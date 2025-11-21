@@ -60,8 +60,8 @@ static void CustomLogOutput(void* userdata, int category, SDL_LogPriority priori
     
     // Print timestamp and severity in white
     Platform::setConsoleColor(ConsoleColor::Reset);
-    fprintf(output, "[%02d:%02d:%03d %s] ", 
-            now_tm.tm_hour, now_tm.tm_min, (int)now_ms.count(), severityStr);
+    fprintf(output, "[%02d:%02d:%02d.%03d %s] ", 
+            now_tm.tm_hour, now_tm.tm_min, now_tm.tm_sec, (int)now_ms.count(), severityStr);
     
     // Print message in severity color
     Platform::setConsoleColor(color);
@@ -78,6 +78,7 @@ static void CustomLogOutput(void* userdata, int category, SDL_LogPriority priori
         oss << "["
             << std::setfill('0') << std::setw(2) << now_tm.tm_hour << ":"
             << std::setfill('0') << std::setw(2) << now_tm.tm_min << ":"
+            << std::setfill('0') << std::setw(2) << now_tm.tm_sec << "."
             << std::setfill('0') << std::setw(3) << (int)now_ms.count() << " "
             << severityStr << "] " << message;
         logFile.writeLine(oss.str());

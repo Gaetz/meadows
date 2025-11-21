@@ -2,15 +2,6 @@
 
 #include <SDL3/SDL.h>
 
-enum class LogSeverity {
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error,
-    Critical
-};
-
 class Log {
 public:
     // Prevent instantiation

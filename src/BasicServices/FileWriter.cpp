@@ -1,20 +1,28 @@
 #include "FileWriter.h"
 
-void FileWriter::open(const std::string& filepath) {
+FileWriter::FileWriter(const std::string& filepath) {
+    open(filepath);
+}
+
+FileWriter::~FileWriter() {
+    close();
+}
+
+bool FileWriter::open(const std::string& filepath) {
+    close();  // Close any existing file
     stream.open(filepath);
+    return stream.is_open();
 }
 
 void FileWriter::write(const std::string& text) {
     if (stream.is_open()) {
         stream << text;
-        stream.flush();
     }
 }
 
 void FileWriter::writeLine(const std::string& text) {
     if (stream.is_open()) {
         stream << text << "\n";
-        stream.flush();
     }
 }
 

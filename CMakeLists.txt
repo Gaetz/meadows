@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(VulkanDemo LANGUAGES CXX C)
+project(Meadows LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,7 +21,7 @@ FetchContent_MakeAvailable(SDL3)
 FetchContent_Declare(
     glm
     GIT_REPOSITORY https://github.com/g-truc/glm.git
-    GIT_TAG 1.0.1
+    GIT_TAG master  # Use master for latest CMake compatibility
 )
 FetchContent_MakeAvailable(glm)
 
@@ -65,7 +65,7 @@ compile_shader(${SHADER_DIR}/shader.vert ${SPV_DIR}/shader.vert.spv)
 compile_shader(${SHADER_DIR}/shader.frag ${SPV_DIR}/shader.frag.spv)
 
 # Main Executable
-add_executable(VulkanDemo
+add_executable(Meadows
     src/main.cpp
     src/Engine.cpp
     src/Engine.h
@@ -93,13 +93,13 @@ add_executable(VulkanDemo
 
 # Platform-specific sources
 if(WIN32)
-    target_sources(VulkanDemo PRIVATE src/BasicServices/Platform_Win.cpp)
+    target_sources(Meadows PRIVATE src/BasicServices/Platform_Win.cpp)
 else()
-    target_sources(VulkanDemo PRIVATE src/BasicServices/Platform_Linux.cpp)
+    target_sources(Meadows PRIVATE src/BasicServices/Platform_Linux.cpp)
 endif()
 
 # ImGui Sources
-target_sources(VulkanDemo PRIVATE
+target_sources(Meadows PRIVATE
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
@@ -109,21 +109,21 @@ target_sources(VulkanDemo PRIVATE
     ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
 )
 
-target_include_directories(VulkanDemo PRIVATE 
+target_include_directories(Meadows PRIVATE 
     src 
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
     ${vulkanmemoryallocator_SOURCE_DIR}/include
 )
 
-target_link_libraries(VulkanDemo PRIVATE
+target_link_libraries(Meadows PRIVATE
     SDL3::SDL3
     Vulkan::Vulkan
     glm::glm
 )
 
 # Copy shaders to output directory for execution
-add_custom_command(TARGET VulkanDemo POST_BUILD
+add_custom_command(TARGET Meadows POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${SPV_DIR} $<TARGET_FILE_DIR:VulkanDemo>/shaders
+    ${SPV_DIR} $<TARGET_FILE_DIR:Meadows>/shaders
 )

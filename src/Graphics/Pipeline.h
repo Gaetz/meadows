@@ -30,7 +30,6 @@ public:
     static void defaultPipelineConfigInfo(PipelineConfigInfo& configInfo);
 
 private:
-    static std::vector<char> readFile(const std::string& filepath);
     void createGraphicsPipeline(const std::string& vertFilepath, const std::string& fragFilepath, const PipelineConfigInfo& configInfo);
     void createShaderModule(const std::vector<char>& code, vk::ShaderModule* shaderModule);
 

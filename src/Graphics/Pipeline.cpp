@@ -19,13 +19,9 @@ void Pipeline::bind(vk::CommandBuffer commandBuffer) {
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 }
 
-std::vector<char> Pipeline::readFile(const std::string& filepath) {
-    return File::readBinary(filepath);
-}
-
 void Pipeline::createGraphicsPipeline(const std::string& vertFilepath, const std::string& fragFilepath, const PipelineConfigInfo& configInfo) {
-    auto vertCode = readFile(vertFilepath);
-    auto fragCode = readFile(fragFilepath);
+    auto vertCode = File::readBinary(vertFilepath);
+    auto fragCode = File::readBinary(fragFilepath);
 
     createShaderModule(vertCode, &vertShaderModule);
     createShaderModule(fragCode, &fragShaderModule);

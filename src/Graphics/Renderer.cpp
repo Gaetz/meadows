@@ -229,17 +229,7 @@ void Renderer::createVertexBuffer() {
     vertexCount = static_cast<uint32_t>(vertices.size());
     vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
-    // Staging buffer
-    Buffer stagingBuffer(
-        context,
-        bufferSize,
-        vk::BufferUsageFlagBits::eTransferSrc,
-        VMA_MEMORY_USAGE_CPU_ONLY
-    );
-
-    stagingBuffer.write(vertices.data(), bufferSize);
-
-    // Vertex buffer
+    // Create vertex buffer
     vertexBuffer = new Buffer(
         context,
         bufferSize,
@@ -247,7 +237,21 @@ void Renderer::createVertexBuffer() {
         VMA_MEMORY_USAGE_GPU_ONLY
     );
 
-    // Copy from staging to vertex buffer
+    copyBufferViaStaging(vertices.data(), bufferSize, vertexBuffer);
+}
+
+void Renderer::copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer) {
+    // Staging buffer
+    Buffer stagingBuffer(
+        context,
+        size,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        VMA_MEMORY_USAGE_CPU_ONLY
+    );
+
+    stagingBuffer.write(const_cast<void*>(data), size);
+
+    // Copy from staging to destination buffer  
     vk::CommandBufferAllocateInfo allocInfo(
         commandPool,
         vk::CommandBufferLevel::ePrimary,
@@ -258,9 +262,9 @@ void Renderer::createVertexBuffer() {
 
     vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
     commandBuffer.begin(beginInfo);
-
-    vk::BufferCopy copyRegion(0, 0, bufferSize);
-    commandBuffer.copyBuffer(stagingBuffer.getBuffer(), vertexBuffer->getBuffer(), 1, &copyRegion);
+    
+    vk::BufferCopy copyRegion(0, 0, size);
+    commandBuffer.copyBuffer(stagingBuffer.getBuffer(), dstBuffer->getBuffer(), 1, &copyRegion);
 
     commandBuffer.end();
 
@@ -268,7 +272,7 @@ void Renderer::createVertexBuffer() {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    context->getGraphicsQueue().submit(1, &submitInfo, nullptr);
+    (void)context->getGraphicsQueue().submit(1, &submitInfo, nullptr);
     context->getGraphicsQueue().waitIdle();
 
     context->getDevice().freeCommandBuffers(commandPool, 1, &commandBuffer);
@@ -293,15 +297,6 @@ void Renderer::createIndexBuffer() {
     indexCount = static_cast<uint32_t>(indices.size());
     vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
-    Buffer stagingBuffer(
-        context,
-        bufferSize,
-        vk::BufferUsageFlagBits::eTransferSrc,
-        VMA_MEMORY_USAGE_CPU_ONLY
-    );
-
-    stagingBuffer.write(indices.data(), bufferSize);
-
     indexBuffer = new Buffer(
         context,
         bufferSize,
@@ -309,30 +304,7 @@ void Renderer::createIndexBuffer() {
         VMA_MEMORY_USAGE_GPU_ONLY
     );
 
-    vk::CommandBufferAllocateInfo allocInfo(
-        commandPool,
-        vk::CommandBufferLevel::ePrimary,
-        1
-    );
-
-    vk::CommandBuffer commandBuffer = context->getDevice().allocateCommandBuffers(allocInfo)[0];
-
-    vk::CommandBufferBeginInfo beginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-    commandBuffer.begin(beginInfo);
-
-    vk::BufferCopy copyRegion(0, 0, bufferSize);
-    commandBuffer.copyBuffer(stagingBuffer.getBuffer(), indexBuffer->getBuffer(), 1, &copyRegion);
-
-    commandBuffer.end();
-
-    vk::SubmitInfo submitInfo;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffer;
-
-    context->getGraphicsQueue().submit(1, &submitInfo, nullptr);
-    context->getGraphicsQueue().waitIdle();
-
-    context->getDevice().freeCommandBuffers(commandPool, 1, &commandBuffer);
+    copyBufferViaStaging(indices.data(), bufferSize, indexBuffer);
 }
 
 void Renderer::createDescriptorSetLayout() {
@@ -485,13 +457,13 @@ void Renderer::draw() {
 
     // Check if a previous frame is using this image (wait on its fence)
     if (imagesInFlight[imageIndex]) {
-        device.waitForFences(1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+        (void)device.waitForFences(1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
     }
     
     // Mark the image as now being in use by this frame
     imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
-    device.resetFences(1, &inFlightFences[currentFrame]);
+    (void)device.resetFences(1, &inFlightFences[currentFrame]);
 
     commandBuffers[currentFrame].reset();
 

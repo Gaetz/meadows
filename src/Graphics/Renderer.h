@@ -4,10 +4,13 @@
 #include <vulkan/vulkan.hpp>
 #include <vector>
 #include <chrono>
+#include <functional>
 
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
-#include <backends/imgui_impl_vulkan.h>
+ #include <backends/imgui_impl_vulkan.h>
+
+class Buffer;  // Forward declaration
 
 class Renderer {
 public:
@@ -35,6 +38,9 @@ private:
 
     void initImGui();
     void drawImGui(vk::CommandBuffer commandBuffer);
+    
+    // Helper methods
+    void copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer);
 
     VulkanContext* context;
     
