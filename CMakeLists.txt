@@ -71,6 +71,10 @@ add_executable(VulkanDemo
     src/Engine.h
     src/BasicServices/Log.cpp
     src/BasicServices/Log.h
+    src/BasicServices/File.cpp
+    src/BasicServices/File.h
+    src/BasicServices/FileWriter.cpp
+    src/BasicServices/FileWriter.h
     src/BasicServices/Platform.h
     src/Graphics/VulkanContext.cpp
     src/Graphics/VulkanContext.h

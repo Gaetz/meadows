@@ -1,12 +1,14 @@
 #include "Log.h"
 #include "Platform.h"
+#include "FileWriter.h"
 #include <cstdarg>
-#include <cstdio>
 #include <chrono>
 #include <ctime>
+#include <sstream>
+#include <iomanip>
 
 // Global log file
-static FILE* logFile = nullptr;
+static FileWriter logFile;
 
 // Custom SDL log output function with colored output
 static void CustomLogOutput(void* userdata, int category, SDL_LogPriority priority, const char* message) {
@@ -71,10 +73,14 @@ static void CustomLogOutput(void* userdata, int category, SDL_LogPriority priori
     fflush(output);
     
     // Also write to log file (without colors)
-    if (logFile) {
-        fprintf(logFile, "[%02d:%02d:%03d %s] %s\n", 
-                now_tm.tm_hour, now_tm.tm_min, (int)now_ms.count(), severityStr, message);
-        fflush(logFile);
+    if (logFile.isOpen()) {
+        std::ostringstream oss;
+        oss << "["
+            << std::setfill('0') << std::setw(2) << now_tm.tm_hour << ":"
+            << std::setfill('0') << std::setw(2) << now_tm.tm_min << ":"
+            << std::setfill('0') << std::setw(3) << (int)now_ms.count() << " "
+            << severityStr << "] " << message;
+        logFile.writeLine(oss.str());
     }
 }
 
@@ -83,20 +89,18 @@ class LogInitializer {
 public:
     LogInitializer() {
         // Open log file
-        logFile = fopen("LastRun.log", "w");
-        if (logFile) {
-            fprintf(logFile, "=== Log Started ===\n");
-            fflush(logFile);
+        logFile.open("LastRun.log");
+        if (logFile.isOpen()) {
+            logFile.writeLine("=== Log Started ===");
         }
         
         SDL_SetLogOutputFunction(CustomLogOutput, nullptr);
     }
     
     ~LogInitializer() {
-        if (logFile) {
-            fprintf(logFile, "=== Log Ended ===\n");
-            fclose(logFile);
-            logFile = nullptr;
+        if (logFile.isOpen()) {
+            logFile.writeLine("=== Log Ended ===");
+            logFile.close();
         }
     }
 };
