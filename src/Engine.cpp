@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "BasicServices/Log.h"
 #include "Graphics/VulkanContext.h"
 #include "Graphics/Renderer.h"
 #include <backends/imgui_impl_sdl3.h>
@@ -14,7 +15,7 @@ Engine::~Engine() {
 void Engine::init() {
     // Initialize SDL
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize SDL: %s", SDL_GetError());
+        Log::Error("Failed to initialize SDL: %s", SDL_GetError());
         return;
     }
 
@@ -25,7 +26,7 @@ void Engine::init() {
     renderer->init();
 
     isInitialized = true;
-    SDL_Log("Engine Initialized");
+    Log::Info("Engine Initialized");
 }
 
 void Engine::cleanup() {
@@ -47,7 +48,7 @@ void Engine::cleanup() {
         }
         SDL_Quit();
         isInitialized = false;
-        SDL_Log("Engine Cleaned Up");
+        Log::Info("Engine Cleaned Up");
     }
 }
 
@@ -68,7 +69,7 @@ void Engine::initWindow() {
     );
 
     if (!window) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create window: %s", SDL_GetError());
+        Log::Error("Failed to create window: %s", SDL_GetError());
         // Handle error appropriately
     }
 }
@@ -78,7 +79,7 @@ void Engine::initVulkan() {
     try {
         vulkanContext->init();
     } catch (const std::exception& e) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Vulkan Initialization Error: %s", e.what());
+        Log::Error("Vulkan Initialization Error: %s", e.what());
         cleanup();
         exit(-1);
     }

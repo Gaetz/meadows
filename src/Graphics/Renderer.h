@@ -44,6 +44,8 @@ private:
     std::vector<vk::Semaphore> imageAvailableSemaphores;
     std::vector<vk::Semaphore> renderFinishedSemaphores;
     std::vector<vk::Fence> inFlightFences;
+    std::vector<vk::Fence> imagesInFlight;  // Track which fence is using each swapchain image
+
 
     vk::RenderPass renderPass;
     std::vector<vk::Framebuffer> framebuffers;

@@ -57,39 +57,44 @@ void Renderer::cleanup() {
         device.destroyPipelineLayout(pipelineLayout);
     }
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        delete uniformBuffers[i];
+    // Destroy sync objects
+    for (size_t i = 0; i < imageAvailableSemaphores.size(); i++) {
+        if (imageAvailableSemaphores[i]) {
+            device.destroySemaphore(imageAvailableSemaphores[i]);
+        }
+    }
+    for (size_t i = 0; i < renderFinishedSemaphores.size(); i++) {
+        if (renderFinishedSemaphores[i]) {
+            device.destroySemaphore(renderFinishedSemaphores[i]);
+        }
+    }
+    for (size_t i = 0; i < inFlightFences.size(); i++) {
+        if (inFlightFences[i]) {
+            device.destroyFence(inFlightFences[i]);
+        }
+    }
+
+    for (auto& buffer : uniformBuffers) {
+        delete buffer;
     }
     uniformBuffers.clear();
 
-    if (vertexBuffer) {
-        delete vertexBuffer;
-        vertexBuffer = nullptr;
-    }
+    delete indexBuffer;
+    indexBuffer = nullptr;
 
-    if (indexBuffer) {
-        delete indexBuffer;
-        indexBuffer = nullptr;
-    }
+    delete vertexBuffer;
+    vertexBuffer = nullptr;
 
-    if (pipeline) {
-        delete pipeline;
-        pipeline = nullptr;
-    }
-
-    if (renderPass) {
-        device.destroyRenderPass(renderPass);
-    }
+    delete pipeline;
+    pipeline = nullptr;
 
     for (auto framebuffer : framebuffers) {
         device.destroyFramebuffer(framebuffer);
     }
     framebuffers.clear();
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        device.destroySemaphore(renderFinishedSemaphores[i]);
-        device.destroySemaphore(imageAvailableSemaphores[i]);
-        device.destroyFence(inFlightFences[i]);
+    if (renderPass) {
+        device.destroyRenderPass(renderPass);
     }
 
     if (commandPool) {
@@ -427,18 +432,30 @@ void Renderer::updateUniformBuffer(uint32_t currentImage) {
 }
 
 void Renderer::createSyncObjects() {
-    imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    // Get swapchain image count
+    size_t imageCount = context->getSwapchain()->getImageViews().size();
+    
+    // Allocate semaphores per swapchain image (not per frame)
+    imageAvailableSemaphores.resize(imageCount);
+    renderFinishedSemaphores.resize(imageCount);
+    
+    // Fences are still per frame
     inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+    imagesInFlight.resize(imageCount, vk::Fence());
 
     vk::SemaphoreCreateInfo semaphoreInfo;
     vk::FenceCreateInfo fenceInfo(vk::FenceCreateFlagBits::eSignaled);
 
     vk::Device device = context->getDevice();
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    // Create semaphores for each swapchain image
+    for (size_t i = 0; i < imageCount; i++) {
         imageAvailableSemaphores[i] = device.createSemaphore(semaphoreInfo);
         renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
+    }
+    
+    // Create fences for each frame in flight
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         inFlightFences[i] = device.createFence(fenceInfo);
     }
 }
@@ -453,7 +470,11 @@ void Renderer::draw() {
     }
     
     uint32_t imageIndex;
-    vk::Result result = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphores[currentFrame], nullptr, &imageIndex);
+    // We still need to use currentFrame to avoid using uninitialized imageIndex
+    // But the real fix is using imageAvailableSemaphores indexed by a cyclic counter
+    static uint32_t semaphoreIndex = 0;
+    vk::Result result = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphores[semaphoreIndex % imageAvailableSemaphores.size()], nullptr, &imageIndex);
+    semaphoreIndex++;
     
     if (result == vk::Result::eErrorOutOfDateKHR) {
         // Recreate swapchain (TODO)
@@ -461,6 +482,14 @@ void Renderer::draw() {
     } else if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
         throw std::runtime_error("failed to acquire swap chain image!");
     }
+
+    // Check if a previous frame is using this image (wait on its fence)
+    if (imagesInFlight[imageIndex]) {
+        device.waitForFences(1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+    }
+    
+    // Mark the image as now being in use by this frame
+    imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
     device.resetFences(1, &inFlightFences[currentFrame]);
 
@@ -524,7 +553,7 @@ void Renderer::draw() {
     commandBuffers[currentFrame].end();
 
     vk::SubmitInfo submitInfo;
-    vk::Semaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
+    vk::Semaphore waitSemaphores[] = { imageAvailableSemaphores[imageIndex] };
     vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;
@@ -533,7 +562,7 @@ void Renderer::draw() {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffers[currentFrame];
 
-    vk::Semaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
+    vk::Semaphore signalSemaphores[] = { renderFinishedSemaphores[imageIndex] };
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 

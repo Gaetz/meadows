@@ -1,6 +1,6 @@
 #include "VulkanContext.h"
+#include "../BasicServices/Log.h"
 #include "Swapchain.h"
-#include <SDL3/SDL_log.h>
 #include <set>
 
 // VMA Implementation
@@ -56,7 +56,7 @@ void VulkanContext::cleanup() {
 
 void VulkanContext::createInstance() {
     if (enableValidationLayers && !checkValidationLayerSupport()) {
-        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "Validation layers requested but not available! Running without validation.");
+        Log::Warn("Validation layers requested but not available! Running without validation.");
         enableValidationLayers = false;
     }
 
@@ -85,7 +85,7 @@ void VulkanContext::setupDebugMessenger() {
     createInfo.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
     createInfo.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
     createInfo.pfnUserCallback = [](vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity, vk::DebugUtilsMessageTypeFlagsEXT messageType, const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) -> VkBool32 {
-        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "validation layer: %s", pCallbackData->pMessage);
+        Log::Error("validation layer: %s", pCallbackData->pMessage);
         return VK_FALSE;
     };
 

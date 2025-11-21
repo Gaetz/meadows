@@ -1,4 +1,5 @@
 #include "Pipeline.h"
+#include "../BasicServices/Log.h"
 #include "Types.h"
 #include <SDL3/SDL.h>
 #include <fstream>
@@ -36,11 +37,11 @@ std::string getBasePath() {
 std::vector<char> Pipeline::readFile(const std::string& filepath) {
     std::string fullPath = getBasePath() + filepath;
 
-    SDL_Log("Attempting to load shader: %s", fullPath.c_str());
+    Log::Debug("Attempting to load shader: %s", fullPath.c_str());
     std::ifstream file(fullPath, std::ios::ate | std::ios::binary);
 
     if (!file.is_open()) {
-        SDL_Log("Failed to open absolute path. Trying relative: %s", filepath.c_str());
+        Log::Debug("Failed to open absolute path. Trying relative: %s", filepath.c_str());
         // Try relative path as fallback
         file.open(filepath, std::ios::ate | std::ios::binary);
         if (!file.is_open()) {

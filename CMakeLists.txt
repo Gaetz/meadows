@@ -69,6 +69,9 @@ add_executable(VulkanDemo
     src/main.cpp
     src/Engine.cpp
     src/Engine.h
+    src/BasicServices/Log.cpp
+    src/BasicServices/Log.h
+    src/BasicServices/Platform.h
     src/Graphics/VulkanContext.cpp
     src/Graphics/VulkanContext.h
     src/Graphics/Renderer.cpp
@@ -83,6 +86,13 @@ add_executable(VulkanDemo
     ${SPV_DIR}/shader.vert.spv
     ${SPV_DIR}/shader.frag.spv
 )
+
+# Platform-specific sources
+if(WIN32)
+    target_sources(VulkanDemo PRIVATE src/BasicServices/Platform_Win.cpp)
+else()
+    target_sources(VulkanDemo PRIVATE src/BasicServices/Platform_Linux.cpp)
+endif()
 
 # ImGui Sources
 target_sources(VulkanDemo PRIVATE
