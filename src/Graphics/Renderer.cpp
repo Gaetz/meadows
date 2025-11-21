@@ -595,20 +595,23 @@ void Renderer::initImGui() {
 
     // 4: Initialize ImGui for Vulkan
     ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = context->getInstance();
-    init_info.PhysicalDevice = context->getPhysicalDevice();
-    init_info.Device = context->getDevice();
-    init_info.Queue = context->getGraphicsQueue();
-    init_info.DescriptorPool = imguiDescriptorPool;
+    init_info.Instance = (VkInstance)context->getInstance();
+    init_info.PhysicalDevice = (VkPhysicalDevice)context->getPhysicalDevice();
+    init_info.Device = (VkDevice)context->getDevice();
+    init_info.Queue = (VkQueue)context->getGraphicsQueue();
+    init_info.DescriptorPool = (VkDescriptorPool)imguiDescriptorPool;
     init_info.MinImageCount = 3;
     init_info.ImageCount = 3;
-    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    init_info.RenderPass = renderPass;
+    // init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    // init_info.RenderPass = (VkRenderPass)renderPass; // Deprecated
+    init_info.PipelineInfoMain.RenderPass = (VkRenderPass)renderPass;
+    init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    init_info.PipelineInfoMain.Subpass = 0;
 
     ImGui_ImplVulkan_Init(&init_info);
 
     // Upload fonts
-    ImGui_ImplVulkan_CreateFontsTexture();
+    // ImGui_ImplVulkan_CreateFontsTexture(); // Removed in newer ImGui versions
 }
 
 void Renderer::drawImGui(vk::CommandBuffer commandBuffer) {

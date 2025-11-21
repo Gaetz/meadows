@@ -1,21 +1,19 @@
-cmake_minimum_required(VERSION 3.25)
-
-project(VulkanEngine LANGUAGES CXX C)
+cmake_minimum_required(VERSION 3.20)
+project(VulkanDemo LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Output directories
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-
 # Dependencies
+find_package(Vulkan REQUIRED)
+
 include(FetchContent)
 
 # SDL3
 FetchContent_Declare(
     SDL3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG preview-3.1.3 # Using a recent preview tag or main
+    GIT_TAG main
 )
 FetchContent_MakeAvailable(SDL3)
 
@@ -27,109 +25,91 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glm)
 
-# Vulkan
-find_package(Vulkan REQUIRED)
-
-# Vulkan Memory Allocator
-FetchContent_Declare(
-    VulkanMemoryAllocator
-    GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-    GIT_TAG v3.1.0
-)
-FetchContent_MakeAvailable(VulkanMemoryAllocator)
-
 # ImGui
 FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG v1.91.1
+    GIT_TAG docking
 )
 FetchContent_MakeAvailable(imgui)
 
-# ShaderCompiler (glslang) - Optional but good for runtime compilation if needed, 
-# but for now we might just rely on precompiled spir-v or system tools. 
-# Let's stick to basic setup first.
-
-# Sources
-file(GLOB_RECURSE SOURCES "src/*.cpp" "src/*.h")
-
-# ImGui Sources (Need to include backends)
-set(IMGUI_DIR ${imgui_SOURCE_DIR})
-list(APPEND SOURCES
-    ${IMGUI_DIR}/imgui.cpp
-    ${IMGUI_DIR}/imgui_demo.cpp
-    ${IMGUI_DIR}/imgui_draw.cpp
-    ${IMGUI_DIR}/imgui_tables.cpp
-    ${IMGUI_DIR}/imgui_widgets.cpp
-    src/backends/imgui_impl_sdl3.cpp
-    src/backends/imgui_impl_vulkan.cpp
+# VulkanMemoryAllocator
+FetchContent_Declare(
+    VulkanMemoryAllocator
+    GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+    GIT_TAG master
 )
+FetchContent_MakeAvailable(VulkanMemoryAllocator)
 
-add_executable(VulkanEngine ${SOURCES})
-
-# Includes
-target_include_directories(VulkanEngine PRIVATE 
-    src 
-    src/backends
-    ${IMGUI_DIR} 
-    ${IMGUI_DIR}/backends
-    ${vulkanmemoryallocator_SOURCE_DIR}/include
-)
-
-# Link Libraries
-target_link_libraries(VulkanEngine PRIVATE 
-    SDL3::SDL3 
-    glm::glm 
-    Vulkan::Vulkan
-)
-
-# Platform specific flags
-if(WIN32)
-    # Ensure we are using the correct subsystem for windows (no console window if desired, but good for debug)
-    # add_compile_definitions(VK_USE_PLATFORM_WIN32_KHR) # SDL handles this usually
-elseif(UNIX AND NOT APPLE)
-    # Linux specific
-    # add_compile_definitions(VK_USE_PLATFORM_XCB_KHR) # or Wayland
-endif()
-
-# Shader Compilation
-find_program(GLSLC_EXECUTABLE glslc HINTS 
-    $ENV{VULKAN_SDK}/Bin
-    "C:/VulkanSDK/1.4.328.1/Bin"
-)
-
-if(GLSLC_EXECUTABLE)
-    message(STATUS "Found glslc: ${GLSLC_EXECUTABLE}")
-    
-    set(SHADERS 
-        shaders/shader.vert
-        shaders/shader.frag
-    )
-    
-    foreach(SHADER ${SHADERS})
-        get_filename_component(FILENAME ${SHADER} NAME)
-        set(SPIRV "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${FILENAME}.spv")
-        
-        add_custom_command(
-            OUTPUT ${SPIRV}
-            COMMAND ${GLSLC_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER} -o ${SPIRV}
-            DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER}
-            COMMENT "Compiling ${FILENAME} to SPIR-V"
-        )
-        
-        list(APPEND SPIRV_SHADERS ${SPIRV})
-
-        add_custom_command(TARGET VulkanEngine POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:VulkanEngine>/shaders
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SPIRV} $<TARGET_FILE_DIR:VulkanEngine>/shaders/
-        )
-    endforeach()
-    
-    add_custom_target(Shaders ALL DEPENDS ${SPIRV_SHADERS})
-    add_dependencies(VulkanEngine Shaders)
-else()
+# Shader compilation
+find_program(GLSLC_EXECUTABLE glslc HINTS $ENV{VULKAN_SDK}/bin)
+if(NOT GLSLC_EXECUTABLE)
     message(WARNING "glslc not found! Shaders will not be compiled.")
 endif()
 
-# Copy shaders to bin (source shaders, optional if we only use spv)
-# file(COPY ${CMAKE_SOURCE_DIR}/shaders DESTINATION ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+function(compile_shader SHADER_SOURCE SHADER_BINARY)
+    add_custom_command(
+        OUTPUT ${SHADER_BINARY}
+        COMMAND ${GLSLC_EXECUTABLE} ${SHADER_SOURCE} -o ${SHADER_BINARY}
+        DEPENDS ${SHADER_SOURCE}
+        COMMENT "Compiling ${SHADER_SOURCE} to ${SHADER_BINARY}"
+    )
+endfunction()
+
+set(SHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
+set(SPV_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
+file(MAKE_DIRECTORY ${SPV_DIR})
+
+# Match the names expected by Renderer.cpp
+compile_shader(${SHADER_DIR}/shader.vert ${SPV_DIR}/shader.vert.spv)
+compile_shader(${SHADER_DIR}/shader.frag ${SPV_DIR}/shader.frag.spv)
+
+# Main Executable
+add_executable(VulkanDemo
+    src/main.cpp
+    src/Engine.cpp
+    src/Engine.h
+    src/Graphics/VulkanContext.cpp
+    src/Graphics/VulkanContext.h
+    src/Graphics/Renderer.cpp
+    src/Graphics/Renderer.h
+    src/Graphics/Pipeline.cpp
+    src/Graphics/Pipeline.h
+    src/Graphics/Swapchain.cpp
+    src/Graphics/Swapchain.h
+    src/Graphics/Buffer.cpp
+    src/Graphics/Buffer.h
+    src/Graphics/Types.h
+    ${SPV_DIR}/shader.vert.spv
+    ${SPV_DIR}/shader.frag.spv
+)
+
+# ImGui Sources
+target_sources(VulkanDemo PRIVATE
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+)
+
+target_include_directories(VulkanDemo PRIVATE 
+    src 
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+    ${vulkanmemoryallocator_SOURCE_DIR}/include
+)
+
+target_link_libraries(VulkanDemo PRIVATE
+    SDL3::SDL3
+    Vulkan::Vulkan
+    glm::glm
+)
+
+# Copy shaders to output directory for execution
+add_custom_command(TARGET VulkanDemo POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${SPV_DIR} $<TARGET_FILE_DIR:VulkanDemo>/shaders
+)

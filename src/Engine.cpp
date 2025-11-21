@@ -14,7 +14,7 @@ Engine::~Engine() {
 void Engine::init() {
     // Initialize SDL
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        std::cerr << "Failed to initialize SDL: " << SDL_GetError() << std::endl;
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to initialize SDL: %s", SDL_GetError());
         return;
     }
 
@@ -25,7 +25,7 @@ void Engine::init() {
     renderer->init();
 
     isInitialized = true;
-    std::cout << "Engine Initialized" << std::endl;
+    SDL_Log("Engine Initialized");
 }
 
 void Engine::cleanup() {
@@ -47,7 +47,7 @@ void Engine::cleanup() {
         }
         SDL_Quit();
         isInitialized = false;
-        std::cout << "Engine Cleaned Up" << std::endl;
+        SDL_Log("Engine Cleaned Up");
     }
 }
 
@@ -68,7 +68,7 @@ void Engine::initWindow() {
     );
 
     if (!window) {
-        std::cerr << "Failed to create window: " << SDL_GetError() << std::endl;
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to create window: %s", SDL_GetError());
         // Handle error appropriately
     }
 }
@@ -78,7 +78,7 @@ void Engine::initVulkan() {
     try {
         vulkanContext->init();
     } catch (const std::exception& e) {
-        std::cerr << "Vulkan Initialization Error: " << e.what() << std::endl;
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Vulkan Initialization Error: %s", e.what());
         cleanup();
         exit(-1);
     }

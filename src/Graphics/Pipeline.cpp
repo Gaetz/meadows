@@ -1,7 +1,7 @@
 #include "Pipeline.h"
 #include "Types.h"
+#include <SDL3/SDL.h>
 #include <fstream>
-#include <iostream>
 
 Pipeline::Pipeline(VulkanContext* context, const std::string& vertFilepath, const std::string& fragFilepath, const PipelineConfigInfo& configInfo)
     : context(context) {
@@ -18,11 +18,34 @@ void Pipeline::bind(vk::CommandBuffer commandBuffer) {
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 }
 
+std::string getBasePath() {
+    static std::string basePathStr;
+    static bool initialized = false;
+
+    if (!initialized) {
+        const char* basePath = SDL_GetBasePath();
+        if (basePath) {
+            basePathStr = std::string(basePath);
+            SDL_free((void*)basePath);
+        }
+        initialized = true;
+    }
+    return basePathStr;
+}
+
 std::vector<char> Pipeline::readFile(const std::string& filepath) {
-    std::ifstream file(filepath, std::ios::ate | std::ios::binary);
+    std::string fullPath = getBasePath() + filepath;
+
+    SDL_Log("Attempting to load shader: %s", fullPath.c_str());
+    std::ifstream file(fullPath, std::ios::ate | std::ios::binary);
 
     if (!file.is_open()) {
-        throw std::runtime_error("failed to open file: " + filepath);
+        SDL_Log("Failed to open absolute path. Trying relative: %s", filepath.c_str());
+        // Try relative path as fallback
+        file.open(filepath, std::ios::ate | std::ios::binary);
+        if (!file.is_open()) {
+            throw std::runtime_error("failed to open file: " + fullPath);
+        }
     }
 
     size_t fileSize = (size_t)file.tellg();

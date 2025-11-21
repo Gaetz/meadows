@@ -1,6 +1,6 @@
 #include "VulkanContext.h"
 #include "Swapchain.h"
-#include <iostream>
+#include <SDL3/SDL_log.h>
 #include <set>
 
 // VMA Implementation
@@ -56,7 +56,8 @@ void VulkanContext::cleanup() {
 
 void VulkanContext::createInstance() {
     if (enableValidationLayers && !checkValidationLayerSupport()) {
-        throw std::runtime_error("validation layers requested, but not available!");
+        SDL_LogWarn(SDL_LOG_CATEGORY_RENDER, "Validation layers requested but not available! Running without validation.");
+        enableValidationLayers = false;
     }
 
     vk::ApplicationInfo appInfo("Vulkan Engine", VK_MAKE_VERSION(1, 0, 0), "No Engine", VK_MAKE_VERSION(1, 0, 0), VK_API_VERSION_1_3);
@@ -80,15 +81,13 @@ void VulkanContext::createInstance() {
 void VulkanContext::setupDebugMessenger() {
     if (!enableValidationLayers) return;
 
-    vk::DebugUtilsMessengerCreateInfoEXT createInfo(
-        {},
-        vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
-        vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
-        [](VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) -> VkBool32 {
-            std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
-            return VK_FALSE;
-        }
-    );
+    vk::DebugUtilsMessengerCreateInfoEXT createInfo;
+    createInfo.messageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
+    createInfo.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
+    createInfo.pfnUserCallback = [](vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity, vk::DebugUtilsMessageTypeFlagsEXT messageType, const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) -> VkBool32 {
+        SDL_LogError(SDL_LOG_CATEGORY_RENDER, "validation layer: %s", pCallbackData->pMessage);
+        return VK_FALSE;
+    };
 
     // Create debug messenger using dynamic dispatch
     auto func = (PFN_vkCreateDebugUtilsMessengerEXT)instance.getProcAddr("vkCreateDebugUtilsMessengerEXT");
