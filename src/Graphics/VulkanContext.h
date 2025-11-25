@@ -6,62 +6,67 @@
 
 class VulkanContext {
 public:
-    VulkanContext(SDL_Window* window);
-    ~VulkanContext();
+  VulkanContext(SDL_Window *window);
+  ~VulkanContext();
 
-    void init();
-    void cleanup();
+  void init();
+  void cleanup();
 
-    vk::Instance getInstance() const { return instance; }
-    vk::PhysicalDevice getPhysicalDevice() const { return physicalDevice; }
-    vk::Device getDevice() const { return device; }
-    vk::Queue getGraphicsQueue() const { return graphicsQueue; }
-    vk::Queue getPresentQueue() const { return presentQueue; }
-    vk::SurfaceKHR getSurface() const { return surface; }
-    VmaAllocator getAllocator() const { return allocator; }
-    class Swapchain* getSwapchain() const { return swapchain; }
-    SDL_Window* getWindow() const { return window; }
-    
-    QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device);
+  vk::Instance getInstance() const { return instance; }
+  vk::PhysicalDevice getPhysicalDevice() const { return physicalDevice; }
+  vk::Device getDevice() const { return device; }
+  vk::Queue getGraphicsQueue() const { return graphicsQueue; }
+  vk::Queue getPresentQueue() const { return presentQueue; }
+  vk::SurfaceKHR getSurface() const { return surface; }
+  VmaAllocator getAllocator() const { return allocator; }
+  class Swapchain *getSwapchain() const { return swapchain; }
+  SDL_Window *getWindow() const { return window; }
+
+  QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device);
 
 private:
-    void createInstance();
-    void setupDebugMessenger();
-    void createSurface();
-    void pickPhysicalDevice();
-    void createLogicalDevice();
-    void createAllocator();
-    void createSwapchain();
+  void createInstance();
+  void setupDebugMessenger();
 
-    bool checkValidationLayerSupport();
-    std::vector<const char*> getRequiredExtensions();
-    bool checkDeviceExtensionSupport(vk::PhysicalDevice device);
-    SwapChainSupportDetails querySwapChainSupport(vk::PhysicalDevice device);
+  static VKAPI_ATTR VkBool32 VKAPI_CALL
+  debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                VkDebugUtilsMessageTypeFlagsEXT messageType,
+                const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+                void *pUserData);
 
-    SDL_Window* window;
+  void createSurface();
+  void pickPhysicalDevice();
+  void createLogicalDevice();
+  void createAllocator();
+  void createSwapchain();
 
-    vk::Instance instance;
-    vk::DebugUtilsMessengerEXT debugMessenger;
-    vk::SurfaceKHR surface;
-    vk::PhysicalDevice physicalDevice;
-    vk::Device device;
-    vk::Queue graphicsQueue;
-    vk::Queue presentQueue;
-    
-    VmaAllocator allocator;
-    class Swapchain* swapchain{ nullptr };
+  bool checkValidationLayerSupport();
+  std::vector<const char *> getRequiredExtensions();
+  bool checkDeviceExtensionSupport(vk::PhysicalDevice device);
+  SwapChainSupportDetails querySwapChainSupport(vk::PhysicalDevice device);
 
-    const std::vector<const char*> validationLayers = {
-        "VK_LAYER_KHRONOS_validation"
-    };
+  SDL_Window *window;
 
-    const std::vector<const char*> deviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
-    };
+  vk::Instance instance;
+  vk::DebugUtilsMessengerEXT debugMessenger;
+  vk::SurfaceKHR surface;
+  vk::PhysicalDevice physicalDevice;
+  vk::Device device;
+  vk::Queue graphicsQueue;
+  vk::Queue presentQueue;
+
+  VmaAllocator allocator;
+  class Swapchain *swapchain{nullptr};
+
+  const std::vector<const char *> validationLayers = {
+      "VK_LAYER_KHRONOS_validation"};
+
+  const std::vector<const char *> deviceExtensions = {
+      VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
 #ifdef NDEBUG
-    bool enableValidationLayers = false;
+  bool enableValidationLayers = false;
 #else
-    bool enableValidationLayers = true;
+  bool enableValidationLayers = true;
 #endif
 };

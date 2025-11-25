@@ -122,8 +122,13 @@ target_link_libraries(Meadows PRIVATE
     glm::glm
 )
 
-# Copy shaders to output directory for execution
-add_custom_command(TARGET Meadows POST_BUILD
+# Copy execution dependencies to output directory
+add_custom_command(TARGET Meadows POST_BUILD*
+    # Copy shaders to output directory for execution
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${SPV_DIR} $<TARGET_FILE_DIR:Meadows>/shaders
+    # Also copy SDL3 binary to output directory
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    $<TARGET_FILE:SDL3::SDL3>
+    $<TARGET_FILE_DIR:Meadows>
 )
