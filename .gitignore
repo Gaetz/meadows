@@ -43,3 +43,4 @@
 # Build
 build/
 .idea/
+.vscode/

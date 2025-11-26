@@ -4,9 +4,6 @@
 #include "Graphics/Renderer.h"
 #include <backends/imgui_impl_sdl3.h>
 
-Engine::Engine() {
-    // Constructor
-}
 
 Engine::~Engine() {
     cleanup();

@@ -3,6 +3,7 @@
 #include "../BasicServices/File.h"
 #include "Types.h"
 #include <SDL3/SDL.h>
+#include <cassert>
 
 Pipeline::Pipeline(VulkanContext* context, const std::string& vertFilepath, const std::string& fragFilepath, const PipelineConfigInfo& configInfo)
     : context(context) {
@@ -60,9 +61,7 @@ void Pipeline::createGraphicsPipeline(const std::string& vertFilepath, const std
     );
 
     auto result = context->getDevice().createGraphicsPipeline(nullptr, pipelineInfo);
-    if (result.result != vk::Result::eSuccess) {
-        throw std::runtime_error("failed to create graphics pipeline!");
-    }
+    assert(result.result == vk::Result::eSuccess && "failed to create graphics pipeline!");
     graphicsPipeline = result.value;
 }
 

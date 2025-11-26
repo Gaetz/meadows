@@ -123,7 +123,7 @@ target_link_libraries(Meadows PRIVATE
 )
 
 # Copy execution dependencies to output directory
-add_custom_command(TARGET Meadows POST_BUILD*
+add_custom_command(TARGET Meadows POST_BUILD
     # Copy shaders to output directory for execution
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${SPV_DIR} $<TARGET_FILE_DIR:Meadows>/shaders

@@ -8,6 +8,9 @@ public:
     Buffer(VulkanContext* context, vk::DeviceSize size, vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage);
     ~Buffer();
 
+    Buffer(const Buffer&) = delete;
+    Buffer& operator=(const Buffer&) = delete;
+
     void map(void** data);
     void unmap();
     void write(void* data, vk::DeviceSize size, vk::DeviceSize offset = 0);

@@ -4,11 +4,10 @@
 #include <vulkan/vulkan.hpp>
 #include <vector>
 #include <chrono>
-#include <functional>
 
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
- #include <backends/imgui_impl_vulkan.h>
+#include <backends/imgui_impl_vulkan.h>
 
 class Buffer;  // Forward declaration
 
@@ -78,4 +77,6 @@ private:
 
     uint32_t currentFrame = 0;
     static const int MAX_FRAMES_IN_FLIGHT = 2;
+    
+    bool cleanedUp = false;
 };

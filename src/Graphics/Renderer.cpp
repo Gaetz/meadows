@@ -5,6 +5,7 @@
 #include <iostream>
 #include <array>
 #include <chrono>
+#include <cassert>
 #include <glm/gtc/matrix_transform.hpp>
 
 Renderer::Renderer(VulkanContext* context) : context(context) {
@@ -33,6 +34,9 @@ void Renderer::init() {
 }
 
 void Renderer::cleanup() {
+    if (cleanedUp) return;
+    cleanedUp = true;
+
     vk::Device device = context->getDevice();
 
     device.waitIdle();
@@ -75,18 +79,26 @@ void Renderer::cleanup() {
     }
 
     for (auto& buffer : uniformBuffers) {
-        delete buffer;
+        if (buffer) {
+            delete buffer;
+        }
     }
     uniformBuffers.clear();
+    
+    if (indexBuffer) {
+        delete indexBuffer;
+        indexBuffer = nullptr;
+    }
 
-    delete indexBuffer;
-    indexBuffer = nullptr;
+    if (vertexBuffer) {
+        delete vertexBuffer;
+        vertexBuffer = nullptr;
+    }
 
-    delete vertexBuffer;
-    vertexBuffer = nullptr;
-
-    delete pipeline;
-    pipeline = nullptr;
+    if (pipeline) {
+        delete pipeline;
+        pipeline = nullptr;
+    }
 
     for (auto framebuffer : framebuffers) {
         device.destroyFramebuffer(framebuffer);
@@ -437,9 +449,8 @@ void Renderer::draw() {
     vk::SwapchainKHR swapchain = context->getSwapchain()->getSwapchain();
 
     // Wait for previous frame
-    if (device.waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX) != vk::Result::eSuccess) {
-        throw std::runtime_error("failed to wait for fence!");
-    }
+    vk::Result fenceResult = device.waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+    assert(fenceResult == vk::Result::eSuccess && "failed to wait for fence!");
     
     uint32_t imageIndex;
     // We still need to use currentFrame to avoid using uninitialized imageIndex
@@ -451,9 +462,8 @@ void Renderer::draw() {
     if (result == vk::Result::eErrorOutOfDateKHR) {
         // Recreate swapchain (TODO)
         return;
-    } else if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
-        throw std::runtime_error("failed to acquire swap chain image!");
     }
+    assert((result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR) && "failed to acquire swap chain image!");
 
     // Check if a previous frame is using this image (wait on its fence)
     if (imagesInFlight[imageIndex]) {
@@ -538,9 +548,8 @@ void Renderer::draw() {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    if (context->getGraphicsQueue().submit(1, &submitInfo, inFlightFences[currentFrame]) != vk::Result::eSuccess) {
-        throw std::runtime_error("failed to submit draw command buffer!");
-    }
+    vk::Result submitResult = context->getGraphicsQueue().submit(1, &submitInfo, inFlightFences[currentFrame]);
+    assert(submitResult == vk::Result::eSuccess && "failed to submit draw command buffer!");
 
     vk::PresentInfoKHR presentInfo;
     presentInfo.waitSemaphoreCount = 1;
@@ -555,8 +564,8 @@ void Renderer::draw() {
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
         // Recreate swapchain (TODO)
-    } else if (result != vk::Result::eSuccess) {
-        throw std::runtime_error("failed to present swap chain image!");
+    } else {
+        assert(result == vk::Result::eSuccess && "failed to present swap chain image!");
     }
 
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;

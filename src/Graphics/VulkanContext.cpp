@@ -2,6 +2,7 @@
 #include "../BasicServices/Log.h"
 #include "Swapchain.h"
 #include <set>
+#include <cassert>
 
 // VMA Implementation
 #define VMA_IMPLEMENTATION
@@ -29,6 +30,7 @@ void VulkanContext::cleanup() {
 
   if (allocator) {
     vmaDestroyAllocator(allocator);
+    allocator = nullptr;
   }
 
   if (device) {
@@ -54,12 +56,6 @@ void VulkanContext::cleanup() {
 }
 
 void VulkanContext::createInstance() {
-  if (enableValidationLayers && !checkValidationLayerSupport()) {
-    Log::Warn("Validation layers requested but not available! Running without "
-              "validation.");
-    enableValidationLayers = false;
-  }
-
   vk::ApplicationInfo appInfo("Vulkan Engine", VK_MAKE_VERSION(1, 0, 0),
                               "No Engine", VK_MAKE_VERSION(1, 0, 0),
                               VK_API_VERSION_1_3);
@@ -72,58 +68,52 @@ void VulkanContext::createInstance() {
       enableValidationLayers ? validationLayers.data() : nullptr,
       (uint32_t)extensions.size(), extensions.data());
 
-  vk::DebugUtilsMessengerCreateInfoEXT debugCreateInfo;
-  if (enableValidationLayers) {
-    // Set up debug messenger for instance creation/destruction if needed
-    // For simplicity, we skip the pNext debug messenger for now
-  }
-
   instance = vk::createInstance(createInfo);
 }
 
 void VulkanContext::setupDebugMessenger() {
-  if (!enableValidationLayers)
+  if (enableValidationLayers && !checkValidationLayerSupport()) {
+    Log::Warn("Validation layers requested but not available! Running without validation.");
     return;
+  }
 
-  vk::DebugUtilsMessengerCreateInfoEXT createInfo;
-  createInfo.messageSeverity =
-      vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
-      vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-      vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
-  createInfo.messageType = vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
-                           vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation |
-                           vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance;
+  VkDebugUtilsMessengerCreateInfoEXT createInfo{};
+  createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+  createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+  createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
   createInfo.pfnUserCallback = debugCallback;
 
   // Create debug messenger using dynamic dispatch
-  auto func = (PFN_vkCreateDebugUtilsMessengerEXT)instance.getProcAddr("vkCreateDebugUtilsMessengerEXT");
+  auto func = (PFN_vkCreateDebugUtilsMessengerEXT)instance.getProcAddr(
+      "vkCreateDebugUtilsMessengerEXT");
   if (func != nullptr) {
     VkDebugUtilsMessengerEXT messenger;
-    if (func(instance,
-             reinterpret_cast<const VkDebugUtilsMessengerCreateInfoEXT *>(
-                 &createInfo),
-             nullptr, &messenger) != VK_SUCCESS) {
-      throw std::runtime_error("failed to set up debug messenger!");
+    VkResult result = func(instance, &createInfo, nullptr, &messenger);
+    assert(result == VK_SUCCESS && "failed to set up debug messenger!");
+    if (result == VK_SUCCESS) {
+      debugMessenger = messenger;
     }
-    debugMessenger = messenger;
   } else {
-    throw std::runtime_error("failed to set up debug messenger extension!");
+    assert(false && "failed to set up debug messenger extension!");
   }
 }
 
 void VulkanContext::createSurface() {
   VkSurfaceKHR cSurface;
-  if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, &cSurface)) {
-    throw std::runtime_error("failed to create window surface!");
+  bool result = SDL_Vulkan_CreateSurface(window, instance, nullptr, &cSurface);
+  assert(result && "failed to create window surface!");
+  if (result) {
+    surface = cSurface;
   }
-  surface = cSurface;
 }
 
 void VulkanContext::pickPhysicalDevice() {
   auto devices = instance.enumeratePhysicalDevices();
-  if (devices.empty()) {
-    throw std::runtime_error("failed to find GPUs with Vulkan support!");
-  }
+  assert(!devices.empty() && "failed to find GPUs with Vulkan support!");
 
   for (const auto &device : devices) {
     QueueFamilyIndices indices = findQueueFamilies(device);
@@ -141,9 +131,7 @@ void VulkanContext::pickPhysicalDevice() {
     }
   }
 
-  if (!physicalDevice) {
-    throw std::runtime_error("failed to find a suitable GPU!");
-  }
+  assert(physicalDevice && "failed to find a suitable GPU!");
 }
 
 void VulkanContext::createLogicalDevice() {

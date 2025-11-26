@@ -25,6 +25,9 @@ public:
     Pipeline(VulkanContext* context, const std::string& vertFilepath, const std::string& fragFilepath, const PipelineConfigInfo& configInfo);
     ~Pipeline();
 
+    Pipeline(const Pipeline&) = delete;
+    Pipeline& operator=(const Pipeline&) = delete;
+
     void bind(vk::CommandBuffer commandBuffer);
 
     static void defaultPipelineConfigInfo(PipelineConfigInfo& configInfo);

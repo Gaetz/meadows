@@ -7,7 +7,7 @@
 
 class Engine {
 public:
-    Engine();
+    Engine() = default;
     ~Engine();
 
     void init();

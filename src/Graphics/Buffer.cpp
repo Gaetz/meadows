@@ -1,5 +1,5 @@
 #include "Buffer.h"
-#include <stdexcept>
+#include <cassert>
 
 Buffer::Buffer(VulkanContext* context, vk::DeviceSize size, vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage)
     : context(context), size(size) {
@@ -14,9 +14,8 @@ Buffer::Buffer(VulkanContext* context, vk::DeviceSize size, vk::BufferUsageFlags
     allocInfo.usage = memoryUsage;
 
     VkBuffer vkBuffer;
-    if (vmaCreateBuffer(context->getAllocator(), &bufferInfo, &allocInfo, &vkBuffer, &allocation, nullptr) != VK_SUCCESS) {
-        throw std::runtime_error("failed to create buffer!");
-    }
+    VkResult result = vmaCreateBuffer(context->getAllocator(), &bufferInfo, &allocInfo, &vkBuffer, &allocation, nullptr);
+    assert(result == VK_SUCCESS && "failed to create buffer!");
     buffer = vkBuffer;
 }
 
