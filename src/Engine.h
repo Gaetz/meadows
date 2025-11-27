@@ -1,7 +1,7 @@
 #pragma once
 
 #include <SDL3/SDL.h>
-#include "BasicServices/Defines.h"
+#include "Defines.h"
 #include "Graphics/Renderer.h"
 
 using graphics::VulkanContext;
