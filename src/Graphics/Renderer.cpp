@@ -34,8 +34,7 @@ void Renderer::init() {
 }
 
 void Renderer::cleanup() {
-    if (cleanedUp) return;
-    cleanedUp = true;
+    if (!commandPool) return; // Already cleaned up or never initialized
 
     vk::Device device = context->getDevice();
 
@@ -45,73 +44,43 @@ void Renderer::cleanup() {
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 
-    if (imguiDescriptorPool) {
-        device.destroyDescriptorPool(imguiDescriptorPool);
-    }
-
-    if (descriptorPool) {
-        device.destroyDescriptorPool(descriptorPool);
-    }
-
-    if (descriptorSetLayout) {
-        device.destroyDescriptorSetLayout(descriptorSetLayout);
-    }
-
-    if (pipelineLayout) {
-        device.destroyPipelineLayout(pipelineLayout);
-    }
+    device.destroyDescriptorPool(imguiDescriptorPool);
+    device.destroyDescriptorPool(descriptorPool);
+    device.destroyDescriptorSetLayout(descriptorSetLayout);
+    device.destroyPipelineLayout(pipelineLayout);
 
     // Destroy sync objects
-    for (size_t i = 0; i < imageAvailableSemaphores.size(); i++) {
-        if (imageAvailableSemaphores[i]) {
-            device.destroySemaphore(imageAvailableSemaphores[i]);
-        }
+    for (auto semaphore : imageAvailableSemaphores) {
+        device.destroySemaphore(semaphore);
     }
-    for (size_t i = 0; i < renderFinishedSemaphores.size(); i++) {
-        if (renderFinishedSemaphores[i]) {
-            device.destroySemaphore(renderFinishedSemaphores[i]);
-        }
+    for (auto semaphore : renderFinishedSemaphores) {
+        device.destroySemaphore(semaphore);
     }
-    for (size_t i = 0; i < inFlightFences.size(); i++) {
-        if (inFlightFences[i]) {
-            device.destroyFence(inFlightFences[i]);
-        }
+    for (auto fence : inFlightFences) {
+        device.destroyFence(fence);
     }
 
-    for (auto& buffer : uniformBuffers) {
-        if (buffer) {
-            delete buffer;
-        }
+    for (auto buffer : uniformBuffers) {
+        delete buffer;
     }
     uniformBuffers.clear();
     
-    if (indexBuffer) {
-        delete indexBuffer;
-        indexBuffer = nullptr;
-    }
+    delete indexBuffer;
+    indexBuffer = nullptr;
 
-    if (vertexBuffer) {
-        delete vertexBuffer;
-        vertexBuffer = nullptr;
-    }
+    delete vertexBuffer;
+    vertexBuffer = nullptr;
 
-    if (pipeline) {
-        delete pipeline;
-        pipeline = nullptr;
-    }
+    delete pipeline;
+    pipeline = nullptr;
 
     for (auto framebuffer : framebuffers) {
         device.destroyFramebuffer(framebuffer);
     }
     framebuffers.clear();
 
-    if (renderPass) {
-        device.destroyRenderPass(renderPass);
-    }
-
-    if (commandPool) {
-        device.destroyCommandPool(commandPool);
-    }
+    device.destroyRenderPass(renderPass);
+    device.destroyCommandPool(commandPool);
 }
 
 void Renderer::createCommandPool() {

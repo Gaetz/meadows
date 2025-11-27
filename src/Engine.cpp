@@ -22,37 +22,31 @@ void Engine::init() {
     renderer = new Renderer(vulkanContext);
     renderer->init();
 
-    isInitialized = true;
     Log::Info("Engine Initialized");
 }
 
 void Engine::cleanup() {
-    if (isInitialized) {
-        if (renderer) {
-            // Wait for device to be idle before destroying renderer
-            vulkanContext->getDevice().waitIdle();
-            delete renderer;
-            renderer = nullptr;
-        }
-
-        if (vulkanContext) {
-            delete vulkanContext;
-            vulkanContext = nullptr;
-        }
-
-        if (window) {
-            SDL_DestroyWindow(window);
-            window = nullptr;
-        }
-
-        isInitialized = false;
-        Log::Info("Engine Cleaned Up");
-        SDL_Quit();
+    if (!renderer) {
+        return; // Already cleaned up or never initialized
     }
+
+    // Wait for device to be idle before destroying renderer
+    vulkanContext->getDevice().waitIdle();
+    delete renderer;
+    renderer = nullptr;
+
+    delete vulkanContext;
+    vulkanContext = nullptr;
+
+    SDL_DestroyWindow(window);
+    window = nullptr;
+
+    Log::Info("Engine Cleaned Up");
+    SDL_Quit();
 }
 
 void Engine::run() {
-    if (!isInitialized) {
+    if (!renderer) {
         Log::Critical("Engine not initialized. Quitting before the main loop.");
         return;
     }

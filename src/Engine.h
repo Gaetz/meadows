@@ -19,8 +19,6 @@ private:
     void initVulkan();
     void mainLoop();
 
-    bool isInitialized{ false };
-    int windowExtent{ 800 };
 
     struct SDL_Window* window{ nullptr };
     class VulkanContext* vulkanContext{ nullptr };

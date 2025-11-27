@@ -77,6 +77,4 @@ private:
 
     uint32_t currentFrame = 0;
     static const int MAX_FRAMES_IN_FLIGHT = 2;
-    
-    bool cleanedUp = false;
 };

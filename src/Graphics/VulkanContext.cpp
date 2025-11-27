@@ -33,12 +33,10 @@ void VulkanContext::cleanup() {
     allocator = nullptr;
   }
 
-  if (device) {
-    device.destroy();
-  }
+  // Vulkan handles can be safely destroyed even if null
+  device.destroy();
 
-  if (enableValidationLayers) {
-    // Destroy debug messenger using dynamic dispatch
+  if (enableValidationLayers && debugMessenger) {
     auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)instance.getProcAddr(
         "vkDestroyDebugUtilsMessengerEXT");
     if (func != nullptr) {
@@ -46,13 +44,8 @@ void VulkanContext::cleanup() {
     }
   }
 
-  if (surface) {
-    instance.destroySurfaceKHR(surface);
-  }
-
-  if (instance) {
-    instance.destroy();
-  }
+  instance.destroySurfaceKHR(surface);
+  instance.destroy();
 }
 
 void VulkanContext::createInstance() {

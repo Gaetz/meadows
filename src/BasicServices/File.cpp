@@ -3,21 +3,21 @@
 #include <SDL3/SDL.h>
 #include <fstream>
 #include <filesystem>
+#include <mutex>
 
 std::string File::getBasePath() {
     static std::string basePathStr;
-    static bool initialized = false;
+    static std::once_flag initFlag;
 
-    if (!initialized) {
+    std::call_once(initFlag, []() {
         const char* basePath = SDL_GetBasePath();
         if (basePath) {
             basePathStr = std::string(basePath);
             // NOTE: In SDL3, SDL_GetBasePath() returns a cached pointer owned by SDL.
             // Do NOT call SDL_free() on it, as SDL will free it in SDL_QuitFilesystem().
-            // SDL_free((void*)basePath);  // <-- REMOVED: This was causing double-free!
         }
-        initialized = true;
-    }
+    });
+
     return basePathStr;
 }
 
