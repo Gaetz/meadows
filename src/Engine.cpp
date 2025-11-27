@@ -42,15 +42,18 @@ void Engine::cleanup() {
 
         if (window) {
             SDL_DestroyWindow(window);
+            window = nullptr;
         }
-        SDL_Quit();
+
         isInitialized = false;
         Log::Info("Engine Cleaned Up");
+        SDL_Quit();
     }
 }
 
 void Engine::run() {
     if (!isInitialized) {
+        Log::Critical("Engine not initialized. Quitting before the main loop.");
         return;
     }
 

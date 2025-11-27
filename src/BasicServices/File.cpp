@@ -12,7 +12,9 @@ std::string File::getBasePath() {
         const char* basePath = SDL_GetBasePath();
         if (basePath) {
             basePathStr = std::string(basePath);
-            SDL_free((void*)basePath);
+            // NOTE: In SDL3, SDL_GetBasePath() returns a cached pointer owned by SDL.
+            // Do NOT call SDL_free() on it, as SDL will free it in SDL_QuitFilesystem().
+            // SDL_free((void*)basePath);  // <-- REMOVED: This was causing double-free!
         }
         initialized = true;
     }
