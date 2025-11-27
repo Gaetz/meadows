@@ -10,6 +10,8 @@
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_vulkan.h>
 
+#include "VulkanInit.hpp"
+
 namespace graphics {
 
 Renderer::Renderer(VulkanContext* context) : context(context) {
@@ -76,22 +78,29 @@ void Renderer::cleanup() {
     framebuffers.clear();
 
     device.destroyRenderPass(renderPass);
-    device.destroyCommandPool(commandPool);
+    for (int i = 0; i < FRAME_OVERLAP; i++)
+    {
+        device.destroyCommandPool(frames[i].commandPool);
+    }
 }
 
 void Renderer::createCommandPool() {
-    QueueFamilyIndices queueFamilyIndices = context->findQueueFamilies(context->getPhysicalDevice());
+    const QueueFamilyIndices queueFamilyIndices = context->findQueueFamilies(context->getPhysicalDevice());
 
-    vk::CommandPoolCreateInfo poolInfo(
-        vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-        queueFamilyIndices.graphicsFamily.value()
+    const auto poolInfo = graphics::commandPoolCreateInfo(
+        queueFamilyIndices.graphicsFamily.value(),
+        vk::CommandPoolCreateFlagBits::eResetCommandBuffer
     );
 
-    commandPool = context->getDevice().createCommandPool(poolInfo);
+    for (int i = 0; i < FRAME_OVERLAP; i++)
+    {
+        vk::CommandBufferAllocateInfo cmdAllocInfo = graphics::commandBufferAllocateInfo(frames[i].commandPool, 1);
+        frames[i].commandPool = context->getDevice().createCommandPool(poolInfo);
+    }
 }
 
 void Renderer::createCommandBuffers() {
-    commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    //commandBuffers.resize(FRAME_OVERLAP);
 
     vk::CommandBufferAllocateInfo allocInfo(
         commandPool,
@@ -304,9 +313,9 @@ void Renderer::createDescriptorSetLayout() {
 void Renderer::createUniformBuffers() {
     vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
 
-    uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    uniformBuffers.resize(FRAME_OVERLAP);
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < FRAME_OVERLAP; i++) {
         uniformBuffers[i] = std::make_unique<Buffer>(
             context,
             bufferSize,
@@ -319,12 +328,12 @@ void Renderer::createUniformBuffers() {
 void Renderer::createDescriptorPool() {
     vk::DescriptorPoolSize poolSize(
         vk::DescriptorType::eUniformBuffer,
-        static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)
+        static_cast<uint32_t>(FRAME_OVERLAP)
     );
 
     vk::DescriptorPoolCreateInfo poolInfo(
         {},
-        static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+        static_cast<uint32_t>(FRAME_OVERLAP),
         1, &poolSize
     );
 
@@ -332,16 +341,16 @@ void Renderer::createDescriptorPool() {
 }
 
 void Renderer::createDescriptorSets() {
-    std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+    std::vector<vk::DescriptorSetLayout> layouts(FRAME_OVERLAP, descriptorSetLayout);
     vk::DescriptorSetAllocateInfo allocInfo(
         descriptorPool,
-        static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+        static_cast<uint32_t>(FRAME_OVERLAP),
         layouts.data()
     );
 
     descriptorSets = context->getDevice().allocateDescriptorSets(allocInfo);
 
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    for (size_t i = 0; i < FRAME_OVERLAP; i++) {
         vk::DescriptorBufferInfo bufferInfo(
             uniformBuffers[i]->getBuffer(),
             0,
@@ -381,65 +390,34 @@ void Renderer::updateUniformBuffer(uint32_t currentImage) {
 }
 
 void Renderer::createSyncObjects() {
-    // Get swapchain image count
-    size_t imageCount = context->getSwapchain()->getImageViews().size();
-    
-    // Allocate semaphores per swapchain image
-    imageAvailableSemaphores.resize(imageCount);
-    renderFinishedSemaphores.resize(imageCount);
-
-    // Fences are still per frame
-    inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-    imagesInFlight.resize(imageCount, vk::Fence());
-
-    vk::SemaphoreCreateInfo semaphoreInfo;
-    vk::FenceCreateInfo fenceInfo(vk::FenceCreateFlagBits::eSignaled);
+    vk::SemaphoreCreateInfo semaphoreInfo = graphics::semaphoreCreateInfo();
+    vk::FenceCreateInfo fenceInfo = graphics::fenceCreateInfo(vk::FenceCreateFlagBits::eSignaled);
 
     vk::Device device = context->getDevice();
-
-    // Create semaphores for each swapchain image
-    for (size_t i = 0; i < imageCount; i++) {
-        imageAvailableSemaphores[i] = device.createSemaphore(semaphoreInfo);
-        renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
-    }
-    
-    // Create fences for each frame in flight
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        inFlightFences[i] = device.createFence(fenceInfo);
+    // Create semaphores and fence for each swapchain image
+    for (size_t i = 0; i < FRAME_OVERLAP; i++) {
+        frames[i].renderFence = device.createFence(fenceInfo);
+        frames[i].imageAvailableSemaphore = device.createSemaphore(semaphoreInfo);
+        frames[i].renderFinishedSemaphore = device.createSemaphore(semaphoreInfo);
     }
 }
 
 void Renderer::draw() {
     vk::Device device = context->getDevice();
     vk::SwapchainKHR swapchain = context->getSwapchain()->getSwapchain();
+    FrameData& currentFrameData = getCurrentFrame();
 
     // Wait for previous frame
-    vk::Result fenceResult = device.waitForFences(1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-    assert(fenceResult == vk::Result::eSuccess && "failed to wait for fence!");
-    
-    uint32_t imageIndex;
-    static uint32_t acquireSemaphoreIndex = 0;
-    uint32_t semaphoreIndex = acquireSemaphoreIndex % imageAvailableSemaphores.size();
-    vk::Result result = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphores[semaphoreIndex], nullptr, &imageIndex);
-    acquireSemaphoreIndex++;
+    vk::Result fenceResult = device.waitForFences(1, &currentFrameData.renderFence, true, 1000000000);
+    device.resetFences(1, &currentFrameData.renderFence);
 
-    if (result == vk::Result::eErrorOutOfDateKHR) {
-        // Recreate swapchain (TODO)
-        return;
-    }
-    assert((result == vk::Result::eSuccess || result == vk::Result::eSuboptimalKHR) && "failed to acquire swap chain image!");
+    u32 imageIndex;
+    vk::Result result = device.acquireNextImageKHR(swapchain, 1000000000, currentFrameData.imageAvailableSemaphore, nullptr, &imageIndex);
 
-    // Check if a previous frame is using this image (wait on its fence)
-    if (imagesInFlight[imageIndex]) {
-        (void)device.waitForFences(1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
-    }
-    
-    // Mark the image as now being in use by this frame
-    imagesInFlight[imageIndex] = inFlightFences[currentFrame];
+    //acquireSemaphoreIndex++;
 
-    (void)device.resetFences(1, &inFlightFences[currentFrame]);
-
-    commandBuffers[currentFrame].reset();
+    vk::CommandBuffer command = currentFrameData.mainCommandBuffer;
+    command.reset();
 
     updateUniformBuffer(currentFrame);
 
@@ -532,7 +510,7 @@ void Renderer::draw() {
         assert(result == vk::Result::eSuccess && "failed to present swap chain image!");
     }
 
-    currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    currentFrame = (currentFrame + 1) % FRAME_OVERLAP;
 
 }
 

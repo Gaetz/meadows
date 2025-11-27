@@ -35,10 +35,9 @@ void VulkanContext::cleanup() {
     allocator = nullptr;
   }
 
-  // VkBootstrap handles destruction of instance, device, and debug messenger
   instance.destroySurfaceKHR(surface);
   vkb::destroy_debug_utils_messenger(instance, debugMessenger);
-  // instance, device, and debugMessenger are managed by VkBootstrap
+  // VkBootstrap handles destruction of instance and device
 }
 
 vkb::Instance VulkanContext::createInstance() {

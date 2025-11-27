@@ -8,6 +8,13 @@
 
 namespace graphics {
 
+    struct FrameData {
+        vk::CommandPool commandPool;
+        vk::CommandBuffer mainCommandBuffer;
+        vk::Semaphore imageAvailableSemaphore, renderFinishedSemaphore;
+        vk::Fence renderFence;
+    };
+
 class Buffer;  // Forward declaration
 
 class Renderer {
@@ -41,14 +48,21 @@ private:
     void copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer);
 
     VulkanContext* context;
-    
-    vk::CommandPool commandPool;
-    std::vector<vk::CommandBuffer> commandBuffers;
 
-    std::vector<vk::Semaphore> imageAvailableSemaphores;
-    std::vector<vk::Semaphore> renderFinishedSemaphores;
-    std::vector<vk::Fence> inFlightFences;
-    std::vector<vk::Fence> imagesInFlight;  // Track which fence is using each swapchain image
+    int frameNumber {0};
+    uint32_t currentFrame = 0;
+    static const int FRAME_OVERLAP = 2;
+
+    FrameData frames[FRAME_OVERLAP];
+    FrameData& getCurrentFrame() { return frames[frameNumber % FRAME_OVERLAP]; };
+
+    //vk::CommandPool commandPool;
+    //std::vector<vk::CommandBuffer> commandBuffers;
+
+    //std::vector<vk::Semaphore> imageAvailableSemaphores;
+    //std::vector<vk::Semaphore> renderFinishedSemaphores;
+    //std::vector<vk::Fence> inFlightFences;
+    //std::vector<vk::Fence> imagesInFlight;  // Track which fence is using each swapchain image
 
 
     vk::RenderPass renderPass;
@@ -73,9 +87,6 @@ private:
     float rotationSpeed = 1.0f;
     float accumulatedRotation = 0.0f;
     std::chrono::high_resolution_clock::time_point lastFrameTime;
-
-    uint32_t currentFrame = 0;
-    static const int MAX_FRAMES_IN_FLIGHT = 2;
 };
 
 } // namespace graphics
