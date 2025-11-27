@@ -1,12 +1,14 @@
 #pragma once
 
-#include <string>
+#include "Defines.h"
 #include <fstream>
+
+namespace services {
 
 class FileWriter {
 public:
     FileWriter() = default;
-    explicit FileWriter(const std::string& filepath);
+    explicit FileWriter(const str& filepath);
     ~FileWriter();
     
     // Disable copy, allow move
@@ -15,12 +17,14 @@ public:
     FileWriter(FileWriter&&) = default;
     FileWriter& operator=(FileWriter&&) = default;
     
-    bool open(const std::string& filepath);
-    void write(const std::string& text);
-    void writeLine(const std::string& text);
+    bool open(const str& filepath);
+    void write(const str& text);
+    void writeLine(const str& text);
     bool isOpen() const;
     void close();
     
 private:
     std::ofstream stream;
 };
+
+} // namespace services

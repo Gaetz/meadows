@@ -4,6 +4,8 @@
 #include "Graphics/Renderer.h"
 #include <backends/imgui_impl_sdl3.h>
 
+using services::Log;
+
 
 Engine::~Engine() {
     cleanup();
@@ -19,7 +21,7 @@ void Engine::init() {
     initWindow();
     initVulkan();
 
-    renderer = new Renderer(vulkanContext);
+    renderer = std::make_unique<Renderer>(vulkanContext.get());
     renderer->init();
 
     Log::Info("Engine Initialized");
@@ -32,11 +34,10 @@ void Engine::cleanup() {
 
     // Wait for device to be idle before destroying renderer
     vulkanContext->getDevice().waitIdle();
-    delete renderer;
-    renderer = nullptr;
 
-    delete vulkanContext;
-    vulkanContext = nullptr;
+    // unique_ptr automatically deletes when reset or goes out of scope
+    renderer.reset();
+    vulkanContext.reset();
 
     SDL_DestroyWindow(window);
     window = nullptr;
@@ -69,7 +70,7 @@ void Engine::initWindow() {
 }
 
 void Engine::initVulkan() {
-    vulkanContext = new VulkanContext(window);
+    vulkanContext = std::make_unique<VulkanContext>(window);
     try {
         vulkanContext->init();
     } catch (const std::exception& e) {

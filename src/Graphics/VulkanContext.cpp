@@ -3,10 +3,15 @@
 #include "Swapchain.h"
 #include <set>
 #include <cassert>
+#include <SDL3/SDL_vulkan.h>
 
 // VMA Implementation
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
+
+using services::Log;
+
+namespace graphics {
 
 VulkanContext::VulkanContext(SDL_Window* window) : window(window) {}
 
@@ -23,10 +28,8 @@ void VulkanContext::init() {
 }
 
 void VulkanContext::cleanup() {
-  if (swapchain) {
-    delete swapchain;
-    swapchain = nullptr;
-  }
+  // unique_ptr automatically deletes when reset
+  swapchain.reset();
 
   if (allocator) {
     vmaDestroyAllocator(allocator);
@@ -168,7 +171,7 @@ void VulkanContext::createAllocator() {
 void VulkanContext::createSwapchain() {
   int w, h;
   SDL_GetWindowSize(window, &w, &h);
-  swapchain = new Swapchain(device, physicalDevice, surface, w, h);
+  swapchain = std::make_unique<Swapchain>(device, physicalDevice, surface, w, h);
   swapchain->init();
 }
 
@@ -227,7 +230,7 @@ std::vector<const char *> VulkanContext::getRequiredExtensions() {
 
 bool VulkanContext::checkDeviceExtensionSupport(vk::PhysicalDevice device) {
   auto availableExtensions = device.enumerateDeviceExtensionProperties();
-  std::set<std::string> requiredExtensions(deviceExtensions.begin(),
+  std::set<str> requiredExtensions(deviceExtensions.begin(),
                                            deviceExtensions.end());
 
   for (const auto &extension : availableExtensions) {
@@ -255,3 +258,5 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::debugCallback(
   Log::Error("validation layer: %s", pCallbackData->pMessage);
   return VK_FALSE;
 }
+
+} // namespace graphics

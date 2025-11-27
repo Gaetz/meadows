@@ -1,7 +1,9 @@
 #pragma once
 
-#include <string>
+#include "Defines.h"
 #include <vector>
+
+namespace services {
 
 class File {
 public:
@@ -12,8 +14,10 @@ public:
     File& operator=(const File&) = delete;
 
     // Path management
-    static std::string getBasePath();
+    static str getBasePath();
 
     // Binary file reading
-    static std::vector<char> readBinary(const std::string& filepath);
+    static std::vector<char> readBinary(const str& filepath);
 };
+
+} // namespace services

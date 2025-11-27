@@ -3,6 +3,8 @@
 #include "VulkanContext.h"
 #include <vulkan/vulkan.hpp>
 
+namespace graphics {
+
 class Buffer {
 public:
     Buffer(VulkanContext* context, vk::DeviceSize size, vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage);
@@ -23,3 +25,5 @@ private:
     VmaAllocation allocation;
     vk::DeviceSize size;
 };
+
+} // namespace graphics

@@ -2,11 +2,15 @@
 #include "Swapchain.h"
 #include "Pipeline.h"
 #include "Buffer.h"
-#include <iostream>
 #include <array>
 #include <chrono>
 #include <cassert>
 #include <glm/gtc/matrix_transform.hpp>
+#include <imgui.h>
+#include <backends/imgui_impl_sdl3.h>
+#include <backends/imgui_impl_vulkan.h>
+
+namespace graphics {
 
 Renderer::Renderer(VulkanContext* context) : context(context) {
     lastFrameTime = std::chrono::high_resolution_clock::now();
@@ -60,19 +64,11 @@ void Renderer::cleanup() {
         device.destroyFence(fence);
     }
 
-    for (auto buffer : uniformBuffers) {
-        delete buffer;
-    }
+    // unique_ptr automatically deletes when cleared
     uniformBuffers.clear();
-    
-    delete indexBuffer;
-    indexBuffer = nullptr;
-
-    delete vertexBuffer;
-    vertexBuffer = nullptr;
-
-    delete pipeline;
-    pipeline = nullptr;
+    indexBuffer.reset();
+    vertexBuffer.reset();
+    pipeline.reset();
 
     for (auto framebuffer : framebuffers) {
         device.destroyFramebuffer(framebuffer);
@@ -183,7 +179,7 @@ void Renderer::createPipeline() {
     pipelineLayout = context->getDevice().createPipelineLayout(pipelineLayoutInfo);
     pipelineConfig.pipelineLayout = pipelineLayout;
 
-    pipeline = new Pipeline(
+    pipeline = std::make_unique<Pipeline>(
         context,
         "shaders/shader.vert.spv",
         "shaders/shader.frag.spv",
@@ -211,14 +207,14 @@ void Renderer::createVertexBuffer() {
     vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
     // Create vertex buffer
-    vertexBuffer = new Buffer(
+    vertexBuffer = std::make_unique<Buffer>(
         context,
         bufferSize,
         vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
         VMA_MEMORY_USAGE_GPU_ONLY
     );
 
-    copyBufferViaStaging(vertices.data(), bufferSize, vertexBuffer);
+    copyBufferViaStaging(vertices.data(), bufferSize, vertexBuffer.get());
 }
 
 void Renderer::copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer) {
@@ -278,14 +274,14 @@ void Renderer::createIndexBuffer() {
     indexCount = static_cast<uint32_t>(indices.size());
     vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
-    indexBuffer = new Buffer(
+    indexBuffer = std::make_unique<Buffer>(
         context,
         bufferSize,
         vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
         VMA_MEMORY_USAGE_GPU_ONLY
     );
 
-    copyBufferViaStaging(indices.data(), bufferSize, indexBuffer);
+    copyBufferViaStaging(indices.data(), bufferSize, indexBuffer.get());
 }
 
 void Renderer::createDescriptorSetLayout() {
@@ -311,7 +307,7 @@ void Renderer::createUniformBuffers() {
     uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        uniformBuffers[i] = new Buffer(
+        uniformBuffers[i] = std::make_unique<Buffer>(
             context,
             bufferSize,
             vk::BufferUsageFlagBits::eUniformBuffer,
@@ -606,3 +602,5 @@ void Renderer::drawImGui(vk::CommandBuffer commandBuffer) {
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 }
+
+} // namespace graphics

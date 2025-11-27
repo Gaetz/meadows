@@ -6,7 +6,8 @@
 #include <array>
 #include <vector>
 #include <optional>
-#include <string>
+
+namespace graphics {
 
 struct Vertex {
     glm::vec3 pos;
@@ -68,3 +69,5 @@ struct SwapChainSupportDetails {
     std::vector<vk::SurfaceFormatKHR> formats;
     std::vector<vk::PresentModeKHR> presentModes;
 };
+
+} // namespace graphics

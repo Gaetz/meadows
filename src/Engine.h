@@ -1,9 +1,11 @@
 #pragma once
 
 #include <SDL3/SDL.h>
-#include <vulkan/vulkan.hpp>
-#include <vector>
-#include <iostream>
+#include "BasicServices/Defines.h"
+#include "Graphics/Renderer.h"
+
+using graphics::VulkanContext;
+using graphics::Renderer;
 
 class Engine {
 public:
@@ -19,8 +21,7 @@ private:
     void initVulkan();
     void mainLoop();
 
-
     struct SDL_Window* window{ nullptr };
-    class VulkanContext* vulkanContext{ nullptr };
-    class Renderer* renderer{ nullptr };
+    uptr<VulkanContext> vulkanContext;
+    uptr<Renderer> renderer;
 };

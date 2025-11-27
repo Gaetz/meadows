@@ -1,9 +1,11 @@
 #pragma once
 
+#include "../BasicServices/Defines.h"
 #include "VulkanContext.h"
 #include <vulkan/vulkan.hpp>
-#include <string>
 #include <vector>
+
+namespace graphics {
 
 struct PipelineConfigInfo {
     vk::PipelineViewportStateCreateInfo viewportInfo;
@@ -22,7 +24,7 @@ struct PipelineConfigInfo {
 
 class Pipeline {
 public:
-    Pipeline(VulkanContext* context, const std::string& vertFilepath, const std::string& fragFilepath, const PipelineConfigInfo& configInfo);
+    Pipeline(VulkanContext* context, const str& vertFilepath, const str& fragFilepath, const PipelineConfigInfo& configInfo);
     ~Pipeline();
 
     Pipeline(const Pipeline&) = delete;
@@ -33,7 +35,7 @@ public:
     static void defaultPipelineConfigInfo(PipelineConfigInfo& configInfo);
 
 private:
-    void createGraphicsPipeline(const std::string& vertFilepath, const std::string& fragFilepath, const PipelineConfigInfo& configInfo);
+    void createGraphicsPipeline(const str& vertFilepath, const str& fragFilepath, const PipelineConfigInfo& configInfo);
     void createShaderModule(const std::vector<char>& code, vk::ShaderModule* shaderModule);
 
     VulkanContext* context;
@@ -41,3 +43,5 @@ private:
     vk::ShaderModule vertShaderModule;
     vk::ShaderModule fragShaderModule;
 };
+
+} // namespace graphics

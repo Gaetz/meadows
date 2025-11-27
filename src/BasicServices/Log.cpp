@@ -6,6 +6,11 @@
 #include <ctime>
 #include <sstream>
 #include <iomanip>
+#include <SDL3/SDL_log.h>
+
+using services::FileWriter;
+using services::Platform;
+using services::ConsoleColor;
 
 // Global log file
 static FileWriter logFile;
@@ -108,6 +113,8 @@ public:
 
 static LogInitializer logInit; // Runs before main()
 
+namespace services {
+
 void Log::Trace(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -149,3 +156,5 @@ void Log::Critical(const char* fmt, ...) {
     SDL_LogMessageV(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_CRITICAL, fmt, args);
     va_end(args);
 }
+
+} // namespace services

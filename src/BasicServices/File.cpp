@@ -5,14 +5,17 @@
 #include <filesystem>
 #include <mutex>
 
-std::string File::getBasePath() {
-    static std::string basePathStr;
+
+namespace services {
+
+str File::getBasePath() {
+    static str basePathStr;
     static std::once_flag initFlag;
 
     std::call_once(initFlag, []() {
         const char* basePath = SDL_GetBasePath();
         if (basePath) {
-            basePathStr = std::string(basePath);
+            basePathStr = str(basePath);
             // NOTE: In SDL3, SDL_GetBasePath() returns a cached pointer owned by SDL.
             // Do NOT call SDL_free() on it, as SDL will free it in SDL_QuitFilesystem().
         }
@@ -21,9 +24,9 @@ std::string File::getBasePath() {
     return basePathStr;
 }
 
-std::vector<char> File::readBinary(const std::string& filepath) {
-    std::string fullPath = getBasePath() + filepath;
-    
+std::vector<char> File::readBinary(const str& filepath) {
+    str fullPath = getBasePath() + filepath;
+
     // Try absolute path first
     std::filesystem::path path = fullPath;
     if (!std::filesystem::exists(path)) {
@@ -61,3 +64,6 @@ std::vector<char> File::readBinary(const std::string& filepath) {
     Log::Debug("Successfully loaded file: %s (%zu bytes)", filepath.c_str(), fileSize);
     return buffer;
 }
+
+} // namespace services
+

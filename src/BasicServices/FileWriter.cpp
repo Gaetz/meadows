@@ -1,6 +1,8 @@
 #include "FileWriter.h"
 
-FileWriter::FileWriter(const std::string& filepath) {
+namespace services {
+
+FileWriter::FileWriter(const str& filepath) {
     open(filepath);
 }
 
@@ -8,19 +10,19 @@ FileWriter::~FileWriter() {
     close();
 }
 
-bool FileWriter::open(const std::string& filepath) {
+bool FileWriter::open(const str& filepath) {
     close();  // Close any existing file
     stream.open(filepath);
     return stream.is_open();
 }
 
-void FileWriter::write(const std::string& text) {
+void FileWriter::write(const str& text) {
     if (stream.is_open()) {
         stream << text;
     }
 }
 
-void FileWriter::writeLine(const std::string& text) {
+void FileWriter::writeLine(const str& text) {
     if (stream.is_open()) {
         stream << text << "\n";
     }
@@ -35,3 +37,5 @@ void FileWriter::close() {
         stream.close();
     }
 }
+
+} // namespace services

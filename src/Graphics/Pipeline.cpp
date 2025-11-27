@@ -2,10 +2,14 @@
 #include "../BasicServices/Log.h"
 #include "../BasicServices/File.h"
 #include "Types.h"
-#include <SDL3/SDL.h>
 #include <cassert>
 
-Pipeline::Pipeline(VulkanContext* context, const std::string& vertFilepath, const std::string& fragFilepath, const PipelineConfigInfo& configInfo)
+using services::File;
+using services::Log;
+
+namespace graphics {
+
+Pipeline::Pipeline(VulkanContext* context, const str& vertFilepath, const str& fragFilepath, const PipelineConfigInfo& configInfo)
     : context(context) {
     createGraphicsPipeline(vertFilepath, fragFilepath, configInfo);
 }
@@ -20,7 +24,7 @@ void Pipeline::bind(vk::CommandBuffer commandBuffer) {
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 }
 
-void Pipeline::createGraphicsPipeline(const std::string& vertFilepath, const std::string& fragFilepath, const PipelineConfigInfo& configInfo) {
+void Pipeline::createGraphicsPipeline(const str& vertFilepath, const str& fragFilepath, const PipelineConfigInfo& configInfo) {
     auto vertCode = File::readBinary(vertFilepath);
     auto fragCode = File::readBinary(fragFilepath);
 
@@ -113,3 +117,5 @@ void Pipeline::defaultPipelineConfigInfo(PipelineConfigInfo& configInfo) {
         {}, (uint32_t)configInfo.dynamicStateEnables.size(), configInfo.dynamicStateEnables.data()
     );
 }
+
+} // namespace graphics

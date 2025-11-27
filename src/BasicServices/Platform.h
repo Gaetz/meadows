@@ -1,5 +1,7 @@
 #pragma once
 
+namespace services {
+
 enum class ConsoleColor {
     Gray,
     Cyan,
@@ -21,3 +23,5 @@ public:
     // Platform-specific console color setting
     static void setConsoleColor(ConsoleColor color);
 };
+
+} // namespace services

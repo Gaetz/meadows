@@ -1,6 +1,9 @@
 #include "Platform.h"
 #include <windows.h>
 
+
+namespace services {
+
 void Platform::setConsoleColor(ConsoleColor color) {
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
     WORD attribute = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE; // Default white
@@ -31,3 +34,5 @@ void Platform::setConsoleColor(ConsoleColor color) {
     
     SetConsoleTextAttribute(hConsole, attribute);
 }
+
+} // namespace services

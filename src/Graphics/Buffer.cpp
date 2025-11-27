@@ -1,6 +1,8 @@
 #include "Buffer.h"
 #include <cassert>
 
+namespace graphics {
+
 Buffer::Buffer(VulkanContext* context, vk::DeviceSize size, vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage)
     : context(context), size(size) {
     
@@ -37,3 +39,5 @@ void Buffer::write(void* data, vk::DeviceSize size, vk::DeviceSize offset) {
     memcpy((char*)mappedData + offset, data, (size_t)size);
     unmap();
 }
+
+} // namespace graphics

@@ -1,13 +1,12 @@
 #pragma once
 
+#include "../BasicServices/Defines.h"
 #include "VulkanContext.h"
 #include <vulkan/vulkan.hpp>
 #include <vector>
 #include <chrono>
 
-#include <imgui.h>
-#include <backends/imgui_impl_sdl3.h>
-#include <backends/imgui_impl_vulkan.h>
+namespace graphics {
 
 class Buffer;  // Forward declaration
 
@@ -54,15 +53,15 @@ private:
 
     vk::RenderPass renderPass;
     std::vector<vk::Framebuffer> framebuffers;
-    class Pipeline* pipeline{ nullptr };
+    uptr<class Pipeline> pipeline;
 
-    class Buffer* vertexBuffer{ nullptr };
+    uptr<class Buffer> vertexBuffer;
     uint32_t vertexCount = 0;
 
-    class Buffer* indexBuffer{ nullptr };
+    uptr<class Buffer> indexBuffer;
     uint32_t indexCount = 0;
 
-    std::vector<class Buffer*> uniformBuffers;
+    std::vector<uptr<class Buffer>> uniformBuffers;
     vk::DescriptorPool descriptorPool;
     vk::DescriptorSetLayout descriptorSetLayout;
     std::vector<vk::DescriptorSet> descriptorSets;
@@ -78,3 +77,5 @@ private:
     uint32_t currentFrame = 0;
     static const int MAX_FRAMES_IN_FLIGHT = 2;
 };
+
+} // namespace graphics

@@ -1,8 +1,9 @@
 #pragma once
 
-#include "Types.h"
 #include <vulkan/vulkan.hpp>
 #include <vector>
+
+namespace graphics {
 
 class Swapchain {
 public:
@@ -39,3 +40,5 @@ private:
     uint32_t width;
     uint32_t height;
 };
+
+} // namespace graphics

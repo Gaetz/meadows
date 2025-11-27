@@ -1,8 +1,11 @@
 #pragma once
 
+#include "../BasicServices/Defines.h"
 #include "Types.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+
+namespace graphics {
 
 class VulkanContext {
 public:
@@ -19,7 +22,7 @@ public:
   vk::Queue getPresentQueue() const { return presentQueue; }
   vk::SurfaceKHR getSurface() const { return surface; }
   VmaAllocator getAllocator() const { return allocator; }
-  class Swapchain *getSwapchain() const { return swapchain; }
+  class Swapchain *getSwapchain() const { return swapchain.get(); }
   SDL_Window *getWindow() const { return window; }
 
   QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device);
@@ -56,7 +59,7 @@ private:
   vk::Queue presentQueue;
 
   VmaAllocator allocator;
-  class Swapchain* swapchain{nullptr};
+  uptr<class Swapchain> swapchain;
 
   const std::vector<const char*> validationLayers = {
       "VK_LAYER_KHRONOS_validation"};
@@ -70,3 +73,6 @@ private:
   bool enableValidationLayers = true;
 #endif
 };
+
+} // namespace graphics
+

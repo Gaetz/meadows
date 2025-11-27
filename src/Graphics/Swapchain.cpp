@@ -1,6 +1,9 @@
 #include "Swapchain.h"
 #include <algorithm>
 #include <limits>
+#include "Types.h"
+
+namespace graphics {
 
 Swapchain::Swapchain(vk::Device device, vk::PhysicalDevice physicalDevice, vk::SurfaceKHR surface, uint32_t width, uint32_t height)
     : device(device), physicalDevice(physicalDevice), surface(surface), width(width), height(height) {}
@@ -125,3 +128,5 @@ vk::Extent2D Swapchain::chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capab
         return actualExtent;
     }
 }
+
+} // namespace graphics

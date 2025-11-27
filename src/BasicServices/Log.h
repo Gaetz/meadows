@@ -1,6 +1,6 @@
 #pragma once
 
-#include <SDL3/SDL.h>
+namespace services {
 
 class Log {
 public:
@@ -18,3 +18,5 @@ public:
     static void Error(const char* fmt, ...);
     static void Critical(const char* fmt, ...);
 };
+
+} // namespace services
