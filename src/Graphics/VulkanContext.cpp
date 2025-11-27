@@ -18,11 +18,10 @@ VulkanContext::VulkanContext(SDL_Window* window) : window(window) {}
 VulkanContext::~VulkanContext() { cleanup(); }
 
 void VulkanContext::init() {
-  createInstance();
-  setupDebugMessenger();
+  const vkb::Instance vkbInstance = createInstance();
   createSurface();
-  pickPhysicalDevice();
-  createLogicalDevice();
+  const vkb::PhysicalDevice vkbPhysicalDevice = pickPhysicalDevice(vkbInstance);
+  createLogicalDevice(vkbPhysicalDevice);
   createAllocator();
   createSwapchain();
 }
@@ -36,66 +35,54 @@ void VulkanContext::cleanup() {
     allocator = nullptr;
   }
 
-  // Vulkan handles can be safely destroyed even if null
-  device.destroy();
-
-  if (enableValidationLayers && debugMessenger) {
-    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)instance.getProcAddr(
-        "vkDestroyDebugUtilsMessengerEXT");
-    if (func != nullptr) {
-      func(instance, debugMessenger, nullptr);
-    }
-  }
-
+  // VkBootstrap handles destruction of instance, device, and debug messenger
   instance.destroySurfaceKHR(surface);
-  instance.destroy();
+  vkb::destroy_debug_utils_messenger(instance, debugMessenger);
+  // instance, device, and debugMessenger are managed by VkBootstrap
 }
 
-void VulkanContext::createInstance() {
-  vk::ApplicationInfo appInfo("Vulkan Engine", VK_MAKE_VERSION(1, 0, 0),
-                              "No Engine", VK_MAKE_VERSION(1, 0, 0),
-                              VK_API_VERSION_1_3);
+vkb::Instance VulkanContext::createInstance() {
+  vkb::InstanceBuilder builder;
 
-  auto extensions = getRequiredExtensions();
+  // Application info
+  builder.set_app_name("Meadows")
+         .set_app_version(1, 0, 0)
+         .set_engine_name("Meadows")
+         .set_engine_version(1, 0, 0)
+         .require_api_version(1, 3);
 
-  vk::InstanceCreateInfo createInfo(
-      {}, &appInfo,
-      enableValidationLayers ? (uint32_t)validationLayers.size() : 0,
-      enableValidationLayers ? validationLayers.data() : nullptr,
-      (uint32_t)extensions.size(), extensions.data());
+  // Enable validation layers if requested
+  if (enableValidationLayers) {
+    builder.request_validation_layers();
 
-  instance = vk::createInstance(createInfo);
-}
-
-void VulkanContext::setupDebugMessenger() {
-  if (enableValidationLayers && !checkValidationLayerSupport()) {
-    Log::Warn("Validation layers requested but not available! Running without validation.");
-    return;
+    // Set custom debug callback
+    auto debugCallback = [](VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                            VkDebugUtilsMessageTypeFlagsEXT messageType,
+                            const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+                            void* pUserData) -> VkBool32 {
+      Log::Warn("VULKAN VALIDATION | %s ", pCallbackData->pMessage);
+      return VK_FALSE;
+    };
+    builder.set_debug_callback(debugCallback);
   }
 
-  VkDebugUtilsMessengerCreateInfoEXT createInfo{};
-  createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-  createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                               VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-  createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-  createInfo.pfnUserCallback = debugCallback;
-
-  // Create debug messenger using dynamic dispatch
-  auto func = (PFN_vkCreateDebugUtilsMessengerEXT)instance.getProcAddr(
-      "vkCreateDebugUtilsMessengerEXT");
-  if (func != nullptr) {
-    VkDebugUtilsMessengerEXT messenger;
-    VkResult result = func(instance, &createInfo, nullptr, &messenger);
-    assert(result == VK_SUCCESS && "failed to set up debug messenger!");
-    if (result == VK_SUCCESS) {
-      debugMessenger = messenger;
-    }
-  } else {
-    assert(false && "failed to set up debug messenger extension!");
+  // Get required extensions from SDL
+  uint32_t count = 0;
+  const char *const *sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&count);
+  for (uint32_t i = 0; i < count; ++i) {
+    builder.enable_extension(sdlExtensions[i]);
   }
+
+  auto instRet = builder.build();
+  if (!instRet) {
+    Log::Error("Failed to create Vulkan instance: %s", instRet.error().message().c_str());
+    assert(false && "Failed to create Vulkan instance");
+  }
+
+  auto vkbInstance = instRet.value();
+  instance = vkbInstance.instance;
+  debugMessenger = vkbInstance.debug_messenger;
+  return vkbInstance;
 }
 
 void VulkanContext::createSurface() {
@@ -107,55 +94,57 @@ void VulkanContext::createSurface() {
   }
 }
 
-void VulkanContext::pickPhysicalDevice() {
-  auto devices = instance.enumeratePhysicalDevices();
-  assert(!devices.empty() && "failed to find GPUs with Vulkan support!");
+vkb::PhysicalDevice VulkanContext::pickPhysicalDevice(vkb::Instance vkbInstance) {
+  // Vulkan 1.3 features
+  vk::PhysicalDeviceVulkan13Features features13{};
+  features13.sType = vk::StructureType::ePhysicalDeviceVulkan13Features;
+  features13.dynamicRendering = true;
+  features13.synchronization2 = true;
 
-  for (const auto &device : devices) {
-    QueueFamilyIndices indices = findQueueFamilies(device);
-    bool extensionsSupported = checkDeviceExtensionSupport(device);
-    bool swapChainAdequate = false;
-    if (extensionsSupported) {
-      SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
-      swapChainAdequate = !swapChainSupport.formats.empty() &&
-                          !swapChainSupport.presentModes.empty();
-    }
+  // Vulkan 1.2 features
+  vk::PhysicalDeviceVulkan12Features features12{};
+  features12.sType = vk::StructureType::ePhysicalDeviceVulkan12Features;
+  features12.bufferDeviceAddress = true;
+  features12.descriptorIndexing = true;
 
-    if (indices.isComplete() && extensionsSupported && swapChainAdequate) {
-      physicalDevice = device;
-      break;
-    }
+  // Use VkBootstrap to select a GPU
+  // We want a GPU that can write to the SDL surface and supports Vulkan 1.3 with the correct features
+  vkb::PhysicalDeviceSelector selector{ vkbInstance };
+  auto physRet = selector
+    .set_minimum_version(1, 3)
+    .set_required_features_13(features13)
+    .set_required_features_12(features12)
+    .set_surface(surface)
+    .select();
+
+  if (!physRet) {
+    Log::Error("Failed to select physical device: %s", physRet.error().message().c_str());
+    assert(false && "Failed to select physical device");
   }
 
-  assert(physicalDevice && "failed to find a suitable GPU!");
+  auto vkbPhysicalDevice = physRet.value();
+  physicalDevice = vkbPhysicalDevice.physical_device;
+  return vkbPhysicalDevice;
 }
 
-void VulkanContext::createLogicalDevice() {
-  QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+void VulkanContext::createLogicalDevice(vkb::PhysicalDevice vkbPhysicalDevice) {
+  // Create the final Vulkan device
+  vkb::DeviceBuilder deviceBuilder{ vkbPhysicalDevice };
 
-  std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
-  std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(),
-                                            indices.presentFamily.value()};
-
-  float queuePriority = 1.0f;
-  for (uint32_t queueFamily : uniqueQueueFamilies) {
-    queueCreateInfos.push_back(
-        vk::DeviceQueueCreateInfo({}, queueFamily, 1, &queuePriority));
+  auto devRet = deviceBuilder.build();
+  if (!devRet) {
+    Log::Error("Failed to create logical device: %s", devRet.error().message().c_str());
+    assert(false && "Failed to create logical device");
   }
 
-  vk::PhysicalDeviceFeatures deviceFeatures;
+  vkb::Device vkbDevice = devRet.value();
 
-  vk::DeviceCreateInfo createInfo(
-      {}, (uint32_t)queueCreateInfos.size(), queueCreateInfos.data(),
-      enableValidationLayers ? (uint32_t)validationLayers.size() : 0,
-      enableValidationLayers ? validationLayers.data() : nullptr,
-      (uint32_t)deviceExtensions.size(), deviceExtensions.data(),
-      &deviceFeatures);
+  // Get the VkDevice handle used in the rest of a Vulkan application
+  device = vkbDevice.device;
 
-  device = physicalDevice.createDevice(createInfo);
-
-  graphicsQueue = device.getQueue(indices.graphicsFamily.value(), 0);
-  presentQueue = device.getQueue(indices.presentFamily.value(), 0);
+  // Get queues
+  graphicsQueue = vkbDevice.get_queue(vkb::QueueType::graphics).value();
+  presentQueue = vkbDevice.get_queue(vkb::QueueType::present).value();
 }
 
 void VulkanContext::createAllocator() {
@@ -198,36 +187,6 @@ QueueFamilyIndices VulkanContext::findQueueFamilies(vk::PhysicalDevice device) {
   return indices;
 }
 
-bool VulkanContext::checkValidationLayerSupport() {
-  auto availableLayers = vk::enumerateInstanceLayerProperties();
-
-  for (const char *layerName : validationLayers) {
-    bool layerFound = false;
-    for (const auto &layerProperties : availableLayers) {
-      if (strcmp(layerName, layerProperties.layerName) == 0) {
-        layerFound = true;
-        break;
-      }
-    }
-    if (!layerFound)
-      return false;
-  }
-  return true;
-}
-
-std::vector<const char *> VulkanContext::getRequiredExtensions() {
-  uint32_t count = 0;
-  const char *const *sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&count);
-
-  std::vector<const char *> extensions(sdlExtensions, sdlExtensions + count);
-
-  if (enableValidationLayers) {
-    extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-  }
-
-  return extensions;
-}
-
 bool VulkanContext::checkDeviceExtensionSupport(vk::PhysicalDevice device) {
   auto availableExtensions = device.enumerateDeviceExtensionProperties();
   std::set<str> requiredExtensions(deviceExtensions.begin(),
@@ -249,14 +208,5 @@ VulkanContext::querySwapChainSupport(vk::PhysicalDevice device) {
   return details;
 }
 
-VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::debugCallback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT messageType,
-    const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-    void *pUserData) {
-
-  Log::Error("validation layer: %s", pCallbackData->pMessage);
-  return VK_FALSE;
-}
 
 } // namespace graphics

@@ -4,6 +4,7 @@
 #include "Types.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+#include <VkBootstrap.h>
 
 namespace graphics {
 
@@ -28,23 +29,13 @@ public:
   QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device);
 
 private:
-  void createInstance();
-  void setupDebugMessenger();
-
-  static VKAPI_ATTR VkBool32 VKAPI_CALL
-  debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                VkDebugUtilsMessageTypeFlagsEXT messageType,
-                const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-                void *pUserData);
-
+  vkb::Instance createInstance();
   void createSurface();
-  void pickPhysicalDevice();
-  void createLogicalDevice();
+  vkb::PhysicalDevice pickPhysicalDevice(vkb::Instance vkbInstance);
+  void createLogicalDevice(vkb::PhysicalDevice vkbPhysicalDevice);
   void createAllocator();
   void createSwapchain();
 
-  bool checkValidationLayerSupport();
-  std::vector<const char *> getRequiredExtensions();
   bool checkDeviceExtensionSupport(vk::PhysicalDevice device);
   SwapChainSupportDetails querySwapChainSupport(vk::PhysicalDevice device);
 
@@ -75,4 +66,3 @@ private:
 };
 
 } // namespace graphics
-

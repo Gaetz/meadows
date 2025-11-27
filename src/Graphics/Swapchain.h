@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.hpp>
 #include <vector>
+#include <VkBootstrap.h>
 
 namespace graphics {
 
@@ -17,12 +18,11 @@ public:
     vk::SwapchainKHR getSwapchain() const { return swapchain; }
     vk::Format getImageFormat() const { return imageFormat; }
     vk::Extent2D getExtent() const { return extent; }
-    const std::vector<vk::ImageView>& getImageViews() const { return imageViews; }
+    const std::vector<vk::ImageView>& getImageViews() const { return swapchainImageViews; }
 
 private:
-    void createSwapchain();
-    void createImageViews();
-    
+    void createSwapchain(uint32_t width, uint32_t height, vk::SwapchainKHR oldSwapchain = nullptr);
+
     vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
     vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
     vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities);
@@ -32,8 +32,8 @@ private:
     vk::SurfaceKHR surface;
     
     vk::SwapchainKHR swapchain;
-    std::vector<vk::Image> images;
-    std::vector<vk::ImageView> imageViews;
+    std::vector<vk::Image> swapchainImages;
+    std::vector<vk::ImageView> swapchainImageViews;
     vk::Format imageFormat;
     vk::Extent2D extent;
 

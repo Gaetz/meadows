@@ -384,10 +384,10 @@ void Renderer::createSyncObjects() {
     // Get swapchain image count
     size_t imageCount = context->getSwapchain()->getImageViews().size();
     
-    // Allocate semaphores per swapchain image (not per frame)
+    // Allocate semaphores per swapchain image
     imageAvailableSemaphores.resize(imageCount);
     renderFinishedSemaphores.resize(imageCount);
-    
+
     // Fences are still per frame
     inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
     imagesInFlight.resize(imageCount, vk::Fence());
@@ -418,12 +418,11 @@ void Renderer::draw() {
     assert(fenceResult == vk::Result::eSuccess && "failed to wait for fence!");
     
     uint32_t imageIndex;
-    // We still need to use currentFrame to avoid using uninitialized imageIndex
-    // But the real fix is using imageAvailableSemaphores indexed by a cyclic counter
-    static uint32_t semaphoreIndex = 0;
-    vk::Result result = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphores[semaphoreIndex % imageAvailableSemaphores.size()], nullptr, &imageIndex);
-    semaphoreIndex++;
-    
+    static uint32_t acquireSemaphoreIndex = 0;
+    uint32_t semaphoreIndex = acquireSemaphoreIndex % imageAvailableSemaphores.size();
+    vk::Result result = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphores[semaphoreIndex], nullptr, &imageIndex);
+    acquireSemaphoreIndex++;
+
     if (result == vk::Result::eErrorOutOfDateKHR) {
         // Recreate swapchain (TODO)
         return;
@@ -500,7 +499,7 @@ void Renderer::draw() {
     commandBuffers[currentFrame].end();
 
     vk::SubmitInfo submitInfo;
-    vk::Semaphore waitSemaphores[] = { imageAvailableSemaphores[imageIndex] };
+    vk::Semaphore waitSemaphores[] = { imageAvailableSemaphores[semaphoreIndex] };
     vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = waitSemaphores;

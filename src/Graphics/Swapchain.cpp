@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <limits>
 #include "Types.h"
+#include "Defines.h"
 
 namespace graphics {
 
@@ -13,15 +14,14 @@ Swapchain::~Swapchain() {
 }
 
 void Swapchain::init() {
-    createSwapchain();
-    createImageViews();
+    createSwapchain(width, height);
 }
 
 void Swapchain::cleanup() {
-    for (auto imageView : imageViews) {
+    for (auto imageView : swapchainImageViews) {
         device.destroyImageView(imageView);
     }
-    imageViews.clear();
+    swapchainImageViews.clear();
 
     if (swapchain) {
         device.destroySwapchainKHR(swapchain);
@@ -32,73 +32,51 @@ void Swapchain::cleanup() {
 void Swapchain::recreate(uint32_t newWidth, uint32_t newHeight) {
     width = newWidth;
     height = newHeight;
+    vk::SwapchainKHR old = swapchain;
     cleanup();
-    init();
+    createSwapchain(newWidth, newHeight, old);
 }
 
-void Swapchain::createSwapchain() {
-    SwapChainSupportDetails details;
-    details.capabilities = physicalDevice.getSurfaceCapabilitiesKHR(surface);
-    details.formats = physicalDevice.getSurfaceFormatsKHR(surface);
-    details.presentModes = physicalDevice.getSurfacePresentModesKHR(surface);
+void Swapchain::createSwapchain(uint32_t width, uint32_t height, vk::SwapchainKHR oldSwapchain) {
+    vkb::SwapchainBuilder swapchainBuilder{ physicalDevice, device, surface };
 
-    vk::SurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(details.formats);
-    vk::PresentModeKHR presentMode = chooseSwapPresentMode(details.presentModes);
-    vk::Extent2D extent = chooseSwapExtent(details.capabilities);
+    imageFormat = vk::Format::eB8G8R8A8Unorm;
 
-    uint32_t imageCount = details.capabilities.minImageCount + 1;
-    if (details.capabilities.maxImageCount > 0 && imageCount > details.capabilities.maxImageCount) {
-        imageCount = details.capabilities.maxImageCount;
-    }
+    vkb::Swapchain vkbSwapchain = swapchainBuilder
+        .set_desired_format(vk::SurfaceFormatKHR{ imageFormat, vk::ColorSpaceKHR::eSrgbNonlinear })
+        .set_desired_present_mode((VkPresentModeKHR)vk::PresentModeKHR::eFifo)
+        .set_desired_extent(width, height)
+        .add_image_usage_flags((VkImageUsageFlags)vk::ImageUsageFlagBits::eTransferDst)
+        .set_old_swapchain(oldSwapchain)
+        .build()
+        .value();
 
-    vk::SwapchainCreateInfoKHR createInfo(
-        {},
-        surface,
-        imageCount,
-        surfaceFormat.format,
-        surfaceFormat.colorSpace,
-        extent,
-        1,
-        vk::ImageUsageFlagBits::eColorAttachment
-    );
-
-    // Assuming graphics and present queues are the same for simplicity now, 
-    // or handled by sharing mode if different. 
-    // For this basic engine, we assume concurrent sharing if needed or just exclusive.
-    // In VulkanContext we picked same queue family if possible or different.
-    // Ideally we should pass queue family indices here if they are different.
-    // For now, forcing exclusive mode.
-    createInfo.imageSharingMode = vk::SharingMode::eExclusive;
-
-    createInfo.preTransform = details.capabilities.currentTransform;
-    createInfo.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
-    createInfo.presentMode = presentMode;
-    createInfo.clipped = VK_TRUE;
-    createInfo.oldSwapchain = nullptr;
-
-    swapchain = device.createSwapchainKHR(createInfo);
-
-    images = device.getSwapchainImagesKHR(swapchain);
-    imageFormat = surfaceFormat.format;
-    this->extent = extent;
+    extent = vkbSwapchain.extent;
+    swapchain = vkbSwapchain.swapchain;
+    std::vector<VkImage> images = vkbSwapchain.get_images().value();
+    swapchainImages.assign(images.begin(), images.end());
+    std::vector<VkImageView> imageViews = vkbSwapchain.get_image_views().value();
+    swapchainImageViews.assign(imageViews.begin(), imageViews.end());
 }
 
+/*
 void Swapchain::createImageViews() {
-    imageViews.resize(images.size());
+    swapchainImageViews.resize(swapchainImages.size());
 
-    for (size_t i = 0; i < images.size(); i++) {
+    for (size_t i = 0; i < swapchainImages.size(); i++) {
         vk::ImageViewCreateInfo createInfo(
             {},
-            images[i],
+            swapchainImages[i],
             vk::ImageViewType::e2D,
             imageFormat,
             vk::ComponentMapping(),
             vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)
         );
 
-        imageViews[i] = device.createImageView(createInfo);
+        swapchainImageViews[i] = device.createImageView(createInfo);
     }
 }
+*/
 
 vk::SurfaceFormatKHR Swapchain::chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
     for (const auto& availableFormat : availableFormats) {
