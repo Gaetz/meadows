@@ -8,6 +8,7 @@
 // VMA Implementation
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
+#include "Swapchain.h"
 
 using services::Log;
 

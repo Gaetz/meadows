@@ -4,12 +4,12 @@
 #include "Buffer.h"
 #include <array>
 #include <chrono>
-#include <cassert>
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_vulkan.h>
 
+#include "Utils.hpp"
 #include "VulkanInit.hpp"
 
 namespace graphics {
@@ -23,29 +23,30 @@ Renderer::~Renderer() {
 }
 
 void Renderer::init() {
-    createRenderPass();
-    createDescriptorSetLayout();
-    createFramebuffers();
-    createPipeline();
+    //createRenderPass();
+    //createDescriptorSetLayout();
+    //createFramebuffers();
+    //createPipeline();
     createCommandPool();
-    createVertexBuffer();
-    createIndexBuffer();
-    createUniformBuffers();
-    createDescriptorPool();
-    createDescriptorSets();
-    createCommandBuffers();
+    //createVertexBuffer();
+    //createIndexBuffer();
+    //createUniformBuffers();
+    //createDescriptorPool();
+    //createDescriptorSets();
+    //createCommandBuffers();
     createSyncObjects();
     
     initImGui();
 }
 
 void Renderer::cleanup() {
-    if (!commandPool) return; // Already cleaned up or never initialized
+    if (!frames[0].commandPool) return; // Already cleaned up or never initialized
 
     vk::Device device = context->getDevice();
 
     device.waitIdle();
 
+    /*
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
@@ -54,17 +55,6 @@ void Renderer::cleanup() {
     device.destroyDescriptorPool(descriptorPool);
     device.destroyDescriptorSetLayout(descriptorSetLayout);
     device.destroyPipelineLayout(pipelineLayout);
-
-    // Destroy sync objects
-    for (auto semaphore : imageAvailableSemaphores) {
-        device.destroySemaphore(semaphore);
-    }
-    for (auto semaphore : renderFinishedSemaphores) {
-        device.destroySemaphore(semaphore);
-    }
-    for (auto fence : inFlightFences) {
-        device.destroyFence(fence);
-    }
 
     // unique_ptr automatically deletes when cleared
     uniformBuffers.clear();
@@ -78,9 +68,13 @@ void Renderer::cleanup() {
     framebuffers.clear();
 
     device.destroyRenderPass(renderPass);
+    */
     for (int i = 0; i < FRAME_OVERLAP; i++)
     {
         device.destroyCommandPool(frames[i].commandPool);
+        device.destroySemaphore(frames[i].imageAvailableSemaphore);
+        device.destroySemaphore(frames[i].renderFinishedSemaphore);
+        device.destroyFence(frames[i].renderFence);
     }
 }
 
@@ -94,13 +88,16 @@ void Renderer::createCommandPool() {
 
     for (int i = 0; i < FRAME_OVERLAP; i++)
     {
-        vk::CommandBufferAllocateInfo cmdAllocInfo = graphics::commandBufferAllocateInfo(frames[i].commandPool, 1);
         frames[i].commandPool = context->getDevice().createCommandPool(poolInfo);
+
+        vk::CommandBufferAllocateInfo cmdAllocInfo = graphics::commandBufferAllocateInfo(frames[i].commandPool, 1);
+        frames[i].mainCommandBuffer = context->getDevice().allocateCommandBuffers(cmdAllocInfo)[0];
     }
 }
 
 void Renderer::createCommandBuffers() {
     //commandBuffers.resize(FRAME_OVERLAP);
+    /*
 
     vk::CommandBufferAllocateInfo allocInfo(
         commandPool,
@@ -109,9 +106,11 @@ void Renderer::createCommandBuffers() {
     );
 
     commandBuffers = context->getDevice().allocateCommandBuffers(allocInfo);
+    */
 }
 
 void Renderer::createRenderPass() {
+    /*
     vk::AttachmentDescription colorAttachment(
         {},
         context->getSwapchain()->getImageFormat(),
@@ -150,9 +149,11 @@ void Renderer::createRenderPass() {
     );
 
     renderPass = context->getDevice().createRenderPass(renderPassInfo);
+    */
 }
 
 void Renderer::createFramebuffers() {
+    /*
     const auto& imageViews = context->getSwapchain()->getImageViews();
     vk::Extent2D extent = context->getSwapchain()->getExtent();
 
@@ -174,6 +175,7 @@ void Renderer::createFramebuffers() {
 
         framebuffers[i] = context->getDevice().createFramebuffer(framebufferInfo);
     }
+    */
 }
 
 void Renderer::createPipeline() {
@@ -227,6 +229,7 @@ void Renderer::createVertexBuffer() {
 }
 
 void Renderer::copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer) {
+    /*
     // Staging buffer
     Buffer stagingBuffer(
         context,
@@ -262,6 +265,7 @@ void Renderer::copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffe
     context->getGraphicsQueue().waitIdle();
 
     context->getDevice().freeCommandBuffers(commandPool, 1, &commandBuffer);
+    */
 }
 
 void Renderer::createIndexBuffer() {
@@ -403,27 +407,83 @@ void Renderer::createSyncObjects() {
 }
 
 void Renderer::draw() {
-    vk::Device device = context->getDevice();
-    vk::SwapchainKHR swapchain = context->getSwapchain()->getSwapchain();
-    FrameData& currentFrameData = getCurrentFrame();
+    const vk::Device device = context->getDevice();
+    const FrameData& currentFrameData = getCurrentFrame();
 
     // Wait for previous frame
     vk::Result fenceResult = device.waitForFences(1, &currentFrameData.renderFence, true, 1000000000);
     device.resetFences(1, &currentFrameData.renderFence);
 
+    // Request image from the swapchain
     u32 imageIndex;
-    vk::Result result = device.acquireNextImageKHR(swapchain, 1000000000, currentFrameData.imageAvailableSemaphore, nullptr, &imageIndex);
+    vk::Result result = device.acquireNextImageKHR(*context->getSwapchain()->getSwapchain(), 1000000000, currentFrameData.imageAvailableSemaphore, nullptr, &imageIndex);
 
     //acquireSemaphoreIndex++;
 
-    vk::CommandBuffer command = currentFrameData.mainCommandBuffer;
+    const vk::CommandBuffer command = currentFrameData.mainCommandBuffer;
     command.reset();
 
-    updateUniformBuffer(currentFrame);
+    // TODO put this again with the right current frame
+    //updateUniformBuffer(currentFrame);
 
     // Record command buffer
-    vk::CommandBufferBeginInfo beginInfo;
-    commandBuffers[currentFrame].begin(beginInfo);
+    vk::CommandBufferBeginInfo beginInfo = graphics::commandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+    command.begin(beginInfo);
+
+    // Make the swapchain image into writeable mode before rendering
+    graphics::transitionImage(command, context->getSwapchain()->getImages()[imageIndex],
+        vk::ImageLayout::eUndefined,vk::ImageLayout::eGeneral);
+
+    // Clear image
+    float flash = std::abs(std::sin(frameNumber / 120.f));
+    vk::ClearColorValue clearValue = vk::ClearColorValue { 0.0f, 0.0f, flash, 1.0f };
+
+    vk::ImageSubresourceRange clearRange = graphics::imageSubresourceRange(vk::ImageAspectFlagBits::eColor);
+    command.clearColorImage(context->getSwapchain()->getImages()[imageIndex],
+        vk::ImageLayout::eGeneral, &clearValue,1, &clearRange);
+
+    // Make the swapchain image into presentable mode
+    graphics::transitionImage(command, context->getSwapchain()->getImages()[imageIndex],vk::ImageLayout::eGeneral, vk::ImageLayout::ePresentSrcKHR);
+
+    // Finalize the command buffer (we can no longer add commands, but it can now be executed)
+    command.end();
+
+    /* Prepare the submission to the queue.
+     * We want to wait on the imageAvailableSemaphore, as that semaphore is signaled when the swapchain is ready
+     * We will signal the renderFinishedSemaphore, to signal that rendering has finished
+     */
+
+    const vk::CommandBufferSubmitInfo commandInfo = graphics::commandBufferSubmitInfo(command);
+    vk::SemaphoreSubmitInfo waitInfo = graphics::semaphoreSubmitInfo(currentFrameData.imageAvailableSemaphore, vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+    vk::SemaphoreSubmitInfo signalInfo = graphics::semaphoreSubmitInfo(currentFrameData.renderFinishedSemaphore, vk::PipelineStageFlagBits2::eAllGraphics);
+    const vk::SubmitInfo2 submit = graphics::submitInfo(commandInfo, &signalInfo, &waitInfo);
+
+    /* Submit command buffer to the queue and execute it.
+     * renderFence will now block until the graphic commands finish execution
+    */
+    vk::Result submitResult = context->getGraphicsQueue().submit2(1, &submit, currentFrameData.renderFence);
+
+    /* Prepare present
+     * This will put the image we just rendered to into the visible window.
+     * we want to wait on the renderFinishedSemaphore for that, as its necessary that
+     * drawing commands have finished before the image is displayed to the user.
+    */
+    vk::PresentInfoKHR presentInfo = {};
+    presentInfo.pNext = nullptr;
+    presentInfo.pSwapchains = context->getSwapchain()->getSwapchain();
+    presentInfo.swapchainCount = 1;
+
+    presentInfo.pWaitSemaphores = &currentFrameData.renderFinishedSemaphore;
+    presentInfo.waitSemaphoreCount = 1;
+
+    presentInfo.pImageIndices = &imageIndex;
+
+    vk::Result queueResult = context->getGraphicsQueue().presentKHR(&presentInfo);
+
+    // Increase the number of frames drawn
+    frameNumber++;
+
+/*
 
     vk::RenderPassBeginInfo renderPassInfo(
         renderPass,
@@ -511,7 +571,7 @@ void Renderer::draw() {
     }
 
     currentFrame = (currentFrame + 1) % FRAME_OVERLAP;
-
+*/
 }
 
 void Renderer::initImGui() {

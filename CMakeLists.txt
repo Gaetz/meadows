@@ -218,7 +218,9 @@ add_executable(Meadows
     src/Graphics/Swapchain.h
     src/Graphics/Buffer.cpp
     src/Graphics/Buffer.h
+    src/Graphics/VulkanInit.cpp
     src/Graphics/Types.h
+    src/Graphics/Utils.cpp
     ${SPV_DIR}/shader.vert.spv
     ${SPV_DIR}/shader.frag.spv
 )

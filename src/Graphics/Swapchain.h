@@ -15,9 +15,10 @@ public:
     void cleanup();
     void recreate(uint32_t width, uint32_t height);
 
-    vk::SwapchainKHR getSwapchain() const { return swapchain; }
+    vk::SwapchainKHR* getSwapchain()  { return &swapchain; }
     vk::Format getImageFormat() const { return imageFormat; }
     vk::Extent2D getExtent() const { return extent; }
+    const std::vector<vk::Image>& getImages() const { return swapchainImages; }
     const std::vector<vk::ImageView>& getImageViews() const { return swapchainImageViews; }
 
 private:
