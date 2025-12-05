@@ -11,7 +11,7 @@ namespace graphics {
     struct FrameData {
         vk::CommandPool commandPool;
         vk::CommandBuffer mainCommandBuffer;
-        vk::Semaphore imageAvailableSemaphore, renderFinishedSemaphore;
+        vk::Semaphore imageAvailableSemaphore;
         vk::Fence renderFence;
     };
 
@@ -55,6 +55,9 @@ private:
 
     FrameData frames[FRAME_OVERLAP];
     FrameData& getCurrentFrame() { return frames[frameNumber % FRAME_OVERLAP]; };
+
+    // One semaphore per swapchain image for proper synchronization
+    std::vector<vk::Semaphore> renderFinishedSemaphores;
 
     //vk::CommandPool commandPool;
     //std::vector<vk::CommandBuffer> commandBuffers;

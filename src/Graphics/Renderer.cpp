@@ -73,9 +73,13 @@ void Renderer::cleanup() {
     {
         device.destroyCommandPool(frames[i].commandPool);
         device.destroySemaphore(frames[i].imageAvailableSemaphore);
-        device.destroySemaphore(frames[i].renderFinishedSemaphore);
         device.destroyFence(frames[i].renderFence);
     }
+
+    for (auto& semaphore : renderFinishedSemaphores) {
+        device.destroySemaphore(semaphore);
+    }
+    renderFinishedSemaphores.clear();
 }
 
 void Renderer::createCommandPool() {
@@ -398,11 +402,18 @@ void Renderer::createSyncObjects() {
     vk::FenceCreateInfo fenceInfo = graphics::fenceCreateInfo(vk::FenceCreateFlagBits::eSignaled);
 
     vk::Device device = context->getDevice();
-    // Create semaphores and fence for each swapchain image
+
+    // Create command pool sync objects for frames in flight
     for (size_t i = 0; i < FRAME_OVERLAP; i++) {
         frames[i].renderFence = device.createFence(fenceInfo);
         frames[i].imageAvailableSemaphore = device.createSemaphore(semaphoreInfo);
-        frames[i].renderFinishedSemaphore = device.createSemaphore(semaphoreInfo);
+    }
+
+    // Create one render finished semaphore per swapchain image
+    size_t imageCount = context->getSwapchain()->getImages().size();
+    renderFinishedSemaphores.resize(imageCount);
+    for (size_t i = 0; i < imageCount; i++) {
+        renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
     }
 }
 
@@ -455,7 +466,7 @@ void Renderer::draw() {
 
     const vk::CommandBufferSubmitInfo commandInfo = graphics::commandBufferSubmitInfo(command);
     vk::SemaphoreSubmitInfo waitInfo = graphics::semaphoreSubmitInfo(currentFrameData.imageAvailableSemaphore, vk::PipelineStageFlagBits2::eColorAttachmentOutput);
-    vk::SemaphoreSubmitInfo signalInfo = graphics::semaphoreSubmitInfo(currentFrameData.renderFinishedSemaphore, vk::PipelineStageFlagBits2::eAllGraphics);
+    vk::SemaphoreSubmitInfo signalInfo = graphics::semaphoreSubmitInfo(renderFinishedSemaphores[imageIndex], vk::PipelineStageFlagBits2::eAllGraphics);
     const vk::SubmitInfo2 submit = graphics::submitInfo(commandInfo, &signalInfo, &waitInfo);
 
     /* Submit command buffer to the queue and execute it.
@@ -473,7 +484,7 @@ void Renderer::draw() {
     presentInfo.pSwapchains = context->getSwapchain()->getSwapchain();
     presentInfo.swapchainCount = 1;
 
-    presentInfo.pWaitSemaphores = &currentFrameData.renderFinishedSemaphore;
+    presentInfo.pWaitSemaphores = &renderFinishedSemaphores[imageIndex];
     presentInfo.waitSemaphoreCount = 1;
 
     presentInfo.pImageIndices = &imageIndex;
