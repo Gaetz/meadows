@@ -74,12 +74,15 @@ void Renderer::cleanup() {
         device.destroyCommandPool(frames[i].commandPool);
         device.destroySemaphore(frames[i].imageAvailableSemaphore);
         device.destroyFence(frames[i].renderFence);
+        frames[i].deletionQueue.flush();
     }
 
     for (auto& semaphore : renderFinishedSemaphores) {
         device.destroySemaphore(semaphore);
     }
     renderFinishedSemaphores.clear();
+
+    context->flushMainDeletionQueue();
 }
 
 void Renderer::createCommandPool() {
@@ -417,12 +420,23 @@ void Renderer::createSyncObjects() {
     }
 }
 
+void Renderer::drawBackground(vk::CommandBuffer command) {
+    float flash = std::abs(std::sin(frameNumber / 120.f));
+    vk::ClearColorValue clearValue = vk::ClearColorValue { 0.0f, 0.0f, flash, 1.0f };
+
+    vk::ImageSubresourceRange clearRange = graphics::imageSubresourceRange(vk::ImageAspectFlagBits::eColor);
+    command.clearColorImage(context->getDrawImage().image,
+        vk::ImageLayout::eGeneral, &clearValue,1, &clearRange);
+}
+
+
 void Renderer::draw() {
     const vk::Device device = context->getDevice();
-    const FrameData& currentFrameData = getCurrentFrame();
+    FrameData& currentFrameData = getCurrentFrame();
 
     // Wait for previous frame
     vk::Result fenceResult = device.waitForFences(1, &currentFrameData.renderFence, true, 1000000000);
+    currentFrameData.deletionQueue.flush();
     device.resetFences(1, &currentFrameData.renderFence);
 
     // Request image from the swapchain
@@ -439,22 +453,28 @@ void Renderer::draw() {
 
     // Record command buffer
     vk::CommandBufferBeginInfo beginInfo = graphics::commandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+
+    vk::Extent2D drawExtent;
+    drawExtent.width = context->getDrawImage().imageExtent.width;
+    drawExtent.height = context->getDrawImage().imageExtent.height;
+    AllocatedImage& drawImage = context->getDrawImage();
     command.begin(beginInfo);
 
     // Make the swapchain image into writeable mode before rendering
-    graphics::transitionImage(command, context->getSwapchain()->getImages()[imageIndex],
+    graphics::transitionImage(command, drawImage.image,
         vk::ImageLayout::eUndefined,vk::ImageLayout::eGeneral);
 
-    // Clear image
-    float flash = std::abs(std::sin(frameNumber / 120.f));
-    vk::ClearColorValue clearValue = vk::ClearColorValue { 0.0f, 0.0f, flash, 1.0f };
+    drawBackground(command);
 
-    vk::ImageSubresourceRange clearRange = graphics::imageSubresourceRange(vk::ImageAspectFlagBits::eColor);
-    command.clearColorImage(context->getSwapchain()->getImages()[imageIndex],
-        vk::ImageLayout::eGeneral, &clearValue,1, &clearRange);
+	// Transition the draw image and the swapchain image into their correct transfer layouts
+    graphics::transitionImage(command, drawImage.image,vk::ImageLayout::eGeneral, vk::ImageLayout::eTransferSrcOptimal);
+    graphics::transitionImage(command, context->getSwapchain()->getImages()[imageIndex],vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
 
-    // Make the swapchain image into presentable mode
-    graphics::transitionImage(command, context->getSwapchain()->getImages()[imageIndex],vk::ImageLayout::eGeneral, vk::ImageLayout::ePresentSrcKHR);
+    // Execute a copy from the draw image into the swapchain
+    graphics::copyImageToImage(command, drawImage.image, context->getSwapchain()->getImages()[imageIndex], drawExtent, context->getSwapchain()->getExtent());
+
+    // Set swapchain image layout to Present so we can show it on the screen
+    graphics::transitionImage(command, context->getSwapchain()->getImages()[imageIndex], vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::ePresentSrcKHR);
 
     // Finalize the command buffer (we can no longer add commands, but it can now be executed)
     command.end();

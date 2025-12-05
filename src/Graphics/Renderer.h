@@ -5,17 +5,18 @@
 #include <vulkan/vulkan.hpp>
 #include <vector>
 #include <chrono>
+#include "DeletionQueue.hpp"
 
 namespace graphics {
+    class Buffer;  // Forward declaration
 
     struct FrameData {
         vk::CommandPool commandPool;
         vk::CommandBuffer mainCommandBuffer;
         vk::Semaphore imageAvailableSemaphore;
         vk::Fence renderFence;
+        DeletionQueue deletionQueue;
     };
-
-class Buffer;  // Forward declaration
 
 class Renderer {
 public:
@@ -43,6 +44,8 @@ private:
 
     void initImGui();
     void drawImGui(vk::CommandBuffer commandBuffer);
+
+    void drawBackground(vk::CommandBuffer);
     
     // Helper methods
     void copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer);
@@ -66,7 +69,6 @@ private:
     //std::vector<vk::Semaphore> renderFinishedSemaphores;
     //std::vector<vk::Fence> inFlightFences;
     //std::vector<vk::Fence> imagesInFlight;  // Track which fence is using each swapchain image
-
 
     vk::RenderPass renderPass;
     std::vector<vk::Framebuffer> framebuffers;

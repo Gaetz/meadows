@@ -9,6 +9,7 @@
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 #include "Swapchain.h"
+#include "VulkanInit.hpp"
 
 using services::Log;
 
@@ -162,6 +163,43 @@ void VulkanContext::createSwapchain() {
   SDL_GetWindowSize(window, &w, &h);
   swapchain = std::make_unique<Swapchain>(device, physicalDevice, surface, w, h);
   swapchain->init();
+
+  // Draw image size will match the window
+  VkExtent3D drawImageExtent = {
+    static_cast<u32>(w),
+    static_cast<u32>(h),
+    1
+  };
+
+  // Hardcoding the draw format to 32 bit float
+  drawImage.imageFormat = vk::Format::eR16G16B16A16Sfloat;
+  drawImage.imageExtent = drawImageExtent;
+
+  vk::ImageUsageFlags drawImageUsages{};
+  drawImageUsages |= vk::ImageUsageFlagBits::eTransferSrc;
+  drawImageUsages |= vk::ImageUsageFlagBits::eTransferDst;
+  drawImageUsages |= vk::ImageUsageFlagBits::eStorage;
+  drawImageUsages |= vk::ImageUsageFlagBits::eColorAttachment;
+
+  vk::ImageCreateInfo renderImageInfo = graphics::imageCreateInfo(drawImage.imageFormat, drawImageUsages, drawImageExtent);
+
+  // For the draw image, we want to allocate it from gpu local memory
+  VmaAllocationCreateInfo rimg_allocinfo = {};
+  rimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+  rimg_allocinfo.requiredFlags = static_cast<VkMemoryPropertyFlags>(vk::MemoryPropertyFlags(vk::MemoryPropertyFlagBits::eDeviceLocal));
+
+  // Allocate and create the image
+  vmaCreateImage(allocator, reinterpret_cast<const VkImageCreateInfo*>(&renderImageInfo),
+    &rimg_allocinfo, reinterpret_cast<VkImage*>(&drawImage.image), &drawImage.allocation, nullptr);
+
+  // Build a image-view for the draw image to use for rendering
+  vk::ImageViewCreateInfo rview_info = graphics::imageViewCreateInfo(drawImage.imageFormat, drawImage.image, vk::ImageAspectFlagBits::eColor);
+  device.createImageView(&rview_info, nullptr, &drawImage.imageView);
+
+  mainDeletionQueue.pushFunction([=]() {
+      device.destroyImageView(drawImage.imageView, nullptr);
+      vmaDestroyImage(allocator, drawImage.image, drawImage.allocation);
+  });
 }
 
 QueueFamilyIndices VulkanContext::findQueueFamilies(vk::PhysicalDevice device) {

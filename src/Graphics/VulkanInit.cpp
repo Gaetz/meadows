@@ -91,4 +91,32 @@ namespace graphics
         return info;
     }
 
+    vk::ImageCreateInfo imageCreateInfo(vk::Format format, vk::ImageUsageFlags usageFlags, vk::Extent3D extent) {
+        vk::ImageCreateInfo info{};
+        info.imageType = vk::ImageType::e2D;
+        info.format = format;
+        info.extent = extent;
+        info.mipLevels = 1;
+        info.arrayLayers = 1;
+        info.samples = vk::SampleCountFlagBits::e1;
+        info.tiling = vk::ImageTiling::eOptimal;
+        info.usage = usageFlags;
+        return info;
+    }
+
+    vk::ImageViewCreateInfo imageViewCreateInfo(vk::Format format, vk::Image image, vk::ImageAspectFlags aspectFlags) {
+        vk::ImageViewCreateInfo info{};
+        info.image = image;
+        info.viewType = vk::ImageViewType::e2D;
+        info.format = format;
+        info.subresourceRange.baseMipLevel = 0;
+        info.subresourceRange.levelCount = 1;
+        info.subresourceRange.baseArrayLayer = 0;
+        info.subresourceRange.layerCount = 1;
+        info.subresourceRange.aspectMask = aspectFlags;
+        return info;
+    }
+
+
+
 } // namespace graphics

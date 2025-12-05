@@ -221,6 +221,7 @@ add_executable(Meadows
     src/Graphics/VulkanInit.cpp
     src/Graphics/Types.h
     src/Graphics/Utils.cpp
+    src/Graphics/DeletionQueue.cpp
     ${SPV_DIR}/shader.vert.spv
     ${SPV_DIR}/shader.frag.spv
 )

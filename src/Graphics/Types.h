@@ -53,6 +53,9 @@ struct AllocatedBuffer {
 struct AllocatedImage {
     vk::Image image;
     VmaAllocation allocation;
+    vk::ImageView imageView;
+    vk::Extent3D imageExtent;
+    vk::Format imageFormat;
 };
 
 struct QueueFamilyIndices {

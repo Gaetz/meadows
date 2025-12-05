@@ -5,6 +5,8 @@
 #include <SDL3/SDL.h>
 #include <VkBootstrap.h>
 
+#include "DeletionQueue.hpp"
+
 namespace graphics {
     class Swapchain;
 
@@ -26,7 +28,10 @@ public:
   Swapchain *getSwapchain() const { return swapchain.get(); }
   SDL_Window *getWindow() const { return window; }
 
+        AllocatedImage& getDrawImage() { return drawImage; }
+
   QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device);
+        void flushMainDeletionQueue() { mainDeletionQueue.flush(); }
 
 private:
   vkb::Instance createInstance();
@@ -48,9 +53,13 @@ private:
   vk::Device device;
   vk::Queue graphicsQueue;
   vk::Queue presentQueue;
+  DeletionQueue mainDeletionQueue;
 
   VmaAllocator allocator;
   uptr<Swapchain> swapchain;
+
+
+    AllocatedImage drawImage;
 
   const std::vector<const char*> validationLayers = {
       "VK_LAYER_KHRONOS_validation"};
