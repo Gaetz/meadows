@@ -3,8 +3,7 @@
 #include <vulkan/vulkan.hpp>
 #include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
-#include <array>
-#include <vector>
+#include "../Defines.h"
 #include <optional>
 
 namespace graphics {

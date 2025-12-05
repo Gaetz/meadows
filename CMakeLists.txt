@@ -195,6 +195,14 @@ file(MAKE_DIRECTORY ${SPV_DIR})
 # Match the names expected by Renderer.cpp
 compile_shader(${SHADER_DIR}/shader.vert ${SPV_DIR}/shader.vert.spv)
 compile_shader(${SHADER_DIR}/shader.frag ${SPV_DIR}/shader.frag.spv)
+compile_shader(${SHADER_DIR}/gradient.comp ${SPV_DIR}/gradient.comp.spv)
+
+add_custom_target(Shaders ALL
+        DEPENDS
+        ${SPV_DIR}/shader.vert.spv
+        ${SPV_DIR}/shader.frag.spv
+        ${SPV_DIR}/gradient.comp.spv
+)
 
 # Main Executable
 add_executable(Meadows
@@ -222,9 +230,12 @@ add_executable(Meadows
     src/Graphics/Types.h
     src/Graphics/Utils.cpp
     src/Graphics/DeletionQueue.cpp
-    ${SPV_DIR}/shader.vert.spv
-    ${SPV_DIR}/shader.frag.spv
+    src/Graphics/DescriptorLayoutBuilder.cpp
+    src/Graphics/DescriptorLayoutBuilder.hpp
 )
+
+# Ensure shaders are compiled before building Meadows
+add_dependencies(Meadows Shaders)
 
 # Platform-specific sources
 if(WIN32)
