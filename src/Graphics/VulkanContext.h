@@ -6,72 +6,89 @@
 #include <VkBootstrap.h>
 
 #include "DeletionQueue.hpp"
+#include "DescriptorAllocator.h"
 
 namespace graphics {
     class Swapchain;
 
     class VulkanContext {
-public:
-  VulkanContext(SDL_Window* window);
-  ~VulkanContext();
+    public:
+        VulkanContext(SDL_Window *window);
 
-  void init();
-  void cleanup();
+        ~VulkanContext();
 
-  vk::Instance getInstance() const { return instance; }
-  vk::PhysicalDevice getPhysicalDevice() const { return physicalDevice; }
-  vk::Device getDevice() const { return device; }
-  vk::Queue getGraphicsQueue() const { return graphicsQueue; }
-  vk::Queue getPresentQueue() const { return presentQueue; }
-  vk::SurfaceKHR getSurface() const { return surface; }
-  VmaAllocator getAllocator() const { return allocator; }
-  Swapchain *getSwapchain() const { return swapchain.get(); }
-  SDL_Window *getWindow() const { return window; }
+        void init();
 
-        AllocatedImage& getDrawImage() { return drawImage; }
+        void cleanup();
 
-  QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device);
+        vk::Instance getInstance() const { return instance; }
+        vk::PhysicalDevice getPhysicalDevice() const { return physicalDevice; }
+        vk::Device getDevice() const { return device; }
+        vk::Queue getGraphicsQueue() const { return graphicsQueue; }
+        vk::Queue getPresentQueue() const { return presentQueue; }
+        vk::SurfaceKHR getSurface() const { return surface; }
+        VmaAllocator getAllocator() const { return allocator; }
+        Swapchain *getSwapchain() const { return swapchain.get(); }
+        SDL_Window *getWindow() const { return window; }
+        DescriptorAllocator* getGlobalDescriptorAllocator() const { return globalDescriptorAllocator.get(); }
+
+        AllocatedImage &getDrawImage() { return drawImage; }
+
+        QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device);
+
+        void addToMainDeletionQueue(std::function<void()> &&function) {
+            mainDeletionQueue.pushFunction(std::move(function));
+        }
         void flushMainDeletionQueue() { mainDeletionQueue.flush(); }
 
-private:
-  vkb::Instance createInstance();
-  void createSurface();
-  vkb::PhysicalDevice pickPhysicalDevice(vkb::Instance vkbInstance);
-  void createLogicalDevice(vkb::PhysicalDevice vkbPhysicalDevice);
-  void createAllocator();
-  void createSwapchain();
+    private:
+        vkb::Instance createInstance();
 
-  bool checkDeviceExtensionSupport(vk::PhysicalDevice device);
-  SwapChainSupportDetails querySwapChainSupport(vk::PhysicalDevice device);
+        void createSurface();
 
-  SDL_Window *window;
+        vkb::PhysicalDevice pickPhysicalDevice(vkb::Instance vkbInstance);
 
-  vk::Instance instance;
-  vk::DebugUtilsMessengerEXT debugMessenger;
-  vk::SurfaceKHR surface;
-  vk::PhysicalDevice physicalDevice;
-  vk::Device device;
-  vk::Queue graphicsQueue;
-  vk::Queue presentQueue;
-  DeletionQueue mainDeletionQueue;
+        void createLogicalDevice(vkb::PhysicalDevice vkbPhysicalDevice);
 
-  VmaAllocator allocator;
-  uptr<Swapchain> swapchain;
+        void createAllocator();
 
+        void createSwapchain();
 
-    AllocatedImage drawImage;
+        bool checkDeviceExtensionSupport(vk::PhysicalDevice device);
 
-  const std::vector<const char*> validationLayers = {
-      "VK_LAYER_KHRONOS_validation"};
+        SwapChainSupportDetails querySwapChainSupport(vk::PhysicalDevice device);
 
-  const std::vector<const char*> deviceExtensions = {
-      VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        void createDescriptorAllocator();
+
+        SDL_Window *window;
+
+        vk::Instance instance;
+        vk::DebugUtilsMessengerEXT debugMessenger;
+        vk::SurfaceKHR surface;
+        vk::PhysicalDevice physicalDevice;
+        vk::Device device;
+        vk::Queue graphicsQueue;
+        vk::Queue presentQueue;
+        DeletionQueue mainDeletionQueue;
+
+        VmaAllocator allocator;
+        uptr<Swapchain> swapchain{nullptr};
+        uptr<DescriptorAllocator> globalDescriptorAllocator{nullptr};
+
+        AllocatedImage drawImage;
+
+        const std::vector<const char *> validationLayers = {
+            "VK_LAYER_KHRONOS_validation"
+        };
+
+        const std::vector<const char *> deviceExtensions = {
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME
+        };
 
 #ifdef NDEBUG
-  bool enableValidationLayers = false;
+        bool enableValidationLayers = false;
 #else
-  bool enableValidationLayers = true;
+        bool enableValidationLayers = true;
 #endif
-};
-
+    };
 } // namespace graphics

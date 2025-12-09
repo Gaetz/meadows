@@ -6,6 +6,7 @@
 #include <vector>
 #include <chrono>
 #include "DeletionQueue.hpp"
+#include "PipelineCompute.h"
 
 namespace graphics {
     class Buffer;  // Forward declaration
@@ -33,13 +34,16 @@ private:
     void createSyncObjects();
     void createRenderPass();
     void createFramebuffers();
-    void createPipeline();
     void createVertexBuffer();
     void createIndexBuffer();
     void createUniformBuffers();
-    void createDescriptorPool();
-    void createDescriptorSetLayout();
-    void createDescriptorSets();
+    void createDescriptors();
+    void createPipelines();
+    void createBackgroundPipeline();
+
+    //void createDescriptorPool();
+    //void createDescriptorSetLayout();
+    //void createDescriptorSets();
     void updateUniformBuffer(uint32_t currentImage);
 
     void initImGui();
@@ -62,6 +66,12 @@ private:
     // One semaphore per swapchain image for proper synchronization
     std::vector<vk::Semaphore> renderFinishedSemaphores;
 
+    //vk::DescriptorPool descriptorPool;
+    vk::DescriptorSetLayout drawImageDescriptorLayout;
+    vk::DescriptorSet drawImageDescriptors;
+
+    uptr<PipelineCompute> computePipeline { nullptr };
+
     //vk::CommandPool commandPool;
     //std::vector<vk::CommandBuffer> commandBuffers;
 
@@ -81,9 +91,6 @@ private:
     uint32_t indexCount = 0;
 
     std::vector<uptr<class Buffer>> uniformBuffers;
-    vk::DescriptorPool descriptorPool;
-    vk::DescriptorSetLayout descriptorSetLayout;
-    std::vector<vk::DescriptorSet> descriptorSets;
 
     vk::PipelineLayout pipelineLayout;
 

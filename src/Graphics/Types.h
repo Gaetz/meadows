@@ -9,8 +9,8 @@
 namespace graphics {
 
 struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 color;
+    Vec3 pos;
+    Vec3 color;
 
     static vk::VertexInputBindingDescription getBindingDescription() {
         vk::VertexInputBindingDescription bindingDescription{};
@@ -20,8 +20,8 @@ struct Vertex {
         return bindingDescription;
     }
 
-    static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions() {
-        std::array<vk::VertexInputAttributeDescription, 2> attributeDescriptions{};
+    static array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions() {
+        array<vk::VertexInputAttributeDescription, 2> attributeDescriptions{};
 
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
@@ -38,9 +38,9 @@ struct Vertex {
 };
 
 struct UniformBufferObject {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
+    Mat4 model;
+    Mat4 view;
+    Mat4 proj;
 };
 
 // Common types

@@ -9,6 +9,8 @@
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_vulkan.h>
 
+#include "DescriptorLayoutBuilder.hpp"
+#include "PipelineCompute.h"
 #include "Utils.hpp"
 #include "VulkanInit.hpp"
 
@@ -35,6 +37,8 @@ void Renderer::init() {
     //createDescriptorSets();
     //createCommandBuffers();
     createSyncObjects();
+    createDescriptors();
+    createPipelines();
     
     initImGui();
 }
@@ -101,6 +105,36 @@ void Renderer::createCommandPool() {
         frames[i].mainCommandBuffer = context->getDevice().allocateCommandBuffers(cmdAllocInfo)[0];
     }
 }
+
+void Renderer::createDescriptors() {
+    // Make the descriptor set layout for our compute draw
+    DescriptorLayoutBuilder layoutBuilder;
+    layoutBuilder.addBinding(0, vk::DescriptorType::eStorageImage);
+    drawImageDescriptorLayout = layoutBuilder.build(context->getDevice(), vk::ShaderStageFlagBits::eCompute);
+
+    // Allocate a descriptor set for our draw image
+    drawImageDescriptors = context->getGlobalDescriptorAllocator()->allocate(drawImageDescriptorLayout);
+
+    vk::DescriptorImageInfo imageInfo = {};
+    imageInfo.imageLayout = vk::ImageLayout::eGeneral;
+    imageInfo.imageView = context->getDrawImage().imageView;
+
+    vk::WriteDescriptorSet descriptorWrite = {};
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstSet = drawImageDescriptors;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.descriptorType = vk::DescriptorType::eStorageImage;
+    descriptorWrite.pImageInfo = &imageInfo;
+
+    context->getDevice().updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+
+    // Cleanup
+    context->addToMainDeletionQueue([&]() {
+        context->getDevice().destroyDescriptorSetLayout(drawImageDescriptorLayout);
+    });
+}
+
+
 
 void Renderer::createCommandBuffers() {
     //commandBuffers.resize(FRAME_OVERLAP);
@@ -185,16 +219,25 @@ void Renderer::createFramebuffers() {
     */
 }
 
-void Renderer::createPipeline() {
+void Renderer::createPipelines() {
+    createBackgroundPipeline();
+}
+
+void Renderer::createBackgroundPipeline() {
+
+    vk::PipelineLayoutCreateInfo computeLayout{};
+    computeLayout.setLayoutCount = 1;
+    computeLayout.pSetLayouts = &drawImageDescriptorLayout;
+    pipelineLayout = context->getDevice().createPipelineLayout(computeLayout);
+    computePipeline = std::make_unique<PipelineCompute>(context, "shaders/gradient.comp.spv", pipelineLayout);
+
+/*
     PipelineConfigInfo pipelineConfig{};
     Pipeline::defaultPipelineConfigInfo(pipelineConfig);
     pipelineConfig.renderPass = renderPass;
-    
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
-    
-    pipelineLayout = context->getDevice().createPipelineLayout(pipelineLayoutInfo);
+
+
+
     pipelineConfig.pipelineLayout = pipelineLayout;
 
     pipeline = std::make_unique<Pipeline>(
@@ -203,8 +246,8 @@ void Renderer::createPipeline() {
         "shaders/shader.frag.spv",
         pipelineConfig
     );
+    */
 }
-
 
 
 void Renderer::createVertexBuffer() {
@@ -304,6 +347,22 @@ void Renderer::createIndexBuffer() {
     copyBufferViaStaging(indices.data(), bufferSize, indexBuffer.get());
 }
 
+void Renderer::createUniformBuffers() {
+    vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
+
+    uniformBuffers.resize(FRAME_OVERLAP);
+
+    for (size_t i = 0; i < FRAME_OVERLAP; i++) {
+        uniformBuffers[i] = std::make_unique<Buffer>(
+            context,
+            bufferSize,
+            vk::BufferUsageFlagBits::eUniformBuffer,
+            VMA_MEMORY_USAGE_CPU_TO_GPU
+        );
+    }
+}
+
+    /*
 void Renderer::createDescriptorSetLayout() {
     vk::DescriptorSetLayoutBinding uboLayoutBinding(
         0,
@@ -319,21 +378,6 @@ void Renderer::createDescriptorSetLayout() {
     );
 
     descriptorSetLayout = context->getDevice().createDescriptorSetLayout(layoutInfo);
-}
-
-void Renderer::createUniformBuffers() {
-    vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
-
-    uniformBuffers.resize(FRAME_OVERLAP);
-
-    for (size_t i = 0; i < FRAME_OVERLAP; i++) {
-        uniformBuffers[i] = std::make_unique<Buffer>(
-            context,
-            bufferSize,
-            vk::BufferUsageFlagBits::eUniformBuffer,
-            VMA_MEMORY_USAGE_CPU_TO_GPU
-        );
-    }
 }
 
 void Renderer::createDescriptorPool() {
@@ -382,6 +426,7 @@ void Renderer::createDescriptorSets() {
         context->getDevice().updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
     }
 }
+    */
 
 void Renderer::updateUniformBuffer(uint32_t currentImage) {
     auto currentTime = std::chrono::high_resolution_clock::now();
@@ -421,12 +466,24 @@ void Renderer::createSyncObjects() {
 }
 
 void Renderer::drawBackground(vk::CommandBuffer command) {
+    // Clear color
+    /*
     float flash = std::abs(std::sin(frameNumber / 120.f));
     vk::ClearColorValue clearValue = vk::ClearColorValue { 0.0f, 0.0f, flash, 1.0f };
 
     vk::ImageSubresourceRange clearRange = graphics::imageSubresourceRange(vk::ImageAspectFlagBits::eColor);
     command.clearColorImage(context->getDrawImage().image,
         vk::ImageLayout::eGeneral, &clearValue,1, &clearRange);
+    */
+
+
+    // Bind compute pipeline and descriptor sets
+    constexpr auto bindPoint = vk::PipelineBindPoint::eCompute;
+    command.bindPipeline(bindPoint, computePipeline->get());
+    command.bindDescriptorSets(bindPoint, pipelineLayout, 0, 1, &drawImageDescriptors, 0, nullptr);
+    command.dispatch(std::ceil(context->getDrawImage().imageExtent.width / 16.0f),
+                     std::ceil(context->getDrawImage().imageExtent.height / 16.0f),
+                     1);
 }
 
 

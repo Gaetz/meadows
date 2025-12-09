@@ -15,7 +15,7 @@ struct PipelineConfigInfo {
     vk::PipelineColorBlendAttachmentState colorBlendAttachment;
     vk::PipelineColorBlendStateCreateInfo colorBlendInfo;
     vk::PipelineDepthStencilStateCreateInfo depthStencilInfo;
-    std::vector<vk::DynamicState> dynamicStateEnables;
+    vector<vk::DynamicState> dynamicStateEnables;
     vk::PipelineDynamicStateCreateInfo dynamicStateInfo;
     vk::PipelineLayout pipelineLayout = nullptr;
     vk::RenderPass renderPass = nullptr;
