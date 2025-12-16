@@ -72,4 +72,11 @@ struct SwapChainSupportDetails {
     std::vector<vk::PresentModeKHR> presentModes;
 };
 
+struct ComputePushConstants {
+    Vec4 data1;
+    Vec4 data2;
+    Vec4 data3;
+    Vec4 data4;
+};
+
 } // namespace graphics

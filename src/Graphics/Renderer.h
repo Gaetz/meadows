@@ -5,6 +5,8 @@
 #include <vulkan/vulkan.hpp>
 #include <vector>
 #include <chrono>
+
+#include "ComputeEffect.h"
 #include "DeletionQueue.hpp"
 #include "PipelineCompute.h"
 
@@ -67,8 +69,11 @@ private:
 
     vk::DescriptorSetLayout drawImageDescriptorLayout;
     vk::DescriptorSet drawImageDescriptors;
-
     vk::PipelineLayout pipelineLayout;
+
+    // Compute effects
+    std::vector<ComputeEffect> backgroundEffects;
+    int currentBackgroundEffect{0};
     uptr<PipelineCompute> computePipeline { nullptr };
 
     // Immediate submit structures
@@ -76,6 +81,8 @@ private:
     vk::CommandPool immCommandPool;
     vk::CommandBuffer immCommandBuffer;
     void immediateSubmit(std::function<void(vk::CommandBuffer cmd)>&& function);
+
+
 
 
     //vk::CommandPool commandPool;

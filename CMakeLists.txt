@@ -197,6 +197,7 @@ compile_shader(${SHADER_DIR}/shader.vert ${SPV_DIR}/shader.vert.spv)
 compile_shader(${SHADER_DIR}/shader.frag ${SPV_DIR}/shader.frag.spv)
 compile_shader(${SHADER_DIR}/gradient.comp ${SPV_DIR}/gradient.comp.spv)
 compile_shader(${SHADER_DIR}/gradientCustom.comp ${SPV_DIR}/gradientCustom.comp.spv)
+compile_shader(${SHADER_DIR}/sky.comp ${SPV_DIR}/sky.comp.spv)
 
 add_custom_target(Shaders ALL
         DEPENDS
@@ -204,6 +205,7 @@ add_custom_target(Shaders ALL
         ${SPV_DIR}/shader.frag.spv
         ${SPV_DIR}/gradient.comp.spv
         ${SPV_DIR}/gradientCustom.comp.spv
+        ${SPV_DIR}/sky.comp.spv
 )
 
 # Main Executable
@@ -238,6 +240,8 @@ add_executable(Meadows
         src/Graphics/DescriptorAllocator.h
         src/Graphics/PipelineCompute.cpp
         src/Graphics/PipelineCompute.h
+        src/Graphics/ComputeEffect.cpp
+        src/Graphics/ComputeEffect.h
 )
 
 # Ensure shaders are compiled before building Meadows

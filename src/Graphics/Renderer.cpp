@@ -212,6 +212,7 @@ void Renderer::createBackgroundPipeline() {
     computePipeline = std::make_unique<PipelineCompute>(context, "shaders/gradient.comp.spv", pipelineLayout);
     */
 
+
     // Pipeline layout with push constants
     vk::PushConstantRange pushConstant {};
     pushConstant.offset = 0;
@@ -221,7 +222,18 @@ void Renderer::createBackgroundPipeline() {
     computeLayout.pushConstantRangeCount = 1;
     computeLayout.pPushConstantRanges = &pushConstant;
     pipelineLayout = context->getDevice().createPipelineLayout(computeLayout);
+
+    /*
+    // Simple compute pipeline with push constants
     computePipeline = std::make_unique<PipelineCompute>(context, "shaders/gradientCustom.comp.spv", pipelineLayout);
+    */
+
+    ComputeEffect gradient {};
+    gradient = ComputeEffect(context, "shaders/gradientCustom.comp.spv", pipelineLayout);
+
+
+
+
 
 /*
     PipelineConfigInfo pipelineConfig{};

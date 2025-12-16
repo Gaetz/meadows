@@ -4,13 +4,6 @@
 
 namespace graphics {
 
-    struct ComputePushConstants {
-        Vec4 data1;
-        Vec4 data2;
-        Vec4 data3;
-        Vec4 data4;
-    };
-
     class PipelineCompute {
     public:
         PipelineCompute(VulkanContext* context, const str& compFilepath, vk::PipelineLayout computePipelineLayout);
