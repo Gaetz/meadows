@@ -19,4 +19,9 @@ namespace graphics
 
     vk::ImageCreateInfo imageCreateInfo(vk::Format format, vk::ImageUsageFlags usageFlags, vk::Extent3D extent);
     vk::ImageViewCreateInfo imageViewCreateInfo(vk::Format format, vk::Image image, vk::ImageAspectFlags aspectFlags);
+
+    vk::RenderingAttachmentInfo attachmentInfo(vk::ImageView imageView, vk::ClearValue* clear, vk::ImageLayout imageLayout);
+    vk::RenderingInfo renderingInfo(vk::Rect2D renderArea, vk::RenderingAttachmentInfo* colorAttachments,
+        vk::RenderingAttachmentInfo* depthAttachment = nullptr, vk::RenderingAttachmentInfo* stencilAttachment = nullptr);
+
 }

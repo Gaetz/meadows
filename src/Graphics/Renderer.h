@@ -29,8 +29,7 @@ public:
     void draw();
 
 private:
-    void createCommandPool();
-    void createCommandBuffers();
+    void createCommandPoolAndBuffers();
     void createSyncObjects();
     void createRenderPass();
     void createFramebuffers();
@@ -66,11 +65,18 @@ private:
     // One semaphore per swapchain image for proper synchronization
     std::vector<vk::Semaphore> renderFinishedSemaphores;
 
-    //vk::DescriptorPool descriptorPool;
     vk::DescriptorSetLayout drawImageDescriptorLayout;
     vk::DescriptorSet drawImageDescriptors;
 
+    vk::PipelineLayout pipelineLayout;
     uptr<PipelineCompute> computePipeline { nullptr };
+
+    // Immediate submit structures
+    vk::Fence immFence;
+    vk::CommandPool immCommandPool;
+    vk::CommandBuffer immCommandBuffer;
+    void immediateSubmit(std::function<void(vk::CommandBuffer cmd)>&& function);
+
 
     //vk::CommandPool commandPool;
     //std::vector<vk::CommandBuffer> commandBuffers;
@@ -80,9 +86,10 @@ private:
     //std::vector<vk::Fence> inFlightFences;
     //std::vector<vk::Fence> imagesInFlight;  // Track which fence is using each swapchain image
 
-    vk::RenderPass renderPass;
-    std::vector<vk::Framebuffer> framebuffers;
-    uptr<class Pipeline> pipeline;
+    //vk::RenderPass renderPass;
+    //std::vector<vk::Framebuffer> framebuffers;
+    //uptr<class Pipeline> pipeline;
+
 
     uptr<class Buffer> vertexBuffer;
     uint32_t vertexCount = 0;
@@ -92,7 +99,6 @@ private:
 
     std::vector<uptr<class Buffer>> uniformBuffers;
 
-    vk::PipelineLayout pipelineLayout;
 
     // ImGui
     vk::DescriptorPool imguiDescriptorPool;

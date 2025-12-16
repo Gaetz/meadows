@@ -117,6 +117,27 @@ namespace graphics
         return info;
     }
 
+    vk::RenderingAttachmentInfo attachmentInfo(vk::ImageView imageView, vk::ClearValue* clear, vk::ImageLayout imageLayout) {
+        vk::RenderingAttachmentInfo info{};
+        info.imageView = imageView;
+        info.imageLayout = imageLayout;
+        info.loadOp = clear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad;
+        if (clear) {
+            info.clearValue = *clear;
+        }
+        info.storeOp = vk::AttachmentStoreOp::eStore;
+        return info;
+    }
 
-
+    vk::RenderingInfo renderingInfo(vk::Rect2D renderArea, vk::RenderingAttachmentInfo* colorAttachments,
+        vk::RenderingAttachmentInfo* depthAttachment, vk::RenderingAttachmentInfo* stencilAttachment) {
+        vk::RenderingInfo info{};
+        info.renderArea = renderArea;
+        info.layerCount = 1;
+        info.colorAttachmentCount = 1;
+        info.pColorAttachments = colorAttachments;
+        info.pDepthAttachment = depthAttachment;
+        info.pStencilAttachment = stencilAttachment;
+        return info;
+    }
 } // namespace graphics

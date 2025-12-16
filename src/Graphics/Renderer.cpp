@@ -29,7 +29,7 @@ void Renderer::init() {
     //createDescriptorSetLayout();
     //createFramebuffers();
     //createPipeline();
-    createCommandPool();
+    createCommandPoolAndBuffers();
     //createVertexBuffer();
     //createIndexBuffer();
     //createUniformBuffers();
@@ -50,29 +50,13 @@ void Renderer::cleanup() {
 
     device.waitIdle();
 
-    /*
+    // Cleanup ImGui
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 
     device.destroyDescriptorPool(imguiDescriptorPool);
-    device.destroyDescriptorPool(descriptorPool);
-    device.destroyDescriptorSetLayout(descriptorSetLayout);
-    device.destroyPipelineLayout(pipelineLayout);
 
-    // unique_ptr automatically deletes when cleared
-    uniformBuffers.clear();
-    indexBuffer.reset();
-    vertexBuffer.reset();
-    pipeline.reset();
-
-    for (auto framebuffer : framebuffers) {
-        device.destroyFramebuffer(framebuffer);
-    }
-    framebuffers.clear();
-
-    device.destroyRenderPass(renderPass);
-    */
     for (int i = 0; i < FRAME_OVERLAP; i++)
     {
         device.destroyCommandPool(frames[i].commandPool);
@@ -89,7 +73,7 @@ void Renderer::cleanup() {
     context->flushMainDeletionQueue();
 }
 
-void Renderer::createCommandPool() {
+void Renderer::createCommandPoolAndBuffers() {
     const QueueFamilyIndices queueFamilyIndices = context->findQueueFamilies(context->getPhysicalDevice());
 
     const auto poolInfo = graphics::commandPoolCreateInfo(
@@ -97,6 +81,7 @@ void Renderer::createCommandPool() {
         vk::CommandPoolCreateFlagBits::eResetCommandBuffer
     );
 
+    // Frame-specific command pools and buffers
     for (int i = 0; i < FRAME_OVERLAP; i++)
     {
         frames[i].commandPool = context->getDevice().createCommandPool(poolInfo);
@@ -104,6 +89,14 @@ void Renderer::createCommandPool() {
         vk::CommandBufferAllocateInfo cmdAllocInfo = graphics::commandBufferAllocateInfo(frames[i].commandPool, 1);
         frames[i].mainCommandBuffer = context->getDevice().allocateCommandBuffers(cmdAllocInfo)[0];
     }
+
+    // Immediate command pool
+    immCommandPool = context->getDevice().createCommandPool(poolInfo);
+    vk::CommandBufferAllocateInfo cmdAllocInfo = graphics::commandBufferAllocateInfo(immCommandPool, 1);
+    immCommandBuffer = context->getDevice().allocateCommandBuffers(cmdAllocInfo)[0];
+    context->addToMainDeletionQueue([this]() {
+        context->getDevice().destroyCommandPool(immCommandPool);
+    });
 }
 
 void Renderer::createDescriptors() {
@@ -132,22 +125,6 @@ void Renderer::createDescriptors() {
     context->addToMainDeletionQueue([&]() {
         context->getDevice().destroyDescriptorSetLayout(drawImageDescriptorLayout);
     });
-}
-
-
-
-void Renderer::createCommandBuffers() {
-    //commandBuffers.resize(FRAME_OVERLAP);
-    /*
-
-    vk::CommandBufferAllocateInfo allocInfo(
-        commandPool,
-        vk::CommandBufferLevel::ePrimary,
-        (uint32_t)commandBuffers.size()
-    );
-
-    commandBuffers = context->getDevice().allocateCommandBuffers(allocInfo);
-    */
 }
 
 void Renderer::createRenderPass() {
@@ -318,6 +295,23 @@ void Renderer::copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffe
     */
 }
 
+void Renderer::immediateSubmit(std::function<void(vk::CommandBuffer cmd)> &&function) {
+    context->getDevice().resetFences(immFence);
+    immCommandBuffer.reset();
+
+    vk::CommandBufferBeginInfo beginInfo = graphics::commandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+    immCommandBuffer.begin(beginInfo);
+
+    function(immCommandBuffer);
+
+    immCommandBuffer.end();
+
+    vk::CommandBufferSubmitInfo submitInfo = graphics::commandBufferSubmitInfo(immCommandBuffer);
+    vk::SubmitInfo2 submit = graphics::submitInfo(submitInfo, nullptr, nullptr);
+    const auto res = context->getGraphicsQueue().submit2(1, &submit, immFence);
+    const auto res2 = context->getDevice().waitForFences(1, &immFence, true, UINT64_MAX);
+}
+
 void Renderer::createIndexBuffer() {
     std::vector<uint16_t> indices = {
         // Front
@@ -463,6 +457,12 @@ void Renderer::createSyncObjects() {
     for (size_t i = 0; i < imageCount; i++) {
         renderFinishedSemaphores[i] = device.createSemaphore(semaphoreInfo);
     }
+
+    // Create a fence for immediate submits
+    immFence = device.createFence(graphics::fenceCreateInfo());
+    context->addToMainDeletionQueue([this]() {
+        context->getDevice().destroyFence(immFence);
+    });
 }
 
 void Renderer::drawBackground(vk::CommandBuffer command) {
@@ -494,7 +494,7 @@ void Renderer::draw() {
     // Wait for previous frame
     vk::Result fenceResult = device.waitForFences(1, &currentFrameData.renderFence, true, 1000000000);
     currentFrameData.deletionQueue.flush();
-    device.resetFences(1, &currentFrameData.renderFence);
+    const auto res = device.resetFences(1, &currentFrameData.renderFence);
 
     // Request image from the swapchain
     u32 imageIndex;
@@ -530,8 +530,19 @@ void Renderer::draw() {
     // Execute a copy from the draw image into the swapchain
     graphics::copyImageToImage(command, drawImage.image, context->getSwapchain()->getImages()[imageIndex], drawExtent, context->getSwapchain()->getExtent());
 
+    // Transition swapchain image to color attachment for ImGui rendering
+    graphics::transitionImage(command, context->getSwapchain()->getImages()[imageIndex], vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eColorAttachmentOptimal);
+
+    // Render ImGui on top of the swapchain image
+    vk::RenderingAttachmentInfo colorAttachment = graphics::attachmentInfo(context->getSwapchain()->getImageViews()[imageIndex], nullptr, vk::ImageLayout::eColorAttachmentOptimal);
+    vk::RenderingInfo renderInfo = graphics::renderingInfo(vk::Rect2D({0, 0}, context->getSwapchain()->getExtent()), &colorAttachment);
+
+    command.beginRendering(renderInfo);
+    drawImGui(command);
+    command.endRendering();
+
     // Set swapchain image layout to Present so we can show it on the screen
-    graphics::transitionImage(command, context->getSwapchain()->getImages()[imageIndex], vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::ePresentSrcKHR);
+    graphics::transitionImage(command, context->getSwapchain()->getImages()[imageIndex], vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR);
 
     // Finalize the command buffer (we can no longer add commands, but it can now be executed)
     command.end();
@@ -693,25 +704,27 @@ void Renderer::initImGui() {
     // 3: Initialize ImGui for SDL3
     ImGui_ImplSDL3_InitForVulkan(context->getWindow());
 
-    // 4: Initialize ImGui for Vulkan
+    // 4: Initialize ImGui for Vulkan (using dynamic rendering)
     ImGui_ImplVulkan_InitInfo init_info = {};
-    init_info.Instance = (VkInstance)context->getInstance();
-    init_info.PhysicalDevice = (VkPhysicalDevice)context->getPhysicalDevice();
-    init_info.Device = (VkDevice)context->getDevice();
-    init_info.Queue = (VkQueue)context->getGraphicsQueue();
-    init_info.DescriptorPool = (VkDescriptorPool)imguiDescriptorPool;
+    init_info.Instance = static_cast<VkInstance>(context->getInstance());
+    init_info.PhysicalDevice = static_cast<VkPhysicalDevice>(context->getPhysicalDevice());
+    init_info.Device = static_cast<VkDevice>(context->getDevice());
+    init_info.Queue = static_cast<VkQueue>(context->getGraphicsQueue());
+    init_info.DescriptorPool = static_cast<VkDescriptorPool>(imguiDescriptorPool);
     init_info.MinImageCount = 3;
     init_info.ImageCount = 3;
-    // init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    // init_info.RenderPass = (VkRenderPass)renderPass; // Deprecated
-    init_info.PipelineInfoMain.RenderPass = (VkRenderPass)renderPass;
-    init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-    init_info.PipelineInfoMain.Subpass = 0;
+    init_info.UseDynamicRendering = true;
+
+    // Dynamic rendering setup
+    VkPipelineRenderingCreateInfoKHR pipelineRenderingInfo = {};
+    pipelineRenderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR;
+    const auto colorAttachmentFormat = static_cast<VkFormat>(context->getSwapchain()->getImageFormat());
+    pipelineRenderingInfo.colorAttachmentCount = 1;
+    pipelineRenderingInfo.pColorAttachmentFormats = &colorAttachmentFormat;
+
+    init_info.PipelineInfoMain.PipelineRenderingCreateInfo = pipelineRenderingInfo;
 
     ImGui_ImplVulkan_Init(&init_info);
-
-    // Upload fonts
-    // ImGui_ImplVulkan_CreateFontsTexture(); // Removed in newer ImGui versions
 }
 
 void Renderer::drawImGui(vk::CommandBuffer commandBuffer) {
@@ -719,9 +732,9 @@ void Renderer::drawImGui(vk::CommandBuffer commandBuffer) {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::Begin("Vulkan Engine");
+    // Simple Hello World window
+    ImGui::Begin("Hello ImGui");
     ImGui::Text("Hello, World!");
-    ImGui::SliderFloat("Rotation Speed", &rotationSpeed, 0.0f, 5.0f);
     ImGui::End();
 
     ImGui::Render();
