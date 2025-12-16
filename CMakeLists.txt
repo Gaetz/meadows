@@ -196,12 +196,14 @@ file(MAKE_DIRECTORY ${SPV_DIR})
 compile_shader(${SHADER_DIR}/shader.vert ${SPV_DIR}/shader.vert.spv)
 compile_shader(${SHADER_DIR}/shader.frag ${SPV_DIR}/shader.frag.spv)
 compile_shader(${SHADER_DIR}/gradient.comp ${SPV_DIR}/gradient.comp.spv)
+compile_shader(${SHADER_DIR}/gradientCustom.comp ${SPV_DIR}/gradientCustom.comp.spv)
 
 add_custom_target(Shaders ALL
         DEPENDS
         ${SPV_DIR}/shader.vert.spv
         ${SPV_DIR}/shader.frag.spv
         ${SPV_DIR}/gradient.comp.spv
+        ${SPV_DIR}/gradientCustom.comp.spv
 )
 
 # Main Executable

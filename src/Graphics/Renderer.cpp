@@ -205,8 +205,23 @@ void Renderer::createBackgroundPipeline() {
     vk::PipelineLayoutCreateInfo computeLayout{};
     computeLayout.setLayoutCount = 1;
     computeLayout.pSetLayouts = &drawImageDescriptorLayout;
+
+    /*
+    // Basic compute pipeline layout
     pipelineLayout = context->getDevice().createPipelineLayout(computeLayout);
     computePipeline = std::make_unique<PipelineCompute>(context, "shaders/gradient.comp.spv", pipelineLayout);
+    */
+
+    // Pipeline layout with push constants
+    vk::PushConstantRange pushConstant {};
+    pushConstant.offset = 0;
+    pushConstant.size = sizeof(ComputePushConstants);
+    pushConstant.stageFlags = vk::ShaderStageFlagBits::eCompute;
+
+    computeLayout.pushConstantRangeCount = 1;
+    computeLayout.pPushConstantRanges = &pushConstant;
+    pipelineLayout = context->getDevice().createPipelineLayout(computeLayout);
+    computePipeline = std::make_unique<PipelineCompute>(context, "shaders/gradientCustom.comp.spv", pipelineLayout);
 
 /*
     PipelineConfigInfo pipelineConfig{};
@@ -481,6 +496,12 @@ void Renderer::drawBackground(vk::CommandBuffer command) {
     constexpr auto bindPoint = vk::PipelineBindPoint::eCompute;
     command.bindPipeline(bindPoint, computePipeline->get());
     command.bindDescriptorSets(bindPoint, pipelineLayout, 0, 1, &drawImageDescriptors, 0, nullptr);
+
+    ComputePushConstants pushConstants{};
+    pushConstants.data1 = Vec4 { 1, 0, 0, 1 };
+    pushConstants.data2 = Vec4 { 0, 0, 1, 1 };
+    command.pushConstants<ComputePushConstants>(pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, pushConstants);
+
     command.dispatch(std::ceil(context->getDrawImage().imageExtent.width / 16.0f),
                      std::ceil(context->getDrawImage().imageExtent.height / 16.0f),
                      1);
