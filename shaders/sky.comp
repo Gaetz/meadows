@@ -1,4 +1,5 @@
-﻿#version 450
+#version 450
+
 layout (local_size_x = 16, local_size_y = 16) in;
 layout(rgba8,set = 0, binding = 0) uniform image2D image;
 
@@ -7,10 +8,10 @@ layout(rgba8,set = 0, binding = 0) uniform image2D image;
 //push constants block
 layout( push_constant ) uniform constants
 {
- vec4 data1;
- vec4 data2;
- vec4 data3;
- vec4 data4;
+    vec4 data1;
+    vec4 data2;
+    vec4 data3;
+    vec4 data4;
 } PushConstants;
 
 // Return random noise in the range [0.0, 1.0], as a function of x.
@@ -26,9 +27,9 @@ float NoisyStarField( in vec2 vSamplePos, float fThreshhold )
 {
     float StarVal = Noise2d( vSamplePos );
     if ( StarVal >= fThreshhold )
-        StarVal = pow( (StarVal - fThreshhold)/(1.0 - fThreshhold), 6.0 );
+    StarVal = pow( (StarVal - fThreshhold)/(1.0 - fThreshhold), 6.0 );
     else
-        StarVal = 0.0;
+    StarVal = 0.0;
     return StarVal;
 }
 
@@ -47,17 +48,17 @@ float StableStarField( in vec2 vSamplePos, float fThreshhold )
     float v4 = NoisyStarField( floorSample + vec2( 1.0, 1.0 ), fThreshhold );
 
     float StarVal =   v1 * ( 1.0 - fractX ) * ( 1.0 - fractY )
-        			+ v2 * ( 1.0 - fractX ) * fractY
-        			+ v3 * fractX * ( 1.0 - fractY )
-        			+ v4 * fractX * fractY;
-	return StarVal;
+    + v2 * ( 1.0 - fractX ) * fractY
+    + v3 * fractX * ( 1.0 - fractY )
+    + v4 * fractX * fractY;
+    return StarVal;
 }
 
 void mainImage( out vec4 fragColor, in vec2 fragCoord )
 {
-    vec2 iResolution = imageSize(image);
-	// Sky Background Color
-	//vec3 vColor = vec3( 0.1, 0.2, 0.4 ) * fragCoord.y / iResolution.y;
+    vec2 iResolution = vec2( imageSize(image) );
+    // Sky Background Color
+    //vec3 vColor = vec3( 0.1, 0.2, 0.4 ) * fragCoord.y / iResolution.y;
     vec3 vColor = PushConstants.data1.xyz * fragCoord.y / iResolution.y;
 
     // Note: Choose fThreshhold in the range [0.99, 0.9999].
@@ -68,23 +69,23 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     float xRate = 0.2;
     float yRate = -0.06;
     vec2 vSamplePos = fragCoord.xy + vec2( xRate * float( 1 ), yRate * float( 1 ) );
-	float StarVal = StableStarField( vSamplePos, StarFieldThreshhold );
+    float StarVal = StableStarField( vSamplePos, StarFieldThreshhold );
     vColor += vec3( StarVal );
 
-	fragColor = vec4(vColor, 1.0);
+    fragColor = vec4(vColor, 1.0);
 }
 
 
 
 void main()
 {
-	vec4 value = vec4(0.0, 0.0, 0.0, 1.0);
+    vec4 value = vec4(0.0, 0.0, 0.0, 1.0);
     ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
-	ivec2 size = imageSize(image);
+    ivec2 size = imageSize(image);
     if(texelCoord.x < size.x && texelCoord.y < size.y)
     {
         vec4 color;
-        mainImage(color,texelCoord);
+        mainImage(color, vec2(texelCoord));
 
         imageStore(image, texelCoord, color);
     }

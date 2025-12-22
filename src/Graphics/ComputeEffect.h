@@ -23,6 +23,3 @@ namespace graphics {
         }
     };
 }
-
-
-#endif //MEADOWS_COMPUTEEFFECT_H
