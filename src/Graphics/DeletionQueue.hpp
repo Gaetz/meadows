@@ -18,7 +18,7 @@ namespace  graphics
     class DeletionQueue
     {
     public:
-        void pushFunction(std::function<void()> &&func, const str& name);
+        void pushFunction(std::function<void()> &&func, str&& name);
         void flush();
     private:
         std::deque<std::function<void()>> deletors;

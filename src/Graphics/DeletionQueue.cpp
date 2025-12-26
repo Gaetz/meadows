@@ -6,16 +6,16 @@
 
 namespace graphics
 {
-    void DeletionQueue::pushFunction(std::function<void()>&& func, const str& name) {
-        deletors.push_back(std::move(func));
-        names.push_back(name);
+    void DeletionQueue::pushFunction(std::function<void()>&& func, str&& name) {
+        deletors.emplace_back(std::move(func));
+        names.emplace_back(std::move(name));
     }
 
     void DeletionQueue::flush() {
         for (auto & deletor : std::ranges::reverse_view(deletors)) {
             auto deletedName = names.back();
             names.pop_back();
-            services::Log::Info(("Deletion queue: " + deletedName).c_str());
+            services::Log::Trace(("Deletion queue: " + deletedName).c_str());
             deletor();
         }
         deletors.clear();

@@ -35,8 +35,11 @@ namespace graphics {
         computePipeline = context->getDevice().createComputePipeline(nullptr, computePipelineCreateInfo).value;
 
         context->getDevice().destroyShaderModule(compShaderModule);
-        context->addToMainDeletionQueue([this]() {
-                context->getDevice().destroyPipeline(computePipeline);
+
+        vk::Device contextDevice = context->getDevice();
+        vk::Pipeline pipelineCopy = computePipeline;
+        context->addToMainDeletionQueue([pipelineCopy, contextDevice]() {
+                contextDevice.destroyPipeline(pipelineCopy);
             }
         , "computePipeline");
     }
