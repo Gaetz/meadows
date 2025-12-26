@@ -2,7 +2,6 @@
 #include "Swapchain.h"
 #include "Pipeline.h"
 #include "Buffer.h"
-#include <array>
 #include <chrono>
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
@@ -47,7 +46,6 @@ void Renderer::cleanup() {
     if (!frames[0].commandPool) return; // Already cleaned up or never initialized
 
     vk::Device device = context->getDevice();
-
     device.waitIdle();
 
     // Cleanup ImGui
@@ -59,10 +57,11 @@ void Renderer::cleanup() {
 
     for (int i = 0; i < FRAME_OVERLAP; i++)
     {
+        frames[i].deletionQueue.flush();
+
         device.destroyCommandPool(frames[i].commandPool);
         device.destroySemaphore(frames[i].imageAvailableSemaphore);
         device.destroyFence(frames[i].renderFence);
-        frames[i].deletionQueue.flush();
     }
 
     for (auto& semaphore : renderFinishedSemaphores) {
@@ -228,12 +227,17 @@ void Renderer::createBackgroundPipeline() {
     computePipeline = std::make_unique<PipelineCompute>(context, "shaders/gradientCustom.comp.spv", pipelineLayout);
     */
 
-    ComputeEffect gradient {};
-    gradient = ComputeEffect(context, "shaders/gradientCustom.comp.spv", pipelineLayout);
+    ComputeEffect gradient { "Gradient", context, "shaders/gradientCustom.comp.spv", pipelineLayout };
+    gradient.data.data1 = Vec4 { 1, 0, 0, 1 };
+    gradient.data.data2 = Vec4 { 0, 0, 1, 1 };
 
+    ComputeEffect sky { "Sky", context, "shaders/sky.comp.spv", pipelineLayout };
+    sky.data.data1 = Vec4 { 0.1, 0.2, 0.4, 0.97 };
 
+    context->addToMainDeletionQueue( [this](){ context->getDevice().destroyPipelineLayout(pipelineLayout);} );
 
-
+    backgroundEffects.push_back(gradient);
+    backgroundEffects.push_back(sky);
 
 /*
     PipelineConfigInfo pipelineConfig{};
@@ -506,13 +510,10 @@ void Renderer::drawBackground(vk::CommandBuffer command) {
 
     // Bind compute pipeline and descriptor sets
     constexpr auto bindPoint = vk::PipelineBindPoint::eCompute;
-    command.bindPipeline(bindPoint, computePipeline->get());
-    command.bindDescriptorSets(bindPoint, pipelineLayout, 0, 1, &drawImageDescriptors, 0, nullptr);
-
-    ComputePushConstants pushConstants{};
-    pushConstants.data1 = Vec4 { 1, 0, 0, 1 };
-    pushConstants.data2 = Vec4 { 0, 0, 1, 1 };
-    command.pushConstants<ComputePushConstants>(pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, pushConstants);
+    const ComputeEffect& effect = backgroundEffects[currentBackgroundEffect];
+    command.bindPipeline(bindPoint, effect.getPipeline());
+    command.bindDescriptorSets(bindPoint, effect.getPipelineLayout(), 0, 1, &drawImageDescriptors, 0, nullptr);
+    command.pushConstants<ComputePushConstants>(effect.getPipelineLayout(), vk::ShaderStageFlagBits::eCompute, 0, effect.data);
 
     command.dispatch(std::ceil(context->getDrawImage().imageExtent.width / 16.0f),
                      std::ceil(context->getDrawImage().imageExtent.height / 16.0f),
@@ -765,9 +766,23 @@ void Renderer::drawImGui(vk::CommandBuffer commandBuffer) {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
+    /**
     // Simple Hello World window
     ImGui::Begin("Hello ImGui");
     ImGui::Text("Hello, World!");
+    ImGui::End();
+    */
+
+    if (ImGui::Begin("background")) {
+        ComputeEffect& selected = backgroundEffects[currentBackgroundEffect];
+        ImGui::Text("Selected effect: ", selected.name);
+        ImGui::SliderInt("Effect Index", &currentBackgroundEffect,0, backgroundEffects.size() - 1);
+
+        ImGui::InputFloat4("data1",(float*)& selected.data.data1);
+        ImGui::InputFloat4("data2",(float*)& selected.data.data2);
+        ImGui::InputFloat4("data3",(float*)& selected.data.data3);
+        ImGui::InputFloat4("data4",(float*)& selected.data.data4);
+    }
     ImGui::End();
 
     ImGui::Render();

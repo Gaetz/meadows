@@ -36,7 +36,6 @@ namespace graphics {
 
         context->getDevice().destroyShaderModule(compShaderModule);
         context->addToMainDeletionQueue([&]() {
-                context->getDevice().destroyPipelineLayout(computePipelineLayout);
                 context->getDevice().destroyPipeline(computePipeline);
             }
         );

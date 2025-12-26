@@ -10,7 +10,8 @@ namespace graphics {
         ~PipelineCompute() = default;
 
         void bind(vk::CommandBuffer commandBuffer);
-        vk::Pipeline get() const { return computePipeline; }
+        [[nodiscard]] vk::Pipeline get() const { return computePipeline; }
+        [[nodiscard]] vk::PipelineLayout getLayout() const { return computePipelineLayout; }
 
     private:
         void createComputePipeline(const str& compFilepath);

@@ -8,7 +8,6 @@
 
 #include "ComputeEffect.h"
 #include "DeletionQueue.hpp"
-#include "PipelineCompute.h"
 
 namespace graphics {
     class Buffer;  // Forward declaration
@@ -74,7 +73,7 @@ private:
     // Compute effects
     std::vector<ComputeEffect> backgroundEffects;
     int currentBackgroundEffect{0};
-    uptr<PipelineCompute> computePipeline { nullptr };
+    //uptr<PipelineCompute> computePipeline { nullptr };
 
     // Immediate submit structures
     vk::Fence immFence;
