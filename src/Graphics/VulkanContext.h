@@ -36,8 +36,8 @@ namespace graphics {
 
         QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device);
 
-        void addToMainDeletionQueue(std::function<void()> &&function) {
-            mainDeletionQueue.pushFunction(std::move(function));
+        void addToMainDeletionQueue(std::function<void()> &&function, const str& name) {
+            mainDeletionQueue.pushFunction(std::move(function), name);
         }
         void flushMainDeletionQueue() { mainDeletionQueue.flush(); }
 

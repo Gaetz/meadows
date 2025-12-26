@@ -35,10 +35,10 @@ namespace graphics {
         computePipeline = context->getDevice().createComputePipeline(nullptr, computePipelineCreateInfo).value;
 
         context->getDevice().destroyShaderModule(compShaderModule);
-        context->addToMainDeletionQueue([&]() {
+        context->addToMainDeletionQueue([this]() {
                 context->getDevice().destroyPipeline(computePipeline);
             }
-        );
+        , "computePipeline");
     }
 
     void PipelineCompute::createShaderModule(const std::vector<char> &code) {

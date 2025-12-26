@@ -95,7 +95,7 @@ void Renderer::createCommandPoolAndBuffers() {
     immCommandBuffer = context->getDevice().allocateCommandBuffers(cmdAllocInfo)[0];
     context->addToMainDeletionQueue([this]() {
         context->getDevice().destroyCommandPool(immCommandPool);
-    });
+    }, "Immediate command pool");
 }
 
 void Renderer::createDescriptors() {
@@ -123,7 +123,7 @@ void Renderer::createDescriptors() {
     // Cleanup
     context->addToMainDeletionQueue([&]() {
         context->getDevice().destroyDescriptorSetLayout(drawImageDescriptorLayout);
-    });
+    }, "drawImageDescriptorLayout");
 }
 
 void Renderer::createRenderPass() {
@@ -234,7 +234,7 @@ void Renderer::createBackgroundPipeline() {
     ComputeEffect sky { "Sky", context, "shaders/sky.comp.spv", pipelineLayout };
     sky.data.data1 = Vec4 { 0.1, 0.2, 0.4, 0.97 };
 
-    context->addToMainDeletionQueue( [this](){ context->getDevice().destroyPipelineLayout(pipelineLayout);} );
+    context->addToMainDeletionQueue( [this](){ context->getDevice().destroyPipelineLayout(pipelineLayout);}, "Renderer's pipelineLayout");
 
     backgroundEffects.push_back(gradient);
     backgroundEffects.push_back(sky);
@@ -493,7 +493,7 @@ void Renderer::createSyncObjects() {
     immFence = device.createFence(graphics::fenceCreateInfo());
     context->addToMainDeletionQueue([this]() {
         context->getDevice().destroyFence(immFence);
-    });
+    }, "immFence");
 }
 
 void Renderer::drawBackground(vk::CommandBuffer command) {

@@ -197,12 +197,12 @@ namespace graphics {
         // Build a image-view for the draw image to use for rendering
         vk::ImageViewCreateInfo rview_info = graphics::imageViewCreateInfo(
             drawImage.imageFormat, drawImage.image, vk::ImageAspectFlagBits::eColor);
-        device.createImageView(&rview_info, nullptr, &drawImage.imageView);
+        auto res = device.createImageView(&rview_info, nullptr, &drawImage.imageView);
 
-        mainDeletionQueue.pushFunction([=]() {
+        mainDeletionQueue.pushFunction([this]() {
             device.destroyImageView(drawImage.imageView, nullptr);
             vmaDestroyImage(allocator, drawImage.image, drawImage.allocation);
-        });
+        }, "Swapchain's image and view");
     }
 
     QueueFamilyIndices VulkanContext::findQueueFamilies(vk::PhysicalDevice device) {
