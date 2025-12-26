@@ -99,7 +99,11 @@ public:
         if (logFile.isOpen()) {
             logFile.writeLine("=== Log Started ===");
         }
-        
+#if defined(NDEBUG)
+        SDL_SetLogPriorities(SDL_LOG_PRIORITY_WARN);
+#else
+        SDL_SetLogPriorities(SDL_LOG_PRIORITY_DEBUG);
+#endif
         SDL_SetLogOutputFunction(CustomLogOutput, nullptr);
     }
     
