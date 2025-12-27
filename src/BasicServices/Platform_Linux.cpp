@@ -1,7 +1,8 @@
 #include "Platform.h"
 #include <cstdio>
 
-namespace services {
+namespace services
+{
     void Platform::setConsoleColor(ConsoleColor color) {
         const char* code = "\033[0m"; // Reset
 

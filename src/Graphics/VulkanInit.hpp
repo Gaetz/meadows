@@ -14,7 +14,7 @@ namespace graphics
     vk::SemaphoreSubmitInfo semaphoreSubmitInfo(vk::Semaphore semaphore, vk::PipelineStageFlagBits2 flags = {});
 
     vk::ImageSubresourceRange imageSubresourceRange(vk::ImageAspectFlags aspectFlags);
-    vk::SubmitInfo2 submitInfo(vk::CommandBufferSubmitInfo commandSubmitInfo,
+    vk::SubmitInfo2 submitInfo(const vk::CommandBufferSubmitInfo* commandSubmitInfo,
         vk::SemaphoreSubmitInfo* signalSemaphoreInfo, vk::SemaphoreSubmitInfo* waitSemaphoreInfo);
 
     vk::ImageCreateInfo imageCreateInfo(vk::Format format, vk::ImageUsageFlags usageFlags, vk::Extent3D extent);

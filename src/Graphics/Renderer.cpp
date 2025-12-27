@@ -338,7 +338,7 @@ void Renderer::immediateSubmit(std::function<void(vk::CommandBuffer cmd)> &&func
     immCommandBuffer.end();
 
     vk::CommandBufferSubmitInfo submitInfo = graphics::commandBufferSubmitInfo(immCommandBuffer);
-    vk::SubmitInfo2 submit = graphics::submitInfo(submitInfo, nullptr, nullptr);
+    vk::SubmitInfo2 submit = graphics::submitInfo(&submitInfo, nullptr, nullptr);
     const auto res = context->getGraphicsQueue().submit2(1, &submit, immFence);
     const auto res2 = context->getDevice().waitForFences(1, &immFence, true, UINT64_MAX);
 }
@@ -589,7 +589,7 @@ void Renderer::draw() {
     const vk::CommandBufferSubmitInfo commandInfo = graphics::commandBufferSubmitInfo(command);
     vk::SemaphoreSubmitInfo waitInfo = graphics::semaphoreSubmitInfo(currentFrameData.imageAvailableSemaphore, vk::PipelineStageFlagBits2::eColorAttachmentOutput);
     vk::SemaphoreSubmitInfo signalInfo = graphics::semaphoreSubmitInfo(renderFinishedSemaphores[imageIndex], vk::PipelineStageFlagBits2::eAllGraphics);
-    const vk::SubmitInfo2 submit = graphics::submitInfo(commandInfo, &signalInfo, &waitInfo);
+    const vk::SubmitInfo2 submit = graphics::submitInfo(&commandInfo, &signalInfo, &waitInfo);
 
     /* Submit command buffer to the queue and execute it.
      * renderFence will now block until the graphic commands finish execution

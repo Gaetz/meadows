@@ -75,7 +75,7 @@ namespace graphics
         return subImage;
     }
 
-    vk::SubmitInfo2 submitInfo(vk::CommandBufferSubmitInfo commandSubmitInfo,
+    vk::SubmitInfo2 submitInfo(const vk::CommandBufferSubmitInfo* commandSubmitInfo,
                                  vk::SemaphoreSubmitInfo* signalSemaphoreInfo,
                                  vk::SemaphoreSubmitInfo* waitSemaphoreInfo) {
         vk::SubmitInfo2 info{};
@@ -85,8 +85,8 @@ namespace graphics
         info.pWaitSemaphoreInfos = waitSemaphoreInfo;
         info.signalSemaphoreInfoCount = signalSemaphoreInfo == nullptr ? 0 : 1;
         info.pSignalSemaphoreInfos = signalSemaphoreInfo;
-        info.commandBufferInfoCount = 1;
-        info.pCommandBufferInfos = &commandSubmitInfo;
+        info.commandBufferInfoCount = commandSubmitInfo == nullptr ? 0 : 1;
+        info.pCommandBufferInfos = commandSubmitInfo;
 
         return info;
     }

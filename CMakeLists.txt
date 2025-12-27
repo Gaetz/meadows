@@ -115,7 +115,12 @@ else()
     message(STATUS " ➤ VkBootstrap (cached)")
 endif()
 file(ARCHIVE_EXTRACT INPUT ${VKBOOTSTRAP_ZIP} DESTINATION ${VKBOOTSTRAP_SOURCE_DIR})
-add_subdirectory(${VKBOOTSTRAP_SOURCE_DIR}/vk-bootstrap-${VK_MAJOR}.${VK_MINOR}.${VK_PATCH} ${CMAKE_BINARY_DIR}/_deps/VkBootstrap-build)
+if(Vulkan_VERSION AND VK_MAJOR)
+    set(VKBOOTSTRAP_EXTRACTED "${VKBOOTSTRAP_SOURCE_DIR}/vk-bootstrap-${VK_MAJOR}.${VK_MINOR}.${VK_PATCH}")
+else()
+    set(VKBOOTSTRAP_EXTRACTED "${VKBOOTSTRAP_SOURCE_DIR}/vk-bootstrap-1.4.307")
+endif()
+add_subdirectory(${VKBOOTSTRAP_EXTRACTED} ${CMAKE_BINARY_DIR}/_deps/VkBootstrap-build)
 download_complete("VkBootstrap")
 
 # ──────────────────────────────────────────────────────────────────────
