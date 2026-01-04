@@ -4,6 +4,8 @@
 
 #include "PipelineCompute.h"
 
+#include "Utils.hpp"
+#include "VulkanInit.hpp"
 #include "BasicServices/File.h"
 
 using services::File;
@@ -20,13 +22,10 @@ namespace graphics {
     }
 
     void PipelineCompute::createComputePipeline(const str& compFilepath) {
-        auto compCode = File::readBinary(compFilepath);
-        createShaderModule(compCode);
+        const auto compCode = File::readBinary(compFilepath);
+        compShaderModule = createShaderModule(compCode, context->getDevice());
 
-        vk::PipelineShaderStageCreateInfo stageInfo {};
-        stageInfo.stage = vk::ShaderStageFlagBits::eCompute;
-        stageInfo.module = compShaderModule;
-        stageInfo.pName = "main";
+        const vk::PipelineShaderStageCreateInfo stageInfo = graphics::shaderStageCreateInfo(vk::ShaderStageFlagBits::eCompute, compShaderModule);
 
         vk::ComputePipelineCreateInfo computePipelineCreateInfo{};
         computePipelineCreateInfo.layout = computePipelineLayout;
@@ -42,15 +41,5 @@ namespace graphics {
                 contextDevice.destroyPipeline(pipelineCopy);
             }
         , "computePipeline");
-    }
-
-    void PipelineCompute::createShaderModule(const std::vector<char> &code) {
-        vk::ShaderModuleCreateInfo createInfo(
-            {},
-            code.size(),
-            reinterpret_cast<const uint32_t*>(code.data())
-        );
-
-        compShaderModule = context->getDevice().createShaderModule(createInfo);
     }
 }

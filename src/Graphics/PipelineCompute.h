@@ -15,7 +15,6 @@ namespace graphics {
 
     private:
         void createComputePipeline(const str& compFilepath);
-        void createShaderModule(const std::vector<char>& code);
 
         VulkanContext* context;
         vk::PipelineLayout computePipelineLayout;

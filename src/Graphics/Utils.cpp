@@ -4,6 +4,16 @@
 
 namespace graphics
 {
+    vk::ShaderModule createShaderModule(const std::vector<char> &code, const vk::Device device) {
+        const vk::ShaderModuleCreateInfo createInfo(
+            {},
+            code.size(),
+            reinterpret_cast<const uint32_t*>(code.data())
+        );
+
+        return device.createShaderModule(createInfo);
+    }
+
     void transitionImage(vk::CommandBuffer command, vk::Image image,
         vk::ImageLayout currentLayout, vk::ImageLayout newLayout)
     {

@@ -24,4 +24,6 @@ namespace graphics
     vk::RenderingInfo renderingInfo(vk::Rect2D renderArea, vk::RenderingAttachmentInfo* colorAttachments,
         vk::RenderingAttachmentInfo* depthAttachment = nullptr, vk::RenderingAttachmentInfo* stencilAttachment = nullptr);
 
+    vk::PipelineShaderStageCreateInfo shaderStageCreateInfo(vk::ShaderStageFlagBits stage, vk::ShaderModule shaderModule);
+
 }

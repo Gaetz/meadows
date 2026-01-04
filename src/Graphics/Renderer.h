@@ -40,6 +40,7 @@ private:
     void createDescriptors();
     void createPipelines();
     void createBackgroundPipeline();
+    void createTrianglePipeline();
 
     //void createDescriptorPool();
     //void createDescriptorSetLayout();
@@ -50,7 +51,8 @@ private:
     void drawImGui(vk::CommandBuffer commandBuffer);
 
     void drawBackground(vk::CommandBuffer);
-    
+    void drawGeometry(vk::CommandBuffer);
+
     // Helper methods
     void copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer);
 
@@ -73,7 +75,6 @@ private:
     // Compute effects
     std::vector<ComputeEffect> backgroundEffects;
     int currentBackgroundEffect{0};
-    //uptr<PipelineCompute> computePipeline { nullptr };
 
     // Immediate submit structures
     vk::Fence immFence;
@@ -81,7 +82,9 @@ private:
     vk::CommandBuffer immCommandBuffer;
     void immediateSubmit(std::function<void(vk::CommandBuffer cmd)>&& function);
 
-
+    // Graphics pipeline
+    vk::PipelineLayout trianglePipelineLayout;
+    vk::Pipeline trianglePipeline;
 
 
     //vk::CommandPool commandPool;

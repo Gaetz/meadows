@@ -140,4 +140,13 @@ namespace graphics
         info.pStencilAttachment = stencilAttachment;
         return info;
     }
+
+    vk::PipelineShaderStageCreateInfo shaderStageCreateInfo(vk::ShaderStageFlagBits stage,
+        vk::ShaderModule shaderModule) {
+        vk::PipelineShaderStageCreateInfo info{};
+        info.stage = stage;
+        info.module = shaderModule;
+        info.pName = "main";
+        return info;
+    }
 } // namespace graphics
