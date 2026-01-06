@@ -1,82 +1,65 @@
 #pragma once
 
 #include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.h>
 #include <glm/glm.hpp>
 #include "../Defines.h"
 #include <optional>
+#include <vk_mem_alloc.h>
 
-namespace graphics {
+namespace graphics
+{
+    struct Vertex
+    {
+        glm::vec3 position;
+        float uvX;
+        glm::vec3 normal;
+        float uvY;
+        glm::vec4 color;
+    };
 
-struct Vertex {
-    Vec3 pos;
-    Vec3 color;
+    // Push constants for our mesh object draws
+    struct GPUDrawPushConstants
+    {
+        glm::mat4 worldMatrix;
+        vk::DeviceAddress vertexBuffer;
+    };
 
-    static vk::VertexInputBindingDescription getBindingDescription() {
-        vk::VertexInputBindingDescription bindingDescription{};
-        bindingDescription.binding = 0;
-        bindingDescription.stride = sizeof(Vertex);
-        bindingDescription.inputRate = vk::VertexInputRate::eVertex;
-        return bindingDescription;
-    }
+    struct UniformBufferObject
+    {
+        Mat4 model;
+        Mat4 view;
+        Mat4 proj;
+    };
 
-    static array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions() {
-        array<vk::VertexInputAttributeDescription, 2> attributeDescriptions{};
+    struct AllocatedImage
+    {
+        vk::Image image;
+        VmaAllocation allocation;
+        vk::ImageView imageView;
+        vk::Extent3D imageExtent;
+        vk::Format imageFormat;
+    };
 
-        attributeDescriptions[0].binding = 0;
-        attributeDescriptions[0].location = 0;
-        attributeDescriptions[0].format = vk::Format::eR32G32B32Sfloat;
-        attributeDescriptions[0].offset = offsetof(Vertex, pos);
+    struct QueueFamilyIndices
+    {
+        std::optional<uint32_t> graphicsFamily;
+        std::optional<uint32_t> presentFamily;
 
-        attributeDescriptions[1].binding = 0;
-        attributeDescriptions[1].location = 1;
-        attributeDescriptions[1].format = vk::Format::eR32G32B32Sfloat;
-        attributeDescriptions[1].offset = offsetof(Vertex, color);
+        bool isComplete() { return graphicsFamily.has_value() && presentFamily.has_value(); }
+    };
 
-        return attributeDescriptions;
-    }
-};
+    struct SwapChainSupportDetails
+    {
+        vk::SurfaceCapabilitiesKHR capabilities;
+        std::vector<vk::SurfaceFormatKHR> formats;
+        std::vector<vk::PresentModeKHR> presentModes;
+    };
 
-struct UniformBufferObject {
-    Mat4 model;
-    Mat4 view;
-    Mat4 proj;
-};
-
-// Common types
-struct AllocatedBuffer {
-    vk::Buffer buffer;
-    VmaAllocation allocation;
-};
-
-struct AllocatedImage {
-    vk::Image image;
-    VmaAllocation allocation;
-    vk::ImageView imageView;
-    vk::Extent3D imageExtent;
-    vk::Format imageFormat;
-};
-
-struct QueueFamilyIndices {
-    std::optional<uint32_t> graphicsFamily;
-    std::optional<uint32_t> presentFamily;
-
-    bool isComplete() {
-        return graphicsFamily.has_value() && presentFamily.has_value();
-    }
-};
-
-struct SwapChainSupportDetails {
-    vk::SurfaceCapabilitiesKHR capabilities;
-    std::vector<vk::SurfaceFormatKHR> formats;
-    std::vector<vk::PresentModeKHR> presentModes;
-};
-
-struct ComputePushConstants {
-    Vec4 data1;
-    Vec4 data2;
-    Vec4 data3;
-    Vec4 data4;
-};
-
+    struct ComputePushConstants
+    {
+        Vec4 data1;
+        Vec4 data2;
+        Vec4 data3;
+        Vec4 data4;
+    };
 } // namespace graphics

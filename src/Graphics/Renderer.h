@@ -6,13 +6,12 @@
 #include <vector>
 #include <chrono>
 
+#include "Buffer.h"
 #include "ComputeEffect.h"
 #include "DeletionQueue.hpp"
 #include "Pipeline.h"
 
 namespace graphics {
-    class Buffer;  // Forward declaration
-
     struct FrameData {
         vk::CommandPool commandPool;
         vk::CommandBuffer mainCommandBuffer;
@@ -55,7 +54,8 @@ private:
     void drawGeometry(vk::CommandBuffer);
 
     // Helper methods
-    void copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer);
+    //void copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer);
+    GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
     VulkanContext* context;
 

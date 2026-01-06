@@ -266,6 +266,7 @@ namespace graphics {
     }
 
     void Renderer::createVertexBuffer() {
+        /*
         std::vector<Vertex> vertices = {
             // Front face
             {{-0.5f, -0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}}, // 0
@@ -291,6 +292,7 @@ namespace graphics {
         );
 
         copyBufferViaStaging(vertices.data(), bufferSize, vertexBuffer.get());
+        */
     }
 
     void Renderer::copyBufferViaStaging(const void *data, vk::DeviceSize size, Buffer *dstBuffer) {
@@ -567,6 +569,57 @@ void Renderer::createDescriptorSets() {
         command.draw(3, 1, 0, 0);
 
         command.endRendering();
+    }
+
+    GPUMeshBuffers Renderer::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {
+        const size_t vertexBufferSize = vertices.size() * sizeof(Vertex);
+        const size_t indexBufferSize = indices.size() * sizeof(uint32_t);
+
+        GPUMeshBuffers newSurface;
+
+        // Vertex buffer
+        newSurface.vertexBuffer = Buffer {context, vertexBufferSize,
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            VMA_MEMORY_USAGE_GPU_ONLY};
+
+        // Find the adress of the vertex buffer
+        vk::BufferDeviceAddressInfo deviceAdressInfo {};
+        deviceAdressInfo.buffer = newSurface.vertexBuffer.buffer;
+        newSurface.vertexBufferAddress = context->getDevice().getBufferAddress(&deviceAdressInfo);
+
+        // Index buffer
+        newSurface.indexBuffer = Buffer {context,indexBufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+            VMA_MEMORY_USAGE_GPU_ONLY};
+
+        // Uploading via staging buffers
+        Buffer staging { context, vertexBufferSize + indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_CPU_ONLY};
+
+        void* data = staging.allocation->GetMappedData();
+
+        // copy vertex buffer
+        memcpy(data, vertices.data(), vertexBufferSize);
+        // copy index buffer
+        memcpy((char*)data + vertexBufferSize, indices.data(), indexBufferSize);
+
+        immediate_submit([&](VkCommandBuffer cmd) {
+            VkBufferCopy vertexCopy{ 0 };
+            vertexCopy.dstOffset = 0;
+            vertexCopy.srcOffset = 0;
+            vertexCopy.size = vertexBufferSize;
+
+            vkCmdCopyBuffer(cmd, staging.buffer, newSurface.vertexBuffer.buffer, 1, &vertexCopy);
+
+            VkBufferCopy indexCopy{ 0 };
+            indexCopy.dstOffset = 0;
+            indexCopy.srcOffset = vertexBufferSize;
+            indexCopy.size = indexBufferSize;
+
+            vkCmdCopyBuffer(cmd, staging.buffer, newSurface.indexBuffer.buffer, 1, &indexCopy);
+        });
+
+        destroy_buffer(staging);
+
+        return newSurface;
     }
 
 

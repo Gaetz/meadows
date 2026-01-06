@@ -3,22 +3,26 @@
 
 namespace graphics {
 
-Buffer::Buffer(VulkanContext* context, vk::DeviceSize size, vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage)
-    : context(context), size(size) {
+Buffer::Buffer(VulkanContext* context, size_t allocSize, vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage)
+    : context(context), size(allocSize) {
     
-    VkBufferCreateInfo bufferInfo = {};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    vk::BufferCreateInfo bufferInfo = {};
     bufferInfo.size = size;
-    bufferInfo.usage = (VkBufferUsageFlags)usage;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    bufferInfo.usage = usage;
 
     VmaAllocationCreateInfo allocInfo = {};
     allocInfo.usage = memoryUsage;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
 
-    VkBuffer vkBuffer;
-    VkResult result = vmaCreateBuffer(context->getAllocator(), &bufferInfo, &allocInfo, &vkBuffer, &allocation, nullptr);
+    VkBuffer vkBuffer {nullptr};
+    const VkResult result = vmaCreateBuffer(context->getAllocator(),
+                                      reinterpret_cast<const VkBufferCreateInfo*>(&bufferInfo),
+                                      &allocInfo,
+                                      &vkBuffer,
+                                      &allocation,
+                                      nullptr);
     assert(result == VK_SUCCESS && "failed to create buffer!");
-    buffer = vkBuffer;
+    buffer = vk::Buffer(vkBuffer);
 }
 
 Buffer::~Buffer() {

@@ -25,4 +25,4 @@ namespace graphics {
     void Pipeline::bind(vk::CommandBuffer commandBuffer) const {
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
     }
-} // namespace graphics
+}
