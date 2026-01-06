@@ -15,13 +15,10 @@ namespace graphics {
         vk::Device contextDevice = context->getDevice();
         vk::Pipeline pipelineCopy = pipeline;
         vk::PipelineLayout pipelineLayoutCopy = pipelineLayout;
-        context->addToMainDeletionQueue([contextDevice, pipelineCopy, pipelineLayoutCopy]() {
-            contextDevice.destroyPipelineLayout(pipelineLayoutCopy, nullptr);
-            contextDevice.destroyPipeline(pipelineCopy, nullptr);
-        }, "Triangle pipeline");
     }
 
     Pipeline::~Pipeline() {
+        context->getDevice().destroyPipelineLayout(pipelineLayout);
         context->getDevice().destroyPipeline(graphicsPipeline);
     }
 
