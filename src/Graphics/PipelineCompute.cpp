@@ -35,6 +35,7 @@ namespace graphics {
 
         context->getDevice().destroyShaderModule(compShaderModule);
 
+        // Copy to be able to execute when object is out of scope
         vk::Device contextDevice = context->getDevice();
         vk::Pipeline pipelineCopy = computePipeline;
         context->addToMainDeletionQueue([pipelineCopy, contextDevice]() {

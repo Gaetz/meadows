@@ -6,6 +6,11 @@
 namespace graphics {
     class PipelineBuilder {
     public:
+        VulkanContext* context {nullptr};
+
+        vk::ShaderModule vertexShaderModule {nullptr};
+        vk::ShaderModule fragmentShaderModule {nullptr};
+
         vector<vk::PipelineShaderStageCreateInfo> shaderStages;
         vk::PipelineInputAssemblyStateCreateInfo inputAssembly;
         vk::PipelineRasterizationStateCreateInfo rasterizer;
@@ -16,11 +21,12 @@ namespace graphics {
         vk::PipelineRenderingCreateInfo renderInfo;
         vk::Format colorAttachmentFormat;
 
-        PipelineBuilder();
+        PipelineBuilder(VulkanContext* context);
+        PipelineBuilder(VulkanContext* context, const str& vertFilepath, const str& fragFilepath);
 
         void clear();
 
-        vk::Pipeline buildPipeline(vk::Device device) const;
+        [[nodiscard]] uptr<Pipeline> buildPipeline(vk::Device device) const;
 
         void setShaders(vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader);
 

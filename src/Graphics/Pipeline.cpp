@@ -8,27 +8,24 @@ using services::File;
 using services::Log;
 
 namespace graphics {
-    Pipeline::Pipeline(VulkanContext *context, const str &vertFilepath, const str &fragFilepath)
-        : context(context) {
-        createGraphicsPipeline(vertFilepath, fragFilepath);
+    Pipeline::Pipeline(VulkanContext *context, vk::Pipeline pipeline, vk::PipelineLayout pipelineLayout)
+    : context(context), graphicsPipeline(pipeline), pipelineLayout(pipelineLayout) {
+
+        // Copy to be able to execute when object is out of scope
+        vk::Device contextDevice = context->getDevice();
+        vk::Pipeline pipelineCopy = pipeline;
+        vk::PipelineLayout pipelineLayoutCopy = pipelineLayout;
+        context->addToMainDeletionQueue([contextDevice, pipelineCopy, pipelineLayoutCopy]() {
+            contextDevice.destroyPipelineLayout(pipelineLayoutCopy, nullptr);
+            contextDevice.destroyPipeline(pipelineCopy, nullptr);
+        }, "Triangle pipeline");
     }
 
     Pipeline::~Pipeline() {
-        context->getDevice().destroyShaderModule(vertShaderModule);
-        context->getDevice().destroyShaderModule(fragShaderModule);
         context->getDevice().destroyPipeline(graphicsPipeline);
     }
 
-    void Pipeline::bind(vk::CommandBuffer commandBuffer) {
+    void Pipeline::bind(vk::CommandBuffer commandBuffer) const {
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
-    }
-
-    void Pipeline::createGraphicsPipeline(const str &vertFilepath, const str &fragFilepath) {
-        auto vertCode = File::readBinary(vertFilepath);
-        auto fragCode = File::readBinary(fragFilepath);
-
-        const vk::Device device = context->getDevice();
-        vertShaderModule = graphics::createShaderModule(vertCode, device);
-        fragShaderModule = graphics::createShaderModule(fragCode, device);
     }
 } // namespace graphics

@@ -8,6 +8,7 @@
 
 #include "ComputeEffect.h"
 #include "DeletionQueue.hpp"
+#include "Pipeline.h"
 
 namespace graphics {
     class Buffer;  // Forward declaration
@@ -84,7 +85,7 @@ private:
 
     // Graphics pipeline
     vk::PipelineLayout trianglePipelineLayout;
-    vk::Pipeline trianglePipeline;
+    uptr<Pipeline> trianglePipeline;
 
 
     //vk::CommandPool commandPool;

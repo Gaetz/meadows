@@ -244,20 +244,12 @@ namespace graphics {
         const vk::Device device = context->getDevice();
 
         // Create triangle pipeline
-        vk::ShaderModule triangleVertexShader = graphics::createShaderModule(
-            services::File::readBinary("shaders/coloredTriangle.vert.spv"),
-            device
-        );
-        vk::ShaderModule triangleFragmentShader = graphics::createShaderModule(
-            services::File::readBinary("shaders/coloredTriangle.frag.spv"),
-            device
-        );
+
         vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
         trianglePipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
 
-        PipelineBuilder pipelineBuilder;
+        PipelineBuilder pipelineBuilder { context, "shaders/coloredTriangle.vert.spv", "shaders/coloredTriangle.frag.spv"};
         pipelineBuilder.pipelineLayout = trianglePipelineLayout;
-        pipelineBuilder.setShaders(triangleVertexShader, triangleFragmentShader);
         pipelineBuilder.setInputTopology(vk::PrimitiveTopology::eTriangleList);
         pipelineBuilder.setPolygonMode(vk::PolygonMode::eFill);
         pipelineBuilder.setCullMode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
@@ -271,15 +263,6 @@ namespace graphics {
 
         // Finally build the pipeline
         trianglePipeline = pipelineBuilder.buildPipeline(device);
-
-        // Clean structures
-        device.destroyShaderModule(triangleVertexShader, nullptr);
-        device.destroyShaderModule(triangleFragmentShader, nullptr);
-
-        context->addToMainDeletionQueue([&, device]() {
-            device.destroyPipelineLayout(trianglePipelineLayout, nullptr);
-            device.destroyPipeline(trianglePipeline, nullptr);
-        }, "Triangle pipeline");
     }
 
     void Renderer::createVertexBuffer() {
@@ -559,7 +542,7 @@ void Renderer::createDescriptorSets() {
         const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, nullptr);
         command.beginRendering(&renderInfo);
 
-        command.bindPipeline(vk::PipelineBindPoint::eGraphics, trianglePipeline);
+        trianglePipeline->bind(command);
 
         // Set dynamic viewport and scissor
         vk::Viewport viewport = {};

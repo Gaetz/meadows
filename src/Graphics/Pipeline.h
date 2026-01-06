@@ -8,22 +8,18 @@ namespace graphics {
 
 class Pipeline {
 public:
-    Pipeline(VulkanContext* context, const str& vertFilepath, const str& fragFilepath);
+    Pipeline(VulkanContext* context, vk::Pipeline pipeline, vk::PipelineLayout pipelineLayout);
     ~Pipeline();
 
     Pipeline(const Pipeline&) = delete;
     Pipeline& operator=(const Pipeline&) = delete;
 
-    void bind(vk::CommandBuffer commandBuffer);
+    void bind(vk::CommandBuffer commandBuffer) const;
 
 private:
-    void createGraphicsPipeline(const str& vertFilepath, const str& fragFilepath);
-    void createShaderModule(const std::vector<char>& code, vk::ShaderModule* shaderModule);
-
     VulkanContext* context;
     vk::Pipeline graphicsPipeline;
-    vk::ShaderModule vertShaderModule;
-    vk::ShaderModule fragShaderModule;
+    vk::PipelineLayout pipelineLayout;
 };
 
 } // namespace graphics

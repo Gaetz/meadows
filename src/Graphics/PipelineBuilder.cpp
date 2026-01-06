@@ -4,12 +4,29 @@
 
 #include "PipelineBuilder.h"
 
+#include "Utils.hpp"
 #include "VulkanInit.hpp"
+#include "BasicServices/File.h"
 #include "BasicServices/Log.h"
 
 namespace graphics {
-    PipelineBuilder::PipelineBuilder() {
+    PipelineBuilder::PipelineBuilder(VulkanContext* context) : context(context) {
         clear();
+    }
+
+    PipelineBuilder::PipelineBuilder(VulkanContext* context, const str &vertFilepath, const str &fragFilepath)
+    : context(context) {
+        clear();
+        const vk::Device device = context->getDevice();
+        vertexShaderModule = graphics::createShaderModule(
+            services::File::readBinary("shaders/coloredTriangle.vert.spv"),
+            device
+        );
+        fragmentShaderModule = graphics::createShaderModule(
+            services::File::readBinary("shaders/coloredTriangle.frag.spv"),
+            device
+        );
+        setShaders(vertexShaderModule, fragmentShaderModule);
     }
 
     void PipelineBuilder::clear() {
@@ -23,7 +40,7 @@ namespace graphics {
         shaderStages.clear();
     }
 
-    vk::Pipeline PipelineBuilder::buildPipeline(const vk::Device device) const {
+    uptr<Pipeline> PipelineBuilder::buildPipeline(const vk::Device device) const {
         // Make viewport state from our stored viewport and scissor.
         // at the moment we won't support multiple viewports or scissors
         vk::PipelineViewportStateCreateInfo viewportState {};
@@ -66,9 +83,13 @@ namespace graphics {
         vk::Pipeline newPipeline;
         if (device.createGraphicsPipelines(VK_NULL_HANDLE, 1, &pipelineInfo,nullptr, &newPipeline) != vk::Result::eSuccess) {
             services::Log::Error("Failed to create graphics pipeline");
-            return VK_NULL_HANDLE;
         }
-        return newPipeline;
+
+        // Clean structures
+        device.destroyShaderModule(vertexShaderModule, nullptr);
+        device.destroyShaderModule(fragmentShaderModule, nullptr);
+
+        return std::make_unique<Pipeline>( context, newPipeline, pipelineLayout );
     }
 
     void PipelineBuilder::setShaders(const vk::ShaderModule vertexShader, const vk::ShaderModule fragmentShader) {
