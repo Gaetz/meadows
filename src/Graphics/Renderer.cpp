@@ -285,7 +285,7 @@ namespace graphics {
         pipelineBuilder.setPolygonMode(vk::PolygonMode::eFill);
         pipelineBuilder.setCullMode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
         pipelineBuilder.setMultisamplingNone();
-        pipelineBuilder.disableBlending();
+        pipelineBuilder.enableBlendingAdditive();
         pipelineBuilder.enableDepthTest(true, vk::CompareOp::eGreaterOrEqual);
 
         // Connect the image format we will draw into, from draw image

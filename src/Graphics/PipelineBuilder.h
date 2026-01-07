@@ -40,6 +40,10 @@ namespace graphics {
 
         void disableBlending();
 
+        void enableBlendingAdditive();
+
+        void enableBlendingAlphaBlend();
+
         void setColorAttachmentFormat(vk::Format format);
 
         void setDepthFormat(vk::Format format);
