@@ -205,6 +205,7 @@ compile_shader(${SHADER_DIR}/gradientCustom.comp ${SPV_DIR}/gradientCustom.comp.
 compile_shader(${SHADER_DIR}/sky.comp ${SPV_DIR}/sky.comp.spv)
 compile_shader(${SHADER_DIR}/coloredTriangle.vert ${SPV_DIR}/coloredTriangle.vert.spv)
 compile_shader(${SHADER_DIR}/coloredTriangle.frag ${SPV_DIR}/coloredTriangle.frag.spv)
+compile_shader(${SHADER_DIR}/coloredTriangleMesh.vert ${SPV_DIR}/coloredTriangleMesh.vert.spv)
 
 add_custom_target(Shaders ALL
         DEPENDS
@@ -215,6 +216,7 @@ add_custom_target(Shaders ALL
         ${SPV_DIR}/sky.comp.spv
         ${SPV_DIR}/coloredTriangle.vert.spv
         ${SPV_DIR}/coloredTriangle.frag.spv
+        ${SPV_DIR}/coloredTriangleMesh.vert.spv
 )
 
 # Main Executable
@@ -239,6 +241,7 @@ add_executable(Meadows
     src/Graphics/Swapchain.h
     src/Graphics/Buffer.cpp
     src/Graphics/Buffer.h
+    src/Graphics/VmaImplementation.cpp
     src/Graphics/VulkanInit.cpp
     src/Graphics/Types.h
     src/Graphics/Utils.cpp

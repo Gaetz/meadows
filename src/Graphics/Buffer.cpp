@@ -12,7 +12,11 @@ Buffer::Buffer(VulkanContext* context, size_t allocSize, vk::BufferUsageFlags us
 
     VmaAllocationCreateInfo allocInfo = {};
     allocInfo.usage = memoryUsage;
-    allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    // Only map CPU-visible buffers
+    if (memoryUsage == VMA_MEMORY_USAGE_CPU_ONLY || memoryUsage == VMA_MEMORY_USAGE_CPU_TO_GPU) {
+        allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+    }
 
     VkBuffer vkBuffer {nullptr};
     const VkResult result = vmaCreateBuffer(context->getAllocator(),
@@ -20,13 +24,51 @@ Buffer::Buffer(VulkanContext* context, size_t allocSize, vk::BufferUsageFlags us
                                       &allocInfo,
                                       &vkBuffer,
                                       &allocation,
-                                      nullptr);
+                                      &info);
     assert(result == VK_SUCCESS && "failed to create buffer!");
     buffer = vk::Buffer(vkBuffer);
 }
 
 Buffer::~Buffer() {
-    vmaDestroyBuffer(context->getAllocator(), buffer, allocation);
+    if (context && buffer) {
+        vmaDestroyBuffer(context->getAllocator(), buffer, allocation);
+    }
+}
+
+Buffer::Buffer(Buffer&& other) noexcept
+    : context(other.context)
+    , buffer(other.buffer)
+    , allocation(other.allocation)
+    , info(other.info)
+    , size(other.size) {
+    // Invalidate the moved-from object
+    other.context = nullptr;
+    other.buffer = nullptr;
+    other.allocation = nullptr;
+    other.size = 0;
+}
+
+Buffer& Buffer::operator=(Buffer&& other) noexcept {
+    if (this != &other) {
+        // Destroy current resources
+        if (context && buffer) {
+            vmaDestroyBuffer(context->getAllocator(), buffer, allocation);
+        }
+
+        // Move from other
+        context = other.context;
+        buffer = other.buffer;
+        allocation = other.allocation;
+        info = other.info;
+        size = other.size;
+
+        // Invalidate the moved-from object
+        other.context = nullptr;
+        other.buffer = nullptr;
+        other.allocation = nullptr;
+        other.size = 0;
+    }
+    return *this;
 }
 
 void Buffer::map(void** data) {

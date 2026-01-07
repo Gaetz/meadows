@@ -1,19 +1,19 @@
 #include "Renderer.h"
-#include "Swapchain.h"
-#include "Pipeline.h"
-#include "Buffer.h"
+
+#include <vk_mem_alloc.h>
 #include <chrono>
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_vulkan.h>
 
+#include "Swapchain.h"
+#include "Pipeline.h"
+#include "Buffer.h"
 #include "DescriptorLayoutBuilder.hpp"
 #include "PipelineBuilder.h"
-#include "PipelineCompute.h"
 #include "Utils.hpp"
 #include "VulkanInit.hpp"
-#include "BasicServices/File.h"
 
 namespace graphics {
     Renderer::Renderer(VulkanContext *context) : context(context) {
@@ -39,6 +39,8 @@ namespace graphics {
         createSyncObjects();
         createDescriptors();
         createPipelines();
+
+        createSceneData();
 
         initImGui();
     }
@@ -197,6 +199,7 @@ namespace graphics {
     void Renderer::createPipelines() {
         createBackgroundPipeline();
         createTrianglePipeline();
+        createMeshPipeline();
     }
 
     void Renderer::createBackgroundPipeline() {
@@ -243,8 +246,6 @@ namespace graphics {
     void Renderer::createTrianglePipeline() {
         const vk::Device device = context->getDevice();
 
-        // Create triangle pipeline
-
         vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
         trianglePipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
 
@@ -261,8 +262,36 @@ namespace graphics {
         pipelineBuilder.setColorAttachmentFormat(context->getDrawImage().imageFormat);
         pipelineBuilder.setDepthFormat(vk::Format::eUndefined);
 
-        // Finally build the pipeline
         trianglePipeline = pipelineBuilder.buildPipeline(device);
+    }
+
+    void Renderer::createMeshPipeline() {
+        const vk::Device device = context->getDevice();
+
+        vk::PushConstantRange bufferRange {};
+        bufferRange.offset = 0;
+        bufferRange.size = sizeof(GraphicsPushConstants);
+        bufferRange.stageFlags = vk::ShaderStageFlagBits::eVertex;
+
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+        pipelineLayoutInfo.pPushConstantRanges = &bufferRange;
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        meshPipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
+
+        PipelineBuilder pipelineBuilder { context, "shaders/coloredTriangleMesh.vert.spv", "shaders/coloredTriangle.frag.spv"};
+        pipelineBuilder.pipelineLayout = meshPipelineLayout;
+        pipelineBuilder.setInputTopology(vk::PrimitiveTopology::eTriangleList);
+        pipelineBuilder.setPolygonMode(vk::PolygonMode::eFill);
+        pipelineBuilder.setCullMode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
+        pipelineBuilder.setMultisamplingNone();
+        pipelineBuilder.disableBlending();
+        pipelineBuilder.disableDepthTest();
+
+        // Connect the image format we will draw into, from draw image
+        pipelineBuilder.setColorAttachmentFormat(context->getDrawImage().imageFormat);
+        pipelineBuilder.setDepthFormat(vk::Format::eUndefined);
+
+        meshPipeline = pipelineBuilder.buildPipeline(device);
     }
 
     void Renderer::createVertexBuffer() {
@@ -295,8 +324,9 @@ namespace graphics {
         */
     }
 
+    /*
     void Renderer::copyBufferViaStaging(const void *data, vk::DeviceSize size, Buffer *dstBuffer) {
-        /*
+
         // Staging buffer
         Buffer stagingBuffer(
             context,
@@ -332,8 +362,8 @@ namespace graphics {
         context->getGraphicsQueue().waitIdle();
 
         context->getDevice().freeCommandBuffers(commandPool, 1, &commandBuffer);
-        */
-    }
+
+    }   */
 
     void Renderer::immediateSubmit(std::function<void(vk::CommandBuffer cmd)> &&function) {
         context->getDevice().resetFences(immFence);
@@ -354,6 +384,7 @@ namespace graphics {
     }
 
     void Renderer::createIndexBuffer() {
+        /*
         std::vector<uint16_t> indices = {
             // Front
             0, 1, 2, 2, 3, 0,
@@ -380,6 +411,7 @@ namespace graphics {
         );
 
         copyBufferViaStaging(indices.data(), bufferSize, indexBuffer.get());
+        */
     }
 
     void Renderer::createUniformBuffers() {
@@ -544,9 +576,9 @@ void Renderer::createDescriptorSets() {
         const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, nullptr);
         command.beginRendering(&renderInfo);
 
+        // Draw triangle
         trianglePipeline->bind(command);
 
-        // Set dynamic viewport and scissor
         vk::Viewport viewport = {};
         viewport.x = 0;
         viewport.y = 0;
@@ -554,7 +586,6 @@ void Renderer::createDescriptorSets() {
         viewport.height = imageExtent.height;
         viewport.minDepth = 0.f;
         viewport.maxDepth = 1.f;
-
         command.setViewport(0, 1, &viewport);
 
         vk::Rect2D scissor = {};
@@ -562,13 +593,45 @@ void Renderer::createDescriptorSets() {
         scissor.offset.y = 0;
         scissor.extent.width = imageExtent.width;
         scissor.extent.height = imageExtent.height;
-
         command.setScissor(0, 1, &scissor);
 
-        // Launch a draw command to draw 3 vertices
         command.draw(3, 1, 0, 0);
 
+        // Draw rectangle
+        meshPipeline->bind(command);
+
+        GraphicsPushConstants pushConstants;
+        pushConstants.worldMatrix = glm::mat4{ 1.f };
+        pushConstants.vertexBuffer = rectangleMesh.vertexBufferAddress;
+
+        command.pushConstants(meshPipeline->getPipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
+        command.bindIndexBuffer(rectangleMesh.indexBuffer.buffer, 0, vk::IndexType::eUint32);
+
+        command.drawIndexed(6, 1, 0, 0, 0);
+
+        // End of draing
         command.endRendering();
+    }
+
+    void Renderer::createSceneData() {
+        array<Vertex, 4> rectVertices;
+
+        rectVertices[0].position = {0.5, -0.5, 0.0};
+        rectVertices[1].position = {0.5,0.5, 0};
+        rectVertices[2].position = {-0.5,-0.5, 0};
+        rectVertices[3].position = {-0.5,0.5, 0};
+
+        rectVertices[0].color = {0,0, 0,1};
+        rectVertices[1].color = { 0.5,0.5,0.5 ,1};
+        rectVertices[2].color = { 1,0, 0,1 };
+        rectVertices[3].color = { 0,1, 0,1 };
+
+        array<uint32_t, 6> rectIndices = {
+            0,1,2,
+            2,1,3
+        };
+
+        rectangleMesh = uploadMesh(rectIndices, rectVertices);
     }
 
     GPUMeshBuffers Renderer::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {
@@ -582,43 +645,45 @@ void Renderer::createDescriptorSets() {
             vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eShaderDeviceAddress,
             VMA_MEMORY_USAGE_GPU_ONLY};
 
-        // Find the adress of the vertex buffer
-        vk::BufferDeviceAddressInfo deviceAdressInfo {};
-        deviceAdressInfo.buffer = newSurface.vertexBuffer.buffer;
-        newSurface.vertexBufferAddress = context->getDevice().getBufferAddress(&deviceAdressInfo);
+        // Find the address of the vertex buffer
+        vk::BufferDeviceAddressInfo deviceAddressInfo {};
+        deviceAddressInfo.buffer = newSurface.vertexBuffer.buffer;
+        newSurface.vertexBufferAddress = context->getDevice().getBufferAddress(deviceAddressInfo);
 
         // Index buffer
         newSurface.indexBuffer = Buffer {context,indexBufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
             VMA_MEMORY_USAGE_GPU_ONLY};
 
         // Uploading via staging buffers
-        Buffer staging { context, vertexBufferSize + indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_CPU_ONLY};
+        const Buffer staging { context, vertexBufferSize + indexBufferSize, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_CPU_ONLY};
+        void* data = staging.info.pMappedData;
 
-        void* data = staging.allocation->GetMappedData();
-
-        // copy vertex buffer
+        // Copy  buffers
         memcpy(data, vertices.data(), vertexBufferSize);
-        // copy index buffer
-        memcpy((char*)data + vertexBufferSize, indices.data(), indexBufferSize);
+        memcpy(static_cast<char *>(data) + vertexBufferSize, indices.data(), indexBufferSize);
 
-        immediate_submit([&](VkCommandBuffer cmd) {
-            VkBufferCopy vertexCopy{ 0 };
+        immediateSubmit([&](vk::CommandBuffer cmd) {
+            vk::BufferCopy vertexCopy{ 0 };
             vertexCopy.dstOffset = 0;
             vertexCopy.srcOffset = 0;
             vertexCopy.size = vertexBufferSize;
 
-            vkCmdCopyBuffer(cmd, staging.buffer, newSurface.vertexBuffer.buffer, 1, &vertexCopy);
+            cmd.copyBuffer(staging.buffer, newSurface.vertexBuffer.buffer, 1, &vertexCopy);
 
-            VkBufferCopy indexCopy{ 0 };
+            vk::BufferCopy indexCopy{ 0 };
             indexCopy.dstOffset = 0;
             indexCopy.srcOffset = vertexBufferSize;
             indexCopy.size = indexBufferSize;
 
-            vkCmdCopyBuffer(cmd, staging.buffer, newSurface.indexBuffer.buffer, 1, &indexCopy);
+            cmd.copyBuffer(staging.buffer, newSurface.indexBuffer.buffer, 1, &indexCopy);
         });
 
-        destroy_buffer(staging);
-
+        /*
+         * TODO Optimization
+         * This pattern is not very efficient, as we are waiting for the GPU command to fully execute before
+         * continuing with our CPU side logic. This is something people generally put on a background thread, whose
+         * sole job is to execute uploads like this one, and deleting/reusing the staging buffers.
+        */
         return newSurface;
     }
 

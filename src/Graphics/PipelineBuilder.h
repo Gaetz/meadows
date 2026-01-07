@@ -22,7 +22,7 @@ namespace graphics {
         vk::Format colorAttachmentFormat;
 
         PipelineBuilder(VulkanContext* context);
-        PipelineBuilder(VulkanContext* context, const str& vertFilepath, const str& fragFilepath);
+        PipelineBuilder(VulkanContext* context, const str& vertFilePath, const str& fragFilePath);
 
         void clear();
 

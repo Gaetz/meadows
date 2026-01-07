@@ -1,4 +1,5 @@
 #include "VulkanContext.h"
+
 #include "../BasicServices/Log.h"
 #include "Swapchain.h"
 #include <set>
@@ -6,8 +7,6 @@
 #include <SDL3/SDL_vulkan.h>
 
 // VMA Implementation
-#define VMA_IMPLEMENTATION
-#include <vk_mem_alloc.h>
 #include "VulkanInit.hpp"
 
 using services::Log;
@@ -154,6 +153,7 @@ namespace graphics {
         allocatorInfo.device = device;
         allocatorInfo.instance = instance;
         allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+        allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
         vmaCreateAllocator(&allocatorInfo, &allocator);
     }

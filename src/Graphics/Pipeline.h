@@ -13,6 +13,9 @@ namespace graphics {
         Pipeline(const Pipeline&) = delete;
         Pipeline& operator=(const Pipeline&) = delete;
 
+        vk::Pipeline getPipeline() const { return graphicsPipeline; }
+        vk::PipelineLayout getPipelineLayout() const { return pipelineLayout; }
+
         void bind(vk::CommandBuffer commandBuffer) const;
 
     private:

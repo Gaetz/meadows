@@ -40,7 +40,9 @@ private:
     void createDescriptors();
     void createPipelines();
     void createBackgroundPipeline();
+
     void createTrianglePipeline();
+    void createMeshPipeline();
 
     //void createDescriptorPool();
     //void createDescriptorSetLayout();
@@ -53,8 +55,9 @@ private:
     void drawBackground(vk::CommandBuffer);
     void drawGeometry(vk::CommandBuffer);
 
-    // Helper methods
+    // Data methods
     //void copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer);
+    void createSceneData();
     GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
     VulkanContext* context;
@@ -83,10 +86,15 @@ private:
     vk::CommandBuffer immCommandBuffer;
     void immediateSubmit(std::function<void(vk::CommandBuffer cmd)>&& function);
 
-    // Graphics pipeline
+    // Graphics pipelines
     vk::PipelineLayout trianglePipelineLayout;
     uptr<Pipeline> trianglePipeline;
 
+    vk::PipelineLayout meshPipelineLayout;
+    uptr<Pipeline> meshPipeline;
+
+    // Mesh data
+    GPUMeshBuffers rectangleMesh;
 
     //vk::CommandPool commandPool;
     //std::vector<vk::CommandBuffer> commandBuffers;

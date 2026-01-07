@@ -6,6 +6,7 @@
 #include <optional>
 #include <vk_mem_alloc.h>
 
+
 namespace graphics
 {
     struct Vertex
@@ -18,7 +19,7 @@ namespace graphics
     };
 
     // Push constants for our mesh object draws
-    struct GPUDrawPushConstants
+    struct GraphicsPushConstants
     {
         glm::mat4 worldMatrix;
         vk::DeviceAddress vertexBuffer;

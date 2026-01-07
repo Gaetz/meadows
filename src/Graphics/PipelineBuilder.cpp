@@ -14,16 +14,16 @@ namespace graphics {
         clear();
     }
 
-    PipelineBuilder::PipelineBuilder(VulkanContext* context, const str &vertFilepath, const str &fragFilepath)
+    PipelineBuilder::PipelineBuilder(VulkanContext* context, const str &vertFilePath, const str &fragFilePath)
     : context(context) {
         clear();
         const vk::Device device = context->getDevice();
         vertexShaderModule = graphics::createShaderModule(
-            services::File::readBinary("shaders/coloredTriangle.vert.spv"),
+            services::File::readBinary(vertFilePath),
             device
         );
         fragmentShaderModule = graphics::createShaderModule(
-            services::File::readBinary("shaders/coloredTriangle.frag.spv"),
+            services::File::readBinary(fragFilePath),
             device
         );
         setShaders(vertexShaderModule, fragmentShaderModule);

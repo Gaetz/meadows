@@ -2,7 +2,6 @@
 
 #include "VulkanContext.h"
 #include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.h>
 
 namespace graphics {
     class Buffer {
@@ -11,7 +10,13 @@ namespace graphics {
         Buffer(VulkanContext* context, size_t allocSize, vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage);
         ~Buffer();
 
+        // Disable copy
         Buffer(const Buffer&) = delete;
+        Buffer& operator=(const Buffer&) = delete;
+
+        // Enable move
+        Buffer(Buffer&& other) noexcept;
+        Buffer& operator=(Buffer&& other) noexcept;
 
         void map(void** data);
         void unmap();
