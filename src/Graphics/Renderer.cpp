@@ -247,7 +247,7 @@ namespace graphics {
         const vk::Device device = context->getDevice();
 
         vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-        trianglePipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
+        const vk::PipelineLayout trianglePipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
 
         PipelineBuilder pipelineBuilder { context, "shaders/coloredTriangle.vert.spv", "shaders/coloredTriangle.frag.spv"};
         pipelineBuilder.pipelineLayout = trianglePipelineLayout;
@@ -276,7 +276,7 @@ namespace graphics {
         vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.pPushConstantRanges = &bufferRange;
         pipelineLayoutInfo.pushConstantRangeCount = 1;
-        meshPipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
+        const vk::PipelineLayout meshPipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
 
         PipelineBuilder pipelineBuilder { context, "shaders/coloredTriangleMesh.vert.spv", "shaders/coloredTriangle.frag.spv"};
         pipelineBuilder.pipelineLayout = meshPipelineLayout;
@@ -609,7 +609,7 @@ void Renderer::createDescriptorSets() {
 
         command.drawIndexed(6, 1, 0, 0, 0);
 
-        // End of draing
+        // End of drawing
         command.endRendering();
     }
 

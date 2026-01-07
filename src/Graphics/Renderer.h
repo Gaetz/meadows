@@ -87,10 +87,7 @@ private:
     void immediateSubmit(std::function<void(vk::CommandBuffer cmd)>&& function);
 
     // Graphics pipelines
-    vk::PipelineLayout trianglePipelineLayout;
     uptr<Pipeline> trianglePipeline;
-
-    vk::PipelineLayout meshPipelineLayout;
     uptr<Pipeline> meshPipeline;
 
     // Mesh data
