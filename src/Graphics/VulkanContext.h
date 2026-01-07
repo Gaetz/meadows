@@ -42,6 +42,8 @@ namespace graphics {
         }
         void flushMainDeletionQueue() { mainDeletionQueue.flush(); }
 
+        void resizeSwapchain();
+
     private:
         vkb::Instance createInstance();
 

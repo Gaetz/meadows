@@ -228,6 +228,13 @@ namespace graphics {
 
     }
 
+    void VulkanContext::resizeSwapchain() {
+        device.waitIdle();
+        int w, h;
+        SDL_GetWindowSize(window, &w, &h);
+        swapchain->recreate(w, h);
+    }
+
     QueueFamilyIndices VulkanContext::findQueueFamilies(vk::PhysicalDevice device) {
         QueueFamilyIndices indices;
         auto queueFamilies = device.getQueueFamilyProperties();

@@ -64,6 +64,10 @@ private:
 
     VulkanContext* context;
 
+    bool resizeRequested {false};
+    vk::Extent2D drawExtent;
+    float renderScale = 1.f;
+
     int frameNumber {0};
     uint32_t currentFrame = 0;
     static const int FRAME_OVERLAP = 2;

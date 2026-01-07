@@ -32,9 +32,22 @@ void Swapchain::cleanup() {
 void Swapchain::recreate(uint32_t newWidth, uint32_t newHeight) {
     width = newWidth;
     height = newHeight;
-    vk::SwapchainKHR old = swapchain;
-    cleanup();
-    createSwapchain(newWidth, newHeight, old);
+
+    vk::SwapchainKHR oldSwapchain = swapchain;
+
+    // Destroy old image views
+    for (auto imageView : swapchainImageViews) {
+        device.destroyImageView(imageView);
+    }
+    swapchainImageViews.clear();
+
+    // Create new swapchain using old one
+    createSwapchain(newWidth, newHeight, oldSwapchain);
+
+    // Destroy old swapchain
+    if (oldSwapchain) {
+        device.destroySwapchainKHR(oldSwapchain);
+    }
 }
 
 void Swapchain::createSwapchain(uint32_t width, uint32_t height, vk::SwapchainKHR oldSwapchain) {

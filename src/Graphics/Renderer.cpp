@@ -731,6 +731,12 @@ void Renderer::createDescriptorSets() {
         const vk::Device device = context->getDevice();
         FrameData &currentFrameData = getCurrentFrame();
 
+        if (resizeRequested) {
+            context->resizeSwapchain();
+            resizeRequested = false;
+        }
+
+
         // Wait for previous frame
         vk::Result fenceResult = device.waitForFences(1, &currentFrameData.renderFence, true, 1000000000);
         currentFrameData.deletionQueue.flush();
@@ -740,6 +746,10 @@ void Renderer::createDescriptorSets() {
         u32 imageIndex;
         vk::Result result = device.acquireNextImageKHR(*context->getSwapchain()->getSwapchain(), 1000000000,
                                                        currentFrameData.imageAvailableSemaphore, nullptr, &imageIndex);
+        if (result == vk::Result::eErrorOutOfDateKHR) {
+            resizeRequested = true;
+            return;
+        }
 
         //acquireSemaphoreIndex++;
 
@@ -757,8 +767,11 @@ void Renderer::createDescriptorSets() {
         AllocatedImage& drawImage = context->getDrawImage();
         AllocatedImage& depthImage = context->getDepthImage();
 
-        drawExtent.width = drawImage.imageExtent.width;
-        drawExtent.height = drawImage.imageExtent.height;
+        auto swapchainExtent = context->getSwapchain()->getExtent();
+        drawExtent.width = std::min(swapchainExtent.width, drawImage.imageExtent.width) * renderScale;
+        drawExtent.height = std::min(swapchainExtent.height, drawImage.imageExtent.height) * renderScale;
+
+
         command.begin(beginInfo);
 
         // Make the swapchain image into writeable mode before rendering
@@ -837,6 +850,10 @@ void Renderer::createDescriptorSets() {
         presentInfo.pImageIndices = &imageIndex;
 
         vk::Result queueResult = context->getGraphicsQueue().presentKHR(&presentInfo);
+        if (queueResult == vk::Result::eErrorOutOfDateKHR) {
+            resizeRequested = true;
+            return;
+        }
 
         // Increase the number of frames drawn
         frameNumber++;
@@ -999,6 +1016,7 @@ void Renderer::createDescriptorSets() {
         */
 
         if (ImGui::Begin("background")) {
+            ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
             ComputeEffect &selected = backgroundEffects[currentBackgroundEffect];
             ImGui::Text("Selected effect: ", selected.name);
             ImGui::SliderInt("Effect Index", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);

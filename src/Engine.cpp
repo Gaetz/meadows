@@ -93,12 +93,8 @@ void Engine::mainLoop() {
             }
         }
 
-        if (renderer) {
-            renderer->draw();
-        }
+        renderer->draw();
     }
     
-    if (vulkanContext) {
-        vulkanContext->getDevice().waitIdle();
-    }
+    vulkanContext->getDevice().waitIdle();
 }
