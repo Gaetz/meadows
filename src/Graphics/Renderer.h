@@ -10,6 +10,7 @@
 #include "ComputeEffect.h"
 #include "DeletionQueue.hpp"
 #include "Pipeline.h"
+#include "VulkanLoader.h"
 
 namespace graphics {
     struct FrameData {
@@ -28,6 +29,8 @@ public:
     void init();
     void cleanup();
     void draw();
+
+    GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
 private:
     void createCommandPoolAndBuffers();
@@ -58,7 +61,6 @@ private:
     // Data methods
     //void copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer);
     void createSceneData();
-    GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
     VulkanContext* context;
 
@@ -92,6 +94,7 @@ private:
 
     // Mesh data
     GPUMeshBuffers rectangleMesh;
+    vector<sptr<MeshAsset>> testMeshes;
 
     //vk::CommandPool commandPool;
     //std::vector<vk::CommandBuffer> commandBuffers;

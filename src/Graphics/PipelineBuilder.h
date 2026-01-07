@@ -45,5 +45,7 @@ namespace graphics {
         void setDepthFormat(vk::Format format);
 
         void disableDepthTest();
+
+        void enableDepthTest(bool deepWriteEnable, vk::CompareOp compareOp);
     };
 } // namespace graphics

@@ -156,4 +156,15 @@ namespace graphics {
         depthStencil.maxDepthBounds = 1.f;
     }
 
+    void PipelineBuilder::enableDepthTest(bool deepWriteEnable, vk::CompareOp compareOp) {
+        depthStencil.depthTestEnable = true;
+        depthStencil.depthWriteEnable = deepWriteEnable;
+        depthStencil.depthCompareOp = compareOp;
+        depthStencil.depthBoundsTestEnable = false;
+        depthStencil.stencilTestEnable = false;
+        depthStencil.front = vk::StencilOp::eZero;
+        depthStencil.back = vk::StencilOp::eZero;
+        depthStencil.minDepthBounds = 0.f;
+        depthStencil.maxDepthBounds = 1.f;
+    }
 }

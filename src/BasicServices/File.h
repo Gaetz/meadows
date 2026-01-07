@@ -1,5 +1,7 @@
 #pragma once
 
+#include <filesystem>
+
 #include "../Defines.h"
 #include <vector>
 
@@ -15,6 +17,7 @@ public:
 
     // Path management
     static str getBasePath();
+    static std::filesystem::path getFileSystemPath(const str& filepath);
 
     // Binary file reading
     static std::vector<char> readBinary(const str& filepath);

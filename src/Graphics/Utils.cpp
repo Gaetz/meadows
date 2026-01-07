@@ -36,7 +36,7 @@ namespace graphics
         imageBarrier.oldLayout = currentLayout;
         imageBarrier.newLayout = newLayout;
 
-        vk::ImageAspectFlags imageAspectFlags = newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal ?
+        vk::ImageAspectFlags imageAspectFlags = (newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal || newLayout == vk::ImageLayout::eDepthAttachmentOptimal) ?
             vk::ImageAspectFlagBits::eDepth :
             vk::ImageAspectFlagBits::eColor;
         imageBarrier.subresourceRange = graphics::imageSubresourceRange(imageAspectFlags);

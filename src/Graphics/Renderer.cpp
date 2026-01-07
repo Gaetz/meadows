@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_vulkan.h>
+#include <glm/gtx/transform.hpp>
 
 #include "Swapchain.h"
 #include "Pipeline.h"
@@ -198,7 +199,7 @@ namespace graphics {
 
     void Renderer::createPipelines() {
         createBackgroundPipeline();
-        createTrianglePipeline();
+        //createTrianglePipeline();
         createMeshPipeline();
     }
 
@@ -260,7 +261,7 @@ namespace graphics {
 
         // Connect the image format we will draw into, from draw image
         pipelineBuilder.setColorAttachmentFormat(context->getDrawImage().imageFormat);
-        pipelineBuilder.setDepthFormat(vk::Format::eUndefined);
+        pipelineBuilder.setDepthFormat(context->getDepthImage().imageFormat);
 
         trianglePipeline = pipelineBuilder.buildPipeline(device);
     }
@@ -285,11 +286,11 @@ namespace graphics {
         pipelineBuilder.setCullMode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
         pipelineBuilder.setMultisamplingNone();
         pipelineBuilder.disableBlending();
-        pipelineBuilder.disableDepthTest();
+        pipelineBuilder.enableDepthTest(true, vk::CompareOp::eGreaterOrEqual);
 
         // Connect the image format we will draw into, from draw image
         pipelineBuilder.setColorAttachmentFormat(context->getDrawImage().imageFormat);
-        pipelineBuilder.setDepthFormat(vk::Format::eUndefined);
+        pipelineBuilder.setDepthFormat(context->getDepthImage().imageFormat);
 
         meshPipeline = pipelineBuilder.buildPipeline(device);
     }
@@ -569,14 +570,16 @@ void Renderer::createDescriptorSets() {
     void Renderer::drawGeometry(vk::CommandBuffer command) {
         // Begin a render pass connected to our draw image
         vk::RenderingAttachmentInfo colorAttachment = graphics::attachmentInfo(context->getDrawImage().imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
+        vk::RenderingAttachmentInfo depthAttachment = graphics::depthAttachmentInfo(context->getDepthImage().imageView, vk::ImageLayout::eDepthAttachmentOptimal);
 
         const auto imageExtent = context->getDrawImage().imageExtent;
         // Fix: initialize vk::Rect2D with an explicit offset and the extent to avoid narrowing conversions
         const vk::Rect2D rect{ vk::Offset2D{0, 0}, {imageExtent.width, imageExtent.height} };
-        const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, nullptr);
+        const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, &depthAttachment);
         command.beginRendering(&renderInfo);
 
         // Draw triangle
+        /*
         trianglePipeline->bind(command);
 
         vk::Viewport viewport = {};
@@ -596,11 +599,32 @@ void Renderer::createDescriptorSets() {
         command.setScissor(0, 1, &scissor);
 
         command.draw(3, 1, 0, 0);
+        */
 
-        // Draw rectangle
+        // Draw meshes
         meshPipeline->bind(command);
 
+        vk::Viewport viewport = {};
+        viewport.x = 0;
+        viewport.y = 0;
+        viewport.width = imageExtent.width;
+        viewport.height = imageExtent.height;
+        viewport.minDepth = 1.f;
+        viewport.maxDepth = 0.f;
+        command.setViewport(0, 1, &viewport);
+
+        vk::Rect2D scissor = {};
+        scissor.offset.x = 0;
+        scissor.offset.y = 0;
+        scissor.extent.width = imageExtent.width;
+        scissor.extent.height = imageExtent.height;
+        command.setScissor(0, 1, &scissor);
+
         GraphicsPushConstants pushConstants;
+
+
+        /*
+        // Draw rectangle mesh
         pushConstants.worldMatrix = glm::mat4{ 1.f };
         pushConstants.vertexBuffer = rectangleMesh.vertexBufferAddress;
 
@@ -608,6 +632,19 @@ void Renderer::createDescriptorSets() {
         command.bindIndexBuffer(rectangleMesh.indexBuffer.buffer, 0, vk::IndexType::eUint32);
 
         command.drawIndexed(6, 1, 0, 0, 0);
+        */
+
+        // Draw test GLTF
+        const Mat4 view = glm::translate( Vec3{ 0,0,-5 });
+        Mat4 projection = glm::perspective(glm::radians(70.f), static_cast<float>(imageExtent.width) / static_cast<float>(imageExtent.height), 0.1f, 10000.f);
+        projection[1][1] *= -1; // Invert the Y direction so that we are more similar to opengl and gltf axis
+        pushConstants.worldMatrix = projection * view;
+        pushConstants.vertexBuffer = testMeshes[2]->meshBuffers.vertexBufferAddress;
+
+        command.pushConstants(meshPipeline->getPipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
+        command.bindIndexBuffer(testMeshes[2]->meshBuffers.indexBuffer.buffer, 0, vk::IndexType::eUint32);
+
+        command.drawIndexed(testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
 
         // End of drawing
         command.endRendering();
@@ -632,6 +669,8 @@ void Renderer::createDescriptorSets() {
         };
 
         rectangleMesh = uploadMesh(rectIndices, rectVertices);
+
+        testMeshes = loadGltfMeshes(this,"assets\\basicmesh.glb").value();
     }
 
     GPUMeshBuffers Renderer::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {
@@ -715,9 +754,11 @@ void Renderer::createDescriptorSets() {
             vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
 
         vk::Extent2D drawExtent;
-        drawExtent.width = context->getDrawImage().imageExtent.width;
-        drawExtent.height = context->getDrawImage().imageExtent.height;
-        AllocatedImage &drawImage = context->getDrawImage();
+        AllocatedImage& drawImage = context->getDrawImage();
+        AllocatedImage& depthImage = context->getDepthImage();
+
+        drawExtent.width = drawImage.imageExtent.width;
+        drawExtent.height = drawImage.imageExtent.height;
         command.begin(beginInfo);
 
         // Make the swapchain image into writeable mode before rendering
@@ -728,6 +769,7 @@ void Renderer::createDescriptorSets() {
 
         // Transition draw image to color attachment optimal for geometry rendering
         graphics::transitionImage(command, drawImage.image, vk::ImageLayout::eGeneral, vk::ImageLayout::eColorAttachmentOptimal);
+        graphics::transitionImage(command, depthImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal);
 
         drawGeometry(command);
 

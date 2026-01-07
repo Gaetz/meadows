@@ -129,6 +129,16 @@ namespace graphics
         return info;
     }
 
+    vk::RenderingAttachmentInfo depthAttachmentInfo(const vk::ImageView imageView, const vk::ImageLayout imageLayout) {
+        vk::RenderingAttachmentInfo info{};
+        info.imageView = imageView;
+        info.imageLayout = imageLayout;
+        info.loadOp = vk::AttachmentLoadOp::eClear;
+        info.storeOp = vk::AttachmentStoreOp::eStore;
+        info.clearValue.depthStencil.depth = 0.f;
+        return info;
+    }
+
     vk::RenderingInfo renderingInfo(vk::Rect2D renderArea, vk::RenderingAttachmentInfo* colorAttachments,
         vk::RenderingAttachmentInfo* depthAttachment, vk::RenderingAttachmentInfo* stencilAttachment) {
         vk::RenderingInfo info{};

@@ -256,6 +256,8 @@ add_executable(Meadows
         src/Graphics/ComputeEffect.h
         src/Graphics/PipelineBuilder.cpp
         src/Graphics/PipelineBuilder.h
+        src/Graphics/VulkanLoader.cpp
+        src/Graphics/VulkanLoader.h
 )
 
 # Ensure shaders are compiled before building Meadows
@@ -305,4 +307,7 @@ add_custom_command(TARGET Meadows POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     $<TARGET_FILE:SDL3::SDL3>
     $<TARGET_FILE_DIR:Meadows>
+    # Copy assets folder to output directory
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:Meadows>/assets
 )

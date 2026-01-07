@@ -21,6 +21,7 @@ namespace graphics
     vk::ImageViewCreateInfo imageViewCreateInfo(vk::Format format, vk::Image image, vk::ImageAspectFlags aspectFlags);
 
     vk::RenderingAttachmentInfo attachmentInfo(vk::ImageView imageView, vk::ClearValue* clear, vk::ImageLayout imageLayout);
+    vk::RenderingAttachmentInfo depthAttachmentInfo(vk::ImageView imageView, vk::ImageLayout imageLayout);
     vk::RenderingInfo renderingInfo(vk::Rect2D renderArea, vk::RenderingAttachmentInfo* colorAttachments,
         vk::RenderingAttachmentInfo* depthAttachment = nullptr, vk::RenderingAttachmentInfo* stencilAttachment = nullptr);
 

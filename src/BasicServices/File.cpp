@@ -24,6 +24,20 @@ str File::getBasePath() {
     return basePathStr;
 }
 
+std::filesystem::path File::getFileSystemPath(const str &filepath) {
+    const str fullPath = getBasePath() + filepath;
+    std::filesystem::path path = fullPath;
+
+    // Check if the file exists at the absolute path
+    if (std::filesystem::exists(path)) {
+        return path;
+    }
+
+    // Fallback to relative path
+    path = filepath;
+    return path;
+}
+
 std::vector<char> File::readBinary(const str& filepath) {
     str fullPath = getBasePath() + filepath;
 
