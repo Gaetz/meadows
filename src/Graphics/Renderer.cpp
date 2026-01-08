@@ -12,6 +12,7 @@
 #include "Pipeline.h"
 #include "Buffer.h"
 #include "DescriptorLayoutBuilder.hpp"
+#include "DescriptorWriter.h"
 #include "PipelineBuilder.h"
 #include "Utils.hpp"
 #include "VulkanInit.hpp"
@@ -101,31 +102,46 @@ namespace graphics {
     }
 
     void Renderer::createDescriptors() {
+        vk::Device device = context->getDevice();
+
         // Make the descriptor set layout for our compute draw
         DescriptorLayoutBuilder layoutBuilder;
         layoutBuilder.addBinding(0, vk::DescriptorType::eStorageImage);
-        drawImageDescriptorLayout = layoutBuilder.build(context->getDevice(), vk::ShaderStageFlagBits::eCompute);
+        drawImageDescriptorLayout = layoutBuilder.build(device, vk::ShaderStageFlagBits::eCompute);
 
         // Allocate a descriptor set for our draw image
         drawImageDescriptors = context->getGlobalDescriptorAllocator()->allocate(drawImageDescriptorLayout);
 
-        vk::DescriptorImageInfo imageInfo = {};
-        imageInfo.imageLayout = vk::ImageLayout::eGeneral;
-        imageInfo.imageView = context->getDrawImage().imageView;
+        // Write the descriptor set to point to our draw image
+        DescriptorWriter writer;
+        writer.writeImage(0, context->getDrawImage().imageView, nullptr, vk::ImageLayout::eGeneral, vk::DescriptorType::eStorageImage);
 
-        vk::WriteDescriptorSet descriptorWrite = {};
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstSet = drawImageDescriptors;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.descriptorType = vk::DescriptorType::eStorageImage;
-        descriptorWrite.pImageInfo = &imageInfo;
-
-        context->getDevice().updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+        writer.updateSet(device, drawImageDescriptors);
 
         // Cleanup
         context->addToMainDeletionQueue([&]() {
             context->getDevice().destroyDescriptorSetLayout(drawImageDescriptorLayout);
         }, "drawImageDescriptorLayout");
+
+        // Create per-frame descriptor allocators
+        for (int i = 0; i < FRAME_OVERLAP; i++) {
+            // create a descriptor pool
+            vector<DescriptorAllocatorGrowable::PoolSizeRatio> frameSizes {
+                { vk::DescriptorType::eStorageImage, 3 },
+                { vk::DescriptorType::eStorageBuffer, 3 },
+                { vk::DescriptorType::eUniformBuffer, 3 },
+                { vk::DescriptorType::eCombinedImageSampler, 4 }
+            };
+
+            frames[i].frameDescriptors = DescriptorAllocatorGrowable { device, 1000, frameSizes };
+        }
+
+        // We use uniform buffer here instead of SSBO because this is a small buffer.
+        // We aren't using it through  buffer device address because we have a single
+        // descriptor set for all objects so there isn't any overhead of managing it.
+        DescriptorLayoutBuilder builder;
+        builder.addBinding(0, vk::DescriptorType::eUniformBuffer);
+        gpuSceneDataDescriptorLayout = builder.build(device, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
     }
 
     void Renderer::createRenderPass() {
@@ -578,6 +594,29 @@ void Renderer::createDescriptorSets() {
         const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, &depthAttachment);
         command.beginRendering(&renderInfo);
 
+
+
+        // Allocate a new uniform buffer for the scene data
+        Buffer gpuSceneDataBuffer { context, sizeof(GPUSceneData), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU };
+
+        // Add it to the deletion queue of this frame so it gets deleted once its been used
+        getCurrentFrame().deletionQueue.pushFunction([gpuSceneDataBuffer, this]() {
+            vmaDestroyBuffer(context->getAllocator(), gpuSceneDataBuffer.buffer, gpuSceneDataBuffer.allocation);
+        }, "Frame GPU scene data buffer");
+
+        // Write the buffer
+        auto sceneUniformData = static_cast<GPUSceneData *>(gpuSceneDataBuffer.info.pMappedData);
+        *sceneUniformData = sceneData;
+
+        // Create a descriptor set that binds that buffer and update it
+        VkDescriptorSet globalDescriptor = getCurrentFrame().frameDescriptors.allocate(gpuSceneDataDescriptorLayout);
+
+        DescriptorWriter writer;
+        writer.writeBuffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, vk::DescriptorType::eUniformBuffer);
+        writer.updateSet(context->getDevice(), globalDescriptor);
+
+
+
         // Draw triangle
         /*
         trianglePipeline->bind(command);
@@ -740,6 +779,7 @@ void Renderer::createDescriptorSets() {
         // Wait for previous frame
         vk::Result fenceResult = device.waitForFences(1, &currentFrameData.renderFence, true, 1000000000);
         currentFrameData.deletionQueue.flush();
+        currentFrameData.frameDescriptors.clear();
         const auto res = device.resetFences(1, &currentFrameData.renderFence);
 
         // Request image from the swapchain

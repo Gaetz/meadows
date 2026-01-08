@@ -19,13 +19,6 @@ namespace graphics
         glm::vec4 color;
     };
 
-    // Push constants for our mesh object draws
-    struct GraphicsPushConstants
-    {
-        glm::mat4 worldMatrix;
-        vk::DeviceAddress vertexBuffer;
-    };
-
     struct UniformBufferObject
     {
         Mat4 model;
@@ -64,4 +57,20 @@ namespace graphics
         Vec4 data3;
         Vec4 data4;
     };
+
+    struct GraphicsPushConstants
+    {
+        Mat4 worldMatrix;
+        vk::DeviceAddress vertexBuffer;
+    };
+
+    struct GPUSceneData {
+        Mat4 view;
+        Mat4 proj;
+        Mat4 viewProj;
+        Vec4 ambientColor;
+        Vec4 sunlightDirection; // w for sun power
+        Vec4 sunlightColor;
+    };
+
 } // namespace graphics

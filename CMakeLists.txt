@@ -258,6 +258,10 @@ add_executable(Meadows
         src/Graphics/PipelineBuilder.h
         src/Graphics/VulkanLoader.cpp
         src/Graphics/VulkanLoader.h
+        src/Graphics/DescriptorAllocatorGrowable.cpp
+        src/Graphics/DescriptorAllocatorGrowable.h
+        src/Graphics/DescriptorWriter.cpp
+        src/Graphics/DescriptorWriter.h
 )
 
 # Ensure shaders are compiled before building Meadows

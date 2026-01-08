@@ -9,6 +9,7 @@
 #include "Buffer.h"
 #include "ComputeEffect.h"
 #include "DeletionQueue.hpp"
+#include "DescriptorAllocatorGrowable.h"
 #include "Pipeline.h"
 #include "VulkanLoader.h"
 
@@ -19,6 +20,7 @@ namespace graphics {
         vk::Semaphore imageAvailableSemaphore;
         vk::Fence renderFence;
         DeletionQueue deletionQueue;
+        DescriptorAllocatorGrowable frameDescriptors;
     };
 
 class Renderer {
@@ -97,9 +99,11 @@ private:
     uptr<Pipeline> trianglePipeline;
     uptr<Pipeline> meshPipeline;
 
-    // Mesh data
+    // Scene data
     GPUMeshBuffers rectangleMesh;
     vector<sptr<MeshAsset>> testMeshes;
+    GPUSceneData sceneData;
+    vk::DescriptorSetLayout gpuSceneDataDescriptorLayout;
 
     //vk::CommandPool commandPool;
     //std::vector<vk::CommandBuffer> commandBuffers;
