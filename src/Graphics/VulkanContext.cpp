@@ -167,8 +167,8 @@ namespace graphics {
 
         // Image size will match the window
         VkExtent3D drawImageExtent = {
-            static_cast<u32>(w),
-            static_cast<u32>(h),
+            3440, //static_cast<u32>(w),
+            1440, //static_cast<u32>(h),
             1
         };
 

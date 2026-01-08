@@ -59,7 +59,7 @@ void Engine::initWindow() {
     // Create window with Vulkan flag
     window = SDL_CreateWindow(
         "Vulkan Engine",
-        800, 600,
+        1720, 720,
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
     );
 

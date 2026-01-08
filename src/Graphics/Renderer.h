@@ -59,6 +59,7 @@ private:
     void drawGeometry(vk::CommandBuffer);
 
     // Data methods
+    float getMinRenderScale() const;
     //void copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer);
     void createSceneData();
 
@@ -66,7 +67,7 @@ private:
 
     bool resizeRequested {false};
     vk::Extent2D drawExtent;
-    float renderScale = 1.f;
+    float renderScale { 0.5f };
 
     int frameNumber {0};
     uint32_t currentFrame = 0;

@@ -768,8 +768,8 @@ void Renderer::createDescriptorSets() {
         AllocatedImage& depthImage = context->getDepthImage();
 
         auto swapchainExtent = context->getSwapchain()->getExtent();
-        drawExtent.width = std::min(swapchainExtent.width, drawImage.imageExtent.width) * renderScale;
-        drawExtent.height = std::min(swapchainExtent.height, drawImage.imageExtent.height) * renderScale;
+        drawExtent.width = std::min(swapchainExtent.width, drawImage.imageExtent.width) / renderScale;
+        drawExtent.height = std::min(swapchainExtent.height, drawImage.imageExtent.height) / renderScale;
 
 
         command.begin(beginInfo);
@@ -1003,6 +1003,19 @@ void Renderer::createDescriptorSets() {
         ImGui_ImplVulkan_Init(&init_info);
     }
 
+    float Renderer::getMinRenderScale() const {
+        // Calculate min scale to avoid exceeding drawImage size
+        auto drawImageExtent = context->getDrawImage().imageExtent;
+        auto swapchainExtent = context->getSwapchain()->getExtent();
+
+        // Formula: size = min(swap, draw) / scale
+        // We want: scale >= min(swap, draw) / draw
+        float minScaleX = (float)std::min(swapchainExtent.width, drawImageExtent.width) / (float)drawImageExtent.width;
+        float minScaleY = (float)std::min(swapchainExtent.height, drawImageExtent.height) / (float)drawImageExtent.height;
+
+        return std::max(minScaleX, minScaleY);
+    }
+
     void Renderer::drawImGui(vk::CommandBuffer commandBuffer) {
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL3_NewFrame();
@@ -1016,7 +1029,10 @@ void Renderer::createDescriptorSets() {
         */
 
         if (ImGui::Begin("background")) {
-            ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
+            const float minScale = getMinRenderScale();
+            if (renderScale < minScale) renderScale = minScale;
+            ImGui::SliderFloat("Render Scale", &renderScale, minScale, 1.f);
+
             ComputeEffect &selected = backgroundEffects[currentBackgroundEffect];
             ImGui::Text("Selected effect: ", selected.name);
             ImGui::SliderInt("Effect Index", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);
