@@ -10,7 +10,7 @@
 #include "ComputeEffect.h"
 #include "DeletionQueue.hpp"
 #include "DescriptorAllocatorGrowable.h"
-#include "Pipeline.h"
+#include "MaterialPipeline.h"
 #include "Utils.hpp"
 #include "VulkanLoader.h"
 
@@ -93,8 +93,8 @@ private:
     int currentBackgroundEffect{0};
 
     // Graphics pipelines
-    uptr<Pipeline> trianglePipeline;
-    uptr<Pipeline> meshPipeline;
+    uptr<MaterialPipeline> trianglePipeline;
+    uptr<MaterialPipeline> meshPipeline;
 
     // Scene data
     GPUMeshBuffers rectangleMesh;

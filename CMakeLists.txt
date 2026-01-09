@@ -237,8 +237,8 @@ add_executable(Meadows
     src/Graphics/VulkanContext.h
     src/Graphics/Renderer.cpp
     src/Graphics/Renderer.h
-    src/Graphics/Pipeline.cpp
-    src/Graphics/Pipeline.h
+    src/Graphics/MaterialPipeline.cpp
+    src/Graphics/MaterialPipeline.h
     src/Graphics/Swapchain.cpp
     src/Graphics/Swapchain.h
     src/Graphics/Buffer.cpp

@@ -1,7 +1,7 @@
 ﻿#pragma once
 #include <vector>
 
-#include "Pipeline.h"
+#include "MaterialPipeline.h"
 
 namespace graphics {
     class PipelineBuilder {
@@ -26,7 +26,7 @@ namespace graphics {
 
         void clear();
 
-        [[nodiscard]] uptr<Pipeline> buildPipeline(vk::Device device) const;
+        [[nodiscard]] uptr<MaterialPipeline> buildPipeline(vk::Device device) const;
 
         void setShaders(vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader);
 

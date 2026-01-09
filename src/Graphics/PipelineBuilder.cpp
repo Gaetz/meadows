@@ -40,7 +40,7 @@ namespace graphics {
         shaderStages.clear();
     }
 
-    uptr<Pipeline> PipelineBuilder::buildPipeline(const vk::Device device) const {
+    uptr<MaterialPipeline> PipelineBuilder::buildPipeline(const vk::Device device) const {
         // Make viewport state from our stored viewport and scissor.
         // at the moment we won't support multiple viewports or scissors
         vk::PipelineViewportStateCreateInfo viewportState {};
@@ -89,7 +89,7 @@ namespace graphics {
         device.destroyShaderModule(vertexShaderModule, nullptr);
         device.destroyShaderModule(fragmentShaderModule, nullptr);
 
-        return std::make_unique<Pipeline>( context, newPipeline, pipelineLayout );
+        return std::make_unique<MaterialPipeline>( context, newPipeline, pipelineLayout );
     }
 
     void PipelineBuilder::setShaders(const vk::ShaderModule vertexShader, const vk::ShaderModule fragmentShader) {

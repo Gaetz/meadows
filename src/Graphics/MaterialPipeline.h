@@ -5,13 +5,13 @@
 
 namespace graphics {
 
-    class Pipeline {
+    class MaterialPipeline {
     public:
-        Pipeline(VulkanContext* context, vk::Pipeline pipeline, vk::PipelineLayout pipelineLayout);
-        ~Pipeline();
+        MaterialPipeline(VulkanContext* context, vk::Pipeline pipeline, vk::PipelineLayout pipelineLayout);
+        ~MaterialPipeline();
 
-        Pipeline(const Pipeline&) = delete;
-        Pipeline& operator=(const Pipeline&) = delete;
+        MaterialPipeline(const MaterialPipeline&) = delete;
+        MaterialPipeline& operator=(const MaterialPipeline&) = delete;
 
         vk::Pipeline getPipeline() const { return graphicsPipeline; }
         vk::PipelineLayout getPipelineLayout() const { return pipelineLayout; }

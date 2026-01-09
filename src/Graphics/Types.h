@@ -10,6 +10,8 @@
 
 namespace graphics
 {
+    class MaterialPipeline;
+
     struct Vertex
     {
         glm::vec3 position;
@@ -62,6 +64,29 @@ namespace graphics
         Vec4 ambientColor;
         Vec4 sunlightDirection; // w for sun power
         Vec4 sunlightColor;
+    };
+
+    enum class MaterialPass :u8 {
+        MainColor,
+        Transparent,
+        Other
+    };
+
+    struct MaterialInstance {
+        MaterialPipeline* pipeline;
+        VkDescriptorSet materialSet;
+        MaterialPass passType;
+    };
+
+    struct RenderObject {
+        u32 indexCount;
+        u32 firstIndex;
+        vk::Buffer indexBuffer;
+
+        MaterialInstance* material;
+
+        Mat4 transform;
+        vk::DeviceAddress vertexBufferAddress;
     };
 
 } // namespace graphics

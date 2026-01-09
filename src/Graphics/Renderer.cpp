@@ -9,7 +9,7 @@
 #include <glm/gtx/transform.hpp>
 
 #include "Swapchain.h"
-#include "Pipeline.h"
+#include "MaterialPipeline.h"
 #include "Buffer.h"
 #include "DescriptorLayoutBuilder.hpp"
 #include "DescriptorWriter.h"
@@ -745,12 +745,11 @@ void Renderer::createDescriptorSets() {
         vk::SamplerCreateInfo samplerInfo {};
         samplerInfo.magFilter = vk::Filter::eNearest;
         samplerInfo.minFilter = vk::Filter::eNearest;
-
-        device.createSampler(&samplerInfo, nullptr, &defaultSamplerNearest);
+        auto nearestRes = device.createSampler(&samplerInfo, nullptr, &defaultSamplerNearest);
 
         samplerInfo.magFilter = vk::Filter::eLinear;
         samplerInfo.minFilter = vk::Filter::eLinear;
-        device.createSampler(&samplerInfo, nullptr, &defaultSamplerLinear);
+        auto linearRes = device.createSampler(&samplerInfo, nullptr, &defaultSamplerLinear);
 
         context->addToMainDeletionQueue([this, device](){
             device.destroySampler(defaultSamplerNearest,nullptr);
