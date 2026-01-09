@@ -13,6 +13,7 @@
 #include "Buffer.h"
 #include "DescriptorLayoutBuilder.hpp"
 #include "DescriptorWriter.h"
+#include "Image.h"
 #include "PipelineBuilder.h"
 #include "Utils.hpp"
 #include "VulkanInit.hpp"
@@ -93,11 +94,11 @@ namespace graphics {
         }
 
         // Immediate command pool
-        immCommandPool = context->getDevice().createCommandPool(poolInfo);
-        vk::CommandBufferAllocateInfo cmdAllocInfo = graphics::commandBufferAllocateInfo(immCommandPool, 1);
-        immCommandBuffer = context->getDevice().allocateCommandBuffers(cmdAllocInfo)[0];
+        immSubmitter.immCommandPool = context->getDevice().createCommandPool(poolInfo);
+        vk::CommandBufferAllocateInfo cmdAllocInfo = graphics::commandBufferAllocateInfo(immSubmitter.immCommandPool, 1);
+        immSubmitter.immCommandBuffer = context->getDevice().allocateCommandBuffers(cmdAllocInfo)[0];
         context->addToMainDeletionQueue([this]() {
-            context->getDevice().destroyCommandPool(immCommandPool);
+            context->getDevice().destroyCommandPool(immSubmitter.immCommandPool);
         }, "Immediate command pool");
     }
 
@@ -382,24 +383,6 @@ namespace graphics {
 
     }   */
 
-    void Renderer::immediateSubmit(std::function<void(vk::CommandBuffer cmd)> &&function) {
-        context->getDevice().resetFences(immFence);
-        immCommandBuffer.reset();
-
-        vk::CommandBufferBeginInfo beginInfo = graphics::commandBufferBeginInfo(
-            vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-        immCommandBuffer.begin(beginInfo);
-
-        function(immCommandBuffer);
-
-        immCommandBuffer.end();
-
-        vk::CommandBufferSubmitInfo submitInfo = graphics::commandBufferSubmitInfo(immCommandBuffer);
-        vk::SubmitInfo2 submit = graphics::submitInfo(&submitInfo, nullptr, nullptr);
-        const auto res = context->getGraphicsQueue().submit2(1, &submit, immFence);
-        const auto res2 = context->getDevice().waitForFences(1, &immFence, true, UINT64_MAX);
-    }
-
     void Renderer::createIndexBuffer() {
         /*
         std::vector<uint16_t> indices = {
@@ -552,9 +535,9 @@ void Renderer::createDescriptorSets() {
         }
 
         // Create a fence for immediate submits
-        immFence = device.createFence(graphics::fenceCreateInfo());
+        immSubmitter.immFence = device.createFence(graphics::fenceCreateInfo());
         context->addToMainDeletionQueue([this]() {
-            context->getDevice().destroyFence(immFence);
+            context->getDevice().destroyFence(immSubmitter.immFence);
         }, "immFence");
     }
 
@@ -600,9 +583,10 @@ void Renderer::createDescriptorSets() {
         Buffer gpuSceneDataBuffer { context, sizeof(GPUSceneData), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU };
 
         // Add it to the deletion queue of this frame so it gets deleted once its been used
-        getCurrentFrame().deletionQueue.pushFunction([gpuSceneDataBuffer, this]() {
-            vmaDestroyBuffer(context->getAllocator(), gpuSceneDataBuffer.buffer, gpuSceneDataBuffer.allocation);
+        getCurrentFrame().deletionQueue.pushFunction([&gpuSceneDataBuffer]() {
+            gpuSceneDataBuffer.destroy();
         }, "Frame GPU scene data buffer");
+
 
         // Write the buffer
         auto sceneUniformData = static_cast<GPUSceneData *>(gpuSceneDataBuffer.info.pMappedData);
@@ -740,7 +724,7 @@ void Renderer::createDescriptorSets() {
         memcpy(data, vertices.data(), vertexBufferSize);
         memcpy(static_cast<char *>(data) + vertexBufferSize, indices.data(), indexBufferSize);
 
-        immediateSubmit([&](vk::CommandBuffer cmd) {
+        immSubmitter.immediateSubmit(context, [&](vk::CommandBuffer cmd) {
             vk::BufferCopy vertexCopy{ 0 };
             vertexCopy.dstOffset = 0;
             vertexCopy.srcOffset = 0;
@@ -804,8 +788,8 @@ void Renderer::createDescriptorSets() {
             vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
 
         vk::Extent2D drawExtent;
-        AllocatedImage& drawImage = context->getDrawImage();
-        AllocatedImage& depthImage = context->getDepthImage();
+        Image& drawImage = context->getDrawImage();
+        Image& depthImage = context->getDepthImage();
 
         auto swapchainExtent = context->getSwapchain()->getExtent();
         drawExtent.width = std::min(swapchainExtent.width, drawImage.imageExtent.width) / renderScale;

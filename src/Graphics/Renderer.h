@@ -11,6 +11,7 @@
 #include "DeletionQueue.hpp"
 #include "DescriptorAllocatorGrowable.h"
 #include "Pipeline.h"
+#include "Utils.hpp"
 #include "VulkanLoader.h"
 
 namespace graphics {
@@ -85,15 +86,11 @@ private:
     vk::DescriptorSet drawImageDescriptors;
     vk::PipelineLayout pipelineLayout;
 
+    ImmediateSubmitter immSubmitter;
+
     // Compute effects
     std::vector<ComputeEffect> backgroundEffects;
     int currentBackgroundEffect{0};
-
-    // Immediate submit structures
-    vk::Fence immFence;
-    vk::CommandPool immCommandPool;
-    vk::CommandBuffer immCommandBuffer;
-    void immediateSubmit(std::function<void(vk::CommandBuffer cmd)>&& function);
 
     // Graphics pipelines
     uptr<Pipeline> trianglePipeline;

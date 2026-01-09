@@ -9,6 +9,7 @@
 #include "DescriptorAllocator.h"
 
 namespace graphics {
+    class Image;
     class Swapchain;
 
     class VulkanContext {
@@ -32,8 +33,8 @@ namespace graphics {
         SDL_Window *getWindow() const { return window; }
         DescriptorAllocator* getGlobalDescriptorAllocator() const { return globalDescriptorAllocator.get(); }
 
-        AllocatedImage& getDrawImage() { return drawImage; }
-        AllocatedImage& getDepthImage() { return depthImage; }
+        Image& getDrawImage();
+        Image& getDepthImage();
 
         QueueFamilyIndices findQueueFamilies(vk::PhysicalDevice device);
 
@@ -78,8 +79,8 @@ namespace graphics {
         uptr<Swapchain> swapchain{nullptr};
         uptr<DescriptorAllocator> globalDescriptorAllocator{nullptr};
 
-        AllocatedImage drawImage;
-        AllocatedImage depthImage;
+        Image drawImage;
+        Image depthImage;
 
         const std::vector<const char *> validationLayers = {
             "VK_LAYER_KHRONOS_validation"

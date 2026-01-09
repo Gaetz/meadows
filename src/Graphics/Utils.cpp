@@ -1,5 +1,6 @@
 #include "Utils.hpp"
 
+#include "VulkanContext.h"
 #include "VulkanInit.hpp"
 
 namespace graphics
@@ -81,5 +82,23 @@ namespace graphics
         blitInfo.pRegions = &blitRegion;
 
         command.blitImage2(&blitInfo);
+    }
+
+    void ImmediateSubmitter::immediateSubmit(VulkanContext* context, std::function<void(vk::CommandBuffer cmd)> &&function) {
+        context->getDevice().resetFences(immFence);
+        immCommandBuffer.reset();
+
+        vk::CommandBufferBeginInfo beginInfo = graphics::commandBufferBeginInfo(
+            vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+        immCommandBuffer.begin(beginInfo);
+
+        function(immCommandBuffer);
+
+        immCommandBuffer.end();
+
+        vk::CommandBufferSubmitInfo submitInfo = graphics::commandBufferSubmitInfo(immCommandBuffer);
+        vk::SubmitInfo2 submit = graphics::submitInfo(&submitInfo, nullptr, nullptr);
+        const auto res = context->getGraphicsQueue().submit2(1, &submit, immFence);
+        const auto res2 = context->getDevice().waitForFences(1, &immFence, true, UINT64_MAX);
     }
 }

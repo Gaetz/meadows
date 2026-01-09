@@ -30,9 +30,7 @@ Buffer::Buffer(VulkanContext* context, size_t allocSize, vk::BufferUsageFlags us
 }
 
 Buffer::~Buffer() {
-    if (context && buffer) {
-        vmaDestroyBuffer(context->getAllocator(), buffer, allocation);
-    }
+    destroy();
 }
 
 Buffer::Buffer(Buffer&& other) noexcept
@@ -86,4 +84,9 @@ void Buffer::write(void* data, vk::DeviceSize size, vk::DeviceSize offset) {
     unmap();
 }
 
+void Buffer::destroy() {
+    if (buffer) {
+        vmaDestroyBuffer(context->getAllocator(), buffer, allocation);
+    }
+}
 } // namespace graphics

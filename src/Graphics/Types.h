@@ -26,15 +26,6 @@ namespace graphics
         Mat4 proj;
     };
 
-    struct AllocatedImage
-    {
-        vk::Image image;
-        VmaAllocation allocation;
-        vk::ImageView imageView;
-        vk::Extent3D imageExtent;
-        vk::Format imageFormat;
-    };
-
     struct QueueFamilyIndices
     {
         std::optional<uint32_t> graphicsFamily;

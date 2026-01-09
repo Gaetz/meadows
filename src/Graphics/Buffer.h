@@ -21,6 +21,7 @@ namespace graphics {
         void map(void** data);
         void unmap();
         void write(void* data, vk::DeviceSize size, vk::DeviceSize offset = 0);
+        void destroy();
 
         vk::Buffer getBuffer() const { return buffer; }
 

@@ -7,6 +7,7 @@
 #include <SDL3/SDL_vulkan.h>
 
 // VMA Implementation
+#include "Image.h"
 #include "VulkanInit.hpp"
 
 using services::Log;
@@ -233,6 +234,14 @@ namespace graphics {
         int w, h;
         SDL_GetWindowSize(window, &w, &h);
         swapchain->recreate(w, h);
+    }
+
+    Image & VulkanContext::getDrawImage() {
+        return drawImage;
+    }
+
+    Image & VulkanContext::getDepthImage() {
+        return depthImage;
     }
 
     QueueFamilyIndices VulkanContext::findQueueFamilies(vk::PhysicalDevice device) {

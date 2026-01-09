@@ -262,6 +262,8 @@ add_executable(Meadows
         src/Graphics/DescriptorAllocatorGrowable.h
         src/Graphics/DescriptorWriter.cpp
         src/Graphics/DescriptorWriter.h
+        src/Graphics/Image.cpp
+        src/Graphics/Image.h
 )
 
 # Ensure shaders are compiled before building Meadows
