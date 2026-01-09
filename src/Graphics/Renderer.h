@@ -38,22 +38,12 @@ public:
 private:
     void createCommandPoolAndBuffers();
     void createSyncObjects();
-    void createRenderPass();
-    void createFramebuffers();
-    void createVertexBuffer();
-    void createIndexBuffer();
-    void createUniformBuffers();
     void createDescriptors();
+
     void createPipelines();
     void createBackgroundPipeline();
-
     void createTrianglePipeline();
     void createMeshPipeline();
-
-    //void createDescriptorPool();
-    //void createDescriptorSetLayout();
-    //void createDescriptorSets();
-    void updateUniformBuffer(uint32_t currentImage);
 
     void initImGui();
     void drawImGui(vk::CommandBuffer commandBuffer);
@@ -63,8 +53,8 @@ private:
 
     // Data methods
     float getMinRenderScale() const;
-    //void copyBufferViaStaging(const void* data, vk::DeviceSize size, Buffer* dstBuffer);
     void createSceneData();
+
 
     VulkanContext* context;
 
@@ -84,11 +74,11 @@ private:
 
     vk::DescriptorSetLayout drawImageDescriptorLayout;
     vk::DescriptorSet drawImageDescriptors;
-    vk::PipelineLayout pipelineLayout;
 
     ImmediateSubmitter immSubmitter;
 
     // Compute effects
+    vk::PipelineLayout computePipelineLayout;
     std::vector<ComputeEffect> backgroundEffects;
     int currentBackgroundEffect{0};
 
@@ -110,28 +100,6 @@ private:
     vk::Sampler defaultSamplerLinear;
     vk::Sampler defaultSamplerNearest;
     vk::DescriptorSetLayout singleImageDescriptorLayout;
-
-    //vk::CommandPool commandPool;
-    //std::vector<vk::CommandBuffer> commandBuffers;
-
-    //std::vector<vk::Semaphore> imageAvailableSemaphores;
-    //std::vector<vk::Semaphore> renderFinishedSemaphores;
-    //std::vector<vk::Fence> inFlightFences;
-    //std::vector<vk::Fence> imagesInFlight;  // Track which fence is using each swapchain image
-
-    //vk::RenderPass renderPass;
-    //std::vector<vk::Framebuffer> framebuffers;
-    //uptr<class Pipeline> pipeline;
-
-
-    uptr<class Buffer> vertexBuffer;
-    uint32_t vertexCount = 0;
-
-    uptr<class Buffer> indexBuffer;
-    uint32_t indexCount = 0;
-
-    std::vector<uptr<class Buffer>> uniformBuffers;
-
 
     // ImGui
     vk::DescriptorPool imguiDescriptorPool;
