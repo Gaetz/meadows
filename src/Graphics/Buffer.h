@@ -18,8 +18,8 @@ namespace graphics {
         Buffer(Buffer&& other) noexcept;
         Buffer& operator=(Buffer&& other) noexcept;
 
-        void map(void** data);
-        void unmap();
+        void map(void** data) const;
+        void unmap() const;
         void write(void* data, vk::DeviceSize size, vk::DeviceSize offset = 0);
         void destroy();
 

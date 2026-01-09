@@ -17,6 +17,7 @@
 #include "PipelineBuilder.h"
 #include "Utils.hpp"
 #include "VulkanInit.hpp"
+#include "fmt/color.h"
 
 namespace graphics {
     Renderer::Renderer(VulkanContext *context) : context(context) {
@@ -143,6 +144,11 @@ namespace graphics {
         DescriptorLayoutBuilder builder;
         builder.addBinding(0, vk::DescriptorType::eUniformBuffer);
         gpuSceneDataDescriptorLayout = builder.build(device, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+
+        // Simple texture descriptor
+        DescriptorLayoutBuilder builderTexture;
+        builderTexture.addBinding(0, vk::DescriptorType::eCombinedImageSampler);
+        singleImageDescriptorLayout = builderTexture.build(device, vk::ShaderStageFlagBits::eFragment);
     }
 
     void Renderer::createRenderPass() {
@@ -294,15 +300,24 @@ namespace graphics {
         vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.pPushConstantRanges = &bufferRange;
         pipelineLayoutInfo.pushConstantRangeCount = 1;
+        /* Simple mesh pipeline
         const vk::PipelineLayout meshPipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
 
         PipelineBuilder pipelineBuilder { context, "shaders/coloredTriangleMesh.vert.spv", "shaders/coloredTriangle.frag.spv"};
+        */
+
+        // Textured mesh pipeline
+        pipelineLayoutInfo.pSetLayouts = &singleImageDescriptorLayout;
+        pipelineLayoutInfo.setLayoutCount = 1;
+        const vk::PipelineLayout meshPipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
+
+        PipelineBuilder pipelineBuilder { context, "shaders/coloredTriangleMesh.vert.spv", "shaders/texImage.frag.spv"};
         pipelineBuilder.pipelineLayout = meshPipelineLayout;
         pipelineBuilder.setInputTopology(vk::PrimitiveTopology::eTriangleList);
         pipelineBuilder.setPolygonMode(vk::PolygonMode::eFill);
         pipelineBuilder.setCullMode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
         pipelineBuilder.setMultisamplingNone();
-        pipelineBuilder.enableBlendingAdditive();
+        pipelineBuilder.enableBlendingAlphaBlend();
         pipelineBuilder.enableDepthTest(true, vk::CompareOp::eGreaterOrEqual);
 
         // Connect the image format we will draw into, from draw image
@@ -583,10 +598,11 @@ void Renderer::createDescriptorSets() {
         Buffer gpuSceneDataBuffer { context, sizeof(GPUSceneData), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU };
 
         // Add it to the deletion queue of this frame so it gets deleted once its been used
+        /*
         getCurrentFrame().deletionQueue.pushFunction([&gpuSceneDataBuffer]() {
             gpuSceneDataBuffer.destroy();
         }, "Frame GPU scene data buffer");
-
+        */
 
         // Write the buffer
         auto sceneUniformData = static_cast<GPUSceneData *>(gpuSceneDataBuffer.info.pMappedData);
@@ -657,6 +673,18 @@ void Renderer::createDescriptorSets() {
         command.drawIndexed(6, 1, 0, 0, 0);
         */
 
+        // Texture binding
+        vk::DescriptorSet imageSet = getCurrentFrame().frameDescriptors.allocate(singleImageDescriptorLayout);
+        {
+            DescriptorWriter writer;
+            writer.writeImage(0, errorCheckerboardImage.imageView, defaultSamplerNearest,
+                vk::ImageLayout::eShaderReadOnlyOptimal, vk::DescriptorType::eCombinedImageSampler);
+
+            writer.updateSet(context->getDevice(), imageSet);
+        }
+        command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, meshPipeline->getPipelineLayout(), 0, 1, &imageSet, 0, nullptr);
+
+
         // Draw test GLTF
         const Mat4 view = glm::translate( Vec3{ 0,0,-5 });
         Mat4 projection = glm::perspective(glm::radians(70.f), static_cast<float>(imageExtent.width) / static_cast<float>(imageExtent.height), 0.1f, 10000.f);
@@ -675,25 +703,64 @@ void Renderer::createDescriptorSets() {
 
     void Renderer::createSceneData() {
         array<Vertex, 4> rectVertices;
-
         rectVertices[0].position = {0.5, -0.5, 0.0};
         rectVertices[1].position = {0.5,0.5, 0};
         rectVertices[2].position = {-0.5,-0.5, 0};
         rectVertices[3].position = {-0.5,0.5, 0};
-
         rectVertices[0].color = {0,0, 0,1};
         rectVertices[1].color = { 0.5,0.5,0.5 ,1};
         rectVertices[2].color = { 1,0, 0,1 };
         rectVertices[3].color = { 0,1, 0,1 };
-
         array<uint32_t, 6> rectIndices = {
             0,1,2,
             2,1,3
         };
-
         rectangleMesh = uploadMesh(rectIndices, rectVertices);
 
         testMeshes = loadGltfMeshes(this,"assets\\basicmesh.glb").value();
+
+        u32 white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
+        whiteImage = Image{ context, immSubmitter, static_cast<void*>(&white), VkExtent3D{ 1, 1, 1 },
+            vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled };
+
+        u32 grey = glm::packUnorm4x8(glm::vec4(0.66f, 0.66f, 0.66f, 1));
+        greyImage = Image{ context, immSubmitter, static_cast<void*>(&grey), VkExtent3D{ 1, 1, 1 },
+            vk::Format::eR8G8B8A8Unorm,vk::ImageUsageFlagBits::eSampled };
+
+        u32 black = glm::packUnorm4x8(glm::vec4(0, 0, 0, 1));
+        blackImage = Image{ context, immSubmitter, static_cast<void*>(&black), VkExtent3D{ 1, 1, 1 },
+            vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled };
+
+        u32 magenta = glm::packUnorm4x8(glm::vec4(1, 0, 1, 1));
+        array<u32, 16 *16 > pixels; // for 16x16 checkerboard texture
+        for (int x = 0; x < 16; x++) {
+            for (int y = 0; y < 16; y++) {
+                pixels[y*16 + x] = ((x % 2) ^ (y % 2)) ? magenta : black;
+            }
+        }
+        errorCheckerboardImage = Image{ context, immSubmitter, pixels.data(), VkExtent3D{16, 16, 1},
+            vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled };
+
+        vk::Device device = context->getDevice();
+        vk::SamplerCreateInfo samplerInfo {};
+        samplerInfo.magFilter = vk::Filter::eNearest;
+        samplerInfo.minFilter = vk::Filter::eNearest;
+
+        device.createSampler(&samplerInfo, nullptr, &defaultSamplerNearest);
+
+        samplerInfo.magFilter = vk::Filter::eLinear;
+        samplerInfo.minFilter = vk::Filter::eLinear;
+        device.createSampler(&samplerInfo, nullptr, &defaultSamplerLinear);
+
+        context->addToMainDeletionQueue([this, device](){
+            device.destroySampler(defaultSamplerNearest,nullptr);
+            device.destroySampler(defaultSamplerLinear,nullptr);
+
+            whiteImage.destroy(context);
+            greyImage.destroy(context);
+            blackImage.destroy(context);
+            errorCheckerboardImage.destroy(context);
+        }, "Default textures and samplers");
     }
 
     GPUMeshBuffers Renderer::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {
@@ -1034,8 +1101,8 @@ void Renderer::createDescriptorSets() {
 
         // Formula: size = min(swap, draw) / scale
         // We want: scale >= min(swap, draw) / draw
-        float minScaleX = (float)std::min(swapchainExtent.width, drawImageExtent.width) / (float)drawImageExtent.width;
-        float minScaleY = (float)std::min(swapchainExtent.height, drawImageExtent.height) / (float)drawImageExtent.height;
+        float minScaleX = static_cast<float>(std::min(swapchainExtent.width, drawImageExtent.width)) / static_cast<float>(drawImageExtent.width);
+        float minScaleY = static_cast<float>(std::min(swapchainExtent.height, drawImageExtent.height)) / static_cast<float>(drawImageExtent.height);
 
         return std::max(minScaleX, minScaleY);
     }
@@ -1061,10 +1128,10 @@ void Renderer::createDescriptorSets() {
             ImGui::Text("Selected effect: ", selected.name);
             ImGui::SliderInt("Effect Index", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);
 
-            ImGui::InputFloat4("data1", (float *) &selected.data.data1);
-            ImGui::InputFloat4("data2", (float *) &selected.data.data2);
-            ImGui::InputFloat4("data3", (float *) &selected.data.data3);
-            ImGui::InputFloat4("data4", (float *) &selected.data.data4);
+            ImGui::InputFloat4("data1", reinterpret_cast<float*>(&selected.data.data1));
+            ImGui::InputFloat4("data2", reinterpret_cast<float*>(&selected.data.data2));
+            ImGui::InputFloat4("data3", reinterpret_cast<float*>(&selected.data.data3));
+            ImGui::InputFloat4("data4", reinterpret_cast<float*>(&selected.data.data4));
         }
         ImGui::End();
 

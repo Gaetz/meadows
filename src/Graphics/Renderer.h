@@ -102,6 +102,15 @@ private:
     GPUSceneData sceneData;
     vk::DescriptorSetLayout gpuSceneDataDescriptorLayout;
 
+    // Texture data
+    Image whiteImage;
+    Image blackImage;
+    Image greyImage;
+    Image errorCheckerboardImage;
+    vk::Sampler defaultSamplerLinear;
+    vk::Sampler defaultSamplerNearest;
+    vk::DescriptorSetLayout singleImageDescriptorLayout;
+
     //vk::CommandPool commandPool;
     //std::vector<vk::CommandBuffer> commandBuffers;
 

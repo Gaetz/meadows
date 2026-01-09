@@ -24,7 +24,7 @@ namespace graphics
 
         vk::DescriptorSetLayoutCreateInfo info {};
         info.pNext = pNext;
-        info.bindingCount = (u32)bindings.size();
+        info.bindingCount = static_cast<u32>(bindings.size());
         info.pBindings = bindings.data();
         info.flags = flags;
 

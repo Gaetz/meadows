@@ -4,8 +4,10 @@
 namespace graphics {
 
 Buffer::Buffer(VulkanContext* context, size_t allocSize, vk::BufferUsageFlags usage, VmaMemoryUsage memoryUsage)
-    : context(context), size(allocSize) {
-    
+    : context(context), buffer(nullptr), allocation(), info(), size(allocSize) {
+    allocation = nullptr;
+    info = {};
+
     vk::BufferCreateInfo bufferInfo = {};
     bufferInfo.size = size;
     bufferInfo.usage = usage;
@@ -49,9 +51,7 @@ Buffer::Buffer(Buffer&& other) noexcept
 Buffer& Buffer::operator=(Buffer&& other) noexcept {
     if (this != &other) {
         // Destroy current resources
-        if (context && buffer) {
-            vmaDestroyBuffer(context->getAllocator(), buffer, allocation);
-        }
+        destroy();
 
         // Move from other
         context = other.context;
@@ -69,11 +69,11 @@ Buffer& Buffer::operator=(Buffer&& other) noexcept {
     return *this;
 }
 
-void Buffer::map(void** data) {
+void Buffer::map(void** data) const {
     vmaMapMemory(context->getAllocator(), allocation, data);
 }
 
-void Buffer::unmap() {
+void Buffer::unmap() const {
     vmaUnmapMemory(context->getAllocator(), allocation);
 }
 
@@ -85,8 +85,11 @@ void Buffer::write(void* data, vk::DeviceSize size, vk::DeviceSize offset) {
 }
 
 void Buffer::destroy() {
-    if (buffer) {
+    if (context && buffer) {
         vmaDestroyBuffer(context->getAllocator(), buffer, allocation);
+        buffer = nullptr;
+        allocation = nullptr;
+        context = nullptr;
     }
 }
 } // namespace graphics

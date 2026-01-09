@@ -21,5 +21,11 @@ namespace graphics {
         vk::ImageView imageView;
         vk::Extent3D imageExtent;
         vk::Format imageFormat;
+
+        Image(Image&& other) noexcept;
+        Image& operator=(Image&& other) noexcept;
+
+        Image(const Image&) = delete;
+        Image& operator=(const Image&) = delete;
     };
 }

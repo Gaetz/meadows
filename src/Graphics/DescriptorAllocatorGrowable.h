@@ -16,6 +16,12 @@ namespace graphics {
         void clear();
         vk::DescriptorSet allocate(vk::DescriptorSetLayout layout, const void* pNext = nullptr);
 
+        DescriptorAllocatorGrowable(DescriptorAllocatorGrowable&& other) noexcept;
+        DescriptorAllocatorGrowable& operator=(DescriptorAllocatorGrowable&& other) noexcept;
+
+        DescriptorAllocatorGrowable(const DescriptorAllocatorGrowable&) = delete;
+        DescriptorAllocatorGrowable& operator=(const DescriptorAllocatorGrowable&) = delete;
+
         private:
         vk::DescriptorPool getPool();
         vk::DescriptorPool createPool(u32 setCount, std::span<PoolSizeRatio> poolRatios) const;

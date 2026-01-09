@@ -8,10 +8,11 @@ namespace graphics {
     DescriptorAllocatorGrowable::DescriptorAllocatorGrowable(vk::Device device, u32 initialSets,  std::span<PoolSizeRatio> poolRatios) :
         device { device } {
         ratios.clear();
-        this->ratios = vector<PoolSizeRatio>(poolRatios.begin(), poolRatios.end());
+        ratios.reserve(poolRatios.size());
+        ratios = vector<PoolSizeRatio>(poolRatios.begin(), poolRatios.end());
 
+        setsPerPool = static_cast<u32>(static_cast<float>(initialSets) * 1.5f);
         const vk::DescriptorPool newPool = createPool(setsPerPool, ratios);
-        setsPerPool = initialSets * 1.5;
         readyPools.push_back(newPool);
     }
 
@@ -66,14 +67,14 @@ namespace graphics {
 
     vk::DescriptorPool DescriptorAllocatorGrowable::getPool() {
         vk::DescriptorPool newPool {};
-        if (readyPools.size() != 0) {
+        if (!readyPools.empty()) {
             newPool = readyPools.back();
             readyPools.pop_back();
         } else {
             // Need to create a new pool
             newPool = createPool(setsPerPool, ratios);
 
-            setsPerPool = setsPerPool * 1.5;
+            setsPerPool = static_cast<u32>(static_cast<float>(setsPerPool) * 1.5f);
             if (setsPerPool > 4092) {
                 setsPerPool = 4092;
             }
@@ -87,7 +88,7 @@ namespace graphics {
         for (const PoolSizeRatio ratio : poolRatios) {
             vk::DescriptorPoolSize descriptorPoolSize = {};
             descriptorPoolSize.type = ratio.type;
-            descriptorPoolSize.descriptorCount = static_cast<u32>(ratio.ratio * setCount);
+            descriptorPoolSize.descriptorCount = static_cast<u32>(ratio.ratio * static_cast<float>(setCount));
             poolSizes.push_back(descriptorPoolSize);
         }
 
@@ -97,5 +98,32 @@ namespace graphics {
         poolInfo.pPoolSizes = poolSizes.data();
 
         return device.createDescriptorPool(poolInfo, nullptr);
+    }
+
+    DescriptorAllocatorGrowable::DescriptorAllocatorGrowable(DescriptorAllocatorGrowable&& other) noexcept
+        : device(other.device), setsPerPool(other.setsPerPool), ratios(std::move(other.ratios)),
+          fullPools(std::move(other.fullPools)), readyPools(std::move(other.readyPools)) {
+        other.device = nullptr;
+    }
+
+    DescriptorAllocatorGrowable& DescriptorAllocatorGrowable::operator=(DescriptorAllocatorGrowable&& other) noexcept {
+        if (this != &other) {
+            // Destroy current pools
+            for (const auto p : readyPools) {
+                device.destroyDescriptorPool(p, nullptr);
+            }
+            for (const auto p: fullPools) {
+                device.destroyDescriptorPool(p, nullptr);
+            }
+
+            device = other.device;
+            setsPerPool = other.setsPerPool;
+            ratios = std::move(other.ratios);
+            fullPools = std::move(other.fullPools);
+            readyPools = std::move(other.readyPools);
+
+            other.device = nullptr;
+        }
+        return *this;
     }
 }

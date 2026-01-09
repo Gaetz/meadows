@@ -7,7 +7,9 @@
 
 namespace graphics {
     Image::Image(VulkanContext *context, vk::Extent3D size, vk::Format format, vk::ImageUsageFlags usage,
-                 bool mipmapped) : context(context), imageExtent(size), imageFormat(format) {
+                 bool mipmapped) : context(context), allocation(nullptr), imageExtent(size), imageFormat(format) {
+        image = nullptr;
+        imageView = nullptr;
 
         VkImageCreateInfo img_info = graphics::imageCreateInfo(format, usage, size);
         if (mipmapped) {
@@ -37,20 +39,18 @@ namespace graphics {
         VkImageView newView = VK_NULL_HANDLE;
         vkCreateImageView(context->getDevice(), &view_info, nullptr, &newView);
         imageView = newView;
-
     }
 
-    Image::Image(VulkanContext *context, ImmediateSubmitter& submitter, void *data, vk::Extent3D size, vk::Format format, vk::ImageUsageFlags usage, bool mipmapped) {
+    Image::Image(VulkanContext *context, ImmediateSubmitter& submitter, void *data, vk::Extent3D size, vk::Format format, vk::ImageUsageFlags usage, bool mipmapped)
+        : Image(context, size, format, usage | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, mipmapped) {
 
-        size_t data_size = size.depth * size.width * size.height * 4;
+        size_t data_size = static_cast<size_t>(size.depth) * size.width * size.height * 4;
         Buffer uploadbuffer {context, data_size, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_CPU_TO_GPU};
 
         memcpy(uploadbuffer.info.pMappedData, data, data_size);
 
-        Image new_image { context, size, format, usage | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, mipmapped };
-
         submitter.immediateSubmit(context, [&](VkCommandBuffer cmd) {
-            graphics::transitionImage(cmd, new_image.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+            graphics::transitionImage(cmd, this->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
 
             VkBufferImageCopy copyRegion = {};
             copyRegion.bufferOffset = 0;
@@ -64,19 +64,48 @@ namespace graphics {
             copyRegion.imageExtent = size;
 
             // copy the buffer into the image
-            vkCmdCopyBufferToImage(cmd, uploadbuffer.buffer, new_image.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+            vkCmdCopyBufferToImage(cmd, uploadbuffer.buffer, this->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                 &copyRegion);
 
-            graphics::transitionImage(cmd, new_image.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eReadOnlyOptimal);
+            graphics::transitionImage(cmd, this->image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eReadOnlyOptimal);
             });
     }
 
-    void Image::destroy(const VulkanContext* context) {
-        if (imageView) {
-            context->getDevice().destroyImageView(imageView);
+    Image::Image(Image&& other) noexcept
+        : context(other.context), image(other.image), allocation(other.allocation),
+          imageView(other.imageView), imageExtent(other.imageExtent), imageFormat(other.imageFormat) {
+        other.image = nullptr;
+        other.imageView = nullptr;
+        other.allocation = nullptr;
+    }
+
+    Image& Image::operator=(Image&& other) noexcept {
+        if (this != &other) {
+            context = other.context;
+            image = other.image;
+            allocation = other.allocation;
+            imageView = other.imageView;
+            imageExtent = other.imageExtent;
+            imageFormat = other.imageFormat;
+
+            other.image = nullptr;
+            other.imageView = nullptr;
+            other.allocation = nullptr;
         }
-        if (image) {
-            vmaDestroyImage(context->getAllocator(), image, allocation);
+        return *this;
+    }
+
+    void Image::destroy(const VulkanContext* ctx) {
+        if (ctx) {
+            if (imageView) {
+                ctx->getDevice().destroyImageView(imageView);
+                imageView = nullptr;
+            }
+            if (image && allocation) {
+                vmaDestroyImage(ctx->getAllocator(), image, allocation);
+                image = nullptr;
+                allocation = nullptr;
+            }
         }
     }
 }
