@@ -40,7 +40,7 @@ namespace graphics {
 
     }
 
-    Image::Image(VulkanContext *context, void *data, vk::Extent3D size, vk::Format format, vk::ImageUsageFlags usage, bool mipmapped) {
+    Image::Image(VulkanContext *context, ImmediateSubmitter& submitter, void *data, vk::Extent3D size, vk::Format format, vk::ImageUsageFlags usage, bool mipmapped) {
 
         size_t data_size = size.depth * size.width * size.height * 4;
         Buffer uploadbuffer {context, data_size, vk::BufferUsageFlagBits::eTransferSrc, VMA_MEMORY_USAGE_CPU_TO_GPU};
@@ -49,7 +49,7 @@ namespace graphics {
 
         Image new_image { context, size, format, usage | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, mipmapped };
 
-        immediateSubmit(context, [&](VkCommandBuffer cmd) {
+        submitter.immediateSubmit(context, [&](VkCommandBuffer cmd) {
             graphics::transitionImage(cmd, new_image.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
 
             VkBufferImageCopy copyRegion = {};

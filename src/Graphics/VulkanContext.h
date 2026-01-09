@@ -7,6 +7,7 @@
 
 #include "DeletionQueue.hpp"
 #include "DescriptorAllocator.h"
+#include "Image.h"
 
 namespace graphics {
     class Image;
