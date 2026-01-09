@@ -13,6 +13,7 @@
 #include "MaterialPipeline.h"
 #include "Utils.hpp"
 #include "VulkanLoader.h"
+#include "Pipelines/GLTFMetallicRoughness.h"
 
 namespace graphics {
     struct FrameData {
@@ -34,6 +35,9 @@ public:
     void draw();
 
     GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+
+    VulkanContext* getContext() const { return context; }
+    vk::DescriptorSetLayout getSceneDataDescriptorLayout() const { return gpuSceneDataDescriptorLayout; }
 
 private:
     void createCommandPoolAndBuffers();
@@ -100,6 +104,10 @@ private:
     vk::Sampler defaultSamplerLinear;
     vk::Sampler defaultSamplerNearest;
     vk::DescriptorSetLayout singleImageDescriptorLayout;
+
+    MaterialInstance defaultData;
+    pipelines::GLTFMetallicRoughness metalRoughMaterial;
+
 
     // ImGui
     vk::DescriptorPool imguiDescriptorPool;

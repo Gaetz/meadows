@@ -19,7 +19,10 @@
 #include "VulkanInit.hpp"
 #include "fmt/color.h"
 
+using graphics::pipelines::GLTFMetallicRoughness;
+
 namespace graphics {
+
     Renderer::Renderer(VulkanContext *context) : context(context) {
         lastFrameTime = std::chrono::high_resolution_clock::now();
     }
@@ -143,6 +146,7 @@ namespace graphics {
         createBackgroundPipeline();
         //createTrianglePipeline();
         createMeshPipeline();
+        metalRoughMaterial.buildPipelines(this);
     }
 
     void Renderer::createBackgroundPipeline() {
@@ -327,9 +331,11 @@ namespace graphics {
         // Create a descriptor set that binds that buffer and update it
         VkDescriptorSet globalDescriptor = getCurrentFrame().frameDescriptors.allocate(gpuSceneDataDescriptorLayout);
 
-        DescriptorWriter writer;
-        writer.writeBuffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, vk::DescriptorType::eUniformBuffer);
-        writer.updateSet(context->getDevice(), globalDescriptor);
+        {
+            DescriptorWriter writer;
+            writer.writeBuffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, vk::DescriptorType::eUniformBuffer);
+            writer.updateSet(context->getDevice(), globalDescriptor);
+        }
 
 
 
@@ -398,7 +404,7 @@ namespace graphics {
 
             writer.updateSet(context->getDevice(), imageSet);
         }
-        command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, meshPipeline->getPipelineLayout(), 0, 1, &imageSet, 0, nullptr);
+        command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, meshPipeline->getLayout(), 0, 1, &imageSet, 0, nullptr);
 
 
         // Draw test GLTF
@@ -408,7 +414,7 @@ namespace graphics {
         pushConstants.worldMatrix = projection * view;
         pushConstants.vertexBuffer = testMeshes[2]->meshBuffers.vertexBufferAddress;
 
-        command.pushConstants(meshPipeline->getPipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
+        command.pushConstants(meshPipeline->getLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
         command.bindIndexBuffer(testMeshes[2]->meshBuffers.indexBuffer.buffer, 0, vk::IndexType::eUint32);
 
         command.drawIndexed(testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
@@ -435,6 +441,7 @@ namespace graphics {
 
         testMeshes = loadGltfMeshes(this,"assets\\basicmesh.glb").value();
 
+        // Texture
         u32 white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
         whiteImage = Image{ context, immSubmitter, static_cast<void*>(&white), VkExtent3D{ 1, 1, 1 },
             vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled };
@@ -476,6 +483,27 @@ namespace graphics {
             blackImage.destroy(context);
             errorCheckerboardImage.destroy(context);
         }, "Default textures and samplers");
+
+        // PBR
+        GLTFMetallicRoughness::MaterialResources materialResources;
+        //default the material textures
+        materialResources.colorImage = whiteImage;
+        materialResources.colorSampler = defaultSamplerLinear;
+        materialResources.metalRoughImage = whiteImage;
+        materialResources.metalRoughSampler = defaultSamplerLinear;
+
+        //set the uniform buffer for the material data
+        Buffer materialConstants { context, sizeof(GLTFMetallicRoughness::MaterialConstants), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU };
+
+        //write the buffer
+        const auto sceneUniformData = static_cast<GLTFMetallicRoughness::MaterialConstants *>(materialConstants.info.pMappedData);
+        sceneUniformData->colorFactors = Vec4 {1,1,1,1};
+        sceneUniformData->metalRoughFactors = Vec4 {1,0.5,0,0};
+
+        materialResources.dataBuffer = materialConstants.buffer;
+        materialResources.dataBufferOffset = 0;
+
+        defaultData = metalRoughMaterial.writeMaterial(device, MaterialPass::MainColor, materialResources, context->getGlobalDescriptorAllocator());
     }
 
     GPUMeshBuffers Renderer::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {
@@ -743,7 +771,7 @@ namespace graphics {
             ImGui::SliderFloat("Render Scale", &renderScale, minScale, 1.f);
 
             ComputeEffect &selected = backgroundEffects[currentBackgroundEffect];
-            ImGui::Text("Selected effect: ", selected.name);
+            ImGui::Text("Selected effect: %s", selected.name);
             ImGui::SliderInt("Effect Index", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);
 
             ImGui::InputFloat4("data1", reinterpret_cast<float*>(&selected.data.data1));

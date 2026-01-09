@@ -7,6 +7,7 @@
 #include <SDL3/SDL_vulkan.h>
 
 // VMA Implementation
+#include "DescriptorAllocatorGrowable.h"
 #include "Image.h"
 #include "VulkanInit.hpp"
 
@@ -290,7 +291,7 @@ namespace graphics {
 
     void VulkanContext::createDescriptorAllocator() {
         // Create a descriptor pool that will hold 10 sets with 1 image each
-        vector<PoolSizeRatio> sizes = {{vk::DescriptorType::eStorageImage, 1.0f}};
-        globalDescriptorAllocator = std::make_unique<DescriptorAllocator>(device, 10, sizes);
+        vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = {{vk::DescriptorType::eStorageImage, 1.0f}};
+        globalDescriptorAllocator = std::make_unique<DescriptorAllocatorGrowable>(device, 10, sizes);
     }
 } // namespace graphics

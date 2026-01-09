@@ -207,6 +207,8 @@ compile_shader(${SHADER_DIR}/coloredTriangle.vert ${SPV_DIR}/coloredTriangle.ver
 compile_shader(${SHADER_DIR}/coloredTriangle.frag ${SPV_DIR}/coloredTriangle.frag.spv)
 compile_shader(${SHADER_DIR}/coloredTriangleMesh.vert ${SPV_DIR}/coloredTriangleMesh.vert.spv)
 compile_shader(${SHADER_DIR}/texImage.frag ${SPV_DIR}/texImage.frag.spv)
+compile_shader(${SHADER_DIR}/mesh.vert ${SPV_DIR}/mesh.vert.spv)
+compile_shader(${SHADER_DIR}/mesh.frag ${SPV_DIR}/mesh.frag.spv)
 
 add_custom_target(Shaders ALL
         DEPENDS
@@ -219,6 +221,8 @@ add_custom_target(Shaders ALL
         ${SPV_DIR}/coloredTriangle.frag.spv
         ${SPV_DIR}/coloredTriangleMesh.vert.spv
         ${SPV_DIR}/texImage.frag.spv
+        ${SPV_DIR}/mesh.vert.spv
+        ${SPV_DIR}/mesh.frag.spv
 )
 
 # Main Executable
@@ -266,6 +270,8 @@ add_executable(Meadows
         src/Graphics/DescriptorWriter.h
         src/Graphics/Image.cpp
         src/Graphics/Image.h
+        src/Graphics/Pipelines/GLTFMetallicRoughness.cpp
+        src/Graphics/Pipelines/GLTFMetallicRoughness.h
 )
 
 # Ensure shaders are compiled before building Meadows

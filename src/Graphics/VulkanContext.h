@@ -6,10 +6,10 @@
 #include <VkBootstrap.h>
 
 #include "DeletionQueue.hpp"
-#include "DescriptorAllocator.h"
 #include "Image.h"
 
 namespace graphics {
+    class DescriptorAllocatorGrowable;
     class Image;
     class Swapchain;
 
@@ -32,7 +32,7 @@ namespace graphics {
         VmaAllocator getAllocator() const { return allocator; }
         Swapchain *getSwapchain() const { return swapchain.get(); }
         SDL_Window *getWindow() const { return window; }
-        DescriptorAllocator* getGlobalDescriptorAllocator() const { return globalDescriptorAllocator.get(); }
+        DescriptorAllocatorGrowable* getGlobalDescriptorAllocator() const { return globalDescriptorAllocator.get(); }
 
         Image& getDrawImage();
         Image& getDepthImage();
@@ -78,7 +78,7 @@ namespace graphics {
 
         VmaAllocator allocator;
         uptr<Swapchain> swapchain{nullptr};
-        uptr<DescriptorAllocator> globalDescriptorAllocator{nullptr};
+        uptr<DescriptorAllocatorGrowable> globalDescriptorAllocator {nullptr};
 
         Image drawImage;
         Image depthImage;

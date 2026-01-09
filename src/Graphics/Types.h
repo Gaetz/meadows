@@ -74,7 +74,7 @@ namespace graphics
 
     struct MaterialInstance {
         MaterialPipeline* pipeline;
-        VkDescriptorSet materialSet;
+        vk::DescriptorSet materialSet;
         MaterialPass passType;
     };
 

@@ -25,7 +25,7 @@ namespace graphics {
         Image(Image&& other) noexcept;
         Image& operator=(Image&& other) noexcept;
 
-        Image(const Image&) = delete;
-        Image& operator=(const Image&) = delete;
+        Image(const Image&) = default;
+        Image& operator=(const Image&) = default;
     };
 }
