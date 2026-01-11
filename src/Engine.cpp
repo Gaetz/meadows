@@ -88,9 +88,13 @@ void Engine::mainLoop() {
         // Handle events on queue
         while (SDL_PollEvent(&e)) {
             ImGui_ImplSDL3_ProcessEvent(&e);
+
             if (e.type == SDL_EVENT_QUIT) {
                 quit = true;
             }
+
+            // Pass events to renderer for camera control
+            renderer->processEvent(e);
         }
 
         renderer->draw();

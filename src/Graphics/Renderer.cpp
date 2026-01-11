@@ -542,13 +542,22 @@ namespace graphics {
         }
     }
 
+    void Renderer::processEvent(const SDL_Event& event) {
+        mainCamera.processSDLEvent(event);
+    }
+
     void Renderer::updateScene() {
+        // Update camera
+        mainCamera.update();
+
         mainDrawContext.opaqueSurfaces.clear();
 
         loadedNodes["Suzanne"]->draw(glm::mat4{1.f}, mainDrawContext);
 
         const auto imageExtent = context->getDrawImage().imageExtent;
-        sceneData.view = glm::translate(glm::vec3{ 0,0,-5 });
+
+        // Use camera for view matrix
+        sceneData.view = mainCamera.getViewMatrix();
         sceneData.proj = glm::perspective(glm::radians(70.f), static_cast<float>(imageExtent.width) / static_cast<float>(imageExtent.height), 0.1f, 10000.f);
 
         // Invert the Y direction on projection matrix so that we are more similar
@@ -562,9 +571,8 @@ namespace graphics {
         sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
 
         for (int x = -3; x < 3; x++) {
-
             glm::mat4 scale = glm::scale(glm::vec3{0.2});
-            glm::mat4 translation =  glm::translate(glm::vec3{x, 1, 0});
+            glm::mat4 translation = glm::translate(glm::vec3{x, 1, 0});
 
             loadedNodes["Cube"]->draw(translation * scale, mainDrawContext);
         }

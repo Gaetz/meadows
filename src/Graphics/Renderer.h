@@ -7,6 +7,7 @@
 #include <chrono>
 
 #include "Buffer.h"
+#include "Camera.h"
 #include "ComputeEffect.h"
 #include "DeletionQueue.hpp"
 #include "DescriptorAllocatorGrowable.h"
@@ -35,6 +36,7 @@ public:
     void init();
     void cleanup();
     void draw();
+    void processEvent(const SDL_Event& event);
 
     GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
 
@@ -65,11 +67,9 @@ private:
     VulkanContext* context;
 
     bool resizeRequested {false};
-    vk::Extent2D drawExtent;
     float renderScale { 0.5f };
 
     int frameNumber {0};
-    uint32_t currentFrame = 0;
     static const int FRAME_OVERLAP = 2;
 
     FrameData frames[FRAME_OVERLAP];
@@ -93,6 +93,7 @@ private:
     uptr<MaterialPipeline> meshPipeline;
 
     // Scene data
+    Camera mainCamera;
     GPUMeshBuffers rectangleMesh;
     vector<sptr<MeshAsset>> testMeshes;
     GPUSceneData sceneData;

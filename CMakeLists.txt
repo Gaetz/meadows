@@ -275,6 +275,8 @@ add_executable(Meadows
         src/Graphics/Pipelines/GLTFMetallicRoughness.h
         src/Graphics/Node.cpp
         src/Graphics/Node.h
+        src/Graphics/Camera.cpp
+        src/Graphics/Camera.h
 )
 
 # Ensure shaders are compiled before building Meadows

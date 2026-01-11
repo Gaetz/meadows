@@ -11,11 +11,6 @@ using services::Log;
 namespace graphics {
     MaterialPipeline::MaterialPipeline(VulkanContext *context, vk::Pipeline pipeline, vk::PipelineLayout pipelineLayout)
     : context(context), graphicsPipeline(pipeline), pipelineLayout(pipelineLayout) {
-
-        // Copy to be able to execute when object is out of scope
-        vk::Device contextDevice = context->getDevice();
-        vk::Pipeline pipelineCopy = pipeline;
-        vk::PipelineLayout pipelineLayoutCopy = pipelineLayout;
     }
 
     MaterialPipeline::~MaterialPipeline() {

@@ -45,3 +45,4 @@ build/
 .idea/
 .vscode/
 cmake-build-debug/
+/.claude/
