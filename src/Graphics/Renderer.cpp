@@ -601,10 +601,14 @@ namespace graphics {
         vk::SamplerCreateInfo samplerInfo {};
         samplerInfo.magFilter = vk::Filter::eNearest;
         samplerInfo.minFilter = vk::Filter::eNearest;
+        samplerInfo.mipmapMode = vk::SamplerMipmapMode::eNearest;
+        samplerInfo.minLod = 0;
+        samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
         auto nearestRes = device.createSampler(&samplerInfo, nullptr, &defaultSamplerNearest);
 
         samplerInfo.magFilter = vk::Filter::eLinear;
         samplerInfo.minFilter = vk::Filter::eLinear;
+        samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
         auto linearRes = device.createSampler(&samplerInfo, nullptr, &defaultSamplerLinear);
 
         context->addToMainDeletionQueue([this, device](){

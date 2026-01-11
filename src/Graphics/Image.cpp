@@ -67,8 +67,12 @@ namespace graphics {
             vkCmdCopyBufferToImage(cmd, uploadbuffer.buffer, this->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                 &copyRegion);
 
-            graphics::transitionImage(cmd, this->image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eReadOnlyOptimal);
-            });
+            if (mipmapped) {
+                graphics::generateMipmaps(cmd, this->image, vk::Extent2D { size.width, size.height });
+            } else {
+                graphics::transitionImage(cmd, this->image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eReadOnlyOptimal);
+            }
+        });
     }
 
     Image::Image(Image&& other) noexcept

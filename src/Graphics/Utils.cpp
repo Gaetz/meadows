@@ -1,5 +1,8 @@
 #include "Utils.hpp"
 
+#include <cmath>
+#include <algorithm>
+
 #include "VulkanContext.h"
 #include "VulkanInit.hpp"
 
@@ -82,6 +85,85 @@ namespace graphics
         blitInfo.pRegions = &blitRegion;
 
         command.blitImage2(&blitInfo);
+    }
+
+    void generateMipmaps(vk::CommandBuffer command, vk::Image image, vk::Extent2D imageSize) {
+        int mipLevels = static_cast<int>(std::floor(std::log2(std::max(imageSize.width, imageSize.height)))) + 1;
+
+        for (int mip = 0; mip < mipLevels; mip++) {
+            vk::Extent2D halfSize = {
+                std::max(imageSize.width >> 1, 1u),
+                std::max(imageSize.height >> 1, 1u)
+            };
+
+            vk::ImageMemoryBarrier2 imageBarrier {};
+            imageBarrier.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands;
+            imageBarrier.srcAccessMask = vk::AccessFlagBits2::eMemoryWrite;
+            imageBarrier.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands;
+            imageBarrier.dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite;
+            imageBarrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+            imageBarrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+            imageBarrier.subresourceRange = imageSubresourceRange(vk::ImageAspectFlagBits::eColor);
+            imageBarrier.subresourceRange.levelCount = 1;
+            imageBarrier.subresourceRange.baseMipLevel = mip;
+            imageBarrier.image = image;
+
+            vk::DependencyInfo dependencyInfo {};
+            dependencyInfo.imageMemoryBarrierCount = 1;
+            dependencyInfo.pImageMemoryBarriers = &imageBarrier;
+            command.pipelineBarrier2(dependencyInfo);
+
+            if (mip < mipLevels - 1) {
+                vk::ImageBlit2 blitRegion {};
+                blitRegion.srcOffsets[1].x = imageSize.width;
+                blitRegion.srcOffsets[1].y = imageSize.height;
+                blitRegion.srcOffsets[1].z = 1;
+
+                blitRegion.dstOffsets[1].x = halfSize.width;
+                blitRegion.dstOffsets[1].y = halfSize.height;
+                blitRegion.dstOffsets[1].z = 1;
+
+                blitRegion.srcSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+                blitRegion.srcSubresource.baseArrayLayer = 0;
+                blitRegion.srcSubresource.layerCount = 1;
+                blitRegion.srcSubresource.mipLevel = mip;
+
+                blitRegion.dstSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+                blitRegion.dstSubresource.baseArrayLayer = 0;
+                blitRegion.dstSubresource.layerCount = 1;
+                blitRegion.dstSubresource.mipLevel = mip + 1;
+
+                vk::BlitImageInfo2 blitInfo {};
+                blitInfo.dstImage = image;
+                blitInfo.dstImageLayout = vk::ImageLayout::eTransferDstOptimal;
+                blitInfo.srcImage = image;
+                blitInfo.srcImageLayout = vk::ImageLayout::eTransferSrcOptimal;
+                blitInfo.filter = vk::Filter::eLinear;
+                blitInfo.regionCount = 1;
+                blitInfo.pRegions = &blitRegion;
+
+                command.blitImage2(&blitInfo);
+
+                imageSize = halfSize;
+            }
+        }
+
+        // Transition all mip levels to shader read-only optimal
+        vk::ImageMemoryBarrier2 imageBarrier {};
+        imageBarrier.srcStageMask = vk::PipelineStageFlagBits2::eAllCommands;
+        imageBarrier.srcAccessMask = vk::AccessFlagBits2::eMemoryWrite;
+        imageBarrier.dstStageMask = vk::PipelineStageFlagBits2::eAllCommands;
+        imageBarrier.dstAccessMask = vk::AccessFlagBits2::eMemoryRead | vk::AccessFlagBits2::eMemoryWrite;
+        imageBarrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+        imageBarrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        imageBarrier.subresourceRange = imageSubresourceRange(vk::ImageAspectFlagBits::eColor);
+        imageBarrier.subresourceRange.levelCount = mipLevels;
+        imageBarrier.image = image;
+
+        vk::DependencyInfo dependencyInfo {};
+        dependencyInfo.imageMemoryBarrierCount = 1;
+        dependencyInfo.pImageMemoryBarriers = &imageBarrier;
+        command.pipelineBarrier2(dependencyInfo);
     }
 
     void ImmediateSubmitter::immediateSubmit(VulkanContext* context, std::function<void(vk::CommandBuffer cmd)> &&function) {

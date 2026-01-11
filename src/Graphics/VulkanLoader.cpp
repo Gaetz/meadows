@@ -192,7 +192,7 @@ namespace graphics {
                     imagesize.height = height;
                     imagesize.depth = 1;
 
-                    newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled);
+                    newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled, true);
 
                     stbi_image_free(data);
                 }
@@ -205,7 +205,7 @@ namespace graphics {
                     imagesize.height = height;
                     imagesize.depth = 1;
 
-                    newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled);
+                    newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled, true);
 
                     stbi_image_free(data);
                 }
@@ -224,7 +224,7 @@ namespace graphics {
                             imagesize.height = height;
                             imagesize.depth = 1;
 
-                            newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled);
+                            newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled, true);
 
                             stbi_image_free(data);
                         }
@@ -237,7 +237,7 @@ namespace graphics {
                             imagesize.height = height;
                             imagesize.depth = 1;
 
-                            newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled);
+                            newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled, true);
 
                             stbi_image_free(data);
                         }
