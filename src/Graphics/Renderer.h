@@ -45,6 +45,10 @@ public:
     vk::DescriptorSetLayout getSceneDataDescriptorLayout() const { return gpuSceneDataDescriptorLayout; }
     ImmediateSubmitter* getImmediateSubmitter() { return &immSubmitter; }
 
+    // External DrawContext (from Scene)
+    void setDrawContext(DrawContext* ctx) { externalDrawContext = ctx; }
+    DrawContext* getDrawContext() { return externalDrawContext ? externalDrawContext : &mainDrawContext; }
+
     // Rendering data
     Image errorCheckerboardImage;
     Image whiteImage;
@@ -118,6 +122,9 @@ private:
     DrawContext mainDrawContext;
     std::unordered_map<std::string, sptr<Node>> loadedNodes;
     std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
+
+    // External DrawContext (from Scene)
+    DrawContext* externalDrawContext { nullptr };
 
     // Optimization data
     MaterialPipeline* lastPipeline { nullptr };

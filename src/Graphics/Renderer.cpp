@@ -365,21 +365,24 @@ namespace graphics {
         // Begin clock
         auto start = std::chrono::system_clock::now();
 
+        // Get the active draw context (external or internal)
+        DrawContext& ctx = *getDrawContext();
+
         // Sort the render objects by those parameters to minimize the number of calls
         std::vector<u32> opaqueDraws;
-        opaqueDraws.reserve(mainDrawContext.opaqueSurfaces.size());
+        opaqueDraws.reserve(ctx.opaqueSurfaces.size());
 
         // Frustum culling: only add visible objects to draw list
-        for (uint32_t i = 0; i < mainDrawContext.opaqueSurfaces.size(); i++) {
-            if (isVisible(mainDrawContext.opaqueSurfaces[i], sceneData.viewProj)) {
+        for (uint32_t i = 0; i < ctx.opaqueSurfaces.size(); i++) {
+            if (isVisible(ctx.opaqueSurfaces[i], sceneData.viewProj)) {
                 opaqueDraws.push_back(i);
             }
         }
 
         // Sort the opaque surfaces by material and mesh
         std::ranges::sort(opaqueDraws, [&](const auto& iA, const auto& iB) {
-            const RenderObject& A = mainDrawContext.opaqueSurfaces[iA];
-            const RenderObject& B = mainDrawContext.opaqueSurfaces[iB];
+            const RenderObject& A = ctx.opaqueSurfaces[iA];
+            const RenderObject& B = ctx.opaqueSurfaces[iB];
             if (A.material == B.material) {
                 return A.indexBuffer < B.indexBuffer;
             }
@@ -498,8 +501,8 @@ namespace graphics {
         */
 
         if (frameNumber == 0) {
-            services::Log::Debug("Rendering %zu opaque surfaces", mainDrawContext.opaqueSurfaces.size());
-            services::Log::Debug("Rendering %zu transparent surfaces", mainDrawContext.transparentSurfaces.size());
+            services::Log::Debug("Rendering %zu opaque surfaces", ctx.opaqueSurfaces.size());
+            services::Log::Debug("Rendering %zu transparent surfaces", ctx.transparentSurfaces.size());
         }
 
         auto draw = [&](const RenderObject& r) {
@@ -534,10 +537,10 @@ namespace graphics {
         };
 
         for (auto& r : opaqueDraws) {
-            draw(mainDrawContext.opaqueSurfaces[r]);
+            draw(ctx.opaqueSurfaces[r]);
         }
 
-        for (auto& r : mainDrawContext.transparentSurfaces) {
+        for (auto& r : ctx.transparentSurfaces) {
             if (isVisible(r, sceneData.viewProj)) {
                 draw(r);
             }
@@ -679,8 +682,11 @@ namespace graphics {
         // Update camera
         mainCamera.update();
 
-        mainDrawContext.opaqueSurfaces.clear();
-        mainDrawContext.transparentSurfaces.clear();
+        // Only clear internal context if no external context is provided
+        if (!externalDrawContext) {
+            mainDrawContext.opaqueSurfaces.clear();
+            mainDrawContext.transparentSurfaces.clear();
+        }
 
 
 
@@ -711,8 +717,11 @@ namespace graphics {
         }
 
         */
-        
-        loadedScenes["structure"]->draw(Mat4{ 1.f }, mainDrawContext);
+
+        // Only fill mainDrawContext if no external context is provided
+        if (!externalDrawContext) {
+            loadedScenes["structure"]->draw(Mat4{ 1.f }, mainDrawContext);
+        }
     }
 
     GPUMeshBuffers Renderer::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {
