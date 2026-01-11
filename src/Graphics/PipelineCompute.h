@@ -1,8 +1,9 @@
 ﻿#pragma once
 #include "Defines.h"
-#include "VulkanContext.h"
+#include <vulkan/vulkan.hpp>
 
 namespace graphics {
+    class VulkanContext;
 
     class PipelineCompute {
     public:

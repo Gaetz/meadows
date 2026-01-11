@@ -2,7 +2,7 @@
 #include <filesystem>
 
 #include "Buffer.h"
-#include "Defines.h"
+#include "Types.h"
 
 namespace graphics {
     struct GLTFMaterial {

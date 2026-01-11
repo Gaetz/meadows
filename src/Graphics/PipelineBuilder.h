@@ -1,9 +1,12 @@
 ﻿#pragma once
 #include <vector>
 
-#include "MaterialPipeline.h"
+#include "Types.h"
 
 namespace graphics {
+    class VulkanContext;
+    class MaterialPipeline;
+
     class PipelineBuilder {
     public:
         VulkanContext* context {nullptr};

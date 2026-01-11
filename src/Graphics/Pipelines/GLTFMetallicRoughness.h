@@ -3,6 +3,7 @@
 #include "Graphics/Types.h"
 #include "Graphics/DescriptorWriter.h"
 #include "Graphics/MaterialPipeline.h"
+#include "Graphics/Image.h"
 
 namespace graphics {
     class DescriptorAllocatorGrowable;

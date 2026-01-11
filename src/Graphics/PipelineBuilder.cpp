@@ -4,6 +4,8 @@
 
 #include "PipelineBuilder.h"
 
+#include "MaterialPipeline.h"
+#include "VulkanContext.h"
 #include "Utils.hpp"
 #include "VulkanInit.hpp"
 #include "BasicServices/File.h"

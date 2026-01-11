@@ -1,9 +1,9 @@
 #pragma once
 
 #include "Types.h"
-#include "VulkanContext.h"
 
 namespace graphics {
+    class VulkanContext;
 
     class MaterialPipeline {
     public:

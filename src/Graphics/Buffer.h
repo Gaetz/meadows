@@ -1,9 +1,11 @@
 #pragma once
 
-#include "VulkanContext.h"
 #include <vulkan/vulkan.hpp>
+#include <vk_mem_alloc.h>
 
 namespace graphics {
+    class VulkanContext;
+
     class Buffer {
     public:
         Buffer() = default;

@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include "PipelineCompute.h"
+#include "Types.h"
 
 namespace graphics {
     class ComputeEffect {

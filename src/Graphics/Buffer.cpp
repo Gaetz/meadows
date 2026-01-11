@@ -1,4 +1,5 @@
 #include "Buffer.h"
+#include "VulkanContext.h"
 #include <cassert>
 
 namespace graphics {

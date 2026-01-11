@@ -10,7 +10,6 @@
 
 namespace graphics {
     class DescriptorAllocatorGrowable;
-    class Image;
     class Swapchain;
 
     class VulkanContext {

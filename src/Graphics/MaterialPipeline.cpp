@@ -1,4 +1,5 @@
 #include "MaterialPipeline.h"
+#include "VulkanContext.h"
 #include "../BasicServices/Log.h"
 #include "../BasicServices/File.h"
 #include "Types.h"
