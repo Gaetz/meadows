@@ -463,6 +463,17 @@ namespace graphics {
                     newSurface.material = materials[0];
                 }
 
+                // Calculate bounds from vertex positions
+                glm::vec3 minPos = vertices[initialVtx].position;
+                glm::vec3 maxPos = vertices[initialVtx].position;
+                for (size_t i = initialVtx; i < vertices.size(); i++) {
+                    minPos = glm::min(minPos, vertices[i].position);
+                    maxPos = glm::max(maxPos, vertices[i].position);
+                }
+                newSurface.bounds.origin = (maxPos + minPos) / 2.f;
+                newSurface.bounds.extents = (maxPos - minPos) / 2.f;
+                newSurface.bounds.sphereRadius = glm::length(newSurface.bounds.extents);
+
                 newMesh->surfaces.push_back(newSurface);
             }
 

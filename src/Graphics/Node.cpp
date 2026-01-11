@@ -34,6 +34,7 @@ namespace graphics {
             def.firstIndex = startIndex;
             def.indexBuffer = mesh->meshBuffers.indexBuffer.buffer;
             def.material = &material->data;
+            def.bounds = bounds;
 
             def.transform = nodeMatrix;
             def.vertexBufferAddress = mesh->meshBuffers.vertexBufferAddress;

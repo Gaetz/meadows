@@ -314,11 +314,54 @@ namespace graphics {
                          1);
     }
 
+    bool isVisible(const RenderObject& obj, const Mat4& viewProj) {
+        std::array<Vec3, 8> corners {
+            Vec3 { 1, 1, 1 },
+            Vec3 { 1, 1, -1 },
+            Vec3 { 1, -1, 1 },
+            Vec3 { 1, -1, -1 },
+            Vec3 { -1, 1, 1 },
+            Vec3 { -1, 1, -1 },
+            Vec3 { -1, -1, 1 },
+            Vec3 { -1, -1, -1 },
+        };
+
+        Mat4 matrix = viewProj * obj.transform;
+
+        Vec3 min = { 1.5f, 1.5f, 1.5f };
+        Vec3 max = { -1.5f, -1.5f, -1.5f };
+
+        for (int c = 0; c < 8; c++) {
+            // Transform corner to clip space
+            Vec4 v = matrix * Vec4(obj.bounds.origin + (corners[c] * obj.bounds.extents), 1.f);
+
+            // Perspective division
+            v.x = v.x / v.w;
+            v.y = v.y / v.w;
+            v.z = v.z / v.w;
+
+            min = glm::min(Vec3{ v.x, v.y, v.z }, min);
+            max = glm::max(Vec3{ v.x, v.y, v.z }, max);
+        }
+
+        // Check against view frustum in clip space
+        if (min.z > 1.f || max.z < 0.f || min.x > 1.f || max.x < -1.f || min.y > 1.f || max.y < -1.f) {
+            return false;
+        }
+        return true;
+    }
+
     void Renderer::drawGeometry(vk::CommandBuffer command) {
         // Reset stats counters
         auto& stats = services::RenderingStats::Instance();
         stats.drawcallCount = 0;
         stats.triangleCount = 0;
+
+        // Reset cached pipeline state for this frame
+        lastPipeline = nullptr;
+        lastMaterial = nullptr;
+        lastIndexBuffer = nullptr;
+
         // Begin clock
         auto start = std::chrono::system_clock::now();
 
@@ -326,8 +369,11 @@ namespace graphics {
         std::vector<u32> opaqueDraws;
         opaqueDraws.reserve(mainDrawContext.opaqueSurfaces.size());
 
+        // Frustum culling: only add visible objects to draw list
         for (uint32_t i = 0; i < mainDrawContext.opaqueSurfaces.size(); i++) {
-            opaqueDraws.push_back(i);
+            if (isVisible(mainDrawContext.opaqueSurfaces[i], sceneData.viewProj)) {
+                opaqueDraws.push_back(i);
+            }
         }
 
         // Sort the opaque surfaces by material and mesh
@@ -492,7 +538,9 @@ namespace graphics {
         }
 
         for (auto& r : mainDrawContext.transparentSurfaces) {
-            draw(r);
+            if (isVisible(r, sceneData.viewProj)) {
+                draw(r);
+            }
         }
 
         // End of drawing
