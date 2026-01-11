@@ -16,6 +16,8 @@
 #include "Pipelines/GLTFMetallicRoughness.h"
 
 namespace graphics {
+    struct Node;
+
     struct FrameData {
         vk::CommandPool commandPool;
         vk::CommandBuffer mainCommandBuffer;
@@ -58,7 +60,7 @@ private:
     // Data methods
     float getMinRenderScale() const;
     void createSceneData();
-
+    void updateScene();
 
     VulkanContext* context;
 
@@ -94,6 +96,7 @@ private:
     GPUMeshBuffers rectangleMesh;
     vector<sptr<MeshAsset>> testMeshes;
     GPUSceneData sceneData;
+    Buffer sceneDataBuffer;
     vk::DescriptorSetLayout gpuSceneDataDescriptorLayout;
 
     // Texture data
@@ -106,8 +109,11 @@ private:
     vk::DescriptorSetLayout singleImageDescriptorLayout;
 
     MaterialInstance defaultData;
+    Buffer defaultMaterialConstants;
     pipelines::GLTFMetallicRoughness metalRoughMaterial;
 
+    DrawContext mainDrawContext;
+    std::unordered_map<std::string, sptr<Node>> loadedNodes;
 
     // ImGui
     vk::DescriptorPool imguiDescriptorPool;

@@ -126,7 +126,7 @@ namespace graphics {
         }
 
         // display the vertex normals
-        if (constexpr bool OverrideColors = true) {
+        if (constexpr bool OverrideColors = false) {
             for (Vertex& vtx : vertices) {
                 vtx.color = glm::vec4(vtx.normal, 1.f);
             }

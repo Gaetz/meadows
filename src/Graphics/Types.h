@@ -89,4 +89,8 @@ namespace graphics
         vk::DeviceAddress vertexBufferAddress;
     };
 
+    struct DrawContext {
+        vector<RenderObject> opaqueSurfaces;
+    };
+
 } // namespace graphics

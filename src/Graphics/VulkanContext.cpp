@@ -290,8 +290,11 @@ namespace graphics {
     }
 
     void VulkanContext::createDescriptorAllocator() {
-        // Create a descriptor pool that will hold 10 sets with 1 image each
-        vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = {{vk::DescriptorType::eStorageImage, 1.0f}};
+        vector<DescriptorAllocatorGrowable::PoolSizeRatio> sizes = {
+            {vk::DescriptorType::eStorageImage, 1.0f},
+            {vk::DescriptorType::eUniformBuffer, 1.0f},
+            {vk::DescriptorType::eCombinedImageSampler, 1.0f}
+        };
         globalDescriptorAllocator = std::make_unique<DescriptorAllocatorGrowable>(device, 10, sizes);
     }
 } // namespace graphics

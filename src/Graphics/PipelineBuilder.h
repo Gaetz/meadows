@@ -51,5 +51,7 @@ namespace graphics {
         void disableDepthTest();
 
         void enableDepthTest(bool deepWriteEnable, vk::CompareOp compareOp);
+
+        void destroyShaderModules(vk::Device device);
     };
 } // namespace graphics

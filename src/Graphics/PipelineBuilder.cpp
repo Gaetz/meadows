@@ -80,14 +80,10 @@ namespace graphics {
         dynamicInfo.dynamicStateCount = 2;
         pipelineInfo.pDynamicState = &dynamicInfo;
 
-        vk::Pipeline newPipeline;
+        vk::Pipeline newPipeline {};
         if (device.createGraphicsPipelines(VK_NULL_HANDLE, 1, &pipelineInfo,nullptr, &newPipeline) != vk::Result::eSuccess) {
             services::Log::Error("Failed to create graphics pipeline");
         }
-
-        // Clean structures
-        device.destroyShaderModule(vertexShaderModule, nullptr);
-        device.destroyShaderModule(fragmentShaderModule, nullptr);
 
         return std::make_unique<MaterialPipeline>( context, newPipeline, pipelineLayout );
     }
@@ -188,5 +184,16 @@ namespace graphics {
         depthStencil.back = vk::StencilOp::eZero;
         depthStencil.minDepthBounds = 0.f;
         depthStencil.maxDepthBounds = 1.f;
+    }
+
+    void PipelineBuilder::destroyShaderModules(vk::Device device) {
+        if (vertexShaderModule) {
+            device.destroyShaderModule(vertexShaderModule, nullptr);
+            vertexShaderModule = nullptr;
+        }
+        if (fragmentShaderModule) {
+            device.destroyShaderModule(fragmentShaderModule, nullptr);
+            fragmentShaderModule = nullptr;
+        }
     }
 }

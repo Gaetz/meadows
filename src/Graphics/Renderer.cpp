@@ -14,9 +14,11 @@
 #include "DescriptorLayoutBuilder.hpp"
 #include "DescriptorWriter.h"
 #include "Image.h"
+#include "Node.h"
 #include "PipelineBuilder.h"
 #include "Utils.hpp"
 #include "VulkanInit.hpp"
+#include "BasicServices/Log.h"
 #include "fmt/color.h"
 
 using graphics::pipelines::GLTFMetallicRoughness;
@@ -52,6 +54,9 @@ namespace graphics {
         ImGui::DestroyContext();
 
         device.destroyDescriptorPool(imguiDescriptorPool);
+
+        // Cleanup material pipelines
+        metalRoughMaterial.clear(device);
 
         for (int i = 0; i < FRAME_OVERLAP; i++) {
             frames[i].deletionQueue.flush();
@@ -135,6 +140,9 @@ namespace graphics {
         DescriptorLayoutBuilder builder;
         builder.addBinding(0, vk::DescriptorType::eUniformBuffer);
         gpuSceneDataDescriptorLayout = builder.build(device, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+
+        // Create scene data buffer (single buffer, updated each frame after waitForFences)
+        sceneDataBuffer = Buffer { context, sizeof(GPUSceneData), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU };
 
         // Simple texture descriptor
         DescriptorLayoutBuilder builderTexture;
@@ -314,30 +322,18 @@ namespace graphics {
 
 
 
-        // Allocate a new uniform buffer for the scene data
-        Buffer gpuSceneDataBuffer { context, sizeof(GPUSceneData), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU };
-
-        // Add it to the deletion queue of this frame so it gets deleted once its been used
-        /*
-        getCurrentFrame().deletionQueue.pushFunction([&gpuSceneDataBuffer]() {
-            gpuSceneDataBuffer.destroy();
-        }, "Frame GPU scene data buffer");
-        */
-
-        // Write the buffer
-        auto sceneUniformData = static_cast<GPUSceneData *>(gpuSceneDataBuffer.info.pMappedData);
+        // Write the scene data buffer
+        auto sceneUniformData = static_cast<GPUSceneData *>(sceneDataBuffer.info.pMappedData);
         *sceneUniformData = sceneData;
 
         // Create a descriptor set that binds that buffer and update it
-        VkDescriptorSet globalDescriptor = getCurrentFrame().frameDescriptors.allocate(gpuSceneDataDescriptorLayout);
+        vk::DescriptorSet globalDescriptor = getCurrentFrame().frameDescriptors.allocate(gpuSceneDataDescriptorLayout);
 
         {
             DescriptorWriter writer;
-            writer.writeBuffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, vk::DescriptorType::eUniformBuffer);
+            writer.writeBuffer(0, sceneDataBuffer.buffer, sizeof(GPUSceneData), 0, vk::DescriptorType::eUniformBuffer);
             writer.updateSet(context->getDevice(), globalDescriptor);
         }
-
-
 
         // Draw triangle
         /*
@@ -368,10 +364,10 @@ namespace graphics {
         vk::Viewport viewport = {};
         viewport.x = 0;
         viewport.y = 0;
-        viewport.width = imageExtent.width;
-        viewport.height = imageExtent.height;
-        viewport.minDepth = 1.f;
-        viewport.maxDepth = 0.f;
+        viewport.width = static_cast<float>(imageExtent.width);
+        viewport.height = static_cast<float>(imageExtent.height);
+        viewport.minDepth = 0.f;
+        viewport.maxDepth = 1.f;
         command.setViewport(0, 1, &viewport);
 
         vk::Rect2D scissor = {};
@@ -381,11 +377,11 @@ namespace graphics {
         scissor.extent.height = imageExtent.height;
         command.setScissor(0, 1, &scissor);
 
-        GraphicsPushConstants pushConstants;
 
 
         /*
         // Draw rectangle mesh
+        GraphicsPushConstants pushConstants;
         pushConstants.worldMatrix = glm::mat4{ 1.f };
         pushConstants.vertexBuffer = rectangleMesh.vertexBufferAddress;
 
@@ -395,7 +391,10 @@ namespace graphics {
         command.drawIndexed(6, 1, 0, 0, 0);
         */
 
+        /*
         // Texture binding
+        GraphicsPushConstants pushConstants;
+
         vk::DescriptorSet imageSet = getCurrentFrame().frameDescriptors.allocate(singleImageDescriptorLayout);
         {
             DescriptorWriter writer;
@@ -418,6 +417,28 @@ namespace graphics {
         command.bindIndexBuffer(testMeshes[2]->meshBuffers.indexBuffer.buffer, 0, vk::IndexType::eUint32);
 
         command.drawIndexed(testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
+        */
+
+        if (frameNumber == 0) {
+            services::Log::Debug("Rendering %zu opaque surfaces", mainDrawContext.opaqueSurfaces.size());
+        }
+
+        for (const RenderObject& draw : mainDrawContext.opaqueSurfaces) {
+
+            command.bindPipeline(vk::PipelineBindPoint::eGraphics, draw.material->pipeline->getPipeline());
+            command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.material->pipeline->getLayout(), 0,1, &globalDescriptor,0,nullptr );
+            command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.material->pipeline->getLayout(), 1,1, &draw.material->materialSet,0,nullptr );
+
+            command.bindIndexBuffer(draw.indexBuffer,0,vk::IndexType::eUint32);
+
+            GraphicsPushConstants pushConstants {};
+            pushConstants.vertexBuffer = draw.vertexBufferAddress;
+            pushConstants.worldMatrix = draw.transform;
+            command.pushConstants(draw.material->pipeline->getLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
+
+            command.drawIndexed(draw.indexCount,1,draw.firstIndex,0,0);
+        }
+
 
         // End of drawing
         command.endRendering();
@@ -486,24 +507,67 @@ namespace graphics {
 
         // PBR
         GLTFMetallicRoughness::MaterialResources materialResources;
-        //default the material textures
+        // Default the material textures
         materialResources.colorImage = whiteImage;
         materialResources.colorSampler = defaultSamplerLinear;
         materialResources.metalRoughImage = whiteImage;
         materialResources.metalRoughSampler = defaultSamplerLinear;
 
-        //set the uniform buffer for the material data
-        Buffer materialConstants { context, sizeof(GLTFMetallicRoughness::MaterialConstants), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU };
+        // Set the uniform buffer for the material data
+        defaultMaterialConstants = Buffer { context, sizeof(GLTFMetallicRoughness::MaterialConstants), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU };
 
-        //write the buffer
-        const auto sceneUniformData = static_cast<GLTFMetallicRoughness::MaterialConstants *>(materialConstants.info.pMappedData);
+        // Write the buffer
+        const auto sceneUniformData = static_cast<GLTFMetallicRoughness::MaterialConstants *>(defaultMaterialConstants.info.pMappedData);
         sceneUniformData->colorFactors = Vec4 {1,1,1,1};
         sceneUniformData->metalRoughFactors = Vec4 {1,0.5,0,0};
 
-        materialResources.dataBuffer = materialConstants.buffer;
+        materialResources.dataBuffer = defaultMaterialConstants.buffer;
         materialResources.dataBufferOffset = 0;
 
         defaultData = metalRoughMaterial.writeMaterial(device, MaterialPass::MainColor, materialResources, context->getGlobalDescriptorAllocator());
+
+        for (auto& m : testMeshes) {
+            services::Log::Debug("Loaded mesh: '%s' with %zu surfaces", m->name.c_str(), m->surfaces.size());
+            auto newNode = std::make_shared<MeshNode>();
+            newNode->mesh = m;
+
+            newNode->localTransform = glm::mat4{ 1.f };
+            newNode->worldTransform = glm::mat4{ 1.f };
+
+            for (auto& s : newNode->mesh->surfaces) {
+                s.material = std::make_shared<GLTFMaterial>(defaultData);
+            }
+
+            loadedNodes[m->name] = std::move(newNode);
+        }
+    }
+
+    void Renderer::updateScene() {
+        mainDrawContext.opaqueSurfaces.clear();
+
+        loadedNodes["Suzanne"]->draw(glm::mat4{1.f}, mainDrawContext);
+
+        const auto imageExtent = context->getDrawImage().imageExtent;
+        sceneData.view = glm::translate(glm::vec3{ 0,0,-5 });
+        sceneData.proj = glm::perspective(glm::radians(70.f), static_cast<float>(imageExtent.width) / static_cast<float>(imageExtent.height), 0.1f, 10000.f);
+
+        // Invert the Y direction on projection matrix so that we are more similar
+        // to opengl and gltf axis
+        sceneData.proj[1][1] *= -1;
+        sceneData.viewProj = sceneData.proj * sceneData.view;
+
+        // Some default lighting parameters
+        sceneData.ambientColor = glm::vec4(.1f);
+        sceneData.sunlightColor = glm::vec4(1.f);
+        sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
+
+        for (int x = -3; x < 3; x++) {
+
+            glm::mat4 scale = glm::scale(glm::vec3{0.2});
+            glm::mat4 translation =  glm::translate(glm::vec3{x, 1, 0});
+
+            loadedNodes["Cube"]->draw(translation * scale, mainDrawContext);
+        }
     }
 
     GPUMeshBuffers Renderer::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {
@@ -568,6 +632,8 @@ namespace graphics {
             context->resizeSwapchain();
             resizeRequested = false;
         }
+
+        updateScene();
 
         // Wait for previous frame
         vk::Result fenceResult = device.waitForFences(1, &currentFrameData.renderFence, true, 1000000000);

@@ -5,9 +5,14 @@
 #include "Defines.h"
 
 namespace graphics {
+    struct GLTFMaterial {
+        MaterialInstance data;
+    };
+
     struct GeoSurface {
         u32 startIndex;
         u32 count;
+        sptr<GLTFMaterial> material;
     };
 
     struct MeshAsset {

@@ -13,17 +13,17 @@ namespace graphics {
         MaterialPipeline(const MaterialPipeline&) = delete;
         MaterialPipeline& operator=(const MaterialPipeline&) = delete;
 
-        vk::Pipeline getPipeline() const { return graphicsPipeline; }
-        vk::PipelineLayout getLayout() const { return pipelineLayout; }
+        [[nodiscard]] vk::Pipeline getPipeline() const { return graphicsPipeline; }
+        [[nodiscard]] vk::PipelineLayout getLayout() const { return pipelineLayout; }
 
-        void setLayout(const vk::PipelineLayout layout) { pipelineLayout = layout; }
+        void setLayout(vk::PipelineLayout layout) { pipelineLayout = layout; }
 
         void bind(vk::CommandBuffer commandBuffer) const;
 
     private:
         VulkanContext* context;
-        vk::Pipeline graphicsPipeline;
-        vk::PipelineLayout pipelineLayout;
+        vk::Pipeline graphicsPipeline {nullptr};
+        vk::PipelineLayout pipelineLayout {nullptr};  // Not owned, do not destroy
     };
 
 } // namespace graphics

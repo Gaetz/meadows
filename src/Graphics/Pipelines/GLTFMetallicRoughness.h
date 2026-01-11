@@ -15,7 +15,8 @@ namespace  graphics::pipelines {
     public:
         uptr<MaterialPipeline> opaquePipeline { nullptr };
         uptr<MaterialPipeline> transparentPipeline { nullptr };
-        vk::DescriptorSetLayout materialLayout;
+        vk::DescriptorSetLayout materialLayout { nullptr };
+        vk::PipelineLayout pipelineLayout { nullptr };
 
         struct MaterialConstants {
             Vec4 colorFactors;
@@ -36,7 +37,7 @@ namespace  graphics::pipelines {
         DescriptorWriter writer;
 
         void buildPipelines(const Renderer *renderer);
-        void clearResources(vk::Device device);
+        void clear(vk::Device device);
 
         MaterialInstance writeMaterial(vk::Device device, MaterialPass pass, const MaterialResources& resources, DescriptorAllocatorGrowable* descriptorAllocator);
     };

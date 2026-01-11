@@ -18,7 +18,7 @@ namespace graphics {
     }
 
     MaterialPipeline::~MaterialPipeline() {
-        context->getDevice().destroyPipelineLayout(pipelineLayout);
+        // Note: pipelineLayout is not owned by MaterialPipeline, it's managed by the material system
         context->getDevice().destroyPipeline(graphicsPipeline);
     }
 

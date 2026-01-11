@@ -26,21 +26,22 @@ message(STATUS "━━━━━━━━━━━━━━━━━━━━━�
 # ──────────────────────────────────────────────────────────────────────
 # SDL3
 # ──────────────────────────────────────────────────────────────────────
-download_with_progress("SDL3")
+set(SDL3_VERSION "3.4.0")
+download_with_progress("SDL3 ${SDL3_VERSION}")
 set(SDL_TEST OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC OFF CACHE BOOL "" FORCE)
 set(SDL_SHARED ON CACHE BOOL "" FORCE)
-set(SDL3_URL "https://github.com/libsdl-org/SDL/archive/refs/heads/main.zip")
-set(SDL3_ZIP "${CMAKE_BINARY_DIR}/_deps/SDL3.zip")
+set(SDL3_URL "https://github.com/libsdl-org/SDL/archive/refs/tags/release-${SDL3_VERSION}.zip")
+set(SDL3_ZIP "${CMAKE_BINARY_DIR}/_deps/SDL3-${SDL3_VERSION}.zip")
 set(SDL3_SOURCE_DIR "${CMAKE_BINARY_DIR}/_deps/SDL3-src")
 if(NOT EXISTS ${SDL3_ZIP})
     file(DOWNLOAD ${SDL3_URL} ${SDL3_ZIP} SHOW_PROGRESS)
 else()
-    message(STATUS " ➤ SDL3 (cached)")
+    message(STATUS " ➤ SDL3 ${SDL3_VERSION} (cached)")
 endif()
 file(ARCHIVE_EXTRACT INPUT ${SDL3_ZIP} DESTINATION ${SDL3_SOURCE_DIR})
-add_subdirectory(${SDL3_SOURCE_DIR}/SDL-main ${CMAKE_BINARY_DIR}/_deps/SDL3-build)
-download_complete("SDL3")
+add_subdirectory(${SDL3_SOURCE_DIR}/SDL-release-${SDL3_VERSION} ${CMAKE_BINARY_DIR}/_deps/SDL3-build)
+download_complete("SDL3 ${SDL3_VERSION}")
 
 # ──────────────────────────────────────────────────────────────────────
 # GLM
@@ -272,6 +273,8 @@ add_executable(Meadows
         src/Graphics/Image.h
         src/Graphics/Pipelines/GLTFMetallicRoughness.cpp
         src/Graphics/Pipelines/GLTFMetallicRoughness.h
+        src/Graphics/Node.cpp
+        src/Graphics/Node.h
 )
 
 # Ensure shaders are compiled before building Meadows

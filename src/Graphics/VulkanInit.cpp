@@ -135,7 +135,7 @@ namespace graphics
         info.imageLayout = imageLayout;
         info.loadOp = vk::AttachmentLoadOp::eClear;
         info.storeOp = vk::AttachmentStoreOp::eStore;
-        info.clearValue.depthStencil.depth = 0.f;
+        info.clearValue.depthStencil.depth = 1.f;
         return info;
     }
 

@@ -28,9 +28,7 @@ namespace graphics::pipelines {
         meshLayoutInfo.pPushConstantRanges = &matrixRange;
         meshLayoutInfo.pushConstantRangeCount = 1;
 
-        const vk::PipelineLayout newLayout = device.createPipelineLayout(meshLayoutInfo);
-        opaquePipeline->setLayout(newLayout);
-        transparentPipeline->setLayout(newLayout);
+        pipelineLayout = device.createPipelineLayout(meshLayoutInfo);
 
         PipelineBuilder pipelineBuilder{renderer->getContext(), "shaders/mesh.vert.spv", "shaders/mesh.frag.spv"};
         pipelineBuilder.setInputTopology(vk::PrimitiveTopology::eTriangleList);
@@ -38,21 +36,23 @@ namespace graphics::pipelines {
         pipelineBuilder.setCullMode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
         pipelineBuilder.setMultisamplingNone();
         pipelineBuilder.disableBlending();
-        pipelineBuilder.enableDepthTest(true, vk::CompareOp::eGreaterOrEqual);
+        pipelineBuilder.enableDepthTest(true, vk::CompareOp::eLessOrEqual);
 
         // Render format
         pipelineBuilder.setColorAttachmentFormat(renderer->getContext()->getDrawImage().imageFormat);
         pipelineBuilder.setDepthFormat(renderer->getContext()->getDepthImage().imageFormat);
 
-        // Use the triangle layout we created
-        pipelineBuilder.pipelineLayout = newLayout;
+        // Use the pipeline layout we created
+        pipelineBuilder.pipelineLayout = pipelineLayout;
 
         opaquePipeline = pipelineBuilder.buildPipeline(device);
 
         // Create the transparent variant
         pipelineBuilder.enableBlendingAdditive();
-        pipelineBuilder.enableDepthTest(false, vk::CompareOp::eGreaterOrEqual);
+        pipelineBuilder.enableDepthTest(false, vk::CompareOp::eLessOrEqual);
         transparentPipeline = pipelineBuilder.buildPipeline(device);
+
+        pipelineBuilder.destroyShaderModules(device);
     }
 
     MaterialInstance GLTFMetallicRoughness::writeMaterial(vk::Device device, MaterialPass pass,
@@ -79,5 +79,19 @@ namespace graphics::pipelines {
         writer.updateSet(device, matData.materialSet);
 
         return matData;
+    }
+
+    void GLTFMetallicRoughness::clear(vk::Device device) {
+        if (pipelineLayout) {
+            device.destroyPipelineLayout(pipelineLayout);
+            pipelineLayout = nullptr;
+        }
+        if (materialLayout) {
+            device.destroyDescriptorSetLayout(materialLayout);
+            materialLayout = nullptr;
+        }
+        // Pipelines are destroyed by their unique_ptr destructors
+        opaquePipeline.reset();
+        transparentPipeline.reset();
     }
 }
