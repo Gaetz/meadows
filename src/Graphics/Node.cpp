@@ -37,7 +37,11 @@ namespace graphics {
             def.transform = nodeMatrix;
             def.vertexBufferAddress = mesh->meshBuffers.vertexBufferAddress;
 
-            ctx.opaqueSurfaces.push_back(def);
+            if (material->data.passType == MaterialPass::Transparent) {
+                ctx.transparentSurfaces.push_back(def);
+            } else {
+                ctx.opaqueSurfaces.push_back(def);
+            }
         }
 
         // Recurse down

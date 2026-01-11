@@ -91,6 +91,7 @@ namespace graphics
 
     struct DrawContext {
         vector<RenderObject> opaqueSurfaces;
+        std::vector<RenderObject> transparentSurfaces;
     };
 
 } // namespace graphics

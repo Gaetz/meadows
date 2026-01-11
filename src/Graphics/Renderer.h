@@ -42,6 +42,7 @@ public:
 
     VulkanContext* getContext() const { return context; }
     vk::DescriptorSetLayout getSceneDataDescriptorLayout() const { return gpuSceneDataDescriptorLayout; }
+    ImmediateSubmitter* getImmediateSubmitter() { return &immSubmitter; }
 
     // Rendering data
     Image errorCheckerboardImage;

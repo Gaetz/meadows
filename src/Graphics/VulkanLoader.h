@@ -3,6 +3,8 @@
 
 #include "Buffer.h"
 #include "Types.h"
+#include "Image.h"
+#include <fastgltf/core.hpp>
 
 namespace graphics {
     struct GLTFMaterial {
@@ -27,4 +29,5 @@ namespace graphics {
 
     std::optional<vector<sptr<MeshAsset>>> loadGltfMeshes(Renderer* engine, const str& filePath);
     std::optional<sptr<LoadedGLTF>> loadGltf(Renderer* engine, const str& filePath);
+    std::optional<Image> loadImage(Renderer* engine, fastgltf::Asset& asset, fastgltf::Image& image);
 }

@@ -1,4 +1,6 @@
 ﻿#pragma once
+#include <vk_mem_alloc.h>
+
 #include "Types.h"
 
 namespace graphics {

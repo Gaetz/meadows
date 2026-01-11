@@ -2,7 +2,6 @@
 #include <glm/gtx/transform.hpp>
 #include "VulkanLoader.h"
 
-#include "stb_image.h"
 #include <iostream>
 
 #include "Renderer.h"
@@ -16,6 +15,9 @@
 
 #include "BasicServices/File.h"
 #include "fastgltf/core.hpp"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 using services::Log;
 
@@ -171,6 +173,88 @@ namespace graphics {
         }
     }
 
+    std::optional<Image> loadImage(Renderer* engine, fastgltf::Asset& asset, fastgltf::Image& image) {
+        std::optional<Image> newImage;
+
+        int width, height, nrChannels;
+
+        std::visit(fastgltf::visitor {
+            [](auto& arg) {},
+            [&](fastgltf::sources::URI& filePath) {
+                assert(filePath.fileByteOffset == 0); // We don't support offsets with stbi
+                assert(filePath.uri.isLocalPath()); // We're only testing local files
+
+                const std::string path(filePath.uri.path().begin(), filePath.uri.path().end());
+                unsigned char* data = stbi_load(path.c_str(), &width, &height, &nrChannels, 4);
+                if (data) {
+                    vk::Extent3D imagesize;
+                    imagesize.width = width;
+                    imagesize.height = height;
+                    imagesize.depth = 1;
+
+                    newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled);
+
+                    stbi_image_free(data);
+                }
+            },
+            [&](fastgltf::sources::Vector& vector) {
+                unsigned char* data = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(vector.bytes.data()), static_cast<int>(vector.bytes.size()), &width, &height, &nrChannels, 4);
+                if (data) {
+                    vk::Extent3D imagesize;
+                    imagesize.width = width;
+                    imagesize.height = height;
+                    imagesize.depth = 1;
+
+                    newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled);
+
+                    stbi_image_free(data);
+                }
+            },
+            [&](fastgltf::sources::BufferView& view) {
+                auto& bufferView = asset.bufferViews[view.bufferViewIndex];
+                auto& buffer = asset.buffers[bufferView.bufferIndex];
+
+                std::visit(fastgltf::visitor {
+                    [](auto& arg) {},
+                    [&](fastgltf::sources::Array& array) {
+                        unsigned char* data = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(array.bytes.data() + bufferView.byteOffset), static_cast<int>(bufferView.byteLength), &width, &height, &nrChannels, 4);
+                        if (data) {
+                            vk::Extent3D imagesize;
+                            imagesize.width = width;
+                            imagesize.height = height;
+                            imagesize.depth = 1;
+
+                            newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled);
+
+                            stbi_image_free(data);
+                        }
+                    },
+                    [&](fastgltf::sources::Vector& vector) {
+                        unsigned char* data = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(vector.bytes.data() + bufferView.byteOffset), static_cast<int>(bufferView.byteLength), &width, &height, &nrChannels, 4);
+                        if (data) {
+                            vk::Extent3D imagesize;
+                            imagesize.width = width;
+                            imagesize.height = height;
+                            imagesize.depth = 1;
+
+                            newImage = Image(engine->getContext(), *engine->getImmediateSubmitter(), data, imagesize, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eSampled);
+
+                            stbi_image_free(data);
+                        }
+                    }
+                }, buffer.data);
+            },
+        }, image.data);
+
+        // If loading failed, return empty optional
+        if (!newImage.has_value()) {
+            Log::Error("Failed to load texture for glTF");
+             return {};
+        }
+
+        return newImage;
+    }
+
     std::optional<sptr<LoadedGLTF>> loadGltf(Renderer* engine, const str& filePath) {
         Log::Debug("Loading glTF scene: %s", filePath.c_str());
 
@@ -242,12 +326,20 @@ namespace graphics {
         vector<Image> images;
         vector<sptr<GLTFMaterial>> materials;
 
-        // Load Images (placeholders for now)
-        for (auto& image : gltf.images) {
-            images.push_back(engine->errorCheckerboardImage);
-        }
+        // Load Images
+        for (fastgltf::Image& image : gltf.images) {
+            std::optional<Image> img = loadImage(engine, gltf, image);
 
-        // Load Materials
+            if (img.has_value()) {
+                images.push_back(*img);
+                file.images[image.name.c_str()] = *img; 
+            } else {
+                // we failed to load, so let's give the slot a default white image to not crash
+                images.push_back(engine->errorCheckerboardImage);
+                Log::Error("gltf failed to load texture: %s", image.name.c_str());
+            }
+        }
+        
         file.materialDataBuffer = Buffer(engine->getContext(), sizeof(pipelines::GLTFMetallicRoughness::MaterialConstants) * gltf.materials.size(),
             vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
 

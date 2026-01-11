@@ -425,24 +425,32 @@ namespace graphics {
 
         if (frameNumber == 0) {
             services::Log::Debug("Rendering %zu opaque surfaces", mainDrawContext.opaqueSurfaces.size());
+            services::Log::Debug("Rendering %zu transparent surfaces", mainDrawContext.transparentSurfaces.size());
         }
 
-        for (const RenderObject& draw : mainDrawContext.opaqueSurfaces) {
+        auto draw = [&](const RenderObject& toDraw) {
 
-            command.bindPipeline(vk::PipelineBindPoint::eGraphics, draw.material->pipeline->getPipeline());
-            command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.material->pipeline->getLayout(), 0,1, &globalDescriptor,0,nullptr );
-            command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.material->pipeline->getLayout(), 1,1, &draw.material->materialSet,0,nullptr );
+            command.bindPipeline(vk::PipelineBindPoint::eGraphics, toDraw.material->pipeline->getPipeline());
+            command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, toDraw.material->pipeline->getLayout(), 0,1, &globalDescriptor,0,nullptr );
+            command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, toDraw.material->pipeline->getLayout(), 1,1, &toDraw.material->materialSet,0,nullptr );
 
-            command.bindIndexBuffer(draw.indexBuffer,0,vk::IndexType::eUint32);
+            command.bindIndexBuffer(toDraw.indexBuffer,0,vk::IndexType::eUint32);
 
             GraphicsPushConstants pushConstants {};
-            pushConstants.vertexBuffer = draw.vertexBufferAddress;
-            pushConstants.worldMatrix = draw.transform;
-            command.pushConstants(draw.material->pipeline->getLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
+            pushConstants.vertexBuffer = toDraw.vertexBufferAddress;
+            pushConstants.worldMatrix = toDraw.transform;
+            command.pushConstants(toDraw.material->pipeline->getLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
 
-            command.drawIndexed(draw.indexCount,1,draw.firstIndex,0,0);
+            command.drawIndexed(toDraw.indexCount,1,toDraw.firstIndex,0,0);
+        };
+
+        for (auto& r : mainDrawContext.opaqueSurfaces) {
+            draw(r);
         }
 
+        for (auto& r : mainDrawContext.transparentSurfaces) {
+            draw(r);
+        }
 
         // End of drawing
         command.endRendering();
@@ -570,6 +578,7 @@ namespace graphics {
         mainCamera.update();
 
         mainDrawContext.opaqueSurfaces.clear();
+        mainDrawContext.transparentSurfaces.clear();
 
 
 
