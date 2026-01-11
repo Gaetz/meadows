@@ -12,6 +12,7 @@
 #include "DeletionQueue.hpp"
 #include "DescriptorAllocatorGrowable.h"
 #include "MaterialPipeline.h"
+#include "RenderObject.h"
 #include "Utils.hpp"
 #include "VulkanLoader.h"
 #include "Pipelines/GLTFMetallicRoughness.h"
@@ -117,6 +118,11 @@ private:
     DrawContext mainDrawContext;
     std::unordered_map<std::string, sptr<Node>> loadedNodes;
     std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
+
+    // Optimization data
+    MaterialPipeline* lastPipeline { nullptr };
+    MaterialInstance* lastMaterial { nullptr };
+    vk::Buffer lastIndexBuffer { nullptr };
 
     // ImGui
     vk::DescriptorPool imguiDescriptorPool;

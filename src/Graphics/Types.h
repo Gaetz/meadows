@@ -7,7 +7,6 @@
 #include <optional>
 #include <vk_mem_alloc.h>
 
-
 namespace graphics
 {
     class MaterialPipeline;
@@ -77,21 +76,4 @@ namespace graphics
         vk::DescriptorSet materialSet;
         MaterialPass passType;
     };
-
-    struct RenderObject {
-        u32 indexCount;
-        u32 firstIndex;
-        vk::Buffer indexBuffer;
-
-        MaterialInstance* material;
-
-        Mat4 transform;
-        vk::DeviceAddress vertexBufferAddress;
-    };
-
-    struct DrawContext {
-        vector<RenderObject> opaqueSurfaces;
-        std::vector<RenderObject> transparentSurfaces;
-    };
-
 } // namespace graphics

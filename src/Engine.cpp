@@ -4,6 +4,8 @@
 #include "Graphics/Renderer.h"
 #include <backends/imgui_impl_sdl3.h>
 
+#include "BasicServices/RenderingStats.h"
+
 using services::Log;
 
 
@@ -85,6 +87,9 @@ void Engine::mainLoop() {
     SDL_Event e;
 
     while (!quit) {
+        // Begin stats clock
+        auto start = std::chrono::system_clock::now();
+
         // Handle events on queue
         while (SDL_PollEvent(&e)) {
             ImGui_ImplSDL3_ProcessEvent(&e);
@@ -98,6 +103,11 @@ void Engine::mainLoop() {
         }
 
         renderer->draw();
+
+        // End stats clock
+        auto end = std::chrono::system_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        services::RenderingStats::Instance().frameTime = static_cast<float>(elapsed.count()) / 1000.f;
     }
     
     vulkanContext->getDevice().waitIdle();

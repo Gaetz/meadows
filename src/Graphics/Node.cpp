@@ -4,6 +4,7 @@
 
 #include "Node.h"
 
+#include "RenderObject.h"
 #include "VulkanLoader.h"
 
 namespace graphics {
@@ -27,7 +28,7 @@ namespace graphics {
 
         // A mesh can have multiple surfaces with different materials, so we will loop the surfaces
         // of the mesh, and add the resulting RenderObjects to the list.
-        for (auto&[startIndex, count, material] : mesh->surfaces) {
+        for (auto&[startIndex, count, bounds, material] : mesh->surfaces) {
             RenderObject def;
             def.indexCount = count;
             def.firstIndex = startIndex;

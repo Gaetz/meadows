@@ -20,6 +20,7 @@
 #include "Utils.hpp"
 #include "VulkanInit.hpp"
 #include "BasicServices/Log.h"
+#include "BasicServices/RenderingStats.h"
 #include "fmt/color.h"
 
 using graphics::pipelines::GLTFMetallicRoughness;
@@ -314,6 +315,33 @@ namespace graphics {
     }
 
     void Renderer::drawGeometry(vk::CommandBuffer command) {
+        // Reset stats counters
+        auto& stats = services::RenderingStats::Instance();
+        stats.drawcallCount = 0;
+        stats.triangleCount = 0;
+        // Begin clock
+        auto start = std::chrono::system_clock::now();
+
+        // Sort the render objects by those parameters to minimize the number of calls
+        std::vector<u32> opaqueDraws;
+        opaqueDraws.reserve(mainDrawContext.opaqueSurfaces.size());
+
+        for (uint32_t i = 0; i < mainDrawContext.opaqueSurfaces.size(); i++) {
+            opaqueDraws.push_back(i);
+        }
+
+        // Sort the opaque surfaces by material and mesh
+        std::ranges::sort(opaqueDraws, [&](const auto& iA, const auto& iB) {
+            const RenderObject& A = mainDrawContext.opaqueSurfaces[iA];
+            const RenderObject& B = mainDrawContext.opaqueSurfaces[iB];
+            if (A.material == B.material) {
+                return A.indexBuffer < B.indexBuffer;
+            }
+            // else
+            return A.material < B.material;
+        });
+
+
         // Begin a render pass connected to our draw image
         vk::RenderingAttachmentInfo colorAttachment = graphics::attachmentInfo(context->getDrawImage().imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
         vk::RenderingAttachmentInfo depthAttachment = graphics::depthAttachmentInfo(context->getDepthImage().imageView, vk::ImageLayout::eDepthAttachmentOptimal);
@@ -428,24 +456,39 @@ namespace graphics {
             services::Log::Debug("Rendering %zu transparent surfaces", mainDrawContext.transparentSurfaces.size());
         }
 
-        auto draw = [&](const RenderObject& toDraw) {
+        auto draw = [&](const RenderObject& r) {
 
-            command.bindPipeline(vk::PipelineBindPoint::eGraphics, toDraw.material->pipeline->getPipeline());
-            command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, toDraw.material->pipeline->getLayout(), 0,1, &globalDescriptor,0,nullptr );
-            command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, toDraw.material->pipeline->getLayout(), 1,1, &toDraw.material->materialSet,0,nullptr );
+            if (r.material != lastMaterial) {
+                lastMaterial = r.material;
+                // Rebind pipeline and descriptors if the material changed
+                if (r.material->pipeline != lastPipeline) {
+                    lastPipeline = r.material->pipeline;
 
-            command.bindIndexBuffer(toDraw.indexBuffer,0,vk::IndexType::eUint32);
+                    command.bindPipeline(vk::PipelineBindPoint::eGraphics, r.material->pipeline->getPipeline());
+                    command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, r.material->pipeline->getLayout(), 0, 1, &globalDescriptor, 0, nullptr);
+                }
+                command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, r.material->pipeline->getLayout(), 1, 1, &r.material->materialSet, 0, nullptr);
+            }
+            // Rebind index buffer if needed
+            if (r.indexBuffer != lastIndexBuffer) {
+                lastIndexBuffer = r.indexBuffer;
+                command.bindIndexBuffer(r.indexBuffer,0,vk::IndexType::eUint32);
+            }
 
+            // Calculate final mesh matrix
             GraphicsPushConstants pushConstants {};
-            pushConstants.vertexBuffer = toDraw.vertexBufferAddress;
-            pushConstants.worldMatrix = toDraw.transform;
-            command.pushConstants(toDraw.material->pipeline->getLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
+            pushConstants.vertexBuffer = r.vertexBufferAddress;
+            pushConstants.worldMatrix = r.transform;
+            command.pushConstants(r.material->pipeline->getLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
 
-            command.drawIndexed(toDraw.indexCount,1,toDraw.firstIndex,0,0);
+            command.drawIndexed(r.indexCount,1,r.firstIndex,0,0);
+
+            stats.drawcallCount++;
+            stats.triangleCount += r.indexCount / 3;
         };
 
-        for (auto& r : mainDrawContext.opaqueSurfaces) {
-            draw(r);
+        for (auto& r : opaqueDraws) {
+            draw(mainDrawContext.opaqueSurfaces[r]);
         }
 
         for (auto& r : mainDrawContext.transparentSurfaces) {
@@ -454,6 +497,13 @@ namespace graphics {
 
         // End of drawing
         command.endRendering();
+
+        // End stats
+        auto end = std::chrono::system_clock::now();
+
+        // Convert to microseconds (integer), and then come back to milliseconds
+        auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        stats.meshDrawTime = elapsed.count() / 1000.f;
     }
 
     void Renderer::createSceneData() {
@@ -888,6 +938,15 @@ namespace graphics {
             ImGui::InputFloat4("data3", reinterpret_cast<float*>(&selected.data.data3));
             ImGui::InputFloat4("data4", reinterpret_cast<float*>(&selected.data.data4));
         }
+        ImGui::End();
+
+        ImGui::Begin("Stats");
+        auto& stats = services::RenderingStats::Instance();
+        ImGui::Text("frametime %f ms", stats.frameTime);
+        ImGui::Text("draw time %f ms", stats.meshDrawTime);
+        ImGui::Text("update time %f ms", stats.sceneUpdateTime);
+        ImGui::Text("triangles %i", stats.triangleCount);
+        ImGui::Text("draws %i", stats.drawcallCount);
         ImGui::End();
 
         ImGui::Render();

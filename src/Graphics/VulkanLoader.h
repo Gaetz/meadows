@@ -11,9 +11,16 @@ namespace graphics {
         MaterialInstance data;
     };
 
+    struct Bounds {
+        Vec3 origin;
+        f32 sphereRadius;
+        Vec3 extents;
+    };
+
     struct GeoSurface {
         u32 startIndex;
         u32 count;
+        Bounds bounds;
         sptr<GLTFMaterial> material;
     };
 

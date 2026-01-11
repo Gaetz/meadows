@@ -279,6 +279,8 @@ add_executable(Meadows
         src/Graphics/Node.h
         src/Graphics/Camera.cpp
         src/Graphics/Camera.h
+        src/BasicServices/RenderingStats.h
+        src/Graphics/RenderObject.h
 )
 
 # Ensure shaders are compiled before building Meadows
