@@ -43,6 +43,15 @@ public:
     VulkanContext* getContext() const { return context; }
     vk::DescriptorSetLayout getSceneDataDescriptorLayout() const { return gpuSceneDataDescriptorLayout; }
 
+    // Rendering data
+    Image errorCheckerboardImage;
+    Image whiteImage;
+    Image blackImage;
+    Image greyImage;
+    vk::Sampler defaultSamplerLinear;
+    vk::Sampler defaultSamplerNearest;
+    pipelines::GLTFMetallicRoughness metalRoughMaterial;
+
 private:
     void createCommandPoolAndBuffers();
     void createSyncObjects();
@@ -99,22 +108,14 @@ private:
     GPUSceneData sceneData;
     Buffer sceneDataBuffer;
     vk::DescriptorSetLayout gpuSceneDataDescriptorLayout;
-
-    // Texture data
-    Image whiteImage;
-    Image blackImage;
-    Image greyImage;
-    Image errorCheckerboardImage;
-    vk::Sampler defaultSamplerLinear;
-    vk::Sampler defaultSamplerNearest;
     vk::DescriptorSetLayout singleImageDescriptorLayout;
 
     MaterialInstance defaultData;
     Buffer defaultMaterialConstants;
-    pipelines::GLTFMetallicRoughness metalRoughMaterial;
 
     DrawContext mainDrawContext;
     std::unordered_map<std::string, sptr<Node>> loadedNodes;
+    std::unordered_map<std::string, std::shared_ptr<LoadedGLTF>> loadedScenes;
 
     // ImGui
     vk::DescriptorPool imguiDescriptorPool;

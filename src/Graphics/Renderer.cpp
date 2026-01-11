@@ -14,6 +14,7 @@
 #include "DescriptorLayoutBuilder.hpp"
 #include "DescriptorWriter.h"
 #include "Image.h"
+#include "LoadedGLTF.h"
 #include "Node.h"
 #include "PipelineBuilder.h"
 #include "Utils.hpp"
@@ -47,6 +48,9 @@ namespace graphics {
 
         vk::Device device = context->getDevice();
         device.waitIdle();
+
+        // Cleanup loaded scenes
+        loadedScenes.clear();
 
         // Cleanup ImGui
         ImGui_ImplVulkan_Shutdown();
@@ -382,7 +386,7 @@ namespace graphics {
         /*
         // Draw rectangle mesh
         GraphicsPushConstants pushConstants;
-        pushConstants.worldMatrix = glm::mat4{ 1.f };
+        pushConstants.worldMatrix = Mat4{ 1.f };
         pushConstants.vertexBuffer = rectangleMesh.vertexBufferAddress;
 
         command.pushConstants(meshPipeline->getPipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
@@ -445,6 +449,9 @@ namespace graphics {
     }
 
     void Renderer::createSceneData() {
+        /*
+        Rectangle mesh
+
         array<Vertex, 4> rectVertices;
         rectVertices[0].position = {0.5, -0.5, 0.0};
         rectVertices[1].position = {0.5,0.5, 0};
@@ -459,8 +466,7 @@ namespace graphics {
             2,1,3
         };
         rectangleMesh = uploadMesh(rectIndices, rectVertices);
-
-        testMeshes = loadGltfMeshes(this,"assets\\basicmesh.glb").value();
+        */
 
         // Texture
         u32 white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
@@ -505,6 +511,10 @@ namespace graphics {
             errorCheckerboardImage.destroy(context);
         }, "Default textures and samplers");
 
+
+        /* Load test GLTF mesh
+        testMeshes = loadGltfMeshes(this,"assets\\basicmesh.glb").value();
+
         // PBR
         GLTFMetallicRoughness::MaterialResources materialResources;
         // Default the material textures
@@ -531,8 +541,8 @@ namespace graphics {
             auto newNode = std::make_shared<MeshNode>();
             newNode->mesh = m;
 
-            newNode->localTransform = glm::mat4{ 1.f };
-            newNode->worldTransform = glm::mat4{ 1.f };
+            newNode->localTransform = Mat4{ 1.f };
+            newNode->worldTransform = Mat4{ 1.f };
 
             for (auto& s : newNode->mesh->surfaces) {
                 s.material = std::make_shared<GLTFMaterial>(defaultData);
@@ -540,6 +550,15 @@ namespace graphics {
 
             loadedNodes[m->name] = std::move(newNode);
         }
+        */
+        
+        // Load scene
+        std::string structurePath = { "assets\\structure.glb" };
+        auto structureFile = loadGltf(this, structurePath);
+        assert(structureFile.has_value());
+
+        loadedScenes["structure"] = *structureFile;
+        mainCamera.position = Vec3{ 30.f, 0.f, -85.f };
     }
 
     void Renderer::processEvent(const SDL_Event& event) {
@@ -552,7 +571,7 @@ namespace graphics {
 
         mainDrawContext.opaqueSurfaces.clear();
 
-        loadedNodes["Suzanne"]->draw(glm::mat4{1.f}, mainDrawContext);
+
 
         const auto imageExtent = context->getDrawImage().imageExtent;
 
@@ -570,12 +589,19 @@ namespace graphics {
         sceneData.sunlightColor = glm::vec4(1.f);
         sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
 
+        /* Draw test GLTF nodes
+
+        loadedNodes["Suzanne"]->draw(Mat4{1.f}, mainDrawContext);
         for (int x = -3; x < 3; x++) {
-            glm::mat4 scale = glm::scale(glm::vec3{0.2});
-            glm::mat4 translation = glm::translate(glm::vec3{x, 1, 0});
+            Mat4 scale = glm::scale(glm::vec3{0.2});
+            Mat4 translation = glm::translate(glm::vec3{x, 1, 0});
 
             loadedNodes["Cube"]->draw(translation * scale, mainDrawContext);
         }
+
+        */
+        
+        loadedScenes["structure"]->draw(Mat4{ 1.f }, mainDrawContext);
     }
 
     GPUMeshBuffers Renderer::uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices) {

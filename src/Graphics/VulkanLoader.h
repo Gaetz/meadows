@@ -23,6 +23,8 @@ namespace graphics {
     };
 
     class Renderer;
+    class LoadedGLTF;
 
     std::optional<vector<sptr<MeshAsset>>> loadGltfMeshes(Renderer* engine, const str& filePath);
+    std::optional<sptr<LoadedGLTF>> loadGltf(Renderer* engine, const str& filePath);
 }

@@ -265,6 +265,8 @@ add_executable(Meadows
         src/Graphics/PipelineBuilder.h
         src/Graphics/VulkanLoader.cpp
         src/Graphics/VulkanLoader.h
+        src/Graphics/LoadedGLTF.cpp
+        src/Graphics/LoadedGLTF.h
         src/Graphics/DescriptorAllocatorGrowable.cpp
         src/Graphics/DescriptorAllocatorGrowable.h
         src/Graphics/DescriptorWriter.cpp
