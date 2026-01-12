@@ -15,6 +15,7 @@ namespace graphics::techniques {
     enum class TechniqueType {
         Basic,
         ShadowMapping,
+        Deferred,
         // Add more technique types as needed
     };
 

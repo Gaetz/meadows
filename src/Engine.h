@@ -6,6 +6,7 @@
 #include "Graphics/LoadedGLTF.h"
 #include "Graphics/Techniques/BasicTechnique.h"
 #include "Graphics/Techniques/ShadowMappingTechnique.h"
+#include "Graphics/Techniques/DeferredRenderingTechnique.h"
 #include "Scene.h"
 
 using graphics::VulkanContext;
@@ -35,13 +36,16 @@ private:
     // Scenes
     uptr<Scene> basicScene;
     uptr<Scene> shadowScene;
+    uptr<Scene> deferredScene;
     Scene* activeScene { nullptr };
 
     // Loaded models (kept alive for scenes)
     sptr<graphics::LoadedGLTF> basicSceneModel;
     sptr<graphics::LoadedGLTF> shadowSceneModel;
+    sptr<graphics::LoadedGLTF> deferredSceneModel;
 
     // Rendering techniques (owned by Engine, used by scenes)
     uptr<graphics::techniques::BasicTechnique> basicTechnique;
     uptr<graphics::techniques::ShadowMappingTechnique> shadowMappingTechnique;
+    uptr<graphics::techniques::DeferredRenderingTechnique> deferredTechnique;
 };

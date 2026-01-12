@@ -43,6 +43,9 @@ void Engine::initScenes() {
     shadowMappingTechnique = std::make_unique<graphics::techniques::ShadowMappingTechnique>();
     shadowMappingTechnique->init(renderer.get());
 
+    deferredTechnique = std::make_unique<graphics::techniques::DeferredRenderingTechnique>();
+    deferredTechnique->init(renderer.get());
+
     // Create scene with basic technique (no shadows)
     basicScene = std::make_unique<Scene>(renderer.get());
     basicScene->setRenderingTechnique(basicTechnique.get());
@@ -65,7 +68,18 @@ void Engine::initScenes() {
         Log::Info("Loaded model for shadow scene");
     }
 
-    // Set the default active scene (with shadow mapping)
+    // Create scene with deferred technique
+    deferredScene = std::make_unique<Scene>(renderer.get());
+    deferredScene->setRenderingTechnique(deferredTechnique.get());
+
+    // Load a model into the deferred scene
+    auto deferredModel = graphics::loadGltf(renderer.get(), "assets/structure.glb");
+    if (deferredModel.has_value()) {
+        deferredSceneModel = *deferredModel;
+        Log::Info("Loaded model for deferred scene");
+    }
+
+    // Set the default active scene (with deferred rendering)
     setActiveScene(shadowScene.get());
 }
 
@@ -100,10 +114,12 @@ void Engine::cleanup() {
     // Cleanup loaded models
     basicSceneModel.reset();
     shadowSceneModel.reset();
+    deferredSceneModel.reset();
 
     // Cleanup scenes
     basicScene.reset();
     shadowScene.reset();
+    deferredScene.reset();
     activeScene = nullptr;
 
     // Cleanup rendering techniques
@@ -115,6 +131,10 @@ void Engine::cleanup() {
     if (shadowMappingTechnique) {
         shadowMappingTechnique->cleanup(device);
         shadowMappingTechnique.reset();
+    }
+    if (deferredTechnique) {
+        deferredTechnique->cleanup(device);
+        deferredTechnique.reset();
     }
 
     // unique_ptr automatically deletes when reset or goes out of scope
@@ -191,6 +211,8 @@ void Engine::mainLoop() {
                 basicSceneModel->draw(Mat4{1.f}, activeScene->getDrawContext());
             } else if (activeScene == shadowScene.get() && shadowSceneModel) {
                 shadowSceneModel->draw(Mat4{1.f}, activeScene->getDrawContext());
+            } else if (activeScene == deferredScene.get() && deferredSceneModel) {
+                deferredSceneModel->draw(Mat4{1.f}, activeScene->getDrawContext());
             }
         }
 

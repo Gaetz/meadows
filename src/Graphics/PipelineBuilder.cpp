@@ -1,7 +1,3 @@
-﻿//
-// Created by dsin on 04/01/2026.
-//
-
 #include "PipelineBuilder.h"
 
 #include "MaterialPipeline.h"
@@ -33,7 +29,12 @@ namespace graphics {
 
     void PipelineBuilder::clear() {
         inputAssembly = vk::PipelineInputAssemblyStateCreateInfo();
+        inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+        inputAssembly.primitiveRestartEnable = false;
+
         rasterizer = vk::PipelineRasterizationStateCreateInfo();
+        rasterizer.lineWidth = 1.0f;
+
         colorBlendAttachment = vk::PipelineColorBlendAttachmentState{};
         multisampling = vk::PipelineMultisampleStateCreateInfo{};
         pipelineLayout = vk::PipelineLayout{};
@@ -59,8 +60,15 @@ namespace graphics {
             colorBlending.attachmentCount = 0;
             colorBlending.pAttachments = nullptr;
         } else {
-            colorBlending.attachmentCount = 1;
-            colorBlending.pAttachments = &colorBlendAttachment;
+            colorBlending.attachmentCount = static_cast<uint32_t>(renderInfo.colorAttachmentCount);
+            // For now, we use the same blend state for all attachments if multiple are used
+            // This could be improved if needed
+            static std::vector<vk::PipelineColorBlendAttachmentState> blendAttachments;
+            blendAttachments.clear();
+            for (uint32_t i = 0; i < renderInfo.colorAttachmentCount; ++i) {
+                blendAttachments.push_back(colorBlendAttachment);
+            }
+            colorBlending.pAttachments = blendAttachments.data();
         }
 
         // Completely clear VertexInputStateCreateInfo, as we have no need for it
@@ -172,10 +180,16 @@ namespace graphics {
     }
 
     void PipelineBuilder::setColorAttachmentFormat(const vk::Format format) {
-        colorAttachmentFormat = format;
+        colorAttachmentFormats = { format };
         // connect the format to the renderInfo  structure
         renderInfo.colorAttachmentCount = 1;
-        renderInfo.pColorAttachmentFormats = &colorAttachmentFormat;
+        renderInfo.pColorAttachmentFormats = colorAttachmentFormats.data();
+    }
+
+    void PipelineBuilder::setColorAttachmentFormats(std::span<vk::Format> formats) {
+        colorAttachmentFormats.assign(formats.begin(), formats.end());
+        renderInfo.colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size());
+        renderInfo.pColorAttachmentFormats = colorAttachmentFormats.data();
     }
 
     void PipelineBuilder::setDepthFormat(const vk::Format format) {

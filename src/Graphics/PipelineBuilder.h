@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <vector>
 
 #include "Types.h"
@@ -22,7 +22,7 @@ namespace graphics {
         vk::PipelineLayout pipelineLayout;
         vk::PipelineDepthStencilStateCreateInfo depthStencil;
         vk::PipelineRenderingCreateInfo renderInfo;
-        vk::Format colorAttachmentFormat;
+        std::vector<vk::Format> colorAttachmentFormats;
 
         // Depth-only pipeline support
         bool depthOnlyMode { false };
@@ -52,6 +52,8 @@ namespace graphics {
         void enableBlendingAlphaBlend();
 
         void setColorAttachmentFormat(vk::Format format);
+
+        void setColorAttachmentFormats(std::span<vk::Format> formats);
 
         void setDepthFormat(vk::Format format);
 

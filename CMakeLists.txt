@@ -210,6 +210,10 @@ compile_shader(${SHADER_DIR}/coloredTriangleMesh.vert ${SPV_DIR}/coloredTriangle
 compile_shader(${SHADER_DIR}/texImage.frag ${SPV_DIR}/texImage.frag.spv)
 compile_shader(${SHADER_DIR}/mesh.vert ${SPV_DIR}/mesh.vert.spv)
 compile_shader(${SHADER_DIR}/mesh.frag ${SPV_DIR}/mesh.frag.spv)
+compile_shader(${SHADER_DIR}/g_buffer.vert ${SPV_DIR}/g_buffer.vert.spv)
+compile_shader(${SHADER_DIR}/g_buffer.frag ${SPV_DIR}/g_buffer.frag.spv)
+compile_shader(${SHADER_DIR}/deferred.vert ${SPV_DIR}/deferred.vert.spv)
+compile_shader(${SHADER_DIR}/deferred.frag ${SPV_DIR}/deferred.frag.spv)
 
 # Shadow mapping shaders
 compile_shader(${SHADER_DIR}/shadowDepth.vert ${SPV_DIR}/shadowDepth.vert.spv)
@@ -231,6 +235,10 @@ add_custom_target(Shaders ALL
         ${SPV_DIR}/texImage.frag.spv
         ${SPV_DIR}/mesh.vert.spv
         ${SPV_DIR}/mesh.frag.spv
+        ${SPV_DIR}/g_buffer.vert.spv
+        ${SPV_DIR}/g_buffer.frag.spv
+        ${SPV_DIR}/deferred.vert.spv
+        ${SPV_DIR}/deferred.frag.spv
         ${SPV_DIR}/shadowDepth.vert.spv
         ${SPV_DIR}/meshShadow.vert.spv
         ${SPV_DIR}/meshShadow.frag.spv
@@ -304,6 +312,8 @@ add_executable(Meadows
         src/Graphics/Techniques/BasicTechnique.h
         src/Graphics/Techniques/ShadowMappingTechnique.cpp
         src/Graphics/Techniques/ShadowMappingTechnique.h
+        src/Graphics/Techniques/DeferredRenderingTechnique.cpp
+        src/Graphics/Techniques/DeferredRenderingTechnique.h
 )
 
 # Ensure shaders are compiled before building Meadows

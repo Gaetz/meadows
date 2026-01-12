@@ -10,6 +10,7 @@
 #include <imgui.h>
 
 #include "Graphics/Techniques/ShadowMappingTechnique.h"
+#include "Graphics/Techniques/DeferredRenderingTechnique.h"
 
 Scene::Scene(graphics::Renderer* renderer)
     : renderer(renderer)
@@ -204,7 +205,7 @@ void Scene::drawImGui() {
         }
 
         // Debug for shadow mapping technique
-        if (renderingTechnique->getTechnique() == graphics::techniques::TechniqueType::ShadowMapping) {
+        if (renderingTechnique && renderingTechnique->getTechnique() == graphics::techniques::TechniqueType::ShadowMapping) {
             bool displayShadowMap = static_cast<graphics::techniques::ShadowMappingTechnique*>(renderingTechnique)->isDisplayingShadowMap();
             if (ImGui::Checkbox("Display Shadow Map", &displayShadowMap)) {
                 static_cast<graphics::techniques::ShadowMappingTechnique*>(renderingTechnique)->setDisplayShadowMap(displayShadowMap);
@@ -213,6 +214,18 @@ void Scene::drawImGui() {
             bool enablePCF = static_cast<graphics::techniques::ShadowMappingTechnique*>(renderingTechnique)->isPCFEnabled();
             if (ImGui::Checkbox("Enable PCF", &enablePCF)) {
                 static_cast<graphics::techniques::ShadowMappingTechnique*>(renderingTechnique)->setEnablePCF(enablePCF);
+            }
+        }
+
+        // Debug for deferred technique
+        if (renderingTechnique && renderingTechnique->getTechnique() == graphics::techniques::TechniqueType::Deferred) {
+            ImGui::Text("Deferred Rendering Active");
+            auto* deferred = static_cast<graphics::techniques::DeferredRenderingTechnique*>(renderingTechnique);
+            
+            const char* debugModes[] = { "None", "Position", "Normal", "Albedo" };
+            int currentMode = static_cast<int>(deferred->getDebugMode());
+            if (ImGui::Combo("Debug Mode", &currentMode, debugModes, IM_ARRAYSIZE(debugModes))) {
+                deferred->setDebugMode(static_cast<graphics::techniques::DeferredRenderingTechnique::DebugMode>(currentMode));
             }
         }
     }
