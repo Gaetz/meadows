@@ -40,9 +40,13 @@
 # debug information files
 *.dwo
 
+# AI
+.claude/
+tmpclaude*
+nul
+
 # Build
 build/
 .idea/
 .vscode/
 cmake-build-debug/
-/.claude/

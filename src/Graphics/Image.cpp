@@ -28,7 +28,7 @@ namespace graphics {
 
         // If the format is a depth format, we will need to have it use the correct aspect flag
         vk::ImageAspectFlags aspectFlag = vk::ImageAspectFlagBits::eColor;
-        if (format == vk::Format::eD32Sfloat) {
+        if (format == vk::Format::eD32Sfloat || format == vk::Format::eD16Unorm) {
             aspectFlag = vk::ImageAspectFlagBits::eDepth;
         }
 

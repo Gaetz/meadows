@@ -24,6 +24,10 @@ namespace graphics {
         vk::PipelineRenderingCreateInfo renderInfo;
         vk::Format colorAttachmentFormat;
 
+        // Depth-only pipeline support
+        bool depthOnlyMode { false };
+        bool depthBiasEnable { false };
+
         PipelineBuilder(VulkanContext* context);
         PipelineBuilder(VulkanContext* context, const str& vertFilePath, const str& fragFilePath);
 
@@ -54,6 +58,12 @@ namespace graphics {
         void disableDepthTest();
 
         void enableDepthTest(bool deepWriteEnable, vk::CompareOp compareOp);
+
+        void setDepthBiasEnable(bool enable);
+
+        void setDepthOnlyMode(bool enable);
+
+        void setVertexShaderOnly(vk::ShaderModule vertexShader);
 
         void destroyShaderModules(vk::Device device);
     };

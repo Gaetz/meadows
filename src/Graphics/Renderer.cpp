@@ -62,6 +62,13 @@ namespace graphics {
 
         // Cleanup material pipelines
         metalRoughMaterial.clear(device);
+        shadowPipeline.clear(device);
+
+        // Cleanup shadow map
+        if (shadowMap) {
+            shadowMap->destroy();
+            shadowMap.reset();
+        }
 
         for (int i = 0; i < FRAME_OVERLAP; i++) {
             frames[i].deletionQueue.flush();
@@ -146,8 +153,17 @@ namespace graphics {
         builder.addBinding(0, vk::DescriptorType::eUniformBuffer);
         gpuSceneDataDescriptorLayout = builder.build(device, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
 
+        // Shadow scene data layout: scene data + shadow map sampler
+        DescriptorLayoutBuilder shadowBuilder;
+        shadowBuilder.addBinding(0, vk::DescriptorType::eUniformBuffer);
+        shadowBuilder.addBinding(1, vk::DescriptorType::eCombinedImageSampler);
+        shadowSceneDataDescriptorLayout = shadowBuilder.build(device, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+
         // Create scene data buffer (single buffer, updated each frame after waitForFences)
         sceneDataBuffer = Buffer { context, sizeof(GPUSceneData), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU };
+
+        // Create shadow map
+        shadowMap = std::make_unique<ShadowMap>(context, 2048);
 
         // Simple texture descriptor
         DescriptorLayoutBuilder builderTexture;
@@ -160,6 +176,7 @@ namespace graphics {
         //createTrianglePipeline();
         createMeshPipeline();
         metalRoughMaterial.buildPipelines(this);
+        shadowPipeline.buildPipelines(this);
     }
 
     void Renderer::createBackgroundPipeline() {
@@ -557,6 +574,215 @@ namespace graphics {
         stats.meshDrawTime = elapsed.count() / 1000.f;
     }
 
+    void Renderer::updateLightMatrices() {
+        // Animate light position if enabled
+        if (animateLight) {
+            auto now = std::chrono::high_resolution_clock::now();
+            auto elapsed = std::chrono::duration<float>(now - lastFrameTime).count();
+            lastFrameTime = now;
+            lightAngle += elapsed * 0.5f;  // Rotate 0.5 radians per second
+            if (lightAngle > glm::two_pi<float>()) {
+                lightAngle -= glm::two_pi<float>();
+            }
+
+            // Orbit light around scene
+            float radius = 50.0f;
+            lightPos.x = std::cos(lightAngle) * radius;
+            lightPos.z = std::sin(lightAngle) * radius;
+        }
+
+        // Calculate light space matrix (orthographic for directional, perspective for spot)
+        Mat4 depthProjection = glm::perspective(
+            glm::radians(lightFOV), 1.0f,
+            shadowMap->getZNear(), shadowMap->getZFar());
+
+        // Look at scene center from light position
+        Mat4 depthView = glm::lookAt(lightPos, Vec3(0.0f, 0.0f, 0.0f), Vec3(0.0f, 1.0f, 0.0f));
+
+        sceneData.lightSpaceMatrix = depthProjection * depthView;
+        sceneData.shadowParams = Vec4(
+            shadowMap->getZNear(),
+            shadowMap->getZFar(),
+            enablePCF ? 1.0f : 0.0f,
+            0.0f
+        );
+
+        // Update sunlight direction to match light position
+        sceneData.sunlightDirection = Vec4(glm::normalize(-lightPos), 1.0f);
+    }
+
+    void Renderer::drawShadowPass(vk::CommandBuffer command) {
+        // Transition shadow map to depth attachment
+        graphics::transitionImage(command, shadowMap->getImage().image,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal);
+
+        // Begin depth-only rendering
+        vk::RenderingAttachmentInfo depthAttachment{};
+        depthAttachment.imageView = shadowMap->getImage().imageView;
+        depthAttachment.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
+        depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+        depthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
+        depthAttachment.clearValue.depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+
+        uint32_t resolution = shadowMap->getResolution();
+        vk::RenderingInfo renderInfo{};
+        renderInfo.renderArea = vk::Rect2D{{0, 0}, {resolution, resolution}};
+        renderInfo.layerCount = 1;
+        renderInfo.pDepthAttachment = &depthAttachment;
+        // No color attachments for depth-only pass
+
+        command.beginRendering(&renderInfo);
+
+        // Set viewport and scissor for shadow map
+        vk::Viewport viewport{};
+        viewport.x = 0;
+        viewport.y = 0;
+        viewport.width = static_cast<float>(resolution);
+        viewport.height = static_cast<float>(resolution);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        command.setViewport(0, 1, &viewport);
+
+        vk::Rect2D scissor{{0, 0}, {resolution, resolution}};
+        command.setScissor(0, 1, &scissor);
+
+        // Set depth bias to prevent shadow acne
+        command.setDepthBias(
+            shadowMap->getDepthBiasConstant(),
+            0.0f,
+            shadowMap->getDepthBiasSlope()
+        );
+
+        // Write scene data buffer
+        auto sceneUniformData = static_cast<GPUSceneData*>(sceneDataBuffer.info.pMappedData);
+        *sceneUniformData = sceneData;
+
+        // Create descriptor set for scene data
+        vk::DescriptorSet sceneDescriptor = getCurrentFrame().frameDescriptors.allocate(gpuSceneDataDescriptorLayout);
+        {
+            DescriptorWriter writer;
+            writer.writeBuffer(0, sceneDataBuffer.buffer, sizeof(GPUSceneData), 0, vk::DescriptorType::eUniformBuffer);
+            writer.updateSet(context->getDevice(), sceneDescriptor);
+        }
+
+        // Bind depth pipeline
+        shadowPipeline.depthPipeline->bind(command);
+        command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+            shadowPipeline.depthPipelineLayout, 0, 1, &sceneDescriptor, 0, nullptr);
+
+        // Draw all opaque geometry from light's perspective
+        DrawContext& ctx = *getDrawContext();
+        for (auto& r : ctx.opaqueSurfaces) {
+            // Use frustum culling from light's perspective
+            if (isVisible(r, sceneData.lightSpaceMatrix)) {
+                GraphicsPushConstants pushConstants{};
+                pushConstants.vertexBuffer = r.vertexBufferAddress;
+                pushConstants.worldMatrix = r.transform;
+
+                command.pushConstants(shadowPipeline.depthPipelineLayout,
+                    vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
+
+                command.bindIndexBuffer(r.indexBuffer, 0, vk::IndexType::eUint32);
+                command.drawIndexed(r.indexCount, 1, r.firstIndex, 0, 0);
+            }
+        }
+
+        command.endRendering();
+
+        // Transition shadow map to shader read for sampling
+        graphics::transitionImage(command, shadowMap->getImage().image,
+            vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+    }
+
+    void Renderer::drawShadowGeometry(vk::CommandBuffer command, vk::DescriptorSet sceneDescriptor) {
+        DrawContext& ctx = *getDrawContext();
+
+        // Sort opaque draws
+        std::vector<u32> opaqueDraws;
+        opaqueDraws.reserve(ctx.opaqueSurfaces.size());
+        for (uint32_t i = 0; i < ctx.opaqueSurfaces.size(); i++) {
+            if (isVisible(ctx.opaqueSurfaces[i], sceneData.viewProj)) {
+                opaqueDraws.push_back(i);
+            }
+        }
+
+        std::ranges::sort(opaqueDraws, [&](const auto& iA, const auto& iB) {
+            const RenderObject& A = ctx.opaqueSurfaces[iA];
+            const RenderObject& B = ctx.opaqueSurfaces[iB];
+            if (A.material == B.material) {
+                return A.indexBuffer < B.indexBuffer;
+            }
+            return A.material < B.material;
+        });
+
+        // Bind shadow mesh pipeline
+        shadowPipeline.shadowMeshPipeline->bind(command);
+
+        const auto imageExtent = context->getDrawImage().imageExtent;
+        vk::Viewport viewport{};
+        viewport.x = 0;
+        viewport.y = 0;
+        viewport.width = static_cast<float>(imageExtent.width);
+        viewport.height = static_cast<float>(imageExtent.height);
+        viewport.minDepth = 0.f;
+        viewport.maxDepth = 1.f;
+        command.setViewport(0, 1, &viewport);
+
+        vk::Rect2D scissor{{0, 0}, {imageExtent.width, imageExtent.height}};
+        command.setScissor(0, 1, &scissor);
+
+        MaterialInstance* lastMat = nullptr;
+        vk::Buffer lastIdx = nullptr;
+
+        for (auto& idx : opaqueDraws) {
+            const RenderObject& r = ctx.opaqueSurfaces[idx];
+
+            if (r.material != lastMat) {
+                lastMat = r.material;
+                command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                    shadowPipeline.shadowMeshPipelineLayout, 0, 1, &sceneDescriptor, 0, nullptr);
+                command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                    shadowPipeline.shadowMeshPipelineLayout, 1, 1, &r.material->materialSet, 0, nullptr);
+            }
+
+            if (r.indexBuffer != lastIdx) {
+                lastIdx = r.indexBuffer;
+                command.bindIndexBuffer(r.indexBuffer, 0, vk::IndexType::eUint32);
+            }
+
+            GraphicsPushConstants pushConstants{};
+            pushConstants.vertexBuffer = r.vertexBufferAddress;
+            pushConstants.worldMatrix = r.transform;
+            command.pushConstants(shadowPipeline.shadowMeshPipelineLayout,
+                vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
+
+            command.drawIndexed(r.indexCount, 1, r.firstIndex, 0, 0);
+        }
+    }
+
+    void Renderer::drawShadowDebug(vk::CommandBuffer command, vk::DescriptorSet sceneDescriptor) {
+        shadowPipeline.debugPipeline->bind(command);
+
+        const auto imageExtent = context->getDrawImage().imageExtent;
+        vk::Viewport viewport{};
+        viewport.x = 0;
+        viewport.y = 0;
+        viewport.width = static_cast<float>(imageExtent.width);
+        viewport.height = static_cast<float>(imageExtent.height);
+        viewport.minDepth = 0.f;
+        viewport.maxDepth = 1.f;
+        command.setViewport(0, 1, &viewport);
+
+        vk::Rect2D scissor{{0, 0}, {imageExtent.width, imageExtent.height}};
+        command.setScissor(0, 1, &scissor);
+
+        command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+            shadowPipeline.debugPipelineLayout, 0, 1, &sceneDescriptor, 0, nullptr);
+
+        // Draw fullscreen triangle (3 vertices, generated in vertex shader)
+        command.draw(3, 1, 0, 0);
+    }
+
     void Renderer::createSceneData() {
         /*
         Rectangle mesh
@@ -706,6 +932,9 @@ namespace graphics {
         sceneData.sunlightColor = glm::vec4(1.f);
         sceneData.sunlightDirection = glm::vec4(0,1,0.5,1.f);
 
+        // Update light matrices for shadow mapping
+        updateLightMatrices();
+
         /* Draw test GLTF nodes
 
         loadedNodes["Suzanne"]->draw(Mat4{1.f}, mainDrawContext);
@@ -821,6 +1050,9 @@ namespace graphics {
 
         command.begin(beginInfo);
 
+        // Shadow pass - render depth from light's perspective
+        drawShadowPass(command);
+
         // Make the swapchain image into writeable mode before rendering
         graphics::transitionImage(command, drawImage.image,
                                   vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
@@ -831,7 +1063,48 @@ namespace graphics {
         graphics::transitionImage(command, drawImage.image, vk::ImageLayout::eGeneral, vk::ImageLayout::eColorAttachmentOptimal);
         graphics::transitionImage(command, depthImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal);
 
-        drawGeometry(command);
+        // Create shadow scene descriptor with shadow map
+        vk::DescriptorSet shadowSceneDescriptor = getCurrentFrame().frameDescriptors.allocate(shadowSceneDataDescriptorLayout);
+        {
+            DescriptorWriter writer;
+            writer.writeBuffer(0, sceneDataBuffer.buffer, sizeof(GPUSceneData), 0, vk::DescriptorType::eUniformBuffer);
+            writer.writeImage(1, shadowMap->getImage().imageView, shadowMap->getSampler(),
+                vk::ImageLayout::eShaderReadOnlyOptimal, vk::DescriptorType::eCombinedImageSampler);
+            writer.updateSet(context->getDevice(), shadowSceneDescriptor);
+        }
+
+        // Render geometry with shadows or debug view
+        if (displayShadowMap) {
+            // Begin rendering
+            vk::RenderingAttachmentInfo colorAttachment = graphics::attachmentInfo(
+                drawImage.imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
+            vk::RenderingAttachmentInfo depthAttachment = graphics::depthAttachmentInfo(
+                depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
+
+            const auto imageExtent = drawImage.imageExtent;
+            const vk::Rect2D rect{ vk::Offset2D{0, 0}, {imageExtent.width, imageExtent.height} };
+            const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, &depthAttachment);
+            command.beginRendering(&renderInfo);
+
+            drawShadowDebug(command, shadowSceneDescriptor);
+
+            command.endRendering();
+        } else {
+            // Begin rendering
+            vk::RenderingAttachmentInfo colorAttachment = graphics::attachmentInfo(
+                drawImage.imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
+            vk::RenderingAttachmentInfo depthAttachment = graphics::depthAttachmentInfo(
+                depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
+
+            const auto imageExtent = drawImage.imageExtent;
+            const vk::Rect2D rect{ vk::Offset2D{0, 0}, {imageExtent.width, imageExtent.height} };
+            const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, &depthAttachment);
+            command.beginRendering(&renderInfo);
+
+            drawShadowGeometry(command, shadowSceneDescriptor);
+
+            command.endRendering();
+        }
 
         // Transition the draw image and the swapchain image into their correct transfer layouts
         graphics::transitionImage(command, drawImage.image, vk::ImageLayout::eColorAttachmentOptimal,
@@ -1008,6 +1281,37 @@ namespace graphics {
         ImGui::Text("update time %f ms", stats.sceneUpdateTime);
         ImGui::Text("triangles %i", stats.triangleCount);
         ImGui::Text("draws %i", stats.drawcallCount);
+        ImGui::End();
+
+        // Shadow mapping controls
+        if (ImGui::Begin("Shadows")) {
+            ImGui::Checkbox("Display Shadow Map", &displayShadowMap);
+            ImGui::Checkbox("Enable PCF", &enablePCF);
+            ImGui::Checkbox("Animate Light", &animateLight);
+            ImGui::Separator();
+            ImGui::SliderFloat3("Light Position", &lightPos.x, -100.f, 100.f);
+            ImGui::SliderFloat("Light FOV", &lightFOV, 10.f, 120.f);
+
+            if (shadowMap) {
+                float zNear = shadowMap->getZNear();
+                float zFar = shadowMap->getZFar();
+                float biasConstant = shadowMap->getDepthBiasConstant();
+                float biasSlope = shadowMap->getDepthBiasSlope();
+
+                if (ImGui::SliderFloat("Shadow zNear", &zNear, 0.1f, 10.f)) {
+                    shadowMap->setZNear(zNear);
+                }
+                if (ImGui::SliderFloat("Shadow zFar", &zFar, 10.f, 500.f)) {
+                    shadowMap->setZFar(zFar);
+                }
+                if (ImGui::SliderFloat("Depth Bias Constant", &biasConstant, 0.f, 5.f)) {
+                    shadowMap->setDepthBiasConstant(biasConstant);
+                }
+                if (ImGui::SliderFloat("Depth Bias Slope", &biasSlope, 0.f, 5.f)) {
+                    shadowMap->setDepthBiasSlope(biasSlope);
+                }
+            }
+        }
         ImGui::End();
 
         ImGui::Render();

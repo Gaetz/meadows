@@ -16,6 +16,8 @@
 #include "Utils.hpp"
 #include "VulkanLoader.h"
 #include "Pipelines/GLTFMetallicRoughness.h"
+#include "Pipelines/ShadowPipeline.h"
+#include "ShadowMap.h"
 
 namespace graphics {
     struct Node;
@@ -43,7 +45,9 @@ public:
 
     VulkanContext* getContext() const { return context; }
     vk::DescriptorSetLayout getSceneDataDescriptorLayout() const { return gpuSceneDataDescriptorLayout; }
+    vk::DescriptorSetLayout getShadowSceneDataDescriptorLayout() const { return shadowSceneDataDescriptorLayout; }
     ImmediateSubmitter* getImmediateSubmitter() { return &immSubmitter; }
+    ShadowMap* getShadowMap() { return shadowMap.get(); }
 
     // External DrawContext (from Scene)
     void setDrawContext(DrawContext* ctx) { externalDrawContext = ctx; }
@@ -73,6 +77,10 @@ private:
 
     void drawBackground(vk::CommandBuffer);
     void drawGeometry(vk::CommandBuffer);
+    void drawShadowPass(vk::CommandBuffer);
+    void drawShadowGeometry(vk::CommandBuffer, vk::DescriptorSet sceneDescriptor);
+    void drawShadowDebug(vk::CommandBuffer, vk::DescriptorSet sceneDescriptor);
+    void updateLightMatrices();
 
     // Data methods
     float getMinRenderScale() const;
@@ -114,7 +122,18 @@ private:
     GPUSceneData sceneData;
     Buffer sceneDataBuffer;
     vk::DescriptorSetLayout gpuSceneDataDescriptorLayout;
+    vk::DescriptorSetLayout shadowSceneDataDescriptorLayout;  // Scene data + shadow map
     vk::DescriptorSetLayout singleImageDescriptorLayout;
+
+    // Shadow mapping
+    uptr<ShadowMap> shadowMap;
+    pipelines::ShadowPipeline shadowPipeline;
+    bool displayShadowMap { false };
+    bool enablePCF { true };
+    bool animateLight { true };
+    Vec3 lightPos { 0.0f, 50.0f, 25.0f };
+    float lightFOV { 45.0f };
+    float lightAngle { 0.0f };
 
     MaterialInstance defaultData;
     Buffer defaultMaterialConstants;

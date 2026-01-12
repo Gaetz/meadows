@@ -211,6 +211,13 @@ compile_shader(${SHADER_DIR}/texImage.frag ${SPV_DIR}/texImage.frag.spv)
 compile_shader(${SHADER_DIR}/mesh.vert ${SPV_DIR}/mesh.vert.spv)
 compile_shader(${SHADER_DIR}/mesh.frag ${SPV_DIR}/mesh.frag.spv)
 
+# Shadow mapping shaders
+compile_shader(${SHADER_DIR}/shadowDepth.vert ${SPV_DIR}/shadowDepth.vert.spv)
+compile_shader(${SHADER_DIR}/meshShadow.vert ${SPV_DIR}/meshShadow.vert.spv)
+compile_shader(${SHADER_DIR}/meshShadow.frag ${SPV_DIR}/meshShadow.frag.spv)
+compile_shader(${SHADER_DIR}/shadowDebug.vert ${SPV_DIR}/shadowDebug.vert.spv)
+compile_shader(${SHADER_DIR}/shadowDebug.frag ${SPV_DIR}/shadowDebug.frag.spv)
+
 add_custom_target(Shaders ALL
         DEPENDS
         ${SPV_DIR}/shader.vert.spv
@@ -224,6 +231,11 @@ add_custom_target(Shaders ALL
         ${SPV_DIR}/texImage.frag.spv
         ${SPV_DIR}/mesh.vert.spv
         ${SPV_DIR}/mesh.frag.spv
+        ${SPV_DIR}/shadowDepth.vert.spv
+        ${SPV_DIR}/meshShadow.vert.spv
+        ${SPV_DIR}/meshShadow.frag.spv
+        ${SPV_DIR}/shadowDebug.vert.spv
+        ${SPV_DIR}/shadowDebug.frag.spv
 )
 
 # Main Executable
@@ -275,14 +287,20 @@ add_executable(Meadows
         src/Graphics/Image.h
         src/Graphics/Pipelines/GLTFMetallicRoughness.cpp
         src/Graphics/Pipelines/GLTFMetallicRoughness.h
+        src/Graphics/Pipelines/ShadowPipeline.cpp
+        src/Graphics/Pipelines/ShadowPipeline.h
         src/Graphics/Node.cpp
         src/Graphics/Node.h
         src/Graphics/Camera.cpp
         src/Graphics/Camera.h
+        src/Graphics/ShadowMap.cpp
+        src/Graphics/ShadowMap.h
         src/BasicServices/RenderingStats.h
         src/Graphics/RenderObject.h
         src/Scene.cpp
         src/Scene.h
+        src/ShadowScene.cpp
+        src/ShadowScene.h
 )
 
 # Ensure shaders are compiled before building Meadows

@@ -40,6 +40,8 @@ namespace graphics {
         depthStencil = vk::PipelineDepthStencilStateCreateInfo{};
         renderInfo = vk::PipelineRenderingCreateInfo{};
         shaderStages.clear();
+        depthOnlyMode = false;
+        depthBiasEnable = false;
     }
 
     uptr<MaterialPipeline> PipelineBuilder::buildPipeline(const vk::Device device) const {
@@ -49,16 +51,24 @@ namespace graphics {
         viewportState.viewportCount = 1;
         viewportState.scissorCount = 1;
 
-        // Setup dummy color blending. We aren't using transparent objects yet
-        // the blending is just "no blend", but we do write to the color attachment
+        // Setup color blending - no attachments for depth-only mode
         vk::PipelineColorBlendStateCreateInfo colorBlending {};
         colorBlending.logicOpEnable = false;
         colorBlending.logicOp = vk::LogicOp::eCopy;
-        colorBlending.attachmentCount = 1;
-        colorBlending.pAttachments = &colorBlendAttachment;
+        if (depthOnlyMode) {
+            colorBlending.attachmentCount = 0;
+            colorBlending.pAttachments = nullptr;
+        } else {
+            colorBlending.attachmentCount = 1;
+            colorBlending.pAttachments = &colorBlendAttachment;
+        }
 
         // Completely clear VertexInputStateCreateInfo, as we have no need for it
         vk::PipelineVertexInputStateCreateInfo vertexInputInfo {};
+
+        // Configure rasterizer for depth bias if enabled
+        vk::PipelineRasterizationStateCreateInfo rasterizerCopy = rasterizer;
+        rasterizerCopy.depthBiasEnable = depthBiasEnable ? VK_TRUE : VK_FALSE;
 
         // Build the actual pipeline
         vk::GraphicsPipelineCreateInfo pipelineInfo {};
@@ -70,16 +80,24 @@ namespace graphics {
         pipelineInfo.pVertexInputState = &vertexInputInfo;
         pipelineInfo.pInputAssemblyState = &inputAssembly;
         pipelineInfo.pViewportState = &viewportState;
-        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pRasterizationState = &rasterizerCopy;
         pipelineInfo.pMultisampleState = &multisampling;
         pipelineInfo.pColorBlendState = &colorBlending;
         pipelineInfo.pDepthStencilState = &depthStencil;
         pipelineInfo.layout = pipelineLayout;
 
-        constexpr vk::DynamicState state[] = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+        // Dynamic states - add depth bias if enabled
+        std::vector<vk::DynamicState> dynamicStates = {
+            vk::DynamicState::eViewport,
+            vk::DynamicState::eScissor
+        };
+        if (depthBiasEnable) {
+            dynamicStates.push_back(vk::DynamicState::eDepthBias);
+        }
+
         vk::PipelineDynamicStateCreateInfo dynamicInfo {};
-        dynamicInfo.pDynamicStates = &state[0];
-        dynamicInfo.dynamicStateCount = 2;
+        dynamicInfo.pDynamicStates = dynamicStates.data();
+        dynamicInfo.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         pipelineInfo.pDynamicState = &dynamicInfo;
 
         vk::Pipeline newPipeline {};
@@ -186,6 +204,25 @@ namespace graphics {
         depthStencil.back = vk::StencilOp::eZero;
         depthStencil.minDepthBounds = 0.f;
         depthStencil.maxDepthBounds = 1.f;
+    }
+
+    void PipelineBuilder::setDepthBiasEnable(bool enable) {
+        depthBiasEnable = enable;
+    }
+
+    void PipelineBuilder::setDepthOnlyMode(bool enable) {
+        depthOnlyMode = enable;
+        if (enable) {
+            // For depth-only mode, no color attachments
+            renderInfo.colorAttachmentCount = 0;
+            renderInfo.pColorAttachmentFormats = nullptr;
+        }
+    }
+
+    void PipelineBuilder::setVertexShaderOnly(vk::ShaderModule vertexShader) {
+        shaderStages.clear();
+        shaderStages.push_back(
+            graphics::shaderStageCreateInfo(vk::ShaderStageFlagBits::eVertex, vertexShader));
     }
 
     void PipelineBuilder::destroyShaderModules(vk::Device device) {

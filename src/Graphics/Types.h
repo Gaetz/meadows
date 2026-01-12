@@ -60,9 +60,11 @@ namespace graphics
         Mat4 view;
         Mat4 proj;
         Mat4 viewProj;
+        Mat4 lightSpaceMatrix;  // Light view-projection for shadow mapping
         Vec4 ambientColor;
         Vec4 sunlightDirection; // w for sun power
         Vec4 sunlightColor;
+        Vec4 shadowParams;      // x=zNear, y=zFar, z=enablePCF, w=shadowBias
     };
 
     enum class MaterialPass :u8 {
