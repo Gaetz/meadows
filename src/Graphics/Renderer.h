@@ -83,6 +83,7 @@ public:
     vk::Sampler defaultSamplerLinear;
     vk::Sampler defaultSamplerNearest;
     pipelines::GLTFMetallicRoughness metalRoughMaterial;
+    Camera mainCamera;
 
 private:
     void createCommandPoolAndBuffers();
@@ -138,7 +139,6 @@ private:
     uptr<MaterialPipeline> meshPipeline;
 
     // Scene data
-    Camera mainCamera;
     GPUMeshBuffers rectangleMesh;
     vector<sptr<MeshAsset>> testMeshes;
     GPUSceneData sceneData;

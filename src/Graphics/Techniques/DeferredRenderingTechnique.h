@@ -4,6 +4,8 @@
 #include "../Image.h"
 #include "../MaterialPipeline.h"
 #include "../DescriptorAllocatorGrowable.h"
+#include "../Buffer.h"
+#include <chrono>
 
 namespace graphics::techniques {
 
@@ -23,7 +25,8 @@ namespace graphics::techniques {
             None = 0,
             Position = 1,
             Normal = 2,
-            Albedo = 3
+            Albedo = 3,
+            Depth = 4
         };
 
         void init(Renderer* renderer) override;
@@ -54,8 +57,17 @@ namespace graphics::techniques {
 
         vk::DescriptorSetLayout gBufferDescriptorLayout { nullptr };
         vk::DescriptorSetLayout deferredDescriptorLayout { nullptr };
-        
+
         vk::DescriptorSet gBufferDescriptorSet; // For the deferred pass to read G-Buffer
+
+        // Point lights
+        Buffer lightsBuffer;
+        DeferredLightsData lightsData;
+        vk::Sampler gBufferSampler { nullptr };
+
+        // Animation
+        std::chrono::high_resolution_clock::time_point startTime;
+        void updateLights(const GPUSceneData& sceneData);
     };
 
 } // namespace graphics::techniques

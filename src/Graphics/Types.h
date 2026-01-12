@@ -67,6 +67,21 @@ namespace graphics
         Vec4 shadowParams;      // x=zNear, y=zFar, z=enablePCF, w=shadowBias
     };
 
+    // Point light for deferred rendering
+    struct PointLight {
+        Vec4 position;   // xyz = position, w = unused
+        Vec4 colorRadius; // xyz = color, w = radius
+    };
+
+    // Uniform data for deferred composition pass
+    static constexpr int MAX_LIGHTS = 6;
+    struct DeferredLightsData {
+        PointLight lights[MAX_LIGHTS];
+        Vec4 viewPos;    // Camera position for specular
+        int numLights;
+        int padding[3];  // Align to 16 bytes
+    };
+
     enum class MaterialPass :u8 {
         MainColor,
         Transparent,

@@ -41,6 +41,39 @@ namespace graphics {
         imageView = newView;
     }
 
+    Image::Image(VulkanContext *context, vk::Extent3D size, vk::Format format, vk::ImageUsageFlags usage,
+                 uint32_t mipLevels) : context(context), allocation(nullptr), imageExtent(size), imageFormat(format) {
+        image = nullptr;
+        imageView = nullptr;
+
+        VkImageCreateInfo img_info = graphics::imageCreateInfo(format, usage, size);
+        img_info.mipLevels = mipLevels;
+
+        // Always allocate images on dedicated GPU memory
+        VmaAllocationCreateInfo allocinfo {};
+        allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+        allocinfo.requiredFlags = static_cast<VkMemoryPropertyFlags>(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        // Allocate and create the image
+        VkImage newImage = VK_NULL_HANDLE;
+        vmaCreateImage(context->getAllocator(), &img_info, &allocinfo, &newImage, &allocation, nullptr);
+        image = newImage;
+
+        // If the format is a depth format, we will need to have it use the correct aspect flag
+        vk::ImageAspectFlags aspectFlag = vk::ImageAspectFlagBits::eColor;
+        if (format == vk::Format::eD32Sfloat || format == vk::Format::eD16Unorm) {
+            aspectFlag = vk::ImageAspectFlagBits::eDepth;
+        }
+
+        // Build an image-view for the image
+        VkImageViewCreateInfo view_info = graphics::imageViewCreateInfo(format, image, aspectFlag);
+        view_info.subresourceRange.levelCount = mipLevels;
+
+        VkImageView newView = VK_NULL_HANDLE;
+        vkCreateImageView(context->getDevice(), &view_info, nullptr, &newView);
+        imageView = newView;
+    }
+
     Image::Image(VulkanContext *context, ImmediateSubmitter& submitter, void *data, vk::Extent3D size, vk::Format format, vk::ImageUsageFlags usage, bool mipmapped)
         : Image(context, size, format, usage | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, mipmapped) {
 

@@ -8,6 +8,8 @@
 #include "BasicServices/Log.h"
 #include "../VulkanInit.hpp"
 
+using services::Log;
+
 namespace graphics::techniques {
 
     void GBuffer::init(VulkanContext* context, vk::Extent3D extent) {
@@ -25,6 +27,40 @@ namespace graphics::techniques {
 
     void DeferredRenderingTechnique::init(Renderer* renderer) {
         this->renderer = renderer;
+        startTime = std::chrono::high_resolution_clock::now();
+
+        // Create lights buffer
+        lightsBuffer = Buffer(renderer->getContext(), sizeof(DeferredLightsData),
+            vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+        // Initialize lights (like Sascha Willems example, scaled up for the 30x model)
+        lightsData.numLights = 6;
+        const float scale = 30.0f;  // Match the model scale
+
+        // White light
+        lightsData.lights[0].position = Vec4(0.0f, 0.0f, 1.0f, 0.0f) * scale;
+        lightsData.lights[0].colorRadius = Vec4(1.5f, 1.5f, 1.5f, 15.0f * scale);
+
+        // Red light
+        lightsData.lights[1].position = Vec4(-2.0f, 0.0f, 0.0f, 0.0f) * scale;
+        lightsData.lights[1].colorRadius = Vec4(1.0f, 0.0f, 0.0f, 15.0f * scale);
+
+        // Blue light
+        lightsData.lights[2].position = Vec4(2.0f, -1.0f, 0.0f, 0.0f) * scale;
+        lightsData.lights[2].colorRadius = Vec4(0.0f, 0.0f, 2.5f, 10.0f * scale);
+
+        // Yellow light
+        lightsData.lights[3].position = Vec4(0.0f, -0.9f, 0.5f, 0.0f) * scale;
+        lightsData.lights[3].colorRadius = Vec4(1.0f, 1.0f, 0.0f, 5.0f * scale);
+
+        // Green light
+        lightsData.lights[4].position = Vec4(0.0f, -0.5f, 0.0f, 0.0f) * scale;
+        lightsData.lights[4].colorRadius = Vec4(0.0f, 1.0f, 0.2f, 10.0f * scale);
+
+        // Orange light
+        lightsData.lights[5].position = Vec4(0.0f, -1.0f, 0.0f, 0.0f) * scale;
+        lightsData.lights[5].colorRadius = Vec4(1.0f, 0.7f, 0.3f, 30.0f * scale);
+
         createGBuffer();
         createDescriptors();
         createPipelines();
@@ -32,6 +68,7 @@ namespace graphics::techniques {
 
     void DeferredRenderingTechnique::cleanup(vk::Device device) {
         gBuffer.destroy(renderer->getContext());
+        lightsBuffer.destroy();
         device.destroyDescriptorSetLayout(gBufferDescriptorLayout);
         device.destroyDescriptorSetLayout(deferredDescriptorLayout);
         device.destroyPipelineLayout(gBufferLayout);
@@ -51,20 +88,22 @@ namespace graphics::techniques {
         gBufferBuilder.addBinding(0, vk::DescriptorType::eUniformBuffer); // SceneData
         gBufferDescriptorLayout = gBufferBuilder.build(device, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
 
-        // Deferred pass descriptors (G-Buffer textures)
+        // Deferred pass descriptors (G-Buffer textures + Lights)
         DescriptorLayoutBuilder deferredBuilder;
         deferredBuilder.addBinding(0, vk::DescriptorType::eCombinedImageSampler); // Position
         deferredBuilder.addBinding(1, vk::DescriptorType::eCombinedImageSampler); // Normal
         deferredBuilder.addBinding(2, vk::DescriptorType::eCombinedImageSampler); // Albedo
+        deferredBuilder.addBinding(3, vk::DescriptorType::eUniformBuffer);        // Lights
         deferredDescriptorLayout = deferredBuilder.build(device, vk::ShaderStageFlagBits::eFragment);
-        
+
         // Allocate and update deferred descriptor set
         gBufferDescriptorSet = renderer->getContext()->getGlobalDescriptorAllocator()->allocate(deferredDescriptorLayout);
-        
+
         DescriptorWriter writer;
         writer.writeImage(0, gBuffer.position.imageView, renderer->defaultSamplerLinear, vk::ImageLayout::eShaderReadOnlyOptimal, vk::DescriptorType::eCombinedImageSampler);
         writer.writeImage(1, gBuffer.normal.imageView, renderer->defaultSamplerLinear, vk::ImageLayout::eShaderReadOnlyOptimal, vk::DescriptorType::eCombinedImageSampler);
         writer.writeImage(2, gBuffer.albedo.imageView, renderer->defaultSamplerLinear, vk::ImageLayout::eShaderReadOnlyOptimal, vk::DescriptorType::eCombinedImageSampler);
+        writer.writeBuffer(3, lightsBuffer.buffer, sizeof(DeferredLightsData), 0, vk::DescriptorType::eUniformBuffer);
         writer.updateSet(device, gBufferDescriptorSet);
     }
 
@@ -126,6 +165,13 @@ namespace graphics::techniques {
         const GPUSceneData& sceneData,
         DescriptorAllocatorGrowable& frameDescriptors
     ) {
+        static bool loggedOnce = false;
+        if (!loggedOnce) {
+            Log::Debug("Deferred: opaqueSurfaces=%zu, transparentSurfaces=%zu",
+                drawContext.opaqueSurfaces.size(), drawContext.transparentSurfaces.size());
+            loggedOnce = true;
+        }
+
         // 1. Geometry Pass
         // Transition G-Buffer images to color attachment
         graphics::transitionImage(cmd, gBuffer.position.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
@@ -190,6 +236,9 @@ namespace graphics::techniques {
         graphics::transitionImage(cmd, gBuffer.normal.image, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
         graphics::transitionImage(cmd, gBuffer.albedo.image, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 
+        // Update animated lights
+        updateLights(sceneData);
+
         // 3. Deferred Pass
         vk::RenderingAttachmentInfo finalColorAttachment = graphics::attachmentInfo(renderer->getContext()->getDrawImage().imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
         vk::RenderingInfo deferredRenderInfo;
@@ -215,6 +264,38 @@ namespace graphics::techniques {
         cmd.draw(3, 1, 0, 0);
 
         cmd.endRendering();
+    }
+
+    void DeferredRenderingTechnique::updateLights(const GPUSceneData& sceneData) {
+        // Get elapsed time
+        auto now = std::chrono::high_resolution_clock::now();
+        float timer = std::chrono::duration<float>(now - startTime).count();
+
+        // Extract camera position from inverse view matrix
+        Mat4 invView = glm::inverse(sceneData.view);
+        lightsData.viewPos = Vec4(invView[3]);
+
+        const float scale = 30.0f;  // Match the model scale
+
+        // Animate lights (like Sascha Willems example, scaled up)
+        // White light - orbits around center
+        lightsData.lights[0].position.x = sin(glm::radians(360.0f * timer)) * 5.0f * scale;
+        lightsData.lights[0].position.z = cos(glm::radians(360.0f * timer)) * 5.0f * scale;
+
+        // Red light
+        lightsData.lights[1].position.x = (-4.0f + sin(glm::radians(360.0f * timer) + 45.0f) * 2.0f) * scale;
+        lightsData.lights[1].position.z = (0.0f + cos(glm::radians(360.0f * timer) + 45.0f) * 2.0f) * scale;
+
+        // Blue light
+        lightsData.lights[2].position.x = (4.0f + sin(glm::radians(360.0f * timer)) * 2.0f) * scale;
+        lightsData.lights[2].position.z = (0.0f + cos(glm::radians(360.0f * timer)) * 2.0f) * scale;
+
+        // Green light
+        lightsData.lights[4].position.x = (0.0f + sin(glm::radians(360.0f * timer + 90.0f)) * 5.0f) * scale;
+        lightsData.lights[4].position.z = (0.0f - cos(glm::radians(360.0f * timer + 45.0f)) * 5.0f) * scale;
+
+        // Copy to GPU buffer
+        memcpy(lightsBuffer.info.pMappedData, &lightsData, sizeof(DeferredLightsData));
     }
 
 } // namespace graphics::techniques

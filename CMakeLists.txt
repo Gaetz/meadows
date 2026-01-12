@@ -293,6 +293,8 @@ add_executable(Meadows
         src/Graphics/DescriptorWriter.h
         src/Graphics/Image.cpp
         src/Graphics/Image.h
+        src/Graphics/KTXLoader.cpp
+        src/Graphics/KTXLoader.h
         src/Graphics/Pipelines/GLTFMetallicRoughness.cpp
         src/Graphics/Pipelines/GLTFMetallicRoughness.h
         src/Graphics/Pipelines/ShadowPipeline.cpp

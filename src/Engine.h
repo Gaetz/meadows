@@ -4,6 +4,7 @@
 #include "Defines.h"
 #include "Graphics/Renderer.h"
 #include "Graphics/LoadedGLTF.h"
+#include "Graphics/Image.h"
 #include "Graphics/Techniques/BasicTechnique.h"
 #include "Graphics/Techniques/ShadowMappingTechnique.h"
 #include "Graphics/Techniques/DeferredRenderingTechnique.h"
@@ -48,4 +49,9 @@ private:
     uptr<graphics::techniques::BasicTechnique> basicTechnique;
     uptr<graphics::techniques::ShadowMappingTechnique> shadowMappingTechnique;
     uptr<graphics::techniques::DeferredRenderingTechnique> deferredTechnique;
+
+    // KTX textures for armor model
+    std::optional<graphics::Image> armorColorMap;
+    std::optional<graphics::Image> armorNormalMap;
+    graphics::Buffer armorMaterialBuffer;
 };

@@ -12,6 +12,7 @@ namespace graphics {
     public:
         Image() = default;
         Image(VulkanContext* context, vk::Extent3D size, vk::Format format, vk::ImageUsageFlags usage, bool mipmapped = false);
+        Image(VulkanContext* context, vk::Extent3D size, vk::Format format, vk::ImageUsageFlags usage, uint32_t mipLevels);
         Image(VulkanContext* context, ImmediateSubmitter& submitter, void* data, vk::Extent3D size, vk::Format format, vk::ImageUsageFlags usage, bool mipmapped = false);
         ~Image() = default;
 

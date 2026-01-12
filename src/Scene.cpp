@@ -219,10 +219,9 @@ void Scene::drawImGui() {
 
         // Debug for deferred technique
         if (renderingTechnique && renderingTechnique->getTechnique() == graphics::techniques::TechniqueType::Deferred) {
-            ImGui::Text("Deferred Rendering Active");
             auto* deferred = static_cast<graphics::techniques::DeferredRenderingTechnique*>(renderingTechnique);
-            
-            const char* debugModes[] = { "None", "Position", "Normal", "Albedo" };
+
+            const char* debugModes[] = { "None", "Position", "Normal", "Albedo", "Depth" };
             int currentMode = static_cast<int>(deferred->getDebugMode());
             if (ImGui::Combo("Debug Mode", &currentMode, debugModes, IM_ARRAYSIZE(debugModes))) {
                 deferred->setDebugMode(static_cast<graphics::techniques::DeferredRenderingTechnique::DebugMode>(currentMode));

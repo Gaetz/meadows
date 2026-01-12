@@ -5,10 +5,13 @@
 #include "Graphics/Techniques/BasicTechnique.h"
 #include "Graphics/Techniques/ShadowMappingTechnique.h"
 #include "Graphics/VulkanLoader.h"
+#include "Graphics/KTXLoader.h"
+#include "Graphics/Pipelines/GLTFMetallicRoughness.h"
 #include "Scene.h"
 #include <backends/imgui_impl_sdl3.h>
 
 #include "BasicServices/RenderingStats.h"
+#include <glm/gtx/transform.hpp>
 
 using services::Log;
 
@@ -61,7 +64,7 @@ void Engine::initScenes() {
     shadowScene = std::make_unique<Scene>(renderer.get());
     shadowScene->setRenderingTechnique(shadowMappingTechnique.get());
 
-    // Load a model into the shadow scene (use same model)
+    // Load a model into the shadow scene
     auto shadowModel = graphics::loadGltf(renderer.get(), "assets/structure.glb");
     if (shadowModel.has_value()) {
         shadowSceneModel = *shadowModel;
@@ -72,15 +75,72 @@ void Engine::initScenes() {
     deferredScene = std::make_unique<Scene>(renderer.get());
     deferredScene->setRenderingTechnique(deferredTechnique.get());
 
-    // Load a model into the deferred scene
-    auto deferredModel = graphics::loadGltf(renderer.get(), "assets/structure.glb");
+    // Load a model into the deferred scene (armor model from Sascha Willems)
+    auto deferredModel = graphics::loadGltf(renderer.get(), "assets/armor/armor.gltf");
     if (deferredModel.has_value()) {
         deferredSceneModel = *deferredModel;
-        Log::Info("Loaded model for deferred scene");
+        Log::Info("Loaded model for deferred scene: %zu meshes, %zu topNodes",
+            deferredSceneModel->meshes.size(), deferredSceneModel->topNodes.size());
+
+        // Log surfaces count
+        size_t totalSurfaces = 0;
+        for (auto& [name, mesh] : deferredSceneModel->meshes) {
+            totalSurfaces += mesh->surfaces.size();
+            Log::Debug("  Mesh '%s': %zu surfaces", name.c_str(), mesh->surfaces.size());
+        }
+
+        // Load KTX textures for the armor model
+        armorColorMap = graphics::loadKTXImage(renderer.get(), "assets/armor/colormap_rgba.ktx");
+        armorNormalMap = graphics::loadKTXImage(renderer.get(), "assets/armor/normalmap_rgba.ktx");
+
+        if (armorColorMap.has_value()) {
+            Log::Info("Loaded armor color map KTX texture");
+
+            // Create material buffer for armor
+            armorMaterialBuffer = graphics::Buffer(
+                vulkanContext.get(),
+                sizeof(graphics::pipelines::GLTFMetallicRoughness::MaterialConstants),
+                vk::BufferUsageFlagBits::eUniformBuffer,
+                VMA_MEMORY_USAGE_CPU_TO_GPU
+            );
+
+            // Set material constants
+            auto* constants = static_cast<graphics::pipelines::GLTFMetallicRoughness::MaterialConstants*>(
+                armorMaterialBuffer.info.pMappedData
+            );
+            constants->colorFactors = Vec4(1.0f, 1.0f, 1.0f, 1.0f);
+            constants->metalRoughFactors = Vec4(0.0f, 0.5f, 0.0f, 0.0f);
+
+            // Create material resources with KTX textures
+            graphics::pipelines::GLTFMetallicRoughness::MaterialResources resources;
+            resources.colorImage = *armorColorMap;
+            resources.colorSampler = renderer->defaultSamplerLinear;
+            resources.metalRoughImage = renderer->whiteImage;  // No metal-rough map in this example
+            resources.metalRoughSampler = renderer->defaultSamplerLinear;
+            resources.dataBuffer = armorMaterialBuffer.buffer;
+            resources.dataBufferOffset = 0;
+
+            // Create material instance
+            auto armorMaterial = renderer->metalRoughMaterial.writeMaterial(
+                vulkanContext->getDevice(),
+                graphics::MaterialPass::MainColor,
+                resources,
+                &deferredSceneModel->descriptorPool
+            );
+
+            // Apply material to all surfaces in the model
+            for (auto& [name, mesh] : deferredSceneModel->meshes) {
+                for (auto& surface : mesh->surfaces) {
+                    surface.material = std::make_shared<graphics::GLTFMaterial>();
+                    surface.material->data = armorMaterial;
+                }
+            }
+            Log::Info("Applied KTX textures to armor model");
+        }
     }
 
     // Set the default active scene (with deferred rendering)
-    setActiveScene(shadowScene.get());
+    setActiveScene(deferredScene.get());
 }
 
 void Engine::setActiveScene(Scene* scene) {
@@ -93,6 +153,10 @@ void Engine::setActiveScene(Scene* scene) {
         // Disable light animation for the basic scene to prevent color/shading changes
         if (activeScene == basicScene.get()) {
             renderer->setAnimateLight(false);
+        } else if (activeScene == deferredScene.get()) {
+            // Position camera for the armor model
+            renderer->mainCamera.position = Vec3(0.0f, 50.0f, 100.0f);
+            renderer->setAnimateLight(false);  // Static light for deferred
         } else {
             renderer->setAnimateLight(true);
         }
@@ -110,6 +174,17 @@ void Engine::cleanup() {
 
     // Wait for device to be idle before destroying renderer
     vulkanContext->getDevice().waitIdle();
+
+    // Cleanup KTX textures
+    if (armorColorMap.has_value()) {
+        armorColorMap->destroy(vulkanContext.get());
+        armorColorMap.reset();
+    }
+    if (armorNormalMap.has_value()) {
+        armorNormalMap->destroy(vulkanContext.get());
+        armorNormalMap.reset();
+    }
+    armorMaterialBuffer.destroy();
 
     // Cleanup loaded models
     basicSceneModel.reset();
@@ -212,7 +287,9 @@ void Engine::mainLoop() {
             } else if (activeScene == shadowScene.get() && shadowSceneModel) {
                 shadowSceneModel->draw(Mat4{1.f}, activeScene->getDrawContext());
             } else if (activeScene == deferredScene.get() && deferredSceneModel) {
-                deferredSceneModel->draw(Mat4{1.f}, activeScene->getDrawContext());
+                // Scale up the armor model (it has internal scale of ~0.03) and center it
+                Mat4 transform = glm::scale(Vec3(30.0f)) * glm::translate(Vec3(0.0f, 2.3f, 0.0f));
+                deferredSceneModel->draw(transform, activeScene->getDrawContext());
             }
         }
 
