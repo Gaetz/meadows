@@ -19,6 +19,12 @@
 #include "Pipelines/ShadowPipeline.h"
 #include "ShadowMap.h"
 
+class Scene;
+
+namespace graphics::techniques {
+    class IRenderingTechnique;
+}
+
 namespace graphics {
     struct Node;
 
@@ -48,10 +54,26 @@ public:
     vk::DescriptorSetLayout getShadowSceneDataDescriptorLayout() const { return shadowSceneDataDescriptorLayout; }
     ImmediateSubmitter* getImmediateSubmitter() { return &immSubmitter; }
     ShadowMap* getShadowMap() { return shadowMap.get(); }
+    Buffer& getSceneDataBuffer() { return sceneDataBuffer; }
+    const Buffer& getSceneDataBuffer() const { return sceneDataBuffer; }
 
     // External DrawContext (from Scene)
     void setDrawContext(DrawContext* ctx) { externalDrawContext = ctx; }
     DrawContext* getDrawContext() { return externalDrawContext ? externalDrawContext : &mainDrawContext; }
+
+    // External Rendering Technique (from Scene)
+    void setRenderingTechnique(techniques::IRenderingTechnique* technique) { externalRenderingTechnique = technique; }
+    techniques::IRenderingTechnique* getRenderingTechnique() const { return externalRenderingTechnique; }
+    DescriptorAllocatorGrowable& getCurrentFrameDescriptors() { return getCurrentFrame().frameDescriptors; }
+    GPUSceneData& getSceneData() { return sceneData; }
+
+    // Active scene for ImGui
+    void setActiveScene(::Scene* scene) { activeScene = scene; }
+    ::Scene* getActiveScene() const { return activeScene; }
+
+    // Light animation control
+    void setAnimateLight(bool animate) { animateLight = animate; }
+    bool isAnimatingLight() const { return animateLight; }
 
     // Rendering data
     Image errorCheckerboardImage;
@@ -144,6 +166,12 @@ private:
 
     // External DrawContext (from Scene)
     DrawContext* externalDrawContext { nullptr };
+
+    // External Rendering Technique (from Scene)
+    techniques::IRenderingTechnique* externalRenderingTechnique { nullptr };
+
+    // Active scene for ImGui
+    ::Scene* activeScene { nullptr };
 
     // Optimization data
     MaterialPipeline* lastPipeline { nullptr };

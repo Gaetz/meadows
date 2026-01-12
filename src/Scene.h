@@ -11,6 +11,10 @@ namespace graphics {
     class Renderer;
 }
 
+namespace graphics::techniques {
+    class IRenderingTechnique;
+}
+
 /***
  *
  * Utilisation:
@@ -30,10 +34,11 @@ namespace graphics {
 class Scene {
 public:
     explicit Scene(graphics::Renderer* renderer);
-    ~Scene();
+    virtual ~Scene();
 
     // Core lifecycle methods
-    void update();
+    virtual void update();
+    virtual void drawImGui();
 
     // Provides the DrawContext for rendering
     graphics::DrawContext& getDrawContext() { return drawContext; }
@@ -50,12 +55,17 @@ public:
     void setDefaultMaterial(const graphics::MaterialInstance& material);
     graphics::MaterialInstance* getDefaultMaterial() { return &defaultMaterial; }
 
+    // Rendering technique
+    void setRenderingTechnique(graphics::techniques::IRenderingTechnique* technique) { renderingTechnique = technique; }
+    graphics::techniques::IRenderingTechnique* getRenderingTechnique() const { return renderingTechnique; }
+
     // Access to internal structures
     const std::unordered_map<str, sptr<graphics::Node>>& getNodes() const { return nodes; }
     const vector<sptr<graphics::Node>>& getTopNodes() const { return topNodes; }
 
 private:
     graphics::Renderer* renderer;
+    graphics::techniques::IRenderingTechnique* renderingTechnique { nullptr };
 
     // Node hierarchy
     std::unordered_map<str, sptr<graphics::Node>> nodes;

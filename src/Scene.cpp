@@ -6,6 +6,8 @@
 #include "Graphics/Renderer.h"
 #include "Graphics/RenderObject.h"
 #include "Graphics/Pipelines/GLTFMetallicRoughness.h"
+#include "Graphics/Techniques/IRenderingTechnique.h"
+#include <imgui.h>
 
 Scene::Scene(graphics::Renderer* renderer)
     : renderer(renderer)
@@ -19,8 +21,9 @@ Scene::Scene(graphics::Renderer* renderer)
     vk::Device device = renderer->getContext()->getDevice();
     descriptorPool = graphics::DescriptorAllocatorGrowable(device, 100, sizes);
 
-    // Initialize default material
+    // Initialize default
     initializeDefaultMaterial();
+    renderer->setAnimateLight(false);
 }
 
 Scene::~Scene() {
@@ -173,4 +176,18 @@ sptr<graphics::Node> Scene::getNode(const str& name) const {
 void Scene::setDefaultMaterial(const graphics::MaterialInstance& material) {
     defaultMaterial = material;
     hasDefaultMaterial = true;
+}
+
+void Scene::drawImGui() {
+    // Default ImGui for base Scene - can be overridden by derived classes
+    if (ImGui::Begin("Scene Info")) {
+        ImGui::Text("Nodes: %zu", nodes.size());
+        ImGui::Text("Opaque surfaces: %zu", drawContext.opaqueSurfaces.size());
+        ImGui::Text("Transparent surfaces: %zu", drawContext.transparentSurfaces.size());
+
+        if (renderingTechnique) {
+            ImGui::Text("Technique: %s", renderingTechnique->getName());
+        }
+    }
+    ImGui::End();
 }

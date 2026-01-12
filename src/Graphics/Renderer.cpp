@@ -19,9 +19,11 @@
 #include "PipelineBuilder.h"
 #include "Utils.hpp"
 #include "VulkanInit.hpp"
+#include "Techniques/IRenderingTechnique.h"
 #include "BasicServices/Log.h"
 #include "BasicServices/RenderingStats.h"
 #include "fmt/color.h"
+#include "../Scene.h"
 
 using graphics::pipelines::GLTFMetallicRoughness;
 
@@ -1050,60 +1052,81 @@ namespace graphics {
 
         command.begin(beginInfo);
 
-        // Shadow pass - render depth from light's perspective
-        drawShadowPass(command);
+        // Use external rendering technique if provided, otherwise use default shadow mapping
+        if (externalRenderingTechnique) {
+            // Make the swapchain image into writeable mode before rendering
+            graphics::transitionImage(command, drawImage.image,
+                                      vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
 
-        // Make the swapchain image into writeable mode before rendering
-        graphics::transitionImage(command, drawImage.image,
-                                  vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+            drawBackground(command);
 
-        drawBackground(command);
+            // Transition draw image to color attachment optimal for geometry rendering
+            graphics::transitionImage(command, drawImage.image, vk::ImageLayout::eGeneral, vk::ImageLayout::eColorAttachmentOptimal);
+            graphics::transitionImage(command, depthImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal);
 
-        // Transition draw image to color attachment optimal for geometry rendering
-        graphics::transitionImage(command, drawImage.image, vk::ImageLayout::eGeneral, vk::ImageLayout::eColorAttachmentOptimal);
-        graphics::transitionImage(command, depthImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal);
+            // Write scene data buffer
+            auto sceneUniformData = static_cast<GPUSceneData*>(sceneDataBuffer.info.pMappedData);
+            *sceneUniformData = sceneData;
 
-        // Create shadow scene descriptor with shadow map
-        vk::DescriptorSet shadowSceneDescriptor = getCurrentFrame().frameDescriptors.allocate(shadowSceneDataDescriptorLayout);
-        {
-            DescriptorWriter writer;
-            writer.writeBuffer(0, sceneDataBuffer.buffer, sizeof(GPUSceneData), 0, vk::DescriptorType::eUniformBuffer);
-            writer.writeImage(1, shadowMap->getImage().imageView, shadowMap->getSampler(),
-                vk::ImageLayout::eShaderReadOnlyOptimal, vk::DescriptorType::eCombinedImageSampler);
-            writer.updateSet(context->getDevice(), shadowSceneDescriptor);
-        }
-
-        // Render geometry with shadows or debug view
-        if (displayShadowMap) {
-            // Begin rendering
-            vk::RenderingAttachmentInfo colorAttachment = graphics::attachmentInfo(
-                drawImage.imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
-            vk::RenderingAttachmentInfo depthAttachment = graphics::depthAttachmentInfo(
-                depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
-
-            const auto imageExtent = drawImage.imageExtent;
-            const vk::Rect2D rect{ vk::Offset2D{0, 0}, {imageExtent.width, imageExtent.height} };
-            const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, &depthAttachment);
-            command.beginRendering(&renderInfo);
-
-            drawShadowDebug(command, shadowSceneDescriptor);
-
-            command.endRendering();
+            // Use the external rendering technique - it handles its own render passes
+            DrawContext& ctx = *getDrawContext();
+            externalRenderingTechnique->render(command, ctx, sceneData, getCurrentFrame().frameDescriptors);
         } else {
-            // Begin rendering
-            vk::RenderingAttachmentInfo colorAttachment = graphics::attachmentInfo(
-                drawImage.imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
-            vk::RenderingAttachmentInfo depthAttachment = graphics::depthAttachmentInfo(
-                depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
+            // Default: Shadow pass - render depth from light's perspective
+            drawShadowPass(command);
 
-            const auto imageExtent = drawImage.imageExtent;
-            const vk::Rect2D rect{ vk::Offset2D{0, 0}, {imageExtent.width, imageExtent.height} };
-            const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, &depthAttachment);
-            command.beginRendering(&renderInfo);
+            // Make the swapchain image into writeable mode before rendering
+            graphics::transitionImage(command, drawImage.image,
+                                      vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
 
-            drawShadowGeometry(command, shadowSceneDescriptor);
+            drawBackground(command);
 
-            command.endRendering();
+            // Transition draw image to color attachment optimal for geometry rendering
+            graphics::transitionImage(command, drawImage.image, vk::ImageLayout::eGeneral, vk::ImageLayout::eColorAttachmentOptimal);
+            graphics::transitionImage(command, depthImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal);
+
+            // Create shadow scene descriptor with shadow map
+            vk::DescriptorSet shadowSceneDescriptor = getCurrentFrame().frameDescriptors.allocate(shadowSceneDataDescriptorLayout);
+            {
+                DescriptorWriter writer;
+                writer.writeBuffer(0, sceneDataBuffer.buffer, sizeof(GPUSceneData), 0, vk::DescriptorType::eUniformBuffer);
+                writer.writeImage(1, shadowMap->getImage().imageView, shadowMap->getSampler(),
+                    vk::ImageLayout::eShaderReadOnlyOptimal, vk::DescriptorType::eCombinedImageSampler);
+                writer.updateSet(context->getDevice(), shadowSceneDescriptor);
+            }
+
+            // Render geometry with shadows or debug view
+            if (displayShadowMap) {
+                // Begin rendering
+                vk::RenderingAttachmentInfo colorAttachment = graphics::attachmentInfo(
+                    drawImage.imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
+                vk::RenderingAttachmentInfo depthAttachment = graphics::depthAttachmentInfo(
+                    depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
+
+                const auto imageExtent = drawImage.imageExtent;
+                const vk::Rect2D rect{ vk::Offset2D{0, 0}, {imageExtent.width, imageExtent.height} };
+                const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, &depthAttachment);
+                command.beginRendering(&renderInfo);
+
+                drawShadowDebug(command, shadowSceneDescriptor);
+
+                command.endRendering();
+            } else {
+                // Begin rendering
+                vk::RenderingAttachmentInfo colorAttachment = graphics::attachmentInfo(
+                    drawImage.imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
+                vk::RenderingAttachmentInfo depthAttachment = graphics::depthAttachmentInfo(
+                    depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
+
+                const auto imageExtent = drawImage.imageExtent;
+                const vk::Rect2D rect{ vk::Offset2D{0, 0}, {imageExtent.width, imageExtent.height} };
+                const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, &depthAttachment);
+                command.beginRendering(&renderInfo);
+
+                drawShadowGeometry(command, shadowSceneDescriptor);
+
+                command.endRendering();
+            }
         }
 
         // Transition the draw image and the swapchain image into their correct transfer layouts
@@ -1251,68 +1274,10 @@ namespace graphics {
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        /**
-        // Simple Hello World window
-        ImGui::Begin("Hello ImGui");
-        ImGui::Text("Hello, World!");
-        ImGui::End();
-        */
-
-        if (ImGui::Begin("background")) {
-            const float minScale = getMinRenderScale();
-            if (renderScale < minScale) renderScale = minScale;
-            ImGui::SliderFloat("Render Scale", &renderScale, minScale, 1.f);
-
-            ComputeEffect &selected = backgroundEffects[currentBackgroundEffect];
-            ImGui::Text("Selected effect: %s", selected.name);
-            ImGui::SliderInt("Effect Index", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);
-
-            ImGui::InputFloat4("data1", reinterpret_cast<float*>(&selected.data.data1));
-            ImGui::InputFloat4("data2", reinterpret_cast<float*>(&selected.data.data2));
-            ImGui::InputFloat4("data3", reinterpret_cast<float*>(&selected.data.data3));
-            ImGui::InputFloat4("data4", reinterpret_cast<float*>(&selected.data.data4));
+        // Let the active scene draw its own ImGui
+        if (activeScene) {
+            activeScene->drawImGui();
         }
-        ImGui::End();
-
-        ImGui::Begin("Stats");
-        auto& stats = services::RenderingStats::Instance();
-        ImGui::Text("frametime %f ms", stats.frameTime);
-        ImGui::Text("draw time %f ms", stats.meshDrawTime);
-        ImGui::Text("update time %f ms", stats.sceneUpdateTime);
-        ImGui::Text("triangles %i", stats.triangleCount);
-        ImGui::Text("draws %i", stats.drawcallCount);
-        ImGui::End();
-
-        // Shadow mapping controls
-        if (ImGui::Begin("Shadows")) {
-            ImGui::Checkbox("Display Shadow Map", &displayShadowMap);
-            ImGui::Checkbox("Enable PCF", &enablePCF);
-            ImGui::Checkbox("Animate Light", &animateLight);
-            ImGui::Separator();
-            ImGui::SliderFloat3("Light Position", &lightPos.x, -100.f, 100.f);
-            ImGui::SliderFloat("Light FOV", &lightFOV, 10.f, 120.f);
-
-            if (shadowMap) {
-                float zNear = shadowMap->getZNear();
-                float zFar = shadowMap->getZFar();
-                float biasConstant = shadowMap->getDepthBiasConstant();
-                float biasSlope = shadowMap->getDepthBiasSlope();
-
-                if (ImGui::SliderFloat("Shadow zNear", &zNear, 0.1f, 10.f)) {
-                    shadowMap->setZNear(zNear);
-                }
-                if (ImGui::SliderFloat("Shadow zFar", &zFar, 10.f, 500.f)) {
-                    shadowMap->setZFar(zFar);
-                }
-                if (ImGui::SliderFloat("Depth Bias Constant", &biasConstant, 0.f, 5.f)) {
-                    shadowMap->setDepthBiasConstant(biasConstant);
-                }
-                if (ImGui::SliderFloat("Depth Bias Slope", &biasSlope, 0.f, 5.f)) {
-                    shadowMap->setDepthBiasSlope(biasSlope);
-                }
-            }
-        }
-        ImGui::End();
 
         ImGui::Render();
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);

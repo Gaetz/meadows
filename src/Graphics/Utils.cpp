@@ -21,6 +21,20 @@ namespace graphics
     void transitionImage(vk::CommandBuffer command, vk::Image image,
         vk::ImageLayout currentLayout, vk::ImageLayout newLayout)
     {
+        // Determine if this is a depth image based on either layout
+        bool isDepthImage =
+            currentLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal ||
+            currentLayout == vk::ImageLayout::eDepthAttachmentOptimal ||
+            newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal ||
+            newLayout == vk::ImageLayout::eDepthAttachmentOptimal;
+
+        transitionImage(command, image, currentLayout, newLayout,
+            isDepthImage ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor);
+    }
+
+    void transitionImage(vk::CommandBuffer command, vk::Image image,
+        vk::ImageLayout currentLayout, vk::ImageLayout newLayout, vk::ImageAspectFlags aspectFlags)
+    {
         vk::ImageMemoryBarrier2 imageBarrier {};
         imageBarrier.pNext = nullptr;
 
@@ -40,10 +54,7 @@ namespace graphics
         imageBarrier.oldLayout = currentLayout;
         imageBarrier.newLayout = newLayout;
 
-        vk::ImageAspectFlags imageAspectFlags = (newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal || newLayout == vk::ImageLayout::eDepthAttachmentOptimal) ?
-            vk::ImageAspectFlagBits::eDepth :
-            vk::ImageAspectFlagBits::eColor;
-        imageBarrier.subresourceRange = graphics::imageSubresourceRange(imageAspectFlags);
+        imageBarrier.subresourceRange = graphics::imageSubresourceRange(aspectFlags);
         imageBarrier.image = image;
 
         vk::DependencyInfo dependencyInfo {};
