@@ -12,6 +12,12 @@ namespace graphics {
 
 namespace graphics::techniques {
 
+    enum class TechniqueType {
+        Basic,
+        ShadowMapping,
+        // Add more technique types as needed
+    };
+
     class IRenderingTechnique {
     public:
         virtual ~IRenderingTechnique() = default;
@@ -28,7 +34,9 @@ namespace graphics::techniques {
 
         virtual bool requiresShadowPass() const { return false; }
 
-        virtual const char* getName() const = 0;
+        virtual const TechniqueType getTechnique() const = 0;
+        virtual const str getName() const = 0;
+
     };
 
 } // namespace graphics::techniques

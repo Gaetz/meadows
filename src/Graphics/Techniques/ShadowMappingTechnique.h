@@ -20,7 +20,8 @@ namespace graphics::techniques {
         ) override;
 
         bool requiresShadowPass() const override { return true; }
-        const char* getName() const override { return "Shadow Mapping"; }
+        const TechniqueType getTechnique() const override { return TechniqueType::ShadowMapping; }
+        const str getName() const override { return std::move("ShadowMapping"); }
 
         ShadowMap* getShadowMap() { return shadowMap.get(); }
         vk::DescriptorSetLayout getMaterialLayout() const { return materialLayout; }

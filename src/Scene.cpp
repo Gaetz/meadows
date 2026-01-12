@@ -9,6 +9,8 @@
 #include "Graphics/Techniques/IRenderingTechnique.h"
 #include <imgui.h>
 
+#include "Graphics/Techniques/ShadowMappingTechnique.h"
+
 Scene::Scene(graphics::Renderer* renderer)
     : renderer(renderer)
 {
@@ -23,7 +25,6 @@ Scene::Scene(graphics::Renderer* renderer)
 
     // Initialize default
     initializeDefaultMaterial();
-    renderer->setAnimateLight(false);
 }
 
 Scene::~Scene() {
@@ -178,6 +179,19 @@ void Scene::setDefaultMaterial(const graphics::MaterialInstance& material) {
     hasDefaultMaterial = true;
 }
 
+void Scene::setRenderingTechnique(graphics::techniques::IRenderingTechnique* technique) {
+    renderingTechnique = technique;
+    if (renderingTechnique->getTechnique() == graphics::techniques::TechniqueType::ShadowMapping) {
+        setAnimateLight(true);
+    } else {
+        setAnimateLight(false);
+    }
+}
+
+void Scene::setAnimateLight(bool animate) {
+    renderer->setAnimateLight(animate);
+}
+
 void Scene::drawImGui() {
     // Default ImGui for base Scene - can be overridden by derived classes
     if (ImGui::Begin("Scene Info")) {
@@ -186,7 +200,20 @@ void Scene::drawImGui() {
         ImGui::Text("Transparent surfaces: %zu", drawContext.transparentSurfaces.size());
 
         if (renderingTechnique) {
-            ImGui::Text("Technique: %s", renderingTechnique->getName());
+            ImGui::Text("Technique: %s", renderingTechnique->getName().c_str());
+        }
+
+        // Debug for shadow mapping technique
+        if (renderingTechnique->getTechnique() == graphics::techniques::TechniqueType::ShadowMapping) {
+            bool displayShadowMap = static_cast<graphics::techniques::ShadowMappingTechnique*>(renderingTechnique)->isDisplayingShadowMap();
+            if (ImGui::Checkbox("Display Shadow Map", &displayShadowMap)) {
+                static_cast<graphics::techniques::ShadowMappingTechnique*>(renderingTechnique)->setDisplayShadowMap(displayShadowMap);
+            }
+
+            bool enablePCF = static_cast<graphics::techniques::ShadowMappingTechnique*>(renderingTechnique)->isPCFEnabled();
+            if (ImGui::Checkbox("Enable PCF", &enablePCF)) {
+                static_cast<graphics::techniques::ShadowMappingTechnique*>(renderingTechnique)->setEnablePCF(enablePCF);
+            }
         }
     }
     ImGui::End();

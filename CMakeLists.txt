@@ -299,8 +299,6 @@ add_executable(Meadows
         src/Graphics/RenderObject.h
         src/Scene.cpp
         src/Scene.h
-        src/ShadowScene.cpp
-        src/ShadowScene.h
         src/Graphics/Techniques/IRenderingTechnique.h
         src/Graphics/Techniques/BasicTechnique.cpp
         src/Graphics/Techniques/BasicTechnique.h

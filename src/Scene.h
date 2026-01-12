@@ -56,8 +56,9 @@ public:
     graphics::MaterialInstance* getDefaultMaterial() { return &defaultMaterial; }
 
     // Rendering technique
-    void setRenderingTechnique(graphics::techniques::IRenderingTechnique* technique) { renderingTechnique = technique; }
+    void setRenderingTechnique(graphics::techniques::IRenderingTechnique* technique);
     graphics::techniques::IRenderingTechnique* getRenderingTechnique() const { return renderingTechnique; }
+    void setAnimateLight(bool animate);
 
     // Access to internal structures
     const std::unordered_map<str, sptr<graphics::Node>>& getNodes() const { return nodes; }

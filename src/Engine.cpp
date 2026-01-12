@@ -75,6 +75,13 @@ void Engine::setActiveScene(Scene* scene) {
         renderer->setDrawContext(&activeScene->getDrawContext());
         renderer->setRenderingTechnique(activeScene->getRenderingTechnique());
         renderer->setActiveScene(activeScene);
+
+        // Disable light animation for the basic scene to prevent color/shading changes
+        if (activeScene == basicScene.get()) {
+            renderer->setAnimateLight(false);
+        } else {
+            renderer->setAnimateLight(true);
+        }
     } else {
         renderer->setDrawContext(nullptr);
         renderer->setRenderingTechnique(nullptr);

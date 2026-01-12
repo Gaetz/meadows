@@ -19,7 +19,8 @@ namespace graphics::techniques {
         ) override;
 
         bool requiresShadowPass() const override { return false; }
-        const char* getName() const override { return "Basic"; }
+        const TechniqueType getTechnique() const override { return TechniqueType::Basic; }
+        const str getName() const override { return std::move("Basic"); }
 
         vk::DescriptorSetLayout getMaterialLayout() const { return materialLayout; }
         vk::PipelineLayout getPipelineLayout() const { return pipelineLayout; }
