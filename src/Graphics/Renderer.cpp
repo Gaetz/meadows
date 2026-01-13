@@ -20,6 +20,8 @@
 #include "Utils.hpp"
 #include "VulkanInit.hpp"
 #include "Techniques/IRenderingTechnique.h"
+#include "Techniques/DeferredRenderingTechnique.h"
+#include "Techniques/ShadowMappingTechnique.h"
 #include "BasicServices/Log.h"
 #include "BasicServices/RenderingStats.h"
 #include "fmt/color.h"
@@ -65,7 +67,9 @@ namespace graphics {
 
         // Cleanup post-processing
         bloom.cleanup(device);
+        ssao.cleanup(device);
         sceneImage.destroy(context);
+        ssaoOutputImage.destroy(context);
 
         // Cleanup material pipelines
         metalRoughMaterial.clear(device);
@@ -1210,7 +1214,15 @@ namespace graphics {
         auto extent = context->getDrawImage().imageExtent;
         sceneImage = Image(context, extent,
             context->getDrawImage().imageFormat,
-            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst);
+
+        // Create SSAO output image (used as intermediate between SSAO and bloom)
+        ssaoOutputImage = Image(context, extent,
+            context->getDrawImage().imageFormat,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst);
+
+        // Initialize SSAO post-process
+        ssao.init(this, extent.width, extent.height);
 
         // Initialize bloom post-process
         bloom.init(this, extent.width, extent.height);
@@ -1223,12 +1235,44 @@ namespace graphics {
         graphics::transitionImage(cmd, sceneImage.image,
             vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 
+        // Check if we can apply SSAO (requires G-Buffer from a rendering technique)
+        Image* ssaoInput = &sceneImage;
+
+        if (ssao.getParams().enabled && externalRenderingTechnique) {
+            techniques::GBuffer* gBuffer = nullptr;
+
+            // Try to get the G-Buffer from DeferredRenderingTechnique
+            if (auto* deferredTechnique = dynamic_cast<techniques::DeferredRenderingTechnique*>(externalRenderingTechnique)) {
+                gBuffer = &deferredTechnique->getGBuffer();
+            }
+            // Try to get the G-Buffer from ShadowMappingTechnique
+            else if (auto* shadowTechnique = dynamic_cast<techniques::ShadowMappingTechnique*>(externalRenderingTechnique)) {
+                gBuffer = &shadowTechnique->getGBuffer();
+            }
+
+            if (gBuffer) {
+                // Transition SSAO output image for writing
+                graphics::transitionImage(cmd, ssaoOutputImage.image,
+                    vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
+
+                // Apply SSAO: sceneImage + G-Buffer -> ssaoOutputImage
+                ssao.apply(cmd, sceneImage, ssaoOutputImage, gBuffer->position, gBuffer->normal,
+                          sceneData.proj, sceneData.view, getCurrentFrame().frameDescriptors);
+
+                // Transition SSAO output for reading by bloom
+                graphics::transitionImage(cmd, ssaoOutputImage.image,
+                    vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+                ssaoInput = &ssaoOutputImage;
+            }
+        }
+
         // Transition draw image for writing
         graphics::transitionImage(cmd, drawImage.image,
             vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
 
         // Apply bloom (will blit directly if disabled)
-        bloom.apply(cmd, sceneImage, drawImage, getCurrentFrame().frameDescriptors);
+        bloom.apply(cmd, *ssaoInput, drawImage, getCurrentFrame().frameDescriptors);
     }
 
     void Renderer::initImGui() {

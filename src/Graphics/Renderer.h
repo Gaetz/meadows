@@ -19,6 +19,7 @@
 #include "Pipelines/ShadowPipeline.h"
 #include "ShadowMap.h"
 #include "Techniques/BloomTechnique.h"
+#include "Techniques/SSAOTechnique.h"
 
 class Scene;
 
@@ -80,6 +81,8 @@ public:
     Image& getSceneImage() { return sceneImage; }
     techniques::BloomParams& getBloomParams() { return bloom.getParams(); }
     const techniques::BloomParams& getBloomParams() const { return bloom.getParams(); }
+    techniques::SSAOParams& getSSAOParams() { return ssao.getParams(); }
+    const techniques::SSAOParams& getSSAOParams() const { return ssao.getParams(); }
 
     // Rendering data
     Image errorCheckerboardImage;
@@ -192,7 +195,9 @@ private:
 
     // Post-processing
     Image sceneImage;  // Intermediate render target before post-processing
+    Image ssaoOutputImage;  // Output image after SSAO (before bloom)
     techniques::BloomTechnique bloom;
+    techniques::SSAOTechnique ssao;
     void createPostProcessResources();
     void applyPostProcess(vk::CommandBuffer cmd);
 };

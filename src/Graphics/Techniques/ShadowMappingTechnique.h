@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IRenderingTechnique.h"
+#include "DeferredRenderingTechnique.h"  // For GBuffer struct
 #include "../MaterialPipeline.h"
 #include "../DescriptorAllocatorGrowable.h"
 #include "../ShadowMap.h"
@@ -32,25 +33,35 @@ namespace graphics::techniques {
         void setEnablePCF(bool enable) { enablePCF = enable; }
         bool isPCFEnabled() const { return enablePCF; }
 
+        // G-Buffer access for SSAO
+        GBuffer& getGBuffer() { return gBuffer; }
+        const GBuffer& getGBuffer() const { return gBuffer; }
+
     private:
+        void createGBuffer();
         void buildDepthPipeline(vk::Device device);
         void buildShadowMeshPipeline(vk::Device device);
+        void buildGBufferPipeline(vk::Device device);
         void buildDebugPipeline(vk::Device device);
 
         void renderShadowPass(vk::CommandBuffer cmd, const DrawContext& drawContext, const GPUSceneData& sceneData, DescriptorAllocatorGrowable& frameDescriptors);
+        void renderGBufferPass(vk::CommandBuffer cmd, const DrawContext& drawContext, const GPUSceneData& sceneData, DescriptorAllocatorGrowable& frameDescriptors);
         void renderShadowGeometry(vk::CommandBuffer cmd, const DrawContext& drawContext, const GPUSceneData& sceneData, vk::DescriptorSet sceneDescriptor);
         void renderDebugView(vk::CommandBuffer cmd, vk::DescriptorSet sceneDescriptor);
 
         Renderer* renderer { nullptr };
 
         uptr<ShadowMap> shadowMap;
+        GBuffer gBuffer;  // For SSAO support
 
         uptr<MaterialPipeline> depthPipeline;
         uptr<MaterialPipeline> shadowMeshPipeline;
+        uptr<MaterialPipeline> gBufferPipeline;  // G-Buffer generation pipeline
         uptr<MaterialPipeline> debugPipeline;
 
         vk::PipelineLayout depthPipelineLayout { nullptr };
         vk::PipelineLayout shadowMeshPipelineLayout { nullptr };
+        vk::PipelineLayout gBufferPipelineLayout { nullptr };
         vk::PipelineLayout debugPipelineLayout { nullptr };
         vk::DescriptorSetLayout materialLayout { nullptr };
         vk::DescriptorSetLayout shadowSceneDataLayout { nullptr };

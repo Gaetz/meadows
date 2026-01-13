@@ -53,6 +53,9 @@ namespace graphics::techniques {
 
         shadowMap = std::make_unique<ShadowMap>(renderer->getContext(), 2048);
 
+        // Create G-Buffer for SSAO support
+        createGBuffer();
+
         DescriptorLayoutBuilder shadowBuilder;
         shadowBuilder.addBinding(0, vk::DescriptorType::eUniformBuffer);
         shadowBuilder.addBinding(1, vk::DescriptorType::eCombinedImageSampler);
@@ -60,10 +63,14 @@ namespace graphics::techniques {
 
         buildDepthPipeline(device);
         buildShadowMeshPipeline(device);
+        buildGBufferPipeline(device);
         buildDebugPipeline(device);
     }
 
     void ShadowMappingTechnique::cleanup(vk::Device device) {
+        // Cleanup G-Buffer
+        gBuffer.destroy(renderer->getContext());
+
         if (depthPipelineLayout) {
             device.destroyPipelineLayout(depthPipelineLayout);
             depthPipelineLayout = nullptr;
@@ -71,6 +78,10 @@ namespace graphics::techniques {
         if (shadowMeshPipelineLayout) {
             device.destroyPipelineLayout(shadowMeshPipelineLayout);
             shadowMeshPipelineLayout = nullptr;
+        }
+        if (gBufferPipelineLayout) {
+            device.destroyPipelineLayout(gBufferPipelineLayout);
+            gBufferPipelineLayout = nullptr;
         }
         if (debugPipelineLayout) {
             device.destroyPipelineLayout(debugPipelineLayout);
@@ -92,6 +103,7 @@ namespace graphics::techniques {
 
         depthPipeline.reset();
         shadowMeshPipeline.reset();
+        gBufferPipeline.reset();
         debugPipeline.reset();
     }
 
@@ -230,6 +242,9 @@ namespace graphics::techniques {
 
         renderShadowPass(cmd, drawContext, sceneData, frameDescriptors);
 
+        // Render G-Buffer pass for SSAO support
+        renderGBufferPass(cmd, drawContext, sceneData, frameDescriptors);
+
         // Render to Renderer's sceneImage for post-processing
         Image& sceneImage = renderer->getSceneImage();
         Image& depthImage = renderer->getContext()->getDepthImage();
@@ -260,6 +275,10 @@ namespace graphics::techniques {
         }
 
         cmd.endRendering();
+
+        // Transition G-Buffer to shader read for SSAO
+        graphics::transitionImage(cmd, gBuffer.position.image, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+        graphics::transitionImage(cmd, gBuffer.normal.image, vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 
         auto end = std::chrono::system_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
@@ -431,6 +450,104 @@ namespace graphics::techniques {
             debugPipelineLayout, 0, 1, &sceneDescriptor, 0, nullptr);
 
         cmd.draw(3, 1, 0, 0);
+    }
+
+    void ShadowMappingTechnique::createGBuffer() {
+        auto extent = renderer->getContext()->getDrawImage().imageExtent;
+        gBuffer.init(renderer->getContext(), extent);
+    }
+
+    void ShadowMappingTechnique::buildGBufferPipeline(vk::Device device) {
+        vk::PushConstantRange pushConstant;
+        pushConstant.offset = 0;
+        pushConstant.size = sizeof(GraphicsPushConstants);
+        pushConstant.stageFlags = vk::ShaderStageFlagBits::eVertex;
+
+        vk::DescriptorSetLayout layouts[] = { renderer->getSceneDataDescriptorLayout(), renderer->metalRoughMaterial.materialLayout };
+        vk::PipelineLayoutCreateInfo gBufferLayoutInfo;
+        gBufferLayoutInfo.setLayoutCount = 2;
+        gBufferLayoutInfo.pSetLayouts = layouts;
+        gBufferLayoutInfo.pushConstantRangeCount = 1;
+        gBufferLayoutInfo.pPushConstantRanges = &pushConstant;
+        gBufferPipelineLayout = device.createPipelineLayout(gBufferLayoutInfo);
+
+        PipelineBuilder gBufferBuilder(renderer->getContext(), "shaders/g_buffer.vert.spv", "shaders/g_buffer.frag.spv");
+        gBufferBuilder.pipelineLayout = gBufferPipelineLayout;
+        vk::Format formats[] = { gBuffer.position.imageFormat, gBuffer.normal.imageFormat, gBuffer.albedo.imageFormat };
+        gBufferBuilder.setColorAttachmentFormats(formats);
+        gBufferBuilder.setDepthFormat(renderer->getContext()->getDepthImage().imageFormat);
+        gBufferBuilder.enableDepthTest(true, vk::CompareOp::eLessOrEqual);
+        gBufferBuilder.setCullMode(vk::CullModeFlagBits::eBack, vk::FrontFace::eCounterClockwise);
+        gBufferBuilder.disableBlending();
+        gBufferBuilder.setMultisamplingNone();
+        gBufferPipeline = gBufferBuilder.buildPipeline(device);
+    }
+
+    void ShadowMappingTechnique::renderGBufferPass(
+        vk::CommandBuffer cmd,
+        const DrawContext& drawContext,
+        const GPUSceneData& sceneData,
+        DescriptorAllocatorGrowable& frameDescriptors
+    ) {
+        // Transition G-Buffer images to color attachment
+        graphics::transitionImage(cmd, gBuffer.position.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
+        graphics::transitionImage(cmd, gBuffer.normal.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
+        graphics::transitionImage(cmd, gBuffer.albedo.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
+
+        vk::ClearValue clearValues[3];
+        clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
+        clearValues[1].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
+        clearValues[2].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f});
+
+        vk::RenderingAttachmentInfo colorAttachments[3];
+        colorAttachments[0] = graphics::attachmentInfo(gBuffer.position.imageView, &clearValues[0], vk::ImageLayout::eColorAttachmentOptimal);
+        colorAttachments[1] = graphics::attachmentInfo(gBuffer.normal.imageView, &clearValues[1], vk::ImageLayout::eColorAttachmentOptimal);
+        colorAttachments[2] = graphics::attachmentInfo(gBuffer.albedo.imageView, &clearValues[2], vk::ImageLayout::eColorAttachmentOptimal);
+
+        // Use existing depth buffer (already filled by shadow pass clear)
+        Image& depthImage = renderer->getContext()->getDepthImage();
+        vk::RenderingAttachmentInfo depthAttachment = graphics::depthAttachmentInfo(depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
+
+        vk::RenderingInfo renderInfo;
+        renderInfo.renderArea = vk::Rect2D({0, 0}, {gBuffer.extent.width, gBuffer.extent.height});
+        renderInfo.layerCount = 1;
+        renderInfo.colorAttachmentCount = 3;
+        renderInfo.pColorAttachments = colorAttachments;
+        renderInfo.pDepthAttachment = &depthAttachment;
+
+        cmd.beginRendering(&renderInfo);
+
+        vk::Viewport viewport(0, 0, (float)gBuffer.extent.width, (float)gBuffer.extent.height, 0, 1);
+        cmd.setViewport(0, 1, &viewport);
+        vk::Rect2D scissor({0, 0}, {gBuffer.extent.width, gBuffer.extent.height});
+        cmd.setScissor(0, 1, &scissor);
+
+        // Bind G-Buffer pipeline
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, gBufferPipeline->getPipeline());
+
+        // Bind Scene Data
+        vk::DescriptorSet sceneDescriptor = frameDescriptors.allocate(renderer->getSceneDataDescriptorLayout());
+        {
+            DescriptorWriter writer;
+            writer.writeBuffer(0, renderer->getSceneDataBuffer().buffer, sizeof(GPUSceneData), 0, vk::DescriptorType::eUniformBuffer);
+            writer.updateSet(renderer->getContext()->getDevice(), sceneDescriptor);
+        }
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, gBufferPipelineLayout, 0, 1, &sceneDescriptor, 0, nullptr);
+
+        // Draw opaque surfaces
+        for (const auto& r : drawContext.opaqueSurfaces) {
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, gBufferPipelineLayout, 1, 1, &r.material->materialSet, 0, nullptr);
+            cmd.bindIndexBuffer(r.indexBuffer, 0, vk::IndexType::eUint32);
+
+            GraphicsPushConstants pushConstants;
+            pushConstants.vertexBuffer = r.vertexBufferAddress;
+            pushConstants.worldMatrix = r.transform;
+            cmd.pushConstants(gBufferPipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
+
+            cmd.drawIndexed(r.indexCount, 1, r.firstIndex, 0, 0);
+        }
+
+        cmd.endRendering();
     }
 
 } // namespace graphics::techniques

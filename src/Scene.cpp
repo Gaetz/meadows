@@ -241,6 +241,21 @@ void Scene::drawImGui() {
             ImGui::SliderFloat("Bloom Strength", &bloomParams.bloomStrength, 0.0f, 2.0f);
             ImGui::SliderFloat("Exposure", &bloomParams.exposure, 0.1f, 5.0f);
         }
+
+        // SSAO controls (available with Deferred or ShadowMapping Rendering)
+        if (renderingTechnique && (renderingTechnique->getTechnique() == graphics::techniques::TechniqueType::Deferred ||
+                                   renderingTechnique->getTechnique() == graphics::techniques::TechniqueType::ShadowMapping)) {
+            ImGui::Separator();
+            auto& ssaoParams = renderer->getSSAOParams();
+            ImGui::Checkbox("Enable SSAO", &ssaoParams.enabled);
+            if (ssaoParams.enabled) {
+                ImGui::SliderFloat("SSAO Radius", &ssaoParams.radius, 0.1f, 50.0f);
+                ImGui::SliderFloat("SSAO Bias", &ssaoParams.bias, 0.001f, 1.0f);
+                ImGui::SliderFloat("SSAO Intensity", &ssaoParams.intensity, 0.5f, 5.0f);
+                ImGui::Checkbox("SSAO Blur", &ssaoParams.blurEnabled);
+                ImGui::Checkbox("SSAO Only (Debug)", &ssaoParams.ssaoOnly);
+            }
+        }
     }
     ImGui::End();
 }

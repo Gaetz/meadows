@@ -40,6 +40,10 @@ namespace graphics::techniques {
         void setDebugMode(DebugMode mode) { debugMode = mode; }
         DebugMode getDebugMode() const { return debugMode; }
 
+        // G-Buffer access for post-processing (e.g., SSAO)
+        GBuffer& getGBuffer() { return gBuffer; }
+        const GBuffer& getGBuffer() const { return gBuffer; }
+
     private:
         void createGBuffer();
         void createPipelines();
@@ -71,3 +75,4 @@ namespace graphics::techniques {
     };
 
 } // namespace graphics::techniques
+

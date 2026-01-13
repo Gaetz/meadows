@@ -228,6 +228,12 @@ compile_shader(${SHADER_DIR}/bloom_blur.frag ${SPV_DIR}/bloom_blur.frag.spv)
 compile_shader(${SHADER_DIR}/bloom_brightpass.frag ${SPV_DIR}/bloom_brightpass.frag.spv)
 compile_shader(${SHADER_DIR}/bloom_composite.frag ${SPV_DIR}/bloom_composite.frag.spv)
 
+# SSAO shaders
+compile_shader(${SHADER_DIR}/ssao.vert ${SPV_DIR}/ssao.vert.spv)
+compile_shader(${SHADER_DIR}/ssao.frag ${SPV_DIR}/ssao.frag.spv)
+compile_shader(${SHADER_DIR}/ssao_blur.frag ${SPV_DIR}/ssao_blur.frag.spv)
+compile_shader(${SHADER_DIR}/ssao_composite.frag ${SPV_DIR}/ssao_composite.frag.spv)
+
 add_custom_target(Shaders ALL
         DEPENDS
         ${SPV_DIR}/shader.vert.spv
@@ -254,6 +260,10 @@ add_custom_target(Shaders ALL
         ${SPV_DIR}/bloom_blur.frag.spv
         ${SPV_DIR}/bloom_brightpass.frag.spv
         ${SPV_DIR}/bloom_composite.frag.spv
+        ${SPV_DIR}/ssao.vert.spv
+        ${SPV_DIR}/ssao.frag.spv
+        ${SPV_DIR}/ssao_blur.frag.spv
+        ${SPV_DIR}/ssao_composite.frag.spv
 )
 
 # Main Executable
@@ -328,6 +338,8 @@ add_executable(Meadows
         src/Graphics/Techniques/DeferredRenderingTechnique.h
         src/Graphics/Techniques/BloomTechnique.cpp
         src/Graphics/Techniques/BloomTechnique.h
+        src/Graphics/Techniques/SSAOTechnique.cpp
+        src/Graphics/Techniques/SSAOTechnique.h
 )
 
 # Ensure shaders are compiled before building Meadows
