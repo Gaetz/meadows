@@ -295,8 +295,6 @@ add_executable(Meadows
     src/Graphics/DeletionQueue.cpp
     src/Graphics/DescriptorLayoutBuilder.cpp
     src/Graphics/DescriptorLayoutBuilder.hpp
-        src/Graphics/DescriptorAllocator.cpp
-        src/Graphics/DescriptorAllocator.h
         src/Graphics/PipelineCompute.cpp
         src/Graphics/PipelineCompute.h
         src/Graphics/ComputeEffect.cpp

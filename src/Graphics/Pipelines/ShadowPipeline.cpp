@@ -1,3 +1,11 @@
+/**
+ * @file ShadowPipeline.cpp
+ * @brief Implementation of shadow mapping pipelines.
+ *
+ * Shadow mapping is a fundamental technique for real-time shadows.
+ * This implementation uses a simple shadow map with depth bias to prevent artifacts.
+ */
+
 #include "ShadowPipeline.h"
 
 #include "Graphics/DescriptorLayoutBuilder.hpp"
@@ -9,22 +17,36 @@
 
 namespace graphics::pipelines {
 
+    // =========================================================================
+    // Main Build Function
+    // =========================================================================
+
     void ShadowPipeline::buildPipelines(const Renderer* renderer) {
         vk::Device device = renderer->getContext()->getDevice();
 
+        // Build all three pipelines
         buildDepthPipeline(renderer, device);
         buildShadowMeshPipeline(renderer, device);
         buildDebugPipeline(renderer, device);
     }
 
+    // =========================================================================
+    // Depth Pipeline (Shadow Map Generation)
+    // =========================================================================
+
     void ShadowPipeline::buildDepthPipeline(const Renderer* renderer, vk::Device device) {
-        // Push constants for world matrix and vertex buffer
+        // -----------------------------------------------------------------
+        // Push constants for model matrix and vertex buffer address
+        // -----------------------------------------------------------------
         vk::PushConstantRange matrixRange{};
         matrixRange.offset = 0;
         matrixRange.size = sizeof(GraphicsPushConstants);
         matrixRange.stageFlags = vk::ShaderStageFlagBits::eVertex;
 
-        // Depth pipeline only needs scene data (set 0) for light space matrix
+        // -----------------------------------------------------------------
+        // Pipeline layout - only needs scene data (set 0) for light matrices
+        // -----------------------------------------------------------------
+        // No material data needed - we're just writing depth values
         const vk::DescriptorSetLayout layouts[] = { renderer->getSceneDataDescriptorLayout() };
 
         vk::PipelineLayoutCreateInfo layoutInfo{};
@@ -35,10 +57,13 @@ namespace graphics::pipelines {
 
         depthPipelineLayout = device.createPipelineLayout(layoutInfo);
 
-        // Create depth-only pipeline
+        // -----------------------------------------------------------------
+        // Build the depth-only pipeline
+        // -----------------------------------------------------------------
         PipelineBuilder builder(renderer->getContext());
 
-        // Load only vertex shader for depth pass
+        // Load only vertex shader - no fragment shader needed for depth-only
+        // The depth is written automatically by the rasterizer
         vk::ShaderModule vertShader = graphics::createShaderModule(
             services::File::readBinary("shaders/shadowDepth.vert.spv"),
             device
@@ -47,25 +72,35 @@ namespace graphics::pipelines {
 
         builder.setInputTopology(vk::PrimitiveTopology::eTriangleList);
         builder.setPolygonMode(vk::PolygonMode::eFill);
-        // No culling for shadow map - capture all geometry
+
+        // No culling - we want to capture shadows from all geometry
+        // Front-face culling could miss thin objects seen from behind
         builder.setCullMode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
         builder.setMultisamplingNone();
         builder.disableBlending();
         builder.enableDepthTest(true, vk::CompareOp::eLessOrEqual);
 
         // Enable depth bias to prevent shadow acne
+        // Shadow acne occurs when a surface incorrectly shadows itself due to
+        // floating-point precision issues. Depth bias pushes the depth slightly
+        // away from the light, eliminating the self-shadowing artifacts.
         builder.setDepthBiasEnable(true);
 
-        // Depth-only mode - no color attachments
+        // Depth-only mode - no color attachments at all
         builder.setDepthOnlyMode(true);
-        builder.setDepthFormat(vk::Format::eD16Unorm);
+        builder.setDepthFormat(vk::Format::eD16Unorm);  // 16-bit depth is sufficient for shadow maps
 
         builder.pipelineLayout = depthPipelineLayout;
 
         depthPipeline = builder.buildPipeline(device);
 
+        // Clean up shader module
         device.destroyShaderModule(vertShader);
     }
+
+    // =========================================================================
+    // Shadow Mesh Pipeline (Scene Rendering with Shadows)
+    // =========================================================================
 
     void ShadowPipeline::buildShadowMeshPipeline(const Renderer* renderer, vk::Device device) {
         vk::PushConstantRange matrixRange{};
@@ -73,7 +108,12 @@ namespace graphics::pipelines {
         matrixRange.size = sizeof(GraphicsPushConstants);
         matrixRange.stageFlags = vk::ShaderStageFlagBits::eVertex;
 
-        // Build material layout (same structure as GLTFMetallicRoughness)
+        // -----------------------------------------------------------------
+        // Material descriptor layout (same as GLTFMetallicRoughness)
+        // -----------------------------------------------------------------
+        // Binding 0: Material constants (uniform buffer)
+        // Binding 1: Base color texture
+        // Binding 2: Metallic-roughness texture
         DescriptorLayoutBuilder layoutBuilder;
         layoutBuilder.addBinding(0, vk::DescriptorType::eUniformBuffer);
         layoutBuilder.addBinding(1, vk::DescriptorType::eCombinedImageSampler);
@@ -82,9 +122,13 @@ namespace graphics::pipelines {
         materialLayout = layoutBuilder.build(
             device, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
 
-        // Uses scene data with shadow map (set 0) and material (set 1)
+        // -----------------------------------------------------------------
+        // Pipeline layout with shadow map access
+        // -----------------------------------------------------------------
+        // Set 0: Scene data WITH shadow map (uses special shadow descriptor layout)
+        // Set 1: Material data (textures, constants)
         const vk::DescriptorSetLayout layouts[] = {
-            renderer->getShadowSceneDataDescriptorLayout(),
+            renderer->getShadowSceneDataDescriptorLayout(),  // Includes shadow map sampler
             materialLayout
         };
 
@@ -96,7 +140,10 @@ namespace graphics::pipelines {
 
         shadowMeshPipelineLayout = device.createPipelineLayout(layoutInfo);
 
-        // Create shadow mesh pipeline
+        // -----------------------------------------------------------------
+        // Build the shadow mesh pipeline
+        // -----------------------------------------------------------------
+        // Uses special shaders that sample the shadow map
         PipelineBuilder builder(renderer->getContext(),
             "shaders/meshShadow.vert.spv",
             "shaders/meshShadow.frag.spv");
@@ -118,19 +165,23 @@ namespace graphics::pipelines {
         builder.destroyShaderModules(device);
     }
 
+    // =========================================================================
+    // Debug Pipeline (Shadow Map Visualization)
+    // =========================================================================
+
     void ShadowPipeline::buildDebugPipeline(const Renderer* renderer, vk::Device device) {
-        // Debug pipeline uses scene data with shadow map (set 0)
+        // Uses scene data with shadow map for visualization
         const vk::DescriptorSetLayout layouts[] = { renderer->getShadowSceneDataDescriptorLayout() };
 
         vk::PipelineLayoutCreateInfo layoutInfo{};
         layoutInfo.setLayoutCount = 1;
         layoutInfo.pSetLayouts = layouts;
-        layoutInfo.pPushConstantRanges = nullptr;
+        layoutInfo.pPushConstantRanges = nullptr;  // No push constants needed
         layoutInfo.pushConstantRangeCount = 0;
 
         debugPipelineLayout = device.createPipelineLayout(layoutInfo);
 
-        // Create debug visualization pipeline
+        // Create a simple fullscreen quad pipeline
         PipelineBuilder builder(renderer->getContext(),
             "shaders/shadowDebug.vert.spv",
             "shaders/shadowDebug.frag.spv");
@@ -140,7 +191,7 @@ namespace graphics::pipelines {
         builder.setCullMode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
         builder.setMultisamplingNone();
         builder.disableBlending();
-        builder.disableDepthTest();
+        builder.disableDepthTest();  // Fullscreen quad doesn't need depth testing
 
         builder.setColorAttachmentFormat(renderer->getContext()->getDrawImage().imageFormat);
         builder.setDepthFormat(renderer->getContext()->getDepthImage().imageFormat);
@@ -152,7 +203,12 @@ namespace graphics::pipelines {
         builder.destroyShaderModules(device);
     }
 
+    // =========================================================================
+    // Cleanup
+    // =========================================================================
+
     void ShadowPipeline::clear(vk::Device device) {
+        // Destroy pipeline layouts
         if (depthPipelineLayout) {
             device.destroyPipelineLayout(depthPipelineLayout);
             depthPipelineLayout = nullptr;
@@ -165,11 +221,14 @@ namespace graphics::pipelines {
             device.destroyPipelineLayout(debugPipelineLayout);
             debugPipelineLayout = nullptr;
         }
+
+        // Destroy descriptor set layout
         if (materialLayout) {
             device.destroyDescriptorSetLayout(materialLayout);
             materialLayout = nullptr;
         }
 
+        // Pipelines are automatically destroyed by unique_ptr
         depthPipeline.reset();
         shadowMeshPipeline.reset();
         debugPipeline.reset();

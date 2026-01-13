@@ -140,7 +140,7 @@ void Engine::initScenes() {
     }
 
     // Set the default active scene
-    setActiveScene(deferredScene.get());
+    setActiveScene(basicScene.get());
 }
 
 void Engine::setActiveScene(Scene* scene) {

@@ -1,3 +1,11 @@
+/**
+ * @file PipelineBuilder.cpp
+ * @brief Implementation of the Graphics Pipeline builder.
+ *
+ * This file implements a builder pattern that simplifies the creation of
+ * Vulkan graphics pipelines, which require extensive configuration.
+ */
+
 #include "PipelineBuilder.h"
 
 #include "MaterialPipeline.h"
@@ -8,6 +16,11 @@
 #include "BasicServices/Log.h"
 
 namespace graphics {
+
+    // =========================================================================
+    // Constructors
+    // =========================================================================
+
     PipelineBuilder::PipelineBuilder(VulkanContext* context) : context(context) {
         clear();
     }
@@ -15,6 +28,8 @@ namespace graphics {
     PipelineBuilder::PipelineBuilder(VulkanContext* context, const str &vertFilePath, const str &fragFilePath)
     : context(context) {
         clear();
+
+        // Load and create shader modules from SPIR-V files
         const vk::Device device = context->getDevice();
         vertexShaderModule = graphics::createShaderModule(
             services::File::readBinary(vertFilePath),
@@ -27,14 +42,21 @@ namespace graphics {
         setShaders(vertexShaderModule, fragmentShaderModule);
     }
 
+    // =========================================================================
+    // Builder Reset
+    // =========================================================================
+
     void PipelineBuilder::clear() {
+        // Reset input assembly to triangle list (most common)
         inputAssembly = vk::PipelineInputAssemblyStateCreateInfo();
         inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
         inputAssembly.primitiveRestartEnable = false;
 
+        // Reset rasterizer with default line width
         rasterizer = vk::PipelineRasterizationStateCreateInfo();
         rasterizer.lineWidth = 1.0f;
 
+        // Clear other state
         colorBlendAttachment = vk::PipelineColorBlendAttachmentState{};
         multisampling = vk::PipelineMultisampleStateCreateInfo{};
         pipelineLayout = vk::PipelineLayout{};
@@ -45,31 +67,35 @@ namespace graphics {
         depthBiasEnable = false;
     }
 
+    // =========================================================================
+    // Pipeline Building
+    // =========================================================================
+
     uptr<MaterialPipeline> PipelineBuilder::buildPipeline(const vk::Device device) const {
-        // Apply fragment specialization if set
+        // Apply fragment specialization constants if set
         std::vector<vk::PipelineShaderStageCreateInfo> finalShaderStages = shaderStages;
         if (fragmentSpecialization.has_value() && finalShaderStages.size() > 1) {
-            // Fragment shader is typically the second stage
+            // Fragment shader is typically the second stage (index 1)
             finalShaderStages[1].pSpecializationInfo = &fragmentSpecialization.value();
         }
 
-        // Make viewport state from our stored viewport and scissor.
-        // at the moment we won't support multiple viewports or scissors
+        // Viewport state - we use dynamic viewport/scissor, so just specify count
         vk::PipelineViewportStateCreateInfo viewportState {};
         viewportState.viewportCount = 1;
         viewportState.scissorCount = 1;
 
-        // Setup color blending - no attachments for depth-only mode
+        // Color blending configuration
         vk::PipelineColorBlendStateCreateInfo colorBlending {};
         colorBlending.logicOpEnable = false;
         colorBlending.logicOp = vk::LogicOp::eCopy;
+
         if (depthOnlyMode) {
+            // No color attachments for depth-only rendering (shadow maps)
             colorBlending.attachmentCount = 0;
             colorBlending.pAttachments = nullptr;
         } else {
+            // Create blend state for each color attachment
             colorBlending.attachmentCount = static_cast<uint32_t>(renderInfo.colorAttachmentCount);
-            // For now, we use the same blend state for all attachments if multiple are used
-            // This could be improved if needed
             static std::vector<vk::PipelineColorBlendAttachmentState> blendAttachments;
             blendAttachments.clear();
             for (uint32_t i = 0; i < renderInfo.colorAttachmentCount; ++i) {
@@ -78,16 +104,17 @@ namespace graphics {
             colorBlending.pAttachments = blendAttachments.data();
         }
 
-        // Completely clear VertexInputStateCreateInfo, as we have no need for it
+        // Vertex input - empty because we use buffer device addresses
+        // (vertices are fetched manually in the shader)
         vk::PipelineVertexInputStateCreateInfo vertexInputInfo {};
 
-        // Configure rasterizer for depth bias if enabled
+        // Copy rasterizer and apply depth bias setting
         vk::PipelineRasterizationStateCreateInfo rasterizerCopy = rasterizer;
         rasterizerCopy.depthBiasEnable = depthBiasEnable ? VK_TRUE : VK_FALSE;
 
-        // Build the actual pipeline
+        // Assemble the final pipeline create info
         vk::GraphicsPipelineCreateInfo pipelineInfo {};
-        // Connect the renderInfo to the pNext extension mechanism
+        // Dynamic rendering - connect format info via pNext chain
         pipelineInfo.pNext = &renderInfo;
 
         pipelineInfo.stageCount = static_cast<uint32_t>(finalShaderStages.size());
@@ -101,13 +128,13 @@ namespace graphics {
         pipelineInfo.pDepthStencilState = &depthStencil;
         pipelineInfo.layout = pipelineLayout;
 
-        // Dynamic states - add depth bias if enabled
+        // Dynamic states - these can be changed per draw call without recreating the pipeline
         std::vector<vk::DynamicState> dynamicStates = {
-            vk::DynamicState::eViewport,
-            vk::DynamicState::eScissor
+            vk::DynamicState::eViewport,  // Viewport can change (window resize)
+            vk::DynamicState::eScissor    // Scissor can change (UI clipping)
         };
         if (depthBiasEnable) {
-            dynamicStates.push_back(vk::DynamicState::eDepthBias);
+            dynamicStates.push_back(vk::DynamicState::eDepthBias);  // For shadow mapping
         }
 
         vk::PipelineDynamicStateCreateInfo dynamicInfo {};
@@ -115,6 +142,7 @@ namespace graphics {
         dynamicInfo.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         pipelineInfo.pDynamicState = &dynamicInfo;
 
+        // Create the pipeline!
         vk::Pipeline newPipeline {};
         if (device.createGraphicsPipelines(VK_NULL_HANDLE, 1, &pipelineInfo,nullptr, &newPipeline) != vk::Result::eSuccess) {
             services::Log::Error("Failed to create graphics pipeline");
@@ -123,22 +151,59 @@ namespace graphics {
         return std::make_unique<MaterialPipeline>( context, newPipeline, pipelineLayout );
     }
 
+    // =========================================================================
+    // Shader Configuration
+    // =========================================================================
+
     void PipelineBuilder::setShaders(const vk::ShaderModule vertexShader, const vk::ShaderModule fragmentShader) {
         shaderStages.clear();
+        // Add vertex shader stage
         shaderStages.push_back(
             graphics::shaderStageCreateInfo(vk::ShaderStageFlagBits::eVertex, vertexShader));
+        // Add fragment shader stage
         shaderStages.push_back(
             graphics::shaderStageCreateInfo(vk::ShaderStageFlagBits::eFragment, fragmentShader));
     }
+
+    void PipelineBuilder::setVertexShaderOnly(vk::ShaderModule vertexShader) {
+        shaderStages.clear();
+        // Only add vertex shader - used for depth-only passes
+        shaderStages.push_back(
+            graphics::shaderStageCreateInfo(vk::ShaderStageFlagBits::eVertex, vertexShader));
+    }
+
+    void PipelineBuilder::setFragmentSpecialization(const vk::SpecializationInfo& specInfo) {
+        fragmentSpecialization = specInfo;
+    }
+
+    void PipelineBuilder::destroyShaderModules(vk::Device device) {
+        // Shader modules can be destroyed after pipeline creation
+        if (vertexShaderModule) {
+            device.destroyShaderModule(vertexShaderModule, nullptr);
+            vertexShaderModule = nullptr;
+        }
+        if (fragmentShaderModule) {
+            device.destroyShaderModule(fragmentShaderModule, nullptr);
+            fragmentShaderModule = nullptr;
+        }
+    }
+
+    // =========================================================================
+    // Input Assembly
+    // =========================================================================
 
     void PipelineBuilder::setInputTopology(const vk::PrimitiveTopology topology) {
         inputAssembly.topology = topology;
         inputAssembly.primitiveRestartEnable = false;
     }
 
+    // =========================================================================
+    // Rasterization
+    // =========================================================================
+
     void PipelineBuilder::setPolygonMode(const vk::PolygonMode mode) {
         rasterizer.polygonMode = mode;
-        rasterizer.lineWidth = 1.f;
+        rasterizer.lineWidth = 1.f;  // Required even for fill mode
     }
 
     void PipelineBuilder::setCullMode(vk::CullModeFlags cullMode, vk::FrontFace frontFace) {
@@ -146,25 +211,31 @@ namespace graphics {
         rasterizer.frontFace = frontFace;
     }
 
+    // =========================================================================
+    // Multisampling
+    // =========================================================================
+
     void PipelineBuilder::setMultisamplingNone() {
         multisampling.sampleShadingEnable = false;
-        // Multisampling defaulted to no multisampling (1 sample per pixel)
-        multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+        multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;  // 1 sample = no MSAA
         multisampling.minSampleShading = 1.0f;
         multisampling.pSampleMask = nullptr;
-        // No alpha to coverage either
         multisampling.alphaToCoverageEnable = false;
         multisampling.alphaToOneEnable = false;
     }
 
+    // =========================================================================
+    // Color Blending
+    // =========================================================================
+
     void PipelineBuilder::disableBlending() {
-        // Default write mask
+        // Write all color channels
         colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-        // No blending
         colorBlendAttachment.blendEnable = false;
     }
 
     void PipelineBuilder::enableBlendingAdditive() {
+        // Additive: result = src * srcAlpha + dst * 1
         colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
         colorBlendAttachment.blendEnable = true;
         colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
@@ -176,6 +247,7 @@ namespace graphics {
     }
 
     void PipelineBuilder::enableBlendingAlphaBlend() {
+        // Alpha blend: result = src * srcAlpha + dst * (1 - srcAlpha)
         colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
         colorBlendAttachment.blendEnable = true;
         colorBlendAttachment.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
@@ -186,9 +258,12 @@ namespace graphics {
         colorBlendAttachment.alphaBlendOp = vk::BlendOp::eAdd;
     }
 
+    // =========================================================================
+    // Render Targets
+    // =========================================================================
+
     void PipelineBuilder::setColorAttachmentFormat(const vk::Format format) {
         colorAttachmentFormats = { format };
-        // connect the format to the renderInfo  structure
         renderInfo.colorAttachmentCount = 1;
         renderInfo.pColorAttachmentFormats = colorAttachmentFormats.data();
     }
@@ -202,6 +277,10 @@ namespace graphics {
     void PipelineBuilder::setDepthFormat(const vk::Format format) {
         renderInfo.depthAttachmentFormat = format;
     }
+
+    // =========================================================================
+    // Depth Testing
+    // =========================================================================
 
     void PipelineBuilder::disableDepthTest() {
         depthStencil.depthTestEnable = false;
@@ -234,30 +313,9 @@ namespace graphics {
     void PipelineBuilder::setDepthOnlyMode(bool enable) {
         depthOnlyMode = enable;
         if (enable) {
-            // For depth-only mode, no color attachments
+            // No color attachments for depth-only rendering
             renderInfo.colorAttachmentCount = 0;
             renderInfo.pColorAttachmentFormats = nullptr;
-        }
-    }
-
-    void PipelineBuilder::setVertexShaderOnly(vk::ShaderModule vertexShader) {
-        shaderStages.clear();
-        shaderStages.push_back(
-            graphics::shaderStageCreateInfo(vk::ShaderStageFlagBits::eVertex, vertexShader));
-    }
-
-    void PipelineBuilder::setFragmentSpecialization(const vk::SpecializationInfo& specInfo) {
-        fragmentSpecialization = specInfo;
-    }
-
-    void PipelineBuilder::destroyShaderModules(vk::Device device) {
-        if (vertexShaderModule) {
-            device.destroyShaderModule(vertexShaderModule, nullptr);
-            vertexShaderModule = nullptr;
-        }
-        if (fragmentShaderModule) {
-            device.destroyShaderModule(fragmentShaderModule, nullptr);
-            fragmentShaderModule = nullptr;
         }
     }
 }
