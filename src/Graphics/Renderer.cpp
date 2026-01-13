@@ -317,28 +317,21 @@ namespace graphics {
         }, "immFence");
     }
 
-    void Renderer::drawBackground(vk::CommandBuffer command) {
-        // Clear color
-        /*
-        float flash = std::abs(std::sin(frameNumber / 120.f));
-        vk::ClearColorValue clearValue = vk::ClearColorValue { 0.0f, 0.0f, flash, 1.0f };
-
-        vk::ImageSubresourceRange clearRange = graphics::imageSubresourceRange(vk::ImageAspectFlagBits::eColor);
-        command.clearColorImage(context->getDrawImage().image,
-            vk::ImageLayout::eGeneral, &clearValue,1, &clearRange);
-        */
-
+    void Renderer::drawBackground(vk::CommandBuffer command, const vk::DescriptorSet* targetDescriptors, const Image* targetImage) {
+        // Use provided descriptors/image or default to drawImage
+        const vk::DescriptorSet& descriptors = targetDescriptors ? *targetDescriptors : drawImageDescriptors;
+        const Image& image = targetImage ? *targetImage : context->getDrawImage();
 
         // Bind compute pipeline and descriptor sets
         constexpr auto bindPoint = vk::PipelineBindPoint::eCompute;
         const ComputeEffect &effect = backgroundEffects[currentBackgroundEffect];
         command.bindPipeline(bindPoint, effect.getPipeline());
-        command.bindDescriptorSets(bindPoint, effect.getPipelineLayout(), 0, 1, &drawImageDescriptors, 0, nullptr);
+        command.bindDescriptorSets(bindPoint, effect.getPipelineLayout(), 0, 1, &descriptors, 0, nullptr);
         command.pushConstants<ComputePushConstants>(effect.getPipelineLayout(), vk::ShaderStageFlagBits::eCompute, 0,
                                                     effect.data);
 
-        command.dispatch(std::ceil(context->getDrawImage().imageExtent.width / 16.0f),
-                         std::ceil(context->getDrawImage().imageExtent.height / 16.0f),
+        command.dispatch(std::ceil(image.imageExtent.width / 16.0f),
+                         std::ceil(image.imageExtent.height / 16.0f),
                          1);
     }
 
@@ -586,7 +579,7 @@ namespace graphics {
     }
 
     void Renderer::updateLightMatrices() {
-        // Animate light position if enabled
+        // Animate light position if enabled (matching VulkanDemo shadowmapping example)
         if (animateLight) {
             auto now = std::chrono::high_resolution_clock::now();
             auto elapsed = std::chrono::duration<float>(now - lastFrameTime).count();
@@ -596,10 +589,10 @@ namespace graphics {
                 lightAngle -= glm::two_pi<float>();
             }
 
-            // Orbit light around scene
-            float radius = 50.0f;
-            lightPos.x = std::cos(lightAngle) * radius;
-            lightPos.z = std::sin(lightAngle) * radius;
+            // Light animation (adapted from VulkanDemo - Y inverted because we don't flip model)
+            lightPos.x = std::cos(lightAngle) * 40.0f;
+            lightPos.y = 50.0f + std::sin(lightAngle) * 20.0f;  // Positive Y (above scene)
+            lightPos.z = 25.0f + std::sin(lightAngle) * 5.0f;
         }
 
         // Calculate light space matrix (orthographic for directional, perspective for spot)
@@ -1064,8 +1057,14 @@ namespace graphics {
         // Use external rendering technique if provided, otherwise use default shadow mapping
         if (externalRenderingTechnique) {
             // Transition scene image and depth image for rendering
+            // Draw background to sceneImage using compute shader
             graphics::transitionImage(command, sceneImage.image,
-                                      vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
+                                      vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+            drawBackground(command, &sceneImageDescriptors, &sceneImage);
+
+            // Transition for rendering
+            graphics::transitionImage(command, sceneImage.image,
+                                      vk::ImageLayout::eGeneral, vk::ImageLayout::eColorAttachmentOptimal);
             graphics::transitionImage(command, depthImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal);
 
             // Write scene data buffer
@@ -1211,10 +1210,19 @@ namespace graphics {
 
     void Renderer::createPostProcessResources() {
         // Create scene image as intermediate render target
+        // eStorage is needed for compute shader background rendering
         auto extent = context->getDrawImage().imageExtent;
         sceneImage = Image(context, extent,
             context->getDrawImage().imageFormat,
-            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst);
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled |
+            vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
+            vk::ImageUsageFlagBits::eStorage);
+
+        // Create descriptor set for sceneImage (for background compute shader)
+        sceneImageDescriptors = context->getGlobalDescriptorAllocator()->allocate(drawImageDescriptorLayout);
+        DescriptorWriter sceneWriter;
+        sceneWriter.writeImage(0, sceneImage.imageView, nullptr, vk::ImageLayout::eGeneral, vk::DescriptorType::eStorageImage);
+        sceneWriter.updateSet(context->getDevice(), sceneImageDescriptors);
 
         // Create SSAO output image (used as intermediate between SSAO and bloom)
         ssaoOutputImage = Image(context, extent,

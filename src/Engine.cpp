@@ -64,8 +64,8 @@ void Engine::initScenes() {
     shadowScene = std::make_unique<Scene>(renderer.get());
     shadowScene->setRenderingTechnique(shadowMappingTechnique.get());
 
-    // Load a model into the shadow scene
-    auto shadowModel = graphics::loadGltf(renderer.get(), "assets/structure.glb");
+    // Load a model into the shadow scene (same as VulkanDemo shadowmapping example)
+    auto shadowModel = graphics::loadGltf(renderer.get(), "assets/vulkanscene_shadow.gltf");
     if (shadowModel.has_value()) {
         shadowSceneModel = *shadowModel;
         Log::Info("Loaded model for shadow scene");
@@ -153,6 +153,13 @@ void Engine::setActiveScene(Scene* scene) {
         // Disable light animation for the basic scene to prevent color/shading changes
         if (activeScene == basicScene.get()) {
             renderer->setAnimateLight(false);
+        } else if (activeScene == shadowScene.get()) {
+            // Position camera for vulkanscene_shadow.gltf
+            // Looking at scene from front, slightly elevated
+            renderer->mainCamera.position = Vec3(0.0f, 5.0f, 10.0f);
+            renderer->mainCamera.pitch = glm::radians(-15.0f);  // Look slightly down
+            renderer->mainCamera.yaw = 0.0f;                     // Look towards positive Z (into scene)
+            renderer->setAnimateLight(true);
         } else if (activeScene == deferredScene.get()) {
             // Position camera for the armor model
             renderer->mainCamera.position = Vec3(0.0f, 50.0f, 100.0f);

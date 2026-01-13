@@ -225,7 +225,7 @@ namespace graphics {
         // =====================================================================
         void initImGui();
         void drawImGui(vk::CommandBuffer commandBuffer);
-        void drawBackground(vk::CommandBuffer);
+        void drawBackground(vk::CommandBuffer, const vk::DescriptorSet* targetDescriptors = nullptr, const Image* targetImage = nullptr);
         void drawGeometry(vk::CommandBuffer);
         void drawShadowPass(vk::CommandBuffer);
         void drawShadowGeometry(vk::CommandBuffer, vk::DescriptorSet sceneDescriptor);
@@ -264,6 +264,7 @@ namespace graphics {
         // =====================================================================
         vk::DescriptorSetLayout drawImageDescriptorLayout;
         vk::DescriptorSet drawImageDescriptors;
+        vk::DescriptorSet sceneImageDescriptors;  // For background compute on sceneImage
 
         // =====================================================================
         // Immediate Submission (for uploads)
@@ -302,7 +303,7 @@ namespace graphics {
         bool displayShadowMap { false };
         bool enablePCF { true };
         bool animateLight { true };
-        Vec3 lightPos { 0.0f, 50.0f, 25.0f };
+        Vec3 lightPos { 40.0f, 50.0f, 25.0f };  // Above scene (Y inverted from VulkanDemo)
         float lightFOV { 45.0f };
         float lightAngle { 0.0f };
 
