@@ -12,18 +12,6 @@ using services::Log;
 
 namespace graphics::techniques {
 
-    void GBuffer::init(VulkanContext* context, vk::Extent3D extent) {
-        this->extent = extent;
-        position = Image(context, extent, vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
-        normal = Image(context, extent, vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
-        albedo = Image(context, extent, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
-    }
-
-    void GBuffer::destroy(VulkanContext* context) {
-        position.destroy(context);
-        normal.destroy(context);
-        albedo.destroy(context);
-    }
 
     void DeferredRenderingTechnique::init(Renderer* renderer) {
         this->renderer = renderer;

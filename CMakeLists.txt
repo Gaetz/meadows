@@ -330,6 +330,8 @@ add_executable(Meadows
         src/Scene.cpp
         src/Scene.h
         src/Graphics/Techniques/IRenderingTechnique.h
+        src/Graphics/Techniques/GBuffer.cpp
+        src/Graphics/Techniques/GBuffer.h
         src/Graphics/Techniques/BasicTechnique.cpp
         src/Graphics/Techniques/BasicTechnique.h
         src/Graphics/Techniques/ShadowMappingTechnique.cpp

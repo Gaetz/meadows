@@ -1,7 +1,7 @@
 #pragma once
 
 #include "IRenderingTechnique.h"
-#include "DeferredRenderingTechnique.h"  // For GBuffer struct
+#include "GBuffer.h"
 #include "../MaterialPipeline.h"
 #include "../DescriptorAllocatorGrowable.h"
 #include "../ShadowMap.h"

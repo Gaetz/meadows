@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IRenderingTechnique.h"
+#include "GBuffer.h"
 #include "../Image.h"
 #include "../MaterialPipeline.h"
 #include "../DescriptorAllocatorGrowable.h"
@@ -9,15 +10,6 @@
 
 namespace graphics::techniques {
 
-    struct GBuffer {
-        Image position;
-        Image normal;
-        Image albedo;
-        vk::Extent3D extent;
-
-        void init(VulkanContext* context, vk::Extent3D extent);
-        void destroy(VulkanContext* context);
-    };
 
     class DeferredRenderingTechnique : public IRenderingTechnique {
     public:
