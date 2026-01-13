@@ -43,6 +43,7 @@ namespace graphics {
         createDescriptors();
         createPipelines();
         createSceneData();
+        createPostProcessResources();
         initImGui();
     }
 
@@ -61,6 +62,10 @@ namespace graphics {
         ImGui::DestroyContext();
 
         device.destroyDescriptorPool(imguiDescriptorPool);
+
+        // Cleanup post-processing
+        bloom.cleanup(device);
+        sceneImage.destroy(context);
 
         // Cleanup material pipelines
         metalRoughMaterial.clear(device);
@@ -1054,23 +1059,21 @@ namespace graphics {
 
         // Use external rendering technique if provided, otherwise use default shadow mapping
         if (externalRenderingTechnique) {
-            // Make the swapchain image into writeable mode before rendering
-            graphics::transitionImage(command, drawImage.image,
-                                      vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-
-            drawBackground(command);
-
-            // Transition draw image to color attachment optimal for geometry rendering
-            graphics::transitionImage(command, drawImage.image, vk::ImageLayout::eGeneral, vk::ImageLayout::eColorAttachmentOptimal);
+            // Transition scene image and depth image for rendering
+            graphics::transitionImage(command, sceneImage.image,
+                                      vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
             graphics::transitionImage(command, depthImage.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal);
 
             // Write scene data buffer
             auto sceneUniformData = static_cast<GPUSceneData*>(sceneDataBuffer.info.pMappedData);
             *sceneUniformData = sceneData;
 
-            // Use the external rendering technique - it handles its own render passes
+            // Use the external rendering technique - it renders to sceneImage
             DrawContext& ctx = *getDrawContext();
             externalRenderingTechnique->render(command, ctx, sceneData, getCurrentFrame().frameDescriptors);
+
+            // Apply post-processing (bloom) from sceneImage to drawImage
+            applyPostProcess(command);
         } else {
             // Default: Shadow pass - render depth from light's perspective
             drawShadowPass(command);
@@ -1200,6 +1203,32 @@ namespace graphics {
 
         // Increase the number of frames drawn
         frameNumber++;
+    }
+
+    void Renderer::createPostProcessResources() {
+        // Create scene image as intermediate render target
+        auto extent = context->getDrawImage().imageExtent;
+        sceneImage = Image(context, extent,
+            context->getDrawImage().imageFormat,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
+
+        // Initialize bloom post-process
+        bloom.init(this, extent.width, extent.height);
+    }
+
+    void Renderer::applyPostProcess(vk::CommandBuffer cmd) {
+        Image& drawImage = context->getDrawImage();
+
+        // Transition scene image for reading
+        graphics::transitionImage(cmd, sceneImage.image,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+        // Transition draw image for writing
+        graphics::transitionImage(cmd, drawImage.image,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal);
+
+        // Apply bloom (will blit directly if disabled)
+        bloom.apply(cmd, sceneImage, drawImage, getCurrentFrame().frameDescriptors);
     }
 
     void Renderer::initImGui() {

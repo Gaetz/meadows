@@ -230,15 +230,16 @@ namespace graphics::techniques {
 
         renderShadowPass(cmd, drawContext, sceneData, frameDescriptors);
 
-        Image& drawImage = renderer->getContext()->getDrawImage();
+        // Render to Renderer's sceneImage for post-processing
+        Image& sceneImage = renderer->getSceneImage();
         Image& depthImage = renderer->getContext()->getDepthImage();
 
         vk::RenderingAttachmentInfo colorAttachment = graphics::attachmentInfo(
-            drawImage.imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
+            sceneImage.imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
         vk::RenderingAttachmentInfo depthAttachment = graphics::depthAttachmentInfo(
             depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
 
-        const auto imageExtent = drawImage.imageExtent;
+        const auto imageExtent = sceneImage.imageExtent;
         const vk::Rect2D rect{ vk::Offset2D{0, 0}, {imageExtent.width, imageExtent.height} };
         const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, &depthAttachment);
         cmd.beginRendering(&renderInfo);
@@ -368,7 +369,7 @@ namespace graphics::techniques {
 
         shadowMeshPipeline->bind(cmd);
 
-        const auto imageExtent = renderer->getContext()->getDrawImage().imageExtent;
+        const auto imageExtent = renderer->getSceneImage().imageExtent;
         vk::Viewport viewport{};
         viewport.x = 0;
         viewport.y = 0;
@@ -413,7 +414,7 @@ namespace graphics::techniques {
     void ShadowMappingTechnique::renderDebugView(vk::CommandBuffer cmd, vk::DescriptorSet sceneDescriptor) {
         debugPipeline->bind(cmd);
 
-        const auto imageExtent = renderer->getContext()->getDrawImage().imageExtent;
+        const auto imageExtent = renderer->getSceneImage().imageExtent;
         vk::Viewport viewport{};
         viewport.x = 0;
         viewport.y = 0;

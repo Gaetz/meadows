@@ -46,6 +46,13 @@ namespace graphics {
     }
 
     uptr<MaterialPipeline> PipelineBuilder::buildPipeline(const vk::Device device) const {
+        // Apply fragment specialization if set
+        std::vector<vk::PipelineShaderStageCreateInfo> finalShaderStages = shaderStages;
+        if (fragmentSpecialization.has_value() && finalShaderStages.size() > 1) {
+            // Fragment shader is typically the second stage
+            finalShaderStages[1].pSpecializationInfo = &fragmentSpecialization.value();
+        }
+
         // Make viewport state from our stored viewport and scissor.
         // at the moment we won't support multiple viewports or scissors
         vk::PipelineViewportStateCreateInfo viewportState {};
@@ -83,8 +90,8 @@ namespace graphics {
         // Connect the renderInfo to the pNext extension mechanism
         pipelineInfo.pNext = &renderInfo;
 
-        pipelineInfo.stageCount = static_cast<uint32_t>(shaderStages.size());
-        pipelineInfo.pStages = shaderStages.data();
+        pipelineInfo.stageCount = static_cast<uint32_t>(finalShaderStages.size());
+        pipelineInfo.pStages = finalShaderStages.data();
         pipelineInfo.pVertexInputState = &vertexInputInfo;
         pipelineInfo.pInputAssemblyState = &inputAssembly;
         pipelineInfo.pViewportState = &viewportState;
@@ -237,6 +244,10 @@ namespace graphics {
         shaderStages.clear();
         shaderStages.push_back(
             graphics::shaderStageCreateInfo(vk::ShaderStageFlagBits::eVertex, vertexShader));
+    }
+
+    void PipelineBuilder::setFragmentSpecialization(const vk::SpecializationInfo& specInfo) {
+        fragmentSpecialization = specInfo;
     }
 
     void PipelineBuilder::destroyShaderModules(vk::Device device) {

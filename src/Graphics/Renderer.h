@@ -18,6 +18,7 @@
 #include "Pipelines/GLTFMetallicRoughness.h"
 #include "Pipelines/ShadowPipeline.h"
 #include "ShadowMap.h"
+#include "Techniques/BloomTechnique.h"
 
 class Scene;
 
@@ -74,6 +75,11 @@ public:
     // Light animation control
     void setAnimateLight(bool animate) { animateLight = animate; }
     bool isAnimatingLight() const { return animateLight; }
+
+    // Post-processing
+    Image& getSceneImage() { return sceneImage; }
+    techniques::BloomParams& getBloomParams() { return bloom.getParams(); }
+    const techniques::BloomParams& getBloomParams() const { return bloom.getParams(); }
 
     // Rendering data
     Image errorCheckerboardImage;
@@ -183,6 +189,12 @@ private:
     float rotationSpeed = 1.0f;
     float accumulatedRotation = 0.0f;
     std::chrono::high_resolution_clock::time_point lastFrameTime;
+
+    // Post-processing
+    Image sceneImage;  // Intermediate render target before post-processing
+    techniques::BloomTechnique bloom;
+    void createPostProcessResources();
+    void applyPostProcess(vk::CommandBuffer cmd);
 };
 
 } // namespace graphics

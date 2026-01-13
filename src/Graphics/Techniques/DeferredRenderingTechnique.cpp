@@ -239,18 +239,20 @@ namespace graphics::techniques {
         // Update animated lights
         updateLights(sceneData);
 
-        // 3. Deferred Pass
-        vk::RenderingAttachmentInfo finalColorAttachment = graphics::attachmentInfo(renderer->getContext()->getDrawImage().imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
+        // 3. Deferred Pass - Render to Renderer's scene image (for post-processing)
+        Image& sceneImage = renderer->getSceneImage();
+
+        vk::RenderingAttachmentInfo sceneColorAttachment = graphics::attachmentInfo(sceneImage.imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
         vk::RenderingInfo deferredRenderInfo;
         deferredRenderInfo.renderArea = vk::Rect2D({0, 0}, {gBuffer.extent.width, gBuffer.extent.height});
         deferredRenderInfo.layerCount = 1;
         deferredRenderInfo.colorAttachmentCount = 1;
-        deferredRenderInfo.pColorAttachments = &finalColorAttachment;
+        deferredRenderInfo.pColorAttachments = &sceneColorAttachment;
 
         cmd.beginRendering(&deferredRenderInfo);
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, deferredPipeline->getPipeline());
-        
+
         // Bind Scene Data at set 0
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, deferredLayout, 0, 1, &sceneDescriptor, 0, nullptr);
         // Bind G-Buffer descriptors at set 2

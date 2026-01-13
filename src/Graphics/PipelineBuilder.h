@@ -28,6 +28,9 @@ namespace graphics {
         bool depthOnlyMode { false };
         bool depthBiasEnable { false };
 
+        // Specialization constants
+        std::optional<vk::SpecializationInfo> fragmentSpecialization;
+
         PipelineBuilder(VulkanContext* context);
         PipelineBuilder(VulkanContext* context, const str& vertFilePath, const str& fragFilePath);
 
@@ -66,6 +69,8 @@ namespace graphics {
         void setDepthOnlyMode(bool enable);
 
         void setVertexShaderOnly(vk::ShaderModule vertexShader);
+
+        void setFragmentSpecialization(const vk::SpecializationInfo& specInfo);
 
         void destroyShaderModules(vk::Device device);
     };

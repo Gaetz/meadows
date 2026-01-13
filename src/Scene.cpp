@@ -227,6 +227,20 @@ void Scene::drawImGui() {
                 deferred->setDebugMode(static_cast<graphics::techniques::DeferredRenderingTechnique::DebugMode>(currentMode));
             }
         }
+
+        // Bloom controls (available for all techniques now)
+        ImGui::Separator();
+        ImGui::Text("Post-Processing");
+        auto& bloomParams = renderer->getBloomParams();
+        ImGui::Checkbox("Enable Bloom", &bloomParams.enabled);
+        if (bloomParams.enabled) {
+            ImGui::SliderFloat("Threshold", &bloomParams.threshold, 0.0f, 2.0f);
+            ImGui::SliderFloat("Intensity", &bloomParams.intensity, 0.0f, 5.0f);
+            ImGui::SliderFloat("Blur Scale", &bloomParams.blurScale, 0.1f, 3.0f);
+            ImGui::SliderFloat("Blur Strength", &bloomParams.blurStrength, 0.5f, 3.0f);
+            ImGui::SliderFloat("Bloom Strength", &bloomParams.bloomStrength, 0.0f, 2.0f);
+            ImGui::SliderFloat("Exposure", &bloomParams.exposure, 0.1f, 5.0f);
+        }
     }
     ImGui::End();
 }

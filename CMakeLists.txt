@@ -222,6 +222,12 @@ compile_shader(${SHADER_DIR}/meshShadow.frag ${SPV_DIR}/meshShadow.frag.spv)
 compile_shader(${SHADER_DIR}/shadowDebug.vert ${SPV_DIR}/shadowDebug.vert.spv)
 compile_shader(${SHADER_DIR}/shadowDebug.frag ${SPV_DIR}/shadowDebug.frag.spv)
 
+# Bloom shaders
+compile_shader(${SHADER_DIR}/bloom_blur.vert ${SPV_DIR}/bloom_blur.vert.spv)
+compile_shader(${SHADER_DIR}/bloom_blur.frag ${SPV_DIR}/bloom_blur.frag.spv)
+compile_shader(${SHADER_DIR}/bloom_brightpass.frag ${SPV_DIR}/bloom_brightpass.frag.spv)
+compile_shader(${SHADER_DIR}/bloom_composite.frag ${SPV_DIR}/bloom_composite.frag.spv)
+
 add_custom_target(Shaders ALL
         DEPENDS
         ${SPV_DIR}/shader.vert.spv
@@ -244,6 +250,10 @@ add_custom_target(Shaders ALL
         ${SPV_DIR}/meshShadow.frag.spv
         ${SPV_DIR}/shadowDebug.vert.spv
         ${SPV_DIR}/shadowDebug.frag.spv
+        ${SPV_DIR}/bloom_blur.vert.spv
+        ${SPV_DIR}/bloom_blur.frag.spv
+        ${SPV_DIR}/bloom_brightpass.frag.spv
+        ${SPV_DIR}/bloom_composite.frag.spv
 )
 
 # Main Executable
@@ -316,6 +326,8 @@ add_executable(Meadows
         src/Graphics/Techniques/ShadowMappingTechnique.h
         src/Graphics/Techniques/DeferredRenderingTechnique.cpp
         src/Graphics/Techniques/DeferredRenderingTechnique.h
+        src/Graphics/Techniques/BloomTechnique.cpp
+        src/Graphics/Techniques/BloomTechnique.h
 )
 
 # Ensure shaders are compiled before building Meadows

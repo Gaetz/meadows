@@ -139,8 +139,8 @@ void Engine::initScenes() {
         }
     }
 
-    // Set the default active scene (with deferred rendering)
-    setActiveScene(deferredScene.get());
+    // Set the default active scene
+    setActiveScene(shadowScene.get());
 }
 
 void Engine::setActiveScene(Scene* scene) {
