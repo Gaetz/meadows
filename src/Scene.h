@@ -15,22 +15,6 @@ namespace graphics::techniques {
     class IRenderingTechnique;
 }
 
-/***
- *
- * Utilisation:
- * // Créer la scène
- * scene = std::make_unique<Scene>(renderer);
- * auto mesh = graphics::loadGltfMeshes(renderer, "assets/cube.glb");
- * scene->addMeshNode("cube", mesh->at(0));
- *
- * // Connecter au renderer
- * renderer->setDrawContext(&scene->getDrawContext());
- *
- * // Dans la boucle principale
- * scene->update();      // Scene remplit son DrawContext
- * renderer->draw();     // Renderer utilise le DrawContext de Scene
-**/
-
 class Scene {
 public:
     explicit Scene(graphics::Renderer* renderer);

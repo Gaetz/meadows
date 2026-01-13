@@ -81,7 +81,7 @@ namespace graphics::techniques {
         pipelineBuilder.disableBlending();
         pipelineBuilder.enableDepthTest(true, vk::CompareOp::eLessOrEqual);
 
-        pipelineBuilder.setColorAttachmentFormat(renderer->getContext()->getDrawImage().imageFormat);
+        pipelineBuilder.setColorAttachmentFormat(renderer->getSceneImage().imageFormat);
         pipelineBuilder.setDepthFormat(renderer->getContext()->getDepthImage().imageFormat);
 
         pipelineBuilder.pipelineLayout = pipelineLayout;
@@ -120,15 +120,15 @@ namespace graphics::techniques {
 
         auto start = std::chrono::system_clock::now();
 
-        Image& drawImage = renderer->getContext()->getDrawImage();
+        Image& sceneImage = renderer->getSceneImage();
         Image& depthImage = renderer->getContext()->getDepthImage();
 
         vk::RenderingAttachmentInfo colorAttachment = graphics::attachmentInfo(
-            drawImage.imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
+            sceneImage.imageView, nullptr, vk::ImageLayout::eColorAttachmentOptimal);
         vk::RenderingAttachmentInfo depthAttachment = graphics::depthAttachmentInfo(
             depthImage.imageView, vk::ImageLayout::eDepthAttachmentOptimal);
 
-        const auto imageExtent = drawImage.imageExtent;
+        const auto imageExtent = sceneImage.imageExtent;
         const vk::Rect2D rect{ vk::Offset2D{0, 0}, {imageExtent.width, imageExtent.height} };
         const vk::RenderingInfo renderInfo = graphics::renderingInfo(rect, &colorAttachment, &depthAttachment);
         cmd.beginRendering(&renderInfo);
@@ -146,7 +146,7 @@ namespace graphics::techniques {
 
         auto end = std::chrono::system_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-        stats.meshDrawTime = elapsed.count() / 1000.f;
+        stats.meshDrawTime = static_cast<float>(elapsed.count()) / 1000.f;
     }
 
     void BasicTechnique::renderGeometry(
@@ -179,7 +179,7 @@ namespace graphics::techniques {
             return A.material < B.material;
         });
 
-        const auto imageExtent = renderer->getContext()->getDrawImage().imageExtent;
+        const auto imageExtent = renderer->getSceneImage().imageExtent;
         vk::Viewport viewport{};
         viewport.x = 0;
         viewport.y = 0;
@@ -215,7 +215,7 @@ namespace graphics::techniques {
             cmd.drawIndexed(r.indexCount, 1, r.firstIndex, 0, 0);
 
             stats.drawcallCount++;
-            stats.triangleCount += r.indexCount / 3;
+            stats.triangleCount += static_cast<int>(r.indexCount / 3);
         };
 
         for (auto& r : opaqueDraws) {

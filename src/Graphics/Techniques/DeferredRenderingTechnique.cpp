@@ -281,20 +281,20 @@ namespace graphics::techniques {
 
         // Animate lights (like Sascha Willems example, scaled up)
         // White light - orbits around center
-        lightsData.lights[0].position.x = sin(glm::radians(360.0f * timer)) * 5.0f * scale;
-        lightsData.lights[0].position.z = cos(glm::radians(360.0f * timer)) * 5.0f * scale;
+        lightsData.lights[0].position.x = sin(glm::radians(360.0f * timer * 0.2f)) * 5.0f * scale;
+        lightsData.lights[0].position.z = cos(glm::radians(360.0f * timer * 0.2f)) * 5.0f * scale;
 
         // Red light
-        lightsData.lights[1].position.x = (-4.0f + sin(glm::radians(360.0f * timer) + 45.0f) * 2.0f) * scale;
-        lightsData.lights[1].position.z = (0.0f + cos(glm::radians(360.0f * timer) + 45.0f) * 2.0f) * scale;
+        lightsData.lights[1].position.x = (-4.0f + sin(glm::radians(360.0f * timer * 0.2f) + 45.0f) * 2.0f) * scale;
+        lightsData.lights[1].position.z = (0.0f + cos(glm::radians(360.0f * timer * 0.2f) + 45.0f) * 2.0f) * scale;
 
         // Blue light
-        lightsData.lights[2].position.x = (4.0f + sin(glm::radians(360.0f * timer)) * 2.0f) * scale;
-        lightsData.lights[2].position.z = (0.0f + cos(glm::radians(360.0f * timer)) * 2.0f) * scale;
+        lightsData.lights[2].position.x = (4.0f + sin(glm::radians(360.0f * timer * 0.2f)) * 2.0f) * scale;
+        lightsData.lights[2].position.z = (0.0f + cos(glm::radians(360.0f * timer * 0.2f)) * 2.0f) * scale;
 
         // Green light
-        lightsData.lights[4].position.x = (0.0f + sin(glm::radians(360.0f * timer + 90.0f)) * 5.0f) * scale;
-        lightsData.lights[4].position.z = (0.0f - cos(glm::radians(360.0f * timer + 45.0f)) * 5.0f) * scale;
+        lightsData.lights[4].position.x = (0.0f + sin(glm::radians(360.0f * timer * 0.2f + 90.0f)) * 5.0f) * scale;
+        lightsData.lights[4].position.z = (0.0f - cos(glm::radians(360.0f * timer * 0.2f + 45.0f)) * 5.0f) * scale;
 
         // Copy to GPU buffer
         memcpy(lightsBuffer.info.pMappedData, &lightsData, sizeof(DeferredLightsData));
