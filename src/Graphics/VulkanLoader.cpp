@@ -266,7 +266,7 @@ namespace graphics {
 
         auto dataResult = fastgltf::GltfDataBuffer::FromPath(path);
         if (!dataResult) {
-            Log::Error("Failed to load glTF file: %s", fastgltf::getErrorName(dataResult.error()).data());
+            Log::Error("%s: Failed to load glTF file %s", fastgltf::getErrorName(dataResult.error()).data(), filePath.c_str());
             return {};
         }
 
