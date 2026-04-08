@@ -1,6 +1,5 @@
 #include "RainbowScene.h"
 #include "Graphics/Renderer.h"
-#include "Graphics/Techniques/RainbowTechnique.h"
 #include <imgui.h>
 #include <glm/glm.hpp>
 #include <cmath>
@@ -8,23 +7,26 @@
 
 static constexpr float kPI = 3.14159265358979323846f;
 
-RainbowScene::RainbowScene(graphics::techniques::RainbowTechnique* technique)
-    : technique(technique)
-{}
+RainbowScene::RainbowScene(graphics::Renderer* renderer)
+    : renderer(renderer)
+{
+    technique = std::make_unique<graphics::techniques::RainbowTechnique>();
+    technique->init(renderer);
+}
+
+RainbowScene::~RainbowScene() {
+    technique->cleanup(renderer->getContext()->getDevice());
+}
 
 graphics::techniques::IRenderingTechnique* RainbowScene::getRenderingTechnique() const {
-    return technique;
+    return technique.get();
 }
 
-void RainbowScene::setRenderingTechnique(graphics::techniques::IRenderingTechnique* t) {
-    technique = static_cast<graphics::techniques::RainbowTechnique*>(t);
-}
-
-void RainbowScene::onActivated(graphics::Renderer* renderer) {
-    cachedRenderer = renderer;
-    renderer->mainCamera.position = { 0.f, 200.f, 5.f };
-    renderer->mainCamera.pitch    = glm::radians(-20.f);
-    renderer->mainCamera.yaw      = 0.f;
+void RainbowScene::onActivated(graphics::Renderer* r) {
+    cachedRenderer = r;
+    r->mainCamera.position = { 0.f, 200.f, 5.f };
+    r->mainCamera.pitch    = glm::radians(-20.f);
+    r->mainCamera.yaw      = 0.f;
     if (technique) technique->params.altitude = 200.f;
 }
 

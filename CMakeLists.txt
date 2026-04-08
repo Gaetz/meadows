@@ -349,6 +349,12 @@ add_executable(Meadows
         src/IScene.h
         src/GltfScene.cpp
         src/GltfScene.h
+        src/BasicScene.cpp
+        src/BasicScene.h
+        src/ShadowScene.cpp
+        src/ShadowScene.h
+        src/DeferredScene.cpp
+        src/DeferredScene.h
         src/Graphics/Techniques/IRenderingTechnique.h
         src/Graphics/Techniques/GBuffer.cpp
         src/Graphics/Techniques/GBuffer.h

@@ -2,12 +2,12 @@
 #include "BasicServices/Log.h"
 #include "Graphics/VulkanContext.h"
 #include "Graphics/Renderer.h"
-#include "GltfScene.h"
+#include "BasicScene.h"
+#include "ShadowScene.h"
+#include "DeferredScene.h"
 #include "RainbowScene.h"
-#include "Graphics/Techniques/RainbowTechnique.h"
 #include <backends/imgui_impl_sdl3.h>
 #include "BasicServices/RenderingStats.h"
-#include <glm/gtx/transform.hpp>
 
 using services::Log;
 
@@ -34,49 +34,11 @@ void Engine::init() {
 }
 
 void Engine::initScenes() {
-    // Initialize rendering techniques
-    basicTechnique = std::make_unique<graphics::techniques::BasicTechnique>();
-    basicTechnique->init(renderer.get());
+    basicScene    = std::make_unique<BasicScene>(renderer.get());
+    shadowScene   = std::make_unique<ShadowScene>(renderer.get());
+    deferredScene = std::make_unique<DeferredScene>(renderer.get());
+    rainbowScene  = std::make_unique<RainbowScene>(renderer.get());
 
-    shadowMappingTechnique = std::make_unique<graphics::techniques::ShadowMappingTechnique>();
-    shadowMappingTechnique->init(renderer.get());
-
-    deferredTechnique = std::make_unique<graphics::techniques::DeferredRenderingTechnique>();
-    deferredTechnique->init(renderer.get());
-
-    // Basic scene
-    auto basic = std::make_unique<GltfScene>(renderer.get(), "assets/structure.glb");
-    basic->setRenderingTechnique(basicTechnique.get());
-    basic->animateLight = false;
-    basicScene = std::move(basic);
-
-    // Shadow scene
-    auto shadow = std::make_unique<GltfScene>(renderer.get(), "assets/vulkanscene_shadow.gltf");
-    shadow->setRenderingTechnique(shadowMappingTechnique.get());
-    shadow->initialCameraPos   = Vec3(0.0f, 5.0f, 10.0f);
-    shadow->initialCameraPitch = glm::radians(-15.0f);
-    shadow->initialCameraYaw   = 0.0f;
-    shadow->animateLight       = true;
-    shadowScene = std::move(shadow);
-
-    // Deferred scene (armor model with KTX textures)
-    auto deferred = std::make_unique<GltfScene>(
-        renderer.get(),
-        "assets/armor/armor.gltf",
-        glm::scale(Vec3(30.0f)) * glm::translate(Vec3(0.0f, 2.3f, 0.0f))
-    );
-    deferred->setRenderingTechnique(deferredTechnique.get());
-    deferred->initialCameraPos = Vec3(0.0f, 50.0f, 100.0f);
-    deferred->animateLight     = false;
-    deferred->loadKTXColorMap("assets/armor/colormap_rgba.ktx");
-    deferredScene = std::move(deferred);
-
-    // Rainbow scene
-    rainbowTechnique = std::make_unique<graphics::techniques::RainbowTechnique>();
-    rainbowTechnique->init(renderer.get());
-    rainbowScene = std::make_unique<RainbowScene>(rainbowTechnique.get());
-
-    // Scene selector UI registered with Renderer
     renderer->setImguiCallback([this]() {
         if (ImGui::Begin("Scenes")) {
             if (ImGui::Button("Basic"))    setActiveScene(basicScene.get());
@@ -111,29 +73,12 @@ void Engine::cleanup() {
 
     vulkanContext->getDevice().waitIdle();
 
+    // Scenes own and clean up their techniques in their destructors
     basicScene.reset();
     shadowScene.reset();
     deferredScene.reset();
     rainbowScene.reset();
     activeScene = nullptr;
-
-    vk::Device device = vulkanContext->getDevice();
-    if (basicTechnique) {
-        basicTechnique->cleanup(device);
-        basicTechnique.reset();
-    }
-    if (shadowMappingTechnique) {
-        shadowMappingTechnique->cleanup(device);
-        shadowMappingTechnique.reset();
-    }
-    if (deferredTechnique) {
-        deferredTechnique->cleanup(device);
-        deferredTechnique.reset();
-    }
-    if (rainbowTechnique) {
-        rainbowTechnique->cleanup(device);
-        rainbowTechnique.reset();
-    }
 
     renderer.reset();
     vulkanContext.reset();

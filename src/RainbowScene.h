@@ -3,33 +3,30 @@
 #include "IScene.h"
 #include "Defines.h"
 #include "Graphics/RenderObject.h"
+#include "Graphics/Techniques/RainbowTechnique.h"
 
 namespace graphics {
     class Renderer;
 }
 
-namespace graphics::techniques {
-    class IRenderingTechnique;
-    class RainbowTechnique;
-}
-
 class RainbowScene : public IScene {
 public:
-    explicit RainbowScene(graphics::techniques::RainbowTechnique* technique);
+    explicit RainbowScene(graphics::Renderer* renderer);
+    ~RainbowScene() override;
 
     // IScene interface
     void update() override;
     void drawImGui() override;
     graphics::DrawContext& getDrawContext() override { return drawContext; }
     graphics::techniques::IRenderingTechnique* getRenderingTechnique() const override;
-    void setRenderingTechnique(graphics::techniques::IRenderingTechnique* technique) override;
+    void setRenderingTechnique(graphics::techniques::IRenderingTechnique*) override {}
     void onActivated(graphics::Renderer* renderer) override;
 
 private:
     void drawDropletDiagram();
 
-    graphics::techniques::RainbowTechnique* technique { nullptr };
+    graphics::Renderer* renderer { nullptr };
+    uptr<graphics::techniques::RainbowTechnique> technique;
     graphics::DrawContext drawContext;
-
     graphics::Renderer* cachedRenderer { nullptr };
 };

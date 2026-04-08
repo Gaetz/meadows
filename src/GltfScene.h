@@ -56,7 +56,7 @@ public:
     const std::unordered_map<str, sptr<graphics::Node>>& getNodes() const { return nodes; }
     const vector<sptr<graphics::Node>>& getTopNodes() const { return topNodes; }
 
-private:
+protected:
     graphics::Renderer* renderer;
     graphics::techniques::IRenderingTechnique* renderingTechnique { nullptr };
 
