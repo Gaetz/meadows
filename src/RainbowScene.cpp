@@ -22,15 +22,16 @@ void RainbowScene::setRenderingTechnique(graphics::techniques::IRenderingTechniq
 
 void RainbowScene::onActivated(graphics::Renderer* renderer) {
     cachedRenderer = renderer;
-    renderer->mainCamera.position = { 0.f, 1.f, 5.f };
-    renderer->mainCamera.pitch    = glm::radians(10.f);
+    renderer->mainCamera.position = { 0.f, 200.f, 5.f };
+    renderer->mainCamera.pitch    = glm::radians(-20.f);
     renderer->mainCamera.yaw      = 0.f;
+    if (technique) technique->params.altitude = 200.f;
 }
 
 void RainbowScene::update() {
-    // Mise à jour de la hauteur caméra selon l'altitude (1 unité = 1000 m)
+    // Sync camera Y ↔ altitude param so Q/E and the slider stay coherent
     if (cachedRenderer && technique) {
-        cachedRenderer->mainCamera.position.y = 1.f + technique->params.altitude * 0.001f;
+        technique->params.altitude = cachedRenderer->mainCamera.position.y;
     }
 }
 
@@ -78,8 +79,26 @@ void RainbowScene::drawImGui() {
 
         ImGui::SeparatorText("Altitude");
         ImGui::SetNextItemWidth(200.f);
-        ImGui::SliderFloat("Altitude (m)", &p.altitude, 0.f, 12000.f, "%.0f m");
-        ImGui::TextDisabled("  3000 m+ : cercle complet visible");
+        if (ImGui::SliderFloat("Altitude", &p.altitude, 0.f, 5000.f, "y = %.1f")) {
+            if (cachedRenderer)
+                cachedRenderer->mainCamera.position.y = p.altitude;
+        }
+        ImGui::TextDisabled("  Q/E ou le slider pour monter/descendre");
+
+        ImGui::SeparatorText("Terrain");
+        ImGui::Checkbox("Afficher le terrain", &p.showTerrain);
+        if (p.showTerrain) {
+            ImGui::SetNextItemWidth(200.f);
+            ImGui::SliderFloat("Hauteur max (m)",  &p.terrainHeight,      5.f,   500.f);
+            ImGui::SetNextItemWidth(200.f);
+            ImGui::SliderFloat("Frequence FBM",    &p.terrainFrequency,   0.001f, 0.05f, "%.4f");
+            ImGui::SetNextItemWidth(200.f);
+            ImGui::SliderInt("Octaves FBM",        &p.terrainOctaves,     2, 10);
+            ImGui::SetNextItemWidth(200.f);
+            ImGui::SliderFloat("Persistance",      &p.terrainPersistence, 0.2f,   0.8f);
+            ImGui::SetNextItemWidth(200.f);
+            ImGui::SliderFloat("Lumiere ambiante", &p.terrainAmbient,     0.0f,   0.5f);
+        }
     }
     ImGui::End();
 

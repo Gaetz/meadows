@@ -1,0 +1,116 @@
+#version 450
+#extension GL_EXT_mesh_shader : require
+
+layout(local_size_x = 128) in;
+layout(triangles, max_vertices = 81, max_primitives = 128) out;
+
+layout(location = 0) out vec3 outWorldPos[];
+layout(location = 1) out vec3 outNormal[];
+layout(location = 2) out float outHeight[];
+
+layout(set = 0, binding = 0) uniform TerrainUBO {
+    mat4  viewProj;
+    vec4  cameraPos;
+    vec4  sunDir;
+    float patchSize;
+    float heightScale;
+    float fbmFrequency;
+    float fbmPersistence;
+    int   fbmOctaves;
+    int   gridSize;
+    float ambientLight;
+    float _pad;
+} ubo;
+
+// ── Gradient noise (Perlin-like) ─────────────────────────────────────────────
+// Returns a pseudo-random 2D gradient for lattice point p
+vec2 grad2(vec2 p) {
+    // Hash to a gradient direction
+    vec2 h = vec2(dot(p, vec2(127.1, 311.7)),
+                  dot(p, vec2(269.5, 183.3)));
+    h = fract(sin(h) * 43758.5453123);
+    return normalize(-1.0 + 2.0 * h);
+}
+
+// 2D gradient noise in [-1, 1] using quintic smoothstep
+float gnoise(vec2 p) {
+    vec2 i  = floor(p);
+    vec2 f  = fract(p);
+    // Quintic fade: 6t^5 - 15t^4 + 10t^3
+    vec2 u  = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+
+    float n00 = dot(grad2(i),               f);
+    float n10 = dot(grad2(i + vec2(1,0)),   f - vec2(1,0));
+    float n01 = dot(grad2(i + vec2(0,1)),   f - vec2(0,1));
+    float n11 = dot(grad2(i + vec2(1,1)),   f - vec2(1,1));
+
+    return mix(mix(n00, n10, u.x),
+               mix(n01, n11, u.x), u.y);
+}
+
+// FBM built on gradient noise
+float fbm(vec2 p) {
+    float value     = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    float norm      = 0.0;
+    for (int i = 0; i < ubo.fbmOctaves; i++) {
+        value     += amplitude * gnoise(p * frequency);
+        norm      += amplitude;
+        amplitude *= ubo.fbmPersistence;
+        frequency *= 2.0;
+    }
+    // Remap [-1,1] output to [0,1]
+    return (value / norm) * 0.5 + 0.5;
+}
+
+float terrainY(vec2 xz) {
+    return fbm(xz * ubo.fbmFrequency) * ubo.heightScale;
+}
+
+void main() {
+    SetMeshOutputsEXT(81, 128);
+
+    uint tid = gl_LocalInvocationID.x;
+
+    // Center terrain grid around world origin
+    float halfW = float(ubo.gridSize) * ubo.patchSize * 0.5;
+    vec2  origin = vec2(gl_WorkGroupID.xy) * ubo.patchSize - halfW;
+    float step   = ubo.patchSize / 8.0;
+
+    // Emit one vertex per thread for IDs 0..80  (9×9 grid)
+    if (tid < 81u) {
+        uint xi = tid % 9u;
+        uint zi = tid / 9u;
+
+        float x = origin.x + float(xi) * step;
+        float z = origin.y + float(zi) * step;
+        float y = terrainY(vec2(x, z));
+
+        // Central differences for approximate surface normal
+        float eps = step * 0.5;
+        float yl  = terrainY(vec2(x - eps, z));
+        float yr  = terrainY(vec2(x + eps, z));
+        float yd  = terrainY(vec2(x, z - eps));
+        float yu  = terrainY(vec2(x, z + eps));
+        vec3  n   = normalize(vec3(yl - yr, 2.0 * eps, yd - yu));
+
+        gl_MeshVerticesEXT[tid].gl_Position = ubo.viewProj * vec4(x, y, z, 1.0);
+        outWorldPos[tid] = vec3(x, y, z);
+        outNormal[tid]   = n;
+        outHeight[tid]   = y / ubo.heightScale;
+    }
+
+    // Each thread emits one triangle (2 per quad × 64 quads = 128)
+    uint q  = tid / 2u;
+    uint t  = tid % 2u;
+    uint qx = q % 8u;
+    uint qz = q / 8u;
+    uint v  = qz * 9u + qx;
+
+    if (t == 0u) {
+        gl_PrimitiveTriangleIndicesEXT[tid] = uvec3(v, v + 1u, v + 10u);
+    } else {
+        gl_PrimitiveTriangleIndicesEXT[tid] = uvec3(v, v + 10u, v + 9u);
+    }
+}

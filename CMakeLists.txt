@@ -194,6 +194,15 @@ function(compile_shader SHADER_SOURCE SHADER_BINARY)
     )
 endfunction()
 
+function(compile_mesh_shader SHADER_SOURCE SHADER_BINARY)
+    add_custom_command(
+        OUTPUT ${SHADER_BINARY}
+        COMMAND ${GLSLC_EXECUTABLE} --target-env=vulkan1.3 ${SHADER_SOURCE} -o ${SHADER_BINARY}
+        DEPENDS ${SHADER_SOURCE}
+        COMMENT "Compiling mesh shader ${SHADER_SOURCE} to ${SHADER_BINARY}"
+    )
+endfunction()
+
 set(SHADER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
 set(SPV_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
 file(MAKE_DIRECTORY ${SPV_DIR})
@@ -238,6 +247,10 @@ compile_shader(${SHADER_DIR}/ssao_composite.frag ${SPV_DIR}/ssao_composite.frag.
 compile_shader(${SHADER_DIR}/rainbow_sky.vert ${SPV_DIR}/rainbow_sky.vert.spv)
 compile_shader(${SHADER_DIR}/rainbow_sky.frag ${SPV_DIR}/rainbow_sky.frag.spv)
 
+# Terrain shaders (mesh shader requires vulkan1.3 target)
+compile_mesh_shader(${SHADER_DIR}/terrain.mesh ${SPV_DIR}/terrain.mesh.spv)
+compile_shader(${SHADER_DIR}/terrain.frag      ${SPV_DIR}/terrain.frag.spv)
+
 add_custom_target(Shaders ALL
         DEPENDS
         ${SPV_DIR}/shader.vert.spv
@@ -270,6 +283,8 @@ add_custom_target(Shaders ALL
         ${SPV_DIR}/ssao_composite.frag.spv
         ${SPV_DIR}/rainbow_sky.vert.spv
         ${SPV_DIR}/rainbow_sky.frag.spv
+        ${SPV_DIR}/terrain.mesh.spv
+        ${SPV_DIR}/terrain.frag.spv
 )
 
 # Main Executable

@@ -82,6 +82,8 @@ namespace graphics {
         Image drawImage;
         Image depthImage;
 
+        vk::PhysicalDeviceMeshShaderFeaturesEXT meshShaderFeatures{};
+
         const std::vector<const char *> validationLayers = {
             "VK_LAYER_KHRONOS_validation"
         };

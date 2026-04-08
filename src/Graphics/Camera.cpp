@@ -67,7 +67,7 @@ namespace graphics {
         const Vec3 movement = Vec3(rotation * Vec4(velocity, 0.f));
 
         // Apply movement with a speed factor
-        constexpr float speed = 0.1f;
+        constexpr float speed = 2.0f;
         position += movement * speed;
     }
 

@@ -109,6 +109,10 @@ namespace graphics {
         features12.bufferDeviceAddress = true;
         features12.descriptorIndexing = true;
 
+        // Mesh shader features (VK_EXT_mesh_shader)
+        meshShaderFeatures.meshShader = VK_TRUE;
+        meshShaderFeatures.taskShader = VK_TRUE;
+
         // Use VkBootstrap to select a GPU
         // We want a GPU that can write to the SDL surface and supports Vulkan 1.3 with the correct features
         vkb::PhysicalDeviceSelector selector{vkbInstance};
@@ -116,6 +120,8 @@ namespace graphics {
                 .set_minimum_version(1, 3)
                 .set_required_features_13(features13)
                 .set_required_features_12(features12)
+                .add_required_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME)
+                .add_required_extension_features(meshShaderFeatures)
                 .set_surface(surface)
                 .select();
 
@@ -132,6 +138,7 @@ namespace graphics {
     void VulkanContext::createLogicalDevice(vkb::PhysicalDevice vkbPhysicalDevice) {
         // Create the final Vulkan device
         vkb::DeviceBuilder deviceBuilder{vkbPhysicalDevice};
+        deviceBuilder.add_pNext(&meshShaderFeatures);
 
         auto devRet = deviceBuilder.build();
         if (!devRet) {

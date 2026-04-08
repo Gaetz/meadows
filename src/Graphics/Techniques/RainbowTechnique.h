@@ -21,6 +21,16 @@ namespace graphics::techniques {
             int   numWavelengths     = 24;
             float altitude           = 0.f;    // metres (0 – 12000)
             float intensityMult      = 2.f;    // multiplicateur global des arcs
+
+            // Terrain
+            bool  showTerrain        = true;
+            int   terrainGridSize    = 64;     // patches par côté
+            float terrainPatchSize   = 16.f;   // taille monde d'un patch
+            float terrainHeight      = 150.f;  // amplitude verticale
+            float terrainFrequency   = 0.008f;
+            float terrainPersistence = 0.5f;
+            int   terrainOctaves     = 7;
+            float terrainAmbient     = 0.15f;
         } params;
 
         // ── IRenderingTechnique ──────────────────────────────────────────────
@@ -50,8 +60,25 @@ namespace graphics::techniques {
             float     altitude;   // remplace _pad, même offset (124)
         };
 
+        // GPU-side uniform buffer for terrain (matches terrain.mesh / terrain.frag)
+        struct TerrainUBO {
+            glm::mat4 viewProj;        // offset   0
+            glm::vec4 cameraPos;       // offset  64
+            glm::vec4 sunDir;          // offset  80
+            float     patchSize;       // offset  96
+            float     heightScale;     // offset 100
+            float     fbmFrequency;    // offset 104
+            float     fbmPersistence;  // offset 108
+            int       fbmOctaves;      // offset 112
+            int       gridSize;        // offset 116
+            float     ambientLight;    // offset 120
+            float     _pad;            // offset 124
+        };  // 128 bytes
+
         void createDescriptors();
         void createPipeline();
+        void createTerrainDescriptors();
+        void createTerrainPipeline();
 
         Renderer* renderer { nullptr };
 
@@ -62,6 +89,14 @@ namespace graphics::techniques {
 
         vk::PipelineLayout        pipelineLayout { nullptr };
         uptr<MaterialPipeline>    pipeline;
+
+        Buffer                      terrainUboBuffer;
+        vk::DescriptorSetLayout     terrainDescriptorLayout { nullptr };
+        vk::DescriptorSet           terrainDescriptorSet    { nullptr };
+        DescriptorAllocatorGrowable terrainDescriptorPool;
+        vk::PipelineLayout          terrainPipelineLayout   { nullptr };
+        vk::Pipeline                terrainPipeline         { nullptr };
+        PFN_vkCmdDrawMeshTasksEXT   pfnDrawMeshTasksEXT     { nullptr };
     };
 
 } // namespace graphics::techniques
