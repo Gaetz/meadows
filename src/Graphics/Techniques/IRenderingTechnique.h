@@ -30,7 +30,7 @@ namespace graphics::techniques {
         Basic,          ///< Simple forward rendering without shadows
         ShadowMapping,  ///< Forward rendering with shadow mapping
         Deferred,       ///< Deferred rendering with G-Buffer
-        // Add more technique types as needed
+        Rainbow,        ///< Analytical sky + rainbow arc simulation
     };
 
     /**

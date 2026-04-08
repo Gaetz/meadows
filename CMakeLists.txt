@@ -234,6 +234,10 @@ compile_shader(${SHADER_DIR}/ssao.frag ${SPV_DIR}/ssao.frag.spv)
 compile_shader(${SHADER_DIR}/ssao_blur.frag ${SPV_DIR}/ssao_blur.frag.spv)
 compile_shader(${SHADER_DIR}/ssao_composite.frag ${SPV_DIR}/ssao_composite.frag.spv)
 
+# Rainbow shaders
+compile_shader(${SHADER_DIR}/rainbow_sky.vert ${SPV_DIR}/rainbow_sky.vert.spv)
+compile_shader(${SHADER_DIR}/rainbow_sky.frag ${SPV_DIR}/rainbow_sky.frag.spv)
+
 add_custom_target(Shaders ALL
         DEPENDS
         ${SPV_DIR}/shader.vert.spv
@@ -264,6 +268,8 @@ add_custom_target(Shaders ALL
         ${SPV_DIR}/ssao.frag.spv
         ${SPV_DIR}/ssao_blur.frag.spv
         ${SPV_DIR}/ssao_composite.frag.spv
+        ${SPV_DIR}/rainbow_sky.vert.spv
+        ${SPV_DIR}/rainbow_sky.frag.spv
 )
 
 # Main Executable
@@ -325,8 +331,9 @@ add_executable(Meadows
         src/Graphics/ShadowMap.h
         src/BasicServices/RenderingStats.h
         src/Graphics/RenderObject.h
-        src/Scene.cpp
-        src/Scene.h
+        src/IScene.h
+        src/GltfScene.cpp
+        src/GltfScene.h
         src/Graphics/Techniques/IRenderingTechnique.h
         src/Graphics/Techniques/GBuffer.cpp
         src/Graphics/Techniques/GBuffer.h
@@ -340,6 +347,10 @@ add_executable(Meadows
         src/Graphics/Techniques/BloomTechnique.h
         src/Graphics/Techniques/SSAOTechnique.cpp
         src/Graphics/Techniques/SSAOTechnique.h
+        src/Graphics/Techniques/RainbowTechnique.cpp
+        src/Graphics/Techniques/RainbowTechnique.h
+        src/RainbowScene.cpp
+        src/RainbowScene.h
 )
 
 # Ensure shaders are compiled before building Meadows

@@ -25,7 +25,7 @@
 #include "BasicServices/Log.h"
 #include "BasicServices/RenderingStats.h"
 #include "fmt/color.h"
-#include "../Scene.h"
+#include "../IScene.h"
 
 using graphics::pipelines::GLTFMetallicRoughness;
 
@@ -1354,6 +1354,11 @@ namespace graphics {
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
+
+        // Scene selector and other engine-level UI
+        if (imguiCallback) {
+            imguiCallback();
+        }
 
         // Let the active scene draw its own ImGui
         if (activeScene) {

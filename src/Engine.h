@@ -3,12 +3,13 @@
 #include <SDL3/SDL.h>
 #include "Defines.h"
 #include "Graphics/Renderer.h"
-#include "Graphics/LoadedGLTF.h"
-#include "Graphics/Image.h"
+#include "IScene.h"
+#include "GltfScene.h"
 #include "Graphics/Techniques/BasicTechnique.h"
 #include "Graphics/Techniques/ShadowMappingTechnique.h"
 #include "Graphics/Techniques/DeferredRenderingTechnique.h"
-#include "Scene.h"
+#include "Graphics/Techniques/RainbowTechnique.h"
+#include "RainbowScene.h"
 
 using graphics::VulkanContext;
 using graphics::Renderer;
@@ -22,7 +23,7 @@ public:
     void run();
     void cleanup();
 
-    void setActiveScene(Scene* scene);
+    void setActiveScene(IScene* scene);
 
 private:
     void initWindow();
@@ -35,23 +36,15 @@ private:
     uptr<Renderer> renderer;
 
     // Scenes
-    uptr<Scene> basicScene;
-    uptr<Scene> shadowScene;
-    uptr<Scene> deferredScene;
-    Scene* activeScene { nullptr };
-
-    // Loaded models (kept alive for scenes)
-    sptr<graphics::LoadedGLTF> basicSceneModel;
-    sptr<graphics::LoadedGLTF> shadowSceneModel;
-    sptr<graphics::LoadedGLTF> deferredSceneModel;
+    uptr<IScene> basicScene;
+    uptr<IScene> shadowScene;
+    uptr<IScene> deferredScene;
+    uptr<IScene> rainbowScene;
+    IScene* activeScene { nullptr };
 
     // Rendering techniques (owned by Engine, used by scenes)
     uptr<graphics::techniques::BasicTechnique> basicTechnique;
     uptr<graphics::techniques::ShadowMappingTechnique> shadowMappingTechnique;
     uptr<graphics::techniques::DeferredRenderingTechnique> deferredTechnique;
-
-    // KTX textures for armor model
-    std::optional<graphics::Image> armorColorMap;
-    std::optional<graphics::Image> armorNormalMap;
-    graphics::Buffer armorMaterialBuffer;
+    uptr<graphics::techniques::RainbowTechnique> rainbowTechnique;
 };

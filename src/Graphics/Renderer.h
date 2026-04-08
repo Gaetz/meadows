@@ -13,6 +13,7 @@
 #include <vulkan/vulkan.hpp>
 #include <vector>
 #include <chrono>
+#include <functional>
 
 #include "Buffer.h"
 #include "Camera.h"
@@ -29,7 +30,7 @@
 #include "Techniques/BloomTechnique.h"
 #include "Techniques/SSAOTechnique.h"
 
-class Scene;
+class IScene;
 
 namespace graphics::techniques {
     class IRenderingTechnique;
@@ -178,8 +179,11 @@ namespace graphics {
         GPUSceneData& getSceneData() { return sceneData; }
 
         /// Sets the active scene for ImGui rendering
-        void setActiveScene(::Scene* scene) { activeScene = scene; }
-        ::Scene* getActiveScene() const { return activeScene; }
+        void setActiveScene(IScene* scene) { activeScene = scene; }
+        IScene* getActiveScene() const { return activeScene; }
+
+        /// Optional extra ImGui callback (e.g. scene selector registered by Engine)
+        void setImguiCallback(std::function<void()> cb) { imguiCallback = std::move(cb); }
 
         // =====================================================================
         // Rendering Configuration
@@ -325,7 +329,8 @@ namespace graphics {
         // Rendering Technique
         // =====================================================================
         techniques::IRenderingTechnique* externalRenderingTechnique { nullptr };
-        ::Scene* activeScene { nullptr };
+        IScene* activeScene { nullptr };
+        std::function<void()> imguiCallback;
 
         // =====================================================================
         // Optimization State Caching
