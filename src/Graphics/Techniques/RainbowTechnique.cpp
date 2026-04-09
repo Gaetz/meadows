@@ -212,6 +212,14 @@ namespace graphics::techniques {
                                   const DrawContext& /*drawContext*/,
                                   const GPUSceneData& sceneData,
                                   DescriptorAllocatorGrowable& /*frameDescriptors*/) {
+        // ── Elapsed time for animated water ─────────────────────────────────
+        auto now = std::chrono::steady_clock::now();
+        if (lastFrameTime != std::chrono::steady_clock::time_point{}) {
+            float dt = std::chrono::duration<float>(now - lastFrameTime).count();
+            accumTime += std::min(dt, 0.1f); // clamp spike on first frame
+        }
+        lastFrameTime = now;
+
         // ── Update UBO ──────────────────────────────────────────────────────
         RainbowUBO ubo{};
         ubo.invViewProj = glm::inverse(sceneData.viewProj);
@@ -304,6 +312,7 @@ namespace graphics::techniques {
             tubo.fbmOctaves     = params.terrainOctaves;
             tubo.gridSize       = params.terrainGridSize;
             tubo.ambientLight   = params.terrainAmbient;
+            tubo.time           = accumTime;
             memcpy(terrainUboBuffer.info.pMappedData, &tubo, sizeof(TerrainUBO));
 
             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, terrainPipeline);

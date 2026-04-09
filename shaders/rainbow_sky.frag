@@ -74,6 +74,12 @@ float rainbowAngle(float n, int order) {
     }
 }
 
+// Option A — ACES filmic tone mapping
+vec3 aces(vec3 x) {
+    const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+    return clamp((x*(a*x+b)) / (x*(c*x+d)+e), 0.0, 1.0);
+}
+
 void main() {
     // ── Reconstruct world-space view direction ───────────────────────────────
     vec2 ndc = inUV * 2.0 - 1.0;
@@ -182,5 +188,5 @@ void main() {
     rainbow *= visible;
 
     // ── Final composite ──────────────────────────────────────────────────────
-    outColor = vec4(skyColor + rainbow, 1.0);
+    outColor = vec4(aces(skyColor + rainbow), 1.0);
 }

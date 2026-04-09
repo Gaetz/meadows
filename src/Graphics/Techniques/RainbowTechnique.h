@@ -4,6 +4,7 @@
 #include "../Buffer.h"
 #include "../DescriptorAllocatorGrowable.h"
 #include "../MaterialPipeline.h"
+#include <chrono>
 
 namespace graphics::techniques {
 
@@ -72,7 +73,7 @@ namespace graphics::techniques {
             int       fbmOctaves;      // offset 112
             int       gridSize;        // offset 116
             float     ambientLight;    // offset 120
-            float     _pad;            // offset 124
+            float     time;            // offset 124
         };  // 128 bytes
 
         void createDescriptors();
@@ -97,6 +98,9 @@ namespace graphics::techniques {
         vk::PipelineLayout          terrainPipelineLayout   { nullptr };
         vk::Pipeline                terrainPipeline         { nullptr };
         PFN_vkCmdDrawMeshTasksEXT   pfnDrawMeshTasksEXT     { nullptr };
+
+        float accumTime { 0.0f };
+        std::chrono::steady_clock::time_point lastFrameTime {};
     };
 
 } // namespace graphics::techniques
