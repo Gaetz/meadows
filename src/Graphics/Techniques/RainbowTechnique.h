@@ -25,8 +25,8 @@ namespace graphics::techniques {
 
             // Terrain
             bool  showTerrain        = true;
-            int   terrainGridSize    = 64;     // patches par côté
-            float terrainPatchSize   = 16.f;   // taille monde d'un patch
+            int   terrainGridSize    = 128;    // patches par côté
+            float terrainPatchSize   = 32.f;   // taille monde d'un patch
             float terrainHeight      = 150.f;  // amplitude verticale
             float terrainFrequency   = 0.008f;
             float terrainPersistence = 0.5f;

@@ -45,68 +45,6 @@
 namespace graphics::techniques {
 
     // =========================================================================
-    // Frustum Culling Helper
-    // =========================================================================
-
-    namespace {
-        /**
-         * @brief Tests if a render object is visible in the camera frustum.
-         *
-         * Frustum culling is a critical optimization that skips objects
-         * outside the camera's view. This saves GPU work by not drawing
-         * invisible geometry.
-         *
-         * How it works:
-         * 1. Transform the object's bounding box corners to clip space
-         * 2. Check if the box is completely outside any frustum plane
-         * 3. If outside, the object is not visible
-         *
-         * @param obj The render object to test.
-         * @param viewProj Combined view-projection matrix.
-         * @return true if the object is potentially visible.
-         */
-        bool isVisible(const RenderObject& obj, const Mat4& viewProj) {
-            // 8 corners of a unit cube
-            std::array<Vec3, 8> corners {
-                Vec3 { 1, 1, 1 },
-                Vec3 { 1, 1, -1 },
-                Vec3 { 1, -1, 1 },
-                Vec3 { 1, -1, -1 },
-                Vec3 { -1, 1, 1 },
-                Vec3 { -1, 1, -1 },
-                Vec3 { -1, -1, 1 },
-                Vec3 { -1, -1, -1 },
-            };
-
-            // Transform from object space to clip space
-            Mat4 matrix = viewProj * obj.transform;
-
-            // Track min/max of transformed corners in clip space
-            Vec3 min = { 1.5f, 1.5f, 1.5f };
-            Vec3 max = { -1.5f, -1.5f, -1.5f };
-
-            for (int c = 0; c < 8; c++) {
-                // Transform corner to clip space
-                Vec4 v = matrix * Vec4(obj.bounds.origin + (corners[c] * obj.bounds.extents), 1.f);
-
-                // Perspective divide (clip space -> normalized device coordinates)
-                v.x = v.x / v.w;
-                v.y = v.y / v.w;
-                v.z = v.z / v.w;
-
-                min = glm::min(Vec3{ v.x, v.y, v.z }, min);
-                max = glm::max(Vec3{ v.x, v.y, v.z }, max);
-            }
-
-            // Check against NDC bounds [-1, 1] for X/Y and [0, 1] for Z
-            if (min.z > 1.f || max.z < 0.f || min.x > 1.f || max.x < -1.f || min.y > 1.f || max.y < -1.f) {
-                return false;
-            }
-            return true;
-        }
-    }
-
-    // =========================================================================
     // Initialization
     // =========================================================================
 
@@ -319,19 +257,7 @@ namespace graphics::techniques {
         // -----------------------------------------------------------------
         const auto imageExtent = renderer->getSceneImage().imageExtent;
 
-        // Viewport: Maps [-1,1] to screen coordinates
-        vk::Viewport viewport{};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = static_cast<float>(imageExtent.width);
-        viewport.height = static_cast<float>(imageExtent.height);
-        viewport.minDepth = 0.f;
-        viewport.maxDepth = 1.f;
-        cmd.setViewport(0, 1, &viewport);
-
-        // Scissor: Clips to this rectangle (usually full screen)
-        vk::Rect2D scissor{{0, 0}, {imageExtent.width, imageExtent.height}};
-        cmd.setScissor(0, 1, &scissor);
+        setViewportScissor(cmd, {imageExtent.width, imageExtent.height});
 
         // -----------------------------------------------------------------
         // Draw Lambda

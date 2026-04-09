@@ -11,6 +11,7 @@
 #include <vulkan/vulkan.hpp>
 #include "../Types.h"
 #include "../RenderObject.h"
+#include "GBuffer.h"
 
 namespace graphics {
     class Renderer;
@@ -128,6 +129,10 @@ namespace graphics::techniques {
 
         /// Returns a human-readable name for the technique
         virtual const str getName() const = 0;
+
+        /// Returns the G-Buffer if this technique produces one, or nullptr otherwise.
+        /// Used by the Renderer to apply SSAO without knowing the concrete technique type.
+        virtual GBuffer* getGBuffer() { return nullptr; }
 
     };
 

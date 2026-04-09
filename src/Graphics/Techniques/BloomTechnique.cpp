@@ -224,10 +224,7 @@ namespace graphics::techniques {
 
             cmd.beginRendering(&compositeRenderInfo);
 
-            vk::Viewport fullViewport(0, 0, (float)width, (float)height, 0, 1);
-            cmd.setViewport(0, 1, &fullViewport);
-            vk::Rect2D fullScissor({0, 0}, {width, height});
-            cmd.setScissor(0, 1, &fullScissor);
+            setViewportScissor(cmd, {width, height});
 
             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, compositePipeline->getPipeline());
 
@@ -275,10 +272,7 @@ namespace graphics::techniques {
 
         cmd.beginRendering(&brightRenderInfo);
 
-        vk::Viewport viewport(0, 0, (float)bloomWidth, (float)bloomHeight, 0, 1);
-        cmd.setViewport(0, 1, &viewport);
-        vk::Rect2D scissor({0, 0}, {bloomWidth, bloomHeight});
-        cmd.setScissor(0, 1, &scissor);
+        setViewportScissor(cmd, {bloomWidth, bloomHeight});
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, brightPassPipeline->getPipeline());
 
@@ -313,8 +307,7 @@ namespace graphics::techniques {
         blurVRenderInfo.pColorAttachments = &blurVAttachment;
 
         cmd.beginRendering(&blurVRenderInfo);
-        cmd.setViewport(0, 1, &viewport);
-        cmd.setScissor(0, 1, &scissor);
+        setViewportScissor(cmd, {bloomWidth, bloomHeight});
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, blurVertPipeline->getPipeline());
 
@@ -344,8 +337,7 @@ namespace graphics::techniques {
         blurHRenderInfo.pColorAttachments = &blurHAttachment;
 
         cmd.beginRendering(&blurHRenderInfo);
-        cmd.setViewport(0, 1, &viewport);
-        cmd.setScissor(0, 1, &scissor);
+        setViewportScissor(cmd, {bloomWidth, bloomHeight});
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, blurHorzPipeline->getPipeline());
 
@@ -374,10 +366,7 @@ namespace graphics::techniques {
 
         cmd.beginRendering(&compositeRenderInfo);
 
-        vk::Viewport fullViewport(0, 0, (float)width, (float)height, 0, 1);
-        cmd.setViewport(0, 1, &fullViewport);
-        vk::Rect2D fullScissor({0, 0}, {width, height});
-        cmd.setScissor(0, 1, &fullScissor);
+        setViewportScissor(cmd, {width, height});
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, compositePipeline->getPipeline());
 

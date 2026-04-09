@@ -33,8 +33,7 @@ namespace graphics::techniques {
         DebugMode getDebugMode() const { return debugMode; }
 
         // G-Buffer access for post-processing (e.g., SSAO)
-        GBuffer& getGBuffer() { return gBuffer; }
-        const GBuffer& getGBuffer() const { return gBuffer; }
+        GBuffer* getGBuffer() override { return &gBuffer; }
 
     private:
         void createGBuffer();

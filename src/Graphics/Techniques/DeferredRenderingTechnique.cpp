@@ -187,10 +187,7 @@ namespace graphics::techniques {
 
         cmd.beginRendering(&renderInfo);
 
-        vk::Viewport viewport(0, 0, (float)gBuffer.extent.width, (float)gBuffer.extent.height, 0, 1);
-        cmd.setViewport(0, 1, &viewport);
-        vk::Rect2D scissor({0, 0}, {gBuffer.extent.width, gBuffer.extent.height});
-        cmd.setScissor(0, 1, &scissor);
+        setViewportScissor(cmd, {gBuffer.extent.width, gBuffer.extent.height});
 
         // Bind G-Buffer pipeline
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, gBufferPipeline->getPipeline());

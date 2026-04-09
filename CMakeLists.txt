@@ -137,7 +137,7 @@ else()
     message(STATUS " ➤ fmt (cached)")
 endif()
 file(ARCHIVE_EXTRACT INPUT ${FMT_ZIP} DESTINATION ${FMT_SOURCE_DIR})
-add_subdirectory(${FMT_SOURCE_DIR}/fmt-master ${CMAKE_BINARY_DIR}/_deps/fmt-build)
+add_subdirectory(${FMT_SOURCE_DIR}/fmt-main ${CMAKE_BINARY_DIR}/_deps/fmt-build)
 download_complete("fmt")
 
 # ──────────────────────────────────────────────────────────────────────

@@ -2,12 +2,35 @@
 
 #include <cmath>
 #include <algorithm>
+#include <array>
 
 #include "VulkanContext.h"
 #include "VulkanInit.hpp"
 
 namespace graphics
 {
+    bool isVisible(const RenderObject& obj, const Mat4& viewProj) {
+        constexpr std::array<Vec3, 8> corners {
+            Vec3 { 1, 1, 1 },  Vec3 { 1, 1, -1 },
+            Vec3 { 1, -1, 1 }, Vec3 { 1, -1, -1 },
+            Vec3 { -1, 1, 1 }, Vec3 { -1, 1, -1 },
+            Vec3 { -1, -1, 1 },Vec3 { -1, -1, -1 },
+        };
+
+        Mat4 matrix = viewProj * obj.transform;
+        Vec3 min = { 1.5f, 1.5f, 1.5f };
+        Vec3 max = { -1.5f, -1.5f, -1.5f };
+
+        for (const Vec3& c : corners) {
+            Vec4 v = matrix * Vec4(obj.bounds.origin + (c * obj.bounds.extents), 1.f);
+            v.x /= v.w; v.y /= v.w; v.z /= v.w;
+            min = glm::min(Vec3{ v.x, v.y, v.z }, min);
+            max = glm::max(Vec3{ v.x, v.y, v.z }, max);
+        }
+
+        return !(min.z > 1.f || max.z < 0.f || min.x > 1.f || max.x < -1.f || min.y > 1.f || max.y < -1.f);
+    }
+
     vk::ShaderModule createShaderModule(const std::vector<char> &code, const vk::Device device) {
         const vk::ShaderModuleCreateInfo createInfo(
             {},

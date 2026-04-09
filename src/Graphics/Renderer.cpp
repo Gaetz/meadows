@@ -20,8 +20,6 @@
 #include "Utils.hpp"
 #include "VulkanInit.hpp"
 #include "Techniques/IRenderingTechnique.h"
-#include "Techniques/DeferredRenderingTechnique.h"
-#include "Techniques/ShadowMappingTechnique.h"
 #include "BasicServices/Log.h"
 #include "BasicServices/RenderingStats.h"
 #include "fmt/color.h"
@@ -184,7 +182,6 @@ namespace graphics {
 
     void Renderer::createPipelines() {
         createBackgroundPipeline();
-        //createTrianglePipeline();
         createMeshPipeline();
         metalRoughMaterial.buildPipelines(this);
         shadowPipeline.buildPipelines(this);
@@ -195,13 +192,6 @@ namespace graphics {
         computeLayout.setLayoutCount = 1;
         computeLayout.pSetLayouts = &drawImageDescriptorLayout;
 
-        /*
-        // Basic compute pipeline layout
-        pipelineLayout = context->getDevice().createPipelineLayout(computeLayout);
-        computePipeline = std::make_unique<PipelineCompute>(context, "shaders/gradient.comp.spv", pipelineLayout);
-        */
-
-
         // Pipeline layout with push constants
         vk::PushConstantRange pushConstant{};
         pushConstant.offset = 0;
@@ -211,11 +201,6 @@ namespace graphics {
         computeLayout.pushConstantRangeCount = 1;
         computeLayout.pPushConstantRanges = &pushConstant;
         computePipelineLayout = context->getDevice().createPipelineLayout(computeLayout);
-
-        /*
-        // Simple compute pipeline with push constants
-        computePipeline = std::make_unique<PipelineCompute>(context, "shaders/gradientCustom.comp.spv", pipelineLayout);
-        */
 
         ComputeEffect gradient{"Gradient", context, "shaders/gradientCustom.comp.spv", computePipelineLayout};
         gradient.data.data1 = Vec4{1, 0, 0, 1};
@@ -264,12 +249,6 @@ namespace graphics {
         vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.pPushConstantRanges = &bufferRange;
         pipelineLayoutInfo.pushConstantRangeCount = 1;
-        /* Simple mesh pipeline
-        const vk::PipelineLayout meshPipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
-
-        PipelineBuilder pipelineBuilder { context, "shaders/coloredTriangleMesh.vert.spv", "shaders/coloredTriangle.frag.spv"};
-        */
-
         // Textured mesh pipeline
         pipelineLayoutInfo.pSetLayouts = &singleImageDescriptorLayout;
         pipelineLayoutInfo.setLayoutCount = 1;
@@ -333,43 +312,6 @@ namespace graphics {
         command.dispatch(std::ceil(image.imageExtent.width / 16.0f),
                          std::ceil(image.imageExtent.height / 16.0f),
                          1);
-    }
-
-    bool isVisible(const RenderObject& obj, const Mat4& viewProj) {
-        std::array<Vec3, 8> corners {
-            Vec3 { 1, 1, 1 },
-            Vec3 { 1, 1, -1 },
-            Vec3 { 1, -1, 1 },
-            Vec3 { 1, -1, -1 },
-            Vec3 { -1, 1, 1 },
-            Vec3 { -1, 1, -1 },
-            Vec3 { -1, -1, 1 },
-            Vec3 { -1, -1, -1 },
-        };
-
-        Mat4 matrix = viewProj * obj.transform;
-
-        Vec3 min = { 1.5f, 1.5f, 1.5f };
-        Vec3 max = { -1.5f, -1.5f, -1.5f };
-
-        for (int c = 0; c < 8; c++) {
-            // Transform corner to clip space
-            Vec4 v = matrix * Vec4(obj.bounds.origin + (corners[c] * obj.bounds.extents), 1.f);
-
-            // Perspective division
-            v.x = v.x / v.w;
-            v.y = v.y / v.w;
-            v.z = v.z / v.w;
-
-            min = glm::min(Vec3{ v.x, v.y, v.z }, min);
-            max = glm::max(Vec3{ v.x, v.y, v.z }, max);
-        }
-
-        // Check against view frustum in clip space
-        if (min.z > 1.f || max.z < 0.f || min.x > 1.f || max.x < -1.f || min.y > 1.f || max.y < -1.f) {
-            return false;
-        }
-        return true;
     }
 
     void Renderer::drawGeometry(vk::CommandBuffer command) {
@@ -437,89 +379,12 @@ namespace graphics {
             writer.updateSet(context->getDevice(), globalDescriptor);
         }
 
-        // Draw triangle
-        /*
-        trianglePipeline->bind(command);
-
-        vk::Viewport viewport = {};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = imageExtent.width;
-        viewport.height = imageExtent.height;
-        viewport.minDepth = 0.f;
-        viewport.maxDepth = 1.f;
-        command.setViewport(0, 1, &viewport);
-
-        vk::Rect2D scissor = {};
-        scissor.offset.x = 0;
-        scissor.offset.y = 0;
-        scissor.extent.width = imageExtent.width;
-        scissor.extent.height = imageExtent.height;
-        command.setScissor(0, 1, &scissor);
-
-        command.draw(3, 1, 0, 0);
-        */
-
         // Draw meshes
         meshPipeline->bind(command);
 
-        vk::Viewport viewport = {};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = static_cast<float>(imageExtent.width);
-        viewport.height = static_cast<float>(imageExtent.height);
-        viewport.minDepth = 0.f;
-        viewport.maxDepth = 1.f;
-        command.setViewport(0, 1, &viewport);
-
-        vk::Rect2D scissor = {};
-        scissor.offset.x = 0;
-        scissor.offset.y = 0;
-        scissor.extent.width = imageExtent.width;
-        scissor.extent.height = imageExtent.height;
-        command.setScissor(0, 1, &scissor);
+        setViewportScissor(command, {imageExtent.width, imageExtent.height});
 
 
-
-        /*
-        // Draw rectangle mesh
-        GraphicsPushConstants pushConstants;
-        pushConstants.worldMatrix = Mat4{ 1.f };
-        pushConstants.vertexBuffer = rectangleMesh.vertexBufferAddress;
-
-        command.pushConstants(meshPipeline->getPipelineLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
-        command.bindIndexBuffer(rectangleMesh.indexBuffer.buffer, 0, vk::IndexType::eUint32);
-
-        command.drawIndexed(6, 1, 0, 0, 0);
-        */
-
-        /*
-        // Texture binding
-        GraphicsPushConstants pushConstants;
-
-        vk::DescriptorSet imageSet = getCurrentFrame().frameDescriptors.allocate(singleImageDescriptorLayout);
-        {
-            DescriptorWriter writer;
-            writer.writeImage(0, errorCheckerboardImage.imageView, defaultSamplerNearest,
-                vk::ImageLayout::eShaderReadOnlyOptimal, vk::DescriptorType::eCombinedImageSampler);
-
-            writer.updateSet(context->getDevice(), imageSet);
-        }
-        command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, meshPipeline->getLayout(), 0, 1, &imageSet, 0, nullptr);
-
-
-        // Draw test GLTF
-        const Mat4 view = glm::translate( Vec3{ 0,0,-5 });
-        Mat4 projection = glm::perspective(glm::radians(70.f), static_cast<float>(imageExtent.width) / static_cast<float>(imageExtent.height), 0.1f, 10000.f);
-        projection[1][1] *= -1; // Invert the Y direction so that we are more similar to opengl and gltf axis
-        pushConstants.worldMatrix = projection * view;
-        pushConstants.vertexBuffer = testMeshes[2]->meshBuffers.vertexBufferAddress;
-
-        command.pushConstants(meshPipeline->getLayout(), vk::ShaderStageFlagBits::eVertex, 0, sizeof(GraphicsPushConstants), &pushConstants);
-        command.bindIndexBuffer(testMeshes[2]->meshBuffers.indexBuffer.buffer, 0, vk::IndexType::eUint32);
-
-        command.drawIndexed(testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
-        */
 
         if (frameNumber == 0) {
             services::Log::Debug("Rendering %zu opaque surfaces", ctx.opaqueSurfaces.size());
@@ -637,18 +502,7 @@ namespace graphics {
 
         command.beginRendering(&renderInfo);
 
-        // Set viewport and scissor for shadow map
-        vk::Viewport viewport{};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = static_cast<float>(resolution);
-        viewport.height = static_cast<float>(resolution);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        command.setViewport(0, 1, &viewport);
-
-        vk::Rect2D scissor{{0, 0}, {resolution, resolution}};
-        command.setScissor(0, 1, &scissor);
+        setViewportScissor(command, {resolution, resolution});
 
         // Set depth bias to prevent shadow acne
         command.setDepthBias(
@@ -723,17 +577,7 @@ namespace graphics {
         shadowPipeline.shadowMeshPipeline->bind(command);
 
         const auto imageExtent = context->getDrawImage().imageExtent;
-        vk::Viewport viewport{};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = static_cast<float>(imageExtent.width);
-        viewport.height = static_cast<float>(imageExtent.height);
-        viewport.minDepth = 0.f;
-        viewport.maxDepth = 1.f;
-        command.setViewport(0, 1, &viewport);
-
-        vk::Rect2D scissor{{0, 0}, {imageExtent.width, imageExtent.height}};
-        command.setScissor(0, 1, &scissor);
+        setViewportScissor(command, {imageExtent.width, imageExtent.height});
 
         MaterialInstance* lastMat = nullptr;
         vk::Buffer lastIdx = nullptr;
@@ -768,17 +612,7 @@ namespace graphics {
         shadowPipeline.debugPipeline->bind(command);
 
         const auto imageExtent = context->getDrawImage().imageExtent;
-        vk::Viewport viewport{};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = static_cast<float>(imageExtent.width);
-        viewport.height = static_cast<float>(imageExtent.height);
-        viewport.minDepth = 0.f;
-        viewport.maxDepth = 1.f;
-        command.setViewport(0, 1, &viewport);
-
-        vk::Rect2D scissor{{0, 0}, {imageExtent.width, imageExtent.height}};
-        command.setScissor(0, 1, &scissor);
+        setViewportScissor(command, {imageExtent.width, imageExtent.height});
 
         command.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
             shadowPipeline.debugPipelineLayout, 0, 1, &sceneDescriptor, 0, nullptr);
@@ -788,25 +622,6 @@ namespace graphics {
     }
 
     void Renderer::createSceneData() {
-        /*
-        Rectangle mesh
-
-        array<Vertex, 4> rectVertices;
-        rectVertices[0].position = {0.5, -0.5, 0.0};
-        rectVertices[1].position = {0.5,0.5, 0};
-        rectVertices[2].position = {-0.5,-0.5, 0};
-        rectVertices[3].position = {-0.5,0.5, 0};
-        rectVertices[0].color = {0,0, 0,1};
-        rectVertices[1].color = { 0.5,0.5,0.5 ,1};
-        rectVertices[2].color = { 1,0, 0,1 };
-        rectVertices[3].color = { 0,1, 0,1 };
-        array<uint32_t, 6> rectIndices = {
-            0,1,2,
-            2,1,3
-        };
-        rectangleMesh = uploadMesh(rectIndices, rectVertices);
-        */
-
         // Texture
         u32 white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
         whiteImage = Image{ context, immSubmitter, static_cast<void*>(&white), VkExtent3D{ 1, 1, 1 },
@@ -855,46 +670,6 @@ namespace graphics {
         }, "Default textures and samplers");
 
 
-        /* Load test GLTF mesh
-        testMeshes = loadGltfMeshes(this,"assets\\basicmesh.glb").value();
-
-        // PBR
-        GLTFMetallicRoughness::MaterialResources materialResources;
-        // Default the material textures
-        materialResources.colorImage = whiteImage;
-        materialResources.colorSampler = defaultSamplerLinear;
-        materialResources.metalRoughImage = whiteImage;
-        materialResources.metalRoughSampler = defaultSamplerLinear;
-
-        // Set the uniform buffer for the material data
-        defaultMaterialConstants = Buffer { context, sizeof(GLTFMetallicRoughness::MaterialConstants), vk::BufferUsageFlagBits::eUniformBuffer, VMA_MEMORY_USAGE_CPU_TO_GPU };
-
-        // Write the buffer
-        const auto sceneUniformData = static_cast<GLTFMetallicRoughness::MaterialConstants *>(defaultMaterialConstants.info.pMappedData);
-        sceneUniformData->colorFactors = Vec4 {1,1,1,1};
-        sceneUniformData->metalRoughFactors = Vec4 {1,0.5,0,0};
-
-        materialResources.dataBuffer = defaultMaterialConstants.buffer;
-        materialResources.dataBufferOffset = 0;
-
-        defaultData = metalRoughMaterial.writeMaterial(device, MaterialPass::MainColor, materialResources, context->getGlobalDescriptorAllocator());
-
-        for (auto& m : testMeshes) {
-            services::Log::Debug("Loaded mesh: '%s' with %zu surfaces", m->name.c_str(), m->surfaces.size());
-            auto newNode = std::make_shared<MeshNode>();
-            newNode->mesh = m;
-
-            newNode->localTransform = Mat4{ 1.f };
-            newNode->worldTransform = Mat4{ 1.f };
-
-            for (auto& s : newNode->mesh->surfaces) {
-                s.material = std::make_shared<GLTFMaterial>(defaultData);
-            }
-
-            loadedNodes[m->name] = std::move(newNode);
-        }
-        */
-        
         // Load scene
         std::string structurePath = { "assets/structure.glb" };
         auto structureFile = loadGltf(this, structurePath);
@@ -938,18 +713,6 @@ namespace graphics {
 
         // Update light matrices for shadow mapping
         updateLightMatrices();
-
-        /* Draw test GLTF nodes
-
-        loadedNodes["Suzanne"]->draw(Mat4{1.f}, mainDrawContext);
-        for (int x = -3; x < 3; x++) {
-            Mat4 scale = glm::scale(glm::vec3{0.2});
-            Mat4 translation = glm::translate(glm::vec3{x, 1, 0});
-
-            loadedNodes["Cube"]->draw(translation * scale, mainDrawContext);
-        }
-
-        */
 
         // Only fill mainDrawContext if no external context is provided
         if (!externalDrawContext) {
@@ -1247,16 +1010,7 @@ namespace graphics {
         Image* ssaoInput = &sceneImage;
 
         if (ssao.getParams().enabled && externalRenderingTechnique) {
-            techniques::GBuffer* gBuffer = nullptr;
-
-            // Try to get the G-Buffer from DeferredRenderingTechnique
-            if (auto* deferredTechnique = dynamic_cast<techniques::DeferredRenderingTechnique*>(externalRenderingTechnique)) {
-                gBuffer = &deferredTechnique->getGBuffer();
-            }
-            // Try to get the G-Buffer from ShadowMappingTechnique
-            else if (auto* shadowTechnique = dynamic_cast<techniques::ShadowMappingTechnique*>(externalRenderingTechnique)) {
-                gBuffer = &shadowTechnique->getGBuffer();
-            }
+            techniques::GBuffer* gBuffer = externalRenderingTechnique->getGBuffer();
 
             if (gBuffer) {
                 // Transition SSAO output image for writing

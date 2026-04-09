@@ -34,8 +34,7 @@ namespace graphics::techniques {
         bool isPCFEnabled() const { return enablePCF; }
 
         // G-Buffer access for SSAO
-        GBuffer& getGBuffer() { return gBuffer; }
-        const GBuffer& getGBuffer() const { return gBuffer; }
+        GBuffer* getGBuffer() override { return &gBuffer; }
 
     private:
         void createGBuffer();

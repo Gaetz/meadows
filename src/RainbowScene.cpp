@@ -91,6 +91,8 @@ void RainbowScene::drawImGui() {
         ImGui::Checkbox("Afficher le terrain", &p.showTerrain);
         if (p.showTerrain) {
             ImGui::SetNextItemWidth(200.f);
+            ImGui::SliderFloat("Taille patch (m)", &p.terrainPatchSize,   8.f,   128.f, "%.0f");
+            ImGui::SetNextItemWidth(200.f);
             ImGui::SliderFloat("Hauteur max (m)",  &p.terrainHeight,      5.f,   500.f);
             ImGui::SetNextItemWidth(200.f);
             ImGui::SliderFloat("Frequence FBM",    &p.terrainFrequency,   0.001f, 0.05f, "%.4f");
@@ -100,6 +102,8 @@ void RainbowScene::drawImGui() {
             ImGui::SliderFloat("Persistance",      &p.terrainPersistence, 0.2f,   0.8f);
             ImGui::SetNextItemWidth(200.f);
             ImGui::SliderFloat("Lumiere ambiante", &p.terrainAmbient,     0.0f,   0.5f);
+            float totalSide = p.terrainPatchSize * float(p.terrainGridSize);
+            ImGui::TextDisabled("  Etendue : %.0f x %.0f m", totalSide, totalSide);
         }
     }
     ImGui::End();

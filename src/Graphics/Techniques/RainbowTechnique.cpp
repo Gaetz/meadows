@@ -275,24 +275,13 @@ namespace graphics::techniques {
         renderInfo.pColorAttachments    = &colorAttachment;
         renderInfo.pDepthAttachment     = &depthAttachment;
 
-        vk::Viewport viewport{};
-        viewport.x        = 0;
-        viewport.y        = 0;
-        viewport.width    = static_cast<float>(extent.width);
-        viewport.height   = static_cast<float>(extent.height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-
-        vk::Rect2D scissor{{0, 0}, {extent.width, extent.height}};
-
         cmd.beginRendering(renderInfo);
 
         // ── Pass 1 : sky (fullscreen triangle, depth disabled) ───────────────
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->getPipeline());
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout,
                                0, 1, &descriptorSet, 0, nullptr);
-        cmd.setViewport(0, viewport);
-        cmd.setScissor(0, scissor);
+        setViewportScissor(cmd, {extent.width, extent.height});
         cmd.draw(3, 1, 0, 0); // Fullscreen triangle — no vertex buffer needed
 
         // ── Pass 2 : terrain (mesh shader, depth enabled) ────────────────────
@@ -319,8 +308,7 @@ namespace graphics::techniques {
             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                    terrainPipelineLayout, 0, 1,
                                    &terrainDescriptorSet, 0, nullptr);
-            cmd.setViewport(0, viewport);
-            cmd.setScissor(0, scissor);
+            setViewportScissor(cmd, {extent.width, extent.height});
 
             int g = params.terrainGridSize;
             if (pfnDrawMeshTasksEXT) {

@@ -11,42 +11,6 @@
 
 namespace graphics::techniques {
 
-    namespace {
-        bool isVisible(const RenderObject& obj, const Mat4& viewProj) {
-            std::array<Vec3, 8> corners {
-                Vec3 { 1, 1, 1 },
-                Vec3 { 1, 1, -1 },
-                Vec3 { 1, -1, 1 },
-                Vec3 { 1, -1, -1 },
-                Vec3 { -1, 1, 1 },
-                Vec3 { -1, 1, -1 },
-                Vec3 { -1, -1, 1 },
-                Vec3 { -1, -1, -1 },
-            };
-
-            Mat4 matrix = viewProj * obj.transform;
-
-            Vec3 min = { 1.5f, 1.5f, 1.5f };
-            Vec3 max = { -1.5f, -1.5f, -1.5f };
-
-            for (int c = 0; c < 8; c++) {
-                Vec4 v = matrix * Vec4(obj.bounds.origin + (corners[c] * obj.bounds.extents), 1.f);
-
-                v.x = v.x / v.w;
-                v.y = v.y / v.w;
-                v.z = v.z / v.w;
-
-                min = glm::min(Vec3{ v.x, v.y, v.z }, min);
-                max = glm::max(Vec3{ v.x, v.y, v.z }, max);
-            }
-
-            if (min.z > 1.f || max.z < 0.f || min.x > 1.f || max.x < -1.f || min.y > 1.f || max.y < -1.f) {
-                return false;
-            }
-            return true;
-        }
-    }
-
     void ShadowMappingTechnique::init(Renderer* renderer) {
         this->renderer = renderer;
         vk::Device device = renderer->getContext()->getDevice();
@@ -309,17 +273,7 @@ namespace graphics::techniques {
 
         cmd.beginRendering(&renderInfo);
 
-        vk::Viewport viewport{};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = static_cast<float>(resolution);
-        viewport.height = static_cast<float>(resolution);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        cmd.setViewport(0, 1, &viewport);
-
-        vk::Rect2D scissor{{0, 0}, {resolution, resolution}};
-        cmd.setScissor(0, 1, &scissor);
+        setViewportScissor(cmd, {resolution, resolution});
 
         cmd.setDepthBias(
             shadowMap->getDepthBiasConstant(),
@@ -389,17 +343,7 @@ namespace graphics::techniques {
         shadowMeshPipeline->bind(cmd);
 
         const auto imageExtent = renderer->getSceneImage().imageExtent;
-        vk::Viewport viewport{};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = static_cast<float>(imageExtent.width);
-        viewport.height = static_cast<float>(imageExtent.height);
-        viewport.minDepth = 0.f;
-        viewport.maxDepth = 1.f;
-        cmd.setViewport(0, 1, &viewport);
-
-        vk::Rect2D scissor{{0, 0}, {imageExtent.width, imageExtent.height}};
-        cmd.setScissor(0, 1, &scissor);
+        setViewportScissor(cmd, {imageExtent.width, imageExtent.height});
 
         for (auto& idx : opaqueDraws) {
             const RenderObject& r = drawContext.opaqueSurfaces[idx];
@@ -434,17 +378,7 @@ namespace graphics::techniques {
         debugPipeline->bind(cmd);
 
         const auto imageExtent = renderer->getSceneImage().imageExtent;
-        vk::Viewport viewport{};
-        viewport.x = 0;
-        viewport.y = 0;
-        viewport.width = static_cast<float>(imageExtent.width);
-        viewport.height = static_cast<float>(imageExtent.height);
-        viewport.minDepth = 0.f;
-        viewport.maxDepth = 1.f;
-        cmd.setViewport(0, 1, &viewport);
-
-        vk::Rect2D scissor{{0, 0}, {imageExtent.width, imageExtent.height}};
-        cmd.setScissor(0, 1, &scissor);
+        setViewportScissor(cmd, {imageExtent.width, imageExtent.height});
 
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
             debugPipelineLayout, 0, 1, &sceneDescriptor, 0, nullptr);
@@ -517,10 +451,7 @@ namespace graphics::techniques {
 
         cmd.beginRendering(&renderInfo);
 
-        vk::Viewport viewport(0, 0, (float)gBuffer.extent.width, (float)gBuffer.extent.height, 0, 1);
-        cmd.setViewport(0, 1, &viewport);
-        vk::Rect2D scissor({0, 0}, {gBuffer.extent.width, gBuffer.extent.height});
-        cmd.setScissor(0, 1, &scissor);
+        setViewportScissor(cmd, {gBuffer.extent.width, gBuffer.extent.height});
 
         // Bind G-Buffer pipeline
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, gBufferPipeline->getPipeline());

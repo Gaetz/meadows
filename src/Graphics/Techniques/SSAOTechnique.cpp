@@ -330,10 +330,7 @@ namespace graphics::techniques {
 
         cmd.beginRendering(&ssaoRenderInfo);
 
-        vk::Viewport viewport(0, 0, static_cast<float>(width), static_cast<float>(height), 0, 1);
-        cmd.setViewport(0, 1, &viewport);
-        vk::Rect2D scissor({0, 0}, {width, height});
-        cmd.setScissor(0, 1, &scissor);
+        setViewportScissor(cmd, {width, height});
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, ssaoPipeline->getPipeline());
 
@@ -373,8 +370,7 @@ namespace graphics::techniques {
             blurRenderInfo.pColorAttachments = &blurAttachment;
 
             cmd.beginRendering(&blurRenderInfo);
-            cmd.setViewport(0, 1, &viewport);
-            cmd.setScissor(0, 1, &scissor);
+            setViewportScissor(cmd, {width, height});
 
             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, blurPipeline->getPipeline());
 
@@ -404,8 +400,7 @@ namespace graphics::techniques {
         compositeRenderInfo.pColorAttachments = &compositeAttachment;
 
         cmd.beginRendering(&compositeRenderInfo);
-        cmd.setViewport(0, 1, &viewport);
-        cmd.setScissor(0, 1, &scissor);
+        setViewportScissor(cmd, {width, height});
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, compositePipeline->getPipeline());
 
