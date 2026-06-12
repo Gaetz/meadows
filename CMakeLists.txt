@@ -28,6 +28,17 @@ CPMAddPackage("gh:g-truc/glm#1.0.1")
 CPMAddPackage("gh:doctest/doctest@2.5.2")
 CPMAddPackage("gh:marzer/tomlplusplus@3.4.0")
 
+# stb has no tags: pinned by commit. Header-only; the implementation TU
+# lives in engine/assets/StbImpl.cpp.
+CPMAddPackage(
+    NAME stb
+    GITHUB_REPOSITORY nothings/stb
+    GIT_TAG 31c1ad374564
+    DOWNLOAD_ONLY TRUE
+)
+add_library(stb INTERFACE)
+target_include_directories(stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
+
 # Dear ImGui ships no CMakeLists; build it as a small static lib with the
 # SDL3 + OpenGL3 backends (the GL3 backend embeds its own function loader).
 CPMAddPackage(

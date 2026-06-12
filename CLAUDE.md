@@ -389,10 +389,16 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   bounds-checked reader) + `data/plugins/TomlWriter` (fields sorted by
 >   name → clean diffs); `tools/cooker` CLI: cook / uncook / new-guid.
 >   Binary reading needs no registry (raw ids, validated by the resolver).
-> - [ ] **(e) Asset DB** — `engine/assets/`: AssetId = Guid, per-plugin
->   manifest Guid → path, layered VFS (last plugin wins), sync stb_image
->   loading; end-to-end demo: base plugin + mod patching a form and
->   overriding a texture.
+> - [x] **(e) Asset DB** — `engine/assets/AssetDatabase` (guid → path,
+>   last layer wins; knows nothing about plugins — game code feeds it),
+>   `[assets]` table in plugin TOML (+ binary format), sync stb_image
+>   loading (`assets::loadImageFile`), `platform::executableDir()`.
+>   End-to-end demo in game/: base plugin (iron sword) + `golden-blades`
+>   mod patching 3 fields and overriding the sprite asset, live toggle in
+>   ImGui with full re-resolution.
+>
+> Phase 1 done (2026-06-12). This brick list stays as a journal: re-read it
+> to resync after a context compression.
 
 ---
 

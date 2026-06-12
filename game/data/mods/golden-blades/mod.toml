@@ -1,0 +1,18 @@
+# Sample mod: patches two fields of the base sword and overrides its
+# texture asset — same guid, different file (§5 asset layering).
+
+[plugin]
+id = "f4a7d215-6e89-4c30-8f1b-2d9a05c7e364"
+name = "golden-blades"
+dependencies = ["0a3f9c1e-5b71-4d2a-9c64-8e21d7b3f0a1"]
+
+[assets]
+"7c5e2d90-4f3a-4b18-a52e-c91d80f64b23" = "textures/gold_sword.png"
+
+[[records]]
+form = "3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f482"
+type = "WeaponForm"
+[records.fields]
+displayName = "Golden Sword"
+damage = 25.0
+goldValue = 200

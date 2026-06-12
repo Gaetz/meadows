@@ -210,6 +210,12 @@ vector<u8> writePluginBinary(const Plugin& plugin) {
         w.guid(dep);
     }
 
+    w.u32_(static_cast<u32>(plugin.assets.size()));
+    for (const AssetEntry& asset : plugin.assets) {
+        w.guid(asset.id);
+        w.str_(asset.path);
+    }
+
     w.u32_(static_cast<u32>(plugin.records.size()));
     for (const Record& record : plugin.records) {
         w.guid(record.formId);
@@ -270,6 +276,18 @@ std::optional<Plugin> readPluginBinary(std::span<const u8> bytes,
             return truncated();
         }
         plugin.dependencies.push_back(dep);
+    }
+
+    u32 assetCount = 0;
+    if (!r.u32_(assetCount)) {
+        return truncated();
+    }
+    for (u32 i = 0; i < assetCount; ++i) {
+        AssetEntry asset;
+        if (!r.guid(asset.id) || !r.str_(asset.path)) {
+            return truncated();
+        }
+        plugin.assets.push_back(std::move(asset));
     }
 
     u32 recordCount = 0;

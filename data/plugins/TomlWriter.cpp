@@ -82,6 +82,21 @@ str writePluginToml(const Plugin& plugin, const FormTypeRegistry& types) {
     }
     root.insert("plugin", std::move(header));
 
+    if (!plugin.assets.empty()) {
+        // Sorted by guid string for stable diffs.
+        vector<std::pair<str, str>> sorted;
+        sorted.reserve(plugin.assets.size());
+        for (const AssetEntry& asset : plugin.assets) {
+            sorted.emplace_back(asset.id.toString(), asset.path);
+        }
+        std::sort(sorted.begin(), sorted.end());
+        toml::table assets;
+        for (const auto& [guid, path] : sorted) {
+            assets.insert(guid, path);
+        }
+        root.insert("assets", std::move(assets));
+    }
+
     toml::array records;
     for (const Record& record : plugin.records) {
         const reflect::TypeInfo* type = types.findType(record.typeId);

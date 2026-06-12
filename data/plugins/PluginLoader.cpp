@@ -143,6 +143,19 @@ std::optional<Plugin> parsePluginToml(std::string_view text,
         }
     }
 
+    if (const toml::table* assets = root["assets"].as_table()) {
+        for (const auto& [key, node] : *assets) {
+            const auto guid = core::Guid::fromString(key.str());
+            const auto path = node.value<std::string>();
+            if (!guid || !path || path->empty()) {
+                LOG_WARN("{}: skipped malformed asset entry '{}'", sourceName,
+                         key.str());
+                continue;
+            }
+            plugin.assets.push_back({ *guid, *path });
+        }
+    }
+
     const toml::array* records = root["records"].as_array();
     if (!records) {
         return plugin; // a plugin with no records is legal (asset-only mods)
@@ -217,7 +230,12 @@ std::optional<Plugin> loadPluginFile(const std::filesystem::path& path,
     }
     std::ostringstream content;
     content << file.rdbuf();
-    return parsePluginToml(content.str(), types, path.filename().string());
+    auto plugin =
+        parsePluginToml(content.str(), types, path.filename().string());
+    if (plugin) {
+        plugin->baseDir = path.parent_path().string();
+    }
+    return plugin;
 }
 
 } // namespace data

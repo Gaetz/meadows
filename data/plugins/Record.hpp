@@ -19,6 +19,14 @@ struct Record {
     std::unordered_map<u32 /*fieldId*/, reflect::Value> fields;
 };
 
+// One asset the plugin provides or overrides: same last-writer-wins
+// layering as record fields, applied per asset guid (§5 "assets layer the
+// same way"). `path` is relative to the plugin file's directory.
+struct AssetEntry {
+    core::Guid id;
+    str path;
+};
+
 // An ordered set of records: base game, mod, or (later) the save layer —
 // all the same thing to the resolver (§2.4).
 struct Plugin {
@@ -27,6 +35,11 @@ struct Plugin {
     vector<core::Guid> dependencies; // declared requirements, for load-order
                                      // validation (not enforced yet)
     vector<Record> records;
+    vector<AssetEntry> assets;
+
+    // Where the plugin file lives; resolves relative asset paths. Runtime
+    // info, never serialized.
+    str baseDir;
 };
 
 } // namespace data
