@@ -1,5 +1,6 @@
 #include "engine/core/Log.hpp"
 #include "engine/platform/Window.hpp"
+#include "engine/rhi/Device.hpp"
 
 int main(int /*argc*/, char** /*argv*/) {
     core::Log::init();
@@ -10,8 +11,17 @@ int main(int /*argc*/, char** /*argv*/) {
         return 1;
     }
 
+    auto device = rhi::Device::create(rhi::Backend::OpenGL, *window);
+    if (!device) {
+        return 1;
+    }
+
     while (window->pumpEvents()) {
-        // Frame work comes with the RHI milestone.
+        auto& cmd = device->beginFrame();
+        cmd.beginRenderPass({ .loadOp = rhi::LoadOp::Clear,
+                              .clearColor = { 0.39f, 0.58f, 0.93f, 1.0f } });
+        cmd.endRenderPass();
+        device->endFrame();
     }
 
     LOG_INFO("Shutting down");

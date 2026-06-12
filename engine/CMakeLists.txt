@@ -2,7 +2,10 @@
 # may depend on game code.
 add_library(meadows STATIC
     core/Log.cpp
+    platform/common/GlContext.cpp
     platform/common/Window.cpp
+    rhi/Device.cpp
+    rhi/backends/gl/GlDevice.cpp
 )
 
 # Per-OS platform sources are selected here at configure time (§3.1), e.g.:
@@ -17,7 +20,7 @@ target_include_directories(meadows PUBLIC ${PROJECT_SOURCE_DIR})
 
 target_link_libraries(meadows
     PUBLIC spdlog::spdlog glm::glm
-    PRIVATE SDL3::SDL3
+    PRIVATE SDL3::SDL3 glad
 )
 
 # Compile LOG_TRACE/LOG_DEBUG out of release builds.

@@ -27,6 +27,10 @@ public:
     i32 width() const;
     i32 height() const;
 
+    // Opaque native window for platform-internal consumers (GlContext, later
+    // a Vulkan surface). Outside platform/, treat it as a token — never cast.
+    void* nativeHandle() const;
+
 private:
     Window();
 

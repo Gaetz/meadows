@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
-project(true-adventurer LANGUAGES CXX)
+# C is needed for vendored C sources (glad).
+project(true-adventurer LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -33,5 +34,6 @@ function(meadows_set_warnings target)
     endif()
 endfunction()
 
+add_subdirectory(extern/glad)
 add_subdirectory(engine)
 add_subdirectory(game)

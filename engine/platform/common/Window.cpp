@@ -80,4 +80,8 @@ i32 Window::height() const {
     return impl->height;
 }
 
+void* Window::nativeHandle() const {
+    return impl->window;
+}
+
 } // namespace platform
