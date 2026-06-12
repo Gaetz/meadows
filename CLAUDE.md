@@ -384,8 +384,11 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   duplicate create degrades to patch, orphan patches counted+dropped,
 >   patch-before-creator re-ranked by load order, wrong-type patch skipped,
 >   deterministic. The save system reuses this resolver as-is (§2.4).
-> - [ ] **(d) Cooker** — `tools/cooker/`: CLI, text(TOML) ↔ binary chunked
->   format (magic + version), roundtrip test, `new-guid` subcommand.
+> - [x] **(d) Cooker** — `data/plugins/BinaryFormat` (magic 'MDWP' +
+>   version, little-endian, fields sorted by id → deterministic cooks,
+>   bounds-checked reader) + `data/plugins/TomlWriter` (fields sorted by
+>   name → clean diffs); `tools/cooker` CLI: cook / uncook / new-guid.
+>   Binary reading needs no registry (raw ids, validated by the resolver).
 > - [ ] **(e) Asset DB** — `engine/assets/`: AssetId = Guid, per-plugin
 >   manifest Guid → path, layered VFS (last plugin wins), sync stb_image
 >   loading; end-to-end demo: base plugin + mod patching a form and

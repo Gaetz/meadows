@@ -4,8 +4,10 @@
 add_library(meadows-data STATIC
     forms/CoreForms.cpp
     forms/FormDatabase.cpp
+    plugins/BinaryFormat.cpp
     plugins/PluginLoader.cpp
     plugins/Resolver.cpp
+    plugins/TomlWriter.cpp
 )
 
 target_link_libraries(meadows-data
