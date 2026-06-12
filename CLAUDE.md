@@ -363,7 +363,9 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 9 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
-> **CURRENT PHASE: 0** — update this line as work progresses.
+> **CURRENT PHASE: 1** — update this line as work progresses.
+> Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job
+> system, RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
 
 ---
 

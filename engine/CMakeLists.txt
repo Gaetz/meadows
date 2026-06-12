@@ -1,12 +1,15 @@
 # meadows — the engine library. The game links against this; nothing in here
 # may depend on game code.
 add_library(meadows STATIC
+    Engine.cpp
+    core/Jobs.cpp
     core/Log.cpp
     platform/common/GlContext.cpp
     platform/common/Window.cpp
     render/SpriteRenderer.cpp
     rhi/Device.cpp
     rhi/backends/gl/GlDevice.cpp
+    ui/ImGuiLayer.cpp
 )
 
 # Per-OS platform sources are selected here at configure time (§3.1), e.g.:
@@ -19,8 +22,9 @@ add_library(meadows STATIC
 
 target_include_directories(meadows PUBLIC ${PROJECT_SOURCE_DIR})
 
+# imgui is PUBLIC: the game emits its own dev-UI widgets in Game::drawUi.
 target_link_libraries(meadows
-    PUBLIC spdlog::spdlog glm::glm
+    PUBLIC spdlog::spdlog glm::glm imgui
     PRIVATE SDL3::SDL3 glad
 )
 

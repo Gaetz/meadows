@@ -1,0 +1,67 @@
+#pragma once
+
+#include "engine/core/Defines.hpp"
+#include "engine/render/Camera2D.hpp"
+#include "engine/rhi/Rhi.hpp"
+
+namespace core {
+class JobSystem;
+}
+namespace platform {
+class Window;
+}
+namespace rhi {
+class Device;
+}
+namespace render {
+class SpriteRenderer;
+}
+namespace ui {
+class ImGuiLayer;
+}
+
+namespace engine {
+
+class Game;
+
+struct EngineConfig {
+    str title { "Meadows" };
+    i32 width { 1280 };
+    i32 height { 720 };
+    rhi::Backend backend { rhi::Backend::OpenGL };
+    rhi::Color clearColor { 0.10f, 0.12f, 0.16f, 1.0f };
+};
+
+// Owns the platform window, the RHI device, the renderers, the dev UI and
+// the frame loop. The small explicit context passed by reference (§8) — no
+// global singletons.
+class Engine {
+public:
+    // Brings every system up, runs the loop until quit, tears down.
+    // Returns the process exit code.
+    static i32 run(const EngineConfig& config, Game& game);
+
+    ~Engine();
+
+    platform::Window& getWindow() { return *window; }
+    rhi::Device& getDevice() { return *device; }
+    render::SpriteRenderer& getSpriteRenderer() { return *spriteRenderer; }
+    render::Camera2D& getCamera() { return camera; }
+    core::JobSystem& getJobSystem() { return *jobSystem; }
+
+private:
+    Engine() = default;
+
+    bool init(const EngineConfig& config);
+    void loop(Game& game);
+
+    EngineConfig config;
+    uptr<core::JobSystem> jobSystem;
+    uptr<platform::Window> window;
+    uptr<rhi::Device> device;
+    uptr<render::SpriteRenderer> spriteRenderer;
+    uptr<ui::ImGuiLayer> imgui;
+    render::Camera2D camera;
+};
+
+} // namespace engine

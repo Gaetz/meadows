@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "engine/core/Defines.hpp"
 
 namespace platform {
@@ -23,6 +25,12 @@ public:
 
     // Pumps OS events; returns false once the user requested quit.
     bool pumpEvents();
+
+    // Called for every raw platform event during pumpEvents (the pointer is
+    // an SDL_Event, kept opaque so this header stays platform-clean). Sole
+    // intended consumer: the dev-UI layer. Pass nullptr to remove.
+    using EventHook = std::function<void(const void* nativeEvent)>;
+    void setEventHook(EventHook hook);
 
     i32 width() const;
     i32 height() const;

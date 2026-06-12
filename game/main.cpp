@@ -1,12 +1,12 @@
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 
 #include <glm/gtc/constants.hpp>
+#include <imgui.h>
 
+#include "engine/Engine.hpp"
+#include "engine/Game.hpp"
 #include "engine/core/Defines.hpp"
-#include "engine/core/Log.hpp"
-#include "engine/platform/Window.hpp"
 #include "engine/render/SpriteRenderer.hpp"
 #include "engine/rhi/Device.hpp"
 
@@ -40,7 +40,8 @@ rhi::TextureHandle createDiscTexture(rhi::Device& device) {
             const f32 dy = static_cast<f32>(y) - center;
             const f32 dist = std::sqrt(dx * dx + dy * dy);
             // 2-pixel soft edge so alpha blending is visible.
-            const f32 alpha = std::clamp((radius - dist) * 0.5f + 0.5f, 0.0f, 1.0f);
+            const f32 alpha =
+                std::clamp((radius - dist) * 0.5f + 0.5f, 0.0f, 1.0f);
             pixels[y * size + x] =
                 (static_cast<u32>(alpha * 255.0f) << 24) | 0x00FFFFFF;
         }
@@ -50,82 +51,84 @@ rhi::TextureHandle createDiscTexture(rhi::Device& device) {
         pixels.data());
 }
 
-} // namespace
-
-int main(int /*argc*/, char** /*argv*/) {
-    core::Log::init();
-    LOG_INFO("True Adventurer - meadows engine, phase 0");
-
-    auto window = platform::Window::create({ .title = "True Adventurer" });
-    if (!window) {
-        return 1;
+class TrueAdventurer final : public engine::Game {
+public:
+    void init(engine::Engine& engine) override {
+        checker = createCheckerTexture(engine.getDevice());
+        disc = createDiscTexture(engine.getDevice());
+        engine.getCamera().viewHeight = 12.0f;
     }
 
-    auto device = rhi::Device::create(rhi::Backend::OpenGL, *window);
-    if (!device) {
-        return 1;
+    void update(f32 dt) override {
+        time += dt * speed;
     }
 
-    auto renderer = render::SpriteRenderer::create(*device);
-    if (!renderer) {
-        return 1;
-    }
-
-    const rhi::TextureHandle checker = createCheckerTexture(*device);
-    const rhi::TextureHandle disc = createDiscTexture(*device);
-
-    render::Camera2D camera { .position = { 0.0f, 0.0f }, .viewHeight = 12.0f };
-
-    const auto startTime = std::chrono::steady_clock::now();
-    while (window->pumpEvents()) {
-        const f32 time = std::chrono::duration<f32>(
-                             std::chrono::steady_clock::now() - startTime)
-                             .count();
-        const f32 aspect = static_cast<f32>(window->width()) /
-                           static_cast<f32>(window->height());
-
-        auto& cmd = device->beginFrame();
-        cmd.beginRenderPass({ .loadOp = rhi::LoadOp::Clear,
-                              .clearColor = { 0.10f, 0.12f, 0.16f, 1.0f } });
-
-        renderer->begin(camera, aspect);
-
+    void draw(render::SpriteRenderer& renderer) override {
         // Meadow ground: one tinted checker tile per world unit.
         for (i32 y = -6; y < 6; ++y) {
             for (i32 x = -10; x < 10; ++x) {
                 const f32 shade =
-                    0.85f + 0.15f * static_cast<f32>((x * 7 + y * 13 + 60) % 5) / 4.0f;
-                renderer->draw({
+                    0.85f +
+                    0.15f * static_cast<f32>((x * 7 + y * 13 + 60) % 5) / 4.0f;
+                renderer.draw({
                     .position = { static_cast<f32>(x) + 0.5f,
                                   static_cast<f32>(y) + 0.5f },
-                    .tint = { 0.35f * shade, 0.55f * shade, 0.30f * shade, 1.0f },
+                    .tint = { 0.35f * shade, 0.55f * shade, 0.30f * shade,
+                              1.0f },
                     .texture = checker,
                 });
             }
         }
 
         // Rotating ring of translucent discs over the ground.
-        for (u32 k = 0; k < 8; ++k) {
-            const f32 angle =
-                time * 0.5f + static_cast<f32>(k) * glm::two_pi<f32>() / 8.0f;
-            const f32 hue = static_cast<f32>(k) / 8.0f;
-            renderer->draw({
-                .position = { 4.0f * std::cos(angle), 4.0f * std::sin(angle) },
+        for (u32 k = 0; k < discCount; ++k) {
+            const f32 angle = time * 0.5f + static_cast<f32>(k) *
+                                                glm::two_pi<f32>() /
+                                                static_cast<f32>(discCount);
+            const f32 hue = static_cast<f32>(k) / static_cast<f32>(discCount);
+            renderer.draw({
+                .position = { ringRadius * std::cos(angle),
+                              ringRadius * std::sin(angle) },
                 .size = { 1.5f, 1.5f },
                 .rotation = time,
                 .tint = { 0.5f + 0.5f * std::cos(hue * glm::two_pi<f32>()),
-                          0.5f + 0.5f * std::cos((hue + 0.33f) * glm::two_pi<f32>()),
-                          0.5f + 0.5f * std::cos((hue + 0.67f) * glm::two_pi<f32>()),
+                          0.5f +
+                              0.5f * std::cos((hue + 0.33f) * glm::two_pi<f32>()),
+                          0.5f +
+                              0.5f * std::cos((hue + 0.67f) * glm::two_pi<f32>()),
                           0.85f },
                 .texture = disc,
             });
         }
-
-        renderer->end(cmd);
-        cmd.endRenderPass();
-        device->endFrame();
     }
 
-    LOG_INFO("Shutting down");
-    return 0;
+    void drawUi() override {
+        ImGui::Begin("True Adventurer");
+        ImGui::Text("%.1f fps (%.2f ms)", ImGui::GetIO().Framerate,
+                    1000.0f / ImGui::GetIO().Framerate);
+        ImGui::SliderFloat("Ring radius", &ringRadius, 1.0f, 5.0f);
+        ImGui::SliderFloat("Speed", &speed, 0.0f, 4.0f);
+        int count = static_cast<int>(discCount);
+        if (ImGui::SliderInt("Discs", &count, 1, 64)) {
+            discCount = static_cast<u32>(count);
+        }
+        ImGui::End();
+    }
+
+    void close() override {}
+
+private:
+    rhi::TextureHandle checker {};
+    rhi::TextureHandle disc {};
+    f32 time { 0.0f };
+    f32 speed { 1.0f };
+    f32 ringRadius { 4.0f };
+    u32 discCount { 8 };
+};
+
+} // namespace
+
+int main(int /*argc*/, char** /*argv*/) {
+    TrueAdventurer game;
+    return engine::Engine::run({ .title = "True Adventurer" }, game);
 }

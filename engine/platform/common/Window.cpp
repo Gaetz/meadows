@@ -14,6 +14,7 @@ struct Window::Impl {
     SDL_Window* window { nullptr };
     i32 width { 0 };
     i32 height { 0 };
+    EventHook eventHook;
 };
 
 Window::Window() : impl { std::make_unique<Impl>() } {}
@@ -52,6 +53,9 @@ uptr<Window> Window::create(const WindowDesc& desc) {
 bool Window::pumpEvents() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        if (impl->eventHook) {
+            impl->eventHook(&event);
+        }
         switch (event.type) {
         case SDL_EVENT_QUIT:
             return false;
@@ -82,6 +86,10 @@ i32 Window::height() const {
 
 void* Window::nativeHandle() const {
     return impl->window;
+}
+
+void Window::setEventHook(EventHook hook) {
+    impl->eventHook = std::move(hook);
 }
 
 } // namespace platform

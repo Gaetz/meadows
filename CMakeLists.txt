@@ -26,6 +26,27 @@ CPMAddPackage(
 CPMAddPackage("gh:gabime/spdlog@1.17.0")
 CPMAddPackage("gh:g-truc/glm#1.0.1")
 
+# Dear ImGui ships no CMakeLists; build it as a small static lib with the
+# SDL3 + OpenGL3 backends (the GL3 backend embeds its own function loader).
+CPMAddPackage(
+    NAME imgui
+    GITHUB_REPOSITORY ocornut/imgui
+    GIT_TAG v1.92.8
+    DOWNLOAD_ONLY TRUE
+)
+add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+)
+target_include_directories(imgui SYSTEM PUBLIC
+    ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+target_link_libraries(imgui PRIVATE SDL3::SDL3)
+
 function(meadows_set_warnings target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4)
@@ -37,3 +58,6 @@ endfunction()
 add_subdirectory(extern/glad)
 add_subdirectory(engine)
 add_subdirectory(game)
+
+enable_testing()
+add_subdirectory(tests)
