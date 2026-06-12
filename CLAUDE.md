@@ -378,12 +378,12 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   (TOML_EXCEPTIONS=0). New static lib `meadows-data` (depends on
 >   `meadows`, never on render/rhi). Form::id is NOT reflected (identity,
 >   not payload); quat file order is [x, y, z, w].
-> - [ ] **(c) Plugin resolver** — `data/plugins/`: Record/Plugin structs,
->   ordered-layer resolution, **last-writer-wins per field**, conflict
->   report (field written by ≥2 plugins), tolerant of unknown types/guids
->   (log + skip, never crash). The save system reuses this resolver as-is
->   (§2.4): it takes an abstract ordered layer list. Most-tested code in
->   the repo.
+> - [x] **(c) Plugin resolver** — `data/plugins/Resolver`: ordered-layer
+>   resolution, **last-writer-wins per field**, conflict report (field
+>   written by ≥2 plugins, base game included — filtering is presentation),
+>   duplicate create degrades to patch, orphan patches counted+dropped,
+>   patch-before-creator re-ranked by load order, wrong-type patch skipped,
+>   deterministic. The save system reuses this resolver as-is (§2.4).
 > - [ ] **(d) Cooker** — `tools/cooker/`: CLI, text(TOML) ↔ binary chunked
 >   format (magic + version), roundtrip test, `new-guid` subcommand.
 > - [ ] **(e) Asset DB** — `engine/assets/`: AssetId = Guid, per-plugin

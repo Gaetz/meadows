@@ -5,6 +5,7 @@ add_library(meadows-data STATIC
     forms/CoreForms.cpp
     forms/FormDatabase.cpp
     plugins/PluginLoader.cpp
+    plugins/Resolver.cpp
 )
 
 target_link_libraries(meadows-data

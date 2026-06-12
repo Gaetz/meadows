@@ -5,6 +5,7 @@ add_executable(meadows-tests
     JobsTest.cpp
     PluginLoaderTest.cpp
     ReflectTest.cpp
+    ResolverTest.cpp
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data
                       doctest::doctest)
