@@ -30,8 +30,31 @@ public:
 
     virtual Backend backend() const = 0;
 
-    // Resource creation (createBuffer / createTexture / createPipeline /
-    // createBindGroup) arrives with the sprite renderer milestone.
+    // --- Resources -----------------------------------------------------------
+    // All creation functions return a 0 handle (with a logged error) on
+    // failure. Destroying a 0 handle is a no-op.
+
+    virtual BufferHandle createBuffer(const BufferDesc& desc,
+                                      const void* initialData = nullptr) = 0;
+    // Queue-style write: the data is visible to the next frame's commands.
+    // Honors BufferDesc::dynamic for the upload strategy.
+    virtual void updateBuffer(BufferHandle handle, const void* data, u64 size,
+                              u64 offset = 0) = 0;
+    virtual void destroyBuffer(BufferHandle handle) = 0;
+
+    // `pixels` is tightly packed, desc.width * desc.height texels.
+    virtual TextureHandle createTexture(const TextureDesc& desc,
+                                        const void* pixels) = 0;
+    virtual void destroyTexture(TextureHandle handle) = 0;
+
+    virtual ShaderHandle createShader(const ShaderDesc& desc) = 0;
+    virtual void destroyShader(ShaderHandle handle) = 0;
+
+    virtual PipelineHandle createPipeline(const PipelineDesc& desc) = 0;
+    virtual void destroyPipeline(PipelineHandle handle) = 0;
+
+    virtual BindGroupHandle createBindGroup(const BindGroupDesc& desc) = 0;
+    virtual void destroyBindGroup(BindGroupHandle handle) = 0;
 };
 
 } // namespace rhi

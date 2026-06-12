@@ -4,6 +4,7 @@ add_library(meadows STATIC
     core/Log.cpp
     platform/common/GlContext.cpp
     platform/common/Window.cpp
+    render/SpriteRenderer.cpp
     rhi/Device.cpp
     rhi/backends/gl/GlDevice.cpp
 )

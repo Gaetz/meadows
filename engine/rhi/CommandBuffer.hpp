@@ -14,8 +14,20 @@ public:
     virtual void beginRenderPass(const RenderPassDesc& desc) = 0;
     virtual void endRenderPass() = 0;
 
-    // setPipeline / setBindGroup / setVertexBuffer / draw arrive with the
-    // sprite renderer milestone.
+    virtual void setPipeline(PipelineHandle pipeline) = 0;
+
+    // `index` is the bind-group slot (future Vulkan descriptor-set index).
+    // The GL backend ignores it: entries carry explicit binding points.
+    virtual void setBindGroup(u32 index, BindGroupHandle group) = 0;
+
+    // `slot` matches PipelineDesc::vertexBuffers. Call after setPipeline.
+    virtual void setVertexBuffer(u32 slot, BufferHandle buffer) = 0;
+    virtual void setIndexBuffer(BufferHandle buffer, IndexFormat format) = 0;
+
+    virtual void draw(u32 vertexCount, u32 instanceCount = 1,
+                      u32 firstVertex = 0) = 0;
+    virtual void drawIndexed(u32 indexCount, u32 instanceCount = 1,
+                             u32 firstIndex = 0, u32 firstInstance = 0) = 0;
 };
 
 } // namespace rhi
