@@ -25,6 +25,8 @@ CPMAddPackage(
 
 CPMAddPackage("gh:gabime/spdlog@1.17.0")
 CPMAddPackage("gh:g-truc/glm#1.0.1")
+CPMAddPackage("gh:doctest/doctest@2.5.2")
+CPMAddPackage("gh:marzer/tomlplusplus@3.4.0")
 
 # Dear ImGui ships no CMakeLists; build it as a small static lib with the
 # SDL3 + OpenGL3 backends (the GL3 backend embeds its own function loader).
@@ -57,6 +59,7 @@ endfunction()
 
 add_subdirectory(extern/glad)
 add_subdirectory(engine)
+add_subdirectory(data)
 add_subdirectory(game)
 
 enable_testing()

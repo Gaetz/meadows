@@ -366,6 +366,30 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 > **CURRENT PHASE: 1** — update this line as work progresses.
 > Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job
 > system, RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
+>
+> **Phase 1 bricks** (work top-to-bottom, each lands with green tests):
+> - [x] **(a) GUID + reflection** — `core::Guid` (v4, string roundtrip),
+>   FNV-1a ids, all-in-header `REFLECT_BEGIN/FIELD/END` macros, type-erased
+>   field get/set via member-pointer lambdas, explicit `reflect::Registry`,
+>   doctest test suite (`meadows-tests`).
+> - [x] **(b) Forms** — `data/forms/`: `Form` base (Guid id + editorId),
+>   sample `WeaponForm`/`ActorForm`, `FormDatabase` (Guid → Form lookup +
+>   compact FormHandle table), TOML record parsing via toml++ 3.4
+>   (TOML_EXCEPTIONS=0). New static lib `meadows-data` (depends on
+>   `meadows`, never on render/rhi). Form::id is NOT reflected (identity,
+>   not payload); quat file order is [x, y, z, w].
+> - [ ] **(c) Plugin resolver** — `data/plugins/`: Record/Plugin structs,
+>   ordered-layer resolution, **last-writer-wins per field**, conflict
+>   report (field written by ≥2 plugins), tolerant of unknown types/guids
+>   (log + skip, never crash). The save system reuses this resolver as-is
+>   (§2.4): it takes an abstract ordered layer list. Most-tested code in
+>   the repo.
+> - [ ] **(d) Cooker** — `tools/cooker/`: CLI, text(TOML) ↔ binary chunked
+>   format (magic + version), roundtrip test, `new-guid` subcommand.
+> - [ ] **(e) Asset DB** — `engine/assets/`: AssetId = Guid, per-plugin
+>   manifest Guid → path, layered VFS (last plugin wins), sync stb_image
+>   loading; end-to-end demo: base plugin + mod patching a form and
+>   overriding a texture.
 
 ---
 

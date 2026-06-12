@@ -2,8 +2,10 @@
 # may depend on game code.
 add_library(meadows STATIC
     Engine.cpp
+    core/Guid.cpp
     core/Jobs.cpp
     core/Log.cpp
+    reflect/Registry.cpp
     platform/common/GlContext.cpp
     platform/common/Window.cpp
     render/SpriteRenderer.cpp

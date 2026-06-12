@@ -1,15 +1,10 @@
-// Job system smoke test: grouped jobs + counter wait, then destructor drain.
-// Plain checks (no framework yet); a real test framework lands with the
-// Phase-1 data-model tests, where testing becomes mandatory (§8).
-
 #include <atomic>
 
+#include <doctest/doctest.h>
+
 #include "engine/core/Jobs.hpp"
-#include "engine/core/Log.hpp"
 
-namespace {
-
-bool testCounterWait() {
+TEST_CASE("jobs: counter waits for a full batch") {
     core::JobSystem jobs;
     std::atomic<u64> sum { 0 };
     core::JobCounter counter;
@@ -20,15 +15,11 @@ bool testCounterWait() {
     }
     jobs.wait(counter);
 
-    constexpr u64 expected = u64(jobCount) * (jobCount + 1) / 2;
-    if (sum != expected || !counter.done()) {
-        LOG_ERROR("counter wait: sum = {}, expected {}", sum.load(), expected);
-        return false;
-    }
-    return true;
+    CHECK(sum == u64(jobCount) * (jobCount + 1) / 2);
+    CHECK(counter.done());
 }
 
-bool testDestructorDrains() {
+TEST_CASE("jobs: destructor drains the queue") {
     std::atomic<u32> ran { 0 };
     constexpr u32 jobCount = 200;
     {
@@ -38,14 +29,10 @@ bool testDestructorDrains() {
         }
         // No wait: destruction must finish everything already queued.
     }
-    if (ran != jobCount) {
-        LOG_ERROR("destructor drain: {} of {} jobs ran", ran.load(), jobCount);
-        return false;
-    }
-    return true;
+    CHECK(ran == jobCount);
 }
 
-bool testReuseCounter() {
+TEST_CASE("jobs: a counter is reusable across batches") {
     core::JobSystem jobs;
     core::JobCounter counter;
     std::atomic<u32> ran { 0 };
@@ -55,21 +42,5 @@ bool testReuseCounter() {
         }
         jobs.wait(counter);
     }
-    if (ran != 150) {
-        LOG_ERROR("counter reuse: {} of 150 jobs ran", ran.load());
-        return false;
-    }
-    return true;
-}
-
-} // namespace
-
-int main() {
-    core::Log::init();
-    bool ok = true;
-    ok &= testCounterWait();
-    ok &= testDestructorDrains();
-    ok &= testReuseCounter();
-    LOG_INFO("jobs test: {}", ok ? "PASSED" : "FAILED");
-    return ok ? 0 : 1;
+    CHECK(ran == 150);
 }
