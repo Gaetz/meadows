@@ -9,6 +9,7 @@ add_executable(meadows-tests
     PluginLoaderTest.cpp
     ReflectTest.cpp
     ResolverTest.cpp
+    SpawnerTest.cpp
     WorldModelTest.cpp
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs

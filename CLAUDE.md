@@ -433,10 +433,12 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   `registerWorldFormTypes`, `FormCategory` + registry, `WorldModel` (resolved
 >   spatial index over FormDatabase). Tests in `tests/WorldModelTest.cpp`.
 >   *(done 2026-06-13)*
-> - [ ] **(b) Reference → entity spawner** — `world/scene/`: components
+> - [x] **(b) Reference → entity spawner** — `world/scene/`: components
 >   (`Transform` 3D-ready, `SpriteRender` holding an asset handle not pixels §7,
->   `RefId`), per-category C++ spawner (§2.7) applying fields **through
->   reflection**, posing the `InCell` relation.
+>   `RefId`, category markers), `registerSceneComponents`, per-category C++
+>   spawner (§2.7) seeding `SpriteRender.sprite` from the base form **through
+>   reflection** and posing the `InCell` relation. `meadows-world` now links
+>   `meadows-ecs`. Tests in `tests/SpawnerTest.cpp`. *(done 2026-06-13)*
 > - [ ] **(d) Scene representation + render bridge** — `game/SceneSubmit`: the
 >   only ECS↔rhi seam (kept reusable), Transform+SpriteRender → SpriteRenderer.
 > - [ ] **(e) Populate a 2D world** — `world/streaming/CellLoader` (eager load

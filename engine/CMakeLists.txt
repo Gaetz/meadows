@@ -51,4 +51,10 @@ add_library(meadows-ecs STATIC
 )
 target_link_libraries(meadows-ecs PUBLIC meadows flecs::flecs_static)
 
+# flecs' component-registration template trips C4702 (unreachable code) under
+# MSVC /W4; the SYSTEM include doesn't cover warnings raised while instantiating
+# a template in our TUs. It is benign and internal to flecs — suppress it for
+# every flecs consumer (PUBLIC), not in our own warning baseline.
+target_compile_options(meadows-ecs PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/wd4702>)
+
 meadows_set_warnings(meadows-ecs)

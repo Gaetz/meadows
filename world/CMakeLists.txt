@@ -6,8 +6,10 @@ add_library(meadows-world STATIC
     worldspace/WorldForms.cpp
     worldspace/FormCategory.cpp
     worldspace/WorldModel.cpp
+    scene/Components.cpp
+    scene/Spawner.cpp
 )
 
-target_link_libraries(meadows-world PUBLIC meadows-data)
+target_link_libraries(meadows-world PUBLIC meadows-data meadows-ecs)
 
 meadows_set_warnings(meadows-world)

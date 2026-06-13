@@ -125,11 +125,33 @@ meadows-ecs  meadows-data  (both flecs-free except meadows-ecs which OWNS flecs)
   it** between cells on re-resolve (ties brick c to the §5 invariant); category
   mapping. Suite green (47 cases / 521 assertions).
 
-### (b) Reference → entity spawner — TODO
-`world/scene/`: components `Transform` (Vec3/Quat/Vec3, dimension-agnostic §2.6),
-`SpriteRender` (asset Guid + size/tint/layer, no rhi §7), `RefId`; per-category
-C++ spawner (§2.7) applying fields **through reflection** (reads the base form's
-`sprite` reflected field, etc.), posing `(InCell, cellEntity)`.
+### (b) Reference → entity spawner — DONE 2026-06-13
+- `world/scene/Components.hpp` + `.cpp`: `Transform` (Vec3/Quat/Vec3,
+  dimension-agnostic §2.6), `SpriteRender` (asset Guid + size/tint/layer, **no
+  rhi** §7), `RefId` (reflects only `referenceId`; `base`/`cell` are runtime
+  handles, not reflected — handles never persist), and zero-size category
+  markers (`StaticMarker`/`ItemMarker`/`ActorMarker` — runtime ECS tags, *not*
+  GameplayTags). `registerSceneComponents(World&)` bridges the three reflected
+  components into flecs + our registry; markers auto-register in flecs.
+- `world/scene/Spawner.hpp` + `.cpp`: `SpawnContext { World&, FormDatabase&,
+  FormCategoryRegistry& }`, `SpawnFn` per category, `Spawner::spawn(ctx, ref,
+  cellEntity)`. Flow: resolve `ref.baseForm` → category → wire universal
+  components (Transform from the reference; RefId; **SpriteRender seeded from the
+  base form's `sprite` field via reflection** — §2.7, no per-type code) → pose
+  `(InCell, cellEntity)` → call the category hook (markers now; AbilitySystem in
+  Phase 3). Guards: invalid entity (logged) if the base form is unresolvable or
+  its category has no spawner. Does not check `enabled` (the loader's call).
+- `registerCoreSpawners` installs Static/Item/Actor.
+- `meadows-world` now links `meadows-ecs`.
+- **Build note:** flecs' `component<T>` template trips MSVC C4702 in our TUs;
+  the SYSTEM include doesn't cover template-instantiation warnings, so `/wd4702`
+  is suppressed PUBLIC from `meadows-ecs` for every flecs consumer (benign,
+  flecs-internal).
+- Tests `tests/SpawnerTest.cpp`: mandatory components present with the right
+  values (sprite via reflection, RefId keyed on GUID, InCell, Item marker for a
+  WeaponForm); **a mod patch on the reference flows into the spawned entity**
+  (ties brick b to §5); unresolvable base form → no entity. Suite green
+  (50 cases / 545 assertions).
 
 ### (d) Scene representation + render bridge — TODO
 `game/SceneSubmit`: reusable, the only ECS↔rhi seam. Query
