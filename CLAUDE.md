@@ -267,7 +267,7 @@ that removes most of GAS's complexity. Everything below is **data, therefore
 moddable**: it layers through the §5 patch system like any other Form.
 
 - **Attributes** — named float values with a `BaseValue` / `CurrentValue` split
-  (e.g. Health, MaxHealth, Stamina, Magicka, ArmorRating, CarryWeight). Grouped
+  (e.g. Health, MaxHealth, Energy, Essence, ArmorRating, CarryWeight). Grouped
   into **AttributeSets** (reflected components). Clamping and derived values live
   in change hooks (pre/post). `CurrentValue` = `BaseValue` + active modifiers.
 - **GameplayEffects (GE)** — the **only** way to change an attribute (§2.9).
@@ -483,7 +483,10 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   reflected `AttributeSet` (base values) + `AbilitySystem` (tags + current
 >   overlay); attributes addressed by reflection. `tests/AbilitySystemTest.cpp`.
 >   *(done 2026-06-13)*
-> - [ ] **(3c) GameplayEffects + modifier pipeline** (the big one).
+> - [x] **(3c) GameplayEffects + modifier pipeline** — `EffectForm` (flat: 1
+>   modifier + 1 tag/slot), flat linear apply/tick (instant→Base + damage meta→
+>   health + clamp; duration/infinite→Current; periodic→tick), `recomputeCurrent`.
+>   `tests/GameplayEffectsTest.cpp`. *(done 2026-06-13)*
 > - [ ] **(3d) Minimal GameplayAbility** (cost/cooldown = effects).
 > - [ ] **(3e) Combat in 2D** — attack ability → damage → `State.Dead` + ImGui
 >   debug panel.

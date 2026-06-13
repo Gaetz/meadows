@@ -22,20 +22,20 @@ namespace gameplay {
 struct AttributeSet {
     f32 health { 100.0f };
     f32 maxHealth { 100.0f };
-    f32 stamina { 100.0f };
-    f32 maxStamina { 100.0f };
-    f32 magicka { 50.0f };
-    f32 maxMagicka { 50.0f };
+    f32 energy { 100.0f };
+    f32 maxEnergy { 100.0f };
+    f32 essence { 50.0f };
+    f32 maxEssence { 50.0f };
     f32 armorRating { 0.0f };
     f32 damage { 0.0f }; // meta-attribute (transient)
 
     REFLECT_BEGIN(AttributeSet, void)
         REFLECT_FIELD(health)
         REFLECT_FIELD(maxHealth)
-        REFLECT_FIELD(stamina)
-        REFLECT_FIELD(maxStamina)
-        REFLECT_FIELD(magicka)
-        REFLECT_FIELD(maxMagicka)
+        REFLECT_FIELD(energy)
+        REFLECT_FIELD(maxEnergy)
+        REFLECT_FIELD(essence)
+        REFLECT_FIELD(maxEssence)
         REFLECT_FIELD(armorRating)
         REFLECT_FIELD(damage)
     REFLECT_END()

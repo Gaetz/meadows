@@ -9,7 +9,7 @@ using namespace gameplay;
 TEST_CASE("attributes: base values read/written by reflection-addressed id") {
     AttributeSet set;
     CHECK(baseValueOf(set, attr("health")) == 100.0f);
-    CHECK(baseValueOf(set, attr("magicka")) == 50.0f);
+    CHECK(baseValueOf(set, attr("essence")) == 50.0f);
     CHECK_FALSE(baseValueOf(set, attr("doesNotExist")).has_value());
 
     CHECK(setBaseValue(set, attr("maxHealth"), 150.0f));
@@ -24,7 +24,7 @@ TEST_CASE("attributes: current overlay is seeded from base, then independent") {
     AbilitySystem system;
     initializeCurrent(system, set);
     CHECK(currentValueOf(system, attr("health")) == 80.0f);
-    CHECK(currentValueOf(system, attr("magicka")) == 50.0f);
+    CHECK(currentValueOf(system, attr("essence")) == 50.0f);
     CHECK(currentValueOf(system, attr("doesNotExist")) == 0.0f);
 
     setCurrentValue(system, attr("health"), 30.0f);

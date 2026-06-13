@@ -96,7 +96,7 @@ then the condition evaluator / quests in Phase 4).
   are a runtime overlay on the `AbilitySystem` (recomputed in 3c, §2.9). This is
   the §2.9-faithful split and reuses the reflection keystone — no new system.
 - `gameplay/ability/Attributes.hpp`: `AttributeSet` reflected component
-  (health/maxHealth/stamina/maxStamina/magicka/maxMagicka/armorRating + the
+  (health/maxHealth/energy/maxEnergy/essence/maxEssence/armorRating + the
   transient `damage` meta-attribute). `attr(name)` = `fnv1a` id (the data-driven
   attribute handle effects target).
 - `gameplay/ability/AbilitySystem.hpp` + `.cpp`: `AbilitySystem` component
@@ -111,10 +111,31 @@ then the condition evaluator / quests in Phase 4).
   components register + attach to an entity. Suite green (62 cases / 598
   assertions); build clean.
 
-### (3c) GameplayEffects + modifier pipeline — TODO (the big one)
-`EffectForm` (Form): modifiers (attribute, op, magnitude), duration policy,
-period, granted/required/blocked tags. Application + recompute + tick system +
-meta-attribute Damage→Health + clamp + immunity.
+### (3c) GameplayEffects + modifier pipeline — DONE 2026-06-13
+- `gameplay/ability/GameplayEffects.hpp` + `.cpp`. `EffectForm` (Form,
+  moddable, registered via `registerGameplayFormTypes`): **flat** — one modifier
+  (`attribute` name, `op` add/multiply/override, `magnitude`) + duration policy
+  (`instant`/`duration`/`infinite`/`periodic`, `durationSeconds`, `period`) +
+  one tag per slot (`grantedTag`/`requiredTag`/`blockedTag`). Multi-modifier /
+  multi-tag effects compose several effects (lists await Phase 5).
+- Runtime state added to `AbilitySystem`: `ModifierOp`, `ActiveEffect`,
+  `vector<ActiveEffect> activeEffects`.
+- Pipeline (flat linear, no node-graph): `applyEffect` checks required/blocked
+  tags → for **instant** applies to BaseValue, routes the `damage` meta-attribute
+  into health (PostExecute), clamps vitals, recomputes current; for
+  **duration/infinite** pushes an active modifier + grants its tag (ref-counted)
+  and recomputes current; **periodic** pushes an entry that re-applies to
+  BaseValue on tick. `tickEffects` advances periodics (BaseValue) and durations,
+  drops granted tags on expiry, recomputes. `recomputeCurrent` aggregates
+  non-periodic modifiers `(base + Σadd)·Πmult` (override wins) and clamps vitals
+  to their current maxima.
+- Tests `tests/GameplayEffectsTest.cpp`: instant damage via meta-attribute,
+  clamp at 0 and at maxHealth, infinite buff raising CurrentValue not Base,
+  duration revert + granted-tag drop on expiry, required/blocked (immunity)
+  gating, periodic ticking then expiring. Suite green (68 cases / 624
+  assertions); build clean.
+- **Limits (deferred):** single modifier/tag per effect; infinite-periodic not
+  expressible; serialization of active effects = Phase 5.
 
 ### (3d) Minimal GameplayAbility — TODO
 `AbilityForm`, grant + `tryActivate` (tags/cost/cooldown), apply effect to target.
