@@ -479,7 +479,10 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 > - [x] **(3a) GameplayTags** — interned hierarchical vocabulary + ref-counted
 >   container (lib `meadows-gameplay`). `tests/GameplayTagsTest.cpp`.
 >   *(done 2026-06-13)*
-> - [ ] **(3b) Attributes + AttributeSets + AbilitySystem skeleton**.
+> - [x] **(3b) Attributes + AttributeSets + AbilitySystem skeleton** —
+>   reflected `AttributeSet` (base values) + `AbilitySystem` (tags + current
+>   overlay); attributes addressed by reflection. `tests/AbilitySystemTest.cpp`.
+>   *(done 2026-06-13)*
 > - [ ] **(3c) GameplayEffects + modifier pipeline** (the big one).
 > - [ ] **(3d) Minimal GameplayAbility** (cost/cooldown = effects).
 > - [ ] **(3e) Combat in 2D** — attack ability → damage → `State.Dead` + ImGui

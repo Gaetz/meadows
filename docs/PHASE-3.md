@@ -89,11 +89,27 @@ then the condition evaluator / quests in Phase 4).
 - **Note:** these are our moddable gameplay tags, **not** flecs tags. The
   registry is explicit (no statics); a data manifest can feed it later.
 
-### (3b) Attributes + AttributeSets + AbilitySystem skeleton — TODO
-`Attribute { f32 base; f32 current; }`, a starter reflected AttributeSet
-(Vitals: Health/MaxHealth/Stamina/Magicka…), `AbilitySystem` component owning
-set(s) + `TagContainer` + (empty) active-effects list. Attribute addressed by
-reflection.
+### (3b) Attributes + AttributeSets + AbilitySystem skeleton — DONE 2026-06-13
+- **Representation decision** (reflection v1 has no nested-struct / no
+  `Attribute` Value alternative): the `AttributeSet` reflects its **BaseValues**
+  as flat `f32` fields (patchable §5, serializable Phase 5); **CurrentValues**
+  are a runtime overlay on the `AbilitySystem` (recomputed in 3c, §2.9). This is
+  the §2.9-faithful split and reuses the reflection keystone — no new system.
+- `gameplay/ability/Attributes.hpp`: `AttributeSet` reflected component
+  (health/maxHealth/stamina/maxStamina/magicka/maxMagicka/armorRating + the
+  transient `damage` meta-attribute). `attr(name)` = `fnv1a` id (the data-driven
+  attribute handle effects target).
+- `gameplay/ability/AbilitySystem.hpp` + `.cpp`: `AbilitySystem` component
+  (`TagContainer` + `current` overlay map; runtime-only, not reflected — its
+  members are containers). `registerGameplayComponents(World&)` (AttributeSet via
+  the reflection bridge, AbilitySystem as a plain flecs component). Accessors
+  **addressed by reflection**: `baseValueOf`/`setBaseValue` (read/write a set
+  field by id via `findField`), `initializeCurrent` (seed overlay from base over
+  every reflected f32), `currentValueOf`/`setCurrentValue`.
+- Tests `tests/AbilitySystemTest.cpp`: reflection-addressed base get/set
+  (unknown id → nullopt/false), overlay seeded from base then independent,
+  components register + attach to an entity. Suite green (62 cases / 598
+  assertions); build clean.
 
 ### (3c) GameplayEffects + modifier pipeline — TODO (the big one)
 `EffectForm` (Form): modifiers (attribute, op, magnitude), duration policy,
