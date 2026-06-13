@@ -227,6 +227,33 @@ This is the heart of moddability. Get it right early.
 Do **not** implement record-level (whole-object) overrides as the primary
 mechanism. Field-level patching is the design.
 
+### 5.1 Synthesis / conflict-arbitration patches (design decided, build later)
+
+Skyrim needs Wrye Bash / Synthesis because its overrides are whole-record;
+our field-level layering removes that class of conflict natively. The only
+real conflict left is two plugins writing the *same field* when the user
+wants A's value for one field and B's for another — unexpressible by load
+order alone. The decided design:
+
+- **A synthesis patch is an ordinary plugin loaded last.** No special
+  format, no new engine mechanism. A tool reads the resolver's conflict
+  report, lets the user pick a winner (or custom value) per conflicted
+  field, and emits a normal plugin (via the existing TomlWriter) carrying
+  only the arbitrated fields, with the arbitrated mods in `dependencies`.
+- **Provenance for regeneration**: the generated plugin records where each
+  choice came from (comment/metadata, e.g. `# from: sharper-swords`) so the
+  tool can re-apply choices after a modlist update and flag stale picks.
+- **Programmatic patchers** ("all weapons 10% lighter, mods included") are
+  functions `resolved FormDatabase -> patch plugin`; scriptable in Lua once
+  Phase 4 lands. Output is again an ordinary plugin.
+- Prerequisite when building the tool: extend `FieldConflict` to carry each
+  writer's *value*, not just its name (small resolver change).
+- Invariant to protect: never add a parallel resolution mechanism — the
+  answer to "force this value" is always "one more layer" (§2.4).
+
+Target: Phase 9 editor conflict view, or a CLI subcommand if the need bites
+earlier.
+
 ---
 
 ## 6. Gameplay systems — simplified GAS
