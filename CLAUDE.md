@@ -495,8 +495,12 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   `performAttack`); Actor spawner wires GAS (world→gameplay edge); GAS tick +
 >   "Combat (GAS debug)" ImGui panel in `game/`. `tests/CombatTest.cpp`.
 >   *(done 2026-06-13)* — **GAS core (3a–3e) complete; visual run owed.**
-> Then the rest of Phase 3 (player controller, 2D collision/triggers, inventory,
-> AI grid A* + perception, factions = tags + relations table) as later bricks.
+> Then the rest of Phase 3 (player controller [done], 2D collision/triggers,
+> inventory, AI grid A* + perception, factions = tags + relations table).
+> - [x] **Player controller + movement** — `platform::Input` (SDL behind a clean
+>   header; `Engine::getInput()`), `Velocity` component + `applyMovement`
+>   (`world/scene/Movement`), a `GameplayScene` moving a player with WASD.
+>   `tests/MovementTest.cpp`. *(done 2026-06-13)*
 > - [x] **Harness: scene stack** — `game/Scene` + `game/SceneStack` (in
 >   `meadows-runtime`, above the engine): deferred push/pop/replace, `opaque` /
 >   `blocksUpdate` layering. Demos split into isolated scenes (`game/scenes/`:

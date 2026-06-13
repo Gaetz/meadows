@@ -10,6 +10,7 @@ add_library(meadows STATIC
     core/Log.cpp
     reflect/Registry.cpp
     platform/common/GlContext.cpp
+    platform/common/Input.cpp
     platform/common/Paths.cpp
     platform/common/Window.cpp
     render/SpriteRenderer.cpp

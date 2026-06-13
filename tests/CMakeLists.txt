@@ -12,6 +12,7 @@ add_executable(meadows-tests
     GameplayTagsTest.cpp
     GuidTest.cpp
     JobsTest.cpp
+    MovementTest.cpp
     PluginLoaderTest.cpp
     ReflectTest.cpp
     ResolverTest.cpp

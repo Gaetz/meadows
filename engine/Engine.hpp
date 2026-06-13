@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/platform/Input.hpp"
 #include "engine/render/Camera2D.hpp"
 #include "engine/rhi/Rhi.hpp"
 
@@ -47,6 +48,7 @@ public:
     rhi::Device& getDevice() { return *device; }
     render::SpriteRenderer& getSpriteRenderer() { return *spriteRenderer; }
     render::Camera2D& getCamera() { return camera; }
+    platform::Input& getInput() { return input; }
     core::JobSystem& getJobSystem() { return *jobSystem; }
 
 private:
@@ -62,6 +64,7 @@ private:
     uptr<render::SpriteRenderer> spriteRenderer;
     uptr<ui::ImGuiLayer> imgui;
     render::Camera2D camera;
+    platform::Input input;
 };
 
 } // namespace engine

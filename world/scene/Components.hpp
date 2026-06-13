@@ -47,6 +47,16 @@ struct SpriteRender {
     REFLECT_END()
 };
 
+// Planar velocity in world units/second, integrated into Transform by the
+// movement system (`applyMovement`). Reflected so it can serialize later.
+struct Velocity {
+    Vec3 value { 0.0f, 0.0f, 0.0f };
+
+    REFLECT_BEGIN(Velocity, void)
+        REFLECT_FIELD(value)
+    REFLECT_END()
+};
+
 // Links an entity back to its source records. `referenceId` is the persistent
 // identity (the ReferenceForm guid) that saves key on; `base`/`cell` are runtime
 // handles, deliberately NOT reflected (handles never persist — §2.5).

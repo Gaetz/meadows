@@ -2,11 +2,13 @@
 
 #include <imgui.h>
 
+#include "engine/platform/Input.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
 #include "gameplay/combat/Combat.hpp"
 #include "world/scene/Components.hpp"
+#include "world/scene/Movement.hpp"
 
 namespace game {
 
@@ -14,6 +16,11 @@ namespace {
 
 const core::Guid kStrikeAbility =
     *core::Guid::fromString("ab000000-0000-4000-8000-000000000001");
+
+// Placeholder player sprite (the iron sword texture, tinted), until the player
+// has its own asset.
+const core::Guid kPlayerSprite =
+    *core::Guid::fromString("7c5e2d90-4f3a-4b18-a52e-c91d80f64b23");
 
 } // namespace
 
@@ -104,6 +111,53 @@ void CombatScene::drawUi() {
             ImGui::Separator();
         });
     ImGui::End();
+}
+
+// --- GameplayScene ----------------------------------------------------------
+
+void GameplayScene::onEnter() {
+    WorldDemoScene::onEnter();
+
+    player = world.create();
+    world::Transform transform;
+    transform.position = { 0.0f, -2.0f, 0.0f };
+    player.set<world::Transform>(transform);
+
+    world::SpriteRender sprite;
+    sprite.sprite = kPlayerSprite;
+    sprite.tint = { 0.4f, 0.6f, 1.0f, 1.0f }; // blue, to stand out
+    sprite.layer = 1;
+    player.set<world::SpriteRender>(sprite);
+
+    player.set<world::Velocity>({});
+}
+
+void GameplayScene::update(f32 dt) {
+    WorldDemoScene::update(dt); // GAS tick on the world's actors
+
+    const platform::Input& input = engine.getInput();
+    Vec3 direction { 0.0f, 0.0f, 0.0f };
+    if (input.isDown(platform::Key::W) || input.isDown(platform::Key::Up)) {
+        direction.y += 1.0f;
+    }
+    if (input.isDown(platform::Key::S) || input.isDown(platform::Key::Down)) {
+        direction.y -= 1.0f;
+    }
+    if (input.isDown(platform::Key::D) || input.isDown(platform::Key::Right)) {
+        direction.x += 1.0f;
+    }
+    if (input.isDown(platform::Key::A) || input.isDown(platform::Key::Left)) {
+        direction.x -= 1.0f;
+    }
+    if (direction.x != 0.0f || direction.y != 0.0f) {
+        direction = glm::normalize(direction);
+    }
+
+    constexpr f32 speed = 5.0f; // world units / second
+    if (player.is_alive()) {
+        player.set<world::Velocity>({ direction * speed });
+    }
+    world::applyMovement(world, dt);
 }
 
 } // namespace game

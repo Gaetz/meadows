@@ -68,6 +68,7 @@ void Engine::loop(Game& game) {
             std::chrono::duration<f32>(now - lastTime).count(), kMaxDt);
         lastTime = now;
 
+        input.update(); // snapshot keyboard state for this frame's update
         game.update(dt);
 
         auto& cmd = device->beginFrame();

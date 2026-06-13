@@ -213,6 +213,25 @@ stays unchanged, still driving a single `engine::Game`).
   `main.cpp` is now a thin `DemoApp` (a `SceneStack` + a selector to switch
   demos). Suite green (80 cases / 669 assertions); `true-adventurer.exe` builds.
 
-## Rest of Phase 3 (later bricks)
-Player controller, 2D collision/triggers, inventory/items/equipment, AI
-(grid A* + packages + perception), factions (tags + relations table).
+## Rest of Phase 3
+
+### Player controller + movement — DONE 2026-06-13
+- **Platform input** (§3.1, SDL behind a clean header): `engine/platform/Input`
+  — a `Key` enum mapped to SDL scancodes in `platform/common/Input.cpp`;
+  `update()`/`isDown()`/`wasPressed()`. `Engine` owns an `Input`, calls
+  `update()` each frame after the event pump, exposes `getInput()`.
+- **Movement**: a reflected `Velocity` component (`world/scene/Components.hpp`,
+  registered in `registerSceneComponents`) + `applyMovement(world, dt)`
+  (`world/scene/Movement`) integrating `Transform += Velocity·dt` over every
+  entity with both. Tests in `tests/MovementTest.cpp`.
+- **Player control**: a new `GameplayScene` (`game/scenes/`) spawns a player
+  entity (Transform + tinted SpriteRender + Velocity) and, in `update`, maps
+  WASD/arrows → a normalized direction → the player's `Velocity`, then runs
+  `applyMovement`. It reuses `WorldDemoScene` (world + GAS tick + render), so the
+  cell's objects/actors are present too. A "Gameplay (WASD)" selector button in
+  `main.cpp`. Suite green (82 cases / 673 assertions); `true-adventurer.exe`
+  builds. Visual run owed (move the blue player with WASD).
+
+### Still to come
+2D collision/triggers, inventory/items/equipment, AI (grid A* + packages +
+perception), factions (tags + relations table).

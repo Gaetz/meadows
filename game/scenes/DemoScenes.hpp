@@ -33,4 +33,16 @@ public:
     void drawUi() override;
 };
 
+// Demonstrates the player controller + movement: spawns a player entity moved
+// with WASD / arrows (input → Velocity → applyMovement).
+class GameplayScene : public WorldDemoScene {
+public:
+    using WorldDemoScene::WorldDemoScene;
+    void onEnter() override;
+    void update(f32 dt) override;
+
+private:
+    ecs::Entity player {};
+};
+
 } // namespace game

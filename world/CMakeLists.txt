@@ -8,6 +8,7 @@ add_library(meadows-world STATIC
     worldspace/WorldModel.cpp
     scene/Components.cpp
     scene/Spawner.cpp
+    scene/Movement.cpp
     streaming/CellLoader.cpp
 )
 
