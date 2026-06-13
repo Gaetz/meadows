@@ -95,6 +95,7 @@ add_subdirectory(extern/glad)
 add_subdirectory(engine)
 add_subdirectory(data)
 add_subdirectory(world)
+add_subdirectory(gameplay)
 add_subdirectory(game)
 add_subdirectory(tools)
 

@@ -400,7 +400,7 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 9 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
-> **CURRENT PHASE: 2** — update this line as work progresses.
+> **CURRENT PHASE: 3** — update this line as work progresses.
 > Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job
 > system, RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
 > Phase 1 done (2026-06-12): reflection, Forms, field-level plugin resolver,
@@ -408,7 +408,7 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 > non-obvious decisions live in `docs/PHASE-1.md`** — read it before touching
 > the data/modding model.
 >
-> **Phase 2 in progress** (ECS + world model). Architecture decided with the
+> **Phase 2 done** (2026-06-13) (ECS + world model). Architecture decided with the
 > dev (full rationale + brick journal in `docs/PHASE-2.md` — read it before
 > touching ecs/world). Load-bearing choices:
 > - **ECS = flecs** (pinned v4.1.5), used directly in systems (no façade).
@@ -451,9 +451,41 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   re-resolution preserved (moves/disables references too). Tests in
 >   `tests/CellLoaderTest.cpp`. *(done 2026-06-13)*
 >
-> All Phase 2 bricks landed (build + 54 tests green). **Pending: visual run of
-> `true-adventurer` to confirm the world renders and the editor works**, then
-> bump CURRENT PHASE to 3. Full journal in `docs/PHASE-2.md`.
+> Phase 2 done (build + 54 tests green; visual run validated by the dev).
+>
+> **Phase 3 in progress** (gameplay 2D; GAS core first). Architecture decided
+> with the dev after reading Unreal GAS (full rationale + brick journal in
+> `docs/PHASE-3.md` — read it before touching gameplay/GAS). Load-bearing:
+> - **The simplified GAS core is inseparable**: AbilitySystem + AttributeSets +
+>   GameplayEffects + GameplayTags are mutually dependent — Phase 3 builds the
+>   whole core **+ a minimal GameplayAbility**; AbilityTasks / condition
+>   evaluator / Lua → Phase 4.
+> - **Attributes = reflected C++ AttributeSets**, addressed by reflection (like
+>   UE's FGameplayAttribute). **GameplayEffects are the only mutator** (§2.9):
+>   instant→Base, duration/infinite→Current, periodic→tick; add/mult/override +
+>   clamp; effects grant/require/block tags + immunity.
+> - **Damage = transient `Damage` meta-attribute + PostExecute → Health**; clamp
+>   via PreAttributeChange.
+> - **GameplayTags = interned hierarchical vocabulary + ref-counted container**
+>   (not one Form per tag; ≠ flecs tags).
+> - **Effect pipeline is a flat linear sequence, NOT a node-graph**: branching =
+>   tags + condition evaluator (Phase 4). Node/graph is reserved for AI behavior
+>   trees, dialogue/quest graphs, and an editor view over flat data — never the
+>   runtime/persisted GAS model (graphs don't field-patch cleanly, §5).
+> - GAS lives in new lib `meadows-gameplay` (deps meadows-data + meadows-ecs,
+>   render-free). Public API kept tiny (~4 functions).
+>
+> Bricks (dependency order; each lands green; STOP for validation between each):
+> - [x] **(3a) GameplayTags** — interned hierarchical vocabulary + ref-counted
+>   container (lib `meadows-gameplay`). `tests/GameplayTagsTest.cpp`.
+>   *(done 2026-06-13)*
+> - [ ] **(3b) Attributes + AttributeSets + AbilitySystem skeleton**.
+> - [ ] **(3c) GameplayEffects + modifier pipeline** (the big one).
+> - [ ] **(3d) Minimal GameplayAbility** (cost/cooldown = effects).
+> - [ ] **(3e) Combat in 2D** — attack ability → damage → `State.Dead` + ImGui
+>   debug panel.
+> Then the rest of Phase 3 (player controller, 2D collision/triggers, inventory,
+> AI grid A* + perception, factions = tags + relations table) as later bricks.
 
 ---
 

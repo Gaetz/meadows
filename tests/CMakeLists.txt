@@ -5,6 +5,7 @@ add_executable(meadows-tests
     CookerTest.cpp
     EcsTest.cpp
     FormsTest.cpp
+    GameplayTagsTest.cpp
     GuidTest.cpp
     JobsTest.cpp
     PluginLoaderTest.cpp
@@ -15,6 +16,7 @@ add_executable(meadows-tests
     WorldModelTest.cpp
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs
-                      meadows-world meadows-runtime doctest::doctest)
+                      meadows-world meadows-runtime meadows-gameplay
+                      doctest::doctest)
 meadows_set_warnings(meadows-tests)
 add_test(NAME meadows COMMAND meadows-tests)
