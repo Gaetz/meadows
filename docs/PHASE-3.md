@@ -1,4 +1,4 @@
-# Phase 3 — Gameplay 2D (GAS core first) (IN PROGRESS)
+# Phase 3 — Gameplay 2D (GAS core done; rest of Phase 3 in progress)
 
 > Journal of the Phase 3 implementation, same role as `docs/PHASE-1/2.md`. Read
 > it before touching `gameplay/` or the GAS systems. Re-read to resync after a
@@ -158,8 +158,34 @@ then the condition evaluator / quests in Phase 4).
   cooldown expires (`tickEffects`). Suite green (73 cases / 643 assertions);
   build clean.
 
-### (3e) Combat in 2D — TODO
-Attack ability → damage effect → `State.Dead`; ImGui debug panel in `game/`.
+### (3e) Combat in 2D — DONE 2026-06-13
+- `gameplay/combat/Combat.hpp` + `.cpp`: `updateLifeState` (derived change hook —
+  grants/clears `State.Dead` from current health) and `performAttack`
+  (`tryActivate` + refresh the target's life state). Combat = abilities +
+  effects (§6); this layer adds only "death".
+- **Actor spawner now wires the mandatory GAS** (§2.7): `spawnActor`
+  (`world/scene/Spawner.cpp`) attaches an `AttributeSet` (seeded from the base
+  form's reflected `maxHealth`) + an `AbilitySystem` (current overlay
+  initialized). **`meadows-world` now depends on `meadows-gameplay`** (acyclic);
+  `add_subdirectory` order is gameplay → world.
+- Demo data (`base.toml`): a `TrainingDummy` ActorForm (maxHealth 40), a
+  `StrikeDamage` instant effect (10), a `StrikeCooldown` duration effect (1s,
+  grants `Cooldown.Strike`), a `Strike` AbilityForm (effect + cooldown), and an
+  actor reference placing the dummy in the cell.
+- `game/main.cpp`: registers gameplay form types + components + the tag
+  vocabulary; `update(dt)` runs the **GAS tick** over all actors (effects +
+  `updateLifeState`); a "Combat (GAS debug)" ImGui panel shows each actor's
+  health bar + dead state and a Strike button that activates the ability.
+- Tests `tests/CombatTest.cpp`: life state crossing zero (dead/revive), an
+  attack ability damaging and killing a target. Suite green (75 cases / 652
+  assertions); full build clean, `true-adventurer.exe` builds.
+- **Verification owed:** a visual run (Strike a dummy, watch health drop to 0 →
+  DEAD, cooldown gating between strikes) — done by the dev.
+
+---
+
+**GAS core (3a–3e) complete.** Remaining Phase 3 bricks (player controller, 2D
+collision/triggers, inventory, AI grid A* + perception, factions) follow.
 
 ## Rest of Phase 3 (later bricks)
 Player controller, 2D collision/triggers, inventory/items/equipment, AI

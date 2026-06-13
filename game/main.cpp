@@ -16,6 +16,12 @@
 #include "game/SceneSubmit.hpp"
 #include "game/TextureCache.hpp"
 #include "game/WorldEditor.hpp"
+#include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/Attributes.hpp"
+#include "gameplay/ability/GameplayAbility.hpp"
+#include "gameplay/ability/GameplayEffects.hpp"
+#include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/combat/Combat.hpp"
 #include "world/scene/Components.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/streaming/CellLoader.hpp"
@@ -24,6 +30,9 @@
 #include "world/worldspace/WorldModel.hpp"
 
 namespace {
+
+const core::Guid kStrikeAbility =
+    *core::Guid::fromString("ab000000-0000-4000-8000-000000000001");
 
 // Stand-in ground texture until tiles become assets too.
 rhi::TextureHandle createCheckerTexture(rhi::Device& device) {
@@ -48,9 +57,15 @@ public:
 
         data::registerCoreFormTypes(types);
         world::registerWorldFormTypes(types);
+        gameplay::registerGameplayFormTypes(types);
         world::registerCoreCategories(categories);
         world::registerCoreSpawners(spawner);
         world::registerSceneComponents(world);
+        gameplay::registerGameplayComponents(world);
+
+        // Gameplay tag vocabulary (a data manifest will feed this later).
+        tags.registerTag("State.Dead");
+        tags.registerTag("Cooldown.Strike");
 
         checker = createCheckerTexture(engine->getDevice());
         engine->getCamera().viewHeight = 12.0f;
@@ -70,7 +85,19 @@ public:
         rebuild();
     }
 
-    void update(f32 dt) override { time += dt; }
+    void update(f32 dt) override {
+        time += dt;
+        // GAS tick (§6): advance active effects (durations, periodics, cooldowns)
+        // on every actor, then refresh derived life state. Ordered C++ update —
+        // no flecs pipeline yet.
+        world.handle()
+            .query<gameplay::AttributeSet, gameplay::AbilitySystem>()
+            .each([&](flecs::entity, gameplay::AttributeSet& set,
+                      gameplay::AbilitySystem& system) {
+                gameplay::tickEffects(set, system, dt, tags);
+                gameplay::updateLifeState(system, tags);
+            });
+    }
 
     void draw(render::SpriteRenderer& renderer) override {
         // Ground tiles (a flat checkered floor under the scene).
@@ -116,6 +143,7 @@ public:
         ImGui::End();
 
         editor->drawUi();
+        drawCombatPanel();
     }
 
     void close() override {
@@ -173,6 +201,55 @@ private:
                  report.conflicts.size());
     }
 
+    // Debug panel: every actor's AbilitySystem, with a Strike button that
+    // activates the attack ability on it (combat = abilities + effects, §6).
+    void drawCombatPanel() {
+        const gameplay::AbilityForm* strike =
+            forms.find<gameplay::AbilityForm>(kStrikeAbility);
+        const auto deadTag = tags.find("State.Dead");
+
+        ImGui::Begin("Combat (GAS debug)");
+        if (!strike) {
+            ImGui::TextDisabled("No Strike ability in the database.");
+            ImGui::End();
+            return;
+        }
+        ImGui::TextWrapped("'Strike' applies a 10-damage effect (1s cooldown). "
+                           "Health 0 grants State.Dead.");
+        ImGui::Separator();
+
+        world.handle()
+            .query<gameplay::AttributeSet, gameplay::AbilitySystem>()
+            .each([&](flecs::entity entity, gameplay::AttributeSet& set,
+                      gameplay::AbilitySystem& system) {
+                str name = "actor";
+                if (const world::RefId* refId = entity.try_get<world::RefId>()) {
+                    if (const data::Form* base = forms.get(refId->base);
+                        base && !base->editorId.empty()) {
+                        name = base->editorId;
+                    }
+                }
+                const f32 health =
+                    gameplay::currentValueOf(system, gameplay::attr("health"));
+                const f32 maxHealth =
+                    gameplay::currentValueOf(system, gameplay::attr("maxHealth"));
+                const bool dead = deadTag && system.tags.has(*deadTag);
+
+                ImGui::PushID(static_cast<int>(entity.id()));
+                ImGui::Text("%s%s  %.0f / %.0f", name.c_str(),
+                            dead ? " (DEAD)" : "", health, maxHealth);
+                ImGui::ProgressBar(maxHealth > 0.0f ? health / maxHealth : 0.0f,
+                                   ImVec2(-1.0f, 0.0f));
+                if (ImGui::Button("Strike")) {
+                    gameplay::performAttack(*strike, set, system, set, system,
+                                            { forms, tags });
+                }
+                ImGui::PopID();
+                ImGui::Separator();
+            });
+        ImGui::End();
+    }
+
     engine::Engine* engine { nullptr };
     std::filesystem::path dataDir;
     data::FormTypeRegistry types;
@@ -189,6 +266,7 @@ private:
     ecs::World world;
     world::FormCategoryRegistry categories;
     world::Spawner spawner;
+    gameplay::GameplayTagRegistry tags;
     std::optional<world::CellLoader> cellLoader;
 
     uptr<game::TextureCache> textureCache;

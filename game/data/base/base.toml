@@ -72,3 +72,55 @@ editorId = "Sword_C"
 baseForm = "3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f482"
 cell = "22220000-0000-4000-8000-000000000000"
 position = [3.0, 1.0, 0.0]
+
+# --- Combat (GAS): an actor, a damage effect, and a strike ability ----------
+
+[[records]]
+form = "5a000000-0000-4000-8000-000000000001"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "TrainingDummy"
+displayName = "Training Dummy"
+maxHealth = 40.0
+sprite = "7c5e2d90-4f3a-4b18-a52e-c91d80f64b23"
+
+[[records]]
+form = "e0000000-0000-4000-8000-000000000001"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "StrikeDamage"
+attribute = "damage"
+op = "add"
+magnitude = 10.0
+duration = "instant"
+
+[[records]]
+form = "e0000000-0000-4000-8000-000000000002"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "StrikeCooldown"
+duration = "duration"
+durationSeconds = 1.0
+grantedTag = "Cooldown.Strike"
+
+[[records]]
+form = "ab000000-0000-4000-8000-000000000001"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "Strike"
+cooldown = "e0000000-0000-4000-8000-000000000002"
+effect = "e0000000-0000-4000-8000-000000000001"
+
+[[records]]
+form = "44440000-0000-4000-8000-00000000000a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+editorId = "Dummy_A"
+baseForm = "5a000000-0000-4000-8000-000000000001"
+cell = "22220000-0000-4000-8000-000000000000"
+position = [0.0, 3.0, 0.0]

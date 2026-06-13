@@ -1,6 +1,8 @@
 #include "world/scene/Spawner.hpp"
 
 #include "engine/core/Log.hpp"
+#include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/Attributes.hpp"
 
 namespace world {
 
@@ -16,9 +18,29 @@ void spawnItem(SpawnContext&, ecs::Entity entity, const data::Form&,
     entity.add<ItemMarker>();
 }
 
-void spawnActor(SpawnContext&, ecs::Entity entity, const data::Form&,
-                const reflect::TypeInfo&) {
+void spawnActor(SpawnContext&, ecs::Entity entity, const data::Form& base,
+                const reflect::TypeInfo& baseType) {
     entity.add<ActorMarker>();
+
+    // Mandatory GAS for actors (§2.7): an AttributeSet seeded from the base
+    // form's reflected `maxHealth` (through reflection — no per-type code), plus
+    // an AbilitySystem with its current-value overlay initialized.
+    gameplay::AttributeSet attributes;
+    if (const reflect::FieldInfo* field = baseType.findField("maxHealth");
+        field && field->kind == reflect::FieldKind::F32) {
+        const reflect::Value value = field->get(&base);
+        if (const f32* maxHealth = std::get_if<f32>(&value)) {
+            gameplay::setBaseValue(attributes, gameplay::attr("maxHealth"),
+                                   *maxHealth);
+            gameplay::setBaseValue(attributes, gameplay::attr("health"),
+                                   *maxHealth);
+        }
+    }
+    gameplay::AbilitySystem system;
+    gameplay::initializeCurrent(system, attributes);
+
+    entity.set<gameplay::AttributeSet>(attributes);
+    entity.set<gameplay::AbilitySystem>(system);
 }
 
 } // namespace

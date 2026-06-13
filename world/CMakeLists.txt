@@ -11,6 +11,7 @@ add_library(meadows-world STATIC
     streaming/CellLoader.cpp
 )
 
-target_link_libraries(meadows-world PUBLIC meadows-data meadows-ecs)
+# meadows-gameplay: the Actor spawner wires the mandatory GAS components (§2.7).
+target_link_libraries(meadows-world PUBLIC meadows-data meadows-ecs meadows-gameplay)
 
 meadows_set_warnings(meadows-world)

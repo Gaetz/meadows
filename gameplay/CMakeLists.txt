@@ -7,6 +7,7 @@ add_library(meadows-gameplay STATIC
     ability/AbilitySystem.cpp
     ability/GameplayEffects.cpp
     ability/GameplayAbility.cpp
+    combat/Combat.cpp
 )
 
 target_link_libraries(meadows-gameplay PUBLIC meadows-data meadows-ecs)

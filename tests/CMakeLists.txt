@@ -3,6 +3,7 @@ add_executable(meadows-tests
     AbilitySystemTest.cpp
     AssetsTest.cpp
     CellLoaderTest.cpp
+    CombatTest.cpp
     CookerTest.cpp
     EcsTest.cpp
     FormsTest.cpp
