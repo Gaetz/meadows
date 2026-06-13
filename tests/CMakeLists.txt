@@ -15,6 +15,7 @@ add_executable(meadows-tests
     PluginLoaderTest.cpp
     ReflectTest.cpp
     ResolverTest.cpp
+    SceneStackTest.cpp
     SceneSubmitTest.cpp
     SpawnerTest.cpp
     WorldModelTest.cpp

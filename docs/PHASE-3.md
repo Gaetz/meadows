@@ -187,6 +187,32 @@ then the condition evaluator / quests in Phase 4).
 **GAS core (3a–3e) complete.** Remaining Phase 3 bricks (player controller, 2D
 collision/triggers, inventory, AI grid A* + perception, factions) follow.
 
+### Harness: scene stack — DONE 2026-06-13
+
+A small **scene/state stack** to exercise systems in isolation (and the seed of
+real game-state management later). Lives in `meadows-runtime` (above the engine,
+so it can use world/gameplay/render — the engine can't, per the DAG; engine
+stays unchanged, still driving a single `engine::Game`).
+
+- `game/Scene.hpp`: `Scene` interface — `onEnter/onExit`, `update/draw/drawUi`,
+  plus `opaque()` (if false, the scene below is drawn too) and `blocksUpdate()`
+  (if false, the scene below keeps updating). Scenes capture deps (e.g.
+  `engine::Engine&`) at construction, so lifecycle hooks are parameterless.
+- `game/SceneStack.hpp` + `.cpp`: deferred `push`/`pop`/`replace` (applied at
+  the start of the next update, never mid-iteration); update covers the top down
+  to the first `blocksUpdate`, draw/drawUi down to the first `opaque`, active
+  scenes run bottom-to-top. Tests in `tests/SceneStackTest.cpp`.
+- **Design note:** a scene is NOT necessarily the owner of the simulation.
+  Independent scenes (the demos) own a private `ecs::World`; overlays that act on
+  the scene below (inventory, pause, dialogue — later) will reference a shared
+  *session*, not their own world. The `Scene` interface takes a context so adding
+  that is non-breaking. (Time-scale / slow-mo overlays deferred.)
+- Demos split into scenes (`game/scenes/`): `WorldDemoScene` base (owns the
+  world load + GAS tick + render) with `PluginScene` (mod toggle + resolve
+  report), `WorldEditScene` (the editor), `CombatScene` (the GAS combat panel).
+  `main.cpp` is now a thin `DemoApp` (a `SceneStack` + a selector to switch
+  demos). Suite green (80 cases / 669 assertions); `true-adventurer.exe` builds.
+
 ## Rest of Phase 3 (later bricks)
 Player controller, 2D collision/triggers, inventory/items/equipment, AI
 (grid A* + packages + perception), factions (tags + relations table).

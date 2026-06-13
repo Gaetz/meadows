@@ -497,6 +497,12 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   *(done 2026-06-13)* — **GAS core (3a–3e) complete; visual run owed.**
 > Then the rest of Phase 3 (player controller, 2D collision/triggers, inventory,
 > AI grid A* + perception, factions = tags + relations table) as later bricks.
+> - [x] **Harness: scene stack** — `game/Scene` + `game/SceneStack` (in
+>   `meadows-runtime`, above the engine): deferred push/pop/replace, `opaque` /
+>   `blocksUpdate` layering. Demos split into isolated scenes (`game/scenes/`:
+>   `WorldDemoScene` base + Plugin/WorldEdit/Combat); `main.cpp` is a thin
+>   `DemoApp` (stack + selector). Overlays will share a *session*, not own a
+>   world. `tests/SceneStackTest.cpp`. *(done 2026-06-13)*
 
 ---
 

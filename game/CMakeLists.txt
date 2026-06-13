@@ -3,6 +3,7 @@
 # the engine lib never depends on world/ (DAG stays acyclic). A future editor
 # (in-engine or standalone) reuses this without the game executable.
 add_library(meadows-runtime STATIC
+    SceneStack.cpp
     SceneSubmit.cpp
     TextureCache.cpp
     WorldEditor.cpp
@@ -10,7 +11,11 @@ add_library(meadows-runtime STATIC
 target_link_libraries(meadows-runtime PUBLIC meadows meadows-world)
 meadows_set_warnings(meadows-runtime)
 
-add_executable(true-adventurer main.cpp)
+add_executable(true-adventurer
+    main.cpp
+    scenes/WorldDemoScene.cpp
+    scenes/DemoScenes.cpp
+)
 target_link_libraries(true-adventurer PRIVATE meadows-runtime meadows-data)
 meadows_set_warnings(true-adventurer)
 
