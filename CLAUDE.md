@@ -108,6 +108,7 @@ Use these unless there is a concrete reason not to (then ask first).
 | GPU                | OpenGL 4.6 (DSA, bindless) behind RHI    | Vulkan later, same interface. |
 | Mesh / model       | glTF 2.0 via cgltf                       | Skinning, anims, PBR built in. |
 | Textures           | stb_image + KTX2 (Basis Universal)       | Compressed for runtime. |
+| ECS                | flecs (pinned v4.1.5)                     | Runtime only (lib `meadows-ecs`); data model stays flecs-free. Used directly in systems, not behind a façade. Our reflection — not flecs meta — is the keystone (§2.3). See `docs/PHASE-2.md`. |
 | Physics            | Jolt                                     | 3D phase. 2D phase uses simple custom collision. |
 | Navmesh (3D)       | Recast / Detour                          | 2D phase uses grid A*. |
 | Scripting          | Lua via sol2                             | AngelScript / WASM as future options. |
@@ -379,6 +380,15 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 4 — Scripting, abilities & quests:** Lua (sol2) VM, event dispatch,
   scripts on forms/refs, **gameplay abilities**, tag-based **condition
   evaluator**, quest state machines + aliases, dialogue trees.
+- **Phase 4.5 — Multithreading architecture:** the first point where async is
+  truly forced (it precedes streaming). Define the thread model and the
+  **JobSystem-vs-flecs-scheduler boundary**, plus the async asset-residency
+  path (§7: background decode → main-thread GPU upload, never block spawn or the
+  frame). Pre-framing (to confirm here): the **JobSystem owns task parallelism**
+  (I/O, asset decode, per-cell resolution); **flecs systems stay single-threaded**
+  until profiling justifies parallel systems (likely Phase 7/8). Everything is
+  single-threaded until this phase; gameplay randomness stays on the engine RNG
+  (§8) so saves/replays remain reproducible.
 - **Phase 5 — Streaming & persistence:** cell grid, async load/unload, LOD,
   interior/exterior transitions, **save = runtime patch layer** reusing the
   Phase-1 resolver.
@@ -398,30 +408,43 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 > non-obvious decisions live in `docs/PHASE-1.md`** — read it before touching
 > the data/modding model.
 >
-> **Phase 2 bricks** (ECS + world model; work top-to-bottom, each lands with
-> green tests). Goal: entities/components, worldspace→cell→reference
-> hierarchy, a shared 2D/3D scene representation, and a populated 2D world.
-> Lives in `engine/ecs/` and `world/` (see §4). Stays free of any rhi/render
-> includes (§4) and renderer-/dimension-agnostic (§2.6).
-> - [ ] **(a) ECS core** — `engine/ecs/`: entity handles (generational),
->   component storage, archetype or sparse-set queries, registration through
->   reflection (§2.3, §8). Decide the storage model up front and document it.
-> - [ ] **(b) Reference → entity spawner** — resolved Form + Reference becomes
->   an ECS entity via a per-category C++ spawner (§2.7), wiring mandatory
->   components and applying field values **through reflection**. Reference is
->   a record with instance-level overrides (§5).
-> - [ ] **(c) Worldspace / cell / reference hierarchy** — `world/worldspace/`:
->   worldspace → cell grid → references, as Forms/records layered by the
->   Phase-1 resolver.
-> - [ ] **(d) Shared scene representation** — `world/scene/`: scene graph used
->   unchanged by 2D now and 3D later (§2.6). `SpriteRender` holds an asset
->   handle, never pixels (§7).
-> - [ ] **(e) Populate a 2D world** — load a worldspace + cells, spawn
->   references, render them through the existing sprite renderer; demo in
->   `game/`.
+> **Phase 2 in progress** (ECS + world model). Architecture decided with the
+> dev (full rationale + brick journal in `docs/PHASE-2.md` — read it before
+> touching ecs/world). Load-bearing choices:
+> - **ECS = flecs** (pinned v4.1.5), used directly in systems (no façade).
+>   **Confined to runtime**: new lib `meadows-ecs`; `meadows` and `meadows-data`
+>   stay flecs-free. Our reflection stays the data-model keystone (§2.3); flecs
+>   ids are opaque (never persisted/indexed — back-link by GUID).
+> - **Reference = a Form** (`ReferenceForm`) resolved by the §5 resolver, so
+>   place/move/disable/save are all field patches (§2.4). `cell` is a field on
+>   the reference (no list-type in reflection v1; also cleaner under
+>   last-writer-wins). At runtime, membership is a flecs relation `(InCell,
+>   cellEntity)`; **cells are ephemeral flecs entities**, never persisted.
+> - **GameplayTags (§6) ≠ flecs tags** — keep them reflected moddable data.
 >
-> When Phase 2 completes, summarize it the same way: move the brick detail to
-> `docs/PHASE-2.md` and leave a one-line pointer here.
+> Bricks (built in dependency order a → c → b → d → e; each lands green):
+> - [x] **(a) ECS core** — `engine/ecs/` (`meadows-ecs`): `ecs::World` (thin
+>   owner of `flecs::world`, `handle()`), `Entity = flecs::entity`, `InCell`
+>   relation, `registerComponent<T>()` = single point bridging flecs storage +
+>   our reflected-component registry. Tests in `tests/EcsTest.cpp`. *(done
+>   2026-06-13)*
+> - [x] **(c) World data model** — `world/worldspace/` (`meadows-world`):
+>   `WorldspaceForm`/`CellForm`/`ReferenceForm` (reflected Forms),
+>   `registerWorldFormTypes`, `FormCategory` + registry, `WorldModel` (resolved
+>   spatial index over FormDatabase). Tests in `tests/WorldModelTest.cpp`.
+>   *(done 2026-06-13)*
+> - [ ] **(b) Reference → entity spawner** — `world/scene/`: components
+>   (`Transform` 3D-ready, `SpriteRender` holding an asset handle not pixels §7,
+>   `RefId`), per-category C++ spawner (§2.7) applying fields **through
+>   reflection**, posing the `InCell` relation.
+> - [ ] **(d) Scene representation + render bridge** — `game/SceneSubmit`: the
+>   only ECS↔rhi seam (kept reusable), Transform+SpriteRender → SpriteRenderer.
+> - [ ] **(e) Populate a 2D world** — `world/streaming/CellLoader` (eager load
+>   now; async = Phase 4.5/5), worldspace+cells demo in `game/` with the live
+>   mod re-resolution preserved.
+>
+> When Phase 2 completes, mark the journal done in `docs/PHASE-2.md` and leave
+> the one-line pointer here.
 
 ---
 
