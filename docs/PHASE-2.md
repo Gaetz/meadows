@@ -153,11 +153,26 @@ meadows-ecs  meadows-data  (both flecs-free except meadows-ecs which OWNS flecs)
   (ties brick b to §5); unresolvable base form → no entity. Suite green
   (50 cases / 545 assertions).
 
-### (d) Scene representation + render bridge — TODO
-`game/SceneSubmit`: reusable, the only ECS↔rhi seam. Query
-`Transform`+`SpriteRender`, sort by layer (painter), resolve texture (reuse the
-`textureFor`/cache logic in `game/main.cpp`), submit to `render::SpriteRenderer`
-(2D angle from quat = `2·atan2(q.z, q.w)`).
+### (d) Scene representation + render bridge — DONE 2026-06-13
+- New reusable lib **`meadows-runtime`** (`game/CMakeLists.txt`, links `meadows`
+  + `meadows-world`), sitting **above** engine and world so `meadows` never
+  depends on `world/` (DAG acyclic). `game/` is now lib + exe; the executable
+  links `meadows-runtime`. A future editor reuses the lib without the exe.
+- `game/TextureCache.hpp` + `.cpp`: GUID → `rhi::TextureHandle`, caching and
+  **owning** the textures (destroyed on `clear()` / teardown). Caches misses
+  too. Missing/unloadable asset → invalid handle (SpriteRenderer draws its white
+  fallback). Synchronous; async residency (§7) deferred to Phase 4.5/5.
+- `game/SceneSubmit.hpp` + `.cpp`: the single ECS↔rhi seam.
+  - `spriteFor(Transform, SpriteRender, texture)` — **pure** mapping (no GPU,
+    unit-testable): position.xy, size = sprite.size · scale.xy, tint, and the 2D
+    rotation = yaw of the quaternion (`2·atan2(z, w)`, §2.6).
+  - `submitScene(world, textures, renderer)` — queries
+    `const Transform`+`const SpriteRender` (read-only, §Game::draw), resolves
+    textures, **stable-sorts by `layer`** (painter; no depth in 2D), submits.
+    Assumes the engine owns `begin`/`end`.
+- Tests `tests/SceneSubmitTest.cpp`: the `spriteFor` mapping + yaw-from-quat.
+  The GPU path (submission) is verified by running the game (brick e). Suite
+  green (52 cases / 554 assertions); `true-adventurer.exe` builds clean.
 
 ### (e) Populate a 2D world — TODO
 `world/streaming/CellLoader` (`loadCell`/`unloadCell`; eager load all cells in

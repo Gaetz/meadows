@@ -9,10 +9,11 @@ add_executable(meadows-tests
     PluginLoaderTest.cpp
     ReflectTest.cpp
     ResolverTest.cpp
+    SceneSubmitTest.cpp
     SpawnerTest.cpp
     WorldModelTest.cpp
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs
-                      meadows-world doctest::doctest)
+                      meadows-world meadows-runtime doctest::doctest)
 meadows_set_warnings(meadows-tests)
 add_test(NAME meadows COMMAND meadows-tests)

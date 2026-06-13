@@ -439,8 +439,11 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   spawner (§2.7) seeding `SpriteRender.sprite` from the base form **through
 >   reflection** and posing the `InCell` relation. `meadows-world` now links
 >   `meadows-ecs`. Tests in `tests/SpawnerTest.cpp`. *(done 2026-06-13)*
-> - [ ] **(d) Scene representation + render bridge** — `game/SceneSubmit`: the
->   only ECS↔rhi seam (kept reusable), Transform+SpriteRender → SpriteRenderer.
+> - [x] **(d) Scene representation + render bridge** — `game/SceneSubmit` +
+>   `game/TextureCache` in the reusable `meadows-runtime` lib (the only ECS↔rhi
+>   seam): pure `spriteFor` (Transform+SpriteRender → 2D sprite, yaw from quat),
+>   `submitScene` (query, resolve texture, painter sort by layer). Tests in
+>   `tests/SceneSubmitTest.cpp`. *(done 2026-06-13)*
 > - [ ] **(e) Populate a 2D world** — `world/streaming/CellLoader` (eager load
 >   now; async = Phase 4.5/5), worldspace+cells demo in `game/` with the live
 >   mod re-resolution preserved.
