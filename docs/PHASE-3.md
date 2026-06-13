@@ -137,8 +137,26 @@ then the condition evaluator / quests in Phase 4).
 - **Limits (deferred):** single modifier/tag per effect; infinite-periodic not
   expressible; serialization of active effects = Phase 5.
 
-### (3d) Minimal GameplayAbility — TODO
-`AbilityForm`, grant + `tryActivate` (tags/cost/cooldown), apply effect to target.
+### (3d) Minimal GameplayAbility — DONE 2026-06-13
+- `gameplay/ability/GameplayAbility.hpp` + `.cpp`. `AbilityForm` (Form): flat —
+  `requiredTag`/`blockedTag` (caster activation gates), `cost`/`cooldown`/`effect`
+  guids (all EffectForms). **Cost & cooldown ARE effects** (faithful to GAS):
+  cost = an instant effect on a resource; cooldown = a duration effect whose
+  `grantedTag` is the cooldown tag.
+- `registerGameplayFormTypes` moved here (registers EffectForm + AbilityForm —
+  the ability layer aggregates the gameplay Form types). `AbilitySystem` gained
+  `grantedAbilities` (+ `grantAbility`).
+- `tryActivate(ability, caster set/system, target set/system, {forms, tags})`:
+  checks required/blocked tags → on-cooldown (caster has the cooldown effect's
+  granted tag) → cost affordability (`canAfford`: a negative add keeps the
+  attribute ≥ 0). On success applies cost + cooldown to the caster and the
+  primary effect to the target. No state change on rejection. No AbilityTasks /
+  Lua (Phase 4).
+- Tests `tests/GameplayAbilityTest.cpp`: success (pays cost, deals damage, sets
+  cooldown tag), cannot reactivate while on cooldown, blocked tag prevents
+  activation, unaffordable cost prevents activation, reactivates after the
+  cooldown expires (`tickEffects`). Suite green (73 cases / 643 assertions);
+  build clean.
 
 ### (3e) Combat in 2D — TODO
 Attack ability → damage effect → `State.Dead`; ImGui debug panel in `game/`.

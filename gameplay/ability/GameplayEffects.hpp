@@ -4,10 +4,6 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 
-namespace data {
-class FormTypeRegistry;
-}
-
 namespace gameplay {
 
 // A GameplayEffect definition (Form, moddable) — the ONLY way to change an
@@ -40,9 +36,6 @@ struct EffectForm : data::Form {
         REFLECT_FIELD(blockedTag)
     REFLECT_END()
 };
-
-// Registers the gameplay Form types (EffectForm now; AbilityForm in 3d).
-void registerGameplayFormTypes(data::FormTypeRegistry& registry);
 
 // Applies an effect to a target (its AttributeSet + AbilitySystem). Returns
 // false if the target's tags fail the effect's required/blocked requirements.

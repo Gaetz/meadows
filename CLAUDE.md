@@ -487,7 +487,10 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   modifier + 1 tag/slot), flat linear apply/tick (instant→Base + damage meta→
 >   health + clamp; duration/infinite→Current; periodic→tick), `recomputeCurrent`.
 >   `tests/GameplayEffectsTest.cpp`. *(done 2026-06-13)*
-> - [ ] **(3d) Minimal GameplayAbility** (cost/cooldown = effects).
+> - [x] **(3d) Minimal GameplayAbility** — `AbilityForm` (tags + cost/cooldown/
+>   effect guids; cost & cooldown ARE effects), `tryActivate` (tag gates +
+>   cooldown + affordability), `grantAbility`. `tests/GameplayAbilityTest.cpp`.
+>   *(done 2026-06-13)*
 > - [ ] **(3e) Combat in 2D** — attack ability → damage → `State.Dead` + ImGui
 >   debug panel.
 > Then the rest of Phase 3 (player controller, 2D collision/triggers, inventory,

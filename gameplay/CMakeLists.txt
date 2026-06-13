@@ -6,6 +6,7 @@ add_library(meadows-gameplay STATIC
     ability/GameplayTags.cpp
     ability/AbilitySystem.cpp
     ability/GameplayEffects.cpp
+    ability/GameplayAbility.cpp
 )
 
 target_link_libraries(meadows-gameplay PUBLIC meadows-data meadows-ecs)

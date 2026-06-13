@@ -4,6 +4,7 @@
 #include <unordered_map>
 
 #include "engine/core/Defines.hpp"
+#include "engine/core/Guid.hpp"
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 
@@ -41,6 +42,7 @@ struct AbilitySystem {
     TagContainer tags;
     std::unordered_map<u32 /*attr field id*/, f32> current; // current-value overlay
     vector<ActiveEffect> activeEffects;
+    vector<core::Guid> grantedAbilities; // AbilityForm guids this actor can activate
 };
 
 // Registers the GAS components in the ECS: AttributeSet through the reflection

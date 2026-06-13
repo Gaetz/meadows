@@ -2,8 +2,6 @@
 
 #include <algorithm>
 
-#include "data/forms/FormTypeRegistry.hpp"
-
 namespace gameplay {
 
 namespace {
@@ -60,10 +58,6 @@ void clampBaseVitals(AttributeSet& set) {
 }
 
 } // namespace
-
-void registerGameplayFormTypes(data::FormTypeRegistry& registry) {
-    registry.registerFormType<EffectForm>();
-}
 
 void recomputeCurrent(const AttributeSet& set, AbilitySystem& system) {
     for (const reflect::FieldInfo& field : AttributeSet::staticTypeInfo().fields) {

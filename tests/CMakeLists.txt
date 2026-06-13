@@ -6,6 +6,7 @@ add_executable(meadows-tests
     CookerTest.cpp
     EcsTest.cpp
     FormsTest.cpp
+    GameplayAbilityTest.cpp
     GameplayEffectsTest.cpp
     GameplayTagsTest.cpp
     GuidTest.cpp
