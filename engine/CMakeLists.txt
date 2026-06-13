@@ -41,3 +41,14 @@ target_compile_definitions(meadows PUBLIC
 )
 
 meadows_set_warnings(meadows)
+
+# meadows-ecs — the ECS layer (flecs). Kept a separate target so flecs stays
+# confined to the runtime: meadows (base engine) and meadows-data both remain
+# flecs-free. Components are plain reflected structs; flecs only appears in
+# ecs/world/system TUs, never in component-data headers.
+add_library(meadows-ecs STATIC
+    ecs/World.cpp
+)
+target_link_libraries(meadows-ecs PUBLIC meadows flecs::flecs_static)
+
+meadows_set_warnings(meadows-ecs)

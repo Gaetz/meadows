@@ -28,6 +28,29 @@ CPMAddPackage("gh:g-truc/glm#1.0.1")
 CPMAddPackage("gh:doctest/doctest@2.5.2")
 CPMAddPackage("gh:marzer/tomlplusplus@3.4.0")
 
+# flecs — the ECS (Phase 2). Pinned like every dep (§3.1); flecs breaks API
+# across majors, so version bumps are deliberate. Static lib only (no DLL on
+# Windows); confined to the meadows-ecs target — meadows-data stays flecs-free.
+CPMAddPackage(
+    NAME flecs
+    GITHUB_REPOSITORY SanderMertens/flecs
+    GIT_TAG v4.1.5
+    GIT_SHALLOW TRUE
+    OPTIONS
+        "FLECS_SHARED OFF"
+        "FLECS_STATIC ON"
+        "FLECS_TESTS OFF"
+)
+
+# flecs exports its include dir as a normal (non-system) PUBLIC include, which
+# leaks its own /W4 -Wextra warnings into our TUs. Mark it system for every
+# consumer so only our code is held to our warning bar.
+if(TARGET flecs_static)
+    get_target_property(_flecs_inc flecs_static INTERFACE_INCLUDE_DIRECTORIES)
+    set_target_properties(flecs_static PROPERTIES
+        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_flecs_inc}")
+endif()
+
 # stb has no tags: pinned by commit. Header-only; the implementation TU
 # lives in engine/assets/StbImpl.cpp.
 CPMAddPackage(

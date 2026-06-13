@@ -390,42 +390,38 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 9 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
-> **CURRENT PHASE: 1** — update this line as work progresses.
+> **CURRENT PHASE: 2** — update this line as work progresses.
 > Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job
 > system, RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
+> Phase 1 done (2026-06-12): reflection, Forms, field-level plugin resolver,
+> text↔binary cooker, GUID asset DB. **Full brick-by-brick detail and the
+> non-obvious decisions live in `docs/PHASE-1.md`** — read it before touching
+> the data/modding model.
 >
-> **Phase 1 bricks** (work top-to-bottom, each lands with green tests):
-> - [x] **(a) GUID + reflection** — `core::Guid` (v4, string roundtrip),
->   FNV-1a ids, all-in-header `REFLECT_BEGIN/FIELD/END` macros, type-erased
->   field get/set via member-pointer lambdas, explicit `reflect::Registry`,
->   doctest test suite (`meadows-tests`).
-> - [x] **(b) Forms** — `data/forms/`: `Form` base (Guid id + editorId),
->   sample `WeaponForm`/`ActorForm`, `FormDatabase` (Guid → Form lookup +
->   compact FormHandle table), TOML record parsing via toml++ 3.4
->   (TOML_EXCEPTIONS=0). New static lib `meadows-data` (depends on
->   `meadows`, never on render/rhi). Form::id is NOT reflected (identity,
->   not payload); quat file order is [x, y, z, w].
-> - [x] **(c) Plugin resolver** — `data/plugins/Resolver`: ordered-layer
->   resolution, **last-writer-wins per field**, conflict report (field
->   written by ≥2 plugins, base game included — filtering is presentation),
->   duplicate create degrades to patch, orphan patches counted+dropped,
->   patch-before-creator re-ranked by load order, wrong-type patch skipped,
->   deterministic. The save system reuses this resolver as-is (§2.4).
-> - [x] **(d) Cooker** — `data/plugins/BinaryFormat` (magic 'MDWP' +
->   version, little-endian, fields sorted by id → deterministic cooks,
->   bounds-checked reader) + `data/plugins/TomlWriter` (fields sorted by
->   name → clean diffs); `tools/cooker` CLI: cook / uncook / new-guid.
->   Binary reading needs no registry (raw ids, validated by the resolver).
-> - [x] **(e) Asset DB** — `engine/assets/AssetDatabase` (guid → path,
->   last layer wins; knows nothing about plugins — game code feeds it),
->   `[assets]` table in plugin TOML (+ binary format), sync stb_image
->   loading (`assets::loadImageFile`), `platform::executableDir()`.
->   End-to-end demo in game/: base plugin (iron sword) + `golden-blades`
->   mod patching 3 fields and overriding the sprite asset, live toggle in
->   ImGui with full re-resolution.
+> **Phase 2 bricks** (ECS + world model; work top-to-bottom, each lands with
+> green tests). Goal: entities/components, worldspace→cell→reference
+> hierarchy, a shared 2D/3D scene representation, and a populated 2D world.
+> Lives in `engine/ecs/` and `world/` (see §4). Stays free of any rhi/render
+> includes (§4) and renderer-/dimension-agnostic (§2.6).
+> - [ ] **(a) ECS core** — `engine/ecs/`: entity handles (generational),
+>   component storage, archetype or sparse-set queries, registration through
+>   reflection (§2.3, §8). Decide the storage model up front and document it.
+> - [ ] **(b) Reference → entity spawner** — resolved Form + Reference becomes
+>   an ECS entity via a per-category C++ spawner (§2.7), wiring mandatory
+>   components and applying field values **through reflection**. Reference is
+>   a record with instance-level overrides (§5).
+> - [ ] **(c) Worldspace / cell / reference hierarchy** — `world/worldspace/`:
+>   worldspace → cell grid → references, as Forms/records layered by the
+>   Phase-1 resolver.
+> - [ ] **(d) Shared scene representation** — `world/scene/`: scene graph used
+>   unchanged by 2D now and 3D later (§2.6). `SpriteRender` holds an asset
+>   handle, never pixels (§7).
+> - [ ] **(e) Populate a 2D world** — load a worldspace + cells, spawn
+>   references, render them through the existing sprite renderer; demo in
+>   `game/`.
 >
-> Phase 1 done (2026-06-12). This brick list stays as a journal: re-read it
-> to resync after a context compression.
+> When Phase 2 completes, summarize it the same way: move the brick detail to
+> `docs/PHASE-2.md` and leave a one-line pointer here.
 
 ---
 
