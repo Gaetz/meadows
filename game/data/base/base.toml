@@ -7,6 +7,8 @@ name = "true-adventurer-base"
 [assets]
 "7c5e2d90-4f3a-4b18-a52e-c91d80f64b23" = "textures/iron_sword.png"
 
+# --- Definitions ------------------------------------------------------------
+
 [[records]]
 form = "3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f482"
 type = "WeaponForm"
@@ -18,3 +20,55 @@ damage = 12.0
 weight = 3.0
 goldValue = 25
 sprite = "7c5e2d90-4f3a-4b18-a52e-c91d80f64b23"
+
+# --- World: a worldspace with one cell --------------------------------------
+
+[[records]]
+form = "11110000-0000-4000-8000-000000000001"
+type = "WorldspaceForm"
+new = true
+[records.fields]
+editorId = "Overworld"
+cellSize = 16.0
+
+[[records]]
+form = "22220000-0000-4000-8000-000000000000"
+type = "CellForm"
+new = true
+[records.fields]
+editorId = "Cell_0_0"
+worldspace = "11110000-0000-4000-8000-000000000001"
+gridX = 0
+gridY = 0
+
+# --- References: three swords placed in the cell ----------------------------
+
+[[records]]
+form = "44440000-0000-4000-8000-000000000001"
+type = "ReferenceForm"
+new = true
+[records.fields]
+editorId = "Sword_A"
+baseForm = "3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f482"
+cell = "22220000-0000-4000-8000-000000000000"
+position = [-3.0, 1.0, 0.0]
+
+[[records]]
+form = "44440000-0000-4000-8000-000000000002"
+type = "ReferenceForm"
+new = true
+[records.fields]
+editorId = "Sword_B"
+baseForm = "3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f482"
+cell = "22220000-0000-4000-8000-000000000000"
+position = [0.0, 0.0, 0.0]
+
+[[records]]
+form = "44440000-0000-4000-8000-000000000003"
+type = "ReferenceForm"
+new = true
+[records.fields]
+editorId = "Sword_C"
+baseForm = "3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f482"
+cell = "22220000-0000-4000-8000-000000000000"
+position = [3.0, 1.0, 0.0]

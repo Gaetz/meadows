@@ -444,12 +444,16 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   seam): pure `spriteFor` (Transform+SpriteRender → 2D sprite, yaw from quat),
 >   `submitScene` (query, resolve texture, painter sort by layer). Tests in
 >   `tests/SceneSubmitTest.cpp`. *(done 2026-06-13)*
-> - [ ] **(e) Populate a 2D world** — `world/streaming/CellLoader` (eager load
->   now; async = Phase 4.5/5), worldspace+cells demo in `game/` with the live
->   mod re-resolution preserved.
+> - [x] **(e) Populate a 2D world** — `world/streaming/CellLoader` (eager
+>   load/unload now; async = Phase 4.5/5), `game/WorldEditor` in-game ImGui tool
+>   (add / select / move / delete objects), `main.cpp` loads a worldspace + cell
+>   of references via the spawner and renders through `submitScene`, live mod
+>   re-resolution preserved (moves/disables references too). Tests in
+>   `tests/CellLoaderTest.cpp`. *(done 2026-06-13)*
 >
-> When Phase 2 completes, mark the journal done in `docs/PHASE-2.md` and leave
-> the one-line pointer here.
+> All Phase 2 bricks landed (build + 54 tests green). **Pending: visual run of
+> `true-adventurer` to confirm the world renders and the editor works**, then
+> bump CURRENT PHASE to 3. Full journal in `docs/PHASE-2.md`.
 
 ---
 

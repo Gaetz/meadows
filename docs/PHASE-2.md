@@ -1,4 +1,4 @@
-# Phase 2 — ECS + world model (IN PROGRESS)
+# Phase 2 — ECS + world model (all bricks landed; visual run pending)
 
 > Journal of the Phase 2 implementation, same role as `docs/PHASE-1.md`: the
 > canonical record of what each brick delivered and the non-obvious decisions.
@@ -174,10 +174,32 @@ meadows-ecs  meadows-data  (both flecs-free except meadows-ecs which OWNS flecs)
   The GPU path (submission) is verified by running the game (brick e). Suite
   green (52 cases / 554 assertions); `true-adventurer.exe` builds clean.
 
-### (e) Populate a 2D world — TODO
-`world/streaming/CellLoader` (`loadCell`/`unloadCell`; eager load all cells in
-Phase 2, interface shaped for Phase 5 async). `game/main.cpp` loads a worldspace
-+ cells (statics, an actor, items) and keeps the live mod re-resolution toggle.
+### (e) Populate a 2D world — DONE 2026-06-13
+- `world/streaming/CellLoader.hpp` + `.cpp` (in `meadows-world`):
+  `loadCell`/`unloadCell`/`loadAll`/`unloadAll`, `cellEntity(cell)`. Each loaded
+  cell gets a flecs cell-entity; references are spawned with `(InCell, …)` so
+  unload is one `delete_with`. Skips disabled references. Eager in Phase 2; the
+  interface is the shape Phase 5 async streaming implements.
+- `game/WorldEditor.hpp` + `.cpp` (in `meadows-runtime`): in-game ImGui dev tool
+  — a palette of spawnable base forms (those with a category) + "Add to active
+  cell", an object list (select), and move/rotate/delete of the selected
+  entity. Edits are **instance state** (Transform / spawned references), never
+  Forms (§2.2); **not yet persisted** — exporting as a §5 patch layer is §5.1 /
+  Phase 9, so a reload (mod toggle) discards live edits.
+- `game/main.cpp` rewritten: registers core + world form types, categories,
+  spawners and scene components; `rebuild()` resolves plugins → assets →
+  `WorldModel` → `CellLoader.loadAll()`, re-runnable on the live mod toggle
+  (unloadAll/loadAll). `draw()` renders the checker ground then `submitScene`.
+  `drawUi()` shows the mod toggle + resolve report and the world editor.
+  `close()` frees GPU resources while the device is alive.
+- Demo data: `base.toml` gains a worldspace, one cell, and three sword
+  references; `mod.toml` now also **moves Sword_A and disables Sword_B** (§5
+  field patches on references) — toggling the mod live re-arranges the world.
+- Tests `tests/CellLoaderTest.cpp`: loads enabled refs / skips disabled,
+  `unloadCell` removes the cell's entities. Suite green (54 cases / 561
+  assertions); full build clean.
+- **Verification still owed:** a visual run of `true-adventurer` (GUI) to
+  confirm rendering + the editor — done by the developer.
 
 ## Tests (mandatory — §8)
 

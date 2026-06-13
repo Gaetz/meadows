@@ -1,0 +1,49 @@
+#pragma once
+
+#include <unordered_map>
+
+#include "data/forms/FormDatabase.hpp"
+#include "engine/ecs/World.hpp"
+#include "world/scene/Spawner.hpp"
+#include "world/worldspace/FormCategory.hpp"
+#include "world/worldspace/WorldModel.hpp"
+
+namespace world {
+
+// Turns a cell's resolved references into live entities and back. Phase 2:
+// eager (loadAll at startup). The interface is the shape Phase 5's async
+// streaming will implement (load/unload per cell, persistence on unload).
+//
+// Each loaded cell gets a flecs cell-entity; its references are spawned with an
+// (InCell, cellEntity) relation, so unloadCell is a single delete_with. The
+// cell-entity is an ephemeral runtime projection (§ docs/PHASE-2.md), never
+// serialized.
+class CellLoader {
+public:
+    CellLoader(ecs::World& world, const data::FormDatabase& forms,
+               const WorldModel& model, const Spawner& spawner,
+               const FormCategoryRegistry& categories)
+        : world { world }, forms { forms }, model { model }, spawner { spawner },
+          categories { categories } {}
+
+    // Spawns the cell's enabled references (idempotent: returns the existing
+    // cell-entity if already loaded).
+    ecs::Entity loadCell(data::FormHandle cell);
+    void unloadCell(data::FormHandle cell);
+
+    void loadAll();   // every cell in the world model
+    void unloadAll();
+
+    // The cell-entity for a loaded cell, or an invalid entity if not loaded.
+    ecs::Entity cellEntity(data::FormHandle cell) const;
+
+private:
+    ecs::World& world;
+    const data::FormDatabase& forms;
+    const WorldModel& model;
+    const Spawner& spawner;
+    const FormCategoryRegistry& categories;
+    std::unordered_map<u32, ecs::Entity> loaded; // cell handle value -> cell-entity
+};
+
+} // namespace world

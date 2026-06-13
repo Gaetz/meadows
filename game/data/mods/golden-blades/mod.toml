@@ -1,5 +1,6 @@
-# Sample mod: patches two fields of the base sword and overrides its
-# texture asset — same guid, different file (§5 asset layering).
+# Sample mod: patches the base sword (fields + texture asset, same guid) AND
+# edits placed references — moving one, disabling another. All field-level
+# patches through the §5 resolver: toggling the mod live re-arranges the world.
 
 [plugin]
 id = "f4a7d215-6e89-4c30-8f1b-2d9a05c7e364"
@@ -9,6 +10,7 @@ dependencies = ["0a3f9c1e-5b71-4d2a-9c64-8e21d7b3f0a1"]
 [assets]
 "7c5e2d90-4f3a-4b18-a52e-c91d80f64b23" = "textures/gold_sword.png"
 
+# Patch the weapon definition (every sword turns golden + stronger).
 [[records]]
 form = "3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f482"
 type = "WeaponForm"
@@ -16,3 +18,17 @@ type = "WeaponForm"
 displayName = "Golden Sword"
 damage = 25.0
 goldValue = 200
+
+# Move Sword_A (instance-level patch on a reference).
+[[records]]
+form = "44440000-0000-4000-8000-000000000001"
+type = "ReferenceForm"
+[records.fields]
+position = [-3.0, -3.0, 0.0]
+
+# Disable Sword_B (it stops being spawned by the cell loader).
+[[records]]
+form = "44440000-0000-4000-8000-000000000002"
+type = "ReferenceForm"
+[records.fields]
+enabled = false

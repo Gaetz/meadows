@@ -1,6 +1,7 @@
 add_executable(meadows-tests
     Main.cpp
     AssetsTest.cpp
+    CellLoaderTest.cpp
     CookerTest.cpp
     EcsTest.cpp
     FormsTest.cpp

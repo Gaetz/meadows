@@ -8,6 +8,7 @@ add_library(meadows-world STATIC
     worldspace/WorldModel.cpp
     scene/Components.cpp
     scene/Spawner.cpp
+    streaming/CellLoader.cpp
 )
 
 target_link_libraries(meadows-world PUBLIC meadows-data meadows-ecs)

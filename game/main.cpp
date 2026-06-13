@@ -1,5 +1,4 @@
-#include <cmath>
-#include <unordered_map>
+#include <optional>
 
 #include <imgui.h>
 
@@ -9,16 +8,22 @@
 #include "engine/Engine.hpp"
 #include "engine/Game.hpp"
 #include "engine/assets/AssetDatabase.hpp"
-#include "engine/assets/Image.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/ecs/World.hpp"
 #include "engine/platform/Paths.hpp"
 #include "engine/render/SpriteRenderer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "game/SceneSubmit.hpp"
+#include "game/TextureCache.hpp"
+#include "game/WorldEditor.hpp"
+#include "world/scene/Components.hpp"
+#include "world/scene/Spawner.hpp"
+#include "world/streaming/CellLoader.hpp"
+#include "world/worldspace/FormCategory.hpp"
+#include "world/worldspace/WorldForms.hpp"
+#include "world/worldspace/WorldModel.hpp"
 
 namespace {
-
-const core::Guid kSwordFormId =
-    *core::Guid::fromString("3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f482");
 
 // Stand-in ground texture until tiles become assets too.
 rhi::TextureHandle createCheckerTexture(rhi::Device& device) {
@@ -40,27 +45,37 @@ public:
     void init(engine::Engine& engineContext) override {
         engine = &engineContext;
         dataDir = platform::executableDir() / "data";
+
         data::registerCoreFormTypes(types);
+        world::registerWorldFormTypes(types);
+        world::registerCoreCategories(categories);
+        world::registerCoreSpawners(spawner);
+        world::registerSceneComponents(world);
 
         checker = createCheckerTexture(engine->getDevice());
-        engine->getCamera().viewHeight = 8.0f;
+        engine->getCamera().viewHeight = 12.0f;
 
-        basePlugin = data::loadPluginFile(dataDir / "base" / "base.toml", types);
+        textureCache = std::make_unique<game::TextureCache>(
+            engine->getDevice(), assetDb);
+        editor = std::make_unique<game::WorldEditor>(world, forms, categories,
+                                                     spawner);
+
+        basePlugin =
+            data::loadPluginFile(dataDir / "base" / "base.toml", types);
         modPlugin = data::loadPluginFile(
             dataDir / "mods" / "golden-blades" / "mod.toml", types);
         if (!basePlugin) {
             LOG_CRITICAL("Base plugin failed to load; nothing to show");
         }
-        loadWorld();
+        rebuild();
     }
 
-    void update(f32 dt) override {
-        time += dt;
-    }
+    void update(f32 dt) override { time += dt; }
 
     void draw(render::SpriteRenderer& renderer) override {
-        for (i32 y = -4; y < 4; ++y) {
-            for (i32 x = -7; x < 7; ++x) {
+        // Ground tiles (a flat checkered floor under the scene).
+        for (i32 y = -5; y < 5; ++y) {
+            for (i32 x = -8; x < 8; ++x) {
                 const f32 shade =
                     0.85f +
                     0.15f * static_cast<f32>((x * 7 + y * 13 + 60) % 5) / 4.0f;
@@ -74,57 +89,47 @@ public:
             }
         }
 
-        if (sword) {
-            renderer.draw({
-                .position = { 0.0f, 0.15f * std::sin(time * 2.0f) },
-                .size = { 2.5f, 2.5f },
-                .rotation = 0.15f * std::sin(time * 0.7f),
-                .texture = swordTexture,
-            });
-        }
+        // The ECS scene: the single ECS→rhi seam (§2.6).
+        game::submitScene(world, *textureCache, renderer);
     }
 
     void drawUi() override {
-        ImGui::Begin("True Adventurer - data model demo");
+        ImGui::Begin("True Adventurer - Phase 2 world");
         ImGui::Text("%.1f fps", ImGui::GetIO().Framerate);
         ImGui::Separator();
 
         if (modPlugin &&
             ImGui::Checkbox("Enable 'golden-blades' mod", &modEnabled)) {
-            loadWorld(); // full §5 re-resolution, live
+            rebuild(); // full §5 re-resolution; discards live editor edits
         }
-
-        if (sword) {
-            ImGui::Text("Resolved WeaponForm (%s):", sword->editorId.c_str());
-            ImGui::BulletText("displayName: %s", sword->displayName.c_str());
-            ImGui::BulletText("damage: %.1f", sword->damage);
-            ImGui::BulletText("weight: %.1f (base value, no mod touches it)",
-                              sword->weight);
-            ImGui::BulletText("goldValue: %d", sword->goldValue);
-        } else {
-            ImGui::TextColored({ 1, 0.4f, 0.4f, 1 }, "Sword form not found");
-        }
+        ImGui::TextWrapped(
+            "The mod patches the sword (gold + stronger), moves Sword_A and "
+            "disables Sword_B - all field-level patches on records.");
 
         ImGui::Separator();
-        ImGui::Text("Resolve report: %u forms, %u records, %u conflicts",
-                    report.formsCreated, report.recordsApplied,
-                    static_cast<u32>(report.conflicts.size()));
+        ImGui::Text("%u forms, %zu cells, %zu conflicts", forms.count(),
+                    model.cells().size(), report.conflicts.size());
         for (const data::FieldConflict& conflict : report.conflicts) {
-            str writers;
-            for (size_t i = 0; i < conflict.writers.size(); ++i) {
-                writers += (i ? " -> " : "") + conflict.writers[i];
-            }
-            ImGui::BulletText("%s.%s: %s (last wins)",
-                              conflict.typeName.c_str(),
-                              conflict.fieldName.c_str(), writers.c_str());
+            ImGui::BulletText("%s.%s", conflict.typeName.c_str(),
+                              conflict.fieldName.c_str());
         }
         ImGui::End();
+
+        editor->drawUi();
     }
 
-    void close() override {}
+    void close() override {
+        // Free GPU resources while the device is still alive (close() runs
+        // before engine teardown); reset the cache so its dtor does not touch a
+        // dead device.
+        textureCache.reset();
+        if (checker.id != 0) {
+            engine->getDevice().destroyTexture(checker);
+        }
+    }
 
 private:
-    void loadWorld() {
+    void rebuild() {
         vector<const data::Plugin*> loadOrder;
         if (basePlugin) {
             loadOrder.push_back(&*basePlugin);
@@ -142,40 +147,30 @@ private:
                 assetDb.add(asset.id, plugin->baseDir, asset.path);
             }
         }
+        textureCache->clear(); // an asset guid may now map to a different file
 
-        // The texture behind an asset guid may have changed: drop the cache.
-        for (auto& [path, texture] : textureCache) {
-            engine->getDevice().destroyTexture(texture);
-        }
-        textureCache.clear();
+        model = world::WorldModel::build(forms);
 
-        sword = forms.find<data::WeaponForm>(kSwordFormId);
-        swordTexture = sword ? textureFor(sword->sprite)
-                             : rhi::TextureHandle {};
-        LOG_INFO("World loaded: {} plugins, {} forms, {} conflicts",
-                 loadOrder.size(), forms.count(), report.conflicts.size());
-    }
+        if (!cellLoader) {
+            cellLoader.emplace(world, forms, model, spawner, categories);
+        } else {
+            cellLoader->unloadAll();
+        }
+        cellLoader->loadAll();
 
-    rhi::TextureHandle textureFor(const core::Guid& assetId) {
-        const auto path = assetDb.resolve(assetId);
-        if (!path) {
-            LOG_WARN("No asset for guid {}", assetId.toString());
-            return {};
+        // Point the editor at the first cell (the demo has a single one).
+        if (!model.cells().empty()) {
+            const data::FormHandle cellHandle = model.cells().front();
+            const data::Form* cellForm = forms.get(cellHandle);
+            editor->setActiveCell(cellLoader->cellEntity(cellHandle),
+                                  cellForm ? cellForm->id : core::Guid {});
+        } else {
+            editor->setActiveCell({}, {});
         }
-        if (const auto it = textureCache.find(path->string());
-            it != textureCache.end()) {
-            return it->second;
-        }
-        const auto image = assets::loadImageFile(*path);
-        if (!image) {
-            return {};
-        }
-        const auto texture = engine->getDevice().createTexture(
-            { .width = image->width, .height = image->height,
-              .filter = rhi::FilterMode::Nearest },
-            image->pixels.data());
-        textureCache.emplace(path->string(), texture);
-        return texture;
+
+        LOG_INFO("World rebuilt: {} plugins, {} forms, {} cells, {} conflicts",
+                 loadOrder.size(), forms.count(), model.cells().size(),
+                 report.conflicts.size());
     }
 
     engine::Engine* engine { nullptr };
@@ -189,10 +184,16 @@ private:
     data::FormDatabase forms;
     data::ResolveReport report;
     assets::AssetDatabase assetDb;
-    std::unordered_map<str, rhi::TextureHandle> textureCache;
+    world::WorldModel model;
 
-    const data::WeaponForm* sword { nullptr };
-    rhi::TextureHandle swordTexture {};
+    ecs::World world;
+    world::FormCategoryRegistry categories;
+    world::Spawner spawner;
+    std::optional<world::CellLoader> cellLoader;
+
+    uptr<game::TextureCache> textureCache;
+    uptr<game::WorldEditor> editor;
+
     rhi::TextureHandle checker {};
     f32 time { 0.0f };
 };

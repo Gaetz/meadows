@@ -1,0 +1,63 @@
+#include "world/streaming/CellLoader.hpp"
+
+namespace world {
+
+ecs::Entity CellLoader::loadCell(data::FormHandle cell) {
+    if (const auto it = loaded.find(cell.value); it != loaded.end()) {
+        return it->second;
+    }
+
+    ecs::Entity cellEntity = world.create();
+    loaded.emplace(cell.value, cellEntity);
+
+    SpawnContext ctx { world, forms, categories };
+    const u32 referenceTypeId = ReferenceForm::staticTypeInfo().id;
+    for (const data::FormHandle handle : model.referencesIn(cell)) {
+        const reflect::TypeInfo* type = forms.typeOf(handle);
+        const data::Form* form = forms.get(handle);
+        if (!type || !form || !type->isA(referenceTypeId)) {
+            continue;
+        }
+        const auto* reference = static_cast<const ReferenceForm*>(form);
+        if (!reference->enabled) {
+            continue; // disabled references are not spawned (the loader's call)
+        }
+        spawner.spawn(ctx, *reference, cellEntity);
+    }
+    return cellEntity;
+}
+
+void CellLoader::unloadCell(data::FormHandle cell) {
+    const auto it = loaded.find(cell.value);
+    if (it == loaded.end()) {
+        return;
+    }
+    ecs::Entity cellEntity = it->second;
+    world.handle().delete_with<ecs::InCell>(cellEntity); // the cell's references
+    cellEntity.destruct();
+    loaded.erase(it);
+}
+
+void CellLoader::loadAll() {
+    for (const data::FormHandle cell : model.cells()) {
+        loadCell(cell);
+    }
+}
+
+void CellLoader::unloadAll() {
+    vector<data::FormHandle> cells;
+    cells.reserve(loaded.size());
+    for (const auto& [value, entity] : loaded) {
+        cells.push_back(data::FormHandle { value });
+    }
+    for (const data::FormHandle cell : cells) {
+        unloadCell(cell);
+    }
+}
+
+ecs::Entity CellLoader::cellEntity(data::FormHandle cell) const {
+    const auto it = loaded.find(cell.value);
+    return it != loaded.end() ? it->second : ecs::Entity {};
+}
+
+} // namespace world

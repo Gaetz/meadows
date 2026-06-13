@@ -5,6 +5,7 @@
 add_library(meadows-runtime STATIC
     SceneSubmit.cpp
     TextureCache.cpp
+    WorldEditor.cpp
 )
 target_link_libraries(meadows-runtime PUBLIC meadows meadows-world)
 meadows_set_warnings(meadows-runtime)
