@@ -1,16 +1,20 @@
 add_executable(meadows-tests
     Main.cpp
     AbilitySystemTest.cpp
+    AiTest.cpp
     AssetsTest.cpp
     CellLoaderTest.cpp
+    CollisionTest.cpp
     CombatTest.cpp
     CookerTest.cpp
     EcsTest.cpp
+    FactionsTest.cpp
     FormsTest.cpp
     GameplayAbilityTest.cpp
     GameplayEffectsTest.cpp
     GameplayTagsTest.cpp
     GuidTest.cpp
+    InventoryTest.cpp
     JobsTest.cpp
     MovementTest.cpp
     PluginLoaderTest.cpp

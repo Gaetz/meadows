@@ -9,6 +9,9 @@ add_library(meadows-world STATIC
     scene/Components.cpp
     scene/Spawner.cpp
     scene/Movement.cpp
+    scene/Collision.cpp
+    ai/Pathfinding.cpp
+    ai/AiController.cpp
     streaming/CellLoader.cpp
 )
 

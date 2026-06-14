@@ -8,6 +8,8 @@ add_library(meadows-gameplay STATIC
     ability/GameplayEffects.cpp
     ability/GameplayAbility.cpp
     combat/Combat.cpp
+    inventory/Inventory.cpp
+    faction/Factions.cpp
 )
 
 target_link_libraries(meadows-gameplay PUBLIC meadows-data meadows-ecs)

@@ -400,7 +400,7 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 9 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
-> **CURRENT PHASE: 3** — update this line as work progresses.
+> **CURRENT PHASE: 4** — update this line as work progresses.
 > Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job
 > system, RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
 > Phase 1 done (2026-06-12): reflection, Forms, field-level plugin resolver,
@@ -495,12 +495,23 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   `performAttack`); Actor spawner wires GAS (world→gameplay edge); GAS tick +
 >   "Combat (GAS debug)" ImGui panel in `game/`. `tests/CombatTest.cpp`.
 >   *(done 2026-06-13)* — **GAS core (3a–3e) complete; visual run owed.**
-> Then the rest of Phase 3 (player controller [done], 2D collision/triggers,
-> inventory, AI grid A* + perception, factions = tags + relations table).
+> Rest of Phase 3 (all done — detail in `docs/PHASE-3.md`):
 > - [x] **Player controller + movement** — `platform::Input` (SDL behind a clean
->   header; `Engine::getInput()`), `Velocity` component + `applyMovement`
->   (`world/scene/Movement`), a `GameplayScene` moving a player with WASD.
->   `tests/MovementTest.cpp`. *(done 2026-06-13)*
+>   header; `Engine::getInput()`), `Velocity` + `applyMovement`
+>   (`world/scene/Movement`), `GameplayScene` moving a player with WASD.
+> - [x] **2D collision / triggers** — `Collider` + `world/scene/Collision`
+>   (AABB overlap, MTV resolve, trigger overlaps).
+> - [x] **Inventory / items / equipment** — `gameplay/inventory/Inventory`
+>   (`Inventory`/`Equipment`, add/remove/equip).
+> - [x] **AI** — `world/ai/` (namespace `ai`, in meadows-world to avoid the
+>   gameplay cycle): grid A* `findPath`, `Steering` (perception + seek),
+>   `AiAgent` + `updateChaseAi`.
+> - [x] **Factions (§6.1)** — `gameplay/faction/Factions`: membership = tags,
+>   `FactionRelationForm` table + `FactionRelations::standingBetween`.
+>
+> **Phase 3 done (2026-06-14).** 94 tests / 716 assertions green; full build
+> clean. GAS core + scene-stack harness + the five gameplay bricks above; demo
+> wired in `GameplayScene` (move/pickup/chase) + Plugin/Editor/Combat scenes.
 > - [x] **Harness: scene stack** — `game/Scene` + `game/SceneStack` (in
 >   `meadows-runtime`, above the engine): deferred push/pop/replace, `opaque` /
 >   `blocksUpdate` layering. Demos split into isolated scenes (`game/scenes/`:

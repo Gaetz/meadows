@@ -40,6 +40,7 @@ public:
     using WorldDemoScene::WorldDemoScene;
     void onEnter() override;
     void update(f32 dt) override;
+    void drawUi() override;
 
 private:
     ecs::Entity player {};

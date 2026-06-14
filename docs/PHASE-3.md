@@ -1,4 +1,4 @@
-# Phase 3 — Gameplay 2D (GAS core done; rest of Phase 3 in progress)
+# Phase 3 — Gameplay 2D (DONE 2026-06-14)
 
 > Journal of the Phase 3 implementation, same role as `docs/PHASE-1/2.md`. Read
 > it before touching `gameplay/` or the GAS systems. Re-read to resync after a
@@ -232,6 +232,44 @@ stays unchanged, still driving a single `engine::Game`).
   `main.cpp`. Suite green (82 cases / 673 assertions); `true-adventurer.exe`
   builds. Visual run owed (move the blue player with WASD).
 
-### Still to come
-2D collision/triggers, inventory/items/equipment, AI (grid A* + packages +
-perception), factions (tags + relations table).
+### 2D collision / triggers — DONE 2026-06-14
+`Collider` component (AABB half-extents + `trigger` flag, in
+`world/scene/Components`). `world/scene/Collision`: `aabbOverlap`,
+`minimumTranslation`, `resolveCollisions` (pushes dynamic Velocity+Collider
+entities out of solids by MTV), `forEachTriggerOverlap` (reports overlaps with
+trigger colliders — pickups/zones). Tests in `tests/CollisionTest.cpp`.
+
+### Inventory / items / equipment — DONE 2026-06-14
+`gameplay/inventory/Inventory`: `Inventory` component (runtime `vector<ItemStack>`,
+serialization Phase 5), reflected `Equipment` (equipped weapon guid),
+`addItem`/`removeItem`/`itemCount`/`equip`/`unequip`. Items are Forms referenced
+by guid. Tests in `tests/InventoryTest.cpp`. (Ownership deferred.)
+
+### AI (grid A* + perception + chase) — DONE 2026-06-14
+Lives in **`meadows-world`** (`world/ai/`, namespace `ai`): putting it in
+gameplay would cycle, since `meadows-world` already depends on
+`meadows-gameplay` and the AI touches `world::Transform`/`Velocity`. Pure
+`Grid` + `findPath` (4-connected A*, Manhattan); `Steering` (`withinRange`
+perception, `seek`); `AiAgent` reflected component + `updateChaseAi` (perceive →
+seek the target, else stop). Tests in `tests/AiTest.cpp`.
+
+### Factions — DONE 2026-06-14
+`gameplay/faction/Factions` (§6.1): membership is gameplay tags
+(`Faction.CityGuard`) on the entity — no faction component. `FactionRelationForm`
+(a Form, moddable: factionA/B tag names + relation) is the relations "table";
+`FactionRelations::build` aggregates them from a FormDatabase into a symmetric
+lookup; `standingBetween` (Enemy/Neutral/Ally, default Neutral). Tests in
+`tests/FactionsTest.cpp`.
+
+### Demo wiring
+`GameplayScene` now ties it together: the player (collides, carries an
+Inventory) moves with WASD; spawned actors get a chase `AiAgent` + a solid
+body and pursue the player; items become pickup triggers (walk over a sword →
+`addItem` + the entity is destroyed); an inventory panel lists items with an
+Equip button.
+
+---
+
+**Phase 3 complete (2026-06-14).** 94 test cases / 716 assertions green; full
+build clean; `true-adventurer.exe` builds. Visual runs (movement, combat,
+pickups, chase) owed to the dev.

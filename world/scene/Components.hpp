@@ -57,6 +57,18 @@ struct Velocity {
     REFLECT_END()
 };
 
+// A 2D axis-aligned box for collision. Solid colliders block movement; trigger
+// colliders only report overlaps (the §3 "simple custom 2D collision").
+struct Collider {
+    Vec2 halfExtents { 0.5f, 0.5f };
+    bool trigger { false };
+
+    REFLECT_BEGIN(Collider, void)
+        REFLECT_FIELD(halfExtents)
+        REFLECT_FIELD(trigger)
+    REFLECT_END()
+};
+
 // Links an entity back to its source records. `referenceId` is the persistent
 // identity (the ReferenceForm guid) that saves key on; `base`/`cell` are runtime
 // handles, deliberately NOT reflected (handles never persist — §2.5).
