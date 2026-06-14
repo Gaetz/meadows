@@ -1,14 +1,18 @@
 #include <doctest/doctest.h>
 
+#include <memory>
 #include <variant>
 
+#include "data/forms/FormDatabase.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
+#include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/event/EventBus.hpp"
 #include "script/ScriptVars.hpp"
 #include "script/Vm.hpp"
 
+using core::Guid;
 using namespace script;
 
 TEST_CASE("script: ScriptVars read/write through self.x") {
@@ -115,4 +119,52 @@ TEST_CASE("script: a Lua handler subscribes to the event bus") {
     const auto hits = vm.getNumber("hits");
     REQUIRE(hits.has_value());
     CHECK(*hits == 8.0); // 5 + 3; the OnDeath dispatch is ignored
+}
+
+TEST_CASE("script: a coroutine ability waits then applies an effect") {
+    const Guid damageId =
+        *Guid::fromString("d4000000-0000-4000-8000-000000000001");
+    data::FormDatabase db;
+    auto effect = std::make_unique<gameplay::EffectForm>();
+    effect->id = damageId;
+    effect->attribute = "damage";
+    effect->op = "add";
+    effect->magnitude = 30.0f;
+    effect->duration = "instant";
+    db.add(std::move(effect), gameplay::EffectForm::staticTypeInfo());
+
+    gameplay::GameplayTagRegistry tags;
+    gameplay::AttributeSet casterAttrs;
+    gameplay::AbilitySystem casterSys;
+    gameplay::initializeCurrent(casterSys, casterAttrs);
+    gameplay::AttributeSet targetAttrs;
+    gameplay::AbilitySystem targetSys;
+    gameplay::initializeCurrent(targetSys, targetAttrs);
+
+    Vm vm;
+    ScriptContext caster;
+    caster.attributes = &casterAttrs;
+    caster.abilitySystem = &casterSys;
+    caster.tags = &tags;
+    caster.forms = &db;
+    ScriptContext target;
+    target.attributes = &targetAttrs;
+    target.abilitySystem = &targetSys;
+    target.tags = &tags;
+    target.forms = &db;
+
+    vm.startCoroutine(
+        "wait(2.0)\n"
+        "target:applyEffect('d4000000-0000-4000-8000-000000000001')",
+        caster, target);
+    CHECK(vm.pendingCoroutines() == 1);
+    CHECK(gameplay::baseValueOf(targetAttrs, gameplay::attr("health")) == 100.0f);
+
+    vm.tickCoroutines(1.0f);
+    CHECK(vm.pendingCoroutines() == 1); // still waiting
+    CHECK(gameplay::baseValueOf(targetAttrs, gameplay::attr("health")) == 100.0f);
+
+    vm.tickCoroutines(1.5f); // 2.5s elapsed >= 2.0 → resume, apply, finish
+    CHECK(vm.pendingCoroutines() == 0);
+    CHECK(gameplay::baseValueOf(targetAttrs, gameplay::attr("health")) == 70.0f);
 }

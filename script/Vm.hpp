@@ -18,18 +18,24 @@ struct AbilitySystem;
 class GameplayTagRegistry;
 class EventBus;
 }
+namespace data {
+class FormDatabase;
+}
 
 namespace script {
 
 struct ScriptVars;
 
-// What `self` resolves against for one script run: the acting entity's
-// components. Any pointer may be null (the proxy degrades gracefully).
+// What `self` (or `target`) resolves against for one script run: the acting
+// entity's components. Any pointer may be null (the proxy degrades gracefully).
+// `attributes` is mutable so `self:applyEffect(...)` can route through the effect
+// pipeline (§2.9) — direct `self.<attr> = x` is still rejected.
 struct ScriptContext {
-    const gameplay::AttributeSet* attributes { nullptr }; // attribute reads (read-only)
-    gameplay::AbilitySystem* abilitySystem { nullptr };   // tags + current values
-    ScriptVars* scriptVars { nullptr };                   // self.x read/write
+    gameplay::AttributeSet* attributes { nullptr };
+    gameplay::AbilitySystem* abilitySystem { nullptr };
+    ScriptVars* scriptVars { nullptr };
     const gameplay::GameplayTagRegistry* tags { nullptr };
+    const data::FormDatabase* forms { nullptr }; // resolves effects for applyEffect
 };
 
 struct RunResult {
@@ -64,6 +70,20 @@ public:
     // Reads a global Lua number (inspection / tests); nullopt if absent or not
     // a number.
     std::optional<f64> getNumber(const std::string& name);
+
+    // --- Latent ability execution: Lua coroutines + a central scheduler (§2.8) ---
+
+    // Starts `code` as a coroutine with `self`/`target` bound. The script may
+    // call `wait(t)` to suspend for t game-seconds and `self:applyEffect(guid)`
+    // / `self:addTag(...)`. The contexts are held until the coroutine ends, so
+    // the referenced components must outlive it (cancel on entity death).
+    void startCoroutine(const std::string& code, ScriptContext self,
+                        ScriptContext target);
+
+    // Advances suspended coroutines by dt, resuming those whose wait elapsed.
+    void tickCoroutines(f32 dt);
+
+    size_t pendingCoroutines() const;
 
     // Deterministic RNG exposed to Lua as `rng()` -> [0, 1). Seed it from the
     // engine RNG so saves/replays reproduce.

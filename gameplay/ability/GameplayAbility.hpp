@@ -26,6 +26,8 @@ struct AbilityForm : data::Form {
     core::Guid cooldown;   // EffectForm applied to self; its grantedTag IS the
                            // cooldown tag checked on re-activation (optional)
     core::Guid effect;     // primary EffectForm applied to the target (optional)
+    str script;            // optional Lua coroutine run on activation (latent
+                           // logic: wait(t), self:applyEffect(...), …) — Phase 4
 
     REFLECT_BEGIN(AbilityForm, data::Form)
         REFLECT_FIELD(requiredTag)
@@ -33,6 +35,7 @@ struct AbilityForm : data::Form {
         REFLECT_FIELD(cost)
         REFLECT_FIELD(cooldown)
         REFLECT_FIELD(effect)
+        REFLECT_FIELD(script)
     REFLECT_END()
 };
 

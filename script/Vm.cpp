@@ -1,13 +1,16 @@
 #include "script/Vm.hpp"
 
+#include <list>
 #include <optional>
 #include <stdexcept>
 #include <variant>
 
 #include <sol/sol.hpp>
 
+#include "data/forms/FormDatabase.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
+#include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/event/EventBus.hpp"
 #include "script/ScriptVars.hpp"
@@ -106,6 +109,22 @@ struct ScriptSelf {
         }
     }
 
+    void applyEffect(const std::string& guid) {
+        if (!ctx || !ctx->forms || !ctx->attributes || !ctx->abilitySystem ||
+            !ctx->tags) {
+            return;
+        }
+        const auto id = core::Guid::fromString(guid);
+        if (!id) {
+            return;
+        }
+        if (const gameplay::EffectForm* effect =
+                ctx->forms->find<gameplay::EffectForm>(*id)) {
+            gameplay::applyEffect(*ctx->attributes, *ctx->abilitySystem, *effect,
+                                  *ctx->tags);
+        }
+    }
+
     void addTag(const std::string& name) {
         if (ctx && ctx->tags && ctx->abilitySystem) {
             if (const auto tag = ctx->tags->find(name)) {
@@ -133,13 +152,22 @@ struct ScriptSelf {
 } // namespace
 
 struct Vm::Impl {
+    struct Coro {
+        sol::thread thread;
+        sol::coroutine co;
+        ScriptContext self;
+        ScriptContext target;
+        f32 remaining { 0.0f };
+    };
+
     sol::state lua;
     u64 rngState { 0x9E3779B97F4A7C15ull };
+    std::list<Coro> coros; // suspended ability coroutines (stable addresses)
 };
 
 Vm::Vm() : impl(std::make_unique<Impl>()) {
     impl->lua.open_libraries(sol::lib::base, sol::lib::table, sol::lib::string,
-                             sol::lib::math);
+                             sol::lib::math, sol::lib::coroutine);
 
     // Sandbox (§8): no filesystem, OS, clock, dynamic loading, or
     // non-deterministic RNG. Randomness comes from the engine-seeded rng().
@@ -155,9 +183,13 @@ Vm::Vm() : impl(std::make_unique<Impl>()) {
 
     impl->lua.new_usertype<ScriptSelf>(
         "ScriptSelf", sol::meta_function::index, &ScriptSelf::index,
-        sol::meta_function::new_index, &ScriptSelf::newindex, "addTag",
-        &ScriptSelf::addTag, "removeTag", &ScriptSelf::removeTag, "hasTag",
-        &ScriptSelf::hasTag);
+        sol::meta_function::new_index, &ScriptSelf::newindex, "applyEffect",
+        &ScriptSelf::applyEffect, "addTag", &ScriptSelf::addTag, "removeTag",
+        &ScriptSelf::removeTag, "hasTag", &ScriptSelf::hasTag);
+
+    // `wait(t)` suspends the running coroutine for t game-seconds (the scheduler
+    // resumes it). Outside a coroutine it is a no-op error, swallowed by run().
+    impl->lua.script("function wait(t) return coroutine.yield(t or 0) end");
 }
 
 Vm::~Vm() = default;
@@ -225,6 +257,59 @@ std::optional<f64> Vm::getNumber(const std::string& name) {
         return object.as<f64>();
     }
     return std::nullopt;
+}
+
+void Vm::startCoroutine(const std::string& code, ScriptContext self,
+                        ScriptContext target) {
+    impl->coros.emplace_back();
+    Impl::Coro& coro = impl->coros.back();
+    coro.self = std::move(self);
+    coro.target = std::move(target);
+    coro.thread = sol::thread::create(impl->lua.lua_state());
+
+    const sol::load_result loaded = coro.thread.state().load(code);
+    if (!loaded.valid()) {
+        impl->coros.pop_back(); // compile error
+        return;
+    }
+    coro.co = sol::coroutine(loaded.get<sol::function>());
+
+    impl->lua["self"] = ScriptSelf { &coro.self };
+    impl->lua["target"] = ScriptSelf { &coro.target };
+    const sol::protected_function_result result = coro.co();
+    impl->lua["self"] = sol::nil;
+    impl->lua["target"] = sol::nil;
+    if (!result.valid() || coro.co.status() != sol::call_status::yielded) {
+        impl->coros.pop_back(); // finished or errored without a wait
+        return;
+    }
+    coro.remaining = static_cast<f32>(result.get<double>(0));
+}
+
+void Vm::tickCoroutines(f32 dt) {
+    for (auto it = impl->coros.begin(); it != impl->coros.end();) {
+        Impl::Coro& coro = *it;
+        coro.remaining -= dt;
+        if (coro.remaining > 0.0f) {
+            ++it;
+            continue;
+        }
+        impl->lua["self"] = ScriptSelf { &coro.self };
+        impl->lua["target"] = ScriptSelf { &coro.target };
+        const sol::protected_function_result result = coro.co();
+        impl->lua["self"] = sol::nil;
+        impl->lua["target"] = sol::nil;
+        if (!result.valid() || coro.co.status() != sol::call_status::yielded) {
+            it = impl->coros.erase(it); // finished or errored
+            continue;
+        }
+        coro.remaining = static_cast<f32>(result.get<double>(0));
+        ++it;
+    }
+}
+
+size_t Vm::pendingCoroutines() const {
+    return impl->coros.size();
 }
 
 void Vm::seedRng(u64 seed) {

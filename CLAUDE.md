@@ -548,8 +548,11 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   parent, ANDed) + Lua escape via a callback (no gameplay→script cycle);
 >   `conditionsPass` wired into `tryActivate` (optional `AbilityContext.eval`).
 >   `tests/ConditionTest.cpp`. *(done 2026-06-14)*
-> - [ ] **(4d) Full ability (Lua + tasks/wait)** · [ ] **(4e) Quests** ·
->   [ ] **(4f) Dialogue**.
+> - [x] **(4d) Full ability (Lua + tasks/wait)** — `AbilityForm.script` (Lua),
+>   a coroutine scheduler in `Vm` (`startCoroutine`/`tickCoroutines`, `wait(t)`),
+>   `self:applyEffect`. Activation conditions via 4c. `tests/ScriptTest.cpp`.
+>   *(done 2026-06-14)*
+> - [ ] **(4e) Quests** · [ ] **(4f) Dialogue**.
 
 ---
 

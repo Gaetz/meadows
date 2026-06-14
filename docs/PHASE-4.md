@@ -103,7 +103,25 @@ The condition evaluator must be usable by GAS abilities → it lives **low**
 - Tests `tests/ConditionTest.cpp` (each clause, negate, AND, ability gating) +
   an `evalPredicate` case in `tests/ScriptTest.cpp`. Suite green (105 cases /
   756 assertions).
-### (4d) Full GameplayAbility — TODO (Lua hook + coroutine scheduler `wait()` + activation conditions)
+### (4d) Full GameplayAbility — DONE 2026-06-14
+- `AbilityForm` gained a `script` field (optional Lua coroutine for latent/custom
+  logic). The "full ability" = `tryActivate` (gates + 4c conditions + cost +
+  cooldown + fixed effect) **plus** the script coroutine for `wait()`-driven
+  logic. Activation conditions already wired in 4c.
+- **Coroutine scheduler in `script::Vm`** (§2.8: Lua coroutines + a central
+  scheduler): `startCoroutine(code, self, target)` runs the script on a
+  `sol::thread`; `wait(t)` (global = `coroutine.yield(t)`) suspends; the entry is
+  stored in a `std::list` (stable addresses for the bound `ScriptContext`s).
+  `tickCoroutines(dt)` resumes due coroutines; `pendingCoroutines()`. **Needed
+  `sol::lib::coroutine` in the sandbox.** Note: contexts hold component pointers
+  for the coroutine's lifetime (safe while no structural ECS change / entity
+  alive during the wait).
+- `ScriptContext` extended: mutable `AttributeSet*` + a `FormDatabase*`, so
+  `self:applyEffect(guid)` resolves an `EffectForm` and routes through
+  `gameplay::applyEffect` (the §2.9-correct mutation path from Lua).
+- Tests in `tests/ScriptTest.cpp`: a "wait 2s then apply a damage effect to the
+  target" coroutine — pending while waiting, effect applied after the elapsed
+  tick. Suite green (106 cases / 762 assertions).
 ### (4e) Quests — TODO (records-by-id state machine; advance via events + conditions; aliases; data-task history)
 ### (4f) Dialogue — TODO (NPC/Player node graph; chunk runtime; condition-gated options; speakers; ImGui demo)
 
