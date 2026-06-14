@@ -453,9 +453,9 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >
 > Phase 2 done (build + 54 tests green; visual run validated by the dev).
 >
-> **Phase 3 in progress** (gameplay 2D; GAS core first). Architecture decided
-> with the dev after reading Unreal GAS (full rationale + brick journal in
-> `docs/PHASE-3.md` — read it before touching gameplay/GAS). Load-bearing:
+> **Phase 3 done** (2026-06-14) (gameplay 2D; GAS core first). Architecture
+> decided with the dev after reading Unreal GAS (full rationale + brick journal
+> in `docs/PHASE-3.md` — read it before touching gameplay/GAS). Load-bearing:
 > - **The simplified GAS core is inseparable**: AbilitySystem + AttributeSets +
 >   GameplayEffects + GameplayTags are mutually dependent — Phase 3 builds the
 >   whole core **+ a minimal GameplayAbility**; AbilityTasks / condition
@@ -518,6 +518,32 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   `WorldDemoScene` base + Plugin/WorldEdit/Combat); `main.cpp` is a thin
 >   `DemoApp` (stack + selector). Overlays will share a *session*, not own a
 >   world. `tests/SceneStackTest.cpp`. *(done 2026-06-13)*
+>
+> **Phase 4 in progress** (scripting, abilities, conditions, quests, dialogue).
+> Architecture decided with the dev (incl. lessons from Unreal's NarrativePro);
+> full rationale + brick journal in `docs/PHASE-4.md`. Load-bearing:
+> - **Lua = sol2, ONE shared VM**, scripts = stateless modules, `self` = entity
+>   handle; persistent state in reflected `ScriptVars`; **attributes read-only
+>   from Lua** (mutate via effects, §2.9); sandboxed + deterministic RNG (§8).
+> - **Latent `wait()` = Lua coroutines + a central scheduler** keyed by entity.
+> - **Conditions = structured data clauses + a Lua escape** — the shared
+>   evaluator (abilities, quests, dialogue, AI). **Events/actions** = structured
+>   list (addTag/applyEffect/advanceQuest/giveItem/startDialogue/runLua) — the
+>   GAS↔narrative bridge.
+> - **Quests/dialogue = decomposed records linked by id** (NarrativePro's
+>   node+Conditions+Events pattern, but each node a patchable Form; many records
+>   per file). No container type; new steps = new records + link patches.
+> - Libs: condition evaluator in `meadows-gameplay` (abilities use it);
+>   `meadows-script` (VM/events/scheduler); `meadows-narrative` (quests/dialogue).
+>
+> Bricks (dependency order; each lands green; STOP between each):
+> - [x] **(4a) Lua foundation** — `script/Vm` (sol2, sandboxed, deterministic
+>   `rng()`), `ScriptVars`, the `self` proxy (ScriptVars R/W, attribute reads,
+>   addTag/hasTag). Lib `meadows-script` (lua 5.4.8 + sol2 3.5.0 pinned).
+>   `tests/ScriptTest.cpp`. *(done 2026-06-14)*
+> - [ ] **(4b) Event dispatch** · [ ] **(4c) Condition evaluator** ·
+>   [ ] **(4d) Full ability (Lua + tasks/wait)** · [ ] **(4e) Quests** ·
+>   [ ] **(4f) Dialogue**.
 
 ---
 

@@ -51,6 +51,33 @@ if(TARGET flecs_static)
         INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_flecs_inc}")
 endif()
 
+# Lua (Phase 4 scripting). lua/lua ships no CMake; build a static lib from its
+# sources (same pattern as imgui/stb below). Exclude the interpreter/compiler
+# mains (lua.c, luac.c) and the single-file build (onelua.c).
+CPMAddPackage(
+    NAME lua
+    GITHUB_REPOSITORY lua/lua
+    GIT_TAG v5.4.8
+    DOWNLOAD_ONLY TRUE
+)
+file(GLOB lua_sources ${lua_SOURCE_DIR}/*.c)
+list(REMOVE_ITEM lua_sources
+    ${lua_SOURCE_DIR}/lua.c ${lua_SOURCE_DIR}/luac.c ${lua_SOURCE_DIR}/onelua.c)
+add_library(lua STATIC ${lua_sources})
+target_include_directories(lua SYSTEM PUBLIC ${lua_SOURCE_DIR})
+
+# sol2 — header-only C++ binding over Lua. Confined to the meadows-script target.
+CPMAddPackage(
+    NAME sol2
+    GITHUB_REPOSITORY ThePhD/sol2
+    GIT_TAG v3.5.0
+    DOWNLOAD_ONLY TRUE
+)
+add_library(sol2 INTERFACE)
+target_include_directories(sol2 SYSTEM INTERFACE ${sol2_SOURCE_DIR}/include)
+target_link_libraries(sol2 INTERFACE lua)
+target_compile_definitions(sol2 INTERFACE SOL_ALL_SAFETIES_ON=1)
+
 # stb has no tags: pinned by commit. Header-only; the implementation TU
 # lives in engine/assets/StbImpl.cpp.
 CPMAddPackage(
@@ -95,6 +122,7 @@ add_subdirectory(extern/glad)
 add_subdirectory(engine)
 add_subdirectory(data)
 add_subdirectory(gameplay)
+add_subdirectory(script)
 add_subdirectory(world)
 add_subdirectory(game)
 add_subdirectory(tools)

@@ -22,11 +22,12 @@ add_executable(meadows-tests
     ResolverTest.cpp
     SceneStackTest.cpp
     SceneSubmitTest.cpp
+    ScriptTest.cpp
     SpawnerTest.cpp
     WorldModelTest.cpp
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs
                       meadows-world meadows-runtime meadows-gameplay
-                      doctest::doctest)
+                      meadows-script doctest::doctest)
 meadows_set_warnings(meadows-tests)
 add_test(NAME meadows COMMAND meadows-tests)
