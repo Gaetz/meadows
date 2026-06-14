@@ -51,6 +51,11 @@ public:
     // Runs `code` with no `self` (global/module setup).
     RunResult run(const std::string& code);
 
+    // Evaluates `expr` as a boolean predicate with `self` bound (Lua truthiness:
+    // nil/false are false). Returns false on error. Feeds the condition
+    // evaluator's Lua escape (gameplay supplies this as a callback).
+    bool evalPredicate(const std::string& expr, ScriptContext& context);
+
     // Exposes a Lua `events` table — `events.on(name, fn)` subscribes a Lua
     // function to the bus; on dispatch it receives a table
     // {source, target, value, name, tag}. The bus must outlive this Vm.

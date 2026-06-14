@@ -11,6 +11,7 @@ add_library(meadows-gameplay STATIC
     inventory/Inventory.cpp
     faction/Factions.cpp
     event/EventBus.cpp
+    condition/Condition.cpp
 )
 
 target_link_libraries(meadows-gameplay PUBLIC meadows-data meadows-ecs)

@@ -1,6 +1,7 @@
 #include "gameplay/ability/GameplayAbility.hpp"
 
 #include "data/forms/FormTypeRegistry.hpp"
+#include "gameplay/condition/Condition.hpp"
 
 namespace gameplay {
 
@@ -20,6 +21,7 @@ bool canAfford(const AbilitySystem& caster, const EffectForm& cost) {
 void registerGameplayFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<EffectForm>();
     registry.registerFormType<AbilityForm>();
+    registry.registerFormType<ConditionForm>();
 }
 
 void grantAbility(AbilitySystem& system, const core::Guid& ability) {
@@ -42,6 +44,12 @@ bool tryActivate(const AbilityForm& ability,
         if (tag && casterSystem.tags.has(*tag)) {
             return false;
         }
+    }
+
+    // Data-driven activation conditions (4c), when an evaluation context is
+    // provided — the ability's ConditionForms must all pass.
+    if (ctx.eval && !conditionsPass(ctx.forms, ability.id, *ctx.eval)) {
+        return false;
     }
 
     // Cooldown: the cooldown effect's granted tag, if still present, blocks.

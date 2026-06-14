@@ -174,6 +174,24 @@ RunResult Vm::run(const std::string& code, ScriptContext& context) {
     return { true, {} };
 }
 
+bool Vm::evalPredicate(const std::string& expr, ScriptContext& context) {
+    impl->lua["self"] = ScriptSelf { &context };
+    const sol::protected_function_result result =
+        impl->lua.safe_script("return (" + expr + ")", sol::script_pass_on_error);
+    impl->lua["self"] = sol::nil;
+    if (!result.valid()) {
+        return false;
+    }
+    const sol::object value = result;
+    if (value.get_type() == sol::type::lua_nil) {
+        return false;
+    }
+    if (value.is<bool>()) {
+        return value.as<bool>();
+    }
+    return true; // any non-nil, non-false value is truthy
+}
+
 RunResult Vm::run(const std::string& code) {
     const sol::protected_function_result result =
         impl->lua.safe_script(code, sol::script_pass_on_error);

@@ -544,8 +544,12 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 > - [x] **(4b) Event dispatch** — `gameplay::EventBus` (deterministic, Lua-
 >   agnostic C++ handlers) + a Lua bridge (`events.on(name, fn)`).
 >   `tests/EventBusTest.cpp`. *(done 2026-06-14)*
-> - [ ] **(4c) Condition evaluator** · [ ] **(4d) Full ability (Lua + tasks/
->   wait)** · [ ] **(4e) Quests** · [ ] **(4f) Dialogue**.
+> - [x] **(4c) Condition evaluator** — `ConditionForm` clauses (records by
+>   parent, ANDed) + Lua escape via a callback (no gameplay→script cycle);
+>   `conditionsPass` wired into `tryActivate` (optional `AbilityContext.eval`).
+>   `tests/ConditionTest.cpp`. *(done 2026-06-14)*
+> - [ ] **(4d) Full ability (Lua + tasks/wait)** · [ ] **(4e) Quests** ·
+>   [ ] **(4f) Dialogue**.
 
 ---
 

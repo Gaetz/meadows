@@ -12,6 +12,8 @@ class FormTypeRegistry;
 
 namespace gameplay {
 
+struct EvalContext;
+
 // A minimal GameplayAbility (§6): an activatable action. Faithful to GAS in that
 // **cost and cooldown are themselves GameplayEffects**. Phase 3 keeps it flat
 // and data-only — no AbilityTasks, no latent `wait()`, no Lua (Phase 4). The
@@ -47,6 +49,9 @@ void grantAbility(AbilitySystem& system, const core::Guid& ability);
 struct AbilityContext {
     const data::FormDatabase& forms;
     const GameplayTagRegistry& tags;
+    // Optional: when set, the caster's ConditionForms (parent == ability.id)
+    // must also pass for activation. Null = Phase-3 behaviour (tags/cost only).
+    const EvalContext* eval { nullptr };
 };
 
 // Tries to activate `ability` from caster onto target (caster == target for a

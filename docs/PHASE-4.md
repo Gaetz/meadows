@@ -87,7 +87,22 @@ The condition evaluator must be usable by GAS abilities → it lives **low**
 - Tests: `tests/EventBusTest.cpp` (order, kind filtering, payload, unsubscribe)
   + a Lua-subscription case in `tests/ScriptTest.cpp`. Suite green (101 cases /
   739 assertions).
-### (4c) Condition evaluator — TODO (structured clauses + Lua escape; the shared engine)
+### (4c) Condition evaluator — DONE 2026-06-14
+- `gameplay/condition/Condition.hpp` + `.cpp`: `ConditionForm` (a Form — one
+  clause, linked to its node by `parent`; ANDed per node; `negate` flips it).
+  Clause kinds: `HasTag`, `AttributeAtLeast`, `AttributeAtMost`, `HasItem`,
+  `Lua`. `EvalContext` = the entity's `AbilitySystem`/`Inventory`/tag registry +
+  a **`luaPredicate` callback** (the Lua escape — gameplay must not depend on the
+  VM, so the script layer supplies the callback; no cycle). `evaluateClause` +
+  `conditionsPass(forms, node, ctx)` (AND; true if no clauses).
+- Wired into abilities: `AbilityContext` gained an optional `eval`; `tryActivate`
+  checks the ability's conditions when it is set (Phase-3 callers pass null →
+  unchanged). `ConditionForm` registered in `registerGameplayFormTypes`.
+- Script side: `Vm::evalPredicate(expr, ctx)` evaluates a boolean Lua expression
+  with `self` bound (the real backing for the `Lua` clause's callback).
+- Tests `tests/ConditionTest.cpp` (each clause, negate, AND, ability gating) +
+  an `evalPredicate` case in `tests/ScriptTest.cpp`. Suite green (105 cases /
+  756 assertions).
 ### (4d) Full GameplayAbility — TODO (Lua hook + coroutine scheduler `wait()` + activation conditions)
 ### (4e) Quests — TODO (records-by-id state machine; advance via events + conditions; aliases; data-task history)
 ### (4f) Dialogue — TODO (NPC/Player node graph; chunk runtime; condition-gated options; speakers; ImGui demo)

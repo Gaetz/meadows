@@ -85,6 +85,20 @@ TEST_CASE("script: deterministic rng; sandbox removes os") {
     CHECK_FALSE(vmA.run("return os.time()").ok); // os was removed
 }
 
+TEST_CASE("script: evalPredicate evaluates a boolean expression with self") {
+    Vm vm;
+    gameplay::AttributeSet attributes;
+    gameplay::AbilitySystem system;
+    gameplay::initializeCurrent(system, attributes);
+    ScriptContext ctx;
+    ctx.attributes = &attributes;
+    ctx.abilitySystem = &system;
+
+    CHECK(vm.evalPredicate("self.health > 50", ctx));
+    CHECK_FALSE(vm.evalPredicate("self.health < 50", ctx));
+    CHECK_FALSE(vm.evalPredicate("this is not valid lua ((", ctx)); // error → false
+}
+
 TEST_CASE("script: a Lua handler subscribes to the event bus") {
     Vm vm;
     gameplay::EventBus bus;
