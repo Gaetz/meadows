@@ -40,6 +40,10 @@ public:
         if (ImGui::Button("Gameplay (WASD)")) {
             stack.replace(std::make_unique<game::GameplayScene>(*engine));
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Narrative")) {
+            stack.replace(std::make_unique<game::NarrativeScene>(*engine));
+        }
         ImGui::End();
 
         stack.drawUi();

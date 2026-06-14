@@ -10,6 +10,8 @@
 #include "gameplay/ability/GameplayAbility.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/combat/Combat.hpp"
+#include "quest/Dialogue.hpp"
+#include "quest/Quest.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
 namespace game {
@@ -39,6 +41,8 @@ void WorldDemoScene::onEnter() {
     data::registerCoreFormTypes(types);
     world::registerWorldFormTypes(types);
     gameplay::registerGameplayFormTypes(types);
+    quest::registerQuestFormTypes(types);
+    quest::registerDialogueFormTypes(types);
     world::registerCoreCategories(categories);
     world::registerCoreSpawners(spawner);
     world::registerSceneComponents(world);

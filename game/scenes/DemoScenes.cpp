@@ -8,7 +8,9 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
+#include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/combat/Combat.hpp"
+#include "gameplay/condition/Condition.hpp"
 #include "gameplay/inventory/Inventory.hpp"
 #include "world/ai/AiController.hpp"
 #include "world/scene/Collision.hpp"
@@ -26,6 +28,18 @@ const core::Guid kStrikeAbility =
 // has its own asset.
 const core::Guid kPlayerSprite =
     *core::Guid::fromString("7c5e2d90-4f3a-4b18-a52e-c91d80f64b23");
+
+// Narrative content (defined in base.toml).
+const core::Guid kGuardDialogue =
+    *core::Guid::fromString("7d000000-0000-4000-8000-000000000001");
+const core::Guid kSlayQuest =
+    *core::Guid::fromString("7e000000-0000-4000-8000-000000000001");
+const core::Guid kSlayTask =
+    *core::Guid::fromString("7e000000-0000-4000-8000-0000000000d1");
+const core::Guid kReportState =
+    *core::Guid::fromString("7e000000-0000-4000-8000-00000000000c");
+const core::Guid kCopper =
+    *core::Guid::fromString("7f000000-0000-4000-8000-000000000001");
 
 } // namespace
 
@@ -293,6 +307,116 @@ void GameplayScene::drawUi() {
                                 : "?");
             }
         }
+    }
+    ImGui::End();
+}
+
+// --- NarrativeScene ---------------------------------------------------------
+
+void NarrativeScene::onEnter() {
+    WorldDemoScene::onEnter();
+    tags.registerTag("Status.Brave"); // gates the brag option
+    tags.registerTag("Quest.Active");  // mirrors quest state for dialogue gating
+    tags.registerTag("Quest.Ready");
+    dialogue.emplace(forms, bus);
+
+    // Accepting the guard's offer begins the quest; the bandit-death and
+    // report-to-guard events advance it (the second is fired by a dialogue
+    // option, the first by the debug button).
+    bus.subscribe(gameplay::eventKind("OnAcceptQuest"),
+                  [this](const gameplay::Event&) {
+                      quest::beginQuest(questLog, forms, kSlayQuest);
+                  });
+    const auto advance = [this](const gameplay::Event& event) {
+        quest::onQuestEvent(questLog, forms, event, tags);
+    };
+    bus.subscribe(gameplay::eventKind("OnBanditDeath"), advance);
+    bus.subscribe(gameplay::eventKind("OnReportToGuard"), advance);
+}
+
+void NarrativeScene::drawUi() {
+    // Mirror quest state into player tags so dialogue options can gate on it
+    // (the "Accept" option hides once active; "Report" appears once ready).
+    const bool questActive = quest::isActive(questLog, kSlayQuest);
+    const bool questReady =
+        questActive && quest::questState(questLog, kSlayQuest) == kReportState;
+    const auto syncTag = [&](const char* name, bool want) {
+        const auto tag = tags.find(name);
+        if (!tag) {
+            return;
+        }
+        const bool have = playerAbilities.tags.has(*tag);
+        if (want && !have) {
+            playerAbilities.tags.add(*tag, tags);
+        } else if (!want && have) {
+            playerAbilities.tags.remove(*tag, tags);
+        }
+    };
+    syncTag("Quest.Active", questActive);
+    syncTag("Quest.Ready", questReady);
+
+    // Reward on completion (once).
+    if (!rewarded && quest::questStatus(questLog, kSlayQuest) ==
+                         quest::QuestStatus::Succeeded) {
+        gameplay::addItem(playerInventory, kCopper, 200);
+        rewarded = true;
+    }
+
+    gameplay::EvalContext ctx;
+    ctx.abilitySystem = &playerAbilities;
+    ctx.tags = &tags;
+
+    ImGui::Begin("Narrative");
+
+    if (ImGui::Checkbox("Player is Brave (Status.Brave)", &brave)) {
+        if (const auto tag = tags.find("Status.Brave")) {
+            if (brave) {
+                playerAbilities.tags.add(*tag, tags);
+            } else {
+                playerAbilities.tags.remove(*tag, tags);
+            }
+        }
+    }
+    ImGui::Separator();
+
+    if (!dialogue->active()) {
+        if (ImGui::Button("Talk to the Guard")) {
+            dialogue->start(kGuardDialogue);
+        }
+    } else if (const quest::DialogueNodeForm* line = dialogue->currentLine()) {
+        ImGui::TextWrapped("%s: %s", line->speaker.c_str(), line->text.c_str());
+        ImGui::Spacing();
+        const auto options = dialogue->options(ctx);
+        for (const quest::DialogueNodeForm* option : options) {
+            if (ImGui::Button(option->text.c_str())) {
+                dialogue->select(*option);
+                break; // options just changed
+            }
+        }
+        if (options.empty() && ImGui::Button("(End conversation)")) {
+            dialogue->end();
+        }
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Journal:");
+    const quest::QuestStatus status = quest::questStatus(questLog, kSlayQuest);
+    if (status == quest::QuestStatus::Succeeded) {
+        ImGui::BulletText("Slay the Bandits - COMPLETE");
+    } else if (questReady) {
+        ImGui::BulletText("Slay the Bandits - return to the guard");
+    } else if (questActive) {
+        ImGui::BulletText("Slay the Bandits - %d / 2 bandits defeated",
+                          quest::taskProgress(questLog, kSlayQuest, kSlayTask));
+    } else {
+        ImGui::TextDisabled("(no active quests - talk to the Guard)");
+    }
+    ImGui::Text("Copper coins: %d",
+                gameplay::itemCount(playerInventory, kCopper));
+
+    ImGui::Separator();
+    if (ImGui::Button("Debug: a bandit was defeated")) {
+        bus.dispatch({ gameplay::eventKind("OnBanditDeath") });
     }
     ImGui::End();
 }

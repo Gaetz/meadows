@@ -1,4 +1,4 @@
-# Phase 4 — Scripting, abilities, conditions, quests, dialogue (IN PROGRESS)
+# Phase 4 — Scripting, abilities, conditions, quests, dialogue (DONE 2026-06-14)
 
 > Journal of the Phase 4 implementation, same role as `docs/PHASE-1/2/3.md`.
 > Read before touching `script/`, the condition evaluator, or `meadows-narrative`.
@@ -122,8 +122,49 @@ The condition evaluator must be usable by GAS abilities → it lives **low**
 - Tests in `tests/ScriptTest.cpp`: a "wait 2s then apply a damage effect to the
   target" coroutine — pending while waiting, effect applied after the elapsed
   tick. Suite green (106 cases / 762 assertions).
-### (4e) Quests — TODO (records-by-id state machine; advance via events + conditions; aliases; data-task history)
-### (4f) Dialogue — TODO (NPC/Player node graph; chunk runtime; condition-gated options; speakers; ImGui demo)
+### (4e) Quests — DONE 2026-06-14
+- New lib **`meadows-narrative`** (`quest/`, deps gameplay + data). `quest/Quest`:
+  `QuestForm`/`QuestStateForm`/`QuestBranchForm`/`QuestTaskForm` — NarrativePro's
+  state machine decomposed into id-linked records (state → branches → tasks).
+  Runtime `QuestLog` (current state + per-task progress + status). `beginQuest`;
+  `onQuestEvent` progresses matching tasks (by event name + optional ancestor-
+  aware tag filter) → takes a completed branch → enters its destination →
+  Success/Failure finish. Queries `isActive`/`questState`/`taskProgress`/
+  `questStatus`. `registerQuestFormTypes`.
+- Tests `tests/QuestTest.cpp`: a "slay 2 bandits" quest progressing on tagged
+  `OnDeath` events (wrong tag / wrong kind ignored) → Succeeded.
+
+### (4f) Dialogue — DONE 2026-06-14
+- `quest/Dialogue`: `DialogueForm` (rootNode) + `DialogueNodeForm` (parent,
+  speaker, text, optional `event`, order) — a node tree by id. `DialogueRunner`:
+  `start`/`currentLine`/`options(ctx)`/`select`/`end`. NPC lines + Player options;
+  options are **gated by the 4c condition evaluator**; entering a node **dispatches
+  its `event`** (4b) so quests/scripts react. Single-player (no replication/party).
+- Tests `tests/DialogueTest.cpp`: chunk flow, a condition-gated option appearing
+  when a tag is granted, `OnAccept` fired on select, advance to the NPC reply.
+
+### Narrative demo — `game/scenes/NarrativeScene`
+A two-step quest with a turn-in and reward, all in moddable records
+(`base.toml`):
+- The guard offers "Slay the Bandits"; the **Accept** option is gated to hide
+  once the quest is active (a negated `HasTag Quest.Active`), **Brag** by
+  `Status.Brave` (a checkbox), **Report** by `Quest.Ready`.
+- Accepting fires `OnAcceptQuest` → `beginQuest`. The "bandit defeated" debug
+  button dispatches `OnBanditDeath` (×2) → the quest reaches the intermediate
+  **Report** state. Returning to the guard and picking **"The bandits are dealt
+  with."** fires `OnReportToGuard` → the quest enters its `Success` state
+  (`QuestStatus::Succeeded`) and the scene awards **200 copper** (an `Inventory`).
+- The scene mirrors quest state into `Quest.Active`/`Quest.Ready` tags so the
+  dialogue gates on it through the existing `HasTag` clause (no quest-aware
+  condition clause needed — kept the gameplay→narrative edge out). Form types
+  registered in `WorldDemoScene::onEnter`; selector button in `main.cpp`.
+
+---
+
+**Phase 4 complete (2026-06-14).** 108 test cases / 783 assertions green; full
+build clean; `true-adventurer.exe` builds. New libs: `meadows-script`,
+`meadows-narrative`. Visual run of the Narrative/Combat/Gameplay scenes owed to
+the dev.
 
 ## Out of scope (Phase 5+ / deferred)
 Save serialization of runtime state (ScriptVars/QuestLog/active effects) → Phase

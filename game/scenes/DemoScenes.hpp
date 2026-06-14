@@ -1,7 +1,14 @@
 #pragma once
 
+#include <optional>
+
 #include "game/WorldEditor.hpp"
 #include "game/scenes/WorldDemoScene.hpp"
+#include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/event/EventBus.hpp"
+#include "gameplay/inventory/Inventory.hpp"
+#include "quest/Dialogue.hpp"
+#include "quest/Quest.hpp"
 
 namespace game {
 
@@ -44,6 +51,25 @@ public:
 
 private:
     ecs::Entity player {};
+};
+
+// Demonstrates the narrative layer (Phase 4): a guard offers a quest through a
+// dialogue (one option is condition-gated), accepting it begins the quest via an
+// event, and a debug button advances/completes it.
+class NarrativeScene : public WorldDemoScene {
+public:
+    using WorldDemoScene::WorldDemoScene;
+    void onEnter() override;
+    void drawUi() override;
+
+private:
+    gameplay::EventBus bus;
+    quest::QuestLog questLog;
+    std::optional<quest::DialogueRunner> dialogue;
+    gameplay::AbilitySystem playerAbilities; // condition context for the player
+    gameplay::Inventory playerInventory;     // receives the quest reward
+    bool brave { false };
+    bool rewarded { false };
 };
 
 } // namespace game

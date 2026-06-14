@@ -124,3 +124,187 @@ editorId = "Dummy_A"
 baseForm = "5a000000-0000-4000-8000-000000000001"
 cell = "22220000-0000-4000-8000-000000000000"
 position = [0.0, 3.0, 0.0]
+
+# --- Narrative (Phase 4): a dialogue that offers a quest, and the quest --------
+
+[[records]]
+form = "7d000000-0000-4000-8000-000000000001"
+type = "DialogueForm"
+new = true
+[records.fields]
+displayName = "Guard greeting"
+rootNode = "7d000000-0000-4000-8000-00000000000a"
+
+[[records]]
+form = "7d000000-0000-4000-8000-00000000000a"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+editorId = "GuardGreeting"
+speaker = "Guard"
+text = "Adventurer! Bandits plague the road. Will you help?"
+
+[[records]]
+form = "7d000000-0000-4000-8000-0000000000b1"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+editorId = "Accept"
+parent = "7d000000-0000-4000-8000-00000000000a"
+speaker = "Player"
+text = "I'll deal with them."
+event = "OnAcceptQuest"
+order = 0
+
+[[records]]
+form = "7d000000-0000-4000-8000-0000000000b2"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+editorId = "Brag"
+parent = "7d000000-0000-4000-8000-00000000000a"
+speaker = "Player"
+text = "I fear nothing!"
+order = 1
+
+[[records]]
+form = "7d000000-0000-4000-8000-0000000000c1"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+editorId = "Thanks"
+parent = "7d000000-0000-4000-8000-0000000000b1"
+speaker = "Guard"
+text = "You have my thanks."
+
+[[records]]
+form = "7d000000-0000-4000-8000-0000000000c2"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+editorId = "BragReply"
+parent = "7d000000-0000-4000-8000-0000000000b2"
+speaker = "Guard"
+text = "Bold words. Prove it."
+
+# The brag option only appears if the player has Status.Brave.
+[[records]]
+form = "7d000000-0000-4000-8000-0000000000d2"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "7d000000-0000-4000-8000-0000000000b2"
+kind = "HasTag"
+tag = "Status.Brave"
+
+[[records]]
+form = "7e000000-0000-4000-8000-000000000001"
+type = "QuestForm"
+new = true
+[records.fields]
+displayName = "Slay the Bandits"
+startState = "7e000000-0000-4000-8000-00000000000a"
+
+[[records]]
+form = "7e000000-0000-4000-8000-00000000000a"
+type = "QuestStateForm"
+new = true
+[records.fields]
+quest = "7e000000-0000-4000-8000-000000000001"
+kind = "Regular"
+
+[[records]]
+form = "7e000000-0000-4000-8000-00000000000b"
+type = "QuestStateForm"
+new = true
+[records.fields]
+quest = "7e000000-0000-4000-8000-000000000001"
+kind = "Success"
+
+[[records]]
+form = "7e000000-0000-4000-8000-0000000000c1"
+type = "QuestBranchForm"
+new = true
+[records.fields]
+state = "7e000000-0000-4000-8000-00000000000a"
+destination = "7e000000-0000-4000-8000-00000000000c"
+
+[[records]]
+form = "7e000000-0000-4000-8000-0000000000d1"
+type = "QuestTaskForm"
+new = true
+[records.fields]
+branch = "7e000000-0000-4000-8000-0000000000c1"
+displayName = "Defeat bandits"
+event = "OnBanditDeath"
+required = 2
+
+# Step 2: return to the guard to turn the quest in.
+[[records]]
+form = "7e000000-0000-4000-8000-00000000000c"
+type = "QuestStateForm"
+new = true
+[records.fields]
+quest = "7e000000-0000-4000-8000-000000000001"
+kind = "Regular"
+
+[[records]]
+form = "7e000000-0000-4000-8000-0000000000c2"
+type = "QuestBranchForm"
+new = true
+[records.fields]
+state = "7e000000-0000-4000-8000-00000000000c"
+destination = "7e000000-0000-4000-8000-00000000000b"
+
+[[records]]
+form = "7e000000-0000-4000-8000-0000000000d2"
+type = "QuestTaskForm"
+new = true
+[records.fields]
+branch = "7e000000-0000-4000-8000-0000000000c2"
+displayName = "Report to the guard"
+event = "OnReportToGuard"
+required = 1
+
+# Dialogue: "Accept" only before the quest is active; "Report" only once the
+# bandits are dead (the scene mirrors quest state into Quest.Active/Quest.Ready).
+[[records]]
+form = "7d000000-0000-4000-8000-0000000000e1"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "7d000000-0000-4000-8000-0000000000b1"
+kind = "HasTag"
+tag = "Quest.Active"
+negate = true
+
+[[records]]
+form = "7d000000-0000-4000-8000-0000000000b3"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+editorId = "Report"
+parent = "7d000000-0000-4000-8000-00000000000a"
+speaker = "Player"
+text = "The bandits are dealt with."
+event = "OnReportToGuard"
+order = 0
+
+[[records]]
+form = "7d000000-0000-4000-8000-0000000000e3"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "7d000000-0000-4000-8000-0000000000b3"
+kind = "HasTag"
+tag = "Quest.Ready"
+
+[[records]]
+form = "7d000000-0000-4000-8000-0000000000c3"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+editorId = "ReportReply"
+parent = "7d000000-0000-4000-8000-0000000000b3"
+speaker = "Guard"
+text = "Excellent! Here are 200 copper for your trouble."

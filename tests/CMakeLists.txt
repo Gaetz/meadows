@@ -8,6 +8,7 @@ add_executable(meadows-tests
     CombatTest.cpp
     ConditionTest.cpp
     CookerTest.cpp
+    DialogueTest.cpp
     EcsTest.cpp
     EventBusTest.cpp
     FactionsTest.cpp
@@ -20,6 +21,7 @@ add_executable(meadows-tests
     JobsTest.cpp
     MovementTest.cpp
     PluginLoaderTest.cpp
+    QuestTest.cpp
     ReflectTest.cpp
     ResolverTest.cpp
     SceneStackTest.cpp
@@ -30,6 +32,6 @@ add_executable(meadows-tests
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs
                       meadows-world meadows-runtime meadows-gameplay
-                      meadows-script doctest::doctest)
+                      meadows-script meadows-narrative doctest::doctest)
 meadows_set_warnings(meadows-tests)
 add_test(NAME meadows COMMAND meadows-tests)

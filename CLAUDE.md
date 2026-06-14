@@ -400,7 +400,7 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 9 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
-> **CURRENT PHASE: 4** — update this line as work progresses.
+> **CURRENT PHASE: 5** — update this line as work progresses.
 > Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job
 > system, RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
 > Phase 1 done (2026-06-12): reflection, Forms, field-level plugin resolver,
@@ -519,9 +519,10 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   `DemoApp` (stack + selector). Overlays will share a *session*, not own a
 >   world. `tests/SceneStackTest.cpp`. *(done 2026-06-13)*
 >
-> **Phase 4 in progress** (scripting, abilities, conditions, quests, dialogue).
-> Architecture decided with the dev (incl. lessons from Unreal's NarrativePro);
-> full rationale + brick journal in `docs/PHASE-4.md`. Load-bearing:
+> **Phase 4 done** (2026-06-14) (scripting, abilities, conditions, quests,
+> dialogue). Architecture decided with the dev (incl. lessons from Unreal's
+> NarrativePro); full rationale + brick journal in `docs/PHASE-4.md`.
+> Load-bearing:
 > - **Lua = sol2, ONE shared VM**, scripts = stateless modules, `self` = entity
 >   handle; persistent state in reflected `ScriptVars`; **attributes read-only
 >   from Lua** (mutate via effects, §2.9); sandboxed + deterministic RNG (§8).
@@ -552,7 +553,17 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   a coroutine scheduler in `Vm` (`startCoroutine`/`tickCoroutines`, `wait(t)`),
 >   `self:applyEffect`. Activation conditions via 4c. `tests/ScriptTest.cpp`.
 >   *(done 2026-06-14)*
-> - [ ] **(4e) Quests** · [ ] **(4f) Dialogue**.
+> - [x] **(4e) Quests** — `quest/Quest` (Quest/State/Branch/Task forms by id;
+>   `QuestLog`; `onQuestEvent` advances tasks on events → branches → Success/
+>   Failure). Lib `meadows-narrative`. `tests/QuestTest.cpp`. *(done 2026-06-14)*
+> - [x] **(4f) Dialogue** — `quest/Dialogue` (DialogueForm + DialogueNodeForm by
+>   id; `DialogueRunner` chunk flow; condition-gated options; events on
+>   enter/select). `tests/DialogueTest.cpp`. *(done 2026-06-14)*
+>
+> **Phase 4 done (2026-06-14).** 108 tests / 783 assertions green; full build
+> clean. A `NarrativeScene` demo (guard dialogue offers a quest; condition-gated
+> option; accepting starts the quest; debug button advances it) is wired in
+> `game/` alongside the other scenes.
 
 ---
 

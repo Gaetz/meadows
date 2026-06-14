@@ -16,7 +16,8 @@ add_executable(true-adventurer
     scenes/WorldDemoScene.cpp
     scenes/DemoScenes.cpp
 )
-target_link_libraries(true-adventurer PRIVATE meadows-runtime meadows-data)
+target_link_libraries(true-adventurer PRIVATE meadows-runtime meadows-data
+                      meadows-narrative)
 meadows_set_warnings(true-adventurer)
 
 # Game data (plugins + assets) ships next to the executable.
