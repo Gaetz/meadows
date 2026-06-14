@@ -8,6 +8,7 @@ add_executable(meadows-tests
     CombatTest.cpp
     CookerTest.cpp
     EcsTest.cpp
+    EventBusTest.cpp
     FactionsTest.cpp
     FormsTest.cpp
     GameplayAbilityTest.cpp

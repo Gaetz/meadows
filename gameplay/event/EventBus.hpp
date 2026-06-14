@@ -1,0 +1,55 @@
+#pragma once
+
+#include <functional>
+#include <string_view>
+
+#include "engine/core/Defines.hpp"
+#include "engine/core/Hash.hpp"
+#include "engine/ecs/World.hpp"
+#include "gameplay/ability/GameplayTags.hpp"
+
+// The gameplay event bus (Phase 4, brick 4b). A deterministic dispatcher that
+// quests, scripts and abilities react to. It is Lua-agnostic — handlers are
+// plain C++ callbacks; `meadows-script` registers Lua-forwarding handlers.
+// Dispatch order = subscription order (§8 determinism).
+
+namespace gameplay {
+
+using EventKind = u32; // fnv1a of the event name, e.g. "OnDeath"
+inline EventKind eventKind(std::string_view name) { return core::fnv1a(name); }
+
+// A generic gameplay event. The fixed payload (source/target/tag/value/name)
+// covers the common cases (hit, death, activate, trigger, task progress…)
+// without a typed struct per event, and maps cleanly to a Lua table.
+struct Event {
+    EventKind kind { 0 };
+    ecs::Entity source {};      // who caused it (attacker, activator)
+    ecs::Entity target {};      // who it happened to (victim, activated)
+    GameplayTag tag {};         // optional categorizing tag
+    f32 value { 0.0f };         // optional scalar (damage, progress…)
+    str name;                   // optional string arg (e.g. a data-task arg)
+};
+
+using EventHandler = std::function<void(const Event&)>;
+using SubscriptionId = u32;
+
+class EventBus {
+public:
+    SubscriptionId subscribe(EventKind kind, EventHandler handler);
+    void unsubscribe(SubscriptionId id);
+
+    // Calls every handler for `event.kind`, in subscription order. Re-entrant:
+    // handlers added/removed during dispatch take effect on the next dispatch.
+    void dispatch(const Event& event) const;
+
+private:
+    struct Sub {
+        SubscriptionId id;
+        EventKind kind;
+        EventHandler handler;
+    };
+    vector<Sub> subs;
+    SubscriptionId nextId { 1 };
+};
+
+} // namespace gameplay

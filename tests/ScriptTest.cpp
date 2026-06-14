@@ -5,6 +5,7 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/event/EventBus.hpp"
 #include "script/ScriptVars.hpp"
 #include "script/Vm.hpp"
 
@@ -82,4 +83,22 @@ TEST_CASE("script: deterministic rng; sandbox removes os") {
     CHECK(std::get<f32>(varsB.vars.at("r")) == first); // same seed → same draw
 
     CHECK_FALSE(vmA.run("return os.time()").ok); // os was removed
+}
+
+TEST_CASE("script: a Lua handler subscribes to the event bus") {
+    Vm vm;
+    gameplay::EventBus bus;
+    vm.bindEvents(bus);
+
+    REQUIRE(vm.run("hits = 0\n"
+                   "events.on('OnHit', function(e) hits = hits + e.value end)")
+                .ok);
+
+    bus.dispatch({ gameplay::eventKind("OnHit"), {}, {}, {}, 5.0f, "" });
+    bus.dispatch({ gameplay::eventKind("OnHit"), {}, {}, {}, 3.0f, "" });
+    bus.dispatch({ gameplay::eventKind("OnDeath"), {}, {}, {}, 99.0f, "" });
+
+    const auto hits = vm.getNumber("hits");
+    REQUIRE(hits.has_value());
+    CHECK(*hits == 8.0); // 5 + 3; the OnDeath dispatch is ignored
 }

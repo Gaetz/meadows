@@ -9,6 +9,7 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/event/EventBus.hpp"
 #include "script/ScriptVars.hpp"
 
 namespace script {
@@ -181,6 +182,31 @@ RunResult Vm::run(const std::string& code) {
         return { false, err.what() };
     }
     return { true, {} };
+}
+
+void Vm::bindEvents(gameplay::EventBus& bus) {
+    sol::table events = impl->lua.create_named_table("events");
+    events.set_function(
+        "on", [this, &bus](const std::string& name, sol::protected_function fn) {
+            bus.subscribe(gameplay::eventKind(name),
+                          [this, fn](const gameplay::Event& event) {
+                              sol::table payload = impl->lua.create_table();
+                              payload["source"] = event.source.id();
+                              payload["target"] = event.target.id();
+                              payload["value"] = event.value;
+                              payload["name"] = event.name;
+                              payload["tag"] = event.tag.id;
+                              (void)fn(payload); // errors swallowed for 4b
+                          });
+        });
+}
+
+std::optional<f64> Vm::getNumber(const std::string& name) {
+    const sol::object object = impl->lua[name];
+    if (object.get_type() == sol::type::number) {
+        return object.as<f64>();
+    }
+    return std::nullopt;
 }
 
 void Vm::seedRng(u64 seed) {

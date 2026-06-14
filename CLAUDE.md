@@ -541,9 +541,11 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   `rng()`), `ScriptVars`, the `self` proxy (ScriptVars R/W, attribute reads,
 >   addTag/hasTag). Lib `meadows-script` (lua 5.4.8 + sol2 3.5.0 pinned).
 >   `tests/ScriptTest.cpp`. *(done 2026-06-14)*
-> - [ ] **(4b) Event dispatch** · [ ] **(4c) Condition evaluator** ·
->   [ ] **(4d) Full ability (Lua + tasks/wait)** · [ ] **(4e) Quests** ·
->   [ ] **(4f) Dialogue**.
+> - [x] **(4b) Event dispatch** — `gameplay::EventBus` (deterministic, Lua-
+>   agnostic C++ handlers) + a Lua bridge (`events.on(name, fn)`).
+>   `tests/EventBusTest.cpp`. *(done 2026-06-14)*
+> - [ ] **(4c) Condition evaluator** · [ ] **(4d) Full ability (Lua + tasks/
+>   wait)** · [ ] **(4e) Quests** · [ ] **(4f) Dialogue**.
 
 ---
 

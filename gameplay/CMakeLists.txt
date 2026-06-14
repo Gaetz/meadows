@@ -10,6 +10,7 @@ add_library(meadows-gameplay STATIC
     combat/Combat.cpp
     inventory/Inventory.cpp
     faction/Factions.cpp
+    event/EventBus.cpp
 )
 
 target_link_libraries(meadows-gameplay PUBLIC meadows-data meadows-ecs)

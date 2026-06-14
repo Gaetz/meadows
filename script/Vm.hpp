@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "engine/core/Defines.hpp"
@@ -15,6 +16,7 @@ namespace gameplay {
 struct AttributeSet;
 struct AbilitySystem;
 class GameplayTagRegistry;
+class EventBus;
 }
 
 namespace script {
@@ -48,6 +50,15 @@ public:
 
     // Runs `code` with no `self` (global/module setup).
     RunResult run(const std::string& code);
+
+    // Exposes a Lua `events` table — `events.on(name, fn)` subscribes a Lua
+    // function to the bus; on dispatch it receives a table
+    // {source, target, value, name, tag}. The bus must outlive this Vm.
+    void bindEvents(gameplay::EventBus& bus);
+
+    // Reads a global Lua number (inspection / tests); nullopt if absent or not
+    // a number.
+    std::optional<f64> getNumber(const std::string& name);
 
     // Deterministic RNG exposed to Lua as `rng()` -> [0, 1). Seed it from the
     // engine RNG so saves/replays reproduce.

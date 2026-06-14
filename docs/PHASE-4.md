@@ -74,7 +74,19 @@ The condition evaluator must be usable by GAS abilities → it lives **low**
   read-only (write fails, value unchanged), addTag/hasTag, deterministic rng +
   `os` removed. Suite green (98 cases / 732 assertions); build clean.
 
-### (4b) Event dispatch — TODO
+### (4b) Event dispatch — DONE 2026-06-14
+- `gameplay/event/EventBus.hpp` + `.cpp`: `Event` (kind = fnv1a of the name +
+  generic payload: source/target entities, tag, value, name — covers
+  hit/death/activate/trigger/task-progress without a typed struct per event).
+  `EventBus::subscribe/unsubscribe/dispatch`; **Lua-agnostic** (`std::function`
+  handlers); **deterministic** dispatch in subscription order; re-entrant
+  (snapshots matching handlers before calling).
+- Lua bridge in `script::Vm`: `bindEvents(bus)` exposes `events.on(name, fn)` —
+  a Lua handler subscribes and receives a `{source, target, value, name, tag}`
+  table on dispatch. `getNumber(global)` added for inspection/tests.
+- Tests: `tests/EventBusTest.cpp` (order, kind filtering, payload, unsubscribe)
+  + a Lua-subscription case in `tests/ScriptTest.cpp`. Suite green (101 cases /
+  739 assertions).
 ### (4c) Condition evaluator — TODO (structured clauses + Lua escape; the shared engine)
 ### (4d) Full GameplayAbility — TODO (Lua hook + coroutine scheduler `wait()` + activation conditions)
 ### (4e) Quests — TODO (records-by-id state machine; advance via events + conditions; aliases; data-task history)
