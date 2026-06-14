@@ -1,36 +1,63 @@
 #include "gameplay/condition/Condition.hpp"
 
+#include <string_view>
+#include <unordered_map>
+
 #include "data/forms/FormDatabase.hpp"
 
 namespace gameplay {
 
-bool evaluateClause(const ConditionForm& clause, const EvalContext& context) {
-    bool result = false;
-    if (clause.kind == "HasTag") {
-        if (context.abilitySystem && context.tags) {
-            if (const auto tag = context.tags->find(clause.tag)) {
-                result = context.abilitySystem->tags.has(*tag);
-            }
-        }
-    } else if (clause.kind == "AttributeAtLeast") {
-        if (context.abilitySystem) {
-            result = currentValueOf(*context.abilitySystem, attr(clause.attribute)) >=
-                     clause.value;
-        }
-    } else if (clause.kind == "AttributeAtMost") {
-        if (context.abilitySystem) {
-            result = currentValueOf(*context.abilitySystem, attr(clause.attribute)) <=
-                     clause.value;
-        }
-    } else if (clause.kind == "HasItem") {
-        if (context.inventory) {
-            const i32 needed =
-                clause.value > 0.0f ? static_cast<i32>(clause.value) : 1;
-            result = itemCount(*context.inventory, clause.item) >= needed;
-        }
-    } else if (clause.kind == "Lua") {
-        result = context.luaPredicate ? context.luaPredicate(clause.lua) : false;
+namespace {
+
+// One evaluator per clause kind. Registering a new kind is adding an entry to
+// the table below — the dispatch stays open for extension, closed for
+// modification (OCP), with no growing if/else chain.
+bool hasTag(const ConditionForm& clause, const EvalContext& ctx) {
+    if (!ctx.abilitySystem || !ctx.tags) {
+        return false;
     }
+    const auto tag = ctx.tags->find(clause.tag);
+    return tag && ctx.abilitySystem->tags.has(*tag);
+}
+
+bool attributeAtLeast(const ConditionForm& clause, const EvalContext& ctx) {
+    return ctx.abilitySystem &&
+           currentValueOf(*ctx.abilitySystem, attr(clause.attribute)) >= clause.value;
+}
+
+bool attributeAtMost(const ConditionForm& clause, const EvalContext& ctx) {
+    return ctx.abilitySystem &&
+           currentValueOf(*ctx.abilitySystem, attr(clause.attribute)) <= clause.value;
+}
+
+bool hasItem(const ConditionForm& clause, const EvalContext& ctx) {
+    if (!ctx.inventory) {
+        return false;
+    }
+    const i32 needed = clause.value > 0.0f ? static_cast<i32>(clause.value) : 1;
+    return itemCount(*ctx.inventory, clause.item) >= needed;
+}
+
+bool luaPredicate(const ConditionForm& clause, const EvalContext& ctx) {
+    return ctx.luaPredicate && ctx.luaPredicate(clause.lua);
+}
+
+using ClauseFn = bool (*)(const ConditionForm&, const EvalContext&);
+const std::unordered_map<std::string_view, ClauseFn> kClauseEvaluators {
+    { "HasTag", &hasTag },
+    { "AttributeAtLeast", &attributeAtLeast },
+    { "AttributeAtMost", &attributeAtMost },
+    { "HasItem", &hasItem },
+    { "Lua", &luaPredicate },
+};
+
+} // namespace
+
+bool evaluateClause(const ConditionForm& clause, const EvalContext& context) {
+    const auto it = kClauseEvaluators.find(clause.kind);
+    const bool result = it != kClauseEvaluators.end()
+                            ? it->second(clause, context)
+                            : false;
     return clause.negate ? !result : result;
 }
 

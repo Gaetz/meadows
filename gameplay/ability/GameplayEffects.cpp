@@ -16,6 +16,21 @@ ModifierOp parseOp(const str& op) {
     return ModifierOp::Add;
 }
 
+enum class DurationPolicy { Instant, Duration, Infinite, Periodic };
+
+DurationPolicy parseDuration(const str& duration) {
+    if (duration == "duration") {
+        return DurationPolicy::Duration;
+    }
+    if (duration == "infinite") {
+        return DurationPolicy::Infinite;
+    }
+    if (duration == "periodic") {
+        return DurationPolicy::Periodic;
+    }
+    return DurationPolicy::Instant;
+}
+
 void applyModifierToBase(AttributeSet& set, u32 attrId, ModifierOp op, f32 mag) {
     const auto base = baseValueOf(set, attrId);
     if (!base) {
@@ -120,8 +135,9 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
 
     const u32 attrId = attr(effect.attribute);
     const ModifierOp op = parseOp(effect.op);
+    const DurationPolicy policy = parseDuration(effect.duration);
 
-    if (effect.duration == "instant") {
+    if (policy == DurationPolicy::Instant) {
         applyModifierToBase(set, attrId, op, effect.magnitude);
         routeDamageMeta(set);
         clampBaseVitals(set);
@@ -133,9 +149,10 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
     active.attribute = attrId;
     active.op = op;
     active.magnitude = effect.magnitude;
-    active.infinite = (effect.duration == "infinite");
+    active.infinite = (policy == DurationPolicy::Infinite);
     active.remaining = effect.durationSeconds;
-    active.period = (effect.duration == "periodic") ? effect.period : 0.0f;
+    active.period =
+        policy == DurationPolicy::Periodic ? effect.period : 0.0f;
     if (!effect.grantedTag.empty()) {
         if (const auto tag = registry.find(effect.grantedTag)) {
             active.grantedTag = *tag;
