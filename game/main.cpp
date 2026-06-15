@@ -44,6 +44,10 @@ public:
         if (ImGui::Button("Narrative")) {
             stack.replace(std::make_unique<game::NarrativeScene>(*engine));
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Stats")) {
+            stack.replace(std::make_unique<game::StatsScene>(*engine));
+        }
         ImGui::End();
 
         stack.drawUi();

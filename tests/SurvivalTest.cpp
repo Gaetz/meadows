@@ -37,6 +37,19 @@ TEST_CASE("survival: folds into the effective resonance (onyx), no direct set") 
     CHECK(eff.amber == doctest::Approx(0.0f));
 }
 
+TEST_CASE("survival: low sleep drives essence (garnet) resonance, hunger/thirst onyx") {
+    Survival s;
+    s.sleep = 0.0f; // hunger/thirst still full
+    Resonance eff = effectiveResonance(Resonance {}, s);
+    CHECK(eff.garnet == doctest::Approx(-50.0f));
+    CHECK(eff.onyx == doctest::Approx(0.0f));
+
+    s.hunger = 0.0f;
+    s.thirst = 0.0f;
+    eff = effectiveResonance(Resonance {}, s);
+    CHECK(eff.onyx == doctest::Approx(-100.0f)); // hunger -50 + thirst -50 (cumulative)
+}
+
 TEST_CASE("survival: advancing the clock drives hunger below threshold → resonance") {
     GameClock clock; // timescale ×10
     Survival s;

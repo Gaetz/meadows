@@ -1,5 +1,6 @@
 #include "game/scenes/DemoScenes.hpp"
 
+#include <algorithm>
 #include <cstdio>
 
 #include <imgui.h>
@@ -418,6 +419,156 @@ void NarrativeScene::drawUi() {
     if (ImGui::Button("Debug: a bandit was defeated")) {
         bus.dispatch({ gameplay::eventKind("OnBanditDeath") });
     }
+    ImGui::End();
+}
+
+// --- StatsScene -------------------------------------------------------------
+
+gameplay::StatModifiers StatsScene::resonanceModifiers() const {
+    gameplay::StatModifiers mods;
+    gameplay::buildResonanceModifiers(
+        gameplay::effectiveResonance(resonance, survival), mods);
+    return mods;
+}
+
+void StatsScene::seedResources() {
+    const gameplay::StatModifiers mods = resonanceModifiers();
+    gameplay::recomputeStats(core, vitals, system, derived, &mods);
+    vitals.health = gameplay::currentValueOf(system, gameplay::attr("maxHealth"));
+    vitals.energy = gameplay::currentValueOf(system, gameplay::attr("maxEnergy"));
+    vitals.essence = gameplay::currentValueOf(system, gameplay::attr("maxEssence"));
+    gameplay::recomputeStats(core, vitals, system, derived, &mods);
+    combat.posture = gameplay::currentValueOf(system, gameplay::attr("maxPosture"));
+}
+
+void StatsScene::onEnter() {
+    WorldDemoScene::onEnter();
+    tags.registerTag("State.Staggered");
+    gameplay::registerCoreDerivedStats(derived);
+    seedResources();
+}
+
+void StatsScene::update(f32 dt) {
+    WorldDemoScene::update(dt);
+    const f64 gameDt = clock.advance(dt);
+    gameplay::tickSurvival(survival, gameDt);
+    gameplay::updateStagger(combat, system, dt, tags);
+
+    const gameplay::StatModifiers mods = resonanceModifiers();
+    gameplay::recomputeStats(core, vitals, system, derived, &mods);
+
+    // Posture regenerates while not staggered.
+    if (combat.staggerSeconds <= 0.0f) {
+        const f32 maxP = gameplay::currentValueOf(system, gameplay::attr("maxPosture"));
+        const f32 regen =
+            gameplay::currentValueOf(system, gameplay::attr("postureRegen"));
+        combat.posture = std::min(maxP, combat.posture + regen * dt);
+    }
+}
+
+void StatsScene::drawUi() {
+    using namespace gameplay;
+    const auto cur = [&](const char* n) { return currentValueOf(system, attr(n)); };
+
+    ImGui::Begin("Character stats (slice)");
+
+    if (ImGui::CollapsingHeader("Attributes (base)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::DragFloat("strength", &core.strength, 0.1f, 0.0f, 40.0f);
+        ImGui::DragFloat("constitution", &core.constitution, 0.1f, 0.0f, 40.0f);
+        ImGui::DragFloat("grace", &core.grace, 0.1f, 0.0f, 40.0f);
+        ImGui::DragFloat("dexterity", &core.dexterity, 0.1f, 0.0f, 40.0f);
+        ImGui::DragFloat("alacrity", &core.alacrity, 0.1f, 0.0f, 40.0f);
+        ImGui::DragFloat("perception", &core.perception, 0.1f, 0.0f, 40.0f);
+        ImGui::DragFloat("charisma", &core.charisma, 0.1f, 0.0f, 40.0f);
+        ImGui::DragFloat("ego", &core.ego, 0.1f, 0.0f, 40.0f);
+        ImGui::DragFloat("insight", &core.insight, 0.1f, 0.0f, 40.0f);
+    }
+
+    ImGui::SeparatorText("Vitals");
+    const auto bar = [&](const char* label, const char* value, const char* maxField) {
+        const f32 v = cur(value);
+        const f32 m = cur(maxField);
+        char overlay[32];
+        std::snprintf(overlay, sizeof(overlay), "%.0f / %.0f", v, m);
+        ImGui::ProgressBar(m > 0.0f ? v / m : 0.0f, ImVec2(-1.0f, 0.0f), overlay);
+        ImGui::SameLine();
+        ImGui::Text("%s", label);
+    };
+    bar("health", "health", "maxHealth");
+    bar("energy", "energy", "maxEnergy");
+    bar("essence", "essence", "maxEssence");
+    {
+        const f32 maxP = cur("maxPosture");
+        char overlay[32];
+        std::snprintf(overlay, sizeof(overlay), "%.0f / %.0f", combat.posture, maxP);
+        ImGui::ProgressBar(maxP > 0.0f ? combat.posture / maxP : 0.0f,
+                           ImVec2(-1.0f, 0.0f), overlay);
+        ImGui::SameLine();
+        ImGui::Text("posture");
+    }
+    if (const auto st = tags.find("State.Staggered"); st && system.tags.has(*st)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "STAGGERED");
+    }
+    if (const auto dead = tags.find("State.Dead"); dead && system.tags.has(*dead)) {
+        ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "DEAD");
+    }
+
+    ImGui::SeparatorText("Resonance (persistent, editable)");
+    ImGui::DragFloat("onyx (health)", &resonance.onyx, 0.5f, -100.0f, 200.0f);
+    ImGui::DragFloat("amber (energy)", &resonance.amber, 0.5f, -100.0f, 200.0f);
+    ImGui::DragFloat("garnet (essence)", &resonance.garnet, 0.5f, -100.0f, 200.0f);
+    const Resonance eff = harmonyEffective(effectiveResonance(resonance, survival));
+    ImGui::Text("effective (survival + harmony): onyx %.1f  amber %.1f  garnet %.1f",
+                eff.onyx, eff.amber, eff.garnet);
+
+    ImGui::SeparatorText("Survival (drag below 75 to drive resonance)");
+    ImGui::DragFloat("hunger", &survival.hunger, 0.5f, 0.0f, 100.0f);  // → onyx
+    ImGui::DragFloat("thirst", &survival.thirst, 0.5f, 0.0f, 100.0f);  // → onyx
+    ImGui::DragFloat("sleep", &survival.sleep, 0.5f, 0.0f, 100.0f);    // → garnet
+    ImGui::Text("game time %.1f h", clock.gameHours());
+
+    ImGui::SeparatorText("Derived");
+    ImGui::Text("defense %.1f   armor S/B/P %.0f/%.0f/%.0f", cur("defense"),
+                cur("armorSlash"), cur("armorBlunt"), cur("armorPierce"));
+    ImGui::Text("resist fire/lightning %.0f/%.0f   will %.1f", cur("resistFire"),
+                cur("resistLightning"), cur("will"));
+    ImGui::Text("maxPosture %.0f   postureRegen %.1f   critSens %.1f",
+                cur("maxPosture"), cur("postureRegen"), cur("criticalSensitivity"));
+
+    ImGui::SeparatorText("Actions");
+    const StatModifiers mods = resonanceModifiers();
+    StatBlock block { core, vitals, system, combat };
+    if (ImGui::Button("Slash 50")) {
+        applyDamage(block, DamageEvent { { { DamageType::Slash, 50.0f } }, 25.0f },
+                    tags, derived, &mods);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Fire 50")) {
+        applyDamage(block, DamageEvent { { { DamageType::Fire, 50.0f } }, 0.0f },
+                    tags, derived, &mods);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Posture hit")) {
+        applyDamage(block, DamageEvent { {}, 40.0f }, tags, derived, &mods);
+    }
+    if (ImGui::Button("Wound (-15 onyx)")) {
+        resonance.onyx -= 15.0f;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Heal full")) {
+        seedResources();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Eat / drink")) {
+        survival.hunger = 100.0f;
+        survival.thirst = 100.0f;
+    }
+    if (ImGui::Button("Advance 6h (game time)")) {
+        const f64 gd = 6.0 * 3600.0;
+        clock.gameSeconds += gd;
+        tickSurvival(survival, gd);
+    }
+
     ImGui::End();
 }
 

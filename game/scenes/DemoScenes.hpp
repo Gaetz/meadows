@@ -7,6 +7,12 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp"
+#include "gameplay/stats/CharacterStats.hpp"
+#include "gameplay/stats/CoreAttributes.hpp"
+#include "gameplay/stats/Damage.hpp"
+#include "gameplay/stats/GameClock.hpp"
+#include "gameplay/stats/Resonance.hpp"
+#include "gameplay/stats/Survival.hpp"
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
 
@@ -70,6 +76,31 @@ private:
     gameplay::Inventory playerInventory;     // receives the quest reward
     bool brave { false };
     bool rewarded { false };
+};
+
+// Demonstrates the character-stats slice (docs/STATS.md): a single actor with the
+// nine attributes → primary stats, Resonance + Harmony, typed-damage mitigation,
+// posture/stagger, and a hunger→resonance loop on the game clock. The ImGui panel
+// drives it all so the cascade, shifting maxima and posture break are visible.
+class StatsScene : public WorldDemoScene {
+public:
+    using WorldDemoScene::WorldDemoScene;
+    void onEnter() override;
+    void update(f32 dt) override;
+    void drawUi() override;
+
+private:
+    gameplay::StatModifiers resonanceModifiers() const;
+    void seedResources();
+
+    gameplay::CoreAttributes core;
+    gameplay::AttributeSet vitals;
+    gameplay::Resonance resonance;   // persistent (wounds/drugs later)
+    gameplay::Survival survival;
+    gameplay::CombatState combat;
+    gameplay::AbilitySystem system;
+    gameplay::DerivedStatRegistry derived;
+    gameplay::GameClock clock;
 };
 
 } // namespace game
