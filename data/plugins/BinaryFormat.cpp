@@ -11,7 +11,7 @@ namespace data {
 namespace {
 
 constexpr u8 kMagic[4] = { 'M', 'D', 'W', 'P' };
-constexpr u8 kMaxKind = static_cast<u8>(reflect::FieldKind::Guid);
+constexpr u8 kMaxKind = static_cast<u8>(reflect::FieldKind::F64);
 
 class Writer {
 public:
@@ -29,6 +29,7 @@ public:
         }
     }
     void f32_(f32 value) { u32_(std::bit_cast<u32>(value)); }
+    void f64_(f64 value) { u64_(std::bit_cast<u64>(value)); }
     void str_(const str& value) {
         u32_(static_cast<u32>(value.size()));
         out.insert(out.end(), value.begin(), value.end());
@@ -46,6 +47,7 @@ public:
         case FieldKind::I32:  u32_(std::bit_cast<u32>(std::get<i32>(v))); break;
         case FieldKind::U32:  u32_(std::get<u32>(v)); break;
         case FieldKind::F32:  f32_(std::get<f32>(v)); break;
+        case FieldKind::F64:  f64_(std::get<f64>(v)); break;
         case FieldKind::Str:  str_(std::get<str>(v)); break;
         case FieldKind::Vec2: {
             const Vec2& vec = std::get<Vec2>(v);
@@ -108,6 +110,12 @@ public:
         value = std::bit_cast<f32>(bits);
         return true;
     }
+    bool f64_(f64& value) {
+        u64 bits = 0;
+        if (!u64_(bits)) return false;
+        value = std::bit_cast<f64>(bits);
+        return true;
+    }
     bool str_(str& value) {
         u32 size = 0;
         if (!u32_(size) || remaining() < size) return false;
@@ -143,6 +151,12 @@ public:
         case FieldKind::F32: {
             f32 v = 0;
             if (!f32_(v)) return false;
+            out = v;
+            return true;
+        }
+        case FieldKind::F64: {
+            f64 v = 0;
+            if (!f64_(v)) return false;
             out = v;
             return true;
         }

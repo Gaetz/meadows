@@ -56,6 +56,11 @@ std::optional<reflect::Value> convertValue(const toml::node& node,
             return Value { static_cast<f32>(*value) };
         }
         return std::nullopt;
+    case FieldKind::F64:
+        if (const auto value = node.value<double>()) {
+            return Value { *value };
+        }
+        return std::nullopt;
     case FieldKind::Str:
         if (const auto value = node.value<std::string>()) {
             return Value { *value };

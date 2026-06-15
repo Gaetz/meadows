@@ -39,6 +39,7 @@ data::Plugin makeKitchenSink() {
     record.fields.emplace(
         9u, reflect::Value { Quat { 0.7071f, 0.7071f, 0.0f, 0.0f } });
     record.fields.emplace(10u, reflect::Value { Guid::generate() });
+    record.fields.emplace(11u, reflect::Value { f64 { 1.0e300 } }); // beyond f32
     plugin.records.push_back(std::move(record));
     return plugin;
 }

@@ -35,6 +35,9 @@ void insertValue(toml::table& fields, std::string_view name,
     case FieldKind::F32:
         fields.insert(name, static_cast<double>(std::get<f32>(value)));
         break;
+    case FieldKind::F64:
+        fields.insert(name, std::get<f64>(value));
+        break;
     case FieldKind::Str:
         fields.insert(name, std::get<str>(value));
         break;

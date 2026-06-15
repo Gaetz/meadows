@@ -47,12 +47,14 @@ enum class FieldKind : u8 {
     Vec4,
     Quat,
     Guid,
+    F64, // appended last so existing kind ordinals (persisted in cooked binary)
+         // stay stable
 };
 
 // Type-erased field value: the currency of serialization and patches.
 // Alternative order must match FieldKind.
 using Value = std::variant<bool, i32, u32, f32, str, Vec2, Vec3, Vec4, Quat,
-                           core::Guid>;
+                           core::Guid, f64>;
 
 constexpr FieldKind valueKind(const Value& value) {
     return static_cast<FieldKind>(value.index());
@@ -65,6 +67,7 @@ template<> struct KindOf<bool> { static constexpr auto value = FieldKind::Bool; 
 template<> struct KindOf<i32>  { static constexpr auto value = FieldKind::I32; };
 template<> struct KindOf<u32>  { static constexpr auto value = FieldKind::U32; };
 template<> struct KindOf<f32>  { static constexpr auto value = FieldKind::F32; };
+template<> struct KindOf<f64>  { static constexpr auto value = FieldKind::F64; };
 template<> struct KindOf<str>  { static constexpr auto value = FieldKind::Str; };
 template<> struct KindOf<Vec2> { static constexpr auto value = FieldKind::Vec2; };
 template<> struct KindOf<Vec3> { static constexpr auto value = FieldKind::Vec3; };

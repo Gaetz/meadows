@@ -15,6 +15,7 @@ add_executable(meadows-tests
     EventBusTest.cpp
     FactionsTest.cpp
     FormsTest.cpp
+    GameClockTest.cpp
     GameplayAbilityTest.cpp
     GameplayEffectsTest.cpp
     GameplayTagsTest.cpp

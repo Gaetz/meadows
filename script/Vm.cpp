@@ -31,6 +31,7 @@ sol::object valueToLua(sol::this_state ts, const reflect::Value& value) {
                                  std::is_same_v<T, i32> ||
                                  std::is_same_v<T, u32> ||
                                  std::is_same_v<T, f32> ||
+                                 std::is_same_v<T, f64> ||
                                  std::is_same_v<T, str>) {
                 return sol::make_object(ts, held);
             } else {

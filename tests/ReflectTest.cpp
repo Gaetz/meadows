@@ -21,6 +21,7 @@ struct TestWeapon : TestBase {
     bool twoHanded { false };
     Vec3 hiltOffset { 0.0f, 0.1f, 0.0f };
     f32 cachedDps { 0.0f };
+    f64 preciseWeight { 0.0 };
 
     REFLECT_BEGIN(TestWeapon, TestBase)
         REFLECT_FIELD(damage)
@@ -28,6 +29,7 @@ struct TestWeapon : TestBase {
         REFLECT_FIELD(twoHanded)
         REFLECT_FIELD(hiltOffset)
         REFLECT_FIELD_FLAGS(cachedDps, reflect::Transient)
+        REFLECT_FIELD(preciseWeight)
     REFLECT_END()
 };
 
@@ -40,7 +42,7 @@ TEST_CASE("reflect: type info carries names, ids, parent") {
     CHECK(info.size == sizeof(TestWeapon));
     REQUIRE(info.parent != nullptr);
     CHECK(info.parent->name == "TestBase");
-    CHECK(info.fields.size() == 5);
+    CHECK(info.fields.size() == 6);
 
     CHECK(info.isA(core::fnv1a("TestBase")));
     CHECK(info.isA(info.id));
@@ -63,6 +65,14 @@ TEST_CASE("reflect: get and set through type-erased fields") {
     REQUIRE(hilt != nullptr);
     CHECK(hilt->set(&weapon, reflect::Value { Vec3 { 1.0f, 2.0f, 3.0f } }));
     CHECK(weapon.hiltOffset == Vec3 { 1.0f, 2.0f, 3.0f });
+
+    // f64: a value beyond the f32 range proves it is not narrowed.
+    const auto* weight = info.findField("preciseWeight");
+    REQUIRE(weight != nullptr);
+    CHECK(weight->kind == reflect::FieldKind::F64);
+    CHECK(weight->set(&weapon, reflect::Value { f64 { 1.0e300 } }));
+    CHECK(weapon.preciseWeight == 1.0e300);
+    CHECK(std::get<f64>(weight->get(&weapon)) == 1.0e300);
 }
 
 TEST_CASE("reflect: set with mismatched kind fails without writing") {
