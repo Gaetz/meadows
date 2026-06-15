@@ -60,13 +60,23 @@ leveling UI later.
 
 > **Derivation:** maxHealth = (strength+constitution+grace)·5, maxEnergy =
 > (dexterity+alacrity+perception)·5, maxEssence = (charisma+ego+insight)·5.
+> The maxima derive from the attributes' **base** (starting / leveled) value, not
+> their current value: a *temporary* attribute change (Resonance, buffs) must
+> **not** move the max — only Resonance's % does (§2); a *permanent* change
+> (leveling) does. (Decided with the dev to avoid Resonance hitting the max
+> twice.) The Resonance attribute offset still feeds the **secondary** stats,
+> which read the current value.
 
 ## 2. Resonance (hidden stat) & Harmony
 
 **Resonance** is a float per channel (onyx=health, amber=energy, garnet=essence),
-range **-100..1500**, base **0**. It is a percentage modifier on the **maximum**
-of its primary stat, and **every 15 points adds/subtracts 1 to all attributes
-linked to that primary** (which cascades into the derived stats). `[4.6]`
+range **-100..1500**, base **0**. Two effects `[4.6]`: (1) a **percentage modifier
+on the maximum** of its primary stat — `max × (1 + r/100)` — the *only* direct
+effect on the max; (2) **every 15 points, ±1 to all attributes linked to that
+primary** (`trunc(r/15)`), which lowers/raises the attributes' *current* value and
+thereby the **secondary** stats derived from them. Because the maxima derive from
+*base* attributes (§1), effect (2) does **not** touch the max — avoiding a double
+hit.
 
 It is only *visible* through its effects: bars that no longer refill to max (or
 overfill), and the attribute bonus/malus. Temporary negative resonance is tagged

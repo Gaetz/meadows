@@ -59,7 +59,8 @@ void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
 // aggregation); finally vitals are clamped to their current maxima. `derived` may
 // be null (no derived pass — the Phase-3 behaviour).
 void recomputeCurrent(AbilitySystem& system, std::span<const AttrSetRef> sets,
-                      const DerivedStatRegistry* derived = nullptr);
+                      const DerivedStatRegistry* derived = nullptr,
+                      const StatModifiers* extra = nullptr);
 
 // Single-set, no-derived overload (the Phase-3 special case): unchanged for the
 // existing combat/effects callers.

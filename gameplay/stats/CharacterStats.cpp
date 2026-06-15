@@ -2,24 +2,30 @@
 
 #include "engine/ecs/World.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
+#include "gameplay/stats/Resonance.hpp"
 
 namespace gameplay {
 
 void registerStatsComponents(ecs::World& world) {
     world.registerComponent<CoreAttributes>(); // reflected: base values serialize
+    world.registerComponent<Resonance>();      // reflected: hidden phase stat
 }
 
 namespace {
 // Primary maxima = sum of the three linked attributes × 5 (docs/STATS.md §1):
-// a starting humanoid (6/6/6, insight 0) has 90 / 90 / 60.
+// a starting humanoid (6/6/6, insight 0) has 90 / 90 / 60. They read the
+// attributes' BASE (starting/leveled) value, NOT the current one — so a temporary
+// attribute change (Resonance, buffs) does not move the max; only Resonance's %
+// does (§2). The Resonance attribute offset still flows into the secondary stats,
+// which read the current value.
 f32 maxHealthFormula(const StatView& v) {
-    return (v.get("strength") + v.get("constitution") + v.get("grace")) * 5.0f;
+    return (v.base("strength") + v.base("constitution") + v.base("grace")) * 5.0f;
 }
 f32 maxEnergyFormula(const StatView& v) {
-    return (v.get("dexterity") + v.get("alacrity") + v.get("perception")) * 5.0f;
+    return (v.base("dexterity") + v.base("alacrity") + v.base("perception")) * 5.0f;
 }
 f32 maxEssenceFormula(const StatView& v) {
-    return (v.get("charisma") + v.get("ego") + v.get("insight")) * 5.0f;
+    return (v.base("charisma") + v.base("ego") + v.base("insight")) * 5.0f;
 }
 } // namespace
 

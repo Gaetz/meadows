@@ -72,9 +72,11 @@ void clampBaseVitals(AttributeSet& set) {
     clampBasePair(set, attr("essence"), attr("maxEssence"));
 }
 
-// Aggregates the non-periodic effect modifiers targeting `id` onto `base`:
-// (base + Σadd)·Πmult, with Override winning. The shared core of recompute.
-f32 aggregateModifiers(const AbilitySystem& system, u32 id, f32 base) {
+// Aggregates the non-periodic effect modifiers (plus any continuous `extra`
+// modifiers) targeting `id` onto `base`: (base + Σadd)·Πmult, with Override
+// winning. The shared core of recompute.
+f32 aggregateModifiers(const AbilitySystem& system, u32 id, f32 base,
+                       const StatModifiers* extra) {
     f32 addSum = 0.0f;
     f32 mulProduct = 1.0f;
     bool hasOverride = false;
@@ -88,6 +90,14 @@ f32 aggregateModifiers(const AbilitySystem& system, u32 id, f32 base) {
         case ModifierOp::Multiply: mulProduct *= active.magnitude; break;
         case ModifierOp::Override: hasOverride = true;
                                    overrideValue = active.magnitude; break;
+        }
+    }
+    if (extra) {
+        if (const auto it = extra->add.find(id); it != extra->add.end()) {
+            addSum += it->second;
+        }
+        if (const auto it = extra->mul.find(id); it != extra->mul.end()) {
+            mulProduct *= it->second;
         }
     }
     const f32 current = (base + addSum) * mulProduct;
@@ -125,7 +135,8 @@ void clampVitalsCurrent(AbilitySystem& system) {
 } // namespace
 
 void recomputeCurrent(AbilitySystem& system, std::span<const AttrSetRef> sets,
-                      const DerivedStatRegistry* derived) {
+                      const DerivedStatRegistry* derived,
+                      const StatModifiers* extra) {
     // Which derived calculators apply this recompute (their source set present)?
     // Pass 1 skips their targets; pass 2 fills them from their formula.
     vector<const DerivedStat*> applied;
@@ -155,17 +166,17 @@ void recomputeCurrent(AbilitySystem& system, std::span<const AttrSetRef> sets,
             if (field.kind != reflect::FieldKind::F32 || isDerivedTarget(field.id)) {
                 continue;
             }
-            system.current[field.id] =
-                aggregateModifiers(system, field.id, readF32(field, ref.instance));
+            system.current[field.id] = aggregateModifiers(
+                system, field.id, readF32(field, ref.instance), extra);
         }
     }
 
     // Pass 2 — derived fields: aggregate over the formula. Sources (the nine
     // attributes) are non-derived, already computed in pass 1.
-    const StatView view { system };
+    const StatView view { system, sets };
     for (const DerivedStat* stat : applied) {
         system.current[stat->target] =
-            aggregateModifiers(system, stat->target, stat->formula(view));
+            aggregateModifiers(system, stat->target, stat->formula(view), extra);
     }
 
     clampVitalsCurrent(system);
