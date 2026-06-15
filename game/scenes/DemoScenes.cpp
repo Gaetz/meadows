@@ -428,6 +428,9 @@ gameplay::StatModifiers StatsScene::resonanceModifiers() const {
     gameplay::StatModifiers mods;
     gameplay::buildResonanceModifiers(
         gameplay::effectiveResonance(resonance, survival, tuning), mods);
+    if (armorEquipped) {
+        gameplay::armorModifiers(sampleArmor, mods); // F3: equipment → derived stats
+    }
     return mods;
 }
 
@@ -447,6 +450,14 @@ void StatsScene::onEnter() {
     tuning = gameplay::resolveStatsTuning(forms); // §5: data or defaults
     gameplay::registerCoreDerivedStats(derived, tuning);
     seedResources();
+
+    // F3 sample gear.
+    sampleWeapon.slashAttack = 30.0f;
+    sampleWeapon.scalingAttribute = "strength";
+    sampleWeapon.scalingK = 1.5f;
+    sampleWeapon.postureDamage = 15.0f;
+    sampleArmor.armorSlash = 20.0f;
+    sampleArmor.resistFire = 15.0f;
 }
 
 void StatsScene::update(f32 dt) {
@@ -567,7 +578,15 @@ void StatsScene::drawUi() {
     if (ImGui::Button("Advance 6h (game time)")) {
         const f64 gd = 6.0 * 3600.0;
         clock.gameSeconds += gd;
-        tickSurvival(survival, gd);
+        tickSurvival(survival, gd, tuning);
+    }
+
+    ImGui::SeparatorText("Equipment (F3)");
+    ImGui::Checkbox("Equip leather armor (+20 slash armor, +15 fire resist)",
+                    &armorEquipped);
+    if (ImGui::Button("Attack with equipped weapon (30 slash, ×1.5 strength)")) {
+        applyDamage(block, weaponDamageEvent(sampleWeapon, system), tags, derived,
+                    &mods, tuning);
     }
 
     ImGui::End();

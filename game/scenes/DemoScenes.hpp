@@ -2,6 +2,7 @@
 
 #include <optional>
 
+#include "data/forms/CoreForms.hpp"
 #include "game/WorldEditor.hpp"
 #include "game/scenes/WorldDemoScene.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
@@ -10,6 +11,7 @@
 #include "gameplay/stats/CharacterStats.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Damage.hpp"
+#include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/Resonance.hpp"
 #include "gameplay/stats/Survival.hpp"
@@ -102,6 +104,11 @@ private:
     gameplay::DerivedStatRegistry derived;
     gameplay::StatsTuningForm tuning; // resolved from data (§5), or defaults
     gameplay::GameClock clock;
+
+    // F3 demo: sample gear (scene-local, so no plugin data needed).
+    data::WeaponForm sampleWeapon;
+    data::ArmorForm sampleArmor;
+    bool armorEquipped { false };
 };
 
 } // namespace game

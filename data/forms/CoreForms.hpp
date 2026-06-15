@@ -18,6 +18,18 @@ struct WeaponForm : Form {
     bool twoHanded { false };
     core::Guid sprite; // asset reference, resolved through the asset DB
 
+    // Typed attack channels (docs/STATS.md §3 Offensive): flat damage per type,
+    // scaled at use by (1 + scalingK · <scalingAttribute> %). 0 = the weapon does
+    // not deal that type. Per-channel scaling is a later refinement.
+    f32 slashAttack { 0.0f };
+    f32 pierceAttack { 0.0f };
+    f32 bluntAttack { 0.0f };
+    f32 fireAttack { 0.0f };
+    f32 lightningAttack { 0.0f };
+    str scalingAttribute { "strength" };
+    f32 scalingK { 1.0f };
+    f32 postureDamage { 0.0f };
+
     REFLECT_BEGIN(WeaponForm, Form)
         REFLECT_FIELD(displayName)
         REFLECT_FIELD(damage)
@@ -25,6 +37,63 @@ struct WeaponForm : Form {
         REFLECT_FIELD(goldValue)
         REFLECT_FIELD(twoHanded)
         REFLECT_FIELD(sprite)
+        REFLECT_FIELD(slashAttack)
+        REFLECT_FIELD(pierceAttack)
+        REFLECT_FIELD(bluntAttack)
+        REFLECT_FIELD(fireAttack)
+        REFLECT_FIELD(lightningAttack)
+        REFLECT_FIELD(scalingAttribute)
+        REFLECT_FIELD(scalingK)
+        REFLECT_FIELD(postureDamage)
+    REFLECT_END()
+};
+
+// A wearable piece (docs/STATS.md §3). `slot` is head/torso/arms/legs. Equipping
+// it contributes its mitigation % to the derived stats (via StatModifiers) and
+// its weight to encumbrance (later). Exposure fields back the temperature loop
+// (later). A new C++ Form type (§2.7), extended by data.
+struct ArmorForm : Form {
+    str displayName;
+    str slot { "torso" };
+    f32 armorSlash { 0.0f };
+    f32 armorBlunt { 0.0f };
+    f32 armorPierce { 0.0f };
+    f32 resistFire { 0.0f };
+    f32 resistLightning { 0.0f };
+    f32 coldExposure { 0.0f }; // exposure reduction — temperature loop (later)
+    f32 heatExposure { 0.0f };
+    f32 weight { 2.0f };
+    core::Guid sprite;
+
+    REFLECT_BEGIN(ArmorForm, Form)
+        REFLECT_FIELD(displayName)
+        REFLECT_FIELD(slot)
+        REFLECT_FIELD(armorSlash)
+        REFLECT_FIELD(armorBlunt)
+        REFLECT_FIELD(armorPierce)
+        REFLECT_FIELD(resistFire)
+        REFLECT_FIELD(resistLightning)
+        REFLECT_FIELD(coldExposure)
+        REFLECT_FIELD(heatExposure)
+        REFLECT_FIELD(weight)
+        REFLECT_FIELD(sprite)
+    REFLECT_END()
+};
+
+// A consumable (food / drug / treatment). It applies `effect` (a GameplayEffect
+// guid) when used; the drug/treatment semantics (harmony break, aftershock,
+// injury cure) are wired by the Phase-7 mechanics that consume it.
+struct ConsumableForm : Form {
+    str displayName;
+    str category { "food" }; // food | drug | treatment
+    core::Guid effect;       // the GameplayEffect applied on use
+    f32 weight { 0.1f };
+
+    REFLECT_BEGIN(ConsumableForm, Form)
+        REFLECT_FIELD(displayName)
+        REFLECT_FIELD(category)
+        REFLECT_FIELD(effect)
+        REFLECT_FIELD(weight)
     REFLECT_END()
 };
 

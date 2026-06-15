@@ -23,13 +23,22 @@ struct Inventory {
     vector<ItemStack> items;
 };
 
-// The currently equipped weapon (a WeaponForm guid; invalid = nothing equipped).
-// Reflected, so it serializes and patches like any field.
+// The equipped items, by slot (each a Form guid; invalid = empty). Reflected, so
+// it serializes and patches like any field. Armor slots contribute their stats
+// through gameplay/stats/EquipmentStats; the weapon drives the damage pipeline.
 struct Equipment {
     core::Guid weapon;
+    core::Guid head;
+    core::Guid torso;
+    core::Guid arms;
+    core::Guid legs;
 
     REFLECT_BEGIN(Equipment, void)
         REFLECT_FIELD(weapon)
+        REFLECT_FIELD(head)
+        REFLECT_FIELD(torso)
+        REFLECT_FIELD(arms)
+        REFLECT_FIELD(legs)
     REFLECT_END()
 };
 

@@ -12,6 +12,7 @@ add_executable(meadows-tests
     DerivedStatsTest.cpp
     DialogueTest.cpp
     EcsTest.cpp
+    EquipmentStatsTest.cpp
     EventBusTest.cpp
     FactionsTest.cpp
     FormsTest.cpp
