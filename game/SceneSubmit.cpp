@@ -61,4 +61,11 @@ void submitSnapshot(const RenderSnapshot& snapshot,
     }
 }
 
+void prewarmTextures(const ecs::World& world, TextureCache& textures) {
+    world.handle().query<const world::SpriteRender>().each(
+        [&](flecs::entity, const world::SpriteRender& sprite) {
+            textures.resolve(sprite.sprite); // first sighting kicks the decode
+        });
+}
+
 } // namespace game

@@ -6,6 +6,7 @@ add_executable(meadows-tests
     CellLoaderTest.cpp
     CollisionTest.cpp
     CombatTest.cpp
+    ConcurrentQueueTest.cpp
     ConditionTest.cpp
     CookerTest.cpp
     DialogueTest.cpp

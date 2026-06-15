@@ -3,6 +3,7 @@
 #include "data/forms/CoreForms.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
+#include "engine/platform/Window.hpp"
 #include "engine/render/SpriteRenderer.hpp"
 #include "engine/rhi/Device.hpp"
 #include "game/SceneSubmit.hpp"
@@ -53,8 +54,8 @@ void WorldDemoScene::onEnter() {
 
     checker = createCheckerTexture(engine.getDevice());
     engine.getCamera().viewHeight = 12.0f;
-    textureCache =
-        std::make_unique<game::TextureCache>(engine.getDevice(), assetDb);
+    textureCache = std::make_unique<game::TextureCache>(
+        engine.getDevice(), assetDb, engine.getJobSystem());
 
     basePlugin = data::loadPluginFile(dataDir / "base" / "base.toml", types);
     modPlugin = data::loadPluginFile(
@@ -86,6 +87,22 @@ void WorldDemoScene::update(f32 dt) {
 }
 
 void WorldDemoScene::draw(render::SpriteRenderer& renderer) {
+    // Completion-queue drain point of the frame (§9 Phase 4.5): upload any asset
+    // that finished decoding on a worker, flipping its handle to resident before
+    // extractScene reads it. Runs right before the seam, on the main thread.
+    textureCache->pumpUploads();
+
+    // Loading gate (§7): while the visible set is still decoding, show only the
+    // loading screen — never the world, so its placeholders stay hidden.
+    if (loading) {
+        if (textureCache->pendingCount() == 0) {
+            loading = false; // everything resident: reveal the world this frame
+        } else {
+            drawLoadingScreen(renderer);
+            return;
+        }
+    }
+
     for (i32 y = -5; y < 5; ++y) {
         for (i32 x = -8; x < 8; ++x) {
             const f32 shade =
@@ -103,6 +120,40 @@ void WorldDemoScene::draw(render::SpriteRenderer& renderer) {
     // submit move to a render thread later without touching gameplay.
     const game::RenderSnapshot snapshot = game::extractScene(world, *textureCache);
     game::submitSnapshot(snapshot, renderer);
+}
+
+void WorldDemoScene::drawLoadingScreen(render::SpriteRenderer& renderer) {
+    const render::Camera2D& cam = engine.getCamera();
+    const f32 aspect = static_cast<f32>(engine.getWindow().width()) /
+                       static_cast<f32>(engine.getWindow().height());
+    const f32 viewW = cam.viewHeight * aspect;
+
+    // Opaque cover over the whole view (untextured → white fallback, tinted), so
+    // the world behind it never shows. Centered on the camera, so it covers the
+    // screen wherever the view is.
+    renderer.draw({ .position = cam.position,
+                    .size = { viewW, cam.viewHeight },
+                    .tint = { 0.06f, 0.07f, 0.09f, 1.0f } });
+
+    // Progress bar: the resident fraction of the assets we are waiting on.
+    const u32 remaining = textureCache->pendingCount();
+    const f32 done = loadTotal > 0
+                         ? static_cast<f32>(loadTotal - remaining) /
+                               static_cast<f32>(loadTotal)
+                         : 1.0f;
+    const f32 barW = viewW * 0.5f;
+    const f32 barH = cam.viewHeight * 0.04f;
+
+    renderer.draw({ .position = cam.position,
+                    .size = { barW, barH },
+                    .tint = { 0.18f, 0.19f, 0.24f, 1.0f } }); // track
+    const f32 fillW = barW * done;
+    if (fillW > 0.0f) {
+        renderer.draw({ .position = { cam.position.x - (barW - fillW) * 0.5f,
+                                      cam.position.y },
+                        .size = { fillW, barH },
+                        .tint = { 0.40f, 0.80f, 0.55f, 1.0f } }); // fill
+    }
 }
 
 void WorldDemoScene::rebuild() {
@@ -137,6 +188,12 @@ void WorldDemoScene::rebuild() {
     LOG_INFO("World rebuilt: {} plugins, {} forms, {} cells, {} conflicts",
              loadOrder.size(), forms.count(), model.cells().size(),
              report.conflicts.size());
+
+    // Kick the decode of every visible asset now and hold the world behind the
+    // loading gate until they are resident (§7) — no startup pop-in.
+    game::prewarmTextures(world, *textureCache);
+    loadTotal = textureCache->pendingCount();
+    loading = loadTotal > 0;
 }
 
 } // namespace game

@@ -44,6 +44,12 @@ render::Sprite spriteFor(const world::Transform& transform,
 // snapshot. Read-only: never mutates the world.
 RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures);
 
+// Kicks the decode of every sprite asset in the world without drawing anything,
+// so a loading gate can wait for them to become resident before the first frame
+// is shown (§7) — no startup pop-in. Generalizes to streaming: preload the
+// cells around the player before they are on screen.
+void prewarmTextures(const ecs::World& world, TextureCache& textures);
+
 // SUBMIT — pure consumer. Draws the snapshot's sprites in order. Touches neither
 // the World nor the TextureCache, only the packet and the renderer. Assumes the
 // renderer's frame is already begun (the engine owns begin/end).

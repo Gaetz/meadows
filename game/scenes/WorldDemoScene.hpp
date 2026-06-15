@@ -39,6 +39,13 @@ public:
 protected:
     void rebuild(); // re-resolve plugins → assets → world model → load cells
 
+    // Full-screen loading gate (§7): after a (re)build, the visible assets
+    // decode on workers; we hold the world hidden behind a progress bar until
+    // they are resident, so the player never sees the placeholder pop-in.
+    void drawLoadingScreen(render::SpriteRenderer& renderer);
+    bool loading { false };
+    u32 loadTotal { 0 }; // assets pending when the gate began (for progress)
+
     engine::Engine& engine;
     std::filesystem::path dataDir;
     data::FormTypeRegistry types;
