@@ -8,6 +8,7 @@ add_library(meadows-gameplay STATIC
     ability/GameplayEffects.cpp
     ability/GameplayAbility.cpp
     combat/Combat.cpp
+    stats/CharacterStats.cpp
     inventory/Inventory.cpp
     faction/Factions.cpp
     event/EventBus.cpp

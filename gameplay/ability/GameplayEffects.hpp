@@ -1,7 +1,10 @@
 #pragma once
 
+#include <span>
+
 #include "data/forms/Form.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 
 namespace gameplay {
@@ -50,8 +53,16 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
 void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
                  const GameplayTagRegistry& registry);
 
-// Recomputes every CurrentValue from BaseValue + active (non-periodic)
-// modifiers, with vitals clamped to their current maxima.
+// Recomputes every CurrentValue across the given AttributeSets: pass 1 sets each
+// non-derived field to (base + Σadd)·Πmult (override wins); pass 2 fills derived
+// fields whose source set is present from their formula (then the same modifier
+// aggregation); finally vitals are clamped to their current maxima. `derived` may
+// be null (no derived pass — the Phase-3 behaviour).
+void recomputeCurrent(AbilitySystem& system, std::span<const AttrSetRef> sets,
+                      const DerivedStatRegistry* derived = nullptr);
+
+// Single-set, no-derived overload (the Phase-3 special case): unchanged for the
+// existing combat/effects callers.
 void recomputeCurrent(const AttributeSet& set, AbilitySystem& system);
 
 } // namespace gameplay

@@ -9,6 +9,7 @@ add_executable(meadows-tests
     ConcurrentQueueTest.cpp
     ConditionTest.cpp
     CookerTest.cpp
+    DerivedStatsTest.cpp
     DialogueTest.cpp
     EcsTest.cpp
     EventBusTest.cpp

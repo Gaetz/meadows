@@ -72,40 +72,44 @@ void clampBaseVitals(AttributeSet& set) {
     clampBasePair(set, attr("essence"), attr("maxEssence"));
 }
 
-} // namespace
-
-void recomputeCurrent(const AttributeSet& set, AbilitySystem& system) {
-    for (const reflect::FieldInfo& field : AttributeSet::staticTypeInfo().fields) {
-        if (field.kind != reflect::FieldKind::F32) {
-            continue;
+// Aggregates the non-periodic effect modifiers targeting `id` onto `base`:
+// (base + Σadd)·Πmult, with Override winning. The shared core of recompute.
+f32 aggregateModifiers(const AbilitySystem& system, u32 id, f32 base) {
+    f32 addSum = 0.0f;
+    f32 mulProduct = 1.0f;
+    bool hasOverride = false;
+    f32 overrideValue = 0.0f;
+    for (const ActiveEffect& active : system.activeEffects) {
+        if (active.period > 0.0f || active.attribute != id) {
+            continue; // periodic effects act on BaseValue, not aggregation
         }
-        const reflect::Value baseValue = field.get(&set);
-        const f32* base = std::get_if<f32>(&baseValue);
-        if (!base) {
-            continue;
+        switch (active.op) {
+        case ModifierOp::Add:      addSum += active.magnitude; break;
+        case ModifierOp::Multiply: mulProduct *= active.magnitude; break;
+        case ModifierOp::Override: hasOverride = true;
+                                   overrideValue = active.magnitude; break;
         }
-        f32 addSum = 0.0f;
-        f32 mulProduct = 1.0f;
-        bool hasOverride = false;
-        f32 overrideValue = 0.0f;
-        for (const ActiveEffect& active : system.activeEffects) {
-            if (active.period > 0.0f || active.attribute != field.id) {
-                continue; // periodic effects act on BaseValue, not aggregation
-            }
-            switch (active.op) {
-            case ModifierOp::Add:      addSum += active.magnitude; break;
-            case ModifierOp::Multiply: mulProduct *= active.magnitude; break;
-            case ModifierOp::Override: hasOverride = true;
-                                       overrideValue = active.magnitude; break;
-            }
-        }
-        f32 current = (*base + addSum) * mulProduct;
-        if (hasOverride) {
-            current = overrideValue;
-        }
-        system.current[field.id] = current;
     }
+    const f32 current = (base + addSum) * mulProduct;
+    return hasOverride ? overrideValue : current;
+}
 
+bool setPresent(std::span<const AttrSetRef> sets, const reflect::TypeInfo* type) {
+    for (const AttrSetRef& ref : sets) {
+        if (ref.type == type) {
+            return true;
+        }
+    }
+    return false;
+}
+
+f32 readF32(const reflect::FieldInfo& field, const void* instance) {
+    const reflect::Value value = field.get(instance);
+    const f32* result = std::get_if<f32>(&value);
+    return result ? *result : 0.0f;
+}
+
+void clampVitalsCurrent(AbilitySystem& system) {
     const auto clampCurrent = [&](u32 valueId, u32 maxId) {
         const auto value = system.current.find(valueId);
         const auto max = system.current.find(maxId);
@@ -116,6 +120,60 @@ void recomputeCurrent(const AttributeSet& set, AbilitySystem& system) {
     clampCurrent(attr("health"), attr("maxHealth"));
     clampCurrent(attr("energy"), attr("maxEnergy"));
     clampCurrent(attr("essence"), attr("maxEssence"));
+}
+
+} // namespace
+
+void recomputeCurrent(AbilitySystem& system, std::span<const AttrSetRef> sets,
+                      const DerivedStatRegistry* derived) {
+    // Which derived calculators apply this recompute (their source set present)?
+    // Pass 1 skips their targets; pass 2 fills them from their formula.
+    vector<const DerivedStat*> applied;
+    if (derived) {
+        for (const DerivedStat& stat : derived->all()) {
+            if (stat.formula &&
+                (stat.sourceSet == nullptr || setPresent(sets, stat.sourceSet))) {
+                applied.push_back(&stat);
+            }
+        }
+    }
+    const auto isDerivedTarget = [&](u32 id) {
+        for (const DerivedStat* stat : applied) {
+            if (stat->target == id) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // Pass 1 — non-derived fields across every set: aggregate over the base.
+    for (const AttrSetRef& ref : sets) {
+        if (!ref.type || !ref.instance) {
+            continue;
+        }
+        for (const reflect::FieldInfo& field : ref.type->fields) {
+            if (field.kind != reflect::FieldKind::F32 || isDerivedTarget(field.id)) {
+                continue;
+            }
+            system.current[field.id] =
+                aggregateModifiers(system, field.id, readF32(field, ref.instance));
+        }
+    }
+
+    // Pass 2 — derived fields: aggregate over the formula. Sources (the nine
+    // attributes) are non-derived, already computed in pass 1.
+    const StatView view { system };
+    for (const DerivedStat* stat : applied) {
+        system.current[stat->target] =
+            aggregateModifiers(system, stat->target, stat->formula(view));
+    }
+
+    clampVitalsCurrent(system);
+}
+
+void recomputeCurrent(const AttributeSet& set, AbilitySystem& system) {
+    const AttrSetRef one { &AttributeSet::staticTypeInfo(), &set };
+    recomputeCurrent(system, std::span<const AttrSetRef> { &one, 1 }, nullptr);
 }
 
 bool applyEffect(AttributeSet& set, AbilitySystem& system,

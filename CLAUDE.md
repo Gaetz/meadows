@@ -266,6 +266,11 @@ spells, perks). **Single-player only: no network prediction or replication** —
 that removes most of GAS's complexity. Everything below is **data, therefore
 moddable**: it layers through the §5 patch system like any other Form.
 
+> The concrete character-stats design built on this GAS (attributes, the hidden
+> **Resonance** stat + Harmony, derived secondary stats, typed damage, posture,
+> survival, injuries) is specified in **`docs/STATS.md`** — the canonical
+> reference. Read it before touching `gameplay/stats/`.
+
 - **Attributes** — named float values with a `BaseValue` / `CurrentValue` split
   (e.g. Health, MaxHealth, Energy, Essence, ArmorRating, CarryWeight). Grouped
   into **AttributeSets** (reflected components). Clamping and derived values live
@@ -418,6 +423,22 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
     Real cell streaming stays Phase 5. Everything is single-threaded until this
     phase; gameplay randomness stays on the engine RNG (§8) so saves/replays
     remain reproducible.
+- **Phase 4.6 — Character stats: vertical slice (2D):** the load-bearing core of
+  the stats design (`docs/STATS.md`) — 9 attributes → 3 primary stats
+  (Health/Energy/Essence), **Resonance** (hidden signed stat, Onyx/Amber/Garnet
+  spheres) + **Harmony** cascade, derived secondary stats via **C++ calculators +
+  data constants** (§2.7/§6) with per-stat **override/offset** for non-humanoids,
+  a typed-damage → armor/resistance → health+posture pipeline with posture/stagger,
+  a minimal game clock (timescale), one survival→resonance loop, and an ImGui
+  `StatsScene` to drive it. The new derived-attribute machinery generalizes the
+  GAS (multiple AttributeSets; `recomputeCurrent` runs a derived pass). Tested in
+  2D before streaming/3D.
+- **Phase 4.7 — Character stats: full system (2D):** the rest of `docs/STATS.md` —
+  body-part injuries (bruise/cut/fracture, severity, timers, treatment), the full
+  secondary list (all endurances/resistances, social, utility, encumbrance),
+  reputation by faction/location, drugs + harmony break, climate/exposure/clothing,
+  permanent statuses (diseases/psychoses), full critical-weakness/shaken/dismember,
+  the erudition curve. All bolt onto the 4.6 machinery. Still 2D.
 - **Phase 5 — Streaming & persistence:** cell grid, async load/unload, LOD,
   interior/exterior transitions, **save = runtime patch layer** reusing the
   Phase-1 resolver.
@@ -429,7 +450,11 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 9 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
-> **CURRENT PHASE: 5** — update this line as work progresses.
+> **CURRENT PHASE: 4.6** — update this line as work progresses.
+> Character stats slice (`docs/STATS.md` is the canonical design reference — read
+> it before touching `gameplay/stats/`). Inserted before streaming/3D at the
+> dev's request: the full stats design is validated in 2D first (4.6 core, 4.7
+> tail), then Phase 5 streaming.
 >
 > **Phase 4.5 done** (2026-06-15) (multithreading seam). Full brick journal +
 > the crash postmortem in `docs/PHASE-4.5.md` — read it before touching the
