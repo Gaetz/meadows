@@ -433,12 +433,20 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
   `StatsScene` to drive it. The new derived-attribute machinery generalizes the
   GAS (multiple AttributeSets; `recomputeCurrent` runs a derived pass). Tested in
   2D before streaming/3D.
-- **Phase 7 — Character stats: full system (2D):** the rest of `docs/STATS.md` —
-  body-part injuries (bruise/cut/fracture, severity, timers, treatment), the full
-  secondary list (all endurances/resistances, social, utility, encumbrance),
-  reputation by faction/location, drugs + harmony break, climate/exposure/clothing,
-  permanent statuses (diseases/psychoses), full critical-weakness/shaken/dismember,
-  the erudition curve. All bolt onto the Phase 6 machinery. Still 2D.
+- **Phase 7 — Character stats: permanent-status & resonance mechanics (2D):**
+  **value-first** scope (decided with the dev) — the foundations + the novel /
+  risky systems, not the whole `docs/STATS.md` tail. **Foundations:** a seeded
+  engine RNG (`core::Rng`, §8), a `StatsTuningForm` (Phase-6 constants → moddable
+  data, §5), a stat-bearing **item/equipment** model (weapons with typed attack +
+  scaling, armor/clothing per slot, consumables), and **rest/sleep** recovery.
+  **Novel mechanics:** status **buildup** (poison/bleed/…), **body-part injuries**
+  + **diseases/psychoses** (the permanent-status system, gated by resonance-
+  resistance, rolled via RNG), and **drugs + harmony break**. All bolt onto the
+  Phase 6 machinery. **Deferred to a later stats pass:** the full secondary stat
+  list, the full combat-state machine (critical-weakness/shaken/dismember — needs
+  a real-time combat loop), temperature/clothing survival, social + faction-by-
+  location reputation, encumbrance/movement, the erudition curve. Still 2D. Brick
+  journal: `docs/PHASE-7.md`; design: `docs/STATS.md`.
 - **Phase 8 — Streaming & persistence:** cell grid, async load/unload, LOD,
   interior/exterior transitions, **save = runtime patch layer** reusing the
   Phase-1 resolver.
@@ -451,11 +459,12 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
 > **CURRENT PHASE: 7** — update this line as work progresses.
-> Character stats: full system (`docs/STATS.md` is the canonical design
-> reference — read it before touching `gameplay/stats/`). The stats work was
-> inserted before streaming/3D at the dev's request: the full design is
-> validated in 2D first (Phase 6 core done; Phase 7 tail next), then Phase 8
-> streaming.
+> Character stats: permanent-status & resonance mechanics, **value-first**
+> (`docs/STATS.md` is the canonical design reference — read it before touching
+> `gameplay/stats/`). Foundations (RNG, tuning form, stat-bearing items, rest)
+> then the novel mechanics (status buildup, body-part injuries + diseases/
+> psychoses, drugs + harmony break); the mechanical long-tail is deferred to a
+> later stats pass. Phase 6 core is done. Then Phase 8 streaming.
 > Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job
 > system, RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
 > Phase 1 done (2026-06-12): reflection, Forms, field-level plugin resolver,

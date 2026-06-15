@@ -7,6 +7,8 @@
 
 #include <sol/sol.hpp>
 
+#include "engine/core/Rng.hpp"
+
 #include "data/forms/FormDatabase.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
@@ -162,7 +164,7 @@ struct Vm::Impl {
     };
 
     sol::state lua;
-    u64 rngState { 0x9E3779B97F4A7C15ull };
+    core::Rng rng; // the shared engine RNG (§8); seeded from the engine's stream
     std::list<Coro> coros; // suspended ability coroutines (stable addresses)
 };
 
@@ -314,17 +316,11 @@ size_t Vm::pendingCoroutines() const {
 }
 
 void Vm::seedRng(u64 seed) {
-    impl->rngState = seed != 0 ? seed : 1;
+    impl->rng.seed(seed);
 }
 
 f64 Vm::nextRandom() {
-    // xorshift64* — deterministic, seedable; returns [0, 1).
-    u64& state = impl->rngState;
-    state ^= state >> 12;
-    state ^= state << 25;
-    state ^= state >> 27;
-    const u64 result = state * 0x2545F4914F6CDD1Dull;
-    return static_cast<f64>(result >> 11) * (1.0 / 9007199254740992.0);
+    return impl->rng.unit(); // [0, 1), via the shared core::Rng (§8)
 }
 
 } // namespace script
