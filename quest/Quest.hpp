@@ -17,7 +17,7 @@ class GameplayTagRegistry;
 // individually-patchable Form records linked by id (States → Branches → Tasks).
 // A branch completes when all its tasks are done → the quest enters the branch's
 // destination state. Success/Failure states finish the quest. Tasks progress on
-// gameplay events (4b). Runtime state lives in `QuestLog` (serialized Phase 5).
+// gameplay events (4b). Runtime state lives in `QuestLog` (serialized Phase 8).
 
 namespace quest {
 

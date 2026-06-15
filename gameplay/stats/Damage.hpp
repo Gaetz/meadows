@@ -36,7 +36,7 @@ struct DamageResult {
 
 // Combat resource state (runtime, not reflected; like AbilitySystem). `posture`
 // is the poise resource (seeded to maxPosture); `staggerSeconds` counts down a
-// stagger. Critical-weakness / shaken live here too in Phase 4.7.
+// stagger. Critical-weakness / shaken live here too in Phase 7.
 struct CombatState {
     f32 posture { 0.0f };
     f32 staggerSeconds { 0.0f };

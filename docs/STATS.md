@@ -3,11 +3,11 @@
 > Canonical reference for the game's character-stats system. Distilled from the
 > dev's design doc + decisions taken with the dev. **Read this before touching
 > `gameplay/stats/`.** This is the *design* (what the stats are); the
-> implementation journal lives in `docs/PHASE-4.6.md` / `PHASE-4.7.md`.
+> implementation journal lives in `docs/PHASE-6.md` / `PHASE-7.md`.
 >
-> **Scope tags:** `[4.6]` = vertical-slice core (built first, tested in 2D).
-> `[4.7]` = full system (bolts onto the 4.6 machinery, still 2D). Everything is
-> validated in 2D before streaming (Phase 5) and 3D (Phase 6).
+> **Scope tags:** `[6]` = vertical-slice core (built first, tested in 2D).
+> `[7]` = full system (bolts onto the 6 machinery, still 2D). Everything is
+> validated in 2D before streaming (Phase 8) and 3D (Phase 9).
 
 The system is a richer, data-driven extension of the simplified GAS (CLAUDE.md
 §6, `docs/PHASE-3.md`): attributes are reflected C++ AttributeSets, the only
@@ -35,7 +35,7 @@ Identifiers stay English (§8). New concept names were chosen with the dev.
 | Sphère Onyx / Ambre / Grenat | onyx / amber / garnet | resonance channel for health / energy / essence |
 | Harmonie           | harmony          | cross-channel resonance cascade |
 | Blessure/Épuisement/Stress/Stimulation | Status.Wound / Exhaustion / Stress / Stimulation | temporary resonance status tags |
-| Ecchymose / Plaie / Fracture | Injury.Bruise / Cut / Fracture | permanent injuries (4.7) |
+| Ecchymose / Plaie / Fracture | Injury.Bruise / Cut / Fracture | permanent injuries (7) |
 
 ## 1. Primary stats & attributes
 
@@ -51,11 +51,11 @@ Nine **attributes**, grouped three-per-primary:
 
 Attributes start at **6** on average (origin can modify), except **insight = 0**.
 **Each attribute point grants +5 to its primary stat's maximum.** So a starting
-character has maxHealth 90, maxEnergy 90, maxEssence 60. `[4.6]`
+character has maxHealth 90, maxEnergy 90, maxEssence 60. `[6]`
 
 Growth: each level the player may add +5 to one of health/energy/essence max;
 attributes also rise when associated skills pass thresholds (skills = separate
-doc, later), which raises the associated primary. `[4.6]` for the derivation;
+doc, later), which raises the associated primary. `[6]` for the derivation;
 leveling UI later.
 
 > **Derivation:** maxHealth = (strength+constitution+grace)·5, maxEnergy =
@@ -70,7 +70,7 @@ leveling UI later.
 ## 2. Resonance (hidden stat) & Harmony
 
 **Resonance** is a float per channel (onyx=health, amber=energy, garnet=essence),
-range **-100..1500**, base **0**. Two effects `[4.6]`: (1) a **percentage modifier
+range **-100..1500**, base **0**. Two effects `[6]`: (1) a **percentage modifier
 on the maximum** of its primary stat — `max × (1 + r/100)` — the *only* direct
 effect on the max; (2) **every 15 points, ±1 to all attributes linked to that
 primary** (`trunc(r/15)`), which lowers/raises the attributes' *current* value and
@@ -87,29 +87,29 @@ Lore: synchronization/desynchronization with the three spheres — Onyx (bodily
 health/form/structure), Amber (insertion in time/causality), Garnet (essence /
 persistence-in-being).
 
-**Acquisition** `[4.6 minimal — one source; 4.7 full]`:
+**Acquisition** `[6 minimal — one source; 7 full]`:
 - Neglecting needs: hunger/thirst → health (onyx) resonance; sleep → essence
-  (garnet) resonance; cold/heat → energy (amber) resonance. `[4.6: hunger,
-  thirst, sleep; temperature → 4.7]`
+  (garnet) resonance; cold/heat → energy (amber) resonance. `[6: hunger,
+  thirst, sleep; temperature → 7]`
 - Using stats: losing health/energy/essence accrues a matching negative
-  resonance; bars won't refill to max until an 8h rest. `[4.7]`
+  resonance; bars won't refill to max until an 8h rest. `[7]`
 - Fighting negative resonance: enduring builds resistance — +0.001 positive
   resonance per negative point removed during an 8h rest. This shifts the
-  character's *default* phase, so it does **not** affect attributes. `[4.7]`
+  character's *default* phase, so it does **not** affect attributes. `[7]`
 - Drugs: sharp positive/negative resonance, time-limited, with an aftershock of
-  negative resonance + side effects (8h/day rest removes 10 negative points). `[4.7]`
+  negative resonance + side effects (8h/day rest removes 10 negative points). `[7]`
 
-**Harmony** `[4.6]`: resonance channels are coupled. From the most-displaced
+**Harmony** `[6]`: resonance channels are coupled. From the most-displaced
 channel, a displacement cascades **half** to the next channel and **quarter**
 (truncated) to the third, **once**, in order Amber→Garnet→Onyx (energy→essence→
 health→…). Example: -10 health resonance ⇒ -5 energy ⇒ -2 essence. It is a
 *minimum*, applied once from the most-displaced stat.
 
-**Harmony break** `[4.7]`: most drugs break harmony (channels become independent)
+**Harmony break** `[7]`: most drugs break harmony (channels become independent)
 during the positive effect; the aftershock usually restores harmony, so it hits
 all three channels.
 
-**Resonance as resistance to permanent statuses** `[4.7]`: permanent negative
+**Resonance as resistance to permanent statuses** `[7]`: permanent negative
 statuses (injuries/diseases/psychoses) have a low inflict chance (~10%). Phase
 acts as resistance: with non-negative resonance the status **cannot** apply; with
 negative resonance of value `d`, the chance to actually take it is `d%`. Net
@@ -124,17 +124,17 @@ bypass the humanoid formula. Defaults below assume humanoid attributes 1–20.
 
 ### Defensive
 - **health regen** — per second. 0.0002 · grace (very slow). Food increases it.
-- **defense** `[4.6]` — flat physical reduction before %. constitution·0.5, capped
+- **defense** `[6]` — flat physical reduction before %. constitution·0.5, capped
   at 25+constitution % of incoming damage.
 - **critical sensitivity** — % health removed by a crit (on top of the weapon's
   crit damage). 25 − constitution·0.1.
-- **armor/slash · blunt · pierce** `[4.6]` — % reduction of that physical type.
+- **armor/slash · blunt · pierce** `[6]` — % reduction of that physical type.
   0.5·strength / 0.5·constitution / 0.5·grace.
 - **energy regen** — 35 + alacrity per second; pauses during an action, resumes
   after `0.9 − alacrity·0.1` s idle (min 0.5). Food: small %.
 - **dodge** — % chance an incoming hit is nullified. Default 0 (rare/strong).
-- **posture** `[4.6]` — poise points. 50 + alacrity.
-- **posture regen** `[4.6]` — 2 + alacrity/3 per second. Food: small %.
+- **posture** `[6]` — poise points. 50 + alacrity.
+- **posture regen** `[6]` — 2 + alacrity/3 per second. Food: small %.
 - **vitality** — reduces a status's damage by % once its buildup is met. 1 +
   alacrity/4, capped at 25+alacrity %.
 - **endurance/poison · bleed** — buildup duration. 100 + dexterity·0.5.
@@ -142,7 +142,7 @@ bypass the humanoid formula. Defaults below assume humanoid attributes 1–20.
 - **essence regen** — 0.005 · insight per second (slow).
 - **will** — flat non-physical reduction before %. 1 + ego/4, capped at 25+ego %.
 - **resistance/fire · cold · lightning · sonic · chemical · psychic · holy · dark
-  · ether** `[4.6: fire+lightning only]` — % reduction; also raises the matching
+  · ether** `[6: fire+lightning only]` — % reduction; also raises the matching
   buildup by the same %. 0.5 · {charisma|ego|insight} per the table below.
 
 Attribute → defense mapping:
@@ -160,16 +160,16 @@ Attribute → defense mapping:
 | essence | insight      | —              | —                 | lightning, psychic, ether |
 
 ### Offensive
-- **attack** `[4.6]` — flat damage; also unarmed damage. 5 + strength.
+- **attack** `[6]` — flat damage; also unarmed damage. 5 + strength.
 - **bonus attack** — flat damage of the weapon's type from its attribute(s).
-- **slash / pierce / blunt attack** `[4.6 slash]` — flat physical of that type.
+- **slash / pierce / blunt attack** `[6 slash]` — flat physical of that type.
   A weapon's physical type is exclusive per attack animation (a short sword's
   side strikes deal slash, its thrust deals pierce).
-- **fire / lightning / ice / holy / dark attack** `[4.6 fire]` (+ chemical / sonic
+- **fire / lightning / ice / holy / dark attack** `[6 fire]` (+ chemical / sonic
   / psychic / ether — NPC-only) — flat elemental, added to physical each hit.
 - Each attack channel scales by `k · attribute %` (k usually 0.5–2.0, total per
   classic weapon = 2.0 ⇒ +40% at 20 attribute points; rare/legendary push beyond).
-- **posture damage** `[4.6]` — per hit. base + base·(strength−5)%.
+- **posture damage** `[6]` — per hit. base + base·(strength−5)%.
 - **critical damage** — crit multiplier. 1.5 + (dexterity−0.5). Weapons can raise
   the base.
 - **attack speed** — animation speed mult. 95% + 1%/alacrity.
@@ -182,7 +182,7 @@ Each attack animation carries **two motion values**: one multiplies weapon
 damage, one multiplies posture damage (usually equal; lunges can be high-damage,
 low-posture). A light-attack combo averages motion value 1.
 
-### Social (0..100) `[4.7]`
+### Social (0..100) `[7]`
 - **beauty** — (strength+constitution)/2 + grace + charisma.
 - **prestige** (apparat) — status/wealth impression. Default 0.
 - **menace** — danger impression. Default 0.
@@ -192,7 +192,7 @@ low-posture). A light-attack combo averages motion value 1.
 - **faction reputation** — per-faction score −100..100, geographically located;
   one location's faction reputation partially influences another's.
 
-### Utility `[4.7]`
+### Utility `[7]`
 - **encumbrance / max** — max = 50 + strength·10 + constitution·2.
 - **encumbrance category** — light (<40% max, no effect) / medium (40–70%, −25%
   speeds, −44% accel) / heavy (70–100%, −50%, −75% accel) / overencumbered
@@ -205,7 +205,7 @@ low-posture). A light-attack combo averages motion value 1.
 - **climb grip / swim speed** — % modifiers.
 - **breath** (apnea) — seconds; at 0, lose health; −2× during sprint.
 
-## 4. Combat model `[4.6 subset]`
+## 4. Combat model `[6 subset]`
 
 - Attacks/actions (except move & parry) cost energy; at 0 energy, no action.
   Energy regen halves while parrying.
@@ -223,11 +223,11 @@ low-posture). A light-attack combo averages motion value 1.
   in constitution/2 minutes; head = instant). Player + essential companions are
   immune to dismemberment.
 
-> **4.6 slice:** posture + posture damage + posture→0 ⇒ `State.Staggered` (timed),
+> **6 slice:** posture + posture damage + posture→0 ⇒ `State.Staggered` (timed),
 > reusing the `Combat.cpp::updateLifeState` pattern. Full critical-weakness /
-> shaken / dismemberment / bleed-out timers are `[4.7]`.
+> shaken / dismemberment / bleed-out timers are `[7]`.
 
-## 5. Injuries & permanent statuses `[4.7]`
+## 5. Injuries & permanent statuses `[7]`
 
 Permanent negative statuses (don't fade over time; need an action/sleep to remove)
 gated by the ~10% inflict chance × resonance-resistance (§2). Health injuries:
@@ -266,4 +266,4 @@ and psychoses (essence) follow the same shape. Full tables in the design doc.
   (injuries, dismemberment) goes through the engine RNG. **§5**: constants,
   overrides, and sets are moddable data.
 
-See `docs/PHASE-4.6.md` for the brick-by-brick build of the 4.6 slice.
+See `docs/PHASE-6.md` for the brick-by-brick build of the 6 slice.

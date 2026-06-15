@@ -11,7 +11,7 @@ namespace game {
 // In-game dev tool (ImGui): add, select, move and delete objects in the active
 // cell. Edits operate on instance state — the entity's Transform and spawned
 // references — never on Forms (§2.2). They are NOT yet persisted to plugins:
-// exporting live edits as a §5 patch layer is the §5.1 / Phase 9 editor concern,
+// exporting live edits as a §5 patch layer is the §5.1 / Phase 12 editor concern,
 // so reloading the world (e.g. the mod toggle) discards them.
 //
 // Lives in the reusable meadows-runtime lib, so a future editor can build on it.

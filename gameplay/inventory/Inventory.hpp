@@ -18,7 +18,7 @@ struct ItemStack {
 };
 
 // Runtime component: an actor's carried items. Not reflected (a container);
-// serialization is Phase 5 (same deferred container story as active effects).
+// serialization is Phase 8 (same deferred container story as active effects).
 struct Inventory {
     vector<ItemStack> items;
 };

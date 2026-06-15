@@ -20,7 +20,7 @@ namespace game {
 // re-resolution an asset GUID may point at a different file, so the game clears
 // the cache before re-spawning.
 //
-// Async residency (§7, §9 Phase 4.5): resolve() NEVER blocks. A first sighting
+// Async residency (§7, §9 Phase 5): resolve() NEVER blocks. A first sighting
 // returns a placeholder and kicks a background decode on the JobSystem; the
 // worker decodes CPU-side (touching neither the GPU nor this cache) and pushes
 // the result into a ConcurrentQueue. pumpUploads(), called once per frame on the

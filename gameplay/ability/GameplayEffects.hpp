@@ -12,7 +12,7 @@ namespace gameplay {
 // A GameplayEffect definition (Form, moddable) — the ONLY way to change an
 // attribute (§2.9). Phase 3 keeps it flat: ONE modifier and ONE tag per slot
 // (multi-modifier / multi-tag effects compose several effects; lists await the
-// reflection container story, Phase 5). Application is a fixed linear pipeline
+// reflection container story, Phase 8). Application is a fixed linear pipeline
 // (no node-graph); branching is expressed by required/blocked tags.
 struct EffectForm : data::Form {
     str attribute;              // target attribute field name ("health", "damage"…)

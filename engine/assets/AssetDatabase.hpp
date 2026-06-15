@@ -15,7 +15,7 @@ namespace assets {
 // layer (or game startup) feeds it.
 //
 // Phase-1 scope: identity + layering + synchronous resolution. Async
-// loading, residency, and placeholders are Phase 5 / §7 concerns.
+// loading, residency, and placeholders are Phase 8 / §7 concerns.
 class AssetDatabase {
 public:
     // Registers or overrides an asset. `path` may be relative to `baseDir`.

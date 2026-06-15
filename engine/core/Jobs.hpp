@@ -28,7 +28,7 @@ private:
 // Simple thread pool: one shared queue, mutex + condvar (§10: simplest thing
 // that exercises the concept). Work stealing, priorities, or fibers only when
 // a real workload demands them; the first real client is async asset/cell
-// streaming (Phase 5). The destructor drains queued jobs before joining.
+// streaming (Phase 8). The destructor drains queued jobs before joining.
 class JobSystem {
 public:
     using Job = std::function<void()>;

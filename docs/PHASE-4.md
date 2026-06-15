@@ -36,7 +36,7 @@ monolithic UObject asset), to fit §5.
   parent/next/target id-fields + its conditions/events. **Many records per file**
   (a quest = one `.toml`, N records); enriching = a mod adds records + patches
   links (no list-merge conflict). The Phase-2 child→parent pattern (parent +
-  order) assembles a node's children. The visual graph editor (Phase 9) is the
+  order) assembles a node's children. The visual graph editor (Phase 12) is the
   human layer over these flat records.
 - **Reused from NarrativePro:** quest state-machine (States → Branches → Tasks
   with progress), data-task history, dialogue chunk model, speakers, tagged
@@ -166,7 +166,7 @@ build clean; `true-adventurer.exe` builds. New libs: `meadows-script`,
 `meadows-narrative`. Visual run of the Narrative/Combat/Gameplay scenes owed to
 the dev.
 
-## Out of scope (Phase 5+ / deferred)
+## Out of scope (Phase 8+ / deferred)
 Save serialization of runtime state (ScriptVars/QuestLog/active effects) → Phase
-5. Visual graph editors → Phase 9. Cinematics/audio, networking, party,
+5. Visual graph editors → Phase 12. Cinematics/audio, networking, party,
 AngelScript/WASM.

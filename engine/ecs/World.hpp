@@ -47,7 +47,7 @@ public:
     Entity create() { return world.entity(); }
 
     // Registers a component in BOTH systems at once: flecs storage AND our
-    // reflected-component registry, so Phase 5 saves can serialize component
+    // reflected-component registry, so Phase 8 saves can serialize component
     // state through the same reflect::Value pipeline as Forms (§2.8). The
     // single registration point that keeps the two from diverging.
     template<typename T>
@@ -59,7 +59,7 @@ public:
 
     // Reflection type info for a flecs component id, or nullptr if it was not
     // registered through registerComponent (e.g. an internal flecs component).
-    // Drives generic component serialization (Phase 5).
+    // Drives generic component serialization (Phase 8).
     const reflect::TypeInfo* reflectedComponent(flecs::id_t componentId) const;
 
 private:

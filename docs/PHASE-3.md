@@ -50,7 +50,7 @@ pieces are inseparable. Outcome:
   tags + the condition evaluator** (Phase 4), not a graph: a graph is a topology
   that does not field-patch cleanly (§5/§2.4) and hurts determinism (§8). A
   node/graph representation is **reserved** for AI behavior trees, dialogue/quest
-  graphs (Phase 4), and an editor view *over* flat data (Phase 9) — never the
+  graphs (Phase 4), and an editor view *over* flat data (Phase 12) — never the
   runtime/persisted GAS model.
 - **Public API kept deliberately tiny** (~4 functions): `applyEffect`,
   `tryActivate`, `getAttribute`, `hasTag/addTag/removeTag`. Authoring is flat
@@ -59,7 +59,7 @@ pieces are inseparable. Outcome:
   (single-player), GameplayCues (we have our own rendering), AbilityTasks
   (Phase 4), MMC / ExecutionCalculations, snapshot, stacking.
 - **Persistence**: runtime containers (active effects, owned tags, granted
-  abilities) are `std::` containers; their serialization is **Phase 5** (same
+  abilities) are `std::` containers; their serialization is **Phase 8** (same
   no-container-type-in-reflection wall as cells).
 - **Determinism**: GAS tick is an ordered C++ update (no flecs pipeline yet);
   randomness via the engine RNG (§8).
@@ -92,7 +92,7 @@ then the condition evaluator / quests in Phase 4).
 ### (3b) Attributes + AttributeSets + AbilitySystem skeleton — DONE 2026-06-13
 - **Representation decision** (reflection v1 has no nested-struct / no
   `Attribute` Value alternative): the `AttributeSet` reflects its **BaseValues**
-  as flat `f32` fields (patchable §5, serializable Phase 5); **CurrentValues**
+  as flat `f32` fields (patchable §5, serializable Phase 8); **CurrentValues**
   are a runtime overlay on the `AbilitySystem` (recomputed in 3c, §2.9). This is
   the §2.9-faithful split and reuses the reflection keystone — no new system.
 - `gameplay/ability/Attributes.hpp`: `AttributeSet` reflected component
@@ -117,7 +117,7 @@ then the condition evaluator / quests in Phase 4).
   (`attribute` name, `op` add/multiply/override, `magnitude`) + duration policy
   (`instant`/`duration`/`infinite`/`periodic`, `durationSeconds`, `period`) +
   one tag per slot (`grantedTag`/`requiredTag`/`blockedTag`). Multi-modifier /
-  multi-tag effects compose several effects (lists await Phase 5).
+  multi-tag effects compose several effects (lists await Phase 8).
 - Runtime state added to `AbilitySystem`: `ModifierOp`, `ActiveEffect`,
   `vector<ActiveEffect> activeEffects`.
 - Pipeline (flat linear, no node-graph): `applyEffect` checks required/blocked
@@ -135,7 +135,7 @@ then the condition evaluator / quests in Phase 4).
   gating, periodic ticking then expiring. Suite green (68 cases / 624
   assertions); build clean.
 - **Limits (deferred):** single modifier/tag per effect; infinite-periodic not
-  expressible; serialization of active effects = Phase 5.
+  expressible; serialization of active effects = Phase 8.
 
 ### (3d) Minimal GameplayAbility — DONE 2026-06-13
 - `gameplay/ability/GameplayAbility.hpp` + `.cpp`. `AbilityForm` (Form): flat —
@@ -241,7 +241,7 @@ trigger colliders — pickups/zones). Tests in `tests/CollisionTest.cpp`.
 
 ### Inventory / items / equipment — DONE 2026-06-14
 `gameplay/inventory/Inventory`: `Inventory` component (runtime `vector<ItemStack>`,
-serialization Phase 5), reflected `Equipment` (equipped weapon guid),
+serialization Phase 8), reflected `Equipment` (equipped weapon guid),
 `addItem`/`removeItem`/`itemCount`/`equip`/`unequip`. Items are Forms referenced
 by guid. Tests in `tests/InventoryTest.cpp`. (Ownership deferred.)
 

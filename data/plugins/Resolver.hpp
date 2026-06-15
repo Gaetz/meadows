@@ -9,7 +9,7 @@ namespace data {
 // A field written by two or more plugins. This includes the normal
 // "mod overrides base game" case on purpose: the resolver reports raw
 // facts, filtering (e.g. hiding base-game writers) is a presentation
-// concern for the future conflict view (Phase 9).
+// concern for the future conflict view (Phase 12).
 struct FieldConflict {
     core::Guid formId;
     str typeName;

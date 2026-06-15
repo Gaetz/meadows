@@ -11,7 +11,7 @@
 namespace world {
 
 // Turns a cell's resolved references into live entities and back. Phase 2:
-// eager (loadAll at startup). The interface is the shape Phase 5's async
+// eager (loadAll at startup). The interface is the shape Phase 8's async
 // streaming will implement (load/unload per cell, persistence on unload).
 //
 // Each loaded cell gets a flecs cell-entity; its references are spawned with an

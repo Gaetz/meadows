@@ -7,7 +7,7 @@
 // Survival needs (docs/STATS.md §2 "survie"). Below a threshold each need drives
 // Resonance: hunger + thirst → onyx (health), sleep → garnet (essence). A reflected
 // component (serializes §5). Resonance is reached through the resonance path, never
-// by setting attributes directly (§2.9). (Temperature → amber is Phase 4.7.)
+// by setting attributes directly (§2.9). (Temperature → amber is Phase 7.)
 
 namespace gameplay {
 

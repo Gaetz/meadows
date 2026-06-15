@@ -1,13 +1,13 @@
-# Phase 4.5 — Multithreading architecture (DONE 2026-06-15)
+# Phase 5 — Multithreading architecture (DONE 2026-06-15)
 
-> Journal of the Phase 4.5 implementation, same role as `docs/PHASE-1..4.md`.
+> Journal of the Phase 5 implementation, same role as `docs/PHASE-1..4.md`.
 > Read before touching the render seam (`game/SceneSubmit`), the job/queue
 > primitives (`engine/core/`), or the async asset path (`game/TextureCache`).
 
-Phase 4.5 is the first point where async is **forced** (it precedes streaming).
+Phase 5 is the first point where async is **forced** (it precedes streaming).
 Its job is to lay the **seam**, not to build streaming: define the thread model,
 the JobSystem↔flecs boundary, and the async asset-residency path. **No render
-thread, no real cell streaming** (Phase 5). Everything was single-threaded before
+thread, no real cell streaming** (Phase 8). Everything was single-threaded before
 this; gameplay randomness stays on the engine RNG (§8) so saves/replays remain
 reproducible.
 
@@ -38,13 +38,13 @@ a *policy*.
   or saves (§8).
 - **JobSystem owns task parallelism** (I/O, asset decode, later per-cell
   resolution); **flecs systems stay single-threaded** until profiling justifies
-  parallel systems (likely Phase 7/8). These are **orthogonal axes** —
+  parallel systems (likely Phase 10/11). These are **orthogonal axes** —
   heterogeneous-task parallelism (JobSystem) vs. intra-system parallelism over
   entities (flecs scheduler); not to be conflated.
 
 ## Bricks
 
-### (4.5a) Strict render snapshot — DONE 2026-06-15
+### (5a) Strict render snapshot — DONE 2026-06-15
 - `game/SceneSubmit` split from a single monolithic pass into **EXTRACT** +
   **SUBMIT**:
   - `RenderSnapshot` — a self-owning `vector<render::Sprite>` already in painter
@@ -61,7 +61,7 @@ a *policy*.
 - Validation: GL path exercised by running the game (established precedent);
   `spriteFor` mapping stays unit-tested (`tests/SceneSubmitTest.cpp`).
 
-### (4.5b) Non-blocking completion queue — DONE 2026-06-15
+### (5b) Non-blocking completion queue — DONE 2026-06-15
 - `engine/core/ConcurrentQueue.hpp` — header-only, mutex-guarded MPSC mailbox
   (§10: simplest thing; a lock-free ring buffer only if profiling shows the lock
   hot). `push` (any thread), `drain(fn)` (consumer: swaps the buffer out under the
@@ -76,7 +76,7 @@ a *policy*.
   callback without deadlock, and an 8-producer × 10 000 stress proving nothing is
   lost or duplicated.
 
-### (4.5c) Async asset residency + loading gate — DONE 2026-06-15
+### (5c) Async asset residency + loading gate — DONE 2026-06-15
 - `game/TextureCache` went from synchronous-blocking to async:
   - `resolve(guid)` (main, during `extractScene`) **never blocks**. A first
     sighting marks the entry `Pending`, returns a **placeholder** (a tiny built-in
@@ -137,16 +137,16 @@ reliable.**
 
 ---
 
-**Phase 4.5 complete (2026-06-15).** 112 test cases / 803 assertions green; full
+**Phase 5 complete (2026-06-15).** 112 test cases / 803 assertions green; full
 build clean; `true-adventurer.exe` runs (verified looping, not blocked). New
 primitive `core::ConcurrentQueue`; the render seam is now a strict by-value
 snapshot; assets stream in via worker-decode → main-upload with a no-pop-in
 loading gate.
 
-## Out of scope (Phase 5+ / deferred)
+## Out of scope (Phase 8+ / deferred)
 Real cell streaming (async load/unload, LOD, transitions) and **save = runtime
-patch layer** → Phase 5 (the first true clients of this seam). A dedicated render
+patch layer** → Phase 8 (the first true clients of this seam). A dedicated render
 thread / frame pipelining → only when render cost justifies it (the strict
-snapshot keeps it cheap). flecs multi-threaded systems → Phase 7/8 on profiling.
+snapshot keeps it cheap). flecs multi-threaded systems → Phase 10/11 on profiling.
 `JobCounter` destroy-during-notify hardening → when a second client needs the
 wait-then-destroy pattern.

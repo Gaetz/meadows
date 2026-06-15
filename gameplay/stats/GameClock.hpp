@@ -5,7 +5,7 @@
 
 // A minimal in-game clock (docs/STATS.md §6): real time scaled by `timescale`
 // (default ×10 — one real second is ten in-game seconds). Backs the time-based
-// stats (regen, survival, rest, injury recovery). Reflected for save (Phase 5);
+// stats (regen, survival, rest, injury recovery). Reflected for save (Phase 8);
 // `gameSeconds` is f64 so it stays precise across long playthroughs.
 
 namespace gameplay {

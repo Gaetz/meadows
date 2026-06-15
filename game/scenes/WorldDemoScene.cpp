@@ -87,7 +87,7 @@ void WorldDemoScene::update(f32 dt) {
 }
 
 void WorldDemoScene::draw(render::SpriteRenderer& renderer) {
-    // Completion-queue drain point of the frame (§9 Phase 4.5): upload any asset
+    // Completion-queue drain point of the frame (§9 Phase 5): upload any asset
     // that finished decoding on a worker, flipping its handle to resident before
     // extractScene reads it. Runs right before the seam, on the main thread.
     textureCache->pumpUploads();
@@ -115,7 +115,7 @@ void WorldDemoScene::draw(render::SpriteRenderer& renderer) {
             });
         }
     }
-    // Strict ECS↔renderer seam (§9 Phase 4.5): extract a self-owning snapshot
+    // Strict ECS↔renderer seam (§9 Phase 5): extract a self-owning snapshot
     // from the world, then submit it. Same thread today; the split is what lets
     // submit move to a render thread later without touching gameplay.
     const game::RenderSnapshot snapshot = game::extractScene(world, *textureCache);

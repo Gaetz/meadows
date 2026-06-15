@@ -252,7 +252,7 @@ order alone. The decided design:
 - Invariant to protect: never add a parallel resolution mechanism — the
   answer to "force this value" is always "one more layer" (§2.4).
 
-Target: Phase 9 editor conflict view, or a CLI subcommand if the need bites
+Target: Phase 12 editor conflict view, or a CLI subcommand if the need bites
 earlier.
 
 ---
@@ -385,7 +385,7 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 4 — Scripting, abilities & quests:** Lua (sol2) VM, event dispatch,
   scripts on forms/refs, **gameplay abilities**, tag-based **condition
   evaluator**, quest state machines + aliases, dialogue trees.
-- **Phase 4.5 — Multithreading architecture:** the first point where async is
+- **Phase 5 — Multithreading architecture:** the first point where async is
   truly forced (it precedes streaming). Define the thread model and the
   **JobSystem-vs-flecs-scheduler boundary**, plus the async asset-residency
   path (§7: background decode → main-thread GPU upload, never block spawn or the
@@ -409,7 +409,7 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
     + a transfer queue instead — the render-thread model is a GL-era optim).
   - **JobSystem owns task parallelism** (I/O, asset decode, per-cell
     resolution); **flecs systems stay single-threaded** until profiling
-    justifies parallel systems (likely Phase 7/8). These are **orthogonal
+    justifies parallel systems (likely Phase 10/11). These are **orthogonal
     axes** — heterogeneous-task parallelism (JobSystem) vs. intra-system
     parallelism over entities (flecs scheduler); do not conflate them.
   - **Main owns the ECS world and the GPU; a worker touches neither.** Workers
@@ -417,13 +417,13 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
     fixed point each frame) — never `JobSystem::wait()` on the frame thread.
     The main thread applies results in a **deterministic order** (e.g. sort by
     GUID) so completion order never perturbs the engine RNG or saves (§8).
-  - Phase-4.5 scope = the **seam** only: the strict render snapshot, the
+  - Phase-5 scope = the **seam** only: the strict render snapshot, the
     non-blocking completion queue, and one asset-residency path (decode in a
     worker → upload on main → flip handle to resident). **No render thread.**
-    Real cell streaming stays Phase 5. Everything is single-threaded until this
+    Real cell streaming stays Phase 8. Everything is single-threaded until this
     phase; gameplay randomness stays on the engine RNG (§8) so saves/replays
     remain reproducible.
-- **Phase 4.6 — Character stats: vertical slice (2D):** the load-bearing core of
+- **Phase 6 — Character stats: vertical slice (2D):** the load-bearing core of
   the stats design (`docs/STATS.md`) — 9 attributes → 3 primary stats
   (Health/Energy/Essence), **Resonance** (hidden signed stat, Onyx/Amber/Garnet
   spheres) + **Harmony** cascade, derived secondary stats via **C++ calculators +
@@ -433,49 +433,29 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
   `StatsScene` to drive it. The new derived-attribute machinery generalizes the
   GAS (multiple AttributeSets; `recomputeCurrent` runs a derived pass). Tested in
   2D before streaming/3D.
-- **Phase 4.7 — Character stats: full system (2D):** the rest of `docs/STATS.md` —
+- **Phase 7 — Character stats: full system (2D):** the rest of `docs/STATS.md` —
   body-part injuries (bruise/cut/fracture, severity, timers, treatment), the full
   secondary list (all endurances/resistances, social, utility, encumbrance),
   reputation by faction/location, drugs + harmony break, climate/exposure/clothing,
   permanent statuses (diseases/psychoses), full critical-weakness/shaken/dismember,
-  the erudition curve. All bolt onto the 4.6 machinery. Still 2D.
-- **Phase 5 — Streaming & persistence:** cell grid, async load/unload, LOD,
+  the erudition curve. All bolt onto the Phase 6 machinery. Still 2D.
+- **Phase 8 — Streaming & persistence:** cell grid, async load/unload, LOD,
   interior/exterior transitions, **save = runtime patch layer** reusing the
   Phase-1 resolver.
-- **Phase 6 — 3D transition:** glTF meshes/materials/skinning, 3D camera,
+- **Phase 9 — 3D transition:** glTF meshes/materials/skinning, 3D camera,
   scene→3D, low-poly pipeline, keep gameplay untouched.
-- **Phase 7 — BotW lighting:** the §7 list.
-- **Phase 8 — Physics/anim/audio/nav:** Jolt, blend trees + foot IK,
+- **Phase 10 — BotW lighting:** the §7 list.
+- **Phase 11 — Physics/anim/audio/nav:** Jolt, blend trees + foot IK,
   miniaudio, Recast/Detour 3D navmesh.
-- **Phase 9 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
+- **Phase 12 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
-> **CURRENT PHASE: 4.6** — update this line as work progresses.
-> Character stats slice (`docs/STATS.md` is the canonical design reference — read
-> it before touching `gameplay/stats/`). Inserted before streaming/3D at the
-> dev's request: the full stats design is validated in 2D first (4.6 core, 4.7
-> tail), then Phase 5 streaming.
->
-> **Phase 4.5 done** (2026-06-15) (multithreading seam). Full brick journal +
-> the crash postmortem in `docs/PHASE-4.5.md` — read it before touching the
-> render seam (`game/SceneSubmit`), the job/queue primitives (`engine/core/`),
-> or the async asset path (`game/TextureCache`). Load-bearing:
-> - **Strict render snapshot (decouple ≠ thread).** `extractScene` (reads the
->   `World`) → self-owning `RenderSnapshot` (POD, by value) → `submitSnapshot`
->   (renderer has NO access to the `World`). Same-thread is the default; placing
->   the consumer on a render thread is a scheduling policy, not a rewrite.
-> - **`core::ConcurrentQueue`** — non-blocking MPSC completion mailbox (workers
->   push, main drains at a fixed frame point; never `wait()` on the frame).
->   Deterministic application (sort the batch) is the consumer's job (§8).
-> - **Async asset residency** — `TextureCache::resolve` never blocks: placeholder
->   + worker decode → main-thread GPU upload via RHI (GL is single-threaded) →
->   flip to resident; `clear()` bumps a generation so in-flight results cancel.
->   A **loading gate** (`prewarmTextures` + `pendingCount` + `drawLoadingScreen`)
->   hides the world until the visible set is resident — no startup pop-in.
-> - JobSystem owns task parallelism; flecs stays single-threaded (Phase 7/8).
-> - **Build lesson:** changing a shared type's layout did not recompile all
->   dependents (ninja header-dep miss) → stale-obj heap corruption. After a
->   layout change, do a clean rebuild.
+> **CURRENT PHASE: 7** — update this line as work progresses.
+> Character stats: full system (`docs/STATS.md` is the canonical design
+> reference — read it before touching `gameplay/stats/`). The stats work was
+> inserted before streaming/3D at the dev's request: the full design is
+> validated in 2D first (Phase 6 core done; Phase 7 tail next), then Phase 8
+> streaming.
 > Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job
 > system, RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
 > Phase 1 done (2026-06-12): reflection, Forms, field-level plugin resolver,
@@ -520,7 +500,7 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 >   `submitScene` (query, resolve texture, painter sort by layer). Tests in
 >   `tests/SceneSubmitTest.cpp`. *(done 2026-06-13)*
 > - [x] **(e) Populate a 2D world** — `world/streaming/CellLoader` (eager
->   load/unload now; async = Phase 4.5/5), `game/WorldEditor` in-game ImGui tool
+>   load/unload now; async = Phase 5/8), `game/WorldEditor` in-game ImGui tool
 >   (add / select / move / delete objects), `main.cpp` loads a worldspace + cell
 >   of references via the spawner and renders through `submitScene`, live mod
 >   re-resolution preserved (moves/disables references too). Tests in
@@ -639,6 +619,46 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 > clean. A `NarrativeScene` demo (guard dialogue offers a quest; condition-gated
 > option; accepting starts the quest; debug button advances it) is wired in
 > `game/` alongside the other scenes.
+>
+> **Phase 5 done** (2026-06-15) (multithreading seam). Full brick journal +
+> the crash postmortem in `docs/PHASE-5.md` — read it before touching the
+> render seam (`game/SceneSubmit`), the job/queue primitives (`engine/core/`),
+> or the async asset path (`game/TextureCache`). Load-bearing:
+> - **Strict render snapshot (decouple ≠ thread).** `extractScene` (reads the
+>   `World`) → self-owning `RenderSnapshot` (POD, by value) → `submitSnapshot`
+>   (renderer has NO access to the `World`). Same-thread is the default; placing
+>   the consumer on a render thread is a scheduling policy, not a rewrite.
+> - **`core::ConcurrentQueue`** — non-blocking MPSC completion mailbox (workers
+>   push, main drains at a fixed frame point; never `wait()` on the frame).
+>   Deterministic application (sort the batch) is the consumer's job (§8).
+> - **Async asset residency** — `TextureCache::resolve` never blocks: placeholder
+>   + worker decode → main-thread GPU upload via RHI (GL is single-threaded) →
+>   flip to resident; `clear()` bumps a generation so in-flight results cancel.
+>   A **loading gate** (`prewarmTextures` + `pendingCount` + `drawLoadingScreen`)
+>   hides the world until the visible set is resident — no startup pop-in.
+> - JobSystem owns task parallelism; flecs stays single-threaded (Phase 10/11).
+> - **Build lesson:** changing a shared type's layout did not recompile all
+>   dependents (ninja header-dep miss) → stale-obj heap corruption. After a
+>   layout change, do a clean rebuild.
+>
+> **Phase 6 done** (2026-06-15) (character stats: vertical slice). Full brick
+> journal in `docs/PHASE-6.md`; the design is `docs/STATS.md`. Load-bearing:
+> - **Derived-attribute machinery** generalizes the GAS: multiple AttributeSets,
+>   `recomputeCurrent` runs a two-pass derived calculation (`gameplay/ability/
+>   DerivedStats`) — C++ calculators + data constants (§2.7/§6). Opt-in per
+>   source set, so Phase-3 combat is unchanged; non-humanoids override a derived
+>   stat with an infinite Override effect.
+> - **Primary maxima derive from BASE attributes** (Resonance/temporary changes
+>   don't move the max — only its %); secondary stats read CURRENT (so Resonance
+>   weakens them).
+> - **Resonance + Harmony** (`gameplay/stats/Resonance`), a survival→resonance
+>   loop (`Survival`: hunger/thirst→onyx, sleep→garnet), a `GameClock`
+>   (timescale), and a **typed-damage** execution (`Damage`: flat defense/will
+>   capped + armor/resistance %, posture→stagger).
+> - **f64 added to the reflection system** (it was missing only because unneeded):
+>   `FieldKind::F64` appended last (binary ordinals stable), TOML/binary/Lua
+>   paths extended. Used by `GameClock`.
+> - `StatsScene` ImGui harness drives it all (validated by the dev).
 
 ---
 

@@ -8,7 +8,7 @@
 // the renderer observes the scene from above, gameplay never calls into render.
 // Lives in the reusable `meadows-runtime` lib so a future editor can reuse it.
 //
-// Strict decoupling (§9 Phase 4.5): the bridge is split into EXTRACT (reads the
+// Strict decoupling (§9 Phase 5): the bridge is split into EXTRACT (reads the
 // world, produces a self-owning RenderSnapshot) and SUBMIT (consumes only the
 // snapshot). Whether the two run on the same thread or across a thread boundary
 // is then a scheduling policy, not an architectural choice.

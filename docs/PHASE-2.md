@@ -27,8 +27,8 @@ The full discussion is summarized here so it survives context loss.
 - **Our reflection stays the keystone (§2.3)** for the *data model*: Forms,
   patches, §5 resolution, saves. flecs has its own meta system — we do **not**
   use it for persistence (that would fork the serialization path). Components
-  are reflected in **our** system (for the Phase 5 save/patch path) and merely
-  *stored/queried* by flecs. flecs meta is opt-in later, only for the Phase 9
+  are reflected in **our** system (for the Phase 8 save/patch path) and merely
+  *stored/queried* by flecs. flecs meta is opt-in later, only for the Phase 12
   explorer.
 - **flecs ids are opaque runtime tokens.** They encode a generation (and, for
   relationship pairs, relation+target) in their high bits. **Never persist
@@ -63,7 +63,7 @@ The full discussion is summarized here so it survives context loss.
   ECS↔rhi seam), so `meadows` never depends on `world/` (DAG stays acyclic) and
   a future editor can reuse it.
 - **Phase 2 is single-threaded**, asset loading synchronous/eager. Async + the
-  thread model (JobSystem vs flecs scheduler) are the new **Phase 4.5**.
+  thread model (JobSystem vs flecs scheduler) are the new **Phase 5**.
 
 ## Lib / DAG
 
@@ -89,7 +89,7 @@ meadows-ecs  meadows-data  (both flecs-free except meadows-ecs which OWNS flecs)
   - `registerComponent<T>()` — the single registration point: registers the
     component in flecs and records `T::staticTypeInfo()` in a
     `flecs id → reflect::TypeInfo*` map (`reflectedComponent(id)`), the skeleton
-    for Phase 5 generic component serialization.
+    for Phase 8 generic component serialization.
 - CMake: flecs pinned in root `CMakeLists.txt` (`FLECS_SHARED OFF`,
   `FLECS_STATIC ON`, `FLECS_TESTS OFF`); flecs includes forced SYSTEM for
   consumers (clean `/W4 -Wextra`). `meadows-ecs` target in
@@ -161,7 +161,7 @@ meadows-ecs  meadows-data  (both flecs-free except meadows-ecs which OWNS flecs)
 - `game/TextureCache.hpp` + `.cpp`: GUID → `rhi::TextureHandle`, caching and
   **owning** the textures (destroyed on `clear()` / teardown). Caches misses
   too. Missing/unloadable asset → invalid handle (SpriteRenderer draws its white
-  fallback). Synchronous; async residency (§7) deferred to Phase 4.5/5.
+  fallback). Synchronous; async residency (§7) deferred to Phase 5/8.
 - `game/SceneSubmit.hpp` + `.cpp`: the single ECS↔rhi seam.
   - `spriteFor(Transform, SpriteRender, texture)` — **pure** mapping (no GPU,
     unit-testable): position.xy, size = sprite.size · scale.xy, tint, and the 2D
@@ -179,13 +179,13 @@ meadows-ecs  meadows-data  (both flecs-free except meadows-ecs which OWNS flecs)
   `loadCell`/`unloadCell`/`loadAll`/`unloadAll`, `cellEntity(cell)`. Each loaded
   cell gets a flecs cell-entity; references are spawned with `(InCell, …)` so
   unload is one `delete_with`. Skips disabled references. Eager in Phase 2; the
-  interface is the shape Phase 5 async streaming implements.
+  interface is the shape Phase 8 async streaming implements.
 - `game/WorldEditor.hpp` + `.cpp` (in `meadows-runtime`): in-game ImGui dev tool
   — a palette of spawnable base forms (those with a category) + "Add to active
   cell", an object list (select), and move/rotate/delete of the selected
   entity. Edits are **instance state** (Transform / spawned references), never
   Forms (§2.2); **not yet persisted** — exporting as a §5 patch layer is §5.1 /
-  Phase 9, so a reload (mod toggle) discards live edits.
+  Phase 12, so a reload (mod toggle) discards live edits.
 - `game/main.cpp` rewritten: registers core + world form types, categories,
   spawners and scene components; `rebuild()` resolves plugins → assets →
   `WorldModel` → `CellLoader.loadAll()`, re-runnable on the live mod toggle
