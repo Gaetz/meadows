@@ -33,6 +33,7 @@ add_executable(meadows-tests
     ScriptTest.cpp
     SpawnerTest.cpp
     SurvivalTest.cpp
+    TypedDamageTest.cpp
     WorldModelTest.cpp
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "gameplay/ability/DerivedStats.hpp"
+#include "gameplay/stats/CoreAttributes.hpp"
 
 namespace ecs {
 class World;
@@ -8,14 +9,22 @@ class World;
 
 namespace gameplay {
 
-// Registers the character-stats ECS components (CoreAttributes; later Resonance,
-// Survival). Kept separate from registerGameplayComponents so the GAS core
-// (gameplay/ability/) stays free of the stats content (gameplay/stats/).
+// Registers the character-stats ECS components (CoreAttributes, Resonance,
+// Survival, CombatState). Kept separate from registerGameplayComponents so the
+// GAS core (gameplay/ability/) stays free of the stats content (gameplay/stats/).
 void registerStatsComponents(ecs::World& world);
 
-// Registers the slice's derived-stat calculators: the three primary maxima from
-// the nine attributes (×5, docs/STATS.md §1). Later bricks add defense, armor,
-// posture, resistances, etc. (same registry).
+// Registers the slice's derived-stat calculators: the three primary maxima
+// (docs/STATS.md §1) and the defensive stats (§3 — defense, armor, resistances,
+// will, maxPosture, postureRegen, criticalSensitivity).
 void registerCoreDerivedStats(DerivedStatRegistry& registry);
+
+// Recomputes an actor's current values over its CoreAttributes + Vitals, running
+// the derived pass and folding in `extra` modifiers (e.g. Resonance). The
+// orchestration the scene runs each frame and the execution calcs run after a
+// mutation.
+void recomputeStats(const CoreAttributes& core, const AttributeSet& vitals,
+                    AbilitySystem& system, const DerivedStatRegistry& derived,
+                    const StatModifiers* extra = nullptr);
 
 } // namespace gameplay
