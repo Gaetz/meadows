@@ -429,13 +429,28 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 9 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
-> **CURRENT PHASE: 4.5** — update this line as work progresses.
-> Phase 4.5 (multithreading) architecture decided with the dev (2026-06-15):
-> strict render-snapshot decoupling (renderer reads a self-owning packet by
-> value, never the `World`), same-thread default, non-blocking completion
-> queue, JobSystem owns task parallelism, flecs stays single-threaded. Scope =
-> the seam only (snapshot + completion queue + one asset-residency path), no
-> render thread; real streaming stays Phase 5. Rationale in §9 Phase 4.5.
+> **CURRENT PHASE: 5** — update this line as work progresses.
+>
+> **Phase 4.5 done** (2026-06-15) (multithreading seam). Full brick journal +
+> the crash postmortem in `docs/PHASE-4.5.md` — read it before touching the
+> render seam (`game/SceneSubmit`), the job/queue primitives (`engine/core/`),
+> or the async asset path (`game/TextureCache`). Load-bearing:
+> - **Strict render snapshot (decouple ≠ thread).** `extractScene` (reads the
+>   `World`) → self-owning `RenderSnapshot` (POD, by value) → `submitSnapshot`
+>   (renderer has NO access to the `World`). Same-thread is the default; placing
+>   the consumer on a render thread is a scheduling policy, not a rewrite.
+> - **`core::ConcurrentQueue`** — non-blocking MPSC completion mailbox (workers
+>   push, main drains at a fixed frame point; never `wait()` on the frame).
+>   Deterministic application (sort the batch) is the consumer's job (§8).
+> - **Async asset residency** — `TextureCache::resolve` never blocks: placeholder
+>   + worker decode → main-thread GPU upload via RHI (GL is single-threaded) →
+>   flip to resident; `clear()` bumps a generation so in-flight results cancel.
+>   A **loading gate** (`prewarmTextures` + `pendingCount` + `drawLoadingScreen`)
+>   hides the world until the visible set is resident — no startup pop-in.
+> - JobSystem owns task parallelism; flecs stays single-threaded (Phase 7/8).
+> - **Build lesson:** changing a shared type's layout did not recompile all
+>   dependents (ninja header-dep miss) → stale-obj heap corruption. After a
+>   layout change, do a clean rebuild.
 > Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job
 > system, RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
 > Phase 1 done (2026-06-12): reflection, Forms, field-level plugin resolver,
