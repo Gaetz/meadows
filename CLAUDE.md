@@ -384,11 +384,40 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
   truly forced (it precedes streaming). Define the thread model and the
   **JobSystem-vs-flecs-scheduler boundary**, plus the async asset-residency
   path (§7: background decode → main-thread GPU upload, never block spawn or the
-  frame). Pre-framing (to confirm here): the **JobSystem owns task parallelism**
-  (I/O, asset decode, per-cell resolution); **flecs systems stay single-threaded**
-  until profiling justifies parallel systems (likely Phase 7/8). Everything is
-  single-threaded until this phase; gameplay randomness stays on the engine RNG
-  (§8) so saves/replays remain reproducible.
+  frame). Decided with the dev (full rationale below); load-bearing:
+  - **Decouple ≠ thread.** The sim produces a **render snapshot** each frame
+    (an *extract* phase): a self-owning POD packet of draw data (resolved
+    texture handles, no live pointers into the ECS world or asset internals).
+    The renderer reads **only** this packet — it has no access to the `World`.
+    `submitScene`'s sprite list already *is* this packet; formalize it as the
+    contractual boundary. **Strict** decoupling: the packet is passed by value,
+    so where its consumer runs (same thread, a render thread, a pipeline of
+    frames) is a **scheduling policy, not an architectural invariant**.
+  - **Same thread is the default, not a law.** Keeping sim+render on the main
+    thread stays the default (a render thread buys ~nothing for an instanced 2D
+    renderer and would only cost state double-buffering + a frame of latency).
+    The strict snapshot is what keeps a render thread *cheap to add later*.
+  - **GL caveat.** The GL context is thread-affine: *if* a render thread is
+    ever introduced it becomes *the* GL thread, and asset uploads migrate to it
+    (uploads are GL calls). Keep uploads **behind the RHI** so this stays a
+    backend detail (and so a Vulkan backend can use parallel command recording
+    + a transfer queue instead — the render-thread model is a GL-era optim).
+  - **JobSystem owns task parallelism** (I/O, asset decode, per-cell
+    resolution); **flecs systems stay single-threaded** until profiling
+    justifies parallel systems (likely Phase 7/8). These are **orthogonal
+    axes** — heterogeneous-task parallelism (JobSystem) vs. intra-system
+    parallelism over entities (flecs scheduler); do not conflate them.
+  - **Main owns the ECS world and the GPU; a worker touches neither.** Workers
+    produce results into a **non-blocking completion queue** (MPSC, drained at a
+    fixed point each frame) — never `JobSystem::wait()` on the frame thread.
+    The main thread applies results in a **deterministic order** (e.g. sort by
+    GUID) so completion order never perturbs the engine RNG or saves (§8).
+  - Phase-4.5 scope = the **seam** only: the strict render snapshot, the
+    non-blocking completion queue, and one asset-residency path (decode in a
+    worker → upload on main → flip handle to resident). **No render thread.**
+    Real cell streaming stays Phase 5. Everything is single-threaded until this
+    phase; gameplay randomness stays on the engine RNG (§8) so saves/replays
+    remain reproducible.
 - **Phase 5 — Streaming & persistence:** cell grid, async load/unload, LOD,
   interior/exterior transitions, **save = runtime patch layer** reusing the
   Phase-1 resolver.
@@ -400,7 +429,13 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 9 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
-> **CURRENT PHASE: 5** — update this line as work progresses.
+> **CURRENT PHASE: 4.5** — update this line as work progresses.
+> Phase 4.5 (multithreading) architecture decided with the dev (2026-06-15):
+> strict render-snapshot decoupling (renderer reads a self-owning packet by
+> value, never the `World`), same-thread default, non-blocking completion
+> queue, JobSystem owns task parallelism, flecs stays single-threaded. Scope =
+> the seam only (snapshot + completion queue + one asset-residency path), no
+> render thread; real streaming stays Phase 5. Rationale in §9 Phase 4.5.
 > Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job
 > system, RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
 > Phase 1 done (2026-06-12): reflection, Forms, field-level plugin resolver,

@@ -7,6 +7,11 @@
 // engine and world libs, is what lets `meadows` stay free of any world/ deps —
 // the renderer observes the scene from above, gameplay never calls into render.
 // Lives in the reusable `meadows-runtime` lib so a future editor can reuse it.
+//
+// Strict decoupling (§9 Phase 4.5): the bridge is split into EXTRACT (reads the
+// world, produces a self-owning RenderSnapshot) and SUBMIT (consumes only the
+// snapshot). Whether the two run on the same thread or across a thread boundary
+// is then a scheduling policy, not an architectural choice.
 
 namespace ecs {
 class World;
@@ -16,6 +21,17 @@ namespace game {
 
 class TextureCache;
 
+// A self-owning render packet — the contractual ECS↔renderer boundary. Extracted
+// from the world once per frame; the renderer consumes ONLY this and has no
+// access to the World. render::Sprite is pure POD carrying an already-resolved
+// rhi::TextureHandle (no live pointers into the ECS or assets), so the packet is
+// safe to pass by value across a thread boundary later without touching callers.
+struct RenderSnapshot {
+    // Sprites already in painter order (lower SpriteRender.layer first; stable
+    // query order within a layer — no depth buffer in the 2D phase).
+    vector<render::Sprite> sprites;
+};
+
 // Pure mapping from scene components to a 2D sprite (no GPU — unit-testable).
 // The 2D rotation is the yaw of the 3D-ready quaternion (§2.6); the texture is
 // resolved by the caller and passed in.
@@ -23,12 +39,15 @@ render::Sprite spriteFor(const world::Transform& transform,
                          const world::SpriteRender& sprite,
                          rhi::TextureHandle texture);
 
-// Queries every entity with Transform + SpriteRender, resolves its texture, and
-// submits in painter order (sorted by SpriteRender.layer — there is no depth
-// buffer in the 2D phase). Read-only: called from Game::draw, never mutates the
-// world. Assumes the renderer's frame is already begun (the engine owns
-// begin/end).
-void submitScene(const ecs::World& world, TextureCache& textures,
-                 render::SpriteRenderer& renderer);
+// EXTRACT — the only step that reads the World. Queries every entity with
+// Transform + SpriteRender, resolves each texture, and returns a painter-sorted
+// snapshot. Read-only: never mutates the world.
+RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures);
+
+// SUBMIT — pure consumer. Draws the snapshot's sprites in order. Touches neither
+// the World nor the TextureCache, only the packet and the renderer. Assumes the
+// renderer's frame is already begun (the engine owns begin/end).
+void submitSnapshot(const RenderSnapshot& snapshot,
+                    render::SpriteRenderer& renderer);
 
 } // namespace game

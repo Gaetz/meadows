@@ -23,8 +23,7 @@ render::Sprite spriteFor(const world::Transform& transform,
     return out;
 }
 
-void submitScene(const ecs::World& world, TextureCache& textures,
-                 render::SpriteRenderer& renderer) {
+RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures) {
     struct Drawable {
         i32 layer;
         render::Sprite sprite;
@@ -47,8 +46,18 @@ void submitScene(const ecs::World& world, TextureCache& textures,
                          return a.layer < b.layer;
                      });
 
+    RenderSnapshot snapshot;
+    snapshot.sprites.reserve(drawables.size());
     for (const Drawable& drawable : drawables) {
-        renderer.draw(drawable.sprite);
+        snapshot.sprites.push_back(drawable.sprite);
+    }
+    return snapshot;
+}
+
+void submitSnapshot(const RenderSnapshot& snapshot,
+                    render::SpriteRenderer& renderer) {
+    for (const render::Sprite& sprite : snapshot.sprites) {
+        renderer.draw(sprite);
     }
 }
 

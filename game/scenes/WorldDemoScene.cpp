@@ -98,7 +98,11 @@ void WorldDemoScene::draw(render::SpriteRenderer& renderer) {
             });
         }
     }
-    game::submitScene(world, *textureCache, renderer);
+    // Strict ECS↔renderer seam (§9 Phase 4.5): extract a self-owning snapshot
+    // from the world, then submit it. Same thread today; the split is what lets
+    // submit move to a render thread later without touching gameplay.
+    const game::RenderSnapshot snapshot = game::extractScene(world, *textureCache);
+    game::submitSnapshot(snapshot, renderer);
 }
 
 void WorldDemoScene::rebuild() {
