@@ -3,12 +3,14 @@
 #include "engine/ecs/World.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Resonance.hpp"
+#include "gameplay/stats/Survival.hpp"
 
 namespace gameplay {
 
 void registerStatsComponents(ecs::World& world) {
     world.registerComponent<CoreAttributes>(); // reflected: base values serialize
     world.registerComponent<Resonance>();      // reflected: hidden phase stat
+    world.registerComponent<Survival>();       // reflected: hunger / thirst
 }
 
 namespace {

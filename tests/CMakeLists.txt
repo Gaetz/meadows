@@ -32,6 +32,7 @@ add_executable(meadows-tests
     SceneSubmitTest.cpp
     ScriptTest.cpp
     SpawnerTest.cpp
+    SurvivalTest.cpp
     WorldModelTest.cpp
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs

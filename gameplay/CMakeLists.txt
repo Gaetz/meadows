@@ -10,6 +10,7 @@ add_library(meadows-gameplay STATIC
     combat/Combat.cpp
     stats/CharacterStats.cpp
     stats/Resonance.cpp
+    stats/Survival.cpp
     inventory/Inventory.cpp
     faction/Factions.cpp
     event/EventBus.cpp
