@@ -2,6 +2,7 @@
 
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
+#include "gameplay/stats/StatsTuning.hpp"
 
 namespace ecs {
 class World;
@@ -16,8 +17,11 @@ void registerStatsComponents(ecs::World& world);
 
 // Registers the slice's derived-stat calculators: the three primary maxima
 // (docs/STATS.md §1) and the defensive stats (§3 — defense, armor, resistances,
-// will, maxPosture, postureRegen, criticalSensitivity).
-void registerCoreDerivedStats(DerivedStatRegistry& registry);
+// will, maxPosture, postureRegen, criticalSensitivity). The calculators capture
+// `tuning` (§5; defaults match the original constants), so re-register after a
+// tuning change.
+void registerCoreDerivedStats(DerivedStatRegistry& registry,
+                              const StatsTuningForm& tuning = {});
 
 // Recomputes an actor's current values over its CoreAttributes + Vitals, running
 // the derived pass and folding in `extra` modifiers (e.g. Resonance). The

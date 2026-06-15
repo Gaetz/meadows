@@ -9,6 +9,7 @@ add_library(meadows-gameplay STATIC
     ability/GameplayAbility.cpp
     combat/Combat.cpp
     stats/CharacterStats.cpp
+    stats/StatsTuning.cpp
     stats/Resonance.cpp
     stats/Survival.cpp
     stats/Damage.cpp

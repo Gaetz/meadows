@@ -33,6 +33,7 @@ add_executable(meadows-tests
     SceneSubmitTest.cpp
     ScriptTest.cpp
     SpawnerTest.cpp
+    StatsTuningTest.cpp
     SurvivalTest.cpp
     TypedDamageTest.cpp
     WorldModelTest.cpp

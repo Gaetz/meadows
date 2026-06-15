@@ -100,6 +100,7 @@ private:
     gameplay::CombatState combat;
     gameplay::AbilitySystem system;
     gameplay::DerivedStatRegistry derived;
+    gameplay::StatsTuningForm tuning; // resolved from data (§5), or defaults
     gameplay::GameClock clock;
 };
 

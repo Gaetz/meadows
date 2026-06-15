@@ -11,6 +11,7 @@
 #include "gameplay/ability/GameplayAbility.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/combat/Combat.hpp"
+#include "gameplay/stats/StatsTuning.hpp"
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
 #include "world/worldspace/WorldForms.hpp"
@@ -42,6 +43,7 @@ void WorldDemoScene::onEnter() {
     data::registerCoreFormTypes(types);
     world::registerWorldFormTypes(types);
     gameplay::registerGameplayFormTypes(types);
+    gameplay::registerStatsFormTypes(types);
     quest::registerQuestFormTypes(types);
     quest::registerDialogueFormTypes(types);
     world::registerCoreCategories(categories);

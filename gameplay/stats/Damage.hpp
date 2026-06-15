@@ -5,6 +5,7 @@
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
+#include "gameplay/stats/StatsTuning.hpp"
 
 // Typed damage + posture/stagger (docs/STATS.md §3-§4). The mitigation pipeline is
 // the "custom execution calculation" the GAS deferred (§6): per channel, a flat
@@ -59,7 +60,8 @@ struct StatBlock {
 DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
                          const GameplayTagRegistry& tags,
                          const DerivedStatRegistry& derived,
-                         const StatModifiers* extra = nullptr);
+                         const StatModifiers* extra = nullptr,
+                         const StatsTuningForm& tuning = {});
 
 // Counts down an active stagger; drops State.Staggered when it elapses. Called
 // each frame with the real dt.

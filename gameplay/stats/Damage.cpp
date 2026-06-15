@@ -8,8 +8,6 @@
 namespace gameplay {
 
 namespace {
-constexpr f32 kStaggerSeconds = 1.5f;
-
 bool isPhysical(DamageType type) {
     return type == DamageType::Slash || type == DamageType::Pierce ||
            type == DamageType::Blunt;
@@ -33,7 +31,7 @@ f32 mitigationPercent(const AbilitySystem& system, DamageType type) {
 DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
                          const GameplayTagRegistry& tags,
                          const DerivedStatRegistry& derived,
-                         const StatModifiers* extra) {
+                         const StatModifiers* extra, const StatsTuningForm& tuning) {
     const AbilitySystem& sys = target.system;
     const auto cur = [&](const char* name) { return currentValueOf(sys, attr(name)); };
 
@@ -44,7 +42,8 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
         const bool physical = isPhysical(ch.type);
         const f32 flatStat = physical ? cur("defense") : cur("will");
         const f32 capAttr = physical ? cur("constitution") : cur("ego");
-        const f32 flatCap = (25.0f + capAttr) / 100.0f * ch.amount;
+        const f32 flatCap =
+            (tuning.flatMitigationCapBase + capAttr) / 100.0f * ch.amount;
         const f32 flat = std::min(flatStat, flatCap);
         const f32 afterFlat = std::max(0.0f, ch.amount - flat);
         const f32 percent = std::clamp(mitigationPercent(sys, ch.type), 0.0f, 100.0f);
@@ -67,7 +66,7 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
     // Posture break → stagger: grant the tag, start the timer, restore posture.
     if (target.combat.posture <= 0.0f && event.postureAmount > 0.0f) {
         result.staggered = true;
-        target.combat.staggerSeconds = kStaggerSeconds;
+        target.combat.staggerSeconds = tuning.staggerSeconds;
         target.combat.posture = currentValueOf(target.system, attr("maxPosture"));
         if (const auto tag = tags.find("State.Staggered")) {
             target.system.tags.add(*tag, tags);

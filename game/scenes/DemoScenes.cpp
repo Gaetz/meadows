@@ -427,7 +427,7 @@ void NarrativeScene::drawUi() {
 gameplay::StatModifiers StatsScene::resonanceModifiers() const {
     gameplay::StatModifiers mods;
     gameplay::buildResonanceModifiers(
-        gameplay::effectiveResonance(resonance, survival), mods);
+        gameplay::effectiveResonance(resonance, survival, tuning), mods);
     return mods;
 }
 
@@ -444,14 +444,15 @@ void StatsScene::seedResources() {
 void StatsScene::onEnter() {
     WorldDemoScene::onEnter();
     tags.registerTag("State.Staggered");
-    gameplay::registerCoreDerivedStats(derived);
+    tuning = gameplay::resolveStatsTuning(forms); // §5: data or defaults
+    gameplay::registerCoreDerivedStats(derived, tuning);
     seedResources();
 }
 
 void StatsScene::update(f32 dt) {
     WorldDemoScene::update(dt);
     const f64 gameDt = clock.advance(dt);
-    gameplay::tickSurvival(survival, gameDt);
+    gameplay::tickSurvival(survival, gameDt, tuning);
     gameplay::updateStagger(combat, system, dt, tags);
 
     const gameplay::StatModifiers mods = resonanceModifiers();
@@ -540,16 +541,16 @@ void StatsScene::drawUi() {
     StatBlock block { core, vitals, system, combat };
     if (ImGui::Button("Slash 50")) {
         applyDamage(block, DamageEvent { { { DamageType::Slash, 50.0f } }, 25.0f },
-                    tags, derived, &mods);
+                    tags, derived, &mods, tuning);
     }
     ImGui::SameLine();
     if (ImGui::Button("Fire 50")) {
         applyDamage(block, DamageEvent { { { DamageType::Fire, 50.0f } }, 0.0f },
-                    tags, derived, &mods);
+                    tags, derived, &mods, tuning);
     }
     ImGui::SameLine();
     if (ImGui::Button("Posture hit")) {
-        applyDamage(block, DamageEvent { {}, 40.0f }, tags, derived, &mods);
+        applyDamage(block, DamageEvent { {}, 40.0f }, tags, derived, &mods, tuning);
     }
     if (ImGui::Button("Wound (-15 onyx)")) {
         resonance.onyx -= 15.0f;

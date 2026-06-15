@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <span>
 #include <string_view>
 #include <unordered_map>
@@ -66,7 +67,9 @@ struct StatView {
 struct DerivedStat {
     u32 target { 0 };                               // attribute field id written
     const reflect::TypeInfo* sourceSet { nullptr }; // required set (null = always)
-    f32 (*formula)(const StatView&) { nullptr };
+    // A closure so content calculators can capture tuning constants (§5); the
+    // generic machinery stays unaware of the stats content.
+    std::function<f32(const StatView&)> formula;
 };
 
 class DerivedStatRegistry {
