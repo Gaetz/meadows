@@ -36,8 +36,10 @@ Resonance harmonyEffective(const Resonance& res) {
     return Resonance { /*onyx*/ vals[2], /*amber*/ vals[0], /*garnet*/ vals[1] };
 }
 
-void buildResonanceModifiers(const Resonance& res, StatModifiers& mods) {
-    const Resonance eff = harmonyEffective(res);
+void buildResonanceModifiers(const Resonance& res, StatModifiers& mods,
+                             bool harmonyBroken) {
+    // A drug (N4) breaks harmony: the channels act independently (no cascade).
+    const Resonance eff = harmonyBroken ? res : harmonyEffective(res);
 
     const auto channel = [&](f32 r, std::initializer_list<const char*> attrs,
                              const char* maxField) {

@@ -3,6 +3,7 @@
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormTypeRegistry.hpp"
 #include "gameplay/stats/Afflictions.hpp" // registerAfflictionFormTypes
+#include "gameplay/stats/Drugs.hpp"       // registerDrugFormTypes
 
 namespace gameplay {
 
@@ -15,6 +16,7 @@ const core::Guid kStatsTuningGuid =
 void registerStatsFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<StatsTuningForm>();
     registerAfflictionFormTypes(registry); // diseases / psychoses (N3)
+    registerDrugFormTypes(registry);       // drugs (N4)
 }
 
 StatsTuningForm resolveStatsTuning(const data::FormDatabase& forms) {

@@ -33,7 +33,9 @@ Resonance harmonyEffective(const Resonance& res);
 // Translates resonance into stat modifiers (after the harmony cascade): each
 // channel's effective resonance `r` scales its primary max by (1 + r/100) and
 // offsets its three linked attributes by trunc(r/15). Pass the result to
-// recomputeCurrent as its `extra` modifiers.
-void buildResonanceModifiers(const Resonance& res, StatModifiers& mods);
+// recomputeCurrent as its `extra` modifiers. When `harmonyBroken` (a drug is
+// active, N4), the channels are independent — the cascade is skipped.
+void buildResonanceModifiers(const Resonance& res, StatModifiers& mods,
+                             bool harmonyBroken = false);
 
 } // namespace gameplay

@@ -432,7 +432,11 @@ gameplay::StatModifiers StatsScene::resonanceModifiers() const {
     const gameplay::Resonance ar = gameplay::afflictionResonance(afflictions, afflictionDb);
     eff.amber += ar.amber;   // N3: diseases → energy resonance
     eff.garnet += ar.garnet; // N3: psychoses → essence resonance
-    gameplay::buildResonanceModifiers(eff, mods);
+    const gameplay::Resonance dr = gameplay::drugResonance(activeDrugs); // N4: drug boost
+    eff.onyx += dr.onyx;
+    eff.amber += dr.amber;
+    eff.garnet += dr.garnet;
+    gameplay::buildResonanceModifiers(eff, mods, gameplay::harmonyBroken(system, tags));
     if (armorEquipped) {
         gameplay::armorModifiers(sampleArmor, mods); // F3: equipment → derived stats
     }
@@ -456,7 +460,7 @@ void StatsScene::onEnter() {
     tags.registerTag("State.Staggered");
     for (const char* statusTag :
          { "Status.Poisoned", "Status.Bleeding", "Status.Mental", "Status.Diseased",
-           "Status.Cursed", "Status.Dying" }) {
+           "Status.Cursed", "Status.Dying", "Status.HarmonyBroken" }) {
         tags.registerTag(statusTag);
     }
     tuning = gameplay::resolveStatsTuning(forms); // §5: data or defaults
@@ -493,12 +497,20 @@ void StatsScene::onEnter() {
     psychosis->recoveryHours = 72.0f;
     samplePsychosis = psychosis->id;
     afflictionDb.add(std::move(psychosis), gameplay::AfflictionForm::staticTypeInfo());
+
+    // N4 sample drug: a stimulant (amber boost, breaks harmony, then aftershock).
+    sampleDrug.displayName = "Stimulant";
+    sampleDrug.channel = "amber";
+    sampleDrug.resonanceBoost = 100.0f;
+    sampleDrug.durationHours = 2.0f;
+    sampleDrug.aftershockResonance = -30.0f;
 }
 
 void StatsScene::update(f32 dt) {
     WorldDemoScene::update(dt);
     const f64 gameDt = clock.advance(dt);
     gameplay::tickSurvival(survival, gameDt, tuning);
+    gameplay::tickDrugs(activeDrugs, resonance, system, gameDt, tags); // N4: expiry → aftershock
     gameplay::accrueRest(combat, gameDt); // not in active combat in the demo
     gameplay::updateStagger(combat, system, dt, tags);
 
@@ -701,6 +713,18 @@ void StatsScene::drawUi() {
                                afflictionResonance(afflictions, afflictionDb).garnet;
             inflictAffliction(afflictions, samplePsychosis, *def, garnet, 1.0, rng);
         }
+    }
+
+    ImGui::SeparatorText("Drugs (N4) — boost + harmony break, then aftershock");
+    ImGui::Text("harmony: %s", harmonyBroken(system, tags)
+                                   ? "BROKEN (channels independent)"
+                                   : "intact (cascade on)");
+    for (const ActiveDrug& d : activeDrugs.list) {
+        ImGui::BulletText("drug (+%.0f %s) — %.1fh left", d.boost, d.channel.c_str(),
+                          d.hoursRemaining);
+    }
+    if (ImGui::Button("Take stimulant (+100 amber, breaks harmony, -30 aftershock)")) {
+        takeDrug(activeDrugs, sampleDrug, system, tags);
     }
 
     ImGui::End();

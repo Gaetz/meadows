@@ -13,6 +13,7 @@
 #include "gameplay/stats/CharacterStats.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Damage.hpp"
+#include "gameplay/stats/Drugs.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/Injuries.hpp"
@@ -107,6 +108,8 @@ private:
     gameplay::StatusBuildup buildup;
     gameplay::Injuries injuries;
     gameplay::Afflictions afflictions;
+    gameplay::ActiveDrugs activeDrugs;
+    gameplay::DrugForm sampleDrug;
     gameplay::CombatState combat;
     gameplay::AbilitySystem system;
     core::Rng rng { 0xC0FFEEu };
