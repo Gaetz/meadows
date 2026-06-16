@@ -14,6 +14,7 @@
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/Resonance.hpp"
+#include "gameplay/stats/Rest.hpp"
 #include "gameplay/stats/Survival.hpp"
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"

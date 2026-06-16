@@ -464,6 +464,7 @@ void StatsScene::update(f32 dt) {
     WorldDemoScene::update(dt);
     const f64 gameDt = clock.advance(dt);
     gameplay::tickSurvival(survival, gameDt, tuning);
+    gameplay::accrueRest(combat, gameDt); // not in active combat in the demo
     gameplay::updateStagger(combat, system, dt, tags);
 
     const gameplay::StatModifiers mods = resonanceModifiers();
@@ -537,7 +538,8 @@ void StatsScene::drawUi() {
     ImGui::DragFloat("hunger", &survival.hunger, 0.5f, 0.0f, 100.0f);  // → onyx
     ImGui::DragFloat("thirst", &survival.thirst, 0.5f, 0.0f, 100.0f);  // → onyx
     ImGui::DragFloat("sleep", &survival.sleep, 0.5f, 0.0f, 100.0f);    // → garnet
-    ImGui::Text("game time %.1f h", clock.gameHours());
+    ImGui::Text("game time %.1f h   rest %.1f h", clock.gameHours(),
+                combat.restSeconds / 3600.0f);
 
     ImGui::SeparatorText("Derived");
     ImGui::Text("defense %.1f   armor S/B/P %.0f/%.0f/%.0f", cur("defense"),
@@ -579,6 +581,10 @@ void StatsScene::drawUi() {
         const f64 gd = 6.0 * 3600.0;
         clock.gameSeconds += gd;
         tickSurvival(survival, gd, tuning);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Sleep 8h (restores sleep, accrues rest)")) {
+        gameplay::sleep(clock, survival, combat, 8.0f, tuning);
     }
 
     ImGui::SeparatorText("Equipment (F3)");

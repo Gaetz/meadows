@@ -29,6 +29,7 @@ add_executable(meadows-tests
     ReflectTest.cpp
     ResolverTest.cpp
     ResonanceTest.cpp
+    RestTest.cpp
     RngTest.cpp
     SceneStackTest.cpp
     SceneSubmitTest.cpp

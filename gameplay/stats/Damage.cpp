@@ -57,6 +57,11 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
     // Deplete posture (combat resource).
     target.combat.posture = std::max(0.0f, target.combat.posture - event.postureAmount);
 
+    // A hit interrupts Rest (§5): injury/resonance recovery restarts after sleep.
+    if (totalHealth > 0.0f || event.postureAmount > 0.0f) {
+        target.combat.restSeconds = 0.0f;
+    }
+
     recomputeStats(target.core, target.vitals, target.system, derived, extra);
 
     DamageResult result;
