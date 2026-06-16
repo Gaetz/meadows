@@ -15,6 +15,7 @@
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/Resonance.hpp"
 #include "gameplay/stats/Rest.hpp"
+#include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/stats/Survival.hpp"
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
@@ -100,6 +101,7 @@ private:
     gameplay::AttributeSet vitals;
     gameplay::Resonance resonance;   // persistent (wounds/drugs later)
     gameplay::Survival survival;
+    gameplay::StatusBuildup buildup;
     gameplay::CombatState combat;
     gameplay::AbilitySystem system;
     gameplay::DerivedStatRegistry derived;

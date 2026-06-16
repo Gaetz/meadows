@@ -447,6 +447,11 @@ void StatsScene::seedResources() {
 void StatsScene::onEnter() {
     WorldDemoScene::onEnter();
     tags.registerTag("State.Staggered");
+    for (const char* statusTag :
+         { "Status.Poisoned", "Status.Bleeding", "Status.Mental", "Status.Diseased",
+           "Status.Cursed", "Status.Dying" }) {
+        tags.registerTag(statusTag);
+    }
     tuning = gameplay::resolveStatsTuning(forms); // §5: data or defaults
     gameplay::registerCoreDerivedStats(derived, tuning);
     seedResources();
@@ -469,6 +474,7 @@ void StatsScene::update(f32 dt) {
 
     const gameplay::StatModifiers mods = resonanceModifiers();
     gameplay::recomputeStats(core, vitals, system, derived, &mods);
+    gameplay::tickBuildup(buildup, system, dt, tags, tuning); // endurance now current
 
     // Posture regenerates while not staggered.
     if (combat.staggerSeconds <= 0.0f) {
@@ -593,6 +599,26 @@ void StatsScene::drawUi() {
     if (ImGui::Button("Attack with equipped weapon (30 slash, ×1.5 strength)")) {
         applyDamage(block, weaponDamageEvent(sampleWeapon, system), tags, derived,
                     &mods, tuning);
+    }
+
+    ImGui::SeparatorText("Status buildup (N1) — fill to endurance to trigger");
+    ImGui::Text("poison %.0f / %.0f    bleed %.0f / %.0f", buildup.poison,
+                cur("endurancePoison"), buildup.bleed, cur("enduranceBleed"));
+    if (ImGui::Button("Poison +40")) {
+        addBuildup(buildup, StatusType::Poison, 40.0f);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Bleed +40")) {
+        addBuildup(buildup, StatusType::Bleed, 40.0f);
+    }
+    ImGui::Text("active statuses:");
+    for (const char* statusTag :
+         { "Status.Poisoned", "Status.Bleeding", "Status.Mental", "Status.Diseased",
+           "Status.Cursed", "Status.Dying" }) {
+        if (const auto t = tags.find(statusTag); t && system.tags.has(*t)) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.7f, 1.0f, 0.4f, 1.0f), "%s", statusTag);
+        }
     }
 
     ImGui::End();

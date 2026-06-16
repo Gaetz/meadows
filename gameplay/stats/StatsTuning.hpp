@@ -27,6 +27,10 @@ struct StatsTuningForm : data::Form {
     f32 postureRegenPerAlacrity { 0.333333f };
     f32 critSensBase { 25.0f };
     f32 critSensPerConstitution { 0.1f }; // subtracted
+    // Status buildup / endurance (StatusBuildup, N1).
+    f32 enduranceBase { 100.0f };         // buildup threshold to trigger a status
+    f32 endurancePerAttribute { 0.5f };
+    f32 statusBuildupDecay { 5.0f };      // buildup points lost per second
     // Damage (Damage).
     f32 flatMitigationCapBase { 25.0f };  // flat reduction cap = (this + attr) %
     f32 staggerSeconds { 1.5f };
@@ -48,6 +52,9 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(postureRegenPerAlacrity)
         REFLECT_FIELD(critSensBase)
         REFLECT_FIELD(critSensPerConstitution)
+        REFLECT_FIELD(enduranceBase)
+        REFLECT_FIELD(endurancePerAttribute)
+        REFLECT_FIELD(statusBuildupDecay)
         REFLECT_FIELD(flatMitigationCapBase)
         REFLECT_FIELD(staggerSeconds)
         REFLECT_FIELD(survivalThreshold)

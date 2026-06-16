@@ -36,6 +36,7 @@ add_executable(meadows-tests
     ScriptTest.cpp
     SpawnerTest.cpp
     StatsTuningTest.cpp
+    StatusBuildupTest.cpp
     SurvivalTest.cpp
     TypedDamageTest.cpp
     WorldModelTest.cpp

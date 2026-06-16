@@ -4,15 +4,17 @@
 #include "gameplay/ability/GameplayEffects.hpp" // recomputeCurrent
 #include "gameplay/stats/Damage.hpp"            // CombatState
 #include "gameplay/stats/Resonance.hpp"
+#include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/stats/Survival.hpp"
 
 namespace gameplay {
 
 void registerStatsComponents(ecs::World& world) {
-    world.registerComponent<CoreAttributes>(); // reflected: base values serialize
-    world.registerComponent<Resonance>();      // reflected: hidden phase stat
-    world.registerComponent<Survival>();       // reflected: hunger / thirst
-    world.handle().component<CombatState>();    // runtime: posture / stagger
+    world.registerComponent<CoreAttributes>();  // reflected: base values serialize
+    world.registerComponent<Resonance>();       // reflected: hidden phase stat
+    world.registerComponent<Survival>();        // reflected: hunger / thirst
+    world.registerComponent<StatusBuildup>();   // reflected: status accumulators
+    world.handle().component<CombatState>();     // runtime: posture / stagger
 }
 
 void registerCoreDerivedStats(DerivedStatRegistry& registry,
@@ -64,6 +66,20 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
     registry.add({ attr("criticalSensitivity"), core, [t](const StatView& v) {
         return t.critSensBase - v.get("constitution") * t.critSensPerConstitution;
     } });
+
+    // Endurance = the per-type status-buildup threshold (docs/STATS.md §3, N1):
+    // dexterity → poison/bleed, alacrity → mental/disease, perception → curse/death.
+    const auto endurance = [&](const char* stat, const char* attribute) {
+        registry.add({ attr(stat), core, [t, attribute](const StatView& v) {
+            return t.enduranceBase + v.get(attribute) * t.endurancePerAttribute;
+        } });
+    };
+    endurance("endurancePoison", "dexterity");
+    endurance("enduranceBleed", "dexterity");
+    endurance("enduranceMental", "alacrity");
+    endurance("enduranceDisease", "alacrity");
+    endurance("enduranceCurse", "perception");
+    endurance("enduranceDeath", "perception");
 }
 
 void recomputeStats(const CoreAttributes& core, const AttributeSet& vitals,
