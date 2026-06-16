@@ -3,6 +3,7 @@
 #include "engine/ecs/World.hpp"
 #include "gameplay/ability/GameplayEffects.hpp" // recomputeCurrent
 #include "gameplay/stats/Damage.hpp"            // CombatState
+#include "gameplay/stats/Injuries.hpp"          // Injuries
 #include "gameplay/stats/Resonance.hpp"
 #include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/stats/Survival.hpp"
@@ -15,6 +16,7 @@ void registerStatsComponents(ecs::World& world) {
     world.registerComponent<Survival>();        // reflected: hunger / thirst
     world.registerComponent<StatusBuildup>();   // reflected: status accumulators
     world.handle().component<CombatState>();     // runtime: posture / stagger
+    world.handle().component<Injuries>();        // runtime: body-part injuries
 }
 
 void registerCoreDerivedStats(DerivedStatRegistry& registry,
@@ -80,6 +82,12 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
     endurance("enduranceDisease", "alacrity");
     endurance("enduranceCurse", "perception");
     endurance("enduranceDeath", "perception");
+
+    // Movement speed (docs/STATS.md §3) — minimal, so leg-injury speed maluses
+    // (N2) have a target; full utility/encumbrance is a later pass.
+    registry.add({ attr("movementSpeed"), core, [](const StatView& v) {
+        return 90.0f + v.get("alacrity") + v.get("strength");
+    } });
 }
 
 void recomputeStats(const CoreAttributes& core, const AttributeSet& vitals,

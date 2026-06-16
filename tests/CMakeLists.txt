@@ -21,6 +21,7 @@ add_executable(meadows-tests
     GameplayEffectsTest.cpp
     GameplayTagsTest.cpp
     GuidTest.cpp
+    InjuriesTest.cpp
     InventoryTest.cpp
     JobsTest.cpp
     MovementTest.cpp

@@ -426,11 +426,13 @@ void NarrativeScene::drawUi() {
 
 gameplay::StatModifiers StatsScene::resonanceModifiers() const {
     gameplay::StatModifiers mods;
-    gameplay::buildResonanceModifiers(
-        gameplay::effectiveResonance(resonance, survival, tuning), mods);
+    gameplay::Resonance eff = gameplay::effectiveResonance(resonance, survival, tuning);
+    eff.onyx += gameplay::injuryResonance(injuries); // N2: injuries → health resonance
+    gameplay::buildResonanceModifiers(eff, mods);
     if (armorEquipped) {
         gameplay::armorModifiers(sampleArmor, mods); // F3: equipment → derived stats
     }
+    gameplay::injuryStatModifiers(injuries, mods); // N2: attribute & speed maluses
     return mods;
 }
 
@@ -589,16 +591,25 @@ void StatsScene::drawUi() {
         tickSurvival(survival, gd, tuning);
     }
     ImGui::SameLine();
-    if (ImGui::Button("Sleep 8h (restores sleep, accrues rest)")) {
+    if (ImGui::Button("Sleep 8h (restores sleep, accrues rest, heals injuries)")) {
         gameplay::sleep(clock, survival, combat, 8.0f, tuning);
+        gameplay::recoverInjuries(injuries, 8.0f);
     }
 
     ImGui::SeparatorText("Equipment (F3)");
     ImGui::Checkbox("Equip leather armor (+20 slash armor, +15 fire resist)",
                     &armorEquipped);
     if (ImGui::Button("Attack with equipped weapon (30 slash, ×1.5 strength)")) {
-        applyDamage(block, weaponDamageEvent(sampleWeapon, system), tags, derived,
-                    &mods, tuning);
+        const DamageResult r = applyDamage(block, weaponDamageEvent(sampleWeapon, system),
+                                           tags, derived, &mods, tuning);
+        // Roll a cut from the hit — gated by resonance-resistance (no injury at
+        // onyx ≥ 0; wound/starve the actor first to see injuries land).
+        const f32 maxH = cur("maxHealth");
+        const f32 frac = maxH > 0.0f ? r.healthDamage / maxH : 0.0f;
+        const f32 onyx = effectiveResonance(resonance, survival, tuning).onyx +
+                         injuryResonance(injuries);
+        rollInjury(injuries, InjuryType::Cut, BodyPart::Torso,
+                   injuryBaseChance(InjuryType::Cut, frac), onyx, rng);
     }
 
     ImGui::SeparatorText("Status buildup (N1) — fill to endurance to trigger");
@@ -619,6 +630,24 @@ void StatsScene::drawUi() {
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(0.7f, 1.0f, 0.4f, 1.0f), "%s", statusTag);
         }
+    }
+
+    ImGui::SeparatorText("Injuries (N2) — heal by sleeping");
+    ImGui::Text("movement speed %.0f", cur("movementSpeed")); // drops with leg injury
+    static const char* kInjuryTypes[] = { "Bruise", "Cut", "Fracture" };
+    static const char* kInjuryParts[] = { "Head", "Torso", "Arms", "Legs" };
+    static const char* kInjurySevs[] = { "light", "major", "severe" };
+    for (const Injury& inj : injuries.list) {
+        ImGui::BulletText("%s %s (%s) — %.0fh left", kInjuryTypes[static_cast<int>(inj.type)],
+                          kInjuryParts[static_cast<int>(inj.part)],
+                          kInjurySevs[inj.severity], inj.recoveryHoursRemaining);
+    }
+    if (ImGui::Button("Inflict cut (torso)")) {
+        addInjury(injuries, InjuryType::Cut, BodyPart::Torso);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Inflict fracture (legs)")) {
+        addInjury(injuries, InjuryType::Fracture, BodyPart::Legs);
     }
 
     ImGui::End();

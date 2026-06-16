@@ -227,18 +227,56 @@ low-posture). A light-attack combo averages motion value 1.
 > reusing the `Combat.cpp::updateLifeState` pattern. Full critical-weakness /
 > shaken / dismemberment / bleed-out timers are `[7]`.
 
-## 5. Injuries & permanent statuses `[7]`
+## 5. Injuries & permanent statuses
 
-Permanent negative statuses (don't fade over time; need an action/sleep to remove)
-gated by the ~10% inflict chance × resonance-resistance (§2). Health injuries:
-**bruise** (light/hematoma, by body part: head/torso/arms/legs), **cut**
-(light/major/severe; can be open → blood loss, or infected → cumulative energy
-resonance), **fracture** (light/major/severe; longest to heal, max two at once).
-Each carries a resonance penalty + per-body-part attribute/speed maluses, recovery
-times (rest = time without combat/health-loss; starts after 4h sleep, +4h bonus
-for 8h comfortable), aggravation chances, and treatment items (compress/herbs,
-clean/dirty bandage, medical alcohol, needle & thread, splint). Diseases (energy)
-and psychoses (essence) follow the same shape. Full tables in the design doc.
+Permanent negative statuses don't fade with time — they recover only over **Rest**
+(in-game time without taking a hit; §4/F4) and with treatment. Inflict is gated:
+a low base chance (from the hit) **× resonance-resistance** (§2 — with non-negative
+resonance the injury **cannot** apply; with negative onyx `d`, the chance is scaled
+by `|d|/100`), rolled via the engine RNG (§8). Health injuries are **bruise**,
+**cut**, **fracture**, by body part (head/torso/arms/legs). Diseases (energy) and
+psychoses (essence) follow the same shape (N3).
+
+Each injury carries an **onyx resonance penalty**, a **per-body-part attribute
+malus** (and a leg **speed** malus), and a **recovery time** (in rest-hours; when
+it elapses the severity drops one rank, then the injury clears). `N2` implements
+this core; **open/infected** cut sub-states, **aggravation**, **treatment items**
+(compress/herbs, clean/dirty bandage, alcohol, needle & thread, splint) and the
+exact source-probability tables are `[7+]` (a follow-up).
+
+**Bruise** (`Injury.Bruise`, severity light/hematoma; one per body part). Resonance
+−1/−2. Recovery 24h/rank.
+
+| Body part | Malus (light / hematoma) |
+|-----------|--------------------------|
+| head  | grace 0 / −1 |
+| torso | strength 0 / −1 |
+| arms  | dexterity 0 / −1 |
+| legs  | movement speed 0% / −5% |
+
+**Cut** (`Injury.Cut`, light/major/severe). Resonance −1/−2/−4. Recovery 48h/rank.
+
+| Body part | Malus (light / major / severe) |
+|-----------|--------------------------------|
+| head  | alacrity −1 / −2 / −3 |
+| torso | constitution −1 / −2 / −3 |
+| arms  | dexterity 0 / −1 / −2 |
+| legs  | strength −1/−2/−3 + speed 0% / −5% / −10% |
+
+**Fracture** (`Injury.Fracture`, light/major/severe; longest, max two at once).
+Resonance −10/−20/−30. Recovery 72h/rank.
+
+| Body part | Malus (light / major / severe) |
+|-----------|--------------------------------|
+| head  | alacrity −1 / −3 / −4 |
+| torso | ego −1 / −3 / −4 |
+| arms  | dexterity −1 / −2 / −3 |
+| legs  | strength −1/−2/−3 + speed −10% / −25% / −40% |
+
+A second injury of the same type on the same part **aggravates** it (severity +1,
+capped). Maluses feed the stat system through `StatModifiers`; the resonance
+penalty feeds the onyx channel (so it also resists further injuries, §2). Leg speed
+maluses need a `movementSpeed` derived stat (added with N2; full utility later).
 
 ## 6. Implementation architecture
 
