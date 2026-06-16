@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <memory>
 
 #include <imgui.h>
 
@@ -428,11 +429,15 @@ gameplay::StatModifiers StatsScene::resonanceModifiers() const {
     gameplay::StatModifiers mods;
     gameplay::Resonance eff = gameplay::effectiveResonance(resonance, survival, tuning);
     eff.onyx += gameplay::injuryResonance(injuries); // N2: injuries → health resonance
+    const gameplay::Resonance ar = gameplay::afflictionResonance(afflictions, afflictionDb);
+    eff.amber += ar.amber;   // N3: diseases → energy resonance
+    eff.garnet += ar.garnet; // N3: psychoses → essence resonance
     gameplay::buildResonanceModifiers(eff, mods);
     if (armorEquipped) {
         gameplay::armorModifiers(sampleArmor, mods); // F3: equipment → derived stats
     }
-    gameplay::injuryStatModifiers(injuries, mods); // N2: attribute & speed maluses
+    gameplay::injuryStatModifiers(injuries, mods);                  // N2 maluses
+    gameplay::afflictionStatModifiers(afflictions, afflictionDb, mods); // N3 maluses
     return mods;
 }
 
@@ -465,6 +470,29 @@ void StatsScene::onEnter() {
     sampleWeapon.postureDamage = 15.0f;
     sampleArmor.armorSlash = 20.0f;
     sampleArmor.resistFire = 15.0f;
+
+    // N3 sample disease (amber/energy) + psychosis (garnet/essence).
+    auto disease = std::make_unique<gameplay::AfflictionForm>();
+    disease->id = *core::Guid::fromString("d1000000-0000-4000-8000-0000000000a1");
+    disease->displayName = "Fever";
+    disease->channel = "amber";
+    disease->resonancePenalty = -15.0f;
+    disease->attributeMalus = "constitution";
+    disease->attributeMalusValue = -2.0f;
+    disease->recoveryHours = 48.0f;
+    sampleDisease = disease->id;
+    afflictionDb.add(std::move(disease), gameplay::AfflictionForm::staticTypeInfo());
+
+    auto psychosis = std::make_unique<gameplay::AfflictionForm>();
+    psychosis->id = *core::Guid::fromString("d2000000-0000-4000-8000-0000000000a2");
+    psychosis->displayName = "Phobia";
+    psychosis->channel = "garnet";
+    psychosis->resonancePenalty = -20.0f;
+    psychosis->attributeMalus = "ego";
+    psychosis->attributeMalusValue = -2.0f;
+    psychosis->recoveryHours = 72.0f;
+    samplePsychosis = psychosis->id;
+    afflictionDb.add(std::move(psychosis), gameplay::AfflictionForm::staticTypeInfo());
 }
 
 void StatsScene::update(f32 dt) {
@@ -594,6 +622,7 @@ void StatsScene::drawUi() {
     if (ImGui::Button("Sleep 8h (restores sleep, accrues rest, heals injuries)")) {
         gameplay::sleep(clock, survival, combat, 8.0f, tuning);
         gameplay::recoverInjuries(injuries, 8.0f);
+        gameplay::recoverAfflictions(afflictions, 8.0f);
     }
 
     ImGui::SeparatorText("Equipment (F3)");
@@ -648,6 +677,30 @@ void StatsScene::drawUi() {
     ImGui::SameLine();
     if (ImGui::Button("Inflict fracture (legs)")) {
         addInjury(injuries, InjuryType::Fracture, BodyPart::Legs);
+    }
+
+    ImGui::SeparatorText("Afflictions (N3) — diseases/psychoses, gated by amber/garnet");
+    for (const ActiveAffliction& a : afflictions.list) {
+        if (const AfflictionForm* def = afflictionDb.find<AfflictionForm>(a.form)) {
+            ImGui::BulletText("%s (%s) — %.0fh left", def->displayName.c_str(),
+                              def->channel.c_str(), a.recoveryHoursRemaining);
+        }
+    }
+    if (ImGui::Button("Inflict disease (set amber < 0 first)")) {
+        if (const AfflictionForm* def = afflictionDb.find<AfflictionForm>(sampleDisease)) {
+            const f32 amber = effectiveResonance(resonance, survival, tuning).amber +
+                              afflictionResonance(afflictions, afflictionDb).amber;
+            inflictAffliction(afflictions, sampleDisease, *def, amber, 1.0, rng);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Inflict psychosis (set garnet < 0 first)")) {
+        if (const AfflictionForm* def =
+                afflictionDb.find<AfflictionForm>(samplePsychosis)) {
+            const f32 garnet = effectiveResonance(resonance, survival, tuning).garnet +
+                               afflictionResonance(afflictions, afflictionDb).garnet;
+            inflictAffliction(afflictions, samplePsychosis, *def, garnet, 1.0, rng);
+        }
     }
 
     ImGui::End();

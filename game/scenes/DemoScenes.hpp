@@ -9,6 +9,7 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp"
+#include "gameplay/stats/Afflictions.hpp"
 #include "gameplay/stats/CharacterStats.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Damage.hpp"
@@ -105,9 +106,15 @@ private:
     gameplay::Survival survival;
     gameplay::StatusBuildup buildup;
     gameplay::Injuries injuries;
+    gameplay::Afflictions afflictions;
     gameplay::CombatState combat;
     gameplay::AbilitySystem system;
     core::Rng rng { 0xC0FFEEu };
+
+    // N3 demo: sample disease/psychosis in a scene-local DB (no plugin data needed).
+    data::FormDatabase afflictionDb;
+    core::Guid sampleDisease;
+    core::Guid samplePsychosis;
     gameplay::DerivedStatRegistry derived;
     gameplay::StatsTuningForm tuning; // resolved from data (§5), or defaults
     gameplay::GameClock clock;
