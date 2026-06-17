@@ -458,216 +458,61 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 12 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
-> **CURRENT PHASE: 7** — update this line as work progresses.
-> Character stats: permanent-status & resonance mechanics, **value-first**
-> (`docs/STATS.md` is the canonical design reference — read it before touching
-> `gameplay/stats/`). Foundations (RNG, tuning form, stat-bearing items, rest)
-> then the novel mechanics (status buildup, body-part injuries + diseases/
-> psychoses, drugs + harmony break); the mechanical long-tail is deferred to a
-> later stats pass. Phase 6 core is done. Then Phase 8 streaming.
-> Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job
-> system, RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
+> **CURRENT PHASE: 8** — update this line as work progresses.
+> Phase 8: Streaming & persistence — cell grid, async load/unload, LOD,
+> interior/exterior transitions, **save = runtime patch layer** reusing the
+> Phase-1 resolver. Design: `docs/STATS.md`; read before touching `gameplay/stats/`.
+>
+> Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job system,
+> RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
+>
 > Phase 1 done (2026-06-12): reflection, Forms, field-level plugin resolver,
 > text↔binary cooker, GUID asset DB. **Full brick-by-brick detail and the
 > non-obvious decisions live in `docs/PHASE-1.md`** — read it before touching
 > the data/modding model.
 >
-> **Phase 2 done** (2026-06-13) (ECS + world model). Architecture decided with the
-> dev (full rationale + brick journal in `docs/PHASE-2.md` — read it before
-> touching ecs/world). Load-bearing choices:
-> - **ECS = flecs** (pinned v4.1.5), used directly in systems (no façade).
->   **Confined to runtime**: new lib `meadows-ecs`; `meadows` and `meadows-data`
->   stay flecs-free. Our reflection stays the data-model keystone (§2.3); flecs
->   ids are opaque (never persisted/indexed — back-link by GUID).
-> - **Reference = a Form** (`ReferenceForm`) resolved by the §5 resolver, so
->   place/move/disable/save are all field patches (§2.4). `cell` is a field on
->   the reference (no list-type in reflection v1; also cleaner under
->   last-writer-wins). At runtime, membership is a flecs relation `(InCell,
->   cellEntity)`; **cells are ephemeral flecs entities**, never persisted.
-> - **GameplayTags (§6) ≠ flecs tags** — keep them reflected moddable data.
+> **Phase 2 done** (2026-06-13, 54 tests green). ECS + world model. Full rationale
+> + brick journal in `docs/PHASE-2.md` — **read it before touching ecs/world**.
+> Key: flecs confined to `meadows-ecs` (meadows + meadows-data stay flecs-free);
+> Reference = a `ReferenceForm` (place/move/disable = field patches); cells =
+> ephemeral flecs entities, never persisted; GameplayTags ≠ flecs tags.
 >
-> Bricks (built in dependency order a → c → b → d → e; each lands green):
-> - [x] **(a) ECS core** — `engine/ecs/` (`meadows-ecs`): `ecs::World` (thin
->   owner of `flecs::world`, `handle()`), `Entity = flecs::entity`, `InCell`
->   relation, `registerComponent<T>()` = single point bridging flecs storage +
->   our reflected-component registry. Tests in `tests/EcsTest.cpp`. *(done
->   2026-06-13)*
-> - [x] **(c) World data model** — `world/worldspace/` (`meadows-world`):
->   `WorldspaceForm`/`CellForm`/`ReferenceForm` (reflected Forms),
->   `registerWorldFormTypes`, `FormCategory` + registry, `WorldModel` (resolved
->   spatial index over FormDatabase). Tests in `tests/WorldModelTest.cpp`.
->   *(done 2026-06-13)*
-> - [x] **(b) Reference → entity spawner** — `world/scene/`: components
->   (`Transform` 3D-ready, `SpriteRender` holding an asset handle not pixels §7,
->   `RefId`, category markers), `registerSceneComponents`, per-category C++
->   spawner (§2.7) seeding `SpriteRender.sprite` from the base form **through
->   reflection** and posing the `InCell` relation. `meadows-world` now links
->   `meadows-ecs`. Tests in `tests/SpawnerTest.cpp`. *(done 2026-06-13)*
-> - [x] **(d) Scene representation + render bridge** — `game/SceneSubmit` +
->   `game/TextureCache` in the reusable `meadows-runtime` lib (the only ECS↔rhi
->   seam): pure `spriteFor` (Transform+SpriteRender → 2D sprite, yaw from quat),
->   `submitScene` (query, resolve texture, painter sort by layer). Tests in
->   `tests/SceneSubmitTest.cpp`. *(done 2026-06-13)*
-> - [x] **(e) Populate a 2D world** — `world/streaming/CellLoader` (eager
->   load/unload now; async = Phase 5/8), `game/WorldEditor` in-game ImGui tool
->   (add / select / move / delete objects), `main.cpp` loads a worldspace + cell
->   of references via the spawner and renders through `submitScene`, live mod
->   re-resolution preserved (moves/disables references too). Tests in
->   `tests/CellLoaderTest.cpp`. *(done 2026-06-13)*
+> **Phase 3 done** (2026-06-14, 94 tests / 716 assertions green). Gameplay 2D +
+> GAS core. Full rationale + brick journal in `docs/PHASE-3.md` — **read it
+> before touching gameplay/GAS**. Key: GAS core inseparable (Attributes + Effects
+> + Tags + Abilities built together); damage = transient meta-attribute +
+> PostExecute → Health; effect pipeline is flat linear (not a node-graph); lib
+> `meadows-gameplay`.
 >
-> Phase 2 done (build + 54 tests green; visual run validated by the dev).
+> **Phase 4 done** (2026-06-14, 108 tests / 783 assertions green). Scripting,
+> abilities, conditions, quests, dialogue. Full rationale + brick journal in
+> `docs/PHASE-4.md`. Key: ONE shared Lua VM, scripts stateless, `self` = entity
+> handle; latent `wait()` = coroutines + central scheduler; conditions =
+> structured clauses + Lua escape; quests/dialogue = decomposed records linked by
+> id; libs `meadows-script` + `meadows-narrative`.
 >
-> **Phase 3 done** (2026-06-14) (gameplay 2D; GAS core first). Architecture
-> decided with the dev after reading Unreal GAS (full rationale + brick journal
-> in `docs/PHASE-3.md` — read it before touching gameplay/GAS). Load-bearing:
-> - **The simplified GAS core is inseparable**: AbilitySystem + AttributeSets +
->   GameplayEffects + GameplayTags are mutually dependent — Phase 3 builds the
->   whole core **+ a minimal GameplayAbility**; AbilityTasks / condition
->   evaluator / Lua → Phase 4.
-> - **Attributes = reflected C++ AttributeSets**, addressed by reflection (like
->   UE's FGameplayAttribute). **GameplayEffects are the only mutator** (§2.9):
->   instant→Base, duration/infinite→Current, periodic→tick; add/mult/override +
->   clamp; effects grant/require/block tags + immunity.
-> - **Damage = transient `Damage` meta-attribute + PostExecute → Health**; clamp
->   via PreAttributeChange.
-> - **GameplayTags = interned hierarchical vocabulary + ref-counted container**
->   (not one Form per tag; ≠ flecs tags).
-> - **Effect pipeline is a flat linear sequence, NOT a node-graph**: branching =
->   tags + condition evaluator (Phase 4). Node/graph is reserved for AI behavior
->   trees, dialogue/quest graphs, and an editor view over flat data — never the
->   runtime/persisted GAS model (graphs don't field-patch cleanly, §5).
-> - GAS lives in new lib `meadows-gameplay` (deps meadows-data + meadows-ecs,
->   render-free). Public API kept tiny (~4 functions).
+> **Phase 5 done** (2026-06-15). Multithreading seam. Full brick journal + crash
+> postmortem in `docs/PHASE-5.md` — **read it before touching `game/SceneSubmit`,
+> `engine/core/`, or `game/TextureCache`**. Key: strict render snapshot
+> (`extractScene` → `RenderSnapshot` → `submitSnapshot`; renderer has NO `World`
+> access); non-blocking MPSC `ConcurrentQueue`; async texture residency + loading
+> gate. **Build lesson: after a shared-type layout change, do a clean rebuild**
+> (ninja header-dep miss → stale-obj heap corruption).
 >
-> Bricks (dependency order; each lands green; STOP for validation between each):
-> - [x] **(3a) GameplayTags** — interned hierarchical vocabulary + ref-counted
->   container (lib `meadows-gameplay`). `tests/GameplayTagsTest.cpp`.
->   *(done 2026-06-13)*
-> - [x] **(3b) Attributes + AttributeSets + AbilitySystem skeleton** —
->   reflected `AttributeSet` (base values) + `AbilitySystem` (tags + current
->   overlay); attributes addressed by reflection. `tests/AbilitySystemTest.cpp`.
->   *(done 2026-06-13)*
-> - [x] **(3c) GameplayEffects + modifier pipeline** — `EffectForm` (flat: 1
->   modifier + 1 tag/slot), flat linear apply/tick (instant→Base + damage meta→
->   health + clamp; duration/infinite→Current; periodic→tick), `recomputeCurrent`.
->   `tests/GameplayEffectsTest.cpp`. *(done 2026-06-13)*
-> - [x] **(3d) Minimal GameplayAbility** — `AbilityForm` (tags + cost/cooldown/
->   effect guids; cost & cooldown ARE effects), `tryActivate` (tag gates +
->   cooldown + affordability), `grantAbility`. `tests/GameplayAbilityTest.cpp`.
->   *(done 2026-06-13)*
-> - [x] **(3e) Combat in 2D** — `gameplay/combat` (`updateLifeState`,
->   `performAttack`); Actor spawner wires GAS (world→gameplay edge); GAS tick +
->   "Combat (GAS debug)" ImGui panel in `game/`. `tests/CombatTest.cpp`.
->   *(done 2026-06-13)* — **GAS core (3a–3e) complete; visual run owed.**
-> Rest of Phase 3 (all done — detail in `docs/PHASE-3.md`):
-> - [x] **Player controller + movement** — `platform::Input` (SDL behind a clean
->   header; `Engine::getInput()`), `Velocity` + `applyMovement`
->   (`world/scene/Movement`), `GameplayScene` moving a player with WASD.
-> - [x] **2D collision / triggers** — `Collider` + `world/scene/Collision`
->   (AABB overlap, MTV resolve, trigger overlaps).
-> - [x] **Inventory / items / equipment** — `gameplay/inventory/Inventory`
->   (`Inventory`/`Equipment`, add/remove/equip).
-> - [x] **AI** — `world/ai/` (namespace `ai`, in meadows-world to avoid the
->   gameplay cycle): grid A* `findPath`, `Steering` (perception + seek),
->   `AiAgent` + `updateChaseAi`.
-> - [x] **Factions (§6.1)** — `gameplay/faction/Factions`: membership = tags,
->   `FactionRelationForm` table + `FactionRelations::standingBetween`.
+> **Phase 6 done** (2026-06-15). Character stats vertical slice. Full brick journal
+> in `docs/PHASE-6.md`; design in `docs/STATS.md`. Key: derived-attribute two-pass
+> `recomputeCurrent` (`DerivedStats`); primary maxima from BASE (Resonance doesn't
+> move the max), secondary stats from CURRENT; Resonance + Harmony; typed-damage
+> pipeline; `f64` added to reflection (appended last — binary ordinals stable).
 >
-> **Phase 3 done (2026-06-14).** 94 tests / 716 assertions green; full build
-> clean. GAS core + scene-stack harness + the five gameplay bricks above; demo
-> wired in `GameplayScene` (move/pickup/chase) + Plugin/Editor/Combat scenes.
-> - [x] **Harness: scene stack** — `game/Scene` + `game/SceneStack` (in
->   `meadows-runtime`, above the engine): deferred push/pop/replace, `opaque` /
->   `blocksUpdate` layering. Demos split into isolated scenes (`game/scenes/`:
->   `WorldDemoScene` base + Plugin/WorldEdit/Combat); `main.cpp` is a thin
->   `DemoApp` (stack + selector). Overlays will share a *session*, not own a
->   world. `tests/SceneStackTest.cpp`. *(done 2026-06-13)*
->
-> **Phase 4 done** (2026-06-14) (scripting, abilities, conditions, quests,
-> dialogue). Architecture decided with the dev (incl. lessons from Unreal's
-> NarrativePro); full rationale + brick journal in `docs/PHASE-4.md`.
-> Load-bearing:
-> - **Lua = sol2, ONE shared VM**, scripts = stateless modules, `self` = entity
->   handle; persistent state in reflected `ScriptVars`; **attributes read-only
->   from Lua** (mutate via effects, §2.9); sandboxed + deterministic RNG (§8).
-> - **Latent `wait()` = Lua coroutines + a central scheduler** keyed by entity.
-> - **Conditions = structured data clauses + a Lua escape** — the shared
->   evaluator (abilities, quests, dialogue, AI). **Events/actions** = structured
->   list (addTag/applyEffect/advanceQuest/giveItem/startDialogue/runLua) — the
->   GAS↔narrative bridge.
-> - **Quests/dialogue = decomposed records linked by id** (NarrativePro's
->   node+Conditions+Events pattern, but each node a patchable Form; many records
->   per file). No container type; new steps = new records + link patches.
-> - Libs: condition evaluator in `meadows-gameplay` (abilities use it);
->   `meadows-script` (VM/events/scheduler); `meadows-narrative` (quests/dialogue).
->
-> Bricks (dependency order; each lands green; STOP between each):
-> - [x] **(4a) Lua foundation** — `script/Vm` (sol2, sandboxed, deterministic
->   `rng()`), `ScriptVars`, the `self` proxy (ScriptVars R/W, attribute reads,
->   addTag/hasTag). Lib `meadows-script` (lua 5.4.8 + sol2 3.5.0 pinned).
->   `tests/ScriptTest.cpp`. *(done 2026-06-14)*
-> - [x] **(4b) Event dispatch** — `gameplay::EventBus` (deterministic, Lua-
->   agnostic C++ handlers) + a Lua bridge (`events.on(name, fn)`).
->   `tests/EventBusTest.cpp`. *(done 2026-06-14)*
-> - [x] **(4c) Condition evaluator** — `ConditionForm` clauses (records by
->   parent, ANDed) + Lua escape via a callback (no gameplay→script cycle);
->   `conditionsPass` wired into `tryActivate` (optional `AbilityContext.eval`).
->   `tests/ConditionTest.cpp`. *(done 2026-06-14)*
-> - [x] **(4d) Full ability (Lua + tasks/wait)** — `AbilityForm.script` (Lua),
->   a coroutine scheduler in `Vm` (`startCoroutine`/`tickCoroutines`, `wait(t)`),
->   `self:applyEffect`. Activation conditions via 4c. `tests/ScriptTest.cpp`.
->   *(done 2026-06-14)*
-> - [x] **(4e) Quests** — `quest/Quest` (Quest/State/Branch/Task forms by id;
->   `QuestLog`; `onQuestEvent` advances tasks on events → branches → Success/
->   Failure). Lib `meadows-narrative`. `tests/QuestTest.cpp`. *(done 2026-06-14)*
-> - [x] **(4f) Dialogue** — `quest/Dialogue` (DialogueForm + DialogueNodeForm by
->   id; `DialogueRunner` chunk flow; condition-gated options; events on
->   enter/select). `tests/DialogueTest.cpp`. *(done 2026-06-14)*
->
-> **Phase 4 done (2026-06-14).** 108 tests / 783 assertions green; full build
-> clean. A `NarrativeScene` demo (guard dialogue offers a quest; condition-gated
-> option; accepting starts the quest; debug button advances it) is wired in
-> `game/` alongside the other scenes.
->
-> **Phase 5 done** (2026-06-15) (multithreading seam). Full brick journal +
-> the crash postmortem in `docs/PHASE-5.md` — read it before touching the
-> render seam (`game/SceneSubmit`), the job/queue primitives (`engine/core/`),
-> or the async asset path (`game/TextureCache`). Load-bearing:
-> - **Strict render snapshot (decouple ≠ thread).** `extractScene` (reads the
->   `World`) → self-owning `RenderSnapshot` (POD, by value) → `submitSnapshot`
->   (renderer has NO access to the `World`). Same-thread is the default; placing
->   the consumer on a render thread is a scheduling policy, not a rewrite.
-> - **`core::ConcurrentQueue`** — non-blocking MPSC completion mailbox (workers
->   push, main drains at a fixed frame point; never `wait()` on the frame).
->   Deterministic application (sort the batch) is the consumer's job (§8).
-> - **Async asset residency** — `TextureCache::resolve` never blocks: placeholder
->   + worker decode → main-thread GPU upload via RHI (GL is single-threaded) →
->   flip to resident; `clear()` bumps a generation so in-flight results cancel.
->   A **loading gate** (`prewarmTextures` + `pendingCount` + `drawLoadingScreen`)
->   hides the world until the visible set is resident — no startup pop-in.
-> - JobSystem owns task parallelism; flecs stays single-threaded (Phase 10/11).
-> - **Build lesson:** changing a shared type's layout did not recompile all
->   dependents (ninja header-dep miss) → stale-obj heap corruption. After a
->   layout change, do a clean rebuild.
->
-> **Phase 6 done** (2026-06-15) (character stats: vertical slice). Full brick
-> journal in `docs/PHASE-6.md`; the design is `docs/STATS.md`. Load-bearing:
-> - **Derived-attribute machinery** generalizes the GAS: multiple AttributeSets,
->   `recomputeCurrent` runs a two-pass derived calculation (`gameplay/ability/
->   DerivedStats`) — C++ calculators + data constants (§2.7/§6). Opt-in per
->   source set, so Phase-3 combat is unchanged; non-humanoids override a derived
->   stat with an infinite Override effect.
-> - **Primary maxima derive from BASE attributes** (Resonance/temporary changes
->   don't move the max — only its %); secondary stats read CURRENT (so Resonance
->   weakens them).
-> - **Resonance + Harmony** (`gameplay/stats/Resonance`), a survival→resonance
->   loop (`Survival`: hunger/thirst→onyx, sleep→garnet), a `GameClock`
->   (timescale), and a **typed-damage** execution (`Damage`: flat defense/will
->   capped + armor/resistance %, posture→stagger).
-> - **f64 added to the reflection system** (it was missing only because unneeded):
->   `FieldKind::F64` appended last (binary ordinals stable), TOML/binary/Lua
->   paths extended. Used by `GameClock`.
-> - `StatsScene` ImGui harness drives it all (validated by the dev).
+> **Phase 7 done** (2026-06-17, 167 tests / 5056 assertions green). Permanent-status
+> & resonance mechanics. Brick journal in `docs/PHASE-7.md`; design in
+> `docs/STATS.md`. Deliverables: seeded engine RNG (`core::Rng`, §8),
+> `StatsTuningForm` (Phase-6 constants → moddable data, §5), stat-bearing
+> items/equipment (weapons with typed attack + scaling, armor/clothing per slot,
+> consumables), rest/sleep recovery, status buildup (poison/bleed/…), body-part
+> injuries + diseases/psychoses (permanent-status system, RNG-rolled, gated by
+> resonance-resistance), drugs + harmony break.
 
 ---
 
