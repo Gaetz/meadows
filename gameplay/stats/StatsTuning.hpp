@@ -25,12 +25,26 @@ struct StatsTuningForm : data::Form {
     f32 posturePerAlacrity { 1.0f };
     f32 postureRegenBase { 2.0f };
     f32 postureRegenPerAlacrity { 0.333333f };
+    f32 energyRegenBase { 35.0f };      // energy/s base (docs/STATS.md §3)
+    f32 energyRegenPerAlacrity { 1.0f };
     f32 critSensBase { 25.0f };
     f32 critSensPerConstitution { 0.1f }; // subtracted
     // Status buildup / endurance (StatusBuildup, N1).
-    f32 enduranceBase { 100.0f };         // buildup threshold to trigger a status
+    f32 enduranceBase { 100.0f };            // buildup threshold to trigger a status
     f32 endurancePerAttribute { 0.5f };
-    f32 statusBuildupDecay { 5.0f };      // buildup points lost per second
+    f32 statusBuildupDecayFlat { 3.0f };     // points/s before status acquired
+    f32 statusBuildupDecayPercent { 0.01f }; // fraction/s after status acquired (1%/s)
+    // Status effect magnitudes (all moddable via §5 patch layer).
+    f32 poisonBaseDamagePerSecond { 1.0f };        // HP/s base while poisoned (vitality-reduced)
+    f32 ignitionDamagePercent { 0.002f };          // fraction of maxHealth lost/s while ignited
+    f32 electrocutionDamagePercent { 0.002f };     // fraction of maxEssence lost/s while electrocuted
+    f32 electrocutionPostureDrainPercent { 1.0f }; // fraction of maxPosture removed on trigger
+    f32 glaciationParalysisDuration { 3.0f };      // paralysis seconds on glaciation trigger
+    f32 glaciationEnergyRegenMult { 0.7f };        // energy regen multiplier while glaciated
+    f32 bleedBurstDamage { 30.0f };                // slash damage dealt on bleed trigger
+    // Rest (Rest.cpp).
+    f32 comfortableSleepHours { 8.0f };  // hours for a full-rest sleep (restores sleep to 100)
+    f32 sleepPerHour { 2.0f };           // sleep points recovered per hour below comfortable
     // Damage (Damage).
     f32 flatMitigationCapBase { 25.0f };  // flat reduction cap = (this + attr) %
     f32 staggerSeconds { 1.5f };
@@ -50,11 +64,23 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(posturePerAlacrity)
         REFLECT_FIELD(postureRegenBase)
         REFLECT_FIELD(postureRegenPerAlacrity)
+        REFLECT_FIELD(energyRegenBase)
+        REFLECT_FIELD(energyRegenPerAlacrity)
         REFLECT_FIELD(critSensBase)
         REFLECT_FIELD(critSensPerConstitution)
         REFLECT_FIELD(enduranceBase)
         REFLECT_FIELD(endurancePerAttribute)
-        REFLECT_FIELD(statusBuildupDecay)
+        REFLECT_FIELD(statusBuildupDecayFlat)
+        REFLECT_FIELD(statusBuildupDecayPercent)
+        REFLECT_FIELD(poisonBaseDamagePerSecond)
+        REFLECT_FIELD(ignitionDamagePercent)
+        REFLECT_FIELD(electrocutionDamagePercent)
+        REFLECT_FIELD(electrocutionPostureDrainPercent)
+        REFLECT_FIELD(glaciationParalysisDuration)
+        REFLECT_FIELD(glaciationEnergyRegenMult)
+        REFLECT_FIELD(bleedBurstDamage)
+        REFLECT_FIELD(comfortableSleepHours)
+        REFLECT_FIELD(sleepPerHour)
         REFLECT_FIELD(flatMitigationCapBase)
         REFLECT_FIELD(staggerSeconds)
         REFLECT_FIELD(survivalThreshold)

@@ -58,16 +58,27 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
                    [m](const StatView& v) { return m * v.get("grace"); } });
     registry.add({ attr("resistFire"), core,
                    [m](const StatView& v) { return m * v.get("charisma"); } });
+    registry.add({ attr("resistCold"), core,
+                   [m](const StatView& v) { return m * v.get("ego"); } });
     registry.add({ attr("resistLightning"), core,
                    [m](const StatView& v) { return m * v.get("insight"); } });
     registry.add({ attr("will"), core, [t](const StatView& v) {
         return t.willBase + v.get("ego") * t.willPerEgo;
+    } });
+    // Vitality: reduces a status's ongoing damage by % (docs/STATS.md §3).
+    // Formula: min(1 + alacrity/4, 25 + alacrity) expressed as a percentage.
+    registry.add({ attr("vitality"), core, [](const StatView& v) {
+        const f32 a = v.get("alacrity");
+        return std::min(1.0f + a / 4.0f, 25.0f + a);
     } });
     registry.add({ attr("maxPosture"), core, [t](const StatView& v) {
         return t.basePosture + v.base("alacrity") * t.posturePerAlacrity;
     } });
     registry.add({ attr("postureRegen"), core, [t](const StatView& v) {
         return t.postureRegenBase + v.get("alacrity") * t.postureRegenPerAlacrity;
+    } });
+    registry.add({ attr("energyRegen"), core, [t](const StatView& v) {
+        return t.energyRegenBase + v.get("alacrity") * t.energyRegenPerAlacrity;
     } });
     registry.add({ attr("criticalSensitivity"), core, [t](const StatView& v) {
         return t.critSensBase - v.get("constitution") * t.critSensPerConstitution;
@@ -86,6 +97,17 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
     endurance("enduranceDisease", "alacrity");
     endurance("enduranceCurse", "perception");
     endurance("enduranceDeath", "perception");
+    // Elemental endurance = enduranceBase + matching resistance (docs/STATS.md §3).
+    // resistFire = m*charisma, resistCold = m*ego, resistLightning = m*insight.
+    registry.add({ attr("enduranceIgnition"), core, [t, m](const StatView& v) {
+        return t.enduranceBase + m * v.get("charisma");
+    } });
+    registry.add({ attr("enduranceGlaciation"), core, [t, m](const StatView& v) {
+        return t.enduranceBase + m * v.get("ego");
+    } });
+    registry.add({ attr("enduranceElectrocution"), core, [t, m](const StatView& v) {
+        return t.enduranceBase + m * v.get("insight");
+    } });
 
     // Movement speed (docs/STATS.md §3) — minimal, so leg-injury speed maluses
     // (N2) have a target; full utility/encumbrance is a later pass.

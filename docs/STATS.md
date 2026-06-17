@@ -137,13 +137,17 @@ bypass the humanoid formula. Defaults below assume humanoid attributes 1–20.
 - **posture regen** `[6]` — 2 + alacrity/3 per second. Food: small %.
 - **vitality** — reduces a status's damage by % once its buildup is met. 1 +
   alacrity/4, capped at 25+alacrity %.
-- **endurance/poison · bleed** — buildup duration. 100 + dexterity·0.5.
+- **endurance/poison · bleed** — buildup threshold. 100 + dexterity·0.5.
 - **endurance/mental · disease · curse · death** — 100 + alacrity·0.5.
+- **endurance/ignition** — 100 + resistFire (= 100 + charisma·0.5).
+- **endurance/glaciation** — 100 + resistCold (= 100 + ego·0.5).
+- **endurance/electrocution** — 100 + resistLightning (= 100 + insight·0.5).
 - **essence regen** — 0.005 · insight per second (slow).
 - **will** — flat non-physical reduction before %. 1 + ego/4, capped at 25+ego %.
 - **resistance/fire · cold · lightning · sonic · chemical · psychic · holy · dark
-  · ether** `[6: fire+lightning only]` — % reduction; also raises the matching
-  buildup by the same %. 0.5 · {charisma|ego|insight} per the table below.
+  · ether** `[6: fire+lightning; 7: cold]` — % reduction; also raises the matching
+  elemental buildup threshold by the same value. 0.5 · {charisma|ego|insight} per
+  the table below. (`resistCold = 0.5·ego`; `resistFire = 0.5·charisma`; `resistLightning = 0.5·insight`.)
 
 Attribute → defense mapping:
 
@@ -158,6 +162,32 @@ Attribute → defense mapping:
 | essence | charisma     | —              | —                 | fire, sonic, holy    |
 | essence | ego          | —              | —                 | cold, chemical, dark |
 | essence | insight      | —              | —                 | lightning, psychic, ether |
+
+### Elemental buildup statuses `[7]`
+
+The three elemental buildups work like poison/bleed but trigger different effects.
+Buildup decays at 3/s before the status is acquired; at 1% of threshold/s once
+acquired (flat rate — status lasts ~100 s from threshold). Cannot re-acquire
+while active. Status expires when buildup reaches 0.
+
+**Ignition** (`Status.Ignited`). Triggered by fire buildup reaching `enduranceIgnition`.
+- **Ongoing** while buildup decays: loses **0.2% of maxHealth per second**.
+  Reduced by vitality. Unlike poison (which is a flat 1 HP/s), ignition scales
+  with the target's max HP so it is a % drain.
+
+**Glaciation** (`Status.Glaciated`). Triggered by cold buildup reaching `enduranceGlaciation`.
+- **On trigger**: paralyzes for 3 seconds (reuses `staggerSeconds`).
+- **Ongoing** while buildup decays: slows energy regeneration to **0.7× normal**.
+
+**Electrocution** (`Status.Electrocuted`). Triggered by lightning buildup reaching
+`enduranceElectrocution`.
+- **On trigger**: collapses posture to 0 instantly (opening a stagger/critical window).
+- **Ongoing** while buildup decays: drains **0.2% of maxEssence per second**.
+
+**Resistance duality.** Each elemental resistance serves two roles simultaneously:
+it reduces incoming elemental damage *and* it raises the matching buildup threshold
+by the same amount. High-charisma characters are harder to ignite *and* take less
+fire damage; this is the same stat, not two separate systems.
 
 ### Offensive
 - **attack** `[6]` — flat damage; also unarmed damage. 5 + strength.

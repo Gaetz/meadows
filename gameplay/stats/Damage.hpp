@@ -17,7 +17,7 @@ namespace gameplay {
 
 class DerivedStatRegistry;
 
-enum class DamageType { Slash, Pierce, Blunt, Fire, Lightning };
+enum class DamageType { Slash, Pierce, Blunt, Fire, Cold, Lightning };
 
 struct DamageChannel {
     DamageType type { DamageType::Slash };

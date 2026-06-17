@@ -460,7 +460,8 @@ void StatsScene::onEnter() {
     tags.registerTag("State.Staggered");
     for (const char* statusTag :
          { "Status.Poisoned", "Status.Bleeding", "Status.Mental", "Status.Diseased",
-           "Status.Cursed", "Status.Dying", "Status.HarmonyBroken" }) {
+           "Status.Cursed", "Status.Dying", "Status.HarmonyBroken",
+           "Status.Ignited", "Status.Glaciated", "Status.Electrocuted" }) {
         tags.registerTag(statusTag);
     }
     tuning = gameplay::resolveStatsTuning(forms); // §5: data or defaults
@@ -516,7 +517,46 @@ void StatsScene::update(f32 dt) {
 
     const gameplay::StatModifiers mods = resonanceModifiers();
     gameplay::recomputeStats(core, vitals, system, derived, &mods);
-    gameplay::tickBuildup(buildup, system, dt, tags, tuning); // endurance now current
+    const gameplay::BuildupTickResult buildupResult =
+        gameplay::tickBuildup(buildup, system, dt, tags, tuning);
+
+    if (buildupResult.poisonHealthDamage > 0.0f) {
+        vitals.health = std::max(0.0f, vitals.health - buildupResult.poisonHealthDamage);
+    }
+    if (buildupResult.ignitionHealthDamage > 0.0f) {
+        vitals.health = std::max(0.0f, vitals.health - buildupResult.ignitionHealthDamage);
+    }
+    if (buildupResult.electrocutionEssenceDamage > 0.0f) {
+        vitals.essence = std::max(0.0f, vitals.essence - buildupResult.electrocutionEssenceDamage);
+    }
+    if (buildupResult.bleedBurst) {
+        // Critical slash burst using tunable damage.
+        gameplay::StatBlock block { core, vitals, system, combat };
+        applyDamage(block,
+                    gameplay::DamageEvent { { { gameplay::DamageType::Slash, tuning.bleedBurstDamage } }, 0.0f },
+                    tags, derived, &mods, tuning);
+    }
+    if (buildupResult.glaciationTriggered) {
+        // Paralysis for tunable duration (reuses staggerSeconds).
+        combat.staggerSeconds = std::max(combat.staggerSeconds, tuning.glaciationParalysisDuration);
+        if (const auto staggered = tags.find("State.Staggered")) {
+            system.tags.add(*staggered, tags);
+        }
+    }
+    if (buildupResult.electrocutionTriggered) {
+        // Drain posture by tunable fraction of maxPosture (default 100 %).
+        const f32 maxP = gameplay::currentValueOf(system, gameplay::attr("maxPosture"));
+        combat.posture = std::max(0.0f, combat.posture - maxP * tuning.electrocutionPostureDrainPercent);
+        combat.staggerSeconds = std::max(combat.staggerSeconds, tuning.staggerSeconds);
+        if (const auto staggered = tags.find("State.Staggered")) {
+            system.tags.add(*staggered, tags);
+        }
+    }
+    if (buildupResult.deathTriggered) {
+        if (const auto dead = tags.find("State.Dead")) {
+            system.tags.add(*dead, tags);
+        }
+    }
 
     // Posture regenerates while not staggered.
     if (combat.staggerSeconds <= 0.0f) {
@@ -524,6 +564,12 @@ void StatsScene::update(f32 dt) {
         const f32 regen =
             gameplay::currentValueOf(system, gameplay::attr("postureRegen"));
         combat.posture = std::min(maxP, combat.posture + regen * dt);
+    }
+    // Energy regenerates continuously (slowed while glaciated).
+    {
+        const f32 maxE = gameplay::currentValueOf(system, gameplay::attr("maxEnergy"));
+        const f32 regen = gameplay::currentValueOf(system, gameplay::attr("energyRegen"));
+        vitals.energy = std::min(maxE, vitals.energy + regen * buildupResult.energyRegenMult * dt);
     }
 }
 
@@ -654,19 +700,46 @@ void StatsScene::drawUi() {
     }
 
     ImGui::SeparatorText("Status buildup (N1) — fill to endurance to trigger");
-    ImGui::Text("poison %.0f / %.0f    bleed %.0f / %.0f", buildup.poison,
-                cur("endurancePoison"), buildup.bleed, cur("enduranceBleed"));
+    ImGui::Text("vitality %.1f%%  (reduces poison/ignition/electrocution DoT)", cur("vitality"));
+    ImGui::Text("poison %.1f/%.0f  bleed %.1f/%.0f  death %.1f/%.0f",
+                buildup.poison, cur("endurancePoison"),
+                buildup.bleed, cur("enduranceBleed"),
+                buildup.death, cur("enduranceDeath"));
+    ImGui::Text("ignition %.1f/%.0f  glaciation %.1f/%.0f  electrocution %.1f/%.0f",
+                buildup.ignition, cur("enduranceIgnition"),
+                buildup.glaciation, cur("enduranceGlaciation"),
+                buildup.electrocution, cur("enduranceElectrocution"));
     if (ImGui::Button("Poison +40")) {
-        addBuildup(buildup, StatusType::Poison, 40.0f);
+        tryAddBuildup(buildup, StatusType::Poison, 40.0f, system, tags);
     }
     ImGui::SameLine();
     if (ImGui::Button("Bleed +40")) {
-        addBuildup(buildup, StatusType::Bleed, 40.0f);
+        tryAddBuildup(buildup, StatusType::Bleed, 40.0f, system, tags);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Death +40")) {
+        tryAddBuildup(buildup, StatusType::Death, 40.0f, system, tags);
+    }
+    if (ImGui::Button("Ignition +40")) {
+        tryAddBuildup(buildup, StatusType::Ignition, 40.0f, system, tags);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Glaciation +40")) {
+        tryAddBuildup(buildup, StatusType::Glaciation, 40.0f, system, tags);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Electrocution +40")) {
+        tryAddBuildup(buildup, StatusType::Electrocution, 40.0f, system, tags);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Antidote (poison -60)")) {
+        buildup.poison = std::max(0.0f, buildup.poison - 60.0f);
     }
     ImGui::Text("active statuses:");
     for (const char* statusTag :
          { "Status.Poisoned", "Status.Bleeding", "Status.Mental", "Status.Diseased",
-           "Status.Cursed", "Status.Dying" }) {
+           "Status.Cursed", "Status.Dying",
+           "Status.Ignited", "Status.Glaciated", "Status.Electrocuted" }) {
         if (const auto t = tags.find(statusTag); t && system.tags.has(*t)) {
             ImGui::SameLine();
             ImGui::TextColored(ImVec4(0.7f, 1.0f, 0.4f, 1.0f), "%s", statusTag);
