@@ -80,6 +80,12 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
     registry.add({ attr("energyRegen"), core, [t](const StatView& v) {
         return t.energyRegenBase + v.get("alacrity") * t.energyRegenPerAlacrity;
     } });
+    registry.add({ attr("healthRegen"), core, [t](const StatView& v) {
+        return v.get("grace") * t.healthRegenPerGrace;
+    } });
+    registry.add({ attr("essenceRegen"), core, [t](const StatView& v) {
+        return t.essenceRegenBase + v.get("insight") * t.essenceRegenPerInsight;
+    } });
     registry.add({ attr("criticalSensitivity"), core, [t](const StatView& v) {
         return t.critSensBase - v.get("constitution") * t.critSensPerConstitution;
     } });

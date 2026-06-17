@@ -27,6 +27,9 @@ struct StatsTuningForm : data::Form {
     f32 postureRegenPerAlacrity { 0.333333f };
     f32 energyRegenBase { 35.0f };      // energy/s base (docs/STATS.md §3)
     f32 energyRegenPerAlacrity { 1.0f };
+    f32 healthRegenPerGrace { 0.0002f };    // HP/s per grace (very slow; food raises it)
+    f32 essenceRegenBase { 0.01f };         // essence/s base (docs/STATS.md §3)
+    f32 essenceRegenPerInsight { 0.0025f }; // essence/s per insight
     f32 critSensBase { 25.0f };
     f32 critSensPerConstitution { 0.1f }; // subtracted
     // Status buildup / endurance (StatusBuildup, N1).
@@ -51,9 +54,9 @@ struct StatsTuningForm : data::Form {
     // Survival (Survival).
     f32 survivalThreshold { 75.0f };      // below this, a need drives resonance
     f32 survivalResonanceAtEmpty { -50.0f };
-    f32 hungerHoursPerPoint { 3.0f };
-    f32 thirstHoursPerPoint { 1.0f };
-    f32 sleepHoursPerPoint { 1.0f };
+    f32 hungerHoursPerPoint { 0.96f };   // 1.042 pts/game_h → threshold (75) in 24h from 100
+    f32 thirstHoursPerPoint { 0.32f };   // 3.125 pts/game_h → threshold (75) in 8h from 100
+    f32 sleepHoursPerPoint { 0.72f };    // 1.389 pts/game_h → threshold (75) in 18h from 100
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -66,6 +69,9 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(postureRegenPerAlacrity)
         REFLECT_FIELD(energyRegenBase)
         REFLECT_FIELD(energyRegenPerAlacrity)
+        REFLECT_FIELD(healthRegenPerGrace)
+        REFLECT_FIELD(essenceRegenBase)
+        REFLECT_FIELD(essenceRegenPerInsight)
         REFLECT_FIELD(critSensBase)
         REFLECT_FIELD(critSensPerConstitution)
         REFLECT_FIELD(enduranceBase)

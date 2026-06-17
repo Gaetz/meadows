@@ -6,13 +6,13 @@
 
 using namespace gameplay;
 
-TEST_CASE("survival: hunger decays one point per three in-game hours") {
+TEST_CASE("survival: hunger starts at 100 and reaches threshold 75 after 24 game hours") {
     Survival s;
     CHECK(s.hunger == doctest::Approx(100.0f));
-    tickSurvival(s, 3.0 * 3600.0); // 3 in-game hours → -1
-    CHECK(s.hunger == doctest::Approx(99.0f));
-    tickSurvival(s, 72.0 * 3600.0); // 24 in-game points → 75
-    CHECK(s.hunger == doctest::Approx(75.0f));
+    tickSurvival(s, 12.0 * 3600.0); // 12h → -12.5 pts → 87.5
+    CHECK(s.hunger == doctest::Approx(87.5f).epsilon(0.01f));
+    tickSurvival(s, 12.0 * 3600.0); // 12h more → 75 (threshold)
+    CHECK(s.hunger == doctest::Approx(75.0f).epsilon(0.01f));
 }
 
 TEST_CASE("survival: hunger below 75 yields negative health resonance, linearly") {

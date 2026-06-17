@@ -19,6 +19,7 @@ add_library(meadows-gameplay STATIC
     stats/Injuries.cpp
     stats/Afflictions.cpp
     stats/Drugs.cpp
+    stats/GameTime.cpp
     inventory/Inventory.cpp
     faction/Factions.cpp
     event/EventBus.cpp

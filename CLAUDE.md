@@ -252,7 +252,7 @@ order alone. The decided design:
 - Invariant to protect: never add a parallel resolution mechanism — the
   answer to "force this value" is always "one more layer" (§2.4).
 
-Target: Phase 12 editor conflict view, or a CLI subcommand if the need bites
+Target: Phase 14 editor conflict view, or a CLI subcommand if the need bites
 earlier.
 
 ---
@@ -409,7 +409,7 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
     + a transfer queue instead — the render-thread model is a GL-era optim).
   - **JobSystem owns task parallelism** (I/O, asset decode, per-cell
     resolution); **flecs systems stay single-threaded** until profiling
-    justifies parallel systems (likely Phase 10/11). These are **orthogonal
+    justifies parallel systems (likely Phase 12/13). These are **orthogonal
     axes** — heterogeneous-task parallelism (JobSystem) vs. intra-system
     parallelism over entities (flecs scheduler); do not conflate them.
   - **Main owns the ECS world and the GPU; a worker touches neither.** Workers
@@ -447,21 +447,40 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
   a real-time combat loop), temperature/clothing survival, social + faction-by-
   location reputation, encumbrance/movement, the erudition curve. Still 2D. Brick
   journal: `docs/PHASE-7.md`; design: `docs/STATS.md`.
-- **Phase 8 — Streaming & persistence:** cell grid, async load/unload, LOD,
+- **Phase 8 — Combat 2D dynamique :** scène jouable style Zelda 2D — joueur
+  contrôlable avec attaque/esquive, ennemis actifs (IA chase + attaque au
+  contact), boucle de combat réelle (hits mutuels, posture, stagger, mort).
+  PNJ repos (aubergiste : récupération santé/énergie/essence) et marchand
+  (achat/vente d'équipement). Objectif : exercer tous les systèmes de stats
+  (Phases 6-7) en situation dynamique réelle, pas seulement via l'ImGui.
+  Toujours 2D. Brick journal : `docs/PHASE-8.md`.
+- **Phase 9 — Stats avancées (passe complète) :** tout ce qui a été différé
+  de Phase 7 et qui nécessite la boucle de combat Phase 8. **Machine d'état de
+  combat :** shaken (rupture posture rapide), critical weakness (posture=0 →
+  5s, ouvre les critiques), démembrement, saignée/bleed-out, mort → inconscient
+  → stabilisation. **Stats offensives dérivées :** attack (5 + force), crit
+  damage (1.5 + dex/2), attack speed (95% + 1%/célérité), armor/resistance
+  penetration, status damage scaling. **Stats sociales :** beauté, prestige,
+  menace, suspicion, discrétion, érudition, réputation de faction. **Stats
+  utilitaires :** encombrement (50 + force·10 + constitution·2), saut, escalade,
+  nage, apnée. **Blessures avancées :** plaies ouvertes/infectées, traitement
+  par items (compresses, herbes, bandages, splintes). Brick journal :
+  `docs/PHASE-9.md`; design : `docs/STATS.md`.
+- **Phase 10 — Streaming & persistence:** cell grid, async load/unload, LOD,
   interior/exterior transitions, **save = runtime patch layer** reusing the
   Phase-1 resolver.
-- **Phase 9 — 3D transition:** glTF meshes/materials/skinning, 3D camera,
+- **Phase 11 — 3D transition:** glTF meshes/materials/skinning, 3D camera,
   scene→3D, low-poly pipeline, keep gameplay untouched.
-- **Phase 10 — BotW lighting:** the §7 list.
-- **Phase 11 — Physics/anim/audio/nav:** Jolt, blend trees + foot IK,
+- **Phase 12 — BotW lighting:** the §7 list.
+- **Phase 13 — Physics/anim/audio/nav:** Jolt, blend trees + foot IK,
   miniaudio, Recast/Detour 3D navmesh.
-- **Phase 12 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
+- **Phase 14 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
   quests, conflict view); Vulkan RHI backend **only when a real need exists**.
 
 > **CURRENT PHASE: 8** — update this line as work progresses.
-> Phase 8: Streaming & persistence — cell grid, async load/unload, LOD,
-> interior/exterior transitions, **save = runtime patch layer** reusing the
-> Phase-1 resolver. Design: `docs/STATS.md`; read before touching `gameplay/stats/`.
+> Phase 8: Combat 2D dynamique — scène jouable Zelda-like, boucle de combat
+> réelle (joueur + ennemis actifs), PNJ repos/marchand. Brick journal :
+> `docs/PHASE-8.md`. Design stats : `docs/STATS.md`.
 >
 > Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job system,
 > RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
@@ -505,14 +524,16 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 > move the max), secondary stats from CURRENT; Resonance + Harmony; typed-damage
 > pipeline; `f64` added to reflection (appended last — binary ordinals stable).
 >
-> **Phase 7 done** (2026-06-17, 167 tests / 5056 assertions green). Permanent-status
+> **Phase 7 done** (2026-06-17, 172 tests / 5071 assertions green). Permanent-status
 > & resonance mechanics. Brick journal in `docs/PHASE-7.md`; design in
 > `docs/STATS.md`. Deliverables: seeded engine RNG (`core::Rng`, §8),
 > `StatsTuningForm` (Phase-6 constants → moddable data, §5), stat-bearing
 > items/equipment (weapons with typed attack + scaling, armor/clothing per slot,
 > consumables), rest/sleep recovery, status buildup (poison/bleed/…), body-part
 > injuries + diseases/psychoses (permanent-status system, RNG-rolled, gated by
-> resonance-resistance), drugs + harmony break.
+> resonance-resistance), drugs + harmony break. Stats manquantes ajoutées en
+> post-phase : `healthRegen` (0.0002·grace/s), `essenceRegen` (0.005·insight/s),
+> `resistCold`, `State.Paralyzed` (glaciation ≠ stagger), `DamageType::Cold`.
 
 ---
 

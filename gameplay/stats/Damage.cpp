@@ -21,6 +21,7 @@ f32 mitigationPercent(const AbilitySystem& system, DamageType type) {
     case DamageType::Slash:     field = "armorSlash"; break;
     case DamageType::Pierce:    field = "armorPierce"; break;
     case DamageType::Blunt:     field = "armorBlunt"; break;
+    case DamageType::Cold:      field = "resistCold"; break;
     case DamageType::Fire:      field = "resistFire"; break;
     case DamageType::Lightning: field = "resistLightning"; break;
     }
@@ -91,6 +92,20 @@ void updateStagger(CombatState& combat, AbilitySystem& system, f32 dt,
     if (combat.staggerSeconds <= 0.0f) {
         combat.staggerSeconds = 0.0f;
         if (const auto tag = tags.find("State.Staggered")) {
+            system.tags.remove(*tag, tags);
+        }
+    }
+}
+
+void updateParalysis(CombatState& combat, AbilitySystem& system, f32 dt,
+                     const GameplayTagRegistry& tags) {
+    if (combat.paralysisSeconds <= 0.0f) {
+        return;
+    }
+    combat.paralysisSeconds -= dt;
+    if (combat.paralysisSeconds <= 0.0f) {
+        combat.paralysisSeconds = 0.0f;
+        if (const auto tag = tags.find("State.Paralyzed")) {
             system.tags.remove(*tag, tags);
         }
     }

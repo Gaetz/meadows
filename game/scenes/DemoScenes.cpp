@@ -425,6 +425,11 @@ void NarrativeScene::drawUi() {
 
 // --- StatsScene -------------------------------------------------------------
 
+gameplay::GameTimeTickArgs StatsScene::makeGameTimeArgs() {
+    return { core, vitals, system, combat, buildup, survival, activeDrugs,
+             injuries, afflictions, resonance, afflictionDb, derived, tags, tuning };
+}
+
 gameplay::StatModifiers StatsScene::resonanceModifiers() const {
     gameplay::StatModifiers mods;
     gameplay::Resonance eff = gameplay::effectiveResonance(resonance, survival, tuning);
@@ -458,6 +463,7 @@ void StatsScene::seedResources() {
 void StatsScene::onEnter() {
     WorldDemoScene::onEnter();
     tags.registerTag("State.Staggered");
+    tags.registerTag("State.Paralyzed");
     for (const char* statusTag :
          { "Status.Poisoned", "Status.Bleeding", "Status.Mental", "Status.Diseased",
            "Status.Cursed", "Status.Dying", "Status.HarmonyBroken",
@@ -510,13 +516,14 @@ void StatsScene::onEnter() {
 void StatsScene::update(f32 dt) {
     WorldDemoScene::update(dt);
     const f64 gameDt = clock.advance(dt);
-    gameplay::tickSurvival(survival, gameDt, tuning);
-    gameplay::tickDrugs(activeDrugs, resonance, system, gameDt, tags); // N4: expiry → aftershock
-    gameplay::accrueRest(combat, gameDt); // not in active combat in the demo
     gameplay::updateStagger(combat, system, dt, tags);
+    gameplay::updateParalysis(combat, system, dt, tags);
 
+    // Recompute stats with all modifiers (resonance, injuries, afflictions, drugs, equipment).
     const gameplay::StatModifiers mods = resonanceModifiers();
     gameplay::recomputeStats(core, vitals, system, derived, &mods);
+
+    // Real-time: status buildup DoT + decay (combat resolution).
     const gameplay::BuildupTickResult buildupResult =
         gameplay::tickBuildup(buildup, system, dt, tags, tuning);
 
@@ -530,21 +537,18 @@ void StatsScene::update(f32 dt) {
         vitals.essence = std::max(0.0f, vitals.essence - buildupResult.electrocutionEssenceDamage);
     }
     if (buildupResult.bleedBurst) {
-        // Critical slash burst using tunable damage.
         gameplay::StatBlock block { core, vitals, system, combat };
         applyDamage(block,
                     gameplay::DamageEvent { { { gameplay::DamageType::Slash, tuning.bleedBurstDamage } }, 0.0f },
                     tags, derived, &mods, tuning);
     }
     if (buildupResult.glaciationTriggered) {
-        // Paralysis for tunable duration (reuses staggerSeconds).
-        combat.staggerSeconds = std::max(combat.staggerSeconds, tuning.glaciationParalysisDuration);
-        if (const auto staggered = tags.find("State.Staggered")) {
-            system.tags.add(*staggered, tags);
+        combat.paralysisSeconds = std::max(combat.paralysisSeconds, tuning.glaciationParalysisDuration);
+        if (const auto paralyzed = tags.find("State.Paralyzed")) {
+            system.tags.add(*paralyzed, tags);
         }
     }
     if (buildupResult.electrocutionTriggered) {
-        // Drain posture by tunable fraction of maxPosture (default 100 %).
         const f32 maxP = gameplay::currentValueOf(system, gameplay::attr("maxPosture"));
         combat.posture = std::max(0.0f, combat.posture - maxP * tuning.electrocutionPostureDrainPercent);
         combat.staggerSeconds = std::max(combat.staggerSeconds, tuning.staggerSeconds);
@@ -558,19 +562,21 @@ void StatsScene::update(f32 dt) {
         }
     }
 
-    // Posture regenerates while not staggered.
+    // Real-time: posture regen (while not staggered) and energy regen.
     if (combat.staggerSeconds <= 0.0f) {
         const f32 maxP = gameplay::currentValueOf(system, gameplay::attr("maxPosture"));
-        const f32 regen =
-            gameplay::currentValueOf(system, gameplay::attr("postureRegen"));
+        const f32 regen = gameplay::currentValueOf(system, gameplay::attr("postureRegen"));
         combat.posture = std::min(maxP, combat.posture + regen * dt);
     }
-    // Energy regenerates continuously (slowed while glaciated).
     {
         const f32 maxE = gameplay::currentValueOf(system, gameplay::attr("maxEnergy"));
         const f32 regen = gameplay::currentValueOf(system, gameplay::attr("energyRegen"));
         vitals.energy = std::min(maxE, vitals.energy + regen * buildupResult.energyRegenMult * dt);
     }
+
+    // Game-time: health/essence regen, survival, drugs, injury/affliction recovery.
+    auto gtArgs = makeGameTimeArgs();
+    gameplay::tickGameTime(gtArgs, gameDt, mods);
 }
 
 void StatsScene::drawUi() {
@@ -614,7 +620,10 @@ void StatsScene::drawUi() {
         ImGui::Text("posture");
     }
     if (const auto st = tags.find("State.Staggered"); st && system.tags.has(*st)) {
-        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "STAGGERED");
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "STAGGERED (%.1fs)", combat.staggerSeconds);
+    }
+    if (const auto pa = tags.find("State.Paralyzed"); pa && system.tags.has(*pa)) {
+        ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "PARALYZED (%.1fs)", combat.paralysisSeconds);
     }
     if (const auto dead = tags.find("State.Dead"); dead && system.tags.has(*dead)) {
         ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "DEAD");
@@ -636,12 +645,19 @@ void StatsScene::drawUi() {
                 combat.restSeconds / 3600.0f);
 
     ImGui::SeparatorText("Derived");
-    ImGui::Text("defense %.1f   armor S/B/P %.0f/%.0f/%.0f", cur("defense"),
-                cur("armorSlash"), cur("armorBlunt"), cur("armorPierce"));
-    ImGui::Text("resist fire/lightning %.0f/%.0f   will %.1f", cur("resistFire"),
-                cur("resistLightning"), cur("will"));
-    ImGui::Text("maxPosture %.0f   postureRegen %.1f   critSens %.1f",
-                cur("maxPosture"), cur("postureRegen"), cur("criticalSensitivity"));
+    // Show current attribute values (base + injury/resonance maluses).
+    ImGui::Text("str %.1f  con %.1f  gra %.1f  dex %.1f  ala %.1f  per %.1f  cha %.1f  ego %.1f  ins %.1f",
+                cur("strength"), cur("constitution"), cur("grace"),
+                cur("dexterity"), cur("alacrity"), cur("perception"),
+                cur("charisma"), cur("ego"), cur("insight"));
+    ImGui::Text("defense %.1f   armor S/B/P %.1f/%.1f/%.1f   critSens %.1f", cur("defense"),
+                cur("armorSlash"), cur("armorBlunt"), cur("armorPierce"), cur("criticalSensitivity"));
+    ImGui::Text("resist fire/cold/lightning %.1f/%.1f/%.1f   will %.1f",
+                cur("resistFire"), cur("resistCold"), cur("resistLightning"), cur("will"));
+    ImGui::Text("maxPosture %.0f   postureRegen %.1f   energyRegen %.1f",
+                cur("maxPosture"), cur("postureRegen"), cur("energyRegen"));
+    ImGui::Text("healthRegen %.4f/s   essenceRegen %.4f/s",
+                cur("healthRegen"), cur("essenceRegen"));
 
     ImGui::SeparatorText("Actions");
     const StatModifiers mods = resonanceModifiers();
@@ -672,15 +688,24 @@ void StatsScene::drawUi() {
         survival.thirst = 100.0f;
     }
     if (ImGui::Button("Advance 6h (game time)")) {
-        const f64 gd = 6.0 * 3600.0;
-        clock.gameSeconds += gd;
-        tickSurvival(survival, gd, tuning);
+        clock.gameSeconds += 6.0 * 3600.0;
+        auto gtArgs = makeGameTimeArgs();
+        const gameplay::StatModifiers equipMods = resonanceModifiers();
+        const gameplay::GameTimeResult r =
+            gameplay::advanceGameTime(gtArgs, 6.0 * 3600.0, clock.timescale, equipMods);
+        if (r.died) { /* State.Dead tag already set; UI will show DEAD */ }
     }
     ImGui::SameLine();
     if (ImGui::Button("Sleep 8h (restores sleep, accrues rest, heals injuries)")) {
-        gameplay::sleep(clock, survival, combat, 8.0f, tuning);
-        gameplay::recoverInjuries(injuries, 8.0f);
-        gameplay::recoverAfflictions(afflictions, 8.0f);
+        // sleep() handles the survival/clock side; advanceGameTime covers everything else.
+        const f32 sleepBefore = survival.sleep;
+        survival.sleep = 8.0f >= tuning.comfortableSleepHours
+                             ? 100.0f
+                             : std::min(100.0f, sleepBefore + tuning.sleepPerHour * 8.0f);
+        clock.gameSeconds += 8.0 * 3600.0;
+        auto gtArgs = makeGameTimeArgs();
+        const gameplay::StatModifiers equipMods = resonanceModifiers();
+        gameplay::advanceGameTime(gtArgs, 8.0 * 3600.0, clock.timescale, equipMods);
     }
 
     ImGui::SeparatorText("Equipment (F3)");
@@ -700,7 +725,8 @@ void StatsScene::drawUi() {
     }
 
     ImGui::SeparatorText("Status buildup (N1) — fill to endurance to trigger");
-    ImGui::Text("vitality %.1f%%  (reduces poison/ignition/electrocution DoT)", cur("vitality"));
+    ImGui::Text("vitality %.1f%%  will %.1f%%  (vitality→poison DoT, will→ignition/electrocution DoT)",
+                cur("vitality"), cur("will"));
     ImGui::Text("poison %.1f/%.0f  bleed %.1f/%.0f  death %.1f/%.0f",
                 buildup.poison, cur("endurancePoison"),
                 buildup.bleed, cur("enduranceBleed"),

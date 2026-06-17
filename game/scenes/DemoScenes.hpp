@@ -16,6 +16,7 @@
 #include "gameplay/stats/Drugs.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
+#include "gameplay/stats/GameTime.hpp"
 #include "gameplay/stats/Injuries.hpp"
 #include "gameplay/stats/Resonance.hpp"
 #include "gameplay/stats/Rest.hpp"
@@ -99,6 +100,7 @@ public:
 
 private:
     gameplay::StatModifiers resonanceModifiers() const;
+    gameplay::GameTimeTickArgs makeGameTimeArgs();
     void seedResources();
 
     gameplay::CoreAttributes core;

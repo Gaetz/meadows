@@ -42,7 +42,8 @@ struct DamageResult {
 // / shaken live here too in Phase 7.
 struct CombatState {
     f32 posture { 0.0f };
-    f32 staggerSeconds { 0.0f };
+    f32 staggerSeconds { 0.0f };   // posture break: opens criticals
+    f32 paralysisSeconds { 0.0f }; // glaciation: frozen in place (distinct from stagger)
     f32 restSeconds { 0.0f };
 };
 
@@ -66,9 +67,12 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
                          const StatModifiers* extra = nullptr,
                          const StatsTuningForm& tuning = {});
 
-// Counts down an active stagger; drops State.Staggered when it elapses. Called
-// each frame with the real dt.
+// Counts down an active stagger; drops State.Staggered when it elapses.
 void updateStagger(CombatState& combat, AbilitySystem& system, f32 dt,
                    const GameplayTagRegistry& tags);
+
+// Counts down glaciation paralysis; drops State.Paralyzed when it elapses.
+void updateParalysis(CombatState& combat, AbilitySystem& system, f32 dt,
+                     const GameplayTagRegistry& tags);
 
 } // namespace gameplay
