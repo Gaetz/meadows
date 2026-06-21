@@ -638,8 +638,8 @@ void StatsScene::drawUi() {
                 eff.onyx, eff.amber, eff.garnet);
 
     ImGui::SeparatorText("Survival (drag below 75 to drive resonance)");
-    ImGui::DragFloat("hunger", &survival.hunger, 0.5f, 0.0f, 100.0f);  // → onyx
-    ImGui::DragFloat("thirst", &survival.thirst, 0.5f, 0.0f, 100.0f);  // → onyx
+    ImGui::DragFloat("hunger", &survival.hunger, 0.5f, 0.0f, 100.0f);  // → amber
+    ImGui::DragFloat("thirst", &survival.thirst, 0.5f, 0.0f, 100.0f);  // → amber
     ImGui::DragFloat("sleep", &survival.sleep, 0.5f, 0.0f, 100.0f);    // → garnet
     ImGui::Text("game time %.1f h   rest %.1f h", clock.gameHours(),
                 combat.restSeconds / 3600.0f);

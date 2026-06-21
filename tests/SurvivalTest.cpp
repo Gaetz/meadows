@@ -15,7 +15,7 @@ TEST_CASE("survival: hunger starts at 100 and reaches threshold 75 after 24 game
     CHECK(s.hunger == doctest::Approx(75.0f).epsilon(0.01f));
 }
 
-TEST_CASE("survival: hunger below 75 yields negative health resonance, linearly") {
+TEST_CASE("survival: hunger below 75 yields negative energy resonance, linearly") {
     Survival s;
     s.hunger = 75.0f;
     CHECK(hungerResonance(s) == doctest::Approx(0.0f));
@@ -27,27 +27,27 @@ TEST_CASE("survival: hunger below 75 yields negative health resonance, linearly"
     CHECK(hungerResonance(s) == doctest::Approx(-50.0f)); // empty stomach
 }
 
-TEST_CASE("survival: folds into the effective resonance (onyx), no direct set") {
+TEST_CASE("survival: folds into the effective resonance (amber), no direct set") {
     Survival s;
     s.hunger = 0.0f;
     Resonance persistent;
-    persistent.onyx = -10.0f;
+    persistent.amber = -10.0f;
     const Resonance eff = effectiveResonance(persistent, s);
-    CHECK(eff.onyx == doctest::Approx(-60.0f)); // -10 persistent + -50 hunger
-    CHECK(eff.amber == doctest::Approx(0.0f));
+    CHECK(eff.amber == doctest::Approx(-60.0f)); // -10 persistent + -50 hunger
+    CHECK(eff.onyx == doctest::Approx(0.0f));
 }
 
-TEST_CASE("survival: low sleep drives essence (garnet) resonance, hunger/thirst onyx") {
+TEST_CASE("survival: low sleep drives essence (garnet) resonance, hunger/thirst amber") {
     Survival s;
     s.sleep = 0.0f; // hunger/thirst still full
     Resonance eff = effectiveResonance(Resonance {}, s);
     CHECK(eff.garnet == doctest::Approx(-50.0f));
-    CHECK(eff.onyx == doctest::Approx(0.0f));
+    CHECK(eff.amber == doctest::Approx(0.0f));
 
     s.hunger = 0.0f;
     s.thirst = 0.0f;
     eff = effectiveResonance(Resonance {}, s);
-    CHECK(eff.onyx == doctest::Approx(-100.0f)); // hunger -50 + thirst -50 (cumulative)
+    CHECK(eff.amber == doctest::Approx(-100.0f)); // hunger -50 + thirst -50 (cumulative)
 }
 
 TEST_CASE("survival: advancing the clock drives hunger below threshold → resonance") {

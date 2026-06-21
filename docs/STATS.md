@@ -88,8 +88,8 @@ health/form/structure), Amber (insertion in time/causality), Garnet (essence /
 persistence-in-being).
 
 **Acquisition** `[6 minimal — one source; 7 full]`:
-- Neglecting needs: hunger/thirst → health (onyx) resonance; sleep → essence
-  (garnet) resonance; cold/heat → energy (amber) resonance. `[6: hunger,
+- Neglecting needs: hunger/thirst → energy (amber) resonance; sleep → essence
+  (garnet) resonance; cold/heat → health (onyx) resonance. `[6: hunger,
   thirst, sleep; temperature → 7]`
 - Using stats: losing health/energy/essence accrues a matching negative
   resonance; bars won't refill to max until an 8h rest. `[7]`

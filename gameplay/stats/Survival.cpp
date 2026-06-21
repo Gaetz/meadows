@@ -33,8 +33,8 @@ f32 hungerResonance(const Survival& survival, const StatsTuningForm& tuning) {
 Resonance effectiveResonance(const Resonance& persistent, const Survival& survival,
                              const StatsTuningForm& tuning) {
     Resonance r = persistent;
-    r.onyx += needResonance(survival.hunger, tuning) +
-              needResonance(survival.thirst, tuning);
+    r.amber += needResonance(survival.hunger, tuning) +
+               needResonance(survival.thirst, tuning);
     r.garnet += needResonance(survival.sleep, tuning);
     return r;
 }

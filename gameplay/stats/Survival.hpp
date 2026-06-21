@@ -6,9 +6,9 @@
 #include "gameplay/stats/StatsTuning.hpp"
 
 // Survival needs (docs/STATS.md §2 "survie"). Below a threshold each need drives
-// Resonance: hunger + thirst → onyx (health), sleep → garnet (essence). A reflected
+// Resonance: hunger + thirst → amber (energy), sleep → garnet (essence). A reflected
 // component (serializes §5). Resonance is reached through the resonance path, never
-// by setting attributes directly (§2.9). (Temperature → amber is Phase 7.)
+// by setting attributes directly (§2.9). (Temperature → onyx (health) is Phase 7.)
 
 namespace gameplay {
 
@@ -28,13 +28,13 @@ struct Survival {
 // GameClock::advance returns), at the per-point rates in `tuning`. Clamps at 0.
 void tickSurvival(Survival& survival, f64 gameDt, const StatsTuningForm& tuning = {});
 
-// The onyx (health) Resonance contribution from hunger alone: 0 at/above the
+// The amber (energy) Resonance contribution from hunger alone: 0 at/above the
 // threshold, then linear to the empty magnitude at 0 (both from `tuning`).
 // Transient — a function of current hunger, restored by eating.
 f32 hungerResonance(const Survival& survival, const StatsTuningForm& tuning = {});
 
 // The persistent Resonance with the transient survival contributions folded in:
-// hunger + thirst → onyx, sleep → garnet. Feed this to buildResonanceModifiers.
+// hunger + thirst → amber (energy), sleep → garnet (essence). Feed this to buildResonanceModifiers.
 Resonance effectiveResonance(const Resonance& persistent, const Survival& survival,
                              const StatsTuningForm& tuning = {});
 
