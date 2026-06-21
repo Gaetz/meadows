@@ -28,7 +28,8 @@ void registerDrugFormTypes(data::FormTypeRegistry& registry) {
 void takeDrug(ActiveDrugs& drugs, const DrugForm& drug, AbilitySystem& system,
               const GameplayTagRegistry& tags) {
     drugs.list.push_back(
-        { drug.channel, drug.resonanceBoost, drug.aftershockResonance, drug.durationHours });
+        { drug.channel, drug.resonanceBoost, drug.aftershockResonance,
+          drug.aftershockRecoveryPerHour, drug.durationHours, drug.durationHours });
     if (const auto tag = tags.find(kHarmonyBroken)) {
         system.tags.add(*tag, tags); // ref-counted; one hold per active drug
     }
@@ -42,23 +43,43 @@ Resonance drugResonance(const ActiveDrugs& drugs) {
     return result;
 }
 
-void tickDrugs(ActiveDrugs& drugs, Resonance& persistent, AbilitySystem& system,
+Resonance drugAftereffectResonance(const ActiveDrugs& drugs) {
+    Resonance result;
+    for (const DrugAftereffect& ae : drugs.aftereffects) {
+        addToChannel(result, ae.channel, ae.remaining);
+    }
+    return result;
+}
+
+void tickDrugs(ActiveDrugs& drugs, AbilitySystem& system,
                f64 gameDt, const GameplayTagRegistry& tags) {
     const f32 hours = static_cast<f32>(gameDt / 3600.0);
     const auto tag = tags.find(kHarmonyBroken);
+
+    // Step 1: advance existing aftereffects (before expiry, so new ones don't
+    // recover in the same tick they are created).
+    for (DrugAftereffect& ae : drugs.aftereffects) {
+        ae.remaining = std::min(0.0f, ae.remaining + ae.recoveryPerHour * hours);
+    }
+    std::erase_if(drugs.aftereffects,
+                  [](const DrugAftereffect& ae) { return ae.remaining >= 0.0f; });
+
+    // Step 2: expire drugs; spawn new aftereffects (they recover from next tick).
     for (ActiveDrug& drug : drugs.list) {
         drug.hoursRemaining -= hours;
         if (drug.hoursRemaining <= 0.0f) {
-            // Aftershock to the persistent resonance; harmony is restored (the
-            // hold is released), so it cascades to the other channels.
-            addToChannel(persistent, drug.channel, drug.aftershock);
+            // Aftershock becomes a progressive aftereffect — not baked into
+            // persistent resonance. Harmony is restored (hold released) so the
+            // cascade will apply to the aftereffect on the next recompute.
+            drugs.aftereffects.push_back(
+                { drug.channel, drug.aftershock, drug.recoveryPerHour, drug.aftershock });
             if (tag) {
                 system.tags.remove(*tag, tags);
             }
         }
     }
     std::erase_if(drugs.list,
-                  [](const ActiveDrug& drug) { return drug.hoursRemaining <= 0.0f; });
+                  [](const ActiveDrug& d) { return d.hoursRemaining <= 0.0f; });
 }
 
 bool harmonyBroken(const AbilitySystem& system, const GameplayTagRegistry& tags) {

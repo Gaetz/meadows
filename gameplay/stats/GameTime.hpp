@@ -58,9 +58,9 @@ void tickGameTime(GameTimeTickArgs& args, f64 gameDt, const StatModifiers& mods)
 // Converts to real-time equivalents and steps in 10 s real-time chunks, ticking
 // status buildup (real-time DoT + decay) each chunk, then game-time effects.
 // Stops early and returns died=true if health reaches 0.
-// `extraMods` are equipment/fixed modifiers; resonance/injury/drug mods are
+// `equipmentMods` are equipment/fixed modifiers; resonance/injury/drug mods are
 // recomputed internally each chunk.
 GameTimeResult advanceGameTime(GameTimeTickArgs& args, f64 gameDt, f32 timescale,
-                               const StatModifiers& extraMods = {});
+                               const StatModifiers& equipmentMods = {});
 
 } // namespace gameplay

@@ -100,6 +100,7 @@ public:
 
 private:
     gameplay::StatModifiers resonanceModifiers() const;
+    gameplay::StatModifiers equipmentModifiers() const; // equipment-only (no resonance)
     gameplay::GameTimeTickArgs makeGameTimeArgs();
     void seedResources();
 

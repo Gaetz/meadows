@@ -106,8 +106,15 @@ health→…). Example: -10 health resonance ⇒ -5 energy ⇒ -2 essence. It is
 *minimum*, applied once from the most-displaced stat.
 
 **Harmony break** `[7]`: most drugs break harmony (channels become independent)
-during the positive effect; the aftershock usually restores harmony, so it hits
-all three channels.
+during the positive effect. When the drug wears off, harmony is restored and the
+aftershock kicks in — but not as an instant hit to persistent resonance. Instead,
+each affected channel accumulates a **progressive penalty** (initially equal to
+`aftershockResonance`, e.g. −30) that fades back to 0 at `aftershockRecoveryPerHour`
+pts/game-hour (default 1). Multiple drug aftershocks accumulate independently.
+Because this penalty is **transient** (not baked into persistent resonance), it
+stacks correctly across repeated drug use and does not interact with the 8h rest
+recovery (which operates on `persistent` only). With harmony restored, the harmony
+cascade applies to the aftereffect, so it spreads to the other channels.
 
 **Resonance as resistance to permanent statuses** `[7]`: permanent negative
 statuses (injuries/diseases/psychoses) have a low inflict chance (~10%). Phase

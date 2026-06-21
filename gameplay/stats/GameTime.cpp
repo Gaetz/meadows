@@ -10,9 +10,9 @@ namespace gameplay {
 namespace {
 
 // Builds the full StatModifiers for a character from all resonance-driven sources
-// (resonance spheres, survival, injuries, afflictions, drugs) merged with extraMods.
-// Does NOT include equipment (pass those via extraMods).
-StatModifiers buildCharacterMods(GameTimeTickArgs& a, const StatModifiers& extraMods) {
+// (resonance spheres, survival, injuries, afflictions, drugs) merged with equipmentMods.
+// Does NOT include equipment (pass those via equipmentMods).
+StatModifiers buildCharacterMods(GameTimeTickArgs& a, const StatModifiers& equipmentMods) {
     Resonance eff = effectiveResonance(a.resonance, a.survival, a.tuning);
     eff.onyx  += injuryResonance(a.injuries);
     const Resonance ar = afflictionResonance(a.afflictions, a.afflictionDb);
@@ -22,6 +22,10 @@ StatModifiers buildCharacterMods(GameTimeTickArgs& a, const StatModifiers& extra
     eff.onyx   += dr.onyx;
     eff.amber  += dr.amber;
     eff.garnet += dr.garnet;
+    const Resonance da = drugAftereffectResonance(a.activeDrugs);
+    eff.onyx   += da.onyx;
+    eff.amber  += da.amber;
+    eff.garnet += da.garnet;
 
     StatModifiers mods;
     buildResonanceModifiers(eff, mods, harmonyBroken(a.system, a.tags));
@@ -29,8 +33,8 @@ StatModifiers buildCharacterMods(GameTimeTickArgs& a, const StatModifiers& extra
     afflictionStatModifiers(a.afflictions, a.afflictionDb, mods);
 
     // Merge equipment / fixed mods.
-    for (const auto& [k, v] : extraMods.add) { mods.add[k] += v; }
-    for (const auto& [k, v] : extraMods.mul) {
+    for (const auto& [k, v] : equipmentMods.add) { mods.add[k] += v; }
+    for (const auto& [k, v] : equipmentMods.mul) {
         auto [it, inserted] = mods.mul.try_emplace(k, 1.0f);
         it->second *= v;
     }
@@ -106,8 +110,8 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
     // Survival needs decay (game-time).
     tickSurvival(a.survival, gameDt, a.tuning);
 
-    // Drug expiry and aftershock (game-time).
-    tickDrugs(a.activeDrugs, a.resonance, a.system, gameDt, a.tags);
+    // Drug expiry and progressive aftereffect (game-time).
+    tickDrugs(a.activeDrugs, a.system, gameDt, a.tags);
 
     // Injury and affliction recovery (game-time, in hours).
     recoverInjuries(a.injuries, static_cast<f32>(gameDt / 3600.0));
@@ -118,7 +122,7 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
 }
 
 GameTimeResult advanceGameTime(GameTimeTickArgs& a, f64 gameDt, f32 timescale,
-                               const StatModifiers& extraMods) {
+                               const StatModifiers& equipmentMods) {
     constexpr f64 kChunkReal = 10.0; // 10 real seconds per chunk
     const f64 realTotal  = (timescale > 0.0f) ? gameDt / static_cast<f64>(timescale) : gameDt;
     f64 remaining = realTotal;
@@ -128,7 +132,7 @@ GameTimeResult advanceGameTime(GameTimeTickArgs& a, f64 gameDt, f32 timescale,
         const f64 thisGame = thisReal * static_cast<f64>(timescale);
 
         // Recompute mods and overlay from current state.
-        const StatModifiers mods = buildCharacterMods(a, extraMods);
+        const StatModifiers mods = buildCharacterMods(a, equipmentMods);
         recomputeStats(a.core, a.vitals, a.system, a.derived, &mods);
 
         // Tick status buildup in real time (DoT + decay + tag expiry).
