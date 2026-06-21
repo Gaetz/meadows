@@ -9,8 +9,12 @@ namespace render {
 namespace {
 
 // Embedded until the asset system (Phase 1) provides shader files via the VFS.
+// Written in GLSL 4.10 (compatible with both GL 4.1 and GL 4.6).
+// Binding points are not declared in GLSL (that requires 4.2+); they are set
+// explicitly via glUniformBlockBinding / glUniform1i after link (see ShaderDesc
+// uniformBlocks / samplers fields).
 const char* kVertexShader = R"glsl(
-#version 460 core
+#version 410 core
 layout(location = 0) in vec2 aCorner;
 layout(location = 1) in vec2 aUv;
 layout(location = 2) in vec4 aPosSize;
@@ -18,7 +22,7 @@ layout(location = 3) in vec4 aUvRect;
 layout(location = 4) in vec4 aTint;
 layout(location = 5) in float aRotation;
 
-layout(std140, binding = 0) uniform Camera {
+layout(std140) uniform Camera {
     mat4 uViewProj;
 };
 
@@ -38,11 +42,11 @@ void main() {
 )glsl";
 
 const char* kFragmentShader = R"glsl(
-#version 460 core
+#version 410 core
 in vec2 vUv;
 in vec4 vTint;
 
-layout(binding = 0) uniform sampler2D uTexture;
+uniform sampler2D uTexture;
 
 out vec4 fragColor;
 
@@ -72,6 +76,8 @@ uptr<SpriteRenderer> SpriteRenderer::create(rhi::Device& device) {
         .debugName = "sprite",
         .vertexSource = kVertexShader,
         .fragmentSource = kFragmentShader,
+        .uniformBlocks = { { "Camera", 0 } },
+        .samplers      = { { "uTexture", 0 } },
     });
     if (shader.id == 0) {
         return nullptr;
@@ -189,17 +195,19 @@ void SpriteRenderer::end(rhi::CommandBuffer& cmd) {
         return;
     }
 
-    device.updateBuffer(instanceBuffer, instances.data(),
-                        instances.size() * sizeof(Instance));
-
     cmd.setPipeline(pipeline);
     cmd.setVertexBuffer(0, quadVertices);
     cmd.setVertexBuffer(1, instanceBuffer);
     cmd.setIndexBuffer(quadIndices, rhi::IndexFormat::U16);
 
+    // Upload per-batch so firstInstance is always 0 — avoids requiring
+    // GL_ARB_base_instance (unavailable on macOS GL 4.1).
     for (const Batch& batch : batches) {
+        device.updateBuffer(instanceBuffer,
+                            instances.data() + batch.firstInstance,
+                            batch.instanceCount * sizeof(Instance));
         cmd.setBindGroup(0, bindGroupFor({ batch.textureId }));
-        cmd.drawIndexed(6, batch.instanceCount, 0, batch.firstInstance);
+        cmd.drawIndexed(6, batch.instanceCount, 0, 0);
     }
 }
 

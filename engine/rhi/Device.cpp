@@ -8,7 +8,7 @@ namespace rhi {
 uptr<Device> Device::create(Backend backend, platform::Window& window) {
     switch (backend) {
     case Backend::OpenGL:
-        return GlDevice::create(window);
+        return createGlDevice(window);
     }
     LOG_ERROR("Unknown RHI backend");
     return nullptr;

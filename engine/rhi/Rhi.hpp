@@ -65,12 +65,26 @@ struct TextureDesc {
 
 // --- Shaders -------------------------------------------------------------------
 
-// Sources are backend-specific for now (GLSL 460 for GL). Offline SPIR-V
+// Sources are backend-specific for now (GLSL for GL). Offline SPIR-V
 // cross-compilation becomes the path once a second backend exists.
+//
+// uniformBlocks / samplers: explicit binding assignments applied after link via
+// glUniformBlockBinding / glUniform1i. Required on GL 4.1 (no layout(binding=N)
+// in GLSL 4.10); harmless on GL 4.6 (overrides the layout qualifier).
+struct UniformBlockBinding {
+    str name;
+    u32 binding { 0 };
+};
+struct SamplerBinding {
+    str name;
+    u32 unit { 0 };
+};
 struct ShaderDesc {
     str debugName;
     str vertexSource;
     str fragmentSource;
+    vector<UniformBlockBinding> uniformBlocks;
+    vector<SamplerBinding>      samplers;
 };
 
 // --- Pipelines -------------------------------------------------------------------

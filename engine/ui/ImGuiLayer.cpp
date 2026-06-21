@@ -28,7 +28,7 @@ uptr<ImGuiLayer> ImGuiLayer::create(platform::Window& window) {
 
     auto* sdlWindow = static_cast<SDL_Window*>(window.nativeHandle());
     if (!ImGui_ImplSDL3_InitForOpenGL(sdlWindow, SDL_GL_GetCurrentContext()) ||
-        !ImGui_ImplOpenGL3_Init("#version 460")) {
+        !ImGui_ImplOpenGL3_Init("#version 150")) {
         LOG_ERROR("ImGui backend initialization failed");
         ImGui::DestroyContext();
         return nullptr;

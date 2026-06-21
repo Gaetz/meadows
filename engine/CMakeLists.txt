@@ -16,6 +16,9 @@ add_library(meadows STATIC
     render/SpriteRenderer.cpp
     rhi/Device.cpp
     rhi/backends/gl/GlDevice.cpp
+    rhi/backends/gl/GlDeviceBase.cpp
+    rhi/backends/gl/GlDevice46.cpp
+    rhi/backends/gl/GlDevice41.cpp
     ui/ImGuiLayer.cpp
 )
 

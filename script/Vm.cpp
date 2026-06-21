@@ -37,7 +37,7 @@ sol::object valueToLua(sol::this_state ts, const reflect::Value& value) {
                                  std::is_same_v<T, str>) {
                 return sol::make_object(ts, held);
             } else {
-                return sol::make_object(ts, sol::nil);
+                return sol::make_object(ts, sol::lua_nil);
             }
         },
         value);
@@ -71,7 +71,7 @@ struct ScriptSelf {
 
     sol::object index(sol::stack_object key, sol::this_state ts) {
         if (!ctx || key.get_type() != sol::type::string) {
-            return sol::make_object(ts, sol::nil);
+            return sol::make_object(ts, sol::lua_nil);
         }
         const std::string name = key.as<std::string>();
         if (isAttribute(name)) {
@@ -88,7 +88,7 @@ struct ScriptSelf {
                 return valueToLua(ts, it->second);
             }
         }
-        return sol::make_object(ts, sol::nil);
+        return sol::make_object(ts, sol::lua_nil);
     }
 
     void newindex(sol::stack_object key, sol::stack_object value) {
@@ -177,11 +177,11 @@ Vm::Vm() : impl(std::make_unique<Impl>()) {
     for (const char* global :
          { "os", "io", "dofile", "loadfile", "load", "require",
            "collectgarbage", "package" }) {
-        impl->lua[global] = sol::nil;
+        impl->lua[global] = sol::lua_nil;
     }
     sol::table math = impl->lua["math"];
-    math["random"] = sol::nil;
-    math["randomseed"] = sol::nil;
+    math["random"] = sol::lua_nil;
+    math["randomseed"] = sol::lua_nil;
     impl->lua.set_function("rng", [this]() { return nextRandom(); });
 
     impl->lua.new_usertype<ScriptSelf>(
@@ -201,7 +201,7 @@ RunResult Vm::run(const std::string& code, ScriptContext& context) {
     impl->lua["self"] = ScriptSelf { &context };
     const sol::protected_function_result result =
         impl->lua.safe_script(code, sol::script_pass_on_error);
-    impl->lua["self"] = sol::nil; // do not retain a dangling context pointer
+    impl->lua["self"] = sol::lua_nil; // do not retain a dangling context pointer
     if (!result.valid()) {
         const sol::error err = result;
         return { false, err.what() };
@@ -213,7 +213,7 @@ bool Vm::evalPredicate(const std::string& expr, ScriptContext& context) {
     impl->lua["self"] = ScriptSelf { &context };
     const sol::protected_function_result result =
         impl->lua.safe_script("return (" + expr + ")", sol::script_pass_on_error);
-    impl->lua["self"] = sol::nil;
+    impl->lua["self"] = sol::lua_nil;
     if (!result.valid()) {
         return false;
     }
@@ -280,8 +280,8 @@ void Vm::startCoroutine(const std::string& code, ScriptContext self,
     impl->lua["self"] = ScriptSelf { &coro.self };
     impl->lua["target"] = ScriptSelf { &coro.target };
     const sol::protected_function_result result = coro.co();
-    impl->lua["self"] = sol::nil;
-    impl->lua["target"] = sol::nil;
+    impl->lua["self"] = sol::lua_nil;
+    impl->lua["target"] = sol::lua_nil;
     if (!result.valid() || coro.co.status() != sol::call_status::yielded) {
         impl->coros.pop_back(); // finished or errored without a wait
         return;
@@ -300,8 +300,8 @@ void Vm::tickCoroutines(f32 dt) {
         impl->lua["self"] = ScriptSelf { &coro.self };
         impl->lua["target"] = ScriptSelf { &coro.target };
         const sol::protected_function_result result = coro.co();
-        impl->lua["self"] = sol::nil;
-        impl->lua["target"] = sol::nil;
+        impl->lua["self"] = sol::lua_nil;
+        impl->lua["target"] = sol::lua_nil;
         if (!result.valid() || coro.co.status() != sol::call_status::yielded) {
             it = impl->coros.erase(it); // finished or errored
             continue;

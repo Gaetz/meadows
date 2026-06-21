@@ -32,8 +32,8 @@ uptr<GlContext> GlContext::create(Window& window, i32 major, i32 minor) {
 
     SDL_GLContext sdlContext = SDL_GL_CreateContext(sdlWindow);
     if (!sdlContext) {
-        LOG_ERROR("GL {}.{} context creation failed: {}", major, minor,
-                  SDL_GetError());
+        LOG_WARN("GL {}.{} context creation failed: {}", major, minor,
+                 SDL_GetError());
         return nullptr;
     }
 
