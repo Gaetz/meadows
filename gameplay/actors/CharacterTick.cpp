@@ -10,6 +10,7 @@
 #include "gameplay/stats/GameTime.hpp"
 #include "gameplay/stats/Injuries.hpp"
 #include "gameplay/stats/Resonance.hpp"
+#include "gameplay/stats/ResonanceDecays.hpp"
 #include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/stats/Survival.hpp"
 
@@ -28,17 +29,43 @@ void tickCharacter(flecs::entity entity, f32 dt, f64 gameDt,
     auto& activeDrugs = entity.get_mut<ActiveDrugs>();
     auto& injuries    = entity.get_mut<Injuries>();
     auto& afflictions = entity.get_mut<Afflictions>();
+    auto& resoDecays  = entity.get_mut<ResonanceDecays>();
 
     // Stagger / paralysis timers decay in real time.
     updateStagger(combat, system, dt, ctx.tags);
     updateParalysis(combat, system, dt, ctx.tags);
 
-    // Assemble full character modifiers and bake derived stats.
+    // Pre-register decay entries for resonance effects about to expire this tick.
+    // Must happen BEFORE tickEffects() removes them from activeEffects.
+    {
+        const u32 kOnyx = attr("onyx"), kAmber = attr("amber"), kGarnet = attr("garnet");
+        for (const ActiveEffect& active : system.activeEffects) {
+            if (!active.infinite && active.decayOnExpiry && active.remaining <= dt) {
+                if (active.attribute == kOnyx || active.attribute == kAmber ||
+                    active.attribute == kGarnet) {
+                    resoDecays.list.push_back({
+                        active.attribute, active.magnitude,
+                        active.decayPerHour, active.magnitude
+                    });
+                }
+            }
+        }
+    }
+
+    // Tick real-time GAS effects (cooldowns, duration effects, tag expiry).
+    tickEffects(vitals, system, dt, ctx.tags);
+
+    // Phase A — resonance current values: Resonance BaseValues + GAS activeEffects.
+    recomputeStats(core, vitals, resonance, system, ctx.derived, nullptr);
+
+    // Phase B — full character mods from GAS resonance + survival/injuries/drugs/decays.
     GameTimeTickArgs args { core, vitals, system, combat, buildup, survival,
                             activeDrugs, injuries, afflictions, resonance,
-                            ctx.afflictionDb, ctx.derived, ctx.tags, ctx.tuning };
+                            resoDecays, ctx.afflictionDb, ctx.derived, ctx.tags, ctx.tuning };
     const StatModifiers mods = buildCharacterMods(args, equipmentMods);
-    recomputeStats(core, vitals, system, ctx.derived, &mods);
+
+    // Phase C — full recompute with cascade mods (maxHealth, attributes, derived).
+    recomputeStats(core, vitals, resonance, system, ctx.derived, &mods);
 
     // Real-time status buildup: DoT, decay, status triggers.
     const BuildupTickResult br = tickBuildup(buildup, system, dt, ctx.tags, ctx.tuning);
@@ -75,7 +102,6 @@ void tickCharacter(flecs::entity entity, f32 dt, f64 gameDt,
     }
 
     // Real-time regen (posture while not staggered; energy always).
-    // Regen-rate multipliers from active statuses are already in mods → currentValueOf.
     if (combat.staggerSeconds <= 0.0f) {
         const f32 maxP = currentValueOf(system, attr("maxPosture"));
         const f32 regen = currentValueOf(system, attr("postureRegen"));
@@ -104,16 +130,25 @@ void initializeActorStats(flecs::entity entity,
     auto& injuries    = entity.get_mut<Injuries>();
     auto& afflictions = entity.get_mut<Afflictions>();
     auto& resonance   = entity.get_mut<Resonance>();
+    auto& resoDecays  = entity.get_mut<ResonanceDecays>();
+
+    // Phase A — resonance values from GAS (no cascade yet).
+    recomputeStats(core, vitals, resonance, system, ctx.derived, nullptr);
 
     GameTimeTickArgs args { core, vitals, system, combat, buildup, survival,
                             activeDrugs, injuries, afflictions, resonance,
-                            ctx.afflictionDb, ctx.derived, ctx.tags, ctx.tuning };
+                            resoDecays, ctx.afflictionDb, ctx.derived, ctx.tags, ctx.tuning };
     const StatModifiers mods = buildCharacterMods(args, equipmentMods);
-    recomputeStats(core, vitals, system, ctx.derived, &mods);
+
+    // Phase C — full recompute with cascade mods.
+    recomputeStats(core, vitals, resonance, system, ctx.derived, &mods);
+
+    // Restore vitals to full, then recompute once more so derived stats are
+    // consistent with the new maxima.
     vitals.health  = currentValueOf(system, attr("maxHealth"));
     vitals.energy  = currentValueOf(system, attr("maxEnergy"));
     vitals.essence = currentValueOf(system, attr("maxEssence"));
-    recomputeStats(core, vitals, system, ctx.derived, &mods);
+    recomputeStats(core, vitals, resonance, system, ctx.derived, &mods);
     combat.posture = currentValueOf(system, attr("maxPosture"));
 }
 

@@ -14,6 +14,7 @@
 #include "gameplay/combat/Combat.hpp"
 #include "gameplay/condition/Condition.hpp"
 #include "gameplay/inventory/Inventory.hpp"
+#include "gameplay/stats/ResonanceDecays.hpp"
 #include "world/ai/AiController.hpp"
 #include "world/scene/Collision.hpp"
 #include "world/scene/Components.hpp"
@@ -461,6 +462,7 @@ void StatsScene::onEnter() {
     player.set<gameplay::Injuries>({});
     player.set<gameplay::Afflictions>({});
     player.set<gameplay::ActiveDrugs>({});
+    player.set<gameplay::ResonanceDecays>({});
     gameplay::initializeCurrent(player.get_mut<gameplay::AbilitySystem>(),
                                 player.get<gameplay::AttributeSet>());
 

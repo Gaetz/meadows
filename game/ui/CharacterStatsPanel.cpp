@@ -13,6 +13,7 @@
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/Injuries.hpp"
 #include "gameplay/stats/Resonance.hpp"
+#include "gameplay/stats/ResonanceDecays.hpp"
 #include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/stats/Survival.hpp"
 
@@ -37,12 +38,14 @@ void drawCharacterStatsPanel(flecs::entity player,
     auto& system      = player.get_mut<AbilitySystem>();
     const auto cur = [&](const char* n) { return currentValueOf(system, attr(n)); };
 
+    auto& resoDecays  = player.get_mut<ResonanceDecays>();
+
     // Build a GameTimeTickArgs bundle from the already-fetched component refs.
     // Used by both the damage buttons (mods) and the time-advance buttons.
     const auto makeArgs = [&]() -> GameTimeTickArgs {
         return { core, vitals, system, combat, buildup, survival,
                  activeDrugs, injuries, afflictions, resonance,
-                 ctx.afflictionDb, ctx.derived, ctx.tags, ctx.tuning };
+                 resoDecays, ctx.afflictionDb, ctx.derived, ctx.tags, ctx.tuning };
     };
 
     ImGui::Begin("Character stats (slice)");

@@ -2,8 +2,9 @@
 
 #include <algorithm>
 
-#include "gameplay/combat/Combat.hpp"     // updateLifeState
-#include "gameplay/stats/Rest.hpp"        // accrueRest
+#include "gameplay/combat/Combat.hpp"         // updateLifeState
+#include "gameplay/stats/Rest.hpp"            // accrueRest
+#include "gameplay/stats/ResonanceDecays.hpp" // addResonanceDecayToResonance, tickResonanceDecays
 
 namespace gameplay {
 
@@ -68,12 +69,19 @@ bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
 } // namespace
 
 // Public: builds full StatModifiers for a character from all resonance-driven
-// sources (resonance, survival, injuries, afflictions, drugs) plus equipment,
-// and injects regen-rate multipliers from active statuses (buildupStatusModifiers).
-// Callers that need to compute mods independently (e.g. tickCharacter) use this
-// instead of duplicating the logic.
+// sources plus equipment. Must be called AFTER Phase A (recomputeStats without
+// extra), so currentValueOf("onyx/amber/garnet") already includes GAS activeEffects.
 StatModifiers buildCharacterMods(GameTimeTickArgs& a, const StatModifiers& equipmentMods) {
-    Resonance eff = effectiveResonance(a.resonance, a.survival, a.tuning);
+    // Read resonance current values from GAS (Phase A must have run first).
+    // These already include the persistent Resonance BaseValues + any GAS effects
+    // targeting onyx/amber/garnet (curses, food, blessings, etc.).
+    Resonance gasRes;
+    gasRes.onyx   = currentValueOf(a.system, attr("onyx"));
+    gasRes.amber  = currentValueOf(a.system, attr("amber"));
+    gasRes.garnet = currentValueOf(a.system, attr("garnet"));
+
+    // effectiveResonance adds survival contributions on top (not GAS effects).
+    Resonance eff = effectiveResonance(gasRes, a.survival, a.tuning);
     eff.onyx  += injuryResonance(a.injuries);
     const Resonance ar = afflictionResonance(a.afflictions, a.afflictionDb);
     eff.amber  += ar.amber;
@@ -86,6 +94,9 @@ StatModifiers buildCharacterMods(GameTimeTickArgs& a, const StatModifiers& equip
     eff.onyx   += da.onyx;
     eff.amber  += da.amber;
     eff.garnet += da.garnet;
+
+    // Decaying contributions from expired resonance GAS effects (fold into cascade).
+    addResonanceDecayToResonance(a.resoDecays, eff);
 
     StatModifiers mods;
     buildResonanceModifiers(eff, mods, harmonyBroken(a.system, a.tags));
@@ -119,6 +130,9 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
     // Drug expiry and progressive aftereffect (game-time).
     tickDrugs(a.activeDrugs, a.system, gameDt, a.tags);
 
+    // Resonance decay (game-time, in hours).
+    tickResonanceDecays(a.resoDecays, static_cast<f32>(gameDt / 3600.0));
+
     // Injury and affliction recovery (game-time, in hours).
     recoverInjuries(a.injuries, static_cast<f32>(gameDt / 3600.0));
     recoverAfflictions(a.afflictions, static_cast<f32>(gameDt / 3600.0));
@@ -137,9 +151,10 @@ GameTimeResult advanceGameTime(GameTimeTickArgs& a, f64 gameDt, f32 timescale,
         const f64 thisReal = std::min(remaining, kChunkReal);
         const f64 thisGame = thisReal * static_cast<f64>(timescale);
 
-        // Recompute mods and overlay from current state.
+        // 3-phase recompute: A (resonance from GAS) → B (cascade mods) → C (full).
+        recomputeStats(a.core, a.vitals, a.resonance, a.system, a.derived, nullptr);
         const StatModifiers mods = buildCharacterMods(a, equipmentMods);
-        recomputeStats(a.core, a.vitals, a.system, a.derived, &mods);
+        recomputeStats(a.core, a.vitals, a.resonance, a.system, a.derived, &mods);
 
         // Tick status buildup in real time (DoT + decay + tag expiry).
         const BuildupTickResult br =

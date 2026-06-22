@@ -12,6 +12,7 @@ add_library(meadows-gameplay STATIC
     stats/CharacterStats.cpp
     stats/StatsTuning.cpp
     stats/Resonance.cpp
+    stats/ResonanceDecays.cpp
     stats/Survival.cpp
     stats/Damage.cpp
     stats/EquipmentStats.cpp

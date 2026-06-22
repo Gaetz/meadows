@@ -2,6 +2,7 @@
 
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
+#include "gameplay/stats/Resonance.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 
 namespace ecs {
@@ -28,6 +29,14 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
 // orchestration the scene runs each frame and the execution calcs run after a
 // mutation.
 void recomputeStats(const CoreAttributes& core, const AttributeSet& vitals,
+                    AbilitySystem& system, const DerivedStatRegistry& derived,
+                    const StatModifiers* extra = nullptr);
+
+// 3-phase overload: includes Resonance as a third AttrSetRef so GAS effects
+// targeting "onyx"/"amber"/"garnet" are picked up. Use for Phase A (extra=null)
+// and Phase C (extra=cascade mods) of the character tick.
+void recomputeStats(const CoreAttributes& core, const AttributeSet& vitals,
+                    const Resonance& resonance,
                     AbilitySystem& system, const DerivedStatRegistry& derived,
                     const StatModifiers* extra = nullptr);
 

@@ -220,8 +220,9 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
     active.magnitude = effect.magnitude;
     active.infinite = (policy == DurationPolicy::Infinite);
     active.remaining = effect.durationSeconds;
-    active.period =
-        policy == DurationPolicy::Periodic ? effect.period : 0.0f;
+    active.period = policy == DurationPolicy::Periodic ? effect.period : 0.0f;
+    active.decayOnExpiry = (effect.expiryMode == "decay");
+    active.decayPerHour  = effect.decayPerHour;
     if (!effect.grantedTag.empty()) {
         if (const auto tag = registry.find(effect.grantedTag)) {
             active.grantedTag = *tag;

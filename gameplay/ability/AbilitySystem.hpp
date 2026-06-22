@@ -30,6 +30,8 @@ struct ActiveEffect {
     f32 period { 0.0f };       // periodic interval; 0 = not periodic
     f32 sinceLastTick { 0.0f };
     GameplayTag grantedTag {}; // dropped (ref-counted) when the effect ends
+    bool decayOnExpiry { false }; // resonance channels only: fade toward 0 on expiry
+    f32  decayPerHour  { 1.0f };  // pts/game-hour for the decay phase
 };
 
 // The AbilitySystem (the ASC, §6): one per actor (player and NPC alike). Owns

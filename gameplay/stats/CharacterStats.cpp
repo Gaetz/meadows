@@ -132,4 +132,16 @@ void recomputeStats(const CoreAttributes& core, const AttributeSet& vitals,
     recomputeCurrent(system, sets, &derived, extra);
 }
 
+void recomputeStats(const CoreAttributes& core, const AttributeSet& vitals,
+                    const Resonance& resonance,
+                    AbilitySystem& system, const DerivedStatRegistry& derived,
+                    const StatModifiers* extra) {
+    const AttrSetRef sets[] = {
+        { &CoreAttributes::staticTypeInfo(), &core   },
+        { &AttributeSet::staticTypeInfo(),   &vitals },
+        { &Resonance::staticTypeInfo(),      &resonance },
+    };
+    recomputeCurrent(system, sets, &derived, extra);
+}
+
 } // namespace gameplay

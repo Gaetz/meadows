@@ -27,6 +27,12 @@ struct EffectForm : data::Form {
     str requiredTag;  // target must have it (ancestor-aware) to be affected
     str blockedTag;   // target must NOT have it (immunity)
 
+    // Resonance-channel effects (attribute = "onyx"|"amber"|"garnet") only.
+    // "immediate" = removed instantly when duration expires.
+    // "decay"     = the bonus/penalty fades at decayPerHour pts/game-hour toward 0.
+    str expiryMode { "immediate" };
+    f32 decayPerHour { 1.0f };
+
     REFLECT_BEGIN(EffectForm, data::Form)
         REFLECT_FIELD(attribute)
         REFLECT_FIELD(op)
@@ -37,6 +43,8 @@ struct EffectForm : data::Form {
         REFLECT_FIELD(grantedTag)
         REFLECT_FIELD(requiredTag)
         REFLECT_FIELD(blockedTag)
+        REFLECT_FIELD(expiryMode)
+        REFLECT_FIELD(decayPerHour)
     REFLECT_END()
 };
 

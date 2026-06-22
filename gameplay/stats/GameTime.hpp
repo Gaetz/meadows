@@ -9,6 +9,7 @@
 #include "gameplay/stats/Drugs.hpp"
 #include "gameplay/stats/Injuries.hpp"
 #include "gameplay/stats/Resonance.hpp"
+#include "gameplay/stats/ResonanceDecays.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 #include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/stats/Survival.hpp"
@@ -38,6 +39,7 @@ struct GameTimeTickArgs {
     Injuries& injuries;
     Afflictions& afflictions;
     Resonance& resonance;
+    ResonanceDecays& resoDecays;
     const data::FormDatabase& afflictionDb;
     const DerivedStatRegistry& derived;
     const GameplayTagRegistry& tags;
