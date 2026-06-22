@@ -49,6 +49,13 @@ struct GameTimeResult {
     bool died { false };
 };
 
+// Assembles the full StatModifiers for a character: resonance cascade, injuries,
+// afflictions, drugs, equipment mods, and regen-rate suppression from active
+// statuses (buildupStatusModifiers). Both tickCharacter and advanceGameTime use
+// this as the single source of truth for modifier assembly.
+StatModifiers buildCharacterMods(GameTimeTickArgs& args,
+                                 const StatModifiers& equipmentMods = {});
+
 // Per-frame game-time tick: health regen, essence regen, survival, drugs,
 // injury/affliction recovery, rest accrual. Does NOT tick status buildup.
 // `mods` must already be computed and recomputeStats called by the caller.

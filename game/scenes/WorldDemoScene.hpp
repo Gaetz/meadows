@@ -10,11 +10,15 @@
 #include "data/plugins/Resolver.hpp"
 #include "engine/Engine.hpp"
 #include "engine/assets/AssetDatabase.hpp"
+#include "engine/core/Rng.hpp"
 #include "engine/ecs/World.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
 #include "game/TextureCache.hpp"
+#include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/stats/GameClock.hpp"
+#include "gameplay/stats/StatsTuning.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/streaming/CellLoader.hpp"
 #include "world/worldspace/FormCategory.hpp"
@@ -67,6 +71,13 @@ protected:
 
     uptr<game::TextureCache> textureCache;
     rhi::TextureHandle checker {};
+
+    // World-level resources shared by all derived scenes (refreshed on rebuild).
+    // Analogous to Unreal's GameState: one instance per session, not per scene.
+    gameplay::DerivedStatRegistry derived;
+    gameplay::StatsTuningForm      tuning;
+    gameplay::GameClock            clock;
+    core::Rng                      rng { 0xC0FFEEu };
 };
 
 } // namespace game

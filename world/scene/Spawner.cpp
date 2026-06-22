@@ -3,6 +3,14 @@
 #include "engine/core/Log.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
+#include "gameplay/stats/Afflictions.hpp"
+#include "gameplay/stats/CoreAttributes.hpp"
+#include "gameplay/stats/Damage.hpp"
+#include "gameplay/stats/Drugs.hpp"
+#include "gameplay/stats/Injuries.hpp"
+#include "gameplay/stats/Resonance.hpp"
+#include "gameplay/stats/StatusBuildup.hpp"
+#include "gameplay/stats/Survival.hpp"
 
 namespace world {
 
@@ -41,6 +49,17 @@ void spawnActor(SpawnContext&, ecs::Entity entity, const data::Form& base,
 
     entity.set<gameplay::AttributeSet>(attributes);
     entity.set<gameplay::AbilitySystem>(system);
+
+    // Full character-stats components (§2.7): all actors carry the complete
+    // stat sheet so tickCharacter works uniformly across player and NPCs.
+    entity.set<gameplay::CoreAttributes>({});
+    entity.set<gameplay::Resonance>({});
+    entity.set<gameplay::Survival>({});
+    entity.set<gameplay::StatusBuildup>({});
+    entity.set<gameplay::CombatState>({});
+    entity.set<gameplay::Injuries>({});
+    entity.set<gameplay::Afflictions>({});
+    entity.set<gameplay::ActiveDrugs>({});
 }
 
 } // namespace

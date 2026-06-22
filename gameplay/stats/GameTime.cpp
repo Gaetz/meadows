@@ -9,40 +9,6 @@ namespace gameplay {
 
 namespace {
 
-// Builds the full StatModifiers for a character from all resonance-driven sources
-// (resonance spheres, survival, injuries, afflictions, drugs) merged with equipmentMods.
-// Does NOT include equipment (pass those via equipmentMods).
-StatModifiers buildCharacterMods(GameTimeTickArgs& a, const StatModifiers& equipmentMods) {
-    Resonance eff = effectiveResonance(a.resonance, a.survival, a.tuning);
-    eff.onyx  += injuryResonance(a.injuries);
-    const Resonance ar = afflictionResonance(a.afflictions, a.afflictionDb);
-    eff.amber  += ar.amber;
-    eff.garnet += ar.garnet;
-    const Resonance dr = drugResonance(a.activeDrugs);
-    eff.onyx   += dr.onyx;
-    eff.amber  += dr.amber;
-    eff.garnet += dr.garnet;
-    const Resonance da = drugAftereffectResonance(a.activeDrugs);
-    eff.onyx   += da.onyx;
-    eff.amber  += da.amber;
-    eff.garnet += da.garnet;
-
-    StatModifiers mods;
-    buildResonanceModifiers(eff, mods, harmonyBroken(a.system, a.tags));
-    injuryStatModifiers(a.injuries, mods);
-    afflictionStatModifiers(a.afflictions, a.afflictionDb, mods);
-
-    // Merge equipment / fixed mods.
-    for (const auto& [k, v] : equipmentMods.add) { mods.add[k] += v; }
-    for (const auto& [k, v] : equipmentMods.mul) {
-        auto [it, inserted] = mods.mul.try_emplace(k, 1.0f);
-        it->second *= v;
-    }
-
-    buildupStatusModifiers(a.system, a.tags, a.tuning, mods);
-    return mods;
-}
-
 bool isDead(const GameTimeTickArgs& a) {
     const auto dead = a.tags.find("State.Dead");
     return dead && a.system.tags.has(*dead);
@@ -100,6 +66,42 @@ bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
 }
 
 } // namespace
+
+// Public: builds full StatModifiers for a character from all resonance-driven
+// sources (resonance, survival, injuries, afflictions, drugs) plus equipment,
+// and injects regen-rate multipliers from active statuses (buildupStatusModifiers).
+// Callers that need to compute mods independently (e.g. tickCharacter) use this
+// instead of duplicating the logic.
+StatModifiers buildCharacterMods(GameTimeTickArgs& a, const StatModifiers& equipmentMods) {
+    Resonance eff = effectiveResonance(a.resonance, a.survival, a.tuning);
+    eff.onyx  += injuryResonance(a.injuries);
+    const Resonance ar = afflictionResonance(a.afflictions, a.afflictionDb);
+    eff.amber  += ar.amber;
+    eff.garnet += ar.garnet;
+    const Resonance dr = drugResonance(a.activeDrugs);
+    eff.onyx   += dr.onyx;
+    eff.amber  += dr.amber;
+    eff.garnet += dr.garnet;
+    const Resonance da = drugAftereffectResonance(a.activeDrugs);
+    eff.onyx   += da.onyx;
+    eff.amber  += da.amber;
+    eff.garnet += da.garnet;
+
+    StatModifiers mods;
+    buildResonanceModifiers(eff, mods, harmonyBroken(a.system, a.tags));
+    injuryStatModifiers(a.injuries, mods);
+    afflictionStatModifiers(a.afflictions, a.afflictionDb, mods);
+
+    // Merge equipment / fixed mods.
+    for (const auto& [k, v] : equipmentMods.add) { mods.add[k] += v; }
+    for (const auto& [k, v] : equipmentMods.mul) {
+        auto [it, inserted] = mods.mul.try_emplace(k, 1.0f);
+        it->second *= v;
+    }
+
+    buildupStatusModifiers(a.system, a.tags, a.tuning, mods);
+    return mods;
+}
 
 void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
     const auto cur = [&](const char* n) { return currentValueOf(a.system, attr(n)); };

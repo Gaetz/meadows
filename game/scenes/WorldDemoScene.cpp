@@ -8,9 +8,11 @@
 #include "engine/rhi/Device.hpp"
 #include "game/SceneSubmit.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/combat/Combat.hpp"
+#include "gameplay/stats/CharacterStats.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
@@ -190,6 +192,12 @@ void WorldDemoScene::rebuild() {
     LOG_INFO("World rebuilt: {} plugins, {} forms, {} cells, {} conflicts",
              loadOrder.size(), forms.count(), model.cells().size(),
              report.conflicts.size());
+
+    // Refresh world-level stat resources whenever the plugin set changes (§5:
+    // StatsTuningForm is a moddable Form, so tuning values can change per-rebuild).
+    tuning  = gameplay::resolveStatsTuning(forms);
+    derived = gameplay::DerivedStatRegistry {};
+    gameplay::registerCoreDerivedStats(derived, tuning);
 
     // Kick the decode of every visible asset now and hold the world behind the
     // loading gate until they are resident (§7) — no startup pop-in.

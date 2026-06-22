@@ -3,25 +3,14 @@
 #include <optional>
 
 #include "data/forms/CoreForms.hpp"
-#include "engine/core/Rng.hpp"
 #include "game/WorldEditor.hpp"
 #include "game/scenes/WorldDemoScene.hpp"
+#include "game/ui/CharacterStatsPanel.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/Afflictions.hpp"
-#include "gameplay/stats/CharacterStats.hpp"
-#include "gameplay/stats/CoreAttributes.hpp"
-#include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/Drugs.hpp"
-#include "gameplay/stats/EquipmentStats.hpp"
-#include "gameplay/stats/GameClock.hpp"
-#include "gameplay/stats/GameTime.hpp"
-#include "gameplay/stats/Injuries.hpp"
-#include "gameplay/stats/Resonance.hpp"
-#include "gameplay/stats/Rest.hpp"
-#include "gameplay/stats/StatusBuildup.hpp"
-#include "gameplay/stats/Survival.hpp"
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
 
@@ -99,36 +88,23 @@ public:
     void drawUi() override;
 
 private:
-    gameplay::StatModifiers resonanceModifiers() const;
-    gameplay::StatModifiers equipmentModifiers() const; // equipment-only (no resonance)
-    gameplay::GameTimeTickArgs makeGameTimeArgs();
+    gameplay::StatModifiers equipmentModifiers() const;
     void seedResources();
 
-    gameplay::CoreAttributes core;
-    gameplay::AttributeSet vitals;
-    gameplay::Resonance resonance;   // persistent (wounds/drugs later)
-    gameplay::Survival survival;
-    gameplay::StatusBuildup buildup;
-    gameplay::Injuries injuries;
-    gameplay::Afflictions afflictions;
-    gameplay::ActiveDrugs activeDrugs;
-    gameplay::DrugForm sampleDrug;
-    gameplay::CombatState combat;
-    gameplay::AbilitySystem system;
-    core::Rng rng { 0xC0FFEEu };
+    // The player is an ECS entity; all character-stats components live on it.
+    // World-level resources (derived, tuning, clock, rng) are in WorldDemoScene.
+    ecs::Entity player {};
 
-    // N3 demo: sample disease/psychosis in a scene-local DB (no plugin data needed).
+    // N3 demo: sample affliction DB (Phase 10: will come from forms).
     data::FormDatabase afflictionDb;
     core::Guid sampleDisease;
     core::Guid samplePsychosis;
-    gameplay::DerivedStatRegistry derived;
-    gameplay::StatsTuningForm tuning; // resolved from data (§5), or defaults
-    gameplay::GameClock clock;
 
-    // F3 demo: sample gear (scene-local, so no plugin data needed).
+    // F3 demo: sample gear.
     data::WeaponForm sampleWeapon;
     data::ArmorForm sampleArmor;
     bool armorEquipped { false };
+    gameplay::DrugForm sampleDrug;
 };
 
 } // namespace game
