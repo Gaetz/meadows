@@ -48,7 +48,6 @@ BuildupTickResult tickBuildup(StatusBuildup& buildup, AbilitySystem& system,
                               f32 dt, const GameplayTagRegistry& tags,
                               const StatsTuningForm& tuning) {
     BuildupTickResult result;
-    bool glaciated = false;
 
     for (int i = 0; i < kTypeCount; ++i) {
         f32& value = buildup.*kRows[i].field;
@@ -73,7 +72,7 @@ BuildupTickResult tickBuildup(StatusBuildup& buildup, AbilitySystem& system,
                     const f32 will = std::min(currentValueOf(system, attr("will")) / 100.0f, 1.0f);
                     result.ignitionHealthDamage += maxH * tuning.ignitionDamagePercent * (1.0f - will) * dt;
                 } else if (type == StatusType::Glaciation) {
-                    glaciated = true; // energy regen mult set after the loop
+                    // regen penalty handled via buildupStatusModifiers → StatModifiers
                 } else if (type == StatusType::Electrocution) {
                     const f32 maxE = currentValueOf(system, attr("maxEssence"));
                     const f32 will = std::min(currentValueOf(system, attr("will")) / 100.0f, 1.0f);
@@ -115,8 +114,22 @@ BuildupTickResult tickBuildup(StatusBuildup& buildup, AbilitySystem& system,
         }
     }
 
-    result.energyRegenMult = glaciated ? tuning.glaciationEnergyRegenMult : 1.0f;
     return result;
+}
+
+void buildupStatusModifiers(const AbilitySystem& system,
+                            const GameplayTagRegistry& tags,
+                            const StatsTuningForm& tuning,
+                            StatModifiers& mods) {
+    const auto check = [&](const char* tagName, u32 attrId, f32 mult) {
+        const auto t = tags.find(tagName);
+        if (t && system.tags.has(*t)) {
+            auto [it, ins] = mods.mul.try_emplace(attrId, 1.0f);
+            it->second *= mult;
+        }
+    };
+    check("Status.Glaciated",    attr("energyRegen"),  tuning.glaciationEnergyRegenMult);
+    check("Status.Electrocuted", attr("essenceRegen"), 0.0f);
 }
 
 const char* statusTagName(StatusType type) {

@@ -189,3 +189,42 @@ TEST_CASE("status buildup: death triggers instant kill and resets") {
     CHECK(result.deathTriggered);
     CHECK(b.death == doctest::Approx(0.0f));
 }
+
+TEST_CASE("buildupStatusModifiers: electrocution zeroes essenceRegen mult") {
+    DerivedStatRegistry reg;
+    registerCoreDerivedStats(reg);
+    CoreAttributes core;
+    AbilitySystem sys;
+    recompute(sys, core, reg);
+    GameplayTagRegistry tags;
+    tags.registerTag("Status.Electrocuted");
+    tags.registerTag("Status.Glaciated");
+    StatsTuningForm tuning;
+
+    // No status active: mods unchanged.
+    StatModifiers mods;
+    buildupStatusModifiers(sys, tags, tuning, mods);
+    CHECK(mods.mul.find(attr("essenceRegen")) == mods.mul.end());
+    CHECK(mods.mul.find(attr("energyRegen"))  == mods.mul.end());
+
+    // Activate electrocution: essenceRegen suppressed, energyRegen unaffected.
+    const auto electrocuted = tags.find("Status.Electrocuted");
+    REQUIRE(electrocuted);
+    sys.tags.add(*electrocuted, tags);
+    mods = {};
+    buildupStatusModifiers(sys, tags, tuning, mods);
+    REQUIRE(mods.mul.find(attr("essenceRegen")) != mods.mul.end());
+    CHECK(mods.mul.at(attr("essenceRegen")) == doctest::Approx(0.0f));
+    CHECK(mods.mul.find(attr("energyRegen")) == mods.mul.end());
+    sys.tags.remove(*electrocuted, tags);
+
+    // Activate glaciation: energyRegen reduced, essenceRegen unaffected.
+    const auto glaciated = tags.find("Status.Glaciated");
+    REQUIRE(glaciated);
+    sys.tags.add(*glaciated, tags);
+    mods = {};
+    buildupStatusModifiers(sys, tags, tuning, mods);
+    REQUIRE(mods.mul.find(attr("energyRegen")) != mods.mul.end());
+    CHECK(mods.mul.at(attr("energyRegen")) == doctest::Approx(tuning.glaciationEnergyRegenMult));
+    CHECK(mods.mul.find(attr("essenceRegen")) == mods.mul.end());
+}

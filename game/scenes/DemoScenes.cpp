@@ -451,6 +451,7 @@ gameplay::StatModifiers StatsScene::resonanceModifiers() const {
     }
     gameplay::injuryStatModifiers(injuries, mods);                  // N2 maluses
     gameplay::afflictionStatModifiers(afflictions, afflictionDb, mods); // N3 maluses
+    gameplay::buildupStatusModifiers(system, tags, tuning, mods);
     return mods;
 }
 
@@ -583,7 +584,7 @@ void StatsScene::update(f32 dt) {
     {
         const f32 maxE = gameplay::currentValueOf(system, gameplay::attr("maxEnergy"));
         const f32 regen = gameplay::currentValueOf(system, gameplay::attr("energyRegen"));
-        vitals.energy = std::min(maxE, vitals.energy + regen * buildupResult.energyRegenMult * dt);
+        vitals.energy = std::min(maxE, vitals.energy + regen * dt);
     }
 
     // Game-time: health/essence regen, survival, drugs, injury/affliction recovery.

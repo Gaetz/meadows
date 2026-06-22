@@ -38,6 +38,8 @@ StatModifiers buildCharacterMods(GameTimeTickArgs& a, const StatModifiers& equip
         auto [it, inserted] = mods.mul.try_emplace(k, 1.0f);
         it->second *= v;
     }
+
+    buildupStatusModifiers(a.system, a.tags, a.tuning, mods);
     return mods;
 }
 
@@ -104,6 +106,8 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
     const f32 gdt = static_cast<f32>(gameDt);
 
     // Health and essence regen (game-time; very slow — docs/STATS.md §3).
+    // Regen-rate modifiers (electrocution suppresses essence, glaciation reduces energy, etc.)
+    // are already baked into currentValueOf via buildupStatusModifiers → recomputeStats.
     a.vitals.health  = std::min(cur("maxHealth"),  a.vitals.health  + cur("healthRegen")  * gdt);
     a.vitals.essence = std::min(cur("maxEssence"), a.vitals.essence + cur("essenceRegen") * gdt);
 

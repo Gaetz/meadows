@@ -5,6 +5,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/reflect/Reflect.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 
@@ -65,7 +66,6 @@ struct BuildupTickResult {
     f32 poisonHealthDamage { 0.0f };           // vitality-reduced HP to remove this tick
     f32 ignitionHealthDamage { 0.0f };         // 0.2%/s of maxHealth while ignited
     f32 electrocutionEssenceDamage { 0.0f };   // 0.2%/s of maxEssence while electrocuted
-    f32 energyRegenMult { 1.0f };              // 0.7 while glaciated, else 1.0
     bool deathTriggered { false };             // instant kill
     bool bleedBurst { false };                 // critical burst damage (caller applies)
     bool glaciationTriggered { false };        // caller applies 3s paralysis
@@ -80,6 +80,15 @@ struct BuildupTickResult {
 BuildupTickResult tickBuildup(StatusBuildup& buildup, AbilitySystem& system,
                               f32 dt, const GameplayTagRegistry& tags,
                               const StatsTuningForm& tuning = {});
+
+// Injects regen-rate multipliers for active statuses into mods.mul.
+// Call this alongside resonance/injury/drug mods before recomputeStats so that
+// currentValueOf(system, attr("essenceRegen")) etc. already reflect suppressions.
+// Add one line here per status that affects a regen rate.
+void buildupStatusModifiers(const AbilitySystem& system,
+                            const GameplayTagRegistry& tags,
+                            const StatsTuningForm& tuning,
+                            StatModifiers& mods);
 
 // The Status.* tag name for a type (e.g. "Status.Poisoned").
 const char* statusTagName(StatusType type);
