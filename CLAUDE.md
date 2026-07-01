@@ -18,6 +18,14 @@ The project is built **2D top-down first**, then transitions to **3D low-poly**
 with a stylized "Breath of the Wild"-like look. The game *logic* must run
 unchanged across that transition — the renderer is decoupled from gameplay.
 
+**The lasting asset is the simulation layer, not the renderer.** The gameplay
+model (flecs ECS, GAS, data-model, modding layer, Lua scripting) must compile
+and run without any renderer — the headless test suite is the proof. The
+graphical frontend is a replaceable shell. The 2D OpenGL renderer is a working
+prototype; **Godot (via GDExtension)** is the target long-term frontend,
+validated by a 2D→Godot port test (Phase 8.5) before committing to the 3D phase.
+See `docs/SIMULATION-AND-PRESENTATION.md`.
+
 This is a prototype to test **game-design concepts**, not a shipping engine.
 The biggest risk is in the gameplay/world/modding systems, **not** in the
 renderer. Bias effort accordingly: do **not** gold-plate the rendering layer
@@ -94,6 +102,12 @@ approval.
    saves cheap (persist `BaseValue`s + active durational effects; derive
    `CurrentValue`s on load).
 
+10. **Simulation runs headless.** `gameplay/`, `world/`, `data/`, `script/`
+    have zero dependency on `engine/platform/`, `engine/rhi/`, or
+    `engine/render/`. They compile and run without SDL, OpenGL, or any renderer.
+    The test suite (181+ headless tests) enforces this. Any violation is a
+    coupling that must be removed before the Phase 8.5 Godot port.
+
 ---
 
 ## 3. Tech stack
@@ -105,7 +119,7 @@ Use these unless there is a concrete reason not to (then ask first).
 | Build              | CMake + CPM.cmake (FetchContent)         | Deps pinned in CMake, fetched at build time, identical on Fedora/Debian/Windows, no per-machine bootstrap. vcpkg (manifest) / Conan also work cross-platform. |
 | Window / input     | SDL3                                     | Gamepad, events, optional audio. |
 | Math               | GLM                                      | Don't reinvent. |
-| GPU                | OpenGL 4.6 (DSA, bindless) behind RHI    | Vulkan later, same interface. |
+| GPU                | OpenGL 4.6 (DSA, bindless) behind RHI    | 2D prototype renderer. Long-term frontend = **Godot via GDExtension** (validated by Phase 8.5). Vulkan backend not planned unless the custom-renderer path is chosen post-validation. |
 | Mesh / model       | glTF 2.0 via cgltf                       | Skinning, anims, PBR built in. |
 | Textures           | stb_image + KTX2 (Basis Universal)       | Compressed for runtime. |
 | ECS                | flecs (pinned v4.1.5)                     | Runtime only (lib `meadows-ecs`); data model stays flecs-free. Used directly in systems, not behind a façade. Our reflection — not flecs meta — is the keystone (§2.3). See `docs/PHASE-2.md`. |
@@ -326,9 +340,15 @@ bespoke faction subsystem parallel to tags.
 
 ## 7. Rendering notes
 
+> **Conditional:** The 3D rendering roadmap below describes the **custom renderer
+> path**. Whether it is taken depends on the Phase 8.5 Godot port validation.
+> If Godot is confirmed as the 3D frontend, Phases 11–14 are superseded by a
+> Godot-based 3D integration and the list below becomes a long-term / custom-
+> runtime-only reference. See `docs/SIMULATION-AND-PRESENTATION.md`.
+
 - **2D phase:** instanced sprite/quad renderer, top-down camera, tilemap or
   free placement. Enough to exercise world, streaming, combat, AI, UI.
-- **3D phase (BotW-like look), implement in this rough order:**
+- **3D phase (BotW-like look — custom renderer path), implement in this rough order:**
   1. Clustered forward (forward+) rendering.
   2. Cascaded shadow maps for the sun (soft).
   3. Sky + atmosphere (analytic sky model or gradient) driven by time-of-day.
@@ -459,6 +479,14 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
   (achat/vente d'équipement). Objectif : exercer tous les systèmes de stats
   (Phases 6-7) en situation dynamique réelle, pas seulement via l'ImGui.
   Toujours 2D. Brick journal : `docs/PHASE-8.md`.
+- **Phase 8.5 — Godot port validation:** Port the 2D combat prototype to Godot
+  via GDExtension (§2.10). Deliverables: a C++ GDExtension bridge exposing the
+  flecs World to Godot; a generic `EntityView` node (`Node2D`) configured by
+  projection from ECS state; input → `push_intent` flow; the headless sim
+  running unchanged. **Goal:** validate that the sim/presentation boundary is
+  real and coupling is zero. If easy → Godot becomes the 3D frontend (Phases
+  11+ reframed). If coupling is found → fix it here, before the 3D investment.
+  Ref: `docs/SIMULATION-AND-PRESENTATION.md`.
 - **Phase 9 — Stats avancées (passe complète) :** tout ce qui a été différé
   de Phase 7 et qui nécessite la boucle de combat Phase 8. **Machine d'état de
   combat :** shaken (rupture posture rapide), critical weakness (posture=0 →
@@ -474,13 +502,18 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - **Phase 10 — Streaming & persistence:** cell grid, async load/unload, LOD,
   interior/exterior transitions, **save = runtime patch layer** reusing the
   Phase-1 resolver.
-- **Phase 11 — 3D transition:** glTF meshes/materials/skinning, 3D camera,
-  scene→3D, low-poly pipeline, keep gameplay untouched.
-- **Phase 12 — BotW lighting:** the §7 list.
-- **Phase 13 — Physics/anim/audio/nav:** Jolt, blend trees + foot IK,
-  miniaudio, Recast/Detour 3D navmesh.
-- **Phase 14 — Editor & Vulkan:** in-engine ImGui editor (forms, cells, refs,
-  quests, conflict view); Vulkan RHI backend **only when a real need exists**.
+- **Phase 11 — 3D frontend (conditional on Phase 8.5 outcome):**
+  *Godot path (expected):* load glTF assets via Godot, 3D scene from ECS state
+  via the GDExtension bridge, BotW-like look via Godot's renderer; gameplay
+  untouched.
+  *Custom renderer path (if Godot rejected):* glTF meshes/materials/skinning,
+  3D camera, scene→3D, low-poly pipeline behind the existing RHI.
+- **Phase 12–14 — Lighting / physics / audio / editor (conditional):**
+  *Godot path:* use Godot's built-in rendering features (lighting, shadows,
+  navmesh, audio, animation); build the in-engine editor as a Godot UI calling
+  back into the C++ data layer via GDExtension.
+  *Custom renderer path:* §7 roadmap (clustered forward, CSM, Jolt, Recast,
+  miniaudio, Vulkan). Decision deferred to Phase 8.5 outcome.
 
 > **CURRENT PHASE: 8** — update this line as work progresses.
 > Phase 8: Combat 2D dynamique — scène jouable Zelda-like, boucle de combat
