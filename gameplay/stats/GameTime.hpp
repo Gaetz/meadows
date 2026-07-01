@@ -3,7 +3,6 @@
 #include "data/forms/Form.hpp"
 #include "engine/core/Defines.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
-#include "gameplay/stats/Afflictions.hpp"
 #include "gameplay/stats/CharacterStats.hpp"
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/Drugs.hpp"
@@ -20,7 +19,7 @@
 //   - Real-time path (update(), dt):  energy/posture regen, stagger/paralysis,
 //     status buildup DoT + decay (tickBuildup stays in update()).
 //   - Game-time path (tickGameTime, gameDt): health regen, essence regen, survival,
-//     drugs, injury/affliction recovery.
+//     drug expiry, injury/affliction recovery (via GAS game-time effects).
 //
 // Time-skip (advanceGameTime): converts gameDt to real-time equivalents, runs in
 // 10 s real-time chunks so death/status-expiry are detected mid-skip.
@@ -28,6 +27,8 @@
 namespace gameplay {
 
 // Full character state bundle for game-time functions.
+// ActiveDrugs, Afflictions, and their FormDatabase are removed — all these now
+// live as GAS activeEffects (gameTime=true) in the AbilitySystem.
 struct GameTimeTickArgs {
     CoreAttributes& core;
     AttributeSet& vitals;
@@ -35,12 +36,9 @@ struct GameTimeTickArgs {
     CombatState& combat;
     StatusBuildup& buildup;
     Survival& survival;
-    ActiveDrugs& activeDrugs;
-    Injuries& injuries;
-    Afflictions& afflictions;
+    Injuries& injuries;         // for recoverInjuries + syncInjuryEffects
     Resonance& resonance;
     ResonanceDecays& resoDecays;
-    const data::FormDatabase& afflictionDb;
     const DerivedStatRegistry& derived;
     const GameplayTagRegistry& tags;
     const StatsTuningForm& tuning;
@@ -51,24 +49,21 @@ struct GameTimeResult {
     bool died { false };
 };
 
-// Assembles the full StatModifiers for a character: resonance cascade, injuries,
-// afflictions, drugs, equipment mods, and regen-rate suppression from active
-// statuses (buildupStatusModifiers). Both tickCharacter and advanceGameTime use
-// this as the single source of truth for modifier assembly.
+// Assembles the StatModifiers for a character: resonance cascade (from GAS
+// current values after Phase A), equipment mods, and regen-rate suppression
+// from active statuses. All resonance sources (survival, injuries, afflictions,
+// drugs) are already in the GAS activeEffects; only the cascade and equipment
+// remain as external contributions.
 StatModifiers buildCharacterMods(GameTimeTickArgs& args,
                                  const StatModifiers& equipmentMods = {});
 
-// Per-frame game-time tick: health regen, essence regen, survival, drugs,
-// injury/affliction recovery, rest accrual. Does NOT tick status buildup.
+// Per-frame game-time tick: health regen, essence regen, survival effects,
+// game-time GAS effects (drugs/afflictions), injury recovery, resonance decay,
+// rest accrual. Does NOT tick status buildup.
 // `mods` must already be computed and recomputeStats called by the caller.
 void tickGameTime(GameTimeTickArgs& args, f64 gameDt, const StatModifiers& mods);
 
 // Simulates `gameDt` game-seconds for a time-skip (Advance / Sleep buttons).
-// Converts to real-time equivalents and steps in 10 s real-time chunks, ticking
-// status buildup (real-time DoT + decay) each chunk, then game-time effects.
-// Stops early and returns died=true if health reaches 0.
-// `equipmentMods` are equipment/fixed modifiers; resonance/injury/drug mods are
-// recomputed internally each chunk.
 GameTimeResult advanceGameTime(GameTimeTickArgs& args, f64 gameDt, f32 timescale,
                                const StatModifiers& equipmentMods = {});
 

@@ -433,12 +433,13 @@ gameplay::StatModifiers StatsScene::equipmentModifiers() const {
 }
 
 void StatsScene::seedResources() {
-    const gameplay::CharacterTickContext ctx { derived, tags, tuning, afflictionDb };
+    const gameplay::CharacterTickContext ctx { derived, tags, tuning };
     gameplay::initializeActorStats(player, ctx, equipmentModifiers());
 }
 
 void StatsScene::onEnter() {
     WorldDemoScene::onEnter();
+    tags.registerTag("State.Dead");
     tags.registerTag("State.Staggered");
     tags.registerTag("State.Paralyzed");
     for (const char* statusTag :
@@ -447,6 +448,7 @@ void StatsScene::onEnter() {
            "Status.Ignited", "Status.Glaciated", "Status.Electrocuted" }) {
         tags.registerTag(statusTag);
     }
+    gameplay::registerStatsRuntimeTags(tags); // Injury.Active, Internal.SurvivalAmber/Garnet
     // tuning + derived are initialized by WorldDemoScene::rebuild() (called from
     // WorldDemoScene::onEnter() above) and refreshed on each mod toggle.
 
@@ -460,8 +462,6 @@ void StatsScene::onEnter() {
     player.set<gameplay::StatusBuildup>({});
     player.set<gameplay::CombatState>({});
     player.set<gameplay::Injuries>({});
-    player.set<gameplay::Afflictions>({});
-    player.set<gameplay::ActiveDrugs>({});
     player.set<gameplay::ResonanceDecays>({});
     gameplay::initializeCurrent(player.get_mut<gameplay::AbilitySystem>(),
                                 player.get<gameplay::AttributeSet>());
@@ -476,49 +476,47 @@ void StatsScene::onEnter() {
     sampleArmor.armorSlash = 20.0f;
     sampleArmor.resistFire = 15.0f;
 
-    // N3 sample disease (amber/energy) + psychosis (garnet/essence).
-    auto disease = std::make_unique<gameplay::AfflictionForm>();
-    disease->id = *core::Guid::fromString("d1000000-0000-4000-8000-0000000000a1");
-    disease->displayName = "Fever";
-    disease->channel = "amber";
-    disease->resonancePenalty = -15.0f;
-    disease->attributeMalus = "constitution";
-    disease->attributeMalusValue = -2.0f;
-    disease->recoveryHours = 48.0f;
-    sampleDisease = disease->id;
-    afflictionDb.add(std::move(disease), gameplay::AfflictionForm::staticTypeInfo());
+    // N3 sample disease (amber/energy) + psychosis (garnet/essence) as EffectForms.
+    sampleDisease.attribute = "amber";
+    sampleDisease.op = "add";
+    sampleDisease.magnitude = -15.0f;
+    sampleDisease.attribute2 = "constitution";
+    sampleDisease.magnitude2 = -2.0f;
+    sampleDisease.durationHours = 48.0f;
+    sampleDisease.grantedTag = "Status.Diseased.Fever";
+    tags.registerTag("Status.Diseased.Fever");
 
-    auto psychosis = std::make_unique<gameplay::AfflictionForm>();
-    psychosis->id = *core::Guid::fromString("d2000000-0000-4000-8000-0000000000a2");
-    psychosis->displayName = "Phobia";
-    psychosis->channel = "garnet";
-    psychosis->resonancePenalty = -20.0f;
-    psychosis->attributeMalus = "ego";
-    psychosis->attributeMalusValue = -2.0f;
-    psychosis->recoveryHours = 72.0f;
-    samplePsychosis = psychosis->id;
-    afflictionDb.add(std::move(psychosis), gameplay::AfflictionForm::staticTypeInfo());
+    samplePsychosis.attribute = "garnet";
+    samplePsychosis.op = "add";
+    samplePsychosis.magnitude = -20.0f;
+    samplePsychosis.attribute2 = "ego";
+    samplePsychosis.magnitude2 = -2.0f;
+    samplePsychosis.durationHours = 72.0f;
+    samplePsychosis.grantedTag = "Status.Mental.Phobia";
+    tags.registerTag("Status.Mental.Phobia");
 
     // N4 sample drug: a stimulant (amber boost, breaks harmony, then aftershock).
-    sampleDrug.displayName = "Stimulant";
-    sampleDrug.channel = "amber";
-    sampleDrug.resonanceBoost = 100.0f;
+    sampleDrug.attribute = "amber";
+    sampleDrug.op = "add";
+    sampleDrug.magnitude = 100.0f;
     sampleDrug.durationHours = 2.0f;
-    sampleDrug.aftershockResonance = -30.0f;
+    sampleDrug.grantedTag = "Status.HarmonyBroken";
+    sampleDrug.expiryMode = "decay";
+    sampleDrug.expiryMagnitude = -30.0f;
+    sampleDrug.decayPerHour = 1.0f;
 }
 
 void StatsScene::update(f32 dt) {
     WorldDemoScene::update(dt);
     const f64 gameDt = clock.advance(dt);
-    const gameplay::CharacterTickContext ctx { derived, tags, tuning, afflictionDb };
+    const gameplay::CharacterTickContext ctx { derived, tags, tuning };
     gameplay::tickCharacter(player, dt, gameDt, ctx, equipmentModifiers());
 }
 
 void StatsScene::drawUi() {
-    const gameplay::CharacterTickContext ctx { derived, tags, tuning, afflictionDb };
+    const gameplay::CharacterTickContext ctx { derived, tags, tuning };
     game::ui::CharacterStatsDemoState demo { sampleWeapon, sampleArmor, armorEquipped,
-                                             sampleDrug, rng, afflictionDb,
-                                             sampleDisease, samplePsychosis };
+                                             sampleDrug, sampleDisease, samplePsychosis, rng };
     game::ui::drawCharacterStatsPanel(player, ctx, clock, equipmentModifiers(), demo);
 }
 

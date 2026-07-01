@@ -298,6 +298,11 @@ or adds tags — purely in data, layered by load order. This data-driven richnes
 is what lets entity *composition* stay a simple C++ spawner (§2.7) instead of a
 data-defined component system.
 
+> **Modder reference:** `docs/MODDING-EFFECTS.md` — complete `EffectForm` /
+> `AbilityForm` field guide, attribute list, TOML plugin format, and recipes for
+> all use cases (damage, buffs, DoT, drugs, afflictions, buildup, abilities). No C++
+> required.
+
 **Persistence.** Per §2.9, persist `BaseValue`s and the set of active durational
 effects; recompute `CurrentValue`s on load. Instant effects are already baked
 into `BaseValue`. Keeps saves small and the layering invariant (§2.4) intact.
@@ -524,16 +529,19 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 > move the max), secondary stats from CURRENT; Resonance + Harmony; typed-damage
 > pipeline; `f64` added to reflection (appended last — binary ordinals stable).
 >
-> **Phase 7 done** (2026-06-17, 172 tests / 5071 assertions green). Permanent-status
-> & resonance mechanics. Brick journal in `docs/PHASE-7.md`; design in
-> `docs/STATS.md`. Deliverables: seeded engine RNG (`core::Rng`, §8),
+> **Phase 7 done** (2026-06-17 → 176 tests / 5087 assertions green after post-phase).
+> Permanent-status & resonance mechanics. Brick journal in `docs/PHASE-7.md`; design
+> in `docs/STATS.md`. Deliverables: seeded engine RNG (`core::Rng`, §8),
 > `StatsTuningForm` (Phase-6 constants → moddable data, §5), stat-bearing
 > items/equipment (weapons with typed attack + scaling, armor/clothing per slot,
 > consumables), rest/sleep recovery, status buildup (poison/bleed/…), body-part
 > injuries + diseases/psychoses (permanent-status system, RNG-rolled, gated by
-> resonance-resistance), drugs + harmony break. Stats manquantes ajoutées en
-> post-phase : `healthRegen` (0.0002·grace/s), `essenceRegen` (0.005·insight/s),
-> `resistCold`, `State.Paralyzed` (glaciation ≠ stagger), `DamageType::Cold`.
+> resonance-resistance), drugs + harmony break. Post-phase additions: `healthRegen`
+> (0.0002·grace/s), `essenceRegen` (0.005·insight/s), `resistCold`, `State.Paralyzed`
+> (glaciation ≠ stagger), `DamageType::Cold`; `CharacterTick` extracted from scene;
+> `AfflictionForm` + `DrugForm` supprimés — tout passe par `EffectForm`/`applyEffect`
+> (GAS unification); `ResonanceDecays` pour le fondu post-expiration. Référence
+> moddeur : `docs/MODDING-EFFECTS.md`.
 
 ---
 

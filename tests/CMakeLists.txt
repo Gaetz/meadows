@@ -31,6 +31,7 @@ add_executable(meadows-tests
     QuestTest.cpp
     ReflectTest.cpp
     ResolverTest.cpp
+    ResonanceDecayTest.cpp
     ResonanceTest.cpp
     RestTest.cpp
     RngTest.cpp

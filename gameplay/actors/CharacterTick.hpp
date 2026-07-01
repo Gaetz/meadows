@@ -27,11 +27,11 @@
 namespace gameplay {
 
 // World-level resources shared across all character ticks in a scene.
+// afflictionDb removed: afflictions/drugs are now GAS game-time effects.
 struct CharacterTickContext {
     const DerivedStatRegistry& derived;
     const GameplayTagRegistry& tags;
     const StatsTuningForm&     tuning;
-    const data::FormDatabase&  afflictionDb;
 };
 
 // Full real-time + game-time tick for one actor entity.

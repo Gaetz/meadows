@@ -6,7 +6,6 @@
 #include "gameplay/stats/Afflictions.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Damage.hpp"
-#include "gameplay/stats/Drugs.hpp"
 #include "gameplay/stats/GameTime.hpp"
 #include "gameplay/stats/Injuries.hpp"
 #include "gameplay/stats/Resonance.hpp"
@@ -26,26 +25,25 @@ void tickCharacter(flecs::entity entity, f32 dt, f64 gameDt,
     auto& buildup     = entity.get_mut<StatusBuildup>();
     auto& resonance   = entity.get_mut<Resonance>();
     auto& survival    = entity.get_mut<Survival>();
-    auto& activeDrugs = entity.get_mut<ActiveDrugs>();
     auto& injuries    = entity.get_mut<Injuries>();
-    auto& afflictions = entity.get_mut<Afflictions>();
     auto& resoDecays  = entity.get_mut<ResonanceDecays>();
 
     // Stagger / paralysis timers decay in real time.
     updateStagger(combat, system, dt, ctx.tags);
     updateParalysis(combat, system, dt, ctx.tags);
 
-    // Pre-register decay entries for resonance effects about to expire this tick.
-    // Must happen BEFORE tickEffects() removes them from activeEffects.
+    // Pre-register decay entries for real-time resonance effects about to expire.
     {
         const u32 kOnyx = attr("onyx"), kAmber = attr("amber"), kGarnet = attr("garnet");
         for (const ActiveEffect& active : system.activeEffects) {
-            if (!active.infinite && active.decayOnExpiry && active.remaining <= dt) {
+            if (active.gameTime || active.infinite || !active.decayOnExpiry) continue;
+            if (active.remaining <= dt) {
                 if (active.attribute == kOnyx || active.attribute == kAmber ||
                     active.attribute == kGarnet) {
+                    const f32 decayInit = (active.expiryMagnitude != 0.0f)
+                        ? active.expiryMagnitude : active.magnitude;
                     resoDecays.list.push_back({
-                        active.attribute, active.magnitude,
-                        active.decayPerHour, active.magnitude
+                        active.attribute, decayInit, active.decayPerHour, decayInit
                     });
                 }
             }
@@ -58,10 +56,10 @@ void tickCharacter(flecs::entity entity, f32 dt, f64 gameDt,
     // Phase A — resonance current values: Resonance BaseValues + GAS activeEffects.
     recomputeStats(core, vitals, resonance, system, ctx.derived, nullptr);
 
-    // Phase B — full character mods from GAS resonance + survival/injuries/drugs/decays.
+    // Phase B — full character mods from GAS resonance + cascade + equipment.
     GameTimeTickArgs args { core, vitals, system, combat, buildup, survival,
-                            activeDrugs, injuries, afflictions, resonance,
-                            resoDecays, ctx.afflictionDb, ctx.derived, ctx.tags, ctx.tuning };
+                            injuries, resonance, resoDecays,
+                            ctx.derived, ctx.tags, ctx.tuning };
     const StatModifiers mods = buildCharacterMods(args, equipmentMods);
 
     // Phase C — full recompute with cascade mods (maxHealth, attributes, derived).
@@ -126,18 +124,22 @@ void initializeActorStats(flecs::entity entity,
     auto& combat      = entity.get_mut<CombatState>();
     auto& buildup     = entity.get_mut<StatusBuildup>();
     auto& survival    = entity.get_mut<Survival>();
-    auto& activeDrugs = entity.get_mut<ActiveDrugs>();
     auto& injuries    = entity.get_mut<Injuries>();
-    auto& afflictions = entity.get_mut<Afflictions>();
     auto& resonance   = entity.get_mut<Resonance>();
     auto& resoDecays  = entity.get_mut<ResonanceDecays>();
+
+    // Sync initial injury GAS effects.
+    syncInjuryEffects(injuries, system, vitals, ctx.tags);
+
+    // Sync initial survival GAS effects.
+    updateSurvivalEffects(survival, system, vitals, ctx.tags, ctx.tuning);
 
     // Phase A — resonance values from GAS (no cascade yet).
     recomputeStats(core, vitals, resonance, system, ctx.derived, nullptr);
 
     GameTimeTickArgs args { core, vitals, system, combat, buildup, survival,
-                            activeDrugs, injuries, afflictions, resonance,
-                            resoDecays, ctx.afflictionDb, ctx.derived, ctx.tags, ctx.tuning };
+                            injuries, resonance, resoDecays,
+                            ctx.derived, ctx.tags, ctx.tuning };
     const StatModifiers mods = buildCharacterMods(args, equipmentMods);
 
     // Phase C — full recompute with cascade mods.
@@ -150,6 +152,9 @@ void initializeActorStats(flecs::entity entity,
     vitals.essence = currentValueOf(system, attr("maxEssence"));
     recomputeStats(core, vitals, resonance, system, ctx.derived, &mods);
     combat.posture = currentValueOf(system, attr("maxPosture"));
+
+    // Clear State.Dead if health was just restored above 0.
+    updateLifeState(system, ctx.tags);
 }
 
 } // namespace gameplay

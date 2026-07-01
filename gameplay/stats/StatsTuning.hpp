@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/forms/Form.hpp"
+#include "gameplay/ability/GameplayTags.hpp"
 
 // Moddable tuning constants for the stats system (§5). A single Form, resolved
 // from the FormDatabase by a canonical guid; the defaults below match the
@@ -97,9 +98,12 @@ struct StatsTuningForm : data::Form {
     REFLECT_END()
 };
 
-// Registers the stats Form types (StatsTuningForm; later items/injuries). Call at
-// startup before loading plugins.
+// Registers the stats Form types (StatsTuningForm). Call at startup.
 void registerStatsFormTypes(data::FormTypeRegistry& registry);
+
+// Registers internal gameplay tags needed by the stats system (injury, survival).
+// Call once after creating the GameplayTagRegistry at startup.
+void registerStatsRuntimeTags(GameplayTagRegistry& tags);
 
 // Resolves the tuning from the database (canonical guid), or defaults if absent.
 StatsTuningForm resolveStatsTuning(const data::FormDatabase& forms);

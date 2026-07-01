@@ -26,12 +26,15 @@ struct ActiveEffect {
     ModifierOp op { ModifierOp::Add };
     f32 magnitude { 0.0f };
     bool infinite { false };
-    f32 remaining { 0.0f };    // seconds left (ignored if infinite)
+    f32 remaining { 0.0f };    // seconds left (ignored if infinite); game-seconds if gameTime
     f32 period { 0.0f };       // periodic interval; 0 = not periodic
     f32 sinceLastTick { 0.0f };
     GameplayTag grantedTag {}; // dropped (ref-counted) when the effect ends
     bool decayOnExpiry { false }; // resonance channels only: fade toward 0 on expiry
     f32  decayPerHour  { 1.0f };  // pts/game-hour for the decay phase
+    f32  expiryMagnitude { 0.0f }; // initial ResonanceDecay value if != 0 (drug aftershock)
+    bool gameTime { false };       // if true, remaining is in game-seconds (tickGameTimeEffects)
+    u32  effectId { 0 };           // unique handle for targeted removal (0 = untracked)
 };
 
 // The AbilitySystem (the ASC, §6): one per actor (player and NPC alike). Owns
@@ -45,6 +48,7 @@ struct AbilitySystem {
     std::unordered_map<u32 /*attr field id*/, f32> current; // current-value overlay
     vector<ActiveEffect> activeEffects;
     vector<core::Guid> grantedAbilities; // AbilityForm guids this actor can activate
+    u32 nextEffectId { 1 };              // counter for effect ID allocation
 };
 
 // Registers the GAS components in the ECS: AttributeSet through the reflection

@@ -3,10 +3,8 @@
 #include "engine/core/Log.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
-#include "gameplay/stats/Afflictions.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Damage.hpp"
-#include "gameplay/stats/Drugs.hpp"
 #include "gameplay/stats/Injuries.hpp"
 #include "gameplay/stats/Resonance.hpp"
 #include "gameplay/stats/ResonanceDecays.hpp"
@@ -59,8 +57,6 @@ void spawnActor(SpawnContext&, ecs::Entity entity, const data::Form& base,
     entity.set<gameplay::StatusBuildup>({});
     entity.set<gameplay::CombatState>({});
     entity.set<gameplay::Injuries>({});
-    entity.set<gameplay::Afflictions>({});
-    entity.set<gameplay::ActiveDrugs>({});
     entity.set<gameplay::ResonanceDecays>({});
 }
 

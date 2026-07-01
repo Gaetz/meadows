@@ -93,4 +93,8 @@ void buildupStatusModifiers(const AbilitySystem& system,
 // The Status.* tag name for a type (e.g. "Status.Poisoned").
 const char* statusTagName(StatusType type);
 
+// Parses a buildup type name from an EffectForm buildupType string.
+// Returns StatusType::Poison for unknown strings.
+StatusType parseStatusType(const str& name);
+
 } // namespace gameplay

@@ -3,11 +3,10 @@
 #include <flecs.h>
 
 #include "data/forms/FormDatabase.hpp"
-#include "engine/core/Guid.hpp"
 #include "engine/core/Rng.hpp"
+#include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/stats/CharacterStats.hpp"
-#include "gameplay/stats/Drugs.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/GameTime.hpp"
@@ -24,14 +23,13 @@ namespace game::ui {
 // and Equipment components. Grouped in one struct so the panel signature stays
 // stable as we replace them one by one in Phase 8.
 struct CharacterStatsDemoState {
-    data::WeaponForm&   sampleWeapon;
-    data::ArmorForm&    sampleArmor;
-    bool&               armorEquipped;
-    gameplay::DrugForm& sampleDrug;
-    core::Rng&          rng;
-    data::FormDatabase& afflictionDb;
-    core::Guid          sampleDisease;
-    core::Guid          samplePsychosis;
+    data::WeaponForm&      sampleWeapon;
+    data::ArmorForm&       sampleArmor;
+    bool&                  armorEquipped;
+    gameplay::EffectForm&  sampleDrug;      // drug: grantedTag="Status.HarmonyBroken"
+    gameplay::EffectForm&  sampleDisease;   // affliction: attribute="amber"
+    gameplay::EffectForm&  samplePsychosis; // affliction: attribute="garnet"
+    core::Rng&             rng;
 };
 
 // Draws the full "Character stats" ImGui panel for any actor entity.

@@ -7,10 +7,9 @@
 #include "game/scenes/WorldDemoScene.hpp"
 #include "game/ui/CharacterStatsPanel.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp"
-#include "gameplay/stats/Afflictions.hpp"
-#include "gameplay/stats/Drugs.hpp"
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
 
@@ -95,16 +94,14 @@ private:
     // World-level resources (derived, tuning, clock, rng) are in WorldDemoScene.
     ecs::Entity player {};
 
-    // N3 demo: sample affliction DB (Phase 10: will come from forms).
-    data::FormDatabase afflictionDb;
-    core::Guid sampleDisease;
-    core::Guid samplePsychosis;
-
     // F3 demo: sample gear.
     data::WeaponForm sampleWeapon;
     data::ArmorForm sampleArmor;
     bool armorEquipped { false };
-    gameplay::DrugForm sampleDrug;
+    // N3/N4 demo: afflictions and drugs as EffectForms (Phase 7+ GAS unification).
+    gameplay::EffectForm sampleDrug;
+    gameplay::EffectForm sampleDisease;
+    gameplay::EffectForm samplePsychosis;
 };
 
 } // namespace game

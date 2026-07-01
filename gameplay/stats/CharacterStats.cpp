@@ -2,9 +2,7 @@
 
 #include "engine/ecs/World.hpp"
 #include "gameplay/ability/GameplayEffects.hpp" // recomputeCurrent
-#include "gameplay/stats/Afflictions.hpp"       // Afflictions
 #include "gameplay/stats/Damage.hpp"            // CombatState
-#include "gameplay/stats/Drugs.hpp"             // ActiveDrugs
 #include "gameplay/stats/Injuries.hpp"          // Injuries
 #include "gameplay/stats/Resonance.hpp"
 #include "gameplay/stats/StatusBuildup.hpp"
@@ -19,8 +17,6 @@ void registerStatsComponents(ecs::World& world) {
     world.registerComponent<StatusBuildup>();   // reflected: status accumulators
     world.handle().component<CombatState>();     // runtime: posture / stagger
     world.handle().component<Injuries>();        // runtime: body-part injuries
-    world.handle().component<Afflictions>();     // runtime: diseases / psychoses
-    world.handle().component<ActiveDrugs>();     // runtime: active drugs (N4)
 }
 
 void registerCoreDerivedStats(DerivedStatRegistry& registry,

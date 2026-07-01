@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "gameplay/stats/StatusBuildup.hpp" // for buildupType routing
+
 namespace gameplay {
 
 namespace {
@@ -132,6 +134,14 @@ void clampVitalsCurrent(AbilitySystem& system) {
     clampCurrent(attr("essence"), attr("maxEssence"));
 }
 
+// Removes the granted tag for an expired effect (if any) and erases it.
+void expireEffect(AbilitySystem& system, const ActiveEffect& active,
+                  const GameplayTagRegistry& registry) {
+    if (active.grantedTag.isValid()) {
+        system.tags.remove(active.grantedTag, registry);
+    }
+}
+
 } // namespace
 
 void recomputeCurrent(AbilitySystem& system, std::span<const AttrSetRef> sets,
@@ -188,7 +198,9 @@ void recomputeCurrent(const AttributeSet& set, AbilitySystem& system) {
 }
 
 bool applyEffect(AttributeSet& set, AbilitySystem& system,
-                 const EffectForm& effect, const GameplayTagRegistry& registry) {
+                 const EffectForm& effect, const GameplayTagRegistry& registry,
+                 StatusBuildup* buildup, u32* outEffectId) {
+    // Tag gate.
     if (!effect.requiredTag.empty()) {
         const auto tag = registry.find(effect.requiredTag);
         if (!tag || !system.tags.has(*tag)) {
@@ -202,27 +214,46 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
         }
     }
 
+    // StatusBuildup routing: if buildupType is set, delegate and return.
+    if (!effect.buildupType.empty() && buildup) {
+        const StatusType st = parseStatusType(effect.buildupType);
+        tryAddBuildup(*buildup, st, effect.magnitude, system, registry);
+        return true;
+    }
+
     const u32 attrId = attr(effect.attribute);
     const ModifierOp op = parseOp(effect.op);
     const DurationPolicy policy = parseDuration(effect.duration);
 
-    if (policy == DurationPolicy::Instant) {
+    // durationHours > 0 implies a game-time duration effect, overriding the default "instant".
+    const bool isGameTime = (effect.durationHours > 0.0f);
+
+    if (!isGameTime && policy == DurationPolicy::Instant) {
         applyModifierToBase(set, attrId, op, effect.magnitude);
         routeDamageMeta(set);
         clampBaseVitals(set);
         recomputeCurrent(set, system);
         return true;
     }
+    const f32 remainingSeconds = isGameTime
+        ? effect.durationHours * 3600.0f
+        : effect.durationSeconds;
 
+    const u32 effectId = system.nextEffectId++;
+
+    // Primary effect.
     ActiveEffect active;
     active.attribute = attrId;
     active.op = op;
     active.magnitude = effect.magnitude;
     active.infinite = (policy == DurationPolicy::Infinite);
-    active.remaining = effect.durationSeconds;
+    active.remaining = remainingSeconds;
     active.period = policy == DurationPolicy::Periodic ? effect.period : 0.0f;
     active.decayOnExpiry = (effect.expiryMode == "decay");
     active.decayPerHour  = effect.decayPerHour;
+    active.expiryMagnitude = effect.expiryMagnitude;
+    active.gameTime = isGameTime;
+    active.effectId = effectId;
     if (!effect.grantedTag.empty()) {
         if (const auto tag = registry.find(effect.grantedTag)) {
             active.grantedTag = *tag;
@@ -230,6 +261,29 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
         }
     }
     system.activeEffects.push_back(active);
+
+    // Optional second attribute (e.g. affliction attribute malus).
+    if (!effect.attribute2.empty()) {
+        ActiveEffect active2;
+        active2.attribute = attr(effect.attribute2);
+        active2.op = parseOp(effect.op); // inherit op from primary
+        active2.magnitude = effect.magnitude2;
+        active2.infinite = active.infinite;
+        active2.remaining = remainingSeconds;
+        active2.period = 0.0f;
+        active2.gameTime = isGameTime;
+        active2.effectId = system.nextEffectId++;
+        active2.grantedTag = active.grantedTag; // same tag for grouped removal
+        if (active.grantedTag.isValid()) {
+            system.tags.add(active.grantedTag, registry); // extra ref-count
+        }
+        system.activeEffects.push_back(active2);
+    }
+
+    if (outEffectId) {
+        *outEffectId = effectId;
+    }
+
     recomputeCurrent(set, system);
     return true;
 }
@@ -237,6 +291,9 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
 void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
                  const GameplayTagRegistry& registry) {
     for (ActiveEffect& active : system.activeEffects) {
+        if (active.gameTime) {
+            continue; // ticked by tickGameTimeEffects
+        }
         if (active.period > 0.0f) {
             active.sinceLastTick += dt;
             while (active.sinceLastTick >= active.period) {
@@ -253,16 +310,67 @@ void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
     }
 
     for (const ActiveEffect& active : system.activeEffects) {
+        if (active.gameTime) continue;
         const bool expired = !active.infinite && active.remaining <= 0.0f;
-        if (expired && active.grantedTag.isValid()) {
-            system.tags.remove(active.grantedTag, registry);
+        if (expired) {
+            expireEffect(system, active, registry);
         }
     }
     std::erase_if(system.activeEffects, [](const ActiveEffect& active) {
-        return !active.infinite && active.remaining <= 0.0f;
+        return !active.gameTime && !active.infinite && active.remaining <= 0.0f;
     });
 
     recomputeCurrent(set, system);
+}
+
+void tickGameTimeEffects(AttributeSet& set, AbilitySystem& system, f64 gameDt,
+                         const GameplayTagRegistry& registry) {
+    const f32 gameDtF = static_cast<f32>(gameDt);
+    for (ActiveEffect& active : system.activeEffects) {
+        if (!active.gameTime) {
+            continue; // ticked by tickEffects
+        }
+        if (!active.infinite) {
+            active.remaining -= gameDtF;
+        }
+    }
+
+    for (const ActiveEffect& active : system.activeEffects) {
+        if (!active.gameTime) continue;
+        const bool expired = !active.infinite && active.remaining <= 0.0f;
+        if (expired) {
+            expireEffect(system, active, registry);
+        }
+    }
+    std::erase_if(system.activeEffects, [](const ActiveEffect& active) {
+        return active.gameTime && !active.infinite && active.remaining <= 0.0f;
+    });
+
+    recomputeCurrent(set, system);
+}
+
+void removeEffectsByGrantedTag(AbilitySystem& system, GameplayTag tag,
+                               const GameplayTagRegistry& registry) {
+    if (!tag.isValid()) return;
+    for (const ActiveEffect& active : system.activeEffects) {
+        if (active.grantedTag == tag) {
+            system.tags.remove(tag, registry); // one ref per effect
+        }
+    }
+    std::erase_if(system.activeEffects,
+                  [tag](const ActiveEffect& a) { return a.grantedTag == tag; });
+}
+
+void removeEffectById(AbilitySystem& system, u32 effectId,
+                      const GameplayTagRegistry& registry) {
+    if (effectId == 0) return;
+    for (const ActiveEffect& active : system.activeEffects) {
+        if (active.effectId == effectId) {
+            expireEffect(system, active, registry);
+        }
+    }
+    std::erase_if(system.activeEffects,
+                  [effectId](const ActiveEffect& a) { return a.effectId == effectId; });
 }
 
 } // namespace gameplay

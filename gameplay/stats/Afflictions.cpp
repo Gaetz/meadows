@@ -1,47 +1,11 @@
 #include "gameplay/stats/Afflictions.hpp"
 
-#include <algorithm>
-#include <string_view>
-
-#include "data/forms/FormDatabase.hpp"
-#include "data/forms/FormTypeRegistry.hpp"
-
 namespace gameplay {
 
-void registerAfflictionFormTypes(data::FormTypeRegistry& registry) {
-    registry.registerFormType<AfflictionForm>();
-}
-
-Resonance afflictionResonance(const Afflictions& afflictions,
-                              const data::FormDatabase& forms) {
-    Resonance result; // onyx stays 0; afflictions hit amber / garnet
-    for (const ActiveAffliction& active : afflictions.list) {
-        const AfflictionForm* def = forms.find<AfflictionForm>(active.form);
-        if (!def) {
-            continue;
-        }
-        if (def->channel == "garnet") {
-            result.garnet += def->resonancePenalty;
-        } else {
-            result.amber += def->resonancePenalty; // "amber" (default)
-        }
-    }
-    return result;
-}
-
-void afflictionStatModifiers(const Afflictions& afflictions,
-                             const data::FormDatabase& forms, StatModifiers& mods) {
-    for (const ActiveAffliction& active : afflictions.list) {
-        const AfflictionForm* def = forms.find<AfflictionForm>(active.form);
-        if (def && !def->attributeMalus.empty() && def->attributeMalusValue != 0.0f) {
-            mods.add[attr(def->attributeMalus)] += def->attributeMalusValue;
-        }
-    }
-}
-
-bool inflictAffliction(Afflictions& afflictions, const core::Guid& form,
-                       const AfflictionForm& definition, f32 channelResonance,
-                       f64 baseChance, core::Rng& rng) {
+bool inflictEffect(AttributeSet& vitals, AbilitySystem& system,
+                   const EffectForm& effect, f32 channelResonance,
+                   f64 baseChance, core::Rng& rng,
+                   const GameplayTagRegistry& tags) {
     if (channelResonance >= 0.0f) {
         return false; // resonance resistance: cannot be afflicted (§2)
     }
@@ -49,23 +13,15 @@ bool inflictAffliction(Afflictions& afflictions, const core::Guid& form,
     if (!rng.chance(chance)) {
         return false;
     }
-    for (ActiveAffliction& active : afflictions.list) {
-        if (active.form == form) {
-            active.recoveryHoursRemaining = definition.recoveryHours; // refresh
-            return true;
+    // Re-infliction refreshes the timer: remove any existing effect with the same
+    // grantedTag, then apply fresh.
+    if (!effect.grantedTag.empty()) {
+        if (const auto tag = tags.find(effect.grantedTag)) {
+            removeEffectsByGrantedTag(system, *tag, tags);
         }
     }
-    afflictions.list.push_back({ form, definition.recoveryHours });
+    applyEffect(vitals, system, effect, tags);
     return true;
-}
-
-void recoverAfflictions(Afflictions& afflictions, f32 restHours) {
-    for (ActiveAffliction& active : afflictions.list) {
-        active.recoveryHoursRemaining -= restHours;
-    }
-    std::erase_if(afflictions.list, [](const ActiveAffliction& active) {
-        return active.recoveryHoursRemaining <= 0.0f;
-    });
 }
 
 } // namespace gameplay

@@ -136,4 +136,16 @@ const char* statusTagName(StatusType type) {
     return kRows[static_cast<int>(type)].tag;
 }
 
+StatusType parseStatusType(const str& name) {
+    if (name == "bleed")         return StatusType::Bleed;
+    if (name == "mental")        return StatusType::Mental;
+    if (name == "disease")       return StatusType::Disease;
+    if (name == "curse")         return StatusType::Curse;
+    if (name == "death")         return StatusType::Death;
+    if (name == "ignition")      return StatusType::Ignition;
+    if (name == "glaciation")    return StatusType::Glaciation;
+    if (name == "electrocution") return StatusType::Electrocution;
+    return StatusType::Poison; // default / "poison"
+}
+
 } // namespace gameplay

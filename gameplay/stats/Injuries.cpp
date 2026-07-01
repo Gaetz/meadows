@@ -2,10 +2,14 @@
 
 #include <algorithm>
 
+#include "gameplay/ability/Attributes.hpp" // AttributeSet
+
 namespace gameplay {
 
 namespace {
-// docs/STATS.md §5 tables, baked in C++ (the design's specific values; §2.7).
+
+static const char* kInjuryActiveTag = "Injury.Active";
+
 constexpr f32 kCutResonance[3] = { -1.0f, -2.0f, -4.0f };
 constexpr f32 kFractureResonance[3] = { -10.0f, -20.0f, -30.0f };
 
@@ -95,29 +99,45 @@ f32 recoveryHours(InjuryType type) {
     }
     return 24.0f;
 }
+
+void applyInjuryEffect(const Injury& inj, AbilitySystem& system,
+                       AttributeSet& vitals, const GameplayTagRegistry& tags) {
+    const f32 res = resonancePenalty(inj.type, inj.severity);
+    // Primary: onyx resonance penalty.
+    {
+        EffectForm eff;
+        eff.attribute = "onyx";
+        eff.op = "add";
+        eff.magnitude = res;
+        eff.duration = "infinite";
+        eff.grantedTag = kInjuryActiveTag;
+        applyEffect(vitals, system, eff, tags);
+    }
+    // Secondary: attribute malus (if any).
+    const AttrMalus malus = attributeMalus(inj.type, inj.part, inj.severity);
+    if (malus.attribute && malus.value != 0.0f) {
+        EffectForm eff;
+        eff.attribute = malus.attribute;
+        eff.op = "add";
+        eff.magnitude = malus.value;
+        eff.duration = "infinite";
+        eff.grantedTag = kInjuryActiveTag;
+        applyEffect(vitals, system, eff, tags);
+    }
+    // Tertiary: movement speed multiplier (legs only).
+    const f32 speed = speedMalusPercent(inj.type, inj.part, inj.severity);
+    if (speed != 0.0f) {
+        EffectForm eff;
+        eff.attribute = "movementSpeed";
+        eff.op = "multiply";
+        eff.magnitude = 1.0f + speed / 100.0f;
+        eff.duration = "infinite";
+        eff.grantedTag = kInjuryActiveTag;
+        applyEffect(vitals, system, eff, tags);
+    }
+}
+
 } // namespace
-
-f32 injuryResonance(const Injuries& injuries) {
-    f32 total = 0.0f;
-    for (const Injury& inj : injuries.list) {
-        total += resonancePenalty(inj.type, inj.severity);
-    }
-    return total;
-}
-
-void injuryStatModifiers(const Injuries& injuries, StatModifiers& mods) {
-    for (const Injury& inj : injuries.list) {
-        const AttrMalus malus = attributeMalus(inj.type, inj.part, inj.severity);
-        if (malus.attribute && malus.value != 0.0f) {
-            mods.add[attr(malus.attribute)] += malus.value;
-        }
-        const f32 speed = speedMalusPercent(inj.type, inj.part, inj.severity);
-        if (speed != 0.0f) {
-            auto [it, inserted] = mods.mul.try_emplace(attr("movementSpeed"), 1.0f);
-            it->second *= (1.0f + speed / 100.0f);
-        }
-    }
-}
 
 void addInjury(Injuries& injuries, InjuryType type, BodyPart part) {
     for (Injury& inj : injuries.list) {
@@ -128,6 +148,18 @@ void addInjury(Injuries& injuries, InjuryType type, BodyPart part) {
         }
     }
     injuries.list.push_back({ type, part, 0, recoveryHours(type) });
+}
+
+void syncInjuryEffects(const Injuries& injuries, AbilitySystem& system,
+                       AttributeSet& vitals, const GameplayTagRegistry& tags) {
+    // Remove all existing injury effects.
+    if (const auto t = tags.find(kInjuryActiveTag)) {
+        removeEffectsByGrantedTag(system, *t, tags);
+    }
+    // Re-apply for current state.
+    for (const Injury& inj : injuries.list) {
+        applyInjuryEffect(inj, system, vitals, tags);
+    }
 }
 
 f64 injuryBaseChance(InjuryType type, f32 healthFractionRemoved) {
@@ -166,6 +198,10 @@ void recoverInjuries(Injuries& injuries, f32 restHours) {
     }
     std::erase_if(injuries.list,
                   [](const Injury& inj) { return inj.severity < 0; });
+}
+
+void registerInjuryTags(GameplayTagRegistry& tags) {
+    tags.registerTag(kInjuryActiveTag);
 }
 
 } // namespace gameplay
