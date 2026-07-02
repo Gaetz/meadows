@@ -205,6 +205,18 @@ When `buildupType` is set, `attribute`, `op`, `magnitude2`, and duration fields 
 **ignored** — the engine adds `magnitude` to the accumulator. When it reaches the
 target's endurance threshold, the corresponding status is triggered.
 
+### Energy regen delay
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `bypassEnergyRegenDelay` | bool | `false` | If `true`, spending energy through this effect does **not** pause energy regen. |
+
+Spending energy (an `"add"` effect with negative `magnitude` on `energy`) pauses the
+target's energy regeneration for a short recharge delay, so rapid energy use has a
+recovery cost. Set `bypassEnergyRegenDelay = true` on a cost effect to let that
+action spend energy **without** triggering the pause (e.g. a low-cost utility action
+that shouldn't interrupt recovery).
+
 ---
 
 ## 4. AbilityForm — activatable actions
@@ -219,6 +231,22 @@ An ability is a data record that references up to three `EffectForm` GUIDs.
 | `cost` | GUID | — | `EffectForm` applied to **self** on activation (energy cost, etc.) |
 | `cooldown` | GUID | — | `EffectForm` applied to **self**; its `grantedTag` is the cooldown gate |
 | `effect` | GUID | — | `EffectForm` applied to the **target** |
+| `costPolicy` | string | `""` | How the cost is gated: `""` auto, `"permissive"`, `"strict"` |
+
+**Cost policy:** Controls whether the caster needs the **full** cost to activate.
+
+- `"permissive"` — activate with **any** reserve of the cost resource (spend what you
+  have; overdrawing clamps to 0). A roll costing 25 energy is usable at 12 energy, but
+  **not** at 0. This is the **stamina** model. (For energy, the empty-reserve block is
+  the `State.Exhausted` gate — see §Energy regen delay.)
+- `"strict"` — require the **full** cost (`current >= cost`). This is the **magic**
+  model: a spell costing 20 essence is refused below 20.
+- `""` (auto) — resolve by resource: **energy → permissive**, everything else
+  (essence/magic, etc.) → **strict**.
+
+Set `costPolicy` on the ability's TOML to override the default (e.g. a stamina-gated
+spell → `"permissive"`, or a magic-like energy drain that needs the full amount →
+`"strict"`).
 
 **Cooldown pattern:** The cooldown effect grants a tag while active. The ability checks
 that the caster does NOT have that tag before activating. When the duration expires,

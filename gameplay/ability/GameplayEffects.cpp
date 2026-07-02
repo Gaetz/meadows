@@ -225,6 +225,17 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
     const ModifierOp op = parseOp(effect.op);
     const DurationPolicy policy = parseDuration(effect.duration);
 
+    // Spending energy pauses its regen for a beat (unless the effect opts out via
+    // bypassEnergyRegenDelay), so rapid energy use carries a recharge cost.
+    // CharacterTick counts the timer down and holds regen while it is > 0.
+    // Duration is a constant for now (→ StatsTuningForm later, like the exhaustion
+    // gate). Refreshes (max) so back-to-back spends don't shorten the pause.
+    if (!effect.bypassEnergyRegenDelay && op == ModifierOp::Add &&
+        effect.magnitude < 0.0f && attrId == attr("energy")) {
+        constexpr f32 kEnergyRegenDelay = 1.0f;
+        system.energyRegenDelay = std::max(system.energyRegenDelay, kEnergyRegenDelay);
+    }
+
     // durationHours > 0 implies a game-time duration effect, overriding the default "instant".
     const bool isGameTime = (effect.durationHours > 0.0f);
 
@@ -321,6 +332,21 @@ void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
     });
 
     recomputeCurrent(set, system);
+}
+
+void updateExhaustion(const AttributeSet& set, AbilitySystem& system,
+                      const GameplayTagRegistry& registry, f32 recoverFraction) {
+    const auto exhausted = registry.find("State.Exhausted");
+    if (!exhausted) {
+        return; // gate not in this scene's vocabulary → nothing to do
+    }
+    const f32 maxEnergy = currentValueOf(system, attr("maxEnergy"));
+    const bool has = system.tags.has(*exhausted);
+    if (!has && set.energy <= 0.0f) {
+        system.tags.add(*exhausted, registry);
+    } else if (has && set.energy >= maxEnergy * recoverFraction) {
+        system.tags.remove(*exhausted, registry);
+    }
 }
 
 void tickGameTimeEffects(AttributeSet& set, AbilitySystem& system, f64 gameDt,

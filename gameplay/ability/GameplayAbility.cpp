@@ -7,13 +7,26 @@ namespace gameplay {
 
 namespace {
 
-// A cost is affordable when applying its (negative add) modifier keeps the
-// attribute >= 0. Only simple add costs are gated; anything else is allowed.
-bool canAfford(const AbilitySystem& caster, const EffectForm& cost) {
+// Whether the caster can pay `cost`, per the ability's cost policy. Only simple
+// negative add costs are gated; anything else is always allowed.
+//   permissive — activate with any reserve > 0 (spend what you have; overdraw
+//                clamps to 0). Default for energy (stamina): a roll costing 25 is
+//                allowed at 12 energy, but not at 0 (that is the exhaustion gate).
+//   strict     — require the full cost (current + magnitude >= 0). Default for
+//                magic (essence) and any non-energy resource.
+// An empty policy resolves by resource: energy → permissive, else → strict.
+bool canAfford(const AbilitySystem& caster, const EffectForm& cost,
+               const str& policy) {
     if (cost.op != "add" || cost.magnitude >= 0.0f) {
         return true;
     }
-    return currentValueOf(caster, attr(cost.attribute)) + cost.magnitude >= 0.0f;
+    const f32 current = currentValueOf(caster, attr(cost.attribute));
+    const bool permissive = policy == "permissive" ||
+                            (policy.empty() && cost.attribute == "energy");
+    if (permissive) {
+        return current > 0.0f;
+    }
+    return current + cost.magnitude >= 0.0f;
 }
 
 } // namespace
@@ -67,7 +80,7 @@ bool tryActivate(const AbilityForm& ability,
     const EffectForm* cost =
         ability.cost.isValid() ? ctx.forms.find<EffectForm>(ability.cost)
                                : nullptr;
-    if (cost && !canAfford(casterSystem, *cost)) {
+    if (cost && !canAfford(casterSystem, *cost, ability.costPolicy)) {
         return false;
     }
 

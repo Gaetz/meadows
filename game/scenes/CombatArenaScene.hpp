@@ -8,6 +8,10 @@
 #include "engine/ecs/World.hpp"
 #include "game/scenes/WorldDemoScene.hpp"
 
+namespace gameplay {
+struct AbilityForm;
+}
+
 namespace game {
 
 // Phase 8 — the playable "village + arena" scene (docs/PHASE-8.md).
@@ -37,8 +41,19 @@ private:
     ecs::Entity spawnCombatant(std::string name, Vec3 position,
                                const core::Guid& sheet, Vec2 facing);
 
+    // Step 2 player controller: WASD movement, facing toward the mouse cursor,
+    // and the dodge ability. Runs before the per-combatant tick each frame.
+    void updatePlayer(f32 dt);
+
     ecs::Entity player {};
     std::vector<Combatant> combatants; // player + dummies (ticked + inspected)
+
+    // Dodge state (Step 2). The GAS ability owns cost/cooldown/i-frames; the
+    // scene only drives the movement burst and the sprite facing.
+    const gameplay::AbilityForm* dodgeAbility { nullptr }; // resolved in onEnter
+    f32 dodgeTimer { 0.0f };            // > 0 → dodge velocity burst in progress
+    Vec2 dodgeDir { 0.0f, 0.0f };       // burst direction
+    Vec2 aimDir { 0.0f, -1.0f };        // current facing (default south)
 };
 
 } // namespace game

@@ -14,6 +14,7 @@ add_executable(meadows-tests
     DialogueTest.cpp
     DrugsTest.cpp
     EcsTest.cpp
+    EnergyExhaustionTest.cpp
     EquipmentStatsTest.cpp
     EventBusTest.cpp
     FactionsTest.cpp

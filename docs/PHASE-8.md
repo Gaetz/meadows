@@ -127,14 +127,62 @@ PRESENTATION.md "UI = disposable shell"). Reuse what is already integrated:
   game logic (`Game.hpp`: draw must not mutate game state). This is what makes the
   ImGui→Godot swap mechanical in Phase 8.5.
 
-### Step 2 — Real-time player: move + aim + dodge  ▢
+### Step 2 — Real-time player: move + aim + dodge  ✅ DONE
 - WASD → `Velocity` (reuse `applyMovement` + `resolveCollisions`).
 - **Mouse support** added to `platform::Input`; facing = normalized vector from
   player to cursor world position.
 - **Dodge** on short Shift press: a brief velocity burst (in movement direction,
   or backward from aim if stationary) + a transient `State.Dodging` i-frame tag +
   an energy cost (GameplayEffect) + a cooldown.
-**Deliverable:** player strafes, aims at cursor, rolls with i-frames.
+**Delivered:** player strafes, aims at the cursor (8-dir frame follows the mouse),
+rolls with i-frames. Build green, tests 181 → 183.
+
+Implementation notes:
+- **Mouse in `platform::Input`** (platform-clean, §3.1): logical `MouseButton`
+  enum + `mousePosition()`/`mouseDown`/`mousePressed` in the header; SDL3 mapping
+  (`SDL_GetMouseState` → float pos + button bitmask via `SDL_BUTTON_MASK`) in the
+  `.cpp`. Added `Key::Shift` (→ `SDL_SCANCODE_LSHIFT`). `Input.hpp` now pulls
+  `<glm/vec2.hpp>` because `Defines.hpp` only forward-declares glm.
+- **`render::screenToWorld`** (free inline in `Camera2D.hpp`): inverse of
+  `viewProj` for a point, flips screen-Y → world +Y. Reusable by later steps.
+- **Dodge = a real `AbilityForm`** (`base.toml`: `Dodge` + `DodgeCost`/`DodgeIFrames`/
+  `DodgeCooldown` effects), activated by `tryActivate`. The **AbilitySystem** owns
+  the gating — cooldown (`Cooldown.Dodge`), cost affordability, **and**
+  `blockedTag=State.Exhausted`. The scene does **zero** manual cooldown/cost
+  checks; on success it only drives the movement burst + `dodgeTimer`. Facing
+  updated each frame via the existing `uvRectForFacing8`.
+- **Energy-exhaustion gate** (decided with the dev): energy-costed actions
+  (dodge now; attack Step 3; sprint later) are blocked when out of energy via a
+  shared `State.Exhausted` tag with **hysteresis** (set at energy 0, cleared above
+  20% max). Lives in the shared tick (`updateExhaustion`, called from
+  `tickCharacter`) so **enemies gate too** (Step 4). Extracted as a free helper in
+  `GameplayEffects` → unit-tested headless (`tests/EnergyExhaustionTest.cpp`).
+  Threshold is a constant for now → `StatsTuningForm` later.
+- **Sprint (course) deliberately out of Step 2 scope** (per this doc); the gate is
+  designed to cover it when it lands.
+
+Post-review fixes (dev feedback):
+- **Facing was vertically inverted.** Textures upload un-flipped (row 0 = top) but
+  the sprite quad maps world +Y → v=1, so the renderer samples V downward — a
+  vertical mirror. `uvRectForFacing8` now negates `facing.y` to cancel it, so the
+  on-screen facing matches the world-space aim. (Horizontal was already correct;
+  the static Step-1 spawns render identically since they were authored in world
+  facing.)
+- **Movement now accelerates** (was instant velocity). Target speed = the
+  `movementSpeed` derived stat × world scale; velocity ramps toward it at a new
+  **`acceleration`** derived stat (`90 + alacrity·2`, provisional → Phase 9
+  utility pass) × scale, with sharper braking inertia when idle. So stats/injuries
+  that touch movementSpeed/acceleration change the feel live.
+- **Dodge burst eases out** (ease-out quad on the remaining fraction) instead of a
+  constant speed + hard stop, so it decelerates into the roll's end.
+- **Dodge retuned**: cooldown 1.2s → **0.5s**, energy cost −15 → **−25** (base.toml).
+- **Energy regen delay** (new): spending energy pauses regen for a beat (constant
+  1.0s → StatsTuning later), so rapid use has a recharge cost. Timer lives in
+  `AbilitySystem.energyRegenDelay` (runtime), armed in `applyEffect` on any negative
+  energy `add`, counted down in `CharacterTick` (gates the regen line). A new
+  `EffectForm.bypassEnergyRegenDelay` TOML flag lets specific actions spend energy
+  without arming the pause. Modder ref updated in `docs/MODDING-EFFECTS.md`; tested
+  in `tests/EnergyExhaustionTest.cpp`.
 
 ### Step 3 — Player melee attack  ▢
 Attack state machine windup→active→recovery on left-click. During *active*, a
@@ -206,6 +254,26 @@ Balance pass. Finalize this journal.
   loop entirely.
 - **All combatants share one game clock, advanced once per frame.** The same
   `gameDt` goes to every `tickCharacter` call — never advance the clock per actor.
+- **Player/enemy actions with a cost or cooldown are GameplayAbilities**
+  (`AbilityForm` + `tryActivate`), never hand-rolled `applyEffect` in the scene.
+  The AbilitySystem owns the gating (cooldown tag, cost affordability, blocked
+  tags); the scene only reacts to a `true` return (e.g. the dodge movement burst).
+  This is the pattern to reuse for the Step 3 attack and any enemy ability.
+
+- **Cost gating has two policies, set per-ability in TOML (`AbilityForm.costPolicy`).**
+  `"permissive"` (stamina): activate with any reserve > 0, overdraw clamps to 0 (roll
+  at 12 energy for a 25 cost; the empty-reserve block is `State.Exhausted`).
+  `"strict"` (magic): require the full cost. Default (`""`) resolves by resource —
+  **energy → permissive, essence/other → strict**. `canAfford` in
+  `GameplayAbility.cpp` implements it; reuse for the Step 3 attack and any spell.
+
+- **Energy-costed actions are gated by a shared `State.Exhausted` tag**, not
+  per-action checks. `updateExhaustion` (in `GameplayEffects`, called from
+  `tickCharacter`) sets it at energy 0 and clears it above a fraction of max
+  (hysteresis, no flicker); every energy-costed `AbilityForm` carries
+  `blockedTag=State.Exhausted`. Living in the shared tick means enemies are gated
+  by the same rule (Step 4). Threshold is a constant → migrate to `StatsTuningForm`.
+
 - **Combatant spawning is code-side for now** (`spawnCombatant`), not data-driven.
   The full stat sheet matches the Spawner's `spawnActor` wiring, so moving to
   data-driven arena population later is a mechanical change. Per-actor stat variety

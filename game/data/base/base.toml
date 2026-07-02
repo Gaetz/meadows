@@ -119,6 +119,50 @@ editorId = "Strike"
 cooldown = "e0000000-0000-4000-8000-000000000002"
 effect = "e0000000-0000-4000-8000-000000000001"
 
+# --- Dodge (Phase 8 Step 2): a self ability. Cost = energy; cooldown + i-frames
+# are granted-tag effects; blockedTag=State.Exhausted gates it when out of energy.
+[[records]]
+form = "e0000000-0000-4000-8000-000000000010"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "DodgeCost"
+attribute = "energy"
+op = "add"
+magnitude = -25.0
+duration = "instant"
+
+[[records]]
+form = "e0000000-0000-4000-8000-000000000011"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "DodgeIFrames"
+duration = "duration"
+durationSeconds = 0.28
+grantedTag = "State.Dodging"
+
+[[records]]
+form = "e0000000-0000-4000-8000-000000000012"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "DodgeCooldown"
+duration = "duration"
+durationSeconds = 0.5
+grantedTag = "Cooldown.Dodge"
+
+[[records]]
+form = "ab000000-0000-4000-8000-000000000002"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "Dodge"
+cost = "e0000000-0000-4000-8000-000000000010"
+cooldown = "e0000000-0000-4000-8000-000000000012"
+effect = "e0000000-0000-4000-8000-000000000011"
+blockedTag = "State.Exhausted"
+
 [[records]]
 form = "44440000-0000-4000-8000-00000000000a"
 type = "ReferenceForm"

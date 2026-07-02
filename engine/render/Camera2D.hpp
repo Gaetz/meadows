@@ -22,4 +22,18 @@ struct Camera2D {
     }
 };
 
+// Inverse of viewProj for a point: maps a screen pixel (top-left origin) to a
+// world position on the camera plane. Flips Y (screen top-left → world +Y up).
+inline Vec2 screenToWorld(const Camera2D& camera, Vec2 screenPx,
+                          f32 aspect, i32 winW, i32 winH) {
+    const Vec2 ndc = {
+        (screenPx.x / static_cast<f32>(winW)) * 2.0f - 1.0f,
+        1.0f - (screenPx.y / static_cast<f32>(winH)) * 2.0f,
+    };
+    const f32 halfH = camera.viewHeight * 0.5f;
+    const f32 halfW = halfH * aspect;
+    return { camera.position.x + ndc.x * halfW,
+             camera.position.y + ndc.y * halfH };
+}
+
 } // namespace render

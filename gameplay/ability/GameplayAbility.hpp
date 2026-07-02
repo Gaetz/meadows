@@ -29,6 +29,14 @@ struct AbilityForm : data::Form {
     str script;            // optional Lua coroutine run on activation (latent
                            // logic: wait(t), self:applyEffect(...), …) — Phase 4
 
+    // How the cost is gated (see canAfford):
+    //   ""            auto — energy costs are "permissive", others "strict".
+    //   "permissive"  activate with ANY reserve of the cost resource (spend what
+    //                 you have; overdraw clamps to 0). Empty (0) still blocks —
+    //                 for energy that is the State.Exhausted gate. Stamina model.
+    //   "strict"      require the FULL cost (current >= cost). Magic model.
+    str costPolicy;
+
     REFLECT_BEGIN(AbilityForm, data::Form)
         REFLECT_FIELD(requiredTag)
         REFLECT_FIELD(blockedTag)
@@ -36,6 +44,7 @@ struct AbilityForm : data::Form {
         REFLECT_FIELD(cooldown)
         REFLECT_FIELD(effect)
         REFLECT_FIELD(script)
+        REFLECT_FIELD(costPolicy)
     REFLECT_END()
 };
 

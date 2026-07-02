@@ -28,11 +28,11 @@ struct Fixture {
     AttributeSet targetSet;
     AbilitySystem targetSystem;
 
-    Fixture() {
+    Fixture(const char* costAttr = "energy", const char* costPolicy = "") {
         registry.registerTag("Cooldown.Slash");
         registry.registerTag("Status.Stunned");
 
-        addEffect(kCost, "energy", "add", -20.0f, "instant", 0.0f, "");
+        addEffect(kCost, costAttr, "add", -20.0f, "instant", 0.0f, "");
         addEffect(kCooldown, "", "add", 0.0f, "duration", 5.0f, "Cooldown.Slash");
         addEffect(kDamage, "damage", "add", 30.0f, "instant", 0.0f, "");
 
@@ -42,6 +42,7 @@ struct Fixture {
         ability->cost = kCost;
         ability->cooldown = kCooldown;
         ability->effect = kDamage;
+        ability->costPolicy = costPolicy;
         db.add(std::move(ability), AbilityForm::staticTypeInfo());
 
         initializeCurrent(casterSystem, casterSet);
@@ -101,13 +102,42 @@ TEST_CASE("ability: a blocked activation tag prevents activation") {
     CHECK(baseValueOf(f.casterSet, attr("energy")) == 100.0f);
 }
 
-TEST_CASE("ability: an unaffordable cost prevents activation") {
-    Fixture f;
+TEST_CASE("ability: energy cost is permissive — activates with any reserve") {
+    Fixture f; // energy cost, default policy → permissive
     setBaseValue(f.casterSet, attr("energy"), 10.0f); // less than the 20 cost
     initializeCurrent(f.casterSystem, f.casterSet);
 
-    CHECK_FALSE(f.activate());
+    CHECK(f.activate()); // permissive: 10 > 0 is enough
+    CHECK(baseValueOf(f.casterSet, attr("energy")) == 0.0f); // overdraw clamps to 0
+    CHECK(baseValueOf(f.targetSet, attr("health")) == 70.0f);
+}
+
+TEST_CASE("ability: permissive cost still blocks at zero reserve") {
+    Fixture f;
+    setBaseValue(f.casterSet, attr("energy"), 0.0f);
+    initializeCurrent(f.casterSystem, f.casterSet);
+
+    CHECK_FALSE(f.activate()); // empty → blocked
     CHECK(baseValueOf(f.targetSet, attr("health")) == 100.0f);
+    CHECK(baseValueOf(f.casterSet, attr("energy")) == 0.0f);
+}
+
+TEST_CASE("ability: magic (essence) cost is strict — full cost required") {
+    Fixture f("essence"); // non-energy resource → strict by default
+    setBaseValue(f.casterSet, attr("essence"), 10.0f); // less than the 20 cost
+    initializeCurrent(f.casterSystem, f.casterSet);
+
+    CHECK_FALSE(f.activate()); // strict: 10 < 20 → blocked
+    CHECK(baseValueOf(f.targetSet, attr("health")) == 100.0f);
+    CHECK(baseValueOf(f.casterSet, attr("essence")) == 10.0f);
+}
+
+TEST_CASE("ability: costPolicy overrides the resource default") {
+    Fixture f("energy", "strict"); // force strict on an energy cost
+    setBaseValue(f.casterSet, attr("energy"), 10.0f);
+    initializeCurrent(f.casterSystem, f.casterSet);
+
+    CHECK_FALSE(f.activate()); // strict override: 10 < 20 → blocked
     CHECK(baseValueOf(f.casterSet, attr("energy")) == 10.0f);
 }
 

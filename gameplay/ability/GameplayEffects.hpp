@@ -42,6 +42,12 @@ struct EffectForm : data::Form {
     // "curse", "death", "ignition", "glaciation", "electrocution".
     str buildupType;
 
+    // If true, spending energy through this effect does NOT pause energy regen
+    // (the post-spend recharge delay). Default false: any energy cost pauses regen
+    // for a beat (see updateExhaustion / CharacterTick). Lets some actions cost
+    // energy without the recharge penalty.
+    bool bypassEnergyRegenDelay { false };
+
     REFLECT_BEGIN(EffectForm, data::Form)
         REFLECT_FIELD(attribute)
         REFLECT_FIELD(op)
@@ -59,6 +65,7 @@ struct EffectForm : data::Form {
         REFLECT_FIELD(decayPerHour)
         REFLECT_FIELD(expiryMagnitude)
         REFLECT_FIELD(buildupType)
+        REFLECT_FIELD(bypassEnergyRegenDelay)
     REFLECT_END()
 };
 
@@ -80,6 +87,15 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
 // Advances real-time active effects (gameTime == false) by dt.
 void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
                  const GameplayTagRegistry& registry);
+
+// Toggles the shared "State.Exhausted" gate on `system` from current energy,
+// with hysteresis: added when energy reaches 0, removed once energy recovers
+// above `recoverFraction` of maxEnergy. Energy-costed abilities (dodge, attack,
+// sprint) carry blockedTag="State.Exhausted", so tryActivate rejects them while
+// it is set. No-op if the tag is not registered. Called once per character tick.
+void updateExhaustion(const AttributeSet& set, AbilitySystem& system,
+                      const GameplayTagRegistry& registry,
+                      f32 recoverFraction = 0.20f);
 
 // Advances game-time active effects (gameTime == true) by gameDt (game-seconds).
 void tickGameTimeEffects(AttributeSet& set, AbilitySystem& system, f64 gameDt,

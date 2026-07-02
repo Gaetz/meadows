@@ -116,6 +116,13 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
     registry.add({ attr("movementSpeed"), core, [](const StatView& v) {
         return 90.0f + v.get("alacrity") + v.get("strength");
     } });
+
+    // Acceleration (docs/STATS.md §3) — the movement speed *ramp*: celerity
+    // (alacrity) governs how fast you reach movementSpeed. Formula provisional
+    // (base + alacrity·2) until the Phase 9 utility pass wires encumbrance/inertia.
+    registry.add({ attr("acceleration"), core, [](const StatView& v) {
+        return 90.0f + v.get("alacrity") * 2.0f;
+    } });
 }
 
 void recomputeStats(const CoreAttributes& core, const AttributeSet& vitals,

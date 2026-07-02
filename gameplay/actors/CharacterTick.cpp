@@ -108,7 +108,19 @@ void tickCharacter(flecs::entity entity, f32 dt, f64 gameDt,
     {
         const f32 maxE = currentValueOf(system, attr("maxEnergy"));
         const f32 regen = currentValueOf(system, attr("energyRegen"));
-        vitals.energy = std::min(maxE, vitals.energy + regen * dt);
+        // Post-spend recharge delay: spending energy pauses regen for a beat
+        // (set in applyEffect). Count it down; only regen once it elapses.
+        if (system.energyRegenDelay > 0.0f) {
+            system.energyRegenDelay = std::max(0.0f, system.energyRegenDelay - dt);
+        } else {
+            vitals.energy = std::min(maxE, vitals.energy + regen * dt);
+        }
+
+        // Exhaustion gate: energy-costed abilities (dodge, attack, sprint) carry
+        // blockedTag=State.Exhausted, so tryActivate rejects them while out of
+        // energy. Shared here so enemies gate too (hysteresis lives in the
+        // helper). Threshold is a constant for now (→ StatsTuningForm later).
+        updateExhaustion(vitals, system, ctx.tags);
     }
 
     // Game-time: health/essence regen, survival decay, drug expiry, injury recovery.

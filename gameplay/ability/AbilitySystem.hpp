@@ -49,6 +49,9 @@ struct AbilitySystem {
     vector<ActiveEffect> activeEffects;
     vector<core::Guid> grantedAbilities; // AbilityForm guids this actor can activate
     u32 nextEffectId { 1 };              // counter for effect ID allocation
+    f32 energyRegenDelay { 0.0f };       // seconds before energy regen resumes after
+                                         // a spend (set in applyEffect, counted down
+                                         // in CharacterTick); 0 = regen active
 };
 
 // Registers the GAS components in the ECS: AttributeSet through the reflection
