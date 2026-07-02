@@ -19,6 +19,7 @@ render::Sprite spriteFor(const world::Transform& transform,
     // sin θ/2), so θ = 2·atan2(z, w). 3D rotations collapse to their yaw in 2D.
     out.rotation = 2.0f * std::atan2(transform.rotation.z, transform.rotation.w);
     out.tint = sprite.tint;
+    out.uvRect = sprite.uvRect;
     out.texture = texture;
     return out;
 }

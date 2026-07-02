@@ -1,3 +1,4 @@
+#include <functional>
 #include <memory>
 
 #include <imgui.h>
@@ -5,6 +6,7 @@
 #include "engine/Engine.hpp"
 #include "engine/Game.hpp"
 #include "game/SceneStack.hpp"
+#include "game/scenes/CombatArenaScene.hpp"
 #include "game/scenes/DemoScenes.hpp"
 
 namespace {
@@ -16,7 +18,7 @@ class DemoApp final : public engine::Game {
 public:
     void init(engine::Engine& engineContext) override {
         engine = &engineContext;
-        stack.replace(std::make_unique<game::PluginScene>(*engine));
+        stack.replace(std::make_unique<game::CombatArenaScene>(*engine));
     }
 
     void update(f32 dt) override { stack.update(dt); }
@@ -24,29 +26,51 @@ public:
     void draw(render::SpriteRenderer& renderer) override { stack.draw(renderer); }
 
     void drawUi() override {
-        ImGui::Begin("Demos");
-        if (ImGui::Button("Plugins / mods")) {
-            stack.replace(std::make_unique<game::PluginScene>(*engine));
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("World editor")) {
-            stack.replace(std::make_unique<game::WorldEditScene>(*engine));
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Combat")) {
-            stack.replace(std::make_unique<game::CombatScene>(*engine));
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Gameplay (WASD)")) {
-            stack.replace(std::make_unique<game::GameplayScene>(*engine));
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Narrative")) {
-            stack.replace(std::make_unique<game::NarrativeScene>(*engine));
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Stats")) {
-            stack.replace(std::make_unique<game::StatsScene>(*engine));
+        // AlwaysAutoResize so the window grows to fit every button (ignoring any
+        // stale saved size in imgui.ini) — no demo is clipped as the list grows.
+        ImGui::Begin("Demos", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+
+        struct Demo {
+            const char* label;
+            std::function<std::unique_ptr<game::Scene>()> make;
+        };
+        const Demo demos[] = {
+            { "Plugins / mods",
+              [&] { return std::make_unique<game::PluginScene>(*engine); } },
+            { "World editor",
+              [&] { return std::make_unique<game::WorldEditScene>(*engine); } },
+            { "Combat",
+              [&] { return std::make_unique<game::CombatScene>(*engine); } },
+            { "Gameplay (WASD)",
+              [&] { return std::make_unique<game::GameplayScene>(*engine); } },
+            { "Narrative",
+              [&] { return std::make_unique<game::NarrativeScene>(*engine); } },
+            { "Stats",
+              [&] { return std::make_unique<game::StatsScene>(*engine); } },
+            { "Combat arena",
+              [&] { return std::make_unique<game::CombatArenaScene>(*engine); } },
+        };
+
+        // Wrap buttons across rows at a fixed budget. A fixed budget (not the
+        // window width) avoids a feedback loop with AlwaysAutoResize.
+        const ImGuiStyle& style = ImGui::GetStyle();
+        constexpr float kWrapWidth = 520.0f;
+        float rowX = 0.0f;
+        for (int i = 0; i < IM_ARRAYSIZE(demos); ++i) {
+            const float w = ImGui::CalcTextSize(demos[i].label).x +
+                            style.FramePadding.x * 2.0f;
+            if (i > 0) {
+                if (rowX + style.ItemSpacing.x + w <= kWrapWidth) {
+                    ImGui::SameLine();
+                    rowX += style.ItemSpacing.x;
+                } else {
+                    rowX = 0.0f; // overflow: start a new row
+                }
+            }
+            if (ImGui::Button(demos[i].label)) {
+                stack.replace(demos[i].make());
+            }
+            rowX += w;
         }
         ImGui::End();
 

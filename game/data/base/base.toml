@@ -6,6 +6,10 @@ name = "true-adventurer-base"
 
 [assets]
 "7c5e2d90-4f3a-4b18-a52e-c91d80f64b23" = "textures/iron_sword.png"
+# 8-direction character placeholders (debug facing; stand in for a missing Godot
+# sprite once Godot is the frontend). One 512x64 strip = 8 frames of 64x64.
+"b1a7c0de-0000-4000-8000-000000000001" = "textures/placeholder_player_8dir.png"
+"b1a7c0de-0000-4000-8000-000000000002" = "textures/placeholder_enemy_8dir.png"
 
 # --- Definitions ------------------------------------------------------------
 

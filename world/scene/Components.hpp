@@ -38,12 +38,17 @@ struct SpriteRender {
     Vec2 size { 1.0f, 1.0f };
     Vec4 tint { 1.0f, 1.0f, 1.0f, 1.0f };
     i32 layer { 0 }; // painter order (no depth buffer in 2D)
+    // Sub-region of the texture to draw (u0, v0, u1, v1). Default = the whole
+    // texture. Lets one atlas / sprite-sheet hold many frames (e.g. the 8
+    // directional facings of a character); the renderer samples only this rect.
+    Vec4 uvRect { 0.0f, 0.0f, 1.0f, 1.0f };
 
     REFLECT_BEGIN(SpriteRender, void)
         REFLECT_FIELD(sprite)
         REFLECT_FIELD(size)
         REFLECT_FIELD(tint)
         REFLECT_FIELD(layer)
+        REFLECT_FIELD(uvRect) // appended last: binary ordinals stay stable
     REFLECT_END()
 };
 

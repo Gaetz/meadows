@@ -15,6 +15,7 @@ add_executable(true-adventurer
     main.cpp
     scenes/WorldDemoScene.cpp
     scenes/DemoScenes.cpp
+    scenes/CombatArenaScene.cpp
     ui/CharacterStatsPanel.cpp
 )
 target_link_libraries(true-adventurer PRIVATE meadows-runtime meadows-data
