@@ -15,6 +15,7 @@ enum class Key : u16 {
     Up, Down, Left, Right,
     Space, Enter, Escape,
     E, F, Shift,
+    Num1, Num2, Num3, Num4, Num5,
     Count
 };
 

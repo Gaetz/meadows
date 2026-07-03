@@ -22,6 +22,11 @@ SDL_Scancode scancodeFor(Key key) {
     case Key::E:      return SDL_SCANCODE_E;
     case Key::F:      return SDL_SCANCODE_F;
     case Key::Shift:  return SDL_SCANCODE_LSHIFT;
+    case Key::Num1:   return SDL_SCANCODE_1;
+    case Key::Num2:   return SDL_SCANCODE_2;
+    case Key::Num3:   return SDL_SCANCODE_3;
+    case Key::Num4:   return SDL_SCANCODE_4;
+    case Key::Num5:   return SDL_SCANCODE_5;
     case Key::Count:  break;
     }
     return SDL_SCANCODE_UNKNOWN;
