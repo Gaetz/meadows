@@ -15,10 +15,10 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 10: RHI offscreen validation — the scene renders into an offscreen
-// color+depth framebuffer and reaches the backbuffer through an identity
-// fullscreen blit (sampler object + framebuffer + new formats exercised).
-// The image must be pixel-identical with the toggle on or off.
+// Brick 11: terrain splatting — a 4-layer tiling material array
+// (grass/rock/snow/sand, procedurally synthesized) blended per pixel by
+// slope and altitude. The scene renders through the offscreen target
+// (validated in brick 10) which becomes the HDR seat next brick.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -50,7 +50,6 @@ private:
     bool regenerateRequested { false };
     bool wireframeUi { false };
     bool animateTime { false };
-    bool offscreenUi { true };
 
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};

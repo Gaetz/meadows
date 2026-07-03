@@ -6,6 +6,7 @@
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/landscape/SplatTextures.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
 
@@ -141,7 +142,35 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                                 indices.data());
     }
 
-    shaders.load(kTerrainShader, { { "FrameUbo", 0 } });
+    if (device.caps().textureArrays) {
+        const vector<u8> splatPixels = buildSplatTilePixels();
+        splatTexture = device.createTexture(
+            { .width = kSplatTileSize,
+              .height = kSplatTileSize,
+              .arrayLayers = SplatLayer_Count,
+              .mipLevels = 9, // full chain for a 256 tile
+              .format = rhi::TextureFormat::RGBA8,
+              .filter = rhi::FilterMode::Linear,
+              .wrap = rhi::AddressMode::Repeat,
+              .usage = rhi::TextureUsage_Sampled },
+            splatPixels.data());
+        device.generateMipmaps(splatTexture);
+        splatSampler = device.createSampler(
+            { .mipmapFilter = true,
+              .addressU = rhi::AddressMode::Repeat,
+              .addressV = rhi::AddressMode::Repeat,
+              .maxAnisotropy = 8.0f });
+        splatBindGroup = device.createBindGroup(
+            { .entries = { { .binding = 0,
+                             .texture = splatTexture,
+                             .sampler = splatSampler } } });
+    } else {
+        LOG_WARN("TerrainSystem: no texture arrays on this backend — "
+                 "terrain splatting disabled");
+    }
+
+    shaders.load(kTerrainShader, { { "FrameUbo", 0 } },
+                 { { "uSplat", 0 } });
     buildPipeline(device, shaders);
 }
 
@@ -161,6 +190,12 @@ void TerrainSystem::destroy(rhi::Device& device) {
         device.destroyBuffer(indexBuffers[lod]);
         indexBuffers[lod] = {};
     }
+    device.destroyBindGroup(splatBindGroup);
+    device.destroySampler(splatSampler);
+    device.destroyTexture(splatTexture);
+    splatBindGroup = {};
+    splatSampler = {};
+    splatTexture = {};
 }
 
 void TerrainSystem::regenerate(rhi::Device& device) {
@@ -334,6 +369,9 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
                          rhi::BindGroupHandle frameBindGroup) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
+    if (splatBindGroup.id != 0) {
+        cmd.setBindGroup(1, splatBindGroup);
+    }
     // Grouped by LOD so the shared index buffer binds once per level.
     for (u32 lod = 0; lod < kLodCount; ++lod) {
         bool indexBufferBound = false;

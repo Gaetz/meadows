@@ -152,11 +152,11 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .zenithColor = { skyState.zenithColor, 0.0f },
         .horizonColor = { skyState.horizonColor, 0.0f },
         .horizonFarColor = { skyState.horizonFarColor, 0.0f },
+        .terrainInfo = { terrain.params.seaLevel, 110.0f, 0.25f, 0.0f },
     };
     frame.device.updateBuffer(frameUbo, &uniforms, sizeof(uniforms), 0);
 
-    const bool useOffscreen =
-        offscreenUi && frame.device.caps().offscreenTargets;
+    const bool useOffscreen = frame.device.caps().offscreenTargets;
     if (useOffscreen) {
         ensureOffscreenTarget(frame.device, frame.width, frame.height);
         if (shaders->generation(kBlitShader) != blitShaderGeneration) {
@@ -186,7 +186,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 10: offscreen framebuffer + blit.");
+    ImGui::TextUnformatted("Brick 11: terrain texture splatting.");
     ImGui::TextUnformatted(
         "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -208,8 +208,6 @@ void LandscapeScene::drawUi() {
     ImGui::SliderFloat("Time of day (h)", &sky.timeOfDay, 0.0f, 24.0f,
                        "%.1f");
     ImGui::Checkbox("Animate (24 h in 2 min)", &animateTime);
-    ImGui::Separator();
-    ImGui::Checkbox("Route through offscreen target", &offscreenUi);
     ImGui::End();
 }
 

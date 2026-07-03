@@ -138,6 +138,12 @@ private:
     array<u32, kLodCount> indexCounts {};
     rhi::PipelineHandle pipeline {};
     u64 shaderGeneration { 0 };
+
+    // Splat material array (grass/rock/snow/sand tiles) + anisotropic
+    // repeat sampler, bound as bind group 1 by draw().
+    rhi::TextureHandle splatTexture {};
+    rhi::SamplerHandle splatSampler {};
+    rhi::BindGroupHandle splatBindGroup {};
 };
 
 // Pure CPU chunk meshing, runs on worker threads. Vertices sample

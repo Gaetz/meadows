@@ -12,4 +12,6 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uZenithColor;      // rgb = sky gradient top
     vec4 uHorizonColor;     // rgb = horizon on the SUN side (warm at dusk)
     vec4 uHorizonFarColor;  // rgb = horizon opposite the sun (already night)
+    vec4 uTerrainInfo;      // x = sea level, y = snow line (m),
+                            // z = splat UV scale (tiles/meter)
 };

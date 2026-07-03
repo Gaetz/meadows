@@ -22,6 +22,8 @@ struct FrameUniforms {
     Vec4 zenithColor {};      // rgb = sky gradient top
     Vec4 horizonColor {};     // rgb = horizon on the SUN side (warm at dusk)
     Vec4 horizonFarColor {};  // rgb = horizon opposite the sun (already night)
+    Vec4 terrainInfo {};      // x = sea level, y = snow line (m),
+                              // z = splat UV scale (tiles/meter), w unused
 };
 
 } // namespace render
