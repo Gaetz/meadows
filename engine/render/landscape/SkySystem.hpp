@@ -22,8 +22,9 @@ class ShaderLibrary;
 // only background pixels get shaded.
 class SkySystem {
 public:
-    // Sun/sky palette for one moment of the day. Colors are pre-HDR (<= ~1.2)
-    // until the HDR brick raises the range.
+    // Sun/sky palette for one moment of the day, in LINEAR HDR: the sun
+    // exceeds 1 so the filmic tonemap rolls highlights off, and the disc is
+    // bright enough to bloom later.
     struct SkyState {
         Vec3 sunDirection {};
         Vec3 sunColor {};
@@ -32,7 +33,7 @@ public:
         Vec3 zenithColor {};
         Vec3 horizonColor {};     // sun side of the horizon ring
         Vec3 horizonFarColor {};  // opposite side (night arrives there first)
-        f32 sunDiscIntensity { 2.0f };
+        f32 sunDiscIntensity { 12.0f };
     };
 
     void create(rhi::Device& device, ShaderLibrary& shaders);

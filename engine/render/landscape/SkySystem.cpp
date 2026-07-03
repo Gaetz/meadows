@@ -11,7 +11,20 @@
 namespace render {
 
 namespace {
+
 constexpr const char* kSkyShader = "sky";
+
+// The palette below is authored in display (sRGB-ish) space — the intuitive
+// space to pick colors in. The HDR pipeline lights in linear and re-encodes
+// at the tonemap pass, so authored colors convert on the way in.
+Vec3 linearize(const Vec3& srgb) {
+    return glm::pow(srgb, Vec3 { 2.2f });
+}
+
+// Sun radiance in daylight: > 1 on purpose, so lit slopes exceed the display
+// range and the filmic curve rolls them off instead of clipping.
+constexpr f32 kSunIntensity = 2.6f;
+
 } // namespace
 
 SkySystem::SkyState SkySystem::evaluate() const {
@@ -59,34 +72,35 @@ SkySystem::SkyState SkySystem::evaluate() const {
     state.sunDirection = sunDirection;
     Vec3 sun = glm::mix(Vec3 { 1.00f, 0.97f, 0.90f }, goldenColor, golden);
     sun = glm::mix(sun, redColor, reddening);
-    state.sunColor = sun * sunUp;
+    state.sunColor = linearize(sun) * (sunUp * kSunIntensity);
     // The halo/afterglow follows the same palette but outlives the disc;
     // cleaner morning air scatters less, so the dawn glow is softer.
-    state.glowColor = sun * glm::max(sunUp, twilight) *
-                      (1.0f - 0.25f * morning);
+    state.glowColor = linearize(sun) * glm::max(sunUp, twilight) *
+                      (1.0f - 0.25f * morning) * 1.4f;
 
     Vec3 zenith = glm::mix(Vec3 { 0.015f, 0.025f, 0.060f },
                            Vec3 { 0.22f, 0.45f, 0.80f }, day);
     // Indigo (dusk) / pale lavender (dawn) band overhead, blending into the
     // warm horizon as a purple-to-rose gradient midway down.
     zenith = glm::mix(zenith, duskZenith, twilight * 0.70f);
-    state.zenithColor = zenith;
+    state.zenithColor = linearize(zenith);
 
     const Vec3 horizonBase = glm::mix(Vec3 { 0.040f, 0.050f, 0.100f },
                                       Vec3 { 0.60f, 0.75f, 0.90f }, day);
     // Sun side gets the warm twilight band; the opposite horizon is already
     // sliding into night while the sun sets.
-    state.horizonColor = glm::mix(horizonBase, duskHorizon, twilight * 0.90f);
-    state.horizonFarColor = glm::mix(horizonBase,
-                                     Vec3 { 0.040f, 0.050f, 0.100f },
-                                     twilight * 0.45f);
+    state.horizonColor =
+        linearize(glm::mix(horizonBase, duskHorizon, twilight * 0.90f));
+    state.horizonFarColor =
+        linearize(glm::mix(horizonBase, Vec3 { 0.040f, 0.050f, 0.100f },
+                           twilight * 0.45f));
 
     Vec3 ambient = glm::mix(Vec3 { 0.045f, 0.055f, 0.095f },
                             Vec3 { 0.34f, 0.39f, 0.47f }, day);
     // Between dog and wolf the world stays readable: a dim indigo-warm
     // ambient lingers with the afterglow instead of dropping to night.
     ambient = glm::mix(ambient, duskAmbient, twilight * 0.45f);
-    state.ambientColor = ambient;
+    state.ambientColor = linearize(ambient);
     return state;
 }
 

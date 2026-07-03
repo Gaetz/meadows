@@ -19,9 +19,7 @@ constexpr u32 kSplatTileSize = 256; // texels per side, per layer
 // contiguous (layer-major) — the exact shape Device::createTexture expects
 // for an array texture. Procedural (periodic value noise): stylized flat-ish
 // albedo, low contrast, in the BotW spirit; swappable for CC0 tiles later.
-//
-// Authored in display space and stored as RGBA8 for now; switches to SRGBA8
-// once the HDR/tonemap brick handles gamma on output.
+// Authored in display space, stored as SRGBA8 (linear on sample).
 vector<u8> buildSplatTilePixels();
 
 } // namespace render

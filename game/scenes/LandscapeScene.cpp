@@ -13,7 +13,7 @@
 namespace game {
 
 namespace {
-constexpr const char* kBlitShader = "blit";
+constexpr const char* kTonemapShader = "tonemap";
 } // namespace
 
 void LandscapeScene::onEnter() {
@@ -32,7 +32,8 @@ void LandscapeScene::onEnter() {
 
     if (device.caps().offscreenTargets) {
         blitSampler = device.createSampler({}); // linear, clamp — identity
-        shaders->load(kBlitShader, {}, { { "uSceneColor", 0 } });
+        shaders->load(kTonemapShader, { { "FrameUbo", 0 } },
+                      { { "uSceneColor", 0 } });
         rebuildBlitPipeline(device);
     }
 
@@ -62,10 +63,13 @@ void LandscapeScene::ensureOffscreenTarget(rhi::Device& device, u32 width,
         return;
     }
     destroyOffscreenTarget(device);
+    // HDR scene target: the sky/sun palette is linear HDR (sun > 1); the
+    // tonemap pass compresses to display range.
     offscreenColor = device.createTexture(
         { .width = width,
           .height = height,
-          .format = rhi::TextureFormat::RGBA8,
+          .format = device.caps().hdrFormats ? rhi::TextureFormat::RGBA16F
+                                             : rhi::TextureFormat::RGBA8,
           .filter = rhi::FilterMode::Linear,
           .usage = rhi::TextureUsage_Sampled |
                    rhi::TextureUsage_RenderAttachment },
@@ -107,8 +111,9 @@ void LandscapeScene::rebuildBlitPipeline(rhi::Device& device) {
     if (blitPipeline.id != 0) {
         device.destroyPipeline(blitPipeline);
     }
-    blitPipeline = device.createPipeline({ .shader = shaders->get(kBlitShader) });
-    blitShaderGeneration = shaders->generation(kBlitShader);
+    blitPipeline =
+        device.createPipeline({ .shader = shaders->get(kTonemapShader) });
+    blitShaderGeneration = shaders->generation(kTonemapShader);
 }
 
 void LandscapeScene::update(f32 dt) {
@@ -153,13 +158,14 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .horizonColor = { skyState.horizonColor, 0.0f },
         .horizonFarColor = { skyState.horizonFarColor, 0.0f },
         .terrainInfo = { terrain.params.seaLevel, 110.0f, 0.25f, 0.0f },
+        .postInfo = { tonemapUi ? 1.0f : 0.0f, exposureUi, 0.0f, 0.0f },
     };
     frame.device.updateBuffer(frameUbo, &uniforms, sizeof(uniforms), 0);
 
     const bool useOffscreen = frame.device.caps().offscreenTargets;
     if (useOffscreen) {
         ensureOffscreenTarget(frame.device, frame.width, frame.height);
-        if (shaders->generation(kBlitShader) != blitShaderGeneration) {
+        if (shaders->generation(kTonemapShader) != blitShaderGeneration) {
             rebuildBlitPipeline(frame.device);
         }
     }
@@ -174,11 +180,12 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     frame.cmd.endRenderPass();
 
     if (useOffscreen) {
-        // Identity fullscreen blit — the seed of the tonemap composite pass.
+        // Tonemap composite: HDR scene -> filmic curve -> gamma -> backbuffer.
         frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::DontCare,
                                     .depthLoadOp = rhi::LoadOp::DontCare });
         frame.cmd.setPipeline(blitPipeline);
-        frame.cmd.setBindGroup(0, blitBindGroup);
+        frame.cmd.setBindGroup(0, frameBindGroup); // FrameUbo (uPostInfo)
+        frame.cmd.setBindGroup(1, blitBindGroup);  // scene color + sampler
         frame.cmd.draw(3);
         frame.cmd.endRenderPass();
     }
@@ -186,7 +193,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 11: terrain texture splatting.");
+    ImGui::TextUnformatted("Brick 12: HDR + filmic tonemap.");
     ImGui::TextUnformatted(
         "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -208,6 +215,9 @@ void LandscapeScene::drawUi() {
     ImGui::SliderFloat("Time of day (h)", &sky.timeOfDay, 0.0f, 24.0f,
                        "%.1f");
     ImGui::Checkbox("Animate (24 h in 2 min)", &animateTime);
+    ImGui::Separator();
+    ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
+    ImGui::SliderFloat("Exposure", &exposureUi, 0.25f, 3.0f, "%.2f");
     ImGui::End();
 }
 

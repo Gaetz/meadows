@@ -15,10 +15,10 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 11: terrain splatting — a 4-layer tiling material array
-// (grass/rock/snow/sand, procedurally synthesized) blended per pixel by
-// slope and altitude. The scene renders through the offscreen target
-// (validated in brick 10) which becomes the HDR seat next brick.
+// Brick 12: HDR pipeline — the scene renders linear HDR into an RGBA16F
+// target (sun radiance > 1), then a fullscreen ACES filmic tonemap + gamma
+// pass composites to the backbuffer. Sky palette linearized, splat tiles
+// sRGB-decoded: the whole lighting path is gamma-correct now.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -50,6 +50,8 @@ private:
     bool regenerateRequested { false };
     bool wireframeUi { false };
     bool animateTime { false };
+    bool tonemapUi { true };
+    f32 exposureUi { 1.0f };
 
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};

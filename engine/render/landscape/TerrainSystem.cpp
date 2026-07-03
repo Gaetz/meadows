@@ -149,7 +149,9 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
               .height = kSplatTileSize,
               .arrayLayers = SplatLayer_Count,
               .mipLevels = 9, // full chain for a 256 tile
-              .format = rhi::TextureFormat::RGBA8,
+              // sRGB: tiles are authored in display space, decoded to linear
+              // on sample — the HDR pipeline lights in linear (brick 12).
+              .format = rhi::TextureFormat::SRGBA8,
               .filter = rhi::FilterMode::Linear,
               .wrap = rhi::AddressMode::Repeat,
               .usage = rhi::TextureUsage_Sampled },

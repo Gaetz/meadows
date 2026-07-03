@@ -24,6 +24,7 @@ struct FrameUniforms {
     Vec4 horizonFarColor {};  // rgb = horizon opposite the sun (already night)
     Vec4 terrainInfo {};      // x = sea level, y = snow line (m),
                               // z = splat UV scale (tiles/meter), w unused
+    Vec4 postInfo {};         // x = filmic tonemap (0/1), y = exposure
 };
 
 } // namespace render
