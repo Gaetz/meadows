@@ -11,8 +11,9 @@ constexpr f32 kMaxPitch = glm::radians(89.0f);
 } // namespace
 
 void FlyCamera::update(platform::Input& input, platform::Window& window,
-                       f32 dt) {
-    const bool wantCapture = input.mouseDown(platform::MouseButton::Right);
+                       f32 dt, bool allowCapture) {
+    const bool held = input.mouseDown(platform::MouseButton::Left);
+    const bool wantCapture = captured ? held : (held && allowCapture);
     if (wantCapture != captured) {
         captured = wantCapture;
         window.setRelativeMouseMode(captured);

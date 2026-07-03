@@ -2,6 +2,7 @@
 
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/landscape/SkySystem.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
@@ -14,9 +15,9 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 8: LOD rings + skirts on the streamed terrain — mesh density falls
-// with distance (65/33/17/9 verts per side), skirts cover LOD seams, and the
-// view radius grows to ~900 m. Wireframe toggle to inspect the rings.
+// Brick 9: analytic sky + day/night cycle — a time-of-day slider drives the
+// sun's direction/color, the sky gradient, and the terrain's ambient, all
+// through the shared FrameUbo (one sun for everything, fog reuses it later).
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -39,8 +40,10 @@ private:
 
     uptr<render::ShaderLibrary> shaders;
     render::TerrainSystem terrain;
+    render::SkySystem sky;
     bool regenerateRequested { false };
     bool wireframeUi { false };
+    bool animateTime { false };
 
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};

@@ -8,9 +8,8 @@ in vec3 vWorldPos;
 out vec4 fragColor;
 
 void main() {
-    // Fixed sun until the SkySystem drives it through FrameUbo (brick 9).
-    vec3 sunDir = normalize(vec3(0.35, 0.75, 0.25));
-    float ndl = max(dot(normalize(vNormal), sunDir), 0.0);
-    vec3 lit = vColor * (0.35 + 0.75 * ndl);
+    vec3 n = normalize(vNormal);
+    float ndl = max(dot(n, uSunDirection.xyz), 0.0);
+    vec3 lit = vColor * (uAmbientColor.rgb + uSunColor.rgb * ndl);
     fragColor = vec4(lit, 1.0);
 }
