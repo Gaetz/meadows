@@ -159,6 +159,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .horizonFarColor = { skyState.horizonFarColor, 0.0f },
         .terrainInfo = { terrain.params.seaLevel, 110.0f, 0.25f, 0.0f },
         .postInfo = { tonemapUi ? 1.0f : 0.0f, exposureUi, 0.0f, 0.0f },
+        .fogInfo = { fogDensityUi, fogHeightFalloffUi, fogLowBoostUi,
+                     fogStartUi },
     };
     frame.device.updateBuffer(frameUbo, &uniforms, sizeof(uniforms), 0);
 
@@ -193,7 +195,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 12: HDR + filmic tonemap.");
+    ImGui::TextUnformatted("Brick 13: sky-tinted distance/height fog.");
     ImGui::TextUnformatted(
         "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -218,6 +220,13 @@ void LandscapeScene::drawUi() {
     ImGui::Separator();
     ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
     ImGui::SliderFloat("Exposure", &exposureUi, 0.25f, 3.0f, "%.2f");
+    ImGui::SliderFloat("Fog density", &fogDensityUi, 0.0f, 0.004f, "%.4f",
+                       ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Fog height falloff", &fogHeightFalloffUi, 0.001f,
+                       0.08f, "%.3f", ImGuiSliderFlags_Logarithmic);
+    ImGui::SliderFloat("Fog low-altitude boost", &fogLowBoostUi, 0.0f, 5.0f,
+                       "%.1f");
+    ImGui::SliderFloat("Fog start (m)", &fogStartUi, 0.0f, 500.0f, "%.0f");
     ImGui::End();
 }
 

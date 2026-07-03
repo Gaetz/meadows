@@ -35,3 +35,22 @@ vec3 skyWithSun(vec3 dir) {
     sky += uSunColor.rgb * uSunColor.a * smoothstep(0.99945, 0.99985, cosSun);
     return sky;
 }
+
+// Distance + height fog, tinted by skyGradient along the view ray: distant
+// geometry dissolves into EXACTLY the sky behind it, at any time of day (the
+// BotW haze). Denser near sea level so valleys and shores go misty first.
+vec3 applyFog(vec3 color, vec3 worldPos) {
+    vec3 toPoint = worldPos - uCameraPos.xyz;
+    float dist = length(toPoint);
+    vec3 viewDir = toPoint / max(dist, 1e-4);
+    // Altitude term uses the ray midpoint so tall peaks seen from a valley
+    // (and valleys seen from a peak) both fog sensibly.
+    float midHeight = 0.5 * (worldPos.y + uCameraPos.y);
+    float lowBoost = exp(-max(midHeight - uTerrainInfo.x, 0.0) * uFogInfo.y);
+    float density = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z);
+    // Only the distance BEYOND the start counts: everything nearer keeps its
+    // true colors, the haze belongs to the far field.
+    float fogDist = max(dist - uFogInfo.w, 0.0);
+    float amount = 1.0 - exp(-fogDist * density);
+    return mix(color, skyGradient(viewDir), amount);
+}

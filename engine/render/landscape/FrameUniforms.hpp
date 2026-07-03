@@ -25,6 +25,8 @@ struct FrameUniforms {
     Vec4 terrainInfo {};      // x = sea level, y = snow line (m),
                               // z = splat UV scale (tiles/meter), w unused
     Vec4 postInfo {};         // x = filmic tonemap (0/1), y = exposure
+    Vec4 fogInfo {};          // x = density, y = height falloff (1/m),
+                              // z = low-altitude boost, w = start distance (m)
 };
 
 } // namespace render

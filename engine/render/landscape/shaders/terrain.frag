@@ -1,5 +1,6 @@
 #version 460 core
 #include "common.glsl"
+#include "sky.glsl"
 
 // Splat array, layers: 0 grass, 1 rock, 2 snow, 3 sand (SplatTextures.hpp).
 layout(binding = 0) uniform sampler2DArray uSplat;
@@ -43,5 +44,5 @@ void main() {
 
     float ndl = max(dot(n, uSunDirection.xyz), 0.0);
     vec3 lit = albedo * (uAmbientColor.rgb + uSunColor.rgb * ndl);
-    fragColor = vec4(lit, 1.0);
+    fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

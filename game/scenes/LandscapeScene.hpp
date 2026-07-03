@@ -15,10 +15,9 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 12: HDR pipeline — the scene renders linear HDR into an RGBA16F
-// target (sun radiance > 1), then a fullscreen ACES filmic tonemap + gamma
-// pass composites to the backbuffer. Sky palette linearized, splat tiles
-// sRGB-decoded: the whole lighting path is gamma-correct now.
+// Brick 13: distance + height fog tinted by skyGradient along the view ray —
+// distant terrain dissolves into exactly the sky behind it at any time of
+// day (the BotW haze); valleys and shores mist up first.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -52,6 +51,10 @@ private:
     bool animateTime { false };
     bool tonemapUi { true };
     f32 exposureUi { 1.0f };
+    f32 fogDensityUi { 0.0011f };
+    f32 fogHeightFalloffUi { 0.02f };
+    f32 fogLowBoostUi { 1.6f };
+    f32 fogStartUi { 150.0f };
 
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};

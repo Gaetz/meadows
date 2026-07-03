@@ -15,4 +15,6 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uTerrainInfo;      // x = sea level, y = snow line (m),
                             // z = splat UV scale (tiles/meter)
     vec4 uPostInfo;         // x = filmic tonemap (0/1), y = exposure
+    vec4 uFogInfo;          // x = density, y = height falloff (1/m),
+                            // z = low-altitude boost, w = start distance (m)
 };
