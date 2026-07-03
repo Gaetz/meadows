@@ -47,6 +47,7 @@ public:
     CommandBuffer& beginFrame() override;
     void endFrame() override;
     Backend backend() const override { return Backend::OpenGL; }
+    const DeviceCaps& caps() const override { return caps_; }
 
     // --- Shared implementations (no branching) --------------------------------
 
@@ -57,6 +58,15 @@ public:
     void destroyPipeline(PipelineHandle handle) override;
     BindGroupHandle createBindGroup(const BindGroupDesc& desc) override;
     void destroyBindGroup(BindGroupHandle handle) override;
+    void destroySampler(SamplerHandle handle) override;
+    void destroyFramebuffer(FramebufferHandle handle) override;
+
+    // --- 3D-path features: logged stubs here, real implementations in
+    // GlDevice46 (the future 4.1 degraded mode promotes them one by one).
+
+    void generateMipmaps(TextureHandle handle) override;
+    SamplerHandle createSampler(const SamplerDesc& desc) override;
+    FramebufferHandle createFramebuffer(const FramebufferDesc& desc) override;
 
     // --- Pure virtual: divergent GL operations --------------------------------
     // Implemented by GlDevice46 (DSA) and GlDevice41 (legacy).
@@ -116,19 +126,37 @@ public:
     virtual void implBindEbo(const GlPipeline& p, u32 glBufId) = 0;
 
 protected:
+    // Texture bookkeeping beyond the GL name: framebuffer creation and
+    // (later) copyTexture need dimensions/layout.
+    struct GlTexture {
+        u32 name { 0 };
+        u32 width { 0 };
+        u32 height { 0 };
+        u32 arrayLayers { 1 };
+        TextureFormat format { TextureFormat::RGBA8 };
+    };
+    struct GlFramebuffer {
+        u32 name { 0 };
+        u32 width { 0 };  // attachment size at its selected mip:
+        u32 height { 0 }; // beginRenderPass sets the viewport from these
+    };
+
     uptr<platform::GlContext> context;
     platform::Window& window;
     GlCommandBuffer commandBuffer;
 
     bool           baseInstance_ { false };
     PFNBaseInstance pfnDrawElementsInstancedBaseInstance_ { nullptr };
+    DeviceCaps caps_ {}; // set by the concrete backend's constructor
 
     // GL object registries, keyed by handle id (0 = invalid, shared counter).
     std::unordered_map<u32, u32>       buffers;    // id -> GL buffer
-    std::unordered_map<u32, u32>       textures;   // id -> GL texture
+    std::unordered_map<u32, GlTexture> textures;
     std::unordered_map<u32, u32>       shaders;    // id -> GL program
     std::unordered_map<u32, GlPipeline> pipelines;
     std::unordered_map<u32, BindGroupDesc> bindGroups;
+    std::unordered_map<u32, u32>       samplers;   // id -> GL sampler
+    std::unordered_map<u32, GlFramebuffer> framebuffers;
     u32 nextId { 1 };
 };
 

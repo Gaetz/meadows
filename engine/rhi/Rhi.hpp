@@ -22,12 +22,27 @@ struct Color {
 // Opaque ids owned by the Device: cheap to copy and safe to pass across
 // subsystem boundaries (§8). 0 = invalid.
 
-struct BufferHandle    { u32 id { 0 }; };
-struct TextureHandle   { u32 id { 0 }; };
-struct SamplerHandle   { u32 id { 0 }; };
-struct ShaderHandle    { u32 id { 0 }; };
-struct PipelineHandle  { u32 id { 0 }; };
-struct BindGroupHandle { u32 id { 0 }; };
+struct BufferHandle      { u32 id { 0 }; };
+struct TextureHandle     { u32 id { 0 }; };
+struct SamplerHandle     { u32 id { 0 }; };
+struct ShaderHandle      { u32 id { 0 }; };
+struct PipelineHandle    { u32 id { 0 }; };
+struct BindGroupHandle   { u32 id { 0 }; };
+struct FramebufferHandle { u32 id { 0 }; };
+
+// --- Capabilities --------------------------------------------------------------
+
+// Per-feature flags, granular on purpose: a future GL 4.1 degraded mode
+// lights features up one by one without changing this contract. Renderer
+// systems check the flags they need and disable themselves gracefully.
+struct DeviceCaps {
+    bool offscreenTargets { false }; // framebuffers + RenderPassDesc.framebuffer
+    bool textureArrays { false };    // TextureDesc::arrayLayers > 1
+    bool hdrFormats { false };       // RGBA16F / R16F attachments
+    bool samplerObjects { false };   // createSampler + BindGroupEntry::sampler
+    bool mipmapGeneration { false }; // Device::generateMipmaps
+    bool copyTexture { false };      // CommandBuffer::copyTexture (later brick)
+};
 
 // --- Buffers -------------------------------------------------------------------
 
@@ -49,6 +64,10 @@ struct BufferDesc {
 
 enum class TextureFormat {
     RGBA8,
+    SRGBA8,   // sRGB-decoded on sample (albedo/splat tiles)
+    RGBA16F,  // HDR color target
+    R16F,     // single-channel (AO, masks)
+    Depth32F, // depth attachment, sampleable (shadow maps, scene depth)
 };
 
 enum class FilterMode {
@@ -56,11 +75,55 @@ enum class FilterMode {
     Linear,
 };
 
+enum class AddressMode {
+    ClampToEdge,
+    Repeat,
+};
+
+// Bitmask. Attachment textures stay sampleable afterwards (shadow maps,
+// post-process chains).
+enum TextureUsage : u32 {
+    TextureUsage_Sampled          = 1u << 0,
+    TextureUsage_RenderAttachment = 1u << 1,
+};
+
+// `pixels` at creation covers the base mip of every layer, tightly packed
+// and contiguous (width*height*bpp*arrayLayers). Only RGBA8/SRGBA8 accept
+// initial pixels; render-target formats are created empty.
 struct TextureDesc {
     u32 width { 0 };
     u32 height { 0 };
+    u32 arrayLayers { 1 }; // > 1 = texture array (splat layers, CSM cascades)
+    u32 mipLevels { 1 };   // storage levels; fill base, then generateMipmaps()
     TextureFormat format { TextureFormat::RGBA8 };
     FilterMode filter { FilterMode::Nearest };
+    AddressMode wrap { AddressMode::ClampToEdge };
+    u32 usage { TextureUsage_Sampled };
+};
+
+// --- Samplers --------------------------------------------------------------------
+
+enum class CompareFunc {
+    Never,
+    Less,
+    Equal,
+    LessEqual,
+    Greater,
+    NotEqual,
+    GreaterEqual,
+    Always,
+};
+
+// Immutable sampler object (Vulkan VkSampler). When CompareFunc != Never the
+// sampler is a COMPARISON sampler (COMPARE_REF_TO_TEXTURE) for shadow PCF.
+struct SamplerDesc {
+    FilterMode minFilter { FilterMode::Linear };
+    FilterMode magFilter { FilterMode::Linear };
+    bool mipmapFilter { false }; // trilinear across mips when true
+    AddressMode addressU { AddressMode::ClampToEdge };
+    AddressMode addressV { AddressMode::ClampToEdge };
+    CompareFunc compare { CompareFunc::Never }; // Never = regular sampler
+    f32 maxAnisotropy { 1.0f };
 };
 
 // --- Shaders -------------------------------------------------------------------
@@ -126,17 +189,6 @@ enum class PrimitiveTopology {
     Lines,
 };
 
-enum class CompareFunc {
-    Never,
-    Less,
-    Equal,
-    LessEqual,
-    Greater,
-    NotEqual,
-    GreaterEqual,
-    Always,
-};
-
 // Depth test/write state, part of the immutable pipeline (Vulkan
 // VkPipelineDepthStencilState). Defaults keep every 2D pipeline unchanged.
 struct DepthState {
@@ -174,15 +226,36 @@ struct PipelineDesc {
 
 // The resources a draw reads, bound as one immutable unit (a Vulkan
 // descriptor set later). Exactly one of buffer/texture is set per entry;
-// `binding` matches the shader's binding index.
+// `binding` matches the shader's binding index. `sampler` is only valid
+// alongside `texture` (combined image-sampler); when unset, the texture's
+// own creation-time parameters apply (legacy 2D path).
 struct BindGroupEntry {
     u32 binding { 0 };
     BufferHandle buffer {};
     TextureHandle texture {};
+    SamplerHandle sampler {};
 };
 
 struct BindGroupDesc {
     vector<BindGroupEntry> entries;
+};
+
+// --- Framebuffers ----------------------------------------------------------------
+
+// One mip level of one layer of a texture, used as a render target (a Vulkan
+// image view). arrayLayer selects CSM cascades; mipLevel selects bloom mips.
+struct FramebufferAttachment {
+    TextureHandle texture {};
+    u32 mipLevel { 0 };
+    u32 arrayLayer { 0 };
+};
+
+// Fixed attachment set (a Vulkan VkFramebuffer). Empty colorAttachments with
+// a depth attachment = depth-only pass (shadow maps). All attachments must
+// share the same dimensions at their selected mip.
+struct FramebufferDesc {
+    vector<FramebufferAttachment> colorAttachments; // 0..4
+    FramebufferAttachment depthAttachment {};       // texture.id 0 = none
 };
 
 // --- Draw / render pass ------------------------------------------------------------
@@ -198,10 +271,12 @@ enum class LoadOp {
     DontCare,
 };
 
-// Targets the swapchain backbuffer for now; off-screen framebuffers arrive
-// with the 3D offscreen brick. Depth defaults clear to the far plane, which is
-// a no-op for depth-less 2D passes and the right start for 3D ones.
+// framebuffer 0 targets the swapchain backbuffer (existing callers
+// unchanged). beginRenderPass binds the target and sets the viewport to its
+// full size. Depth defaults clear to the far plane, which is a no-op for
+// depth-less 2D passes and the right start for 3D ones.
 struct RenderPassDesc {
+    FramebufferHandle framebuffer {};
     LoadOp loadOp { LoadOp::Clear };
     Color clearColor {};
     LoadOp depthLoadOp { LoadOp::Clear };

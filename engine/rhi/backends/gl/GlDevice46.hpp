@@ -21,6 +21,10 @@ public:
                                 const void* pixels) override;
     PipelineHandle createPipeline(const PipelineDesc& desc) override;
 
+    void generateMipmaps(TextureHandle handle) override;
+    SamplerHandle createSampler(const SamplerDesc& desc) override;
+    FramebufferHandle createFramebuffer(const FramebufferDesc& desc) override;
+
     void implBindTexture(u32 binding, u32 glTexId) override;
     void implBindVboSlot(const GlPipeline& p, u32 slot, u32 glBufId) override;
     void implBindEbo(const GlPipeline& p, u32 glBufId) override;

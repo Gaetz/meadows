@@ -15,9 +15,10 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 9: analytic sky + day/night cycle — a time-of-day slider drives the
-// sun's direction/color, the sky gradient, and the terrain's ambient, all
-// through the shared FrameUbo (one sun for everything, fog reuses it later).
+// Brick 10: RHI offscreen validation — the scene renders into an offscreen
+// color+depth framebuffer and reaches the backbuffer through an identity
+// fullscreen blit (sampler object + framebuffer + new formats exercised).
+// The image must be pixel-identical with the toggle on or off.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -33,6 +34,11 @@ public:
     void drawUi() override;
 
 private:
+    // Offscreen color+depth target at window size, recreated on resize.
+    void ensureOffscreenTarget(rhi::Device& device, u32 width, u32 height);
+    void destroyOffscreenTarget(rhi::Device& device);
+    void rebuildBlitPipeline(rhi::Device& device);
+
     engine::Engine* engine { nullptr };
 
     render::FlyCamera flyCamera;
@@ -44,9 +50,20 @@ private:
     bool regenerateRequested { false };
     bool wireframeUi { false };
     bool animateTime { false };
+    bool offscreenUi { true };
 
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};
+
+    rhi::TextureHandle offscreenColor {};
+    rhi::TextureHandle offscreenDepth {};
+    rhi::FramebufferHandle offscreenFb {};
+    rhi::SamplerHandle blitSampler {};
+    rhi::BindGroupHandle blitBindGroup {};
+    rhi::PipelineHandle blitPipeline {};
+    u64 blitShaderGeneration { 0 };
+    u32 offscreenWidth { 0 };
+    u32 offscreenHeight { 0 };
 };
 
 } // namespace game

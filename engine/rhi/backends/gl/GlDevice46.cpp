@@ -1,14 +1,17 @@
 #include "engine/rhi/backends/gl/GlDevice46.hpp"
 
+#include <algorithm>
+
 #include <glad/gl.h>
 
 #include "engine/core/Log.hpp"
 #include "engine/platform/Window.hpp"
 
-// Helper declared in GlDeviceBase.cpp — shared with GlDevice41.
+// Helpers declared in GlDeviceBase.cpp — shared with GlDevice41.
 namespace rhi {
 u32    glVertexFormatComponents(VertexFormat f);
 GLenum glToTopology(PrimitiveTopology t);
+GLenum glToCompare(CompareFunc f);
 }
 
 namespace rhi {
@@ -18,7 +21,43 @@ GlDevice46::GlDevice46(uptr<platform::GlContext> context,
                        bool baseInstance,
                        GlDeviceBase::PFNBaseInstance pfnBaseInstance)
     : GlDeviceBase(std::move(context), window, baseInstance, pfnBaseInstance) {
+    caps_ = { .offscreenTargets = true,
+              .textureArrays = true,
+              .hdrFormats = true,
+              .samplerObjects = true,
+              .mipmapGeneration = true,
+              .copyTexture = false }; // arrives with the water brick
 }
+
+namespace {
+
+GLenum toGlInternalFormat(TextureFormat format) {
+    switch (format) {
+    case TextureFormat::RGBA8:    return GL_RGBA8;
+    case TextureFormat::SRGBA8:   return GL_SRGB8_ALPHA8;
+    case TextureFormat::RGBA16F:  return GL_RGBA16F;
+    case TextureFormat::R16F:     return GL_R16F;
+    case TextureFormat::Depth32F: return GL_DEPTH_COMPONENT32F;
+    }
+    return GL_RGBA8;
+}
+
+bool acceptsPixelUpload(TextureFormat format) {
+    return format == TextureFormat::RGBA8 || format == TextureFormat::SRGBA8;
+}
+
+GLint toGlWrap(AddressMode mode) {
+    return mode == AddressMode::Repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+}
+
+GLint toGlMinFilter(FilterMode filter, bool mipmapFilter) {
+    if (filter == FilterMode::Nearest) {
+        return mipmapFilter ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST;
+    }
+    return mipmapFilter ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR;
+}
+
+} // namespace
 
 // --- createBuffer (DSA) -------------------------------------------------------
 
@@ -46,27 +85,141 @@ void GlDevice46::updateBuffer(BufferHandle handle, const void* data, u64 size,
 
 TextureHandle GlDevice46::createTexture(const TextureDesc& desc,
                                         const void* pixels) {
-    GLuint texture = 0;
-    const GLint filter =
-        desc.filter == FilterMode::Nearest ? GL_NEAREST : GL_LINEAR;
-
-    glCreateTextures(GL_TEXTURE_2D, 1, &texture);
-    glTextureStorage2D(texture, 1, GL_RGBA8,
-                       static_cast<GLsizei>(desc.width),
-                       static_cast<GLsizei>(desc.height));
-    if (pixels) {
-        glTextureSubImage2D(texture, 0, 0, 0,
-                            static_cast<GLsizei>(desc.width),
-                            static_cast<GLsizei>(desc.height),
-                            GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    if (pixels && !acceptsPixelUpload(desc.format)) {
+        LOG_ERROR("createTexture: initial pixels only supported for "
+                  "RGBA8/SRGBA8 (render-target formats are created empty)");
+        return {};
     }
-    glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, filter);
-    glTextureParameteri(texture, GL_TEXTURE_MAG_FILTER, filter);
-    glTextureParameteri(texture, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTextureParameteri(texture, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    const bool isArray = desc.arrayLayers > 1;
+    const GLenum internal = toGlInternalFormat(desc.format);
+    GLuint texture = 0;
+    glCreateTextures(isArray ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D, 1,
+                     &texture);
+    if (isArray) {
+        glTextureStorage3D(texture, static_cast<GLsizei>(desc.mipLevels),
+                           internal, static_cast<GLsizei>(desc.width),
+                           static_cast<GLsizei>(desc.height),
+                           static_cast<GLsizei>(desc.arrayLayers));
+        if (pixels) {
+            glTextureSubImage3D(texture, 0, 0, 0, 0,
+                                static_cast<GLsizei>(desc.width),
+                                static_cast<GLsizei>(desc.height),
+                                static_cast<GLsizei>(desc.arrayLayers),
+                                GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        }
+    } else {
+        glTextureStorage2D(texture, static_cast<GLsizei>(desc.mipLevels),
+                           internal, static_cast<GLsizei>(desc.width),
+                           static_cast<GLsizei>(desc.height));
+        if (pixels) {
+            glTextureSubImage2D(texture, 0, 0, 0,
+                                static_cast<GLsizei>(desc.width),
+                                static_cast<GLsizei>(desc.height),
+                                GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        }
+    }
+
+    // Creation-time parameters serve textures used WITHOUT a sampler object
+    // (the legacy 2D path); a bound SamplerHandle overrides all of this.
+    glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER,
+                        toGlMinFilter(desc.filter, desc.mipLevels > 1));
+    glTextureParameteri(
+        texture, GL_TEXTURE_MAG_FILTER,
+        desc.filter == FilterMode::Nearest ? GL_NEAREST : GL_LINEAR);
+    glTextureParameteri(texture, GL_TEXTURE_WRAP_S, toGlWrap(desc.wrap));
+    glTextureParameteri(texture, GL_TEXTURE_WRAP_T, toGlWrap(desc.wrap));
 
     const u32 id = nextId++;
-    textures.emplace(id, texture);
+    textures.emplace(id, GlTexture { .name = texture,
+                                     .width = desc.width,
+                                     .height = desc.height,
+                                     .arrayLayers = desc.arrayLayers,
+                                     .format = desc.format });
+    return { id };
+}
+
+void GlDevice46::generateMipmaps(TextureHandle handle) {
+    glGenerateTextureMipmap(textures.at(handle.id).name);
+}
+
+SamplerHandle GlDevice46::createSampler(const SamplerDesc& desc) {
+    GLuint sampler = 0;
+    glCreateSamplers(1, &sampler);
+    glSamplerParameteri(sampler, GL_TEXTURE_MIN_FILTER,
+                        toGlMinFilter(desc.minFilter, desc.mipmapFilter));
+    glSamplerParameteri(
+        sampler, GL_TEXTURE_MAG_FILTER,
+        desc.magFilter == FilterMode::Nearest ? GL_NEAREST : GL_LINEAR);
+    glSamplerParameteri(sampler, GL_TEXTURE_WRAP_S, toGlWrap(desc.addressU));
+    glSamplerParameteri(sampler, GL_TEXTURE_WRAP_T, toGlWrap(desc.addressV));
+    if (desc.compare != CompareFunc::Never) {
+        glSamplerParameteri(sampler, GL_TEXTURE_COMPARE_MODE,
+                            GL_COMPARE_REF_TO_TEXTURE);
+        glSamplerParameteri(sampler, GL_TEXTURE_COMPARE_FUNC,
+                            static_cast<GLint>(glToCompare(desc.compare)));
+    }
+    if (desc.maxAnisotropy > 1.0f) {
+        glSamplerParameterf(sampler, GL_TEXTURE_MAX_ANISOTROPY,
+                            desc.maxAnisotropy);
+    }
+    const u32 id = nextId++;
+    samplers.emplace(id, sampler);
+    return { id };
+}
+
+FramebufferHandle GlDevice46::createFramebuffer(const FramebufferDesc& desc) {
+    GLuint framebuffer = 0;
+    glCreateFramebuffers(1, &framebuffer);
+
+    u32 width = 0;
+    u32 height = 0;
+    const auto attach = [&](GLenum attachment,
+                            const FramebufferAttachment& att) {
+        const GlTexture& texture = textures.at(att.texture.id);
+        if (texture.arrayLayers > 1) {
+            glNamedFramebufferTextureLayer(framebuffer, attachment,
+                                           texture.name,
+                                           static_cast<GLint>(att.mipLevel),
+                                           static_cast<GLint>(att.arrayLayer));
+        } else {
+            glNamedFramebufferTexture(framebuffer, attachment, texture.name,
+                                      static_cast<GLint>(att.mipLevel));
+        }
+        width = std::max(1u, texture.width >> att.mipLevel);
+        height = std::max(1u, texture.height >> att.mipLevel);
+    };
+
+    vector<GLenum> drawBuffers;
+    for (u32 i = 0; i < desc.colorAttachments.size(); ++i) {
+        attach(GL_COLOR_ATTACHMENT0 + i, desc.colorAttachments[i]);
+        drawBuffers.push_back(GL_COLOR_ATTACHMENT0 + i);
+    }
+    if (desc.depthAttachment.texture.id != 0) {
+        attach(GL_DEPTH_ATTACHMENT, desc.depthAttachment);
+    }
+    if (drawBuffers.empty()) {
+        // Depth-only pass (shadow maps): no color output at all.
+        glNamedFramebufferDrawBuffer(framebuffer, GL_NONE);
+        glNamedFramebufferReadBuffer(framebuffer, GL_NONE);
+    } else {
+        glNamedFramebufferDrawBuffers(
+            framebuffer, static_cast<GLsizei>(drawBuffers.size()),
+            drawBuffers.data());
+    }
+
+    const GLenum status =
+        glCheckNamedFramebufferStatus(framebuffer, GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        LOG_ERROR("createFramebuffer: incomplete (status 0x{:x})", status);
+        glDeleteFramebuffers(1, &framebuffer);
+        return {};
+    }
+
+    const u32 id = nextId++;
+    framebuffers.emplace(
+        id, GlFramebuffer { .name = framebuffer, .width = width,
+                            .height = height });
     return { id };
 }
 

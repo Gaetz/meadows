@@ -30,6 +30,10 @@ public:
 
     virtual Backend backend() const = 0;
 
+    // Per-feature capabilities (§ degraded-mode goal): renderer systems check
+    // the flags they need instead of testing GL versions.
+    virtual const DeviceCaps& caps() const = 0;
+
     // --- Resources -----------------------------------------------------------
     // All creation functions return a 0 handle (with a logged error) on
     // failure. Destroying a 0 handle is a no-op.
@@ -42,10 +46,19 @@ public:
                               u64 offset = 0) = 0;
     virtual void destroyBuffer(BufferHandle handle) = 0;
 
-    // `pixels` is tightly packed, desc.width * desc.height texels.
+    // `pixels` is tightly packed, desc.width * desc.height * arrayLayers
+    // texels (base mip only; see TextureDesc).
     virtual TextureHandle createTexture(const TextureDesc& desc,
                                         const void* pixels) = 0;
     virtual void destroyTexture(TextureHandle handle) = 0;
+    // Fills mip levels 1..N from the base level (requires mipLevels > 1).
+    virtual void generateMipmaps(TextureHandle handle) = 0;
+
+    virtual SamplerHandle createSampler(const SamplerDesc& desc) = 0;
+    virtual void destroySampler(SamplerHandle handle) = 0;
+
+    virtual FramebufferHandle createFramebuffer(const FramebufferDesc& desc) = 0;
+    virtual void destroyFramebuffer(FramebufferHandle handle) = 0;
 
     virtual ShaderHandle createShader(const ShaderDesc& desc) = 0;
     virtual void destroyShader(ShaderHandle handle) = 0;

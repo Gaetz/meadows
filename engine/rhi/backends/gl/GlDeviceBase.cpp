@@ -67,10 +67,20 @@ GLuint compileStage(GLenum stage, const str& source, const str& debugName) {
 // Expose helpers to subclass .cpp files without re-declaring them.
 u32  glVertexFormatComponents(VertexFormat f) { return vertexFormatComponents(f); }
 GLenum glToTopology(PrimitiveTopology t)      { return toGlTopology(t); }
+GLenum glToCompare(CompareFunc f)             { return toGlCompare(f); }
 
 // --- GlCommandBuffer ----------------------------------------------------------
 
 void GlCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
+    if (desc.framebuffer.id != 0) {
+        const auto& fb = device.framebuffers.at(desc.framebuffer.id);
+        glBindFramebuffer(GL_FRAMEBUFFER, fb.name);
+        glViewport(0, 0, static_cast<GLsizei>(fb.width),
+                   static_cast<GLsizei>(fb.height));
+    } else {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, device.window.width(), device.window.height());
+    }
     GLbitfield clearMask = 0;
     if (desc.loadOp == LoadOp::Clear) {
         const Color& c = desc.clearColor;
@@ -90,6 +100,9 @@ void GlCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
 }
 
 void GlCommandBuffer::endRenderPass() {
+    // Defensive: whatever pass just ran, ImGui and the next pass start from
+    // the backbuffer.
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     currentPipelineId = 0;
 }
 
@@ -156,7 +169,14 @@ void GlCommandBuffer::setBindGroup(u32 /*index*/, BindGroupHandle group) {
                              device.buffers.at(entry.buffer.id));
         } else {
             device.implBindTexture(entry.binding,
-                                   device.textures.at(entry.texture.id));
+                                   device.textures.at(entry.texture.id).name);
+            // Explicit unbind when no sampler: the texture's own parameters
+            // apply (legacy 2D bind groups keep working after a 3D pass
+            // bound a sampler on the same unit).
+            glBindSampler(entry.binding,
+                          entry.sampler.id != 0
+                              ? device.samplers.at(entry.sampler.id)
+                              : 0);
         }
     }
 }
@@ -222,6 +242,12 @@ GlDeviceBase::GlDeviceBase(uptr<platform::GlContext> context,
 }
 
 GlDeviceBase::~GlDeviceBase() {
+    for (auto& [id, framebuffer] : framebuffers) {
+        glDeleteFramebuffers(1, &framebuffer.name);
+    }
+    for (auto& [id, sampler] : samplers) {
+        glDeleteSamplers(1, &sampler);
+    }
     for (auto& [id, pipeline] : pipelines) {
         glDeleteVertexArrays(1, &pipeline.vao);
     }
@@ -229,7 +255,7 @@ GlDeviceBase::~GlDeviceBase() {
         glDeleteProgram(program);
     }
     for (auto& [id, texture] : textures) {
-        glDeleteTextures(1, &texture);
+        glDeleteTextures(1, &texture.name);
     }
     for (auto& [id, buffer] : buffers) {
         glDeleteBuffers(1, &buffer);
@@ -237,7 +263,7 @@ GlDeviceBase::~GlDeviceBase() {
 }
 
 CommandBuffer& GlDeviceBase::beginFrame() {
-    glViewport(0, 0, window.width(), window.height());
+    // Viewport is per render pass (beginRenderPass sets it from its target).
     return commandBuffer;
 }
 
@@ -254,9 +280,45 @@ void GlDeviceBase::destroyBuffer(BufferHandle handle) {
 
 void GlDeviceBase::destroyTexture(TextureHandle handle) {
     if (auto it = textures.find(handle.id); it != textures.end()) {
-        glDeleteTextures(1, &it->second);
+        glDeleteTextures(1, &it->second.name);
         textures.erase(it);
     }
+}
+
+void GlDeviceBase::destroySampler(SamplerHandle handle) {
+    if (auto it = samplers.find(handle.id); it != samplers.end()) {
+        glDeleteSamplers(1, &it->second);
+        samplers.erase(it);
+    }
+}
+
+void GlDeviceBase::destroyFramebuffer(FramebufferHandle handle) {
+    if (auto it = framebuffers.find(handle.id); it != framebuffers.end()) {
+        glDeleteFramebuffers(1, &it->second.name);
+        framebuffers.erase(it);
+    }
+}
+
+// 3D-path features: real implementations live in GlDevice46. These logged
+// stubs are what the GL 4.1 backend reports until a degraded mode promotes
+// them (callers must check Device::caps() first).
+
+void GlDeviceBase::generateMipmaps(TextureHandle /*handle*/) {
+    LOG_ERROR("generateMipmaps: not supported by this backend (check "
+              "Device::caps().mipmapGeneration)");
+}
+
+SamplerHandle GlDeviceBase::createSampler(const SamplerDesc& /*desc*/) {
+    LOG_ERROR("createSampler: not supported by this backend (check "
+              "Device::caps().samplerObjects)");
+    return {};
+}
+
+FramebufferHandle
+GlDeviceBase::createFramebuffer(const FramebufferDesc& /*desc*/) {
+    LOG_ERROR("createFramebuffer: not supported by this backend (check "
+              "Device::caps().offscreenTargets)");
+    return {};
 }
 
 ShaderHandle GlDeviceBase::createShader(const ShaderDesc& desc) {
@@ -335,6 +397,12 @@ BindGroupHandle GlDeviceBase::createBindGroup(const BindGroupDesc& desc) {
         if (hasBuffer == hasTexture) {
             LOG_ERROR("createBindGroup: entry {} must reference exactly one "
                       "of buffer/texture",
+                      entry.binding);
+            return {};
+        }
+        if (entry.sampler.id != 0 && !hasTexture) {
+            LOG_ERROR("createBindGroup: entry {} has a sampler without a "
+                      "texture",
                       entry.binding);
             return {};
         }

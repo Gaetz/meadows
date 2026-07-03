@@ -57,6 +57,15 @@ void GlDevice41::updateBuffer(BufferHandle handle, const void* data, u64 size,
 
 TextureHandle GlDevice41::createTexture(const TextureDesc& desc,
                                         const void* pixels) {
+    // 3D-path texture features are not implemented on the legacy backend
+    // yet (future degraded mode); the 2D path only uses RGBA8/1-mip/1-layer.
+    if (desc.format != TextureFormat::RGBA8 || desc.arrayLayers > 1 ||
+        desc.mipLevels > 1) {
+        LOG_ERROR("createTexture: only RGBA8, single-mip, single-layer "
+                  "textures are supported on the GL 4.1 backend");
+        return {};
+    }
+
     GLuint texture = 0;
     const GLint filter =
         desc.filter == FilterMode::Nearest ? GL_NEAREST : GL_LINEAR;
@@ -76,7 +85,11 @@ TextureHandle GlDevice41::createTexture(const TextureDesc& desc,
     glBindTexture(GL_TEXTURE_2D, 0);
 
     const u32 id = nextId++;
-    textures.emplace(id, texture);
+    textures.emplace(id, GlTexture { .name = texture,
+                                     .width = desc.width,
+                                     .height = desc.height,
+                                     .arrayLayers = 1,
+                                     .format = desc.format });
     return { id };
 }
 

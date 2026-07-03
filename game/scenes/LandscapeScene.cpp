@@ -12,6 +12,10 @@
 
 namespace game {
 
+namespace {
+constexpr const char* kBlitShader = "blit";
+} // namespace
+
 void LandscapeScene::onEnter() {
     rhi::Device& device = engine->getDevice();
 
@@ -26,6 +30,12 @@ void LandscapeScene::onEnter() {
     terrain.create(device, *shaders, engine->getJobSystem());
     sky.create(device, *shaders);
 
+    if (device.caps().offscreenTargets) {
+        blitSampler = device.createSampler({}); // linear, clamp — identity
+        shaders->load(kBlitShader, {}, { { "uSceneColor", 0 } });
+        rebuildBlitPipeline(device);
+    }
+
     flyCamera.camera.position = { 32.0f, 110.0f, 400.0f };
     flyCamera.camera.pitch = -0.30f;
     // Cover the full streamed ring (~14 chunks = ~900 m) plus headroom.
@@ -35,11 +45,70 @@ void LandscapeScene::onEnter() {
 void LandscapeScene::onExit() {
     rhi::Device& device = engine->getDevice();
     engine->getWindow().setRelativeMouseMode(false);
+    destroyOffscreenTarget(device);
+    device.destroyPipeline(blitPipeline);
+    device.destroySampler(blitSampler);
     sky.destroy(device);
     terrain.destroy(device);
     shaders.reset(); // destroys the library's shader programs
     device.destroyBindGroup(frameBindGroup);
     device.destroyBuffer(frameUbo);
+}
+
+void LandscapeScene::ensureOffscreenTarget(rhi::Device& device, u32 width,
+                                           u32 height) {
+    if (offscreenFb.id != 0 && offscreenWidth == width &&
+        offscreenHeight == height) {
+        return;
+    }
+    destroyOffscreenTarget(device);
+    offscreenColor = device.createTexture(
+        { .width = width,
+          .height = height,
+          .format = rhi::TextureFormat::RGBA8,
+          .filter = rhi::FilterMode::Linear,
+          .usage = rhi::TextureUsage_Sampled |
+                   rhi::TextureUsage_RenderAttachment },
+        nullptr);
+    offscreenDepth = device.createTexture(
+        { .width = width,
+          .height = height,
+          .format = rhi::TextureFormat::Depth32F,
+          .usage = rhi::TextureUsage_RenderAttachment },
+        nullptr);
+    offscreenFb = device.createFramebuffer(
+        { .colorAttachments = { { .texture = offscreenColor } },
+          .depthAttachment = { .texture = offscreenDepth } });
+    blitBindGroup = device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = offscreenColor,
+                         .sampler = blitSampler } } });
+    offscreenWidth = width;
+    offscreenHeight = height;
+}
+
+void LandscapeScene::destroyOffscreenTarget(rhi::Device& device) {
+    if (offscreenFb.id == 0) {
+        return;
+    }
+    device.destroyBindGroup(blitBindGroup);
+    device.destroyFramebuffer(offscreenFb);
+    device.destroyTexture(offscreenDepth);
+    device.destroyTexture(offscreenColor);
+    blitBindGroup = {};
+    offscreenFb = {};
+    offscreenDepth = {};
+    offscreenColor = {};
+    offscreenWidth = 0;
+    offscreenHeight = 0;
+}
+
+void LandscapeScene::rebuildBlitPipeline(rhi::Device& device) {
+    if (blitPipeline.id != 0) {
+        device.destroyPipeline(blitPipeline);
+    }
+    blitPipeline = device.createPipeline({ .shader = shaders->get(kBlitShader) });
+    blitShaderGeneration = shaders->generation(kBlitShader);
 }
 
 void LandscapeScene::update(f32 dt) {
@@ -86,17 +155,38 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     };
     frame.device.updateBuffer(frameUbo, &uniforms, sizeof(uniforms), 0);
 
+    const bool useOffscreen =
+        offscreenUi && frame.device.caps().offscreenTargets;
+    if (useOffscreen) {
+        ensureOffscreenTarget(frame.device, frame.width, frame.height);
+        if (shaders->generation(kBlitShader) != blitShaderGeneration) {
+            rebuildBlitPipeline(frame.device);
+        }
+    }
+
     // The sky covers every background pixel — no color clear needed.
-    frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::DontCare,
-                                .depthLoadOp = rhi::LoadOp::Clear });
+    frame.cmd.beginRenderPass(
+        { .framebuffer = useOffscreen ? offscreenFb : rhi::FramebufferHandle {},
+          .loadOp = rhi::LoadOp::DontCare,
+          .depthLoadOp = rhi::LoadOp::Clear });
     terrain.draw(frame.cmd, frameBindGroup);
     sky.draw(frame.cmd, frameBindGroup); // after opaque: background only
     frame.cmd.endRenderPass();
+
+    if (useOffscreen) {
+        // Identity fullscreen blit — the seed of the tonemap composite pass.
+        frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::DontCare,
+                                    .depthLoadOp = rhi::LoadOp::DontCare });
+        frame.cmd.setPipeline(blitPipeline);
+        frame.cmd.setBindGroup(0, blitBindGroup);
+        frame.cmd.draw(3);
+        frame.cmd.endRenderPass();
+    }
 }
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 9: sky + day/night cycle.");
+    ImGui::TextUnformatted("Brick 10: offscreen framebuffer + blit.");
     ImGui::TextUnformatted(
         "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -118,6 +208,8 @@ void LandscapeScene::drawUi() {
     ImGui::SliderFloat("Time of day (h)", &sky.timeOfDay, 0.0f, 24.0f,
                        "%.1f");
     ImGui::Checkbox("Animate (24 h in 2 min)", &animateTime);
+    ImGui::Separator();
+    ImGui::Checkbox("Route through offscreen target", &offscreenUi);
     ImGui::End();
 }
 
