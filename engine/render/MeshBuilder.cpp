@@ -111,4 +111,17 @@ void appendBlob(MeshData& mesh, u32 seed, const Vec3& center, f32 radius,
     }
 }
 
+void recomputeFlatNormals(MeshData& mesh) {
+    for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+        MeshVertex& a = mesh.vertices[mesh.indices[i]];
+        MeshVertex& b = mesh.vertices[mesh.indices[i + 1]];
+        MeshVertex& c = mesh.vertices[mesh.indices[i + 2]];
+        const Vec3 normal = glm::normalize(
+            glm::cross(b.position - a.position, c.position - a.position));
+        a.normal = normal;
+        b.normal = normal;
+        c.normal = normal;
+    }
+}
+
 } // namespace render

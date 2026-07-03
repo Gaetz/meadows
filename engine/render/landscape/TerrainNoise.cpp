@@ -94,6 +94,22 @@ f32 noise01(u32 seed, f32 x, f32 z) {
     return valueNoise(seed, x, z);
 }
 
+MaterialWeights materialWeights(const TerrainParams& params, f32 height,
+                                const Vec3& normal) {
+    const f32 slope = 1.0f - normal.y;
+    MaterialWeights weights;
+    weights.rock = glm::smoothstep(0.18f, 0.35f, slope);
+    weights.snow = glm::smoothstep(kSnowLine - 12.0f, kSnowLine + 42.0f,
+                                   height) *
+                   (1.0f - glm::smoothstep(0.25f, 0.45f, slope));
+    weights.sand = (1.0f - glm::smoothstep(params.seaLevel + 1.0f,
+                                           params.seaLevel + 8.0f, height)) *
+                   (1.0f - weights.rock);
+    weights.grass = glm::max(
+        1.0f - weights.rock - weights.snow - weights.sand, 0.0f);
+    return weights;
+}
+
 f32 height(const TerrainParams& params, f32 x, f32 z) {
     const f32 hills = (fbm(params.seed, x, z, 1.0f / params.hillWavelength,
                            params.octaves, params.lacunarity, params.gain) *

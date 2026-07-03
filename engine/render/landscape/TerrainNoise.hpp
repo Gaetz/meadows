@@ -46,6 +46,19 @@ Vec3 normal(const TerrainParams& params, f32 x, f32 z, f32 step = 0.5f);
 // masks (grass patches, forest belts) so they share the terrain's hash.
 f32 noise01(u32 seed, f32 x, f32 z);
 
+// CPU mirror of terrain.frag's splat weights (minus the texture-driven
+// border wander): ONE definition of "what grows where" shared by every
+// scatter rule. Keep in sync with the shader when tuning.
+struct MaterialWeights {
+    f32 grass { 0.0f };
+    f32 rock { 0.0f };
+    f32 snow { 0.0f };
+    f32 sand { 0.0f };
+};
+constexpr f32 kSnowLine = 110.0f; // meters; matches uTerrainInfo.y
+MaterialWeights materialWeights(const TerrainParams& params, f32 height,
+                                const Vec3& normal);
+
 } // namespace terrain
 
 } // namespace render

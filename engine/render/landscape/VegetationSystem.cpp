@@ -15,7 +15,7 @@ namespace render {
 namespace {
 
 constexpr const char* kTreeShader = "tree";
-constexpr f32 kTreeSpacing = 5.5f; // meters between scatter candidates
+constexpr f32 kTreeSpacing = 4.0f; // meters between scatter candidates
 
 u32 hashU32(u32 v) {
     v ^= v >> 16;
@@ -41,54 +41,143 @@ f32 forestMask(u32 seed, f32 x, f32 z) {
         terrain::noise01(seed ^ 0x3c6ef372u, x / 105.0f, z / 105.0f);
     const f32 detail =
         terrain::noise01(seed ^ 0xa54ff53au, x / 28.0f, z / 28.0f);
-    return glm::smoothstep(0.50f, 0.60f, broad * 0.78f + detail * 0.22f);
+    return glm::smoothstep(0.46f, 0.58f, broad * 0.78f + detail * 0.22f);
+}
+
+// Bush clumps: medium-frequency blobs so shrubs come in family groups —
+// and, crossed with the forest-edge factor, break its isoline into clusters
+// instead of tracing it as a string.
+f32 bushClumpMask(u32 seed, f32 x, f32 z) {
+    const f32 blob = terrain::noise01(seed ^ 0x452821e6u, x / 13.0f,
+                                      z / 13.0f);
+    return glm::smoothstep(0.52f, 0.66f, blob);
 }
 
 } // namespace
 
-VegetationSystem::VariantBuckets scatterTrees(const TerrainParams& params,
+VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                               i32 cx, i32 cz) {
     const f32 originX = static_cast<f32>(cx) * TerrainSystem::kChunkSize;
     const f32 originZ = static_cast<f32>(cz) * TerrainSystem::kChunkSize;
-    const u32 perSide =
-        static_cast<u32>(TerrainSystem::kChunkSize / kTreeSpacing);
-
     VegetationSystem::VariantBuckets buckets;
-    for (u32 gz = 0; gz < perSide; ++gz) {
-        for (u32 gx = 0; gx < perSide; ++gx) {
-            HashRng rng { hashU32(params.seed ^ 0x2545f491u) ^
-                          hashU32(static_cast<u32>(cx * 83492791 ^
-                                                   cz * 297121507) ^
-                                  (gz * perSide + gx)) };
-            const f32 x = originX + (static_cast<f32>(gx) + rng.next()) *
+
+    const auto place = [&](u32 firstVariant, u32 variantCount, HashRng& rng,
+                           f32 x, f32 y, f32 z, f32 scaleMin, f32 scaleMax) {
+        const u32 variant =
+            firstVariant +
+            glm::min(static_cast<u32>(rng.next() *
+                                      static_cast<f32>(variantCount)),
+                     variantCount - 1);
+        buckets[variant].push_back({
+            .positionScale = { x, y, z,
+                               scaleMin + rng.next() * (scaleMax - scaleMin) },
+            .params = { rng.next() * 6.2831853f, // yaw
+                        rng.next(),              // tint jitter
+                        rng.next() * 6.2831853f, // sway phase
+                        0.0f },
+        });
+    };
+    const auto candidateRng = [&](u32 salt, u32 index) {
+        return HashRng { hashU32(params.seed ^ salt) ^
+                         hashU32(static_cast<u32>(cx * 83492791 ^
+                                                  cz * 297121507) ^
+                                 index) };
+    };
+
+    // --- Trees: forest belts on gentle grassy mid-altitude ground ------------
+    {
+        const u32 perSide =
+            static_cast<u32>(TerrainSystem::kChunkSize / kTreeSpacing);
+        for (u32 i = 0; i < perSide * perSide; ++i) {
+            HashRng rng = candidateRng(0x2545f491u, i);
+            const f32 x = originX + (static_cast<f32>(i % perSide) +
+                                     rng.next()) *
                                         kTreeSpacing;
-            const f32 z = originZ + (static_cast<f32>(gz) + rng.next()) *
+            const f32 z = originZ + (static_cast<f32>(i / perSide) +
+                                     rng.next()) *
                                         kTreeSpacing;
             const f32 forest = forestMask(params.seed, x, z);
-            if (forest < 0.05f || rng.next() >= forest * 0.85f) {
+            if (forest < 0.05f || rng.next() >= forest * 0.95f) {
                 continue;
             }
             const f32 h = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
-            // Trees want gentle, grassy, mid-altitude ground: above the
-            // beach, below the alpine line, off the cliffs.
             const f32 slope = 1.0f - n.y;
             if (h < params.seaLevel + 3.0f || h > 92.0f || slope > 0.22f) {
                 continue;
             }
-            const u32 variant = static_cast<u32>(
-                rng.next() * static_cast<f32>(VegetationSystem::kTreeVariants));
-            buckets[glm::min(variant,
-                             VegetationSystem::kTreeVariants - 1)]
-                .push_back({
-                    // Sink slightly so leaning trunks never float on slopes.
-                    .positionScale = { x, h - 0.15f, z,
-                                       0.8f + rng.next() * 0.6f },
-                    .params = { rng.next() * 6.2831853f, // yaw
-                                rng.next(),              // tint jitter
-                                rng.next() * 6.2831853f, // sway phase
-                                0.0f },
-                });
+            // Sink slightly so leaning trunks never float on slopes.
+            place(0, VegetationSystem::kTreeVariants, rng, x, h - 0.15f, z,
+                  0.8f, 1.4f);
+        }
+    }
+
+    // --- Rocks: sparse everywhere, denser on rocky/alpine ground -------------
+    {
+        constexpr f32 kRockSpacing = 7.5f;
+        const u32 perSide =
+            static_cast<u32>(TerrainSystem::kChunkSize / kRockSpacing);
+        for (u32 i = 0; i < perSide * perSide; ++i) {
+            HashRng rng = candidateRng(0x8f14ab5du, i);
+            const f32 x = originX + (static_cast<f32>(i % perSide) +
+                                     rng.next()) *
+                                        kRockSpacing;
+            const f32 z = originZ + (static_cast<f32>(i / perSide) +
+                                     rng.next()) *
+                                        kRockSpacing;
+            const f32 h = terrain::height(params, x, z);
+            const Vec3 n = terrain::normal(params, x, z);
+            const f32 slope = 1.0f - n.y;
+            if (h < params.seaLevel + 0.5f || slope > 0.55f) {
+                continue; // not underwater, not on cliff faces
+            }
+            const auto weights = terrain::materialWeights(params, h, n);
+            // Boulders belong to rocky and alpine ground first, meadows get
+            // the occasional loner.
+            const f32 chance =
+                0.08f + 0.42f * weights.rock + 0.32f * weights.snow;
+            if (rng.next() >= chance) {
+                continue;
+            }
+            place(VegetationSystem::kFirstRock,
+                  VegetationSystem::kRockVariants, rng, x, h - 0.10f, z,
+                  0.5f, 2.0f);
+        }
+    }
+
+    // --- Bushes: grassy ground, biased toward forest edges -------------------
+    {
+        constexpr f32 kBushSpacing = 5.0f;
+        const u32 perSide =
+            static_cast<u32>(TerrainSystem::kChunkSize / kBushSpacing);
+        for (u32 i = 0; i < perSide * perSide; ++i) {
+            HashRng rng = candidateRng(0xc1d1f0adu, i);
+            const f32 x = originX + (static_cast<f32>(i % perSide) +
+                                     rng.next()) *
+                                        kBushSpacing;
+            const f32 z = originZ + (static_cast<f32>(i / perSide) +
+                                     rng.next()) *
+                                        kBushSpacing;
+            const f32 h = terrain::height(params, x, z);
+            const Vec3 n = terrain::normal(params, x, z);
+            if (terrain::materialWeights(params, h, n).grass < 0.65f) {
+                continue;
+            }
+            // Clumps gate everything (bushes come in family groups); the
+            // forest-edge factor then biases WHICH clumps are lush, without
+            // tracing the treeline as a string.
+            const f32 clump = bushClumpMask(params.seed, x, z);
+            if (clump < 0.05f) {
+                continue;
+            }
+            const f32 forest = forestMask(params.seed, x, z);
+            const f32 edge = forest * (1.0f - forest) * 4.0f;
+            if (rng.next() >= clump * (0.35f + 0.65f * edge)) {
+                continue;
+            }
+            place(VegetationSystem::kFirstBush,
+                  VegetationSystem::kBushVariants, rng, x, h - 0.05f, z,
+                  0.7f, 1.3f);
         }
     }
     return buckets;
@@ -105,8 +194,16 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
 
 void VegetationSystem::createVariantMeshes(rhi::Device& device,
                                            u32 terrainSeed) {
-    for (u32 i = 0; i < kTreeVariants; ++i) {
-        const MeshData mesh = generateTree(hashU32(terrainSeed) + i * 977u);
+    for (u32 i = 0; i < kVariantCount; ++i) {
+        const u32 seed = hashU32(terrainSeed) + i * 977u;
+        MeshData mesh;
+        if (i < kFirstRock) {
+            mesh = generateTree(seed);
+        } else if (i < kFirstBush) {
+            mesh = generateRock(seed);
+        } else {
+            mesh = generateBush(seed);
+        }
         variantMeshes[i].indexCount = static_cast<u32>(mesh.indices.size());
         variantMeshes[i].vertexBuffer = device.createBuffer(
             { .usage = rhi::BufferUsage::Vertex,
@@ -165,7 +262,7 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
         }
         Chunk& chunk = it->second;
         vector<Instance> packed;
-        for (u32 v = 0; v < kTreeVariants; ++v) {
+        for (u32 v = 0; v < kVariantCount; ++v) {
             chunk.firstInstance[v] = static_cast<u32>(packed.size());
             chunk.counts[v] = static_cast<u32>(built.buckets[v].size());
             packed.insert(packed.end(), built.buckets[v].begin(),
@@ -199,7 +296,7 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
             jobs->enqueue([sharedRef = shared, params, cx, cz,
                            gen = generation] {
                 sharedRef->built.push(
-                    { cx, cz, gen, scatterTrees(params, cx, cz) });
+                    { cx, cz, gen, scatterProps(params, cx, cz) });
             });
         }
     }
@@ -272,7 +369,7 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     // Variant-major: bind each tree mesh once, then one instanced draw per
     // chunk holding that variant (firstInstance = offset into the chunk's
     // variant-sorted instance buffer; requires baseInstance, present on 4.6).
-    for (u32 v = 0; v < kTreeVariants; ++v) {
+    for (u32 v = 0; v < kVariantCount; ++v) {
         bool meshBound = false;
         for (const auto& [key, chunk] : chunks) {
             if (!chunk.resident || chunk.counts[v] == 0) {

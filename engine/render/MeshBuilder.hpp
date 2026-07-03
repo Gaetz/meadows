@@ -22,4 +22,8 @@ void appendTaperedTube(MeshData& mesh, const Vec3& base, const Vec3& top,
 void appendBlob(MeshData& mesh, u32 seed, const Vec3& center, f32 radius,
                 f32 jitter, const Vec3& color);
 
+// Recomputes per-face normals after positions were deformed (e.g. squashed
+// rocks). Assumes the flat-shaded layout (three unique vertices per face).
+void recomputeFlatNormals(MeshData& mesh);
+
 } // namespace render

@@ -209,7 +209,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 15: procedural trees.");
+    ImGui::TextUnformatted("Brick 16: rocks & bushes.");
     ImGui::TextUnformatted(
         "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -221,8 +221,8 @@ void LandscapeScene::drawUi() {
     ImGui::Text("Resident: %u | pending: %u | uploads/frame: %u",
                 terrain.residentCount(), terrain.pendingCount(),
                 terrain.uploadsLastFrame());
-    ImGui::Text("Grass blades: %u | trees: %u", grass.instanceTotal(),
-                vegetation.treeTotal());
+    ImGui::Text("Grass blades: %u | props: %u", grass.instanceTotal(),
+                vegetation.propTotal());
     ImGui::InputScalar("Seed", ImGuiDataType_U32, &terrain.params.seed);
     ImGui::SameLine();
     if (ImGui::Button("Regenerate")) {

@@ -45,21 +45,6 @@ struct HashRng {
     }
 };
 
-// CPU mirror of terrain.frag's material weights (without the texture-based
-// border wander — scatter need not match the blend pixel-perfect).
-f32 grassWeight(const TerrainParams& params, f32 h, const Vec3& n) {
-    constexpr f32 kSnowLine = 110.0f; // keep in sync with uTerrainInfo.y
-    const f32 slope = 1.0f - n.y;
-    const f32 rockW = glm::smoothstep(0.18f, 0.35f, slope);
-    const f32 snowW = glm::smoothstep(kSnowLine - 12.0f, kSnowLine + 42.0f, h) *
-                      (1.0f - glm::smoothstep(0.25f, 0.45f, slope));
-    const f32 sandW =
-        (1.0f - glm::smoothstep(params.seaLevel + 1.0f, params.seaLevel + 8.0f,
-                                h)) *
-        (1.0f - rockW);
-    return glm::max(1.0f - rockW - snowW - sandW, 0.0f);
-}
-
 // One blade = a tapered 5-triangle ribbon, REAL geometry (no alpha test):
 // vertex = (side in [-1,1] with the taper baked in, t along the blade).
 // The vertex shader gives it width, height, lean, and wind.
@@ -108,7 +93,7 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             const Vec3 n = terrain::normal(params, x, z);
             // HARD material cutoff: grass only on solidly grassy ground —
             // never on the sand/snow/rock transition fringes.
-            if (grassWeight(params, h, n) < 0.72f) {
+            if (terrain::materialWeights(params, h, n).grass < 0.72f) {
                 continue;
             }
             // Blades stand taller toward the heart of a patch.

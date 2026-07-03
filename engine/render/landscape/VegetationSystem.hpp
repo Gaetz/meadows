@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <unordered_map>
 
@@ -19,17 +19,24 @@ namespace render {
 
 class ShaderLibrary;
 
-// Procedural trees (brick 15; rocks and bushes join in brick 16). A handful
-// of TreeGenerator mesh variants are built once; worker threads scatter
-// instances per chunk into FOREST BELTS (low-frequency mask over grassy,
-// gently sloped, mid-altitude ground), deterministic per seed. Streaming
-// skeleton identical to GrassSystem, with a wider ring since trees carry to
-// the fog line. Draws are grouped variant-major: one instanced draw per
-// (variant, chunk) pair, using firstInstance offsets into the chunk's
-// variant-sorted instance buffer.
+// Procedural props: trees, rocks and bushes (bricks 15+16). A handful of
+// generated mesh variants are built once; worker threads scatter instances
+// per chunk — trees into FOREST BELTS (low-frequency mask over grassy,
+// gently sloped, mid-altitude ground), rocks sparsely everywhere including
+// the alpine zone, bushes on grass with a bias toward forest edges — all
+// deterministic per seed. Streaming skeleton identical to GrassSystem, with
+// a wider ring since props carry to the fog line. Draws are grouped
+// variant-major: one instanced draw per (variant, chunk) pair, using
+// firstInstance offsets into the chunk's variant-sorted instance buffer.
 class VegetationSystem {
 public:
     static constexpr u32 kTreeVariants = 5;
+    static constexpr u32 kRockVariants = 4;
+    static constexpr u32 kBushVariants = 3;
+    static constexpr u32 kVariantCount =
+        kTreeVariants + kRockVariants + kBushVariants;
+    static constexpr u32 kFirstRock = kTreeVariants;
+    static constexpr u32 kFirstBush = kTreeVariants + kRockVariants;
     static constexpr i32 kViewRadius = 7; // chunks (~480 m; fade covers edge)
     static constexpr i32 kEvictRadius = 8;
     static constexpr u32 kMaxUploadsPerFrame = 2;
@@ -50,22 +57,22 @@ public:
 
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup);
 
-    u32 treeTotal() const { return instances; }
+    u32 propTotal() const { return instances; }
 
-    // One placed tree. Layout mirrors tree.vert's instance attributes.
+    // One placed prop. Layout mirrors tree.vert's instance attributes.
     struct Instance {
         Vec4 positionScale; // xyz = terrain point, w = uniform scale
         Vec4 params;        // x = yaw, y = tint jitter, z = sway phase, w free
     };
     // Worker output: instances bucketed per mesh variant.
-    using VariantBuckets = array<vector<Instance>, kTreeVariants>;
+    using VariantBuckets = array<vector<Instance>, kVariantCount>;
 
 private:
     struct Chunk {
         bool resident { false };
         rhi::BufferHandle instanceBuffer {};
-        array<u32, kTreeVariants> counts {};
-        array<u32, kTreeVariants> firstInstance {};
+        array<u32, kVariantCount> counts {};
+        array<u32, kVariantCount> firstInstance {};
         u32 total { 0 };
     };
     struct BuiltChunk {
@@ -99,13 +106,13 @@ private:
     u64 generation { 0 };
     u32 instances { 0 };
 
-    array<VariantMesh, kTreeVariants> variantMeshes {};
+    array<VariantMesh, kVariantCount> variantMeshes {};
     rhi::PipelineHandle pipeline {};
     u64 shaderGeneration { 0 };
 };
 
 // Pure CPU scatter for one chunk, runs on worker threads. Deterministic.
-VegetationSystem::VariantBuckets scatterTrees(const TerrainParams& params,
+VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                               i32 cx, i32 cz);
 
 } // namespace render
