@@ -26,6 +26,9 @@ uptr<GlContext> GlContext::create(Window& window, i32 major, i32 minor) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, major);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, minor);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    // The 3D path depth-tests against the backbuffer; SDL's default depth
+    // size is not guaranteed to be more than 16 bits.
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 #ifndef NDEBUG
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
 #endif

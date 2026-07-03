@@ -20,7 +20,7 @@ class DemoApp final : public engine::Game {
 public:
     void init(engine::Engine& engineContext) override {
         engine = &engineContext;
-        stack.replace(std::make_unique<game::CombatArenaScene>(*engine));
+        stack.replace(std::make_unique<game::LandscapeScene>(*engine));
     }
 
     void update(f32 dt) override { stack.update(dt); }

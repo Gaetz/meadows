@@ -29,6 +29,20 @@ GLenum toGlTopology(PrimitiveTopology topology) {
     return GL_TRIANGLES;
 }
 
+GLenum toGlCompare(CompareFunc func) {
+    switch (func) {
+    case CompareFunc::Never:        return GL_NEVER;
+    case CompareFunc::Less:         return GL_LESS;
+    case CompareFunc::Equal:        return GL_EQUAL;
+    case CompareFunc::LessEqual:    return GL_LEQUAL;
+    case CompareFunc::Greater:      return GL_GREATER;
+    case CompareFunc::NotEqual:     return GL_NOTEQUAL;
+    case CompareFunc::GreaterEqual: return GL_GEQUAL;
+    case CompareFunc::Always:       return GL_ALWAYS;
+    }
+    return GL_LESS;
+}
+
 GLuint compileStage(GLenum stage, const str& source, const str& debugName) {
     GLuint shader = glCreateShader(stage);
     const char* src = source.c_str();
@@ -57,10 +71,21 @@ GLenum glToTopology(PrimitiveTopology t)      { return toGlTopology(t); }
 // --- GlCommandBuffer ----------------------------------------------------------
 
 void GlCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
+    GLbitfield clearMask = 0;
     if (desc.loadOp == LoadOp::Clear) {
         const Color& c = desc.clearColor;
         glClearColor(c.r, c.g, c.b, c.a);
-        glClear(GL_COLOR_BUFFER_BIT);
+        clearMask |= GL_COLOR_BUFFER_BIT;
+    }
+    if (desc.depthLoadOp == LoadOp::Clear) {
+        // A previously bound pipeline may have disabled depth writes, which
+        // would silently swallow the clear.
+        glDepthMask(GL_TRUE);
+        glClearDepthf(desc.clearDepth);
+        clearMask |= GL_DEPTH_BUFFER_BIT;
+    }
+    if (clearMask != 0) {
+        glClear(clearMask);
     }
 }
 
@@ -68,10 +93,18 @@ void GlCommandBuffer::endRenderPass() {
     currentPipelineId = 0;
 }
 
+void GlCommandBuffer::setViewport(u32 x, u32 y, u32 width, u32 height) {
+    glViewport(static_cast<GLint>(x), static_cast<GLint>(y),
+               static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+}
+
 void GlCommandBuffer::setPipeline(PipelineHandle pipeline) {
     const auto& p = device.pipelines.at(pipeline.id);
     glUseProgram(p.program);
     glBindVertexArray(p.vao);
+    // Every piece of state is applied — enables AND disables — so a pipeline
+    // never inherits state from the previous one (anti-leak guarantee: the
+    // sprite pipeline after a 3D pass turns depth/cull back off).
     switch (p.blend) {
     case BlendMode::Opaque:
         glDisable(GL_BLEND);
@@ -84,6 +117,32 @@ void GlCommandBuffer::setPipeline(PipelineHandle pipeline) {
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE);
         break;
+    }
+    if (p.depth.testEnable) {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(toGlCompare(p.depth.compare));
+    } else {
+        glDisable(GL_DEPTH_TEST);
+    }
+    glDepthMask(p.depth.writeEnable ? GL_TRUE : GL_FALSE);
+    switch (p.cull) {
+    case CullMode::None:
+        glDisable(GL_CULL_FACE);
+        break;
+    case CullMode::Back:
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+        break;
+    case CullMode::Front:
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT);
+        break;
+    }
+    if (p.depthBias != 0.0f || p.depthBiasSlope != 0.0f) {
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(p.depthBiasSlope, p.depthBias);
+    } else {
+        glDisable(GL_POLYGON_OFFSET_FILL);
     }
     currentPipelineId = pipeline.id;
 }

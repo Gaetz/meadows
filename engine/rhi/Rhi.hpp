@@ -126,13 +126,46 @@ enum class PrimitiveTopology {
     Lines,
 };
 
+enum class CompareFunc {
+    Never,
+    Less,
+    Equal,
+    LessEqual,
+    Greater,
+    NotEqual,
+    GreaterEqual,
+    Always,
+};
+
+// Depth test/write state, part of the immutable pipeline (Vulkan
+// VkPipelineDepthStencilState). Defaults keep every 2D pipeline unchanged.
+struct DepthState {
+    bool testEnable { false };
+    bool writeEnable { false };
+    CompareFunc compare { CompareFunc::Less };
+};
+
+enum class CullMode {
+    None,
+    Back,
+    Front,
+};
+
 // Whole-pipeline state object, immutable once created (maps 1:1 to a Vulkan
 // pipeline later; the GL backend translates it to program + VAO + state).
+// The backend applies ALL state — enables and disables — on every setPipeline,
+// so no state leaks between passes (2D after 3D, ImGui after either).
 struct PipelineDesc {
     ShaderHandle shader;
     vector<VertexBufferLayout> vertexBuffers; // index = buffer slot
     BlendMode blend { BlendMode::Opaque };
     PrimitiveTopology topology { PrimitiveTopology::Triangles };
+    DepthState depth {};
+    CullMode cull { CullMode::None };
+    // Polygon offset for shadow casters (Vulkan depthBias*). Applied when
+    // either value is non-zero.
+    f32 depthBias { 0.0f };
+    f32 depthBiasSlope { 0.0f };
 };
 
 // --- Bind groups -----------------------------------------------------------------
@@ -163,11 +196,14 @@ enum class LoadOp {
     DontCare,
 };
 
-// Targets the swapchain backbuffer for now; off-screen color/depth attachments
-// arrive with the 3D phase.
+// Targets the swapchain backbuffer for now; off-screen framebuffers arrive
+// with the 3D offscreen brick. Depth defaults clear to the far plane, which is
+// a no-op for depth-less 2D passes and the right start for 3D ones.
 struct RenderPassDesc {
     LoadOp loadOp { LoadOp::Clear };
     Color clearColor {};
+    LoadOp depthLoadOp { LoadOp::Clear };
+    f32 clearDepth { 1.0f };
 };
 
 } // namespace rhi

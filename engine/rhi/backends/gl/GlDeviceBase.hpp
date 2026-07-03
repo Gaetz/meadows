@@ -19,6 +19,8 @@ public:
     void beginRenderPass(const RenderPassDesc& desc) override;
     void endRenderPass() override;
 
+    void setViewport(u32 x, u32 y, u32 width, u32 height) override;
+
     void setPipeline(PipelineHandle pipeline) override;
     void setBindGroup(u32 index, BindGroupHandle group) override;
     void setVertexBuffer(u32 slot, BufferHandle buffer) override;
@@ -85,6 +87,10 @@ protected:
         u32 vao { 0 };
         BlendMode blend { BlendMode::Opaque };
         u32 glTopology { 0 };
+        DepthState depth {};
+        CullMode cull { CullMode::None };
+        f32 depthBias { 0.0f };
+        f32 depthBiasSlope { 0.0f };
         vector<u32> strides; // per vertex-buffer slot
 
         // GL 4.1 compatibility: attribute format info used by

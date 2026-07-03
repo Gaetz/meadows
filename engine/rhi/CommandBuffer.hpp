@@ -14,6 +14,9 @@ public:
     virtual void beginRenderPass(const RenderPassDesc& desc) = 0;
     virtual void endRenderPass() = 0;
 
+    // Overrides the viewport set by beginRenderPass (full target size).
+    virtual void setViewport(u32 x, u32 y, u32 width, u32 height) = 0;
+
     virtual void setPipeline(PipelineHandle pipeline) = 0;
 
     // `index` is the bind-group slot (future Vulkan descriptor-set index).

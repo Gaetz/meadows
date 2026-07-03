@@ -80,9 +80,13 @@ PipelineHandle GlDevice46::createPipeline(const PipelineDesc& desc) {
     }
 
     GlPipeline pipeline;
-    pipeline.program   = shaderIt->second;
-    pipeline.blend     = desc.blend;
-    pipeline.glTopology = glToTopology(desc.topology);
+    pipeline.program        = shaderIt->second;
+    pipeline.blend          = desc.blend;
+    pipeline.glTopology     = glToTopology(desc.topology);
+    pipeline.depth          = desc.depth;
+    pipeline.cull           = desc.cull;
+    pipeline.depthBias      = desc.depthBias;
+    pipeline.depthBiasSlope = desc.depthBiasSlope;
 
     glCreateVertexArrays(1, &pipeline.vao);
     for (u32 slot = 0; slot < desc.vertexBuffers.size(); ++slot) {
