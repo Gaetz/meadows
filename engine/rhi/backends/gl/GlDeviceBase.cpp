@@ -144,6 +144,7 @@ void GlCommandBuffer::setPipeline(PipelineHandle pipeline) {
     } else {
         glDisable(GL_POLYGON_OFFSET_FILL);
     }
+    glPolygonMode(GL_FRONT_AND_BACK, p.wireframe ? GL_LINE : GL_FILL);
     currentPipelineId = pipeline.id;
 }
 

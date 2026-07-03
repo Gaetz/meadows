@@ -91,6 +91,7 @@ protected:
         CullMode cull { CullMode::None };
         f32 depthBias { 0.0f };
         f32 depthBiasSlope { 0.0f };
+        bool wireframe { false };
         vector<u32> strides; // per vertex-buffer slot
 
         // GL 4.1 compatibility: attribute format info used by

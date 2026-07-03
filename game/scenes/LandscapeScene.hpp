@@ -14,9 +14,9 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 7: streamed terrain — a chunk ring follows the camera, meshed on
-// worker threads and uploaded a budgeted few per frame (no frame hitches),
-// with eviction hysteresis behind. The landscape is now infinite.
+// Brick 8: LOD rings + skirts on the streamed terrain — mesh density falls
+// with distance (65/33/17/9 verts per side), skirts cover LOD seams, and the
+// view radius grows to ~900 m. Wireframe toggle to inspect the rings.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -40,6 +40,7 @@ private:
     uptr<render::ShaderLibrary> shaders;
     render::TerrainSystem terrain;
     bool regenerateRequested { false };
+    bool wireframeUi { false };
 
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};

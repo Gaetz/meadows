@@ -166,6 +166,8 @@ struct PipelineDesc {
     // either value is non-zero.
     f32 depthBias { 0.0f };
     f32 depthBiasSlope { 0.0f };
+    // Debug rasterization (Vulkan polygonMode = LINE).
+    bool wireframe { false };
 };
 
 // --- Bind groups -----------------------------------------------------------------

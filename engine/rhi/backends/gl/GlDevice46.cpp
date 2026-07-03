@@ -87,6 +87,7 @@ PipelineHandle GlDevice46::createPipeline(const PipelineDesc& desc) {
     pipeline.cull           = desc.cull;
     pipeline.depthBias      = desc.depthBias;
     pipeline.depthBiasSlope = desc.depthBiasSlope;
+    pipeline.wireframe      = desc.wireframe;
 
     glCreateVertexArrays(1, &pipeline.vao);
     for (u32 slot = 0; slot < desc.vertexBuffers.size(); ++slot) {

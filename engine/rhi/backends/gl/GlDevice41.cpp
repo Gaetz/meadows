@@ -97,6 +97,7 @@ PipelineHandle GlDevice41::createPipeline(const PipelineDesc& desc) {
     pipeline.cull           = desc.cull;
     pipeline.depthBias      = desc.depthBias;
     pipeline.depthBiasSlope = desc.depthBiasSlope;
+    pipeline.wireframe      = desc.wireframe;
 
     // Generate a bare VAO. Attribute format info is stored for later use in
     // implBindVboSlot, where glVertexAttribPointer bakes buffer + format

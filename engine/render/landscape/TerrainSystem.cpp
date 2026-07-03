@@ -42,18 +42,22 @@ i32 chunkCoordOf(f32 worldCoord) {
 } // namespace
 
 vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
-                                      i32 cz) {
-    constexpr u32 kVertsPerSide = TerrainSystem::kChunkQuads + 1;
-    constexpr f32 kStep = TerrainSystem::kChunkSize / TerrainSystem::kChunkQuads;
+                                      i32 cz, u32 lod) {
+    const u32 quads = TerrainSystem::lodQuads(lod);
+    const u32 vertsPerSide = quads + 1;
+    const f32 step = TerrainSystem::kChunkSize / static_cast<f32>(quads);
     const f32 originX = static_cast<f32>(cx) * TerrainSystem::kChunkSize;
     const f32 originZ = static_cast<f32>(cz) * TerrainSystem::kChunkSize;
+    // Deep enough to cover the height error between this LOD's samples and
+    // any neighbor's (error grows with the sample step).
+    const f32 skirtDepth = 3.0f * step;
 
     vector<MeshVertex> vertices;
-    vertices.reserve(kVertsPerSide * kVertsPerSide);
-    for (u32 gz = 0; gz < kVertsPerSide; ++gz) {
-        for (u32 gx = 0; gx < kVertsPerSide; ++gx) {
-            const f32 x = originX + static_cast<f32>(gx) * kStep;
-            const f32 z = originZ + static_cast<f32>(gz) * kStep;
+    vertices.reserve(vertsPerSide * vertsPerSide + 4 * vertsPerSide);
+    for (u32 gz = 0; gz < vertsPerSide; ++gz) {
+        for (u32 gx = 0; gx < vertsPerSide; ++gx) {
+            const f32 x = originX + static_cast<f32>(gx) * step;
+            const f32 z = originZ + static_cast<f32>(gz) * step;
             const f32 y = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
             vertices.push_back({
@@ -65,23 +69,60 @@ vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
             });
         }
     }
+
+    // Skirt ring: copies of the edge vertices pushed straight down. Same
+    // normal/color as the edge, so lit skirts blend into the terrain when
+    // they peek through an LOD seam. Order: north, south, west, east.
+    const auto gridAt = [&](u32 gx, u32 gz) -> const MeshVertex& {
+        return vertices[gz * vertsPerSide + gx];
+    };
+    const auto pushSkirt = [&](const MeshVertex& edge) {
+        MeshVertex v = edge;
+        v.position.y -= skirtDepth;
+        vertices.push_back(v);
+    };
+    for (u32 i = 0; i < vertsPerSide; ++i) { pushSkirt(gridAt(i, 0)); }
+    for (u32 i = 0; i < vertsPerSide; ++i) { pushSkirt(gridAt(i, quads)); }
+    for (u32 j = 0; j < vertsPerSide; ++j) { pushSkirt(gridAt(0, j)); }
+    for (u32 j = 0; j < vertsPerSide; ++j) { pushSkirt(gridAt(quads, j)); }
     return vertices;
 }
 
-vector<u32> buildChunkIndices() {
-    constexpr u32 kQuads = TerrainSystem::kChunkQuads;
-    constexpr u32 kVertsPerSide = kQuads + 1;
+vector<u32> buildChunkIndices(u32 lod) {
+    const u32 quads = TerrainSystem::lodQuads(lod);
+    const u32 vertsPerSide = quads + 1;
     vector<u32> indices;
-    indices.reserve(kQuads * kQuads * 6);
-    for (u32 gz = 0; gz < kQuads; ++gz) {
-        for (u32 gx = 0; gx < kQuads; ++gx) {
-            const u32 i00 = gz * kVertsPerSide + gx;
+    indices.reserve(quads * quads * 6 + 4 * quads * 12);
+    for (u32 gz = 0; gz < quads; ++gz) {
+        for (u32 gx = 0; gx < quads; ++gx) {
+            const u32 i00 = gz * vertsPerSide + gx;
             const u32 i10 = i00 + 1;
-            const u32 i01 = i00 + kVertsPerSide;
+            const u32 i01 = i00 + vertsPerSide;
             const u32 i11 = i01 + 1;
             // CCW seen from above (+Y), so CullMode::Back keeps the top.
             indices.insert(indices.end(), { i00, i01, i11, i00, i11, i10 });
         }
+    }
+
+    // Skirt quads, double-sided (both windings): per-edge winding bookkeeping
+    // buys nothing at ~1k extra hidden triangles worst case.
+    const u32 skirtBase = vertsPerSide * vertsPerSide;
+    const auto quadDoubleSided = [&](u32 a, u32 b, u32 c, u32 d) {
+        indices.insert(indices.end(),
+                       { a, b, c, a, c, d, a, c, b, a, d, c });
+    };
+    const u32 north = skirtBase;
+    const u32 south = skirtBase + vertsPerSide;
+    const u32 west = skirtBase + 2 * vertsPerSide;
+    const u32 east = skirtBase + 3 * vertsPerSide;
+    for (u32 i = 0; i < quads; ++i) {
+        quadDoubleSided(i, i + 1, north + i + 1, north + i); // gz = 0 edge
+        const u32 s0 = quads * vertsPerSide + i;             // gz = quads edge
+        quadDoubleSided(s0, s0 + 1, south + i + 1, south + i);
+        const u32 w0 = i * vertsPerSide;                     // gx = 0 edge
+        quadDoubleSided(w0, w0 + vertsPerSide, west + i + 1, west + i);
+        const u32 e0 = i * vertsPerSide + quads;             // gx = quads edge
+        quadDoubleSided(e0, e0 + vertsPerSide, east + i + 1, east + i);
     }
     return indices;
 }
@@ -91,11 +132,14 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     jobs = &jobSystem;
     shared = std::make_shared<Shared>();
 
-    const vector<u32> indices = buildChunkIndices();
-    indexCount = static_cast<u32>(indices.size());
-    indexBuffer = device.createBuffer({ .usage = rhi::BufferUsage::Index,
-                                        .size = indices.size() * sizeof(u32) },
-                                      indices.data());
+    for (u32 lod = 0; lod < kLodCount; ++lod) {
+        const vector<u32> indices = buildChunkIndices(lod);
+        indexCounts[lod] = static_cast<u32>(indices.size());
+        indexBuffers[lod] =
+            device.createBuffer({ .usage = rhi::BufferUsage::Index,
+                                  .size = indices.size() * sizeof(u32) },
+                                indices.data());
+    }
 
     shaders.load(kTerrainShader, { { "FrameUbo", 0 } });
     buildPipeline(device, shaders);
@@ -112,9 +156,11 @@ void TerrainSystem::destroy(rhi::Device& device) {
     resident = 0;
     pending = 0;
     device.destroyPipeline(pipeline);
-    device.destroyBuffer(indexBuffer);
     pipeline = {};
-    indexBuffer = {};
+    for (u32 lod = 0; lod < kLodCount; ++lod) {
+        device.destroyBuffer(indexBuffers[lod]);
+        indexBuffers[lod] = {};
+    }
 }
 
 void TerrainSystem::regenerate(rhi::Device& device) {
@@ -142,15 +188,22 @@ void TerrainSystem::pumpUploads(rhi::Device& device) {
             continue; // stale: regenerated or torn down since the request
         }
         const auto it = chunks.find(keyOf(built.cx, built.cz));
-        if (it == chunks.end() || it->second.state == ChunkState::Resident) {
-            continue; // evicted while in flight, or a duplicate result
+        if (it == chunks.end() || it->second.queuedLod != built.lod) {
+            continue; // evicted while in flight, or superseded by another LOD
         }
-        it->second.vertexBuffer = device.createBuffer(
+        Chunk& chunk = it->second;
+        if (chunk.residentLod == kNoLod) {
+            ++resident;
+        } else {
+            // LOD swap: the old mesh drew until this very frame — no hole.
+            device.destroyBuffer(chunk.vertexBuffer);
+        }
+        chunk.vertexBuffer = device.createBuffer(
             { .usage = rhi::BufferUsage::Vertex,
               .size = built.vertices.size() * sizeof(MeshVertex) },
             built.vertices.data());
-        it->second.state = ChunkState::Resident;
-        ++resident;
+        chunk.residentLod = built.lod;
+        chunk.queuedLod = kNoLod;
         --pending;
         ++lastUploads;
     }
@@ -162,33 +215,54 @@ void TerrainSystem::requestMissing(const Vec3& cameraPos) {
 
     struct Candidate {
         i32 cx, cz, dist2;
+        u8 lod;
     };
-    vector<Candidate> missing;
+    vector<Candidate> wanted;
     for (i32 dz = -kViewRadius; dz <= kViewRadius; ++dz) {
         for (i32 dx = -kViewRadius; dx <= kViewRadius; ++dx) {
             const i32 cx = camCx + dx;
             const i32 cz = camCz + dz;
-            if (!chunks.contains(keyOf(cx, cz))) {
-                missing.push_back({ cx, cz, dx * dx + dz * dz });
+            const u8 lod = static_cast<u8>(
+                lodForDistance(std::max(std::abs(dx), std::abs(dz))));
+            const auto it = chunks.find(keyOf(cx, cz));
+            if (it == chunks.end()) {
+                wanted.push_back({ cx, cz, dx * dx + dz * dz, lod });
+                continue;
+            }
+            // LOD change: request the new mesh once the previous request (if
+            // any) has landed; the resident mesh keeps drawing meanwhile.
+            Chunk& chunk = it->second;
+            if (chunk.queuedLod == kNoLod && chunk.residentLod != lod) {
+                chunk.queuedLod = lod;
+                ++pending;
+                enqueueBuild(cx, cz, lod);
             }
         }
     }
     // Center-out: the terrain under the camera arrives first, holes stay at
     // the horizon.
-    std::sort(missing.begin(), missing.end(),
+    std::sort(wanted.begin(), wanted.end(),
               [](const Candidate& a, const Candidate& b) {
                   return a.dist2 < b.dist2;
               });
 
-    for (const Candidate& c : missing) {
-        chunks.emplace(keyOf(c.cx, c.cz), Chunk {});
+    for (const Candidate& c : wanted) {
+        Chunk chunk;
+        chunk.queuedLod = c.lod;
+        chunks.emplace(keyOf(c.cx, c.cz), chunk);
         ++pending;
-        jobs->enqueue([sharedRef = shared, chunkParams = params, cx = c.cx,
-                       cz = c.cz, gen = generation] {
-            sharedRef->built.push({ cx, cz, gen,
-                                    buildChunkVertices(chunkParams, cx, cz) });
-        });
+        enqueueBuild(c.cx, c.cz, c.lod);
     }
+}
+
+void TerrainSystem::enqueueBuild(i32 cx, i32 cz, u8 lod) {
+    jobs->enqueue(
+        [sharedRef = shared, chunkParams = params, cx, cz, lod,
+         gen = generation] {
+            sharedRef->built.push(
+                { cx, cz, lod, gen,
+                  buildChunkVertices(chunkParams, cx, cz, lod) });
+        });
 }
 
 void TerrainSystem::evictFar(rhi::Device& device, const Vec3& cameraPos) {
@@ -202,10 +276,11 @@ void TerrainSystem::evictFar(rhi::Device& device, const Vec3& cameraPos) {
             ++it;
             continue;
         }
-        if (it->second.state == ChunkState::Resident) {
+        if (it->second.residentLod != kNoLod) {
             device.destroyBuffer(it->second.vertexBuffer);
             --resident;
-        } else {
+        }
+        if (it->second.queuedLod != kNoLod) {
             --pending; // in-flight result will be dropped on arrival
         }
         it = chunks.erase(it);
@@ -235,7 +310,8 @@ void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::Back });
+          .cull = rhi::CullMode::Back,
+          .wireframe = wireframe });
     shaderGeneration = shaders.generation(kTerrainShader);
 }
 
@@ -246,17 +322,32 @@ void TerrainSystem::refreshPipeline(rhi::Device& device,
     }
 }
 
+void TerrainSystem::setWireframe(bool enabled, rhi::Device& device,
+                                 ShaderLibrary& shaders) {
+    if (wireframe != enabled) {
+        wireframe = enabled;
+        buildPipeline(device, shaders);
+    }
+}
+
 void TerrainSystem::draw(rhi::CommandBuffer& cmd,
                          rhi::BindGroupHandle frameBindGroup) {
     cmd.setPipeline(pipeline);
-    cmd.setIndexBuffer(indexBuffer, rhi::IndexFormat::U32);
     cmd.setBindGroup(0, frameBindGroup);
-    for (const auto& [key, chunk] : chunks) {
-        if (chunk.state != ChunkState::Resident) {
-            continue;
+    // Grouped by LOD so the shared index buffer binds once per level.
+    for (u32 lod = 0; lod < kLodCount; ++lod) {
+        bool indexBufferBound = false;
+        for (const auto& [key, chunk] : chunks) {
+            if (chunk.residentLod != lod) {
+                continue;
+            }
+            if (!indexBufferBound) {
+                cmd.setIndexBuffer(indexBuffers[lod], rhi::IndexFormat::U32);
+                indexBufferBound = true;
+            }
+            cmd.setVertexBuffer(0, chunk.vertexBuffer);
+            cmd.drawIndexed(indexCounts[lod]);
         }
-        cmd.setVertexBuffer(0, chunk.vertexBuffer);
-        cmd.drawIndexed(indexCount);
     }
 }
 

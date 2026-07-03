@@ -32,6 +32,8 @@ void LandscapeScene::onEnter() {
 
     flyCamera.camera.position = { 32.0f, 110.0f, 400.0f };
     flyCamera.camera.pitch = -0.30f;
+    // Cover the full streamed ring (~14 chunks = ~900 m) plus headroom.
+    flyCamera.camera.farPlane = 1600.0f;
 }
 
 void LandscapeScene::onExit() {
@@ -51,6 +53,7 @@ void LandscapeScene::update(f32 dt) {
 void LandscapeScene::render(engine::FrameContext& frame) {
     shaders->pollHotReload(frame.dt);
     terrain.refreshPipeline(frame.device, *shaders);
+    terrain.setWireframe(wireframeUi, frame.device, *shaders);
     if (regenerateRequested) {
         regenerateRequested = false;
         terrain.regenerate(frame.device);
@@ -74,7 +77,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 7: streamed chunks (fly far & fast).");
+    ImGui::TextUnformatted("Brick 8: LOD rings + skirts (~900 m view).");
     ImGui::TextUnformatted(
         "Hold RMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -89,6 +92,7 @@ void LandscapeScene::drawUi() {
     if (ImGui::Button("Regenerate")) {
         regenerateRequested = true; // applied at the top of the next render
     }
+    ImGui::Checkbox("Wireframe (LOD debug)", &wireframeUi);
     ImGui::End();
 }
 
