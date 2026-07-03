@@ -83,6 +83,8 @@ void LandscapeScene::drawUi() {
         "Shift: speed boost");
     const Vec3 p = flyCamera.camera.position;
     ImGui::Text("Position: %.1f  %.1f  %.1f", p.x, p.y, p.z);
+    ImGui::SliderFloat("Move speed (m/s)", &flyCamera.moveSpeed, 2.0f, 150.0f,
+                       "%.0f", ImGuiSliderFlags_Logarithmic);
     ImGui::Separator();
     ImGui::Text("Resident: %u | pending: %u | uploads/frame: %u",
                 terrain.residentCount(), terrain.pendingCount(),

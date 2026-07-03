@@ -17,7 +17,7 @@ class FlyCamera {
 public:
     Camera3D camera;
 
-    f32 moveSpeed { 10.0f };        // m/s
+    f32 moveSpeed { 20.0f };        // m/s
     f32 fastMultiplier { 5.0f };    // while Shift is held
     f32 lookSensitivity { 0.0025f };// radians per pixel
 
