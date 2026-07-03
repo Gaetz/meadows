@@ -3,6 +3,9 @@
 #include "engine/core/Defines.hpp"
 #include "game/Scene.hpp"
 
+namespace engine {
+struct FrameContext;
+}
 namespace render {
 class SpriteRenderer;
 }
@@ -23,6 +26,10 @@ public:
     void applyPending();             // applies queued ops (fires onEnter/onExit)
 
     void update(f32 dt);             // applies pending, then updates the active set
+    // Records the whole frame: the first drawn scene's own passes when it
+    // ownsFrame(), then one sprite pass over the drawn set (Clear when the
+    // stack is pure 2D, Load on top of a frame-owning scene).
+    void render(engine::FrameContext& frame);
     void draw(render::SpriteRenderer& renderer);
     void drawUi();
 

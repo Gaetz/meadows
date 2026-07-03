@@ -2,6 +2,9 @@
 
 #include "engine/core/Defines.hpp"
 
+namespace engine {
+struct FrameContext;
+}
 namespace render {
 class SpriteRenderer;
 }
@@ -24,6 +27,13 @@ public:
     virtual void update(f32 /*dt*/) {}
     virtual void draw(render::SpriteRenderer& /*renderer*/) {}
     virtual void drawUi() {}
+
+    // A frame-owning scene records its own render passes (3D: shadow /
+    // offscreen / composite chains) and must leave the backbuffer holding the
+    // scene on return. The stack then layers the usual sprite pass on top
+    // (LoadOp::Load), so 2D overlays keep working above a 3D scene.
+    virtual bool ownsFrame() const { return false; }
+    virtual void render(engine::FrameContext& /*frame*/) {}
 
     // If false, this scene is an overlay: the scene below is drawn too.
     virtual bool opaque() const { return true; }

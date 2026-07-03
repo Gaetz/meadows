@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 
+#include "engine/FrameContext.hpp"
 #include "engine/Game.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
@@ -72,14 +73,18 @@ void Engine::loop(Game& game) {
         game.update(dt);
 
         auto& cmd = device->beginFrame();
-        cmd.beginRenderPass({ .loadOp = rhi::LoadOp::Clear,
-                              .clearColor = config.clearColor });
         const f32 aspect = static_cast<f32>(window->width()) /
                            static_cast<f32>(window->height());
-        spriteRenderer->begin(camera, aspect);
-        game.draw(*spriteRenderer);
-        spriteRenderer->end(cmd);
-        cmd.endRenderPass();
+        FrameContext frame { .device = *device,
+                             .cmd = cmd,
+                             .sprites = *spriteRenderer,
+                             .camera2d = camera,
+                             .clearColor = config.clearColor,
+                             .dt = dt,
+                             .aspect = aspect,
+                             .width = static_cast<u32>(window->width()),
+                             .height = static_cast<u32>(window->height()) };
+        game.render(frame);
 
         // Dev UI renders after the scene, straight into the backbuffer.
         imgui->beginFrame();

@@ -4,10 +4,12 @@
 #include <imgui.h>
 
 #include "engine/Engine.hpp"
+#include "engine/FrameContext.hpp"
 #include "engine/Game.hpp"
 #include "game/SceneStack.hpp"
 #include "game/scenes/CombatArenaScene.hpp"
 #include "game/scenes/DemoScenes.hpp"
+#include "game/scenes/LandscapeScene.hpp"
 
 namespace {
 
@@ -23,7 +25,7 @@ public:
 
     void update(f32 dt) override { stack.update(dt); }
 
-    void draw(render::SpriteRenderer& renderer) override { stack.draw(renderer); }
+    void render(engine::FrameContext& frame) override { stack.render(frame); }
 
     void drawUi() override {
         // AlwaysAutoResize so the window grows to fit every button (ignoring any
@@ -49,6 +51,8 @@ public:
               [&] { return std::make_unique<game::StatsScene>(*engine); } },
             { "Combat arena",
               [&] { return std::make_unique<game::CombatArenaScene>(*engine); } },
+            { "Landscape (3D)",
+              [&] { return std::make_unique<game::LandscapeScene>(*engine); } },
         };
 
         // Wrap buttons across rows at a fixed budget. A fixed budget (not the

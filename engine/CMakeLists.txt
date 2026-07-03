@@ -2,6 +2,7 @@
 # may depend on game code.
 add_library(meadows STATIC
     Engine.cpp
+    Game.cpp
     assets/AssetDatabase.cpp
     assets/Image.cpp
     assets/StbImpl.cpp

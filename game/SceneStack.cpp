@@ -1,5 +1,9 @@
 #include "game/SceneStack.hpp"
 
+#include "engine/FrameContext.hpp"
+#include "engine/render/SpriteRenderer.hpp"
+#include "engine/rhi/CommandBuffer.hpp"
+
 namespace game {
 
 void SceneStack::push(uptr<Scene> scene) {
@@ -64,6 +68,27 @@ void SceneStack::update(f32 dt) {
     for (size_t i = firstUpdatedIndex(); i < scenes.size(); ++i) {
         scenes[i]->update(dt);
     }
+}
+
+void SceneStack::render(engine::FrameContext& frame) {
+    const size_t first = scenes.empty() ? 0 : firstDrawnIndex();
+    const bool frameOwned = !scenes.empty() && scenes[first]->ownsFrame();
+    if (frameOwned) {
+        scenes[first]->render(frame);
+    }
+
+    // Sprite pass over every drawn scene (a frame owner's default draw() is a
+    // no-op). Load preserves the owner's backbuffer; a pure-2D stack clears,
+    // exactly as the pre-seam loop did.
+    frame.cmd.beginRenderPass({ .loadOp = frameOwned ? rhi::LoadOp::Load
+                                                     : rhi::LoadOp::Clear,
+                                .clearColor = frame.clearColor });
+    frame.sprites.begin(frame.camera2d, frame.aspect);
+    for (size_t i = first; i < scenes.size(); ++i) {
+        scenes[i]->draw(frame.sprites);
+    }
+    frame.sprites.end(frame.cmd);
+    frame.cmd.endRenderPass();
 }
 
 void SceneStack::draw(render::SpriteRenderer& renderer) {
