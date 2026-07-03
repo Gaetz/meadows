@@ -32,22 +32,22 @@ Vec3 terrainColor(f32 height, const Vec3& normal, f32 seaLevel) {
 
 } // namespace
 
-MeshData buildChunkMesh(const TerrainParams& params, i32 cx, i32 cz) {
-    constexpr u32 kQuads = TerrainSystem::kChunkQuads;
-    constexpr u32 kVertsPerSide = kQuads + 1;
-    constexpr f32 kStep = TerrainSystem::kChunkSize / kQuads;
+vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
+                                      i32 cz) {
+    constexpr u32 kVertsPerSide = TerrainSystem::kChunkQuads + 1;
+    constexpr f32 kStep = TerrainSystem::kChunkSize / TerrainSystem::kChunkQuads;
     const f32 originX = static_cast<f32>(cx) * TerrainSystem::kChunkSize;
     const f32 originZ = static_cast<f32>(cz) * TerrainSystem::kChunkSize;
 
-    MeshData mesh;
-    mesh.vertices.reserve(kVertsPerSide * kVertsPerSide);
+    vector<MeshVertex> vertices;
+    vertices.reserve(kVertsPerSide * kVertsPerSide);
     for (u32 gz = 0; gz < kVertsPerSide; ++gz) {
         for (u32 gx = 0; gx < kVertsPerSide; ++gx) {
             const f32 x = originX + static_cast<f32>(gx) * kStep;
             const f32 z = originZ + static_cast<f32>(gz) * kStep;
             const f32 y = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
-            mesh.vertices.push_back({
+            vertices.push_back({
                 .position = { x, y, z },
                 .normal = n,
                 .uv = { x / TerrainSystem::kChunkSize,
@@ -56,8 +56,14 @@ MeshData buildChunkMesh(const TerrainParams& params, i32 cx, i32 cz) {
             });
         }
     }
+    return vertices;
+}
 
-    mesh.indices.reserve(kQuads * kQuads * 6);
+vector<u32> buildChunkIndices() {
+    constexpr u32 kQuads = TerrainSystem::kChunkQuads;
+    constexpr u32 kVertsPerSide = kQuads + 1;
+    vector<u32> indices;
+    indices.reserve(kQuads * kQuads * 6);
     for (u32 gz = 0; gz < kQuads; ++gz) {
         for (u32 gx = 0; gx < kQuads; ++gx) {
             const u32 i00 = gz * kVertsPerSide + gx;
@@ -65,24 +71,32 @@ MeshData buildChunkMesh(const TerrainParams& params, i32 cx, i32 cz) {
             const u32 i01 = i00 + kVertsPerSide;
             const u32 i11 = i01 + 1;
             // CCW seen from above (+Y), so CullMode::Back keeps the top.
-            mesh.indices.insert(mesh.indices.end(),
-                                { i00, i01, i11, i00, i11, i10 });
+            indices.insert(indices.end(), { i00, i01, i11, i00, i11, i10 });
         }
     }
-    return mesh;
+    return indices;
 }
 
 void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders) {
-    const MeshData mesh = buildChunkMesh(params, 0, 0);
-    indexCount = static_cast<u32>(mesh.indices.size());
-    vertexBuffer = device.createBuffer(
-        { .usage = rhi::BufferUsage::Vertex,
-          .size = mesh.vertices.size() * sizeof(MeshVertex) },
-        mesh.vertices.data());
-    indexBuffer = device.createBuffer(
-        { .usage = rhi::BufferUsage::Index,
-          .size = mesh.indices.size() * sizeof(u32) },
-        mesh.indices.data());
+    const vector<u32> indices = buildChunkIndices();
+    indexCount = static_cast<u32>(indices.size());
+    indexBuffer = device.createBuffer({ .usage = rhi::BufferUsage::Index,
+                                        .size = indices.size() * sizeof(u32) },
+                                      indices.data());
+
+    for (i32 cz = -kGridHalfExtent; cz <= kGridHalfExtent; ++cz) {
+        for (i32 cx = -kGridHalfExtent; cx <= kGridHalfExtent; ++cx) {
+            const vector<MeshVertex> vertices =
+                buildChunkVertices(params, cx, cz);
+            chunks.push_back(
+                { .cx = cx,
+                  .cz = cz,
+                  .vertexBuffer = device.createBuffer(
+                      { .usage = rhi::BufferUsage::Vertex,
+                        .size = vertices.size() * sizeof(MeshVertex) },
+                      vertices.data()) });
+        }
+    }
 
     shaders.load(kTerrainShader, { { "FrameUbo", 0 } });
     buildPipeline(device, shaders);
@@ -90,11 +104,13 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders) {
 
 void TerrainSystem::destroy(rhi::Device& device) {
     device.destroyPipeline(pipeline);
+    for (const Chunk& chunk : chunks) {
+        device.destroyBuffer(chunk.vertexBuffer);
+    }
+    chunks.clear();
     device.destroyBuffer(indexBuffer);
-    device.destroyBuffer(vertexBuffer);
     pipeline = {};
     indexBuffer = {};
-    vertexBuffer = {};
 }
 
 void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
@@ -134,10 +150,12 @@ void TerrainSystem::refreshPipeline(rhi::Device& device,
 void TerrainSystem::draw(rhi::CommandBuffer& cmd,
                          rhi::BindGroupHandle frameBindGroup) {
     cmd.setPipeline(pipeline);
-    cmd.setVertexBuffer(0, vertexBuffer);
     cmd.setIndexBuffer(indexBuffer, rhi::IndexFormat::U32);
     cmd.setBindGroup(0, frameBindGroup);
-    cmd.drawIndexed(indexCount);
+    for (const Chunk& chunk : chunks) {
+        cmd.setVertexBuffer(0, chunk.vertexBuffer);
+        cmd.drawIndexed(indexCount);
+    }
 }
 
 } // namespace render

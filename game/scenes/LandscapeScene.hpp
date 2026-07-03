@@ -14,8 +14,8 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 5: one 64 m terrain chunk (seeded FBM noise, analytic normals,
-// height/slope material colors, lambert sun) under the fly camera.
+// Brick 6: a static 9x9 chunk grid (576 m across, uniform LOD) — seams
+// between chunks must be invisible from any angle.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)

@@ -30,9 +30,10 @@ void LandscapeScene::onEnter() {
     shaders = std::make_unique<render::ShaderLibrary>(device);
     terrain.create(device, *shaders);
 
-    // Above the chunk's south edge, looking across it (chunk spans [0,64]²).
-    flyCamera.camera.position = { 32.0f, 40.0f, 110.0f };
-    flyCamera.camera.pitch = -0.25f;
+    // Above the grid's south edge, overlooking the whole 9x9 landscape
+    // (chunks span [-256, 320] on both axes).
+    flyCamera.camera.position = { 32.0f, 110.0f, 400.0f };
+    flyCamera.camera.pitch = -0.30f;
 }
 
 void LandscapeScene::onExit() {
@@ -70,13 +71,14 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 5: one terrain chunk (FBM + lambert).");
+    ImGui::TextUnformatted("Brick 6: static 9x9 chunk grid, uniform LOD.");
     ImGui::TextUnformatted(
         "Hold RMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
     const Vec3 p = flyCamera.camera.position;
     ImGui::Text("Position: %.1f  %.1f  %.1f", p.x, p.y, p.z);
-    ImGui::Text("Terrain seed: %u", terrain.params.seed);
+    ImGui::Text("Terrain seed: %u | chunks: %u", terrain.params.seed,
+                terrain.chunkCount());
     ImGui::End();
 }
 
