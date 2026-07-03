@@ -14,8 +14,9 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 6: a static 9x9 chunk grid (576 m across, uniform LOD) — seams
-// between chunks must be invisible from any angle.
+// Brick 7: streamed terrain — a chunk ring follows the camera, meshed on
+// worker threads and uploaded a budgeted few per frame (no frame hitches),
+// with eviction hysteresis behind. The landscape is now infinite.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -38,6 +39,7 @@ private:
 
     uptr<render::ShaderLibrary> shaders;
     render::TerrainSystem terrain;
+    bool regenerateRequested { false };
 
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};

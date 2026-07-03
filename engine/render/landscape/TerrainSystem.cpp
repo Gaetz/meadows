@@ -1,5 +1,9 @@
 #include "engine/render/landscape/TerrainSystem.hpp"
 
+#include <algorithm>
+#include <cmath>
+
+#include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
@@ -28,6 +32,11 @@ Vec3 terrainColor(f32 height, const Vec3& normal, f32 seaLevel) {
     const f32 snowiness = glm::smoothstep(110.0f, 140.0f, height) *
                           (1.0f - glm::smoothstep(0.25f, 0.45f, slope));
     return glm::mix(color, kSnow, snowiness);
+}
+
+i32 chunkCoordOf(f32 worldCoord) {
+    return static_cast<i32>(
+        std::floor(worldCoord / TerrainSystem::kChunkSize));
 }
 
 } // namespace
@@ -77,40 +86,130 @@ vector<u32> buildChunkIndices() {
     return indices;
 }
 
-void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders) {
+void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
+                           core::JobSystem& jobSystem) {
+    jobs = &jobSystem;
+    shared = std::make_shared<Shared>();
+
     const vector<u32> indices = buildChunkIndices();
     indexCount = static_cast<u32>(indices.size());
     indexBuffer = device.createBuffer({ .usage = rhi::BufferUsage::Index,
                                         .size = indices.size() * sizeof(u32) },
                                       indices.data());
 
-    for (i32 cz = -kGridHalfExtent; cz <= kGridHalfExtent; ++cz) {
-        for (i32 cx = -kGridHalfExtent; cx <= kGridHalfExtent; ++cx) {
-            const vector<MeshVertex> vertices =
-                buildChunkVertices(params, cx, cz);
-            chunks.push_back(
-                { .cx = cx,
-                  .cz = cz,
-                  .vertexBuffer = device.createBuffer(
-                      { .usage = rhi::BufferUsage::Vertex,
-                        .size = vertices.size() * sizeof(MeshVertex) },
-                      vertices.data()) });
-        }
-    }
-
     shaders.load(kTerrainShader, { { "FrameUbo", 0 } });
     buildPipeline(device, shaders);
 }
 
 void TerrainSystem::destroy(rhi::Device& device) {
-    device.destroyPipeline(pipeline);
-    for (const Chunk& chunk : chunks) {
+    // Orphaned worker jobs keep pushing into `shared` harmlessly; results die
+    // with the last reference (TextureCache teardown pattern).
+    ++generation;
+    for (auto& [key, chunk] : chunks) {
         device.destroyBuffer(chunk.vertexBuffer);
     }
     chunks.clear();
+    resident = 0;
+    pending = 0;
+    device.destroyPipeline(pipeline);
     device.destroyBuffer(indexBuffer);
     pipeline = {};
     indexBuffer = {};
+}
+
+void TerrainSystem::regenerate(rhi::Device& device) {
+    ++generation;
+    for (auto& [key, chunk] : chunks) {
+        device.destroyBuffer(chunk.vertexBuffer);
+    }
+    chunks.clear();
+    resident = 0;
+    pending = 0;
+    // update() re-requests the ring with the new params next frame.
+}
+
+void TerrainSystem::update(rhi::Device& device, const Vec3& cameraPos) {
+    pumpUploads(device);
+    requestMissing(cameraPos);
+    evictFar(device, cameraPos);
+}
+
+void TerrainSystem::pumpUploads(rhi::Device& device) {
+    lastUploads = 0;
+    BuiltChunk built;
+    while (lastUploads < kMaxUploadsPerFrame && shared->built.tryPop(built)) {
+        if (built.generation != generation) {
+            continue; // stale: regenerated or torn down since the request
+        }
+        const auto it = chunks.find(keyOf(built.cx, built.cz));
+        if (it == chunks.end() || it->second.state == ChunkState::Resident) {
+            continue; // evicted while in flight, or a duplicate result
+        }
+        it->second.vertexBuffer = device.createBuffer(
+            { .usage = rhi::BufferUsage::Vertex,
+              .size = built.vertices.size() * sizeof(MeshVertex) },
+            built.vertices.data());
+        it->second.state = ChunkState::Resident;
+        ++resident;
+        --pending;
+        ++lastUploads;
+    }
+}
+
+void TerrainSystem::requestMissing(const Vec3& cameraPos) {
+    const i32 camCx = chunkCoordOf(cameraPos.x);
+    const i32 camCz = chunkCoordOf(cameraPos.z);
+
+    struct Candidate {
+        i32 cx, cz, dist2;
+    };
+    vector<Candidate> missing;
+    for (i32 dz = -kViewRadius; dz <= kViewRadius; ++dz) {
+        for (i32 dx = -kViewRadius; dx <= kViewRadius; ++dx) {
+            const i32 cx = camCx + dx;
+            const i32 cz = camCz + dz;
+            if (!chunks.contains(keyOf(cx, cz))) {
+                missing.push_back({ cx, cz, dx * dx + dz * dz });
+            }
+        }
+    }
+    // Center-out: the terrain under the camera arrives first, holes stay at
+    // the horizon.
+    std::sort(missing.begin(), missing.end(),
+              [](const Candidate& a, const Candidate& b) {
+                  return a.dist2 < b.dist2;
+              });
+
+    for (const Candidate& c : missing) {
+        chunks.emplace(keyOf(c.cx, c.cz), Chunk {});
+        ++pending;
+        jobs->enqueue([sharedRef = shared, chunkParams = params, cx = c.cx,
+                       cz = c.cz, gen = generation] {
+            sharedRef->built.push({ cx, cz, gen,
+                                    buildChunkVertices(chunkParams, cx, cz) });
+        });
+    }
+}
+
+void TerrainSystem::evictFar(rhi::Device& device, const Vec3& cameraPos) {
+    const i32 camCx = chunkCoordOf(cameraPos.x);
+    const i32 camCz = chunkCoordOf(cameraPos.z);
+    for (auto it = chunks.begin(); it != chunks.end();) {
+        const i32 cx = static_cast<i32>(it->first >> 32);
+        const i32 cz = static_cast<i32>(it->first & 0xffffffffu);
+        const i32 dist = std::max(std::abs(cx - camCx), std::abs(cz - camCz));
+        if (dist <= kEvictRadius) {
+            ++it;
+            continue;
+        }
+        if (it->second.state == ChunkState::Resident) {
+            device.destroyBuffer(it->second.vertexBuffer);
+            --resident;
+        } else {
+            --pending; // in-flight result will be dropped on arrival
+        }
+        it = chunks.erase(it);
+    }
 }
 
 void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
@@ -152,7 +251,10 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
     cmd.setPipeline(pipeline);
     cmd.setIndexBuffer(indexBuffer, rhi::IndexFormat::U32);
     cmd.setBindGroup(0, frameBindGroup);
-    for (const Chunk& chunk : chunks) {
+    for (const auto& [key, chunk] : chunks) {
+        if (chunk.state != ChunkState::Resident) {
+            continue;
+        }
         cmd.setVertexBuffer(0, chunk.vertexBuffer);
         cmd.drawIndexed(indexCount);
     }

@@ -28,10 +28,8 @@ void LandscapeScene::onEnter() {
         { .entries = { { .binding = 0, .buffer = frameUbo } } });
 
     shaders = std::make_unique<render::ShaderLibrary>(device);
-    terrain.create(device, *shaders);
+    terrain.create(device, *shaders, engine->getJobSystem());
 
-    // Above the grid's south edge, overlooking the whole 9x9 landscape
-    // (chunks span [-256, 320] on both axes).
     flyCamera.camera.position = { 32.0f, 110.0f, 400.0f };
     flyCamera.camera.pitch = -0.30f;
 }
@@ -53,6 +51,11 @@ void LandscapeScene::update(f32 dt) {
 void LandscapeScene::render(engine::FrameContext& frame) {
     shaders->pollHotReload(frame.dt);
     terrain.refreshPipeline(frame.device, *shaders);
+    if (regenerateRequested) {
+        regenerateRequested = false;
+        terrain.regenerate(frame.device);
+    }
+    terrain.update(frame.device, flyCamera.camera.position);
 
     const render::Camera3D& camera = flyCamera.camera;
     const render::FrameUniforms uniforms {
@@ -71,14 +74,21 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 6: static 9x9 chunk grid, uniform LOD.");
+    ImGui::TextUnformatted("Brick 7: streamed chunks (fly far & fast).");
     ImGui::TextUnformatted(
         "Hold RMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
     const Vec3 p = flyCamera.camera.position;
     ImGui::Text("Position: %.1f  %.1f  %.1f", p.x, p.y, p.z);
-    ImGui::Text("Terrain seed: %u | chunks: %u", terrain.params.seed,
-                terrain.chunkCount());
+    ImGui::Separator();
+    ImGui::Text("Resident: %u | pending: %u | uploads/frame: %u",
+                terrain.residentCount(), terrain.pendingCount(),
+                terrain.uploadsLastFrame());
+    ImGui::InputScalar("Seed", ImGuiDataType_U32, &terrain.params.seed);
+    ImGui::SameLine();
+    if (ImGui::Button("Regenerate")) {
+        regenerateRequested = true; // applied at the top of the next render
+    }
     ImGui::End();
 }
 
