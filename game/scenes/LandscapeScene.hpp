@@ -19,9 +19,9 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 18: water — a sea-level sheet with procedural wave normals, fresnel
-// between sky reflection and depth-absorbed refraction (from a pre-water
-// scene snapshot via copyTexture), and animated shore foam.
+// Brick 19: planar water reflections — the scene mirrored about the water
+// plane into a half-res target (oblique near-plane clip, flipped winding),
+// sampled by the water with wave distortion in place of the analytic sky.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -60,6 +60,7 @@ private:
     bool tonemapUi { true };
     bool shadowsUi { true };
     bool cascadeDebugUi { false };
+    bool reflectionsUi { true };
     f32 exposureUi { 1.0f };
     f32 fogDensityUi { 0.0014f };
     f32 fogHeightFalloffUi { 0.02f };
@@ -76,6 +77,12 @@ private:
     rhi::TextureHandle sceneColorCopy {};
     rhi::TextureHandle sceneDepthCopy {};
     rhi::BindGroupHandle waterSceneBindGroup {};
+    // Half-res mirrored scene for the water's planar reflection.
+    rhi::TextureHandle reflectionColor {};
+    rhi::TextureHandle reflectionDepth {};
+    rhi::FramebufferHandle reflectionFb {};
+    rhi::BufferHandle reflectionUbo {};
+    rhi::BindGroupHandle reflectionBindGroup {};
     rhi::SamplerHandle depthSampler {}; // nearest — depth must not filter
     rhi::SamplerHandle blitSampler {};
     rhi::BindGroupHandle blitBindGroup {};

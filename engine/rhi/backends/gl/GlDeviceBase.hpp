@@ -20,6 +20,7 @@ public:
     void endRenderPass() override;
 
     void setViewport(u32 x, u32 y, u32 width, u32 height) override;
+    void setFrontFace(FrontFace frontFace) override;
 
     void setPipeline(PipelineHandle pipeline) override;
     void setBindGroup(u32 index, BindGroupHandle group) override;

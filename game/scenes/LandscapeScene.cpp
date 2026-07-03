@@ -13,7 +13,26 @@
 namespace game {
 
 namespace {
+
 constexpr const char* kTonemapShader = "tonemap";
+
+// Lengyel's oblique near plane: bends the projection's near plane onto an
+// arbitrary view-space plane, so the mirrored render clips everything below
+// the water for free (no user clip distance in the shaders).
+Mat4 obliqueProjection(Mat4 proj, const Vec4& clipPlaneView) {
+    Vec4 q;
+    q.x = (glm::sign(clipPlaneView.x) + proj[2][0]) / proj[0][0];
+    q.y = (glm::sign(clipPlaneView.y) + proj[2][1]) / proj[1][1];
+    q.z = -1.0f;
+    q.w = (1.0f + proj[2][2]) / proj[3][2];
+    const Vec4 c = clipPlaneView * (2.0f / glm::dot(clipPlaneView, q));
+    proj[0][2] = c.x;
+    proj[1][2] = c.y;
+    proj[2][2] = c.z + 1.0f;
+    proj[3][2] = c.w;
+    return proj;
+}
+
 } // namespace
 
 void LandscapeScene::onEnter() {
@@ -40,6 +59,13 @@ void LandscapeScene::onEnter() {
         depthSampler = device.createSampler(
             { .minFilter = rhi::FilterMode::Nearest,
               .magFilter = rhi::FilterMode::Nearest });
+        reflectionUbo =
+            device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
+                                  .size = sizeof(render::FrameUniforms),
+                                  .dynamic = true },
+                                nullptr);
+        reflectionBindGroup = device.createBindGroup(
+            { .entries = { { .binding = 0, .buffer = reflectionUbo } } });
     }
 
     if (device.caps().offscreenTargets) {
@@ -62,6 +88,8 @@ void LandscapeScene::onExit() {
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
     water.destroy(device);
+    device.destroyBindGroup(reflectionBindGroup);
+    device.destroyBuffer(reflectionUbo);
     device.destroySampler(depthSampler);
     shadows.destroy(device);
     sky.destroy(device);
@@ -119,13 +147,36 @@ void LandscapeScene::ensureOffscreenTarget(rhi::Device& device, u32 width,
               .format = rhi::TextureFormat::Depth32F,
               .usage = rhi::TextureUsage_Sampled },
             nullptr);
+        const u32 reflectionWidth = glm::max(width / 2, 1u);
+        const u32 reflectionHeight = glm::max(height / 2, 1u);
+        reflectionColor = device.createTexture(
+            { .width = reflectionWidth,
+              .height = reflectionHeight,
+              .format = device.caps().hdrFormats ? rhi::TextureFormat::RGBA16F
+                                                 : rhi::TextureFormat::RGBA8,
+              .filter = rhi::FilterMode::Linear,
+              .usage = rhi::TextureUsage_Sampled |
+                       rhi::TextureUsage_RenderAttachment },
+            nullptr);
+        reflectionDepth = device.createTexture(
+            { .width = reflectionWidth,
+              .height = reflectionHeight,
+              .format = rhi::TextureFormat::Depth32F,
+              .usage = rhi::TextureUsage_RenderAttachment },
+            nullptr);
+        reflectionFb = device.createFramebuffer(
+            { .colorAttachments = { { .texture = reflectionColor } },
+              .depthAttachment = { .texture = reflectionDepth } });
         waterSceneBindGroup = device.createBindGroup(
             { .entries = { { .binding = 0,
                              .texture = sceneColorCopy,
                              .sampler = blitSampler },
                            { .binding = 1,
                              .texture = sceneDepthCopy,
-                             .sampler = depthSampler } } });
+                             .sampler = depthSampler },
+                           { .binding = 2,
+                             .texture = reflectionColor,
+                             .sampler = blitSampler } } });
     }
     offscreenWidth = width;
     offscreenHeight = height;
@@ -136,9 +187,15 @@ void LandscapeScene::destroyOffscreenTarget(rhi::Device& device) {
         return;
     }
     device.destroyBindGroup(waterSceneBindGroup);
+    device.destroyFramebuffer(reflectionFb);
+    device.destroyTexture(reflectionDepth);
+    device.destroyTexture(reflectionColor);
     device.destroyTexture(sceneDepthCopy);
     device.destroyTexture(sceneColorCopy);
     waterSceneBindGroup = {};
+    reflectionFb = {};
+    reflectionDepth = {};
+    reflectionColor = {};
     sceneDepthCopy = {};
     sceneColorCopy = {};
     device.destroyBindGroup(blitBindGroup);
@@ -215,6 +272,11 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         shadows.updateCascadeUbos(frame.device, cascades);
     }
 
+    // Planar reflection is meaningful only from above the surface.
+    const bool reflectionsActive =
+        reflectionsUi && reflectionFb.id != 0 &&
+        camera.position.y > terrain.params.seaLevel;
+
     const render::FrameUniforms uniforms {
         .viewProj = viewProj,
         .invViewProj = glm::inverse(viewProj),
@@ -227,7 +289,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .zenithColor = { skyState.zenithColor, 0.0f },
         .horizonColor = { skyState.horizonColor, 0.0f },
         .horizonFarColor = { skyState.horizonFarColor, 0.0f },
-        .terrainInfo = { terrain.params.seaLevel, 110.0f, 0.25f, 0.0f },
+        .terrainInfo = { terrain.params.seaLevel, 110.0f, 0.25f,
+                         reflectionsActive ? 1.0f : 0.0f },
         .postInfo = { tonemapUi ? 1.0f : 0.0f, exposureUi,
                       cascadeDebugUi ? 1.0f : 0.0f, 0.0f },
         .fogInfo = { fogDensityUi, fogHeightFalloffUi, fogLowBoostUi,
@@ -265,6 +328,45 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         if (shaders->generation(kTonemapShader) != blitShaderGeneration) {
             rebuildBlitPipeline(frame.device);
         }
+    }
+
+    // Planar reflection: the scene mirrored about the water plane, at half
+    // resolution. The mirrored view flips triangle winding (front face CW),
+    // and an oblique near plane clips everything below the surface.
+    if (reflectionsActive) {
+        const f32 waterY = terrain.params.seaLevel;
+        Mat4 mirror { 1.0f };
+        mirror[1][1] = -1.0f;
+        mirror[3][1] = 2.0f * waterY;
+        const Mat4 reflectedView = camera.view() * mirror;
+        // Keep the above-water side; tiny epsilon avoids a clipped seam
+        // right at the waterline.
+        const Vec4 planeWorld { 0.0f, 1.0f, 0.0f, -(waterY - 0.08f) };
+        const Vec4 planeView =
+            glm::transpose(glm::inverse(reflectedView)) * planeWorld;
+        const Mat4 reflectedProj =
+            obliqueProjection(camera.proj(frame.aspect), planeView);
+        const Mat4 reflectedViewProj = reflectedProj * reflectedView;
+
+        render::FrameUniforms reflectionUniforms = uniforms;
+        reflectionUniforms.viewProj = reflectedViewProj;
+        reflectionUniforms.invViewProj = glm::inverse(reflectedViewProj);
+        reflectionUniforms.cameraPos = { camera.position.x,
+                                         2.0f * waterY - camera.position.y,
+                                         camera.position.z, 1.0f };
+        frame.device.updateBuffer(reflectionUbo, &reflectionUniforms,
+                                  sizeof(reflectionUniforms), 0);
+
+        frame.cmd.beginRenderPass({ .framebuffer = reflectionFb,
+                                    .loadOp = rhi::LoadOp::DontCare,
+                                    .depthLoadOp = rhi::LoadOp::Clear });
+        frame.cmd.setFrontFace(rhi::FrontFace::Clockwise);
+        terrain.draw(frame.cmd, reflectionBindGroup,
+                     shadows.receiverBindGroup());
+        vegetation.draw(frame.cmd, reflectionBindGroup,
+                        shadows.receiverBindGroup());
+        sky.draw(frame.cmd, reflectionBindGroup);
+        frame.cmd.endRenderPass();
     }
 
     // The sky covers every background pixel — no color clear needed.
@@ -305,7 +407,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 18: water (waves, fresnel, foam).");
+    ImGui::TextUnformatted("Brick 19: planar water reflections.");
     ImGui::TextUnformatted(
         "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -338,6 +440,7 @@ void LandscapeScene::drawUi() {
     ImGui::Checkbox("Shadows", &shadowsUi);
     ImGui::SameLine();
     ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);
+    ImGui::Checkbox("Water reflections", &reflectionsUi);
     ImGui::SliderFloat("Exposure", &exposureUi, 0.25f, 3.0f, "%.2f");
     ImGui::SliderFloat("Fog density", &fogDensityUi, 0.0f, 0.004f, "%.4f",
                        ImGuiSliderFlags_Logarithmic);

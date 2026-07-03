@@ -203,6 +203,13 @@ enum class CullMode {
     Front,
 };
 
+// Winding of front faces (Vulkan VK_DYNAMIC_STATE_FRONT_FACE). Mirrored
+// passes (planar reflections) flip it instead of duplicating pipelines.
+enum class FrontFace {
+    CounterClockwise, // default
+    Clockwise,
+};
+
 // Whole-pipeline state object, immutable once created (maps 1:1 to a Vulkan
 // pipeline later; the GL backend translates it to program + VAO + state).
 // The backend applies ALL state — enables and disables — on every setPipeline,

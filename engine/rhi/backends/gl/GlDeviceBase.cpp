@@ -97,6 +97,8 @@ void GlCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
     if (clearMask != 0) {
         glClear(clearMask);
     }
+    // State hygiene: a mirrored pass may have flipped the winding.
+    glFrontFace(GL_CCW);
 }
 
 void GlCommandBuffer::endRenderPass() {
@@ -109,6 +111,10 @@ void GlCommandBuffer::endRenderPass() {
 void GlCommandBuffer::setViewport(u32 x, u32 y, u32 width, u32 height) {
     glViewport(static_cast<GLint>(x), static_cast<GLint>(y),
                static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+}
+
+void GlCommandBuffer::setFrontFace(FrontFace frontFace) {
+    glFrontFace(frontFace == FrontFace::Clockwise ? GL_CW : GL_CCW);
 }
 
 void GlCommandBuffer::setPipeline(PipelineHandle pipeline) {

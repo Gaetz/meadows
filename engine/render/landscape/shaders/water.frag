@@ -6,6 +6,10 @@
 // sampling a bound attachment would be undefined).
 layout(binding = 0) uniform sampler2D uSceneColor;
 layout(binding = 1) uniform sampler2D uSceneDepth;
+// Half-res mirrored scene (uTerrainInfo.w = 1 when valid this frame). For
+// points on the water plane the mirror camera projects to the SAME screen
+// UV, so the fragment's own UV samples its reflection.
+layout(binding = 2) uniform sampler2D uReflection;
 
 in vec3 vWorldPos;
 out vec4 fragColor;
@@ -66,14 +70,24 @@ void main() {
     vec3 transmitted =
         mix(vec3(0.008, 0.045, 0.055), refracted, absorption);
 
-    // Reflection: the shared sky (sun disc included — free glints); the
-    // planar-reflection brick swaps in the mirrored scene here.
+    // Reflection: the mirrored scene (terrain, trees, sky + sun glints all
+    // included), wobbled by the waves; falls back to the analytic sky when
+    // the planar pass is off.
     vec3 viewDir = normalize(vWorldPos - uCameraPos.xyz);
-    vec3 reflectDir = reflect(viewDir, n);
-    reflectDir.y = abs(reflectDir.y); // never reflect below the horizon
-    vec3 reflected = skyWithSun(reflectDir);
+    vec3 reflected;
+    if (uTerrainInfo.w > 0.5) {
+        vec2 reflectionUv = clamp(screenUv + n.xz * 0.035, vec2(0.001),
+                                  vec2(0.999));
+        reflected = texture(uReflection, reflectionUv).rgb;
+    } else {
+        vec3 reflectDir = reflect(viewDir, n);
+        reflectDir.y = abs(reflectDir.y); // never reflect below the horizon
+        reflected = skyWithSun(reflectDir);
+    }
     float fresnel =
         0.02 + 0.98 * pow(1.0 - max(dot(-viewDir, n), 0.0), 5.0);
+    // Dialed down so the reflection reads as water, not as a second world.
+    fresnel *= 0.75;
 
     vec3 color = mix(transmitted, reflected, fresnel);
 
