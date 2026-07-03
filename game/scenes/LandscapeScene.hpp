@@ -3,6 +3,7 @@
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/GrassSystem.hpp"
+#include "engine/render/landscape/ShadowMapper.hpp"
 #include "engine/render/landscape/SkySystem.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
@@ -17,9 +18,9 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 15: procedural trees — 5 seeded low-poly variants (leaning trunk +
-// faceted foliage blobs), scattered into forest belts on worker threads,
-// drawn variant-major with per-chunk instancing and canopy sway.
+// Brick 17: cascaded shadow maps — 3 sun cascades (depth array + hardware
+// PCF), terrain and props cast, everything receives; shadows lengthen with
+// the day cycle and fade out as the sun crosses the horizon.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -50,10 +51,13 @@ private:
     render::GrassSystem grass;
     render::VegetationSystem vegetation;
     render::SkySystem sky;
+    render::ShadowMapper shadows;
     bool regenerateRequested { false };
     bool wireframeUi { false };
     bool animateTime { false };
     bool tonemapUi { true };
+    bool shadowsUi { true };
+    bool cascadeDebugUi { false };
     f32 exposureUi { 1.0f };
     f32 fogDensityUi { 0.0014f };
     f32 fogHeightFalloffUi { 0.02f };

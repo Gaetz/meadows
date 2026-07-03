@@ -27,6 +27,10 @@ struct FrameUniforms {
     Vec4 postInfo {};         // x = filmic tonemap (0/1), y = exposure
     Vec4 fogInfo {};          // x = density, y = height falloff (1/m),
                               // z = low-altitude boost, w = start distance (m)
+    array<Mat4, 3> sunViewProj {}; // world -> cascade shadow clip space
+    Vec4 cascadeSplits {};    // xyz = cascade far view-distances (m)
+    Vec4 shadowInfo {};       // xyz = world texel size per cascade,
+                              // w = shadow strength (0 = shadows off)
 };
 
 } // namespace render

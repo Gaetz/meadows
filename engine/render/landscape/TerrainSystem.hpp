@@ -75,8 +75,17 @@ public:
                       ShaderLibrary& shaders);
     bool isWireframe() const { return wireframe; }
 
-    // Records terrain draws into the current render pass.
-    void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup);
+    // Records terrain draws into the current render pass. `shadowBindGroup`
+    // provides the CSM map + comparison sampler (texture unit 1).
+    void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
+              rhi::BindGroupHandle shadowBindGroup);
+
+    // Depth-only caster pass into one shadow cascade. `casterBindGroup`
+    // carries the cascade's light matrix; chunks beyond `maxChunkDistance`
+    // (Chebyshev, from the camera chunk) are skipped.
+    void drawDepth(rhi::CommandBuffer& cmd,
+                   rhi::BindGroupHandle casterBindGroup, const Vec3& cameraPos,
+                   i32 maxChunkDistance);
 
     // Streaming stats for the debug panel.
     u32 residentCount() const { return resident; }
@@ -122,6 +131,7 @@ private:
     void enqueueBuild(i32 cx, i32 cz, u8 lod);
     void evictFar(rhi::Device& device, const Vec3& cameraPos);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
+    void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
     sptr<Shared> shared;
     core::JobSystem* jobs { nullptr };
@@ -136,8 +146,14 @@ private:
     // Chunks of equal LOD share one index buffer (identical topology).
     array<rhi::BufferHandle, kLodCount> indexBuffers {};
     array<u32, kLodCount> indexCounts {};
+    // Grid triangles only (skirts excluded): the shadow pass uses this —
+    // skirts are vertical walls along chunk borders and would cast shadow
+    // lines onto neighboring terrain.
+    array<u32, kLodCount> gridIndexCounts {};
     rhi::PipelineHandle pipeline {};
     u64 shaderGeneration { 0 };
+    rhi::PipelineHandle casterPipeline {};
+    u64 casterShaderGeneration { 0 };
 
     // Splat material array (grass/rock/snow/sand tiles) + anisotropic
     // repeat sampler, bound as bind group 1 by draw().

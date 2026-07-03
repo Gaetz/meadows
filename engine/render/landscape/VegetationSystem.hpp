@@ -55,7 +55,14 @@ public:
 
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
-    void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup);
+    void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
+              rhi::BindGroupHandle shadowBindGroup);
+
+    // Depth-only caster pass into one shadow cascade (frameBindGroup feeds
+    // the sway/fade math, casterBindGroup the cascade's light matrix).
+    void drawDepth(rhi::CommandBuffer& cmd,
+                   rhi::BindGroupHandle frameBindGroup,
+                   rhi::BindGroupHandle casterBindGroup);
 
     u32 propTotal() const { return instances; }
 
@@ -98,6 +105,7 @@ private:
     void createVariantMeshes(rhi::Device& device, u32 terrainSeed);
     void destroyVariantMeshes(rhi::Device& device);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
+    void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
     sptr<Shared> shared;
     core::JobSystem* jobs { nullptr };
@@ -109,6 +117,8 @@ private:
     array<VariantMesh, kVariantCount> variantMeshes {};
     rhi::PipelineHandle pipeline {};
     u64 shaderGeneration { 0 };
+    rhi::PipelineHandle casterPipeline {};
+    u64 casterShaderGeneration { 0 };
 };
 
 // Pure CPU scatter for one chunk, runs on worker threads. Deterministic.

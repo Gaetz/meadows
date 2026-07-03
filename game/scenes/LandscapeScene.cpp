@@ -32,6 +32,9 @@ void LandscapeScene::onEnter() {
     vegetation.create(device, *shaders, engine->getJobSystem(),
                       terrain.params.seed);
     sky.create(device, *shaders);
+    if (device.caps().offscreenTargets && device.caps().textureArrays) {
+        shadows.create(device);
+    }
 
     if (device.caps().offscreenTargets) {
         blitSampler = device.createSampler({}); // linear, clamp — identity
@@ -52,6 +55,7 @@ void LandscapeScene::onExit() {
     destroyOffscreenTarget(device);
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
+    shadows.destroy(device);
     sky.destroy(device);
     vegetation.destroy(device);
     grass.destroy(device);
@@ -157,6 +161,20 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     const render::Camera3D& camera = flyCamera.camera;
     const Mat4 viewProj = camera.viewProj(frame.aspect);
     const render::SkySystem::SkyState skyState = sky.evaluate();
+
+    // Shadows ramp out as the sun crosses the horizon (no sun, no shadows).
+    const bool shadowsAvailable = shadows.receiverBindGroup().id != 0;
+    const f32 shadowStrength =
+        (shadowsUi && shadowsAvailable)
+            ? glm::smoothstep(-0.02f, 0.06f, skyState.sunDirection.y)
+            : 0.0f;
+    render::ShadowMapper::Cascades cascades {};
+    if (shadowStrength > 0.0f) {
+        cascades = shadows.computeCascades(camera, frame.aspect,
+                                           skyState.sunDirection);
+        shadows.updateCascadeUbos(frame.device, cascades);
+    }
+
     const render::FrameUniforms uniforms {
         .viewProj = viewProj,
         .invViewProj = glm::inverse(viewProj),
@@ -170,11 +188,32 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .horizonColor = { skyState.horizonColor, 0.0f },
         .horizonFarColor = { skyState.horizonFarColor, 0.0f },
         .terrainInfo = { terrain.params.seaLevel, 110.0f, 0.25f, 0.0f },
-        .postInfo = { tonemapUi ? 1.0f : 0.0f, exposureUi, 0.0f, 0.0f },
+        .postInfo = { tonemapUi ? 1.0f : 0.0f, exposureUi,
+                      cascadeDebugUi ? 1.0f : 0.0f, 0.0f },
         .fogInfo = { fogDensityUi, fogHeightFalloffUi, fogLowBoostUi,
                      fogStartUi },
+        .sunViewProj = cascades.viewProj,
+        .cascadeSplits = { cascades.splitFar[0], cascades.splitFar[1],
+                           cascades.splitFar[2], 0.0f },
+        .shadowInfo = { cascades.texelWorld[0], cascades.texelWorld[1],
+                        cascades.texelWorld[2], shadowStrength },
     };
     frame.device.updateBuffer(frameUbo, &uniforms, sizeof(uniforms), 0);
+
+    // Cascade passes: depth-only casters from the sun's point of view.
+    if (shadowStrength > 0.0f) {
+        for (u32 i = 0; i < render::ShadowMapper::kCascadeCount; ++i) {
+            frame.cmd.beginRenderPass(
+                { .framebuffer = shadows.framebuffer(i),
+                  .loadOp = rhi::LoadOp::DontCare,
+                  .depthLoadOp = rhi::LoadOp::Clear });
+            terrain.drawDepth(frame.cmd, shadows.casterBindGroup(i),
+                              camera.position, 9);
+            vegetation.drawDepth(frame.cmd, frameBindGroup,
+                                 shadows.casterBindGroup(i));
+            frame.cmd.endRenderPass();
+        }
+    }
 
     const bool useOffscreen = frame.device.caps().offscreenTargets;
     if (useOffscreen) {
@@ -189,9 +228,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         { .framebuffer = useOffscreen ? offscreenFb : rhi::FramebufferHandle {},
           .loadOp = rhi::LoadOp::DontCare,
           .depthLoadOp = rhi::LoadOp::Clear });
-    terrain.draw(frame.cmd, frameBindGroup);
-    vegetation.draw(frame.cmd, frameBindGroup);
-    grass.draw(frame.cmd, frameBindGroup);
+    terrain.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup());
+    vegetation.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup());
+    grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup());
     sky.draw(frame.cmd, frameBindGroup); // after opaque: background only
     frame.cmd.endRenderPass();
 
@@ -209,7 +248,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 16: rocks & bushes.");
+    ImGui::TextUnformatted("Brick 17: cascaded shadow maps.");
     ImGui::TextUnformatted(
         "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -235,6 +274,9 @@ void LandscapeScene::drawUi() {
     ImGui::Checkbox("Animate (24 h in 2 min)", &animateTime);
     ImGui::Separator();
     ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
+    ImGui::Checkbox("Shadows", &shadowsUi);
+    ImGui::SameLine();
+    ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);
     ImGui::SliderFloat("Exposure", &exposureUi, 0.25f, 3.0f, "%.2f");
     ImGui::SliderFloat("Fog density", &fogDensityUi, 0.0f, 0.004f, "%.4f",
                        ImGuiSliderFlags_Logarithmic);

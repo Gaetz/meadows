@@ -15,6 +15,7 @@ namespace render {
 namespace {
 
 constexpr const char* kTreeShader = "tree";
+constexpr const char* kPropCasterShader = "shadow_prop";
 constexpr f32 kTreeSpacing = 4.0f; // meters between scatter candidates
 
 u32 hashU32(u32 v) {
@@ -188,8 +189,11 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     jobs = &jobSystem;
     shared = std::make_shared<Shared>();
     createVariantMeshes(device, terrainSeed);
-    shaders.load(kTreeShader, { { "FrameUbo", 0 } });
+    shaders.load(kTreeShader, { { "FrameUbo", 0 } },
+                 { { "uShadowMap", 1 } });
     buildPipeline(device, shaders);
+    shaders.load(kPropCasterShader, { { "FrameUbo", 0 }, { "ShadowUbo", 1 } });
+    buildCasterPipeline(device, shaders);
 }
 
 void VegetationSystem::createVariantMeshes(rhi::Device& device,
@@ -233,6 +237,8 @@ void VegetationSystem::destroy(rhi::Device& device) {
     instances = 0;
     device.destroyPipeline(pipeline);
     pipeline = {};
+    device.destroyPipeline(casterPipeline);
+    casterPipeline = {};
     destroyVariantMeshes(device);
 }
 
@@ -355,20 +361,85 @@ void VegetationSystem::buildPipeline(rhi::Device& device,
     shaderGeneration = shaders.generation(kTreeShader);
 }
 
+void VegetationSystem::buildCasterPipeline(rhi::Device& device,
+                                           ShaderLibrary& shaders) {
+    if (casterPipeline.id != 0) {
+        device.destroyPipeline(casterPipeline);
+    }
+    casterPipeline = device.createPipeline(
+        { .shader = shaders.get(kPropCasterShader),
+          .vertexBuffers =
+              { { .stride = sizeof(MeshVertex),
+                  .attributes = { { .location = 0,
+                                    .format = rhi::VertexFormat::F32x3,
+                                    .offset = offsetof(MeshVertex, position) },
+                                  { .location = 2,
+                                    .format = rhi::VertexFormat::F32x2,
+                                    .offset = offsetof(MeshVertex, uv) } } },
+                { .stride = sizeof(Instance),
+                  .stepMode = rhi::VertexStepMode::Instance,
+                  .attributes = { { .location = 4,
+                                    .format = rhi::VertexFormat::F32x4,
+                                    .offset = offsetof(Instance,
+                                                       positionScale) },
+                                  { .location = 5,
+                                    .format = rhi::VertexFormat::F32x4,
+                                    .offset = offsetof(Instance, params) } } } },
+          .depth = { .testEnable = true,
+                     .writeEnable = true,
+                     .compare = rhi::CompareFunc::Less },
+          .cull = rhi::CullMode::Back,
+          .depthBias = 4.0f,
+          .depthBiasSlope = 2.5f });
+    casterShaderGeneration = shaders.generation(kPropCasterShader);
+}
+
 void VegetationSystem::refreshPipeline(rhi::Device& device,
                                        ShaderLibrary& shaders) {
     if (shaders.generation(kTreeShader) != shaderGeneration) {
         buildPipeline(device, shaders);
     }
+    if (shaders.generation(kPropCasterShader) != casterShaderGeneration) {
+        buildCasterPipeline(device, shaders);
+    }
 }
 
 void VegetationSystem::draw(rhi::CommandBuffer& cmd,
-                            rhi::BindGroupHandle frameBindGroup) {
+                            rhi::BindGroupHandle frameBindGroup,
+                            rhi::BindGroupHandle shadowBindGroup) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
+    if (shadowBindGroup.id != 0) {
+        cmd.setBindGroup(2, shadowBindGroup);
+    }
     // Variant-major: bind each tree mesh once, then one instanced draw per
     // chunk holding that variant (firstInstance = offset into the chunk's
     // variant-sorted instance buffer; requires baseInstance, present on 4.6).
+    for (u32 v = 0; v < kVariantCount; ++v) {
+        bool meshBound = false;
+        for (const auto& [key, chunk] : chunks) {
+            if (!chunk.resident || chunk.counts[v] == 0) {
+                continue;
+            }
+            if (!meshBound) {
+                cmd.setVertexBuffer(0, variantMeshes[v].vertexBuffer);
+                cmd.setIndexBuffer(variantMeshes[v].indexBuffer,
+                                   rhi::IndexFormat::U32);
+                meshBound = true;
+            }
+            cmd.setVertexBuffer(1, chunk.instanceBuffer);
+            cmd.drawIndexed(variantMeshes[v].indexCount, chunk.counts[v], 0,
+                            chunk.firstInstance[v]);
+        }
+    }
+}
+
+void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
+                                 rhi::BindGroupHandle frameBindGroup,
+                                 rhi::BindGroupHandle casterBindGroup) {
+    cmd.setPipeline(casterPipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    cmd.setBindGroup(1, casterBindGroup);
     for (u32 v = 0; v < kVariantCount; ++v) {
         bool meshBound = false;
         for (const auto& [key, chunk] : chunks) {

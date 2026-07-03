@@ -15,6 +15,7 @@ namespace render {
 namespace {
 
 constexpr const char* kTerrainShader = "terrain";
+constexpr const char* kTerrainCasterShader = "shadow_terrain";
 
 // Per-vertex material color until the splatting brick replaces it with
 // blended tiling textures: sand at the shoreline, grass on plains, rock on
@@ -136,6 +137,9 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     for (u32 lod = 0; lod < kLodCount; ++lod) {
         const vector<u32> indices = buildChunkIndices(lod);
         indexCounts[lod] = static_cast<u32>(indices.size());
+        // buildChunkIndices appends the skirt AFTER the grid, so the grid
+        // prefix is a valid draw range on its own.
+        gridIndexCounts[lod] = lodQuads(lod) * lodQuads(lod) * 6;
         indexBuffers[lod] =
             device.createBuffer({ .usage = rhi::BufferUsage::Index,
                                   .size = indices.size() * sizeof(u32) },
@@ -172,8 +176,10 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     }
 
     shaders.load(kTerrainShader, { { "FrameUbo", 0 } },
-                 { { "uSplat", 0 } });
+                 { { "uSplat", 0 }, { "uShadowMap", 1 } });
     buildPipeline(device, shaders);
+    shaders.load(kTerrainCasterShader, { { "ShadowUbo", 1 } });
+    buildCasterPipeline(device, shaders);
 }
 
 void TerrainSystem::destroy(rhi::Device& device) {
@@ -188,6 +194,8 @@ void TerrainSystem::destroy(rhi::Device& device) {
     pending = 0;
     device.destroyPipeline(pipeline);
     pipeline = {};
+    device.destroyPipeline(casterPipeline);
+    casterPipeline = {};
     for (u32 lod = 0; lod < kLodCount; ++lod) {
         device.destroyBuffer(indexBuffers[lod]);
         indexBuffers[lod] = {};
@@ -352,10 +360,36 @@ void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
     shaderGeneration = shaders.generation(kTerrainShader);
 }
 
+void TerrainSystem::buildCasterPipeline(rhi::Device& device,
+                                        ShaderLibrary& shaders) {
+    if (casterPipeline.id != 0) {
+        device.destroyPipeline(casterPipeline);
+    }
+    casterPipeline = device.createPipeline(
+        { .shader = shaders.get(kTerrainCasterShader),
+          .vertexBuffers =
+              { { .stride = sizeof(MeshVertex),
+                  .attributes = { { .location = 0,
+                                    .format = rhi::VertexFormat::F32x3,
+                                    .offset = offsetof(MeshVertex,
+                                                       position) } } } },
+          .depth = { .testEnable = true,
+                     .writeEnable = true,
+                     .compare = rhi::CompareFunc::Less },
+          .cull = rhi::CullMode::Back,
+          // Polygon offset: the first line of defense against shadow acne.
+          .depthBias = 4.0f,
+          .depthBiasSlope = 2.5f });
+    casterShaderGeneration = shaders.generation(kTerrainCasterShader);
+}
+
 void TerrainSystem::refreshPipeline(rhi::Device& device,
                                     ShaderLibrary& shaders) {
     if (shaders.generation(kTerrainShader) != shaderGeneration) {
         buildPipeline(device, shaders);
+    }
+    if (shaders.generation(kTerrainCasterShader) != casterShaderGeneration) {
+        buildCasterPipeline(device, shaders);
     }
 }
 
@@ -368,11 +402,15 @@ void TerrainSystem::setWireframe(bool enabled, rhi::Device& device,
 }
 
 void TerrainSystem::draw(rhi::CommandBuffer& cmd,
-                         rhi::BindGroupHandle frameBindGroup) {
+                         rhi::BindGroupHandle frameBindGroup,
+                         rhi::BindGroupHandle shadowBindGroup) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
     if (splatBindGroup.id != 0) {
         cmd.setBindGroup(1, splatBindGroup);
+    }
+    if (shadowBindGroup.id != 0) {
+        cmd.setBindGroup(2, shadowBindGroup);
     }
     // Grouped by LOD so the shared index buffer binds once per level.
     for (u32 lod = 0; lod < kLodCount; ++lod) {
@@ -387,6 +425,37 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
             }
             cmd.setVertexBuffer(0, chunk.vertexBuffer);
             cmd.drawIndexed(indexCounts[lod]);
+        }
+    }
+}
+
+// Skirts are excluded here (gridIndexCounts): seen from the sun they are
+// vertical walls along chunk borders and would print shadow lines.
+void TerrainSystem::drawDepth(rhi::CommandBuffer& cmd,
+                              rhi::BindGroupHandle casterBindGroup,
+                              const Vec3& cameraPos, i32 maxChunkDistance) {
+    const i32 camCx = chunkCoordOf(cameraPos.x);
+    const i32 camCz = chunkCoordOf(cameraPos.z);
+    cmd.setPipeline(casterPipeline);
+    cmd.setBindGroup(0, casterBindGroup);
+    for (u32 lod = 0; lod < kLodCount; ++lod) {
+        bool indexBufferBound = false;
+        for (const auto& [key, chunk] : chunks) {
+            if (chunk.residentLod != lod) {
+                continue;
+            }
+            const i32 cx = static_cast<i32>(key >> 32);
+            const i32 cz = static_cast<i32>(key & 0xffffffffu);
+            if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
+                maxChunkDistance) {
+                continue; // beyond the last cascade
+            }
+            if (!indexBufferBound) {
+                cmd.setIndexBuffer(indexBuffers[lod], rhi::IndexFormat::U32);
+                indexBufferBound = true;
+            }
+            cmd.setVertexBuffer(0, chunk.vertexBuffer);
+            cmd.drawIndexed(gridIndexCounts[lod]);
         }
     }
 }

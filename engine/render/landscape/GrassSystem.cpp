@@ -124,7 +124,8 @@ void GrassSystem::create(rhi::Device& device, ShaderLibrary& shaders,
         kBladeIndices);
     bladeIndexCount = static_cast<u32>(std::size(kBladeIndices));
 
-    shaders.load(kGrassShader, { { "FrameUbo", 0 } });
+    shaders.load(kGrassShader, { { "FrameUbo", 0 } },
+                 { { "uShadowMap", 1 } });
     buildPipeline(device, shaders);
 }
 
@@ -253,9 +254,13 @@ void GrassSystem::refreshPipeline(rhi::Device& device,
 }
 
 void GrassSystem::draw(rhi::CommandBuffer& cmd,
-                       rhi::BindGroupHandle frameBindGroup) {
+                       rhi::BindGroupHandle frameBindGroup,
+                       rhi::BindGroupHandle shadowBindGroup) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
+    if (shadowBindGroup.id != 0) {
+        cmd.setBindGroup(2, shadowBindGroup);
+    }
     cmd.setVertexBuffer(0, bladeVertexBuffer);
     cmd.setIndexBuffer(bladeIndexBuffer, rhi::IndexFormat::U16);
     for (const auto& [key, chunk] : chunks) {

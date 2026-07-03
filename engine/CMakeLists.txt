@@ -19,6 +19,7 @@ add_library(meadows STATIC
     render/ShaderLibrary.cpp
     render/SpriteRenderer.cpp
     render/landscape/GrassSystem.cpp
+    render/landscape/ShadowMapper.cpp
     render/landscape/SkySystem.cpp
     render/landscape/SplatTextures.cpp
     render/landscape/TerrainNoise.cpp

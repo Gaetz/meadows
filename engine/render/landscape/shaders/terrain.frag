@@ -4,6 +4,8 @@
 
 // Splat array, layers: 0 grass, 1 rock, 2 snow, 3 sand (SplatTextures.hpp).
 layout(binding = 0) uniform sampler2DArray uSplat;
+layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
+#include "shadow.glsl"
 
 in vec3 vNormal;
 in vec3 vColor;
@@ -42,7 +44,9 @@ void main() {
                    texture(uSplat, vec3(uv, 3.0)).rgb * sandW) /
                   total;
 
+    albedo *= cascadeDebugTint(vWorldPos);
     float ndl = max(dot(n, uSunDirection.xyz), 0.0);
-    vec3 lit = albedo * (uAmbientColor.rgb + uSunColor.rgb * ndl);
+    float shadow = shadowFactor(vWorldPos, n);
+    vec3 lit = albedo * (uAmbientColor.rgb + uSunColor.rgb * (ndl * shadow));
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

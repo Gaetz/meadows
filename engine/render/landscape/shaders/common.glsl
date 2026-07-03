@@ -17,4 +17,8 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uPostInfo;         // x = filmic tonemap (0/1), y = exposure
     vec4 uFogInfo;          // x = density, y = height falloff (1/m),
                             // z = low-altitude boost, w = start distance (m)
+    mat4 uSunViewProj[3];   // world -> cascade shadow clip space
+    vec4 uCascadeSplits;    // xyz = cascade far view-distances (m)
+    vec4 uShadowInfo;       // xyz = world texel size per cascade,
+                            // w = shadow strength (0 = shadows off)
 };

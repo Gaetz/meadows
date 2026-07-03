@@ -2,6 +2,9 @@
 #include "common.glsl"
 #include "sky.glsl"
 
+layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
+#include "shadow.glsl"
+
 in float vT;
 in float vSide;
 in float vTint;
@@ -34,9 +37,11 @@ void main() {
     vec3 halfDir = normalize(uSunDirection.xyz - viewDir);
     float sheen = pow(max(dot(n, halfDir), 0.0), 24.0) * 0.25 * vT;
 
+    float shadow = shadowFactor(vWorldPos, n);
     vec3 lit = albedo * ao *
-                   (uAmbientColor.rgb + uSunColor.rgb * (wrap + backlight)) +
-               uSunColor.rgb * sheen * ao;
+                   (uAmbientColor.rgb +
+                    uSunColor.rgb * ((wrap + backlight) * shadow)) +
+               uSunColor.rgb * sheen * ao * shadow;
 
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }
