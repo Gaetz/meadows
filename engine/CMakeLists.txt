@@ -15,7 +15,10 @@ add_library(meadows STATIC
     platform/common/Paths.cpp
     platform/common/Window.cpp
     render/FlyCamera.cpp
+    render/ShaderLibrary.cpp
     render/SpriteRenderer.cpp
+    render/landscape/TerrainNoise.cpp
+    render/landscape/TerrainSystem.cpp
     rhi/Device.cpp
     rhi/backends/gl/GlDevice.cpp
     rhi/backends/gl/GlDeviceBase.cpp
@@ -44,6 +47,12 @@ target_link_libraries(meadows
 target_compile_definitions(meadows PUBLIC
     $<$<CONFIG:Debug>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
     $<$<NOT:$<CONFIG:Debug>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO>
+)
+
+# Debug builds hot-reload shaders straight from the repo's source directory
+# (editing a .vert/.frag reloads live); other builds read <exe>/data/shaders.
+target_compile_definitions(meadows PRIVATE
+    $<$<CONFIG:Debug>:MEADOWS_SHADER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/render/landscape/shaders">
 )
 
 meadows_set_warnings(meadows)

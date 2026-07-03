@@ -43,6 +43,7 @@ add_executable(meadows-tests
     StatsTuningTest.cpp
     StatusBuildupTest.cpp
     SurvivalTest.cpp
+    TerrainNoiseTest.cpp
     TypedDamageTest.cpp
     WorldModelTest.cpp
 )

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "engine/render/FlyCamera.hpp"
+#include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
 
@@ -12,8 +14,8 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 3: fly camera (RMB mouselook + WASD/EQ) over an instanced cube grid,
-// with the FrameUniforms UBO every landscape shader will share.
+// Brick 5: one 64 m terrain chunk (seeded FBM noise, analytic normals,
+// height/slope material colors, lambert sun) under the fly camera.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -34,14 +36,11 @@ private:
     render::FlyCamera flyCamera;
     f32 timeSeconds { 0.0f };
 
-    rhi::BufferHandle vertexBuffer {};
-    rhi::BufferHandle indexBuffer {};
-    rhi::BufferHandle instanceBuffer {};
+    uptr<render::ShaderLibrary> shaders;
+    render::TerrainSystem terrain;
+
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};
-    rhi::ShaderHandle shader {};
-    rhi::PipelineHandle pipeline {};
-    u32 instanceCount { 0 };
 };
 
 } // namespace game
