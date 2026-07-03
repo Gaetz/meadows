@@ -42,6 +42,10 @@ f32 height(const TerrainParams& params, f32 x, f32 z);
 // never mesh-derived) so normals are seamless across chunk borders and LODs.
 Vec3 normal(const TerrainParams& params, f32 x, f32 z, f32 step = 0.5f);
 
+// Raw smooth value noise in [0,1] — the building block, exposed for scatter
+// masks (grass patches, forest belts) so they share the terrain's hash.
+f32 noise01(u32 seed, f32 x, f32 z);
+
 } // namespace terrain
 
 } // namespace render

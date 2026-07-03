@@ -28,6 +28,7 @@ void LandscapeScene::onEnter() {
 
     shaders = std::make_unique<render::ShaderLibrary>(device);
     terrain.create(device, *shaders, engine->getJobSystem());
+    grass.create(device, *shaders, engine->getJobSystem());
     sky.create(device, *shaders);
 
     if (device.caps().offscreenTargets) {
@@ -50,6 +51,7 @@ void LandscapeScene::onExit() {
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
     sky.destroy(device);
+    grass.destroy(device);
     terrain.destroy(device);
     shaders.reset(); // destroys the library's shader programs
     device.destroyBindGroup(frameBindGroup);
@@ -134,13 +136,16 @@ void LandscapeScene::update(f32 dt) {
 void LandscapeScene::render(engine::FrameContext& frame) {
     shaders->pollHotReload(frame.dt);
     terrain.refreshPipeline(frame.device, *shaders);
+    grass.refreshPipeline(frame.device, *shaders);
     sky.refreshPipeline(frame.device, *shaders);
     terrain.setWireframe(wireframeUi, frame.device, *shaders);
     if (regenerateRequested) {
         regenerateRequested = false;
         terrain.regenerate(frame.device);
+        grass.regenerate(frame.device);
     }
     terrain.update(frame.device, flyCamera.camera.position);
+    grass.update(frame.device, terrain.params, flyCamera.camera.position);
 
     const render::Camera3D& camera = flyCamera.camera;
     const Mat4 viewProj = camera.viewProj(frame.aspect);
@@ -178,6 +183,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
           .loadOp = rhi::LoadOp::DontCare,
           .depthLoadOp = rhi::LoadOp::Clear });
     terrain.draw(frame.cmd, frameBindGroup);
+    grass.draw(frame.cmd, frameBindGroup);
     sky.draw(frame.cmd, frameBindGroup); // after opaque: background only
     frame.cmd.endRenderPass();
 
@@ -195,7 +201,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 13: sky-tinted distance/height fog.");
+    ImGui::TextUnformatted("Brick 14: animated grass.");
     ImGui::TextUnformatted(
         "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -207,6 +213,7 @@ void LandscapeScene::drawUi() {
     ImGui::Text("Resident: %u | pending: %u | uploads/frame: %u",
                 terrain.residentCount(), terrain.pendingCount(),
                 terrain.uploadsLastFrame());
+    ImGui::Text("Grass tufts: %u", grass.instanceTotal());
     ImGui::InputScalar("Seed", ImGuiDataType_U32, &terrain.params.seed);
     ImGui::SameLine();
     if (ImGui::Button("Regenerate")) {

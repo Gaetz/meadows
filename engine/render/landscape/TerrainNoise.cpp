@@ -90,6 +90,10 @@ f32 smoothstepf(f32 low, f32 high, f32 x) {
 
 namespace terrain {
 
+f32 noise01(u32 seed, f32 x, f32 z) {
+    return valueNoise(seed, x, z);
+}
+
 f32 height(const TerrainParams& params, f32 x, f32 z) {
     const f32 hills = (fbm(params.seed, x, z, 1.0f / params.hillWavelength,
                            params.octaves, params.lacunarity, params.gain) *

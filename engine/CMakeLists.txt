@@ -17,6 +17,7 @@ add_library(meadows STATIC
     render/FlyCamera.cpp
     render/ShaderLibrary.cpp
     render/SpriteRenderer.cpp
+    render/landscape/GrassSystem.cpp
     render/landscape/SkySystem.cpp
     render/landscape/SplatTextures.cpp
     render/landscape/TerrainNoise.cpp
