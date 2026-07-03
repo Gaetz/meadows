@@ -35,6 +35,10 @@ public:
     i32 width() const;
     i32 height() const;
 
+    // Relative mouse mode: hides the cursor and streams unbounded motion
+    // deltas (Input::mouseDelta) — mouselook for the 3D fly camera.
+    void setRelativeMouseMode(bool enabled);
+
     // Opaque native window for platform-internal consumers (GlContext, later
     // a Vulkan surface). Outside platform/, treat it as a token — never cast.
     void* nativeHandle() const;

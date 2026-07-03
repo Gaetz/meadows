@@ -21,7 +21,9 @@ SDL_Scancode scancodeFor(Key key) {
     case Key::Escape: return SDL_SCANCODE_ESCAPE;
     case Key::E:      return SDL_SCANCODE_E;
     case Key::F:      return SDL_SCANCODE_F;
+    case Key::Q:      return SDL_SCANCODE_Q;
     case Key::Shift:  return SDL_SCANCODE_LSHIFT;
+    case Key::Ctrl:   return SDL_SCANCODE_LCTRL;
     case Key::Num1:   return SDL_SCANCODE_1;
     case Key::Num2:   return SDL_SCANCODE_2;
     case Key::Num3:   return SDL_SCANCODE_3;
@@ -58,6 +60,11 @@ void Input::update() {
     float mx = 0.0f, my = 0.0f;
     const SDL_MouseButtonFlags mask = SDL_GetMouseState(&mx, &my);
     mousePos = { mx, my };
+    // Accumulated motion since the previous call — works in relative mouse
+    // mode too, where the absolute position stops moving.
+    float dx = 0.0f, dy = 0.0f;
+    SDL_GetRelativeMouseState(&dx, &dy);
+    mouseDeltaPx = { dx, dy };
     for (size_t i = 0; i < mouseCurrent.size(); ++i) {
         mouseCurrent[i] =
             (mask & SDL_BUTTON_MASK(sdlButtonFor(static_cast<MouseButton>(i)))) != 0;
@@ -75,6 +82,10 @@ bool Input::wasPressed(Key key) const {
 
 Vec2 Input::mousePosition() const {
     return mousePos;
+}
+
+Vec2 Input::mouseDelta() const {
+    return mouseDeltaPx;
 }
 
 bool Input::mouseDown(MouseButton button) const {

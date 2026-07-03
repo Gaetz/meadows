@@ -14,6 +14,7 @@ add_library(meadows STATIC
     platform/common/Input.cpp
     platform/common/Paths.cpp
     platform/common/Window.cpp
+    render/FlyCamera.cpp
     render/SpriteRenderer.cpp
     rhi/Device.cpp
     rhi/backends/gl/GlDevice.cpp

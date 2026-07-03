@@ -1,5 +1,6 @@
 #pragma once
 
+#include "engine/render/FlyCamera.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
 
@@ -11,8 +12,8 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 2: two hard-coded rotating cubes proving RHI depth test + backface
-// culling. Shaders stay embedded until the ShaderLibrary brick.
+// Brick 3: fly camera (RMB mouselook + WASD/EQ) over an instanced cube grid,
+// with the FrameUniforms UBO every landscape shader will share.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -30,14 +31,17 @@ public:
 private:
     engine::Engine* engine { nullptr };
 
+    render::FlyCamera flyCamera;
+    f32 timeSeconds { 0.0f };
+
     rhi::BufferHandle vertexBuffer {};
     rhi::BufferHandle indexBuffer {};
-    rhi::BufferHandle cubeUbo[2] {};
-    rhi::BindGroupHandle cubeBindGroup[2] {};
+    rhi::BufferHandle instanceBuffer {};
+    rhi::BufferHandle frameUbo {};
+    rhi::BindGroupHandle frameBindGroup {};
     rhi::ShaderHandle shader {};
     rhi::PipelineHandle pipeline {};
-
-    f32 angle { 0.0f };
+    u32 instanceCount { 0 };
 };
 
 } // namespace game

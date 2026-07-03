@@ -14,7 +14,7 @@ enum class Key : u16 {
     W, A, S, D,
     Up, Down, Left, Right,
     Space, Enter, Escape,
-    E, F, Shift,
+    E, F, Q, Shift, Ctrl,
     Num1, Num2, Num3, Num4, Num5,
     Count
 };
@@ -37,6 +37,9 @@ public:
     bool wasPressed(Key key) const; // edge: down this frame, up last frame
 
     Vec2 mousePosition() const;             // screen pixels, top-left origin
+    // Mouse motion since last frame, in pixels. Keeps accumulating in relative
+    // mouse mode (Window::setRelativeMouseMode), where mousePosition freezes.
+    Vec2 mouseDelta() const;
     bool mouseDown(MouseButton button) const;    // held this frame
     bool mousePressed(MouseButton button) const; // edge: down this, up last
 
@@ -45,7 +48,8 @@ private:
     array<bool, static_cast<size_t>(Key::Count)> previous {};
     array<bool, static_cast<size_t>(MouseButton::Count)> mouseCurrent {};
     array<bool, static_cast<size_t>(MouseButton::Count)> mousePrevious {};
-    Vec2 mousePos {}; // screen pixels
+    Vec2 mousePos {};      // screen pixels
+    Vec2 mouseDeltaPx {};  // pixels moved since last update()
 };
 
 } // namespace platform

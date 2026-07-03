@@ -84,6 +84,10 @@ i32 Window::height() const {
     return impl->height;
 }
 
+void Window::setRelativeMouseMode(bool enabled) {
+    SDL_SetWindowRelativeMouseMode(impl->window, enabled);
+}
+
 void* Window::nativeHandle() const {
     return impl->window;
 }
