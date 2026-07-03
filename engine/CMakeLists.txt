@@ -26,6 +26,7 @@ add_library(meadows STATIC
     render/landscape/TerrainSystem.cpp
     render/landscape/TreeGenerator.cpp
     render/landscape/VegetationSystem.cpp
+    render/landscape/WaterSystem.cpp
     rhi/Device.cpp
     rhi/backends/gl/GlDevice.cpp
     rhi/backends/gl/GlDeviceBase.cpp

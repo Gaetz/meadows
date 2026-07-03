@@ -21,4 +21,5 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uCascadeSplits;    // xyz = cascade far view-distances (m)
     vec4 uShadowInfo;       // xyz = world texel size per cascade,
                             // w = shadow strength (0 = shadows off)
+    vec4 uScreenInfo;       // xy = viewport size (px), zw = 1/size
 };

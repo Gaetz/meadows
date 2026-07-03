@@ -31,6 +31,7 @@ struct FrameUniforms {
     Vec4 cascadeSplits {};    // xyz = cascade far view-distances (m)
     Vec4 shadowInfo {};       // xyz = world texel size per cascade,
                               // w = shadow strength (0 = shadows off)
+    Vec4 screenInfo {};       // xy = viewport size (px), zw = 1/size
 };
 
 } // namespace render

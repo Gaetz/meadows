@@ -7,6 +7,7 @@
 #include "engine/render/landscape/SkySystem.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
+#include "engine/render/landscape/WaterSystem.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
 
@@ -18,9 +19,9 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 17: cascaded shadow maps — 3 sun cascades (depth array + hardware
-// PCF), terrain and props cast, everything receives; shadows lengthen with
-// the day cycle and fade out as the sun crosses the horizon.
+// Brick 18: water — a sea-level sheet with procedural wave normals, fresnel
+// between sky reflection and depth-absorbed refraction (from a pre-water
+// scene snapshot via copyTexture), and animated shore foam.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -52,6 +53,7 @@ private:
     render::VegetationSystem vegetation;
     render::SkySystem sky;
     render::ShadowMapper shadows;
+    render::WaterSystem water;
     bool regenerateRequested { false };
     bool wireframeUi { false };
     bool animateTime { false };
@@ -70,6 +72,11 @@ private:
     rhi::TextureHandle offscreenColor {};
     rhi::TextureHandle offscreenDepth {};
     rhi::FramebufferHandle offscreenFb {};
+    // Pre-water snapshots of the opaque scene (copyTexture targets).
+    rhi::TextureHandle sceneColorCopy {};
+    rhi::TextureHandle sceneDepthCopy {};
+    rhi::BindGroupHandle waterSceneBindGroup {};
+    rhi::SamplerHandle depthSampler {}; // nearest — depth must not filter
     rhi::SamplerHandle blitSampler {};
     rhi::BindGroupHandle blitBindGroup {};
     rhi::PipelineHandle blitPipeline {};

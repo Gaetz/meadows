@@ -26,7 +26,7 @@ GlDevice46::GlDevice46(uptr<platform::GlContext> context,
               .hdrFormats = true,
               .samplerObjects = true,
               .mipmapGeneration = true,
-              .copyTexture = false }; // arrives with the water brick
+              .copyTexture = true }; // glCopyImageSubData (GL 4.3+)
 }
 
 namespace {

@@ -30,6 +30,8 @@ public:
     void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex,
                      u32 firstInstance) override;
 
+    void copyTexture(TextureHandle src, TextureHandle dst) override;
+
 private:
     GlDeviceBase& device;
     u32 currentPipelineId { 0 };

@@ -27,7 +27,7 @@ struct TerrainParams {
     f32 mountainMaskLow { 0.45f };  // mask noise below this -> plains
     f32 mountainMaskHigh { 0.75f }; // above this -> full mountains
 
-    f32 seaLevel { 8.0f };
+    f32 seaLevel { 14.0f };
 };
 
 namespace terrain {

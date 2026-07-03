@@ -31,6 +31,12 @@ public:
                       u32 firstVertex = 0) = 0;
     virtual void drawIndexed(u32 indexCount, u32 instanceCount = 1,
                              u32 firstIndex = 0, u32 firstInstance = 0) = 0;
+
+    // Copies the full base level of `src` into `dst` (same size and format;
+    // Vulkan vkCmdCopyImage). Call OUTSIDE a render pass — the intended use
+    // is snapshotting scene color/depth between passes so a later pass can
+    // sample them (sampling a bound attachment is undefined).
+    virtual void copyTexture(TextureHandle src, TextureHandle dst) = 0;
 };
 
 } // namespace rhi

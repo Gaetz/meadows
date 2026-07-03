@@ -228,6 +228,20 @@ void GlCommandBuffer::drawIndexed(u32 indexCount, u32 instanceCount,
     }
 }
 
+void GlCommandBuffer::copyTexture(TextureHandle src, TextureHandle dst) {
+    if (!device.caps().copyTexture) {
+        LOG_ERROR("copyTexture: not supported by this backend (check "
+                  "Device::caps().copyTexture)");
+        return;
+    }
+    const auto& srcTex = device.textures.at(src.id);
+    const auto& dstTex = device.textures.at(dst.id);
+    glCopyImageSubData(srcTex.name, GL_TEXTURE_2D, 0, 0, 0, 0, dstTex.name,
+                       GL_TEXTURE_2D, 0, 0, 0, 0,
+                       static_cast<GLsizei>(srcTex.width),
+                       static_cast<GLsizei>(srcTex.height), 1);
+}
+
 // --- GlDeviceBase -------------------------------------------------------------
 
 GlDeviceBase::GlDeviceBase(uptr<platform::GlContext> context,

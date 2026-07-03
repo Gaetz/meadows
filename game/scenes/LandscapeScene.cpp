@@ -35,6 +35,12 @@ void LandscapeScene::onEnter() {
     if (device.caps().offscreenTargets && device.caps().textureArrays) {
         shadows.create(device);
     }
+    if (device.caps().copyTexture) {
+        water.create(device, *shaders);
+        depthSampler = device.createSampler(
+            { .minFilter = rhi::FilterMode::Nearest,
+              .magFilter = rhi::FilterMode::Nearest });
+    }
 
     if (device.caps().offscreenTargets) {
         blitSampler = device.createSampler({}); // linear, clamp — identity
@@ -55,6 +61,8 @@ void LandscapeScene::onExit() {
     destroyOffscreenTarget(device);
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
+    water.destroy(device);
+    device.destroySampler(depthSampler);
     shadows.destroy(device);
     sky.destroy(device);
     vegetation.destroy(device);
@@ -96,6 +104,29 @@ void LandscapeScene::ensureOffscreenTarget(rhi::Device& device, u32 width,
         { .entries = { { .binding = 0,
                          .texture = offscreenColor,
                          .sampler = blitSampler } } });
+    if (device.caps().copyTexture) {
+        sceneColorCopy = device.createTexture(
+            { .width = width,
+              .height = height,
+              .format = device.caps().hdrFormats ? rhi::TextureFormat::RGBA16F
+                                                 : rhi::TextureFormat::RGBA8,
+              .filter = rhi::FilterMode::Linear,
+              .usage = rhi::TextureUsage_Sampled },
+            nullptr);
+        sceneDepthCopy = device.createTexture(
+            { .width = width,
+              .height = height,
+              .format = rhi::TextureFormat::Depth32F,
+              .usage = rhi::TextureUsage_Sampled },
+            nullptr);
+        waterSceneBindGroup = device.createBindGroup(
+            { .entries = { { .binding = 0,
+                             .texture = sceneColorCopy,
+                             .sampler = blitSampler },
+                           { .binding = 1,
+                             .texture = sceneDepthCopy,
+                             .sampler = depthSampler } } });
+    }
     offscreenWidth = width;
     offscreenHeight = height;
 }
@@ -104,6 +135,12 @@ void LandscapeScene::destroyOffscreenTarget(rhi::Device& device) {
     if (offscreenFb.id == 0) {
         return;
     }
+    device.destroyBindGroup(waterSceneBindGroup);
+    device.destroyTexture(sceneDepthCopy);
+    device.destroyTexture(sceneColorCopy);
+    waterSceneBindGroup = {};
+    sceneDepthCopy = {};
+    sceneColorCopy = {};
     device.destroyBindGroup(blitBindGroup);
     device.destroyFramebuffer(offscreenFb);
     device.destroyTexture(offscreenDepth);
@@ -146,6 +183,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     grass.refreshPipeline(frame.device, *shaders);
     vegetation.refreshPipeline(frame.device, *shaders);
     sky.refreshPipeline(frame.device, *shaders);
+    if (frame.device.caps().copyTexture) {
+        water.refreshPipeline(frame.device, *shaders);
+    }
     terrain.setWireframe(wireframeUi, frame.device, *shaders);
     if (regenerateRequested) {
         regenerateRequested = false;
@@ -197,6 +237,10 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                            cascades.splitFar[2], 0.0f },
         .shadowInfo = { cascades.texelWorld[0], cascades.texelWorld[1],
                         cascades.texelWorld[2], shadowStrength },
+        .screenInfo = { static_cast<f32>(frame.width),
+                        static_cast<f32>(frame.height),
+                        1.0f / static_cast<f32>(frame.width),
+                        1.0f / static_cast<f32>(frame.height) },
     };
     frame.device.updateBuffer(frameUbo, &uniforms, sizeof(uniforms), 0);
 
@@ -234,6 +278,19 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     sky.draw(frame.cmd, frameBindGroup); // after opaque: background only
     frame.cmd.endRenderPass();
 
+    // Water: snapshot the opaque scene (sampling a bound attachment is UB),
+    // then compose refraction/reflection/foam back into the HDR target.
+    if (useOffscreen && frame.device.caps().copyTexture &&
+        waterSceneBindGroup.id != 0) {
+        frame.cmd.copyTexture(offscreenColor, sceneColorCopy);
+        frame.cmd.copyTexture(offscreenDepth, sceneDepthCopy);
+        frame.cmd.beginRenderPass({ .framebuffer = offscreenFb,
+                                    .loadOp = rhi::LoadOp::Load,
+                                    .depthLoadOp = rhi::LoadOp::Load });
+        water.draw(frame.cmd, frameBindGroup, waterSceneBindGroup);
+        frame.cmd.endRenderPass();
+    }
+
     if (useOffscreen) {
         // Tonemap composite: HDR scene -> filmic curve -> gamma -> backbuffer.
         frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::DontCare,
@@ -248,7 +305,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 17: cascaded shadow maps.");
+    ImGui::TextUnformatted("Brick 18: water (waves, fresnel, foam).");
     ImGui::TextUnformatted(
         "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -267,6 +324,10 @@ void LandscapeScene::drawUi() {
     if (ImGui::Button("Regenerate")) {
         regenerateRequested = true; // applied at the top of the next render
     }
+    // Water plane, sand band and material weights follow live; the scatter
+    // (grass/trees/props) is baked per chunk — Regenerate to re-align it.
+    ImGui::SliderFloat("Sea level (m)", &terrain.params.seaLevel, 0.0f, 40.0f,
+                       "%.0f");
     ImGui::Checkbox("Wireframe (LOD debug)", &wireframeUi);
     ImGui::Separator();
     ImGui::SliderFloat("Time of day (h)", &sky.timeOfDay, 0.0f, 24.0f,
