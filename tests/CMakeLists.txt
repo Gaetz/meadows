@@ -44,6 +44,7 @@ add_executable(meadows-tests
     StatusBuildupTest.cpp
     SurvivalTest.cpp
     TerrainNoiseTest.cpp
+    TreeGeneratorTest.cpp
     TypedDamageTest.cpp
     WorldModelTest.cpp
 )

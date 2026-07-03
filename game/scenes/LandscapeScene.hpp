@@ -5,6 +5,7 @@
 #include "engine/render/landscape/GrassSystem.hpp"
 #include "engine/render/landscape/SkySystem.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
+#include "engine/render/landscape/VegetationSystem.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
 
@@ -16,9 +17,9 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 14: animated grass — deterministic per-chunk tuft scatter on worker
-// threads (density follows the terrain material), instanced crossed quads
-// with procedural blade shapes, vertex-shader wind, distance fade.
+// Brick 15: procedural trees — 5 seeded low-poly variants (leaning trunk +
+// faceted foliage blobs), scattered into forest belts on worker threads,
+// drawn variant-major with per-chunk instancing and canopy sway.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -47,6 +48,7 @@ private:
     uptr<render::ShaderLibrary> shaders;
     render::TerrainSystem terrain;
     render::GrassSystem grass;
+    render::VegetationSystem vegetation;
     render::SkySystem sky;
     bool regenerateRequested { false };
     bool wireframeUi { false };

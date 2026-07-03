@@ -15,6 +15,7 @@ add_library(meadows STATIC
     platform/common/Paths.cpp
     platform/common/Window.cpp
     render/FlyCamera.cpp
+    render/MeshBuilder.cpp
     render/ShaderLibrary.cpp
     render/SpriteRenderer.cpp
     render/landscape/GrassSystem.cpp
@@ -22,6 +23,8 @@ add_library(meadows STATIC
     render/landscape/SplatTextures.cpp
     render/landscape/TerrainNoise.cpp
     render/landscape/TerrainSystem.cpp
+    render/landscape/TreeGenerator.cpp
+    render/landscape/VegetationSystem.cpp
     rhi/Device.cpp
     rhi/backends/gl/GlDevice.cpp
     rhi/backends/gl/GlDeviceBase.cpp
