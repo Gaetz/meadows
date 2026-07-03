@@ -19,9 +19,9 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 19: planar water reflections — the scene mirrored about the water
-// plane into a half-res target (oblique near-plane clip, flipped winding),
-// sampled by the water with wave distortion in place of the analytic sky.
+// Brick 20: clouds — a drifting stylized layer on the sky dome, tinted by
+// the day palette, whose SAME noise field attenuates the sun on the ground:
+// cloud shadows sweep the terrain in sync with the sky above.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -62,6 +62,8 @@ private:
     bool cascadeDebugUi { false };
     bool reflectionsUi { true };
     f32 exposureUi { 1.0f };
+    f32 cloudCoverageUi { 0.38f };
+    f32 cloudShadowUi { 0.5f };
     f32 fogDensityUi { 0.0014f };
     f32 fogHeightFalloffUi { 0.02f };
     f32 fogLowBoostUi { 1.6f };

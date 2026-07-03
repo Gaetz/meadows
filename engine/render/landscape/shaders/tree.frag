@@ -4,6 +4,7 @@
 
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
+#include "clouds.glsl"
 
 in vec3 vNormal;
 in vec3 vColor;
@@ -22,7 +23,7 @@ void main() {
     // Wrap diffuse keeps the shaded side of the canopy readable (soft-GI
     // feel); the flat facets do the stylization.
     float wrap = clamp((dot(n, uSunDirection.xyz) + 0.4) / 1.4, 0.0, 1.0);
-    float shadow = shadowFactor(vWorldPos, n);
+    float shadow = shadowFactor(vWorldPos, n) * cloudShadowFactor(vWorldPos);
     vec3 lit = albedo * (uAmbientColor.rgb + uSunColor.rgb * (wrap * shadow));
 
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);

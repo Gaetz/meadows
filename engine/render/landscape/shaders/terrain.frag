@@ -6,6 +6,7 @@
 layout(binding = 0) uniform sampler2DArray uSplat;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
+#include "clouds.glsl"
 
 in vec3 vNormal;
 in vec3 vColor;
@@ -46,7 +47,7 @@ void main() {
 
     albedo *= cascadeDebugTint(vWorldPos);
     float ndl = max(dot(n, uSunDirection.xyz), 0.0);
-    float shadow = shadowFactor(vWorldPos, n);
+    float shadow = shadowFactor(vWorldPos, n) * cloudShadowFactor(vWorldPos);
     vec3 lit = albedo * (uAmbientColor.rgb + uSunColor.rgb * (ndl * shadow));
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

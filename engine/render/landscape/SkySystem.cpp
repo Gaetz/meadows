@@ -27,7 +27,7 @@ constexpr f32 kSunIntensity = 2.6f;
 
 } // namespace
 
-SkySystem::SkyState SkySystem::evaluate() const {
+SkySystem::SkyState SkySystem::evaluate(f32 cloudCoverage) const {
     // Sun path: rises +X at 6h, zenith at 12h, sets -X at 18h; a slight +Z
     // tilt keeps noon shadows from degenerating to a point.
     const f32 theta =
@@ -101,6 +101,25 @@ SkySystem::SkyState SkySystem::evaluate() const {
     // ambient lingers with the afterglow instead of dropping to night.
     ambient = glm::mix(ambient, duskAmbient, twilight * 0.45f);
     state.ambientColor = linearize(ambient);
+
+    // Overcast: heavy cover eats the direct sun first (real overcast light is
+    // all-diffuse), grays the sky toward its own luminance, and dims the
+    // ambient a little — the world turns gloomy, not just spotted.
+    const f32 overcast = glm::clamp(cloudCoverage, 0.0f, 1.0f);
+    if (overcast > 0.0f) {
+        const auto grayed = [&](const Vec3& c) {
+            const f32 luma = glm::dot(c, Vec3 { 0.299f, 0.587f, 0.114f });
+            return glm::mix(c, Vec3 { luma * 0.85f + 0.015f },
+                            overcast * 0.65f);
+        };
+        state.sunColor *= 1.0f - 0.75f * overcast;
+        state.glowColor *= 1.0f - 0.55f * overcast;
+        state.ambientColor *= 1.0f - 0.25f * overcast;
+        state.zenithColor = grayed(state.zenithColor);
+        state.horizonColor = grayed(state.horizonColor);
+        state.horizonFarColor = grayed(state.horizonFarColor);
+        state.sunDiscIntensity *= 1.0f - 0.8f * overcast;
+    }
     return state;
 }
 

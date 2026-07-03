@@ -257,13 +257,16 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
     const render::Camera3D& camera = flyCamera.camera;
     const Mat4 viewProj = camera.viewProj(frame.aspect);
-    const render::SkySystem::SkyState skyState = sky.evaluate();
+    const render::SkySystem::SkyState skyState =
+        sky.evaluate(cloudCoverageUi);
 
-    // Shadows ramp out as the sun crosses the horizon (no sun, no shadows).
+    // Shadows ramp out as the sun crosses the horizon (no sun, no shadows),
+    // and soften away under heavy cloud cover (diffuse light casts none).
     const bool shadowsAvailable = shadows.receiverBindGroup().id != 0;
     const f32 shadowStrength =
         (shadowsUi && shadowsAvailable)
-            ? glm::smoothstep(-0.02f, 0.06f, skyState.sunDirection.y)
+            ? glm::smoothstep(-0.02f, 0.06f, skyState.sunDirection.y) *
+                  (1.0f - 0.65f * cloudCoverageUi)
             : 0.0f;
     render::ShadowMapper::Cascades cascades {};
     if (shadowStrength > 0.0f) {
@@ -304,6 +307,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                         static_cast<f32>(frame.height),
                         1.0f / static_cast<f32>(frame.width),
                         1.0f / static_cast<f32>(frame.height) },
+        .cloudInfo = { cloudCoverageUi, 520.0f, 0.0011f, cloudShadowUi },
     };
     frame.device.updateBuffer(frameUbo, &uniforms, sizeof(uniforms), 0);
 
@@ -407,7 +411,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 19: planar water reflections.");
+    ImGui::TextUnformatted("Brick 20: clouds + drifting cloud shadows.");
     ImGui::TextUnformatted(
         "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -449,6 +453,10 @@ void LandscapeScene::drawUi() {
     ImGui::SliderFloat("Fog low-altitude boost", &fogLowBoostUi, 0.0f, 5.0f,
                        "%.1f");
     ImGui::SliderFloat("Fog start (m)", &fogStartUi, 0.0f, 500.0f, "%.0f");
+    ImGui::SliderFloat("Cloud coverage", &cloudCoverageUi, 0.0f, 1.0f,
+                       "%.2f");
+    ImGui::SliderFloat("Cloud shadow strength", &cloudShadowUi, 0.0f, 1.0f,
+                       "%.2f");
     ImGui::End();
 }
 

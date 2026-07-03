@@ -32,6 +32,8 @@ struct FrameUniforms {
     Vec4 shadowInfo {};       // xyz = world texel size per cascade,
                               // w = shadow strength (0 = shadows off)
     Vec4 screenInfo {};       // xy = viewport size (px), zw = 1/size
+    Vec4 cloudInfo {};        // x = coverage [0,1], y = layer height (m),
+                              // z = pattern scale (1/m), w = shadow strength
 };
 
 } // namespace render

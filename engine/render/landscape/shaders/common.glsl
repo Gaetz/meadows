@@ -22,4 +22,6 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uShadowInfo;       // xyz = world texel size per cascade,
                             // w = shadow strength (0 = shadows off)
     vec4 uScreenInfo;       // xy = viewport size (px), zw = 1/size
+    vec4 uCloudInfo;        // x = coverage [0,1], y = layer height (m),
+                            // z = pattern scale (1/m), w = shadow strength
 };

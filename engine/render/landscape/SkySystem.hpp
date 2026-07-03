@@ -43,8 +43,10 @@ public:
     // Draw last in the opaque pass (background pixels only).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup);
 
-    // Pure function of timeOfDay — headless-testable.
-    SkyState evaluate() const;
+    // Pure function of timeOfDay — headless-testable. `cloudCoverage` [0,1]
+    // grays and dims the whole palette: heavy cover kills the direct sun,
+    // mutes the sky and softens everything toward an overcast gloom.
+    SkyState evaluate(f32 cloudCoverage = 0.0f) const;
 
     f32 timeOfDay { 10.5f }; // hours, [0, 24)
 
