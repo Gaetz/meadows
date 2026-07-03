@@ -21,9 +21,15 @@ f32 mitigationPercent(const AbilitySystem& system, DamageType type) {
     case DamageType::Slash:     field = "armorSlash"; break;
     case DamageType::Pierce:    field = "armorPierce"; break;
     case DamageType::Blunt:     field = "armorBlunt"; break;
-    case DamageType::Cold:      field = "resistCold"; break;
     case DamageType::Fire:      field = "resistFire"; break;
+    case DamageType::Cold:      field = "resistCold"; break;
     case DamageType::Lightning: field = "resistLightning"; break;
+    case DamageType::Sonic:     field = "resistSonic"; break;
+    case DamageType::Chemical:  field = "resistChemical"; break;
+    case DamageType::Psychic:   field = "resistPsychic"; break;
+    case DamageType::Holy:      field = "resistHoly"; break;
+    case DamageType::Dark:      field = "resistDark"; break;
+    case DamageType::Ether:     field = "resistEther"; break;
     }
     return currentValueOf(system, attr(field));
 }
@@ -47,7 +53,9 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
             (tuning.flatMitigationCapBase + capAttr) / 100.0f * ch.amount;
         const f32 flat = std::min(flatStat, flatCap);
         const f32 afterFlat = std::max(0.0f, ch.amount - flat);
-        const f32 percent = std::clamp(mitigationPercent(sys, ch.type), 0.0f, 100.0f);
+        // Negative resistance = vulnerability: it amplifies the hit (e.g. iron
+        // armor conducts electricity). Floor at -100% so the worst case is ×2.
+        const f32 percent = std::clamp(mitigationPercent(sys, ch.type), -100.0f, 100.0f);
         totalHealth += afterFlat * (1.0f - percent / 100.0f);
     }
 

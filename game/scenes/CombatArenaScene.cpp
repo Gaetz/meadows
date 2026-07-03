@@ -1,11 +1,13 @@
 #include "game/scenes/CombatArenaScene.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
 #include <glm/glm.hpp>
 #include <imgui.h>
 
+#include "data/forms/CoreForms.hpp" // WeaponForm
 #include "engine/core/Guid.hpp"
 #include "engine/platform/Input.hpp"
 #include "engine/platform/Window.hpp" // width()/height() for aspect + projection
@@ -16,7 +18,9 @@
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/combat/Combat.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
-#include "gameplay/stats/Damage.hpp" // CombatState
+#include "gameplay/stats/Damage.hpp" // CombatState, applyDamage
+#include "gameplay/inventory/Inventory.hpp" // Equipment
+#include "gameplay/stats/EquipmentStats.hpp" // weaponDamageEvent, applyEquipmentModifiers
 #include "gameplay/stats/Injuries.hpp"
 #include "gameplay/stats/Resonance.hpp"
 #include "gameplay/stats/ResonanceDecays.hpp"
@@ -43,6 +47,25 @@ const core::Guid kEnemySheet =
 const core::Guid kDodgeAbility =
     *core::Guid::fromString("ab000000-0000-4000-8000-000000000002");
 
+// Player attack ability + default weapon (declared in base.toml). The dodge
+// ability guid (kDodgeAbility) is defined with the sheet guids above.
+const core::Guid kPlayerAttack =
+    *core::Guid::fromString("ab000000-0000-4000-8000-000000000003");
+const core::Guid kIronSword =
+    *core::Guid::fromString("3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f482");
+const core::Guid kMace =
+    *core::Guid::fromString("3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f483");
+const core::Guid kPoisonDagger =
+    *core::Guid::fromString("3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f484");
+const core::Guid kBleedMace =
+    *core::Guid::fromString("3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f485");
+const core::Guid kFlameScimitar =
+    *core::Guid::fromString("3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f486");
+const core::Guid kLeatherArmor =
+    *core::Guid::fromString("a5000000-0000-4000-8000-000000000001");
+const core::Guid kIronArmor =
+    *core::Guid::fromString("a5000000-0000-4000-8000-000000000002");
+
 // Player controller tuning (placeholders; balance pass in Step 5).
 // movementSpeed/acceleration are stat-space (docs/STATS.md §3); these map them to
 // world units (units/s and units/s²). Calibrated so the default sheet (~102)
@@ -52,6 +75,14 @@ constexpr f32 kAccelScale = 0.28f; // acceleration  (stat) → world units/s²
 constexpr f32 kBrakeMult = 1.6f;   // braking inertia is sharper than accel
 constexpr f32 kDodgeSpeed = 14.0f;
 constexpr f32 kDodgeTime = 0.28f; // must match DodgeIFrames.durationSeconds
+
+// Melee attack tuning (Step 3; balance pass in Step 5). A short swing with a
+// front arc; the active window is when the hitbox is live.
+constexpr f32 kAttackWindup = 0.12f;   // telegraph before the hit lands
+constexpr f32 kAttackActive = 0.10f;   // hitbox live
+constexpr f32 kAttackRecovery = 0.18f; // follow-through, still committed
+constexpr f32 kAttackRange = 1.4f;     // reach from player center (world units)
+constexpr f32 kAttackArcCos = 0.5f;    // half-arc = 60° (dot ≥ cos60°)
 
 // Selects one frame's uvRect in an 8-frame horizontal strip from a 2D facing
 // (world +Y up). Frame i = angle i*45 deg CCW from +X (East) — matches
@@ -120,6 +151,14 @@ ecs::Entity CombatArenaScene::spawnCombatant(std::string name, Vec3 position,
     return e;
 }
 
+gameplay::StatModifiers CombatArenaScene::equipmentModsFor(ecs::Entity e) const {
+    gameplay::StatModifiers mods;
+    if (const auto* eq = e.try_get<gameplay::Equipment>()) {
+        gameplay::applyEquipmentModifiers(*eq, forms, mods);
+    }
+    return mods;
+}
+
 void CombatArenaScene::onEnter() {
     WorldDemoScene::onEnter();
 
@@ -142,22 +181,45 @@ void CombatArenaScene::onEnter() {
     tags.registerTag("State.Dodging");
     tags.registerTag("Cooldown.Dodge");
     tags.registerTag("State.Exhausted");
+    tags.registerTag("Cooldown.Attack");
     dodgeAbility = forms.find<gameplay::AbilityForm>(kDodgeAbility);
+    attackAbility = forms.find<gameplay::AbilityForm>(kPlayerAttack);
+    weapons[0] = forms.find<data::WeaponForm>(kIronSword);     // 1: classic sword
+    weapons[1] = forms.find<data::WeaponForm>(kMace);          // 2: mace
+    weapons[2] = forms.find<data::WeaponForm>(kPoisonDagger);  // 3: poison dagger
+    weapons[3] = forms.find<data::WeaponForm>(kBleedMace);     // 4: bleed mace
+    weapons[4] = forms.find<data::WeaponForm>(kFlameScimitar); // 5: flame scimitar
 
     // The player (blue sheet), facing south — toward the camera.
     player = spawnCombatant("Player", { 0.0f, -4.0f, 0.0f }, kPlayerSheet,
                             { 0.0f, -1.0f });
 
-    // Two training dummies (enemy sheet), facing the player. Real enemy AI (and
-    // dynamic facing toward their target) lands in Step 4; for now they just tick.
-    spawnCombatant("Dummy A", { -2.0f, 2.0f, 0.0f }, kEnemySheet, { 0.0f, -1.0f });
-    spawnCombatant("Dummy B", { 2.0f, 2.0f, 0.0f }, kEnemySheet, { 0.0f, -1.0f });
+    // Three training dummies (enemy sheet): unarmored / leather / iron, so the
+    // typed-damage mitigation is directly comparable. Real enemy AI (and dynamic
+    // facing) lands in Step 4; for now they just tick. Equip via a torso ArmorForm
+    // and re-initialize with the folded mods so they start armored.
+    const gameplay::CharacterTickContext ctx { derived, tags, tuning };
+    const auto equipDummy = [&](ecs::Entity e, const core::Guid& armor) {
+        gameplay::Equipment eq;
+        eq.torso = armor;
+        e.set<gameplay::Equipment>(eq);
+        gameplay::initializeActorStats(e, ctx, equipmentModsFor(e));
+    };
+    spawnCombatant("Dummy (none)", { -3.0f, 2.0f, 0.0f }, kEnemySheet, { 0.0f, -1.0f });
+    equipDummy(spawnCombatant("Dummy (leather)", { 0.0f, 2.0f, 0.0f }, kEnemySheet,
+                              { 0.0f, -1.0f }),
+               kLeatherArmor);
+    equipDummy(spawnCombatant("Dummy (iron)", { 3.0f, 2.0f, 0.0f }, kEnemySheet,
+                              { 0.0f, -1.0f }),
+               kIronArmor);
 }
 
 void CombatArenaScene::update(f32 dt) {
-    // Player input → velocity + facing + dodge, before the stats tick so the
-    // dodge ability's cost/tags are visible to this frame's tickCharacter.
+    // Player input → velocity + facing + dodge, then the melee swing, before the
+    // stats tick so ability costs/tags and dealt damage are visible to this
+    // frame's tickCharacter (which refreshes life state).
     updatePlayer(dt);
+    updatePlayerAttack(dt);
 
     // Advance the shared game clock once, then run the full per-frame tick on
     // every combatant. We deliberately do NOT call WorldDemoScene::update(): its
@@ -169,7 +231,7 @@ void CombatArenaScene::update(f32 dt) {
         if (!c.entity.is_alive()) {
             continue;
         }
-        gameplay::tickCharacter(c.entity, dt, gameDt, ctx);
+        gameplay::tickCharacter(c.entity, dt, gameDt, ctx, equipmentModsFor(c.entity));
         // Idempotent life-state refresh (cheap): guards any path that drops
         // health to 0 without going through applyDamage.
         gameplay::updateLifeState(c.entity.get_mut<gameplay::AbilitySystem>(), tags);
@@ -187,6 +249,17 @@ void CombatArenaScene::updatePlayer(f32 dt) {
     }
 
     const platform::Input& input = engine.getInput();
+
+    // Weapon switch (keys 1-5), ignoring slots that failed to resolve.
+    const platform::Key weaponKeys[kWeaponCount] = {
+        platform::Key::Num1, platform::Key::Num2, platform::Key::Num3,
+        platform::Key::Num4, platform::Key::Num5,
+    };
+    for (int i = 0; i < kWeaponCount; ++i) {
+        if (input.wasPressed(weaponKeys[i]) && weapons[i] != nullptr) {
+            weaponIndex = i;
+        }
+    }
 
     // WASD → normalized walk direction (independent of facing, FPS-style).
     Vec3 walk { 0.0f, 0.0f, 0.0f };
@@ -259,24 +332,149 @@ void CombatArenaScene::updatePlayer(f32 dt) {
     player.set<world::Velocity>({ Vec3 { vel.x, vel.y, 0.0f } });
 }
 
+void CombatArenaScene::updatePlayerAttack(f32 dt) {
+    if (!player.is_alive()) {
+        return;
+    }
+
+    // Start a swing on left-click when idle (and not mid-dodge): the attack
+    // ability gates the energy cost, cooldown, and State.Exhausted. On success,
+    // lock the aim for the whole swing and enter windup.
+    const platform::Input& input = engine.getInput();
+    if (attackPhase == AttackPhase::None && dodgeTimer <= 0.0f &&
+        input.mousePressed(platform::MouseButton::Left) && attackAbility != nullptr) {
+        auto& set = player.get_mut<gameplay::AttributeSet>();
+        auto& sys = player.get_mut<gameplay::AbilitySystem>();
+        const gameplay::AbilityContext ctx { forms, tags };
+        if (gameplay::tryActivate(*attackAbility, set, sys, set, sys, ctx)) {
+            attackPhase = AttackPhase::Windup;
+            attackTimer = kAttackWindup;
+            attackDir = aimDir;
+            hitThisSwing.clear();
+        }
+    }
+
+    if (attackPhase == AttackPhase::None) {
+        return;
+    }
+
+    // Advance the windup → active → recovery timeline.
+    attackTimer -= dt;
+    if (attackTimer <= 0.0f) {
+        switch (attackPhase) {
+        case AttackPhase::Windup:
+            attackPhase = AttackPhase::Active;
+            attackTimer = kAttackActive;
+            break;
+        case AttackPhase::Active:
+            attackPhase = AttackPhase::Recovery;
+            attackTimer = kAttackRecovery;
+            break;
+        case AttackPhase::Recovery:
+        case AttackPhase::None:
+            attackPhase = AttackPhase::None;
+            attackTimer = 0.0f;
+            break;
+        }
+    }
+
+    // Only the active window deals damage. Sweep the front arc and hit each enemy
+    // at most once per swing with the weapon's typed damage (applyDamage does the
+    // mitigation + posture/stagger pipeline).
+    const data::WeaponForm* weapon = weapons[weaponIndex];
+    if (attackPhase != AttackPhase::Active || weapon == nullptr) {
+        return;
+    }
+    const auto& playerT = player.get<world::Transform>();
+    const Vec2 origin { playerT.position.x, playerT.position.y };
+    auto& playerSys = player.get_mut<gameplay::AbilitySystem>();
+
+    for (const Combatant& c : combatants) {
+        if (c.entity == player || !c.entity.is_alive()) {
+            continue;
+        }
+        if (std::find(hitThisSwing.begin(), hitThisSwing.end(), c.entity) !=
+            hitThisSwing.end()) {
+            continue;
+        }
+        const auto& targetT = c.entity.get<world::Transform>();
+        const Vec2 to { targetT.position.x - origin.x, targetT.position.y - origin.y };
+        const f32 dist = glm::length(to);
+        if (dist > kAttackRange || dist < 1e-4f) {
+            continue;
+        }
+        if (glm::dot(to / dist, attackDir) < kAttackArcCos) {
+            continue; // outside the swing arc
+        }
+
+        auto& core = c.entity.get_mut<gameplay::CoreAttributes>();
+        auto& vitals = c.entity.get_mut<gameplay::AttributeSet>();
+        auto& system = c.entity.get_mut<gameplay::AbilitySystem>();
+        auto& combat = c.entity.get_mut<gameplay::CombatState>();
+        gameplay::StatBlock block { core, vitals, system, combat };
+        const gameplay::StatModifiers mods = equipmentModsFor(c.entity);
+        gameplay::applyDamage(block, gameplay::weaponDamageEvent(*weapon, playerSys),
+                              tags, derived, &mods, tuning);
+        // Weapon status buildup on hit (poison/bleed/ignition…), gated by the
+        // target's endurance (armor raises it), so the mitigation is live.
+        if (!weapon->buildupType.empty() && weapon->buildupAmount > 0.0f) {
+            auto& buildup = c.entity.get_mut<gameplay::StatusBuildup>();
+            gameplay::tryAddBuildup(buildup,
+                                    gameplay::parseStatusType(weapon->buildupType),
+                                    weapon->buildupAmount, system, tags);
+        }
+        gameplay::updateLifeState(system, tags);
+        hitThisSwing.push_back(c.entity);
+    }
+}
+
 void CombatArenaScene::drawUi() {
-    ImGui::Begin("Combat Arena (Step 2: player control)");
+    ImGui::Begin("Combat Arena (Step 3: melee attack)");
     ImGui::TextWrapped(
-        "WASD to move, aim with the mouse, Shift to dodge (costs energy, has a "
-        "cooldown, blocked while Exhausted). Attacks and enemy AI land next.");
+        "WASD move, mouse aim, Shift dodge, LEFT-CLICK swing. Keys 1-5 swap weapon "
+        "to test each damage type + effect against the unarmored/leather/iron dummies.");
+
+    // Current weapon + its full profile (damage / posture / effect).
+    ImGui::SeparatorText("Weapon [1-5]");
+    if (const data::WeaponForm* w = weapons[weaponIndex]) {
+        ImGui::Text("%d. %s", weaponIndex + 1, w->displayName.c_str());
+        const auto chan = [](const char* n, f32 v) {
+            if (v > 0.0f) {
+                ImGui::SameLine();
+                ImGui::Text("| %s %.0f", n, v);
+            }
+        };
+        chan("slash", w->slashAttack);
+        chan("blunt", w->bluntAttack);
+        chan("pierce", w->pierceAttack);
+        chan("fire", w->fireAttack);
+        chan("lightning", w->lightningAttack);
+        ImGui::SameLine();
+        ImGui::Text("| posture %.0f", w->postureDamage);
+        if (!w->buildupType.empty()) {
+            ImGui::SameLine();
+            ImGui::Text("| %s +%.0f", w->buildupType.c_str(), w->buildupAmount);
+        }
+    }
     ImGui::Separator();
 
     const auto deadTag = tags.find("State.Dead");
     const auto staggeredTag = tags.find("State.Staggered");
     const auto paralyzedTag = tags.find("State.Paralyzed");
 
-    if (ImGui::BeginTable("combatants", 6,
+    const auto poisonedTag = tags.find("Status.Poisoned");
+    const auto bleedingTag = tags.find("Status.Bleeding");
+    const auto ignitedTag = tags.find("Status.Ignited");
+    if (ImGui::BeginTable("combatants", 9,
                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupColumn("Name");
         ImGui::TableSetupColumn("Health");
         ImGui::TableSetupColumn("Energy");
         ImGui::TableSetupColumn("Essence");
         ImGui::TableSetupColumn("Posture");
+        ImGui::TableSetupColumn("Poison");   // buildup / endurance threshold
+        ImGui::TableSetupColumn("Bleed");
+        ImGui::TableSetupColumn("Ignition");
         ImGui::TableSetupColumn("State");
         ImGui::TableHeadersRow();
 
@@ -301,17 +499,60 @@ void CombatArenaScene::drawUi() {
             ImGui::Text("%.0f / %.0f", cur("essence"), cur("maxEssence"));
             ImGui::TableNextColumn();
             ImGui::Text("%.0f / %.0f", combat.posture, cur("maxPosture"));
+            const auto& buildup = c.entity.get<gameplay::StatusBuildup>();
             ImGui::TableNextColumn();
-            const bool dead = deadTag && system.tags.has(*deadTag);
-            const bool staggered = staggeredTag && system.tags.has(*staggeredTag);
-            const bool paralyzed = paralyzedTag && system.tags.has(*paralyzedTag);
-            ImGui::TextUnformatted(dead        ? "DEAD"
-                                   : paralyzed ? "Paralyzed"
-                                   : staggered ? "Staggered"
-                                               : "OK");
+            ImGui::Text("%.0f / %.0f", buildup.poison, cur("endurancePoison"));
+            ImGui::TableNextColumn();
+            ImGui::Text("%.0f / %.0f", buildup.bleed, cur("enduranceBleed"));
+            ImGui::TableNextColumn();
+            ImGui::Text("%.0f / %.0f", buildup.ignition, cur("enduranceIgnition"));
+            ImGui::TableNextColumn();
+            const auto has = [&](const std::optional<gameplay::GameplayTag>& t) {
+                return t && system.tags.has(*t);
+            };
+            ImGui::TextUnformatted(has(deadTag)        ? "DEAD"
+                                   : has(paralyzedTag) ? "Paralyzed"
+                                   : has(staggeredTag) ? "Staggered"
+                                   : has(bleedingTag)  ? "Bleeding"
+                                   : has(ignitedTag)   ? "Ignited"
+                                   : has(poisonedTag)  ? "Poisoned"
+                                                       : "OK");
         }
         ImGui::EndTable();
     }
+
+    // Debug: the weapons (keys 1-5) cover slash/blunt/pierce/fire + poison/bleed/
+    // ignition. Lightning has no weapon, so keep one button to show iron's negative
+    // lightning resistance (it takes MORE). Reset heals every dummy to full.
+    ImGui::SeparatorText("Debug");
+    if (ImGui::Button("Lightning 40 (no weapon covers it)")) {
+        for (const Combatant& c : combatants) {
+            if (c.entity == player || !c.entity.is_alive()) {
+                continue;
+            }
+            auto& core = c.entity.get_mut<gameplay::CoreAttributes>();
+            auto& vitals = c.entity.get_mut<gameplay::AttributeSet>();
+            auto& system = c.entity.get_mut<gameplay::AbilitySystem>();
+            auto& combat = c.entity.get_mut<gameplay::CombatState>();
+            gameplay::StatBlock block { core, vitals, system, combat };
+            const gameplay::StatModifiers mods = equipmentModsFor(c.entity);
+            gameplay::applyDamage(
+                block, gameplay::DamageEvent { { { gameplay::DamageType::Lightning, 40.0f } }, 0.0f },
+                tags, derived, &mods, tuning);
+            gameplay::updateLifeState(system, tags);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset dummies (heal to full)")) {
+        const gameplay::CharacterTickContext ctx { derived, tags, tuning };
+        for (const Combatant& c : combatants) {
+            if (c.entity == player || !c.entity.is_alive()) {
+                continue;
+            }
+            gameplay::initializeActorStats(c.entity, ctx, equipmentModsFor(c.entity));
+        }
+    }
+
     ImGui::End();
 }
 

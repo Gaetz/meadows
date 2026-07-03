@@ -17,7 +17,14 @@ namespace gameplay {
 
 class DerivedStatRegistry;
 
-enum class DamageType { Slash, Pierce, Blunt, Fire, Cold, Lightning };
+// Physical (slash/pierce/blunt) + elemental. The nine elements map to the three
+// essence attributes (docs/STATS.md §3): charisma → fire/sonic/holy,
+// ego → cold/chemical/dark, insight → lightning/psychic/ether.
+enum class DamageType {
+    Slash, Pierce, Blunt,
+    Fire, Cold, Lightning,
+    Sonic, Chemical, Psychic, Holy, Dark, Ether,
+};
 
 struct DamageChannel {
     DamageType type { DamageType::Slash };

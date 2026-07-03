@@ -24,6 +24,141 @@ damage = 12.0
 weight = 3.0
 goldValue = 25
 sprite = "7c5e2d90-4f3a-4b18-a52e-c91d80f64b23"
+slashAttack = 12.0
+postureDamage = 18.0
+scalingAttribute = "strength"
+scalingK = 1.0
+
+# --- Test weapons (Phase 8): one full profile each, swappable with keys 1-5.
+[[records]]
+form = "3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f483"
+type = "WeaponForm"
+new = true
+[records.fields]
+editorId = "Mace"
+displayName = "Mace"
+damage = 14.0
+weight = 5.0
+goldValue = 20
+bluntAttack = 15.0
+postureDamage = 32.0
+scalingAttribute = "strength"
+scalingK = 1.0
+
+[[records]]
+form = "3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f484"
+type = "WeaponForm"
+new = true
+[records.fields]
+editorId = "PoisonDagger"
+displayName = "Poison Dagger"
+damage = 6.0
+weight = 1.0
+goldValue = 30
+pierceAttack = 8.0
+postureDamage = 6.0
+scalingAttribute = "dexterity"
+scalingK = 1.0
+buildupType = "poison"
+buildupAmount = 35.0
+
+[[records]]
+form = "3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f485"
+type = "WeaponForm"
+new = true
+[records.fields]
+editorId = "BleedMace"
+displayName = "Spiked Mace"
+damage = 12.0
+weight = 6.0
+goldValue = 35
+bluntAttack = 12.0
+postureDamage = 24.0
+scalingAttribute = "strength"
+scalingK = 1.0
+buildupType = "bleed"
+buildupAmount = 30.0
+
+[[records]]
+form = "3d8b1f6a-92c4-4e07-b8d9-1a5c7e30f486"
+type = "WeaponForm"
+new = true
+[records.fields]
+editorId = "FlameScimitar"
+displayName = "Flame Scimitar"
+damage = 10.0
+weight = 3.0
+goldValue = 60
+slashAttack = 9.0
+fireAttack = 10.0
+postureDamage = 14.0
+scalingAttribute = "strength"
+scalingK = 1.0
+buildupType = "ignition"
+buildupAmount = 30.0
+
+# --- Armor (Phase 8): leather = elemental + blunt focus; iron = slash/pierce
+# focus but conducts electricity (negative lightning). Values = % mitigation.
+[[records]]
+form = "a5000000-0000-4000-8000-000000000001"
+type = "ArmorForm"
+new = true
+[records.fields]
+editorId = "LeatherArmor"
+displayName = "Leather Armor"
+slot = "torso"
+# Light: modest physical (best vs blunt/strike), good elemental insulation, very
+# high poison/disease/death/mental endurance (Elden Ring leather profile).
+armorSlash = 12.0
+armorBlunt = 18.0
+armorPierce = 14.0
+resistFire = 22.0
+resistCold = 20.0
+resistLightning = 22.0
+resistSonic = 15.0
+resistChemical = 15.0
+resistPsychic = 18.0
+resistHoly = 22.0
+resistDark = 16.0
+resistEther = 20.0
+endurancePoison = 55.0
+enduranceBleed = 30.0
+enduranceMental = 38.0
+enduranceDisease = 45.0
+enduranceCurse = 25.0
+enduranceDeath = 45.0
+weight = 6.0
+
+[[records]]
+form = "a5000000-0000-4000-8000-000000000002"
+type = "ArmorForm"
+new = true
+[records.fields]
+editorId = "IronArmor"
+displayName = "Iron Armor"
+slot = "torso"
+# Heavy: strong slash/pierce, poor elemental (conducts electricity → negative
+# lightning, which also makes electrocution easier), high bleed/frost robustness,
+# low poison/disease/death/mental endurance (Elden Ring iron profile).
+armorSlash = 34.0
+armorBlunt = 22.0
+armorPierce = 32.0
+resistFire = 18.0
+resistCold = 8.0
+resistLightning = -22.0
+resistSonic = 10.0
+resistChemical = 6.0
+resistPsychic = 8.0
+resistHoly = 16.0
+resistDark = 6.0
+resistEther = 12.0
+endurancePoison = 18.0
+enduranceBleed = 42.0
+enduranceMental = 12.0
+enduranceDisease = 14.0
+enduranceCurse = 10.0
+enduranceDeath = 15.0
+weight = 18.0
 
 # --- World: a worldspace with one cell --------------------------------------
 
@@ -161,6 +296,39 @@ editorId = "Dodge"
 cost = "e0000000-0000-4000-8000-000000000010"
 cooldown = "e0000000-0000-4000-8000-000000000012"
 effect = "e0000000-0000-4000-8000-000000000011"
+blockedTag = "State.Exhausted"
+
+# --- Player melee attack (Phase 8 Step 3). Cost + cooldown gate only; the actual
+# typed damage is dealt by the scene's melee hitbox via applyDamage (not an effect).
+[[records]]
+form = "e0000000-0000-4000-8000-000000000020"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "AttackCost"
+attribute = "energy"
+op = "add"
+magnitude = -20.0
+duration = "instant"
+
+[[records]]
+form = "e0000000-0000-4000-8000-000000000021"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "AttackCooldown"
+duration = "duration"
+durationSeconds = 0.5
+grantedTag = "Cooldown.Attack"
+
+[[records]]
+form = "ab000000-0000-4000-8000-000000000003"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "PlayerAttack"
+cost = "e0000000-0000-4000-8000-000000000020"
+cooldown = "e0000000-0000-4000-8000-000000000021"
 blockedTag = "State.Exhausted"
 
 [[records]]

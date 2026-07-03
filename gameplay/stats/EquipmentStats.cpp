@@ -9,7 +9,22 @@ void armorModifiers(const data::ArmorForm& armor, StatModifiers& mods) {
     mods.add[attr("armorBlunt")] += armor.armorBlunt;
     mods.add[attr("armorPierce")] += armor.armorPierce;
     mods.add[attr("resistFire")] += armor.resistFire;
+    mods.add[attr("resistCold")] += armor.resistCold;
     mods.add[attr("resistLightning")] += armor.resistLightning;
+    mods.add[attr("resistSonic")] += armor.resistSonic;
+    mods.add[attr("resistChemical")] += armor.resistChemical;
+    mods.add[attr("resistPsychic")] += armor.resistPsychic;
+    mods.add[attr("resistHoly")] += armor.resistHoly;
+    mods.add[attr("resistDark")] += armor.resistDark;
+    mods.add[attr("resistEther")] += armor.resistEther;
+    // Status-buildup endurances (ignition/glaciation/electrocution follow the
+    // resist* fields above via the derived-stat formulas — not folded here).
+    mods.add[attr("endurancePoison")] += armor.endurancePoison;
+    mods.add[attr("enduranceBleed")] += armor.enduranceBleed;
+    mods.add[attr("enduranceMental")] += armor.enduranceMental;
+    mods.add[attr("enduranceDisease")] += armor.enduranceDisease;
+    mods.add[attr("enduranceCurse")] += armor.enduranceCurse;
+    mods.add[attr("enduranceDeath")] += armor.enduranceDeath;
     // weight → encumbrance, exposure → temperature: both deferred to a later pass.
 }
 

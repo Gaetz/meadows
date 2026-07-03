@@ -29,6 +29,11 @@ struct WeaponForm : Form {
     str scalingAttribute { "strength" };
     f32 scalingK { 1.0f };
     f32 postureDamage { 0.0f };
+    // Status buildup applied on hit (docs/STATS.md §3): buildupType routes through
+    // parseStatusType ("poison"|"bleed"|"ignition"|…); buildupAmount = points per
+    // hit. Empty = no status. Appended last so binary ordinals stay stable.
+    str buildupType;
+    f32 buildupAmount { 0.0f };
 
     REFLECT_BEGIN(WeaponForm, Form)
         REFLECT_FIELD(displayName)
@@ -45,6 +50,8 @@ struct WeaponForm : Form {
         REFLECT_FIELD(scalingAttribute)
         REFLECT_FIELD(scalingK)
         REFLECT_FIELD(postureDamage)
+        REFLECT_FIELD(buildupType)
+        REFLECT_FIELD(buildupAmount)
     REFLECT_END()
 };
 
@@ -64,6 +71,25 @@ struct ArmorForm : Form {
     f32 heatExposure { 0.0f };
     f32 weight { 2.0f };
     core::Guid sprite;
+    // The remaining elemental resistances (docs/STATS.md §3). Appended after the
+    // original fields so binary ordinals stay stable. resistCold completes the
+    // core trio; sonic/chemical/psychic/holy/dark/ether cover the full element set.
+    f32 resistCold { 0.0f };
+    f32 resistSonic { 0.0f };
+    f32 resistChemical { 0.0f };
+    f32 resistPsychic { 0.0f };
+    f32 resistHoly { 0.0f };
+    f32 resistDark { 0.0f };
+    f32 resistEther { 0.0f };
+    // Status-buildup endurance bonuses (docs/STATS.md §3): raise the matching
+    // buildup threshold. The three elemental buildups (ignition/glaciation/
+    // electrocution) follow resistFire/Cold/Lightning instead, so no fields here.
+    f32 endurancePoison { 0.0f };
+    f32 enduranceBleed { 0.0f };
+    f32 enduranceMental { 0.0f };
+    f32 enduranceDisease { 0.0f };
+    f32 enduranceCurse { 0.0f };
+    f32 enduranceDeath { 0.0f };
 
     REFLECT_BEGIN(ArmorForm, Form)
         REFLECT_FIELD(displayName)
@@ -77,6 +103,19 @@ struct ArmorForm : Form {
         REFLECT_FIELD(heatExposure)
         REFLECT_FIELD(weight)
         REFLECT_FIELD(sprite)
+        REFLECT_FIELD(resistCold)
+        REFLECT_FIELD(resistSonic)
+        REFLECT_FIELD(resistChemical)
+        REFLECT_FIELD(resistPsychic)
+        REFLECT_FIELD(resistHoly)
+        REFLECT_FIELD(resistDark)
+        REFLECT_FIELD(resistEther)
+        REFLECT_FIELD(endurancePoison)
+        REFLECT_FIELD(enduranceBleed)
+        REFLECT_FIELD(enduranceMental)
+        REFLECT_FIELD(enduranceDisease)
+        REFLECT_FIELD(enduranceCurse)
+        REFLECT_FIELD(enduranceDeath)
     REFLECT_END()
 };
 

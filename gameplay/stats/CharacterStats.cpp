@@ -52,11 +52,26 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
                    [m](const StatView& v) { return m * v.get("constitution"); } });
     registry.add({ attr("armorPierce"), core,
                    [m](const StatView& v) { return m * v.get("grace"); } });
+    // Elemental resistances (docs/STATS.md §3): 0.5·attribute, mapped
+    // charisma → fire/sonic/holy, ego → cold/chemical/dark,
+    // insight → lightning/psychic/ether.
     registry.add({ attr("resistFire"), core,
+                   [m](const StatView& v) { return m * v.get("charisma"); } });
+    registry.add({ attr("resistSonic"), core,
+                   [m](const StatView& v) { return m * v.get("charisma"); } });
+    registry.add({ attr("resistHoly"), core,
                    [m](const StatView& v) { return m * v.get("charisma"); } });
     registry.add({ attr("resistCold"), core,
                    [m](const StatView& v) { return m * v.get("ego"); } });
+    registry.add({ attr("resistChemical"), core,
+                   [m](const StatView& v) { return m * v.get("ego"); } });
+    registry.add({ attr("resistDark"), core,
+                   [m](const StatView& v) { return m * v.get("ego"); } });
     registry.add({ attr("resistLightning"), core,
+                   [m](const StatView& v) { return m * v.get("insight"); } });
+    registry.add({ attr("resistPsychic"), core,
+                   [m](const StatView& v) { return m * v.get("insight"); } });
+    registry.add({ attr("resistEther"), core,
                    [m](const StatView& v) { return m * v.get("insight"); } });
     registry.add({ attr("will"), core, [t](const StatView& v) {
         return t.willBase + v.get("ego") * t.willPerEgo;
@@ -100,15 +115,19 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
     endurance("enduranceCurse", "perception");
     endurance("enduranceDeath", "perception");
     // Elemental endurance = enduranceBase + matching resistance (docs/STATS.md §3).
-    // resistFire = m*charisma, resistCold = m*ego, resistLightning = m*insight.
-    registry.add({ attr("enduranceIgnition"), core, [t, m](const StatView& v) {
-        return t.enduranceBase + m * v.get("charisma");
+    // Reads the resist* derived stat (not the raw attribute) so equipment armor
+    // propagates: a fire-resistant coat also resists ignition, and iron's negative
+    // lightning resistance makes electrocution *easier*. For a bare actor this is a
+    // no-op (resistFire base = m·charisma). resist* are registered above, so their
+    // current is ready when pass 2 evaluates these (registration order).
+    registry.add({ attr("enduranceIgnition"), core, [t](const StatView& v) {
+        return t.enduranceBase + v.get("resistFire");
     } });
-    registry.add({ attr("enduranceGlaciation"), core, [t, m](const StatView& v) {
-        return t.enduranceBase + m * v.get("ego");
+    registry.add({ attr("enduranceGlaciation"), core, [t](const StatView& v) {
+        return t.enduranceBase + v.get("resistCold");
     } });
-    registry.add({ attr("enduranceElectrocution"), core, [t, m](const StatView& v) {
-        return t.enduranceBase + m * v.get("insight");
+    registry.add({ attr("enduranceElectrocution"), core, [t](const StatView& v) {
+        return t.enduranceBase + v.get("resistLightning");
     } });
 
     // Movement speed (docs/STATS.md §3) — minimal, so leg-injury speed maluses

@@ -152,7 +152,8 @@ bypass the humanoid formula. Defaults below assume humanoid attributes 1–20.
 - **essence regen** — 0.005 · insight per second (slow).
 - **will** — flat non-physical reduction before %. 1 + ego/4, capped at 25+ego %.
 - **resistance/fire · cold · lightning · sonic · chemical · psychic · holy · dark
-  · ether** `[6: fire+lightning; 7: cold]` — % reduction; also raises the matching
+  · ether** `[6: fire+lightning; 7: cold; 8: sonic/chemical/psychic/holy/dark/ether]`
+  — % reduction (negative = vulnerability, capped at ×2); also raises the matching
   elemental buildup threshold by the same value. 0.5 · {charisma|ego|insight} per
   the table below. (`resistCold = 0.5·ego`; `resistFire = 0.5·charisma`; `resistLightning = 0.5·insight`.)
 

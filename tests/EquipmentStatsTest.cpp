@@ -43,6 +43,49 @@ TEST_CASE("equipment: armor stacks onto the attribute-derived stat at recompute"
     CHECK(currentValueOf(sys, attr("armorSlash")) == doctest::Approx(23.0f)); // 3+20
 }
 
+TEST_CASE("equipment: armor raises a status-buildup endurance threshold") {
+    DerivedStatRegistry reg;
+    registerCoreDerivedStats(reg);
+    CoreAttributes core; // dexterity 6 → endurancePoison = 100 + 6×0.5 = 103
+    AttributeSet vitals;
+    AbilitySystem sys;
+
+    data::ArmorForm armor;
+    armor.endurancePoison = 40.0f;
+    StatModifiers mods;
+    armorModifiers(armor, mods);
+    CHECK(mods.add[attr("endurancePoison")] == doctest::Approx(40.0f));
+
+    const AttrSetRef sets[] = {
+        { &CoreAttributes::staticTypeInfo(), &core },
+        { &AttributeSet::staticTypeInfo(), &vitals },
+    };
+    recomputeCurrent(sys, sets, &reg, &mods);
+    CHECK(currentValueOf(sys, attr("endurancePoison")) == doctest::Approx(143.0f));
+}
+
+TEST_CASE("equipment: negative lightning resistance lowers electrocution endurance") {
+    DerivedStatRegistry reg;
+    registerCoreDerivedStats(reg);
+    CoreAttributes core; // insight 0 → resistLightning 0 → enduranceElectrocution 100
+    AttributeSet vitals;
+    AbilitySystem sys;
+
+    // Iron-like: resistLightning −22 → enduranceElectrocution follows it (§1).
+    data::ArmorForm armor;
+    armor.resistLightning = -22.0f;
+    StatModifiers mods;
+    armorModifiers(armor, mods);
+
+    const AttrSetRef sets[] = {
+        { &CoreAttributes::staticTypeInfo(), &core },
+        { &AttributeSet::staticTypeInfo(), &vitals },
+    };
+    recomputeCurrent(sys, sets, &reg, &mods);
+    CHECK(currentValueOf(sys, attr("resistLightning")) == doctest::Approx(-22.0f));
+    CHECK(currentValueOf(sys, attr("enduranceElectrocution")) == doctest::Approx(78.0f));
+}
+
 TEST_CASE("equipment: weaponDamageEvent scales by the attacker's attribute") {
     data::WeaponForm weapon;
     weapon.slashAttack = 50.0f;

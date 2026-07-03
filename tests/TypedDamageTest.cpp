@@ -62,6 +62,27 @@ TEST_CASE("typed damage: elemental channel uses will then resistance %") {
     CHECK(r.healthDamage == doctest::Approx(84.6f));
 }
 
+TEST_CASE("typed damage: a new element uses will then its own resistance %") {
+    Fixture f;
+    // holy 100: flat min(will 6, 45) = 6 → 94 → resistHoly (0.5·charisma = 10) 10% → 84.6.
+    const DamageResult r = hit(f, DamageType::Holy, 100.0f);
+    CHECK(r.healthDamage == doctest::Approx(84.6f));
+}
+
+TEST_CASE("typed damage: negative resistance amplifies the hit (vulnerability)") {
+    Fixture f;
+    // Iron-like conductive armor: resistLightning 10 + (-30) = -20% → ×1.2.
+    StatModifiers armor;
+    armor.add[attr("resistLightning")] += -30.0f;
+    recomputeStats(f.core, f.vitals, f.system, f.derived, &armor); // fold into current
+    StatBlock b = f.block();
+    const DamageResult r =
+        applyDamage(b, DamageEvent { { { DamageType::Lightning, 100.0f } }, 0.0f },
+                    f.tags, f.derived, &armor);
+    // flat min(will 6, 45) = 6 → 94 → ×(1 − (−0.20)) = 94 × 1.2 = 112.8.
+    CHECK(r.healthDamage == doctest::Approx(112.8f));
+}
+
 TEST_CASE("typed damage: channels sum onto health") {
     Fixture f;
     StatBlock b = f.block();

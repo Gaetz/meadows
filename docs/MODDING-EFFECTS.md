@@ -97,8 +97,14 @@ These feed all derived stats. Resonance channel bonuses also add to them.
 | `armorBlunt`   | 0.5 × constitution |
 | `armorPierce`  | 0.5 × grace |
 | `resistFire`   | 0.5 × charisma |
+| `resistSonic`  | 0.5 × charisma |
+| `resistHoly`   | 0.5 × charisma |
 | `resistCold`   | 0.5 × ego |
+| `resistChemical` | 0.5 × ego |
+| `resistDark`   | 0.5 × ego |
 | `resistLightning` | 0.5 × insight |
+| `resistPsychic` | 0.5 × insight |
+| `resistEther`  | 0.5 × insight |
 | `will`         | 1 + ego × 0.25 |
 | `criticalSensitivity` | 25 − constitution × 0.1 |
 
@@ -129,6 +135,12 @@ to poison. You rarely need to target these directly.
 `endurancePoison`, `enduranceBleed`, `enduranceMental`, `enduranceDisease`,
 `enduranceCurse`, `enduranceDeath`, `enduranceIgnition`, `enduranceGlaciation`,
 `enduranceElectrocution`
+
+**Armor raises these.** An `ArmorForm` has `endurancePoison … enduranceDeath` fields
+(added to the wearer's threshold). The three elemental endurances
+(`enduranceIgnition/Glaciation/Electrocution`) instead follow the armor's
+`resistFire/Cold/Lightning` — so a fire-resistant coat also resists ignition, and a
+piece with *negative* lightning resistance makes electrocution **easier**.
 
 ---
 
@@ -469,6 +481,11 @@ duration    = "instant"
 
 When the target's accumulated poison exceeds their `endurancePoison`, the
 `Status.Poisoned` tag is applied and DoT begins.
+
+A `WeaponForm` can also carry buildup **natively** (applied on every hit,
+independent of an effect): set `buildupType` (`"poison"|"bleed"|"ignition"|…`) and
+`buildupAmount` on the weapon record. The target's matching endurance (raised by
+armor) still gates it.
 
 ---
 

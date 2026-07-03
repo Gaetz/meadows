@@ -12,6 +12,10 @@ namespace gameplay {
 struct AbilityForm;
 }
 
+namespace data {
+struct WeaponForm;
+}
+
 namespace game {
 
 // Phase 8 — the playable "village + arena" scene (docs/PHASE-8.md).
@@ -45,6 +49,14 @@ private:
     // and the dodge ability. Runs before the per-combatant tick each frame.
     void updatePlayer(f32 dt);
 
+    // Step 3 melee attack: the windup→active→recovery state machine driven by the
+    // left mouse button, dealing typed weapon damage through a transient hitbox.
+    void updatePlayerAttack(f32 dt);
+
+    // Equipment mitigation for a combatant: folds its equipped armor (if any) into
+    // StatModifiers, fed to its tickCharacter each frame so mitigation reflects it.
+    gameplay::StatModifiers equipmentModsFor(ecs::Entity e) const;
+
     ecs::Entity player {};
     std::vector<Combatant> combatants; // player + dummies (ticked + inspected)
 
@@ -54,6 +66,21 @@ private:
     f32 dodgeTimer { 0.0f };            // > 0 → dodge velocity burst in progress
     Vec2 dodgeDir { 0.0f, 0.0f };       // burst direction
     Vec2 aimDir { 0.0f, -1.0f };        // current facing (default south)
+
+    // Attack state (Step 3). The GAS ability gates cost/cooldown; the scene runs
+    // the swing timing and the melee hitbox. Damage is weapon-driven (applyDamage
+    // + weaponDamageEvent), not a generic effect.
+    enum class AttackPhase { None, Windup, Active, Recovery };
+    const gameplay::AbilityForm* attackAbility { nullptr }; // resolved in onEnter
+    // Swappable test weapons (keys 1-5), resolved in onEnter. Each has its own
+    // typed damage, posture damage, and status effect.
+    static constexpr int kWeaponCount = 5;
+    const data::WeaponForm* weapons[kWeaponCount] {}; // [0]=sword … [4]=flame scimitar
+    int weaponIndex { 0 };
+    AttackPhase attackPhase { AttackPhase::None };
+    f32 attackTimer { 0.0f };            // time left in the current phase
+    Vec2 attackDir { 0.0f, -1.0f };      // aim locked at the swing's start
+    std::vector<ecs::Entity> hitThisSwing; // enemies already struck this swing
 };
 
 } // namespace game

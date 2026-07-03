@@ -184,11 +184,87 @@ Post-review fixes (dev feedback):
   without arming the pause. Modder ref updated in `docs/MODDING-EFFECTS.md`; tested
   in `tests/EnergyExhaustionTest.cpp`.
 
-### Step 3 — Player melee attack  ▢
+### Step 3 — Player melee attack  ✅ DONE
 Attack state machine windup→active→recovery on left-click. During *active*, a
 transient melee hitbox in front of the aim direction; overlap query → `applyDamage`
 (typed) + posture damage on enemies hit. Energy cost + cooldown (GameplayEffects).
-**Deliverable:** player kills dummies; posture/stagger/typed mitigation visibly fire.
+**Delivered:** left-click swings the iron sword; dummies take typed slash + posture
+damage, Staggered fires on posture break, and they die (State.Dead). Build green,
+187 tests.
+
+Implementation notes:
+- **Attack = a GAS `AbilityForm`** (`PlayerAttack` in base.toml) for gating only —
+  energy cost (`AttackCost`, permissive like all energy costs), cooldown
+  (`AttackCooldown`, `grantedTag=Cooldown.Attack`, 0.5s), `blockedTag=State.Exhausted`.
+  It has **no `effect`**: the damage is NOT a generic effect. Left-click →
+  `tryActivate`; on success the scene starts the swing.
+- **Damage is weapon-driven + typed**, per the doc default: the scene builds
+  `weaponDamageEvent(playerWeapon, playerSystem)` and feeds `applyDamage` (the
+  typed mitigation + posture/stagger pipeline). `playerWeapon` = the `IronSword`
+  WeaponForm resolved from base.toml (given typed `slashAttack`/`postureDamage`
+  fields, which it lacked). Live equip/unequip is Step 6; here the weapon is a
+  resolved scene pointer (equipment "matters from Step 3" without the inventory UI).
+- **Swing state machine is scene-side** (`updatePlayerAttack`): `None → Windup
+  (0.12s) → Active (0.10s) → Recovery (0.18s)`. Only the **Active** window deals
+  damage. Aim is **locked** at swing start (`attackDir`), so the hit lands where you
+  committed, not where the cursor drifted.
+- **Hitbox = a front arc**: within `kAttackRange` (1.4u) and `dot(dirToTarget,
+  attackDir) ≥ cos60°`. Each enemy is hit **at most once per swing**
+  (`hitThisSwing` set). Can't start a swing mid-dodge.
+- **No new headless test for the swing**: the timing/arc is presentation; the
+  damage path (`weaponDamageEvent` + `applyDamage`) is already covered by the
+  typed-damage / equipment tests. Enemies still just tick (real AI is Step 4).
+
+Post-step (dev request) — **full damage system on the dummies**:
+- **All 9 elemental resistances implemented** (was fire/lightning + cold only):
+  `DamageType` gained Sonic/Chemical/Psychic/Holy/Dark/Ether; `CharacterStats` got
+  the six matching `resist*` derives (charisma → fire/sonic/holy, ego →
+  cold/chemical/dark, insight → lightning/psychic/ether, 0.5·attr); `ArmorForm`
+  gained `resistCold` + the six (appended last, ordinals stable); `applyDamage`
+  maps every channel; `armorModifiers` folds them all.
+- **Negative resistance now amplifies** (vulnerability): the mitigation clamp is
+  `[-100%, 100%]`, so a negative resist takes up to ×2. Makes iron's conductive
+  lightning weakness real. Tested (`TypedDamageTest`).
+- **Two armors in base.toml**: `LeatherArmor` (elemental + blunt focus) and
+  `IronArmor` (slash/pierce focus, −20 lightning). Three arena dummies now spawn
+  unarmored / leather / iron (equipped via a torso `ArmorForm`; each combatant's
+  armor is folded into **its** `tickCharacter` via `equipmentModsFor`, so mitigation
+  is live). Static equip only — live equip/unequip UI is still Step 6.
+- **Debug typed-hit buttons** in the arena panel (Slash/Fire/Lightning/Holy 40 +
+  reset) apply a channel to every dummy, so the mitigation differences are
+  directly comparable (the melee sword only exercises slash).
+
+Second armor pass (dev request) — **buildup endurances + Elden Ring-flavoured values**:
+- **Armor now raises status-buildup endurances.** `ArmorForm` gained six fields
+  (`endurancePoison/Bleed/Mental/Disease/Curse/Death`), folded by `armorModifiers`.
+  The three elemental endurances follow the armor's `resist*` instead: the
+  `enduranceIgnition/Glaciation/Electrocution` derives now read `resistFire/Cold/
+  Lightning` (was the raw attribute) — a no-op bare, but armor propagates, and
+  **iron's −22 lightning makes electrocution easier** (threshold drops).
+- **Leather / iron reworked from the ER Leather/Iron sets**: leather = modest
+  physical (best vs blunt), good elemental insulation, very high poison/disease/
+  death/mental endurance; iron = strong slash/pierce, poor elemental (−22
+  lightning), high bleed/frost robustness, low poison/focus/vitality. Values in
+  base.toml.
+- **Arena**: a Poison/Bleed/Ignition buildup readout makes the endurance
+  difference visible — leather soaks far more poison than iron before
+  `Status.Poisoned`. Tests in `EquipmentStatsTest` (endurance fold + negative-resist
+  electrocution drop). 191 tests green.
+
+Swappable test weapons (dev request) — **one full profile per weapon, keys 1-5**:
+- `WeaponForm` gained native `buildupType` + `buildupAmount` (appended last, ordinals
+  stable): a weapon applies status buildup on hit, gated by the target's endurance
+  (so armor resists it). `docs/MODDING-EFFECTS.md` updated.
+- Five weapons in base.toml, each a complete profile: **1 Iron Sword** (slash),
+  **2 Mace** (blunt, high posture → stagger), **3 Poison Dagger** (pierce + poison
+  buildup), **4 Spiked Mace** (blunt + bleed buildup), **5 Flame Scimitar**
+  (slash + fire + ignition buildup). Keys `1-5` swap the equipped weapon
+  (`platform::Key::Num1..5` added to the input layer).
+- The arena panel shows the current weapon's full stat line; the combatant table
+  gained Poison/Bleed/Ignition columns (value / endurance) so each weapon's effect
+  is observable and its armor resistance comparable across the three dummies. The
+  old per-channel debug buttons were pruned to just Lightning (no weapon covers it)
+  + Reset.
 
 ### Step 4 — Enemy combat AI  ▢
 Extend `AiAgent` into a small FSM: idle → chase (perceive player) → attack (in
@@ -227,9 +303,10 @@ Balance pass. Finalize this journal.
 
 ## Open design points (decide as steps land)
 
-- **Attack model:** single melee for the vertical slice, or weapon-driven (light/
-  heavy from `WeaponForm`)? Default: one melee driven by the equipped `WeaponForm`'s
-  typed attack + scaling, so equipment matters from Step 3.
+- ~~**Attack model**~~ — DECIDED (Step 3): one melee driven by the equipped
+  `WeaponForm`'s typed attack + scaling (`weaponDamageEvent` → `applyDamage`). Light/
+  heavy variants deferred; the weapon is a resolved scene pointer until Step 6 wires
+  live equipment.
 - **Dodge i-frames:** exact window + whether it also cancels attack recovery.
 - **Enemy variety:** start with one melee archetype; add a ranged/caster only if
   time allows.
