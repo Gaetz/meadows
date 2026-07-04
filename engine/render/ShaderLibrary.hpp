@@ -33,12 +33,14 @@ public:
     ShaderLibrary(const ShaderLibrary&) = delete;
     ShaderLibrary& operator=(const ShaderLibrary&) = delete;
 
-    // Loads and compiles a shader pair. Returns a null handle on failure
-    // (missing file, compile error) — the entry is still registered so a
-    // later hot reload can fix it.
+    // Loads and compiles a shader pair (<name>.vert + <name>.frag). Returns
+    // a null handle on failure (missing file, compile error) — the entry is
+    // still registered so a later hot reload can fix it. `vertexName`
+    // overrides the vertex file (shared fullscreen triangle for post passes).
     rhi::ShaderHandle load(const str& name,
                            vector<rhi::UniformBlockBinding> uniformBlocks = {},
-                           vector<rhi::SamplerBinding> samplers = {});
+                           vector<rhi::SamplerBinding> samplers = {},
+                           const str& vertexName = {});
 
     rhi::ShaderHandle get(const str& name) const;
 
@@ -59,6 +61,7 @@ private:
     struct Entry {
         rhi::ShaderHandle handle {};
         u64 generation { 1 };
+        str vertexName; // empty = same as the entry name
         vector<rhi::UniformBlockBinding> uniformBlocks;
         vector<rhi::SamplerBinding> samplers;
         vector<WatchedFile> files; // .vert + .frag + every include

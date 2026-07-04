@@ -6,7 +6,8 @@ layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aUv;      // x = sway weight, y = height01
 layout(location = 3) in vec3 aColor;
 layout(location = 4) in vec4 aPosScale; // xyz = terrain point, w = scale
-layout(location = 5) in vec4 aParams;   // x = yaw, y = tint, z = sway phase
+layout(location = 5) in vec4 aParams;   // x = yaw, y = tint, z = sway phase,
+                                        // w = fade-end distance (m)
 
 out vec3 vNormal;
 out vec3 vColor;
@@ -22,10 +23,10 @@ void main() {
     vec3 normal = vec3(aNormal.x * c - aNormal.z * s, aNormal.y,
                        aNormal.x * s + aNormal.z * c);
 
-    // Distance fade: trees sink/shrink away right before the ring edge (the
-    // fog has already eaten most of the contrast out there).
+    // Distance fade, per category (aParams.w): trees carry to the fog line,
+    // rocks and bushes bow out earlier.
     float dist = distance(aPosScale.xyz, uCameraPos.xyz);
-    float fade = 1.0 - smoothstep(380.0, 440.0, dist);
+    float fade = 1.0 - smoothstep(aParams.w * 0.86, aParams.w, dist);
     vec3 world = aPosScale.xyz + local * (aPosScale.w * fade);
 
     // Gentle canopy sway: same gust field as the grass, scaled by the

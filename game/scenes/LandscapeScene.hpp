@@ -3,6 +3,7 @@
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/GrassSystem.hpp"
+#include "engine/render/landscape/PostFx.hpp"
 #include "engine/render/landscape/ShadowMapper.hpp"
 #include "engine/render/landscape/SkySystem.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
@@ -19,9 +20,9 @@ namespace game {
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 20: clouds — a drifting stylized layer on the sky dome, tinted by
-// the day palette, whose SAME noise field attenuates the sun on the ground:
-// cloud shadows sweep the terrain in sync with the sky above.
+// Brick 21: bloom (soft-threshold HDR pyramid, additive upsample) and
+// screen-space god rays (radial march toward the sun over sky-only
+// radiance), both composed in linear HDR by the tonemap pass.
 class LandscapeScene final : public Scene {
 public:
     explicit LandscapeScene(engine::Engine& engineContext)
@@ -54,6 +55,7 @@ private:
     render::SkySystem sky;
     render::ShadowMapper shadows;
     render::WaterSystem water;
+    render::PostFx postFx;
     bool regenerateRequested { false };
     bool wireframeUi { false };
     bool animateTime { false };
@@ -63,7 +65,11 @@ private:
     bool reflectionsUi { true };
     f32 exposureUi { 1.0f };
     f32 cloudCoverageUi { 0.38f };
-    f32 cloudShadowUi { 0.5f };
+    f32 cloudShadowUi { 0.7f };
+    f32 bloomIntensityUi { 0.35f };
+    f32 godRayIntensityUi { 0.6f };
+    f32 volumetricUi { 1.0f };
+    i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 volumetric
     f32 fogDensityUi { 0.0014f };
     f32 fogHeightFalloffUi { 0.02f };
     f32 fogLowBoostUi { 1.6f };

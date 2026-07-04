@@ -37,8 +37,8 @@ public:
         kTreeVariants + kRockVariants + kBushVariants;
     static constexpr u32 kFirstRock = kTreeVariants;
     static constexpr u32 kFirstBush = kTreeVariants + kRockVariants;
-    static constexpr i32 kViewRadius = 7; // chunks (~480 m; fade covers edge)
-    static constexpr i32 kEvictRadius = 8;
+    static constexpr i32 kViewRadius = 14; // chunks (~900 m; fade at 880 m)
+    static constexpr i32 kEvictRadius = 15;
     static constexpr u32 kMaxUploadsPerFrame = 2;
 
     void create(rhi::Device& device, ShaderLibrary& shaders,

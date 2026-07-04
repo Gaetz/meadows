@@ -63,7 +63,8 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
     VegetationSystem::VariantBuckets buckets;
 
     const auto place = [&](u32 firstVariant, u32 variantCount, HashRng& rng,
-                           f32 x, f32 y, f32 z, f32 scaleMin, f32 scaleMax) {
+                           f32 x, f32 y, f32 z, f32 scaleMin, f32 scaleMax,
+                           f32 fadeEnd) {
         const u32 variant =
             firstVariant +
             glm::min(static_cast<u32>(rng.next() *
@@ -75,7 +76,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             .params = { rng.next() * 6.2831853f, // yaw
                         rng.next(),              // tint jitter
                         rng.next() * 6.2831853f, // sway phase
-                        0.0f },
+                        fadeEnd },               // per-category view distance
         });
     };
     const auto candidateRng = [&](u32 salt, u32 index) {
@@ -109,7 +110,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             }
             // Sink slightly so leaning trunks never float on slopes.
             place(0, VegetationSystem::kTreeVariants, rng, x, h - 0.15f, z,
-                  0.8f, 1.4f);
+                  0.8f, 1.4f, 880.0f);
         }
     }
 
@@ -142,7 +143,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             }
             place(VegetationSystem::kFirstRock,
                   VegetationSystem::kRockVariants, rng, x, h - 0.10f, z,
-                  0.5f, 2.0f);
+                  0.5f, 2.0f, 660.0f); // 25% shorter reach than trees
         }
     }
 
@@ -178,7 +179,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             }
             place(VegetationSystem::kFirstBush,
                   VegetationSystem::kBushVariants, rng, x, h - 0.05f, z,
-                  0.7f, 1.3f);
+                  0.7f, 1.3f, 660.0f); // small silhouettes: rock reach
         }
     }
     return buckets;

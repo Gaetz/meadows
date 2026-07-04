@@ -4,7 +4,8 @@ layout(std140, binding = 0) uniform FrameUbo {
     mat4 uViewProj;
     mat4 uInvViewProj;   // NDC -> world, for fullscreen ray reconstruction
     vec4 uCameraPos;     // xyz = camera world position
-    vec4 uTime;          // x = seconds since scene start
+    vec4 uTime;          // x = seconds since scene start,
+                         // z = volumetric shaft intensity
     vec4 uSunDirection;  // xyz = normalized, points TOWARD the sun
     vec4 uSunColor;      // rgb = sun light color, w = sun disc intensity
     vec4 uSunGlowColor;  // rgb = sky halo/afterglow (outlives the disc)
@@ -24,4 +25,6 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uScreenInfo;       // xy = viewport size (px), zw = 1/size
     vec4 uCloudInfo;        // x = coverage [0,1], y = layer height (m),
                             // z = pattern scale (1/m), w = shadow strength
+    vec4 uSunScreen;        // xy = sun position in screen UV, z = shaft
+                            // visibility fade, w = god-ray intensity
 };

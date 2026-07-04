@@ -71,8 +71,15 @@ void LandscapeScene::onEnter() {
     if (device.caps().offscreenTargets) {
         blitSampler = device.createSampler({}); // linear, clamp — identity
         shaders->load(kTonemapShader, { { "FrameUbo", 0 } },
-                      { { "uSceneColor", 0 } });
+                      { { "uSceneColor", 0 },
+                        { "uBloom", 1 },
+                        { "uGodRays", 2 },
+                        { "uVolumetric", 3 } });
         rebuildBlitPipeline(device);
+    }
+    if (device.caps().offscreenTargets && device.caps().hdrFormats &&
+        device.caps().copyTexture) {
+        postFx.create(device, *shaders);
     }
 
     flyCamera.camera.position = { 32.0f, 110.0f, 400.0f };
@@ -87,6 +94,7 @@ void LandscapeScene::onExit() {
     destroyOffscreenTarget(device);
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
+    postFx.destroy(device);
     water.destroy(device);
     device.destroyBindGroup(reflectionBindGroup);
     device.destroyBuffer(reflectionUbo);
@@ -128,10 +136,6 @@ void LandscapeScene::ensureOffscreenTarget(rhi::Device& device, u32 width,
     offscreenFb = device.createFramebuffer(
         { .colorAttachments = { { .texture = offscreenColor } },
           .depthAttachment = { .texture = offscreenDepth } });
-    blitBindGroup = device.createBindGroup(
-        { .entries = { { .binding = 0,
-                         .texture = offscreenColor,
-                         .sampler = blitSampler } } });
     if (device.caps().copyTexture) {
         sceneColorCopy = device.createTexture(
             { .width = width,
@@ -178,6 +182,34 @@ void LandscapeScene::ensureOffscreenTarget(rhi::Device& device, u32 width,
                              .texture = reflectionColor,
                              .sampler = blitSampler } } });
     }
+
+    if (device.caps().offscreenTargets && device.caps().hdrFormats &&
+        device.caps().copyTexture) {
+        postFx.resize(device, width, height, offscreenColor, sceneColorCopy,
+                      sceneDepthCopy);
+    }
+    // Tonemap inputs: scene + bloom + god rays (black 1x1 fallbacks are not
+    // needed on the 4.6 path — postFx is always ready when we get here).
+    blitBindGroup = device.createBindGroup(
+        { .entries =
+              postFx.ready()
+                  ? vector<rhi::BindGroupEntry> {
+                        { .binding = 0,
+                          .texture = offscreenColor,
+                          .sampler = blitSampler },
+                        { .binding = 1,
+                          .texture = postFx.bloomTexture(),
+                          .sampler = blitSampler },
+                        { .binding = 2,
+                          .texture = postFx.godRayTexture(),
+                          .sampler = blitSampler },
+                        { .binding = 3,
+                          .texture = postFx.volumetricTexture(),
+                          .sampler = blitSampler } }
+                  : vector<rhi::BindGroupEntry> {
+                        { .binding = 0,
+                          .texture = offscreenColor,
+                          .sampler = blitSampler } } });
     offscreenWidth = width;
     offscreenHeight = height;
 }
@@ -243,6 +275,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     if (frame.device.caps().copyTexture) {
         water.refreshPipeline(frame.device, *shaders);
     }
+    postFx.refreshPipelines(frame.device, *shaders);
     terrain.setWireframe(wireframeUi, frame.device, *shaders);
     if (regenerateRequested) {
         regenerateRequested = false;
@@ -280,11 +313,30 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         reflectionsUi && reflectionFb.id != 0 &&
         camera.position.y > terrain.params.seaLevel;
 
+    // Sun position on screen for the god rays; shafts fade as the sun
+    // leaves the frame or dips below the horizon.
+    Vec2 sunUv { 0.5f, 0.5f };
+    f32 shaftFade = 0.0f;
+    {
+        const Vec4 clip =
+            viewProj *
+            Vec4 { camera.position + skyState.sunDirection * 1000.0f, 1.0f };
+        if (clip.w > 0.0f) {
+            const Vec2 ndc { clip.x / clip.w, clip.y / clip.w };
+            sunUv = ndc * 0.5f + Vec2 { 0.5f };
+            const f32 edge = glm::max(std::abs(ndc.x), std::abs(ndc.y));
+            shaftFade =
+                (1.0f - glm::smoothstep(0.85f, 1.35f, edge)) *
+                glm::smoothstep(-0.02f, 0.05f, skyState.sunDirection.y);
+        }
+    }
+
     const render::FrameUniforms uniforms {
         .viewProj = viewProj,
         .invViewProj = glm::inverse(viewProj),
         .cameraPos = { camera.position, 1.0f },
-        .time = { timeSeconds, 0.0f, 0.0f, 0.0f },
+        .time = { timeSeconds, 0.0f, volumetricUi,
+                  static_cast<f32>(debugBufferUi) },
         .sunDirection = { skyState.sunDirection, 0.0f },
         .sunColor = { skyState.sunColor, skyState.sunDiscIntensity },
         .sunGlowColor = { skyState.glowColor, 0.0f },
@@ -295,7 +347,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .terrainInfo = { terrain.params.seaLevel, 110.0f, 0.25f,
                          reflectionsActive ? 1.0f : 0.0f },
         .postInfo = { tonemapUi ? 1.0f : 0.0f, exposureUi,
-                      cascadeDebugUi ? 1.0f : 0.0f, 0.0f },
+                      cascadeDebugUi ? 1.0f : 0.0f, bloomIntensityUi },
         .fogInfo = { fogDensityUi, fogHeightFalloffUi, fogLowBoostUi,
                      fogStartUi },
         .sunViewProj = cascades.viewProj,
@@ -308,6 +360,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                         1.0f / static_cast<f32>(frame.width),
                         1.0f / static_cast<f32>(frame.height) },
         .cloudInfo = { cloudCoverageUi, 520.0f, 0.0011f, cloudShadowUi },
+        .sunScreen = { sunUv.x, sunUv.y, shaftFade, godRayIntensityUi },
     };
     frame.device.updateBuffer(frameUbo, &uniforms, sizeof(uniforms), 0);
 
@@ -397,6 +450,12 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         frame.cmd.endRenderPass();
     }
 
+    // Bloom pyramid + god rays + volumetric shafts, composed by the tonemap.
+    if (useOffscreen) {
+        postFx.render(frame.cmd, frameBindGroup,
+                      shadows.receiverBindGroup());
+    }
+
     if (useOffscreen) {
         // Tonemap composite: HDR scene -> filmic curve -> gamma -> backbuffer.
         frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::DontCare,
@@ -411,7 +470,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 20: clouds + drifting cloud shadows.");
+    ImGui::TextUnformatted("Brick 21: bloom + god rays.");
+    ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate,
+                1000.0f / ImGui::GetIO().Framerate);
     ImGui::TextUnformatted(
         "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
         "Shift: speed boost");
@@ -441,6 +502,14 @@ void LandscapeScene::drawUi() {
     ImGui::Checkbox("Animate (24 h in 2 min)", &animateTime);
     ImGui::Separator();
     ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
+    ImGui::SliderFloat("Bloom intensity", &bloomIntensityUi, 0.0f, 1.5f,
+                       "%.2f");
+    ImGui::SliderFloat("God rays intensity", &godRayIntensityUi, 0.0f, 2.0f,
+                       "%.2f");
+    ImGui::SliderFloat("Volumetric shafts", &volumetricUi, 0.0f, 3.0f,
+                       "%.2f");
+    ImGui::Combo("Debug buffer", &debugBufferUi,
+                 "Off\0Bloom\0God rays\0Volumetric\0");
     ImGui::Checkbox("Shadows", &shadowsUi);
     ImGui::SameLine();
     ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);

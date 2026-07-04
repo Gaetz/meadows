@@ -41,8 +41,8 @@ public:
     static constexpr f32 kChunkSize = 64.0f;  // meters
     static constexpr u32 kChunkQuads = 64;    // LOD0: 65x65 vertices
     static constexpr u32 kLodCount = 4;       // 64/32/16/8 quads per side
-    static constexpr i32 kViewRadius = 14;    // chunks (Chebyshev), ~900 m
-    static constexpr i32 kEvictRadius = 16;   // > view radius: hysteresis
+    static constexpr i32 kViewRadius = 15;    // chunks (Chebyshev), ~960 m
+    static constexpr i32 kEvictRadius = 17;   // > view radius: hysteresis
     static constexpr u32 kMaxUploadsPerFrame = 8;
 
     static constexpr u32 lodQuads(u32 lod) { return kChunkQuads >> lod; }

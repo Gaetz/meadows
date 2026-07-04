@@ -112,9 +112,11 @@ bool ShaderLibrary::compile(const str& name, Entry& entry) {
     str fragmentSource;
     std::unordered_set<str> includedVert;
     std::unordered_set<str> includedFrag;
+    const str& vertexName =
+        entry.vertexName.empty() ? name : entry.vertexName;
     const bool read =
-        expandFile(rootDir, rootDir / (name + ".vert"), includedVert, files,
-                   vertexSource) &&
+        expandFile(rootDir, rootDir / (vertexName + ".vert"), includedVert,
+                   files, vertexSource) &&
         expandFile(rootDir, rootDir / (name + ".frag"), includedFrag, files,
                    fragmentSource);
 
@@ -147,8 +149,10 @@ bool ShaderLibrary::compile(const str& name, Entry& entry) {
 
 rhi::ShaderHandle ShaderLibrary::load(const str& name,
                                       vector<rhi::UniformBlockBinding> uniformBlocks,
-                                      vector<rhi::SamplerBinding> samplers) {
+                                      vector<rhi::SamplerBinding> samplers,
+                                      const str& vertexName) {
     Entry& entry = entries[name];
+    entry.vertexName = vertexName;
     entry.uniformBlocks = std::move(uniformBlocks);
     entry.samplers = std::move(samplers);
     if (!compile(name, entry)) {

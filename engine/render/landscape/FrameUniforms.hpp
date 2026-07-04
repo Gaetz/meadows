@@ -34,6 +34,8 @@ struct FrameUniforms {
     Vec4 screenInfo {};       // xy = viewport size (px), zw = 1/size
     Vec4 cloudInfo {};        // x = coverage [0,1], y = layer height (m),
                               // z = pattern scale (1/m), w = shadow strength
+    Vec4 sunScreen {};        // xy = sun position in screen UV, z = shaft
+                              // visibility fade, w = god-ray intensity
 };
 
 } // namespace render

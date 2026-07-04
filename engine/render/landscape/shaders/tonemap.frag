@@ -2,6 +2,9 @@
 #include "common.glsl"
 
 layout(binding = 0) uniform sampler2D uSceneColor;
+layout(binding = 1) uniform sampler2D uBloom;
+layout(binding = 2) uniform sampler2D uGodRays;
+layout(binding = 3) uniform sampler2D uVolumetric;
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -17,7 +20,33 @@ vec3 acesFilm(vec3 x) {
 }
 
 void main() {
-    vec3 hdr = texture(uSceneColor, vUv).rgb * uPostInfo.y;
+    // Debug buffer viewer (uTime.w): 1 = bloom, 2 = god rays, 3 = volumetric.
+    if (uTime.w > 0.5) {
+        vec3 debugColor = uTime.w < 1.5   ? texture(uBloom, vUv).rgb
+                          : uTime.w < 2.5 ? texture(uGodRays, vUv).rgb
+                                          : texture(uVolumetric, vUv).rgb;
+        fragColor = vec4(pow(debugColor * 2.0, vec3(1.0 / 2.2)), 1.0);
+        return;
+    }
+
+    vec3 hdr = texture(uSceneColor, vUv).rgb;
+    // Volumetric: alpha REMOVES the fog in-scatter where distant air is
+    // cloud-shadowed (dark far curtains), rgb ADDS the near shafts. Then
+    // bloom (uPostInfo.w) and god rays (uSunScreen.w), all in linear HDR
+    // before exposure and the filmic curve.
+    // Rotated-grid 4-tap fetch (16 effective bilinear samples) smooths the
+    // marching dither out of both the shafts and the dark curtains.
+    vec2 volTexel = 1.0 / vec2(textureSize(uVolumetric, 0));
+    vec4 volumetric =
+        (texture(uVolumetric, vUv + volTexel * vec2(0.6, 0.2)) +
+         texture(uVolumetric, vUv + volTexel * vec2(-0.2, 0.6)) +
+         texture(uVolumetric, vUv + volTexel * vec2(-0.6, -0.2)) +
+         texture(uVolumetric, vUv + volTexel * vec2(0.2, -0.6))) *
+        0.25;
+    hdr = hdr * volumetric.a + volumetric.rgb;
+    hdr += texture(uBloom, vUv).rgb * uPostInfo.w;
+    hdr += texture(uGodRays, vUv).rgb * uSunScreen.w;
+    hdr *= uPostInfo.y;
     // Submerged camera: the whole frame breathes water — teal absorption
     // that deepens with how far below the surface the camera sits.
     float submersion = clamp((uTerrainInfo.x - uCameraPos.y) * 0.35, 0.0,

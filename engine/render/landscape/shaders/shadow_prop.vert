@@ -18,7 +18,7 @@ void main() {
                       aPos.x * s + aPos.z * c);
 
     float dist = distance(aPosScale.xyz, uCameraPos.xyz);
-    float fade = 1.0 - smoothstep(380.0, 440.0, dist);
+    float fade = 1.0 - smoothstep(aParams.w * 0.86, aParams.w, dist);
     vec3 world = aPosScale.xyz + local * (aPosScale.w * fade);
 
     float gust = sin(uTime.x * 1.1 + aParams.z +

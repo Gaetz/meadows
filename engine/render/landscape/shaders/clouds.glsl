@@ -31,7 +31,7 @@ float cloudFbm(vec2 p) {
 // Cloud density [0,1] at a point of the (world-anchored) cloud plane. The
 // pattern drifts with time — one global wind for layer and shadows alike.
 float cloudDensityAt(vec2 planePos) {
-    vec2 wind = vec2(1.0, 0.35) * 9.0; // m/s of drift
+    vec2 wind = vec2(1.0, 0.35) * 17.0; // m/s of drift
     vec2 uv = (planePos + wind * uTime.x) * uCloudInfo.z;
     float f = cloudFbm(uv);
     float threshold = 1.0 - uCloudInfo.x * 0.9;
@@ -50,20 +50,28 @@ vec3 applyClouds(vec3 sky, vec3 dir) {
     if (density <= 0.0) {
         return sky;
     }
+    // skyFill skies go dark and matte (the Ghibli storm-slab look — and the
+    // backdrop volumetric shafts need); sparse skies keep bright clouds
+    // with jewel edges.
+    float skyFill = clamp(uCloudInfo.x, 0.0, 1.0);
+
     // Two-tone stylized shading, tinted by the day palette: white at noon,
     // rose/orange embers at dusk, faint slabs at night.
-    vec3 lit = uAmbientColor.rgb * 2.1 + uSunGlowColor.rgb * 0.40;
-    vec3 core = lit * 0.55;
-    float coreAmount = smoothstep(0.35, 0.95, density);
+    vec3 lit = (uAmbientColor.rgb * 1.9 + uSunGlowColor.rgb * 0.34) *
+               (1.0 - 0.35 * skyFill);
+    vec3 core = lit * mix(0.55, 0.38, skyFill);
+    float coreAmount = smoothstep(mix(0.35, 0.22, skyFill), 0.9, density);
     vec3 cloudColor = mix(lit, core, coreAmount);
 
+    // Sparse-sky jewelry, fading out as the sky fills in:
+    float sparse = 1.0 - 0.75 * skyFill;
     // Forward scattering: THIN cloud transmits sunlight, so looking toward
     // the sun the wispy parts glow — a broad soft lobe plus a tight halo
     // right around the disc.
     float sunAlign = max(dot(dir, uSunDirection.xyz), 0.0);
     float thin = 1.0 - coreAmount;
     float diffusion = pow(sunAlign, 8.0) * 0.5 + pow(sunAlign, 32.0) * 0.9;
-    cloudColor += uSunGlowColor.rgb * (diffusion * thin);
+    cloudColor += uSunGlowColor.rgb * (diffusion * thin * sparse);
 
     // Silver lining: the bright fringe where sun-facing cloud EDGES thin
     // out. Tinted by the live sun palette — silver at noon, gold/rose at
@@ -71,7 +79,7 @@ vec3 applyClouds(vec3 sky, vec3 dir) {
     float edge = smoothstep(0.02, 0.20, density) *
                  (1.0 - smoothstep(0.25, 0.60, density));
     vec3 liningColor = uSunColor.rgb * 0.30 + uSunGlowColor.rgb * 0.30;
-    cloudColor += liningColor * (edge * pow(sunAlign, 4.0));
+    cloudColor += liningColor * (edge * pow(sunAlign, 4.0) * sparse);
 
     return mix(sky, cloudColor, density * horizonFade * 0.92);
 }
