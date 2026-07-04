@@ -3,8 +3,13 @@
 #include <glm/glm.hpp>
 #include <imgui.h>
 
+#include "data/forms/FormDatabase.hpp"
+#include "data/plugins/PluginLoader.hpp"
+#include "data/plugins/Resolver.hpp"
 #include "engine/Engine.hpp"
 #include "engine/FrameContext.hpp"
+#include "engine/core/Log.hpp"
+#include "engine/platform/Paths.hpp"
 #include "engine/platform/Window.hpp"
 #include "engine/render/landscape/FrameUniforms.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
@@ -37,6 +42,44 @@ Mat4 obliqueProjection(Mat4 proj, const Vec4& clipPlaneView) {
 
 void LandscapeScene::onEnter() {
     rhi::Device& device = engine->getDevice();
+
+    // Load the moddable landscape tuning (§5): its own small plugin, plus
+    // future mod plugins patching it field by field.
+    registerLandscapeFormTypes(formTypes);
+    const auto landscapePlugin = data::loadPluginFile(
+        platform::executableDir() / "data" / "base" / "landscape.toml",
+        formTypes);
+    data::FormDatabase forms;
+    if (landscapePlugin) {
+        vector<const data::Plugin*> loadOrder { &*landscapePlugin };
+        data::resolve(loadOrder, formTypes, forms);
+    } else {
+        LOG_WARN("landscape.toml failed to load — using built-in defaults");
+    }
+    tuning = resolveLandscapeTuning(forms);
+    LOG_INFO("Landscape tuning: seed={} seaLevel={} fogDensity={} "
+             "coverage={}",
+             tuning.terrainSeed, tuning.seaLevel, tuning.fogDensity,
+             tuning.cloudCoverage);
+
+    // Terrain shape + startup values for every live-adjustable knob.
+    terrain.params.seed = tuning.terrainSeed;
+    terrain.params.hillWavelength = tuning.hillWavelength;
+    terrain.params.hillAmplitude = tuning.hillAmplitude;
+    terrain.params.mountainWavelength = tuning.mountainWavelength;
+    terrain.params.mountainAmplitude = tuning.mountainAmplitude;
+    terrain.params.seaLevel = tuning.seaLevel;
+    fogDensityUi = tuning.fogDensity;
+    fogHeightFalloffUi = tuning.fogHeightFalloff;
+    fogLowBoostUi = tuning.fogLowBoost;
+    fogStartUi = tuning.fogStart;
+    exposureUi = tuning.exposure;
+    bloomIntensityUi = tuning.bloomIntensity;
+    godRayIntensityUi = tuning.godRayIntensity;
+    volumetricUi = tuning.volumetricIntensity;
+    ssaoUi = tuning.ssaoStrength;
+    cloudCoverageUi = tuning.cloudCoverage;
+    cloudShadowUi = tuning.cloudShadowStrength;
 
     frameUbo = device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
                                      .size = sizeof(render::FrameUniforms),
@@ -351,7 +394,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .zenithColor = { skyState.zenithColor, 0.0f },
         .horizonColor = { skyState.horizonColor, 0.0f },
         .horizonFarColor = { skyState.horizonFarColor, 0.0f },
-        .terrainInfo = { terrain.params.seaLevel, 110.0f, 0.25f,
+        .terrainInfo = { terrain.params.seaLevel, tuning.snowLine,
+                         tuning.splatUvScale,
                          reflectionsActive ? 1.0f : 0.0f },
         .postInfo = { tonemapUi ? 1.0f : 0.0f, exposureUi,
                       cascadeDebugUi ? 1.0f : 0.0f, bloomIntensityUi },
@@ -366,7 +410,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                         static_cast<f32>(frame.height),
                         1.0f / static_cast<f32>(frame.width),
                         1.0f / static_cast<f32>(frame.height) },
-        .cloudInfo = { cloudCoverageUi, 520.0f, 0.0011f, cloudShadowUi },
+        .cloudInfo = { cloudCoverageUi, tuning.cloudHeight, tuning.cloudScale,
+                       cloudShadowUi },
         .sunScreen = { sunUv.x, sunUv.y, shaftFade, godRayIntensityUi },
         .cloudMapInfo = { std::floor(camera.position.x /
                                      (render::SkySystem::kCloudMapSpan /
@@ -507,7 +552,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 22: SSAO.");
+    ImGui::TextUnformatted("Brick 23b: TOML landscape tuning.");
     ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate,
                 1000.0f / ImGui::GetIO().Framerate);
     ImGui::TextUnformatted(

@@ -1,7 +1,9 @@
 #pragma once
 
+#include "data/forms/FormTypeRegistry.hpp"
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "game/scenes/LandscapeTuning.hpp"
 #include "engine/render/landscape/GrassSystem.hpp"
 #include "engine/render/landscape/PostFx.hpp"
 #include "engine/render/landscape/ShadowMapper.hpp"
@@ -44,6 +46,13 @@ private:
     void rebuildBlitPipeline(rhi::Device& device);
 
     engine::Engine* engine { nullptr };
+
+    // Moddable startup values (§5): loaded from data/base/landscape.toml
+    // (plus any mod patches) in onEnter, then copied into the systems' plain
+    // params and the UI members below — the panel still adjusts everything
+    // live; the TOML sets where it all starts.
+    data::FormTypeRegistry formTypes;
+    LandscapeTuningForm tuning;
 
     render::FlyCamera flyCamera;
     f32 timeSeconds { 0.0f };
