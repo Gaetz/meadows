@@ -27,4 +27,8 @@ layout(std140, binding = 0) uniform FrameUbo {
                             // z = pattern scale (1/m), w = shadow strength
     vec4 uSunScreen;        // xy = sun position in screen UV, z = shaft
                             // visibility fade, w = god-ray intensity
+    vec4 uCloudMapInfo;     // xy = baked cloud-field center (world XZ),
+                            // z = 1/span
+    vec4 uWaterMapInfo;     // xy = pool-depth map center (world XZ),
+                            // z = 1/span
 };

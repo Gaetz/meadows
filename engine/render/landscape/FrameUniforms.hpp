@@ -36,6 +36,10 @@ struct FrameUniforms {
                               // z = pattern scale (1/m), w = shadow strength
     Vec4 sunScreen {};        // xy = sun position in screen UV, z = shaft
                               // visibility fade, w = god-ray intensity
+    Vec4 cloudMapInfo {};     // xy = baked cloud-field center (world XZ),
+                              // z = 1/span, w unused
+    Vec4 waterMapInfo {};     // xy = pool-depth map center (world XZ),
+                              // z = 1/span, w unused
 };
 
 } // namespace render

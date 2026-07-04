@@ -407,7 +407,8 @@ void VegetationSystem::refreshPipeline(rhi::Device& device,
 
 void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                             rhi::BindGroupHandle frameBindGroup,
-                            rhi::BindGroupHandle shadowBindGroup) {
+                            rhi::BindGroupHandle shadowBindGroup,
+                            u32 variantLimit) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
     if (shadowBindGroup.id != 0) {
@@ -416,7 +417,7 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     // Variant-major: bind each tree mesh once, then one instanced draw per
     // chunk holding that variant (firstInstance = offset into the chunk's
     // variant-sorted instance buffer; requires baseInstance, present on 4.6).
-    for (u32 v = 0; v < kVariantCount; ++v) {
+    for (u32 v = 0; v < variantLimit; ++v) {
         bool meshBound = false;
         for (const auto& [key, chunk] : chunks) {
             if (!chunk.resident || chunk.counts[v] == 0) {
@@ -437,7 +438,13 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
 
 void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
                                  rhi::BindGroupHandle frameBindGroup,
-                                 rhi::BindGroupHandle casterBindGroup) {
+                                 rhi::BindGroupHandle casterBindGroup,
+                                 const Vec3& cameraPos,
+                                 i32 maxChunkDistance) {
+    const i32 camCx = static_cast<i32>(
+        std::floor(cameraPos.x / TerrainSystem::kChunkSize));
+    const i32 camCz = static_cast<i32>(
+        std::floor(cameraPos.z / TerrainSystem::kChunkSize));
     cmd.setPipeline(casterPipeline);
     cmd.setBindGroup(0, frameBindGroup);
     cmd.setBindGroup(1, casterBindGroup);
@@ -446,6 +453,12 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
         for (const auto& [key, chunk] : chunks) {
             if (!chunk.resident || chunk.counts[v] == 0) {
                 continue;
+            }
+            const i32 cx = static_cast<i32>(key >> 32);
+            const i32 cz = static_cast<i32>(key & 0xffffffffu);
+            if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
+                maxChunkDistance) {
+                continue; // beyond the last shadow cascade
             }
             if (!meshBound) {
                 cmd.setVertexBuffer(0, variantMeshes[v].vertexBuffer);

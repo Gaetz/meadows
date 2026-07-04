@@ -55,7 +55,7 @@ void LandscapeScene::onEnter() {
         shadows.create(device);
     }
     if (device.caps().copyTexture) {
-        water.create(device, *shaders);
+        water.create(device, *shaders, engine->getJobSystem());
         depthSampler = device.createSampler(
             { .minFilter = rhi::FilterMode::Nearest,
               .magFilter = rhi::FilterMode::Nearest });
@@ -291,6 +291,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     grass.update(frame.device, terrain.params, flyCamera.camera.position);
     vegetation.update(frame.device, terrain.params,
                       flyCamera.camera.position);
+    if (frame.device.caps().copyTexture) {
+        water.update(frame.device, terrain.params, flyCamera.camera.position);
+    }
 
     const render::Camera3D& camera = flyCamera.camera;
     const Mat4 viewProj = camera.viewProj(frame.aspect);
@@ -365,8 +368,23 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                         1.0f / static_cast<f32>(frame.height) },
         .cloudInfo = { cloudCoverageUi, 520.0f, 0.0011f, cloudShadowUi },
         .sunScreen = { sunUv.x, sunUv.y, shaftFade, godRayIntensityUi },
+        .cloudMapInfo = { std::floor(camera.position.x /
+                                     (render::SkySystem::kCloudMapSpan /
+                                      render::SkySystem::kCloudMapSize)) *
+                              (render::SkySystem::kCloudMapSpan /
+                               render::SkySystem::kCloudMapSize),
+                          std::floor(camera.position.z /
+                                     (render::SkySystem::kCloudMapSpan /
+                                      render::SkySystem::kCloudMapSize)) *
+                              (render::SkySystem::kCloudMapSpan /
+                               render::SkySystem::kCloudMapSize),
+                          1.0f / render::SkySystem::kCloudMapSpan, 0.0f },
+        .waterMapInfo = water.poolMapInfo(),
     };
     frame.device.updateBuffer(frameUbo, &uniforms, sizeof(uniforms), 0);
+
+    // Bake this frame's cloud field before anything lights with it.
+    sky.bakeCloudMap(frame.cmd, frameBindGroup);
 
     // Cascade passes: depth-only casters from the sun's point of view.
     if (shadowStrength > 0.0f) {
@@ -377,8 +395,10 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                   .depthLoadOp = rhi::LoadOp::Clear });
             terrain.drawDepth(frame.cmd, shadows.casterBindGroup(i),
                               camera.position, 9);
+            // Same 9-chunk cap: the last cascade ends at 480 m.
             vegetation.drawDepth(frame.cmd, frameBindGroup,
-                                 shadows.casterBindGroup(i));
+                                 shadows.casterBindGroup(i),
+                                 camera.position, 9);
             frame.cmd.endRenderPass();
         }
     }
@@ -422,10 +442,16 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                                     .loadOp = rhi::LoadOp::DontCare,
                                     .depthLoadOp = rhi::LoadOp::Clear });
         frame.cmd.setFrontFace(rhi::FrontFace::Clockwise);
+        if (sky.cloudMapBindGroup().id != 0) {
+            frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
+        }
         terrain.draw(frame.cmd, reflectionBindGroup,
                      shadows.receiverBindGroup());
+        // Trees only: rocks and bushes are invisible in a wobbly half-res
+        // reflection.
         vegetation.draw(frame.cmd, reflectionBindGroup,
-                        shadows.receiverBindGroup());
+                        shadows.receiverBindGroup(),
+                        render::VegetationSystem::kTreeVariants);
         sky.draw(frame.cmd, reflectionBindGroup);
         frame.cmd.endRenderPass();
     }
@@ -435,6 +461,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         { .framebuffer = useOffscreen ? offscreenFb : rhi::FramebufferHandle {},
           .loadOp = rhi::LoadOp::DontCare,
           .depthLoadOp = rhi::LoadOp::Clear });
+    if (sky.cloudMapBindGroup().id != 0) {
+            frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
+        }
     terrain.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup());
     vegetation.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup());
     grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup());
@@ -455,7 +484,11 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     }
 
     // Bloom pyramid + god rays + volumetric shafts, composed by the tonemap.
+    // Unit 2 (cloud map) persists across the post passes for the march.
     if (useOffscreen) {
+        if (sky.cloudMapBindGroup().id != 0) {
+            frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
+        }
         postFx.render(frame.cmd, frameBindGroup,
                       shadows.receiverBindGroup());
     }

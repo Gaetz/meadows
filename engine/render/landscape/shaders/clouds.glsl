@@ -30,7 +30,9 @@ float cloudFbm(vec2 p) {
 
 // Cloud density [0,1] at a point of the (world-anchored) cloud plane. The
 // pattern drifts with time — one global wind for layer and shadows alike.
-float cloudDensityAt(vec2 planePos) {
+// ANALYTIC evaluation: used by the sky dome (whose rays reach far beyond
+// the baked field) and by the once-per-frame bake pass itself.
+float cloudDensityAnalytic(vec2 planePos) {
     vec2 wind = vec2(1.0, 0.35) * 17.0; // m/s of drift
     vec2 uv = (planePos + wind * uTime.x) * uCloudInfo.z;
     float f = cloudFbm(uv);
@@ -38,7 +40,20 @@ float cloudDensityAt(vec2 planePos) {
     return smoothstep(threshold - 0.18, threshold + 0.22, f);
 }
 
+#ifndef CLOUD_BAKE_PASS
+// Baked cloud field (SkySystem renders it once per frame): every shadow
+// consumer — terrain/tree/grass lighting and the 20-step volumetric march —
+// reads ONE texture tap instead of a 4-octave FBM.
+layout(binding = 2) uniform sampler2D uCloudMap;
+
+float cloudDensityAt(vec2 planePos) {
+    vec2 uv = (planePos - uCloudMapInfo.xy) * uCloudMapInfo.z + 0.5;
+    return texture(uCloudMap, uv).r;
+}
+#endif
+
 // Blends the cloud layer over the sky color for an upward view ray.
+// Analytic density: horizon rays reach tens of km, far past the baked field.
 vec3 applyClouds(vec3 sky, vec3 dir) {
     float horizonFade = smoothstep(0.03, 0.14, dir.y);
     if (horizonFade <= 0.0 || uCameraPos.y >= uCloudInfo.y) {
@@ -46,7 +61,7 @@ vec3 applyClouds(vec3 sky, vec3 dir) {
     }
     float t = (uCloudInfo.y - uCameraPos.y) / dir.y;
     vec2 planePos = uCameraPos.xz + dir.xz * t;
-    float density = cloudDensityAt(planePos);
+    float density = cloudDensityAnalytic(planePos);
     if (density <= 0.0) {
         return sky;
     }
@@ -87,8 +102,9 @@ vec3 applyClouds(vec3 sky, vec3 dir) {
 // Sun attenuation from cloud cover, for terrain/vegetation lighting. The
 // sample point is pushed along the sun ray up to the cloud layer, so shadows
 // sit where the cloud actually blocks the sun (not straight above).
+#ifndef CLOUD_BAKE_PASS
 float cloudShadowFactor(vec3 worldPos) {
-    if (uCloudInfo.w <= 0.0 || uSunDirection.y <= 0.05) {
+    if (uCloudInfo.w <= 0.0 || uSunDirection.y <= 0.08) {
         return 1.0;
     }
     float t = (uCloudInfo.y - worldPos.y) / uSunDirection.y;
@@ -96,5 +112,10 @@ float cloudShadowFactor(vec3 worldPos) {
     // Sharpened response: even a moderate cloud throws a solid patch — the
     // soft visual density would only dim the sun by a few percent.
     float shade = smoothstep(0.06, 0.55, cloudDensityAt(planePos));
-    return 1.0 - shade * uCloudInfo.w;
+    // Fade out at low sun: the projected sample point runs off the baked
+    // field (offset ~ height/sin(elevation)), and grazing-light cloud
+    // shadows are washed out anyway.
+    float sunFade = smoothstep(0.08, 0.18, uSunDirection.y);
+    return 1.0 - shade * uCloudInfo.w * sunFade;
 }
+#endif

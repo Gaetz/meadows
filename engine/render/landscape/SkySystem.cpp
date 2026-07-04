@@ -13,6 +13,7 @@ namespace render {
 namespace {
 
 constexpr const char* kSkyShader = "sky";
+constexpr const char* kCloudBakeShader = "cloud_bake";
 
 // The palette below is authored in display (sRGB-ish) space — the intuitive
 // space to pick colors in. The HDR pipeline lights in linear and re-encodes
@@ -126,11 +127,36 @@ SkySystem::SkyState SkySystem::evaluate(f32 cloudCoverage) const {
 void SkySystem::create(rhi::Device& device, ShaderLibrary& shaders) {
     shaders.load(kSkyShader, { { "FrameUbo", 0 } });
     buildPipeline(device, shaders);
+
+    if (device.caps().offscreenTargets && device.caps().hdrFormats) {
+        cloudMap = device.createTexture(
+            { .width = kCloudMapSize,
+              .height = kCloudMapSize,
+              .format = rhi::TextureFormat::R16F,
+              .filter = rhi::FilterMode::Linear,
+              .usage = rhi::TextureUsage_Sampled |
+                       rhi::TextureUsage_RenderAttachment },
+            nullptr);
+        cloudMapFb = device.createFramebuffer(
+            { .colorAttachments = { { .texture = cloudMap } } });
+        cloudMapSampler = device.createSampler({}); // linear clamp
+        cloudMapGroup = device.createBindGroup(
+            { .entries = { { .binding = 2,
+                             .texture = cloudMap,
+                             .sampler = cloudMapSampler } } });
+        shaders.load(kCloudBakeShader, { { "FrameUbo", 0 } }, {},
+                     "fullscreen");
+    }
 }
 
 void SkySystem::destroy(rhi::Device& device) {
+    device.destroyPipeline(bakePipeline);
+    device.destroyBindGroup(cloudMapGroup);
+    device.destroySampler(cloudMapSampler);
+    device.destroyFramebuffer(cloudMapFb);
+    device.destroyTexture(cloudMap);
     device.destroyPipeline(pipeline);
-    pipeline = {};
+    *this = SkySystem {};
 }
 
 void SkySystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
@@ -152,6 +178,29 @@ void SkySystem::refreshPipeline(rhi::Device& device, ShaderLibrary& shaders) {
     if (shaders.generation(kSkyShader) != shaderGeneration) {
         buildPipeline(device, shaders);
     }
+    if (cloudMapFb.id != 0 &&
+        shaders.generation(kCloudBakeShader) != bakeShaderGeneration) {
+        if (bakePipeline.id != 0) {
+            device.destroyPipeline(bakePipeline);
+        }
+        bakePipeline = device.createPipeline(
+            { .shader = shaders.get(kCloudBakeShader) });
+        bakeShaderGeneration = shaders.generation(kCloudBakeShader);
+    }
+}
+
+void SkySystem::bakeCloudMap(rhi::CommandBuffer& cmd,
+                             rhi::BindGroupHandle frameBindGroup) {
+    if (cloudMapFb.id == 0 || bakePipeline.id == 0) {
+        return;
+    }
+    cmd.beginRenderPass({ .framebuffer = cloudMapFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(bakePipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    cmd.draw(3);
+    cmd.endRenderPass();
 }
 
 void SkySystem::draw(rhi::CommandBuffer& cmd,

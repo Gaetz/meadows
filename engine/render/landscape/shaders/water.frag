@@ -10,6 +10,9 @@ layout(binding = 1) uniform sampler2D uSceneDepth;
 // points on the water plane the mirror camera projects to the SAME screen
 // UV, so the fragment's own UV samples its reflection.
 layout(binding = 2) uniform sampler2D uReflection;
+// CPU-baked pool depth around the camera (pre-dilated neighborhood max) —
+// view-independent, unlike screen-space probing.
+layout(binding = 3) uniform sampler2D uPoolDepth;
 
 in vec3 vWorldPos;
 out vec4 fragColor;
@@ -99,6 +102,16 @@ void main() {
                                     (n.x + n.z) * 22.0);
     float foam = waterline +
                  band * smoothstep(0.30, 0.75, pattern + band * 0.30) * 0.8;
+
+    // Small-pool suppression: ONE tap into the CPU-baked pool-depth map
+    // (already a neighborhood max). Shallow-everywhere puddles lose their
+    // foam; real shores — deep water nearby — keep it. View-independent:
+    // no camera-distance popping.
+    vec2 poolUv =
+        (vWorldPos.xz - uWaterMapInfo.xy) * uWaterMapInfo.z + 0.5;
+    float poolDepth = texture(uPoolDepth, poolUv).r;
+    foam *= smoothstep(2.0, 4.0, poolDepth);
+
     color = mix(color, vec3(0.75, 0.82, 0.85), clamp(foam, 0.0, 1.0));
 
     fragColor = vec4(applyFog(color, vWorldPos), 1.0);

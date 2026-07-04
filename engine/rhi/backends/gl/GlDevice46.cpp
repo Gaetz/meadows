@@ -43,7 +43,21 @@ GLenum toGlInternalFormat(TextureFormat format) {
 }
 
 bool acceptsPixelUpload(TextureFormat format) {
-    return format == TextureFormat::RGBA8 || format == TextureFormat::SRGBA8;
+    // R16F uploads take tightly packed f32 texels (GL converts on upload).
+    return format == TextureFormat::RGBA8 ||
+           format == TextureFormat::SRGBA8 ||
+           format == TextureFormat::R16F;
+}
+
+void uploadFormatFor(TextureFormat format, GLenum& pixelFormat,
+                     GLenum& pixelType) {
+    if (format == TextureFormat::R16F) {
+        pixelFormat = GL_RED;
+        pixelType = GL_FLOAT;
+    } else {
+        pixelFormat = GL_RGBA;
+        pixelType = GL_UNSIGNED_BYTE;
+    }
 }
 
 GLint toGlWrap(AddressMode mode) {
@@ -93,6 +107,9 @@ TextureHandle GlDevice46::createTexture(const TextureDesc& desc,
 
     const bool isArray = desc.arrayLayers > 1;
     const GLenum internal = toGlInternalFormat(desc.format);
+    GLenum pixelFormat = GL_RGBA;
+    GLenum pixelType = GL_UNSIGNED_BYTE;
+    uploadFormatFor(desc.format, pixelFormat, pixelType);
     GLuint texture = 0;
     glCreateTextures(isArray ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D, 1,
                      &texture);
@@ -106,7 +123,7 @@ TextureHandle GlDevice46::createTexture(const TextureDesc& desc,
                                 static_cast<GLsizei>(desc.width),
                                 static_cast<GLsizei>(desc.height),
                                 static_cast<GLsizei>(desc.arrayLayers),
-                                GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+                                pixelFormat, pixelType, pixels);
         }
     } else {
         glTextureStorage2D(texture, static_cast<GLsizei>(desc.mipLevels),
@@ -116,7 +133,7 @@ TextureHandle GlDevice46::createTexture(const TextureDesc& desc,
             glTextureSubImage2D(texture, 0, 0, 0,
                                 static_cast<GLsizei>(desc.width),
                                 static_cast<GLsizei>(desc.height),
-                                GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+                                pixelFormat, pixelType, pixels);
         }
     }
 

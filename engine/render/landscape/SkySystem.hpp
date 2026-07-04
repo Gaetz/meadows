@@ -36,9 +36,23 @@ public:
         f32 sunDiscIntensity { 12.0f };
     };
 
+    // Baked cloud field: the drifting 2D density around the camera,
+    // rendered once per frame so shadow consumers (terrain/tree/grass
+    // lighting, volumetric march) sample a texture instead of a 4-octave
+    // FBM per evaluation.
+    static constexpr u32 kCloudMapSize = 512;
+    static constexpr f32 kCloudMapSpan = 8192.0f; // meters covered
+
     void create(rhi::Device& device, ShaderLibrary& shaders);
     void destroy(rhi::Device& device);
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
+
+    // Renders the cloud field for this frame. Call before any pass that
+    // lights with cloud shadows.
+    void bakeCloudMap(rhi::CommandBuffer& cmd,
+                      rhi::BindGroupHandle frameBindGroup);
+    // Texture unit 2 for every consumer; bind once per render pass.
+    rhi::BindGroupHandle cloudMapBindGroup() const { return cloudMapGroup; }
 
     // Draw last in the opaque pass (background pixels only).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup);
@@ -55,6 +69,13 @@ private:
 
     rhi::PipelineHandle pipeline {};
     u64 shaderGeneration { 0 };
+
+    rhi::TextureHandle cloudMap {};
+    rhi::FramebufferHandle cloudMapFb {};
+    rhi::SamplerHandle cloudMapSampler {};
+    rhi::BindGroupHandle cloudMapGroup {};
+    rhi::PipelineHandle bakePipeline {};
+    u64 bakeShaderGeneration { 0 };
 };
 
 } // namespace render

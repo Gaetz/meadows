@@ -55,14 +55,20 @@ public:
 
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
+    // `variantLimit` restricts which variants draw (e.g. kTreeVariants for
+    // the reflection pass: trees only).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
-              rhi::BindGroupHandle shadowBindGroup);
+              rhi::BindGroupHandle shadowBindGroup,
+              u32 variantLimit = kVariantCount);
 
     // Depth-only caster pass into one shadow cascade (frameBindGroup feeds
     // the sway/fade math, casterBindGroup the cascade's light matrix).
+    // Chunks beyond `maxChunkDistance` (Chebyshev) are skipped — cascades
+    // only reach so far.
     void drawDepth(rhi::CommandBuffer& cmd,
                    rhi::BindGroupHandle frameBindGroup,
-                   rhi::BindGroupHandle casterBindGroup);
+                   rhi::BindGroupHandle casterBindGroup, const Vec3& cameraPos,
+                   i32 maxChunkDistance);
 
     u32 propTotal() const { return instances; }
 
