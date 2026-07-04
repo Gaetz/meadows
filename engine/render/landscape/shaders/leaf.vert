@@ -31,8 +31,11 @@ void main() {
     vec3 normal = vec3(aNormal.x * c - aNormal.z * s, aNormal.y,
                        aNormal.x * s + aNormal.z * c);
 
+    // Cards cut out FAR earlier than the tree (fill-rate: they were the
+    // frame cost) — beyond ~300 m the solid blobs carry the canopy alone.
+    float leafEnd = min(aParams.w, 300.0);
     float dist = distance(aPosScale.xyz, uCameraPos.xyz);
-    float fade = 1.0 - smoothstep(aParams.w * 0.86, aParams.w, dist);
+    float fade = 1.0 - smoothstep(leafEnd * 0.80, leafEnd, dist);
     vec3 world = aPosScale.xyz + local * (aPosScale.w * fade);
 
     // Canopy gust (same field as tree.vert, full weight up here) + a small

@@ -81,6 +81,8 @@ private:
     bool wireframeUi { false };
     bool animateTime { false };
     bool tonemapUi { true };
+    bool stylizedUi { true }; // BotW step lighting vs classic wrap (A/B)
+    bool leafCardsUi { true }; // tree leaf-card pass (perf A/B)
     bool shadowsUi { true };
     bool cascadeDebugUi { false };
     bool reflectionsUi { true };

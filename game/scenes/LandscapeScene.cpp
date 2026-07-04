@@ -500,7 +500,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .sunDirection = { skyState.sunDirection, 0.0f },
         .sunColor = { skyState.sunColor, skyState.sunDiscIntensity },
         .sunGlowColor = { skyState.glowColor, 0.0f },
-        .ambientColor = { skyState.ambientColor, 0.0f },
+        .ambientColor = { skyState.ambientColor,
+                          stylizedUi ? 1.0f : 0.0f },
         .zenithColor = { skyState.zenithColor, 0.0f },
         .horizonColor = { skyState.horizonColor, 0.0f },
         .horizonFarColor = { skyState.horizonFarColor, 0.0f },
@@ -623,7 +624,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
     terrain.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup());
-    vegetation.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup());
+    vegetation.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
+                    render::VegetationSystem::kVariantCount, leafCardsUi,
+                    camera.position);
     grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup());
     sky.draw(frame.cmd, frameBindGroup); // after opaque: background only
     frame.cmd.endRenderPass();
@@ -733,6 +736,8 @@ void LandscapeScene::drawUi() {
                            "%.2f");
         ImGui::Separator();
     }
+    ImGui::Checkbox("Stylized lighting (BotW A/B)", &stylizedUi);
+    ImGui::Checkbox("Tree leaf cards (perf A/B)", &leafCardsUi);
     ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
     ImGui::SliderFloat("Bloom intensity", &bloomIntensityUi, 0.0f, 1.5f,
                        "%.2f");

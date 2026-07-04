@@ -5,6 +5,7 @@
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
 #include "clouds.glsl"
+#include "stylized.glsl"
 
 in vec3 vNormal;
 in vec3 vColor;
@@ -20,11 +21,15 @@ void main() {
 
     albedo *= cascadeDebugTint(vWorldPos);
     vec3 n = normalize(vNormal);
-    // Wrap diffuse keeps the shaded side of the canopy readable (soft-GI
-    // feel); the flat facets do the stylization.
-    float wrap = clamp((dot(n, uSunDirection.xyz) + 0.4) / 1.4, 0.0, 1.0);
-    float shadow = shadowFactor(vWorldPos, n) * cloudShadowFactor(vWorldPos);
-    vec3 lit = albedo * (uAmbientColor.rgb + uSunColor.rgb * (wrap * shadow));
+    // Classic mode: wrap diffuse (soft-GI feel). Stylized mode: the shared
+    // BotW step ramp — flat lit/shade plateaus over the faceted masses.
+    float ndl = dot(n, uSunDirection.xyz);
+    float wrap = clamp((ndl + 0.4) / 1.4, 0.0, 1.0);
+    float diffuse = stylizedDiffuse(ndl, wrap);
+    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
+                   cloudShadowFactor(vWorldPos);
+    vec3 lit =
+        albedo * (uAmbientColor.rgb + uSunColor.rgb * (diffuse * shadow));
 
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

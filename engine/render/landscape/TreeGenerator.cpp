@@ -48,9 +48,9 @@ void appendLeafCard(MeshData& mesh, HashRng& rng, const Vec3& blobCenter,
     // up to ~1.2 × radius, so cards sit at 1.05-1.30 ×.
     const Vec3 center =
         blobCenter + dir * (blobRadius * (1.05f + rng.next() * 0.25f));
-    // BIG cards, few of them (the article look: each quad reads as one
-    // chunky leaf cluster — the in-card leaves are ~10-20 cm, not confetti).
-    const f32 halfSize = blobRadius * (0.34f + rng.next() * 0.20f);
+    // Mid-size cards (~0.35-0.6 m): big enough that each quad reads as a
+    // leaf cluster, small enough not to plate the canopy in giant panels.
+    const f32 halfSize = blobRadius * (0.22f + rng.next() * 0.12f);
 
     // One of the four atlas cells.
     const f32 cellU = rng.next() < 0.5f ? 0.0f : 0.5f;
@@ -148,7 +148,8 @@ TreeMeshes generateTree(u32 seed) {
         HashRng cardRng { hashU32(seed ^ (0x9e3779b9u + i * 747796405u)) };
         const u32 cardCount = static_cast<u32>(
             12.566f * clumps[i].radius * clumps[i].radius *
-            2.8f); // 4πr² × cards per m² — big cards need few of them
+            5.5f); // 4πr² × cards per m² — sized against the 0.22-0.34×r
+                   // cards for ~full shell coverage
         const Vec3 cardBright = glm::mix(leafColor,
                                          Vec3 { 0.110f, 0.175f, 0.045f },
                                          0.5f);

@@ -5,6 +5,7 @@
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
 #include "clouds.glsl"
+#include "stylized.glsl"
 
 in float vT;
 in float vSide;
@@ -27,21 +28,24 @@ void main() {
     float ao = mix(0.45, 1.0, vT);
 
     vec3 n = normalize(vNormal);
-    // Wrap diffuse: soft, carpet-like response instead of hard lambert.
-    float wrap = clamp((dot(n, uSunDirection.xyz) + 0.5) / 1.5, 0.0, 1.0);
+    // Classic mode: wrap diffuse (carpet-like). Stylized mode: the shared
+    // BotW step ramp — the meadow becomes flat lit/shade fields.
+    float ndl = dot(n, uSunDirection.xyz);
+    float wrap = clamp((ndl + 0.5) / 1.5, 0.0, 1.0);
+    float diffuse = stylizedDiffuse(ndl, wrap);
 
-    // Backlight translucency + a thin view-dependent sheen along the blade,
-    // strongest near the tips — the glint that sells a windy meadow.
+    // Backlight translucency (fake SSS) + a thin view-dependent sheen along
+    // the blade, strongest near the tips — the glint of a windy meadow.
     vec3 viewDir = normalize(vWorldPos - uCameraPos.xyz);
-    float backlight =
-        pow(max(dot(viewDir, uSunDirection.xyz), 0.0), 3.0) * 0.30 * vT;
+    float backlight = stylizedSss(vWorldPos) * 0.30 * vT;
     vec3 halfDir = normalize(uSunDirection.xyz - viewDir);
     float sheen = pow(max(dot(n, halfDir), 0.0), 24.0) * 0.25 * vT;
 
-    float shadow = shadowFactor(vWorldPos, n) * cloudShadowFactor(vWorldPos);
+    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
+                   cloudShadowFactor(vWorldPos);
     vec3 lit = albedo * ao *
                    (uAmbientColor.rgb +
-                    uSunColor.rgb * ((wrap + backlight) * shadow)) +
+                    uSunColor.rgb * ((diffuse + backlight) * shadow)) +
                uSunColor.rgb * sheen * ao * shadow;
 
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);

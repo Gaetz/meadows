@@ -531,7 +531,8 @@ void VegetationSystem::refreshPipeline(rhi::Device& device,
 void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                             rhi::BindGroupHandle frameBindGroup,
                             rhi::BindGroupHandle shadowBindGroup,
-                            u32 variantLimit, bool withLeaves) {
+                            u32 variantLimit, bool withLeaves,
+                            const Vec3& cameraPos) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
     if (shadowBindGroup.id != 0) {
@@ -558,10 +559,16 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         }
     }
 
-    // Leaf-card overlay on tree variants, same instance buffers.
+    // Leaf-card overlay on tree variants, same instance buffers — near
+    // chunks only (cards fade out by ~300 m in leaf.vert; skipping far
+    // chunks here spares their vertex work too).
     if (!withLeaves || leafPipeline.id == 0) {
         return;
     }
+    const i32 camCx = static_cast<i32>(
+        std::floor(cameraPos.x / TerrainSystem::kChunkSize));
+    const i32 camCz = static_cast<i32>(
+        std::floor(cameraPos.z / TerrainSystem::kChunkSize));
     bool leafStateSet = false;
     for (u32 v = 0; v < glm::min(variantLimit, kTreeVariants); ++v) {
         if (variantMeshes[v].leafIndexCount == 0) {
@@ -570,6 +577,12 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         bool meshBound = false;
         for (const auto& [key, chunk] : chunks) {
             if (!chunk.resident || chunk.counts[v] == 0) {
+                continue;
+            }
+            const i32 cx = static_cast<i32>(key >> 32);
+            const i32 cz = static_cast<i32>(key & 0xffffffffu);
+            if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
+                kLeafChunkRadius) {
                 continue;
             }
             if (!leafStateSet) {

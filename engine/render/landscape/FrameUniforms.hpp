@@ -18,7 +18,8 @@ struct FrameUniforms {
     Vec4 sunDirection {};  // xyz = normalized, points TOWARD the sun
     Vec4 sunColor {};      // rgb = sun light color, w = sun disc intensity
     Vec4 sunGlowColor {};  // rgb = sky halo/afterglow (outlives the disc)
-    Vec4 ambientColor {};  // rgb = sky ambient term
+    Vec4 ambientColor {};  // rgb = sky ambient term, w = stylized-lighting
+                           // blend (0 classic wrap, 1 BotW step ramp)
     Vec4 zenithColor {};      // rgb = sky gradient top
     Vec4 horizonColor {};     // rgb = horizon on the SUN side (warm at dusk)
     Vec4 horizonFarColor {};  // rgb = horizon opposite the sun (already night)

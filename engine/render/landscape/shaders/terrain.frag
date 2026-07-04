@@ -7,6 +7,7 @@ layout(binding = 0) uniform sampler2DArray uSplat;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
 #include "clouds.glsl"
+#include "stylized.glsl"
 
 in vec3 vNormal;
 in vec3 vColor;
@@ -46,8 +47,13 @@ void main() {
                   total;
 
     albedo *= cascadeDebugTint(vWorldPos);
-    float ndl = max(dot(n, uSunDirection.xyz), 0.0);
-    float shadow = shadowFactor(vWorldPos, n) * cloudShadowFactor(vWorldPos);
-    vec3 lit = albedo * (uAmbientColor.rgb + uSunColor.rgb * (ndl * shadow));
+    float ndl = dot(n, uSunDirection.xyz);
+    float diffuse = stylizedDiffuse(ndl, max(ndl, 0.0));
+    // Cast shadows quantize to flat pools; cloud shadows stay soft (they
+    // drift — hard edges would crawl).
+    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
+                   cloudShadowFactor(vWorldPos);
+    vec3 lit =
+        albedo * (uAmbientColor.rgb + uSunColor.rgb * (diffuse * shadow));
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

@@ -5,6 +5,7 @@
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
 #include "clouds.glsl"
+#include "stylized.glsl"
 
 layout(binding = 4) uniform sampler2D uLeafTex;
 
@@ -37,24 +38,28 @@ void main() {
                   mix(vec3(0.85, 1.0, 0.75), vec3(1.1, 1.0, 1.15), vTint);
     albedo *= cascadeDebugTint(vWorldPos);
 
-    // The article's cel lighting: ONE crisp cutoff on N·L of the spherical
-    // normal — the sphere gradient turns into a clean lit/shade boundary
-    // sweeping the canopy. The narrow smoothstep is only anti-aliasing.
+    // The article's cel lighting: the shared BotW step ramp on N·L of the
+    // spherical normal — the sphere gradient turns into a clean lit/shade
+    // boundary sweeping the canopy. (Classic fallback = the same cel: the
+    // leaves were born stylized.)
     vec3 n = normalize(vNormal);
     float ndl = dot(n, uSunDirection.xyz);
-    float cel = smoothstep(0.02, 0.14, ndl);
+    float cel = stylizedDiffuse(ndl, smoothstep(0.02, 0.14, ndl));
 
-    // Backlit translucency (ported from the grass): sun shining through
-    // the canopy toward the camera.
-    vec3 viewDir = normalize(vWorldPos - uCameraPos.xyz);
-    float backlight =
-        pow(max(dot(viewDir, uSunDirection.xyz), 0.0), 3.0) * 0.30;
+    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
+                   cloudShadowFactor(vWorldPos);
+    // Backlit translucency (fake SSS), gated the article's way
+    // (stepAtten * diff): it lives on the lit edges of the canopy.
+    float backlight = stylizedSss(vWorldPos) * 0.45 * cel;
+    // Stepped rim on the spherized normals: a crisp sky-tinted fringe on
+    // the silhouettes.
+    float rim = stylizedRim(n, vWorldPos);
 
-    float shadow = shadowFactor(vWorldPos, n) * cloudShadowFactor(vWorldPos);
     // Shade side = cool ambient only (that IS the toon shadow color);
     // lit side adds the full sun band.
-    vec3 lit = albedo * (uAmbientColor.rgb * (0.9 + 0.25 * n.y) +
-                         uSunColor.rgb * ((cel * 0.95 + backlight) * shadow));
+    vec3 lit =
+        albedo * (uAmbientColor.rgb * (0.9 + 0.25 * n.y + rim * 0.9) +
+                  uSunColor.rgb * ((cel * 0.95 + backlight) * shadow));
 
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

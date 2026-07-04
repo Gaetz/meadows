@@ -9,7 +9,8 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uSunDirection;  // xyz = normalized, points TOWARD the sun
     vec4 uSunColor;      // rgb = sun light color, w = sun disc intensity
     vec4 uSunGlowColor;  // rgb = sky halo/afterglow (outlives the disc)
-    vec4 uAmbientColor;  // rgb = sky ambient term
+    vec4 uAmbientColor;  // rgb = sky ambient term, w = stylized-lighting
+                         // blend (0 classic, 1 BotW step — stylized.glsl)
     vec4 uZenithColor;      // rgb = sky gradient top
     vec4 uHorizonColor;     // rgb = horizon on the SUN side (warm at dusk)
     vec4 uHorizonFarColor;  // rgb = horizon opposite the sun (already night)

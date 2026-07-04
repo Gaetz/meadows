@@ -63,13 +63,20 @@ public:
 
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
+    // Leaf cards cut out at ~300 m (leaf.vert fade); chunks beyond this
+    // Chebyshev radius skip the leaf pass entirely (vertex work, not just
+    // fill).
+    static constexpr i32 kLeafChunkRadius = 5; // × 64 m = 320 m
+
     // `variantLimit` restricts which variants draw (e.g. kTreeVariants for
     // the reflection pass: trees only). `withLeaves` adds the alpha-cutout
-    // leaf-card pass over the tree variants — skipped in the reflection
-    // (the solid blobs carry the mirrored silhouette for far less fill).
+    // leaf-card pass over the tree variants, for chunks near `cameraPos`
+    // only — skipped in the reflection (the solid blobs carry the mirrored
+    // silhouette for far less fill).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle shadowBindGroup,
-              u32 variantLimit = kVariantCount, bool withLeaves = true);
+              u32 variantLimit = kVariantCount, bool withLeaves = true,
+              const Vec3& cameraPos = {});
 
     // Depth-only caster pass into one shadow cascade (frameBindGroup feeds
     // the sway/fade math, casterBindGroup the cascade's light matrix).
