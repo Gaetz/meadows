@@ -64,10 +64,12 @@ public:
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
     // `variantLimit` restricts which variants draw (e.g. kTreeVariants for
-    // the reflection pass: trees only).
+    // the reflection pass: trees only). `withLeaves` adds the alpha-cutout
+    // leaf-card pass over the tree variants — skipped in the reflection
+    // (the solid blobs carry the mirrored silhouette for far less fill).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle shadowBindGroup,
-              u32 variantLimit = kVariantCount);
+              u32 variantLimit = kVariantCount, bool withLeaves = true);
 
     // Depth-only caster pass into one shadow cascade (frameBindGroup feeds
     // the sway/fade math, casterBindGroup the cascade's light matrix).
@@ -109,6 +111,10 @@ private:
         rhi::BufferHandle vertexBuffer {};
         rhi::BufferHandle indexBuffer {};
         u32 indexCount { 0 };
+        // Leaf-card overlay (tree variants only; empty elsewhere).
+        rhi::BufferHandle leafVertexBuffer {};
+        rhi::BufferHandle leafIndexBuffer {};
+        u32 leafIndexCount { 0 };
     };
 
     static u64 keyOf(i32 cx, i32 cz) {
@@ -120,6 +126,9 @@ private:
     void destroyVariantMeshes(rhi::Device& device);
     void uploadVariantMesh(rhi::Device& device, u32 variant,
                            const MeshData& mesh);
+    void uploadLeafMesh(rhi::Device& device, u32 variant,
+                        const MeshData& mesh);
+    void buildLeafPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
@@ -136,6 +145,13 @@ private:
     u64 shaderGeneration { 0 };
     rhi::PipelineHandle casterPipeline {};
     u64 casterShaderGeneration { 0 };
+
+    // Leaf-card pass: bouquet atlas + its own alpha-cutout pipeline.
+    rhi::TextureHandle leafTexture {};
+    rhi::SamplerHandle leafSampler {};
+    rhi::BindGroupHandle leafBindGroup {};
+    rhi::PipelineHandle leafPipeline {};
+    u64 leafShaderGeneration { 0 };
 };
 
 // Pure CPU scatter for one chunk, runs on worker threads. Deterministic.

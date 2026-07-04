@@ -57,10 +57,22 @@ public:
     // Draw last in the opaque pass (background pixels only).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup);
 
-    // Pure function of timeOfDay — headless-testable. `cloudCoverage` [0,1]
-    // grays and dims the whole palette: heavy cover kills the direct sun,
-    // mutes the sky and softens everything toward an overcast gloom.
-    SkyState evaluate(f32 cloudCoverage = 0.0f) const;
+    // Weather modifiers layered over the time-of-day palette (brick 24).
+    // `cloudCoverage` [0,1] grays and dims everything toward overcast gloom;
+    // the rest lets a weather state color-grade the moment: `warmth` reddens
+    // the low-sun palette (haze makes sunsets burn — Porco Rosso skies),
+    // `saturation` washes the world toward gray (overcast, storm), and the
+    // intensity multipliers dim the light beyond what coverage does.
+    struct Weather {
+        f32 cloudCoverage { 0.0f };
+        f32 sunIntensity { 1.0f };
+        f32 ambientIntensity { 1.0f };
+        f32 saturation { 1.0f };
+        f32 warmth { 0.0f };
+    };
+
+    // Pure function of timeOfDay — headless-testable.
+    SkyState evaluate(const Weather& weather = {}) const;
 
     f32 timeOfDay { 10.5f }; // hours, [0, 24)
 

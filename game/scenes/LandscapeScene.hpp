@@ -54,6 +54,18 @@ private:
     data::FormTypeRegistry formTypes;
     LandscapeTuningForm tuning;
 
+    // Weather (brick 24): precreated states from landscape.toml, crossfaded
+    // over ~weatherDuration seconds. The blend writes into the same UI
+    // members the sliders edit, so the panel shows live values and manual
+    // tweaking resumes once the transition lands.
+    vector<WeatherForm> weathers;
+    i32 weatherSelected { -1 };  // index into weathers, -1 = manual
+    WeatherForm weatherFrom;     // captured state at transition start
+    f32 weatherBlend { 1.0f };   // 1 = arrived
+    f32 weatherDuration { 30.0f };
+    WeatherForm captureCurrentWeather() const;
+    void applyWeather(const WeatherForm& w);
+
     render::FlyCamera flyCamera;
     f32 timeSeconds { 0.0f };
 
@@ -84,6 +96,15 @@ private:
     f32 fogHeightFalloffUi { 0.02f };
     f32 fogLowBoostUi { 1.6f };
     f32 fogStartUi { 300.0f };
+    f32 cloudHeightUi { 520.0f };
+    f32 cloudScaleUi { 0.0011f };
+    f32 sunIntensityUi { 1.0f };
+    f32 ambientIntensityUi { 1.0f };
+    f32 saturationUi { 1.0f };
+    f32 warmthUi { 0.0f };
+    f32 windStrengthUi { 1.0f };
+    f32 waveChopUi { 1.0f };
+    f32 windTime { 0.0f }; // accumulated wind phase (dt x strength)
 
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};

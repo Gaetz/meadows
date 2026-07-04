@@ -73,7 +73,7 @@ void appendTaperedTube(MeshData& mesh, const Vec3& base, const Vec3& top,
 }
 
 void appendBlob(MeshData& mesh, u32 seed, const Vec3& center, f32 radius,
-                f32 jitter, const Vec3& color) {
+                f32 jitter, const Vec3& color, u32 subdivisions) {
     // Icosahedron.
     const f32 phi = 1.6180339f;
     const Vec3 base[12] = {
@@ -96,18 +96,27 @@ void appendBlob(MeshData& mesh, u32 seed, const Vec3& center, f32 radius,
         return center + unit * r;
     };
 
-    // One subdivision (4 faces per face, 80 total), flat-shaded.
-    for (const auto& face : kFaces) {
-        const Vec3 a = glm::normalize(base[face[0]]);
-        const Vec3 b = glm::normalize(base[face[1]]);
-        const Vec3 c = glm::normalize(base[face[2]]);
+    // Recursive subdivision (4 faces per face per level), flat-shaded.
+    // Emission order at depth 1 matches the previous hard-coded version,
+    // keeping rock/bush meshes bit-identical per seed.
+    const auto subdivide = [&](const auto& self, const Vec3& a, const Vec3& b,
+                               const Vec3& c, u32 depth) -> void {
+        if (depth == 0) {
+            appendTriangle(mesh, place(a), place(b), place(c), color);
+            return;
+        }
         const Vec3 ab = glm::normalize(a + b);
         const Vec3 bc = glm::normalize(b + c);
         const Vec3 ca = glm::normalize(c + a);
-        appendTriangle(mesh, place(a), place(ab), place(ca), color);
-        appendTriangle(mesh, place(ab), place(b), place(bc), color);
-        appendTriangle(mesh, place(ca), place(bc), place(c), color);
-        appendTriangle(mesh, place(ab), place(bc), place(ca), color);
+        self(self, a, ab, ca, depth - 1);
+        self(self, ab, b, bc, depth - 1);
+        self(self, ca, bc, c, depth - 1);
+        self(self, ab, bc, ca, depth - 1);
+    };
+    for (const auto& face : kFaces) {
+        subdivide(subdivide, glm::normalize(base[face[0]]),
+                  glm::normalize(base[face[1]]),
+                  glm::normalize(base[face[2]]), subdivisions);
     }
 }
 

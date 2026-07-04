@@ -40,6 +40,10 @@ struct FrameUniforms {
                               // z = 1/span, w unused
     Vec4 waterMapInfo {};     // xy = pool-depth map center (world XZ),
                               // z = 1/span, w unused
+    Vec4 windInfo {};         // x = accumulated wind time (s, speed-scaled —
+                              // keeps cloud/wave phase continuous when the
+                              // weather changes the wind), y = sway strength,
+                              // z = water chop multiplier, w unused
 };
 
 } // namespace render

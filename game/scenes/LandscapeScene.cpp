@@ -58,10 +58,11 @@ void LandscapeScene::onEnter() {
         LOG_WARN("landscape.toml failed to load — using built-in defaults");
     }
     tuning = resolveLandscapeTuning(forms);
+    weathers = resolveWeatherForms(forms);
     LOG_INFO("Landscape tuning: seed={} seaLevel={} fogDensity={} "
-             "coverage={}",
+             "coverage={} | {} weather states",
              tuning.terrainSeed, tuning.seaLevel, tuning.fogDensity,
-             tuning.cloudCoverage);
+             tuning.cloudCoverage, weathers.size());
 
     // Terrain shape + startup values for every live-adjustable knob.
     terrain.params.seed = tuning.terrainSeed;
@@ -81,6 +82,8 @@ void LandscapeScene::onEnter() {
     ssaoUi = tuning.ssaoStrength;
     cloudCoverageUi = tuning.cloudCoverage;
     cloudShadowUi = tuning.cloudShadowStrength;
+    cloudHeightUi = tuning.cloudHeight;
+    cloudScaleUi = tuning.cloudScale;
 
     frameUbo = device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
                                      .size = sizeof(render::FrameUniforms),
@@ -318,6 +321,49 @@ void LandscapeScene::rebuildBlitPipeline(rhi::Device& device) {
 
 void LandscapeScene::update(f32 dt) {
     timeSeconds += dt;
+    // Wind phase integrates the CURRENT strength: speed changes bend the
+    // drift/sway smoothly instead of teleporting the pattern.
+    windTime += dt * glm::max(windStrengthUi, 0.05f);
+
+    // Weather crossfade: every parameter slides from the captured start
+    // state to the selected weather over weatherDuration seconds.
+    if (weatherBlend < 1.0f && weatherSelected >= 0 &&
+        weatherSelected < static_cast<i32>(weathers.size())) {
+        weatherBlend = glm::min(
+            weatherBlend + dt / glm::max(weatherDuration, 0.01f), 1.0f);
+        const WeatherForm& to = weathers[weatherSelected];
+        const f32 t = glm::smoothstep(0.0f, 1.0f, weatherBlend);
+        WeatherForm blended;
+        const auto lerp = [t](f32 a, f32 b) { return glm::mix(a, b, t); };
+        blended.cloudCoverage = lerp(weatherFrom.cloudCoverage,
+                                     to.cloudCoverage);
+        blended.cloudScale = lerp(weatherFrom.cloudScale, to.cloudScale);
+        blended.cloudHeight = lerp(weatherFrom.cloudHeight, to.cloudHeight);
+        blended.cloudShadowStrength = lerp(weatherFrom.cloudShadowStrength,
+                                           to.cloudShadowStrength);
+        blended.fogDensity = lerp(weatherFrom.fogDensity, to.fogDensity);
+        blended.fogHeightFalloff = lerp(weatherFrom.fogHeightFalloff,
+                                        to.fogHeightFalloff);
+        blended.fogLowBoost = lerp(weatherFrom.fogLowBoost, to.fogLowBoost);
+        blended.fogStart = lerp(weatherFrom.fogStart, to.fogStart);
+        blended.sunIntensity = lerp(weatherFrom.sunIntensity,
+                                    to.sunIntensity);
+        blended.ambientIntensity = lerp(weatherFrom.ambientIntensity,
+                                        to.ambientIntensity);
+        blended.saturation = lerp(weatherFrom.saturation, to.saturation);
+        blended.warmth = lerp(weatherFrom.warmth, to.warmth);
+        blended.volumetricIntensity = lerp(weatherFrom.volumetricIntensity,
+                                           to.volumetricIntensity);
+        blended.godRayIntensity = lerp(weatherFrom.godRayIntensity,
+                                       to.godRayIntensity);
+        blended.bloomIntensity = lerp(weatherFrom.bloomIntensity,
+                                      to.bloomIntensity);
+        blended.windStrength = lerp(weatherFrom.windStrength,
+                                    to.windStrength);
+        blended.waveChop = lerp(weatherFrom.waveChop, to.waveChop);
+        applyWeather(blended);
+    }
+
     // Don't steal the mouse from ImGui: clicking a panel must not mouselook.
     const bool allowCapture = !ImGui::GetIO().WantCaptureMouse;
     flyCamera.update(engine->getInput(), engine->getWindow(), dt,
@@ -329,6 +375,48 @@ void LandscapeScene::update(f32 dt) {
             sky.timeOfDay -= 24.0f;
         }
     }
+}
+
+WeatherForm LandscapeScene::captureCurrentWeather() const {
+    WeatherForm w;
+    w.cloudCoverage = cloudCoverageUi;
+    w.cloudScale = cloudScaleUi;
+    w.cloudHeight = cloudHeightUi;
+    w.cloudShadowStrength = cloudShadowUi;
+    w.fogDensity = fogDensityUi;
+    w.fogHeightFalloff = fogHeightFalloffUi;
+    w.fogLowBoost = fogLowBoostUi;
+    w.fogStart = fogStartUi;
+    w.sunIntensity = sunIntensityUi;
+    w.ambientIntensity = ambientIntensityUi;
+    w.saturation = saturationUi;
+    w.warmth = warmthUi;
+    w.volumetricIntensity = volumetricUi;
+    w.godRayIntensity = godRayIntensityUi;
+    w.bloomIntensity = bloomIntensityUi;
+    w.windStrength = windStrengthUi;
+    w.waveChop = waveChopUi;
+    return w;
+}
+
+void LandscapeScene::applyWeather(const WeatherForm& w) {
+    cloudCoverageUi = w.cloudCoverage;
+    cloudScaleUi = w.cloudScale;
+    cloudHeightUi = w.cloudHeight;
+    cloudShadowUi = w.cloudShadowStrength;
+    fogDensityUi = w.fogDensity;
+    fogHeightFalloffUi = w.fogHeightFalloff;
+    fogLowBoostUi = w.fogLowBoost;
+    fogStartUi = w.fogStart;
+    sunIntensityUi = w.sunIntensity;
+    ambientIntensityUi = w.ambientIntensity;
+    saturationUi = w.saturation;
+    warmthUi = w.warmth;
+    volumetricUi = w.volumetricIntensity;
+    godRayIntensityUi = w.godRayIntensity;
+    bloomIntensityUi = w.bloomIntensity;
+    windStrengthUi = w.windStrength;
+    waveChopUi = w.waveChop;
 }
 
 void LandscapeScene::render(engine::FrameContext& frame) {
@@ -359,7 +447,11 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     const render::Camera3D& camera = flyCamera.camera;
     const Mat4 viewProj = camera.viewProj(frame.aspect);
     const render::SkySystem::SkyState skyState =
-        sky.evaluate(cloudCoverageUi);
+        sky.evaluate({ .cloudCoverage = cloudCoverageUi,
+                       .sunIntensity = sunIntensityUi,
+                       .ambientIntensity = ambientIntensityUi,
+                       .saturation = saturationUi,
+                       .warmth = warmthUi });
 
     // Shadows ramp out as the sun crosses the horizon (no sun, no shadows),
     // and soften away under heavy cloud cover (diffuse light casts none).
@@ -428,7 +520,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                         static_cast<f32>(frame.height),
                         1.0f / static_cast<f32>(frame.width),
                         1.0f / static_cast<f32>(frame.height) },
-        .cloudInfo = { cloudCoverageUi, tuning.cloudHeight, tuning.cloudScale,
+        .cloudInfo = { cloudCoverageUi, cloudHeightUi, cloudScaleUi,
                        cloudShadowUi },
         .sunScreen = { sunUv.x, sunUv.y, shaftFade, godRayIntensityUi },
         .cloudMapInfo = { std::floor(camera.position.x /
@@ -443,6 +535,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                                render::SkySystem::kCloudMapSize),
                           1.0f / render::SkySystem::kCloudMapSpan, 0.0f },
         .waterMapInfo = water.poolMapInfo(),
+        .windInfo = { windTime, windStrengthUi, waveChopUi, 0.0f },
     };
     frame.device.updateBuffer(frameUbo, &uniforms, sizeof(uniforms), 0);
 
@@ -511,10 +604,12 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         terrain.draw(frame.cmd, reflectionBindGroup,
                      shadows.receiverBindGroup());
         // Trees only: rocks and bushes are invisible in a wobbly half-res
-        // reflection.
+        // reflection — and the solid blobs carry the mirrored silhouette,
+        // so skip the leaf cards (fill-rate).
         vegetation.draw(frame.cmd, reflectionBindGroup,
                         shadows.receiverBindGroup(),
-                        render::VegetationSystem::kTreeVariants);
+                        render::VegetationSystem::kTreeVariants,
+                        /*withLeaves=*/false);
         sky.draw(frame.cmd, reflectionBindGroup);
         frame.cmd.endRenderPass();
     }
@@ -570,7 +665,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 23b: TOML landscape tuning.");
+    ImGui::TextUnformatted("Brick 24: weather states with faded transitions.");
     ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate,
                 1000.0f / ImGui::GetIO().Framerate);
     ImGui::TextUnformatted(
@@ -601,6 +696,43 @@ void LandscapeScene::drawUi() {
                        "%.1f");
     ImGui::Checkbox("Animate (24 h in 2 min)", &animateTime);
     ImGui::Separator();
+    if (!weathers.empty()) {
+        // "(manual)" entry + one per WeatherForm, separated by '\0' as
+        // ImGui::Combo expects (c_str() supplies the double terminator).
+        str items = "(manual)";
+        items.push_back('\0');
+        for (const WeatherForm& w : weathers) {
+            items += w.editorId;
+            items.push_back('\0');
+        }
+        int selected = weatherSelected + 1;
+        if (ImGui::Combo("Weather", &selected, items.c_str())) {
+            weatherSelected = selected - 1;
+            if (weatherSelected >= 0) {
+                // Depart from whatever is on screen right now — mid-fade
+                // switches stay continuous.
+                weatherFrom = captureCurrentWeather();
+                weatherBlend = 0.0f;
+            }
+        }
+        ImGui::SliderFloat("Transition (s)", &weatherDuration, 1.0f, 120.0f,
+                           "%.0f", ImGuiSliderFlags_Logarithmic);
+        if (weatherBlend < 1.0f && weatherSelected >= 0) {
+            ImGui::SameLine();
+            ImGui::Text("%.0f%%", weatherBlend * 100.0f);
+        }
+        ImGui::SliderFloat("Wind strength", &windStrengthUi, 0.0f, 2.5f,
+                           "%.2f");
+        ImGui::SliderFloat("Wave chop", &waveChopUi, 0.0f, 2.5f, "%.2f");
+        ImGui::SliderFloat("Sun intensity", &sunIntensityUi, 0.0f, 1.5f,
+                           "%.2f");
+        ImGui::SliderFloat("Ambient intensity", &ambientIntensityUi, 0.0f,
+                           1.5f, "%.2f");
+        ImGui::SliderFloat("Saturation", &saturationUi, 0.0f, 1.3f, "%.2f");
+        ImGui::SliderFloat("Warmth (dawn/dusk)", &warmthUi, 0.0f, 1.0f,
+                           "%.2f");
+        ImGui::Separator();
+    }
     ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
     ImGui::SliderFloat("Bloom intensity", &bloomIntensityUi, 0.0f, 1.5f,
                        "%.2f");

@@ -15,6 +15,7 @@ namespace render {
 namespace {
 
 constexpr const char* kTreeShader = "tree";
+constexpr const char* kLeafShader = "leaf";
 constexpr const char* kPropCasterShader = "shadow_prop";
 constexpr f32 kTreeSpacing = 4.0f; // meters between scatter candidates
 
@@ -195,6 +196,26 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     buildPipeline(device, shaders);
     shaders.load(kPropCasterShader, { { "FrameUbo", 0 }, { "ShadowUbo", 1 } });
     buildCasterPipeline(device, shaders);
+
+    // Leaf-bouquet atlas (unit 4: 0 splat, 1 shadow, 2 clouds, 3 pool map).
+    const vector<u8> leafPixels = buildLeafTexturePixels();
+    leafTexture = device.createTexture(
+        { .width = kLeafTextureSize,
+          .height = kLeafTextureSize,
+          .mipLevels = 9, // full chain for 256
+          .format = rhi::TextureFormat::RGBA8, // luminance mask: linear
+          .filter = rhi::FilterMode::Linear,
+          .usage = rhi::TextureUsage_Sampled },
+        leafPixels.data());
+    device.generateMipmaps(leafTexture);
+    leafSampler = device.createSampler({ .mipmapFilter = true });
+    leafBindGroup = device.createBindGroup(
+        { .entries = { { .binding = 4,
+                         .texture = leafTexture,
+                         .sampler = leafSampler } } });
+    shaders.load(kLeafShader, { { "FrameUbo", 0 } },
+                 { { "uShadowMap", 1 }, { "uLeafTex", 4 } });
+    buildLeafPipeline(device, shaders);
 }
 
 void VegetationSystem::createVariantMeshes(rhi::Device& device,
@@ -206,15 +227,15 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
             continue;
         }
         const u32 seed = hashU32(terrainSeed) + i * 977u;
-        MeshData mesh;
         if (i < kFirstRock) {
-            mesh = generateTree(seed);
+            const TreeMeshes tree = generateTree(seed);
+            uploadVariantMesh(device, i, tree.body);
+            uploadLeafMesh(device, i, tree.leaves);
         } else if (i < kFirstBush) {
-            mesh = generateRock(seed);
+            uploadVariantMesh(device, i, generateRock(seed));
         } else {
-            mesh = generateBush(seed);
+            uploadVariantMesh(device, i, generateBush(seed));
         }
-        uploadVariantMesh(device, i, mesh);
     }
 }
 
@@ -232,6 +253,23 @@ void VegetationSystem::uploadVariantMesh(rhi::Device& device, u32 variant,
         mesh.indices.data());
 }
 
+void VegetationSystem::uploadLeafMesh(rhi::Device& device, u32 variant,
+                                      const MeshData& mesh) {
+    if (mesh.vertices.empty()) {
+        return;
+    }
+    variantMeshes[variant].leafIndexCount =
+        static_cast<u32>(mesh.indices.size());
+    variantMeshes[variant].leafVertexBuffer = device.createBuffer(
+        { .usage = rhi::BufferUsage::Vertex,
+          .size = mesh.vertices.size() * sizeof(MeshVertex) },
+        mesh.vertices.data());
+    variantMeshes[variant].leafIndexBuffer = device.createBuffer(
+        { .usage = rhi::BufferUsage::Index,
+          .size = mesh.indices.size() * sizeof(u32) },
+        mesh.indices.data());
+}
+
 void VegetationSystem::overrideVariantMesh(rhi::Device& device, u32 variant,
                                            MeshData mesh) {
     if (variant >= kVariantCount || mesh.vertices.empty() ||
@@ -241,8 +279,13 @@ void VegetationSystem::overrideVariantMesh(rhi::Device& device, u32 variant,
     if (variantMeshes[variant].vertexBuffer.id != 0) {
         device.destroyBuffer(variantMeshes[variant].indexBuffer);
         device.destroyBuffer(variantMeshes[variant].vertexBuffer);
-        variantMeshes[variant] = {};
     }
+    if (variantMeshes[variant].leafVertexBuffer.id != 0) {
+        // Authored meshes come complete: no procedural card overlay.
+        device.destroyBuffer(variantMeshes[variant].leafIndexBuffer);
+        device.destroyBuffer(variantMeshes[variant].leafVertexBuffer);
+    }
+    variantMeshes[variant] = {};
     uploadVariantMesh(device, variant, mesh);
     meshOverrides[variant] = std::move(mesh);
 }
@@ -251,6 +294,10 @@ void VegetationSystem::destroyVariantMeshes(rhi::Device& device) {
     for (VariantMesh& variant : variantMeshes) {
         device.destroyBuffer(variant.indexBuffer);
         device.destroyBuffer(variant.vertexBuffer);
+        if (variant.leafVertexBuffer.id != 0) {
+            device.destroyBuffer(variant.leafIndexBuffer);
+            device.destroyBuffer(variant.leafVertexBuffer);
+        }
         variant = {};
     }
 }
@@ -266,6 +313,14 @@ void VegetationSystem::destroy(rhi::Device& device) {
     pipeline = {};
     device.destroyPipeline(casterPipeline);
     casterPipeline = {};
+    device.destroyPipeline(leafPipeline);
+    leafPipeline = {};
+    device.destroyBindGroup(leafBindGroup);
+    leafBindGroup = {};
+    device.destroySampler(leafSampler);
+    leafSampler = {};
+    device.destroyTexture(leafTexture);
+    leafTexture = {};
     destroyVariantMeshes(device);
 }
 
@@ -388,6 +443,45 @@ void VegetationSystem::buildPipeline(rhi::Device& device,
     shaderGeneration = shaders.generation(kTreeShader);
 }
 
+void VegetationSystem::buildLeafPipeline(rhi::Device& device,
+                                         ShaderLibrary& shaders) {
+    if (leafPipeline.id != 0) {
+        device.destroyPipeline(leafPipeline);
+    }
+    // Same layout as the body pipeline; Cull None — leaf cards must read
+    // from both sides. Opaque depth-write draw, cutout via discard.
+    leafPipeline = device.createPipeline(
+        { .shader = shaders.get(kLeafShader),
+          .vertexBuffers =
+              { { .stride = sizeof(MeshVertex),
+                  .attributes = { { .location = 0,
+                                    .format = rhi::VertexFormat::F32x3,
+                                    .offset = offsetof(MeshVertex, position) },
+                                  { .location = 1,
+                                    .format = rhi::VertexFormat::F32x3,
+                                    .offset = offsetof(MeshVertex, normal) },
+                                  { .location = 2,
+                                    .format = rhi::VertexFormat::F32x2,
+                                    .offset = offsetof(MeshVertex, uv) },
+                                  { .location = 3,
+                                    .format = rhi::VertexFormat::F32x3,
+                                    .offset = offsetof(MeshVertex, color) } } },
+                { .stride = sizeof(Instance),
+                  .stepMode = rhi::VertexStepMode::Instance,
+                  .attributes = { { .location = 4,
+                                    .format = rhi::VertexFormat::F32x4,
+                                    .offset = offsetof(Instance,
+                                                       positionScale) },
+                                  { .location = 5,
+                                    .format = rhi::VertexFormat::F32x4,
+                                    .offset = offsetof(Instance, params) } } } },
+          .depth = { .testEnable = true,
+                     .writeEnable = true,
+                     .compare = rhi::CompareFunc::Less },
+          .cull = rhi::CullMode::None });
+    leafShaderGeneration = shaders.generation(kLeafShader);
+}
+
 void VegetationSystem::buildCasterPipeline(rhi::Device& device,
                                            ShaderLibrary& shaders) {
     if (casterPipeline.id != 0) {
@@ -429,12 +523,15 @@ void VegetationSystem::refreshPipeline(rhi::Device& device,
     if (shaders.generation(kPropCasterShader) != casterShaderGeneration) {
         buildCasterPipeline(device, shaders);
     }
+    if (shaders.generation(kLeafShader) != leafShaderGeneration) {
+        buildLeafPipeline(device, shaders);
+    }
 }
 
 void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                             rhi::BindGroupHandle frameBindGroup,
                             rhi::BindGroupHandle shadowBindGroup,
-                            u32 variantLimit) {
+                            u32 variantLimit, bool withLeaves) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
     if (shadowBindGroup.id != 0) {
@@ -458,6 +555,41 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
             cmd.setVertexBuffer(1, chunk.instanceBuffer);
             cmd.drawIndexed(variantMeshes[v].indexCount, chunk.counts[v], 0,
                             chunk.firstInstance[v]);
+        }
+    }
+
+    // Leaf-card overlay on tree variants, same instance buffers.
+    if (!withLeaves || leafPipeline.id == 0) {
+        return;
+    }
+    bool leafStateSet = false;
+    for (u32 v = 0; v < glm::min(variantLimit, kTreeVariants); ++v) {
+        if (variantMeshes[v].leafIndexCount == 0) {
+            continue;
+        }
+        bool meshBound = false;
+        for (const auto& [key, chunk] : chunks) {
+            if (!chunk.resident || chunk.counts[v] == 0) {
+                continue;
+            }
+            if (!leafStateSet) {
+                cmd.setPipeline(leafPipeline);
+                cmd.setBindGroup(0, frameBindGroup);
+                if (shadowBindGroup.id != 0) {
+                    cmd.setBindGroup(2, shadowBindGroup);
+                }
+                cmd.setBindGroup(4, leafBindGroup);
+                leafStateSet = true;
+            }
+            if (!meshBound) {
+                cmd.setVertexBuffer(0, variantMeshes[v].leafVertexBuffer);
+                cmd.setIndexBuffer(variantMeshes[v].leafIndexBuffer,
+                                   rhi::IndexFormat::U32);
+                meshBound = true;
+            }
+            cmd.setVertexBuffer(1, chunk.instanceBuffer);
+            cmd.drawIndexed(variantMeshes[v].leafIndexCount, chunk.counts[v],
+                            0, chunk.firstInstance[v]);
         }
     }
 }

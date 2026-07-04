@@ -21,9 +21,10 @@ void main() {
     float fade = 1.0 - smoothstep(aParams.w * 0.86, aParams.w, dist);
     vec3 world = aPosScale.xyz + local * (aPosScale.w * fade);
 
-    float gust = sin(uTime.x * 1.1 + aParams.z +
+    float gust = sin(uWindInfo.x * 1.1 + aParams.z +
                      (aPosScale.x + aPosScale.z * 0.7) * 0.05);
-    world.xz += vec2(0.9, 0.35) * (gust * 0.07 * aUv.x * aPosScale.w * fade);
+    world.xz += vec2(0.9, 0.35) *
+                (gust * 0.07 * uWindInfo.y * aUv.x * aPosScale.w * fade);
 
     gl_Position = uLightViewProj * vec4(world, 1.0);
 }

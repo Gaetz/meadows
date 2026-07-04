@@ -28,7 +28,7 @@ constexpr f32 kSunIntensity = 2.6f;
 
 } // namespace
 
-SkySystem::SkyState SkySystem::evaluate(f32 cloudCoverage) const {
+SkySystem::SkyState SkySystem::evaluate(const Weather& weather) const {
     // Sun path: rises +X at 6h, zenith at 12h, sets -X at 18h; a slight +Z
     // tilt keeps noon shadows from degenerating to a point.
     const f32 theta =
@@ -106,7 +106,7 @@ SkySystem::SkyState SkySystem::evaluate(f32 cloudCoverage) const {
     // Overcast: heavy cover eats the direct sun first (real overcast light is
     // all-diffuse), grays the sky toward its own luminance, and dims the
     // ambient a little — the world turns gloomy, not just spotted.
-    const f32 overcast = glm::clamp(cloudCoverage, 0.0f, 1.0f);
+    const f32 overcast = glm::clamp(weather.cloudCoverage, 0.0f, 1.0f);
     if (overcast > 0.0f) {
         const auto grayed = [&](const Vec3& c) {
             const f32 luma = glm::dot(c, Vec3 { 0.299f, 0.587f, 0.114f });
@@ -120,6 +120,36 @@ SkySystem::SkyState SkySystem::evaluate(f32 cloudCoverage) const {
         state.horizonColor = grayed(state.horizonColor);
         state.horizonFarColor = grayed(state.horizonFarColor);
         state.sunDiscIntensity *= 1.0f - 0.8f * overcast;
+    }
+
+    // Weather grading (brick 24), on top of time-of-day and overcast.
+    // Warmth first (a color shift only the low sun feels — haze reddens
+    // sunsets), then the intensity multipliers, saturation last so gray
+    // weathers stay gray whatever warmth asked for.
+    if (weather.warmth > 0.0f) {
+        const f32 lowSun = 1.0f - glm::smoothstep(0.05f, 0.35f, elevation);
+        const Vec3 warmGain = glm::mix(
+            Vec3 { 1.0f }, Vec3 { 1.30f, 0.88f, 0.55f },
+            glm::clamp(weather.warmth, 0.0f, 1.0f) * lowSun);
+        state.sunColor *= warmGain;
+        state.glowColor *= warmGain;
+        state.horizonColor *= warmGain;
+    }
+    state.sunColor *= weather.sunIntensity;
+    state.glowColor *= weather.sunIntensity;
+    state.sunDiscIntensity *= weather.sunIntensity;
+    state.ambientColor *= weather.ambientIntensity;
+    if (weather.saturation != 1.0f) {
+        const auto resaturate = [&](Vec3& c) {
+            const f32 luma = glm::dot(c, Vec3 { 0.299f, 0.587f, 0.114f });
+            c = glm::mix(Vec3 { luma }, c, weather.saturation);
+        };
+        resaturate(state.sunColor);
+        resaturate(state.glowColor);
+        resaturate(state.ambientColor);
+        resaturate(state.zenithColor);
+        resaturate(state.horizonColor);
+        resaturate(state.horizonFarColor);
     }
     return state;
 }

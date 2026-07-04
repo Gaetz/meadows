@@ -73,10 +73,65 @@ struct LandscapeTuningForm : data::Form {
     REFLECT_END()
 };
 
+// One weather state (brick 24): a full parameter set the scene crossfades
+// to over ~30 s. Ordinary Forms in landscape.toml — a mod adds a weather
+// type or retunes one in pure TOML (§5). Defaults = the shipped "manual"
+// look, so a sparse record only has to state what it changes.
+struct WeatherForm : data::Form {
+    i32 sortOrder { 0 };  // dropdown position
+    // Clouds.
+    f32 cloudCoverage { 0.38f };
+    f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
+    f32 cloudHeight { 520.0f };   // meters
+    f32 cloudShadowStrength { 0.7f };
+    // Fog / atmosphere.
+    f32 fogDensity { 0.0014f };
+    f32 fogHeightFalloff { 0.02f };
+    f32 fogLowBoost { 1.6f };
+    f32 fogStart { 300.0f };
+    // Light grading (SkySystem::Weather).
+    f32 sunIntensity { 1.0f };
+    f32 ambientIntensity { 1.0f };
+    f32 saturation { 1.0f };
+    f32 warmth { 0.0f };  // reddens dawn/dusk (haze)
+    // Post.
+    f32 volumetricIntensity { 1.0f };
+    f32 godRayIntensity { 0.6f };
+    f32 bloomIntensity { 0.35f };
+    // Wind / water.
+    f32 windStrength { 1.0f };  // sway amplitude + drift/wave speed
+    f32 waveChop { 1.0f };      // water surface roughness
+
+    REFLECT_BEGIN(WeatherForm, data::Form)
+        REFLECT_FIELD(sortOrder)
+        REFLECT_FIELD(cloudCoverage)
+        REFLECT_FIELD(cloudScale)
+        REFLECT_FIELD(cloudHeight)
+        REFLECT_FIELD(cloudShadowStrength)
+        REFLECT_FIELD(fogDensity)
+        REFLECT_FIELD(fogHeightFalloff)
+        REFLECT_FIELD(fogLowBoost)
+        REFLECT_FIELD(fogStart)
+        REFLECT_FIELD(sunIntensity)
+        REFLECT_FIELD(ambientIntensity)
+        REFLECT_FIELD(saturation)
+        REFLECT_FIELD(warmth)
+        REFLECT_FIELD(volumetricIntensity)
+        REFLECT_FIELD(godRayIntensity)
+        REFLECT_FIELD(bloomIntensity)
+        REFLECT_FIELD(windStrength)
+        REFLECT_FIELD(waveChop)
+    REFLECT_END()
+};
+
 // Registers the landscape Form types. Call before loading landscape.toml.
 void registerLandscapeFormTypes(data::FormTypeRegistry& registry);
 
 // Resolves the tuning from the database (canonical guid), or defaults.
 LandscapeTuningForm resolveLandscapeTuning(const data::FormDatabase& forms);
+
+// Every WeatherForm in the database, sorted by sortOrder — feeds the
+// weather dropdown. Empty if the plugin ships none.
+vector<WeatherForm> resolveWeatherForms(const data::FormDatabase& forms);
 
 } // namespace game

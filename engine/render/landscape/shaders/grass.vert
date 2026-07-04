@@ -33,13 +33,14 @@ void main() {
     // Static lean (each blade settles differently) + layered wind: a slow
     // traveling gust front plus a fast per-blade flutter. All of it bends
     // quadratically along the blade so the root stays planted.
-    float gust = 0.5 + 0.5 * sin(uTime.x * 1.4 +
+    float gust = 0.5 + 0.5 * sin(uWindInfo.x * 1.4 +
                                  (aPosScale.x + aPosScale.z * 0.7) * 0.07);
-    float flutter = sin(uTime.x * 5.1 + aParams.y * 6.2831853);
+    float flutter = sin(uWindInfo.x * 5.1 + aParams.y * 6.2831853);
     vec3 windDir = normalize(vec3(1.0, 0.0, 0.35));
     float bendT = t * t;
     vec3 bend = faceDir * (aParams.w * 0.30 * bendT) +
-                windDir * ((0.22 * gust + 0.06 * flutter) * bendT);
+                windDir * ((0.22 * gust + 0.06 * flutter) * bendT *
+                           uWindInfo.y);
 
     vec3 world = aPosScale.xyz + sideDir * (aBlade.x * kBladeHalfWidth) +
                  vec3(0.0, height * t, 0.0) + bend * height;

@@ -31,4 +31,6 @@ layout(std140, binding = 0) uniform FrameUbo {
                             // z = 1/span
     vec4 uWaterMapInfo;     // xy = pool-depth map center (world XZ),
                             // z = 1/span
+    vec4 uWindInfo;         // x = accumulated wind time (s, speed-scaled),
+                            // y = sway strength, z = water chop multiplier
 };

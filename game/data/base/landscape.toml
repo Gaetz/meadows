@@ -43,3 +43,159 @@ cloudCoverage = 0.38        # 0 = clear sky, 1 = overcast
 cloudShadowStrength = 0.7
 cloudHeight = 520.0         # cloud layer altitude (m)
 cloudScale = 0.0011         # pattern frequency (1/m)
+
+# ==========================================================================
+# Weather states (brick 24). Each record is a full parameter set the scene
+# crossfades to; the dropdown lists them by sortOrder. Mods add or retune
+# weathers here — ordinary field-level records (§5).
+# ==========================================================================
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-000000000002"
+type = "WeatherForm"
+new = true
+[records.fields]
+editorId = "Clear"
+sortOrder = 0
+cloudCoverage = 0.12
+cloudScale = 0.0011
+cloudHeight = 560.0
+cloudShadowStrength = 0.7
+fogDensity = 0.0010
+fogHeightFalloff = 0.02
+fogLowBoost = 1.2
+fogStart = 380.0
+sunIntensity = 1.0
+ambientIntensity = 1.0
+saturation = 1.0
+warmth = 0.05
+volumetricIntensity = 0.6
+godRayIntensity = 0.6
+bloomIntensity = 0.35
+windStrength = 0.6
+waveChop = 0.7
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-000000000003"
+type = "WeatherForm"
+new = true
+[records.fields]
+editorId = "Morning Mist"
+sortOrder = 1
+cloudCoverage = 0.25
+cloudScale = 0.0013
+cloudHeight = 480.0
+cloudShadowStrength = 0.6
+fogDensity = 0.0026
+fogHeightFalloff = 0.035
+fogLowBoost = 3.8            # thick valley banks
+fogStart = 60.0
+sunIntensity = 0.92
+ambientIntensity = 1.05
+saturation = 0.88
+warmth = 0.45
+volumetricIntensity = 1.8    # mist is where the shafts live
+godRayIntensity = 0.9
+bloomIntensity = 0.45
+windStrength = 0.35
+waveChop = 0.5
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-000000000004"
+type = "WeatherForm"
+new = true
+[records.fields]
+editorId = "Hazy"
+sortOrder = 2
+cloudCoverage = 0.45
+cloudScale = 0.0009          # broader, softer veils
+cloudHeight = 540.0
+cloudShadowStrength = 0.6
+fogDensity = 0.0020
+fogHeightFalloff = 0.025
+fogLowBoost = 2.2
+fogStart = 160.0
+sunIntensity = 0.95
+ambientIntensity = 1.0
+saturation = 0.92
+warmth = 0.6                 # haze burns the sunsets red
+volumetricIntensity = 1.4
+godRayIntensity = 0.8
+bloomIntensity = 0.4
+windStrength = 0.55
+waveChop = 0.65
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-000000000005"
+type = "WeatherForm"
+new = true
+[records.fields]
+editorId = "Cloudy"
+sortOrder = 3
+cloudCoverage = 0.58
+cloudScale = 0.0012
+cloudHeight = 520.0
+cloudShadowStrength = 0.75
+fogDensity = 0.0015
+fogHeightFalloff = 0.02
+fogLowBoost = 1.6
+fogStart = 260.0
+sunIntensity = 0.9
+ambientIntensity = 0.95
+saturation = 0.9
+warmth = 0.15
+volumetricIntensity = 1.1
+godRayIntensity = 0.6
+bloomIntensity = 0.35
+windStrength = 0.9
+waveChop = 1.0
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-000000000006"
+type = "WeatherForm"
+new = true
+[records.fields]
+editorId = "Overcast"
+sortOrder = 4
+cloudCoverage = 0.85
+cloudScale = 0.0014
+cloudHeight = 460.0
+cloudShadowStrength = 0.8
+fogDensity = 0.0018
+fogHeightFalloff = 0.022
+fogLowBoost = 1.8
+fogStart = 200.0
+sunIntensity = 0.6
+ambientIntensity = 0.85
+saturation = 0.62
+warmth = 0.0
+volumetricIntensity = 0.9
+godRayIntensity = 0.3
+bloomIntensity = 0.3
+windStrength = 1.1
+waveChop = 1.25
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-000000000007"
+type = "WeatherForm"
+new = true
+[records.fields]
+editorId = "Storm"
+sortOrder = 5
+cloudCoverage = 0.97
+cloudScale = 0.0016
+cloudHeight = 400.0          # low, heavy ceiling
+cloudShadowStrength = 0.9
+fogDensity = 0.0022
+fogHeightFalloff = 0.025
+fogLowBoost = 2.4
+fogStart = 140.0
+sunIntensity = 0.35
+ambientIntensity = 0.68
+saturation = 0.5
+warmth = 0.0
+volumetricIntensity = 0.8
+godRayIntensity = 0.15
+bloomIntensity = 0.28
+windStrength = 1.9
+waveChop = 1.9

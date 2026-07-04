@@ -31,12 +31,15 @@ vec3 waveNormal(vec2 p, float t) {
     grad.x += 0.45 * cos(p.x * 0.71 - p.y * 0.33 - t * 1.7);
     grad.y += 0.45 * cos(p.y * 0.83 + p.x * 0.29 + t * 1.9);
     grad += 0.22 * vec2(cos(p.x * 2.3 + t * 3.1), cos(p.y * 2.1 - t * 2.7));
-    return normalize(vec3(-grad.x * 0.045, 1.0, -grad.y * 0.045));
+    // Weather chop (uWindInfo.z): storm whips the slopes up, calm flattens
+    // the surface toward a mirror.
+    float slope = 0.045 * uWindInfo.z;
+    return normalize(vec3(-grad.x * slope, 1.0, -grad.y * slope));
 }
 
 void main() {
     vec2 screenUv = gl_FragCoord.xy * uScreenInfo.zw;
-    float t = uTime.x;
+    float t = uWindInfo.x; // wind-scaled phase: waves slow down in a calm
     vec3 n = waveNormal(vWorldPos.xz, t);
 
     // Underside: the camera is below the surface, looking up through it.

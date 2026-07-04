@@ -1,5 +1,7 @@
 #include "game/scenes/LandscapeTuning.hpp"
 
+#include <algorithm>
+
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormTypeRegistry.hpp"
 
@@ -12,6 +14,7 @@ const core::Guid kLandscapeTuningGuid =
 
 void registerLandscapeFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<LandscapeTuningForm>();
+    registry.registerFormType<WeatherForm>();
 }
 
 LandscapeTuningForm resolveLandscapeTuning(const data::FormDatabase& forms) {
@@ -20,6 +23,23 @@ LandscapeTuningForm resolveLandscapeTuning(const data::FormDatabase& forms) {
         return *tuning;
     }
     return LandscapeTuningForm {};
+}
+
+vector<WeatherForm> resolveWeatherForms(const data::FormDatabase& forms) {
+    vector<WeatherForm> weathers;
+    for (u32 i = 1; i <= forms.count(); ++i) {
+        const data::FormHandle handle { i };
+        if (!forms.typeOf(handle)->isA(WeatherForm::staticTypeInfo().id)) {
+            continue;
+        }
+        weathers.push_back(
+            *static_cast<const WeatherForm*>(forms.get(handle)));
+    }
+    std::sort(weathers.begin(), weathers.end(),
+              [](const WeatherForm& a, const WeatherForm& b) {
+                  return a.sortOrder < b.sortOrder;
+              });
+    return weathers;
 }
 
 } // namespace game
