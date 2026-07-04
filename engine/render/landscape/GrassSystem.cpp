@@ -173,6 +173,12 @@ void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
                 { .usage = rhi::BufferUsage::Vertex,
                   .size = built.instances.size() * sizeof(Instance) },
                 built.instances.data());
+            chunk.minY = built.instances[0].positionScale.y;
+            chunk.maxY = chunk.minY;
+            for (const Instance& instance : built.instances) {
+                chunk.minY = glm::min(chunk.minY, instance.positionScale.y);
+                chunk.maxY = glm::max(chunk.maxY, instance.positionScale.y);
+            }
         }
         chunk.resident = true;
         instances += chunk.instanceCount;
@@ -255,7 +261,8 @@ void GrassSystem::refreshPipeline(rhi::Device& device,
 
 void GrassSystem::draw(rhi::CommandBuffer& cmd,
                        rhi::BindGroupHandle frameBindGroup,
-                       rhi::BindGroupHandle shadowBindGroup) {
+                       rhi::BindGroupHandle shadowBindGroup,
+                       const Frustum* frustum) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
     if (shadowBindGroup.id != 0) {
@@ -266,6 +273,20 @@ void GrassSystem::draw(rhi::CommandBuffer& cmd,
     for (const auto& [key, chunk] : chunks) {
         if (!chunk.resident || chunk.instanceCount == 0) {
             continue;
+        }
+        if (frustum) {
+            const f32 x0 = static_cast<f32>(static_cast<i32>(key >> 32)) *
+                           TerrainSystem::kChunkSize;
+            const f32 z0 =
+                static_cast<f32>(static_cast<i32>(key & 0xffffffffu)) *
+                TerrainSystem::kChunkSize;
+            // +1.5 m headroom over the blade roots (height × scale + wind).
+            if (!frustum->intersectsAabb(
+                    { x0, chunk.minY - 0.5f, z0 },
+                    { x0 + TerrainSystem::kChunkSize, chunk.maxY + 1.5f,
+                      z0 + TerrainSystem::kChunkSize })) {
+                continue;
+            }
         }
         cmd.setVertexBuffer(1, chunk.instanceBuffer);
         cmd.drawIndexed(bladeIndexCount, chunk.instanceCount);

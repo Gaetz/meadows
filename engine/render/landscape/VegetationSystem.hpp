@@ -4,6 +4,7 @@
 
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
+#include "engine/render/Frustum.hpp"
 #include "engine/render/MeshData.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
@@ -76,7 +77,10 @@ public:
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle shadowBindGroup,
               u32 variantLimit = kVariantCount, bool withLeaves = true,
-              const Vec3& cameraPos = {});
+              const Vec3& cameraPos = {}, const Frustum* frustum = nullptr);
+
+    // Chunks the last culled draw() recorded (for the debug panel).
+    u32 drawnLastFrame() const { return lastDrawn; }
 
     // Depth-only caster pass into one shadow cascade (frameBindGroup feeds
     // the sway/fade math, casterBindGroup the cascade's light matrix).
@@ -104,6 +108,9 @@ private:
         array<u32, kVariantCount> counts {};
         array<u32, kVariantCount> firstInstance {};
         u32 total { 0 };
+        // Prop-base height range, for the frustum AABB.
+        f32 minY { 0.0f };
+        f32 maxY { 0.0f };
     };
     struct BuiltChunk {
         i32 cx { 0 };
@@ -145,6 +152,7 @@ private:
     std::unordered_map<u64, Chunk> chunks;
     u64 generation { 0 };
     u32 instances { 0 };
+    u32 lastDrawn { 0 };
 
     array<VariantMesh, kVariantCount> variantMeshes {};
     std::unordered_map<u32, MeshData> meshOverrides;

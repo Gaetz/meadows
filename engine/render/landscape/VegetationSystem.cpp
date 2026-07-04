@@ -362,6 +362,12 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
                 { .usage = rhi::BufferUsage::Vertex,
                   .size = packed.size() * sizeof(Instance) },
                 packed.data());
+            chunk.minY = packed[0].positionScale.y;
+            chunk.maxY = chunk.minY;
+            for (const Instance& instance : packed) {
+                chunk.minY = glm::min(chunk.minY, instance.positionScale.y);
+                chunk.maxY = glm::max(chunk.maxY, instance.positionScale.y);
+            }
         }
         chunk.resident = true;
         instances += chunk.total;
@@ -532,7 +538,43 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                             rhi::BindGroupHandle frameBindGroup,
                             rhi::BindGroupHandle shadowBindGroup,
                             u32 variantLimit, bool withLeaves,
-                            const Vec3& cameraPos) {
+                            const Vec3& cameraPos, const Frustum* frustum) {
+    // Frustum verdict per chunk, computed once (the variant-major loops
+    // revisit every chunk per variant). Props overhang their chunk: pad XZ
+    // by the canopy reach and the top by the tallest scaled tree.
+    const auto chunkVisible = [&](u64 key, const Chunk& chunk) {
+        if (!frustum) {
+            return true;
+        }
+        const f32 x0 = static_cast<f32>(static_cast<i32>(key >> 32)) *
+                       TerrainSystem::kChunkSize;
+        const f32 z0 = static_cast<f32>(static_cast<i32>(key & 0xffffffffu)) *
+                       TerrainSystem::kChunkSize;
+        return frustum->intersectsAabb(
+            { x0 - 4.0f, chunk.minY - 1.0f, z0 - 4.0f },
+            { x0 + TerrainSystem::kChunkSize + 4.0f, chunk.maxY + 14.0f,
+              z0 + TerrainSystem::kChunkSize + 4.0f });
+    };
+    std::unordered_map<u64, bool> visible;
+    if (frustum) {
+        visible.reserve(chunks.size());
+        u32 drawnChunks = 0;
+        for (const auto& [key, chunk] : chunks) {
+            const bool v = chunk.resident && chunk.total > 0 &&
+                           chunkVisible(key, chunk);
+            visible.emplace(key, v);
+            drawnChunks += v ? 1u : 0u;
+        }
+        lastDrawn = drawnChunks;
+    }
+    const auto culled = [&](u64 key) {
+        if (!frustum) {
+            return false;
+        }
+        const auto it = visible.find(key);
+        return it == visible.end() || !it->second;
+    };
+
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
     if (shadowBindGroup.id != 0) {
@@ -544,7 +586,7 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     for (u32 v = 0; v < variantLimit; ++v) {
         bool meshBound = false;
         for (const auto& [key, chunk] : chunks) {
-            if (!chunk.resident || chunk.counts[v] == 0) {
+            if (!chunk.resident || chunk.counts[v] == 0 || culled(key)) {
                 continue;
             }
             if (!meshBound) {
@@ -576,7 +618,7 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         }
         bool meshBound = false;
         for (const auto& [key, chunk] : chunks) {
-            if (!chunk.resident || chunk.counts[v] == 0) {
+            if (!chunk.resident || chunk.counts[v] == 0 || culled(key)) {
                 continue;
             }
             const i32 cx = static_cast<i32>(key >> 32);

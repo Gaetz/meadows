@@ -446,6 +446,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
     const render::Camera3D& camera = flyCamera.camera;
     const Mat4 viewProj = camera.viewProj(frame.aspect);
+    // CPU chunk culling (brick 25): one frustum per rendered viewpoint.
+    const render::Frustum viewFrustum = render::Frustum::fromViewProj(viewProj);
     const render::SkySystem::SkyState skyState =
         sky.evaluate({ .cloudCoverage = cloudCoverageUi,
                        .sunIntensity = sunIntensityUi,
@@ -585,6 +587,10 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         const Mat4 reflectedProj =
             obliqueProjection(camera.proj(frame.aspect), planeView);
         const Mat4 reflectedViewProj = reflectedProj * reflectedView;
+        // Cull with the NON-oblique projection: Lengyel's trick corrupts
+        // the far plane, and the regular frustum is a superset (safe).
+        const render::Frustum reflectionFrustum = render::Frustum::fromViewProj(
+            camera.proj(frame.aspect) * reflectedView);
 
         render::FrameUniforms reflectionUniforms = uniforms;
         reflectionUniforms.viewProj = reflectedViewProj;
@@ -603,14 +609,15 @@ void LandscapeScene::render(engine::FrameContext& frame) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
         terrain.draw(frame.cmd, reflectionBindGroup,
-                     shadows.receiverBindGroup());
+                     shadows.receiverBindGroup(), &reflectionFrustum);
         // Trees only: rocks and bushes are invisible in a wobbly half-res
         // reflection — and the solid blobs carry the mirrored silhouette,
         // so skip the leaf cards (fill-rate).
         vegetation.draw(frame.cmd, reflectionBindGroup,
                         shadows.receiverBindGroup(),
                         render::VegetationSystem::kTreeVariants,
-                        /*withLeaves=*/false);
+                        /*withLeaves=*/false, camera.position,
+                        &reflectionFrustum);
         sky.draw(frame.cmd, reflectionBindGroup);
         frame.cmd.endRenderPass();
     }
@@ -623,11 +630,13 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     if (sky.cloudMapBindGroup().id != 0) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
-    terrain.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup());
+    terrain.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
+                 &viewFrustum);
     vegetation.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
                     render::VegetationSystem::kVariantCount, leafCardsUi,
-                    camera.position);
-    grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup());
+                    camera.position, &viewFrustum);
+    grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
+               &viewFrustum);
     sky.draw(frame.cmd, frameBindGroup); // after opaque: background only
     frame.cmd.endRenderPass();
 
@@ -679,9 +688,10 @@ void LandscapeScene::drawUi() {
     ImGui::SliderFloat("Move speed (m/s)", &flyCamera.moveSpeed, 2.0f, 150.0f,
                        "%.0f", ImGuiSliderFlags_Logarithmic);
     ImGui::Separator();
-    ImGui::Text("Resident: %u | pending: %u | uploads/frame: %u",
-                terrain.residentCount(), terrain.pendingCount(),
-                terrain.uploadsLastFrame());
+    ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
+                terrain.residentCount(), terrain.drawnLastFrame(),
+                terrain.pendingCount(), terrain.uploadsLastFrame());
+    ImGui::Text("Prop chunks drawn: %u", vegetation.drawnLastFrame());
     ImGui::Text("Grass blades: %u | props: %u", grass.instanceTotal(),
                 vegetation.propTotal());
     ImGui::InputScalar("Seed", ImGuiDataType_U32, &terrain.params.seed);

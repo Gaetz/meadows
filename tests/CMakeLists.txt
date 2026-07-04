@@ -19,6 +19,7 @@ add_executable(meadows-tests
     EventBusTest.cpp
     FactionsTest.cpp
     FormsTest.cpp
+    FrustumTest.cpp
     GameClockTest.cpp
     GameplayAbilityTest.cpp
     GameplayEffectsTest.cpp

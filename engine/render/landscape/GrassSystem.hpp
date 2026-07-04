@@ -4,6 +4,7 @@
 
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
+#include "engine/render/Frustum.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 
@@ -52,7 +53,8 @@ public:
     // draw with the other opaques, before the sky). Grass receives shadows
     // (shadowBindGroup) but does not cast them.
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
-              rhi::BindGroupHandle shadowBindGroup);
+              rhi::BindGroupHandle shadowBindGroup,
+              const Frustum* frustum = nullptr);
 
     u32 instanceTotal() const { return instances; }
 
@@ -68,6 +70,9 @@ private:
         bool resident { false };
         rhi::BufferHandle instanceBuffer {};
         u32 instanceCount { 0 };
+        // Blade-root height range, for the frustum AABB.
+        f32 minY { 0.0f };
+        f32 maxY { 0.0f };
     };
     struct BuiltChunk {
         i32 cx { 0 };

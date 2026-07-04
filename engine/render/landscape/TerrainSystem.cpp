@@ -249,6 +249,8 @@ void TerrainSystem::pumpUploads(rhi::Device& device) {
             built.vertices.data());
         chunk.residentLod = built.lod;
         chunk.queuedLod = kNoLod;
+        chunk.minY = built.minY;
+        chunk.maxY = built.maxY;
         --pending;
         ++lastUploads;
     }
@@ -304,9 +306,17 @@ void TerrainSystem::enqueueBuild(i32 cx, i32 cz, u8 lod) {
     jobs->enqueue(
         [sharedRef = shared, chunkParams = params, cx, cz, lod,
          gen = generation] {
-            sharedRef->built.push(
-                { cx, cz, lod, gen,
-                  buildChunkVertices(chunkParams, cx, cz, lod) });
+            BuiltChunk built { cx, cz, lod, gen,
+                               buildChunkVertices(chunkParams, cx, cz, lod) };
+            // Height range for the frustum AABB (skirts included: they
+            // hang below, keeping the bound conservative).
+            built.minY = built.vertices[0].position.y;
+            built.maxY = built.minY;
+            for (const MeshVertex& vertex : built.vertices) {
+                built.minY = glm::min(built.minY, vertex.position.y);
+                built.maxY = glm::max(built.maxY, vertex.position.y);
+            }
+            sharedRef->built.push(std::move(built));
         });
 }
 
@@ -403,7 +413,8 @@ void TerrainSystem::setWireframe(bool enabled, rhi::Device& device,
 
 void TerrainSystem::draw(rhi::CommandBuffer& cmd,
                          rhi::BindGroupHandle frameBindGroup,
-                         rhi::BindGroupHandle shadowBindGroup) {
+                         rhi::BindGroupHandle shadowBindGroup,
+                         const Frustum* frustum) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
     if (splatBindGroup.id != 0) {
@@ -412,6 +423,7 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
     if (shadowBindGroup.id != 0) {
         cmd.setBindGroup(2, shadowBindGroup);
     }
+    u32 drawn = 0;
     // Grouped by LOD so the shared index buffer binds once per level.
     for (u32 lod = 0; lod < kLodCount; ++lod) {
         bool indexBufferBound = false;
@@ -419,13 +431,29 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
             if (chunk.residentLod != lod) {
                 continue;
             }
+            if (frustum) {
+                const f32 x0 = static_cast<f32>(static_cast<i32>(key >> 32)) *
+                               kChunkSize;
+                const f32 z0 =
+                    static_cast<f32>(static_cast<i32>(key & 0xffffffffu)) *
+                    kChunkSize;
+                if (!frustum->intersectsAabb(
+                        { x0, chunk.minY, z0 },
+                        { x0 + kChunkSize, chunk.maxY, z0 + kChunkSize })) {
+                    continue;
+                }
+            }
             if (!indexBufferBound) {
                 cmd.setIndexBuffer(indexBuffers[lod], rhi::IndexFormat::U32);
                 indexBufferBound = true;
             }
             cmd.setVertexBuffer(0, chunk.vertexBuffer);
             cmd.drawIndexed(indexCounts[lod]);
+            ++drawn;
         }
+    }
+    if (frustum) {
+        lastDrawn = drawn;
     }
 }
 

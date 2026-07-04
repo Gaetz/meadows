@@ -4,6 +4,7 @@
 
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
+#include "engine/render/Frustum.hpp"
 #include "engine/render/MeshData.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
@@ -76,9 +77,12 @@ public:
     bool isWireframe() const { return wireframe; }
 
     // Records terrain draws into the current render pass. `shadowBindGroup`
-    // provides the CSM map + comparison sampler (texture unit 1).
+    // provides the CSM map + comparison sampler (texture unit 1). When a
+    // frustum is given, chunks whose AABB (XZ footprint × meshed [minY,
+    // maxY]) lies outside are skipped (brick 25).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
-              rhi::BindGroupHandle shadowBindGroup);
+              rhi::BindGroupHandle shadowBindGroup,
+              const Frustum* frustum = nullptr);
 
     // Depth-only caster pass into one shadow cascade. `casterBindGroup`
     // carries the cascade's light matrix; chunks beyond `maxChunkDistance`
@@ -91,6 +95,8 @@ public:
     u32 residentCount() const { return resident; }
     u32 pendingCount() const { return pending; }
     u32 uploadsLastFrame() const { return lastUploads; }
+    // Chunks the last culled draw() actually recorded (main pass runs last).
+    u32 drawnLastFrame() const { return lastDrawn; }
 
     TerrainParams params {};
 
@@ -104,6 +110,9 @@ private:
         // (guards to one in-flight job per chunk).
         u8 queuedLod { kNoLod };
         rhi::BufferHandle vertexBuffer {};
+        // Meshed height range (skirts included), for the frustum AABB.
+        f32 minY { 0.0f };
+        f32 maxY { 0.0f };
     };
     // A worker's finished mesh. `generation` stamps which world it belongs
     // to; stale results (after regenerate) are dropped on arrival.
@@ -113,6 +122,8 @@ private:
         u8 lod { 0 };
         u64 generation { 0 };
         vector<MeshVertex> vertices;
+        f32 minY { 0.0f };
+        f32 maxY { 0.0f };
     };
     // Owned via shared_ptr and captured by every worker job, so a job that
     // outlives this system still has a valid queue to push into (the
@@ -141,6 +152,7 @@ private:
     u32 resident { 0 };
     u32 pending { 0 };
     u32 lastUploads { 0 };
+    u32 lastDrawn { 0 };
     bool wireframe { false };
 
     // Chunks of equal LOD share one index buffer (identical topology).
