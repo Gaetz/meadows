@@ -69,7 +69,8 @@ private:
     f32 bloomIntensityUi { 0.35f };
     f32 godRayIntensityUi { 0.6f };
     f32 volumetricUi { 1.0f };
-    i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 volumetric
+    f32 ssaoUi { 0.7f };
+    i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 vol, 4 ssao
     f32 fogDensityUi { 0.0014f };
     f32 fogHeightFalloffUi { 0.02f };
     f32 fogLowBoostUi { 1.6f };

@@ -15,6 +15,7 @@ constexpr const char* kDownShader = "bloom_down";
 constexpr const char* kUpShader = "bloom_up";
 constexpr const char* kGodRaysShader = "godrays";
 constexpr const char* kVolumetricShader = "volumetric";
+constexpr const char* kSsaoShader = "ssao";
 } // namespace
 
 void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
@@ -28,11 +29,14 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
     shaders.load(kVolumetricShader, { { "FrameUbo", 0 } },
                  { { "uSceneDepth", 0 }, { "uShadowMap", 1 } },
                  kFullscreenVert);
+    shaders.load(kSsaoShader, { { "FrameUbo", 0 } },
+                 { { "uSceneDepth", 0 } }, kFullscreenVert);
     buildPipelines(device, shaders);
 }
 
 void PostFx::destroy(rhi::Device& device) {
     destroyTargets(device);
+    device.destroyPipeline(ssaoPipeline);
     device.destroyPipeline(volumetricPipeline);
     device.destroyPipeline(godRayPipeline);
     device.destroyPipeline(upPipeline);
@@ -56,11 +60,13 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
     rebuild(upPipeline, kUpShader, rhi::BlendMode::Additive);
     rebuild(godRayPipeline, kGodRaysShader, rhi::BlendMode::Opaque);
     rebuild(volumetricPipeline, kVolumetricShader, rhi::BlendMode::Opaque);
+    rebuild(ssaoPipeline, kSsaoShader, rhi::BlendMode::Opaque);
     shaderGeneration = shaders.generation(kPrefilterShader) +
                        shaders.generation(kDownShader) +
                        shaders.generation(kUpShader) +
                        shaders.generation(kGodRaysShader) +
-                       shaders.generation(kVolumetricShader);
+                       shaders.generation(kVolumetricShader) +
+                       shaders.generation(kSsaoShader);
 }
 
 void PostFx::refreshPipelines(rhi::Device& device, ShaderLibrary& shaders) {
@@ -68,13 +74,20 @@ void PostFx::refreshPipelines(rhi::Device& device, ShaderLibrary& shaders) {
                         shaders.generation(kDownShader) +
                         shaders.generation(kUpShader) +
                         shaders.generation(kGodRaysShader) +
-                        shaders.generation(kVolumetricShader);
+                        shaders.generation(kVolumetricShader) +
+                        shaders.generation(kSsaoShader);
     if (current != shaderGeneration) {
         buildPipelines(device, shaders);
     }
 }
 
 void PostFx::destroyTargets(rhi::Device& device) {
+    device.destroyBindGroup(ssaoGroup);
+    device.destroyFramebuffer(ssaoFb);
+    device.destroyTexture(ssaoTex);
+    ssaoGroup = {};
+    ssaoFb = {};
+    ssaoTex = {};
     device.destroyBindGroup(volumetricGroup);
     device.destroyFramebuffer(volumetricFb);
     device.destroyTexture(volumetricTex);
@@ -172,6 +185,21 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
         { .entries = { { .binding = 0,
                          .texture = sceneDepthCopy,
                          .sampler = linearSampler } } });
+
+    ssaoTex = device.createTexture(
+        { .width = std::max(width / 2, 1u),
+          .height = std::max(height / 2, 1u),
+          .format = rhi::TextureFormat::R16F,
+          .filter = rhi::FilterMode::Linear,
+          .usage = rhi::TextureUsage_Sampled |
+                   rhi::TextureUsage_RenderAttachment },
+        nullptr);
+    ssaoFb = device.createFramebuffer(
+        { .colorAttachments = { { .texture = ssaoTex } } });
+    ssaoGroup = device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = sceneDepthCopy,
+                         .sampler = linearSampler } } });
 }
 
 void PostFx::render(rhi::CommandBuffer& cmd,
@@ -231,6 +259,16 @@ void PostFx::render(rhi::CommandBuffer& cmd,
     if (shadowBindGroup.id != 0) {
         cmd.setBindGroup(2, shadowBindGroup);
     }
+    cmd.draw(3);
+    cmd.endRenderPass();
+
+    // SSAO: contact darkening from the scene depth.
+    cmd.beginRenderPass({ .framebuffer = ssaoFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(ssaoPipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    cmd.setBindGroup(1, ssaoGroup);
     cmd.draw(3);
     cmd.endRenderPass();
 }

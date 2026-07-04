@@ -74,7 +74,8 @@ void LandscapeScene::onEnter() {
                       { { "uSceneColor", 0 },
                         { "uBloom", 1 },
                         { "uGodRays", 2 },
-                        { "uVolumetric", 3 } });
+                        { "uVolumetric", 3 },
+                        { "uSsao", 4 } });
         rebuildBlitPipeline(device);
     }
     if (device.caps().offscreenTargets && device.caps().hdrFormats &&
@@ -205,6 +206,9 @@ void LandscapeScene::ensureOffscreenTarget(rhi::Device& device, u32 width,
                           .sampler = blitSampler },
                         { .binding = 3,
                           .texture = postFx.volumetricTexture(),
+                          .sampler = blitSampler },
+                        { .binding = 4,
+                          .texture = postFx.ssaoTexture(),
                           .sampler = blitSampler } }
                   : vector<rhi::BindGroupEntry> {
                         { .binding = 0,
@@ -335,7 +339,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .viewProj = viewProj,
         .invViewProj = glm::inverse(viewProj),
         .cameraPos = { camera.position, 1.0f },
-        .time = { timeSeconds, 0.0f, volumetricUi,
+        .time = { timeSeconds, ssaoUi, volumetricUi,
                   static_cast<f32>(debugBufferUi) },
         .sunDirection = { skyState.sunDirection, 0.0f },
         .sunColor = { skyState.sunColor, skyState.sunDiscIntensity },
@@ -470,7 +474,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
 void LandscapeScene::drawUi() {
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 21: bloom + god rays.");
+    ImGui::TextUnformatted("Brick 22: SSAO.");
     ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate,
                 1000.0f / ImGui::GetIO().Framerate);
     ImGui::TextUnformatted(
@@ -508,8 +512,9 @@ void LandscapeScene::drawUi() {
                        "%.2f");
     ImGui::SliderFloat("Volumetric shafts", &volumetricUi, 0.0f, 3.0f,
                        "%.2f");
+    ImGui::SliderFloat("SSAO strength", &ssaoUi, 0.0f, 1.0f, "%.2f");
     ImGui::Combo("Debug buffer", &debugBufferUi,
-                 "Off\0Bloom\0God rays\0Volumetric\0");
+                 "Off\0Bloom\0God rays\0Volumetric\0SSAO\0");
     ImGui::Checkbox("Shadows", &shadowsUi);
     ImGui::SameLine();
     ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);

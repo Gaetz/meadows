@@ -47,6 +47,7 @@ public:
     rhi::TextureHandle bloomTexture() const { return bloomTex[0]; }
     rhi::TextureHandle godRayTexture() const { return godRayTex; }
     rhi::TextureHandle volumetricTexture() const { return volumetricTex; }
+    rhi::TextureHandle ssaoTexture() const { return ssaoTex; }
 
     bool ready() const { return bloomTex[0].id != 0; }
 
@@ -72,11 +73,16 @@ private:
     rhi::FramebufferHandle volumetricFb {};
     rhi::BindGroupHandle volumetricGroup {};
 
+    rhi::TextureHandle ssaoTex {};
+    rhi::FramebufferHandle ssaoFb {};
+    rhi::BindGroupHandle ssaoGroup {};
+
     rhi::PipelineHandle prefilterPipeline {};
     rhi::PipelineHandle downPipeline {};
     rhi::PipelineHandle upPipeline {}; // additive blend
     rhi::PipelineHandle godRayPipeline {};
     rhi::PipelineHandle volumetricPipeline {};
+    rhi::PipelineHandle ssaoPipeline {};
     u64 shaderGeneration { 0 };
 };
 
