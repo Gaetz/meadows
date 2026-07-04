@@ -200,6 +200,11 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
 void VegetationSystem::createVariantMeshes(rhi::Device& device,
                                            u32 terrainSeed) {
     for (u32 i = 0; i < kVariantCount; ++i) {
+        if (const auto it = meshOverrides.find(i);
+            it != meshOverrides.end()) {
+            uploadVariantMesh(device, i, it->second);
+            continue;
+        }
         const u32 seed = hashU32(terrainSeed) + i * 977u;
         MeshData mesh;
         if (i < kFirstRock) {
@@ -209,16 +214,37 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
         } else {
             mesh = generateBush(seed);
         }
-        variantMeshes[i].indexCount = static_cast<u32>(mesh.indices.size());
-        variantMeshes[i].vertexBuffer = device.createBuffer(
-            { .usage = rhi::BufferUsage::Vertex,
-              .size = mesh.vertices.size() * sizeof(MeshVertex) },
-            mesh.vertices.data());
-        variantMeshes[i].indexBuffer = device.createBuffer(
-            { .usage = rhi::BufferUsage::Index,
-              .size = mesh.indices.size() * sizeof(u32) },
-            mesh.indices.data());
+        uploadVariantMesh(device, i, mesh);
     }
+}
+
+void VegetationSystem::uploadVariantMesh(rhi::Device& device, u32 variant,
+                                         const MeshData& mesh) {
+    variantMeshes[variant].indexCount =
+        static_cast<u32>(mesh.indices.size());
+    variantMeshes[variant].vertexBuffer = device.createBuffer(
+        { .usage = rhi::BufferUsage::Vertex,
+          .size = mesh.vertices.size() * sizeof(MeshVertex) },
+        mesh.vertices.data());
+    variantMeshes[variant].indexBuffer = device.createBuffer(
+        { .usage = rhi::BufferUsage::Index,
+          .size = mesh.indices.size() * sizeof(u32) },
+        mesh.indices.data());
+}
+
+void VegetationSystem::overrideVariantMesh(rhi::Device& device, u32 variant,
+                                           MeshData mesh) {
+    if (variant >= kVariantCount || mesh.vertices.empty() ||
+        mesh.indices.empty()) {
+        return;
+    }
+    if (variantMeshes[variant].vertexBuffer.id != 0) {
+        device.destroyBuffer(variantMeshes[variant].indexBuffer);
+        device.destroyBuffer(variantMeshes[variant].vertexBuffer);
+        variantMeshes[variant] = {};
+    }
+    uploadVariantMesh(device, variant, mesh);
+    meshOverrides[variant] = std::move(mesh);
 }
 
 void VegetationSystem::destroyVariantMeshes(rhi::Device& device) {

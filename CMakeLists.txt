@@ -78,6 +78,17 @@ target_include_directories(sol2 SYSTEM INTERFACE ${sol2_SOURCE_DIR}/include)
 target_link_libraries(sol2 INTERFACE lua)
 target_compile_definitions(sol2 INTERFACE SOL_ALL_SAFETIES_ON=1)
 
+# cgltf — header-only glTF 2.0 loader (§3 mesh/model). The implementation TU
+# lives in engine/assets/GltfMesh.cpp.
+CPMAddPackage(
+    NAME cgltf
+    GITHUB_REPOSITORY jkuhlmann/cgltf
+    GIT_TAG v1.15
+    DOWNLOAD_ONLY TRUE
+)
+add_library(cgltf INTERFACE)
+target_include_directories(cgltf SYSTEM INTERFACE ${cgltf_SOURCE_DIR})
+
 # stb has no tags: pinned by commit. Header-only; the implementation TU
 # lives in engine/assets/StbImpl.cpp.
 CPMAddPackage(

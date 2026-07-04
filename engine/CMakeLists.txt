@@ -4,6 +4,7 @@ add_library(meadows STATIC
     Engine.cpp
     Game.cpp
     assets/AssetDatabase.cpp
+    assets/GltfMesh.cpp
     assets/Image.cpp
     assets/StbImpl.cpp
     core/Guid.cpp
@@ -49,7 +50,7 @@ target_include_directories(meadows PUBLIC ${PROJECT_SOURCE_DIR})
 # imgui is PUBLIC: the game emits its own dev-UI widgets in Game::drawUi.
 target_link_libraries(meadows
     PUBLIC spdlog::spdlog glm::glm imgui
-    PRIVATE SDL3::SDL3 glad stb
+    PRIVATE SDL3::SDL3 glad stb cgltf
 )
 
 # Compile LOG_TRACE/LOG_DEBUG out of release builds.

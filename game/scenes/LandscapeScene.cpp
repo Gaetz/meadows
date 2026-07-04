@@ -8,6 +8,7 @@
 #include "data/plugins/Resolver.hpp"
 #include "engine/Engine.hpp"
 #include "engine/FrameContext.hpp"
+#include "engine/assets/GltfMesh.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
 #include "engine/platform/Window.hpp"
@@ -93,6 +94,23 @@ void LandscapeScene::onEnter() {
     grass.create(device, *shaders, engine->getJobSystem());
     vegetation.create(device, *shaders, engine->getJobSystem(),
                       terrain.params.seed);
+
+    // Brick 23: swap one procedural rock variant for an authored CC0 glTF
+    // rock (moon_rock_02, Poly Haven). Missing file = procedural fallback.
+    if (auto rock = assets::loadGltfMesh(platform::executableDir() / "data" /
+                                         "base" / "models" /
+                                         "rock_cc0.gltf")) {
+        assets::normalizeMesh(*rock, 2.2f);
+        for (render::MeshVertex& vertex : rock->vertices) {
+            vertex.uv = { 0.0f, 0.0f }; // rigid: no canopy sway
+            // The scan's albedo lives in a texture we don't sample; tint
+            // the white base color down to the procedural rocks' gray.
+            vertex.color *= Vec3 { 0.125f, 0.120f, 0.115f };
+        }
+        vegetation.overrideVariantMesh(
+            device, render::VegetationSystem::kFirstRock, std::move(*rock));
+        LOG_INFO("glTF rock loaded as rock variant 0");
+    }
     sky.create(device, *shaders);
     if (device.caps().offscreenTargets && device.caps().textureArrays) {
         shadows.create(device);

@@ -23,6 +23,7 @@ add_executable(meadows-tests
     GameplayAbilityTest.cpp
     GameplayEffectsTest.cpp
     GameplayTagsTest.cpp
+    GltfMeshTest.cpp
     GuidTest.cpp
     InjuriesTest.cpp
     InventoryTest.cpp

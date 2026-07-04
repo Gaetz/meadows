@@ -4,6 +4,7 @@
 
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
+#include "engine/render/MeshData.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 
@@ -52,6 +53,13 @@ public:
     // Drops every chunk (terrain seed changed). Variant meshes are reseeded
     // on the next update.
     void regenerate(rhi::Device& device, u32 terrainSeed);
+
+    // Replaces one variant's mesh with an authored one (brick 23: glTF
+    // rock). The CPU copy is kept so regenerate() re-uploads it after a
+    // seed change. uv.x drives canopy sway in tree.vert — zero the uvs for
+    // rigid props. Scatter, instancing and shadow casting are untouched.
+    void overrideVariantMesh(rhi::Device& device, u32 variant,
+                             MeshData mesh);
 
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
@@ -110,6 +118,8 @@ private:
 
     void createVariantMeshes(rhi::Device& device, u32 terrainSeed);
     void destroyVariantMeshes(rhi::Device& device);
+    void uploadVariantMesh(rhi::Device& device, u32 variant,
+                           const MeshData& mesh);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
@@ -121,6 +131,7 @@ private:
     u32 instances { 0 };
 
     array<VariantMesh, kVariantCount> variantMeshes {};
+    std::unordered_map<u32, MeshData> meshOverrides;
     rhi::PipelineHandle pipeline {};
     u64 shaderGeneration { 0 };
     rhi::PipelineHandle casterPipeline {};
