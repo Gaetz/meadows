@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <unordered_set>
 
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
@@ -79,10 +80,50 @@ public:
     // Records terrain draws into the current render pass. `shadowBindGroup`
     // provides the CSM map + comparison sampler (texture unit 1). When a
     // frustum is given, chunks whose AABB (XZ footprint × meshed [minY,
-    // maxY]) lies outside are skipped (brick 25).
+    // maxY]) lies outside are skipped (brick 25); `occluded` additionally
+    // drops chunks hidden behind terrain (brick 26, main view only —
+    // the set is built for the real camera, not the mirrored one).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle shadowBindGroup,
-              const Frustum* frustum = nullptr);
+              const Frustum* frustum = nullptr,
+              const std::unordered_set<u64>* occluded = nullptr);
+
+    // Resident chunk AABBs, the GPU occlusion candidate list (brick 26).
+    struct ChunkAabb {
+        u64 key { 0 };
+        Vec3 lo {};
+        Vec3 hi {};
+    };
+    void collectChunkAabbs(vector<ChunkAabb>& out) const {
+        out.clear();
+        out.reserve(chunks.size());
+        for (const auto& [key, chunk] : chunks) {
+            if (chunk.residentLod == kNoLod) {
+                continue;
+            }
+            const f32 x0 = static_cast<f32>(static_cast<i32>(key >> 32)) *
+                           kChunkSize;
+            const f32 z0 =
+                static_cast<f32>(static_cast<i32>(key & 0xffffffffu)) *
+                kChunkSize;
+            out.push_back({ key, { x0, chunk.minY, z0 },
+                            { x0 + kChunkSize, chunk.maxY,
+                              z0 + kChunkSize } });
+        }
+    }
+
+    // Meshed maxY per resident chunk — the occlusion rebuild's target
+    // table (copied only when a rebuild starts, ~1/s).
+    std::unordered_map<u64, f32> chunkTops() const {
+        std::unordered_map<u64, f32> tops;
+        tops.reserve(chunks.size());
+        for (const auto& [key, chunk] : chunks) {
+            if (chunk.residentLod != kNoLod) {
+                tops.emplace(key, chunk.maxY);
+            }
+        }
+        return tops;
+    }
 
     // Depth-only caster pass into one shadow cascade. `casterBindGroup`
     // carries the cascade's light matrix; chunks beyond `maxChunkDistance`

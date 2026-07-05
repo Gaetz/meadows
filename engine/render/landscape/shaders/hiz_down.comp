@@ -1,0 +1,28 @@
+#version 460 core
+
+// Hi-Z pyramid downsample (brick 26): mip N = max depth of the region mip
+// N-1 covers, via image load/store (no sampler feedback games). The 3x3
+// clamped window absorbs odd-size remainders conservatively.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0, r32f) uniform readonly image2D uPrevMip;
+layout(binding = 1, r32f) uniform writeonly image2D uOutMip;
+
+void main() {
+    ivec2 dst = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outSize = imageSize(uOutMip);
+    if (dst.x >= outSize.x || dst.y >= outSize.y) {
+        return;
+    }
+    ivec2 src = dst * 2;
+    ivec2 srcMax = imageSize(uPrevMip) - 1;
+    float d = 0.0;
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x < 3; ++x) {
+            d = max(d, imageLoad(uPrevMip,
+                                 min(src + ivec2(x, y), srcMax)).r);
+        }
+    }
+    imageStore(uOutMip, dst, vec4(d));
+}

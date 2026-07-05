@@ -414,7 +414,8 @@ void TerrainSystem::setWireframe(bool enabled, rhi::Device& device,
 void TerrainSystem::draw(rhi::CommandBuffer& cmd,
                          rhi::BindGroupHandle frameBindGroup,
                          rhi::BindGroupHandle shadowBindGroup,
-                         const Frustum* frustum) {
+                         const Frustum* frustum,
+                         const std::unordered_set<u64>* occluded) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
     if (splatBindGroup.id != 0) {
@@ -430,6 +431,9 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
         for (const auto& [key, chunk] : chunks) {
             if (chunk.residentLod != lod) {
                 continue;
+            }
+            if (occluded && occluded->contains(key)) {
+                continue; // hidden behind a ridge (brick 26)
             }
             if (frustum) {
                 const f32 x0 = static_cast<f32>(static_cast<i32>(key >> 32)) *

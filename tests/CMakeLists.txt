@@ -5,6 +5,7 @@ add_executable(meadows-tests
     AiTest.cpp
     AssetsTest.cpp
     CellLoaderTest.cpp
+    ChunkOcclusionTest.cpp
     CollisionTest.cpp
     CombatTest.cpp
     ConcurrentQueueTest.cpp

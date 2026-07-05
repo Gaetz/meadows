@@ -26,7 +26,8 @@ GlDevice46::GlDevice46(uptr<platform::GlContext> context,
               .hdrFormats = true,
               .samplerObjects = true,
               .mipmapGeneration = true,
-              .copyTexture = true }; // glCopyImageSubData (GL 4.3+)
+              .copyTexture = true,      // glCopyImageSubData (GL 4.3+)
+              .computeShaders = true }; // glDispatchCompute (GL 4.3+)
 }
 
 namespace {
@@ -37,6 +38,7 @@ GLenum toGlInternalFormat(TextureFormat format) {
     case TextureFormat::SRGBA8:   return GL_SRGB8_ALPHA8;
     case TextureFormat::RGBA16F:  return GL_RGBA16F;
     case TextureFormat::R16F:     return GL_R16F;
+    case TextureFormat::R32F:     return GL_R32F;
     case TextureFormat::Depth32F: return GL_DEPTH_COMPONENT32F;
     }
     return GL_RGBA8;
@@ -80,7 +82,9 @@ BufferHandle GlDevice46::createBuffer(const BufferDesc& desc,
     GLuint buffer = 0;
     glCreateBuffers(1, &buffer);
     glNamedBufferData(buffer, static_cast<GLsizeiptr>(desc.size), initialData,
-                      desc.dynamic ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
+                      desc.readback ? GL_STREAM_READ
+                      : desc.dynamic ? GL_DYNAMIC_DRAW
+                                     : GL_STATIC_DRAW);
     const u32 id = nextId++;
     buffers.emplace(id, buffer);
     return { id };

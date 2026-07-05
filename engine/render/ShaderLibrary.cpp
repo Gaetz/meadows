@@ -110,15 +110,22 @@ bool ShaderLibrary::compile(const str& name, Entry& entry) {
     vector<WatchedFile> files;
     str vertexSource;
     str fragmentSource;
-    std::unordered_set<str> includedVert;
-    std::unordered_set<str> includedFrag;
-    const str& vertexName =
-        entry.vertexName.empty() ? name : entry.vertexName;
-    const bool read =
-        expandFile(rootDir, rootDir / (vertexName + ".vert"), includedVert,
-                   files, vertexSource) &&
-        expandFile(rootDir, rootDir / (name + ".frag"), includedFrag, files,
-                   fragmentSource);
+    str computeSource;
+    bool read = false;
+    if (entry.compute) {
+        std::unordered_set<str> includedComp;
+        read = expandFile(rootDir, rootDir / (name + ".comp"), includedComp,
+                          files, computeSource);
+    } else {
+        std::unordered_set<str> includedVert;
+        std::unordered_set<str> includedFrag;
+        const str& vertexName =
+            entry.vertexName.empty() ? name : entry.vertexName;
+        read = expandFile(rootDir, rootDir / (vertexName + ".vert"),
+                          includedVert, files, vertexSource) &&
+               expandFile(rootDir, rootDir / (name + ".frag"), includedFrag,
+                          files, fragmentSource);
+    }
 
     // Refresh the watch list even on failure so a broken state is re-checked
     // only when a file actually changes again (no per-poll retry spam).
@@ -133,6 +140,7 @@ bool ShaderLibrary::compile(const str& name, Entry& entry) {
         device.createShader({ .debugName = name,
                               .vertexSource = vertexSource,
                               .fragmentSource = fragmentSource,
+                              .computeSource = computeSource,
                               .uniformBlocks = entry.uniformBlocks,
                               .samplers = entry.samplers });
     if (handle.id == 0) {
@@ -157,6 +165,19 @@ rhi::ShaderHandle ShaderLibrary::load(const str& name,
     entry.samplers = std::move(samplers);
     if (!compile(name, entry)) {
         LOG_ERROR("ShaderLibrary: initial load of '{}' failed", name);
+    }
+    return entry.handle;
+}
+
+rhi::ShaderHandle ShaderLibrary::loadCompute(
+    const str& name, vector<rhi::UniformBlockBinding> uniformBlocks,
+    vector<rhi::SamplerBinding> samplers) {
+    Entry& entry = entries[name];
+    entry.compute = true;
+    entry.uniformBlocks = std::move(uniformBlocks);
+    entry.samplers = std::move(samplers);
+    if (!compile(name, entry)) {
+        LOG_ERROR("ShaderLibrary: initial load of compute '{}' failed", name);
     }
     return entry.handle;
 }

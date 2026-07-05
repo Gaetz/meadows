@@ -1,0 +1,78 @@
+#version 460 core
+
+// GPU occlusion culling (brick 26): one thread per candidate chunk AABB,
+// tested against the Hi-Z max-depth pyramid built from THIS frame's depth
+// and camera (results are consumed next frame — 1 frame of latency, with
+// conservative outs everywhere):
+//   - any corner behind the near plane        -> visible
+//   - footprint touching the screen border    -> visible (a rotation may
+//     reveal it next frame; the frustum pass owns the edges)
+//   - nearest chunk depth <= Hi-Z max + eps   -> visible
+// The sampler is NEAREST_MIPMAP_NEAREST: depth values must never blend.
+
+layout(local_size_x = 64) in;
+
+layout(std140, binding = 0) uniform CullUbo {
+    mat4 uCullViewProj;
+    vec4 uCullInfo; // x = candidate count, y = mip count,
+                    // zw = Hi-Z base size (texels)
+};
+
+struct Aabb {
+    vec4 lo; // xyz used
+    vec4 hi;
+};
+layout(std430, binding = 1) readonly buffer Candidates { Aabb uAabbs[]; };
+layout(std430, binding = 2) writeonly buffer Visibility { uint uVisible[]; };
+
+layout(binding = 3) uniform sampler2D uHiZ;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uint(uCullInfo.x)) {
+        return;
+    }
+    vec3 lo = uAabbs[i].lo.xyz;
+    vec3 hi = uAabbs[i].hi.xyz;
+
+    vec2 ndcMin = vec2(1e9);
+    vec2 ndcMax = vec2(-1e9);
+    float nearestDepth = 1e9;
+    bool nearPlane = false;
+    for (int c = 0; c < 8; ++c) {
+        vec3 p = vec3((c & 1) != 0 ? hi.x : lo.x,
+                      (c & 2) != 0 ? hi.y : lo.y,
+                      (c & 4) != 0 ? hi.z : lo.z);
+        vec4 clip = uCullViewProj * vec4(p, 1.0);
+        if (clip.w <= 0.001) {
+            nearPlane = true;
+            break;
+        }
+        vec3 ndc = clip.xyz / clip.w;
+        ndcMin = min(ndcMin, ndc.xy);
+        ndcMax = max(ndcMax, ndc.xy);
+        nearestDepth = min(nearestDepth, ndc.z * 0.5 + 0.5);
+    }
+
+    uint visible = 1u;
+    if (!nearPlane &&
+        ndcMin.x > -1.0 && ndcMin.y > -1.0 &&
+        ndcMax.x < 1.0 && ndcMax.y < 1.0) {
+        vec2 uvMin = ndcMin * 0.5 + 0.5;
+        vec2 uvMax = ndcMax * 0.5 + 0.5;
+        // Mip where the footprint fits one texel: the 4 corner taps then
+        // cover the up-to-2x2 texels it can straddle.
+        vec2 sizePx = (uvMax - uvMin) * uCullInfo.zw;
+        float lod = clamp(ceil(log2(max(max(sizePx.x, sizePx.y), 1.0))),
+                          0.0, uCullInfo.y - 1.0);
+        float farDepth =
+            max(max(textureLod(uHiZ, uvMin, lod).r,
+                    textureLod(uHiZ, vec2(uvMax.x, uvMin.y), lod).r),
+                max(textureLod(uHiZ, vec2(uvMin.x, uvMax.y), lod).r,
+                    textureLod(uHiZ, uvMax, lod).r));
+        if (nearestDepth > farDepth + 1e-4) {
+            visible = 0u;
+        }
+    }
+    uVisible[i] = visible;
+}

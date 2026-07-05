@@ -42,6 +42,8 @@ struct DeviceCaps {
     bool samplerObjects { false };   // createSampler + BindGroupEntry::sampler
     bool mipmapGeneration { false }; // Device::generateMipmaps
     bool copyTexture { false };      // CommandBuffer::copyTexture (later brick)
+    bool computeShaders { false };   // compute pipelines + dispatch + SSBOs
+                                     // (GL >= 4.3; absent on the 4.1 path)
 };
 
 // --- Buffers -------------------------------------------------------------------
@@ -50,6 +52,7 @@ enum class BufferUsage {
     Vertex,
     Index,
     Uniform,
+    Storage, // SSBO: read/written by compute shaders (caps.computeShaders)
 };
 
 struct BufferDesc {
@@ -58,6 +61,10 @@ struct BufferDesc {
     // True for buffers rewritten every frame (instance data, per-frame
     // uniforms); lets the backend pick an upload strategy.
     bool dynamic { false };
+    // True for GPU-written buffers read back via Device::readBuffer every
+    // frame (compute culling results): the backend keeps them host-visible
+    // (Vulkan: readback heap) instead of bouncing VRAM->RAM per read.
+    bool readback { false };
 };
 
 // --- Textures ------------------------------------------------------------------
@@ -67,6 +74,7 @@ enum class TextureFormat {
     SRGBA8,   // sRGB-decoded on sample (albedo/splat tiles)
     RGBA16F,  // HDR color target
     R16F,     // single-channel (AO, masks)
+    R32F,     // full-precision single channel (Hi-Z depth pyramid)
     Depth32F, // depth attachment, sampleable (shadow maps, scene depth)
 };
 
@@ -146,6 +154,9 @@ struct ShaderDesc {
     str debugName;
     str vertexSource;
     str fragmentSource;
+    // Compute program when non-empty (vertex/fragment must be empty);
+    // requires caps.computeShaders.
+    str computeSource;
     vector<UniformBlockBinding> uniformBlocks;
     vector<SamplerBinding>      samplers;
 };
@@ -229,18 +240,32 @@ struct PipelineDesc {
     bool wireframe { false };
 };
 
+// A compute pipeline is just its program (Vulkan VkComputePipeline): no
+// vertex layout, no raster state. Dispatched via CommandBuffer::dispatch.
+struct ComputePipelineDesc {
+    ShaderHandle shader;
+};
+
 // --- Bind groups -----------------------------------------------------------------
 
 // The resources a draw reads, bound as one immutable unit (a Vulkan
 // descriptor set later). Exactly one of buffer/texture is set per entry;
 // `binding` matches the shader's binding index. `sampler` is only valid
 // alongside `texture` (combined image-sampler); when unset, the texture's
-// own creation-time parameters apply (legacy 2D path).
+// own creation-time parameters apply (legacy 2D path). `storage` marks a
+// buffer entry as an SSBO (Vulkan STORAGE_BUFFER descriptor type) instead
+// of a uniform block.
+// `storageImage` binds one mip of the texture for imageLoad/imageStore in a
+// compute shader (Vulkan STORAGE_IMAGE) instead of sampling — the Hi-Z
+// pyramid builds level N from level N-1 this way, no feedback loop.
 struct BindGroupEntry {
     u32 binding { 0 };
     BufferHandle buffer {};
     TextureHandle texture {};
     SamplerHandle sampler {};
+    bool storage { false };
+    bool storageImage { false };
+    u32 imageMip { 0 };
 };
 
 struct BindGroupDesc {

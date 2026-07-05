@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <unordered_map>
+#include <unordered_set>
 
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
@@ -77,7 +78,8 @@ public:
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle shadowBindGroup,
               u32 variantLimit = kVariantCount, bool withLeaves = true,
-              const Vec3& cameraPos = {}, const Frustum* frustum = nullptr);
+              const Vec3& cameraPos = {}, const Frustum* frustum = nullptr,
+              const std::unordered_set<u64>* occluded = nullptr);
 
     // Chunks the last culled draw() recorded (for the debug panel).
     u32 drawnLastFrame() const { return lastDrawn; }

@@ -41,6 +41,21 @@ public:
     // is snapshotting scene color/depth between passes so a later pass can
     // sample them (sampling a bound attachment is undefined).
     virtual void copyTexture(TextureHandle src, TextureHandle dst) = 0;
+
+    // GPU-side buffer copy (Vulkan vkCmdCopyBuffer). Pairs a device-local
+    // buffer with a `readback` staging buffer: the GPU result is copied
+    // into the staging copy, which the CPU reads without dragging the
+    // working buffer out of VRAM.
+    virtual void copyBuffer(BufferHandle src, BufferHandle dst, u64 size,
+                            u64 srcOffset = 0, u64 dstOffset = 0) = 0;
+
+    // Compute (caps.computeShaders). setPipeline accepts compute pipelines
+    // too (only the program binds — no raster state is touched). Call
+    // outside render passes.
+    virtual void dispatch(u32 groupsX, u32 groupsY = 1, u32 groupsZ = 1) = 0;
+    // Makes compute writes (SSBOs, sampled textures) visible to subsequent
+    // GPU work and CPU readback (Vulkan vkCmdPipelineBarrier).
+    virtual void memoryBarrier() = 0;
 };
 
 } // namespace rhi

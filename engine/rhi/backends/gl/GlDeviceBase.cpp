@@ -120,6 +120,12 @@ void GlCommandBuffer::setFrontFace(FrontFace frontFace) {
 void GlCommandBuffer::setPipeline(PipelineHandle pipeline) {
     const auto& p = device.pipelines.at(pipeline.id);
     glUseProgram(p.program);
+    if (p.compute) {
+        // Compute binds the program only; raster state is untouched (the
+        // next graphics setPipeline reapplies everything anyway).
+        currentPipelineId = pipeline.id;
+        return;
+    }
     glBindVertexArray(p.vao);
     // Every piece of state is applied — enables AND disables — so a pipeline
     // never inherits state from the previous one (anti-leak guarantee: the
@@ -171,8 +177,22 @@ void GlCommandBuffer::setBindGroup(u32 /*index*/, BindGroupHandle group) {
     const auto& desc = device.bindGroups.at(group.id);
     for (const BindGroupEntry& entry : desc.entries) {
         if (entry.buffer.id != 0) {
-            glBindBufferBase(GL_UNIFORM_BUFFER, entry.binding,
+            glBindBufferBase(entry.storage ? GL_SHADER_STORAGE_BUFFER
+                                           : GL_UNIFORM_BUFFER,
+                             entry.binding,
                              device.buffers.at(entry.buffer.id));
+        } else if (entry.storageImage) {
+            const auto& texture = device.textures.at(entry.texture.id);
+            GLenum imageFormat = GL_RGBA8;
+            switch (texture.format) {
+            case TextureFormat::R32F:    imageFormat = GL_R32F; break;
+            case TextureFormat::R16F:    imageFormat = GL_R16F; break;
+            case TextureFormat::RGBA16F: imageFormat = GL_RGBA16F; break;
+            default: break;
+            }
+            glBindImageTexture(entry.binding, texture.name,
+                               static_cast<GLint>(entry.imageMip), GL_FALSE,
+                               0, GL_READ_WRITE, imageFormat);
         } else {
             device.implBindTexture(entry.binding,
                                    device.textures.at(entry.texture.id).name);
@@ -232,6 +252,38 @@ void GlCommandBuffer::drawIndexed(u32 indexCount, u32 instanceCount,
             reinterpret_cast<const void*>(offset),
             static_cast<GLsizei>(instanceCount));
     }
+}
+
+void GlCommandBuffer::copyBuffer(BufferHandle src, BufferHandle dst, u64 size,
+                                 u64 srcOffset, u64 dstOffset) {
+    // Bind-style copy: valid on every GL level, and the dedicated COPY
+    // targets don't disturb vertex/index/uniform bindings.
+    glBindBuffer(GL_COPY_READ_BUFFER, device.buffers.at(src.id));
+    glBindBuffer(GL_COPY_WRITE_BUFFER, device.buffers.at(dst.id));
+    glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER,
+                        static_cast<GLintptr>(srcOffset),
+                        static_cast<GLintptr>(dstOffset),
+                        static_cast<GLsizeiptr>(size));
+    glBindBuffer(GL_COPY_READ_BUFFER, 0);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+}
+
+void GlCommandBuffer::dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) {
+    if (!device.caps().computeShaders) {
+        LOG_ERROR("dispatch: no compute shaders on this backend (check "
+                  "caps().computeShaders)");
+        return;
+    }
+    glDispatchCompute(groupsX, groupsY, groupsZ);
+}
+
+void GlCommandBuffer::memoryBarrier() {
+    if (!device.caps().computeShaders) {
+        return;
+    }
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT |
+                    GL_TEXTURE_FETCH_BARRIER_BIT | GL_UNIFORM_BARRIER_BIT |
+                    GL_BUFFER_UPDATE_BARRIER_BIT);
 }
 
 void GlCommandBuffer::copyTexture(TextureHandle src, TextureHandle dst) {
@@ -342,24 +394,45 @@ GlDeviceBase::createFramebuffer(const FramebufferDesc& /*desc*/) {
 }
 
 ShaderHandle GlDeviceBase::createShader(const ShaderDesc& desc) {
-    const GLuint vertex =
-        compileStage(GL_VERTEX_SHADER, desc.vertexSource, desc.debugName);
-    if (vertex == 0) {
-        return {};
-    }
-    const GLuint fragment =
-        compileStage(GL_FRAGMENT_SHADER, desc.fragmentSource, desc.debugName);
-    if (fragment == 0) {
-        glDeleteShader(vertex);
-        return {};
-    }
+    GLuint program = 0;
+    if (!desc.computeSource.empty()) {
+        // Compute program (caps.computeShaders — GL >= 4.3).
+        if (!caps_.computeShaders) {
+            LOG_ERROR("Shader '{}': compute shaders not supported by this "
+                      "backend", desc.debugName);
+            return {};
+        }
+        const GLuint compute = compileStage(GL_COMPUTE_SHADER,
+                                            desc.computeSource,
+                                            desc.debugName);
+        if (compute == 0) {
+            return {};
+        }
+        program = glCreateProgram();
+        glAttachShader(program, compute);
+        glLinkProgram(program);
+        glDeleteShader(compute);
+    } else {
+        const GLuint vertex =
+            compileStage(GL_VERTEX_SHADER, desc.vertexSource, desc.debugName);
+        if (vertex == 0) {
+            return {};
+        }
+        const GLuint fragment = compileStage(GL_FRAGMENT_SHADER,
+                                             desc.fragmentSource,
+                                             desc.debugName);
+        if (fragment == 0) {
+            glDeleteShader(vertex);
+            return {};
+        }
 
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vertex);
-    glAttachShader(program, fragment);
-    glLinkProgram(program);
-    glDeleteShader(vertex);
-    glDeleteShader(fragment);
+        program = glCreateProgram();
+        glAttachShader(program, vertex);
+        glAttachShader(program, fragment);
+        glLinkProgram(program);
+        glDeleteShader(vertex);
+        glDeleteShader(fragment);
+    }
 
     GLint ok = GL_FALSE;
     glGetProgramiv(program, GL_LINK_STATUS, &ok);
@@ -394,6 +467,40 @@ ShaderHandle GlDeviceBase::createShader(const ShaderDesc& desc) {
     const u32 id = nextId++;
     shaders.emplace(id, program);
     return { id };
+}
+
+PipelineHandle GlDeviceBase::createComputePipeline(
+    const ComputePipelineDesc& desc) {
+    if (!caps_.computeShaders) {
+        LOG_ERROR("createComputePipeline: no compute shaders on this backend");
+        return {};
+    }
+    const auto it = shaders.find(desc.shader.id);
+    if (it == shaders.end()) {
+        LOG_ERROR("createComputePipeline: invalid shader handle");
+        return {};
+    }
+    GlPipeline pipeline;
+    pipeline.program = it->second;
+    pipeline.compute = true;
+    const u32 id = nextId++;
+    pipelines.emplace(id, std::move(pipeline));
+    return { id };
+}
+
+void GlDeviceBase::readBuffer(BufferHandle handle, void* dst, u64 size,
+                              u64 offset) {
+    const auto it = buffers.find(handle.id);
+    if (it == buffers.end()) {
+        LOG_ERROR("readBuffer: invalid buffer handle");
+        return;
+    }
+    // Bind-style (works on every GL level; COPY_READ avoids disturbing
+    // vertex/index binding points).
+    glBindBuffer(GL_COPY_READ_BUFFER, it->second);
+    glGetBufferSubData(GL_COPY_READ_BUFFER, static_cast<GLintptr>(offset),
+                       static_cast<GLsizeiptr>(size), dst);
+    glBindBuffer(GL_COPY_READ_BUFFER, 0);
 }
 
 void GlDeviceBase::destroyShader(ShaderHandle handle) {

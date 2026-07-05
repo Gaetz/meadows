@@ -1,0 +1,30 @@
+#version 460 core
+
+// Hi-Z pyramid, level 0 (brick 26): half-res MAX-depth reduction of the
+// scene depth snapshot. Max (not min) because the cull asks "is the chunk's
+// nearest point farther than EVERYTHING drawn over its footprint?" — only a
+// conservative max keeps false culls impossible. The 3x3 clamped fetch
+// over-covers on odd source sizes: a larger max only means less culling.
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D uSceneDepth;
+layout(binding = 1, r32f) uniform writeonly image2D uOutMip;
+
+void main() {
+    ivec2 dst = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outSize = imageSize(uOutMip);
+    if (dst.x >= outSize.x || dst.y >= outSize.y) {
+        return;
+    }
+    ivec2 src = dst * 2;
+    ivec2 srcMax = textureSize(uSceneDepth, 0) - 1;
+    float d = 0.0;
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x < 3; ++x) {
+            d = max(d, texelFetch(uSceneDepth,
+                                  min(src + ivec2(x, y), srcMax), 0).r);
+        }
+    }
+    imageStore(uOutMip, dst, vec4(d));
+}

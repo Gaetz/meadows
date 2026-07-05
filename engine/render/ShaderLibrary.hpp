@@ -42,6 +42,12 @@ public:
                            vector<rhi::SamplerBinding> samplers = {},
                            const str& vertexName = {});
 
+    // Loads a compute shader (<name>.comp) — same include expansion, hot
+    // reload and generation tracking as the graphics pairs.
+    rhi::ShaderHandle loadCompute(
+        const str& name, vector<rhi::UniformBlockBinding> uniformBlocks = {},
+        vector<rhi::SamplerBinding> samplers = {});
+
     rhi::ShaderHandle get(const str& name) const;
 
     // Starts at 1; bumps on every successful hot reload of `name`.
@@ -61,6 +67,7 @@ private:
     struct Entry {
         rhi::ShaderHandle handle {};
         u64 generation { 1 };
+        bool compute { false }; // <name>.comp instead of .vert/.frag
         str vertexName; // empty = same as the entry name
         vector<rhi::UniformBlockBinding> uniformBlocks;
         vector<rhi::SamplerBinding> samplers;

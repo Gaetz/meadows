@@ -94,6 +94,7 @@ void LandscapeScene::onEnter() {
 
     shaders = std::make_unique<render::ShaderLibrary>(device);
     terrain.create(device, *shaders, engine->getJobSystem());
+    occlusion.create(engine->getJobSystem());
     grass.create(device, *shaders, engine->getJobSystem());
     vegetation.create(device, *shaders, engine->getJobSystem(),
                       terrain.params.seed);
@@ -146,6 +147,10 @@ void LandscapeScene::onEnter() {
         device.caps().copyTexture) {
         postFx.create(device, *shaders);
     }
+    if (device.caps().computeShaders && device.caps().copyTexture &&
+        device.caps().offscreenTargets) {
+        gpuOcclusion.create(device, *shaders);
+    }
 
     flyCamera.camera.position = { 32.0f, 110.0f, 400.0f };
     flyCamera.camera.pitch = -0.30f;
@@ -159,6 +164,7 @@ void LandscapeScene::onExit() {
     destroyOffscreenTarget(device);
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
+    gpuOcclusion.destroy(device);
     postFx.destroy(device);
     water.destroy(device);
     device.destroyBindGroup(reflectionBindGroup);
@@ -429,14 +435,23 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         water.refreshPipeline(frame.device, *shaders);
     }
     postFx.refreshPipelines(frame.device, *shaders);
+    gpuOcclusion.refreshPipelines(frame.device, *shaders);
     terrain.setWireframe(wireframeUi, frame.device, *shaders);
     if (regenerateRequested) {
         regenerateRequested = false;
         terrain.regenerate(frame.device);
         grass.regenerate(frame.device);
         vegetation.regenerate(frame.device, terrain.params.seed);
+        occlusion.invalidate();
     }
     terrain.update(frame.device, flyCamera.camera.position);
+    // Height-horizon occlusion (brick 26): rebuilt on a worker whenever
+    // the camera strays; the set stays valid (conservative) meanwhile.
+    occlusion.pump();
+    if (occlusion.wantsRebuild(flyCamera.camera.position)) {
+        occlusion.rebuild(terrain.params, flyCamera.camera.position,
+                          terrain.chunkTops());
+    }
     grass.update(frame.device, terrain.params, flyCamera.camera.position);
     vegetation.update(frame.device, terrain.params,
                       flyCamera.camera.position);
@@ -630,11 +645,25 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     if (sky.cloudMapBindGroup().id != 0) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
+    // Occlusion applies to the main view only: both sets were built for the
+    // real camera, not the mirrored one (the grass ring is too close to
+    // ever be ridge-occluded — frustum only). CPU horizon ∪ GPU Hi-Z.
+    gpuOccluded.clear();
+    gpuOcclusion.collectResults(frame.device, gpuOccluded);
+    combinedOccluded.clear();
+    if (occlusionUi && occlusion.occludedSet()) {
+        combinedOccluded = *occlusion.occludedSet();
+    }
+    if (gpuOcclusionUi) {
+        combinedOccluded.insert(gpuOccluded.begin(), gpuOccluded.end());
+    }
+    const std::unordered_set<u64>* occludedSet =
+        combinedOccluded.empty() ? nullptr : &combinedOccluded;
     terrain.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
-                 &viewFrustum);
+                 &viewFrustum, occludedSet);
     vegetation.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
                     render::VegetationSystem::kVariantCount, leafCardsUi,
-                    camera.position, &viewFrustum);
+                    camera.position, &viewFrustum, occludedSet);
     grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
                &viewFrustum);
     sky.draw(frame.cmd, frameBindGroup); // after opaque: background only
@@ -646,6 +675,25 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         waterSceneBindGroup.id != 0) {
         frame.cmd.copyTexture(offscreenColor, sceneColorCopy);
         frame.cmd.copyTexture(offscreenDepth, sceneDepthCopy);
+
+        // GPU Hi-Z occlusion (brick 26): pyramid from this frame's depth
+        // snapshot + cull dispatch; the verdict is read back NEXT frame.
+        if (frame.device.caps().computeShaders) {
+            gpuOcclusion.resize(frame.device, frame.width, frame.height);
+            terrain.collectChunkAabbs(occlusionAabbs);
+            occlusionCandidates.clear();
+            occlusionCandidates.reserve(occlusionAabbs.size());
+            for (const auto& aabb : occlusionAabbs) {
+                occlusionCandidates.push_back(
+                    { aabb.key, aabb.lo,
+                      { aabb.hi.x,
+                        aabb.hi.y + render::ChunkOcclusion::kPropHeadroom,
+                        aabb.hi.z } });
+            }
+            gpuOcclusion.run(frame.cmd, frame.device, sceneDepthCopy,
+                             viewProj, occlusionCandidates);
+        }
+
         frame.cmd.beginRenderPass({ .framebuffer = offscreenFb,
                                     .loadOp = rhi::LoadOp::Load,
                                     .depthLoadOp = rhi::LoadOp::Load });
@@ -691,7 +739,12 @@ void LandscapeScene::drawUi() {
     ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
                 terrain.residentCount(), terrain.drawnLastFrame(),
                 terrain.pendingCount(), terrain.uploadsLastFrame());
-    ImGui::Text("Prop chunks drawn: %u", vegetation.drawnLastFrame());
+    ImGui::Text("Prop chunks drawn: %u | occluded CPU: %u | GPU: %u",
+                vegetation.drawnLastFrame(), occlusion.occludedCount(),
+                gpuOcclusion.lastOccludedCount());
+    ImGui::Checkbox("Occlusion culling (A/B)", &occlusionUi);
+    ImGui::SameLine();
+    ImGui::Checkbox("GPU Hi-Z", &gpuOcclusionUi);
     ImGui::Text("Grass blades: %u | props: %u", grass.instanceTotal(),
                 vegetation.propTotal());
     ImGui::InputScalar("Seed", ImGuiDataType_U32, &terrain.params.seed);

@@ -66,6 +66,16 @@ public:
     virtual PipelineHandle createPipeline(const PipelineDesc& desc) = 0;
     virtual void destroyPipeline(PipelineHandle handle) = 0;
 
+    // Compute pipeline (caps.computeShaders): destroyed via destroyPipeline.
+    virtual PipelineHandle createComputePipeline(
+        const ComputePipelineDesc& desc) = 0;
+
+    // Synchronous GPU->CPU readback (Vulkan: staging copy + fence). Intended
+    // for small buffers written LAST frame (compute culling results): by
+    // then the GPU is done and the stall is negligible.
+    virtual void readBuffer(BufferHandle handle, void* dst, u64 size,
+                            u64 offset = 0) = 0;
+
     virtual BindGroupHandle createBindGroup(const BindGroupDesc& desc) = 0;
     virtual void destroyBindGroup(BindGroupHandle handle) = 0;
 };

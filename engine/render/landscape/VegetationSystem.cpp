@@ -538,11 +538,15 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                             rhi::BindGroupHandle frameBindGroup,
                             rhi::BindGroupHandle shadowBindGroup,
                             u32 variantLimit, bool withLeaves,
-                            const Vec3& cameraPos, const Frustum* frustum) {
+                            const Vec3& cameraPos, const Frustum* frustum,
+                            const std::unordered_set<u64>* occluded) {
     // Frustum verdict per chunk, computed once (the variant-major loops
     // revisit every chunk per variant). Props overhang their chunk: pad XZ
     // by the canopy reach and the top by the tallest scaled tree.
     const auto chunkVisible = [&](u64 key, const Chunk& chunk) {
+        if (occluded && occluded->contains(key)) {
+            return false; // hidden behind a ridge (brick 26)
+        }
         if (!frustum) {
             return true;
         }
@@ -555,8 +559,9 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
             { x0 + TerrainSystem::kChunkSize + 4.0f, chunk.maxY + 14.0f,
               z0 + TerrainSystem::kChunkSize + 4.0f });
     };
+    const bool culling = frustum != nullptr || occluded != nullptr;
     std::unordered_map<u64, bool> visible;
-    if (frustum) {
+    if (culling) {
         visible.reserve(chunks.size());
         u32 drawnChunks = 0;
         for (const auto& [key, chunk] : chunks) {
@@ -568,7 +573,7 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         lastDrawn = drawnChunks;
     }
     const auto culled = [&](u64 key) {
-        if (!frustum) {
+        if (!culling) {
             return false;
         }
         const auto it = visible.find(key);

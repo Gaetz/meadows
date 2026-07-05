@@ -4,6 +4,8 @@
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "game/scenes/LandscapeTuning.hpp"
+#include "engine/render/landscape/ChunkOcclusion.hpp"
+#include "engine/render/landscape/GpuOcclusion.hpp"
 #include "engine/render/landscape/GrassSystem.hpp"
 #include "engine/render/landscape/PostFx.hpp"
 #include "engine/render/landscape/ShadowMapper.hpp"
@@ -74,6 +76,14 @@ private:
     render::GrassSystem grass;
     render::VegetationSystem vegetation;
     render::SkySystem sky;
+    render::ChunkOcclusion occlusion;
+    bool occlusionUi { true }; // height-horizon occlusion culling (A/B)
+    render::GpuOcclusion gpuOcclusion;
+    bool gpuOcclusionUi { true }; // Hi-Z compute culling (A/B)
+    std::unordered_set<u64> gpuOccluded;      // last frame's GPU verdict
+    std::unordered_set<u64> combinedOccluded; // CPU horizon ∪ GPU Hi-Z
+    vector<render::TerrainSystem::ChunkAabb> occlusionAabbs;
+    vector<render::GpuOcclusion::Candidate> occlusionCandidates;
     render::ShadowMapper shadows;
     render::WaterSystem water;
     render::PostFx postFx;

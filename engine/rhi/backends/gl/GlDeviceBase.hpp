@@ -33,6 +33,11 @@ public:
 
     void copyTexture(TextureHandle src, TextureHandle dst) override;
 
+    void copyBuffer(BufferHandle src, BufferHandle dst, u64 size,
+                    u64 srcOffset, u64 dstOffset) override;
+    void dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) override;
+    void memoryBarrier() override;
+
 private:
     GlDeviceBase& device;
     u32 currentPipelineId { 0 };
@@ -71,6 +76,13 @@ public:
     SamplerHandle createSampler(const SamplerDesc& desc) override;
     FramebufferHandle createFramebuffer(const FramebufferDesc& desc) override;
 
+    // Compute: shared implementations, gated by caps_.computeShaders (the
+    // 4.1 backend leaves the flag off and these log + return 0 / no-op).
+    PipelineHandle createComputePipeline(
+        const ComputePipelineDesc& desc) override;
+    void readBuffer(BufferHandle handle, void* dst, u64 size,
+                    u64 offset) override;
+
     // --- Pure virtual: divergent GL operations --------------------------------
     // Implemented by GlDevice46 (DSA) and GlDevice41 (legacy).
 
@@ -98,6 +110,7 @@ protected:
     struct GlPipeline {
         u32 program { 0 };
         u32 vao { 0 };
+        bool compute { false }; // program-only bind, no raster state
         BlendMode blend { BlendMode::Opaque };
         u32 glTopology { 0 };
         DepthState depth {};
