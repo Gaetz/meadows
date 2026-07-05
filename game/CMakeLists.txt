@@ -16,12 +16,16 @@ add_executable(true-adventurer
     scenes/WorldDemoScene.cpp
     scenes/DemoScenes.cpp
     scenes/CombatArenaScene.cpp
+    scenes/EditorScene.cpp
     scenes/LandscapeScene.cpp
-    scenes/LandscapeTuning.cpp
+    scenes/UiDemoScene.cpp
     ui/CharacterStatsPanel.cpp
+    ui/ConsolePanel.cpp
+    ui/PropertyGrid.cpp
 )
 target_link_libraries(true-adventurer PRIVATE meadows-runtime meadows-data
-                      meadows-narrative)
+                      meadows-narrative meadows-script meadows-ui
+                      meadows-audio)
 meadows_set_warnings(true-adventurer)
 
 # Game data (plugins + assets) and engine shaders ship next to the executable.

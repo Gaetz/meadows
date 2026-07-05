@@ -192,6 +192,8 @@ enum class BlendMode {
     Opaque,
     Alpha,
     Additive,
+    // Premultiplied alpha (ONE, ONE_MINUS_SRC_ALPHA) — RmlUi's output.
+    PremultipliedAlpha,
 };
 
 enum class PrimitiveTopology {

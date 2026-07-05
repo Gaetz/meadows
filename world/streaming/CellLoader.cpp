@@ -22,6 +22,10 @@ ecs::Entity CellLoader::loadCell(data::FormHandle cell) {
         if (!reference->enabled) {
             continue; // disabled references are not spawned (the loader's call)
         }
+        if (reference->prefab.isValid()) {
+            continue; // prefab TEMPLATE child: only spawned when a placed
+                      // reference instantiates its PrefabForm (H8)
+        }
         spawner.spawn(ctx, *reference, cellEntity);
     }
     return cellEntity;

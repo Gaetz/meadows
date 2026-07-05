@@ -17,6 +17,11 @@ public:
     // Overrides the viewport set by beginRenderPass (full target size).
     virtual void setViewport(u32 x, u32 y, u32 width, u32 height) = 0;
 
+    // Scissor rectangle (Vulkan dynamic scissor), origin bottom-left like
+    // the viewport. beginRenderPass resets it to disabled/full-target.
+    virtual void setScissor(u32 x, u32 y, u32 width, u32 height) = 0;
+    virtual void clearScissor() = 0;
+
     // Winding of front faces for subsequent draws. beginRenderPass resets it
     // to CounterClockwise; mirrored passes set Clockwise once.
     virtual void setFrontFace(FrontFace frontFace) = 0;

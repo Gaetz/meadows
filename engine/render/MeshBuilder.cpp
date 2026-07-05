@@ -120,6 +120,42 @@ void appendBlob(MeshData& mesh, u32 seed, const Vec3& center, f32 radius,
     }
 }
 
+void appendBox(MeshData& mesh, const Vec3& center, const Vec3& halfExtents,
+               const Vec3& color) {
+    // 6 faces × 4 unique vertices, UVs [0,1] per face, outward CCW.
+    struct Face {
+        Vec3 normal;
+        Vec3 tangentU; // maps to u
+        Vec3 tangentV; // maps to v
+    };
+    const Face faces[6] = {
+        { { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 } },
+        { { -1, 0, 0 }, { 0, 0, 1 }, { 0, 1, 0 } },
+        { { 0, 1, 0 }, { 1, 0, 0 }, { 0, 0, -1 } },
+        { { 0, -1, 0 }, { 1, 0, 0 }, { 0, 0, 1 } },
+        { { 0, 0, 1 }, { 1, 0, 0 }, { 0, 1, 0 } },
+        { { 0, 0, -1 }, { -1, 0, 0 }, { 0, 1, 0 } },
+    };
+    for (const Face& face : faces) {
+        const u32 base = static_cast<u32>(mesh.vertices.size());
+        for (u32 corner = 0; corner < 4; ++corner) {
+            const f32 u = corner == 1 || corner == 2 ? 1.0f : 0.0f;
+            const f32 v = corner >= 2 ? 1.0f : 0.0f;
+            const Vec3 position =
+                center + (face.normal + face.tangentU * (u * 2.0f - 1.0f) +
+                          face.tangentV * (v * 2.0f - 1.0f)) *
+                             halfExtents;
+            mesh.vertices.push_back({ .position = position,
+                                      .normal = face.normal,
+                                      .uv = { u, v },
+                                      .color = color });
+        }
+        mesh.indices.insert(mesh.indices.end(),
+                            { base, base + 1, base + 2, base, base + 2,
+                              base + 3 });
+    }
+}
+
 void recomputeFlatNormals(MeshData& mesh) {
     for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
         MeshVertex& a = mesh.vertices[mesh.indices[i]];

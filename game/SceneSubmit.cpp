@@ -1,7 +1,11 @@
+
 #include "game/SceneSubmit.hpp"
 
 #include <algorithm>
 #include <cmath>
+
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "engine/ecs/World.hpp"
 #include "game/TextureCache.hpp"
@@ -52,6 +56,21 @@ RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures) {
     for (const Drawable& drawable : drawables) {
         snapshot.sprites.push_back(drawable.sprite);
     }
+
+    // Mesh section (H8): composed world transforms + resource guids only.
+    // The 3D frontend resolves guids through its residency caches (§7:
+    // pending assets draw placeholders, never block).
+    world.handle()
+        .query<const world::Transform, const world::MeshRender>()
+        .each([&](flecs::entity, const world::Transform& transform,
+                  const world::MeshRender& mesh) {
+            const Mat4 world3d =
+                glm::translate(Mat4 { 1.0f }, transform.position) *
+                glm::mat4_cast(transform.rotation) *
+                glm::scale(Mat4 { 1.0f }, transform.scale);
+            snapshot.meshes.push_back(
+                { mesh.model, mesh.material, world3d });
+        });
     return snapshot;
 }
 

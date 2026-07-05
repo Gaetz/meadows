@@ -12,6 +12,7 @@
 #include "engine/platform/Input.hpp"
 #include "engine/platform/Window.hpp" // width()/height() for aspect + projection
 #include "engine/render/Camera2D.hpp"
+#include "engine/render/SpriteRenderer.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
@@ -162,6 +163,28 @@ gameplay::StatModifiers CombatArenaScene::equipmentModsFor(ecs::Entity e) const 
 void CombatArenaScene::onEnter() {
     WorldDemoScene::onEnter();
 
+    // H7 proof handler: any hit cue bursts sparks at the impact point.
+    // (The real runtime resolves CueForms — CueTable — into particle/
+    // sound/shake handlers; one hardwired handler proves the seam.)
+    cues.addHandler([this](const gameplay::CueEvent& event) {
+        fx::EmitterParams sparks;
+        sparks.burst = 14;
+        sparks.lifetime = 0.28f;
+        sparks.lifetimeJitter = 0.10f;
+        sparks.velocity = { 0.0f, 2.5f, 0.0f };
+        sparks.velocityJitter = 3.5f;
+        sparks.gravity = { 0.0f, -9.0f, 0.0f };
+        sparks.sizeStart = 0.16f;
+        sparks.sizeEnd = 0.02f;
+        sparks.colorStart = { 1.0f, 0.9f, 0.35f, 1.0f };
+        sparks.colorEnd = { 1.0f, 0.25f, 0.05f, 0.0f };
+        // Cosmetic seed: position hash + running count (free RNG, §8).
+        const u32 seed = static_cast<u32>(event.position.x * 73.0f) ^
+                         (static_cast<u32>(event.position.y * 179.0f) << 8) ^
+                         particles.count();
+        particles.spawnBurst(sparks, event.position, seed);
+    });
+
     // Combat/status tag vocabulary needed by tickCharacter (life state, stagger,
     // paralysis, the nine status types) plus the stats runtime tags (injuries,
     // survival). Same set StatsScene registers.
@@ -220,6 +243,7 @@ void CombatArenaScene::update(f32 dt) {
     // frame's tickCharacter (which refreshes life state).
     updatePlayer(dt);
     updatePlayerAttack(dt);
+    particles.update(dt); // H7 cue sparks
 
     // Advance the shared game clock once, then run the full per-frame tick on
     // every combatant. We deliberately do NOT call WorldDemoScene::update(): its
@@ -424,8 +448,24 @@ void CombatArenaScene::updatePlayerAttack(f32 dt) {
                                     weapon->buildupAmount, system, tags);
         }
         gameplay::updateLifeState(system, tags);
+        // H7: the sim announces the impact as a CUE — presentation-agnostic
+        // (headless = no handler = no-op). This scene's handler sparks.
+        cues.emit({ "Cue.Hit.Slash", targetT.position,
+                    currentValueOf(system, gameplay::attr("damage")) });
         hitThisSwing.push_back(c.entity);
     }
+}
+
+void CombatArenaScene::draw(render::SpriteRenderer& renderer) {
+    WorldDemoScene::draw(renderer);
+    // Cue sparks over the world (painter order: after every entity).
+    particles.forEach([&](const Vec3& position, f32 size,
+                          const Vec4& color) {
+        renderer.draw({ .position = { position.x, position.y },
+                        .size = { size, size },
+                        .tint = color,
+                        .texture = checker });
+    });
 }
 
 void CombatArenaScene::drawUi() {

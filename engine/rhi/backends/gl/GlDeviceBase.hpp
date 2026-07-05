@@ -20,6 +20,8 @@ public:
     void endRenderPass() override;
 
     void setViewport(u32 x, u32 y, u32 width, u32 height) override;
+    void setScissor(u32 x, u32 y, u32 width, u32 height) override;
+    void clearScissor() override;
     void setFrontFace(FrontFace frontFace) override;
 
     void setPipeline(PipelineHandle pipeline) override;

@@ -6,7 +6,9 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 #include "engine/ecs/World.hpp"
+#include "engine/fx/Particles.hpp"
 #include "game/scenes/WorldDemoScene.hpp"
+#include "gameplay/cue/GameplayCues.hpp"
 
 namespace gameplay {
 struct AbilityForm;
@@ -30,6 +32,7 @@ public:
 
     void onEnter() override;
     void update(f32 dt) override;
+    void draw(render::SpriteRenderer& renderer) override;
     void drawUi() override;
 
 private:
@@ -81,6 +84,12 @@ private:
     f32 attackTimer { 0.0f };            // time left in the current phase
     Vec2 attackDir { 0.0f, -1.0f };      // aim locked at the swing's start
     std::vector<ecs::Entity> hitThisSwing; // enemies already struck this swing
+
+    // H7 proof: the sim emits "Cue.Hit.*" on melee impact; the scene's
+    // handler bursts sparks (fx::ParticleSim), drawn as sprites after the
+    // world. Headless would simply have no handler — no coupling.
+    gameplay::CueRegistry cues;
+    fx::ParticleSim particles;
 };
 
 } // namespace game

@@ -23,6 +23,11 @@ void appendTaperedTube(MeshData& mesh, const Vec3& base, const Vec3& top,
 void appendBlob(MeshData& mesh, u32 seed, const Vec3& center, f32 radius,
                 f32 jitter, const Vec3& color, u32 subdivisions = 1);
 
+// Axis-aligned box, flat-shaded, each face carrying [0,1] UVs — the
+// textured-mesh workhorse (H8 proof cube, kit-module prototypes).
+void appendBox(MeshData& mesh, const Vec3& center, const Vec3& halfExtents,
+               const Vec3& color);
+
 // Recomputes per-face normals after positions were deformed (e.g. squashed
 // rocks). Assumes the flat-shaded layout (three unique vertices per face).
 void recomputeFlatNormals(MeshData& mesh);

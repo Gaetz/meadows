@@ -78,6 +78,73 @@ target_include_directories(sol2 SYSTEM INTERFACE ${sol2_SOURCE_DIR}/include)
 target_link_libraries(sol2 INTERFACE lua)
 target_compile_definitions(sol2 INTERFACE SOL_ALL_SAFETIES_ON=1)
 
+# Jolt (§3 physics, horizontal pass H3). CMake lives in Build/. Options trim
+# every extra target; USE_STATIC_MSVC_RUNTIME_LIBRARY must be OFF to match our
+# dynamic CRT. CROSS_PLATFORM_DETERMINISTIC keeps the §8 determinism door open.
+CPMAddPackage(
+    NAME JoltPhysics
+    GITHUB_REPOSITORY jrouwe/JoltPhysics
+    GIT_TAG v5.2.0
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR Build
+    OPTIONS
+        "TARGET_UNIT_TESTS OFF"
+        "TARGET_HELLO_WORLD OFF"
+        "TARGET_PERFORMANCE_TEST OFF"
+        "TARGET_SAMPLES OFF"
+        "TARGET_VIEWER OFF"
+        "USE_STATIC_MSVC_RUNTIME_LIBRARY OFF"
+        "CROSS_PLATFORM_DETERMINISTIC ON"
+        "INTERPROCEDURAL_OPTIMIZATION OFF"
+        "ENABLE_ALL_WARNINGS OFF"
+)
+if(TARGET Jolt)
+    get_target_property(_jolt_inc Jolt INTERFACE_INCLUDE_DIRECTORIES)
+    set_target_properties(Jolt PROPERTIES
+        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_jolt_inc}")
+endif()
+
+# miniaudio (§3 audio, H6) — single header; implementation TU in
+# engine/audio/Audio.cpp.
+CPMAddPackage(
+    NAME miniaudio
+    GITHUB_REPOSITORY mackron/miniaudio
+    GIT_TAG 0.11.21
+    GIT_SHALLOW TRUE
+    DOWNLOAD_ONLY TRUE
+)
+add_library(miniaudio INTERFACE)
+target_include_directories(miniaudio SYSTEM INTERFACE ${miniaudio_SOURCE_DIR})
+
+# FreeType + RmlUi (§3 game UI, H4). FreeType is trimmed of every optional
+# codec; RmlUi 6 picks up the existing Freetype::Freetype target instead of
+# find_package when it is already defined.
+CPMAddPackage(
+    NAME freetype
+    GITHUB_REPOSITORY freetype/freetype
+    GIT_TAG VER-2-13-3
+    GIT_SHALLOW TRUE
+    OPTIONS
+        "FT_DISABLE_ZLIB ON"
+        "FT_DISABLE_BZIP2 ON"
+        "FT_DISABLE_PNG ON"
+        "FT_DISABLE_HARFBUZZ ON"
+        "FT_DISABLE_BROTLI ON"
+)
+if(TARGET freetype AND NOT TARGET Freetype::Freetype)
+    add_library(Freetype::Freetype ALIAS freetype)
+endif()
+CPMAddPackage(
+    NAME RmlUi
+    GITHUB_REPOSITORY mikke89/RmlUi
+    GIT_TAG 6.1
+    GIT_SHALLOW TRUE
+    OPTIONS
+        "BUILD_SHARED_LIBS OFF"
+        "RMLUI_SAMPLES OFF"
+        "RMLUI_LUA_BINDINGS OFF"
+)
+
 # cgltf — header-only glTF 2.0 loader (§3 mesh/model). The implementation TU
 # lives in engine/assets/GltfMesh.cpp.
 CPMAddPackage(

@@ -56,6 +56,13 @@ struct ReferenceForm : data::Form {
     Vec3 scale { 1.0f, 1.0f, 1.0f };
     bool enabled { true };
     i32 count { 1 };
+    // Prefab membership (H1, appended — ordinals stable). A reference with
+    // `prefab` set is a TEMPLATE child of that PrefabForm: its transform is
+    // relative to the prefab pivot, it belongs to no cell, and the
+    // CellLoader never spawns it directly. Placing a reference whose
+    // baseForm IS a PrefabForm instantiates every template child with a
+    // deterministic derived guid (see Spawner, H8).
+    core::Guid prefab;
 
     REFLECT_BEGIN(ReferenceForm, data::Form)
         REFLECT_FIELD(baseForm)
@@ -65,6 +72,48 @@ struct ReferenceForm : data::Form {
         REFLECT_FIELD(scale)
         REFLECT_FIELD(enabled)
         REFLECT_FIELD(count)
+        REFLECT_FIELD(prefab)
+    REFLECT_END()
+};
+
+// A reusable group of references (H1). The form itself is just the group's
+// identity: its content is every ReferenceForm whose `prefab` points here
+// (child-record convention, data::childrenOf). Authoring lives in the
+// level editor ("create prefab from selection"); nesting = a template
+// child whose baseForm is another PrefabForm.
+struct PrefabForm : data::Form {
+    str displayName;
+
+    REFLECT_BEGIN(PrefabForm, data::Form)
+        REFLECT_FIELD(displayName)
+    REFLECT_END()
+};
+
+// An invisible authoring/AI anchor (spawn points, patrol stops, schedule
+// locations, heading markers). Placed like anything else; `kind` is free
+// vocabulary the systems agree on ("spawn", "patrol", "idle"...).
+struct MarkerForm : data::Form {
+    str kind { "marker" };
+
+    REFLECT_BEGIN(MarkerForm, data::Form)
+        REFLECT_FIELD(kind)
+    REFLECT_END()
+};
+
+// A gameplay volume: fires `event` on the EventBus (and/or runs `script`)
+// when something enters/leaves. Extent is a local-space box half-size,
+// scaled/rotated by the placing reference like any transform.
+struct TriggerForm : data::Form {
+    Vec3 halfExtents { 1.0f, 1.0f, 1.0f };
+    str event;        // EventBus event name ("" = none)
+    str script;       // Lua snippet ("" = none)
+    bool once { false };
+
+    REFLECT_BEGIN(TriggerForm, data::Form)
+        REFLECT_FIELD(halfExtents)
+        REFLECT_FIELD(event)
+        REFLECT_FIELD(script)
+        REFLECT_FIELD(once)
     REFLECT_END()
 };
 

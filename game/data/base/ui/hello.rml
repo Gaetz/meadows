@@ -1,0 +1,15 @@
+<rml>
+<head>
+	<link type="text/rcss" href="hello.rcss"/>
+	<title>Hello</title>
+</head>
+<body>
+	<div id="panel">
+		<h1>Meadows UI</h1>
+		<p>This screen is an RmlUi document served through the plugin
+		stack. Ship a <code>ui/hello.rml</code> in a later plugin and it
+		replaces this one — the SkyUI model, built in.</p>
+		<div id="footer">horizontal pass H4 · data/base/ui/hello.rml</div>
+	</div>
+</body>
+</rml>

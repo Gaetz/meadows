@@ -9,7 +9,9 @@
 #include "game/SceneStack.hpp"
 #include "game/scenes/CombatArenaScene.hpp"
 #include "game/scenes/DemoScenes.hpp"
+#include "game/scenes/EditorScene.hpp"
 #include "game/scenes/LandscapeScene.hpp"
+#include "game/scenes/UiDemoScene.hpp"
 
 namespace {
 
@@ -53,6 +55,10 @@ public:
               [&] { return std::make_unique<game::CombatArenaScene>(*engine); } },
             { "Landscape (3D)",
               [&] { return std::make_unique<game::LandscapeScene>(*engine); } },
+            { "Game DB (editor)",
+              [&] { return std::make_unique<game::EditorScene>(*engine); } },
+            { "UI (RmlUi)",
+              [&] { return std::make_unique<game::UiDemoScene>(*engine); } },
         };
 
         // Wrap buttons across rows at a fixed budget. A fixed budget (not the

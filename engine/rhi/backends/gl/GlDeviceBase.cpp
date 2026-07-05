@@ -72,6 +72,9 @@ GLenum glToCompare(CompareFunc f)             { return toGlCompare(f); }
 // --- GlCommandBuffer ----------------------------------------------------------
 
 void GlCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
+    // State hygiene: clears honor the scissor — a UI pass must never crop
+    // the next pass's clear.
+    glDisable(GL_SCISSOR_TEST);
     if (desc.framebuffer.id != 0) {
         const auto& fb = device.framebuffers.at(desc.framebuffer.id);
         glBindFramebuffer(GL_FRAMEBUFFER, fb.name);
@@ -113,6 +116,16 @@ void GlCommandBuffer::setViewport(u32 x, u32 y, u32 width, u32 height) {
                static_cast<GLsizei>(width), static_cast<GLsizei>(height));
 }
 
+void GlCommandBuffer::setScissor(u32 x, u32 y, u32 width, u32 height) {
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(static_cast<GLint>(x), static_cast<GLint>(y),
+              static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+}
+
+void GlCommandBuffer::clearScissor() {
+    glDisable(GL_SCISSOR_TEST);
+}
+
 void GlCommandBuffer::setFrontFace(FrontFace frontFace) {
     glFrontFace(frontFace == FrontFace::Clockwise ? GL_CW : GL_CCW);
 }
@@ -141,6 +154,10 @@ void GlCommandBuffer::setPipeline(PipelineHandle pipeline) {
     case BlendMode::Additive:
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        break;
+    case BlendMode::PremultipliedAlpha:
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
         break;
     }
     if (p.depth.testEnable) {

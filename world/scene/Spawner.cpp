@@ -1,6 +1,12 @@
 #include "world/scene/Spawner.hpp"
 
+#include <glm/gtc/quaternion.hpp>
+
+#include "data/forms/FormQuery.hpp"
+#include "data/forms/VisualForms.hpp"
 #include "engine/core/Log.hpp"
+#include "gameplay/interaction/FurnitureForms.hpp"
+#include "world/worldspace/WorldForms.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
@@ -18,6 +24,43 @@ namespace {
 void spawnStatic(SpawnContext&, ecs::Entity entity, const data::Form&,
                  const reflect::TypeInfo&) {
     entity.add<StaticMarker>();
+}
+
+void spawnLight(SpawnContext&, ecs::Entity entity, const data::Form& base,
+                const reflect::TypeInfo&) {
+    entity.add<LightMarker>();
+    const auto& light = static_cast<const data::LightForm&>(base);
+    LightSource source;
+    source.color = light.color;
+    source.intensity = light.intensity;
+    source.radius = light.radius;
+    source.spotAngle = light.kind == "spot" ? light.spotAngle : 0.0f;
+    source.flicker = light.flicker;
+    entity.set<LightSource>(source);
+}
+
+void spawnMarker(SpawnContext&, ecs::Entity entity, const data::Form& base,
+                 const reflect::TypeInfo&) {
+    const auto& marker = static_cast<const MarkerForm&>(base);
+    entity.set<MarkerKind>({ marker.kind });
+}
+
+void spawnTrigger(SpawnContext&, ecs::Entity entity, const data::Form& base,
+                  const reflect::TypeInfo&) {
+    entity.add<TriggerMarker>();
+    const auto& trigger = static_cast<const TriggerForm&>(base);
+    TriggerVolume volume;
+    volume.halfExtents = trigger.halfExtents;
+    volume.event = trigger.event;
+    volume.script = trigger.script;
+    volume.once = trigger.once;
+    entity.set<TriggerVolume>(volume);
+}
+
+void spawnFurniture(SpawnContext&, ecs::Entity entity,
+                    const data::Form& base, const reflect::TypeInfo&) {
+    entity.add<FurnitureMarker>();
+    entity.set<FurnitureRef>({ base.id });
 }
 
 void spawnItem(SpawnContext&, ecs::Entity entity, const data::Form&,
@@ -79,6 +122,49 @@ ecs::Entity Spawner::spawn(SpawnContext& ctx, const ReferenceForm& reference,
                  baseType->name);
         return ecs::Entity {};
     }
+
+    // Prefab expansion (H8): a placed reference whose base is a PrefabForm
+    // spawns every template child with a DERIVED, deterministic guid —
+    // combine(instance, template) — so saves/patches can target one child
+    // of one placed prefab forever. Nested prefabs recurse naturally.
+    if (*category == FormCategory::Prefab) {
+        ecs::Entity root = ctx.world.create();
+        Transform rootTransform;
+        rootTransform.position = reference.position;
+        rootTransform.rotation = reference.rotation;
+        rootTransform.scale = reference.scale;
+        root.set<Transform>(rootTransform);
+        RefId rootId;
+        rootId.referenceId = reference.id;
+        rootId.base = baseHandle;
+        rootId.cell = ctx.forms.handleOf(reference.cell);
+        root.set<RefId>(rootId);
+        root.add<PrefabRootMarker>();
+        if (cellEntity.is_valid()) {
+            root.add<ecs::InCell>(cellEntity);
+        }
+        data::forEach<ReferenceForm>(
+            ctx.forms, [&](const ReferenceForm& child) {
+                if (child.prefab != base->id || !child.enabled) {
+                    return;
+                }
+                ReferenceForm derived = child;
+                derived.id = core::Guid::combine(reference.id, child.id);
+                derived.prefab = {}; // the derived copy is a real placement
+                derived.cell = reference.cell;
+                // Compose the instance transform over the template's
+                // (template transforms are relative to the prefab pivot).
+                derived.position =
+                    reference.position +
+                    reference.rotation *
+                        (child.position * reference.scale);
+                derived.rotation = reference.rotation * child.rotation;
+                derived.scale = reference.scale * child.scale;
+                spawn(ctx, derived, cellEntity);
+            });
+        return root;
+    }
+
     const auto spawnFn = byCategory.find(*category);
     if (spawnFn == byCategory.end()) {
         LOG_WARN("Spawner: no spawner registered for the category of {}",
@@ -111,6 +197,27 @@ ecs::Entity Spawner::spawn(SpawnContext& ctx, const ReferenceForm& reference,
         entity.set<SpriteRender>(sprite);
     }
 
+    // MeshRender seeded the same reflected way from `model` + `material`
+    // (H8): any base form declaring them gets a 3D visual — StaticForm,
+    // FurnitureForm today, ActorForm's appearance path later.
+    if (const reflect::FieldInfo* modelField = baseType->findField("model");
+        modelField && modelField->kind == reflect::FieldKind::Guid) {
+        const core::Guid model =
+            std::get<core::Guid>(modelField->get(base));
+        if (model.isValid()) {
+            MeshRender mesh;
+            mesh.model = model;
+            if (const reflect::FieldInfo* materialField =
+                    baseType->findField("material");
+                materialField &&
+                materialField->kind == reflect::FieldKind::Guid) {
+                mesh.material =
+                    std::get<core::Guid>(materialField->get(base));
+            }
+            entity.set<MeshRender>(mesh);
+        }
+    }
+
     // Runtime cell membership (ephemeral; never serialized).
     if (cellEntity.is_valid()) {
         entity.add<ecs::InCell>(cellEntity);
@@ -125,6 +232,11 @@ void registerCoreSpawners(Spawner& spawner) {
     spawner.registerCategory(FormCategory::Static, &spawnStatic);
     spawner.registerCategory(FormCategory::Item, &spawnItem);
     spawner.registerCategory(FormCategory::Actor, &spawnActor);
+    spawner.registerCategory(FormCategory::Light, &spawnLight);
+    spawner.registerCategory(FormCategory::Marker, &spawnMarker);
+    spawner.registerCategory(FormCategory::Trigger, &spawnTrigger);
+    spawner.registerCategory(FormCategory::Furniture, &spawnFurniture);
+    // FormCategory::Prefab is handled inside Spawner::spawn (expansion).
 }
 
 } // namespace world

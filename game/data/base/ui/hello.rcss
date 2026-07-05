@@ -1,0 +1,37 @@
+body {
+	width: 100%;
+	height: 100%;
+	font-family: "JetBrains Mono";
+	font-size: 18dp;
+	color: #e8e2d0;
+}
+
+#panel {
+	width: 460dp;
+	margin: auto;
+	margin-top: 120dp;
+	padding: 24dp;
+	background-color: #1d2430e0;
+	border: 2dp #5a6a52;
+	border-radius: 8dp;
+}
+
+h1 {
+	font-size: 30dp;
+	color: #a8c68c;
+	margin-bottom: 12dp;
+}
+
+p {
+	line-height: 1.4em;
+	margin-bottom: 16dp;
+}
+
+code {
+	color: #d9b96c;
+}
+
+#footer {
+	font-size: 13dp;
+	color: #78839a;
+}

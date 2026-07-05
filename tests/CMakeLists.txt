@@ -3,6 +3,8 @@ add_executable(meadows-tests
     AbilitySystemTest.cpp
     AfflictionsTest.cpp
     AiTest.cpp
+    AnimTest.cpp
+    AudioTest.cpp
     AssetsTest.cpp
     CellLoaderTest.cpp
     ChunkOcclusionTest.cpp
@@ -11,10 +13,12 @@ add_executable(meadows-tests
     ConcurrentQueueTest.cpp
     ConditionTest.cpp
     CookerTest.cpp
+    CuesSchedulesTest.cpp
     DerivedStatsTest.cpp
     DialogueTest.cpp
     DrugsTest.cpp
     EcsTest.cpp
+    EditSessionTest.cpp
     EnergyExhaustionTest.cpp
     EquipmentStatsTest.cpp
     EventBusTest.cpp
@@ -27,10 +31,14 @@ add_executable(meadows-tests
     GameplayTagsTest.cpp
     GltfMeshTest.cpp
     GuidTest.cpp
+    HorizontalFormsTest.cpp
     InjuriesTest.cpp
     InventoryTest.cpp
     JobsTest.cpp
     MovementTest.cpp
+    PhysicsTest.cpp
+    PluginConfigTest.cpp
+    PrefabTest.cpp
     PluginLoaderTest.cpp
     QuestTest.cpp
     ReflectTest.cpp
@@ -53,6 +61,7 @@ add_executable(meadows-tests
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs
                       meadows-world meadows-runtime meadows-gameplay
-                      meadows-script meadows-narrative doctest::doctest)
+                      meadows-script meadows-narrative meadows-physics
+                      meadows-audio doctest::doctest)
 meadows_set_warnings(meadows-tests)
 add_test(NAME meadows COMMAND meadows-tests)

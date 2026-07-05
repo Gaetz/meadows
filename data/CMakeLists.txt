@@ -2,9 +2,17 @@
 # Depends on the engine core/reflect layers only; rendering must never leak
 # in here (the build enforces what §4 demands).
 add_library(meadows-data STATIC
+    forms/AnimForms.cpp
+    forms/AudioForms.cpp
     forms/CoreForms.cpp
     forms/FormDatabase.cpp
+    forms/LandscapeForms.cpp
+    forms/LocForms.cpp
+    forms/UiForms.cpp
+    forms/VisualForms.cpp
     plugins/BinaryFormat.cpp
+    plugins/EditSession.cpp
+    plugins/PluginConfig.cpp
     plugins/PluginLoader.cpp
     plugins/Resolver.cpp
     plugins/TomlWriter.cpp

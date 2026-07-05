@@ -20,7 +20,7 @@ new = true
 [records.fields]
 editorId = "IronSword"
 displayName = "Iron Sword"
-damage = 12.0
+damage = 15.0
 weight = 3.0
 goldValue = 25
 sprite = "7c5e2d90-4f3a-4b18-a52e-c91d80f64b23"

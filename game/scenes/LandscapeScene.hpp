@@ -121,6 +121,21 @@ private:
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};
 
+    // H8 proof: one textured stylized cube driven by a MaterialForm
+    // ("DemoCubeMaterial" in landscape.toml) — the renderer/gameplay mesh
+    // contract, end to end (Form -> asset guid -> VFS -> GPU).
+    rhi::TextureHandle cubeTexture {};
+    rhi::SamplerHandle cubeSampler {};
+    rhi::BufferHandle cubeModelUbo {};
+    rhi::BindGroupHandle cubeGroup {};
+    rhi::BufferHandle cubeVertexBuffer {};
+    rhi::BufferHandle cubeIndexBuffer {};
+    u32 cubeIndexCount { 0 };
+    rhi::PipelineHandle meshPipeline {};
+    u64 meshShaderGeneration { 0 };
+    bool cubeReady { false };
+    void buildMeshPipeline(rhi::Device& device);
+
     rhi::TextureHandle offscreenColor {};
     rhi::TextureHandle offscreenDepth {};
     rhi::FramebufferHandle offscreenFb {};

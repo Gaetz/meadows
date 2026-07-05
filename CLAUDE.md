@@ -12,18 +12,22 @@
 A **custom game engine prototype** to validate the systems of a Skyrim-like,
 open-world, moddable RPG. The author is a solo developer (professional C++ /
 graphics programmer). The engine is built in **C++ with a graphics-API
-abstraction (RHI)**, OpenGL first, Vulkan later.
+abstraction (RHI)** — OpenGL 4.6 today, Vulkan possible later.
 
-The project is built **2D top-down first**, then transitions to **3D low-poly**
-with a stylized "Breath of the Wild"-like look. The game *logic* must run
-unchanged across that transition — the renderer is decoupled from gameplay.
+The project was built **2D top-down first** (phases 0-8, all core systems)
+and is now moving to **3D low-poly** with a stylized "Breath of the
+Wild"-like look. The game *logic* runs unchanged across that transition —
+the renderer is decoupled from gameplay.
 
 **The lasting asset is the simulation layer, not the renderer.** The gameplay
 model (flecs ECS, GAS, data-model, modding layer, Lua scripting) must compile
 and run without any renderer — the headless test suite is the proof. The
-graphical frontend is a replaceable shell. The 2D OpenGL renderer is a working
-prototype; **Godot (via GDExtension)** is the target long-term frontend,
-validated by a 2D→Godot port test (Phase 8.5) before committing to the 3D phase.
+graphical frontend is a replaceable shell. **Decision (2026-07-05): the
+gameplay demo is built in Meadows itself** (the custom GL 4.6 3D renderer —
+`docs/3D-RENDERER.md` — proved out); the engine/tool roadmap for that demo
+lives in **`docs/MEADOWS-PLAN.md`**. Godot (via GDExtension) remains a
+**post-demo option**, its validation (Phase 8.5) postponed — which is exactly
+why the sim/presentation seam stays a protected invariant.
 See `docs/SIMULATION-AND-PRESENTATION.md`.
 
 This is a prototype to test **game-design concepts**, not a shipping engine.
@@ -105,8 +109,9 @@ approval.
 10. **Simulation runs headless.** `gameplay/`, `world/`, `data/`, `script/`
     have zero dependency on `engine/platform/`, `engine/rhi/`, or
     `engine/render/`. They compile and run without SDL, OpenGL, or any renderer.
-    The test suite (181+ headless tests) enforces this. Any violation is a
-    coupling that must be removed before the Phase 8.5 Godot port.
+    The test suite (229+ headless tests) enforces this. Any violation is a
+    coupling to remove on sight — it is what keeps the post-demo Godot
+    option (and any other frontend swap) open.
 
 ---
 
@@ -119,23 +124,23 @@ Use these unless there is a concrete reason not to (then ask first).
 | Build              | CMake + CPM.cmake (FetchContent)         | Deps pinned in CMake, fetched at build time, identical on Fedora/Debian/Windows, no per-machine bootstrap. vcpkg (manifest) / Conan also work cross-platform. |
 | Window / input     | SDL3                                     | Gamepad, events, optional audio. |
 | Math               | GLM                                      | Don't reinvent. |
-| GPU                | OpenGL 4.6 (DSA, bindless) behind RHI    | 2D prototype renderer. Long-term frontend = **Godot via GDExtension** (validated by Phase 8.5). Vulkan backend not planned unless the custom-renderer path is chosen post-validation. |
+| GPU                | OpenGL 4.6 (DSA, bindless) behind RHI    | 2D renderer + **custom 3D landscape renderer** (`docs/3D-RENDERER.md`) — the demo ships on it (2026-07-05 pivot). Godot via GDExtension = post-demo option. Vulkan backend not planned for the demo. |
 | Mesh / model       | glTF 2.0 via cgltf                       | Skinning, anims, PBR built in. |
 | Textures           | stb_image + KTX2 (Basis Universal)       | Compressed for runtime. |
 | ECS                | flecs (pinned v4.1.5)                     | Runtime only (lib `meadows-ecs`); data model stays flecs-free. Used directly in systems, not behind a façade. Our reflection — not flecs meta — is the keystone (§2.3). See `docs/PHASE-2.md`. |
-| Physics            | Jolt                                     | 3D phase. 2D phase uses simple custom collision. |
-| Navmesh (3D)       | Recast / Detour                          | 2D phase uses grid A*. |
+| Physics            | Jolt (pinned v5.2.0)                     | Integrated (lib `meadows-physics`, pimpl facade — no Jolt type in any header). 2D scenes keep the simple custom collision. |
+| Navmesh (3D)       | Recast / Detour                          | Not integrated yet; `engine/nav/` interface exists with a grid-A* stub behind it. |
 | Scripting          | Lua via sol2                             | AngelScript / WASM as future options. |
 | Dev UI / editor    | Dear ImGui                               | |
-| Game UI            | RmlUi (or custom)                        | Defer until needed. |
-| Audio              | miniaudio                                | |
+| Game UI            | RmlUi (decided 2026-07-05)               | Integrated (lib `meadows-ui`). RML/RCSS documents served through the §5 plugin VFS → document-level UI modding (the SkyUI/Scaleform model). Dev tools stay ImGui. |
+| Audio              | miniaudio                                | Integrated (lib `meadows-audio`, null backend for headless). |
 | Logging            | spdlog                                   | |
 | Reflection         | Custom (macros/codegen)                  | The keystone — see §2.3. |
 
-**On-disk formats:** authoring/mod records in a **human-readable text format**
-(TOML or a small custom DSL) so mods diff cleanly under version control (this
-serves the "git-like" intent); a **binary cooked** format for runtime load.
-Provide a text↔binary tool.
+**On-disk formats:** authoring/mod records in **TOML** (decided Phase 1) so
+mods diff cleanly under version control (this serves the "git-like" intent);
+a **binary cooked** format for runtime load. The text↔binary tool is
+`tools/cooker`.
 
 ### 3.1 Platform abstraction & build portability
 
@@ -173,47 +178,52 @@ buildable at all times. macOS optional later.
 
 ```
 /engine
-  /platform     # cross-platform layer (mostly SDL3). ONE .hpp per concern,
-    /common     #   per-OS .cpp selected by CMake. common/ = cross-platform impl
-    /posix      #   shared Linux/macOS impl
-    /linux      #   Linux-only impl (only what SDL doesn't cover)
-    /win32      #   Windows-only impl (only what SDL doesn't cover)
-  /core         # logging, asserts, allocators, job system, math aliases
-  /reflect      # reflection system (field registration, type info)
-  /rhi          # graphics abstraction (interface)
+  /platform     # cross-platform layer (mostly SDL3). ONE .hpp per concern;
+    /common     #   only common/ exists today — posix/linux/win32 appear the
+                #   day something needs a per-OS .cpp (§3.1 pattern)
+  /core         # logging, asserts, job system, math aliases, Guid, Rng, clock
+  /reflect      # reflection system (field registration, type info) — keystone
+  /rhi          # graphics abstraction (interface + compute extension)
     /backends
-      /gl        # OpenGL 4.6 backend (only backend for now)
-  /render       # renderer built on RHI: 2d sprite renderer, later 3d pipeline
-  /assets       # asset DB (GUID), loaders (gltf, ktx2), cooked cache
-  /ecs          # entity-component-system
+      /gl       # OpenGL 4.6 backend (only backend for now)
+  /render       # 2D sprite renderer on the RHI
+    /landscape  # the custom 3D renderer (docs/3D-RENDERER.md)
+  /assets       # asset DB (GUID), loaders (stb, cgltf), async residency
+  /ecs          # flecs wrapper (lib meadows-ecs; flecs confined here)
+  /anim         # skeletal anim runtime — headless, flat params (no data/ dep)
+  /physics      # Jolt facade (lib meadows-physics, pimpl)
+  /ui           # RmlUi adapter (lib meadows-ui) — GAME UI, not dev panels
+  /audio        # miniaudio facade (lib meadows-audio, null backend headless)
+  /fx           # CPU particle emitters (flat params)
+  /nav          # Navigator interface (grid-A* stub; Recast later)
 /data
-  /forms        # Form/record system, schema, reflection-driven serialize
-  /plugins      # plugin/mod loader, layered field-level patch resolution
-  /save         # save = runtime patch layer (reuses /data/plugins machinery)
+  /forms        # Form types + FormQuery helpers (childrenOf: the child-record
+                #   pattern for variable cardinality — reflection stays flat)
+  /plugins      # loader, field-level patch resolution, TomlWriter,
+                #   PluginConfig (plugins.toml), EditSession (editor→plugin);
+                #   a save is a runtime patch layer on this machinery — there
+                #   is deliberately NO separate /save directory
 /world
-  /worldspace   # worldspace -> cell grid -> references hierarchy
-  /streaming    # async cell load/unload, LOD, transitions, persistence
-  /scene        # scene representation shared by 2D and 3D
-/gameplay
-  /ability      # simplified GAS: attributes, attribute sets, gameplay effects,
-                #   abilities, gameplay tags, ability-system component
-  /actors       # actor templates, leveling, perks (perks = passive effects)
-  /combat       # expressed via abilities + effects (damage = effect on Health)
-  /inventory    # items, containers, equipment, ownership
-  /ai           # navmesh, pathfinding, AI packages, perception
-  /magic        # spells = abilities; magic effects = gameplay effects
-  /faction      # faction relations table; membership via gameplay tags
-/script         # Lua VM integration, event dispatch, bindings
-/quest          # quest state machines, aliases, dialogue, condition evaluator
-/ui             # imgui dev UI; game UI later
-/editor         # in-engine ImGui editor (forms, cells, refs, quests)
-/tools          # text<->binary cooker, asset importers, mod validator
-/game           # the actual prototype game data + entry point
-/tests
+  /worldspace   # worldspace -> cell grid -> references; categories; prefabs
+  /streaming    # cell load/unload (CellLoader)
+  /scene        # components, Spawner, AnimBridge — shared 2D/3D, maps
+                #   Forms -> engine flat params (the data->engine seam)
+  /ai           # GridNavigator
+/gameplay       # ability (GAS core), actors, ai (packages/schedules),
+                #   combat, condition, cue (GameplayCues), event, faction,
+                #   interaction (furniture), inventory, stats
+/script         # Lua VM integration (sol2), event dispatch, bindings
+/quest          # quest state machines, aliases, dialogue
+/game           # true-adventurer: entry point, scenes (incl. EditorScene,
+                #   LandscapeScene), ImGui dev panels (game/ui), data plugins
+/tools          # cooker (text<->binary); future importers/validators
+/tests          # the headless doctest suite (proof of §2.10)
+/userdoc        # user & modder documentation (hub: userdoc/README.md)
 ```
 
-Keep `gameplay/`, `world/`, `quest/`, `script/` free of any `rhi/`,
-`render/`, or backend includes.
+Keep `gameplay/`, `world/`, `quest/`, `script/`, `data/` free of any
+`rhi/`, `render/`, or backend includes; `engine/*` never includes `data/*`
+(Forms are mapped to plain params in world/gameplay/runtime code).
 
 ---
 
@@ -259,15 +269,16 @@ order alone. The decided design:
   choice came from (comment/metadata, e.g. `# from: sharper-swords`) so the
   tool can re-apply choices after a modlist update and flag stale picks.
 - **Programmatic patchers** ("all weapons 10% lighter, mods included") are
-  functions `resolved FormDatabase -> patch plugin`; scriptable in Lua once
-  Phase 4 lands. Output is again an ordinary plugin.
+  functions `resolved FormDatabase -> patch plugin`; scriptable in Lua (the
+  shared VM exists since Phase 4). Output is again an ordinary plugin.
 - Prerequisite when building the tool: extend `FieldConflict` to carry each
   writer's *value*, not just its name (small resolver change).
 - Invariant to protect: never add a parallel resolution mechanism — the
   answer to "force this value" is always "one more layer" (§2.4).
 
-Target: Phase 14 editor conflict view, or a CLI subcommand if the need bites
-earlier.
+Target: the editor conflict view (MEADOWS-PLAN, chantier « interfaces » —
+the PluginsPanel already displays per-field conflicts), or a CLI subcommand
+if the need bites earlier.
 
 ---
 
@@ -340,26 +351,16 @@ bespoke faction subsystem parallel to tags.
 
 ## 7. Rendering notes
 
-> **Conditional:** The 3D rendering roadmap below describes the **custom renderer
-> path**. Whether it is taken depends on the Phase 8.5 Godot port validation.
-> If Godot is confirmed as the 3D frontend, Phases 11–14 are superseded by a
-> Godot-based 3D integration and the list below becomes a long-term / custom-
-> runtime-only reference. See `docs/SIMULATION-AND-PRESENTATION.md`.
-
-- **2D phase:** instanced sprite/quad renderer, top-down camera, tilemap or
-  free placement. Enough to exercise world, streaming, combat, AI, UI.
-- **3D phase (BotW-like look — custom renderer path), implement in this rough order:**
-  1. Clustered forward (forward+) rendering.
-  2. Cascaded shadow maps for the sun (soft).
-  3. Sky + atmosphere (analytic sky model or gradient) driven by time-of-day.
-  4. Hemisphere/SH ambient + SSAO.
-  5. Height/volumetric fog.
-  6. Bloom + filmic tonemap + color-grade LUT.
-  7. Time-of-day + weather system feeding sun/sky/fog (and AI schedules).
+- **The custom renderer path IS taken** (2026-07-05 pivot: demo in Meadows).
+  The 3D landscape renderer is built — journal, architecture and remaining
+  brick specs in `docs/3D-RENDERER.md`; their scheduling lives in the
+  `docs/MEADOWS-PLAN.md` chantiers. The instanced 2D sprite renderer stays
+  for the 2D test scenes. Godot remains a post-demo option
+  (`docs/SIMULATION-AND-PRESENTATION.md`).
 - The "BotW look" is mostly **art direction + soft GI feel + atmosphere**, not
   exotic tech. Flat-ish albedo, lighting does the work. Keep it stylized.
 - **Asset residency at spawn (both 2D and 3D).** Render components
-  (`SpriteRender`, later mesh components) hold an **asset handle**, never pixels
+  (`SpriteRender`, `MeshRender`) hold an **asset handle**, never pixels
   or vertex data. Streaming may spawn an entity *before* its asset is
   GPU-resident, because asset resolution (VFS → load → upload via RHI) is async.
   Therefore: a missing-but-pending asset renders a **placeholder** and the
@@ -390,39 +391,55 @@ bespoke faction subsystem parallel to tags.
 
 ---
 
-## 9. Implementation roadmap (phased)
+## 9. Implementation history (phases 0-8) & roadmap pointer
 
-Work top-to-bottom. **Mark the current phase** below and keep it updated.
-Do not jump ahead to 3D rendering before the 2D-phase systems work.
+**The living roadmap is `docs/MEADOWS-PLAN.md`** (single driver since the
+2026-07-05 pivot: the gameplay demo is built in Meadows; work proceeds in
+*chantiers*, each planned brick-by-brick when it starts). This section is
+the **history** of the phased 2D build-up — kept because each phase's
+journal (`docs/PHASE-*.md`) documents decisions you must read before
+touching the corresponding systems.
 
-- **Phase 0 — Foundations:** CMake+CPM.cmake, platform (SDL3 window/input),
-  core (logging, job system, math), RHI interface + GL backend, 2D sprite
-  renderer, ImGui integration.
-- **Phase 1 — Data model:** reflection system, Form/record types, GUID asset
-  DB, plugin loader + **field-level patch resolution**, text↔binary cooker.
-  *(This phase de-risks the whole project. Do it well.)*
-- **Phase 2 — ECS + world model:** entities/components, worldspace→cell→
-  reference hierarchy, shared scene representation, populate a 2D world.
-- **Phase 3 — Gameplay in 2D:** player controller, 2D collision/triggers,
-  inventory/items, **simplified GAS (attributes + gameplay effects + tags)**,
-  combat expressed as abilities/effects, basic AI (grid A* + simple packages),
-  factions (tags + relations table), perception.
-- **Phase 4 — Scripting, abilities & quests:** Lua (sol2) VM, event dispatch,
-  scripts on forms/refs, **gameplay abilities**, tag-based **condition
-  evaluator**, quest state machines + aliases, dialogue trees.
-- **Phase 5 — Multithreading architecture:** the first point where async is
-  truly forced (it precedes streaming). Define the thread model and the
-  **JobSystem-vs-flecs-scheduler boundary**, plus the async asset-residency
-  path (§7: background decode → main-thread GPU upload, never block spawn or the
-  frame). Decided with the dev (full rationale below); load-bearing:
+- **Phase 0 — Foundations** (done 2026-06-12): CMake+CPM.cmake, SDL3
+  window/input, logging, job system, math, RHI interface + GL 4.6 backend,
+  instanced 2D sprite renderer, ImGui integration.
+- **Phase 1 — Data model** (done 2026-06-12): reflection system, Forms,
+  **field-level patch resolution**, text↔binary cooker, GUID asset DB.
+  **Journal: `docs/PHASE-1.md` — read it before touching the data/modding
+  model** (the non-obvious decisions live there).
+- **Phase 2 — ECS + world model** (done 2026-06-13): entities/components,
+  worldspace→cell→reference hierarchy, 2D world populated. Key: flecs
+  confined to `meadows-ecs` (meadows + meadows-data stay flecs-free);
+  Reference = a `ReferenceForm` (place/move/disable = field patches); cells
+  = ephemeral flecs entities, never persisted; GameplayTags ≠ flecs tags.
+  **Journal: `docs/PHASE-2.md` — read before touching ecs/world.**
+- **Phase 3 — Gameplay 2D + GAS core** (done 2026-06-14): player controller,
+  2D collision/triggers, inventory/items, simplified GAS (attributes +
+  effects + tags + abilities), combat as effects, grid-A* AI, factions,
+  perception. Key: the GAS core is inseparable (built together); damage =
+  transient meta-attribute + PostExecute → Health; effect pipeline is flat
+  linear (not a node-graph); lib `meadows-gameplay`. **Journal:
+  `docs/PHASE-3.md` — read before touching gameplay/GAS.**
+- **Phase 4 — Scripting, abilities & quests** (done 2026-06-14): Lua (sol2)
+  VM, event dispatch, scripts on forms/refs, tag-based condition evaluator,
+  quest state machines + aliases, dialogue trees. Key: ONE shared Lua VM,
+  scripts stateless, `self` = entity handle; latent `wait()` = coroutines +
+  central scheduler; conditions = structured clauses + Lua escape;
+  quests/dialogue = decomposed records linked by id; libs `meadows-script`
+  + `meadows-narrative`. **Journal: `docs/PHASE-4.md`.**
+- **Phase 5 — Multithreading architecture** (done 2026-06-15): the thread
+  model, the **JobSystem-vs-flecs-scheduler boundary**, and the async
+  asset-residency path (§7: background decode → main-thread GPU upload,
+  never block spawn or the frame). Decided with the dev; load-bearing:
   - **Decouple ≠ thread.** The sim produces a **render snapshot** each frame
     (an *extract* phase): a self-owning POD packet of draw data (resolved
     texture handles, no live pointers into the ECS world or asset internals).
     The renderer reads **only** this packet — it has no access to the `World`.
-    `submitScene`'s sprite list already *is* this packet; formalize it as the
-    contractual boundary. **Strict** decoupling: the packet is passed by value,
-    so where its consumer runs (same thread, a render thread, a pipeline of
-    frames) is a **scheduling policy, not an architectural invariant**.
+    Implemented as `extractScene` → `RenderSnapshot` → `submitSnapshot`
+    (`game/SceneSubmit`) — the contractual boundary. **Strict** decoupling:
+    the packet is passed by value, so where its consumer runs (same thread,
+    a render thread, a pipeline of frames) is a **scheduling policy, not an
+    architectural invariant**.
   - **Same thread is the default, not a law.** Keeping sim+render on the main
     thread stays the default (a render thread buys ~nothing for an instanced 2D
     renderer and would only cost state double-buffering + a frame of latency).
@@ -434,7 +451,7 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
     + a transfer queue instead — the render-thread model is a GL-era optim).
   - **JobSystem owns task parallelism** (I/O, asset decode, per-cell
     resolution); **flecs systems stay single-threaded** until profiling
-    justifies parallel systems (likely Phase 12/13). These are **orthogonal
+    justifies parallel systems. These are **orthogonal
     axes** — heterogeneous-task parallelism (JobSystem) vs. intra-system
     parallelism over entities (flecs scheduler); do not conflate them.
   - **Main owns the ECS world and the GPU; a worker touches neither.** Workers
@@ -442,139 +459,94 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
     fixed point each frame) — never `JobSystem::wait()` on the frame thread.
     The main thread applies results in a **deterministic order** (e.g. sort by
     GUID) so completion order never perturbs the engine RNG or saves (§8).
-  - Phase-5 scope = the **seam** only: the strict render snapshot, the
+  - Phase-5 scope was the **seam** only: the strict render snapshot, the
     non-blocking completion queue, and one asset-residency path (decode in a
     worker → upload on main → flip handle to resident). **No render thread.**
-    Real cell streaming stays Phase 8. Everything is single-threaded until this
-    phase; gameplay randomness stays on the engine RNG (§8) so saves/replays
-    remain reproducible.
-- **Phase 6 — Character stats: vertical slice (2D):** the load-bearing core of
-  the stats design (`docs/STATS.md`) — 9 attributes → 3 primary stats
-  (Health/Energy/Essence), **Resonance** (hidden signed stat, Onyx/Amber/Garnet
-  spheres) + **Harmony** cascade, derived secondary stats via **C++ calculators +
-  data constants** (§2.7/§6) with per-stat **override/offset** for non-humanoids,
-  a typed-damage → armor/resistance → health+posture pipeline with posture/stagger,
-  a minimal game clock (timescale), one survival→resonance loop, and an ImGui
-  `StatsScene` to drive it. The new derived-attribute machinery generalizes the
-  GAS (multiple AttributeSets; `recomputeCurrent` runs a derived pass). Tested in
-  2D before streaming/3D.
-- **Phase 7 — Character stats: permanent-status & resonance mechanics (2D):**
-  **value-first** scope (decided with the dev) — the foundations + the novel /
-  risky systems, not the whole `docs/STATS.md` tail. **Foundations:** a seeded
-  engine RNG (`core::Rng`, §8), a `StatsTuningForm` (Phase-6 constants → moddable
-  data, §5), a stat-bearing **item/equipment** model (weapons with typed attack +
-  scaling, armor/clothing per slot, consumables), and **rest/sleep** recovery.
-  **Novel mechanics:** status **buildup** (poison/bleed/…), **body-part injuries**
-  + **diseases/psychoses** (the permanent-status system, gated by resonance-
-  resistance, rolled via RNG), and **drugs + harmony break**. All bolt onto the
-  Phase 6 machinery. **Deferred to a later stats pass:** the full secondary stat
-  list, the full combat-state machine (critical-weakness/shaken/dismember — needs
-  a real-time combat loop), temperature/clothing survival, social + faction-by-
-  location reputation, encumbrance/movement, the erudition curve. Still 2D. Brick
-  journal: `docs/PHASE-7.md`; design: `docs/STATS.md`.
-- **Phase 8 — Combat 2D dynamique :** scène jouable style Zelda 2D — joueur
-  contrôlable avec attaque/esquive, ennemis actifs (IA chase + attaque au
-  contact), boucle de combat réelle (hits mutuels, posture, stagger, mort).
-  PNJ repos (aubergiste : récupération santé/énergie/essence) et marchand
-  (achat/vente d'équipement). Objectif : exercer tous les systèmes de stats
-  (Phases 6-7) en situation dynamique réelle, pas seulement via l'ImGui.
-  Toujours 2D. Brick journal : `docs/PHASE-8.md`.
-- **Phase 8.5 — Godot port validation:** Port the 2D combat prototype to Godot
-  via GDExtension (§2.10). Deliverables: a C++ GDExtension bridge exposing the
-  flecs World to Godot; a generic `EntityView` node (`Node2D`) configured by
-  projection from ECS state; input → `push_intent` flow; the headless sim
-  running unchanged. **Goal:** validate that the sim/presentation boundary is
-  real and coupling is zero. If easy → Godot becomes the 3D frontend (Phases
-  11+ reframed). If coupling is found → fix it here, before the 3D investment.
-  Ref: `docs/SIMULATION-AND-PRESENTATION.md`.
-- **Phase 9 — Stats avancées (passe complète) :** tout ce qui a été différé
-  de Phase 7 et qui nécessite la boucle de combat Phase 8. **Machine d'état de
-  combat :** shaken (rupture posture rapide), critical weakness (posture=0 →
-  5s, ouvre les critiques), démembrement, saignée/bleed-out, mort → inconscient
-  → stabilisation. **Stats offensives dérivées :** attack (5 + force), crit
-  damage (1.5 + dex/2), attack speed (95% + 1%/célérité), armor/resistance
-  penetration, status damage scaling. **Stats sociales :** beauté, prestige,
-  menace, suspicion, discrétion, érudition, réputation de faction. **Stats
-  utilitaires :** encombrement (50 + force·10 + constitution·2), saut, escalade,
-  nage, apnée. **Blessures avancées :** plaies ouvertes/infectées, traitement
-  par items (compresses, herbes, bandages, splintes). Brick journal :
-  `docs/PHASE-9.md`; design : `docs/STATS.md`.
-- **Phase 10 — Streaming & persistence:** cell grid, async load/unload, LOD,
-  interior/exterior transitions, **save = runtime patch layer** reusing the
-  Phase-1 resolver.
-- **Phase 11 — 3D frontend (conditional on Phase 8.5 outcome):**
-  *Godot path (expected):* load glTF assets via Godot, 3D scene from ECS state
-  via the GDExtension bridge, BotW-like look via Godot's renderer; gameplay
-  untouched.
-  *Custom renderer path (if Godot rejected):* glTF meshes/materials/skinning,
-  3D camera, scene→3D, low-poly pipeline behind the existing RHI.
-- **Phase 12–14 — Lighting / physics / audio / editor (conditional):**
-  *Godot path:* use Godot's built-in rendering features (lighting, shadows,
-  navmesh, audio, animation); build the in-engine editor as a Godot UI calling
-  back into the C++ data layer via GDExtension.
-  *Custom renderer path:* §7 roadmap (clustered forward, CSM, Jolt, Recast,
-  miniaudio, Vulkan). Decision deferred to Phase 8.5 outcome.
+    Real cell streaming belongs to the « persistance » chantier. Gameplay
+    randomness stays on the engine RNG (§8) so saves/replays remain
+    reproducible.
 
-> **CURRENT PHASE: 8** — update this line as work progresses.
-> Phase 8: Combat 2D dynamique — scène jouable Zelda-like, boucle de combat
-> réelle (joueur + ennemis actifs), PNJ repos/marchand. Brick journal :
-> `docs/PHASE-8.md`. Design stats : `docs/STATS.md`.
+  **Journal + crash postmortem: `docs/PHASE-5.md` — read before touching
+  `game/SceneSubmit`, `engine/core/`, or `game/TextureCache`.** Build
+  lesson: after a shared-type layout change, do a **clean rebuild** (ninja
+  header-dep miss → stale-obj heap corruption).
+- **Phase 6 — Character stats: vertical slice** (done 2026-06-15): 9
+  attributes → 3 primary stats (Health/Energy/Essence), **Resonance**
+  (hidden signed stat, Onyx/Amber/Garnet spheres) + **Harmony** cascade,
+  derived secondary stats via **C++ calculators + data constants** with
+  per-stat **override/offset** for non-humanoids, typed-damage →
+  armor/resistance → health+posture pipeline with stagger, game clock,
+  survival→resonance loop, ImGui `StatsScene`. Key: two-pass
+  `recomputeCurrent` (`DerivedStats`); primary maxima from BASE (Resonance
+  doesn't move the max), secondary stats from CURRENT; `f64` added to
+  reflection appended last (binary ordinals stable). **Journal:
+  `docs/PHASE-6.md`; design: `docs/STATS.md`.**
+- **Phase 7 — Permanent-status & resonance mechanics** (done 2026-06-17,
+  value-first scope decided with the dev — the rest of the `docs/STATS.md`
+  tail is the ex-Phase 9, now in MEADOWS-PLAN): seeded engine RNG
+  (`core::Rng`, §8), `StatsTuningForm` (Phase-6 constants → moddable data,
+  §5), stat-bearing **items/equipment** (weapons with typed attack +
+  scaling, armor/clothing per slot, consumables), **rest/sleep** recovery,
+  status **buildup** (poison/bleed/…), **body-part injuries** +
+  **diseases/psychoses** (permanent-status system, RNG-rolled, gated by
+  resonance-resistance), **drugs + harmony break**. Post-phase:
+  `healthRegen`/`essenceRegen`/`resistCold`, `State.Paralyzed` (glaciation
+  ≠ stagger), `DamageType::Cold`, `CharacterTick` extracted from the scene;
+  `AfflictionForm` + `DrugForm` removed — everything goes through
+  `EffectForm`/`applyEffect` (GAS unification); `ResonanceDecays` for the
+  post-expiration fade. **Journal: `docs/PHASE-7.md`; design:
+  `docs/STATS.md`; modder reference: `docs/MODDING-EFFECTS.md`.**
+- **Phase 8 — Combat 2D dynamique (PARTIELLE, absorbée) :** steps 1-3 faits
+  (tick multi-combattants, contrôleur joueur move/dodge, attaque mêlée à
+  dégâts typés — brick journal `docs/PHASE-8.md`, scène CombatArena qui
+  reste le banc d'essai GAS). Le reliquat (IA ennemie chase+attaque, PNJ
+  repos/marchand) est absorbé par le **chantier « vivant »** de
+  `docs/MEADOWS-PLAN.md`.
+- **Phases 8.5 → 14 — ABSORBÉES par `docs/MEADOWS-PLAN.md` (2026-07-06).**
+  Depuis le pivot (démo dans Meadows, 2026-07-05), la roadmap vit dans les
+  chantiers de MEADOWS-PLAN. Mapping :
+  - *Phase 8.5 (validation Godot)* → **reportée post-démo** ; le seam
+    sim/présentation (§2.10) reste un invariant prouvé par les tests
+    headless ; le scope d'origine est conservé dans
+    `docs/SIMULATION-AND-PRESENTATION.md`.
+  - *Phase 9 (stats avancées : machine d'état de combat, stats
+    offensives/sociales/utilitaires, blessures avancées)* → chantier
+    « P1 par valeur », après la boucle de combat 3D ; le design complet
+    reste `docs/STATS.md`.
+  - *Phase 10 (streaming & persistence, save = couche de patches)* →
+    chantier « persistance », inchangée sur le fond.
+  - *Phases 11-14 (frontend 3D, lighting/physique/audio/éditeur)* → le
+    chemin custom est EN COURS de fait : renderer paysage
+    (`docs/3D-RENDERER.md`), seams Jolt/miniaudio/éditeur posés par la
+    passe horizontale (`docs/HORIZONTAL-PASS.md`) ; la suite se déroule
+    chantier par chantier.
+
+> **WHERE THE PROJECT IS (2026-07-06) — the roadmap now has ONE driver:**
+> **`docs/MEADOWS-PLAN.md`** (décision 2026-07-05 : la démo de gameplay se
+> fait dans Meadows ; Godot reporté post-démo). La numérotation de phases
+> s'arrête ici : les phases 0-8 ci-dessus sont l'HISTORIQUE (avec leurs
+> journaux `docs/PHASE-*.md`), les phases 8.5-14 sont absorbées par les
+> chantiers de MEADOWS-PLAN (mapping ci-dessus). **Toute planification de
+> la suite part de MEADOWS-PLAN, pas de cette section.**
 >
-> Phase 0 done (2026-06-12): CMake+CPM, SDL3 window/input, logging, job system,
-> RHI interface + GL 4.6 backend, instanced sprite renderer, ImGui.
+> **Trois documents d'état, un par piste :**
+> 1. **`docs/MEADOWS-PLAN.md`** — LE plan de la démo : décisions actées
+>    (RmlUi, in-place, skills-by-use, texturé stylisé, monde fait main),
+>    chantiers verticaux à venir. À lire avant tout nouveau chantier.
+> 2. **`docs/HORIZONTAL-PASS.md`** — la passe d'architecture FAITE
+>    (2026-07-06) : nouveaux Forms, boucle éditeur→plugins (GameDB/
+>    console), seams Jolt/RmlUi/anim/miniaudio (libs meadows-physics/-ui/
+>    -audio), cues/schedules/mobilier/particules/nav, prefabs, contrats
+>    renderer + audit de compat. **C'est le contrat d'implémentation des
+>    verticales : suivre les seams, ne pas les redessiner.**
+> 3. **`docs/3D-RENDERER.md`** — le renderer paysage GL 4.6 (briques 1-26
+>    faites ; les 27-31 sont planifiées via les chantiers de MEADOWS-PLAN,
+>    ce fichier reste leur spec détaillée). À lire avant de toucher
+>    `engine/render/landscape/`, les extensions 3D/compute du RHI ou
+>    `LandscapeScene`.
 >
-> Phase 1 done (2026-06-12): reflection, Forms, field-level plugin resolver,
-> text↔binary cooker, GUID asset DB. **Full brick-by-brick detail and the
-> non-obvious decisions live in `docs/PHASE-1.md`** — read it before touching
-> the data/modding model.
->
-> **Phase 2 done** (2026-06-13, 54 tests green). ECS + world model. Full rationale
-> + brick journal in `docs/PHASE-2.md` — **read it before touching ecs/world**.
-> Key: flecs confined to `meadows-ecs` (meadows + meadows-data stay flecs-free);
-> Reference = a `ReferenceForm` (place/move/disable = field patches); cells =
-> ephemeral flecs entities, never persisted; GameplayTags ≠ flecs tags.
->
-> **Phase 3 done** (2026-06-14, 94 tests / 716 assertions green). Gameplay 2D +
-> GAS core. Full rationale + brick journal in `docs/PHASE-3.md` — **read it
-> before touching gameplay/GAS**. Key: GAS core inseparable (Attributes + Effects
-> + Tags + Abilities built together); damage = transient meta-attribute +
-> PostExecute → Health; effect pipeline is flat linear (not a node-graph); lib
-> `meadows-gameplay`.
->
-> **Phase 4 done** (2026-06-14, 108 tests / 783 assertions green). Scripting,
-> abilities, conditions, quests, dialogue. Full rationale + brick journal in
-> `docs/PHASE-4.md`. Key: ONE shared Lua VM, scripts stateless, `self` = entity
-> handle; latent `wait()` = coroutines + central scheduler; conditions =
-> structured clauses + Lua escape; quests/dialogue = decomposed records linked by
-> id; libs `meadows-script` + `meadows-narrative`.
->
-> **Phase 5 done** (2026-06-15). Multithreading seam. Full brick journal + crash
-> postmortem in `docs/PHASE-5.md` — **read it before touching `game/SceneSubmit`,
-> `engine/core/`, or `game/TextureCache`**. Key: strict render snapshot
-> (`extractScene` → `RenderSnapshot` → `submitSnapshot`; renderer has NO `World`
-> access); non-blocking MPSC `ConcurrentQueue`; async texture residency + loading
-> gate. **Build lesson: after a shared-type layout change, do a clean rebuild**
-> (ninja header-dep miss → stale-obj heap corruption).
->
-> **Phase 6 done** (2026-06-15). Character stats vertical slice. Full brick journal
-> in `docs/PHASE-6.md`; design in `docs/STATS.md`. Key: derived-attribute two-pass
-> `recomputeCurrent` (`DerivedStats`); primary maxima from BASE (Resonance doesn't
-> move the max), secondary stats from CURRENT; Resonance + Harmony; typed-damage
-> pipeline; `f64` added to reflection (appended last — binary ordinals stable).
->
-> **Phase 7 done** (2026-06-17 → 176 tests / 5087 assertions green after post-phase).
-> Permanent-status & resonance mechanics. Brick journal in `docs/PHASE-7.md`; design
-> in `docs/STATS.md`. Deliverables: seeded engine RNG (`core::Rng`, §8),
-> `StatsTuningForm` (Phase-6 constants → moddable data, §5), stat-bearing
-> items/equipment (weapons with typed attack + scaling, armor/clothing per slot,
-> consumables), rest/sleep recovery, status buildup (poison/bleed/…), body-part
-> injuries + diseases/psychoses (permanent-status system, RNG-rolled, gated by
-> resonance-resistance), drugs + harmony break. Post-phase additions: `healthRegen`
-> (0.0002·grace/s), `essenceRegen` (0.005·insight/s), `resistCold`, `State.Paralyzed`
-> (glaciation ≠ stagger), `DamageType::Cold`; `CharacterTick` extracted from scene;
-> `AfflictionForm` + `DrugForm` supprimés — tout passe par `EffectForm`/`applyEffect`
-> (GAS unification); `ResonanceDecays` pour le fondu post-expiration. Référence
-> moddeur : `docs/MODDING-EFFECTS.md`.
+> Doc utilisateur/moddeur : `userdoc/README.md` (hub) — à maintenir à
+> chaque verticale livrée. Entrée du dépôt : `README.md`.
 
 ---
 
@@ -583,7 +555,8 @@ Do not jump ahead to 3D rendering before the 2D-phase systems work.
 - If a task touches the **data model, plugin resolution, or saves**, re-read §5
   and prefer asking over guessing — these invariants are expensive to change
   later.
-- If a feature can be tested in the **2D phase**, build it there first.
+- If a feature can be proven **headless** (a doctest) or in an existing 2D
+  scene, do that before wiring it into the 3D frontend.
 - If you're about to make the **renderer fancier** while core systems are
   incomplete, stop and reprioritize.
 - Never set an attribute directly — apply a **GameplayEffect** (§2.9, §6).

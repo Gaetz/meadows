@@ -6,6 +6,11 @@
 id = "0a3f9c1e-5b71-4d2a-9c64-8e21d7b3f0a2"
 name = "true-adventurer-landscape"
 
+# H8 proof asset: the demo cube's albedo (reuses a base texture file under
+# its own asset guid — assets layer per guid like fields, §5).
+[assets]
+"1a4d5c00-0000-4000-8000-0000000000a1" = "textures/iron_sword.png"
+
 [[records]]
 form = "1a4d5c00-0000-4000-8000-000000000001"
 type = "LandscapeTuningForm"
@@ -43,6 +48,19 @@ cloudCoverage = 0.38        # 0 = clear sky, 1 = overcast
 cloudShadowStrength = 0.7
 cloudHeight = 520.0         # cloud layer altitude (m)
 cloudScale = 0.0011         # pattern frequency (1/m)
+
+# H8 proof: MaterialForm -> textured stylized mesh (the renderer-gameplay
+# contract). The LandscapeScene draws one cube with this material near the
+# spawn point; patch tint/emissive to see the data drive the pixels.
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b1"
+type = "MaterialForm"
+new = true
+[records.fields]
+editorId = "DemoCubeMaterial"
+albedoTexture = "1a4d5c00-0000-4000-8000-0000000000a1"
+tint = [1.0, 0.95, 0.85, 1.0]
+emissive = 0.0
 
 # ==========================================================================
 # Weather states (brick 24). Each record is a full parameter set the scene

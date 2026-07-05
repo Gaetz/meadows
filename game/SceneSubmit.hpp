@@ -30,6 +30,17 @@ struct RenderSnapshot {
     // Sprites already in painter order (lower SpriteRender.layer first; stable
     // query order within a layer — no depth buffer in the 2D phase).
     vector<render::Sprite> sprites;
+
+    // 3D meshes (H8 contract). Guids, not GPU handles: the 3D frontend
+    // owns a mesh/material residency cache (the TextureCache pattern) and
+    // resolves them at submit — a pending asset draws a placeholder,
+    // never blocks (§7). Transform is fully composed world space.
+    struct MeshInstance {
+        core::Guid model;    // glTF mesh asset
+        core::Guid material; // MaterialForm
+        Mat4 transform { 1.0f };
+    };
+    vector<MeshInstance> meshes;
 };
 
 // Pure mapping from scene components to a 2D sprite (no GPU — unit-testable).

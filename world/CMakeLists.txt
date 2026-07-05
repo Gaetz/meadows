@@ -6,12 +6,14 @@ add_library(meadows-world STATIC
     worldspace/WorldForms.cpp
     worldspace/FormCategory.cpp
     worldspace/WorldModel.cpp
+    scene/AnimBridge.cpp
     scene/Components.cpp
     scene/Spawner.cpp
     scene/Movement.cpp
     scene/Collision.cpp
     ai/Pathfinding.cpp
     ai/AiController.cpp
+    ai/GridNavigator.cpp
     streaming/CellLoader.cpp
 )
 

@@ -141,12 +141,20 @@ struct ActorForm : Form {
     f32 maxHealth { 100.0f };
     f32 walkSpeed { 3.0f };
     core::Guid sprite;
+    // 3D-demo hooks (horizontal pass H1), appended so binary ordinals stay
+    // stable. All optional (0 = the 2D/legacy path).
+    core::Guid appearance; // gameplay::AppearanceForm (modular visual)
+    core::Guid animGraph;  // AnimGraphForm (animation controller)
+    core::Guid schedule;   // gameplay::ScheduleForm (daily routine)
 
     REFLECT_BEGIN(ActorForm, Form)
         REFLECT_FIELD(displayName)
         REFLECT_FIELD(maxHealth)
         REFLECT_FIELD(walkSpeed)
         REFLECT_FIELD(sprite)
+        REFLECT_FIELD(appearance)
+        REFLECT_FIELD(animGraph)
+        REFLECT_FIELD(schedule)
     REFLECT_END()
 };
 

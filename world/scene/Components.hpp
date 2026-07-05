@@ -87,12 +87,86 @@ struct RefId {
     REFLECT_END()
 };
 
+// --- 3D-demo components (horizontal pass H8) -----------------------------------
+
+// A 3D visual: mesh + material by asset/form guid — HANDLE-STYLE, never
+// pixels or vertices (§7 asset-residency rule). The render bridge
+// (extractScene) copies these into the snapshot's mesh section; the
+// frontend resolves guids to GPU resources (placeholder while pending).
+struct MeshRender {
+    core::Guid model;    // glTF mesh asset
+    core::Guid material; // MaterialForm
+
+    REFLECT_BEGIN(MeshRender, void)
+        REFLECT_FIELD(model)
+        REFLECT_FIELD(material)
+    REFLECT_END()
+};
+
+// A placed local light (interiors, torches), seeded from LightForm.
+struct LightSource {
+    Vec3 color { 1.0f, 0.9f, 0.7f };
+    f32 intensity { 1.0f };
+    f32 radius { 8.0f };
+    f32 spotAngle { 0.0f }; // 0 = point light
+    f32 flicker { 0.0f };
+
+    REFLECT_BEGIN(LightSource, void)
+        REFLECT_FIELD(color)
+        REFLECT_FIELD(intensity)
+        REFLECT_FIELD(radius)
+        REFLECT_FIELD(spotAngle)
+        REFLECT_FIELD(flicker)
+    REFLECT_END()
+};
+
+// A gameplay volume (TriggerForm): the trigger system (vertical) fires
+// `event` on the EventBus / runs `script` on overlap.
+struct TriggerVolume {
+    Vec3 halfExtents { 1.0f, 1.0f, 1.0f };
+    str event;
+    str script;
+    bool once { false };
+    bool fired { false }; // runtime latch for `once`
+
+    REFLECT_BEGIN(TriggerVolume, void)
+        REFLECT_FIELD(halfExtents)
+        REFLECT_FIELD(event)
+        REFLECT_FIELD(script)
+        REFLECT_FIELD(once)
+        REFLECT_FIELD(fired) // persists: a fired once-trigger stays fired
+    REFLECT_END()
+};
+
+// An invisible authoring/AI anchor (MarkerForm).
+struct MarkerKind {
+    str kind { "marker" };
+
+    REFLECT_BEGIN(MarkerKind, void)
+        REFLECT_FIELD(kind)
+    REFLECT_END()
+};
+
+// Links a placed furniture entity to its FurnitureForm (use points and
+// effects resolve through it; occupancy keys on RefId::referenceId).
+struct FurnitureRef {
+    core::Guid furniture;
+
+    REFLECT_BEGIN(FurnitureRef, void)
+        REFLECT_FIELD(furniture)
+    REFLECT_END()
+};
+
 // Zero-size ECS marker tags stamped by the per-category spawner, so systems can
 // query "all actors", "all items"... These are runtime ECS markers (flecs
 // tags), NOT GameplayTags (§6, which are reflected moddable data).
 struct StaticMarker {};
 struct ItemMarker {};
 struct ActorMarker {};
+struct LightMarker {};
+struct TriggerMarker {};
+struct FurnitureMarker {};
+struct PrefabRootMarker {}; // the group entity of an expanded prefab
 
 // Registers the scene components in the ECS (flecs storage + our reflected-
 // component registry). Call once per World before spawning.

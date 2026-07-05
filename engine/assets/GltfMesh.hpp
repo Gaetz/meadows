@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <optional>
 
+#include "engine/anim/Anim.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/render/MeshData.hpp"
 
@@ -28,5 +29,22 @@ std::optional<render::MeshData> loadGltfMeshFromMemory(const void* bytes,
 // on the terrain), and uniformly scales so the largest dimension equals
 // `targetSize` meters (scale 1 instances then read as authored).
 void normalizeMesh(render::MeshData& mesh, f32 targetSize);
+
+// --- Skeletal data (horizontal pass H5) ----------------------------------------
+// Skin 0 of the file becomes the skeleton (joints reordered parents-first,
+// the anim runtime's requirement); animations resample into engine clips
+// with tracks indexed by joint. Skinned MESH import (vertex weights) lands
+// with the GPU-skinning vertical.
+
+// Named clip: `name` comes from the glTF animation (may be empty).
+struct GltfClip {
+    str name;
+    anim::AnimClip clip;
+};
+
+std::optional<anim::Skeleton> loadGltfSkeleton(
+    const std::filesystem::path& path);
+vector<GltfClip> loadGltfAnimations(const std::filesystem::path& path,
+                                    const anim::Skeleton& skeleton);
 
 } // namespace assets

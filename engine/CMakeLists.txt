@@ -3,7 +3,9 @@
 add_library(meadows STATIC
     Engine.cpp
     Game.cpp
+    anim/Anim.cpp
     assets/AssetDatabase.cpp
+    fx/Particles.cpp
     assets/GltfMesh.cpp
     assets/Image.cpp
     assets/StbImpl.cpp
@@ -68,6 +70,40 @@ target_compile_definitions(meadows PRIVATE
 )
 
 meadows_set_warnings(meadows)
+
+# meadows-physics — the Jolt seam (horizontal pass H3). A separate lib so
+# Jolt stays PRIVATE: consumers see only the phys:: facade (engine/physics/
+# Physics.hpp, pimpl — §3.1). Headless: the sim side owns physics.
+add_library(meadows-physics STATIC
+    physics/Physics.cpp
+)
+target_link_libraries(meadows-physics
+    PUBLIC meadows
+    PRIVATE Jolt
+)
+meadows_set_warnings(meadows-physics)
+
+# meadows-ui — the RmlUi seam (horizontal pass H4). RmlUi/FreeType stay
+# PRIVATE; consumers see only ui::UiSystem (engine/ui/UiSystem.hpp).
+add_library(meadows-ui STATIC
+    ui/UiSystem.cpp
+)
+target_link_libraries(meadows-ui
+    PUBLIC meadows
+    PRIVATE RmlUi::RmlUi
+)
+meadows_set_warnings(meadows-ui)
+
+# meadows-audio — the miniaudio seam (horizontal pass H6). miniaudio stays
+# PRIVATE; consumers see only audio::AudioSystem.
+add_library(meadows-audio STATIC
+    audio/Audio.cpp
+)
+target_link_libraries(meadows-audio
+    PUBLIC meadows
+    PRIVATE miniaudio
+)
+meadows_set_warnings(meadows-audio)
 
 # meadows-ecs — the ECS layer (flecs). Kept a separate target so flecs stays
 # confined to the runtime: meadows (base engine) and meadows-data both remain

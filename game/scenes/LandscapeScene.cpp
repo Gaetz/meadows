@@ -4,8 +4,13 @@
 #include <imgui.h>
 
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/FormQuery.hpp"
+#include "data/forms/VisualForms.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
+#include "engine/assets/AssetDatabase.hpp"
+#include "engine/assets/Image.hpp"
+#include "engine/render/MeshBuilder.hpp"
 #include "engine/Engine.hpp"
 #include "engine/FrameContext.hpp"
 #include "engine/assets/GltfMesh.hpp"
@@ -47,6 +52,7 @@ void LandscapeScene::onEnter() {
     // Load the moddable landscape tuning (§5): its own small plugin, plus
     // future mod plugins patching it field by field.
     registerLandscapeFormTypes(formTypes);
+    data::registerVisualFormTypes(formTypes); // MaterialForm (H8 proof)
     const auto landscapePlugin = data::loadPluginFile(
         platform::executableDir() / "data" / "base" / "landscape.toml",
         formTypes);
@@ -98,6 +104,77 @@ void LandscapeScene::onEnter() {
     grass.create(device, *shaders, engine->getJobSystem());
     vegetation.create(device, *shaders, engine->getJobSystem(),
                       terrain.params.seed);
+
+    // H8 proof: MaterialForm -> textured stylized mesh, end to end. The
+    // material comes from the plugin (patchable), its albedo resolves
+    // through the guid-keyed asset layering, and one cube renders with
+    // the shared ramp near the spawn point.
+    if (landscapePlugin) {
+        if (const auto* material = data::findByEditorId<data::MaterialForm>(
+                forms, "DemoCubeMaterial")) {
+            assets::AssetDatabase assetDb;
+            for (const data::AssetEntry& entry : landscapePlugin->assets) {
+                assetDb.add(entry.id, landscapePlugin->baseDir, entry.path);
+            }
+            const auto path = assetDb.resolve(material->albedoTexture);
+            const auto image =
+                path ? assets::loadImageFile(*path) : std::nullopt;
+            if (image) {
+                cubeTexture = device.createTexture(
+                    { .width = image->width,
+                      .height = image->height,
+                      .format = rhi::TextureFormat::SRGBA8,
+                      .filter = rhi::FilterMode::Linear },
+                    image->pixels.data());
+                cubeSampler = device.createSampler({});
+
+                render::MeshData cube;
+                render::appendBox(cube, { 0.0f, 0.0f, 0.0f },
+                                  { 0.8f, 0.8f, 0.8f },
+                                  { 1.0f, 1.0f, 1.0f });
+                cubeIndexCount = static_cast<u32>(cube.indices.size());
+                cubeVertexBuffer = device.createBuffer(
+                    { .usage = rhi::BufferUsage::Vertex,
+                      .size = cube.vertices.size() *
+                              sizeof(render::MeshVertex) },
+                    cube.vertices.data());
+                cubeIndexBuffer = device.createBuffer(
+                    { .usage = rhi::BufferUsage::Index,
+                      .size = cube.indices.size() * sizeof(u32) },
+                    cube.indices.data());
+
+                // std140 ModelUbo: model + tint + info (x = emissive).
+                struct ModelUniforms {
+                    Mat4 model { 1.0f };
+                    Vec4 tint { 1.0f };
+                    Vec4 info { 0.0f };
+                } model;
+                const Vec3 spot { 32.0f, 0.0f, 368.0f };
+                const f32 ground = render::terrain::height(
+                    terrain.params, spot.x, spot.z);
+                model.model = glm::translate(
+                    Mat4 { 1.0f }, { spot.x, ground + 1.0f, spot.z });
+                model.tint = material->tint;
+                model.info.x = material->emissive;
+                cubeModelUbo = device.createBuffer(
+                    { .usage = rhi::BufferUsage::Uniform,
+                      .size = sizeof(model) },
+                    &model);
+                cubeGroup = device.createBindGroup(
+                    { .entries = { { .binding = 1,
+                                     .buffer = cubeModelUbo },
+                                   { .binding = 0,
+                                     .texture = cubeTexture,
+                                     .sampler = cubeSampler } } });
+                shaders->load("mesh",
+                              { { "FrameUbo", 0 }, { "ModelUbo", 1 } },
+                              { { "uAlbedo", 0 } });
+                buildMeshPipeline(device);
+                cubeReady = true;
+                LOG_INFO("H8: DemoCubeMaterial resolved -> textured cube");
+            }
+        }
+    }
 
     // Brick 23: swap one procedural rock variant for an authored CC0 glTF
     // rock (moon_rock_02, Poly Haven). Missing file = procedural fallback.
@@ -164,6 +241,14 @@ void LandscapeScene::onExit() {
     destroyOffscreenTarget(device);
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
+    // H8 demo cube.
+    device.destroyPipeline(meshPipeline);
+    device.destroyBindGroup(cubeGroup);
+    device.destroyBuffer(cubeModelUbo);
+    device.destroyBuffer(cubeIndexBuffer);
+    device.destroyBuffer(cubeVertexBuffer);
+    device.destroySampler(cubeSampler);
+    device.destroyTexture(cubeTexture);
     gpuOcclusion.destroy(device);
     postFx.destroy(device);
     water.destroy(device);
@@ -381,6 +466,34 @@ void LandscapeScene::update(f32 dt) {
             sky.timeOfDay -= 24.0f;
         }
     }
+}
+
+void LandscapeScene::buildMeshPipeline(rhi::Device& device) {
+    if (meshPipeline.id != 0) {
+        device.destroyPipeline(meshPipeline);
+    }
+    meshPipeline = device.createPipeline(
+        { .shader = shaders->get("mesh"),
+          .vertexBuffers =
+              { { .stride = sizeof(render::MeshVertex),
+                  .attributes =
+                      { { .location = 0,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset = offsetof(render::MeshVertex, position) },
+                        { .location = 1,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset = offsetof(render::MeshVertex, normal) },
+                        { .location = 2,
+                          .format = rhi::VertexFormat::F32x2,
+                          .offset = offsetof(render::MeshVertex, uv) },
+                        { .location = 3,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset = offsetof(render::MeshVertex, color) } } } },
+          .depth = { .testEnable = true,
+                     .writeEnable = true,
+                     .compare = rhi::CompareFunc::Less },
+          .cull = rhi::CullMode::Back });
+    meshShaderGeneration = shaders->generation("mesh");
 }
 
 WeatherForm LandscapeScene::captureCurrentWeather() const {
@@ -666,6 +779,17 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                     camera.position, &viewFrustum, occludedSet);
     grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
                &viewFrustum);
+    if (cubeReady) { // H8: the MaterialForm-driven textured mesh
+        if (shaders->generation("mesh") != meshShaderGeneration) {
+            buildMeshPipeline(frame.device);
+        }
+        frame.cmd.setPipeline(meshPipeline);
+        frame.cmd.setBindGroup(0, frameBindGroup);
+        frame.cmd.setBindGroup(1, cubeGroup);
+        frame.cmd.setVertexBuffer(0, cubeVertexBuffer);
+        frame.cmd.setIndexBuffer(cubeIndexBuffer, rhi::IndexFormat::U32);
+        frame.cmd.drawIndexed(cubeIndexCount);
+    }
     sky.draw(frame.cmd, frameBindGroup); // after opaque: background only
     frame.cmd.endRenderPass();
 

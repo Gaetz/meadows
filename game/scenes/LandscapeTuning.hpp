@@ -1,137 +1,20 @@
 #pragma once
 
-#include "data/forms/Form.hpp"
+// Compatibility shim (audit 2026-07-06): the landscape/weather Forms moved
+// to meadows-data (data/forms/LandscapeForms.hpp) so TOOLS — the cooker,
+// the Game DB editor — can register them; an exe-local Form type is
+// invisible to every consumer but the game. Reflected names are
+// unqualified, so on-disk TOML is untouched. Existing game code keeps its
+// unqualified spellings through these aliases.
 
-// Moddable tuning for the landscape renderer (§5), following the
-// StatsTuningForm precedent: one Form resolved by canonical guid, defaults
-// matching the values the renderer shipped with — behaviour is unchanged
-// when the record is absent. Lives in game/ (not engine/render) so the
-// renderer keeps zero data-layer dependency: the scene maps Form -> plain
-// params at load.
-//
-// The record ships in game/data/base/landscape.toml — its own small plugin,
-// the first slice of the base.toml split the dev wants. Mods patch any
-// field, last writer wins per field.
-
-namespace data {
-class FormDatabase;
-class FormTypeRegistry;
-} // namespace data
+#include "data/forms/LandscapeForms.hpp"
 
 namespace game {
 
-struct LandscapeTuningForm : data::Form {
-    // Terrain shape (render::TerrainParams).
-    u32 terrainSeed { 1337 };
-    f32 hillWavelength { 400.0f };
-    f32 hillAmplitude { 50.0f };
-    f32 mountainWavelength { 1500.0f };
-    f32 mountainAmplitude { 180.0f };
-    f32 seaLevel { 14.0f };
-    // Terrain materials.
-    f32 snowLine { 110.0f };     // meters
-    f32 splatUvScale { 0.25f };  // tiles per meter
-    // Fog / atmosphere.
-    f32 fogDensity { 0.0014f };
-    f32 fogHeightFalloff { 0.02f };
-    f32 fogLowBoost { 1.6f };
-    f32 fogStart { 300.0f };
-    // Post processing.
-    f32 exposure { 1.0f };
-    f32 bloomIntensity { 0.35f };
-    f32 godRayIntensity { 0.6f };
-    f32 volumetricIntensity { 1.0f };
-    f32 ssaoStrength { 0.7f };
-    // Clouds.
-    f32 cloudCoverage { 0.38f };
-    f32 cloudShadowStrength { 0.7f };
-    f32 cloudHeight { 520.0f };   // meters
-    f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
-
-    REFLECT_BEGIN(LandscapeTuningForm, data::Form)
-        REFLECT_FIELD(terrainSeed)
-        REFLECT_FIELD(hillWavelength)
-        REFLECT_FIELD(hillAmplitude)
-        REFLECT_FIELD(mountainWavelength)
-        REFLECT_FIELD(mountainAmplitude)
-        REFLECT_FIELD(seaLevel)
-        REFLECT_FIELD(snowLine)
-        REFLECT_FIELD(splatUvScale)
-        REFLECT_FIELD(fogDensity)
-        REFLECT_FIELD(fogHeightFalloff)
-        REFLECT_FIELD(fogLowBoost)
-        REFLECT_FIELD(fogStart)
-        REFLECT_FIELD(exposure)
-        REFLECT_FIELD(bloomIntensity)
-        REFLECT_FIELD(godRayIntensity)
-        REFLECT_FIELD(volumetricIntensity)
-        REFLECT_FIELD(ssaoStrength)
-        REFLECT_FIELD(cloudCoverage)
-        REFLECT_FIELD(cloudShadowStrength)
-        REFLECT_FIELD(cloudHeight)
-        REFLECT_FIELD(cloudScale)
-    REFLECT_END()
-};
-
-// One weather state (brick 24): a full parameter set the scene crossfades
-// to over ~30 s. Ordinary Forms in landscape.toml — a mod adds a weather
-// type or retunes one in pure TOML (§5). Defaults = the shipped "manual"
-// look, so a sparse record only has to state what it changes.
-struct WeatherForm : data::Form {
-    i32 sortOrder { 0 };  // dropdown position
-    // Clouds.
-    f32 cloudCoverage { 0.38f };
-    f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
-    f32 cloudHeight { 520.0f };   // meters
-    f32 cloudShadowStrength { 0.7f };
-    // Fog / atmosphere.
-    f32 fogDensity { 0.0014f };
-    f32 fogHeightFalloff { 0.02f };
-    f32 fogLowBoost { 1.6f };
-    f32 fogStart { 300.0f };
-    // Light grading (SkySystem::Weather).
-    f32 sunIntensity { 1.0f };
-    f32 ambientIntensity { 1.0f };
-    f32 saturation { 1.0f };
-    f32 warmth { 0.0f };  // reddens dawn/dusk (haze)
-    // Post.
-    f32 volumetricIntensity { 1.0f };
-    f32 godRayIntensity { 0.6f };
-    f32 bloomIntensity { 0.35f };
-    // Wind / water.
-    f32 windStrength { 1.0f };  // sway amplitude + drift/wave speed
-    f32 waveChop { 1.0f };      // water surface roughness
-
-    REFLECT_BEGIN(WeatherForm, data::Form)
-        REFLECT_FIELD(sortOrder)
-        REFLECT_FIELD(cloudCoverage)
-        REFLECT_FIELD(cloudScale)
-        REFLECT_FIELD(cloudHeight)
-        REFLECT_FIELD(cloudShadowStrength)
-        REFLECT_FIELD(fogDensity)
-        REFLECT_FIELD(fogHeightFalloff)
-        REFLECT_FIELD(fogLowBoost)
-        REFLECT_FIELD(fogStart)
-        REFLECT_FIELD(sunIntensity)
-        REFLECT_FIELD(ambientIntensity)
-        REFLECT_FIELD(saturation)
-        REFLECT_FIELD(warmth)
-        REFLECT_FIELD(volumetricIntensity)
-        REFLECT_FIELD(godRayIntensity)
-        REFLECT_FIELD(bloomIntensity)
-        REFLECT_FIELD(windStrength)
-        REFLECT_FIELD(waveChop)
-    REFLECT_END()
-};
-
-// Registers the landscape Form types. Call before loading landscape.toml.
-void registerLandscapeFormTypes(data::FormTypeRegistry& registry);
-
-// Resolves the tuning from the database (canonical guid), or defaults.
-LandscapeTuningForm resolveLandscapeTuning(const data::FormDatabase& forms);
-
-// Every WeatherForm in the database, sorted by sortOrder — feeds the
-// weather dropdown. Empty if the plugin ships none.
-vector<WeatherForm> resolveWeatherForms(const data::FormDatabase& forms);
+using data::LandscapeTuningForm;
+using data::WeatherForm;
+using data::registerLandscapeFormTypes;
+using data::resolveLandscapeTuning;
+using data::resolveWeatherForms;
 
 } // namespace game

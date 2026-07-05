@@ -122,6 +122,19 @@ struct TypeInfo {
     }
 };
 
+// Visits every field including inherited ones, parents first (the natural
+// display/serialization order). The editor property grid, clone and diff
+// paths all iterate through this — one traversal to rule them out of sync.
+template<typename Fn>
+void forEachField(const TypeInfo& type, Fn&& fn) {
+    if (type.parent) {
+        forEachField(*type.parent, fn);
+    }
+    for (const FieldInfo& field : type.fields) {
+        fn(field);
+    }
+}
+
 // Resolves the parent argument of REFLECT_BEGIN; void = root type.
 template<typename T>
 const TypeInfo* typeInfoOf() {
