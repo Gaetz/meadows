@@ -10,32 +10,25 @@ namespace render {
 // space. uv.x carries the wind sway weight (0 = rigid, 1 = outer foliage),
 // uv.y the normalized height — tree.vert uses both.
 
-// A tree splits into two draws (stylized-leaves recipe, halisavakis.com):
-// `body` = trunk + darkened canopy blobs, drawn with the standard prop
-// shader and reused as the shadow caster (solid blobs cast softer, cheaper
-// shadows than alpha-tested cards). `leaves` = leaf cards scattered on the
-// blob surfaces, alpha-cutout textured, with SPHERICAL normals (direction
-// from the blob center — all four card corners share it) so the canopy
-// lights as one soft volume; their uv addresses the leaf-bouquet atlas.
-struct TreeMeshes {
-    MeshData body;
-    MeshData leaves;
-};
-
-// Tall trunk column, 3-5 short upward branches near the top, a faceted
-// foliage blob at each branch tip (plus a crown) carrying the leaf cards.
-TreeMeshes generateTree(u32 seed);
+// A tree is ONE opaque mesh (brick 27: full stylized canopy — the BotW
+// look; the leaf-card system lost the fill-rate A/B and was removed).
+// Tall trunk column, 3-5 short upward branches near the top, one rounded
+// foliage lobe per branch tip plus a crown. The canopy's normals are
+// SPHERIZED on the mesh: each vertex blends its lobe-center direction with
+// the whole-canopy direction (~0.4), so light pools per lobe while staying
+// coherent across the tree — the halisavakis/BotW trick applied to solid
+// geometry. Early-Z friendly, and the same mesh casts the shadows.
+//
+// `lobeSubdivisions` is the canopy LOD: 2 = 320-face lobes (near), 1 = 80
+// faces (distance, shadow casters, reflections — 4x cheaper on vertices).
+// The SAME seed drives both: composition and colors match across LODs,
+// only the lobe tessellation changes.
+MeshData generateTree(u32 seed, u32 lobeSubdivisions = 2);
 
 // Squashed craggy boulder, meant to be sunk slightly into the ground.
 MeshData generateRock(u32 seed);
 
 // One or two low foliage blobs hugging the ground.
 MeshData generateBush(u32 seed);
-
-// Procedural leaf-bouquet atlas (2x2 cells of ellipse leaf clusters),
-// RGBA8: rgb = luminance variation multiplied by the card's vertex color,
-// a = cutout mask. Deterministic; size = kLeafTextureSize squared.
-inline constexpr u32 kLeafTextureSize = 256;
-vector<u8> buildLeafTexturePixels();
 
 } // namespace render

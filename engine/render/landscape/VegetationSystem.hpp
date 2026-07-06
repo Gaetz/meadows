@@ -65,20 +65,20 @@ public:
 
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
-    // Leaf cards cut out at ~300 m (leaf.vert fade); chunks beyond this
-    // Chebyshev radius skip the leaf pass entirely (vertex work, not just
-    // fill).
-    static constexpr i32 kLeafChunkRadius = 5; // × 64 m = 320 m
+    // Canopy LOD: chunks within this Chebyshev radius of the camera draw
+    // the 320-face lobes; everything beyond gets the 80-face LOD (same
+    // seed, same silhouette — 4x fewer vertices where facets are invisible
+    // anyway). Shadow casters and reflections always use the low LOD.
+    static constexpr i32 kHighDetailRadius = 4; // x 64 m = ~256 m
 
     // `variantLimit` restricts which variants draw (e.g. kTreeVariants for
-    // the reflection pass: trees only). `withLeaves` adds the alpha-cutout
-    // leaf-card pass over the tree variants, for chunks near `cameraPos`
-    // only — skipped in the reflection (the solid blobs carry the mirrored
-    // silhouette for far less fill).
+    // the reflection pass: trees only). Brick 27: trees are single opaque
+    // meshes — no leaf-card overlay pass anymore. `cameraPos` drives the
+    // per-chunk LOD pick; `forceLowDetail` = mirrored/downsampled passes.
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle shadowBindGroup,
-              u32 variantLimit = kVariantCount, bool withLeaves = true,
-              const Vec3& cameraPos = {}, const Frustum* frustum = nullptr,
+              u32 variantLimit = kVariantCount, const Vec3& cameraPos = {},
+              bool forceLowDetail = false, const Frustum* frustum = nullptr,
               const std::unordered_set<u64>* occluded = nullptr);
 
     // Chunks the last culled draw() recorded (for the debug panel).
@@ -127,10 +127,10 @@ private:
         rhi::BufferHandle vertexBuffer {};
         rhi::BufferHandle indexBuffer {};
         u32 indexCount { 0 };
-        // Leaf-card overlay (tree variants only; empty elsewhere).
-        rhi::BufferHandle leafVertexBuffer {};
-        rhi::BufferHandle leafIndexBuffer {};
-        u32 leafIndexCount { 0 };
+        // Low-detail twin (tree variants only; empty = use the main mesh).
+        rhi::BufferHandle lowVertexBuffer {};
+        rhi::BufferHandle lowIndexBuffer {};
+        u32 lowIndexCount { 0 };
     };
 
     static u64 keyOf(i32 cx, i32 cz) {
@@ -142,9 +142,8 @@ private:
     void destroyVariantMeshes(rhi::Device& device);
     void uploadVariantMesh(rhi::Device& device, u32 variant,
                            const MeshData& mesh);
-    void uploadLeafMesh(rhi::Device& device, u32 variant,
-                        const MeshData& mesh);
-    void buildLeafPipeline(rhi::Device& device, ShaderLibrary& shaders);
+    void uploadLowDetailMesh(rhi::Device& device, u32 variant,
+                             const MeshData& mesh);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
@@ -162,13 +161,6 @@ private:
     u64 shaderGeneration { 0 };
     rhi::PipelineHandle casterPipeline {};
     u64 casterShaderGeneration { 0 };
-
-    // Leaf-card pass: bouquet atlas + its own alpha-cutout pipeline.
-    rhi::TextureHandle leafTexture {};
-    rhi::SamplerHandle leafSampler {};
-    rhi::BindGroupHandle leafBindGroup {};
-    rhi::PipelineHandle leafPipeline {};
-    u64 leafShaderGeneration { 0 };
 };
 
 // Pure CPU scatter for one chunk, runs on worker threads. Deterministic.

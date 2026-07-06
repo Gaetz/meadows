@@ -1368,12 +1368,11 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         terrain.draw(frame.cmd, reflectionBindGroup,
                      shadows.receiverBindGroup(), &reflectionFrustum);
         // Trees only: rocks and bushes are invisible in a wobbly half-res
-        // reflection — and the solid blobs carry the mirrored silhouette,
-        // so skip the leaf cards (fill-rate).
+        // reflection — low-detail canopies for the same reason.
         vegetation.draw(frame.cmd, reflectionBindGroup,
                         shadows.receiverBindGroup(),
                         render::VegetationSystem::kTreeVariants,
-                        /*withLeaves=*/false, camera.position,
+                        camera.position, /*forceLowDetail=*/true,
                         &reflectionFrustum);
         sky.draw(frame.cmd, reflectionBindGroup);
         frame.cmd.endRenderPass();
@@ -1404,8 +1403,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     terrain.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
                  &viewFrustum, occludedSet);
     vegetation.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
-                    render::VegetationSystem::kVariantCount, leafCardsUi,
-                    camera.position, &viewFrustum, occludedSet);
+                    render::VegetationSystem::kVariantCount, camera.position,
+                    /*forceLowDetail=*/false, &viewFrustum, occludedSet);
     grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
                &viewFrustum);
     drawSceneMeshes(frame); // B1: the RenderSnapshot.meshes consumer
@@ -1658,7 +1657,6 @@ void LandscapeScene::drawGameplayUi() {
 
 void LandscapeScene::drawRenderUi() {
     ImGui::Checkbox("Stylized lighting (BotW A/B)", &stylizedUi);
-    ImGui::Checkbox("Tree leaf cards (perf A/B)", &leafCardsUi);
     ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
     ImGui::SliderFloat("Bloom intensity", &bloomIntensityUi, 0.0f, 1.5f,
                        "%.2f");

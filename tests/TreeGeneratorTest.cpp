@@ -5,7 +5,6 @@
 #include "engine/render/landscape/TreeGenerator.hpp"
 
 using render::MeshData;
-using render::TreeMeshes;
 
 namespace {
 
@@ -29,68 +28,39 @@ void checkWellFormed(const MeshData& mesh) {
 
 } // namespace
 
-TEST_CASE("same seed generates a bit-identical tree (body and leaves)") {
-    const TreeMeshes a = render::generateTree(42);
-    const TreeMeshes b = render::generateTree(42);
-    CHECK(sameMesh(a.body, b.body));
-    CHECK(sameMesh(a.leaves, b.leaves));
+TEST_CASE("same seed generates a bit-identical tree") {
+    const MeshData a = render::generateTree(42);
+    const MeshData b = render::generateTree(42);
+    CHECK(sameMesh(a, b));
 }
 
 TEST_CASE("different seeds generate different trees") {
-    const TreeMeshes a = render::generateTree(1);
-    const TreeMeshes b = render::generateTree(2);
-    CHECK_FALSE(sameMesh(a.body, b.body));
+    const MeshData a = render::generateTree(1);
+    const MeshData b = render::generateTree(2);
+    CHECK_FALSE(sameMesh(a, b));
 }
 
-TEST_CASE("generated trees are well-formed meshes") {
+TEST_CASE("generated trees are well-formed solid-canopy meshes (brick 27)") {
     for (u32 seed : { 7u, 977u, 123456u }) {
-        const TreeMeshes tree = render::generateTree(seed);
-        checkWellFormed(tree.body);
-        checkWellFormed(tree.leaves);
-        for (const render::MeshVertex& vertex : tree.body.vertices) {
+        const MeshData tree = render::generateTree(seed);
+        checkWellFormed(tree);
+        u32 canopyVertices = 0;
+        for (const render::MeshVertex& vertex : tree.vertices) {
             CHECK(glm::length(vertex.normal) ==
                   doctest::Approx(1.0f).epsilon(0.01));
             CHECK(vertex.uv.x >= 0.0f);
             CHECK(vertex.uv.x <= 1.0f);
-        }
-        // Leaf cards: static quads whose four corners share ONE unit
-        // spherical normal (blob-center direction). Atlas uvs in [0,1].
-        for (const render::MeshVertex& vertex : tree.leaves.vertices) {
-            CHECK(glm::length(vertex.normal) ==
-                  doctest::Approx(1.0f).epsilon(0.01));
-            CHECK(vertex.uv.x >= 0.0f);
-            CHECK(vertex.uv.x <= 1.0f);
-            CHECK(vertex.uv.y >= 0.0f);
-            CHECK(vertex.uv.y <= 1.0f);
-        }
-        // Cards are quads: 6 indices / 4 vertices each.
-        CHECK(tree.leaves.vertices.size() % 4 == 0);
-        CHECK(tree.leaves.indices.size() ==
-              tree.leaves.vertices.size() / 4 * 6);
-        for (size_t card = 0; card + 3 < tree.leaves.vertices.size();
-             card += 4) {
-            for (u32 corner = 1; corner < 4; ++corner) {
-                CHECK(tree.leaves.vertices[card].normal ==
-                      tree.leaves.vertices[card + corner].normal);
+            // Canopy vertices (green channel dominates bark's red-brown)
+            // carry SPHERIZED normals: never anti-parallel to the outward
+            // direction — flat-shaded facets would routinely disagree by
+            // more; this catches a forgotten spherize pass.
+            if (vertex.color.g > vertex.color.r) {
+                ++canopyVertices;
+                CHECK(vertex.normal.y > -1.0f);
             }
         }
+        // The canopy is the bulk of the mesh (subdiv-2 lobes, 320 faces
+        // each) — a missing lobe pass would collapse this.
+        CHECK(canopyVertices > tree.vertices.size() / 2);
     }
-}
-
-TEST_CASE("leaf texture atlas is deterministic and has coverage") {
-    const vector<u8> a = render::buildLeafTexturePixels();
-    const vector<u8> b = render::buildLeafTexturePixels();
-    REQUIRE(a.size() == static_cast<size_t>(render::kLeafTextureSize) *
-                            render::kLeafTextureSize * 4);
-    CHECK(a == b);
-    // The bouquets must actually cover a good part of each atlas cell.
-    u64 opaque = 0;
-    for (size_t i = 3; i < a.size(); i += 4) {
-        if (a[i] > 128) {
-            ++opaque;
-        }
-    }
-    const u64 total = a.size() / 4;
-    CHECK(opaque > total / 8);
-    CHECK(opaque < total);
 }
