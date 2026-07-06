@@ -9,8 +9,8 @@
 | Renderer paysage (briques 27-31) | 27 ✅ FAITE (canopées pleines + LOD, chantier 1) ; 28-31 → chantier 6 ; spec : `docs/3D-RENDERER.md` |
 | **Chantier 1 — Socle 3D gameplay** | ✅ FAIT 2026-07-06 — journal : `docs/CHANTIER-1.md` (joueur FPS piloté par ses stats, PNJ 100 % Forms en patrouille, MeshCache/skinning/anim data, collision terrain Jolt, arbres brique 27) |
 | **Chantier 2 — Monde habitable** (cellules 3D, éditeur de niveau+gizmos, lumières locales, kit+intérieur+portes, terrain auteuré+sculpt) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-2.md` |
-| **Chantier 3 — Vivant** (navmesh, IA/schedules exécutés, combat 3D, cues/FX/audio P0) | ⬅️ **PROCHAIN** — plan de briques proposé : `docs/CHANTIER-3.md` (à valider) |
-| Chantier 4 — Interfaces (écrans RmlUi P0, GameDB/console déjà livrés en squelette) | à faire |
+| **Chantier 3 — Vivant** (horloge, interaction E, schedules exécutés, IA hostile + combat mêlée 3D, repos) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-3.md`. Reportés : cues/audio (pas d'assets son — dev doit les déposer), Recast (fallback TerrainNavigator), barter (chantier 4), ability GAS formelle pour l'attaque joueur |
+| Chantier 4 — Interfaces (écrans RmlUi P0, GameDB/console déjà livrés en squelette, + barter reporté du ch. 3) | ⬅️ **PROCHAIN** |
 | Chantier 5 — Persistance (Phase 10 : streaming + save = couche de patches) | à faire |
 | Chantier 6 — P1 par valeur (quêtes outillées, économie/crime, éditeurs anim/FX/UI…) | à faire |
 | Refonte herbe (renderer) | ⏸️ en attente des recherches du dev |
@@ -84,7 +84,7 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
 | ✅ **Matériaux & textures sur meshes** | P0 | v1 FAITE (H8 + chantier 1) : `MaterialForm` (albédo × teinte × rampe stylisée), MeshCache async, cube→props réels. Reste : normal maps P1, pipeline KTX2/Basis, atlas/array pour l'instancing par (model, material). |
-| ✅ **Lumières locales + ombres intérieures** | P0 | v1 FAITE (chantier 2 B5) : LightsUbo des 16 plus proches (binding 5), falloff quadratique, flicker CPU, sur meshes+personnages ; le paysage reste sun-only. Reste : ombres 1-2 lumières clés par intérieur, spots réels, clustered P1. |
+| ✅ **Lumières locales + ombres intérieures** | P0 | v1 FAITE (chantier 2 B5) : LightsUbo des 16 plus proches (binding 5), falloff quadratique, flicker CPU, sur meshes+personnages ; le paysage reste sun-only. **⚠ Retour dev (2026-07-06) : la qualité d'éclairage (surtout intérieur) est « très simple et moche » — passe dédiée à planifier** : ombres 1-2 lumières clés, spots réels, AO/ambiance de pièce, rampe stylisée sur les lumières locales, éventuel ambient par sonde. Cible : début du chantier 6 (avec les briques renderer 28-29) ou brique tirée plus tôt si ça bloque la démo. Clustered P1. |
 | ✅ **Meshes skinnés (GPU skinning)** | P0 | FAIT (chantier 1) : import poids/squelette (remap parents-first), palettes SSBO, shaders skinnés. Reste : rendu INSTANCIÉ des personnages (chantier « vivant », quand ils seront nombreux). |
 | **Transparence triée** | P1 | Alpha blend trié par distance (verre, fantômes, eau intérieure) ; le cutout reste l'exception (leçon fill-rate). |
 | 🔨 **Émissifs & enchantements** | P1 | Champ `emissive` branché (mesh.frag + bloom). Reste : effets de matériau animés (dissolve, glow) pilotés par GameplayCues (voir F). |
@@ -147,22 +147,22 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| 🔨 **Navmesh (Recast/Detour)** | P0 | Interface `nav::Navigator` + `GridNavigator` (A* 2D) posées (H7). Reste : Recast/Detour réels — génération offline par cellule (cooker) + liens, requêtes async, évitement local. Chantier « vivant ». |
-| 🔨 **Emploi du temps des PNJ** | P0 | `ScheduleForm`/entrées enfants + `evaluateSchedule` FAITS (H1/H7, doctests : fenêtres, minuit, override par mod, conditions). Reste : l'EXÉCUTION sur le monde vivant (ScheduleAgent, interruptions/reprise) — chantier « vivant » ; simulation dégradée hors cellule P2. |
-| 🔨 **Packages IA (exécution)** | P0 | `AiPackageForm` posé (H1) ; la patrouille du chantier 1 est l'embryon d'exécution. Reste : les comportements réels (dormir/manger/travailler/errer/voyager/mobilier) pilotés par le schedule — chantier « vivant ». |
+| 🔨 **Navmesh (Recast/Detour)** | P0 | v1 = `TerrainNavigator` (chantier 3 B2, doctesté) : A* grille 1 m projeté sur le terrain patché, obstacles = AABB des colliders statics. Reste : Recast/Detour réels (génération offline par cellule + liens, requêtes async, évitement local) — quand la grille pique. |
+| ✅ **Emploi du temps des PNJ** | P0 | `evaluateSchedule` (H1/H7) + EXÉCUTION (chantier 3 B3) : ré-évaluation par slot 10 min-jeu, la journée du Villager se déroule seule. Reste : interruptions/reprise fines (combat, dialogue) ; simulation dégradée hors cellule P2. |
+| ✅ **Packages IA (exécution)** | P0 | wander / travel / useFurniture (claim + anims par tag) / guard exécutés (chantier 3 B3). S'enrichit avec le contenu. |
 | 🔨 **Outil emploi du temps** | P0/P1 | P0 (vue debug) : posée dans l'EditorScene (drawSchedules + slider d'heure, H7) ; à brancher sur le monde vivant. P1 = éditeur visuel timeline, sortie = plugin. |
-| **IA de combat 3D** | P0 | Port du chase/attack 2D : distances d'engagement, strafe, usage d'abilities GAS (coûts/cooldowns existants), fuite (courage/santé), appel à l'aide (factions existantes). Chantier « vivant ». |
-| **Perception 3D** | P0 | Vue (cône + raycast d'occlusion — la furtivité P1 en dépend), ouïe (événements sonores gameplay), mémoire de dernière position connue. Chantier « vivant ». |
+| 🔨 **IA de combat 3D** | P0 | v1 (chantier 3 B5) : chase à vue (distance + LOS raycast), attaque mêlée GAS à portée. Reste : strafe, fuite (courage/santé), appel à l'aide (factions), distances d'engagement par arme. |
+| 🔨 **Perception 3D** | P0 | v1 (chantier 3 B5) : vue = distance + raycast d'occlusion, inline dans l'IA hostile. Reste : composant Perception dédié (cône, ouïe, mémoire de dernière position — la furtivité P1 en dépend). |
 | **Foules/planification** | P2 | Budget d'update IA par frame, LOD IA (PNJ hors cellule simulés grossièrement — « offscreen simulation » Skyrim). |
 
 ## F. Gameplay (au-dessus du GAS existant)
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **Combat 3D** | P0 | Traces d'armes (shape cast sur fenêtres de hit des anims), directions de blocage, projectiles (flèches/sorts — gravité simple), lock-on optionnel, staggers/posture déjà en données. Tout passe par les GameplayEffects existants. Chantier « vivant ». |
-| 🔨 **GameplayCues (pont effets→présentation)** | P0 | Registre + `CueTable` (fallback hiérarchique) + `CueForm` + preuve (hit → étincelles CombatArena) FAITS (H7). Reste : les handlers standard (particule/son/shake résolus par CueForm) et les points d'émission systématiques — chantier « vivant ». |
-| **Interaction** | P0 | Raycast d'interaction + prompt contextuel (Prendre/Parler/Ouvrir/Dormir), activation via le système existant. Chantier « vivant ». |
-| 🔨 **Mobilier & postes de travail** | P0 | `FurnitureForm` + points d'usage enfants + `FurnitureOccupancy` (claim/release/file) + spawner FAITS (H1/H7/H8, doctests). Reste : le FLUX complet (nav vers le point → anims entrée/boucle/sortie → effet GAS pendant l'usage) — chantier « vivant ». |
+| 🔨 **Combat 3D** | P0 | v1 (chantier 3 B6) : mêlée joueur LMB (cible en cône, `weaponDamageEvent` → `applyDamage`), mort Death01 par tag. Reste : ability GAS formelle + fenêtres de hit par events d'anim (shape cast), blocage directionnel, projectiles, lock-on. |
+| 🔨 **GameplayCues (pont effets→présentation)** | P0 | Registre + `CueTable` (fallback hiérarchique) + `CueForm` + preuve (hit → étincelles CombatArena) FAITS (H7). Reste : les handlers standard (particule/son/shake résolus par CueForm) et les points d'émission systématiques — **REPORTÉ chantier 3 : aucun asset audio dans le dépôt** (le dev dépose les sons, workflow kit). |
+| ✅ **Interaction** | P0 | FAITE (chantier 3 B1/B7-lite) : E contextuel — porte (travel), prendre (inventaire), parler (placeholder dialogue), mobilier (lit 8 h / siège 1 h via `gameplay::sleep()` Phase 7). |
+| 🔨 **Mobilier & postes de travail** | P0 | `FurnitureForm` + occupancy + spawner FAITS ; PNJ : nav → claim → anim par tag (chantier 3 B3) ; joueur : repos/sommeil (B7-lite). Reste : effet GAS pendant l'usage, anims entrée/sortie, postes de travail (écrans). |
 | **Économie/marchands 3D** | P1 | Port du barter 2D ; inventaires de marchands régénérés (game clock), richesse limitée. |
 | **Crime & prime** | P1 | Témoins (perception), bounty par faction (relations existantes), gardes qui arrêtent, prison/amende. |
 | **Furtivité** | P1 | Détection (lumière P2, bruit, ligne de vue), état Sneak, dégâts sournois — la Phase 9 (stats) la prévoit. |

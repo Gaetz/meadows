@@ -304,6 +304,91 @@ compare = "less"
 threshold = 3.0
 blendTime = 0.25
 
+# Sitting (chantier 3 B3): a tag-gated state — the runtime raises
+# State.Sitting (furniture use) and the graph blends in/out of the chair.
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000e6"
+type = "AnimClipForm"
+new = true
+[records.fields]
+editorId = "CharSit"
+asset = "2b5e7d10-0000-4000-8000-0000000000e0"
+animationName = "Sitting_Idle_Loop"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000f8"
+type = "AnimStateForm"
+new = true
+[records.fields]
+editorId = "CharStateSit"
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+clip = "2b5e7d10-0000-4000-8000-0000000000e6"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000f9"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+from = "2b5e7d10-0000-4000-8000-0000000000f1"
+to = "2b5e7d10-0000-4000-8000-0000000000f8"
+requiredTag = "State.Sitting"
+blendTime = 0.35
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000fa"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+from = "2b5e7d10-0000-4000-8000-0000000000f8"
+to = "2b5e7d10-0000-4000-8000-0000000000f1"
+blockedTag = "State.Sitting"
+blendTime = 0.35
+
+# Death (chantier 3 B6): gated on the GAS life state — health reaches 0,
+# tickCharacter grants State.Dead, the graph falls over. One-shot clip.
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000e7"
+type = "AnimClipForm"
+new = true
+[records.fields]
+editorId = "CharDeath"
+asset = "2b5e7d10-0000-4000-8000-0000000000e0"
+animationName = "Death01"
+loop = false
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000fb"
+type = "AnimStateForm"
+new = true
+[records.fields]
+editorId = "CharStateDeath"
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+clip = "2b5e7d10-0000-4000-8000-0000000000e7"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000fc"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+from = "2b5e7d10-0000-4000-8000-0000000000f1"
+to = "2b5e7d10-0000-4000-8000-0000000000fb"
+requiredTag = "State.Dead"
+blendTime = 0.15
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000fd"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+from = "2b5e7d10-0000-4000-8000-0000000000f2"
+to = "2b5e7d10-0000-4000-8000-0000000000fb"
+requiredTag = "State.Dead"
+blendTime = 0.15
+
 # --- The showcase NPC (B6) --------------------------------------------------
 # A full Forms-driven character: ActorForm (the character definition hub,
 # MEADOWS-PLAN §C.1) -> AppearanceForm (rig + body mesh + tint) + the B3

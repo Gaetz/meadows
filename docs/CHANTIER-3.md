@@ -1,10 +1,10 @@
 # Chantier 3 — Vivant : « explorer, combattre, parler »
 
-> **PLAN PROPOSÉ (2026-07-06) — À VALIDER PAR LE DEV avant exécution.**
-> Rédigé en fin de chantier 2 pour la passation post-Fable : suivre les
-> seams (`docs/HORIZONTAL-PASS.md`), relire les « pièges payés » de
-> `docs/CHANTIER-1.md` et `docs/CHANTIER-2.md`, cadence brique-par-brique
-> avec validation dev (sauf directive contraire). État global :
+> **FAIT (2026-07-06) — exécuté d'une traite sur directive dev** (« passe
+> à la suite, je testerai plus tard » — même mode que le chantier 2).
+> 246 tests / 77 845 assertions verts. Validation visuelle dev EN ATTENTE
+> (liste « quoi tester » dans le rapport de fin de session). Écarts
+> d'exécution et pièges payés en fin de fichier. État global :
 > `docs/MEADOWS-PLAN.md`.
 
 ## Contexte
@@ -110,6 +110,37 @@ ActorForm).
 ### B8 — Clôture
 - CHANTIER-3 annoté, MEADOWS-PLAN (coches E/F/H/I), HORIZONTAL-PASS,
   userdoc (schedules-and-furniture surtout), mémoire agent.
+
+## Réalisé — journal d'exécution (2026-07-06)
+
+| Brique | État | Notes |
+|---|---|---|
+| B1 horloge + interaction | ✅ | GameClock (timescale 12) possède sky.timeOfDay ; E générique : porte / prendre (inventaire) / parler (placeholder) / mobilier |
+| B2 navmesh | ✅ **écart** | Recast REPORTÉ (garde-fou appliqué) → `world/ai/TerrainNavigator` : A* grille 1 m projeté terrain, obstacles = AABB colliders statics +0.4 m, doctesté |
+| B3 schedules exécutés | ✅ | Ré-évaluation par slot de 10 min-jeu ; wander/travel/useFurniture (claim + tag Sitting)/guard ; la journée du Villager se déroule seule (village.toml) |
+| B4 cues + audio | ⛔ REPORTÉ | AUCUN asset audio dans le dépôt — même workflow que le kit : le dev dépose les sons, la brique se fait à ce moment-là (le seam miniaudio + SoundForm attendent) |
+| B5 perception + IA combat | ✅ simplifié | Chase à vue (distance + raycast LOS physique) sans composant Perception séparé ; repath 1 s, attaque à 1.8 m / 1.6 s via GAS |
+| B6 combat joueur | ✅ simplifié | LMB mêlée : cooldown 0.7 s, cible la plus proche ≤ 2.4 m dans le cône, `weaponDamageEvent` → `applyDamage` (§2.9) ; mort = Death01 (tag State.Dead, gate anim) + gel ; PAS d'ability GAS formelle ni de fenêtre par event d'anim (v1 sans corps visible) — À FORMALISER quand le combat s'épaissit |
+| B7 marchand + repos | ✅ partiel | Repos : E sur mobilier → `gameplay::sleep()` Phase 7 (lit 8 h / siège 1 h, fondu au noir, l'horloge saute, le ciel suit) ; **barter REPORTÉ** (UI = chantier « interfaces ») |
+| B8 clôture | ✅ | Ce fichier, MEADOWS-PLAN, mémoire |
+
+**Contenu data** : `village.toml` — RustySword/BanditClub (WeaponForm),
+Bandit (ActorForm + `ActorTagForm` Faction.Bandits → hostile, réf cellule
+(1,5)), SimpleBed (FurnitureForm category=bed, visuel caisse aplatie —
+remplacer quand un vrai lit arrive) ; `adventure.toml` — état anim Death01
+(depuis idle/walk, requiredTag State.Dead), Sitting_Idle_Loop.
+
+**Pièges payés** :
+- `ActorTagForm` = le pattern §C.1 (records enfants par `parent`) — les
+  grants/loadout suivront le même moule.
+- Les gates d'anim par tag (`GraphInstance::setTagCheck`) suffisent pour
+  sitting ET death — aucun nouveau runtime d'anim.
+- `tickCharacter` par PNJ : gameDt = dt × timescale, le MÊME pipeline que
+  le joueur (régén, survie) — pas de tick « light » parallèle.
+- Le zombie `cl.exe` (PDB lock C1041) : si un build échoue en boucle sur
+  vc143.pdb, chercher un cl.exe orphelin figé (CPU constant) et le tuer.
+- `RefId.base` est un FormHandle : lookup typé = `typeOf(handle)->isA(...)`
+  + `static_cast`, pas `find<T>` (qui prend un Guid).
 
 ## Garde-fous
 

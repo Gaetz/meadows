@@ -34,6 +34,11 @@ struct WeaponForm : Form {
     // hit. Empty = no status. Appended last so binary ordinals stay stable.
     str buildupType;
     f32 buildupAmount { 0.0f };
+    // 3D world visual (chantier 3, appended — ordinals stable): wired by
+    // the universal reflected model/material spawner path. Also the first
+    // step of EquipmentVisuals (§C.1): the drawn/sheathed weapon mesh.
+    core::Guid model;
+    core::Guid material;
 
     REFLECT_BEGIN(WeaponForm, Form)
         REFLECT_FIELD(displayName)
@@ -52,6 +57,8 @@ struct WeaponForm : Form {
         REFLECT_FIELD(postureDamage)
         REFLECT_FIELD(buildupType)
         REFLECT_FIELD(buildupAmount)
+        REFLECT_FIELD(model)
+        REFLECT_FIELD(material)
     REFLECT_END()
 };
 
@@ -127,12 +134,17 @@ struct ConsumableForm : Form {
     str category { "food" }; // food | drug | treatment
     core::Guid effect;       // the GameplayEffect applied on use
     f32 weight { 0.1f };
+    // 3D world visual (chantier 3, appended — ordinals stable).
+    core::Guid model;
+    core::Guid material;
 
     REFLECT_BEGIN(ConsumableForm, Form)
         REFLECT_FIELD(displayName)
         REFLECT_FIELD(category)
         REFLECT_FIELD(effect)
         REFLECT_FIELD(weight)
+        REFLECT_FIELD(model)
+        REFLECT_FIELD(material)
     REFLECT_END()
 };
 

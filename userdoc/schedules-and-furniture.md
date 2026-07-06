@@ -82,5 +82,16 @@ animTag = "Sleep"
 - Points have an offset, a facing and an animation tag; multi-seat
   benches simply have several points.
 
+## What runs in the current build
+
+- Schedules are **executed** in the 3D world: NPCs re-evaluate their
+  entry every 10 in-game minutes and walk to it (`wander`, `travel`,
+  `useFurniture` — claim + sit animation —, `guard` are live).
+- The player can use furniture with **E**: a `category = "bed"` sleeps
+  8 hours, anything else rests 1 hour — both advance the game clock,
+  restore the sleep need and accrue Rest (injury recovery).
+- The per-use `effect` and workstation `screen` fields are declared but
+  not applied yet (UI vertical).
+
 Related: [The data model](data-model.md) ·
 [World & levels](world-and-levels.md)

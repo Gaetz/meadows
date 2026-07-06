@@ -650,6 +650,244 @@ baseForm = "4d7a9b30-0000-4000-8000-000000000064"
 cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [9.0, 2.2, 10.0]
 
+# --- Melee combat (chantier 3 B6) ----------------------------------------------
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000090"
+type = "WeaponForm"
+new = true
+[records.fields]
+editorId = "RustySword"
+displayName = "Rusty sword"
+slashAttack = 14.0
+postureDamage = 20.0
+scalingAttribute = "strength"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000091"
+type = "WeaponForm"
+new = true
+[records.fields]
+editorId = "BanditClub"
+displayName = "Bandit club"
+bluntAttack = 8.0
+postureDamage = 25.0
+
+# The bandit: same rig as the villager, a darker soul (Faction.Bandits
+# child tag makes it hostile — §C.1 tag records). Lurks east of the
+# village, in the next cell.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000092"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "Bandit"
+displayName = "Bandit"
+maxHealth = 45.0
+appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
+animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000093"
+type = "ActorTagForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000092"
+tag = "Faction.Bandits"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000094"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000092"
+cell = "3c6f8e20-0000-4000-8000-000000000015"
+position = [82.0, 0.0, 372.0]
+
+# --- The villager's day (chantier 3 B3) --------------------------------------
+# Spot markers, a seat, packages, the schedule — and a §5 CROSS-PLUGIN
+# PATCH: this plugin gives adventure.toml's Villager its `schedule` field.
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000080"
+type = "MarkerForm"
+new = true
+[records.fields]
+editorId = "SpotMarker"
+kind = "spot"
+
+# The village square (wander anchor, mornings).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000081"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000080"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [48.0, 0.0, 371.0]
+
+# Near the wagon (afternoons).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000082"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000080"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [57.0, 0.0, 362.5]
+
+# A crate used as a seat (FurnitureForm + one use point).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000083"
+type = "FurnitureForm"
+new = true
+[records.fields]
+editorId = "CrateSeat"
+displayName = "Crate seat"
+category = "seat"
+model = "4d7a9b30-0000-4000-8000-0000000000a8"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000084"
+type = "FurniturePointForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000083"
+offset = [0.0, 0.55, 0.0]
+animTag = "Sit"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000085"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000083"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [51.5, 0.0, 369.0]
+
+# Packages.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000086"
+type = "AiPackageForm"
+new = true
+[records.fields]
+editorId = "PkgWanderSquare"
+kind = "wander"
+radius = 5.0
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000087"
+type = "AiPackageForm"
+new = true
+[records.fields]
+editorId = "PkgSit"
+kind = "useFurniture"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000088"
+type = "AiPackageForm"
+new = true
+[records.fields]
+editorId = "PkgStand"
+kind = "guard"
+
+# The daily routine.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000089"
+type = "ScheduleForm"
+new = true
+[records.fields]
+editorId = "VillagerDay"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000008a"
+type = "ScheduleEntryForm"
+new = true
+[records.fields]
+editorId = "VillagerMorning"
+parent = "4d7a9b30-0000-4000-8000-000000000089"
+startHour = 8.0
+endHour = 12.0
+package = "4d7a9b30-0000-4000-8000-000000000086"
+location = "4d7a9b30-0000-4000-8000-000000000081"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000008b"
+type = "ScheduleEntryForm"
+new = true
+[records.fields]
+editorId = "VillagerLunch"
+parent = "4d7a9b30-0000-4000-8000-000000000089"
+startHour = 12.0
+endHour = 14.0
+package = "4d7a9b30-0000-4000-8000-000000000087"
+location = "4d7a9b30-0000-4000-8000-000000000085"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000008c"
+type = "ScheduleEntryForm"
+new = true
+[records.fields]
+editorId = "VillagerAfternoon"
+parent = "4d7a9b30-0000-4000-8000-000000000089"
+startHour = 14.0
+endHour = 19.0
+package = "4d7a9b30-0000-4000-8000-000000000086"
+location = "4d7a9b30-0000-4000-8000-000000000082"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000008d"
+type = "ScheduleEntryForm"
+new = true
+[records.fields]
+editorId = "VillagerNight"
+parent = "4d7a9b30-0000-4000-8000-000000000089"
+startHour = 19.0
+endHour = 8.0
+package = "4d7a9b30-0000-4000-8000-000000000088"
+location = "4d7a9b30-0000-4000-8000-000000000024"
+
+# §5 cross-plugin patch: the Villager (declared in adventure.toml) gains
+# its daily routine from THIS plugin — one field, last writer wins.
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000b1"
+type = "ActorForm"
+[records.fields]
+schedule = "4d7a9b30-0000-4000-8000-000000000089"
+
+# A pickable item (chantier 3 B1): rations on the crates — [E] takes them
+# into the inventory (persistence of pickups = the save layer, chantier 5).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000070"
+type = "ConsumableForm"
+new = true
+[records.fields]
+editorId = "TravelRations"
+displayName = "Travel rations"
+category = "food"
+weight = 0.5
+model = "4d7a9b30-0000-4000-8000-0000000000a8"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000071"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000070"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [7.6, 1.1, 5.6]
+scale = [0.35, 0.35, 0.35]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000072"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000070"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [55.2, 1.1, 366.8]
+scale = [0.35, 0.35, 0.35]
+
 # Crates in the corner.
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000067"
@@ -669,3 +907,35 @@ baseForm = "4d7a9b30-0000-4000-8000-000000000017"
 cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [7.6, 0.0, 5.6]
 rotation = [0.0, 0.258819, 0.0, 0.9659258]
+
+# A bed in the house (chantier 3 B7-lite): [E] sleeps 8 h through the
+# Phase-7 gameplay::sleep(). Visual is a flattened crate — the kit is
+# architecture-only; swap the model when a real bed asset lands.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000095"
+type = "FurnitureForm"
+new = true
+[records.fields]
+editorId = "SimpleBed"
+displayName = "Simple bed"
+category = "bed"
+model = "4d7a9b30-0000-4000-8000-0000000000a8"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000096"
+type = "FurniturePointForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000095"
+offset = [0.0, 0.45, 0.0]
+animTag = "Sit"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000097"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000095"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [9.3, 0.0, 7.2]
+scale = [1.6, 0.45, 0.9]

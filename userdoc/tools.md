@@ -35,6 +35,26 @@ loaded on the next run — your level edits ARE a plugin.
   Smooth, paint with the left button. *Save terrain to mod* stages the
   grids; *Export* writes them with the rest.
 
+### First steps, in order
+
+1. Open the **Landscape (3D)** scene and press **F6** — the *Level
+   editor* window appears (if not: F10 un-hides the panels).
+2. **Move an object**: left-click a rock. Colored gizmo handles appear on
+   it — drag them. Press `2` to rotate, `3` to scale, `1` back to move.
+   Release the mouse: the change is recorded.
+3. **Sculpt**: in the Level editor window, tick **Sculpt terrain**. Now
+   the left mouse button is a brush — hold it on the ground and the
+   terrain rises (pick *Lower*, *Flatten* or *Smooth* in the *Brush*
+   combo; *Radius*/*Strength* sliders tune it). Grass, props and
+   collision follow when you release. Untick *Sculpt terrain* to go back
+   to selecting objects.
+4. **Keep your work**: *Save terrain to mod* (if you sculpted), then
+   **Export mod** — everything lands in `data/mods/level-edits.toml` and
+   is loaded automatically on the next launch.
+5. To fly while editing: hold the **left button on the sky/ground far
+   away won't select** — use LMB-hold **+ WASD** like the normal fly
+   camera (the camera only captures the mouse while you hold and move).
+
 ## The plugin manager
 
 The **Plugins** window shows the load order: reorder with the arrows,

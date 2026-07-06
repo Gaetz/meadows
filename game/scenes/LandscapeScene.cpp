@@ -31,7 +31,12 @@
 #include "gameplay/ability/GameplayAbility.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
+#include "gameplay/interaction/FurnitureForms.hpp"
+#include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/CharacterStats.hpp"
+#include "gameplay/stats/Damage.hpp"
+#include "gameplay/stats/EquipmentStats.hpp"
+#include "gameplay/stats/Rest.hpp"
 #include "world/scene/AnimBridge.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/terrain/TerrainPatches.hpp"
@@ -83,6 +88,8 @@ void LandscapeScene::onEnter() {
     gameplay::registerGameplayFormTypes(formTypes); // EffectForm (sprint...)
     gameplay::registerStatsFormTypes(formTypes);    // StatsTuningForm (mods)
     gameplay::registerCharacterFormTypes(formTypes); // AppearanceForm (NPC)
+    gameplay::registerAiFormTypes(formTypes);        // schedules/packages
+    gameplay::registerFurnitureFormTypes(formTypes); // seats/beds
     const auto landscapePlugin = data::loadPluginFile(
         platform::executableDir() / "data" / "base" / "landscape.toml",
         formTypes);
@@ -218,6 +225,14 @@ void LandscapeScene::onEnter() {
     terrainCollision =
         std::make_unique<TerrainCollision>(*physics, terrain.params);
 
+    // Chantier 3 B2: navigation over the SAME height function as
+    // everything else (patches included — the pointer rides in params).
+    navigator = std::make_unique<world::TerrainNavigator>(
+        [this](f32 x, f32 z) {
+            return render::terrain::height(terrain.params, x, z);
+        });
+    furnitureOccupancy = gameplay::FurnitureOccupancy {};
+
     // B5.5: the character-stats runtime shared by every actor in the scene
     // (the player first; the NPC joins in B6) — same setup as CombatArena.
     statsTuning = gameplay::resolveStatsTuning(forms);
@@ -240,6 +255,11 @@ void LandscapeScene::onEnter() {
         data::findByEditorId<gameplay::EffectForm>(forms, "SprintCost");
     testWoundEffect =
         data::findByEditorId<gameplay::EffectForm>(forms, "TestLegWound");
+    // Chantier 3 B6: the melee weapons (data — retune in village.toml).
+    playerWeapon =
+        data::findByEditorId<data::WeaponForm>(forms, "RustySword");
+    banditWeapon =
+        data::findByEditorId<data::WeaponForm>(forms, "BanditClub");
 
     world = ecs::World {}; // fresh on re-enter
     world::registerSceneComponents(world);
@@ -269,6 +289,11 @@ void LandscapeScene::onEnter() {
     fadeAlpha = 0.0f;
     fadeDirection = 0;
     pendingTravel = core::Guid {};
+    // Chantier 3 B1: start the day at 10:00, ~7.5 real minutes per game
+    // hour (timescale 12 — "Animate" boosts it).
+    gameClock = gameplay::GameClock {};
+    gameClock.gameSeconds = 10.0 * 3600.0;
+    gameClock.timescale = 12.0f;
     // B3/B4: a fresh edit session over the freshly resolved database.
     levelEditor = std::make_unique<LevelEditor>(forms, formTypes);
     editMode = false;
@@ -328,6 +353,7 @@ void LandscapeScene::onEnter() {
     }
     snapCellEntities();
     refreshNpcs(device);
+    refreshNavObstacles();
 
     // Brick 23: swap one procedural rock variant for an authored CC0 glTF
     // rock (moon_rock_02, Poly Haven). Missing file = procedural fallback.
@@ -642,18 +668,21 @@ void LandscapeScene::update(f32 dt) {
         if (cellStreamer->update(activeWorldspace, focus.x, focus.z)) {
             snapCellEntities();
             refreshNpcs(engine->getDevice());
+            refreshNavObstacles();
         }
     }
     updateStaticColliders(); // B2: bodies follow spawns + mesh residency
-    // B7: door prompts + the travel fade state machine.
-    updateDoorInteraction(dt);
-    // B5.5: the character pipeline ticks the player (effects, regen,
-    // exhaustion, injuries...) — game time 1:1 with real time until the
-    // game clock joins the scene.
+    // B7/ch.3 B1: interaction prompts + the travel fade state machine.
+    updateInteraction(dt);
+    // Chantier 3 B1: the game clock owns time — the sky follows it, and
+    // tickCharacter gets REAL game-seconds (regen/survival at timescale).
+    gameClock.timescale = animateTime ? 720.0f : 12.0f;
+    const f64 gameDt = gameClock.advance(dt);
+    sky.timeOfDay = static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
     if (playerEntity.is_alive()) {
         const gameplay::CharacterTickContext tickCtx { derivedStats,
                                                        gameTags, statsTuning };
-        gameplay::tickCharacter(playerEntity, dt, dt, tickCtx);
+        gameplay::tickCharacter(playerEntity, dt, gameDt, tickCtx);
     }
     snapshot.meshes.clear();
     extractMeshes(world, snapshot);
@@ -725,13 +754,7 @@ void LandscapeScene::update(f32 dt) {
         flyCamera.update(engine->getInput(), engine->getWindow(), dt,
                          allowCapture);
     }
-    if (animateTime) {
-        // Full day/night cycle in two minutes.
-        sky.timeOfDay += dt * (24.0f / 120.0f);
-        if (sky.timeOfDay >= 24.0f) {
-            sky.timeOfDay -= 24.0f;
-        }
-    }
+    // (Time-of-day now advances through the game clock, above.)
 }
 
 // Draws the snapshot's mesh section in the opaque pass: guids resolve
@@ -1385,36 +1408,138 @@ void LandscapeScene::drawEditorUi() {
 
 // --- B7: doors & worldspace travel ------------------------------------------------
 
-void LandscapeScene::updateDoorInteraction(f32 dt) {
-    promptDoor = ecs::Entity {};
+void LandscapeScene::updateInteraction(f32 dt) {
+    promptEntity = ecs::Entity {};
+    promptKind = PromptKind::None;
+    if (talkTimer > 0.0f) {
+        talkTimer -= dt;
+    }
     if (fadeDirection == 0 && playMode && player) {
-        // Aim test: nearest door within reach, roughly in front of the eye.
+        // Aim test: nearest interactable within reach, roughly in front
+        // of the eye. One scorer for every kind.
         const Vec3 eye = player->position() + Vec3 { 0.0f, 1.7f, 0.0f };
         const Vec3 forward = flyCamera.camera.forward();
         f32 bestScore = 0.55f; // minimum facing alignment
-        ecs::Entity best {};
+        const auto consider = [&](flecs::entity e, const Vec3& position,
+                                  PromptKind kind, f32 reach) {
+            const Vec3 to = position + Vec3 { 0.0f, 1.1f, 0.0f } - eye;
+            const f32 distance = glm::length(to);
+            if (distance > reach || distance < 1e-3f) {
+                return;
+            }
+            const f32 facing = glm::dot(to / distance, forward);
+            if (facing > bestScore) {
+                bestScore = facing;
+                promptEntity = ecs::Entity { e };
+                promptKind = kind;
+            }
+        };
         world.handle()
             .query<const world::Transform, const world::DoorTarget>()
             .each([&](flecs::entity e, const world::Transform& transform,
                       const world::DoorTarget&) {
-                const Vec3 to =
-                    transform.position + Vec3 { 0.0f, 1.1f, 0.0f } - eye;
-                const f32 distance = glm::length(to);
-                if (distance > 3.0f || distance < 1e-3f) {
-                    return;
-                }
-                const f32 facing = glm::dot(to / distance, forward);
-                if (facing > bestScore) {
-                    bestScore = facing;
-                    best = ecs::Entity { e };
+                consider(e, transform.position, PromptKind::Door, 3.0f);
+            });
+        world.handle()
+            .query<const world::Transform, const world::RefId>()
+            .each([&](flecs::entity e, const world::Transform& transform,
+                      const world::RefId&) {
+                const ecs::Entity entity { e };
+                if (entity.has<world::ItemMarker>()) {
+                    consider(e, transform.position, PromptKind::Item, 2.4f);
+                } else if (entity.has<world::ActorMarker>() &&
+                           entity != playerEntity) {
+                    consider(e, transform.position, PromptKind::Actor,
+                             2.8f);
+                } else if (entity.has<world::FurnitureMarker>()) {
+                    consider(e, transform.position, PromptKind::Furniture,
+                             2.4f);
                 }
             });
-        promptDoor = best;
-        if (promptDoor.is_alive() &&
+
+        // The prompt label from the base form's displayName (reflection).
+        promptLabel.clear();
+        if (promptEntity.is_alive()) {
+            str name;
+            const auto& ref = promptEntity.get<world::RefId>();
+            if (const data::Form* base = forms.get(ref.base)) {
+                if (const reflect::TypeInfo* type = forms.typeOf(ref.base)) {
+                    if (const reflect::FieldInfo* field =
+                            type->findField("displayName");
+                        field && field->kind == reflect::FieldKind::Str) {
+                        name = std::get<str>(field->get(base));
+                    }
+                }
+            }
+            switch (promptKind) {
+            case PromptKind::Door:
+                promptLabel = "[E] " + (name.empty() ? "Use door" : name);
+                break;
+            case PromptKind::Item:
+                promptLabel =
+                    "[E] Take " + (name.empty() ? "item" : name);
+                break;
+            case PromptKind::Actor:
+                promptLabel =
+                    "[E] Talk to " + (name.empty() ? "them" : name);
+                break;
+            case PromptKind::Furniture:
+                promptLabel = "[E] Use " + (name.empty() ? "this" : name);
+                break;
+            default:
+                break;
+            }
+        }
+
+        if (promptEntity.is_alive() &&
             engine->getInput().wasPressed(platform::Key::E)) {
-            pendingTravel =
-                promptDoor.get<world::DoorTarget>().targetReference;
-            fadeDirection = 1;
+            switch (promptKind) {
+            case PromptKind::Door:
+                pendingTravel =
+                    promptEntity.get<world::DoorTarget>().targetReference;
+                fadeDirection = 1;
+                break;
+            case PromptKind::Item: {
+                // Into the inventory; the entity leaves the world.
+                // (Persisting the pickup = the save layer, chantier 5.)
+                const auto& ref = promptEntity.get<world::RefId>();
+                if (const data::Form* base = forms.get(ref.base)) {
+                    if (!playerEntity.has<gameplay::Inventory>()) {
+                        playerEntity.set<gameplay::Inventory>({});
+                    }
+                    gameplay::addItem(
+                        playerEntity.get_mut<gameplay::Inventory>(),
+                        base->id, 1);
+                    LOG_INFO("Taken: {}", base->editorId);
+                }
+                promptEntity.destruct();
+                promptEntity = ecs::Entity {};
+                break;
+            }
+            case PromptKind::Actor:
+                // Placeholder until the dialogue vertical: a spoken line.
+                talkLine = "Belle journee, voyageur.";
+                talkTimer = 4.0f;
+                break;
+            case PromptKind::Furniture: {
+                // B7-lite: beds sleep 8h, seats rest 1h — both through the
+                // Phase-7 gameplay::sleep() at the black of the fade.
+                const auto& ref = promptEntity.get<world::RefId>();
+                f32 hours = 1.0f;
+                if (const reflect::TypeInfo* type = forms.typeOf(ref.base);
+                    type &&
+                    type->isA(gameplay::FurnitureForm::staticTypeInfo().id)) {
+                    const auto* furniture = static_cast<
+                        const gameplay::FurnitureForm*>(forms.get(ref.base));
+                    if (furniture->category == "bed") { hours = 8.0f; }
+                }
+                pendingSleepHours = hours;
+                fadeDirection = 1;
+                break;
+            }
+            default:
+                break;
+            }
         }
     }
     // Fade state machine: out (0.3 s) -> travel at black -> in.
@@ -1423,8 +1548,13 @@ void LandscapeScene::updateDoorInteraction(f32 dt) {
         fadeAlpha += dt * kFadeSpeed;
         if (fadeAlpha >= 1.0f) {
             fadeAlpha = 1.0f;
-            performTravel(pendingTravel);
-            pendingTravel = core::Guid {};
+            if (pendingSleepHours > 0.0f) {
+                performRest(pendingSleepHours);
+                pendingSleepHours = 0.0f;
+            } else {
+                performTravel(pendingTravel);
+                pendingTravel = core::Guid {};
+            }
             fadeDirection = -1;
         }
     } else if (fadeDirection < 0) {
@@ -1462,6 +1592,7 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     snapCellEntities();
     refreshNpcs(engine->getDevice());
     updateStaticColliders();
+    refreshNavObstacles();
 
     // Fresh terrain tiles for the new space (none are built in interiors).
     terrainCollision =
@@ -1486,10 +1617,98 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
              marker->position.x, interiorMode);
 }
 
+// Chantier 3 B7-lite: rest/sleep on furniture — the Phase-7 sleep()
+// advances the game clock (the sky follows on the next frame), decays
+// hunger/thirst over the skipped time, restores the sleep need, and
+// accrues Rest (the injury/resonance recovery precondition). NPC
+// schedules re-evaluate on their next slot check and warp forward.
+void LandscapeScene::performRest(f32 hours) {
+    if (!playerEntity.is_alive()) {
+        return;
+    }
+    if (!playerEntity.has<gameplay::Survival>() ||
+        !playerEntity.has<gameplay::CombatState>()) {
+        LOG_WARN("B7: player has no survival stats; rest skipped");
+        return;
+    }
+    gameplay::sleep(gameClock,
+                    playerEntity.get_mut<gameplay::Survival>(),
+                    playerEntity.get_mut<gameplay::CombatState>(),
+                    hours, statsTuning);
+    talkLine = hours >= 8.0f
+        ? "Vous dormez profondement (8 h)."
+        : "Vous vous reposez un moment (1 h).";
+    talkTimer = 3.0f;
+    LOG_INFO("B7-lite: rested {} h -> game time {:.2f} h", hours,
+             std::fmod(gameClock.gameHours(), 24.0));
+}
+
+// Chantier 3 B6: first-person melee — LMB swings the equipped weapon at
+// the nearest living NPC in reach and roughly in front. Damage flows
+// through the SAME GAS pipeline as the 2D arena (§2.9: no hand-rolled
+// numbers). v1 has no swing animation (no visible body) — the cooldown
+// and the hit feedback carry the feel until the FX/audio brick.
+void LandscapeScene::tryPlayerAttack() {
+    if (!playerWeapon || !playerEntity.is_alive() || !player) {
+        return;
+    }
+    playerAttackCooldown = 0.7f;
+    const Vec3 eye = player->position() + Vec3 { 0.0f, 1.7f, 0.0f };
+    const Vec3 forward = flyCamera.camera.forward();
+    Npc* best = nullptr;
+    f32 bestScore = 0.45f;
+    for (auto& npcPtr : npcs) {
+        Npc& npc = *npcPtr;
+        if (npc.dead || !npc.entity.is_alive()) {
+            continue;
+        }
+        const Vec3 position =
+            npc.entity.get<world::Transform>().position;
+        const Vec3 to = position + Vec3 { 0.0f, 1.1f, 0.0f } - eye;
+        const f32 distance = glm::length(to);
+        if (distance > 2.4f || distance < 1e-3f) {
+            continue;
+        }
+        const f32 facing = glm::dot(to / distance, forward);
+        if (facing > bestScore) {
+            bestScore = facing;
+            best = &npc;
+        }
+    }
+    if (!best) {
+        LOG_INFO("Swing: nothing in reach");
+        return;
+    }
+    gameplay::StatBlock block {
+        best->entity.get_mut<gameplay::CoreAttributes>(),
+        best->entity.get_mut<gameplay::AttributeSet>(),
+        best->entity.get_mut<gameplay::AbilitySystem>(),
+        best->entity.get_mut<gameplay::CombatState>()
+    };
+    const auto& playerSys = playerEntity.get<gameplay::AbilitySystem>();
+    const gameplay::DamageResult result = gameplay::applyDamage(
+        block, gameplay::weaponDamageEvent(*playerWeapon, playerSys),
+        gameTags, derivedStats, nullptr, statsTuning);
+    LOG_INFO("You hit for {:.0f} damage{} (target health {:.0f})",
+             result.healthDamage, result.staggered ? " — staggered!" : "",
+             gameplay::currentValueOf(
+                 best->entity.get<gameplay::AbilitySystem>(),
+                 gameplay::attr("health")));
+    // Aggro: a peaceful NPC defends itself... by fleeing (the villager
+    // has no weapon) — combat AI beyond bandits is the next slice.
+}
+
 void LandscapeScene::updatePlayer(f32 dt) {
     platform::Input& input = engine->getInput();
     if (fadeDirection != 0) {
         return; // frozen during door transitions
+    }
+    // B6: melee swing on LMB (the mouse is captured in Play — ImGui
+    // never owns it here).
+    playerAttackCooldown -= dt;
+    if (playerAttackCooldown <= 0.0f &&
+        input.mousePressed(platform::MouseButton::Left)) {
+        tryPlayerAttack();
     }
 
     // Mouselook, always captured in Play (no LMB gymnastics in a game).
@@ -1815,9 +2034,25 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
             npc->rig = rig;
             npc->graph = std::move(*graph);
             npc->anim = std::make_unique<anim::GraphInstance>(npc->graph);
-            // No event sink yet: timeline events (Footstep...) get their
-            // consumers (cues, audio-by-material) in the « vivant »
-            // chantier — logging each step only floods the console.
+            // Chantier 3 B3/B6: the daily routine + the anim tag gates
+            // (sitting from furniture use, dead from the GAS life state).
+            npc->schedule = actor.schedule;
+            data::childrenOf<gameplay::ActorTagForm>(
+                forms, actor.id, [&](const gameplay::ActorTagForm& tagForm) {
+                    if (tagForm.tag == "Faction.Bandits") {
+                        npc->hostile = true;
+                    }
+                });
+            npc->anim->setTagCheck(
+                [raw = npc.get()](std::string_view tag) {
+                    if (tag == "State.Sitting") {
+                        return raw->sitting;
+                    }
+                    if (tag == "State.Dead") {
+                        return raw->dead;
+                    }
+                    return false;
+                });
             npc->tint = visual->tint;
             npc->palette.assign(rig->skeleton.joints.size(), Mat4 { 1.0f });
             npc->vertices = device.createBuffer(
@@ -1867,54 +2102,320 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
         });
 }
 
+// Chantier 3 B2: the navigator's obstacle set = the static colliders'
+// world AABBs, inflated by the agent radius. Refreshed on cell changes.
+void LandscapeScene::refreshNavObstacles() {
+    if (!navigator || !meshCache) {
+        return;
+    }
+    vector<world::TerrainNavigator::BlockingBox> boxes;
+    world.handle()
+        .query<const world::Transform, const world::MeshRender,
+               const world::RefId>()
+        .each([&](flecs::entity, const world::Transform& transform,
+                  const world::MeshRender& mesh, const world::RefId& ref) {
+            const data::Form* base = forms.get(ref.base);
+            const reflect::TypeInfo* type = forms.typeOf(ref.base);
+            if (!base || !type) {
+                return;
+            }
+            const reflect::FieldInfo* field = type->findField("collides");
+            if (!field || field->kind != reflect::FieldKind::Bool ||
+                !std::get<bool>(field->get(base))) {
+                return;
+            }
+            Vec3 lo { -0.5f }, hi { 0.5f };
+            if (const MeshCache::CpuMesh* cpu =
+                    meshCache->cpuMesh(mesh.model)) {
+                lo = cpu->boundsMin;
+                hi = cpu->boundsMax;
+            }
+            const Mat4 model =
+                glm::translate(Mat4 { 1.0f }, transform.position) *
+                glm::mat4_cast(transform.rotation) *
+                glm::scale(Mat4 { 1.0f }, transform.scale);
+            Vec3 wlo { 1e9f }, whi { -1e9f };
+            for (u32 i = 0; i < 8; ++i) {
+                const Vec3 corner { (i & 1) ? hi.x : lo.x,
+                                    (i & 2) ? hi.y : lo.y,
+                                    (i & 4) ? hi.z : lo.z };
+                const Vec3 w = Vec3 { model * Vec4 { corner, 1.0f } };
+                wlo = glm::min(wlo, w);
+                whi = glm::max(whi, w);
+            }
+            constexpr f32 kAgentRadius = 0.4f;
+            boxes.push_back({ wlo - Vec3 { kAgentRadius, 0.0f, kAgentRadius },
+                              whi + Vec3 { kAgentRadius, 0.0f,
+                                           kAgentRadius } });
+        });
+    navigator->setBlockingBoxes(std::move(boxes));
+}
+
+// Chantier 3 B3: re-evaluate the schedule every 10 game minutes; execute
+// the active package (travel / wander / useFurniture / guard...).
+void LandscapeScene::updateNpcSchedule(Npc& npc, f32 hourOfDay) {
+    const i32 slot = static_cast<i32>(hourOfDay * 6.0f);
+    if (slot == npc.lastEvaluatedSlot) {
+        return;
+    }
+    npc.lastEvaluatedSlot = slot;
+    const auto intent =
+        gameplay::evaluateSchedule(forms, npc.schedule, hourOfDay);
+    const gameplay::AiPackageForm* next =
+        intent ? intent->package : nullptr;
+    const core::Guid nextLocation = intent ? intent->location
+                                           : core::Guid {};
+    if (next != npc.activePackage || nextLocation != npc.activeLocation) {
+        // Package change: stand up, drop the path, release furniture.
+        npc.activePackage = next;
+        npc.activeLocation = nextLocation;
+        npc.intentReason = intent ? intent->reason : "(no schedule entry)";
+        npc.path.clear();
+        npc.pathIndex = 0;
+        npc.sitting = false;
+        if (npc.furnitureClaimed) {
+            furnitureOccupancy.release(npc.entity.id());
+            npc.furnitureClaimed = false;
+        }
+    }
+}
+
+bool LandscapeScene::moveNpcAlongPath(Npc& npc, f32 dt, f32 speedScale) {
+    if (npc.pathIndex >= npc.path.size()) {
+        return true;
+    }
+    auto& transform = npc.entity.get_mut<world::Transform>();
+    const auto& sys = npc.entity.get<gameplay::AbilitySystem>();
+    const f32 walkSpeed =
+        gameplay::currentValueOf(sys, gameplay::attr("movementSpeed")) *
+        kSpeedScale3D * kNpcWalkFactor * speedScale;
+
+    const Vec3 goal = npc.path[npc.pathIndex];
+    Vec3 to = goal - transform.position;
+    to.y = 0.0f;
+    const f32 distance = glm::length(to);
+    if (distance < 0.35f) {
+        ++npc.pathIndex;
+        return npc.pathIndex >= npc.path.size();
+    }
+    const Vec3 dir = to / distance;
+    transform.position += dir * glm::min(walkSpeed * dt, distance);
+    transform.position.y = render::terrain::height(
+        terrain.params, transform.position.x, transform.position.z);
+    const f32 goalYaw = std::atan2(dir.x, dir.z);
+    f32 delta = goalYaw - npc.yaw;
+    while (delta > glm::pi<f32>()) {
+        delta -= glm::two_pi<f32>();
+    }
+    while (delta < -glm::pi<f32>()) {
+        delta += glm::two_pi<f32>();
+    }
+    npc.yaw += delta * (1.0f - std::exp(-8.0f * dt));
+    transform.rotation = glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
+    npc.speed += (walkSpeed - npc.speed) * (1.0f - std::exp(-10.0f * dt));
+    return false;
+}
+
 void LandscapeScene::updateNpcs(f32 dt) {
+    const f32 hourOfDay =
+        static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
+    const f64 gameDt =
+        static_cast<f64>(dt) * static_cast<f64>(gameClock.timescale);
+    const gameplay::CharacterTickContext tickCtx { derivedStats, gameTags,
+                                                   statsTuning };
+    const auto deadTag = gameTags.find("State.Dead");
     for (auto& npcPtr : npcs) {
         Npc& npc = *npcPtr;
         auto& transform = npc.entity.get_mut<world::Transform>();
+        f32 idleDecay = 10.0f;
 
-        // The stroll speed comes from the NPC's OWN stats (§C.1: the actor
-        // is the character definition — a wounded villager limps).
-        const auto& sys = npc.entity.get<gameplay::AbilitySystem>();
-        const f32 walkSpeed =
-            gameplay::currentValueOf(sys, gameplay::attr("movementSpeed")) *
-            kSpeedScale3D * kNpcWalkFactor;
+        // B6: NPCs run the full character pipeline too (effects, stagger,
+        // life state) — that's where State.Dead comes from.
+        gameplay::tickCharacter(npc.entity, dt, gameDt, tickCtx);
+        const auto& npcSys = npc.entity.get<gameplay::AbilitySystem>();
+        npc.dead = deadTag && npcSys.tags.has(*deadTag);
+        if (npc.dead) {
+            // The death transition (anim graph, State.Dead gate) plays;
+            // the body stays. Loot/despawn: a later slice.
+            npc.sitting = false;
+            npc.path.clear();
+            npc.speed = 0.0f;
+            npc.anim->setParam("speed", 0.0f);
+            npc.anim->update(dt, 0.0f);
+            anim::bindPose(npc.rig->skeleton, npc.pose);
+            npc.anim->evaluate(npc.pose);
+            anim::skinMatrices(npc.rig->skeleton, npc.pose, npc.palette);
+            continue;
+        }
 
-        f32 targetSpeed = 0.0f;
-        if (patrolPoints.size() >= 2) {
-            const Vec3 goal = patrolPoints[npc.target % patrolPoints.size()];
+        // B5: hostile actors hunt the player on sight (distance + a clear
+        // line — the perception cone can refine later).
+        bool inCombat = false;
+        if (npc.hostile && playMode && player) {
+            const Vec3 playerPos = player->position();
+            Vec3 to = playerPos - transform.position;
+            to.y = 0.0f;
+            const f32 distance = glm::length(to);
+            if (distance < 16.0f) {
+                const Vec3 eye =
+                    transform.position + Vec3 { 0.0f, 1.5f, 0.0f };
+                const Vec3 target = playerPos + Vec3 { 0.0f, 1.2f, 0.0f };
+                const Vec3 dir = glm::normalize(target - eye);
+                const f32 sight = glm::length(target - eye);
+                const phys::RayHit hit =
+                    physics->rayCast(eye, dir, sight);
+                const bool blocked = hit.hit && hit.distance < sight - 0.6f;
+                if (!blocked) {
+                    inCombat = true;
+                    npc.sitting = false;
+                    npc.attackCooldown -= dt;
+                    npc.repathTimer -= dt;
+                    if (distance > 1.8f) {
+                        if (npc.repathTimer <= 0.0f) {
+                            const nav::PathResult found =
+                                navigator->findPath({ transform.position,
+                                                      playerPos, 1.2f });
+                            npc.path = found.success ? found.waypoints
+                                                     : vector<Vec3> {};
+                            npc.pathIndex = 0;
+                            npc.repathTimer = 1.0f;
+                        }
+                        moveNpcAlongPath(npc, dt, 1.8f); // hurry
+                    } else {
+                        npc.path.clear();
+                        // Face the player and swing.
+                        const f32 goalYaw = std::atan2(to.x, to.z);
+                        npc.yaw = goalYaw;
+                        transform.rotation = glm::angleAxis(
+                            npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
+                        if (npc.attackCooldown <= 0.0f && banditWeapon &&
+                            playerEntity.is_alive()) {
+                            npc.attackCooldown = 1.6f;
+                            gameplay::StatBlock block {
+                                playerEntity
+                                    .get_mut<gameplay::CoreAttributes>(),
+                                playerEntity
+                                    .get_mut<gameplay::AttributeSet>(),
+                                playerEntity
+                                    .get_mut<gameplay::AbilitySystem>(),
+                                playerEntity
+                                    .get_mut<gameplay::CombatState>()
+                            };
+                            const gameplay::DamageResult result =
+                                gameplay::applyDamage(
+                                    block,
+                                    gameplay::weaponDamageEvent(
+                                        *banditWeapon, npcSys),
+                                    gameTags, derivedStats, nullptr,
+                                    statsTuning);
+                            LOG_INFO("Bandit hits you: {:.0f} damage{}",
+                                     result.healthDamage,
+                                     result.staggered ? " (staggered!)"
+                                                      : "");
+                        }
+                    }
+                }
+            }
+        }
+
+        if (inCombat) {
+            // combat overrode the schedule this frame
+        } else if (npc.schedule.isValid()) {
+            // --- Schedule-driven day (B3) ---
+            updateNpcSchedule(npc, hourOfDay);
+            npc.repathTimer -= dt;
+            if (npc.wanderTimer > 0.0f) {
+                npc.wanderTimer -= dt;
+            }
+            const gameplay::AiPackageForm* package = npc.activePackage;
+            Vec3 anchor = transform.position;
+            if (const auto* locationRef =
+                    npc.activeLocation.isValid()
+                        ? forms.find<world::ReferenceForm>(
+                              npc.activeLocation)
+                        : nullptr) {
+                anchor = locationRef->position;
+                anchor.y = render::terrain::height(terrain.params, anchor.x,
+                                                   anchor.z);
+            }
+            const auto goTo = [&](const Vec3& target) {
+                if (npc.pathIndex < npc.path.size() ||
+                    npc.repathTimer > 0.0f) {
+                    return;
+                }
+                const nav::PathResult found = navigator->findPath(
+                    { transform.position, target, 0.8f });
+                npc.path = found.success ? found.waypoints
+                                         : vector<Vec3> {};
+                npc.pathIndex = 0;
+                npc.repathTimer = 2.0f; // budget: no repath storm
+            };
+            const str kind = package ? package->kind : str { "guard" };
+            if (kind == "wander") {
+                const f32 radius = package ? package->radius : 4.0f;
+                if (npc.pathIndex >= npc.path.size() &&
+                    npc.wanderTimer <= 0.0f) {
+                    // Cheap per-NPC stroll target around the anchor
+                    // (cosmetic randomness — not gameplay RNG, §8).
+                    const u32 hash =
+                        static_cast<u32>(npc.entity.id()) * 2654435761u +
+                        static_cast<u32>(timeSeconds * 0.37f);
+                    const f32 angle = static_cast<f32>(hash % 628) * 0.01f;
+                    const f32 reach =
+                        radius * (0.35f + static_cast<f32>(hash % 61) *
+                                              0.01f);
+                    goTo(anchor + Vec3 { std::cos(angle) * reach, 0.0f,
+                                         std::sin(angle) * reach });
+                }
+                if (moveNpcAlongPath(npc, dt,
+                                     package ? package->speed : 1.0f)) {
+                    if (npc.pathIndex >= npc.path.size() &&
+                        npc.wanderTimer <= 0.0f && !npc.path.empty()) {
+                        npc.path.clear();
+                        npc.wanderTimer = 3.0f + static_cast<f32>(
+                                                     npc.entity.id() % 4);
+                    }
+                    idleDecay = 6.0f;
+                }
+            } else if (kind == "useFurniture" || kind == "sleep" ||
+                       kind == "eat" || kind == "work") {
+                goTo(anchor);
+                if (moveNpcAlongPath(npc, dt,
+                                     package ? package->speed : 1.0f)) {
+                    // Arrived: claim a point and sit (the anim graph's
+                    // State.Sitting gate does the rest).
+                    if (!npc.furnitureClaimed) {
+                        furnitureOccupancy.claim(npc.activeLocation, 1,
+                                                 npc.entity.id());
+                        npc.furnitureClaimed = true;
+                    }
+                    npc.sitting = true;
+                }
+            } else { // travel / guard / unknown: reach the spot and stand
+                goTo(anchor);
+                moveNpcAlongPath(npc, dt, package ? package->speed : 1.0f);
+            }
+        } else if (patrolPoints.size() >= 2) {
+            // --- Legacy patrol fallback (chantier 1 B6) ---
+            const Vec3 goal =
+                patrolPoints[npc.target % patrolPoints.size()];
             Vec3 to = goal - transform.position;
             to.y = 0.0f;
             const f32 distance = glm::length(to);
             if (npc.pauseTimer > 0.0f) {
-                npc.pauseTimer -= dt; // idle beat at the end point
+                npc.pauseTimer -= dt;
             } else if (distance < 0.4f) {
                 npc.pauseTimer = kNpcPauseSeconds;
                 npc.target = (npc.target + 1) %
                              static_cast<u32>(patrolPoints.size());
             } else {
-                const Vec3 dir = to / distance;
-                targetSpeed = walkSpeed;
-                transform.position += dir * walkSpeed * dt;
-                transform.position.y = render::terrain::height(
-                    terrain.params, transform.position.x,
-                    transform.position.z);
-                // Face the walk direction (mannequin authored facing +Z),
-                // smoothed over ~0.15 s.
-                const f32 goalYaw = std::atan2(dir.x, dir.z);
-                f32 delta = goalYaw - npc.yaw;
-                while (delta > glm::pi<f32>()) {
-                    delta -= glm::two_pi<f32>();
-                }
-                while (delta < -glm::pi<f32>()) {
-                    delta += glm::two_pi<f32>();
-                }
-                npc.yaw += delta * (1.0f - std::exp(-8.0f * dt));
-                transform.rotation =
-                    glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
+                npc.path = { goal };
+                npc.pathIndex = 0;
+                moveNpcAlongPath(npc, dt, 1.0f);
             }
         }
-        npc.speed += (targetSpeed - npc.speed) *
-                     (1.0f - std::exp(-10.0f * dt));
+        npc.speed -= npc.speed * (1.0f - std::exp(-idleDecay * dt)) *
+                     (npc.pathIndex >= npc.path.size() ? 1.0f : 0.0f);
 
         // Anim: real speed feeds the param (transitions) AND the
         // referenceSpeed sync (anti-foot-sliding).
@@ -2427,23 +2928,20 @@ void LandscapeScene::drawUi() {
     // door prompt (foreground draw list — no renderer pass involved).
     ImDrawList* foreground = ImGui::GetForegroundDrawList();
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    if (playMode && promptDoor.is_alive() && fadeDirection == 0) {
-        str label = "[E] Use door";
-        const auto& ref = promptDoor.get<world::RefId>();
-        const data::Form* base = forms.get(ref.base);
-        const reflect::TypeInfo* type = forms.typeOf(ref.base);
-        if (base && type &&
-            type->isA(world::DoorForm::staticTypeInfo().id)) {
-            const auto& door = *static_cast<const world::DoorForm*>(base);
-            if (!door.displayName.empty()) {
-                label = "[E] " + door.displayName;
-            }
-        }
-        const ImVec2 size = ImGui::CalcTextSize(label.c_str());
+    if (playMode && promptEntity.is_alive() && fadeDirection == 0 &&
+        !promptLabel.empty()) {
+        const ImVec2 size = ImGui::CalcTextSize(promptLabel.c_str());
         foreground->AddText(
             { (display.x - size.x) * 0.5f, display.y * 0.62f },
             ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.95f)),
-            label.c_str());
+            promptLabel.c_str());
+    }
+    if (talkTimer > 0.0f && !talkLine.empty()) {
+        const ImVec2 size = ImGui::CalcTextSize(talkLine.c_str());
+        foreground->AddText(
+            { (display.x - size.x) * 0.5f, display.y * 0.55f },
+            ImGui::GetColorU32(ImVec4(1.0f, 0.95f, 0.8f, 0.95f)),
+            talkLine.c_str());
     }
     if (fadeAlpha > 0.0f) {
         foreground->AddRectFilled(
@@ -2542,9 +3040,17 @@ void LandscapeScene::drawUi() {
 }
 
 void LandscapeScene::drawSkyUi() {
-    ImGui::SliderFloat("Time of day (h)", &sky.timeOfDay, 0.0f, 24.0f,
-                       "%.1f");
+    // The clock is the source of truth: the slider WRITES it (day count
+    // preserved), the sky follows in update().
+    f32 hour = static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
+    if (ImGui::SliderFloat("Time of day (h)", &hour, 0.0f, 24.0f, "%.1f")) {
+        const f64 days = std::floor(gameClock.gameHours() / 24.0);
+        gameClock.gameSeconds = (days * 24.0 + hour) * 3600.0;
+    }
     ImGui::Checkbox("Animate (24 h in 2 min)", &animateTime);
+    ImGui::SameLine();
+    ImGui::TextDisabled("day %d, x%.0f", static_cast<int>(gameClock.gameDays()),
+                        gameClock.timescale);
     if (!weathers.empty()) {
         // "(manual)" entry + one per WeatherForm, separated by '\0' as
         // ImGui::Combo expects (c_str() supplies the double terminator).
@@ -2590,10 +3096,13 @@ void LandscapeScene::drawGameplayUi() {
                                                        "run" };
         const Npc& npc = *npcs.front();
         const u32 state = npc.anim->currentState();
-        ImGui::Text("NPC: %s%s | %.1f m/s | pause %.1f s",
-                    state < 3 ? kStateNames[state] : "?",
-                    npc.anim->blending() ? " (blending)" : "", npc.speed,
-                    glm::max(npc.pauseTimer, 0.0f));
+        ImGui::Text("NPC: %s%s | %.1f m/s",
+                    state < 3 ? kStateNames[state] : "sit/other",
+                    npc.anim->blending() ? " (blending)" : "", npc.speed);
+        if (!npc.intentReason.empty()) {
+            // The P0 schedule tool: where is this NPC going, and why.
+            ImGui::TextDisabled("intent: %s", npc.intentReason.c_str());
+        }
         if (ImGui::Button("Teleport to NPC")) {
             // Stand 6 m south, eyes 2 m up, looking at the NPC's CURRENT
             // position (it walks).

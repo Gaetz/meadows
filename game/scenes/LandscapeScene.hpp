@@ -14,7 +14,11 @@
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/ai/ScheduleSystem.hpp"
+#include "gameplay/interaction/Furniture.hpp"
+#include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
+#include "world/ai/TerrainNavigator.hpp"
 #include "world/streaming/CellStreamer.hpp"
 #include "game/SceneSubmit.hpp"
 #include "game/TerrainCollision.hpp"
@@ -34,6 +38,9 @@
 
 namespace engine {
 class Engine;
+}
+namespace data {
+struct WeaponForm; // CoreForms — pointers only in this header
 }
 
 namespace game {
@@ -209,12 +216,33 @@ private:
     void applyBrush(const Vec3& center, f32 dt);
     void publishSculpt();
     void saveSculptToMod();
-    ecs::Entity promptDoor {};   // the door aimed at (Play mode)
+    // Chantier 3 B1: GENERIC interaction (E) — doors travel, items land
+    // in the inventory, actors talk (placeholder line), furniture = B7.
+    enum class PromptKind : u8 { None, Door, Item, Actor, Furniture };
+    ecs::Entity promptEntity {};
+    PromptKind promptKind { PromptKind::None };
+    str promptLabel;
+    str talkLine; // placeholder dialogue bubble
+    f32 talkTimer { 0.0f };
     core::Guid pendingTravel {}; // armed target marker reference
+    f32 pendingSleepHours { 0.0f }; // armed rest/sleep (B7-lite), at black
     f32 fadeAlpha { 0.0f };      // 0 = clear, 1 = black
     i32 fadeDirection { 0 };     // +1 fading out, -1 fading in
-    void updateDoorInteraction(f32 dt);
+    void updateInteraction(f32 dt);
     void performTravel(const core::Guid& targetReference);
+    void performRest(f32 hours); // Phase-7 sleep(): clock + survival + rest
+
+    // Chantier 3 B1: the game clock owns time-of-day (the sky follows)
+    // and feeds real game-time into tickCharacter/schedules.
+    gameplay::GameClock gameClock;
+
+    // Chantier 3 B5/B6: melee combat — everything flows through the GAS
+    // damage pipeline (weaponDamageEvent -> applyDamage), like the 2D
+    // CombatArena. First-person: no player swing anim needed in v1.
+    const data::WeaponForm* playerWeapon { nullptr };
+    const data::WeaponForm* banditWeapon { nullptr };
+    f32 playerAttackCooldown { 0.0f };
+    void tryPlayerAttack();
     void snapCellEntities(); // idempotent ground snap (y = terrain + authored)
 
     // Chantier 2 B8: the authored-terrain overlay. IMMUTABLE once
@@ -275,6 +303,25 @@ private:
         f32 pauseTimer { 0.0f };
         f32 yaw { 0.0f };
         f32 speed { 0.0f }; // smoothed horizontal speed -> anim param
+
+        // Chantier 3 B3: schedule-driven life (replaces the patrol when
+        // the ActorForm carries a schedule; patrol stays the fallback).
+        core::Guid schedule {};
+        i32 lastEvaluatedSlot { -1 }; // 10-game-minute re-eval granularity
+        const gameplay::AiPackageForm* activePackage { nullptr };
+        core::Guid activeLocation {};
+        str intentReason; // the debug view's "why"
+        vector<Vec3> path;
+        u32 pathIndex { 0 };
+        f32 repathTimer { 0.0f };
+        f32 wanderTimer { 0.0f };
+        bool sitting { false };         // drives the State.Sitting anim gate
+        bool furnitureClaimed { false };
+
+        // Chantier 3 B5/B6: combat.
+        bool hostile { false }; // ActorTagForm child "Faction.Bandits"
+        bool dead { false };    // mirrors the GAS State.Dead tag
+        f32 attackCooldown { 0.0f };
     };
     vector<uptr<Npc>> npcs;
     vector<Vec3> patrolPoints;   // grounded "patrol" marker positions
@@ -288,6 +335,15 @@ private:
     void destroyNpc(rhi::Device& device, Npc& npc);
     void updateNpcs(f32 dt);
     void drawNpcs(engine::FrameContext& frame);
+
+    // Chantier 3 B2/B3: navigation + schedule execution.
+    uptr<world::TerrainNavigator> navigator;
+    gameplay::FurnitureOccupancy furnitureOccupancy;
+    void refreshNavObstacles();
+    void updateNpcSchedule(Npc& npc, f32 hourOfDay);
+    // Follows npc.path at walk speed x `speedScale`; returns true when
+    // the path is finished (or empty).
+    bool moveNpcAlongPath(Npc& npc, f32 dt, f32 speedScale);
 
     // B4 (chantier 1): physics — height-field tiles follow the camera (the
     // player takes over as focus in B5); the debug capsule proves the

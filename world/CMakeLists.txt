@@ -14,6 +14,7 @@ add_library(meadows-world STATIC
     ai/Pathfinding.cpp
     ai/AiController.cpp
     ai/GridNavigator.cpp
+    ai/TerrainNavigator.cpp
     streaming/CellLoader.cpp
     streaming/CellStreamer.cpp
     terrain/TerrainPatches.cpp

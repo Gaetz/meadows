@@ -6,6 +6,7 @@ namespace gameplay {
 
 void registerCharacterFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<AppearanceForm>();
+    registry.registerFormType<ActorTagForm>(); // chantier 3
 }
 
 } // namespace gameplay

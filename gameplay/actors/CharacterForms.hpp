@@ -43,6 +43,21 @@ struct AppearanceForm : data::Form {
     REFLECT_END()
 };
 
+// Default gameplay tags of an actor (chantier 3 — the §C.1 NarrativePro
+// mapping, first slice): CHILD records — a mod adds a faction membership
+// ("Faction.Bandits") with one record. v1: the runtime reads them for
+// hostility; the full grant-into-GAS (with the loadout/grants records)
+// is the next slice of the character-definition work.
+struct ActorTagForm : data::Form {
+    core::Guid parent; // ActorForm
+    str tag;           // "Faction.Bandits", "State.Invulnerable"...
+
+    REFLECT_BEGIN(ActorTagForm, data::Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(tag)
+    REFLECT_END()
+};
+
 void registerCharacterFormTypes(data::FormTypeRegistry& registry);
 
 } // namespace gameplay
