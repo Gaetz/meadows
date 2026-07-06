@@ -1,4 +1,4 @@
-#include "game/scenes/LandscapeScene.hpp"
+﻿#include "game/scenes/LandscapeScene.hpp"
 
 #include <cmath>
 #include <filesystem>
@@ -27,6 +27,7 @@
 #include "engine/render/landscape/FrameUniforms.hpp"
 #include "data/forms/AnimForms.hpp"
 #include "data/forms/CoreForms.hpp"
+#include "data/forms/UiForms.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
@@ -49,10 +50,10 @@ namespace {
 
 constexpr const char* kTonemapShader = "tonemap";
 
-// B5.5: stat-space -> world mapping (docs/STATS.md §3; the CombatArena's
+// B5.5: stat-space -> world mapping (docs/STATS.md Â§3; the CombatArena's
 // kSpeedScale precedent, recalibrated for meters). Default sheet (~102):
 // jog ~5.1 m/s, sprint x1.6 ~8.2 m/s, velocity settles in ~0.1 s.
-// (Dev feel pass 2026-07-06: +50% — the unencumbered adventurer is brisk;
+// (Dev feel pass 2026-07-06: +50% â€” the unencumbered adventurer is brisk;
 // encumbrance will pull it back down when the P1 utility pass lands.)
 constexpr f32 kSpeedScale3D = 1.0f / 20.0f; // movementSpeed stat -> m/s
 constexpr f32 kSprintMult = 1.6f;           // "sprint multiplies" (STATS.md)
@@ -80,10 +81,10 @@ Mat4 obliqueProjection(Mat4 proj, const Vec4& clipPlaneView) {
 void LandscapeScene::onEnter() {
     rhi::Device& device = engine->getDevice();
 
-    // Load the moddable data (§5) through the plugin stack (chantier 4 B1):
+    // Load the moddable data (Â§5) through the plugin stack (chantier 4 B1):
     // data/plugins.toml declares the load order, the resolver layers every
     // plugin's fields last-writer-wins. One registration site for all
-    // families (AllForms) — UI/quest/dialogue records now resolve here too.
+    // families (AllForms) â€” UI/quest/dialogue records now resolve here too.
     game::registerAllFormTypes(formTypes);
     const auto dataDir = platform::executableDir() / "data";
     data::PluginConfig pluginConfig;
@@ -91,7 +92,7 @@ void LandscapeScene::onEnter() {
             data::loadPluginConfigFile(dataDir / "plugins.toml")) {
         pluginConfig = *loaded;
     } else {
-        LOG_WARN("data/plugins.toml missing — defaulting to data/base/*.toml");
+        LOG_WARN("data/plugins.toml missing â€” defaulting to data/base/*.toml");
         pluginConfig = data::defaultConfigFromDirectory(dataDir / "base");
         for (auto& entry : pluginConfig.entries) {
             entry.file = "base/" + entry.file;
@@ -118,7 +119,7 @@ void LandscapeScene::onEnter() {
              tuning.terrainSeed, tuning.seaLevel, tuning.fogDensity,
              tuning.cloudCoverage, weathers.size());
 
-    // B8: the authored-terrain overlay rides inside TerrainParams — every
+    // B8: the authored-terrain overlay rides inside TerrainParams â€” every
     // consumer (chunk workers, scatter, collision, snaps) is patched at
     // once. Retire the previous overlay instead of freeing it (workers).
     if (heightPatches) {
@@ -156,7 +157,7 @@ void LandscapeScene::onEnter() {
                                      .size = sizeof(render::FrameUniforms),
                                      .dynamic = true },
                                    nullptr);
-    // B5: local lights ride binding 5 of the SAME group — shaders that
+    // B5: local lights ride binding 5 of the SAME group â€” shaders that
     // don't declare the block simply ignore it.
     lightsUbo = device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform,
@@ -175,9 +176,9 @@ void LandscapeScene::onEnter() {
                       terrain.params.seed);
 
     // B1: the real mesh path. Plugin ReferenceForms spawn into a small ECS
-    // world through the Spawner (§2.7 — MeshRender wired by reflection from
+    // world through the Spawner (Â§2.7 â€” MeshRender wired by reflection from
     // the base form's model/material); extractMeshes fills the snapshot;
-    // the residency caches resolve guids at draw time (§7).
+    // the residency caches resolve guids at draw time (Â§7).
     materialTextures = std::make_unique<TextureCache>(
         device, assetDb, engine->getJobSystem(),
         TextureCache::UploadDesc { .format = rhi::TextureFormat::SRGBA8,
@@ -195,6 +196,10 @@ void LandscapeScene::onEnter() {
                   { { "uAlbedo", 0 } });
     buildMeshPipeline(device);
 
+    // Chantier 4 B2: the RmlUi game UI (screens from UiScreenForm records,
+    // documents through the plugins' ui/ roots).
+    createGameUi(device);
+
     // B4: the sim-side physics world + terrain collision (tiles follow the
     // camera for now; the player becomes the focus in B5).
     physics = std::make_unique<phys::PhysicsWorld>();
@@ -202,7 +207,7 @@ void LandscapeScene::onEnter() {
         std::make_unique<TerrainCollision>(*physics, terrain.params);
 
     // Chantier 3 B2: navigation over the SAME height function as
-    // everything else (patches included — the pointer rides in params).
+    // everything else (patches included â€” the pointer rides in params).
     navigator = std::make_unique<world::TerrainNavigator>(
         [this](f32 x, f32 z) {
             return render::terrain::height(terrain.params, x, z);
@@ -210,7 +215,7 @@ void LandscapeScene::onEnter() {
     furnitureOccupancy = gameplay::FurnitureOccupancy {};
 
     // B5.5: the character-stats runtime shared by every actor in the scene
-    // (the player first; the NPC joins in B6) — same setup as CombatArena.
+    // (the player first; the NPC joins in B6) â€” same setup as CombatArena.
     statsTuning = gameplay::resolveStatsTuning(forms);
     derivedStats = gameplay::DerivedStatRegistry {};
     gameplay::registerCoreDerivedStats(derivedStats, statsTuning);
@@ -231,7 +236,7 @@ void LandscapeScene::onEnter() {
         data::findByEditorId<gameplay::EffectForm>(forms, "SprintCost");
     testWoundEffect =
         data::findByEditorId<gameplay::EffectForm>(forms, "TestLegWound");
-    // Chantier 3 B6: the melee weapons (data — retune in village.toml).
+    // Chantier 3 B6: the melee weapons (data â€” retune in village.toml).
     playerWeapon =
         data::findByEditorId<data::WeaponForm>(forms, "RustySword");
     banditWeapon =
@@ -246,7 +251,7 @@ void LandscapeScene::onEnter() {
     world::registerCoreSpawners(spawner);
 
     // Chantier 2 B1: the cell machinery. PERSISTENT references (no cell)
-    // are spawned once here — the player; everything celled streams in
+    // are spawned once here â€” the player; everything celled streams in
     // and out through the CellStreamer (update()).
     worldModel = world::WorldModel::build(forms);
     cellLoader = std::make_unique<world::CellLoader>(
@@ -258,7 +263,7 @@ void LandscapeScene::onEnter() {
             data::findByEditorId<world::WorldspaceForm>(forms, "Overworld")) {
         overworldHandle = forms.handleOf(overworld->id);
     } else {
-        LOG_WARN("chantier 2 B1: no Overworld worldspace — nothing streams");
+        LOG_WARN("chantier 2 B1: no Overworld worldspace â€” nothing streams");
     }
     activeWorldspace = overworldHandle;
     interiorMode = false;
@@ -266,7 +271,7 @@ void LandscapeScene::onEnter() {
     fadeDirection = 0;
     pendingTravel = core::Guid {};
     // Chantier 3 B1: start the day at 10:00, ~7.5 real minutes per game
-    // hour (timescale 12 — "Animate" boosts it).
+    // hour (timescale 12 â€” "Animate" boosts it).
     gameClock = gameplay::GameClock {};
     gameClock.gameSeconds = 10.0 * 3600.0;
     gameClock.timescale = 12.0f;
@@ -301,14 +306,14 @@ void LandscapeScene::onEnter() {
                                                        gameTags, statsTuning };
         gameplay::initializeActorStats(playerEntity, tickCtx);
     } else {
-        LOG_WARN("B5.5: no Player actor spawned — controller falls back to "
+        LOG_WARN("B5.5: no Player actor spawned â€” controller falls back to "
                  "fixed speeds");
     }
     LOG_INFO("B1 (ch.2): {} persistent reference(s); cells stream around "
              "the player",
              persistent);
 
-    // B6: Forms-driven NPCs — every spawned actor whose ActorForm resolves
+    // B6: Forms-driven NPCs â€” every spawned actor whose ActorForm resolves
     // an ActorVisual gets its GPU skin, its data-built locomotion graph,
     // and its patrol brain. The scene builds no character by hand anymore.
     shaders->load("skinned",
@@ -318,7 +323,7 @@ void LandscapeScene::onEnter() {
     buildSkinnedPipeline(device);
 
     // Initial cell ring around the player spawn, then the post-spawn
-    // fixups (ground snap, NPC build) — the same pair update() re-runs
+    // fixups (ground snap, NPC build) â€” the same pair update() re-runs
     // whenever the ring changes.
     Vec3 startFocus { 32.0f, 0.0f, 368.0f };
     if (playerEntity.is_alive()) {
@@ -366,7 +371,7 @@ void LandscapeScene::onEnter() {
     }
 
     if (device.caps().offscreenTargets) {
-        blitSampler = device.createSampler({}); // linear, clamp — identity
+        blitSampler = device.createSampler({}); // linear, clamp â€” identity
         shaders->load(kTonemapShader, { { "FrameUbo", 0 } },
                       { { "uSceneColor", 0 },
                         { "uBloom", 1 },
@@ -384,7 +389,7 @@ void LandscapeScene::onEnter() {
         gpuOcclusion.create(device, *shaders);
     }
 
-    // Start beside the NPC (slightly above, looking at it) — never
+    // Start beside the NPC (slightly above, looking at it) â€” never
     // inside the terrain: the spot is grounded on the SAME height function
     // the mesh uses. Fallback: safely above the demo area.
     if (!npcs.empty()) {
@@ -407,11 +412,22 @@ void LandscapeScene::onEnter() {
 void LandscapeScene::onExit() {
     rhi::Device& device = engine->getDevice();
     engine->getWindow().setRelativeMouseMode(false);
+    engine->getWindow().setTextInput(false);
+    // Chantier 4: game UI (one UiSystem per process â€” release before any
+    // other scene creates its own).
+    if (uiCreated) {
+        uiSystem.destroy(device);
+        uiCreated = false;
+    }
+    screenStack = ScreenStack {};
+    shownScreens.clear();
+    uiModalWasOpen = false;
+    uiTextInputOn = false;
     destroyOffscreenTarget(device);
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
     // B1 mesh path: per-entry draw state, then the caches (their dtors free
-    // the GPU resources they own — device is alive here).
+    // the GPU resources they own â€” device is alive here).
     for (MeshDraw& draw : meshDraws) {
         if (draw.group.id != 0) {
             device.destroyBindGroup(draw.group);
@@ -434,7 +450,7 @@ void LandscapeScene::onExit() {
     rigCache.clear();
     device.destroyPipeline(skinnedPipeline);
     skinnedPipeline = {};
-    // Chantier 2 B1: cell machinery (references scene members — release
+    // Chantier 2 B1: cell machinery (references scene members â€” release
     // before the members are reset on the next onEnter).
     cellStreamer.reset();
     cellLoader.reset();
@@ -548,7 +564,7 @@ void LandscapeScene::ensureOffscreenTarget(rhi::Device& device, u32 width,
                       sceneDepthCopy);
     }
     // Tonemap inputs: scene + bloom + god rays (black 1x1 fallbacks are not
-    // needed on the 4.6 path — postFx is always ready when we get here).
+    // needed on the 4.6 path â€” postFx is always ready when we get here).
     blitBindGroup = device.createBindGroup(
         { .entries =
               postFx.ready()
@@ -616,16 +632,21 @@ void LandscapeScene::rebuildBlitPipeline(rhi::Device& device) {
 void LandscapeScene::update(f32 dt) {
     timeSeconds += dt;
     // B1 mesh path: pump async residency (worker decodes -> main-thread
-    // uploads, §7), then extract this frame's snapshot from the world.
+    // uploads, Â§7), then extract this frame's snapshot from the world.
     if (materialTextures) {
         materialTextures->pumpUploads();
     }
     if (meshCache) {
         meshCache->pumpUploads();
     }
+    // Chantier 4 B2: the game UI runs first â€” an open MODAL screen pauses
+    // the sim below (UiScreenForm.modal) and owns mouse/keyboard; the HUD
+    // overlay just reads. Dev ImGui stays live either way.
+    updateGameUi(dt);
+    const bool uiPaused = uiCreated && screenStack.modalOpen();
     // B4/B5: physics tick + collision tiles around the focus (the player
     // in Play mode, the camera in Fly); the debug capsule free-falls.
-    if (physics) {
+    if (physics && !uiPaused) {
         physics->tick(dt);
         if (!interiorMode) { // interiors have no terrain to collide with
             terrainCollision->update(playMode && player
@@ -638,7 +659,7 @@ void LandscapeScene::update(f32 dt) {
     }
     // Chantier 2 B1: stream cells around the focus; on any ring change,
     // re-run the post-spawn fixups (idempotent snap + NPC refresh).
-    if (cellStreamer && activeWorldspace.isValid()) {
+    if (cellStreamer && activeWorldspace.isValid() && !uiPaused) {
         const Vec3 focus = playMode && player ? player->position()
                                               : flyCamera.camera.position;
         if (cellStreamer->update(activeWorldspace, focus.x, focus.z)) {
@@ -648,17 +669,22 @@ void LandscapeScene::update(f32 dt) {
         }
     }
     updateStaticColliders(); // B2: bodies follow spawns + mesh residency
-    // B7/ch.3 B1: interaction prompts + the travel fade state machine.
-    updateInteraction(dt);
-    // Chantier 3 B1: the game clock owns time — the sky follows it, and
-    // tickCharacter gets REAL game-seconds (regen/survival at timescale).
-    gameClock.timescale = animateTime ? 720.0f : 12.0f;
-    const f64 gameDt = gameClock.advance(dt);
-    sky.timeOfDay = static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
-    if (playerEntity.is_alive()) {
-        const gameplay::CharacterTickContext tickCtx { derivedStats,
-                                                       gameTags, statsTuning };
-        gameplay::tickCharacter(playerEntity, dt, gameDt, tickCtx);
+    if (!uiPaused) {
+        // B7/ch.3 B1: interaction prompts + the travel fade state machine.
+        updateInteraction(dt);
+        // Chantier 3 B1: the game clock owns time â€” the sky follows it,
+        // and tickCharacter gets REAL game-seconds (regen/survival at
+        // timescale).
+        gameClock.timescale = animateTime ? 720.0f : 12.0f;
+        const f64 gameDt = gameClock.advance(dt);
+        sky.timeOfDay =
+            static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
+        if (playerEntity.is_alive()) {
+            const gameplay::CharacterTickContext tickCtx { derivedStats,
+                                                           gameTags,
+                                                           statsTuning };
+            gameplay::tickCharacter(playerEntity, dt, gameDt, tickCtx);
+        }
     }
     snapshot.meshes.clear();
     extractMeshes(world, snapshot);
@@ -671,7 +697,9 @@ void LandscapeScene::update(f32 dt) {
         snapshot.meshes.push_back({ core::Guid {}, core::Guid {}, transform });
     }
     // B6: patrol + graph-driven poses for every Forms-built NPC.
-    updateNpcs(dt);
+    if (!uiPaused) {
+        updateNpcs(dt);
+    }
     // Wind phase integrates the CURRENT strength: speed changes bend the
     // drift/sway smoothly instead of teleporting the pattern.
     windTime += dt * glm::max(windStrengthUi, 0.05f);
@@ -717,11 +745,13 @@ void LandscapeScene::update(f32 dt) {
 
     // B5: F toggles first-person Play mode (unless ImGui owns the
     // keyboard). In Play the player drives; Fly stays the dev camera.
-    if (engine->getInput().wasPressed(platform::Key::F) &&
+    if (!uiPaused && engine->getInput().wasPressed(platform::Key::F) &&
         !ImGui::GetIO().WantCaptureKeyboard) {
         playMode ? exitPlayMode() : enterPlayMode();
     }
-    if (playMode && player) {
+    if (uiPaused) {
+        // A modal screen owns the input; cameras and player hold still.
+    } else if (playMode && player) {
         updatePlayer(dt);
     } else {
         // Don't steal the mouse from ImGui: clicking a panel must not
@@ -738,7 +768,7 @@ void LandscapeScene::update(f32 dt) {
 // one small ModelUbo + bind group per entry, recreated only when the bound
 // texture flips (placeholder -> resident) or the material changes. N stays
 // tiny in B1; grouping/instancing per (model, material) is the contract's
-// planned next step (HORIZONTAL-PASS, monde 3D note). No shadow cast yet —
+// planned next step (HORIZONTAL-PASS, monde 3D note). No shadow cast yet â€”
 // parity with the H8 cube; casters join with the interiors chantier.
 void LandscapeScene::drawSceneMeshes(engine::FrameContext& frame) {
     if (snapshot.meshes.empty()) {
@@ -821,13 +851,15 @@ void LandscapeScene::enterPlayMode() {
     playerVelocity = Vec3 { 0.0f };
     playMode = true;
     engine->getWindow().setRelativeMouseMode(true);
+    screenStack.show("hud"); // the HUD overlay lives with Play mode
 }
 
 void LandscapeScene::exitPlayMode() {
     playMode = false;
     player.reset();
     engine->getWindow().setRelativeMouseMode(false);
-    // The camera stays where the player stood — Fly resumes from there.
+    screenStack.close("hud");
+    // The camera stays where the player stood â€” Fly resumes from there.
 }
 
 // --- B3/B4: the level editor -------------------------------------------------------
@@ -1083,7 +1115,7 @@ void LandscapeScene::saveSculptToMod() {
                       static_cast<unsigned long long>(key & 0xFFFFFFFFFFFFull));
         const core::Guid assetGuid = *core::Guid::fromString(guidText);
         levelEditor->addExportAsset(assetGuid, str { "terrain/" } + name);
-        // One TerrainPatchForm per chunk — reuse the existing record if
+        // One TerrainPatchForm per chunk â€” reuse the existing record if
         // this chunk was already authored (patch it), else create.
         core::Guid recordGuid {};
         data::forEach<world::TerrainPatchForm>(
@@ -1106,7 +1138,7 @@ void LandscapeScene::saveSculptToMod() {
         session.setField(recordGuid, type.findField("asset")->id,
                          reflect::Value { assetGuid });
     }
-    LOG_INFO("B9: {} sculpted chunk(s) staged — Export writes the mod",
+    LOG_INFO("B9: {} sculpted chunk(s) staged â€” Export writes the mod",
              sculptGrids.size());
 }
 
@@ -1208,7 +1240,7 @@ void LandscapeScene::drawEditorUi() {
                     }
                 }
                 if (!cellGuid.isValid()) {
-                    LOG_WARN("Editor: no authored cell here — placement "
+                    LOG_WARN("Editor: no authored cell here â€” placement "
                              "aborted");
                 } else {
                     // Authored y follows the base's convention: snapping
@@ -1348,7 +1380,7 @@ void LandscapeScene::drawEditorUi() {
     ImGui::Separator();
     ImGui::TextUnformatted(placementBase.isValid()
                                ? "Placing: click the ground (Esc: cancel)"
-                               : "Palette — click to arm:");
+                               : "Palette â€” click to arm:");
     if (placementBase.isValid() &&
         ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
         placementBase = core::Guid {};
@@ -1498,7 +1530,7 @@ void LandscapeScene::updateInteraction(f32 dt) {
                 talkTimer = 4.0f;
                 break;
             case PromptKind::Furniture: {
-                // B7-lite: beds sleep 8h, seats rest 1h — both through the
+                // B7-lite: beds sleep 8h, seats rest 1h â€” both through the
                 // Phase-7 gameplay::sleep() at the black of the fade.
                 const auto& ref = promptEntity.get<world::RefId>();
                 f32 hours = 1.0f;
@@ -1575,7 +1607,7 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
         std::make_unique<TerrainCollision>(*physics, terrain.params);
 
     // Teleport the capsule to the marker, facing its authored yaw. The
-    // fade-in (0.3 s) covers the async floor-collider cook — the player
+    // fade-in (0.3 s) covers the async floor-collider cook â€” the player
     // doesn't move (and barely falls) until it lands.
     if (player) {
         player = std::make_unique<phys::CharacterBody>(
@@ -1593,7 +1625,7 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
              marker->position.x, interiorMode);
 }
 
-// Chantier 3 B7-lite: rest/sleep on furniture — the Phase-7 sleep()
+// Chantier 3 B7-lite: rest/sleep on furniture â€” the Phase-7 sleep()
 // advances the game clock (the sky follows on the next frame), decays
 // hunger/thirst over the skipped time, restores the sleep need, and
 // accrues Rest (the injury/resonance recovery precondition). NPC
@@ -1619,10 +1651,208 @@ void LandscapeScene::performRest(f32 hours) {
              std::fmod(gameClock.gameHours(), 24.0));
 }
 
-// Chantier 3 B6: first-person melee — LMB swings the equipped weapon at
+// --- Chantier 4: the RmlUi game UI --------------------------------------------------
+
+void LandscapeScene::createGameUi(rhi::Device& device) {
+    // Document roots = every plugin's ui/ dir, in load order (last wins â€”
+    // a mod overrides a screen by shipping the same path).
+    vector<std::filesystem::path> roots;
+    for (const data::Plugin& plugin : pluginStack.plugins) {
+        const auto root = std::filesystem::path { plugin.baseDir } / "ui";
+        if (std::filesystem::exists(root) &&
+            std::find(roots.begin(), roots.end(), root) == roots.end()) {
+            roots.push_back(root);
+        }
+    }
+    if (roots.empty()) {
+        roots.push_back(platform::executableDir() / "data" / "base" / "ui");
+    }
+    const auto fontRoots = roots; // create() moves the list
+    uiCreated = uiSystem.create(device, *shaders, roots,
+                                static_cast<u32>(engine->getWindow().width()),
+                                static_cast<u32>(engine->getWindow().height()));
+    if (!uiCreated) {
+        LOG_WARN("Game UI unavailable (UiSystem creation failed)");
+        return;
+    }
+    // Fonts before documents (RmlUi requirement): every plugin may add
+    // faces under ui/fonts/.
+    for (const auto& root : fontRoots) {
+        const auto fontsDir = root / "fonts";
+        std::error_code ec;
+        for (const auto& entry :
+             std::filesystem::directory_iterator { fontsDir, ec }) {
+            if (entry.path().extension() == ".ttf" ||
+                entry.path().extension() == ".otf") {
+                uiSystem.loadFont(entry.path());
+            }
+        }
+    }
+
+    // Data models BEFORE the documents that reference them (Rml freezes
+    // bindings at creation). One "hud" model for B2; screens add theirs.
+    uiSystem.createModel(
+        { .name = "hud",
+          .numbers = { "healthPct", "energyPct", "essencePct",
+                       "posturePct" },
+          .strings = { "healthText", "energyText", "essenceText", "clock",
+                       "prompt", "talk" },
+          .bools = { "promptVisible", "talkVisible" } });
+
+    // Screens from UiScreenForm records â€” pure data, moddable (Â§5).
+    data::forEach<data::UiScreenForm>(forms, [&](const data::UiScreenForm& f) {
+        screenStack.define({ .name = f.screen,
+                             .document = f.document,
+                             .modal = f.modal,
+                             .overlay = f.overlay });
+    });
+    syncScreens();
+}
+
+void LandscapeScene::updateGameUi(f32 dt) {
+    if (!uiCreated) {
+        return;
+    }
+    platform::Input& input = engine->getInput();
+    const bool imguiOwnsKeys = ImGui::GetIO().WantCaptureKeyboard;
+
+    // Escape: close the top modal first; the pause menu (B6) catches it
+    // when nothing is open.
+    if (!imguiOwnsKeys && input.wasPressed(platform::Key::Escape)) {
+        if (!screenStack.closeTop()) {
+            if (screenStack.find("pause")) {
+                screenStack.show("pause");
+            }
+        }
+    }
+
+    const bool modal = screenStack.modalOpen();
+    if (modal != uiModalWasOpen) {
+        // A modal frees the mouse (and pauses the sim, handled in
+        // update()); closing it restores the Play capture.
+        if (playMode) {
+            engine->getWindow().setRelativeMouseMode(!modal);
+        }
+        uiModalWasOpen = modal;
+    }
+    if (modal) {
+        // The open screen owns the input.
+        const Vec2 mouse = input.mousePosition();
+        uiSystem.processMouseMove(static_cast<i32>(mouse.x),
+                                  static_cast<i32>(mouse.y));
+        if (input.mousePressed(platform::MouseButton::Left)) {
+            uiSystem.processMouseButton(0, true);
+        }
+        if (input.mouseReleased(platform::MouseButton::Left)) {
+            uiSystem.processMouseButton(0, false);
+        }
+        if (input.wheelDelta() != 0.0f) {
+            uiSystem.processMouseWheel(input.wheelDelta());
+        }
+        for (const platform::Input::KeyEvent& event : input.keyEvents()) {
+            if (event.key == platform::Key::Escape) {
+                continue; // handled above (stack pop)
+            }
+            uiSystem.processKey(event.key, event.down);
+        }
+        uiSystem.processTextInput(input.textInput());
+    }
+    // OS text events only while an Rml text field holds the focus.
+    const bool wantText = modal && uiSystem.textFieldFocused();
+    if (wantText != uiTextInputOn) {
+        engine->getWindow().setTextInput(wantText);
+        uiTextInputOn = wantText;
+    }
+
+    updateHudModel();
+    syncScreens();
+    uiSystem.update(dt);
+}
+
+void LandscapeScene::updateHudModel() {
+    if (!uiCreated) {
+        return;
+    }
+    if (playerEntity.is_alive() &&
+        playerEntity.has<gameplay::AbilitySystem>() &&
+        playerEntity.has<gameplay::AttributeSet>()) {
+        const auto& sys = playerEntity.get<gameplay::AbilitySystem>();
+        const auto& vitals = playerEntity.get<gameplay::AttributeSet>();
+        const auto pct = [](f32 value, f32 max) {
+            return max > 0.0f ? glm::clamp(100.0f * value / max, 0.0f,
+                                           100.0f)
+                              : 0.0f;
+        };
+        const f32 maxHealth =
+            gameplay::currentValueOf(sys, gameplay::attr("maxHealth"));
+        const f32 maxEnergy =
+            gameplay::currentValueOf(sys, gameplay::attr("maxEnergy"));
+        const f32 maxEssence =
+            gameplay::currentValueOf(sys, gameplay::attr("maxEssence"));
+        const f32 maxPosture =
+            gameplay::currentValueOf(sys, gameplay::attr("maxPosture"));
+        uiSystem.setNumber("hud", "healthPct", pct(vitals.health, maxHealth));
+        uiSystem.setNumber("hud", "energyPct", pct(vitals.energy, maxEnergy));
+        uiSystem.setNumber("hud", "essencePct",
+                           pct(vitals.essence, maxEssence));
+        f32 posture = maxPosture;
+        if (playerEntity.has<gameplay::CombatState>()) {
+            posture = playerEntity.get<gameplay::CombatState>().posture;
+        }
+        uiSystem.setNumber("hud", "posturePct", pct(posture, maxPosture));
+        const auto text = [](f32 value, f32 max) {
+            return std::to_string(static_cast<i32>(value + 0.5f)) + " / " +
+                   std::to_string(static_cast<i32>(max + 0.5f));
+        };
+        uiSystem.setString("hud", "healthText", text(vitals.health, maxHealth));
+        uiSystem.setString("hud", "energyText", text(vitals.energy, maxEnergy));
+        uiSystem.setString("hud", "essenceText",
+                           text(vitals.essence, maxEssence));
+    }
+    const f64 hours = std::fmod(gameClock.gameHours(), 24.0);
+    const i32 hh = static_cast<i32>(hours);
+    const i32 mm = static_cast<i32>((hours - hh) * 60.0);
+    char clock[8];
+    std::snprintf(clock, sizeof(clock), "%02d:%02d", hh, mm);
+    uiSystem.setString("hud", "clock", clock);
+    // The interaction prompt + talk line (migrated from the ImGui overlay).
+    const bool promptOn = playMode && promptEntity.is_alive() &&
+                          fadeDirection == 0 && !promptLabel.empty();
+    uiSystem.setBool("hud", "promptVisible", promptOn);
+    uiSystem.setString("hud", "prompt", promptOn ? promptLabel : str {});
+    const bool talkOn = talkTimer > 0.0f && !talkLine.empty();
+    uiSystem.setBool("hud", "talkVisible", talkOn);
+    uiSystem.setString("hud", "talk", talkOn ? talkLine : str {});
+}
+
+void LandscapeScene::syncScreens() {
+    if (!uiCreated) {
+        return;
+    }
+    vector<str> want;
+    for (const ScreenStack::Screen* screen : screenStack.visibleScreens()) {
+        want.push_back(screen->document);
+    }
+    for (const str& doc : shownScreens) {
+        if (std::find(want.begin(), want.end(), doc) == want.end()) {
+            uiSystem.closeDocument(doc);
+        }
+    }
+    for (const str& doc : want) {
+        if (std::find(shownScreens.begin(), shownScreens.end(), doc) ==
+            shownScreens.end()) {
+            if (!uiSystem.showDocument(doc)) {
+                LOG_WARN("UI screen document '{}' failed to load", doc);
+            }
+        }
+    }
+    shownScreens = std::move(want);
+}
+
+// Chantier 3 B6: first-person melee â€” LMB swings the equipped weapon at
 // the nearest living NPC in reach and roughly in front. Damage flows
-// through the SAME GAS pipeline as the 2D arena (§2.9: no hand-rolled
-// numbers). v1 has no swing animation (no visible body) — the cooldown
+// through the SAME GAS pipeline as the 2D arena (Â§2.9: no hand-rolled
+// numbers). v1 has no swing animation (no visible body) â€” the cooldown
 // and the hit feedback carry the feel until the FX/audio brick.
 void LandscapeScene::tryPlayerAttack() {
     if (!playerWeapon || !playerEntity.is_alive() || !player) {
@@ -1666,12 +1896,12 @@ void LandscapeScene::tryPlayerAttack() {
         block, gameplay::weaponDamageEvent(*playerWeapon, playerSys),
         gameTags, derivedStats, nullptr, statsTuning);
     LOG_INFO("You hit for {:.0f} damage{} (target health {:.0f})",
-             result.healthDamage, result.staggered ? " — staggered!" : "",
+             result.healthDamage, result.staggered ? " â€” staggered!" : "",
              gameplay::currentValueOf(
                  best->entity.get<gameplay::AbilitySystem>(),
                  gameplay::attr("health")));
     // Aggro: a peaceful NPC defends itself... by fleeing (the villager
-    // has no weapon) — combat AI beyond bandits is the next slice.
+    // has no weapon) â€” combat AI beyond bandits is the next slice.
 }
 
 void LandscapeScene::updatePlayer(f32 dt) {
@@ -1679,7 +1909,7 @@ void LandscapeScene::updatePlayer(f32 dt) {
     if (fadeDirection != 0) {
         return; // frozen during door transitions
     }
-    // B6: melee swing on LMB (the mouse is captured in Play — ImGui
+    // B6: melee swing on LMB (the mouse is captured in Play â€” ImGui
     // never owns it here).
     playerAttackCooldown -= dt;
     if (playerAttackCooldown <= 0.0f &&
@@ -1694,8 +1924,8 @@ void LandscapeScene::updatePlayer(f32 dt) {
         flyCamera.camera.pitch - look.y * flyCamera.lookSensitivity,
         glm::radians(-89.0f), glm::radians(89.0f));
 
-    // Camera-relative intent, flattened to the horizontal plane (§ the
-    // controller OWNS motion — anims stay in place).
+    // Camera-relative intent, flattened to the horizontal plane (Â§ the
+    // controller OWNS motion â€” anims stay in place).
     const f32 yaw = flyCamera.camera.yaw;
     const Vec3 forward { std::sin(yaw), 0.0f, -std::cos(yaw) };
     const Vec3 right { std::cos(yaw), 0.0f, std::sin(yaw) };
@@ -1714,9 +1944,9 @@ void LandscapeScene::updatePlayer(f32 dt) {
     }
     const bool moving = glm::dot(wish, wish) > 0.0f;
 
-    // B5.5: speeds come from the CURRENT derived stats (docs/STATS.md §3
-    // — stat-space ~100 = nominal; injuries/buffs move them live). The
-    // controller only READS attributes (§2.9); sprint pays energy through
+    // B5.5: speeds come from the CURRENT derived stats (docs/STATS.md Â§3
+    // â€” stat-space ~100 = nominal; injuries/buffs move them live). The
+    // controller only READS attributes (Â§2.9); sprint pays energy through
     // the SprintCost effect below. Fallback keeps the scene alive without
     // a Player actor.
     f32 jog = 100.0f * kSpeedScale3D;
@@ -1744,7 +1974,7 @@ void LandscapeScene::updatePlayer(f32 dt) {
     }
     player->move(playerVelocity, dt);
 
-    // Sprint cost: one instant GameplayEffect per half second (§2.9 — the
+    // Sprint cost: one instant GameplayEffect per half second (Â§2.9 â€” the
     // ONLY way energy moves; the spend also pauses regen for a beat).
     if (sprinting && sprintCostEffect && playerEntity.is_alive()) {
         sprintCostAccumulator += dt;
@@ -1759,7 +1989,7 @@ void LandscapeScene::updatePlayer(f32 dt) {
     }
 
     // Eyes 1.70 m above the feet; the ENTITY transform tracks the capsule
-    // (the sim's view of the player — extract/saves read this, not Jolt).
+    // (the sim's view of the player â€” extract/saves read this, not Jolt).
     flyCamera.camera.position =
         player->position() + Vec3 { 0.0f, 1.7f, 0.0f };
     if (playerEntity.is_alive()) {
@@ -1773,7 +2003,7 @@ void LandscapeScene::updatePlayer(f32 dt) {
 namespace {
 constexpr f32 kNpcPauseSeconds = 2.5f; // idle beat at each patrol end
 constexpr f32 kNpcWalkFactor = 0.35f;  // of the jog speed (STATS.md: walk
-                                       // divides) — a stroll, not a march
+                                       // divides) â€” a stroll, not a march
 } // namespace
 
 const LandscapeScene::RigData* LandscapeScene::loadRig(
@@ -1793,14 +2023,14 @@ const LandscapeScene::RigData* LandscapeScene::loadRig(
     }
     rig.skeleton = std::move(*skeleton);
     rig.clips = assets::loadGltfAnimations(*path, rig.skeleton);
-    LOG_INFO("B6: rig {} loaded — {} joints, {} clips", path->string(),
+    LOG_INFO("B6: rig {} loaded â€” {} joints, {} clips", path->string(),
              rig.skeleton.joints.size(), rig.clips.size());
     return &rig;
 }
 
 // Chantier 2 B2: static colliders follow the spawned statics. Runs every
 // frame (cheap: map lookups + a small query) because meshes turn resident
-// asynchronously — a newcomer gets its body the frame its CPU data lands.
+// asynchronously â€” a newcomer gets its body the frame its CPU data lands.
 void LandscapeScene::updateStaticColliders() {
     if (!physics || !meshCache) {
         return;
@@ -1836,7 +2066,7 @@ void LandscapeScene::updateStaticColliders() {
             }
             const MeshCache::CpuMesh* cpu = meshCache->cpuMesh(mesh.model);
             if (!cpu) {
-                return; // still streaming — retried next frame
+                return; // still streaming â€” retried next frame
             }
             const phys::BodyId body = physics->addStaticMesh(
                 cpu->positions.data(),
@@ -1853,7 +2083,7 @@ void LandscapeScene::updateStaticColliders() {
 // (x, z) + the reference's AUTHORED y (an offset above ground until the
 // level editor writes real heights). Safe to re-run after every cell
 // change; prefab-derived children (no base record) keep their expanded Y.
-// Skipped for: interior cells (no terrain — authored y is absolute) and
+// Skipped for: interior cells (no terrain â€” authored y is absolute) and
 // base forms with snapToGround = false (building modules on a pad).
 void LandscapeScene::snapCellEntities() {
     if (editMode) {
@@ -1913,7 +2143,7 @@ void LandscapeScene::snapCellEntities() {
 }
 
 void LandscapeScene::destroyNpc(rhi::Device& device, Npc& npc) {
-    npc.anim.reset(); // references npc.graph — release first
+    npc.anim.reset(); // references npc.graph â€” release first
     device.destroyBindGroup(npc.group);
     device.destroyBuffer(npc.modelUbo);
     device.destroyBuffer(npc.paletteSsbo);
@@ -2206,7 +2436,7 @@ void LandscapeScene::updateNpcs(f32 dt) {
         f32 idleDecay = 10.0f;
 
         // B6: NPCs run the full character pipeline too (effects, stagger,
-        // life state) — that's where State.Dead comes from.
+        // life state) â€” that's where State.Dead comes from.
         gameplay::tickCharacter(npc.entity, dt, gameDt, tickCtx);
         const auto& npcSys = npc.entity.get<gameplay::AbilitySystem>();
         npc.dead = deadTag && npcSys.tags.has(*deadTag);
@@ -2225,7 +2455,7 @@ void LandscapeScene::updateNpcs(f32 dt) {
         }
 
         // B5: hostile actors hunt the player on sight (distance + a clear
-        // line — the perception cone can refine later).
+        // line â€” the perception cone can refine later).
         bool inCombat = false;
         if (npc.hostile && playMode && player) {
             const Vec3 playerPos = player->position();
@@ -2332,7 +2562,7 @@ void LandscapeScene::updateNpcs(f32 dt) {
                 if (npc.pathIndex >= npc.path.size() &&
                     npc.wanderTimer <= 0.0f) {
                     // Cheap per-NPC stroll target around the anchor
-                    // (cosmetic randomness — not gameplay RNG, §8).
+                    // (cosmetic randomness â€” not gameplay RNG, Â§8).
                     const u32 hash =
                         static_cast<u32>(npc.entity.id()) * 2654435761u +
                         static_cast<u32>(timeSeconds * 0.37f);
@@ -2679,7 +2909,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     render::FrameUniforms frameData = uniforms;
     if (interiorMode) {
         // B7 interior mode: no sun, no sky glow, dim constant ambient, no
-        // fog, no god rays/volumetric — local lights (B5) carry the room.
+        // fog, no god rays/volumetric â€” local lights (B5) carry the room.
         frameData.sunColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         frameData.sunGlowColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         frameData.ambientColor = { Vec3 { 0.16f, 0.15f, 0.14f },
@@ -2691,7 +2921,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     frame.device.updateBuffer(frameUbo, &frameData, sizeof(frameData), 0);
 
     // B5: the 16 nearest local lights, flicker applied CPU-side (sin +
-    // per-index phase — cheap and stateless).
+    // per-index phase â€” cheap and stateless).
     {
         struct LightsUniforms {
             Vec4 count { 0.0f };
@@ -2789,7 +3019,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         terrain.draw(frame.cmd, reflectionBindGroup,
                      shadows.receiverBindGroup(), &reflectionFrustum);
         // Trees only: rocks and bushes are invisible in a wobbly half-res
-        // reflection — low-detail canopies for the same reason.
+        // reflection â€” low-detail canopies for the same reason.
         vegetation.draw(frame.cmd, reflectionBindGroup,
                         shadows.receiverBindGroup(),
                         render::VegetationSystem::kTreeVariants,
@@ -2799,7 +3029,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         frame.cmd.endRenderPass();
     }
 
-    // Exterior: the sky covers every background pixel — no color clear.
+    // Exterior: the sky covers every background pixel â€” no color clear.
     // Interior: clear to a near-black room tone instead.
     frame.cmd.beginRenderPass(
         { .framebuffer = useOffscreen ? offscreenFb : rhi::FramebufferHandle {},
@@ -2811,7 +3041,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         }
     // Occlusion applies to the main view only: both sets were built for the
     // real camera, not the mirrored one (the grass ring is too close to
-    // ever be ridge-occluded — frustum only). CPU horizon ∪ GPU Hi-Z.
+    // ever be ridge-occluded â€” frustum only). CPU horizon âˆª GPU Hi-Z.
     gpuOccluded.clear();
     gpuOcclusion.collectResults(frame.device, gpuOccluded);
     combinedOccluded.clear();
@@ -2842,7 +3072,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     frame.cmd.endRenderPass();
 
     // Snapshot the opaque scene (sampling a bound attachment is UB): the
-    // SSAO pass reads the depth copy EVERY frame — interiors included
+    // SSAO pass reads the depth copy EVERY frame â€” interiors included
     // (skipping it left the previous exterior's AO ghosting over the
     // room). Water composition and Hi-Z occlusion stay exterior-only.
     if (useOffscreen && frame.device.caps().copyTexture &&
@@ -2895,29 +3125,46 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         frame.cmd.setBindGroup(0, frameBindGroup); // FrameUbo (uPostInfo)
         frame.cmd.setBindGroup(1, blitBindGroup);  // scene color + sampler
         frame.cmd.draw(3);
+        // Chantier 4: the game UI composes over the tonemapped scene,
+        // under the dev ImGui layer.
+        if (uiCreated) {
+            uiSystem.resize(frame.width, frame.height); // no-op if unchanged
+            uiSystem.render(frame.cmd, frame.device, frame.width,
+                            frame.height);
+        }
+        frame.cmd.endRenderPass();
+    } else if (uiCreated) {
+        frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::Load,
+                                    .depthLoadOp = rhi::LoadOp::DontCare });
+        uiSystem.resize(frame.width, frame.height);
+        uiSystem.render(frame.cmd, frame.device, frame.width, frame.height);
         frame.cmd.endRenderPass();
     }
 }
 
 void LandscapeScene::drawUi() {
-    // B7 overlays draw regardless of the panel: the travel fade and the
-    // door prompt (foreground draw list — no renderer pass involved).
+    // The travel fade stays an ImGui overlay (a plain black quad, not a
+    // moddable screen). Prompt + talk line moved to the RmlUi HUD
+    // (chantier 4 B2); the ImGui fallback below only serves when the game
+    // UI failed to create.
     ImDrawList* foreground = ImGui::GetForegroundDrawList();
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    if (playMode && promptEntity.is_alive() && fadeDirection == 0 &&
-        !promptLabel.empty()) {
-        const ImVec2 size = ImGui::CalcTextSize(promptLabel.c_str());
-        foreground->AddText(
-            { (display.x - size.x) * 0.5f, display.y * 0.62f },
-            ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.95f)),
-            promptLabel.c_str());
-    }
-    if (talkTimer > 0.0f && !talkLine.empty()) {
-        const ImVec2 size = ImGui::CalcTextSize(talkLine.c_str());
-        foreground->AddText(
-            { (display.x - size.x) * 0.5f, display.y * 0.55f },
-            ImGui::GetColorU32(ImVec4(1.0f, 0.95f, 0.8f, 0.95f)),
-            talkLine.c_str());
+    if (!uiCreated) {
+        if (playMode && promptEntity.is_alive() && fadeDirection == 0 &&
+            !promptLabel.empty()) {
+            const ImVec2 size = ImGui::CalcTextSize(promptLabel.c_str());
+            foreground->AddText(
+                { (display.x - size.x) * 0.5f, display.y * 0.62f },
+                ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.95f)),
+                promptLabel.c_str());
+        }
+        if (talkTimer > 0.0f && !talkLine.empty()) {
+            const ImVec2 size = ImGui::CalcTextSize(talkLine.c_str());
+            foreground->AddText(
+                { (display.x - size.x) * 0.5f, display.y * 0.55f },
+                ImGui::GetColorU32(ImVec4(1.0f, 0.95f, 0.8f, 0.95f)),
+                talkLine.c_str());
+        }
     }
     if (fadeAlpha > 0.0f) {
         foreground->AddRectFilled(
@@ -2925,7 +3172,7 @@ void LandscapeScene::drawUi() {
             ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, fadeAlpha)));
     }
 
-    // F6 toggles the level editor (leaves Play first — the editor flies).
+    // F6 toggles the level editor (leaves Play first â€” the editor flies).
     if (ImGui::IsKeyPressed(ImGuiKey_F6, false) && levelEditor) {
         editMode = !editMode;
         if (editMode && playMode) {
@@ -2941,7 +3188,7 @@ void LandscapeScene::drawUi() {
     }
 
     // F10 hides/shows the whole panel (works even while the mouse is
-    // captured in Play — ImGui keeps its own keyboard state).
+    // captured in Play â€” ImGui keeps its own keyboard state).
     if (ImGui::IsKeyPressed(ImGuiKey_F10, false)) {
         uiPanelVisible = !uiPanelVisible;
     }
@@ -2975,7 +3222,7 @@ void LandscapeScene::drawUi() {
     ImGui::TextDisabled("F1-F4: sections | F10: hide panel");
     ImGui::Separator();
 
-    if (section("Gameplay — player, NPC, physics  [F1]", ImGuiKey_F1,
+    if (section("Gameplay â€” player, NPC, physics  [F1]", ImGuiKey_F1,
                 uiGameplayOpen)) {
         drawGameplayUi();
     }
@@ -2998,7 +3245,7 @@ void LandscapeScene::drawUi() {
             regenerateRequested = true; // applied at the next render
         }
         // Water plane, sand band and material weights follow live; the
-        // scatter (grass/trees/props) is baked per chunk — Regenerate to
+        // scatter (grass/trees/props) is baked per chunk â€” Regenerate to
         // re-align it.
         ImGui::SliderFloat("Sea level (m)", &terrain.params.seaLevel, 0.0f,
                            40.0f, "%.0f");
@@ -3040,7 +3287,7 @@ void LandscapeScene::drawSkyUi() {
         if (ImGui::Combo("Weather", &selected, items.c_str())) {
             weatherSelected = selected - 1;
             if (weatherSelected >= 0) {
-                // Depart from whatever is on screen right now — mid-fade
+                // Depart from whatever is on screen right now â€” mid-fade
                 // switches stay continuous.
                 weatherFrom = captureCurrentWeather();
                 weatherBlend = 0.0f;
@@ -3067,7 +3314,7 @@ void LandscapeScene::drawSkyUi() {
 
 void LandscapeScene::drawGameplayUi() {
     if (!npcs.empty()) {
-        // B6: the Forms-driven NPC — patrol state + locomotion graph live.
+        // B6: the Forms-driven NPC â€” patrol state + locomotion graph live.
         static constexpr const char* kStateNames[] = { "idle", "walk",
                                                        "run" };
         const Npc& npc = *npcs.front();
@@ -3095,7 +3342,7 @@ void LandscapeScene::drawGameplayUi() {
     if (physics) {
         // B5: first-person Play mode.
         bool play = playMode;
-        if (ImGui::Checkbox("Play mode (B5) — press F", &play)) {
+        if (ImGui::Checkbox("Play mode (B5) â€” press F", &play)) {
             play ? enterPlayMode() : exitPlayMode();
         }
         if (playMode) {
@@ -3122,7 +3369,7 @@ void LandscapeScene::drawGameplayUi() {
                 gameplay::applyEffect(set, asys, *testWoundEffect, gameTags);
             }
         }
-        // B4: drop a kinematic capsule from the camera — it falls, lands
+        // B4: drop a kinematic capsule from the camera â€” it falls, lands
         // on the height-field tiles, and rides slopes (magenta box).
         if (ImGui::Button("Drop capsule here (B4)")) {
             debugCapsule = std::make_unique<phys::CharacterBody>(

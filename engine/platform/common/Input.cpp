@@ -146,6 +146,11 @@ bool Input::mousePressed(MouseButton button) const {
     return mouseCurrent[index] && !mousePrevious[index];
 }
 
+bool Input::mouseReleased(MouseButton button) const {
+    const auto index = static_cast<size_t>(button);
+    return !mouseCurrent[index] && mousePrevious[index];
+}
+
 const vector<Input::KeyEvent>& Input::keyEvents() const {
     return frameKeyEvents;
 }

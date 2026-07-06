@@ -1,0 +1,87 @@
+/* Norden-inspired shared theme (chantier 4): modern, restrained, muted
+   near-monochrome panels with one warm accent — no parchment. A mod
+   overrides this whole file by shiping ui/theme.rcss (path overlay). */
+
+body {
+	width: 100%;
+	height: 100%;
+	font-family: "JetBrains Mono";
+	font-size: 16dp;
+	color: #e6e3dc;
+}
+
+.panel {
+	background-color: #14161acc;
+	border: 1dp #3c4046;
+	border-radius: 3dp;
+	padding: 14dp;
+}
+
+.title {
+	font-size: 21dp;
+	color: #f0ede4;
+	letter-spacing: 2dp;
+	border-bottom: 1dp #3c4046;
+	padding-bottom: 6dp;
+	margin-bottom: 10dp;
+}
+
+.muted {
+	color: #8a8f96;
+}
+
+.accent {
+	color: #d9b96c;
+}
+
+button, .button {
+	display: inline-block;
+	padding: 6dp 16dp;
+	margin: 3dp;
+	background-color: #1e2126e6;
+	border: 1dp #4a4f56;
+	border-radius: 2dp;
+	color: #e6e3dc;
+	cursor: pointer;
+	text-align: center;
+}
+
+button:hover, .button:hover {
+	border-color: #d9b96c;
+	color: #f5f2e9;
+}
+
+button.disabled, .button.disabled {
+	color: #5b5f66;
+	border-color: #2c2f34;
+}
+
+input.text {
+	background-color: #101216e6;
+	border: 1dp #4a4f56;
+	border-radius: 2dp;
+	padding: 4dp 8dp;
+	color: #e6e3dc;
+	cursor: text;
+}
+
+input.text:focus {
+	border-color: #d9b96c;
+}
+
+scrollbarvertical {
+	width: 8dp;
+}
+
+scrollbarvertical slidertrack {
+	background-color: #1a1d21;
+}
+
+scrollbarvertical sliderbar {
+	background-color: #4a4f56;
+	border-radius: 4dp;
+}
+
+scrollbarvertical sliderbar:hover {
+	background-color: #d9b96c;
+}

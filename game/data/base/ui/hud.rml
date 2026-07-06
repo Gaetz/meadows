@@ -1,0 +1,29 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="hud.rcss"/>
+</head>
+<body data-model="hud">
+	<div id="crosshair">+</div>
+	<div id="prompt" data-if="promptVisible">{{ prompt }}</div>
+	<div id="talk" data-if="talkVisible">{{ talk }}</div>
+	<div id="clock">{{ clock }}</div>
+	<div id="vitals">
+		<div class="stat">
+			<div class="bar health"><div class="fill" data-style-width="healthPct + '%'"/></div>
+			<div class="value">{{ healthText }}</div>
+		</div>
+		<div class="stat">
+			<div class="bar energy"><div class="fill" data-style-width="energyPct + '%'"/></div>
+			<div class="value">{{ energyText }}</div>
+		</div>
+		<div class="stat">
+			<div class="bar essence"><div class="fill" data-style-width="essencePct + '%'"/></div>
+			<div class="value">{{ essenceText }}</div>
+		</div>
+		<div class="stat">
+			<div class="bar posture"><div class="fill" data-style-width="posturePct + '%'"/></div>
+		</div>
+	</div>
+</body>
+</rml>

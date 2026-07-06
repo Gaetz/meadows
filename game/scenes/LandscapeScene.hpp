@@ -19,6 +19,8 @@
 #include "gameplay/interaction/Furniture.hpp"
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
+#include "engine/ui/UiSystem.hpp"
+#include "game/ScreenStack.hpp"
 #include "world/ai/TerrainNavigator.hpp"
 #include "world/streaming/CellStreamer.hpp"
 #include "game/SceneSubmit.hpp"
@@ -237,6 +239,21 @@ private:
     // Chantier 3 B1: the game clock owns time-of-day (the sky follows)
     // and feeds real game-time into tickCharacter/schedules.
     gameplay::GameClock gameClock;
+
+    // Chantier 4 B2: the RmlUi game UI. Screens come from UiScreenForm
+    // records (documents through the plugins' ui/ roots — the SkyUI
+    // model); the ScreenStack decides what is visible, a modal screen
+    // pauses the sim and owns mouse/keyboard. Dev panels stay ImGui.
+    ::ui::UiSystem uiSystem; // ::ui — game::ui (panels) masks it
+    ScreenStack screenStack;
+    bool uiCreated { false };
+    bool uiModalWasOpen { false };
+    bool uiTextInputOn { false };
+    vector<str> shownScreens; // documents currently shown (sync state)
+    void createGameUi(rhi::Device& device);
+    void updateGameUi(f32 dt);
+    void updateHudModel();
+    void syncScreens();
 
     // Chantier 3 B5/B6: melee combat — everything flows through the GAS
     // damage pipeline (weaponDamageEvent -> applyDamage), like the 2D

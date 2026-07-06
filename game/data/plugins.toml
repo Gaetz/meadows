@@ -13,6 +13,9 @@ file = "base/adventure.toml"
 [[plugins]]
 file = "base/village.toml"
 
+[[plugins]]
+file = "base/ui.toml"
+
 # 2D test-scene data (WorldDemoScene / CombatArena load it directly);
 # disabled in the 3D game stack — enable to inspect it in the Game DB.
 [[plugins]]

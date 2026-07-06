@@ -1,0 +1,82 @@
+/* The always-on HUD overlay (chantier 4 B2). Vitals bottom-left, clock
+   top-right, prompt/talk centered — SkyHUD-like restraint. */
+
+body {
+	pointer-events: none;
+}
+
+#crosshair {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	margin-left: -6dp;
+	margin-top: -11dp;
+	width: 12dp;
+	text-align: center;
+	font-size: 15dp;
+	color: #e6e3dc99;
+}
+
+#prompt {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 62%;
+	text-align: center;
+	font-size: 18dp;
+	color: #f0ede4;
+}
+
+#talk {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 54%;
+	text-align: center;
+	font-size: 17dp;
+	color: #e8d9b0;
+}
+
+#clock {
+	position: absolute;
+	top: 14dp;
+	right: 18dp;
+	font-size: 17dp;
+	color: #c9c5bb;
+	letter-spacing: 1dp;
+}
+
+#vitals {
+	position: absolute;
+	left: 18dp;
+	bottom: 16dp;
+	width: 240dp;
+}
+
+.stat {
+	margin-top: 5dp;
+}
+
+.bar {
+	width: 240dp;
+	height: 7dp;
+	background-color: #14161ab0;
+	border: 1dp #3c4046;
+	border-radius: 2dp;
+}
+
+.bar .fill {
+	height: 100%;
+	border-radius: 2dp;
+}
+
+.bar.health .fill  { background-color: #a8483f; }
+.bar.energy .fill  { background-color: #5d8a4e; }
+.bar.essence .fill { background-color: #4e6e8a; }
+.bar.posture .fill { background-color: #b8a15e; }
+
+.value {
+	font-size: 12dp;
+	color: #b9b5ac;
+	margin-top: 1dp;
+}

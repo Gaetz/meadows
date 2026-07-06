@@ -43,8 +43,9 @@ public:
     // Mouse motion since last frame, in pixels. Keeps accumulating in relative
     // mouse mode (Window::setRelativeMouseMode), where mousePosition freezes.
     Vec2 mouseDelta() const;
-    bool mouseDown(MouseButton button) const;    // held this frame
-    bool mousePressed(MouseButton button) const; // edge: down this, up last
+    bool mouseDown(MouseButton button) const;     // held this frame
+    bool mousePressed(MouseButton button) const;  // edge: down this, up last
+    bool mouseReleased(MouseButton button) const; // edge: up this, down last
 
     // --- Event-fed channel (chantier 4, game UI) -----------------------------
     // Engine's event hook feeds raw platform events here during pumpEvents;

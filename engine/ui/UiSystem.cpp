@@ -499,6 +499,10 @@ void UiSystem::closeDocuments() {
 
 void UiSystem::resize(u32 width, u32 height) {
     if (pimpl && pimpl->context) {
+        if (pimpl->renderInterface.viewportWidth == width &&
+            pimpl->renderInterface.viewportHeight == height) {
+            return; // callers may resize() every frame
+        }
         pimpl->renderInterface.viewportWidth = width;
         pimpl->renderInterface.viewportHeight = height;
         pimpl->context->SetDimensions(

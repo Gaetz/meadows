@@ -1,0 +1,18 @@
+# Base-game UI screens (chantier 4). Each record names a screen and points
+# at its document; the documents themselves live in ui/ and layer by path
+# (a mod ships ui/hud.rml to reskin the HUD, or patches `document` here to
+# swap it for another file).
+
+[plugin]
+id = "5e8bac40-0000-4000-8000-000000000000"
+name = "true-adventurer-ui"
+
+[[records]]
+form = "5e8bac40-0000-4000-8000-000000000001"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenHud"
+screen = "hud"
+document = "hud.rml"
+overlay = true

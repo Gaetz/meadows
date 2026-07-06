@@ -11,6 +11,9 @@ void Log::init() {
 #ifndef NDEBUG
     spdlog::set_level(spdlog::level::trace);
 #endif
+    // Flush every line: when stdout is a pipe (CI, tooling) a crash must
+    // not swallow the last messages — the ones that say where it died.
+    spdlog::flush_on(spdlog::level::trace);
 }
 
 } // namespace core
