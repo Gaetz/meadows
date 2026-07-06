@@ -62,6 +62,17 @@ struct StatsTuningForm : data::Form {
     // × these; charisma/speechcraft scaling joins with the P1 stats pass.
     f32 barterBuyMult { 1.5f };   // the player BUYS at value × this
     f32 barterSellMult { 0.5f };  // the player SELLS at value × this
+    // Offensive stats + combat state machine (chantier 6, appended).
+    f32 attackBase { 5.0f };            // attack = base + strength
+    f32 critDamageBase { 1.5f };        // crit multiplier base
+    // STATS.md says "1.5 + (dexterity−0.5)" — ×7 at dex 6, surely meant
+    // per-point scaling. Tunable so the design call stays in data.
+    f32 critDamagePerDexterity { 0.05f };
+    f32 armorPenPerAlacrity { 0.5f };   // (alacrity−5) × this, floor 0
+    f32 resistPenPerInsight { 0.5f };   // (insight−5) × this, floor 0
+    f32 shakenThresholdBase { 15.0f };  // shaken if posture hit > (base+con)% of max
+    f32 shakenSeconds { 0.6f };         // brief flinch window
+    f32 critWindowSeconds { 5.0f };     // posture break → prostrate window
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -101,6 +112,14 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(sleepHoursPerPoint)
         REFLECT_FIELD(barterBuyMult)
         REFLECT_FIELD(barterSellMult)
+        REFLECT_FIELD(attackBase)
+        REFLECT_FIELD(critDamageBase)
+        REFLECT_FIELD(critDamagePerDexterity)
+        REFLECT_FIELD(armorPenPerAlacrity)
+        REFLECT_FIELD(resistPenPerInsight)
+        REFLECT_FIELD(shakenThresholdBase)
+        REFLECT_FIELD(shakenSeconds)
+        REFLECT_FIELD(critWindowSeconds)
     REFLECT_END()
 };
 

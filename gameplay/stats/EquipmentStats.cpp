@@ -58,6 +58,37 @@ DamageEvent weaponDamageEvent(const data::WeaponForm& weapon,
     add(DamageType::Fire, weapon.fireAttack);
     add(DamageType::Lightning, weapon.lightningAttack);
     event.postureAmount = weapon.postureDamage * scale;
+
+    // Chantier 6 C1: the attacker's flat `attack` folds into the
+    // strongest PHYSICAL channel (a weapon's physical type is exclusive
+    // per swing, docs/STATS.md §3); bare fists get a blunt channel.
+    const f32 attack = currentValueOf(attacker, attr("attack"));
+    if (attack > 0.0f) {
+        DamageChannel* strongest = nullptr;
+        for (DamageChannel& channel : event.channels) {
+            const bool physical = channel.type == DamageType::Slash ||
+                                  channel.type == DamageType::Pierce ||
+                                  channel.type == DamageType::Blunt;
+            if (physical && (!strongest || channel.amount > strongest->amount)) {
+                strongest = &channel;
+            }
+        }
+        if (strongest) {
+            strongest->amount += attack;
+        } else {
+            event.channels.push_back({ DamageType::Blunt, attack });
+        }
+    }
+    // Pens + crit multiplier ride the event; the attack site decides
+    // `critical` (target in its critical window).
+    event.armorPenetration =
+        currentValueOf(attacker, attr("armorPenetration"));
+    event.resistPenetration =
+        currentValueOf(attacker, attr("resistPenetration"));
+    const f32 critical = currentValueOf(attacker, attr("criticalDamage"));
+    if (critical > 0.0f) {
+        event.criticalMultiplier = critical;
+    }
     return event;
 }
 

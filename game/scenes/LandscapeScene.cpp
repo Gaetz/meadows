@@ -247,6 +247,8 @@ void LandscapeScene::onEnter() {
     gameTags.registerTag("State.Staggered");
     gameTags.registerTag("State.Paralyzed");
     gameTags.registerTag("State.Exhausted");
+    gameTags.registerTag("State.Shaken");
+    gameTags.registerTag("State.CriticalWeakness");
     for (const char* statusTag :
          { "Status.Poisoned", "Status.Bleeding", "Status.Mental",
            "Status.Diseased", "Status.Cursed", "Status.Dying",
@@ -3172,11 +3174,17 @@ void LandscapeScene::tryPlayerAttack() {
         best->entity.get_mut<gameplay::CombatState>()
     };
     const auto& playerSys = playerEntity.get<gameplay::AbilitySystem>();
+    gameplay::DamageEvent event =
+        gameplay::weaponDamageEvent(*weapon, playerSys);
+    // C1: a target in its critical window eats the critical execution.
+    if (const auto weakness = gameTags.find("State.CriticalWeakness")) {
+        event.critical = block.system.tags.has(*weakness);
+    }
     const gameplay::DamageResult result = gameplay::applyDamage(
-        block, gameplay::weaponDamageEvent(*weapon, playerSys),
-        gameTags, derivedStats, nullptr, statsTuning);
-    LOG_INFO("You hit for {:.0f} damage{} (target health {:.0f})",
-             result.healthDamage, result.staggered ? " — staggered!" : "",
+        block, event, gameTags, derivedStats, nullptr, statsTuning);
+    LOG_INFO("You hit for {:.0f} damage{}{} (target health {:.0f})",
+             result.healthDamage, event.critical ? " — CRITICAL!" : "",
+             result.staggered ? " — staggered!" : "",
              gameplay::currentValueOf(
                  best->entity.get<gameplay::AbilitySystem>(),
                  gameplay::attr("health")));

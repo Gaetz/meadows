@@ -101,6 +101,25 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
         return t.critSensBase - v.get("constitution") * t.critSensPerConstitution;
     } });
 
+    // Offensive stats (docs/STATS.md §3, chantier 6 C1) — consumed by
+    // weaponDamageEvent (attack folded into the strongest physical
+    // channel, pens carried on the DamageEvent) and applyDamage (crit).
+    registry.add({ attr("attack"), core, [t](const StatView& v) {
+        return t.attackBase + v.get("strength");
+    } });
+    registry.add({ attr("criticalDamage"), core, [t](const StatView& v) {
+        return t.critDamageBase +
+               v.get("dexterity") * t.critDamagePerDexterity;
+    } });
+    registry.add({ attr("armorPenetration"), core, [t](const StatView& v) {
+        return std::max(0.0f,
+                        (v.get("alacrity") - 5.0f) * t.armorPenPerAlacrity);
+    } });
+    registry.add({ attr("resistPenetration"), core, [t](const StatView& v) {
+        return std::max(0.0f,
+                        (v.get("insight") - 5.0f) * t.resistPenPerInsight);
+    } });
+
     // Endurance = the per-type status-buildup threshold (docs/STATS.md §3, N1):
     // dexterity → poison/bleed, alacrity → mental/disease, perception → curse/death.
     const auto endurance = [&](const char* stat, const char* attribute) {

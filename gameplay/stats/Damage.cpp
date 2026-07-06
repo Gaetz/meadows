@@ -55,8 +55,25 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
         const f32 afterFlat = std::max(0.0f, ch.amount - flat);
         // Negative resistance = vulnerability: it amplifies the hit (e.g. iron
         // armor conducts electricity). Floor at -100% so the worst case is ×2.
-        const f32 percent = std::clamp(mitigationPercent(sys, ch.type), -100.0f, 100.0f);
+        f32 percent = std::clamp(mitigationPercent(sys, ch.type), -100.0f, 100.0f);
+        // Chantier 6 C1: penetration eats POSITIVE protection only — it
+        // never turns a vulnerability into a bigger one.
+        const f32 pen =
+            physical ? event.armorPenetration : event.resistPenetration;
+        if (percent > 0.0f && pen > 0.0f) {
+            percent = std::max(0.0f, percent - pen);
+        }
         totalHealth += afterFlat * (1.0f - percent / 100.0f);
+    }
+
+    // Chantier 6 C1: the critical execution — criticalSensitivity% of the
+    // target's max health × the attacker's multiplier, bypassing armor
+    // entirely (docs/STATS.md §4). Fired by the attack site when the
+    // target sits in its critical window.
+    if (event.critical) {
+        const f32 sensitivity = std::max(0.0f, cur("criticalSensitivity"));
+        totalHealth += cur("maxHealth") * sensitivity / 100.0f *
+                       event.criticalMultiplier;
     }
 
     // Deplete health (the resource this execution calculation drains, §6/§2.9).

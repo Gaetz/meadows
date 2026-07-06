@@ -41,6 +41,7 @@ add_executable(meadows-tests
     JobsTest.cpp
     LevelEditorTest.cpp
     MovementTest.cpp
+    OffensiveStatsTest.cpp
     PhysicsTest.cpp
     PluginConfigTest.cpp
     PrefabChildSaveTest.cpp

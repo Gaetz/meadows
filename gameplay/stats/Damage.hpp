@@ -34,6 +34,16 @@ struct DamageChannel {
 struct DamageEvent {
     vector<DamageChannel> channels;
     f32 postureAmount { 0.0f };
+    // Chantier 6 C1: attacker-side offensive stats, carried on the event
+    // (plain runtime struct — no ordinal concern). Pens subtract from the
+    // target's POSITIVE mitigation only (they reduce protection, they
+    // never amplify a vulnerability); `critical` triggers the critical
+    // execution (criticalSensitivity% of the TARGET's maxHealth ×
+    // `criticalMultiplier`, bypassing armor — docs/STATS.md §4).
+    f32 armorPenetration { 0.0f };
+    f32 resistPenetration { 0.0f };
+    bool critical { false };
+    f32 criticalMultiplier { 1.5f };
 };
 
 struct DamageResult {
