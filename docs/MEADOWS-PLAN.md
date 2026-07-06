@@ -10,7 +10,7 @@
 | **Chantier 1 — Socle 3D gameplay** | ✅ FAIT 2026-07-06 — journal : `docs/CHANTIER-1.md` (joueur FPS piloté par ses stats, PNJ 100 % Forms en patrouille, MeshCache/skinning/anim data, collision terrain Jolt, arbres brique 27) |
 | **Chantier 2 — Monde habitable** (cellules 3D, éditeur de niveau+gizmos, lumières locales, kit+intérieur+portes, terrain auteuré+sculpt) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-2.md` |
 | **Chantier 3 — Vivant** (horloge, interaction E, schedules exécutés, IA hostile + combat mêlée 3D, repos) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-3.md`. Reportés : cues/audio (pas d'assets son — dev doit les déposer), Recast (fallback TerrainNavigator), barter (chantier 4), ability GAS formelle pour l'attaque joueur |
-| Chantier 4 — Interfaces (écrans RmlUi P0, GameDB/console déjà livrés en squelette, + barter reporté du ch. 3) | ⬅️ **PROCHAIN** |
+| Chantier 4 — Interfaces (écrans RmlUi P0, GameDB/console déjà livrés en squelette, + barter reporté du ch. 3) | ⬅️ **PROCHAIN** — planifié en briques : `docs/CHANTIER-4.md` (2026-07-06) |
 | Chantier 5 — Persistance (Phase 10 : streaming + save = couche de patches) | à faire |
 | Chantier 6 — P1 par valeur (quêtes outillées, économie/crime, éditeurs anim/FX/UI…) | à faire |
 | Refonte herbe (renderer) | ⏸️ en attente des recherches du dev |
