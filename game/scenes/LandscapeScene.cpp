@@ -14,6 +14,7 @@
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
 #include "game/AllForms.hpp"
+#include "game/Barter.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/assets/Image.hpp"
 #include "engine/render/MeshBuilder.hpp"
@@ -50,10 +51,10 @@ namespace {
 
 constexpr const char* kTonemapShader = "tonemap";
 
-// B5.5: stat-space -> world mapping (docs/STATS.md Â§3; the CombatArena's
+// B5.5: stat-space -> world mapping (docs/STATS.md §3; the CombatArena's
 // kSpeedScale precedent, recalibrated for meters). Default sheet (~102):
 // jog ~5.1 m/s, sprint x1.6 ~8.2 m/s, velocity settles in ~0.1 s.
-// (Dev feel pass 2026-07-06: +50% â€” the unencumbered adventurer is brisk;
+// (Dev feel pass 2026-07-06: +50% — the unencumbered adventurer is brisk;
 // encumbrance will pull it back down when the P1 utility pass lands.)
 constexpr f32 kSpeedScale3D = 1.0f / 20.0f; // movementSpeed stat -> m/s
 constexpr f32 kSprintMult = 1.6f;           // "sprint multiplies" (STATS.md)
@@ -81,10 +82,10 @@ Mat4 obliqueProjection(Mat4 proj, const Vec4& clipPlaneView) {
 void LandscapeScene::onEnter() {
     rhi::Device& device = engine->getDevice();
 
-    // Load the moddable data (Â§5) through the plugin stack (chantier 4 B1):
+    // Load the moddable data (§5) through the plugin stack (chantier 4 B1):
     // data/plugins.toml declares the load order, the resolver layers every
     // plugin's fields last-writer-wins. One registration site for all
-    // families (AllForms) â€” UI/quest/dialogue records now resolve here too.
+    // families (AllForms) — UI/quest/dialogue records now resolve here too.
     game::registerAllFormTypes(formTypes);
     const auto dataDir = platform::executableDir() / "data";
     data::PluginConfig pluginConfig;
@@ -92,7 +93,7 @@ void LandscapeScene::onEnter() {
             data::loadPluginConfigFile(dataDir / "plugins.toml")) {
         pluginConfig = *loaded;
     } else {
-        LOG_WARN("data/plugins.toml missing â€” defaulting to data/base/*.toml");
+        LOG_WARN("data/plugins.toml missing — defaulting to data/base/*.toml");
         pluginConfig = data::defaultConfigFromDirectory(dataDir / "base");
         for (auto& entry : pluginConfig.entries) {
             entry.file = "base/" + entry.file;
@@ -119,7 +120,7 @@ void LandscapeScene::onEnter() {
              tuning.terrainSeed, tuning.seaLevel, tuning.fogDensity,
              tuning.cloudCoverage, weathers.size());
 
-    // B8: the authored-terrain overlay rides inside TerrainParams â€” every
+    // B8: the authored-terrain overlay rides inside TerrainParams — every
     // consumer (chunk workers, scatter, collision, snaps) is patched at
     // once. Retire the previous overlay instead of freeing it (workers).
     if (heightPatches) {
@@ -157,7 +158,7 @@ void LandscapeScene::onEnter() {
                                      .size = sizeof(render::FrameUniforms),
                                      .dynamic = true },
                                    nullptr);
-    // B5: local lights ride binding 5 of the SAME group â€” shaders that
+    // B5: local lights ride binding 5 of the SAME group — shaders that
     // don't declare the block simply ignore it.
     lightsUbo = device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform,
@@ -176,9 +177,9 @@ void LandscapeScene::onEnter() {
                       terrain.params.seed);
 
     // B1: the real mesh path. Plugin ReferenceForms spawn into a small ECS
-    // world through the Spawner (Â§2.7 â€” MeshRender wired by reflection from
+    // world through the Spawner (§2.7 — MeshRender wired by reflection from
     // the base form's model/material); extractMeshes fills the snapshot;
-    // the residency caches resolve guids at draw time (Â§7).
+    // the residency caches resolve guids at draw time (§7).
     materialTextures = std::make_unique<TextureCache>(
         device, assetDb, engine->getJobSystem(),
         TextureCache::UploadDesc { .format = rhi::TextureFormat::SRGBA8,
@@ -207,7 +208,7 @@ void LandscapeScene::onEnter() {
         std::make_unique<TerrainCollision>(*physics, terrain.params);
 
     // Chantier 3 B2: navigation over the SAME height function as
-    // everything else (patches included â€” the pointer rides in params).
+    // everything else (patches included — the pointer rides in params).
     navigator = std::make_unique<world::TerrainNavigator>(
         [this](f32 x, f32 z) {
             return render::terrain::height(terrain.params, x, z);
@@ -215,7 +216,7 @@ void LandscapeScene::onEnter() {
     furnitureOccupancy = gameplay::FurnitureOccupancy {};
 
     // B5.5: the character-stats runtime shared by every actor in the scene
-    // (the player first; the NPC joins in B6) â€” same setup as CombatArena.
+    // (the player first; the NPC joins in B6) — same setup as CombatArena.
     statsTuning = gameplay::resolveStatsTuning(forms);
     derivedStats = gameplay::DerivedStatRegistry {};
     gameplay::registerCoreDerivedStats(derivedStats, statsTuning);
@@ -236,11 +237,19 @@ void LandscapeScene::onEnter() {
         data::findByEditorId<gameplay::EffectForm>(forms, "SprintCost");
     testWoundEffect =
         data::findByEditorId<gameplay::EffectForm>(forms, "TestLegWound");
-    // Chantier 3 B6: the melee weapons (data â€” retune in village.toml).
+    // Chantier 3 B6: the melee weapons (data — retune in village.toml).
     playerWeapon =
         data::findByEditorId<data::WeaponForm>(forms, "RustySword");
     banditWeapon =
         data::findByEditorId<data::WeaponForm>(forms, "BanditClub");
+    // Chantier 4 B5: the currency + the barter trigger (a dialogue node
+    // fires "OpenBarter" — the vendor is whoever we're talking to).
+    goldForm = data::findByEditorId<data::MiscItemForm>(forms, "GoldCoin");
+    eventBus = gameplay::EventBus {};
+    eventBus.subscribe(gameplay::eventKind("OpenBarter"),
+                       [this](const gameplay::Event&) {
+                           openBarterScreen(dialoguePartner);
+                       });
 
     world = ecs::World {}; // fresh on re-enter
     world::registerSceneComponents(world);
@@ -251,7 +260,7 @@ void LandscapeScene::onEnter() {
     world::registerCoreSpawners(spawner);
 
     // Chantier 2 B1: the cell machinery. PERSISTENT references (no cell)
-    // are spawned once here â€” the player; everything celled streams in
+    // are spawned once here — the player; everything celled streams in
     // and out through the CellStreamer (update()).
     worldModel = world::WorldModel::build(forms);
     cellLoader = std::make_unique<world::CellLoader>(
@@ -263,7 +272,7 @@ void LandscapeScene::onEnter() {
             data::findByEditorId<world::WorldspaceForm>(forms, "Overworld")) {
         overworldHandle = forms.handleOf(overworld->id);
     } else {
-        LOG_WARN("chantier 2 B1: no Overworld worldspace â€” nothing streams");
+        LOG_WARN("chantier 2 B1: no Overworld worldspace — nothing streams");
     }
     activeWorldspace = overworldHandle;
     interiorMode = false;
@@ -271,7 +280,7 @@ void LandscapeScene::onEnter() {
     fadeDirection = 0;
     pendingTravel = core::Guid {};
     // Chantier 3 B1: start the day at 10:00, ~7.5 real minutes per game
-    // hour (timescale 12 â€” "Animate" boosts it).
+    // hour (timescale 12 — "Animate" boosts it).
     gameClock = gameplay::GameClock {};
     gameClock.gameSeconds = 10.0 * 3600.0;
     gameClock.timescale = 12.0f;
@@ -322,15 +331,22 @@ void LandscapeScene::onEnter() {
             playerEntity.get_mut<gameplay::Equipment>().weapon =
                 playerWeapon->id;
         }
+        // B5: the rest of the kit (gold...) comes from LoadoutEntryForm
+        // children on the Player ActorForm — data, like every NPC.
+        if (playerForm) {
+            gameplay::applyLoadout(
+                forms, playerForm->id,
+                playerEntity.get_mut<gameplay::Inventory>(), lootRng);
+        }
     } else {
-        LOG_WARN("B5.5: no Player actor spawned â€” controller falls back to "
+        LOG_WARN("B5.5: no Player actor spawned — controller falls back to "
                  "fixed speeds");
     }
     LOG_INFO("B1 (ch.2): {} persistent reference(s); cells stream around "
              "the player",
              persistent);
 
-    // B6: Forms-driven NPCs â€” every spawned actor whose ActorForm resolves
+    // B6: Forms-driven NPCs — every spawned actor whose ActorForm resolves
     // an ActorVisual gets its GPU skin, its data-built locomotion graph,
     // and its patrol brain. The scene builds no character by hand anymore.
     shaders->load("skinned",
@@ -340,7 +356,7 @@ void LandscapeScene::onEnter() {
     buildSkinnedPipeline(device);
 
     // Initial cell ring around the player spawn, then the post-spawn
-    // fixups (ground snap, NPC build) â€” the same pair update() re-runs
+    // fixups (ground snap, NPC build) — the same pair update() re-runs
     // whenever the ring changes.
     Vec3 startFocus { 32.0f, 0.0f, 368.0f };
     if (playerEntity.is_alive()) {
@@ -388,7 +404,7 @@ void LandscapeScene::onEnter() {
     }
 
     if (device.caps().offscreenTargets) {
-        blitSampler = device.createSampler({}); // linear, clamp â€” identity
+        blitSampler = device.createSampler({}); // linear, clamp — identity
         shaders->load(kTonemapShader, { { "FrameUbo", 0 } },
                       { { "uSceneColor", 0 },
                         { "uBloom", 1 },
@@ -406,7 +422,7 @@ void LandscapeScene::onEnter() {
         gpuOcclusion.create(device, *shaders);
     }
 
-    // Start beside the NPC (slightly above, looking at it) â€” never
+    // Start beside the NPC (slightly above, looking at it) — never
     // inside the terrain: the spot is grounded on the SAME height function
     // the mesh uses. Fallback: safely above the demo area.
     if (!npcs.empty()) {
@@ -430,7 +446,7 @@ void LandscapeScene::onExit() {
     rhi::Device& device = engine->getDevice();
     engine->getWindow().setRelativeMouseMode(false);
     engine->getWindow().setTextInput(false);
-    // Chantier 4: game UI (one UiSystem per process â€” release before any
+    // Chantier 4: game UI (one UiSystem per process — release before any
     // other scene creates its own).
     if (uiCreated) {
         uiSystem.destroy(device);
@@ -443,11 +459,14 @@ void LandscapeScene::onExit() {
     dialogueRunner.reset(); // references `forms`, reset before re-resolve
     dialogueOptions.clear();
     containerEntity = ecs::Entity {};
+    dialoguePartner = ecs::Entity {};
+    barterMode = false;
+    goldForm = nullptr;
     destroyOffscreenTarget(device);
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
     // B1 mesh path: per-entry draw state, then the caches (their dtors free
-    // the GPU resources they own â€” device is alive here).
+    // the GPU resources they own — device is alive here).
     for (MeshDraw& draw : meshDraws) {
         if (draw.group.id != 0) {
             device.destroyBindGroup(draw.group);
@@ -470,7 +489,7 @@ void LandscapeScene::onExit() {
     rigCache.clear();
     device.destroyPipeline(skinnedPipeline);
     skinnedPipeline = {};
-    // Chantier 2 B1: cell machinery (references scene members â€” release
+    // Chantier 2 B1: cell machinery (references scene members — release
     // before the members are reset on the next onEnter).
     cellStreamer.reset();
     cellLoader.reset();
@@ -584,7 +603,7 @@ void LandscapeScene::ensureOffscreenTarget(rhi::Device& device, u32 width,
                       sceneDepthCopy);
     }
     // Tonemap inputs: scene + bloom + god rays (black 1x1 fallbacks are not
-    // needed on the 4.6 path â€” postFx is always ready when we get here).
+    // needed on the 4.6 path — postFx is always ready when we get here).
     blitBindGroup = device.createBindGroup(
         { .entries =
               postFx.ready()
@@ -652,14 +671,14 @@ void LandscapeScene::rebuildBlitPipeline(rhi::Device& device) {
 void LandscapeScene::update(f32 dt) {
     timeSeconds += dt;
     // B1 mesh path: pump async residency (worker decodes -> main-thread
-    // uploads, Â§7), then extract this frame's snapshot from the world.
+    // uploads, §7), then extract this frame's snapshot from the world.
     if (materialTextures) {
         materialTextures->pumpUploads();
     }
     if (meshCache) {
         meshCache->pumpUploads();
     }
-    // Chantier 4 B2: the game UI runs first â€” an open MODAL screen pauses
+    // Chantier 4 B2: the game UI runs first — an open MODAL screen pauses
     // the sim below (UiScreenForm.modal) and owns mouse/keyboard; the HUD
     // overlay just reads. Dev ImGui stays live either way.
     updateGameUi(dt);
@@ -692,7 +711,7 @@ void LandscapeScene::update(f32 dt) {
     if (!uiPaused) {
         // B7/ch.3 B1: interaction prompts + the travel fade state machine.
         updateInteraction(dt);
-        // Chantier 3 B1: the game clock owns time â€” the sky follows it,
+        // Chantier 3 B1: the game clock owns time — the sky follows it,
         // and tickCharacter gets REAL game-seconds (regen/survival at
         // timescale).
         gameClock.timescale = animateTime ? 720.0f : 12.0f;
@@ -796,7 +815,7 @@ void LandscapeScene::update(f32 dt) {
 // one small ModelUbo + bind group per entry, recreated only when the bound
 // texture flips (placeholder -> resident) or the material changes. N stays
 // tiny in B1; grouping/instancing per (model, material) is the contract's
-// planned next step (HORIZONTAL-PASS, monde 3D note). No shadow cast yet â€”
+// planned next step (HORIZONTAL-PASS, monde 3D note). No shadow cast yet —
 // parity with the H8 cube; casters join with the interiors chantier.
 void LandscapeScene::drawSceneMeshes(engine::FrameContext& frame) {
     if (snapshot.meshes.empty()) {
@@ -887,7 +906,7 @@ void LandscapeScene::exitPlayMode() {
     player.reset();
     engine->getWindow().setRelativeMouseMode(false);
     screenStack.close("hud");
-    // The camera stays where the player stood â€” Fly resumes from there.
+    // The camera stays where the player stood — Fly resumes from there.
 }
 
 // --- B3/B4: the level editor -------------------------------------------------------
@@ -1143,7 +1162,7 @@ void LandscapeScene::saveSculptToMod() {
                       static_cast<unsigned long long>(key & 0xFFFFFFFFFFFFull));
         const core::Guid assetGuid = *core::Guid::fromString(guidText);
         levelEditor->addExportAsset(assetGuid, str { "terrain/" } + name);
-        // One TerrainPatchForm per chunk â€” reuse the existing record if
+        // One TerrainPatchForm per chunk — reuse the existing record if
         // this chunk was already authored (patch it), else create.
         core::Guid recordGuid {};
         data::forEach<world::TerrainPatchForm>(
@@ -1166,7 +1185,7 @@ void LandscapeScene::saveSculptToMod() {
         session.setField(recordGuid, type.findField("asset")->id,
                          reflect::Value { assetGuid });
     }
-    LOG_INFO("B9: {} sculpted chunk(s) staged â€” Export writes the mod",
+    LOG_INFO("B9: {} sculpted chunk(s) staged — Export writes the mod",
              sculptGrids.size());
 }
 
@@ -1268,7 +1287,7 @@ void LandscapeScene::drawEditorUi() {
                     }
                 }
                 if (!cellGuid.isValid()) {
-                    LOG_WARN("Editor: no authored cell here â€” placement "
+                    LOG_WARN("Editor: no authored cell here — placement "
                              "aborted");
                 } else {
                     // Authored y follows the base's convention: snapping
@@ -1408,7 +1427,7 @@ void LandscapeScene::drawEditorUi() {
     ImGui::Separator();
     ImGui::TextUnformatted(placementBase.isValid()
                                ? "Placing: click the ground (Esc: cancel)"
-                               : "Palette â€” click to arm:");
+                               : "Palette — click to arm:");
     if (placementBase.isValid() &&
         ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
         placementBase = core::Guid {};
@@ -1577,6 +1596,7 @@ void LandscapeScene::updateInteraction(f32 dt) {
                         ? static_cast<const data::ActorForm*>(base)
                         : nullptr;
                 if (actor && actor->dialogue.isValid()) {
+                    dialoguePartner = promptEntity; // the vendor for B5
                     openDialogue(actor->dialogue);
                 } else {
                     talkLine = "Belle journee, voyageur.";
@@ -1588,7 +1608,7 @@ void LandscapeScene::updateInteraction(f32 dt) {
                 openContainerScreen(promptEntity);
                 break;
             case PromptKind::Furniture: {
-                // B7-lite: beds sleep 8h, seats rest 1h â€” both through the
+                // B7-lite: beds sleep 8h, seats rest 1h — both through the
                 // Phase-7 gameplay::sleep() at the black of the fade.
                 const auto& ref = promptEntity.get<world::RefId>();
                 f32 hours = 1.0f;
@@ -1665,7 +1685,7 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
         std::make_unique<TerrainCollision>(*physics, terrain.params);
 
     // Teleport the capsule to the marker, facing its authored yaw. The
-    // fade-in (0.3 s) covers the async floor-collider cook â€” the player
+    // fade-in (0.3 s) covers the async floor-collider cook — the player
     // doesn't move (and barely falls) until it lands.
     if (player) {
         player = std::make_unique<phys::CharacterBody>(
@@ -1683,7 +1703,7 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
              marker->position.x, interiorMode);
 }
 
-// Chantier 3 B7-lite: rest/sleep on furniture â€” the Phase-7 sleep()
+// Chantier 3 B7-lite: rest/sleep on furniture — the Phase-7 sleep()
 // advances the game clock (the sky follows on the next frame), decays
 // hunger/thirst over the skipped time, restores the sleep need, and
 // accrues Rest (the injury/resonance recovery precondition). NPC
@@ -1712,7 +1732,7 @@ void LandscapeScene::performRest(f32 hours) {
 // --- Chantier 4: the RmlUi game UI --------------------------------------------------
 
 void LandscapeScene::createGameUi(rhi::Device& device) {
-    // Document roots = every plugin's ui/ dir, in load order (last wins â€”
+    // Document roots = every plugin's ui/ dir, in load order (last wins —
     // a mod overrides a screen by shipping the same path).
     vector<std::filesystem::path> roots;
     for (const data::Plugin& plugin : pluginStack.plugins) {
@@ -1761,7 +1781,7 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
     uiSystem.createModel(
         { .name = "inventory",
           .strings = { "search", "detailName", "detailInfo", "weightText",
-                       "equipLabel" },
+                       "equipLabel", "goldText" },
           .bools = { "hasSelection", "selUsable", "transferMode" },
           .rows = true,
           .events = { "tab", "sortCol", "pick", "equipAction",
@@ -1775,12 +1795,18 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                            .strings = { "npcName", "npcLine" },
                            .rows = true,
                            .events = { "choose" } });
+    // B5: barter — the vendor side (the player side reuses "inventory").
+    uiSystem.createModel(
+        { .name = "barter",
+          .strings = { "title", "playerGold", "vendorGold" },
+          .rows = true,
+          .events = { "pickBuy" } });
     uiSystem.setModelEventHandler(
         [this](const str& model, const str& event, const vector<str>& args) {
             handleUiEvent(model, event, args);
         });
 
-    // Screens from UiScreenForm records â€” pure data, moddable (Â§5).
+    // Screens from UiScreenForm records — pure data, moddable (§5).
     data::forEach<data::UiScreenForm>(forms, [&](const data::UiScreenForm& f) {
         screenStack.define({ .name = f.screen,
                              .document = f.document,
@@ -1974,6 +2000,7 @@ void LandscapeScene::syncScreens() {
 
 void LandscapeScene::openInventoryScreen() {
     containerEntity = ecs::Entity {};
+    barterMode = false;
     uiSystem.setBool("inventory", "transferMode", false);
     pushItemModels();
     screenStack.show("inventory");
@@ -1981,6 +2008,7 @@ void LandscapeScene::openInventoryScreen() {
 
 void LandscapeScene::openContainerScreen(ecs::Entity container) {
     containerEntity = container;
+    barterMode = false;
     if (containerEntity.is_alive() &&
         !containerEntity.has<gameplay::Inventory>()) {
         containerEntity.set<gameplay::Inventory>({});
@@ -1988,6 +2016,64 @@ void LandscapeScene::openContainerScreen(ecs::Entity container) {
     uiSystem.setBool("inventory", "transferMode", true);
     pushItemModels();
     screenStack.show("container");
+}
+
+void LandscapeScene::openBarterScreen(ecs::Entity vendor) {
+    if (!vendor.is_alive() || !goldForm || !playerEntity.is_alive()) {
+        return;
+    }
+    containerEntity = vendor;
+    barterMode = true;
+    if (!containerEntity.has<gameplay::Inventory>()) {
+        containerEntity.set<gameplay::Inventory>({});
+    }
+    uiSystem.setBool("inventory", "transferMode", true);
+    // The vendor's name for the screen title.
+    str title = "Merchant";
+    if (containerEntity.has<world::RefId>()) {
+        const auto& ref = containerEntity.get<world::RefId>();
+        if (const reflect::TypeInfo* type = forms.typeOf(ref.base);
+            type && type->isA(data::ActorForm::staticTypeInfo().id)) {
+            const auto* actor =
+                static_cast<const data::ActorForm*>(forms.get(ref.base));
+            if (!actor->displayName.empty()) {
+                title = actor->displayName;
+            }
+        }
+    }
+    uiSystem.setString("barter", "title", title);
+    pushItemModels();
+    screenStack.show("barter");
+}
+
+void LandscapeScene::barterTrade(const core::Guid& item, bool playerBuys) {
+    if (!barterMode || !goldForm || !containerEntity.is_alive() ||
+        !playerEntity.is_alive()) {
+        return;
+    }
+    // The unit value comes from the view row (already resolved per kind).
+    const InventoryView& side = playerBuys ? lootView : invView;
+    const InventoryView::Row* row = nullptr;
+    for (const InventoryView::Row& candidate : side.rows()) {
+        if (candidate.id == item) {
+            row = &candidate;
+            break;
+        }
+    }
+    if (!row) {
+        return;
+    }
+    auto& bag = playerEntity.get_mut<gameplay::Inventory>();
+    auto& stock = containerEntity.get_mut<gameplay::Inventory>();
+    if (playerBuys) {
+        const i32 price =
+            barterPrice(row->value, statsTuning.barterBuyMult);
+        barterBuy(bag, stock, item, price, goldForm->id);
+    } else {
+        const i32 price =
+            barterPrice(row->value, statsTuning.barterSellMult);
+        barterSell(bag, stock, item, price, goldForm->id);
+    }
 }
 
 void LandscapeScene::pushItemModels() {
@@ -2007,8 +2093,10 @@ void LandscapeScene::pushItemModels() {
     }
     invView.build(forms, *bag, equipment);
 
+    // In barter mode the value column shows the PRICE at the relevant
+    // multiplier (sell on the player side, buy on the vendor side).
     const auto pushRows = [this](const InventoryView& view,
-                                 const str& model) {
+                                 const str& model, f32 priceMult) {
         vector<::ui::UiRow> rows;
         rows.reserve(view.rows().size());
         char buffer[32];
@@ -2020,7 +2108,9 @@ void LandscapeScene::pushItemModels() {
                          : row.name;
             std::snprintf(buffer, sizeof(buffer), "%.1f", row.weight);
             out.c1 = buffer;
-            out.c2 = std::to_string(row.value);
+            out.c2 = std::to_string(
+                priceMult > 0.0f ? barterPrice(row.value, priceMult)
+                                 : row.value);
             out.c3 = row.power > 0.0f
                          ? std::to_string(
                                static_cast<i32>(row.power + 0.5f))
@@ -2031,7 +2121,8 @@ void LandscapeScene::pushItemModels() {
         }
         uiSystem.setRows(model, std::move(rows));
     };
-    pushRows(invView, "inventory");
+    pushRows(invView, "inventory",
+             barterMode ? statsTuning.barterSellMult : 0.0f);
 
     char footer[64];
     std::snprintf(footer, sizeof(footer), "Carried weight  %.1f",
@@ -2062,8 +2153,23 @@ void LandscapeScene::pushItemModels() {
         containerEntity.has<gameplay::Inventory>()) {
         lootView.build(forms, containerEntity.get<gameplay::Inventory>(),
                        nullptr);
-        pushRows(lootView, "container");
-        uiSystem.setString("container", "title", "Loot");
+        if (barterMode) {
+            pushRows(lootView, "barter", statsTuning.barterBuyMult);
+            if (goldForm) {
+                const auto& stock =
+                    containerEntity.get<gameplay::Inventory>();
+                uiSystem.setString(
+                    "barter", "vendorGold",
+                    std::to_string(
+                        gameplay::itemCount(stock, goldForm->id)));
+                uiSystem.setString(
+                    "inventory", "goldText",
+                    std::to_string(gameplay::itemCount(*bag, goldForm->id)));
+            }
+        } else {
+            pushRows(lootView, "container", 0.0f);
+            uiSystem.setString("container", "title", "Loot");
+        }
     }
 }
 
@@ -2100,7 +2206,9 @@ void LandscapeScene::handleUiEvent(const str& model, const str& event,
             invView.sortBy(column);
         } else if (event == "pick") {
             if (const auto id = argGuid()) {
-                if (containerEntity.is_alive()) {
+                if (barterMode) {
+                    barterTrade(*id, /*playerBuys=*/false); // sell
+                } else if (containerEntity.is_alive()) {
                     transferItem(*id, /*fromContainer=*/false);
                 } else {
                     invView.select(*id);
@@ -2127,6 +2235,13 @@ void LandscapeScene::handleUiEvent(const str& model, const str& event,
                 }
             }
             loot.items.clear();
+        }
+        pushItemModels();
+    } else if (model == "barter") {
+        if (event == "pickBuy") {
+            if (const auto id = argGuid()) {
+                barterTrade(*id, /*playerBuys=*/true);
+            }
         }
         pushItemModels();
     } else if (model == "dialogue") {
@@ -2295,10 +2410,10 @@ void LandscapeScene::transferItem(const core::Guid& id,
     }
 }
 
-// Chantier 3 B6: first-person melee â€” LMB swings the equipped weapon at
+// Chantier 3 B6: first-person melee — LMB swings the equipped weapon at
 // the nearest living NPC in reach and roughly in front. Damage flows
-// through the SAME GAS pipeline as the 2D arena (Â§2.9: no hand-rolled
-// numbers). v1 has no swing animation (no visible body) â€” the cooldown
+// through the SAME GAS pipeline as the 2D arena (§2.9: no hand-rolled
+// numbers). v1 has no swing animation (no visible body) — the cooldown
 // and the hit feedback carry the feel until the FX/audio brick.
 void LandscapeScene::tryPlayerAttack() {
     if (!playerEntity.is_alive() || !player) {
@@ -2355,12 +2470,12 @@ void LandscapeScene::tryPlayerAttack() {
         block, gameplay::weaponDamageEvent(*weapon, playerSys),
         gameTags, derivedStats, nullptr, statsTuning);
     LOG_INFO("You hit for {:.0f} damage{} (target health {:.0f})",
-             result.healthDamage, result.staggered ? " â€” staggered!" : "",
+             result.healthDamage, result.staggered ? " — staggered!" : "",
              gameplay::currentValueOf(
                  best->entity.get<gameplay::AbilitySystem>(),
                  gameplay::attr("health")));
     // Aggro: a peaceful NPC defends itself... by fleeing (the villager
-    // has no weapon) â€” combat AI beyond bandits is the next slice.
+    // has no weapon) — combat AI beyond bandits is the next slice.
 }
 
 void LandscapeScene::updatePlayer(f32 dt) {
@@ -2368,7 +2483,7 @@ void LandscapeScene::updatePlayer(f32 dt) {
     if (fadeDirection != 0) {
         return; // frozen during door transitions
     }
-    // B6: melee swing on LMB (the mouse is captured in Play â€” ImGui
+    // B6: melee swing on LMB (the mouse is captured in Play — ImGui
     // never owns it here).
     playerAttackCooldown -= dt;
     if (playerAttackCooldown <= 0.0f &&
@@ -2383,8 +2498,8 @@ void LandscapeScene::updatePlayer(f32 dt) {
         flyCamera.camera.pitch - look.y * flyCamera.lookSensitivity,
         glm::radians(-89.0f), glm::radians(89.0f));
 
-    // Camera-relative intent, flattened to the horizontal plane (Â§ the
-    // controller OWNS motion â€” anims stay in place).
+    // Camera-relative intent, flattened to the horizontal plane (§ the
+    // controller OWNS motion — anims stay in place).
     const f32 yaw = flyCamera.camera.yaw;
     const Vec3 forward { std::sin(yaw), 0.0f, -std::cos(yaw) };
     const Vec3 right { std::cos(yaw), 0.0f, std::sin(yaw) };
@@ -2403,9 +2518,9 @@ void LandscapeScene::updatePlayer(f32 dt) {
     }
     const bool moving = glm::dot(wish, wish) > 0.0f;
 
-    // B5.5: speeds come from the CURRENT derived stats (docs/STATS.md Â§3
-    // â€” stat-space ~100 = nominal; injuries/buffs move them live). The
-    // controller only READS attributes (Â§2.9); sprint pays energy through
+    // B5.5: speeds come from the CURRENT derived stats (docs/STATS.md §3
+    // — stat-space ~100 = nominal; injuries/buffs move them live). The
+    // controller only READS attributes (§2.9); sprint pays energy through
     // the SprintCost effect below. Fallback keeps the scene alive without
     // a Player actor.
     f32 jog = 100.0f * kSpeedScale3D;
@@ -2433,7 +2548,7 @@ void LandscapeScene::updatePlayer(f32 dt) {
     }
     player->move(playerVelocity, dt);
 
-    // Sprint cost: one instant GameplayEffect per half second (Â§2.9 â€” the
+    // Sprint cost: one instant GameplayEffect per half second (§2.9 — the
     // ONLY way energy moves; the spend also pauses regen for a beat).
     if (sprinting && sprintCostEffect && playerEntity.is_alive()) {
         sprintCostAccumulator += dt;
@@ -2448,7 +2563,7 @@ void LandscapeScene::updatePlayer(f32 dt) {
     }
 
     // Eyes 1.70 m above the feet; the ENTITY transform tracks the capsule
-    // (the sim's view of the player â€” extract/saves read this, not Jolt).
+    // (the sim's view of the player — extract/saves read this, not Jolt).
     flyCamera.camera.position =
         player->position() + Vec3 { 0.0f, 1.7f, 0.0f };
     if (playerEntity.is_alive()) {
@@ -2462,7 +2577,7 @@ void LandscapeScene::updatePlayer(f32 dt) {
 namespace {
 constexpr f32 kNpcPauseSeconds = 2.5f; // idle beat at each patrol end
 constexpr f32 kNpcWalkFactor = 0.35f;  // of the jog speed (STATS.md: walk
-                                       // divides) â€” a stroll, not a march
+                                       // divides) — a stroll, not a march
 } // namespace
 
 const LandscapeScene::RigData* LandscapeScene::loadRig(
@@ -2482,14 +2597,14 @@ const LandscapeScene::RigData* LandscapeScene::loadRig(
     }
     rig.skeleton = std::move(*skeleton);
     rig.clips = assets::loadGltfAnimations(*path, rig.skeleton);
-    LOG_INFO("B6: rig {} loaded â€” {} joints, {} clips", path->string(),
+    LOG_INFO("B6: rig {} loaded — {} joints, {} clips", path->string(),
              rig.skeleton.joints.size(), rig.clips.size());
     return &rig;
 }
 
 // Chantier 2 B2: static colliders follow the spawned statics. Runs every
 // frame (cheap: map lookups + a small query) because meshes turn resident
-// asynchronously â€” a newcomer gets its body the frame its CPU data lands.
+// asynchronously — a newcomer gets its body the frame its CPU data lands.
 void LandscapeScene::updateStaticColliders() {
     if (!physics || !meshCache) {
         return;
@@ -2525,7 +2640,7 @@ void LandscapeScene::updateStaticColliders() {
             }
             const MeshCache::CpuMesh* cpu = meshCache->cpuMesh(mesh.model);
             if (!cpu) {
-                return; // still streaming â€” retried next frame
+                return; // still streaming — retried next frame
             }
             const phys::BodyId body = physics->addStaticMesh(
                 cpu->positions.data(),
@@ -2542,7 +2657,7 @@ void LandscapeScene::updateStaticColliders() {
 // (x, z) + the reference's AUTHORED y (an offset above ground until the
 // level editor writes real heights). Safe to re-run after every cell
 // change; prefab-derived children (no base record) keep their expanded Y.
-// Skipped for: interior cells (no terrain â€” authored y is absolute) and
+// Skipped for: interior cells (no terrain — authored y is absolute) and
 // base forms with snapToGround = false (building modules on a pad).
 void LandscapeScene::snapCellEntities() {
     if (editMode) {
@@ -2602,7 +2717,7 @@ void LandscapeScene::snapCellEntities() {
 }
 
 void LandscapeScene::destroyNpc(rhi::Device& device, Npc& npc) {
-    npc.anim.reset(); // references npc.graph â€” release first
+    npc.anim.reset(); // references npc.graph — release first
     device.destroyBindGroup(npc.group);
     device.destroyBuffer(npc.modelUbo);
     device.destroyBuffer(npc.paletteSsbo);
@@ -2755,6 +2870,15 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
             transform.position.y = render::terrain::height(
                 terrain.params, transform.position.x, transform.position.z);
             gameplay::initializeActorStats(entity, tickCtx);
+            // Chantier 4 B5: pockets from LoadoutEntryForm children —
+            // vendor stock, bandit loot, all data (§C.1).
+            if (!entity.has<gameplay::Inventory>()) {
+                ecs::Entity mutableEntity = entity;
+                mutableEntity.set<gameplay::Inventory>({});
+                gameplay::applyLoadout(
+                    forms, actor.id,
+                    mutableEntity.get_mut<gameplay::Inventory>(), lootRng);
+            }
 
             if (npcs.empty()) {
                 characterSpot = transform.position;
@@ -2895,28 +3019,12 @@ void LandscapeScene::updateNpcs(f32 dt) {
         f32 idleDecay = 10.0f;
 
         // B6: NPCs run the full character pipeline too (effects, stagger,
-        // life state) â€” that's where State.Dead comes from.
+        // life state) — that's where State.Dead comes from.
         gameplay::tickCharacter(npc.entity, dt, gameDt, tickCtx);
         const auto& npcSys = npc.entity.get<gameplay::AbilitySystem>();
-        const bool wasDead = npc.dead;
         npc.dead = deadTag && npcSys.tags.has(*deadTag);
-        if (npc.dead && !wasDead) {
-            // Chantier 4 B3: the corpse becomes lootable — its weapon and
-            // a few coins land in an Inventory on the entity ([E] opens
-            // the transfer screen). Data-driven loadouts = §C.1 later.
-            if (!npc.entity.has<gameplay::Inventory>()) {
-                npc.entity.set<gameplay::Inventory>({});
-            }
-            auto& loot = npc.entity.get_mut<gameplay::Inventory>();
-            if (npc.hostile && banditWeapon) {
-                gameplay::addItem(loot, banditWeapon->id, 1);
-            }
-            if (const auto* gold =
-                    data::findByEditorId<data::MiscItemForm>(forms,
-                                                             "GoldCoin")) {
-                gameplay::addItem(loot, gold->id, npc.hostile ? 12 : 3);
-            }
-        }
+        // (The corpse is lootable — its Inventory was rolled from the
+        // LoadoutEntryForm children at build, chantier 4 B5.)
         if (npc.dead) {
             // The death transition (anim graph, State.Dead gate) plays;
             // the body stays. Despawn: a later slice.
@@ -2932,7 +3040,7 @@ void LandscapeScene::updateNpcs(f32 dt) {
         }
 
         // B5: hostile actors hunt the player on sight (distance + a clear
-        // line â€” the perception cone can refine later).
+        // line — the perception cone can refine later).
         bool inCombat = false;
         if (npc.hostile && playMode && player) {
             const Vec3 playerPos = player->position();
@@ -3039,7 +3147,7 @@ void LandscapeScene::updateNpcs(f32 dt) {
                 if (npc.pathIndex >= npc.path.size() &&
                     npc.wanderTimer <= 0.0f) {
                     // Cheap per-NPC stroll target around the anchor
-                    // (cosmetic randomness â€” not gameplay RNG, Â§8).
+                    // (cosmetic randomness — not gameplay RNG, §8).
                     const u32 hash =
                         static_cast<u32>(npc.entity.id()) * 2654435761u +
                         static_cast<u32>(timeSeconds * 0.37f);
@@ -3386,7 +3494,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     render::FrameUniforms frameData = uniforms;
     if (interiorMode) {
         // B7 interior mode: no sun, no sky glow, dim constant ambient, no
-        // fog, no god rays/volumetric â€” local lights (B5) carry the room.
+        // fog, no god rays/volumetric — local lights (B5) carry the room.
         frameData.sunColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         frameData.sunGlowColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         frameData.ambientColor = { Vec3 { 0.16f, 0.15f, 0.14f },
@@ -3398,7 +3506,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     frame.device.updateBuffer(frameUbo, &frameData, sizeof(frameData), 0);
 
     // B5: the 16 nearest local lights, flicker applied CPU-side (sin +
-    // per-index phase â€” cheap and stateless).
+    // per-index phase — cheap and stateless).
     {
         struct LightsUniforms {
             Vec4 count { 0.0f };
@@ -3496,7 +3604,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         terrain.draw(frame.cmd, reflectionBindGroup,
                      shadows.receiverBindGroup(), &reflectionFrustum);
         // Trees only: rocks and bushes are invisible in a wobbly half-res
-        // reflection â€” low-detail canopies for the same reason.
+        // reflection — low-detail canopies for the same reason.
         vegetation.draw(frame.cmd, reflectionBindGroup,
                         shadows.receiverBindGroup(),
                         render::VegetationSystem::kTreeVariants,
@@ -3506,7 +3614,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         frame.cmd.endRenderPass();
     }
 
-    // Exterior: the sky covers every background pixel â€” no color clear.
+    // Exterior: the sky covers every background pixel — no color clear.
     // Interior: clear to a near-black room tone instead.
     frame.cmd.beginRenderPass(
         { .framebuffer = useOffscreen ? offscreenFb : rhi::FramebufferHandle {},
@@ -3518,7 +3626,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         }
     // Occlusion applies to the main view only: both sets were built for the
     // real camera, not the mirrored one (the grass ring is too close to
-    // ever be ridge-occluded â€” frustum only). CPU horizon âˆª GPU Hi-Z.
+    // ever be ridge-occluded — frustum only). CPU horizon ∪ GPU Hi-Z.
     gpuOccluded.clear();
     gpuOcclusion.collectResults(frame.device, gpuOccluded);
     combinedOccluded.clear();
@@ -3549,7 +3657,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     frame.cmd.endRenderPass();
 
     // Snapshot the opaque scene (sampling a bound attachment is UB): the
-    // SSAO pass reads the depth copy EVERY frame â€” interiors included
+    // SSAO pass reads the depth copy EVERY frame — interiors included
     // (skipping it left the previous exterior's AO ghosting over the
     // room). Water composition and Hi-Z occlusion stay exterior-only.
     if (useOffscreen && frame.device.caps().copyTexture &&
@@ -3649,7 +3757,7 @@ void LandscapeScene::drawUi() {
             ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, fadeAlpha)));
     }
 
-    // F6 toggles the level editor (leaves Play first â€” the editor flies).
+    // F6 toggles the level editor (leaves Play first — the editor flies).
     if (ImGui::IsKeyPressed(ImGuiKey_F6, false) && levelEditor) {
         editMode = !editMode;
         if (editMode && playMode) {
@@ -3665,7 +3773,7 @@ void LandscapeScene::drawUi() {
     }
 
     // F10 hides/shows the whole panel (works even while the mouse is
-    // captured in Play â€” ImGui keeps its own keyboard state).
+    // captured in Play — ImGui keeps its own keyboard state).
     if (ImGui::IsKeyPressed(ImGuiKey_F10, false)) {
         uiPanelVisible = !uiPanelVisible;
     }
@@ -3699,7 +3807,7 @@ void LandscapeScene::drawUi() {
     ImGui::TextDisabled("F1-F4: sections | F10: hide panel");
     ImGui::Separator();
 
-    if (section("Gameplay â€” player, NPC, physics  [F1]", ImGuiKey_F1,
+    if (section("Gameplay — player, NPC, physics  [F1]", ImGuiKey_F1,
                 uiGameplayOpen)) {
         drawGameplayUi();
     }
@@ -3722,7 +3830,7 @@ void LandscapeScene::drawUi() {
             regenerateRequested = true; // applied at the next render
         }
         // Water plane, sand band and material weights follow live; the
-        // scatter (grass/trees/props) is baked per chunk â€” Regenerate to
+        // scatter (grass/trees/props) is baked per chunk — Regenerate to
         // re-align it.
         ImGui::SliderFloat("Sea level (m)", &terrain.params.seaLevel, 0.0f,
                            40.0f, "%.0f");
@@ -3764,7 +3872,7 @@ void LandscapeScene::drawSkyUi() {
         if (ImGui::Combo("Weather", &selected, items.c_str())) {
             weatherSelected = selected - 1;
             if (weatherSelected >= 0) {
-                // Depart from whatever is on screen right now â€” mid-fade
+                // Depart from whatever is on screen right now — mid-fade
                 // switches stay continuous.
                 weatherFrom = captureCurrentWeather();
                 weatherBlend = 0.0f;
@@ -3791,7 +3899,7 @@ void LandscapeScene::drawSkyUi() {
 
 void LandscapeScene::drawGameplayUi() {
     if (!npcs.empty()) {
-        // B6: the Forms-driven NPC â€” patrol state + locomotion graph live.
+        // B6: the Forms-driven NPC — patrol state + locomotion graph live.
         static constexpr const char* kStateNames[] = { "idle", "walk",
                                                        "run" };
         const Npc& npc = *npcs.front();
@@ -3819,7 +3927,7 @@ void LandscapeScene::drawGameplayUi() {
     if (physics) {
         // B5: first-person Play mode.
         bool play = playMode;
-        if (ImGui::Checkbox("Play mode (B5) â€” press F", &play)) {
+        if (ImGui::Checkbox("Play mode (B5) — press F", &play)) {
             play ? enterPlayMode() : exitPlayMode();
         }
         if (playMode) {
@@ -3846,7 +3954,7 @@ void LandscapeScene::drawGameplayUi() {
                 gameplay::applyEffect(set, asys, *testWoundEffect, gameTags);
             }
         }
-        // B4: drop a kinematic capsule from the camera â€” it falls, lands
+        // B4: drop a kinematic capsule from the camera — it falls, lands
         // on the height-field tiles, and rides slopes (magenta box).
         if (ImGui::Button("Drop capsule here (B4)")) {
             debugCapsule = std::make_unique<phys::CharacterBody>(

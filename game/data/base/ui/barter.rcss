@@ -1,0 +1,7 @@
+/* Barter additions over the shared item-table styles (chantier 4 B5). */
+
+.gold {
+	font-size: 14dp;
+	color: #b9b5ac;
+	margin-bottom: 6dp;
+}

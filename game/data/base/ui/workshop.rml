@@ -1,0 +1,18 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="menus.rcss"/>
+</head>
+<body>
+	<div id="menu" class="panel" data-model="menu">
+		<div class="title">Workbench</div>
+		<p class="muted">The tools are laid out and ready. Crafting arrives
+		with a later vertical &mdash; this screen proves the
+		FurnitureForm.screen hook (a workstation opens its UI for the
+		player).</p>
+		<div class="menu-buttons">
+			<button data-event-click="menuAction('cancel')">Step away</button>
+		</div>
+	</div>
+</body>
+</rml>

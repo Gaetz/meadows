@@ -1,0 +1,24 @@
+/* Menu screens (chantier 4 B6): pause, main menu, wait, workstation. */
+
+#menu {
+	width: 340dp;
+	margin: auto;
+	margin-top: 18%;
+	text-align: center;
+}
+
+.menu-buttons {
+	margin: 10dp 0;
+}
+
+.menu-buttons button {
+	display: block;
+	width: 220dp;
+	margin: 6dp auto;
+}
+
+p {
+	line-height: 1.4em;
+	margin: 8dp 0;
+	text-align: left;
+}

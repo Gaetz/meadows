@@ -47,14 +47,55 @@ screen = "dialogue"
 document = "dialogue.rml"
 modal = true
 
-# The gold currency (chantier 4 B5): an ordinary MISC item — no parallel
-# money system, the barter screen just moves coins like any stack.
 [[records]]
-form = "5e8bac40-0000-4000-8000-000000000010"
-type = "MiscItemForm"
+form = "5e8bac40-0000-4000-8000-000000000005"
+type = "UiScreenForm"
 new = true
 [records.fields]
-editorId = "GoldCoin"
-displayName = "Gold"
-weight = 0.0
-goldValue = 1
+editorId = "ScreenBarter"
+screen = "barter"
+document = "barter.rml"
+modal = true
+
+[[records]]
+form = "5e8bac40-0000-4000-8000-000000000006"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenPause"
+screen = "pause"
+document = "pause.rml"
+modal = true
+
+[[records]]
+form = "5e8bac40-0000-4000-8000-000000000007"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenMainMenu"
+screen = "mainmenu"
+document = "main-menu.rml"
+modal = true
+
+[[records]]
+form = "5e8bac40-0000-4000-8000-000000000008"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenWait"
+screen = "wait"
+document = "wait.rml"
+modal = true
+
+[[records]]
+form = "5e8bac40-0000-4000-8000-000000000009"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenWorkshop"
+screen = "workshop"
+document = "workshop.rml"
+modal = true
+
+# (The GoldCoin currency lives in village.toml with the rest of the
+# economy content — this plugin only registers SCREENS.)

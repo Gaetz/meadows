@@ -1,0 +1,18 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="menus.rcss"/>
+</head>
+<body>
+	<div id="menu" class="panel" data-model="menu">
+		<div class="title">Wait</div>
+		<div class="menu-buttons">
+			<button data-event-click="menuAction('wait1')">Wait 1 hour</button>
+			<button data-event-click="menuAction('wait4')">Wait 4 hours</button>
+			<button data-event-click="menuAction('wait8')">Wait 8 hours</button>
+			<button data-event-click="menuAction('cancel')">Cancel</button>
+		</div>
+		<div class="muted">{{ clockLine }} &mdash; waiting passes game time without the recovery of a bed.</div>
+	</div>
+</body>
+</rml>

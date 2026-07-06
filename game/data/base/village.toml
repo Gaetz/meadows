@@ -932,7 +932,20 @@ parent = "4d7a9b30-0000-4000-8000-0000000000d4"
 speaker = "Villager"
 text = "Gardez-les precieusement — la route est longue jusqu'a la prochaine auberge."
 
-# Option 3: goodbye (no reply node -> the conversation ends).
+# Option 3: trade (chantier 4 B5) — the node fires "OpenBarter"; no reply
+# node, so the conversation ends and the barter screen takes over.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000d8"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000d1"
+speaker = "Player"
+text = "Voyons vos marchandises."
+event = "OpenBarter"
+order = 3
+
+# Option 4: goodbye (no reply node -> the conversation ends).
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000000d7"
 type = "DialogueNodeForm"
@@ -941,7 +954,100 @@ new = true
 parent = "4d7a9b30-0000-4000-8000-0000000000d1"
 speaker = "Player"
 text = "Bonne journee a vous."
-order = 3
+order = 4
+
+# The gold currency (chantier 4 B5): an ordinary MISC item — no parallel
+# money system, the barter screen just moves coins like any stack.
+[[records]]
+form = "5e8bac40-0000-4000-8000-000000000010"
+type = "MiscItemForm"
+new = true
+[records.fields]
+editorId = "GoldCoin"
+displayName = "Gold"
+weight = 0.0
+goldValue = 1
+
+# Loadouts (chantier 4 B5 — §C.1 LoadoutEntryForm children, rolled at
+# spawn on the seeded engine RNG): the Villager's stock + purse, the
+# Bandit's pockets (its lootable corpse), the Player's starting gold.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000e0"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000b1"   # Villager
+item = "4d7a9b30-0000-4000-8000-000000000070"     # TravelRations
+count = 4
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000e1"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000b1"   # Villager
+item = "5e8bac40-0000-4000-8000-000000000010"     # GoldCoin
+count = 60
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000e2"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000092"   # Bandit
+item = "4d7a9b30-0000-4000-8000-000000000091"     # BanditClub
+count = 1
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000e3"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000092"   # Bandit
+item = "5e8bac40-0000-4000-8000-000000000010"     # GoldCoin
+count = 12
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000e4"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000a0"   # Player
+item = "5e8bac40-0000-4000-8000-000000000010"     # GoldCoin
+count = 25
+
+# A workbench (chantier 4 B6): a WORKSTATION — [E] opens its UI screen
+# (FurnitureForm.screen -> UiScreenForm "workshop") instead of resting.
+# Same crate placeholder visual as the bed until a real prop lands.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000e5"
+type = "FurnitureForm"
+new = true
+[records.fields]
+editorId = "Workbench"
+displayName = "Workbench"
+category = "workstation"
+model = "4d7a9b30-0000-4000-8000-0000000000a8"
+screen = "workshop"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000e6"
+type = "FurniturePointForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000e5"
+offset = [0.0, 0.9, 0.0]
+animTag = "Sit"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000e7"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-0000000000e5"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [49.5, 0.0, 366.5]
+scale = [1.2, 0.9, 0.8]
 
 # A pickable item (chantier 3 B1): rations on the crates — [E] takes them
 # into the inventory (persistence of pickups = the save layer, chantier 5).

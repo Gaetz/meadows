@@ -3,6 +3,7 @@
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormTypeRegistry.hpp"
 #include "data/plugins/PluginConfig.hpp"
+#include "engine/core/Rng.hpp"
 #include "engine/anim/Anim.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/assets/GltfMesh.hpp"
@@ -47,7 +48,8 @@ namespace engine {
 class Engine;
 }
 namespace data {
-struct WeaponForm; // CoreForms — pointers only in this header
+struct WeaponForm;   // CoreForms — pointers only in this header
+struct MiscItemForm; // (gold, chantier 4 B5)
 }
 
 namespace game {
@@ -280,9 +282,19 @@ private:
     gameplay::EventBus eventBus;
     uptr<quest::DialogueRunner> dialogueRunner;
     vector<const quest::DialogueNodeForm*> dialogueOptions;
+    ecs::Entity dialoguePartner {}; // who [E] Talk opened (vendor for B5)
     gameplay::EvalContext makeEvalContext() const;
     void openDialogue(const core::Guid& dialogueId);
     void pushDialogueModel();
+
+    // Chantier 4 B5: barter. Gold is an ordinary item; prices = goldValue
+    // × the StatsTuningForm multipliers; the vendor's stock/wealth is its
+    // LoadoutEntryForm-rolled Inventory (limited — no restock yet).
+    bool barterMode { false };
+    core::Rng lootRng { 0x4d7a9b30u }; // loadout rolls (§8 seeded)
+    const data::MiscItemForm* goldForm { nullptr };
+    void openBarterScreen(ecs::Entity vendor);
+    void barterTrade(const core::Guid& item, bool playerBuys);
 
     // Chantier 3 B5/B6: melee combat — everything flows through the GAS
     // damage pipeline (weaponDamageEvent -> applyDamage), like the 2D

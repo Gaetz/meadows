@@ -3,6 +3,7 @@
 # the engine lib never depends on world/ (DAG stays acyclic). A future editor
 # (in-engine or standalone) reuses this without the game executable.
 add_library(meadows-runtime STATIC
+    Barter.cpp
     InventoryView.cpp
     LevelEditor.cpp
     MeshCache.cpp

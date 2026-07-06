@@ -58,6 +58,10 @@ struct StatsTuningForm : data::Form {
     f32 hungerHoursPerPoint { 0.96f };   // 1.042 pts/game_h → threshold (75) in 24h from 100
     f32 thirstHoursPerPoint { 0.32f };   // 3.125 pts/game_h → threshold (75) in 8h from 100
     f32 sleepHoursPerPoint { 0.72f };    // 1.389 pts/game_h → threshold (75) in 18h from 100
+    // Barter (chantier 4, appended — ordinals stable). Prices = goldValue
+    // × these; charisma/speechcraft scaling joins with the P1 stats pass.
+    f32 barterBuyMult { 1.5f };   // the player BUYS at value × this
+    f32 barterSellMult { 0.5f };  // the player SELLS at value × this
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -95,6 +99,8 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(hungerHoursPerPoint)
         REFLECT_FIELD(thirstHoursPerPoint)
         REFLECT_FIELD(sleepHoursPerPoint)
+        REFLECT_FIELD(barterBuyMult)
+        REFLECT_FIELD(barterSellMult)
     REFLECT_END()
 };
 

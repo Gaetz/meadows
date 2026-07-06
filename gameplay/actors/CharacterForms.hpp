@@ -13,11 +13,17 @@
 // guids (append) + a system that recomputes the visible mesh per slot from
 // (appearance, equipped items); tints multiply the material.
 
+namespace core {
+class Rng;
+}
 namespace data {
+class FormDatabase;
 class FormTypeRegistry;
 }
 
 namespace gameplay {
+
+struct Inventory;
 
 struct AppearanceForm : data::Form {
     core::Guid skeleton;  // glTF asset carrying the shared skeleton
@@ -58,6 +64,30 @@ struct ActorTagForm : data::Form {
     REFLECT_END()
 };
 
+// Starting items of an actor (chantier 4 — the §C.1 LoadoutEntryForm):
+// CHILD records rolled once when the actor spawns. `chance` in [0,1] with
+// the engine RNG (§8 determinism); a mod adds a loadout line with one
+// record. Feeds vendors' stock, bandits' pockets, the player's kit.
+struct LoadoutEntryForm : data::Form {
+    core::Guid parent; // ActorForm
+    core::Guid item;   // Weapon/Armor/Consumable/MiscItem Form
+    i32 count { 1 };
+    f32 chance { 1.0f };
+
+    REFLECT_BEGIN(LoadoutEntryForm, data::Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(item)
+        REFLECT_FIELD(count)
+        REFLECT_FIELD(chance)
+    REFLECT_END()
+};
+
 void registerCharacterFormTypes(data::FormTypeRegistry& registry);
+
+// Rolls the actor's LoadoutEntryForm children into `inventory` (call once
+// at spawn). `chance` rolls on the engine RNG (§8 — seeded, so saves and
+// replays reproduce the same pockets).
+void applyLoadout(const data::FormDatabase& forms, const core::Guid& actor,
+                  Inventory& inventory, core::Rng& rng);
 
 } // namespace gameplay

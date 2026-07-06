@@ -1,0 +1,16 @@
+[16:08:26.196] [info] meadows engine starting: True Adventurer
+[16:08:26.199] [info] Job system: 19 workers
+[16:08:26.471] [info] OpenGL 4.6 — NVIDIA GeForce RTX 4070 SUPER/PCIe/SSE2 (NVIDIA Corporation) | backend:GL46(DSA) BaseInstance:yes
+[16:08:26.523] [info] plugin 'mods/level-edits.toml' not present — skipped
+[16:08:26.529] [info] Plugin stack: 4 plugins, 167 forms
+[16:08:26.532] [info] Landscape tuning: seed=1337 seaLevel=14 fogDensity=0.0014 coverage=0.38 | 6 weather states
+[16:08:26.534] [info] B8: 1 authored terrain patch(es)
+[16:08:26.537] [info] ShaderLibrary root: C:/Rufflerim/meadows/engine/render/landscape/shaders
+[16:08:26.688] [info] RmlUi: Loaded font face 'JetBrains Mono' [regular] from 'C:\Rufflerim\meadows\build\game\Debug\data\base\ui\fonts\DemoFont.ttf'.
+[16:08:26.758] [error] RmlUi: Could not locate data model 'menu' in element div#menu.panel < body.
+[16:08:26.760] [error] RmlUi: Could not locate data model 'menu' in element div#menu.panel < body.
+[16:08:26.762] [error] RmlUi: Could not locate data model 'menu' in element div#menu.panel < body.
+[16:08:26.765] [error] RmlUi: Could not locate data model 'menu' in element div#menu.panel < body.
+[16:08:26.780] [warning] WorldModel: reference 2b5e7d10-0000-4000-8000-0000000000a1 placed in unknown cell 00000000-0000-0000-0000-000000000000
+[16:08:26.782] [info] B1 (ch.2): 1 persistent reference(s); cells stream around the player
+[16:08:26.940] [info] B6: rig C:\Rufflerim\meadows\build\game\Debug\data\base\models/UAL1_Standard.glb loaded — 65 joints, 43 clips

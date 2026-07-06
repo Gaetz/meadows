@@ -6,6 +6,7 @@ add_executable(meadows-tests
     AnimTest.cpp
     AudioTest.cpp
     AssetsTest.cpp
+    BarterTest.cpp
     CellLoaderTest.cpp
     CellStreamerTest.cpp
     ChunkOcclusionTest.cpp

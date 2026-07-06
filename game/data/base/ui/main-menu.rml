@@ -1,0 +1,17 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="menus.rcss"/>
+</head>
+<body>
+	<div id="menu" class="panel" data-model="menu">
+		<div class="title">True Adventurer</div>
+		<div class="menu-buttons">
+			<button data-event-click="menuAction('play')">Enter the world</button>
+			<button class="disabled">Load game</button>
+			<button data-event-click="menuAction('quit')">Quit</button>
+		</div>
+		<div class="muted">Load game arrives with the persistence chantier.</div>
+	</div>
+</body>
+</rml>

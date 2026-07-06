@@ -1,0 +1,49 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="inventory.rcss"/>
+	<link type="text/rcss" href="barter.rcss"/>
+</head>
+<body>
+	<div id="transfer">
+		<div class="panel side" data-model="barter">
+			<div class="title">{{ title }}</div>
+			<div class="gold">Vendor gold&nbsp;&nbsp;<span class="accent">{{ vendorGold }}</span></div>
+			<div class="tablehead">
+				<div class="col name">Name</div>
+				<div class="col num">Weight</div>
+				<div class="col num">Price</div>
+				<div class="col num">Power</div>
+			</div>
+			<div class="itemlist">
+				<div class="row" data-for="row : rows" data-event-click="pickBuy(row.id)">
+					<div class="col name">{{ row.c0 }}</div>
+					<div class="col num">{{ row.c1 }}</div>
+					<div class="col num">{{ row.c2 }}</div>
+					<div class="col num">{{ row.c3 }}</div>
+				</div>
+			</div>
+			<div class="muted">Click an item to buy it.</div>
+		</div>
+		<div class="panel side" data-model="inventory">
+			<div class="title">You</div>
+			<div class="gold">Your gold&nbsp;&nbsp;<span class="accent">{{ goldText }}</span></div>
+			<div class="tablehead">
+				<div class="col name" data-event-click="sortCol('name')">Name</div>
+				<div class="col num" data-event-click="sortCol('weight')">Weight</div>
+				<div class="col num" data-event-click="sortCol('value')">Price</div>
+				<div class="col num" data-event-click="sortCol('power')">Power</div>
+			</div>
+			<div class="itemlist">
+				<div class="row" data-for="row : rows" data-class-equipped="row.tag == 'equipped'" data-event-click="pick(row.id)">
+					<div class="col name">{{ row.c0 }}</div>
+					<div class="col num">{{ row.c1 }}</div>
+					<div class="col num">{{ row.c2 }}</div>
+					<div class="col num">{{ row.c3 }}</div>
+				</div>
+			</div>
+			<div class="muted">Click an item to sell it.</div>
+		</div>
+	</div>
+</body>
+</rml>
