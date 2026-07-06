@@ -41,6 +41,10 @@ struct StaticForm : Form {
     core::Guid material; // MaterialForm
     core::Guid sprite;   // 2D fallback/minimap icon
     bool collides { true };
+    // Chantier 2 (appended — ordinals stable): true = the reference's
+    // authored y is an offset above the terrain (props); false = authored
+    // y is ABSOLUTE (building modules on a leveled pad).
+    bool snapToGround { true };
 
     REFLECT_BEGIN(StaticForm, Form)
         REFLECT_FIELD(displayName)
@@ -48,6 +52,7 @@ struct StaticForm : Form {
         REFLECT_FIELD(material)
         REFLECT_FIELD(sprite)
         REFLECT_FIELD(collides)
+        REFLECT_FIELD(snapToGround)
     REFLECT_END()
 };
 

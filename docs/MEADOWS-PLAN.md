@@ -8,8 +8,8 @@
 | **Passe horizontale** (architecture de tous les systèmes) | ✅ FAITE 2026-07-06 — contrat : `docs/HORIZONTAL-PASS.md` (audit de compat inclus) |
 | Renderer paysage (briques 27-31) | 27 ✅ FAITE (canopées pleines + LOD, chantier 1) ; 28-31 → chantier 6 ; spec : `docs/3D-RENDERER.md` |
 | **Chantier 1 — Socle 3D gameplay** | ✅ FAIT 2026-07-06 — journal : `docs/CHANTIER-1.md` (joueur FPS piloté par ses stats, PNJ 100 % Forms en patrouille, MeshCache/skinning/anim data, collision terrain Jolt, arbres brique 27) |
-| **Chantier 2 — Monde habitable** (cellules 3D, intérieurs, éditeur de niveau v1, prefabs) | ⬅️ **PROCHAIN** (à planifier) |
-| Chantier 3 — Vivant (navmesh, IA/schedules exécutés, combat 3D, cues/FX/audio P0) | à faire |
+| **Chantier 2 — Monde habitable** (cellules 3D, éditeur de niveau+gizmos, lumières locales, kit+intérieur+portes, terrain auteuré+sculpt) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-2.md` |
+| **Chantier 3 — Vivant** (navmesh, IA/schedules exécutés, combat 3D, cues/FX/audio P0) | ⬅️ **PROCHAIN** — plan de briques proposé : `docs/CHANTIER-3.md` (à valider) |
 | Chantier 4 — Interfaces (écrans RmlUi P0, GameDB/console déjà livrés en squelette) | à faire |
 | Chantier 5 — Persistance (Phase 10 : streaming + save = couche de patches) | à faire |
 | Chantier 6 — P1 par valeur (quêtes outillées, économie/crime, éditeurs anim/FX/UI…) | à faire |
@@ -70,11 +70,11 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **Streaming 3D worldspace→cells** (ex-Phase 10) | P0 | Cellules extérieures async (le pattern chunks du renderer EST le prototype), intérieurs = worldspaces séparés, transitions portes + chargement, persistance par cellule. Chantier 2/5. |
-| 🔨 **Éditeur de niveau interne au jeu** | P0 | Fondations livrées (H2) : EditSession (undo/redo, export plugin), PropertyGrid réflexion, console. Reste (chantier 2) : mode éditeur dans la scène 3D — sélection/placement (gizmos, snap, duplication), palette GameDB, **sculpt de terrain**, picking. |
-| 🔨 **Système de prefabs** | P0 | Expansion runtime FAITE (H8, doctestée : GUIDs enfants dérivés, ciblables par patches/saves). Reste : prefabs imbriqués éprouvés + « créer un prefab depuis la sélection » dans l'éditeur (chantier 2). |
-| **Intérieurs** | P0 | Cellules intérieures : pas de terrain/ciel, kit de modules (murs/sols — tilesets 3D), éclairage local (voir B), occlusion simple par pièce (portals P2 ; v1 = cellule entière), ambiance audio/reverb dédiée. Chantier 2. |
-| **Terrain fait main** | P0 | Terrain extérieur = **heightmaps auteurées par worldspace** : sculpt dans l'éditeur (raise/lower/flatten/smooth) + peinture de splat, stockage en données moddables (patches de terrain par plugin), streaming par cellules inchangé. Routes/chemins (splines) et rivières/lacs placés P1. Le `TerrainNoise` actuel reste (a) le bac à sable du renderer paysage et (b) un outil « seed → terrain de départ » qu'on retouche — jamais la base du monde jeu. |
+| 🔨 **Streaming 3D worldspace→cells** (ex-Phase 10) | P0 | v1 SYNCHRONE FAITE (chantier 2 B1) : CellStreamer (anneau + hystérésis), worldspaces intérieurs séparés, transitions portes. Reste (chantier 5) : chargement ASYNC + persistance par cellule. |
+| ✅ **Éditeur de niveau interne au jeu** | P0 | v1 FAITE (chantier 2 B3/B4/B9) : picking ray-AABB, gizmos ImGuizmo (1/2/3), palette, placement au sol, sculpt, undo/redo, **export = mod `data/mods/level-edits.toml`** rechargé au run suivant. Reste : duplication, multi-sélection rectangle, resync live après undo, snap de grille. |
+| ✅ **Système de prefabs** | P0 | FAIT : expansion runtime (H8) + **« créer un prefab depuis la sélection »** dans l'éditeur (chantier 2 B4, doctesté). Reste : prefabs imbriqués éprouvés. |
+| ✅ **Intérieurs** | P0 | v1 FAITE (chantier 2 B6) : worldspace interior, kit de modules (Quaternius village), mode renderer intérieur (pas de terrain/ciel/soleil, ambiant + lumières locales), occlusion v1 = cellule entière. Reste : ambiance audio/reverb (chantier « vivant »), portals P2. |
+| ✅ **Terrain fait main** | P0 | v1 FAITE (chantier 2 B8/B9) : hauteur = bruit + **patches delta auteurés** (`.ter` assets + TerrainPatchForm — moddables §5), sculpt raise/lower/flatten/smooth dans l'éditeur, outil offline `cooker terrain-pad`, collision/scatter/rendu tous synchrones. Reste : peinture de splat (B10 non tirée), routes/splines et rivières placées P1. `TerrainNoise` reste la base procédurale qu'on retouche. |
 | **Outils procéduraux d'assistance** | P1 | **Brosses de scatter** dans l'éditeur (une brosse ÉCRIT des références dans le plugin — outil d'authoring, pas système runtime ; l'herbe cosmétique peut rester rule-based, elle ne porte pas de gameplay). **Générateur de bases de donjons par règles** (assemblage de kits de modules → sortie = records/prefabs retouchables à la main) P1/P2. |
 | 🔨 **Volumes de gameplay** | P0 | TriggerForm + spawner + composant posés (H1/H8) ; reste le branchement Jolt sensors → EventBus (chantier 2/3), volumes d'eau, kill-z, zones de son/reverb. |
 | ✅ **Marqueurs** | P0 | FAIT : MarkerForm + spawner (H1/H8), utilisés en vrai par la patrouille du PNJ (chantier 1). Références invisibles = le modèle prévu. |
@@ -84,7 +84,7 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
 | ✅ **Matériaux & textures sur meshes** | P0 | v1 FAITE (H8 + chantier 1) : `MaterialForm` (albédo × teinte × rampe stylisée), MeshCache async, cube→props réels. Reste : normal maps P1, pipeline KTX2/Basis, atlas/array pour l'instancing par (model, material). |
-| 🔨 **Lumières locales + ombres intérieures** | P0 | `LightForm` + spawner + composant posés (H1/H8). Reste (chantier 2) : le rendu — N lumières par objet (forward simple d'abord, clustered P1), ombres pour 1-2 lumières clés par intérieur, flicker/candles. Le paysage reste sun-only. |
+| ✅ **Lumières locales + ombres intérieures** | P0 | v1 FAITE (chantier 2 B5) : LightsUbo des 16 plus proches (binding 5), falloff quadratique, flicker CPU, sur meshes+personnages ; le paysage reste sun-only. Reste : ombres 1-2 lumières clés par intérieur, spots réels, clustered P1. |
 | ✅ **Meshes skinnés (GPU skinning)** | P0 | FAIT (chantier 1) : import poids/squelette (remap parents-first), palettes SSBO, shaders skinnés. Reste : rendu INSTANCIÉ des personnages (chantier « vivant », quand ils seront nombreux). |
 | **Transparence triée** | P1 | Alpha blend trié par distance (verre, fantômes, eau intérieure) ; le cutout reste l'exception (leçon fill-rate). |
 | 🔨 **Émissifs & enchantements** | P1 | Champ `emissive` branché (mesh.frag + bloom). Reste : effets de matériau animés (dissolve, glow) pilotés par GameplayCues (voir F). |
@@ -138,10 +138,10 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| 🔨 **Intégration Jolt** | P0 | Monde + capsule + raycasts + **height fields terrain** FAITS (H3 + chantier 1, doctests headless). Reste : mesh colliders des cellules/kits (`addStaticMesh`, chantier 2), shape casts combat, triggers sensors. |
+| 🔨 **Intégration Jolt** | P0 | Monde + capsule + raycasts + height fields + **mesh colliders des statics/kits** (`addStaticMesh`, chantier 2 B2 — suivent le spawn/despawn des cellules) FAITS. Reste : shape casts combat, triggers sensors (chantier « vivant »). |
 | ✅ **Character controller** | P0 | v1 FAITE (chantier 1) : capsule cinématique, pentes/marches, saut, sprint payé en énergie GAS, vitesses par stats dérivées. Reste : dégâts de chute, nage P1. |
 | **Objets dynamiques** | P1 | Props poussables, loot qui tombe, physique légère (le « clutter » Skyrim). Havok-cheese P2. |
-| **Portes & mécanismes** | P0 | Portes animées + verrous (crochetage = minigame P1), leviers, coffres — états persistés (= patches de référence, §5 natif). Chantier 2. |
+| ✅ **Portes & mécanismes** | P0 | v1 FAITE (chantier 2 B7) : `DoorForm` (cible = référence de marker, résolution 100 % records), prompt [E], transition worldspace avec fondu. Reste : portes ANIMÉES (battant), verrous/crochetage P1, leviers/coffres, états persistés (chantier 5). |
 
 ## E. IA & navigation
 

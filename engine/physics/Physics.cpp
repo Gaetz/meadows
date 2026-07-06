@@ -14,6 +14,7 @@
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -168,6 +169,44 @@ BodyId PhysicsWorld::addHeightField(const f32* samples, u32 sampleCount,
     // The origin is baked into the shape's offset; the body sits at zero.
     JPH::BodyCreationSettings settings { result.Get(), JPH::RVec3::sZero(),
                                          JPH::Quat::sIdentity(),
+                                         JPH::EMotionType::Static,
+                                         kLayerStatic };
+    const JPH::BodyID body =
+        pimpl->system.GetBodyInterface().CreateAndAddBody(
+            settings, JPH::EActivation::DontActivate);
+    return body.GetIndexAndSequenceNumber();
+}
+
+BodyId PhysicsWorld::addStaticMesh(const Vec3* vertices, u32 vertexCount,
+                                   const u32* indices, u32 indexCount,
+                                   const Vec3& position,
+                                   const Quat& rotation, const Vec3& scale) {
+    if (!vertices || !indices || vertexCount == 0 || indexCount < 3) {
+        return 0;
+    }
+    JPH::VertexList jphVertices;
+    jphVertices.reserve(vertexCount);
+    for (u32 i = 0; i < vertexCount; ++i) {
+        jphVertices.push_back({ vertices[i].x * scale.x,
+                                vertices[i].y * scale.y,
+                                vertices[i].z * scale.z });
+    }
+    JPH::IndexedTriangleList triangles;
+    triangles.reserve(indexCount / 3);
+    for (u32 i = 0; i + 2 < indexCount; i += 3) {
+        triangles.push_back(JPH::IndexedTriangle(indices[i], indices[i + 1],
+                                                 indices[i + 2]));
+    }
+    JPH::MeshShapeSettings shape { std::move(jphVertices),
+                                   std::move(triangles) };
+    const JPH::ShapeSettings::ShapeResult result = shape.Create();
+    if (result.HasError()) {
+        LOG_ERROR("Physics: mesh shape rejected: {}",
+                  result.GetError().c_str());
+        return 0;
+    }
+    JPH::BodyCreationSettings settings { result.Get(), toJph(position),
+                                         toJph(rotation),
                                          JPH::EMotionType::Static,
                                          kLayerStatic };
     const JPH::BodyID body =

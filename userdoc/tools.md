@@ -17,6 +17,24 @@ database — every record of every type, from every enabled plugin.
   is the fastest way to make a tweak mod: edit, export, done. Edits apply
   after *Reload data* (or a relaunch).
 
+## The level editor (in the 3D scene)
+
+Press **F6** in the Landscape scene. Everything you do writes RECORDS,
+and *Export* saves them as an ordinary mod (`data/mods/level-edits.toml`)
+loaded on the next run — your level edits ARE a plugin.
+
+- **Pick**: left-click an object. **Gizmo**: move/rotate/scale with the
+  handles; `1`/`2`/`3` switch the operation. The record is patched when
+  you release.
+- **Place**: arm a palette entry (Statics / Lights / Prefabs), click the
+  ground. `Esc` cancels.
+- **Group into a prefab**: Ctrl+click several objects, name it, *Create
+  prefab from group* — the originals collapse into one reusable prefab
+  you can place again from the palette.
+- **Sculpt terrain**: check *Sculpt terrain*, choose Raise/Lower/Flatten/
+  Smooth, paint with the left button. *Save terrain to mod* stages the
+  grids; *Export* writes them with the rest.
+
 ## The plugin manager
 
 The **Plugins** window shows the load order: reorder with the arrows,

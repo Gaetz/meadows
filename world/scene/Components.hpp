@@ -147,6 +147,16 @@ struct MarkerKind {
     REFLECT_END()
 };
 
+// A traversable door (chantier 2 B7): the transition target is the GUID
+// of a placed marker REFERENCE — resolved from records at travel time.
+struct DoorTarget {
+    core::Guid targetReference;
+
+    REFLECT_BEGIN(DoorTarget, void)
+        REFLECT_FIELD(targetReference)
+    REFLECT_END()
+};
+
 // Links a placed furniture entity to its FurnitureForm (use points and
 // effects resolve through it; occupancy keys on RefId::referenceId).
 struct FurnitureRef {

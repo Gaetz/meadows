@@ -45,6 +45,14 @@ void spawnMarker(SpawnContext&, ecs::Entity entity, const data::Form& base,
     entity.set<MarkerKind>({ marker.kind });
 }
 
+// Chantier 2 B7: doors get their visual from the universal model/material
+// wiring; the category hook only adds the travel target.
+void spawnDoor(SpawnContext&, ecs::Entity entity, const data::Form& base,
+               const reflect::TypeInfo&) {
+    const auto& door = static_cast<const DoorForm&>(base);
+    entity.set<DoorTarget>({ door.targetMarker });
+}
+
 void spawnTrigger(SpawnContext&, ecs::Entity entity, const data::Form& base,
                   const reflect::TypeInfo&) {
     entity.add<TriggerMarker>();
@@ -236,6 +244,7 @@ void registerCoreSpawners(Spawner& spawner) {
     spawner.registerCategory(FormCategory::Marker, &spawnMarker);
     spawner.registerCategory(FormCategory::Trigger, &spawnTrigger);
     spawner.registerCategory(FormCategory::Furniture, &spawnFurniture);
+    spawner.registerCategory(FormCategory::Door, &spawnDoor);
     // FormCategory::Prefab is handled inside Spawner::spawn (expansion).
 }
 

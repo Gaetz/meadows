@@ -120,6 +120,36 @@ entity's real speed so feet don't slide). Timeline events (`AnimEventForm`
 children of a clip: footsteps, hit frames) are the animation→gameplay
 bridge.
 
+## Doors and interiors
+
+An interior is its own worldspace (`WorldspaceForm` with
+`interior = true`) with its own cells — no terrain or sky, ambient plus
+local lights. A `DoorForm` links spaces: its `targetMarker` is the GUID of
+a placed marker *reference* — position, facing AND destination cell (thus
+worldspace) all come from that one record:
+
+```toml
+[[records]]
+form = "GUID-HOUSE-DOOR"
+type = "DoorForm"
+new = true
+[records.fields]
+displayName = "House door"
+model = "GUID-DOOR-MODEL"
+targetMarker = "GUID-ARRIVAL-MARKER-REF"
+```
+
+## Authored terrain
+
+Terrain height = the procedural base + **authored delta grids**, one per
+64 m chunk, stored as `.ter` assets referenced by `TerrainPatchForm`
+records — so terrain edits are moddable like everything else (override
+the asset by guid, or patch the record). Sculpt in the in-game level
+editor (F6 → Sculpt terrain), or generate a leveled pad offline with
+`cooker terrain-pad`. Building modules use `snapToGround = false` in
+their `StaticForm` (absolute heights on a leveled pad); loose props keep
+the default (their `y` is an offset above the ground).
+
 ## Hand-made world, procedural helpers
 
 The game world is authored by hand. Procedural tools exist to *assist*

@@ -90,6 +90,34 @@ TEST_CASE("a capsule lands on a height field and climbs its slope (B4)") {
           5.0f + (character.position().x - 32.0f) * 0.2f - 0.5f);
 }
 
+TEST_CASE("a static triangle mesh blocks a capsule and rays (ch.2 B2)") {
+    phys::PhysicsWorld world;
+    // A 10x10 m quad at y = 2, two triangles, scaled x2 through the API.
+    const Vec3 vertices[] = { { -5.0f, 2.0f, -5.0f },
+                              { 5.0f, 2.0f, -5.0f },
+                              { 5.0f, 2.0f, 5.0f },
+                              { -5.0f, 2.0f, 5.0f } };
+    const u32 indices[] = { 0, 1, 2, 0, 2, 3 };
+    const phys::BodyId mesh = world.addStaticMesh(
+        vertices, 4, indices, 6, { 0.0f, 0.0f, 0.0f },
+        { 1.0f, 0.0f, 0.0f, 0.0f }, { 2.0f, 1.0f, 2.0f });
+    REQUIRE(mesh != 0);
+
+    const phys::RayHit hit =
+        world.rayCast({ 8.0f, 10.0f, 8.0f }, { 0.0f, -1.0f, 0.0f }, 20.0f);
+    REQUIRE(hit.hit); // x=8 is inside the SCALED quad (±10)
+    CHECK(hit.position.y == doctest::Approx(2.0f).epsilon(0.01));
+
+    phys::CharacterBody capsule { world, 0.35f, 1.8f, { 0.0f, 6.0f, 0.0f } };
+    constexpr f32 dt = 1.0f / 60.0f;
+    for (int i = 0; i < 180; ++i) {
+        capsule.move({ 0.0f, 0.0f, 0.0f }, dt);
+        world.tick(dt);
+    }
+    CHECK(capsule.onGround());
+    CHECK(capsule.position().y == doctest::Approx(2.0f).epsilon(0.05));
+}
+
 TEST_CASE("raycasts hit static geometry and miss empty space") {
     phys::PhysicsWorld world;
     const phys::BodyId floor =

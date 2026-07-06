@@ -14,6 +14,7 @@ void registerCoreCategories(FormCategoryRegistry& registry) {
     registry.set<data::LightForm>(FormCategory::Light);
     registry.set<MarkerForm>(FormCategory::Marker);
     registry.set<TriggerForm>(FormCategory::Trigger);
+    registry.set<DoorForm>(FormCategory::Door); // chantier 2 B7
     registry.set<PrefabForm>(FormCategory::Prefab);
     registry.set<gameplay::FurnitureForm>(FormCategory::Furniture);
 }

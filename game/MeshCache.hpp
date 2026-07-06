@@ -31,6 +31,16 @@ public:
         u32 indexCount { 0 };
     };
 
+    // CPU-side geometry retained for RESIDENT meshes (chantier 2 B2):
+    // collision cooking (addStaticMesh) and editor picking read it. Also
+    // carries the local-space bounds.
+    struct CpuMesh {
+        vector<Vec3> positions;
+        vector<u32> indices;
+        Vec3 boundsMin { 0.0f };
+        Vec3 boundsMax { 0.0f };
+    };
+
     MeshCache(rhi::Device& device, const assets::AssetDatabase& assets,
               core::JobSystem& jobs);
     ~MeshCache();
@@ -45,6 +55,10 @@ public:
     // Main thread, once per frame: drains finished decodes, uploads them,
     // flips entries to resident. Returns how many became resident.
     u32 pumpUploads();
+
+    // The retained CPU geometry of a RESIDENT mesh; nullptr while pending,
+    // failed or never sighted (does NOT trigger a load — resolve() does).
+    const CpuMesh* cpuMesh(const core::Guid& model) const;
 
     u32 pendingCount() const { return pending; }
 
@@ -67,6 +81,7 @@ private:
     struct Entry {
         Gpu gpu {}; // the placeholder while Pending/Failed
         Residency state { Residency::Pending };
+        uptr<CpuMesh> cpu; // resident only
     };
 
     rhi::Device& device;

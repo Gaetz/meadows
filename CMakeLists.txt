@@ -188,6 +188,22 @@ target_include_directories(imgui SYSTEM PUBLIC
     ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 target_link_libraries(imgui PRIVATE SDL3::SDL3)
 
+# ImGuizmo (chantier 2 B3): translate/rotate/scale gizmos for the level
+# editor. MIT, plain sources over the imgui headers.
+CPMAddPackage(
+    NAME imguizmo
+    GITHUB_REPOSITORY CedricGuillemet/ImGuizmo
+    # No release tag tracks recent imgui; pin the master commit compatible
+    # with imgui 1.92 (2026-07 state).
+    GIT_TAG 87fb88b13a4f6bb04cd6ecd4e9d1625929935ff1
+    DOWNLOAD_ONLY TRUE
+)
+add_library(imguizmo STATIC ${imguizmo_SOURCE_DIR}/src/ImGuizmo.cpp)
+target_include_directories(imguizmo SYSTEM PUBLIC
+    ${imguizmo_SOURCE_DIR}/src)
+target_compile_definitions(imguizmo PRIVATE IMGUI_DEFINE_MATH_OPERATORS)
+target_link_libraries(imguizmo PUBLIC imgui)
+
 function(meadows_set_warnings target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4)

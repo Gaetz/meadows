@@ -15,6 +15,8 @@ add_library(meadows-world STATIC
     ai/AiController.cpp
     ai/GridNavigator.cpp
     streaming/CellLoader.cpp
+    streaming/CellStreamer.cpp
+    terrain/TerrainPatches.cpp
 )
 
 # meadows-gameplay: the Actor spawner wires the mandatory GAS components (§2.7).

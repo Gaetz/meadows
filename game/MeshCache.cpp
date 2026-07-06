@@ -102,10 +102,30 @@ u32 MeshCache::pumpUploads() {
               .size = result.mesh->indices.size() * sizeof(u32) },
             result.mesh->indices.data());
         gpu.indexCount = static_cast<u32>(result.mesh->indices.size());
-        it->second = Entry { gpu, Residency::Resident };
+        // Retain the CPU side (collision, picking) + local bounds.
+        auto cpu = std::make_unique<CpuMesh>();
+        cpu->positions.reserve(result.mesh->vertices.size());
+        cpu->boundsMin = cpu->boundsMax =
+            result.mesh->vertices.empty()
+                ? Vec3 { 0.0f }
+                : result.mesh->vertices[0].position;
+        for (const render::MeshVertex& vertex : result.mesh->vertices) {
+            cpu->positions.push_back(vertex.position);
+            cpu->boundsMin = glm::min(cpu->boundsMin, vertex.position);
+            cpu->boundsMax = glm::max(cpu->boundsMax, vertex.position);
+        }
+        cpu->indices = result.mesh->indices;
+        it->second = Entry { gpu, Residency::Resident, std::move(cpu) };
         ++becameResident;
     });
     return becameResident;
+}
+
+const MeshCache::CpuMesh* MeshCache::cpuMesh(const core::Guid& model) const {
+    const auto it = byGuid.find(model);
+    return it != byGuid.end() && it->second.state == Residency::Resident
+               ? it->second.cpu.get()
+               : nullptr;
 }
 
 void MeshCache::clear() {

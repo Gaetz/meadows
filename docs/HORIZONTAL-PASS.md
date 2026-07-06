@@ -97,22 +97,25 @@
 - Recast/Detour derrière `nav::Navigator` quand le monde 3D existe ;
   jusque-là `GridNavigator` suffit. Long chemins → pattern worker/queue.
 
-### Monde 3D / renderer
-- Résidence mesh/material : un cache façon `TextureCache` (guid → GPU,
-  placeholder en attendant — JAMAIS bloquer le spawn, §7) consommant
-  `RenderSnapshot.meshes`. Le cube H8 est le contrat de rendu à généraliser
-  (instancing par model+material ensuite).
-- Lumières locales : collecter les `LightSource` de la cellule → UBO des N
-  plus proches par objet (design MEADOWS-PLAN §B) ; ombres = 1-2 lumières
-  clés par intérieur max.
-- Streaming 3D : le pattern chunks du renderer paysage EST le modèle
-  (worker → queue → upload budgété, éviction hystérésis, génération).
+### Monde 3D / renderer — REMPLI en large partie (chantiers 1-2)
+- ✅ Résidence mesh/material : `game/MeshCache` (+ copie CPU pour
+  collision/picking) consomme `RenderSnapshot.meshes` (chantier 1 B1).
+  Reste : instancing par (model, material), textures réelles/KTX2.
+- ✅ Lumières locales : LightsUbo 16 proches, flicker (chantier 2 B5).
+  Reste : ombres clés, spots.
+- ✅ Cellules : CellStreamer synchrone (chantier 2 B1) ; l'async reprendra
+  le pattern chunks (worker → queue → upload budgété) au chantier 5.
+- ✅ Terrain auteuré : overlay de deltas DANS TerrainParams (chantier 2
+  B8 — voir CHANTIER-2.md pour les invariants d'immutabilité/retirement).
 
-### Éditeur
-- L'éditeur de niveau = EditSession + PropertyGrid (réutiliser tels quels)
-  + picking/gizmos dans une scène 3D ; « create prefab from selection » =
-  createForm(PrefabForm) + copies des refs avec `prefab` = le nouveau guid.
-- Undo/redo, export, load order : déjà dans EditSession/PluginsPanel.
+### Éditeur — REMPLI (chantier 2 B3/B4/B9, `docs/CHANTIER-2.md`)
+- ✅ FAIT : `game/LevelEditor` (ops pures sur EditSession, doctestées) +
+  mode F6 dans LandscapeScene (picking ray-AABB sur les bounds MeshCache,
+  gizmos ImGuizmo, palette, placement au sol, sculpt de terrain,
+  « create prefab from selection », export → data/mods/level-edits.toml
+  rechargé au run suivant). `game/WorldEditor` (embryon) est OBSOLÈTE.
+- Reste : resync des entités vivantes après undo/redo, duplication,
+  multi-sélection rectangle, snap de grille.
 
 ## Audit de compatibilité (2026-07-06, demandé par le dev)
 

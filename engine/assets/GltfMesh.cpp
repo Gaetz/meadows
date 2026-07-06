@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <unordered_map>
 
 #define CGLTF_IMPLEMENTATION
 #include <cgltf.h>
@@ -9,6 +10,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "engine/assets/Image.hpp"
 #include "engine/core/Log.hpp"
 
 namespace assets {
@@ -48,8 +50,50 @@ void reconstructNormals(render::MeshData& mesh, u32 firstVertex,
     }
 }
 
+// The mesh pipeline is untextured (flat albedo x ramp): textured kits
+// (Quaternius village...) bake the AVERAGE of each material's baseColor
+// texture into the vertex color instead — flat stylized zones, no texture
+// sampling, one draw. sRGB average linearized (vertex colors are linear).
+// Texture files resolve next to the glTF, then in ../Textures (the
+// Quaternius layout). Failures average to white (logged once per file).
+using TextureAverages = std::unordered_map<str, Vec3>;
+
+Vec3 averageTextureColor(const std::filesystem::path& baseDir,
+                         const char* uri, TextureAverages& cache) {
+    if (const auto it = cache.find(uri); it != cache.end()) {
+        return it->second;
+    }
+    std::filesystem::path path = baseDir / uri;
+    if (!std::filesystem::exists(path)) {
+        path = baseDir / ".." / "Textures" / uri;
+    }
+    Vec3 average { 1.0f };
+    if (const auto image = loadImageFile(path)) {
+        f64 r = 0.0, g = 0.0, b = 0.0;
+        const size_t pixels =
+            static_cast<size_t>(image->width) * image->height;
+        for (size_t i = 0; i < pixels; ++i) {
+            r += image->pixels[i * 4 + 0];
+            g += image->pixels[i * 4 + 1];
+            b += image->pixels[i * 4 + 2];
+        }
+        const f64 inv = pixels > 0 ? 1.0 / (255.0 * pixels) : 0.0;
+        // sRGB -> linear (gamma 2.2 approximation).
+        average = { std::pow(static_cast<f32>(r * inv), 2.2f),
+                    std::pow(static_cast<f32>(g * inv), 2.2f),
+                    std::pow(static_cast<f32>(b * inv), 2.2f) };
+    } else {
+        LOG_WARN("glTF: baseColor texture '{}' unreadable — white bake",
+                 uri);
+    }
+    cache.emplace(uri, average);
+    return average;
+}
+
 void appendPrimitive(render::MeshData& mesh, const cgltf_primitive& primitive,
-                     const Mat4& world) {
+                     const Mat4& world,
+                     const std::filesystem::path& baseDir,
+                     TextureAverages* textureAverages) {
     const cgltf_accessor* positions =
         findAttribute(primitive, cgltf_attribute_type_position);
     if (!positions || primitive.type != cgltf_primitive_type_triangles) {
@@ -68,6 +112,14 @@ void appendPrimitive(render::MeshData& mesh, const cgltf_primitive& primitive,
         const cgltf_float* factor =
             primitive.material->pbr_metallic_roughness.base_color_factor;
         baseColor = { factor[0], factor[1], factor[2] };
+        const cgltf_texture* texture =
+            primitive.material->pbr_metallic_roughness.base_color_texture
+                .texture;
+        if (textureAverages && texture && texture->image &&
+            texture->image->uri) {
+            baseColor *= averageTextureColor(baseDir, texture->image->uri,
+                                             *textureAverages);
+        }
     }
 
     const Mat3 normalMatrix =
@@ -116,8 +168,10 @@ void appendPrimitive(render::MeshData& mesh, const cgltf_primitive& primitive,
 }
 
 std::optional<render::MeshData> buildMesh(const cgltf_data& data,
-                                          const str& label) {
+                                          const str& label,
+                                          const std::filesystem::path* baseDir) {
     render::MeshData mesh;
+    TextureAverages textureAverages;
     for (cgltf_size n = 0; n < data.nodes_count; ++n) {
         const cgltf_node& node = data.nodes[n];
         if (!node.mesh) {
@@ -126,7 +180,9 @@ std::optional<render::MeshData> buildMesh(const cgltf_data& data,
         Mat4 world { 1.0f };
         cgltf_node_transform_world(&node, glm::value_ptr(world));
         for (cgltf_size p = 0; p < node.mesh->primitives_count; ++p) {
-            appendPrimitive(mesh, node.mesh->primitives[p], world);
+            appendPrimitive(mesh, node.mesh->primitives[p], world,
+                            baseDir ? *baseDir : std::filesystem::path {},
+                            baseDir ? &textureAverages : nullptr);
         }
     }
     if (mesh.vertices.empty() || mesh.indices.empty()) {
@@ -160,7 +216,8 @@ std::optional<render::MeshData> loadGltfMesh(
                   static_cast<int>(result));
         return std::nullopt;
     }
-    return buildMesh(*data, pathStr);
+    const std::filesystem::path baseDir = path.parent_path();
+    return buildMesh(*data, pathStr, &baseDir);
 }
 
 std::optional<render::MeshData> loadGltfMeshFromMemory(const void* bytes,
@@ -181,7 +238,7 @@ std::optional<render::MeshData> loadGltfMeshFromMemory(const void* bytes,
                   static_cast<int>(result));
         return std::nullopt;
     }
-    return buildMesh(*data, "<memory>");
+    return buildMesh(*data, "<memory>", nullptr);
 }
 
 // --- Skeletal data (H5) ---------------------------------------------------------

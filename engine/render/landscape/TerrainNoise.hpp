@@ -1,10 +1,35 @@
 #pragma once
 
+#include <unordered_map>
+
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"
 
 namespace render {
+
+// Authored terrain overrides (chantier 2 B8): per-chunk DELTA grids added
+// on top of the procedural base — final height = noise + bilinear(delta).
+// The world layer builds this from TerrainPatchForm records + `.ter`
+// assets (the engine never sees Forms — rule n°2, HORIZONTAL-PASS);
+// sculpting edits grids then publishes a NEW immutable instance, so
+// workers holding the old pointer stay race-free.
+struct HeightPatch {
+    u32 samples { 0 }; // n: the grid is n x n, row-major, x fastest,
+                       // rows along +Z; edge samples are SHARED with the
+                       // neighbouring chunk (seamless by construction)
+    vector<f32> deltas; // meters, n * n
+};
+
+struct HeightPatches {
+    f32 chunkSize { 64.0f }; // world meters per chunk (= terrain chunks)
+    std::unordered_map<u64, HeightPatch> chunks;
+
+    static u64 keyOf(i32 cx, i32 cz) {
+        return (static_cast<u64>(static_cast<u32>(cx)) << 32) |
+               static_cast<u64>(static_cast<u32>(cz));
+    }
+};
 
 // Terrain generation parameters. One plain struct on purpose: when landscape
 // population becomes moddable it converts into a reflected Form patched
@@ -12,6 +37,14 @@ namespace render {
 // local change.
 struct TerrainParams {
     u32 seed { 1337 };
+
+    // Authored overrides — a NON-OWNING observer (the scene owns the
+    // instance and keeps every published one alive while workers may hold
+    // a copied TerrainParams). Null = pure procedural, bit-identical to
+    // the pre-B8 behavior (the non-regression contract). Riding inside
+    // TerrainParams means every consumer (workers included) is patched
+    // without a single signature change.
+    const HeightPatches* patches { nullptr };
 
     // Rolling hills: FBM value noise.
     f32 hillWavelength { 400.0f }; // meters per base octave

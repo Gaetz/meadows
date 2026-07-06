@@ -7,6 +7,7 @@ add_executable(meadows-tests
     AudioTest.cpp
     AssetsTest.cpp
     CellLoaderTest.cpp
+    CellStreamerTest.cpp
     ChunkOcclusionTest.cpp
     CollisionTest.cpp
     CombatTest.cpp
@@ -35,6 +36,7 @@ add_executable(meadows-tests
     InjuriesTest.cpp
     InventoryTest.cpp
     JobsTest.cpp
+    LevelEditorTest.cpp
     MovementTest.cpp
     PhysicsTest.cpp
     PluginConfigTest.cpp
@@ -56,6 +58,7 @@ add_executable(meadows-tests
     SurvivalTest.cpp
     TerrainCollisionTest.cpp
     TerrainNoiseTest.cpp
+    TerrainPatchesTest.cpp
     TreeGeneratorTest.cpp
     TypedDamageTest.cpp
     WorldModelTest.cpp

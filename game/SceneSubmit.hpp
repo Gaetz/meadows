@@ -60,6 +60,20 @@ RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures);
 // calls it directly; extractScene calls it as part of the full extract.
 void extractMeshes(const ecs::World& world, RenderSnapshot& out);
 
+// A placed local light, extracted for the renderer (chantier 2 B5).
+struct SceneLight {
+    Vec3 position { 0.0f };
+    Vec3 color { 1.0f };
+    f32 intensity { 1.0f };
+    f32 radius { 8.0f };
+    f32 flicker { 0.0f };
+};
+
+// The `maxLights` LightSource entities nearest to `focus`, nearest first
+// (stable ordering: ties keep query order — deterministic). Headless.
+vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
+                                 u32 maxLights);
+
 // Kicks the decode of every sprite asset in the world without drawing anything,
 // so a loading gate can wait for them to become resident before the first frame
 // is shown (§7) — no startup pop-in. Generalizes to streaming: preload the

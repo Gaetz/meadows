@@ -11,6 +11,8 @@ void registerWorldFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<PrefabForm>();
     registry.registerFormType<MarkerForm>();
     registry.registerFormType<TriggerForm>();
+    registry.registerFormType<DoorForm>();
+    registry.registerFormType<TerrainPatchForm>();
 }
 
 } // namespace world

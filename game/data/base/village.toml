@@ -1,0 +1,671 @@
+# True Adventurer — the village plugin (chantier 2 B6/B7).
+# A SECOND content plugin on top of landscape+adventure (§5 layering in
+# action): the Quaternius Medieval Village kit (CC0, dev-provided), a
+# leveled terrain pad, a house shell in the Overworld and its INTERIOR
+# worldspace, two doors linking them.
+#
+# Authoring conventions:
+#  - kit building modules: snapToGround = false, ABSOLUTE y (the pad is
+#    leveled to 134.6 m by terrain/village_pad_0_5.ter);
+#  - props (crates, wagon...): snapToGround = true, y = offset above soil;
+#  - interior worldspace: its own absolute frame, room anchored at (8,0,8).
+# House anchor (exterior): (52, 134.6, 362). Wall modules are 2 m wide,
+# 3.12 m tall; the house is 4 m (x) by 8 m (z).
+
+[plugin]
+id = "9e1b3d50-4c2a-4f6b-8d7e-1a2b3c4d5e6f"
+name = "true-adventurer-village"
+
+[assets]
+# Kit modules (Quaternius Medieval Village Mega Kit, CC0).
+"4d7a9b30-0000-4000-8000-0000000000a1" = "models/kit/MedievalVillageMegaKit/glTF/Floor_WoodDark.gltf"
+"4d7a9b30-0000-4000-8000-0000000000a2" = "models/kit/MedievalVillageMegaKit/glTF/Wall_Plaster_Straight.gltf"
+"4d7a9b30-0000-4000-8000-0000000000a3" = "models/kit/MedievalVillageMegaKit/glTF/Wall_Plaster_Door_Flat.gltf"
+"4d7a9b30-0000-4000-8000-0000000000a4" = "models/kit/MedievalVillageMegaKit/glTF/Wall_Plaster_Window_Wide_Flat2.gltf"
+"4d7a9b30-0000-4000-8000-0000000000a5" = "models/kit/MedievalVillageMegaKit/glTF/Roof_RoundTiles_4x8.gltf"
+"4d7a9b30-0000-4000-8000-0000000000a6" = "models/kit/MedievalVillageMegaKit/glTF/Roof_Front_Brick4.gltf"
+"4d7a9b30-0000-4000-8000-0000000000a7" = "models/kit/MedievalVillageMegaKit/glTF/Door_1_Flat.gltf"
+"4d7a9b30-0000-4000-8000-0000000000a8" = "models/kit/MedievalVillageMegaKit/glTF/Prop_Crate.gltf"
+"4d7a9b30-0000-4000-8000-0000000000a9" = "models/kit/MedievalVillageMegaKit/glTF/Prop_Wagon.gltf"
+"4d7a9b30-0000-4000-8000-0000000000aa" = "models/kit/MedievalVillageMegaKit/glTF/Prop_WoodenFence_Single.gltf"
+# The leveled village pad (cooker terrain-pad, 134.6 m).
+"4d7a9b30-0000-4000-8000-0000000000ab" = "terrain/village_pad_0_5.ter"
+
+# --- Terrain: the village esplanade ------------------------------------------
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000001"
+type = "TerrainPatchForm"
+new = true
+[records.fields]
+editorId = "VillagePad"
+chunkX = 0
+chunkZ = 5
+asset = "4d7a9b30-0000-4000-8000-0000000000ab"
+
+# --- Kit statics --------------------------------------------------------------
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000011"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "KitFloorWood"
+displayName = "Wooden floor"
+model = "4d7a9b30-0000-4000-8000-0000000000a1"
+snapToGround = false
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000012"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "KitWallPlaster"
+displayName = "Plaster wall"
+model = "4d7a9b30-0000-4000-8000-0000000000a2"
+snapToGround = false
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000013"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "KitWallDoorway"
+displayName = "Plaster wall (doorway)"
+model = "4d7a9b30-0000-4000-8000-0000000000a3"
+snapToGround = false
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000014"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "KitWallWindow"
+displayName = "Plaster wall (window)"
+model = "4d7a9b30-0000-4000-8000-0000000000a4"
+snapToGround = false
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000015"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "KitRoof"
+displayName = "Tiled roof"
+model = "4d7a9b30-0000-4000-8000-0000000000a5"
+snapToGround = false
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000016"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "KitGable"
+displayName = "Brick gable"
+model = "4d7a9b30-0000-4000-8000-0000000000a6"
+snapToGround = false
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000017"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "Crate"
+displayName = "Crate"
+model = "4d7a9b30-0000-4000-8000-0000000000a8"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000018"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "Wagon"
+displayName = "Wagon"
+model = "4d7a9b30-0000-4000-8000-0000000000a9"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000019"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "WoodenFence"
+displayName = "Wooden fence"
+model = "4d7a9b30-0000-4000-8000-0000000000aa"
+
+# --- The interior worldspace ---------------------------------------------------
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000020"
+type = "WorldspaceForm"
+new = true
+[records.fields]
+editorId = "HouseInterior"
+cellSize = 64.0
+interior = true
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000021"
+type = "CellForm"
+new = true
+[records.fields]
+editorId = "HouseInteriorCell"
+worldspace = "4d7a9b30-0000-4000-8000-000000000020"
+gridX = 0
+gridY = 0
+interior = true
+
+# --- Arrival markers -------------------------------------------------------------
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000022"
+type = "MarkerForm"
+new = true
+[records.fields]
+editorId = "DoorTargetMarker"
+kind = "doorTarget"
+
+# Inside the house, just past the door, facing north (into the room).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000023"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000022"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [9.0, 0.0, 10.6]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+# Outside, in front of the door, facing south (away from the house).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000024"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000022"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [53.0, 134.65, 367.6]
+
+# --- Doors -------------------------------------------------------------------------
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000025"
+type = "DoorForm"
+new = true
+[records.fields]
+editorId = "HouseDoorExterior"
+displayName = "House door"
+model = "4d7a9b30-0000-4000-8000-0000000000a7"
+targetMarker = "4d7a9b30-0000-4000-8000-000000000023"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000026"
+type = "DoorForm"
+new = true
+[records.fields]
+editorId = "HouseDoorInterior"
+displayName = "Door outside"
+model = "4d7a9b30-0000-4000-8000-0000000000a7"
+targetMarker = "4d7a9b30-0000-4000-8000-000000000024"
+
+# Exterior door leaf, in the south doorway wall.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000027"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000025"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [52.45, 134.6, 366.0]
+
+# Interior door leaf, mirrored in the interior doorway wall.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000028"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000026"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [8.45, 0.0, 12.0]
+
+# --- House shell (Overworld, anchor 52 / 134.6 / 362) -------------------------
+# North gable wall (z = 358).
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000030"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [51.0, 134.6, 358.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000031"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [53.0, 134.6, 358.0]
+
+# South wall: plain + doorway (z = 366).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000032"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [51.0, 134.6, 366.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000033"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000013"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [53.0, 134.6, 366.0]
+
+# West side (x = 50), four modules rotated 90°, two with windows.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000034"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [50.0, 134.6, 359.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000035"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [50.0, 134.6, 361.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000036"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [50.0, 134.6, 363.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000037"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [50.0, 134.6, 365.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+# East side (x = 54).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000038"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [54.0, 134.6, 359.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000039"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [54.0, 134.6, 361.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000003a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [54.0, 134.6, 363.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000003b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [54.0, 134.6, 365.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+# Gables + roof.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000003c"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000016"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [52.0, 137.72, 358.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000003d"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000016"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [52.0, 137.72, 366.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000003e"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000015"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [52.0, 137.6, 362.0]
+
+# Village props on the pad (snapToGround = true).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000040"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000018"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [57.5, 0.0, 364.0]
+rotation = [0.0, 0.3826834, 0.0, 0.9238795]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000041"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000017"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [55.2, 0.0, 366.8]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000042"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000019"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [47.0, 0.0, 368.5]
+
+# A lantern by the door (light only — flicker sells the flame).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000043"
+type = "LightForm"
+new = true
+[records.fields]
+editorId = "DoorLantern"
+color = [1.0, 0.72, 0.42]
+intensity = 1.6
+radius = 9.0
+flicker = 0.35
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000044"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000043"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [54.2, 2.2, 366.4]
+
+# --- Interior fit-out (HouseInterior, room anchor 8 / 0 / 8) -------------------
+# Floor: 2 x 4 tiles.
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000050"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [7.0, 0.0, 5.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000051"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [9.0, 0.0, 5.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000052"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [7.0, 0.0, 7.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000053"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [9.0, 0.0, 7.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000054"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [7.0, 0.0, 9.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000055"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [9.0, 0.0, 9.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000056"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [7.0, 0.0, 11.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000057"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [9.0, 0.0, 11.0]
+
+# Interior walls: north pair, south pair (one doorway), sides x = 6 / 10.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000058"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [7.0, 0.0, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000059"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [9.0, 0.0, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000005a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [7.0, 0.0, 12.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000005b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000013"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [9.0, 0.0, 12.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000005c"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [6.0, 0.0, 5.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000005d"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [6.0, 0.0, 7.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000005e"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [6.0, 0.0, 9.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000005f"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [6.0, 0.0, 11.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000060"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [10.0, 0.0, 5.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000061"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [10.0, 0.0, 7.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000062"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [10.0, 0.0, 9.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000063"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [10.0, 0.0, 11.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+# Warm interior lights (flicker = candles).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000064"
+type = "LightForm"
+new = true
+[records.fields]
+editorId = "InteriorCandle"
+color = [1.0, 0.68, 0.38]
+intensity = 1.4
+radius = 7.0
+flicker = 0.3
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000065"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000064"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [7.0, 2.3, 6.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000066"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000064"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [9.0, 2.2, 10.0]
+
+# Crates in the corner.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000067"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000017"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [6.8, 0.0, 5.4]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000068"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000017"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [7.6, 0.0, 5.6]
+rotation = [0.0, 0.258819, 0.0, 0.9659258]

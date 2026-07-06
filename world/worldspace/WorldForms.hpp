@@ -117,6 +117,47 @@ struct TriggerForm : data::Form {
     REFLECT_END()
 };
 
+// A traversable door (chantier 2 B7). Visual through the universal
+// reflected model/material wiring (like StaticForm); `targetMarker` is the
+// GUID of a placed marker REFERENCE (a ReferenceForm record) — the arrival
+// spot. Its record carries position AND cell, whose CellForm names the
+// destination worldspace: the transition resolves entirely from records,
+// so it works even while the destination cells are unloaded.
+struct DoorForm : data::Form {
+    str displayName;
+    core::Guid model;    // glTF door leaf
+    core::Guid material; // MaterialForm (0 = vertex colors)
+    bool collides { true };
+    bool snapToGround { false }; // doors sit in authored walls
+    core::Guid targetMarker;     // ReferenceForm of a MarkerForm
+
+    REFLECT_BEGIN(DoorForm, data::Form)
+        REFLECT_FIELD(displayName)
+        REFLECT_FIELD(model)
+        REFLECT_FIELD(material)
+        REFLECT_FIELD(collides)
+        REFLECT_FIELD(snapToGround)
+        REFLECT_FIELD(targetMarker)
+    REFLECT_END()
+};
+
+// An authored terrain override (chantier 2 B8): one record per sculpted
+// 64 m terrain chunk, pointing at a `.ter` delta-grid ASSET (reflection is
+// flat — grids never live in Forms). Final height = procedural noise +
+// bilinear(delta). Mods override the grid by shipping the asset guid (§5
+// VFS) or patch the record. IO + overlay building: world/terrain/.
+struct TerrainPatchForm : data::Form {
+    i32 chunkX { 0 };
+    i32 chunkZ { 0 };
+    core::Guid asset; // .ter grid file
+
+    REFLECT_BEGIN(TerrainPatchForm, data::Form)
+        REFLECT_FIELD(chunkX)
+        REFLECT_FIELD(chunkZ)
+        REFLECT_FIELD(asset)
+    REFLECT_END()
+};
+
 // Registers the world form types; call once at startup, like
 // data::registerCoreFormTypes, before loading plugins that place references.
 void registerWorldFormTypes(data::FormTypeRegistry& registry);

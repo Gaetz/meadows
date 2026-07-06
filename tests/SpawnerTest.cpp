@@ -267,6 +267,31 @@ editorId = "LegacyNpc"
     CHECK_FALSE(world::resolveActorVisual(fx.db, *legacy).has_value());
 }
 
+TEST_CASE("collectLights picks the nearest N, deterministically (ch.2 B5)") {
+    Fixture fx;
+    const auto light = [&](f32 x, f32 intensity) {
+        ecs::Entity e = fx.world.create();
+        e.set<world::Transform>({ .position = { x, 0.0f, 0.0f } });
+        e.set<world::LightSource>({ .color = { 1.0f, 1.0f, 1.0f },
+                                    .intensity = intensity,
+                                    .radius = 8.0f });
+        return e;
+    };
+    light(30.0f, 3.0f);
+    light(5.0f, 1.0f);
+    light(12.0f, 2.0f);
+
+    const auto lights =
+        game::collectLights(fx.world, { 0.0f, 0.0f, 0.0f }, 2);
+    REQUIRE(lights.size() == 2);
+    CHECK(lights[0].intensity == doctest::Approx(1.0f)); // x = 5, nearest
+    CHECK(lights[1].intensity == doctest::Approx(2.0f)); // x = 12
+    // Same call, same order (stable).
+    const auto again =
+        game::collectLights(fx.world, { 0.0f, 0.0f, 0.0f }, 2);
+    CHECK(again[0].position.x == lights[0].position.x);
+}
+
 TEST_CASE("spawner: an unresolvable base form yields no entity") {
     Fixture fx;
     const auto base = parse(fx.types, kBase, "base");

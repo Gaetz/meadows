@@ -1,9 +1,11 @@
 #include "game/scenes/LandscapeScene.hpp"
 
 #include <cmath>
+#include <filesystem>
 
 #include <glm/glm.hpp>
 #include <imgui.h>
+#include <ImGuizmo.h>
 
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"
@@ -32,6 +34,7 @@
 #include "gameplay/stats/CharacterStats.hpp"
 #include "world/scene/AnimBridge.hpp"
 #include "world/scene/Spawner.hpp"
+#include "world/terrain/TerrainPatches.hpp"
 
 namespace game {
 
@@ -86,6 +89,17 @@ void LandscapeScene::onEnter() {
     const auto adventurePlugin = data::loadPluginFile(
         platform::executableDir() / "data" / "base" / "adventure.toml",
         formTypes);
+    const auto villagePlugin = data::loadPluginFile(
+        platform::executableDir() / "data" / "base" / "village.toml",
+        formTypes);
+    // Level-editor output (B4): an ordinary mod layered on top. Absent on
+    // a fresh install — that's fine.
+    std::optional<data::Plugin> editsPlugin;
+    const auto editsPath =
+        platform::executableDir() / "data" / "mods" / "level-edits.toml";
+    if (std::filesystem::exists(editsPath)) {
+        editsPlugin = data::loadPluginFile(editsPath, formTypes);
+    }
     forms = data::FormDatabase {};   // fresh on re-enter
     assetDb = assets::AssetDatabase {};
     vector<const data::Plugin*> loadOrder;
@@ -98,6 +112,15 @@ void LandscapeScene::onEnter() {
         loadOrder.push_back(&*adventurePlugin);
     } else {
         LOG_WARN("adventure.toml failed to load — no props/NPCs");
+    }
+    if (villagePlugin) {
+        loadOrder.push_back(&*villagePlugin);
+    } else {
+        LOG_WARN("village.toml failed to load — no village/interior");
+    }
+    if (editsPlugin) {
+        loadOrder.push_back(&*editsPlugin);
+        LOG_INFO("Level edits mod loaded (data/mods/level-edits.toml)");
     }
     data::resolve(loadOrder, formTypes, forms);
     for (const data::Plugin* plugin : loadOrder) {
@@ -112,8 +135,21 @@ void LandscapeScene::onEnter() {
              tuning.terrainSeed, tuning.seaLevel, tuning.fogDensity,
              tuning.cloudCoverage, weathers.size());
 
+    // B8: the authored-terrain overlay rides inside TerrainParams — every
+    // consumer (chunk workers, scatter, collision, snaps) is patched at
+    // once. Retire the previous overlay instead of freeing it (workers).
+    if (heightPatches) {
+        retiredPatches.push_back(heightPatches);
+    }
+    heightPatches = world::buildHeightPatches(forms, assetDb);
+    if (!heightPatches->chunks.empty()) {
+        LOG_INFO("B8: {} authored terrain patch(es)",
+                 heightPatches->chunks.size());
+    }
+
     // Terrain shape + startup values for every live-adjustable knob.
     terrain.params.seed = tuning.terrainSeed;
+    terrain.params.patches = heightPatches.get();
     terrain.params.hillWavelength = tuning.hillWavelength;
     terrain.params.hillAmplitude = tuning.hillAmplitude;
     terrain.params.mountainWavelength = tuning.mountainWavelength;
@@ -137,8 +173,16 @@ void LandscapeScene::onEnter() {
                                      .size = sizeof(render::FrameUniforms),
                                      .dynamic = true },
                                    nullptr);
+    // B5: local lights ride binding 5 of the SAME group — shaders that
+    // don't declare the block simply ignore it.
+    lightsUbo = device.createBuffer(
+        { .usage = rhi::BufferUsage::Uniform,
+          .size = (1 + 2 * kMaxLights) * sizeof(Vec4),
+          .dynamic = true },
+        nullptr);
     frameBindGroup = device.createBindGroup(
-        { .entries = { { .binding = 0, .buffer = frameUbo } } });
+        { .entries = { { .binding = 0, .buffer = frameUbo },
+                       { .binding = 5, .buffer = lightsUbo } } });
 
     shaders = std::make_unique<render::ShaderLibrary>(device);
     terrain.create(device, *shaders, engine->getJobSystem());
@@ -162,7 +206,9 @@ void LandscapeScene::onEnter() {
         { .width = 1, .height = 1, .format = rhi::TextureFormat::SRGBA8 },
         &white);
     meshSampler = device.createSampler({});
-    shaders->load("mesh", { { "FrameUbo", 0 }, { "ModelUbo", 1 } },
+    shaders->load("mesh",
+                  { { "FrameUbo", 0 }, { "ModelUbo", 1 },
+                    { "LightsUbo", 5 } },
                   { { "uAlbedo", 0 } });
     buildMeshPipeline(device);
 
@@ -198,24 +244,52 @@ void LandscapeScene::onEnter() {
     world = ecs::World {}; // fresh on re-enter
     world::registerSceneComponents(world);
     gameplay::registerGameplayComponents(world);
-    world::FormCategoryRegistry categories;
+    categories = world::FormCategoryRegistry {};
     world::registerCoreCategories(categories);
-    world::Spawner spawner;
+    spawner = world::Spawner {};
     world::registerCoreSpawners(spawner);
+
+    // Chantier 2 B1: the cell machinery. PERSISTENT references (no cell)
+    // are spawned once here — the player; everything celled streams in
+    // and out through the CellStreamer (update()).
+    worldModel = world::WorldModel::build(forms);
+    cellLoader = std::make_unique<world::CellLoader>(
+        world, forms, worldModel, spawner, categories);
+    cellStreamer = std::make_unique<world::CellStreamer>(*cellLoader,
+                                                         worldModel, forms);
+    overworldHandle = data::FormHandle {};
+    if (const auto* overworld =
+            data::findByEditorId<world::WorldspaceForm>(forms, "Overworld")) {
+        overworldHandle = forms.handleOf(overworld->id);
+    } else {
+        LOG_WARN("chantier 2 B1: no Overworld worldspace — nothing streams");
+    }
+    activeWorldspace = overworldHandle;
+    interiorMode = false;
+    fadeAlpha = 0.0f;
+    fadeDirection = 0;
+    pendingTravel = core::Guid {};
+    // B3/B4: a fresh edit session over the freshly resolved database.
+    levelEditor = std::make_unique<LevelEditor>(forms, formTypes);
+    editMode = false;
+    editSelection = ecs::Entity {};
+    placementBase = core::Guid {};
+
     world::SpawnContext spawnCtx { world, forms, categories };
     const auto* playerForm =
         data::findByEditorId<data::ActorForm>(forms, "Player");
     playerEntity = ecs::Entity {};
-    u32 spawned = 0;
+    u32 persistent = 0;
     data::forEach<world::ReferenceForm>(
         forms, [&](const world::ReferenceForm& reference) {
-            if (!reference.enabled || reference.prefab.isValid()) {
-                return; // disabled, or a prefab TEMPLATE (never self-spawns)
+            if (!reference.enabled || reference.prefab.isValid() ||
+                reference.cell.isValid()) {
+                return; // celled refs belong to the streamer
             }
             const ecs::Entity entity =
                 spawner.spawn(spawnCtx, reference, ecs::Entity {});
             if (entity.is_alive()) {
-                ++spawned;
+                ++persistent;
                 if (playerForm && reference.baseForm == playerForm->id) {
                     playerEntity = entity;
                 }
@@ -229,25 +303,31 @@ void LandscapeScene::onEnter() {
         LOG_WARN("B5.5: no Player actor spawned — controller falls back to "
                  "fixed speeds");
     }
-    // B1 convention: authored position.y is an offset above the terrain —
-    // ground every mesh prop (hand-authored heights arrive with the level
-    // editor, chantier 2).
-    world.handle()
-        .query<world::Transform, const world::MeshRender>()
-        .each([&](flecs::entity, world::Transform& transform,
-                  const world::MeshRender&) {
-            transform.position.y += render::terrain::height(
-                terrain.params, transform.position.x, transform.position.z);
-        });
-    LOG_INFO("B1: {} references spawned from the plugin stack", spawned);
+    LOG_INFO("B1 (ch.2): {} persistent reference(s); cells stream around "
+             "the player",
+             persistent);
 
     // B6: Forms-driven NPCs — every spawned actor whose ActorForm resolves
     // an ActorVisual gets its GPU skin, its data-built locomotion graph,
     // and its patrol brain. The scene builds no character by hand anymore.
-    shaders->load("skinned", { { "FrameUbo", 0 }, { "ModelUbo", 1 } },
+    shaders->load("skinned",
+                  { { "FrameUbo", 0 }, { "ModelUbo", 1 },
+                    { "LightsUbo", 5 } },
                   { { "uAlbedo", 0 } });
     buildSkinnedPipeline(device);
-    setupNpcs(device);
+
+    // Initial cell ring around the player spawn, then the post-spawn
+    // fixups (ground snap, NPC build) — the same pair update() re-runs
+    // whenever the ring changes.
+    Vec3 startFocus { 32.0f, 0.0f, 368.0f };
+    if (playerEntity.is_alive()) {
+        startFocus = playerEntity.get<world::Transform>().position;
+    }
+    if (overworldHandle.isValid()) {
+        cellStreamer->update(overworldHandle, startFocus.x, startFocus.z);
+    }
+    snapCellEntities();
+    refreshNpcs(device);
 
     // Brick 23: swap one procedural rock variant for an authored CC0 glTF
     // rock (moon_rock_02, Poly Haven). Missing file = procedural fallback.
@@ -345,22 +425,26 @@ void LandscapeScene::onExit() {
     device.destroyPipeline(meshPipeline);
     // B6 NPCs: GPU state per NPC, then the CPU-side rig cache.
     for (auto& npc : npcs) {
-        npc->anim.reset(); // references npc->graph — release it first
-        device.destroyBindGroup(npc->group);
-        device.destroyBuffer(npc->modelUbo);
-        device.destroyBuffer(npc->paletteSsbo);
-        device.destroyBuffer(npc->indices);
-        device.destroyBuffer(npc->vertices);
+        destroyNpc(device, *npc);
     }
     npcs.clear();
     patrolPoints.clear();
     rigCache.clear();
     device.destroyPipeline(skinnedPipeline);
     skinnedPipeline = {};
+    // Chantier 2 B1: cell machinery (references scene members — release
+    // before the members are reset on the next onEnter).
+    cellStreamer.reset();
+    cellLoader.reset();
+    overworldHandle = data::FormHandle {};
     // B4/B5 physics: bodies -> tiles -> world (each references the previous).
     playMode = false;
     player.reset();
     debugCapsule.reset();
+    for (const auto& [entity, body] : staticColliders) {
+        physics->removeBody(body);
+    }
+    staticColliders.clear();
     terrainCollision.reset();
     physics.reset();
     device.destroySampler(meshSampler);
@@ -378,6 +462,7 @@ void LandscapeScene::onExit() {
     terrain.destroy(device);
     shaders.reset(); // destroys the library's shader programs
     device.destroyBindGroup(frameBindGroup);
+    device.destroyBuffer(lightsUbo);
     device.destroyBuffer(frameUbo);
 }
 
@@ -540,13 +625,28 @@ void LandscapeScene::update(f32 dt) {
     // in Play mode, the camera in Fly); the debug capsule free-falls.
     if (physics) {
         physics->tick(dt);
-        terrainCollision->update(playMode && player
-                                     ? player->position()
-                                     : flyCamera.camera.position);
+        if (!interiorMode) { // interiors have no terrain to collide with
+            terrainCollision->update(playMode && player
+                                         ? player->position()
+                                         : flyCamera.camera.position);
+        }
         if (debugCapsule) {
             debugCapsule->move({ 0.0f, 0.0f, 0.0f }, dt);
         }
     }
+    // Chantier 2 B1: stream cells around the focus; on any ring change,
+    // re-run the post-spawn fixups (idempotent snap + NPC refresh).
+    if (cellStreamer && activeWorldspace.isValid()) {
+        const Vec3 focus = playMode && player ? player->position()
+                                              : flyCamera.camera.position;
+        if (cellStreamer->update(activeWorldspace, focus.x, focus.z)) {
+            snapCellEntities();
+            refreshNpcs(engine->getDevice());
+        }
+    }
+    updateStaticColliders(); // B2: bodies follow spawns + mesh residency
+    // B7: door prompts + the travel fade state machine.
+    updateDoorInteraction(dt);
     // B5.5: the character pipeline ticks the player (effects, regen,
     // exhaustion, injuries...) — game time 1:1 with real time until the
     // game clock joins the scene.
@@ -731,8 +831,666 @@ void LandscapeScene::exitPlayMode() {
     // The camera stays where the player stood — Fly resumes from there.
 }
 
+// --- B3/B4: the level editor -------------------------------------------------------
+
+Vec3 LandscapeScene::mouseRayDirection(const Vec2& mousePx) const {
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const f32 aspect = display.y > 0.0f ? display.x / display.y : 1.0f;
+    const Vec2 ndc { 2.0f * mousePx.x / display.x - 1.0f,
+                     1.0f - 2.0f * mousePx.y / display.y };
+    const Mat4 inv =
+        glm::inverse(flyCamera.camera.viewProj(aspect));
+    Vec4 nearPoint = inv * Vec4 { ndc.x, ndc.y, -1.0f, 1.0f };
+    Vec4 farPoint = inv * Vec4 { ndc.x, ndc.y, 1.0f, 1.0f };
+    nearPoint /= nearPoint.w;
+    farPoint /= farPoint.w;
+    return glm::normalize(Vec3 { farPoint } - Vec3 { nearPoint });
+}
+
+bool LandscapeScene::pickEntity(const Vec2& mousePx, ecs::Entity& out) {
+    const Vec3 origin = flyCamera.camera.position;
+    const Vec3 dir = mouseRayDirection(mousePx);
+    f32 bestT = 1e9f;
+    ecs::Entity best {};
+    world.handle()
+        .query<const world::Transform, const world::MeshRender,
+               const world::RefId>()
+        .each([&](flecs::entity e, const world::Transform& transform,
+                  const world::MeshRender& mesh, const world::RefId&) {
+            Vec3 lo { -0.5f }, hi { 0.5f };
+            if (const MeshCache::CpuMesh* cpu =
+                    meshCache->cpuMesh(mesh.model)) {
+                lo = cpu->boundsMin;
+                hi = cpu->boundsMax;
+            }
+            // World AABB of the transformed local box (8 corners).
+            const Mat4 model =
+                glm::translate(Mat4 { 1.0f }, transform.position) *
+                glm::mat4_cast(transform.rotation) *
+                glm::scale(Mat4 { 1.0f }, transform.scale);
+            Vec3 wlo { 1e9f }, whi { -1e9f };
+            for (u32 i = 0; i < 8; ++i) {
+                const Vec3 corner { (i & 1) ? hi.x : lo.x,
+                                    (i & 2) ? hi.y : lo.y,
+                                    (i & 4) ? hi.z : lo.z };
+                const Vec3 world3 = Vec3 { model * Vec4 { corner, 1.0f } };
+                wlo = glm::min(wlo, world3);
+                whi = glm::max(whi, world3);
+            }
+            // Slab test.
+            f32 t0 = 0.0f, t1 = 1e9f;
+            for (u32 axis = 0; axis < 3; ++axis) {
+                const f32 d = dir[static_cast<i32>(axis)];
+                const f32 o = origin[static_cast<i32>(axis)];
+                if (std::abs(d) < 1e-6f) {
+                    if (o < wlo[static_cast<i32>(axis)] ||
+                        o > whi[static_cast<i32>(axis)]) {
+                        return;
+                    }
+                    continue;
+                }
+                f32 near = (wlo[static_cast<i32>(axis)] - o) / d;
+                f32 far = (whi[static_cast<i32>(axis)] - o) / d;
+                if (near > far) {
+                    std::swap(near, far);
+                }
+                t0 = glm::max(t0, near);
+                t1 = glm::min(t1, far);
+                if (t0 > t1) {
+                    return;
+                }
+            }
+            if (t0 < bestT) {
+                bestT = t0;
+                best = ecs::Entity { e };
+            }
+        });
+    out = best;
+    return best.is_alive();
+}
+
+bool LandscapeScene::groundUnderMouse(const Vec2& mousePx, Vec3& out) {
+    const Vec3 origin = flyCamera.camera.position;
+    const Vec3 dir = mouseRayDirection(mousePx);
+    if (interiorMode) { // interiors: intersect the y = 0 floor plane
+        if (std::abs(dir.y) < 1e-4f) {
+            return false;
+        }
+        const f32 t = -origin.y / dir.y;
+        if (t <= 0.0f || t > 200.0f) {
+            return false;
+        }
+        out = origin + dir * t;
+        return true;
+    }
+    // Raymarch the height function: coarse steps, then a refinement.
+    f32 t = 0.0f;
+    f32 previous = t;
+    for (u32 i = 0; i < 400; ++i) {
+        t += 1.5f;
+        const Vec3 p = origin + dir * t;
+        if (p.y <= render::terrain::height(terrain.params, p.x, p.z)) {
+            for (u32 r = 0; r < 12; ++r) { // bisect
+                const f32 mid = (previous + t) * 0.5f;
+                const Vec3 m = origin + dir * mid;
+                if (m.y <=
+                    render::terrain::height(terrain.params, m.x, m.z)) {
+                    t = mid;
+                } else {
+                    previous = mid;
+                }
+            }
+            const Vec3 hit = origin + dir * t;
+            out = { hit.x,
+                    render::terrain::height(terrain.params, hit.x, hit.z),
+                    hit.z };
+            return true;
+        }
+        previous = t;
+    }
+    return false;
+}
+
+// --- B9: terrain sculpt ------------------------------------------------------------
+
+render::HeightPatch& LandscapeScene::sculptGridFor(i32 cx, i32 cz) {
+    const u64 key = render::HeightPatches::keyOf(cx, cz);
+    const auto it = sculptGrids.find(key);
+    if (it != sculptGrids.end()) {
+        return it->second;
+    }
+    // Seed from the published overlay when the chunk is already authored.
+    if (heightPatches) {
+        if (const auto existing = heightPatches->chunks.find(key);
+            existing != heightPatches->chunks.end()) {
+            return sculptGrids.emplace(key, existing->second).first->second;
+        }
+    }
+    render::HeightPatch fresh;
+    fresh.samples = 65;
+    fresh.deltas.assign(65 * 65, 0.0f);
+    return sculptGrids.emplace(key, std::move(fresh)).first->second;
+}
+
+void LandscapeScene::applyBrush(const Vec3& center, f32 dt) {
+    constexpr f32 kChunk = 64.0f;
+    const i32 minCx = static_cast<i32>(
+        std::floor((center.x - brushRadius) / kChunk));
+    const i32 maxCx = static_cast<i32>(
+        std::floor((center.x + brushRadius) / kChunk));
+    const i32 minCz = static_cast<i32>(
+        std::floor((center.z - brushRadius) / kChunk));
+    const i32 maxCz = static_cast<i32>(
+        std::floor((center.z + brushRadius) / kChunk));
+    for (i32 cz = minCz; cz <= maxCz; ++cz) {
+        for (i32 cx = minCx; cx <= maxCx; ++cx) {
+            render::HeightPatch& grid = sculptGridFor(cx, cz);
+            for (u32 row = 0; row < grid.samples; ++row) {
+                for (u32 col = 0; col < grid.samples; ++col) {
+                    const f32 x =
+                        static_cast<f32>(cx) * kChunk + static_cast<f32>(col);
+                    const f32 z =
+                        static_cast<f32>(cz) * kChunk + static_cast<f32>(row);
+                    const f32 dx = x - center.x;
+                    const f32 dz = z - center.z;
+                    const f32 dist = std::sqrt(dx * dx + dz * dz);
+                    if (dist >= brushRadius) {
+                        continue;
+                    }
+                    const f32 t = 1.0f - dist / brushRadius;
+                    const f32 falloff = t * t * (3.0f - 2.0f * t);
+                    f32& delta = grid.deltas[row * grid.samples + col];
+                    switch (brushKind) {
+                    case 0: // raise
+                        delta += brushStrength * falloff * dt;
+                        break;
+                    case 1: // lower
+                        delta -= brushStrength * falloff * dt;
+                        break;
+                    case 2: { // flatten toward the stroke-start height:
+                        // work against the LIVE height (base + published
+                        // patch); the working delta absorbs the gap.
+                        const f32 current =
+                            render::terrain::height(terrain.params, x, z);
+                        const f32 gap = flattenTarget - current;
+                        delta += gap * glm::min(2.5f * falloff * dt, 1.0f);
+                        break;
+                    }
+                    case 3: { // smooth: relax toward the neighbour average
+                        const u32 c0 = col > 0 ? col - 1 : col;
+                        const u32 c1 = glm::min(col + 1, grid.samples - 1);
+                        const u32 r0 = row > 0 ? row - 1 : row;
+                        const u32 r1 = glm::min(row + 1, grid.samples - 1);
+                        const f32 average =
+                            (grid.deltas[row * grid.samples + c0] +
+                             grid.deltas[row * grid.samples + c1] +
+                             grid.deltas[r0 * grid.samples + col] +
+                             grid.deltas[r1 * grid.samples + col]) *
+                            0.25f;
+                        delta += (average - delta) *
+                                 glm::min(4.0f * falloff * dt, 1.0f);
+                        break;
+                    }
+                    default:
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void LandscapeScene::publishSculpt() {
+    if (sculptGrids.empty()) {
+        return;
+    }
+    // New immutable overlay = published chunks overridden by the working
+    // grids; retire the old instance (in-flight workers hold raw copies).
+    auto next = std::make_shared<render::HeightPatches>();
+    next->chunkSize = 64.0f;
+    if (heightPatches) {
+        next->chunks = heightPatches->chunks;
+    }
+    for (const auto& [key, grid] : sculptGrids) {
+        next->chunks[key] = grid;
+    }
+    retiredPatches.push_back(heightPatches);
+    heightPatches = std::move(next);
+    terrain.params.patches = heightPatches.get();
+    regenerateRequested = true; // terrain + scatter rebuild next frame
+    occlusion.invalidate();
+    terrainCollision =
+        std::make_unique<TerrainCollision>(*physics, terrain.params);
+    snapCellEntities();
+}
+
+void LandscapeScene::saveSculptToMod() {
+    const auto dir = platform::executableDir() / "data" / "mods" / "terrain";
+    std::error_code errc;
+    std::filesystem::create_directories(dir, errc);
+    const reflect::TypeInfo& type = world::TerrainPatchForm::staticTypeInfo();
+    for (const auto& [key, grid] : sculptGrids) {
+        const i32 cx = static_cast<i32>(key >> 32);
+        const i32 cz = static_cast<i32>(key & 0xffffffffu);
+        char name[64];
+        std::snprintf(name, sizeof(name), "patch_%d_%d.ter", cx, cz);
+        if (!world::writeTerFile(dir / name, grid)) {
+            continue;
+        }
+        // Deterministic asset guid per chunk (stable across saves).
+        char guidText[40];
+        std::snprintf(guidText, sizeof(guidText),
+                      "7e88a110-0000-4000-8000-%012llx",
+                      static_cast<unsigned long long>(key & 0xFFFFFFFFFFFFull));
+        const core::Guid assetGuid = *core::Guid::fromString(guidText);
+        levelEditor->addExportAsset(assetGuid, str { "terrain/" } + name);
+        // One TerrainPatchForm per chunk — reuse the existing record if
+        // this chunk was already authored (patch it), else create.
+        core::Guid recordGuid {};
+        data::forEach<world::TerrainPatchForm>(
+            forms, [&](const world::TerrainPatchForm& form) {
+                if (form.chunkX == cx && form.chunkZ == cz) {
+                    recordGuid = form.id;
+                }
+            });
+        auto& session = levelEditor->editSession();
+        if (!recordGuid.isValid()) {
+            char editorId[64];
+            std::snprintf(editorId, sizeof(editorId), "SculptPatch_%d_%d",
+                          cx, cz);
+            recordGuid = session.createForm(type.id, editorId);
+            session.setField(recordGuid, type.findField("chunkX")->id,
+                             reflect::Value { cx });
+            session.setField(recordGuid, type.findField("chunkZ")->id,
+                             reflect::Value { cz });
+        }
+        session.setField(recordGuid, type.findField("asset")->id,
+                         reflect::Value { assetGuid });
+    }
+    LOG_INFO("B9: {} sculpted chunk(s) staged — Export writes the mod",
+             sculptGrids.size());
+}
+
+// The editor frame: gizmo on the selection, click-to-pick / click-to-place,
+// and the editor window (palette, selection ops, session, export).
+void LandscapeScene::drawEditorUi() {
+    ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 display = io.DisplaySize;
+    const f32 aspect = display.y > 0.0f ? display.x / display.y : 1.0f;
+    ImGuizmo::BeginFrame();
+    ImGuizmo::SetRect(0.0f, 0.0f, display.x, display.y);
+
+    // Gizmo op hotkeys (1/2/3), like every DCC.
+    if (ImGui::IsKeyPressed(ImGuiKey_1, false)) {
+        gizmoOperation = 0;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_2, false)) {
+        gizmoOperation = 1;
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_3, false)) {
+        gizmoOperation = 2;
+    }
+
+    // Gizmo on the live selection; commit to the RECORD on release.
+    if (editSelection.is_alive()) {
+        auto& transform = editSelection.get_mut<world::Transform>();
+        Mat4 model = glm::translate(Mat4 { 1.0f }, transform.position) *
+                     glm::mat4_cast(transform.rotation) *
+                     glm::scale(Mat4 { 1.0f }, transform.scale);
+        const Mat4 view = flyCamera.camera.view();
+        const Mat4 proj = flyCamera.camera.proj(aspect);
+        const ImGuizmo::OPERATION op =
+            gizmoOperation == 0   ? ImGuizmo::TRANSLATE
+            : gizmoOperation == 1 ? ImGuizmo::ROTATE
+                                  : ImGuizmo::SCALE;
+        if (ImGuizmo::Manipulate(&view[0][0], &proj[0][0], op,
+                                 ImGuizmo::WORLD, &model[0][0])) {
+            // Manual decompose (translation / per-column scale / rotation).
+            transform.position = Vec3 { model[3] };
+            Vec3 scale { glm::length(Vec3 { model[0] }),
+                         glm::length(Vec3 { model[1] }),
+                         glm::length(Vec3 { model[2] }) };
+            scale = glm::max(scale, Vec3 { 1e-4f });
+            transform.scale = scale;
+            transform.rotation = glm::normalize(glm::quat_cast(
+                Mat3 { Vec3 { model[0] } / scale.x,
+                       Vec3 { model[1] } / scale.y,
+                       Vec3 { model[2] } / scale.z }));
+        }
+        const bool usingNow = ImGuizmo::IsUsing();
+        if (gizmoWasUsing && !usingNow) {
+            levelEditor->commitTransform(
+                editSelection.get<world::RefId>().referenceId,
+                transform.position, transform.rotation, transform.scale);
+        }
+        gizmoWasUsing = usingNow;
+    } else {
+        gizmoWasUsing = false;
+    }
+
+    // Sculpt strokes take priority over pick/place while armed.
+    if (sculptMode && !io.WantCaptureMouse && !flyCamera.capturing()) {
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            Vec3 ground;
+            if (groundUnderMouse({ io.MousePos.x, io.MousePos.y }, ground)) {
+                if (!strokeActive) {
+                    strokeActive = true;
+                    flattenTarget = ground.y;
+                }
+                applyBrush(ground, io.DeltaTime);
+            }
+        } else if (strokeActive) {
+            strokeActive = false;
+            publishSculpt(); // rebuild once per stroke, not per frame
+        }
+    }
+
+    // Click: place (armed palette entry) or pick. Never while the mouse is
+    // over a window/gizmo, while mouselooking, or while sculpting.
+    if (!sculptMode && !io.WantCaptureMouse && !ImGuizmo::IsOver() &&
+        !flyCamera.capturing() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        const Vec2 mouse { io.MousePos.x, io.MousePos.y };
+        if (placementBase.isValid()) {
+            Vec3 ground;
+            if (groundUnderMouse(mouse, ground)) {
+                // The authored cell under the hit (placement needs one).
+                core::Guid cellGuid {};
+                if (const auto* space =
+                        static_cast<const world::WorldspaceForm*>(
+                            forms.get(activeWorldspace))) {
+                    const i32 gx = static_cast<i32>(
+                        std::floor(ground.x / space->cellSize));
+                    const i32 gy = static_cast<i32>(
+                        std::floor(ground.z / space->cellSize));
+                    const data::FormHandle cell =
+                        worldModel.cellAt(activeWorldspace, gx, gy);
+                    if (const data::Form* form = forms.get(cell)) {
+                        cellGuid = form->id;
+                    }
+                }
+                if (!cellGuid.isValid()) {
+                    LOG_WARN("Editor: no authored cell here — placement "
+                             "aborted");
+                } else {
+                    // Authored y follows the base's convention: snapping
+                    // bases store an offset (0 = on the ground), pad-based
+                    // ones (snapToGround = false) store the ABSOLUTE hit.
+                    f32 storedY = 0.0f;
+                    if (const data::Form* baseF = forms.find(placementBase)) {
+                        const reflect::TypeInfo* baseT =
+                            forms.typeOf(forms.handleOf(placementBase));
+                        if (const reflect::FieldInfo* field =
+                                baseT ? baseT->findField("snapToGround")
+                                      : nullptr;
+                            field &&
+                            field->kind == reflect::FieldKind::Bool &&
+                            !std::get<bool>(field->get(baseF))) {
+                            storedY = ground.y;
+                        }
+                    }
+                    const core::Guid placed = levelEditor->placeReference(
+                        placementBase, cellGuid,
+                        { ground.x, storedY, ground.z });
+                    // Live spawn from the draft, into the loaded cell.
+                    if (const auto* draft =
+                            static_cast<const world::ReferenceForm*>(
+                                levelEditor->editSession().view(placed))) {
+                        world::SpawnContext ctx { world, forms, categories };
+                        world::ReferenceForm live = *draft;
+                        live.position = ground; // grounded live position
+                        const ecs::Entity cellEntity = cellLoader->cellEntity(
+                            forms.handleOf(cellGuid));
+                        const ecs::Entity entity =
+                            spawner.spawn(ctx, live, cellEntity);
+                        if (entity.is_alive()) {
+                            editSelection = entity;
+                            levelEditor->select(placed);
+                        }
+                    }
+                }
+            }
+        } else {
+            ecs::Entity picked {};
+            if (pickEntity(mouse, picked)) {
+                editSelection = picked;
+                levelEditor->select(
+                    picked.get<world::RefId>().referenceId);
+                if (io.KeyCtrl) { // Ctrl+click: grow the prefab group
+                    levelEditor->groupSelection().push_back(
+                        picked.get<world::RefId>().referenceId);
+                }
+            } else {
+                editSelection = ecs::Entity {};
+                levelEditor->select(core::Guid {});
+            }
+        }
+    }
+
+    // The editor window.
+    ImGui::Begin("Level editor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::TextUnformatted(
+        "LMB: pick / place | Ctrl+LMB: add to group | 1/2/3: gizmo op\n"
+        "Hold LMB on sky + WASD: fly | F6: leave editor");
+    ImGui::Text("Session: %u dirty record(s)",
+                levelEditor->editSession().dirtyCount());
+    if (ImGui::Button("Undo") && levelEditor->editSession().canUndo()) {
+        levelEditor->editSession().undo();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Redo") && levelEditor->editSession().canRedo()) {
+        levelEditor->editSession().redo();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Export mod (data/mods/level-edits.toml)")) {
+        levelEditor->exportTo(platform::executableDir() / "data" / "mods" /
+                                  "level-edits.toml",
+                              *core::Guid::fromString(
+                                  "aaaaaaaa-0000-4000-8000-0000000000ed"),
+                              "level-edits");
+    }
+    if (editSelection.is_alive()) {
+        const auto& ref = editSelection.get<world::RefId>();
+        ImGui::Separator();
+        ImGui::Text("Selected: %s", ref.referenceId.toString().c_str());
+        if (ImGui::Button("Disable (delete)")) {
+            levelEditor->disableReference(ref.referenceId);
+            editSelection.destruct();
+            editSelection = ecs::Entity {};
+        }
+    }
+    ImGui::Separator();
+    ImGui::Text("Prefab group: %u",
+                static_cast<u32>(levelEditor->groupSelection().size()));
+    ImGui::SameLine();
+    if (ImGui::Button("Clear")) {
+        levelEditor->groupSelection().clear();
+    }
+    static char prefabName[64] = "MyPrefab";
+    ImGui::InputText("##prefabname", prefabName, sizeof(prefabName));
+    ImGui::SameLine();
+    if (ImGui::Button("Create prefab from group")) {
+        const core::Guid instance = levelEditor->createPrefabFromSelection(
+            levelEditor->groupSelection(), prefabName);
+        if (instance.isValid()) {
+            // Remove the originals' live entities; spawn the instance.
+            for (const core::Guid& id : levelEditor->groupSelection()) {
+                world.handle()
+                    .query<const world::RefId>()
+                    .each([&](flecs::entity e, const world::RefId& rid) {
+                        if (rid.referenceId == id) {
+                            ecs::Entity { e }.destruct();
+                        }
+                    });
+            }
+            levelEditor->groupSelection().clear();
+            if (const auto* draft =
+                    static_cast<const world::ReferenceForm*>(
+                        levelEditor->editSession().view(instance))) {
+                world::SpawnContext ctx { world, forms, categories };
+                spawner.spawn(ctx, *draft, ecs::Entity {});
+            }
+        }
+    }
+    ImGui::Separator();
+    // B9: terrain sculpt.
+    ImGui::Checkbox("Sculpt terrain", &sculptMode);
+    if (sculptMode) {
+        ImGui::Combo("Brush", &brushKind, "Raise\0Lower\0Flatten\0Smooth\0");
+        ImGui::SliderFloat("Radius (m)", &brushRadius, 1.0f, 24.0f, "%.0f");
+        ImGui::SliderFloat("Strength", &brushStrength, 0.2f, 10.0f, "%.1f");
+        ImGui::Text("Sculpted chunks: %u",
+                    static_cast<u32>(sculptGrids.size()));
+        if (ImGui::Button("Save terrain to mod")) {
+            saveSculptToMod();
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(then Export)");
+    }
+    ImGui::Separator();
+    ImGui::TextUnformatted(placementBase.isValid()
+                               ? "Placing: click the ground (Esc: cancel)"
+                               : "Palette — click to arm:");
+    if (placementBase.isValid() &&
+        ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+        placementBase = core::Guid {};
+    }
+    // Palette: every placeable base form, by category.
+    const auto paletteEntry = [&](const data::Form& form) {
+        const bool armed = placementBase == form.id;
+        if (ImGui::Selectable(
+                (form.editorId + (armed ? "  [armed]" : "")).c_str(),
+                armed)) {
+            placementBase = armed ? core::Guid {} : form.id;
+        }
+    };
+    if (ImGui::CollapsingHeader("Statics",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        data::forEach<data::StaticForm>(
+            forms, [&](const data::StaticForm& form) {
+                paletteEntry(form);
+            });
+    }
+    if (ImGui::CollapsingHeader("Lights")) {
+        data::forEach<data::LightForm>(
+            forms,
+            [&](const data::LightForm& form) { paletteEntry(form); });
+    }
+    if (ImGui::CollapsingHeader("Prefabs")) {
+        data::forEach<world::PrefabForm>(
+            forms,
+            [&](const world::PrefabForm& form) { paletteEntry(form); });
+    }
+    ImGui::End();
+}
+
+// --- B7: doors & worldspace travel ------------------------------------------------
+
+void LandscapeScene::updateDoorInteraction(f32 dt) {
+    promptDoor = ecs::Entity {};
+    if (fadeDirection == 0 && playMode && player) {
+        // Aim test: nearest door within reach, roughly in front of the eye.
+        const Vec3 eye = player->position() + Vec3 { 0.0f, 1.7f, 0.0f };
+        const Vec3 forward = flyCamera.camera.forward();
+        f32 bestScore = 0.55f; // minimum facing alignment
+        ecs::Entity best {};
+        world.handle()
+            .query<const world::Transform, const world::DoorTarget>()
+            .each([&](flecs::entity e, const world::Transform& transform,
+                      const world::DoorTarget&) {
+                const Vec3 to =
+                    transform.position + Vec3 { 0.0f, 1.1f, 0.0f } - eye;
+                const f32 distance = glm::length(to);
+                if (distance > 3.0f || distance < 1e-3f) {
+                    return;
+                }
+                const f32 facing = glm::dot(to / distance, forward);
+                if (facing > bestScore) {
+                    bestScore = facing;
+                    best = ecs::Entity { e };
+                }
+            });
+        promptDoor = best;
+        if (promptDoor.is_alive() &&
+            engine->getInput().wasPressed(platform::Key::E)) {
+            pendingTravel =
+                promptDoor.get<world::DoorTarget>().targetReference;
+            fadeDirection = 1;
+        }
+    }
+    // Fade state machine: out (0.3 s) -> travel at black -> in.
+    constexpr f32 kFadeSpeed = 1.0f / 0.3f;
+    if (fadeDirection > 0) {
+        fadeAlpha += dt * kFadeSpeed;
+        if (fadeAlpha >= 1.0f) {
+            fadeAlpha = 1.0f;
+            performTravel(pendingTravel);
+            pendingTravel = core::Guid {};
+            fadeDirection = -1;
+        }
+    } else if (fadeDirection < 0) {
+        fadeAlpha -= dt * kFadeSpeed;
+        if (fadeAlpha <= 0.0f) {
+            fadeAlpha = 0.0f;
+            fadeDirection = 0;
+        }
+    }
+}
+
+void LandscapeScene::performTravel(const core::Guid& targetReference) {
+    const auto* marker = forms.find<world::ReferenceForm>(targetReference);
+    if (!marker) {
+        LOG_WARN("B7: travel target {} not found",
+                 targetReference.toString());
+        return;
+    }
+    const auto* cellForm = forms.find<world::CellForm>(marker->cell);
+    if (!cellForm) {
+        LOG_WARN("B7: travel target {} has no cell",
+                 targetReference.toString());
+        return;
+    }
+    const data::FormHandle space = forms.handleOf(cellForm->worldspace);
+
+    // Swap worldspaces: drop everything streamed, ring around the arrival,
+    // then the usual post-spawn fixups. Colliders for despawned entities
+    // fall out on the next updateStaticColliders pass.
+    cellStreamer->unloadAll();
+    activeWorldspace = space;
+    interiorMode = cellForm->interior;
+    cellStreamer->update(activeWorldspace, marker->position.x,
+                         marker->position.z);
+    snapCellEntities();
+    refreshNpcs(engine->getDevice());
+    updateStaticColliders();
+
+    // Fresh terrain tiles for the new space (none are built in interiors).
+    terrainCollision =
+        std::make_unique<TerrainCollision>(*physics, terrain.params);
+
+    // Teleport the capsule to the marker, facing its authored yaw. The
+    // fade-in (0.3 s) covers the async floor-collider cook — the player
+    // doesn't move (and barely falls) until it lands.
+    if (player) {
+        player = std::make_unique<phys::CharacterBody>(
+            *physics, 0.3f, 1.8f,
+            marker->position + Vec3 { 0.0f, 0.25f, 0.0f });
+        playerVelocity = Vec3 { 0.0f };
+        flyCamera.camera.yaw =
+            2.0f * std::atan2(marker->rotation.y, marker->rotation.w);
+        flyCamera.camera.pitch = 0.0f;
+        flyCamera.camera.position =
+            marker->position + Vec3 { 0.0f, 1.95f, 0.0f };
+    }
+    LOG_INFO("B7: traveled to {} ({}), interior = {}",
+             cellForm->editorId,
+             marker->position.x, interiorMode);
+}
+
 void LandscapeScene::updatePlayer(f32 dt) {
     platform::Input& input = engine->getInput();
+    if (fadeDirection != 0) {
+        return; // frozen during door transitions
+    }
 
     // Mouselook, always captured in Play (no LMB gymnastics in a game).
     const Vec2 look = input.mouseDelta();
@@ -845,8 +1603,141 @@ const LandscapeScene::RigData* LandscapeScene::loadRig(
     return &rig;
 }
 
-void LandscapeScene::setupNpcs(rhi::Device& device) {
-    // Patrol points: every "patrol" marker, grounded, in spawn order.
+// Chantier 2 B2: static colliders follow the spawned statics. Runs every
+// frame (cheap: map lookups + a small query) because meshes turn resident
+// asynchronously — a newcomer gets its body the frame its CPU data lands.
+void LandscapeScene::updateStaticColliders() {
+    if (!physics || !meshCache) {
+        return;
+    }
+    for (auto it = staticColliders.begin(); it != staticColliders.end();) {
+        if (!world.handle().is_alive(static_cast<flecs::entity_t>(it->first))) {
+            physics->removeBody(it->second);
+            it = staticColliders.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    world.handle()
+        .query<const world::Transform, const world::RefId,
+               const world::MeshRender>()
+        .each([&](flecs::entity e, const world::Transform& transform,
+                  const world::RefId& ref, const world::MeshRender& mesh) {
+            const u64 id = e.id();
+            if (staticColliders.contains(id)) {
+                return;
+            }
+            // `collides` read through reflection: any base form declaring
+            // it opts in (StaticForm today, DoorForm...).
+            const data::Form* base = forms.get(ref.base);
+            const reflect::TypeInfo* type = forms.typeOf(ref.base);
+            if (!base || !type) {
+                return;
+            }
+            const reflect::FieldInfo* field = type->findField("collides");
+            if (!field || field->kind != reflect::FieldKind::Bool ||
+                !std::get<bool>(field->get(base))) {
+                return;
+            }
+            const MeshCache::CpuMesh* cpu = meshCache->cpuMesh(mesh.model);
+            if (!cpu) {
+                return; // still streaming — retried next frame
+            }
+            const phys::BodyId body = physics->addStaticMesh(
+                cpu->positions.data(),
+                static_cast<u32>(cpu->positions.size()),
+                cpu->indices.data(), static_cast<u32>(cpu->indices.size()),
+                transform.position, transform.rotation, transform.scale);
+            if (body != 0) {
+                staticColliders.emplace(id, body);
+            }
+        });
+}
+
+// Idempotent ground snap (chantier 2 B1): world Y = terrain height at
+// (x, z) + the reference's AUTHORED y (an offset above ground until the
+// level editor writes real heights). Safe to re-run after every cell
+// change; prefab-derived children (no base record) keep their expanded Y.
+// Skipped for: interior cells (no terrain — authored y is absolute) and
+// base forms with snapToGround = false (building modules on a pad).
+void LandscapeScene::snapCellEntities() {
+    if (editMode) {
+        return; // the editor owns transforms while it is active
+    }
+    const auto skipsSnap = [&](const world::ReferenceForm& reference,
+                               data::FormHandle baseHandle) {
+        if (const auto* cell =
+                forms.find<world::CellForm>(reference.cell);
+            cell && cell->interior) {
+            return true;
+        }
+        const data::Form* base = forms.get(baseHandle);
+        const reflect::TypeInfo* type = forms.typeOf(baseHandle);
+        if (base && type) {
+            if (const reflect::FieldInfo* field =
+                    type->findField("snapToGround");
+                field && field->kind == reflect::FieldKind::Bool &&
+                !std::get<bool>(field->get(base))) {
+                return true;
+            }
+        }
+        return false;
+    };
+    world.handle()
+        .query<world::Transform, const world::RefId,
+               const world::MeshRender>()
+        .each([&](flecs::entity, world::Transform& transform,
+                  const world::RefId& ref, const world::MeshRender&) {
+            const auto* reference =
+                forms.find<world::ReferenceForm>(ref.referenceId);
+            if (!reference || skipsSnap(*reference, ref.base)) {
+                return;
+            }
+            transform.position.y =
+                render::terrain::height(terrain.params, transform.position.x,
+                                        transform.position.z) +
+                reference->position.y;
+        });
+    // Lights too (no MeshRender): a torch's authored y is its height
+    // above the ground it stands on.
+    world.handle()
+        .query<world::Transform, const world::RefId,
+               const world::LightSource>()
+        .each([&](flecs::entity, world::Transform& transform,
+                  const world::RefId& ref, const world::LightSource&) {
+            const auto* reference =
+                forms.find<world::ReferenceForm>(ref.referenceId);
+            if (!reference || skipsSnap(*reference, ref.base)) {
+                return;
+            }
+            transform.position.y =
+                render::terrain::height(terrain.params, transform.position.x,
+                                        transform.position.z) +
+                reference->position.y;
+        });
+}
+
+void LandscapeScene::destroyNpc(rhi::Device& device, Npc& npc) {
+    npc.anim.reset(); // references npc.graph — release first
+    device.destroyBindGroup(npc.group);
+    device.destroyBuffer(npc.modelUbo);
+    device.destroyBuffer(npc.paletteSsbo);
+    device.destroyBuffer(npc.indices);
+    device.destroyBuffer(npc.vertices);
+}
+
+void LandscapeScene::refreshNpcs(rhi::Device& device) {
+    // Prune NPCs whose entity was unloaded with its cell.
+    for (auto it = npcs.begin(); it != npcs.end();) {
+        if (!(*it)->entity.is_alive()) {
+            destroyNpc(device, **it);
+            it = npcs.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Patrol points: every LOADED "patrol" marker, grounded, spawn order.
     patrolPoints.clear();
     world.handle()
         .query<world::Transform, const world::MarkerKind>()
@@ -870,6 +1761,11 @@ void LandscapeScene::setupNpcs(rhi::Device& device) {
             if (!entity.has<world::ActorMarker>() ||
                 entity == playerEntity) {
                 return;
+            }
+            for (const auto& tracked : npcs) {
+                if (tracked->entity == entity) {
+                    return; // already built
+                }
             }
             const data::Form* base = forms.get(ref.base);
             const reflect::TypeInfo* type = forms.typeOf(ref.base);
@@ -964,9 +1860,11 @@ void LandscapeScene::setupNpcs(rhi::Device& device) {
                 characterSpot = transform.position;
             }
             npcs.push_back(std::move(npc));
+            LOG_INFO("B6: NPC '{}' built from Forms",
+                     static_cast<const data::ActorForm*>(
+                         forms.get(ref.base))
+                         ->editorId);
         });
-    LOG_INFO("B6: {} NPC(s) built from Forms, {} patrol point(s)",
-             npcs.size(), patrolPoints.size());
 }
 
 void LandscapeScene::updateNpcs(f32 dt) {
@@ -1186,19 +2084,23 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         vegetation.regenerate(frame.device, terrain.params.seed);
         occlusion.invalidate();
     }
-    terrain.update(frame.device, flyCamera.camera.position);
-    // Height-horizon occlusion (brick 26): rebuilt on a worker whenever
-    // the camera strays; the set stays valid (conservative) meanwhile.
-    occlusion.pump();
-    if (occlusion.wantsRebuild(flyCamera.camera.position)) {
-        occlusion.rebuild(terrain.params, flyCamera.camera.position,
-                          terrain.chunkTops());
-    }
-    grass.update(frame.device, terrain.params, flyCamera.camera.position);
-    vegetation.update(frame.device, terrain.params,
-                      flyCamera.camera.position);
-    if (frame.device.caps().copyTexture) {
-        water.update(frame.device, terrain.params, flyCamera.camera.position);
+    if (!interiorMode) { // interiors: no terrain/scatter/water to stream
+        terrain.update(frame.device, flyCamera.camera.position);
+        // Height-horizon occlusion (brick 26): rebuilt on a worker
+        // whenever the camera strays; stays valid (conservative) meanwhile.
+        occlusion.pump();
+        if (occlusion.wantsRebuild(flyCamera.camera.position)) {
+            occlusion.rebuild(terrain.params, flyCamera.camera.position,
+                              terrain.chunkTops());
+        }
+        grass.update(frame.device, terrain.params,
+                     flyCamera.camera.position);
+        vegetation.update(frame.device, terrain.params,
+                          flyCamera.camera.position);
+        if (frame.device.caps().copyTexture) {
+            water.update(frame.device, terrain.params,
+                         flyCamera.camera.position);
+        }
     }
 
     const render::Camera3D& camera = flyCamera.camera;
@@ -1216,7 +2118,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     // and soften away under heavy cloud cover (diffuse light casts none).
     const bool shadowsAvailable = shadows.receiverBindGroup().id != 0;
     const f32 shadowStrength =
-        (shadowsUi && shadowsAvailable)
+        (shadowsUi && shadowsAvailable && !interiorMode)
             ? glm::smoothstep(-0.02f, 0.06f, skyState.sunDirection.y) *
                   (1.0f - 0.65f * cloudCoverageUi)
             : 0.0f;
@@ -1229,7 +2131,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
     // Planar reflection is meaningful only from above the surface.
     const bool reflectionsActive =
-        reflectionsUi && reflectionFb.id != 0 &&
+        reflectionsUi && reflectionFb.id != 0 && !interiorMode &&
         camera.position.y > terrain.params.seaLevel;
 
     // Sun position on screen for the god rays; shafts fade as the sun
@@ -1297,10 +2199,52 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .waterMapInfo = water.poolMapInfo(),
         .windInfo = { windTime, windStrengthUi, waveChopUi, 0.0f },
     };
-    frame.device.updateBuffer(frameUbo, &uniforms, sizeof(uniforms), 0);
+    render::FrameUniforms frameData = uniforms;
+    if (interiorMode) {
+        // B7 interior mode: no sun, no sky glow, dim constant ambient, no
+        // fog, no god rays/volumetric — local lights (B5) carry the room.
+        frameData.sunColor = { 0.0f, 0.0f, 0.0f, 0.0f };
+        frameData.sunGlowColor = { 0.0f, 0.0f, 0.0f, 0.0f };
+        frameData.ambientColor = { Vec3 { 0.16f, 0.15f, 0.14f },
+                                   uniforms.ambientColor.w };
+        frameData.fogInfo = { 0.0f, 0.02f, 0.0f, 100000.0f };
+        frameData.sunScreen = { 0.5f, 0.5f, 0.0f, 0.0f };
+        frameData.time.z = 0.0f; // volumetric shafts off
+    }
+    frame.device.updateBuffer(frameUbo, &frameData, sizeof(frameData), 0);
+
+    // B5: the 16 nearest local lights, flicker applied CPU-side (sin +
+    // per-index phase — cheap and stateless).
+    {
+        struct LightsUniforms {
+            Vec4 count { 0.0f };
+            Vec4 positionRadius[kMaxLights] {};
+            Vec4 colorIntensity[kMaxLights] {};
+        } lights;
+        const vector<SceneLight> nearest =
+            collectLights(world, camera.position, kMaxLights);
+        lights.count.x = static_cast<f32>(nearest.size());
+        for (u32 i = 0; i < nearest.size(); ++i) {
+            const SceneLight& light = nearest[i];
+            f32 intensity = light.intensity;
+            if (light.flicker > 0.0f) {
+                const f32 phase = static_cast<f32>(i) * 1.7f;
+                intensity *=
+                    1.0f + light.flicker *
+                               (0.55f * std::sin(timeSeconds * 9.0f + phase) +
+                                0.45f * std::sin(timeSeconds * 23.0f +
+                                                 phase * 3.1f));
+            }
+            lights.positionRadius[i] = { light.position, light.radius };
+            lights.colorIntensity[i] = { light.color * intensity, 0.0f };
+        }
+        frame.device.updateBuffer(lightsUbo, &lights, sizeof(lights), 0);
+    }
 
     // Bake this frame's cloud field before anything lights with it.
-    sky.bakeCloudMap(frame.cmd, frameBindGroup);
+    if (!interiorMode) {
+        sky.bakeCloudMap(frame.cmd, frameBindGroup);
+    }
 
     // Cascade passes: depth-only casters from the sun's point of view.
     if (shadowStrength > 0.0f) {
@@ -1378,10 +2322,12 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         frame.cmd.endRenderPass();
     }
 
-    // The sky covers every background pixel — no color clear needed.
+    // Exterior: the sky covers every background pixel — no color clear.
+    // Interior: clear to a near-black room tone instead.
     frame.cmd.beginRenderPass(
         { .framebuffer = useOffscreen ? offscreenFb : rhi::FramebufferHandle {},
-          .loadOp = rhi::LoadOp::DontCare,
+          .loadOp = interiorMode ? rhi::LoadOp::Clear : rhi::LoadOp::DontCare,
+          .clearColor = { 0.015f, 0.014f, 0.013f, 1.0f },
           .depthLoadOp = rhi::LoadOp::Clear });
     if (sky.cloudMapBindGroup().id != 0) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
@@ -1400,20 +2346,28 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     }
     const std::unordered_set<u64>* occludedSet =
         combinedOccluded.empty() ? nullptr : &combinedOccluded;
-    terrain.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
-                 &viewFrustum, occludedSet);
-    vegetation.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
-                    render::VegetationSystem::kVariantCount, camera.position,
-                    /*forceLowDetail=*/false, &viewFrustum, occludedSet);
-    grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
-               &viewFrustum);
+    if (!interiorMode) {
+        terrain.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
+                     &viewFrustum, occludedSet);
+        vegetation.draw(frame.cmd, frameBindGroup,
+                        shadows.receiverBindGroup(),
+                        render::VegetationSystem::kVariantCount,
+                        camera.position,
+                        /*forceLowDetail=*/false, &viewFrustum, occludedSet);
+        grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
+                   &viewFrustum);
+    }
     drawSceneMeshes(frame); // B1: the RenderSnapshot.meshes consumer
     drawNpcs(frame);        // B6: the Forms-driven skinned NPCs
-    sky.draw(frame.cmd, frameBindGroup); // after opaque: background only
+    if (!interiorMode) {
+        sky.draw(frame.cmd, frameBindGroup); // background only
+    }
     frame.cmd.endRenderPass();
 
-    // Water: snapshot the opaque scene (sampling a bound attachment is UB),
-    // then compose refraction/reflection/foam back into the HDR target.
+    // Snapshot the opaque scene (sampling a bound attachment is UB): the
+    // SSAO pass reads the depth copy EVERY frame — interiors included
+    // (skipping it left the previous exterior's AO ghosting over the
+    // room). Water composition and Hi-Z occlusion stay exterior-only.
     if (useOffscreen && frame.device.caps().copyTexture &&
         waterSceneBindGroup.id != 0) {
         frame.cmd.copyTexture(offscreenColor, sceneColorCopy);
@@ -1421,7 +2375,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
         // GPU Hi-Z occlusion (brick 26): pyramid from this frame's depth
         // snapshot + cull dispatch; the verdict is read back NEXT frame.
-        if (frame.device.caps().computeShaders) {
+        if (!interiorMode && frame.device.caps().computeShaders) {
             gpuOcclusion.resize(frame.device, frame.width, frame.height);
             terrain.collectChunkAabbs(occlusionAabbs);
             occlusionCandidates.clear();
@@ -1437,11 +2391,13 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                              viewProj, occlusionCandidates);
         }
 
-        frame.cmd.beginRenderPass({ .framebuffer = offscreenFb,
-                                    .loadOp = rhi::LoadOp::Load,
-                                    .depthLoadOp = rhi::LoadOp::Load });
-        water.draw(frame.cmd, frameBindGroup, waterSceneBindGroup);
-        frame.cmd.endRenderPass();
+        if (!interiorMode) {
+            frame.cmd.beginRenderPass({ .framebuffer = offscreenFb,
+                                        .loadOp = rhi::LoadOp::Load,
+                                        .depthLoadOp = rhi::LoadOp::Load });
+            water.draw(frame.cmd, frameBindGroup, waterSceneBindGroup);
+            frame.cmd.endRenderPass();
+        }
     }
 
     // Bloom pyramid + god rays + volumetric shafts, composed by the tonemap.
@@ -1467,6 +2423,49 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 }
 
 void LandscapeScene::drawUi() {
+    // B7 overlays draw regardless of the panel: the travel fade and the
+    // door prompt (foreground draw list — no renderer pass involved).
+    ImDrawList* foreground = ImGui::GetForegroundDrawList();
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    if (playMode && promptDoor.is_alive() && fadeDirection == 0) {
+        str label = "[E] Use door";
+        const auto& ref = promptDoor.get<world::RefId>();
+        const data::Form* base = forms.get(ref.base);
+        const reflect::TypeInfo* type = forms.typeOf(ref.base);
+        if (base && type &&
+            type->isA(world::DoorForm::staticTypeInfo().id)) {
+            const auto& door = *static_cast<const world::DoorForm*>(base);
+            if (!door.displayName.empty()) {
+                label = "[E] " + door.displayName;
+            }
+        }
+        const ImVec2 size = ImGui::CalcTextSize(label.c_str());
+        foreground->AddText(
+            { (display.x - size.x) * 0.5f, display.y * 0.62f },
+            ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.95f)),
+            label.c_str());
+    }
+    if (fadeAlpha > 0.0f) {
+        foreground->AddRectFilled(
+            { 0.0f, 0.0f }, display,
+            ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, fadeAlpha)));
+    }
+
+    // F6 toggles the level editor (leaves Play first — the editor flies).
+    if (ImGui::IsKeyPressed(ImGuiKey_F6, false) && levelEditor) {
+        editMode = !editMode;
+        if (editMode && playMode) {
+            exitPlayMode();
+        }
+        if (!editMode) {
+            editSelection = ecs::Entity {};
+            placementBase = core::Guid {};
+        }
+    }
+    if (editMode && levelEditor) {
+        drawEditorUi();
+    }
+
     // F10 hides/shows the whole panel (works even while the mouse is
     // captured in Play — ImGui keeps its own keyboard state).
     if (ImGui::IsKeyPressed(ImGuiKey_F10, false)) {
@@ -1651,7 +2650,9 @@ void LandscapeScene::drawGameplayUi() {
                         debugCapsule->onGround() ? "(grounded)"
                                                  : "(falling)");
         }
-        ImGui::Text("Collision tiles: %u", terrainCollision->tileCount());
+        ImGui::Text("Collision tiles: %u | cells loaded: %u",
+                    terrainCollision->tileCount(),
+                    cellStreamer ? cellStreamer->loadedCount() : 0);
     }
 }
 

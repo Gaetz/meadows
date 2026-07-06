@@ -55,6 +55,16 @@ public:
     BodyId addHeightField(const f32* samples, u32 sampleCount,
                           const Vec3& origin, f32 spacing);
 
+    // A static triangle mesh (chantier 2 B2): world geometry from authored
+    // models (kit modules, rocks). `indices` are triangles (count = 3n);
+    // `scale` is baked into the vertices CPU-side (meshes are small).
+    // Returns 0 on failure (degenerate/empty mesh).
+    BodyId addStaticMesh(const Vec3* vertices, u32 vertexCount,
+                         const u32* indices, u32 indexCount,
+                         const Vec3& position,
+                         const Quat& rotation = { 1.0f, 0.0f, 0.0f, 0.0f },
+                         const Vec3& scale = { 1.0f, 1.0f, 1.0f });
+
     void removeBody(BodyId body);
 
     // First hit along a ray (interaction, camera, combat traces).

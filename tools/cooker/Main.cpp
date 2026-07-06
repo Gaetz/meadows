@@ -4,7 +4,10 @@
 //   cooker uncook <in.bin>  <out.toml>   cooked binary -> text
 //   cooker new-guid [count]              mint authoring guids
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string_view>
@@ -20,6 +23,8 @@
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/render/landscape/TerrainNoise.hpp"
+#include "world/terrain/TerrainPatches.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/ai/AiForms.hpp"
@@ -33,11 +38,65 @@
 namespace {
 
 int usage() {
-    std::printf("usage:\n"
-                "  cooker cook   <in.toml> <out.bin>\n"
-                "  cooker uncook <in.bin>  <out.toml>\n"
-                "  cooker new-guid [count]\n");
+    std::printf(
+        "usage:\n"
+        "  cooker cook   <in.toml> <out.bin>\n"
+        "  cooker uncook <in.bin>  <out.toml>\n"
+        "  cooker new-guid [count]\n"
+        "  cooker terrain-pad <cx> <cz> <x0> <z0> <x1> <z1> <height> "
+        "<out.ter>\n"
+        "     flattens the rect [x0..x1]x[z0..z1] of terrain chunk "
+        "(cx,cz)\n"
+        "     to <height> m (3 m smooth blend ring), demo seed/params\n");
     return 2;
+}
+
+// Authored-terrain helper (chantier 2 B6/B8): computes the delta grid that
+// levels a rectangle of the DEMO terrain (default TerrainParams — matches
+// landscape.toml) to a target height, feathered over 3 m. The output .ter
+// ships as a plugin asset referenced by a TerrainPatchForm.
+int terrainPad(char** argv) {
+    const i32 cx = std::atoi(argv[2]);
+    const i32 cz = std::atoi(argv[3]);
+    const f32 x0 = static_cast<f32>(std::atof(argv[4]));
+    const f32 z0 = static_cast<f32>(std::atof(argv[5]));
+    const f32 x1 = static_cast<f32>(std::atof(argv[6]));
+    const f32 z1 = static_cast<f32>(std::atof(argv[7]));
+    const f32 target = static_cast<f32>(std::atof(argv[8]));
+    constexpr f32 kChunk = 64.0f;
+    constexpr u32 kSamples = 65; // 1 m grid, shared edges
+    constexpr f32 kBlend = 3.0f;
+
+    render::TerrainParams params; // demo defaults (seed 1337)
+    render::HeightPatch patch;
+    patch.samples = kSamples;
+    patch.deltas.resize(static_cast<size_t>(kSamples) * kSamples, 0.0f);
+    for (u32 row = 0; row < kSamples; ++row) {
+        for (u32 col = 0; col < kSamples; ++col) {
+            const f32 x = static_cast<f32>(cx) * kChunk +
+                          static_cast<f32>(col);
+            const f32 z = static_cast<f32>(cz) * kChunk +
+                          static_cast<f32>(row);
+            // Distance outside the rect (0 inside), feathered to kBlend.
+            const f32 dx = std::max({ x0 - x, 0.0f, x - x1 });
+            const f32 dz = std::max({ z0 - z, 0.0f, z - z1 });
+            const f32 outside = std::sqrt(dx * dx + dz * dz);
+            if (outside >= kBlend) {
+                continue;
+            }
+            const f32 t = 1.0f - outside / kBlend;
+            const f32 weight = t * t * (3.0f - 2.0f * t); // smoothstep
+            const f32 base = render::terrain::height(params, x, z);
+            patch.deltas[row * kSamples + col] = (target - base) * weight;
+        }
+    }
+    if (!world::writeTerFile(argv[9], patch)) {
+        return 1;
+    }
+    LOG_INFO("terrain-pad: chunk ({}, {}) rect [{},{}]x[{},{}] -> {} m, "
+             "wrote {}",
+             cx, cz, x0, z0, x1, z1, target, argv[9]);
+    return 0;
 }
 
 std::optional<vector<u8>> readFileBytes(const std::filesystem::path& path) {
@@ -148,6 +207,9 @@ int main(int argc, char** argv) {
     }
     if (command == "uncook" && argc == 4) {
         return uncook(argv[2], argv[3], types);
+    }
+    if (command == "terrain-pad" && argc == 10) {
+        return terrainPad(argv);
     }
     return usage();
 }

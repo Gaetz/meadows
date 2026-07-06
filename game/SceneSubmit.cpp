@@ -77,6 +77,42 @@ void extractMeshes(const ecs::World& world, RenderSnapshot& out) {
         });
 }
 
+vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
+                                 u32 maxLights) {
+    struct Candidate {
+        f32 distanceSq;
+        u32 order; // query order — the stable tiebreak
+        SceneLight light;
+    };
+    vector<Candidate> candidates;
+    u32 order = 0;
+    world.handle()
+        .query<const world::Transform, const world::LightSource>()
+        .each([&](flecs::entity, const world::Transform& transform,
+                  const world::LightSource& source) {
+            const Vec3 d = transform.position - focus;
+            candidates.push_back({ glm::dot(d, d), order++,
+                                   { transform.position, source.color,
+                                     source.intensity, source.radius,
+                                     source.flicker } });
+        });
+    std::stable_sort(candidates.begin(), candidates.end(),
+                     [](const Candidate& a, const Candidate& b) {
+                         return a.distanceSq != b.distanceSq
+                                    ? a.distanceSq < b.distanceSq
+                                    : a.order < b.order;
+                     });
+    vector<SceneLight> lights;
+    lights.reserve(glm::min<size_t>(candidates.size(), maxLights));
+    for (const Candidate& candidate : candidates) {
+        if (lights.size() >= maxLights) {
+            break;
+        }
+        lights.push_back(candidate.light);
+    }
+    return lights;
+}
+
 void submitSnapshot(const RenderSnapshot& snapshot,
                     render::SpriteRenderer& renderer) {
     for (const render::Sprite& sprite : snapshot.sprites) {

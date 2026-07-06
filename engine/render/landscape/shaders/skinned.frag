@@ -2,6 +2,7 @@
 #include "common.glsl"
 #include "sky.glsl"
 #include "stylized.glsl"
+#include "locallights.glsl"
 
 // Shading twin of mesh.frag (albedo texture x tint x vertex color, shared
 // BotW ramp, shared fog) — KEEP IN SYNC with mesh.frag; only the vertex
@@ -26,7 +27,8 @@ void main() {
     vec3 n = normalize(vNormal);
     float ndl = dot(n, uSunDirection.xyz);
     float diffuse = stylizedDiffuse(ndl, max(ndl, 0.0));
-    vec3 lit = albedo * (uAmbientColor.rgb + uSunColor.rgb * diffuse) +
+    vec3 lit = albedo * (uAmbientColor.rgb + uSunColor.rgb * diffuse +
+                         localLights(vWorldPos, n)) +
                albedo * uMeshInfo.x;
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

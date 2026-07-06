@@ -9,11 +9,13 @@
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/physics/Physics.hpp"
+#include "game/LevelEditor.hpp"
 #include "game/MeshCache.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
+#include "world/streaming/CellStreamer.hpp"
 #include "game/SceneSubmit.hpp"
 #include "game/TerrainCollision.hpp"
 #include "game/TextureCache.hpp"
@@ -147,6 +149,10 @@ private:
 
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};
+    // Chantier 2 B5: local lights UBO (binding 5, same group as FrameUbo).
+    // The 16 nearest LightSource entities, flicker applied CPU-side.
+    rhi::BufferHandle lightsUbo {};
+    static constexpr u32 kMaxLights = 16;
 
     // B1 (chantier 1): the real mesh path replacing the H8 hardcoded cube.
     // A small ECS world spawned from plugin ReferenceForms; extractMeshes
@@ -156,6 +162,68 @@ private:
                                    //   lookups happen at draw time)
     assets::AssetDatabase assetDb; // guid -> file, layered per plugin order
     ecs::World world;
+
+    // Chantier 2 B1: cells stream around the player (synchronous ring —
+    // async + persistence is the « persistance » chantier). References
+    // with no cell are persistent (the player), spawned once at enter.
+    world::FormCategoryRegistry categories; // must outlive the CellLoader
+    world::Spawner spawner;
+    world::WorldModel worldModel;
+    uptr<world::CellLoader> cellLoader;
+    uptr<world::CellStreamer> cellStreamer;
+    data::FormHandle overworldHandle {};
+
+    // Chantier 2 B7: worldspace travel through doors. `activeWorldspace`
+    // drives the streamer; `interiorMode` reshapes the renderer (no
+    // terrain/sky/sun/water — ambient + local lights only).
+    data::FormHandle activeWorldspace {};
+    bool interiorMode { false };
+
+    // Chantier 2 B3/B4: level-editor mode (F6). CPU ray-AABB picking over
+    // MeshCache bounds, ImGuizmo gizmos, palette placement — every edit
+    // lands in the LevelEditor's EditSession (§5) and exports to
+    // data/mods/level-edits.toml, loaded on the next run.
+    bool editMode { false };
+    uptr<LevelEditor> levelEditor;
+    ecs::Entity editSelection {};
+    core::Guid placementBase {}; // armed palette entry (0 = none)
+    i32 gizmoOperation { 0 };    // 0 translate, 1 rotate, 2 scale
+    bool gizmoWasUsing { false };
+    void drawEditorUi();
+    bool pickEntity(const Vec2& mousePx, ecs::Entity& out);
+    bool groundUnderMouse(const Vec2& mousePx, Vec3& out);
+    Vec3 mouseRayDirection(const Vec2& mousePx) const;
+
+    // Chantier 2 B9: terrain sculpt. Brushes edit WORKING grids; the
+    // stroke's release publishes a fresh immutable HeightPatches (workers
+    // stay race-free) and regenerates terrain/scatter/collision. "Save
+    // terrain" writes .ter files + TerrainPatchForm records into the mod.
+    bool sculptMode { false };
+    i32 brushKind { 0 }; // 0 raise, 1 lower, 2 flatten, 3 smooth
+    f32 brushRadius { 6.0f };
+    f32 brushStrength { 2.0f };
+    bool strokeActive { false };
+    f32 flattenTarget { 0.0f }; // grabbed at stroke start
+    std::unordered_map<u64, render::HeightPatch> sculptGrids;
+    render::HeightPatch& sculptGridFor(i32 cx, i32 cz);
+    void applyBrush(const Vec3& center, f32 dt);
+    void publishSculpt();
+    void saveSculptToMod();
+    ecs::Entity promptDoor {};   // the door aimed at (Play mode)
+    core::Guid pendingTravel {}; // armed target marker reference
+    f32 fadeAlpha { 0.0f };      // 0 = clear, 1 = black
+    i32 fadeDirection { 0 };     // +1 fading out, -1 fading in
+    void updateDoorInteraction(f32 dt);
+    void performTravel(const core::Guid& targetReference);
+    void snapCellEntities(); // idempotent ground snap (y = terrain + authored)
+
+    // Chantier 2 B8: the authored-terrain overlay. IMMUTABLE once
+    // published (terrain.params.patches points at it); the sculpt tool
+    // edits a working copy then publishes a NEW instance — the old ones
+    // are retired here and NEVER freed before app exit, because workers
+    // hold copied TerrainParams with the raw pointer inside.
+    sptr<const render::HeightPatches> heightPatches;
+    vector<sptr<const render::HeightPatches>> retiredPatches;
     uptr<TextureCache> materialTextures; // SRGBA8 + Linear (3D albedo)
     uptr<MeshCache> meshCache;
     RenderSnapshot snapshot;
@@ -214,7 +282,10 @@ private:
     rhi::PipelineHandle skinnedPipeline {};
     u64 skinnedShaderGeneration { 0 };
     void buildSkinnedPipeline(rhi::Device& device);
-    void setupNpcs(rhi::Device& device);
+    // Cell streaming makes NPC entities come and go: refresh prunes dead
+    // ones (freeing their GPU state) and builds newcomers.
+    void refreshNpcs(rhi::Device& device);
+    void destroyNpc(rhi::Device& device, Npc& npc);
     void updateNpcs(f32 dt);
     void drawNpcs(engine::FrameContext& frame);
 
@@ -224,6 +295,11 @@ private:
     uptr<phys::PhysicsWorld> physics;
     uptr<TerrainCollision> terrainCollision;
     uptr<phys::CharacterBody> debugCapsule;
+    // Chantier 2 B2: one Jolt mesh body per collidable spawned static,
+    // cooked from the MeshCache CPU copy once resident, dropped when the
+    // entity's cell unloads. Keyed by flecs entity id.
+    std::unordered_map<u64, phys::BodyId> staticColliders;
+    void updateStaticColliders();
 
     // B5: first-person Play mode (the game IS first-person — acted
     // decision). The player is a kinematic capsule, the camera sits at eye

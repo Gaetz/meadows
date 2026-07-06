@@ -7,6 +7,11 @@
 # B1 convention: ReferenceForm.position.y is an offset ABOVE the terrain at
 # (x, z) — the scene grounds every spawned prop (hand-authored heights come
 # with the level editor, chantier 2).
+#
+# Chantier 2 (B1): the demo area is CELLED — 64 m cells (aligned on the
+# terrain chunks) in the "Overworld" worldspace, loaded/unloaded around
+# the player (CellStreamer). A reference with NO `cell` is PERSISTENT
+# (spawned once at scene start — the player). gridY is the Z axis.
 
 [plugin]
 id = "7c9e2f40-3a1b-4c8d-9e5f-6a7b8c9d0e1f"
@@ -19,6 +24,50 @@ name = "true-adventurer-adventure"
 # — 43 in-place clips, 65 joints, authored in meters. Same asset GUID as
 # the B2 fox it replaced: the graph records didn't move (§5 layering).
 "2b5e7d10-0000-4000-8000-0000000000e0" = "models/UAL1_Standard.glb"
+
+# --- World structure (chantier 2, B1) ---------------------------------------
+
+[[records]]
+form = "3c6f8e20-0000-4000-8000-000000000001"
+type = "WorldspaceForm"
+new = true
+[records.fields]
+editorId = "Overworld"
+cellSize = 64.0
+
+# The demo cell (x 0-64, z 320-384) holds the rocks, the NPC and its
+# patrol markers.
+[[records]]
+form = "3c6f8e20-0000-4000-8000-000000000005"
+type = "CellForm"
+new = true
+[records.fields]
+editorId = "OverworldC0x5"
+worldspace = "3c6f8e20-0000-4000-8000-000000000001"
+gridX = 0
+gridY = 5
+
+# Two more authored cells east of the demo area — the pop-in proof lives
+# in the farthest one.
+[[records]]
+form = "3c6f8e20-0000-4000-8000-000000000015"
+type = "CellForm"
+new = true
+[records.fields]
+editorId = "OverworldC1x5"
+worldspace = "3c6f8e20-0000-4000-8000-000000000001"
+gridX = 1
+gridY = 5
+
+[[records]]
+form = "3c6f8e20-0000-4000-8000-000000000025"
+type = "CellForm"
+new = true
+[records.fields]
+editorId = "OverworldC2x5"
+worldspace = "3c6f8e20-0000-4000-8000-000000000001"
+gridX = 2
+gridY = 5
 
 # --- Materials ------------------------------------------------------------
 
@@ -288,6 +337,7 @@ type = "ReferenceForm"
 new = true
 [records.fields]
 baseForm = "2b5e7d10-0000-4000-8000-0000000000b1"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [26.0, 0.0, 366.0]
 
 [[records]]
@@ -304,6 +354,7 @@ type = "ReferenceForm"
 new = true
 [records.fields]
 baseForm = "2b5e7d10-0000-4000-8000-0000000000b3"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [22.0, 0.0, 362.0]
 
 [[records]]
@@ -312,6 +363,7 @@ type = "ReferenceForm"
 new = true
 [records.fields]
 baseForm = "2b5e7d10-0000-4000-8000-0000000000b3"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [40.0, 0.0, 377.0]
 
 # --- Placed references (near the spawn point, ~(32, 368)) ------------------
@@ -321,6 +373,7 @@ form = "2b5e7d10-0000-4000-8000-0000000000d1"
 type = "ReferenceForm"
 new = true
 [records.fields]
+cell = "3c6f8e20-0000-4000-8000-000000000005"
 baseForm = "2b5e7d10-0000-4000-8000-0000000000c4"
 position = [26.0, 0.0, 361.0]
 scale = [2.0, 2.0, 2.0]
@@ -331,6 +384,7 @@ type = "ReferenceForm"
 new = true
 [records.fields]
 baseForm = "2b5e7d10-0000-4000-8000-0000000000c5"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [38.0, 0.0, 359.0]
 rotation = [0.0, 0.3826834, 0.0, 0.9238795]  # 45° yaw
 scale = [3.0, 3.0, 3.0]
@@ -340,6 +394,19 @@ form = "2b5e7d10-0000-4000-8000-0000000000d3"
 type = "ReferenceForm"
 new = true
 [records.fields]
+cell = "3c6f8e20-0000-4000-8000-000000000005"
 baseForm = "2b5e7d10-0000-4000-8000-0000000000c4"
 position = [31.0, 0.0, 374.0]
 scale = [1.1, 1.1, 1.1]
+
+# The streaming proof: a big rock two cells east — walk ~120 m toward it
+# and watch its cell pop in (panel F1 shows the loaded-cell count).
+[[records]]
+form = "3c6f8e20-0000-4000-8000-000000000031"
+type = "ReferenceForm"
+new = true
+[records.fields]
+cell = "3c6f8e20-0000-4000-8000-000000000025"
+baseForm = "2b5e7d10-0000-4000-8000-0000000000c5"
+position = [150.0, 0.0, 360.0]
+scale = [4.0, 4.0, 4.0]
