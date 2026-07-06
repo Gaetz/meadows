@@ -1286,3 +1286,107 @@ baseForm = "4d7a9b30-0000-4000-8000-000000000095"
 cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [9.3, 0.0, 7.2]
 scale = [1.6, 0.45, 0.9]
+
+# --- Crime v1 (chantier 6 D2) -------------------------------------------------
+# The village guard: stands watch on the square (the guard package, all
+# day). Hostile ONLY while the player carries a bounty (Crime.Wanted);
+# the fine is paid through his dialogue.
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000100"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "VillageGuard"
+displayName = "Garde du village"
+maxHealth = 80.0
+appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
+animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
+dialogue = "4d7a9b30-0000-4000-8000-000000000104"
+schedule = "4d7a9b30-0000-4000-8000-000000000102"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000101"
+type = "ActorTagForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000100"
+tag = "Faction.VillageGuard"
+
+# His post: the guard package anchored at the square marker, day and night.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000102"
+type = "ScheduleForm"
+new = true
+[records.fields]
+editorId = "GuardDay"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000103"
+type = "ScheduleEntryForm"
+new = true
+[records.fields]
+editorId = "GuardWatch"
+parent = "4d7a9b30-0000-4000-8000-000000000102"
+startHour = 0.0
+endHour = 24.0
+package = "4d7a9b30-0000-4000-8000-000000000088"
+location = "4d7a9b30-0000-4000-8000-000000000081"
+
+# The guard's conversation: pay the fine (40 gold) while Wanted.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000104"
+type = "DialogueForm"
+new = true
+[records.fields]
+editorId = "GuardChat"
+displayName = "Garde"
+rootNode = "4d7a9b30-0000-4000-8000-000000000105"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000105"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+speaker = "Garde"
+text = "Circulez, citoyen. Le village est sous ma garde."
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000106"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000105"
+speaker = "Player"
+text = "Je souhaite payer mon amende. (40 pieces d'or)"
+event = "OnPayFine"
+order = 1
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000107"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000106"
+kind = "HasTag"
+tag = "Crime.Wanted"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000108"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000106"
+kind = "HasItem"
+item = "5e8bac40-0000-4000-8000-000000000010"
+value = 40.0
+
+# Placed on the village square, near his post.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000010a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000100"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [46.0, 0.0, 368.0]

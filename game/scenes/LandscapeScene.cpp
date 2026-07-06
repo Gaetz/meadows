@@ -306,6 +306,26 @@ void LandscapeScene::onEnter() {
                        [this](const gameplay::Event& event) {
                            handleQuestEvent(event);
                        });
+    // Chantier 6 D2: paying the fine clears the bounty. The option is
+    // gated by HasTag Crime.Wanted + HasItem gold ≥ 40 in data, so the
+    // removeItem below can only fail if a mod broke the gate — then it
+    // simply does nothing.
+    eventBus.subscribe(
+        gameplay::eventKind("OnPayFine"), [this](const gameplay::Event&) {
+            if (!playerEntity.is_alive() || !goldForm) {
+                return;
+            }
+            auto& bag = playerEntity.get_mut<gameplay::Inventory>();
+            if (!gameplay::removeItem(bag, goldForm->id, 40)) {
+                return;
+            }
+            if (playerEntity.has<gameplay::Bounty>()) {
+                playerEntity.get_mut<gameplay::Bounty>().bounty = 0.0f;
+            }
+            syncWantedTag();
+            talkLine = "Amende payee. Restez dans le droit chemin.";
+            talkTimer = 4.0f;
+        });
     // Chantier 6 A4: a loaded save rebuilds the quest log (the tags
     // mirror re-syncs after the player spawns, below).
     if (loadedFromSave) {
@@ -435,6 +455,7 @@ void LandscapeScene::onEnter() {
                 playerWeapon->id;
         }
         syncQuestTags(); // A4: re-mirror a loaded quest log onto the player
+        syncWantedTag(); // D2: re-mirror a loaded bounty (tag not persisted)
     } else {
         LOG_WARN("B5.5: no Player actor spawned — controller falls back to "
                  "fixed speeds");
@@ -2278,6 +2299,14 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
     if (!entity.has<gameplay::Equipment>()) {
         entity.set<gameplay::Equipment>({});
     }
+    // D1/D2: present on every actor BEFORE the saved-state apply, so the
+    // name-matched SavedStatsForm fields (bounty, lastRestockHours) land.
+    if (!entity.has<gameplay::Bounty>()) {
+        entity.set<gameplay::Bounty>({});
+    }
+    if (!entity.has<gameplay::VendorState>()) {
+        entity.set<gameplay::VendorState>({});
+    }
     core::Guid refGuid;
     if (entity.has<world::RefId>()) {
         refGuid = entity.get<world::RefId>().referenceId;
@@ -2369,18 +2398,19 @@ void LandscapeScene::openBarterScreen(ecs::Entity vendor) {
     constexpr f64 kRestockHours = 24.0;
     const f64 nowHours = gameClock.gameHours();
     if (!containerEntity.has<gameplay::VendorState>()) {
+        containerEntity.set<gameplay::VendorState>({});
+    }
+    auto& vendorState = containerEntity.get_mut<gameplay::VendorState>();
+    if (vendorState.lastRestockHours <= 0.0f) {
         // First open: stamp the clock, the spawn loadout IS the stock.
-        containerEntity.set<gameplay::VendorState>(
-            { static_cast<f32>(nowHours) });
-    } else if (vendorFormId.isValid()) {
-        auto& vendorState = containerEntity.get_mut<gameplay::VendorState>();
-        if (nowHours - vendorState.lastRestockHours > kRestockHours) {
-            auto& stock = containerEntity.get_mut<gameplay::Inventory>();
-            stock.items.clear();
-            gameplay::applyLoadout(forms, vendorFormId, stock, lootRng);
-            vendorState.lastRestockHours = static_cast<f32>(nowHours);
-            LOG_INFO("Vendor restocked ({}h game time)", nowHours);
-        }
+        vendorState.lastRestockHours = static_cast<f32>(nowHours);
+    } else if (vendorFormId.isValid() &&
+               nowHours - vendorState.lastRestockHours > kRestockHours) {
+        auto& stock = containerEntity.get_mut<gameplay::Inventory>();
+        stock.items.clear();
+        gameplay::applyLoadout(forms, vendorFormId, stock, lootRng);
+        vendorState.lastRestockHours = static_cast<f32>(nowHours);
+        LOG_INFO("Vendor restocked ({}h game time)", nowHours);
     }
     pushItemModels();
     screenStack.show("barter");
@@ -3241,8 +3271,64 @@ void LandscapeScene::tryPlayerAttack() {
              gameplay::currentValueOf(
                  best->entity.get<gameplay::AbilitySystem>(),
                  gameplay::attr("health")));
-    // Aggro: a peaceful NPC defends itself... by fleeing (the villager
-    // has no weapon) — combat AI beyond bandits is the next slice.
+
+    // D2 — crime v1: assaulting a peaceful NPC in front of a witness.
+    // Witnesses = the victim (if still alive) or any living NPC within
+    // earshot with a clear line to the player (the B5 raycast idiom).
+    if (!best->hostile) {
+        constexpr f32 kBountyAssault = 40.0f;
+        constexpr f32 kWitnessRange = 20.0f;
+        bool witnessed = !best->dead && best->entity.is_alive();
+        for (const auto& witnessPtr : npcs) {
+            if (witnessed) {
+                break;
+            }
+            const Npc& witness = *witnessPtr;
+            if (&witness == best || witness.dead ||
+                !witness.entity.is_alive()) {
+                continue;
+            }
+            const Vec3 witnessEye =
+                witness.entity.get<world::Transform>().position +
+                Vec3 { 0.0f, 1.5f, 0.0f };
+            const Vec3 toPlayer = eye - witnessEye;
+            const f32 sight = glm::length(toPlayer);
+            if (sight > kWitnessRange || sight < 1e-3f) {
+                continue;
+            }
+            const phys::RayHit hit =
+                physics->rayCast(witnessEye, toPlayer / sight, sight);
+            witnessed = !(hit.hit && hit.distance < sight - 0.6f);
+        }
+        if (witnessed && playerEntity.is_alive()) {
+            auto& bounty = playerEntity.get_mut<gameplay::Bounty>();
+            bounty.bounty += kBountyAssault;
+            syncWantedTag();
+            talkLine = "Crime observe ! Prime : " +
+                       std::to_string(static_cast<i32>(bounty.bounty)) +
+                       " pieces d'or.";
+            talkTimer = 4.0f;
+            LOG_INFO("Crime witnessed — bounty {:.0f}", bounty.bounty);
+        }
+    }
+}
+
+void LandscapeScene::syncWantedTag() {
+    if (!playerEntity.is_alive()) {
+        return;
+    }
+    const auto tag = gameTags.find("Crime.Wanted");
+    if (!tag) {
+        return;
+    }
+    const bool wanted = playerEntity.has<gameplay::Bounty>() &&
+                        playerEntity.get<gameplay::Bounty>().bounty > 0.0f;
+    auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
+    if (wanted) {
+        system.tags.add(*tag, gameTags);
+    } else {
+        system.tags.remove(*tag, gameTags);
+    }
 }
 
 void LandscapeScene::updatePlayer(f32 dt) {
@@ -3623,6 +3709,9 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
                     if (tagForm.tag == "Faction.Bandits") {
                         npc->hostile = true;
                     }
+                    if (tagForm.tag == "Faction.VillageGuard") {
+                        npc->guard = true; // D2: aggro only while Wanted
+                    }
                 });
             npc->anim->setTagCheck(
                 [raw = npc.get()](std::string_view tag) {
@@ -3860,9 +3949,18 @@ void LandscapeScene::updateNpcs(f32 dt) {
         }
 
         // B5: hostile actors hunt the player on sight (distance + a clear
-        // line — the perception cone can refine later).
+        // line — the perception cone can refine later). D2: a guard turns
+        // hostile while the player carries a bounty (tag-based — the
+        // relations table stays a later pass).
+        bool wanted = false;
+        if (npc.guard && playerEntity.is_alive()) {
+            if (const auto tag = gameTags.find("Crime.Wanted")) {
+                wanted = playerEntity.get<gameplay::AbilitySystem>()
+                             .tags.has(*tag);
+            }
+        }
         bool inCombat = false;
-        if (npc.hostile && playMode && player) {
+        if ((npc.hostile || wanted) && playMode && player) {
             const Vec3 playerPos = player->position();
             Vec3 to = playerPos - transform.position;
             to.y = 0.0f;

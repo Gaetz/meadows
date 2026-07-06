@@ -305,6 +305,11 @@ private:
     void handleQuestEvent(const gameplay::Event& event);
     void pushJournalModel(); // A3: quest rows for journal.rml
 
+    // Chantier 6 D2 — crime v1: assault on a peaceful NPC in front of a
+    // witness (LOS) = bounty on the reflected Bounty component, mirrored
+    // into the Crime.Wanted tag (conditions can't see components).
+    void syncWantedTag();
+
     // Chantier 4 B4: dialogue — the Phase-4 tree + condition evaluator,
     // surfaced by the RmlUi screen.
     gameplay::EventBus eventBus;
@@ -454,6 +459,7 @@ private:
 
         // Chantier 3 B5/B6: combat.
         bool hostile { false }; // ActorTagForm child "Faction.Bandits"
+        bool guard { false };   // D2: "Faction.VillageGuard" — hostile while Wanted
         bool dead { false };    // mirrors the GAS State.Dead tag
         f32 attackCooldown { 0.0f };
         // Chantier 6 A1: the first Faction.* tag — what the OnDeath
