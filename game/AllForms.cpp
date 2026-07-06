@@ -12,6 +12,7 @@
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/faction/Factions.hpp"
 #include "gameplay/interaction/FurnitureForms.hpp"
+#include "gameplay/save/SaveForms.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
@@ -34,6 +35,7 @@ void registerAllFormTypes(data::FormTypeRegistry& types) {
     gameplay::registerCharacterFormTypes(types);
     gameplay::registerAiFormTypes(types);
     gameplay::registerFurnitureFormTypes(types);
+    gameplay::registerSaveFormTypes(types); // chantier 5: save records
     quest::registerQuestFormTypes(types);
     quest::registerDialogueFormTypes(types);
 }

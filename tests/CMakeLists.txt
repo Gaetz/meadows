@@ -51,6 +51,7 @@ add_executable(meadows-tests
     ResonanceTest.cpp
     RestTest.cpp
     RngTest.cpp
+    SaveFormsTest.cpp
     SceneStackTest.cpp
     SceneSubmitTest.cpp
     ScreenStackTest.cpp

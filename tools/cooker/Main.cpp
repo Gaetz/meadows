@@ -30,6 +30,7 @@
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/faction/Factions.hpp"
 #include "gameplay/interaction/FurnitureForms.hpp"
+#include "gameplay/save/SaveForms.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
@@ -199,6 +200,7 @@ int main(int argc, char** argv) {
     gameplay::registerCharacterFormTypes(types);
     gameplay::registerAiFormTypes(types);
     gameplay::registerFurnitureFormTypes(types);
+    gameplay::registerSaveFormTypes(types); // chantier 5: cookable saves
     quest::registerQuestFormTypes(types);
     quest::registerDialogueFormTypes(types);
 

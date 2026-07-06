@@ -32,6 +32,8 @@ add_library(meadows-gameplay STATIC
     faction/Factions.cpp
     event/EventBus.cpp
     condition/Condition.cpp
+    save/SaveForms.cpp
+    save/SaveState.cpp
 )
 
 target_link_libraries(meadows-gameplay PUBLIC meadows-data meadows-ecs)

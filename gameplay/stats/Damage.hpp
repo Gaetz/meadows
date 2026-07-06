@@ -42,16 +42,24 @@ struct DamageResult {
     bool staggered { false };   // posture hit 0 this hit
 };
 
-// Combat resource state (runtime, not reflected; like AbilitySystem). `posture`
-// is the poise resource (seeded to maxPosture); `staggerSeconds` counts down a
-// stagger; `restSeconds` is the in-game time since the last hit ("Rest", §5 — the
-// precondition for injury/resonance recovery; a hit resets it). Critical-weakness
-// / shaken live here too in Phase 7.
+// Combat resource state. `posture` is the poise resource (seeded to
+// maxPosture); `staggerSeconds` counts down a stagger; `restSeconds` is the
+// in-game time since the last hit ("Rest", §5 — the precondition for
+// injury/resonance recovery; a hit resets it). Critical-weakness / shaken
+// live here too in Phase 7. Reflected since chantier 5: the save layer
+// captures it by field name like the other stat components.
 struct CombatState {
     f32 posture { 0.0f };
     f32 staggerSeconds { 0.0f };   // posture break: opens criticals
     f32 paralysisSeconds { 0.0f }; // glaciation: frozen in place (distinct from stagger)
     f32 restSeconds { 0.0f };
+
+    REFLECT_BEGIN(CombatState, void)
+        REFLECT_FIELD(posture)
+        REFLECT_FIELD(staggerSeconds)
+        REFLECT_FIELD(paralysisSeconds)
+        REFLECT_FIELD(restSeconds)
+    REFLECT_END()
 };
 
 // The bundle of stat components an actor carries — passed to the execution
