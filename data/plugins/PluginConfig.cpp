@@ -98,6 +98,13 @@ PluginStack loadPluginStack(const std::filesystem::path& directory,
         if (!entry.enabled) {
             continue;
         }
+        // An absent file is not an error: optional layers (editor exports,
+        // not-yet-installed mods) list themselves before they exist.
+        if (!std::filesystem::exists(directory / entry.file)) {
+            LOG_INFO("plugin '{}' not present — skipped", entry.file);
+            stack.skipped.push_back(entry.file);
+            continue;
+        }
         auto plugin = loadPluginFile(directory / entry.file, types);
         if (!plugin) {
             stack.errors.push_back("failed to load " + entry.file);

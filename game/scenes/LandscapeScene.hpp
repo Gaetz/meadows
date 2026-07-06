@@ -2,6 +2,7 @@
 
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormTypeRegistry.hpp"
+#include "data/plugins/PluginConfig.hpp"
 #include "engine/anim/Anim.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/assets/GltfMesh.hpp"
@@ -167,6 +168,7 @@ private:
     // GPU resources (placeholders while pending — never block, §7).
     data::FormDatabase forms;      // resolved plugin stack (member: material
                                    //   lookups happen at draw time)
+    data::PluginStack pluginStack; // owns the plugins behind `forms`
     assets::AssetDatabase assetDb; // guid -> file, layered per plugin order
     ecs::World world;
 

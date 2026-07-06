@@ -56,7 +56,16 @@ bool Engine::init(const EngineConfig& engineConfig) {
         return false;
     }
     imgui = ui::ImGuiLayer::create(*window);
-    return imgui != nullptr;
+    if (!imgui) {
+        return false;
+    }
+    // One event hook, fanned out: ImGui (dev UI) first, then the event-fed
+    // Input channel (text/wheel/key events for the game UI, chantier 4).
+    window->setEventHook([this](const void* nativeEvent) {
+        ui::ImGuiLayer::processEvent(nativeEvent);
+        input.handleEvent(nativeEvent);
+    });
+    return true;
 }
 
 void Engine::loop(Game& game) {

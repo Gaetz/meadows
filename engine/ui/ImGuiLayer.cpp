@@ -34,11 +34,12 @@ uptr<ImGuiLayer> ImGuiLayer::create(platform::Window& window) {
         return nullptr;
     }
 
-    window.setEventHook([](const void* nativeEvent) {
-        ImGui_ImplSDL3_ProcessEvent(static_cast<const SDL_Event*>(nativeEvent));
-    });
-
+    // The Engine installs the window event hook (fan-out to ImGui + Input).
     return uptr<ImGuiLayer> { new ImGuiLayer(window) };
+}
+
+void ImGuiLayer::processEvent(const void* nativeEvent) {
+    ImGui_ImplSDL3_ProcessEvent(static_cast<const SDL_Event*>(nativeEvent));
 }
 
 void ImGuiLayer::beginFrame() {

@@ -1,8 +1,10 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 
 #include "engine/core/Defines.hpp"
+#include "engine/platform/Input.hpp"
 #include "engine/rhi/Rhi.hpp"
 
 namespace rhi {
@@ -14,6 +16,34 @@ class ShaderLibrary;
 }
 
 namespace ui {
+
+// One row of a data-model table (inventory, barter, dialogue choices...).
+// Fixed named cells keep the Rml binding flat and the .rml free to lay out
+// whichever columns it wants ({{ row.c0 }} ... {{ row.c4 }}). `id` comes
+// back in row events; `tag` is a freeform CSS hook ("equipped", "hostile").
+struct UiRow {
+    str id;
+    str c0, c1, c2, c3, c4;
+    bool selected { false };
+    str tag;
+};
+
+// Declares a data model and its slots up front — RmlUi freezes a model's
+// bindings at creation, so every name a document references must be listed
+// here, BEFORE that document loads.
+struct UiModelDesc {
+    str name;
+    vector<str> numbers; // bound as f64
+    vector<str> strings;
+    vector<str> bools;
+    bool rows { false };          // binds a "rows" array of UiRow
+    vector<str> events;           // data-event callbacks by name
+};
+
+// Callback for data-event bindings: model name, event name, stringified
+// arguments (e.g. <div data-event-click="pick(row.id)">).
+using UiModelEventHandler = std::function<void(
+    const str& model, const str& event, const vector<str>& args)>;
 
 // The game-UI seam (horizontal pass H4): RmlUi behind a narrow facade —
 // no Rml type crosses this header. Documents (.rml/.rcss) resolve through
@@ -49,8 +79,12 @@ public:
     // Fonts must load before the first document (RmlUi requirement).
     bool loadFont(const std::filesystem::path& path);
 
-    // Loads + shows a document by root-relative path ("hello.rml").
+    // Loads + shows a document by root-relative path ("hud.rml"). Loaded
+    // documents are kept by path: showing an already-loaded document just
+    // makes it visible again (screen stack friendly).
     bool showDocument(const str& path);
+    // Hides + unloads one document by the path it was shown with.
+    void closeDocument(const str& path);
     void closeDocuments();
 
     void resize(u32 width, u32 height);
@@ -62,6 +96,23 @@ public:
     void processMouseMove(i32 x, i32 y);
     void processMouseButton(i32 button, bool down);
     void processMouseWheel(f32 delta);
+    // Key events (edges + OS repeat) and UTF-8 text — feed from
+    // platform::Input::keyEvents()/textInput() while a screen is open.
+    void processKey(platform::Key key, bool down);
+    void processTextInput(const str& utf8);
+    // True while an Rml text field has the focus (route text there, and
+    // enable Window::setTextInput while it holds).
+    bool textFieldFocused() const;
+
+    // --- Data models (B2) ---------------------------------------------------
+    // Create before the documents that reference them load; set* pushes a
+    // value and dirties the binding. All Rml types stay in the .cpp.
+    bool createModel(const UiModelDesc& desc);
+    void setModelEventHandler(UiModelEventHandler handler);
+    void setNumber(const str& model, const str& slot, f64 value);
+    void setString(const str& model, const str& slot, const str& value);
+    void setBool(const str& model, const str& slot, bool value);
+    void setRows(const str& model, vector<UiRow> rows);
 
     bool ready() const { return created; }
 

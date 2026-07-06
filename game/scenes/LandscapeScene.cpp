@@ -10,8 +10,10 @@
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"
 #include "data/forms/VisualForms.hpp"
+#include "data/plugins/PluginConfig.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
+#include "game/AllForms.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/assets/Image.hpp"
 #include "engine/render/MeshBuilder.hpp"
@@ -78,63 +80,37 @@ Mat4 obliqueProjection(Mat4 proj, const Vec4& clipPlaneView) {
 void LandscapeScene::onEnter() {
     rhi::Device& device = engine->getDevice();
 
-    // Load the moddable data (§5): the landscape tuning plugin, then the
-    // adventure plugin (props/NPCs of the 3D gameplay socle) on top.
-    registerLandscapeFormTypes(formTypes);
-    data::registerCoreFormTypes(formTypes);       // ActorForm (the player)
-    data::registerVisualFormTypes(formTypes);     // MaterialForm, StaticForm
-    data::registerAnimFormTypes(formTypes);       // clips + locomotion graph
-    world::registerWorldFormTypes(formTypes);     // ReferenceForm, markers...
-    gameplay::registerGameplayFormTypes(formTypes); // EffectForm (sprint...)
-    gameplay::registerStatsFormTypes(formTypes);    // StatsTuningForm (mods)
-    gameplay::registerCharacterFormTypes(formTypes); // AppearanceForm (NPC)
-    gameplay::registerAiFormTypes(formTypes);        // schedules/packages
-    gameplay::registerFurnitureFormTypes(formTypes); // seats/beds
-    const auto landscapePlugin = data::loadPluginFile(
-        platform::executableDir() / "data" / "base" / "landscape.toml",
-        formTypes);
-    const auto adventurePlugin = data::loadPluginFile(
-        platform::executableDir() / "data" / "base" / "adventure.toml",
-        formTypes);
-    const auto villagePlugin = data::loadPluginFile(
-        platform::executableDir() / "data" / "base" / "village.toml",
-        formTypes);
-    // Level-editor output (B4): an ordinary mod layered on top. Absent on
-    // a fresh install — that's fine.
-    std::optional<data::Plugin> editsPlugin;
-    const auto editsPath =
-        platform::executableDir() / "data" / "mods" / "level-edits.toml";
-    if (std::filesystem::exists(editsPath)) {
-        editsPlugin = data::loadPluginFile(editsPath, formTypes);
+    // Load the moddable data (§5) through the plugin stack (chantier 4 B1):
+    // data/plugins.toml declares the load order, the resolver layers every
+    // plugin's fields last-writer-wins. One registration site for all
+    // families (AllForms) — UI/quest/dialogue records now resolve here too.
+    game::registerAllFormTypes(formTypes);
+    const auto dataDir = platform::executableDir() / "data";
+    data::PluginConfig pluginConfig;
+    if (const auto loaded =
+            data::loadPluginConfigFile(dataDir / "plugins.toml")) {
+        pluginConfig = *loaded;
+    } else {
+        LOG_WARN("data/plugins.toml missing — defaulting to data/base/*.toml");
+        pluginConfig = data::defaultConfigFromDirectory(dataDir / "base");
+        for (auto& entry : pluginConfig.entries) {
+            entry.file = "base/" + entry.file;
+        }
+    }
+    pluginStack = data::loadPluginStack(dataDir, pluginConfig, formTypes);
+    for (const str& error : pluginStack.errors) {
+        LOG_WARN("plugin stack: {}", error);
     }
     forms = data::FormDatabase {};   // fresh on re-enter
     assetDb = assets::AssetDatabase {};
-    vector<const data::Plugin*> loadOrder;
-    if (landscapePlugin) {
-        loadOrder.push_back(&*landscapePlugin);
-    } else {
-        LOG_WARN("landscape.toml failed to load — using built-in defaults");
-    }
-    if (adventurePlugin) {
-        loadOrder.push_back(&*adventurePlugin);
-    } else {
-        LOG_WARN("adventure.toml failed to load — no props/NPCs");
-    }
-    if (villagePlugin) {
-        loadOrder.push_back(&*villagePlugin);
-    } else {
-        LOG_WARN("village.toml failed to load — no village/interior");
-    }
-    if (editsPlugin) {
-        loadOrder.push_back(&*editsPlugin);
-        LOG_INFO("Level edits mod loaded (data/mods/level-edits.toml)");
-    }
-    data::resolve(loadOrder, formTypes, forms);
-    for (const data::Plugin* plugin : loadOrder) {
-        for (const data::AssetEntry& entry : plugin->assets) {
-            assetDb.add(entry.id, plugin->baseDir, entry.path);
+    data::resolve(data::pointersOf(pluginStack), formTypes, forms);
+    for (const data::Plugin& plugin : pluginStack.plugins) {
+        for (const data::AssetEntry& entry : plugin.assets) {
+            assetDb.add(entry.id, plugin.baseDir, entry.path);
         }
     }
+    LOG_INFO("Plugin stack: {} plugins, {} forms",
+             pluginStack.plugins.size(), forms.count());
     tuning = resolveLandscapeTuning(forms);
     weathers = resolveWeatherForms(forms);
     LOG_INFO("Landscape tuning: seed={} seaLevel={} fogDensity={} "

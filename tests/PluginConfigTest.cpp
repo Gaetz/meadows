@@ -118,12 +118,14 @@ TEST_CASE("plugin stack: load order applies, disabled entries skip") {
               doctest::Approx(10.0f));
     }
 
-    // Missing file: reported, not fatal.
+    // Missing file: reported as skipped (an optional layer may list itself
+    // before it exists — chantier 4), never fatal.
     {
         data::PluginConfig config = defaults;
         config.entries.push_back({ "missing.toml", true });
         const auto stack = data::loadPluginStack(tmp.dir, config, types);
-        CHECK(stack.errors.size() == 1);
+        CHECK(stack.errors.empty());
+        CHECK(stack.skipped.size() == 1);
         CHECK(stack.plugins.size() == 2);
     }
 }

@@ -39,6 +39,10 @@ public:
     // deltas (Input::mouseDelta) — mouselook for the 3D fly camera.
     void setRelativeMouseMode(bool enabled);
 
+    // OS text input (IME/UTF-8 typing events for Input::textInput). Enable
+    // while a UI text field has focus, disable for gameplay.
+    void setTextInput(bool enabled);
+
     // Opaque native window for platform-internal consumers (GlContext, later
     // a Vulkan surface). Outside platform/, treat it as a token — never cast.
     void* nativeHandle() const;

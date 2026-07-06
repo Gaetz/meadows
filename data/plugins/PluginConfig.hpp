@@ -44,12 +44,15 @@ str writePluginConfigToml(const PluginConfig& config);
 PluginConfig defaultConfigFromDirectory(
     const std::filesystem::path& directory);
 
-// Loads every enabled entry (skipping failures with a logged error kept in
-// `errors`). The returned plugins are self-owning; feed pointersOf() to
+// Loads every enabled entry. Files that exist but fail to load land in
+// `errors`; listed-but-absent files land in `skipped` (optional layers —
+// editor exports, not-yet-installed mods — may list themselves before they
+// exist). The returned plugins are self-owning; feed pointersOf() to
 // data::resolve().
 struct PluginStack {
     vector<Plugin> plugins;
     vector<str> errors;
+    vector<str> skipped;
 };
 PluginStack loadPluginStack(const std::filesystem::path& directory,
                             const PluginConfig& config,

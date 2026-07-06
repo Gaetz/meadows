@@ -1,0 +1,25 @@
+# Plugin load order for the game AND the editor (chantier 4 B1: everything
+# goes through data::loadPluginStack — écart n°1 of HORIZONTAL-PASS closed).
+# Later plugins override earlier ones per FIELD (last writer wins, §5).
+# Paths are relative to this data/ directory. Managed by the in-game plugin
+# manager; hand-editing is fine too.
+
+[[plugins]]
+file = "base/landscape.toml"
+
+[[plugins]]
+file = "base/adventure.toml"
+
+[[plugins]]
+file = "base/village.toml"
+
+# 2D test-scene data (WorldDemoScene / CombatArena load it directly);
+# disabled in the 3D game stack — enable to inspect it in the Game DB.
+[[plugins]]
+file = "base/base.toml"
+enabled = false
+
+# Level-editor output: an ordinary mod layered on top. Absent on a fresh
+# install — silently skipped until the first editor export.
+[[plugins]]
+file = "mods/level-edits.toml"

@@ -5,59 +5,34 @@
 
 #include <imgui.h>
 
-#include "data/forms/AnimForms.hpp"
-#include "data/forms/AudioForms.hpp"
-#include "data/forms/CoreForms.hpp"
-#include "data/forms/LocForms.hpp"
-#include "data/forms/UiForms.hpp"
-#include "data/forms/VisualForms.hpp"
+#include "data/forms/FormQuery.hpp"
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/platform/Paths.hpp"
+#include "game/AllForms.hpp"
 #include "game/ui/PropertyGrid.hpp"
-#include "gameplay/ability/GameplayAbility.hpp"
-#include "gameplay/actors/CharacterForms.hpp"
-#include "data/forms/FormQuery.hpp"
-#include "gameplay/ai/AiForms.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
-#include "gameplay/faction/Factions.hpp"
-#include "gameplay/interaction/FurnitureForms.hpp"
-#include "gameplay/stats/StatsTuning.hpp"
-#include "game/scenes/LandscapeTuning.hpp"
-#include "quest/Dialogue.hpp"
-#include "quest/Quest.hpp"
-#include "world/worldspace/WorldForms.hpp"
 
 namespace game {
 
 void EditorScene::onEnter() {
-    // The WHOLE game database: every form family registers here.
-    data::registerCoreFormTypes(types);
-    data::registerVisualFormTypes(types);
-    data::registerAnimFormTypes(types);
-    data::registerAudioFormTypes(types);
-    data::registerUiFormTypes(types);
-    data::registerLocFormTypes(types);
-    world::registerWorldFormTypes(types);
-    gameplay::registerGameplayFormTypes(types);
-    gameplay::registerStatsFormTypes(types);
-    gameplay::registerFactionFormTypes(types);
-    gameplay::registerCharacterFormTypes(types);
-    gameplay::registerAiFormTypes(types);
-    gameplay::registerFurnitureFormTypes(types);
-    quest::registerQuestFormTypes(types);
-    quest::registerDialogueFormTypes(types);
-    registerLandscapeFormTypes(types);
+    // The WHOLE game database: the shared registration site (chantier 4 B1).
+    game::registerAllFormTypes(types);
 
     types.forEachType(
         [&](const reflect::TypeInfo& type) { typeNames.push_back(type.name); });
     std::sort(typeNames.begin(), typeNames.end());
 
-    pluginDir = platform::executableDir() / "data" / "base";
+    // Same stack as the game: data/plugins.toml over the data/ root
+    // (chantier 4 B1 — the editor edits exactly what the game runs).
+    pluginDir = platform::executableDir() / "data";
     if (const auto loaded =
             data::loadPluginConfigFile(pluginDir / "plugins.toml")) {
         config = *loaded;
     } else {
-        config = data::defaultConfigFromDirectory(pluginDir);
+        config = data::defaultConfigFromDirectory(pluginDir / "base");
+        for (auto& entry : config.entries) {
+            entry.file = "base/" + entry.file;
+        }
     }
     vm = std::make_unique<script::Vm>();
     reload();

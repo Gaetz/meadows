@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <map>
 #include <unordered_map>
 
 #include <glm/glm.hpp>
@@ -316,11 +317,78 @@ public:
 
 // --- UiSystem -------------------------------------------------------------------
 
+namespace {
+
+Rml::Input::KeyIdentifier rmlKeyFor(platform::Key key) {
+    using platform::Key;
+    using namespace Rml::Input;
+    switch (key) {
+    case Key::W: return KI_W;
+    case Key::A: return KI_A;
+    case Key::S: return KI_S;
+    case Key::D: return KI_D;
+    case Key::E: return KI_E;
+    case Key::F: return KI_F;
+    case Key::Q: return KI_Q;
+    case Key::I: return KI_I;
+    case Key::T: return KI_T;
+    case Key::Up: return KI_UP;
+    case Key::Down: return KI_DOWN;
+    case Key::Left: return KI_LEFT;
+    case Key::Right: return KI_RIGHT;
+    case Key::Space: return KI_SPACE;
+    case Key::Enter: return KI_RETURN;
+    case Key::Escape: return KI_ESCAPE;
+    case Key::Tab: return KI_TAB;
+    case Key::Backspace: return KI_BACK;
+    case Key::Delete: return KI_DELETE;
+    case Key::Home: return KI_HOME;
+    case Key::End: return KI_END;
+    case Key::PageUp: return KI_PRIOR;
+    case Key::PageDown: return KI_NEXT;
+    case Key::Shift: return KI_LSHIFT;
+    case Key::Ctrl: return KI_LCONTROL;
+    case Key::Num1: return KI_1;
+    case Key::Num2: return KI_2;
+    case Key::Num3: return KI_3;
+    case Key::Num4: return KI_4;
+    case Key::Num5: return KI_5;
+    case Key::Count: break;
+    }
+    return KI_UNKNOWN;
+}
+
+} // namespace
+
 struct UiSystem::Impl {
     RhiRenderInterface renderInterface;
     RhiSystemInterface systemInterface;
     RootsFileInterface fileInterface;
     Rml::Context* context { nullptr };
+
+    // Documents kept by the path they were shown with (screen stack).
+    std::unordered_map<str, Rml::ElementDocument*> documents;
+
+    // Data models: map nodes give the bound values stable addresses.
+    struct ModelStore {
+        std::map<str, double> numbers;
+        std::map<str, Rml::String> strings;
+        std::map<str, bool> bools;
+        vector<UiRow> rows;
+        Rml::DataModelHandle handle;
+    };
+    std::unordered_map<str, uptr<ModelStore>> models;
+    UiModelEventHandler eventHandler;
+    bool rowTypeRegistered { false };
+
+    // Modifier state for Rml key events (tracked from processKey).
+    bool shiftDown { false };
+    bool ctrlDown { false };
+
+    int rmlModifiers() const {
+        return (shiftDown ? Rml::Input::KM_SHIFT : 0) |
+               (ctrlDown ? Rml::Input::KM_CTRL : 0);
+    }
 };
 
 UiSystem::UiSystem() = default;
@@ -396,17 +464,36 @@ bool UiSystem::showDocument(const str& path) {
     if (!pimpl || !pimpl->context) {
         return false;
     }
+    if (const auto it = pimpl->documents.find(path);
+        it != pimpl->documents.end()) {
+        it->second->Show();
+        return true;
+    }
     Rml::ElementDocument* document = pimpl->context->LoadDocument(path);
     if (!document) {
         return false;
     }
     document->Show();
+    pimpl->documents.emplace(path, document);
     return true;
+}
+
+void UiSystem::closeDocument(const str& path) {
+    if (!pimpl || !pimpl->context) {
+        return;
+    }
+    const auto it = pimpl->documents.find(path);
+    if (it == pimpl->documents.end()) {
+        return;
+    }
+    pimpl->context->UnloadDocument(it->second);
+    pimpl->documents.erase(it);
 }
 
 void UiSystem::closeDocuments() {
     if (pimpl && pimpl->context) {
         pimpl->context->UnloadAllDocuments();
+        pimpl->documents.clear();
     }
 }
 
@@ -463,6 +550,178 @@ void UiSystem::processMouseWheel(f32 delta) {
     if (pimpl && pimpl->context) {
         pimpl->context->ProcessMouseWheel(-delta, 0);
     }
+}
+
+void UiSystem::processKey(platform::Key key, bool down) {
+    if (!pimpl || !pimpl->context) {
+        return;
+    }
+    if (key == platform::Key::Shift) {
+        pimpl->shiftDown = down;
+    } else if (key == platform::Key::Ctrl) {
+        pimpl->ctrlDown = down;
+    }
+    const Rml::Input::KeyIdentifier rmlKey = rmlKeyFor(key);
+    if (rmlKey == Rml::Input::KI_UNKNOWN) {
+        return;
+    }
+    if (down) {
+        pimpl->context->ProcessKeyDown(rmlKey, pimpl->rmlModifiers());
+    } else {
+        pimpl->context->ProcessKeyUp(rmlKey, pimpl->rmlModifiers());
+    }
+}
+
+void UiSystem::processTextInput(const str& utf8) {
+    if (pimpl && pimpl->context && !utf8.empty()) {
+        pimpl->context->ProcessTextInput(Rml::String { utf8 });
+    }
+}
+
+bool UiSystem::textFieldFocused() const {
+    if (!pimpl || !pimpl->context) {
+        return false;
+    }
+    const Rml::Element* focus = pimpl->context->GetFocusElement();
+    if (!focus) {
+        return false;
+    }
+    const Rml::String& tag = focus->GetTagName();
+    return tag == "input" || tag == "textarea";
+}
+
+// --- Data models ------------------------------------------------------------
+
+bool UiSystem::createModel(const UiModelDesc& desc) {
+    if (!pimpl || !pimpl->context) {
+        return false;
+    }
+    if (pimpl->models.contains(desc.name)) {
+        return true; // idempotent (scene re-enter)
+    }
+    Rml::DataModelConstructor constructor =
+        pimpl->context->CreateDataModel(desc.name);
+    if (!constructor) {
+        LOG_ERROR("RmlUi: data model '{}' creation failed", desc.name);
+        return false;
+    }
+    auto store = std::make_unique<Impl::ModelStore>();
+    for (const str& name : desc.numbers) {
+        constructor.Bind(name, &store->numbers[name]);
+    }
+    for (const str& name : desc.strings) {
+        constructor.Bind(name, &store->strings[name]);
+    }
+    for (const str& name : desc.bools) {
+        constructor.Bind(name, &store->bools[name]);
+    }
+    if (desc.rows) {
+        // The row struct/array types live in the context-wide register:
+        // register them once, the first model that asks.
+        if (!pimpl->rowTypeRegistered) {
+            if (auto rowHandle = constructor.RegisterStruct<UiRow>()) {
+                rowHandle.RegisterMember("id", &UiRow::id);
+                rowHandle.RegisterMember("c0", &UiRow::c0);
+                rowHandle.RegisterMember("c1", &UiRow::c1);
+                rowHandle.RegisterMember("c2", &UiRow::c2);
+                rowHandle.RegisterMember("c3", &UiRow::c3);
+                rowHandle.RegisterMember("c4", &UiRow::c4);
+                rowHandle.RegisterMember("selected", &UiRow::selected);
+                rowHandle.RegisterMember("tag", &UiRow::tag);
+            }
+            constructor.RegisterArray<vector<UiRow>>();
+            pimpl->rowTypeRegistered = true;
+        }
+        constructor.Bind("rows", &store->rows);
+    }
+    for (const str& event : desc.events) {
+        const str modelName = desc.name;
+        Impl* impl = pimpl.get();
+        constructor.BindEventCallback(
+            event,
+            [impl, modelName, event](Rml::DataModelHandle, Rml::Event&,
+                                     const Rml::VariantList& variants) {
+                if (!impl->eventHandler) {
+                    return;
+                }
+                vector<str> args;
+                args.reserve(variants.size());
+                for (const Rml::Variant& variant : variants) {
+                    args.push_back(variant.Get<Rml::String>());
+                }
+                impl->eventHandler(modelName, event, args);
+            });
+    }
+    store->handle = constructor.GetModelHandle();
+    pimpl->models.emplace(desc.name, std::move(store));
+    return true;
+}
+
+void UiSystem::setModelEventHandler(UiModelEventHandler handler) {
+    if (pimpl) {
+        pimpl->eventHandler = std::move(handler);
+    }
+}
+
+void UiSystem::setNumber(const str& model, const str& slot, f64 value) {
+    if (!pimpl) {
+        return;
+    }
+    const auto it = pimpl->models.find(model);
+    if (it == pimpl->models.end()) {
+        return;
+    }
+    const auto slotIt = it->second->numbers.find(slot);
+    if (slotIt == it->second->numbers.end() || slotIt->second == value) {
+        return;
+    }
+    slotIt->second = value;
+    it->second->handle.DirtyVariable(slot);
+}
+
+void UiSystem::setString(const str& model, const str& slot,
+                         const str& value) {
+    if (!pimpl) {
+        return;
+    }
+    const auto it = pimpl->models.find(model);
+    if (it == pimpl->models.end()) {
+        return;
+    }
+    const auto slotIt = it->second->strings.find(slot);
+    if (slotIt == it->second->strings.end() || slotIt->second == value) {
+        return;
+    }
+    slotIt->second = value;
+    it->second->handle.DirtyVariable(slot);
+}
+
+void UiSystem::setBool(const str& model, const str& slot, bool value) {
+    if (!pimpl) {
+        return;
+    }
+    const auto it = pimpl->models.find(model);
+    if (it == pimpl->models.end()) {
+        return;
+    }
+    const auto slotIt = it->second->bools.find(slot);
+    if (slotIt == it->second->bools.end() || slotIt->second == value) {
+        return;
+    }
+    slotIt->second = value;
+    it->second->handle.DirtyVariable(slot);
+}
+
+void UiSystem::setRows(const str& model, vector<UiRow> rows) {
+    if (!pimpl) {
+        return;
+    }
+    const auto it = pimpl->models.find(model);
+    if (it == pimpl->models.end()) {
+        return;
+    }
+    it->second->rows = std::move(rows);
+    it->second->handle.DirtyVariable("rows");
 }
 
 } // namespace ui

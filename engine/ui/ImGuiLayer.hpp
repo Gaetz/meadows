@@ -29,6 +29,11 @@ public:
     // after the scene's render pass.
     void render();
 
+    // Feeds one raw platform event to the ImGui backend. The Engine owns
+    // the window event hook (it fans out to ImGui AND platform::Input) and
+    // calls this from it.
+    static void processEvent(const void* nativeEvent);
+
 private:
     explicit ImGuiLayer(platform::Window& window);
 

@@ -51,6 +51,7 @@ add_executable(meadows-tests
     RngTest.cpp
     SceneStackTest.cpp
     SceneSubmitTest.cpp
+    ScreenStackTest.cpp
     ScriptTest.cpp
     SpawnerTest.cpp
     StatsTuningTest.cpp

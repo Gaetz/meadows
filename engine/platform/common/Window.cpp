@@ -59,12 +59,8 @@ bool Window::pumpEvents() {
         switch (event.type) {
         case SDL_EVENT_QUIT:
             return false;
-        case SDL_EVENT_KEY_DOWN:
-            // Temporary dev shortcut until a real input system exists.
-            if (event.key.key == SDLK_ESCAPE) {
-                return false;
-            }
-            break;
+        // Escape no longer quits (chantier 4): it belongs to the game now
+        // (pause menu / close screen). Quit = window close or in-game menu.
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
             impl->width = event.window.data1;
             impl->height = event.window.data2;
@@ -86,6 +82,14 @@ i32 Window::height() const {
 
 void Window::setRelativeMouseMode(bool enabled) {
     SDL_SetWindowRelativeMouseMode(impl->window, enabled);
+}
+
+void Window::setTextInput(bool enabled) {
+    if (enabled) {
+        SDL_StartTextInput(impl->window);
+    } else {
+        SDL_StopTextInput(impl->window);
+    }
 }
 
 void* Window::nativeHandle() const {

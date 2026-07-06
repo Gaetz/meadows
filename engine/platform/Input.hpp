@@ -16,6 +16,9 @@ enum class Key : u16 {
     Space, Enter, Escape,
     E, F, Q, Shift, Ctrl,
     Num1, Num2, Num3, Num4, Num5,
+    // UI keys (chantier 4): text editing + game-screen hotkeys.
+    Tab, Backspace, Delete, Home, End, PageUp, PageDown,
+    I, T,
     Count
 };
 
@@ -43,6 +46,21 @@ public:
     bool mouseDown(MouseButton button) const;    // held this frame
     bool mousePressed(MouseButton button) const; // edge: down this, up last
 
+    // --- Event-fed channel (chantier 4, game UI) -----------------------------
+    // Engine's event hook feeds raw platform events here during pumpEvents;
+    // update() then publishes what accumulated as this frame's data. Unlike
+    // the polled snapshot above, this preserves ordering and OS key repeat —
+    // what text fields need.
+    void handleEvent(const void* nativeEvent); // opaque SDL_Event (§3.1)
+
+    struct KeyEvent {
+        Key key;
+        bool down;
+    };
+    const vector<KeyEvent>& keyEvents() const;  // this frame, repeats included
+    const str& textInput() const;               // UTF-8 typed this frame
+    f32 wheelDelta() const;                     // vertical scroll this frame
+
 private:
     array<bool, static_cast<size_t>(Key::Count)> current {};
     array<bool, static_cast<size_t>(Key::Count)> previous {};
@@ -50,6 +68,14 @@ private:
     array<bool, static_cast<size_t>(MouseButton::Count)> mousePrevious {};
     Vec2 mousePos {};      // screen pixels
     Vec2 mouseDeltaPx {};  // pixels moved since last update()
+
+    // Accumulated during pumpEvents, published by update().
+    vector<KeyEvent> pendingKeyEvents;
+    str pendingText;
+    f32 pendingWheel { 0.0f };
+    vector<KeyEvent> frameKeyEvents;
+    str frameText;
+    f32 frameWheel { 0.0f };
 };
 
 } // namespace platform

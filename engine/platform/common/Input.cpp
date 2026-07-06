@@ -29,9 +29,28 @@ SDL_Scancode scancodeFor(Key key) {
     case Key::Num3:   return SDL_SCANCODE_3;
     case Key::Num4:   return SDL_SCANCODE_4;
     case Key::Num5:   return SDL_SCANCODE_5;
+    case Key::Tab:       return SDL_SCANCODE_TAB;
+    case Key::Backspace: return SDL_SCANCODE_BACKSPACE;
+    case Key::Delete:    return SDL_SCANCODE_DELETE;
+    case Key::Home:      return SDL_SCANCODE_HOME;
+    case Key::End:       return SDL_SCANCODE_END;
+    case Key::PageUp:    return SDL_SCANCODE_PAGEUP;
+    case Key::PageDown:  return SDL_SCANCODE_PAGEDOWN;
+    case Key::I:         return SDL_SCANCODE_I;
+    case Key::T:         return SDL_SCANCODE_T;
     case Key::Count:  break;
     }
     return SDL_SCANCODE_UNKNOWN;
+}
+
+// Reverse map for the event-fed channel: only the keys the UI cares about.
+Key keyForScancode(SDL_Scancode scancode) {
+    for (u16 i = 0; i < static_cast<u16>(Key::Count); ++i) {
+        if (scancodeFor(static_cast<Key>(i)) == scancode) {
+            return static_cast<Key>(i);
+        }
+    }
+    return Key::Count;
 }
 
 int sdlButtonFor(MouseButton button) {
@@ -46,9 +65,39 @@ int sdlButtonFor(MouseButton button) {
 
 } // namespace
 
+void Input::handleEvent(const void* nativeEvent) {
+    const auto* event = static_cast<const SDL_Event*>(nativeEvent);
+    switch (event->type) {
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_KEY_UP: {
+        const Key key = keyForScancode(event->key.scancode);
+        if (key != Key::Count) {
+            pendingKeyEvents.push_back(
+                { key, event->type == SDL_EVENT_KEY_DOWN });
+        }
+        break;
+    }
+    case SDL_EVENT_TEXT_INPUT:
+        pendingText += event->text.text;
+        break;
+    case SDL_EVENT_MOUSE_WHEEL:
+        pendingWheel += event->wheel.y;
+        break;
+    default:
+        break;
+    }
+}
+
 void Input::update() {
     previous = current;
     mousePrevious = mouseCurrent;
+    // Publish what pumpEvents accumulated since the last frame.
+    frameKeyEvents = std::move(pendingKeyEvents);
+    pendingKeyEvents.clear();
+    frameText = std::move(pendingText);
+    pendingText.clear();
+    frameWheel = pendingWheel;
+    pendingWheel = 0.0f;
     // Valid after SDL_PumpEvents, which the window's event pump runs each frame.
     const bool* state = SDL_GetKeyboardState(nullptr);
     if (state) {
@@ -95,6 +144,18 @@ bool Input::mouseDown(MouseButton button) const {
 bool Input::mousePressed(MouseButton button) const {
     const auto index = static_cast<size_t>(button);
     return mouseCurrent[index] && !mousePrevious[index];
+}
+
+const vector<Input::KeyEvent>& Input::keyEvents() const {
+    return frameKeyEvents;
+}
+
+const str& Input::textInput() const {
+    return frameText;
+}
+
+f32 Input::wheelDelta() const {
+    return frameWheel;
 }
 
 } // namespace platform

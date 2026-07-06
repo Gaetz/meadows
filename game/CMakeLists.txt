@@ -7,6 +7,7 @@ add_library(meadows-runtime STATIC
     MeshCache.cpp
     SceneStack.cpp
     SceneSubmit.cpp
+    ScreenStack.cpp
     TerrainCollision.cpp
     TextureCache.cpp
     WorldEditor.cpp
@@ -17,6 +18,7 @@ meadows_set_warnings(meadows-runtime)
 
 add_executable(true-adventurer
     main.cpp
+    AllForms.cpp
     scenes/WorldDemoScene.cpp
     scenes/DemoScenes.cpp
     scenes/CombatArenaScene.cpp
