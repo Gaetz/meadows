@@ -2999,6 +2999,9 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
 
     const gameplay::CharacterTickContext tickCtx { derivedStats, gameTags,
                                                    statsTuning };
+    // Adding a component inside .each() is a structural change on a LOCKED
+    // table (flecs LOCKED_STORAGE assert) — collect here, apply after.
+    vector<std::pair<ecs::Entity, core::Guid>> pendingLoadouts;
     world.handle()
         .query<world::Transform, const world::RefId>()
         .each([&](flecs::entity e, world::Transform& transform,
@@ -3118,13 +3121,10 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
                 terrain.params, transform.position.x, transform.position.z);
             gameplay::initializeActorStats(entity, tickCtx);
             // Chantier 4 B5: pockets from LoadoutEntryForm children —
-            // vendor stock, bandit loot, all data (§C.1).
+            // vendor stock, bandit loot, all data (§C.1). Deferred below:
+            // set<Inventory> would move the entity's locked table.
             if (!entity.has<gameplay::Inventory>()) {
-                ecs::Entity mutableEntity = entity;
-                mutableEntity.set<gameplay::Inventory>({});
-                gameplay::applyLoadout(
-                    forms, actor.id,
-                    mutableEntity.get_mut<gameplay::Inventory>(), lootRng);
+                pendingLoadouts.emplace_back(entity, actor.id);
             }
 
             if (npcs.empty()) {
@@ -3136,6 +3136,12 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
                          forms.get(ref.base))
                          ->editorId);
         });
+    for (auto& [entity, actorId] : pendingLoadouts) {
+        entity.set<gameplay::Inventory>({});
+        gameplay::applyLoadout(forms, actorId,
+                               entity.get_mut<gameplay::Inventory>(),
+                               lootRng);
+    }
 }
 
 // Chantier 3 B2: the navigator's obstacle set = the static colliders'

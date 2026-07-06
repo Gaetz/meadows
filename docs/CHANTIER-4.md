@@ -217,6 +217,12 @@ voit dans le log immédiatement).
   crash n'avale plus la fin du log).
 - Le zombie `cl.exe` (C1041 vc143.pdb) revient si on lance DEUX builds en
   parallèle (un en arrière-plan oublié) — un seul build à la fois.
+- **flecs LOCKED_STORAGE** (trouvé par le dev au premier run) : AJOUTER un
+  composant (`entity.set<T>` sur un T absent = table move) à l'intérieur
+  d'un `query.each()` asserte — la table est verrouillée pendant
+  l'itération. Collecter les entités pendant la boucle, appliquer après
+  (le pattern de `refreshNpcs` pour les loadouts). Muter un composant
+  EXISTANT via `get_mut` reste sûr (pas de table move).
 - ~~`row.cells[i]`~~ : les lignes de table passent par des champs nommés
   plats (`c0..c4`) — l'indexation de tableaux dans les expressions Rml
   n'est pas fiable ; les cellules nommées se lient trivialement.
