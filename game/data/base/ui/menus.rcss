@@ -3,7 +3,9 @@
 #menu {
 	width: 340dp;
 	margin: auto;
-	margin-top: 18%;
+	/* dp, not %: percentage margins resolve against width (or not at
+	   all) in RmlUi — the menu was gluing itself to the top edge. */
+	margin-top: 170dp;
 	text-align: center;
 }
 

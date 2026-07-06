@@ -162,8 +162,13 @@ public:
     Rml::TextureHandle registerTexture(rhi::TextureHandle texture) {
         Texture entry;
         entry.texture = texture;
+        // The UiUbo rides in EVERY group: buffer binding 0 (UBO index)
+        // and texture binding 0 (texture unit) are distinct GL namespaces.
+        // Without it the vertex shader reads an unbound block — invisible
+        // UI the moment another pass bound its own UBO at index 0.
         entry.group = device->createBindGroup(
-            { .entries = { { .binding = 0,
+            { .entries = { { .binding = 0, .buffer = ubo },
+                           { .binding = 0,
                              .texture = texture,
                              .sampler = sampler } } });
         const uintptr_t handle = nextHandle++;
@@ -424,6 +429,8 @@ bool UiSystem::create(rhi::Device& device, render::ShaderLibrary& shaders,
         white);
     impl.renderInterface.whiteGroup = device.createBindGroup(
         { .entries = { { .binding = 0,
+                         .buffer = impl.renderInterface.ubo },
+                       { .binding = 0,
                          .texture = impl.renderInterface.whiteTexture,
                          .sampler = impl.renderInterface.sampler } } });
 
