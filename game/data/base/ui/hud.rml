@@ -10,6 +10,12 @@
 	<div id="prompt" data-if="promptVisible">{{ prompt }}</div>
 	<div id="talk" data-if="talkVisible">{{ talk }}</div>
 	<div id="clock">{{ clock }}</div>
+	<div id="nameplates">
+		<div class="plate" data-for="p : rows" data-class-hostile="p.tag == 'hostile'" data-style-left="p.c2 + 'px'" data-style-top="p.c3 + 'px'">
+			<div class="pname">{{ p.c0 }}</div>
+			<div class="phealth"><div class="pfill" data-style-width="p.c1 + '%'"/></div>
+		</div>
+	</div>
 	<div id="vitals">
 		<div class="stat">
 			<div class="bar health"><div class="fill" data-style-width="healthPct + '%'"/></div>

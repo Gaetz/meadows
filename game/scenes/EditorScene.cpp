@@ -234,6 +234,42 @@ void EditorScene::drawPlugins() {
                            error.c_str());
     }
 
+    // Chantier 4 B7: declared dependencies (Plugin::dependencies guids) —
+    // ok / loads-after / missing, per loaded plugin.
+    ImGui::SeparatorText("Dependencies");
+    bool anyDependency = false;
+    for (size_t i = 0; i < stack.plugins.size(); ++i) {
+        const data::Plugin& plugin = stack.plugins[i];
+        for (const core::Guid& dependency : plugin.dependencies) {
+            anyDependency = true;
+            size_t found = stack.plugins.size();
+            for (size_t j = 0; j < stack.plugins.size(); ++j) {
+                if (stack.plugins[j].id == dependency) {
+                    found = j;
+                    break;
+                }
+            }
+            if (found == stack.plugins.size()) {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f),
+                                   "%s requires %s — MISSING",
+                                   plugin.name.c_str(),
+                                   dependency.toString().c_str());
+            } else if (found > i) {
+                ImGui::TextColored(
+                    ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+                    "%s requires %s — loads AFTER it (reorder)",
+                    plugin.name.c_str(),
+                    stack.plugins[found].name.c_str());
+            } else {
+                ImGui::Text("%s requires %s — ok", plugin.name.c_str(),
+                            stack.plugins[found].name.c_str());
+            }
+        }
+    }
+    if (!anyDependency) {
+        ImGui::TextDisabled("none declared");
+    }
+
     ImGui::SeparatorText("Field conflicts (last writer wins)");
     if (report.conflicts.empty()) {
         ImGui::TextDisabled("none");

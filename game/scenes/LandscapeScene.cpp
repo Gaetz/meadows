@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <filesystem>
+#include <sstream>
 
 #include <glm/glm.hpp>
 #include <imgui.h>
@@ -15,6 +16,7 @@
 #include "data/plugins/Resolver.hpp"
 #include "game/AllForms.hpp"
 #include "game/Barter.hpp"
+#include "game/ui/ConsolePanel.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/assets/Image.hpp"
 #include "engine/render/MeshBuilder.hpp"
@@ -289,6 +291,7 @@ void LandscapeScene::onEnter() {
     editMode = false;
     editSelection = ecs::Entity {};
     placementBase = core::Guid {};
+    createConsole(); // chantier 4 B7: F8 in-game dev console
 
     world::SpawnContext spawnCtx { world, forms, categories };
     const auto* playerForm =
@@ -462,6 +465,11 @@ void LandscapeScene::onExit() {
     dialoguePartner = ecs::Entity {};
     barterMode = false;
     goldForm = nullptr;
+    console.reset(); // references forms/session — before re-resolve
+    consoleVm.reset();
+    consoleSession.reset();
+    consoleVisible = false;
+    godMode = false;
     destroyOffscreenTarget(device);
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
@@ -1784,7 +1792,8 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                        "posturePct" },
           .strings = { "healthText", "energyText", "essenceText", "clock",
                        "prompt", "talk" },
-          .bools = { "promptVisible", "talkVisible" } });
+          .bools = { "promptVisible", "talkVisible" },
+          .rows = true }); // B7: nameplates over hostile/hurt NPCs
     // B3: the player-side item table (inventory screen + the player panel
     // of the container/barter screens) and the loot side.
     uiSystem.createModel(
@@ -1995,6 +2004,7 @@ void LandscapeScene::updateHudModel() {
     const bool talkOn = talkTimer > 0.0f && !talkLine.empty();
     uiSystem.setBool("hud", "talkVisible", talkOn);
     uiSystem.setString("hud", "talk", talkOn ? talkLine : str {});
+    updateNameplates(); // B7
 }
 
 void LandscapeScene::syncScreens() {
@@ -2415,6 +2425,153 @@ void LandscapeScene::handleMenuAction(const str& action) {
     } else if (action == "quit") {
         engine->requestQuit();
     }
+}
+
+// --- Chantier 4 B7: console + nameplates --------------------------------------------
+
+void LandscapeScene::createConsole() {
+    consoleSession = std::make_unique<data::EditSession>(forms, formTypes);
+    consoleVm = std::make_unique<script::Vm>();
+    console = std::make_unique<ConsolePanel>(*consoleSession, forms,
+                                             formTypes, *consoleVm);
+    // World commands (the H2 note: registered by the scene that owns a
+    // world; reflection stays the backbone for get/set).
+    console->addCommand("spawn", [this](const str& args) -> str {
+        if (args.empty()) {
+            return "usage: spawn <EditorId>";
+        }
+        const data::Form* base = nullptr;
+        for (u32 i = 1; i <= forms.count(); ++i) {
+            const data::Form* form = forms.get(data::FormHandle { i });
+            if (form && form->editorId == args) {
+                base = form;
+                break;
+            }
+        }
+        if (!base) {
+            return "no form named '" + args + "'";
+        }
+        Vec3 forward = flyCamera.camera.forward();
+        forward.y = 0.0f;
+        if (glm::dot(forward, forward) < 1e-4f) {
+            forward = { 0.0f, 0.0f, -1.0f };
+        }
+        const Vec3 origin = playMode && player ? player->position()
+                                               : flyCamera.camera.position;
+        Vec3 position = origin + glm::normalize(forward) * 3.0f;
+        position.y =
+            render::terrain::height(terrain.params, position.x, position.z);
+        world::ReferenceForm reference;
+        reference.id = core::Guid::generate(); // transient (not a record)
+        reference.baseForm = base->id;
+        reference.position = position;
+        world::SpawnContext spawnCtx { world, forms, categories };
+        const ecs::Entity entity =
+            spawner.spawn(spawnCtx, reference, ecs::Entity {});
+        if (!entity.is_alive()) {
+            return "'" + args + "' is not a spawnable category";
+        }
+        snapCellEntities();
+        refreshNpcs(engine->getDevice()); // actors need their rig/brain
+        return "spawned " + args + " (transient — not saved)";
+    });
+    console->addCommand("tp", [this](const str& args) -> str {
+        std::istringstream in { args };
+        f32 x = 0.0f, z = 0.0f;
+        if (!(in >> x >> z)) {
+            return "usage: tp <x> <z>";
+        }
+        const f32 y = render::terrain::height(terrain.params, x, z) + 0.5f;
+        if (playMode && player) {
+            player = std::make_unique<phys::CharacterBody>(
+                *physics, 0.3f, 1.8f, Vec3 { x, y, z });
+            playerVelocity = Vec3 { 0.0f };
+        } else {
+            flyCamera.camera.position = { x, y + 1.7f, z };
+        }
+        char out[64];
+        std::snprintf(out, sizeof(out), "teleported to %.0f %.0f", x, z);
+        return out;
+    });
+    console->addCommand("tgm", [this](const str&) -> str {
+        godMode = !godMode;
+        return godMode ? "god mode ON" : "god mode OFF";
+    });
+    console->addCommand("settime", [this](const str& args) -> str {
+        std::istringstream in { args };
+        f32 hour = 0.0f;
+        if (!(in >> hour) || hour < 0.0f || hour >= 24.0f) {
+            return "usage: settime <0-24>";
+        }
+        const f64 dayBase =
+            std::floor(gameClock.gameDays()) * 86400.0;
+        gameClock.gameSeconds =
+            dayBase + static_cast<f64>(hour) * 3600.0;
+        return "time set";
+    });
+}
+
+void LandscapeScene::updateNameplates() {
+    vector<::ui::UiRow> plates;
+    if (playMode && player && uiCreated) {
+        const f32 width = static_cast<f32>(engine->getWindow().width());
+        const f32 height = static_cast<f32>(engine->getWindow().height());
+        const Mat4 viewProj =
+            flyCamera.camera.viewProj(height > 0.0f ? width / height : 1.0f);
+        for (const auto& npcPtr : npcs) {
+            const Npc& npc = *npcPtr;
+            if (npc.dead || !npc.entity.is_alive() ||
+                !npc.entity.has<gameplay::AbilitySystem>()) {
+                continue;
+            }
+            const Vec3 position =
+                npc.entity.get<world::Transform>().position;
+            const Vec3 to = position - player->position();
+            if (glm::dot(to, to) > 15.0f * 15.0f) {
+                continue;
+            }
+            const auto& sys = npc.entity.get<gameplay::AbilitySystem>();
+            const f32 health =
+                gameplay::currentValueOf(sys, gameplay::attr("health"));
+            const f32 maxHealth =
+                gameplay::currentValueOf(sys, gameplay::attr("maxHealth"));
+            // Nameplates single out threats and the wounded (SkyUI-style
+            // restraint: a healthy villager stays unlabelled).
+            if (!npc.hostile && health >= maxHealth - 0.5f) {
+                continue;
+            }
+            const Vec4 clip =
+                viewProj * Vec4 { position + Vec3 { 0.0f, 2.15f, 0.0f },
+                                  1.0f };
+            if (clip.w <= 0.1f) {
+                continue; // behind the camera
+            }
+            const f32 px = (clip.x / clip.w * 0.5f + 0.5f) * width;
+            const f32 py = (1.0f - (clip.y / clip.w * 0.5f + 0.5f)) * height;
+            ::ui::UiRow plate;
+            plate.id = std::to_string(npc.entity.id());
+            str name = "?";
+            if (npc.entity.has<world::RefId>()) {
+                const auto& ref = npc.entity.get<world::RefId>();
+                if (const reflect::TypeInfo* type = forms.typeOf(ref.base);
+                    type &&
+                    type->isA(data::ActorForm::staticTypeInfo().id)) {
+                    name = static_cast<const data::ActorForm*>(
+                               forms.get(ref.base))
+                               ->displayName;
+                }
+            }
+            plate.c0 = name;
+            plate.c1 = std::to_string(static_cast<i32>(glm::clamp(
+                100.0f * health / glm::max(maxHealth, 1.0f), 0.0f,
+                100.0f)));
+            plate.c2 = std::to_string(static_cast<i32>(px - 60.0f));
+            plate.c3 = std::to_string(static_cast<i32>(py));
+            plate.tag = npc.hostile ? "hostile" : "";
+            plates.push_back(std::move(plate));
+        }
+    }
+    uiSystem.setRows("hud", std::move(plates));
 }
 
 // --- Chantier 4 B4: dialogue --------------------------------------------------------
@@ -3170,7 +3327,7 @@ void LandscapeScene::updateNpcs(f32 dt) {
                         transform.rotation = glm::angleAxis(
                             npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
                         if (npc.attackCooldown <= 0.0f && banditWeapon &&
-                            playerEntity.is_alive()) {
+                            playerEntity.is_alive() && !godMode) {
                             npc.attackCooldown = 1.6f;
                             gameplay::StatBlock block {
                                 playerEntity
@@ -3860,6 +4017,15 @@ void LandscapeScene::drawUi() {
     }
     if (editMode && levelEditor) {
         drawEditorUi();
+    }
+
+    // F8 toggles the dev console (chantier 4 B7 — spawn/tp/tgm/settime,
+    // reflection get/set, Lua).
+    if (ImGui::IsKeyPressed(ImGuiKey_F8, false)) {
+        consoleVisible = !consoleVisible;
+    }
+    if (consoleVisible && console) {
+        console->draw();
     }
 
     // F10 hides/shows the whole panel (works even while the mouse is

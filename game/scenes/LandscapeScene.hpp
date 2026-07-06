@@ -50,9 +50,15 @@ class Engine;
 namespace data {
 struct WeaponForm;   // CoreForms — pointers only in this header
 struct MiscItemForm; // (gold, chantier 4 B5)
+class EditSession;   // console (chantier 4 B7)
+}
+namespace script {
+class Vm;
 }
 
 namespace game {
+
+class ConsolePanel;
 
 // The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
 // Owns the frame: records its own render passes instead of the sprite path.
@@ -302,6 +308,17 @@ private:
     void handleMenuAction(const str& action);
     void performWait(f32 hours); // clock + needs decay, NO bed recovery
     void updateMenuClockLine();
+
+    // Chantier 4 B7: dev console in the game scene (F8) — the H2 panel
+    // with world commands registered on top (spawn/tp/tgm/settime), plus
+    // god mode and the nameplates over hostile/hurt NPCs.
+    uptr<data::EditSession> consoleSession;
+    uptr<script::Vm> consoleVm;
+    uptr<ConsolePanel> console;
+    bool consoleVisible { false };
+    bool godMode { false };
+    void createConsole();
+    void updateNameplates();
 
     // Chantier 3 B5/B6: melee combat — everything flows through the GAS
     // damage pipeline (weaponDamageEvent -> applyDamage), like the 2D

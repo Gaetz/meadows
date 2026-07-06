@@ -86,3 +86,33 @@ body {
 	color: #b9b5ac;
 	margin-top: 1dp;
 }
+
+/* B7: nameplates over hostile/hurt characters (screen-space, C++ feeds
+   left/top in pixels). */
+.plate {
+	position: absolute;
+	width: 120dp;
+	text-align: center;
+}
+
+.pname {
+	font-size: 13dp;
+	color: #e6e3dc;
+}
+
+.plate.hostile .pname {
+	color: #d98c7a;
+}
+
+.phealth {
+	width: 90dp;
+	height: 4dp;
+	margin: 1dp auto;
+	background-color: #14161ab0;
+	border: 1dp #3c4046;
+}
+
+.pfill {
+	height: 100%;
+	background-color: #a8483f;
+}
