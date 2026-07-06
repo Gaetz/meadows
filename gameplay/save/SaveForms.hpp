@@ -75,6 +75,12 @@ struct SavedStatsForm : data::Form {
     core::Guid torso;
     core::Guid arms;
     core::Guid legs;
+    // Chantier 6 APPENDs (ordinals stable): CombatState timers, vendor
+    // restock clock, crime bounty (name-mirrored like everything above).
+    f32 critWindowSeconds { 0.0f };
+    f32 shakenSeconds { 0.0f };
+    f32 lastRestockHours { 0.0f };
+    f32 bounty { 0.0f };
 
     REFLECT_BEGIN(SavedStatsForm, data::Form)
         REFLECT_FIELD(parent)
@@ -118,6 +124,10 @@ struct SavedStatsForm : data::Form {
         REFLECT_FIELD(torso)
         REFLECT_FIELD(arms)
         REFLECT_FIELD(legs)
+        REFLECT_FIELD(critWindowSeconds)
+        REFLECT_FIELD(shakenSeconds)
+        REFLECT_FIELD(lastRestockHours)
+        REFLECT_FIELD(bounty)
     REFLECT_END()
 };
 

@@ -95,21 +95,53 @@ TEST_CASE("typed damage: channels sum onto health") {
     CHECK(currentValueOf(f.system, attr("health")) == doctest::Approx(300.0f - 165.6f));
 }
 
-TEST_CASE("posture: depleting posture staggers, then it recovers on a timer") {
+TEST_CASE("posture: a break staggers and opens the critical window (C2)") {
     Fixture f;
+    f.tags.registerTag("State.CriticalWeakness");
     const auto staggered = f.tags.find("State.Staggered");
+    const auto weakness = f.tags.find("State.CriticalWeakness");
     REQUIRE(staggered.has_value());
+    REQUIRE(weakness.has_value());
 
     StatBlock b = f.block();
     const DamageResult r = applyDamage(
         b, DamageEvent { { { DamageType::Blunt, 10.0f } }, 80.0f }, f.tags, f.derived);
     CHECK(r.staggered);
     CHECK(f.system.tags.has(*staggered));
+    CHECK(f.system.tags.has(*weakness));
     CHECK(f.combat.staggerSeconds == doctest::Approx(1.5f));
-    CHECK(f.combat.posture == doctest::Approx(70.0f)); // restored on the break
+    CHECK(f.combat.critWindowSeconds == doctest::Approx(5.0f));
+    CHECK(f.combat.posture == doctest::Approx(0.0f)); // sits at 0 all window
 
     updateStagger(f.combat, f.system, 1.0f, f.tags); // not yet elapsed
     CHECK(f.system.tags.has(*staggered));
     updateStagger(f.combat, f.system, 1.0f, f.tags); // elapsed
     CHECK_FALSE(f.system.tags.has(*staggered));
+
+    updateCritWindow(f.combat, f.system, 4.0f, f.tags); // still open
+    CHECK(f.system.tags.has(*weakness));
+    CHECK(f.combat.posture == doctest::Approx(0.0f));
+    updateCritWindow(f.combat, f.system, 1.5f, f.tags); // expires
+    CHECK_FALSE(f.system.tags.has(*weakness));
+    CHECK(f.combat.posture == doctest::Approx(70.0f)); // refilled on expiry
+}
+
+TEST_CASE("posture: a heavy non-breaking hit grants a short Shaken (C2)") {
+    Fixture f;
+    f.tags.registerTag("State.Shaken");
+    const auto shaken = f.tags.find("State.Shaken");
+    REQUIRE(shaken.has_value());
+
+    // Threshold = (15 + constitution 20)% of maxPosture 70 = 24.5.
+    StatBlock b = f.block();
+    applyDamage(b, DamageEvent { {}, 20.0f }, f.tags, f.derived);
+    CHECK_FALSE(f.system.tags.has(*shaken)); // below threshold
+
+    applyDamage(b, DamageEvent { {}, 30.0f }, f.tags, f.derived);
+    CHECK(f.system.tags.has(*shaken));
+    CHECK(f.combat.shakenSeconds == doctest::Approx(0.6f));
+    CHECK(f.combat.posture == doctest::Approx(20.0f)); // 70 − 20 − 30, no break
+
+    updateShaken(f.combat, f.system, 1.0f, f.tags);
+    CHECK_FALSE(f.system.tags.has(*shaken));
 }

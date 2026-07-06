@@ -94,12 +94,26 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
     result.healthDamage = totalHealth;
     result.postureDamage = event.postureAmount;
 
-    // Posture break → stagger: grant the tag, start the timer, restore posture.
+    // Posture break → stagger + critical window (chantier 6 C2): posture
+    // SITS at 0 for critWindowSeconds (updateCritWindow refills it on
+    // expiry) and the target is open to the critical execution.
     if (target.combat.posture <= 0.0f && event.postureAmount > 0.0f) {
         result.staggered = true;
         target.combat.staggerSeconds = tuning.staggerSeconds;
-        target.combat.posture = currentValueOf(target.system, attr("maxPosture"));
+        target.combat.critWindowSeconds = tuning.critWindowSeconds;
         if (const auto tag = tags.find("State.Staggered")) {
+            target.system.tags.add(*tag, tags);
+        }
+        if (const auto tag = tags.find("State.CriticalWeakness")) {
+            target.system.tags.add(*tag, tags);
+        }
+    } else if (event.postureAmount >
+               (tuning.shakenThresholdBase + cur("constitution")) / 100.0f *
+                   currentValueOf(target.system, attr("maxPosture"))) {
+        // A heavy posture hit that does NOT break still rattles: brief
+        // State.Shaken debuff (the break is strictly worse, so no stack).
+        target.combat.shakenSeconds = tuning.shakenSeconds;
+        if (const auto tag = tags.find("State.Shaken")) {
             target.system.tags.add(*tag, tags);
         }
     }
@@ -131,6 +145,35 @@ void updateParalysis(CombatState& combat, AbilitySystem& system, f32 dt,
     if (combat.paralysisSeconds <= 0.0f) {
         combat.paralysisSeconds = 0.0f;
         if (const auto tag = tags.find("State.Paralyzed")) {
+            system.tags.remove(*tag, tags);
+        }
+    }
+}
+
+void updateCritWindow(CombatState& combat, AbilitySystem& system, f32 dt,
+                      const GameplayTagRegistry& tags) {
+    if (combat.critWindowSeconds <= 0.0f) {
+        return;
+    }
+    combat.critWindowSeconds -= dt;
+    if (combat.critWindowSeconds <= 0.0f) {
+        combat.critWindowSeconds = 0.0f;
+        combat.posture = currentValueOf(system, attr("maxPosture"));
+        if (const auto tag = tags.find("State.CriticalWeakness")) {
+            system.tags.remove(*tag, tags);
+        }
+    }
+}
+
+void updateShaken(CombatState& combat, AbilitySystem& system, f32 dt,
+                  const GameplayTagRegistry& tags) {
+    if (combat.shakenSeconds <= 0.0f) {
+        return;
+    }
+    combat.shakenSeconds -= dt;
+    if (combat.shakenSeconds <= 0.0f) {
+        combat.shakenSeconds = 0.0f;
+        if (const auto tag = tags.find("State.Shaken")) {
             system.tags.remove(*tag, tags);
         }
     }

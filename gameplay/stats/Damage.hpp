@@ -55,20 +55,27 @@ struct DamageResult {
 // Combat resource state. `posture` is the poise resource (seeded to
 // maxPosture); `staggerSeconds` counts down a stagger; `restSeconds` is the
 // in-game time since the last hit ("Rest", §5 — the precondition for
-// injury/resonance recovery; a hit resets it). Critical-weakness / shaken
-// live here too in Phase 7. Reflected since chantier 5: the save layer
-// captures it by field name like the other stat components.
+// injury/resonance recovery; a hit resets it). Reflected since chantier 5:
+// the save layer captures it by field name like the other stat components —
+// chantier 6 fields are APPENDED (binary ordinals stable).
 struct CombatState {
     f32 posture { 0.0f };
-    f32 staggerSeconds { 0.0f };   // posture break: opens criticals
+    f32 staggerSeconds { 0.0f };   // posture break: brief loss of control
     f32 paralysisSeconds { 0.0f }; // glaciation: frozen in place (distinct from stagger)
     f32 restSeconds { 0.0f };
+    // Chantier 6 C2 (docs/STATS.md §4): the critical window opened by a
+    // posture break — posture SITS at 0 until it elapses, then refills;
+    // `shakenSeconds` is the short accuracy debuff from a heavy posture hit.
+    f32 critWindowSeconds { 0.0f };
+    f32 shakenSeconds { 0.0f };
 
     REFLECT_BEGIN(CombatState, void)
         REFLECT_FIELD(posture)
         REFLECT_FIELD(staggerSeconds)
         REFLECT_FIELD(paralysisSeconds)
         REFLECT_FIELD(restSeconds)
+        REFLECT_FIELD(critWindowSeconds)
+        REFLECT_FIELD(shakenSeconds)
     REFLECT_END()
 };
 
@@ -99,5 +106,14 @@ void updateStagger(CombatState& combat, AbilitySystem& system, f32 dt,
 // Counts down glaciation paralysis; drops State.Paralyzed when it elapses.
 void updateParalysis(CombatState& combat, AbilitySystem& system, f32 dt,
                      const GameplayTagRegistry& tags);
+
+// Counts down the critical window; on expiry drops State.CriticalWeakness
+// and refills posture to maxPosture (it sat at 0 for the whole window).
+void updateCritWindow(CombatState& combat, AbilitySystem& system, f32 dt,
+                      const GameplayTagRegistry& tags);
+
+// Counts down the shaken debuff; drops State.Shaken when it elapses.
+void updateShaken(CombatState& combat, AbilitySystem& system, f32 dt,
+                  const GameplayTagRegistry& tags);
 
 } // namespace gameplay

@@ -28,9 +28,11 @@ void tickCharacter(flecs::entity entity, f32 dt, f64 gameDt,
     auto& injuries    = entity.get_mut<Injuries>();
     auto& resoDecays  = entity.get_mut<ResonanceDecays>();
 
-    // Stagger / paralysis timers decay in real time.
+    // Stagger / paralysis / crit-window / shaken timers decay in real time.
     updateStagger(combat, system, dt, ctx.tags);
     updateParalysis(combat, system, dt, ctx.tags);
+    updateCritWindow(combat, system, dt, ctx.tags);
+    updateShaken(combat, system, dt, ctx.tags);
 
     // Pre-register decay entries for real-time resonance effects about to expire.
     {
@@ -99,8 +101,9 @@ void tickCharacter(flecs::entity entity, f32 dt, f64 gameDt,
             system.tags.add(*dead, ctx.tags);
     }
 
-    // Real-time regen (posture while not staggered; energy always).
-    if (combat.staggerSeconds <= 0.0f) {
+    // Real-time regen (posture while not staggered NOR in the critical
+    // window — posture must sit at 0 for the whole window; energy always).
+    if (combat.staggerSeconds <= 0.0f && combat.critWindowSeconds <= 0.0f) {
         const f32 maxP = currentValueOf(system, attr("maxPosture"));
         const f32 regen = currentValueOf(system, attr("postureRegen"));
         combat.posture = std::min(maxP, combat.posture + regen * dt);

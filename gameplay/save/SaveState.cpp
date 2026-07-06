@@ -7,6 +7,7 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/actors/ActorState.hpp"
 #include "gameplay/combat/Combat.hpp"
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
@@ -132,6 +133,8 @@ vector<data::Record> captureActor(flecs::entity entity,
     componentToSaved<StatusBuildup>(entity, stats);
     componentToSaved<CombatState>(entity, stats);
     componentToSaved<Equipment>(entity, stats);
+    componentToSaved<VendorState>(entity, stats);
+    componentToSaved<Bounty>(entity, stats);
     records.push_back(
         createRecord(stats, core::Guid::combine(kSavedStatsNs, refGuid)));
     // The sentinel must survive resolution even for a pristine actor: an
@@ -218,6 +221,8 @@ void applySavedState(flecs::entity entity, const SavedActorRecords& saved,
     savedToComponent<StatusBuildup>(*saved.stats, entity);
     savedToComponent<CombatState>(*saved.stats, entity);
     savedToComponent<Equipment>(*saved.stats, entity);
+    savedToComponent<VendorState>(*saved.stats, entity);
+    savedToComponent<Bounty>(*saved.stats, entity);
 
     if (entity.has<Inventory>()) {
         auto& bag = entity.get_mut<Inventory>();
