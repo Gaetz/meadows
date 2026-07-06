@@ -146,6 +146,12 @@ void LandscapeScene::onEnter() {
                   { { "uAlbedo", 0 } });
     buildMeshPipeline(device);
 
+    // B4: the sim-side physics world + terrain collision (tiles follow the
+    // camera for now; the player becomes the focus in B5).
+    physics = std::make_unique<phys::PhysicsWorld>();
+    terrainCollision =
+        std::make_unique<TerrainCollision>(*physics, terrain.params);
+
     world = ecs::World {}; // fresh on re-enter
     world::registerSceneComponents(world);
     world::FormCategoryRegistry categories;
@@ -343,8 +349,22 @@ void LandscapeScene::onEnter() {
         gpuOcclusion.create(device, *shaders);
     }
 
-    flyCamera.camera.position = { 32.0f, 110.0f, 400.0f };
-    flyCamera.camera.pitch = -0.30f;
+    // Start beside the character (slightly above, looking at it) — never
+    // inside the terrain: the spot is grounded on the SAME height function
+    // the mesh uses. Fallback: safely above the demo area.
+    if (characterReady) {
+        flyCamera.camera.position = characterSpot + Vec3 { 2.5f, 2.0f, 7.0f };
+        const Vec3 look = glm::normalize(characterSpot +
+                                         Vec3 { 0.0f, 0.5f, 0.0f } -
+                                         flyCamera.camera.position);
+        flyCamera.camera.yaw = std::atan2(look.x, -look.z);
+        flyCamera.camera.pitch = std::asin(look.y);
+    } else {
+        const f32 ground = render::terrain::height(terrain.params, 32.0f,
+                                                   400.0f);
+        flyCamera.camera.position = { 32.0f, ground + 30.0f, 400.0f };
+        flyCamera.camera.pitch = -0.30f;
+    }
     // Cover the full streamed ring (~14 chunks = ~900 m) plus headroom.
     flyCamera.camera.farPlane = 1600.0f;
 }
@@ -384,6 +404,10 @@ void LandscapeScene::onExit() {
     characterGraphDesc = anim::GraphDesc {};
     characterClips.clear();
     characterSkeleton = anim::Skeleton {};
+    // B4 physics: capsule -> tiles -> world (each references the previous).
+    debugCapsule.reset();
+    terrainCollision.reset();
+    physics.reset();
     device.destroySampler(meshSampler);
     device.destroyTexture(whiteTexture);
     gpuOcclusion.destroy(device);
@@ -557,8 +581,25 @@ void LandscapeScene::update(f32 dt) {
     if (meshCache) {
         meshCache->pumpUploads();
     }
+    // B4: physics tick + collision tiles around the camera; the debug
+    // capsule free-falls (zero desired velocity) and rides the terrain.
+    if (physics) {
+        physics->tick(dt);
+        terrainCollision->update(flyCamera.camera.position);
+        if (debugCapsule) {
+            debugCapsule->move({ 0.0f, 0.0f, 0.0f }, dt);
+        }
+    }
     snapshot.meshes.clear();
     extractMeshes(world, snapshot);
+    if (debugCapsule) {
+        // Visualize as the residency placeholder box (magenta), stretched
+        // to the capsule's stance, standing at the FEET position.
+        const Mat4 transform =
+            glm::scale(glm::translate(Mat4 { 1.0f }, debugCapsule->position()),
+                       Vec3 { 0.9f, 2.25f, 0.9f });
+        snapshot.meshes.push_back({ core::Guid {}, core::Guid {}, transform });
+    }
     // B3: the graph drives the pose — the debug slider stands in for the
     // entity speed (param for transitions AND referenceSpeed sync).
     if (characterReady && characterAnim) {
@@ -1224,6 +1265,23 @@ void LandscapeScene::drawUi() {
         ImGui::SameLine();
         ImGui::Text("at %.0f %.0f %.0f", characterSpot.x, characterSpot.y,
                     characterSpot.z);
+        ImGui::Separator();
+    }
+    if (physics) {
+        // B4: drop a kinematic capsule from the camera — it falls, lands
+        // on the height-field tiles, and rides slopes (magenta box).
+        if (ImGui::Button("Drop capsule here (B4)")) {
+            debugCapsule = std::make_unique<phys::CharacterBody>(
+                *physics, 0.3f, 1.8f, flyCamera.camera.position);
+        }
+        if (debugCapsule) {
+            ImGui::SameLine();
+            const Vec3 feet = debugCapsule->position();
+            ImGui::Text("%.1f %.1f %.1f %s", feet.x, feet.y, feet.z,
+                        debugCapsule->onGround() ? "(grounded)"
+                                                 : "(falling)");
+        }
+        ImGui::Text("Collision tiles: %u", terrainCollision->tileCount());
         ImGui::Separator();
     }
     ImGui::Checkbox("Stylized lighting (BotW A/B)", &stylizedUi);

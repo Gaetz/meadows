@@ -8,8 +8,10 @@
 #include "engine/ecs/World.hpp"
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/physics/Physics.hpp"
 #include "game/MeshCache.hpp"
 #include "game/SceneSubmit.hpp"
+#include "game/TerrainCollision.hpp"
 #include "game/TextureCache.hpp"
 #include "game/scenes/LandscapeTuning.hpp"
 #include "engine/render/landscape/ChunkOcclusion.hpp"
@@ -181,6 +183,13 @@ private:
     bool characterReady { false };
     void buildSkinnedPipeline(rhi::Device& device);
     void drawCharacter(engine::FrameContext& frame);
+
+    // B4 (chantier 1): physics — height-field tiles follow the camera (the
+    // player takes over as focus in B5); the debug capsule proves the
+    // fall/rest/slope behavior in-scene (drawn as the placeholder box).
+    uptr<phys::PhysicsWorld> physics;
+    uptr<TerrainCollision> terrainCollision;
+    uptr<phys::CharacterBody> debugCapsule;
 
     rhi::TextureHandle offscreenColor {};
     rhi::TextureHandle offscreenDepth {};

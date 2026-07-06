@@ -6,10 +6,12 @@ add_library(meadows-runtime STATIC
     MeshCache.cpp
     SceneStack.cpp
     SceneSubmit.cpp
+    TerrainCollision.cpp
     TextureCache.cpp
     WorldEditor.cpp
 )
-target_link_libraries(meadows-runtime PUBLIC meadows meadows-world)
+target_link_libraries(meadows-runtime PUBLIC meadows meadows-world
+                      meadows-physics)
 meadows_set_warnings(meadows-runtime)
 
 add_executable(true-adventurer

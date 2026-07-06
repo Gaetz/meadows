@@ -13,6 +13,7 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -146,6 +147,29 @@ BodyId PhysicsWorld::addStaticBox(const Vec3& halfExtents,
         new JPH::BoxShape(toJph(halfExtents)), toJph(position),
         toJph(rotation), JPH::EMotionType::Static, kLayerStatic
     };
+    const JPH::BodyID body =
+        pimpl->system.GetBodyInterface().CreateAndAddBody(
+            settings, JPH::EActivation::DontActivate);
+    return body.GetIndexAndSequenceNumber();
+}
+
+BodyId PhysicsWorld::addHeightField(const f32* samples, u32 sampleCount,
+                                    const Vec3& origin, f32 spacing) {
+    JPH::HeightFieldShapeSettings shape {
+        samples, toJph(origin), JPH::Vec3(spacing, 1.0f, spacing),
+        sampleCount
+    };
+    const JPH::ShapeSettings::ShapeResult result = shape.Create();
+    if (result.HasError()) {
+        LOG_ERROR("Physics: height field rejected: {}",
+                  result.GetError().c_str());
+        return 0;
+    }
+    // The origin is baked into the shape's offset; the body sits at zero.
+    JPH::BodyCreationSettings settings { result.Get(), JPH::RVec3::sZero(),
+                                         JPH::Quat::sIdentity(),
+                                         JPH::EMotionType::Static,
+                                         kLayerStatic };
     const JPH::BodyID body =
         pimpl->system.GetBodyInterface().CreateAndAddBody(
             settings, JPH::EActivation::DontActivate);

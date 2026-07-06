@@ -46,6 +46,15 @@ public:
     // prototyping; triangle meshes arrive with the cell-cooking vertical.
     BodyId addStaticBox(const Vec3& halfExtents, const Vec3& position,
                         const Quat& rotation = { 1.0f, 0.0f, 0.0f, 0.0f });
+
+    // A square terrain tile (chantier 1, B4): sampleCount x sampleCount
+    // heights, row-major with x fastest and rows along +Z, world corner at
+    // `origin`, one sample every `spacing` meters — covers
+    // (sampleCount-1) * spacing meters per side. Keep sampleCount a power
+    // of two (Jolt blocks the field internally). Returns 0 on failure.
+    BodyId addHeightField(const f32* samples, u32 sampleCount,
+                          const Vec3& origin, f32 spacing);
+
     void removeBody(BodyId body);
 
     // First hit along a ray (interaction, camera, combat traces).
