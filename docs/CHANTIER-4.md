@@ -41,6 +41,32 @@ HORIZONTAL-PASS : basculer les scènes sur `loadPluginStack`
 - **Police** : `game/data/base/ui/fonts/DemoFont.ttf` (placeholder — le
   dev dépose une vraie police quand il veut, workflow kit).
 
+## Référence de design (directive dev 2026-07-06) : SkyUI / Norden UI
+
+Le dev veut des inventaires **en tableau**, à la SkyUI (le standard de
+facto du modding Skyrim) avec la direction visuelle de Norden UI /
+NORDIC UI (reskins modernes de SkyUI). Ce qu'on retient :
+
+- **Table multi-colonnes triable** : Nom, Poids, Valeur (+ Dégâts ou
+  Armure selon la catégorie) ; clic sur l'en-tête = tri asc/desc.
+- **Onglets de catégories** en barre du haut : Tout / Armes / Armures /
+  Consommables / Livres / Divers — filtre instantané.
+- **Champ de recherche** à correspondance partielle sur le nom.
+- **Icônes d'état** en colonne : équipé, compteur (xN) ; (volé/enchanté
+  plus tard, quand ces systèmes existeront).
+- **Panneau de détail** de l'item sélectionné (nom, description, stats) ;
+  la preview 3D de l'objet = P2 (demande du render-to-texture).
+- **État persistant** : catégorie/tri/scroll restaurés à la réouverture.
+- **Direction visuelle Norden/NORDIC** : moderne épuré, palette sobre
+  quasi monochrome, panneaux translucides, typographie nette — pas de
+  parchemin ; en phase avec la DA stylisée BotW.
+- Le **barter et les conteneurs réutilisent le même tableau** (c'est
+  exactement le modèle SkyUI) — B3/B5 partagent le composant.
+
+RmlUi couvre ça nativement (flexbox + tables RCSS, data binding pour les
+lignes) ; le tri/filtre vit dans le C++ (ScreenStack/binding), le .rml ne
+fait que l'affichage — un mod reskinne sans toucher à la logique.
+
 ## Les briques proposées
 
 ### B1 — Socle : plugin stack + pile d'écrans + clavier
@@ -72,15 +98,22 @@ HORIZONTAL-PASS : basculer les scènes sur `loadPluginStack`
 - Preuve : les coups du bandit font baisser la barre ; le prompt [E]
   s'affiche en RmlUi.
 
-### B3 — Inventaire + conteneur/loot
-- `inventory.rml` (modal, touche I ou Tab) : liste des items (nom, count,
-  poids, valeur), total porté / CarryWeight ; actions : équiper/déséquiper
-  (EquipmentStats Phase 7), utiliser (consommables → applyEffect), jeter.
-- **Conteneur/loot** = le même écran en mode transfert (deux colonnes) :
+### B3 — Inventaire + conteneur/loot (modèle SkyUI, voir § Référence)
+- `inventory.rml` (modal, touche I ou Tab) : **table triable** (Nom,
+  Poids, Valeur, Dégâts/Armure contextuels), onglets de catégories,
+  recherche, icône « équipé » + compteur, panneau de détail de l'item
+  sélectionné ; total porté / CarryWeight en pied. Actions :
+  équiper/déséquiper (EquipmentStats Phase 7), utiliser (consommables →
+  applyEffect), jeter. Tri/filtre/état = C++ (logique pure doctestable :
+  `InventoryView` — tri par colonne, filtre catégorie, recherche) ; le
+  .rml n'affiche que les lignes bindées.
+- **Conteneur/loot** = le même tableau en mode transfert (deux panneaux) :
   E sur un conteneur ou le cadavre du bandit → prendre/déposer.
 - Doctests : les opérations inventaire/équipement sont déjà testées —
-  ajouter le round-trip transfert conteneur si manquant.
-- Preuve : looter le bandit, équiper l'épée rouillée, manger une ration.
+  ajouter `InventoryView` (tri/filtre/recherche) et le round-trip
+  transfert conteneur si manquant.
+- Preuve : looter le bandit, trier par valeur, chercher « ration »,
+  équiper l'épée rouillée, manger une ration.
 
 ### B4 — Dialogue
 - `dialogue.rml` (modal) : texte du PNJ + choix du joueur — branché sur
@@ -93,7 +126,8 @@ HORIZONTAL-PASS : basculer les scènes sur `loadPluginStack`
 ### B5 — Barter (reliquat chantier 3)
 - **L'or est un item** (`ItemForm` GoldCoin, count) — pas de nouveau champ
   ni de monnaie parallèle ; réutilise l'inventaire tel quel.
-- `barter.rml` (modal) : deux inventaires côte à côte, prix = valeur ×
+- `barter.rml` (modal) : **le même tableau que B3** (composant partagé,
+  modèle SkyUI) en deux panneaux joueur/marchand, colonne Prix = valeur ×
   multiplicateurs achat/vente (constantes StatsTuningForm — moddable),
   or affiché des deux côtés.
 - Marchand v1 : le Villager (ou un 2e PNJ marchand ActorForm) avec un
