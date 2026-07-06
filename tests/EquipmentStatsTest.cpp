@@ -103,6 +103,61 @@ TEST_CASE("equipment: weaponDamageEvent scales by the attacker's attribute") {
     CHECK(event.postureAmount == doctest::Approx(14.0f));       // 10 × 1.4
 }
 
+TEST_CASE("encumbrance: weight sum, categories, and speed penalties (C3)") {
+    // inventoryWeight sums stacks across form types.
+    data::FormDatabase forms;
+    auto weapon = std::make_unique<data::WeaponForm>();
+    weapon->id = *core::Guid::fromString("a4000000-0000-4000-8000-000000000010");
+    weapon->weight = 8.0f;
+    const core::Guid weaponId = weapon->id;
+    forms.add(std::move(weapon), data::WeaponForm::staticTypeInfo());
+    auto misc = std::make_unique<data::MiscItemForm>();
+    misc->id = *core::Guid::fromString("a4000000-0000-4000-8000-000000000011");
+    misc->weight = 0.5f;
+    const core::Guid miscId = misc->id;
+    forms.add(std::move(misc), data::MiscItemForm::staticTypeInfo());
+
+    Inventory bag;
+    addItem(bag, weaponId, 1);
+    addItem(bag, miscId, 4);
+    CHECK(inventoryWeight(forms, bag) == doctest::Approx(10.0f)); // 8 + 4×0.5
+
+    // Default sheet: max = 50 + 6·10 + 6·2 = 122.
+    DerivedStatRegistry reg;
+    registerCoreDerivedStats(reg);
+    CoreAttributes core;
+    AttributeSet vitals;
+    AbilitySystem sys;
+    const AttrSetRef sets[] = {
+        { &CoreAttributes::staticTypeInfo(), &core },
+        { &AttributeSet::staticTypeInfo(), &vitals },
+    };
+    recomputeCurrent(sys, sets, &reg, nullptr);
+    const f32 maxEnc = currentValueOf(sys, attr("maxEncumbrance"));
+    CHECK(maxEnc == doctest::Approx(122.0f));
+    CHECK(currentValueOf(sys, attr("jumpPower")) == doctest::Approx(104.0f));
+
+    CHECK(encumbranceCategory(10.0f, maxEnc) == EncumbranceCategory::Light);
+    CHECK(encumbranceCategory(61.0f, maxEnc) == EncumbranceCategory::Medium);
+    CHECK(encumbranceCategory(100.0f, maxEnc) == EncumbranceCategory::Heavy);
+    CHECK(encumbranceCategory(130.0f, maxEnc) ==
+          EncumbranceCategory::Overencumbered);
+    CHECK(encumbranceCategory(10.0f, 0.0f) == EncumbranceCategory::Light);
+
+    // Heavy: −50% speed, −75% accel, folded as ×-modifiers.
+    StatModifiers mods;
+    encumbranceModifiers(EncumbranceCategory::Heavy, mods);
+    recomputeCurrent(sys, sets, &reg, &mods);
+    // movementSpeed base = 90 + alacrity 6 + strength 6 = 102.
+    CHECK(currentValueOf(sys, attr("movementSpeed")) == doctest::Approx(51.0f));
+    CHECK(currentValueOf(sys, attr("acceleration")) ==
+          doctest::Approx((90.0f + 12.0f) * 0.25f));
+
+    StatModifiers none;
+    encumbranceModifiers(EncumbranceCategory::Light, none);
+    CHECK(none.mul.empty());
+}
+
 TEST_CASE("equipment: applyEquipmentModifiers resolves slots from the database") {
     data::FormDatabase forms;
     auto armor = std::make_unique<data::ArmorForm>();

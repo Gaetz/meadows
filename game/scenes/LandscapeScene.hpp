@@ -23,6 +23,7 @@
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/interaction/Furniture.hpp"
 #include "gameplay/save/SaveState.hpp"
+#include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 #include "quest/Dialogue.hpp"
@@ -500,7 +501,12 @@ private:
     bool playMode { false };
     uptr<phys::CharacterBody> player;
     Vec3 playerVelocity { 0.0f }; // smoothed horizontal velocity (m/s)
-    f32 jumpSpeed { 5.0f };       // jump power stat = the P1 stats pass
+    f32 jumpSpeed { 5.0f };       // fallback only — jumpPower stat drives it (C3)
+    // C3: refreshed each frame at the equipMods site; gates jump/sprint
+    // and feeds the inventory footer.
+    gameplay::EncumbranceCategory playerEncumbrance {
+        gameplay::EncumbranceCategory::Light };
+    f32 playerCarriedWeight { 0.0f };
     void enterPlayMode();
     void exitPlayMode();
     void updatePlayer(f32 dt);

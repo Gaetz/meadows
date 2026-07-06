@@ -92,4 +92,71 @@ DamageEvent weaponDamageEvent(const data::WeaponForm& weapon,
     return event;
 }
 
+f32 itemWeight(const data::FormDatabase& forms, const core::Guid& item) {
+    if (const auto* weapon = forms.find<data::WeaponForm>(item)) {
+        return weapon->weight;
+    }
+    if (const auto* armor = forms.find<data::ArmorForm>(item)) {
+        return armor->weight;
+    }
+    if (const auto* consumable = forms.find<data::ConsumableForm>(item)) {
+        return consumable->weight;
+    }
+    if (const auto* misc = forms.find<data::MiscItemForm>(item)) {
+        return misc->weight;
+    }
+    return 0.0f;
+}
+
+f32 inventoryWeight(const data::FormDatabase& forms, const Inventory& inventory) {
+    f32 total = 0.0f;
+    for (const ItemStack& stack : inventory.items) {
+        if (stack.count > 0) {
+            total += itemWeight(forms, stack.item) * static_cast<f32>(stack.count);
+        }
+    }
+    return total;
+}
+
+EncumbranceCategory encumbranceCategory(f32 weight, f32 maxEncumbrance) {
+    if (maxEncumbrance <= 0.0f) {
+        return EncumbranceCategory::Light;
+    }
+    const f32 ratio = weight / maxEncumbrance;
+    if (ratio < 0.4f)  return EncumbranceCategory::Light;
+    if (ratio < 0.7f)  return EncumbranceCategory::Medium;
+    if (ratio <= 1.0f) return EncumbranceCategory::Heavy;
+    return EncumbranceCategory::Overencumbered;
+}
+
+const char* encumbranceLabel(EncumbranceCategory category) {
+    switch (category) {
+    case EncumbranceCategory::Light:  return "light";
+    case EncumbranceCategory::Medium: return "medium";
+    case EncumbranceCategory::Heavy:  return "heavy";
+    case EncumbranceCategory::Overencumbered: return "overencumbered";
+    }
+    return "light";
+}
+
+void encumbranceModifiers(EncumbranceCategory category, StatModifiers& mods) {
+    f32 speed = 1.0f, accel = 1.0f;
+    switch (category) {
+    case EncumbranceCategory::Light:  return; // no effect
+    case EncumbranceCategory::Medium: speed = 0.75f; accel = 0.56f; break;
+    case EncumbranceCategory::Heavy:  speed = 0.50f; accel = 0.25f; break;
+    case EncumbranceCategory::Overencumbered:
+        speed = 0.25f; accel = 0.25f; break;
+    }
+    // Multiplicative fold: stacks with any other ×-modifier on the stat.
+    auto fold = [&](const char* stat, f32 factor) {
+        auto [it, inserted] = mods.mul.try_emplace(attr(stat), factor);
+        if (!inserted) {
+            it->second *= factor;
+        }
+    };
+    fold("movementSpeed", speed);
+    fold("acceleration", accel);
+}
+
 } // namespace gameplay

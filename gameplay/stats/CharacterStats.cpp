@@ -156,10 +156,21 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
     } });
 
     // Acceleration (docs/STATS.md §3) — the movement speed *ramp*: celerity
-    // (alacrity) governs how fast you reach movementSpeed. Formula provisional
-    // (base + alacrity·2) until the Phase 9 utility pass wires encumbrance/inertia.
+    // (alacrity) governs how fast you reach movementSpeed. Encumbrance
+    // penalties fold onto both as ×-modifiers (EquipmentStats, C3).
     registry.add({ attr("acceleration"), core, [](const StatView& v) {
         return 90.0f + v.get("alacrity") * 2.0f;
+    } });
+
+    // Utility stats (docs/STATS.md §3, chantier 6 C3). Both read CURRENT
+    // values so buffs/injuries move them live (a fortify-carry effect works
+    // out of the box).
+    registry.add({ attr("maxEncumbrance"), core, [](const StatView& v) {
+        return 50.0f + v.get("strength") * 10.0f + v.get("constitution") * 2.0f;
+    } });
+    registry.add({ attr("jumpPower"), core, [](const StatView& v) {
+        return 80.0f + v.get("grace") + v.get("dexterity") +
+               v.get("strength") * 2.0f;
     } });
 }
 

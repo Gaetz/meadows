@@ -61,6 +61,7 @@ constexpr const char* kTonemapShader = "tonemap";
 // encumbrance will pull it back down when the P1 utility pass lands.)
 constexpr f32 kSpeedScale3D = 1.0f / 20.0f; // movementSpeed stat -> m/s
 constexpr f32 kSprintMult = 1.6f;           // "sprint multiplies" (STATS.md)
+constexpr f32 kJumpScale3D = 1.0f / 20.8f;  // jumpPower stat -> jump m/s
 constexpr f32 kAccelRate3D = 0.12f;         // acceleration stat -> 1/s ramp
 
 // Lengyel's oblique near plane: bends the projection's near plane onto an
@@ -861,6 +862,18 @@ void LandscapeScene::update(f32 dt) {
                 gameplay::applyEquipmentModifiers(
                     playerEntity.get<gameplay::Equipment>(), forms,
                     equipMods);
+            }
+            // C3: encumbrance penalties fold into the same channel. The
+            // max reads last frame's current (one frame of lag is fine).
+            if (playerEntity.has<gameplay::Inventory>()) {
+                playerCarriedWeight = gameplay::inventoryWeight(
+                    forms, playerEntity.get<gameplay::Inventory>());
+                const f32 maxEncumbrance = gameplay::currentValueOf(
+                    playerEntity.get<gameplay::AbilitySystem>(),
+                    gameplay::attr("maxEncumbrance"));
+                playerEncumbrance = gameplay::encumbranceCategory(
+                    playerCarriedWeight, maxEncumbrance);
+                gameplay::encumbranceModifiers(playerEncumbrance, equipMods);
             }
             gameplay::tickCharacter(playerEntity, dt, gameDt, tickCtx,
                                     equipMods);
@@ -2418,9 +2431,19 @@ void LandscapeScene::pushItemModels() {
     pushRows(invView, "inventory",
              barterMode ? statsTuning.barterSellMult : 0.0f);
 
-    char footer[64];
-    std::snprintf(footer, sizeof(footer), "Carried weight  %.1f",
-                  invView.totalWeight());
+    // C3: weight / max + the encumbrance category.
+    char footer[96];
+    f32 maxEncumbrance = 0.0f;
+    if (playerEntity.is_alive()) {
+        maxEncumbrance = gameplay::currentValueOf(
+            playerEntity.get<gameplay::AbilitySystem>(),
+            gameplay::attr("maxEncumbrance"));
+    }
+    std::snprintf(footer, sizeof(footer),
+                  "Carried weight  %.1f / %.0f  (%s)", invView.totalWeight(),
+                  maxEncumbrance,
+                  gameplay::encumbranceLabel(gameplay::encumbranceCategory(
+                      invView.totalWeight(), maxEncumbrance)));
     uiSystem.setString("inventory", "weightText", footer);
 
     const InventoryView::Row* selected = invView.selectedRow();
@@ -3249,16 +3272,28 @@ void LandscapeScene::updatePlayer(f32 dt) {
             kAccelRate3D;
         energy = gameplay::currentValueOf(sys, gameplay::attr("energy"));
     }
+    // C3: overencumbered = no sprint, no jump (STATS.md §3 Utility).
+    const bool overencumbered =
+        playerEncumbrance == gameplay::EncumbranceCategory::Overencumbered;
     const bool sprinting = moving && input.isDown(platform::Key::Shift) &&
-                           energy > 1.0f;
+                           energy > 1.0f && !overencumbered;
     const f32 targetSpeed = sprinting ? jog * kSprintMult : jog;
     const Vec3 target =
         moving ? glm::normalize(wish) * targetSpeed : Vec3 { 0.0f };
     // Exponential smoothing toward the target: snappy, never binary.
     playerVelocity += (target - playerVelocity) *
                       (1.0f - std::exp(-accelRate * dt));
-    if (input.wasPressed(platform::Key::Space)) {
-        player->jump(jumpSpeed);
+    if (input.wasPressed(platform::Key::Space) && !overencumbered) {
+        // C3: jump velocity from the jumpPower stat (default sheet 104
+        // → the previous hand-tuned 5.0 m/s via kJumpScale3D).
+        f32 jump = jumpSpeed; // fallback without a Player actor
+        if (playerEntity.is_alive()) {
+            jump = gameplay::currentValueOf(
+                       playerEntity.get<gameplay::AbilitySystem>(),
+                       gameplay::attr("jumpPower")) *
+                   kJumpScale3D;
+        }
+        player->jump(jump);
     }
     player->move(playerVelocity, dt);
 
