@@ -36,6 +36,7 @@
 #include "engine/rhi/Device.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
+#include "gameplay/actors/ActorState.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/interaction/FurnitureForms.hpp"
@@ -2335,8 +2336,11 @@ void LandscapeScene::openBarterScreen(ecs::Entity vendor) {
         containerEntity.set<gameplay::Inventory>({});
     }
     uiSystem.setBool("inventory", "transferMode", true);
-    // The vendor's name for the screen title.
+    // The vendor's name for the title + its barter profile (D1).
     str title = "Merchant";
+    vendorBuyMult = statsTuning.barterBuyMult;
+    vendorSellMult = statsTuning.barterSellMult;
+    core::Guid vendorFormId;
     if (containerEntity.has<world::RefId>()) {
         const auto& ref = containerEntity.get<world::RefId>();
         if (const reflect::TypeInfo* type = forms.typeOf(ref.base);
@@ -2346,9 +2350,38 @@ void LandscapeScene::openBarterScreen(ecs::Entity vendor) {
             if (!actor->displayName.empty()) {
                 title = actor->displayName;
             }
+            if (actor->buyMult > 0.0f) {
+                vendorBuyMult = actor->buyMult;
+            }
+            if (actor->sellMult > 0.0f) {
+                vendorSellMult = actor->sellMult;
+            }
+            vendorFormId = actor->id;
         }
     }
     uiSystem.setString("barter", "title", title);
+
+    // D1: restock — more than kRestockHours of game time since the last
+    // re-roll = clear + a fresh loadout roll (gold re-rolls with it, the
+    // Skyrim behavior). VendorState is a reflected component so the save
+    // layer carries the clock (a scene map would reset on re-enter = a
+    // free-restock exploit).
+    constexpr f64 kRestockHours = 24.0;
+    const f64 nowHours = gameClock.gameHours();
+    if (!containerEntity.has<gameplay::VendorState>()) {
+        // First open: stamp the clock, the spawn loadout IS the stock.
+        containerEntity.set<gameplay::VendorState>(
+            { static_cast<f32>(nowHours) });
+    } else if (vendorFormId.isValid()) {
+        auto& vendorState = containerEntity.get_mut<gameplay::VendorState>();
+        if (nowHours - vendorState.lastRestockHours > kRestockHours) {
+            auto& stock = containerEntity.get_mut<gameplay::Inventory>();
+            stock.items.clear();
+            gameplay::applyLoadout(forms, vendorFormId, stock, lootRng);
+            vendorState.lastRestockHours = static_cast<f32>(nowHours);
+            LOG_INFO("Vendor restocked ({}h game time)", nowHours);
+        }
+    }
     pushItemModels();
     screenStack.show("barter");
 }
@@ -2373,12 +2406,10 @@ void LandscapeScene::barterTrade(const core::Guid& item, bool playerBuys) {
     auto& bag = playerEntity.get_mut<gameplay::Inventory>();
     auto& stock = containerEntity.get_mut<gameplay::Inventory>();
     if (playerBuys) {
-        const i32 price =
-            barterPrice(row->value, statsTuning.barterBuyMult);
+        const i32 price = barterPrice(row->value, vendorBuyMult);
         barterBuy(bag, stock, item, price, goldForm->id);
     } else {
-        const i32 price =
-            barterPrice(row->value, statsTuning.barterSellMult);
+        const i32 price = barterPrice(row->value, vendorSellMult);
         barterSell(bag, stock, item, price, goldForm->id);
     }
 }
@@ -2428,8 +2459,7 @@ void LandscapeScene::pushItemModels() {
         }
         uiSystem.setRows(model, std::move(rows));
     };
-    pushRows(invView, "inventory",
-             barterMode ? statsTuning.barterSellMult : 0.0f);
+    pushRows(invView, "inventory", barterMode ? vendorSellMult : 0.0f);
 
     // C3: weight / max + the encumbrance category.
     char footer[96];
@@ -2471,7 +2501,7 @@ void LandscapeScene::pushItemModels() {
         lootView.build(forms, containerEntity.get<gameplay::Inventory>(),
                        nullptr);
         if (barterMode) {
-            pushRows(lootView, "barter", statsTuning.barterBuyMult);
+            pushRows(lootView, "barter", vendorBuyMult);
             if (goldForm) {
                 const auto& stock =
                     containerEntity.get<gameplay::Inventory>();

@@ -321,6 +321,10 @@ private:
     bool barterMode { false };
     core::Rng lootRng { 0x4d7a9b30u }; // loadout rolls (§8 seeded)
     const data::MiscItemForm* goldForm { nullptr };
+    // D1: the OPEN vendor's effective multipliers (ActorForm override or
+    // the global tuning), captured by openBarterScreen.
+    f32 vendorBuyMult { 1.5f };
+    f32 vendorSellMult { 0.5f };
     void openBarterScreen(ecs::Entity vendor);
     void barterTrade(const core::Guid& item, bool playerBuys);
 

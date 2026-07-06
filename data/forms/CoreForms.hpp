@@ -192,6 +192,10 @@ struct ActorForm : Form {
     // Chantier 4 B4 (appended — §C.1 mapping): the conversation opened by
     // [E] Talk (a quest::DialogueForm guid; invalid = a placeholder line).
     core::Guid dialogue;
+    // Chantier 6 D1 (appended): per-vendor barter multipliers.
+    // 0 = use the global StatsTuningForm barterBuyMult/barterSellMult.
+    f32 buyMult { 0.0f };
+    f32 sellMult { 0.0f };
 
     REFLECT_BEGIN(ActorForm, Form)
         REFLECT_FIELD(displayName)
@@ -202,6 +206,8 @@ struct ActorForm : Form {
         REFLECT_FIELD(animGraph)
         REFLECT_FIELD(schedule)
         REFLECT_FIELD(dialogue)
+        REFLECT_FIELD(buyMult)
+        REFLECT_FIELD(sellMult)
     REFLECT_END()
 };
 
