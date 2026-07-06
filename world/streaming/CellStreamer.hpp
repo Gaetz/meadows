@@ -27,8 +27,14 @@ public:
     // `unloadRadius`. Returns true if any cell was loaded or unloaded —
     // the caller re-runs its post-spawn fixups (ground snap, NPC build)
     // only on change.
+    //
+    // `maxLoads` (chantier 5 B8, the smoothed-streaming v1): 0 = load the
+    // whole ring now (scene enter, travels — behind a fade); N = load at
+    // most N cells per call and keep the ring marked incomplete, so the
+    // next call resumes — border crossings spread their spawns over
+    // frames instead of hitching.
     bool update(data::FormHandle worldspace, f32 focusX, f32 focusZ,
-                i32 loadRadius = 2, i32 unloadRadius = 3);
+                i32 loadRadius = 2, i32 unloadRadius = 3, u32 maxLoads = 0);
 
     // Unloads everything this streamer loaded (worldspace transitions).
     void unloadAll();

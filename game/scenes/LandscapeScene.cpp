@@ -790,7 +790,11 @@ void LandscapeScene::update(f32 dt) {
     if (cellStreamer && activeWorldspace.isValid() && !uiPaused) {
         const Vec3 focus = playMode && player ? player->position()
                                               : flyCamera.camera.position;
-        if (cellStreamer->update(activeWorldspace, focus.x, focus.z)) {
+        // Chantier 5 B8: border crossings spread their spawns — one cell
+        // per frame (the initial ring and travels load whole, behind the
+        // fade). Fixups are idempotent, re-run per loaded cell.
+        if (cellStreamer->update(activeWorldspace, focus.x, focus.z, 2, 3,
+                                 /*maxLoads=*/1)) {
             snapCellEntities();
             refreshNpcs(engine->getDevice());
             refreshNavObstacles();

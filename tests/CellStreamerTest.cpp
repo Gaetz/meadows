@@ -142,3 +142,35 @@ TEST_CASE("cell streamer keeps a ring loaded and evicts with hysteresis") {
     CHECK(streamer.loadedCount() == 0);
     CHECK(markerCount(world) == 0);
 }
+
+TEST_CASE("cell streamer: a load budget spreads the ring over calls") {
+    data::FormTypeRegistry types;
+    world::registerWorldFormTypes(types);
+    const auto plugin = data::parsePluginToml(kToml, types, "stream");
+    REQUIRE(plugin.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*plugin }, types, db);
+
+    ecs::World world;
+    world::registerSceneComponents(world);
+    world::FormCategoryRegistry categories;
+    world::registerCoreCategories(categories);
+    world::Spawner spawner;
+    world::registerCoreSpawners(spawner);
+    const world::WorldModel model = world::WorldModel::build(db);
+    world::CellLoader loader { world, db, model, spawner, categories };
+    world::CellStreamer streamer { loader, model, db };
+
+    const data::FormHandle space = db.handleOf(
+        *core::Guid::fromString("70000000-0000-4000-8000-000000000001"));
+
+    // Two cells sit in the initial ring; budget 1 = one per call, and the
+    // incomplete ring keeps reporting work even with a static focus.
+    CHECK(streamer.update(space, 8.0f, 8.0f, 2, 3, 1));
+    CHECK(streamer.loadedCount() == 1);
+    CHECK(streamer.update(space, 8.0f, 8.0f, 2, 3, 1));
+    CHECK(streamer.loadedCount() == 2);
+    // Ring complete: quiet again.
+    CHECK_FALSE(streamer.update(space, 8.0f, 8.0f, 2, 3, 1));
+    CHECK(streamer.loadedCount() == 2);
+}
