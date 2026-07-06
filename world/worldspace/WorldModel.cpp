@@ -33,6 +33,12 @@ WorldModel WorldModel::build(const data::FormDatabase& forms) {
                 handle);
         } else if (type->isA(referenceTypeId)) {
             const auto* reference = static_cast<const ReferenceForm*>(form);
+            // No cell at all = a PERSISTENT reference (the player): the
+            // scene spawns it once, the streamer never touches it. Only a
+            // cell guid that fails to RESOLVE deserves the warning.
+            if (!reference->cell.isValid()) {
+                continue;
+            }
             const data::FormHandle cell = forms.handleOf(reference->cell);
             if (!cell.isValid()) {
                 LOG_WARN("WorldModel: reference {} placed in unknown cell {}",
