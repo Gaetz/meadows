@@ -1610,17 +1610,26 @@ void LandscapeScene::updateInteraction(f32 dt) {
             case PromptKind::Furniture: {
                 // B7-lite: beds sleep 8h, seats rest 1h — both through the
                 // Phase-7 gameplay::sleep() at the black of the fade.
+                // Chantier 4 B6: a WORKSTATION opens its UI screen instead
+                // (FurnitureForm.screen — crafting tables are furniture +
+                // a screen).
                 const auto& ref = promptEntity.get<world::RefId>();
                 f32 hours = 1.0f;
+                str screen;
                 if (const reflect::TypeInfo* type = forms.typeOf(ref.base);
                     type &&
                     type->isA(gameplay::FurnitureForm::staticTypeInfo().id)) {
                     const auto* furniture = static_cast<
                         const gameplay::FurnitureForm*>(forms.get(ref.base));
                     if (furniture->category == "bed") { hours = 8.0f; }
+                    screen = furniture->screen;
                 }
-                pendingSleepHours = hours;
-                fadeDirection = 1;
+                if (!screen.empty() && screenStack.find(screen)) {
+                    screenStack.show(screen);
+                } else {
+                    pendingSleepHours = hours;
+                    fadeDirection = 1;
+                }
                 break;
             }
             default:
@@ -1801,6 +1810,10 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
           .strings = { "title", "playerGold", "vendorGold" },
           .rows = true,
           .events = { "pickBuy" } });
+    // B6: one shared model for the menu screens (pause/main/wait/workshop).
+    uiSystem.createModel({ .name = "menu",
+                           .strings = { "clockLine" },
+                           .events = { "menuAction" } });
     uiSystem.setModelEventHandler(
         [this](const str& model, const str& event, const vector<str>& args) {
             handleUiEvent(model, event, args);
@@ -1822,6 +1835,12 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
     syncScreens();
     screenStack.closeAll();
     screenStack.close("hud");
+    // B6: boot into the main menu — "Enter the world" starts Play;
+    // Escape dismisses it for the dev tools (Fly camera, panels).
+    if (screenStack.find("mainmenu")) {
+        updateMenuClockLine();
+        screenStack.show("mainmenu");
+    }
     syncScreens();
 }
 
@@ -1845,12 +1864,12 @@ void LandscapeScene::updateGameUi(f32 dt) {
     const bool imguiOwnsKeys = ImGui::GetIO().WantCaptureKeyboard;
 
     // Escape: close the top modal first; the pause menu (B6) catches it
-    // when nothing is open.
+    // when nothing is open in Play (Fly/Edit keep Escape free for tools).
     if (!imguiOwnsKeys && input.wasPressed(platform::Key::Escape)) {
-        if (!screenStack.closeTop()) {
-            if (screenStack.find("pause")) {
-                screenStack.show("pause");
-            }
+        if (!screenStack.closeTop() && playMode &&
+            screenStack.find("pause")) {
+            updateMenuClockLine();
+            screenStack.show("pause");
         }
     }
     // I: toggle the inventory (B3) — not while typing in a text field.
@@ -1862,6 +1881,12 @@ void LandscapeScene::updateGameUi(f32 dt) {
         } else if (!screenStack.modalOpen() && playerEntity.is_alive()) {
             openInventoryScreen();
         }
+    }
+    // T: the wait menu (B6) — Play only, nothing else open.
+    if (!imguiOwnsKeys && !uiSystem.textFieldFocused() && playMode &&
+        input.wasPressed(platform::Key::T) && !screenStack.modalOpen()) {
+        updateMenuClockLine();
+        screenStack.show("wait");
     }
 
     const bool modal = screenStack.modalOpen();
@@ -2244,6 +2269,10 @@ void LandscapeScene::handleUiEvent(const str& model, const str& event,
             }
         }
         pushItemModels();
+    } else if (model == "menu") {
+        if (event == "menuAction" && !args.empty()) {
+            handleMenuAction(args[0]);
+        }
     } else if (model == "dialogue") {
         if (event == "choose" && !args.empty() && dialogueRunner) {
             if (args[0] == "leave") {
@@ -2325,6 +2354,67 @@ void LandscapeScene::useConsumable(const core::Guid& id) {
         }
     }
     LOG_INFO("Used: {}", consumable->editorId);
+}
+
+// --- Chantier 4 B6: menus -----------------------------------------------------------
+
+void LandscapeScene::updateMenuClockLine() {
+    const f64 hours = std::fmod(gameClock.gameHours(), 24.0);
+    const i32 hh = static_cast<i32>(hours);
+    const i32 mm = static_cast<i32>((hours - hh) * 60.0);
+    const i32 day = static_cast<i32>(gameClock.gameDays()) + 1;
+    char line[48];
+    std::snprintf(line, sizeof(line), "Day %d — %02d:%02d", day, hh, mm);
+    uiSystem.setString("menu", "clockLine", line);
+}
+
+void LandscapeScene::performWait(f32 hours) {
+    // Waiting passes game time and decays the needs, but restores nothing
+    // — that's what beds are for (gameplay::sleep, B7-lite chantier 3).
+    const f64 gameDt = static_cast<f64>(hours) * 3600.0;
+    gameClock.gameSeconds += gameDt;
+    if (playerEntity.is_alive()) {
+        if (playerEntity.has<gameplay::Survival>()) {
+            gameplay::tickSurvival(
+                playerEntity.get_mut<gameplay::Survival>(), gameDt,
+                statsTuning);
+        }
+        if (playerEntity.has<gameplay::CombatState>()) {
+            gameplay::accrueRest(
+                playerEntity.get_mut<gameplay::CombatState>(), gameDt);
+        }
+    }
+    updateMenuClockLine();
+    LOG_INFO("B6: waited {} h -> game time {:.2f} h", hours,
+             std::fmod(gameClock.gameHours(), 24.0));
+}
+
+void LandscapeScene::handleMenuAction(const str& action) {
+    if (action == "resume" || action == "cancel") {
+        screenStack.closeTop();
+    } else if (action == "wait") {
+        updateMenuClockLine();
+        screenStack.show("wait");
+    } else if (action == "wait1" || action == "wait4" ||
+               action == "wait8") {
+        performWait(action == "wait1" ? 1.0f
+                                      : action == "wait4" ? 4.0f : 8.0f);
+        screenStack.closeTop();
+    } else if (action == "play") {
+        screenStack.closeAll();
+        if (!playMode) {
+            enterPlayMode();
+        }
+    } else if (action == "mainmenu") {
+        if (playMode) {
+            exitPlayMode();
+        }
+        screenStack.closeAll();
+        updateMenuClockLine();
+        screenStack.show("mainmenu");
+    } else if (action == "quit") {
+        engine->requestQuit();
+    }
 }
 
 // --- Chantier 4 B4: dialogue --------------------------------------------------------

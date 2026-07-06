@@ -51,6 +51,10 @@ public:
     platform::Input& getInput() { return input; }
     core::JobSystem& getJobSystem() { return *jobSystem; }
 
+    // Ends the frame loop after the current frame (the in-game Quit
+    // button — Escape belongs to the game UI since chantier 4).
+    void requestQuit() { quitRequested = true; }
+
 private:
     Engine() = default;
 
@@ -65,6 +69,7 @@ private:
     uptr<ui::ImGuiLayer> imgui;
     render::Camera2D camera;
     platform::Input input;
+    bool quitRequested { false };
 };
 
 } // namespace engine

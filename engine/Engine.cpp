@@ -72,7 +72,7 @@ void Engine::loop(Game& game) {
     // Variable timestep for now; a fixed simulation step with render
     // interpolation slots in here once gameplay needs determinism (§8).
     auto lastTime = std::chrono::steady_clock::now();
-    while (window->pumpEvents()) {
+    while (window->pumpEvents() && !quitRequested) {
         const auto now = std::chrono::steady_clock::now();
         const f32 dt = std::min(
             std::chrono::duration<f32>(now - lastTime).count(), kMaxDt);

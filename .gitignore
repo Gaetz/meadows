@@ -50,3 +50,6 @@ build/
 .idea/
 .vscode/
 cmake-build-debug/
+
+smoke.log
+smoke-err.log

@@ -296,6 +296,13 @@ private:
     void openBarterScreen(ecs::Entity vendor);
     void barterTrade(const core::Guid& item, bool playerBuys);
 
+    // Chantier 4 B6: menus (pause / main / wait / workstation screens
+    // share one "menu" data model — the documents differ, the actions
+    // route through handleMenuAction).
+    void handleMenuAction(const str& action);
+    void performWait(f32 hours); // clock + needs decay, NO bed recovery
+    void updateMenuClockLine();
+
     // Chantier 3 B5/B6: melee combat — everything flows through the GAS
     // damage pipeline (weaponDamageEvent -> applyDamage), like the 2D
     // CombatArena. First-person: no player swing anim needed in v1.
