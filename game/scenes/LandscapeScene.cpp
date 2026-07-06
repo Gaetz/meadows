@@ -440,6 +440,9 @@ void LandscapeScene::onExit() {
     shownScreens.clear();
     uiModalWasOpen = false;
     uiTextInputOn = false;
+    dialogueRunner.reset(); // references `forms`, reset before re-resolve
+    dialogueOptions.clear();
+    containerEntity = ecs::Entity {};
     destroyOffscreenTarget(device);
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
@@ -1562,11 +1565,25 @@ void LandscapeScene::updateInteraction(f32 dt) {
                 promptEntity = ecs::Entity {};
                 break;
             }
-            case PromptKind::Actor:
-                // Placeholder until the dialogue vertical: a spoken line.
-                talkLine = "Belle journee, voyageur.";
-                talkTimer = 4.0f;
+            case PromptKind::Actor: {
+                // B4: actors with a DialogueForm talk for real; the rest
+                // keep the placeholder line.
+                const auto& ref = promptEntity.get<world::RefId>();
+                const data::Form* base = forms.get(ref.base);
+                const reflect::TypeInfo* type = forms.typeOf(ref.base);
+                const auto* actor =
+                    base && type &&
+                            type->isA(data::ActorForm::staticTypeInfo().id)
+                        ? static_cast<const data::ActorForm*>(base)
+                        : nullptr;
+                if (actor && actor->dialogue.isValid()) {
+                    openDialogue(actor->dialogue);
+                } else {
+                    talkLine = "Belle journee, voyageur.";
+                    talkTimer = 4.0f;
+                }
                 break;
+            }
             case PromptKind::Corpse:
                 openContainerScreen(promptEntity);
                 break;
@@ -1753,6 +1770,11 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                            .strings = { "title" },
                            .rows = true,
                            .events = { "pickLoot", "takeAll" } });
+    // B4: dialogue — the NPC line + the player options as rows.
+    uiSystem.createModel({ .name = "dialogue",
+                           .strings = { "npcName", "npcLine" },
+                           .rows = true,
+                           .events = { "choose" } });
     uiSystem.setModelEventHandler(
         [this](const str& model, const str& event, const vector<str>& args) {
             handleUiEvent(model, event, args);
@@ -1765,14 +1787,28 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                              .modal = f.modal,
                              .overlay = f.overlay });
     });
-    // TEMP smoke validation: force-load every screen document once.
-    openInventoryScreen();
-    openContainerScreen(playerEntity);
-    screenStack.show("hud");
+    // Preload every screen document once (then hide them): binding or
+    // syntax errors in a base or MODDED document surface in the log at
+    // startup instead of at first open.
+    for (const ScreenStack::Screen* screen : screenStackPreloadList()) {
+        screenStack.show(screen->name);
+    }
     syncScreens();
     screenStack.closeAll();
     screenStack.close("hud");
     syncScreens();
+}
+
+// Every defined screen, for the startup preload pass.
+vector<const ScreenStack::Screen*> LandscapeScene::screenStackPreloadList()
+    const {
+    vector<const ScreenStack::Screen*> screens;
+    data::forEach<data::UiScreenForm>(forms, [&](const data::UiScreenForm& f) {
+        if (const ScreenStack::Screen* screen = screenStack.find(f.screen)) {
+            screens.push_back(screen);
+        }
+    });
+    return screens;
 }
 
 void LandscapeScene::updateGameUi(f32 dt) {
@@ -2093,6 +2129,21 @@ void LandscapeScene::handleUiEvent(const str& model, const str& event,
             loot.items.clear();
         }
         pushItemModels();
+    } else if (model == "dialogue") {
+        if (event == "choose" && !args.empty() && dialogueRunner) {
+            if (args[0] == "leave") {
+                dialogueRunner->end();
+            } else if (const auto id = core::Guid::fromString(args[0])) {
+                for (const quest::DialogueNodeForm* option :
+                     dialogueOptions) {
+                    if (option->id == *id) {
+                        dialogueRunner->select(*option);
+                        break;
+                    }
+                }
+            }
+            pushDialogueModel(); // closes the screen when it ended
+        }
     }
 }
 
@@ -2159,6 +2210,70 @@ void LandscapeScene::useConsumable(const core::Guid& id) {
         }
     }
     LOG_INFO("Used: {}", consumable->editorId);
+}
+
+// --- Chantier 4 B4: dialogue --------------------------------------------------------
+
+gameplay::EvalContext LandscapeScene::makeEvalContext() const {
+    gameplay::EvalContext context;
+    context.tags = &gameTags;
+    if (playerEntity.is_alive()) {
+        if (playerEntity.has<gameplay::AbilitySystem>()) {
+            context.abilitySystem =
+                &playerEntity.get<gameplay::AbilitySystem>();
+        }
+        if (playerEntity.has<gameplay::Inventory>()) {
+            context.inventory = &playerEntity.get<gameplay::Inventory>();
+        }
+    }
+    // Lua clauses: no predicate callback wired in the scene yet — such a
+    // clause fails closed (the shared VM hookup is a later slice).
+    return context;
+}
+
+void LandscapeScene::openDialogue(const core::Guid& dialogueId) {
+    if (!uiCreated) {
+        return;
+    }
+    if (!dialogueRunner) {
+        dialogueRunner =
+            std::make_unique<quest::DialogueRunner>(forms, eventBus);
+    }
+    if (!dialogueRunner->start(dialogueId)) {
+        LOG_WARN("B4: dialogue {} failed to start", dialogueId.toString());
+        return;
+    }
+    if (const auto* dialogue =
+            forms.find<quest::DialogueForm>(dialogueId)) {
+        uiSystem.setString("dialogue", "npcName", dialogue->displayName);
+    }
+    pushDialogueModel();
+    screenStack.show("dialogue");
+}
+
+void LandscapeScene::pushDialogueModel() {
+    if (!dialogueRunner || !dialogueRunner->active()) {
+        screenStack.close("dialogue");
+        dialogueOptions.clear();
+        return;
+    }
+    const quest::DialogueNodeForm* line = dialogueRunner->currentLine();
+    uiSystem.setString("dialogue", "npcLine", line ? line->text : str {});
+    dialogueOptions = dialogueRunner->options(makeEvalContext());
+    vector<::ui::UiRow> rows;
+    u32 index = 1;
+    for (const quest::DialogueNodeForm* option : dialogueOptions) {
+        ::ui::UiRow row;
+        row.id = option->id.toString();
+        row.c0 = std::to_string(index++) + ".  " + option->text;
+        rows.push_back(std::move(row));
+    }
+    ::ui::UiRow leave;
+    leave.id = "leave";
+    leave.c0 = std::to_string(index) + ".  (Leave)";
+    leave.tag = "leave";
+    rows.push_back(std::move(leave));
+    uiSystem.setRows("dialogue", std::move(rows));
 }
 
 void LandscapeScene::transferItem(const core::Guid& id,

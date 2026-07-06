@@ -1,0 +1,36 @@
+/* The conversation screen (chantier 4 B4): NPC line up top, numbered
+   player options below — subtitle-first, no camera work yet. */
+
+#conversation {
+	position: absolute;
+	left: 20%;
+	right: 20%;
+	bottom: 12%;
+}
+
+#line {
+	font-size: 18dp;
+	color: #f0ede4;
+	margin-bottom: 12dp;
+	line-height: 1.4em;
+}
+
+#options {
+	border-top: 1dp #3c4046;
+	padding-top: 8dp;
+}
+
+.option {
+	padding: 5dp 8dp;
+	color: #c9c5bb;
+	cursor: pointer;
+}
+
+.option:hover {
+	color: #f5f2e9;
+	background-color: #23262ce0;
+}
+
+.option.leave {
+	color: #8a8f96;
+}

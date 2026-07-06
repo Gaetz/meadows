@@ -1,0 +1,15 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="dialogue.rcss"/>
+</head>
+<body>
+	<div id="conversation" class="panel" data-model="dialogue">
+		<div class="title">{{ npcName }}</div>
+		<div id="line">{{ npcLine }}</div>
+		<div id="options">
+			<div class="option" data-for="option : rows" data-class-leave="option.tag == 'leave'" data-event-click="choose(option.id)">{{ option.c0 }}</div>
+		</div>
+	</div>
+</body>
+</rml>

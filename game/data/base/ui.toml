@@ -37,6 +37,16 @@ screen = "container"
 document = "container.rml"
 modal = true
 
+[[records]]
+form = "5e8bac40-0000-4000-8000-000000000004"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenDialogue"
+screen = "dialogue"
+document = "dialogue.rml"
+modal = true
+
 # The gold currency (chantier 4 B5): an ordinary MISC item — no parallel
 # money system, the barter screen just moves coins like any stack.
 [[records]]

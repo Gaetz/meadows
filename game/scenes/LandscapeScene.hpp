@@ -16,9 +16,12 @@
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
+#include "gameplay/condition/Condition.hpp"
+#include "gameplay/event/EventBus.hpp"
 #include "gameplay/interaction/Furniture.hpp"
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
+#include "quest/Dialogue.hpp"
 #include "engine/ui/UiSystem.hpp"
 #include "game/InventoryView.hpp"
 #include "game/ScreenStack.hpp"
@@ -256,6 +259,7 @@ private:
     void updateGameUi(f32 dt);
     void updateHudModel();
     void syncScreens();
+    vector<const ScreenStack::Screen*> screenStackPreloadList() const;
 
     // Chantier 4 B3: inventory + container/loot (SkyUI table logic in
     // InventoryView; the same component serves the barter screen, B5).
@@ -270,6 +274,15 @@ private:
     void toggleEquip(const core::Guid& id);
     void useConsumable(const core::Guid& id);
     void transferItem(const core::Guid& id, bool fromContainer);
+
+    // Chantier 4 B4: dialogue — the Phase-4 tree + condition evaluator,
+    // surfaced by the RmlUi screen.
+    gameplay::EventBus eventBus;
+    uptr<quest::DialogueRunner> dialogueRunner;
+    vector<const quest::DialogueNodeForm*> dialogueOptions;
+    gameplay::EvalContext makeEvalContext() const;
+    void openDialogue(const core::Guid& dialogueId);
+    void pushDialogueModel();
 
     // Chantier 3 B5/B6: melee combat — everything flows through the GAS
     // damage pipeline (weaponDamageEvent -> applyDamage), like the 2D

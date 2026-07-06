@@ -852,12 +852,96 @@ package = "4d7a9b30-0000-4000-8000-000000000088"
 location = "4d7a9b30-0000-4000-8000-000000000024"
 
 # §5 cross-plugin patch: the Villager (declared in adventure.toml) gains
-# its daily routine from THIS plugin — one field, last writer wins.
+# its daily routine AND its conversation from THIS plugin — two fields,
+# last writer wins.
 [[records]]
 form = "2b5e7d10-0000-4000-8000-0000000000b1"
 type = "ActorForm"
 [records.fields]
 schedule = "4d7a9b30-0000-4000-8000-000000000089"
+dialogue = "4d7a9b30-0000-4000-8000-0000000000d0"
+
+# The Villager's conversation (chantier 4 B4) — the Phase-4 dialogue tree:
+# decomposed node records linked by `parent`, options gated by the shared
+# condition evaluator. A mod adds an option by adding one child record.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000d0"
+type = "DialogueForm"
+new = true
+[records.fields]
+editorId = "VillagerChat"
+displayName = "Villager"
+rootNode = "4d7a9b30-0000-4000-8000-0000000000d1"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000d1"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+speaker = "Villager"
+text = "Bien le bonjour, voyageur ! Le vent est doux aujourd'hui."
+
+# Option 1: village gossip -> one reply, then back to the root options.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000d2"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000d1"
+speaker = "Player"
+text = "Quoi de neuf au village ?"
+order = 1
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000d3"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000d2"
+speaker = "Villager"
+text = "On raconte qu'un bandit rode a l'est du village. Restez sur vos gardes."
+
+# Option 2: only offered while the player CARRIES travel rations — the
+# condition evaluator gating a dialogue option (HasItem clause).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000d4"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000d1"
+speaker = "Player"
+text = "J'ai trouve des rations de voyage sur une caisse."
+order = 2
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000d5"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000d4"
+kind = "HasItem"
+item = "4d7a9b30-0000-4000-8000-000000000070"
+value = 1.0
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000d6"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000d4"
+speaker = "Villager"
+text = "Gardez-les precieusement — la route est longue jusqu'a la prochaine auberge."
+
+# Option 3: goodbye (no reply node -> the conversation ends).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000d7"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000d1"
+speaker = "Player"
+text = "Bonne journee a vous."
+order = 3
 
 # A pickable item (chantier 3 B1): rations on the crates — [E] takes them
 # into the inventory (persistence of pickups = the save layer, chantier 5).

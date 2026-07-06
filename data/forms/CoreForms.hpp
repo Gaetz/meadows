@@ -189,6 +189,9 @@ struct ActorForm : Form {
     core::Guid appearance; // gameplay::AppearanceForm (modular visual)
     core::Guid animGraph;  // AnimGraphForm (animation controller)
     core::Guid schedule;   // gameplay::ScheduleForm (daily routine)
+    // Chantier 4 B4 (appended — §C.1 mapping): the conversation opened by
+    // [E] Talk (a quest::DialogueForm guid; invalid = a placeholder line).
+    core::Guid dialogue;
 
     REFLECT_BEGIN(ActorForm, Form)
         REFLECT_FIELD(displayName)
@@ -198,6 +201,7 @@ struct ActorForm : Form {
         REFLECT_FIELD(appearance)
         REFLECT_FIELD(animGraph)
         REFLECT_FIELD(schedule)
+        REFLECT_FIELD(dialogue)
     REFLECT_END()
 };
 
