@@ -1,7 +1,20 @@
 #include "gameplay/save/SaveState.hpp"
 
+#include <algorithm>
+
+#include "data/forms/FormDatabase.hpp"
+#include "data/forms/FormQuery.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/combat/Combat.hpp"
+#include "gameplay/inventory/Inventory.hpp"
+#include "gameplay/stats/CoreAttributes.hpp"
+#include "gameplay/stats/Damage.hpp"
+#include "gameplay/stats/Injuries.hpp"
+#include "gameplay/stats/Resonance.hpp"
+#include "gameplay/stats/StatusBuildup.hpp"
+#include "gameplay/stats/Survival.hpp"
 
 namespace gameplay {
 
@@ -10,6 +23,27 @@ namespace {
 // Fixed namespaces for the deterministic save-record guids (§8: re-saving
 // produces the same identities, so save TOMLs diff cleanly).
 constexpr core::Guid kSavedEffectNs { 0x5344454646454354ull, 0x0000000000000001ull };
+constexpr core::Guid kSavedStatsNs  { 0x5344535441545321ull, 0x0000000000000002ull };
+constexpr core::Guid kSavedItemNs   { 0x53444954454d2121ull, 0x0000000000000003ull };
+constexpr core::Guid kSavedInjuryNs { 0x5344494e4a555259ull, 0x0000000000000004ull };
+
+// Copies a component's fields into the SavedStatsForm (capture) or back
+// (apply) when the entity carries it.
+template<typename T>
+void componentToSaved(flecs::entity entity, SavedStatsForm& saved) {
+    if (entity.has<T>()) {
+        copyMatchingFields(T::staticTypeInfo(), &entity.get<T>(),
+                           SavedStatsForm::staticTypeInfo(), &saved);
+    }
+}
+
+template<typename T>
+void savedToComponent(const SavedStatsForm& saved, flecs::entity entity) {
+    if (entity.has<T>()) {
+        copyMatchingFields(SavedStatsForm::staticTypeInfo(), &saved,
+                           T::staticTypeInfo(), &entity.get_mut<T>());
+    }
+}
 
 } // namespace
 
@@ -81,6 +115,141 @@ vector<data::Record> captureActiveEffects(const AbilitySystem& system,
         records.push_back(createRecord(row, rowId));
     }
     return records;
+}
+
+vector<data::Record> captureActor(flecs::entity entity,
+                                  const core::Guid& refGuid,
+                                  const GameplayTagRegistry& registry) {
+    vector<data::Record> records;
+
+    // The stat sheet — one flat record, fields mirrored by name.
+    SavedStatsForm stats;
+    stats.parent = refGuid;
+    componentToSaved<CoreAttributes>(entity, stats);
+    componentToSaved<AttributeSet>(entity, stats);
+    componentToSaved<Resonance>(entity, stats);
+    componentToSaved<Survival>(entity, stats);
+    componentToSaved<StatusBuildup>(entity, stats);
+    componentToSaved<CombatState>(entity, stats);
+    componentToSaved<Equipment>(entity, stats);
+    records.push_back(
+        createRecord(stats, core::Guid::combine(kSavedStatsNs, refGuid)));
+    // The sentinel must survive resolution even for a pristine actor: an
+    // empty record would carry no field at all — keep `parent` always.
+    records.back().fields.emplace(
+        SavedStatsForm::staticTypeInfo().findField("parent")->id,
+        reflect::Value { refGuid });
+
+    if (entity.has<AbilitySystem>()) {
+        const auto effectRecords = captureActiveEffects(
+            entity.get<AbilitySystem>(), refGuid, registry);
+        records.insert(records.end(), effectRecords.begin(),
+                       effectRecords.end());
+    }
+
+    if (entity.has<Inventory>()) {
+        // Sorted by item guid: deterministic identities and diffs (§8).
+        vector<ItemStack> stacks = entity.get<Inventory>().items;
+        std::sort(stacks.begin(), stacks.end(),
+                  [](const ItemStack& a, const ItemStack& b) {
+                      return a.item < b.item;
+                  });
+        for (const ItemStack& stack : stacks) {
+            if (stack.count <= 0) {
+                continue;
+            }
+            SavedItemForm item;
+            item.parent = refGuid;
+            item.item = stack.item;
+            item.count = stack.count;
+            records.push_back(createRecord(
+                item, core::Guid::combine(
+                          core::Guid::combine(kSavedItemNs, refGuid),
+                          stack.item)));
+        }
+    }
+
+    if (entity.has<Injuries>()) {
+        u64 index = 0;
+        for (const Injury& injury : entity.get<Injuries>().list) {
+            SavedInjuryForm row;
+            row.parent = refGuid;
+            row.type = static_cast<i32>(injury.type);
+            row.part = static_cast<i32>(injury.part);
+            row.severity = injury.severity;
+            row.recoveryHoursRemaining = injury.recoveryHoursRemaining;
+            records.push_back(createRecord(
+                row, core::Guid::combine(
+                         core::Guid::combine(kSavedInjuryNs, refGuid),
+                         core::Guid { 0x524f57u, ++index })));
+        }
+    }
+
+    return records;
+}
+
+SavedActorRecords savedRecordsFor(const data::FormDatabase& forms,
+                                  const core::Guid& refGuid) {
+    SavedActorRecords saved;
+    data::childrenOf<SavedStatsForm>(
+        forms, refGuid,
+        [&](const SavedStatsForm& form) { saved.stats = &form; });
+    data::childrenOf<SavedEffectForm>(
+        forms, refGuid,
+        [&](const SavedEffectForm& form) { saved.effects.push_back(&form); });
+    data::childrenOf<SavedItemForm>(
+        forms, refGuid,
+        [&](const SavedItemForm& form) { saved.items.push_back(&form); });
+    data::childrenOf<SavedInjuryForm>(
+        forms, refGuid,
+        [&](const SavedInjuryForm& form) { saved.injuries.push_back(&form); });
+    return saved;
+}
+
+void applySavedState(flecs::entity entity, const SavedActorRecords& saved,
+                     const GameplayTagRegistry& registry) {
+    if (!saved.stats) {
+        return;
+    }
+    savedToComponent<CoreAttributes>(*saved.stats, entity);
+    savedToComponent<AttributeSet>(*saved.stats, entity);
+    savedToComponent<Resonance>(*saved.stats, entity);
+    savedToComponent<Survival>(*saved.stats, entity);
+    savedToComponent<StatusBuildup>(*saved.stats, entity);
+    savedToComponent<CombatState>(*saved.stats, entity);
+    savedToComponent<Equipment>(*saved.stats, entity);
+
+    if (entity.has<Inventory>()) {
+        auto& bag = entity.get_mut<Inventory>();
+        bag.items.clear();
+        for (const SavedItemForm* item : saved.items) {
+            addItem(bag, item->item, item->count);
+        }
+    }
+    if (entity.has<Injuries>()) {
+        auto& injuries = entity.get_mut<Injuries>();
+        injuries.list.clear();
+        for (const SavedInjuryForm* row : saved.injuries) {
+            injuries.list.push_back(
+                { static_cast<InjuryType>(row->type),
+                  static_cast<BodyPart>(row->part), row->severity,
+                  row->recoveryHoursRemaining });
+        }
+    }
+
+    if (entity.has<AbilitySystem>() && entity.has<AttributeSet>()) {
+        auto& system = entity.get_mut<AbilitySystem>();
+        for (const SavedEffectForm* row : saved.effects) {
+            restoreActiveEffect(system, *row, registry);
+        }
+        // §6: currents are DERIVED — seed from the restored bases, fold
+        // the restored modifiers back in, then re-derive the life state
+        // (a dead actor must load dead; initializeActorStats cleared it).
+        const auto& set = entity.get<AttributeSet>();
+        initializeCurrent(system, set);
+        recomputeCurrent(set, system);
+        updateLifeState(system, registry);
+    }
 }
 
 } // namespace gameplay

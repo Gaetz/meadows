@@ -7,6 +7,7 @@ add_library(meadows-runtime STATIC
     InventoryView.cpp
     LevelEditor.cpp
     MeshCache.cpp
+    SaveGame.cpp
     SceneStack.cpp
     SceneSubmit.cpp
     ScreenStack.cpp

@@ -66,4 +66,34 @@ vector<data::Record> captureActiveEffects(const AbilitySystem& system,
                                           const core::Guid& parent,
                                           const GameplayTagRegistry& registry);
 
+// Captures one actor entity's full persistent state (the §6 contract:
+// component BASE values + active durational effects; currents are never
+// stored) as child records of `refGuid`: one SavedStatsForm (also the
+// "was captured" sentinel that suppresses loadout re-rolls), plus
+// SavedEffect/SavedItem/SavedInjury rows. Missing components are simply
+// skipped. Deterministic record guids; items sorted by item guid (§8).
+vector<data::Record> captureActor(flecs::entity entity,
+                                  const core::Guid& refGuid,
+                                  const GameplayTagRegistry& registry);
+
+// The inverse: writes the SavedStatsForm fields back into the entity's
+// components (by reflection name matching), restores the effect rows,
+// refills Inventory/Injuries/Equipment. Call strictly AFTER
+// initializeActorStats (which resets vitals and clears State.Dead), with
+// the same records the capture produced (resolved or pending). Ends with
+// a current recompute + updateLifeState so a dead actor loads dead.
+struct SavedActorRecords {
+    const SavedStatsForm* stats { nullptr };
+    vector<const SavedEffectForm*> effects;
+    vector<const SavedItemForm*> items;
+    vector<const SavedInjuryForm*> injuries;
+};
+void applySavedState(flecs::entity entity, const SavedActorRecords& saved,
+                     const GameplayTagRegistry& registry);
+
+// Convenience: gathers an actor's saved child records from a resolved
+// database (returns stats = nullptr when the actor was never captured).
+SavedActorRecords savedRecordsFor(const data::FormDatabase& forms,
+                                  const core::Guid& refGuid);
+
 } // namespace gameplay
