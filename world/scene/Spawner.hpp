@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <unordered_map>
 
 #include "data/forms/FormDatabase.hpp"
@@ -21,6 +22,11 @@ struct SpawnContext {
     ecs::World& world;
     const data::FormDatabase& forms;
     const FormCategoryRegistry& categories;
+    // Optional per-reference veto (chantier 5): the pending save layer
+    // suppresses references it knows are disabled. Consulted by the
+    // prefab expansion (derived children bypass the cell loop) — the
+    // CellLoader applies it to top-level references itself.
+    std::function<bool(const core::Guid& referenceId)> filter;
 };
 
 // Category-specific wiring, called after the universal components are set.

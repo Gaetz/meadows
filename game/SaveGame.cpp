@@ -17,6 +17,44 @@
 
 namespace game {
 
+namespace {
+
+// Builds a full `creates` ReferenceForm record from a live entity (the
+// prefab-derived-child path — those references exist in no plugin).
+std::optional<data::Record> materializeReference(
+    ecs::Entity entity, const data::FormDatabase& forms, bool enabled) {
+    const auto& refId = entity.get<world::RefId>();
+    world::ReferenceForm derived;
+    derived.id = refId.referenceId;
+    if (const data::Form* base = forms.get(refId.base)) {
+        derived.baseForm = base->id;
+    }
+    if (refId.cell.isValid()) {
+        if (const data::Form* cell = forms.get(refId.cell)) {
+            derived.cell = cell->id;
+        }
+    }
+    if (entity.has<world::Transform>()) {
+        const auto& transform = entity.get<world::Transform>();
+        derived.position = transform.position;
+        derived.rotation = transform.rotation;
+        derived.scale = transform.scale;
+    }
+    derived.enabled = enabled;
+    data::Record record = gameplay::createRecord(derived, derived.id);
+    if (!enabled) {
+        // createRecord drops default-equal fields; enabled=false differs
+        // from the default so it is already carried — this is just belt
+        // and braces for a default change.
+        record.fields.emplace(
+            world::ReferenceForm::staticTypeInfo().findField("enabled")->id,
+            reflect::Value { false });
+    }
+    return record;
+}
+
+} // namespace
+
 std::optional<data::Record> captureReference(ecs::Entity entity,
                                              const data::FormDatabase& forms) {
     if (!entity.is_alive() || !entity.has<world::RefId>()) {
@@ -26,7 +64,11 @@ std::optional<data::Record> captureReference(ecs::Entity entity,
     const auto* reference =
         forms.find<world::ReferenceForm>(refId.referenceId);
     if (!reference) {
-        return std::nullopt; // prefab child without a record — B7's brick
+        // A prefab-derived child: no plugin creates its record, so a
+        // patch would be an orphan the resolver drops. Materialize it as
+        // a FULL `creates` record under its deterministic derived guid —
+        // the Spawner's expansion steps aside when the record exists.
+        return materializeReference(entity, forms, /*enabled=*/true);
     }
     const reflect::TypeInfo& type = world::ReferenceForm::staticTypeInfo();
 
@@ -117,9 +159,21 @@ void PendingSaveLayer::captureCell(ecs::World& world,
     }
 }
 
-void PendingSaveLayer::disableReference(const core::Guid& referenceId) {
+void PendingSaveLayer::disableReference(const core::Guid& referenceId,
+                                        const data::FormDatabase& forms,
+                                        ecs::Entity entity) {
     Entry& entry = entryFor(referenceId);
     entry.disabled = true;
+    if (!forms.find<world::ReferenceForm>(referenceId) &&
+        entity.is_alive() && entity.has<world::RefId>()) {
+        // Prefab-derived child: materialize the full disabled record (a
+        // patch to a record no plugin creates is dropped as an orphan).
+        if (auto record =
+                materializeReference(entity, forms, /*enabled=*/false)) {
+            entry.referencePatch = std::move(*record);
+            return;
+        }
+    }
     data::Record patch;
     patch.formId = referenceId;
     patch.typeId = world::ReferenceForm::staticTypeInfo().id;

@@ -43,6 +43,7 @@ add_executable(meadows-tests
     MovementTest.cpp
     PhysicsTest.cpp
     PluginConfigTest.cpp
+    PrefabChildSaveTest.cpp
     PrefabTest.cpp
     PluginLoaderTest.cpp
     QuestTest.cpp

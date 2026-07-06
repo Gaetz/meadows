@@ -53,8 +53,13 @@ public:
                        const gameplay::GameplayTagRegistry& tags);
 
     // Marks a reference disabled (picked-up item): its spawn is vetoed
-    // (CellLoader::spawnFilter) and the flush emits enabled = false.
-    void disableReference(const core::Guid& referenceId);
+    // (CellLoader::spawnFilter + prefab expansion) and the flush emits
+    // enabled = false. For a prefab-derived child (no record in any
+    // plugin — a patch would be an orphan), pass the still-alive entity:
+    // the layer materializes a full disabled `creates` record instead.
+    void disableReference(const core::Guid& referenceId,
+                          const data::FormDatabase& forms,
+                          ecs::Entity entity = {});
     bool isEnabled(const core::Guid& referenceId) const;
 
     // Materialized saved-actor records for finalizeActorSpawn — valid

@@ -133,7 +133,7 @@ TEST_CASE("cell delta: loot + damage survive unload/reload without disk") {
     gameplay::Inventory pockets;
     gameplay::addItem(pockets, kSword, 2);
     actor.set<gameplay::Inventory>(pockets);
-    pending.disableReference(kItemRef);
+    pending.disableReference(kItemRef, db, findByRef(world, kItemRef));
     findByRef(world, kItemRef).destruct();
 
     // Leave, come back.

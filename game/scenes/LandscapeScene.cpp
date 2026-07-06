@@ -1679,7 +1679,8 @@ void LandscapeScene::updateInteraction(f32 dt) {
                     LOG_INFO("Taken: {}", base->editorId);
                 }
                 if (ref.referenceId.isValid()) {
-                    pendingSave.disableReference(ref.referenceId);
+                    pendingSave.disableReference(ref.referenceId, forms,
+                                                 promptEntity);
                 }
                 promptEntity.destruct();
                 promptEntity = ecs::Entity {};

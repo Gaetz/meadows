@@ -10,7 +10,7 @@ ecs::Entity CellLoader::loadCell(data::FormHandle cell) {
     ecs::Entity cellEntity = world.create();
     loaded.emplace(cell.value, cellEntity);
 
-    SpawnContext ctx { world, forms, categories };
+    SpawnContext ctx { world, forms, categories, spawnFilter };
     const u32 referenceTypeId = ReferenceForm::staticTypeInfo().id;
     for (const data::FormHandle handle : model.referencesIn(cell)) {
         const reflect::TypeInfo* type = forms.typeOf(handle);

@@ -158,6 +158,19 @@ ecs::Entity Spawner::spawn(SpawnContext& ctx, const ReferenceForm& reference,
                 }
                 ReferenceForm derived = child;
                 derived.id = core::Guid::combine(reference.id, child.id);
+                // Chantier 5 B7: a SAVE materializes a touched derived
+                // child as a real record under this same guid (a patch to
+                // a record no plugin creates would be dropped as an
+                // orphan). When that record exists in the database, IT is
+                // the truth — the template expansion steps aside (the
+                // record spawns through the normal cell path, disabled or
+                // moved as saved).
+                if (ctx.forms.handleOf(derived.id).isValid()) {
+                    return;
+                }
+                if (ctx.filter && !ctx.filter(derived.id)) {
+                    return; // pending layer says gone (picked up)
+                }
                 derived.prefab = {}; // the derived copy is a real placement
                 derived.cell = reference.cell;
                 // Compose the instance transform over the template's
