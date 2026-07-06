@@ -1,8 +1,12 @@
 #include "quest/Quest.hpp"
 
+#include <algorithm>
+
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/FormQuery.hpp"
 #include "data/forms/FormTypeRegistry.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/save/SaveState.hpp"
 
 namespace quest {
 
@@ -101,6 +105,8 @@ void registerQuestFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<QuestStateForm>();
     registry.registerFormType<QuestBranchForm>();
     registry.registerFormType<QuestTaskForm>();
+    registry.registerFormType<SavedQuestForm>();     // chantier 6 A4
+    registry.registerFormType<SavedQuestTaskForm>();
 }
 
 void beginQuest(QuestLog& log, const data::FormDatabase& forms,
@@ -150,6 +156,68 @@ i32 taskProgress(const QuestLog& log, const core::Guid& questId,
 QuestStatus questStatus(const QuestLog& log, const core::Guid& questId) {
     const auto it = log.quests.find(questId);
     return it != log.quests.end() ? it->second.status : QuestStatus::Active;
+}
+
+vector<data::Record> captureQuestLog(const QuestLog& log) {
+    constexpr core::Guid kSavedQuestNs { 0x5351554553542121ull,
+                                         0x0000000000000005ull };
+    vector<core::Guid> questIds;
+    questIds.reserve(log.quests.size());
+    for (const auto& [id, progress] : log.quests) {
+        questIds.push_back(id);
+    }
+    std::sort(questIds.begin(), questIds.end());
+
+    vector<data::Record> records;
+    for (const core::Guid& questId : questIds) {
+        const QuestProgress& progress = log.quests.at(questId);
+        SavedQuestForm saved;
+        saved.quest = questId;
+        saved.currentState = progress.currentState;
+        saved.status = static_cast<i32>(progress.status);
+        records.push_back(gameplay::createRecord(
+            saved, core::Guid::combine(kSavedQuestNs, questId)));
+
+        vector<core::Guid> taskIds;
+        taskIds.reserve(progress.taskProgress.size());
+        for (const auto& [taskId, count] : progress.taskProgress) {
+            if (count > 0) {
+                taskIds.push_back(taskId);
+            }
+        }
+        std::sort(taskIds.begin(), taskIds.end());
+        for (const core::Guid& taskId : taskIds) {
+            SavedQuestTaskForm task;
+            task.quest = questId;
+            task.task = taskId;
+            task.progress = progress.taskProgress.at(taskId);
+            records.push_back(gameplay::createRecord(
+                task, core::Guid::combine(
+                          core::Guid::combine(kSavedQuestNs, questId),
+                          taskId)));
+        }
+    }
+    return records;
+}
+
+void applySavedQuests(QuestLog& log, const data::FormDatabase& forms) {
+    data::forEach<SavedQuestForm>(
+        forms, [&](const SavedQuestForm& saved) {
+            if (!saved.quest.isValid()) {
+                return;
+            }
+            QuestProgress progress;
+            progress.currentState = saved.currentState;
+            progress.status = static_cast<QuestStatus>(saved.status);
+            log.quests[saved.quest] = std::move(progress);
+        });
+    data::forEach<SavedQuestTaskForm>(
+        forms, [&](const SavedQuestTaskForm& saved) {
+            const auto it = log.quests.find(saved.quest);
+            if (it != log.quests.end()) {
+                it->second.taskProgress[saved.task] = saved.progress;
+            }
+        });
 }
 
 } // namespace quest

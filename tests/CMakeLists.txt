@@ -46,6 +46,7 @@ add_executable(meadows-tests
     PrefabChildSaveTest.cpp
     PrefabTest.cpp
     PluginLoaderTest.cpp
+    QuestSaveTest.cpp
     QuestTest.cpp
     ReflectTest.cpp
     ResolverTest.cpp

@@ -302,6 +302,11 @@ void LandscapeScene::onEnter() {
                        [this](const gameplay::Event& event) {
                            handleQuestEvent(event);
                        });
+    // Chantier 6 A4: a loaded save rebuilds the quest log (the tags
+    // mirror re-syncs after the player spawns, below).
+    if (loadedFromSave) {
+        quest::applySavedQuests(questLog, forms);
+    }
 
     world = ecs::World {}; // fresh on re-enter
     world::registerSceneComponents(world);
@@ -425,6 +430,7 @@ void LandscapeScene::onEnter() {
             playerEntity.get_mut<gameplay::Equipment>().weapon =
                 playerWeapon->id;
         }
+        syncQuestTags(); // A4: re-mirror a loaded quest log onto the player
     } else {
         LOG_WARN("B5.5: no Player actor spawned — controller falls back to "
                  "fixed speeds");
@@ -2207,6 +2213,11 @@ void LandscapeScene::performSave(const str& slot) {
         "5a5e0000-0000-4000-8000-000000000001"); // the one save layer
     plugin.name = "save-" + slot;
     plugin.records = pendingSave.flush();
+    // Chantier 6 A4: the quest log (scene-level, rebuilt fresh each save
+    // like the WorldStateForm — never in the pending layer).
+    const auto questRecords = quest::captureQuestLog(questLog);
+    plugin.records.insert(plugin.records.end(), questRecords.begin(),
+                          questRecords.end());
 
     gameplay::WorldStateForm state;
     state.gameSeconds = gameClock.gameSeconds;
@@ -2789,6 +2800,38 @@ void LandscapeScene::createConsole() {
         }
         requestLoad(slot);
         return "loading '" + slot + "'...";
+    });
+    console->addCommand("startquest", [this](const str& args) -> str {
+        const auto* quest =
+            data::findByEditorId<quest::QuestForm>(forms, args);
+        if (!quest) {
+            return "no quest named '" + args + "'";
+        }
+        if (questLog.quests.contains(quest->id)) {
+            return "'" + args + "' already in the log";
+        }
+        quest::beginQuest(questLog, forms, quest->id);
+        syncQuestTags();
+        return "quest '" + args + "' started";
+    });
+    console->addCommand("queststate", [this](const str&) -> str {
+        if (questLog.quests.empty()) {
+            return "quest log empty";
+        }
+        str out;
+        for (const auto& [id, progress] : questLog.quests) {
+            const auto* form = forms.find<quest::QuestForm>(id);
+            const auto* state =
+                forms.find<quest::QuestStateForm>(progress.currentState);
+            out += (form ? form->editorId : id.toString()) + ": " +
+                   (progress.status == quest::QuestStatus::Succeeded
+                        ? "succeeded"
+                        : progress.status == quest::QuestStatus::Failed
+                              ? "failed"
+                              : (state ? state->editorId : "?")) +
+                   "  ";
+        }
+        return out;
     });
     console->addCommand("settime", [this](const str& args) -> str {
         std::istringstream in { args };

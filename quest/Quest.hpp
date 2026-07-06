@@ -3,6 +3,7 @@
 #include <unordered_map>
 
 #include "data/forms/Form.hpp"
+#include "data/plugins/Record.hpp"
 #include "gameplay/event/EventBus.hpp"
 
 namespace data {
@@ -96,5 +97,39 @@ core::Guid questState(const QuestLog& log, const core::Guid& questId);
 i32 taskProgress(const QuestLog& log, const core::Guid& questId,
                  const core::Guid& taskId);
 QuestStatus questStatus(const QuestLog& log, const core::Guid& questId);
+
+// --- Save records (chantier 6 A4). The QuestLog persists as ordinary
+// plugin records (§2.4/§5), like everything else: one SavedQuestForm per
+// entry, one SavedQuestTaskForm per progressed task. Deterministic guids
+// (Guid::combine), so re-saving is idempotent.
+
+struct SavedQuestForm : data::Form {
+    core::Guid quest;
+    core::Guid currentState;
+    i32 status { 0 }; // QuestStatus
+
+    REFLECT_BEGIN(SavedQuestForm, data::Form)
+        REFLECT_FIELD(quest)
+        REFLECT_FIELD(currentState)
+        REFLECT_FIELD(status)
+    REFLECT_END()
+};
+
+struct SavedQuestTaskForm : data::Form {
+    core::Guid quest;
+    core::Guid task;
+    i32 progress { 0 };
+
+    REFLECT_BEGIN(SavedQuestTaskForm, data::Form)
+        REFLECT_FIELD(quest)
+        REFLECT_FIELD(task)
+        REFLECT_FIELD(progress)
+    REFLECT_END()
+};
+
+// The QuestLog -> save records mirror (sorted by quest then task, §8).
+vector<data::Record> captureQuestLog(const QuestLog& log);
+// Rebuilds the log from a resolved database carrying a save layer.
+void applySavedQuests(QuestLog& log, const data::FormDatabase& forms);
 
 } // namespace quest
