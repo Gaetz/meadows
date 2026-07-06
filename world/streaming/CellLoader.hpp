@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <unordered_map>
 
 #include "data/forms/FormDatabase.hpp"
@@ -36,6 +37,16 @@ public:
 
     // The cell-entity for a loaded cell, or an invalid entity if not loaded.
     ecs::Entity cellEntity(data::FormHandle cell) const;
+
+    // Persistence seams (chantier 5). `beforeUnload` fires at the top of
+    // unloadCell, while the cell's entities are still alive — the save
+    // layer captures their deltas there. `spawnFilter` (when set) can veto
+    // one reference's spawn by guid — the pending layer suppresses
+    // references it knows are disabled (picked-up items) without touching
+    // the resolved database.
+    std::function<void(data::FormHandle cell, ecs::Entity cellEntity)>
+        beforeUnload;
+    std::function<bool(const core::Guid& referenceId)> spawnFilter;
 
 private:
     ecs::World& world;

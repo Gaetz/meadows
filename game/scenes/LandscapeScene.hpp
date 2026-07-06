@@ -26,6 +26,7 @@
 #include "quest/Dialogue.hpp"
 #include "engine/ui/UiSystem.hpp"
 #include "game/InventoryView.hpp"
+#include "game/SaveGame.hpp"
 #include "game/ScreenStack.hpp"
 #include "world/ai/TerrainNavigator.hpp"
 #include "world/streaming/CellStreamer.hpp"
@@ -323,9 +324,11 @@ private:
     // true when saved state applied (fresh-game extras skip then).
     bool finalizeActorSpawn(ecs::Entity entity,
                             const core::Guid& actorFormId);
-    // Saved child records for a reference: the resolved database for now;
-    // B4 layers the pending in-memory capture on top.
-    gameplay::SavedActorRecords savedFor(const core::Guid& refGuid) const;
+
+    // Chantier 5 B4: the pending in-memory layer — the memory of unloaded
+    // cells (looted crates stay looted without a disk save). Hooked into
+    // CellLoader (beforeUnload capture, spawnFilter veto) each onEnter.
+    PendingSaveLayer pendingSave;
 
     // Chantier 4 B7: dev console in the game scene (F8) — the H2 panel
     // with world commands registered on top (spawn/tp/tgm/settime), plus

@@ -27,6 +27,22 @@ class GameplayTagRegistry;
 void copyMatchingFields(const reflect::TypeInfo& srcType, const void* src,
                         const reflect::TypeInfo& dstType, void* dst);
 
+// Materializes a typed Form from a raw Record (defaults + the record's
+// fields) — how the PENDING in-memory layer turns captured records back
+// into applicable state without a resolver pass.
+template<typename T>
+T formFromRecord(const data::Record& record) {
+    T form;
+    const reflect::TypeInfo& type = T::staticTypeInfo();
+    for (const auto& [fieldId, value] : record.fields) {
+        if (const reflect::FieldInfo* field = type.findField(fieldId)) {
+            field->set(&form, value);
+        }
+    }
+    form.id = record.formId;
+    return form;
+}
+
 // Builds a `creates = true` Record from a filled Form instance, carrying
 // only the OWN fields that differ from the type's C++ defaults (the
 // resolver applies defaults as layer zero — EditSession's export

@@ -1,17 +1,23 @@
 #pragma once
 
 #include <optional>
+#include <unordered_map>
 
 #include "data/plugins/Record.hpp"
 #include "engine/ecs/World.hpp"
+#include "gameplay/save/SaveState.hpp"
 
 // Save-game runtime plumbing (chantier 5) — the world/scene half of the
-// save layer: reference diffs and (B4+) the pending in-memory layer +
-// save files. The gameplay half (actor state capture/apply) lives in
-// gameplay/save/SaveState. A save stays an ORDINARY plugin (§5).
+// save layer: reference diffs, the PENDING in-memory layer (the memory of
+// unloaded cells), and (B5) the save files. The gameplay half (actor
+// state capture/apply) lives in gameplay/save/SaveState. A save stays an
+// ORDINARY plugin (§5).
 
 namespace data {
 class FormDatabase;
+}
+namespace gameplay {
+class GameplayTagRegistry;
 }
 
 namespace game {
@@ -26,5 +32,57 @@ namespace game {
 //    capturing snapped world Y would double the ground offset on reload).
 std::optional<data::Record> captureReference(ecs::Entity entity,
                                              const data::FormDatabase& forms);
+
+// The pending save layer: the RUNTIME memory of what changed, per
+// reference, captured when a cell unloads (CellLoader::beforeUnload) or
+// immediately (item pickups). Looted crates stay looted when their cell
+// reloads — no disk involved; a disk save (B5) just flushes this plus a
+// capture of the still-loaded cells into one ordinary plugin.
+class PendingSaveLayer {
+public:
+    // Captures every (InCell cellEntity) entity's deltas; replaces any
+    // previous capture of the same references.
+    void captureCell(ecs::World& world, const data::FormDatabase& forms,
+                     ecs::Entity cellEntity,
+                     const gameplay::GameplayTagRegistry& tags);
+    // Captures one entity immediately (the player at save time, an NPC
+    // about to despawn).
+    void captureEntity(ecs::Entity entity, const data::FormDatabase& forms,
+                       const gameplay::GameplayTagRegistry& tags);
+
+    // Marks a reference disabled (picked-up item): its spawn is vetoed
+    // (CellLoader::spawnFilter) and the flush emits enabled = false.
+    void disableReference(const core::Guid& referenceId);
+    bool isEnabled(const core::Guid& referenceId) const;
+
+    // Materialized saved-actor records for finalizeActorSpawn — valid
+    // until the next capture of the same reference. Null stats = this
+    // layer holds nothing for that actor.
+    bool hasActorState(const core::Guid& referenceId) const;
+    gameplay::SavedActorRecords actorState(const core::Guid& referenceId);
+
+    // Every record of the layer (reference patches + actor children),
+    // deterministically ordered (§8) — the flush the disk save appends.
+    vector<data::Record> flush() const;
+
+    void clear();
+    u32 trackedCount() const { return static_cast<u32>(entries.size()); }
+
+private:
+    struct Entry {
+        std::optional<data::Record> referencePatch;
+        vector<data::Record> actorRecords; // SavedX children (raw records)
+        bool disabled { false };
+        // Materialized views (actorState) — rebuilt on demand.
+        gameplay::SavedStatsForm stats;
+        vector<gameplay::SavedEffectForm> effects;
+        vector<gameplay::SavedItemForm> items;
+        vector<gameplay::SavedInjuryForm> injuries;
+        bool materialized { false };
+    };
+    Entry& entryFor(const core::Guid& referenceId);
+
+    std::unordered_map<core::Guid, Entry> entries;
+};
 
 } // namespace game

@@ -26,6 +26,9 @@ ecs::Entity CellLoader::loadCell(data::FormHandle cell) {
             continue; // prefab TEMPLATE child: only spawned when a placed
                       // reference instantiates its PrefabForm (H8)
         }
+        if (spawnFilter && !spawnFilter(reference->id)) {
+            continue; // vetoed by the pending save layer (chantier 5)
+        }
         spawner.spawn(ctx, *reference, cellEntity);
     }
     return cellEntity;
@@ -37,6 +40,9 @@ void CellLoader::unloadCell(data::FormHandle cell) {
         return;
     }
     ecs::Entity cellEntity = it->second;
+    if (beforeUnload) {
+        beforeUnload(cell, cellEntity); // capture while still alive
+    }
     world.handle().delete_with<ecs::InCell>(cellEntity); // the cell's references
     cellEntity.destruct();
     loaded.erase(it);

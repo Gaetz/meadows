@@ -279,6 +279,17 @@ void LandscapeScene::onEnter() {
         world, forms, worldModel, spawner, categories);
     cellStreamer = std::make_unique<world::CellStreamer>(*cellLoader,
                                                          worldModel, forms);
+    // Chantier 5 B4: the pending save layer remembers unloaded cells
+    // (capture before unload, spawn veto for disabled references). Fresh
+    // per scene enter — a loaded save carries its state in `forms`.
+    pendingSave.clear();
+    cellLoader->beforeUnload = [this](data::FormHandle,
+                                      ecs::Entity cellEntity) {
+        pendingSave.captureCell(world, forms, cellEntity, gameTags);
+    };
+    cellLoader->spawnFilter = [this](const core::Guid& referenceId) {
+        return pendingSave.isEnabled(referenceId);
+    };
     overworldHandle = data::FormHandle {};
     if (const auto* overworld =
             data::findByEditorId<world::WorldspaceForm>(forms, "Overworld")) {
@@ -1571,8 +1582,10 @@ void LandscapeScene::updateInteraction(f32 dt) {
                 fadeDirection = 1;
                 break;
             case PromptKind::Item: {
-                // Into the inventory; the entity leaves the world.
-                // (Persisting the pickup = the save layer, chantier 5.)
+                // Into the inventory; the entity leaves the world and the
+                // PENDING layer remembers (chantier 5 B4): the reference
+                // stays disabled when its cell reloads, and the disk save
+                // flushes enabled = false.
                 const auto& ref = promptEntity.get<world::RefId>();
                 if (const data::Form* base = forms.get(ref.base)) {
                     if (!playerEntity.has<gameplay::Inventory>()) {
@@ -1582,6 +1595,9 @@ void LandscapeScene::updateInteraction(f32 dt) {
                         playerEntity.get_mut<gameplay::Inventory>(),
                         base->id, 1);
                     LOG_INFO("Taken: {}", base->editorId);
+                }
+                if (ref.referenceId.isValid()) {
+                    pendingSave.disableReference(ref.referenceId);
                 }
                 promptEntity.destruct();
                 promptEntity = ecs::Entity {};
@@ -2032,13 +2048,6 @@ void LandscapeScene::syncScreens() {
 
 // --- Chantier 5: the post-spawn seam -------------------------------------------------
 
-gameplay::SavedActorRecords LandscapeScene::savedFor(
-    const core::Guid& refGuid) const {
-    // B4 will consult the pending in-memory layer first; the resolved
-    // database already contains the save plugin's records after a load.
-    return gameplay::savedRecordsFor(forms, refGuid);
-}
-
 bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
                                         const core::Guid& actorFormId) {
     const gameplay::CharacterTickContext tickCtx { derivedStats, gameTags,
@@ -2054,10 +2063,17 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
     if (entity.has<world::RefId>()) {
         refGuid = entity.get<world::RefId>().referenceId;
     }
-    const gameplay::SavedActorRecords saved = savedFor(refGuid);
+    // Pending layer first (a cell reloading in THIS session), then the
+    // resolved database (a loaded save). The SavedStatsForm existence is
+    // the sentinel — a captured actor never re-rolls its loadout (§8).
+    if (pendingSave.hasActorState(refGuid)) {
+        gameplay::applySavedState(entity, pendingSave.actorState(refGuid),
+                                  gameTags);
+        return true;
+    }
+    const gameplay::SavedActorRecords saved =
+        gameplay::savedRecordsFor(forms, refGuid);
     if (saved.stats) {
-        // Captured before: restore, never re-roll the loadout (§8 — the
-        // sentinel is the SavedStatsForm itself).
         gameplay::applySavedState(entity, saved, gameTags);
         return true;
     }
