@@ -107,7 +107,26 @@ void LandscapeScene::onEnter() {
     }
     forms = data::FormDatabase {};   // fresh on re-enter
     assetDb = assets::AssetDatabase {};
-    data::resolve(data::pointersOf(pluginStack), formTypes, forms);
+    // Chantier 5 B5: a loading game resolves its save file as the LAST
+    // layer — one more plugin, the §5 invariant in action.
+    std::optional<data::Plugin> savePlugin;
+    loadedFromSave = false;
+    if (!pendingLoadSlot.empty()) {
+        savePlugin = readSave(pendingLoadSlot, formTypes);
+        if (savePlugin) {
+            LOG_INFO("Loading save '{}' ({} records)", pendingLoadSlot,
+                     savePlugin->records.size());
+            loadedFromSave = true;
+        } else {
+            LOG_WARN("save '{}' not found", pendingLoadSlot);
+        }
+        pendingLoadSlot.clear();
+    }
+    vector<const data::Plugin*> loadOrder = data::pointersOf(pluginStack);
+    if (savePlugin) {
+        loadOrder.push_back(&*savePlugin);
+    }
+    data::resolve(loadOrder, formTypes, forms);
     for (const data::Plugin& plugin : pluginStack.plugins) {
         for (const data::AssetEntry& entry : plugin.assets) {
             assetDb.add(entry.id, plugin.baseDir, entry.path);
@@ -307,6 +326,32 @@ void LandscapeScene::onEnter() {
     gameClock = gameplay::GameClock {};
     gameClock.gameSeconds = 10.0 * 3600.0;
     gameClock.timescale = 12.0f;
+    // Chantier 5 B5: the WorldStateForm of a loaded save overrides the
+    // fresh-game defaults (clock, worldspace; the camera is restored at
+    // the end of onEnter, after the start-spot heuristic).
+    loadedWorldState.reset();
+    if (loadedFromSave) {
+        data::forEach<gameplay::WorldStateForm>(
+            forms, [&](const gameplay::WorldStateForm& form) {
+                loadedWorldState = form;
+            });
+    }
+    if (loadedWorldState) {
+        gameClock.gameSeconds = loadedWorldState->gameSeconds;
+        gameClock.timescale = loadedWorldState->timescale;
+        if (loadedWorldState->activeWorldspace.isValid()) {
+            const data::FormHandle handle =
+                forms.handleOf(loadedWorldState->activeWorldspace);
+            if (handle.isValid()) {
+                activeWorldspace = handle;
+                if (const auto* space =
+                        static_cast<const world::WorldspaceForm*>(
+                            forms.get(handle))) {
+                    interiorMode = space->interior;
+                }
+            }
+        }
+    }
     // B3/B4: a fresh edit session over the freshly resolved database.
     levelEditor = std::make_unique<LevelEditor>(forms, formTypes);
     editMode = false;
@@ -373,8 +418,8 @@ void LandscapeScene::onEnter() {
     if (playerEntity.is_alive()) {
         startFocus = playerEntity.get<world::Transform>().position;
     }
-    if (overworldHandle.isValid()) {
-        cellStreamer->update(overworldHandle, startFocus.x, startFocus.z);
+    if (activeWorldspace.isValid()) { // a loaded save may start indoors
+        cellStreamer->update(activeWorldspace, startFocus.x, startFocus.z);
     }
     snapCellEntities();
     refreshNpcs(device);
@@ -451,6 +496,33 @@ void LandscapeScene::onEnter() {
     }
     // Cover the full streamed ring (~14 chunks = ~900 m) plus headroom.
     flyCamera.camera.farPlane = 1600.0f;
+
+    // Chantier 5 B5: a loaded game resumes where it stood — camera on the
+    // player, saved look angles, straight into Play (no boot menu). The
+    // capsule spawns at the SAVED position directly (the travel pattern —
+    // enterPlayMode would re-ground on the terrain, wrong indoors).
+    if (loadedFromSave) {
+        Vec3 feet = flyCamera.camera.position - Vec3 { 0.0f, 1.7f, 0.0f };
+        if (playerEntity.is_alive()) {
+            feet = playerEntity.get<world::Transform>().position;
+        }
+        flyCamera.camera.position = feet + Vec3 { 0.0f, 1.7f, 0.0f };
+        if (loadedWorldState) {
+            flyCamera.camera.yaw = loadedWorldState->playerYaw;
+            flyCamera.camera.pitch = loadedWorldState->playerPitch;
+        }
+        screenStack.close("mainmenu");
+        syncScreens();
+        if ((!loadedWorldState || loadedWorldState->playMode) && physics) {
+            player = std::make_unique<phys::CharacterBody>(
+                *physics, 0.3f, 1.8f, feet + Vec3 { 0.0f, 0.25f, 0.0f });
+            playerVelocity = Vec3 { 0.0f };
+            playMode = true;
+            engine->getWindow().setRelativeMouseMode(true);
+            screenStack.show("hud");
+            syncScreens();
+        }
+    }
 }
 
 void LandscapeScene::onExit() {
@@ -824,6 +896,15 @@ void LandscapeScene::update(f32 dt) {
                          allowCapture);
     }
     // (Time-of-day now advances through the game clock, above.)
+
+    // Chantier 5 B5: a requested load re-enters the scene with the save
+    // resolved as the last layer. End of update: nothing touches the
+    // world after this.
+    if (reloadRequested) {
+        reloadRequested = false;
+        onExit();
+        onEnter();
+    }
 }
 
 // Draws the snapshot's mesh section in the opaque pass: guids resolve
@@ -2048,6 +2129,58 @@ void LandscapeScene::syncScreens() {
 
 // --- Chantier 5: the post-spawn seam -------------------------------------------------
 
+void LandscapeScene::performSave(const str& slot) {
+    // Capture EVERYTHING live (loaded cells' entities + the persistent
+    // player) into the pending layer, then flush it plus the world state
+    // into one ordinary plugin (§5). Sweep order is the flush's sorted
+    // order — deterministic (§8).
+    vector<ecs::Entity> live;
+    interactQuery.each([&](flecs::entity e, const world::Transform&,
+                           const world::RefId&) {
+        live.push_back(ecs::Entity { e });
+    });
+    for (ecs::Entity entity : live) {
+        pendingSave.captureEntity(entity, forms, gameTags);
+    }
+
+    data::Plugin plugin;
+    plugin.id = *core::Guid::fromString(
+        "5a5e0000-0000-4000-8000-000000000001"); // the one save layer
+    plugin.name = "save-" + slot;
+    plugin.records = pendingSave.flush();
+
+    gameplay::WorldStateForm state;
+    state.gameSeconds = gameClock.gameSeconds;
+    state.timescale = gameClock.timescale;
+    if (activeWorldspace.isValid()) {
+        if (const data::Form* space = forms.get(activeWorldspace)) {
+            state.activeWorldspace = space->id;
+        }
+    }
+    state.playerYaw = flyCamera.camera.yaw;
+    state.playerPitch = flyCamera.camera.pitch;
+    state.playMode = playMode;
+    state.weatherSelected = weatherSelected;
+    plugin.records.push_back(gameplay::createRecord(
+        state, *core::Guid::fromString(
+                   "5a5e0000-0000-4000-8000-0000000000ff")));
+
+    if (writeSave(slot, plugin, formTypes)) {
+        talkLine = "Partie sauvegardee (" + slot + ").";
+        talkTimer = 3.0f;
+    }
+}
+
+void LandscapeScene::requestLoad(const str& slot) {
+    if (!std::filesystem::exists(savePath(slot))) {
+        talkLine = "Aucune sauvegarde '" + slot + "'.";
+        talkTimer = 3.0f;
+        return;
+    }
+    pendingLoadSlot = slot;
+    reloadRequested = true; // consumed at the end of update()
+}
+
 bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
                                         const core::Guid& actorFormId) {
     const gameplay::CharacterTickContext tickCtx { derivedStats, gameTags,
@@ -2550,6 +2683,18 @@ void LandscapeScene::createConsole() {
     console->addCommand("tgm", [this](const str&) -> str {
         godMode = !godMode;
         return godMode ? "god mode ON" : "god mode OFF";
+    });
+    console->addCommand("save", [this](const str& args) -> str {
+        performSave(args.empty() ? "quick" : args);
+        return "saved '" + (args.empty() ? str { "quick" } : args) + "'";
+    });
+    console->addCommand("load", [this](const str& args) -> str {
+        const str slot = args.empty() ? "quick" : args;
+        if (!std::filesystem::exists(savePath(slot))) {
+            return "no save named '" + slot + "'";
+        }
+        requestLoad(slot);
+        return "loading '" + slot + "'...";
     });
     console->addCommand("settime", [this](const str& args) -> str {
         std::istringstream in { args };
@@ -4074,6 +4219,14 @@ void LandscapeScene::drawUi() {
     }
     if (editMode && levelEditor) {
         drawEditorUi();
+    }
+
+    // Chantier 5 B5: quicksave / quickload.
+    if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
+        performSave("quick");
+    }
+    if (ImGui::IsKeyPressed(ImGuiKey_F9, false)) {
+        requestLoad("quick");
     }
 
     // F8 toggles the dev console (chantier 4 B7 — spawn/tp/tgm/settime,

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <optional>
 #include <unordered_map>
 
@@ -15,6 +16,7 @@
 
 namespace data {
 class FormDatabase;
+class FormTypeRegistry;
 }
 namespace gameplay {
 class GameplayTagRegistry;
@@ -84,5 +86,17 @@ private:
 
     std::unordered_map<core::Guid, Entry> entries;
 };
+
+// --- Save files (B5). A slot = saves/<name>.toml next to the exe — a
+// save file IS a plugin file (writePluginToml/parsePluginToml); the
+// binary cooked path is a future option (the cooker already knows the
+// save form types).
+std::filesystem::path savesDirectory();
+std::filesystem::path savePath(const str& slot);
+vector<str> listSaveSlots(); // sorted by write time, newest first
+bool writeSave(const str& slot, const data::Plugin& plugin,
+               const data::FormTypeRegistry& types);
+std::optional<data::Plugin> readSave(const str& slot,
+                                     const data::FormTypeRegistry& types);
 
 } // namespace game

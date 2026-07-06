@@ -1,8 +1,14 @@
 #include "game/SaveGame.hpp"
 
 #include <algorithm>
+#include <fstream>
+#include <sstream>
 
 #include "data/forms/FormDatabase.hpp"
+#include "data/plugins/PluginLoader.hpp"
+#include "data/plugins/TomlWriter.hpp"
+#include "engine/core/Log.hpp"
+#include "engine/platform/Paths.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "world/scene/Components.hpp"
 #include "world/worldspace/WorldForms.hpp"
@@ -209,6 +215,68 @@ vector<data::Record> PendingSaveLayer::flush() const {
 
 void PendingSaveLayer::clear() {
     entries.clear();
+}
+
+// --- Save files ---------------------------------------------------------------------
+
+std::filesystem::path savesDirectory() {
+    return platform::executableDir() / "saves";
+}
+
+std::filesystem::path savePath(const str& slot) {
+    return savesDirectory() / (slot + ".toml");
+}
+
+vector<str> listSaveSlots() {
+    struct Slot {
+        str name;
+        std::filesystem::file_time_type time;
+    };
+    vector<Slot> slots;
+    std::error_code ec;
+    for (const auto& entry :
+         std::filesystem::directory_iterator { savesDirectory(), ec }) {
+        if (!entry.is_regular_file() ||
+            entry.path().extension() != ".toml") {
+            continue;
+        }
+        slots.push_back({ entry.path().stem().string(),
+                          entry.last_write_time(ec) });
+    }
+    std::sort(slots.begin(), slots.end(),
+              [](const Slot& a, const Slot& b) { return a.time > b.time; });
+    vector<str> names;
+    names.reserve(slots.size());
+    for (Slot& slot : slots) {
+        names.push_back(std::move(slot.name));
+    }
+    return names;
+}
+
+bool writeSave(const str& slot, const data::Plugin& plugin,
+               const data::FormTypeRegistry& types) {
+    std::error_code ec;
+    std::filesystem::create_directories(savesDirectory(), ec);
+    std::ofstream out { savePath(slot), std::ios::binary };
+    if (!out) {
+        LOG_ERROR("save: cannot write {}", savePath(slot).string());
+        return false;
+    }
+    out << data::writePluginToml(plugin, types);
+    LOG_INFO("Saved: {} ({} records)", savePath(slot).string(),
+             plugin.records.size());
+    return true;
+}
+
+std::optional<data::Plugin> readSave(const str& slot,
+                                     const data::FormTypeRegistry& types) {
+    std::ifstream in { savePath(slot), std::ios::binary };
+    if (!in) {
+        return std::nullopt;
+    }
+    std::ostringstream text;
+    text << in.rdbuf();
+    return data::parsePluginToml(text.str(), types, slot);
 }
 
 } // namespace game
