@@ -19,6 +19,7 @@ enum class Key : u16 {
     // UI keys (chantier 4): text editing + game-screen hotkeys.
     Tab, Backspace, Delete, Home, End, PageUp, PageDown,
     I, T,
+    J, // quest journal (chantier 6)
     Count
 };
 

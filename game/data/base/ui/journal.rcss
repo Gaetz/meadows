@@ -1,0 +1,35 @@
+/* The quest journal (chantier 6 A3). */
+
+#quests {
+	max-height: 320dp;
+	overflow-y: auto;
+	margin: 8dp 0;
+	text-align: left;
+}
+
+.entry {
+	display: flex;
+	padding: 5dp 8dp;
+	font-size: 17dp;
+	color: #f0ede4;
+}
+
+.entry.task {
+	font-size: 15dp;
+	color: #c9c5bb;
+	padding-top: 2dp;
+	padding-bottom: 2dp;
+}
+
+.entry.done {
+	color: #8a8f96;
+}
+
+.entry-text {
+	flex: 1;
+}
+
+.entry-status, .entry-progress {
+	font-size: 14dp;
+	margin-left: 8dp;
+}

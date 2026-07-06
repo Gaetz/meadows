@@ -272,6 +272,36 @@ void LandscapeScene::onEnter() {
                        [this](const gameplay::Event&) {
                            openBarterScreen(dialoguePartner);
                        });
+    // Chantier 6 A2: the quest wiring. Gate tags registered up front so
+    // dialogue conditions evaluate before any quest starts.
+    questLog = quest::QuestLog {};
+    easternQuest =
+        data::findByEditorId<quest::QuestForm>(forms, "EasternMenace");
+    for (const char* tag :
+         { "Quest.EasternMenace.Active", "Quest.EasternMenace.Ready",
+           "Quest.EasternMenace.Done", "Crime.Wanted" }) {
+        gameTags.registerTag(tag);
+    }
+    eventBus.subscribe(
+        gameplay::eventKind("OnAcceptEasternMenace"),
+        [this](const gameplay::Event&) {
+            if (!easternQuest ||
+                questLog.quests.contains(easternQuest->id)) {
+                return; // already taken (or done) — never re-begin
+            }
+            quest::beginQuest(questLog, forms, easternQuest->id);
+            syncQuestTags();
+            talkLine = "Nouvelle quete : La menace de l'est (journal : J).";
+            talkTimer = 4.0f;
+        });
+    eventBus.subscribe(gameplay::eventKind("OnDeath"),
+                       [this](const gameplay::Event& event) {
+                           handleQuestEvent(event);
+                       });
+    eventBus.subscribe(gameplay::eventKind("OnReportBandit"),
+                       [this](const gameplay::Event& event) {
+                           handleQuestEvent(event);
+                       });
 
     world = ecs::World {}; // fresh on re-enter
     world::registerSceneComponents(world);
@@ -546,6 +576,8 @@ void LandscapeScene::onExit() {
     dialoguePartner = ecs::Entity {};
     barterMode = false;
     goldForm = nullptr;
+    easternQuest = nullptr; // points into `forms`
+    questLog = quest::QuestLog {};
     console.reset(); // references forms/session — before re-resolve
     consoleVm.reset();
     consoleSession.reset();
@@ -1926,6 +1958,11 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                            .bools = { "empty" },
                            .rows = true,
                            .events = { "loadSlot", "loadCancel" } });
+    // Chantier 6 A3: the quest journal (rows: quest header + task lines).
+    uiSystem.createModel({ .name = "journal",
+                           .bools = { "empty" },
+                           .rows = true,
+                           .events = { "journalClose" } });
     uiSystem.setModelEventHandler(
         [this](const str& model, const str& event, const vector<str>& args) {
             handleUiEvent(model, event, args);
@@ -1999,6 +2036,17 @@ void LandscapeScene::updateGameUi(f32 dt) {
         input.wasPressed(platform::Key::T) && !screenStack.modalOpen()) {
         updateMenuClockLine();
         screenStack.show("wait");
+    }
+    // J: the quest journal (chantier 6 A3) — the I-key idiom.
+    if (!imguiOwnsKeys && !uiSystem.textFieldFocused() &&
+        input.wasPressed(platform::Key::J)) {
+        const ScreenStack::Screen* top = screenStack.topModal();
+        if (top && top->name == "journal") {
+            screenStack.closeTop();
+        } else if (!screenStack.modalOpen()) {
+            pushJournalModel();
+            screenStack.show("journal");
+        }
     }
 
     const bool modal = screenStack.modalOpen();
@@ -2488,6 +2536,10 @@ void LandscapeScene::handleUiEvent(const str& model, const str& event,
         } else if (event == "loadCancel") {
             screenStack.closeTop();
         }
+    } else if (model == "journal") {
+        if (event == "journalClose") {
+            screenStack.closeTop();
+        }
     } else if (model == "dialogue") {
         if (event == "choose" && !args.empty() && dialogueRunner) {
             if (args[0] == "leave") {
@@ -2813,6 +2865,129 @@ void LandscapeScene::updateNameplates() {
         }
     }
     uiSystem.setRows("hud", std::move(plates));
+}
+
+// --- Chantier 6 A2: quests ----------------------------------------------------------
+
+void LandscapeScene::syncQuestTags() {
+    if (!easternQuest || !playerEntity.is_alive() ||
+        !playerEntity.has<gameplay::AbilitySystem>()) {
+        return;
+    }
+    auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
+    const auto syncTag = [&](const char* name, bool want) {
+        const auto tag = gameTags.find(name);
+        if (!tag) {
+            return;
+        }
+        const bool have = system.tags.has(*tag);
+        if (want && !have) {
+            system.tags.add(*tag, gameTags);
+        } else if (!want && have) {
+            system.tags.remove(*tag, gameTags);
+        }
+    };
+    const bool active = quest::isActive(questLog, easternQuest->id);
+    const auto* reportState = data::findByEditorId<quest::QuestStateForm>(
+        forms, "EasternMenaceReport");
+    const bool ready =
+        active && reportState &&
+        quest::questState(questLog, easternQuest->id) == reportState->id;
+    const bool done = quest::questStatus(questLog, easternQuest->id) ==
+                      quest::QuestStatus::Succeeded;
+    syncTag("Quest.EasternMenace.Active", active);
+    syncTag("Quest.EasternMenace.Ready", ready);
+    syncTag("Quest.EasternMenace.Done", done);
+}
+
+void LandscapeScene::handleQuestEvent(const gameplay::Event& event) {
+    if (!easternQuest) {
+        return;
+    }
+    const core::Guid stateBefore =
+        quest::questState(questLog, easternQuest->id);
+    quest::onQuestEvent(questLog, forms, event, gameTags);
+    syncQuestTags();
+    const bool succeeded = quest::questStatus(questLog, easternQuest->id) ==
+                           quest::QuestStatus::Succeeded;
+    if (succeeded && stateBefore.isValid() &&
+        quest::questState(questLog, easternQuest->id) != stateBefore) {
+        // The turn-in option fires exactly once (its gate tag drops with
+        // the transition) — the reward lands here, no flag to persist.
+        if (goldForm && playerEntity.is_alive() &&
+            playerEntity.has<gameplay::Inventory>()) {
+            gameplay::addItem(playerEntity.get_mut<gameplay::Inventory>(),
+                              goldForm->id, 50);
+        }
+        talkLine = "Quete accomplie : La menace de l'est (+50 or).";
+        talkTimer = 5.0f;
+    } else if (quest::questState(questLog, easternQuest->id) !=
+               stateBefore) {
+        talkLine = "Journal mis a jour (J).";
+        talkTimer = 4.0f;
+    }
+}
+
+void LandscapeScene::pushJournalModel() {
+    if (!uiCreated) {
+        return;
+    }
+    // Deterministic listing (§8): quests sorted by guid.
+    vector<core::Guid> questIds;
+    questIds.reserve(questLog.quests.size());
+    for (const auto& [id, progress] : questLog.quests) {
+        questIds.push_back(id);
+    }
+    std::sort(questIds.begin(), questIds.end());
+
+    vector<::ui::UiRow> rows;
+    for (const core::Guid& questId : questIds) {
+        const quest::QuestProgress& progress = questLog.quests.at(questId);
+        const auto* questForm = forms.find<quest::QuestForm>(questId);
+        if (!questForm) {
+            continue; // a mod removed the quest — skip, never fatal (§5)
+        }
+        ::ui::UiRow header;
+        header.id = questId.toString();
+        header.c0 = questForm->displayName;
+        if (progress.status == quest::QuestStatus::Succeeded) {
+            header.c1 = "Accomplie";
+            header.tag = "done";
+        } else if (progress.status == quest::QuestStatus::Failed) {
+            header.c1 = "Echouee";
+            header.tag = "done";
+        }
+        rows.push_back(std::move(header));
+        if (progress.status != quest::QuestStatus::Active) {
+            continue;
+        }
+        // Objectives = the tasks of the current state's branches.
+        data::forEach<quest::QuestBranchForm>(
+            forms, [&](const quest::QuestBranchForm& branch) {
+                if (branch.state != progress.currentState) {
+                    return;
+                }
+                data::forEach<quest::QuestTaskForm>(
+                    forms, [&](const quest::QuestTaskForm& task) {
+                        if (task.branch != branch.id) {
+                            return;
+                        }
+                        ::ui::UiRow row;
+                        row.id = task.id.toString();
+                        row.c0 = task.displayName;
+                        if (task.required > 1) {
+                            row.c2 =
+                                std::to_string(quest::taskProgress(
+                                    questLog, questId, task.id)) +
+                                " / " + std::to_string(task.required);
+                        }
+                        row.tag = "task";
+                        rows.push_back(std::move(row));
+                    });
+            });
+    }
+    uiSystem.setBool("journal", "empty", rows.empty());
+    uiSystem.setRows("journal", std::move(rows));
 }
 
 // --- Chantier 4 B4: dialogue --------------------------------------------------------
@@ -3311,8 +3486,24 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
             // Chantier 3 B3/B6: the daily routine + the anim tag gates
             // (sitting from furniture use, dead from the GAS life state).
             npc->schedule = actor.schedule;
+            // Chantier 6 A1: ActorTagForm children become REAL gameplay
+            // tags on the actor's system (registerTag is idempotent and
+            // auto-registers ancestors); the first Faction.* tag is what
+            // quests/crime filter deaths by. Mutating the EXISTING
+            // AbilitySystem component inside .each is safe (no table
+            // move).
             data::childrenOf<gameplay::ActorTagForm>(
                 forms, actor.id, [&](const gameplay::ActorTagForm& tagForm) {
+                    const gameplay::GameplayTag tag =
+                        gameTags.registerTag(tagForm.tag);
+                    if (entity.has<gameplay::AbilitySystem>()) {
+                        entity.get_mut<gameplay::AbilitySystem>().tags.add(
+                            tag, gameTags);
+                    }
+                    if (!npc->factionTag.isValid() &&
+                        tagForm.tag.starts_with("Faction.")) {
+                        npc->factionTag = tag;
+                    }
                     if (tagForm.tag == "Faction.Bandits") {
                         npc->hostile = true;
                     }
@@ -3379,6 +3570,19 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
         });
     for (auto& [entity, actorId] : pendingLoadouts) {
         finalizeActorSpawn(entity, actorId);
+    }
+    // Chantier 6 A1: seed the death flag from the (possibly restored)
+    // life state, so a corpse reloaded from a save or a cell re-entry
+    // never fires a spurious OnDeath edge on its first tick.
+    if (const auto deadTag = gameTags.find("State.Dead")) {
+        for (auto& npcPtr : npcs) {
+            if (npcPtr->entity.is_alive() &&
+                npcPtr->entity.has<gameplay::AbilitySystem>()) {
+                npcPtr->dead =
+                    npcPtr->entity.get<gameplay::AbilitySystem>().tags.has(
+                        *deadTag);
+            }
+        }
     }
 }
 
@@ -3513,7 +3717,16 @@ void LandscapeScene::updateNpcs(f32 dt) {
         // life state) — that's where State.Dead comes from.
         gameplay::tickCharacter(npc.entity, dt, gameDt, tickCtx);
         const auto& npcSys = npc.entity.get<gameplay::AbilitySystem>();
+        const bool wasDead = npc.dead;
         npc.dead = deadTag && npcSys.tags.has(*deadTag);
+        // Chantier 6 A1: the live->dead EDGE is the gameplay event —
+        // quests (kill tasks) and crime listen on the bus. Reload paths
+        // never fire it: refreshNpcs seeds npc.dead from the tag.
+        if (npc.dead && !wasDead) {
+            eventBus.dispatch({ gameplay::eventKind("OnDeath"),
+                                ecs::Entity {}, npc.entity,
+                                npc.factionTag });
+        }
         // (The corpse is lootable — its Inventory was rolled from the
         // LoadoutEntryForm children at build, chantier 4 B5.)
         if (npc.dead) {

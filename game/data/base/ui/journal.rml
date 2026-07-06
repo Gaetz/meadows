@@ -1,0 +1,22 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="journal.rcss"/>
+</head>
+<body>
+	<div id="menu" class="panel" data-model="journal">
+		<div class="title">Journal</div>
+		<div id="quests">
+			<div class="entry" data-for="row : rows" data-class-done="row.tag == 'done'" data-class-task="row.tag == 'task'">
+				<span class="entry-text">{{ row.c0 }}</span>
+				<span class="entry-status muted">{{ row.c1 }}</span>
+				<span class="entry-progress accent">{{ row.c2 }}</span>
+			</div>
+		</div>
+		<div class="muted" data-if="empty">Aucune quete pour l'instant.</div>
+		<div class="menu-buttons">
+			<button data-event-click="journalClose()">Fermer</button>
+		</div>
+	</div>
+</body>
+</rml>

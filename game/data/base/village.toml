@@ -945,7 +945,82 @@ text = "Voyons vos marchandises."
 event = "OpenBarter"
 order = 3
 
-# Option 4: goodbye (no reply node -> the conversation ends).
+# Option 4 (chantier 6 A2): the quest offer — only while the quest has
+# never been taken (both gate tags absent). Selecting it fires the
+# accept event; the reply sets the scene.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000e8"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000d1"
+speaker = "Player"
+text = "Puis-je aider le village ?"
+event = "OnAcceptEasternMenace"
+order = 4
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000ec"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000e8"
+kind = "HasTag"
+tag = "Quest.EasternMenace.Active"
+negate = true
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000ed"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000e8"
+kind = "HasTag"
+tag = "Quest.EasternMenace.Done"
+negate = true
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000e9"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000e8"
+speaker = "Villager"
+text = "Ce bandit a l'est nous terrorise. Debarrassez-nous de lui et le village saura se montrer reconnaissant."
+
+# Option 5 (chantier 6 A2): the turn-in — only while the quest waits for
+# the report. Selecting it fires the report event (the reward lands in
+# the scene handler, exactly once).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000ea"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000d1"
+speaker = "Player"
+text = "Le bandit ne vous ennuiera plus."
+event = "OnReportBandit"
+order = 5
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000ee"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000ea"
+kind = "HasTag"
+tag = "Quest.EasternMenace.Ready"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000eb"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000ea"
+speaker = "Villager"
+text = "Le village respire enfin ! Voici votre recompense, avec toute notre gratitude."
+
+# Option 6: goodbye (no reply node -> the conversation ends).
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000000d7"
 type = "DialogueNodeForm"
@@ -954,7 +1029,80 @@ new = true
 parent = "4d7a9b30-0000-4000-8000-0000000000d1"
 speaker = "Player"
 text = "Bonne journee a vous."
-order = 4
+order = 6
+
+# --- The quest « La menace de l'est » (chantier 6 A2) — the Phase-4
+# state machine as records: two Regular states (hunt, report), a Success
+# state, one kill task filtered by faction tag, one report task fired by
+# the turn-in dialogue option.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000f0"
+type = "QuestForm"
+new = true
+[records.fields]
+editorId = "EasternMenace"
+displayName = "La menace de l'est"
+startState = "4d7a9b30-0000-4000-8000-0000000000f1"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000f1"
+type = "QuestStateForm"
+new = true
+[records.fields]
+editorId = "EasternMenaceHunt"
+quest = "4d7a9b30-0000-4000-8000-0000000000f0"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000f2"
+type = "QuestStateForm"
+new = true
+[records.fields]
+editorId = "EasternMenaceReport"
+quest = "4d7a9b30-0000-4000-8000-0000000000f0"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000f3"
+type = "QuestStateForm"
+new = true
+[records.fields]
+editorId = "EasternMenaceDone"
+quest = "4d7a9b30-0000-4000-8000-0000000000f0"
+kind = "Success"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000f4"
+type = "QuestBranchForm"
+new = true
+[records.fields]
+state = "4d7a9b30-0000-4000-8000-0000000000f1"
+destination = "4d7a9b30-0000-4000-8000-0000000000f2"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000f5"
+type = "QuestTaskForm"
+new = true
+[records.fields]
+branch = "4d7a9b30-0000-4000-8000-0000000000f4"
+displayName = "Eliminer le bandit a l'est du village"
+event = "OnDeath"
+filterTag = "Faction.Bandits"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000f6"
+type = "QuestBranchForm"
+new = true
+[records.fields]
+state = "4d7a9b30-0000-4000-8000-0000000000f2"
+destination = "4d7a9b30-0000-4000-8000-0000000000f3"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000f7"
+type = "QuestTaskForm"
+new = true
+[records.fields]
+branch = "4d7a9b30-0000-4000-8000-0000000000f6"
+displayName = "Annoncer la nouvelle au villageois"
+event = "OnReportBandit"
 
 # The gold currency (chantier 4 B5): an ordinary MISC item — no parallel
 # money system, the barter screen just moves coins like any stack.

@@ -26,6 +26,7 @@
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 #include "quest/Dialogue.hpp"
+#include "quest/Quest.hpp"
 #include "engine/ui/UiSystem.hpp"
 #include "game/InventoryView.hpp"
 #include "game/SaveGame.hpp"
@@ -294,6 +295,15 @@ private:
     void useConsumable(const core::Guid& id);
     void transferItem(const core::Guid& id, bool fromContainer);
 
+    // Chantier 6 A2: the quest log (scene-level, like the clock) + the
+    // demo quest. Quest state mirrors into PLAYER tags (Phase-4 pattern)
+    // so dialogue options gate on it through the condition evaluator.
+    quest::QuestLog questLog;
+    const quest::QuestForm* easternQuest { nullptr };
+    void syncQuestTags();
+    void handleQuestEvent(const gameplay::Event& event);
+    void pushJournalModel(); // A3: quest rows for journal.rml
+
     // Chantier 4 B4: dialogue — the Phase-4 tree + condition evaluator,
     // surfaced by the RmlUi screen.
     gameplay::EventBus eventBus;
@@ -441,6 +451,9 @@ private:
         bool hostile { false }; // ActorTagForm child "Faction.Bandits"
         bool dead { false };    // mirrors the GAS State.Dead tag
         f32 attackCooldown { 0.0f };
+        // Chantier 6 A1: the first Faction.* tag — what the OnDeath
+        // event carries (quest kill filters, crime factions).
+        gameplay::GameplayTag factionTag {};
     };
     vector<uptr<Npc>> npcs;
     vector<Vec3> patrolPoints;   // grounded "patrol" marker positions
