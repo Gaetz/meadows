@@ -42,22 +42,27 @@
 
 ## Comment remplir, module par module
 
-### Physique / contrôleur (chantier « socle 3D gameplay »)
-- Cuire la collision des cellules : StaticForms placées → `addStaticMesh`
-  (à ajouter dans la façade, triangle mesh Jolt) au chargement de cellule,
-  `removeBody` au déchargement.
+### Physique / contrôleur — REMPLI en partie (chantier 1, `docs/CHANTIER-1.md`)
+- ✅ FAIT : `addHeightField` (façade) + `game/TerrainCollision` (tuiles
+  autour du joueur, échantillonnées de TerrainNoise::height) ; le joueur
+  1re personne = `CharacterBody::move()` piloté par les stats dérivées
+  (B5.5). RESTE : `addStaticMesh` (triangle mesh Jolt) pour la collision
+  des cellules/kits au chargement (chantier 2), triggers sensors.
 - Le joueur/PNJ = `CharacterBody::move()` piloté par l'intent (le
   contrôleur POSSÈDE le mouvement — anims in-place calées dessus).
 - Triggers : corps sensors Jolt → `TriggerVolume.event` sur l'EventBus.
 - Le JobSystemSingleThreaded de Jolt est un choix (déterminisme §8) — ne
   le paralléliser qu'avec preuve de profiling ET validation du dev.
 
-### Animation
-- GPU skinning : `skinMatrices()` → SSBO (l'extension compute RHI existe),
-  vertex shader skinné ; import des poids dans GltfMesh (le squelette et
-  les clips sont déjà importés).
-- Un `GraphInstance` par entité animée dans un composant runtime (non
-  réfléchi) ; params (vitesse) et tags depuis le gameplay chaque frame.
+### Animation — REMPLI (chantier 1 : B2/B3/B6)
+- ✅ FAIT : GPU skinning (`loadGltfSkinnedMesh` + remap JOINTS_0
+  parents-first, `skinned.vert` palette SSBO binding 2), graphe piloté par
+  la vitesse réelle, `world::resolveActorVisual` (ActorForm → rig/mesh/
+  teinte). Le runtime par PNJ vit côté scène (LandscapeScene::Npc) — à
+  généraliser en composant quand le chantier « vivant » multipliera les
+  acteurs.
+- RESTE : layers/masks haut-bas du corps, events → EventBus/GAS (fenêtres
+  de hit) — chantier « vivant ».
 - Les événements timeline (`AnimEventForm.name`) → EventBus/GAS : « Hit »
   ouvre la fenêtre de dégâts, « Footstep » → cue audio par matériau.
 
@@ -140,8 +145,10 @@ double enregistrement de types = no-op (emplace).
    post-build depuis la source) : un rebuild n'écrase pas les nouveaux
    fichiers mais la divergence source/build est un piège — rapatrier à la
    main ce qu'on veut garder, jusqu'à un vrai flux d'authoring.
-3. `RenderSnapshot.meshes` n'a pas encore de consommateur (contrat) ; le
-   cube H8 court-circuite en attendant le cache de résidence mesh.
+3. ~~`RenderSnapshot.meshes` n'a pas encore de consommateur~~ **CLOS
+   (chantier 1 B1)** : `game/MeshCache` (résidence async, placeholder) +
+   `drawSceneMeshes` dans LandscapeScene ; le cube H8 est supprimé.
+   L'instancing par (model, material) reste l'étape suivante du contrat.
 4. `forEach`/`childrenOf`/expansion de prefab = scans O(N) — l'item
    « index secondaires FormDatabase » (MEADOWS-PLAN §J, P1) les remplace
    quand le volume le justifiera.

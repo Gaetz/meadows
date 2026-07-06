@@ -74,6 +74,52 @@ Placing the prefab = one ordinary reference whose `baseForm` is the
 `PrefabForm`; the game expands the group on load. The in-game level editor
 will offer *create prefab from selection*.
 
+## 3D props: models and materials
+
+A `StaticForm` gives a placed prop its 3D look: a glTF model asset plus a
+`MaterialForm` (flat albedo texture × tint, stylized ramp lighting):
+
+```toml
+[assets]
+"GUID-BARREL-MODEL" = "models/barrel.gltf"
+
+[[records]]
+form = "GUID-BARREL-MATERIAL"
+type = "MaterialForm"
+new = true
+[records.fields]
+editorId = "BarrelWood"
+tint = [0.45, 0.32, 0.20, 1.0]   # keep tints well below 1.0: the sun is
+                                 # HDR — near-white tints blow out to white
+
+[[records]]
+form = "GUID-BARREL-STATIC"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "Barrel"
+model = "GUID-BARREL-MODEL"
+material = "GUID-BARREL-MATERIAL"
+```
+
+Model conventions: meters, the engine recenters the footprint and drops
+the base to the ground (references place the base on the terrain);
+per-instance size comes from the reference's `scale`. While a model
+streams in, a placeholder box renders — nothing ever blocks.
+
+## Characters: appearance and animation
+
+An actor's look and motion are data too. `ActorForm.appearance` points at
+an `AppearanceForm` (the rig's glTF asset + a body mesh per slot + skin
+tint) and `ActorForm.animGraph` at an `AnimGraphForm` — a locomotion
+state machine whose states and transitions are child records (a mod adds
+an animation or retunes a blend threshold with one record). Clips
+reference animations *inside* a glTF by name; they must be authored
+**in-place** (the engine drives movement, and syncs playback to the
+entity's real speed so feet don't slide). Timeline events (`AnimEventForm`
+children of a clip: footsteps, hit frames) are the animation→gameplay
+bridge.
+
 ## Hand-made world, procedural helpers
 
 The game world is authored by hand. Procedural tools exist to *assist*

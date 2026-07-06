@@ -22,8 +22,8 @@
 | 1-24 + 23b | Renderer complet (terrain→météo) + passe stylisée BotW | ✅ faites et validées |
 | 25 | Frustum culling CPU des chunks | ✅ FAITE — validée |
 | 26 | Occlusion culling : horizon CPU + Hi-Z GPU (1re extension compute du RHI) | ✅ FAITE — **validation visuelle dev jamais faite** (fond de vallée + rotation rapide, checkboxes A/B du panneau) |
-| 27 | Arbres : canopée pleine stylisée (remplace les leaf cards) | ⏸️ prochaine de LA PISTE (spec complète plus bas) |
-| 28-31 | Grading BotW, auto-exposition, cumulonimbus, pluie | ⏸️ à faire (28-29 courts ; 30-31 branchés sur WeatherForm) |
+| 27 | Arbres : canopée pleine stylisée (remplace les leaf cards) | ✅ FAITE (chantier 1 B7, validée dev 2026-07-06) — spec exécutée + **LOD de canopée par chunk** ajouté post-validation : subdiv 2 ≤ 4 chunks (~256 m), subdiv 1 (80 faces, même seed) au-delà + casters d'ombre + réflexion (sans LOD : 30 fps ; avec : max). Journal : `docs/CHANTIER-1.md`. |
+| 28-31 | Grading BotW, auto-exposition, cumulonimbus, pluie | ⏸️ à faire (28-29 courts ; 30-31 branchés sur WeatherForm) — planifiées via MEADOWS-PLAN chantier 6 |
 | — | Refonte herbe | ⏸️ en attente des recherches du dev (il revient avec une référence shader — ne pas itérer sans lui) |
 
 ## Ce qui est construit (briques 1-26, résumé architectural)

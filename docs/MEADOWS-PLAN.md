@@ -4,11 +4,11 @@
 
 | Piste | État |
 |---|---|
-| Décisions de cadrage (6) | ✅ actées 2026-07-05 (§ Décisions actées) |
+| Décisions de cadrage (7, dont **jeu 1re personne**) | ✅ actées 2026-07-05/06 (§ Décisions actées, §C.1) |
 | **Passe horizontale** (architecture de tous les systèmes) | ✅ FAITE 2026-07-06 — contrat : `docs/HORIZONTAL-PASS.md` (audit de compat inclus) |
-| Renderer paysage (briques 27-31) | ⏸️ en pause — **absorbées par les chantiers** (27→1, lumières int.→2, 28-31→6) ; spec détaillée : `docs/3D-RENDERER.md` |
-| **Chantier 1 — Socle 3D gameplay** (matériaux/skinning/anim/Jolt/caméra) | ⬅️ **PROCHAIN** (à planifier) |
-| Chantier 2 — Monde habitable (cellules 3D, intérieurs, éditeur de niveau v1, prefabs) | à faire |
+| Renderer paysage (briques 27-31) | 27 ✅ FAITE (canopées pleines + LOD, chantier 1) ; 28-31 → chantier 6 ; spec : `docs/3D-RENDERER.md` |
+| **Chantier 1 — Socle 3D gameplay** | ✅ FAIT 2026-07-06 — journal : `docs/CHANTIER-1.md` (joueur FPS piloté par ses stats, PNJ 100 % Forms en patrouille, MeshCache/skinning/anim data, collision terrain Jolt, arbres brique 27) |
+| **Chantier 2 — Monde habitable** (cellules 3D, intérieurs, éditeur de niveau v1, prefabs) | ⬅️ **PROCHAIN** (à planifier) |
 | Chantier 3 — Vivant (navmesh, IA/schedules exécutés, combat 3D, cues/FX/audio P0) | à faire |
 | Chantier 4 — Interfaces (écrans RmlUi P0, GameDB/console déjà livrés en squelette) | à faire |
 | Chantier 5 — Persistance (Phase 10 : streaming + save = couche de patches) | à faire |
@@ -38,6 +38,17 @@
 - **P1** — nécessaire à la démo complète.
 - **P2** — confort / plus tard / après la démo.
 
+## Lecture du catalogue A-K
+
+Chaque ligne porte son état d'avancement :
+- **✅** = fait (livré et validé — le journal dit où : `HORIZONTAL-PASS`,
+  `CHANTIER-1`…) ; un « v1 » signale que le cœur est là, des extensions
+  listées dans la ligne restent.
+- **🔨** = entamé : le seam/les Forms/le squelette sont posés (passe
+  horizontale) ou une partie est livrée — le reste vient avec le chantier
+  indiqué dans la ligne.
+- *(vide)* = à faire.
+
 ## Ce qu'on a déjà (acquis, ne pas refaire)
 
 Réflexion + Forms + résolution de plugins champ par champ + cooker (Phase 1),
@@ -59,38 +70,38 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **Streaming 3D worldspace→cells** (Phase 10 du CLAUDE.md) | P0 | Cellules extérieures async (le pattern chunks du renderer EST le prototype), intérieurs = worldspaces séparés, transitions portes + chargement, persistance par cellule. |
-| **Éditeur de niveau interne au jeu** | P0 | Mode éditeur dans la scène : sélection/placement de références (gizmos translate/rotate/scale, snap, duplication), palette d'objets depuis la GameDB, **sculpt de terrain** (voir ci-dessous), **sortie = plugin TOML** (records ReferenceForm) via TomlWriter. Undo/redo (= inversion de patches). Caméra éditeur, picking (raycast). |
-| **Système de prefabs** | P0 | `PrefabForm` = liste de références enfants relatives à un pivot (+ prefabs imbriqués). Placement en jeu = instanciation du groupe ; overrides par instance en patches champ par champ (§5 s'applique tel quel). L'éditeur sait « créer un prefab depuis la sélection ». |
-| **Intérieurs** | P0 | Cellules intérieures : pas de terrain/ciel, kit de modules (murs/sols — tilesets 3D), éclairage local (voir B), occlusion simple par pièce (portals P2 ; v1 = cellule entière), ambiance audio/reverb dédiée. |
+| **Streaming 3D worldspace→cells** (ex-Phase 10) | P0 | Cellules extérieures async (le pattern chunks du renderer EST le prototype), intérieurs = worldspaces séparés, transitions portes + chargement, persistance par cellule. Chantier 2/5. |
+| 🔨 **Éditeur de niveau interne au jeu** | P0 | Fondations livrées (H2) : EditSession (undo/redo, export plugin), PropertyGrid réflexion, console. Reste (chantier 2) : mode éditeur dans la scène 3D — sélection/placement (gizmos, snap, duplication), palette GameDB, **sculpt de terrain**, picking. |
+| 🔨 **Système de prefabs** | P0 | Expansion runtime FAITE (H8, doctestée : GUIDs enfants dérivés, ciblables par patches/saves). Reste : prefabs imbriqués éprouvés + « créer un prefab depuis la sélection » dans l'éditeur (chantier 2). |
+| **Intérieurs** | P0 | Cellules intérieures : pas de terrain/ciel, kit de modules (murs/sols — tilesets 3D), éclairage local (voir B), occlusion simple par pièce (portals P2 ; v1 = cellule entière), ambiance audio/reverb dédiée. Chantier 2. |
 | **Terrain fait main** | P0 | Terrain extérieur = **heightmaps auteurées par worldspace** : sculpt dans l'éditeur (raise/lower/flatten/smooth) + peinture de splat, stockage en données moddables (patches de terrain par plugin), streaming par cellules inchangé. Routes/chemins (splines) et rivières/lacs placés P1. Le `TerrainNoise` actuel reste (a) le bac à sable du renderer paysage et (b) un outil « seed → terrain de départ » qu'on retouche — jamais la base du monde jeu. |
 | **Outils procéduraux d'assistance** | P1 | **Brosses de scatter** dans l'éditeur (une brosse ÉCRIT des références dans le plugin — outil d'authoring, pas système runtime ; l'herbe cosmétique peut rester rule-based, elle ne porte pas de gameplay). **Générateur de bases de donjons par règles** (assemblage de kits de modules → sortie = records/prefabs retouchables à la main) P1/P2. |
-| **Volumes de gameplay** | P0 | Triggers (déjà en 2D — port 3D), volumes d'eau, kill-z, zones de son/reverb, bornes de cellule. |
-| **Marqueurs** | P0 | Spawn points, patrol points, heading markers ; le mobilier interactif est un système à part entière (voir F, `FurnitureForm`). Ce sont des références invisibles = déjà le modèle. |
+| 🔨 **Volumes de gameplay** | P0 | TriggerForm + spawner + composant posés (H1/H8) ; reste le branchement Jolt sensors → EventBus (chantier 2/3), volumes d'eau, kill-z, zones de son/reverb. |
+| ✅ **Marqueurs** | P0 | FAIT : MarkerForm + spawner (H1/H8), utilisés en vrai par la patrouille du PNJ (chantier 1). Références invisibles = le modèle prévu. |
 
 ## B. Rendu — compléments gameplay (au-delà du paysage)
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **Matériaux & textures sur meshes** | P0 | Le renderer actuel est vertex-color. Il faut : sampling de textures albédo (+ normal P1) sur meshes statiques, `MaterialForm` (données, moddable), pipeline KTX2/Basis à activer, atlas/array pour l'instancing. Adapter au look stylisé (albédo plat + rampe). |
-| **Lumières locales + ombres intérieures** | P0 | Point/spot lights en Forms placées comme références (`LightForm`), N lumières par objet (forward simple d'abord, clustered P1), ombres pour 1-2 lumières clés par cellule intérieure, flicker/candles (anim de params). Le paysage reste sun-only. |
-| **Meshes skinnés (GPU skinning)** | P0 | Extension du loader glTF : squelettes, poids, upload des palettes de bones (UBO/SSBO — l'extension compute peut servir), rendu instancié des personnages. |
+| ✅ **Matériaux & textures sur meshes** | P0 | v1 FAITE (H8 + chantier 1) : `MaterialForm` (albédo × teinte × rampe stylisée), MeshCache async, cube→props réels. Reste : normal maps P1, pipeline KTX2/Basis, atlas/array pour l'instancing par (model, material). |
+| 🔨 **Lumières locales + ombres intérieures** | P0 | `LightForm` + spawner + composant posés (H1/H8). Reste (chantier 2) : le rendu — N lumières par objet (forward simple d'abord, clustered P1), ombres pour 1-2 lumières clés par intérieur, flicker/candles. Le paysage reste sun-only. |
+| ✅ **Meshes skinnés (GPU skinning)** | P0 | FAIT (chantier 1) : import poids/squelette (remap parents-first), palettes SSBO, shaders skinnés. Reste : rendu INSTANCIÉ des personnages (chantier « vivant », quand ils seront nombreux). |
 | **Transparence triée** | P1 | Alpha blend trié par distance (verre, fantômes, eau intérieure) ; le cutout reste l'exception (leçon fill-rate). |
-| **Émissifs & enchantements** | P1 | Param émissif dans MaterialForm (bloom existant fait le reste), effets de matériau animés (dissolve, glow d'enchantement) pilotés par GameplayCues (voir F). |
+| 🔨 **Émissifs & enchantements** | P1 | Champ `emissive` branché (mesh.frag + bloom). Reste : effets de matériau animés (dissolve, glow) pilotés par GameplayCues (voir F). |
 | **Décals** | P1 | Sang, brûlures, impacts — projection simple boîte. |
-| **LOD/impostors bâtiments & props placés** | P1 | Le système de variantes instanciées existe ; ajouter mesh LOD par distance et impostors P2. |
-| **First/third person** | P0 | Caméra 3e personne avec collision (spring arm + raycast), 1re personne P1, caméras de dialogue (cadrage) P1. |
+| 🔨 **LOD/impostors bâtiments & props placés** | P1 | LOD de canopée par chunk FAIT (chantier 1 B7 — le pattern à étendre). Reste : LOD des meshes auteurés, impostors P2. |
+| ✅ **Première personne** | P0 | **Le jeu est à la 1re personne (décision 2026-07-06)** : caméra aux yeux sur capsule cinématique — FAIT (chantier 1). La 3e personne sert aux PNJ ; caméras de dialogue (cadrage) P1 ; vue 3e personne joueur = P2/option. |
 
 ## C. Personnages & animation
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **Système d'animation squelettale** | P0 | Clips glTF, échantillonnage, blending (cross-fade), couches (haut/bas du corps), masques par os, additive P1. **Décidé (2026-07-05) : pas de root motion** — contrôleur cinématique + anims in-place, playback rate calé sur la vélocité contre le foot-sliding. |
-| **Contrôleur d'anim en données** | P0 | `AnimGraphForm` : états + transitions + conditions (réutiliser le **condition evaluator** existant !), paramètres pilotés par le gameplay (vitesse, InCombat via tags GAS). Moddable — un mod ajoute une animation d'attaque. |
-| **Événements sur timeline** | P0 | Frames taguées dans les clips : hit frame (fenêtre de dégâts GAS), footsteps (audio par matériau), spawn FX, camera shake. C'est LE pont anim→gameplay. |
+| ✅ **Système d'animation squelettale** | P0 | v1 FAITE (H5 + chantier 1) : clips glTF, échantillonnage, cross-fades, graphe, anti-foot-sliding (referenceSpeed — **pas de root motion**, décidé 2026-07-05). Reste : couches haut/bas du corps, masques par os, additive P1 (chantier « vivant », le combat en a besoin). |
+| ✅ **Contrôleur d'anim en données** | P0 | v1 FAITE (H1/H5 + chantier 1) : `AnimGraphForm` + états/transitions enfants, params (vitesse) + gates par tags, moddable (prouvé : seuils retunables en TOML). Reste : brancher le **condition evaluator** complet sur les transitions. |
+| 🔨 **Événements sur timeline** | P0 | `AnimEventForm` + tir au bon temps FAITS (H5, doctesté) et posés sur le cycle de marche (chantier 1). Reste : les CONSOMMATEURS — fenêtres de dégâts GAS, footsteps audio par matériau, FX, shake (chantier « vivant »). |
 | **Éditeur d'animation / timeline** | P1 | Outil ImGui : preview du personnage, scrub, pose des événements, réglage des transitions/blend times, sauvegarde en Form. (P0 minimal : édition TOML à la main + hot-reload.) |
-| **Apparence modulaire des personnages** | P0 | Slots visuels (tête/cheveux/torse/jambes/mains/pieds) = meshes skinnés interchangeables sur le même squelette ; teintes (peau/cheveux) ; `AppearanceForm` par PNJ. Le lien équipement→visuel : équiper une armure échange le mesh du slot (les données d'équipement existent depuis la Phase 7). |
-| **Attach points** | P0 | Sockets sur os (main droite = arme, dos = fourreau, selle P2). Armes visibles rangées/dégainées. |
+| 🔨 **Apparence modulaire des personnages** | P0 | `AppearanceForm` (slots+teintes) + `resolveActorVisual` FAITS (H1 + chantier 1) — mais v1 mono-mesh (premier slot rempli). Reste : compositing multi-slots sur un squelette partagé + équipement→visuel (échange du mesh du slot). |
+| **Attach points** | P0 | Sockets sur os (main droite = arme, dos = fourreau, selle P2). Armes visibles rangées/dégainées. Chantier « vivant » (combat). |
 | **Regard & tête** (look-at IK) | P1 | Les PNJ regardent leur interlocuteur ; bouche qui bouge en dialogue P2 (subtitle-first). |
 | **Anim LOD** | P1 | Fréquence d'update réduite avec la distance ; pas d'anim hors écran (le culling sait déjà qui est visible). |
 | **Ragdoll** | P2 | Avec Jolt ; v1 = animations de mort. |
@@ -127,31 +138,31 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **Intégration Jolt** | P0 | Collision statique des cellules (mesh colliders cuits par le cooker), broadphase, raycasts/shape casts (interaction, combat, caméra), triggers. Le monde physique vit côté sim (headless-testable avec Jolt headless). |
-| **Character controller** | P0 | Capsule cinématique : pentes, marches, saut, chute (dégâts existants), nage P1, sprint (coûts GAS existants). |
+| 🔨 **Intégration Jolt** | P0 | Monde + capsule + raycasts + **height fields terrain** FAITS (H3 + chantier 1, doctests headless). Reste : mesh colliders des cellules/kits (`addStaticMesh`, chantier 2), shape casts combat, triggers sensors. |
+| ✅ **Character controller** | P0 | v1 FAITE (chantier 1) : capsule cinématique, pentes/marches, saut, sprint payé en énergie GAS, vitesses par stats dérivées. Reste : dégâts de chute, nage P1. |
 | **Objets dynamiques** | P1 | Props poussables, loot qui tombe, physique légère (le « clutter » Skyrim). Havok-cheese P2. |
-| **Portes & mécanismes** | P0 | Portes animées + verrous (crochetage = minigame P1), leviers, coffres — états persistés (= patches de référence, §5 natif). |
+| **Portes & mécanismes** | P0 | Portes animées + verrous (crochetage = minigame P1), leviers, coffres — états persistés (= patches de référence, §5 natif). Chantier 2. |
 
 ## E. IA & navigation
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **Navmesh (Recast/Detour)** | P0 | Génération offline par cellule (cooker) + liens (portes, sauts), requêtes de chemin async (JobSystem), agents avec évitement local simple. |
-| **Emploi du temps des PNJ** | P0 | `ScheduleForm` : entrées = plage horaire (game clock existant) × activité × lieu (marqueur/mobilier) × conditions (condition evaluator existant). Interruptions (combat, dialogue) avec reprise ; simulation dégradée hors cellule P2. La couche AU-DESSUS des packages : le schedule décide quoi/quand/où, le package exécute. |
-| **Packages IA (exécution)** | P0 | `AiPackageForm` = les comportements exécutables (dormir/manger/travailler/errer/voyager/utiliser un mobilier), pilotés par le schedule ou empilés conditionnellement. |
-| **Outil emploi du temps** | P0/P1 | P0 = **vue debug en jeu** : « où va ce PNJ, quel schedule/package le pilote, pourquoi » — inestimable pour débugger. P1 = éditeur visuel : timeline journalière par PNJ (blocs horaires drag & drop, lieu + activité), sortie = plugin comme tout le reste. |
-| **IA de combat 3D** | P0 | Port du chase/attack 2D : distances d'engagement, strafe, usage d'abilities GAS (coûts/cooldowns existants), fuite (courage/santé), appel à l'aide (factions existantes). |
-| **Perception 3D** | P0 | Vue (cône + raycast d'occlusion — la furtivité de la Phase 9 en dépend), ouïe (événements sonores gameplay), mémoire de dernière position connue. |
+| 🔨 **Navmesh (Recast/Detour)** | P0 | Interface `nav::Navigator` + `GridNavigator` (A* 2D) posées (H7). Reste : Recast/Detour réels — génération offline par cellule (cooker) + liens, requêtes async, évitement local. Chantier « vivant ». |
+| 🔨 **Emploi du temps des PNJ** | P0 | `ScheduleForm`/entrées enfants + `evaluateSchedule` FAITS (H1/H7, doctests : fenêtres, minuit, override par mod, conditions). Reste : l'EXÉCUTION sur le monde vivant (ScheduleAgent, interruptions/reprise) — chantier « vivant » ; simulation dégradée hors cellule P2. |
+| 🔨 **Packages IA (exécution)** | P0 | `AiPackageForm` posé (H1) ; la patrouille du chantier 1 est l'embryon d'exécution. Reste : les comportements réels (dormir/manger/travailler/errer/voyager/mobilier) pilotés par le schedule — chantier « vivant ». |
+| 🔨 **Outil emploi du temps** | P0/P1 | P0 (vue debug) : posée dans l'EditorScene (drawSchedules + slider d'heure, H7) ; à brancher sur le monde vivant. P1 = éditeur visuel timeline, sortie = plugin. |
+| **IA de combat 3D** | P0 | Port du chase/attack 2D : distances d'engagement, strafe, usage d'abilities GAS (coûts/cooldowns existants), fuite (courage/santé), appel à l'aide (factions existantes). Chantier « vivant ». |
+| **Perception 3D** | P0 | Vue (cône + raycast d'occlusion — la furtivité P1 en dépend), ouïe (événements sonores gameplay), mémoire de dernière position connue. Chantier « vivant ». |
 | **Foules/planification** | P2 | Budget d'update IA par frame, LOD IA (PNJ hors cellule simulés grossièrement — « offscreen simulation » Skyrim). |
 
 ## F. Gameplay (au-dessus du GAS existant)
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **Combat 3D** | P0 | Traces d'armes (shape cast sur fenêtres de hit des anims), directions de blocage, projectiles (flèches/sorts — gravité simple), lock-on optionnel, staggers/posture déjà en données. Tout passe par les GameplayEffects existants. |
-| **GameplayCues (pont effets→présentation)** | P0 | **Pièce architecturale clé** : mapping data-driven `tag d'effet → {FX, son, décal, shake, matériau}`. Le sim émet des cues (headless-safe, no-op sans frontend) ; le frontend les résout. C'est ce qui garde le GAS présentation-agnostique ET moddable (un mod ajoute un sort avec ses visuels sans C++). |
-| **Interaction** | P0 | Raycast d'interaction + prompt contextuel (Prendre/Parler/Ouvrir/Dormir), activation via le système existant. |
-| **Mobilier & postes de travail** | P0 | `FurnitureForm` — système PARTAGÉ joueur/PNJ : points d'usage orientés (slots d'occupation, file si occupé), anims entrée/boucle/sortie, effets GAS pendant l'usage (dormir = rest Phase 7, manger, forger/alchimie = crafting P1). Lits/chaises/bancs/fours/enclumes/tables d'alchimie. C'est ce qui rend les emplois du temps VISIBLES. |
+| **Combat 3D** | P0 | Traces d'armes (shape cast sur fenêtres de hit des anims), directions de blocage, projectiles (flèches/sorts — gravité simple), lock-on optionnel, staggers/posture déjà en données. Tout passe par les GameplayEffects existants. Chantier « vivant ». |
+| 🔨 **GameplayCues (pont effets→présentation)** | P0 | Registre + `CueTable` (fallback hiérarchique) + `CueForm` + preuve (hit → étincelles CombatArena) FAITS (H7). Reste : les handlers standard (particule/son/shake résolus par CueForm) et les points d'émission systématiques — chantier « vivant ». |
+| **Interaction** | P0 | Raycast d'interaction + prompt contextuel (Prendre/Parler/Ouvrir/Dormir), activation via le système existant. Chantier « vivant ». |
+| 🔨 **Mobilier & postes de travail** | P0 | `FurnitureForm` + points d'usage enfants + `FurnitureOccupancy` (claim/release/file) + spawner FAITS (H1/H7/H8, doctests). Reste : le FLUX complet (nav vers le point → anims entrée/boucle/sortie → effet GAS pendant l'usage) — chantier « vivant ». |
 | **Économie/marchands 3D** | P1 | Port du barter 2D ; inventaires de marchands régénérés (game clock), richesse limitée. |
 | **Crime & prime** | P1 | Témoins (perception), bounty par faction (relations existantes), gardes qui arrêtent, prison/amende. |
 | **Furtivité** | P1 | Détection (lumière P2, bruit, ligne de vue), état Sneak, dégâts sournois — la Phase 9 (stats) la prévoit. |
@@ -162,31 +173,31 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **Moteur UI : RmlUi (DÉCIDÉ 2026-07-05)** | P0 | Documents RML/RCSS servis via le **VFS de plugins** → moddabilité au niveau document (le modèle SkyUI/Scaleform : un mod remplace un écran). Adaptateur de rendu sur le RHI, data binding vers l'état de jeu. Les outils dev restent ImGui. |
-| **Rendu texte** | P0 | Couvert par RmlUi (FreeType) pour les écrans. Reste un besoin léger de texte monde (nameplates) : overlay screen-space RmlUi ou quads texturés simples. UTF-8 partout (localisation-ready). |
+| 🔨 **Moteur UI : RmlUi (DÉCIDÉ 2026-07-05)** | P0 | Seam FAIT (H4) : rendu sur RHI, **overlay par chemin sur les `ui/` des plugins** (un mod override un écran — prouvé), scène démo. Reste : pile d'écrans (`showScreen`), data binding vers l'état de jeu, clavier/gamepad — chantier « interfaces ». |
+| 🔨 **Rendu texte** | P0 | Couvert par RmlUi+FreeType (H4) pour les écrans. Reste : texte monde léger (nameplates) — overlay screen-space ou quads. UTF-8 partout (localisation-ready). |
 | **Écrans de jeu** | P0→P1 | P0 : HUD (santé/energie/essence/posture — stats existantes, boussole, prompts, crosshair), inventaire/équipement, dialogue, conteneur/loot, menu principal/pause, journal de quêtes. P1 : carte (monde+locale+marqueurs), barter, feuille de personnage, level-up, options complètes, écrans de chargement avec lore. |
 | **Navigation gamepad** | P1 | Focus/navigation directionnelle dans tous les écrans. |
 | **UI monde** | P0 | Nameplates/barres de vie ennemis, prompts flottants, textes de dégâts P2. |
 | **Éditeur d'UI** | P1 | Édition de layout en jeu (ancres, conteneurs, styles), sauvegarde en données moddables. (P0 : layouts en TOML édités à la main + hot-reload.) |
-| **Localisation** | P1 | Tables de chaînes = Forms → **un pack de langue est un plugin** (§5 gratuit). Clés dans dialogues/quêtes/UI dès maintenant (P0 : discipline de clés). |
+| 🔨 **Localisation** | P1 | `LocStringForm` posé (H1 — un pack de langue = un plugin qui patche `text`, doctesté). Reste : la discipline de clés dans dialogues/quêtes/UI et le lookup runtime. |
 
 ## H. FX
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **Système de particules** | P0 | Émetteurs en données (`ParticleForm`) : formes d'émission, courbes sur la durée de vie (taille/couleur/vitesse), flipbooks, soft particles (depth copy existante), tri/blend additif-alpha, budget global. CPU d'abord ; GPU compute P2 (l'infra existe désormais). |
+| 🔨 **Système de particules** | P0 | `ParticleForm` + `fx::ParticleSim` (bursts déterministes, extraction sprites, preuve étincelles 2D) FAITS (H1/H7). Reste : émetteurs continus, formes, courbes, rendu 3D en quads caméra, soft particles, budget — chantier « vivant ». |
 | **Éditeur de FX** | P1 | Panneau live : édition des params d'émetteur avec preview immédiate, save en Form. (P0 : TOML + hot-reload — le pattern tuning existant.) |
 | **Trails & beams** | P1 | Traînées d'armes (sockets d'anim), rayons de sorts. |
 | **FX de matériaux** | P1 | Dissolve, freeze, burn — anim de params de MaterialForm via cues. |
 | **Screen FX** | P1 | Vignette de dégâts, overlays d'états (poison/ivresse — statuts Phase 7), hit flash — hooks dans le tonemap existant. |
-| **Bibliothèque de base** | P0 | Le stock minimal : hit sparks, sang, soin, feu/torches, fumée, poussière de pas, magie par école. Chaque entrée = Form + cue. |
+| **Bibliothèque de base** | P0 | Le stock minimal : hit sparks, sang, soin, feu/torches, fumée, poussière de pas, magie par école. Chaque entrée = Form + cue. Chantier « vivant ». |
 
 ## I. Audio (miniaudio)
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **Moteur son** | P0 | miniaudio : bus (master/SFX/musique/voix/ambiance), `SoundForm` (variations aléatoires, pitch/volume jitter — RNG seedé pour le gameplay, libre pour le cosmétique), spatialisation 3D + atténuation, streaming musique. |
-| **Ambiances** | P0 | Beds par région/cellule/météo/heure (la météo pilote déjà tout le visuel — brancher l'audio dessus), transitions fondues (le crossfade météo existe). |
+| 🔨 **Moteur son** | P0 | Seam FAIT (H6) : bus, play 2D/3D, crossfade musique, backend null pour les tests. Reste : le résolveur `SoundForm` (variantes par poids, jitters, chemin AssetDatabase) — chantier « vivant ». |
+| **Ambiances** | P0 | Beds par région/cellule/météo/heure (la météo pilote déjà tout le visuel — brancher l'audio dessus), transitions fondues (le crossfade météo existe). Chantier « vivant ». |
 | **Musique dynamique** | P1 | Couches explore/combat/danger avec transitions (tags GAS `State.InCombat` déjà là). |
 | **Footsteps par matériau** | P1 | Événements d'anim × matériau du sol (splat weights/type de sol connus). |
 | **Reverb par volume** | P1 | Zones de reverb (intérieurs/grottes). |
@@ -196,24 +207,24 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| **GameDB browser (l'outil central)** | P0 | Navigateur de TOUS les Forms par type : recherche/filtre, édition par réflexion (les property panels sont déjà prévus §2.3), cross-références (« utilisé par »), création/duplication, **sortie = plugins**. Base de l'éditeur de niveau, de l'éditeur de quêtes, etc. Étendre le WorldEditor embryonnaire. |
-| **Gestionnaire de plugins interne** | P0 | UI de configuration : load order, activer/désactiver, dépendances (GUID — déjà le modèle), **rapport de conflits par champ** (le résolveur les détecte déjà), à terme l'outil de synthesis §5.1. |
-| **Console développeur** | P0 | La console Skyrim : commandes par réflexion (`set <form>.<field>`, `spawn`, `tgm`, `tcl`, `teleport`, `setstage`), REPL Lua (VM existante). Accélérateur de dev/debug énorme pour un coût faible. |
-| **Pipeline d'assets** | P0 | Import glTF complet (meshes/skins/anims/matériaux), KTX2/Basis, extension du cooker (binaire pour tous les nouveaux Forms), **asset browser** avec previews, hot-reload étendu (meshes/anims comme les textures/shaders actuels). |
+| ✅ **GameDB browser (l'outil central)** | P0 | v1 FAITE (H2, scène « Game DB ») : navigation par type, recherche editorId, édition par PropertyGrid réflexion, création, **export = plugin**. Reste : cross-références (« utilisé par »), duplication, et son extension en éditeur de niveau (chantier 2). |
+| ✅ **Gestionnaire de plugins interne** | P0 | v1 FAITE (H2, PluginsPanel) : load order (plugins.toml), enable/disable, **rapport de conflits par champ**. Reste : dépendances affichées, l'outil de synthesis §5.1 (chantier « interfaces »). |
+| ✅ **Console développeur** | P0 | v1 FAITE (H2) : get/set par réflexion (`EditorId.field`), find, undo/redo, REPL Lua. Reste : `spawn`, `tp`, `tgm`, `setstage` (au fil des chantiers qui apportent les systèmes visés). |
+| 🔨 **Pipeline d'assets** | P0 | Import glTF statique+skinné+anims FAIT (brique 23 + chantier 1) ; cooker binaire couvre tous les Forms (audit) ; hot-reload textures/shaders. Reste : KTX2/Basis, **asset browser** avec previews, hot-reload meshes/anims. |
 | **Éditeur de quêtes/dialogues** | P1 | Vue graphe des stages/branches de dialogue sur les records existants (Phase 4) ; P0 = TOML à la main (déjà le cas). |
 | **Profiler** | P1 | Zones CPU + timers GPU par passe, compteurs (draws/instances/chunks — partiels), graphe de frame ; P0 minimal = timers par système dans le panneau. |
 | **Validation de mods** | P1 | `tools/` : lint d'un plugin (GUIDs, champs inconnus, refs cassées), déjà prévu au CLAUDE.md. |
 | **Docs moddeur générées** | P2 | Générer la référence des champs depuis la réflexion (le MODDING-EFFECTS.md à la main ne scalera pas). |
-| **Doc utilisateur/moddeur `userdoc/`** | P0 (fait 2026-07-05, à maintenir) | Hub `userdoc/README.md` + pages thématiques liées (plugins, load order, data model, effets, monde, schedules/mobilier, localisation, UI, outils). **Chaque vertical livré met à jour sa page.** |
+| ✅ **Doc utilisateur/moddeur `userdoc/`** | P0 (à maintenir) | FAITE 2026-07-05 : hub + pages thématiques liées. **Chaque vertical livré met à jour sa page** (chantier 1 → world-and-levels : props 3D + personnages). |
 | **Index secondaires FormDatabase** | P1 | Décision 2026-07-05 : PAS de base SQL au runtime — la FormDatabase résolue EST la base (lookups GUID O(1)). La scalabilité vient de : (a) le format binaire cuit (Phase 1) pour le temps de chargement quand les fichiers se multiplient, (b) des index en mémoire construits après resolve (par type, par `parent`) pour remplacer les scans de `forEach`/`childrenOf` quand le volume le justifiera. SQL n'apporterait que de la friction (dep, mismatch avec la réflexion/le layering §5, lookups plus lents qu'une hashmap). |
 | **Crash handling** | P2 | Minidumps + log de la pile de plugins active. |
 
-## K. Sauvegarde & streaming (rappel Phase 10)
+## K. Sauvegarde & streaming (rappel ex-Phase 10) — à faire, chantier 5
 
 Save = couche de patches runtime (§5, non négociable) : état des références
 (positions, morts, inventaires), stages de quêtes, journal, temps/météo,
-état du joueur. Le streaming 3D (A) et la save sont le MÊME chantier que la
-Phase 10 du CLAUDE.md — inchangé, juste re-priorisé P0.
+état du joueur. Le streaming 3D (A) et la save sont le MÊME chantier
+(« persistance ») — inchangé sur le fond, re-priorisé P0.
 
 ---
 
@@ -236,6 +247,11 @@ Phase 10 du CLAUDE.md — inchangé, juste re-priorisé P0.
    terrain de départ, générateur de bases de donjons par règles — sortie
    toujours = records/prefabs retouchables), jamais comme système runtime
    du monde canonique.
+7. **Le jeu est à la PREMIÈRE personne** (2026-07-06) : le joueur est un
+   contrôleur FPS (capsule + caméra aux yeux, pas de mesh visible en v1) ;
+   le rendu/anim 3e personne sert aux PNJ. Et le joueur EST un personnage
+   au sens de `docs/STATS.md` : ses déplacements passent par les stats
+   dérivées, toute mutation par GameplayEffect (fait, chantier 1 B5.5).
 
 ## Passe horizontale Fable (5 → 7 juillet 2026) — ✅ FAITE (2026-07-06)
 
@@ -287,11 +303,12 @@ Périmètre de la passe, priorisé par « coût d'une mauvaise décision » :
 
 ## Ordre macro POST-7/07 — les verticales (chaque chantier = sa propre planification en briques)
 
-1. **Socle 3D gameplay** : matériaux/textures + meshes skinnés + animation
-   (C) + Jolt & contrôleur (D) + caméra — « un personnage qui court dans le
-   paysage existant ». **Absorbe** : le cœur du « frontend 3D » (ex-Phase 11
-   chemin custom) et la **brique renderer 27** (arbres à canopée pleine —
-   suppression des cards, spec dans `docs/3D-RENDERER.md`).
+1. **Socle 3D gameplay — ✅ FAIT (2026-07-06, journal `docs/CHANTIER-1.md`)** :
+   matériaux + meshes skinnés + animation data-driven (C) + Jolt &
+   contrôleur première personne piloté par les stats (D, docs/STATS.md) +
+   PNJ 100 % Forms en patrouille + brique renderer 27 (canopées pleines +
+   LOD). Le joueur EST un acteur GAS (sprint = EffectForm, blessures =
+   vitesse réelle).
 2. **Monde habitable** : streaming/cellules 3D + intérieurs + lumières
    locales (A, B) + éditeur de niveau v1 + prefabs — « un village et une
    maison où entrer ». **Absorbe** : les lumières/ombres intérieures
