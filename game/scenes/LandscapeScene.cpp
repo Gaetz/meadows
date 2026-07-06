@@ -305,6 +305,23 @@ void LandscapeScene::onEnter() {
         const gameplay::CharacterTickContext tickCtx { derivedStats,
                                                        gameTags, statsTuning };
         gameplay::initializeActorStats(playerEntity, tickCtx);
+        // Chantier 4 B3: starting kit — the sword the player used to
+        // conjure from thin air now really sits in the inventory,
+        // equipped (data-driven loadouts = §C.1, later).
+        if (!playerEntity.has<gameplay::Inventory>()) {
+            playerEntity.set<gameplay::Inventory>({});
+        }
+        if (!playerEntity.has<gameplay::Equipment>()) {
+            playerEntity.set<gameplay::Equipment>({});
+        }
+        if (playerWeapon) {
+            auto& bag = playerEntity.get_mut<gameplay::Inventory>();
+            if (gameplay::itemCount(bag, playerWeapon->id) == 0) {
+                gameplay::addItem(bag, playerWeapon->id, 1);
+            }
+            playerEntity.get_mut<gameplay::Equipment>().weapon =
+                playerWeapon->id;
+        }
     } else {
         LOG_WARN("B5.5: no Player actor spawned â€” controller falls back to "
                  "fixed speeds");
@@ -683,7 +700,15 @@ void LandscapeScene::update(f32 dt) {
             const gameplay::CharacterTickContext tickCtx { derivedStats,
                                                            gameTags,
                                                            statsTuning };
-            gameplay::tickCharacter(playerEntity, dt, gameDt, tickCtx);
+            // Chantier 4 B3: equipped gear folds into the derived stats.
+            gameplay::StatModifiers equipMods;
+            if (playerEntity.has<gameplay::Equipment>()) {
+                gameplay::applyEquipmentModifiers(
+                    playerEntity.get<gameplay::Equipment>(), forms,
+                    equipMods);
+            }
+            gameplay::tickCharacter(playerEntity, dt, gameDt, tickCtx,
+                                    equipMods);
         }
     }
     snapshot.meshes.clear();
@@ -1457,7 +1482,16 @@ void LandscapeScene::updateInteraction(f32 dt) {
                     consider(e, transform.position, PromptKind::Item, 2.4f);
                 } else if (entity.has<world::ActorMarker>() &&
                            entity != playerEntity) {
-                    consider(e, transform.position, PromptKind::Actor,
+                    // Chantier 4 B3: a dead actor is searched, not talked to.
+                    bool isDead = false;
+                    for (const auto& npc : npcs) {
+                        if (npc->entity == entity) {
+                            isDead = npc->dead;
+                            break;
+                        }
+                    }
+                    consider(e, transform.position,
+                             isDead ? PromptKind::Corpse : PromptKind::Actor,
                              2.8f);
                 } else if (entity.has<world::FurnitureMarker>()) {
                     consider(e, transform.position, PromptKind::Furniture,
@@ -1490,6 +1524,10 @@ void LandscapeScene::updateInteraction(f32 dt) {
             case PromptKind::Actor:
                 promptLabel =
                     "[E] Talk to " + (name.empty() ? "them" : name);
+                break;
+            case PromptKind::Corpse:
+                promptLabel =
+                    "[E] Search " + (name.empty() ? "the body" : name);
                 break;
             case PromptKind::Furniture:
                 promptLabel = "[E] Use " + (name.empty() ? "this" : name);
@@ -1528,6 +1566,9 @@ void LandscapeScene::updateInteraction(f32 dt) {
                 // Placeholder until the dialogue vertical: a spoken line.
                 talkLine = "Belle journee, voyageur.";
                 talkTimer = 4.0f;
+                break;
+            case PromptKind::Corpse:
+                openContainerScreen(promptEntity);
                 break;
             case PromptKind::Furniture: {
                 // B7-lite: beds sleep 8h, seats rest 1h â€” both through the
@@ -1698,6 +1739,24 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
           .strings = { "healthText", "energyText", "essenceText", "clock",
                        "prompt", "talk" },
           .bools = { "promptVisible", "talkVisible" } });
+    // B3: the player-side item table (inventory screen + the player panel
+    // of the container/barter screens) and the loot side.
+    uiSystem.createModel(
+        { .name = "inventory",
+          .strings = { "search", "detailName", "detailInfo", "weightText",
+                       "equipLabel" },
+          .bools = { "hasSelection", "selUsable", "transferMode" },
+          .rows = true,
+          .events = { "tab", "sortCol", "pick", "equipAction",
+                      "useAction" } });
+    uiSystem.createModel({ .name = "container",
+                           .strings = { "title" },
+                           .rows = true,
+                           .events = { "pickLoot", "takeAll" } });
+    uiSystem.setModelEventHandler(
+        [this](const str& model, const str& event, const vector<str>& args) {
+            handleUiEvent(model, event, args);
+        });
 
     // Screens from UiScreenForm records â€” pure data, moddable (Â§5).
     data::forEach<data::UiScreenForm>(forms, [&](const data::UiScreenForm& f) {
@@ -1706,6 +1765,13 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                              .modal = f.modal,
                              .overlay = f.overlay });
     });
+    // TEMP smoke validation: force-load every screen document once.
+    openInventoryScreen();
+    openContainerScreen(playerEntity);
+    screenStack.show("hud");
+    syncScreens();
+    screenStack.closeAll();
+    screenStack.close("hud");
     syncScreens();
 }
 
@@ -1723,6 +1789,16 @@ void LandscapeScene::updateGameUi(f32 dt) {
             if (screenStack.find("pause")) {
                 screenStack.show("pause");
             }
+        }
+    }
+    // I: toggle the inventory (B3) — not while typing in a text field.
+    if (!imguiOwnsKeys && !uiSystem.textFieldFocused() &&
+        input.wasPressed(platform::Key::I)) {
+        const ScreenStack::Screen* top = screenStack.topModal();
+        if (top && (top->name == "inventory" || top->name == "container")) {
+            screenStack.closeTop();
+        } else if (!screenStack.modalOpen() && playerEntity.is_alive()) {
+            openInventoryScreen();
         }
     }
 
@@ -1762,6 +1838,15 @@ void LandscapeScene::updateGameUi(f32 dt) {
     if (wantText != uiTextInputOn) {
         engine->getWindow().setTextInput(wantText);
         uiTextInputOn = wantText;
+    }
+    // Two-way search box: Rml writes into the bound slot, we mirror it
+    // into the view when it changes (B3).
+    if (modal) {
+        const str search = uiSystem.getString("inventory", "search");
+        if (search != invView.search()) {
+            invView.setSearch(search);
+            pushItemModels();
+        }
     }
 
     updateHudModel();
@@ -1849,13 +1934,272 @@ void LandscapeScene::syncScreens() {
     shownScreens = std::move(want);
 }
 
+// --- Chantier 4 B3: inventory / container ------------------------------------------
+
+void LandscapeScene::openInventoryScreen() {
+    containerEntity = ecs::Entity {};
+    uiSystem.setBool("inventory", "transferMode", false);
+    pushItemModels();
+    screenStack.show("inventory");
+}
+
+void LandscapeScene::openContainerScreen(ecs::Entity container) {
+    containerEntity = container;
+    if (containerEntity.is_alive() &&
+        !containerEntity.has<gameplay::Inventory>()) {
+        containerEntity.set<gameplay::Inventory>({});
+    }
+    uiSystem.setBool("inventory", "transferMode", true);
+    pushItemModels();
+    screenStack.show("container");
+}
+
+void LandscapeScene::pushItemModels() {
+    if (!uiCreated) {
+        return;
+    }
+    static const gameplay::Inventory kEmptyBag;
+    const gameplay::Inventory* bag = &kEmptyBag;
+    const gameplay::Equipment* equipment = nullptr;
+    if (playerEntity.is_alive()) {
+        if (playerEntity.has<gameplay::Inventory>()) {
+            bag = &playerEntity.get<gameplay::Inventory>();
+        }
+        if (playerEntity.has<gameplay::Equipment>()) {
+            equipment = &playerEntity.get<gameplay::Equipment>();
+        }
+    }
+    invView.build(forms, *bag, equipment);
+
+    const auto pushRows = [this](const InventoryView& view,
+                                 const str& model) {
+        vector<::ui::UiRow> rows;
+        rows.reserve(view.rows().size());
+        char buffer[32];
+        for (const InventoryView::Row& row : view.rows()) {
+            ::ui::UiRow out;
+            out.id = row.id.toString();
+            out.c0 = row.count > 1
+                         ? row.name + "  x" + std::to_string(row.count)
+                         : row.name;
+            std::snprintf(buffer, sizeof(buffer), "%.1f", row.weight);
+            out.c1 = buffer;
+            out.c2 = std::to_string(row.value);
+            out.c3 = row.power > 0.0f
+                         ? std::to_string(
+                               static_cast<i32>(row.power + 0.5f))
+                         : str { "-" };
+            out.selected = row.id == view.selected();
+            out.tag = row.equipped ? "equipped" : "";
+            rows.push_back(std::move(out));
+        }
+        uiSystem.setRows(model, std::move(rows));
+    };
+    pushRows(invView, "inventory");
+
+    char footer[64];
+    std::snprintf(footer, sizeof(footer), "Carried weight  %.1f",
+                  invView.totalWeight());
+    uiSystem.setString("inventory", "weightText", footer);
+
+    const InventoryView::Row* selected = invView.selectedRow();
+    uiSystem.setBool("inventory", "hasSelection", selected != nullptr);
+    if (selected) {
+        uiSystem.setString("inventory", "detailName", selected->name);
+        char info[96];
+        std::snprintf(info, sizeof(info),
+                      "Weight %.1f   Value %d%s%s", selected->weight,
+                      selected->value,
+                      selected->power > 0.0f ? "   Power " : "",
+                      selected->power > 0.0f
+                          ? std::to_string(
+                                static_cast<i32>(selected->power + 0.5f))
+                                .c_str()
+                          : "");
+        uiSystem.setString("inventory", "detailInfo", info);
+        uiSystem.setBool("inventory", "selUsable", selected->usable);
+        uiSystem.setString("inventory", "equipLabel",
+                           selected->equipped ? "Unequip" : "Equip");
+    }
+
+    if (containerEntity.is_alive() &&
+        containerEntity.has<gameplay::Inventory>()) {
+        lootView.build(forms, containerEntity.get<gameplay::Inventory>(),
+                       nullptr);
+        pushRows(lootView, "container");
+        uiSystem.setString("container", "title", "Loot");
+    }
+}
+
+void LandscapeScene::handleUiEvent(const str& model, const str& event,
+                                   const vector<str>& args) {
+    const auto argGuid = [&]() -> std::optional<core::Guid> {
+        return args.empty() ? std::nullopt
+                            : core::Guid::fromString(args[0]);
+    };
+    if (model == "inventory") {
+        if (event == "tab" && !args.empty()) {
+            using Category = InventoryView::Category;
+            Category category = Category::All;
+            if (args[0] == "weapons") {
+                category = Category::Weapons;
+            } else if (args[0] == "armor") {
+                category = Category::Armor;
+            } else if (args[0] == "consumables") {
+                category = Category::Consumables;
+            } else if (args[0] == "misc") {
+                category = Category::Misc;
+            }
+            invView.setCategory(category);
+        } else if (event == "sortCol" && !args.empty()) {
+            using Column = InventoryView::Column;
+            Column column = Column::Name;
+            if (args[0] == "weight") {
+                column = Column::Weight;
+            } else if (args[0] == "value") {
+                column = Column::Value;
+            } else if (args[0] == "power") {
+                column = Column::Power;
+            }
+            invView.sortBy(column);
+        } else if (event == "pick") {
+            if (const auto id = argGuid()) {
+                if (containerEntity.is_alive()) {
+                    transferItem(*id, /*fromContainer=*/false);
+                } else {
+                    invView.select(*id);
+                }
+            }
+        } else if (event == "equipAction") {
+            toggleEquip(invView.selected());
+        } else if (event == "useAction") {
+            useConsumable(invView.selected());
+        }
+        pushItemModels();
+    } else if (model == "container") {
+        if (event == "pickLoot") {
+            if (const auto id = argGuid()) {
+                transferItem(*id, /*fromContainer=*/true);
+            }
+        } else if (event == "takeAll" && containerEntity.is_alive() &&
+                   playerEntity.is_alive()) {
+            auto& loot = containerEntity.get_mut<gameplay::Inventory>();
+            auto& bag = playerEntity.get_mut<gameplay::Inventory>();
+            for (const gameplay::ItemStack& stack : loot.items) {
+                if (stack.count > 0) {
+                    gameplay::addItem(bag, stack.item, stack.count);
+                }
+            }
+            loot.items.clear();
+        }
+        pushItemModels();
+    }
+}
+
+void LandscapeScene::toggleEquip(const core::Guid& id) {
+    if (!id.isValid() || !playerEntity.is_alive() ||
+        !playerEntity.has<gameplay::Equipment>()) {
+        return;
+    }
+    auto& equipment = playerEntity.get_mut<gameplay::Equipment>();
+    const data::FormHandle handle = forms.handleOf(id);
+    const reflect::TypeInfo* type = forms.typeOf(handle);
+    if (!type) {
+        return;
+    }
+    if (type->isA(data::WeaponForm::staticTypeInfo().id)) {
+        equipment.weapon = equipment.weapon == id ? core::Guid {} : id;
+    } else if (type->isA(data::ArmorForm::staticTypeInfo().id)) {
+        const auto* armor =
+            static_cast<const data::ArmorForm*>(forms.get(handle));
+        core::Guid* slot = nullptr;
+        if (armor->slot == "head") {
+            slot = &equipment.head;
+        } else if (armor->slot == "torso") {
+            slot = &equipment.torso;
+        } else if (armor->slot == "arms") {
+            slot = &equipment.arms;
+        } else if (armor->slot == "legs") {
+            slot = &equipment.legs;
+        }
+        if (slot) {
+            *slot = *slot == id ? core::Guid {} : id;
+        }
+    }
+}
+
+void LandscapeScene::useConsumable(const core::Guid& id) {
+    if (!id.isValid() || !playerEntity.is_alive()) {
+        return;
+    }
+    const auto* consumable = forms.find<data::ConsumableForm>(id);
+    if (!consumable || !playerEntity.has<gameplay::Inventory>()) {
+        return;
+    }
+    auto& bag = playerEntity.get_mut<gameplay::Inventory>();
+    if (!gameplay::removeItem(bag, id, 1)) {
+        return;
+    }
+    // Survival needs are component fields (the sleep() precedent);
+    // attribute changes still go through effects only (§2.9).
+    if (playerEntity.has<gameplay::Survival>()) {
+        auto& survival = playerEntity.get_mut<gameplay::Survival>();
+        survival.hunger = glm::min(100.0f, survival.hunger +
+                                               consumable->restoreHunger);
+        survival.thirst = glm::min(100.0f, survival.thirst +
+                                               consumable->restoreThirst);
+    }
+    if (consumable->effect.isValid()) {
+        if (const auto* effect =
+                forms.find<gameplay::EffectForm>(consumable->effect)) {
+            gameplay::applyEffect(
+                playerEntity.get_mut<gameplay::AttributeSet>(),
+                playerEntity.get_mut<gameplay::AbilitySystem>(), *effect,
+                gameTags);
+        }
+    }
+    LOG_INFO("Used: {}", consumable->editorId);
+}
+
+void LandscapeScene::transferItem(const core::Guid& id,
+                                  bool fromContainer) {
+    if (!id.isValid() || !containerEntity.is_alive() ||
+        !playerEntity.is_alive()) {
+        return;
+    }
+    if (!containerEntity.has<gameplay::Inventory>() ||
+        !playerEntity.has<gameplay::Inventory>()) {
+        return;
+    }
+    auto& loot = containerEntity.get_mut<gameplay::Inventory>();
+    auto& bag = playerEntity.get_mut<gameplay::Inventory>();
+    auto& source = fromContainer ? loot : bag;
+    auto& target = fromContainer ? bag : loot;
+    if (gameplay::removeItem(source, id, 1)) {
+        gameplay::addItem(target, id, 1);
+    }
+}
+
 // Chantier 3 B6: first-person melee â€” LMB swings the equipped weapon at
 // the nearest living NPC in reach and roughly in front. Damage flows
 // through the SAME GAS pipeline as the 2D arena (Â§2.9: no hand-rolled
 // numbers). v1 has no swing animation (no visible body) â€” the cooldown
 // and the hit feedback carry the feel until the FX/audio brick.
 void LandscapeScene::tryPlayerAttack() {
-    if (!playerWeapon || !playerEntity.is_alive() || !player) {
+    if (!playerEntity.is_alive() || !player) {
+        return;
+    }
+    // Chantier 4 B3: the swing uses the EQUIPPED weapon (inventory screen
+    // can swap/unequip it); bare hands don't attack in v1.
+    const data::WeaponForm* weapon = playerWeapon;
+    if (playerEntity.has<gameplay::Equipment>()) {
+        const auto& equipment = playerEntity.get<gameplay::Equipment>();
+        weapon = equipment.weapon.isValid()
+                     ? forms.find<data::WeaponForm>(equipment.weapon)
+                     : nullptr;
+    }
+    if (!weapon) {
+        LOG_INFO("Swing: no weapon equipped");
         return;
     }
     playerAttackCooldown = 0.7f;
@@ -1893,7 +2237,7 @@ void LandscapeScene::tryPlayerAttack() {
     };
     const auto& playerSys = playerEntity.get<gameplay::AbilitySystem>();
     const gameplay::DamageResult result = gameplay::applyDamage(
-        block, gameplay::weaponDamageEvent(*playerWeapon, playerSys),
+        block, gameplay::weaponDamageEvent(*weapon, playerSys),
         gameTags, derivedStats, nullptr, statsTuning);
     LOG_INFO("You hit for {:.0f} damage{} (target health {:.0f})",
              result.healthDamage, result.staggered ? " â€” staggered!" : "",
@@ -2439,10 +2783,28 @@ void LandscapeScene::updateNpcs(f32 dt) {
         // life state) â€” that's where State.Dead comes from.
         gameplay::tickCharacter(npc.entity, dt, gameDt, tickCtx);
         const auto& npcSys = npc.entity.get<gameplay::AbilitySystem>();
+        const bool wasDead = npc.dead;
         npc.dead = deadTag && npcSys.tags.has(*deadTag);
+        if (npc.dead && !wasDead) {
+            // Chantier 4 B3: the corpse becomes lootable — its weapon and
+            // a few coins land in an Inventory on the entity ([E] opens
+            // the transfer screen). Data-driven loadouts = §C.1 later.
+            if (!npc.entity.has<gameplay::Inventory>()) {
+                npc.entity.set<gameplay::Inventory>({});
+            }
+            auto& loot = npc.entity.get_mut<gameplay::Inventory>();
+            if (npc.hostile && banditWeapon) {
+                gameplay::addItem(loot, banditWeapon->id, 1);
+            }
+            if (const auto* gold =
+                    data::findByEditorId<data::MiscItemForm>(forms,
+                                                             "GoldCoin")) {
+                gameplay::addItem(loot, gold->id, npc.hostile ? 12 : 3);
+            }
+        }
         if (npc.dead) {
             // The death transition (anim graph, State.Dead gate) plays;
-            // the body stays. Loot/despawn: a later slice.
+            // the body stays. Despawn: a later slice.
             npc.sitting = false;
             npc.path.clear();
             npc.speed = 0.0f;

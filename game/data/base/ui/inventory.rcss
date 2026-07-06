@@ -1,0 +1,112 @@
+/* SkyUI-style item tables (chantier 4 B3): category tabs, search, sortable
+   columns, equipped markers. Shared by inventory / container / barter. */
+
+#window {
+	width: 640dp;
+	height: 70%;
+	margin: auto;
+	display: flex;
+	flex-direction: column;
+}
+
+#transfer {
+	display: flex;
+	width: 90%;
+	height: 70%;
+	margin: auto;
+}
+
+.side {
+	flex: 1;
+	margin: 0 8dp;
+	display: flex;
+	flex-direction: column;
+}
+
+#tabs {
+	display: flex;
+	margin-bottom: 8dp;
+}
+
+.tab {
+	padding: 4dp 10dp;
+	margin-right: 4dp;
+	color: #a9adb4;
+	border-bottom: 2dp #3c4046;
+	cursor: pointer;
+}
+
+.tab:hover {
+	color: #f0ede4;
+	border-bottom-color: #d9b96c;
+}
+
+#search {
+	margin-left: auto;
+	width: 150dp;
+}
+
+.tablehead {
+	display: flex;
+	border-bottom: 1dp #4a4f56;
+	padding: 3dp 6dp;
+	color: #8a8f96;
+	font-size: 13dp;
+	letter-spacing: 1dp;
+}
+
+.tablehead .col {
+	cursor: pointer;
+}
+
+.tablehead .col:hover {
+	color: #d9b96c;
+}
+
+#items, .itemlist {
+	flex: 1;
+	overflow-y: auto;
+}
+
+.row {
+	display: flex;
+	padding: 4dp 6dp;
+	cursor: pointer;
+}
+
+.row:hover {
+	background-color: #23262ce0;
+}
+
+.row.selected {
+	background-color: #2c3038e0;
+	border-left: 2dp #d9b96c;
+}
+
+.row.equipped .name {
+	color: #d9b96c;
+}
+
+.col.name {
+	flex: 1;
+}
+
+.col.num {
+	width: 70dp;
+	text-align: right;
+}
+
+#detail {
+	border-top: 1dp #3c4046;
+	padding-top: 8dp;
+	margin-top: 6dp;
+}
+
+#detailinfo {
+	margin: 4dp 0;
+}
+
+#footer {
+	margin-top: 6dp;
+	font-size: 13dp;
+}

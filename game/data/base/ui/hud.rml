@@ -3,7 +3,9 @@
 	<link type="text/rcss" href="theme.rcss"/>
 	<link type="text/rcss" href="hud.rcss"/>
 </head>
-<body data-model="hud">
+<body>
+	<!-- data-model on a wrapper div, not on body (see inventory.rml). -->
+	<div id="hud" data-model="hud">
 	<div id="crosshair">+</div>
 	<div id="prompt" data-if="promptVisible">{{ prompt }}</div>
 	<div id="talk" data-if="talkVisible">{{ talk }}</div>
@@ -24,6 +26,7 @@
 		<div class="stat">
 			<div class="bar posture"><div class="fill" data-style-width="posturePct + '%'"/></div>
 		</div>
+	</div>
 	</div>
 </body>
 </rml>

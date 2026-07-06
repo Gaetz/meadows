@@ -659,6 +659,8 @@ new = true
 [records.fields]
 editorId = "RustySword"
 displayName = "Rusty sword"
+weight = 3.0
+goldValue = 25
 slashAttack = 14.0
 postureDamage = 20.0
 scalingAttribute = "strength"
@@ -670,6 +672,8 @@ new = true
 [records.fields]
 editorId = "BanditClub"
 displayName = "Bandit club"
+weight = 2.5
+goldValue = 8
 bluntAttack = 8.0
 postureDamage = 25.0
 
@@ -867,6 +871,8 @@ displayName = "Travel rations"
 category = "food"
 weight = 0.5
 model = "4d7a9b30-0000-4000-8000-0000000000a8"
+restoreHunger = 30.0
+goldValue = 5
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000071"

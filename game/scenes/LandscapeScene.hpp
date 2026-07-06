@@ -20,6 +20,7 @@
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 #include "engine/ui/UiSystem.hpp"
+#include "game/InventoryView.hpp"
 #include "game/ScreenStack.hpp"
 #include "world/ai/TerrainNavigator.hpp"
 #include "world/streaming/CellStreamer.hpp"
@@ -222,7 +223,8 @@ private:
     void saveSculptToMod();
     // Chantier 3 B1: GENERIC interaction (E) — doors travel, items land
     // in the inventory, actors talk (placeholder line), furniture = B7.
-    enum class PromptKind : u8 { None, Door, Item, Actor, Furniture };
+    enum class PromptKind : u8 { None, Door, Item, Actor, Corpse,
+                                 Furniture };
     ecs::Entity promptEntity {};
     PromptKind promptKind { PromptKind::None };
     str promptLabel;
@@ -254,6 +256,20 @@ private:
     void updateGameUi(f32 dt);
     void updateHudModel();
     void syncScreens();
+
+    // Chantier 4 B3: inventory + container/loot (SkyUI table logic in
+    // InventoryView; the same component serves the barter screen, B5).
+    InventoryView invView;
+    InventoryView lootView;
+    ecs::Entity containerEntity {};
+    void openInventoryScreen();
+    void openContainerScreen(ecs::Entity container);
+    void pushItemModels(); // views -> UiRow rows + detail/footer slots
+    void handleUiEvent(const str& model, const str& event,
+                       const vector<str>& args);
+    void toggleEquip(const core::Guid& id);
+    void useConsumable(const core::Guid& id);
+    void transferItem(const core::Guid& id, bool fromContainer);
 
     // Chantier 3 B5/B6: melee combat — everything flows through the GAS
     // damage pipeline (weaponDamageEvent -> applyDamage), like the 2D

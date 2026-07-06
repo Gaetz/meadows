@@ -97,6 +97,8 @@ struct ArmorForm : Form {
     f32 enduranceDisease { 0.0f };
     f32 enduranceCurse { 0.0f };
     f32 enduranceDeath { 0.0f };
+    // Trade value (chantier 4 barter, appended — ordinals stable).
+    i32 goldValue { 0 };
 
     REFLECT_BEGIN(ArmorForm, Form)
         REFLECT_FIELD(displayName)
@@ -123,6 +125,7 @@ struct ArmorForm : Form {
         REFLECT_FIELD(enduranceDisease)
         REFLECT_FIELD(enduranceCurse)
         REFLECT_FIELD(enduranceDeath)
+        REFLECT_FIELD(goldValue)
     REFLECT_END()
 };
 
@@ -137,12 +140,40 @@ struct ConsumableForm : Form {
     // 3D world visual (chantier 3, appended — ordinals stable).
     core::Guid model;
     core::Guid material;
+    // Chantier 4 (appended): survival restoration on use (needs are
+    // component fields, not attributes — the sleep()/rest precedent) and
+    // trade value for the barter screen.
+    f32 restoreHunger { 0.0f };
+    f32 restoreThirst { 0.0f };
+    i32 goldValue { 0 };
 
     REFLECT_BEGIN(ConsumableForm, Form)
         REFLECT_FIELD(displayName)
         REFLECT_FIELD(category)
         REFLECT_FIELD(effect)
         REFLECT_FIELD(weight)
+        REFLECT_FIELD(model)
+        REFLECT_FIELD(material)
+        REFLECT_FIELD(restoreHunger)
+        REFLECT_FIELD(restoreThirst)
+        REFLECT_FIELD(goldValue)
+    REFLECT_END()
+};
+
+// A plain tradable/carryable item with no behavior — Skyrim's MISC record
+// (chantier 4): gold coins, trinkets, crafting junk. New kinds of behavior
+// come from effects/scripts, not new component types (§2.7).
+struct MiscItemForm : Form {
+    str displayName;
+    f32 weight { 0.1f };
+    i32 goldValue { 0 };
+    core::Guid model;
+    core::Guid material;
+
+    REFLECT_BEGIN(MiscItemForm, Form)
+        REFLECT_FIELD(displayName)
+        REFLECT_FIELD(weight)
+        REFLECT_FIELD(goldValue)
         REFLECT_FIELD(model)
         REFLECT_FIELD(material)
     REFLECT_END()

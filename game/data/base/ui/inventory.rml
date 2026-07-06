@@ -1,0 +1,42 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="inventory.rcss"/>
+</head>
+<body>
+	<!-- data-model on a wrapper div, NOT on body: body attributes apply
+	     after children parse, which silently skips data-for. -->
+	<div id="window" class="panel" data-model="inventory">
+		<div class="title">Inventory</div>
+		<div id="tabs">
+			<div class="tab" data-event-click="tab('all')">All</div>
+			<div class="tab" data-event-click="tab('weapons')">Weapons</div>
+			<div class="tab" data-event-click="tab('armor')">Armor</div>
+			<div class="tab" data-event-click="tab('consumables')">Consumables</div>
+			<div class="tab" data-event-click="tab('misc')">Misc</div>
+			<input type="text" class="text" id="search" data-value="search"/>
+		</div>
+		<div class="tablehead">
+			<div class="col name" data-event-click="sortCol('name')">Name</div>
+			<div class="col num" data-event-click="sortCol('weight')">Weight</div>
+			<div class="col num" data-event-click="sortCol('value')">Value</div>
+			<div class="col num" data-event-click="sortCol('power')">Power</div>
+		</div>
+		<div id="items">
+			<div class="row" data-for="row : rows" data-class-selected="row.selected" data-class-equipped="row.tag == 'equipped'" data-event-click="pick(row.id)">
+				<div class="col name">{{ row.c0 }}</div>
+				<div class="col num">{{ row.c1 }}</div>
+				<div class="col num">{{ row.c2 }}</div>
+				<div class="col num">{{ row.c3 }}</div>
+			</div>
+		</div>
+		<div id="detail" data-if="hasSelection">
+			<div id="detailname" class="accent">{{ detailName }}</div>
+			<div id="detailinfo" class="muted">{{ detailInfo }}</div>
+			<button data-if="!selUsable" data-event-click="equipAction()">{{ equipLabel }}</button>
+			<button data-if="selUsable" data-event-click="useAction()">Use</button>
+		</div>
+		<div id="footer" class="muted">{{ weightText }} &nbsp;&mdash;&nbsp; [I] close</div>
+	</div>
+</body>
+</rml>

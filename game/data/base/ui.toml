@@ -16,3 +16,35 @@ editorId = "ScreenHud"
 screen = "hud"
 document = "hud.rml"
 overlay = true
+
+[[records]]
+form = "5e8bac40-0000-4000-8000-000000000002"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenInventory"
+screen = "inventory"
+document = "inventory.rml"
+modal = true
+
+[[records]]
+form = "5e8bac40-0000-4000-8000-000000000003"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenContainer"
+screen = "container"
+document = "container.rml"
+modal = true
+
+# The gold currency (chantier 4 B5): an ordinary MISC item — no parallel
+# money system, the barter screen just moves coins like any stack.
+[[records]]
+form = "5e8bac40-0000-4000-8000-000000000010"
+type = "MiscItemForm"
+new = true
+[records.fields]
+editorId = "GoldCoin"
+displayName = "Gold"
+weight = 0.0
+goldValue = 1

@@ -35,6 +35,7 @@ add_executable(meadows-tests
     HorizontalFormsTest.cpp
     InjuriesTest.cpp
     InventoryTest.cpp
+    InventoryViewTest.cpp
     JobsTest.cpp
     LevelEditorTest.cpp
     MovementTest.cpp

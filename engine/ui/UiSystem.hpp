@@ -113,6 +113,9 @@ public:
     void setString(const str& model, const str& slot, const str& value);
     void setBool(const str& model, const str& slot, bool value);
     void setRows(const str& model, vector<UiRow> rows);
+    // Reads a string slot back — two-way bindings (data-value on a text
+    // field) write into it (search boxes, name inputs).
+    str getString(const str& model, const str& slot) const;
 
     bool ready() const { return created; }
 

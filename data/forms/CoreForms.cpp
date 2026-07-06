@@ -8,6 +8,7 @@ void registerCoreFormTypes(FormTypeRegistry& registry) {
     registry.registerFormType<WeaponForm>();
     registry.registerFormType<ArmorForm>();
     registry.registerFormType<ConsumableForm>();
+    registry.registerFormType<MiscItemForm>();
     registry.registerFormType<ActorForm>();
 }
 

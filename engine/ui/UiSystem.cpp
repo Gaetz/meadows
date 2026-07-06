@@ -716,6 +716,19 @@ void UiSystem::setBool(const str& model, const str& slot, bool value) {
     it->second->handle.DirtyVariable(slot);
 }
 
+str UiSystem::getString(const str& model, const str& slot) const {
+    if (!pimpl) {
+        return {};
+    }
+    const auto it = pimpl->models.find(model);
+    if (it == pimpl->models.end()) {
+        return {};
+    }
+    const auto slotIt = it->second->strings.find(slot);
+    return slotIt != it->second->strings.end() ? str { slotIt->second }
+                                               : str {};
+}
+
 void UiSystem::setRows(const str& model, vector<UiRow> rows) {
     if (!pimpl) {
         return;
