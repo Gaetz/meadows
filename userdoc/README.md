@@ -22,6 +22,7 @@ is just the first plugin in the list.
 | [NPC schedules & furniture](schedules-and-furniture.md) | Daily routines, AI packages, beds/chairs/workstations |
 | [Localization](localization.md) | Translating the game (or your mod) — a language pack is a plugin |
 | [UI modding](ui-modding.md) | Replacing game screens (RmlUi documents) — the SkyUI model |
+| [Save games](saving.md) | A save is an ordinary plugin: format, slots, what gets captured |
 | [In-game tools](tools.md) | The Game DB editor, the developer console, exporting your edits as a mod |
 
 ## Quick start: your first mod in five minutes

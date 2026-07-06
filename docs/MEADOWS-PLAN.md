@@ -11,8 +11,8 @@
 | **Chantier 2 — Monde habitable** (cellules 3D, éditeur de niveau+gizmos, lumières locales, kit+intérieur+portes, terrain auteuré+sculpt) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-2.md` |
 | **Chantier 3 — Vivant** (horloge, interaction E, schedules exécutés, IA hostile + combat mêlée 3D, repos) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-3.md`. Reportés : cues/audio (pas d'assets son — dev doit les déposer), Recast (fallback TerrainNavigator), barter (chantier 4), ability GAS formelle pour l'attaque joueur |
 | **Chantier 4 — Interfaces** (écrans RmlUi P0, barter, console en jeu, plugin stack unifié) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-4.md`. 9 écrans (HUD/inventaire/conteneur/dialogue/barter/menus/attente/atelier), LoadoutEntryForm (§C.1), écart n°1 HORIZONTAL-PASS clos. Reportés : gamepad, localisation systématique, carte, éditeur d'UI (tous P1) |
-| Chantier 5 — Persistance (Phase 10 : streaming + save = couche de patches) | ⬅️ **PROCHAIN** |
-| Chantier 6 — P1 par valeur (quêtes outillées, économie/crime, éditeurs anim/FX/UI…) | à faire |
+| **Chantier 5 — Persistance** (save = couche de patches, mémoire des cellules, streaming lissé) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-5.md`. Save = plugin TOML dans saves/ (F5/F9, menus), couche pending en RAM (cellules qui se souviennent sans disque), enfants de prefab persistés, spawn budgété. Reste : async IO réel (fichiers cuits par cellule) quand le monde dépassera la RAM |
+| Chantier 6 — P1 par valeur (quêtes outillées, économie/crime, éditeurs anim/FX/UI, passe lighting, briques renderer 28-31…) | ⬅️ **PROCHAIN** |
 | Refonte herbe (renderer) | ⏸️ en attente des recherches du dev |
 
 > **CE FICHIER EST LA ROADMAP UNIQUE.** Les phases 0-8 du CLAUDE.md §9 sont
@@ -70,7 +70,7 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| 🔨 **Streaming 3D worldspace→cells** (ex-Phase 10) | P0 | v1 SYNCHRONE FAITE (chantier 2 B1) : CellStreamer (anneau + hystérésis), worldspaces intérieurs séparés, transitions portes. Reste (chantier 5) : chargement ASYNC + persistance par cellule. |
+| ✅ **Streaming 3D worldspace→cells** (ex-Phase 10) | P0 | FAIT : CellStreamer (anneau + hystérésis, chantier 2 B1) + **persistance par cellule** (couche pending, chantier 5 B4) + **spawn budgété** (1 cellule/frame au franchissement, chantier 5 B8). Reste : vrai async IO (fichiers cuits par cellule + worker) quand le monde dépassera la RAM — le seam Phase 5 est prêt. |
 | ✅ **Éditeur de niveau interne au jeu** | P0 | v1 FAITE (chantier 2 B3/B4/B9) : picking ray-AABB, gizmos ImGuizmo (1/2/3), palette, placement au sol, sculpt, undo/redo, **export = mod `data/mods/level-edits.toml`** rechargé au run suivant. Reste : duplication, multi-sélection rectangle, resync live après undo, snap de grille. |
 | ✅ **Système de prefabs** | P0 | FAIT : expansion runtime (H8) + **« créer un prefab depuis la sélection »** dans l'éditeur (chantier 2 B4, doctesté). Reste : prefabs imbriqués éprouvés. |
 | ✅ **Intérieurs** | P0 | v1 FAITE (chantier 2 B6) : worldspace interior, kit de modules (Quaternius village), mode renderer intérieur (pas de terrain/ciel/soleil, ambiant + lumières locales), occlusion v1 = cellule entière. Reste : ambiance audio/reverb (chantier « vivant »), portals P2. |
@@ -219,12 +219,18 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 | **Index secondaires FormDatabase** | P1 | Décision 2026-07-05 : PAS de base SQL au runtime — la FormDatabase résolue EST la base (lookups GUID O(1)). La scalabilité vient de : (a) le format binaire cuit (Phase 1) pour le temps de chargement quand les fichiers se multiplient, (b) des index en mémoire construits après resolve (par type, par `parent`) pour remplacer les scans de `forEach`/`childrenOf` quand le volume le justifiera. SQL n'apporterait que de la friction (dep, mismatch avec la réflexion/le layering §5, lookups plus lents qu'une hashmap). |
 | **Crash handling** | P2 | Minidumps + log de la pile de plugins active. |
 
-## K. Sauvegarde & streaming (rappel ex-Phase 10) — à faire, chantier 5
+## K. Sauvegarde & streaming (ex-Phase 10) — ✅ FAIT (chantier 5, 2026-07-06)
 
-Save = couche de patches runtime (§5, non négociable) : état des références
-(positions, morts, inventaires), stages de quêtes, journal, temps/météo,
-état du joueur. Le streaming 3D (A) et la save sont le MÊME chantier
-(« persistance ») — inchangé sur le fond, re-priorisé P0.
+Save = couche de patches runtime (§5, tenu) : une save est un **plugin
+TOML** dans `saves/` (records SavedStats/SavedEffect/SavedItem/
+SavedInjury enfants par référence + patches ReferenceForm + un
+WorldStateForm), résolu en dernière couche au chargement. Couvert :
+état/position/mort/inventaire/effets actifs des acteurs, items ramassés,
+enfants de prefab, horloge/worldspace/caméra, mémoire des cellules
+déchargées (sans disque), F5/F9 + menus + console. Reste pour plus tard :
+stages de quêtes/journal (avec le chantier quêtes), météo fine, état PNJ
+fin (schedule en cours — re-dérivé de l'horloge), async IO réel.
+Journal : `docs/CHANTIER-5.md` ; doc moddeur : `userdoc/saving.md`.
 
 ---
 
