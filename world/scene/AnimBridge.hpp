@@ -19,6 +19,10 @@
 // immutable per resolve); one GraphInstance per animated entity, stored
 // in a runtime component; entity speed and tags flow in per frame.
 
+namespace data {
+struct ActorForm;
+}
+
 namespace world {
 
 // (assetGuid, animationName) -> clip. Return nullopt on failure; the
@@ -29,5 +33,18 @@ using ClipResolver = std::function<std::optional<anim::AnimClip>(
 std::optional<anim::GraphDesc> buildAnimGraph(
     const data::FormDatabase& forms, const core::Guid& graphId,
     const ClipResolver& resolveClip);
+
+// Actor visual resolution (chantier 1, B6): ActorForm.appearance ->
+// what to draw. v1 picks the FIRST filled slot mesh (a single body mesh);
+// full per-slot compositing (equipment swaps a slot's mesh) is the
+// EquipmentVisuals vertical. nullopt = no 3D visual (2D/legacy actor).
+struct ActorVisual {
+    core::Guid skeleton;  // glTF asset carrying the rig (and its clips)
+    core::Guid mesh;      // skinned body mesh asset
+    Vec4 tint { 1.0f };   // AppearanceForm.skinTint
+    core::Guid animGraph; // ActorForm.animGraph
+};
+std::optional<ActorVisual> resolveActorVisual(const data::FormDatabase& forms,
+                                              const data::ActorForm& actor);
 
 } // namespace world

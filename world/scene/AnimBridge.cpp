@@ -3,8 +3,10 @@
 #include <unordered_map>
 
 #include "data/forms/AnimForms.hpp"
+#include "data/forms/CoreForms.hpp"
 #include "data/forms/FormQuery.hpp"
 #include "engine/core/Log.hpp"
+#include "gameplay/actors/CharacterForms.hpp"
 
 namespace world {
 
@@ -104,6 +106,39 @@ std::optional<anim::GraphDesc> buildAnimGraph(
         desc.initialState = initial->second;
     }
     return desc;
+}
+
+std::optional<ActorVisual> resolveActorVisual(const data::FormDatabase& forms,
+                                              const data::ActorForm& actor) {
+    if (!actor.appearance.isValid()) {
+        return std::nullopt; // 2D/legacy actor — sprite path only
+    }
+    const auto* appearance =
+        forms.find<gameplay::AppearanceForm>(actor.appearance);
+    if (!appearance || !appearance->skeleton.isValid()) {
+        LOG_WARN("resolveActorVisual: actor '{}' has no usable appearance",
+                 actor.editorId);
+        return std::nullopt;
+    }
+    // First filled slot = the body mesh (v1 single-mesh characters).
+    const core::Guid slots[] = { appearance->torsoMesh, appearance->headMesh,
+                                 appearance->legsMesh, appearance->hairMesh,
+                                 appearance->handsMesh,
+                                 appearance->feetMesh };
+    ActorVisual visual;
+    visual.skeleton = appearance->skeleton;
+    for (const core::Guid& slot : slots) {
+        if (slot.isValid()) {
+            visual.mesh = slot;
+            break;
+        }
+    }
+    if (!visual.mesh.isValid()) {
+        return std::nullopt;
+    }
+    visual.tint = appearance->skinTint;
+    visual.animGraph = actor.animGraph;
+    return visual;
 }
 
 } // namespace world

@@ -6,6 +6,8 @@
 #include "data/plugins/Resolver.hpp"
 #include "engine/ecs/World.hpp"
 #include "game/SceneSubmit.hpp"
+#include "gameplay/actors/CharacterForms.hpp"
+#include "world/scene/AnimBridge.hpp"
 #include "world/scene/Components.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/worldspace/FormCategory.hpp"
@@ -27,6 +29,7 @@ data::FormTypeRegistry makeTypes() {
     data::FormTypeRegistry types;
     data::registerCoreFormTypes(types);
     data::registerVisualFormTypes(types); // StaticForm/MaterialForm (B1)
+    gameplay::registerCharacterFormTypes(types); // AppearanceForm (B6)
     world::registerWorldFormTypes(types);
     return types;
 }
@@ -205,6 +208,63 @@ scale = [2.0, 2.0, 2.0]
     CHECK(snapshot.meshes[0].transform[3].x == doctest::Approx(3.0f));
     CHECK(snapshot.meshes[0].transform[3].z == doctest::Approx(5.0f));
     CHECK(snapshot.meshes[0].transform[0].x == doctest::Approx(2.0f));
+}
+
+TEST_CASE("resolveActorVisual (B6): ActorForm + AppearanceForm resolve to "
+          "a drawable visual") {
+    Fixture fx;
+    const auto base = parse(fx.types, R"toml(
+[plugin]
+id = "55555555-5555-4555-8555-555555555555"
+name = "npc-base"
+
+[[records]]
+form = "60000000-0000-4000-8000-000000000001"
+type = "AppearanceForm"
+new = true
+[records.fields]
+editorId = "Look"
+skeleton = "60000000-0000-4000-8000-0000000000aa"
+torsoMesh = "60000000-0000-4000-8000-0000000000ab"
+skinTint = [0.5, 0.4, 0.3, 1.0]
+
+[[records]]
+form = "60000000-0000-4000-8000-000000000002"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "Npc"
+appearance = "60000000-0000-4000-8000-000000000001"
+animGraph = "60000000-0000-4000-8000-0000000000ac"
+
+[[records]]
+form = "60000000-0000-4000-8000-000000000003"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "LegacyNpc"
+)toml",
+                            "npc-base");
+    data::resolve({ &base }, fx.types, fx.db);
+
+    const auto* actor = fx.db.find<data::ActorForm>(
+        *Guid::fromString("60000000-0000-4000-8000-000000000002"));
+    REQUIRE(actor != nullptr);
+    const auto visual = world::resolveActorVisual(fx.db, *actor);
+    REQUIRE(visual.has_value());
+    CHECK(visual->skeleton ==
+          *Guid::fromString("60000000-0000-4000-8000-0000000000aa"));
+    CHECK(visual->mesh ==
+          *Guid::fromString("60000000-0000-4000-8000-0000000000ab"));
+    CHECK(visual->animGraph ==
+          *Guid::fromString("60000000-0000-4000-8000-0000000000ac"));
+    CHECK(visual->tint.x == doctest::Approx(0.5f));
+
+    // An actor without an appearance is a 2D/legacy actor: no visual.
+    const auto* legacy = fx.db.find<data::ActorForm>(
+        *Guid::fromString("60000000-0000-4000-8000-000000000003"));
+    REQUIRE(legacy != nullptr);
+    CHECK_FALSE(world::resolveActorVisual(fx.db, *legacy).has_value());
 }
 
 TEST_CASE("spawner: an unresolvable base form yields no entity") {

@@ -96,6 +96,33 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 | **Ragdoll** | P2 | Avec Jolt ; v1 = animations de mort. |
 | **Character creator joueur** | P2 | L'apparence modulaire le rend possible ; UI dédiée plus tard. |
 
+### C.1 Fiche de personnage — `ActorForm` comme hub (étude NarrativePro, 2026-07-06)
+
+> Étude du modèle `UCharacterDefinition`/`UNPCDefinition` de Narrative Pro
+> (Unreal) demandée par le dev : un data asset unique décrit TOUT le
+> personnage (apparence, loadout, tags, factions, dialogue, planning,
+> config d'abilities, vendeur). **Verdict : notre modèle couvre déjà le
+> concept — `ActorForm` EST la character definition** (hooks H1 :
+> `appearance`, `animGraph`, `schedule` + GAS §6), et notre convention
+> « records enfants » exprime leurs TArray sans étendre la réflexion.
+> Ce qui manque, planifié par verticale :
+
+| Élément NarrativePro | Équivalent Meadows | Quand |
+|---|---|---|
+| DefaultAppearance | `ActorForm.appearance` → `AppearanceForm` (fait, H1) | B6 (branché) |
+| AbilityConfiguration (abilities/attributs de départ) | **enfants `ActorGrantForm { parent, effect/ability guid }`** appliqués au spawn via applyEffect/grantAbility | chantier « vivant » |
+| DefaultItemLoadout + currency (loot rolls) | **enfants `LoadoutEntryForm { parent, item, count, chance }`** roulés au spawn (RNG §8) + champ `currency` APPEND | chantier « vivant » |
+| DefaultOwnedTags / DefaultFactions | **enfants `ActorTagForm { parent, tag }`** (factions = tags, §6.1 — déjà le modèle) | chantier « vivant » |
+| Dialogue + TaggedDialogueSet | champ `dialogue` guid APPEND sur ActorForm → records Phase 4 ; tagged dialogues = condition evaluator | chantier « vivant » |
+| ActivitySchedules / ActivityConfiguration | `ActorForm.schedule` → ScheduleForm (fait, H1) | chantier « vivant » |
+| Vendeur (bIsVendor, buy/sell %, trading loadout) | **`VendorForm` enfant** (ou APPEND) + inventaire marchand | P1 économie |
+| NPC unique vs multi-instances + GUID de save | **natif** : PNJ unique = ReferenceForm placée (GUID stable §2.5) ; génériques = spawns runtime | rien à faire |
+| Min/MaxLevel | scaling par skills-by-use | P1 stats |
+| Variations d'apparence aléatoires (meshes/teintes par slot, stream seedé) | **enfants `AppearanceVariationForm`** + RNG seedé par guid d'instance (déterministe §8) | P1 (foule variée) |
+
+> Invariant : tout reste des Forms + records enfants — un mod ajoute une
+> entrée de loadout ou une variation d'apparence sans toucher au parent.
+
 ## D. Physique & contrôleur (Jolt)
 
 | Fonctionnalité | Prio | Notes |

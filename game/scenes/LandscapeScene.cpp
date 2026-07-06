@@ -27,6 +27,7 @@
 #include "engine/rhi/Device.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
+#include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/stats/CharacterStats.hpp"
 #include "world/scene/AnimBridge.hpp"
@@ -40,8 +41,10 @@ constexpr const char* kTonemapShader = "tonemap";
 
 // B5.5: stat-space -> world mapping (docs/STATS.md §3; the CombatArena's
 // kSpeedScale precedent, recalibrated for meters). Default sheet (~102):
-// jog ~3.4 m/s, sprint x1.6 ~5.4 m/s, velocity settles in ~0.1 s.
-constexpr f32 kSpeedScale3D = 1.0f / 30.0f; // movementSpeed stat -> m/s
+// jog ~5.1 m/s, sprint x1.6 ~8.2 m/s, velocity settles in ~0.1 s.
+// (Dev feel pass 2026-07-06: +50% — the unencumbered adventurer is brisk;
+// encumbrance will pull it back down when the P1 utility pass lands.)
+constexpr f32 kSpeedScale3D = 1.0f / 20.0f; // movementSpeed stat -> m/s
 constexpr f32 kSprintMult = 1.6f;           // "sprint multiplies" (STATS.md)
 constexpr f32 kAccelRate3D = 0.12f;         // acceleration stat -> 1/s ramp
 
@@ -76,6 +79,7 @@ void LandscapeScene::onEnter() {
     world::registerWorldFormTypes(formTypes);     // ReferenceForm, markers...
     gameplay::registerGameplayFormTypes(formTypes); // EffectForm (sprint...)
     gameplay::registerStatsFormTypes(formTypes);    // StatsTuningForm (mods)
+    gameplay::registerCharacterFormTypes(formTypes); // AppearanceForm (NPC)
     const auto landscapePlugin = data::loadPluginFile(
         platform::executableDir() / "data" / "base" / "landscape.toml",
         formTypes);
@@ -237,119 +241,13 @@ void LandscapeScene::onEnter() {
         });
     LOG_INFO("B1: {} references spawned from the plugin stack", spawned);
 
-    // B2: GPU-skinned character proof. Synchronous load at scene entry
-    // (proof-level, like the brick-23 rock swap); the async skinned path
-    // joins the residency cache when the NPC spawns from Forms (B6).
-    const auto characterPath = platform::executableDir() / "data" / "base" /
-                               "models" / "character_cc0.glb";
-    if (auto skeleton = assets::loadGltfSkeleton(characterPath)) {
-        characterSkeleton = std::move(*skeleton);
-        characterClips =
-            assets::loadGltfAnimations(characterPath, characterSkeleton);
-        const auto skinned = assets::loadGltfSkinnedMesh(characterPath);
-        if (skinned && !characterClips.empty()) {
-            characterVertices = device.createBuffer(
-                { .usage = rhi::BufferUsage::Vertex,
-                  .size = skinned->vertices.size() *
-                          sizeof(render::SkinnedVertex) },
-                skinned->vertices.data());
-            characterIndices = device.createBuffer(
-                { .usage = rhi::BufferUsage::Index,
-                  .size = skinned->indices.size() * sizeof(u32) },
-                skinned->indices.data());
-            characterIndexCount = static_cast<u32>(skinned->indices.size());
-
-            characterPalette.assign(characterSkeleton.joints.size(),
-                                    Mat4 { 1.0f });
-            characterPaletteSsbo = device.createBuffer(
-                { .usage = rhi::BufferUsage::Storage,
-                  .size = characterPalette.size() * sizeof(Mat4),
-                  .dynamic = true },
-                characterPalette.data());
-
-            // ModelUbo: the sample is authored in centimeters — the world
-            // transform carries the uniform scale (the shaders assume it).
-            struct ModelUniforms {
-                Mat4 model { 1.0f };
-                Vec4 tint { 1.0f };
-                Vec4 info { 0.0f };
-            } model;
-            const Vec3 spot { 30.0f, 0.0f, 365.0f };
-            const f32 ground =
-                render::terrain::height(terrain.params, spot.x, spot.z);
-            characterSpot = { spot.x, ground, spot.z };
-            model.model =
-                glm::scale(glm::translate(Mat4 { 1.0f }, characterSpot),
-                           Vec3 { 0.02f });
-            // Flat stylized coat. Keep albedo tints WELL below 1: the sun
-            // is HDR (> 1) — a bright tint saturates every channel and
-            // ACES flattens it to white (the B2 lesson; the mossy rocks
-            // survive because 0.45/0.62/0.38 leaves headroom).
-            model.tint = { 0.55f, 0.27f, 0.12f, 1.0f };
-            characterModelUbo = device.createBuffer(
-                { .usage = rhi::BufferUsage::Uniform,
-                  .size = sizeof(model) },
-                &model);
-            characterGroup = device.createBindGroup(
-                { .entries = { { .binding = 1, .buffer = characterModelUbo },
-                               { .binding = 0,
-                                 .texture = whiteTexture,
-                                 .sampler = meshSampler },
-                               { .binding = 2,
-                                 .buffer = characterPaletteSsbo,
-                                 .storage = true } } });
-            shaders->load("skinned", { { "FrameUbo", 0 }, { "ModelUbo", 1 } },
-                          { { "uAlbedo", 0 } });
-            buildSkinnedPipeline(device);
-            characterReady = true;
-            LOG_INFO("B2: skinned character ready — {} joints, {} clips "
-                     "({} vertices)",
-                     characterSkeleton.joints.size(), characterClips.size(),
-                     skinned->vertices.size());
-
-            // B3: the data path — AnimGraphForm records -> AnimBridge ->
-            // GraphInstance (replaces B2's hand playback). The resolver is
-            // single-asset for now (B6 generalizes it with a per-asset
-            // cache when NPCs spawn from Forms).
-            characterAnim.reset();
-            if (const auto* graphForm =
-                    data::findByEditorId<data::AnimGraphForm>(
-                        forms, "CharacterGraph")) {
-                const auto resolveClip =
-                    [&](const core::Guid& asset,
-                        const str& name) -> std::optional<anim::AnimClip> {
-                    if (assetDb.resolve(asset) != characterPath) {
-                        return std::nullopt; // only the loaded rig, for now
-                    }
-                    for (const assets::GltfClip& clip : characterClips) {
-                        if (name.empty() || clip.name == name) {
-                            return clip.clip;
-                        }
-                    }
-                    LOG_WARN("B3: no animation '{}' in the character rig",
-                             name);
-                    return std::nullopt;
-                };
-                if (auto desc = world::buildAnimGraph(forms, graphForm->id,
-                                                      resolveClip)) {
-                    characterGraphDesc = std::move(*desc);
-                    characterAnim = std::make_unique<anim::GraphInstance>(
-                        characterGraphDesc);
-                    characterAnim->setEventSink([](std::string_view name) {
-                        LOG_INFO("Anim event: {}", name);
-                    });
-                    LOG_INFO("B3: CharacterGraph -> {} states, {} clips, "
-                             "{} transitions",
-                             characterGraphDesc.states.size(),
-                             characterGraphDesc.clips.size(),
-                             characterGraphDesc.transitions.size());
-                }
-            }
-        }
-    } else {
-        LOG_WARN("B2: character_cc0.glb missing or unreadable — no skinned "
-                 "character");
-    }
+    // B6: Forms-driven NPCs — every spawned actor whose ActorForm resolves
+    // an ActorVisual gets its GPU skin, its data-built locomotion graph,
+    // and its patrol brain. The scene builds no character by hand anymore.
+    shaders->load("skinned", { { "FrameUbo", 0 }, { "ModelUbo", 1 } },
+                  { { "uAlbedo", 0 } });
+    buildSkinnedPipeline(device);
+    setupNpcs(device);
 
     // Brick 23: swap one procedural rock variant for an authored CC0 glTF
     // rock (moon_rock_02, Poly Haven). Missing file = procedural fallback.
@@ -404,10 +302,10 @@ void LandscapeScene::onEnter() {
         gpuOcclusion.create(device, *shaders);
     }
 
-    // Start beside the character (slightly above, looking at it) — never
+    // Start beside the NPC (slightly above, looking at it) — never
     // inside the terrain: the spot is grounded on the SAME height function
     // the mesh uses. Fallback: safely above the demo area.
-    if (characterReady) {
+    if (!npcs.empty()) {
         flyCamera.camera.position = characterSpot + Vec3 { 2.5f, 2.0f, 7.0f };
         const Vec3 look = glm::normalize(characterSpot +
                                          Vec3 { 0.0f, 0.5f, 0.0f } -
@@ -445,20 +343,20 @@ void LandscapeScene::onExit() {
     meshCache.reset();
     materialTextures.reset();
     device.destroyPipeline(meshPipeline);
-    // B2 skinned character.
-    if (characterReady) {
-        device.destroyPipeline(skinnedPipeline);
-        device.destroyBindGroup(characterGroup);
-        device.destroyBuffer(characterModelUbo);
-        device.destroyBuffer(characterPaletteSsbo);
-        device.destroyBuffer(characterIndices);
-        device.destroyBuffer(characterVertices);
-        characterReady = false;
+    // B6 NPCs: GPU state per NPC, then the CPU-side rig cache.
+    for (auto& npc : npcs) {
+        npc->anim.reset(); // references npc->graph — release it first
+        device.destroyBindGroup(npc->group);
+        device.destroyBuffer(npc->modelUbo);
+        device.destroyBuffer(npc->paletteSsbo);
+        device.destroyBuffer(npc->indices);
+        device.destroyBuffer(npc->vertices);
     }
-    characterAnim.reset(); // references the desc — release it first
-    characterGraphDesc = anim::GraphDesc {};
-    characterClips.clear();
-    characterSkeleton = anim::Skeleton {};
+    npcs.clear();
+    patrolPoints.clear();
+    rigCache.clear();
+    device.destroyPipeline(skinnedPipeline);
+    skinnedPipeline = {};
     // B4/B5 physics: bodies -> tiles -> world (each references the previous).
     playMode = false;
     player.reset();
@@ -667,16 +565,8 @@ void LandscapeScene::update(f32 dt) {
                        Vec3 { 0.9f, 2.25f, 0.9f });
         snapshot.meshes.push_back({ core::Guid {}, core::Guid {}, transform });
     }
-    // B3: the graph drives the pose — the debug slider stands in for the
-    // entity speed (param for transitions AND referenceSpeed sync).
-    if (characterReady && characterAnim) {
-        characterAnim->setParam("speed", characterSpeedUi);
-        characterAnim->update(dt, characterSpeedUi);
-        anim::bindPose(characterSkeleton, characterPose);
-        characterAnim->evaluate(characterPose);
-        anim::skinMatrices(characterSkeleton, characterPose,
-                           characterPalette);
-    }
+    // B6: patrol + graph-driven poses for every Forms-built NPC.
+    updateNpcs(dt);
     // Wind phase integrates the CURRENT strength: speed changes bend the
     // drift/sway smoothly instead of teleporting the pattern.
     windTime += dt * glm::max(windStrengthUi, 0.05f);
@@ -925,23 +815,250 @@ void LandscapeScene::updatePlayer(f32 dt) {
     }
 }
 
-// B2: one skinned draw — palette upload (once per frame, before the pass
-// commands that consume it), then the usual pipeline/bind/draw.
-void LandscapeScene::drawCharacter(engine::FrameContext& frame) {
-    if (!characterReady) {
+// --- B6: Forms-driven NPCs --------------------------------------------------------
+
+namespace {
+constexpr f32 kNpcPauseSeconds = 2.5f; // idle beat at each patrol end
+constexpr f32 kNpcWalkFactor = 0.35f;  // of the jog speed (STATS.md: walk
+                                       // divides) — a stroll, not a march
+} // namespace
+
+const LandscapeScene::RigData* LandscapeScene::loadRig(
+    const core::Guid& asset) {
+    if (const auto it = rigCache.find(asset); it != rigCache.end()) {
+        return it->second.skeleton.joints.empty() ? nullptr : &it->second;
+    }
+    RigData& rig = rigCache[asset]; // empty entry = negative cache
+    const auto path = assetDb.resolve(asset);
+    if (!path) {
+        LOG_WARN("B6: no asset registered for rig {}", asset.toString());
+        return nullptr;
+    }
+    auto skeleton = assets::loadGltfSkeleton(*path);
+    if (!skeleton) {
+        return nullptr;
+    }
+    rig.skeleton = std::move(*skeleton);
+    rig.clips = assets::loadGltfAnimations(*path, rig.skeleton);
+    LOG_INFO("B6: rig {} loaded — {} joints, {} clips", path->string(),
+             rig.skeleton.joints.size(), rig.clips.size());
+    return &rig;
+}
+
+void LandscapeScene::setupNpcs(rhi::Device& device) {
+    // Patrol points: every "patrol" marker, grounded, in spawn order.
+    patrolPoints.clear();
+    world.handle()
+        .query<world::Transform, const world::MarkerKind>()
+        .each([&](flecs::entity, world::Transform& transform,
+                  const world::MarkerKind& marker) {
+            if (marker.kind == "patrol") {
+                transform.position.y = render::terrain::height(
+                    terrain.params, transform.position.x,
+                    transform.position.z);
+                patrolPoints.push_back(transform.position);
+            }
+        });
+
+    const gameplay::CharacterTickContext tickCtx { derivedStats, gameTags,
+                                                   statsTuning };
+    world.handle()
+        .query<world::Transform, const world::RefId>()
+        .each([&](flecs::entity e, world::Transform& transform,
+                  const world::RefId& ref) {
+            ecs::Entity entity { e };
+            if (!entity.has<world::ActorMarker>() ||
+                entity == playerEntity) {
+                return;
+            }
+            const data::Form* base = forms.get(ref.base);
+            const reflect::TypeInfo* type = forms.typeOf(ref.base);
+            if (!base || !type ||
+                !type->isA(data::ActorForm::staticTypeInfo().id)) {
+                return;
+            }
+            const auto& actor = *static_cast<const data::ActorForm*>(base);
+            const auto visual = world::resolveActorVisual(forms, actor);
+            if (!visual) {
+                return; // 2D/legacy actor (the Player has no appearance)
+            }
+            const RigData* rig = loadRig(visual->skeleton);
+            if (!rig) {
+                return;
+            }
+            const auto meshPath = assetDb.resolve(visual->mesh);
+            auto skinned =
+                meshPath ? assets::loadGltfSkinnedMesh(*meshPath)
+                         : std::nullopt;
+            if (!skinned) {
+                return;
+            }
+            auto graph = world::buildAnimGraph(
+                forms, visual->animGraph,
+                [&](const core::Guid& asset,
+                    const str& name) -> std::optional<anim::AnimClip> {
+                    const RigData* clipRig = loadRig(asset);
+                    if (!clipRig) {
+                        return std::nullopt;
+                    }
+                    for (const assets::GltfClip& clip : clipRig->clips) {
+                        if (name.empty() || clip.name == name) {
+                            return clip.clip;
+                        }
+                    }
+                    LOG_WARN("B6: no animation '{}' in rig {}", name,
+                             asset.toString());
+                    return std::nullopt;
+                });
+            if (!graph) {
+                return;
+            }
+
+            auto npc = std::make_unique<Npc>();
+            npc->entity = entity;
+            npc->rig = rig;
+            npc->graph = std::move(*graph);
+            npc->anim = std::make_unique<anim::GraphInstance>(npc->graph);
+            // No event sink yet: timeline events (Footstep...) get their
+            // consumers (cues, audio-by-material) in the « vivant »
+            // chantier — logging each step only floods the console.
+            npc->tint = visual->tint;
+            npc->palette.assign(rig->skeleton.joints.size(), Mat4 { 1.0f });
+            npc->vertices = device.createBuffer(
+                { .usage = rhi::BufferUsage::Vertex,
+                  .size = skinned->vertices.size() *
+                          sizeof(render::SkinnedVertex) },
+                skinned->vertices.data());
+            npc->indices = device.createBuffer(
+                { .usage = rhi::BufferUsage::Index,
+                  .size = skinned->indices.size() * sizeof(u32) },
+                skinned->indices.data());
+            npc->indexCount = static_cast<u32>(skinned->indices.size());
+            npc->paletteSsbo = device.createBuffer(
+                { .usage = rhi::BufferUsage::Storage,
+                  .size = npc->palette.size() * sizeof(Mat4),
+                  .dynamic = true },
+                npc->palette.data());
+            npc->modelUbo = device.createBuffer(
+                { .usage = rhi::BufferUsage::Uniform,
+                  // std140 ModelUbo: mat4 model + vec4 tint + vec4 info.
+                  .size = sizeof(Mat4) + 2 * sizeof(Vec4),
+                  .dynamic = true },
+                nullptr);
+            npc->group = device.createBindGroup(
+                { .entries = { { .binding = 1, .buffer = npc->modelUbo },
+                               { .binding = 0,
+                                 .texture = whiteTexture,
+                                 .sampler = meshSampler },
+                               { .binding = 2,
+                                 .buffer = npc->paletteSsbo,
+                                 .storage = true } } });
+
+            // Ground the entity (actors have no MeshRender: the B1 snap
+            // skipped them) and give it a full stat sheet.
+            transform.position.y = render::terrain::height(
+                terrain.params, transform.position.x, transform.position.z);
+            gameplay::initializeActorStats(entity, tickCtx);
+
+            if (npcs.empty()) {
+                characterSpot = transform.position;
+            }
+            npcs.push_back(std::move(npc));
+        });
+    LOG_INFO("B6: {} NPC(s) built from Forms, {} patrol point(s)",
+             npcs.size(), patrolPoints.size());
+}
+
+void LandscapeScene::updateNpcs(f32 dt) {
+    for (auto& npcPtr : npcs) {
+        Npc& npc = *npcPtr;
+        auto& transform = npc.entity.get_mut<world::Transform>();
+
+        // The stroll speed comes from the NPC's OWN stats (§C.1: the actor
+        // is the character definition — a wounded villager limps).
+        const auto& sys = npc.entity.get<gameplay::AbilitySystem>();
+        const f32 walkSpeed =
+            gameplay::currentValueOf(sys, gameplay::attr("movementSpeed")) *
+            kSpeedScale3D * kNpcWalkFactor;
+
+        f32 targetSpeed = 0.0f;
+        if (patrolPoints.size() >= 2) {
+            const Vec3 goal = patrolPoints[npc.target % patrolPoints.size()];
+            Vec3 to = goal - transform.position;
+            to.y = 0.0f;
+            const f32 distance = glm::length(to);
+            if (npc.pauseTimer > 0.0f) {
+                npc.pauseTimer -= dt; // idle beat at the end point
+            } else if (distance < 0.4f) {
+                npc.pauseTimer = kNpcPauseSeconds;
+                npc.target = (npc.target + 1) %
+                             static_cast<u32>(patrolPoints.size());
+            } else {
+                const Vec3 dir = to / distance;
+                targetSpeed = walkSpeed;
+                transform.position += dir * walkSpeed * dt;
+                transform.position.y = render::terrain::height(
+                    terrain.params, transform.position.x,
+                    transform.position.z);
+                // Face the walk direction (mannequin authored facing +Z),
+                // smoothed over ~0.15 s.
+                const f32 goalYaw = std::atan2(dir.x, dir.z);
+                f32 delta = goalYaw - npc.yaw;
+                while (delta > glm::pi<f32>()) {
+                    delta -= glm::two_pi<f32>();
+                }
+                while (delta < -glm::pi<f32>()) {
+                    delta += glm::two_pi<f32>();
+                }
+                npc.yaw += delta * (1.0f - std::exp(-8.0f * dt));
+                transform.rotation =
+                    glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
+            }
+        }
+        npc.speed += (targetSpeed - npc.speed) *
+                     (1.0f - std::exp(-10.0f * dt));
+
+        // Anim: real speed feeds the param (transitions) AND the
+        // referenceSpeed sync (anti-foot-sliding).
+        npc.anim->setParam("speed", npc.speed);
+        npc.anim->update(dt, npc.speed);
+        anim::bindPose(npc.rig->skeleton, npc.pose);
+        npc.anim->evaluate(npc.pose);
+        anim::skinMatrices(npc.rig->skeleton, npc.pose, npc.palette);
+    }
+}
+
+void LandscapeScene::drawNpcs(engine::FrameContext& frame) {
+    if (npcs.empty()) {
         return;
     }
     if (shaders->generation("skinned") != skinnedShaderGeneration) {
         buildSkinnedPipeline(frame.device);
     }
-    frame.device.updateBuffer(characterPaletteSsbo, characterPalette.data(),
-                              characterPalette.size() * sizeof(Mat4), 0);
+    struct ModelUniforms {
+        Mat4 model { 1.0f };
+        Vec4 tint { 1.0f };
+        Vec4 info { 0.0f };
+    };
     frame.cmd.setPipeline(skinnedPipeline);
     frame.cmd.setBindGroup(0, frameBindGroup);
-    frame.cmd.setBindGroup(1, characterGroup);
-    frame.cmd.setVertexBuffer(0, characterVertices);
-    frame.cmd.setIndexBuffer(characterIndices, rhi::IndexFormat::U32);
-    frame.cmd.drawIndexed(characterIndexCount);
+    for (auto& npcPtr : npcs) {
+        Npc& npc = *npcPtr;
+        const auto& transform = npc.entity.get<world::Transform>();
+        ModelUniforms uniforms;
+        uniforms.model =
+            glm::translate(Mat4 { 1.0f }, transform.position) *
+            glm::mat4_cast(transform.rotation);
+        uniforms.tint = npc.tint;
+        frame.device.updateBuffer(npc.modelUbo, &uniforms, sizeof(uniforms),
+                                  0);
+        frame.device.updateBuffer(npc.paletteSsbo, npc.palette.data(),
+                                  npc.palette.size() * sizeof(Mat4), 0);
+        frame.cmd.setBindGroup(1, npc.group);
+        frame.cmd.setVertexBuffer(0, npc.vertices);
+        frame.cmd.setIndexBuffer(npc.indices, rhi::IndexFormat::U32);
+        frame.cmd.drawIndexed(npc.indexCount);
+    }
 }
 
 void LandscapeScene::buildSkinnedPipeline(rhi::Device& device) {
@@ -1292,7 +1409,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
                &viewFrustum);
     drawSceneMeshes(frame); // B1: the RenderSnapshot.meshes consumer
-    drawCharacter(frame);   // B2: the GPU-skinned character
+    drawNpcs(frame);        // B6: the Forms-driven skinned NPCs
     sky.draw(frame.cmd, frameBindGroup); // after opaque: background only
     frame.cmd.endRenderPass();
 
@@ -1469,31 +1586,27 @@ void LandscapeScene::drawSkyUi() {
 }
 
 void LandscapeScene::drawGameplayUi() {
-    if (characterReady && characterAnim) {
-        // B3: the locomotion graph from adventure.toml — the slider is the
-        // pretend entity speed; watch idle/walk/run switch with cross-fades
-        // and the footstep events land in the log.
-        ImGui::SliderFloat("Character speed (B3)", &characterSpeedUi, 0.0f,
-                           6.0f, "%.1f m/s");
+    if (!npcs.empty()) {
+        // B6: the Forms-driven NPC — patrol state + locomotion graph live.
         static constexpr const char* kStateNames[] = { "idle", "walk",
                                                        "run" };
-        const u32 state = characterAnim->currentState();
-        ImGui::Text("Graph state: %s%s",
+        const Npc& npc = *npcs.front();
+        const u32 state = npc.anim->currentState();
+        ImGui::Text("NPC: %s%s | %.1f m/s | pause %.1f s",
                     state < 3 ? kStateNames[state] : "?",
-                    characterAnim->blending() ? " (blending)" : "");
-        if (ImGui::Button("Teleport to character")) {
-            // Stand 6 m south, eyes 2 m up, looking at the character.
-            flyCamera.camera.position =
-                characterSpot + Vec3 { 0.0f, 2.0f, 6.0f };
-            const Vec3 dir = glm::normalize(
-                characterSpot + Vec3 { 0.0f, 0.5f, 0.0f } -
-                flyCamera.camera.position);
+                    npc.anim->blending() ? " (blending)" : "", npc.speed,
+                    glm::max(npc.pauseTimer, 0.0f));
+        if (ImGui::Button("Teleport to NPC")) {
+            // Stand 6 m south, eyes 2 m up, looking at the NPC's CURRENT
+            // position (it walks).
+            const Vec3 spot = npc.entity.get<world::Transform>().position;
+            flyCamera.camera.position = spot + Vec3 { 0.0f, 2.0f, 6.0f };
+            const Vec3 dir =
+                glm::normalize(spot + Vec3 { 0.0f, 1.0f, 0.0f } -
+                               flyCamera.camera.position);
             flyCamera.camera.yaw = std::atan2(dir.x, -dir.z);
             flyCamera.camera.pitch = std::asin(dir.y);
         }
-        ImGui::SameLine();
-        ImGui::Text("at %.0f %.0f %.0f", characterSpot.x, characterSpot.y,
-                    characterSpot.z);
         ImGui::Separator();
     }
     if (physics) {

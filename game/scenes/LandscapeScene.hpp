@@ -176,31 +176,48 @@ private:
     void buildMeshPipeline(rhi::Device& device);
     void drawSceneMeshes(engine::FrameContext& frame);
 
-    // B2 (chantier 1): GPU-skinned character proof — skeleton + embedded
-    // clips + skinned mesh from the CC0 rigged sample; one clip sampled
-    // CPU-side into the bone-palette SSBO each frame. B3 replaces the hand
-    // playback with the Forms -> AnimBridge -> GraphInstance path.
-    anim::Skeleton characterSkeleton;
-    vector<assets::GltfClip> characterClips;
-    Vec3 characterSpot { 0.0f }; // grounded world position (teleport target)
-    // B3: the data-driven graph. The desc OWNS the clips and must outlive
-    // the instance (which holds a reference to it).
-    anim::GraphDesc characterGraphDesc;
-    uptr<anim::GraphInstance> characterAnim;
-    f32 characterSpeedUi { 0.0f }; // debug entity speed (m/s) -> param+sync
-    anim::Pose characterPose;
-    vector<Mat4> characterPalette;
-    rhi::BufferHandle characterVertices {};
-    rhi::BufferHandle characterIndices {};
-    u32 characterIndexCount { 0 };
-    rhi::BufferHandle characterPaletteSsbo {};
-    rhi::BufferHandle characterModelUbo {};
-    rhi::BindGroupHandle characterGroup {};
+    // B6 (chantier 1): Forms-driven skinned NPCs. The scene builds NOTHING
+    // by hand anymore — every actor whose ActorForm resolves an
+    // ActorVisual (appearance + animGraph) gets a GPU skin, a data-built
+    // locomotion graph, and a patrol brain. One rig cache per glTF asset
+    // (sync load at enter; the async path joins the caches in chantier 2).
+    struct RigData {
+        anim::Skeleton skeleton;
+        vector<assets::GltfClip> clips;
+    };
+    std::unordered_map<core::Guid, RigData> rigCache;
+    const RigData* loadRig(const core::Guid& asset);
+    // Per-NPC runtime state (non-reflected, §H5). uptr: the GraphInstance
+    // references Npc::graph — addresses must survive vector growth.
+    struct Npc {
+        ecs::Entity entity;
+        const RigData* rig { nullptr };
+        anim::GraphDesc graph; // owns the clips; `anim` references it
+        uptr<anim::GraphInstance> anim;
+        anim::Pose pose;
+        vector<Mat4> palette;
+        Vec4 tint { 1.0f };
+        rhi::BufferHandle vertices {};
+        rhi::BufferHandle indices {};
+        u32 indexCount { 0 };
+        rhi::BufferHandle paletteSsbo {};
+        rhi::BufferHandle modelUbo {};
+        rhi::BindGroupHandle group {};
+        // Patrol: walk to patrolPoints[target], pause, swap ends.
+        u32 target { 0 };
+        f32 pauseTimer { 0.0f };
+        f32 yaw { 0.0f };
+        f32 speed { 0.0f }; // smoothed horizontal speed -> anim param
+    };
+    vector<uptr<Npc>> npcs;
+    vector<Vec3> patrolPoints;   // grounded "patrol" marker positions
+    Vec3 characterSpot { 0.0f }; // first NPC position (teleport target)
     rhi::PipelineHandle skinnedPipeline {};
     u64 skinnedShaderGeneration { 0 };
-    bool characterReady { false };
     void buildSkinnedPipeline(rhi::Device& device);
-    void drawCharacter(engine::FrameContext& frame);
+    void setupNpcs(rhi::Device& device);
+    void updateNpcs(f32 dt);
+    void drawNpcs(engine::FrameContext& frame);
 
     // B4 (chantier 1): physics — height-field tiles follow the camera (the
     // player takes over as focus in B5); the debug capsule proves the

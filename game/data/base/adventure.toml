@@ -15,9 +15,10 @@ name = "true-adventurer-adventure"
 [assets]
 # The CC0 Poly Haven rock scan already shipped with brick 23.
 "2b5e7d10-0000-4000-8000-0000000000c1" = "models/rock_cc0.gltf"
-# The CC0 rigged sample (skeleton + Survey/Walk/Run clips), B2 proof; the
-# demo's real humanoid replaces this file in B6 without touching records.
-"2b5e7d10-0000-4000-8000-0000000000e0" = "models/character_cc0.glb"
+# The NPC rig (B6): Quaternius Universal Animation Library mannequin, CC0
+# — 43 in-place clips, 65 joints, authored in meters. Same asset GUID as
+# the B2 fox it replaced: the graph records didn't move (§5 layering).
+"2b5e7d10-0000-4000-8000-0000000000e0" = "models/UAL1_Standard.glb"
 
 # --- Materials ------------------------------------------------------------
 
@@ -127,7 +128,7 @@ new = true
 [records.fields]
 editorId = "CharIdle"
 asset = "2b5e7d10-0000-4000-8000-0000000000e0"
-animationName = "Survey"
+animationName = "Idle_Loop"
 
 [[records]]
 form = "2b5e7d10-0000-4000-8000-0000000000e2"
@@ -136,7 +137,7 @@ new = true
 [records.fields]
 editorId = "CharWalk"
 asset = "2b5e7d10-0000-4000-8000-0000000000e0"
-animationName = "Walk"
+animationName = "Walk_Loop"
 
 [[records]]
 form = "2b5e7d10-0000-4000-8000-0000000000e3"
@@ -145,7 +146,7 @@ new = true
 [records.fields]
 editorId = "CharRun"
 asset = "2b5e7d10-0000-4000-8000-0000000000e0"
-animationName = "Run"
+animationName = "Jog_Fwd_Loop"
 
 # Footsteps on the walk cycle — the anim->gameplay timeline bridge (fired
 # through the event sink; audio-by-material joins in the "vivant" chantier).
@@ -253,6 +254,65 @@ param = "speed"
 compare = "less"
 threshold = 3.0
 blendTime = 0.25
+
+# --- The showcase NPC (B6) --------------------------------------------------
+# A full Forms-driven character: ActorForm (the character definition hub,
+# MEADOWS-PLAN §C.1) -> AppearanceForm (rig + body mesh + tint) + the B3
+# CharacterGraph. It patrols between the "patrol" markers with pauses —
+# the living proof of the skinned/anim/spawn pipeline, seen first-person.
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000b0"
+type = "AppearanceForm"
+new = true
+[records.fields]
+editorId = "VillagerAppearance"
+skeleton = "2b5e7d10-0000-4000-8000-0000000000e0"
+torsoMesh = "2b5e7d10-0000-4000-8000-0000000000e0"
+skinTint = [0.62, 0.55, 0.48, 1.0]
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000b1"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "Villager"
+displayName = "Villager"
+maxHealth = 60.0
+appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
+animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000b2"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "2b5e7d10-0000-4000-8000-0000000000b1"
+position = [26.0, 0.0, 366.0]
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000b3"
+type = "MarkerForm"
+new = true
+[records.fields]
+editorId = "PatrolMarker"
+kind = "patrol"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000b4"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "2b5e7d10-0000-4000-8000-0000000000b3"
+position = [22.0, 0.0, 362.0]
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000b5"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "2b5e7d10-0000-4000-8000-0000000000b3"
+position = [40.0, 0.0, 377.0]
 
 # --- Placed references (near the spawn point, ~(32, 368)) ------------------
 
