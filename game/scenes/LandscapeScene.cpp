@@ -1,5 +1,7 @@
 #include "game/scenes/LandscapeScene.hpp"
 
+#include <cmath>
+
 #include <glm/glm.hpp>
 #include <imgui.h>
 
@@ -18,8 +20,11 @@
 #include "engine/platform/Paths.hpp"
 #include "engine/platform/Window.hpp"
 #include "engine/render/landscape/FrameUniforms.hpp"
+#include "data/forms/AnimForms.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "world/scene/AnimBridge.hpp"
+#include "world/scene/Spawner.hpp"
 
 namespace game {
 
@@ -49,19 +54,36 @@ Mat4 obliqueProjection(Mat4 proj, const Vec4& clipPlaneView) {
 void LandscapeScene::onEnter() {
     rhi::Device& device = engine->getDevice();
 
-    // Load the moddable landscape tuning (§5): its own small plugin, plus
-    // future mod plugins patching it field by field.
+    // Load the moddable data (§5): the landscape tuning plugin, then the
+    // adventure plugin (props/NPCs of the 3D gameplay socle) on top.
     registerLandscapeFormTypes(formTypes);
-    data::registerVisualFormTypes(formTypes); // MaterialForm (H8 proof)
+    data::registerVisualFormTypes(formTypes); // MaterialForm, StaticForm
+    data::registerAnimFormTypes(formTypes);   // clips + locomotion graph
+    world::registerWorldFormTypes(formTypes); // ReferenceForm, markers...
     const auto landscapePlugin = data::loadPluginFile(
         platform::executableDir() / "data" / "base" / "landscape.toml",
         formTypes);
-    data::FormDatabase forms;
+    const auto adventurePlugin = data::loadPluginFile(
+        platform::executableDir() / "data" / "base" / "adventure.toml",
+        formTypes);
+    forms = data::FormDatabase {};   // fresh on re-enter
+    assetDb = assets::AssetDatabase {};
+    vector<const data::Plugin*> loadOrder;
     if (landscapePlugin) {
-        vector<const data::Plugin*> loadOrder { &*landscapePlugin };
-        data::resolve(loadOrder, formTypes, forms);
+        loadOrder.push_back(&*landscapePlugin);
     } else {
         LOG_WARN("landscape.toml failed to load — using built-in defaults");
+    }
+    if (adventurePlugin) {
+        loadOrder.push_back(&*adventurePlugin);
+    } else {
+        LOG_WARN("adventure.toml failed to load — no props/NPCs");
+    }
+    data::resolve(loadOrder, formTypes, forms);
+    for (const data::Plugin* plugin : loadOrder) {
+        for (const data::AssetEntry& entry : plugin->assets) {
+            assetDb.add(entry.id, plugin->baseDir, entry.path);
+        }
     }
     tuning = resolveLandscapeTuning(forms);
     weathers = resolveWeatherForms(forms);
@@ -105,75 +127,167 @@ void LandscapeScene::onEnter() {
     vegetation.create(device, *shaders, engine->getJobSystem(),
                       terrain.params.seed);
 
-    // H8 proof: MaterialForm -> textured stylized mesh, end to end. The
-    // material comes from the plugin (patchable), its albedo resolves
-    // through the guid-keyed asset layering, and one cube renders with
-    // the shared ramp near the spawn point.
-    if (landscapePlugin) {
-        if (const auto* material = data::findByEditorId<data::MaterialForm>(
-                forms, "DemoCubeMaterial")) {
-            assets::AssetDatabase assetDb;
-            for (const data::AssetEntry& entry : landscapePlugin->assets) {
-                assetDb.add(entry.id, landscapePlugin->baseDir, entry.path);
+    // B1: the real mesh path. Plugin ReferenceForms spawn into a small ECS
+    // world through the Spawner (§2.7 — MeshRender wired by reflection from
+    // the base form's model/material); extractMeshes fills the snapshot;
+    // the residency caches resolve guids at draw time (§7).
+    materialTextures = std::make_unique<TextureCache>(
+        device, assetDb, engine->getJobSystem(),
+        TextureCache::UploadDesc { .format = rhi::TextureFormat::SRGBA8,
+                                   .filter = rhi::FilterMode::Linear });
+    meshCache =
+        std::make_unique<MeshCache>(device, assetDb, engine->getJobSystem());
+    const u32 white = 0xFFFFFFFF;
+    whiteTexture = device.createTexture(
+        { .width = 1, .height = 1, .format = rhi::TextureFormat::SRGBA8 },
+        &white);
+    meshSampler = device.createSampler({});
+    shaders->load("mesh", { { "FrameUbo", 0 }, { "ModelUbo", 1 } },
+                  { { "uAlbedo", 0 } });
+    buildMeshPipeline(device);
+
+    world = ecs::World {}; // fresh on re-enter
+    world::registerSceneComponents(world);
+    world::FormCategoryRegistry categories;
+    world::registerCoreCategories(categories);
+    world::Spawner spawner;
+    world::registerCoreSpawners(spawner);
+    world::SpawnContext spawnCtx { world, forms, categories };
+    u32 spawned = 0;
+    data::forEach<world::ReferenceForm>(
+        forms, [&](const world::ReferenceForm& reference) {
+            if (!reference.enabled || reference.prefab.isValid()) {
+                return; // disabled, or a prefab TEMPLATE (never self-spawns)
             }
-            const auto path = assetDb.resolve(material->albedoTexture);
-            const auto image =
-                path ? assets::loadImageFile(*path) : std::nullopt;
-            if (image) {
-                cubeTexture = device.createTexture(
-                    { .width = image->width,
-                      .height = image->height,
-                      .format = rhi::TextureFormat::SRGBA8,
-                      .filter = rhi::FilterMode::Linear },
-                    image->pixels.data());
-                cubeSampler = device.createSampler({});
+            if (spawner.spawn(spawnCtx, reference, ecs::Entity {})
+                    .is_alive()) {
+                ++spawned;
+            }
+        });
+    // B1 convention: authored position.y is an offset above the terrain —
+    // ground every mesh prop (hand-authored heights arrive with the level
+    // editor, chantier 2).
+    world.handle()
+        .query<world::Transform, const world::MeshRender>()
+        .each([&](flecs::entity, world::Transform& transform,
+                  const world::MeshRender&) {
+            transform.position.y += render::terrain::height(
+                terrain.params, transform.position.x, transform.position.z);
+        });
+    LOG_INFO("B1: {} references spawned from the plugin stack", spawned);
 
-                render::MeshData cube;
-                render::appendBox(cube, { 0.0f, 0.0f, 0.0f },
-                                  { 0.8f, 0.8f, 0.8f },
-                                  { 1.0f, 1.0f, 1.0f });
-                cubeIndexCount = static_cast<u32>(cube.indices.size());
-                cubeVertexBuffer = device.createBuffer(
-                    { .usage = rhi::BufferUsage::Vertex,
-                      .size = cube.vertices.size() *
-                              sizeof(render::MeshVertex) },
-                    cube.vertices.data());
-                cubeIndexBuffer = device.createBuffer(
-                    { .usage = rhi::BufferUsage::Index,
-                      .size = cube.indices.size() * sizeof(u32) },
-                    cube.indices.data());
+    // B2: GPU-skinned character proof. Synchronous load at scene entry
+    // (proof-level, like the brick-23 rock swap); the async skinned path
+    // joins the residency cache when the NPC spawns from Forms (B6).
+    const auto characterPath = platform::executableDir() / "data" / "base" /
+                               "models" / "character_cc0.glb";
+    if (auto skeleton = assets::loadGltfSkeleton(characterPath)) {
+        characterSkeleton = std::move(*skeleton);
+        characterClips =
+            assets::loadGltfAnimations(characterPath, characterSkeleton);
+        const auto skinned = assets::loadGltfSkinnedMesh(characterPath);
+        if (skinned && !characterClips.empty()) {
+            characterVertices = device.createBuffer(
+                { .usage = rhi::BufferUsage::Vertex,
+                  .size = skinned->vertices.size() *
+                          sizeof(render::SkinnedVertex) },
+                skinned->vertices.data());
+            characterIndices = device.createBuffer(
+                { .usage = rhi::BufferUsage::Index,
+                  .size = skinned->indices.size() * sizeof(u32) },
+                skinned->indices.data());
+            characterIndexCount = static_cast<u32>(skinned->indices.size());
 
-                // std140 ModelUbo: model + tint + info (x = emissive).
-                struct ModelUniforms {
-                    Mat4 model { 1.0f };
-                    Vec4 tint { 1.0f };
-                    Vec4 info { 0.0f };
-                } model;
-                const Vec3 spot { 32.0f, 0.0f, 368.0f };
-                const f32 ground = render::terrain::height(
-                    terrain.params, spot.x, spot.z);
-                model.model = glm::translate(
-                    Mat4 { 1.0f }, { spot.x, ground + 1.0f, spot.z });
-                model.tint = material->tint;
-                model.info.x = material->emissive;
-                cubeModelUbo = device.createBuffer(
-                    { .usage = rhi::BufferUsage::Uniform,
-                      .size = sizeof(model) },
-                    &model);
-                cubeGroup = device.createBindGroup(
-                    { .entries = { { .binding = 1,
-                                     .buffer = cubeModelUbo },
-                                   { .binding = 0,
-                                     .texture = cubeTexture,
-                                     .sampler = cubeSampler } } });
-                shaders->load("mesh",
-                              { { "FrameUbo", 0 }, { "ModelUbo", 1 } },
-                              { { "uAlbedo", 0 } });
-                buildMeshPipeline(device);
-                cubeReady = true;
-                LOG_INFO("H8: DemoCubeMaterial resolved -> textured cube");
+            characterPalette.assign(characterSkeleton.joints.size(),
+                                    Mat4 { 1.0f });
+            characterPaletteSsbo = device.createBuffer(
+                { .usage = rhi::BufferUsage::Storage,
+                  .size = characterPalette.size() * sizeof(Mat4),
+                  .dynamic = true },
+                characterPalette.data());
+
+            // ModelUbo: the sample is authored in centimeters — the world
+            // transform carries the uniform scale (the shaders assume it).
+            struct ModelUniforms {
+                Mat4 model { 1.0f };
+                Vec4 tint { 1.0f };
+                Vec4 info { 0.0f };
+            } model;
+            const Vec3 spot { 30.0f, 0.0f, 365.0f };
+            const f32 ground =
+                render::terrain::height(terrain.params, spot.x, spot.z);
+            characterSpot = { spot.x, ground, spot.z };
+            model.model =
+                glm::scale(glm::translate(Mat4 { 1.0f }, characterSpot),
+                           Vec3 { 0.02f });
+            // Flat stylized coat. Keep albedo tints WELL below 1: the sun
+            // is HDR (> 1) — a bright tint saturates every channel and
+            // ACES flattens it to white (the B2 lesson; the mossy rocks
+            // survive because 0.45/0.62/0.38 leaves headroom).
+            model.tint = { 0.55f, 0.27f, 0.12f, 1.0f };
+            characterModelUbo = device.createBuffer(
+                { .usage = rhi::BufferUsage::Uniform,
+                  .size = sizeof(model) },
+                &model);
+            characterGroup = device.createBindGroup(
+                { .entries = { { .binding = 1, .buffer = characterModelUbo },
+                               { .binding = 0,
+                                 .texture = whiteTexture,
+                                 .sampler = meshSampler },
+                               { .binding = 2,
+                                 .buffer = characterPaletteSsbo,
+                                 .storage = true } } });
+            shaders->load("skinned", { { "FrameUbo", 0 }, { "ModelUbo", 1 } },
+                          { { "uAlbedo", 0 } });
+            buildSkinnedPipeline(device);
+            characterReady = true;
+            LOG_INFO("B2: skinned character ready — {} joints, {} clips "
+                     "({} vertices)",
+                     characterSkeleton.joints.size(), characterClips.size(),
+                     skinned->vertices.size());
+
+            // B3: the data path — AnimGraphForm records -> AnimBridge ->
+            // GraphInstance (replaces B2's hand playback). The resolver is
+            // single-asset for now (B6 generalizes it with a per-asset
+            // cache when NPCs spawn from Forms).
+            characterAnim.reset();
+            if (const auto* graphForm =
+                    data::findByEditorId<data::AnimGraphForm>(
+                        forms, "CharacterGraph")) {
+                const auto resolveClip =
+                    [&](const core::Guid& asset,
+                        const str& name) -> std::optional<anim::AnimClip> {
+                    if (assetDb.resolve(asset) != characterPath) {
+                        return std::nullopt; // only the loaded rig, for now
+                    }
+                    for (const assets::GltfClip& clip : characterClips) {
+                        if (name.empty() || clip.name == name) {
+                            return clip.clip;
+                        }
+                    }
+                    LOG_WARN("B3: no animation '{}' in the character rig",
+                             name);
+                    return std::nullopt;
+                };
+                if (auto desc = world::buildAnimGraph(forms, graphForm->id,
+                                                      resolveClip)) {
+                    characterGraphDesc = std::move(*desc);
+                    characterAnim = std::make_unique<anim::GraphInstance>(
+                        characterGraphDesc);
+                    characterAnim->setEventSink([](std::string_view name) {
+                        LOG_INFO("Anim event: {}", name);
+                    });
+                    LOG_INFO("B3: CharacterGraph -> {} states, {} clips, "
+                             "{} transitions",
+                             characterGraphDesc.states.size(),
+                             characterGraphDesc.clips.size(),
+                             characterGraphDesc.transitions.size());
+                }
             }
         }
+    } else {
+        LOG_WARN("B2: character_cc0.glb missing or unreadable — no skinned "
+                 "character");
     }
 
     // Brick 23: swap one procedural rock variant for an authored CC0 glTF
@@ -241,14 +355,37 @@ void LandscapeScene::onExit() {
     destroyOffscreenTarget(device);
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
-    // H8 demo cube.
+    // B1 mesh path: per-entry draw state, then the caches (their dtors free
+    // the GPU resources they own — device is alive here).
+    for (MeshDraw& draw : meshDraws) {
+        if (draw.group.id != 0) {
+            device.destroyBindGroup(draw.group);
+        }
+        if (draw.ubo.id != 0) {
+            device.destroyBuffer(draw.ubo);
+        }
+    }
+    meshDraws.clear();
+    snapshot = RenderSnapshot {};
+    meshCache.reset();
+    materialTextures.reset();
     device.destroyPipeline(meshPipeline);
-    device.destroyBindGroup(cubeGroup);
-    device.destroyBuffer(cubeModelUbo);
-    device.destroyBuffer(cubeIndexBuffer);
-    device.destroyBuffer(cubeVertexBuffer);
-    device.destroySampler(cubeSampler);
-    device.destroyTexture(cubeTexture);
+    // B2 skinned character.
+    if (characterReady) {
+        device.destroyPipeline(skinnedPipeline);
+        device.destroyBindGroup(characterGroup);
+        device.destroyBuffer(characterModelUbo);
+        device.destroyBuffer(characterPaletteSsbo);
+        device.destroyBuffer(characterIndices);
+        device.destroyBuffer(characterVertices);
+        characterReady = false;
+    }
+    characterAnim.reset(); // references the desc — release it first
+    characterGraphDesc = anim::GraphDesc {};
+    characterClips.clear();
+    characterSkeleton = anim::Skeleton {};
+    device.destroySampler(meshSampler);
+    device.destroyTexture(whiteTexture);
     gpuOcclusion.destroy(device);
     postFx.destroy(device);
     water.destroy(device);
@@ -412,6 +549,26 @@ void LandscapeScene::rebuildBlitPipeline(rhi::Device& device) {
 
 void LandscapeScene::update(f32 dt) {
     timeSeconds += dt;
+    // B1 mesh path: pump async residency (worker decodes -> main-thread
+    // uploads, §7), then extract this frame's snapshot from the world.
+    if (materialTextures) {
+        materialTextures->pumpUploads();
+    }
+    if (meshCache) {
+        meshCache->pumpUploads();
+    }
+    snapshot.meshes.clear();
+    extractMeshes(world, snapshot);
+    // B3: the graph drives the pose — the debug slider stands in for the
+    // entity speed (param for transitions AND referenceSpeed sync).
+    if (characterReady && characterAnim) {
+        characterAnim->setParam("speed", characterSpeedUi);
+        characterAnim->update(dt, characterSpeedUi);
+        anim::bindPose(characterSkeleton, characterPose);
+        characterAnim->evaluate(characterPose);
+        anim::skinMatrices(characterSkeleton, characterPose,
+                           characterPalette);
+    }
     // Wind phase integrates the CURRENT strength: speed changes bend the
     // drift/sway smoothly instead of teleporting the pattern.
     windTime += dt * glm::max(windStrengthUi, 0.05f);
@@ -466,6 +623,134 @@ void LandscapeScene::update(f32 dt) {
             sky.timeOfDay -= 24.0f;
         }
     }
+}
+
+// Draws the snapshot's mesh section in the opaque pass: guids resolve
+// through the residency caches (placeholder box / checker while pending);
+// one small ModelUbo + bind group per entry, recreated only when the bound
+// texture flips (placeholder -> resident) or the material changes. N stays
+// tiny in B1; grouping/instancing per (model, material) is the contract's
+// planned next step (HORIZONTAL-PASS, monde 3D note). No shadow cast yet —
+// parity with the H8 cube; casters join with the interiors chantier.
+void LandscapeScene::drawSceneMeshes(engine::FrameContext& frame) {
+    if (snapshot.meshes.empty()) {
+        return;
+    }
+    if (shaders->generation("mesh") != meshShaderGeneration) {
+        buildMeshPipeline(frame.device);
+    }
+    if (meshDraws.size() < snapshot.meshes.size()) {
+        meshDraws.resize(snapshot.meshes.size());
+    }
+    struct ModelUniforms { // std140 ModelUbo: model + tint + info
+        Mat4 model { 1.0f };
+        Vec4 tint { 1.0f };
+        Vec4 info { 0.0f }; // x = emissive
+    };
+    frame.cmd.setPipeline(meshPipeline);
+    frame.cmd.setBindGroup(0, frameBindGroup);
+    for (u32 i = 0; i < snapshot.meshes.size(); ++i) {
+        const RenderSnapshot::MeshInstance& instance = snapshot.meshes[i];
+        const MeshCache::Gpu& mesh = meshCache->resolve(instance.model);
+
+        ModelUniforms uniforms;
+        uniforms.model = instance.transform;
+        rhi::TextureHandle albedo = whiteTexture;
+        if (const auto* material =
+                forms.find<data::MaterialForm>(instance.material)) {
+            uniforms.tint = material->tint;
+            uniforms.info.x = material->emissive;
+            if (material->albedoTexture.isValid()) {
+                const rhi::TextureHandle resolved =
+                    materialTextures->resolve(material->albedoTexture);
+                if (resolved.id != 0) {
+                    albedo = resolved;
+                }
+            }
+        }
+
+        MeshDraw& draw = meshDraws[i];
+        if (draw.ubo.id == 0) {
+            draw.ubo = frame.device.createBuffer(
+                { .usage = rhi::BufferUsage::Uniform,
+                  .size = sizeof(ModelUniforms),
+                  .dynamic = true },
+                nullptr);
+        }
+        frame.device.updateBuffer(draw.ubo, &uniforms, sizeof(uniforms), 0);
+        if (draw.group.id == 0 || draw.boundTexture.id != albedo.id ||
+            draw.material != instance.material) {
+            if (draw.group.id != 0) {
+                frame.device.destroyBindGroup(draw.group);
+            }
+            draw.group = frame.device.createBindGroup(
+                { .entries = { { .binding = 1, .buffer = draw.ubo },
+                               { .binding = 0,
+                                 .texture = albedo,
+                                 .sampler = meshSampler } } });
+            draw.boundTexture = albedo;
+            draw.material = instance.material;
+        }
+        frame.cmd.setBindGroup(1, draw.group);
+        frame.cmd.setVertexBuffer(0, mesh.vertices);
+        frame.cmd.setIndexBuffer(mesh.indices, rhi::IndexFormat::U32);
+        frame.cmd.drawIndexed(mesh.indexCount);
+    }
+}
+
+// B2: one skinned draw — palette upload (once per frame, before the pass
+// commands that consume it), then the usual pipeline/bind/draw.
+void LandscapeScene::drawCharacter(engine::FrameContext& frame) {
+    if (!characterReady) {
+        return;
+    }
+    if (shaders->generation("skinned") != skinnedShaderGeneration) {
+        buildSkinnedPipeline(frame.device);
+    }
+    frame.device.updateBuffer(characterPaletteSsbo, characterPalette.data(),
+                              characterPalette.size() * sizeof(Mat4), 0);
+    frame.cmd.setPipeline(skinnedPipeline);
+    frame.cmd.setBindGroup(0, frameBindGroup);
+    frame.cmd.setBindGroup(1, characterGroup);
+    frame.cmd.setVertexBuffer(0, characterVertices);
+    frame.cmd.setIndexBuffer(characterIndices, rhi::IndexFormat::U32);
+    frame.cmd.drawIndexed(characterIndexCount);
+}
+
+void LandscapeScene::buildSkinnedPipeline(rhi::Device& device) {
+    if (skinnedPipeline.id != 0) {
+        device.destroyPipeline(skinnedPipeline);
+    }
+    skinnedPipeline = device.createPipeline(
+        { .shader = shaders->get("skinned"),
+          .vertexBuffers =
+              { { .stride = sizeof(render::SkinnedVertex),
+                  .attributes =
+                      { { .location = 0,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset =
+                              offsetof(render::SkinnedVertex, position) },
+                        { .location = 1,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset = offsetof(render::SkinnedVertex, normal) },
+                        { .location = 2,
+                          .format = rhi::VertexFormat::F32x2,
+                          .offset = offsetof(render::SkinnedVertex, uv) },
+                        { .location = 3,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset = offsetof(render::SkinnedVertex, color) },
+                        { .location = 4,
+                          .format = rhi::VertexFormat::F32x4,
+                          .offset = offsetof(render::SkinnedVertex, joints) },
+                        { .location = 5,
+                          .format = rhi::VertexFormat::F32x4,
+                          .offset =
+                              offsetof(render::SkinnedVertex, weights) } } } },
+          .depth = { .testEnable = true,
+                     .writeEnable = true,
+                     .compare = rhi::CompareFunc::Less },
+          .cull = rhi::CullMode::Back });
+    skinnedShaderGeneration = shaders->generation("skinned");
 }
 
 void LandscapeScene::buildMeshPipeline(rhi::Device& device) {
@@ -779,17 +1064,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                     camera.position, &viewFrustum, occludedSet);
     grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
                &viewFrustum);
-    if (cubeReady) { // H8: the MaterialForm-driven textured mesh
-        if (shaders->generation("mesh") != meshShaderGeneration) {
-            buildMeshPipeline(frame.device);
-        }
-        frame.cmd.setPipeline(meshPipeline);
-        frame.cmd.setBindGroup(0, frameBindGroup);
-        frame.cmd.setBindGroup(1, cubeGroup);
-        frame.cmd.setVertexBuffer(0, cubeVertexBuffer);
-        frame.cmd.setIndexBuffer(cubeIndexBuffer, rhi::IndexFormat::U32);
-        frame.cmd.drawIndexed(cubeIndexCount);
-    }
+    drawSceneMeshes(frame); // B1: the RenderSnapshot.meshes consumer
+    drawCharacter(frame);   // B2: the GPU-skinned character
     sky.draw(frame.cmd, frameBindGroup); // after opaque: background only
     frame.cmd.endRenderPass();
 
@@ -921,6 +1197,33 @@ void LandscapeScene::drawUi() {
         ImGui::SliderFloat("Saturation", &saturationUi, 0.0f, 1.3f, "%.2f");
         ImGui::SliderFloat("Warmth (dawn/dusk)", &warmthUi, 0.0f, 1.0f,
                            "%.2f");
+        ImGui::Separator();
+    }
+    if (characterReady && characterAnim) {
+        // B3: the locomotion graph from adventure.toml — the slider is the
+        // pretend entity speed; watch idle/walk/run switch with cross-fades
+        // and the footstep events land in the log.
+        ImGui::SliderFloat("Character speed (B3)", &characterSpeedUi, 0.0f,
+                           6.0f, "%.1f m/s");
+        static constexpr const char* kStateNames[] = { "idle", "walk",
+                                                       "run" };
+        const u32 state = characterAnim->currentState();
+        ImGui::Text("Graph state: %s%s",
+                    state < 3 ? kStateNames[state] : "?",
+                    characterAnim->blending() ? " (blending)" : "");
+        if (ImGui::Button("Teleport to character")) {
+            // Stand 6 m south, eyes 2 m up, looking at the character.
+            flyCamera.camera.position =
+                characterSpot + Vec3 { 0.0f, 2.0f, 6.0f };
+            const Vec3 dir = glm::normalize(
+                characterSpot + Vec3 { 0.0f, 0.5f, 0.0f } -
+                flyCamera.camera.position);
+            flyCamera.camera.yaw = std::atan2(dir.x, -dir.z);
+            flyCamera.camera.pitch = std::asin(dir.y);
+        }
+        ImGui::SameLine();
+        ImGui::Text("at %.0f %.0f %.0f", characterSpot.x, characterSpot.y,
+                    characterSpot.z);
         ImGui::Separator();
     }
     ImGui::Checkbox("Stylized lighting (BotW A/B)", &stylizedUi);

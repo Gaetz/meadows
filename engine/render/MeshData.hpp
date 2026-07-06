@@ -22,4 +22,22 @@ struct MeshData {
     vector<u32> indices;
 };
 
+// Skinned variant (chantier 1, B2): the static layout + joint influences.
+// Joints ride as floats because the RHI's vertex formats are float-only —
+// exact up to 2^24 joints, i.e. forever. Matches skinned.vert locations
+// 0..5; the bone palette itself is an SSBO, not a vertex stream.
+struct SkinnedVertex {
+    Vec3 position; // bind-pose mesh space (node transforms don't apply to
+    Vec3 normal;   //   skinned vertices — the palette places them)
+    Vec2 uv;
+    Vec3 color;
+    Vec4 joints;  // 4 palette indices, float-encoded
+    Vec4 weights; // normalized influence weights
+};
+
+struct SkinnedMeshData {
+    vector<SkinnedVertex> vertices;
+    vector<u32> indices;
+};
+
 } // namespace render

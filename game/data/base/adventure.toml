@@ -1,0 +1,236 @@
+# True Adventurer — the 3D gameplay plugin (chantier 1, brick B1).
+# An ordinary plugin (§5): everything the LandscapeScene spawns comes from
+# these records — StaticForm props here, the NPC and its appearance in the
+# later bricks. Loaded after landscape.toml; it may reference that plugin's
+# asset guids (assets layer per guid, like fields).
+#
+# B1 convention: ReferenceForm.position.y is an offset ABOVE the terrain at
+# (x, z) — the scene grounds every spawned prop (hand-authored heights come
+# with the level editor, chantier 2).
+
+[plugin]
+id = "7c9e2f40-3a1b-4c8d-9e5f-6a7b8c9d0e1f"
+name = "true-adventurer-adventure"
+
+[assets]
+# The CC0 Poly Haven rock scan already shipped with brick 23.
+"2b5e7d10-0000-4000-8000-0000000000c1" = "models/rock_cc0.gltf"
+# The CC0 rigged sample (skeleton + Survey/Walk/Run clips), B2 proof; the
+# demo's real humanoid replaces this file in B6 without touching records.
+"2b5e7d10-0000-4000-8000-0000000000e0" = "models/character_cc0.glb"
+
+# --- Materials ------------------------------------------------------------
+
+# Untextured (albedoTexture = 0 -> white): the tint does the talking.
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000c2"
+type = "MaterialForm"
+new = true
+[records.fields]
+editorId = "RockMossMaterial"
+tint = [0.45, 0.62, 0.38, 1.0]
+emissive = 0.0
+
+# Textured: reuses the landscape plugin's albedo asset guid — proves the
+# cross-plugin asset layering on the mesh path.
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000c3"
+type = "MaterialForm"
+new = true
+[records.fields]
+editorId = "RockPaintedMaterial"
+albedoTexture = "1a4d5c00-0000-4000-8000-0000000000a1"
+tint = [1.0, 1.0, 1.0, 1.0]
+emissive = 0.0
+
+# --- Statics ---------------------------------------------------------------
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000c4"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "MossyRock"
+displayName = "Mossy rock"
+model = "2b5e7d10-0000-4000-8000-0000000000c1"
+material = "2b5e7d10-0000-4000-8000-0000000000c2"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000c5"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "PaintedRock"
+displayName = "Painted rock"
+model = "2b5e7d10-0000-4000-8000-0000000000c1"
+material = "2b5e7d10-0000-4000-8000-0000000000c3"
+
+# --- Character animation (B3): clips + locomotion graph --------------------
+# Clips point INTO the glTF asset by animation name; states/transitions are
+# CHILD records of the graph (a mod adds a state or retunes a threshold by
+# adding/patching one record). referenceSpeed = anti-foot-sliding (§ no
+# root motion): playback rate scales by entitySpeed / referenceSpeed.
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000e1"
+type = "AnimClipForm"
+new = true
+[records.fields]
+editorId = "CharIdle"
+asset = "2b5e7d10-0000-4000-8000-0000000000e0"
+animationName = "Survey"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000e2"
+type = "AnimClipForm"
+new = true
+[records.fields]
+editorId = "CharWalk"
+asset = "2b5e7d10-0000-4000-8000-0000000000e0"
+animationName = "Walk"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000e3"
+type = "AnimClipForm"
+new = true
+[records.fields]
+editorId = "CharRun"
+asset = "2b5e7d10-0000-4000-8000-0000000000e0"
+animationName = "Run"
+
+# Footsteps on the walk cycle — the anim->gameplay timeline bridge (fired
+# through the event sink; audio-by-material joins in the "vivant" chantier).
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000e4"
+type = "AnimEventForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000e2"
+time = 0.25
+name = "Footstep"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000e5"
+type = "AnimEventForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000e2"
+time = 0.75
+name = "Footstep"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000f0"
+type = "AnimGraphForm"
+new = true
+[records.fields]
+editorId = "CharacterGraph"
+initialState = "2b5e7d10-0000-4000-8000-0000000000f1"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000f1"
+type = "AnimStateForm"
+new = true
+[records.fields]
+editorId = "CharStateIdle"
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+clip = "2b5e7d10-0000-4000-8000-0000000000e1"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000f2"
+type = "AnimStateForm"
+new = true
+[records.fields]
+editorId = "CharStateWalk"
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+clip = "2b5e7d10-0000-4000-8000-0000000000e2"
+referenceSpeed = 1.5
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000f3"
+type = "AnimStateForm"
+new = true
+[records.fields]
+editorId = "CharStateRun"
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+clip = "2b5e7d10-0000-4000-8000-0000000000e3"
+referenceSpeed = 4.0
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000f4"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+from = "2b5e7d10-0000-4000-8000-0000000000f1"
+to = "2b5e7d10-0000-4000-8000-0000000000f2"
+param = "speed"
+threshold = 0.1
+blendTime = 0.2
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000f5"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+from = "2b5e7d10-0000-4000-8000-0000000000f2"
+to = "2b5e7d10-0000-4000-8000-0000000000f1"
+param = "speed"
+compare = "less"
+threshold = 0.1
+blendTime = 0.25
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000f6"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+from = "2b5e7d10-0000-4000-8000-0000000000f2"
+to = "2b5e7d10-0000-4000-8000-0000000000f3"
+param = "speed"
+threshold = 3.0
+blendTime = 0.2
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000f7"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+from = "2b5e7d10-0000-4000-8000-0000000000f3"
+to = "2b5e7d10-0000-4000-8000-0000000000f2"
+param = "speed"
+compare = "less"
+threshold = 3.0
+blendTime = 0.25
+
+# --- Placed references (near the spawn point, ~(32, 368)) ------------------
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000d1"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "2b5e7d10-0000-4000-8000-0000000000c4"
+position = [26.0, 0.0, 361.0]
+scale = [2.0, 2.0, 2.0]
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000d2"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "2b5e7d10-0000-4000-8000-0000000000c5"
+position = [38.0, 0.0, 359.0]
+rotation = [0.0, 0.3826834, 0.0, 0.9238795]  # 45° yaw
+scale = [3.0, 3.0, 3.0]
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000d3"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "2b5e7d10-0000-4000-8000-0000000000c4"
+position = [31.0, 0.0, 374.0]
+scale = [1.1, 1.1, 1.1]

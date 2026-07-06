@@ -1,8 +1,16 @@
 #pragma once
 
+#include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormTypeRegistry.hpp"
+#include "engine/anim/Anim.hpp"
+#include "engine/assets/AssetDatabase.hpp"
+#include "engine/assets/GltfMesh.hpp"
+#include "engine/ecs/World.hpp"
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "game/MeshCache.hpp"
+#include "game/SceneSubmit.hpp"
+#include "game/TextureCache.hpp"
 #include "game/scenes/LandscapeTuning.hpp"
 #include "engine/render/landscape/ChunkOcclusion.hpp"
 #include "engine/render/landscape/GpuOcclusion.hpp"
@@ -121,20 +129,58 @@ private:
     rhi::BufferHandle frameUbo {};
     rhi::BindGroupHandle frameBindGroup {};
 
-    // H8 proof: one textured stylized cube driven by a MaterialForm
-    // ("DemoCubeMaterial" in landscape.toml) — the renderer/gameplay mesh
-    // contract, end to end (Form -> asset guid -> VFS -> GPU).
-    rhi::TextureHandle cubeTexture {};
-    rhi::SamplerHandle cubeSampler {};
-    rhi::BufferHandle cubeModelUbo {};
-    rhi::BindGroupHandle cubeGroup {};
-    rhi::BufferHandle cubeVertexBuffer {};
-    rhi::BufferHandle cubeIndexBuffer {};
-    u32 cubeIndexCount { 0 };
+    // B1 (chantier 1): the real mesh path replacing the H8 hardcoded cube.
+    // A small ECS world spawned from plugin ReferenceForms; extractMeshes
+    // fills the snapshot each frame; the residency caches resolve guids to
+    // GPU resources (placeholders while pending — never block, §7).
+    data::FormDatabase forms;      // resolved plugin stack (member: material
+                                   //   lookups happen at draw time)
+    assets::AssetDatabase assetDb; // guid -> file, layered per plugin order
+    ecs::World world;
+    uptr<TextureCache> materialTextures; // SRGBA8 + Linear (3D albedo)
+    uptr<MeshCache> meshCache;
+    RenderSnapshot snapshot;
+    rhi::TextureHandle whiteTexture {}; // albedoTexture = 0 -> plain tint
+    rhi::SamplerHandle meshSampler {};
+    // Per-snapshot-entry GPU state (tiny N; instancing per model+material
+    // is the planned next step of the contract — HORIZONTAL-PASS note).
+    struct MeshDraw {
+        rhi::BufferHandle ubo {};
+        rhi::BindGroupHandle group {};
+        rhi::TextureHandle boundTexture {};
+        core::Guid material {};
+    };
+    vector<MeshDraw> meshDraws;
     rhi::PipelineHandle meshPipeline {};
     u64 meshShaderGeneration { 0 };
-    bool cubeReady { false };
     void buildMeshPipeline(rhi::Device& device);
+    void drawSceneMeshes(engine::FrameContext& frame);
+
+    // B2 (chantier 1): GPU-skinned character proof — skeleton + embedded
+    // clips + skinned mesh from the CC0 rigged sample; one clip sampled
+    // CPU-side into the bone-palette SSBO each frame. B3 replaces the hand
+    // playback with the Forms -> AnimBridge -> GraphInstance path.
+    anim::Skeleton characterSkeleton;
+    vector<assets::GltfClip> characterClips;
+    Vec3 characterSpot { 0.0f }; // grounded world position (teleport target)
+    // B3: the data-driven graph. The desc OWNS the clips and must outlive
+    // the instance (which holds a reference to it).
+    anim::GraphDesc characterGraphDesc;
+    uptr<anim::GraphInstance> characterAnim;
+    f32 characterSpeedUi { 0.0f }; // debug entity speed (m/s) -> param+sync
+    anim::Pose characterPose;
+    vector<Mat4> characterPalette;
+    rhi::BufferHandle characterVertices {};
+    rhi::BufferHandle characterIndices {};
+    u32 characterIndexCount { 0 };
+    rhi::BufferHandle characterPaletteSsbo {};
+    rhi::BufferHandle characterModelUbo {};
+    rhi::BindGroupHandle characterGroup {};
+    rhi::PipelineHandle skinnedPipeline {};
+    u64 skinnedShaderGeneration { 0 };
+    bool characterReady { false };
+    void buildSkinnedPipeline(rhi::Device& device);
+    void drawCharacter(engine::FrameContext& frame);
 
     rhi::TextureHandle offscreenColor {};
     rhi::TextureHandle offscreenDepth {};

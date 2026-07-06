@@ -211,3 +211,139 @@ threshold = 0.5
     CHECK(desc->states[1].speed == doctest::Approx(2.0f));
     CHECK(desc->initialState == 0);
 }
+
+TEST_CASE("locomotion graph from records cycles idle/walk/run on the speed "
+          "param (B3)") {
+    // The adventure.toml shape: three states, up transitions on "greater"
+    // and down transitions on compare = "less" (not covered above).
+    constexpr const char* kToml = R"(
+[plugin]
+id = "dddd0000-0000-4000-8000-000000000002"
+name = "locomotion"
+
+[[records]]
+form = "dddd0003-0000-4000-8000-000000000001"
+type = "AnimClipForm"
+new = true
+[records.fields]
+editorId = "Clip"
+
+[[records]]
+form = "dddd0004-0000-4000-8000-000000000001"
+type = "AnimGraphForm"
+new = true
+[records.fields]
+editorId = "Locomotion"
+initialState = "dddd0004-0000-4000-8000-000000000002"
+
+[[records]]
+form = "dddd0004-0000-4000-8000-000000000002"
+type = "AnimStateForm"
+new = true
+[records.fields]
+editorId = "Idle"
+parent = "dddd0004-0000-4000-8000-000000000001"
+clip = "dddd0003-0000-4000-8000-000000000001"
+
+[[records]]
+form = "dddd0004-0000-4000-8000-000000000003"
+type = "AnimStateForm"
+new = true
+[records.fields]
+editorId = "Walk"
+parent = "dddd0004-0000-4000-8000-000000000001"
+clip = "dddd0003-0000-4000-8000-000000000001"
+referenceSpeed = 1.5
+
+[[records]]
+form = "dddd0004-0000-4000-8000-000000000004"
+type = "AnimStateForm"
+new = true
+[records.fields]
+editorId = "Run"
+parent = "dddd0004-0000-4000-8000-000000000001"
+clip = "dddd0003-0000-4000-8000-000000000001"
+referenceSpeed = 4.0
+
+[[records]]
+form = "dddd0004-0000-4000-8000-000000000005"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "dddd0004-0000-4000-8000-000000000001"
+from = "dddd0004-0000-4000-8000-000000000002"
+to = "dddd0004-0000-4000-8000-000000000003"
+param = "speed"
+threshold = 0.1
+blendTime = 0.1
+
+[[records]]
+form = "dddd0004-0000-4000-8000-000000000006"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "dddd0004-0000-4000-8000-000000000001"
+from = "dddd0004-0000-4000-8000-000000000003"
+to = "dddd0004-0000-4000-8000-000000000002"
+param = "speed"
+compare = "less"
+threshold = 0.1
+blendTime = 0.1
+
+[[records]]
+form = "dddd0004-0000-4000-8000-000000000007"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "dddd0004-0000-4000-8000-000000000001"
+from = "dddd0004-0000-4000-8000-000000000003"
+to = "dddd0004-0000-4000-8000-000000000004"
+param = "speed"
+threshold = 3.0
+blendTime = 0.1
+
+[[records]]
+form = "dddd0004-0000-4000-8000-000000000008"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "dddd0004-0000-4000-8000-000000000001"
+from = "dddd0004-0000-4000-8000-000000000004"
+to = "dddd0004-0000-4000-8000-000000000003"
+param = "speed"
+compare = "less"
+threshold = 3.0
+blendTime = 0.1
+)";
+    data::FormTypeRegistry types;
+    data::registerAnimFormTypes(types);
+    const auto plugin = data::parsePluginToml(kToml, types, "locomotion");
+    REQUIRE(plugin.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*plugin }, types, db);
+
+    const auto desc = world::buildAnimGraph(
+        db, *core::Guid::fromString("dddd0004-0000-4000-8000-000000000001"),
+        [](const core::Guid&, const str&) { return armSwingClip(); });
+    REQUIRE(desc.has_value());
+    REQUIRE(desc->states.size() == 3);
+    CHECK(desc->transitions.size() == 4);
+    CHECK(desc->states[1].referenceSpeed == doctest::Approx(1.5f));
+
+    anim::GraphInstance instance { *desc };
+    const auto settle = [&](f32 speed) {
+        instance.setParam("speed", speed);
+        for (int i = 0; i < 30; ++i) {
+            instance.update(0.016f, speed);
+        }
+    };
+    CHECK(instance.currentState() == 0); // idle
+    settle(1.0f);
+    CHECK(instance.currentState() == 1); // walk
+    settle(5.0f);
+    CHECK(instance.currentState() == 2); // run
+    settle(1.0f);
+    CHECK(instance.currentState() == 1); // back to walk ("less")
+    settle(0.0f);
+    CHECK(instance.currentState() == 0); // and idle
+}

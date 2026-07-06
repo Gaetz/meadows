@@ -29,8 +29,16 @@ namespace game {
 // the first place JobSystem + ConcurrentQueue + the snapshot seam collaborate.
 class TextureCache {
 public:
+    // How uploaded textures are created. Defaults fit the 2D sprite path
+    // (linear RGBA8, nearest); the 3D material path passes SRGBA8 + Linear
+    // (albedo is authored in sRGB and sampled smoothly on meshes).
+    struct UploadDesc {
+        rhi::TextureFormat format { rhi::TextureFormat::RGBA8 };
+        rhi::FilterMode filter { rhi::FilterMode::Nearest };
+    };
+
     TextureCache(rhi::Device& device, const assets::AssetDatabase& assets,
-                 core::JobSystem& jobs);
+                 core::JobSystem& jobs, UploadDesc upload = {});
     ~TextureCache();
 
     TextureCache(const TextureCache&) = delete;
@@ -80,6 +88,7 @@ private:
     rhi::Device& device;
     const assets::AssetDatabase& assets;
     core::JobSystem& jobs;
+    UploadDesc upload {};
 
     rhi::TextureHandle placeholder {};
     std::unordered_map<core::Guid, Entry> byGuid;

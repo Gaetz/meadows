@@ -360,6 +360,143 @@ vector<GltfClip> loadGltfAnimations(const std::filesystem::path& path,
     return clips;
 }
 
+// --- Skinned mesh (chantier 1, B2) ----------------------------------------------
+
+namespace {
+
+std::optional<render::SkinnedMeshData> buildSkinnedMesh(
+    const cgltf_data& data, const str& label) {
+    if (data.skins_count == 0) {
+        LOG_ERROR("glTF '{}': no skin — not a skinned mesh", label);
+        return std::nullopt;
+    }
+    const cgltf_skin& skin = data.skins[0];
+    // The SAME reorder as loadGltfSkeleton: palette index j in the file
+    // becomes order[j] in the engine skeleton.
+    const vector<u32> order = topologicalJointOrder(skin);
+
+    render::SkinnedMeshData mesh;
+    for (cgltf_size n = 0; n < data.nodes_count; ++n) {
+        const cgltf_node& node = data.nodes[n];
+        if (!node.mesh || node.skin != &skin) {
+            continue;
+        }
+        for (cgltf_size p = 0; p < node.mesh->primitives_count; ++p) {
+            const cgltf_primitive& primitive = node.mesh->primitives[p];
+            const cgltf_accessor* positions =
+                findAttribute(primitive, cgltf_attribute_type_position);
+            const cgltf_accessor* joints =
+                findAttribute(primitive, cgltf_attribute_type_joints);
+            const cgltf_accessor* weights =
+                findAttribute(primitive, cgltf_attribute_type_weights);
+            if (!positions || !joints || !weights ||
+                primitive.type != cgltf_primitive_type_triangles) {
+                continue;
+            }
+            const cgltf_accessor* normals =
+                findAttribute(primitive, cgltf_attribute_type_normal);
+            const cgltf_accessor* uvs =
+                findAttribute(primitive, cgltf_attribute_type_texcoord);
+            const cgltf_accessor* colors =
+                findAttribute(primitive, cgltf_attribute_type_color);
+
+            Vec3 baseColor { 1.0f };
+            if (primitive.material &&
+                primitive.material->has_pbr_metallic_roughness) {
+                const cgltf_float* factor = primitive.material
+                                                ->pbr_metallic_roughness
+                                                .base_color_factor;
+                baseColor = { factor[0], factor[1], factor[2] };
+            }
+
+            const u32 firstVertex = static_cast<u32>(mesh.vertices.size());
+            for (cgltf_size v = 0; v < positions->count; ++v) {
+                render::SkinnedVertex vertex {};
+                f32 buffer[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+                cgltf_accessor_read_float(positions, v, buffer, 3);
+                vertex.position = { buffer[0], buffer[1], buffer[2] };
+                vertex.normal = { 0.0f, 1.0f, 0.0f };
+                if (normals &&
+                    cgltf_accessor_read_float(normals, v, buffer, 3)) {
+                    vertex.normal = { buffer[0], buffer[1], buffer[2] };
+                }
+                if (uvs && cgltf_accessor_read_float(uvs, v, buffer, 2)) {
+                    vertex.uv = { buffer[0], buffer[1] };
+                }
+                vertex.color = baseColor;
+                if (colors) {
+                    buffer[0] = buffer[1] = buffer[2] = 1.0f;
+                    cgltf_accessor_read_float(colors, v, buffer, 4);
+                    vertex.color *= Vec3(buffer[0], buffer[1], buffer[2]);
+                }
+                cgltf_uint jointIndices[4] = { 0, 0, 0, 0 };
+                cgltf_accessor_read_uint(joints, v, jointIndices, 4);
+                for (int j = 0; j < 4; ++j) {
+                    const cgltf_uint remapped =
+                        jointIndices[j] < skin.joints_count
+                            ? order[jointIndices[j]]
+                            : 0;
+                    vertex.joints[j] = static_cast<f32>(remapped);
+                }
+                f32 w[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+                cgltf_accessor_read_float(weights, v, w, 4);
+                const f32 sum = w[0] + w[1] + w[2] + w[3];
+                const f32 norm = sum > 1e-6f ? 1.0f / sum : 0.0f;
+                vertex.weights = { w[0] * norm, w[1] * norm, w[2] * norm,
+                                   w[3] * norm };
+                mesh.vertices.push_back(vertex);
+            }
+            if (primitive.indices) {
+                for (cgltf_size i = 0; i < primitive.indices->count; ++i) {
+                    mesh.indices.push_back(
+                        firstVertex +
+                        static_cast<u32>(cgltf_accessor_read_index(
+                            primitive.indices, i)));
+                }
+            } else {
+                for (cgltf_size i = 0; i < positions->count; ++i) {
+                    mesh.indices.push_back(firstVertex + static_cast<u32>(i));
+                }
+            }
+        }
+    }
+    if (mesh.vertices.empty() || mesh.indices.empty()) {
+        LOG_ERROR("glTF '{}': skin 0 has no skinned triangle geometry",
+                  label);
+        return std::nullopt;
+    }
+    return mesh;
+}
+
+} // namespace
+
+std::optional<render::SkinnedMeshData> loadGltfSkinnedMesh(
+    const std::filesystem::path& path) {
+    ParsedGltf gltf;
+    if (!parseWithBuffers(path, gltf)) {
+        return std::nullopt;
+    }
+    return buildSkinnedMesh(*gltf.data, path.string());
+}
+
+std::optional<render::SkinnedMeshData> loadGltfSkinnedMeshFromMemory(
+    const void* bytes, u64 byteCount) {
+    cgltf_options options {};
+    cgltf_data* raw = nullptr;
+    if (cgltf_parse(&options, bytes, byteCount, &raw) !=
+        cgltf_result_success) {
+        LOG_ERROR("glTF parse failed (in-memory, skinned)");
+        return std::nullopt;
+    }
+    std::unique_ptr<cgltf_data, GltfDeleter> data { raw };
+    if (cgltf_load_buffers(&options, data.get(), nullptr) !=
+        cgltf_result_success) {
+        LOG_ERROR("glTF buffer load failed (in-memory, skinned)");
+        return std::nullopt;
+    }
+    return buildSkinnedMesh(*data, "<memory>");
+}
+
 void normalizeMesh(render::MeshData& mesh, f32 targetSize) {
     if (mesh.vertices.empty()) {
         return;
@@ -376,6 +513,22 @@ void normalizeMesh(render::MeshData& mesh, f32 targetSize) {
     const Vec3 pivot { (lo.x + hi.x) * 0.5f, lo.y, (lo.z + hi.z) * 0.5f };
     for (render::MeshVertex& vertex : mesh.vertices) {
         vertex.position = (vertex.position - pivot) * scale;
+    }
+}
+
+void groundMesh(render::MeshData& mesh) {
+    if (mesh.vertices.empty()) {
+        return;
+    }
+    Vec3 lo = mesh.vertices[0].position;
+    Vec3 hi = lo;
+    for (const render::MeshVertex& vertex : mesh.vertices) {
+        lo = glm::min(lo, vertex.position);
+        hi = glm::max(hi, vertex.position);
+    }
+    const Vec3 pivot { (lo.x + hi.x) * 0.5f, lo.y, (lo.z + hi.z) * 0.5f };
+    for (render::MeshVertex& vertex : mesh.vertices) {
+        vertex.position -= pivot;
     }
 }
 

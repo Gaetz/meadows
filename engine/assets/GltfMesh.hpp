@@ -30,6 +30,12 @@ std::optional<render::MeshData> loadGltfMeshFromMemory(const void* bytes,
 // `targetSize` meters (scale 1 instances then read as authored).
 void normalizeMesh(render::MeshData& mesh, f32 targetSize);
 
+// The runtime prop-pivot convention (MeshCache applies it to every loaded
+// StaticForm model): footprint centered on XZ, base at y = 0 — references
+// place the base on the ground — WITHOUT rescaling. Authored size is truth;
+// per-instance sizing lives in ReferenceForm.scale.
+void groundMesh(render::MeshData& mesh);
+
 // --- Skeletal data (horizontal pass H5) ----------------------------------------
 // Skin 0 of the file becomes the skeleton (joints reordered parents-first,
 // the anim runtime's requirement); animations resample into engine clips
@@ -46,5 +52,15 @@ std::optional<anim::Skeleton> loadGltfSkeleton(
     const std::filesystem::path& path);
 vector<GltfClip> loadGltfAnimations(const std::filesystem::path& path,
                                     const anim::Skeleton& skeleton);
+
+// Skinned mesh import (chantier 1, B2): the triangle primitives of every
+// node bound to skin 0, vertices left in bind-pose mesh space (a skinned
+// node's transform does not apply — the bone palette places vertices), and
+// JOINTS_0 remapped through the SAME parents-first reorder as
+// loadGltfSkeleton, so palette indices and Skeleton::joints stay aligned.
+std::optional<render::SkinnedMeshData> loadGltfSkinnedMesh(
+    const std::filesystem::path& path);
+std::optional<render::SkinnedMeshData> loadGltfSkinnedMeshFromMemory(
+    const void* bytes, u64 byteCount);
 
 } // namespace assets

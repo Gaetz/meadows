@@ -1,9 +1,11 @@
 #include <doctest/doctest.h>
 
 #include "data/forms/CoreForms.hpp"
+#include "data/forms/VisualForms.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
 #include "engine/ecs/World.hpp"
+#include "game/SceneSubmit.hpp"
 #include "world/scene/Components.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/worldspace/FormCategory.hpp"
@@ -24,6 +26,7 @@ const Guid kMissingBase =
 data::FormTypeRegistry makeTypes() {
     data::FormTypeRegistry types;
     data::registerCoreFormTypes(types);
+    data::registerVisualFormTypes(types); // StaticForm/MaterialForm (B1)
     world::registerWorldFormTypes(types);
     return types;
 }
@@ -142,6 +145,66 @@ position = [5.0, 6.0, 0.0]
     REQUIRE(entity.is_alive());
     CHECK(entity.get<world::Transform>().position.x == 5.0f); // patched value
     CHECK(entity.get<world::Transform>().position.y == 6.0f);
+}
+
+TEST_CASE("extract (B1): a spawned StaticForm reference lands in the "
+          "snapshot's mesh section") {
+    Fixture fx;
+    const auto base = parse(fx.types, R"toml(
+[plugin]
+id = "44444444-4444-4444-8444-444444444444"
+name = "mesh-base"
+
+[[records]]
+form = "50000000-0000-4000-8000-000000000001"
+type = "MaterialForm"
+new = true
+[records.fields]
+editorId = "RockMaterial"
+tint = [0.5, 0.6, 0.4, 1.0]
+
+[[records]]
+form = "50000000-0000-4000-8000-000000000002"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "Rock"
+model = "50000000-0000-4000-8000-0000000000aa"
+material = "50000000-0000-4000-8000-000000000001"
+
+[[records]]
+form = "50000000-0000-4000-8000-000000000003"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "50000000-0000-4000-8000-000000000002"
+position = [3.0, 0.0, 5.0]
+scale = [2.0, 2.0, 2.0]
+)toml",
+                            "mesh-base");
+    data::resolve({ &base }, fx.types, fx.db);
+
+    const Guid refId = *Guid::fromString("50000000-0000-4000-8000-000000000003");
+    const auto* reference = fx.db.find<world::ReferenceForm>(refId);
+    REQUIRE(reference != nullptr);
+
+    auto ctx = fx.context();
+    ecs::Entity entity = fx.spawner.spawn(ctx, *reference, fx.world.create());
+    REQUIRE(entity.is_alive());
+    // MeshRender wired by reflection from the base form's model/material.
+    REQUIRE(entity.try_get<world::MeshRender>() != nullptr);
+
+    game::RenderSnapshot snapshot;
+    game::extractMeshes(fx.world, snapshot);
+    REQUIRE(snapshot.meshes.size() == 1);
+    CHECK(snapshot.meshes[0].model ==
+          *Guid::fromString("50000000-0000-4000-8000-0000000000aa"));
+    CHECK(snapshot.meshes[0].material ==
+          *Guid::fromString("50000000-0000-4000-8000-000000000001"));
+    // Fully composed world transform: translation column + scale diagonal.
+    CHECK(snapshot.meshes[0].transform[3].x == doctest::Approx(3.0f));
+    CHECK(snapshot.meshes[0].transform[3].z == doctest::Approx(5.0f));
+    CHECK(snapshot.meshes[0].transform[0].x == doctest::Approx(2.0f));
 }
 
 TEST_CASE("spawner: an unresolvable base form yields no entity") {

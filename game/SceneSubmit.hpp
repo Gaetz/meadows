@@ -55,6 +55,11 @@ render::Sprite spriteFor(const world::Transform& transform,
 // snapshot. Read-only: never mutates the world.
 RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures);
 
+// The mesh half of the extract, standalone: pure guids, no texture
+// resolution, so it runs (and doctests) without any GPU. The 3D frontend
+// calls it directly; extractScene calls it as part of the full extract.
+void extractMeshes(const ecs::World& world, RenderSnapshot& out);
+
 // Kicks the decode of every sprite asset in the world without drawing anything,
 // so a loading gate can wait for them to become resident before the first frame
 // is shown (§7) — no startup pop-in. Generalizes to streaming: preload the

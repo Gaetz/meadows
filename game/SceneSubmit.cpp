@@ -57,9 +57,14 @@ RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures) {
         snapshot.sprites.push_back(drawable.sprite);
     }
 
-    // Mesh section (H8): composed world transforms + resource guids only.
-    // The 3D frontend resolves guids through its residency caches (§7:
-    // pending assets draw placeholders, never block).
+    extractMeshes(world, snapshot);
+    return snapshot;
+}
+
+// Mesh section (H8): composed world transforms + resource guids only.
+// The 3D frontend resolves guids through its residency caches (§7:
+// pending assets draw placeholders, never block).
+void extractMeshes(const ecs::World& world, RenderSnapshot& out) {
     world.handle()
         .query<const world::Transform, const world::MeshRender>()
         .each([&](flecs::entity, const world::Transform& transform,
@@ -68,10 +73,8 @@ RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures) {
                 glm::translate(Mat4 { 1.0f }, transform.position) *
                 glm::mat4_cast(transform.rotation) *
                 glm::scale(Mat4 { 1.0f }, transform.scale);
-            snapshot.meshes.push_back(
-                { mesh.model, mesh.material, world3d });
+            out.meshes.push_back({ mesh.model, mesh.material, world3d });
         });
-    return snapshot;
 }
 
 void submitSnapshot(const RenderSnapshot& snapshot,

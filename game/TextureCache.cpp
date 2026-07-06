@@ -24,8 +24,8 @@ rhi::TextureHandle createPlaceholderTexture(rhi::Device& device) {
 
 TextureCache::TextureCache(rhi::Device& device,
                            const assets::AssetDatabase& assets,
-                           core::JobSystem& jobs)
-    : device { device }, assets { assets }, jobs { jobs } {
+                           core::JobSystem& jobs, UploadDesc upload)
+    : device { device }, assets { assets }, jobs { jobs }, upload { upload } {
     placeholder = createPlaceholderTexture(device);
 }
 
@@ -89,7 +89,8 @@ u32 TextureCache::pumpUploads() {
         const rhi::TextureHandle texture = device.createTexture(
             { .width = result.image->width,
               .height = result.image->height,
-              .filter = rhi::FilterMode::Nearest },
+              .format = upload.format,
+              .filter = upload.filter },
             result.image->pixels.data());
         it->second = Entry { texture, Residency::Resident };
         ++becameResident;
