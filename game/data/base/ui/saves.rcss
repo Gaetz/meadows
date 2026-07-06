@@ -1,0 +1,26 @@
+/* The saves-list screen (chantier 5 B6). */
+
+#slots {
+	max-height: 300dp;
+	overflow-y: auto;
+	margin: 8dp 0;
+	text-align: left;
+}
+
+.slot {
+	display: flex;
+	padding: 6dp 10dp;
+	cursor: pointer;
+}
+
+.slot:hover {
+	background-color: #23262ce0;
+}
+
+.slot-name {
+	flex: 1;
+}
+
+.slot-date {
+	font-size: 13dp;
+}

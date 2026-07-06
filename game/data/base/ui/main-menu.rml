@@ -8,10 +8,10 @@
 		<div class="title">True Adventurer</div>
 		<div class="menu-buttons">
 			<button data-event-click="menuAction('play')">Enter the world</button>
-			<button class="disabled">Load game</button>
+			<button data-event-click="menuAction('loadmenu')">Load game</button>
 			<button data-event-click="menuAction('quit')">Quit</button>
 		</div>
-		<div class="muted">Load game arrives with the persistence chantier.</div>
+		<div class="muted">F5 quicksaves, F9 quickloads.</div>
 	</div>
 </body>
 </rml>

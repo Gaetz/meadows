@@ -93,7 +93,11 @@ private:
 // save form types).
 std::filesystem::path savesDirectory();
 std::filesystem::path savePath(const str& slot);
-vector<str> listSaveSlots(); // sorted by write time, newest first
+struct SaveSlotInfo {
+    str name;
+    str timestamp; // "YYYY-MM-DD HH:MM" local time, for the list screen
+};
+vector<SaveSlotInfo> listSaveSlots(); // newest first
 bool writeSave(const str& slot, const data::Plugin& plugin,
                const data::FormTypeRegistry& types);
 std::optional<data::Plugin> readSave(const str& slot,

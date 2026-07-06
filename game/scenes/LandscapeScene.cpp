@@ -1,6 +1,7 @@
 ﻿#include "game/scenes/LandscapeScene.hpp"
 
 #include <cmath>
+#include <ctime>
 #include <filesystem>
 #include <sstream>
 
@@ -1915,6 +1916,11 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
     uiSystem.createModel({ .name = "menu",
                            .strings = { "clockLine" },
                            .events = { "menuAction" } });
+    // Chantier 5 B6: the saves-list screen (rows: name + timestamp).
+    uiSystem.createModel({ .name = "saves",
+                           .bools = { "empty" },
+                           .rows = true,
+                           .events = { "loadSlot", "loadCancel" } });
     uiSystem.setModelEventHandler(
         [this](const str& model, const str& event, const vector<str>& args) {
             handleUiEvent(model, event, args);
@@ -2470,6 +2476,13 @@ void LandscapeScene::handleUiEvent(const str& model, const str& event,
         if (event == "menuAction" && !args.empty()) {
             handleMenuAction(args[0]);
         }
+    } else if (model == "saves") {
+        if (event == "loadSlot" && !args.empty()) {
+            screenStack.closeAll();
+            requestLoad(args[0]);
+        } else if (event == "loadCancel") {
+            screenStack.closeTop();
+        }
     } else if (model == "dialogue") {
         if (event == "choose" && !args.empty() && dialogueRunner) {
             if (args[0] == "leave") {
@@ -2589,6 +2602,30 @@ void LandscapeScene::performWait(f32 hours) {
 void LandscapeScene::handleMenuAction(const str& action) {
     if (action == "resume" || action == "cancel") {
         screenStack.closeTop();
+    } else if (action == "save") {
+        // Timestamped manual slot; F5 owns "quick".
+        char slot[32];
+        const std::time_t now = std::time(nullptr);
+        std::tm local {};
+        if (localtime_s(&local, &now) == 0) {
+            std::strftime(slot, sizeof(slot), "save_%Y%m%d_%H%M%S", &local);
+        } else {
+            std::snprintf(slot, sizeof(slot), "save_manual");
+        }
+        performSave(slot);
+        screenStack.closeTop();
+    } else if (action == "loadmenu") {
+        vector<::ui::UiRow> rows;
+        for (const SaveSlotInfo& info : listSaveSlots()) {
+            ::ui::UiRow row;
+            row.id = info.name;
+            row.c0 = info.name;
+            row.c1 = info.timestamp;
+            rows.push_back(std::move(row));
+        }
+        uiSystem.setBool("saves", "empty", rows.empty());
+        uiSystem.setRows("saves", std::move(rows));
+        screenStack.show("saves");
     } else if (action == "wait") {
         updateMenuClockLine();
         screenStack.show("wait");

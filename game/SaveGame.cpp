@@ -1,6 +1,8 @@
 #include "game/SaveGame.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <ctime>
 #include <fstream>
 #include <sstream>
 
@@ -227,7 +229,7 @@ std::filesystem::path savePath(const str& slot) {
     return savesDirectory() / (slot + ".toml");
 }
 
-vector<str> listSaveSlots() {
+vector<SaveSlotInfo> listSaveSlots() {
     struct Slot {
         str name;
         std::filesystem::file_time_type time;
@@ -245,12 +247,22 @@ vector<str> listSaveSlots() {
     }
     std::sort(slots.begin(), slots.end(),
               [](const Slot& a, const Slot& b) { return a.time > b.time; });
-    vector<str> names;
-    names.reserve(slots.size());
+    vector<SaveSlotInfo> infos;
+    infos.reserve(slots.size());
     for (Slot& slot : slots) {
-        names.push_back(std::move(slot.name));
+        str stamp;
+        const auto system = std::chrono::clock_cast<std::chrono::system_clock>(
+            slot.time);
+        const std::time_t t = std::chrono::system_clock::to_time_t(system);
+        std::tm local {};
+        if (localtime_s(&local, &t) == 0) {
+            char buffer[24];
+            std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", &local);
+            stamp = buffer;
+        }
+        infos.push_back({ std::move(slot.name), std::move(stamp) });
     }
-    return names;
+    return infos;
 }
 
 bool writeSave(const str& slot, const data::Plugin& plugin,
