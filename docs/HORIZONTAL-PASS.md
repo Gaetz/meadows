@@ -66,13 +66,16 @@
 - Les événements timeline (`AnimEventForm.name`) → EventBus/GAS : « Hit »
   ouvre la fenêtre de dégâts, « Footstep » → cue audio par matériau.
 
-### UI
-- Écrans : `UiScreenForm` → `showScreen(name)` avec pile modale + overlay
-  HUD ; les roots de documents = les `ui/` de CHAQUE plugin du stack (le
-  UiDemoScene n'en branche qu'un — généraliser via PluginStack.baseDir).
-- Data binding : façade DataModel dans UiSystem (les types Rml restent
-  dans le .cpp) ; brancher santé/inventaire dessus.
-- Clavier/gamepad : compléter processKey/processText (souris déjà là).
+### UI — REMPLI (chantier 4, `docs/CHANTIER-4.md`)
+- ✅ FAIT : pile d'écrans (`game/ScreenStack` pur + `UiScreenForm`,
+  modaux qui pausent le sim), roots multi-plugins, façade DataModel
+  (scalaires/rows/événements — aucun type Rml en header), clavier/texte
+  (canal événementiel de platform::Input), 9 écrans P0 livrés.
+- RESTE : gamepad, localisation systématique dans les documents.
+- Pièges payés : `data-model` jamais sur `<body>` (data-for sauté
+  silencieusement), pas de data-model imbriqué, slots gelés à la
+  création du modèle → les écrans se préchargent au boot pour loguer
+  les erreurs de documents moddés.
 
 ### Audio
 - Résolveur SoundForm : variantes par poids (`SoundVariantForm`), jitters,
@@ -139,11 +142,11 @@ distincts) ; `extractScene` sur un monde 2D sans MeshRender = no-op ;
 double enregistrement de types = no-op (emplace).
 
 **Écarts CONNUS à combler dans les verticales (pas des bugs) :**
-1. **`plugins.toml` n'est lu que par l'EditorScene** — WorldDemoScene/
-   CombatArena chargent base.toml+mod en dur, LandscapeScene charge
-   landscape.toml seul. La verticale « interfaces/monde » bascule tout le
-   monde sur `loadPluginStack` (et unifie l'enregistrement des types —
-   les 2 sites complets actuels : EditorScene::onEnter et cooker Main).
+1. ~~`plugins.toml` n'est lu que par l'EditorScene~~ **CLOS (chantier 4
+   B1)** : `data/plugins.toml` pilote le JEU (LandscapeScene) et
+   l'éditeur ; enregistrement unifié dans `game/AllForms` (2 sites
+   complets restants : AllForms + cooker Main — le cooker ne linke pas
+   game/). WorldDemoScene/CombatArena restent en dur (bancs 2D, assumé).
 2. **Les exports de l'éditeur vivent dans le data/ du BUILD dir** (copié
    post-build depuis la source) : un rebuild n'écrase pas les nouveaux
    fichiers mais la divergence source/build est un piège — rapatrier à la

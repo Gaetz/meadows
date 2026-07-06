@@ -10,8 +10,8 @@
 | **Chantier 1 — Socle 3D gameplay** | ✅ FAIT 2026-07-06 — journal : `docs/CHANTIER-1.md` (joueur FPS piloté par ses stats, PNJ 100 % Forms en patrouille, MeshCache/skinning/anim data, collision terrain Jolt, arbres brique 27) |
 | **Chantier 2 — Monde habitable** (cellules 3D, éditeur de niveau+gizmos, lumières locales, kit+intérieur+portes, terrain auteuré+sculpt) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-2.md` |
 | **Chantier 3 — Vivant** (horloge, interaction E, schedules exécutés, IA hostile + combat mêlée 3D, repos) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-3.md`. Reportés : cues/audio (pas d'assets son — dev doit les déposer), Recast (fallback TerrainNavigator), barter (chantier 4), ability GAS formelle pour l'attaque joueur |
-| Chantier 4 — Interfaces (écrans RmlUi P0, GameDB/console déjà livrés en squelette, + barter reporté du ch. 3) | ⬅️ **PROCHAIN** — planifié en briques : `docs/CHANTIER-4.md` (2026-07-06) |
-| Chantier 5 — Persistance (Phase 10 : streaming + save = couche de patches) | à faire |
+| **Chantier 4 — Interfaces** (écrans RmlUi P0, barter, console en jeu, plugin stack unifié) | ✅ FAIT 2026-07-06 (**validation visuelle dev en attente**) — journal : `docs/CHANTIER-4.md`. 9 écrans (HUD/inventaire/conteneur/dialogue/barter/menus/attente/atelier), LoadoutEntryForm (§C.1), écart n°1 HORIZONTAL-PASS clos. Reportés : gamepad, localisation systématique, carte, éditeur d'UI (tous P1) |
+| Chantier 5 — Persistance (Phase 10 : streaming + save = couche de patches) | ⬅️ **PROCHAIN** |
 | Chantier 6 — P1 par valeur (quêtes outillées, économie/crime, éditeurs anim/FX/UI…) | à faire |
 | Refonte herbe (renderer) | ⏸️ en attente des recherches du dev |
 
@@ -162,8 +162,8 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 | 🔨 **Combat 3D** | P0 | v1 (chantier 3 B6) : mêlée joueur LMB (cible en cône, `weaponDamageEvent` → `applyDamage`), mort Death01 par tag. Reste : ability GAS formelle + fenêtres de hit par events d'anim (shape cast), blocage directionnel, projectiles, lock-on. |
 | 🔨 **GameplayCues (pont effets→présentation)** | P0 | Registre + `CueTable` (fallback hiérarchique) + `CueForm` + preuve (hit → étincelles CombatArena) FAITS (H7). Reste : les handlers standard (particule/son/shake résolus par CueForm) et les points d'émission systématiques — **REPORTÉ chantier 3 : aucun asset audio dans le dépôt** (le dev dépose les sons, workflow kit). |
 | ✅ **Interaction** | P0 | FAITE (chantier 3 B1/B7-lite) : E contextuel — porte (travel), prendre (inventaire), parler (placeholder dialogue), mobilier (lit 8 h / siège 1 h via `gameplay::sleep()` Phase 7). |
-| 🔨 **Mobilier & postes de travail** | P0 | `FurnitureForm` + occupancy + spawner FAITS ; PNJ : nav → claim → anim par tag (chantier 3 B3) ; joueur : repos/sommeil (B7-lite). Reste : effet GAS pendant l'usage, anims entrée/sortie, postes de travail (écrans). |
-| **Économie/marchands 3D** | P1 | Port du barter 2D ; inventaires de marchands régénérés (game clock), richesse limitée. |
+| 🔨 **Mobilier & postes de travail** | P0 | `FurnitureForm` + occupancy + spawner FAITS ; PNJ : nav → claim → anim par tag (chantier 3 B3) ; joueur : repos/sommeil (B7-lite) ; **`screen` câblé** (chantier 4 B6 : le Workbench ouvre son écran). Reste : effet GAS pendant l'usage, anims entrée/sortie, vrais écrans de craft. |
+| 🔨 **Économie/marchands 3D** | P1 | Barter v1 FAIT (chantier 4 B5) : écran deux tables, prix = goldValue × multiplicateurs moddables, or = MiscItemForm, stock/bourse par LoadoutEntryForm, richesse du marchand finie. Reste : restock (game clock), scaling charisme (P1 stats), VendorForm buy/sell % par marchand. |
 | **Crime & prime** | P1 | Témoins (perception), bounty par faction (relations existantes), gardes qui arrêtent, prison/amende. |
 | **Furtivité** | P1 | Détection (lumière P2, bruit, ligne de vue), état Sneak, dégâts sournois — la Phase 9 (stats) la prévoit. |
 | **Repos/attente 3D** | P0 | Lits/chaises via furniture markers, menu d'attente (rest existant Phase 7). |
@@ -173,11 +173,11 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
-| 🔨 **Moteur UI : RmlUi (DÉCIDÉ 2026-07-05)** | P0 | Seam FAIT (H4) : rendu sur RHI, **overlay par chemin sur les `ui/` des plugins** (un mod override un écran — prouvé), scène démo. Reste : pile d'écrans (`showScreen`), data binding vers l'état de jeu, clavier/gamepad — chantier « interfaces ». |
-| 🔨 **Rendu texte** | P0 | Couvert par RmlUi+FreeType (H4) pour les écrans. Reste : texte monde léger (nameplates) — overlay screen-space ou quads. UTF-8 partout (localisation-ready). |
-| **Écrans de jeu** | P0→P1 | P0 : HUD (santé/energie/essence/posture — stats existantes, boussole, prompts, crosshair), inventaire/équipement, dialogue, conteneur/loot, menu principal/pause, journal de quêtes. P1 : carte (monde+locale+marqueurs), barter, feuille de personnage, level-up, options complètes, écrans de chargement avec lore. |
+| ✅ **Moteur UI : RmlUi (DÉCIDÉ 2026-07-05)** | P0 | v1 FAITE (chantier 4 B1/B2) : pile d'écrans (`ScreenStack` + `UiScreenForm`), data binding (façade DataModel — scalaires/rows/événements), clavier/texte, roots multi-plugins. Reste : gamepad P1. |
+| ✅ **Rendu texte** | P0 | RmlUi+FreeType pour les écrans ; nameplates screen-space via le modèle HUD (chantier 4 B7). UTF-8 partout. |
+| 🔨 **Écrans de jeu** | P0→P1 | P0 FAITS (chantier 4) : HUD (barres/crosshair/prompt/horloge), inventaire/équipement (table SkyUI), dialogue, conteneur/loot, barter, menu principal/pause/attente, atelier placeholder. Reste P0 : journal de quêtes (avec le chantier quêtes). P1 : carte, feuille de personnage, level-up, options, boussole, écrans de chargement. |
 | **Navigation gamepad** | P1 | Focus/navigation directionnelle dans tous les écrans. |
-| **UI monde** | P0 | Nameplates/barres de vie ennemis, prompts flottants, textes de dégâts P2. |
+| 🔨 **UI monde** | P0 | Nameplates/barres de vie FAITES (hostiles/blessés, chantier 4 B7) ; prompts flottants = le prompt HUD. Reste : textes de dégâts P2. |
 | **Éditeur d'UI** | P1 | Édition de layout en jeu (ancres, conteneurs, styles), sauvegarde en données moddables. (P0 : layouts en TOML édités à la main + hot-reload.) |
 | 🔨 **Localisation** | P1 | `LocStringForm` posé (H1 — un pack de langue = un plugin qui patche `text`, doctesté). Reste : la discipline de clés dans dialogues/quêtes/UI et le lookup runtime. |
 
@@ -208,8 +208,8 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 | Fonctionnalité | Prio | Notes |
 |---|---|---|
 | ✅ **GameDB browser (l'outil central)** | P0 | v1 FAITE (H2, scène « Game DB ») : navigation par type, recherche editorId, édition par PropertyGrid réflexion, création, **export = plugin**. Reste : cross-références (« utilisé par »), duplication, et son extension en éditeur de niveau (chantier 2). |
-| ✅ **Gestionnaire de plugins interne** | P0 | v1 FAITE (H2, PluginsPanel) : load order (plugins.toml), enable/disable, **rapport de conflits par champ**. Reste : dépendances affichées, l'outil de synthesis §5.1 (chantier « interfaces »). |
-| ✅ **Console développeur** | P0 | v1 FAITE (H2) : get/set par réflexion (`EditorId.field`), find, undo/redo, REPL Lua. Reste : `spawn`, `tp`, `tgm`, `setstage` (au fil des chantiers qui apportent les systèmes visés). |
+| ✅ **Gestionnaire de plugins interne** | P0 | v1 FAITE (H2, PluginsPanel) : load order (plugins.toml — pilote désormais le JEU aussi, chantier 4 B1), enable/disable, **rapport de conflits par champ**, **dépendances affichées** (chantier 4 B7). Reste : l'outil de synthesis §5.1 (quand le besoin mord). |
+| ✅ **Console développeur** | P0 | v1 FAITE (H2) + **en jeu (F8, chantier 4 B7)** avec `spawn`/`tp`/`tgm`/`settime` (spawns transients). Reste : `setstage` (avec le chantier quêtes). |
 | 🔨 **Pipeline d'assets** | P0 | Import glTF statique+skinné+anims FAIT (brique 23 + chantier 1) ; cooker binaire couvre tous les Forms (audit) ; hot-reload textures/shaders. Reste : KTX2/Basis, **asset browser** avec previews, hot-reload meshes/anims. |
 | **Éditeur de quêtes/dialogues** | P1 | Vue graphe des stages/branches de dialogue sur les records existants (Phase 4) ; P0 = TOML à la main (déjà le cas). |
 | **Profiler** | P1 | Zones CPU + timers GPU par passe, compteurs (draws/instances/chunks — partiels), graphe de frame ; P0 minimal = timers par système dans le panneau. |

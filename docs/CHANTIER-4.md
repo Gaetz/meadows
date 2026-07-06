@@ -1,9 +1,10 @@
 # Chantier 4 — Interfaces : « les écrans du jeu »
 
-> **PLANIFIÉ (2026-07-06)** — exécution au prochain « go » du dev (même
-> mode d'une traite possible que les chantiers 2-3 si le dev le demande).
-> État global : `docs/MEADOWS-PLAN.md`. Contrat des seams :
-> `docs/HORIZONTAL-PASS.md` § UI (H4) — suivre, ne pas redessiner.
+> **FAIT (2026-07-06) — exécuté d'une traite sur « go » du dev** (même
+> mode que les chantiers 2-3). 258 tests / 77 921 assertions verts.
+> Validation visuelle dev EN ATTENTE (liste « quoi tester » dans le
+> rapport de fin de session). Journal d'exécution et pièges payés en fin
+> de fichier. État global : `docs/MEADOWS-PLAN.md`.
 
 ## Contexte
 
@@ -179,6 +180,46 @@ fait que l'affichage — un mod reskinne sans toucher à la logique.
   multi-plugins), `LandscapeScene` (loadPluginStack, intégration pile +
   HUD, migration du prompt), `ConsolePanel` (commandes), PluginsPanel
   (dépendances), StatsTuningForm (multiplicateurs barter, APPEND).
+
+## Réalisé — journal d'exécution (2026-07-06)
+
+| Brique | État | Notes |
+|---|---|---|
+| B1 socle | ✅ | `data/plugins.toml` pilote jeu ET éditeur (écart n°1 HORIZONTAL-PASS clos ; fichiers absents = `skipped`, pas une erreur) ; `game/AllForms` = site d'enregistrement unique de l'exécutable (le cooker garde sa liste : il ne linke pas game/) ; `ScreenStack` pur doctesté ; UiSystem : documents par chemin, clavier/texte, façade DataModel (scalaires + rows + événements — aucun type Rml en header) ; canal d'Input événementiel (répétition OS, molette, texte UTF-8) ; **Échap ne quitte plus l'appli** (quit = bouton du menu / croix) |
+| B2 HUD | ✅ | hud.rml overlay : barres santé/énergie/essence/posture, crosshair, horloge, prompt [E] + réplique migrés d'ImGui ; thème Norden (theme.rcss) partagé par tous les écrans |
+| B3 inventaire | ✅ | `InventoryView` pur doctesté (onglets, recherche, tri par colonne avec bascule asc/desc, sélection persistante) ; table SkyUI + panneau détail (équiper/déséquiper/utiliser) ; conteneur = même table en deux panneaux (clic = transfert, Take all) ; **le cadavre du bandit se fouille** ; l'épée du joueur est vraiment dans son sac (équipée) et le swing lit l'ÉQUIPEMENT ; `MiscItemForm` (l'or), `goldValue` APPEND sur Armor/Consumable, `restoreHunger/Thirst` (manger) ; mods d'équipement pliés dans le tick |
+| B4 dialogue | ✅ | DialogueRunner Phase 4 branché : dialogue du Villager (option gated HasItem rations — l'evaluator visible) ; clauses Lua fail-closed (VM non câblée en scène, note) |
+| B5 barter | ✅ | Or = item ordinaire ; barterBuy/Sell purs doctestés (richesse du marchand finie) ; prix = goldValue × StatsTuningForm.barterBuy/SellMult (APPEND) ; **LoadoutEntryForm** (§C.1) rolls au spawn (stock marchand, poches du bandit, bourse joueur) remplace tout loot codé en dur ; « Voyons vos marchandises » → événement OpenBarter |
+| B6 menus | ✅ | Menu principal au boot (Enter the world/Quit ; Load grisé = chantier 5), pause (Échap en Play), attente (T : 1/4/8 h — horloge + besoins, sans récup de lit), `Engine::requestQuit` ; hook `FurnitureForm.screen` réel (Workbench sur la place → workshop.rml placeholder) |
+| B7 UI monde + console | ✅ | Nameplates (hostiles/blessés seulement) via projection écran → modèle HUD ; console F8 en jeu (reflection get/set + Lua + spawn/tp/tgm/settime, spawns transients) ; PluginsPanel : dépendances ok/après/manquante |
+| B8 clôture | ✅ | Ce fichier, MEADOWS-PLAN, HORIZONTAL-PASS, userdoc, mémoire |
+
+**Écrans livrés** (`UiScreenForm` × 9, documents dans `base/ui/`) : hud
+(overlay), inventory, container, dialogue, barter, pause, mainmenu, wait,
+workshop — tous préchargés au démarrage (une erreur de document moddé se
+voit dans le log immédiatement).
+
+**Pièges payés** :
+- **`data-model` JAMAIS sur `<body>`** : les attributs du body
+  s'appliquent après le parse des enfants → les vues STRUCTURELLES
+  (data-for) sont silencieusement sautées et les enfants se lient comme
+  des vues plates qui échouent. Toujours un div englobant.
+- **`data-model` imbriqué interdit** (un re-bind dans un sous-arbre lié) ;
+  faire transiter la valeur par le modèle du sous-arbre.
+- Les modèles de données Rml **gèlent leurs slots à la création** — tout
+  nom référencé par un document doit être déclaré avant son chargement
+  (d'où le préchargement des écrans : les erreurs se voient au boot).
+- **Objets stales × 2** : changer le layout de `platform::Input` puis de
+  `StatsTuningForm` a produit deux crashs au démarrage (tas corrompu,
+  mort avant le premier log utile). Après TOUT changement de layout d'un
+  type partagé : purge des `*.dir` de NOS cibles + rebuild (leçon Phase 5,
+  payée deux fois de plus). Le log flushe désormais chaque ligne (le
+  crash n'avale plus la fin du log).
+- Le zombie `cl.exe` (C1041 vc143.pdb) revient si on lance DEUX builds en
+  parallèle (un en arrière-plan oublié) — un seul build à la fois.
+- ~~`row.cells[i]`~~ : les lignes de table passent par des champs nommés
+  plats (`c0..c4`) — l'indexation de tableaux dans les expressions Rml
+  n'est pas fiable ; les cellules nommées se lient trivialement.
 
 ## Garde-fous
 

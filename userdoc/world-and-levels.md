@@ -120,6 +120,20 @@ entity's real speed so feet don't slide). Timeline events (`AnimEventForm`
 children of a clip: footsteps, hit frames) are the animation→gameplay
 bridge.
 
+The rest of a character's sheet is child records and appended fields on
+the same `ActorForm`:
+
+- **`ActorTagForm`** children — gameplay tags (`Faction.Bandits` makes
+  it hostile).
+- **`LoadoutEntryForm`** children — starting items (`item`, `count`,
+  `chance` rolled on the seeded RNG at spawn). This IS the vendor's
+  stock and purse, the bandit's lootable pockets, the player's kit —
+  a mod adds one record to slip something into anyone's inventory.
+- **`ActorForm.dialogue`** — a `DialogueForm` guid; [E] Talk runs that
+  conversation (nodes are child records, options gated by the shared
+  condition evaluator; a node's `event` can open systems — the
+  Villager's "OpenBarter" option opens the trade screen).
+
 ## Doors and interiors
 
 An interior is its own worldspace (`WorldspaceForm` with

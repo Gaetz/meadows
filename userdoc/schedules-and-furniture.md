@@ -90,8 +90,9 @@ animTag = "Sleep"
 - The player can use furniture with **E**: a `category = "bed"` sleeps
   8 hours, anything else rests 1 hour — both advance the game clock,
   restore the sleep need and accrue Rest (injury recovery).
-- The per-use `effect` and workstation `screen` fields are declared but
-  not applied yet (UI vertical).
+- **Workstations open their screen**: set `screen` to a `UiScreenForm`
+  name and [E] shows that document instead of resting (the village
+  Workbench proves it). The per-use `effect` is still declared-only.
 
 Related: [The data model](data-model.md) ·
 [World & levels](world-and-levels.md)
