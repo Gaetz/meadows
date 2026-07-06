@@ -20,6 +20,7 @@
 #include "gameplay/condition/Condition.hpp"
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/interaction/Furniture.hpp"
+#include "gameplay/save/SaveState.hpp"
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 #include "quest/Dialogue.hpp"
@@ -315,6 +316,16 @@ private:
     void handleMenuAction(const str& action);
     void performWait(f32 hours); // clock + needs decay, NO bed recovery
     void updateMenuClockLine();
+
+    // Chantier 5 B3: the one post-spawn seam for EVERY actor (player and
+    // NPC): stat init, then saved state (when this actor was captured —
+    // its SavedStatsForm is the sentinel) or the data loadout. Returns
+    // true when saved state applied (fresh-game extras skip then).
+    bool finalizeActorSpawn(ecs::Entity entity,
+                            const core::Guid& actorFormId);
+    // Saved child records for a reference: the resolved database for now;
+    // B4 layers the pending in-memory capture on top.
+    gameplay::SavedActorRecords savedFor(const core::Guid& refGuid) const;
 
     // Chantier 4 B7: dev console in the game scene (F8) — the H2 panel
     // with world commands registered on top (spawn/tp/tgm/settime), plus

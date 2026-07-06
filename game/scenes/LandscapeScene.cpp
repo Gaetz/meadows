@@ -324,32 +324,19 @@ void LandscapeScene::onEnter() {
             }
         });
     if (playerEntity.is_alive()) {
-        const gameplay::CharacterTickContext tickCtx { derivedStats,
-                                                       gameTags, statsTuning };
-        gameplay::initializeActorStats(playerEntity, tickCtx);
-        // Chantier 4 B3: starting kit — the sword the player used to
-        // conjure from thin air now really sits in the inventory,
-        // equipped (data-driven loadouts = §C.1, later).
-        if (!playerEntity.has<gameplay::Inventory>()) {
-            playerEntity.set<gameplay::Inventory>({});
-        }
-        if (!playerEntity.has<gameplay::Equipment>()) {
-            playerEntity.set<gameplay::Equipment>({});
-        }
-        if (playerWeapon) {
+        // Chantier 5 B3: the shared post-spawn seam (stats, then saved
+        // state OR loadout). The starting kit only exists on a fresh game.
+        const bool fromSave =
+            finalizeActorSpawn(playerEntity,
+                               playerForm ? playerForm->id : core::Guid {});
+        if (!fromSave && playerWeapon) {
+            // Chantier 4 B3: the sword really sits in the bag, equipped.
             auto& bag = playerEntity.get_mut<gameplay::Inventory>();
             if (gameplay::itemCount(bag, playerWeapon->id) == 0) {
                 gameplay::addItem(bag, playerWeapon->id, 1);
             }
             playerEntity.get_mut<gameplay::Equipment>().weapon =
                 playerWeapon->id;
-        }
-        // B5: the rest of the kit (gold...) comes from LoadoutEntryForm
-        // children on the Player ActorForm — data, like every NPC.
-        if (playerForm) {
-            gameplay::applyLoadout(
-                forms, playerForm->id,
-                playerEntity.get_mut<gameplay::Inventory>(), lootRng);
         }
     } else {
         LOG_WARN("B5.5: no Player actor spawned — controller falls back to "
@@ -2043,6 +2030,45 @@ void LandscapeScene::syncScreens() {
     shownScreens = std::move(want);
 }
 
+// --- Chantier 5: the post-spawn seam -------------------------------------------------
+
+gameplay::SavedActorRecords LandscapeScene::savedFor(
+    const core::Guid& refGuid) const {
+    // B4 will consult the pending in-memory layer first; the resolved
+    // database already contains the save plugin's records after a load.
+    return gameplay::savedRecordsFor(forms, refGuid);
+}
+
+bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
+                                        const core::Guid& actorFormId) {
+    const gameplay::CharacterTickContext tickCtx { derivedStats, gameTags,
+                                                   statsTuning };
+    gameplay::initializeActorStats(entity, tickCtx);
+    if (!entity.has<gameplay::Inventory>()) {
+        entity.set<gameplay::Inventory>({});
+    }
+    if (!entity.has<gameplay::Equipment>()) {
+        entity.set<gameplay::Equipment>({});
+    }
+    core::Guid refGuid;
+    if (entity.has<world::RefId>()) {
+        refGuid = entity.get<world::RefId>().referenceId;
+    }
+    const gameplay::SavedActorRecords saved = savedFor(refGuid);
+    if (saved.stats) {
+        // Captured before: restore, never re-roll the loadout (§8 — the
+        // sentinel is the SavedStatsForm itself).
+        gameplay::applySavedState(entity, saved, gameTags);
+        return true;
+    }
+    if (actorFormId.isValid()) {
+        gameplay::applyLoadout(forms, actorFormId,
+                               entity.get_mut<gameplay::Inventory>(),
+                               lootRng);
+    }
+    return false;
+}
+
 // --- Chantier 4 B3: inventory / container ------------------------------------------
 
 void LandscapeScene::openInventoryScreen() {
@@ -3014,8 +3040,6 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
             }
         });
 
-    const gameplay::CharacterTickContext tickCtx { derivedStats, gameTags,
-                                                   statsTuning };
     // Adding a component inside .each() is a structural change on a LOCKED
     // table (flecs LOCKED_STORAGE assert) — collect here, apply after.
     vector<std::pair<ecs::Entity, core::Guid>> pendingLoadouts;
@@ -3133,16 +3157,13 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
                                  .storage = true } } });
 
             // Ground the entity (actors have no MeshRender: the B1 snap
-            // skipped them) and give it a full stat sheet.
+            // skipped them).
             transform.position.y = render::terrain::height(
                 terrain.params, transform.position.x, transform.position.z);
-            gameplay::initializeActorStats(entity, tickCtx);
-            // Chantier 4 B5: pockets from LoadoutEntryForm children —
-            // vendor stock, bandit loot, all data (§C.1). Deferred below:
-            // set<Inventory> would move the entity's locked table.
-            if (!entity.has<gameplay::Inventory>()) {
-                pendingLoadouts.emplace_back(entity, actor.id);
-            }
+            // Chantier 5 B3: stats + saved state / loadout run through
+            // finalizeActorSpawn — deferred below: it adds components,
+            // a table move on the locked iteration.
+            pendingLoadouts.emplace_back(entity, actor.id);
 
             if (npcs.empty()) {
                 characterSpot = transform.position;
@@ -3154,10 +3175,7 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
                          ->editorId);
         });
     for (auto& [entity, actorId] : pendingLoadouts) {
-        entity.set<gameplay::Inventory>({});
-        gameplay::applyLoadout(forms, actorId,
-                               entity.get_mut<gameplay::Inventory>(),
-                               lootRng);
+        finalizeActorSpawn(entity, actorId);
     }
 }
 
