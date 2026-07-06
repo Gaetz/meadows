@@ -22,6 +22,14 @@ bool CellStreamer::update(data::FormHandle worldspace, f32 focusX,
         static_cast<i32>(std::floor(focusX / space->cellSize));
     const i32 centerY =
         static_cast<i32>(std::floor(focusZ / space->cellSize));
+    if (ringValid && lastWorldspace == worldspace.value &&
+        centerX == lastCenterX && centerY == lastCenterY) {
+        return false; // same center cell -> the ring cannot have changed
+    }
+    lastCenterX = centerX;
+    lastCenterY = centerY;
+    lastWorldspace = worldspace.value;
+    ringValid = true;
 
     bool changed = false;
     // Load the ring. Cells that have no CellForm record simply don't
@@ -62,6 +70,7 @@ void CellStreamer::unloadAll() {
         loader.unloadCell(data::FormHandle { value });
     }
     resident.clear();
+    ringValid = false; // the next update() must rebuild the ring
 }
 
 } // namespace world

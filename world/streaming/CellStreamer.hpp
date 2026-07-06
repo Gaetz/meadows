@@ -40,6 +40,12 @@ private:
     const WorldModel& model;
     const data::FormDatabase& forms;
     std::unordered_set<u32> resident; // cell handle values we loaded
+    // The ring can only change when the focus crosses a cell border (or
+    // after unloadAll): skip the per-frame lookups otherwise.
+    i32 lastCenterX { 0 };
+    i32 lastCenterY { 0 };
+    u32 lastWorldspace { 0 };
+    bool ringValid { false };
 };
 
 } // namespace world

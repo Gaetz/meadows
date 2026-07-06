@@ -256,6 +256,16 @@ void LandscapeScene::onEnter() {
     world = ecs::World {}; // fresh on re-enter
     world::registerSceneComponents(world);
     gameplay::registerGameplayComponents(world);
+    // Per-frame queries, built once against the fresh world.
+    doorQuery = world.handle()
+                    .query<const world::Transform, const world::DoorTarget>();
+    interactQuery =
+        world.handle().query<const world::Transform, const world::RefId>();
+    colliderQuery =
+        world.handle()
+            .query<const world::Transform, const world::RefId,
+                   const world::MeshRender>();
+    nonCollidable.clear();
     categories = world::FormCategoryRegistry {};
     world::registerCoreCategories(categories);
     spawner = world::Spawner {};
@@ -1497,16 +1507,14 @@ void LandscapeScene::updateInteraction(f32 dt) {
                 promptKind = kind;
             }
         };
-        world.handle()
-            .query<const world::Transform, const world::DoorTarget>()
-            .each([&](flecs::entity e, const world::Transform& transform,
-                      const world::DoorTarget&) {
-                consider(e, transform.position, PromptKind::Door, 3.0f);
-            });
-        world.handle()
-            .query<const world::Transform, const world::RefId>()
-            .each([&](flecs::entity e, const world::Transform& transform,
-                      const world::RefId&) {
+        doorQuery.each([&](flecs::entity e,
+                           const world::Transform& transform,
+                           const world::DoorTarget&) {
+            consider(e, transform.position, PromptKind::Door, 3.0f);
+        });
+        interactQuery.each([&](flecs::entity e,
+                               const world::Transform& transform,
+                               const world::RefId&) {
                 const ecs::Entity entity { e };
                 if (entity.has<world::ItemMarker>()) {
                     consider(e, transform.position, PromptKind::Item, 2.4f);
@@ -1936,12 +1944,16 @@ void LandscapeScene::updateGameUi(f32 dt) {
         uiTextInputOn = wantText;
     }
     // Two-way search box: Rml writes into the bound slot, we mirror it
-    // into the view when it changes (B3).
+    // into the view when it changes (B3). Only the item screens carry it.
     if (modal) {
-        const str search = uiSystem.getString("inventory", "search");
-        if (search != invView.search()) {
-            invView.setSearch(search);
-            pushItemModels();
+        const ScreenStack::Screen* top = screenStack.topModal();
+        if (top && (top->name == "inventory" || top->name == "container" ||
+                    top->name == "barter")) {
+            const str search = uiSystem.getString("inventory", "search");
+            if (search != invView.search()) {
+                invView.setSearch(search);
+                pushItemModels();
+            }
         }
     }
 
@@ -2864,25 +2876,27 @@ void LandscapeScene::updateStaticColliders() {
             ++it;
         }
     }
-    world.handle()
-        .query<const world::Transform, const world::RefId,
-               const world::MeshRender>()
-        .each([&](flecs::entity e, const world::Transform& transform,
-                  const world::RefId& ref, const world::MeshRender& mesh) {
+    colliderQuery.each(
+        [&](flecs::entity e, const world::Transform& transform,
+            const world::RefId& ref, const world::MeshRender& mesh) {
             const u64 id = e.id();
-            if (staticColliders.contains(id)) {
+            if (staticColliders.contains(id) ||
+                nonCollidable.contains(id)) {
                 return;
             }
             // `collides` read through reflection: any base form declaring
-            // it opts in (StaticForm today, DoorForm...).
+            // it opts in (StaticForm today, DoorForm...). The negative
+            // verdict is cached — reflection must not run per frame.
             const data::Form* base = forms.get(ref.base);
             const reflect::TypeInfo* type = forms.typeOf(ref.base);
             if (!base || !type) {
+                nonCollidable.insert(id);
                 return;
             }
             const reflect::FieldInfo* field = type->findField("collides");
             if (!field || field->kind != reflect::FieldKind::Bool ||
                 !std::get<bool>(field->get(base))) {
+                nonCollidable.insert(id);
                 return;
             }
             const MeshCache::CpuMesh* cpu = meshCache->cpuMesh(mesh.model);
@@ -2907,6 +2921,9 @@ void LandscapeScene::updateStaticColliders() {
 // Skipped for: interior cells (no terrain — authored y is absolute) and
 // base forms with snapToGround = false (building modules on a pad).
 void LandscapeScene::snapCellEntities() {
+    // Entities changed (cell ring, travel, spawn): stale negative
+    // collider verdicts go with them.
+    nonCollidable.clear();
     if (editMode) {
         return; // the editor owns transforms while it is active
     }

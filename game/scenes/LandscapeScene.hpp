@@ -185,6 +185,13 @@ private:
     data::PluginStack pluginStack; // owns the plugins behind `forms`
     assets::AssetDatabase assetDb; // guid -> file, layered per plugin order
     ecs::World world;
+    // Cached flecs queries for the PER-FRAME paths (creating a query is an
+    // allocation + registry insert — never per frame). Handles into
+    // `world`; rebuilt right after it in onEnter.
+    flecs::query<const world::Transform, const world::DoorTarget> doorQuery;
+    flecs::query<const world::Transform, const world::RefId> interactQuery;
+    flecs::query<const world::Transform, const world::RefId,
+                 const world::MeshRender> colliderQuery;
 
     // Chantier 2 B1: cells stream around the player (synchronous ring —
     // async + persistence is the « persistance » chantier). References
@@ -437,8 +444,12 @@ private:
     uptr<phys::CharacterBody> debugCapsule;
     // Chantier 2 B2: one Jolt mesh body per collidable spawned static,
     // cooked from the MeshCache CPU copy once resident, dropped when the
-    // entity's cell unloads. Keyed by flecs entity id.
+    // entity's cell unloads. Keyed by flecs entity id. `nonCollidable`
+    // is the negative verdict cache: entities whose base form says no
+    // (reflection) skip the per-frame re-check until the next cell change
+    // (snapCellEntities clears it).
     std::unordered_map<u64, phys::BodyId> staticColliders;
+    std::unordered_set<u64> nonCollidable;
     void updateStaticColliders();
 
     // B5: first-person Play mode (the game IS first-person — acted

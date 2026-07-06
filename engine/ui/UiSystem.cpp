@@ -744,6 +744,9 @@ void UiSystem::setRows(const str& model, vector<UiRow> rows) {
     if (it == pimpl->models.end()) {
         return;
     }
+    if (it->second->rows == rows) {
+        return; // dirtying rebuilds the data-for — not on unchanged data
+    }
     it->second->rows = std::move(rows);
     it->second->handle.DirtyVariable("rows");
 }

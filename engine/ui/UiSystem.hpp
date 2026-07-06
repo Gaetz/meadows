@@ -26,6 +26,8 @@ struct UiRow {
     str c0, c1, c2, c3, c4;
     bool selected { false };
     str tag;
+
+    bool operator==(const UiRow&) const = default;
 };
 
 // Declares a data model and its slots up front — RmlUi freezes a model's
