@@ -10,6 +10,10 @@
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/physics/Physics.hpp"
 #include "game/MeshCache.hpp"
+#include "gameplay/ability/DerivedStats.hpp"
+#include "gameplay/ability/GameplayEffects.hpp"
+#include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/stats/StatsTuning.hpp"
 #include "game/SceneSubmit.hpp"
 #include "game/TerrainCollision.hpp"
 #include "game/TextureCache.hpp"
@@ -52,6 +56,11 @@ public:
     void drawUi() override;
 
 private:
+    // Themed panel sections (drawUi wraps them in collapsing headers).
+    void drawGameplayUi();
+    void drawSkyUi();
+    void drawRenderUi();
+
     // Offscreen color+depth target at window size, recreated on resize.
     void ensureOffscreenTarget(rhi::Device& device, u32 width, u32 height);
     void destroyOffscreenTarget(rhi::Device& device);
@@ -80,6 +89,15 @@ private:
 
     render::FlyCamera flyCamera;
     f32 timeSeconds { 0.0f };
+
+    // Panel layout: themed collapsing sections, toggled by click or F-key
+    // (F1-F4 via ImGui's own key state — no platform::Key extension);
+    // F10 hides the whole panel (screenshots, immersion).
+    bool uiPanelVisible { true };
+    bool uiGameplayOpen { true };
+    bool uiTerrainOpen { false };
+    bool uiSkyOpen { false };
+    bool uiRenderOpen { false };
 
     uptr<render::ShaderLibrary> shaders;
     render::TerrainSystem terrain;
@@ -190,6 +208,30 @@ private:
     uptr<phys::PhysicsWorld> physics;
     uptr<TerrainCollision> terrainCollision;
     uptr<phys::CharacterBody> debugCapsule;
+
+    // B5: first-person Play mode (the game IS first-person — acted
+    // decision). The player is a kinematic capsule, the camera sits at eye
+    // height, the mouse is always captured; Fly stays the dev camera.
+    // Toggle: F key or the checkbox.
+    bool playMode { false };
+    uptr<phys::CharacterBody> player;
+    Vec3 playerVelocity { 0.0f }; // smoothed horizontal velocity (m/s)
+    f32 jumpSpeed { 5.0f };       // jump power stat = the P1 stats pass
+    void enterPlayMode();
+    void exitPlayMode();
+    void updatePlayer(f32 dt);
+
+    // B5.5: the player is a GAS actor (docs/STATS.md) — spawned from the
+    // "Player" ActorForm, ticked by tickCharacter; the controller READS
+    // the derived movementSpeed/acceleration currents and pays sprint
+    // through the SprintCost GameplayEffect (§2.9: never set directly).
+    gameplay::DerivedStatRegistry derivedStats;
+    gameplay::GameplayTagRegistry gameTags;
+    gameplay::StatsTuningForm statsTuning;
+    ecs::Entity playerEntity {};
+    f32 sprintCostAccumulator { 0.0f };
+    const gameplay::EffectForm* sprintCostEffect { nullptr };
+    const gameplay::EffectForm* testWoundEffect { nullptr };
 
     rhi::TextureHandle offscreenColor {};
     rhi::TextureHandle offscreenDepth {};

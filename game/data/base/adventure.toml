@@ -65,6 +65,55 @@ displayName = "Painted rock"
 model = "2b5e7d10-0000-4000-8000-0000000000c1"
 material = "2b5e7d10-0000-4000-8000-0000000000c3"
 
+# --- The player (B5.5) ------------------------------------------------------
+# The player IS a character (docs/STATS.md): an ActorForm spawned like any
+# actor — full stat sheet, GAS. The first-person controller reads the
+# DERIVED movementSpeed/acceleration (injuries and buffs genuinely change
+# how you move) and pays sprint through a GameplayEffect (§2.9).
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000a0"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "Player"
+displayName = "The Adventurer"
+maxHealth = 100.0
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000a1"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "2b5e7d10-0000-4000-8000-0000000000a0"
+position = [33.0, 0.0, 367.0]
+
+# Sprint pays energy: one instant tick every half second while sprinting.
+# The energy spend pauses regen for a beat (default), like any exertion.
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000a2"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SprintCost"
+attribute = "energy"
+op = "add"
+magnitude = -1.5
+
+# Dev-test debuff: halves movementSpeed for 10 s — the visible proof that
+# the controller obeys the stat pipeline (a real leg injury does the same).
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000a3"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "TestLegWound"
+attribute = "movementSpeed"
+op = "multiply"
+magnitude = 0.5
+duration = "duration"
+durationSeconds = 10.0
+
 # --- Character animation (B3): clips + locomotion graph --------------------
 # Clips point INTO the glTF asset by animation name; states/transitions are
 # CHILD records of the graph (a mod adds a state or retunes a threshold by

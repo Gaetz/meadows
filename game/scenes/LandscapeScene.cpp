@@ -17,12 +17,18 @@
 #include "engine/FrameContext.hpp"
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/platform/Input.hpp"
 #include "engine/platform/Paths.hpp"
 #include "engine/platform/Window.hpp"
 #include "engine/render/landscape/FrameUniforms.hpp"
 #include "data/forms/AnimForms.hpp"
+#include "data/forms/CoreForms.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/GameplayAbility.hpp"
+#include "gameplay/actors/CharacterTick.hpp"
+#include "gameplay/stats/CharacterStats.hpp"
 #include "world/scene/AnimBridge.hpp"
 #include "world/scene/Spawner.hpp"
 
@@ -31,6 +37,13 @@ namespace game {
 namespace {
 
 constexpr const char* kTonemapShader = "tonemap";
+
+// B5.5: stat-space -> world mapping (docs/STATS.md §3; the CombatArena's
+// kSpeedScale precedent, recalibrated for meters). Default sheet (~102):
+// jog ~3.4 m/s, sprint x1.6 ~5.4 m/s, velocity settles in ~0.1 s.
+constexpr f32 kSpeedScale3D = 1.0f / 30.0f; // movementSpeed stat -> m/s
+constexpr f32 kSprintMult = 1.6f;           // "sprint multiplies" (STATS.md)
+constexpr f32 kAccelRate3D = 0.12f;         // acceleration stat -> 1/s ramp
 
 // Lengyel's oblique near plane: bends the projection's near plane onto an
 // arbitrary view-space plane, so the mirrored render clips everything below
@@ -57,9 +70,12 @@ void LandscapeScene::onEnter() {
     // Load the moddable data (§5): the landscape tuning plugin, then the
     // adventure plugin (props/NPCs of the 3D gameplay socle) on top.
     registerLandscapeFormTypes(formTypes);
-    data::registerVisualFormTypes(formTypes); // MaterialForm, StaticForm
-    data::registerAnimFormTypes(formTypes);   // clips + locomotion graph
-    world::registerWorldFormTypes(formTypes); // ReferenceForm, markers...
+    data::registerCoreFormTypes(formTypes);       // ActorForm (the player)
+    data::registerVisualFormTypes(formTypes);     // MaterialForm, StaticForm
+    data::registerAnimFormTypes(formTypes);       // clips + locomotion graph
+    world::registerWorldFormTypes(formTypes);     // ReferenceForm, markers...
+    gameplay::registerGameplayFormTypes(formTypes); // EffectForm (sprint...)
+    gameplay::registerStatsFormTypes(formTypes);    // StatsTuningForm (mods)
     const auto landscapePlugin = data::loadPluginFile(
         platform::executableDir() / "data" / "base" / "landscape.toml",
         formTypes);
@@ -152,24 +168,63 @@ void LandscapeScene::onEnter() {
     terrainCollision =
         std::make_unique<TerrainCollision>(*physics, terrain.params);
 
+    // B5.5: the character-stats runtime shared by every actor in the scene
+    // (the player first; the NPC joins in B6) — same setup as CombatArena.
+    statsTuning = gameplay::resolveStatsTuning(forms);
+    derivedStats = gameplay::DerivedStatRegistry {};
+    gameplay::registerCoreDerivedStats(derivedStats, statsTuning);
+    gameTags = gameplay::GameplayTagRegistry {};
+    gameTags.registerTag("State.Dead");
+    gameTags.registerTag("State.Staggered");
+    gameTags.registerTag("State.Paralyzed");
+    gameTags.registerTag("State.Exhausted");
+    for (const char* statusTag :
+         { "Status.Poisoned", "Status.Bleeding", "Status.Mental",
+           "Status.Diseased", "Status.Cursed", "Status.Dying",
+           "Status.HarmonyBroken", "Status.Ignited", "Status.Glaciated",
+           "Status.Electrocuted" }) {
+        gameTags.registerTag(statusTag);
+    }
+    gameplay::registerStatsRuntimeTags(gameTags);
+    sprintCostEffect =
+        data::findByEditorId<gameplay::EffectForm>(forms, "SprintCost");
+    testWoundEffect =
+        data::findByEditorId<gameplay::EffectForm>(forms, "TestLegWound");
+
     world = ecs::World {}; // fresh on re-enter
     world::registerSceneComponents(world);
+    gameplay::registerGameplayComponents(world);
     world::FormCategoryRegistry categories;
     world::registerCoreCategories(categories);
     world::Spawner spawner;
     world::registerCoreSpawners(spawner);
     world::SpawnContext spawnCtx { world, forms, categories };
+    const auto* playerForm =
+        data::findByEditorId<data::ActorForm>(forms, "Player");
+    playerEntity = ecs::Entity {};
     u32 spawned = 0;
     data::forEach<world::ReferenceForm>(
         forms, [&](const world::ReferenceForm& reference) {
             if (!reference.enabled || reference.prefab.isValid()) {
                 return; // disabled, or a prefab TEMPLATE (never self-spawns)
             }
-            if (spawner.spawn(spawnCtx, reference, ecs::Entity {})
-                    .is_alive()) {
+            const ecs::Entity entity =
+                spawner.spawn(spawnCtx, reference, ecs::Entity {});
+            if (entity.is_alive()) {
                 ++spawned;
+                if (playerForm && reference.baseForm == playerForm->id) {
+                    playerEntity = entity;
+                }
             }
         });
+    if (playerEntity.is_alive()) {
+        const gameplay::CharacterTickContext tickCtx { derivedStats,
+                                                       gameTags, statsTuning };
+        gameplay::initializeActorStats(playerEntity, tickCtx);
+    } else {
+        LOG_WARN("B5.5: no Player actor spawned — controller falls back to "
+                 "fixed speeds");
+    }
     // B1 convention: authored position.y is an offset above the terrain —
     // ground every mesh prop (hand-authored heights arrive with the level
     // editor, chantier 2).
@@ -404,7 +459,9 @@ void LandscapeScene::onExit() {
     characterGraphDesc = anim::GraphDesc {};
     characterClips.clear();
     characterSkeleton = anim::Skeleton {};
-    // B4 physics: capsule -> tiles -> world (each references the previous).
+    // B4/B5 physics: bodies -> tiles -> world (each references the previous).
+    playMode = false;
+    player.reset();
     debugCapsule.reset();
     terrainCollision.reset();
     physics.reset();
@@ -581,14 +638,24 @@ void LandscapeScene::update(f32 dt) {
     if (meshCache) {
         meshCache->pumpUploads();
     }
-    // B4: physics tick + collision tiles around the camera; the debug
-    // capsule free-falls (zero desired velocity) and rides the terrain.
+    // B4/B5: physics tick + collision tiles around the focus (the player
+    // in Play mode, the camera in Fly); the debug capsule free-falls.
     if (physics) {
         physics->tick(dt);
-        terrainCollision->update(flyCamera.camera.position);
+        terrainCollision->update(playMode && player
+                                     ? player->position()
+                                     : flyCamera.camera.position);
         if (debugCapsule) {
             debugCapsule->move({ 0.0f, 0.0f, 0.0f }, dt);
         }
+    }
+    // B5.5: the character pipeline ticks the player (effects, regen,
+    // exhaustion, injuries...) — game time 1:1 with real time until the
+    // game clock joins the scene.
+    if (playerEntity.is_alive()) {
+        const gameplay::CharacterTickContext tickCtx { derivedStats,
+                                                       gameTags, statsTuning };
+        gameplay::tickCharacter(playerEntity, dt, dt, tickCtx);
     }
     snapshot.meshes.clear();
     extractMeshes(world, snapshot);
@@ -653,10 +720,21 @@ void LandscapeScene::update(f32 dt) {
         applyWeather(blended);
     }
 
-    // Don't steal the mouse from ImGui: clicking a panel must not mouselook.
-    const bool allowCapture = !ImGui::GetIO().WantCaptureMouse;
-    flyCamera.update(engine->getInput(), engine->getWindow(), dt,
-                     allowCapture);
+    // B5: F toggles first-person Play mode (unless ImGui owns the
+    // keyboard). In Play the player drives; Fly stays the dev camera.
+    if (engine->getInput().wasPressed(platform::Key::F) &&
+        !ImGui::GetIO().WantCaptureKeyboard) {
+        playMode ? exitPlayMode() : enterPlayMode();
+    }
+    if (playMode && player) {
+        updatePlayer(dt);
+    } else {
+        // Don't steal the mouse from ImGui: clicking a panel must not
+        // mouselook.
+        const bool allowCapture = !ImGui::GetIO().WantCaptureMouse;
+        flyCamera.update(engine->getInput(), engine->getWindow(), dt,
+                         allowCapture);
+    }
     if (animateTime) {
         // Full day/night cycle in two minutes.
         sky.timeOfDay += dt * (24.0f / 120.0f);
@@ -736,6 +814,114 @@ void LandscapeScene::drawSceneMeshes(engine::FrameContext& frame) {
         frame.cmd.setVertexBuffer(0, mesh.vertices);
         frame.cmd.setIndexBuffer(mesh.indices, rhi::IndexFormat::U32);
         frame.cmd.drawIndexed(mesh.indexCount);
+    }
+}
+
+// --- B5: first-person player -----------------------------------------------------
+
+void LandscapeScene::enterPlayMode() {
+    if (!physics) {
+        return;
+    }
+    // Spawn the capsule under the camera, feet grounded on the height
+    // function (+0.5 m so a slope never pins the spawn into the field).
+    Vec3 feet = flyCamera.camera.position;
+    feet.y = render::terrain::height(terrain.params, feet.x, feet.z) + 0.5f;
+    player =
+        std::make_unique<phys::CharacterBody>(*physics, 0.3f, 1.8f, feet);
+    playerVelocity = Vec3 { 0.0f };
+    playMode = true;
+    engine->getWindow().setRelativeMouseMode(true);
+}
+
+void LandscapeScene::exitPlayMode() {
+    playMode = false;
+    player.reset();
+    engine->getWindow().setRelativeMouseMode(false);
+    // The camera stays where the player stood — Fly resumes from there.
+}
+
+void LandscapeScene::updatePlayer(f32 dt) {
+    platform::Input& input = engine->getInput();
+
+    // Mouselook, always captured in Play (no LMB gymnastics in a game).
+    const Vec2 look = input.mouseDelta();
+    flyCamera.camera.yaw += look.x * flyCamera.lookSensitivity;
+    flyCamera.camera.pitch = glm::clamp(
+        flyCamera.camera.pitch - look.y * flyCamera.lookSensitivity,
+        glm::radians(-89.0f), glm::radians(89.0f));
+
+    // Camera-relative intent, flattened to the horizontal plane (§ the
+    // controller OWNS motion — anims stay in place).
+    const f32 yaw = flyCamera.camera.yaw;
+    const Vec3 forward { std::sin(yaw), 0.0f, -std::cos(yaw) };
+    const Vec3 right { std::cos(yaw), 0.0f, std::sin(yaw) };
+    Vec3 wish { 0.0f };
+    if (input.isDown(platform::Key::W)) {
+        wish += forward;
+    }
+    if (input.isDown(platform::Key::S)) {
+        wish -= forward;
+    }
+    if (input.isDown(platform::Key::D)) {
+        wish += right;
+    }
+    if (input.isDown(platform::Key::A)) {
+        wish -= right;
+    }
+    const bool moving = glm::dot(wish, wish) > 0.0f;
+
+    // B5.5: speeds come from the CURRENT derived stats (docs/STATS.md §3
+    // — stat-space ~100 = nominal; injuries/buffs move them live). The
+    // controller only READS attributes (§2.9); sprint pays energy through
+    // the SprintCost effect below. Fallback keeps the scene alive without
+    // a Player actor.
+    f32 jog = 100.0f * kSpeedScale3D;
+    f32 accelRate = 100.0f * kAccelRate3D;
+    f32 energy = 100.0f;
+    if (playerEntity.is_alive()) {
+        const auto& sys = playerEntity.get<gameplay::AbilitySystem>();
+        jog = gameplay::currentValueOf(sys, gameplay::attr("movementSpeed")) *
+              kSpeedScale3D;
+        accelRate =
+            gameplay::currentValueOf(sys, gameplay::attr("acceleration")) *
+            kAccelRate3D;
+        energy = gameplay::currentValueOf(sys, gameplay::attr("energy"));
+    }
+    const bool sprinting = moving && input.isDown(platform::Key::Shift) &&
+                           energy > 1.0f;
+    const f32 targetSpeed = sprinting ? jog * kSprintMult : jog;
+    const Vec3 target =
+        moving ? glm::normalize(wish) * targetSpeed : Vec3 { 0.0f };
+    // Exponential smoothing toward the target: snappy, never binary.
+    playerVelocity += (target - playerVelocity) *
+                      (1.0f - std::exp(-accelRate * dt));
+    if (input.wasPressed(platform::Key::Space)) {
+        player->jump(jumpSpeed);
+    }
+    player->move(playerVelocity, dt);
+
+    // Sprint cost: one instant GameplayEffect per half second (§2.9 — the
+    // ONLY way energy moves; the spend also pauses regen for a beat).
+    if (sprinting && sprintCostEffect && playerEntity.is_alive()) {
+        sprintCostAccumulator += dt;
+        while (sprintCostAccumulator >= 0.5f) {
+            sprintCostAccumulator -= 0.5f;
+            auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
+            auto& sys = playerEntity.get_mut<gameplay::AbilitySystem>();
+            gameplay::applyEffect(set, sys, *sprintCostEffect, gameTags);
+        }
+    } else {
+        sprintCostAccumulator = 0.0f;
+    }
+
+    // Eyes 1.70 m above the feet; the ENTITY transform tracks the capsule
+    // (the sim's view of the player — extract/saves read this, not Jolt).
+    flyCamera.camera.position =
+        player->position() + Vec3 { 0.0f, 1.7f, 0.0f };
+    if (playerEntity.is_alive()) {
+        playerEntity.get_mut<world::Transform>().position =
+            player->position();
     }
 }
 
@@ -1165,44 +1351,85 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 }
 
 void LandscapeScene::drawUi() {
+    // F10 hides/shows the whole panel (works even while the mouse is
+    // captured in Play — ImGui keeps its own keyboard state).
+    if (ImGui::IsKeyPressed(ImGuiKey_F10, false)) {
+        uiPanelVisible = !uiPanelVisible;
+    }
+    if (!uiPanelVisible) {
+        return;
+    }
+    // A themed section: header click and F-key both toggle the same state.
+    const auto section = [](const char* label, ImGuiKey key, bool& open) {
+        if (ImGui::IsKeyPressed(key, false)) {
+            open = !open;
+        }
+        ImGui::SetNextItemOpen(open, ImGuiCond_Always);
+        open = ImGui::CollapsingHeader(label);
+        return open;
+    };
+
     ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::TextUnformatted("Brick 24: weather states with faded transitions.");
     ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate,
                 1000.0f / ImGui::GetIO().Framerate);
-    ImGui::TextUnformatted(
-        "Hold LMB: mouselook | WASD: move | E/Space: up | Q/Ctrl: down\n"
-        "Shift: speed boost");
     const Vec3 p = flyCamera.camera.position;
     ImGui::Text("Position: %.1f  %.1f  %.1f", p.x, p.y, p.z);
-    ImGui::SliderFloat("Move speed (m/s)", &flyCamera.moveSpeed, 2.0f, 150.0f,
-                       "%.0f", ImGuiSliderFlags_Logarithmic);
-    ImGui::Separator();
-    ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
-                terrain.residentCount(), terrain.drawnLastFrame(),
-                terrain.pendingCount(), terrain.uploadsLastFrame());
-    ImGui::Text("Prop chunks drawn: %u | occluded CPU: %u | GPU: %u",
-                vegetation.drawnLastFrame(), occlusion.occludedCount(),
-                gpuOcclusion.lastOccludedCount());
-    ImGui::Checkbox("Occlusion culling (A/B)", &occlusionUi);
-    ImGui::SameLine();
-    ImGui::Checkbox("GPU Hi-Z", &gpuOcclusionUi);
-    ImGui::Text("Grass blades: %u | props: %u", grass.instanceTotal(),
-                vegetation.propTotal());
-    ImGui::InputScalar("Seed", ImGuiDataType_U32, &terrain.params.seed);
-    ImGui::SameLine();
-    if (ImGui::Button("Regenerate")) {
-        regenerateRequested = true; // applied at the top of the next render
+    if (playMode) {
+        ImGui::TextUnformatted(
+            "PLAY  WASD: move | Shift: sprint | Space: jump | F: fly");
+    } else {
+        ImGui::TextUnformatted(
+            "FLY  LMB: look | WASD+E/Q: move | Shift: boost | F: play");
+        ImGui::SliderFloat("Fly speed (m/s)", &flyCamera.moveSpeed, 2.0f,
+                           150.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
     }
-    // Water plane, sand band and material weights follow live; the scatter
-    // (grass/trees/props) is baked per chunk — Regenerate to re-align it.
-    ImGui::SliderFloat("Sea level (m)", &terrain.params.seaLevel, 0.0f, 40.0f,
-                       "%.0f");
-    ImGui::Checkbox("Wireframe (LOD debug)", &wireframeUi);
+    ImGui::TextDisabled("F1-F4: sections | F10: hide panel");
     ImGui::Separator();
+
+    if (section("Gameplay — player, NPC, physics  [F1]", ImGuiKey_F1,
+                uiGameplayOpen)) {
+        drawGameplayUi();
+    }
+
+    if (section("Terrain & streaming  [F2]", ImGuiKey_F2, uiTerrainOpen)) {
+        ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
+                    terrain.residentCount(), terrain.drawnLastFrame(),
+                    terrain.pendingCount(), terrain.uploadsLastFrame());
+        ImGui::Text("Prop chunks drawn: %u | occluded CPU: %u | GPU: %u",
+                    vegetation.drawnLastFrame(), occlusion.occludedCount(),
+                    gpuOcclusion.lastOccludedCount());
+        ImGui::Checkbox("Occlusion culling (A/B)", &occlusionUi);
+        ImGui::SameLine();
+        ImGui::Checkbox("GPU Hi-Z", &gpuOcclusionUi);
+        ImGui::Text("Grass blades: %u | props: %u", grass.instanceTotal(),
+                    vegetation.propTotal());
+        ImGui::InputScalar("Seed", ImGuiDataType_U32, &terrain.params.seed);
+        ImGui::SameLine();
+        if (ImGui::Button("Regenerate")) {
+            regenerateRequested = true; // applied at the next render
+        }
+        // Water plane, sand band and material weights follow live; the
+        // scatter (grass/trees/props) is baked per chunk — Regenerate to
+        // re-align it.
+        ImGui::SliderFloat("Sea level (m)", &terrain.params.seaLevel, 0.0f,
+                           40.0f, "%.0f");
+        ImGui::Checkbox("Wireframe (LOD debug)", &wireframeUi);
+    }
+
+    if (section("Sky, weather & time  [F3]", ImGuiKey_F3, uiSkyOpen)) {
+        drawSkyUi();
+    }
+
+    if (section("Rendering & post-FX  [F4]", ImGuiKey_F4, uiRenderOpen)) {
+        drawRenderUi();
+    }
+    ImGui::End();
+}
+
+void LandscapeScene::drawSkyUi() {
     ImGui::SliderFloat("Time of day (h)", &sky.timeOfDay, 0.0f, 24.0f,
                        "%.1f");
     ImGui::Checkbox("Animate (24 h in 2 min)", &animateTime);
-    ImGui::Separator();
     if (!weathers.empty()) {
         // "(manual)" entry + one per WeatherForm, separated by '\0' as
         // ImGui::Combo expects (c_str() supplies the double terminator).
@@ -1238,8 +1465,10 @@ void LandscapeScene::drawUi() {
         ImGui::SliderFloat("Saturation", &saturationUi, 0.0f, 1.3f, "%.2f");
         ImGui::SliderFloat("Warmth (dawn/dusk)", &warmthUi, 0.0f, 1.0f,
                            "%.2f");
-        ImGui::Separator();
     }
+}
+
+void LandscapeScene::drawGameplayUi() {
     if (characterReady && characterAnim) {
         // B3: the locomotion graph from adventure.toml — the slider is the
         // pretend entity speed; watch idle/walk/run switch with cross-fades
@@ -1268,6 +1497,35 @@ void LandscapeScene::drawUi() {
         ImGui::Separator();
     }
     if (physics) {
+        // B5: first-person Play mode.
+        bool play = playMode;
+        if (ImGui::Checkbox("Play mode (B5) — press F", &play)) {
+            play ? enterPlayMode() : exitPlayMode();
+        }
+        if (playMode) {
+            ImGui::TextUnformatted(
+                "WASD: move | Shift: sprint | Space: jump | F: back to Fly");
+        }
+        if (playerEntity.is_alive()) {
+            // B5.5: the stats that DRIVE the controller, live.
+            const auto& sys = playerEntity.get<gameplay::AbilitySystem>();
+            ImGui::Text(
+                "Player: energy %.0f/%.0f | moveSpeed %.0f | accel %.0f "
+                "| speed %.1f m/s",
+                gameplay::currentValueOf(sys, gameplay::attr("energy")),
+                gameplay::currentValueOf(sys, gameplay::attr("maxEnergy")),
+                gameplay::currentValueOf(sys,
+                                         gameplay::attr("movementSpeed")),
+                gameplay::currentValueOf(sys, gameplay::attr("acceleration")),
+                glm::length(playerVelocity));
+            if (testWoundEffect &&
+                ImGui::Button("Test: leg wound, 10 s (B5.5)")) {
+                // Click in Fly, press F, walk: half speed until it expires.
+                auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
+                auto& asys = playerEntity.get_mut<gameplay::AbilitySystem>();
+                gameplay::applyEffect(set, asys, *testWoundEffect, gameTags);
+            }
+        }
         // B4: drop a kinematic capsule from the camera — it falls, lands
         // on the height-field tiles, and rides slopes (magenta box).
         if (ImGui::Button("Drop capsule here (B4)")) {
@@ -1282,8 +1540,10 @@ void LandscapeScene::drawUi() {
                                                  : "(falling)");
         }
         ImGui::Text("Collision tiles: %u", terrainCollision->tileCount());
-        ImGui::Separator();
     }
+}
+
+void LandscapeScene::drawRenderUi() {
     ImGui::Checkbox("Stylized lighting (BotW A/B)", &stylizedUi);
     ImGui::Checkbox("Tree leaf cards (perf A/B)", &leafCardsUi);
     ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
@@ -1312,7 +1572,6 @@ void LandscapeScene::drawUi() {
                        "%.2f");
     ImGui::SliderFloat("Cloud shadow strength", &cloudShadowUi, 0.0f, 1.0f,
                        "%.2f");
-    ImGui::End();
 }
 
 } // namespace game
