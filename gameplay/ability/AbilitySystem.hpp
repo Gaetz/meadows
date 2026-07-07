@@ -39,10 +39,12 @@ struct ActiveEffect {
 
 // The AbilitySystem (the ASC, §6): one per actor (player and NPC alike). Owns
 // the runtime gameplay state — owned tags, the current-value overlay, and the
-// active effects (granted abilities in 3d). Runtime state only: serialization is
-// Phase 8 (BaseValues live in the reflected AttributeSet; the active-effects
-// list needs the deferred container story). Not reflected — its members
-// (containers) are not reflectable; it is a plain flecs component.
+// active effects (granted abilities in 3d). Runtime state only. Persistence
+// (save layer, chantier 5): BaseValues live in the reflected AttributeSet; the
+// active durational effects are mirrored as SavedEffect records by SaveState
+// (captureActiveEffects / restoreActiveEffect; currents re-derived on load, §6).
+// Not reflected — its members (containers) are not reflectable; it is a plain
+// flecs component.
 struct AbilitySystem {
     TagContainer tags;
     std::unordered_map<u32 /*attr field id*/, f32> current; // current-value overlay

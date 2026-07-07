@@ -54,8 +54,12 @@ GLuint compileStage(GLenum stage, const str& source, const str& debugName) {
     if (!ok) {
         char log[2048];
         glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-        LOG_ERROR("Shader '{}' ({}) compile error:\n{}", debugName,
-                  stage == GL_VERTEX_SHADER ? "vertex" : "fragment", log);
+        const char* stageName =
+            stage == GL_VERTEX_SHADER   ? "vertex" :
+            stage == GL_FRAGMENT_SHADER ? "fragment" :
+            stage == GL_COMPUTE_SHADER  ? "compute" :
+            stage == GL_GEOMETRY_SHADER ? "geometry" : "shader";
+        LOG_ERROR("Shader '{}' ({}) compile error:\n{}", debugName, stageName, log);
         glDeleteShader(shader);
         return 0;
     }

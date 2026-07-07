@@ -18,7 +18,7 @@ struct ItemStack {
 };
 
 // Runtime component: an actor's carried items. Not reflected (a container);
-// serialization is Phase 8 (same deferred container story as active effects).
+// its stacks are persisted via the save layer (SavedItem records, SaveState).
 struct Inventory {
     vector<ItemStack> items;
 };

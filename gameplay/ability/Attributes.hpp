@@ -8,7 +8,7 @@
 
 // Attributes (§6). An AttributeSet is a reflected component whose f32 fields are
 // the **BaseValues** — patchable like any Form field (§5) and serializable
-// (Phase 8). The matching **CurrentValues** live in a runtime overlay on the
+// (save layer). The matching **CurrentValues** live in a runtime overlay on the
 // AbilitySystem, recomputed from base + active modifiers (§2.9). An attribute is
 // addressed by the fnv1a id of its field name, resolved through reflection
 // (`TypeInfo::findField`) — the same idea as UE's FGameplayAttribute (a

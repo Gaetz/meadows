@@ -58,9 +58,6 @@ rhi::TextureHandle TextureCache::resolve(const core::Guid& sprite) {
     // First sighting: show the placeholder and decode off-thread. The worker
     // captures `shared` (not `this`) and touches neither the GPU nor `byGuid` —
     // only the path (pure file IO + decode) and the shared completion queue.
-    // First sighting: show the placeholder and decode off-thread. The worker
-    // captures `shared` (not `this`) and touches neither the GPU nor `byGuid` —
-    // only the path (pure file IO + decode) and the shared completion queue.
     byGuid.emplace(sprite, Entry { placeholder, Residency::Pending });
     ++pending;
     jobs.enqueue([shared = shared, sprite, gen = generation, path = *path] {

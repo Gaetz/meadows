@@ -41,7 +41,7 @@ struct DeviceCaps {
     bool hdrFormats { false };       // RGBA16F / R16F attachments
     bool samplerObjects { false };   // createSampler + BindGroupEntry::sampler
     bool mipmapGeneration { false }; // Device::generateMipmaps
-    bool copyTexture { false };      // CommandBuffer::copyTexture (later brick)
+    bool copyTexture { false };      // CommandBuffer::copyTexture
     bool computeShaders { false };   // compute pipelines + dispatch + SSBOs
                                      // (GL >= 4.3; absent on the 4.1 path)
 };
