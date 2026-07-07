@@ -14,12 +14,12 @@ namespace render {
 namespace {
 
 constexpr const char* kGrassShader = "grass";
-// 7.8quater (dev: "50 cm between blades"): the patch mask no longer
-// kills presence — grassy ground is FULLY covered (BotW fields show no
-// dirt between blades); patches now shape height instead. The distance
-// density LOD in draw() keeps the vertex budget flat: full density only
-// where the player looks.
-constexpr f32 kBladeSpacing = 0.24f; // meters between candidates
+// 7.8quinquies (dev): the patch DISTRIBUTION across the map is right —
+// what was missing is the volume INSIDE a patch. A BotW clump reads as
+// one SOLID mass of grass with blades poking out of its top and sides,
+// so inside the mask the grid is packed tight (blades overlap); the
+// distance density LOD in draw() keeps the vertex budget in check.
+constexpr f32 kBladeSpacing = 0.15f; // meters between candidates (in-patch)
 
 // BotW-style patch layout: grass gathers in dense clumps with bare meadow
 // between them. Two noise scales — broad patches and small clump detail —
@@ -94,12 +94,12 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                                         kBladeSpacing;
             const f32 z = originZ + (static_cast<f32>(gz) + rng.next()) *
                                         kBladeSpacing;
-            // Patch mask: near-full coverage on grassy ground (7.8quater —
-            // BotW fields show no dirt between blades); the mask mostly
-            // shapes HEIGHT now, and only thins truly marginal fringes.
+            // Near-BINARY presence (7.8quinquies): even moderately inside
+            // the mask the clump is at FULL density (the solid volume);
+            // only the rim thins, fast, so patches keep their silhouette.
             const f32 patch = patchMask(params.seed, x, z);
-            if (patch < 0.03f ||
-                rng.next() >= 0.60f + 0.40f * patch) {
+            const f32 presence = glm::smoothstep(0.08f, 0.40f, patch);
+            if (presence < 0.02f || rng.next() >= presence) {
                 continue;
             }
             const f32 h = terrain::height(params, x, z);
@@ -109,15 +109,24 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             if (terrain::materialWeights(params, h, n).grass < 0.72f) {
                 continue;
             }
-            // Blades stand taller toward the heart of a patch.
-            const f32 scale =
-                (0.55f + rng.next() * 0.55f) * (0.72f + 0.42f * patch);
+            // Height: near-uniform inside the volume so the top reads as
+            // one surface; the rim droops shorter, and ~12% of blades
+            // overshoot — the tips poking above the mass (the BotW tell).
+            f32 scale =
+                (0.70f + rng.next() * 0.30f) * (0.55f + 0.45f * presence);
+            if (rng.next() < 0.12f) {
+                scale *= 1.35f;
+            }
+            // Rim blades lean/curve harder — the clump spills over its
+            // sides instead of ending in a wall.
+            const f32 lean =
+                glm::min(1.0f, rng.next() + (1.0f - presence) * 0.6f);
             result.push_back({
                 .positionScale = { x, h, z, scale },
                 .params = { rng.next() * 6.2831853f,   // yaw
                             rng.next() * 6.2831853f,   // flutter phase
                             rng.next(),                // tint jitter
-                            rng.next() },              // lean amount
+                            lean },                    // lean amount
                 .groundNormal = { n, 0.0f },           // 7.8bis: BotW shading
             });
         }
@@ -333,7 +342,7 @@ void GrassSystem::draw(rhi::CommandBuffer& cmd,
         const i32 cheb = glm::max(
             std::abs(static_cast<i32>(key >> 32) - camCx),
             std::abs(static_cast<i32>(key & 0xffffffffu) - camCz));
-        const f32 fraction = cheb <= 1 ? 1.0f : cheb == 2 ? 0.45f : 0.15f;
+        const f32 fraction = cheb <= 1 ? 1.0f : cheb == 2 ? 0.35f : 0.12f;
         const u32 count = glm::max(
             1u, static_cast<u32>(static_cast<f32>(chunk.instanceCount) *
                                  fraction));
