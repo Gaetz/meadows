@@ -1,9 +1,8 @@
 # Chantier 7 — Graphisme : ce qui reste
 
-> **FAIT (2026-07-07) — briques 7.1-7.7 exécutées d'une traite sur le go
-> du dev (l'herbe 7.8 exclue, réf. reçue : daniel-ilett/shaders-botw-grass
-> — session future).** 276 tests verts, smoke-run par brique, builds
-> Debug + Release. VALIDATION VISUELLE DEV EN ATTENTE sur les 7 briques.
+> **FAIT (2026-07-07) — briques 7.1-7.8 exécutées d'une traite sur le go
+> du dev.** 276 tests verts, smoke-run par brique, builds Debug +
+> Release. VALIDATION VISUELLE DEV EN ATTENTE sur les 8 briques.
 > Specs détaillées : `docs/3D-RENDERER.md` (briques 30-34). Leçons :
 > FrameUbo n'a PLUS de .w libres — trois APPENDs de fin de struct posés
 > ce chantier (uTerrainLightInfo, uSubmersionInfo, keyShadow*, stormInfo,
@@ -44,6 +43,13 @@ spécifiées mais non construites, plus le backlog météo.
   sous les toits — réutilise drawCastersInto), wetness globale (terrain
   28 %, meshes 25 %, extérieur seulement) ; WeatherForm.rainIntensity +
   état « Rain » ; per-pixel dry-under-cover = raffinement noté.
+- **7.8 Herbe BotW** (réf. dev daniel-ilett/shaders-botw-grass, portée
+  sur nos rubans instanciés — shaders seuls, infra intacte) : champ de
+  vent = bruit world-space défilé 2 octaves (vagues organiques, la leçon
+  UV du backlog), courbure t^1.5 par brin, épaississement de biais
+  (+60 % max), palette racine olive → pointe jaune-vert + shimmer de
+  rafale, wetness + terrain light map raccordés. Tuning à chaud dans
+  grass.vert/frag.
 
 ## Les briques, par valeur (ordre proposé)
 
@@ -56,8 +62,7 @@ spécifiées mais non construites, plus le backlog météo.
 | 7.5 | **B2b — Ombre de lumière clé intérieure** | CHANTIER-6.md (descope) | KeyLightShadow perspective 1 layer ; stoppe le light bleed à travers les murs — utile dès les intérieurs multi-pièces |
 | 7.6 | **30 — Cumulonimbus à l'horizon** | 3D-RENDERER §30 | `WeatherForm.stormFront` ; billboards géants |
 | 7.7 | **31 — Pluie + wetness + occlusion top-down** | 3D-RENDERER §31 + addendum | Particules cylindre caméra ; depth map top-down (la pluie s'arrête sous les toits) |
-| 7.8 | **Refonte herbe** | backlog 3D-RENDERER | pour les herbes tu peux utiliser https://github.com/daniel-ilett/shaders-botw-grass
-
+| 7.8 | **Refonte herbe** | réf. dev : https://github.com/daniel-ilett/shaders-botw-grass | ✅ FAITE (shaders seuls, voir résumé ci-dessus) |
 
 Descopés/backlog (inchangés) : LUT 3D, TAA, caustiques, biomes, mode
 dégradé GL 4.1, impostors, 3e personne.
