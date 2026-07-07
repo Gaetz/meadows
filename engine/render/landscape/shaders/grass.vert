@@ -16,6 +16,7 @@ layout(location = 0) in vec2 aBlade;    // x = side [-1,1] (taper baked), y = t
 layout(location = 2) in vec4 aPosScale; // xyz = terrain point, w = height scale
 layout(location = 3) in vec4 aParams;   // x = yaw, y = flutter phase,
                                         // z = tint jitter, w = lean
+layout(location = 4) in vec4 aGroundNormal; // xyz = terrain normal (7.8bis)
 
 out float vT;
 out float vSide;
@@ -87,11 +88,12 @@ void main() {
     vec3 world = aPosScale.xyz + sideDir * (aBlade.x * width) +
                  vec3(0.0, height * t, 0.0) + bend * height;
 
-    // Rounded-ribbon normal: mostly up, tilted by the side coordinate so
-    // the two halves catch light differently (fake cylinder shading),
-    // pushed over with the bend.
-    vNormal = normalize(vec3(0.0, 1.0, 0.0) + sideDir * (aBlade.x * 0.55) -
-                        (bend * 0.9));
+    // 7.8bis — THE BotW trick: shade with the GROUND normal, barely
+    // perturbed. The meadow lights as one continuous rolling surface
+    // (like the terrain under it); blades exist as silhouettes and
+    // motion, not as thousands of individually lit slivers.
+    vNormal = normalize(aGroundNormal.xyz +
+                        sideDir * (aBlade.x * 0.08) - bend * 0.15);
 
     vWorldPos = world;
     gl_Position = uViewProj * vec4(world, 1.0);

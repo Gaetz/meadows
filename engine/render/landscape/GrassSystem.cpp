@@ -114,6 +114,7 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                             rng.next() * 6.2831853f,   // flutter phase
                             rng.next(),                // tint jitter
                             rng.next() },              // lean amount
+                .groundNormal = { n, 0.0f },           // 7.8bis: BotW shading
             });
         }
     }
@@ -270,7 +271,11 @@ void GrassSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
                                                        positionScale) },
                                   { .location = 3,
                                     .format = rhi::VertexFormat::F32x4,
-                                    .offset = offsetof(Instance, params) } } } },
+                                    .offset = offsetof(Instance, params) },
+                                  { .location = 4,
+                                    .format = rhi::VertexFormat::F32x4,
+                                    .offset = offsetof(
+                                        Instance, groundNormal) } } } },
           // Pure geometry, opaque: depth-write on so blades sort against the
           // terrain and each other; ribbons visible from both sides.
           .depth = { .testEnable = true,

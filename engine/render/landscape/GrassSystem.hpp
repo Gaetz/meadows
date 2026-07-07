@@ -67,6 +67,10 @@ public:
         Vec4 positionScale; // xyz = terrain point, w = height scale
         Vec4 params;        // x = yaw, y = flutter phase, z = tint jitter,
                             // w = lean amount
+        // 7.8bis — THE BotW look mechanism: blades shade with the GROUND
+        // normal (the meadow lights as one continuous surface; blade
+        // geometry only shows in silhouettes and wind).
+        Vec4 groundNormal;  // xyz = terrain normal at the root, w unused
     };
 
 private:

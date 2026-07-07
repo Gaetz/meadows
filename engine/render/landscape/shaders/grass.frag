@@ -23,20 +23,22 @@ in vec3 vWorldPos;
 out vec4 fragColor;
 
 void main() {
-    // Linear-space BotW palette: shaded olive root -> fresh yellow-green
-    // tip, with per-blade hue jitter. Tips warm further under a gust.
-    vec3 baseColor = mix(vec3(0.022, 0.055, 0.011),
-                         vec3(0.034, 0.074, 0.016), vTint);
-    vec3 tipColor = mix(vec3(0.095, 0.190, 0.038),
-                        vec3(0.150, 0.215, 0.052), vTint);
+    // 7.8bis palette: MATCHED to the grass splat tile family (the meadow
+    // must blend into the terrain it stands on — in BotW the field and
+    // the ground are one color). Tips only mildly fresher; the gust
+    // shimmer stays the accent.
+    vec3 baseColor = mix(vec3(0.020, 0.052, 0.010),
+                         vec3(0.032, 0.070, 0.014), vTint);
+    vec3 tipColor = mix(vec3(0.070, 0.150, 0.032),
+                        vec3(0.095, 0.170, 0.040), vTint);
     vec3 albedo = mix(baseColor, tipColor, vT * vT * (3.0 - 2.0 * vT));
-    albedo += vec3(0.030, 0.028, 0.006) * (vGust * vT); // gust shimmer
+    albedo += vec3(0.024, 0.024, 0.005) * (vGust * vT); // gust shimmer
     // Brick 31 wetness: rain darkens and cools the meadow.
     albedo *= mix(vec3(1.0), vec3(0.66, 0.72, 0.72),
                   clamp(uStormInfo.y, 0.0, 1.0));
 
-    // Grounded look: ambient occlusion at the root of the ribbon.
-    float ao = mix(0.42, 1.0, vT);
+    // Grounded look: gentle root occlusion (too dark reads as noise).
+    float ao = mix(0.62, 1.0, vT);
 
     vec3 n = normalize(vNormal);
     // Classic mode: wrap diffuse (carpet-like). Stylized mode: the shared
@@ -50,7 +52,7 @@ void main() {
     vec3 viewDir = normalize(vWorldPos - uCameraPos.xyz);
     float backlight = stylizedSss(vWorldPos) * 0.30 * vT;
     vec3 halfDir = normalize(uSunDirection.xyz - viewDir);
-    float sheen = pow(max(dot(n, halfDir), 0.0), 24.0) * 0.28 * vT;
+    float sheen = pow(max(dot(n, halfDir), 0.0), 24.0) * 0.18 * vT;
 
     float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
                    cloudShadowFactor(vWorldPos);
