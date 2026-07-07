@@ -71,6 +71,7 @@ add_executable(meadows-tests
     TerrainPatchesTest.cpp
     TreeGeneratorTest.cpp
     TypedDamageTest.cpp
+    VegetationCollisionTest.cpp
     WorldModelTest.cpp
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs

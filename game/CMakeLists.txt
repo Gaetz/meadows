@@ -13,6 +13,7 @@ add_library(meadows-runtime STATIC
     ScreenStack.cpp
     TerrainCollision.cpp
     TextureCache.cpp
+    VegetationCollision.cpp
     WorldEditor.cpp
 )
 target_link_libraries(meadows-runtime PUBLIC meadows meadows-world
