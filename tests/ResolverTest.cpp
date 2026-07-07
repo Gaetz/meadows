@@ -140,9 +140,13 @@ damage = 7.5
     CHECK(conflict.formId == kSwordId);
     CHECK(conflict.fieldName == "damage");
     REQUIRE(conflict.writers.size() == 3);
-    CHECK(conflict.writers[0] == "base-game");
-    CHECK(conflict.writers[1] == "modA");
-    CHECK(conflict.writers[2] == "modB"); // last entry = winner
+    CHECK(conflict.writers[0].plugin == "base-game");
+    CHECK(conflict.writers[1].plugin == "modA");
+    CHECK(conflict.writers[2].plugin == "modB"); // last entry = winner
+    // 8.5: each writer's VALUE rides along (what the synthesis tool shows).
+    CHECK(std::get<f32>(conflict.writers[1].value) == 20.0f);
+    CHECK(std::get<f32>(conflict.writers[2].value) == 7.5f);
+    CHECK(conflict.fieldId == core::fnv1a("damage"));
 }
 
 TEST_CASE("resolver: load order is the only tie-breaker") {

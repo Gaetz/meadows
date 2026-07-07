@@ -1,4 +1,4 @@
-add_executable(meadows-tests
+﻿add_executable(meadows-tests
     Main.cpp
     AbilitySystemTest.cpp
     AfflictionsTest.cpp
@@ -65,6 +65,7 @@ add_executable(meadows-tests
     StatsTuningTest.cpp
     StatusBuildupTest.cpp
     SurvivalTest.cpp
+    SynthesisTest.cpp
     TerrainCollisionTest.cpp
     TerrainNavigatorTest.cpp
     TerrainNoiseTest.cpp

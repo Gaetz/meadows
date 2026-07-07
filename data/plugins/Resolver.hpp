@@ -6,15 +6,25 @@
 
 namespace data {
 
+// One write in a conflict — 8.5: the value rides along so the synthesis
+// tool (§5.1) can SHOW what each plugin wanted, not just who wrote.
+struct FieldWrite {
+    str plugin;           // writer plugin name
+    reflect::Value value; // what it wrote
+    bool operator==(const FieldWrite&) const = default;
+};
+
 // A field written by two or more plugins. This includes the normal
 // "mod overrides base game" case on purpose: the resolver reports raw
 // facts, filtering (e.g. hiding base-game writers) is a presentation
-// concern for the future conflict view (Phase 12).
+// concern of the conflict view.
 struct FieldConflict {
     core::Guid formId;
     str typeName;
     str fieldName;
-    vector<str> writers; // plugin names, in apply order; the last one won
+    u32 typeId { 0 };  // 8.5: what a synthesis patch Record needs
+    u32 fieldId { 0 };
+    vector<FieldWrite> writers; // in apply order; the last one won
 };
 
 struct ResolveReport {

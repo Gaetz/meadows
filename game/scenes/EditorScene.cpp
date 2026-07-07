@@ -1,12 +1,14 @@
 #include "game/scenes/EditorScene.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <fstream>
 #include <functional>
 
 #include <imgui.h>
 
 #include "data/forms/FormQuery.hpp"
+#include "data/plugins/Synthesis.hpp"
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/platform/Paths.hpp"
 #include "game/AllForms.hpp"
@@ -17,6 +19,56 @@
 #include "quest/Quest.hpp"
 
 namespace game {
+
+namespace {
+
+// Short display form of a reflected value (8.5: the conflict view shows
+// what each plugin wrote).
+str valueRepr(const reflect::Value& value) {
+    using reflect::FieldKind;
+    const auto num = [](double v) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%g", v);
+        return str { buf };
+    };
+    switch (reflect::valueKind(value)) {
+    case FieldKind::Bool:
+        return std::get<bool>(value) ? "true" : "false";
+    case FieldKind::I32:
+        return std::to_string(std::get<i32>(value));
+    case FieldKind::U32:
+        return std::to_string(std::get<u32>(value));
+    case FieldKind::F32:
+        return num(std::get<f32>(value));
+    case FieldKind::F64:
+        return num(std::get<f64>(value));
+    case FieldKind::Str:
+        return "\"" + std::get<str>(value) + "\"";
+    case FieldKind::Vec2: {
+        const Vec2& v = std::get<Vec2>(value);
+        return "(" + num(v.x) + ", " + num(v.y) + ")";
+    }
+    case FieldKind::Vec3: {
+        const Vec3& v = std::get<Vec3>(value);
+        return "(" + num(v.x) + ", " + num(v.y) + ", " + num(v.z) + ")";
+    }
+    case FieldKind::Vec4: {
+        const Vec4& v = std::get<Vec4>(value);
+        return "(" + num(v.x) + ", " + num(v.y) + ", " + num(v.z) + ", " +
+               num(v.w) + ")";
+    }
+    case FieldKind::Quat: {
+        const Quat& q = std::get<Quat>(value);
+        return "(" + num(q.x) + ", " + num(q.y) + ", " + num(q.z) + ", " +
+               num(q.w) + ")";
+    }
+    case FieldKind::Guid:
+        return std::get<core::Guid>(value).toString();
+    }
+    return "?";
+}
+
+} // namespace
 
 void EditorScene::onEnter() {
     // The WHOLE game database: the shared registration site (chantier 4 B1).
@@ -49,6 +101,7 @@ void EditorScene::reload() {
     session = std::make_unique<data::EditSession>(*db, types);
     console = std::make_unique<ConsolePanel>(*session, *db, types, *vm);
     selected = {};
+    synthPicks.assign(report.conflicts.size(), -1); // -1 = keep load order
     status = "loaded " + std::to_string(stack.plugins.size()) + " plugins, " +
              std::to_string(db->count()) + " forms, " +
              std::to_string(report.conflicts.size()) + " field conflicts";
@@ -857,18 +910,87 @@ void EditorScene::drawPlugins() {
         ImGui::TextDisabled("none declared");
     }
 
+    // 8.5 — the synthesis view (§5.1): each conflicted field shows every
+    // writer's VALUE; picking one and generating emits an ORDINARY plugin
+    // loaded last. No new mechanism — one more layer.
     ImGui::SeparatorText("Field conflicts (last writer wins)");
     if (report.conflicts.empty()) {
         ImGui::TextDisabled("none");
     }
-    for (const data::FieldConflict& conflict : report.conflicts) {
-        str writers;
-        for (const str& writer : conflict.writers) {
-            writers += (writers.empty() ? "" : " -> ") + writer;
+    for (size_t ci = 0;
+         ci < report.conflicts.size() && ci < synthPicks.size(); ++ci) {
+        const data::FieldConflict& conflict = report.conflicts[ci];
+        const data::Form* form = db->find(conflict.formId);
+        ImGui::Text("%s  %s.%s",
+                    form && !form->editorId.empty()
+                        ? form->editorId.c_str()
+                        : conflict.formId.toString().c_str(),
+                    conflict.typeName.c_str(), conflict.fieldName.c_str());
+        ImGui::Indent();
+        int& pick = synthPicks[ci];
+        ImGui::RadioButton(
+            ("keep load order##k" + std::to_string(ci)).c_str(), &pick, -1);
+        for (int w = 0; w < static_cast<int>(conflict.writers.size()); ++w) {
+            const data::FieldWrite& write = conflict.writers[w];
+            const str label = write.plugin + " = " + valueRepr(write.value) +
+                              "##w" + std::to_string(ci) + "_" +
+                              std::to_string(w);
+            ImGui::RadioButton(label.c_str(), &pick, w);
         }
-        ImGui::Text("%s.%s: %s", conflict.typeName.c_str(),
-                    conflict.fieldName.c_str(), writers.c_str());
+        ImGui::Unindent();
     }
+    bool anyPick = false;
+    for (const int pick : synthPicks) {
+        anyPick = anyPick || pick >= 0;
+    }
+    ImGui::BeginDisabled(!anyPick);
+    if (ImGui::Button("Generate synthesis patch")) {
+        vector<data::SynthesisChoice> choices;
+        vector<str> arbitratedNames;
+        for (size_t ci = 0;
+             ci < report.conflicts.size() && ci < synthPicks.size(); ++ci) {
+            const int pick = synthPicks[ci];
+            if (pick < 0) {
+                continue;
+            }
+            const data::FieldConflict& conflict = report.conflicts[ci];
+            const data::FieldWrite& write =
+                conflict.writers[static_cast<size_t>(pick)];
+            choices.push_back({ conflict.formId, conflict.typeId,
+                                conflict.fieldId, conflict.fieldName,
+                                write.value, write.plugin });
+            if (std::find(arbitratedNames.begin(), arbitratedNames.end(),
+                          write.plugin) == arbitratedNames.end()) {
+                arbitratedNames.push_back(write.plugin);
+            }
+        }
+        vector<core::Guid> dependencies;
+        for (const data::Plugin& plugin : stack.plugins) {
+            if (std::find(arbitratedNames.begin(), arbitratedNames.end(),
+                          plugin.name) != arbitratedNames.end()) {
+                dependencies.push_back(plugin.id);
+            }
+        }
+        const data::Plugin patch = data::makeSynthesisPatch(
+            core::Guid::generate(), "synthesis", choices, dependencies);
+        const str toml =
+            data::writeSynthesisToml(patch, types, choices, db.get());
+        std::ofstream out { pluginDir / "synthesis.toml",
+                            std::ios::binary };
+        out << toml;
+        const bool known = std::any_of(
+            config.entries.begin(), config.entries.end(),
+            [](const data::PluginConfigEntry& e) {
+                return e.file == "synthesis.toml";
+            });
+        if (!known) {
+            config.entries.push_back({ "synthesis.toml", true });
+            saveConfig();
+        }
+        status = "synthesis.toml: " + std::to_string(choices.size()) +
+                 " arbitrated field(s), loads last (applies on reload)";
+    }
+    ImGui::EndDisabled();
     ImGui::End();
 }
 

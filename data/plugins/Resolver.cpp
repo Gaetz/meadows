@@ -110,7 +110,11 @@ ResolveReport resolve(const vector<const Plugin*>& loadOrder,
         }
         form->id = pendingForm.id;
 
-        std::unordered_map<u32, vector<const Plugin*>> writersPerField;
+        // Writer + a pointer to what it wrote (the record outlives the
+        // resolve; the value is only copied if a conflict materializes).
+        std::unordered_map<
+            u32, vector<std::pair<const Plugin*, const reflect::Value*>>>
+            writersPerField;
 
         for (const Write& write : pendingForm.writes) {
             // A record may address the form through its own type or a base
@@ -138,7 +142,7 @@ ResolveReport resolve(const vector<const Plugin*>& loadOrder,
                              field->name);
                     continue;
                 }
-                writersPerField[fieldId].push_back(write.plugin);
+                writersPerField[fieldId].push_back({ write.plugin, &value });
             }
             report.recordsApplied++;
         }
@@ -159,8 +163,10 @@ ResolveReport resolve(const vector<const Plugin*>& loadOrder,
                 conflict.formId = pendingForm.id;
                 conflict.typeName = pendingForm.type->name;
                 conflict.fieldName = field.name;
-                for (const Plugin* writer : it->second) {
-                    conflict.writers.push_back(writer->name);
+                conflict.typeId = pendingForm.type->id;
+                conflict.fieldId = field.id;
+                for (const auto& [writer, value] : it->second) {
+                    conflict.writers.push_back({ writer->name, *value });
                 }
                 report.conflicts.push_back(std::move(conflict));
             }

@@ -67,6 +67,7 @@ private:
     core::Guid schedDragEntry {};   // 8.4: entry whose edge is dragging
     int schedDragEdge { 0 };        //      0 = startHour, 1 = endHour
     f32 schedDragHour { 0.0f };     //      live preview value (0.5 h snap)
+    vector<int> synthPicks;         // 8.5: per-conflict pick (-1 = load order)
     char exportName[128] { "my-edits" };
     str status;
 };
