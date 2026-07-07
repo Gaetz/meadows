@@ -120,6 +120,8 @@ struct WeatherForm : Form {
     f32 waveChop { 1.0f };      // water surface roughness
     // Brick 30 (appended): horizon cumulonimbus towers, 0-1 (Storm = 1).
     f32 stormFront { 0.0f };
+    // Brick 31 (appended): rain streaks + wetness, 0-1.
+    f32 rainIntensity { 0.0f };
 
     REFLECT_BEGIN(WeatherForm, Form)
         REFLECT_FIELD(sortOrder)
@@ -141,6 +143,7 @@ struct WeatherForm : Form {
         REFLECT_FIELD(windStrength)
         REFLECT_FIELD(waveChop)
         REFLECT_FIELD(stormFront)
+        REFLECT_FIELD(rainIntensity)
     REFLECT_END()
 };
 

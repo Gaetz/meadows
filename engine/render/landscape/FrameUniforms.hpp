@@ -56,8 +56,12 @@ struct FrameUniforms {
     // for the ONE castsShadow light nearest the camera.
     Mat4 keyShadowViewProj {};
     Vec4 keyShadowInfo {}; // xyz = that light's position, w = active
-    // Brick 30 (APPENDED): x = storm front 0-1 (horizon cumulonimbus).
+    // Brick 30/31 (APPENDED): x = storm front 0-1 (horizon cumulonimbus),
+    // y = rain intensity 0-1 (streaks + wetness).
     Vec4 stormInfo {};
+    // Brick 31 (APPENDED): world -> top-down ortho clip for the rain
+    // occlusion depth (no rain under roofs).
+    Mat4 rainOcclusionViewProj {};
 };
 
 } // namespace render

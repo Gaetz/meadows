@@ -464,6 +464,17 @@ private:
     rhi::PipelineHandle stormPipeline {};
     u64 stormShaderGeneration { 0 };
     f32 stormFrontUi { 0.0f };
+    // Brick 31 (chantier 7.7): procedural rain streaks + the top-down
+    // occlusion depth (no rain under roofs) + global wetness.
+    rhi::PipelineHandle rainPipeline {};
+    u64 rainShaderGeneration { 0 };
+    rhi::TextureHandle rainOcclusionTex {};
+    rhi::FramebufferHandle rainOcclusionFb {};
+    rhi::SamplerHandle rainSampler {};
+    rhi::BufferHandle rainOcclusionUbo {};
+    rhi::BindGroupHandle rainCasterGroup {};
+    rhi::BindGroupHandle rainReceiverGroup {};
+    f32 rainIntensityUi { 0.0f };
     bool shaftsUi { true };
     bool contactShadowsUi { true }; // brick 33a
     // Brick 33b/c: worker-baked terrain sun-shadow + sky-openness map.

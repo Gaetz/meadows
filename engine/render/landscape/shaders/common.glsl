@@ -43,6 +43,8 @@ layout(std140, binding = 0) uniform FrameUbo {
     // B2b (APPENDED): the interior key-light shadow.
     mat4 uKeyShadowViewProj;
     vec4 uKeyShadowInfo; // xyz = that light's position, w = active
-    // Brick 30 (APPENDED): x = storm front 0-1 (horizon cumulonimbus).
+    // Brick 30/31 (APPENDED): x = storm front, y = rain intensity.
     vec4 uStormInfo;
+    // Brick 31 (APPENDED): world -> top-down rain-occlusion clip.
+    mat4 uRainOcclusionViewProj;
 };

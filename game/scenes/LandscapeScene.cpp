@@ -269,6 +269,32 @@ void LandscapeScene::onEnter() {
             towers);
     }
 
+    // Brick 31: rain — procedural streaks (no buffers) + the top-down
+    // occlusion depth so roofs keep the drops out.
+    shaders->load("rain", { { "FrameUbo", 0 } },
+                  { { "uRainOcclusion", 9 } });
+    rainOcclusionTex = device.createTexture(
+        { .width = 512,
+          .height = 512,
+          .format = rhi::TextureFormat::Depth32F,
+          .usage = rhi::TextureUsage_Sampled |
+                   rhi::TextureUsage_RenderAttachment },
+        nullptr);
+    rainSampler = device.createSampler({});
+    rainOcclusionFb = device.createFramebuffer(
+        { .depthAttachment = { .texture = rainOcclusionTex } });
+    rainOcclusionUbo =
+        device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
+                              .size = sizeof(Mat4),
+                              .dynamic = true },
+                            nullptr);
+    rainCasterGroup = device.createBindGroup(
+        { .entries = { { .binding = 1, .buffer = rainOcclusionUbo } } });
+    rainReceiverGroup = device.createBindGroup(
+        { .entries = { { .binding = 9,
+                         .texture = rainOcclusionTex,
+                         .sampler = rainSampler } } });
+
     // B2b: the interior key-light shadow target (1024², perspective).
     keyShadowTex = device.createTexture(
         { .width = 1024,
@@ -760,6 +786,21 @@ void LandscapeScene::onExit() {
     stormVertices = {};
     device.destroyPipeline(stormPipeline);
     stormPipeline = {};
+    // Brick 31: rain.
+    device.destroyPipeline(rainPipeline);
+    rainPipeline = {};
+    device.destroyBindGroup(rainReceiverGroup);
+    device.destroyBindGroup(rainCasterGroup);
+    device.destroyBuffer(rainOcclusionUbo);
+    device.destroyFramebuffer(rainOcclusionFb);
+    device.destroySampler(rainSampler);
+    device.destroyTexture(rainOcclusionTex);
+    rainReceiverGroup = {};
+    rainCasterGroup = {};
+    rainOcclusionUbo = {};
+    rainOcclusionFb = {};
+    rainSampler = {};
+    rainOcclusionTex = {};
     // B2b: key-light shadow.
     device.destroyBindGroup(keyShadowReceiverGroup);
     device.destroyBindGroup(keyShadowCasterGroup);
@@ -1134,6 +1175,8 @@ void LandscapeScene::update(f32 dt) {
         blended.waveChop = lerp(weatherFrom.waveChop, to.waveChop);
         blended.stormFront = lerp(weatherFrom.stormFront,
                                   to.stormFront); // brick 30
+        blended.rainIntensity = lerp(weatherFrom.rainIntensity,
+                                     to.rainIntensity); // brick 31
         applyWeather(blended);
     }
 
@@ -4912,7 +4955,8 @@ WeatherForm LandscapeScene::captureCurrentWeather() const {
     w.bloomIntensity = bloomIntensityUi;
     w.windStrength = windStrengthUi;
     w.waveChop = waveChopUi;
-    w.stormFront = stormFrontUi; // brick 30
+    w.stormFront = stormFrontUi;     // brick 30
+    w.rainIntensity = rainIntensityUi; // brick 31
     return w;
 }
 
@@ -4934,7 +4978,8 @@ void LandscapeScene::applyWeather(const WeatherForm& w) {
     bloomIntensityUi = w.bloomIntensity;
     windStrengthUi = w.windStrength;
     waveChopUi = w.waveChop;
-    stormFrontUi = w.stormFront; // brick 30
+    stormFrontUi = w.stormFront;       // brick 30
+    rainIntensityUi = w.rainIntensity; // brick 31
 }
 
 void LandscapeScene::render(engine::FrameContext& frame) {
@@ -5130,8 +5175,22 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     frameData.terrainLightInfo.w =
         (terrainLightUi && !interiorMode && terrainLightMap.ready()) ? 1.0f
                                                                      : 0.0f;
-    // Brick 30: the crossfaded storm front for the cumulonimbus pass.
+    // Brick 30/31: the crossfaded storm front + rain intensity, and the
+    // top-down rain-occlusion matrix (ortho, 40 m around the camera).
     frameData.stormInfo.x = stormFrontUi;
+    frameData.stormInfo.y = interiorMode ? 0.0f : rainIntensityUi;
+    if (frameData.stormInfo.y > 0.003f) {
+        const Vec3 eye = camera.position;
+        const Mat4 rainView =
+            glm::lookAt(eye + Vec3 { 0.0f, 60.0f, 0.0f }, eye,
+                        Vec3 { 0.0f, 0.0f, 1.0f });
+        const Mat4 rainProj =
+            glm::ortho(-40.0f, 40.0f, -40.0f, 40.0f, 0.0f, 140.0f);
+        frameData.rainOcclusionViewProj = rainProj * rainView;
+        frame.device.updateBuffer(rainOcclusionUbo,
+                                  &frameData.rainOcclusionViewProj,
+                                  sizeof(Mat4), 0);
+    }
     // B4 (brick 29): auto-exposure parameters on free .w slots (adapt.frag
     // + the tonemap tap flag).
     frameData.sunDirection.w = frame.dt;
@@ -5236,6 +5295,15 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         }
     }
     (void)keyShadowActive;
+
+    // Brick 31: the top-down rain occlusion depth (roof cover).
+    if (frameData.stormInfo.y > 0.003f && meshShadowCastersUi) {
+        frame.cmd.beginRenderPass({ .framebuffer = rainOcclusionFb,
+                                    .loadOp = rhi::LoadOp::DontCare,
+                                    .depthLoadOp = rhi::LoadOp::Clear });
+        drawCastersInto(frame, rainCasterGroup, /*refreshUbos=*/true);
+        frame.cmd.endRenderPass();
+    }
 
     // Cascade passes: depth-only casters from the sun's point of view.
     if (shadowStrength > 0.0f) {
@@ -5408,6 +5476,27 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         // additive dust shafts — both after every opaque.
         drawWaterVolumes(frame);
         drawLightShafts(frame, skyState.sunColor);
+        // Brick 31: rain streaks (procedural, camera cylinder).
+        if (frameData.stormInfo.y > 0.003f) {
+            if (shaders->generation("rain") != rainShaderGeneration ||
+                rainPipeline.id == 0) {
+                if (rainPipeline.id != 0) {
+                    frame.device.destroyPipeline(rainPipeline);
+                }
+                rainPipeline = frame.device.createPipeline(
+                    { .shader = shaders->get("rain"),
+                      .blend = rhi::BlendMode::Alpha,
+                      .depth = { .testEnable = true,
+                                 .writeEnable = false,
+                                 .compare = rhi::CompareFunc::Less },
+                      .cull = rhi::CullMode::None });
+                rainShaderGeneration = shaders->generation("rain");
+            }
+            frame.cmd.setPipeline(rainPipeline);
+            frame.cmd.setBindGroup(0, frameBindGroup);
+            frame.cmd.setBindGroup(1, rainReceiverGroup);
+            frame.cmd.draw(3000 * 6);
+        }
         frame.cmd.endRenderPass();
     }
 

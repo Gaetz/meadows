@@ -48,6 +48,10 @@ void main() {
                   total;
 
     albedo *= cascadeDebugTint(vWorldPos);
+    // Brick 31 wetness: rain darkens the ground (global v1 — the roof
+    // keeps the DROPS out via the occlusion map; per-pixel dry patches
+    // under cover are a later refinement).
+    albedo *= mix(1.0, 0.72, clamp(uStormInfo.y, 0.0, 1.0));
     float ndl = dot(n, uSunDirection.xyz);
     float diffuse = stylizedDiffuse(ndl, max(ndl, 0.0));
     // Cast shadows quantize to flat pools; cloud shadows stay soft (they

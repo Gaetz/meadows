@@ -26,6 +26,10 @@ out vec4 fragColor;
 
 void main() {
     vec3 albedo = texture(uAlbedo, vUv).rgb * uTint.rgb * vColor;
+    // Brick 31 wetness (exterior only — the interior flag gates it).
+    albedo *= mix(1.0, 0.75,
+                  clamp(uStormInfo.y, 0.0, 1.0) *
+                      (1.0 - uCascadeSplits.w));
     vec3 n = normalize(vNormal);
     float ndl = dot(n, uSunDirection.xyz);
     float diffuse = stylizedDiffuse(ndl, max(ndl, 0.0));
