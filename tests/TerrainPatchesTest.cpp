@@ -4,6 +4,7 @@
 
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
+#include "engine/render/landscape/TerrainNoise.hpp" // TerrainParams + terrain::height (test overlays vs noise)
 #include "world/terrain/TerrainPatches.hpp"
 #include "world/worldspace/WorldForms.hpp"
 

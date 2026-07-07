@@ -5,7 +5,7 @@
 
 #include "data/forms/FormDatabase.hpp"
 #include "engine/assets/AssetDatabase.hpp"
-#include "engine/render/landscape/TerrainNoise.hpp"
+#include "engine/terrain/HeightPatches.hpp"
 
 // Authored-terrain plumbing (chantier 2 B8): TerrainPatchForm records +
 // `.ter` delta-grid assets -> the engine's immutable render::HeightPatches

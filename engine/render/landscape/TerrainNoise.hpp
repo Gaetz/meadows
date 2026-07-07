@@ -1,10 +1,9 @@
 #pragma once
 
-#include <unordered_map>
-
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"
+#include "engine/terrain/HeightPatches.hpp" // render::HeightPatch / HeightPatches
 
 namespace render {
 
@@ -14,22 +13,9 @@ namespace render {
 // assets (the engine never sees Forms — rule n°2, HORIZONTAL-PASS);
 // sculpting edits grids then publishes a NEW immutable instance, so
 // workers holding the old pointer stay race-free.
-struct HeightPatch {
-    u32 samples { 0 }; // n: the grid is n x n, row-major, x fastest,
-                       // rows along +Z; edge samples are SHARED with the
-                       // neighbouring chunk (seamless by construction)
-    vector<f32> deltas; // meters, n * n
-};
-
-struct HeightPatches {
-    f32 chunkSize { 64.0f }; // world meters per chunk (= terrain chunks)
-    std::unordered_map<u64, HeightPatch> chunks;
-
-    static u64 keyOf(i32 cx, i32 cz) {
-        return (static_cast<u64>(static_cast<u32>(cx)) << 32) |
-               static_cast<u64>(static_cast<u32>(cz));
-    }
-};
+// HeightPatch / HeightPatches now live in engine/terrain/HeightPatches.hpp
+// (a headless home) so the world layer can build them without depending on
+// engine/render/. They still ride inside TerrainParams below.
 
 // Terrain generation parameters. One plain struct on purpose: when landscape
 // population becomes moddable it converts into a reflected Form patched
