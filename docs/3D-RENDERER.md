@@ -23,6 +23,8 @@
 | 25 | Frustum culling CPU des chunks | ✅ FAITE — validée |
 | 26 | Occlusion culling : horizon CPU + Hi-Z GPU (1re extension compute du RHI) | ✅ FAITE — **validation visuelle dev jamais faite** (fond de vallée + rotation rapide, checkboxes A/B du panneau) |
 | 27 | Arbres : canopée pleine stylisée (remplace les leaf cards) | ✅ FAITE (chantier 1 B7, validée dev 2026-07-06) — spec exécutée + **LOD de canopée par chunk** ajouté post-validation : subdiv 2 ≤ 4 chunks (~256 m), subdiv 1 (80 faces, même seed) au-delà + casters d'ombre + réflexion (sans LOD : 30 fps ; avec : max). Journal : `docs/CHANTIER-1.md`. |
+| 28-29 | Grading + auto-exposition | ✅ FAITES (chantier 6 B3/B4, 2026-07-07) — NON COMMITÉES, toggles A/B défaut OFF, validation dev en cours. Journal : `docs/CHANTIER-6.md`. |
+| 32 | **Eau plaçable (`WaterVolumeForm`)** — lacs d'altitude, grottes inondées | 📋 SPEC DÉCIDÉE 2026-07-07 (voir brique 32 ci-dessous) — à planifier |
 | 28-31 | Grading BotW, auto-exposition, cumulonimbus, pluie | ⏸️ à faire (28-29 courts ; 30-31 branchés sur WeatherForm) — planifiées via MEADOWS-PLAN chantier 6 |
 | — | Refonte herbe | ⏸️ en attente des recherches du dev (il revient avec une référence shader — ne pas itérer sans lui) |
 
@@ -194,6 +196,63 @@ l'eau avant le post. **Nouveau champ `WeatherForm.rainIntensity` (0-1)** +
 
 **Validation.** Rain/Storm : montée en ~30 s ; streaks penchés par le vent ;
 pas de « mur » aux bords du cylindre en mouvement ; FPS stable.
+
+**Addendum (audit Community Shaders, 2026-07-07 — idées, pas leur code,
+GPL) :** à la même brique ou juste après, **wetness** (albédo assombri +
+spéculaire boosté sous la pluie) et **occlusion de pluie** par depth map
+top-down orthographique (la pluie ne tombe pas sous les toits) — le
+pattern exact de nos cartes bakées (cloud map, pool depth).
+
+## Brique 32 — Eau plaçable (`WaterVolumeForm`) — spec décidée 2026-07-07
+
+**Pourquoi.** L'eau est aujourd'hui UN plan global (`seaLevel`) qui sert à
+la fois de surface, de plan miroir, de référence d'écume et de test de
+submersion — donc ni lac de montagne (eau au-dessus de l'altitude de
+base) ni grotte inondée (eau en intérieur à hauteur arbitraire). Le bug
+« intérieurs verdâtres » (chantier 6 B5bis) était déjà ce test global qui
+fuyait dans les cellules intérieures.
+
+**Quoi.** Un Form plaçable — le modèle Skyrim : une boîte (demi-étendues
++ transform de la référence) dont la **face supérieure est la surface
+d'eau** et dont le **volume est le test « je suis dans l'eau »**. Posable
+au gizmo, moddable (§5), sauvegardable comme toute référence. Champs v1 :
+`halfExtents`, teinte/absorption, chop/vitesse de vagues (réutilise le
+shader eau), `swimmable` (réservé). La mer globale RESTE le cas implicite
+(aucune migration).
+
+**Briques internes, par ordre :**
+1. **Surface + submersion** : un quad d'eau au sommet du volume rendu par
+   le shader eau existant (paramètres par-volume) ; le test
+   caméra-dans-un-volume alimente l'effet de submersion du tonemap — le
+   gate devient « dans un volume OU (extérieur ET sous seaLevel) »
+   (l'exclusion intérieure actuelle devient un cas particulier de cette
+   règle). Spawner : nouvelle catégorie, composant `WaterVolume` runtime.
+2. **Écume/profondeur** : PAS en v1 (la pool-depth map est câblée mer) —
+   bords nets stylisés suffisants pour un lac.
+3. **Nage** : gameplay séparé (capsule en mode nage dans un volume,
+   flottabilité, stat `breath` de STATS.md §3) — chantier gameplay.
+
+**La limite structurelle à assumer : les réflexions.** La réflexion
+planaire rend la scène miroir d'UN plan par frame. Décision : la mer
+globale garde le miroir ; les volumes posés ont une surface « sourde »
+(teinte ciel + fresnel stylisé, pas de miroir). Option de tuning plus
+tard : basculer LE volume le plus proche de la caméra sur le plan miroir
+de la frame quand un lac devient un décor clé.
+
+**Alternative écartée :** hauteur d'eau PAR CELLULE (l'autre moitié du
+modèle Skyrim) — couvrirait l'intérieur inondé mais pas les lacs
+d'extérieur, et créerait un 2e mécanisme parallèle au volume (§5 : jamais
+deux mécanismes pour la même chose).
+
+**Où.** `data/forms/VisualForms.hpp` (WaterVolumeForm), spawner/
+Components (world/scene), `WaterSystem` (draw des quads par-volume),
+tonemap (le test de submersion passe par un uniform « dans l'eau » CPU),
+`LandscapeScene` (collecte des volumes autour de la caméra).
+
+**Validation.** Un lac posé dans une cuvette sculptée au-dessus de 14 m ;
+une salle du hall d'essai inondée à y = 1 m ; entrer/sortir de l'eau =
+la teinte de submersion suit le volume, pas seaLevel ; l'extérieur mer
+inchangé (miroir compris).
 
 ---
 
