@@ -7,6 +7,7 @@ layout(binding = 2) uniform sampler2D uGodRays;
 layout(binding = 3) uniform sampler2D uVolumetric;
 layout(binding = 4) uniform sampler2D uSsao;
 layout(binding = 5) uniform sampler2D uExposure; // brick 29: 1x1 adaptation
+layout(binding = 6) uniform sampler2D uContact;  // brick 33a: white = lit
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -43,6 +44,10 @@ void main() {
                 texture(uSsao, vUv + aoTexel * vec2(0.2, -0.6)).r) *
                0.25;
     hdr *= mix(1.0, ao, uTime.y);
+    // Brick 33a: screen-space contact shadows — same composition slot as
+    // the SSAO (surface darkening before airlight). The texture is the
+    // toggle: the scene clears it to white when the feature is off.
+    hdr *= texture(uContact, vUv).r;
     // Volumetric: alpha REMOVES the fog in-scatter where distant air is
     // cloud-shadowed (dark far curtains), rgb ADDS the near shafts. Then
     // bloom (uPostInfo.w) and god rays (uSunScreen.w), all in linear HDR

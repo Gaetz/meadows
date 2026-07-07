@@ -16,6 +16,7 @@ constexpr const char* kUpShader = "bloom_up";
 constexpr const char* kGodRaysShader = "godrays";
 constexpr const char* kVolumetricShader = "volumetric";
 constexpr const char* kSsaoShader = "ssao";
+constexpr const char* kContactShader = "contactshadow"; // brick 33a
 constexpr const char* kLuminanceShader = "luminance"; // brick 29
 constexpr const char* kAdaptShader = "adapt";
 constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
@@ -34,6 +35,8 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
                  kFullscreenVert);
     shaders.load(kSsaoShader, { { "FrameUbo", 0 } },
                  { { "uSceneDepth", 0 } }, kFullscreenVert);
+    shaders.load(kContactShader, { { "FrameUbo", 0 } },
+                 { { "uSceneDepth", 0 } }, kFullscreenVert);
     shaders.load(kLuminanceShader, {}, { { "uSceneColor", 0 } },
                  kFullscreenVert);
     shaders.load(kAdaptShader, { { "FrameUbo", 0 } },
@@ -46,6 +49,7 @@ void PostFx::destroy(rhi::Device& device) {
     destroyTargets(device);
     device.destroyPipeline(adaptPipeline);
     device.destroyPipeline(luminancePipeline);
+    device.destroyPipeline(contactPipeline);
     device.destroyPipeline(ssaoPipeline);
     device.destroyPipeline(volumetricPipeline);
     device.destroyPipeline(godRayPipeline);
@@ -71,6 +75,7 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
     rebuild(godRayPipeline, kGodRaysShader, rhi::BlendMode::Opaque);
     rebuild(volumetricPipeline, kVolumetricShader, rhi::BlendMode::Opaque);
     rebuild(ssaoPipeline, kSsaoShader, rhi::BlendMode::Opaque);
+    rebuild(contactPipeline, kContactShader, rhi::BlendMode::Opaque);
     rebuild(luminancePipeline, kLuminanceShader, rhi::BlendMode::Opaque);
     rebuild(adaptPipeline, kAdaptShader, rhi::BlendMode::Opaque);
     shaderGeneration = shaders.generation(kPrefilterShader) +
@@ -79,6 +84,7 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
                        shaders.generation(kGodRaysShader) +
                        shaders.generation(kVolumetricShader) +
                        shaders.generation(kSsaoShader) +
+                       shaders.generation(kContactShader) +
                        shaders.generation(kLuminanceShader) +
                        shaders.generation(kAdaptShader);
 }
@@ -90,6 +96,7 @@ void PostFx::refreshPipelines(rhi::Device& device, ShaderLibrary& shaders) {
                         shaders.generation(kGodRaysShader) +
                         shaders.generation(kVolumetricShader) +
                         shaders.generation(kSsaoShader) +
+                        shaders.generation(kContactShader) +
                         shaders.generation(kLuminanceShader) +
                         shaders.generation(kAdaptShader);
     if (current != shaderGeneration) {
@@ -112,6 +119,12 @@ void PostFx::destroyTargets(rhi::Device& device) {
     luminanceGroup = {};
     luminanceFb = {};
     luminanceTex = {};
+    device.destroyBindGroup(contactGroup);
+    device.destroyFramebuffer(contactFb);
+    device.destroyTexture(contactTex);
+    contactGroup = {};
+    contactFb = {};
+    contactTex = {};
     device.destroyBindGroup(ssaoGroup);
     device.destroyFramebuffer(ssaoFb);
     device.destroyTexture(ssaoTex);
@@ -231,6 +244,22 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
                          .texture = sceneDepthCopy,
                          .sampler = linearSampler } } });
 
+    // Brick 33a: contact shadows — half-res, same inputs as the SSAO.
+    contactTex = device.createTexture(
+        { .width = std::max(width / 2, 1u),
+          .height = std::max(height / 2, 1u),
+          .format = rhi::TextureFormat::R16F,
+          .filter = rhi::FilterMode::Linear,
+          .usage = rhi::TextureUsage_Sampled |
+                   rhi::TextureUsage_RenderAttachment },
+        nullptr);
+    contactFb = device.createFramebuffer(
+        { .colorAttachments = { { .texture = contactTex } } });
+    contactGroup = device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = sceneDepthCopy,
+                         .sampler = linearSampler } } });
+
     // Brick 29: auto-exposure — fixed 64² log-luminance pyramid + the two
     // 1×1 adaptation targets (ping-pong; adapt.frag snaps when the prev
     // side reads 0, so fresh targets need no seeding).
@@ -271,6 +300,34 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
                              .sampler = linearSampler } } });
     }
     adaptSide = 0;
+}
+
+void PostFx::renderContactShadows(rhi::CommandBuffer& cmd,
+                                  rhi::BindGroupHandle frameBindGroup) {
+    if (contactTex.id == 0) {
+        return;
+    }
+    cmd.beginRenderPass({ .framebuffer = contactFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(contactPipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    cmd.setBindGroup(1, contactGroup);
+    cmd.draw(3);
+    cmd.endRenderPass();
+}
+
+void PostFx::clearContactShadows(rhi::CommandBuffer& cmd) {
+    if (contactTex.id == 0) {
+        return;
+    }
+    // Toggle-off path: neutral white (there is no free FrameUbo slot for
+    // a flag — the texture itself is the switch).
+    cmd.beginRenderPass({ .framebuffer = contactFb,
+                          .loadOp = rhi::LoadOp::Clear,
+                          .clearColor = { 1.0f, 1.0f, 1.0f, 1.0f },
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.endRenderPass();
 }
 
 void PostFx::renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,

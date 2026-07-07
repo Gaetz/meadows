@@ -443,6 +443,7 @@ private:
     rhi::PipelineHandle shaftPipeline {};
     u64 shaftShaderGeneration { 0 };
     bool shaftsUi { true };
+    bool contactShadowsUi { true }; // brick 33a
     void buildShaftPipeline(rhi::Device& device);
     void drawLightShafts(engine::FrameContext& frame,
                          const Vec3& sunColor);

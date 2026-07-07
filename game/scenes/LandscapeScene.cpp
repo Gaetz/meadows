@@ -547,7 +547,8 @@ void LandscapeScene::onEnter() {
                         { "uGodRays", 2 },
                         { "uVolumetric", 3 },
                         { "uSsao", 4 },
-                        { "uExposure", 5 } }); // B4: adaptation tap
+                        { "uExposure", 5 },   // B4: adaptation tap
+                        { "uContact", 6 } }); // 33a: contact shadows
         rebuildBlitPipeline(device);
     }
     if (device.caps().offscreenTargets && device.caps().hdrFormats &&
@@ -833,6 +834,9 @@ void LandscapeScene::ensureOffscreenTarget(rhi::Device& device, u32 width,
                               .sampler = blitSampler },
                             { .binding = 5,
                               .texture = postFx.exposureTexture(side),
+                              .sampler = blitSampler },
+                            { .binding = 6,
+                              .texture = postFx.contactTexture(),
                               .sampler = blitSampler } }
                       : vector<rhi::BindGroupEntry> {
                             { .binding = 0,
@@ -5130,6 +5134,12 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         }
         postFx.render(frame.cmd, frameBindGroup,
                       shadows.receiverBindGroup());
+        // 33a: contact shadows (the texture is the toggle — white = off).
+        if (contactShadowsUi && !interiorMode) {
+            postFx.renderContactShadows(frame.cmd, frameBindGroup);
+        } else {
+            postFx.clearContactShadows(frame.cmd);
+        }
         // B4 (brick 29): measure + adapt, before the tonemap taps it.
         if (autoExposureUi) {
             postFx.renderAutoExposure(frame.device, frame.cmd,
@@ -5450,6 +5460,7 @@ void LandscapeScene::drawRenderUi() {
     ImGui::Checkbox("Mesh shadow casters", &meshShadowCastersUi);
     ImGui::SameLine();
     ImGui::Checkbox("Light shafts", &shaftsUi); // brick 34
+    ImGui::Checkbox("Contact shadows", &contactShadowsUi); // brick 33a
     // B3 A/B (brick 28): the analytical grade, off by default.
     ImGui::Checkbox("Grading (brick 28)", &gradingUi);
     if (gradingUi) {

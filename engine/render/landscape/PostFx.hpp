@@ -51,11 +51,19 @@ public:
     void renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
                             rhi::BindGroupHandle frameBindGroup);
 
+    // Brick 33a — screen-space contact shadows (Bend march over the depth
+    // copy, SSAO pattern). The TOGGLE is the texture: when the scene turns
+    // the feature off it calls clearContactShadows (neutral white) instead.
+    void renderContactShadows(rhi::CommandBuffer& cmd,
+                              rhi::BindGroupHandle frameBindGroup);
+    void clearContactShadows(rhi::CommandBuffer& cmd);
+
     // For the tonemap bind group.
     rhi::TextureHandle bloomTexture() const { return bloomTex[0]; }
     rhi::TextureHandle godRayTexture() const { return godRayTex; }
     rhi::TextureHandle volumetricTexture() const { return volumetricTex; }
     rhi::TextureHandle ssaoTexture() const { return ssaoTex; }
+    rhi::TextureHandle contactTexture() const { return contactTex; }
     // The ping-pong side renderAutoExposure wrote LAST (the tonemap reads
     // it); the scene keeps one blit group per side.
     u32 exposureSide() const { return adaptSide; }
@@ -91,6 +99,11 @@ private:
     rhi::FramebufferHandle ssaoFb {};
     rhi::BindGroupHandle ssaoGroup {};
 
+    // Brick 33a: contact shadows.
+    rhi::TextureHandle contactTex {};
+    rhi::FramebufferHandle contactFb {};
+    rhi::BindGroupHandle contactGroup {};
+
     // Brick 29: auto-exposure targets (window-size independent).
     rhi::TextureHandle luminanceTex {};
     rhi::FramebufferHandle luminanceFb {};
@@ -106,6 +119,7 @@ private:
     rhi::PipelineHandle godRayPipeline {};
     rhi::PipelineHandle volumetricPipeline {};
     rhi::PipelineHandle ssaoPipeline {};
+    rhi::PipelineHandle contactPipeline {};
     rhi::PipelineHandle luminancePipeline {};
     rhi::PipelineHandle adaptPipeline {};
     u64 shaderGeneration { 0 };
