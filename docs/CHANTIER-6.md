@@ -156,6 +156,20 @@ plan : B1 ambiance+rampe + SSAO existant).
   occlusion de pluie top-down (spec brique 31), ombres de terrain
   lointaines via nos cartes d'horizon, skylighting, A/B falloff
   inverse-square.
+- **B5bis — LA cause racine des « lumières verdâtres » (trouvée par
+  bissection shader, 2026-07-07) : la teinte de SUBMERSION du tonemap.**
+  La cellule intérieure vit à y ≈ 0-3 m, sous le niveau de la mer
+  extérieur (14 m) : `uTerrainInfo.x - uCameraPos.y` → la caméra était
+  traitée comme 11 m sous l'eau et TOUTE la pièce passait par
+  l'absorption teal `{0.18, 0.55, 0.60}` + l'additif d'eau. Fix :
+  submersion × (1 − uCascadeSplits.w) — jamais en intérieur. Diagnostic
+  mémorable : rouge pur écrit par mesh.frag → teal constant à l'écran =
+  une passe post rend la sortie indépendante de la scène ; le buffer
+  brut (uSceneColor) était chaud et correct. Le skew ACES (hue-mix
+  intérieur) reste en place comme amélioration secondaire, réglable
+  (le 0.55 dans tonemap.frag). Deux fausses pistes écartées au passage :
+  moyennes de textures du kit (toutes chaudes, vérifiées) et
+  baseColorFactor glTF (tous blancs).
 
 ### Fichiers B (à commiter APRÈS validation visuelle dev)
 
