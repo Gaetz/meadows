@@ -27,7 +27,13 @@ void main() {
     vec3 n = normalize(vNormal);
     float ndl = dot(n, uSunDirection.xyz);
     float diffuse = stylizedDiffuse(ndl, max(ndl, 0.0));
-    vec3 lit = albedo * (uAmbientColor.rgb + uSunColor.rgb * diffuse +
+    // B5 interior hemispheric ambient — KEEP IN SYNC with mesh.frag.
+    vec3 ambient = uAmbientColor.rgb;
+    if (uCascadeSplits.w > 0.5) {
+        float up = n.y * 0.5 + 0.5;
+        ambient *= mix(vec3(0.50, 0.42, 0.36), vec3(1.35, 1.30, 1.22), up);
+    }
+    vec3 lit = albedo * (ambient + uSunColor.rgb * diffuse +
                          localLights(vWorldPos, n)) +
                albedo * uMeshInfo.x;
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);

@@ -91,10 +91,12 @@ vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
         .each([&](flecs::entity, const world::Transform& transform,
                   const world::LightSource& source) {
             const Vec3 d = transform.position - focus;
-            candidates.push_back({ glm::dot(d, d), order++,
-                                   { transform.position, source.color,
-                                     source.intensity, source.radius,
-                                     source.flicker } });
+            candidates.push_back(
+                { glm::dot(d, d), order++,
+                  { transform.position, source.color, source.intensity,
+                    source.radius, source.flicker,
+                    transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f },
+                    source.spotAngle } });
         });
     std::stable_sort(candidates.begin(), candidates.end(),
                      [](const Candidate& a, const Candidate& b) {

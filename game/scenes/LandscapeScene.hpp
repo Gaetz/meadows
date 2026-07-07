@@ -23,6 +23,7 @@
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/interaction/Furniture.hpp"
 #include "gameplay/save/SaveState.hpp"
+#include "engine/core/FrameProbe.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
@@ -37,6 +38,7 @@
 #include "game/SceneSubmit.hpp"
 #include "game/TerrainCollision.hpp"
 #include "game/TextureCache.hpp"
+#include "game/VegetationCollision.hpp"
 #include "game/scenes/LandscapeTuning.hpp"
 #include "engine/render/landscape/ChunkOcclusion.hpp"
 #include "engine/render/landscape/GpuOcclusion.hpp"
@@ -153,6 +155,20 @@ private:
     bool shadowsUi { true };
     bool cascadeDebugUi { false };
     bool reflectionsUi { true };
+    // The hysteresis-quantized sun the shadow cascades follow (a
+    // continuously rotating light re-bases the texel snap every frame —
+    // crawling edges); lighting keeps the smooth skyState sun.
+    Vec3 shadowSunDirection { 0.0f, 1.0f, 0.0f };
+    // Chantier 6 B3 (brick 28): analytical grade — OFF by default, the
+    // dev A/Bs it before it can change the (liked) exterior look.
+    bool gradingUi { false };
+    f32 gradeVibranceUi { 0.3f };
+    f32 gradeSplitToneUi { 0.35f };
+    f32 gradeContrastUi { 1.06f };
+    // Chantier 6 B4 (brick 29): auto-exposure — OFF by default (A/B).
+    bool autoExposureUi { false };
+    f32 autoExposureMinUi { 0.4f };
+    f32 autoExposureMaxUi { 2.5f };
     f32 exposureUi { 1.0f };
     f32 cloudCoverageUi { 0.38f };
     f32 cloudShadowUi { 0.7f };
@@ -403,12 +419,24 @@ private:
         rhi::BindGroupHandle group {};
         rhi::TextureHandle boundTexture {};
         core::Guid material {};
+        rhi::BindGroupHandle casterGroup {}; // B2a: ubo at binding 4
     };
     vector<MeshDraw> meshDraws;
     rhi::PipelineHandle meshPipeline {};
     u64 meshShaderGeneration { 0 };
     void buildMeshPipeline(rhi::Device& device);
     void drawSceneMeshes(engine::FrameContext& frame);
+
+    // Chantier 6 B2a: meshes + skinned NPCs cast into the sun cascades
+    // (depth-only pipelines; the model UBOs are re-used, one frame behind
+    // for NPCs — invisible at shadow resolution). Toggle = the A/B guard.
+    rhi::PipelineHandle meshCasterPipeline {};
+    rhi::PipelineHandle skinnedCasterPipeline {};
+    u64 meshCasterShaderGeneration { 0 };
+    u64 skinnedCasterShaderGeneration { 0 };
+    bool meshShadowCastersUi { true };
+    void buildCasterPipelines(rhi::Device& device);
+    void drawShadowCasters(engine::FrameContext& frame, u32 cascade);
 
     // B6 (chantier 1): Forms-driven skinned NPCs. The scene builds NOTHING
     // by hand anymore — every actor whose ActorForm resolves an
@@ -437,6 +465,7 @@ private:
         rhi::BufferHandle paletteSsbo {};
         rhi::BufferHandle modelUbo {};
         rhi::BindGroupHandle group {};
+        rhi::BindGroupHandle casterGroup {}; // B2a: ubo b4 + palette b2
         // Patrol: walk to patrolPoints[target], pause, swap ends.
         u32 target { 0 };
         f32 pauseTimer { 0.0f };
@@ -493,6 +522,8 @@ private:
     // fall/rest/slope behavior in-scene (drawn as the placeholder box).
     uptr<phys::PhysicsWorld> physics;
     uptr<TerrainCollision> terrainCollision;
+    // Trunks + rocks from the deterministic scatter (dev report 2026-07-07).
+    uptr<VegetationCollision> vegCollision;
     uptr<phys::CharacterBody> debugCapsule;
     // Chantier 2 B2: one Jolt mesh body per collidable spawned static,
     // cooked from the MeshCache CPU copy once resident, dropped when the
@@ -508,10 +539,16 @@ private:
     // decision). The player is a kinematic capsule, the camera sits at eye
     // height, the mouse is always captured; Fly stays the dev camera.
     // Toggle: F key or the checkbox.
+    // Stutter hunt: per-block frame breakdown, logged on spikes > 25 ms.
+    core::FrameProbe frameProbe;
+
     bool playMode { false };
     uptr<phys::CharacterBody> player;
     Vec3 playerVelocity { 0.0f }; // smoothed horizontal velocity (m/s)
     f32 jumpSpeed { 5.0f };       // fallback only — jumpPower stat drives it (C3)
+    // Travel fade: extra seconds spent holding at black while the arrival
+    // floor's collider is still cooking (see updateInteraction).
+    f32 fadeHoldSeconds { 0.0f };
     // C3: refreshed each frame at the equipMods site; gates jump/sprint
     // and feeds the inventory footer.
     gameplay::EncumbranceCategory playerEncumbrance {
@@ -548,7 +585,10 @@ private:
     rhi::BindGroupHandle reflectionBindGroup {};
     rhi::SamplerHandle depthSampler {}; // nearest — depth must not filter
     rhi::SamplerHandle blitSampler {};
-    rhi::BindGroupHandle blitBindGroup {};
+    // B4: one blit group per adaptation ping-pong side (binding 5 = the
+    // exposure texture the tonemap taps); [0] doubles as the only group
+    // on the no-postFx fallback path.
+    array<rhi::BindGroupHandle, 2> blitBindGroups {};
     rhi::PipelineHandle blitPipeline {};
     u64 blitShaderGeneration { 0 };
     u32 offscreenWidth { 0 };

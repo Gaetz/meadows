@@ -6,6 +6,7 @@ layout(binding = 1) uniform sampler2D uBloom;
 layout(binding = 2) uniform sampler2D uGodRays;
 layout(binding = 3) uniform sampler2D uVolumetric;
 layout(binding = 4) uniform sampler2D uSsao;
+layout(binding = 5) uniform sampler2D uExposure; // brick 29: 1x1 adaptation
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -58,16 +59,60 @@ void main() {
     hdr = hdr * volumetric.a + volumetric.rgb;
     hdr += texture(uBloom, vUv).rgb * uPostInfo.w;
     hdr += texture(uGodRays, vUv).rgb * uSunScreen.w;
-    hdr *= uPostInfo.y;
+    hdr *= uPostInfo.y; // exposure (becomes the EV bias when auto is on)
+    // Brick 29 (chantier 6 B4): the adapted exposure, one tap. The scene
+    // flags it on uWindInfo.w so the toggle costs nothing when off.
+    if (uWindInfo.w > 0.5) {
+        hdr *= texelFetch(uExposure, ivec2(0), 0).r;
+    }
     // Submerged camera: the whole frame breathes water — teal absorption
     // that deepens with how far below the surface the camera sits.
+    // NEVER indoors (uCascadeSplits.w): interior cells live near y = 0,
+    // far below the exterior sea level — the whole room used to render
+    // through 11 m of virtual water (the greenish-interior bug).
     float submersion = clamp((uTerrainInfo.x - uCameraPos.y) * 0.35, 0.0,
-                             1.0);
+                             1.0) *
+                       (1.0 - uCascadeSplits.w);
     hdr = mix(hdr, hdr * vec3(0.18, 0.55, 0.60) + vec3(0.004, 0.030, 0.036),
               submersion * 0.85);
     // A/B toggle: raw path clips instead of rolling off (same gamma encode,
     // so the comparison isolates the tonemap curve).
     vec3 color = uPostInfo.x > 0.5 ? acesFilm(hdr) : clamp(hdr, 0.0, 1.0);
+    // B5: per-channel ACES skews saturated warm light toward yellow-green
+    // as it brightens (R rolls off first, G catches up). INDOORS
+    // (uCascadeSplits.w) blend toward a hue-preserving mapping: ACES on
+    // the luminance, original color ratio kept. The exterior keeps the
+    // classic curve — sunsets live off exactly that desaturation.
+    if (uCascadeSplits.w > 0.5 && uPostInfo.x > 0.5) {
+        float l = dot(hdr, vec3(0.2126, 0.7152, 0.0722));
+        vec3 hueKept = hdr * (acesFilm(vec3(l)).r / max(l, 1e-4));
+        color = mix(color, clamp(hueKept, 0.0, 1.0), 0.55);
+    }
+    // Brick 28 (chantier 6 B3): analytical BotW grade between the curve and
+    // the gamma encode. Parameters ride free .w slots — uSunGlowColor.w =
+    // vibrance, uZenithColor.w = split-tone strength, uHorizonColor.w =
+    // contrast; the scene sends neutral (0 / 0 / 1) when the toggle is off.
+    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    float vibrance = uSunGlowColor.w;
+    if (vibrance > 0.001) {
+        // Weighted saturation: pale colors get the boost, already-vivid
+        // ones barely move (greens sing without going neon at noon).
+        float sat = max(color.r, max(color.g, color.b)) -
+                    min(color.r, min(color.g, color.b));
+        color = mix(vec3(luma), color, 1.0 + vibrance * (1.0 - sat));
+    }
+    float splitTone = uZenithColor.w;
+    if (splitTone > 0.001) {
+        vec3 shadowTint = vec3(-0.04, 0.00, 0.06);  // cool shadows
+        vec3 highTint = vec3(0.06, 0.015, -0.05);   // warm highlights
+        color += splitTone *
+                 mix(shadowTint, highTint, smoothstep(0.15, 0.85, luma));
+    }
+    float contrast = uHorizonColor.w;
+    if (contrast > 0.001) {
+        color = mix(vec3(0.5), color, contrast); // pivot 0.5
+    }
+    color = clamp(color, 0.0, 1.0);
     // Manual gamma encode — no global GL_FRAMEBUFFER_SRGB, the 2D sprite
     // path stays untouched.
     color = pow(color, vec3(1.0 / 2.2));

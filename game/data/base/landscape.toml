@@ -49,6 +49,18 @@ cloudShadowStrength = 0.7
 cloudHeight = 520.0         # cloud layer altitude (m)
 cloudScale = 0.0011         # pattern frequency (1/m)
 
+# --- Interiors (chantier 6 B1) --------------------------------------------
+interiorAmbient = [0.16, 0.15, 0.14]  # constant ambient in interior cells
+
+# --- Grading (renderer brick 28, chantier 6 B3) ----------------------------
+gradeVibrance = 0.3    # weighted saturation boost (0 = off)
+gradeSplitTone = 0.35  # cool shadows / warm highlights (0 = off)
+gradeContrast = 1.06   # pivot 0.5 (1 = neutral)
+
+# --- Auto-exposure (renderer brick 29, chantier 6 B4) -----------------------
+autoExposureMin = 0.4  # adapted exposure clamp (bright scenes)
+autoExposureMax = 2.5  # adapted exposure clamp (dark scenes/interiors)
+
 # H8 proof: MaterialForm -> textured stylized mesh (the renderer-gameplay
 # contract). The LandscapeScene draws one cube with this material near the
 # spawn point; patch tint/emissive to see the data drive the pixels.

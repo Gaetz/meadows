@@ -413,11 +413,13 @@ form = "4d7a9b30-0000-4000-8000-000000000043"
 type = "LightForm"
 new = true
 [records.fields]
+# B1 retune: a lantern's enclosed flame barely flickers (0.12) — the
+# naked candles inside dance (0.45); that contrast reads as material.
 editorId = "DoorLantern"
 color = [1.0, 0.72, 0.42]
-intensity = 1.6
+intensity = 2.8
 radius = 9.0
-flicker = 0.35
+flicker = 0.12
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000044"
@@ -504,23 +506,8 @@ cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [9.0, 0.0, 11.0]
 
 # Interior walls: north pair, south pair (one doorway), sides x = 6 / 10.
-[[records]]
-form = "4d7a9b30-0000-4000-8000-000000000058"
-type = "ReferenceForm"
-new = true
-[records.fields]
-baseForm = "4d7a9b30-0000-4000-8000-000000000012"
-cell = "4d7a9b30-0000-4000-8000-000000000021"
-position = [7.0, 0.0, 4.0]
-
-[[records]]
-form = "4d7a9b30-0000-4000-8000-000000000059"
-type = "ReferenceForm"
-new = true
-[records.fields]
-baseForm = "4d7a9b30-0000-4000-8000-000000000012"
-cell = "4d7a9b30-0000-4000-8000-000000000021"
-position = [9.0, 0.0, 4.0]
+# (B5ter: the two z=4 wall modules moved out of the way — the doorway to
+# the test hall behind the room. Their record ids 58/59 are retired.)
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-00000000005a"
@@ -620,17 +607,18 @@ cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [10.0, 0.0, 11.0]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 
-# Warm interior lights (flicker = candles).
+# Warm interior lights (flicker = candles). B1 retune: livelier candle
+# flicker (a lantern stays ~0.12, a naked flame dances).
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000064"
 type = "LightForm"
 new = true
 [records.fields]
 editorId = "InteriorCandle"
-color = [1.0, 0.68, 0.38]
-intensity = 1.4
+color = [1.0, 0.66, 0.34]
+intensity = 2.6
 radius = 7.0
-flicker = 0.3
+flicker = 0.45
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000065"
@@ -649,6 +637,55 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-000000000064"
 cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [9.0, 2.2, 10.0]
+
+# B1: a cool steady fill from the window side — the warm/cool contrast
+# gives the room depth (the BotW look is lighting doing the work).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000010b"
+type = "LightForm"
+new = true
+[records.fields]
+# B5: R ~ G, blue-heavy — a green-tinted "cool" (G > R) over the warm
+# yellow plaster (which absorbs blue) leaves only green: the greenish
+# cast the dev reported. True blue greys out instead.
+editorId = "InteriorCoolFill"
+color = [0.44, 0.46, 0.85]
+intensity = 0.8
+radius = 10.0
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000010c"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-00000000010b"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [3.0, 2.6, 8.0]
+
+# B1: a spot over the table — the first `kind = "spot"` placement (the
+# reference's rotation aims it; identity forward is +Z, so pitch it down).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000010d"
+type = "LightForm"
+new = true
+[records.fields]
+editorId = "TableSpot"
+kind = "spot"
+color = [1.0, 0.8, 0.55]
+intensity = 3.5
+radius = 6.0
+spotAngle = 55.0
+flicker = 0.12
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000010e"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-00000000010d"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [8.0, 2.8, 8.0]
+rotation = [0.7071068, 0.0, 0.0, 0.7071068]
 
 # --- Melee combat (chantier 3 B6) ----------------------------------------------
 
@@ -1390,3 +1427,317 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-000000000100"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [46.0, 0.0, 368.0]
+
+# --- B5ter: the lighting test hall (dev request 2026-07-07) -------------------
+# An 8 x 16 m hall behind the house room (the two z=4 wall modules made
+# way). Purpose: judge lit/unlit contrast and the falloff curve — dungeon
+# and cinematic ambience prep. Zones, walking in from the room:
+#   1. warm wall pool (left), 2. DARK gap (ambient only), 3. warm wall
+#   pool (right), 4. the cold overhead shaft at the far end + a dying
+#   brazier in the corner. No ceiling: the void above reads as darkness.
+
+# z=4 closures either side of the new 4 m doorway.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000110"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [5.0, 0.0, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000111"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [11.0, 0.0, 4.0]
+
+# West side wall (x = 4), 8 modules.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000112"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [4.0, 0.0, 3.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000113"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [4.0, 0.0, 1.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000114"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [4.0, 0.0, -1.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000115"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [4.0, 0.0, -3.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000116"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [4.0, 0.0, -5.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000117"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [4.0, 0.0, -7.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000118"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [4.0, 0.0, -9.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000119"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [4.0, 0.0, -11.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+# East side wall (x = 12), 8 modules.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000011a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [12.0, 0.0, 3.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000011b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [12.0, 0.0, 1.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000011c"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [12.0, 0.0, -1.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000011d"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [12.0, 0.0, -3.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000011e"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [12.0, 0.0, -5.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000011f"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [12.0, 0.0, -7.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000120"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [12.0, 0.0, -9.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000121"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [12.0, 0.0, -11.0]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+# Far end wall (z = -12), 4 modules.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000122"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [5.0, 0.0, -12.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000123"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [7.0, 0.0, -12.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000124"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [9.0, 0.0, -12.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000125"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [11.0, 0.0, -12.0]
+
+# Floor: two x4-scaled wood tiles (flat vertex colors stretch for free).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000126"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [8.0, 0.0, 0.0]
+scale = [4.0, 1.0, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000127"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [8.0, 0.0, -8.0]
+scale = [4.0, 1.0, 4.0]
+
+# Zone 1 — warm wall pool, west, right after the doorway. Then NOTHING
+# until zone 3: the gap in between is pure interiorAmbient darkness.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000128"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000064"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [4.7, 1.9, 0.5]
+
+# Zone 3 — warm wall pool, east, past the dark gap.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000129"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000064"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [11.3, 1.9, -6.0]
+
+# Zone 4 — the cinematic shaft: a cold, steady spot falling straight down
+# out of the black void onto the far end. Tight cone, hard pool.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000012a"
+type = "LightForm"
+new = true
+[records.fields]
+editorId = "HallShaft"
+kind = "spot"
+color = [0.85, 0.92, 1.0]
+intensity = 5.0
+radius = 10.0
+spotAngle = 38.0
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000012b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-00000000012a"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [8.0, 5.5, -10.0]
+rotation = [0.7071068, 0.0, 0.0, 0.7071068]
+
+# A dying brazier in the far corner — deep red, low, restless: how does a
+# barely-there source read against the dark?
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000012c"
+type = "LightForm"
+new = true
+[records.fields]
+editorId = "DyingBrazier"
+color = [1.0, 0.32, 0.12]
+intensity = 1.1
+radius = 3.5
+flicker = 0.6
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000012d"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-00000000012c"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [5.0, 0.5, -11.0]

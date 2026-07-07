@@ -61,12 +61,17 @@ RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures);
 void extractMeshes(const ecs::World& world, RenderSnapshot& out);
 
 // A placed local light, extracted for the renderer (chantier 2 B5).
+// Chantier 6 B1: spots — `direction` is the placement's forward
+// (Transform.rotation × +Z, the scene's yaw convention); spotAngle is the
+// FULL cone angle in degrees, 0 = point light.
 struct SceneLight {
     Vec3 position { 0.0f };
     Vec3 color { 1.0f };
     f32 intensity { 1.0f };
     f32 radius { 8.0f };
     f32 flicker { 0.0f };
+    Vec3 direction { 0.0f, 0.0f, 1.0f };
+    f32 spotAngle { 0.0f };
 };
 
 // The `maxLights` LightSource entities nearest to `focus`, nearest first

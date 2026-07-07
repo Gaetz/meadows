@@ -16,6 +16,9 @@ constexpr const char* kUpShader = "bloom_up";
 constexpr const char* kGodRaysShader = "godrays";
 constexpr const char* kVolumetricShader = "volumetric";
 constexpr const char* kSsaoShader = "ssao";
+constexpr const char* kLuminanceShader = "luminance"; // brick 29
+constexpr const char* kAdaptShader = "adapt";
+constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
 } // namespace
 
 void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
@@ -31,11 +34,18 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
                  kFullscreenVert);
     shaders.load(kSsaoShader, { { "FrameUbo", 0 } },
                  { { "uSceneDepth", 0 } }, kFullscreenVert);
+    shaders.load(kLuminanceShader, {}, { { "uSceneColor", 0 } },
+                 kFullscreenVert);
+    shaders.load(kAdaptShader, { { "FrameUbo", 0 } },
+                 { { "uLuminance", 0 }, { "uPrevExposure", 1 } },
+                 kFullscreenVert);
     buildPipelines(device, shaders);
 }
 
 void PostFx::destroy(rhi::Device& device) {
     destroyTargets(device);
+    device.destroyPipeline(adaptPipeline);
+    device.destroyPipeline(luminancePipeline);
     device.destroyPipeline(ssaoPipeline);
     device.destroyPipeline(volumetricPipeline);
     device.destroyPipeline(godRayPipeline);
@@ -61,12 +71,16 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
     rebuild(godRayPipeline, kGodRaysShader, rhi::BlendMode::Opaque);
     rebuild(volumetricPipeline, kVolumetricShader, rhi::BlendMode::Opaque);
     rebuild(ssaoPipeline, kSsaoShader, rhi::BlendMode::Opaque);
+    rebuild(luminancePipeline, kLuminanceShader, rhi::BlendMode::Opaque);
+    rebuild(adaptPipeline, kAdaptShader, rhi::BlendMode::Opaque);
     shaderGeneration = shaders.generation(kPrefilterShader) +
                        shaders.generation(kDownShader) +
                        shaders.generation(kUpShader) +
                        shaders.generation(kGodRaysShader) +
                        shaders.generation(kVolumetricShader) +
-                       shaders.generation(kSsaoShader);
+                       shaders.generation(kSsaoShader) +
+                       shaders.generation(kLuminanceShader) +
+                       shaders.generation(kAdaptShader);
 }
 
 void PostFx::refreshPipelines(rhi::Device& device, ShaderLibrary& shaders) {
@@ -75,13 +89,29 @@ void PostFx::refreshPipelines(rhi::Device& device, ShaderLibrary& shaders) {
                         shaders.generation(kUpShader) +
                         shaders.generation(kGodRaysShader) +
                         shaders.generation(kVolumetricShader) +
-                        shaders.generation(kSsaoShader);
+                        shaders.generation(kSsaoShader) +
+                        shaders.generation(kLuminanceShader) +
+                        shaders.generation(kAdaptShader);
     if (current != shaderGeneration) {
         buildPipelines(device, shaders);
     }
 }
 
 void PostFx::destroyTargets(rhi::Device& device) {
+    for (u32 i = 0; i < 2; ++i) {
+        device.destroyBindGroup(adaptGroup[i]);
+        device.destroyFramebuffer(adaptFb[i]);
+        device.destroyTexture(adaptTex[i]);
+        adaptGroup[i] = {};
+        adaptFb[i] = {};
+        adaptTex[i] = {};
+    }
+    device.destroyBindGroup(luminanceGroup);
+    device.destroyFramebuffer(luminanceFb);
+    device.destroyTexture(luminanceTex);
+    luminanceGroup = {};
+    luminanceFb = {};
+    luminanceTex = {};
     device.destroyBindGroup(ssaoGroup);
     device.destroyFramebuffer(ssaoFb);
     device.destroyTexture(ssaoTex);
@@ -200,6 +230,76 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
         { .entries = { { .binding = 0,
                          .texture = sceneDepthCopy,
                          .sampler = linearSampler } } });
+
+    // Brick 29: auto-exposure — fixed 64² log-luminance pyramid + the two
+    // 1×1 adaptation targets (ping-pong; adapt.frag snaps when the prev
+    // side reads 0, so fresh targets need no seeding).
+    luminanceTex = device.createTexture(
+        { .width = kLuminanceSize,
+          .height = kLuminanceSize,
+          .mipLevels = 7, // 64 -> 1
+          .format = rhi::TextureFormat::R16F,
+          .filter = rhi::FilterMode::Linear,
+          .usage = rhi::TextureUsage_Sampled |
+                   rhi::TextureUsage_RenderAttachment },
+        nullptr);
+    luminanceFb = device.createFramebuffer(
+        { .colorAttachments = { { .texture = luminanceTex } } });
+    luminanceGroup = device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = sceneColor,
+                         .sampler = linearSampler } } });
+    for (u32 i = 0; i < 2; ++i) {
+        adaptTex[i] = device.createTexture(
+            { .width = 1,
+              .height = 1,
+              .format = rhi::TextureFormat::R16F,
+              .filter = rhi::FilterMode::Nearest,
+              .usage = rhi::TextureUsage_Sampled |
+                       rhi::TextureUsage_RenderAttachment },
+            nullptr);
+        adaptFb[i] = device.createFramebuffer(
+            { .colorAttachments = { { .texture = adaptTex[i] } } });
+    }
+    for (u32 i = 0; i < 2; ++i) {
+        adaptGroup[i] = device.createBindGroup(
+            { .entries = { { .binding = 0,
+                             .texture = luminanceTex,
+                             .sampler = linearSampler },
+                           { .binding = 1,
+                             .texture = adaptTex[1 - i],
+                             .sampler = linearSampler } } });
+    }
+    adaptSide = 0;
+}
+
+void PostFx::renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
+                                rhi::BindGroupHandle frameBindGroup) {
+    if (luminanceTex.id == 0) {
+        return;
+    }
+    // 1. Log-luminance of the HDR scene into the 64² base level.
+    cmd.beginRenderPass({ .framebuffer = luminanceFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(luminancePipeline);
+    cmd.setBindGroup(0, luminanceGroup);
+    cmd.draw(3);
+    cmd.endRenderPass();
+
+    // 2. Reduce to the 1×1 log-average (mip 6).
+    device.generateMipmaps(luminanceTex);
+
+    // 3. Adaptation micro-pass onto the other ping-pong side.
+    adaptSide = 1 - adaptSide;
+    cmd.beginRenderPass({ .framebuffer = adaptFb[adaptSide],
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(adaptPipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    cmd.setBindGroup(1, adaptGroup[adaptSide]);
+    cmd.draw(3);
+    cmd.endRenderPass();
 }
 
 void PostFx::render(rhi::CommandBuffer& cmd,

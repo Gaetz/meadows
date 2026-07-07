@@ -177,6 +177,11 @@ void LandscapeScene::onEnter() {
     cloudShadowUi = tuning.cloudShadowStrength;
     cloudHeightUi = tuning.cloudHeight;
     cloudScaleUi = tuning.cloudScale;
+    gradeVibranceUi = tuning.gradeVibrance;   // B3 (toggle stays off)
+    gradeSplitToneUi = tuning.gradeSplitTone;
+    gradeContrastUi = tuning.gradeContrast;
+    autoExposureMinUi = tuning.autoExposureMin; // B4 (toggle stays off)
+    autoExposureMaxUi = tuning.autoExposureMax;
 
     frameUbo = device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
                                      .size = sizeof(render::FrameUniforms),
@@ -186,7 +191,9 @@ void LandscapeScene::onEnter() {
     // don't declare the block simply ignore it.
     lightsUbo = device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform,
-          .size = (1 + 2 * kMaxLights) * sizeof(Vec4),
+          // B1: + the appended direction/angle array (the UBO lesson:
+          // new members go at the END, both CPU and GLSL sides).
+          .size = (1 + 3 * kMaxLights) * sizeof(Vec4),
           .dynamic = true },
         nullptr);
     frameBindGroup = device.createBindGroup(
@@ -220,6 +227,12 @@ void LandscapeScene::onEnter() {
                     { "LightsUbo", 5 } },
                   { { "uAlbedo", 0 } });
     buildMeshPipeline(device);
+    // B2a: the depth-only caster variants (sun cascades).
+    shaders->load("shadow_mesh",
+                  { { "ShadowUbo", 1 }, { "CasterModelUbo", 4 } });
+    shaders->load("shadow_skinned",
+                  { { "ShadowUbo", 1 }, { "CasterModelUbo", 4 } });
+    buildCasterPipelines(device);
 
     // Chantier 4 B2: the RmlUi game UI (screens from UiScreenForm records,
     // documents through the plugins' ui/ roots).
@@ -228,8 +241,10 @@ void LandscapeScene::onEnter() {
     // B4: the sim-side physics world + terrain collision (tiles follow the
     // camera for now; the player becomes the focus in B5).
     physics = std::make_unique<phys::PhysicsWorld>();
-    terrainCollision =
-        std::make_unique<TerrainCollision>(*physics, terrain.params);
+    terrainCollision = std::make_unique<TerrainCollision>(
+        *physics, terrain.params, &engine->getJobSystem());
+    vegCollision =
+        std::make_unique<VegetationCollision>(*physics, terrain.params);
 
     // Chantier 3 B2: navigation over the SAME height function as
     // everything else (patches included — the pointer rides in params).
@@ -528,7 +543,8 @@ void LandscapeScene::onEnter() {
                         { "uBloom", 1 },
                         { "uGodRays", 2 },
                         { "uVolumetric", 3 },
-                        { "uSsao", 4 } });
+                        { "uSsao", 4 },
+                        { "uExposure", 5 } }); // B4: adaptation tap
         rebuildBlitPipeline(device);
     }
     if (device.caps().offscreenTargets && device.caps().hdrFormats &&
@@ -585,6 +601,22 @@ void LandscapeScene::onEnter() {
             syncScreens();
         }
     }
+
+    // Dev convenience (interior lighting tuning, 2026-07-07): boot the
+    // session INSIDE the house — the pending travel rides the normal
+    // door fade and fires once the main menu closes (Enter the world /
+    // Escape). Flip to false to boot in the village again.
+    constexpr bool kDevStartInterior = false; // exterior pass next (dev)
+    if (kDevStartInterior && !loadedFromSave) {
+        // HouseDoorExterior's arrival marker (village.toml, the marker
+        // REFERENCE inside the interior cell).
+        if (const auto marker = core::Guid::fromString(
+                "4d7a9b30-0000-4000-8000-000000000023");
+            marker && forms.find<world::ReferenceForm>(*marker)) {
+            pendingTravel = *marker;
+            fadeDirection = 1;
+        }
+    }
 }
 
 void LandscapeScene::onExit() {
@@ -623,6 +655,9 @@ void LandscapeScene::onExit() {
         if (draw.group.id != 0) {
             device.destroyBindGroup(draw.group);
         }
+        if (draw.casterGroup.id != 0) {
+            device.destroyBindGroup(draw.casterGroup);
+        }
         if (draw.ubo.id != 0) {
             device.destroyBuffer(draw.ubo);
         }
@@ -632,6 +667,8 @@ void LandscapeScene::onExit() {
     meshCache.reset();
     materialTextures.reset();
     device.destroyPipeline(meshPipeline);
+    device.destroyPipeline(meshCasterPipeline);   // B2a
+    device.destroyPipeline(skinnedCasterPipeline);
     // B6 NPCs: GPU state per NPC, then the CPU-side rig cache.
     for (auto& npc : npcs) {
         destroyNpc(device, *npc);
@@ -654,6 +691,7 @@ void LandscapeScene::onExit() {
         physics->removeBody(body);
     }
     staticColliders.clear();
+    vegCollision.reset();
     terrainCollision.reset();
     physics.reset();
     device.destroySampler(meshSampler);
@@ -756,29 +794,35 @@ void LandscapeScene::ensureOffscreenTarget(rhi::Device& device, u32 width,
     }
     // Tonemap inputs: scene + bloom + god rays (black 1x1 fallbacks are not
     // needed on the 4.6 path — postFx is always ready when we get here).
-    blitBindGroup = device.createBindGroup(
-        { .entries =
-              postFx.ready()
-                  ? vector<rhi::BindGroupEntry> {
-                        { .binding = 0,
-                          .texture = offscreenColor,
-                          .sampler = blitSampler },
-                        { .binding = 1,
-                          .texture = postFx.bloomTexture(),
-                          .sampler = blitSampler },
-                        { .binding = 2,
-                          .texture = postFx.godRayTexture(),
-                          .sampler = blitSampler },
-                        { .binding = 3,
-                          .texture = postFx.volumetricTexture(),
-                          .sampler = blitSampler },
-                        { .binding = 4,
-                          .texture = postFx.ssaoTexture(),
-                          .sampler = blitSampler } }
-                  : vector<rhi::BindGroupEntry> {
-                        { .binding = 0,
-                          .texture = offscreenColor,
-                          .sampler = blitSampler } } });
+    // B4: one group per adaptation ping-pong side (binding 5).
+    for (u32 side = 0; side < 2; ++side) {
+        blitBindGroups[side] = device.createBindGroup(
+            { .entries =
+                  postFx.ready()
+                      ? vector<rhi::BindGroupEntry> {
+                            { .binding = 0,
+                              .texture = offscreenColor,
+                              .sampler = blitSampler },
+                            { .binding = 1,
+                              .texture = postFx.bloomTexture(),
+                              .sampler = blitSampler },
+                            { .binding = 2,
+                              .texture = postFx.godRayTexture(),
+                              .sampler = blitSampler },
+                            { .binding = 3,
+                              .texture = postFx.volumetricTexture(),
+                              .sampler = blitSampler },
+                            { .binding = 4,
+                              .texture = postFx.ssaoTexture(),
+                              .sampler = blitSampler },
+                            { .binding = 5,
+                              .texture = postFx.exposureTexture(side),
+                              .sampler = blitSampler } }
+                      : vector<rhi::BindGroupEntry> {
+                            { .binding = 0,
+                              .texture = offscreenColor,
+                              .sampler = blitSampler } } });
+    }
     offscreenWidth = width;
     offscreenHeight = height;
 }
@@ -799,11 +843,12 @@ void LandscapeScene::destroyOffscreenTarget(rhi::Device& device) {
     reflectionColor = {};
     sceneDepthCopy = {};
     sceneColorCopy = {};
-    device.destroyBindGroup(blitBindGroup);
+    device.destroyBindGroup(blitBindGroups[0]);
+    device.destroyBindGroup(blitBindGroups[1]);
     device.destroyFramebuffer(offscreenFb);
     device.destroyTexture(offscreenDepth);
     device.destroyTexture(offscreenColor);
-    blitBindGroup = {};
+    blitBindGroups = {};
     offscreenFb = {};
     offscreenDepth = {};
     offscreenColor = {};
@@ -821,28 +866,38 @@ void LandscapeScene::rebuildBlitPipeline(rhi::Device& device) {
 }
 
 void LandscapeScene::update(f32 dt) {
+    frameProbe.beginFrame(); // ends in render() — one probe per frame
     timeSeconds += dt;
     // B1 mesh path: pump async residency (worker decodes -> main-thread
     // uploads, §7), then extract this frame's snapshot from the world.
-    if (materialTextures) {
-        materialTextures->pumpUploads();
-    }
-    if (meshCache) {
-        meshCache->pumpUploads();
+    {
+        core::FrameProbe::Scope probe { frameProbe, "assets" };
+        if (materialTextures) {
+            materialTextures->pumpUploads();
+        }
+        if (meshCache) {
+            meshCache->pumpUploads();
+        }
     }
     // Chantier 4 B2: the game UI runs first — an open MODAL screen pauses
     // the sim below (UiScreenForm.modal) and owns mouse/keyboard; the HUD
     // overlay just reads. Dev ImGui stays live either way.
-    updateGameUi(dt);
+    {
+        core::FrameProbe::Scope probe { frameProbe, "gameUi" };
+        updateGameUi(dt);
+    }
     const bool uiPaused = uiCreated && screenStack.modalOpen();
     // B4/B5: physics tick + collision tiles around the focus (the player
     // in Play mode, the camera in Fly); the debug capsule free-falls.
     if (physics && !uiPaused) {
+        core::FrameProbe::Scope probe { frameProbe, "physics" };
         physics->tick(dt);
         if (!interiorMode) { // interiors have no terrain to collide with
-            terrainCollision->update(playMode && player
-                                         ? player->position()
-                                         : flyCamera.camera.position);
+            const Vec3 focus = playMode && player
+                                   ? player->position()
+                                   : flyCamera.camera.position;
+            terrainCollision->update(focus);
+            vegCollision->update(focus); // trunks + rocks (dev report)
         }
         if (debugCapsule) {
             debugCapsule->move({ 0.0f, 0.0f, 0.0f }, dt);
@@ -851,6 +906,7 @@ void LandscapeScene::update(f32 dt) {
     // Chantier 2 B1: stream cells around the focus; on any ring change,
     // re-run the post-spawn fixups (idempotent snap + NPC refresh).
     if (cellStreamer && activeWorldspace.isValid() && !uiPaused) {
+        core::FrameProbe::Scope probe { frameProbe, "cells" };
         const Vec3 focus = playMode && player ? player->position()
                                               : flyCamera.camera.position;
         // Chantier 5 B8: border crossings spread their spawns — one cell
@@ -863,18 +919,27 @@ void LandscapeScene::update(f32 dt) {
             refreshNavObstacles();
         }
     }
-    updateStaticColliders(); // B2: bodies follow spawns + mesh residency
+    {
+        // B2: bodies follow spawns + mesh residency.
+        core::FrameProbe::Scope probe { frameProbe, "colliders" };
+        updateStaticColliders();
+    }
+    // The sky follows the clock UNCONDITIONALLY — it is presentation, not
+    // sim. Gating it on !uiPaused made the wait menu look broken: +8 h
+    // from the pause chain landed in gameSeconds, but the world behind
+    // the (still open) pause menu kept the stale sun.
+    sky.timeOfDay =
+        static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
     if (!uiPaused) {
         // B7/ch.3 B1: interaction prompts + the travel fade state machine.
         updateInteraction(dt);
-        // Chantier 3 B1: the game clock owns time — the sky follows it,
-        // and tickCharacter gets REAL game-seconds (regen/survival at
-        // timescale).
+        // Chantier 3 B1: the game clock owns time — advancing it stays
+        // paused with the sim; tickCharacter gets REAL game-seconds
+        // (regen/survival at timescale).
         gameClock.timescale = animateTime ? 720.0f : 12.0f;
         const f64 gameDt = gameClock.advance(dt);
-        sky.timeOfDay =
-            static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
         if (playerEntity.is_alive()) {
+            core::FrameProbe::Scope probe { frameProbe, "charTick" };
             const gameplay::CharacterTickContext tickCtx { derivedStats,
                                                            gameTags,
                                                            statsTuning };
@@ -901,8 +966,11 @@ void LandscapeScene::update(f32 dt) {
                                     equipMods);
         }
     }
-    snapshot.meshes.clear();
-    extractMeshes(world, snapshot);
+    {
+        core::FrameProbe::Scope probe { frameProbe, "extract" };
+        snapshot.meshes.clear();
+        extractMeshes(world, snapshot);
+    }
     if (debugCapsule) {
         // Visualize as the residency placeholder box (magenta), stretched
         // to the capsule's stance, standing at the FEET position.
@@ -913,6 +981,7 @@ void LandscapeScene::update(f32 dt) {
     }
     // B6: patrol + graph-driven poses for every Forms-built NPC.
     if (!uiPaused) {
+        core::FrameProbe::Scope probe { frameProbe, "npcs" };
         updateNpcs(dt);
     }
     // Wind phase integrates the CURRENT strength: speed changes bend the
@@ -1314,8 +1383,10 @@ void LandscapeScene::publishSculpt() {
     terrain.params.patches = heightPatches.get();
     regenerateRequested = true; // terrain + scatter rebuild next frame
     occlusion.invalidate();
-    terrainCollision =
-        std::make_unique<TerrainCollision>(*physics, terrain.params);
+    terrainCollision = std::make_unique<TerrainCollision>(
+        *physics, terrain.params, &engine->getJobSystem());
+    vegCollision =
+        std::make_unique<VegetationCollision>(*physics, terrain.params);
     snapCellEntities();
 }
 
@@ -1834,6 +1905,21 @@ void LandscapeScene::updateInteraction(f32 dt) {
             fadeDirection = -1;
         }
     } else if (fadeDirection < 0) {
+        // Hold at black until the world is SOLID under the player: after
+        // a travel the arrival cell's meshes may still be decoding and
+        // the collider cook is budgeted — fading in before the floor
+        // exists dropped the player through it (dev report 2026-07-07).
+        // Timeout keeps an authoring hole from freezing the game black.
+        if (fadeAlpha >= 1.0f && playMode && player && physics) {
+            fadeHoldSeconds += dt;
+            const phys::RayHit floor = physics->rayCast(
+                player->position() + Vec3 { 0.0f, 0.5f, 0.0f },
+                { 0.0f, -1.0f, 0.0f }, 6.0f);
+            if (!floor.hit && fadeHoldSeconds < 5.0f) {
+                return; // still cooking — stay black, player stays frozen
+            }
+        }
+        fadeHoldSeconds = 0.0f;
         fadeAlpha -= dt * kFadeSpeed;
         if (fadeAlpha <= 0.0f) {
             fadeAlpha = 0.0f;
@@ -1871,23 +1957,27 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     refreshNavObstacles();
 
     // Fresh terrain tiles for the new space (none are built in interiors).
-    terrainCollision =
-        std::make_unique<TerrainCollision>(*physics, terrain.params);
+    terrainCollision = std::make_unique<TerrainCollision>(
+        *physics, terrain.params, &engine->getJobSystem());
+    vegCollision =
+        std::make_unique<VegetationCollision>(*physics, terrain.params);
 
     // Teleport the capsule to the marker, facing its authored yaw. The
     // fade-in (0.3 s) covers the async floor-collider cook — the player
-    // doesn't move (and barely falls) until it lands.
+    // doesn't move (and barely falls) until it lands. In Fly (dev
+    // camera, no capsule) the camera alone travels — an interior with
+    // the camera still outside is a black screen.
     if (player) {
         player = std::make_unique<phys::CharacterBody>(
             *physics, 0.3f, 1.8f,
             marker->position + Vec3 { 0.0f, 0.25f, 0.0f });
         playerVelocity = Vec3 { 0.0f };
-        flyCamera.camera.yaw =
-            2.0f * std::atan2(marker->rotation.y, marker->rotation.w);
-        flyCamera.camera.pitch = 0.0f;
-        flyCamera.camera.position =
-            marker->position + Vec3 { 0.0f, 1.95f, 0.0f };
     }
+    flyCamera.camera.yaw =
+        2.0f * std::atan2(marker->rotation.y, marker->rotation.w);
+    flyCamera.camera.pitch = 0.0f;
+    flyCamera.camera.position =
+        marker->position + Vec3 { 0.0f, 1.95f, 0.0f };
     LOG_INFO("B7: traveled to {} ({}), interior = {}",
              cellForm->editorId,
              marker->position.x, interiorMode);
@@ -2055,11 +2145,20 @@ void LandscapeScene::updateGameUi(f32 dt) {
     platform::Input& input = engine->getInput();
     const bool imguiOwnsKeys = ImGui::GetIO().WantCaptureKeyboard;
 
-    // Escape: close the top modal first; the pause menu (B6) catches it
-    // when nothing is open in Play (Fly/Edit keep Escape free for tools).
+    // Tab: back/close the top screen (dev request 2026-07-07 — the
+    // Skyrim reflex). Escape only drives the pause/main menus below.
+    if (!imguiOwnsKeys && !uiSystem.textFieldFocused() &&
+        input.wasPressed(platform::Key::Tab)) {
+        screenStack.closeTop();
+    }
+    // Escape: toggle the pause menu in Play (and still dismiss the boot
+    // main menu for the dev tools); Fly/Edit keep Escape free for tools.
     if (!imguiOwnsKeys && input.wasPressed(platform::Key::Escape)) {
-        if (!screenStack.closeTop() && playMode &&
-            screenStack.find("pause")) {
+        const ScreenStack::Screen* top = screenStack.topModal();
+        if (top && (top->name == "pause" || top->name == "mainmenu")) {
+            screenStack.closeTop();
+        } else if (!screenStack.modalOpen() && playMode &&
+                   screenStack.find("pause")) {
             updateMenuClockLine();
             screenStack.show("pause");
         }
@@ -2116,8 +2215,10 @@ void LandscapeScene::updateGameUi(f32 dt) {
             uiSystem.processMouseWheel(input.wheelDelta());
         }
         for (const platform::Input::KeyEvent& event : input.keyEvents()) {
-            if (event.key == platform::Key::Escape) {
-                continue; // handled above (stack pop)
+            if (event.key == platform::Key::Escape ||
+                event.key == platform::Key::Tab) {
+                continue; // handled above (stack pop / pause) — and Tab
+                          // must not ALSO move the RmlUi focus
             }
             uiSystem.processKey(event.key, event.down);
         }
@@ -3482,12 +3583,31 @@ void LandscapeScene::updateStaticColliders() {
             ++it;
         }
     }
+    // Cook budget: a Jolt MeshShape cook is main-thread and expensive —
+    // a cell's worth of kit meshes turning resident in one frame used to
+    // cost 100+ ms (the frame-probe smoking gun). Two per frame in
+    // normal play, UNCAPPED while the travel fade holds the screen black
+    // (the fade exists to hide exactly this — and a starved budget once
+    // dropped the player through a not-yet-solid floor). NEAREST FIRST,
+    // so the ground underfoot is always the first body to exist.
+    u32 cookBudget =
+        (fadeDirection != 0 || fadeAlpha > 0.0f) ? 4096 : 2;
+    const Vec3 cookFocus = playMode && player ? player->position()
+                                              : flyCamera.camera.position;
+    struct CookCandidate {
+        f32 distSq;
+        u64 id;
+        const MeshCache::CpuMesh* cpu;
+        Vec3 position;
+        Quat rotation;
+        Vec3 scale;
+    };
+    vector<CookCandidate> cooks;
     colliderQuery.each(
         [&](flecs::entity e, const world::Transform& transform,
             const world::RefId& ref, const world::MeshRender& mesh) {
             const u64 id = e.id();
-            if (staticColliders.contains(id) ||
-                nonCollidable.contains(id)) {
+            if (staticColliders.contains(id) || nonCollidable.contains(id)) {
                 return;
             }
             // `collides` read through reflection: any base form declaring
@@ -3509,15 +3629,29 @@ void LandscapeScene::updateStaticColliders() {
             if (!cpu) {
                 return; // still streaming — retried next frame
             }
-            const phys::BodyId body = physics->addStaticMesh(
-                cpu->positions.data(),
-                static_cast<u32>(cpu->positions.size()),
-                cpu->indices.data(), static_cast<u32>(cpu->indices.size()),
-                transform.position, transform.rotation, transform.scale);
-            if (body != 0) {
-                staticColliders.emplace(id, body);
-            }
+            const Vec3 d = transform.position - cookFocus;
+            cooks.push_back({ glm::dot(d, d), id, cpu, transform.position,
+                              transform.rotation, transform.scale });
         });
+    std::sort(cooks.begin(), cooks.end(),
+              [](const CookCandidate& a, const CookCandidate& b) {
+                  return a.distSq < b.distSq;
+              });
+    for (const CookCandidate& cook : cooks) {
+        if (cookBudget == 0) {
+            break;
+        }
+        const phys::BodyId body = physics->addStaticMesh(
+            cook.cpu->positions.data(),
+            static_cast<u32>(cook.cpu->positions.size()),
+            cook.cpu->indices.data(),
+            static_cast<u32>(cook.cpu->indices.size()), cook.position,
+            cook.rotation, cook.scale);
+        if (body != 0) {
+            staticColliders.emplace(cook.id, body);
+            --cookBudget;
+        }
+    }
 }
 
 // Idempotent ground snap (chantier 2 B1): world Y = terrain height at
@@ -3588,6 +3722,9 @@ void LandscapeScene::snapCellEntities() {
 
 void LandscapeScene::destroyNpc(rhi::Device& device, Npc& npc) {
     npc.anim.reset(); // references npc.graph — release first
+    if (npc.casterGroup.id != 0) {
+        device.destroyBindGroup(npc.casterGroup);
+    }
     device.destroyBindGroup(npc.group);
     device.destroyBuffer(npc.modelUbo);
     device.destroyBuffer(npc.paletteSsbo);
@@ -4205,6 +4342,124 @@ void LandscapeScene::buildSkinnedPipeline(rhi::Device& device) {
     skinnedShaderGeneration = shaders->generation("skinned");
 }
 
+void LandscapeScene::buildCasterPipelines(rhi::Device& device) {
+    if (meshCasterPipeline.id != 0) {
+        device.destroyPipeline(meshCasterPipeline);
+    }
+    if (skinnedCasterPipeline.id != 0) {
+        device.destroyPipeline(skinnedCasterPipeline);
+    }
+    // Position-only attributes over the FULL vertex strides (same buffers
+    // as the lit pass); depth state mirrors terrain/vegetation casters.
+    meshCasterPipeline = device.createPipeline(
+        { .shader = shaders->get("shadow_mesh"),
+          .vertexBuffers =
+              { { .stride = sizeof(render::MeshVertex),
+                  .attributes =
+                      { { .location = 0,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset =
+                              offsetof(render::MeshVertex, position) } } } },
+          .depth = { .testEnable = true,
+                     .writeEnable = true,
+                     .compare = rhi::CompareFunc::Less },
+          .cull = rhi::CullMode::Back });
+    skinnedCasterPipeline = device.createPipeline(
+        { .shader = shaders->get("shadow_skinned"),
+          .vertexBuffers =
+              { { .stride = sizeof(render::SkinnedVertex),
+                  .attributes =
+                      { { .location = 0,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset =
+                              offsetof(render::SkinnedVertex, position) },
+                        { .location = 4,
+                          .format = rhi::VertexFormat::F32x4,
+                          .offset = offsetof(render::SkinnedVertex, joints) },
+                        { .location = 5,
+                          .format = rhi::VertexFormat::F32x4,
+                          .offset =
+                              offsetof(render::SkinnedVertex, weights) } } } },
+          .depth = { .testEnable = true,
+                     .writeEnable = true,
+                     .compare = rhi::CompareFunc::Less },
+          .cull = rhi::CullMode::Back });
+    meshCasterShaderGeneration = shaders->generation("shadow_mesh");
+    skinnedCasterShaderGeneration = shaders->generation("shadow_skinned");
+}
+
+void LandscapeScene::drawShadowCasters(engine::FrameContext& frame,
+                                       u32 cascade) {
+    if (shaders->generation("shadow_mesh") != meshCasterShaderGeneration ||
+        shaders->generation("shadow_skinned") !=
+            skinnedCasterShaderGeneration) {
+        buildCasterPipelines(frame.device);
+    }
+    const bool firstCascade = cascade == 0;
+
+    // Scene meshes: the per-draw UBO is the lit pass's — the caster pass
+    // runs first in the frame, so cascade 0 refreshes the model matrix
+    // (drawSceneMeshes rewrites the full block later the same frame).
+    if (!snapshot.meshes.empty()) {
+        if (meshDraws.size() < snapshot.meshes.size()) {
+            meshDraws.resize(snapshot.meshes.size());
+        }
+        frame.cmd.setPipeline(meshCasterPipeline);
+        frame.cmd.setBindGroup(1, shadows.casterBindGroup(cascade));
+        for (u32 i = 0; i < snapshot.meshes.size(); ++i) {
+            const RenderSnapshot::MeshInstance& instance = snapshot.meshes[i];
+            const MeshCache::Gpu& mesh = meshCache->resolve(instance.model);
+            MeshDraw& draw = meshDraws[i];
+            if (draw.ubo.id == 0) {
+                // std140 ModelUbo: mat4 + tint + info (drawSceneMeshes
+                // owns the tail; only the matrix matters here).
+                draw.ubo = frame.device.createBuffer(
+                    { .usage = rhi::BufferUsage::Uniform,
+                      .size = sizeof(Mat4) + 2 * sizeof(Vec4),
+                      .dynamic = true },
+                    nullptr);
+            }
+            if (firstCascade) {
+                frame.device.updateBuffer(draw.ubo, &instance.transform,
+                                          sizeof(Mat4), 0);
+            }
+            if (draw.casterGroup.id == 0) {
+                draw.casterGroup = frame.device.createBindGroup(
+                    { .entries = { { .binding = 4, .buffer = draw.ubo } } });
+            }
+            frame.cmd.setBindGroup(2, draw.casterGroup);
+            frame.cmd.setVertexBuffer(0, mesh.vertices);
+            frame.cmd.setIndexBuffer(mesh.indices, rhi::IndexFormat::U32);
+            frame.cmd.drawIndexed(mesh.indexCount);
+        }
+    }
+
+    // Skinned NPCs: model UBO + palette are last frame's (drawNpcs updates
+    // them after the cascades) — one frame of shadow lag, invisible at
+    // 2048px cascade resolution.
+    if (!npcs.empty()) {
+        frame.cmd.setPipeline(skinnedCasterPipeline);
+        frame.cmd.setBindGroup(1, shadows.casterBindGroup(cascade));
+        for (auto& npcPtr : npcs) {
+            Npc& npc = *npcPtr;
+            if (npc.modelUbo.id == 0 || !npc.entity.is_alive()) {
+                continue;
+            }
+            if (npc.casterGroup.id == 0) {
+                npc.casterGroup = frame.device.createBindGroup(
+                    { .entries = { { .binding = 4, .buffer = npc.modelUbo },
+                                   { .binding = 2,
+                                     .buffer = npc.paletteSsbo,
+                                     .storage = true } } });
+            }
+            frame.cmd.setBindGroup(2, npc.casterGroup);
+            frame.cmd.setVertexBuffer(0, npc.vertices);
+            frame.cmd.setIndexBuffer(npc.indices, rhi::IndexFormat::U32);
+            frame.cmd.drawIndexed(npc.indexCount);
+        }
+    }
+}
+
 void LandscapeScene::buildMeshPipeline(rhi::Device& device) {
     if (meshPipeline.id != 0) {
         device.destroyPipeline(meshPipeline);
@@ -4295,19 +4550,32 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         occlusion.invalidate();
     }
     if (!interiorMode) { // interiors: no terrain/scatter/water to stream
-        terrain.update(frame.device, flyCamera.camera.position);
+        {
+            core::FrameProbe::Scope probe { frameProbe, "terrain" };
+            terrain.update(frame.device, flyCamera.camera.position);
+        }
         // Height-horizon occlusion (brick 26): rebuilt on a worker
         // whenever the camera strays; stays valid (conservative) meanwhile.
-        occlusion.pump();
-        if (occlusion.wantsRebuild(flyCamera.camera.position)) {
-            occlusion.rebuild(terrain.params, flyCamera.camera.position,
-                              terrain.chunkTops());
+        {
+            core::FrameProbe::Scope probe { frameProbe, "occlusion" };
+            occlusion.pump();
+            if (occlusion.wantsRebuild(flyCamera.camera.position)) {
+                occlusion.rebuild(terrain.params, flyCamera.camera.position,
+                                  terrain.chunkTops());
+            }
         }
-        grass.update(frame.device, terrain.params,
-                     flyCamera.camera.position);
-        vegetation.update(frame.device, terrain.params,
-                          flyCamera.camera.position);
+        {
+            core::FrameProbe::Scope probe { frameProbe, "grass" };
+            grass.update(frame.device, terrain.params,
+                         flyCamera.camera.position);
+        }
+        {
+            core::FrameProbe::Scope probe { frameProbe, "veg" };
+            vegetation.update(frame.device, terrain.params,
+                              flyCamera.camera.position);
+        }
         if (frame.device.caps().copyTexture) {
+            core::FrameProbe::Scope probe { frameProbe, "water" };
             water.update(frame.device, terrain.params,
                          flyCamera.camera.position);
         }
@@ -4332,10 +4600,20 @@ void LandscapeScene::render(engine::FrameContext& frame) {
             ? glm::smoothstep(-0.02f, 0.06f, skyState.sunDirection.y) *
                   (1.0f - 0.65f * cloudCoverageUi)
             : 0.0f;
+    // The cascades use a QUANTIZED sun (dev report: tree shadows tremble).
+    // The texel snap absorbs camera translation, but the game clock spins
+    // the light a fraction of a degree every frame, re-basing the snap —
+    // the edges crawl. Hysteresis instead: shadows sit rock-stable, then
+    // take an imperceptible ~0.4° step every ~8 real seconds; the VISIBLE
+    // sun/lighting keeps moving smoothly.
+    if (glm::dot(shadowSunDirection, skyState.sunDirection) <
+        std::cos(glm::radians(0.4f))) {
+        shadowSunDirection = skyState.sunDirection;
+    }
     render::ShadowMapper::Cascades cascades {};
     if (shadowStrength > 0.0f) {
         cascades = shadows.computeCascades(camera, frame.aspect,
-                                           skyState.sunDirection);
+                                           shadowSunDirection);
         shadows.updateCascadeUbos(frame.device, cascades);
     }
 
@@ -4384,8 +4662,12 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .fogInfo = { fogDensityUi, fogHeightFalloffUi, fogLowBoostUi,
                      fogStartUi },
         .sunViewProj = cascades.viewProj,
+        // .w = interior flag (B5): mesh/skinned/locallights switch to the
+        // hemispheric ambient + wrap/bounce indoors; 0 keeps the exterior
+        // byte-identical.
         .cascadeSplits = { cascades.splitFar[0], cascades.splitFar[1],
-                           cascades.splitFar[2], 0.0f },
+                           cascades.splitFar[2],
+                           interiorMode ? 1.0f : 0.0f },
         .shadowInfo = { cascades.texelWorld[0], cascades.texelWorld[1],
                         cascades.texelWorld[2], shadowStrength },
         .screenInfo = { static_cast<f32>(frame.width),
@@ -4415,12 +4697,24 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         // fog, no god rays/volumetric — local lights (B5) carry the room.
         frameData.sunColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         frameData.sunGlowColor = { 0.0f, 0.0f, 0.0f, 0.0f };
-        frameData.ambientColor = { Vec3 { 0.16f, 0.15f, 0.14f },
+        frameData.ambientColor = { tuning.interiorAmbient,
                                    uniforms.ambientColor.w };
         frameData.fogInfo = { 0.0f, 0.02f, 0.0f, 100000.0f };
         frameData.sunScreen = { 0.5f, 0.5f, 0.0f, 0.0f };
         frameData.time.z = 0.0f; // volumetric shafts off
     }
+    // B3 (brick 28): grade parameters on free .w slots — AFTER the
+    // interior override (which zeroes sunGlowColor), so the grade applies
+    // in both modes. Neutral values when the A/B toggle is off.
+    frameData.sunGlowColor.w = gradingUi ? gradeVibranceUi : 0.0f;
+    frameData.zenithColor.w = gradingUi ? gradeSplitToneUi : 0.0f;
+    frameData.horizonColor.w = gradingUi ? gradeContrastUi : 1.0f;
+    // B4 (brick 29): auto-exposure parameters on free .w slots (adapt.frag
+    // + the tonemap tap flag).
+    frameData.sunDirection.w = frame.dt;
+    frameData.horizonFarColor.w = autoExposureMinUi;
+    frameData.cloudMapInfo.w = autoExposureMaxUi;
+    frameData.windInfo.w = autoExposureUi ? 1.0f : 0.0f;
     frame.device.updateBuffer(frameUbo, &frameData, sizeof(frameData), 0);
 
     // B5: the 16 nearest local lights, flicker applied CPU-side (sin +
@@ -4430,6 +4724,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
             Vec4 count { 0.0f };
             Vec4 positionRadius[kMaxLights] {};
             Vec4 colorIntensity[kMaxLights] {};
+            // B1 APPEND (mirrors locallights.glsl): xyz = spot direction,
+            // w = cos(half angle); w = -2 marks a point light.
+            Vec4 directionAngle[kMaxLights] {};
         } lights;
         const vector<SceneLight> nearest =
             collectLights(world, camera.position, kMaxLights);
@@ -4447,6 +4744,12 @@ void LandscapeScene::render(engine::FrameContext& frame) {
             }
             lights.positionRadius[i] = { light.position, light.radius };
             lights.colorIntensity[i] = { light.color * intensity, 0.0f };
+            const bool spot = light.spotAngle > 0.0f;
+            lights.directionAngle[i] = {
+                glm::normalize(light.direction),
+                spot ? std::cos(glm::radians(light.spotAngle * 0.5f))
+                     : -2.0f
+            };
         }
         frame.device.updateBuffer(lightsUbo, &lights, sizeof(lights), 0);
     }
@@ -4458,6 +4761,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
     // Cascade passes: depth-only casters from the sun's point of view.
     if (shadowStrength > 0.0f) {
+        core::FrameProbe::Scope probe { frameProbe, "shadows" };
         for (u32 i = 0; i < render::ShadowMapper::kCascadeCount; ++i) {
             frame.cmd.beginRenderPass(
                 { .framebuffer = shadows.framebuffer(i),
@@ -4469,6 +4773,10 @@ void LandscapeScene::render(engine::FrameContext& frame) {
             vegetation.drawDepth(frame.cmd, frameBindGroup,
                                  shadows.casterBindGroup(i),
                                  camera.position, 9);
+            // B2a: scene meshes + NPCs join the casters (A/B toggle).
+            if (meshShadowCastersUi) {
+                drawShadowCasters(frame, i);
+            }
             frame.cmd.endRenderPass();
         }
     }
@@ -4503,7 +4811,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         const render::Frustum reflectionFrustum = render::Frustum::fromViewProj(
             camera.proj(frame.aspect) * reflectedView);
 
-        render::FrameUniforms reflectionUniforms = uniforms;
+        core::FrameProbe::Scope reflectionProbe { frameProbe, "reflection" };
+    render::FrameUniforms reflectionUniforms = uniforms;
         reflectionUniforms.viewProj = reflectedViewProj;
         reflectionUniforms.invViewProj = glm::inverse(reflectedViewProj);
         reflectionUniforms.cameraPos = { camera.position.x,
@@ -4534,45 +4843,52 @@ void LandscapeScene::render(engine::FrameContext& frame) {
 
     // Exterior: the sky covers every background pixel — no color clear.
     // Interior: clear to a near-black room tone instead.
-    frame.cmd.beginRenderPass(
-        { .framebuffer = useOffscreen ? offscreenFb : rhi::FramebufferHandle {},
-          .loadOp = interiorMode ? rhi::LoadOp::Clear : rhi::LoadOp::DontCare,
-          .clearColor = { 0.015f, 0.014f, 0.013f, 1.0f },
-          .depthLoadOp = rhi::LoadOp::Clear });
-    if (sky.cloudMapBindGroup().id != 0) {
+    {
+        core::FrameProbe::Scope probe { frameProbe, "mainPass" };
+        frame.cmd.beginRenderPass(
+            { .framebuffer =
+                  useOffscreen ? offscreenFb : rhi::FramebufferHandle {},
+              .loadOp =
+                  interiorMode ? rhi::LoadOp::Clear : rhi::LoadOp::DontCare,
+              .clearColor = { 0.015f, 0.014f, 0.013f, 1.0f },
+              .depthLoadOp = rhi::LoadOp::Clear });
+        if (sky.cloudMapBindGroup().id != 0) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
-    // Occlusion applies to the main view only: both sets were built for the
-    // real camera, not the mirrored one (the grass ring is too close to
-    // ever be ridge-occluded — frustum only). CPU horizon ∪ GPU Hi-Z.
-    gpuOccluded.clear();
-    gpuOcclusion.collectResults(frame.device, gpuOccluded);
-    combinedOccluded.clear();
-    if (occlusionUi && occlusion.occludedSet()) {
-        combinedOccluded = *occlusion.occludedSet();
+        // Occlusion applies to the main view only: both sets were built for
+        // the real camera, not the mirrored one (the grass ring is too
+        // close to ever be ridge-occluded — frustum only). CPU ∪ GPU Hi-Z.
+        gpuOccluded.clear();
+        gpuOcclusion.collectResults(frame.device, gpuOccluded);
+        combinedOccluded.clear();
+        if (occlusionUi && occlusion.occludedSet()) {
+            combinedOccluded = *occlusion.occludedSet();
+        }
+        if (gpuOcclusionUi) {
+            combinedOccluded.insert(gpuOccluded.begin(), gpuOccluded.end());
+        }
+        const std::unordered_set<u64>* occludedSet =
+            combinedOccluded.empty() ? nullptr : &combinedOccluded;
+        if (!interiorMode) {
+            terrain.draw(frame.cmd, frameBindGroup,
+                         shadows.receiverBindGroup(), &viewFrustum,
+                         occludedSet);
+            vegetation.draw(frame.cmd, frameBindGroup,
+                            shadows.receiverBindGroup(),
+                            render::VegetationSystem::kVariantCount,
+                            camera.position,
+                            /*forceLowDetail=*/false, &viewFrustum,
+                            occludedSet);
+            grass.draw(frame.cmd, frameBindGroup,
+                       shadows.receiverBindGroup(), &viewFrustum);
+        }
+        drawSceneMeshes(frame); // B1: the RenderSnapshot.meshes consumer
+        drawNpcs(frame);        // B6: the Forms-driven skinned NPCs
+        if (!interiorMode) {
+            sky.draw(frame.cmd, frameBindGroup); // background only
+        }
+        frame.cmd.endRenderPass();
     }
-    if (gpuOcclusionUi) {
-        combinedOccluded.insert(gpuOccluded.begin(), gpuOccluded.end());
-    }
-    const std::unordered_set<u64>* occludedSet =
-        combinedOccluded.empty() ? nullptr : &combinedOccluded;
-    if (!interiorMode) {
-        terrain.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
-                     &viewFrustum, occludedSet);
-        vegetation.draw(frame.cmd, frameBindGroup,
-                        shadows.receiverBindGroup(),
-                        render::VegetationSystem::kVariantCount,
-                        camera.position,
-                        /*forceLowDetail=*/false, &viewFrustum, occludedSet);
-        grass.draw(frame.cmd, frameBindGroup, shadows.receiverBindGroup(),
-                   &viewFrustum);
-    }
-    drawSceneMeshes(frame); // B1: the RenderSnapshot.meshes consumer
-    drawNpcs(frame);        // B6: the Forms-driven skinned NPCs
-    if (!interiorMode) {
-        sky.draw(frame.cmd, frameBindGroup); // background only
-    }
-    frame.cmd.endRenderPass();
 
     // Snapshot the opaque scene (sampling a bound attachment is UB): the
     // SSAO pass reads the depth copy EVERY frame — interiors included
@@ -4580,6 +4896,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     // room). Water composition and Hi-Z occlusion stay exterior-only.
     if (useOffscreen && frame.device.caps().copyTexture &&
         waterSceneBindGroup.id != 0) {
+        core::FrameProbe::Scope probe { frameProbe, "copyHizWater" };
         frame.cmd.copyTexture(offscreenColor, sceneColorCopy);
         frame.cmd.copyTexture(offscreenDepth, sceneDepthCopy);
 
@@ -4613,20 +4930,28 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     // Bloom pyramid + god rays + volumetric shafts, composed by the tonemap.
     // Unit 2 (cloud map) persists across the post passes for the march.
     if (useOffscreen) {
+        core::FrameProbe::Scope probe { frameProbe, "postfx" };
         if (sky.cloudMapBindGroup().id != 0) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
         postFx.render(frame.cmd, frameBindGroup,
                       shadows.receiverBindGroup());
+        // B4 (brick 29): measure + adapt, before the tonemap taps it.
+        if (autoExposureUi) {
+            postFx.renderAutoExposure(frame.device, frame.cmd,
+                                      frameBindGroup);
+        }
     }
 
     if (useOffscreen) {
+        core::FrameProbe::Scope probe { frameProbe, "composite" };
         // Tonemap composite: HDR scene -> filmic curve -> gamma -> backbuffer.
         frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::DontCare,
                                     .depthLoadOp = rhi::LoadOp::DontCare });
         frame.cmd.setPipeline(blitPipeline);
         frame.cmd.setBindGroup(0, frameBindGroup); // FrameUbo (uPostInfo)
-        frame.cmd.setBindGroup(1, blitBindGroup);  // scene color + sampler
+        // B4: the side the adaptation pass just wrote.
+        frame.cmd.setBindGroup(1, blitBindGroups[postFx.exposureSide()]);
         frame.cmd.draw(3);
         // Chantier 4: the game UI composes over the tonemapped scene,
         // under the dev ImGui layer.
@@ -4643,6 +4968,10 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         uiSystem.render(frame.cmd, frame.device, frame.width, frame.height);
         frame.cmd.endRenderPass();
     }
+    // Stutter hunt: one WARN line with the block breakdown on any frame
+    // > 25 ms. If `probed` sits far below the total, the spike lives
+    // outside the instrumented blocks (present/driver/OS).
+    frameProbe.endFrame();
 }
 
 void LandscapeScene::drawUi() {
@@ -4923,8 +5252,26 @@ void LandscapeScene::drawRenderUi() {
     ImGui::Checkbox("Shadows", &shadowsUi);
     ImGui::SameLine();
     ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);
+    // B2a A/B: houses/crates/NPCs casting into the sun cascades.
+    ImGui::Checkbox("Mesh shadow casters", &meshShadowCastersUi);
+    // B3 A/B (brick 28): the analytical grade, off by default.
+    ImGui::Checkbox("Grading (brick 28)", &gradingUi);
+    if (gradingUi) {
+        ImGui::SliderFloat("Vibrance", &gradeVibranceUi, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Split tone", &gradeSplitToneUi, 0.0f, 1.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Contrast", &gradeContrastUi, 0.8f, 1.4f, "%.2f");
+    }
     ImGui::Checkbox("Water reflections", &reflectionsUi);
     ImGui::SliderFloat("Exposure", &exposureUi, 0.25f, 3.0f, "%.2f");
+    // B4 A/B (brick 29): eye adaptation; Exposure above becomes the bias.
+    ImGui::Checkbox("Auto exposure (brick 29)", &autoExposureUi);
+    if (autoExposureUi) {
+        ImGui::SliderFloat("Auto-expo min", &autoExposureMinUi, 0.1f, 1.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Auto-expo max", &autoExposureMaxUi, 1.0f, 6.0f,
+                           "%.2f");
+    }
     ImGui::SliderFloat("Fog density", &fogDensityUi, 0.0f, 0.004f, "%.4f",
                        ImGuiSliderFlags_Logarithmic);
     ImGui::SliderFloat("Fog height falloff", &fogHeightFalloffUi, 0.001f,

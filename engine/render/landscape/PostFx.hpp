@@ -43,11 +43,25 @@ public:
     void render(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
                 rhi::BindGroupHandle shadowBindGroup);
 
+    // Brick 29 (chantier 6 B4): auto-exposure — log-luminance 64² → mips →
+    // 1×1 average, then the adaptation micro-pass (1×1 ping-pong with
+    // asymmetric inertia; parameters ride FrameUbo slots — see adapt.frag).
+    // Call after render(), before the tonemap. Skipped entirely while the
+    // scene's toggle is off (the tonemap then multiplies by 1).
+    void renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
+                            rhi::BindGroupHandle frameBindGroup);
+
     // For the tonemap bind group.
     rhi::TextureHandle bloomTexture() const { return bloomTex[0]; }
     rhi::TextureHandle godRayTexture() const { return godRayTex; }
     rhi::TextureHandle volumetricTexture() const { return volumetricTex; }
     rhi::TextureHandle ssaoTexture() const { return ssaoTex; }
+    // The ping-pong side renderAutoExposure wrote LAST (the tonemap reads
+    // it); the scene keeps one blit group per side.
+    u32 exposureSide() const { return adaptSide; }
+    rhi::TextureHandle exposureTexture(u32 side) const {
+        return adaptTex[side];
+    }
 
     bool ready() const { return bloomTex[0].id != 0; }
 
@@ -77,12 +91,23 @@ private:
     rhi::FramebufferHandle ssaoFb {};
     rhi::BindGroupHandle ssaoGroup {};
 
+    // Brick 29: auto-exposure targets (window-size independent).
+    rhi::TextureHandle luminanceTex {};
+    rhi::FramebufferHandle luminanceFb {};
+    rhi::BindGroupHandle luminanceGroup {};
+    array<rhi::TextureHandle, 2> adaptTex {};
+    array<rhi::FramebufferHandle, 2> adaptFb {};
+    array<rhi::BindGroupHandle, 2> adaptGroup {};
+    u32 adaptSide { 0 };
+
     rhi::PipelineHandle prefilterPipeline {};
     rhi::PipelineHandle downPipeline {};
     rhi::PipelineHandle upPipeline {}; // additive blend
     rhi::PipelineHandle godRayPipeline {};
     rhi::PipelineHandle volumetricPipeline {};
     rhi::PipelineHandle ssaoPipeline {};
+    rhi::PipelineHandle luminancePipeline {};
+    rhi::PipelineHandle adaptPipeline {};
     u64 shaderGeneration { 0 };
 };
 

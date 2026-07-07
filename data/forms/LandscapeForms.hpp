@@ -45,6 +45,20 @@ struct LandscapeTuningForm : Form {
     f32 cloudShadowStrength { 0.7f };
     f32 cloudHeight { 520.0f };   // meters
     f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
+    // Interior ambient (chantier 6 B1, appended — ordinals stable):
+    // replaces the hardcoded interior-mode constant; moddable per §5.
+    Vec3 interiorAmbient { 0.16f, 0.15f, 0.14f };
+    // Analytical grading (renderer brick 28, chantier 6 B3, appended):
+    // applied in tonemap between ACES and gamma; the scene's A/B toggle
+    // sends neutral values (0 / 0 / 1) when off.
+    f32 gradeVibrance { 0.3f };   // weighted saturation boost
+    f32 gradeSplitTone { 0.35f }; // cool shadows / warm highlights
+    f32 gradeContrast { 1.06f };  // pivot 0.5; 1 = neutral
+    // Auto-exposure bounds (renderer brick 29, chantier 6 B4, appended):
+    // the adapted exposure is clamped to [min, max]; the Exposure slider
+    // becomes the EV bias on top.
+    f32 autoExposureMin { 0.4f };
+    f32 autoExposureMax { 2.5f };
 
     REFLECT_BEGIN(LandscapeTuningForm, Form)
         REFLECT_FIELD(terrainSeed)
@@ -68,6 +82,12 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(cloudShadowStrength)
         REFLECT_FIELD(cloudHeight)
         REFLECT_FIELD(cloudScale)
+        REFLECT_FIELD(interiorAmbient)
+        REFLECT_FIELD(gradeVibrance)
+        REFLECT_FIELD(gradeSplitTone)
+        REFLECT_FIELD(gradeContrast)
+        REFLECT_FIELD(autoExposureMin)
+        REFLECT_FIELD(autoExposureMax)
     REFLECT_END()
 };
 
