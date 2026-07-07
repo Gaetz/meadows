@@ -15,7 +15,7 @@
 
 namespace gameplay {
 
-void tickCharacter(flecs::entity entity, f32 dt, f64 gameDt,
+void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
                    const CharacterTickContext& ctx,
                    const StatModifiers& equipmentMods) {
     auto& core        = entity.get_mut<CoreAttributes>();
@@ -130,7 +130,7 @@ void tickCharacter(flecs::entity entity, f32 dt, f64 gameDt,
     tickGameTime(args, gameDt, mods);
 }
 
-void initializeActorStats(flecs::entity entity,
+void initializeActorStats(ecs::Entity entity,
                           const CharacterTickContext& ctx,
                           const StatModifiers& equipmentMods) {
     auto& core        = entity.get_mut<CoreAttributes>();

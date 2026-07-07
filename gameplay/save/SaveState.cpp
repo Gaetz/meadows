@@ -31,7 +31,7 @@ constexpr core::Guid kSavedInjuryNs { 0x5344494e4a555259ull, 0x0000000000000004u
 // Copies a component's fields into the SavedStatsForm (capture) or back
 // (apply) when the entity carries it.
 template<typename T>
-void componentToSaved(flecs::entity entity, SavedStatsForm& saved) {
+void componentToSaved(ecs::Entity entity, SavedStatsForm& saved) {
     if (entity.has<T>()) {
         copyMatchingFields(T::staticTypeInfo(), &entity.get<T>(),
                            SavedStatsForm::staticTypeInfo(), &saved);
@@ -39,7 +39,7 @@ void componentToSaved(flecs::entity entity, SavedStatsForm& saved) {
 }
 
 template<typename T>
-void savedToComponent(const SavedStatsForm& saved, flecs::entity entity) {
+void savedToComponent(const SavedStatsForm& saved, ecs::Entity entity) {
     if (entity.has<T>()) {
         copyMatchingFields(SavedStatsForm::staticTypeInfo(), &saved,
                            T::staticTypeInfo(), &entity.get_mut<T>());
@@ -118,7 +118,7 @@ vector<data::Record> captureActiveEffects(const AbilitySystem& system,
     return records;
 }
 
-vector<data::Record> captureActor(flecs::entity entity,
+vector<data::Record> captureActor(ecs::Entity entity,
                                   const core::Guid& refGuid,
                                   const GameplayTagRegistry& registry) {
     vector<data::Record> records;
@@ -209,7 +209,7 @@ SavedActorRecords savedRecordsFor(const data::FormDatabase& forms,
     return saved;
 }
 
-void applySavedState(flecs::entity entity, const SavedActorRecords& saved,
+void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
                      const GameplayTagRegistry& registry) {
     if (!saved.stats) {
         return;

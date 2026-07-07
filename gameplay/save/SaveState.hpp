@@ -1,8 +1,7 @@
 #pragma once
 
-#include <flecs.h>
-
 #include "data/plugins/Record.hpp"
+#include "engine/ecs/World.hpp" // ecs::Entity (flecs name confined to meadows-ecs)
 #include "gameplay/save/SaveForms.hpp"
 
 // Capture/apply between live actor state and save records (chantier 5).
@@ -88,7 +87,7 @@ vector<data::Record> captureActiveEffects(const AbilitySystem& system,
 // "was captured" sentinel that suppresses loadout re-rolls), plus
 // SavedEffect/SavedItem/SavedInjury rows. Missing components are simply
 // skipped. Deterministic record guids; items sorted by item guid (§8).
-vector<data::Record> captureActor(flecs::entity entity,
+vector<data::Record> captureActor(ecs::Entity entity,
                                   const core::Guid& refGuid,
                                   const GameplayTagRegistry& registry);
 
@@ -104,7 +103,7 @@ struct SavedActorRecords {
     vector<const SavedItemForm*> items;
     vector<const SavedInjuryForm*> injuries;
 };
-void applySavedState(flecs::entity entity, const SavedActorRecords& saved,
+void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
                      const GameplayTagRegistry& registry);
 
 // Convenience: gathers an actor's saved child records from a resolved

@@ -1,8 +1,7 @@
 #pragma once
 
-#include <flecs.h>
-
 #include "data/forms/FormDatabase.hpp"
+#include "engine/ecs/World.hpp" // ecs::Entity (flecs name confined to meadows-ecs)
 #include "engine/core/Defines.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
@@ -38,13 +37,13 @@ struct CharacterTickContext {
 //   dt      : real-time delta (seconds)
 //   gameDt  : game-time delta (game-seconds), already advanced by the caller
 //   equipmentMods : precomputed equipment modifiers (caller resolves from inventory)
-void tickCharacter(flecs::entity entity, f32 dt, f64 gameDt,
+void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
                    const CharacterTickContext& ctx,
                    const StatModifiers& equipmentMods = {});
 
 // Reset an actor to full vitals (health/energy/essence/posture) based on its
 // current mods. Call after spawn or on respawn / "Heal full".
-void initializeActorStats(flecs::entity entity,
+void initializeActorStats(ecs::Entity entity,
                           const CharacterTickContext& ctx,
                           const StatModifiers& equipmentMods = {});
 
