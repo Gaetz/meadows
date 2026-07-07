@@ -1,5 +1,16 @@
 # Chantier 8 — Outillage
 
+> **FAIT (2026-07-07) — briques 8.1-8.5 exécutées d'une traite sur le go
+> du dev.** 279 tests verts, smoke-run par brique, builds Debug +
+> Release. Validation à la main des panneaux par le dev en attente
+> (scène « Game DB (editor) » du hub Demos). Nouvelles APIs :
+> `EditSession::duplicateForm`/`forEachVisible`, `data::referencesTo`,
+> `FieldConflict.writers` = `FieldWrite{plugin, value}` (+typeId/
+> fieldId), `data/plugins/Synthesis` (makeSynthesisPatch +
+> writeSynthesisToml). Leçon re-payée : FieldConflict est un type
+> partagé → purge `*.dir` + rebuild complet (fait, préventivement,
+> aussi pour EditSession).
+
 > Plan écrit 2026-07-07 (go dev). Objectif : accélérer l'AUTHORING du
 > contenu de la démo. Tout outil est un panneau ImGui de l'EditorScene
 > posé sur l'infra existante — `EditSession` (drafts, undo, export =
@@ -77,12 +88,35 @@
   de grille (restes chantier 2).
 - Éditeur de FX (panneau live sur ParticleForm).
 
+## Quoi tester (dev)
+
+Scène « Game DB (editor) » du hub Demos :
+- **Game DB** : sélectionner un form → bouton Duplicate (la copie est
+  sélectionnée, suffixe « Copy ») ; section « Used by » dépliable →
+  clic navigue vers le référenceur.
+- **Quests** : la quête « La menace de l'est » (chantier 6) s'affiche
+  en arbre States→Branches→Tasks ; + State/+ Branch/+ Task créent avec
+  le parent pré-rempli ; warnings inline (startState, destination,
+  event) ; le nœud cliqué s'édite dans la grille en dessous.
+- **Dialogues** : l'arbre du dialogue Villager ; + reply alterne les
+  speakers ; + condition accroche un ConditionForm ; ^ réordonne.
+- **Schedules** : une bande 24 h par schedule, une ligne par entrée ;
+  tirer les bords (snap 0.5 h, un seul undo par drag) ; la ligne jaune
+  = l'heure du slider, l'éval H7 au-dessus de chaque bande.
+- **Plugins** : les conflits listent chaque écrivain AVEC sa valeur ;
+  choisir un gagnant → « Generate synthesis patch » → data/
+  synthesis.toml chargé en dernier (l'entête `# ... from: ...` = la
+  provenance) ; recharger et vérifier la valeur arbitrée.
+- L'export plugin (Game DB) porte toutes les éditions des cinq
+  panneaux — c'est LA même session.
+
 ## Vérification
 
 Par brique : build Debug (+Release si shader/perf) + suite headless +
 smoke-run + commit. Les opérations de données (clone, scan used-by,
-valeurs de conflit, génération de patch) sont doctestées headless ; les
-panneaux ImGui se valident à la main dans l'EditorScene (F10).
+valeurs de conflit, génération de patch) sont doctestées headless
+(EditSessionTest, ResolverTest, SynthesisTest) ; les panneaux ImGui se
+valident à la main dans l'EditorScene.
 
 ## Garde-fous
 
