@@ -82,53 +82,108 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
     const u32 perSide =
         static_cast<u32>(TerrainSystem::kChunkSize / kBladeSpacing);
 
+    // CELL-MAJOR scatter (startup-cost fix: the 0.15 m grid made the
+    // per-candidate noise evals saturate every worker for seconds at
+    // boot). The masks vary over METERS, not centimeters — patch,
+    // material and normal are evaluated once per cell, and the terrain
+    // height on the cell-corner lattice (bilinear per blade — at or
+    // below the render mesh's own sampling error). Bare cells cost two
+    // noise evals total; only the cheap per-blade jitter runs per
+    // candidate.
+    constexpr u32 kCell = 4; // candidates per cell side (0.6 m cells)
+    const u32 cells = (perSide + kCell - 1) / kCell;
+    const f32 cellSize = kBladeSpacing * static_cast<f32>(kCell);
+
+    vector<f32> cornerH((cells + 1) * (cells + 1));
+    for (u32 gz = 0; gz <= cells; ++gz) {
+        for (u32 gx = 0; gx <= cells; ++gx) {
+            cornerH[gz * (cells + 1) + gx] = terrain::height(
+                params, originX + static_cast<f32>(gx) * cellSize,
+                originZ + static_cast<f32>(gz) * cellSize);
+        }
+    }
+
     vector<GrassSystem::Instance> result;
-    result.reserve(perSide * perSide / 2);
-    for (u32 gz = 0; gz < perSide; ++gz) {
-        for (u32 gx = 0; gx < perSide; ++gx) {
-            HashRng rng { hashU32(params.seed ^ 0x6b79a3f1u) ^
-                          hashU32(static_cast<u32>(cx * 73856093 ^
-                                                   cz * 19349663) ^
-                                  (gz * perSide + gx)) };
-            const f32 x = originX + (static_cast<f32>(gx) + rng.next()) *
-                                        kBladeSpacing;
-            const f32 z = originZ + (static_cast<f32>(gz) + rng.next()) *
-                                        kBladeSpacing;
+    result.reserve(perSide * perSide / 4);
+    for (u32 cgz = 0; cgz < cells; ++cgz) {
+        for (u32 cgx = 0; cgx < cells; ++cgx) {
             // Near-BINARY presence (7.8quinquies): even moderately inside
             // the mask the clump is at FULL density (the solid volume);
             // only the rim thins, fast, so patches keep their silhouette.
-            const f32 patch = patchMask(params.seed, x, z);
+            const f32 patch = patchMask(
+                params.seed,
+                originX + (static_cast<f32>(cgx) + 0.5f) * cellSize,
+                originZ + (static_cast<f32>(cgz) + 0.5f) * cellSize);
             const f32 presence = glm::smoothstep(0.08f, 0.40f, patch);
-            if (presence < 0.02f || rng.next() >= presence) {
+            if (presence < 0.02f) {
                 continue;
             }
-            const f32 h = terrain::height(params, x, z);
-            const Vec3 n = terrain::normal(params, x, z);
+            const f32 h00 = cornerH[cgz * (cells + 1) + cgx];
+            const f32 h10 = cornerH[cgz * (cells + 1) + cgx + 1];
+            const f32 h01 = cornerH[(cgz + 1) * (cells + 1) + cgx];
+            const f32 h11 = cornerH[(cgz + 1) * (cells + 1) + cgx + 1];
+            // Cell normal from its corners — grass shading barely
+            // perturbs it, lattice precision is plenty.
+            const Vec3 n = glm::normalize(
+                Vec3 { -(h10 - h00 + h11 - h01) / (2.0f * cellSize), 1.0f,
+                       -(h01 - h00 + h11 - h10) / (2.0f * cellSize) });
+            const f32 hMid = 0.25f * (h00 + h10 + h01 + h11);
             // HARD material cutoff: grass only on solidly grassy ground —
             // never on the sand/snow/rock transition fringes.
-            if (terrain::materialWeights(params, h, n).grass < 0.72f) {
+            if (terrain::materialWeights(params, hMid, n).grass < 0.72f) {
                 continue;
             }
-            // Height: near-uniform inside the volume so the top reads as
-            // one surface; the rim droops shorter, and ~12% of blades
-            // overshoot — the tips poking above the mass (the BotW tell).
-            f32 scale =
-                (0.70f + rng.next() * 0.30f) * (0.55f + 0.45f * presence);
-            if (rng.next() < 0.12f) {
-                scale *= 1.35f;
+            for (u32 sz = 0; sz < kCell; ++sz) {
+                for (u32 sx = 0; sx < kCell; ++sx) {
+                    const u32 gx = cgx * kCell + sx;
+                    const u32 gz = cgz * kCell + sz;
+                    if (gx >= perSide || gz >= perSide) {
+                        continue;
+                    }
+                    HashRng rng { hashU32(params.seed ^ 0x6b79a3f1u) ^
+                                  hashU32(static_cast<u32>(cx * 73856093 ^
+                                                           cz * 19349663) ^
+                                          (gz * perSide + gx)) };
+                    const f32 x = originX +
+                                  (static_cast<f32>(gx) + rng.next()) *
+                                      kBladeSpacing;
+                    const f32 z = originZ +
+                                  (static_cast<f32>(gz) + rng.next()) *
+                                      kBladeSpacing;
+                    if (rng.next() >= presence) {
+                        continue;
+                    }
+                    const f32 fx =
+                        (x - (originX + static_cast<f32>(cgx) * cellSize)) /
+                        cellSize;
+                    const f32 fz =
+                        (z - (originZ + static_cast<f32>(cgz) * cellSize)) /
+                        cellSize;
+                    const f32 h = glm::mix(glm::mix(h00, h10, fx),
+                                           glm::mix(h01, h11, fx), fz);
+                    // Height: near-uniform inside the volume so the top
+                    // reads as one surface; the rim droops shorter, and
+                    // ~12% of blades overshoot — the tips poking above
+                    // the mass (the BotW tell).
+                    f32 scale = (0.70f + rng.next() * 0.30f) *
+                                (0.55f + 0.45f * presence);
+                    if (rng.next() < 0.12f) {
+                        scale *= 1.35f;
+                    }
+                    // Rim blades lean/curve harder — the clump spills
+                    // over its sides instead of ending in a wall.
+                    const f32 lean = glm::min(
+                        1.0f, rng.next() + (1.0f - presence) * 0.6f);
+                    result.push_back({
+                        .positionScale = { x, h, z, scale },
+                        .params = { rng.next() * 6.2831853f, // yaw
+                                    rng.next() * 6.2831853f, // flutter
+                                    rng.next(),              // tint jitter
+                                    lean },                  // lean amount
+                        .groundNormal = { n, 0.0f }, // 7.8bis: BotW shading
+                    });
+                }
             }
-            // Rim blades lean/curve harder — the clump spills over its
-            // sides instead of ending in a wall.
-            const f32 lean =
-                glm::min(1.0f, rng.next() + (1.0f - presence) * 0.6f);
-            result.push_back({
-                .positionScale = { x, h, z, scale },
-                .params = { rng.next() * 6.2831853f,   // yaw
-                            rng.next() * 6.2831853f,   // flutter phase
-                            rng.next(),                // tint jitter
-                            lean },                    // lean amount
-                .groundNormal = { n, 0.0f },           // 7.8bis: BotW shading
-            });
         }
     }
     // Sort by the density-LOD keep key (flutter phase — uniform random
@@ -367,10 +422,10 @@ void GrassSystem::draw(rhi::CommandBuffer& cmd,
         // drawing the first N is exactly the set grass.vert keeps at
         // this chunk's NEAREST distance (density is monotonic in dist —
         // every blade in the chunk is at least that far). Same curve as
-        // the shader: density = mix(1.0, 0.24, smoothstep(18, 110, d)),
+        // the shader: density = mix(1.0, 0.20, smoothstep(10, 70, d)),
         // +3% margin for the key distribution's sampling noise.
-        const f32 thin = glm::smoothstep(18.0f, 110.0f, nearest);
-        const f32 density = glm::min(1.0f, 1.0f - 0.76f * thin + 0.03f);
+        const f32 thin = glm::smoothstep(10.0f, 70.0f, nearest);
+        const f32 density = glm::min(1.0f, 1.0f - 0.80f * thin + 0.03f);
         const u32 count = glm::min(
             chunk.instanceCount,
             1u + static_cast<u32>(

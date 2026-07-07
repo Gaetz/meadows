@@ -54,8 +54,8 @@ void main() {
     // buffer is SORTED by it, and GrassSystem::draw() cuts the prefix
     // with THIS SAME curve — keep the two in sync.
     float dist = distance(aPosScale.xyz, uCameraPos.xyz);
-    float thin = smoothstep(18.0, 110.0, dist);
-    float density = mix(1.0, 0.24, thin);
+    float thin = smoothstep(10.0, 70.0, dist);
+    float density = mix(1.0, 0.20, thin);
     if (aParams.y * 0.15915494 > density) {
         gl_Position = vec4(2.0, 0.0, 2.0, 1.0); // off-clip, zero raster
         return;
@@ -98,7 +98,7 @@ void main() {
     float edge = 1.0 - abs(dot(toCam.xz, normalize(faceDir.xz)));
     float width = kBladeHalfWidth * mix(0.7, 1.3, aParams.z) *
                   (1.0 + edge * 0.35) *
-                  (1.0 + thin * 1.5); // density-LOD width compensation
+                  (1.0 + thin * 1.7); // density-LOD width compensation
 
     // 7.8ter — interactive bending (the Velorexe/BotW walk-through): the
     // player's feet push nearby blades outward and down; recovery is

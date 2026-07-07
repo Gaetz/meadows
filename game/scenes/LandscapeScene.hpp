@@ -402,12 +402,11 @@ private:
     void snapCellEntities(); // idempotent ground snap (y = terrain + authored)
 
     // Chantier 2 B8: the authored-terrain overlay. IMMUTABLE once
-    // published (terrain.params.patches points at it); the sculpt tool
-    // edits a working copy then publishes a NEW instance — the old ones
-    // are retired here and NEVER freed before app exit, because workers
-    // hold copied TerrainParams with the raw pointer inside.
+    // published; the sculpt tool edits a working copy then publishes a
+    // NEW instance. Lifetime is carried by TerrainParams.patches itself
+    // (shared_ptr — worker-held copies keep old instances alive, even
+    // across scene teardown).
     sptr<const render::HeightPatches> heightPatches;
-    vector<sptr<const render::HeightPatches>> retiredPatches;
     uptr<TextureCache> materialTextures; // SRGBA8 + Linear (3D albedo)
     uptr<MeshCache> meshCache;
     RenderSnapshot snapshot;

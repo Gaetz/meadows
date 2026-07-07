@@ -38,13 +38,15 @@ struct HeightPatches {
 struct TerrainParams {
     u32 seed { 1337 };
 
-    // Authored overrides — a NON-OWNING observer (the scene owns the
-    // instance and keeps every published one alive while workers may hold
-    // a copied TerrainParams). Null = pure procedural, bit-identical to
-    // the pre-B8 behavior (the non-regression contract). Riding inside
-    // TerrainParams means every consumer (workers included) is patched
-    // without a single signature change.
-    const HeightPatches* patches { nullptr };
+    // Authored overrides — SHARED ownership (postmortem: this was a raw
+    // observer with a "the scene keeps it alive" contract, and the scene
+    // broke it at teardown — quitting while scatter jobs held copied
+    // TerrainParams read a freed HeightPatches and crashed). Every copy,
+    // worker-held ones included, now keeps the data alive by itself.
+    // Null = pure procedural, bit-identical to the pre-B8 behavior (the
+    // non-regression contract). Riding inside TerrainParams means every
+    // consumer (workers included) is patched without a signature change.
+    sptr<const HeightPatches> patches;
 
     // Rolling hills: FBM value noise.
     f32 hillWavelength { 400.0f }; // meters per base octave

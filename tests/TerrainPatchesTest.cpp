@@ -26,8 +26,7 @@ render::HeightPatch flatPatch(u32 samples, f32 delta) {
 TEST_CASE("no overlay (or an empty one) is bit-identical to the noise") {
     render::TerrainParams pure;
     render::TerrainParams overlaid = pure;
-    render::HeightPatches empty;
-    overlaid.patches = &empty;
+    overlaid.patches = std::make_shared<render::HeightPatches>();
     for (const f32 x : { 0.0f, 31.7f, 1000.5f, -250.0f }) {
         for (const f32 z : { 0.0f, 359.2f, -64.0f }) {
             CHECK(render::terrain::height(pure, x, z) ==
@@ -38,12 +37,13 @@ TEST_CASE("no overlay (or an empty one) is bit-identical to the noise") {
 
 TEST_CASE("a chunk delta applies bilinearly, only inside its chunk") {
     render::TerrainParams params;
-    render::HeightPatches patches;
+    auto patchesPtr = std::make_shared<render::HeightPatches>();
+    render::HeightPatches& patches = *patchesPtr;
     // Chunk (1, 5): x 64-128, z 320-384, uniform +10 m.
     patches.chunks.emplace(render::HeightPatches::keyOf(1, 5),
                            flatPatch(65, 10.0f));
     render::TerrainParams overlaid = params;
-    overlaid.patches = &patches;
+    overlaid.patches = patchesPtr;
 
     CHECK(render::terrain::height(overlaid, 96.0f, 350.0f) ==
           doctest::Approx(render::terrain::height(params, 96.0f, 350.0f) +
@@ -71,7 +71,8 @@ TEST_CASE("a chunk delta applies bilinearly, only inside its chunk") {
 
 TEST_CASE("shared edge samples keep chunk borders seamless") {
     render::TerrainParams params;
-    render::HeightPatches patches;
+    auto patchesPtr = std::make_shared<render::HeightPatches>();
+    render::HeightPatches& patches = *patchesPtr;
     // Both chunks carry the SAME value on their shared edge (x = 128):
     // col 64 of chunk 1 and col 0 of chunk 2.
     patches.chunks.emplace(render::HeightPatches::keyOf(1, 5),
@@ -79,7 +80,7 @@ TEST_CASE("shared edge samples keep chunk borders seamless") {
     patches.chunks.emplace(render::HeightPatches::keyOf(2, 5),
                            flatPatch(65, 6.0f));
     render::TerrainParams overlaid = params;
-    overlaid.patches = &patches;
+    overlaid.patches = patchesPtr;
     const f32 left = render::terrain::height(overlaid, 127.999f, 350.0f);
     const f32 right = render::terrain::height(overlaid, 128.001f, 350.0f);
     CHECK(left == doctest::Approx(right).epsilon(0.001));
@@ -140,7 +141,7 @@ asset = "80000000-0000-4000-8000-0000000000aa"
     REQUIRE(overlay->chunks.size() == 1);
     render::TerrainParams params;
     render::TerrainParams overlaid = params;
-    overlaid.patches = overlay.get();
+    overlaid.patches = overlay;
     CHECK(render::terrain::height(overlaid, 96.0f, 350.0f) ==
           doctest::Approx(render::terrain::height(params, 96.0f, 350.0f) +
                           2.5f));

@@ -147,9 +147,6 @@ void LandscapeScene::onEnter() {
     // B8: the authored-terrain overlay rides inside TerrainParams — every
     // consumer (chunk workers, scatter, collision, snaps) is patched at
     // once. Retire the previous overlay instead of freeing it (workers).
-    if (heightPatches) {
-        retiredPatches.push_back(heightPatches);
-    }
     heightPatches = world::buildHeightPatches(forms, assetDb);
     if (!heightPatches->chunks.empty()) {
         LOG_INFO("B8: {} authored terrain patch(es)",
@@ -158,7 +155,7 @@ void LandscapeScene::onEnter() {
 
     // Terrain shape + startup values for every live-adjustable knob.
     terrain.params.seed = tuning.terrainSeed;
-    terrain.params.patches = heightPatches.get();
+    terrain.params.patches = heightPatches;
     terrain.params.hillWavelength = tuning.hillWavelength;
     terrain.params.hillAmplitude = tuning.hillAmplitude;
     terrain.params.mountainWavelength = tuning.mountainWavelength;
@@ -1522,7 +1519,8 @@ void LandscapeScene::publishSculpt() {
         return;
     }
     // New immutable overlay = published chunks overridden by the working
-    // grids; retire the old instance (in-flight workers hold raw copies).
+    // grids; in-flight workers keep the old instance alive through their
+    // copied TerrainParams (shared_ptr).
     auto next = std::make_shared<render::HeightPatches>();
     next->chunkSize = 64.0f;
     if (heightPatches) {
@@ -1531,9 +1529,8 @@ void LandscapeScene::publishSculpt() {
     for (const auto& [key, grid] : sculptGrids) {
         next->chunks[key] = grid;
     }
-    retiredPatches.push_back(heightPatches);
     heightPatches = std::move(next);
-    terrain.params.patches = heightPatches.get();
+    terrain.params.patches = heightPatches;
     regenerateRequested = true; // terrain + scatter rebuild next frame
     occlusion.invalidate();
     terrainCollision = std::make_unique<TerrainCollision>(
