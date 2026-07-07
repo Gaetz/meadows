@@ -40,4 +40,7 @@ layout(std140, binding = 0) uniform FrameUbo {
     // Brick 32 (APPENDED): x = effective water surface Y for the camera
     // (sea outdoors, a volume top inside one, -1e6 = dry).
     vec4 uSubmersionInfo;
+    // B2b (APPENDED): the interior key-light shadow.
+    mat4 uKeyShadowViewProj;
+    vec4 uKeyShadowInfo; // xyz = that light's position, w = active
 };

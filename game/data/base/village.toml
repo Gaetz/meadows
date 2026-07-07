@@ -673,6 +673,7 @@ editorId = "TableSpot"
 kind = "spot"
 color = [1.0, 0.8, 0.55]
 intensity = 3.5
+castsShadow = true
 radius = 6.0
 spotAngle = 55.0
 flicker = 0.12

@@ -41,6 +41,7 @@ void spawnLight(SpawnContext&, ecs::Entity entity, const data::Form& base,
     source.shaftSoftness = light.shaftSoftness;
     source.dustDensity = light.dustDensity;
     source.sunLinked = light.sunLinked;
+    source.castsShadow = light.castsShadow; // B2b
     entity.set<LightSource>(source);
 }
 

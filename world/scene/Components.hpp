@@ -116,6 +116,8 @@ struct LightSource {
     f32 shaftSoftness { 0.5f };
     f32 dustDensity { 0.6f };
     bool sunLinked { false };
+    // B2b (appended): the interior key-light shadow candidate flag.
+    bool castsShadow { false };
 
     REFLECT_BEGIN(LightSource, void)
         REFLECT_FIELD(color)
@@ -128,6 +130,7 @@ struct LightSource {
         REFLECT_FIELD(shaftSoftness)
         REFLECT_FIELD(dustDensity)
         REFLECT_FIELD(sunLinked)
+        REFLECT_FIELD(castsShadow)
     REFLECT_END()
 };
 

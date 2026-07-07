@@ -477,6 +477,18 @@ private:
     bool meshShadowCastersUi { true };
     void buildCasterPipelines(rhi::Device& device);
     void drawShadowCasters(engine::FrameContext& frame, u32 cascade);
+    void drawCastersInto(engine::FrameContext& frame,
+                         rhi::BindGroupHandle casterGroup, bool refreshUbos);
+    // B2b (chantier 7.5): the interior key-light shadow — ONE perspective
+    // depth layer from the castsShadow light nearest the camera; stops a
+    // candle from lighting through a wall. Never touches kCascadeCount.
+    rhi::TextureHandle keyShadowTex {};
+    rhi::FramebufferHandle keyShadowFb {};
+    rhi::SamplerHandle keyShadowSampler {};
+    rhi::BufferHandle keyShadowUbo {};
+    rhi::BindGroupHandle keyShadowCasterGroup {};
+    rhi::BindGroupHandle keyShadowReceiverGroup {};
+    bool keyShadowUi { true };
 
     // B6 (chantier 1): Forms-driven skinned NPCs. The scene builds NOTHING
     // by hand anymore — every actor whose ActorForm resolves an

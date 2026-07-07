@@ -240,6 +240,31 @@ void LandscapeScene::onEnter() {
     // Brick 32: placed water surfaces.
     shaders->load("watervolume",
                   { { "FrameUbo", 0 }, { "WaterVolumeUbo", 1 } });
+    // B2b: the interior key-light shadow target (1024², perspective).
+    keyShadowTex = device.createTexture(
+        { .width = 1024,
+          .height = 1024,
+          .format = rhi::TextureFormat::Depth32F,
+          .usage = rhi::TextureUsage_Sampled |
+                   rhi::TextureUsage_RenderAttachment },
+        nullptr);
+    keyShadowSampler = device.createSampler(
+        { .minFilter = rhi::FilterMode::Linear,
+          .magFilter = rhi::FilterMode::Linear,
+          .compare = rhi::CompareFunc::LessEqual });
+    keyShadowFb = device.createFramebuffer(
+        { .depthAttachment = { .texture = keyShadowTex } });
+    keyShadowUbo =
+        device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
+                              .size = sizeof(Mat4),
+                              .dynamic = true },
+                            nullptr);
+    keyShadowCasterGroup = device.createBindGroup(
+        { .entries = { { .binding = 1, .buffer = keyShadowUbo } } });
+    keyShadowReceiverGroup = device.createBindGroup(
+        { .entries = { { .binding = 6,
+                         .texture = keyShadowTex,
+                         .sampler = keyShadowSampler } } });
 
     // Chantier 4 B2: the RmlUi game UI (screens from UiScreenForm records,
     // documents through the plugins' ui/ roots).
@@ -701,6 +726,19 @@ void LandscapeScene::onExit() {
     waterQuads.clear();
     device.destroyPipeline(waterVolumePipeline);
     waterVolumePipeline = {};
+    // B2b: key-light shadow.
+    device.destroyBindGroup(keyShadowReceiverGroup);
+    device.destroyBindGroup(keyShadowCasterGroup);
+    device.destroyBuffer(keyShadowUbo);
+    device.destroyFramebuffer(keyShadowFb);
+    device.destroySampler(keyShadowSampler);
+    device.destroyTexture(keyShadowTex);
+    keyShadowReceiverGroup = {};
+    keyShadowCasterGroup = {};
+    keyShadowUbo = {};
+    keyShadowFb = {};
+    keyShadowSampler = {};
+    keyShadowTex = {};
     // B6 NPCs: GPU state per NPC, then the CPU-side rig cache.
     for (auto& npc : npcs) {
         destroyNpc(device, *npc);
@@ -4715,12 +4753,18 @@ void LandscapeScene::buildCasterPipelines(rhi::Device& device) {
 
 void LandscapeScene::drawShadowCasters(engine::FrameContext& frame,
                                        u32 cascade) {
+    drawCastersInto(frame, shadows.casterBindGroup(cascade), cascade == 0);
+}
+
+void LandscapeScene::drawCastersInto(engine::FrameContext& frame,
+                                     rhi::BindGroupHandle casterGroup,
+                                     bool refreshUbos) {
     if (shaders->generation("shadow_mesh") != meshCasterShaderGeneration ||
         shaders->generation("shadow_skinned") !=
             skinnedCasterShaderGeneration) {
         buildCasterPipelines(frame.device);
     }
-    const bool firstCascade = cascade == 0;
+    const bool firstCascade = refreshUbos;
 
     // Scene meshes: the per-draw UBO is the lit pass's — the caster pass
     // runs first in the frame, so cascade 0 refreshes the model matrix
@@ -4730,7 +4774,7 @@ void LandscapeScene::drawShadowCasters(engine::FrameContext& frame,
             meshDraws.resize(snapshot.meshes.size());
         }
         frame.cmd.setPipeline(meshCasterPipeline);
-        frame.cmd.setBindGroup(1, shadows.casterBindGroup(cascade));
+        frame.cmd.setBindGroup(1, casterGroup);
         for (u32 i = 0; i < snapshot.meshes.size(); ++i) {
             const RenderSnapshot::MeshInstance& instance = snapshot.meshes[i];
             const MeshCache::Gpu& mesh = meshCache->resolve(instance.model);
@@ -4764,7 +4808,7 @@ void LandscapeScene::drawShadowCasters(engine::FrameContext& frame,
     // 2048px cascade resolution.
     if (!npcs.empty()) {
         frame.cmd.setPipeline(skinnedCasterPipeline);
-        frame.cmd.setBindGroup(1, shadows.casterBindGroup(cascade));
+        frame.cmd.setBindGroup(1, casterGroup);
         for (auto& npcPtr : npcs) {
             Npc& npc = *npcPtr;
             if (npc.modelUbo.id == 0 || !npc.entity.is_alive()) {
@@ -5098,6 +5142,61 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         sky.bakeCloudMap(frame.cmd, frameBindGroup);
     }
 
+    // B2b — the interior key-light shadow: pick the castsShadow light
+    // nearest the camera, render its perspective depth, and hand the
+    // matrix + position to locallights.glsl (matched by position there).
+    bool keyShadowActive = false;
+    if (keyShadowUi && interiorMode && meshShadowCastersUi) {
+        f32 bestDistSq = 1e12f;
+        Vec3 keyPos {};
+        Vec3 keyDir { 0.0f, 0.0f, 1.0f };
+        f32 keyFov = 100.0f;
+        f32 keyRadius = 10.0f;
+        world.handle()
+            .query<const world::Transform, const world::LightSource>()
+            .each([&](flecs::entity, const world::Transform& transform,
+                      const world::LightSource& light) {
+                if (!light.castsShadow) {
+                    return;
+                }
+                const Vec3 d = transform.position - camera.position;
+                const f32 distSq = glm::dot(d, d);
+                if (distSq < bestDistSq) {
+                    bestDistSq = distSq;
+                    keyPos = transform.position;
+                    keyDir = transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
+                    keyFov = light.spotAngle > 0.0f
+                                 ? glm::min(light.spotAngle * 1.3f, 150.0f)
+                                 : 120.0f;
+                    keyRadius = light.radius;
+                }
+            });
+        if (bestDistSq < 1e12f) {
+            const Vec3 up = std::abs(keyDir.y) > 0.95f
+                                ? Vec3 { 1.0f, 0.0f, 0.0f }
+                                : Vec3 { 0.0f, 1.0f, 0.0f };
+            const Mat4 view = glm::lookAt(keyPos, keyPos + keyDir, up);
+            const Mat4 proj = glm::perspective(
+                glm::radians(keyFov), 1.0f, 0.05f, keyRadius);
+            frameData.keyShadowViewProj = proj * view;
+            frameData.keyShadowInfo = { keyPos, 1.0f };
+            frame.device.updateBuffer(frameUbo, &frameData,
+                                      sizeof(frameData), 0);
+            frame.device.updateBuffer(keyShadowUbo,
+                                      &frameData.keyShadowViewProj,
+                                      sizeof(Mat4), 0);
+            frame.cmd.beginRenderPass(
+                { .framebuffer = keyShadowFb,
+                  .loadOp = rhi::LoadOp::DontCare,
+                  .depthLoadOp = rhi::LoadOp::Clear });
+            drawCastersInto(frame, keyShadowCasterGroup,
+                            /*refreshUbos=*/true);
+            frame.cmd.endRenderPass();
+            keyShadowActive = true;
+        }
+    }
+    (void)keyShadowActive;
+
     // Cascade passes: depth-only casters from the sun's point of view.
     if (shadowStrength > 0.0f) {
         core::FrameProbe::Scope probe { frameProbe, "shadows" };
@@ -5199,6 +5298,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         }
         if (terrainLightMap.bindGroup().id != 0) {
             frame.cmd.setBindGroup(4, terrainLightMap.bindGroup()); // 33b/c
+        }
+        if (keyShadowReceiverGroup.id != 0) {
+            frame.cmd.setBindGroup(5, keyShadowReceiverGroup); // B2b
         }
         // Occlusion applies to the main view only: both sets were built for
         // the real camera, not the mirrored one (the grass ring is too
@@ -5614,6 +5716,7 @@ void LandscapeScene::drawRenderUi() {
     ImGui::Checkbox("Contact shadows", &contactShadowsUi); // brick 33a
     ImGui::SameLine();
     ImGui::Checkbox("Terrain light map", &terrainLightUi); // brick 33b/c
+    ImGui::Checkbox("Key light shadow", &keyShadowUi); // B2b (interiors)
     // B3 A/B (brick 28): the analytical grade, off by default.
     ImGui::Checkbox("Grading (brick 28)", &gradingUi);
     if (gradingUi) {

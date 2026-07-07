@@ -4,6 +4,9 @@
 // shadow is a later brick). The landscape (terrain/grass) stays sun-only
 // by decision — only meshes and characters include this.
 
+// B2b: the ONE shadowed interior key light (matched by position below).
+layout(binding = 6) uniform sampler2DShadow uKeyShadow;
+
 layout(std140, binding = 5) uniform LightsUbo {
     vec4 uLightCount;                 // x = active lights
     vec4 uLightPositionRadius[16];    // xyz world, w radius (m)
@@ -52,6 +55,22 @@ vec3 localLights(vec3 worldPos, vec3 n) {
             float cd = dot(-l, uLightDirectionAngle[i].xyz);
             float edge = mix(cosHalf, 1.0, 0.1);
             atten *= smoothstep(cosHalf, edge, cd);
+        }
+        // B2b: the key light's shadow map (one per interior) stops this
+        // light from bleeding through walls. Matched by position.
+        if (uKeyShadowInfo.w > 0.5 &&
+            distance(uLightPositionRadius[i].xyz, uKeyShadowInfo.xyz) <
+                0.05) {
+            vec4 lc = uKeyShadowViewProj * vec4(worldPos, 1.0);
+            if (lc.w > 0.0) {
+                vec3 proj = lc.xyz / lc.w * 0.5 + 0.5;
+                if (proj.z < 1.0 &&
+                    all(greaterThan(proj.xy, vec2(0.0))) &&
+                    all(lessThan(proj.xy, vec2(1.0)))) {
+                    atten *= texture(
+                        uKeyShadow, vec3(proj.xy, proj.z - 0.0022));
+                }
+            }
         }
         float ndl = dot(n, l);
         float wrapped = clamp((ndl + 0.4) / 1.4, 0.0, 1.0);

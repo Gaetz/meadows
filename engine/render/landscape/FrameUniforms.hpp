@@ -52,6 +52,10 @@ struct FrameUniforms {
     // camera (sea level outdoors, a volume's top when inside one,
     // -1e6 = dry) — the tonemap submersion reads this, not seaLevel.
     Vec4 submersionInfo { -1.0e6f, 0.0f, 0.0f, 0.0f };
+    // B2b (APPENDED): the interior key-light shadow — world -> light clip
+    // for the ONE castsShadow light nearest the camera.
+    Mat4 keyShadowViewProj {};
+    Vec4 keyShadowInfo {}; // xyz = that light's position, w = active
 };
 
 } // namespace render
