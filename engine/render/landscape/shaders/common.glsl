@@ -47,4 +47,7 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uStormInfo;
     // Brick 31 (APPENDED): world -> top-down rain-occlusion clip.
     mat4 uRainOcclusionViewProj;
+    // 7.8ter (APPENDED): grass bending — xy = feet XZ, z = feet Y,
+    // w = radius (0 = off).
+    vec4 uGrassBendInfo;
 };

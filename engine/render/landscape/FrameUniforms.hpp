@@ -62,6 +62,9 @@ struct FrameUniforms {
     // Brick 31 (APPENDED): world -> top-down ortho clip for the rain
     // occlusion depth (no rain under roofs).
     Mat4 rainOcclusionViewProj {};
+    // 7.8ter (APPENDED): interactive grass bending — xy = the player's
+    // feet XZ, z = feet Y, w = bend radius (0 = off, e.g. Fly mode).
+    Vec4 grassBendInfo {};
 };
 
 } // namespace render

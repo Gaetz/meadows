@@ -5175,6 +5175,12 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     frameData.terrainLightInfo.w =
         (terrainLightUi && !interiorMode && terrainLightMap.ready()) ? 1.0f
                                                                      : 0.0f;
+    // 7.8ter: the player's feet part the grass (off in Fly).
+    frameData.grassBendInfo =
+        playMode && player
+            ? Vec4 { player->position().x, player->position().z,
+                     player->position().y, 0.85f }
+            : Vec4 { 0.0f };
     // Brick 30/31: the crossfaded storm front + rain intensity, and the
     // top-down rain-occlusion matrix (ortho, 40 m around the camera).
     frameData.stormInfo.x = stormFrontUi;

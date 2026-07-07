@@ -85,6 +85,23 @@ void main() {
     float width = kBladeHalfWidth * mix(0.7, 1.3, aParams.z) *
                   (1.0 + edge * 0.35);
 
+    // 7.8ter — interactive bending (the Velorexe/BotW walk-through): the
+    // player's feet push nearby blades outward and down; recovery is
+    // implicit (the push follows the feet, blades spring back behind).
+    if (uGrassBendInfo.w > 0.0) {
+        vec2 away = aPosScale.xz - uGrassBendInfo.xy;
+        float d = length(away);
+        if (d < uGrassBendInfo.w &&
+            abs(aPosScale.y - uGrassBendInfo.z) < 2.0) {
+            float push = 1.0 - d / uGrassBendInfo.w;
+            push *= push;
+            bend += vec3(away.x / max(d, 0.05), 0.0,
+                         away.y / max(d, 0.05)) *
+                    (push * 0.9 * t);
+            height *= 1.0 - push * 0.45; // squash under the step
+        }
+    }
+
     vec3 world = aPosScale.xyz + sideDir * (aBlade.x * width) +
                  vec3(0.0, height * t, 0.0) + bend * height;
 
