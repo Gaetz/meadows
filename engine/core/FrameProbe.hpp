@@ -47,7 +47,18 @@ public:
     // Logs the breakdown when the frame exceeded `thresholdMs`. Blocks
     // under 0.5 ms are elided (noise); `probed` = their sum, so a gap
     // between it and the total points outside the instrumented blocks.
+    // Debug builds stay silent: everything is 10-30× slower there
+    // (MSVC iterator debugging, unoptimized noise/Jolt), so every frame
+    // "spikes" and the log drowns — profile stutters in Release.
     void endFrame(f64 thresholdMs = 25.0) {
+#ifdef NDEBUG
+        constexpr bool kSpikeLogging = true;
+#else
+        constexpr bool kSpikeLogging = false;
+#endif
+        if constexpr (!kSpikeLogging) {
+            return;
+        }
         const f64 total = msSince(frameStart);
         if (total < thresholdMs) {
             return;
