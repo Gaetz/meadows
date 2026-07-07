@@ -11,6 +11,7 @@
 #include "game/AllForms.hpp"
 #include "game/ui/PropertyGrid.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
+#include "quest/Quest.hpp"
 
 namespace game {
 
@@ -58,8 +59,186 @@ void EditorScene::saveConfig() const {
 void EditorScene::drawUi() {
     drawGameDb();
     drawPlugins();
+    drawQuests();
     drawSchedules();
     console->draw();
+}
+
+// 8.2 — the quest editor: the decomposed records (Quest -> States ->
+// Branches -> Tasks, linked by guid) shown as ONE tree, created with
+// their parent pre-filled, edited through the same PropertyGrid and
+// exported by the same session as everything else (§5: the editor is a
+// plugin author, nothing more).
+void EditorScene::drawQuests() {
+    ImGui::Begin("Quests");
+
+    // Left: every visible QuestForm (base + session-created).
+    ImGui::BeginChild("questlist", ImVec2(220.0f, 0.0f),
+                      ImGuiChildFlags_ResizeX);
+    if (ImGui::Button("+ Quest")) {
+        questSelected = session->createForm(
+            quest::QuestForm::staticTypeInfo().id, "NewQuest");
+        selected = questSelected;
+    }
+    session->forEachVisible([&](const core::Guid& id, const data::Form& form,
+                                const reflect::TypeInfo& type) {
+        if (type.id != quest::QuestForm::staticTypeInfo().id) {
+            return;
+        }
+        const str label =
+            (form.editorId.empty() ? id.toString() : form.editorId) +
+            (session->isDirty(id) ? " *" : "") + "##q" + id.toString();
+        if (ImGui::Selectable(label.c_str(), questSelected == id)) {
+            questSelected = id;
+            selected = id;
+        }
+    });
+    ImGui::EndChild();
+    ImGui::SameLine();
+
+    ImGui::BeginChild("questtree");
+    const auto* questForm = static_cast<const quest::QuestForm*>(
+        session->view(questSelected));
+    if (!questForm) {
+        ImGui::TextDisabled("(select a quest)");
+        ImGui::EndChild();
+        ImGui::End();
+        return;
+    }
+
+    // Collect the visible children at each level (guid-linked, §C.1).
+    vector<std::pair<core::Guid, const quest::QuestStateForm*>> states;
+    vector<std::pair<core::Guid, const quest::QuestBranchForm*>> branches;
+    vector<std::pair<core::Guid, const quest::QuestTaskForm*>> tasks;
+    session->forEachVisible([&](const core::Guid& id, const data::Form& form,
+                                const reflect::TypeInfo& type) {
+        if (type.id == quest::QuestStateForm::staticTypeInfo().id) {
+            states.emplace_back(
+                id, static_cast<const quest::QuestStateForm*>(&form));
+        } else if (type.id == quest::QuestBranchForm::staticTypeInfo().id) {
+            branches.emplace_back(
+                id, static_cast<const quest::QuestBranchForm*>(&form));
+        } else if (type.id == quest::QuestTaskForm::staticTypeInfo().id) {
+            tasks.emplace_back(
+                id, static_cast<const quest::QuestTaskForm*>(&form));
+        }
+    });
+    const auto nameOf = [&](const core::Guid& id) -> str {
+        const data::Form* form = session->view(id);
+        if (!form) {
+            return "(dangling)";
+        }
+        return form->editorId.empty() ? id.toString() : form->editorId;
+    };
+
+    // Header: the quest itself + its startState health.
+    ImGui::Text("%s", questForm->displayName.empty()
+                          ? questForm->editorId.c_str()
+                          : questForm->displayName.c_str());
+    if (!questForm->startState.isValid()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                           "(!) no startState");
+    } else if (!session->view(questForm->startState)) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f),
+                           "(!) startState dangles");
+    }
+    if (ImGui::Button("+ State")) {
+        const core::Guid id = session->createForm(
+            quest::QuestStateForm::staticTypeInfo().id,
+            questForm->editorId + "State");
+        session->setField(id, core::fnv1a("quest"),
+                          reflect::Value { questSelected });
+        selected = id;
+    }
+    ImGui::Separator();
+
+    for (const auto& [stateId, state] : states) {
+        if (state->quest != questSelected) {
+            continue;
+        }
+        str label = nameOf(stateId) + "  [" + state->kind + "]";
+        if (stateId == questForm->startState) {
+            label += "  <- start";
+        }
+        const bool stateOpen = ImGui::TreeNodeEx(
+            (label + "##s" + stateId.toString()).c_str(),
+            ImGuiTreeNodeFlags_OpenOnArrow |
+                (selected == stateId ? ImGuiTreeNodeFlags_Selected
+                                     : ImGuiTreeNodeFlags_None) |
+                ImGuiTreeNodeFlags_DefaultOpen);
+        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+            selected = stateId;
+        }
+        if (!stateOpen) {
+            continue;
+        }
+        if (ImGui::Button(("+ Branch##" + stateId.toString()).c_str())) {
+            const core::Guid id = session->createForm(
+                quest::QuestBranchForm::staticTypeInfo().id,
+                nameOf(stateId) + "Branch");
+            session->setField(id, core::fnv1a("state"),
+                              reflect::Value { stateId });
+            selected = id;
+        }
+        for (const auto& [branchId, branch] : branches) {
+            if (branch->state != stateId) {
+                continue;
+            }
+            str branchLabel = nameOf(branchId) + "  -> ";
+            branchLabel += branch->destination.isValid()
+                               ? nameOf(branch->destination)
+                               : "(!) no destination";
+            const bool branchOpen = ImGui::TreeNodeEx(
+                (branchLabel + "##b" + branchId.toString()).c_str(),
+                ImGuiTreeNodeFlags_OpenOnArrow |
+                    (selected == branchId ? ImGuiTreeNodeFlags_Selected
+                                          : ImGuiTreeNodeFlags_None) |
+                    ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                selected = branchId;
+            }
+            if (!branchOpen) {
+                continue;
+            }
+            if (ImGui::Button(
+                    ("+ Task##" + branchId.toString()).c_str())) {
+                const core::Guid id = session->createForm(
+                    quest::QuestTaskForm::staticTypeInfo().id,
+                    nameOf(branchId) + "Task");
+                session->setField(id, core::fnv1a("branch"),
+                                  reflect::Value { branchId });
+                selected = id;
+            }
+            for (const auto& [taskId, task] : tasks) {
+                if (task->branch != branchId) {
+                    continue;
+                }
+                str taskLabel = nameOf(taskId);
+                taskLabel += task->event.empty() ? "  (!) no event"
+                                                 : "  on " + task->event;
+                if (task->required > 1) {
+                    taskLabel += " x" + std::to_string(task->required);
+                }
+                if (ImGui::Selectable(
+                        (taskLabel + "##t" + taskId.toString()).c_str(),
+                        selected == taskId)) {
+                    selected = taskId;
+                }
+            }
+            ImGui::TreePop();
+        }
+        ImGui::TreePop();
+    }
+
+    // The clicked node edits in place — same grid, same session.
+    ImGui::Separator();
+    if (selected.isValid()) {
+        drawPropertyGrid(*session, selected);
+    }
+    ImGui::EndChild();
+    ImGui::End();
 }
 
 void EditorScene::drawSchedules() {

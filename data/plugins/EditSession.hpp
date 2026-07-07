@@ -56,6 +56,33 @@ public:
     u32 dirtyCount() const { return static_cast<u32>(drafts.size()); }
     void discardAll();
 
+    // Visits every form the session can see: the resolved base (a dirty
+    // form is visited through its draft) plus the session-CREATED forms —
+    // what tool lists must iterate so fresh records show up before the
+    // next resolve (chantier 8.2). Order: base handle order, then created
+    // drafts (unordered — tools sort by their own keys).
+    template<typename Fn> // Fn(const Guid&, const Form&, const TypeInfo&)
+    void forEachVisible(Fn&& fn) const {
+        for (u32 i = 1; i <= base.count(); ++i) {
+            const FormHandle handle { i };
+            const Form* form = base.get(handle);
+            const reflect::TypeInfo* type = base.typeOf(handle);
+            if (!form || !type) {
+                continue;
+            }
+            if (const auto it = drafts.find(form->id); it != drafts.end()) {
+                fn(form->id, *it->second.form, *it->second.type);
+            } else {
+                fn(form->id, *form, *type);
+            }
+        }
+        for (const auto& [id, draft] : drafts) {
+            if (draft.created) {
+                fn(id, *draft.form, *draft.type);
+            }
+        }
+    }
+
     // The diff as an ordinary plugin: patch records carry only the fields
     // that differ from the base; created forms carry every field that
     // differs from the C++ defaults. Records sorted by guid (determinism).
