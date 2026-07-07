@@ -46,6 +46,8 @@ public:
     static constexpr i32 kViewRadius = 15;    // chunks (Chebyshev), ~960 m
     static constexpr i32 kEvictRadius = 17;   // > view radius: hysteresis
     static constexpr u32 kMaxUploadsPerFrame = 8;
+    // Time cap on top of the count cap (LOD0 uploads dwarf LOD3 ones).
+    static constexpr f64 kUploadMsBudget = 2.0;
     // Requests are budgeted too (nearest first): a border crossing used to
     // dump the whole leading ring edge + the LOD-swap wave on the workers
     // at once — every core saturates and the frame thread starves until

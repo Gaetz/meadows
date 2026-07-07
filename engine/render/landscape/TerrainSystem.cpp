@@ -1,6 +1,7 @@
 #include "engine/render/landscape/TerrainSystem.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 
 #include "engine/core/Jobs.hpp"
@@ -227,8 +228,20 @@ void TerrainSystem::update(rhi::Device& device, const Vec3& cameraPos) {
 
 void TerrainSystem::pumpUploads(rhi::Device& device) {
     lastUploads = 0;
+    // Time-budgeted on top of the count cap: 8 LOD0 uploads cost far more
+    // than 8 LOD3 ones (the frame probe showed the count cap alone
+    // spiking past 30 ms in Debug). At least one upload always lands, so
+    // progress is guaranteed.
+    const auto start = std::chrono::steady_clock::now();
+    const auto elapsedMs = [&] {
+        return std::chrono::duration<f64, std::milli>(
+                   std::chrono::steady_clock::now() - start)
+            .count();
+    };
     BuiltChunk built;
-    while (lastUploads < kMaxUploadsPerFrame && shared->built.tryPop(built)) {
+    while (lastUploads < kMaxUploadsPerFrame &&
+           (lastUploads == 0 || elapsedMs() < kUploadMsBudget) &&
+           shared->built.tryPop(built)) {
         if (built.generation != generation) {
             continue; // stale: regenerated or torn down since the request
         }

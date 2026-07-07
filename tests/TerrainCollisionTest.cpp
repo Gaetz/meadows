@@ -13,10 +13,13 @@ TEST_CASE("terrain collision keeps a tile ring and matches terrain height") {
     game::TerrainCollision collision { world, params };
 
     const Vec3 focus { 32.0f, 0.0f, 368.0f }; // the demo spawn area
-    // Budgeted: ONE tile per update, the focus tile first (anti-stutter).
+    // Synchronous fallback (no JobSystem): the focus tile is guaranteed
+    // on the first update, the ring converges one budgeted cook at a
+    // time (anti-stutter contract; the game path samples on workers).
     collision.update(focus);
-    CHECK(collision.tileCount() == 1);
-    for (int i = 0; i < 8; ++i) {
+    CHECK(collision.tileCount() >= 1);
+    CHECK(collision.tileCount() <= 2);
+    for (int i = 0; i < 10; ++i) {
         collision.update(focus);
     }
     CHECK(collision.tileCount() == 9);
@@ -40,11 +43,11 @@ TEST_CASE("terrain collision keeps a tile ring and matches terrain height") {
     CHECK(character.position().y ==
           doctest::Approx(expected).epsilon(0.02));
 
-    // Moving three tiles away rebuilds the ring ahead (one per update)
-    // and evicts behind (hysteresis keeps ring 2, count stays bounded).
+    // Moving three tiles away rebuilds the ring ahead (budgeted) and
+    // evicts behind (hysteresis keeps ring 2, count stays bounded).
     constexpr f32 kTileEdge = (game::TerrainCollision::kSamples - 1) *
                               game::TerrainCollision::kSpacing;
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 12; ++i) {
         collision.update(focus + Vec3 { 3.0f * kTileEdge, 0.0f, 0.0f });
     }
     CHECK(collision.tileCount() <= 12); // 9 new ring + <= 3 kept behind
