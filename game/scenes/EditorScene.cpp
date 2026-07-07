@@ -457,36 +457,195 @@ void EditorScene::drawQuests() {
     ImGui::End();
 }
 
+// 8.4 — the schedule timeline: one 24 h strip per ScheduleForm, one lane
+// per ScheduleEntryForm (no overlap ambiguity — the last-in-load-order
+// rule is what the scrubbed-hour eval line shows). Bars drag by their
+// edges (0.5 h snap, committed as ONE field edit on release so undo
+// stays sane); midnight-wrapping entries render as two segments. The H7
+// debug eval ("who does what at this hour, and why") stays at the top
+// of each strip.
 void EditorScene::drawSchedules() {
-    ImGui::Begin("Schedules (debug)");
-    ImGui::TextUnformatted(
-        "The P0 schedule tool: what every schedule resolves to at a "
-        "given hour, and why.");
+    ImGui::Begin("Schedules");
     ImGui::SliderFloat("Hour", &debugHour, 0.0f, 24.0f, "%.1f");
-    bool any = false;
-    data::forEach<gameplay::ScheduleForm>(
-        *db, [&](const gameplay::ScheduleForm& schedule) {
-            any = true;
-            const auto intent =
-                gameplay::evaluateSchedule(*db, schedule.id, debugHour);
-            if (intent) {
-                const data::Form* location =
-                    intent->location.isValid() ? db->find(intent->location)
-                                               : nullptr;
-                ImGui::BulletText("%s: %s%s%s", schedule.editorId.c_str(),
-                                  intent->reason.c_str(),
-                                  location ? " @ " : "",
-                                  location ? location->editorId.c_str()
-                                           : "");
-            } else {
-                ImGui::BulletText("%s: (no entry at this hour)",
-                                  schedule.editorId.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("+ Schedule")) {
+        selected = session->createForm(
+            gameplay::ScheduleForm::staticTypeInfo().id, "NewSchedule");
+    }
+
+    vector<std::pair<core::Guid, const gameplay::ScheduleForm*>> schedules;
+    vector<std::pair<core::Guid, const gameplay::ScheduleEntryForm*>> entries;
+    session->forEachVisible([&](const core::Guid& id, const data::Form& form,
+                                const reflect::TypeInfo& type) {
+        if (type.id == gameplay::ScheduleForm::staticTypeInfo().id) {
+            schedules.emplace_back(
+                id, static_cast<const gameplay::ScheduleForm*>(&form));
+        } else if (type.id ==
+                   gameplay::ScheduleEntryForm::staticTypeInfo().id) {
+            entries.emplace_back(
+                id, static_cast<const gameplay::ScheduleEntryForm*>(&form));
+        }
+    });
+    if (schedules.empty()) {
+        ImGui::TextDisabled("No ScheduleForm yet — + Schedule above.");
+    }
+    const auto nameOf = [&](const core::Guid& id) -> str {
+        const data::Form* form = session->view(id);
+        if (!form) {
+            return "(dangling)";
+        }
+        return form->editorId.empty() ? id.toString() : form->editorId;
+    };
+
+    for (const auto& [scheduleId, schedule] : schedules) {
+        const str header = nameOf(scheduleId) +
+                           (session->isDirty(scheduleId) ? " *" : "") +
+                           "##sch" + scheduleId.toString();
+        if (!ImGui::CollapsingHeader(header.c_str(),
+                                     ImGuiTreeNodeFlags_DefaultOpen)) {
+            continue;
+        }
+        // The H7 eval line — resolved base only (a schedule created this
+        // session previews after the next reload).
+        if (const auto intent =
+                gameplay::evaluateSchedule(*db, scheduleId, debugHour)) {
+            const data::Form* location =
+                intent->location.isValid() ? db->find(intent->location)
+                                           : nullptr;
+            ImGui::TextDisabled("at %.1f h: %s%s%s", debugHour,
+                                intent->reason.c_str(),
+                                location ? " @ " : "",
+                                location ? location->editorId.c_str() : "");
+        } else {
+            ImGui::TextDisabled("at %.1f h: (no entry)", debugHour);
+        }
+        if (ImGui::SmallButton(
+                ("+ entry##" + scheduleId.toString()).c_str())) {
+            const core::Guid id = session->createForm(
+                gameplay::ScheduleEntryForm::staticTypeInfo().id,
+                nameOf(scheduleId) + "Entry");
+            session->setField(id, core::fnv1a("parent"),
+                              reflect::Value { scheduleId });
+            selected = id;
+        }
+
+        // The strip: hour grid + one lane per entry.
+        constexpr f32 kLane = 20.0f;
+        constexpr f32 kGridTop = 16.0f;
+        vector<std::pair<core::Guid, const gameplay::ScheduleEntryForm*>>
+            mine;
+        for (const auto& entry : entries) {
+            if (entry.second->parent == scheduleId) {
+                mine.push_back(entry);
             }
-        });
-    if (!any) {
-        ImGui::TextDisabled(
-            "No ScheduleForm in the database — create one in the Game DB "
-            "(type ScheduleForm + ScheduleEntryForm children).");
+        }
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        const f32 width = glm::max(ImGui::GetContentRegionAvail().x, 240.0f);
+        const f32 stripHeight =
+            kGridTop +
+            kLane * static_cast<f32>(std::max<size_t>(mine.size(), 1));
+        const auto xAt = [&](f32 hour) {
+            return origin.x + hour / 24.0f * width;
+        };
+        for (int h = 0; h <= 24; h += 6) {
+            const f32 x = xAt(static_cast<f32>(h));
+            draw->AddLine(ImVec2(x, origin.y + kGridTop - 4.0f),
+                          ImVec2(x, origin.y + stripHeight),
+                          IM_COL32(120, 120, 120, 120));
+            draw->AddText(ImVec2(x + 2.0f, origin.y),
+                          IM_COL32(160, 160, 160, 255),
+                          std::to_string(h).c_str());
+        }
+        for (size_t lane = 0; lane < mine.size(); ++lane) {
+            const auto& [entryId, entry] = mine[lane];
+            const f32 top = origin.y + kGridTop + kLane * static_cast<f32>(lane);
+            // Live preview of an edge drag; the field commits on release.
+            f32 start = entry->startHour;
+            f32 end = entry->endHour;
+            if (schedDragEntry == entryId) {
+                (schedDragEdge == 0 ? start : end) = schedDragHour;
+            }
+            const u32 hash = core::fnv1a(entryId.toString());
+            const ImColor color = ImColor::HSV(
+                static_cast<f32>(hash % 360u) / 360.0f, 0.55f,
+                selected == entryId ? 0.95f : 0.65f);
+            const auto segment = [&](f32 a, f32 b) {
+                draw->AddRectFilled(ImVec2(xAt(a), top + 2.0f),
+                                    ImVec2(xAt(b), top + kLane - 2.0f),
+                                    color, 3.0f);
+            };
+            if (start <= end) {
+                segment(start, end);
+            } else { // wraps midnight
+                segment(start, 24.0f);
+                segment(0.0f, end);
+            }
+            // The clickable body follows the FIRST segment (start->24 when
+            // the entry wraps midnight — never the empty middle).
+            const f32 bodyStart = start;
+            const f32 bodyEnd = start <= end ? end : 24.0f;
+            draw->AddText(ImVec2(xAt(bodyStart) + 4.0f, top + 2.0f),
+                          IM_COL32(255, 255, 255, 220),
+                          nameOf(entry->package).c_str());
+
+            // Bar body: click selects. Edge handles: drag retunes, snapped
+            // to 0.5 h, ONE undoable edit on release.
+            const auto handle = [&](f32 hour, int edge, u32 fieldId) {
+                ImGui::SetCursorScreenPos(
+                    ImVec2(xAt(hour) - 4.0f, top + 2.0f));
+                ImGui::InvisibleButton(
+                    ("##e" + entryId.toString() + std::to_string(edge))
+                        .c_str(),
+                    ImVec2(8.0f, kLane - 4.0f));
+                if (ImGui::IsItemActivated()) {
+                    schedDragEntry = entryId;
+                    schedDragEdge = edge;
+                    schedDragHour = hour;
+                }
+                if (ImGui::IsItemActive() && schedDragEntry == entryId) {
+                    const f32 raw = (ImGui::GetMousePos().x - origin.x) /
+                                    width * 24.0f;
+                    schedDragHour =
+                        glm::clamp(std::round(raw * 2.0f) / 2.0f, 0.0f,
+                                   24.0f);
+                }
+                if (ImGui::IsItemDeactivated() &&
+                    schedDragEntry == entryId) {
+                    session->setField(entryId, fieldId,
+                                      reflect::Value { schedDragHour });
+                    selected = entryId;
+                    schedDragEntry = {};
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                }
+            };
+            ImGui::SetCursorScreenPos(
+                ImVec2(xAt(bodyStart) + 5.0f, top + 2.0f));
+            const f32 bodyWidth =
+                glm::max(xAt(bodyEnd) - xAt(bodyStart) - 10.0f, 4.0f);
+            ImGui::InvisibleButton(
+                ("##b" + entryId.toString()).c_str(),
+                ImVec2(bodyWidth, kLane - 4.0f));
+            if (ImGui::IsItemClicked()) {
+                selected = entryId;
+            }
+            handle(start, 0, core::fnv1a("startHour"));
+            handle(end, 1, core::fnv1a("endHour"));
+        }
+        // Scrubbed hour marker across the strip.
+        draw->AddLine(ImVec2(xAt(debugHour), origin.y + kGridTop - 4.0f),
+                      ImVec2(xAt(debugHour), origin.y + stripHeight),
+                      IM_COL32(255, 220, 80, 200), 2.0f);
+        ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + stripHeight));
+        ImGui::Dummy(ImVec2(width, 4.0f));
+    }
+
+    // Edit the clicked entry/schedule in place.
+    ImGui::Separator();
+    if (selected.isValid()) {
+        drawPropertyGrid(*session, selected);
     }
     ImGui::End();
 }

@@ -64,6 +64,9 @@ private:
     core::Guid selected {};
     core::Guid questSelected {};    // 8.2: the quest whose tree is shown
     core::Guid dialogueSelected {}; // 8.3: the dialogue whose tree is shown
+    core::Guid schedDragEntry {};   // 8.4: entry whose edge is dragging
+    int schedDragEdge { 0 };        //      0 = startHour, 1 = endHour
+    f32 schedDragHour { 0.0f };     //      live preview value (0.5 h snap)
     char exportName[128] { "my-edits" };
     str status;
 };
