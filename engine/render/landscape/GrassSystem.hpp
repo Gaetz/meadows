@@ -33,6 +33,10 @@ public:
     static constexpr i32 kViewRadius = 3;  // chunks — fade hides the edge
     static constexpr i32 kEvictRadius = 4;
     static constexpr u32 kMaxUploadsPerFrame = 2;
+    // Scatter jobs are budgeted like uploads (a border crossing used to
+    // dump a whole ring edge of dense scatters on the workers at once —
+    // part of the fast-travel stutter; see TerrainSystem).
+    static constexpr u32 kMaxRequestsPerFrame = 2;
     static constexpr f32 kFadeStart = 140.0f; // meters
     static constexpr f32 kFadeEnd = 190.0f;
 

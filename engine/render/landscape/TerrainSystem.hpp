@@ -46,6 +46,12 @@ public:
     static constexpr i32 kViewRadius = 15;    // chunks (Chebyshev), ~960 m
     static constexpr i32 kEvictRadius = 17;   // > view radius: hysteresis
     static constexpr u32 kMaxUploadsPerFrame = 8;
+    // Requests are budgeted too (nearest first): a border crossing used to
+    // dump the whole leading ring edge + the LOD-swap wave on the workers
+    // at once — every core saturates and the frame thread starves until
+    // `pending` drains (the fast-travel stutter). Matching the upload
+    // budget keeps the steady-state fill rate; it only flattens the burst.
+    static constexpr u32 kMaxRequestsPerFrame = 8;
 
     static constexpr u32 lodQuads(u32 lod) { return kChunkQuads >> lod; }
     // Ring distances: LOD0 under the camera, then 1/3/6 chunk rings.

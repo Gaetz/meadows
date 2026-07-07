@@ -341,11 +341,17 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
         ++uploads;
     }
 
-    // Request missing chunks.
+    // Request missing chunks — nearest first, budgeted (the rest is
+    // re-detected next frame; the state IS the queue). See TerrainSystem:
+    // the unbudgeted ring edge was part of the fast-travel stutter.
     const i32 camCx = static_cast<i32>(
         std::floor(cameraPos.x / TerrainSystem::kChunkSize));
     const i32 camCz = static_cast<i32>(
         std::floor(cameraPos.z / TerrainSystem::kChunkSize));
+    struct Candidate {
+        i32 cx, cz, dist2;
+    };
+    vector<Candidate> wanted;
     for (i32 dz = -kViewRadius; dz <= kViewRadius; ++dz) {
         for (i32 dx = -kViewRadius; dx <= kViewRadius; ++dx) {
             const i32 cx = camCx + dx;
@@ -353,13 +359,27 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
             if (chunks.contains(keyOf(cx, cz))) {
                 continue;
             }
-            chunks.emplace(keyOf(cx, cz), Chunk {});
-            jobs->enqueue([sharedRef = shared, params, cx, cz,
-                           gen = generation] {
-                sharedRef->built.push(
-                    { cx, cz, gen, scatterProps(params, cx, cz) });
-            });
+            wanted.push_back({ cx, cz, dx * dx + dz * dz });
         }
+    }
+    std::sort(wanted.begin(), wanted.end(),
+              [](const Candidate& a, const Candidate& b) {
+                  return a.dist2 < b.dist2;
+              });
+    u32 requests = 0;
+    for (const Candidate& c : wanted) {
+        if (requests >= kMaxRequestsPerFrame) {
+            break;
+        }
+        const i32 cx = c.cx;
+        const i32 cz = c.cz;
+        chunks.emplace(keyOf(cx, cz), Chunk {});
+        jobs->enqueue([sharedRef = shared, params, cx, cz,
+                       gen = generation] {
+            sharedRef->built.push(
+                { cx, cz, gen, scatterProps(params, cx, cz) });
+        });
+        ++requests;
     }
 
     // Evict beyond hysteresis.

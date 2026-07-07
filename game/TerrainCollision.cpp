@@ -32,28 +32,43 @@ void TerrainCollision::update(const Vec3& focus) {
     const i32 centerZ =
         static_cast<i32>(std::floor(focus.z / kTileEdge));
 
-    // Build the 3x3 ring.
-    vector<f32> samples;
+    // Build the 3x3 ring — ONE tile per update, the focus tile first. A
+    // tile is 4096 noise samples + a Jolt HeightFieldShape cook on the
+    // main thread; cooking the whole leading edge (up to 3 tiles) in one
+    // frame was part of the fast-travel stutter. The tile under the focus
+    // always lands the frame it is needed; the diagonals catch up over the
+    // next frames, long before anything can fall through them.
+    i32 bestX = 0;
+    i32 bestZ = 0;
+    i32 bestDist = INT32_MAX;
     for (i32 tz = centerZ - 1; tz <= centerZ + 1; ++tz) {
         for (i32 tx = centerX - 1; tx <= centerX + 1; ++tx) {
-            const u64 key = packTile(tx, tz);
-            if (tiles.contains(key)) {
+            if (tiles.contains(packTile(tx, tz))) {
                 continue;
             }
-            const Vec3 origin { static_cast<f32>(tx) * kTileEdge, 0.0f,
-                                static_cast<f32>(tz) * kTileEdge };
-            samples.resize(static_cast<size_t>(kSamples) * kSamples);
-            for (u32 row = 0; row < kSamples; ++row) {
-                for (u32 col = 0; col < kSamples; ++col) {
-                    samples[row * kSamples + col] = render::terrain::height(
-                        params, origin.x + static_cast<f32>(col) * kSpacing,
-                        origin.z + static_cast<f32>(row) * kSpacing);
-                }
+            const i32 dist = (tx - centerX) * (tx - centerX) +
+                             (tz - centerZ) * (tz - centerZ);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestX = tx;
+                bestZ = tz;
             }
-            tiles.emplace(key, physics.addHeightField(samples.data(),
-                                                      kSamples, origin,
-                                                      kSpacing));
         }
+    }
+    if (bestDist != INT32_MAX) {
+        const Vec3 origin { static_cast<f32>(bestX) * kTileEdge, 0.0f,
+                            static_cast<f32>(bestZ) * kTileEdge };
+        vector<f32> samples(static_cast<size_t>(kSamples) * kSamples);
+        for (u32 row = 0; row < kSamples; ++row) {
+            for (u32 col = 0; col < kSamples; ++col) {
+                samples[row * kSamples + col] = render::terrain::height(
+                    params, origin.x + static_cast<f32>(col) * kSpacing,
+                    origin.z + static_cast<f32>(row) * kSpacing);
+            }
+        }
+        tiles.emplace(packTile(bestX, bestZ),
+                      physics.addHeightField(samples.data(), kSamples,
+                                             origin, kSpacing));
     }
 
     // Evict beyond ring 2 (hysteresis: a tile-border stroll never churns).

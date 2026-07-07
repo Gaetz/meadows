@@ -43,6 +43,9 @@ public:
     static constexpr i32 kViewRadius = 14; // chunks (~900 m; fade at 880 m)
     static constexpr i32 kEvictRadius = 15;
     static constexpr u32 kMaxUploadsPerFrame = 2;
+    // Scatter jobs budgeted like uploads (see TerrainSystem — the
+    // unbudgeted ring edge was part of the fast-travel stutter).
+    static constexpr u32 kMaxRequestsPerFrame = 4;
 
     void create(rhi::Device& device, ShaderLibrary& shaders,
                 core::JobSystem& jobSystem, u32 terrainSeed);

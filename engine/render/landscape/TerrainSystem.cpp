@@ -263,6 +263,7 @@ void TerrainSystem::requestMissing(const Vec3& cameraPos) {
     struct Candidate {
         i32 cx, cz, dist2;
         u8 lod;
+        bool missing; // vs a LOD swap of a resident chunk
     };
     vector<Candidate> wanted;
     for (i32 dz = -kViewRadius; dz <= kViewRadius; ++dz) {
@@ -273,32 +274,40 @@ void TerrainSystem::requestMissing(const Vec3& cameraPos) {
                 lodForDistance(std::max(std::abs(dx), std::abs(dz))));
             const auto it = chunks.find(keyOf(cx, cz));
             if (it == chunks.end()) {
-                wanted.push_back({ cx, cz, dx * dx + dz * dz, lod });
+                wanted.push_back({ cx, cz, dx * dx + dz * dz, lod, true });
                 continue;
             }
             // LOD change: request the new mesh once the previous request (if
             // any) has landed; the resident mesh keeps drawing meanwhile.
-            Chunk& chunk = it->second;
+            const Chunk& chunk = it->second;
             if (chunk.queuedLod == kNoLod && chunk.residentLod != lod) {
-                chunk.queuedLod = lod;
-                ++pending;
-                enqueueBuild(cx, cz, lod);
+                wanted.push_back({ cx, cz, dx * dx + dz * dz, lod, false });
             }
         }
     }
     // Center-out: the terrain under the camera arrives first, holes stay at
-    // the horizon.
+    // the horizon. Anything past the request budget is simply re-detected
+    // next frame — the state IS the queue.
     std::sort(wanted.begin(), wanted.end(),
               [](const Candidate& a, const Candidate& b) {
                   return a.dist2 < b.dist2;
               });
 
+    u32 requests = 0;
     for (const Candidate& c : wanted) {
-        Chunk chunk;
-        chunk.queuedLod = c.lod;
-        chunks.emplace(keyOf(c.cx, c.cz), chunk);
+        if (requests >= kMaxRequestsPerFrame) {
+            break;
+        }
+        if (c.missing) {
+            Chunk chunk;
+            chunk.queuedLod = c.lod;
+            chunks.emplace(keyOf(c.cx, c.cz), chunk);
+        } else {
+            chunks.find(keyOf(c.cx, c.cz))->second.queuedLod = c.lod;
+        }
         ++pending;
         enqueueBuild(c.cx, c.cz, c.lod);
+        ++requests;
     }
 }
 

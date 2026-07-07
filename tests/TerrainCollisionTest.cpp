@@ -13,9 +13,14 @@ TEST_CASE("terrain collision keeps a tile ring and matches terrain height") {
     game::TerrainCollision collision { world, params };
 
     const Vec3 focus { 32.0f, 0.0f, 368.0f }; // the demo spawn area
+    // Budgeted: ONE tile per update, the focus tile first (anti-stutter).
     collision.update(focus);
+    CHECK(collision.tileCount() == 1);
+    for (int i = 0; i < 8; ++i) {
+        collision.update(focus);
+    }
     CHECK(collision.tileCount() == 9);
-    // Same focus again: nothing rebuilt, nothing evicted.
+    // Same focus again: converged — nothing rebuilt, nothing evicted.
     collision.update(focus);
     CHECK(collision.tileCount() == 9);
 
@@ -35,11 +40,13 @@ TEST_CASE("terrain collision keeps a tile ring and matches terrain height") {
     CHECK(character.position().y ==
           doctest::Approx(expected).epsilon(0.02));
 
-    // Moving two tiles away rebuilds the ring ahead and evicts behind
-    // (hysteresis keeps ring 2, so the count stays bounded).
+    // Moving three tiles away rebuilds the ring ahead (one per update)
+    // and evicts behind (hysteresis keeps ring 2, count stays bounded).
     constexpr f32 kTileEdge = (game::TerrainCollision::kSamples - 1) *
                               game::TerrainCollision::kSpacing;
-    collision.update(focus + Vec3 { 3.0f * kTileEdge, 0.0f, 0.0f });
+    for (int i = 0; i < 9; ++i) {
+        collision.update(focus + Vec3 { 3.0f * kTileEdge, 0.0f, 0.0f });
+    }
     CHECK(collision.tileCount() <= 12); // 9 new ring + <= 3 kept behind
     CHECK(collision.tileCount() >= 9);
 }
