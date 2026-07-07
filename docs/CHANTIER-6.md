@@ -139,6 +139,23 @@ plan : B1 ambiance+rampe + SSAO existant).
   exposure (brick 29) » **défaut OFF**.
 - **B2b — descopé** (stretch) : l'ombre perspective de lumière clé
   intérieure. Fallback assumé du plan : B1 (ambiance + rampe) + SSAO.
+- **B5 — passe intérieure (post-chantier, retour dev « le lighting
+  intérieur est vraiment moche », 2026-07-07).** Deux corrections gated
+  sur un flag intérieur (`uCascadeSplits.w`, extérieur byte-identique) :
+  (1) **ambiante hémisphérique** dans mesh/skinned.frag — sols clairs et
+  frais, plafonds sombres et chauds (tue le gris constant plat, la cause
+  n°1) ; (2) **wrap half-Lambert + bounce** dans locallights.glsl — le
+  terminateur des bougies s'adoucit et chaque lumière ajoute un petit
+  remplissage sans N·L : la pièce prend la teinte de ses sources
+  (stand-in du premier rebond de GI). Constantes dans les shaders =
+  réglables à chaud (hot reload sur l'arbre source). Si les intérieurs
+  restent en deçà après tuning : B2b (ombre de lumière clé) est la
+  brique suivante — elle stoppe aussi le light bleed à travers les murs.
+  Contexte : audit Community Shaders (GPL — idées oui, code non) —
+  retenus pour plus tard : screen-space shadows (contact), wetness +
+  occlusion de pluie top-down (spec brique 31), ombres de terrain
+  lointaines via nos cartes d'horizon, skylighting, A/B falloff
+  inverse-square.
 
 ### Fichiers B (à commiter APRÈS validation visuelle dev)
 
