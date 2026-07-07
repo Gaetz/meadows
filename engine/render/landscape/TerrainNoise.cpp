@@ -2,19 +2,14 @@
 
 #include <cmath>
 
+#include "engine/core/Hash.hpp"
+
 namespace render {
 
 namespace {
 
-// Integer hash (Wang-style avalanche); the only randomness source here.
-u32 hashU32(u32 v) {
-    v ^= v >> 16;
-    v *= 0x7feb352du;
-    v ^= v >> 15;
-    v *= 0x846ca68bu;
-    v ^= v >> 16;
-    return v;
-}
+// hashU32 now lives in engine/core/Hash.hpp (shared scatter hash family).
+using core::hashU32;
 
 // Hash of a lattice point, in [0, 1].
 f32 latticeValue(u32 seed, i32 xi, i32 zi) {

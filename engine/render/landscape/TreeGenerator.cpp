@@ -2,28 +2,16 @@
 
 #include <cmath>
 
+#include "engine/core/Hash.hpp"
 #include "engine/render/MeshBuilder.hpp"
 
 namespace render {
 
 namespace {
 
-u32 hashU32(u32 v) {
-    v ^= v >> 16;
-    v *= 0x7feb352du;
-    v ^= v >> 15;
-    v *= 0x846ca68bu;
-    v ^= v >> 16;
-    return v;
-}
-
-struct HashRng {
-    u32 state;
-    f32 next() { // [0, 1)
-        state = hashU32(state);
-        return static_cast<f32>(state) * (1.0f / 4294967296.0f);
-    }
-};
+// hashU32 / HashRng now live in engine/core/Hash.hpp (shared scatter hash family).
+using core::hashU32;
+using core::HashRng;
 
 } // namespace
 

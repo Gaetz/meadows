@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "engine/core/Hash.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
@@ -32,23 +33,9 @@ f32 patchMask(u32 seed, f32 x, f32 z) {
     return glm::smoothstep(0.47f, 0.60f, broad * 0.72f + detail * 0.28f);
 }
 
-u32 hashU32(u32 v) {
-    v ^= v >> 16;
-    v *= 0x7feb352du;
-    v ^= v >> 15;
-    v *= 0x846ca68bu;
-    v ^= v >> 16;
-    return v;
-}
-
-// Small deterministic per-candidate random stream.
-struct HashRng {
-    u32 state;
-    f32 next() { // [0, 1)
-        state = hashU32(state);
-        return static_cast<f32>(state) * (1.0f / 4294967296.0f);
-    }
-};
+// hashU32 / HashRng now live in engine/core/Hash.hpp (shared scatter hash family).
+using core::hashU32;
+using core::HashRng;
 
 // One blade = a tapered 7-triangle ribbon, REAL geometry (no alpha test):
 // vertex = (side in [-1,1] with the taper baked in, t along the blade).

@@ -3,18 +3,14 @@
 #include <cmath>
 #include <unordered_map>
 
+#include "engine/core/Hash.hpp"
+
 namespace render {
 
 namespace {
 
-u32 hashU32(u32 v) {
-    v ^= v >> 16;
-    v *= 0x7feb352du;
-    v ^= v >> 15;
-    v *= 0x846ca68bu;
-    v ^= v >> 16;
-    return v;
-}
+// hashU32 now lives in engine/core/Hash.hpp (shared scatter hash family).
+using core::hashU32;
 
 // Stable per-direction hash: quantize the unit vector so equal directions
 // (however they were computed) jitter identically.

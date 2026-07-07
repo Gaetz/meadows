@@ -2,28 +2,15 @@
 
 #include <algorithm>
 
+#include "engine/core/Hash.hpp"
+
 namespace fx {
 
 namespace {
 
-// Same hash family as the landscape scatter: cheap, deterministic.
-u32 hashU32(u32 v) {
-    v ^= v >> 16;
-    v *= 0x7feb352du;
-    v ^= v >> 15;
-    v *= 0x846ca68bu;
-    v ^= v >> 16;
-    return v;
-}
-
-struct HashRng {
-    u32 state;
-    f32 next() { // [0, 1)
-        state = hashU32(state);
-        return static_cast<f32>(state) * (1.0f / 4294967296.0f);
-    }
-    f32 spread() { return next() * 2.0f - 1.0f; } // [-1, 1)
-};
+// hashU32 / HashRng now live in engine/core/Hash.hpp (shared scatter hash family).
+using core::hashU32;
+using core::HashRng;
 
 } // namespace
 
