@@ -41,6 +41,7 @@ private:
     void drawGameDb();
     void drawPlugins();
     void drawQuests();    // 8.2: Quest -> States -> Branches -> Tasks tree
+    void drawDialogues(); // 8.3: DialogueNodeForm tree + conditions
     void drawSchedules(); // H7 debug: who does what at which hour, and why
     void saveConfig() const;
     f32 debugHour { 12.0f };
@@ -61,7 +62,8 @@ private:
     int typeFilter { 0 };  // 0 = All
     char search[128] {};
     core::Guid selected {};
-    core::Guid questSelected {}; // 8.2: the quest whose tree is shown
+    core::Guid questSelected {};    // 8.2: the quest whose tree is shown
+    core::Guid dialogueSelected {}; // 8.3: the dialogue whose tree is shown
     char exportName[128] { "my-edits" };
     str status;
 };

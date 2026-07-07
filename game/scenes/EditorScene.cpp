@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <functional>
 
 #include <imgui.h>
 
@@ -11,6 +12,8 @@
 #include "game/AllForms.hpp"
 #include "game/ui/PropertyGrid.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
+#include "gameplay/condition/Condition.hpp"
+#include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
 
 namespace game {
@@ -60,8 +63,221 @@ void EditorScene::drawUi() {
     drawGameDb();
     drawPlugins();
     drawQuests();
+    drawDialogues();
     drawSchedules();
     console->draw();
+}
+
+// 8.3 — the dialogue editor: DialogueNodeForm records (parent-linked,
+// alternating NPC lines and Player choices) as an indented tree with
+// inline creation, sibling reorder and per-node conditions. Same
+// session/grid/export as everything else.
+void EditorScene::drawDialogues() {
+    ImGui::Begin("Dialogues");
+
+    ImGui::BeginChild("dlglist", ImVec2(220.0f, 0.0f),
+                      ImGuiChildFlags_ResizeX);
+    if (ImGui::Button("+ Dialogue")) {
+        dialogueSelected = session->createForm(
+            quest::DialogueForm::staticTypeInfo().id, "NewDialogue");
+        selected = dialogueSelected;
+    }
+    session->forEachVisible([&](const core::Guid& id, const data::Form& form,
+                                const reflect::TypeInfo& type) {
+        if (type.id != quest::DialogueForm::staticTypeInfo().id) {
+            return;
+        }
+        const str label =
+            (form.editorId.empty() ? id.toString() : form.editorId) +
+            (session->isDirty(id) ? " *" : "") + "##d" + id.toString();
+        if (ImGui::Selectable(label.c_str(), dialogueSelected == id)) {
+            dialogueSelected = id;
+            selected = id;
+        }
+    });
+    ImGui::EndChild();
+    ImGui::SameLine();
+
+    ImGui::BeginChild("dlgtree");
+    const auto* dialogue = static_cast<const quest::DialogueForm*>(
+        session->view(dialogueSelected));
+    if (!dialogue) {
+        ImGui::TextDisabled("(select a dialogue)");
+        ImGui::EndChild();
+        ImGui::End();
+        return;
+    }
+
+    // Visible nodes and conditions, once per frame.
+    vector<std::pair<core::Guid, const quest::DialogueNodeForm*>> nodes;
+    vector<std::pair<core::Guid, const gameplay::ConditionForm*>> conditions;
+    session->forEachVisible([&](const core::Guid& id, const data::Form& form,
+                                const reflect::TypeInfo& type) {
+        if (type.id == quest::DialogueNodeForm::staticTypeInfo().id) {
+            nodes.emplace_back(
+                id, static_cast<const quest::DialogueNodeForm*>(&form));
+        } else if (type.id ==
+                   gameplay::ConditionForm::staticTypeInfo().id) {
+            conditions.emplace_back(
+                id, static_cast<const gameplay::ConditionForm*>(&form));
+        }
+    });
+    const auto childrenOf = [&](const core::Guid& parent) {
+        vector<std::pair<core::Guid, const quest::DialogueNodeForm*>> out;
+        for (const auto& entry : nodes) {
+            if (entry.second->parent == parent) {
+                out.push_back(entry);
+            }
+        }
+        // Stable: ties on `order` (hand-authored TOML) must not flicker
+        // between frames.
+        std::stable_sort(out.begin(), out.end(),
+                         [](const auto& a, const auto& b) {
+                             return a.second->order < b.second->order;
+                         });
+        return out;
+    };
+
+    ImGui::Text("%s", dialogue->displayName.empty()
+                          ? dialogue->editorId.c_str()
+                          : dialogue->displayName.c_str());
+    if (!dialogue->rootNode.isValid() ||
+        !session->view(dialogue->rootNode)) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                           "(!) no root node");
+        if (ImGui::Button("+ Root line")) {
+            const core::Guid id = session->createForm(
+                quest::DialogueNodeForm::staticTypeInfo().id,
+                dialogue->editorId + "Root");
+            session->setField(dialogueSelected, core::fnv1a("rootNode"),
+                              reflect::Value { id });
+            selected = id;
+        }
+    }
+    ImGui::Separator();
+
+    // Recursive node drawer. Depth-capped: `parent` links form a tree by
+    // convention, but a bad edit could cycle — never hang the editor.
+    const std::function<void(const core::Guid&, u32)> drawNode =
+        [&](const core::Guid& nodeId, u32 depth) {
+            const auto* node = static_cast<const quest::DialogueNodeForm*>(
+                session->view(nodeId));
+            if (!node || depth > 24) {
+                return;
+            }
+            const bool isPlayer = node->speaker == "Player";
+            str label = isPlayer ? "> " : "";
+            label += node->speaker.empty() ? "(npc)" : node->speaker;
+            label += ": ";
+            label += node->text.size() > 48 ? node->text.substr(0, 48) + "..."
+                                            : node->text;
+            if (!node->event.empty()) {
+                label += "  [" + node->event + "]";
+            }
+            u32 conditionCount = 0;
+            for (const auto& [condId, cond] : conditions) {
+                if (cond->parent == nodeId) {
+                    ++conditionCount;
+                }
+            }
+            if (conditionCount > 0) {
+                label += "  (" + std::to_string(conditionCount) + " cond)";
+            }
+            const bool open = ImGui::TreeNodeEx(
+                (label + "##n" + nodeId.toString()).c_str(),
+                ImGuiTreeNodeFlags_OpenOnArrow |
+                    ImGuiTreeNodeFlags_DefaultOpen |
+                    (selected == nodeId ? ImGuiTreeNodeFlags_Selected
+                                        : ImGuiTreeNodeFlags_None));
+            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                selected = nodeId;
+            }
+            if (!open) {
+                return;
+            }
+            const auto siblings = childrenOf(nodeId);
+            if (ImGui::SmallButton(
+                    ("+ reply##" + nodeId.toString()).c_str())) {
+                const core::Guid id = session->createForm(
+                    quest::DialogueNodeForm::staticTypeInfo().id,
+                    node->editorId + "Reply");
+                session->setField(id, core::fnv1a("parent"),
+                                  reflect::Value { nodeId });
+                // Alternate speakers by default: an NPC line gets Player
+                // choices, a Player choice gets the NPC's answer.
+                session->setField(
+                    id, core::fnv1a("speaker"),
+                    reflect::Value { isPlayer ? str {} : str { "Player" } });
+                const i32 nextOrder =
+                    siblings.empty() ? 0 : siblings.back().second->order + 1;
+                session->setField(id, core::fnv1a("order"),
+                                  reflect::Value { nextOrder });
+                selected = id;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton(
+                    ("+ condition##" + nodeId.toString()).c_str())) {
+                const core::Guid id = session->createForm(
+                    gameplay::ConditionForm::staticTypeInfo().id,
+                    node->editorId + "Cond");
+                session->setField(id, core::fnv1a("parent"),
+                                  reflect::Value { nodeId });
+                selected = id;
+            }
+            // Conditions as selectable leaves under their node.
+            for (const auto& [condId, cond] : conditions) {
+                if (cond->parent != nodeId) {
+                    continue;
+                }
+                str condLabel = "if " + str { cond->negate ? "not " : "" } +
+                                cond->kind;
+                if (!cond->tag.empty()) {
+                    condLabel += " " + cond->tag;
+                }
+                if (ImGui::Selectable(
+                        (condLabel + "##c" + condId.toString()).c_str(),
+                        selected == condId)) {
+                    selected = condId;
+                }
+            }
+            // Children, in order, with reorder arrows (swap the `order`
+            // fields — a plain field edit, undo works for free).
+            const auto children = childrenOf(nodeId);
+            for (size_t i = 0; i < children.size(); ++i) {
+                if (children.size() > 1) {
+                    ImGui::PushID(children[i].first.toString().c_str());
+                    ImGui::BeginDisabled(i == 0);
+                    if (ImGui::SmallButton("^")) {
+                        // Capture BOTH before writing: the first setField
+                        // mutates the draft the second one would read.
+                        const i32 mine = children[i].second->order;
+                        const i32 theirs = children[i - 1].second->order;
+                        session->setField(children[i].first,
+                                          core::fnv1a("order"),
+                                          reflect::Value { theirs });
+                        session->setField(children[i - 1].first,
+                                          core::fnv1a("order"),
+                                          reflect::Value { mine });
+                    }
+                    ImGui::EndDisabled();
+                    ImGui::SameLine();
+                    ImGui::PopID();
+                }
+                drawNode(children[i].first, depth + 1);
+            }
+            ImGui::TreePop();
+        };
+    if (dialogue->rootNode.isValid()) {
+        drawNode(dialogue->rootNode, 0);
+    }
+
+    ImGui::Separator();
+    if (selected.isValid()) {
+        drawPropertyGrid(*session, selected);
+    }
+    ImGui::EndChild();
+    ImGui::End();
 }
 
 // 8.2 — the quest editor: the decomposed records (Quest -> States ->
