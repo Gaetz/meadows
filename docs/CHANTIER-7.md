@@ -1,14 +1,13 @@
-# Chantier 7 — Graphisme : ce qui reste (PLAN, ouvert 2026-07-07)
+# Chantier 7 — Graphisme : ce qui reste
 
-> **PLAN — pas encore exécuté.** Ce fichier devient le journal au fil des
-> briques (le pattern des chantiers 1-6). Toutes les specs détaillées
-> vivent dans `docs/3D-RENDERER.md` (briques 30-34 + backlog) — CE
-> fichier ordonne et scope ; LA spec fait foi. Règles héritées :
-> **une brique = build + tests verts + validation visuelle dev avant la
-> suivante** ; tout changement du look extérieur derrière un toggle A/B ;
-> leçon UBO (APPEND en fin de struct, les .w libres de FrameUbo sont
-> ÉPUISÉS — inventaire dans CHANTIER-6.md) ; purge des *.dir à chaque
-> layout de type partagé.
+> **FAIT (2026-07-07) — briques 7.1-7.7 exécutées d'une traite sur le go
+> du dev (l'herbe 7.8 exclue, réf. reçue : daniel-ilett/shaders-botw-grass
+> — session future).** 276 tests verts, smoke-run par brique, builds
+> Debug + Release. VALIDATION VISUELLE DEV EN ATTENTE sur les 7 briques.
+> Specs détaillées : `docs/3D-RENDERER.md` (briques 30-34). Leçons :
+> FrameUbo n'a PLUS de .w libres — trois APPENDs de fin de struct posés
+> ce chantier (uTerrainLightInfo, uSubmersionInfo, keyShadow*, stormInfo,
+> rainOcclusionViewProj) ; purge *.dir à chaque layout partagé (fait ×5).
 
 ## Contexte
 
@@ -17,6 +16,34 @@ casters mesh/PNJ dans le CSM, grading 28, auto-expo 29, passe intérieure
 B5 : hémisphérique + wrap/bounce + fix submersion + hall d'essai) est
 **validée et commitée par le dev (2026-07-07)**. Restent les briques
 spécifiées mais non construites, plus le backlog météo.
+
+## Ce qui a été livré (résumé d'exécution)
+
+- **7.1 Shafts (34)** : prismes additifs procéduraux depuis LightForm
+  (APPEND shaft/shaftLength/shaftSoftness/dustDensity/sunLinked) ; bruit
+  défilant + motes ; `sunLinked` suit le soleil quantifié des ombres.
+  Banc : HallWindowShaft (mur est du hall, kind=spot → éclaire ET montre).
+- **7.2 Contact shadows (33a)** : marche Bend 12 pas demi-res sur la
+  depth copy (clone SSAO), assombrit 45 % max ; toggle = clear-blanc.
+- **7.3 TerrainLightMap (33b/c)** : bake worker 256²/1,5 km, R =
+  visibilité soleil (marche géométrique ~1 km), G = ouverture ciel (8
+  horizons) ; re-bake au pas du soleil quantifié ; texture unit 7, slot 4.
+- **7.4 Eau plaçable (32)** : WaterVolumeForm → FormCategory::Water →
+  WaterVolume ; quad de surface stylisé (fresnel ciel + rides) ;
+  submersion généralisée (uSubmersionInfo = surface effective — mer /
+  sommet de volume / sec). Banc : bande inondée du fond du hall (y = 1).
+- **7.5 Key light shadow (B2b)** : 1 layer Depth32F 1024² perspective
+  depuis la lumière castsShadow la plus proche (intérieur) ; refactor
+  drawCastersInto ; match par position dans locallights (unit 6, slot 5).
+  TableSpot caste dans la pièce d'entrée.
+- **7.6 Cumulonimbus (30)** : 8 billboards ancrés caméra à 3,2 km, FBM
+  érodé, cel 2 tons + silver lining ; WeatherForm.stormFront crossfadé
+  (Storm = 1).
+- **7.7 Pluie (31 + addendum)** : 3000 streaks 100 % procéduraux
+  (gl_VertexID, zéro buffer/sim), occlusion top-down 512² (pas de pluie
+  sous les toits — réutilise drawCastersInto), wetness globale (terrain
+  28 %, meshes 25 %, extérieur seulement) ; WeatherForm.rainIntensity +
+  état « Rain » ; per-pixel dry-under-cover = raffinement noté.
 
 ## Les briques, par valeur (ordre proposé)
 
