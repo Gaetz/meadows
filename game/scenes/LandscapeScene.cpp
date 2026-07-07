@@ -5441,7 +5441,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                             /*forceLowDetail=*/false, &viewFrustum,
                             occludedSet);
             grass.draw(frame.cmd, frameBindGroup,
-                       shadows.receiverBindGroup(), &viewFrustum);
+                       shadows.receiverBindGroup(), camera.position,
+                       &viewFrustum);
         }
         drawSceneMeshes(frame); // B1: the RenderSnapshot.meshes consumer
         drawNpcs(frame);        // B6: the Forms-driven skinned NPCs

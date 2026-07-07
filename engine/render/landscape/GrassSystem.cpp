@@ -14,10 +14,12 @@ namespace render {
 namespace {
 
 constexpr const char* kGrassShader = "grass";
-// 7.8 follow-up (dev: "many more, thinner blades" — the reference packs
-// one blade per ~0.1 units): doubled density; push lower with an eye on
-// the Release FPS, the instance count scales as 1/spacing².
-constexpr f32 kBladeSpacing = 0.27f; // meters between candidates (in-patch)
+// 7.8quater (dev: "50 cm between blades"): the patch mask no longer
+// kills presence — grassy ground is FULLY covered (BotW fields show no
+// dirt between blades); patches now shape height instead. The distance
+// density LOD in draw() keeps the vertex budget flat: full density only
+// where the player looks.
+constexpr f32 kBladeSpacing = 0.24f; // meters between candidates
 
 // BotW-style patch layout: grass gathers in dense clumps with bare meadow
 // between them. Two noise scales — broad patches and small clump detail —
@@ -92,10 +94,12 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                                         kBladeSpacing;
             const f32 z = originZ + (static_cast<f32>(gz) + rng.next()) *
                                         kBladeSpacing;
-            // Patch mask first (cheapest test): most candidates die here,
-            // leaving dense clumps separated by bare ground.
+            // Patch mask: near-full coverage on grassy ground (7.8quater —
+            // BotW fields show no dirt between blades); the mask mostly
+            // shapes HEIGHT now, and only thins truly marginal fringes.
             const f32 patch = patchMask(params.seed, x, z);
-            if (patch < 0.03f || rng.next() >= patch) {
+            if (patch < 0.03f ||
+                rng.next() >= 0.60f + 0.40f * patch) {
                 continue;
             }
             const f32 h = terrain::height(params, x, z);
@@ -117,6 +121,17 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                 .groundNormal = { n, 0.0f },           // 7.8bis: BotW shading
             });
         }
+    }
+    // Deterministic shuffle (7.8quater): the density LOD draws a PREFIX
+    // of this buffer — shuffled, any prefix is a uniform random subset
+    // instead of the bottom rows of the grid.
+    HashRng shuffleRng { hashU32(params.seed ^ 0x51a7c3d9u) ^
+                         hashU32(static_cast<u32>(cx * 73856093 ^
+                                                  cz * 19349663)) };
+    for (size_t i = result.size(); i > 1; --i) {
+        const size_t j = static_cast<size_t>(
+            shuffleRng.next() * static_cast<f32>(i));
+        std::swap(result[i - 1], result[glm::min(j, i - 1)]);
     }
     return result;
 }
@@ -295,7 +310,7 @@ void GrassSystem::refreshPipeline(rhi::Device& device,
 void GrassSystem::draw(rhi::CommandBuffer& cmd,
                        rhi::BindGroupHandle frameBindGroup,
                        rhi::BindGroupHandle shadowBindGroup,
-                       const Frustum* frustum) {
+                       const Vec3& cameraPos, const Frustum* frustum) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
     if (shadowBindGroup.id != 0) {
@@ -303,10 +318,25 @@ void GrassSystem::draw(rhi::CommandBuffer& cmd,
     }
     cmd.setVertexBuffer(0, bladeVertexBuffer);
     cmd.setIndexBuffer(bladeIndexBuffer, rhi::IndexFormat::U16);
+    const i32 camCx = static_cast<i32>(
+        std::floor(cameraPos.x / TerrainSystem::kChunkSize));
+    const i32 camCz = static_cast<i32>(
+        std::floor(cameraPos.z / TerrainSystem::kChunkSize));
     for (const auto& [key, chunk] : chunks) {
         if (!chunk.resident || chunk.instanceCount == 0) {
             continue;
         }
+        // Density LOD (7.8quater): full blades only near the camera; far
+        // chunks draw a shuffled prefix (blades there are shrunk by the
+        // distance fade anyway). Keeps the vertex budget flat while the
+        // near field doubles in density.
+        const i32 cheb = glm::max(
+            std::abs(static_cast<i32>(key >> 32) - camCx),
+            std::abs(static_cast<i32>(key & 0xffffffffu) - camCz));
+        const f32 fraction = cheb <= 1 ? 1.0f : cheb == 2 ? 0.45f : 0.15f;
+        const u32 count = glm::max(
+            1u, static_cast<u32>(static_cast<f32>(chunk.instanceCount) *
+                                 fraction));
         if (frustum) {
             const f32 x0 = static_cast<f32>(static_cast<i32>(key >> 32)) *
                            TerrainSystem::kChunkSize;
@@ -322,7 +352,7 @@ void GrassSystem::draw(rhi::CommandBuffer& cmd,
             }
         }
         cmd.setVertexBuffer(1, chunk.instanceBuffer);
-        cmd.drawIndexed(bladeIndexCount, chunk.instanceCount);
+        cmd.drawIndexed(bladeIndexCount, count);
     }
 }
 
