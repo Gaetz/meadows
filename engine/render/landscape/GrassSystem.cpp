@@ -131,17 +131,16 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             });
         }
     }
-    // Deterministic shuffle (7.8quater): the density LOD draws a PREFIX
-    // of this buffer — shuffled, any prefix is a uniform random subset
-    // instead of the bottom rows of the grid.
-    HashRng shuffleRng { hashU32(params.seed ^ 0x51a7c3d9u) ^
-                         hashU32(static_cast<u32>(cx * 73856093 ^
-                                                  cz * 19349663)) };
-    for (size_t i = result.size(); i > 1; --i) {
-        const size_t j = static_cast<size_t>(
-            shuffleRng.next() * static_cast<f32>(i));
-        std::swap(result[i - 1], result[glm::min(j, i - 1)]);
-    }
+    // Sort by the density-LOD keep key (flutter phase — uniform random
+    // per blade): grass.vert clips blades whose key exceeds the metric
+    // density curve, so a PREFIX of this buffer is EXACTLY the set the
+    // shader keeps. draw() cuts the prefix with the same curve — the
+    // vertex shader never even sees the tail it would have clipped.
+    std::sort(result.begin(), result.end(),
+              [](const GrassSystem::Instance& a,
+                 const GrassSystem::Instance& b) {
+                  return a.params.y < b.params.y;
+              });
     return result;
 }
 
@@ -327,41 +326,66 @@ void GrassSystem::draw(rhi::CommandBuffer& cmd,
     }
     cmd.setVertexBuffer(0, bladeVertexBuffer);
     cmd.setIndexBuffer(bladeIndexBuffer, rhi::IndexFormat::U16);
-    const i32 camCx = static_cast<i32>(
-        std::floor(cameraPos.x / TerrainSystem::kChunkSize));
-    const i32 camCz = static_cast<i32>(
-        std::floor(cameraPos.z / TerrainSystem::kChunkSize));
+    struct Draw {
+        f32 nearest;
+        const Chunk* chunk;
+        u32 count;
+    };
+    vector<Draw> draws;
+    draws.reserve(chunks.size());
     for (const auto& [key, chunk] : chunks) {
         if (!chunk.resident || chunk.instanceCount == 0) {
             continue;
         }
-        // Density LOD (7.8quater): full blades only near the camera; far
-        // chunks draw a shuffled prefix (blades there are shrunk by the
-        // distance fade anyway). Keeps the vertex budget flat while the
-        // near field doubles in density.
-        const i32 cheb = glm::max(
-            std::abs(static_cast<i32>(key >> 32) - camCx),
-            std::abs(static_cast<i32>(key & 0xffffffffu) - camCz));
-        const f32 fraction = cheb <= 1 ? 1.0f : cheb == 2 ? 0.35f : 0.12f;
-        const u32 count = glm::max(
-            1u, static_cast<u32>(static_cast<f32>(chunk.instanceCount) *
-                                 fraction));
+        const f32 minX = static_cast<f32>(static_cast<i32>(key >> 32)) *
+                         TerrainSystem::kChunkSize;
+        const f32 minZ =
+            static_cast<f32>(static_cast<i32>(key & 0xffffffffu)) *
+            TerrainSystem::kChunkSize;
+        const f32 dx = glm::max(
+            glm::max(minX - cameraPos.x,
+                     cameraPos.x - (minX + TerrainSystem::kChunkSize)),
+            0.0f);
+        const f32 dz = glm::max(
+            glm::max(minZ - cameraPos.z,
+                     cameraPos.z - (minZ + TerrainSystem::kChunkSize)),
+            0.0f);
+        const f32 nearest = std::sqrt(dx * dx + dz * dz);
+        if (nearest > kFadeEnd) {
+            continue; // every blade fully sunk into the ground
+        }
         if (frustum) {
-            const f32 x0 = static_cast<f32>(static_cast<i32>(key >> 32)) *
-                           TerrainSystem::kChunkSize;
-            const f32 z0 =
-                static_cast<f32>(static_cast<i32>(key & 0xffffffffu)) *
-                TerrainSystem::kChunkSize;
             // +1.5 m headroom over the blade roots (height × scale + wind).
             if (!frustum->intersectsAabb(
-                    { x0, chunk.minY - 0.5f, z0 },
-                    { x0 + TerrainSystem::kChunkSize, chunk.maxY + 1.5f,
-                      z0 + TerrainSystem::kChunkSize })) {
+                    { minX, chunk.minY - 0.5f, minZ },
+                    { minX + TerrainSystem::kChunkSize, chunk.maxY + 1.5f,
+                      minZ + TerrainSystem::kChunkSize })) {
                 continue;
             }
         }
-        cmd.setVertexBuffer(1, chunk.instanceBuffer);
-        cmd.drawIndexed(bladeIndexCount, count);
+        // Density LOD prefix: instances are SORTED by the keep key, so
+        // drawing the first N is exactly the set grass.vert keeps at
+        // this chunk's NEAREST distance (density is monotonic in dist —
+        // every blade in the chunk is at least that far). Same curve as
+        // the shader: density = mix(1.0, 0.24, smoothstep(18, 110, d)),
+        // +3% margin for the key distribution's sampling noise.
+        const f32 thin = glm::smoothstep(18.0f, 110.0f, nearest);
+        const f32 density = glm::min(1.0f, 1.0f - 0.76f * thin + 0.03f);
+        const u32 count = glm::min(
+            chunk.instanceCount,
+            1u + static_cast<u32>(
+                     static_cast<f32>(chunk.instanceCount) * density));
+        draws.push_back({ nearest, &chunk, count });
+    }
+    // Front-to-back: near blades fill the depth buffer first, so the
+    // grass behind them early-z-rejects instead of shading over.
+    std::sort(draws.begin(), draws.end(),
+              [](const Draw& a, const Draw& b) {
+                  return a.nearest < b.nearest;
+              });
+    for (const Draw& d : draws) {
+        cmd.setVertexBuffer(1, d.chunk->instanceBuffer);
+        cmd.drawIndexed(bladeIndexCount, d.count);
     }
 }
 

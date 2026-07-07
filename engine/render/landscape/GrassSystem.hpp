@@ -56,8 +56,10 @@ public:
     // Records instanced blade draws into the current render pass (opaque —
     // draw with the other opaques, before the sky). Grass receives shadows
     // (shadowBindGroup) but does not cast them. cameraPos drives the
-    // density LOD: each chunk draws a shuffled PREFIX of its instances,
-    // full only near the camera (7.8quater).
+    // metric density LOD: instances are sorted by the keep key grass.vert
+    // clips against, so each chunk draws exactly the prefix the shader
+    // keeps at its nearest distance (fewer, wider blades far away);
+    // chunks are emitted front-to-back for early-z.
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle shadowBindGroup, const Vec3& cameraPos,
               const Frustum* frustum = nullptr);
