@@ -254,6 +254,53 @@ une salle du hall d'essai inondée à y = 1 m ; entrer/sortir de l'eau =
 la teinte de submersion suit le volume, pas seaLevel ; l'extérieur mer
 inchangé (miroir compris).
 
+## Brique 33 — Passe lumière extérieure (SSS contact, ombres de terrain, skylighting) — spec 2026-07-07
+
+**Pourquoi.** Demande dev après la passe intérieure : trois effets issus de
+l'audit Community Shaders (idées, pas leur code — GPL) qui « assoient » le
+monde extérieur. Ordre = valeur/effort.
+
+**33a — Screen-space contact shadows** (l'algo Bend Studio, GDC). Une passe
+demi-res sur `sceneDepthCopy` (le pattern SSAO existant, à cloner) : depuis
+chaque pixel, marcher ~16 pas en screen-space VERS le soleil ; si un
+échantillon de depth s'interpose (avec une limite d'épaisseur contre les
+halos), le pixel est en ombre de contact. Sortie R8 ; le tonemap multiplie
+comme le SSAO. Toggle SANS uniform : quand désactivé, on saute la passe et
+on clear la texture à blanc (aucun slot .w libre — ils sont tous pris,
+inventaire dans CHANTIER-6.md). Pose l'herbe, les petits props, les pieds
+des PNJ que le CSM 2048² laisse flotter.
+
+**33b — Ombres de terrain lointaines + 33c skylighting : UN SEUL bake.**
+Le pattern cloud-map/pool-map réutilisé : une texture « TerrainLightMap »
+256² (~1,5 km autour de la caméra) bakée sur WORKER depuis la fonction de
+hauteur (patches inclus), DEUX canaux :
+- **R = visibilité du soleil** : marche de la hauteur de terrain vers le
+  soleil (~40 pas) — les montagnes projettent sur les vallées au-delà des
+  480 m du CSM. Re-bake déclenché par le pas d'hystérésis du soleil des
+  cascades (~8 s réels — déjà en place) et par le déplacement du centre
+  (le déclencheur du cloud map).
+- **G = ouverture du ciel** : 8 azimuts × 12 pas d'horizon → fraction
+  d'hémisphère visible ; multiplie l'AMBIANTE (terrain/mesh/grass) — les
+  fonds de vallée et canyons s'assombrissent naturellement (le « BotW
+  grounding »).
+Échantillonnée dans terrain/mesh/skinned/grass comme le cloud map (mêmes
+slots d'info : centre XZ + 1/span sur un vec4 à trouver — AUCUN .w libre,
+il faudra un vrai APPEND de FrameUbo en FIN de struct, leçon UBO).
+Coût bake : 256²×~50 évals FBM ≈ 0,2 s de worker toutes les ~8 s — budget
+cloud-map. v1 terrain seul (pas les bâtiments).
+
+**Où.** 33a : `PostFx` (+1 passe, cloner SSAO), `contactshadow.frag`,
+tonemap binding 6, `LandscapeScene` (toggle + clear-blanc). 33b/c :
+`TerrainLightMap.{hpp,cpp}` (nouveau, pattern SkySystem::bakeCloudMap
+CPU), FrameUbo APPEND (info de carte), taps dans terrain/mesh/skinned/
+grass.frag, re-bake câblé sur le pas du shadowSunDirection.
+
+**Validation.** 33a : herbe/props/pieds posés au sol en plein soleil,
+toggle A/B, FPS stable. 33b : coucher de soleil — les crêtes projettent
+sur les vallées au loin (au-delà du CSM). 33c : fond de vallée plus
+sombre qu'une crête à midi, transition douce. L'extérieur ne change PAS
+toggles off (byte-identique).
+
 ---
 
 ## Backlog (après cette poussée)
