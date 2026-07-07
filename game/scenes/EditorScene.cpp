@@ -193,7 +193,40 @@ void EditorScene::drawGameDb() {
     ImGui::SameLine();
     ImGui::BeginChild("grid");
     if (selected.isValid()) {
+        // 8.1: clone the selected form into the session (children are NOT
+        // copied — recursive clones are the quest editor's job).
+        if (const data::Form* form = session->view(selected)) {
+            if (ImGui::Button("Duplicate")) {
+                const str baseName =
+                    form->editorId.empty() ? str { "Form" } : form->editorId;
+                const core::Guid copy =
+                    session->duplicateForm(selected, baseName + "Copy");
+                if (copy.isValid()) {
+                    selected = copy;
+                }
+            }
+        }
         drawPropertyGrid(*session, selected);
+        // 8.1: reverse lookup — who points at this form. Resolved base
+        // only (session drafts are not scanned, v1).
+        if (ImGui::CollapsingHeader("Used by")) {
+            const auto hits = data::referencesTo(*db, selected);
+            if (hits.empty()) {
+                ImGui::TextDisabled("(no referencers)");
+            }
+            for (size_t i = 0; i < hits.size(); ++i) {
+                const data::FormReferenceHit& hit = hits[i];
+                const data::Form* from = db->find(hit.from);
+                const str label =
+                    (from && !from->editorId.empty() ? from->editorId
+                                                     : hit.from.toString()) +
+                    "  (" + hit.typeName + "." + hit.fieldName + ")##ub" +
+                    std::to_string(i);
+                if (ImGui::Selectable(label.c_str())) {
+                    selected = hit.from;
+                }
+            }
+        }
     } else {
         ImGui::TextDisabled("(select a form)");
     }

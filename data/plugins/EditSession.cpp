@@ -89,10 +89,37 @@ core::Guid EditSession::createForm(u32 typeId, const str& editorId) {
     return id;
 }
 
+core::Guid EditSession::duplicateForm(const core::Guid& source,
+                                      const str& editorId) {
+    const Form* src = view(source);
+    const reflect::TypeInfo* type = viewType(source);
+    if (!src || !type) {
+        return {};
+    }
+    uptr<Form> form = types.instantiate(type->id);
+    if (!form) {
+        LOG_ERROR("EditSession: no factory for type '{}'", type->name);
+        return {};
+    }
+    copyFields(*type, *src, *form);
+    const core::Guid id = core::Guid::generate();
+    form->id = id;
+    form->editorId = editorId; // after copyFields: editorId is reflected
+    drafts.emplace(id, Draft { std::move(form), type, /*created=*/true });
+    undoStack.push_back({ id, 0, {}, {}, type->id, editorId, source });
+    redoStack.clear();
+    return id;
+}
+
 void EditSession::apply(const EditOp& op, bool forward) {
-    if (op.fieldId == 0) { // creation
+    if (op.fieldId == 0) { // creation (blank or duplicate)
         if (forward) {
             uptr<Form> form = types.instantiate(op.typeId);
+            if (op.sourceId.isValid()) {
+                if (const Form* source = view(op.sourceId)) {
+                    copyFields(*types.findType(op.typeId), *source, *form);
+                }
+            }
             form->id = op.id;
             form->editorId = op.editorId;
             drafts.emplace(op.id, Draft { std::move(form),

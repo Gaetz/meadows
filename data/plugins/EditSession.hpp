@@ -41,6 +41,12 @@ public:
     // A brand-new form (guid minted here — authoring-time act).
     core::Guid createForm(u32 typeId, const str& editorId);
 
+    // A copy of an existing form (base or draft) under a new guid — the
+    // GameDB "duplicate" tool (chantier 8.1). Every reflected field is
+    // cloned; CHILD records are NOT duplicated (v1 — recursive clones are
+    // the quest editor's job). Null guid when the source is unknown.
+    core::Guid duplicateForm(const core::Guid& source, const str& editorId);
+
     bool canUndo() const { return !undoStack.empty(); }
     bool canRedo() const { return !redoStack.empty(); }
     void undo();
@@ -68,6 +74,7 @@ private:
         reflect::Value after;
         u32 typeId { 0 };        // creation only
         str editorId;            // creation only
+        core::Guid sourceId;     // duplication only: redo re-copies from it
     };
 
     Draft* draftFor(const core::Guid& id); // clone-on-demand

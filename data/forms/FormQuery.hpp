@@ -54,6 +54,38 @@ vector<const T*> collectChildren(const FormDatabase& database,
     return children;
 }
 
+// Reverse lookup (the GameDB "used by" tool, chantier 8.1): every form
+// carrying a Guid field equal to `target` — parents found from a child,
+// wielders found from a weapon... Reflection-driven, so new Form types
+// participate for free. O(forms × fields): tooling only, never per-frame.
+struct FormReferenceHit {
+    core::Guid from; // the referencing form
+    str typeName;    // its type
+    str fieldName;   // the Guid field that points at target
+};
+
+inline vector<FormReferenceHit> referencesTo(const FormDatabase& database,
+                                             const core::Guid& target) {
+    vector<FormReferenceHit> hits;
+    for (u32 i = 1; i <= database.count(); ++i) {
+        const FormHandle handle { i };
+        const reflect::TypeInfo* type = database.typeOf(handle);
+        if (!type) {
+            continue;
+        }
+        const Form* form = database.get(handle);
+        reflect::forEachField(*type, [&](const reflect::FieldInfo& field) {
+            if (field.kind != reflect::FieldKind::Guid) {
+                return;
+            }
+            if (std::get<core::Guid>(field.get(form)) == target) {
+                hits.push_back({ form->id, type->name, field.name });
+            }
+        });
+    }
+    return hits;
+}
+
 // First form of type T with the given editorId (tool/console lookups; the
 // runtime resolves by guid, editorIds are an authoring convenience).
 template<typename T>
