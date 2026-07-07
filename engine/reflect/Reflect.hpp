@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <string_view>
+#include <type_traits>
 #include <variant>
 
 #include <glm/glm.hpp>
@@ -74,6 +76,34 @@ template<> struct KindOf<Vec3> { static constexpr auto value = FieldKind::Vec3; 
 template<> struct KindOf<Vec4> { static constexpr auto value = FieldKind::Vec4; };
 template<> struct KindOf<Quat> { static constexpr auto value = FieldKind::Quat; };
 template<> struct KindOf<core::Guid> { static constexpr auto value = FieldKind::Guid; };
+
+// --- On-disk / patch contract lock (audit U1-01 / U7-3) ---
+// A FieldKind ordinal is persisted as a raw u8 in cooked binaries and saves,
+// and Value's alternative index IS that ordinal (see valueKind above).
+// Reordering the enum, the variant, or these KindOf specializations would
+// silently corrupt every existing cooked plugin and save. The asserts below
+// pin the three in lockstep: any reorder/insert that desyncs them stops the
+// build. To add a kind: append it LAST to the enum, the variant, and KindOf,
+// bump the size assert, and add one kindMatches line.
+template<FieldKind K, typename T>
+inline constexpr bool kindMatches =
+    std::is_same_v<std::variant_alternative_t<static_cast<std::size_t>(K), Value>, T> &&
+    KindOf<T>::value == K;
+
+static_assert(std::variant_size_v<Value> == 11,
+              "FieldKind/Value count changed — append the new kind LAST and add "
+              "its kindMatches assert (ordinals are an on-disk contract).");
+static_assert(kindMatches<FieldKind::Bool, bool>);
+static_assert(kindMatches<FieldKind::I32,  i32>);
+static_assert(kindMatches<FieldKind::U32,  u32>);
+static_assert(kindMatches<FieldKind::F32,  f32>);
+static_assert(kindMatches<FieldKind::Str,  str>);
+static_assert(kindMatches<FieldKind::Vec2, Vec2>);
+static_assert(kindMatches<FieldKind::Vec3, Vec3>);
+static_assert(kindMatches<FieldKind::Vec4, Vec4>);
+static_assert(kindMatches<FieldKind::Quat, Quat>);
+static_assert(kindMatches<FieldKind::Guid, core::Guid>);
+static_assert(kindMatches<FieldKind::F64,  f64>);
 } // namespace detail
 
 enum FieldFlags : u32 {
