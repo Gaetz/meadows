@@ -301,6 +301,36 @@ sur les vallées au loin (au-delà du CSM). 33c : fond de vallée plus
 sombre qu'une crête à midi, transition douce. L'extérieur ne change PAS
 toggles off (byte-identique).
 
+## Brique 34 — Light shafts intérieurs à poussière (le FXShaft de Skyrim) — spec 2026-07-07
+
+**Pourquoi.** Demande dev : les faisceaux de fenêtre avec poussière de
+Skyrim. Là-bas ce ne sont NI du fog NI des particules : des MESHES
+translucides additifs (prismes) avec texture de poussière défilante.
+Notre twist : la géométrie est GÉNÉRÉE depuis les paramètres de la
+lumière — donc elle peut suivre l'heure du jour.
+
+**Quoi.** Champs APPEND sur `LightForm` : `shaft` (bool), `shaftLength`,
+`shaftSoftness`, `dustDensity`, `sunLinked` (bool). Renderer : pour
+chaque lumière shaft, un prisme/cône effilé procédural (~6 lames, régénéré
+quand direction/angle changent) ; fragment = dégradé axial × fondu radial
+× atténuation par la tranche × 2 couches de bruit défilant le long du
+faisceau (dérive de poussière) + bande de bruit fin seuillé (motes qui
+scintillent). Additif, pas de depth write, après les opaques avant le
+post. **`sunLinked`** : direction/couleur/intensité recalculées du soleil
+QUANTIFIÉ des ombres (hystérésis en place) — shaft rasant doré le matin,
+raide blanc à midi, éteint sous l'horizon. Le cône du spot devient ainsi
+visible (le spot éclaire la flaque, le shaft montre le volume — mêmes
+données). V2 : quelques particules fx::ParticleSim dans le faisceau.
+
+**Où.** `data/forms/VisualForms.hpp` (APPEND), spawner/LightSource (+
+champs), nouveau `lightshaft.vert/frag`, `LandscapeScene` (génération des
+prismes + draw translucide, MAJ sunLinked au pas du shadowSunDirection).
+
+**Validation.** Une fenêtre du hall d'essai avec un shaft sunLinked :
+l'angle et la teinte suivent le cadran (accéléré via « Animate time ») ;
+poussière qui dérive visible de côté ET de face ; nuit = éteint ; FPS
+inchangé.
+
 ---
 
 ## Backlog (après cette poussée)
