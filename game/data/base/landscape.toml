@@ -229,3 +229,4 @@ godRayIntensity = 0.15
 bloomIntensity = 0.28
 windStrength = 1.9
 waveChop = 1.9
+stormFront = 1.0             # brick 30: cumulonimbus towers on the horizon

@@ -458,6 +458,12 @@ private:
     u64 waterVolumeShaderGeneration { 0 };
     void drawWaterVolumes(engine::FrameContext& frame);
     f32 effectiveWaterSurfaceY() const; // brick 32 submersion input
+    // Brick 30 (chantier 7.6): horizon cumulonimbus — a static buffer of
+    // 8 camera-anchored towers, visible only while stormFront > 0.
+    rhi::BufferHandle stormVertices {};
+    rhi::PipelineHandle stormPipeline {};
+    u64 stormShaderGeneration { 0 };
+    f32 stormFrontUi { 0.0f };
     bool shaftsUi { true };
     bool contactShadowsUi { true }; // brick 33a
     // Brick 33b/c: worker-baked terrain sun-shadow + sky-openness map.

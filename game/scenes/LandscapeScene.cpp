@@ -240,6 +240,35 @@ void LandscapeScene::onEnter() {
     // Brick 32: placed water surfaces.
     shaders->load("watervolume",
                   { { "FrameUbo", 0 }, { "WaterVolumeUbo", 1 } });
+    // Brick 30: horizon cumulonimbus — 8 towers, static vertex buffer
+    // (the vertex shader anchors the ring to the camera).
+    shaders->load("cumulonimbus", { { "FrameUbo", 0 } });
+    {
+        f32 towers[8 * 6 * 4];
+        u32 cursor = 0;
+        const auto push = [&](f32 azimuth, f32 u, f32 v, f32 seed) {
+            towers[cursor++] = azimuth;
+            towers[cursor++] = u;
+            towers[cursor++] = v;
+            towers[cursor++] = seed;
+        };
+        for (u32 i = 0; i < 8; ++i) {
+            const f32 azimuth =
+                static_cast<f32>(i) * glm::radians(45.0f) + 0.37f;
+            const f32 seed = static_cast<f32>(i) * 0.618f -
+                             std::floor(static_cast<f32>(i) * 0.618f);
+            push(azimuth, -1.0f, 0.0f, seed);
+            push(azimuth, 1.0f, 0.0f, seed);
+            push(azimuth, 1.0f, 1.0f, seed);
+            push(azimuth, -1.0f, 0.0f, seed);
+            push(azimuth, 1.0f, 1.0f, seed);
+            push(azimuth, -1.0f, 1.0f, seed);
+        }
+        stormVertices = device.createBuffer(
+            { .usage = rhi::BufferUsage::Vertex, .size = sizeof(towers) },
+            towers);
+    }
+
     // B2b: the interior key-light shadow target (1024², perspective).
     keyShadowTex = device.createTexture(
         { .width = 1024,
@@ -726,6 +755,11 @@ void LandscapeScene::onExit() {
     waterQuads.clear();
     device.destroyPipeline(waterVolumePipeline);
     waterVolumePipeline = {};
+    // Brick 30: cumulonimbus.
+    device.destroyBuffer(stormVertices);
+    stormVertices = {};
+    device.destroyPipeline(stormPipeline);
+    stormPipeline = {};
     // B2b: key-light shadow.
     device.destroyBindGroup(keyShadowReceiverGroup);
     device.destroyBindGroup(keyShadowCasterGroup);
@@ -1098,6 +1132,8 @@ void LandscapeScene::update(f32 dt) {
         blended.windStrength = lerp(weatherFrom.windStrength,
                                     to.windStrength);
         blended.waveChop = lerp(weatherFrom.waveChop, to.waveChop);
+        blended.stormFront = lerp(weatherFrom.stormFront,
+                                  to.stormFront); // brick 30
         applyWeather(blended);
     }
 
@@ -4876,6 +4912,7 @@ WeatherForm LandscapeScene::captureCurrentWeather() const {
     w.bloomIntensity = bloomIntensityUi;
     w.windStrength = windStrengthUi;
     w.waveChop = waveChopUi;
+    w.stormFront = stormFrontUi; // brick 30
     return w;
 }
 
@@ -4897,6 +4934,7 @@ void LandscapeScene::applyWeather(const WeatherForm& w) {
     bloomIntensityUi = w.bloomIntensity;
     windStrengthUi = w.windStrength;
     waveChopUi = w.waveChop;
+    stormFrontUi = w.stormFront; // brick 30
 }
 
 void LandscapeScene::render(engine::FrameContext& frame) {
@@ -5092,6 +5130,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     frameData.terrainLightInfo.w =
         (terrainLightUi && !interiorMode && terrainLightMap.ready()) ? 1.0f
                                                                      : 0.0f;
+    // Brick 30: the crossfaded storm front for the cumulonimbus pass.
+    frameData.stormInfo.x = stormFrontUi;
     // B4 (brick 29): auto-exposure parameters on free .w slots (adapt.frag
     // + the tonemap tap flag).
     frameData.sunDirection.w = frame.dt;
@@ -5333,6 +5373,36 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         drawNpcs(frame);        // B6: the Forms-driven skinned NPCs
         if (!interiorMode) {
             sky.draw(frame.cmd, frameBindGroup); // background only
+        }
+        // Brick 30: horizon cumulonimbus, right after the sky dome (they
+        // occlude sky, terrain occludes them via the depth test).
+        if (!interiorMode && stormFrontUi > 0.003f) {
+            if (shaders->generation("cumulonimbus") !=
+                    stormShaderGeneration ||
+                stormPipeline.id == 0) {
+                if (stormPipeline.id != 0) {
+                    frame.device.destroyPipeline(stormPipeline);
+                }
+                stormPipeline = frame.device.createPipeline(
+                    { .shader = shaders->get("cumulonimbus"),
+                      .vertexBuffers =
+                          { { .stride = 4 * sizeof(f32),
+                              .attributes =
+                                  { { .location = 0,
+                                      .format = rhi::VertexFormat::F32x4,
+                                      .offset = 0 } } } },
+                      .blend = rhi::BlendMode::Alpha,
+                      .depth = { .testEnable = true,
+                                 .writeEnable = false,
+                                 .compare = rhi::CompareFunc::Less },
+                      .cull = rhi::CullMode::None });
+                stormShaderGeneration =
+                    shaders->generation("cumulonimbus");
+            }
+            frame.cmd.setPipeline(stormPipeline);
+            frame.cmd.setBindGroup(0, frameBindGroup);
+            frame.cmd.setVertexBuffer(0, stormVertices);
+            frame.cmd.draw(8 * 6);
         }
         // Brick 32: placed water surfaces (alpha), then brick 34:
         // additive dust shafts — both after every opaque.
