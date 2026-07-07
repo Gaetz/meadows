@@ -72,6 +72,9 @@ struct SceneLight {
     f32 flicker { 0.0f };
     Vec3 direction { 0.0f, 0.0f, 1.0f };
     f32 spotAngle { 0.0f };
+    // Brick 34: the scene overrides `direction` (and gates intensity by
+    // sun elevation) for sun-linked lights before filling the UBO.
+    bool sunLinked { false };
 };
 
 // The `maxLights` LightSource entities nearest to `focus`, nearest first

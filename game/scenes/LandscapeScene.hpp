@@ -427,6 +427,26 @@ private:
     void buildMeshPipeline(rhi::Device& device);
     void drawSceneMeshes(engine::FrameContext& frame);
 
+    // Brick 34 (chantier 7.1): dust light shafts — one small additive
+    // blade-prism per shaft light, rebuilt when its direction moves
+    // (sun-linked shafts follow the quantized shadow sun).
+    struct LightShaft {
+        u64 entityId { 0 };
+        bool seen { false }; // mark/sweep against unloaded cells
+        rhi::BufferHandle vertices {};
+        rhi::BufferHandle ubo {};
+        rhi::BindGroupHandle group {};
+        Vec3 cachedDir { 0.0f };
+        u32 vertexCount { 0 };
+    };
+    vector<LightShaft> lightShafts;
+    rhi::PipelineHandle shaftPipeline {};
+    u64 shaftShaderGeneration { 0 };
+    bool shaftsUi { true };
+    void buildShaftPipeline(rhi::Device& device);
+    void drawLightShafts(engine::FrameContext& frame,
+                         const Vec3& sunColor);
+
     // Chantier 6 B2a: meshes + skinned NPCs cast into the sun cascades
     // (depth-only pipelines; the model UBOs are re-used, one frame behind
     // for NPCs — invisible at shadow resolution). Toggle = the A/B guard.

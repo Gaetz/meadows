@@ -29,7 +29,8 @@ spécifiées mais non construites, plus le backlog météo.
 | 7.5 | **B2b — Ombre de lumière clé intérieure** | CHANTIER-6.md (descope) | KeyLightShadow perspective 1 layer ; stoppe le light bleed à travers les murs — utile dès les intérieurs multi-pièces |
 | 7.6 | **30 — Cumulonimbus à l'horizon** | 3D-RENDERER §30 | `WeatherForm.stormFront` ; billboards géants |
 | 7.7 | **31 — Pluie + wetness + occlusion top-down** | 3D-RENDERER §31 + addendum | Particules cylindre caméra ; depth map top-down (la pluie s'arrête sous les toits) |
-| 7.8 | **Refonte herbe** | backlog 3D-RENDERER | ⏸️ TOUJOURS en attente des références shader du dev — ne pas commencer sans |
+| 7.8 | **Refonte herbe** | backlog 3D-RENDERER | pour les herbes tu peux utiliser https://github.com/daniel-ilett/shaders-botw-grass
+
 
 Descopés/backlog (inchangés) : LUT 3D, TAA, caustiques, biomes, mode
 dégradé GL 4.1, impostors, 3e personne.

@@ -66,6 +66,16 @@ struct LightForm : Form {
     f32 spotAngle { 45.0f }; // degrees, spot only
     f32 flicker { 0.0f };    // 0 = steady; else amplitude of flame flicker
     bool castsShadow { false }; // budget: few key lights per interior
+    // Dust light shaft (renderer brick 34, chantier 7.1 — appended,
+    // ordinals stable): a procedural additive prism along the light's
+    // direction (the Skyrim FXShaft model). `sunLinked` re-derives the
+    // direction/color from the (quantized) sun every frame — window
+    // shafts follow the time of day.
+    bool shaft { false };
+    f32 shaftLength { 5.0f };   // meters along the direction
+    f32 shaftSoftness { 0.5f }; // axial fade exponent blend
+    f32 dustDensity { 0.6f };   // scrolling dust/motes visibility
+    bool sunLinked { false };
 
     REFLECT_BEGIN(LightForm, Form)
         REFLECT_FIELD(kind)
@@ -75,6 +85,11 @@ struct LightForm : Form {
         REFLECT_FIELD(spotAngle)
         REFLECT_FIELD(flicker)
         REFLECT_FIELD(castsShadow)
+        REFLECT_FIELD(shaft)
+        REFLECT_FIELD(shaftLength)
+        REFLECT_FIELD(shaftSoftness)
+        REFLECT_FIELD(dustDensity)
+        REFLECT_FIELD(sunLinked)
     REFLECT_END()
 };
 

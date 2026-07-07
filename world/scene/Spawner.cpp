@@ -36,6 +36,11 @@ void spawnLight(SpawnContext&, ecs::Entity entity, const data::Form& base,
     source.radius = light.radius;
     source.spotAngle = light.kind == "spot" ? light.spotAngle : 0.0f;
     source.flicker = light.flicker;
+    source.shaft = light.shaft; // brick 34
+    source.shaftLength = light.shaftLength;
+    source.shaftSoftness = light.shaftSoftness;
+    source.dustDensity = light.dustDensity;
+    source.sunLinked = light.sunLinked;
     entity.set<LightSource>(source);
 }
 

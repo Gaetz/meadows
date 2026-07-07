@@ -1720,6 +1720,36 @@ cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [8.0, 5.5, -10.0]
 rotation = [0.7071068, 0.0, 0.0, 0.7071068]
 
+# Brick 34: the window shaft — sun-linked, so its angle and color follow
+# the time of day (morning = low gold, noon = steep white, night = off).
+# Placed high on the east wall of the hall as if a window sat there; the
+# same light also LIGHTS the pool on the floor (kind = spot).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000012e"
+type = "LightForm"
+new = true
+[records.fields]
+editorId = "HallWindowShaft"
+kind = "spot"
+color = [1.0, 0.95, 0.85]
+intensity = 2.0
+radius = 9.0
+spotAngle = 28.0
+shaft = true
+shaftLength = 7.0
+shaftSoftness = 0.5
+dustDensity = 0.7
+sunLinked = true
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000012f"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [11.8, 2.6, -2.0]
+
 # A dying brazier in the far corner — deep red, low, restless: how does a
 # barely-there source read against the dark?
 [[records]]

@@ -233,6 +233,9 @@ void LandscapeScene::onEnter() {
     shaders->load("shadow_skinned",
                   { { "ShadowUbo", 1 }, { "CasterModelUbo", 4 } });
     buildCasterPipelines(device);
+    // Brick 34: dust light shafts.
+    shaders->load("lightshaft", { { "FrameUbo", 0 }, { "ShaftUbo", 1 } });
+    buildShaftPipeline(device);
 
     // Chantier 4 B2: the RmlUi game UI (screens from UiScreenForm records,
     // documents through the plugins' ui/ roots).
@@ -669,6 +672,19 @@ void LandscapeScene::onExit() {
     device.destroyPipeline(meshPipeline);
     device.destroyPipeline(meshCasterPipeline);   // B2a
     device.destroyPipeline(skinnedCasterPipeline);
+    // Brick 34: shafts (GPU state per shaft, then the pipeline).
+    for (LightShaft& shaft : lightShafts) {
+        if (shaft.vertices.id != 0) {
+            device.destroyBuffer(shaft.vertices);
+        }
+        if (shaft.ubo.id != 0) {
+            device.destroyBindGroup(shaft.group);
+            device.destroyBuffer(shaft.ubo);
+        }
+    }
+    lightShafts.clear();
+    device.destroyPipeline(shaftPipeline);
+    shaftPipeline = {};
     // B6 NPCs: GPU state per NPC, then the CPU-side rig cache.
     for (auto& npc : npcs) {
         destroyNpc(device, *npc);
@@ -4342,6 +4358,182 @@ void LandscapeScene::buildSkinnedPipeline(rhi::Device& device) {
     skinnedShaderGeneration = shaders->generation("skinned");
 }
 
+void LandscapeScene::buildShaftPipeline(rhi::Device& device) {
+    if (shaftPipeline.id != 0) {
+        device.destroyPipeline(shaftPipeline);
+    }
+    // Additive, depth-tested against the opaques but never writing —
+    // the Skyrim FXShaft blend. Both blade faces show (no cull).
+    shaftPipeline = device.createPipeline(
+        { .shader = shaders->get("lightshaft"),
+          .vertexBuffers =
+              { { .stride = 5 * sizeof(f32),
+                  .attributes = { { .location = 0,
+                                    .format = rhi::VertexFormat::F32x3,
+                                    .offset = 0 },
+                                  { .location = 1,
+                                    .format = rhi::VertexFormat::F32x2,
+                                    .offset = 3 * sizeof(f32) } } } },
+          .blend = rhi::BlendMode::Additive,
+          .depth = { .testEnable = true,
+                     .writeEnable = false,
+                     .compare = rhi::CompareFunc::Less },
+          .cull = rhi::CullMode::None });
+    shaftShaderGeneration = shaders->generation("lightshaft");
+}
+
+void LandscapeScene::drawLightShafts(engine::FrameContext& frame,
+                                     const Vec3& sunColor) {
+    if (!shaftsUi) {
+        return;
+    }
+    if (shaders->generation("lightshaft") != shaftShaderGeneration) {
+        buildShaftPipeline(frame.device);
+    }
+    for (LightShaft& shaft : lightShafts) {
+        shaft.seen = false;
+    }
+    bool any = false;
+    world.handle()
+        .query<const world::Transform, const world::LightSource>()
+        .each([&](flecs::entity e, const world::Transform& transform,
+                  const world::LightSource& light) {
+            if (!light.shaft) {
+                return;
+            }
+            // Direction: authored (reference rotation x +Z) or the
+            // quantized shadow sun (so window shafts follow the day
+            // without re-basing every frame).
+            Vec3 dir = light.sunLinked
+                           ? -shadowSunDirection
+                           : transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
+            if (glm::dot(dir, dir) < 1e-6f) {
+                return;
+            }
+            dir = glm::normalize(dir);
+            f32 gate = 1.0f;
+            Vec3 color = light.color * light.intensity;
+            if (light.sunLinked) {
+                gate = glm::smoothstep(0.05f, 0.20f, -dir.y);
+                color = sunColor * light.intensity;
+            }
+            if (interiorMode == false && light.sunLinked) {
+                // Exterior sun shafts belong to the volumetric pass.
+                return;
+            }
+            if (gate <= 0.001f) {
+                return;
+            }
+
+            LightShaft* slot = nullptr;
+            for (LightShaft& shaft : lightShafts) {
+                if (shaft.entityId == e.id()) {
+                    slot = &shaft;
+                    break;
+                }
+            }
+            if (!slot) {
+                lightShafts.push_back({ e.id() });
+                slot = &lightShafts.back();
+            }
+            slot->seen = true;
+
+            // Rebuild the blades when the direction moves (sun steps).
+            if (slot->vertices.id == 0 ||
+                glm::dot(slot->cachedDir, dir) < 0.99995f) {
+                const f32 length = glm::max(light.shaftLength, 0.5f);
+                const f32 halfAngle = glm::radians(
+                    glm::clamp(light.spotAngle > 0.0f ? light.spotAngle
+                                                      : 30.0f,
+                               5.0f, 80.0f) *
+                    0.5f);
+                const f32 w0 = 0.08f;
+                const f32 w1 = std::tan(halfAngle) * length;
+                const Vec3 up = std::abs(dir.y) > 0.95f
+                                    ? Vec3 { 1.0f, 0.0f, 0.0f }
+                                    : Vec3 { 0.0f, 1.0f, 0.0f };
+                const Vec3 s0 = glm::normalize(glm::cross(dir, up));
+                const Vec3 apex = transform.position;
+                const Vec3 end = apex + dir * length;
+                f32 verts[3 * 6 * 5]; // 3 blades x 2 tris x 3 verts x 5f
+                u32 cursor = 0;
+                const auto push = [&](const Vec3& p, f32 u, f32 v) {
+                    verts[cursor++] = p.x;
+                    verts[cursor++] = p.y;
+                    verts[cursor++] = p.z;
+                    verts[cursor++] = u;
+                    verts[cursor++] = v;
+                };
+                for (u32 blade = 0; blade < 3; ++blade) {
+                    const f32 angle =
+                        static_cast<f32>(blade) * glm::radians(60.0f);
+                    const Vec3 side = glm::normalize(
+                        glm::angleAxis(angle, dir) * s0);
+                    const Vec3 a0 = apex - side * w0;
+                    const Vec3 a1 = apex + side * w0;
+                    const Vec3 b0 = end - side * w1;
+                    const Vec3 b1 = end + side * w1;
+                    push(a0, -1.0f, 0.0f);
+                    push(a1, 1.0f, 0.0f);
+                    push(b1, 1.0f, 1.0f);
+                    push(a0, -1.0f, 0.0f);
+                    push(b1, 1.0f, 1.0f);
+                    push(b0, -1.0f, 1.0f);
+                }
+                if (slot->vertices.id == 0) {
+                    slot->vertices = frame.device.createBuffer(
+                        { .usage = rhi::BufferUsage::Vertex,
+                          .size = sizeof(verts),
+                          .dynamic = true },
+                        verts);
+                } else {
+                    frame.device.updateBuffer(slot->vertices, verts,
+                                              sizeof(verts), 0);
+                }
+                slot->vertexCount = 18;
+                slot->cachedDir = dir;
+            }
+            if (slot->ubo.id == 0) {
+                slot->ubo = frame.device.createBuffer(
+                    { .usage = rhi::BufferUsage::Uniform,
+                      .size = 2 * sizeof(Vec4),
+                      .dynamic = true },
+                    nullptr);
+                slot->group = frame.device.createBindGroup(
+                    { .entries = { { .binding = 1, .buffer = slot->ubo } } });
+            }
+            const Vec4 uniforms[2] = {
+                { color * gate, light.shaftSoftness },
+                { light.dustDensity, light.shaftLength, 0.0f, 0.0f }
+            };
+            frame.device.updateBuffer(slot->ubo, uniforms,
+                                      sizeof(uniforms), 0);
+            if (!any) {
+                frame.cmd.setPipeline(shaftPipeline);
+                frame.cmd.setBindGroup(0, frameBindGroup);
+                any = true;
+            }
+            frame.cmd.setBindGroup(1, slot->group);
+            frame.cmd.setVertexBuffer(0, slot->vertices);
+            frame.cmd.draw(slot->vertexCount);
+        });
+    // Sweep shafts whose entity unloaded with its cell.
+    for (auto it = lightShafts.begin(); it != lightShafts.end();) {
+        if (!it->seen) {
+            if (it->vertices.id != 0) {
+                frame.device.destroyBuffer(it->vertices);
+            }
+            if (it->ubo.id != 0) {
+                frame.device.destroyBindGroup(it->group);
+                frame.device.destroyBuffer(it->ubo);
+            }
+            it = lightShafts.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void LandscapeScene::buildCasterPipelines(rhi::Device& device) {
     if (meshCasterPipeline.id != 0) {
         device.destroyPipeline(meshCasterPipeline);
@@ -4887,6 +5079,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         if (!interiorMode) {
             sky.draw(frame.cmd, frameBindGroup); // background only
         }
+        // Brick 34: additive dust shafts, after every opaque.
+        drawLightShafts(frame, skyState.sunColor);
         frame.cmd.endRenderPass();
     }
 
@@ -5254,6 +5448,8 @@ void LandscapeScene::drawRenderUi() {
     ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);
     // B2a A/B: houses/crates/NPCs casting into the sun cascades.
     ImGui::Checkbox("Mesh shadow casters", &meshShadowCastersUi);
+    ImGui::SameLine();
+    ImGui::Checkbox("Light shafts", &shaftsUi); // brick 34
     // B3 A/B (brick 28): the analytical grade, off by default.
     ImGui::Checkbox("Grading (brick 28)", &gradingUi);
     if (gradingUi) {

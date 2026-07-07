@@ -96,7 +96,7 @@ vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
                   { transform.position, source.color, source.intensity,
                     source.radius, source.flicker,
                     transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f },
-                    source.spotAngle } });
+                    source.spotAngle, source.sunLinked } });
         });
     std::stable_sort(candidates.begin(), candidates.end(),
                      [](const Candidate& a, const Candidate& b) {
