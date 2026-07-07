@@ -8,6 +8,7 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
 #include "clouds.glsl"
 #include "stylized.glsl"
+#include "terrainlight.glsl"
 
 in vec3 vNormal;
 in vec3 vColor;
@@ -53,7 +54,9 @@ void main() {
     // drift — hard edges would crawl).
     float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
                    cloudShadowFactor(vWorldPos);
-    vec3 lit =
-        albedo * (uAmbientColor.rgb + uSunColor.rgb * (diffuse * shadow));
+    // 33b/c: long-range terrain sun shadow (x) + sky openness (y).
+    vec2 tl = terrainLightFactors(vWorldPos);
+    vec3 lit = albedo * (uAmbientColor.rgb * tl.y +
+                         uSunColor.rgb * (diffuse * shadow * tl.x));
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

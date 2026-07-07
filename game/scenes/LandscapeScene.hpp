@@ -42,6 +42,7 @@
 #include "game/scenes/LandscapeTuning.hpp"
 #include "engine/render/landscape/ChunkOcclusion.hpp"
 #include "engine/render/landscape/GpuOcclusion.hpp"
+#include "engine/render/landscape/TerrainLightMap.hpp"
 #include "engine/render/landscape/GrassSystem.hpp"
 #include "engine/render/landscape/PostFx.hpp"
 #include "engine/render/landscape/ShadowMapper.hpp"
@@ -444,6 +445,9 @@ private:
     u64 shaftShaderGeneration { 0 };
     bool shaftsUi { true };
     bool contactShadowsUi { true }; // brick 33a
+    // Brick 33b/c: worker-baked terrain sun-shadow + sky-openness map.
+    render::TerrainLightMap terrainLightMap;
+    bool terrainLightUi { true };
     void buildShaftPipeline(rhi::Device& device);
     void drawLightShafts(engine::FrameContext& frame,
                          const Vec3& sunColor);

@@ -34,4 +34,7 @@ layout(std140, binding = 0) uniform FrameUbo {
                             // z = 1/span
     vec4 uWindInfo;         // x = accumulated wind time (s, speed-scaled),
                             // y = sway strength, z = water chop multiplier
+    // Brick 33b/c (APPENDED — the UBO lesson): terrain light map.
+    vec4 uTerrainLightInfo; // xy = map center (world XZ), z = 1/span,
+                            // w = strength (0 = feature off)
 };

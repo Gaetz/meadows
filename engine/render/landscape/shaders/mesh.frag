@@ -3,6 +3,7 @@
 #include "sky.glsl"
 #include "stylized.glsl"
 #include "locallights.glsl"
+#include "terrainlight.glsl"
 
 // Textured stylized mesh (H8): flat albedo texture x material tint x
 // vertex color, lit by the shared BotW ramp, faded by the shared fog.
@@ -37,7 +38,9 @@ void main() {
         float up = n.y * 0.5 + 0.5;
         ambient *= mix(vec3(0.50, 0.42, 0.36), vec3(1.35, 1.30, 1.22), up);
     }
-    vec3 lit = albedo * (ambient + uSunColor.rgb * diffuse +
+    // 33b/c: long-range terrain sun shadow (x) + sky openness (y).
+    vec2 tl = terrainLightFactors(vWorldPos);
+    vec3 lit = albedo * (ambient * tl.y + uSunColor.rgb * (diffuse * tl.x) +
                          localLights(vWorldPos, n)) +
                albedo * uMeshInfo.x;
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);

@@ -45,6 +45,9 @@ struct FrameUniforms {
                               // keeps cloud/wave phase continuous when the
                               // weather changes the wind), y = sway strength,
                               // z = water chop multiplier, w unused
+    // Brick 33b/c (APPENDED — the UBO lesson): the terrain light map.
+    Vec4 terrainLightInfo {}; // xy = map center (world XZ), z = 1/span,
+                              // w = strength (0 = feature off)
 };
 
 } // namespace render

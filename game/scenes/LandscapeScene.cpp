@@ -203,6 +203,7 @@ void LandscapeScene::onEnter() {
     shaders = std::make_unique<render::ShaderLibrary>(device);
     terrain.create(device, *shaders, engine->getJobSystem());
     occlusion.create(engine->getJobSystem());
+    terrainLightMap.create(device, engine->getJobSystem()); // 33b/c
     grass.create(device, *shaders, engine->getJobSystem());
     vegetation.create(device, *shaders, engine->getJobSystem(),
                       terrain.params.seed);
@@ -714,6 +715,7 @@ void LandscapeScene::onExit() {
     device.destroySampler(meshSampler);
     device.destroyTexture(whiteTexture);
     gpuOcclusion.destroy(device);
+    terrainLightMap.destroy(device); // 33b/c
     postFx.destroy(device);
     water.destroy(device);
     device.destroyBindGroup(reflectionBindGroup);
@@ -4749,6 +4751,11 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         {
             core::FrameProbe::Scope probe { frameProbe, "terrain" };
             terrain.update(frame.device, flyCamera.camera.position);
+            // 33b/c: pump/kick the light-map bake (worker; re-bakes on
+            // the quantized sun step or when the focus strays).
+            terrainLightMap.update(frame.device, terrain.params,
+                                   flyCamera.camera.position,
+                                   shadowSunDirection);
         }
         // Height-horizon occlusion (brick 26): rebuilt on a worker
         // whenever the camera strays; stays valid (conservative) meanwhile.
@@ -4905,6 +4912,12 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     frameData.sunGlowColor.w = gradingUi ? gradeVibranceUi : 0.0f;
     frameData.zenithColor.w = gradingUi ? gradeSplitToneUi : 0.0f;
     frameData.horizonColor.w = gradingUi ? gradeContrastUi : 1.0f;
+    // 33b/c: the terrain light map info (w = strength, 0 until the first
+    // bake lands or when toggled off / indoors).
+    frameData.terrainLightInfo = terrainLightMap.info();
+    frameData.terrainLightInfo.w =
+        (terrainLightUi && !interiorMode && terrainLightMap.ready()) ? 1.0f
+                                                                     : 0.0f;
     // B4 (brick 29): auto-exposure parameters on free .w slots (adapt.frag
     // + the tonemap tap flag).
     frameData.sunDirection.w = frame.dt;
@@ -5024,6 +5037,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         if (sky.cloudMapBindGroup().id != 0) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
+        if (terrainLightMap.bindGroup().id != 0) {
+            frame.cmd.setBindGroup(4, terrainLightMap.bindGroup()); // 33b/c
+        }
         terrain.draw(frame.cmd, reflectionBindGroup,
                      shadows.receiverBindGroup(), &reflectionFrustum);
         // Trees only: rocks and bushes are invisible in a wobbly half-res
@@ -5050,6 +5066,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
               .depthLoadOp = rhi::LoadOp::Clear });
         if (sky.cloudMapBindGroup().id != 0) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
+        }
+        if (terrainLightMap.bindGroup().id != 0) {
+            frame.cmd.setBindGroup(4, terrainLightMap.bindGroup()); // 33b/c
         }
         // Occlusion applies to the main view only: both sets were built for
         // the real camera, not the mirrored one (the grass ring is too
@@ -5461,6 +5480,8 @@ void LandscapeScene::drawRenderUi() {
     ImGui::SameLine();
     ImGui::Checkbox("Light shafts", &shaftsUi); // brick 34
     ImGui::Checkbox("Contact shadows", &contactShadowsUi); // brick 33a
+    ImGui::SameLine();
+    ImGui::Checkbox("Terrain light map", &terrainLightUi); // brick 33b/c
     // B3 A/B (brick 28): the analytical grade, off by default.
     ImGui::Checkbox("Grading (brick 28)", &gradingUi);
     if (gradingUi) {

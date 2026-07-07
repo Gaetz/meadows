@@ -3,6 +3,7 @@
 #include "sky.glsl"
 #include "stylized.glsl"
 #include "locallights.glsl"
+#include "terrainlight.glsl"
 
 // Shading twin of mesh.frag (albedo texture x tint x vertex color, shared
 // BotW ramp, shared fog) — KEEP IN SYNC with mesh.frag; only the vertex
@@ -33,7 +34,9 @@ void main() {
         float up = n.y * 0.5 + 0.5;
         ambient *= mix(vec3(0.50, 0.42, 0.36), vec3(1.35, 1.30, 1.22), up);
     }
-    vec3 lit = albedo * (ambient + uSunColor.rgb * diffuse +
+    // 33b/c — KEEP IN SYNC with mesh.frag.
+    vec2 tl = terrainLightFactors(vWorldPos);
+    vec3 lit = albedo * (ambient * tl.y + uSunColor.rgb * (diffuse * tl.x) +
                          localLights(vWorldPos, n)) +
                albedo * uMeshInfo.x;
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
