@@ -39,20 +39,21 @@ dégradé GL 4.1, impostors, 3e personne.
 À trancher avec le dev au moment voulu — l'ordre ci-dessous est une
 proposition par valeur pour la démo :
 
-- **Chantier 8 — Son & vie** : assets audio À DÉPOSER PAR LE DEV
-  (bloquant), câblage cues→miniaudio (seams posés), musique dynamique
-  (states calme/exploration/combat via tags), bruits de pas par matériau,
-  reliquat IA vivante (marchand ambulant ? combat PNJ affiné), Recast en
-  remplacement du TerrainNavigator (les PNJ traversent les troncs depuis
-  la collision végétation).
-- **Chantier 9 — Outillage** : éditeur de quêtes (le runtime est complet,
+- **Chantier 8 — Outillage** : éditeur de quêtes (le runtime est complet,
   l'outillage manque), timeline des schedules (P1 promis §6 décisions),
   éditeurs anim/FX/UI, outil de synthesis patch (§5.1 CLAUDE.md —
   prérequis : FieldConflict porte les valeurs).
-- **Chantier 10 — Confort & plateforme** : gamepad, localisation
+- **Chantier 9 — Confort & plateforme** : gamepad, localisation
   systématique (l'infra existe), carte en jeu, async IO réel des saves/
   cellules (fichiers cuits), build Linux re-vérifié (§3.1 : les deux OS
   doivent rester buildables).
+- **Chantier 10 — Son & vie** (APRÈS confort & plateforme — ordre dev
+  2026-07-07) : assets audio À DÉPOSER PAR LE DEV (bloquant), câblage
+  cues→miniaudio (seams posés), musique dynamique (states calme/
+  exploration/combat via tags), bruits de pas par matériau, reliquat IA
+  vivante (marchand ambulant ? combat PNJ affiné), Recast en remplacement
+  du TerrainNavigator (les PNJ traversent les troncs depuis la collision
+  végétation).
 - **Post-démo** (rappels) : validation Godot (ex-8.5), followers
   (contrat posé chantier 5), table de relations factions, démembrement/
   bleed-out (assets gore), vue 3e personne.
