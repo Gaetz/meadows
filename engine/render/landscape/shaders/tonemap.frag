@@ -71,13 +71,13 @@ void main() {
         hdr *= texelFetch(uExposure, ivec2(0), 0).r;
     }
     // Submerged camera: the whole frame breathes water — teal absorption
-    // that deepens with how far below the surface the camera sits.
-    // NEVER indoors (uCascadeSplits.w): interior cells live near y = 0,
-    // far below the exterior sea level — the whole room used to render
-    // through 11 m of virtual water (the greenish-interior bug).
-    float submersion = clamp((uTerrainInfo.x - uCameraPos.y) * 0.35, 0.0,
-                             1.0) *
-                       (1.0 - uCascadeSplits.w);
+    // that deepens with how far below the surface the camera sits. The
+    // scene sends the EFFECTIVE surface (brick 32): sea level outdoors, a
+    // water volume's top when the camera is inside one (flooded rooms
+    // included), -1e6 = dry (plain interiors — the greenish-interior bug
+    // stays fixed by construction).
+    float submersion =
+        clamp((uSubmersionInfo.x - uCameraPos.y) * 0.35, 0.0, 1.0);
     hdr = mix(hdr, hdr * vec3(0.18, 0.55, 0.60) + vec3(0.004, 0.030, 0.036),
               submersion * 0.85);
     // A/B toggle: raw path clips instead of rolling off (same gamma encode,

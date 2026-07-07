@@ -44,6 +44,12 @@ void spawnLight(SpawnContext&, ecs::Entity entity, const data::Form& base,
     entity.set<LightSource>(source);
 }
 
+void spawnWaterVolume(SpawnContext&, ecs::Entity entity,
+                      const data::Form& base, const reflect::TypeInfo&) {
+    const auto& form = static_cast<const data::WaterVolumeForm&>(base);
+    entity.set<WaterVolume>({ form.halfExtents, form.tint, form.chop });
+}
+
 void spawnMarker(SpawnContext&, ecs::Entity entity, const data::Form& base,
                  const reflect::TypeInfo&) {
     const auto& marker = static_cast<const MarkerForm&>(base);
@@ -259,6 +265,7 @@ void registerCoreSpawners(Spawner& spawner) {
     spawner.registerCategory(FormCategory::Item, &spawnItem);
     spawner.registerCategory(FormCategory::Actor, &spawnActor);
     spawner.registerCategory(FormCategory::Light, &spawnLight);
+    spawner.registerCategory(FormCategory::Water, &spawnWaterVolume);
     spawner.registerCategory(FormCategory::Marker, &spawnMarker);
     spawner.registerCategory(FormCategory::Trigger, &spawnTrigger);
     spawner.registerCategory(FormCategory::Furniture, &spawnFurniture);

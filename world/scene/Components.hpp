@@ -131,6 +131,20 @@ struct LightSource {
     REFLECT_END()
 };
 
+// A placed water volume (brick 32): the box top = the surface, the box =
+// the "in water" test. Seeded from WaterVolumeForm by the spawner.
+struct WaterVolume {
+    Vec3 halfExtents { 4.0f, 1.0f, 4.0f };
+    Vec3 tint { 0.10f, 0.30f, 0.34f };
+    f32 chop { 0.5f };
+
+    REFLECT_BEGIN(WaterVolume, void)
+        REFLECT_FIELD(halfExtents)
+        REFLECT_FIELD(tint)
+        REFLECT_FIELD(chop)
+    REFLECT_END()
+};
+
 // A gameplay volume (TriggerForm): the trigger system (vertical) fires
 // `event` on the EventBus / runs `script` on overlap.
 struct TriggerVolume {

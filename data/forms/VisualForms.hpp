@@ -93,6 +93,27 @@ struct LightForm : Form {
     REFLECT_END()
 };
 
+// A placeable water volume (renderer brick 32, chantier 7.4): the box's
+// TOP face is the water surface, the box itself is the "in water" test —
+// mountain lakes above sea level, flooded interior rooms. The global sea
+// stays the implicit case (and keeps the planar mirror; volumes render a
+// stylized non-mirrored surface).
+struct WaterVolumeForm : Form {
+    str displayName;
+    Vec3 halfExtents { 4.0f, 1.0f, 4.0f };
+    Vec3 tint { 0.10f, 0.30f, 0.34f }; // linear water color
+    f32 chop { 0.5f };                 // wave busyness on the surface
+    bool swimmable { true };           // reserved (swim = gameplay brick)
+
+    REFLECT_BEGIN(WaterVolumeForm, Form)
+        REFLECT_FIELD(displayName)
+        REFLECT_FIELD(halfExtents)
+        REFLECT_FIELD(tint)
+        REFLECT_FIELD(chop)
+        REFLECT_FIELD(swimmable)
+    REFLECT_END()
+};
+
 // A CPU particle emitter description. Curves are start/end pairs (linear
 // over lifetime) in v1 — append richer keys later if a vertical needs them.
 struct ParticleForm : Form {

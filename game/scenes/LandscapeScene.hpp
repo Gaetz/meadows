@@ -443,6 +443,21 @@ private:
     vector<LightShaft> lightShafts;
     rhi::PipelineHandle shaftPipeline {};
     u64 shaftShaderGeneration { 0 };
+    // Brick 32 (chantier 7.4): placed water volumes — one alpha-blended
+    // surface quad per volume + the camera-inside test feeding the
+    // tonemap submersion.
+    struct WaterQuad {
+        u64 entityId { 0 };
+        bool seen { false };
+        rhi::BufferHandle vertices {};
+        rhi::BufferHandle ubo {};
+        rhi::BindGroupHandle group {};
+    };
+    vector<WaterQuad> waterQuads;
+    rhi::PipelineHandle waterVolumePipeline {};
+    u64 waterVolumeShaderGeneration { 0 };
+    void drawWaterVolumes(engine::FrameContext& frame);
+    f32 effectiveWaterSurfaceY() const; // brick 32 submersion input
     bool shaftsUi { true };
     bool contactShadowsUi { true }; // brick 33a
     // Brick 33b/c: worker-baked terrain sun-shadow + sky-openness map.

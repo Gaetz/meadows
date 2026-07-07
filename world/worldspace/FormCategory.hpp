@@ -28,6 +28,7 @@ enum class FormCategory : u8 {
     Trigger,   // TriggerForm volumes
     Furniture, // gameplay::FurnitureForm (registered by gameplay's helper)
     Prefab,    // PrefabForm groups (expanded by the spawner, H8)
+    Water,     // data::WaterVolumeForm (brick 32, chantier 7.4)
 };
 
 // Maps a base form's reflected type id to its category. Explicit (no hidden

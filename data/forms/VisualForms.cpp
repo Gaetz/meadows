@@ -8,6 +8,7 @@ void registerVisualFormTypes(FormTypeRegistry& registry) {
     registry.registerFormType<MaterialForm>();
     registry.registerFormType<StaticForm>();
     registry.registerFormType<LightForm>();
+    registry.registerFormType<WaterVolumeForm>(); // brick 32
     registry.registerFormType<ParticleForm>();
     registry.registerFormType<CueForm>();
 }

@@ -237,6 +237,9 @@ void LandscapeScene::onEnter() {
     // Brick 34: dust light shafts.
     shaders->load("lightshaft", { { "FrameUbo", 0 }, { "ShaftUbo", 1 } });
     buildShaftPipeline(device);
+    // Brick 32: placed water surfaces.
+    shaders->load("watervolume",
+                  { { "FrameUbo", 0 }, { "WaterVolumeUbo", 1 } });
 
     // Chantier 4 B2: the RmlUi game UI (screens from UiScreenForm records,
     // documents through the plugins' ui/ roots).
@@ -687,6 +690,17 @@ void LandscapeScene::onExit() {
     lightShafts.clear();
     device.destroyPipeline(shaftPipeline);
     shaftPipeline = {};
+    // Brick 32: water quads.
+    for (WaterQuad& quad : waterQuads) {
+        if (quad.vertices.id != 0) {
+            device.destroyBuffer(quad.vertices);
+            device.destroyBindGroup(quad.group);
+            device.destroyBuffer(quad.ubo);
+        }
+    }
+    waterQuads.clear();
+    device.destroyPipeline(waterVolumePipeline);
+    waterVolumePipeline = {};
     // B6 NPCs: GPU state per NPC, then the CPU-side rig cache.
     for (auto& npc : npcs) {
         destroyNpc(device, *npc);
@@ -4540,6 +4554,119 @@ void LandscapeScene::drawLightShafts(engine::FrameContext& frame,
     }
 }
 
+f32 LandscapeScene::effectiveWaterSurfaceY() const {
+    // Brick 32: the water surface the CAMERA sits under, if any — sea
+    // level outdoors, a volume's top when inside one (any worldspace),
+    // "dry" otherwise. Feeds the tonemap submersion.
+    f32 surface = interiorMode ? -1.0e6f : terrain.params.seaLevel;
+    const Vec3 eye = flyCamera.camera.position;
+    world.handle()
+        .query<const world::Transform, const world::WaterVolume>()
+        .each([&](flecs::entity, const world::Transform& transform,
+                  const world::WaterVolume& volume) {
+            const Vec3 d = eye - transform.position;
+            if (std::abs(d.x) <= volume.halfExtents.x &&
+                std::abs(d.z) <= volume.halfExtents.z && d.y >= 0.0f &&
+                d.y <= volume.halfExtents.y * 2.0f) {
+                surface = glm::max(
+                    surface,
+                    transform.position.y + volume.halfExtents.y * 2.0f);
+            }
+        });
+    return surface;
+}
+
+void LandscapeScene::drawWaterVolumes(engine::FrameContext& frame) {
+    if (shaders->generation("watervolume") != waterVolumeShaderGeneration ||
+        waterVolumePipeline.id == 0) {
+        if (waterVolumePipeline.id != 0) {
+            frame.device.destroyPipeline(waterVolumePipeline);
+        }
+        waterVolumePipeline = frame.device.createPipeline(
+            { .shader = shaders->get("watervolume"),
+              .vertexBuffers =
+                  { { .stride = 3 * sizeof(f32),
+                      .attributes = { { .location = 0,
+                                        .format = rhi::VertexFormat::F32x3,
+                                        .offset = 0 } } } },
+              .blend = rhi::BlendMode::Alpha,
+              .depth = { .testEnable = true,
+                         .writeEnable = false,
+                         .compare = rhi::CompareFunc::Less },
+              .cull = rhi::CullMode::None });
+        waterVolumeShaderGeneration = shaders->generation("watervolume");
+    }
+    for (WaterQuad& quad : waterQuads) {
+        quad.seen = false;
+    }
+    bool any = false;
+    world.handle()
+        .query<const world::Transform, const world::WaterVolume>()
+        .each([&](flecs::entity e, const world::Transform& transform,
+                  const world::WaterVolume& volume) {
+            WaterQuad* slot = nullptr;
+            for (WaterQuad& quad : waterQuads) {
+                if (quad.entityId == e.id()) {
+                    slot = &quad;
+                    break;
+                }
+            }
+            if (!slot) {
+                waterQuads.push_back({ e.id() });
+                slot = &waterQuads.back();
+            }
+            slot->seen = true;
+            if (slot->vertices.id == 0) {
+                // The box TOP face, two triangles in world space.
+                const Vec3 c = transform.position +
+                               Vec3 { 0.0f, volume.halfExtents.y * 2.0f,
+                                      0.0f };
+                const f32 hx = volume.halfExtents.x;
+                const f32 hz = volume.halfExtents.z;
+                const f32 verts[18] = {
+                    c.x - hx, c.y, c.z - hz, c.x + hx, c.y, c.z - hz,
+                    c.x + hx, c.y, c.z + hz, c.x - hx, c.y, c.z - hz,
+                    c.x + hx, c.y, c.z + hz, c.x - hx, c.y, c.z + hz,
+                };
+                slot->vertices = frame.device.createBuffer(
+                    { .usage = rhi::BufferUsage::Vertex,
+                      .size = sizeof(verts) },
+                    verts);
+                slot->ubo = frame.device.createBuffer(
+                    { .usage = rhi::BufferUsage::Uniform,
+                      .size = sizeof(Vec4),
+                      .dynamic = true },
+                    nullptr);
+                slot->group = frame.device.createBindGroup(
+                    { .entries = { { .binding = 1,
+                                     .buffer = slot->ubo } } });
+                const Vec4 tint { volume.tint, volume.chop };
+                frame.device.updateBuffer(slot->ubo, &tint, sizeof(tint),
+                                          0);
+            }
+            if (!any) {
+                frame.cmd.setPipeline(waterVolumePipeline);
+                frame.cmd.setBindGroup(0, frameBindGroup);
+                any = true;
+            }
+            frame.cmd.setBindGroup(1, slot->group);
+            frame.cmd.setVertexBuffer(0, slot->vertices);
+            frame.cmd.draw(6);
+        });
+    for (auto it = waterQuads.begin(); it != waterQuads.end();) {
+        if (!it->seen) {
+            if (it->vertices.id != 0) {
+                frame.device.destroyBuffer(it->vertices);
+                frame.device.destroyBindGroup(it->group);
+                frame.device.destroyBuffer(it->ubo);
+            }
+            it = waterQuads.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void LandscapeScene::buildCasterPipelines(rhi::Device& device) {
     if (meshCasterPipeline.id != 0) {
         device.destroyPipeline(meshCasterPipeline);
@@ -4912,6 +5039,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     frameData.sunGlowColor.w = gradingUi ? gradeVibranceUi : 0.0f;
     frameData.zenithColor.w = gradingUi ? gradeSplitToneUi : 0.0f;
     frameData.horizonColor.w = gradingUi ? gradeContrastUi : 1.0f;
+    // Brick 32: the effective water surface above the camera (sea /
+    // volume top / dry) — the tonemap submersion input.
+    frameData.submersionInfo.x = effectiveWaterSurfaceY();
     // 33b/c: the terrain light map info (w = strength, 0 until the first
     // bake lands or when toggled off / indoors).
     frameData.terrainLightInfo = terrainLightMap.info();
@@ -5102,7 +5232,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         if (!interiorMode) {
             sky.draw(frame.cmd, frameBindGroup); // background only
         }
-        // Brick 34: additive dust shafts, after every opaque.
+        // Brick 32: placed water surfaces (alpha), then brick 34:
+        // additive dust shafts — both after every opaque.
+        drawWaterVolumes(frame);
         drawLightShafts(frame, skyState.sunColor);
         frame.cmd.endRenderPass();
     }

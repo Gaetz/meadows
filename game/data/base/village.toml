@@ -1750,6 +1750,29 @@ baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
 cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [11.8, 2.6, -2.0]
 
+# Brick 32: the flooded far strip of the hall — a placed water volume
+# whose top face (y = 1) is the surface; wading in submerges the camera
+# (the tonemap reads the volume, not sea level). The dungeon-water bench.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000130"
+type = "WaterVolumeForm"
+new = true
+[records.fields]
+editorId = "HallFloodWater"
+displayName = "Dark water"
+halfExtents = [3.9, 0.5, 1.4]
+tint = [0.06, 0.16, 0.18]
+chop = 0.35
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000131"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000130"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [8.0, 0.0, -10.4]
+
 # A dying brazier in the far corner — deep red, low, restless: how does a
 # barely-there source read against the dark?
 [[records]]

@@ -48,6 +48,10 @@ struct FrameUniforms {
     // Brick 33b/c (APPENDED — the UBO lesson): the terrain light map.
     Vec4 terrainLightInfo {}; // xy = map center (world XZ), z = 1/span,
                               // w = strength (0 = feature off)
+    // Brick 32 (APPENDED): x = the EFFECTIVE water surface Y above the
+    // camera (sea level outdoors, a volume's top when inside one,
+    // -1e6 = dry) — the tonemap submersion reads this, not seaLevel.
+    Vec4 submersionInfo { -1.0e6f, 0.0f, 0.0f, 0.0f };
 };
 
 } // namespace render

@@ -37,4 +37,7 @@ layout(std140, binding = 0) uniform FrameUbo {
     // Brick 33b/c (APPENDED — the UBO lesson): terrain light map.
     vec4 uTerrainLightInfo; // xy = map center (world XZ), z = 1/span,
                             // w = strength (0 = feature off)
+    // Brick 32 (APPENDED): x = effective water surface Y for the camera
+    // (sea outdoors, a volume top inside one, -1e6 = dry).
+    vec4 uSubmersionInfo;
 };

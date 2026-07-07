@@ -13,6 +13,7 @@ void registerCoreCategories(FormCategoryRegistry& registry) {
     registry.set<data::ActorForm>(FormCategory::Actor);
     registry.set<data::StaticForm>(FormCategory::Static);
     registry.set<data::LightForm>(FormCategory::Light);
+    registry.set<data::WaterVolumeForm>(FormCategory::Water); // brick 32
     registry.set<MarkerForm>(FormCategory::Marker);
     registry.set<TriggerForm>(FormCategory::Trigger);
     registry.set<DoorForm>(FormCategory::Door); // chantier 2 B7
