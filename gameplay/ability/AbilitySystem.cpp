@@ -46,8 +46,4 @@ f32 currentValueOf(const AbilitySystem& system, u32 attrId) {
     return it != system.current.end() ? it->second : 0.0f;
 }
 
-void setCurrentValue(AbilitySystem& system, u32 attrId, f32 value) {
-    system.current[attrId] = value;
-}
-
 } // namespace gameplay

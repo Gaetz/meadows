@@ -94,7 +94,7 @@ TEST_CASE("equipment: weaponDamageEvent scales by the attacker's attribute") {
     weapon.postureDamage = 10.0f;
 
     AbilitySystem sys;
-    setCurrentValue(sys, attr("strength"), 20.0f); // scale = 1 + 2 × 20/100 = 1.4
+    sys.current[attr("strength")] = 20.0f; // seed overlay directly (test only); scale = 1 + 2 × 20/100 = 1.4
 
     const DamageEvent event = weaponDamageEvent(weapon, sys);
     REQUIRE(event.channels.size() == 1);

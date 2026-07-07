@@ -71,6 +71,5 @@ bool setBaseValue(AttributeSet& set, u32 attrId, f32 value);
 void initializeCurrent(AbilitySystem& system, const AttributeSet& set);
 
 f32 currentValueOf(const AbilitySystem& system, u32 attrId); // 0 if absent
-void setCurrentValue(AbilitySystem& system, u32 attrId, f32 value);
 
 } // namespace gameplay

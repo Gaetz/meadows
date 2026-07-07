@@ -27,7 +27,7 @@ TEST_CASE("attributes: current overlay is seeded from base, then independent") {
     CHECK(currentValueOf(system, attr("essence")) == 50.0f);
     CHECK(currentValueOf(system, attr("doesNotExist")) == 0.0f);
 
-    setCurrentValue(system, attr("health"), 30.0f);
+    system.current[attr("health")] = 30.0f; // poke the overlay directly (test only)
     CHECK(currentValueOf(system, attr("health")) == 30.0f);
     CHECK(baseValueOf(set, attr("health")) == 80.0f); // base untouched
 }
