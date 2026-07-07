@@ -24,8 +24,11 @@ out float vGust; // wind wave strength at this blade (tip lightening)
 out vec3 vNormal;
 out vec3 vWorldPos;
 
-const float kBladeHeight = 0.68;    // meters at scale 1
-const float kBladeHalfWidth = 0.05;
+// 7.8 follow-up, matched to the reference's Properties: blade width
+// 0.02-0.05 TOTAL (we draw half-width × the per-blade variation below),
+// forward bend 0.38 with a pow(t, 2) curve.
+const float kBladeHeight = 0.62;     // meters at scale 1
+const float kBladeHalfWidth = 0.022; // -> 0.03-0.055 m total per blade
 
 float hash21(vec2 p) {
     p = fract(p * vec2(234.34, 435.345));
@@ -67,18 +70,19 @@ void main() {
     float gust = (wave * 0.34 + flutter) * uWindInfo.y;
     vGust = clamp(wave * uWindInfo.y, 0.0, 1.0);
 
-    // Curvature: the blade arcs forward (t^1.5 keeps the root planted and
-    // rounds the tip), lean gives each blade its own settled arc; wind
+    // Curvature: pow(t, 2) forward arc (the reference's _BladeBendCurve
+    // default), forward amount 0.38 ± the per-blade bend variation; wind
     // bends on top along its own direction.
-    float curveT = t * sqrt(t);
-    vec3 bend = faceDir * ((0.22 + aParams.w * 0.35) * curveT) +
+    float curveT = t * t;
+    vec3 bend = faceDir * ((0.38 * (0.8 + aParams.w * 0.4)) * curveT) +
                 windDir * (gust * curveT);
 
-    // Edge-on thickening: when the camera looks down the blade's plane,
-    // widen it so it keeps a visible body (the geoshader trick, cheap).
+    // Per-blade width variation (the reference's WidthMin..WidthMax) +
+    // edge-on thickening so thin blades keep a body seen down the plane.
     vec3 toCam = normalize(uCameraPos.xyz - aPosScale.xyz);
     float edge = 1.0 - abs(dot(toCam.xz, normalize(faceDir.xz)));
-    float width = kBladeHalfWidth * (1.0 + edge * 0.6);
+    float width = kBladeHalfWidth * mix(0.7, 1.3, aParams.z) *
+                  (1.0 + edge * 0.35);
 
     vec3 world = aPosScale.xyz + sideDir * (aBlade.x * width) +
                  vec3(0.0, height * t, 0.0) + bend * height;

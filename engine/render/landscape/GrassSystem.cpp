@@ -14,7 +14,10 @@ namespace render {
 namespace {
 
 constexpr const char* kGrassShader = "grass";
-constexpr f32 kBladeSpacing = 0.38f; // meters between candidates (in-patch)
+// 7.8 follow-up (dev: "many more, thinner blades" — the reference packs
+// one blade per ~0.1 units): doubled density; push lower with an eye on
+// the Release FPS, the instance count scales as 1/spacing².
+constexpr f32 kBladeSpacing = 0.27f; // meters between candidates (in-patch)
 
 // BotW-style patch layout: grass gathers in dense clumps with bare meadow
 // between them. Two noise scales — broad patches and small clump detail —
@@ -45,21 +48,27 @@ struct HashRng {
     }
 };
 
-// One blade = a tapered 5-triangle ribbon, REAL geometry (no alpha test):
+// One blade = a tapered 7-triangle ribbon, REAL geometry (no alpha test):
 // vertex = (side in [-1,1] with the taper baked in, t along the blade).
-// The vertex shader gives it width, height, lean, and wind.
+// 7.8: matched to the daniel-ilett reference — BLADE_SEGMENTS 4 with a
+// LINEAR taper to a sharp point (width × (1 - t)), which is what reads
+// as "thin blades"; the vertex shader gives it width, height, curvature
+// and wind.
 constexpr f32 kBladeVertices[] = {
     // side,  t
     -1.00f, 0.00f,
      1.00f, 0.00f,
-    -0.82f, 0.35f,
-     0.82f, 0.35f,
-    -0.50f, 0.70f,
-     0.50f, 0.70f,
-     0.00f, 1.00f, // rounded-off tip
+    -0.75f, 0.25f,
+     0.75f, 0.25f,
+    -0.50f, 0.50f,
+     0.50f, 0.50f,
+    -0.25f, 0.75f,
+     0.25f, 0.75f,
+     0.00f, 1.00f, // the point
 };
 constexpr u16 kBladeIndices[] = {
-    0, 1, 2,  1, 3, 2,  2, 3, 4,  3, 5, 4,  4, 5, 6,
+    0, 1, 2,  1, 3, 2,  2, 3, 4,  3, 5, 4,
+    4, 5, 6,  5, 7, 6,  6, 7, 8,
 };
 
 } // namespace
