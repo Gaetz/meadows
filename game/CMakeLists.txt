@@ -28,6 +28,7 @@ add_executable(true-adventurer
     scenes/CombatArenaScene.cpp
     scenes/EditorScene.cpp
     scenes/LandscapeScene.cpp
+    scenes/WeatherController.cpp
     scenes/UiDemoScene.cpp
     ui/CharacterStatsPanel.cpp
     ui/ConsolePanel.cpp

@@ -16,6 +16,7 @@
 #include "game/LevelEditor.hpp"
 #include "game/MeshCache.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
+#include "game/scenes/WeatherController.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
@@ -109,17 +110,11 @@ private:
     data::FormTypeRegistry formTypes;
     LandscapeTuningForm tuning;
 
-    // Weather (brick 24): precreated states from landscape.toml, crossfaded
-    // over ~weatherDuration seconds. The blend writes into the same UI
-    // members the sliders edit, so the panel shows live values and manual
-    // tweaking resumes once the transition lands.
-    vector<WeatherForm> weathers;
-    i32 weatherSelected { -1 };  // index into weathers, -1 = manual
-    WeatherForm weatherFrom;     // captured state at transition start
-    f32 weatherBlend { 1.0f };   // 1 = arrived
-    f32 weatherDuration { 30.0f };
-    WeatherForm captureCurrentWeather() const;
-    void applyWeather(const WeatherForm& w);
+    // Weather (brick 24, extracted to WeatherController brick 3b): precreated
+    // states from landscape.toml, crossfaded into `atmos` over its duration.
+    // The blend writes the same fields the sliders edit, so the panel shows
+    // live values and manual tweaking resumes once the transition lands.
+    WeatherController weather;
 
     render::FlyCamera flyCamera;
     f32 timeSeconds { 0.0f };

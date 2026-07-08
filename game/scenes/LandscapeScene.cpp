@@ -138,11 +138,11 @@ void LandscapeScene::onEnter() {
     LOG_INFO("Plugin stack: {} plugins, {} forms",
              pluginStack.plugins.size(), forms.count());
     tuning = resolveLandscapeTuning(forms);
-    weathers = resolveWeatherForms(forms);
+    weather.init(forms);
     LOG_INFO("Landscape tuning: seed={} seaLevel={} fogDensity={} "
              "coverage={} | {} weather states",
              tuning.terrainSeed, tuning.seaLevel, tuning.fogDensity,
-             tuning.cloudCoverage, weathers.size());
+             tuning.cloudCoverage, weather.states().size());
 
     // B8: the authored-terrain overlay rides inside TerrainParams — every
     // consumer (chunk workers, scatter, collision, snaps) is patched at
@@ -1134,48 +1134,9 @@ void LandscapeScene::update(f32 dt) {
     // drift/sway smoothly instead of teleporting the pattern.
     windTime += dt * glm::max(atmos.windStrength, 0.05f);
 
-    // Weather crossfade: every parameter slides from the captured start
-    // state to the selected weather over weatherDuration seconds.
-    if (weatherBlend < 1.0f && weatherSelected >= 0 &&
-        weatherSelected < static_cast<i32>(weathers.size())) {
-        weatherBlend = glm::min(
-            weatherBlend + dt / glm::max(weatherDuration, 0.01f), 1.0f);
-        const WeatherForm& to = weathers[weatherSelected];
-        const f32 t = glm::smoothstep(0.0f, 1.0f, weatherBlend);
-        WeatherForm blended;
-        const auto lerp = [t](f32 a, f32 b) { return glm::mix(a, b, t); };
-        blended.cloudCoverage = lerp(weatherFrom.cloudCoverage,
-                                     to.cloudCoverage);
-        blended.cloudScale = lerp(weatherFrom.cloudScale, to.cloudScale);
-        blended.cloudHeight = lerp(weatherFrom.cloudHeight, to.cloudHeight);
-        blended.cloudShadowStrength = lerp(weatherFrom.cloudShadowStrength,
-                                           to.cloudShadowStrength);
-        blended.fogDensity = lerp(weatherFrom.fogDensity, to.fogDensity);
-        blended.fogHeightFalloff = lerp(weatherFrom.fogHeightFalloff,
-                                        to.fogHeightFalloff);
-        blended.fogLowBoost = lerp(weatherFrom.fogLowBoost, to.fogLowBoost);
-        blended.fogStart = lerp(weatherFrom.fogStart, to.fogStart);
-        blended.sunIntensity = lerp(weatherFrom.sunIntensity,
-                                    to.sunIntensity);
-        blended.ambientIntensity = lerp(weatherFrom.ambientIntensity,
-                                        to.ambientIntensity);
-        blended.saturation = lerp(weatherFrom.saturation, to.saturation);
-        blended.warmth = lerp(weatherFrom.warmth, to.warmth);
-        blended.volumetricIntensity = lerp(weatherFrom.volumetricIntensity,
-                                           to.volumetricIntensity);
-        blended.godRayIntensity = lerp(weatherFrom.godRayIntensity,
-                                       to.godRayIntensity);
-        blended.bloomIntensity = lerp(weatherFrom.bloomIntensity,
-                                      to.bloomIntensity);
-        blended.windStrength = lerp(weatherFrom.windStrength,
-                                    to.windStrength);
-        blended.waveChop = lerp(weatherFrom.waveChop, to.waveChop);
-        blended.stormFront = lerp(weatherFrom.stormFront,
-                                  to.stormFront); // brick 30
-        blended.rainIntensity = lerp(weatherFrom.rainIntensity,
-                                     to.rainIntensity); // brick 31
-        applyWeather(blended);
-    }
+    // Weather crossfade (owned by WeatherController): slides `atmos` from the
+    // captured start state to the selected weather over its duration.
+    weather.update(atmos, dt);
 
     // B5: F toggles first-person Play mode (unless ImGui owns the
     // keyboard). In Play the player drives; Fly stays the dev camera.
@@ -2518,7 +2479,7 @@ void LandscapeScene::performSave(const str& slot) {
     state.playerYaw = flyCamera.camera.yaw;
     state.playerPitch = flyCamera.camera.pitch;
     state.playMode = playMode;
-    state.weatherSelected = weatherSelected;
+    state.weatherSelected = weather.selected();
     plugin.records.push_back(gameplay::createRecord(
         state, *core::Guid::fromString(
                    "5a5e0000-0000-4000-8000-0000000000ff")));
@@ -4933,52 +4894,6 @@ void LandscapeScene::buildMeshPipeline(rhi::Device& device) {
     meshShaderGeneration = shaders->generation("mesh");
 }
 
-WeatherForm LandscapeScene::captureCurrentWeather() const {
-    WeatherForm w;
-    w.cloudCoverage = atmos.cloudCoverage;
-    w.cloudScale = atmos.cloudScale;
-    w.cloudHeight = atmos.cloudHeight;
-    w.cloudShadowStrength = atmos.cloudShadow;
-    w.fogDensity = atmos.fogDensity;
-    w.fogHeightFalloff = atmos.fogHeightFalloff;
-    w.fogLowBoost = atmos.fogLowBoost;
-    w.fogStart = atmos.fogStart;
-    w.sunIntensity = atmos.sunIntensity;
-    w.ambientIntensity = atmos.ambientIntensity;
-    w.saturation = atmos.saturation;
-    w.warmth = atmos.warmth;
-    w.volumetricIntensity = atmos.volumetric;
-    w.godRayIntensity = atmos.godRayIntensity;
-    w.bloomIntensity = atmos.bloomIntensity;
-    w.windStrength = atmos.windStrength;
-    w.waveChop = atmos.waveChop;
-    w.stormFront = atmos.stormFront;     // brick 30
-    w.rainIntensity = atmos.rainIntensity; // brick 31
-    return w;
-}
-
-void LandscapeScene::applyWeather(const WeatherForm& w) {
-    atmos.cloudCoverage = w.cloudCoverage;
-    atmos.cloudScale = w.cloudScale;
-    atmos.cloudHeight = w.cloudHeight;
-    atmos.cloudShadow = w.cloudShadowStrength;
-    atmos.fogDensity = w.fogDensity;
-    atmos.fogHeightFalloff = w.fogHeightFalloff;
-    atmos.fogLowBoost = w.fogLowBoost;
-    atmos.fogStart = w.fogStart;
-    atmos.sunIntensity = w.sunIntensity;
-    atmos.ambientIntensity = w.ambientIntensity;
-    atmos.saturation = w.saturation;
-    atmos.warmth = w.warmth;
-    atmos.volumetric = w.volumetricIntensity;
-    atmos.godRayIntensity = w.godRayIntensity;
-    atmos.bloomIntensity = w.bloomIntensity;
-    atmos.windStrength = w.windStrength;
-    atmos.waveChop = w.waveChop;
-    atmos.stormFront = w.stormFront;       // brick 30
-    atmos.rainIntensity = w.rainIntensity; // brick 31
-}
-
 void LandscapeScene::render(engine::FrameContext& frame) {
     shaders->pollHotReload(frame.dt);
     terrain.refreshPipeline(frame.device, *shaders);
@@ -5743,30 +5658,26 @@ void LandscapeScene::drawSkyUi() {
     ImGui::SameLine();
     ImGui::TextDisabled("day %d, x%.0f", static_cast<int>(gameClock.gameDays()),
                         gameClock.timescale);
-    if (!weathers.empty()) {
+    if (!weather.states().empty()) {
         // "(manual)" entry + one per WeatherForm, separated by '\0' as
         // ImGui::Combo expects (c_str() supplies the double terminator).
         str items = "(manual)";
         items.push_back('\0');
-        for (const WeatherForm& w : weathers) {
+        for (const WeatherForm& w : weather.states()) {
             items += w.editorId;
             items.push_back('\0');
         }
-        int selected = weatherSelected + 1;
+        int selected = weather.selected() + 1;
         if (ImGui::Combo("Weather", &selected, items.c_str())) {
-            weatherSelected = selected - 1;
-            if (weatherSelected >= 0) {
-                // Depart from whatever is on screen right now — mid-fade
-                // switches stay continuous.
-                weatherFrom = captureCurrentWeather();
-                weatherBlend = 0.0f;
-            }
+            // Depart from whatever is on screen right now — mid-fade switches
+            // stay continuous.
+            weather.beginTransition(selected - 1, atmos);
         }
-        ImGui::SliderFloat("Transition (s)", &weatherDuration, 1.0f, 120.0f,
+        ImGui::SliderFloat("Transition (s)", &weather.duration(), 1.0f, 120.0f,
                            "%.0f", ImGuiSliderFlags_Logarithmic);
-        if (weatherBlend < 1.0f && weatherSelected >= 0) {
+        if (weather.transitioning()) {
             ImGui::SameLine();
-            ImGui::Text("%.0f%%", weatherBlend * 100.0f);
+            ImGui::Text("%.0f%%", weather.blend() * 100.0f);
         }
         ImGui::SliderFloat("Wind strength", &atmos.windStrength, 0.0f, 2.5f,
                            "%.2f");
