@@ -42,8 +42,45 @@ buildée + 279 tests verts) :
   binaire↔ImGui↔Lua), valueRepr n'est pas valueToString, et les deux clones ne sont
   pas un doublon. Le vrai gain livré : exhaustivité compilée du dispatch `Value`
   (filet sur le seam §5) + la règle §5 diff en un seul endroit.
-- **Batch 3 (structurel : décomposition LandscapeScene, seam Phase-5)** — haute valeur
-  mais touche l'architecture ; à faire en session supervisée (CLAUDE.md §10).
+- **Batch 3 (structurel : décomposition LandscapeScene, seam Phase-5)** — **EN COURS**
+  (session supervisée, cadence brique-par-brique ; LandscapeScene n'a pas de couverture
+  headless → build OK → validation en jeu par le dev → commit). **État au 2026-07-08 :**
+  - **Fait & commité :**
+    - Architecture des 3 modes de jeu (Play/Spectator/Edit) : enum `SceneMode`,
+      `simPaused`, hotkeys F2/F3, Escape→`lastActiveMode` (`b97d2b5`, `fa40956`).
+    - **U4-5 — `SceneEditor` + `TerrainSculptTool`** extraits derrière `EditorContext`/
+      `SculptContext` (`f20a7aa`, `9869fe6`) ; caméra éditeur (`FlyCamera::LookTrigger`),
+      sculpt local+live (remeshChunks/invalidateChunks).
+    - **U4-8 — `WeatherController`** (météo capture/apply/blend) — commité en session
+      antérieure.
+    - **U4-10 (partiel) — `StreamingController`** (ring cellules, snap, colliders, nav ;
+      contrat `StreamingContext`) `124ae87` ; **`NpcDirector`** (sous-système NPC complet :
+      structs Npc/RigData, liste, build/IA/schedule/combat/draw ; contrat `NpcContext`,
+      délégateurs fins ; la scène lit via `npcDirector.npcs()`) `533edc9`.
+  - **Bugs open-world corrigés au passage** (pré-existants, PAS des régressions — chemin
+    save intact vs la décompo ; prouvés par diff + tests) : régénération ressuscitant les
+    morts (`isDead` non branché dans `tickGameTime`) `6e5b198` ; position runtime non
+    réappliquée au reload de cellule (`PendingSaveLayer::applyReferenceOverrides`) `5a1787f`.
+    Nouveau test `tests/DeathPersistenceTest.cpp` + cas position dans `CellDeltaTest.cpp`.
+  - **Reste ouvert (Batch 3), ordre suggéré (risque croissant) :**
+    1. **U4-10 (suite)** — `InteractionController` (`updateInteraction`/`performTravel`/
+       `performRest`/`performWait`/prompts, ~217 l.) : prochaine brique naturelle.
+    2. **U4-9** — `GameHud`/`UiPresenter` (les `push*Model` RmlUi, chantier 4).
+    3. **U4-1 (suite)** — sous-systèmes restants du god-object.
+    4. **U4-2 + U4-4 + U4-6** — **le plus structurant, à garder pour la fin** :
+       `LandscapeRenderer` qui possède les systèmes `render::*`, les ~40 handles GPU
+       (wrapper RAII, U4-4), l'assemblage `FrameUniforms` (U4-6), et **consomme un
+       `RenderSnapshot` étendu au lieu du World vivant (U4-2, le finding #1)**.
+    5. Transverses hors-U4 : **U3-1** (dédup ring streaming Terrain/Grass/Veg),
+       **U5-3** (agrégateur d'enregistrement des tags runtime).
+  - **Hors-audit, planifié post-audit :** chantier « cellules extérieures implicites »
+    (`docs/IMPLICIT-CELLS.md`, lié dans MEADOWS-PLAN §chantier 2, commit `f0f7c00`) —
+    n'impacte aucun finding, à faire APRÈS l'audit.
+  - **Comment reprendre :** lire ce bloc + le finding visé dans la table §0 + les mémoires
+    `project-inengine-modes-vision` et `project-codebase-audit-2026-07-07`. Chaque brique :
+    extraire derrière un contrat (`*Context`, cf. Editor/Streaming/Npc), build via
+    `cmake --build cmake-build-debug --target true-adventurer` (env vcvars64), **ne PAS
+    commiter avant validation en jeu par le dev**.
 
 > Note build : le suivi de dépendances de headers de `cmake-build-debug` est bien
 > configuré (`CMAKE_CXX_CL_SHOWINCLUDES_PREFIX` détecté en français). Le « ninja: no
