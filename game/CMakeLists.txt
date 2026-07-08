@@ -29,6 +29,7 @@ add_executable(true-adventurer
     scenes/EditorScene.cpp
     scenes/LandscapeScene.cpp
     scenes/SceneEditor.cpp
+    scenes/StreamingController.cpp
     scenes/TerrainSculptTool.cpp
     scenes/WeatherController.cpp
     scenes/UiDemoScene.cpp

@@ -452,11 +452,7 @@ void LandscapeScene::setupWorldAndStreaming() {
                     .query<const world::Transform, const world::DoorTarget>();
     interactQuery =
         world.handle().query<const world::Transform, const world::RefId>();
-    colliderQuery =
-        world.handle()
-            .query<const world::Transform, const world::RefId,
-                   const world::MeshRender>();
-    nonCollidable.clear();
+    streaming.init(world);
     categories = world::FormCategoryRegistry {};
     world::registerCoreCategories(categories);
     spawner = world::Spawner {};
@@ -596,9 +592,10 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
     if (activeWorldspace.isValid()) { // a loaded save may start indoors
         cellStreamer->update(activeWorldspace, startFocus.x, startFocus.z);
     }
-    snapCellEntities();
+    const StreamingContext sctx = makeStreamingContext();
+    streaming.snapCellEntities(sctx);
     refreshNpcs(device);
-    refreshNavObstacles();
+    streaming.refreshNavObstacles(sctx);
 
     // Brick 23: swap one procedural rock variant for an authored CC0 glTF
     // rock (moon_rock_02, Poly Haven). Missing file = procedural fallback.
@@ -843,10 +840,7 @@ void LandscapeScene::onExit() {
     mode = SceneMode::Spectator;
     player.reset();
     debugCapsule.reset();
-    for (const auto& [entity, body] : staticColliders) {
-        physics->removeBody(body);
-    }
-    staticColliders.clear();
+    streaming.reset(physics.get());
     vegCollision.reset();
     terrainCollision.reset();
     physics.reset();
@@ -1080,15 +1074,16 @@ void LandscapeScene::update(f32 dt) {
         // fade). Fixups are idempotent, re-run per loaded cell.
         if (cellStreamer->update(activeWorldspace, focus.x, focus.z, 2, 3,
                                  /*maxLoads=*/1)) {
-            snapCellEntities();
+            const StreamingContext sctx = makeStreamingContext();
+            streaming.snapCellEntities(sctx);
             refreshNpcs(engine->getDevice());
-            refreshNavObstacles();
+            streaming.refreshNavObstacles(sctx);
         }
     }
     {
         // B2: bodies follow spawns + mesh residency.
         core::FrameProbe::Scope probe { frameProbe, "colliders" };
-        updateStaticColliders();
+        streaming.updateStaticColliders(makeStreamingContext());
     }
     // The sky follows the clock UNCONDITIONALLY — it is presentation, not
     // sim. Gating it on !uiPaused made the wait menu look broken: +8 h
@@ -1363,7 +1358,7 @@ SculptContext LandscapeScene::makeSculptContext() {
                 *physics, terrain.params, &engine->getJobSystem());
             vegCollision = std::make_unique<VegetationCollision>(
                 *physics, terrain.params);
-            snapCellEntities();
+            streaming.snapCellEntities(makeStreamingContext());
         }
     };
 }
@@ -1622,10 +1617,11 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     interiorMode = cellForm->interior;
     cellStreamer->update(activeWorldspace, marker->position.x,
                          marker->position.z);
-    snapCellEntities();
+    const StreamingContext sctx = makeStreamingContext();
+    streaming.snapCellEntities(sctx);
     refreshNpcs(engine->getDevice());
-    updateStaticColliders();
-    refreshNavObstacles();
+    streaming.updateStaticColliders(sctx);
+    streaming.refreshNavObstacles(sctx);
 
     // Fresh terrain tiles for the new space (none are built in interiors).
     terrainCollision = std::make_unique<TerrainCollision>(
@@ -2624,7 +2620,7 @@ void LandscapeScene::createConsole() {
         if (!entity.is_alive()) {
             return "'" + args + "' is not a spawnable category";
         }
-        snapCellEntities();
+        streaming.snapCellEntities(makeStreamingContext());
         refreshNpcs(engine->getDevice()); // actors need their rig/brain
         return "spawned " + args + " (transient — not saved)";
     });
@@ -3246,153 +3242,24 @@ const LandscapeScene::RigData* LandscapeScene::loadRig(
 // Chantier 2 B2: static colliders follow the spawned statics. Runs every
 // frame (cheap: map lookups + a small query) because meshes turn resident
 // asynchronously — a newcomer gets its body the frame its CPU data lands.
-void LandscapeScene::updateStaticColliders() {
-    if (!physics || !meshCache) {
-        return;
-    }
-    for (auto it = staticColliders.begin(); it != staticColliders.end();) {
-        if (!world.handle().is_alive(static_cast<flecs::entity_t>(it->first))) {
-            physics->removeBody(it->second);
-            it = staticColliders.erase(it);
-        } else {
-            ++it;
-        }
-    }
-    // Cook budget: a Jolt MeshShape cook is main-thread and expensive —
-    // a cell's worth of kit meshes turning resident in one frame used to
-    // cost 100+ ms (the frame-probe smoking gun). Two per frame in
-    // normal play, UNCAPPED while the travel fade holds the screen black
-    // (the fade exists to hide exactly this — and a starved budget once
-    // dropped the player through a not-yet-solid floor). NEAREST FIRST,
-    // so the ground underfoot is always the first body to exist.
-    u32 cookBudget =
-        (fadeDirection != 0 || fadeAlpha > 0.0f) ? 4096 : 2;
-    const Vec3 cookFocus = (mode == SceneMode::Play) && player ? player->position()
-                                              : flyCamera.camera.position;
-    struct CookCandidate {
-        f32 distSq;
-        u64 id;
-        const MeshCache::CpuMesh* cpu;
-        Vec3 position;
-        Quat rotation;
-        Vec3 scale;
+// Bundle the streaming fixups' systems for StreamingController this frame —
+// references into the scene plus the focus / fade / mode scalars. Rebuilt each
+// call (cheap: refs + scalars). See StreamingContext (audit U4-10).
+StreamingContext LandscapeScene::makeStreamingContext() {
+    const Vec3 focus = (mode == SceneMode::Play) && player
+                           ? player->position()
+                           : flyCamera.camera.position;
+    return StreamingContext {
+        world,
+        forms,
+        terrain.params,
+        physics.get(),
+        meshCache.get(),
+        navigator.get(),
+        focus,
+        /*fastCook=*/fadeDirection != 0 || fadeAlpha > 0.0f,
+        /*editorOwnsTransforms=*/mode == SceneMode::Edit,
     };
-    vector<CookCandidate> cooks;
-    colliderQuery.each(
-        [&](flecs::entity e, const world::Transform& transform,
-            const world::RefId& ref, const world::MeshRender& mesh) {
-            const u64 id = e.id();
-            if (staticColliders.contains(id) || nonCollidable.contains(id)) {
-                return;
-            }
-            // `collides` read through reflection: any base form declaring
-            // it opts in (StaticForm today, DoorForm...). The negative
-            // verdict is cached — reflection must not run per frame.
-            const data::Form* base = forms.get(ref.base);
-            const reflect::TypeInfo* type = forms.typeOf(ref.base);
-            if (!base || !type) {
-                nonCollidable.insert(id);
-                return;
-            }
-            const reflect::FieldInfo* field = type->findField("collides");
-            if (!field || field->kind != reflect::FieldKind::Bool ||
-                !std::get<bool>(field->get(base))) {
-                nonCollidable.insert(id);
-                return;
-            }
-            const MeshCache::CpuMesh* cpu = meshCache->cpuMesh(mesh.model);
-            if (!cpu) {
-                return; // still streaming — retried next frame
-            }
-            const Vec3 d = transform.position - cookFocus;
-            cooks.push_back({ glm::dot(d, d), id, cpu, transform.position,
-                              transform.rotation, transform.scale });
-        });
-    std::sort(cooks.begin(), cooks.end(),
-              [](const CookCandidate& a, const CookCandidate& b) {
-                  return a.distSq < b.distSq;
-              });
-    for (const CookCandidate& cook : cooks) {
-        if (cookBudget == 0) {
-            break;
-        }
-        const phys::BodyId body = physics->addStaticMesh(
-            cook.cpu->positions.data(),
-            static_cast<u32>(cook.cpu->positions.size()),
-            cook.cpu->indices.data(),
-            static_cast<u32>(cook.cpu->indices.size()), cook.position,
-            cook.rotation, cook.scale);
-        if (body != 0) {
-            staticColliders.emplace(cook.id, body);
-            --cookBudget;
-        }
-    }
-}
-
-// Idempotent ground snap (chantier 2 B1): world Y = terrain height at
-// (x, z) + the reference's AUTHORED y (an offset above ground until the
-// level editor writes real heights). Safe to re-run after every cell
-// change; prefab-derived children (no base record) keep their expanded Y.
-// Skipped for: interior cells (no terrain — authored y is absolute) and
-// base forms with snapToGround = false (building modules on a pad).
-void LandscapeScene::snapCellEntities() {
-    // Entities changed (cell ring, travel, spawn): stale negative
-    // collider verdicts go with them.
-    nonCollidable.clear();
-    if ((mode == SceneMode::Edit)) {
-        return; // the editor owns transforms while it is active
-    }
-    const auto skipsSnap = [&](const world::ReferenceForm& reference,
-                               data::FormHandle baseHandle) {
-        if (const auto* cell =
-                forms.find<world::CellForm>(reference.cell);
-            cell && cell->interior) {
-            return true;
-        }
-        const data::Form* base = forms.get(baseHandle);
-        const reflect::TypeInfo* type = forms.typeOf(baseHandle);
-        if (base && type) {
-            if (const reflect::FieldInfo* field =
-                    type->findField("snapToGround");
-                field && field->kind == reflect::FieldKind::Bool &&
-                !std::get<bool>(field->get(base))) {
-                return true;
-            }
-        }
-        return false;
-    };
-    world.handle()
-        .query<world::Transform, const world::RefId,
-               const world::MeshRender>()
-        .each([&](flecs::entity, world::Transform& transform,
-                  const world::RefId& ref, const world::MeshRender&) {
-            const auto* reference =
-                forms.find<world::ReferenceForm>(ref.referenceId);
-            if (!reference || skipsSnap(*reference, ref.base)) {
-                return;
-            }
-            transform.position.y =
-                render::terrain::height(terrain.params, transform.position.x,
-                                        transform.position.z) +
-                reference->position.y;
-        });
-    // Lights too (no MeshRender): a torch's authored y is its height
-    // above the ground it stands on.
-    world.handle()
-        .query<world::Transform, const world::RefId,
-               const world::LightSource>()
-        .each([&](flecs::entity, world::Transform& transform,
-                  const world::RefId& ref, const world::LightSource&) {
-            const auto* reference =
-                forms.find<world::ReferenceForm>(ref.referenceId);
-            if (!reference || skipsSnap(*reference, ref.base)) {
-                return;
-            }
-            transform.position.y =
-                render::terrain::height(terrain.params, transform.position.x,
-                                        transform.position.z) +
-                reference->position.y;
-        });
 }
 
 void LandscapeScene::destroyNpc(rhi::Device& device, Npc& npc) {
@@ -3601,55 +3468,6 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
             }
         }
     }
-}
-
-// Chantier 3 B2: the navigator's obstacle set = the static colliders'
-// world AABBs, inflated by the agent radius. Refreshed on cell changes.
-void LandscapeScene::refreshNavObstacles() {
-    if (!navigator || !meshCache) {
-        return;
-    }
-    vector<world::TerrainNavigator::BlockingBox> boxes;
-    world.handle()
-        .query<const world::Transform, const world::MeshRender,
-               const world::RefId>()
-        .each([&](flecs::entity, const world::Transform& transform,
-                  const world::MeshRender& mesh, const world::RefId& ref) {
-            const data::Form* base = forms.get(ref.base);
-            const reflect::TypeInfo* type = forms.typeOf(ref.base);
-            if (!base || !type) {
-                return;
-            }
-            const reflect::FieldInfo* field = type->findField("collides");
-            if (!field || field->kind != reflect::FieldKind::Bool ||
-                !std::get<bool>(field->get(base))) {
-                return;
-            }
-            Vec3 lo { -0.5f }, hi { 0.5f };
-            if (const MeshCache::CpuMesh* cpu =
-                    meshCache->cpuMesh(mesh.model)) {
-                lo = cpu->boundsMin;
-                hi = cpu->boundsMax;
-            }
-            const Mat4 model =
-                glm::translate(Mat4 { 1.0f }, transform.position) *
-                glm::mat4_cast(transform.rotation) *
-                glm::scale(Mat4 { 1.0f }, transform.scale);
-            Vec3 wlo { 1e9f }, whi { -1e9f };
-            for (u32 i = 0; i < 8; ++i) {
-                const Vec3 corner { (i & 1) ? hi.x : lo.x,
-                                    (i & 2) ? hi.y : lo.y,
-                                    (i & 4) ? hi.z : lo.z };
-                const Vec3 w = Vec3 { model * Vec4 { corner, 1.0f } };
-                wlo = glm::min(wlo, w);
-                whi = glm::max(whi, w);
-            }
-            constexpr f32 kAgentRadius = 0.4f;
-            boxes.push_back({ wlo - Vec3 { kAgentRadius, 0.0f, kAgentRadius },
-                              whi + Vec3 { kAgentRadius, 0.0f,
-                                           kAgentRadius } });
-        });
-    navigator->setBlockingBoxes(std::move(boxes));
 }
 
 // Chantier 3 B3: re-evaluate the schedule every 10 game minutes; execute

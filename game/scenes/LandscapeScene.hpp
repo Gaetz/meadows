@@ -16,6 +16,7 @@
 #include "game/LevelEditor.hpp"
 #include "game/MeshCache.hpp"
 #include "game/scenes/SceneEditor.hpp"
+#include "game/scenes/StreamingController.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
 #include "game/scenes/WeatherController.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
@@ -198,8 +199,6 @@ private:
     // `world`; rebuilt right after it in onEnter.
     flecs::query<const world::Transform, const world::DoorTarget> doorQuery;
     flecs::query<const world::Transform, const world::RefId> interactQuery;
-    flecs::query<const world::Transform, const world::RefId,
-                 const world::MeshRender> colliderQuery;
 
     // Chantier 2 B1: cells stream around the player (synchronous ring —
     // async + persistence is the « persistance » chantier). References
@@ -385,7 +384,6 @@ private:
     const data::WeaponForm* banditWeapon { nullptr };
     f32 playerAttackCooldown { 0.0f };
     void tryPlayerAttack();
-    void snapCellEntities(); // idempotent ground snap (y = terrain + authored)
 
     // Chantier 2 B8: the authored-terrain overlay. IMMUTABLE once
     // published; the sculpt tool edits a working copy then publishes a
@@ -570,7 +568,6 @@ private:
     // Chantier 3 B2/B3: navigation + schedule execution.
     uptr<world::TerrainNavigator> navigator;
     gameplay::FurnitureOccupancy furnitureOccupancy;
-    void refreshNavObstacles();
     void updateNpcSchedule(Npc& npc, f32 hourOfDay);
     // Follows npc.path at walk speed x `speedScale`; returns true when
     // the path is finished (or empty).
@@ -584,15 +581,13 @@ private:
     // Trunks + rocks from the deterministic scatter (dev report 2026-07-07).
     uptr<VegetationCollision> vegCollision;
     uptr<phys::CharacterBody> debugCapsule;
-    // Chantier 2 B2: one Jolt mesh body per collidable spawned static,
-    // cooked from the MeshCache CPU copy once resident, dropped when the
-    // entity's cell unloads. Keyed by flecs entity id. `nonCollidable`
-    // is the negative verdict cache: entities whose base form says no
-    // (reflection) skip the per-frame re-check until the next cell change
-    // (snapCellEntities clears it).
-    std::unordered_map<u64, phys::BodyId> staticColliders;
-    std::unordered_set<u64> nonCollidable;
-    void updateStaticColliders();
+    // Chantier 2 B2 (extracted, audit U4-10): the cell-streaming fixups —
+    // ground snap, static-collider cook, nav obstacles — live in
+    // StreamingController behind a StreamingContext the scene builds each
+    // frame. NPC (re)building stays here (NpcDirector territory); the scene
+    // interleaves refreshNpcs between snap and nav to preserve order.
+    StreamingController streaming;
+    StreamingContext makeStreamingContext();
 
     // B5: first-person Play mode (the game IS first-person — acted
     // decision). The player is a kinematic capsule, the camera sits at eye
