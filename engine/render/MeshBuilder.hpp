@@ -1,7 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
-#include "engine/render/MeshData.hpp"
+#include "engine/assets/MeshData.hpp"
 
 namespace render {
 

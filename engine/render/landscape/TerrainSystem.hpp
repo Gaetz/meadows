@@ -6,7 +6,7 @@
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/render/Frustum.hpp"
-#include "engine/render/MeshData.hpp"
+#include "engine/assets/MeshData.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 

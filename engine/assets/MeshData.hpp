@@ -4,6 +4,12 @@
 
 #include "engine/core/Defines.hpp"
 
+// CPU mesh data, shared by the asset loaders (GltfMesh) and the renderer's
+// mesh builders. Home is engine/assets/ so the loaders never include
+// engine/render/ (audit U1-08 — the HeightPatches precedent, U7-1). The
+// namespace stays `render` to avoid churning every consumer; these are plain
+// CPU structs with no GPU dependency.
+
 namespace render {
 
 // One interleaved CPU vertex format shared by every landscape mesh (terrain,

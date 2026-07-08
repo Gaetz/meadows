@@ -243,7 +243,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U5-4 |   | U5 | med | factor | EditorScene.cpp:128-704 | 3 éditeurs dev réimplémentent la même forme (~700 l.) | L | non |
 | U1-05 | ✅ | U1 | low | réutil | fx/Particles.cpp:10-26 | `hashU32` dupliqué avec landscape scatter | S | oui |
 | U1-07 |   | U1 | low | propreté | Window.cpp:46 ; GlContext.cpp:43 | `new` littéral dans factories à ctor privé | S | non |
-| U1-08 |   | U1 | low | archi | assets/GltfMesh.hpp:8 | Loader asset dépend de `render::MeshData` | S | oui |
+| U1-08 | ✅ | U1 | low | archi | assets/GltfMesh.hpp:8 | Loader asset dépend de `render::MeshData` | S | oui |
 | U1-09 | ✅ | U1 | low | propreté | _old/renderer_test/ | Arbre dead-code au racine | S | oui |
 | U2-05 | ✅ | U2 | low | propreté | GlDeviceBase.cpp:46-63 | Compile compute mislabellé "fragment" dans le log | S | non |
 | U2-06 |   | U2 | low | factor | GlDevice41.cpp:9 ; GlDevice46.cpp:11 | Helpers libres re-déclarés à la main par sous-classe | S | non |

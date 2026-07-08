@@ -13,7 +13,7 @@
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/physics/Physics.hpp"     // phys::PhysicsWorld/CharacterBody/RayHit
-#include "engine/render/MeshData.hpp"     // render::SkinnedVertex
+#include "engine/assets/MeshData.hpp"     // render::SkinnedVertex
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
 #include "engine/rhi/CommandBuffer.hpp"

@@ -6,7 +6,7 @@
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Guid.hpp"
-#include "engine/render/MeshData.hpp"
+#include "engine/assets/MeshData.hpp"
 #include "engine/rhi/Device.hpp"
 
 namespace core {
