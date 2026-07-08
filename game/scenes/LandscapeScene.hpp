@@ -216,11 +216,18 @@ private:
     data::FormHandle activeWorldspace {};
     bool interiorMode { false };
 
-    // Chantier 2 B3/B4: level-editor mode (F6). CPU ray-AABB picking over
-    // MeshCache bounds, ImGuizmo gizmos, palette placement — every edit
-    // lands in the LevelEditor's EditSession (§5) and exports to
-    // data/mods/level-edits.toml, loaded on the next run.
-    bool editMode { false };
+    // In-game interaction mode. Play = first-person capsule; Spectator = free
+    // fly camera (the base for a future pause/photo mode); Edit = the level
+    // editor over the world (F6). Replaces the former playMode/editMode bools,
+    // making the states mutually exclusive; transitions go through
+    // enter/exitPlayMode and the F6 toggle. Target (see docs): the editor
+    // becomes a stacked SceneStack layer over the running game.
+    enum class SceneMode { Spectator, Play, Edit };
+    SceneMode mode { SceneMode::Spectator };
+
+    // Chantier 2 B3/B4: level editor. CPU ray-AABB picking over MeshCache
+    // bounds, ImGuizmo gizmos, palette placement — every edit lands in the
+    // LevelEditor's EditSession (§5) and exports to data/mods/level-edits.toml.
     uptr<LevelEditor> levelEditor;
     ecs::Entity editSelection {};
     core::Guid placementBase {}; // armed palette entry (0 = none)
@@ -600,7 +607,6 @@ private:
     // Stutter hunt: per-block frame breakdown, logged on spikes > 25 ms.
     core::FrameProbe frameProbe;
 
-    bool playMode { false };
     uptr<phys::CharacterBody> player;
     Vec3 playerVelocity { 0.0f }; // smoothed horizontal velocity (m/s)
     f32 jumpSpeed { 5.0f };       // fallback only — jumpPower stat drives it (C3)

@@ -526,7 +526,7 @@ void LandscapeScene::setupWorldAndStreaming() {
     }
     // B3/B4: a fresh edit session over the freshly resolved database.
     levelEditor = std::make_unique<LevelEditor>(forms, formTypes);
-    editMode = false;
+    mode = SceneMode::Spectator; // fresh on (re-)enter; Play set later if a save
     editSelection = ecs::Entity {};
     placementBase = core::Guid {};
     createConsole(); // chantier 4 B7: F8 in-game dev console
@@ -695,7 +695,7 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
             player = std::make_unique<phys::CharacterBody>(
                 *physics, 0.3f, 1.8f, feet + Vec3 { 0.0f, 0.25f, 0.0f });
             playerVelocity = Vec3 { 0.0f };
-            playMode = true;
+            mode = SceneMode::Play;
             engine->getWindow().setRelativeMouseMode(true);
             screenStack.show("hud");
             syncScreens();
@@ -841,7 +841,7 @@ void LandscapeScene::onExit() {
     cellLoader.reset();
     overworldHandle = data::FormHandle {};
     // B4/B5 physics: bodies -> tiles -> world (each references the previous).
-    playMode = false;
+    mode = SceneMode::Spectator;
     player.reset();
     debugCapsule.reset();
     for (const auto& [entity, body] : staticColliders) {
@@ -1054,7 +1054,7 @@ void LandscapeScene::update(f32 dt) {
         core::FrameProbe::Scope probe { frameProbe, "physics" };
         physics->tick(dt);
         if (!interiorMode) { // interiors have no terrain to collide with
-            const Vec3 focus = playMode && player
+            const Vec3 focus = (mode == SceneMode::Play) && player
                                    ? player->position()
                                    : flyCamera.camera.position;
             terrainCollision->update(focus);
@@ -1068,7 +1068,7 @@ void LandscapeScene::update(f32 dt) {
     // re-run the post-spawn fixups (idempotent snap + NPC refresh).
     if (cellStreamer && activeWorldspace.isValid() && !uiPaused) {
         core::FrameProbe::Scope probe { frameProbe, "cells" };
-        const Vec3 focus = playMode && player ? player->position()
+        const Vec3 focus = (mode == SceneMode::Play) && player ? player->position()
                                               : flyCamera.camera.position;
         // Chantier 5 B8: border crossings spread their spawns — one cell
         // per frame (the initial ring and travels load whole, behind the
@@ -1157,11 +1157,11 @@ void LandscapeScene::update(f32 dt) {
     // keyboard). In Play the player drives; Fly stays the dev camera.
     if (!uiPaused && engine->getInput().wasPressed(platform::Key::F) &&
         !ImGui::GetIO().WantCaptureKeyboard) {
-        playMode ? exitPlayMode() : enterPlayMode();
+        (mode == SceneMode::Play) ? exitPlayMode() : enterPlayMode();
     }
     if (uiPaused) {
         // A modal screen owns the input; cameras and player hold still.
-    } else if (playMode && player) {
+    } else if ((mode == SceneMode::Play) && player) {
         updatePlayer(dt);
     } else {
         // Don't steal the mouse from ImGui: clicking a panel must not
@@ -1268,13 +1268,13 @@ void LandscapeScene::enterPlayMode() {
     player =
         std::make_unique<phys::CharacterBody>(*physics, 0.3f, 1.8f, feet);
     playerVelocity = Vec3 { 0.0f };
-    playMode = true;
+    mode = SceneMode::Play;
     engine->getWindow().setRelativeMouseMode(true);
     screenStack.show("hud"); // the HUD overlay lives with Play mode
 }
 
 void LandscapeScene::exitPlayMode() {
-    playMode = false;
+    mode = SceneMode::Spectator;
     player.reset();
     engine->getWindow().setRelativeMouseMode(false);
     screenStack.close("hud");
@@ -1843,7 +1843,7 @@ void LandscapeScene::updateInteraction(f32 dt) {
     if (talkTimer > 0.0f) {
         talkTimer -= dt;
     }
-    if (fadeDirection == 0 && playMode && player) {
+    if (fadeDirection == 0 && (mode == SceneMode::Play) && player) {
         // Aim test: nearest interactable within reach, roughly in front
         // of the eye. One scorer for every kind.
         const Vec3 eye = player->position() + Vec3 { 0.0f, 1.7f, 0.0f };
@@ -2036,7 +2036,7 @@ void LandscapeScene::updateInteraction(f32 dt) {
         // the collider cook is budgeted — fading in before the floor
         // exists dropped the player through it (dev report 2026-07-07).
         // Timeout keeps an authoring hole from freezing the game black.
-        if (fadeAlpha >= 1.0f && playMode && player && physics) {
+        if (fadeAlpha >= 1.0f && (mode == SceneMode::Play) && player && physics) {
             fadeHoldSeconds += dt;
             const phys::RayHit floor = physics->rayCast(
                 player->position() + Vec3 { 0.0f, 0.5f, 0.0f },
@@ -2283,7 +2283,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
         const ScreenStack::Screen* top = screenStack.topModal();
         if (top && (top->name == "pause" || top->name == "mainmenu")) {
             screenStack.closeTop();
-        } else if (!screenStack.modalOpen() && playMode &&
+        } else if (!screenStack.modalOpen() && (mode == SceneMode::Play) &&
                    screenStack.find("pause")) {
             updateMenuClockLine();
             screenStack.show("pause");
@@ -2300,7 +2300,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
         }
     }
     // T: the wait menu (B6) — Play only, nothing else open.
-    if (!imguiOwnsKeys && !uiSystem.textFieldFocused() && playMode &&
+    if (!imguiOwnsKeys && !uiSystem.textFieldFocused() && (mode == SceneMode::Play) &&
         input.wasPressed(platform::Key::T) && !screenStack.modalOpen()) {
         updateMenuClockLine();
         screenStack.show("wait");
@@ -2321,7 +2321,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
     if (modal != uiModalWasOpen) {
         // A modal frees the mouse (and pauses the sim, handled in
         // update()); closing it restores the Play capture.
-        if (playMode) {
+        if ((mode == SceneMode::Play)) {
             engine->getWindow().setRelativeMouseMode(!modal);
         }
         uiModalWasOpen = modal;
@@ -2422,7 +2422,7 @@ void LandscapeScene::updateHudModel() {
     std::snprintf(clock, sizeof(clock), "%02d:%02d", hh, mm);
     uiSystem.setString("hud", "clock", clock);
     // The interaction prompt + talk line (migrated from the ImGui overlay).
-    const bool promptOn = playMode && promptEntity.is_alive() &&
+    const bool promptOn = (mode == SceneMode::Play) && promptEntity.is_alive() &&
                           fadeDirection == 0 && !promptLabel.empty();
     uiSystem.setBool("hud", "promptVisible", promptOn);
     uiSystem.setString("hud", "prompt", promptOn ? promptLabel : str {});
@@ -2493,7 +2493,7 @@ void LandscapeScene::performSave(const str& slot) {
     }
     state.playerYaw = flyCamera.camera.yaw;
     state.playerPitch = flyCamera.camera.pitch;
-    state.playMode = playMode;
+    state.playMode = (mode == SceneMode::Play);
     state.weatherSelected = weather.selected();
     plugin.records.push_back(gameplay::createRecord(
         state, *core::Guid::fromString(
@@ -3016,11 +3016,11 @@ void LandscapeScene::handleMenuAction(const str& action) {
         screenStack.closeTop();
     } else if (action == "play") {
         screenStack.closeAll();
-        if (!playMode) {
+        if (!(mode == SceneMode::Play)) {
             enterPlayMode();
         }
     } else if (action == "mainmenu") {
-        if (playMode) {
+        if ((mode == SceneMode::Play)) {
             exitPlayMode();
         }
         screenStack.closeAll();
@@ -3060,7 +3060,7 @@ void LandscapeScene::createConsole() {
         if (glm::dot(forward, forward) < 1e-4f) {
             forward = { 0.0f, 0.0f, -1.0f };
         }
-        const Vec3 origin = playMode && player ? player->position()
+        const Vec3 origin = (mode == SceneMode::Play) && player ? player->position()
                                                : flyCamera.camera.position;
         Vec3 position = origin + glm::normalize(forward) * 3.0f;
         position.y =
@@ -3086,7 +3086,7 @@ void LandscapeScene::createConsole() {
             return "usage: tp <x> <z>";
         }
         const f32 y = render::terrain::height(terrain.params, x, z) + 0.5f;
-        if (playMode && player) {
+        if ((mode == SceneMode::Play) && player) {
             player = std::make_unique<phys::CharacterBody>(
                 *physics, 0.3f, 1.8f, Vec3 { x, y, z });
             playerVelocity = Vec3 { 0.0f };
@@ -3161,7 +3161,7 @@ void LandscapeScene::createConsole() {
 
 void LandscapeScene::updateNameplates() {
     vector<::ui::UiRow> plates;
-    if (playMode && player && uiCreated) {
+    if ((mode == SceneMode::Play) && player && uiCreated) {
         const f32 width = static_cast<f32>(engine->getWindow().width());
         const f32 height = static_cast<f32>(engine->getWindow().height());
         const Mat4 viewProj =
@@ -3718,7 +3718,7 @@ void LandscapeScene::updateStaticColliders() {
     // so the ground underfoot is always the first body to exist.
     u32 cookBudget =
         (fadeDirection != 0 || fadeAlpha > 0.0f) ? 4096 : 2;
-    const Vec3 cookFocus = playMode && player ? player->position()
+    const Vec3 cookFocus = (mode == SceneMode::Play) && player ? player->position()
                                               : flyCamera.camera.position;
     struct CookCandidate {
         f32 distSq;
@@ -3790,7 +3790,7 @@ void LandscapeScene::snapCellEntities() {
     // Entities changed (cell ring, travel, spawn): stale negative
     // collider verdicts go with them.
     nonCollidable.clear();
-    if (editMode) {
+    if ((mode == SceneMode::Edit)) {
         return; // the editor owns transforms while it is active
     }
     const auto skipsSnap = [&](const world::ReferenceForm& reference,
@@ -4223,7 +4223,7 @@ void LandscapeScene::updateNpcs(f32 dt) {
             }
         }
         bool inCombat = false;
-        if ((npc.hostile || wanted) && playMode && player) {
+        if ((npc.hostile || wanted) && (mode == SceneMode::Play) && player) {
             const Vec3 playerPos = player->position();
             Vec3 to = playerPos - transform.position;
             to.y = 0.0f;
@@ -5104,7 +5104,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                                                                      : 0.0f;
     // 7.8ter: the player's feet part the grass (off in Fly).
     frameData.grassBendInfo =
-        playMode && player
+        (mode == SceneMode::Play) && player
             ? Vec4 { player->position().x, player->position().z,
                      player->position().y, 0.85f }
             : Vec4 { 0.0f };
@@ -5532,7 +5532,7 @@ void LandscapeScene::drawUi() {
     ImDrawList* foreground = ImGui::GetForegroundDrawList();
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     if (!uiCreated) {
-        if (playMode && promptEntity.is_alive() && fadeDirection == 0 &&
+        if ((mode == SceneMode::Play) && promptEntity.is_alive() && fadeDirection == 0 &&
             !promptLabel.empty()) {
             const ImVec2 size = ImGui::CalcTextSize(promptLabel.c_str());
             foreground->AddText(
@@ -5556,16 +5556,18 @@ void LandscapeScene::drawUi() {
 
     // F6 toggles the level editor (leaves Play first — the editor flies).
     if (ImGui::IsKeyPressed(ImGuiKey_F6, false) && levelEditor) {
-        editMode = !editMode;
-        if (editMode && playMode) {
-            exitPlayMode();
-        }
-        if (!editMode) {
+        if (mode == SceneMode::Edit) {
+            mode = SceneMode::Spectator;
             editSelection = ecs::Entity {};
             placementBase = core::Guid {};
+        } else {
+            if (mode == SceneMode::Play) {
+                exitPlayMode(); // tears down the capsule (also sets Spectator)
+            }
+            mode = SceneMode::Edit;
         }
     }
-    if (editMode && levelEditor) {
+    if (mode == SceneMode::Edit && levelEditor) {
         drawEditorUi();
     }
 
@@ -5609,7 +5611,7 @@ void LandscapeScene::drawUi() {
                 1000.0f / ImGui::GetIO().Framerate);
     const Vec3 p = flyCamera.camera.position;
     ImGui::Text("Position: %.1f  %.1f  %.1f", p.x, p.y, p.z);
-    if (playMode) {
+    if ((mode == SceneMode::Play)) {
         ImGui::TextUnformatted(
             "PLAY  WASD: move | Shift: sprint | Space: jump | F: fly");
     } else {
@@ -5736,11 +5738,11 @@ void LandscapeScene::drawGameplayUi() {
     }
     if (physics) {
         // B5: first-person Play mode.
-        bool play = playMode;
+        bool play = (mode == SceneMode::Play);
         if (ImGui::Checkbox("Play mode (B5) — press F", &play)) {
             play ? enterPlayMode() : exitPlayMode();
         }
-        if (playMode) {
+        if ((mode == SceneMode::Play)) {
             ImGui::TextUnformatted(
                 "WASD: move | Shift: sprint | Space: jump | F: back to Fly");
         }
