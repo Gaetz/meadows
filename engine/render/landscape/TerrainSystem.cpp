@@ -220,6 +220,24 @@ void TerrainSystem::regenerate(rhi::Device& device) {
     // update() re-requests the ring with the new params next frame.
 }
 
+void TerrainSystem::remeshChunks(const vector<u64>& keys) {
+    for (const u64 key : keys) {
+        const auto it = chunks.find(key);
+        if (it == chunks.end() || it->second.residentLod == kNoLod ||
+            it->second.queuedLod != kNoLod) {
+            continue; // not drawn yet, or a build is already in flight
+        }
+        const i32 cx = static_cast<i32>(key >> 32);
+        const i32 cz = static_cast<i32>(key & 0xffffffffu);
+        // Rebuild at the current LOD; enqueueBuild captures today's params
+        // (the new patches). The old mesh keeps drawing until pumpUploads
+        // swaps in the result (residentLod != kNoLod → the LOD-swap path).
+        it->second.queuedLod = it->second.residentLod;
+        ++pending;
+        enqueueBuild(cx, cz, it->second.residentLod);
+    }
+}
+
 void TerrainSystem::update(rhi::Device& device, const Vec3& cameraPos) {
     pumpUploads(device);
     requestMissing(cameraPos);

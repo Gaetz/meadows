@@ -15,6 +15,7 @@
 #include "engine/physics/Physics.hpp"
 #include "game/LevelEditor.hpp"
 #include "game/MeshCache.hpp"
+#include "game/scenes/TerrainSculptTool.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
 #include "game/scenes/WeatherController.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
@@ -242,21 +243,13 @@ private:
     bool groundUnderMouse(const Vec2& mousePx, Vec3& out);
     Vec3 mouseRayDirection(const Vec2& mousePx) const;
 
-    // Chantier 2 B9: terrain sculpt. Brushes edit WORKING grids; the
-    // stroke's release publishes a fresh immutable HeightPatches (workers
-    // stay race-free) and regenerates terrain/scatter/collision. "Save
-    // terrain" writes .ter files + TerrainPatchForm records into the mod.
-    bool sculptMode { false };
-    i32 brushKind { 0 }; // 0 raise, 1 lower, 2 flatten, 3 smooth
-    f32 brushRadius { 6.0f };
-    f32 brushStrength { 2.0f };
-    bool strokeActive { false };
-    f32 flattenTarget { 0.0f }; // grabbed at stroke start
-    std::unordered_map<u64, render::HeightPatch> sculptGrids;
-    render::HeightPatch& sculptGridFor(i32 cx, i32 cz);
-    void applyBrush(const Vec3& center, f32 dt);
-    void publishSculpt();
-    void saveSculptToMod();
+    // Chantier 2 B9: terrain sculpt, extracted to TerrainSculptTool (audit
+    // U4-5). The tool owns the brush state + working grids; the scene supplies
+    // the ray hit under the cursor (groundUnderMouse) and the publish side
+    // effects (rebuild terrain/scatter/collision, re-snap cells) through a
+    // SculptContext rebuilt each frame.
+    TerrainSculptTool sculptTool;
+    SculptContext makeSculptContext();
     // Chantier 3 B1: GENERIC interaction (E) — doors travel, items land
     // in the inventory, actors talk (placeholder line), furniture = B7.
     enum class PromptKind : u8 { None, Door, Item, Actor, Corpse,
@@ -410,6 +403,13 @@ private:
     // (shared_ptr — worker-held copies keep old instances alive, even
     // across scene teardown).
     sptr<const render::HeightPatches> heightPatches;
+    // Chunks a sculpt changed, awaiting a TARGETED GPU rebuild at the safe
+    // point in render() — so a stroke touches just those chunks, not the whole
+    // world (keys use keyOf()). `sculptDirtyChunks` re-meshes the terrain (live
+    // during a stroke, seamless); `sculptScatterChunks` re-scatters grass/veg
+    // (on commit only — re-seeding every preview frame would flicker them).
+    vector<u64> sculptDirtyChunks;
+    vector<u64> sculptScatterChunks;
     uptr<TextureCache> materialTextures; // SRGBA8 + Linear (3D albedo)
     uptr<MeshCache> meshCache;
     RenderSnapshot snapshot;

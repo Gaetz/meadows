@@ -1159,7 +1159,7 @@ void LandscapeScene::update(f32 dt) {
     // captured start state to the selected weather over its duration.
     weather.update(atmos, dt);
 
-    // Mode switching lives with the F11/F12 hotkeys (drawn overlay); Play is
+    // Mode switching lives with the F2/F3 hotkeys (drawn overlay); Play is
     // home. Nothing to toggle here anymore.
     if (uiPaused) {
         // A modal screen owns the input; cameras and player hold still.
@@ -1167,10 +1167,19 @@ void LandscapeScene::update(f32 dt) {
         updatePlayer(dt);
     } else {
         // Don't steal the mouse from ImGui: clicking a panel must not
-        // mouselook.
-        const bool allowCapture = !ImGui::GetIO().WantCaptureMouse;
+        // mouselook. Spectator looks like Play (mouselook always, no button);
+        // Edit looks only while RMB is held, keeping LMB free for pick /
+        // place / sculpt. Hold Alt to free the cursor (reach ImGui panels)
+        // without leaving the mode.
+        const bool freeMouse = ImGui::GetIO().KeyAlt;
+        const bool allowCapture =
+            !ImGui::GetIO().WantCaptureMouse && !freeMouse;
+        const auto trigger =
+            (mode == SceneMode::Edit)
+                ? render::FlyCamera::LookTrigger::RightButton
+                : render::FlyCamera::LookTrigger::Always;
         flyCamera.update(engine->getInput(), engine->getWindow(), dt,
-                         allowCapture);
+                         allowCapture, trigger);
     }
     // (Time-of-day now advances through the game clock, above.)
 
@@ -1436,166 +1445,44 @@ bool LandscapeScene::groundUnderMouse(const Vec2& mousePx, Vec3& out) {
     return false;
 }
 
-// --- B9: terrain sculpt ------------------------------------------------------------
+// --- B9: terrain sculpt (extracted to TerrainSculptTool, audit U4-5) ---------------
 
-render::HeightPatch& LandscapeScene::sculptGridFor(i32 cx, i32 cz) {
-    const u64 key = render::HeightPatches::keyOf(cx, cz);
-    const auto it = sculptGrids.find(key);
-    if (it != sculptGrids.end()) {
-        return it->second;
-    }
-    // Seed from the published overlay when the chunk is already authored.
-    if (heightPatches) {
-        if (const auto existing = heightPatches->chunks.find(key);
-            existing != heightPatches->chunks.end()) {
-            return sculptGrids.emplace(key, existing->second).first->second;
-        }
-    }
-    render::HeightPatch fresh;
-    fresh.samples = 65;
-    fresh.deltas.assign(65 * 65, 0.0f);
-    return sculptGrids.emplace(key, std::move(fresh)).first->second;
-}
-
-void LandscapeScene::applyBrush(const Vec3& center, f32 dt) {
-    constexpr f32 kChunk = 64.0f;
-    const i32 minCx = static_cast<i32>(
-        std::floor((center.x - brushRadius) / kChunk));
-    const i32 maxCx = static_cast<i32>(
-        std::floor((center.x + brushRadius) / kChunk));
-    const i32 minCz = static_cast<i32>(
-        std::floor((center.z - brushRadius) / kChunk));
-    const i32 maxCz = static_cast<i32>(
-        std::floor((center.z + brushRadius) / kChunk));
-    for (i32 cz = minCz; cz <= maxCz; ++cz) {
-        for (i32 cx = minCx; cx <= maxCx; ++cx) {
-            render::HeightPatch& grid = sculptGridFor(cx, cz);
-            for (u32 row = 0; row < grid.samples; ++row) {
-                for (u32 col = 0; col < grid.samples; ++col) {
-                    const f32 x =
-                        static_cast<f32>(cx) * kChunk + static_cast<f32>(col);
-                    const f32 z =
-                        static_cast<f32>(cz) * kChunk + static_cast<f32>(row);
-                    const f32 dx = x - center.x;
-                    const f32 dz = z - center.z;
-                    const f32 dist = std::sqrt(dx * dx + dz * dz);
-                    if (dist >= brushRadius) {
-                        continue;
-                    }
-                    const f32 t = 1.0f - dist / brushRadius;
-                    const f32 falloff = t * t * (3.0f - 2.0f * t);
-                    f32& delta = grid.deltas[row * grid.samples + col];
-                    switch (brushKind) {
-                    case 0: // raise
-                        delta += brushStrength * falloff * dt;
-                        break;
-                    case 1: // lower
-                        delta -= brushStrength * falloff * dt;
-                        break;
-                    case 2: { // flatten toward the stroke-start height:
-                        // work against the LIVE height (base + published
-                        // patch); the working delta absorbs the gap.
-                        const f32 current =
-                            render::terrain::height(terrain.params, x, z);
-                        const f32 gap = flattenTarget - current;
-                        delta += gap * glm::min(2.5f * falloff * dt, 1.0f);
-                        break;
-                    }
-                    case 3: { // smooth: relax toward the neighbour average
-                        const u32 c0 = col > 0 ? col - 1 : col;
-                        const u32 c1 = glm::min(col + 1, grid.samples - 1);
-                        const u32 r0 = row > 0 ? row - 1 : row;
-                        const u32 r1 = glm::min(row + 1, grid.samples - 1);
-                        const f32 average =
-                            (grid.deltas[row * grid.samples + c0] +
-                             grid.deltas[row * grid.samples + c1] +
-                             grid.deltas[r0 * grid.samples + col] +
-                             grid.deltas[r1 * grid.samples + col]) *
-                            0.25f;
-                        delta += (average - delta) *
-                                 glm::min(4.0f * falloff * dt, 1.0f);
-                        break;
-                    }
-                    default:
-                        break;
-                    }
-                }
+// The scene half of the sculpt contract: read access to the terrain height /
+// current overlay, plus the publish side effects the tool can't own — swap the
+// immutable overlay in, rebuild terrain/scatter/collision, invalidate occlusion
+// and re-snap cell entities. Rebuilt each frame (cheap: refs + one closure).
+SculptContext LandscapeScene::makeSculptContext() {
+    return SculptContext {
+        terrain.params,
+        heightPatches.get(),
+        forms,
+        *levelEditor,
+        [this](std::shared_ptr<render::HeightPatches> next,
+               const std::vector<u64>& changed, bool commit) {
+            // Show the new heights immediately: swap the live overlay and queue
+            // a terrain re-mesh of just the changed chunks (deferred to the
+            // safe point in render(), seamless swap). This runs every preview
+            // frame during a stroke.
+            terrain.params.patches = next;
+            sculptDirtyChunks.insert(sculptDirtyChunks.end(), changed.begin(),
+                                     changed.end());
+            if (!commit) {
+                return; // live preview: terrain only, no heavy churn
             }
+            // Stroke release — the permanent publish: the overlay becomes the
+            // committed one, grass/veg re-scatter onto the new heights, and
+            // collision / cell snap rebuild.
+            heightPatches = next;
+            sculptScatterChunks.insert(sculptScatterChunks.end(),
+                                       changed.begin(), changed.end());
+            occlusion.invalidate();
+            terrainCollision = std::make_unique<TerrainCollision>(
+                *physics, terrain.params, &engine->getJobSystem());
+            vegCollision = std::make_unique<VegetationCollision>(
+                *physics, terrain.params);
+            snapCellEntities();
         }
-    }
-}
-
-void LandscapeScene::publishSculpt() {
-    if (sculptGrids.empty()) {
-        return;
-    }
-    // New immutable overlay = published chunks overridden by the working
-    // grids; in-flight workers keep the old instance alive through their
-    // copied TerrainParams (shared_ptr).
-    auto next = std::make_shared<render::HeightPatches>();
-    next->chunkSize = 64.0f;
-    if (heightPatches) {
-        next->chunks = heightPatches->chunks;
-    }
-    for (const auto& [key, grid] : sculptGrids) {
-        next->chunks[key] = grid;
-    }
-    heightPatches = std::move(next);
-    terrain.params.patches = heightPatches;
-    regenerateRequested = true; // terrain + scatter rebuild next frame
-    occlusion.invalidate();
-    terrainCollision = std::make_unique<TerrainCollision>(
-        *physics, terrain.params, &engine->getJobSystem());
-    vegCollision =
-        std::make_unique<VegetationCollision>(*physics, terrain.params);
-    snapCellEntities();
-}
-
-void LandscapeScene::saveSculptToMod() {
-    const auto dir = platform::executableDir() / "data" / "mods" / "terrain";
-    std::error_code errc;
-    std::filesystem::create_directories(dir, errc);
-    const reflect::TypeInfo& type = world::TerrainPatchForm::staticTypeInfo();
-    for (const auto& [key, grid] : sculptGrids) {
-        const i32 cx = static_cast<i32>(key >> 32);
-        const i32 cz = static_cast<i32>(key & 0xffffffffu);
-        char name[64];
-        std::snprintf(name, sizeof(name), "patch_%d_%d.ter", cx, cz);
-        if (!world::writeTerFile(dir / name, grid)) {
-            continue;
-        }
-        // Deterministic asset guid per chunk (stable across saves).
-        char guidText[40];
-        std::snprintf(guidText, sizeof(guidText),
-                      "7e88a110-0000-4000-8000-%012llx",
-                      static_cast<unsigned long long>(key & 0xFFFFFFFFFFFFull));
-        const core::Guid assetGuid = *core::Guid::fromString(guidText);
-        levelEditor->addExportAsset(assetGuid, str { "terrain/" } + name);
-        // One TerrainPatchForm per chunk — reuse the existing record if
-        // this chunk was already authored (patch it), else create.
-        core::Guid recordGuid {};
-        data::forEach<world::TerrainPatchForm>(
-            forms, [&](const world::TerrainPatchForm& form) {
-                if (form.chunkX == cx && form.chunkZ == cz) {
-                    recordGuid = form.id;
-                }
-            });
-        auto& session = levelEditor->editSession();
-        if (!recordGuid.isValid()) {
-            char editorId[64];
-            std::snprintf(editorId, sizeof(editorId), "SculptPatch_%d_%d",
-                          cx, cz);
-            recordGuid = session.createForm(type.id, editorId);
-            session.setField(recordGuid, type.findField("chunkX")->id,
-                             reflect::Value { cx });
-            session.setField(recordGuid, type.findField("chunkZ")->id,
-                             reflect::Value { cz });
-        }
-        session.setField(recordGuid, type.findField("asset")->id,
-                         reflect::Value { assetGuid });
-    }
-    LOG_INFO("B9: {} sculpted chunk(s) staged — Export writes the mod",
-             sculptGrids.size());
+    };
 }
 
 // The editor frame: gizmo on the selection, click-to-pick / click-to-place,
@@ -1655,26 +1542,24 @@ void LandscapeScene::drawEditorUi() {
         gizmoWasUsing = false;
     }
 
-    // Sculpt strokes take priority over pick/place while armed.
-    if (sculptMode && !io.WantCaptureMouse && !flyCamera.capturing()) {
+    // Sculpt strokes take priority over pick/place while armed. The tool owns
+    // the brush + stroke state; the scene supplies the ground hit under the
+    // cursor and the publish effects (SculptContext, rebuilt this frame).
+    const SculptContext sculptCtx = makeSculptContext();
+    if (sculptTool.active() && !io.WantCaptureMouse && !flyCamera.capturing()) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             Vec3 ground;
             if (groundUnderMouse({ io.MousePos.x, io.MousePos.y }, ground)) {
-                if (!strokeActive) {
-                    strokeActive = true;
-                    flattenTarget = ground.y;
-                }
-                applyBrush(ground, io.DeltaTime);
+                sculptTool.stroke(sculptCtx, ground, io.DeltaTime);
             }
-        } else if (strokeActive) {
-            strokeActive = false;
-            publishSculpt(); // rebuild once per stroke, not per frame
+        } else {
+            sculptTool.endStroke(sculptCtx); // publishes once per stroke
         }
     }
 
     // Click: place (armed palette entry) or pick. Never while the mouse is
     // over a window/gizmo, while mouselooking, or while sculpting.
-    if (!sculptMode && !io.WantCaptureMouse && !ImGuizmo::IsOver() &&
+    if (!sculptTool.active() && !io.WantCaptureMouse && !ImGuizmo::IsOver() &&
         !flyCamera.capturing() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         const Vec2 mouse { io.MousePos.x, io.MousePos.y };
         if (placementBase.isValid()) {
@@ -1756,8 +1641,8 @@ void LandscapeScene::drawEditorUi() {
     // The editor window.
     ImGui::Begin("Level editor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::TextUnformatted(
-        "LMB: pick / place | Ctrl+LMB: add to group | 1/2/3: gizmo op\n"
-        "Hold LMB on sky + WASD: fly | F6: leave editor");
+        "LMB: pick / place / sculpt | Ctrl+LMB: add to group | 1/2/3: gizmo "
+        "op\nHold RMB: look + WASD: fly | F3: back to Play");
     ImGui::Text("Session: %u dirty record(s)",
                 levelEditor->editSession().dirtyCount());
     if (ImGui::Button("Undo") && levelEditor->editSession().canUndo()) {
@@ -1819,20 +1704,8 @@ void LandscapeScene::drawEditorUi() {
         }
     }
     ImGui::Separator();
-    // B9: terrain sculpt.
-    ImGui::Checkbox("Sculpt terrain", &sculptMode);
-    if (sculptMode) {
-        ImGui::Combo("Brush", &brushKind, "Raise\0Lower\0Flatten\0Smooth\0");
-        ImGui::SliderFloat("Radius (m)", &brushRadius, 1.0f, 24.0f, "%.0f");
-        ImGui::SliderFloat("Strength", &brushStrength, 0.2f, 10.0f, "%.1f");
-        ImGui::Text("Sculpted chunks: %u",
-                    static_cast<u32>(sculptGrids.size()));
-        if (ImGui::Button("Save terrain to mod")) {
-            saveSculptToMod();
-        }
-        ImGui::SameLine();
-        ImGui::TextDisabled("(then Export)");
-    }
+    // B9: terrain sculpt (TerrainSculptTool).
+    sculptTool.drawPanel(sculptCtx);
     ImGui::Separator();
     ImGui::TextUnformatted(placementBase.isValid()
                                ? "Placing: click the ground (Esc: cancel)"
@@ -4966,6 +4839,19 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         grass.regenerate(frame.device);
         vegetation.regenerate(frame.device, terrain.params.seed);
         occlusion.invalidate();
+    }
+    // Terrain sculpt: re-mesh JUST the chunks a stroke touched (in place, no
+    // hole) — runs live during the stroke for real-time feedback. Grass/veg
+    // re-scatter only on commit (`sculptScatterChunks`) so they don't flicker
+    // every preview frame. The rest of the world stays put.
+    if (!sculptDirtyChunks.empty()) {
+        terrain.remeshChunks(sculptDirtyChunks);
+        sculptDirtyChunks.clear();
+    }
+    if (!sculptScatterChunks.empty()) {
+        grass.invalidateChunks(frame.device, sculptScatterChunks);
+        vegetation.invalidateChunks(frame.device, sculptScatterChunks);
+        sculptScatterChunks.clear();
     }
     if (!interiorMode) { // interiors: no terrain/scatter/water to stream
         {

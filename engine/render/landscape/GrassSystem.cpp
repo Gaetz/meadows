@@ -228,6 +228,19 @@ void GrassSystem::regenerate(rhi::Device& device) {
     instances = 0;
 }
 
+void GrassSystem::invalidateChunks(rhi::Device& device,
+                                   const vector<u64>& keys) {
+    for (const u64 key : keys) {
+        const auto it = chunks.find(key);
+        if (it == chunks.end() || !it->second.resident) {
+            continue; // missing, or still streaming in (no stale swap)
+        }
+        device.destroyBuffer(it->second.instanceBuffer);
+        instances -= it->second.instanceCount;
+        chunks.erase(it); // update() re-requests + re-scatters with new heights
+    }
+}
+
 void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
                          const Vec3& cameraPos) {
     // Budgeted uploads.

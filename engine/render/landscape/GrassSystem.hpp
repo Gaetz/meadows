@@ -51,6 +51,11 @@ public:
     // Drops every chunk (terrain seed changed).
     void regenerate(rhi::Device& device);
 
+    // Drops only these chunks (cx,cz keys) so update() re-scatters them onto
+    // the current terrain — the sculpt path. Non-resident chunks are left to
+    // finish streaming. Keys share the terrain chunk grid (keyOf).
+    void invalidateChunks(rhi::Device& device, const vector<u64>& keys);
+
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
     // Records instanced blade draws into the current render pass (opaque —

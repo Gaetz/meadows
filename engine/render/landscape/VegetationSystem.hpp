@@ -59,6 +59,11 @@ public:
     // on the next update.
     void regenerate(rhi::Device& device, u32 terrainSeed);
 
+    // Drops only these chunks (cx,cz keys) so update() re-scatters props onto
+    // the current terrain — the sculpt path. Non-resident chunks are left to
+    // finish streaming. Keys share the terrain chunk grid (keyOf).
+    void invalidateChunks(rhi::Device& device, const vector<u64>& keys);
+
     // Replaces one variant's mesh with an authored one (brick 23: glTF
     // rock). The CPU copy is kept so regenerate() re-uploads it after a
     // seed change. uv.x drives canopy sway in tree.vert — zero the uvs for

@@ -77,6 +77,13 @@ public:
     // In-flight worker results are invalidated by generation.
     void regenerate(rhi::Device& device);
 
+    // Re-mesh only these chunks (cx,cz keys) in place — the terrain-sculpt
+    // path. Each keeps drawing its current mesh until the rebuilt one (with the
+    // new params) is resident, then swaps (no hole). Non-resident or
+    // already-building chunks are skipped; they pick up the new params when
+    // they next stream. Keys use keyOf() — the shared terrain chunk grid.
+    void remeshChunks(const vector<u64>& keys);
+
     // Rebuilds the pipeline when the terrain shader hot-reloaded.
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 

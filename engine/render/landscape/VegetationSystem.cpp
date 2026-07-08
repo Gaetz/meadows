@@ -290,6 +290,21 @@ void VegetationSystem::regenerate(rhi::Device& device, u32 terrainSeed) {
     createVariantMeshes(device, terrainSeed);
 }
 
+void VegetationSystem::invalidateChunks(rhi::Device& device,
+                                        const vector<u64>& keys) {
+    // The shared variant meshes are height-independent — only per-chunk scatter
+    // is dropped so props re-seat on the new terrain.
+    for (const u64 key : keys) {
+        const auto it = chunks.find(key);
+        if (it == chunks.end() || !it->second.resident) {
+            continue; // missing, or still streaming in (no stale swap)
+        }
+        device.destroyBuffer(it->second.instanceBuffer);
+        instances -= it->second.total;
+        chunks.erase(it); // update() re-requests + re-scatters with new heights
+    }
+}
+
 void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
                               const Vec3& cameraPos) {
     // Budgeted uploads.

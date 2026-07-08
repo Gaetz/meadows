@@ -11,9 +11,19 @@ constexpr f32 kMaxPitch = glm::radians(89.0f);
 } // namespace
 
 void FlyCamera::update(platform::Input& input, platform::Window& window,
-                       f32 dt, bool allowCapture) {
-    const bool held = input.mouseDown(platform::MouseButton::Left);
-    const bool wantCapture = captured ? held : (held && allowCapture);
+                       f32 dt, bool allowCapture, LookTrigger trigger) {
+    bool wantCapture;
+    if (trigger == LookTrigger::Always) {
+        // Play-like continuous mouselook (no button), but yield the cursor the
+        // instant the caller asks — ImGui hover or a hold-to-free modifier —
+        // even mid-capture, so panels stay reachable.
+        wantCapture = allowCapture;
+    } else {
+        const bool held = trigger == LookTrigger::RightButton
+                              ? input.mouseDown(platform::MouseButton::Right)
+                              : input.mouseDown(platform::MouseButton::Left);
+        wantCapture = captured ? held : (held && allowCapture);
+    }
     if (wantCapture != captured) {
         captured = wantCapture;
         window.setRelativeMouseMode(captured);
