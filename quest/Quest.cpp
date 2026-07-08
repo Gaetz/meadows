@@ -12,25 +12,15 @@ namespace quest {
 
 namespace {
 
-template<typename T, typename Fn>
-void forEachForm(const data::FormDatabase& forms, Fn&& fn) {
-    const u32 typeId = T::staticTypeInfo().id;
-    for (u32 value = 1; value <= forms.count(); ++value) {
-        const data::FormHandle handle { value };
-        const reflect::TypeInfo* type = forms.typeOf(handle);
-        const data::Form* form = forms.get(handle);
-        if (type && form && type->isA(typeId)) {
-            fn(*static_cast<const T*>(form));
-        }
-    }
-}
+// (The per-type visitation is data::forEach — the local clone it duplicated
+// is gone, audit U8-1.)
 
 // Is a branch complete (all its tasks at or past `required`, and it has tasks)?
 bool branchComplete(const data::FormDatabase& forms, const core::Guid& branchId,
                     const QuestProgress& progress) {
     bool hasTask = false;
     bool allDone = true;
-    forEachForm<QuestTaskForm>(forms, [&](const QuestTaskForm& task) {
+    data::forEach<QuestTaskForm>(forms, [&](const QuestTaskForm& task) {
         if (task.branch != branchId) {
             return;
         }
@@ -48,11 +38,11 @@ bool branchComplete(const data::FormDatabase& forms, const core::Guid& branchId,
 void progressTasks(const data::FormDatabase& forms, QuestProgress& progress,
                    const gameplay::Event& event,
                    const gameplay::GameplayTagRegistry& tags) {
-    forEachForm<QuestBranchForm>(forms, [&](const QuestBranchForm& branch) {
+    data::forEach<QuestBranchForm>(forms, [&](const QuestBranchForm& branch) {
         if (branch.state != progress.currentState) {
             return;
         }
-        forEachForm<QuestTaskForm>(forms, [&](const QuestTaskForm& task) {
+        data::forEach<QuestTaskForm>(forms, [&](const QuestTaskForm& task) {
             if (task.branch != branch.id ||
                 gameplay::eventKind(task.event) != event.kind) {
                 return;
@@ -77,7 +67,7 @@ void advanceCompletedBranch(const data::FormDatabase& forms,
                             QuestProgress& progress) {
     core::Guid destination;
     bool transition = false;
-    forEachForm<QuestBranchForm>(forms, [&](const QuestBranchForm& branch) {
+    data::forEach<QuestBranchForm>(forms, [&](const QuestBranchForm& branch) {
         if (!transition && branch.state == progress.currentState &&
             branchComplete(forms, branch.id, progress)) {
             transition = true;

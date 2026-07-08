@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef> // offsetof (the std140 layout lock below)
+
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"
@@ -66,5 +68,48 @@ struct FrameUniforms {
     // feet XZ, z = feet Y, w = bend radius (0 = off, e.g. Fly mode).
     Vec4 grassBendInfo {};
 };
+
+// --- std140 layout lock (audit U3-3) -------------------------------------------------
+// The GLSL FrameUbo block (shaders/common.glsl) mirrors this struct by
+// COMMENT only; one member inserted mid-struct (instead of appended) or one
+// non-vec4-multiple member silently desyncs every offset after it and
+// corrupts ~14 shaders at once (the "UBO lesson"). These asserts pin the
+// byte offsets the shaders compile against. To append a member: add it LAST
+// in BOTH files, add its offset line here, and bump the size assert. If an
+// assert fires on an insertion, you are about to break every existing
+// shader read — append instead.
+static_assert(offsetof(FrameUniforms, viewProj) == 0);
+static_assert(offsetof(FrameUniforms, invViewProj) == 64);
+static_assert(offsetof(FrameUniforms, cameraPos) == 128);
+static_assert(offsetof(FrameUniforms, time) == 144);
+static_assert(offsetof(FrameUniforms, sunDirection) == 160);
+static_assert(offsetof(FrameUniforms, sunColor) == 176);
+static_assert(offsetof(FrameUniforms, sunGlowColor) == 192);
+static_assert(offsetof(FrameUniforms, ambientColor) == 208);
+static_assert(offsetof(FrameUniforms, zenithColor) == 224);
+static_assert(offsetof(FrameUniforms, horizonColor) == 240);
+static_assert(offsetof(FrameUniforms, horizonFarColor) == 256);
+static_assert(offsetof(FrameUniforms, terrainInfo) == 272);
+static_assert(offsetof(FrameUniforms, postInfo) == 288);
+static_assert(offsetof(FrameUniforms, fogInfo) == 304);
+static_assert(offsetof(FrameUniforms, sunViewProj) == 320);
+static_assert(offsetof(FrameUniforms, cascadeSplits) == 512);
+static_assert(offsetof(FrameUniforms, shadowInfo) == 528);
+static_assert(offsetof(FrameUniforms, screenInfo) == 544);
+static_assert(offsetof(FrameUniforms, cloudInfo) == 560);
+static_assert(offsetof(FrameUniforms, sunScreen) == 576);
+static_assert(offsetof(FrameUniforms, cloudMapInfo) == 592);
+static_assert(offsetof(FrameUniforms, waterMapInfo) == 608);
+static_assert(offsetof(FrameUniforms, windInfo) == 624);
+static_assert(offsetof(FrameUniforms, terrainLightInfo) == 640);
+static_assert(offsetof(FrameUniforms, submersionInfo) == 656);
+static_assert(offsetof(FrameUniforms, keyShadowViewProj) == 672);
+static_assert(offsetof(FrameUniforms, keyShadowInfo) == 736);
+static_assert(offsetof(FrameUniforms, stormInfo) == 752);
+static_assert(offsetof(FrameUniforms, rainOcclusionViewProj) == 768);
+static_assert(offsetof(FrameUniforms, grassBendInfo) == 832);
+static_assert(sizeof(FrameUniforms) == 848,
+              "FrameUniforms grew: append-only, update common.glsl in "
+              "lockstep, then bump this");
 
 } // namespace render

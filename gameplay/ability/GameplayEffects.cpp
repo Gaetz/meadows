@@ -305,21 +305,18 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
     return true;
 }
 
-void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
-                 const GameplayTagRegistry& registry) {
+namespace {
+
+// The shared age/expire/sweep half of the two tick clocks (audit U6-F3):
+// decrement `remaining` for every effect on the requested clock, fire the
+// expiry side effects, erase the expired, recompute. The real-time path
+// additionally re-applies PERIODIC effects before aging (game-time effects
+// have no periodic support) — that stays in tickEffects.
+void ageAndExpireEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
+                         const GameplayTagRegistry& registry, bool gameTime) {
     for (ActiveEffect& active : system.activeEffects) {
-        if (active.gameTime) {
-            continue; // ticked by tickGameTimeEffects
-        }
-        if (active.period > 0.0f) {
-            active.sinceLastTick += dt;
-            while (active.sinceLastTick >= active.period) {
-                applyModifierToBase(set, active.attribute, active.op,
-                                    active.magnitude);
-                routeDamageMeta(set);
-                clampBaseVitals(set);
-                active.sinceLastTick -= active.period;
-            }
+        if (active.gameTime != gameTime) {
+            continue; // the other clock's tick handles it
         }
         if (!active.infinite) {
             active.remaining -= dt;
@@ -327,17 +324,38 @@ void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
     }
 
     for (const ActiveEffect& active : system.activeEffects) {
-        if (active.gameTime) continue;
+        if (active.gameTime != gameTime) continue;
         const bool expired = !active.infinite && active.remaining <= 0.0f;
         if (expired) {
             expireEffect(system, active, registry);
         }
     }
-    std::erase_if(system.activeEffects, [](const ActiveEffect& active) {
-        return !active.gameTime && !active.infinite && active.remaining <= 0.0f;
+    std::erase_if(system.activeEffects, [gameTime](const ActiveEffect& active) {
+        return active.gameTime == gameTime && !active.infinite &&
+               active.remaining <= 0.0f;
     });
 
     recomputeCurrent(set, system);
+}
+
+} // namespace
+
+void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
+                 const GameplayTagRegistry& registry) {
+    for (ActiveEffect& active : system.activeEffects) {
+        if (active.gameTime || active.period <= 0.0f) {
+            continue;
+        }
+        active.sinceLastTick += dt;
+        while (active.sinceLastTick >= active.period) {
+            applyModifierToBase(set, active.attribute, active.op,
+                                active.magnitude);
+            routeDamageMeta(set);
+            clampBaseVitals(set);
+            active.sinceLastTick -= active.period;
+        }
+    }
+    ageAndExpireEffects(set, system, dt, registry, /*gameTime=*/false);
 }
 
 void updateExhaustion(const AttributeSet& set, AbilitySystem& system,
@@ -357,28 +375,8 @@ void updateExhaustion(const AttributeSet& set, AbilitySystem& system,
 
 void tickGameTimeEffects(AttributeSet& set, AbilitySystem& system, f64 gameDt,
                          const GameplayTagRegistry& registry) {
-    const f32 gameDtF = static_cast<f32>(gameDt);
-    for (ActiveEffect& active : system.activeEffects) {
-        if (!active.gameTime) {
-            continue; // ticked by tickEffects
-        }
-        if (!active.infinite) {
-            active.remaining -= gameDtF;
-        }
-    }
-
-    for (const ActiveEffect& active : system.activeEffects) {
-        if (!active.gameTime) continue;
-        const bool expired = !active.infinite && active.remaining <= 0.0f;
-        if (expired) {
-            expireEffect(system, active, registry);
-        }
-    }
-    std::erase_if(system.activeEffects, [](const ActiveEffect& active) {
-        return active.gameTime && !active.infinite && active.remaining <= 0.0f;
-    });
-
-    recomputeCurrent(set, system);
+    ageAndExpireEffects(set, system, static_cast<f32>(gameDt), registry,
+                        /*gameTime=*/true);
 }
 
 void removeEffectsByGrantedTag(AbilitySystem& system, GameplayTag tag,

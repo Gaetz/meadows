@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/FormQuery.hpp" // data::forEach (audit U8-1)
 #include "data/forms/FormTypeRegistry.hpp"
 #include "gameplay/condition/Condition.hpp"
 #include "gameplay/event/EventBus.hpp"
@@ -10,19 +11,6 @@
 namespace quest {
 
 namespace {
-
-template<typename T, typename Fn>
-void forEachForm(const data::FormDatabase& forms, Fn&& fn) {
-    const u32 typeId = T::staticTypeInfo().id;
-    for (u32 value = 1; value <= forms.count(); ++value) {
-        const data::FormHandle handle { value };
-        const reflect::TypeInfo* type = forms.typeOf(handle);
-        const data::Form* form = forms.get(handle);
-        if (type && form && type->isA(typeId)) {
-            fn(*static_cast<const T*>(form));
-        }
-    }
-}
 
 bool isPlayer(const DialogueNodeForm& node) { return node.speaker == "Player"; }
 
@@ -65,7 +53,7 @@ const DialogueNodeForm* DialogueRunner::currentLine() const {
 std::vector<const DialogueNodeForm*> DialogueRunner::options(
     const gameplay::EvalContext& context) const {
     std::vector<const DialogueNodeForm*> result;
-    forEachForm<DialogueNodeForm>(forms, [&](const DialogueNodeForm& node) {
+    data::forEach<DialogueNodeForm>(forms, [&](const DialogueNodeForm& node) {
         if (node.parent == current && isPlayer(node) &&
             gameplay::conditionsPass(forms, node.id, context)) {
             result.push_back(&node);
@@ -84,7 +72,7 @@ void DialogueRunner::select(const DialogueNodeForm& option) {
     }
     // Advance to the NPC reply that follows this option (lowest order), if any.
     const DialogueNodeForm* reply = nullptr;
-    forEachForm<DialogueNodeForm>(forms, [&](const DialogueNodeForm& node) {
+    data::forEach<DialogueNodeForm>(forms, [&](const DialogueNodeForm& node) {
         if (node.parent == option.id && !isPlayer(node)) {
             if (!reply || node.order < reply->order) {
                 reply = &node;
