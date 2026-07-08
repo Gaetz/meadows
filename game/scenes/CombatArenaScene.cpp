@@ -185,25 +185,14 @@ void CombatArenaScene::onEnter() {
         particles.spawnBurst(sparks, event.position, seed);
     });
 
-    // Combat/status tag vocabulary needed by tickCharacter (life state, stagger,
-    // paralysis, the nine status types) plus the stats runtime tags (injuries,
-    // survival). Same set StatsScene registers.
-    tags.registerTag("State.Dead");
-    tags.registerTag("State.Staggered");
-    tags.registerTag("State.Paralyzed");
-    for (const char* statusTag :
-         { "Status.Poisoned", "Status.Bleeding", "Status.Mental", "Status.Diseased",
-           "Status.Cursed", "Status.Dying", "Status.HarmonyBroken", "Status.Ignited",
-           "Status.Glaciated", "Status.Electrocuted" }) {
-        tags.registerTag(statusTag);
-    }
-    gameplay::registerStatsRuntimeTags(tags); // Injury.Active, Internal.Survival*
+    // The shared character-tick vocabulary (life state, statuses, buildup,
+    // stats runtime tags) — one aggregator for every scene (audit U5-3).
+    gameplay::registerCharacterRuntimeTags(tags);
 
-    // Dodge ability tags: the i-frame state, its cooldown, and the shared
-    // energy-exhaustion gate (blockedTag on every energy-costed ability).
+    // Dodge ability tags: the i-frame state and the cooldowns (the
+    // exhaustion gate is part of the shared vocabulary).
     tags.registerTag("State.Dodging");
     tags.registerTag("Cooldown.Dodge");
-    tags.registerTag("State.Exhausted");
     tags.registerTag("Cooldown.Attack");
     dodgeAbility = forms.find<gameplay::AbilityForm>(kDodgeAbility);
     attackAbility = forms.find<gameplay::AbilityForm>(kPlayerAttack);

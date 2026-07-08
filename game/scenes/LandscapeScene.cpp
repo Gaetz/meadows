@@ -355,20 +355,7 @@ void LandscapeScene::setupGameplay() {
     derivedStats = gameplay::DerivedStatRegistry {};
     gameplay::registerCoreDerivedStats(derivedStats, statsTuning);
     gameTags = gameplay::GameplayTagRegistry {};
-    gameTags.registerTag("State.Dead");
-    gameTags.registerTag("State.Staggered");
-    gameTags.registerTag("State.Paralyzed");
-    gameTags.registerTag("State.Exhausted");
-    gameTags.registerTag("State.Shaken");
-    gameTags.registerTag("State.CriticalWeakness");
-    for (const char* statusTag :
-         { "Status.Poisoned", "Status.Bleeding", "Status.Mental",
-           "Status.Diseased", "Status.Cursed", "Status.Dying",
-           "Status.HarmonyBroken", "Status.Ignited", "Status.Glaciated",
-           "Status.Electrocuted" }) {
-        gameTags.registerTag(statusTag);
-    }
-    gameplay::registerStatsRuntimeTags(gameTags);
+    gameplay::registerCharacterRuntimeTags(gameTags); // audit U5-3
     sprintCostEffect =
         data::findByEditorId<gameplay::EffectForm>(forms, "SprintCost");
     testWoundEffect =

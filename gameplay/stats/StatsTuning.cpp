@@ -22,6 +22,26 @@ void registerStatsRuntimeTags(GameplayTagRegistry& tags) {
     registerSurvivalTags(tags);
 }
 
+void registerCharacterRuntimeTags(GameplayTagRegistry& tags) {
+    // The vocabulary tickCharacter / the buildup / the damage path assume:
+    // life state, the combat statuses, the ten buildup tags, exhaustion,
+    // plus the stats runtime tags (injuries, survival). Registration is
+    // idempotent, so scenes freely add their own vocabulary on top.
+    for (const char* tag :
+         { "State.Dead", "State.Staggered", "State.Paralyzed",
+           "State.Exhausted", "State.Shaken", "State.CriticalWeakness" }) {
+        tags.registerTag(tag);
+    }
+    for (const char* statusTag :
+         { "Status.Poisoned", "Status.Bleeding", "Status.Mental",
+           "Status.Diseased", "Status.Cursed", "Status.Dying",
+           "Status.HarmonyBroken", "Status.Ignited", "Status.Glaciated",
+           "Status.Electrocuted" }) {
+        tags.registerTag(statusTag);
+    }
+    registerStatsRuntimeTags(tags);
+}
+
 StatsTuningForm resolveStatsTuning(const data::FormDatabase& forms) {
     if (const StatsTuningForm* tuning =
             forms.find<StatsTuningForm>(kStatsTuningGuid)) {

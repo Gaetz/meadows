@@ -439,16 +439,9 @@ void StatsScene::seedResources() {
 
 void StatsScene::onEnter() {
     WorldDemoScene::onEnter();
-    tags.registerTag("State.Dead");
-    tags.registerTag("State.Staggered");
-    tags.registerTag("State.Paralyzed");
-    for (const char* statusTag :
-         { "Status.Poisoned", "Status.Bleeding", "Status.Mental", "Status.Diseased",
-           "Status.Cursed", "Status.Dying", "Status.HarmonyBroken",
-           "Status.Ignited", "Status.Glaciated", "Status.Electrocuted" }) {
-        tags.registerTag(statusTag);
-    }
-    gameplay::registerStatsRuntimeTags(tags); // Injury.Active, Internal.SurvivalAmber/Garnet
+    // The shared character-tick vocabulary (life state, statuses, buildup,
+    // stats runtime tags) — one aggregator for every scene (audit U5-3).
+    gameplay::registerCharacterRuntimeTags(tags);
     // tuning + derived are initialized by WorldDemoScene::rebuild() (called from
     // WorldDemoScene::onEnter() above) and refreshed on each mod toggle.
 

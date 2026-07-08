@@ -132,6 +132,14 @@ void registerStatsFormTypes(data::FormTypeRegistry& registry);
 // Call once after creating the GameplayTagRegistry at startup.
 void registerStatsRuntimeTags(GameplayTagRegistry& tags);
 
+// The FULL runtime tag vocabulary every character-ticking scene needs
+// (audit U5-3): life state, the combat statuses, the ten buildup tags,
+// exhaustion, plus the stats runtime tags above. One aggregator so a new
+// runtime tag can no longer reach one scene and silently miss the others.
+// Scene-specific vocabulary (abilities, quest gates, crime) is registered
+// on top by each scene (registerTag is idempotent).
+void registerCharacterRuntimeTags(GameplayTagRegistry& tags);
+
 // Resolves the tuning from the database (canonical guid), or defaults if absent.
 StatsTuningForm resolveStatsTuning(const data::FormDatabase& forms);
 
