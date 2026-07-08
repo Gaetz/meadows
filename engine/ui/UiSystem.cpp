@@ -1,7 +1,6 @@
 #include "engine/ui/UiSystem.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <cstdio>
 #include <map>
 #include <unordered_map>
@@ -12,6 +11,7 @@
 
 #include "engine/assets/Image.hpp"
 #include "engine/core/Assert.hpp"
+#include "engine/core/Clock.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
@@ -264,14 +264,9 @@ public:
 
 class RhiSystemInterface final : public Rml::SystemInterface {
 public:
-    std::chrono::steady_clock::time_point start =
-        std::chrono::steady_clock::now();
+    core::TimePoint start = core::clockNow();
 
-    double GetElapsedTime() override {
-        return std::chrono::duration<double>(
-                   std::chrono::steady_clock::now() - start)
-            .count();
-    }
+    double GetElapsedTime() override { return core::secondsSince(start); }
 
     bool LogMessage(Rml::Log::Type type, const Rml::String& message)
         override {

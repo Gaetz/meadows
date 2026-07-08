@@ -1,9 +1,9 @@
 #include "engine/render/landscape/TerrainSystem.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
 
+#include "engine/core/Clock.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/render/ShaderLibrary.hpp"
@@ -250,12 +250,8 @@ void TerrainSystem::pumpUploads(rhi::Device& device) {
     // than 8 LOD3 ones (the frame probe showed the count cap alone
     // spiking past 30 ms in Debug). At least one upload always lands, so
     // progress is guaranteed.
-    const auto start = std::chrono::steady_clock::now();
-    const auto elapsedMs = [&] {
-        return std::chrono::duration<f64, std::milli>(
-                   std::chrono::steady_clock::now() - start)
-            .count();
-    };
+    const auto start = core::clockNow();
+    const auto elapsedMs = [&] { return core::millisecondsSince(start); };
     BuiltChunk built;
     while (lastUploads < kMaxUploadsPerFrame &&
            (lastUploads == 0 || elapsedMs() < kUploadMsBudget) &&

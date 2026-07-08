@@ -1,10 +1,10 @@
 #include "engine/Engine.hpp"
 
 #include <algorithm>
-#include <chrono>
 
 #include "engine/FrameContext.hpp"
 #include "engine/Game.hpp"
+#include "engine/core/Clock.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Window.hpp"
@@ -71,11 +71,11 @@ bool Engine::init(const EngineConfig& engineConfig) {
 void Engine::loop(Game& game) {
     // Variable timestep for now; a fixed simulation step with render
     // interpolation slots in here once gameplay needs determinism (§8).
-    auto lastTime = std::chrono::steady_clock::now();
+    auto lastTime = core::clockNow();
     while (window->pumpEvents() && !quitRequested) {
-        const auto now = std::chrono::steady_clock::now();
+        const auto now = core::clockNow();
         const f32 dt = std::min(
-            std::chrono::duration<f32>(now - lastTime).count(), kMaxDt);
+            static_cast<f32>(core::secondsBetween(lastTime, now)), kMaxDt);
         lastTime = now;
 
         input.update(); // snapshot keyboard state for this frame's update

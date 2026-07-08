@@ -1,8 +1,8 @@
 #pragma once
 
-#include <chrono>
 #include <string>
 
+#include "engine/core/Clock.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/core/Log.hpp"
 
@@ -17,31 +17,26 @@ namespace core {
 // If the logged blocks sum well below the frame total, the spike lives
 // OUTSIDE the probes (present/swap, driver, OS) — that is a finding too.
 class FrameProbe {
-    using Clock = std::chrono::steady_clock;
-
-    static f64 msSince(Clock::time_point start) {
-        return std::chrono::duration<f64, std::milli>(Clock::now() - start)
-            .count();
-    }
-
 public:
     void beginFrame() {
         entries.clear();
-        frameStart = Clock::now();
+        frameStart = clockNow();
     }
 
     class Scope {
     public:
         Scope(FrameProbe& probe, const char* name)
-            : probe { probe }, name { name }, start { Clock::now() } {}
-        ~Scope() { probe.entries.push_back({ name, msSince(start) }); }
+            : probe { probe }, name { name }, start { clockNow() } {}
+        ~Scope() {
+            probe.entries.push_back({ name, millisecondsSince(start) });
+        }
         Scope(const Scope&) = delete;
         Scope& operator=(const Scope&) = delete;
 
     private:
         FrameProbe& probe;
         const char* name;
-        Clock::time_point start;
+        TimePoint start;
     };
 
     // Logs the breakdown when the frame exceeded `thresholdMs`. Blocks
@@ -59,7 +54,7 @@ public:
         if constexpr (!kSpikeLogging) {
             return;
         }
-        const f64 total = msSince(frameStart);
+        const f64 total = millisecondsSince(frameStart);
         if (total < thresholdMs) {
             return;
         }
@@ -87,7 +82,7 @@ private:
     };
     vector<Entry> entries;
     std::string line;
-    Clock::time_point frameStart {};
+    TimePoint frameStart {};
 };
 
 } // namespace core
