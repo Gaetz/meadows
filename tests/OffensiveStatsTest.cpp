@@ -97,3 +97,26 @@ TEST_CASE("critical execution: sensitivity% of maxHealth × multiplier, no armor
           doctest::Approx(maxHealth * sensitivity / 100.0f * 2.0f));
     CHECK(r.healthDamage > 0.0f); // the default sheet has a real window
 }
+
+TEST_CASE("bleed burst: criticalSensitivity% of maxHealth, ignores armor") {
+    // The status bleed burst (CharacterTick / GameTime) applies a channel-free
+    // critical execution with multiplier 1: criticalSensitivity% of maxHealth,
+    // bypassing armor. Regression for the old flat armor-mitigated slash.
+    Fixture f;
+    // Heavy slash armor must NOT reduce the bleed chunk (it has no channels to
+    // mitigate — that is exactly what "ignores armor" means here).
+    StatModifiers armor;
+    armor.add[attr("armorSlash")] = 80.0f;
+    recomputeStats(f.core, f.vitals, f.system, f.derived, &armor);
+    const f32 maxHealth = currentValueOf(f.system, attr("maxHealth"));
+    const f32 sensitivity =
+        currentValueOf(f.system, attr("criticalSensitivity"));
+
+    DamageEvent bleed; // exactly what the tick sites build
+    bleed.critical = true;
+    bleed.criticalMultiplier = 1.0f;
+    StatBlock b = f.block();
+    const DamageResult r = applyDamage(b, bleed, f.tags, f.derived, &armor);
+    CHECK(r.healthDamage == doctest::Approx(maxHealth * sensitivity / 100.0f));
+    CHECK(r.healthDamage > 0.0f);
+}

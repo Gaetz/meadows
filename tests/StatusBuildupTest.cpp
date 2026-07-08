@@ -228,3 +228,43 @@ TEST_CASE("buildupStatusModifiers: electrocution zeroes essenceRegen mult") {
     CHECK(mods.mul.at(attr("energyRegen")) == doctest::Approx(tuning.glaciationEnergyRegenMult));
     CHECK(mods.mul.find(attr("essenceRegen")) == mods.mul.end());
 }
+
+TEST_CASE("status buildup: ignition/electrocution DoT scale with vitality, not will") {
+    // Regression for the copy-paste bug where ignition/electrocution reduced
+    // their ongoing damage by `will` (ego) instead of `vitality` (alacrity).
+    // docs/STATS.md §145/§183: vitality reduces a status's ongoing damage.
+    auto elementalDot = [](StatusType type, const char* tag, f32 alacrity, f32 ego) {
+        DerivedStatRegistry reg;
+        registerCoreDerivedStats(reg);
+        CoreAttributes core;
+        core.strength = core.constitution = core.grace = 20.0f; // maxHealth = 300
+        core.alacrity = alacrity; // → vitality
+        core.ego = ego;           // → will
+        AbilitySystem sys;
+        recompute(sys, core, reg);
+        GameplayTagRegistry tags;
+        tags.registerTag(tag);
+        StatusBuildup b;
+        addBuildup(b, type, 500.0f);
+        tickBuildup(b, sys, 0.0f, tags);        // trigger → status active
+        return tickBuildup(b, sys, 1.0f, tags); // ongoing DoT
+    };
+
+    // Ignition drains health (maxHealth = str/con/grace, independent of ego),
+    // so ego is a clean "will" knob here: cranking it must not change the DoT.
+    const f32 ignBase = elementalDot(StatusType::Ignition, "Status.Ignited", 6.0f, 6.0f).ignitionHealthDamage;
+    const f32 ignWill = elementalDot(StatusType::Ignition, "Status.Ignited", 6.0f, 90.0f).ignitionHealthDamage;
+    const f32 ignVit  = elementalDot(StatusType::Ignition, "Status.Ignited", 90.0f, 6.0f).ignitionHealthDamage;
+    CHECK(ignBase > 0.0f);
+    CHECK(ignWill == doctest::Approx(ignBase)); // high will (ego) must NOT reduce it
+    CHECK(ignVit  <  ignBase);                  // high vitality (alacrity) reduces it
+
+    // Electrocution drains essence. maxEssence depends on ego, so ego is NOT a
+    // clean will knob here (ignition covers the "not will" case). We assert the
+    // positive property: raising vitality (alacrity — feeds neither maxEssence
+    // nor maxHealth) reduces the DoT.
+    const f32 elBase = elementalDot(StatusType::Electrocution, "Status.Electrocuted", 6.0f, 6.0f).electrocutionEssenceDamage;
+    const f32 elVit  = elementalDot(StatusType::Electrocution, "Status.Electrocuted", 90.0f, 6.0f).electrocutionEssenceDamage;
+    CHECK(elBase > 0.0f);
+    CHECK(elVit  <  elBase);
+}
