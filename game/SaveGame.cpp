@@ -189,6 +189,34 @@ bool PendingSaveLayer::isEnabled(const core::Guid& referenceId) const {
     return it == entries.end() || !it->second.disabled;
 }
 
+void PendingSaveLayer::applyReferenceOverrides(
+    ecs::Entity entity, const core::Guid& referenceId) const {
+    const auto it = entries.find(referenceId);
+    if (it == entries.end() || !it->second.referencePatch ||
+        !entity.is_alive() || !entity.has<world::Transform>()) {
+        return;
+    }
+    const data::Record& patch = *it->second.referencePatch;
+    const reflect::TypeInfo& type = world::ReferenceForm::staticTypeInfo();
+    auto& transform = entity.get_mut<world::Transform>();
+    if (const reflect::FieldInfo* field = type.findField("position")) {
+        if (const auto f = patch.fields.find(field->id);
+            f != patch.fields.end()) {
+            if (const Vec3* p = std::get_if<Vec3>(&f->second)) {
+                transform.position = *p;
+            }
+        }
+    }
+    if (const reflect::FieldInfo* field = type.findField("rotation")) {
+        if (const auto f = patch.fields.find(field->id);
+            f != patch.fields.end()) {
+            if (const Quat* q = std::get_if<Quat>(&f->second)) {
+                transform.rotation = *q;
+            }
+        }
+    }
+}
+
 bool PendingSaveLayer::hasActorState(const core::Guid& referenceId) const {
     const auto it = entries.find(referenceId);
     return it != entries.end() && !it->second.actorRecords.empty();

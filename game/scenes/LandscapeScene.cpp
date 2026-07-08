@@ -2077,6 +2077,11 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
     if (entity.has<world::RefId>()) {
         refGuid = entity.get<world::RefId>().referenceId;
     }
+    // Re-apply captured instance overrides: a moved/killed actor keeps the
+    // spot it died at instead of snapping back to its authored spawn (the
+    // cell loader respawns the resolved record). finalize runs AFTER
+    // refreshNpcs grounds the actor's Y, so the captured position wins.
+    pendingSave.applyReferenceOverrides(entity, refGuid);
     // Pending layer first (a cell reloading in THIS session), then the
     // resolved database (a loaded save). The SavedStatsForm existence is
     // the sentinel — a captured actor never re-rolls its loadout (§8).

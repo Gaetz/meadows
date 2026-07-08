@@ -169,3 +169,107 @@ TEST_CASE("cell delta: loot + damage survive unload/reload without disk") {
     }
     CHECK(sawDisable);
 }
+
+namespace {
+
+const Guid kActorCell =
+    *Guid::fromString("22220000-0000-4000-8000-0000000000a0");
+const Guid kActorForm =
+    *Guid::fromString("55550000-0000-4000-8000-0000000000a1");
+const Guid kMovedActorRef =
+    *Guid::fromString("55550000-0000-4000-8000-0000000000a2");
+
+constexpr const char* kActorPlugin = R"toml(
+[plugin]
+id = "11111111-1111-4111-8111-1111111111a0"
+name = "base"
+
+[[records]]
+form = "11110000-0000-4000-8000-0000000000a0"
+type = "WorldspaceForm"
+new = true
+[records.fields]
+editorId = "Overworld"
+
+[[records]]
+form = "22220000-0000-4000-8000-0000000000a0"
+type = "CellForm"
+new = true
+[records.fields]
+worldspace = "11110000-0000-4000-8000-0000000000a0"
+
+[[records]]
+form = "55550000-0000-4000-8000-0000000000a1"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "Guard"
+maxHealth = 45.0
+
+[[records]]
+form = "55550000-0000-4000-8000-0000000000a2"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "55550000-0000-4000-8000-0000000000a1"
+cell = "22220000-0000-4000-8000-0000000000a0"
+position = [3.0, 0.0, 3.0]
+)toml";
+
+} // namespace
+
+TEST_CASE("cell delta: a moved actor reloads where it moved, not at its spawn") {
+    data::FormTypeRegistry types;
+    data::registerCoreFormTypes(types);
+    world::registerWorldFormTypes(types);
+    gameplay::registerSaveFormTypes(types);
+    const auto plugin = data::parsePluginToml(kActorPlugin, types, "base");
+    REQUIRE(plugin.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*plugin }, types, db);
+
+    ecs::World world;
+    world::registerSceneComponents(world);
+    gameplay::registerGameplayComponents(world);
+    world::FormCategoryRegistry categories;
+    world::registerCoreCategories(categories);
+    world::Spawner spawner;
+    world::registerCoreSpawners(spawner);
+    const world::WorldModel model = world::WorldModel::build(db);
+    world::CellLoader loader { world, db, model, spawner, categories };
+
+    gameplay::GameplayTagRegistry tags;
+    tags.registerTag("State.Dead");
+    game::PendingSaveLayer pending;
+    loader.beforeUnload = [&](data::FormHandle, ecs::Entity cellEntity) {
+        pending.captureCell(world, db, cellEntity, tags);
+    };
+    loader.spawnFilter = [&](const Guid& referenceId) {
+        return pending.isEnabled(referenceId);
+    };
+
+    loader.loadCell(db.handleOf(kActorCell));
+    ecs::Entity actor = findByRef(world, kMovedActorRef);
+    REQUIRE(actor.is_alive());
+    REQUIRE(actor.has<world::ActorMarker>()); // spawnActor marks actors
+
+    // It walks off its authored spot (combat chase / a wander) and is left
+    // there (dead or alive — position capture is actors-only either way).
+    const Vec3 movedTo { 41.0f, 0.5f, 58.0f };
+    actor.get_mut<world::Transform>().position = movedTo;
+
+    loader.unloadCell(db.handleOf(kActorCell)); // captures the moved position
+    loader.loadCell(db.handleOf(kActorCell));
+
+    ecs::Entity reloaded = findByRef(world, kMovedActorRef);
+    REQUIRE(reloaded.is_alive());
+    // The cell loader respawns it at the AUTHORED spot...
+    CHECK(reloaded.get<world::Transform>().position.x == doctest::Approx(3.0f));
+
+    // ...until the pending reference override re-homes it (finalizeActorSpawn).
+    pending.applyReferenceOverrides(reloaded, kMovedActorRef);
+    CHECK(reloaded.get<world::Transform>().position.x ==
+          doctest::Approx(movedTo.x));
+    CHECK(reloaded.get<world::Transform>().position.z ==
+          doctest::Approx(movedTo.z));
+}

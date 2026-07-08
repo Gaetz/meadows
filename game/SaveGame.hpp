@@ -62,6 +62,16 @@ public:
                           ecs::Entity entity = {});
     bool isEnabled(const core::Guid& referenceId) const;
 
+    // Applies any captured instance-field overrides (position/rotation) for
+    // this reference onto a freshly (re)spawned entity — the within-session
+    // equivalent of re-resolving the reference patch over the authored record.
+    // Without this a moved/killed actor reloads at its AUTHORED spawn point
+    // (the cell loader spawns the resolved record; only the enabled veto and
+    // the actor stats are applied elsewhere). No capture for the reference =>
+    // no change. Actors only carry Transform patches today (see captureReference).
+    void applyReferenceOverrides(ecs::Entity entity,
+                                 const core::Guid& referenceId) const;
+
     // Materialized saved-actor records for finalizeActorSpawn — valid
     // until the next capture of the same reference. Null stats = this
     // layer holds nothing for that actor.
