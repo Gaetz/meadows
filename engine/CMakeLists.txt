@@ -1,5 +1,11 @@
-# meadows — the engine library. The game links against this; nothing in here
-# may depend on game code.
+# meadows — the engine BASE library: core, reflection, platform, assets, anim,
+# fx. The game links against this; nothing in here may depend on game code.
+# The renderer/RHI live in meadows-render below (audit U9-3): the sim libs
+# (data/ecs/gameplay/world/script/narrative) link only this base, and the
+# meadows-simlink target (tests/) proves at LINK level that no sim object
+# references a render/rhi/GL symbol (§2.10). Engine.cpp/Game.cpp stay here
+# (they reference render symbols, resolved when the final exe links
+# meadows-render — the sim never pulls their objects).
 add_library(meadows STATIC
     Engine.cpp
     Game.cpp
@@ -13,10 +19,43 @@ add_library(meadows STATIC
     core/Jobs.cpp
     core/Log.cpp
     reflect/Registry.cpp
-    platform/common/GlContext.cpp
     platform/common/Input.cpp
     platform/common/Paths.cpp
     platform/common/Window.cpp
+)
+
+# Per-OS platform sources are selected here at configure time (§3.1), e.g.:
+#   if(WIN32)
+#       target_sources(meadows PRIVATE platform/win32/Paths.cpp)
+#   elseif(LINUX)
+#       target_sources(meadows PRIVATE platform/posix/Paths.cpp)
+#   endif()
+# Nothing OS-specific is needed yet: SDL3 covers it all so far.
+
+target_include_directories(meadows PUBLIC ${PROJECT_SOURCE_DIR})
+
+# imgui is PUBLIC: the game emits its own dev-UI widgets in Game::drawUi.
+# glad moved to meadows-render with the GL backend (audit U9-3).
+target_link_libraries(meadows
+    PUBLIC spdlog::spdlog glm::glm imgui
+    PRIVATE SDL3::SDL3 stb cgltf
+)
+
+# Compile LOG_TRACE/LOG_DEBUG out of release builds.
+target_compile_definitions(meadows PUBLIC
+    $<$<CONFIG:Debug>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
+    $<$<NOT:$<CONFIG:Debug>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO>
+)
+
+meadows_set_warnings(meadows)
+
+# meadows-render — the renderer + RHI, split out of the base lib (audit U9-3)
+# so the sim can be link-proven render-free (§2.10). Same sources, same flags:
+# behavior is identical by construction; only archive membership changed.
+# GlContext lives here (the GL half of the platform layer), ImGuiLayer too
+# (the assumed dev-UI GL exception, §3).
+add_library(meadows-render STATIC
+    platform/common/GlContext.cpp
     render/FlyCamera.cpp
     render/MeshBuilder.cpp
     render/ShaderLibrary.cpp
@@ -41,36 +80,18 @@ add_library(meadows STATIC
     rhi/backends/gl/GlDevice41.cpp
     ui/ImGuiLayer.cpp
 )
-
-# Per-OS platform sources are selected here at configure time (§3.1), e.g.:
-#   if(WIN32)
-#       target_sources(meadows PRIVATE platform/win32/Paths.cpp)
-#   elseif(LINUX)
-#       target_sources(meadows PRIVATE platform/posix/Paths.cpp)
-#   endif()
-# Nothing OS-specific is needed yet: SDL3 covers it all so far.
-
-target_include_directories(meadows PUBLIC ${PROJECT_SOURCE_DIR})
-
-# imgui is PUBLIC: the game emits its own dev-UI widgets in Game::drawUi.
-target_link_libraries(meadows
-    PUBLIC spdlog::spdlog glm::glm imgui
-    PRIVATE SDL3::SDL3 glad stb cgltf
-)
-
-# Compile LOG_TRACE/LOG_DEBUG out of release builds.
-target_compile_definitions(meadows PUBLIC
-    $<$<CONFIG:Debug>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE>
-    $<$<NOT:$<CONFIG:Debug>>:SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO>
+target_link_libraries(meadows-render
+    PUBLIC meadows
+    PRIVATE SDL3::SDL3 glad stb
 )
 
 # Debug builds hot-reload shaders straight from the repo's source directory
 # (editing a .vert/.frag reloads live); other builds read <exe>/data/shaders.
-target_compile_definitions(meadows PRIVATE
+target_compile_definitions(meadows-render PRIVATE
     $<$<CONFIG:Debug>:MEADOWS_SHADER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/render/landscape/shaders">
 )
 
-meadows_set_warnings(meadows)
+meadows_set_warnings(meadows-render)
 
 # meadows-physics — the Jolt seam (horizontal pass H3). A separate lib so
 # Jolt stays PRIVATE: consumers see only the phys:: facade (engine/physics/
@@ -90,7 +111,7 @@ add_library(meadows-ui STATIC
     ui/UiSystem.cpp
 )
 target_link_libraries(meadows-ui
-    PUBLIC meadows
+    PUBLIC meadows-render # UiSystem renders through the RHI
     PRIVATE RmlUi::RmlUi
 )
 meadows_set_warnings(meadows-ui)

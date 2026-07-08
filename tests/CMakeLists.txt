@@ -82,3 +82,14 @@ target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs
                       meadows-audio doctest::doctest)
 meadows_set_warnings(meadows-tests)
 add_test(NAME meadows COMMAND meadows-tests)
+
+# The §2.10 link lock (audit U9-3): links the ENTIRE sim (whole-archive)
+# WITHOUT meadows-render — any sim object referencing a render/rhi/GL symbol
+# breaks this build. Building it (part of ALL) is the test; running it boots
+# a token renderer-free slice.
+add_executable(meadows-simlink SimLinkProof.cpp)
+target_link_libraries(meadows-simlink PRIVATE
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,meadows-data,meadows-ecs,meadows-gameplay,meadows-world,meadows-script,meadows-narrative>"
+)
+meadows_set_warnings(meadows-simlink)
+add_test(NAME simlink COMMAND meadows-simlink)

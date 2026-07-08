@@ -16,7 +16,7 @@ add_library(meadows-runtime STATIC
     VegetationCollision.cpp
     WorldEditor.cpp
 )
-target_link_libraries(meadows-runtime PUBLIC meadows meadows-world
+target_link_libraries(meadows-runtime PUBLIC meadows-render meadows-world
                       meadows-physics)
 meadows_set_warnings(meadows-runtime)
 

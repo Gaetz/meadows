@@ -237,7 +237,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U8-4 | ✅ | U8 | med | qual | script/Vm.cpp:161,265 | Coroutines gardent pointeurs bruts, dangling si entité meurt | M | non |
 | U9-1 |   | U9 | med | qual | tests/SceneSubmitTest.cpp:1-40 | Seam RenderSnapshot à peine testé (2 cas) | M | oui |
 | U9-2 | ✅ | U9 | med | factor | tests/CookerTest.cpp:18 | Aucun golden test figeant les ordinaux réflexion réels | M | oui |
-| U9-3 |   | U9 | med | archi | tests/CMakeLists.txt:78 | Aucune cible link prouvant sim-sans-render (§2.10) | M | oui |
+| U9-3 | ✅ | U9 | med | archi | tests/CMakeLists.txt:78 | Aucune cible link prouvant sim-sans-render (§2.10) | M | oui |
 | U6-F1 | ✅ | U6 | med | archi | CharacterTick.cpp:74-78,119 ; GameTime.cpp:22-27,49,89-90 | §2.9 : regen/DoT/mort-buildup écrivent la base hors pipeline (voir DEEP) | L | oui |
 | U4-10 | ✅ | U4 | med | archi/factor | LandscapeScene.cpp:1014,4195 | `update()` orchestre 10 sous-systèmes ; NPC+interaction inline | L | non |
 | U5-4 |   | U5 | med | factor | EditorScene.cpp:128-704 | 3 éditeurs dev réimplémentent la même forme (~700 l.) | L | non |

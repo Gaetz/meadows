@@ -3,7 +3,10 @@
 # left the cooker registering CoreForms only, silently dropping records).
 # The file is headless (data/world/gameplay/quest only); world + narrative
 # pull every form family into the link/include closure.
+# meadows-render: the `terrain-pad` subcommand bakes heights through
+# render::terrain::height — a TOOL may use the renderer's CPU functions;
+# the sim libs themselves stay render-free (see tests/meadows-simlink).
 add_executable(cooker cooker/Main.cpp ${PROJECT_SOURCE_DIR}/game/AllForms.cpp)
 target_link_libraries(cooker PRIVATE meadows-data meadows-world
-                      meadows-narrative)
+                      meadows-narrative meadows-render)
 meadows_set_warnings(cooker)
