@@ -89,7 +89,8 @@ std::optional<data::Record> captureReference(ecs::Entity entity,
                               reflect::Value { liveCell });
     }
 
-    // Transform: actors only (see header note).
+    // Position/rotation: actors only (see header note — capturing a
+    // ground-snapped item/static Y would double the offset on reload).
     if (entity.has<world::ActorMarker>() &&
         entity.has<world::Transform>()) {
         const auto& transform = entity.get<world::Transform>();
@@ -100,6 +101,16 @@ std::optional<data::Record> captureReference(ecs::Entity entity,
         if (transform.rotation != reference->rotation) {
             record.fields.emplace(type.findField("rotation")->id,
                                   reflect::Value { transform.rotation });
+        }
+    }
+    // Scale: every entity — the ground snap never touches it, so the diff
+    // is snap-safe, and the materialize path already carried it (a scale
+    // change on an existing reference was silently lost — audit U5-5).
+    if (entity.has<world::Transform>()) {
+        const auto& transform = entity.get<world::Transform>();
+        if (transform.scale != reference->scale) {
+            record.fields.emplace(type.findField("scale")->id,
+                                  reflect::Value { transform.scale });
         }
     }
 
@@ -212,6 +223,14 @@ void PendingSaveLayer::applyReferenceOverrides(
             f != patch.fields.end()) {
             if (const Quat* q = std::get_if<Quat>(&f->second)) {
                 transform.rotation = *q;
+            }
+        }
+    }
+    if (const reflect::FieldInfo* field = type.findField("scale")) {
+        if (const auto f = patch.fields.find(field->id);
+            f != patch.fields.end()) {
+            if (const Vec3* s = std::get_if<Vec3>(&f->second)) {
+                transform.scale = *s;
             }
         }
     }

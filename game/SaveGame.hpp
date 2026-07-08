@@ -31,7 +31,8 @@ namespace game {
 //    contract; a different cell = re-homing);
 //  - `position`/`rotation` — ACTORS only (their Y is re-derived from the
 //    terrain at build; item/static positions never change at runtime, and
-//    capturing snapped world Y would double the ground offset on reload).
+//    capturing snapped world Y would double the ground offset on reload);
+//  - `scale` — every entity (the ground snap never touches it — audit U5-5).
 std::optional<data::Record> captureReference(ecs::Entity entity,
                                              const data::FormDatabase& forms);
 

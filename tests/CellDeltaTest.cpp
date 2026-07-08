@@ -273,3 +273,48 @@ TEST_CASE("cell delta: a moved actor reloads where it moved, not at its spawn") 
     CHECK(reloaded.get<world::Transform>().position.z ==
           doctest::Approx(movedTo.z));
 }
+
+TEST_CASE("cell delta: a scale change survives the unload/reload (audit U5-5)") {
+    data::FormTypeRegistry types;
+    data::registerCoreFormTypes(types);
+    world::registerWorldFormTypes(types);
+    gameplay::registerSaveFormTypes(types);
+    const auto plugin = data::parsePluginToml(kActorPlugin, types, "base");
+    REQUIRE(plugin.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*plugin }, types, db);
+
+    ecs::World world;
+    world::registerSceneComponents(world);
+    gameplay::registerGameplayComponents(world);
+    world::FormCategoryRegistry categories;
+    world::registerCoreCategories(categories);
+    world::Spawner spawner;
+    world::registerCoreSpawners(spawner);
+    const world::WorldModel model = world::WorldModel::build(db);
+    world::CellLoader loader { world, db, model, spawner, categories };
+
+    gameplay::GameplayTagRegistry tags;
+    game::PendingSaveLayer pending;
+    loader.beforeUnload = [&](data::FormHandle, ecs::Entity cellEntity) {
+        pending.captureCell(world, db, cellEntity, tags);
+    };
+
+    loader.loadCell(db.handleOf(kActorCell));
+    ecs::Entity actor = findByRef(world, kMovedActorRef);
+    REQUIRE(actor.is_alive());
+
+    // A script/console shrinks it (setscale). The patch path used to drop
+    // scale entirely — only the prefab materialize path carried it.
+    actor.get_mut<world::Transform>().scale = Vec3 { 0.5f, 0.5f, 0.5f };
+
+    loader.unloadCell(db.handleOf(kActorCell));
+    loader.loadCell(db.handleOf(kActorCell));
+
+    ecs::Entity reloaded = findByRef(world, kMovedActorRef);
+    REQUIRE(reloaded.is_alive());
+    CHECK(reloaded.get<world::Transform>().scale.x == doctest::Approx(1.0f));
+    pending.applyReferenceOverrides(reloaded, kMovedActorRef);
+    CHECK(reloaded.get<world::Transform>().scale.x == doctest::Approx(0.5f));
+    CHECK(reloaded.get<world::Transform>().scale.y == doctest::Approx(0.5f));
+}
