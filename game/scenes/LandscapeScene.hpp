@@ -217,13 +217,17 @@ private:
     bool interiorMode { false };
 
     // In-game interaction mode. Play = first-person capsule; Spectator = free
-    // fly camera (the base for a future pause/photo mode); Edit = the level
-    // editor over the world (F6). Replaces the former playMode/editMode bools,
-    // making the states mutually exclusive; transitions go through
-    // enter/exitPlayMode and the F6 toggle. Target (see docs): the editor
+    // fly camera that pauses the sim (the base for a future photo mode); Edit =
+    // the level editor over the world. Replaces the former playMode/editMode
+    // bools, making the states mutually exclusive; transitions go through
+    // enter/exitPlayMode and the mode hotkeys. Target (see docs): the editor
     // becomes a stacked SceneStack layer over the running game.
     enum class SceneMode { Spectator, Play, Edit };
     SceneMode mode { SceneMode::Spectator };
+    // The gameplay mode to return to when a menu (pause/main) closes on Escape.
+    // Defaults to Play so a fresh boot lands in Play, and tracks the last mode
+    // the player was actively in (updated each frame outside menus).
+    SceneMode lastActiveMode { SceneMode::Play };
 
     // Chantier 2 B3/B4: level editor. CPU ray-AABB picking over MeshCache
     // bounds, ImGuizmo gizmos, palette placement — every edit lands in the
@@ -620,6 +624,7 @@ private:
     f32 playerCarriedWeight { 0.0f };
     void enterPlayMode();
     void exitPlayMode();
+    void restoreMode(SceneMode target); // drive into a mode (Escape → last mode)
     void updatePlayer(f32 dt);
 
     // B5.5: the player is a GAS actor (docs/STATS.md) — spawned from the

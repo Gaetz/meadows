@@ -1048,9 +1048,15 @@ void LandscapeScene::update(f32 dt) {
         updateGameUi(dt);
     }
     const bool uiPaused = uiCreated && screenStack.modalOpen();
+    // Spectator freezes the *living* sim — physics, the game clock (so the
+    // sun stops too), the character tick and the NPCs — while the free camera
+    // keeps roaming and the world keeps streaming and rendering. That frozen-
+    // moment-you-can-look-around is the base for a future photo mode. A modal
+    // UI still pauses everything, camera included (it owns the input).
+    const bool simPaused = uiPaused || (mode == SceneMode::Spectator);
     // B4/B5: physics tick + collision tiles around the focus (the player
     // in Play mode, the camera in Fly); the debug capsule free-falls.
-    if (physics && !uiPaused) {
+    if (physics && !simPaused) {
         core::FrameProbe::Scope probe { frameProbe, "physics" };
         physics->tick(dt);
         if (!interiorMode) { // interiors have no terrain to collide with
@@ -1091,7 +1097,7 @@ void LandscapeScene::update(f32 dt) {
     // the (still open) pause menu kept the stale sun.
     sky.timeOfDay =
         static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
-    if (!uiPaused) {
+    if (!simPaused) {
         // B7/ch.3 B1: interaction prompts + the travel fade state machine.
         updateInteraction(dt);
         // Chantier 3 B1: the game clock owns time — advancing it stays
@@ -1141,7 +1147,7 @@ void LandscapeScene::update(f32 dt) {
         snapshot.meshes.push_back({ core::Guid {}, core::Guid {}, transform });
     }
     // B6: patrol + graph-driven poses for every Forms-built NPC.
-    if (!uiPaused) {
+    if (!simPaused) {
         core::FrameProbe::Scope probe { frameProbe, "npcs" };
         updateNpcs(dt);
     }
@@ -1153,12 +1159,8 @@ void LandscapeScene::update(f32 dt) {
     // captured start state to the selected weather over its duration.
     weather.update(atmos, dt);
 
-    // B5: F toggles first-person Play mode (unless ImGui owns the
-    // keyboard). In Play the player drives; Fly stays the dev camera.
-    if (!uiPaused && engine->getInput().wasPressed(platform::Key::F) &&
-        !ImGui::GetIO().WantCaptureKeyboard) {
-        (mode == SceneMode::Play) ? exitPlayMode() : enterPlayMode();
-    }
+    // Mode switching lives with the F11/F12 hotkeys (drawn overlay); Play is
+    // home. Nothing to toggle here anymore.
     if (uiPaused) {
         // A modal screen owns the input; cameras and player hold still.
     } else if ((mode == SceneMode::Play) && player) {
@@ -1171,6 +1173,12 @@ void LandscapeScene::update(f32 dt) {
                          allowCapture);
     }
     // (Time-of-day now advances through the game clock, above.)
+
+    // Remember the active gameplay mode (outside menus) so a menu returns here
+    // on Escape. Defaults to Play, so the boot main menu closes into Play.
+    if (!(uiCreated && screenStack.modalOpen())) {
+        lastActiveMode = mode;
+    }
 
     // Chantier 5 B5: a requested load re-enters the scene with the save
     // resolved as the last layer. End of update: nothing touches the
@@ -1279,6 +1287,33 @@ void LandscapeScene::exitPlayMode() {
     engine->getWindow().setRelativeMouseMode(false);
     screenStack.close("hud");
     // The camera stays where the player stood — Fly resumes from there.
+}
+
+// Drive the scene into `target` from the current mode, reusing enter/exitPlay-
+// Mode so the capsule and mouse/HUD state stay consistent. Used to restore the
+// pre-menu mode on Escape (and anywhere a mode needs setting programmatically).
+void LandscapeScene::restoreMode(SceneMode target) {
+    if (mode == target) {
+        return;
+    }
+    switch (target) {
+    case SceneMode::Play:
+        enterPlayMode(); // spawns the capsule, grabs the mouse, shows the HUD
+        break;
+    case SceneMode::Spectator:
+        if (mode == SceneMode::Play) {
+            exitPlayMode(); // -> Spectator (tears down the capsule)
+        } else {
+            mode = SceneMode::Spectator; // from Edit
+        }
+        break;
+    case SceneMode::Edit:
+        if (mode == SceneMode::Play) {
+            exitPlayMode();
+        }
+        mode = SceneMode::Edit;
+        break;
+    }
 }
 
 // --- B3/B4: the level editor -------------------------------------------------------
@@ -2283,6 +2318,10 @@ void LandscapeScene::updateGameUi(f32 dt) {
         const ScreenStack::Screen* top = screenStack.topModal();
         if (top && (top->name == "pause" || top->name == "mainmenu")) {
             screenStack.closeTop();
+            // Escape returns to the mode in use before the menu — Play on a
+            // fresh boot (the main menu sits over the default), or whatever the
+            // player last switched to.
+            restoreMode(lastActiveMode);
         } else if (!screenStack.modalOpen() && (mode == SceneMode::Play) &&
                    screenStack.find("pause")) {
             updateMenuClockLine();
@@ -5554,17 +5593,38 @@ void LandscapeScene::drawUi() {
             ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, fadeAlpha)));
     }
 
-    // F6 toggles the level editor (leaves Play first — the editor flies).
-    if (ImGui::IsKeyPressed(ImGuiKey_F6, false) && levelEditor) {
-        if (mode == SceneMode::Edit) {
-            mode = SceneMode::Spectator;
-            editSelection = ecs::Entity {};
-            placementBase = core::Guid {};
-        } else {
-            if (mode == SceneMode::Play) {
-                exitPlayMode(); // tears down the capsule (also sets Spectator)
+    // Mode hotkeys. Play is home: F2 toggles Spectator (a paused free camera —
+    // the photo-mode base), F3 toggles the level editor. Each key returns to
+    // Play when pressed again. Both are inert while a modal menu owns the input
+    // (grabbing the mouse for Play would fight the menu). F2/F3 (not F11/F12)
+    // stay clear of the CLion/VS debugger's global Step Into/Over shortcuts.
+    if (!screenStack.modalOpen()) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F2, false)) {
+            if (mode == SceneMode::Spectator) {
+                enterPlayMode(); // back to Play (home)
+            } else {
+                if (mode == SceneMode::Edit) {
+                    editSelection = ecs::Entity {};
+                    placementBase = core::Guid {};
+                }
+                if (mode == SceneMode::Play) {
+                    exitPlayMode(); // -> Spectator (tears down the capsule)
+                } else {
+                    mode = SceneMode::Spectator; // from Edit
+                }
             }
-            mode = SceneMode::Edit;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_F3, false) && levelEditor) {
+            if (mode == SceneMode::Edit) {
+                editSelection = ecs::Entity {};
+                placementBase = core::Guid {};
+                enterPlayMode(); // editor off -> back to Play (home)
+            } else {
+                if (mode == SceneMode::Play) {
+                    exitPlayMode(); // tears down the capsule (the editor flies)
+                }
+                mode = SceneMode::Edit;
+            }
         }
     }
     if (mode == SceneMode::Edit && levelEditor) {
@@ -5739,12 +5799,12 @@ void LandscapeScene::drawGameplayUi() {
     if (physics) {
         // B5: first-person Play mode.
         bool play = (mode == SceneMode::Play);
-        if (ImGui::Checkbox("Play mode (B5) — press F", &play)) {
+        if (ImGui::Checkbox("Play mode — F2 Spectator / F3 Editor", &play)) {
             play ? enterPlayMode() : exitPlayMode();
         }
         if ((mode == SceneMode::Play)) {
-            ImGui::TextUnformatted(
-                "WASD: move | Shift: sprint | Space: jump | F: back to Fly");
+            ImGui::TextUnformatted("WASD: move | Shift: sprint | Space: jump | "
+                                   "F2: Spectator | F3: Editor");
         }
         if (playerEntity.is_alive()) {
             // B5.5: the stats that DRIVE the controller, live.
