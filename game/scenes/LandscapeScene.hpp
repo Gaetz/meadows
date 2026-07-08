@@ -15,6 +15,7 @@
 #include "engine/physics/Physics.hpp"
 #include "game/LevelEditor.hpp"
 #include "game/MeshCache.hpp"
+#include "game/scenes/AtmosphereParams.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
@@ -171,25 +172,13 @@ private:
     f32 autoExposureMinUi { 0.4f };
     f32 autoExposureMaxUi { 2.5f };
     f32 exposureUi { 1.0f };
-    f32 cloudCoverageUi { 0.38f };
-    f32 cloudShadowUi { 0.7f };
-    f32 bloomIntensityUi { 0.35f };
-    f32 godRayIntensityUi { 0.6f };
-    f32 volumetricUi { 1.0f };
+    // Atmospheric render state (sky/fog/weather-driven), grouped so the weather
+    // transition can own it (brick 3a). Manual sliders and the crossfade both
+    // write here; render() reads it. stormFront/rainIntensity live here too
+    // (were separate `*Ui` members near the storm/rain resources).
+    AtmosphereParams atmos;
     f32 ssaoUi { 0.7f };
     i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 vol, 4 ssao
-    f32 fogDensityUi { 0.0014f };
-    f32 fogHeightFalloffUi { 0.02f };
-    f32 fogLowBoostUi { 1.6f };
-    f32 fogStartUi { 300.0f };
-    f32 cloudHeightUi { 520.0f };
-    f32 cloudScaleUi { 0.0011f };
-    f32 sunIntensityUi { 1.0f };
-    f32 ambientIntensityUi { 1.0f };
-    f32 saturationUi { 1.0f };
-    f32 warmthUi { 0.0f };
-    f32 windStrengthUi { 1.0f };
-    f32 waveChopUi { 1.0f };
     f32 windTime { 0.0f }; // accumulated wind phase (dt x strength)
 
     rhi::BufferHandle frameUbo {};
@@ -462,7 +451,6 @@ private:
     rhi::BufferHandle stormVertices {};
     rhi::PipelineHandle stormPipeline {};
     u64 stormShaderGeneration { 0 };
-    f32 stormFrontUi { 0.0f };
     // Brick 31 (chantier 7.7): procedural rain streaks + the top-down
     // occlusion depth (no rain under roofs) + global wetness.
     rhi::PipelineHandle rainPipeline {};
@@ -473,7 +461,6 @@ private:
     rhi::BufferHandle rainOcclusionUbo {};
     rhi::BindGroupHandle rainCasterGroup {};
     rhi::BindGroupHandle rainReceiverGroup {};
-    f32 rainIntensityUi { 0.0f };
     bool shaftsUi { true };
     bool contactShadowsUi { true }; // brick 33a
     // Brick 33b/c: worker-baked terrain sun-shadow + sky-openness map.

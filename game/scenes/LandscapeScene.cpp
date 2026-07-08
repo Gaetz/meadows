@@ -161,19 +161,19 @@ void LandscapeScene::onEnter() {
     terrain.params.mountainWavelength = tuning.mountainWavelength;
     terrain.params.mountainAmplitude = tuning.mountainAmplitude;
     terrain.params.seaLevel = tuning.seaLevel;
-    fogDensityUi = tuning.fogDensity;
-    fogHeightFalloffUi = tuning.fogHeightFalloff;
-    fogLowBoostUi = tuning.fogLowBoost;
-    fogStartUi = tuning.fogStart;
+    atmos.fogDensity = tuning.fogDensity;
+    atmos.fogHeightFalloff = tuning.fogHeightFalloff;
+    atmos.fogLowBoost = tuning.fogLowBoost;
+    atmos.fogStart = tuning.fogStart;
     exposureUi = tuning.exposure;
-    bloomIntensityUi = tuning.bloomIntensity;
-    godRayIntensityUi = tuning.godRayIntensity;
-    volumetricUi = tuning.volumetricIntensity;
+    atmos.bloomIntensity = tuning.bloomIntensity;
+    atmos.godRayIntensity = tuning.godRayIntensity;
+    atmos.volumetric = tuning.volumetricIntensity;
     ssaoUi = tuning.ssaoStrength;
-    cloudCoverageUi = tuning.cloudCoverage;
-    cloudShadowUi = tuning.cloudShadowStrength;
-    cloudHeightUi = tuning.cloudHeight;
-    cloudScaleUi = tuning.cloudScale;
+    atmos.cloudCoverage = tuning.cloudCoverage;
+    atmos.cloudShadow = tuning.cloudShadowStrength;
+    atmos.cloudHeight = tuning.cloudHeight;
+    atmos.cloudScale = tuning.cloudScale;
     gradeVibranceUi = tuning.gradeVibrance;   // B3 (toggle stays off)
     gradeSplitToneUi = tuning.gradeSplitTone;
     gradeContrastUi = tuning.gradeContrast;
@@ -1132,7 +1132,7 @@ void LandscapeScene::update(f32 dt) {
     }
     // Wind phase integrates the CURRENT strength: speed changes bend the
     // drift/sway smoothly instead of teleporting the pattern.
-    windTime += dt * glm::max(windStrengthUi, 0.05f);
+    windTime += dt * glm::max(atmos.windStrength, 0.05f);
 
     // Weather crossfade: every parameter slides from the captured start
     // state to the selected weather over weatherDuration seconds.
@@ -4935,48 +4935,48 @@ void LandscapeScene::buildMeshPipeline(rhi::Device& device) {
 
 WeatherForm LandscapeScene::captureCurrentWeather() const {
     WeatherForm w;
-    w.cloudCoverage = cloudCoverageUi;
-    w.cloudScale = cloudScaleUi;
-    w.cloudHeight = cloudHeightUi;
-    w.cloudShadowStrength = cloudShadowUi;
-    w.fogDensity = fogDensityUi;
-    w.fogHeightFalloff = fogHeightFalloffUi;
-    w.fogLowBoost = fogLowBoostUi;
-    w.fogStart = fogStartUi;
-    w.sunIntensity = sunIntensityUi;
-    w.ambientIntensity = ambientIntensityUi;
-    w.saturation = saturationUi;
-    w.warmth = warmthUi;
-    w.volumetricIntensity = volumetricUi;
-    w.godRayIntensity = godRayIntensityUi;
-    w.bloomIntensity = bloomIntensityUi;
-    w.windStrength = windStrengthUi;
-    w.waveChop = waveChopUi;
-    w.stormFront = stormFrontUi;     // brick 30
-    w.rainIntensity = rainIntensityUi; // brick 31
+    w.cloudCoverage = atmos.cloudCoverage;
+    w.cloudScale = atmos.cloudScale;
+    w.cloudHeight = atmos.cloudHeight;
+    w.cloudShadowStrength = atmos.cloudShadow;
+    w.fogDensity = atmos.fogDensity;
+    w.fogHeightFalloff = atmos.fogHeightFalloff;
+    w.fogLowBoost = atmos.fogLowBoost;
+    w.fogStart = atmos.fogStart;
+    w.sunIntensity = atmos.sunIntensity;
+    w.ambientIntensity = atmos.ambientIntensity;
+    w.saturation = atmos.saturation;
+    w.warmth = atmos.warmth;
+    w.volumetricIntensity = atmos.volumetric;
+    w.godRayIntensity = atmos.godRayIntensity;
+    w.bloomIntensity = atmos.bloomIntensity;
+    w.windStrength = atmos.windStrength;
+    w.waveChop = atmos.waveChop;
+    w.stormFront = atmos.stormFront;     // brick 30
+    w.rainIntensity = atmos.rainIntensity; // brick 31
     return w;
 }
 
 void LandscapeScene::applyWeather(const WeatherForm& w) {
-    cloudCoverageUi = w.cloudCoverage;
-    cloudScaleUi = w.cloudScale;
-    cloudHeightUi = w.cloudHeight;
-    cloudShadowUi = w.cloudShadowStrength;
-    fogDensityUi = w.fogDensity;
-    fogHeightFalloffUi = w.fogHeightFalloff;
-    fogLowBoostUi = w.fogLowBoost;
-    fogStartUi = w.fogStart;
-    sunIntensityUi = w.sunIntensity;
-    ambientIntensityUi = w.ambientIntensity;
-    saturationUi = w.saturation;
-    warmthUi = w.warmth;
-    volumetricUi = w.volumetricIntensity;
-    godRayIntensityUi = w.godRayIntensity;
-    bloomIntensityUi = w.bloomIntensity;
-    windStrengthUi = w.windStrength;
-    waveChopUi = w.waveChop;
-    stormFrontUi = w.stormFront;       // brick 30
-    rainIntensityUi = w.rainIntensity; // brick 31
+    atmos.cloudCoverage = w.cloudCoverage;
+    atmos.cloudScale = w.cloudScale;
+    atmos.cloudHeight = w.cloudHeight;
+    atmos.cloudShadow = w.cloudShadowStrength;
+    atmos.fogDensity = w.fogDensity;
+    atmos.fogHeightFalloff = w.fogHeightFalloff;
+    atmos.fogLowBoost = w.fogLowBoost;
+    atmos.fogStart = w.fogStart;
+    atmos.sunIntensity = w.sunIntensity;
+    atmos.ambientIntensity = w.ambientIntensity;
+    atmos.saturation = w.saturation;
+    atmos.warmth = w.warmth;
+    atmos.volumetric = w.volumetricIntensity;
+    atmos.godRayIntensity = w.godRayIntensity;
+    atmos.bloomIntensity = w.bloomIntensity;
+    atmos.windStrength = w.windStrength;
+    atmos.waveChop = w.waveChop;
+    atmos.stormFront = w.stormFront;       // brick 30
+    atmos.rainIntensity = w.rainIntensity; // brick 31
 }
 
 void LandscapeScene::render(engine::FrameContext& frame) {
@@ -5040,11 +5040,11 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     // CPU chunk culling (brick 25): one frustum per rendered viewpoint.
     const render::Frustum viewFrustum = render::Frustum::fromViewProj(viewProj);
     const render::SkySystem::SkyState skyState =
-        sky.evaluate({ .cloudCoverage = cloudCoverageUi,
-                       .sunIntensity = sunIntensityUi,
-                       .ambientIntensity = ambientIntensityUi,
-                       .saturation = saturationUi,
-                       .warmth = warmthUi });
+        sky.evaluate({ .cloudCoverage = atmos.cloudCoverage,
+                       .sunIntensity = atmos.sunIntensity,
+                       .ambientIntensity = atmos.ambientIntensity,
+                       .saturation = atmos.saturation,
+                       .warmth = atmos.warmth });
 
     // Shadows ramp out as the sun crosses the horizon (no sun, no shadows),
     // and soften away under heavy cloud cover (diffuse light casts none).
@@ -5052,7 +5052,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     const f32 shadowStrength =
         (shadowsUi && shadowsAvailable && !interiorMode)
             ? glm::smoothstep(-0.02f, 0.06f, skyState.sunDirection.y) *
-                  (1.0f - 0.65f * cloudCoverageUi)
+                  (1.0f - 0.65f * atmos.cloudCoverage)
             : 0.0f;
     // The cascades use a QUANTIZED sun (dev report: tree shadows tremble).
     // The texel snap absorbs camera translation, but the game clock spins
@@ -5098,7 +5098,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .viewProj = viewProj,
         .invViewProj = glm::inverse(viewProj),
         .cameraPos = { camera.position, 1.0f },
-        .time = { timeSeconds, ssaoUi, volumetricUi,
+        .time = { timeSeconds, ssaoUi, atmos.volumetric,
                   static_cast<f32>(debugBufferUi) },
         .sunDirection = { skyState.sunDirection, 0.0f },
         .sunColor = { skyState.sunColor, skyState.sunDiscIntensity },
@@ -5112,9 +5112,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                          tuning.splatUvScale,
                          reflectionsActive ? 1.0f : 0.0f },
         .postInfo = { tonemapUi ? 1.0f : 0.0f, exposureUi,
-                      cascadeDebugUi ? 1.0f : 0.0f, bloomIntensityUi },
-        .fogInfo = { fogDensityUi, fogHeightFalloffUi, fogLowBoostUi,
-                     fogStartUi },
+                      cascadeDebugUi ? 1.0f : 0.0f, atmos.bloomIntensity },
+        .fogInfo = { atmos.fogDensity, atmos.fogHeightFalloff, atmos.fogLowBoost,
+                     atmos.fogStart },
         .sunViewProj = cascades.viewProj,
         // .w = interior flag (B5): mesh/skinned/locallights switch to the
         // hemispheric ambient + wrap/bounce indoors; 0 keeps the exterior
@@ -5128,9 +5128,9 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                         static_cast<f32>(frame.height),
                         1.0f / static_cast<f32>(frame.width),
                         1.0f / static_cast<f32>(frame.height) },
-        .cloudInfo = { cloudCoverageUi, cloudHeightUi, cloudScaleUi,
-                       cloudShadowUi },
-        .sunScreen = { sunUv.x, sunUv.y, shaftFade, godRayIntensityUi },
+        .cloudInfo = { atmos.cloudCoverage, atmos.cloudHeight, atmos.cloudScale,
+                       atmos.cloudShadow },
+        .sunScreen = { sunUv.x, sunUv.y, shaftFade, atmos.godRayIntensity },
         .cloudMapInfo = { std::floor(camera.position.x /
                                      (render::SkySystem::kCloudMapSpan /
                                       render::SkySystem::kCloudMapSize)) *
@@ -5143,7 +5143,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
                                render::SkySystem::kCloudMapSize),
                           1.0f / render::SkySystem::kCloudMapSpan, 0.0f },
         .waterMapInfo = water.poolMapInfo(),
-        .windInfo = { windTime, windStrengthUi, waveChopUi, 0.0f },
+        .windInfo = { windTime, atmos.windStrength, atmos.waveChop, 0.0f },
     };
     render::FrameUniforms frameData = uniforms;
     if (interiorMode) {
@@ -5180,8 +5180,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
             : Vec4 { 0.0f };
     // Brick 30/31: the crossfaded storm front + rain intensity, and the
     // top-down rain-occlusion matrix (ortho, 40 m around the camera).
-    frameData.stormInfo.x = stormFrontUi;
-    frameData.stormInfo.y = interiorMode ? 0.0f : rainIntensityUi;
+    frameData.stormInfo.x = atmos.stormFront;
+    frameData.stormInfo.y = interiorMode ? 0.0f : atmos.rainIntensity;
     if (frameData.stormInfo.y > 0.003f) {
         const Vec3 eye = camera.position;
         const Mat4 rainView =
@@ -5448,7 +5448,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         }
         // Brick 30: horizon cumulonimbus, right after the sky dome (they
         // occlude sky, terrain occludes them via the depth test).
-        if (!interiorMode && stormFrontUi > 0.003f) {
+        if (!interiorMode && atmos.stormFront > 0.003f) {
             if (shaders->generation("cumulonimbus") !=
                     stormShaderGeneration ||
                 stormPipeline.id == 0) {
@@ -5768,15 +5768,15 @@ void LandscapeScene::drawSkyUi() {
             ImGui::SameLine();
             ImGui::Text("%.0f%%", weatherBlend * 100.0f);
         }
-        ImGui::SliderFloat("Wind strength", &windStrengthUi, 0.0f, 2.5f,
+        ImGui::SliderFloat("Wind strength", &atmos.windStrength, 0.0f, 2.5f,
                            "%.2f");
-        ImGui::SliderFloat("Wave chop", &waveChopUi, 0.0f, 2.5f, "%.2f");
-        ImGui::SliderFloat("Sun intensity", &sunIntensityUi, 0.0f, 1.5f,
+        ImGui::SliderFloat("Wave chop", &atmos.waveChop, 0.0f, 2.5f, "%.2f");
+        ImGui::SliderFloat("Sun intensity", &atmos.sunIntensity, 0.0f, 1.5f,
                            "%.2f");
-        ImGui::SliderFloat("Ambient intensity", &ambientIntensityUi, 0.0f,
+        ImGui::SliderFloat("Ambient intensity", &atmos.ambientIntensity, 0.0f,
                            1.5f, "%.2f");
-        ImGui::SliderFloat("Saturation", &saturationUi, 0.0f, 1.3f, "%.2f");
-        ImGui::SliderFloat("Warmth (dawn/dusk)", &warmthUi, 0.0f, 1.0f,
+        ImGui::SliderFloat("Saturation", &atmos.saturation, 0.0f, 1.3f, "%.2f");
+        ImGui::SliderFloat("Warmth (dawn/dusk)", &atmos.warmth, 0.0f, 1.0f,
                            "%.2f");
     }
 }
@@ -5860,11 +5860,11 @@ void LandscapeScene::drawGameplayUi() {
 void LandscapeScene::drawRenderUi() {
     ImGui::Checkbox("Stylized lighting (BotW A/B)", &stylizedUi);
     ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
-    ImGui::SliderFloat("Bloom intensity", &bloomIntensityUi, 0.0f, 1.5f,
+    ImGui::SliderFloat("Bloom intensity", &atmos.bloomIntensity, 0.0f, 1.5f,
                        "%.2f");
-    ImGui::SliderFloat("God rays intensity", &godRayIntensityUi, 0.0f, 2.0f,
+    ImGui::SliderFloat("God rays intensity", &atmos.godRayIntensity, 0.0f, 2.0f,
                        "%.2f");
-    ImGui::SliderFloat("Volumetric shafts", &volumetricUi, 0.0f, 3.0f,
+    ImGui::SliderFloat("Volumetric shafts", &atmos.volumetric, 0.0f, 3.0f,
                        "%.2f");
     ImGui::SliderFloat("SSAO strength", &ssaoUi, 0.0f, 1.0f, "%.2f");
     ImGui::Combo("Debug buffer", &debugBufferUi,
@@ -5898,16 +5898,16 @@ void LandscapeScene::drawRenderUi() {
         ImGui::SliderFloat("Auto-expo max", &autoExposureMaxUi, 1.0f, 6.0f,
                            "%.2f");
     }
-    ImGui::SliderFloat("Fog density", &fogDensityUi, 0.0f, 0.004f, "%.4f",
+    ImGui::SliderFloat("Fog density", &atmos.fogDensity, 0.0f, 0.004f, "%.4f",
                        ImGuiSliderFlags_Logarithmic);
-    ImGui::SliderFloat("Fog height falloff", &fogHeightFalloffUi, 0.001f,
+    ImGui::SliderFloat("Fog height falloff", &atmos.fogHeightFalloff, 0.001f,
                        0.08f, "%.3f", ImGuiSliderFlags_Logarithmic);
-    ImGui::SliderFloat("Fog low-altitude boost", &fogLowBoostUi, 0.0f, 5.0f,
+    ImGui::SliderFloat("Fog low-altitude boost", &atmos.fogLowBoost, 0.0f, 5.0f,
                        "%.1f");
-    ImGui::SliderFloat("Fog start (m)", &fogStartUi, 0.0f, 500.0f, "%.0f");
-    ImGui::SliderFloat("Cloud coverage", &cloudCoverageUi, 0.0f, 1.0f,
+    ImGui::SliderFloat("Fog start (m)", &atmos.fogStart, 0.0f, 500.0f, "%.0f");
+    ImGui::SliderFloat("Cloud coverage", &atmos.cloudCoverage, 0.0f, 1.0f,
                        "%.2f");
-    ImGui::SliderFloat("Cloud shadow strength", &cloudShadowUi, 0.0f, 1.0f,
+    ImGui::SliderFloat("Cloud shadow strength", &atmos.cloudShadow, 0.0f, 1.0f,
                        "%.2f");
 }
 
