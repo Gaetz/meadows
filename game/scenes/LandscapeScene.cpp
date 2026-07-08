@@ -1271,6 +1271,12 @@ void LandscapeScene::enterPlayMode() {
         std::make_unique<phys::CharacterBody>(*physics, 0.3f, 1.8f, feet);
     playerVelocity = Vec3 { 0.0f };
     mode = SceneMode::Play;
+    // Play owns the keyboard: drop any lingering ImGui nav focus. With
+    // NavEnableKeyboard, WantCaptureKeyboard stays true as long as a panel
+    // holds nav focus (one click in the Edit-mode panels is enough), and the
+    // captured mouse makes clicking the void to release it impossible — so
+    // Escape/I/T/J went dead after an F3 round-trip (dev report 2026-07-09).
+    ImGui::SetWindowFocus(nullptr);
     engine->getWindow().setRelativeMouseMode(true);
     screenStack.show("hud"); // the HUD overlay lives with Play mode
 }
@@ -3905,6 +3911,11 @@ void LandscapeScene::drawUi() {
     // reflection get/set, Lua).
     if (ImGui::IsKeyPressed(ImGuiKey_F8, false)) {
         consoleVisible = !consoleVisible;
+        if (!consoleVisible && (mode == SceneMode::Play)) {
+            // Same keyboard-focus latch as enterPlayMode: closing the console
+            // must not leave ImGui nav focus on a panel Play can't click away.
+            ImGui::SetWindowFocus(nullptr);
+        }
     }
     if (consoleVisible && console) {
         console->draw();
