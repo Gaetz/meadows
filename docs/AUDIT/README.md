@@ -82,20 +82,87 @@ buildée + 279 tests verts) :
       verrouillé après un aller-retour F3 (NavEnableKeyboard +
       WantCaptureKeyboard latché, souris capturée) — `enterPlayMode` et la
       fermeture de la console F8 relâchent le focus nav.
+  - **NUIT DU 2026-07-09 (session autonome, dev absent — règle : uniquement
+    du prouvable headless, chaque brique = build + suite verte + commit).**
+    11 briques livrées, `2be3a10..cd29a87`, suite passée de 284 à 299 cas :
+    - **U9-2** golden tests du contrat on-disk (ordinaux FieldKind 0..10 +
+      layout octet-à-octet d'un plugin cooké) `2be3a10`.
+    - **U6-F10** les recomputes partiels préservent les maxima dérivés
+      (cache `derivedTargetIds` par acteur ; plus d'écrasement à 100 entre
+      applyEffect et le recompute complet) `9d6f9ad`.
+    - **U6-F2 + U6-F7** `applyBuildupResult` partagé tick réel/game-time —
+      3 vraies divergences réconciliées : ⚠️ la mort par buildup temps réel
+      ne zérotait PAS la santé (tag seul → résurrection au prochain sync +
+      reload vivant, le jumeau du bug regen-revive) ; ⚠️ l'électrocution ne
+      staggerait pas en game-time ; le tag State.Dead atterrit au tick du
+      kill (refresh du current avant updateLifeState) `5e8a971`.
+      **À valider en jeu : mort par poison/buildup, stagger électro.**
+    - **U5-5** le chemin patch capture `scale` (perdu avant) ; le gate
+      acteurs-seulement de position/rotation est DÉLIBÉRÉ (Y snappé) et
+      désormais documenté `3d2e78a`.
+    - **U8-4 + U8-7** Vm Lua : les coroutines portent un handle d'entité et
+      re-résolvent les pointeurs composants à chaque resume (mort = abandon,
+      archetype move = re-fetch — c'était de l'UB) ; les erreurs Lua sont
+      loggées au lieu d'être avalées `76d7ca2`.
+    - **U9-3** ✦ `meadows-render` extraite de la lib de base (render/ +
+      rhi/ + ImGuiLayer + GlContext ; mêmes sources, mêmes flags) + cible
+      **`meadows-simlink`** : link WHOLE_ARCHIVE de tout le sim SANS
+      meadows-render — preuve négative vérifiée (une référence render
+      injectée dans Combat.cpp casse le link, puis retirée). Résidu
+      documenté : SDL/platform restent dans la base (§2.10-strict =
+      décision à venir). Le cooker linke meadows-render (terrain-pad)
+      `2e6a882`. **Dev : lancer le jeu une fois pour confirmer ; CLion
+      reconfigurera seul.**
+    - **U7-6** dépendances déclarées validées par le resolver (manquante ou
+      chargée après → warning + compteur) ; **U1-02** collision de type-id
+      réflexion assertée en debug ; **U8-10** `new-guid` borné ; **U9-5**
+      test de la chaîne horloge→effets game-time ; **U9-1** tests
+      d'`extractMeshes`/`collectLights` (les nourrisseurs headless du
+      snapshot que U4-2 va consommer) `4ec8635`.
+    - **U3-3** (moitié garde) `static_assert` sur chaque offset std140 de
+      `FrameUniforms` + taille totale (le miroir GLSL n'était tenu que par
+      commentaire) ; **U6-F3** les 2 boucles de tick d'effets partagent
+      `ageAndExpireEffects` ; **U8-1** les clones de `data::forEach` dans
+      quest/dialogue supprimés `7b4c7dc`.
+    - **U1-04** `core::Clock` (steady-clock partagé : FrameProbe, dt moteur,
+      budget terrain, RmlUi) `8bd080c` ; **U5-3** agrégateur
+      `registerCharacterRuntimeTags` (les 2 scènes 2D avaient DÉJÀ dérivé :
+      Shaken/CriticalWeakness/Exhausted inégaux) `c3e2972` ; **U1-08**
+      `MeshData.hpp` relocalisé sous engine/assets (précédent U7-1)
+      `cd29a87`.
   - **Reste ouvert (Batch 3), ordre suggéré (risque croissant) :**
-    1. **Garde-fous U9-3 + U9-2** (remontés 2026-07-08) : la cible de link
-       prouvant sim-sans-render (verrouille §2.10 au link, indépendant de la
-       scène) et le golden test figeant les ordinaux réflexion on-disk (les
-       `static_assert` de Batch 1 verrouillent la cohérence des enums entre
-       eux, pas leurs valeurs). Pas chers, et ils sécurisent les briques
-       risquées qui suivent — à poser AVANT le split renderer.
-    2. **U4-1 (suite)** — sous-systèmes restants du god-object.
-    3. **U4-2 + U4-4 + U4-6** — **le plus structurant, à garder pour la fin** :
+    1. **U4-1 (suite)** — sous-systèmes restants du god-object.
+    2. **U4-2 + U4-4 + U4-6** — **le plus structurant, à garder pour la fin** :
        `LandscapeRenderer` qui possède les systèmes `render::*`, les ~40 handles GPU
        (wrapper RAII, U4-4), l'assemblage `FrameUniforms` (U4-6), et **consomme un
        `RenderSnapshot` étendu au lieu du World vivant (U4-2, le finding #1)**.
-    4. Transverses hors-U4 : **U3-1** (dédup ring streaming Terrain/Grass/Veg),
-       **U5-3** (agrégateur d'enregistrement des tags runtime).
+    3. Transverse hors-U4 : **U3-1** (dédup ring streaming Terrain/Grass/Veg).
+  - **À VOIR AVEC LE DEV (non traitables en autonome, classés 2026-07-09) :**
+    - *Validation en jeu des briques de nuit* : mort par buildup (poison à
+      0 → le PNJ meurt et reste mort), stagger d'électrocution, un lancement
+      du jeu post-split meadows-render.
+    - *Refactors renderer, validation visuelle brique par brique* : U3-1
+      (ChunkStreamer ×3), U3-4/U3-5 (clé chunk + layout MeshVertex),
+      U3-6/U3-7 (PostFx dédup, frees RAII — avec U4-4), U2-03/U2-06
+      (backend GL).
+    - *Perf : mesurer AVANT d'agir* (FrameProbe en jeu) : U2-01 (`::at` hot
+      path draw), U7-7/U8-6 (scans O(n) FormQuery/quêtes).
+    - *Arbitrage design* : H-c `Signal<T>` (EventBus/CueRegistry/UiModel),
+      H-d `Handle<Tag>` (7 handles RHI + nextId — touche l'API RHI publique),
+      U1-03 `core::Result` (introduire avec un premier chemin d'appel réel),
+      U1-06 (contrat de durée de vie JobCounter), U2-04 (ShaderDesc/GLSL,
+      dette Vulkan).
+    - *Scène/éditeur (avec U4-1 suite)* : U4-7 (constantes → tuning), U4-11
+      (strings FR → localisation : décision d'approche), U4-12/13/14
+      (cleanups scène), U5-4 (3 éditeurs dev), U5-6 (gActive), U5-8/9/10,
+      U9-7 (Value↔widget ImGui).
+    - *Features absentes reclassées* (chantiers MEADOWS-PLAN, pas des trous
+      de test) : U9-6 (alias de quêtes jamais implémentés), U9-8 (pas d'API
+      begin/end use mobilier — seule l'occupancy existe).
+    - *Pureté §2.10 stricte* : sortir SDL/platform de la lib de base
+      (split meadows-core/meadows-platform) — étape suivante du verrou U9-3.
+    - *U9-4* : mutualiser les helpers de test (~30 TUs) — churn, à faire
+      opportunistement.
   - **Hors-audit, planifié post-audit :** chantier « cellules extérieures implicites »
     (`docs/IMPLICIT-CELLS.md`, lié dans MEADOWS-PLAN §chantier 2, commit `f0f7c00`) —
     n'impacte aucun finding, à faire APRÈS l'audit.
