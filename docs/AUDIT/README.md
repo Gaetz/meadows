@@ -23,6 +23,8 @@ buildée + 279 tests verts) :
 | U6-F1 §2.9 | **Option A** : « execution calculations » sanctionnées dans CLAUDE.md §2.9 + marqueurs sur les sites (aucun changement de comportement) | `a51fae7` |
 | STATS (bug) | DoT ignition/électrocution réduits par **vitality** (était `will` — bug copier-coller vs STATS.md §183) | `f98b6dc` |
 | STATS (bug) | **Bleed** = criticalSensitivity% de maxHealth, **ignore l'armure** (était un forfait slash mitigé par l'armure) | `4d6a71a` |
+| STATS (tests) | Non-régression : DoT ignition/électro ∝ vitality (pas will) ; bleed = crit-execution sans armure | `95a0f14` |
+| U8-3 | **Source unique** d'enregistrement des Form-types : le cooker compile `game/AllForms.cpp` (`registerAllFormTypes`) au lieu de recopier la liste — plus de dérive possible ; sans nouvelle lib ni changement de DAG | `3a02d8e` |
 
 **Reporté (décision dev requise, PAS un oubli) :**
 - **U6-F1 §2.9 — RÉSOLU (Option A, `a51fae7`)** avec le dev : les écritures de tick
@@ -31,9 +33,6 @@ buildée + 279 tests verts) :
   via `applyDamage`) aurait été une **régression** (double-mitigation) — la résistance
   agit sur le seuil de buildup, pas sur le dégât par tick — et a révélé en prime deux
   bugs d'équilibrage, corrigés (`f98b6dc`, `4d6a71a`, cf. table §0).
-- **U8-3 (source unique d'enregistrement des Form-types)** — nécessite une lib
-  d'agrégation ; l'auteur l'a explicitement reportée (« not worth one yet », commentaire
-  `cooker/Main.cpp`). Changement de structure/build à valider par le dev.
 - **Batch 2 (H-a/H-b, mutualisation reflect) et Batch 3 (structurel)** — haute valeur
   mais touchent la sérialisation/les saves et l'architecture ; à faire en session
   supervisée (CLAUDE.md §10).
