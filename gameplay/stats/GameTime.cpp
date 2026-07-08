@@ -18,6 +18,9 @@ bool isDead(const GameTimeTickArgs& a) {
 
 bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
                         const DerivedStatRegistry& derived, const StatModifiers& mods) {
+    // §2.9 execution calc: buildup DoT / lethal zeroing drain BaseValues
+    // directly (final per-tick amounts — see CharacterTick). updateLifeState
+    // below turns health 0 into State.Dead.
     if (br.poisonHealthDamage > 0.0f || br.ignitionHealthDamage > 0.0f) {
         a.vitals.health = std::max(0.0f,
             a.vitals.health - br.poisonHealthDamage - br.ignitionHealthDamage);
@@ -85,6 +88,7 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
     const auto cur = [&](const char* n) { return currentValueOf(a.system, attr(n)); };
     const f32 gdt = static_cast<f32>(gameDt);
 
+    // §2.9 execution calc: rate-driven regen (see CharacterTick) — game-time path.
     // Health and essence regen (game-time; very slow — docs/STATS.md §3).
     a.vitals.health  = std::min(cur("maxHealth"),  a.vitals.health  + cur("healthRegen")  * gdt);
     a.vitals.essence = std::min(cur("maxEssence"), a.vitals.essence + cur("essenceRegen") * gdt);

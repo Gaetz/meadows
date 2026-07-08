@@ -105,6 +105,18 @@ approval.
    (§6). This keeps mutation auditable, stackable, and reversible, and makes
    saves cheap (persist `BaseValue`s + active durational effects; derive
    `CurrentValue`s on load).
+   **Execution calculations are part of the pipeline, not an exception.** Some
+   mutations can't be expressed as declarative add/multiply/override modifiers —
+   typed-damage mitigation (armor/resist/crit → health), rate-driven regen with
+   a dynamic captured magnitude and tag gates, and periodic status DoT / lethal
+   zeroing. These are *execution calculations*: C++ in the damage path or the
+   character tick that computes a result, writes it through the reflected
+   `BaseValue`, and recomputes. Like `applyDamage`/`routeDamageMeta`, they are
+   the pipeline's own terminal writes — centralized, auditable, and save-safe
+   (they write `BaseValue`s) — not ad-hoc bypasses. What §2.9 forbids is
+   *arbitrary* code mutating attributes **outside** this sanctioned set; new
+   execution-calc sites live in the damage path / character tick and recompute
+   after.
 
 10. **Simulation runs headless.** `gameplay/`, `world/`, `data/`, `script/`
     have zero dependency on `engine/platform/`, `engine/rhi/`, or

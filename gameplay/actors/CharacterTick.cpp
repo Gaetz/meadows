@@ -70,6 +70,9 @@ void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
     // Real-time status buildup: DoT, decay, status triggers.
     const BuildupTickResult br = tickBuildup(buildup, system, dt, ctx.tags, ctx.tuning);
 
+    // §2.9 execution calc: buildup DoT drains the BaseValue directly. NOT via
+    // applyDamage — the per-tick amount is already final (resistance acts on
+    // buildup accumulation, not the tick), so it must not be re-mitigated.
     if (br.poisonHealthDamage > 0.0f)
         vitals.health = std::max(0.0f, vitals.health - br.poisonHealthDamage);
     if (br.ignitionHealthDamage > 0.0f)
@@ -109,6 +112,8 @@ void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
         combat.posture = std::min(maxP, combat.posture + regen * dt);
     }
     {
+        // §2.9 execution calc: rate-driven regen (dynamic captured magnitude +
+        // gates) — no static EffectForm can express this; fills BaseValue.
         const f32 maxE = currentValueOf(system, attr("maxEnergy"));
         const f32 regen = currentValueOf(system, attr("energyRegen"));
         // Post-spend recharge delay: spending energy pauses regen for a beat
