@@ -156,7 +156,15 @@ int main(int argc, char** argv) {
     if (command == "new-guid") {
         int count = 1;
         if (argc >= 3) {
+            // atoi returns 0 on garbage and anything on overflow — bound it
+            // instead of looping on whatever the shell passed (audit U8-10).
             count = std::atoi(argv[2]);
+            if (count < 1 || count > 1000) {
+                std::fprintf(stderr,
+                             "new-guid: count must be 1..1000 (got '%s')\n",
+                             argv[2]);
+                return 1;
+            }
         }
         for (int i = 0; i < count; ++i) {
             std::printf("%s\n", core::Guid::generate().toString().c_str());

@@ -208,7 +208,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U4-2 |   | U4 | high | archi | LandscapeScene.cpp:5217,4531,3839 | Seam Phase-5 contourné : `render()` lit le World vivant | L | oui |
 | U4-4 |   | U4 | high | qual | LandscapeScene.cpp:707-858 / hpp:195-663 | ~40 handles GPU bruts, miroir onExit fragile (§8 RAII) | L | oui |
 | U5-1 | ✅ | U5 | high | factor | PropertyGrid.cpp:69-258 ; EditorScene.cpp:34 | Switch FieldKind écrit 3× (face U5 de H-a) | L | oui |
-| U1-02 |   | U1 | med | qual | reflect/Registry.cpp:7-14 | Collision type-id loggée non assertée ; 2e type droppé | S | non |
+| U1-02 | ✅ | U1 | med | qual | reflect/Registry.cpp:7-14 | Collision type-id loggée non assertée ; 2e type droppé | S | non |
 | U1-04 |   | U1 | med | réutil | core/FrameProbe.hpp:20 (+épars) | Aucun clock primitive partagé ; std::chrono re-dérivé 4+ sites | S | oui |
 | U3-4 |   | U3 | med | factor | TerrainSystem.hpp:112 (+15 sites) | Pack/unpack clé u64 chunk à la main | S | non |
 | U3-5 |   | U3 | med | factor | TerrainSystem.cpp:371 (+5 pipelines) | Layout attributs `MeshVertex` réécrit ~5× | S | non |
@@ -235,7 +235,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U7-4 | ✅ | U7 | med | factor | EditSession.cpp:12,193 ; Synthesis.cpp | Clone/diff réflexion dupliqué (H-b) | M | oui |
 | U8-2 | ✅ | U8 | med | archi | gameplay/save/SaveState.hpp:3 ; CharacterTick.hpp | flecs fuite dans headers gameplay | M | oui |
 | U8-4 | ✅ | U8 | med | qual | script/Vm.cpp:161,265 | Coroutines gardent pointeurs bruts, dangling si entité meurt | M | non |
-| U9-1 |   | U9 | med | qual | tests/SceneSubmitTest.cpp:1-40 | Seam RenderSnapshot à peine testé (2 cas) | M | oui |
+| U9-1 | ✅ | U9 | med | qual | tests/SceneSubmitTest.cpp:1-40 | Seam RenderSnapshot à peine testé (2 cas) | M | oui |
 | U9-2 | ✅ | U9 | med | factor | tests/CookerTest.cpp:18 | Aucun golden test figeant les ordinaux réflexion réels | M | oui |
 | U9-3 | ✅ | U9 | med | archi | tests/CMakeLists.txt:78 | Aucune cible link prouvant sim-sans-render (§2.10) | M | oui |
 | U6-F1 | ✅ | U6 | med | archi | CharacterTick.cpp:74-78,119 ; GameTime.cpp:22-27,49,89-90 | §2.9 : regen/DoT/mort-buildup écrivent la base hors pipeline (voir DEEP) | L | oui |
@@ -266,15 +266,15 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U8-5 | ✖ | U8 | low | archi | engine/ui/ImGuiLayer.cpp:4 | ImGui backend GL propre hors RHI (toléré) | S | oui |
 | U8-7 | ✅ | U8 | low | qual | script/Vm.cpp:252 | Handler Lua avale les erreurs (échec silencieux) | S | non |
 | U8-9 | ✅ | U8 | low | réutil | script/Vm.cpp:26-59 | `valueToLua`/`luaToValue` = chaîne if-constexpr par kind (H-a) | S | oui |
-| U8-10 |   | U8 | low | propreté | tools/cooker/Main.cpp:172 | `new-guid count` via atoi non borné | S | non |
+| U8-10 | ✅ | U8 | low | propreté | tools/cooker/Main.cpp:172 | `new-guid count` via atoi non borné | S | non |
 | U9-4 |   | U9 | low | factor | tests/*.cpp (~147 occ) | `makeTypes()`/guid/TOML recopiés dans ~30 TUs | S | non |
-| U9-5 |   | U9 | low | qual | tests/GameClockTest.cpp:1 | Seam GameClock→effets game-time non couvert (H-e) | S | oui |
+| U9-5 | ✅ | U9 | low | qual | tests/GameClockTest.cpp:1 | Seam GameClock→effets game-time non couvert (H-e) | S | oui |
 | U9-6 |   | U9 | low | couverture | tests/QuestTest.cpp | Aucun cas d'alias quête | S | non |
 | U9-7 |   | U9 | low | couverture | game/ui/PropertyGrid.cpp | Value↔widget sans assertion propre (H-a) | S | oui |
 | U9-8 |   | U9 | low | couverture | tests/CuesSchedulesTest.cpp:175 | Usage mobilier (begin/end use) non testé | S | non |
 | U1-06 |   | U1 | low | qual | core/Jobs.hpp:14-26 | Durée de vie JobCounter comment-only ; dangling ref UB | M | non |
 | U4-13 |   | U4 | low | réutil | LandscapeScene.hpp:522,417 | Structs runtime (Npc/MeshDraw/…) dans le header de scène | M | non |
-| U7-6 |   | U7 | low | qual | Resolver.cpp:78 ; Record.hpp:35 | Load order (dependencies) non validé | M | non |
+| U7-6 | ✅ | U7 | low | qual | Resolver.cpp:78 ; Record.hpp:35 | Load order (dependencies) non validé | M | non |
 | U7-7 |   | U7 | low | reuse | data/forms/FormQuery.hpp:23,38,67 | Scans FormQuery non indexés (O(n)) | M | non |
 | U8-6 |   | U8 | low | qual | quest/Quest.cpp:48 ; Dialogue.cpp:65 | Scans O(total forms) par événement quête/dialogue | M | non |
 | U8-8 |   | U8 | low | factor | engine/ui/UiSystem.hpp:47 | `UiModelEventHandler` = 3e canal dispatch (H-c) | M | oui |

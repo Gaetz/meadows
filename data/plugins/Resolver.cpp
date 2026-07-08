@@ -27,6 +27,33 @@ ResolveReport resolve(const vector<const Plugin*>& loadOrder,
                       FormDatabase& outDatabase) {
     ResolveReport report;
 
+    // --- Load-order sanity (audit U7-6): every declared dependency must be
+    // present AND earlier in the load order. Violations don't abort — the
+    // field-level layering below still resolves deterministically — but they
+    // are exactly the "works by accident" setups a modlist tool must surface.
+    {
+        std::unordered_map<core::Guid, size_t> rankOf;
+        for (size_t i = 0; i < loadOrder.size(); ++i) {
+            rankOf.emplace(loadOrder[i]->id, i);
+        }
+        for (size_t i = 0; i < loadOrder.size(); ++i) {
+            for (const core::Guid& dep : loadOrder[i]->dependencies) {
+                const auto it = rankOf.find(dep);
+                if (it == rankOf.end()) {
+                    LOG_WARN("Resolve: '{}' depends on {}, which is not loaded",
+                             loadOrder[i]->name, dep.toString());
+                    report.dependencyViolations++;
+                } else if (it->second > i) {
+                    LOG_WARN("Resolve: '{}' depends on '{}', which loads "
+                             "AFTER it",
+                             loadOrder[i]->name,
+                             loadOrder[it->second]->name);
+                    report.dependencyViolations++;
+                }
+            }
+        }
+    }
+
     // --- Collection: one walk in load order ---------------------------------
     vector<PendingForm> pending;              // creation order
     std::unordered_map<core::Guid, u32> indexOf;

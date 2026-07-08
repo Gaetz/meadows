@@ -322,3 +322,38 @@ displayName = "Sharp Iron Sword"
     CHECK(db1.find<data::WeaponForm>(kSwordId)->damage ==
           db2.find<data::WeaponForm>(kSwordId)->damage);
 }
+
+TEST_CASE("resolver: declared dependencies are validated (audit U7-6)") {
+    const auto types = makeTypes();
+    const auto base = parse(types, kBase, "base");
+
+    const char* kModToml = R"toml(
+[plugin]
+id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+name = "sharper-swords"
+dependencies = ["11111111-1111-4111-8111-111111111111"]
+
+[[records]]
+form = "22222222-2222-4222-8222-222222222222"
+type = "WeaponForm"
+[records.fields]
+damage = 15.0
+)toml";
+    const auto mod = parse(types, kModToml, "mod");
+
+    SUBCASE("dependency loaded first: no violation") {
+        data::FormDatabase db;
+        const auto report = data::resolve({ &base, &mod }, types, db);
+        CHECK(report.dependencyViolations == 0);
+    }
+    SUBCASE("dependency loaded AFTER its dependent: flagged") {
+        data::FormDatabase db;
+        const auto report = data::resolve({ &mod, &base }, types, db);
+        CHECK(report.dependencyViolations == 1);
+    }
+    SUBCASE("dependency absent from the load order: flagged") {
+        data::FormDatabase db;
+        const auto report = data::resolve({ &mod }, types, db);
+        CHECK(report.dependencyViolations == 1);
+    }
+}

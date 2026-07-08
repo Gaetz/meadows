@@ -32,6 +32,8 @@ struct ResolveReport {
     u32 recordsApplied { 0 };
     u32 recordsSkipped { 0 };  // type mismatch, unknown type...
     u32 orphanPatches { 0 };   // patches to a guid no plugin creates
+    u32 dependencyViolations { 0 }; // declared dep missing or loaded after
+                                    // its dependent (audit U7-6)
     vector<FieldConflict> conflicts;
 
     bool hasConflicts() const { return !conflicts.empty(); }
