@@ -81,9 +81,13 @@ void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
         vitals.essence = std::max(0.0f, vitals.essence - br.electrocutionEssenceDamage);
     if (br.bleedBurst) {
         StatBlock block { core, vitals, system, combat };
-        applyDamage(block,
-            DamageEvent { { { DamageType::Slash, ctx.tuning.bleedBurstDamage } }, 0.0f },
-            ctx.tags, ctx.derived, &mods, ctx.tuning);
+        // Bleed = one critical-sensitivity chunk of max health, ignoring armor
+        // (docs/STATS.md §4); the triggering weapon hit already dealt its own
+        // mitigated damage. No channels → the crit execution is the whole effect.
+        DamageEvent bleed;
+        bleed.critical = true;
+        bleed.criticalMultiplier = 1.0f;
+        applyDamage(block, bleed, ctx.tags, ctx.derived, &mods, ctx.tuning);
     }
     if (br.glaciationTriggered) {
         combat.paralysisSeconds = std::max(combat.paralysisSeconds,

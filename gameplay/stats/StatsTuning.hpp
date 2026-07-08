@@ -45,7 +45,9 @@ struct StatsTuningForm : data::Form {
     f32 electrocutionPostureDrainPercent { 1.0f }; // fraction of maxPosture removed on trigger
     f32 glaciationParalysisDuration { 3.0f };      // paralysis seconds on glaciation trigger
     f32 glaciationEnergyRegenMult { 0.7f };        // energy regen multiplier while glaciated
-    f32 bleedBurstDamage { 30.0f };                // slash damage dealt on bleed trigger
+    f32 bleedBurstDamage { 30.0f };                // OBSOLETE: bleed now removes
+                                                   // criticalSensitivity% of maxHealth (ignores
+                                                   // armor). Unused; drop in a data-model pass.
     // Rest (Rest.cpp).
     f32 comfortableSleepHours { 8.0f };  // hours for a full-rest sleep (restores sleep to 100)
     f32 sleepPerHour { 2.0f };           // sleep points recovered per hour below comfortable

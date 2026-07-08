@@ -31,9 +31,12 @@ bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
     }
     if (br.bleedBurst) {
         StatBlock block { a.core, a.vitals, a.system, a.combat };
-        applyDamage(block,
-            DamageEvent { { { DamageType::Slash, a.tuning.bleedBurstDamage } }, 0.0f },
-            a.tags, derived, &mods, a.tuning);
+        // Bleed = one critical-sensitivity chunk of max health, ignoring armor
+        // (docs/STATS.md §4); the weapon hit already dealt its mitigated damage.
+        DamageEvent bleed;
+        bleed.critical = true;
+        bleed.criticalMultiplier = 1.0f;
+        applyDamage(block, bleed, a.tags, derived, &mods, a.tuning);
     }
     if (br.electrocutionTriggered) {
         const f32 maxP = currentValueOf(a.system, attr("maxPosture"));
