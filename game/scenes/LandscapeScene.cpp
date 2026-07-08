@@ -728,7 +728,7 @@ void LandscapeScene::onExit() {
     uiModalWasOpen = false;
     uiTextInputOn = false;
     dialogueRunner.reset(); // references `forms`, reset before re-resolve
-    dialogueOptions.clear();
+    hud.reset(); // dialogue options point into `forms` too
     containerEntity = ecs::Entity {};
     dialoguePartner = ecs::Entity {};
     barterMode = false;
@@ -1571,7 +1571,7 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
     // B6: boot into the main menu — "Enter the world" starts Play;
     // Escape dismisses it for the dev tools (Fly camera, panels).
     if (screenStack.find("mainmenu")) {
-        updateMenuClockLine();
+        hud.updateMenuClockLine(makeHudContext());
         screenStack.show("mainmenu");
     }
     syncScreens();
@@ -1614,7 +1614,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
             restoreMode(lastActiveMode);
         } else if (!screenStack.modalOpen() && (mode == SceneMode::Play) &&
                    screenStack.find("pause")) {
-            updateMenuClockLine();
+            hud.updateMenuClockLine(makeHudContext());
             screenStack.show("pause");
         }
     }
@@ -1631,7 +1631,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
     // T: the wait menu (B6) — Play only, nothing else open.
     if (!imguiOwnsKeys && !uiSystem.textFieldFocused() && (mode == SceneMode::Play) &&
         input.wasPressed(platform::Key::T) && !screenStack.modalOpen()) {
-        updateMenuClockLine();
+        hud.updateMenuClockLine(makeHudContext());
         screenStack.show("wait");
     }
     // J: the quest journal (chantier 6 A3) — the I-key idiom.
@@ -1641,7 +1641,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
         if (top && top->name == "journal") {
             screenStack.closeTop();
         } else if (!screenStack.modalOpen()) {
-            pushJournalModel();
+            hud.pushJournalModel(makeHudContext());
             screenStack.show("journal");
         }
     }
@@ -1692,75 +1692,45 @@ void LandscapeScene::updateGameUi(f32 dt) {
         if (top && (top->name == "inventory" || top->name == "container" ||
                     top->name == "barter")) {
             const str search = uiSystem.getString("inventory", "search");
-            if (search != invView.search()) {
-                invView.setSearch(search);
-                pushItemModels();
+            if (search != hud.inventory().search()) {
+                hud.inventory().setSearch(search);
+                hud.pushItemModels(makeHudContext());
             }
         }
     }
 
-    updateHudModel();
+    hud.updateHudModel(makeHudContext());
     syncScreens();
     uiSystem.update(dt);
 }
 
-void LandscapeScene::updateHudModel() {
-    if (!uiCreated) {
-        return;
-    }
-    if (playerEntity.is_alive() &&
-        playerEntity.has<gameplay::AbilitySystem>() &&
-        playerEntity.has<gameplay::AttributeSet>()) {
-        const auto& sys = playerEntity.get<gameplay::AbilitySystem>();
-        const auto& vitals = playerEntity.get<gameplay::AttributeSet>();
-        const auto pct = [](f32 value, f32 max) {
-            return max > 0.0f ? glm::clamp(100.0f * value / max, 0.0f,
-                                           100.0f)
-                              : 0.0f;
-        };
-        const f32 maxHealth =
-            gameplay::currentValueOf(sys, gameplay::attr("maxHealth"));
-        const f32 maxEnergy =
-            gameplay::currentValueOf(sys, gameplay::attr("maxEnergy"));
-        const f32 maxEssence =
-            gameplay::currentValueOf(sys, gameplay::attr("maxEssence"));
-        const f32 maxPosture =
-            gameplay::currentValueOf(sys, gameplay::attr("maxPosture"));
-        uiSystem.setNumber("hud", "healthPct", pct(vitals.health, maxHealth));
-        uiSystem.setNumber("hud", "energyPct", pct(vitals.energy, maxEnergy));
-        uiSystem.setNumber("hud", "essencePct",
-                           pct(vitals.essence, maxEssence));
-        f32 posture = maxPosture;
-        if (playerEntity.has<gameplay::CombatState>()) {
-            posture = playerEntity.get<gameplay::CombatState>().posture;
-        }
-        uiSystem.setNumber("hud", "posturePct", pct(posture, maxPosture));
-        const auto text = [](f32 value, f32 max) {
-            return std::to_string(static_cast<i32>(value + 0.5f)) + " / " +
-                   std::to_string(static_cast<i32>(max + 0.5f));
-        };
-        uiSystem.setString("hud", "healthText", text(vitals.health, maxHealth));
-        uiSystem.setString("hud", "energyText", text(vitals.energy, maxEnergy));
-        uiSystem.setString("hud", "essenceText",
-                           text(vitals.essence, maxEssence));
-    }
-    const f64 hours = std::fmod(gameClock.gameHours(), 24.0);
-    const i32 hh = static_cast<i32>(hours);
-    const i32 mm = static_cast<i32>((hours - hh) * 60.0);
-    char clock[8];
-    std::snprintf(clock, sizeof(clock), "%02d:%02d", hh, mm);
-    uiSystem.setString("hud", "clock", clock);
-    // The interaction prompt + talk line (migrated from the ImGui overlay).
-    const bool promptOn =
-        (mode == SceneMode::Play) && interaction.promptVisible();
-    uiSystem.setBool("hud", "promptVisible", promptOn);
-    uiSystem.setString("hud", "prompt",
-                       promptOn ? interaction.promptLabel() : str {});
-    const bool talkOn = interaction.talkVisible();
-    uiSystem.setBool("hud", "talkVisible", talkOn);
-    uiSystem.setString("hud", "talk",
-                       talkOn ? interaction.talkLine() : str {});
-    updateNameplates(); // B7
+// Bundle the scene systems the RmlUi presenter reads for GameHud this frame
+// — references into the scene plus a few scalars (audit U4-9). Rebuilt each
+// call (cheap). Mirrors makeEditorContext / makeInteractionContext.
+HudContext LandscapeScene::makeHudContext() {
+    return HudContext {
+        uiSystem,
+        uiCreated,
+        forms,
+        playerEntity,
+        gameClock,
+        interaction,
+        mode == SceneMode::Play,
+        flyCamera,
+        static_cast<f32>(engine->getWindow().width()),
+        static_cast<f32>(engine->getWindow().height()),
+        player.get(),
+        npcDirector.npcs(),
+        containerEntity,
+        barterMode,
+        vendorBuyMult,
+        vendorSellMult,
+        goldForm,
+        questLog,
+        dialogueRunner.get(),
+        makeEvalContext(),
+        screenStack,
+    };
 }
 
 void LandscapeScene::syncScreens() {
@@ -1900,7 +1870,7 @@ void LandscapeScene::openInventoryScreen() {
     containerEntity = ecs::Entity {};
     barterMode = false;
     uiSystem.setBool("inventory", "transferMode", false);
-    pushItemModels();
+    hud.pushItemModels(makeHudContext());
     screenStack.show("inventory");
 }
 
@@ -1912,7 +1882,7 @@ void LandscapeScene::openContainerScreen(ecs::Entity container) {
         containerEntity.set<gameplay::Inventory>({});
     }
     uiSystem.setBool("inventory", "transferMode", true);
-    pushItemModels();
+    hud.pushItemModels(makeHudContext());
     screenStack.show("container");
 }
 
@@ -1973,7 +1943,7 @@ void LandscapeScene::openBarterScreen(ecs::Entity vendor) {
         vendorState.lastRestockHours = static_cast<f32>(nowHours);
         LOG_INFO("Vendor restocked ({}h game time)", nowHours);
     }
-    pushItemModels();
+    hud.pushItemModels(makeHudContext());
     screenStack.show("barter");
 }
 
@@ -1983,7 +1953,8 @@ void LandscapeScene::barterTrade(const core::Guid& item, bool playerBuys) {
         return;
     }
     // The unit value comes from the view row (already resolved per kind).
-    const InventoryView& side = playerBuys ? lootView : invView;
+    const InventoryView& side =
+        playerBuys ? hud.loot() : hud.inventory();
     const InventoryView::Row* row = nullptr;
     for (const InventoryView::Row& candidate : side.rows()) {
         if (candidate.id == item) {
@@ -2002,112 +1973,6 @@ void LandscapeScene::barterTrade(const core::Guid& item, bool playerBuys) {
     } else {
         const i32 price = barterPrice(row->value, vendorSellMult);
         barterSell(bag, stock, item, price, goldForm->id);
-    }
-}
-
-void LandscapeScene::pushItemModels() {
-    if (!uiCreated) {
-        return;
-    }
-    static const gameplay::Inventory kEmptyBag;
-    const gameplay::Inventory* bag = &kEmptyBag;
-    const gameplay::Equipment* equipment = nullptr;
-    if (playerEntity.is_alive()) {
-        if (playerEntity.has<gameplay::Inventory>()) {
-            bag = &playerEntity.get<gameplay::Inventory>();
-        }
-        if (playerEntity.has<gameplay::Equipment>()) {
-            equipment = &playerEntity.get<gameplay::Equipment>();
-        }
-    }
-    invView.build(forms, *bag, equipment);
-
-    // In barter mode the value column shows the PRICE at the relevant
-    // multiplier (sell on the player side, buy on the vendor side).
-    const auto pushRows = [this](const InventoryView& view,
-                                 const str& model, f32 priceMult) {
-        vector<::ui::UiRow> rows;
-        rows.reserve(view.rows().size());
-        char buffer[32];
-        for (const InventoryView::Row& row : view.rows()) {
-            ::ui::UiRow out;
-            out.id = row.id.toString();
-            out.c0 = row.count > 1
-                         ? row.name + "  x" + std::to_string(row.count)
-                         : row.name;
-            std::snprintf(buffer, sizeof(buffer), "%.1f", row.weight);
-            out.c1 = buffer;
-            out.c2 = std::to_string(
-                priceMult > 0.0f ? barterPrice(row.value, priceMult)
-                                 : row.value);
-            out.c3 = row.power > 0.0f
-                         ? std::to_string(
-                               static_cast<i32>(row.power + 0.5f))
-                         : str { "-" };
-            out.selected = row.id == view.selected();
-            out.tag = row.equipped ? "equipped" : "";
-            rows.push_back(std::move(out));
-        }
-        uiSystem.setRows(model, std::move(rows));
-    };
-    pushRows(invView, "inventory", barterMode ? vendorSellMult : 0.0f);
-
-    // C3: weight / max + the encumbrance category.
-    char footer[96];
-    f32 maxEncumbrance = 0.0f;
-    if (playerEntity.is_alive()) {
-        maxEncumbrance = gameplay::currentValueOf(
-            playerEntity.get<gameplay::AbilitySystem>(),
-            gameplay::attr("maxEncumbrance"));
-    }
-    std::snprintf(footer, sizeof(footer),
-                  "Carried weight  %.1f / %.0f  (%s)", invView.totalWeight(),
-                  maxEncumbrance,
-                  gameplay::encumbranceLabel(gameplay::encumbranceCategory(
-                      invView.totalWeight(), maxEncumbrance)));
-    uiSystem.setString("inventory", "weightText", footer);
-
-    const InventoryView::Row* selected = invView.selectedRow();
-    uiSystem.setBool("inventory", "hasSelection", selected != nullptr);
-    if (selected) {
-        uiSystem.setString("inventory", "detailName", selected->name);
-        char info[96];
-        std::snprintf(info, sizeof(info),
-                      "Weight %.1f   Value %d%s%s", selected->weight,
-                      selected->value,
-                      selected->power > 0.0f ? "   Power " : "",
-                      selected->power > 0.0f
-                          ? std::to_string(
-                                static_cast<i32>(selected->power + 0.5f))
-                                .c_str()
-                          : "");
-        uiSystem.setString("inventory", "detailInfo", info);
-        uiSystem.setBool("inventory", "selUsable", selected->usable);
-        uiSystem.setString("inventory", "equipLabel",
-                           selected->equipped ? "Unequip" : "Equip");
-    }
-
-    if (containerEntity.is_alive() &&
-        containerEntity.has<gameplay::Inventory>()) {
-        lootView.build(forms, containerEntity.get<gameplay::Inventory>(),
-                       nullptr);
-        if (barterMode) {
-            pushRows(lootView, "barter", vendorBuyMult);
-            if (goldForm) {
-                const auto& stock =
-                    containerEntity.get<gameplay::Inventory>();
-                uiSystem.setString(
-                    "barter", "vendorGold",
-                    std::to_string(
-                        gameplay::itemCount(stock, goldForm->id)));
-                uiSystem.setString(
-                    "inventory", "goldText",
-                    std::to_string(gameplay::itemCount(*bag, goldForm->id)));
-            }
-        } else {
-            pushRows(lootView, "container", 0.0f);
-            uiSystem.setString("container", "title", "Loot");
-        }
     }
 }
 
@@ -2130,7 +1995,7 @@ void LandscapeScene::handleUiEvent(const str& model, const str& event,
             } else if (args[0] == "misc") {
                 category = Category::Misc;
             }
-            invView.setCategory(category);
+            hud.inventory().setCategory(category);
         } else if (event == "sortCol" && !args.empty()) {
             using Column = InventoryView::Column;
             Column column = Column::Name;
@@ -2141,7 +2006,7 @@ void LandscapeScene::handleUiEvent(const str& model, const str& event,
             } else if (args[0] == "power") {
                 column = Column::Power;
             }
-            invView.sortBy(column);
+            hud.inventory().sortBy(column);
         } else if (event == "pick") {
             if (const auto id = argGuid()) {
                 if (barterMode) {
@@ -2149,15 +2014,15 @@ void LandscapeScene::handleUiEvent(const str& model, const str& event,
                 } else if (containerEntity.is_alive()) {
                     transferItem(*id, /*fromContainer=*/false);
                 } else {
-                    invView.select(*id);
+                    hud.inventory().select(*id);
                 }
             }
         } else if (event == "equipAction") {
-            toggleEquip(invView.selected());
+            toggleEquip(hud.inventory().selected());
         } else if (event == "useAction") {
-            useConsumable(invView.selected());
+            useConsumable(hud.inventory().selected());
         }
-        pushItemModels();
+        hud.pushItemModels(makeHudContext());
     } else if (model == "container") {
         if (event == "pickLoot") {
             if (const auto id = argGuid()) {
@@ -2174,14 +2039,14 @@ void LandscapeScene::handleUiEvent(const str& model, const str& event,
             }
             loot.items.clear();
         }
-        pushItemModels();
+        hud.pushItemModels(makeHudContext());
     } else if (model == "barter") {
         if (event == "pickBuy") {
             if (const auto id = argGuid()) {
                 barterTrade(*id, /*playerBuys=*/true);
             }
         }
-        pushItemModels();
+        hud.pushItemModels(makeHudContext());
     } else if (model == "menu") {
         if (event == "menuAction" && !args.empty()) {
             handleMenuAction(args[0]);
@@ -2203,14 +2068,15 @@ void LandscapeScene::handleUiEvent(const str& model, const str& event,
                 dialogueRunner->end();
             } else if (const auto id = core::Guid::fromString(args[0])) {
                 for (const quest::DialogueNodeForm* option :
-                     dialogueOptions) {
+                     hud.dialogueOptions()) {
                     if (option->id == *id) {
                         dialogueRunner->select(*option);
                         break;
                     }
                 }
             }
-            pushDialogueModel(); // closes the screen when it ended
+            // Closes the screen when the dialogue ended.
+            hud.pushDialogueModel(makeHudContext());
         }
     }
 }
@@ -2282,16 +2148,6 @@ void LandscapeScene::useConsumable(const core::Guid& id) {
 
 // --- Chantier 4 B6: menus -----------------------------------------------------------
 
-void LandscapeScene::updateMenuClockLine() {
-    const f64 hours = std::fmod(gameClock.gameHours(), 24.0);
-    const i32 hh = static_cast<i32>(hours);
-    const i32 mm = static_cast<i32>((hours - hh) * 60.0);
-    const i32 day = static_cast<i32>(gameClock.gameDays()) + 1;
-    char line[48];
-    std::snprintf(line, sizeof(line), "Day %d — %02d:%02d", day, hh, mm);
-    uiSystem.setString("menu", "clockLine", line);
-}
-
 void LandscapeScene::handleMenuAction(const str& action) {
     if (action == "resume" || action == "cancel") {
         screenStack.closeTop();
@@ -2320,7 +2176,7 @@ void LandscapeScene::handleMenuAction(const str& action) {
         uiSystem.setRows("saves", std::move(rows));
         screenStack.show("saves");
     } else if (action == "wait") {
-        updateMenuClockLine();
+        hud.updateMenuClockLine(makeHudContext());
         screenStack.show("wait");
     } else if (action == "wait1" || action == "wait4" ||
                action == "wait8") {
@@ -2328,7 +2184,7 @@ void LandscapeScene::handleMenuAction(const str& action) {
                              : action == "wait4" ? 4.0f
                                                  : 8.0f,
                          makeInteractionContext());
-        updateMenuClockLine();
+        hud.updateMenuClockLine(makeHudContext());
         screenStack.closeTop();
     } else if (action == "play") {
         screenStack.closeAll();
@@ -2340,14 +2196,14 @@ void LandscapeScene::handleMenuAction(const str& action) {
             exitPlayMode();
         }
         screenStack.closeAll();
-        updateMenuClockLine();
+        hud.updateMenuClockLine(makeHudContext());
         screenStack.show("mainmenu");
     } else if (action == "quit") {
         engine->requestQuit();
     }
 }
 
-// --- Chantier 4 B7: console + nameplates --------------------------------------------
+// --- Chantier 4 B7: console (nameplates -> GameHud, audit U4-9) ----------------------
 
 void LandscapeScene::createConsole() {
     consoleSession = std::make_unique<data::EditSession>(forms, formTypes);
@@ -2475,69 +2331,6 @@ void LandscapeScene::createConsole() {
     });
 }
 
-void LandscapeScene::updateNameplates() {
-    vector<::ui::UiRow> plates;
-    if ((mode == SceneMode::Play) && player && uiCreated) {
-        const f32 width = static_cast<f32>(engine->getWindow().width());
-        const f32 height = static_cast<f32>(engine->getWindow().height());
-        const Mat4 viewProj =
-            flyCamera.camera.viewProj(height > 0.0f ? width / height : 1.0f);
-        for (const auto& npcPtr : npcDirector.npcs()) {
-            const Npc& npc = *npcPtr;
-            if (npc.dead || !npc.entity.is_alive() ||
-                !npc.entity.has<gameplay::AbilitySystem>()) {
-                continue;
-            }
-            const Vec3 position =
-                npc.entity.get<world::Transform>().position;
-            const Vec3 to = position - player->position();
-            if (glm::dot(to, to) > 15.0f * 15.0f) {
-                continue;
-            }
-            const auto& sys = npc.entity.get<gameplay::AbilitySystem>();
-            const f32 health =
-                gameplay::currentValueOf(sys, gameplay::attr("health"));
-            const f32 maxHealth =
-                gameplay::currentValueOf(sys, gameplay::attr("maxHealth"));
-            // Nameplates single out threats and the wounded (SkyUI-style
-            // restraint: a healthy villager stays unlabelled).
-            if (!npc.hostile && health >= maxHealth - 0.5f) {
-                continue;
-            }
-            const Vec4 clip =
-                viewProj * Vec4 { position + Vec3 { 0.0f, 2.15f, 0.0f },
-                                  1.0f };
-            if (clip.w <= 0.1f) {
-                continue; // behind the camera
-            }
-            const f32 px = (clip.x / clip.w * 0.5f + 0.5f) * width;
-            const f32 py = (1.0f - (clip.y / clip.w * 0.5f + 0.5f)) * height;
-            ::ui::UiRow plate;
-            plate.id = std::to_string(npc.entity.id());
-            str name = "?";
-            if (npc.entity.has<world::RefId>()) {
-                const auto& ref = npc.entity.get<world::RefId>();
-                if (const reflect::TypeInfo* type = forms.typeOf(ref.base);
-                    type &&
-                    type->isA(data::ActorForm::staticTypeInfo().id)) {
-                    name = static_cast<const data::ActorForm*>(
-                               forms.get(ref.base))
-                               ->displayName;
-                }
-            }
-            plate.c0 = name;
-            plate.c1 = std::to_string(static_cast<i32>(glm::clamp(
-                100.0f * health / glm::max(maxHealth, 1.0f), 0.0f,
-                100.0f)));
-            plate.c2 = std::to_string(static_cast<i32>(px - 60.0f));
-            plate.c3 = std::to_string(static_cast<i32>(py));
-            plate.tag = npc.hostile ? "hostile" : "";
-            plates.push_back(std::move(plate));
-        }
-    }
-    uiSystem.setRows("hud", std::move(plates));
-}
-
 // --- Chantier 6 A2: quests ----------------------------------------------------------
 
 void LandscapeScene::syncQuestTags() {
@@ -2598,68 +2391,6 @@ void LandscapeScene::handleQuestEvent(const gameplay::Event& event) {
     }
 }
 
-void LandscapeScene::pushJournalModel() {
-    if (!uiCreated) {
-        return;
-    }
-    // Deterministic listing (§8): quests sorted by guid.
-    vector<core::Guid> questIds;
-    questIds.reserve(questLog.quests.size());
-    for (const auto& [id, progress] : questLog.quests) {
-        questIds.push_back(id);
-    }
-    std::sort(questIds.begin(), questIds.end());
-
-    vector<::ui::UiRow> rows;
-    for (const core::Guid& questId : questIds) {
-        const quest::QuestProgress& progress = questLog.quests.at(questId);
-        const auto* questForm = forms.find<quest::QuestForm>(questId);
-        if (!questForm) {
-            continue; // a mod removed the quest — skip, never fatal (§5)
-        }
-        ::ui::UiRow header;
-        header.id = questId.toString();
-        header.c0 = questForm->displayName;
-        if (progress.status == quest::QuestStatus::Succeeded) {
-            header.c1 = "Accomplie";
-            header.tag = "done";
-        } else if (progress.status == quest::QuestStatus::Failed) {
-            header.c1 = "Echouee";
-            header.tag = "done";
-        }
-        rows.push_back(std::move(header));
-        if (progress.status != quest::QuestStatus::Active) {
-            continue;
-        }
-        // Objectives = the tasks of the current state's branches.
-        data::forEach<quest::QuestBranchForm>(
-            forms, [&](const quest::QuestBranchForm& branch) {
-                if (branch.state != progress.currentState) {
-                    return;
-                }
-                data::forEach<quest::QuestTaskForm>(
-                    forms, [&](const quest::QuestTaskForm& task) {
-                        if (task.branch != branch.id) {
-                            return;
-                        }
-                        ::ui::UiRow row;
-                        row.id = task.id.toString();
-                        row.c0 = task.displayName;
-                        if (task.required > 1) {
-                            row.c2 =
-                                std::to_string(quest::taskProgress(
-                                    questLog, questId, task.id)) +
-                                " / " + std::to_string(task.required);
-                        }
-                        row.tag = "task";
-                        rows.push_back(std::move(row));
-                    });
-            });
-    }
-    uiSystem.setBool("journal", "empty", rows.empty());
-    uiSystem.setRows("journal", std::move(rows));
-}
-
 // --- Chantier 4 B4: dialogue --------------------------------------------------------
 
 gameplay::EvalContext LandscapeScene::makeEvalContext() const {
@@ -2695,33 +2426,8 @@ void LandscapeScene::openDialogue(const core::Guid& dialogueId) {
             forms.find<quest::DialogueForm>(dialogueId)) {
         uiSystem.setString("dialogue", "npcName", dialogue->displayName);
     }
-    pushDialogueModel();
+    hud.pushDialogueModel(makeHudContext());
     screenStack.show("dialogue");
-}
-
-void LandscapeScene::pushDialogueModel() {
-    if (!dialogueRunner || !dialogueRunner->active()) {
-        screenStack.close("dialogue");
-        dialogueOptions.clear();
-        return;
-    }
-    const quest::DialogueNodeForm* line = dialogueRunner->currentLine();
-    uiSystem.setString("dialogue", "npcLine", line ? line->text : str {});
-    dialogueOptions = dialogueRunner->options(makeEvalContext());
-    vector<::ui::UiRow> rows;
-    u32 index = 1;
-    for (const quest::DialogueNodeForm* option : dialogueOptions) {
-        ::ui::UiRow row;
-        row.id = option->id.toString();
-        row.c0 = std::to_string(index++) + ".  " + option->text;
-        rows.push_back(std::move(row));
-    }
-    ::ui::UiRow leave;
-    leave.id = "leave";
-    leave.c0 = std::to_string(index) + ".  (Leave)";
-    leave.tag = "leave";
-    rows.push_back(std::move(leave));
-    uiSystem.setRows("dialogue", std::move(rows));
 }
 
 void LandscapeScene::transferItem(const core::Guid& id,

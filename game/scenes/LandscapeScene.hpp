@@ -15,6 +15,7 @@
 #include "engine/physics/Physics.hpp"
 #include "game/LevelEditor.hpp"
 #include "game/MeshCache.hpp"
+#include "game/scenes/GameHud.hpp"
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/SceneEditor.hpp"
 #include "game/scenes/StreamingController.hpp"
@@ -275,18 +276,22 @@ private:
 
     void createGameUi(rhi::Device& device);
     void updateGameUi(f32 dt);
-    void updateHudModel();
     void syncScreens();
     vector<const ScreenStack::Screen*> screenStackPreloadList() const;
 
+    // Audit U4-9: every push*Model / update*Model (game state -> UiSystem
+    // data models) plus the view-model state (InventoryViews, dialogue
+    // options) lives in GameHud, wired per call through makeHudContext().
+    // Game ACTIONS stay here (handleUiEvent/handleMenuAction, equip/use/
+    // transfer/barter, open*Screen) and mutate the views via hud accessors.
+    GameHud hud;
+    HudContext makeHudContext();
+
     // Chantier 4 B3: inventory + container/loot (SkyUI table logic in
     // InventoryView; the same component serves the barter screen, B5).
-    InventoryView invView;
-    InventoryView lootView;
     ecs::Entity containerEntity {};
     void openInventoryScreen();
     void openContainerScreen(ecs::Entity container);
-    void pushItemModels(); // views -> UiRow rows + detail/footer slots
     void handleUiEvent(const str& model, const str& event,
                        const vector<str>& args);
     void toggleEquip(const core::Guid& id);
@@ -300,7 +305,6 @@ private:
     const quest::QuestForm* easternQuest { nullptr };
     void syncQuestTags();
     void handleQuestEvent(const gameplay::Event& event);
-    void pushJournalModel(); // A3: quest rows for journal.rml
 
     // Chantier 6 D2 — crime v1: assault on a peaceful NPC in front of a
     // witness (LOS) = bounty on the reflected Bounty component, mirrored
@@ -311,11 +315,9 @@ private:
     // surfaced by the RmlUi screen.
     gameplay::EventBus eventBus;
     uptr<quest::DialogueRunner> dialogueRunner;
-    vector<const quest::DialogueNodeForm*> dialogueOptions;
     ecs::Entity dialoguePartner {}; // who [E] Talk opened (vendor for B5)
     gameplay::EvalContext makeEvalContext() const;
     void openDialogue(const core::Guid& dialogueId);
-    void pushDialogueModel();
 
     // Chantier 4 B5: barter. Gold is an ordinary item; prices = goldValue
     // × the StatsTuningForm multipliers; the vendor's stock/wealth is its
@@ -334,7 +336,6 @@ private:
     // share one "menu" data model — the documents differ, the actions
     // route through handleMenuAction).
     void handleMenuAction(const str& action);
-    void updateMenuClockLine();
 
     // Chantier 5 B3: the one post-spawn seam for EVERY actor (player and
     // NPC): stat init, then saved state (when this actor was captured —
@@ -369,7 +370,6 @@ private:
     bool consoleVisible { false };
     bool godMode { false };
     void createConsole();
-    void updateNameplates();
 
     // Chantier 3 B5/B6: melee combat — everything flows through the GAS
     // damage pipeline (weaponDamageEvent -> applyDamage), like the 2D
