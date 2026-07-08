@@ -277,6 +277,14 @@ private:
     bool uiModalWasOpen { false };
     bool uiTextInputOn { false };
     vector<str> shownScreens; // documents currently shown (sync state)
+    // onEnter phases (brick U4-3): onEnter() runs these in order. Split for
+    // readability only — behaviour is identical to the former 620-line body.
+    void bootstrapData();                             // plugins/save/tuning
+    void createRenderResources(rhi::Device& device);  // GPU resources + game UI
+    void setupGameplay();                             // physics/nav/stats/quest
+    void setupWorldAndStreaming();                    // ECS world, cells, clock
+    void spawnInitialWorld(rhi::Device& device);      // spawn + npc + camera
+
     void createGameUi(rhi::Device& device);
     void updateGameUi(f32 dt);
     void updateHudModel();

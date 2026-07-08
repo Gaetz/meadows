@@ -86,7 +86,14 @@ Mat4 obliqueProjection(Mat4 proj, const Vec4& clipPlaneView) {
 
 void LandscapeScene::onEnter() {
     rhi::Device& device = engine->getDevice();
+    bootstrapData();
+    createRenderResources(device);
+    setupGameplay();
+    setupWorldAndStreaming();
+    spawnInitialWorld(device);
+}
 
+void LandscapeScene::bootstrapData() {
     // Load the moddable data (§5) through the plugin stack (chantier 4 B1):
     // data/plugins.toml declares the load order, the resolver layers every
     // plugin's fields last-writer-wins. One registration site for all
@@ -179,7 +186,9 @@ void LandscapeScene::onEnter() {
     gradeContrastUi = tuning.gradeContrast;
     autoExposureMinUi = tuning.autoExposureMin; // B4 (toggle stays off)
     autoExposureMaxUi = tuning.autoExposureMax;
+}
 
+void LandscapeScene::createRenderResources(rhi::Device& device) {
     frameUbo = device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
                                      .size = sizeof(render::FrameUniforms),
                                      .dynamic = true },
@@ -321,7 +330,9 @@ void LandscapeScene::onEnter() {
     // Chantier 4 B2: the RmlUi game UI (screens from UiScreenForm records,
     // documents through the plugins' ui/ roots).
     createGameUi(device);
+}
 
+void LandscapeScene::setupGameplay() {
     // B4: the sim-side physics world + terrain collision (tiles follow the
     // camera for now; the player becomes the focus in B5).
     physics = std::make_unique<phys::PhysicsWorld>();
@@ -430,7 +441,9 @@ void LandscapeScene::onEnter() {
     if (loadedFromSave) {
         quest::applySavedQuests(questLog, forms);
     }
+}
 
+void LandscapeScene::setupWorldAndStreaming() {
     world = ecs::World {}; // fresh on re-enter
     world::registerSceneComponents(world);
     gameplay::registerGameplayComponents(world);
@@ -517,7 +530,9 @@ void LandscapeScene::onEnter() {
     editSelection = ecs::Entity {};
     placementBase = core::Guid {};
     createConsole(); // chantier 4 B7: F8 in-game dev console
+}
 
+void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
     world::SpawnContext spawnCtx { world, forms, categories };
     const auto* playerForm =
         data::findByEditorId<data::ActorForm>(forms, "Player");
