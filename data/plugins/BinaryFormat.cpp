@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "engine/core/Log.hpp"
+#include "engine/reflect/Visit.hpp"
 
 namespace data {
 
@@ -40,39 +41,23 @@ public:
     }
 
     void value(const reflect::Value& v) {
-        using reflect::FieldKind;
         u8_(static_cast<u8>(reflect::valueKind(v)));
-        switch (reflect::valueKind(v)) {
-        case FieldKind::Bool: u8_(std::get<bool>(v) ? 1 : 0); break;
-        case FieldKind::I32:  u32_(std::bit_cast<u32>(std::get<i32>(v))); break;
-        case FieldKind::U32:  u32_(std::get<u32>(v)); break;
-        case FieldKind::F32:  f32_(std::get<f32>(v)); break;
-        case FieldKind::F64:  f64_(std::get<f64>(v)); break;
-        case FieldKind::Str:  str_(std::get<str>(v)); break;
-        case FieldKind::Vec2: {
-            const Vec2& vec = std::get<Vec2>(v);
-            f32_(vec.x); f32_(vec.y);
-            break;
-        }
-        case FieldKind::Vec3: {
-            const Vec3& vec = std::get<Vec3>(v);
-            f32_(vec.x); f32_(vec.y); f32_(vec.z);
-            break;
-        }
-        case FieldKind::Vec4: {
-            const Vec4& vec = std::get<Vec4>(v);
-            f32_(vec.x); f32_(vec.y); f32_(vec.z); f32_(vec.w);
-            break;
-        }
-        case FieldKind::Quat: {
-            // Component order x, y, z, w — explicit, independent of glm's
-            // storage layout.
-            const Quat& q = std::get<Quat>(v);
-            f32_(q.x); f32_(q.y); f32_(q.z); f32_(q.w);
-            break;
-        }
-        case FieldKind::Guid: guid(std::get<core::Guid>(v)); break;
-        }
+        // Exhaustive: a new FieldKind without a case here fails to compile
+        // (was a silent no-op that corrupted the cooked stream). Quat order
+        // x, y, z, w — explicit, independent of glm's storage layout.
+        reflect::visit(v, reflect::overloaded {
+            [&](bool b)              { u8_(b ? 1 : 0); },
+            [&](i32 x)               { u32_(std::bit_cast<u32>(x)); },
+            [&](u32 x)               { u32_(x); },
+            [&](f32 x)               { f32_(x); },
+            [&](f64 x)               { f64_(x); },
+            [&](const str& s)        { str_(s); },
+            [&](const Vec2& vec)     { f32_(vec.x); f32_(vec.y); },
+            [&](const Vec3& vec)     { f32_(vec.x); f32_(vec.y); f32_(vec.z); },
+            [&](const Vec4& vec)     { f32_(vec.x); f32_(vec.y); f32_(vec.z); f32_(vec.w); },
+            [&](const Quat& q)       { f32_(q.x); f32_(q.y); f32_(q.z); f32_(q.w); },
+            [&](const core::Guid& g) { guid(g); },
+        });
     }
 
 private:

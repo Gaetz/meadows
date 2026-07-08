@@ -6,6 +6,7 @@
 #include <toml++/toml.hpp>
 
 #include "engine/core/Log.hpp"
+#include "engine/reflect/Visit.hpp"
 
 namespace data {
 
@@ -21,51 +22,21 @@ toml::array floatArray(std::initializer_list<f32> values) {
 
 void insertValue(toml::table& fields, std::string_view name,
                  const reflect::Value& value) {
-    using reflect::FieldKind;
-    switch (reflect::valueKind(value)) {
-    case FieldKind::Bool:
-        fields.insert(name, std::get<bool>(value));
-        break;
-    case FieldKind::I32:
-        fields.insert(name, static_cast<i64>(std::get<i32>(value)));
-        break;
-    case FieldKind::U32:
-        fields.insert(name, static_cast<i64>(std::get<u32>(value)));
-        break;
-    case FieldKind::F32:
-        fields.insert(name, static_cast<double>(std::get<f32>(value)));
-        break;
-    case FieldKind::F64:
-        fields.insert(name, std::get<f64>(value));
-        break;
-    case FieldKind::Str:
-        fields.insert(name, std::get<str>(value));
-        break;
-    case FieldKind::Vec2: {
-        const Vec2& v = std::get<Vec2>(value);
-        fields.insert(name, floatArray({ v.x, v.y }));
-        break;
-    }
-    case FieldKind::Vec3: {
-        const Vec3& v = std::get<Vec3>(value);
-        fields.insert(name, floatArray({ v.x, v.y, v.z }));
-        break;
-    }
-    case FieldKind::Vec4: {
-        const Vec4& v = std::get<Vec4>(value);
-        fields.insert(name, floatArray({ v.x, v.y, v.z, v.w }));
-        break;
-    }
-    case FieldKind::Quat: {
-        // File order [x, y, z, w], matching the loader.
-        const Quat& q = std::get<Quat>(value);
-        fields.insert(name, floatArray({ q.x, q.y, q.z, q.w }));
-        break;
-    }
-    case FieldKind::Guid:
-        fields.insert(name, std::get<core::Guid>(value).toString());
-        break;
-    }
+    // Exhaustive per kind (see engine/reflect/Visit.hpp). Vec/Quat file order
+    // [x, y, z, w], matching the loader.
+    reflect::visit(value, reflect::overloaded {
+        [&](bool b)              { fields.insert(name, b); },
+        [&](i32 x)               { fields.insert(name, static_cast<i64>(x)); },
+        [&](u32 x)               { fields.insert(name, static_cast<i64>(x)); },
+        [&](f32 x)               { fields.insert(name, static_cast<double>(x)); },
+        [&](f64 x)               { fields.insert(name, x); },
+        [&](const str& s)        { fields.insert(name, s); },
+        [&](const Vec2& v)       { fields.insert(name, floatArray({ v.x, v.y })); },
+        [&](const Vec3& v)       { fields.insert(name, floatArray({ v.x, v.y, v.z })); },
+        [&](const Vec4& v)       { fields.insert(name, floatArray({ v.x, v.y, v.z, v.w })); },
+        [&](const Quat& q)       { fields.insert(name, floatArray({ q.x, q.y, q.z, q.w })); },
+        [&](const core::Guid& g) { fields.insert(name, g.toString()); },
+    });
 }
 
 } // namespace
