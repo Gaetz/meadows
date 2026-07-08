@@ -168,3 +168,92 @@ TEST_CASE("script: a coroutine ability waits then applies an effect") {
     CHECK(vm.pendingCoroutines() == 0);
     CHECK(gameplay::baseValueOf(targetAttrs, gameplay::attr("health")) == 70.0f);
 }
+
+// --- Coroutine liveness (audit U8-4) -------------------------------------------------
+
+#include "engine/ecs/World.hpp"
+
+namespace {
+
+// World-backed fixture: the contexts carry their entity handle so the Vm
+// re-resolves component pointers on every resume.
+struct CoroWorldFixture {
+    ecs::World world;
+    gameplay::GameplayTagRegistry tags;
+    data::FormDatabase db;
+
+    CoroWorldFixture() {
+        gameplay::registerGameplayComponents(world);
+    }
+
+    ecs::Entity makeActor() {
+        ecs::Entity e = world.create();
+        e.set<gameplay::AttributeSet>({});
+        e.set<gameplay::AbilitySystem>({});
+        auto& sys = e.get_mut<gameplay::AbilitySystem>();
+        gameplay::initializeCurrent(sys, e.get<gameplay::AttributeSet>());
+        return e;
+    }
+
+    script::ScriptContext contextFor(ecs::Entity e) {
+        script::ScriptContext ctx;
+        ctx.attributes = &e.get_mut<gameplay::AttributeSet>();
+        ctx.abilitySystem = &e.get_mut<gameplay::AbilitySystem>();
+        ctx.tags = &tags;
+        ctx.forms = &db;
+        ctx.entity = e;
+        return ctx;
+    }
+};
+
+} // namespace
+
+TEST_CASE("script: a coroutine is abandoned when its entity dies mid-wait") {
+    CoroWorldFixture f;
+    ecs::Entity actor = f.makeActor();
+
+    Vm vm;
+    vm.run("resumed = 0");
+    vm.startCoroutine("wait(1.0)\nresumed = 1", f.contextFor(actor),
+                      script::ScriptContext {});
+    REQUIRE(vm.pendingCoroutines() == 1);
+
+    actor.destruct(); // cell unload / death while the script sleeps
+
+    vm.tickCoroutines(2.0f); // would resume — must abandon instead
+    CHECK(vm.pendingCoroutines() == 0);
+    CHECK(*vm.getNumber("resumed") == 0.0); // never resumed over freed parts
+}
+
+TEST_CASE("script: a resume survives an archetype move (pointers re-resolved)") {
+    CoroWorldFixture f;
+    ecs::Entity actor = f.makeActor();
+
+    Vm vm;
+    vm.startCoroutine("wait(1.0)\nhealthAfter = self.health",
+                      f.contextFor(actor), script::ScriptContext {});
+    REQUIRE(vm.pendingCoroutines() == 1);
+
+    // Any component add moves the entity to another archetype: every
+    // component pointer captured at start is now dangling.
+    struct Marker {};
+    actor.add<Marker>();
+    actor.get_mut<gameplay::AttributeSet>().health = 42.0f;
+    // self.health reads the CURRENT overlay — refresh it on the moved parts.
+    gameplay::recomputeCurrent(actor.get<gameplay::AttributeSet>(),
+                               actor.get_mut<gameplay::AbilitySystem>());
+
+    vm.tickCoroutines(2.0f);
+    CHECK(vm.pendingCoroutines() == 0);
+    REQUIRE(vm.getNumber("healthAfter").has_value());
+    CHECK(*vm.getNumber("healthAfter") == 42.0); // read the MOVED component
+}
+
+TEST_CASE("script: a coroutine erroring on resume is dropped, not retried") {
+    Vm vm;
+    script::ScriptContext none;
+    vm.startCoroutine("wait(0.5)\nerror('boom')", none, none);
+    REQUIRE(vm.pendingCoroutines() == 1);
+    vm.tickCoroutines(1.0f); // resume raises — logged (U8-7) and dropped
+    CHECK(vm.pendingCoroutines() == 0);
+}

@@ -234,7 +234,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U6-F10 | ✅ | U6 | med | archi | GameTime.cpp:131 | `recomputeCurrent` 2-arg laisse les derived transitoirement faux | M | non |
 | U7-4 | ✅ | U7 | med | factor | EditSession.cpp:12,193 ; Synthesis.cpp | Clone/diff réflexion dupliqué (H-b) | M | oui |
 | U8-2 | ✅ | U8 | med | archi | gameplay/save/SaveState.hpp:3 ; CharacterTick.hpp | flecs fuite dans headers gameplay | M | oui |
-| U8-4 |   | U8 | med | qual | script/Vm.cpp:161,265 | Coroutines gardent pointeurs bruts, dangling si entité meurt | M | non |
+| U8-4 | ✅ | U8 | med | qual | script/Vm.cpp:161,265 | Coroutines gardent pointeurs bruts, dangling si entité meurt | M | non |
 | U9-1 |   | U9 | med | qual | tests/SceneSubmitTest.cpp:1-40 | Seam RenderSnapshot à peine testé (2 cas) | M | oui |
 | U9-2 | ✅ | U9 | med | factor | tests/CookerTest.cpp:18 | Aucun golden test figeant les ordinaux réflexion réels | M | oui |
 | U9-3 |   | U9 | med | archi | tests/CMakeLists.txt:78 | Aucune cible link prouvant sim-sans-render (§2.10) | M | oui |
@@ -264,7 +264,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U7-5 | ✖ | U7 | low | archi | world/scene/Spawner.cpp:103 | Spawner seed via setBaseValue direct (init sanctionné) | S | non |
 | U7-8 |   | U7 | low | propreté | world/scene/Spawner.cpp:10 | Spawner tire ~12 headers gameplay/stats | S | non |
 | U8-5 | ✖ | U8 | low | archi | engine/ui/ImGuiLayer.cpp:4 | ImGui backend GL propre hors RHI (toléré) | S | oui |
-| U8-7 |   | U8 | low | qual | script/Vm.cpp:252 | Handler Lua avale les erreurs (échec silencieux) | S | non |
+| U8-7 | ✅ | U8 | low | qual | script/Vm.cpp:252 | Handler Lua avale les erreurs (échec silencieux) | S | non |
 | U8-9 | ✅ | U8 | low | réutil | script/Vm.cpp:26-59 | `valueToLua`/`luaToValue` = chaîne if-constexpr par kind (H-a) | S | oui |
 | U8-10 |   | U8 | low | propreté | tools/cooker/Main.cpp:172 | `new-guid count` via atoi non borné | S | non |
 | U9-4 |   | U9 | low | factor | tests/*.cpp (~147 occ) | `makeTypes()`/guid/TOML recopiés dans ~30 TUs | S | non |

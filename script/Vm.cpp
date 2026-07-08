@@ -7,6 +7,7 @@
 
 #include <sol/sol.hpp>
 
+#include "engine/core/Log.hpp"
 #include "engine/core/Rng.hpp"
 #include "engine/reflect/Visit.hpp"
 
@@ -153,6 +154,31 @@ struct ScriptSelf {
     }
 };
 
+// Re-resolves the per-entity component pointers from the context's entity
+// handle. flecs moves component storage on any archetype change (add/remove
+// of any component) and frees it on death, so a context held across frames
+// (a suspended coroutine) must never trust the pointers captured at start
+// (audit U8-4). A null handle (id 0: immediate-use contexts, tests) trusts
+// the caller's pointers. Returns false when the entity is gone.
+bool refreshEntityPointers(ScriptContext& ctx) {
+    if (ctx.entity.id() == 0) {
+        return true;
+    }
+    if (!ctx.entity.is_alive()) {
+        return false;
+    }
+    ctx.attributes = ctx.entity.has<gameplay::AttributeSet>()
+                         ? &ctx.entity.get_mut<gameplay::AttributeSet>()
+                         : nullptr;
+    ctx.abilitySystem = ctx.entity.has<gameplay::AbilitySystem>()
+                            ? &ctx.entity.get_mut<gameplay::AbilitySystem>()
+                            : nullptr;
+    ctx.scriptVars = ctx.entity.has<ScriptVars>()
+                         ? &ctx.entity.get_mut<ScriptVars>()
+                         : nullptr;
+    return true;
+}
+
 } // namespace
 
 struct Vm::Impl {
@@ -243,14 +269,22 @@ void Vm::bindEvents(gameplay::EventBus& bus) {
     events.set_function(
         "on", [this, &bus](const std::string& name, sol::protected_function fn) {
             bus.subscribe(gameplay::eventKind(name),
-                          [this, fn](const gameplay::Event& event) {
+                          [this, fn, name](const gameplay::Event& event) {
                               sol::table payload = impl->lua.create_table();
                               payload["source"] = event.source.id();
                               payload["target"] = event.target.id();
                               payload["value"] = event.value;
                               payload["name"] = event.name;
                               payload["tag"] = event.tag.id;
-                              (void)fn(payload); // errors swallowed for 4b
+                              const sol::protected_function_result result =
+                                  fn(payload);
+                              if (!result.valid()) {
+                                  // A broken handler must not fail silently
+                                  // (audit U8-7) — nor abort the dispatch.
+                                  const sol::error err = result;
+                                  LOG_WARN("Lua handler for '{}' failed: {}",
+                                           name, err.what());
+                              }
                           });
         });
 }
@@ -273,7 +307,9 @@ void Vm::startCoroutine(const std::string& code, ScriptContext self,
 
     const sol::load_result loaded = coro.thread.state().load(code);
     if (!loaded.valid()) {
-        impl->coros.pop_back(); // compile error
+        const sol::error err = loaded;
+        LOG_WARN("Lua coroutine failed to compile: {}", err.what()); // U8-7
+        impl->coros.pop_back();
         return;
     }
     coro.co = sol::coroutine(loaded.get<sol::function>());
@@ -283,8 +319,14 @@ void Vm::startCoroutine(const std::string& code, ScriptContext self,
     const sol::protected_function_result result = coro.co();
     impl->lua["self"] = sol::lua_nil;
     impl->lua["target"] = sol::lua_nil;
-    if (!result.valid() || coro.co.status() != sol::call_status::yielded) {
-        impl->coros.pop_back(); // finished or errored without a wait
+    if (!result.valid()) {
+        const sol::error err = result;
+        LOG_WARN("Lua coroutine failed: {}", err.what()); // U8-7
+        impl->coros.pop_back();
+        return;
+    }
+    if (coro.co.status() != sol::call_status::yielded) {
+        impl->coros.pop_back(); // finished without a wait — not an error
         return;
     }
     coro.remaining = static_cast<f32>(result.get<double>(0));
@@ -298,13 +340,32 @@ void Vm::tickCoroutines(f32 dt) {
             ++it;
             continue;
         }
+        if (!refreshEntityPointers(coro.self)) {
+            // The acting entity died while suspended: abandon the coroutine —
+            // resuming over freed components is UB (audit U8-4).
+            it = impl->coros.erase(it);
+            continue;
+        }
+        if (!refreshEntityPointers(coro.target)) {
+            // A dead target degrades to nil reads (the proxy tolerates null
+            // members); the script itself keeps running.
+            coro.target.attributes = nullptr;
+            coro.target.abilitySystem = nullptr;
+            coro.target.scriptVars = nullptr;
+        }
         impl->lua["self"] = ScriptSelf { &coro.self };
         impl->lua["target"] = ScriptSelf { &coro.target };
         const sol::protected_function_result result = coro.co();
         impl->lua["self"] = sol::lua_nil;
         impl->lua["target"] = sol::lua_nil;
-        if (!result.valid() || coro.co.status() != sol::call_status::yielded) {
-            it = impl->coros.erase(it); // finished or errored
+        if (!result.valid()) {
+            const sol::error err = result;
+            LOG_WARN("Lua coroutine failed on resume: {}", err.what()); // U8-7
+            it = impl->coros.erase(it);
+            continue;
+        }
+        if (coro.co.status() != sol::call_status::yielded) {
+            it = impl->coros.erase(it); // finished cleanly
             continue;
         }
         coro.remaining = static_cast<f32>(result.get<double>(0));

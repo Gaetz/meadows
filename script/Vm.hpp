@@ -5,6 +5,7 @@
 #include <string>
 
 #include "engine/core/Defines.hpp"
+#include "engine/ecs/World.hpp" // ecs::Entity (flecs name confined to meadows-ecs)
 
 // The Lua scripting VM (Phase 4, §2.8). ONE shared, sandboxed Lua state; scripts
 // are stateless modules; `self` is an entity handle (a proxy over the entity's
@@ -30,12 +31,20 @@ struct ScriptVars;
 // entity's components. Any pointer may be null (the proxy degrades gracefully).
 // `attributes` is mutable so `self:applyEffect(...)` can route through the effect
 // pipeline (§2.9) — direct `self.<attr> = x` is still rejected.
+//
+// `entity` is the LIVENESS handle for contexts that outlive the call (the
+// coroutine scheduler): before each resume the Vm re-resolves the component
+// pointers from it — flecs moves component storage on any archetype change
+// and frees it on death, so pointers captured at start must never be trusted
+// across frames (audit U8-4). A null handle (id 0) means "immediate use":
+// the pointers are taken as-is.
 struct ScriptContext {
     gameplay::AttributeSet* attributes { nullptr };
     gameplay::AbilitySystem* abilitySystem { nullptr };
     ScriptVars* scriptVars { nullptr };
     const gameplay::GameplayTagRegistry* tags { nullptr };
     const data::FormDatabase* forms { nullptr }; // resolves effects for applyEffect
+    ecs::Entity entity {};
 };
 
 struct RunResult {
@@ -75,8 +84,9 @@ public:
 
     // Starts `code` as a coroutine with `self`/`target` bound. The script may
     // call `wait(t)` to suspend for t game-seconds and `self:applyEffect(guid)`
-    // / `self:addTag(...)`. The contexts are held until the coroutine ends, so
-    // the referenced components must outlive it (cancel on entity death).
+    // / `self:addTag(...)`. Give the contexts their `entity` handle: on each
+    // resume the component pointers are re-resolved from it — a dead `self`
+    // abandons the coroutine, a dead `target` degrades to nil reads (U8-4).
     void startCoroutine(const std::string& code, ScriptContext self,
                         ScriptContext target);
 
