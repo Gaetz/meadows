@@ -231,7 +231,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U6-F4 |   | U6 | med | réutil | event/EventBus.hpp:36 ; cue/GameplayCues.hpp:41 | EventBus + CueRegistry = 2 dispatch parallèles (H-c) | M | oui |
 | U6-F5 | ✅ | U6 | med | factor | save/SaveState.hpp:33 | Clone/diff réflexion duplique resolver/EditSession (H-b) | M | oui |
 | U6-F7 |   | U6 | med | qual | Combat.cpp:5 ; CharacterTick.cpp:99 ; GameTime.cpp:47 | Détection de mort incohérente (base vs current) | M | non |
-| U6-F10 |   | U6 | med | archi | GameTime.cpp:131 | `recomputeCurrent` 2-arg laisse les derived transitoirement faux | M | non |
+| U6-F10 | ✅ | U6 | med | archi | GameTime.cpp:131 | `recomputeCurrent` 2-arg laisse les derived transitoirement faux | M | non |
 | U7-4 | ✅ | U7 | med | factor | EditSession.cpp:12,193 ; Synthesis.cpp | Clone/diff réflexion dupliqué (H-b) | M | oui |
 | U8-2 | ✅ | U8 | med | archi | gameplay/save/SaveState.hpp:3 ; CharacterTick.hpp | flecs fuite dans headers gameplay | M | oui |
 | U8-4 |   | U8 | med | qual | script/Vm.cpp:161,265 | Coroutines gardent pointeurs bruts, dangling si entité meurt | M | non |

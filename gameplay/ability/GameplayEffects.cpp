@@ -157,14 +157,20 @@ void recomputeCurrent(AbilitySystem& system, std::span<const AttrSetRef> sets,
                 applied.push_back(&stat);
             }
         }
+        // Refresh the actor's derived-target cache: a later PARTIAL recompute
+        // (2-arg form, no registry at hand) skips these ids in pass 1 instead
+        // of clobbering the formula results with the raw AttributeSet field
+        // defaults (audit U6-F10). Without a registry the cache from the last
+        // full recompute stands.
+        system.derivedTargetIds.clear();
+        for (const DerivedStat* stat : applied) {
+            system.derivedTargetIds.push_back(stat->target);
+        }
     }
     const auto isDerivedTarget = [&](u32 id) {
-        for (const DerivedStat* stat : applied) {
-            if (stat->target == id) {
-                return true;
-            }
-        }
-        return false;
+        return std::find(system.derivedTargetIds.begin(),
+                         system.derivedTargetIds.end(),
+                         id) != system.derivedTargetIds.end();
     };
 
     // Pass 1 — non-derived fields across every set: aggregate over the base.

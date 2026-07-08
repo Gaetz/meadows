@@ -54,6 +54,14 @@ struct AbilitySystem {
     f32 energyRegenDelay { 0.0f };       // seconds before energy regen resumes after
                                          // a spend (set in applyEffect, counted down
                                          // in CharacterTick); 0 = regen active
+    // Attr ids whose current is produced by a derived-stat formula, refreshed
+    // on every full recomputeCurrent (registry at hand). Partial recomputes
+    // (the 2-arg form: applyEffect/tickEffects, no registry) SKIP these in
+    // pass 1 instead of clobbering the formula results with the raw
+    // AttributeSet field defaults (audit U6-F10). Runtime cache, empty until
+    // the first full recompute — pure-GAS actors without derived stats are
+    // untouched.
+    vector<u32> derivedTargetIds;
 };
 
 // Registers the GAS components in the ECS: AttributeSet through the reflection

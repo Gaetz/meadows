@@ -141,10 +141,10 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
     // Accumulate rest time.
     accrueRest(a.combat, gameDt);
 
-    // Re-sync derived stats (maxHealth, maxEnergy, etc.) after all game-time
-    // effects have ticked/expired. tickGameTimeEffects and syncInjuryEffects
-    // call the 2-arg recomputeCurrent which lacks CoreAttributes and thus
-    // overwrites derived targets with the raw AttributeSet field defaults (100).
+    // Re-run the derived formulas after all game-time effects have
+    // ticked/expired (the partial recomputes above PRESERVE the previous
+    // derived currents — audit U6-F10 — but only a full recompute refreshes
+    // them against the new modifier set).
     recomputeStats(a.core, a.vitals, a.resonance, a.system, a.derived, &mods);
 }
 
