@@ -15,7 +15,7 @@
 #include "engine/physics/Physics.hpp"
 #include "game/LevelEditor.hpp"
 #include "game/MeshCache.hpp"
-#include "game/scenes/TerrainSculptTool.hpp"
+#include "game/scenes/SceneEditor.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
 #include "game/scenes/WeatherController.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
@@ -230,25 +230,15 @@ private:
     // the player was actively in (updated each frame outside menus).
     SceneMode lastActiveMode { SceneMode::Play };
 
-    // Chantier 2 B3/B4: level editor. CPU ray-AABB picking over MeshCache
-    // bounds, ImGuizmo gizmos, palette placement — every edit lands in the
-    // LevelEditor's EditSession (§5) and exports to data/mods/level-edits.toml.
+    // Chantier 2 B3/B4 + B9: level editor + terrain sculpt, extracted to
+    // SceneEditor (audit U4-5). The scene owns the EditSession (levelEditor)
+    // and the systems; SceneEditor owns the editor STATE (selection, palette,
+    // gizmo, sculpt tool) and the interaction/UI. Wired each frame through
+    // EditorContext (makeEditorContext, which folds in the sculpt sub-contract
+    // makeSculptContext). Target: SceneEditor becomes a stacked SceneStack layer.
     uptr<LevelEditor> levelEditor;
-    ecs::Entity editSelection {};
-    core::Guid placementBase {}; // armed palette entry (0 = none)
-    i32 gizmoOperation { 0 };    // 0 translate, 1 rotate, 2 scale
-    bool gizmoWasUsing { false };
-    void drawEditorUi();
-    bool pickEntity(const Vec2& mousePx, ecs::Entity& out);
-    bool groundUnderMouse(const Vec2& mousePx, Vec3& out);
-    Vec3 mouseRayDirection(const Vec2& mousePx) const;
-
-    // Chantier 2 B9: terrain sculpt, extracted to TerrainSculptTool (audit
-    // U4-5). The tool owns the brush state + working grids; the scene supplies
-    // the ray hit under the cursor (groundUnderMouse) and the publish side
-    // effects (rebuild terrain/scatter/collision, re-snap cells) through a
-    // SculptContext rebuilt each frame.
-    TerrainSculptTool sculptTool;
+    SceneEditor sceneEditor;
+    EditorContext makeEditorContext();
     SculptContext makeSculptContext();
     // Chantier 3 B1: GENERIC interaction (E) — doors travel, items land
     // in the inventory, actors talk (placeholder line), furniture = B7.
