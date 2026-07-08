@@ -25,6 +25,9 @@ buildée + 279 tests verts) :
 | STATS (bug) | **Bleed** = criticalSensitivity% de maxHealth, **ignore l'armure** (était un forfait slash mitigé par l'armure) | `4d6a71a` |
 | STATS (tests) | Non-régression : DoT ignition/électro ∝ vitality (pas will) ; bleed = crit-execution sans armure | `95a0f14` |
 | U8-3 | **Source unique** d'enregistrement des Form-types : le cooker compile `game/AllForms.cpp` (`registerAllFormTypes`) au lieu de recopier la liste — plus de dérive possible ; sans nouvelle lib ni changement de DAG | `3a02d8e` |
+| H-a (1/3) | `engine/reflect/Visit.hpp` (`overloaded`+`visit`) : dispatch `Value` **exhaustif** (un kind oublié = erreur de compil, plus de corruption silencieuse). Appliqué au binaire + TOML (octets identiques, MD5 inchangé) | `4ac53a5` |
+| H-a (2/3) | `visit` sur les sites éditeur/script (valueRepr, PropertyGrid, Vm). Constat : valueRepr ≠ valueToString (pas le doublon supposé par U5-1 — formats distincts) | `f2865bd` |
+| H-b | `data::diffToRecord` : la règle §5 « record = seulement ce qui change » en **un seul endroit** (EditSession + SaveState). `copyFields`/`copyMatchingFields` laissés en place (opérations distinctes, 1 appelant chacune — déplacer n'enlèverait rien, §10) | `40c9fcf` |
 
 **Reporté (décision dev requise, PAS un oubli) :**
 - **U6-F1 §2.9 — RÉSOLU (Option A, `a51fae7`)** avec le dev : les écritures de tick
@@ -33,9 +36,14 @@ buildée + 279 tests verts) :
   via `applyDamage`) aurait été une **régression** (double-mitigation) — la résistance
   agit sur le seuil de buildup, pas sur le dégât par tick — et a révélé en prime deux
   bugs d'équilibrage, corrigés (`f98b6dc`, `4d6a71a`, cf. table §0).
-- **Batch 2 (H-a/H-b, mutualisation reflect) et Batch 3 (structurel)** — haute valeur
-  mais touchent la sérialisation/les saves et l'architecture ; à faire en session
-  supervisée (CLAUDE.md §10).
+- **Batch 2 (H-a/H-b) — FAIT** (`4ac53a5`, `f2865bd`, `40c9fcf`, en session
+  supervisée). Constat transverse : les findings H-a/H-b (comme U5-1) **sur-groupaient**
+  des choses distinctes — la « table monolithique » H-a violerait §2.10 (couplerait
+  binaire↔ImGui↔Lua), valueRepr n'est pas valueToString, et les deux clones ne sont
+  pas un doublon. Le vrai gain livré : exhaustivité compilée du dispatch `Value`
+  (filet sur le seam §5) + la règle §5 diff en un seul endroit.
+- **Batch 3 (structurel : décomposition LandscapeScene, seam Phase-5)** — haute valeur
+  mais touche l'architecture ; à faire en session supervisée (CLAUDE.md §10).
 
 > Note build : le suivi de dépendances de headers de `cmake-build-debug` est bien
 > configuré (`CMAKE_CXX_CL_SHOWINCLUDES_PREFIX` détecté en français). Le « ninja: no
