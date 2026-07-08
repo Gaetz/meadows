@@ -17,6 +17,7 @@
 #include "game/MeshCache.hpp"
 #include "game/scenes/SceneEditor.hpp"
 #include "game/scenes/StreamingController.hpp"
+#include "game/scenes/NpcDirector.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
 #include "game/scenes/WeatherController.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
@@ -495,83 +496,23 @@ private:
     rhi::BindGroupHandle keyShadowReceiverGroup {};
     bool keyShadowUi { true };
 
-    // B6 (chantier 1): Forms-driven skinned NPCs. The scene builds NOTHING
-    // by hand anymore — every actor whose ActorForm resolves an
-    // ActorVisual (appearance + animGraph) gets a GPU skin, a data-built
-    // locomotion graph, and a patrol brain. One rig cache per glTF asset
-    // (sync load at enter; the async path joins the caches in chantier 2).
-    struct RigData {
-        anim::Skeleton skeleton;
-        vector<assets::GltfClip> clips;
-    };
-    std::unordered_map<core::Guid, RigData> rigCache;
-    const RigData* loadRig(const core::Guid& asset);
-    // Per-NPC runtime state (non-reflected, §H5). uptr: the GraphInstance
-    // references Npc::graph — addresses must survive vector growth.
-    struct Npc {
-        ecs::Entity entity;
-        const RigData* rig { nullptr };
-        anim::GraphDesc graph; // owns the clips; `anim` references it
-        uptr<anim::GraphInstance> anim;
-        anim::Pose pose;
-        vector<Mat4> palette;
-        Vec4 tint { 1.0f };
-        rhi::BufferHandle vertices {};
-        rhi::BufferHandle indices {};
-        u32 indexCount { 0 };
-        rhi::BufferHandle paletteSsbo {};
-        rhi::BufferHandle modelUbo {};
-        rhi::BindGroupHandle group {};
-        rhi::BindGroupHandle casterGroup {}; // B2a: ubo b4 + palette b2
-        // Patrol: walk to patrolPoints[target], pause, swap ends.
-        u32 target { 0 };
-        f32 pauseTimer { 0.0f };
-        f32 yaw { 0.0f };
-        f32 speed { 0.0f }; // smoothed horizontal speed -> anim param
-
-        // Chantier 3 B3: schedule-driven life (replaces the patrol when
-        // the ActorForm carries a schedule; patrol stays the fallback).
-        core::Guid schedule {};
-        i32 lastEvaluatedSlot { -1 }; // 10-game-minute re-eval granularity
-        const gameplay::AiPackageForm* activePackage { nullptr };
-        core::Guid activeLocation {};
-        str intentReason; // the debug view's "why"
-        vector<Vec3> path;
-        u32 pathIndex { 0 };
-        f32 repathTimer { 0.0f };
-        f32 wanderTimer { 0.0f };
-        bool sitting { false };         // drives the State.Sitting anim gate
-        bool furnitureClaimed { false };
-
-        // Chantier 3 B5/B6: combat.
-        bool hostile { false }; // ActorTagForm child "Faction.Bandits"
-        bool guard { false };   // D2: "Faction.VillageGuard" — hostile while Wanted
-        bool dead { false };    // mirrors the GAS State.Dead tag
-        f32 attackCooldown { 0.0f };
-        // Chantier 6 A1: the first Faction.* tag — what the OnDeath
-        // event carries (quest kill filters, crime factions).
-        gameplay::GameplayTag factionTag {};
-    };
-    vector<uptr<Npc>> npcs;
-    vector<Vec3> patrolPoints;   // grounded "patrol" marker positions
-    Vec3 characterSpot { 0.0f }; // first NPC position (teleport target)
-    rhi::PipelineHandle skinnedPipeline {};
-    u64 skinnedShaderGeneration { 0 };
-    void buildSkinnedPipeline(rhi::Device& device);
-    // Cell streaming makes NPC entities come and go: refresh prunes dead
-    // ones (freeing their GPU state) and builds newcomers.
+    // B6 (chantier 1): Forms-driven skinned NPCs — the whole subsystem
+    // (rig cache, NPC list, build/AI/schedule/combat/draw) lives in
+    // NpcDirector (audit U4-10), behind an NpcContext the scene builds each
+    // call. The scene keeps only cross-cutting reads via npcDirector.npcs()
+    // (player attack/crime, shadow caster pass, debug UI, editor, console).
+    NpcDirector npcDirector;
+    NpcContext makeNpcContext();
+    // Thin delegators kept so the many call sites stay unchanged; each just
+    // bundles the context and forwards to the director.
     void refreshNpcs(rhi::Device& device);
-    void destroyNpc(rhi::Device& device, Npc& npc);
     void updateNpcs(f32 dt);
     void drawNpcs(engine::FrameContext& frame);
 
-    // Chantier 3 B2/B3: navigation + schedule execution.
+    // Chantier 3 B2/B3: navigation + furniture (shared with the director via
+    // NpcContext; navigator is also the StreamingController's).
     uptr<world::TerrainNavigator> navigator;
     gameplay::FurnitureOccupancy furnitureOccupancy;
-    void updateNpcSchedule(Npc& npc, f32 hourOfDay);
-    // Follows npc.path at walk speed x `speedScale`; returns true when
-    // the path is finished (or empty).
-    bool moveNpcAlongPath(Npc& npc, f32 dt, f32 speedScale);
 
     // B4 (chantier 1): physics — height-field tiles follow the camera (the
     // player takes over as focus in B5); the debug capsule proves the
