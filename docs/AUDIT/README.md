@@ -57,21 +57,28 @@ buildée + 279 tests verts) :
       contrat `StreamingContext`) `124ae87` ; **`NpcDirector`** (sous-système NPC complet :
       structs Npc/RigData, liste, build/IA/schedule/combat/draw ; contrat `NpcContext`,
       délégateurs fins ; la scène lit via `npcDirector.npcs()`) `533edc9`.
+    - **U4-10 (suite) — `InteractionController`** (`c5ea579`, validé en jeu
+      2026-07-08) : prompt [E] (scan de visée + dispatch porte/objet/PNJ/
+      cadavre/mobilier), machine de fade travel/rest (hold plancher inclus),
+      toast (`say()`), `rest()`/`wait()` — derrière `InteractionContext` (refs
+      + 4 closures : travel/openDialogue/openContainer/tryShowScreen).
+      **`performTravel` RESTE dans la scène** (swap de worldspace = territoire
+      streaming) ; la machine l'appelle via le callback `travel` au noir du
+      fade. La scène lit via accesseurs (`promptVisible/talkVisible/fadeAlpha/
+      fading/…`).
   - **Bugs open-world corrigés au passage** (pré-existants, PAS des régressions — chemin
     save intact vs la décompo ; prouvés par diff + tests) : régénération ressuscitant les
     morts (`isDead` non branché dans `tickGameTime`) `6e5b198` ; position runtime non
     réappliquée au reload de cellule (`PendingSaveLayer::applyReferenceOverrides`) `5a1787f`.
     Nouveau test `tests/DeathPersistenceTest.cpp` + cas position dans `CellDeltaTest.cpp`.
   - **Reste ouvert (Batch 3), ordre suggéré (risque croissant) :**
-    1. **U4-10 (suite)** — `InteractionController` (`updateInteraction`/`performTravel`/
-       `performRest`/`performWait`/prompts, ~217 l.) : prochaine brique naturelle.
-    2. **U4-9** — `GameHud`/`UiPresenter` (les `push*Model` RmlUi, chantier 4).
-    3. **U4-1 (suite)** — sous-systèmes restants du god-object.
-    4. **U4-2 + U4-4 + U4-6** — **le plus structurant, à garder pour la fin** :
+    1. **U4-9** — `GameHud`/`UiPresenter` (les `push*Model` RmlUi, chantier 4).
+    2. **U4-1 (suite)** — sous-systèmes restants du god-object.
+    3. **U4-2 + U4-4 + U4-6** — **le plus structurant, à garder pour la fin** :
        `LandscapeRenderer` qui possède les systèmes `render::*`, les ~40 handles GPU
        (wrapper RAII, U4-4), l'assemblage `FrameUniforms` (U4-6), et **consomme un
        `RenderSnapshot` étendu au lieu du World vivant (U4-2, le finding #1)**.
-    5. Transverses hors-U4 : **U3-1** (dédup ring streaming Terrain/Grass/Veg),
+    4. Transverses hors-U4 : **U3-1** (dédup ring streaming Terrain/Grass/Veg),
        **U5-3** (agrégateur d'enregistrement des tags runtime).
   - **Hors-audit, planifié post-audit :** chantier « cellules extérieures implicites »
     (`docs/IMPLICIT-CELLS.md`, lié dans MEADOWS-PLAN §chantier 2, commit `f0f7c00`) —
