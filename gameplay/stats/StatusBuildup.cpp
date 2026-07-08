@@ -69,14 +69,14 @@ BuildupTickResult tickBuildup(StatusBuildup& buildup, AbilitySystem& system,
                     result.poisonHealthDamage += tuning.poisonBaseDamagePerSecond * (1.0f - vit) * dt;
                 } else if (type == StatusType::Ignition) {
                     const f32 maxH = currentValueOf(system, attr("maxHealth"));
-                    const f32 will = std::min(currentValueOf(system, attr("will")) / 100.0f, 1.0f);
-                    result.ignitionHealthDamage += maxH * tuning.ignitionDamagePercent * (1.0f - will) * dt;
+                    const f32 vit = std::min(currentValueOf(system, attr("vitality")) / 100.0f, 1.0f);
+                    result.ignitionHealthDamage += maxH * tuning.ignitionDamagePercent * (1.0f - vit) * dt;
                 } else if (type == StatusType::Glaciation) {
                     // regen penalty handled via buildupStatusModifiers → StatModifiers
                 } else if (type == StatusType::Electrocution) {
                     const f32 maxE = currentValueOf(system, attr("maxEssence"));
-                    const f32 will = std::min(currentValueOf(system, attr("will")) / 100.0f, 1.0f);
-                    result.electrocutionEssenceDamage += maxE * tuning.electrocutionDamagePercent * (1.0f - will) * dt;
+                    const f32 vit = std::min(currentValueOf(system, attr("vitality")) / 100.0f, 1.0f);
+                    result.electrocutionEssenceDamage += maxE * tuning.electrocutionDamagePercent * (1.0f - vit) * dt;
                 }
             }
 
