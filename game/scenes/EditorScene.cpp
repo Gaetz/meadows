@@ -11,6 +11,7 @@
 #include "data/plugins/Synthesis.hpp"
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/platform/Paths.hpp"
+#include "engine/reflect/Visit.hpp"
 #include "game/AllForms.hpp"
 #include "game/ui/PropertyGrid.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
@@ -23,49 +24,36 @@ namespace game {
 namespace {
 
 // Short display form of a reflected value (8.5: the conflict view shows
-// what each plugin wrote).
+// what each plugin wrote). Distinct from PropertyGrid::valueToString, which
+// must stay round-trippable by valueFromString — here quotes and parentheses
+// are for human reading only. Exhaustive per kind (engine/reflect/Visit.hpp).
 str valueRepr(const reflect::Value& value) {
-    using reflect::FieldKind;
     const auto num = [](double v) {
         char buf[32];
         std::snprintf(buf, sizeof(buf), "%g", v);
         return str { buf };
     };
-    switch (reflect::valueKind(value)) {
-    case FieldKind::Bool:
-        return std::get<bool>(value) ? "true" : "false";
-    case FieldKind::I32:
-        return std::to_string(std::get<i32>(value));
-    case FieldKind::U32:
-        return std::to_string(std::get<u32>(value));
-    case FieldKind::F32:
-        return num(std::get<f32>(value));
-    case FieldKind::F64:
-        return num(std::get<f64>(value));
-    case FieldKind::Str:
-        return "\"" + std::get<str>(value) + "\"";
-    case FieldKind::Vec2: {
-        const Vec2& v = std::get<Vec2>(value);
-        return "(" + num(v.x) + ", " + num(v.y) + ")";
-    }
-    case FieldKind::Vec3: {
-        const Vec3& v = std::get<Vec3>(value);
-        return "(" + num(v.x) + ", " + num(v.y) + ", " + num(v.z) + ")";
-    }
-    case FieldKind::Vec4: {
-        const Vec4& v = std::get<Vec4>(value);
-        return "(" + num(v.x) + ", " + num(v.y) + ", " + num(v.z) + ", " +
-               num(v.w) + ")";
-    }
-    case FieldKind::Quat: {
-        const Quat& q = std::get<Quat>(value);
-        return "(" + num(q.x) + ", " + num(q.y) + ", " + num(q.z) + ", " +
-               num(q.w) + ")";
-    }
-    case FieldKind::Guid:
-        return std::get<core::Guid>(value).toString();
-    }
-    return "?";
+    return reflect::visit(value, reflect::overloaded {
+        [&](bool b)       -> str { return b ? "true" : "false"; },
+        [&](i32 x)        -> str { return std::to_string(x); },
+        [&](u32 x)        -> str { return std::to_string(x); },
+        [&](f32 x)        -> str { return num(x); },
+        [&](f64 x)        -> str { return num(x); },
+        [&](const str& s) -> str { return "\"" + s + "\""; },
+        [&](const Vec2& v) -> str { return "(" + num(v.x) + ", " + num(v.y) + ")"; },
+        [&](const Vec3& v) -> str {
+            return "(" + num(v.x) + ", " + num(v.y) + ", " + num(v.z) + ")";
+        },
+        [&](const Vec4& v) -> str {
+            return "(" + num(v.x) + ", " + num(v.y) + ", " + num(v.z) + ", " +
+                   num(v.w) + ")";
+        },
+        [&](const Quat& q) -> str {
+            return "(" + num(q.x) + ", " + num(q.y) + ", " + num(q.z) + ", " +
+                   num(q.w) + ")";
+        },
+        [&](const core::Guid& g) -> str { return g.toString(); },
+    });
 }
 
 } // namespace

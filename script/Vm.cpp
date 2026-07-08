@@ -8,6 +8,7 @@
 #include <sol/sol.hpp>
 
 #include "engine/core/Rng.hpp"
+#include "engine/reflect/Visit.hpp"
 
 #include "data/forms/FormDatabase.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
@@ -24,23 +25,23 @@ namespace {
 // reflect::Value -> Lua. Scalars map directly; a Guid becomes its string; the
 // vector/quat kinds are not exposed to scripts yet (return nil).
 sol::object valueToLua(sol::this_state ts, const reflect::Value& value) {
-    return std::visit(
-        [&](auto&& held) -> sol::object {
-            using T = std::decay_t<decltype(held)>;
-            if constexpr (std::is_same_v<T, core::Guid>) {
-                return sol::make_object(ts, held.toString());
-            } else if constexpr (std::is_same_v<T, bool> ||
-                                 std::is_same_v<T, i32> ||
-                                 std::is_same_v<T, u32> ||
-                                 std::is_same_v<T, f32> ||
-                                 std::is_same_v<T, f64> ||
-                                 std::is_same_v<T, str>) {
-                return sol::make_object(ts, held);
-            } else {
-                return sol::make_object(ts, sol::lua_nil);
-            }
-        },
-        value);
+    const auto obj = [&](auto&& held) { return sol::make_object(ts, held); };
+    const auto nil = [&] { return sol::make_object(ts, sol::lua_nil); };
+    // Exhaustive: a new FieldKind must decide its Lua mapping here. Vec/Quat
+    // are deliberately not exposed to scripts yet → nil.
+    return reflect::visit(value, reflect::overloaded {
+        [&](bool b)              -> sol::object { return obj(b); },
+        [&](i32 x)               -> sol::object { return obj(x); },
+        [&](u32 x)               -> sol::object { return obj(x); },
+        [&](f32 x)               -> sol::object { return obj(x); },
+        [&](f64 x)               -> sol::object { return obj(x); },
+        [&](const str& s)        -> sol::object { return obj(s); },
+        [&](const core::Guid& g) -> sol::object { return obj(g.toString()); },
+        [&](const Vec2&)         -> sol::object { return nil(); },
+        [&](const Vec3&)         -> sol::object { return nil(); },
+        [&](const Vec4&)         -> sol::object { return nil(); },
+        [&](const Quat&)         -> sol::object { return nil(); },
+    });
 }
 
 // Lua -> reflect::Value for the types ScriptVars stores. Numbers become f32;
