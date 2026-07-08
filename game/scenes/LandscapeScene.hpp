@@ -15,6 +15,7 @@
 #include "engine/physics/Physics.hpp"
 #include "game/LevelEditor.hpp"
 #include "game/MeshCache.hpp"
+#include "game/scenes/InteractionController.hpp"
 #include "game/scenes/SceneEditor.hpp"
 #include "game/scenes/StreamingController.hpp"
 #include "game/scenes/NpcDirector.hpp"
@@ -240,22 +241,15 @@ private:
     SceneEditor sceneEditor;
     EditorContext makeEditorContext();
     SculptContext makeSculptContext();
-    // Chantier 3 B1: GENERIC interaction (E) — doors travel, items land
-    // in the inventory, actors talk (placeholder line), furniture = B7.
-    enum class PromptKind : u8 { None, Door, Item, Actor, Corpse,
-                                 Furniture };
-    ecs::Entity promptEntity {};
-    PromptKind promptKind { PromptKind::None };
-    str promptLabel;
-    str talkLine; // placeholder dialogue bubble
-    f32 talkTimer { 0.0f };
-    core::Guid pendingTravel {}; // armed target marker reference
-    f32 pendingSleepHours { 0.0f }; // armed rest/sleep (B7-lite), at black
-    f32 fadeAlpha { 0.0f };      // 0 = clear, 1 = black
-    i32 fadeDirection { 0 };     // +1 fading out, -1 fading in
-    void updateInteraction(f32 dt);
+    // Chantier 3 B1: GENERIC interaction (E) + travel fade + talk toast,
+    // extracted to InteractionController (audit U4-10). performTravel STAYS
+    // here (a worldspace swap is streaming/scene territory — cellStreamer,
+    // colliders, NPC refresh, player capsule); the controller fires it
+    // through the InteractionContext travel callback at the black of the
+    // fade. Wired each call through makeInteractionContext().
+    InteractionController interaction;
+    InteractionContext makeInteractionContext();
     void performTravel(const core::Guid& targetReference);
-    void performRest(f32 hours); // Phase-7 sleep(): clock + survival + rest
 
     // Chantier 3 B1: the game clock owns time-of-day (the sky follows)
     // and feeds real game-time into tickCharacter/schedules.
@@ -340,7 +334,6 @@ private:
     // share one "menu" data model — the documents differ, the actions
     // route through handleMenuAction).
     void handleMenuAction(const str& action);
-    void performWait(f32 hours); // clock + needs decay, NO bed recovery
     void updateMenuClockLine();
 
     // Chantier 5 B3: the one post-spawn seam for EVERY actor (player and
@@ -540,9 +533,6 @@ private:
     uptr<phys::CharacterBody> player;
     Vec3 playerVelocity { 0.0f }; // smoothed horizontal velocity (m/s)
     f32 jumpSpeed { 5.0f };       // fallback only — jumpPower stat drives it (C3)
-    // Travel fade: extra seconds spent holding at black while the arrival
-    // floor's collider is still cooking (see updateInteraction).
-    f32 fadeHoldSeconds { 0.0f };
     // C3: refreshed each frame at the equipMods site; gates jump/sprint
     // and feeds the inventory footer.
     gameplay::EncumbranceCategory playerEncumbrance {

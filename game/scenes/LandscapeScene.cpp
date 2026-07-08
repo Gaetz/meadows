@@ -405,8 +405,8 @@ void LandscapeScene::setupGameplay() {
             }
             quest::beginQuest(questLog, forms, easternQuest->id);
             syncQuestTags();
-            talkLine = "Nouvelle quete : La menace de l'est (journal : J).";
-            talkTimer = 4.0f;
+            interaction.say(
+                "Nouvelle quete : La menace de l'est (journal : J).", 4.0f);
         });
     eventBus.subscribe(gameplay::eventKind("OnDeath"),
                        [this](const gameplay::Event& event) {
@@ -433,8 +433,8 @@ void LandscapeScene::setupGameplay() {
                 playerEntity.get_mut<gameplay::Bounty>().bounty = 0.0f;
             }
             syncWantedTag();
-            talkLine = "Amende payee. Restez dans le droit chemin.";
-            talkTimer = 4.0f;
+            interaction.say("Amende payee. Restez dans le droit chemin.",
+                            4.0f);
         });
     // Chantier 6 A4: a loaded save rebuilds the quest log (the tags
     // mirror re-syncs after the player spawns, below).
@@ -486,9 +486,7 @@ void LandscapeScene::setupWorldAndStreaming() {
     }
     activeWorldspace = overworldHandle;
     interiorMode = false;
-    fadeAlpha = 0.0f;
-    fadeDirection = 0;
-    pendingTravel = core::Guid {};
+    interaction.reset();
     // Chantier 3 B1: start the day at 10:00, ~7.5 real minutes per game
     // hour (timescale 12 — "Animate" boosts it).
     gameClock = gameplay::GameClock {};
@@ -710,8 +708,7 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
         if (const auto marker = core::Guid::fromString(
                 "4d7a9b30-0000-4000-8000-000000000023");
             marker && forms.find<world::ReferenceForm>(*marker)) {
-            pendingTravel = *marker;
-            fadeDirection = 1;
+            interaction.beginTravel(*marker);
         }
     }
 }
@@ -1087,7 +1084,7 @@ void LandscapeScene::update(f32 dt) {
         static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
     if (!simPaused) {
         // B7/ch.3 B1: interaction prompts + the travel fade state machine.
-        updateInteraction(dt);
+        interaction.update(dt, makeInteractionContext());
         // Chantier 3 B1: the game clock owns time — advancing it stays
         // paused with the sim; tickCharacter gets REAL game-seconds
         // (regen/survival at timescale).
@@ -1371,221 +1368,40 @@ EditorContext LandscapeScene::makeEditorContext() {
 
 // --- B7: doors & worldspace travel ------------------------------------------------
 
-void LandscapeScene::updateInteraction(f32 dt) {
-    promptEntity = ecs::Entity {};
-    promptKind = PromptKind::None;
-    if (talkTimer > 0.0f) {
-        talkTimer -= dt;
-    }
-    if (fadeDirection == 0 && (mode == SceneMode::Play) && player) {
-        // Aim test: nearest interactable within reach, roughly in front
-        // of the eye. One scorer for every kind.
-        const Vec3 eye = player->position() + Vec3 { 0.0f, 1.7f, 0.0f };
-        const Vec3 forward = flyCamera.camera.forward();
-        f32 bestScore = 0.55f; // minimum facing alignment
-        const auto consider = [&](flecs::entity e, const Vec3& position,
-                                  PromptKind kind, f32 reach) {
-            const Vec3 to = position + Vec3 { 0.0f, 1.1f, 0.0f } - eye;
-            const f32 distance = glm::length(to);
-            if (distance > reach || distance < 1e-3f) {
-                return;
+// Bundle the scene systems the [E] interaction touches for
+// InteractionController this frame — references into the scene plus the
+// actions that stay scene territory as closures (travel swaps the
+// worldspace; dialogue/container/screens are UI wiring). Rebuilt each call
+// (cheap: refs + four closures). Mirrors makeEditorContext.
+InteractionContext LandscapeScene::makeInteractionContext() {
+    return InteractionContext {
+        forms,
+        doorQuery,
+        interactQuery,
+        npcDirector.npcs(),
+        engine->getInput(),
+        gameClock,
+        statsTuning,
+        pendingSave,
+        physics.get(),
+        player.get(),
+        playerEntity,
+        flyCamera.camera.forward(),
+        mode == SceneMode::Play,
+        [this](const core::Guid& target) { performTravel(target); },
+        [this](ecs::Entity partner, const core::Guid& dialogue) {
+            dialoguePartner = partner; // the vendor for B5
+            openDialogue(dialogue);
+        },
+        [this](ecs::Entity container) { openContainerScreen(container); },
+        [this](const str& screen) {
+            if (!screenStack.find(screen)) {
+                return false;
             }
-            const f32 facing = glm::dot(to / distance, forward);
-            if (facing > bestScore) {
-                bestScore = facing;
-                promptEntity = ecs::Entity { e };
-                promptKind = kind;
-            }
-        };
-        doorQuery.each([&](flecs::entity e,
-                           const world::Transform& transform,
-                           const world::DoorTarget&) {
-            consider(e, transform.position, PromptKind::Door, 3.0f);
-        });
-        interactQuery.each([&](flecs::entity e,
-                               const world::Transform& transform,
-                               const world::RefId&) {
-                const ecs::Entity entity { e };
-                if (entity.has<world::ItemMarker>()) {
-                    consider(e, transform.position, PromptKind::Item, 2.4f);
-                } else if (entity.has<world::ActorMarker>() &&
-                           entity != playerEntity) {
-                    // Chantier 4 B3: a dead actor is searched, not talked to.
-                    bool isDead = false;
-                    for (const auto& npc : npcDirector.npcs()) {
-                        if (npc->entity == entity) {
-                            isDead = npc->dead;
-                            break;
-                        }
-                    }
-                    consider(e, transform.position,
-                             isDead ? PromptKind::Corpse : PromptKind::Actor,
-                             2.8f);
-                } else if (entity.has<world::FurnitureMarker>()) {
-                    consider(e, transform.position, PromptKind::Furniture,
-                             2.4f);
-                }
-            });
-
-        // The prompt label from the base form's displayName (reflection).
-        promptLabel.clear();
-        if (promptEntity.is_alive()) {
-            str name;
-            const auto& ref = promptEntity.get<world::RefId>();
-            if (const data::Form* base = forms.get(ref.base)) {
-                if (const reflect::TypeInfo* type = forms.typeOf(ref.base)) {
-                    if (const reflect::FieldInfo* field =
-                            type->findField("displayName");
-                        field && field->kind == reflect::FieldKind::Str) {
-                        name = std::get<str>(field->get(base));
-                    }
-                }
-            }
-            switch (promptKind) {
-            case PromptKind::Door:
-                promptLabel = "[E] " + (name.empty() ? "Use door" : name);
-                break;
-            case PromptKind::Item:
-                promptLabel =
-                    "[E] Take " + (name.empty() ? "item" : name);
-                break;
-            case PromptKind::Actor:
-                promptLabel =
-                    "[E] Talk to " + (name.empty() ? "them" : name);
-                break;
-            case PromptKind::Corpse:
-                promptLabel =
-                    "[E] Search " + (name.empty() ? "the body" : name);
-                break;
-            case PromptKind::Furniture:
-                promptLabel = "[E] Use " + (name.empty() ? "this" : name);
-                break;
-            default:
-                break;
-            }
-        }
-
-        if (promptEntity.is_alive() &&
-            engine->getInput().wasPressed(platform::Key::E)) {
-            switch (promptKind) {
-            case PromptKind::Door:
-                pendingTravel =
-                    promptEntity.get<world::DoorTarget>().targetReference;
-                fadeDirection = 1;
-                break;
-            case PromptKind::Item: {
-                // Into the inventory; the entity leaves the world and the
-                // PENDING layer remembers (chantier 5 B4): the reference
-                // stays disabled when its cell reloads, and the disk save
-                // flushes enabled = false.
-                const auto& ref = promptEntity.get<world::RefId>();
-                if (const data::Form* base = forms.get(ref.base)) {
-                    if (!playerEntity.has<gameplay::Inventory>()) {
-                        playerEntity.set<gameplay::Inventory>({});
-                    }
-                    gameplay::addItem(
-                        playerEntity.get_mut<gameplay::Inventory>(),
-                        base->id, 1);
-                    LOG_INFO("Taken: {}", base->editorId);
-                }
-                if (ref.referenceId.isValid()) {
-                    pendingSave.disableReference(ref.referenceId, forms,
-                                                 promptEntity);
-                }
-                promptEntity.destruct();
-                promptEntity = ecs::Entity {};
-                break;
-            }
-            case PromptKind::Actor: {
-                // B4: actors with a DialogueForm talk for real; the rest
-                // keep the placeholder line.
-                const auto& ref = promptEntity.get<world::RefId>();
-                const data::Form* base = forms.get(ref.base);
-                const reflect::TypeInfo* type = forms.typeOf(ref.base);
-                const auto* actor =
-                    base && type &&
-                            type->isA(data::ActorForm::staticTypeInfo().id)
-                        ? static_cast<const data::ActorForm*>(base)
-                        : nullptr;
-                if (actor && actor->dialogue.isValid()) {
-                    dialoguePartner = promptEntity; // the vendor for B5
-                    openDialogue(actor->dialogue);
-                } else {
-                    talkLine = "Belle journee, voyageur.";
-                    talkTimer = 4.0f;
-                }
-                break;
-            }
-            case PromptKind::Corpse:
-                openContainerScreen(promptEntity);
-                break;
-            case PromptKind::Furniture: {
-                // B7-lite: beds sleep 8h, seats rest 1h — both through the
-                // Phase-7 gameplay::sleep() at the black of the fade.
-                // Chantier 4 B6: a WORKSTATION opens its UI screen instead
-                // (FurnitureForm.screen — crafting tables are furniture +
-                // a screen).
-                const auto& ref = promptEntity.get<world::RefId>();
-                f32 hours = 1.0f;
-                str screen;
-                if (const reflect::TypeInfo* type = forms.typeOf(ref.base);
-                    type &&
-                    type->isA(gameplay::FurnitureForm::staticTypeInfo().id)) {
-                    const auto* furniture = static_cast<
-                        const gameplay::FurnitureForm*>(forms.get(ref.base));
-                    if (furniture->category == "bed") { hours = 8.0f; }
-                    screen = furniture->screen;
-                }
-                if (!screen.empty() && screenStack.find(screen)) {
-                    screenStack.show(screen);
-                } else {
-                    pendingSleepHours = hours;
-                    fadeDirection = 1;
-                }
-                break;
-            }
-            default:
-                break;
-            }
-        }
-    }
-    // Fade state machine: out (0.3 s) -> travel at black -> in.
-    constexpr f32 kFadeSpeed = 1.0f / 0.3f;
-    if (fadeDirection > 0) {
-        fadeAlpha += dt * kFadeSpeed;
-        if (fadeAlpha >= 1.0f) {
-            fadeAlpha = 1.0f;
-            if (pendingSleepHours > 0.0f) {
-                performRest(pendingSleepHours);
-                pendingSleepHours = 0.0f;
-            } else {
-                performTravel(pendingTravel);
-                pendingTravel = core::Guid {};
-            }
-            fadeDirection = -1;
-        }
-    } else if (fadeDirection < 0) {
-        // Hold at black until the world is SOLID under the player: after
-        // a travel the arrival cell's meshes may still be decoding and
-        // the collider cook is budgeted — fading in before the floor
-        // exists dropped the player through it (dev report 2026-07-07).
-        // Timeout keeps an authoring hole from freezing the game black.
-        if (fadeAlpha >= 1.0f && (mode == SceneMode::Play) && player && physics) {
-            fadeHoldSeconds += dt;
-            const phys::RayHit floor = physics->rayCast(
-                player->position() + Vec3 { 0.0f, 0.5f, 0.0f },
-                { 0.0f, -1.0f, 0.0f }, 6.0f);
-            if (!floor.hit && fadeHoldSeconds < 5.0f) {
-                return; // still cooking — stay black, player stays frozen
-            }
-        }
-        fadeHoldSeconds = 0.0f;
-        fadeAlpha -= dt * kFadeSpeed;
-        if (fadeAlpha <= 0.0f) {
-            fadeAlpha = 0.0f;
-            fadeDirection = 0;
-        }
-    }
+            screenStack.show(screen);
+            return true;
+        },
+    };
 }
 
 void LandscapeScene::performTravel(const core::Guid& targetReference) {
@@ -1642,32 +1458,6 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     LOG_INFO("B7: traveled to {} ({}), interior = {}",
              cellForm->editorId,
              marker->position.x, interiorMode);
-}
-
-// Chantier 3 B7-lite: rest/sleep on furniture — the Phase-7 sleep()
-// advances the game clock (the sky follows on the next frame), decays
-// hunger/thirst over the skipped time, restores the sleep need, and
-// accrues Rest (the injury/resonance recovery precondition). NPC
-// schedules re-evaluate on their next slot check and warp forward.
-void LandscapeScene::performRest(f32 hours) {
-    if (!playerEntity.is_alive()) {
-        return;
-    }
-    if (!playerEntity.has<gameplay::Survival>() ||
-        !playerEntity.has<gameplay::CombatState>()) {
-        LOG_WARN("B7: player has no survival stats; rest skipped");
-        return;
-    }
-    gameplay::sleep(gameClock,
-                    playerEntity.get_mut<gameplay::Survival>(),
-                    playerEntity.get_mut<gameplay::CombatState>(),
-                    hours, statsTuning);
-    talkLine = hours >= 8.0f
-        ? "Vous dormez profondement (8 h)."
-        : "Vous vous reposez un moment (1 h).";
-    talkTimer = 3.0f;
-    LOG_INFO("B7-lite: rested {} h -> game time {:.2f} h", hours,
-             std::fmod(gameClock.gameHours(), 24.0));
 }
 
 // --- Chantier 4: the RmlUi game UI --------------------------------------------------
@@ -1961,13 +1751,15 @@ void LandscapeScene::updateHudModel() {
     std::snprintf(clock, sizeof(clock), "%02d:%02d", hh, mm);
     uiSystem.setString("hud", "clock", clock);
     // The interaction prompt + talk line (migrated from the ImGui overlay).
-    const bool promptOn = (mode == SceneMode::Play) && promptEntity.is_alive() &&
-                          fadeDirection == 0 && !promptLabel.empty();
+    const bool promptOn =
+        (mode == SceneMode::Play) && interaction.promptVisible();
     uiSystem.setBool("hud", "promptVisible", promptOn);
-    uiSystem.setString("hud", "prompt", promptOn ? promptLabel : str {});
-    const bool talkOn = talkTimer > 0.0f && !talkLine.empty();
+    uiSystem.setString("hud", "prompt",
+                       promptOn ? interaction.promptLabel() : str {});
+    const bool talkOn = interaction.talkVisible();
     uiSystem.setBool("hud", "talkVisible", talkOn);
-    uiSystem.setString("hud", "talk", talkOn ? talkLine : str {});
+    uiSystem.setString("hud", "talk",
+                       talkOn ? interaction.talkLine() : str {});
     updateNameplates(); // B7
 }
 
@@ -2039,15 +1831,13 @@ void LandscapeScene::performSave(const str& slot) {
                    "5a5e0000-0000-4000-8000-0000000000ff")));
 
     if (writeSave(slot, plugin, formTypes)) {
-        talkLine = "Partie sauvegardee (" + slot + ").";
-        talkTimer = 3.0f;
+        interaction.say("Partie sauvegardee (" + slot + ").", 3.0f);
     }
 }
 
 void LandscapeScene::requestLoad(const str& slot) {
     if (!std::filesystem::exists(savePath(slot))) {
-        talkLine = "Aucune sauvegarde '" + slot + "'.";
-        talkTimer = 3.0f;
+        interaction.say("Aucune sauvegarde '" + slot + "'.", 3.0f);
         return;
     }
     pendingLoadSlot = slot;
@@ -2502,27 +2292,6 @@ void LandscapeScene::updateMenuClockLine() {
     uiSystem.setString("menu", "clockLine", line);
 }
 
-void LandscapeScene::performWait(f32 hours) {
-    // Waiting passes game time and decays the needs, but restores nothing
-    // — that's what beds are for (gameplay::sleep, B7-lite chantier 3).
-    const f64 gameDt = static_cast<f64>(hours) * 3600.0;
-    gameClock.gameSeconds += gameDt;
-    if (playerEntity.is_alive()) {
-        if (playerEntity.has<gameplay::Survival>()) {
-            gameplay::tickSurvival(
-                playerEntity.get_mut<gameplay::Survival>(), gameDt,
-                statsTuning);
-        }
-        if (playerEntity.has<gameplay::CombatState>()) {
-            gameplay::accrueRest(
-                playerEntity.get_mut<gameplay::CombatState>(), gameDt);
-        }
-    }
-    updateMenuClockLine();
-    LOG_INFO("B6: waited {} h -> game time {:.2f} h", hours,
-             std::fmod(gameClock.gameHours(), 24.0));
-}
-
 void LandscapeScene::handleMenuAction(const str& action) {
     if (action == "resume" || action == "cancel") {
         screenStack.closeTop();
@@ -2555,8 +2324,11 @@ void LandscapeScene::handleMenuAction(const str& action) {
         screenStack.show("wait");
     } else if (action == "wait1" || action == "wait4" ||
                action == "wait8") {
-        performWait(action == "wait1" ? 1.0f
-                                      : action == "wait4" ? 4.0f : 8.0f);
+        interaction.wait(action == "wait1" ? 1.0f
+                             : action == "wait4" ? 4.0f
+                                                 : 8.0f,
+                         makeInteractionContext());
+        updateMenuClockLine();
         screenStack.closeTop();
     } else if (action == "play") {
         screenStack.closeAll();
@@ -2818,12 +2590,11 @@ void LandscapeScene::handleQuestEvent(const gameplay::Event& event) {
             gameplay::addItem(playerEntity.get_mut<gameplay::Inventory>(),
                               goldForm->id, 50);
         }
-        talkLine = "Quete accomplie : La menace de l'est (+50 or).";
-        talkTimer = 5.0f;
+        interaction.say("Quete accomplie : La menace de l'est (+50 or).",
+                        5.0f);
     } else if (quest::questState(questLog, easternQuest->id) !=
                stateBefore) {
-        talkLine = "Journal mis a jour (J).";
-        talkTimer = 4.0f;
+        interaction.say("Journal mis a jour (J).", 4.0f);
     }
 }
 
@@ -3075,10 +2846,11 @@ void LandscapeScene::tryPlayerAttack() {
             auto& bounty = playerEntity.get_mut<gameplay::Bounty>();
             bounty.bounty += kBountyAssault;
             syncWantedTag();
-            talkLine = "Crime observe ! Prime : " +
-                       std::to_string(static_cast<i32>(bounty.bounty)) +
-                       " pieces d'or.";
-            talkTimer = 4.0f;
+            interaction.say(
+                "Crime observe ! Prime : " +
+                    std::to_string(static_cast<i32>(bounty.bounty)) +
+                    " pieces d'or.",
+                4.0f);
             LOG_INFO("Crime witnessed — bounty {:.0f}", bounty.bounty);
         }
     }
@@ -3104,7 +2876,7 @@ void LandscapeScene::syncWantedTag() {
 
 void LandscapeScene::updatePlayer(f32 dt) {
     platform::Input& input = engine->getInput();
-    if (fadeDirection != 0) {
+    if (interaction.fading()) {
         return; // frozen during door transitions
     }
     // B6: melee swing on LMB (the mouse is captured in Play — ImGui
@@ -3273,7 +3045,7 @@ StreamingContext LandscapeScene::makeStreamingContext() {
         meshCache.get(),
         navigator.get(),
         focus,
-        /*fastCook=*/fadeDirection != 0 || fadeAlpha > 0.0f,
+        /*fastCook=*/interaction.fading() || interaction.fadeAlpha() > 0.0f,
         /*editorOwnsTransforms=*/mode == SceneMode::Edit,
     };
 }
@@ -4355,26 +4127,28 @@ void LandscapeScene::drawUi() {
     ImDrawList* foreground = ImGui::GetForegroundDrawList();
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     if (!uiCreated) {
-        if ((mode == SceneMode::Play) && promptEntity.is_alive() && fadeDirection == 0 &&
-            !promptLabel.empty()) {
-            const ImVec2 size = ImGui::CalcTextSize(promptLabel.c_str());
+        if ((mode == SceneMode::Play) && interaction.promptVisible()) {
+            const str& prompt = interaction.promptLabel();
+            const ImVec2 size = ImGui::CalcTextSize(prompt.c_str());
             foreground->AddText(
                 { (display.x - size.x) * 0.5f, display.y * 0.62f },
                 ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.95f)),
-                promptLabel.c_str());
+                prompt.c_str());
         }
-        if (talkTimer > 0.0f && !talkLine.empty()) {
-            const ImVec2 size = ImGui::CalcTextSize(talkLine.c_str());
+        if (interaction.talkVisible()) {
+            const str& talk = interaction.talkLine();
+            const ImVec2 size = ImGui::CalcTextSize(talk.c_str());
             foreground->AddText(
                 { (display.x - size.x) * 0.5f, display.y * 0.55f },
                 ImGui::GetColorU32(ImVec4(1.0f, 0.95f, 0.8f, 0.95f)),
-                talkLine.c_str());
+                talk.c_str());
         }
     }
-    if (fadeAlpha > 0.0f) {
+    if (interaction.fadeAlpha() > 0.0f) {
         foreground->AddRectFilled(
             { 0.0f, 0.0f }, display,
-            ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, fadeAlpha)));
+            ImGui::GetColorU32(
+                ImVec4(0.0f, 0.0f, 0.0f, interaction.fadeAlpha())));
     }
 
     // Mode hotkeys. Play is home: F2 toggles Spectator (a paused free camera —
