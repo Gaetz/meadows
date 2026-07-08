@@ -63,6 +63,17 @@ StatModifiers buildCharacterMods(GameTimeTickArgs& args,
 // `mods` must already be computed and recomputeStats called by the caller.
 void tickGameTime(GameTimeTickArgs& args, f64 gameDt, const StatModifiers& mods);
 
+// Applies a buildup tick's consequences — DoT drains, bleed burst, status
+// triggers (electrocution stagger+posture, glaciation paralysis) and lethal
+// zeroing — then syncs the life state. ONE implementation shared by the
+// real-time path (tickCharacter) and the time-skip path (advanceGameTime);
+// the two had drifted apart (audit U6-F2/U6-F7). §2.9 execution calc: the
+// per-tick amounts are final (resistance acts on buildup accumulation, not
+// the tick), so the drains write BaseValues directly, never re-mitigated
+// through applyDamage. Returns true when the actor is dead (base health 0).
+bool applyBuildupResult(GameTimeTickArgs& args, const BuildupTickResult& result,
+                        const StatModifiers& mods);
+
 // Simulates `gameDt` game-seconds for a time-skip (Advance / Sleep buttons).
 GameTimeResult advanceGameTime(GameTimeTickArgs& args, f64 gameDt, f32 timescale,
                                const StatModifiers& equipmentMods = {});

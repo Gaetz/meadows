@@ -70,43 +70,12 @@ void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
     // Real-time status buildup: DoT, decay, status triggers.
     const BuildupTickResult br = tickBuildup(buildup, system, dt, ctx.tags, ctx.tuning);
 
-    // §2.9 execution calc: buildup DoT drains the BaseValue directly. NOT via
-    // applyDamage — the per-tick amount is already final (resistance acts on
-    // buildup accumulation, not the tick), so it must not be re-mitigated.
-    if (br.poisonHealthDamage > 0.0f)
-        vitals.health = std::max(0.0f, vitals.health - br.poisonHealthDamage);
-    if (br.ignitionHealthDamage > 0.0f)
-        vitals.health = std::max(0.0f, vitals.health - br.ignitionHealthDamage);
-    if (br.electrocutionEssenceDamage > 0.0f)
-        vitals.essence = std::max(0.0f, vitals.essence - br.electrocutionEssenceDamage);
-    if (br.bleedBurst) {
-        StatBlock block { core, vitals, system, combat };
-        // Bleed = one critical-sensitivity chunk of max health, ignoring armor
-        // (docs/STATS.md §4); the triggering weapon hit already dealt its own
-        // mitigated damage. No channels → the crit execution is the whole effect.
-        DamageEvent bleed;
-        bleed.critical = true;
-        bleed.criticalMultiplier = 1.0f;
-        applyDamage(block, bleed, ctx.tags, ctx.derived, &mods, ctx.tuning);
-    }
-    if (br.glaciationTriggered) {
-        combat.paralysisSeconds = std::max(combat.paralysisSeconds,
-                                           ctx.tuning.glaciationParalysisDuration);
-        if (const auto paralyzed = ctx.tags.find("State.Paralyzed"))
-            system.tags.add(*paralyzed, ctx.tags);
-    }
-    if (br.electrocutionTriggered) {
-        const f32 maxP = currentValueOf(system, attr("maxPosture"));
-        combat.posture = std::max(0.0f,
-            combat.posture - maxP * ctx.tuning.electrocutionPostureDrainPercent);
-        combat.staggerSeconds = std::max(combat.staggerSeconds, ctx.tuning.staggerSeconds);
-        if (const auto staggered = ctx.tags.find("State.Staggered"))
-            system.tags.add(*staggered, ctx.tags);
-    }
-    if (br.deathTriggered) {
-        if (const auto dead = ctx.tags.find("State.Dead"))
-            system.tags.add(*dead, ctx.tags);
-    }
+    // Buildup consequences (DoT drains, bleed burst, status triggers, lethal
+    // zeroing + life-state sync) — the ONE shared implementation with the
+    // time-skip path (audit U6-F2/U6-F7). The return (died) is not consumed
+    // here: the health regen it would guard is gated by the State.Dead tag
+    // this call just synced (tickGameTime's isDead gate).
+    applyBuildupResult(args, br, mods);
 
     // Real-time regen (posture while not staggered NOR in the critical
     // window — posture must sit at 0 for the whole window; energy always).

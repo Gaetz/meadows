@@ -16,11 +16,14 @@ bool isDead(const GameTimeTickArgs& a) {
     return dead && a.system.tags.has(*dead);
 }
 
+} // namespace
+
 bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
-                        const DerivedStatRegistry& derived, const StatModifiers& mods) {
+                        const StatModifiers& mods) {
     // §2.9 execution calc: buildup DoT / lethal zeroing drain BaseValues
-    // directly (final per-tick amounts — see CharacterTick). updateLifeState
-    // below turns health 0 into State.Dead.
+    // directly (final per-tick amounts — resistance acts on buildup
+    // accumulation, not the tick). ONE implementation for the real-time
+    // (tickCharacter) and time-skip (advanceGameTime) paths (audit U6-F2).
     if (br.poisonHealthDamage > 0.0f || br.ignitionHealthDamage > 0.0f) {
         a.vitals.health = std::max(0.0f,
             a.vitals.health - br.poisonHealthDamage - br.ignitionHealthDamage);
@@ -36,12 +39,19 @@ bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
         DamageEvent bleed;
         bleed.critical = true;
         bleed.criticalMultiplier = 1.0f;
-        applyDamage(block, bleed, a.tags, derived, &mods, a.tuning);
+        applyDamage(block, bleed, a.tags, a.derived, &mods, a.tuning);
     }
     if (br.electrocutionTriggered) {
         const f32 maxP = currentValueOf(a.system, attr("maxPosture"));
         a.combat.posture = std::max(0.0f,
             a.combat.posture - maxP * a.tuning.electrocutionPostureDrainPercent);
+        // The jolt also breaks the stance — was only on the real-time path
+        // (audit U6-F2).
+        a.combat.staggerSeconds =
+            std::max(a.combat.staggerSeconds, a.tuning.staggerSeconds);
+        if (const auto staggered = a.tags.find("State.Staggered")) {
+            a.system.tags.add(*staggered, a.tags);
+        }
     }
     if (br.glaciationTriggered) {
         a.combat.paralysisSeconds = std::max(
@@ -51,16 +61,22 @@ bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
         }
     }
     if (br.deathTriggered) {
+        // Lethal zeroing writes the BASE (§2.9): the State.Dead tag alone
+        // (the old real-time behavior) left health > 0, so the next
+        // life-state sync resurrected the actor and it reloaded ALIVE
+        // across a save (audit U6-F7 — the regen-revive bug's sibling).
         a.vitals.health = 0.0f;
     }
     if (a.vitals.health <= 0.0f) {
+        // The current overlay still holds the pre-drain health and
+        // updateLifeState reads CURRENT — refresh it first, or the death
+        // tag lags a full tick behind the kill.
+        recomputeCurrent(a.vitals, a.system);
         updateLifeState(a.system, a.tags);
         return true;
     }
     return false;
 }
-
-} // namespace
 
 StatModifiers buildCharacterMods(GameTimeTickArgs& a, const StatModifiers& equipmentMods) {
     // All resonance sources (survival, injuries, afflictions, drugs) are now GAS
@@ -166,7 +182,7 @@ GameTimeResult advanceGameTime(GameTimeTickArgs& a, f64 gameDt, f32 timescale,
         const BuildupTickResult br =
             tickBuildup(a.buildup, a.system, static_cast<f32>(thisReal), a.tags, a.tuning);
 
-        if (applyBuildupResult(a, br, a.derived, mods)) {
+        if (applyBuildupResult(a, br, mods)) {
             return { true };
         }
 

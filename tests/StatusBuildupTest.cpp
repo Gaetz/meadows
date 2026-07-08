@@ -268,3 +268,104 @@ TEST_CASE("status buildup: ignition/electrocution DoT scale with vitality, not w
     CHECK(elBase > 0.0f);
     CHECK(elVit  <  elBase);
 }
+
+// --- applyBuildupResult: the ONE shared consequence path (audit U6-F2/U6-F7) --------
+
+#include "gameplay/combat/Combat.hpp"   // updateLifeState
+#include "gameplay/stats/GameTime.hpp"  // applyBuildupResult, GameTimeTickArgs
+
+namespace {
+
+// Full character bundle for applyBuildupResult (a plain fixture — the args
+// struct wants every component the game-time path can touch).
+struct BuildupFixture {
+    DerivedStatRegistry reg;
+    GameplayTagRegistry tags;
+    StatsTuningForm tuning;
+    CoreAttributes core;
+    AttributeSet vitals;
+    AbilitySystem sys;
+    CombatState combat;
+    StatusBuildup buildup;
+    Survival survival;
+    Injuries injuries;
+    Resonance resonance;
+    ResonanceDecays decays;
+    StatModifiers mods;
+
+    BuildupFixture() {
+        registerCoreDerivedStats(reg);
+        tags.registerTag("State.Dead");
+        tags.registerTag("State.Staggered");
+        tags.registerTag("State.Paralyzed");
+        recomputeStats(core, vitals, resonance, sys, reg, &mods);
+        vitals.health = currentValueOf(sys, attr("maxHealth"));
+        combat.posture = currentValueOf(sys, attr("maxPosture"));
+        recomputeStats(core, vitals, resonance, sys, reg, &mods);
+    }
+
+    GameTimeTickArgs args() {
+        return { core,     vitals,    sys,  combat, buildup, survival,
+                 injuries, resonance, decays, reg,  tags,    tuning };
+    }
+};
+
+} // namespace
+
+TEST_CASE("buildup result: lethal zeroing writes base health AND State.Dead "
+          "(no resurrection)") {
+    BuildupFixture f;
+    GameTimeTickArgs a = f.args();
+
+    BuildupTickResult br;
+    br.deathTriggered = true;
+    CHECK(applyBuildupResult(a, br, f.mods));
+    // The old real-time path only added the tag: health stayed > 0, so the
+    // next life-state sync resurrected the actor (and it reloaded alive).
+    CHECK(f.vitals.health == 0.0f);
+    CHECK(f.sys.tags.has(*f.tags.find("State.Dead")));
+    updateLifeState(f.sys, f.tags); // a later sync must keep the corpse dead
+    CHECK(f.sys.tags.has(*f.tags.find("State.Dead")));
+}
+
+TEST_CASE("buildup result: a DoT draining health to zero kills immediately") {
+    BuildupFixture f;
+    f.vitals.health = 0.5f;
+    GameTimeTickArgs a = f.args();
+
+    BuildupTickResult br;
+    br.poisonHealthDamage = 1.0f;
+    CHECK(applyBuildupResult(a, br, f.mods));
+    CHECK(f.vitals.health == 0.0f);
+    // The death tag lands THIS tick (the current overlay is refreshed before
+    // the sync), not a full tick later.
+    CHECK(f.sys.tags.has(*f.tags.find("State.Dead")));
+}
+
+TEST_CASE("buildup result: electrocution drains posture AND staggers "
+          "(was real-time only)") {
+    BuildupFixture f;
+    GameTimeTickArgs a = f.args();
+    const f32 postureBefore = f.combat.posture;
+    REQUIRE(postureBefore > 0.0f);
+
+    BuildupTickResult br;
+    br.electrocutionTriggered = true;
+    CHECK(!applyBuildupResult(a, br, f.mods));
+    CHECK(f.combat.posture < postureBefore);
+    CHECK(f.combat.staggerSeconds > 0.0f);
+    CHECK(f.sys.tags.has(*f.tags.find("State.Staggered")));
+    CHECK(!f.sys.tags.has(*f.tags.find("State.Dead")));
+}
+
+TEST_CASE("buildup result: glaciation paralyses on both paths") {
+    BuildupFixture f;
+    GameTimeTickArgs a = f.args();
+
+    BuildupTickResult br;
+    br.glaciationTriggered = true;
+    CHECK(!applyBuildupResult(a, br, f.mods));
+    CHECK(f.combat.paralysisSeconds ==
+          doctest::Approx(f.tuning.glaciationParalysisDuration));
+    CHECK(f.sys.tags.has(*f.tags.find("State.Paralyzed")));
+}
