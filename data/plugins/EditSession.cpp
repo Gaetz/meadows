@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "data/plugins/RecordDiff.hpp"
 #include "engine/core/Log.hpp"
 
 namespace data {
@@ -181,7 +182,9 @@ Plugin EditSession::exportPlugin(const core::Guid& pluginId,
 
         // Reference values: the base form for edits, C++ defaults for
         // creations — either way, only differing fields are emitted (§5:
-        // a record carries only what it changes).
+        // a record carries only what it changes; the shared rule lives in
+        // diffToRecord). Inherited fields included so a changed editorId
+        // persists.
         const Form* reference = nullptr;
         uptr<Form> defaults;
         if (draft.created) {
@@ -190,16 +193,8 @@ Plugin EditSession::exportPlugin(const core::Guid& pluginId,
         } else {
             reference = base.find(id);
         }
-        reflect::forEachField(*draft.type, [&](const reflect::FieldInfo&
-                                                   field) {
-            if (field.flags & reflect::Transient) {
-                return;
-            }
-            const reflect::Value value = field.get(draft.form.get());
-            if (!reference || field.get(reference) != value) {
-                record.fields.emplace(field.id, value);
-            }
-        });
+        diffToRecord(*draft.type, draft.form.get(), reference, record,
+                     /*includeInherited=*/true);
         if (!record.fields.empty() || record.creates) {
             plugin.records.push_back(std::move(record));
         }

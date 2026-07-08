@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/plugins/Record.hpp"
+#include "data/plugins/RecordDiff.hpp"
 #include "engine/ecs/World.hpp" // ecs::Entity (flecs name confined to meadows-ecs)
 #include "gameplay/save/SaveForms.hpp"
 
@@ -43,9 +44,10 @@ T formFromRecord(const data::Record& record) {
 }
 
 // Builds a `creates = true` Record from a filled Form instance, carrying
-// only the OWN fields that differ from the type's C++ defaults (the
-// resolver applies defaults as layer zero — EditSession's export
-// semantics). Transient fields are skipped.
+// only the OWN fields that differ from the type's C++ defaults (the same §5
+// rule as EditSession's export — both go through data::diffToRecord). Own
+// fields only: inherited id/editorId stay out, the record guid is the
+// identity. Transient fields are skipped.
 template<typename T>
 data::Record createRecord(const T& filled, const core::Guid& id) {
     static const T kDefaults {};
@@ -54,15 +56,8 @@ data::Record createRecord(const T& filled, const core::Guid& id) {
     record.formId = id;
     record.typeId = type.id;
     record.creates = true;
-    for (const reflect::FieldInfo& field : type.fields) {
-        if (field.flags & reflect::Transient) {
-            continue;
-        }
-        reflect::Value value = field.get(&filled);
-        if (!(value == field.get(&kDefaults))) {
-            record.fields.emplace(field.id, std::move(value));
-        }
-    }
+    data::diffToRecord(type, &filled, &kDefaults, record,
+                       /*includeInherited=*/false);
     return record;
 }
 

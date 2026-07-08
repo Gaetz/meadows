@@ -14,6 +14,7 @@ add_library(meadows-data STATIC
     plugins/EditSession.cpp
     plugins/PluginConfig.cpp
     plugins/PluginLoader.cpp
+    plugins/RecordDiff.cpp
     plugins/Resolver.cpp
     plugins/Synthesis.cpp
     plugins/TomlWriter.cpp
