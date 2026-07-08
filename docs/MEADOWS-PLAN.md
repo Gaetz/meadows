@@ -320,7 +320,11 @@ Périmètre de la passe, priorisé par « coût d'une mauvaise décision » :
 2. **Monde habitable** : streaming/cellules 3D + intérieurs + lumières
    locales (A, B) + éditeur de niveau v1 + prefabs — « un village et une
    maison où entrer ». **Absorbe** : les lumières/ombres intérieures
-   (ex-Phase 12 chemin custom).
+   (ex-Phase 12 chemin custom). **Inclut le chantier « cellules extérieures
+   implicites » (`docs/IMPLICIT-CELLS.md`, décidé 2026-07-08)** : éditer/poser
+   n'importe où sur la grille infinie (cellules matérialisées à la pose, GUID
+   déterministe — §2.5), au lieu des seules cellules autorisées à la main.
+   Petit chantier (briques 1-3), planifié **après l'audit en cours**.
 3. **Vivant** : navmesh + packages IA + perception (E) + combat 3D + cues +
    FX/audio P0 (F, H, I) — « la boucle Skyrim : explorer, combattre, parler ».
    **Absorbe le reliquat de la Phase 8** : IA ennemie (chase + attaque,
