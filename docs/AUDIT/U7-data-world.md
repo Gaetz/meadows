@@ -1,5 +1,16 @@
 # U7 — Data model + monde (`data/`, `world/`)
 
+> **✅ MISE À JOUR 2026-07-08 — U7-2 (H-a) + U7-4 (H-b) FAITS, suggestions amendées.**
+> H-a (`4ac53a5`) : dispatch `Value` exhaustif via `engine/reflect/Visit.hpp`,
+> **pas** une « kind-descriptor table » (couplerait binaire↔ImGui↔Lua, viol
+> §2.10). BinaryFormat writer + TomlWriter convertis, octets identiques ; le
+> **Reader reste un switch** (construit depuis les octets, échoue déjà proprement).
+> H-b (`40c9fcf`) : `data::diffToRecord` partagé (EditSession + SaveState).
+> **`cloneFields` NON extrait** (contrairement à la suggestion) : `copyFields`
+> et `copyMatchingFields` sont deux opérations distinctes à 1 appelant chacune,
+> les déplacer n'enlèverait rien (§10). Synthesis = assemblage de champs choisis
+> (pas un diff), hors périmètre. Voir `README.md` §H-a/§H-b.
+
 Audit unit U7. ~5074 lines. Scope: `data/forms/`, `data/plugins/`
 (Resolver, PluginLoader, PluginConfig, BinaryFormat, TomlWriter, EditSession,
 Synthesis), `world/{worldspace,streaming,scene,ai,terrain}`.
@@ -64,10 +75,11 @@ Clear and well-commented.
    (read) ≈23 `FieldKind::` occurrences; `TomlWriter.cpp:25` (11);
    `PluginLoader.cpp` (11). Each enumerates all 11 kinds; adding a kind means
    editing every site (plus `game/ui/PropertyGrid.cpp`, `EditorScene.cpp` in
-   U5). *Collapse*: one kind-descriptor table keyed by `FieldKind` supplying
-   `{writeBin, readBin, writeToml, parseToml}`, or a generic
-   `visit(reflect::Value, F&&)` over the variant, so a new kind touches one
-   table. Effort M. Inter-unit (spans data/plugins + game/ui).
+   U5). **✅ FAIT (`4ac53a5`)** via le generic `visit` (`engine/reflect/
+   Visit.hpp`), **PAS** la « kind-descriptor table » : une table centrale des
+   corps `{writeBin, writeToml, editWidget}` coupllerait binaire↔ImGui↔Lua
+   (viol §2.10). Writer + TomlWriter convertis (octets identiques) ; le Reader
+   reste un switch (construit depuis les octets). Voir bandeau + `README.md` §H-a.
 
 3. **[archi / med / inter-unit] Binary value stream depends on the
    `FieldKind` enum's numeric order.** `BinaryFormat.cpp:45` writes the kind
@@ -90,10 +102,11 @@ Clear and well-commented.
    emits only changed fields (`:193`–`:202`, the §5 "record carries only what
    it changes" rule); `Synthesis.cpp` assembles records by hand; and (per
    plan H-b) `gameplay/save/SaveState` runs `createRecord`/`copyMatchingFields`
-   — the same emit-only-diffs pattern. *Action*: extract a shared
-   `reflect`/`data` helper (e.g. `diffToRecord(type, form, reference)` and
-   `cloneFields(type, src, dst)`) reused by EditSession, Synthesis, and
-   SaveState. Effort M. Inter-unit (U6 save).
+   — the same emit-only-diffs pattern. **✅ FAIT (`40c9fcf`)** : `data::diffToRecord`
+   partagé par EditSession + SaveState. **`cloneFields` NON extrait** : `copyFields`
+   (same-type) et `copyMatchingFields` (cross-type par nom+kind) sont des
+   opérations distinctes à 1 appelant chacune — les déplacer n'enlèverait rien
+   (§10). Synthesis assemble des champs choisis (pas un diff), hors périmètre.
 
 5. **[archi / low] §2.9: Spawner seeds attributes via a direct base-value
    write.** `Spawner.cpp:103`–`:106` calls `gameplay::setBaseValue(...)` for

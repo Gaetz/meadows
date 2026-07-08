@@ -3,6 +3,17 @@
 Scope: `gameplay/{ability,stats,combat,inventory,faction,condition,event,cue,interaction,actors,ai,save}`.
 Reference design: CLAUDE.md §2.9/§6, docs/STATS.md, docs/MODDING-EFFECTS.md.
 
+> **✅ MISE À JOUR 2026-07-08 — F1 (§2.9) RÉSOLU par Option A ; NE PAS router le
+> DoT via effects.** L'action proposée en F1 (« Route regen/DoT through
+> GameplayEffects ») a été **rejetée** : le DoT de buildup est déjà mitigé au
+> seuil (endurance) + `vitality`, router le double-mitigerait. Résolu en
+> sanctionnant les écritures de tick comme execution calculations (CLAUDE.md
+> §2.9, `a51fae7`) — voir `DEEP-attribute-mutation.md` (bandeau) et `README.md`
+> §0. **F5 (H-b)** fait : `data::diffToRecord` partagé (`40c9fcf`) ;
+> `copyMatchingFields` laissé en place (1 appelant). Deux bugs révélés au
+> passage, corrigés : ignition/électro `will`→`vitality` (`f98b6dc`), bleed
+> (`4d6a71a`).
+
 ## Hard-check results (explicit pass/fail)
 
 - **§2.10 headless purity — PASS.** Grep for `rhi|render|backends|glad|GL/|SDL|imgui`
@@ -15,8 +26,8 @@ Reference design: CLAUDE.md §2.9/§6, docs/STATS.md, docs/MODDING-EFFECTS.md.
 - **Attribute overlay — PASS (no inline re-derivation).** Systems read current values through
   `currentValueOf()` (Damage.cpp, GameTime.cpp `cur()` lambda, Combat.cpp); none re-derive the
   overlay inline. The `AbilitySystem.current` map is a deliberate, documented current-value cache.
-- **§2.9 attribute mutation — FAIL (see F1).** Multiple direct writes to attribute state bypass
-  the GameplayEffect pipeline.
+- **§2.9 attribute mutation — RÉSOLU (Option A, voir bandeau).** Les écritures de tick
+  (regen/DoT/mort-buildup) sont des execution calculations sanctionnées, pas des bypass.
 
 ## Findings
 

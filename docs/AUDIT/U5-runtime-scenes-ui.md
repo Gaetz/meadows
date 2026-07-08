@@ -1,5 +1,14 @@
 # U5 — Runtime bridge + scènes + game/ui
 
+> **✅ MISE À JOUR 2026-07-08 — U5-1 (H-a) FAIT (`f2865bd`), suggestion amendée.**
+> Ne pas introduire de « visitor / descriptor table » : réalisé via
+> `engine/reflect/Visit.hpp` (`overloaded`+`visit`), un mécanisme header-only ;
+> une table centrale des corps coupllerait binaire↔ImGui↔Lua (viol §2.10).
+> `valueToString`/`drawPropertyGrid` convertis ; `valueFromString` reste un
+> switch (construit une `Value` depuis un kind externe). Constat : `valueRepr`
+> (EditorScene) ≠ `valueToString` — formats distincts (affichage vs
+> re-parsable), **pas** un doublon. Voir `README.md` §H-a.
+
 Scope: `game/` excluding `game/scenes/LandscapeScene.*` (U4). Covers SceneSubmit,
 TextureCache/MeshCache, SaveGame, AllForms, EditorScene + other scenes
 (CombatArena, DemoScenes/StatsScene, WorldDemo, UiDemo), game/ui panels
@@ -34,7 +43,7 @@ are legitimate — the §2.10 purity grep applies to gameplay/world/data, not he
 
 | id | sev | axe | fichier:ligne | description | action | effort | inter-unité |
 |----|-----|-----|---------------|-------------|--------|--------|-------------|
-| U5-1 | high | factor | game/ui/PropertyGrid.cpp:69-113, :155-258; game/scenes/EditorScene.cpp:34-67 | The per-`FieldKind` switch is written 3× in U5: `valueFromString` (parse), `drawPropertyGrid` (edit widgets), `valueRepr` (display), plus the `valueToString` std::visit variant at PropertyGrid.cpp:28-52. Each is ~11 cases; adding a FieldKind means editing all of them. This is the U5 face of H-a (5 sites repo-wide, ~77 occ). | Introduce one reflect `Value` visitor / descriptor table in `engine/reflect`; PropertyGrid + Console + EditorScene consume it. Collapses ~4 switches here to callbacks. | L | yes (H-a) |
+| U5-1 | high | factor | game/ui/PropertyGrid.cpp:69-113, :155-258; game/scenes/EditorScene.cpp:34-67 | The per-`FieldKind` switch is written 3× in U5: `valueFromString` (parse), `drawPropertyGrid` (edit widgets), `valueRepr` (display), plus the `valueToString` std::visit variant at PropertyGrid.cpp:28-52. Each is ~11 cases; adding a FieldKind means editing all of them. This is the U5 face of H-a (5 sites repo-wide, ~77 occ). | ✅ FAIT (`f2865bd`) via `reflect::visit` (PAS de « descriptor table » — viol §2.10). valueToString + drawPropertyGrid convertis ; valueFromString reste un switch. Voir bandeau. | L | yes (H-a) |
 | U5-2 | high | factor | game/TextureCache.{hpp,cpp}; game/MeshCache.{hpp,cpp} | The two caches duplicate the entire async-residency machinery: `Decoded{guid,generation,payload}`, `Shared{ConcurrentQueue}`, `Residency` enum, `Entry{payload,state}`, `generation`/`pending`, and the resolve→placeholder→enqueue / pumpUploads-drain / clear-bumps-generation / "no-wait destructor" logic. Only the payload type and the GPU-upload step differ. | Extract a `ResidencyCache<Payload>` template (or CRTP base) holding the queue/generation/pending/state plumbing; each cache supplies decode + upload. Removes ~60% of both. | M | no |
 | U5-3 | med | factor | game/scenes/CombatArenaScene.cpp:190-207; game/scenes/DemoScenes.cpp:347-386,442-496; (also LandscapeScene, U4) | Runtime gameplay-tag registration ("State.Dead/Staggered/Paralyzed", a status-tag loop, `registerStatsRuntimeTags`, dodge/attack cooldowns) is copy-pasted per scene. There is a `registerAllFormTypes` aggregator but **no equivalent aggregator for components/tags/spawners** (pre-scan finding #7). | Add `gameplay::registerRuntimeGameplayTags(tags)` (+ a component/spawner aggregator) parallel to `registerAllFormTypes`; scenes call one function. | M | yes |
 | U5-4 | med | factor | game/scenes/EditorScene.cpp:128-334 (dialogues), :341-518 (quests), :520-704 (schedules) | The three dev editors each re-implement the same shape: `forEachVisible` double-collect of a parent type + child type into vectors, a `childrenOf`/`nameOf` lambda, a parent-linked tree with inline create + `order`-swap reorder, then `drawPropertyGrid(selected)`. ~700 lines, ~70% structural overlap. | Extract a reflection-driven "record-tree editor" helper (type ids + child field + label fn) reused by all three; keep only the per-type node label. | L | no |

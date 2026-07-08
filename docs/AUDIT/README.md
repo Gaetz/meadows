@@ -71,9 +71,12 @@ La dette est **concentrée en deux foyers**, pas diffuse :
 
 1. **`LandscapeScene` god-object** (5914 l., ~12 responsabilités) qui **érode
    le seam extract/submit Phase-5** que tout le reste du codebase protège.
-2. **Duplication à la frontière de réflexion** : le même switch/clone/diff
-   `reflect::Value` réapparaît partout où la donnée traverse le seam
-   `reflect::Value` (sérialisation binaire/TOML, éditeurs, save, script).
+   *(Reste ouvert — Batch 3.)*
+2. ~~**Duplication à la frontière de réflexion**~~ **✅ TRAITÉ (Batch 2)** : le
+   switch per-`FieldKind` est devenu un `visit` exhaustif (`engine/reflect/
+   Visit.hpp`) et la règle de diff §5 vit dans `data::diffToRecord`. Le « clone »
+   n'était pas un vrai doublon (opérations distinctes, laissées en place). Voir
+   §0 et §H-a/§H-b.
 
 Aucune violation de correction, de save, ou de moddabilité. Les corrections
 d'invariant réelles sont peu nombreuses et cadrées (§5 ci-dessous).
@@ -209,27 +212,34 @@ par le deep-dive.
 La réponse à « qu'est-ce qui est factorisable / réutilisable par plusieurs
 systèmes ? ». Chaque item nomme **tous les call-sites** qu'il unifierait.
 
-### H-a — Un visiteur / table-descripteur `reflect::Value` unique
-**Le plus haut levier.** Un seul `visit(reflect::Value, F&&)` ou une table
-`FieldKind → {writeBin, readBin, writeToml, parseToml, editWidget, display, parse}`
-effondre le switch per-FieldKind écrit partout :
-- `data/plugins/BinaryFormat.cpp:45` (write) + Reader (~23 occ), `TomlWriter.cpp:25`,
-  `PluginLoader.cpp` (**U7-2**)
-- `game/ui/PropertyGrid.cpp:28-258` (valueToString + valueFromString + drawPropertyGrid),
-  `game/scenes/EditorScene.cpp:34` (valueRepr) (**U5-1**)
-- `script/Vm.cpp:26-59` (`valueToLua`/`luaToValue`, if-constexpr par kind) (**U8-9**)
+### H-a — Dispatch `reflect::Value` unique ✅ FAIT (`4ac53a5`, `f2865bd`)
+**⚠️ Suggestion d'origine AMENDÉE — ne pas ré-appliquer la « table ».** La
+proposition initiale (une table `FieldKind → {writeBin, writeToml, editWidget,
+toLua, …}`) a été **écartée** : elle couplerait le binaire (`data/`) à ImGui
+(`game/`) et Lua (`script/`) dans une seule structure → **violation §2.10**.
+Réalisé à la place : `engine/reflect/Visit.hpp` (`overloaded` + `visit`), un
+*mécanisme* de dispatch exhaustif (un kind oublié = erreur de compil), chaque
+site gardant son propre corps. Sites convertis :
+- `BinaryFormat.cpp` (writer), `TomlWriter.cpp` (**U7-2**) — octets identiques.
+  Le **Reader reste un switch** : il construit une `Value` depuis les octets
+  (rien à visiter) et échoue déjà proprement sur un kind inconnu.
+- `PropertyGrid.cpp` (valueToString + drawPropertyGrid), `EditorScene.cpp`
+  (valueRepr) (**U5-1**) — `valueFromString` reste un switch (construit depuis
+  un kind externe). Constat : valueRepr ≠ valueToString (affichage décoré vs
+  texte re-parsable), **pas** le doublon supposé.
+- `Vm.cpp` (`valueToLua`) (**U8-9**) — `luaToValue` reste un switch (idem Reader).
 
-Sources : **U5, U7, U8**. ~5 sites repo-wide.
-
-### H-b — Un helper reflect clone/diff/defaults-diff partagé
-`diffToRecord(type, form, reference)` + `cloneFields(type, src, dst)` unifie la
-règle §5 « le record ne porte que ce qui change » :
-- `data/plugins/EditSession.cpp:12,193` (copyFields + export diff-vs-reference),
-  `Synthesis.cpp` (assemblage manuel) (**U7-4**)
-- `gameplay/save/SaveState.hpp:33` (`createRecord`/`copyMatchingFields`) (**U6-F5**)
-- (bonus) crossfade météo `LandscapeScene.cpp:1128` = cas d'un `lerpFields` réflexion (**U4-8**)
-
-Sources : **U6, U7** (+ U4).
+### H-b — Règle §5 « record = seulement ce qui change » en un point ✅ FAIT (`40c9fcf`)
+Réalisé : `data::diffToRecord(type, object, reference, record, includeInherited)`,
+partagé par `EditSession::exportPlugin` (**U7-4**) et `SaveState::createRecord`
+(**U6-F5**). Le flag `includeInherited` préserve la seule vraie différence
+(éditeur = parents inclus pour `editorId` ; save = own-only).
+**⚠️ `cloneFields`/`copyMatchingFields` NON extraits** (contrairement à la
+suggestion) : ce sont deux opérations distinctes (clone same-type vs cross-type
+par nom+kind) avec **un seul appelant chacune** — les déplacer n'enlèverait
+aucune duplication (§10). Laissés en place. Synthesis assemble des champs
+explicitement choisis (pas un diff) — hors périmètre. Le crossfade météo
+(`LandscapeScene.cpp:1128`, **U4-8**) reste un cas `lerpFields` non traité.
 
 ### H-c — Une primitive `Signal<Payload>` de dispatch
 Alloc-id ordonnée + dispatch + ré-entrance, sur laquelle bâtir les 3 canaux :
@@ -379,18 +389,21 @@ Quick wins isolés, chacun une brique validable :
   de signature ; sinon Batch 3).
 - Nettoyer commentaires périmés/fossiles (**U2-08, U6-F9, U4-14, U5-7, U3-8**).
 - Hoister `hashU32`/`HashRng` → `core/Hash.hpp` (**U1-05/U3-2**).
-- Router DoT-buildup + mort-buildup via `applyDamage` (§2.9 quick consistency,
-  DEEP §3 option B — S).
+- ~~Router DoT-buildup + mort-buildup via `applyDamage`~~ (§2.9 DEEP §3 option B)
+  — **REJETÉ**. La vérification a montré que router le DoT via `applyDamage`
+  double-mitige (la résistance agit sur le *seuil* de buildup, pas sur le dégât
+  par tick). Résolu par **Option A** : les écritures de tick sont des
+  « execution calculations » sanctionnées (CLAUDE.md §2.9, `a51fae7`). Voir §0.
 
-### Batch 2 — « mutualisation reflect » (le plus haut levier)
-Le refactor à plus fort ROI, deux briques couplées :
-- **H-a** : visiteur/table `reflect::Value` unique → effondre les switches
-  FieldKind de BinaryFormat/TomlWriter/PluginLoader/PropertyGrid/EditorScene/Vm
-  (**U7-2, U5-1, U8-9**).
-- **H-b** : helper reflect clone/diff/defaults-diff partagé →
-  Resolver/EditSession/Synthesis/SaveState (+ lerpFields météo) (**U7-4, U6-F5, U4-8**).
-- Adjacents naturels : agrégateur form-types/tags/spawners unique (**U8-3/U5-3/U7**),
-  primitives core `Result` + `Clock` (**U1-03/U1-04**).
+### Batch 2 — « mutualisation reflect » ✅ FAIT (`4ac53a5`, `f2865bd`, `40c9fcf`)
+Voir les sections détaillées **H-a** et **H-b** ci-dessus pour ce qui a réellement
+été livré (et les suggestions amendées : pas de table monolithique, pas de
+`cloneFields`). Résumé : dispatch `reflect::Value` exhaustif (`engine/reflect/
+Visit.hpp`) sur BinaryFormat/TomlWriter/PropertyGrid/EditorScene/Vm
+(**U7-2, U5-1, U8-9**) ; règle §5 diff en un point (`data::diffToRecord`) pour
+EditSession + SaveState (**U7-4, U6-F5**). **U8-3** (agrégateur form-types) fait
+séparément (`3a02d8e`). Restent ouverts : agrégateur tags/spawners (**U5-3**),
+lerpFields météo (**U4-8**), primitives core `Result`/`Clock` (**U1-03/U1-04**).
 
 ### Batch 3 — « structurel » (effort L, à séquencer)
 - **Décomposition `LandscapeScene`** selon la proposition U4 (§Décomposition) :

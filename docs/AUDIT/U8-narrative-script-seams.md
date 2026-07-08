@@ -1,5 +1,14 @@
 # U8 — Narratif + script + seams + cooker (audit)
 
+> **✅ MISE À JOUR 2026-07-08 — U8-3 + U8-9 FAITS, précisions.** U8-3 (`3a02d8e`) :
+> source unique d'enregistrement des Form-types. La description « 3 sites (cooker,
+> EditorScene, AllForms) » était **inexacte** — EditorScene n'enregistre rien (il
+> appelle `registerAllFormTypes`) ; il n'y avait que **2** sites complets. Réalisé
+> **sans nouvelle lib** (la « aggregation lib » que l'auteur jugeait non rentable) :
+> le cooker compile directement `game/AllForms.cpp`. U8-9 (H-a, `f2865bd`) :
+> `valueToLua` passé au `visit` exhaustif (`luaToValue` reste un switch —
+> construit depuis un type Lua externe). Voir `README.md` §0/§H-a.
+
 Périmètre : `quest/` (Quest, Dialogue), `script/` (Vm, ScriptVars),
 `engine/physics/`, `engine/audio/`, `engine/ui/`, `engine/ecs/`,
 `tools/cooker/`. Rubric = plan d'audit `j-ai-fait-une-purrfect-rocket.md`.
@@ -43,7 +52,7 @@ Périmètre : `quest/` (Quest, Dialogue), `script/` (Vm, ScriptVars),
 |----|-----|-----|---------------|-------------|--------|--------|--------------|
 | U8-1 | med | réutil | quest/Quest.cpp:15-26 ; quest/Dialogue.cpp:14-25 | `forEachForm<T>` réimplémenté à l'identique dans les deux fichiers ; duplique `data::forEach<T>` (FormQuery.hpp:23). Quest.cpp utilise déjà `data::forEach` dans applySavedQuests → incohérence interne. | Supprimer les deux templates locaux, appeler `data::forEach`. | S | oui (data/) |
 | U8-2 | med | archi | gameplay/save/SaveState.hpp:3 ; gameplay/actors/CharacterTick.hpp | `flecs.h` + `flecs::entity` dans des headers gameplay, hors `engine/ecs` alors que §3 vise flecs « confiné à meadows-ecs ». | Passer par une abstraction ecs ou déplacer ces signatures ; à trancher côté U6. | M | oui (U6) |
-| U8-3 | high | factor | tools/cooker/Main.cpp:189-205 | Liste de `registerXxxFormTypes` recopiée à la main (le commentaire admet « Keep in sync with EditorScene::onEnter » et signale un bug passé : ne cookait que CoreForms → records droppés). 3 sites de vérité (cooker, EditorScene, AllForms). | Un seul helper d'agrégation `registerAllFormTypes(registry)` réutilisé par les 3 sites. | M | oui (U5/U7) |
+| U8-3 | high | factor | tools/cooker/Main.cpp:189-205 | Liste de `registerXxxFormTypes` recopiée à la main (le commentaire admet « Keep in sync with EditorScene::onEnter » et signale un bug passé : ne cookait que CoreForms → records droppés). 3 sites de vérité (cooker, EditorScene, AllForms). | ✅ FAIT (`3a02d8e`). Précision : seulement **2** sites réels (EditorScene appelle `registerAllFormTypes`, il n'enregistre rien). Le cooker compile `game/AllForms.cpp` — **sans nouvelle lib**. Voir bandeau. | M | oui (U5/U7) |
 | U8-4 | med | qualité | script/Vm.cpp:161-163, 265-283 | Les `Coro` conservent des `ScriptContext` avec pointeurs bruts vers les composants pour toute la durée du wait ; aucun cancel-on-death ni détection de handle mort → dangling si l'entité meurt / changement structurel ECS pendant l'attente. Risque documenté dans le header mais non appliqué. | Indexer les coroutines par `Entity` et purger à la mort / avant mutation structurelle. | M | non |
 | U8-5 | low | archi | engine/ui/ImGuiLayer.cpp:4,31,53 | Backend GL propre d'ImGui, hors RHI (§2.1). Exception dev-tool assumée (§3 « Dev tools stay ImGui ») mais chemin GL réel hors backend. | Documenter comme exception tolérée ; ne pas étendre. UiSystem/RmlUi reste la référence RHI-propre. | S | oui (U2/U3) |
 | U8-6 | low | qualité | quest/Quest.cpp:48-99 ; quest/Dialogue.cpp:65-93 | `onQuestEvent` imbrique branches×tâches (+ `branchComplete` re-scanne les tâches), chaque `forEachForm` étant un balayage O(total forms) de la DB ; `Dialogue.options/select` scannent toute la DB par appel. OK au N proto, à surveiller. | Indexer par parent (child→parent Phase-2) si la DB grossit. | M | non |

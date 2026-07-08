@@ -1,5 +1,21 @@
 # DEEP DIVE — Invariant §2.9 "attributes mutate ONLY through GameplayEffects"
 
+> **✅ RÉSOLU 2026-07-08 — Option A (`a51fae7`). NE PAS appliquer l'Option B
+> ci-dessous : elle est une RÉGRESSION.** La recommandation §3/§4 de router le
+> DoT de buildup via `applyDamage` a été vérifiée puis **rejetée** : le dégât
+> par tick est déjà mitigé *en amont*, au **seuil de buildup** (via les stats
+> d'endurance), et n'est réduit ensuite que par `vitality`. Le router via
+> `applyDamage` le re-passerait par armure/résistances → **double-mitigation**.
+> Les « incohérences » notées plus bas (bleed via `applyDamage`, DoT non) ne
+> sont donc pas des bugs : le DoT et le bleed vivent à des étages différents du
+> pipeline. Résolu en sanctionnant les écritures de tick comme « execution
+> calculations » (CLAUDE.md §2.9 amendé). La revue a aussi révélé et corrigé
+> deux vrais bugs d'équilibrage : DoT ignition/électro réduits par `will` au
+> lieu de `vitality` (`f98b6dc`), et bleed en forfait armor-mitigé au lieu de
+> criticalSensitivity% (`4d6a71a`). Détail complet : `README.md` §0. Le tableau
+> par-site ci-dessous reste valable comme *analyse* ; seules les
+> **recommandations Option B** sont périmées.
+
 **Scope:** rule on every direct attribute-write site flagged by U6-F1, U6-F8, U7,
 and cross-checked against U9. Verdict only — no code changed.
 
@@ -46,7 +62,7 @@ There are two write shapes in play:
 | 6 | `CharacterTick.cpp:165-169` `vitals.* = cur("max*")` | restore-to-full at init | **LEGITIMATE (init seeding)** | `initializeActorStats`, once, before combat. Same category as #5. |
 | 7 | `CharacterTick.cpp:119` `vitals.energy += regen*dt` | energy BaseValue regen | **VIOLATION (soft, cat-c)** | §6 says regen "is an effect". Direct gated `+= rate` poke, no EffectForm. Driven by a dynamic `cur("energyRegen")` + `energyRegenDelay`/exhaustion gate. |
 | 8 | `CharacterTick.cpp:109` `combat.posture += regen*dt` | posture regen | **N/A to §2.9** | `posture` lives on `CombatState`, **not** the AttributeSet — not a GAS attribute. Out of §2.9's scope (it is plain component state). Note for consistency only. |
-| 9 | `CharacterTick.cpp:74-78` `vitals.health/essence -= br.*Damage` | poison/ignition/electrocution DoT | **VIOLATION (cat-c)** | Buildup DoT poked into base directly, while the sibling `bleedBurst` on line 81-83 correctly routes through `applyDamage`. Inconsistent; should route through the damage meta / `applyDamage`. |
+| 9 | `CharacterTick.cpp:74-78` `vitals.health/essence -= br.*Damage` | poison/ignition/electrocution DoT | **execution-calc (sanctioned, §2.9 Option A)** | Buildup DoT: mitigation already applied upstream at the buildup THRESHOLD (endurance) + `vitality` on the per-tick amount. Routing through `applyDamage` would double-mitigate (armor/resist again) — REJECTED. Sanctioned as an execution calc; recomputes after. |
 | 10 | `GameTime.cpp:89-90` `vitals.health/essence += regen*gdt` | game-time health/essence regen | **VIOLATION (soft, cat-c)** | Same as #7, game-time path. §6 "regen is an effect". |
 | 11 | `GameTime.cpp:22-27` `vitals.health/essence -= br.*Damage` | game-time buildup DoT | **VIOLATION (cat-c)** | Same as #9 (game-time path); `bleedBurst` here also correctly uses `applyDamage` (line 30-34). |
 | 12 | `GameTime.cpp:49` `vitals.health = 0.0f` | death zeroing (buildup death) | **VIOLATION (soft, cat-c)** | A lethal `override→0` should be an instant override effect or a lethal `applyDamage`. Direct poke. (CharacterTick.cpp:99-101 does death *correctly* — it only adds `State.Dead`, no base write.) |
@@ -95,7 +111,7 @@ CLAUDE.md §2.9 naming (i) combat/DoT damage and (ii) rate-driven regen as
 bypasses," and require them to call `recompute*` after. This converts #7-#12
 from "violation" to "sanctioned seam" with a documented contract. **Effort S.**
 
-**Option B (purist): route them through effects.**
+**Option B (purist): route them through effects. — ⚠️ REJETÉE (double-mitigation, voir bandeau).**
 
 - **#9 / #11 — buildup DoT (poison/ignition/electrocution).** Route through
   `applyDamage` (as `bleedBurst` already does) or an instant `damage`
@@ -114,9 +130,12 @@ from "violation" to "sanctioned seam" with a documented contract. **Effort S.**
   That is a real pipeline feature, not a rewrite of these call sites. **Effort M-L.**
   Until that feature exists, Option A is the pragmatic call for regen.
 
-Recommended sequence: **B for #9/#11/#12 (S, quick consistency win) + A for
-regen #7/#10 (document as execution calc until capture-magnitude effects land)**;
-delete or comment `setCurrentValue` (#13, S).
+~~Recommended sequence: B for #9/#11/#12 + A for regen~~ — **SUPERSEDED. Decision
+(2026-07-08): Option A for ALL of #7-#12.** Routing DoT/death through `applyDamage`
+(Option B) was rejected: buildup DoT is already mitigated at the threshold +
+`vitality`, so re-routing double-mitigates (see banner + `README.md` §0). All tick
+writes are sanctioned execution calculations (CLAUDE.md §2.9). `setCurrentValue`
+(#13) was removed (`0b86235`).
 
 ---
 
@@ -141,6 +160,9 @@ Rationale:
   pipeline feature (attribute-capture periodic effects).
 
 **Verdict: MEDIUM.** Downgrade U6-F1 from FAIL/high to a MEDIUM consistency +
-documentation finding; fix DoT/death routing (S), and either build
-capture-magnitude periodic effects (M-L) or formally sanction rate regen as an
-execution calculation in §2.9 (S).
+documentation finding. **Résolu (2026-07-08)** en sanctionnant TOUTES les
+écritures de tick (#7-#12) comme execution calculations dans CLAUDE.md §2.9
+(Option A). Le « fix DoT/death routing » (Option B) a été explicitement rejeté
+(double-mitigation). Une vraie feature future — effets périodiques à
+magnitude-capture + gate par tag — reste souhaitable pour re-exprimer le regen
+en data, mais n'est pas requise pour la conformité §2.9.
