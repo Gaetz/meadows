@@ -6,11 +6,12 @@ class FormTypeRegistry;
 
 namespace game {
 
-// Registers EVERY Form family the game knows (chantier 4 B1) — the single
-// registration site for the executable's scenes. Keep in sync with
-// tools/cooker/Main.cpp (the only other complete site; the cooker cannot
-// link game code). A family missing here = its records silently skipped at
-// load (types unknown to the registry are skipped with a log).
+// Registers EVERY Form family the game knows (chantier 4 B1) — THE single
+// registration site. The game exe links it; the cooker compiles this same
+// translation unit (see tools/CMakeLists.txt), so the two can never drift.
+// Add a family here and it is known to both loading and cooking for free.
+// A family missing here = its records silently skipped at load (types unknown
+// to the registry are skipped with a log).
 void registerAllFormTypes(data::FormTypeRegistry& types);
 
 } // namespace game

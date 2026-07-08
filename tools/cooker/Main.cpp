@@ -12,29 +12,13 @@
 #include <fstream>
 #include <string_view>
 
-#include "data/forms/AnimForms.hpp"
-#include "data/forms/AudioForms.hpp"
-#include "data/forms/CoreForms.hpp"
-#include "data/forms/LandscapeForms.hpp"
-#include "data/forms/LocForms.hpp"
-#include "data/forms/UiForms.hpp"
-#include "data/forms/VisualForms.hpp"
 #include "data/plugins/BinaryFormat.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
+#include "game/AllForms.hpp" // registerAllFormTypes — the single registration site
 #include "world/terrain/TerrainPatches.hpp"
-#include "gameplay/ability/GameplayAbility.hpp"
-#include "gameplay/actors/CharacterForms.hpp"
-#include "gameplay/ai/AiForms.hpp"
-#include "gameplay/faction/Factions.hpp"
-#include "gameplay/interaction/FurnitureForms.hpp"
-#include "gameplay/save/SaveForms.hpp"
-#include "gameplay/stats/StatsTuning.hpp"
-#include "quest/Dialogue.hpp"
-#include "quest/Quest.hpp"
-#include "world/worldspace/WorldForms.hpp"
 
 namespace {
 
@@ -180,29 +164,13 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    // EVERY form family, or the cooker silently drops records (unknown
-    // types skip with a warning). Keep in sync with EditorScene::onEnter —
-    // the two complete registration sites (a shared helper needs an
-    // aggregation lib; not worth one yet). Audit 2026-07-06: it previously
-    // registered CoreForms only and could not cook world/gameplay records.
+    // EVERY form family, or the cooker silently drops records (unknown types
+    // skip with a warning). Single source of truth: game::registerAllFormTypes
+    // — the same aggregator the game exe uses, compiled into the cooker (see
+    // tools/CMakeLists.txt). A family added there is cooked here for free; the
+    // two can no longer drift (audit U8-3, 2026-07-08).
     data::FormTypeRegistry types;
-    data::registerCoreFormTypes(types);
-    data::registerVisualFormTypes(types);
-    data::registerAnimFormTypes(types);
-    data::registerAudioFormTypes(types);
-    data::registerUiFormTypes(types);
-    data::registerLocFormTypes(types);
-    data::registerLandscapeFormTypes(types);
-    world::registerWorldFormTypes(types);
-    gameplay::registerGameplayFormTypes(types);
-    gameplay::registerStatsFormTypes(types);
-    gameplay::registerFactionFormTypes(types);
-    gameplay::registerCharacterFormTypes(types);
-    gameplay::registerAiFormTypes(types);
-    gameplay::registerFurnitureFormTypes(types);
-    gameplay::registerSaveFormTypes(types); // chantier 5: cookable saves
-    quest::registerQuestFormTypes(types);
-    quest::registerDialogueFormTypes(types);
+    game::registerAllFormTypes(types);
 
     if (command == "cook" && argc == 4) {
         return cook(argv[2], argv[3], types);
