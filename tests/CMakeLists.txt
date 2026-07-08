@@ -17,6 +17,7 @@
     ConditionTest.cpp
     CookerTest.cpp
     CuesSchedulesTest.cpp
+    DeathPersistenceTest.cpp
     DerivedStatsTest.cpp
     DialogueTest.cpp
     DrugsTest.cpp

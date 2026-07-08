@@ -92,9 +92,15 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
     const f32 gdt = static_cast<f32>(gameDt);
 
     // §2.9 execution calc: rate-driven regen (see CharacterTick) — game-time path.
-    // Health and essence regen (game-time; very slow — docs/STATS.md §3).
-    a.vitals.health  = std::min(cur("maxHealth"),  a.vitals.health  + cur("healthRegen")  * gdt);
-    a.vitals.essence = std::min(cur("maxEssence"), a.vitals.essence + cur("essenceRegen") * gdt);
+    // Health and essence regen (game-time; very slow — docs/STATS.md §3). A dead
+    // actor NEVER regenerates: health creeping back over 0 would silently revive
+    // the corpse, and — worse — that regenerated BASE health persists, so a slain
+    // NPC reloads ALIVE across a cell unload/reload (the save layer re-derives the
+    // life state from health, §5/§6). This is the gate `isDead` was written for.
+    if (!isDead(a)) {
+        a.vitals.health  = std::min(cur("maxHealth"),  a.vitals.health  + cur("healthRegen")  * gdt);
+        a.vitals.essence = std::min(cur("maxEssence"), a.vitals.essence + cur("essenceRegen") * gdt);
+    }
 
     // Survival needs decay (game-time).
     tickSurvival(a.survival, gameDt, a.tuning);
