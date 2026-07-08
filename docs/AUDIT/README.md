@@ -71,20 +71,30 @@ buildée + 279 tests verts) :
     morts (`isDead` non branché dans `tickGameTime`) `6e5b198` ; position runtime non
     réappliquée au reload de cellule (`PendingSaveLayer::applyReferenceOverrides`) `5a1787f`.
     Nouveau test `tests/DeathPersistenceTest.cpp` + cas position dans `CellDeltaTest.cpp`.
+    - **U4-9 — `GameHud`** (`7732bc3`, validé en jeu 2026-07-09) : les 6
+      méthodes de présentation (`updateHudModel`, `updateNameplates`,
+      `pushItemModels`, `pushJournalModel`, `pushDialogueModel`,
+      `updateMenuClockLine`) + l'état de vue (les 2 `InventoryView`,
+      `dialogueOptions`) extraits derrière `HudContext`. Les ACTIONS de jeu
+      restent dans la scène et mutent les vues via `hud.inventory()`/
+      `hud.loot()`/`hud.dialogueOptions()` (le pattern `npcDirector.npcs()`).
+    - **Fix hors-audit** (`c4d0eec`, validé en jeu) : focus clavier ImGui
+      verrouillé après un aller-retour F3 (NavEnableKeyboard +
+      WantCaptureKeyboard latché, souris capturée) — `enterPlayMode` et la
+      fermeture de la console F8 relâchent le focus nav.
   - **Reste ouvert (Batch 3), ordre suggéré (risque croissant) :**
-    1. **U4-9** — `GameHud`/`UiPresenter` (les `push*Model` RmlUi, chantier 4).
-    2. **Garde-fous U9-3 + U9-2** (remontés 2026-07-08) : la cible de link
+    1. **Garde-fous U9-3 + U9-2** (remontés 2026-07-08) : la cible de link
        prouvant sim-sans-render (verrouille §2.10 au link, indépendant de la
        scène) et le golden test figeant les ordinaux réflexion on-disk (les
        `static_assert` de Batch 1 verrouillent la cohérence des enums entre
        eux, pas leurs valeurs). Pas chers, et ils sécurisent les briques
        risquées qui suivent — à poser AVANT le split renderer.
-    3. **U4-1 (suite)** — sous-systèmes restants du god-object.
-    4. **U4-2 + U4-4 + U4-6** — **le plus structurant, à garder pour la fin** :
+    2. **U4-1 (suite)** — sous-systèmes restants du god-object.
+    3. **U4-2 + U4-4 + U4-6** — **le plus structurant, à garder pour la fin** :
        `LandscapeRenderer` qui possède les systèmes `render::*`, les ~40 handles GPU
        (wrapper RAII, U4-4), l'assemblage `FrameUniforms` (U4-6), et **consomme un
        `RenderSnapshot` étendu au lieu du World vivant (U4-2, le finding #1)**.
-    5. Transverses hors-U4 : **U3-1** (dédup ring streaming Terrain/Grass/Veg),
+    4. Transverses hors-U4 : **U3-1** (dédup ring streaming Terrain/Grass/Veg),
        **U5-3** (agrégateur d'enregistrement des tags runtime).
   - **Hors-audit, planifié post-audit :** chantier « cellules extérieures implicites »
     (`docs/IMPLICIT-CELLS.md`, lié dans MEADOWS-PLAN §chantier 2, commit `f0f7c00`) —
@@ -213,7 +223,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U3-6 |   | U3 | med | factor | PostFx.cpp:199,81 | Targets half-res + somme shaderGeneration écrits en double | M | non |
 | U4-6 |   | U4 | med | archi | LandscapeScene.cpp:4982-5596 | `render()` = 615 l. illisibles | M | non |
 | U4-7 |   | U4 | med | propreté | LandscapeScene.cpp (~609 littéraux) | Constantes magiques hors Forms de tuning | M | non |
-| U4-9 |   | U4 | med | factor | LandscapeScene.cpp:2589,3310 | ~10 méthodes push-modèle RmlUi mêlées à la logique jeu | M | non |
+| U4-9 | ✅ | U4 | med | factor | LandscapeScene.cpp:2589,3310 | ~10 méthodes push-modèle RmlUi mêlées à la logique jeu | M | non |
 | U5-3 |   | U5 | med | factor | CombatArenaScene.cpp:190 ; DemoScenes.cpp:347 | Enregistrement runtime gameplay-tags copié par scène | M | oui |
 | U5-5 |   | U5 | med | archi | game/SaveGame.cpp:24 vs :58 | 2 chemins de capture reference divergent en jeu de champs (H-f) | M | oui |
 | U6-F2 |   | U6 | med | factor | CharacterTick.cpp:73 vs GameTime.cpp:19 | `applyBuildupResult` dupliqué ET divergent (H-e) | M | oui |
