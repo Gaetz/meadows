@@ -55,15 +55,7 @@ namespace {
 
 constexpr const char* kTonemapShader = "tonemap";
 
-// B5.5: stat-space -> world mapping (docs/STATS.md §3; the CombatArena's
-// kSpeedScale precedent, recalibrated for meters). Default sheet (~102):
-// jog ~5.1 m/s, sprint x1.6 ~8.2 m/s, velocity settles in ~0.1 s.
-// (Dev feel pass 2026-07-06: +50% — the unencumbered adventurer is brisk;
-// encumbrance will pull it back down when the P1 utility pass lands.)
-constexpr f32 kSpeedScale3D = 1.0f / 20.0f; // movementSpeed stat -> m/s
-constexpr f32 kSprintMult = 1.6f;           // "sprint multiplies" (STATS.md)
-constexpr f32 kJumpScale3D = 1.0f / 20.8f;  // jumpPower stat -> jump m/s
-constexpr f32 kAccelRate3D = 0.12f;         // acceleration stat -> 1/s ramp
+// (B5.5 stat->world movement constants moved to PlayerController, audit U4-1.)
 
 // Lengyel's oblique near plane: bends the projection's near plane onto an
 // arbitrary view-space plane, so the mirrored render clips everything below
@@ -674,9 +666,8 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
         screenStack.close("mainmenu");
         syncScreens();
         if ((!loadedWorldState || loadedWorldState->playMode) && physics) {
-            player = std::make_unique<phys::CharacterBody>(
-                *physics, 0.3f, 1.8f, feet + Vec3 { 0.0f, 0.25f, 0.0f });
-            playerVelocity = Vec3 { 0.0f };
+            playerController.spawnBody(*physics,
+                                       feet + Vec3 { 0.0f, 0.25f, 0.0f });
             mode = SceneMode::Play;
             engine->getWindow().setRelativeMouseMode(true);
             screenStack.show("hud");
@@ -816,7 +807,7 @@ void LandscapeScene::onExit() {
     overworldHandle = data::FormHandle {};
     // B4/B5 physics: bodies -> tiles -> world (each references the previous).
     mode = SceneMode::Spectator;
-    player.reset();
+    playerController.destroyBody();
     debugCapsule.reset();
     streaming.reset(physics.get());
     vegCollision.reset();
@@ -1031,9 +1022,10 @@ void LandscapeScene::update(f32 dt) {
         core::FrameProbe::Scope probe { frameProbe, "physics" };
         physics->tick(dt);
         if (!interiorMode) { // interiors have no terrain to collide with
-            const Vec3 focus = (mode == SceneMode::Play) && player
-                                   ? player->position()
-                                   : flyCamera.camera.position;
+            const Vec3 focus =
+                (mode == SceneMode::Play) && playerController.body()
+                    ? playerController.body()->position()
+                    : flyCamera.camera.position;
             terrainCollision->update(focus);
             vegCollision->update(focus); // trunks + rocks (dev report)
         }
@@ -1045,8 +1037,10 @@ void LandscapeScene::update(f32 dt) {
     // re-run the post-spawn fixups (idempotent snap + NPC refresh).
     if (cellStreamer && activeWorldspace.isValid() && !uiPaused) {
         core::FrameProbe::Scope probe { frameProbe, "cells" };
-        const Vec3 focus = (mode == SceneMode::Play) && player ? player->position()
-                                              : flyCamera.camera.position;
+        const Vec3 focus =
+            (mode == SceneMode::Play) && playerController.body()
+                ? playerController.body()->position()
+                : flyCamera.camera.position;
         // Chantier 5 B8: border crossings spread their spawns — one cell
         // per frame (the initial ring and travels load whole, behind the
         // fade). Fixups are idempotent, re-run per loaded cell.
@@ -1135,8 +1129,8 @@ void LandscapeScene::update(f32 dt) {
     // home. Nothing to toggle here anymore.
     if (uiPaused) {
         // A modal screen owns the input; cameras and player hold still.
-    } else if ((mode == SceneMode::Play) && player) {
-        updatePlayer(dt);
+    } else if ((mode == SceneMode::Play) && playerController.body()) {
+        playerController.update(dt, makePlayerContext());
     } else {
         // Don't steal the mouse from ImGui: clicking a panel must not
         // mouselook. Spectator looks like Play (mouselook always, no button);
@@ -1254,9 +1248,7 @@ void LandscapeScene::enterPlayMode() {
     // function (+0.5 m so a slope never pins the spawn into the field).
     Vec3 feet = flyCamera.camera.position;
     feet.y = render::terrain::height(terrain.params, feet.x, feet.z) + 0.5f;
-    player =
-        std::make_unique<phys::CharacterBody>(*physics, 0.3f, 1.8f, feet);
-    playerVelocity = Vec3 { 0.0f };
+    playerController.spawnBody(*physics, feet);
     mode = SceneMode::Play;
     // Play owns the keyboard: drop any lingering ImGui nav focus. With
     // NavEnableKeyboard, WantCaptureKeyboard stays true as long as a panel
@@ -1270,7 +1262,7 @@ void LandscapeScene::enterPlayMode() {
 
 void LandscapeScene::exitPlayMode() {
     mode = SceneMode::Spectator;
-    player.reset();
+    playerController.destroyBody();
     engine->getWindow().setRelativeMouseMode(false);
     screenStack.close("hud");
     // The camera stays where the player stood — Fly resumes from there.
@@ -1377,7 +1369,7 @@ InteractionContext LandscapeScene::makeInteractionContext() {
         statsTuning,
         pendingSave,
         physics.get(),
-        player.get(),
+        playerController.body(),
         playerEntity,
         flyCamera.camera.forward(),
         mode == SceneMode::Play,
@@ -1437,11 +1429,9 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     // doesn't move (and barely falls) until it lands. In Fly (dev
     // camera, no capsule) the camera alone travels — an interior with
     // the camera still outside is a black screen.
-    if (player) {
-        player = std::make_unique<phys::CharacterBody>(
-            *physics, 0.3f, 1.8f,
-            marker->position + Vec3 { 0.0f, 0.25f, 0.0f });
-        playerVelocity = Vec3 { 0.0f };
+    if (playerController.body()) {
+        playerController.spawnBody(
+            *physics, marker->position + Vec3 { 0.0f, 0.25f, 0.0f });
     }
     flyCamera.camera.yaw =
         2.0f * std::atan2(marker->rotation.y, marker->rotation.w);
@@ -1712,7 +1702,7 @@ HudContext LandscapeScene::makeHudContext() {
         flyCamera,
         static_cast<f32>(engine->getWindow().width()),
         static_cast<f32>(engine->getWindow().height()),
-        player.get(),
+        playerController.body(),
         npcDirector.npcs(),
         containerEntity,
         barterMode,
@@ -2225,8 +2215,10 @@ void LandscapeScene::createConsole() {
         if (glm::dot(forward, forward) < 1e-4f) {
             forward = { 0.0f, 0.0f, -1.0f };
         }
-        const Vec3 origin = (mode == SceneMode::Play) && player ? player->position()
-                                               : flyCamera.camera.position;
+        const Vec3 origin =
+            (mode == SceneMode::Play) && playerController.body()
+                ? playerController.body()->position()
+                : flyCamera.camera.position;
         Vec3 position = origin + glm::normalize(forward) * 3.0f;
         position.y =
             render::terrain::height(terrain.params, position.x, position.z);
@@ -2251,10 +2243,8 @@ void LandscapeScene::createConsole() {
             return "usage: tp <x> <z>";
         }
         const f32 y = render::terrain::height(terrain.params, x, z) + 0.5f;
-        if ((mode == SceneMode::Play) && player) {
-            player = std::make_unique<phys::CharacterBody>(
-                *physics, 0.3f, 1.8f, Vec3 { x, y, z });
-            playerVelocity = Vec3 { 0.0f };
+        if ((mode == SceneMode::Play) && playerController.body()) {
+            playerController.spawnBody(*physics, Vec3 { x, y, z });
         } else {
             flyCamera.camera.position = { x, y + 1.7f, z };
         }
@@ -2442,117 +2432,28 @@ void LandscapeScene::transferItem(const core::Guid& id,
     }
 }
 
-// Chantier 3 B6: first-person melee — LMB swings the equipped weapon at
-// the nearest living NPC in reach and roughly in front. Damage flows
-// through the SAME GAS pipeline as the 2D arena (§2.9: no hand-rolled
-// numbers). v1 has no swing animation (no visible body) — the cooldown
-// and the hit feedback carry the feel until the FX/audio brick.
-void LandscapeScene::tryPlayerAttack() {
-    if (!playerEntity.is_alive() || !player) {
-        return;
-    }
-    // Chantier 4 B3: the swing uses the EQUIPPED weapon (inventory screen
-    // can swap/unequip it); bare hands don't attack in v1.
-    const data::WeaponForm* weapon = playerWeapon;
-    if (playerEntity.has<gameplay::Equipment>()) {
-        const auto& equipment = playerEntity.get<gameplay::Equipment>();
-        weapon = equipment.weapon.isValid()
-                     ? forms.find<data::WeaponForm>(equipment.weapon)
-                     : nullptr;
-    }
-    if (!weapon) {
-        LOG_INFO("Swing: no weapon equipped");
-        return;
-    }
-    playerAttackCooldown = 0.7f;
-    const Vec3 eye = player->position() + Vec3 { 0.0f, 1.7f, 0.0f };
-    const Vec3 forward = flyCamera.camera.forward();
-    Npc* best = nullptr;
-    f32 bestScore = 0.45f;
-    for (auto& npcPtr : npcDirector.npcs()) {
-        Npc& npc = *npcPtr;
-        if (npc.dead || !npc.entity.is_alive()) {
-            continue;
-        }
-        const Vec3 position =
-            npc.entity.get<world::Transform>().position;
-        const Vec3 to = position + Vec3 { 0.0f, 1.1f, 0.0f } - eye;
-        const f32 distance = glm::length(to);
-        if (distance > 2.4f || distance < 1e-3f) {
-            continue;
-        }
-        const f32 facing = glm::dot(to / distance, forward);
-        if (facing > bestScore) {
-            bestScore = facing;
-            best = &npc;
-        }
-    }
-    if (!best) {
-        LOG_INFO("Swing: nothing in reach");
-        return;
-    }
-    gameplay::StatBlock block {
-        best->entity.get_mut<gameplay::CoreAttributes>(),
-        best->entity.get_mut<gameplay::AttributeSet>(),
-        best->entity.get_mut<gameplay::AbilitySystem>(),
-        best->entity.get_mut<gameplay::CombatState>()
+// Bundle the scene systems the Play-mode controller touches for
+// PlayerController this frame — references into the scene, the
+// encumbrance gate, and the Crime.Wanted mirror as a closure (it also
+// serves the OnPayFine handler). Rebuilt each call (cheap). Mirrors the
+// other make*Context builders.
+PlayerContext LandscapeScene::makePlayerContext() {
+    return PlayerContext {
+        forms,
+        flyCamera,
+        engine->getInput(),
+        physics.get(),
+        playerEntity,
+        gameTags,
+        derivedStats,
+        statsTuning,
+        sprintCostEffect,
+        playerWeapon,
+        npcDirector.npcs(),
+        interaction,
+        playerEncumbrance == gameplay::EncumbranceCategory::Overencumbered,
+        [this] { syncWantedTag(); },
     };
-    const auto& playerSys = playerEntity.get<gameplay::AbilitySystem>();
-    gameplay::DamageEvent event =
-        gameplay::weaponDamageEvent(*weapon, playerSys);
-    // C1: a target in its critical window eats the critical execution.
-    if (const auto weakness = gameTags.find("State.CriticalWeakness")) {
-        event.critical = block.system.tags.has(*weakness);
-    }
-    const gameplay::DamageResult result = gameplay::applyDamage(
-        block, event, gameTags, derivedStats, nullptr, statsTuning);
-    LOG_INFO("You hit for {:.0f} damage{}{} (target health {:.0f})",
-             result.healthDamage, event.critical ? " — CRITICAL!" : "",
-             result.staggered ? " — staggered!" : "",
-             gameplay::currentValueOf(
-                 best->entity.get<gameplay::AbilitySystem>(),
-                 gameplay::attr("health")));
-
-    // D2 — crime v1: assaulting a peaceful NPC in front of a witness.
-    // Witnesses = the victim (if still alive) or any living NPC within
-    // earshot with a clear line to the player (the B5 raycast idiom).
-    if (!best->hostile) {
-        constexpr f32 kBountyAssault = 40.0f;
-        constexpr f32 kWitnessRange = 20.0f;
-        bool witnessed = !best->dead && best->entity.is_alive();
-        for (const auto& witnessPtr : npcDirector.npcs()) {
-            if (witnessed) {
-                break;
-            }
-            const Npc& witness = *witnessPtr;
-            if (&witness == best || witness.dead ||
-                !witness.entity.is_alive()) {
-                continue;
-            }
-            const Vec3 witnessEye =
-                witness.entity.get<world::Transform>().position +
-                Vec3 { 0.0f, 1.5f, 0.0f };
-            const Vec3 toPlayer = eye - witnessEye;
-            const f32 sight = glm::length(toPlayer);
-            if (sight > kWitnessRange || sight < 1e-3f) {
-                continue;
-            }
-            const phys::RayHit hit =
-                physics->rayCast(witnessEye, toPlayer / sight, sight);
-            witnessed = !(hit.hit && hit.distance < sight - 0.6f);
-        }
-        if (witnessed && playerEntity.is_alive()) {
-            auto& bounty = playerEntity.get_mut<gameplay::Bounty>();
-            bounty.bounty += kBountyAssault;
-            syncWantedTag();
-            interaction.say(
-                "Crime observe ! Prime : " +
-                    std::to_string(static_cast<i32>(bounty.bounty)) +
-                    " pieces d'or.",
-                4.0f);
-            LOG_INFO("Crime witnessed — bounty {:.0f}", bounty.bounty);
-        }
-    }
 }
 
 void LandscapeScene::syncWantedTag() {
@@ -2570,112 +2471,6 @@ void LandscapeScene::syncWantedTag() {
         system.tags.add(*tag, gameTags);
     } else {
         system.tags.remove(*tag, gameTags);
-    }
-}
-
-void LandscapeScene::updatePlayer(f32 dt) {
-    platform::Input& input = engine->getInput();
-    if (interaction.fading()) {
-        return; // frozen during door transitions
-    }
-    // B6: melee swing on LMB (the mouse is captured in Play — ImGui
-    // never owns it here).
-    playerAttackCooldown -= dt;
-    if (playerAttackCooldown <= 0.0f &&
-        input.mousePressed(platform::MouseButton::Left)) {
-        tryPlayerAttack();
-    }
-
-    // Mouselook, always captured in Play (no LMB gymnastics in a game).
-    const Vec2 look = input.mouseDelta();
-    flyCamera.camera.yaw += look.x * flyCamera.lookSensitivity;
-    flyCamera.camera.pitch = glm::clamp(
-        flyCamera.camera.pitch - look.y * flyCamera.lookSensitivity,
-        glm::radians(-89.0f), glm::radians(89.0f));
-
-    // Camera-relative intent, flattened to the horizontal plane (§ the
-    // controller OWNS motion — anims stay in place).
-    const f32 yaw = flyCamera.camera.yaw;
-    const Vec3 forward { std::sin(yaw), 0.0f, -std::cos(yaw) };
-    const Vec3 right { std::cos(yaw), 0.0f, std::sin(yaw) };
-    Vec3 wish { 0.0f };
-    if (input.isDown(platform::Key::W)) {
-        wish += forward;
-    }
-    if (input.isDown(platform::Key::S)) {
-        wish -= forward;
-    }
-    if (input.isDown(platform::Key::D)) {
-        wish += right;
-    }
-    if (input.isDown(platform::Key::A)) {
-        wish -= right;
-    }
-    const bool moving = glm::dot(wish, wish) > 0.0f;
-
-    // B5.5: speeds come from the CURRENT derived stats (docs/STATS.md §3
-    // — stat-space ~100 = nominal; injuries/buffs move them live). The
-    // controller only READS attributes (§2.9); sprint pays energy through
-    // the SprintCost effect below. Fallback keeps the scene alive without
-    // a Player actor.
-    f32 jog = 100.0f * kSpeedScale3D;
-    f32 accelRate = 100.0f * kAccelRate3D;
-    f32 energy = 100.0f;
-    if (playerEntity.is_alive()) {
-        const auto& sys = playerEntity.get<gameplay::AbilitySystem>();
-        jog = gameplay::currentValueOf(sys, gameplay::attr("movementSpeed")) *
-              kSpeedScale3D;
-        accelRate =
-            gameplay::currentValueOf(sys, gameplay::attr("acceleration")) *
-            kAccelRate3D;
-        energy = gameplay::currentValueOf(sys, gameplay::attr("energy"));
-    }
-    // C3: overencumbered = no sprint, no jump (STATS.md §3 Utility).
-    const bool overencumbered =
-        playerEncumbrance == gameplay::EncumbranceCategory::Overencumbered;
-    const bool sprinting = moving && input.isDown(platform::Key::Shift) &&
-                           energy > 1.0f && !overencumbered;
-    const f32 targetSpeed = sprinting ? jog * kSprintMult : jog;
-    const Vec3 target =
-        moving ? glm::normalize(wish) * targetSpeed : Vec3 { 0.0f };
-    // Exponential smoothing toward the target: snappy, never binary.
-    playerVelocity += (target - playerVelocity) *
-                      (1.0f - std::exp(-accelRate * dt));
-    if (input.wasPressed(platform::Key::Space) && !overencumbered) {
-        // C3: jump velocity from the jumpPower stat (default sheet 104
-        // → the previous hand-tuned 5.0 m/s via kJumpScale3D).
-        f32 jump = jumpSpeed; // fallback without a Player actor
-        if (playerEntity.is_alive()) {
-            jump = gameplay::currentValueOf(
-                       playerEntity.get<gameplay::AbilitySystem>(),
-                       gameplay::attr("jumpPower")) *
-                   kJumpScale3D;
-        }
-        player->jump(jump);
-    }
-    player->move(playerVelocity, dt);
-
-    // Sprint cost: one instant GameplayEffect per half second (§2.9 — the
-    // ONLY way energy moves; the spend also pauses regen for a beat).
-    if (sprinting && sprintCostEffect && playerEntity.is_alive()) {
-        sprintCostAccumulator += dt;
-        while (sprintCostAccumulator >= 0.5f) {
-            sprintCostAccumulator -= 0.5f;
-            auto& set = playerEntity.get_mut<gameplay::AttributeSet>();
-            auto& sys = playerEntity.get_mut<gameplay::AbilitySystem>();
-            gameplay::applyEffect(set, sys, *sprintCostEffect, gameTags);
-        }
-    } else {
-        sprintCostAccumulator = 0.0f;
-    }
-
-    // Eyes 1.70 m above the feet; the ENTITY transform tracks the capsule
-    // (the sim's view of the player — extract/saves read this, not Jolt).
-    flyCamera.camera.position =
-        player->position() + Vec3 { 0.0f, 1.7f, 0.0f };
-    if (playerEntity.is_alive()) {
-        playerEntity.get_mut<world::Transform>().position =
-            player->position();
     }
 }
 
@@ -2699,7 +2494,7 @@ NpcContext LandscapeScene::makeNpcContext() {
         navigator.get(),
         physics.get(),
         playerEntity,
-        player.get(),
+        playerController.body(),
         mode == SceneMode::Play,
         banditWeapon,
         godMode,
@@ -2733,8 +2528,8 @@ void LandscapeScene::drawNpcs(engine::FrameContext& frame) {
 // references into the scene plus the focus / fade / mode scalars. Rebuilt each
 // call (cheap: refs + scalars). See StreamingContext (audit U4-10).
 StreamingContext LandscapeScene::makeStreamingContext() {
-    const Vec3 focus = (mode == SceneMode::Play) && player
-                           ? player->position()
+    const Vec3 focus = (mode == SceneMode::Play) && playerController.body()
+                           ? playerController.body()->position()
                            : flyCamera.camera.position;
     return StreamingContext {
         world,
@@ -3397,10 +3192,11 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         (terrainLightUi && !interiorMode && terrainLightMap.ready()) ? 1.0f
                                                                      : 0.0f;
     // 7.8ter: the player's feet part the grass (off in Fly).
+    const phys::CharacterBody* playerBody = playerController.body();
     frameData.grassBendInfo =
-        (mode == SceneMode::Play) && player
-            ? Vec4 { player->position().x, player->position().z,
-                     player->position().y, 0.85f }
+        (mode == SceneMode::Play) && playerBody
+            ? Vec4 { playerBody->position().x, playerBody->position().z,
+                     playerBody->position().y, 0.85f }
             : Vec4 { 0.0f };
     // Brick 30/31: the crossfaded storm front + rain intensity, and the
     // top-down rain-occlusion matrix (ortho, 40 m around the camera).
@@ -4077,7 +3873,7 @@ void LandscapeScene::drawGameplayUi() {
                 gameplay::currentValueOf(sys,
                                          gameplay::attr("movementSpeed")),
                 gameplay::currentValueOf(sys, gameplay::attr("acceleration")),
-                glm::length(playerVelocity));
+                glm::length(playerController.smoothedVelocity()));
             if (testWoundEffect &&
                 ImGui::Button("Test: leg wound, 10 s (B5.5)")) {
                 // Click in Fly, press F, walk: half speed until it expires.

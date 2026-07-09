@@ -20,6 +20,7 @@
 #include "game/scenes/SceneEditor.hpp"
 #include "game/scenes/StreamingController.hpp"
 #include "game/scenes/NpcDirector.hpp"
+#include "game/scenes/PlayerController.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
 #include "game/scenes/WeatherController.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
@@ -376,8 +377,6 @@ private:
     // CombatArena. First-person: no player swing anim needed in v1.
     const data::WeaponForm* playerWeapon { nullptr };
     const data::WeaponForm* banditWeapon { nullptr };
-    f32 playerAttackCooldown { 0.0f };
-    void tryPlayerAttack();
 
     // Chantier 2 B8: the authored-terrain overlay. IMMUTABLE once
     // published; the sculpt tool edits a working copy then publishes a
@@ -523,25 +522,25 @@ private:
     StreamingController streaming;
     StreamingContext makeStreamingContext();
 
-    // B5: first-person Play mode (the game IS first-person — acted
-    // decision). The player is a kinematic capsule, the camera sits at eye
-    // height, the mouse is always captured; Fly stays the dev camera.
-    // Toggle: F key or the checkbox.
     // Stutter hunt: per-block frame breakdown, logged on spikes > 25 ms.
     core::FrameProbe frameProbe;
 
-    uptr<phys::CharacterBody> player;
-    Vec3 playerVelocity { 0.0f }; // smoothed horizontal velocity (m/s)
-    f32 jumpSpeed { 5.0f };       // fallback only — jumpPower stat drives it (C3)
+    // B5: first-person Play mode (the game IS first-person — acted
+    // decision), extracted to PlayerController (audit U4-1): it owns the
+    // kinematic capsule + movement/attack state, wired per call through
+    // makePlayerContext(). MODE transitions stay here (SceneMode plumbing);
+    // they and travel/tp drive the body via spawnBody/destroyBody, and the
+    // focus/context sites read playerController.body().
+    PlayerController playerController;
+    PlayerContext makePlayerContext();
     // C3: refreshed each frame at the equipMods site; gates jump/sprint
-    // and feeds the inventory footer.
+    // (through the context) and feeds the equip modifiers.
     gameplay::EncumbranceCategory playerEncumbrance {
         gameplay::EncumbranceCategory::Light };
     f32 playerCarriedWeight { 0.0f };
     void enterPlayMode();
     void exitPlayMode();
     void restoreMode(SceneMode target); // drive into a mode (Escape → last mode)
-    void updatePlayer(f32 dt);
 
     // B5.5: the player is a GAS actor (docs/STATS.md) — spawned from the
     // "Player" ActorForm, ticked by tickCharacter; the controller READS
@@ -551,7 +550,6 @@ private:
     gameplay::GameplayTagRegistry gameTags;
     gameplay::StatsTuningForm statsTuning;
     ecs::Entity playerEntity {};
-    f32 sprintCostAccumulator { 0.0f };
     const gameplay::EffectForm* sprintCostEffect { nullptr };
     const gameplay::EffectForm* testWoundEffect { nullptr };
 

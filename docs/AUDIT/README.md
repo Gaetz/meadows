@@ -130,8 +130,24 @@ buildée + 279 tests verts) :
       Shaken/CriticalWeakness/Exhausted inégaux) `c3e2972` ; **U1-08**
       `MeshData.hpp` relocalisé sous engine/assets (précédent U7-1)
       `cd29a87`.
+  - **Fait, EN ATTENTE de validation en jeu (non commité, 2026-07-09) :**
+    - **U4-1 (suite) — `PlayerController`** : la capsule cinématique +
+      l'état de mouvement (vitesse lissée, cooldown d'attaque, accumulateur
+      SprintCost, jumpSpeed fallback) et `update`/`tryAttack` (mouselook,
+      déplacement caméra-relatif, saut, coût sprint §2.9, mêlée LMB + crime
+      D2) extraits derrière `PlayerContext` (refs + `overencumbered` + le
+      closure `syncWantedTag`). **Les transitions de MODE restent dans la
+      scène** (enter/exit/restoreMode = plomberie SceneMode, cohérent avec
+      la vision « éditeur = couche SceneStack ») et pilotent la capsule via
+      `spawnBody`/`destroyBody` ; boot/travel/tp pareil ; les sites focus
+      lisent `playerController.body()`. Scène : 4162 → 3958 l. Build vert +
+      299 tests verts. À valider : marche/sprint/saut (feel identique),
+      coût d'énergie du sprint, attaque LMB + crit fenêtre critique, crime
+      devant témoin (prime + toast), tp console, voyage porte, boot depuis
+      le menu, F2/F3 round-trip, herbe qui se couche sous les pieds.
   - **Reste ouvert (Batch 3), ordre suggéré (risque croissant) :**
-    1. **U4-1 (suite)** — sous-systèmes restants du god-object.
+    1. **U4-1 (suite)** — sous-systèmes restants du god-object : actions/
+       routage UI (~450 l.), save/load, quêtes/crime, console, panneaux dev.
     2. **U4-2 + U4-4 + U4-6** — **le plus structurant, à garder pour la fin** :
        `LandscapeRenderer` qui possède les systèmes `render::*`, les ~40 handles GPU
        (wrapper RAII, U4-4), l'assemblage `FrameUniforms` (U4-6), et **consomme un
