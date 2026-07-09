@@ -1,5 +1,6 @@
 #include "gameplay/condition/Condition.hpp"
 
+#include <cstdio>
 #include <string_view>
 #include <unordered_map>
 
@@ -80,6 +81,40 @@ bool conditionsPass(const data::FormDatabase& forms, const core::Guid& node,
         }
     }
     return true;
+}
+
+str conditionSummary(const ConditionForm& clause) {
+    const str prefix = clause.negate ? "if not " : "if ";
+    const auto num = [](f32 v) {
+        char buf[24];
+        std::snprintf(buf, sizeof(buf), "%g", v);
+        return str { buf };
+    };
+    if (clause.kind == "HasTag") {
+        return prefix + "tag " + (clause.tag.empty() ? "(?)" : clause.tag);
+    }
+    if (clause.kind == "AttributeAtLeast") {
+        return prefix +
+               (clause.attribute.empty() ? "(?)" : clause.attribute) +
+               " >= " + num(clause.value);
+    }
+    if (clause.kind == "AttributeAtMost") {
+        return prefix +
+               (clause.attribute.empty() ? "(?)" : clause.attribute) +
+               " <= " + num(clause.value);
+    }
+    if (clause.kind == "HasItem") {
+        return prefix + "has item x" + num(clause.value < 1.0f
+                                               ? 1.0f
+                                               : clause.value);
+    }
+    if (clause.kind == "Lua") {
+        const str expr = clause.lua.size() > 24
+                             ? clause.lua.substr(0, 24) + "..."
+                             : clause.lua;
+        return prefix + "lua: " + (expr.empty() ? "(?)" : expr);
+    }
+    return prefix + clause.kind + " (?)";
 }
 
 } // namespace gameplay

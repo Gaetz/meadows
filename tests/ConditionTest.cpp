@@ -143,3 +143,38 @@ TEST_CASE("condition: gates ability activation through AbilityContext.eval") {
     initializeCurrent(system, attributes);
     CHECK_FALSE(tryActivate(form, attributes, system, attributes, system, ctx)); // 10 < 50
 }
+
+// 8.9 — the editor's one-line clause reading (shared by the condition
+// builder and the dialogue hierarchy).
+TEST_CASE("conditionSummary reads every kind, negate included") {
+    ConditionForm clause;
+    clause.kind = "HasTag";
+    clause.tag = "Faction.Hostile";
+    CHECK(conditionSummary(clause) == "if tag Faction.Hostile");
+    clause.negate = true;
+    CHECK(conditionSummary(clause) == "if not tag Faction.Hostile");
+
+    clause = {};
+    clause.kind = "AttributeAtLeast";
+    clause.attribute = "health";
+    clause.value = 50.0f;
+    CHECK(conditionSummary(clause) == "if health >= 50");
+    clause.kind = "AttributeAtMost";
+    CHECK(conditionSummary(clause) == "if health <= 50");
+
+    clause = {};
+    clause.kind = "HasItem";
+    clause.value = 3.0f;
+    CHECK(conditionSummary(clause) == "if has item x3");
+    clause.value = 0.0f; // count defaults to at least 1
+    CHECK(conditionSummary(clause) == "if has item x1");
+
+    clause = {};
+    clause.kind = "Lua";
+    clause.lua = "player.gold > 100";
+    CHECK(conditionSummary(clause) == "if lua: player.gold > 100");
+
+    clause = {};
+    clause.kind = "QuestStage"; // future kind: degrade readably
+    CHECK(conditionSummary(clause) == "if QuestStage (?)");
+}

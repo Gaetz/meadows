@@ -53,6 +53,12 @@ struct EvalContext {
 
 bool evaluateClause(const ConditionForm& clause, const EvalContext& context);
 
+// One-line human reading of a clause (chantier 8.9 — the editor's
+// condition builder and the dialogue hierarchy): "if not tag
+// Faction.Hostile", "if health >= 50"… Pure (no database: the item guid
+// stays a guid; the UI resolves names itself).
+str conditionSummary(const ConditionForm& clause);
+
 // True if every ConditionForm with parent == `node` passes (true if there are
 // none — an ungated node is always allowed).
 bool conditionsPass(const data::FormDatabase& forms, const core::Guid& node,

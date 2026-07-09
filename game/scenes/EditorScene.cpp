@@ -16,6 +16,7 @@
 #include "engine/platform/Paths.hpp"
 #include "engine/reflect/Visit.hpp"
 #include "game/AllForms.hpp"
+#include "game/ui/ConditionBuilder.hpp"
 #include "game/ui/EventPicker.hpp"
 #include "game/ui/PropertyGrid.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
@@ -501,6 +502,27 @@ void EditorScene::drawInspector() {
         // not require typing the same name twice).
         drawEventCrossRef(*session, selected, selected);
         drawEventWiring(*session, selected);
+        // 8.9: the shared condition builder — dialogue options and
+        // abilities carry ANDed ConditionForm clauses. Selecting a clause
+        // keeps the list anchored on its parent (the builder must not
+        // vanish under its own selection).
+        core::Guid conditionParent;
+        if (const auto* selType = session->viewType(selected)) {
+            if (selType->id ==
+                    quest::DialogueNodeForm::staticTypeInfo().id ||
+                selType->id == gameplay::AbilityForm::staticTypeInfo().id) {
+                conditionParent = selected;
+            } else if (selType->id ==
+                       gameplay::ConditionForm::staticTypeInfo().id) {
+                conditionParent =
+                    static_cast<const gameplay::ConditionForm*>(
+                        session->view(selected))
+                        ->parent;
+            }
+        }
+        if (conditionParent.isValid()) {
+            drawConditionList(*session, conditionParent, selected);
+        }
         // 8.7d: the one-gesture link — a dialogue option becomes the
         // start of a brand-new quest (event generated when missing),
         // and the editor navigates to it.
@@ -806,18 +828,16 @@ void EditorScene::drawDialogueHierarchy() {
                                   reflect::Value { nodeId });
                 selected = id;
             }
-            // Conditions as selectable leaves under their node.
+            // Conditions as selectable leaves under their node (8.9:
+            // the shared summary — the builder in the grid below edits).
             for (const auto& [condId, cond] : conditions) {
                 if (cond->parent != nodeId) {
                     continue;
                 }
-                str condLabel = "if " + str { cond->negate ? "not " : "" } +
-                                cond->kind;
-                if (!cond->tag.empty()) {
-                    condLabel += " " + cond->tag;
-                }
                 if (ImGui::Selectable(
-                        (condLabel + "##c" + condId.toString()).c_str(),
+                        (gameplay::conditionSummary(*cond) + "##c" +
+                         condId.toString())
+                            .c_str(),
                         selected == condId)) {
                     selected = condId;
                 }
