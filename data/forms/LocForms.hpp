@@ -8,12 +8,17 @@
 // layering gives localization for free, and mods can localize themselves
 // by shipping their own LocStringForms.
 //
-// HOW TO FILL (post-7/07): a `loc(db, "key")` lookup helper + a cached
-// index (editorId -> handle) built after resolve; UI/dialogue/quests
-// reference strings by key from day one (discipline established now).
+// FILLED (audit U4-11 brick 2): TextTable below is the cached index; the
+// authoring pipeline is a CSV (editorId,text) imported by
+// `cooker import-csv <csv> <toml> LocStringForm <pluginGuid>` — see
+// game/data/base/text-fr.csv.
+
+#include <string_view>
+#include <unordered_map>
 
 namespace data {
 
+class FormDatabase;
 class FormTypeRegistry;
 
 struct LocStringForm : Form {
@@ -25,5 +30,24 @@ struct LocStringForm : Form {
 };
 
 void registerLocFormTypes(FormTypeRegistry& registry);
+
+// The boot-time string index: editorId (the KEY) -> text, rebuilt after
+// each §5 resolve — so language packs and mod strings layer for free.
+class TextTable {
+public:
+    void build(const FormDatabase& forms);
+
+    // The text for `key`, or the key itself when missing — a hole shows
+    // its key in game (visible and greppable), never a blank.
+    str get(std::string_view key) const;
+
+    // get(key) with the first "{}" replaced by `arg`.
+    str format(std::string_view key, const str& arg) const;
+
+    u32 size() const { return static_cast<u32>(entries.size()); }
+
+private:
+    std::unordered_map<str, str> entries;
+};
 
 } // namespace data

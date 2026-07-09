@@ -6,6 +6,7 @@
 
 #include "data/forms/CoreForms.hpp" // data::WeaponForm
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/LocForms.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/physics/Physics.hpp"
 #include "engine/platform/Input.hpp"
@@ -149,9 +150,9 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
             bounty.bounty += ctx.statsTuning.crimeBountyAssault; // U4-7
             ctx.syncWantedTag();
             ctx.interaction.say(
-                "Crime observe ! Prime : " +
-                    std::to_string(static_cast<i32>(bounty.bounty)) +
-                    " pieces d'or.",
+                ctx.texts.format(
+                    "crime.observed",
+                    std::to_string(static_cast<i32>(bounty.bounty))),
                 4.0f);
             LOG_INFO("Crime witnessed — bounty {:.0f}", bounty.bounty);
         }

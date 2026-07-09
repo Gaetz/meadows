@@ -6,6 +6,7 @@
 
 #include "data/forms/CoreForms.hpp"   // data::ActorForm
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/LocForms.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/physics/Physics.hpp"
 #include "engine/platform/Input.hpp"
@@ -99,24 +100,28 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                     }
                 }
             }
+            // U4-11: per-kind template ("[E] Prendre {}") + generic-name
+            // fallback, both LocStringForm data — languages and mods
+            // retune every label without a recompile.
+            const auto label = [&](const char* tpl, const char* generic) {
+                return ctx.texts.format(
+                    tpl, name.empty() ? ctx.texts.get(generic) : name);
+            };
             switch (promptKind) {
             case PromptKind::Door:
-                promptLabel_ = "[E] " + (name.empty() ? "Use door" : name);
+                promptLabel_ = label("prompt.door", "prompt.door.name");
                 break;
             case PromptKind::Item:
-                promptLabel_ =
-                    "[E] Take " + (name.empty() ? "item" : name);
+                promptLabel_ = label("prompt.take", "prompt.take.name");
                 break;
             case PromptKind::Actor:
-                promptLabel_ =
-                    "[E] Talk to " + (name.empty() ? "them" : name);
+                promptLabel_ = label("prompt.talk", "prompt.talk.name");
                 break;
             case PromptKind::Corpse:
-                promptLabel_ =
-                    "[E] Search " + (name.empty() ? "the body" : name);
+                promptLabel_ = label("prompt.search", "prompt.search.name");
                 break;
             case PromptKind::Furniture:
-                promptLabel_ = "[E] Use " + (name.empty() ? "this" : name);
+                promptLabel_ = label("prompt.use", "prompt.use.name");
                 break;
             default:
                 break;
@@ -170,7 +175,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                     // The partner becomes the vendor for B5 barter.
                     ctx.openDialogue(promptEntity, actor->dialogue);
                 } else {
-                    say("Belle journee, voyageur.", 4.0f);
+                    say(ctx.texts.get("talk.greeting"), 4.0f);
                 }
                 break;
             }
@@ -262,9 +267,7 @@ void InteractionController::rest(f32 hours, const InteractionContext& ctx) {
                     ctx.playerEntity.get_mut<gameplay::Survival>(),
                     ctx.playerEntity.get_mut<gameplay::CombatState>(),
                     hours, ctx.statsTuning);
-    say(hours >= 8.0f ? "Vous dormez profondement (8 h)."
-                      : "Vous vous reposez un moment (1 h).",
-        3.0f);
+    say(ctx.texts.get(hours >= 8.0f ? "rest.sleep" : "rest.nap"), 3.0f);
     LOG_INFO("B7-lite: rested {} h -> game time {:.2f} h", hours,
              std::fmod(ctx.gameClock.gameHours(), 24.0));
 }

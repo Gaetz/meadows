@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/LocForms.hpp"
 #include "data/forms/FormTypeRegistry.hpp"
 #include "data/plugins/PluginConfig.hpp"
 #include "engine/core/Rng.hpp"
@@ -144,6 +145,7 @@ private:
     // GPU resources (placeholders while pending — never block, §7).
     data::FormDatabase forms;      // resolved plugin stack (material fields
                                    //   fold into the snapshot at extract)
+    data::TextTable texts;         // U4-11: LocStringForm key -> text index
     data::PluginStack pluginStack; // owns the plugins behind `forms`
     assets::AssetDatabase assetDb; // guid -> file, layered per plugin order
     ecs::World world;

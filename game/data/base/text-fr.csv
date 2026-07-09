@@ -1,0 +1,15 @@
+editorId,text
+crime.observed,"Crime observe ! Prime : {} pieces d'or."
+talk.greeting,"Belle journee, voyageur."
+rest.sleep,Vous dormez profondement (8 h).
+rest.nap,Vous vous reposez un moment (1 h).
+prompt.door,[E] {}
+prompt.door.name,Utiliser la porte
+prompt.take,[E] Prendre {}
+prompt.take.name,l'objet
+prompt.talk,[E] Parler a {}
+prompt.talk.name,ce personnage
+prompt.search,[E] Fouiller {}
+prompt.search.name,le corps
+prompt.use,[E] Utiliser {}
+prompt.use.name,ceci

@@ -16,6 +16,12 @@ file = "base/village.toml"
 [[plugins]]
 file = "base/ui.toml"
 
+# Player-facing strings (U4-11): authored in text-fr.csv, imported by
+# `cooker import-csv text-fr.csv text-fr.toml LocStringForm <plugin-guid>`.
+# A language pack = another plugin patching `text` on the same records.
+[[plugins]]
+file = "base/text-fr.toml"
+
 # 2D test-scene data (WorldDemoScene / CombatArena load it directly);
 # disabled in the 3D game stack — enable to inspect it in the Game DB.
 [[plugins]]

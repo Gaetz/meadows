@@ -12,6 +12,7 @@ class Input;
 }
 namespace data {
 class FormDatabase;
+class TextTable;
 }
 namespace phys {
 class PhysicsWorld;
@@ -41,6 +42,7 @@ struct InteractionContext {
     platform::Input& input;
     gameplay::GameClock& gameClock;
     const gameplay::StatsTuningForm& statsTuning;
+    const data::TextTable& texts; // U4-11: player-facing strings by key
     PendingSaveLayer& pendingSave; // item pickup flushes enabled = false
     phys::PhysicsWorld* physics;   // fade-in floor probe
     phys::CharacterBody* player;   // the aiming eye

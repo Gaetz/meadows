@@ -101,6 +101,7 @@ void LandscapeScene::bootstrapData() {
              pluginStack.plugins.size(), forms.count());
     tuning = resolveLandscapeTuning(forms);
     weather.init(forms);
+    texts.build(forms); // U4-11: LocStringForm index (key -> text)
     LOG_INFO("Landscape tuning: seed={} seaLevel={} fogDensity={} "
              "coverage={} | {} weather states",
              tuning.terrainSeed, tuning.seaLevel, tuning.fogDensity,
@@ -800,6 +801,7 @@ InteractionContext LandscapeScene::makeInteractionContext() {
         engine->getInput(),
         gameClock,
         statsTuning,
+        texts,
         saveController.pending(),
         physics.get(),
         playerController.body(),
@@ -1479,6 +1481,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
         gameTags,
         derivedStats,
         statsTuning,
+        texts,
         sprintCostEffect,
         playerWeapon,
         npcDirector.npcs(),

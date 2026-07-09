@@ -44,6 +44,7 @@
     InventoryViewTest.cpp
     JobsTest.cpp
     LevelEditorTest.cpp
+    LocTextTest.cpp
     MovementTest.cpp
     OffensiveStatsTest.cpp
     PhysicsTest.cpp

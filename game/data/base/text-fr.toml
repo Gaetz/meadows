@@ -1,0 +1,129 @@
+[plugin]
+id = 'b754251d-39a5-40b3-9c1e-39d15a8125e8'
+name = 'text-fr.csv'
+
+[[records]]
+form = 'e2b8bbde-f9ab-4bc1-b75b-72dddefd5628'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'crime.observed'
+    text = "Crime observe ! Prime : {} pieces d'or."
+
+[[records]]
+form = 'c6bd8986-02d1-4e32-8061-298470e56b7a'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'talk.greeting'
+    text = 'Belle journee, voyageur.'
+
+[[records]]
+form = '6ce0e2fe-ddc4-431f-974f-cde3e53053b9'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'rest.sleep'
+    text = 'Vous dormez profondement (8 h).'
+
+[[records]]
+form = 'a88ef179-18f9-4c03-95c9-c5611d8822ae'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'rest.nap'
+    text = 'Vous vous reposez un moment (1 h).'
+
+[[records]]
+form = 'ae29826d-8a59-46a8-a82c-f473f8546540'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.door'
+    text = '[E] {}'
+
+[[records]]
+form = '6c7e90db-a5f9-40c6-a66f-560c74d1ab85'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.door.name'
+    text = 'Utiliser la porte'
+
+[[records]]
+form = '785d9402-d33e-440f-872c-6e7c0e409935'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.take'
+    text = '[E] Prendre {}'
+
+[[records]]
+form = 'fd46cf31-699d-4523-909b-ede66ffaa717'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.take.name'
+    text = "l'objet"
+
+[[records]]
+form = '51aae17f-a76d-4096-89f1-cacc00ae7ce7'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.talk'
+    text = '[E] Parler a {}'
+
+[[records]]
+form = '0e5c768f-0eae-430a-9143-ac4f446edfa1'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.talk.name'
+    text = 'ce personnage'
+
+[[records]]
+form = '9c2a384b-717b-47f2-919e-9eba170109c9'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.search'
+    text = '[E] Fouiller {}'
+
+[[records]]
+form = 'bde17a22-dcab-4df2-87ac-441d18dfae0b'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.search.name'
+    text = 'le corps'
+
+[[records]]
+form = 'd080df3d-44e8-4e59-8572-e385930ae3c1'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.use'
+    text = '[E] Utiliser {}'
+
+[[records]]
+form = '2fd9dfcf-35e9-45a4-89b4-d4387b070ad6'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.use.name'
+    text = 'ceci'

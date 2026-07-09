@@ -13,6 +13,7 @@ class FlyCamera;
 }
 namespace data {
 class FormDatabase;
+class TextTable;
 struct WeaponForm;
 }
 namespace phys {
@@ -45,6 +46,7 @@ struct PlayerContext {
     const gameplay::GameplayTagRegistry& gameTags;
     const gameplay::DerivedStatRegistry& derivedStats;
     const gameplay::StatsTuningForm& statsTuning;
+    const data::TextTable& texts; // U4-11: player-facing strings by key
     const gameplay::EffectForm* sprintCostEffect; // §2.9: energy only moves here
     const data::WeaponForm* fallbackWeapon;       // pre-equipment default
     vector<uptr<Npc>>& npcs;          // melee targets + crime witnesses
