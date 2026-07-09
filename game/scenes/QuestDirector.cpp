@@ -197,6 +197,11 @@ void QuestDirector::handleQuestEvent(const QuestContext& ctx,
                              " " + itemName + ")";
             }
             ctx.say("Quete accomplie : " + name + rewardText + ".", 5.0f);
+        } else if (progress.status == quest::QuestStatus::Failed &&
+                   it->second.second != quest::QuestStatus::Failed) {
+            // 8.7e follow-up: failing through a Failure state announces
+            // itself (no reward, obviously).
+            ctx.say("Quete echouee : " + name + ".", 5.0f);
         } else if (progress.currentState != it->second.first) {
             ctx.say("Journal mis a jour (J).", 4.0f);
         }

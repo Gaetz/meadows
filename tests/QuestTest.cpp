@@ -131,3 +131,50 @@ TEST_CASE("startQuestsOn ignores quests without a startEvent") {
     CHECK(started.empty());
     CHECK(log.quests.empty());
 }
+
+// The failure path (dev question 2026-07-10): a branch into a
+// kind=Failure state — e.g. wired to a "betray the village" dialogue
+// option — fails the quest exactly like Success succeeds it.
+TEST_CASE("a branch into a Failure state fails the quest") {
+    data::FormDatabase db = buildQuestDb();
+    const Guid kFailed =
+        *Guid::fromString("90000000-0000-4000-8000-00000000000c");
+    const Guid kBetrayBranch =
+        *Guid::fromString("90000000-0000-4000-8000-0000000000c2");
+    const Guid kBetrayTask =
+        *Guid::fromString("90000000-0000-4000-8000-0000000000d2");
+
+    auto failed = std::make_unique<QuestStateForm>();
+    failed->id = kFailed;
+    failed->quest = kQuest;
+    failed->kind = "Failure";
+    db.add(std::move(failed), QuestStateForm::staticTypeInfo());
+
+    auto branch = std::make_unique<QuestBranchForm>();
+    branch->id = kBetrayBranch;
+    branch->state = kStart;
+    branch->destination = kFailed;
+    db.add(std::move(branch), QuestBranchForm::staticTypeInfo());
+
+    auto task = std::make_unique<QuestTaskForm>();
+    task->id = kBetrayTask;
+    task->branch = kBetrayBranch;
+    task->event = "OnBetray"; // what the dialogue option would fire
+    db.add(std::move(task), QuestTaskForm::staticTypeInfo());
+
+    gameplay::GameplayTagRegistry tags;
+    QuestLog log;
+    beginQuest(log, db, kQuest);
+    REQUIRE(isActive(log, kQuest));
+
+    onQuestEvent(log, db, { gameplay::eventKind("OnBetray") }, tags);
+    CHECK(questStatus(log, kQuest) == QuestStatus::Failed);
+    CHECK_FALSE(isActive(log, kQuest));
+    CHECK(questState(log, kQuest) == kFailed);
+    // And a failed quest never restarts through its startEvent (8.7c).
+    auto* quest = const_cast<QuestForm*>(db.find<QuestForm>(kQuest));
+    quest->startEvent = "OnAcceptSlay";
+    const auto started =
+        startQuestsOn(log, db, { gameplay::eventKind("OnAcceptSlay") });
+    CHECK(started.empty());
+}
