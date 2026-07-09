@@ -162,6 +162,136 @@ bool eventHasListener(const data::EditSession& session, const str& name) {
     return found;
 }
 
+namespace {
+
+// The event a dialogue node fires — generated from its editorId the
+// first time something wires to it ("On<EditorId>").
+str ensureNodeEvent(data::EditSession& session, const core::Guid& nodeId) {
+    const auto* node = static_cast<const quest::DialogueNodeForm*>(
+        session.view(nodeId));
+    if (!node->event.empty()) {
+        return node->event;
+    }
+    const str name =
+        "On" + (node->editorId.empty() ? str { "Dialogue" } : node->editorId);
+    session.setField(nodeId, core::fnv1a("event"), reflect::Value { name });
+    return name;
+}
+
+// "quest / task" display label: task -> branch -> state -> quest chain.
+str taskContextLabel(const data::EditSession& session,
+                     const quest::QuestTaskForm& task) {
+    str questName;
+    if (const auto* branch = static_cast<const quest::QuestBranchForm*>(
+            session.view(task.branch))) {
+        if (const auto* state = static_cast<const quest::QuestStateForm*>(
+                session.view(branch->state))) {
+            if (const data::Form* quest = session.view(state->quest)) {
+                questName = quest->editorId;
+            }
+        }
+    }
+    const str taskName =
+        task.displayName.empty() ? task.editorId : task.displayName;
+    return questName.empty() ? taskName : questName + " / " + taskName;
+}
+
+} // namespace
+
+void drawEventWiring(data::EditSession& session, const core::Guid& target) {
+    const reflect::TypeInfo* type =
+        target.isValid() ? session.viewType(target) : nullptr;
+    if (!type) {
+        return;
+    }
+    static char filter[64];
+
+    if (type->name == "DialogueNodeForm") {
+        if (ImGui::Button("Wire to a quest task...")) {
+            filter[0] = '\0';
+            ImGui::OpenPopup("ev-wire-task");
+        }
+        if (ImGui::BeginPopup("ev-wire-task")) {
+            ImGui::InputTextWithHint("##wf", "filter...", filter,
+                                     sizeof(filter));
+            vector<std::pair<str, core::Guid>> tasks;
+            session.forEachVisible([&](const core::Guid& id,
+                                       const data::Form& form,
+                                       const reflect::TypeInfo& formType) {
+                if (formType.name != "QuestTaskForm") {
+                    return;
+                }
+                const str label = taskContextLabel(
+                    session,
+                    static_cast<const quest::QuestTaskForm&>(form));
+                if (filter[0] != '\0' && label.find(filter) == str::npos) {
+                    return;
+                }
+                tasks.emplace_back(label, id);
+            });
+            std::sort(tasks.begin(), tasks.end());
+            for (const auto& [label, id] : tasks) {
+                if (ImGui::Selectable(
+                        (label + "##wt" + id.toString()).c_str())) {
+                    const str eventName = ensureNodeEvent(session, target);
+                    session.setField(id, core::fnv1a("event"),
+                                     reflect::Value { eventName });
+                }
+            }
+            if (tasks.empty()) {
+                ImGui::TextDisabled("(no quest task yet)");
+            }
+            ImGui::EndPopup();
+        }
+        return;
+    }
+
+    if (type->name == "QuestTaskForm") {
+        if (ImGui::Button("Wire to a dialogue option...")) {
+            filter[0] = '\0';
+            ImGui::OpenPopup("ev-wire-node");
+        }
+        if (ImGui::BeginPopup("ev-wire-node")) {
+            ImGui::InputTextWithHint("##wf", "filter...", filter,
+                                     sizeof(filter));
+            vector<std::pair<str, core::Guid>> nodes;
+            session.forEachVisible([&](const core::Guid& id,
+                                       const data::Form& form,
+                                       const reflect::TypeInfo& formType) {
+                if (formType.name != "DialogueNodeForm") {
+                    return;
+                }
+                const auto& node =
+                    static_cast<const quest::DialogueNodeForm&>(form);
+                str label = node.speaker.empty() ? "(npc)" : node.speaker;
+                label += ": ";
+                label += node.text.size() > 40 ? node.text.substr(0, 40) + "..."
+                                               : node.text;
+                if (!node.event.empty()) {
+                    label += "  [" + node.event + "]";
+                }
+                if (filter[0] != '\0' && label.find(filter) == str::npos) {
+                    return;
+                }
+                nodes.emplace_back(label, id);
+            });
+            std::sort(nodes.begin(), nodes.end());
+            for (const auto& [label, id] : nodes) {
+                if (ImGui::Selectable(
+                        (label + "##wn" + id.toString()).c_str())) {
+                    const str eventName = ensureNodeEvent(session, id);
+                    session.setField(target, core::fnv1a("event"),
+                                     reflect::Value { eventName });
+                }
+            }
+            if (nodes.empty()) {
+                ImGui::TextDisabled("(no dialogue line yet)");
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
 void drawEventCrossRef(const data::EditSession& session,
                        const core::Guid& targetIn, core::Guid& selected) {
     // Copy first: callers may pass `selected` itself as the target, and a

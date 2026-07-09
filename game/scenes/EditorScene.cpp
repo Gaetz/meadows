@@ -454,6 +454,15 @@ void EditorScene::drawGenericSummary() {
 
 void EditorScene::drawInspector() {
     ImGui::Begin("Inspector");
+    // The Inspector's selection reads GOLD — the same tint as the node
+    // editor's selected-node border, so graph and inspector visibly
+    // point at the same thing (dev feedback 8.7d).
+    constexpr ImVec4 kSelGold { 1.0f, 0.69f, 0.20f, 0.45f };
+    constexpr ImVec4 kSelGoldHovered { 1.0f, 0.69f, 0.20f, 0.60f };
+    constexpr ImVec4 kSelGoldActive { 1.0f, 0.69f, 0.20f, 0.80f };
+    ImGui::PushStyleColor(ImGuiCol_Header, kSelGold);
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, kSelGoldHovered);
+    ImGui::PushStyleColor(ImGuiCol_HeaderActive, kSelGoldActive);
     const reflect::TypeInfo* itemType =
         itemSelected.isValid() ? session->viewType(itemSelected) : nullptr;
     const bool hasHierarchy =
@@ -482,8 +491,11 @@ void EditorScene::drawInspector() {
         questGraph->drawInspectorExtras(selected);
         drawPropertyGrid(*session, selected);
         // 8.7c: the quest<->dialogue articulation made visible — who
-        // fires / listens to / starts on this record's event.
+        // fires / listens to / starts on this record's event — and the
+        // explicit wiring buttons (dev feedback: creating the link must
+        // not require typing the same name twice).
         drawEventCrossRef(*session, selected, selected);
+        drawEventWiring(*session, selected);
         // 8.7d: the one-gesture link — a dialogue option becomes the
         // start of a brand-new quest (event generated when missing),
         // and the editor navigates to it.
@@ -522,6 +534,7 @@ void EditorScene::drawInspector() {
         ImGui::TextDisabled("(select something)");
     }
     ImGui::EndChild();
+    ImGui::PopStyleColor(3); // the gold selection tint
     ImGui::End();
 }
 

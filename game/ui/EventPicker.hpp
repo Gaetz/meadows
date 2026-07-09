@@ -38,4 +38,11 @@ void drawEventCrossRef(const data::EditSession& session,
 bool eventHasEmitter(const data::EditSession& session, const str& name);
 bool eventHasListener(const data::EditSession& session, const str& name);
 
+// The explicit wiring gesture (dev feedback on 8.7d — "how do I create
+// an event from the dialogue to the quest?"): on a dialogue node, "Wire
+// to a quest task..." picks a task and gives BOTH sides the same event
+// (generated from the node's editorId when missing); on a quest task,
+// "Wire to a dialogue option..." does the mirror. No-op on other types.
+void drawEventWiring(data::EditSession& session, const core::Guid& target);
+
 } // namespace game
