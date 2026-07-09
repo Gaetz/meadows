@@ -93,7 +93,8 @@ void UiRouter::openBarterScreen(const UiRouterContext& ctx,
     // Skyrim behavior). VendorState is a reflected component so the save
     // layer carries the clock (a scene map would reset on re-enter = a
     // free-restock exploit).
-    constexpr f64 kRestockHours = 24.0;
+    const f64 kRestockHours =
+        static_cast<f64>(ctx.statsTuning.vendorRestockHours); // U4-7
     const f64 nowHours = ctx.gameClock.gameHours();
     if (!containerEntity_.has<gameplay::VendorState>()) {
         containerEntity_.set<gameplay::VendorState>({});

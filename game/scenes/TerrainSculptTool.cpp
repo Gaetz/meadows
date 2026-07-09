@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <system_error>
 
+#include "engine/render/landscape/TerrainSystem.hpp" // kChunkSize
+
 #include <glm/glm.hpp>
 #include <imgui.h>
 
@@ -35,7 +37,8 @@ void TerrainSculptTool::drawPanel(const SculptContext& ctx) {
 
 void TerrainSculptTool::stroke(const SculptContext& ctx, const Vec3& ground,
                                f32 dt) {
-    constexpr f32 kPreviewInterval = 0.05f; // ~20 Hz live re-mesh
+    // [cpp-tuning] ~20 Hz live re-mesh cadence (editor plumbing, not feel).
+    constexpr f32 kPreviewInterval = 0.05f;
     if (!strokeActive) {
         strokeActive = true;
         flattenTarget = ground.y;         // grabbed at stroke start
@@ -82,7 +85,8 @@ render::HeightPatch& TerrainSculptTool::gridFor(const SculptContext& ctx,
 
 void TerrainSculptTool::applyBrush(const SculptContext& ctx, const Vec3& center,
                                    f32 dt) {
-    constexpr f32 kChunk = 64.0f;
+    // One source of truth for the grid size (was a hand-mirrored 64.0f).
+    constexpr f32 kChunk = render::TerrainSystem::kChunkSize;
     const i32 minCx =
         static_cast<i32>(std::floor((center.x - brushRadius) / kChunk));
     const i32 maxCx =

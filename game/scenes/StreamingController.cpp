@@ -216,6 +216,7 @@ void StreamingController::refreshNavObstacles(const StreamingContext& ctx) {
                 wlo = glm::min(wlo, w);
                 whi = glm::max(whi, w);
             }
+            // [cpp-tuning] nav-obstacle inflation = the NPC capsule radius.
             constexpr f32 kAgentRadius = 0.4f;
             boxes.push_back({ wlo - Vec3 { kAgentRadius, 0.0f, kAgentRadius },
                               whi + Vec3 { kAgentRadius, 0.0f,

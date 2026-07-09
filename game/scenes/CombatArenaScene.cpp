@@ -67,17 +67,18 @@ const core::Guid kLeatherArmor =
 const core::Guid kIronArmor =
     *core::Guid::fromString("a5000000-0000-4000-8000-000000000002");
 
-// Player controller tuning (placeholders; balance pass in Step 5).
-// movementSpeed/acceleration are stat-space (docs/STATS.md §3); these map them to
-// world units (units/s and units/s²). Calibrated so the default sheet (~102)
-// walks at ~5 u/s and ramps up in ~0.18s.
+// [cpp-tuning] Player controller tuning (2D GAS test bench — the DEMO's
+// equivalents live in StatsTuningForm, §5 U4-7; promote these too if this
+// scene ever needs modding). movementSpeed/acceleration are stat-space
+// (docs/STATS.md §3); these map them to world units (units/s and
+// units/s²). Calibrated so the default sheet (~102) walks at ~5 u/s.
 constexpr f32 kSpeedScale = 0.05f; // movementSpeed (stat) → world units/s
 constexpr f32 kAccelScale = 0.28f; // acceleration  (stat) → world units/s²
 constexpr f32 kBrakeMult = 1.6f;   // braking inertia is sharper than accel
 constexpr f32 kDodgeSpeed = 14.0f;
 constexpr f32 kDodgeTime = 0.28f; // must match DodgeIFrames.durationSeconds
 
-// Melee attack tuning (Step 3; balance pass in Step 5). A short swing with a
+// [cpp-tuning] Melee attack tuning (2D bench). A short swing with a
 // front arc; the active window is when the hitbox is live.
 constexpr f32 kAttackWindup = 0.12f;   // telegraph before the hit lands
 constexpr f32 kAttackActive = 0.10f;   // hitbox live

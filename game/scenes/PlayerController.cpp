@@ -24,20 +24,17 @@ namespace game {
 
 namespace {
 
-// B5.5: stat-space -> world mapping (docs/STATS.md §3; the CombatArena's
-// kSpeedScale precedent, recalibrated for meters). Default sheet (~102):
-// jog ~5.1 m/s, sprint x1.6 ~8.2 m/s, velocity settles in ~0.1 s.
+// B5.5: the stat-space -> world mapping and the movement feel now live in
+// StatsTuningForm (audit U4-7, §5 moddable) — docs/STATS.md §3. Default
+// sheet (~102): jog ~5.1 m/s, sprint x1.6 ~8.2 m/s, settles in ~0.1 s.
 // (Dev feel pass 2026-07-06: +50% — the unencumbered adventurer is brisk;
 // encumbrance will pull it back down when the P1 utility pass lands.)
-constexpr f32 kSpeedScale3D = 1.0f / 20.0f; // movementSpeed stat -> m/s
-constexpr f32 kSprintMult = 1.6f;           // "sprint multiplies" (STATS.md)
-constexpr f32 kJumpScale3D = 1.0f / 20.8f;  // jumpPower stat -> jump m/s
-constexpr f32 kAccelRate3D = 0.12f;         // acceleration stat -> 1/s ramp
 
 } // namespace
 
 void PlayerController::spawnBody(phys::PhysicsWorld& physics,
                                  const Vec3& position) {
+    // [cpp-tuning] capsule radius/height (collision shape, not feel).
     body_ = std::make_unique<phys::CharacterBody>(physics, 0.3f, 1.8f,
                                                   position);
     velocity = Vec3 { 0.0f };
@@ -69,8 +66,9 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
         LOG_INFO("Swing: no weapon equipped");
         return;
     }
-    attackCooldown = 0.7f;
-    const Vec3 eye = body_->position() + Vec3 { 0.0f, 1.7f, 0.0f };
+    attackCooldown = 0.7f; // [cpp-tuning] melee swing cadence
+    const Vec3 eye =
+        body_->position() + Vec3 { 0.0f, ctx.statsTuning.eyeHeight, 0.0f };
     const Vec3 forward = ctx.flyCamera.camera.forward();
     Npc* best = nullptr;
     f32 bestScore = 0.45f;
@@ -123,8 +121,7 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
     // Witnesses = the victim (if still alive) or any living NPC within
     // earshot with a clear line to the player (the B5 raycast idiom).
     if (!best->hostile) {
-        constexpr f32 kBountyAssault = 40.0f;
-        constexpr f32 kWitnessRange = 20.0f;
+        const f32 witnessRange = ctx.statsTuning.crimeWitnessRange; // U4-7
         bool witnessed = !best->dead && best->entity.is_alive();
         for (const auto& witnessPtr : ctx.npcs) {
             if (witnessed) {
@@ -140,7 +137,7 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
                 Vec3 { 0.0f, 1.5f, 0.0f };
             const Vec3 toPlayer = eye - witnessEye;
             const f32 sight = glm::length(toPlayer);
-            if (sight > kWitnessRange || sight < 1e-3f) {
+            if (sight > witnessRange || sight < 1e-3f) {
                 continue;
             }
             const phys::RayHit hit =
@@ -149,7 +146,7 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
         }
         if (witnessed && ctx.playerEntity.is_alive()) {
             auto& bounty = ctx.playerEntity.get_mut<gameplay::Bounty>();
-            bounty.bounty += kBountyAssault;
+            bounty.bounty += ctx.statsTuning.crimeBountyAssault; // U4-7
             ctx.syncWantedTag();
             ctx.interaction.say(
                 "Crime observe ! Prime : " +
@@ -196,35 +193,37 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     // controller only READS attributes (§2.9); sprint pays energy through
     // the SprintCost effect below. Fallback keeps the scene alive without
     // a Player actor.
-    f32 jog = 100.0f * kSpeedScale3D;
-    f32 accelRate = 100.0f * kAccelRate3D;
+    const gameplay::StatsTuningForm& tuning = ctx.statsTuning; // U4-7
+    f32 jog = 100.0f * tuning.movementSpeedScale3D;
+    f32 accelRate = 100.0f * tuning.accelerationRate3D;
     f32 energy = 100.0f;
     if (ctx.playerEntity.is_alive()) {
         const auto& sys = ctx.playerEntity.get<gameplay::AbilitySystem>();
         jog = gameplay::currentValueOf(sys, gameplay::attr("movementSpeed")) *
-              kSpeedScale3D;
+              tuning.movementSpeedScale3D;
         accelRate =
             gameplay::currentValueOf(sys, gameplay::attr("acceleration")) *
-            kAccelRate3D;
+            tuning.accelerationRate3D;
         energy = gameplay::currentValueOf(sys, gameplay::attr("energy"));
     }
     // C3: overencumbered = no sprint, no jump (STATS.md §3 Utility).
     const bool sprinting = moving && input.isDown(platform::Key::Shift) &&
                            energy > 1.0f && !ctx.overencumbered;
-    const f32 targetSpeed = sprinting ? jog * kSprintMult : jog;
+    const f32 targetSpeed =
+        sprinting ? jog * tuning.sprintMultiplier : jog;
     const Vec3 target =
         moving ? glm::normalize(wish) * targetSpeed : Vec3 { 0.0f };
     // Exponential smoothing toward the target: snappy, never binary.
     velocity += (target - velocity) * (1.0f - std::exp(-accelRate * dt));
     if (input.wasPressed(platform::Key::Space) && !ctx.overencumbered) {
         // C3: jump velocity from the jumpPower stat (default sheet 104
-        // → the previous hand-tuned 5.0 m/s via kJumpScale3D).
+        // → the previous hand-tuned 5.0 m/s via jumpPowerScale3D).
         f32 jump = jumpSpeed; // fallback without a Player actor
         if (ctx.playerEntity.is_alive()) {
             jump = gameplay::currentValueOf(
                        ctx.playerEntity.get<gameplay::AbilitySystem>(),
                        gameplay::attr("jumpPower")) *
-                   kJumpScale3D;
+                   tuning.jumpPowerScale3D;
         }
         body_->jump(jump);
     }
@@ -245,9 +244,10 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
         sprintCostAccumulator = 0.0f;
     }
 
-    // Eyes 1.70 m above the feet; the ENTITY transform tracks the capsule
-    // (the sim's view of the player — extract/saves read this, not Jolt).
-    flyCamera.camera.position = body_->position() + Vec3 { 0.0f, 1.7f, 0.0f };
+    // Eyes above the feet (eyeHeight, §5 U4-7); the ENTITY transform tracks
+    // the capsule (the sim's view — extract/saves read this, not Jolt).
+    flyCamera.camera.position =
+        body_->position() + Vec3 { 0.0f, ctx.statsTuning.eyeHeight, 0.0f };
     if (ctx.playerEntity.is_alive()) {
         ctx.playerEntity.get_mut<world::Transform>().position =
             body_->position();

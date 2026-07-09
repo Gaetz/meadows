@@ -31,8 +31,12 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
     }
     if (fadeDirection == 0 && ctx.playMode && ctx.player) {
         // Aim test: nearest interactable within reach, roughly in front
-        // of the eye. One scorer for every kind.
-        const Vec3 eye = ctx.player->position() + Vec3 { 0.0f, 1.7f, 0.0f };
+        // of the eye. One scorer for every kind. U4-7: the base reach and
+        // the eye height are §5-tunable; the per-kind reach RATIOS stay
+        // [cpp-tuning] (they encode relative ergonomics, not feel).
+        const f32 reach = ctx.statsTuning.interactionRange;
+        const Vec3 eye = ctx.player->position() +
+                         Vec3 { 0.0f, ctx.statsTuning.eyeHeight, 0.0f };
         const Vec3 forward = ctx.cameraForward;
         f32 bestScore = 0.55f; // minimum facing alignment
         const auto consider = [&](flecs::entity e, const Vec3& position,
@@ -52,14 +56,15 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
         ctx.doorQuery.each([&](flecs::entity e,
                                const world::Transform& transform,
                                const world::DoorTarget&) {
-            consider(e, transform.position, PromptKind::Door, 3.0f);
+            consider(e, transform.position, PromptKind::Door, reach);
         });
         ctx.interactQuery.each([&](flecs::entity e,
                                    const world::Transform& transform,
                                    const world::RefId&) {
                 const ecs::Entity entity { e };
                 if (entity.has<world::ItemMarker>()) {
-                    consider(e, transform.position, PromptKind::Item, 2.4f);
+                    consider(e, transform.position, PromptKind::Item,
+                             reach * (2.4f / 3.0f));
                 } else if (entity.has<world::ActorMarker>() &&
                            entity != ctx.playerEntity) {
                     // Chantier 4 B3: a dead actor is searched, not talked to.
@@ -72,10 +77,10 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                     }
                     consider(e, transform.position,
                              isDead ? PromptKind::Corpse : PromptKind::Actor,
-                             2.8f);
+                             reach * (2.8f / 3.0f));
                 } else if (entity.has<world::FurnitureMarker>()) {
                     consider(e, transform.position, PromptKind::Furniture,
-                             2.4f);
+                             reach * (2.4f / 3.0f));
                 }
             });
 
@@ -202,8 +207,10 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
             }
         }
     }
-    // Fade state machine: out (0.3 s) -> travel at black -> in.
-    constexpr f32 kFadeSpeed = 1.0f / 0.3f;
+    // Fade state machine: out -> travel at black -> in (U4-7: duration
+    // §5-tunable, 0.3 s by default).
+    const f32 kFadeSpeed =
+        1.0f / glm::max(ctx.statsTuning.travelFadeSeconds, 0.01f);
     if (fadeDirection > 0) {
         fadeAlpha_ += dt * kFadeSpeed;
         if (fadeAlpha_ >= 1.0f) {

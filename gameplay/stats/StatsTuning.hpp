@@ -75,6 +75,22 @@ struct StatsTuningForm : data::Form {
     f32 shakenThresholdBase { 15.0f };  // shaken if posture hit > (base+con)% of max
     f32 shakenSeconds { 0.6f };         // brief flinch window
     f32 critWindowSeconds { 5.0f };     // posture break → prostrate window
+    // Movement & world interaction (audit U4-7, appended): the stat-space
+    // -> world mapping (docs/STATS.md §3) and the first-person feel
+    // constants, promoted from scattered C++ constexprs so modders can
+    // retune them. What deliberately STAYS C++ is tagged [cpp-tuning].
+    f32 movementSpeedScale3D { 1.0f / 20.0f }; // movementSpeed stat -> m/s
+    f32 sprintMultiplier { 1.6f };             // "sprint multiplies" (STATS.md)
+    f32 jumpPowerScale3D { 1.0f / 20.8f };     // jumpPower stat -> jump m/s
+    f32 accelerationRate3D { 0.12f };          // acceleration stat -> 1/s ramp
+    f32 npcWalkFactor { 0.35f };        // NPC walk = jog × this (STATS.md)
+    f32 npcPatrolPauseSeconds { 2.5f }; // idle beat at each patrol end
+    f32 eyeHeight { 1.7f };             // first-person eye above the feet (m)
+    f32 interactionRange { 3.0f };      // [E] prompt reach (m)
+    f32 travelFadeSeconds { 0.3f };     // door/travel fade to black (s)
+    f32 crimeBountyAssault { 40.0f };   // bounty per witnessed assault
+    f32 crimeWitnessRange { 20.0f };    // witness detection radius (m)
+    f32 vendorRestockHours { 24.0f };   // vendor inventory restock period
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -122,6 +138,18 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(shakenThresholdBase)
         REFLECT_FIELD(shakenSeconds)
         REFLECT_FIELD(critWindowSeconds)
+        REFLECT_FIELD(movementSpeedScale3D)
+        REFLECT_FIELD(sprintMultiplier)
+        REFLECT_FIELD(jumpPowerScale3D)
+        REFLECT_FIELD(accelerationRate3D)
+        REFLECT_FIELD(npcWalkFactor)
+        REFLECT_FIELD(npcPatrolPauseSeconds)
+        REFLECT_FIELD(eyeHeight)
+        REFLECT_FIELD(interactionRange)
+        REFLECT_FIELD(travelFadeSeconds)
+        REFLECT_FIELD(crimeBountyAssault)
+        REFLECT_FIELD(crimeWitnessRange)
+        REFLECT_FIELD(vendorRestockHours)
     REFLECT_END()
 };
 

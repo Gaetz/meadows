@@ -37,11 +37,9 @@ namespace game {
 
 namespace {
 
-// Stat-space -> world mapping (docs/STATS.md §3), mirrored from LandscapeScene
-// (its `kSpeedScale3D` drives the player; NPCs walk at a fraction of the jog).
-constexpr f32 kSpeedScale3D = 1.0f / 20.0f; // movementSpeed stat -> m/s
-constexpr f32 kNpcPauseSeconds = 2.5f;      // idle beat at each patrol end
-constexpr f32 kNpcWalkFactor = 0.35f;       // of the jog speed (STATS.md: walk)
+// U4-7: the stat-space -> world mapping and the NPC gait now come from
+// StatsTuningForm (§5 moddable) — the same scale the player uses, no more
+// hand-mirrored copy.
 
 } // namespace
 
@@ -293,7 +291,8 @@ bool NpcDirector::moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,
     const auto& sys = npc.entity.get<gameplay::AbilitySystem>();
     const f32 walkSpeed =
         gameplay::currentValueOf(sys, gameplay::attr("movementSpeed")) *
-        kSpeedScale3D * kNpcWalkFactor * speedScale;
+        ctx.statsTuning.movementSpeedScale3D * ctx.statsTuning.npcWalkFactor *
+        speedScale; // U4-7: §5-tunable
 
     const Vec3 goal = npc.path[npc.pathIndex];
     Vec3 to = goal - transform.position;
@@ -527,7 +526,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             if (npc.pauseTimer > 0.0f) {
                 npc.pauseTimer -= dt;
             } else if (distance < 0.4f) {
-                npc.pauseTimer = kNpcPauseSeconds;
+                npc.pauseTimer = ctx.statsTuning.npcPatrolPauseSeconds;
                 npc.target =
                     (npc.target + 1) % static_cast<u32>(patrolPoints.size());
             } else {

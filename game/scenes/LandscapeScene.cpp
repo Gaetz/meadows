@@ -399,11 +399,12 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
     // capsule spawns at the SAVED position directly (the travel pattern —
     // enterPlayMode would re-ground on the terrain, wrong indoors).
     if (saveController.loadedFromSave()) {
-        Vec3 feet = flyCamera.camera.position - Vec3 { 0.0f, 1.7f, 0.0f };
+        const Vec3 eye { 0.0f, statsTuning.eyeHeight, 0.0f }; // U4-7
+        Vec3 feet = flyCamera.camera.position - eye;
         if (playerEntity.is_alive()) {
             feet = playerEntity.get<world::Transform>().position;
         }
-        flyCamera.camera.position = feet + Vec3 { 0.0f, 1.7f, 0.0f };
+        flyCamera.camera.position = feet + eye;
         if (loadedWorldState) {
             flyCamera.camera.yaw = loadedWorldState->playerYaw;
             flyCamera.camera.pitch = loadedWorldState->playerPitch;
@@ -1355,7 +1356,7 @@ void LandscapeScene::createConsole() {
         if ((mode == SceneMode::Play) && playerController.body()) {
             playerController.spawnBody(*physics, Vec3 { x, y, z });
         } else {
-            flyCamera.camera.position = { x, y + 1.7f, z };
+            flyCamera.camera.position = { x, y + statsTuning.eyeHeight, z };
         }
         char out[64];
         std::snprintf(out, sizeof(out), "teleported to %.0f %.0f", x, z);
