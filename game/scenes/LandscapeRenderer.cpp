@@ -71,22 +71,22 @@ void LandscapeRenderer::applyTuning(
 }
 
 void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
-    frameUbo = device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
+    frameUbo = { device, device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
                                      .size = sizeof(render::FrameUniforms),
                                      .dynamic = true },
-                                   nullptr);
+                                   nullptr) };
     // B5: local lights ride binding 5 of the SAME group — shaders that
     // don't declare the block simply ignore it.
-    lightsUbo = device.createBuffer(
+    lightsUbo = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform,
           // B1: + the appended direction/angle array (the UBO lesson:
           // new members go at the END, both CPU and GLSL sides).
           .size = (1 + 3 * kMaxLights) * sizeof(Vec4),
           .dynamic = true },
-        nullptr);
-    frameBindGroup = device.createBindGroup(
+        nullptr) };
+    frameBindGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0, .buffer = frameUbo },
-                       { .binding = 5, .buffer = lightsUbo } } });
+                       { .binding = 5, .buffer = lightsUbo } } }) };
 
     shaders = std::make_unique<render::ShaderLibrary>(device);
     terrain.create(device, *shaders, jobs);
@@ -99,10 +99,10 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
     // (The mesh/texture residency caches stay SCENE-owned — the editor and
     // streaming share them; the view hands them in per frame.)
     const u32 white = 0xFFFFFFFF;
-    whiteTexture = device.createTexture(
+    whiteTexture = { device, device.createTexture(
         { .width = 1, .height = 1, .format = rhi::TextureFormat::SRGBA8 },
-        &white);
-    meshSampler = device.createSampler({});
+        &white) };
+    meshSampler = { device, device.createSampler({}) };
     shaders->load("mesh",
                   { { "FrameUbo", 0 }, { "ModelUbo", 1 },
                     { "LightsUbo", 5 } },
@@ -144,62 +144,62 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
             push(azimuth, 1.0f, 1.0f, seed);
             push(azimuth, -1.0f, 1.0f, seed);
         }
-        stormVertices = device.createBuffer(
+        stormVertices = { device, device.createBuffer(
             { .usage = rhi::BufferUsage::Vertex, .size = sizeof(towers) },
-            towers);
+            towers) };
     }
 
     // Brick 31: rain — procedural streaks (no buffers) + the top-down
     // occlusion depth so roofs keep the drops out.
     shaders->load("rain", { { "FrameUbo", 0 } },
                   { { "uRainOcclusion", 9 } });
-    rainOcclusionTex = device.createTexture(
+    rainOcclusionTex = { device, device.createTexture(
         { .width = 512,
           .height = 512,
           .format = rhi::TextureFormat::Depth32F,
           .usage = rhi::TextureUsage_Sampled |
                    rhi::TextureUsage_RenderAttachment },
-        nullptr);
-    rainSampler = device.createSampler({});
-    rainOcclusionFb = device.createFramebuffer(
-        { .depthAttachment = { .texture = rainOcclusionTex } });
+        nullptr) };
+    rainSampler = { device, device.createSampler({}) };
+    rainOcclusionFb = { device, device.createFramebuffer(
+        { .depthAttachment = { .texture = rainOcclusionTex } }) };
     rainOcclusionUbo =
-        device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
+        { device, device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
                               .size = sizeof(Mat4),
                               .dynamic = true },
-                            nullptr);
-    rainCasterGroup = device.createBindGroup(
-        { .entries = { { .binding = 1, .buffer = rainOcclusionUbo } } });
-    rainReceiverGroup = device.createBindGroup(
+                            nullptr) };
+    rainCasterGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 1, .buffer = rainOcclusionUbo } } }) };
+    rainReceiverGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 9,
                          .texture = rainOcclusionTex,
-                         .sampler = rainSampler } } });
+                         .sampler = rainSampler } } }) };
 
     // B2b: the interior key-light shadow target (1024², perspective).
-    keyShadowTex = device.createTexture(
+    keyShadowTex = { device, device.createTexture(
         { .width = 1024,
           .height = 1024,
           .format = rhi::TextureFormat::Depth32F,
           .usage = rhi::TextureUsage_Sampled |
                    rhi::TextureUsage_RenderAttachment },
-        nullptr);
-    keyShadowSampler = device.createSampler(
+        nullptr) };
+    keyShadowSampler = { device, device.createSampler(
         { .minFilter = rhi::FilterMode::Linear,
           .magFilter = rhi::FilterMode::Linear,
-          .compare = rhi::CompareFunc::LessEqual });
-    keyShadowFb = device.createFramebuffer(
-        { .depthAttachment = { .texture = keyShadowTex } });
+          .compare = rhi::CompareFunc::LessEqual }) };
+    keyShadowFb = { device, device.createFramebuffer(
+        { .depthAttachment = { .texture = keyShadowTex } }) };
     keyShadowUbo =
-        device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
+        { device, device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
                               .size = sizeof(Mat4),
                               .dynamic = true },
-                            nullptr);
-    keyShadowCasterGroup = device.createBindGroup(
-        { .entries = { { .binding = 1, .buffer = keyShadowUbo } } });
-    keyShadowReceiverGroup = device.createBindGroup(
+                            nullptr) };
+    keyShadowCasterGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 1, .buffer = keyShadowUbo } } }) };
+    keyShadowReceiverGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 6,
                          .texture = keyShadowTex,
-                         .sampler = keyShadowSampler } } });
+                         .sampler = keyShadowSampler } } }) };
 
     shaders->load("skinned",
                   { { "FrameUbo", 0 }, { "ModelUbo", 1 },
@@ -227,20 +227,20 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
     }
     if (device.caps().copyTexture) {
         water.create(device, *shaders, jobs);
-        depthSampler = device.createSampler(
+        depthSampler = { device, device.createSampler(
             { .minFilter = rhi::FilterMode::Nearest,
-              .magFilter = rhi::FilterMode::Nearest });
+              .magFilter = rhi::FilterMode::Nearest }) };
         reflectionUbo =
-            device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
+            { device, device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
                                   .size = sizeof(render::FrameUniforms),
                                   .dynamic = true },
-                                nullptr);
-        reflectionBindGroup = device.createBindGroup(
-            { .entries = { { .binding = 0, .buffer = reflectionUbo } } });
+                                nullptr) };
+        reflectionBindGroup = { device, device.createBindGroup(
+            { .entries = { { .binding = 0, .buffer = reflectionUbo } } }) };
     }
 
     if (device.caps().offscreenTargets) {
-        blitSampler = device.createSampler({}); // linear, clamp — identity
+        blitSampler = { device, device.createSampler({}) }; // linear, clamp — identity
         shaders->load(kTonemapShader, { { "FrameUbo", 0 } },
                       { { "uSceneColor", 0 },
                         { "uBloom", 1 },
@@ -262,133 +262,72 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
 }
 
 void LandscapeRenderer::destroy(rhi::Device& device) {
+    // U4-4: every handle is an rhi::Unique — clearing/resetting frees it
+    // through its device; there is no manual destroy mirror to keep in
+    // sync anymore. Must run while the device is alive (wrapper contract).
     destroyOffscreenTarget(device);
-    device.destroyPipeline(blitPipeline);
-    device.destroySampler(blitSampler);
+    blitPipeline.reset();
+    blitSampler.reset();
     // B1 mesh path: per-entry draw state (the residency caches are
     // scene-owned; their dtors free what they own).
-    for (MeshDraw& draw : meshDraws) {
-        if (draw.group.id != 0) {
-            device.destroyBindGroup(draw.group);
-        }
-        if (draw.casterGroup.id != 0) {
-            device.destroyBindGroup(draw.casterGroup);
-        }
-        if (draw.ubo.id != 0) {
-            device.destroyBuffer(draw.ubo);
-        }
-    }
     meshDraws.clear();
-    device.destroyPipeline(meshPipeline);
-    device.destroyPipeline(meshCasterPipeline);   // B2a
-    device.destroyPipeline(skinnedCasterPipeline);
-    // Brick 34: shafts (GPU state per shaft, then the pipeline).
-    for (LightShaft& shaft : lightShafts) {
-        if (shaft.vertices.id != 0) {
-            device.destroyBuffer(shaft.vertices);
-        }
-        if (shaft.ubo.id != 0) {
-            device.destroyBindGroup(shaft.group);
-            device.destroyBuffer(shaft.ubo);
-        }
-    }
-    lightShafts.clear();
-    device.destroyPipeline(shaftPipeline);
-    shaftPipeline = {};
-    // Brick 32: water quads.
-    for (WaterQuad& quad : waterQuads) {
-        if (quad.vertices.id != 0) {
-            device.destroyBuffer(quad.vertices);
-            device.destroyBindGroup(quad.group);
-            device.destroyBuffer(quad.ubo);
-        }
-    }
-    waterQuads.clear();
-    device.destroyPipeline(waterVolumePipeline);
-    waterVolumePipeline = {};
-    // Brick 30: cumulonimbus.
-    device.destroyBuffer(stormVertices);
-    stormVertices = {};
-    device.destroyPipeline(stormPipeline);
-    stormPipeline = {};
-    // Brick 31: rain.
-    device.destroyPipeline(rainPipeline);
-    rainPipeline = {};
-    device.destroyBindGroup(rainReceiverGroup);
-    device.destroyBindGroup(rainCasterGroup);
-    device.destroyBuffer(rainOcclusionUbo);
-    device.destroyFramebuffer(rainOcclusionFb);
-    device.destroySampler(rainSampler);
-    device.destroyTexture(rainOcclusionTex);
-    rainReceiverGroup = {};
-    rainCasterGroup = {};
-    rainOcclusionUbo = {};
-    rainOcclusionFb = {};
-    rainSampler = {};
-    rainOcclusionTex = {};
-    // B2b: key-light shadow.
-    device.destroyBindGroup(keyShadowReceiverGroup);
-    device.destroyBindGroup(keyShadowCasterGroup);
-    device.destroyBuffer(keyShadowUbo);
-    device.destroyFramebuffer(keyShadowFb);
-    device.destroySampler(keyShadowSampler);
-    device.destroyTexture(keyShadowTex);
-    keyShadowReceiverGroup = {};
-    keyShadowCasterGroup = {};
-    keyShadowUbo = {};
-    keyShadowFb = {};
-    keyShadowSampler = {};
-    keyShadowTex = {};
-    // B6 NPCs: the per-entity draw state (U4-2b).
-    for (SkinnedDraw& draw : skinnedDraws) {
-        if (draw.casterGroup.id != 0) {
-            device.destroyBindGroup(draw.casterGroup);
-        }
-        if (draw.group.id != 0) {
-            device.destroyBindGroup(draw.group);
-            device.destroyBuffer(draw.modelUbo);
-            device.destroyBuffer(draw.paletteSsbo);
-        }
-    }
-    skinnedDraws.clear();
-    device.destroyPipeline(skinnedPipeline);
-    skinnedPipeline = {};
+    meshPipeline.reset();
+    meshCasterPipeline.reset(); // B2a
+    skinnedCasterPipeline.reset();
+    lightShafts.clear();  // brick 34
+    shaftPipeline.reset();
+    waterQuads.clear();   // brick 32
+    waterVolumePipeline.reset();
+    stormVertices.reset(); // brick 30
+    stormPipeline.reset();
+    rainPipeline.reset();  // brick 31
+    rainReceiverGroup.reset();
+    rainCasterGroup.reset();
+    rainOcclusionUbo.reset();
+    rainOcclusionFb.reset();
+    rainSampler.reset();
+    rainOcclusionTex.reset();
+    keyShadowReceiverGroup.reset(); // B2b
+    keyShadowCasterGroup.reset();
+    keyShadowUbo.reset();
+    keyShadowFb.reset();
+    keyShadowSampler.reset();
+    keyShadowTex.reset();
+    skinnedDraws.clear(); // B6 NPCs (U4-2b)
+    skinnedPipeline.reset();
     skinnedShaderGeneration = 0;
-    device.destroySampler(meshSampler);
-    device.destroyTexture(whiteTexture);
+    meshSampler.reset();
+    whiteTexture.reset();
     gpuOcclusion.destroy(device);
     terrainLightMap.destroy(device); // 33b/c
     postFx.destroy(device);
     water.destroy(device);
-    device.destroyBindGroup(reflectionBindGroup);
-    device.destroyBuffer(reflectionUbo);
-    device.destroySampler(depthSampler);
+    reflectionBindGroup.reset();
+    reflectionUbo.reset();
+    depthSampler.reset();
     shadows.destroy(device);
     sky.destroy(device);
     vegetation.destroy(device);
     grass.destroy(device);
     terrain.destroy(device);
     shaders.reset(); // destroys the library's shader programs
-    device.destroyBindGroup(frameBindGroup);
-    device.destroyBuffer(lightsUbo);
-    device.destroyBuffer(frameUbo);
-    frameBindGroup = {};
-    lightsUbo = {};
-    frameUbo = {};
+    frameBindGroup.reset();
+    lightsUbo.reset();
+    frameUbo.reset();
     sculptDirtyChunks.clear();
     sculptScatterChunks.clear();
 }
 
 void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                                            u32 height) {
-    if (offscreenFb.id != 0 && offscreenWidth == width &&
+    if (offscreenFb.id() != 0 && offscreenWidth == width &&
         offscreenHeight == height) {
         return;
     }
     destroyOffscreenTarget(device);
     // HDR scene target: the sky/sun palette is linear HDR (sun > 1); the
     // tonemap pass compresses to display range.
-    offscreenColor = device.createTexture(
+    offscreenColor = { device, device.createTexture(
         { .width = width,
           .height = height,
           .format = device.caps().hdrFormats ? rhi::TextureFormat::RGBA16F
@@ -396,34 +335,34 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
           .filter = rhi::FilterMode::Linear,
           .usage = rhi::TextureUsage_Sampled |
                    rhi::TextureUsage_RenderAttachment },
-        nullptr);
-    offscreenDepth = device.createTexture(
+        nullptr) };
+    offscreenDepth = { device, device.createTexture(
         { .width = width,
           .height = height,
           .format = rhi::TextureFormat::Depth32F,
           .usage = rhi::TextureUsage_RenderAttachment },
-        nullptr);
-    offscreenFb = device.createFramebuffer(
+        nullptr) };
+    offscreenFb = { device, device.createFramebuffer(
         { .colorAttachments = { { .texture = offscreenColor } },
-          .depthAttachment = { .texture = offscreenDepth } });
+          .depthAttachment = { .texture = offscreenDepth } }) };
     if (device.caps().copyTexture) {
-        sceneColorCopy = device.createTexture(
+        sceneColorCopy = { device, device.createTexture(
             { .width = width,
               .height = height,
               .format = device.caps().hdrFormats ? rhi::TextureFormat::RGBA16F
                                                  : rhi::TextureFormat::RGBA8,
               .filter = rhi::FilterMode::Linear,
               .usage = rhi::TextureUsage_Sampled },
-            nullptr);
-        sceneDepthCopy = device.createTexture(
+            nullptr) };
+        sceneDepthCopy = { device, device.createTexture(
             { .width = width,
               .height = height,
               .format = rhi::TextureFormat::Depth32F,
               .usage = rhi::TextureUsage_Sampled },
-            nullptr);
+            nullptr) };
         const u32 reflectionWidth = glm::max(width / 2, 1u);
         const u32 reflectionHeight = glm::max(height / 2, 1u);
-        reflectionColor = device.createTexture(
+        reflectionColor = { device, device.createTexture(
             { .width = reflectionWidth,
               .height = reflectionHeight,
               .format = device.caps().hdrFormats ? rhi::TextureFormat::RGBA16F
@@ -431,17 +370,17 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
               .filter = rhi::FilterMode::Linear,
               .usage = rhi::TextureUsage_Sampled |
                        rhi::TextureUsage_RenderAttachment },
-            nullptr);
-        reflectionDepth = device.createTexture(
+            nullptr) };
+        reflectionDepth = { device, device.createTexture(
             { .width = reflectionWidth,
               .height = reflectionHeight,
               .format = rhi::TextureFormat::Depth32F,
               .usage = rhi::TextureUsage_RenderAttachment },
-            nullptr);
-        reflectionFb = device.createFramebuffer(
+            nullptr) };
+        reflectionFb = { device, device.createFramebuffer(
             { .colorAttachments = { { .texture = reflectionColor } },
-              .depthAttachment = { .texture = reflectionDepth } });
-        waterSceneBindGroup = device.createBindGroup(
+              .depthAttachment = { .texture = reflectionDepth } }) };
+        waterSceneBindGroup = { device, device.createBindGroup(
             { .entries = { { .binding = 0,
                              .texture = sceneColorCopy,
                              .sampler = blitSampler },
@@ -450,7 +389,7 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                              .sampler = depthSampler },
                            { .binding = 2,
                              .texture = reflectionColor,
-                             .sampler = blitSampler } } });
+                             .sampler = blitSampler } } }) };
     }
 
     if (device.caps().offscreenTargets && device.caps().hdrFormats &&
@@ -462,7 +401,7 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
     // needed on the 4.6 path — postFx is always ready when we get here).
     // B4: one group per adaptation ping-pong side (binding 5).
     for (u32 side = 0; side < 2; ++side) {
-        blitBindGroups[side] = device.createBindGroup(
+        blitBindGroups[side] = { device, device.createBindGroup(
             { .entries =
                   postFx.ready()
                       ? vector<rhi::BindGroupEntry> {
@@ -490,47 +429,36 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                       : vector<rhi::BindGroupEntry> {
                             { .binding = 0,
                               .texture = offscreenColor,
-                              .sampler = blitSampler } } });
+                              .sampler = blitSampler } } }) };
     }
     offscreenWidth = width;
     offscreenHeight = height;
 }
 
 void LandscapeRenderer::destroyOffscreenTarget(rhi::Device& device) {
-    if (offscreenFb.id == 0) {
+    (void)device; // U4-4: the Unique wrappers free through their device
+    if (offscreenFb.id() == 0) {
         return;
     }
-    device.destroyBindGroup(waterSceneBindGroup);
-    device.destroyFramebuffer(reflectionFb);
-    device.destroyTexture(reflectionDepth);
-    device.destroyTexture(reflectionColor);
-    device.destroyTexture(sceneDepthCopy);
-    device.destroyTexture(sceneColorCopy);
-    waterSceneBindGroup = {};
-    reflectionFb = {};
-    reflectionDepth = {};
-    reflectionColor = {};
-    sceneDepthCopy = {};
-    sceneColorCopy = {};
-    device.destroyBindGroup(blitBindGroups[0]);
-    device.destroyBindGroup(blitBindGroups[1]);
-    device.destroyFramebuffer(offscreenFb);
-    device.destroyTexture(offscreenDepth);
-    device.destroyTexture(offscreenColor);
-    blitBindGroups = {};
-    offscreenFb = {};
-    offscreenDepth = {};
-    offscreenColor = {};
+    waterSceneBindGroup.reset();
+    reflectionFb.reset();
+    reflectionDepth.reset();
+    reflectionColor.reset();
+    sceneDepthCopy.reset();
+    sceneColorCopy.reset();
+    blitBindGroups[0].reset();
+    blitBindGroups[1].reset();
+    offscreenFb.reset();
+    offscreenDepth.reset();
+    offscreenColor.reset();
     offscreenWidth = 0;
     offscreenHeight = 0;
 }
 
 void LandscapeRenderer::rebuildBlitPipeline(rhi::Device& device) {
-    if (blitPipeline.id != 0) {
-        device.destroyPipeline(blitPipeline);
-    }
-    blitPipeline =
-        device.createPipeline({ .shader = shaders->get(kTonemapShader) });
+    // U4-4: the assignment frees the previous pipeline through the wrapper.
+    blitPipeline = { device, device.createPipeline(
+                                 { .shader = shaders->get(kTonemapShader) }) };
     blitShaderGeneration = shaders->generation(kTonemapShader);
 }
 
@@ -573,24 +501,22 @@ void LandscapeRenderer::drawSceneMeshes(engine::FrameContext& frame,
         }
 
         MeshDraw& draw = meshDraws[i];
-        if (draw.ubo.id == 0) {
-            draw.ubo = frame.device.createBuffer(
+        if (draw.ubo.id() == 0) {
+            draw.ubo = { frame.device, frame.device.createBuffer(
                 { .usage = rhi::BufferUsage::Uniform,
                   .size = sizeof(ModelUniforms),
                   .dynamic = true },
-                nullptr);
+                nullptr) };
         }
         frame.device.updateBuffer(draw.ubo, &uniforms, sizeof(uniforms), 0);
-        if (draw.group.id == 0 || draw.boundTexture.id != albedo.id ||
+        if (draw.group.id() == 0 || draw.boundTexture.id != albedo.id ||
             draw.material != instance.material) {
-            if (draw.group.id != 0) {
-                frame.device.destroyBindGroup(draw.group);
-            }
-            draw.group = frame.device.createBindGroup(
+            // U4-4: the assignment frees the previous group.
+            draw.group = { frame.device, frame.device.createBindGroup(
                 { .entries = { { .binding = 1, .buffer = draw.ubo },
                                { .binding = 0,
                                  .texture = albedo,
-                                 .sampler = meshSampler } } });
+                                 .sampler = meshSampler } } }) };
             draw.boundTexture = albedo;
             draw.material = instance.material;
         }
@@ -633,26 +559,26 @@ void LandscapeRenderer::drawSkinned(engine::FrameContext& frame,
             slot = &skinnedDraws.back();
         }
         slot->seen = true;
-        if (slot->paletteSsbo.id == 0) {
-            slot->paletteSsbo = frame.device.createBuffer(
+        if (slot->paletteSsbo.id() == 0) {
+            slot->paletteSsbo = { frame.device, frame.device.createBuffer(
                 { .usage = rhi::BufferUsage::Storage,
                   .size = instance.palette.size() * sizeof(Mat4),
                   .dynamic = true },
-                instance.palette.data());
-            slot->modelUbo = frame.device.createBuffer(
+                instance.palette.data()) };
+            slot->modelUbo = { frame.device, frame.device.createBuffer(
                 { .usage = rhi::BufferUsage::Uniform,
                   // std140 ModelUbo: mat4 model + vec4 tint + vec4 info.
                   .size = sizeof(Mat4) + 2 * sizeof(Vec4),
                   .dynamic = true },
-                nullptr);
-            slot->group = frame.device.createBindGroup(
+                nullptr) };
+            slot->group = { frame.device, frame.device.createBindGroup(
                 { .entries = { { .binding = 1, .buffer = slot->modelUbo },
                                { .binding = 0,
                                  .texture = whiteTexture,
                                  .sampler = meshSampler },
                                { .binding = 2,
                                  .buffer = slot->paletteSsbo,
-                                 .storage = true } } });
+                                 .storage = true } } }) };
         }
         ModelUniforms uniforms;
         uniforms.model = instance.transform;
@@ -675,15 +601,7 @@ void LandscapeRenderer::drawSkinned(engine::FrameContext& frame,
     // Sweep draws whose NPC was pruned (cell unload / death cleanup).
     for (auto it = skinnedDraws.begin(); it != skinnedDraws.end();) {
         if (!it->seen) {
-            if (it->casterGroup.id != 0) {
-                frame.device.destroyBindGroup(it->casterGroup);
-            }
-            if (it->group.id != 0) {
-                frame.device.destroyBindGroup(it->group);
-                frame.device.destroyBuffer(it->modelUbo);
-                frame.device.destroyBuffer(it->paletteSsbo);
-            }
-            it = skinnedDraws.erase(it);
+            it = skinnedDraws.erase(it); // U4-4: Unique members self-free
         } else {
             ++it;
         }
@@ -691,10 +609,7 @@ void LandscapeRenderer::drawSkinned(engine::FrameContext& frame,
 }
 
 void LandscapeRenderer::buildSkinnedPipeline(rhi::Device& device) {
-    if (skinnedPipeline.id != 0) {
-        device.destroyPipeline(skinnedPipeline);
-    }
-    skinnedPipeline = device.createPipeline(
+    skinnedPipeline = { device, device.createPipeline(
         { .shader = shaders->get("skinned"),
           .vertexBuffers =
               { { .stride = sizeof(render::SkinnedVertex),
@@ -722,7 +637,7 @@ void LandscapeRenderer::buildSkinnedPipeline(rhi::Device& device) {
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::Back });
+          .cull = rhi::CullMode::Back }) };
     skinnedShaderGeneration = shaders->generation("skinned");
 }
 
@@ -730,12 +645,9 @@ void LandscapeRenderer::buildSkinnedPipeline(rhi::Device& device) {
 // references into the scene plus the focus / fade / mode scalars. Rebuilt each
 
 void LandscapeRenderer::buildShaftPipeline(rhi::Device& device) {
-    if (shaftPipeline.id != 0) {
-        device.destroyPipeline(shaftPipeline);
-    }
     // Additive, depth-tested against the opaques but never writing —
     // the Skyrim FXShaft blend. Both blade faces show (no cull).
-    shaftPipeline = device.createPipeline(
+    shaftPipeline = { device, device.createPipeline(
         { .shader = shaders->get("lightshaft"),
           .vertexBuffers =
               { { .stride = 5 * sizeof(f32),
@@ -749,7 +661,7 @@ void LandscapeRenderer::buildShaftPipeline(rhi::Device& device) {
           .depth = { .testEnable = true,
                      .writeEnable = false,
                      .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::None });
+          .cull = rhi::CullMode::None }) };
     shaftShaderGeneration = shaders->generation("lightshaft");
 }
 
@@ -804,7 +716,7 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
         slot->seen = true;
 
         // Rebuild the blades when the direction moves (sun steps).
-        if (slot->vertices.id == 0 ||
+        if (slot->vertices.id() == 0 ||
             glm::dot(slot->cachedDir, dir) < 0.99995f) {
             const f32 length = glm::max(light.shaftLength, 0.5f);
             const f32 halfAngle = glm::radians(
@@ -844,12 +756,12 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
                 push(b1, 1.0f, 1.0f);
                 push(b0, -1.0f, 1.0f);
             }
-            if (slot->vertices.id == 0) {
-                slot->vertices = frame.device.createBuffer(
+            if (slot->vertices.id() == 0) {
+                slot->vertices = { frame.device, frame.device.createBuffer(
                     { .usage = rhi::BufferUsage::Vertex,
                       .size = sizeof(verts),
                       .dynamic = true },
-                    verts);
+                    verts) };
             } else {
                 frame.device.updateBuffer(slot->vertices, verts,
                                           sizeof(verts), 0);
@@ -857,14 +769,14 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
             slot->vertexCount = 18;
             slot->cachedDir = dir;
         }
-        if (slot->ubo.id == 0) {
-            slot->ubo = frame.device.createBuffer(
+        if (slot->ubo.id() == 0) {
+            slot->ubo = { frame.device, frame.device.createBuffer(
                 { .usage = rhi::BufferUsage::Uniform,
                   .size = 2 * sizeof(Vec4),
                   .dynamic = true },
-                nullptr);
-            slot->group = frame.device.createBindGroup(
-                { .entries = { { .binding = 1, .buffer = slot->ubo } } });
+                nullptr) };
+            slot->group = { frame.device, frame.device.createBindGroup(
+                { .entries = { { .binding = 1, .buffer = slot->ubo } } }) };
         }
         const Vec4 uniforms[2] = {
             { color * gate, light.shaftSoftness },
@@ -883,14 +795,7 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
     // Sweep shafts whose entity unloaded with its cell.
     for (auto it = lightShafts.begin(); it != lightShafts.end();) {
         if (!it->seen) {
-            if (it->vertices.id != 0) {
-                frame.device.destroyBuffer(it->vertices);
-            }
-            if (it->ubo.id != 0) {
-                frame.device.destroyBindGroup(it->group);
-                frame.device.destroyBuffer(it->ubo);
-            }
-            it = lightShafts.erase(it);
+            it = lightShafts.erase(it); // U4-4: Unique members self-free
         } else {
             ++it;
         }
@@ -919,11 +824,8 @@ f32 LandscapeRenderer::effectiveWaterSurfaceY(const RenderSnapshot& snapshot,
 void LandscapeRenderer::drawWaterVolumes(engine::FrameContext& frame,
                                          const RenderSnapshot& snapshot) {
     if (shaders->generation("watervolume") != waterVolumeShaderGeneration ||
-        waterVolumePipeline.id == 0) {
-        if (waterVolumePipeline.id != 0) {
-            frame.device.destroyPipeline(waterVolumePipeline);
-        }
-        waterVolumePipeline = frame.device.createPipeline(
+        waterVolumePipeline.id() == 0) {
+        waterVolumePipeline = { frame.device, frame.device.createPipeline(
             { .shader = shaders->get("watervolume"),
               .vertexBuffers =
                   { { .stride = 3 * sizeof(f32),
@@ -934,7 +836,7 @@ void LandscapeRenderer::drawWaterVolumes(engine::FrameContext& frame,
               .depth = { .testEnable = true,
                          .writeEnable = false,
                          .compare = rhi::CompareFunc::Less },
-              .cull = rhi::CullMode::None });
+              .cull = rhi::CullMode::None }) };
         waterVolumeShaderGeneration = shaders->generation("watervolume");
     }
     for (WaterQuad& quad : waterQuads) {
@@ -954,7 +856,7 @@ void LandscapeRenderer::drawWaterVolumes(engine::FrameContext& frame,
             slot = &waterQuads.back();
         }
         slot->seen = true;
-        if (slot->vertices.id == 0) {
+        if (slot->vertices.id() == 0) {
             // The box TOP face, two triangles in world space.
             const Vec3 c = volume.position +
                            Vec3 { 0.0f, volume.halfExtents.y * 2.0f, 0.0f };
@@ -965,16 +867,16 @@ void LandscapeRenderer::drawWaterVolumes(engine::FrameContext& frame,
                 c.x + hx, c.y, c.z + hz, c.x - hx, c.y, c.z - hz,
                 c.x + hx, c.y, c.z + hz, c.x - hx, c.y, c.z + hz,
             };
-            slot->vertices = frame.device.createBuffer(
+            slot->vertices = { frame.device, frame.device.createBuffer(
                 { .usage = rhi::BufferUsage::Vertex, .size = sizeof(verts) },
-                verts);
-            slot->ubo = frame.device.createBuffer(
+                verts) };
+            slot->ubo = { frame.device, frame.device.createBuffer(
                 { .usage = rhi::BufferUsage::Uniform,
                   .size = sizeof(Vec4),
                   .dynamic = true },
-                nullptr);
-            slot->group = frame.device.createBindGroup(
-                { .entries = { { .binding = 1, .buffer = slot->ubo } } });
+                nullptr) };
+            slot->group = { frame.device, frame.device.createBindGroup(
+                { .entries = { { .binding = 1, .buffer = slot->ubo } } }) };
             const Vec4 tint { volume.tint, volume.chop };
             frame.device.updateBuffer(slot->ubo, &tint, sizeof(tint), 0);
         }
@@ -989,12 +891,7 @@ void LandscapeRenderer::drawWaterVolumes(engine::FrameContext& frame,
     }
     for (auto it = waterQuads.begin(); it != waterQuads.end();) {
         if (!it->seen) {
-            if (it->vertices.id != 0) {
-                frame.device.destroyBuffer(it->vertices);
-                frame.device.destroyBindGroup(it->group);
-                frame.device.destroyBuffer(it->ubo);
-            }
-            it = waterQuads.erase(it);
+            it = waterQuads.erase(it); // U4-4: Unique members self-free
         } else {
             ++it;
         }
@@ -1002,15 +899,9 @@ void LandscapeRenderer::drawWaterVolumes(engine::FrameContext& frame,
 }
 
 void LandscapeRenderer::buildCasterPipelines(rhi::Device& device) {
-    if (meshCasterPipeline.id != 0) {
-        device.destroyPipeline(meshCasterPipeline);
-    }
-    if (skinnedCasterPipeline.id != 0) {
-        device.destroyPipeline(skinnedCasterPipeline);
-    }
     // Position-only attributes over the FULL vertex strides (same buffers
     // as the lit pass); depth state mirrors terrain/vegetation casters.
-    meshCasterPipeline = device.createPipeline(
+    meshCasterPipeline = { device, device.createPipeline(
         { .shader = shaders->get("shadow_mesh"),
           .vertexBuffers =
               { { .stride = sizeof(render::MeshVertex),
@@ -1022,8 +913,8 @@ void LandscapeRenderer::buildCasterPipelines(rhi::Device& device) {
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::Back });
-    skinnedCasterPipeline = device.createPipeline(
+          .cull = rhi::CullMode::Back }) };
+    skinnedCasterPipeline = { device, device.createPipeline(
         { .shader = shaders->get("shadow_skinned"),
           .vertexBuffers =
               { { .stride = sizeof(render::SkinnedVertex),
@@ -1042,7 +933,7 @@ void LandscapeRenderer::buildCasterPipelines(rhi::Device& device) {
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::Back });
+          .cull = rhi::CullMode::Back }) };
     meshCasterShaderGeneration = shaders->generation("shadow_mesh");
     skinnedCasterShaderGeneration = shaders->generation("shadow_skinned");
 }
@@ -1080,22 +971,22 @@ void LandscapeRenderer::drawCastersInto(engine::FrameContext& frame,
             const RenderSnapshot::MeshInstance& instance = snapshot.meshes[i];
             const MeshCache::Gpu& mesh = view.meshCache->resolve(instance.model);
             MeshDraw& draw = meshDraws[i];
-            if (draw.ubo.id == 0) {
+            if (draw.ubo.id() == 0) {
                 // std140 ModelUbo: mat4 + tint + info (drawSceneMeshes
                 // owns the tail; only the matrix matters here).
-                draw.ubo = frame.device.createBuffer(
+                draw.ubo = { frame.device, frame.device.createBuffer(
                     { .usage = rhi::BufferUsage::Uniform,
                       .size = sizeof(Mat4) + 2 * sizeof(Vec4),
                       .dynamic = true },
-                    nullptr);
+                    nullptr) };
             }
             if (firstCascade) {
                 frame.device.updateBuffer(draw.ubo, &instance.transform,
                                           sizeof(Mat4), 0);
             }
-            if (draw.casterGroup.id == 0) {
-                draw.casterGroup = frame.device.createBindGroup(
-                    { .entries = { { .binding = 4, .buffer = draw.ubo } } });
+            if (draw.casterGroup.id() == 0) {
+                draw.casterGroup = { frame.device, frame.device.createBindGroup(
+                    { .entries = { { .binding = 4, .buffer = draw.ubo } } }) };
             }
             frame.cmd.setBindGroup(2, draw.casterGroup);
             frame.cmd.setVertexBuffer(0, mesh.vertices);
@@ -1120,16 +1011,16 @@ void LandscapeRenderer::drawCastersInto(engine::FrameContext& frame,
                     break;
                 }
             }
-            if (!slot || slot->modelUbo.id == 0) {
+            if (!slot || slot->modelUbo.id() == 0) {
                 continue; // built by drawNpcs later this frame
             }
-            if (slot->casterGroup.id == 0) {
-                slot->casterGroup = frame.device.createBindGroup(
+            if (slot->casterGroup.id() == 0) {
+                slot->casterGroup = { frame.device, frame.device.createBindGroup(
                     { .entries = { { .binding = 4,
                                      .buffer = slot->modelUbo },
                                    { .binding = 2,
                                      .buffer = slot->paletteSsbo,
-                                     .storage = true } } });
+                                     .storage = true } } }) };
             }
             frame.cmd.setBindGroup(2, slot->casterGroup);
             frame.cmd.setVertexBuffer(0, instance.vertices);
@@ -1140,10 +1031,7 @@ void LandscapeRenderer::drawCastersInto(engine::FrameContext& frame,
 }
 
 void LandscapeRenderer::buildMeshPipeline(rhi::Device& device) {
-    if (meshPipeline.id != 0) {
-        device.destroyPipeline(meshPipeline);
-    }
-    meshPipeline = device.createPipeline(
+    meshPipeline = { device, device.createPipeline(
         { .shader = shaders->get("mesh"),
           .vertexBuffers =
               { { .stride = sizeof(render::MeshVertex),
@@ -1163,7 +1051,7 @@ void LandscapeRenderer::buildMeshPipeline(rhi::Device& device) {
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::Back });
+          .cull = rhi::CullMode::Back }) };
     meshShaderGeneration = shaders->generation("mesh");
 }
 
@@ -1276,7 +1164,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 
     // Planar reflection is meaningful only from above the surface.
     const bool reflectionsActive =
-        reflectionsUi && reflectionFb.id != 0 && !view.interiorMode &&
+        reflectionsUi && reflectionFb.id() != 0 && !view.interiorMode &&
         camera.position.y > terrain.params.seaLevel;
 
     // The whole UBO composition is pure (audit U4-6a): gather the inputs,
@@ -1532,7 +1420,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         if (terrainLightMap.bindGroup().id != 0) {
             frame.cmd.setBindGroup(4, terrainLightMap.bindGroup()); // 33b/c
         }
-        if (keyShadowReceiverGroup.id != 0) {
+        if (keyShadowReceiverGroup.id() != 0) {
             frame.cmd.setBindGroup(5, keyShadowReceiverGroup); // B2b
         }
         // Occlusion applies to the main view only: both sets were built for
@@ -1573,11 +1461,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         if (!view.interiorMode && view.atmos.stormFront > 0.003f) {
             if (shaders->generation("cumulonimbus") !=
                     stormShaderGeneration ||
-                stormPipeline.id == 0) {
-                if (stormPipeline.id != 0) {
-                    frame.device.destroyPipeline(stormPipeline);
-                }
-                stormPipeline = frame.device.createPipeline(
+                stormPipeline.id() == 0) {
+                stormPipeline = { frame.device, frame.device.createPipeline(
                     { .shader = shaders->get("cumulonimbus"),
                       .vertexBuffers =
                           { { .stride = 4 * sizeof(f32),
@@ -1589,7 +1474,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                       .depth = { .testEnable = true,
                                  .writeEnable = false,
                                  .compare = rhi::CompareFunc::Less },
-                      .cull = rhi::CullMode::None });
+                      .cull = rhi::CullMode::None }) };
                 stormShaderGeneration =
                     shaders->generation("cumulonimbus");
             }
@@ -1605,17 +1490,14 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         // Brick 31: rain streaks (procedural, camera cylinder).
         if (frameData.stormInfo.y > 0.003f) {
             if (shaders->generation("rain") != rainShaderGeneration ||
-                rainPipeline.id == 0) {
-                if (rainPipeline.id != 0) {
-                    frame.device.destroyPipeline(rainPipeline);
-                }
-                rainPipeline = frame.device.createPipeline(
+                rainPipeline.id() == 0) {
+                rainPipeline = { frame.device, frame.device.createPipeline(
                     { .shader = shaders->get("rain"),
                       .blend = rhi::BlendMode::Alpha,
                       .depth = { .testEnable = true,
                                  .writeEnable = false,
                                  .compare = rhi::CompareFunc::Less },
-                      .cull = rhi::CullMode::None });
+                      .cull = rhi::CullMode::None }) };
                 rainShaderGeneration = shaders->generation("rain");
             }
             frame.cmd.setPipeline(rainPipeline);
@@ -1631,7 +1513,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     // (skipping it left the previous exterior's AO ghosting over the
     // room). Water composition and Hi-Z occlusion stay exterior-only.
     if (useOffscreen && frame.device.caps().copyTexture &&
-        waterSceneBindGroup.id != 0) {
+        waterSceneBindGroup.id() != 0) {
         core::FrameProbe::Scope probe { *view.probe, "copyHizWater" };
         frame.cmd.copyTexture(offscreenColor, sceneColorCopy);
         frame.cmd.copyTexture(offscreenDepth, sceneDepthCopy);

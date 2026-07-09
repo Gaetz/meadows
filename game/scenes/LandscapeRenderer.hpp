@@ -16,6 +16,7 @@
 #include "engine/render/landscape/VegetationSystem.hpp"
 #include "engine/render/landscape/WaterSystem.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 #include "game/SceneSubmit.hpp" // RenderSnapshot
 #include "game/scenes/AtmosphereParams.hpp"
 
@@ -195,28 +196,29 @@ private:
     f32 ssaoUi { 0.7f };
     i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 vol, 4 ssao
 
-    rhi::BufferHandle frameUbo {};
-    rhi::BindGroupHandle frameBindGroup {};
+    rhi::UniqueBuffer frameUbo;
+    rhi::UniqueBindGroup frameBindGroup;
     // Chantier 2 B5: local lights UBO (binding 5, same group as FrameUbo).
-    rhi::BufferHandle lightsUbo {};
+    rhi::UniqueBuffer lightsUbo;
 
     // Chunks a sculpt changed, awaiting the safe-point rebuild in render().
     vector<u64> sculptDirtyChunks;
     vector<u64> sculptScatterChunks;
 
-    rhi::TextureHandle whiteTexture {}; // albedoTexture = 0 -> plain tint
-    rhi::SamplerHandle meshSampler {};
+    rhi::UniqueTexture whiteTexture; // albedoTexture = 0 -> plain tint
+    rhi::UniqueSampler meshSampler;
     // Per-snapshot-entry GPU state (tiny N; instancing per model+material
     // is the planned next step of the contract — HORIZONTAL-PASS note).
+    // U4-4: Unique members — vector erase/clear frees the GPU state.
     struct MeshDraw {
-        rhi::BufferHandle ubo {};
-        rhi::BindGroupHandle group {};
-        rhi::TextureHandle boundTexture {};
+        rhi::UniqueBuffer ubo;
+        rhi::UniqueBindGroup group;
+        rhi::TextureHandle boundTexture {}; // NON-owning (residency cache)
         core::Guid material {};
-        rhi::BindGroupHandle casterGroup {}; // B2a: ubo at binding 4
+        rhi::UniqueBindGroup casterGroup; // B2a: ubo at binding 4
     };
     vector<MeshDraw> meshDraws;
-    rhi::PipelineHandle meshPipeline {};
+    rhi::UniquePipeline meshPipeline;
     u64 meshShaderGeneration { 0 };
 
     // U4-2b: per-NPC draw state, keyed by entity id, mark/swept against
@@ -224,13 +226,13 @@ private:
     struct SkinnedDraw {
         u64 entityId { 0 };
         bool seen { false };
-        rhi::BufferHandle paletteSsbo {};
-        rhi::BufferHandle modelUbo {};
-        rhi::BindGroupHandle group {};
-        rhi::BindGroupHandle casterGroup {}; // B2a: ubo b4 + palette b2
+        rhi::UniqueBuffer paletteSsbo;
+        rhi::UniqueBuffer modelUbo;
+        rhi::UniqueBindGroup group;
+        rhi::UniqueBindGroup casterGroup; // B2a: ubo b4 + palette b2
     };
     vector<SkinnedDraw> skinnedDraws;
-    rhi::PipelineHandle skinnedPipeline {};
+    rhi::UniquePipeline skinnedPipeline;
     u64 skinnedShaderGeneration { 0 };
 
     // Brick 34 (chantier 7.1): dust light shafts — one small additive
@@ -238,79 +240,79 @@ private:
     struct LightShaft {
         u64 entityId { 0 };
         bool seen { false }; // mark/sweep against unloaded cells
-        rhi::BufferHandle vertices {};
-        rhi::BufferHandle ubo {};
-        rhi::BindGroupHandle group {};
+        rhi::UniqueBuffer vertices;
+        rhi::UniqueBuffer ubo;
+        rhi::UniqueBindGroup group;
         Vec3 cachedDir { 0.0f };
         u32 vertexCount { 0 };
     };
     vector<LightShaft> lightShafts;
-    rhi::PipelineHandle shaftPipeline {};
+    rhi::UniquePipeline shaftPipeline;
     u64 shaftShaderGeneration { 0 };
     // Brick 32 (chantier 7.4): placed water volumes — one alpha-blended
     // surface quad per volume.
     struct WaterQuad {
         u64 entityId { 0 };
         bool seen { false };
-        rhi::BufferHandle vertices {};
-        rhi::BufferHandle ubo {};
-        rhi::BindGroupHandle group {};
+        rhi::UniqueBuffer vertices;
+        rhi::UniqueBuffer ubo;
+        rhi::UniqueBindGroup group;
     };
     vector<WaterQuad> waterQuads;
-    rhi::PipelineHandle waterVolumePipeline {};
+    rhi::UniquePipeline waterVolumePipeline;
     u64 waterVolumeShaderGeneration { 0 };
     // Brick 30 (chantier 7.6): horizon cumulonimbus — a static buffer of
     // 8 camera-anchored towers, visible only while stormFront > 0.
-    rhi::BufferHandle stormVertices {};
-    rhi::PipelineHandle stormPipeline {};
+    rhi::UniqueBuffer stormVertices;
+    rhi::UniquePipeline stormPipeline;
     u64 stormShaderGeneration { 0 };
     // Brick 31 (chantier 7.7): procedural rain streaks + the top-down
     // occlusion depth (no rain under roofs) + global wetness.
-    rhi::PipelineHandle rainPipeline {};
+    rhi::UniquePipeline rainPipeline;
     u64 rainShaderGeneration { 0 };
-    rhi::TextureHandle rainOcclusionTex {};
-    rhi::FramebufferHandle rainOcclusionFb {};
-    rhi::SamplerHandle rainSampler {};
-    rhi::BufferHandle rainOcclusionUbo {};
-    rhi::BindGroupHandle rainCasterGroup {};
-    rhi::BindGroupHandle rainReceiverGroup {};
+    rhi::UniqueTexture rainOcclusionTex;
+    rhi::UniqueFramebuffer rainOcclusionFb;
+    rhi::UniqueSampler rainSampler;
+    rhi::UniqueBuffer rainOcclusionUbo;
+    rhi::UniqueBindGroup rainCasterGroup;
+    rhi::UniqueBindGroup rainReceiverGroup;
 
     // Chantier 6 B2a: meshes + skinned NPCs cast into the sun cascades
     // (depth-only pipelines; the model UBOs are re-used, one frame behind
     // for NPCs — invisible at shadow resolution).
-    rhi::PipelineHandle meshCasterPipeline {};
-    rhi::PipelineHandle skinnedCasterPipeline {};
+    rhi::UniquePipeline meshCasterPipeline;
+    rhi::UniquePipeline skinnedCasterPipeline;
     u64 meshCasterShaderGeneration { 0 };
     u64 skinnedCasterShaderGeneration { 0 };
     // B2b (chantier 7.5): the interior key-light shadow — ONE perspective
     // depth layer from the castsShadow light nearest the camera.
-    rhi::TextureHandle keyShadowTex {};
-    rhi::FramebufferHandle keyShadowFb {};
-    rhi::SamplerHandle keyShadowSampler {};
-    rhi::BufferHandle keyShadowUbo {};
-    rhi::BindGroupHandle keyShadowCasterGroup {};
-    rhi::BindGroupHandle keyShadowReceiverGroup {};
+    rhi::UniqueTexture keyShadowTex;
+    rhi::UniqueFramebuffer keyShadowFb;
+    rhi::UniqueSampler keyShadowSampler;
+    rhi::UniqueBuffer keyShadowUbo;
+    rhi::UniqueBindGroup keyShadowCasterGroup;
+    rhi::UniqueBindGroup keyShadowReceiverGroup;
 
-    rhi::TextureHandle offscreenColor {};
-    rhi::TextureHandle offscreenDepth {};
-    rhi::FramebufferHandle offscreenFb {};
+    rhi::UniqueTexture offscreenColor;
+    rhi::UniqueTexture offscreenDepth;
+    rhi::UniqueFramebuffer offscreenFb;
     // Pre-water snapshots of the opaque scene (copyTexture targets).
-    rhi::TextureHandle sceneColorCopy {};
-    rhi::TextureHandle sceneDepthCopy {};
-    rhi::BindGroupHandle waterSceneBindGroup {};
+    rhi::UniqueTexture sceneColorCopy;
+    rhi::UniqueTexture sceneDepthCopy;
+    rhi::UniqueBindGroup waterSceneBindGroup;
     // Half-res mirrored scene for the water's planar reflection.
-    rhi::TextureHandle reflectionColor {};
-    rhi::TextureHandle reflectionDepth {};
-    rhi::FramebufferHandle reflectionFb {};
-    rhi::BufferHandle reflectionUbo {};
-    rhi::BindGroupHandle reflectionBindGroup {};
-    rhi::SamplerHandle depthSampler {}; // nearest — depth must not filter
-    rhi::SamplerHandle blitSampler {};
+    rhi::UniqueTexture reflectionColor;
+    rhi::UniqueTexture reflectionDepth;
+    rhi::UniqueFramebuffer reflectionFb;
+    rhi::UniqueBuffer reflectionUbo;
+    rhi::UniqueBindGroup reflectionBindGroup;
+    rhi::UniqueSampler depthSampler; // nearest — depth must not filter
+    rhi::UniqueSampler blitSampler;
     // B4: one blit group per adaptation ping-pong side (binding 5 = the
     // exposure texture the tonemap taps); [0] doubles as the only group
     // on the no-postFx fallback path.
-    array<rhi::BindGroupHandle, 2> blitBindGroups {};
-    rhi::PipelineHandle blitPipeline {};
+    array<rhi::UniqueBindGroup, 2> blitBindGroups;
+    rhi::UniquePipeline blitPipeline;
     u64 blitShaderGeneration { 0 };
     u32 offscreenWidth { 0 };
     u32 offscreenHeight { 0 };

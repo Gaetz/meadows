@@ -74,6 +74,7 @@ add_library(meadows-render STATIC
     render/landscape/VegetationSystem.cpp
     render/landscape/WaterSystem.cpp
     rhi/Device.cpp
+    rhi/UniqueHandle.cpp
     rhi/backends/gl/GlDevice.cpp
     rhi/backends/gl/GlDeviceBase.cpp
     rhi/backends/gl/GlDevice46.cpp
