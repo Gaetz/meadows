@@ -3,10 +3,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/render/Frustum.hpp"
 #include "engine/assets/MeshData.hpp"
+#include "engine/render/landscape/ChunkStreamer.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 
@@ -111,16 +111,13 @@ public:
     };
     void collectChunkAabbs(vector<ChunkAabb>& out) const {
         out.clear();
-        out.reserve(chunks.size());
-        for (const auto& [key, chunk] : chunks) {
+        out.reserve(streamer.chunks.size());
+        for (const auto& [key, chunk] : streamer.chunks) {
             if (chunk.residentLod == kNoLod) {
                 continue;
             }
-            const f32 x0 = static_cast<f32>(static_cast<i32>(key >> 32)) *
-                           kChunkSize;
-            const f32 z0 =
-                static_cast<f32>(static_cast<i32>(key & 0xffffffffu)) *
-                kChunkSize;
+            const f32 x0 = static_cast<f32>(chunkKeyCx(key)) * kChunkSize;
+            const f32 z0 = static_cast<f32>(chunkKeyCz(key)) * kChunkSize;
             out.push_back({ key, { x0, chunk.minY, z0 },
                             { x0 + kChunkSize, chunk.maxY,
                               z0 + kChunkSize } });
@@ -131,8 +128,8 @@ public:
     // table (copied only when a rebuild starts, ~1/s).
     std::unordered_map<u64, f32> chunkTops() const {
         std::unordered_map<u64, f32> tops;
-        tops.reserve(chunks.size());
-        for (const auto& [key, chunk] : chunks) {
+        tops.reserve(streamer.chunks.size());
+        for (const auto& [key, chunk] : streamer.chunks) {
             if (chunk.residentLod != kNoLod) {
                 tops.emplace(key, chunk.maxY);
             }
@@ -170,28 +167,13 @@ private:
         f32 minY { 0.0f };
         f32 maxY { 0.0f };
     };
-    // A worker's finished mesh. `generation` stamps which world it belongs
-    // to; stale results (after regenerate) are dropped on arrival.
-    struct BuiltChunk {
-        i32 cx { 0 };
-        i32 cz { 0 };
+    // A worker's finished mesh (the streamer stamps cx/cz/generation).
+    struct BuiltMesh {
         u8 lod { 0 };
-        u64 generation { 0 };
         vector<MeshVertex> vertices;
         f32 minY { 0.0f };
         f32 maxY { 0.0f };
     };
-    // Owned via shared_ptr and captured by every worker job, so a job that
-    // outlives this system still has a valid queue to push into (the
-    // TextureCache teardown-safety pattern).
-    struct Shared {
-        core::ConcurrentQueue<BuiltChunk> built;
-    };
-
-    static u64 keyOf(i32 cx, i32 cz) {
-        return (static_cast<u64>(static_cast<u32>(cx)) << 32) |
-               static_cast<u32>(cz);
-    }
 
     void pumpUploads(rhi::Device& device);
     void requestMissing(const Vec3& cameraPos);
@@ -200,11 +182,9 @@ private:
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
-    sptr<Shared> shared;
-    core::JobSystem* jobs { nullptr };
-
-    std::unordered_map<u64, Chunk> chunks;
-    u64 generation { 0 };
+    // The shared ring mechanics (audit U3-1): map + generation-stamped
+    // queue + budgeted request/evict live in ChunkStreamer.
+    ChunkStreamer<Chunk, BuiltMesh> streamer;
     u32 resident { 0 };
     u32 pending { 0 };
     u32 lastUploads { 0 };

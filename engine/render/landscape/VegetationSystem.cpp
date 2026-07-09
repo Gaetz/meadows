@@ -175,8 +175,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
 
 void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                               core::JobSystem& jobSystem, u32 terrainSeed) {
-    jobs = &jobSystem;
-    shared = std::make_shared<Shared>();
+    streamer.create(jobSystem);
     createVariantMeshes(device, terrainSeed);
     shaders.load(kTreeShader, { { "FrameUbo", 0 } },
                  { { "uShadowMap", 1 } });
@@ -266,11 +265,9 @@ void VegetationSystem::destroyVariantMeshes(rhi::Device& device) {
 }
 
 void VegetationSystem::destroy(rhi::Device& device) {
-    ++generation;
-    for (auto& [key, chunk] : chunks) {
+    streamer.invalidateAll([&](Chunk& chunk) {
         device.destroyBuffer(chunk.instanceBuffer);
-    }
-    chunks.clear();
+    });
     instances = 0;
     device.destroyPipeline(pipeline);
     pipeline = {};
@@ -280,11 +277,9 @@ void VegetationSystem::destroy(rhi::Device& device) {
 }
 
 void VegetationSystem::regenerate(rhi::Device& device, u32 terrainSeed) {
-    ++generation;
-    for (auto& [key, chunk] : chunks) {
+    streamer.invalidateAll([&](Chunk& chunk) {
         device.destroyBuffer(chunk.instanceBuffer);
-    }
-    chunks.clear();
+    });
     instances = 0;
     destroyVariantMeshes(device);
     createVariantMeshes(device, terrainSeed);
@@ -295,36 +290,33 @@ void VegetationSystem::invalidateChunks(rhi::Device& device,
     // The shared variant meshes are height-independent — only per-chunk scatter
     // is dropped so props re-seat on the new terrain.
     for (const u64 key : keys) {
-        const auto it = chunks.find(key);
-        if (it == chunks.end() || !it->second.resident) {
+        const auto it = streamer.chunks.find(key);
+        if (it == streamer.chunks.end() || !it->second.resident) {
             continue; // missing, or still streaming in (no stale swap)
         }
         device.destroyBuffer(it->second.instanceBuffer);
         instances -= it->second.total;
-        chunks.erase(it); // update() re-requests + re-scatters with new heights
+        // update() re-requests + re-scatters with new heights.
+        streamer.chunks.erase(it);
     }
 }
 
 void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
                               const Vec3& cameraPos) {
-    // Budgeted uploads.
-    u32 uploads = 0;
-    BuiltChunk built;
-    while (uploads < kMaxUploadsPerFrame && shared->built.tryPop(built)) {
-        if (built.generation != generation) {
-            continue;
-        }
-        const auto it = chunks.find(keyOf(built.cx, built.cz));
-        if (it == chunks.end() || it->second.resident) {
-            continue;
+    // Budgeted uploads (U3-1: ring mechanics in ChunkStreamer; this lambda
+    // is the vegetation-specific accept — variant packing + GPU upload).
+    streamer.pump(kMaxUploadsPerFrame, 0.0, [&](u64 key, auto& built) {
+        const auto it = streamer.chunks.find(key);
+        if (it == streamer.chunks.end() || it->second.resident) {
+            return false;
         }
         Chunk& chunk = it->second;
         vector<Instance> packed;
         for (u32 v = 0; v < kVariantCount; ++v) {
             chunk.firstInstance[v] = static_cast<u32>(packed.size());
-            chunk.counts[v] = static_cast<u32>(built.buckets[v].size());
-            packed.insert(packed.end(), built.buckets[v].begin(),
-                          built.buckets[v].end());
+            chunk.counts[v] = static_cast<u32>(built.payload[v].size());
+            packed.insert(packed.end(), built.payload[v].begin(),
+                          built.payload[v].end());
         }
         chunk.total = static_cast<u32>(packed.size());
         if (chunk.total > 0) {
@@ -341,65 +333,33 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
         }
         chunk.resident = true;
         instances += chunk.total;
-        ++uploads;
-    }
+        return true;
+    });
 
     // Request missing chunks — nearest first, budgeted (the rest is
     // re-detected next frame; the state IS the queue). See TerrainSystem:
     // the unbudgeted ring edge was part of the fast-travel stutter.
-    const i32 camCx = static_cast<i32>(
-        std::floor(cameraPos.x / TerrainSystem::kChunkSize));
-    const i32 camCz = static_cast<i32>(
-        std::floor(cameraPos.z / TerrainSystem::kChunkSize));
-    struct Candidate {
-        i32 cx, cz, dist2;
-    };
-    vector<Candidate> wanted;
-    for (i32 dz = -kViewRadius; dz <= kViewRadius; ++dz) {
-        for (i32 dx = -kViewRadius; dx <= kViewRadius; ++dx) {
-            const i32 cx = camCx + dx;
-            const i32 cz = camCz + dz;
-            if (chunks.contains(keyOf(cx, cz))) {
-                continue;
-            }
-            wanted.push_back({ cx, cz, dx * dx + dz * dz });
-        }
-    }
-    std::sort(wanted.begin(), wanted.end(),
-              [](const Candidate& a, const Candidate& b) {
-                  return a.dist2 < b.dist2;
-              });
-    u32 requests = 0;
-    for (const Candidate& c : wanted) {
-        if (requests >= kMaxRequestsPerFrame) {
-            break;
-        }
-        const i32 cx = c.cx;
-        const i32 cz = c.cz;
-        chunks.emplace(keyOf(cx, cz), Chunk {});
-        jobs->enqueue([sharedRef = shared, params, cx, cz,
-                       gen = generation] {
-            sharedRef->built.push(
-                { cx, cz, gen, scatterProps(params, cx, cz) });
+    const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
+    const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
+    streamer.requestMissing(
+        camCx, camCz, kViewRadius, kMaxRequestsPerFrame,
+        [&](i32 cx, i32 cz, i32, i32) {
+            return !streamer.chunks.contains(chunkKey(cx, cz));
+        },
+        [&](i32 cx, i32 cz, i32, i32) {
+            streamer.chunks.emplace(chunkKey(cx, cz), Chunk {});
+            streamer.enqueueBuild(cx, cz, [params, cx, cz] {
+                return scatterProps(params, cx, cz);
+            });
         });
-        ++requests;
-    }
 
     // Evict beyond hysteresis.
-    for (auto it = chunks.begin(); it != chunks.end();) {
-        const i32 cx = static_cast<i32>(it->first >> 32);
-        const i32 cz = static_cast<i32>(it->first & 0xffffffffu);
-        if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) <=
-            kEvictRadius) {
-            ++it;
-            continue;
+    streamer.evictFar(camCx, camCz, kEvictRadius, [&](Chunk& chunk) {
+        if (chunk.resident) {
+            device.destroyBuffer(chunk.instanceBuffer);
+            instances -= chunk.total;
         }
-        if (it->second.resident) {
-            device.destroyBuffer(it->second.instanceBuffer);
-            instances -= it->second.total;
-        }
-        it = chunks.erase(it);
-    }
+    });
 }
 
 void VegetationSystem::buildPipeline(rhi::Device& device,
@@ -498,10 +458,10 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         if (!frustum) {
             return true;
         }
-        const f32 x0 = static_cast<f32>(static_cast<i32>(key >> 32)) *
-                       TerrainSystem::kChunkSize;
-        const f32 z0 = static_cast<f32>(static_cast<i32>(key & 0xffffffffu)) *
-                       TerrainSystem::kChunkSize;
+        const f32 x0 =
+            static_cast<f32>(chunkKeyCx(key)) * TerrainSystem::kChunkSize;
+        const f32 z0 =
+            static_cast<f32>(chunkKeyCz(key)) * TerrainSystem::kChunkSize;
         return frustum->intersectsAabb(
             { x0 - 4.0f, chunk.minY - 1.0f, z0 - 4.0f },
             { x0 + TerrainSystem::kChunkSize + 4.0f, chunk.maxY + 14.0f,
@@ -510,9 +470,9 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     const bool culling = frustum != nullptr || occluded != nullptr;
     std::unordered_map<u64, bool> visible;
     if (culling) {
-        visible.reserve(chunks.size());
+        visible.reserve(streamer.chunks.size());
         u32 drawnChunks = 0;
-        for (const auto& [key, chunk] : chunks) {
+        for (const auto& [key, chunk] : streamer.chunks) {
             const bool v = chunk.resident && chunk.total > 0 &&
                            chunkVisible(key, chunk);
             visible.emplace(key, v);
@@ -536,10 +496,8 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     // Canopy LOD pick, per chunk: high detail near the camera only (and
     // never in mirrored/downsampled passes). Variants without a low twin
     // (rocks, bushes, authored overrides) always use their main mesh.
-    const i32 camCx = static_cast<i32>(
-        std::floor(cameraPos.x / TerrainSystem::kChunkSize));
-    const i32 camCz = static_cast<i32>(
-        std::floor(cameraPos.z / TerrainSystem::kChunkSize));
+    const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
+    const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
     const auto lowDetail = [&](u64 key, const VariantMesh& mesh) {
         if (mesh.lowIndexCount == 0) {
             return false;
@@ -547,8 +505,8 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         if (forceLowDetail) {
             return true;
         }
-        const i32 cx = static_cast<i32>(key >> 32);
-        const i32 cz = static_cast<i32>(key & 0xffffffffu);
+        const i32 cx = chunkKeyCx(key);
+        const i32 cz = chunkKeyCz(key);
         return std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
                kHighDetailRadius;
     };
@@ -560,7 +518,7 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         const VariantMesh& mesh = variantMeshes[v];
         for (const bool lowPass : { false, true }) {
             bool meshBound = false;
-            for (const auto& [key, chunk] : chunks) {
+            for (const auto& [key, chunk] : streamer.chunks) {
                 if (!chunk.resident || chunk.counts[v] == 0 ||
                     culled(key) || lowDetail(key, mesh) != lowPass) {
                     continue;
@@ -590,21 +548,19 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
                                  rhi::BindGroupHandle casterBindGroup,
                                  const Vec3& cameraPos,
                                  i32 maxChunkDistance) {
-    const i32 camCx = static_cast<i32>(
-        std::floor(cameraPos.x / TerrainSystem::kChunkSize));
-    const i32 camCz = static_cast<i32>(
-        std::floor(cameraPos.z / TerrainSystem::kChunkSize));
+    const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
+    const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
     cmd.setPipeline(casterPipeline);
     cmd.setBindGroup(0, frameBindGroup);
     cmd.setBindGroup(1, casterBindGroup);
     for (u32 v = 0; v < kVariantCount; ++v) {
         bool meshBound = false;
-        for (const auto& [key, chunk] : chunks) {
+        for (const auto& [key, chunk] : streamer.chunks) {
             if (!chunk.resident || chunk.counts[v] == 0) {
                 continue;
             }
-            const i32 cx = static_cast<i32>(key >> 32);
-            const i32 cz = static_cast<i32>(key & 0xffffffffu);
+            const i32 cx = chunkKeyCx(key);
+            const i32 cz = chunkKeyCz(key);
             if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
                 maxChunkDistance) {
                 continue; // beyond the last shadow cascade

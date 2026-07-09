@@ -1,10 +1,8 @@
 #pragma once
 
-#include <unordered_map>
-
-#include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/render/Frustum.hpp"
+#include "engine/render/landscape/ChunkStreamer.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 
@@ -91,28 +89,12 @@ private:
         f32 minY { 0.0f };
         f32 maxY { 0.0f };
     };
-    struct BuiltChunk {
-        i32 cx { 0 };
-        i32 cz { 0 };
-        u64 generation { 0 };
-        vector<Instance> instances;
-    };
-    struct Shared {
-        core::ConcurrentQueue<BuiltChunk> built;
-    };
-
-    static u64 keyOf(i32 cx, i32 cz) {
-        return (static_cast<u64>(static_cast<u32>(cx)) << 32) |
-               static_cast<u32>(cz);
-    }
 
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
-    sptr<Shared> shared;
-    core::JobSystem* jobs { nullptr };
-
-    std::unordered_map<u64, Chunk> chunks;
-    u64 generation { 0 };
+    // The shared ring mechanics (audit U3-1): map + generation-stamped
+    // queue + budgeted request/evict live in ChunkStreamer.
+    ChunkStreamer<Chunk, vector<Instance>> streamer;
     u32 instances { 0 };
 
     rhi::BufferHandle bladeVertexBuffer {};

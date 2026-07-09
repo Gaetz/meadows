@@ -37,9 +37,8 @@ Vec3 terrainColor(f32 height, const Vec3& normal, f32 seaLevel) {
     return glm::mix(color, kSnow, snowiness);
 }
 
-i32 chunkCoordOf(f32 worldCoord) {
-    return static_cast<i32>(
-        std::floor(worldCoord / TerrainSystem::kChunkSize));
+i32 camChunk(f32 worldCoord) {
+    return chunkCoordOf(worldCoord, TerrainSystem::kChunkSize);
 }
 
 } // namespace
@@ -132,8 +131,7 @@ vector<u32> buildChunkIndices(u32 lod) {
 
 void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                            core::JobSystem& jobSystem) {
-    jobs = &jobSystem;
-    shared = std::make_shared<Shared>();
+    streamer.create(jobSystem);
 
     for (u32 lod = 0; lod < kLodCount; ++lod) {
         const vector<u32> indices = buildChunkIndices(lod);
@@ -184,13 +182,12 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
 }
 
 void TerrainSystem::destroy(rhi::Device& device) {
-    // Orphaned worker jobs keep pushing into `shared` harmlessly; results die
-    // with the last reference (TextureCache teardown pattern).
-    ++generation;
-    for (auto& [key, chunk] : chunks) {
+    // Orphaned worker jobs keep pushing into the streamer's queue
+    // harmlessly; results die with the last reference (TextureCache
+    // teardown pattern) and stale generations drop on arrival.
+    streamer.invalidateAll([&](Chunk& chunk) {
         device.destroyBuffer(chunk.vertexBuffer);
-    }
-    chunks.clear();
+    });
     resident = 0;
     pending = 0;
     device.destroyPipeline(pipeline);
@@ -210,11 +207,9 @@ void TerrainSystem::destroy(rhi::Device& device) {
 }
 
 void TerrainSystem::regenerate(rhi::Device& device) {
-    ++generation;
-    for (auto& [key, chunk] : chunks) {
+    streamer.invalidateAll([&](Chunk& chunk) {
         device.destroyBuffer(chunk.vertexBuffer);
-    }
-    chunks.clear();
+    });
     resident = 0;
     pending = 0;
     // update() re-requests the ring with the new params next frame.
@@ -222,19 +217,19 @@ void TerrainSystem::regenerate(rhi::Device& device) {
 
 void TerrainSystem::remeshChunks(const vector<u64>& keys) {
     for (const u64 key : keys) {
-        const auto it = chunks.find(key);
-        if (it == chunks.end() || it->second.residentLod == kNoLod ||
+        const auto it = streamer.chunks.find(key);
+        if (it == streamer.chunks.end() ||
+            it->second.residentLod == kNoLod ||
             it->second.queuedLod != kNoLod) {
             continue; // not drawn yet, or a build is already in flight
         }
-        const i32 cx = static_cast<i32>(key >> 32);
-        const i32 cz = static_cast<i32>(key & 0xffffffffu);
         // Rebuild at the current LOD; enqueueBuild captures today's params
         // (the new patches). The old mesh keeps drawing until pumpUploads
         // swaps in the result (residentLod != kNoLod → the LOD-swap path).
         it->second.queuedLod = it->second.residentLod;
         ++pending;
-        enqueueBuild(cx, cz, it->second.residentLod);
+        enqueueBuild(chunkKeyCx(key), chunkKeyCz(key),
+                     it->second.residentLod);
     }
 }
 
@@ -245,137 +240,107 @@ void TerrainSystem::update(rhi::Device& device, const Vec3& cameraPos) {
 }
 
 void TerrainSystem::pumpUploads(rhi::Device& device) {
-    lastUploads = 0;
     // Time-budgeted on top of the count cap: 8 LOD0 uploads cost far more
     // than 8 LOD3 ones (the frame probe showed the count cap alone
     // spiking past 30 ms in Debug). At least one upload always lands, so
-    // progress is guaranteed.
-    const auto start = core::clockNow();
-    const auto elapsedMs = [&] { return core::millisecondsSince(start); };
-    BuiltChunk built;
-    while (lastUploads < kMaxUploadsPerFrame &&
-           (lastUploads == 0 || elapsedMs() < kUploadMsBudget) &&
-           shared->built.tryPop(built)) {
-        if (built.generation != generation) {
-            continue; // stale: regenerated or torn down since the request
-        }
-        const auto it = chunks.find(keyOf(built.cx, built.cz));
-        if (it == chunks.end() || it->second.queuedLod != built.lod) {
-            continue; // evicted while in flight, or superseded by another LOD
-        }
-        Chunk& chunk = it->second;
-        if (chunk.residentLod == kNoLod) {
-            ++resident;
-        } else {
-            // LOD swap: the old mesh drew until this very frame — no hole.
-            device.destroyBuffer(chunk.vertexBuffer);
-        }
-        chunk.vertexBuffer = device.createBuffer(
-            { .usage = rhi::BufferUsage::Vertex,
-              .size = built.vertices.size() * sizeof(MeshVertex) },
-            built.vertices.data());
-        chunk.residentLod = built.lod;
-        chunk.queuedLod = kNoLod;
-        chunk.minY = built.minY;
-        chunk.maxY = built.maxY;
-        --pending;
-        ++lastUploads;
-    }
-}
-
-void TerrainSystem::requestMissing(const Vec3& cameraPos) {
-    const i32 camCx = chunkCoordOf(cameraPos.x);
-    const i32 camCz = chunkCoordOf(cameraPos.z);
-
-    struct Candidate {
-        i32 cx, cz, dist2;
-        u8 lod;
-        bool missing; // vs a LOD swap of a resident chunk
-    };
-    vector<Candidate> wanted;
-    for (i32 dz = -kViewRadius; dz <= kViewRadius; ++dz) {
-        for (i32 dx = -kViewRadius; dx <= kViewRadius; ++dx) {
-            const i32 cx = camCx + dx;
-            const i32 cz = camCz + dz;
-            const u8 lod = static_cast<u8>(
-                lodForDistance(std::max(std::abs(dx), std::abs(dz))));
-            const auto it = chunks.find(keyOf(cx, cz));
-            if (it == chunks.end()) {
-                wanted.push_back({ cx, cz, dx * dx + dz * dz, lod, true });
-                continue;
+    // progress is guaranteed. (U3-1: budget loop in ChunkStreamer; this
+    // lambda is the terrain-specific accept — the LOD-swap upload.)
+    lastUploads = streamer.pump(
+        kMaxUploadsPerFrame, kUploadMsBudget, [&](u64 key, auto& built) {
+            const auto it = streamer.chunks.find(key);
+            if (it == streamer.chunks.end() ||
+                it->second.queuedLod != built.payload.lod) {
+                // Evicted while in flight, or superseded by another LOD.
+                return false;
             }
-            // LOD change: request the new mesh once the previous request (if
-            // any) has landed; the resident mesh keeps drawing meanwhile.
-            const Chunk& chunk = it->second;
-            if (chunk.queuedLod == kNoLod && chunk.residentLod != lod) {
-                wanted.push_back({ cx, cz, dx * dx + dz * dz, lod, false });
+            Chunk& chunk = it->second;
+            if (chunk.residentLod == kNoLod) {
+                ++resident;
+            } else {
+                // LOD swap: the old mesh drew until this very frame — no
+                // hole.
+                device.destroyBuffer(chunk.vertexBuffer);
             }
-        }
-    }
-    // Center-out: the terrain under the camera arrives first, holes stay at
-    // the horizon. Anything past the request budget is simply re-detected
-    // next frame — the state IS the queue.
-    std::sort(wanted.begin(), wanted.end(),
-              [](const Candidate& a, const Candidate& b) {
-                  return a.dist2 < b.dist2;
-              });
-
-    u32 requests = 0;
-    for (const Candidate& c : wanted) {
-        if (requests >= kMaxRequestsPerFrame) {
-            break;
-        }
-        if (c.missing) {
-            Chunk chunk;
-            chunk.queuedLod = c.lod;
-            chunks.emplace(keyOf(c.cx, c.cz), chunk);
-        } else {
-            chunks.find(keyOf(c.cx, c.cz))->second.queuedLod = c.lod;
-        }
-        ++pending;
-        enqueueBuild(c.cx, c.cz, c.lod);
-        ++requests;
-    }
-}
-
-void TerrainSystem::enqueueBuild(i32 cx, i32 cz, u8 lod) {
-    jobs->enqueue(
-        [sharedRef = shared, chunkParams = params, cx, cz, lod,
-         gen = generation] {
-            BuiltChunk built { cx, cz, lod, gen,
-                               buildChunkVertices(chunkParams, cx, cz, lod) };
-            // Height range for the frustum AABB (skirts included: they
-            // hang below, keeping the bound conservative).
-            built.minY = built.vertices[0].position.y;
-            built.maxY = built.minY;
-            for (const MeshVertex& vertex : built.vertices) {
-                built.minY = glm::min(built.minY, vertex.position.y);
-                built.maxY = glm::max(built.maxY, vertex.position.y);
-            }
-            sharedRef->built.push(std::move(built));
+            chunk.vertexBuffer = device.createBuffer(
+                { .usage = rhi::BufferUsage::Vertex,
+                  .size = built.payload.vertices.size() *
+                          sizeof(MeshVertex) },
+                built.payload.vertices.data());
+            chunk.residentLod = built.payload.lod;
+            chunk.queuedLod = kNoLod;
+            chunk.minY = built.payload.minY;
+            chunk.maxY = built.payload.maxY;
+            --pending;
+            return true;
         });
 }
 
+void TerrainSystem::requestMissing(const Vec3& cameraPos) {
+    const i32 camCx = camChunk(cameraPos.x);
+    const i32 camCz = camChunk(cameraPos.z);
+    // Center-out: the terrain under the camera arrives first, holes stay at
+    // the horizon. Anything past the request budget is simply re-detected
+    // next frame — the state IS the queue. The desired LOD is re-derived
+    // from the ring distance in both lambdas (cheap, stateless).
+    const auto lodAt = [](i32 dx, i32 dz) {
+        return static_cast<u8>(
+            lodForDistance(std::max(std::abs(dx), std::abs(dz))));
+    };
+    streamer.requestMissing(
+        camCx, camCz, kViewRadius, kMaxRequestsPerFrame,
+        [&](i32 cx, i32 cz, i32 dx, i32 dz) {
+            const auto it = streamer.chunks.find(chunkKey(cx, cz));
+            if (it == streamer.chunks.end()) {
+                return true; // missing entirely
+            }
+            // LOD change: request the new mesh once the previous request
+            // (if any) has landed; the resident mesh keeps drawing.
+            const Chunk& chunk = it->second;
+            return chunk.queuedLod == kNoLod &&
+                   chunk.residentLod != lodAt(dx, dz);
+        },
+        [&](i32 cx, i32 cz, i32 dx, i32 dz) {
+            const u8 lod = lodAt(dx, dz);
+            const auto it = streamer.chunks.find(chunkKey(cx, cz));
+            if (it == streamer.chunks.end()) {
+                Chunk chunk;
+                chunk.queuedLod = lod;
+                streamer.chunks.emplace(chunkKey(cx, cz), chunk);
+            } else {
+                it->second.queuedLod = lod;
+            }
+            ++pending;
+            enqueueBuild(cx, cz, lod);
+        });
+}
+
+void TerrainSystem::enqueueBuild(i32 cx, i32 cz, u8 lod) {
+    streamer.enqueueBuild(cx, cz, [chunkParams = params, cx, cz, lod] {
+        BuiltMesh built { lod, buildChunkVertices(chunkParams, cx, cz, lod) };
+        // Height range for the frustum AABB (skirts included: they
+        // hang below, keeping the bound conservative).
+        built.minY = built.vertices[0].position.y;
+        built.maxY = built.minY;
+        for (const MeshVertex& vertex : built.vertices) {
+            built.minY = glm::min(built.minY, vertex.position.y);
+            built.maxY = glm::max(built.maxY, vertex.position.y);
+        }
+        return built;
+    });
+}
+
 void TerrainSystem::evictFar(rhi::Device& device, const Vec3& cameraPos) {
-    const i32 camCx = chunkCoordOf(cameraPos.x);
-    const i32 camCz = chunkCoordOf(cameraPos.z);
-    for (auto it = chunks.begin(); it != chunks.end();) {
-        const i32 cx = static_cast<i32>(it->first >> 32);
-        const i32 cz = static_cast<i32>(it->first & 0xffffffffu);
-        const i32 dist = std::max(std::abs(cx - camCx), std::abs(cz - camCz));
-        if (dist <= kEvictRadius) {
-            ++it;
-            continue;
-        }
-        if (it->second.residentLod != kNoLod) {
-            device.destroyBuffer(it->second.vertexBuffer);
-            --resident;
-        }
-        if (it->second.queuedLod != kNoLod) {
-            --pending; // in-flight result will be dropped on arrival
-        }
-        it = chunks.erase(it);
-    }
+    streamer.evictFar(camChunk(cameraPos.x), camChunk(cameraPos.z),
+                      kEvictRadius, [&](Chunk& chunk) {
+                          if (chunk.residentLod != kNoLod) {
+                              device.destroyBuffer(chunk.vertexBuffer);
+                              --resident;
+                          }
+                          if (chunk.queuedLod != kNoLod) {
+                              // In-flight result dropped on arrival.
+                              --pending;
+                          }
+                      });
 }
 
 void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
@@ -464,7 +429,7 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
     // Grouped by LOD so the shared index buffer binds once per level.
     for (u32 lod = 0; lod < kLodCount; ++lod) {
         bool indexBufferBound = false;
-        for (const auto& [key, chunk] : chunks) {
+        for (const auto& [key, chunk] : streamer.chunks) {
             if (chunk.residentLod != lod) {
                 continue;
             }
@@ -472,11 +437,10 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
                 continue; // hidden behind a ridge (brick 26)
             }
             if (frustum) {
-                const f32 x0 = static_cast<f32>(static_cast<i32>(key >> 32)) *
-                               kChunkSize;
+                const f32 x0 =
+                    static_cast<f32>(chunkKeyCx(key)) * kChunkSize;
                 const f32 z0 =
-                    static_cast<f32>(static_cast<i32>(key & 0xffffffffu)) *
-                    kChunkSize;
+                    static_cast<f32>(chunkKeyCz(key)) * kChunkSize;
                 if (!frustum->intersectsAabb(
                         { x0, chunk.minY, z0 },
                         { x0 + kChunkSize, chunk.maxY, z0 + kChunkSize })) {
@@ -502,18 +466,18 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
 void TerrainSystem::drawDepth(rhi::CommandBuffer& cmd,
                               rhi::BindGroupHandle casterBindGroup,
                               const Vec3& cameraPos, i32 maxChunkDistance) {
-    const i32 camCx = chunkCoordOf(cameraPos.x);
-    const i32 camCz = chunkCoordOf(cameraPos.z);
+    const i32 camCx = camChunk(cameraPos.x);
+    const i32 camCz = camChunk(cameraPos.z);
     cmd.setPipeline(casterPipeline);
     cmd.setBindGroup(0, casterBindGroup);
     for (u32 lod = 0; lod < kLodCount; ++lod) {
         bool indexBufferBound = false;
-        for (const auto& [key, chunk] : chunks) {
+        for (const auto& [key, chunk] : streamer.chunks) {
             if (chunk.residentLod != lod) {
                 continue;
             }
-            const i32 cx = static_cast<i32>(key >> 32);
-            const i32 cz = static_cast<i32>(key & 0xffffffffu);
+            const i32 cx = chunkKeyCx(key);
+            const i32 cz = chunkKeyCz(key);
             if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
                 maxChunkDistance) {
                 continue; // beyond the last cascade

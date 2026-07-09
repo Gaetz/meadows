@@ -3,10 +3,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/render/Frustum.hpp"
 #include "engine/assets/MeshData.hpp"
+#include "engine/render/landscape/ChunkStreamer.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 
@@ -122,15 +122,6 @@ private:
         f32 minY { 0.0f };
         f32 maxY { 0.0f };
     };
-    struct BuiltChunk {
-        i32 cx { 0 };
-        i32 cz { 0 };
-        u64 generation { 0 };
-        VariantBuckets buckets;
-    };
-    struct Shared {
-        core::ConcurrentQueue<BuiltChunk> built;
-    };
     struct VariantMesh {
         rhi::BufferHandle vertexBuffer {};
         rhi::BufferHandle indexBuffer {};
@@ -141,11 +132,6 @@ private:
         u32 lowIndexCount { 0 };
     };
 
-    static u64 keyOf(i32 cx, i32 cz) {
-        return (static_cast<u64>(static_cast<u32>(cx)) << 32) |
-               static_cast<u32>(cz);
-    }
-
     void createVariantMeshes(rhi::Device& device, u32 terrainSeed);
     void destroyVariantMeshes(rhi::Device& device);
     void uploadVariantMesh(rhi::Device& device, u32 variant,
@@ -155,11 +141,8 @@ private:
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
-    sptr<Shared> shared;
-    core::JobSystem* jobs { nullptr };
-
-    std::unordered_map<u64, Chunk> chunks;
-    u64 generation { 0 };
+    // The shared ring mechanics (audit U3-1) live in ChunkStreamer.
+    ChunkStreamer<Chunk, VariantBuckets> streamer;
     u32 instances { 0 };
     u32 lastDrawn { 0 };
 

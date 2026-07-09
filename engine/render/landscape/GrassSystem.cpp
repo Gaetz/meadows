@@ -188,8 +188,7 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
 
 void GrassSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                          core::JobSystem& jobSystem) {
-    jobs = &jobSystem;
-    shared = std::make_shared<Shared>();
+    streamer.create(jobSystem);
 
     bladeVertexBuffer = device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex, .size = sizeof(kBladeVertices) },
@@ -205,11 +204,9 @@ void GrassSystem::create(rhi::Device& device, ShaderLibrary& shaders,
 }
 
 void GrassSystem::destroy(rhi::Device& device) {
-    ++generation;
-    for (auto& [key, chunk] : chunks) {
+    streamer.invalidateAll([&](Chunk& chunk) {
         device.destroyBuffer(chunk.instanceBuffer);
-    }
-    chunks.clear();
+    });
     instances = 0;
     device.destroyPipeline(pipeline);
     device.destroyBuffer(bladeIndexBuffer);
@@ -220,114 +217,77 @@ void GrassSystem::destroy(rhi::Device& device) {
 }
 
 void GrassSystem::regenerate(rhi::Device& device) {
-    ++generation;
-    for (auto& [key, chunk] : chunks) {
+    streamer.invalidateAll([&](Chunk& chunk) {
         device.destroyBuffer(chunk.instanceBuffer);
-    }
-    chunks.clear();
+    });
     instances = 0;
 }
 
 void GrassSystem::invalidateChunks(rhi::Device& device,
                                    const vector<u64>& keys) {
     for (const u64 key : keys) {
-        const auto it = chunks.find(key);
-        if (it == chunks.end() || !it->second.resident) {
+        const auto it = streamer.chunks.find(key);
+        if (it == streamer.chunks.end() || !it->second.resident) {
             continue; // missing, or still streaming in (no stale swap)
         }
         device.destroyBuffer(it->second.instanceBuffer);
         instances -= it->second.instanceCount;
-        chunks.erase(it); // update() re-requests + re-scatters with new heights
+        // update() re-requests + re-scatters with new heights.
+        streamer.chunks.erase(it);
     }
 }
 
 void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
                          const Vec3& cameraPos) {
-    // Budgeted uploads.
-    u32 uploads = 0;
-    BuiltChunk built;
-    while (uploads < kMaxUploadsPerFrame && shared->built.tryPop(built)) {
-        if (built.generation != generation) {
-            continue;
-        }
-        const auto it = chunks.find(keyOf(built.cx, built.cz));
-        if (it == chunks.end() || it->second.resident) {
-            continue;
+    // Budgeted uploads (U3-1: the ring mechanics live in ChunkStreamer;
+    // this lambda is the grass-specific accept + GPU upload).
+    streamer.pump(kMaxUploadsPerFrame, 0.0, [&](u64 key, auto& built) {
+        const auto it = streamer.chunks.find(key);
+        if (it == streamer.chunks.end() || it->second.resident) {
+            return false;
         }
         Chunk& chunk = it->second;
-        chunk.instanceCount = static_cast<u32>(built.instances.size());
+        chunk.instanceCount = static_cast<u32>(built.payload.size());
         if (chunk.instanceCount > 0) {
             chunk.instanceBuffer = device.createBuffer(
                 { .usage = rhi::BufferUsage::Vertex,
-                  .size = built.instances.size() * sizeof(Instance) },
-                built.instances.data());
-            chunk.minY = built.instances[0].positionScale.y;
+                  .size = built.payload.size() * sizeof(Instance) },
+                built.payload.data());
+            chunk.minY = built.payload[0].positionScale.y;
             chunk.maxY = chunk.minY;
-            for (const Instance& instance : built.instances) {
+            for (const Instance& instance : built.payload) {
                 chunk.minY = glm::min(chunk.minY, instance.positionScale.y);
                 chunk.maxY = glm::max(chunk.maxY, instance.positionScale.y);
             }
         }
         chunk.resident = true;
         instances += chunk.instanceCount;
-        ++uploads;
-    }
+        return true;
+    });
 
     // Request missing chunks in the grass ring — nearest first, budgeted
     // (the rest is re-detected next frame; the state IS the queue).
-    const i32 camCx = static_cast<i32>(
-        std::floor(cameraPos.x / TerrainSystem::kChunkSize));
-    const i32 camCz = static_cast<i32>(
-        std::floor(cameraPos.z / TerrainSystem::kChunkSize));
-    struct Candidate {
-        i32 cx, cz, dist2;
-    };
-    vector<Candidate> wanted;
-    for (i32 dz = -kViewRadius; dz <= kViewRadius; ++dz) {
-        for (i32 dx = -kViewRadius; dx <= kViewRadius; ++dx) {
-            const i32 cx = camCx + dx;
-            const i32 cz = camCz + dz;
-            if (chunks.contains(keyOf(cx, cz))) {
-                continue;
-            }
-            wanted.push_back({ cx, cz, dx * dx + dz * dz });
-        }
-    }
-    std::sort(wanted.begin(), wanted.end(),
-              [](const Candidate& a, const Candidate& b) {
-                  return a.dist2 < b.dist2;
-              });
-    u32 requests = 0;
-    for (const Candidate& c : wanted) {
-        if (requests >= kMaxRequestsPerFrame) {
-            break;
-        }
-        const i32 cx = c.cx;
-        const i32 cz = c.cz;
-        chunks.emplace(keyOf(cx, cz), Chunk {});
-        jobs->enqueue([sharedRef = shared, params, cx, cz,
-                       gen = generation] {
-            sharedRef->built.push(
-                { cx, cz, gen, scatterGrass(params, cx, cz) });
+    const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
+    const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
+    streamer.requestMissing(
+        camCx, camCz, kViewRadius, kMaxRequestsPerFrame,
+        [&](i32 cx, i32 cz, i32, i32) {
+            return !streamer.chunks.contains(chunkKey(cx, cz));
+        },
+        [&](i32 cx, i32 cz, i32, i32) {
+            streamer.chunks.emplace(chunkKey(cx, cz), Chunk {});
+            streamer.enqueueBuild(cx, cz, [params, cx, cz] {
+                return scatterGrass(params, cx, cz);
+            });
         });
-        ++requests;
-    }
 
     // Evict beyond hysteresis.
-    for (auto it = chunks.begin(); it != chunks.end();) {
-        const i32 cx = static_cast<i32>(it->first >> 32);
-        const i32 cz = static_cast<i32>(it->first & 0xffffffffu);
-        if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) <=
-            kEvictRadius) {
-            ++it;
-            continue;
+    streamer.evictFar(camCx, camCz, kEvictRadius, [&](Chunk& chunk) {
+        if (chunk.resident) {
+            device.destroyBuffer(chunk.instanceBuffer);
+            instances -= chunk.instanceCount;
         }
-        if (it->second.resident) {
-            device.destroyBuffer(it->second.instanceBuffer);
-            instances -= it->second.instanceCount;
-        }
-        it = chunks.erase(it);
-    }
+    });
 }
 
 void GrassSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
@@ -387,16 +347,15 @@ void GrassSystem::draw(rhi::CommandBuffer& cmd,
         u32 count;
     };
     vector<Draw> draws;
-    draws.reserve(chunks.size());
-    for (const auto& [key, chunk] : chunks) {
+    draws.reserve(streamer.chunks.size());
+    for (const auto& [key, chunk] : streamer.chunks) {
         if (!chunk.resident || chunk.instanceCount == 0) {
             continue;
         }
-        const f32 minX = static_cast<f32>(static_cast<i32>(key >> 32)) *
-                         TerrainSystem::kChunkSize;
+        const f32 minX =
+            static_cast<f32>(chunkKeyCx(key)) * TerrainSystem::kChunkSize;
         const f32 minZ =
-            static_cast<f32>(static_cast<i32>(key & 0xffffffffu)) *
-            TerrainSystem::kChunkSize;
+            static_cast<f32>(chunkKeyCz(key)) * TerrainSystem::kChunkSize;
         const f32 dx = glm::max(
             glm::max(minX - cameraPos.x,
                      cameraPos.x - (minX + TerrainSystem::kChunkSize)),

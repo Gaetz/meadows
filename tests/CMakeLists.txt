@@ -11,6 +11,7 @@
     CellLoaderTest.cpp
     CellStreamerTest.cpp
     ChunkOcclusionTest.cpp
+    ChunkStreamerTest.cpp
     CollisionTest.cpp
     CombatTest.cpp
     ConcurrentQueueTest.cpp
