@@ -68,8 +68,9 @@ public:
     void syncQuestTags(const QuestContext& ctx);
     void syncWantedTag(const QuestContext& ctx);
 
-    // Event bodies — the scene's subscriptions call these.
-    void acceptDemoQuest(const QuestContext& ctx);
+    // Event bodies — the scene's subscriptions call these. Since 8.7c the
+    // scene subscribes ONCE for everything (subscribeAll): quest starts
+    // (QuestForm.startEvent) and task progression are data vocabularies.
     void handleQuestEvent(const QuestContext& ctx, const gameplay::Event& event);
     void payFine(const QuestContext& ctx);
 

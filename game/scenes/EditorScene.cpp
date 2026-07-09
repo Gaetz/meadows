@@ -16,6 +16,7 @@
 #include "engine/platform/Paths.hpp"
 #include "engine/reflect/Visit.hpp"
 #include "game/AllForms.hpp"
+#include "game/ui/EventPicker.hpp"
 #include "game/ui/PropertyGrid.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
@@ -480,6 +481,9 @@ void EditorScene::drawInspector() {
         animGraph->drawInspectorExtras(selected);
         questGraph->drawInspectorExtras(selected);
         drawPropertyGrid(*session, selected);
+        // 8.7c: the quest<->dialogue articulation made visible — who
+        // fires / listens to / starts on this record's event.
+        drawEventCrossRef(*session, selected, selected);
     } else {
         ImGui::TextDisabled("(select something)");
     }

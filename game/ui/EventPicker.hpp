@@ -1,0 +1,35 @@
+#pragma once
+
+#include "data/plugins/EditSession.hpp"
+
+namespace game {
+
+// The gameplay-event vocabulary of the editor (chantier 8.7c). Events
+// are NAMES that exist only through use: a dialogue node fires one, a
+// quest task listens for one, a quest starts on one (startEvent), and a
+// few come from C++ (combat). The editor makes that articulation
+// VISIBLE: event fields get a dropdown fed by scanning the session for
+// every name in use (plus the known C++-emitted ones), with inline
+// creation for new names; and the Inspector shows who emits / listens /
+// starts on the selected record's event, with click navigation.
+
+// True for the string fields that hold an EventBus event name.
+bool isEventField(const str& typeName, const str& fieldName);
+
+// Every event name visible to the session (emitters + listeners +
+// startEvents + the C++-emitted builtins), sorted, unique.
+vector<str> collectEventNames(const data::EditSession& session);
+
+// Combo over the known names + "create '<typed>'" for new ones. Returns
+// true when a pick was made this frame and writes it to `picked`.
+bool drawEventCombo(const char* imguiLabel,
+                    const data::EditSession& session, const str& current,
+                    str& picked);
+
+// If `target` is a record with a non-empty event field, lists the
+// cross-references of that event (fired by / progresses / starts),
+// clickable into `selected`. No-op otherwise.
+void drawEventCrossRef(const data::EditSession& session,
+                       const core::Guid& target, core::Guid& selected);
+
+} // namespace game

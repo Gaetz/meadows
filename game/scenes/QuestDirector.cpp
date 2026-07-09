@@ -89,17 +89,21 @@ void QuestDirector::syncWantedTag(const QuestContext& ctx) {
     }
 }
 
-void QuestDirector::acceptDemoQuest(const QuestContext& ctx) {
-    if (!easternQuest_ || questLog_.quests.contains(easternQuest_->id)) {
-        return; // already taken (or done) — never re-begin
-    }
-    quest::beginQuest(questLog_, ctx.forms, easternQuest_->id);
-    syncQuestTags(ctx);
-    ctx.say("Nouvelle quete : La menace de l'est (journal : J).", 4.0f);
-}
-
 void QuestDirector::handleQuestEvent(const QuestContext& ctx,
                                      const gameplay::Event& event) {
+    // 8.7c — data-driven quest starts: any quest whose startEvent matches
+    // begins now (never re-begins: the log keeps finished entries). The
+    // old per-quest C++ subscription (acceptDemoQuest) is gone.
+    const auto started =
+        quest::startQuestsOn(questLog_, ctx.forms, event);
+    for (const quest::QuestForm* quest : started) {
+        syncQuestTags(ctx);
+        ctx.say("Nouvelle quete : " +
+                    (quest->displayName.empty() ? quest->editorId
+                                                : quest->displayName) +
+                    " (journal : J).",
+                4.0f);
+    }
     if (!easternQuest_) {
         return;
     }

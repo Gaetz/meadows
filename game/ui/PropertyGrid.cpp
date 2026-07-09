@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include "engine/reflect/Visit.hpp"
+#include "game/ui/EventPicker.hpp"
 #include "game/ui/Keywords.hpp"
 
 namespace game {
@@ -150,11 +151,18 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
             [&](const str& s) {
                 // Closed vocabularies get a dropdown (8.7b dev feedback:
                 // keywords are not typed by heart), Capitalized + blue;
-                // the CANONICAL value is what commits.
+                // the CANONICAL value is what commits. Event-name fields
+                // (8.7c) get the scanned event vocabulary instead — an
+                // OPEN list with inline creation.
                 if (const auto* options =
                         keywordsFor(type->name, field.name)) {
                     str picked;
                     if (drawKeywordCombo("##v", *options, s, picked)) {
+                        commit(reflect::Value { picked });
+                    }
+                } else if (isEventField(type->name, field.name)) {
+                    str picked;
+                    if (drawEventCombo("##v", session, s, picked)) {
                         commit(reflect::Value { picked });
                     }
                 } else {

@@ -36,10 +36,15 @@ using SubscriptionId = u32;
 class EventBus {
 public:
     SubscriptionId subscribe(EventKind kind, EventHandler handler);
+    // 8.7c: receives EVERY event, whatever its kind — what the quest
+    // system needs (task events and quest startEvents are open, data-
+    // defined vocabulary; per-name C++ subscriptions can't know them).
+    SubscriptionId subscribeAll(EventHandler handler);
     void unsubscribe(SubscriptionId id);
 
-    // Calls every handler for `event.kind`, in subscription order. Re-entrant:
-    // handlers added/removed during dispatch take effect on the next dispatch.
+    // Calls every handler for `event.kind` (plus the subscribeAll ones),
+    // in subscription order. Re-entrant: handlers added/removed during
+    // dispatch take effect on the next dispatch.
     void dispatch(const Event& event) const;
 
 private:

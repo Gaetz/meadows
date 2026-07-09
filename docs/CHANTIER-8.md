@@ -360,6 +360,48 @@ créer state/branch/task/condition sans quitter la fenêtre ; export via
 le menu File ; les panneaux ImGui des scènes 3D inchangés (docking
 n'altère pas leur rendu).
 
+### 8.7c — Articulation quêtes ↔ dialogues (question dev sur OnAcceptEasternMenace)
+
+> **FAITE (2026-07-09) — validation dev en attente.** 340 tests verts
+> (+3 : startQuestsOn ×2, subscribeAll ×1), smoke-run OK. Purge `*.dir`
+> faite (QuestForm change de layout — APPEND).
+
+Constat tracé dans le code : un événement n'est « créé » nulle part —
+c'est un nom. La progression de tâche était déjà 100 % données
+(`QuestTaskForm.event` matché par `onQuestEvent`), mais (a) le
+DÉMARRAGE de quête était câblé en C++ (l'abonnement en dur
+`OnAcceptEasternMenace` → `acceptDemoQuest`), et (b) la réception des
+événements passait par des abonnements C++ par NOM — une task moddée
+sur un événement inconnu du moteur ne progressait jamais.
+
+- **`QuestForm.startEvent`** (APPEND) + **`quest::startQuestsOn`** :
+  toute quête jamais prise dont le startEvent matche démarre — pure
+  donnée, doctesté (démarre une fois, ne redémarre jamais : le log
+  garde les entrées finies). `EasternMenace` porte
+  `startEvent = "OnAcceptEasternMenace"` dans village.toml.
+- **`EventBus::subscribeAll`** (kind 0 = wildcard, doctesté) : la scène
+  s'abonne UNE fois ; `handleQuestEvent` fait startQuestsOn (toast
+  générique « Nouvelle quete : <displayName> ») puis onQuestEvent.
+  `acceptDemoQuest` supprimé ; plus aucun nom d'événement de quête en
+  dur dans le C++ (le bloc récompense démo reste, v1 mono-quête).
+- **Éditeur (`game/ui/EventPicker`)** : les champs d'événement
+  (DialogueNodeForm.event, QuestTaskForm.event, QuestForm.startEvent)
+  deviennent des combos alimentés par le SCAN de la session (tous les
+  noms en usage + les builtins C++ OnDeath/OnBanditDeath), filtre +
+  « create "<nom>" » pour un nouveau nom ; et l'inspecteur montre la
+  cross-ref de l'événement du record sélectionné — « fired by »
+  (nœuds de dialogue), « progresses » (tasks), « starts » (quêtes) —
+  navigation au clic.
+
+**Quoi tester (dev)** : nouvelle partie → accepter la quête au dialogue
+(la chaîne passe désormais par startEvent, le toast doit apparaître) ;
+la refuser puis re-parler → l'option re-proposée ne re-démarre rien une
+fois prise ; dans l'éditeur : la task « tuer les bandits » → son champ
+event est un combo bleu listant OnDeath & co ; sélectionner le nœud de
+dialogue « Puis-je aider le village ? » → la section « Event:
+OnAcceptEasternMenace » liste la quête qui démarre dessus ; créer un
+nom neuf via « create » et le retrouver dans le combo d'une task.
+
 ### 8.8 — Timeline des clips anim (events)
 
 Le pont anim→gameplay (`AnimEventForm` : hit frames, footsteps, FX)

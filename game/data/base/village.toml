@@ -1084,6 +1084,9 @@ new = true
 editorId = "EasternMenace"
 displayName = "La menace de l'est"
 startState = "4d7a9b30-0000-4000-8000-0000000000f1"
+# 8.7c: the dialogue option fires this event; the quest starts on it —
+# pure data, no C++ wiring (quest::startQuestsOn).
+startEvent = "OnAcceptEasternMenace"
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000000f1"

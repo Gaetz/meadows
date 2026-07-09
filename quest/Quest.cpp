@@ -111,6 +111,26 @@ void beginQuest(QuestLog& log, const data::FormDatabase& forms,
     log.quests[questId] = std::move(progress);
 }
 
+vector<const QuestForm*> startQuestsOn(QuestLog& log,
+                                       const data::FormDatabase& forms,
+                                       const gameplay::Event& event) {
+    vector<const QuestForm*> started;
+    data::forEach<QuestForm>(forms, [&](const QuestForm& quest) {
+        if (quest.startEvent.empty() ||
+            gameplay::eventKind(quest.startEvent) != event.kind) {
+            return;
+        }
+        // Once in the log, never again — an abandoned/failed/succeeded
+        // quest keeps its entry, so a re-fired event can't restart it.
+        if (log.quests.contains(quest.id)) {
+            return;
+        }
+        beginQuest(log, forms, quest.id);
+        started.push_back(&quest);
+    });
+    return started;
+}
+
 void onQuestEvent(QuestLog& log, const data::FormDatabase& forms,
                   const gameplay::Event& event,
                   const gameplay::GameplayTagRegistry& tags) {

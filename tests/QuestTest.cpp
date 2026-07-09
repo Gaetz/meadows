@@ -88,3 +88,46 @@ TEST_CASE("quest: tasks progress on matching events and the quest completes") {
     CHECK_FALSE(isActive(log, kQuest));
     CHECK(questState(log, kQuest) == kDone);
 }
+
+// 8.7c — data-driven quest starts: QuestForm.startEvent + startQuestsOn.
+TEST_CASE("startQuestsOn begins matching quests once, never restarts") {
+    data::FormDatabase db = buildQuestDb();
+    // Give the quest a start event (the dialogue option fires it).
+    auto* quest = const_cast<QuestForm*>(db.find<QuestForm>(kQuest));
+    REQUIRE(quest != nullptr);
+    quest->startEvent = "OnAcceptSlay";
+
+    QuestLog log;
+    // A foreign event starts nothing.
+    const auto none = startQuestsOn(
+        log, db, { gameplay::eventKind("OnSomethingElse") });
+    CHECK(none.empty());
+    CHECK_FALSE(log.quests.contains(kQuest));
+
+    // The matching event starts it (and reports it to the caller).
+    const auto started =
+        startQuestsOn(log, db, { gameplay::eventKind("OnAcceptSlay") });
+    REQUIRE(started.size() == 1);
+    CHECK(started[0]->id == kQuest);
+    CHECK(isActive(log, kQuest));
+    CHECK(questState(log, kQuest) == kStart);
+
+    // Re-firing never re-begins — active or finished, the entry stays.
+    const auto again =
+        startQuestsOn(log, db, { gameplay::eventKind("OnAcceptSlay") });
+    CHECK(again.empty());
+    log.quests[kQuest].status = QuestStatus::Succeeded;
+    const auto after =
+        startQuestsOn(log, db, { gameplay::eventKind("OnAcceptSlay") });
+    CHECK(after.empty());
+    CHECK(questStatus(log, kQuest) == QuestStatus::Succeeded);
+}
+
+TEST_CASE("startQuestsOn ignores quests without a startEvent") {
+    const data::FormDatabase db = buildQuestDb(); // startEvent = ""
+    QuestLog log;
+    const auto started =
+        startQuestsOn(log, db, { gameplay::eventKind("OnAcceptSlay") });
+    CHECK(started.empty());
+    CHECK(log.quests.empty());
+}

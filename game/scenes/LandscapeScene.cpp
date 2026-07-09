@@ -202,20 +202,12 @@ void LandscapeScene::setupGameplay() {
                        });
     questDirector.beginScene(makeQuestContext(),
                              saveController.loadedFromSave());
-    eventBus.subscribe(gameplay::eventKind("OnAcceptEasternMenace"),
-                       [this](const gameplay::Event&) {
-                           questDirector.acceptDemoQuest(makeQuestContext());
-                       });
-    eventBus.subscribe(gameplay::eventKind("OnDeath"),
-                       [this](const gameplay::Event& event) {
-                           questDirector.handleQuestEvent(makeQuestContext(),
-                                                          event);
-                       });
-    eventBus.subscribe(gameplay::eventKind("OnReportBandit"),
-                       [this](const gameplay::Event& event) {
-                           questDirector.handleQuestEvent(makeQuestContext(),
-                                                          event);
-                       });
+    // 8.7c: ONE generic subscription — quest starts (QuestForm.startEvent)
+    // and task progression are open, data-defined vocabularies; the
+    // director filters, not the wiring. Modded quests need zero C++.
+    eventBus.subscribeAll([this](const gameplay::Event& event) {
+        questDirector.handleQuestEvent(makeQuestContext(), event);
+    });
     eventBus.subscribe(gameplay::eventKind("OnPayFine"),
                        [this](const gameplay::Event&) {
                            questDirector.payFine(makeQuestContext());

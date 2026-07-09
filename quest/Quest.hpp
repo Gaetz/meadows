@@ -25,10 +25,15 @@ namespace quest {
 struct QuestForm : data::Form {
     str displayName;
     core::Guid startState;
+    // 8.7c: the event that STARTS this quest (e.g. fired by a dialogue
+    // option) — data-driven quest acquisition, no C++ wiring per quest.
+    // "" = started by code/script only. Appended (binary ordinals stable).
+    str startEvent;
 
     REFLECT_BEGIN(QuestForm, data::Form)
         REFLECT_FIELD(displayName)
         REFLECT_FIELD(startState)
+        REFLECT_FIELD(startEvent)
     REFLECT_END()
 };
 
@@ -85,6 +90,14 @@ struct QuestLog {
 
 void beginQuest(QuestLog& log, const data::FormDatabase& forms,
                 const core::Guid& questId);
+
+// 8.7c — data-driven quest starts: begins every quest whose `startEvent`
+// matches the event and which was never taken (a finished quest never
+// restarts: the log keeps its entry). Returns the quests started this
+// call, for the caller's toasts/tag sync.
+vector<const QuestForm*> startQuestsOn(QuestLog& log,
+                                       const data::FormDatabase& forms,
+                                       const gameplay::Event& event);
 
 // Advances the tasks of every active quest whose current state matches the
 // event, taking a branch (and transitioning / finishing) when its tasks complete.
