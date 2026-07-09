@@ -208,14 +208,62 @@ buildée + 279 tests verts) :
       (souris libérée, caméra figée), chaque commande (spawn/tp/tgm/save/
       load/startquest/queststate/settime), Lua libre, `get`/`set` réflexion,
       tgm actif en combat (invulnérabilité), Escape après fermeture en Play.
-  - **Reste ouvert (Batch 3), ordre suggéré (risque croissant) :**
-    1. **U4-1 (suite)** — restant du god-object : panneaux dev ImGui
-       (drawUi/drawSkyUi/drawGameplayUi/drawRenderUi).
-    2. **U4-2 + U4-4 + U4-6** — **le plus structurant, à garder pour la fin** :
-       `LandscapeRenderer` qui possède les systèmes `render::*`, les ~40 handles GPU
-       (wrapper RAII, U4-4), l'assemblage `FrameUniforms` (U4-6), et **consomme un
-       `RenderSnapshot` étendu au lieu du World vivant (U4-2, le finding #1)**.
-    3. Transverse hors-U4 : **U3-1** (dédup ring streaming Terrain/Grass/Veg).
+  - **Le final U4-2 + U4-4 + U4-6 — FAIT en 5 briques (2026-07-09, session
+    autonome à la demande du dev) — build vert + 309 tests verts à chaque
+    brique, un commit/brique révocable individuellement. ⚠️ TOUT LE LOT EST
+    À VALIDER EN JEU (liste de tests remise au dev en fin de session) :**
+    - **R1 — `composeFrameUniforms` (U4-6a)** `b627161` : l'assemblage
+      FrameUniforms (~110 l. : base + override intérieur + grade +
+      submersion + terrain-light + grass-bend + storm/rain + auto-expo)
+      devient une fonction PURE dans meadows-runtime (`game/FrameComposer`),
+      `ComposedFrame{base,resolved}` — `base` préserve le contrat du pass
+      reflection (composition brute, non patchée). 7 doctests headless
+      (l'intérieur zéroe le soleil, toggles A/B neutres, slots .w).
+    - **R2 — le snapshot étendu (U4-2a, le finding #1)** `e2c60ff` :
+      `RenderSnapshot` gagne `lights`/`shadowLights`/`shafts`/
+      `waterVolumes` ; `MeshInstance` embarque tint/emissive/albedo résolus
+      à l'extract (plus de `forms.find` au draw). Extracteurs headless + 3
+      doctests. Plus AUCUN `world.handle()` dans le chemin de rendu hors
+      NPC. Nuance : la SÉLECTION des 16 lumières utilise la caméra
+      pré-update de la même frame (< 10 cm en Play) — imperceptible.
+    - **R3 — NPC skinnés via le snapshot (U4-2b)** `589c290` :
+      `NpcDirector::extract` remplit `snapshot.skinned` (pose COPIÉE +
+      transform + tint + handles de géométrie résolus — le précédent
+      sprite/TextureHandle) après l'update NPC ; l'état de draw par entité
+      (palette SSBO, model UBO, groups) sort de `Npc` vers des slots
+      mark/sweep côté renderer. NpcContext perd ses 4 champs GPU. Le seam
+      Phase-5 est COMPLET. Un NPC saute son ombre sur sa 1re frame
+      (avant : mesh dégénéré invisible) — équivalent visuel.
+    - **R5 (avant R4, inversion délibérée : déplacer d'abord, RAII-ifier
+      ensuite = chaque étape vérifiable) — `LandscapeRenderer`
+      (U4-2c/U4-6)** `e3def86` : la classe qui possède la ShaderLibrary,
+      les 14 systèmes `render::*`, tout l'état GPU, le frame graph complet
+      et les panneaux dev terrain/rendu avec leurs toggles `*Ui` (la
+      décision « les panneaux suivent leur état ») ; consomme UNIQUEMENT
+      frame + snapshot + `RenderView` (caméra, atmos, interior, scalaires
+      tuning, caches, gameUi, probe). Le sim atteint la vérité terrain via
+      `terrainParams()` (collision/nav/snaps/sculpt/spawn), l'horloge ciel
+      via `skySystem()`, le sculpt via les accesseurs de queues ;
+      `applyTuning` seed les knobs depuis le TOML (§5). Création des
+      systèmes regroupée dans `create()` (avant : éparpillée dans onEnter —
+      indépendant de l'ordre). Scène : 3549 → 1848 l. ; son `render()` =
+      construire la vue, tendre le paquet.
+    - **R4 — handles GPU RAII (U4-4)** `059c953` : `rhi::Unique<Handle>`
+      (`engine/rhi/UniqueHandle`, move-only, libère via son device à la
+      destruction/reset/réaffectation, conversion implicite = sites de
+      lecture intacts). Les ~40 handles autonomes ET les structs par entrée
+      (MeshDraw/SkinnedDraw/LightShaft/WaterQuad) convertis : les gardes
+      destroy-avant-rebuild disparaissent, les frees de mark/sweep
+      deviennent `erase()`, le miroir manuel de destroy() (125 l.) devient
+      des resets — un oubli n'est plus une fuite. `boundTexture` reste brut
+      (vue non-possédante du cache). **U3-7 (frees PostFx) peut réutiliser
+      le wrapper.**
+  - **Reste ouvert (Batch 3) :**
+    1. Transverse hors-U4 : **U3-1** (dédup ring streaming Terrain/Grass/Veg).
+    2. (Panneaux dev : `drawUi`/`drawSkyUi`/`drawGameplayUi` RESTENT scène
+       par décision — hotkeys/overlays = contrôle de scène, ciel/météo =
+       état scène (`atmos`/clock/weather), gameplay-debug = sim ; les
+       panneaux terrain + rendu ont suivi leur état dans le renderer.)
   - **À VOIR AVEC LE DEV (non traitables en autonome, classés 2026-07-09) :**
     - *Validation en jeu des briques de nuit* : mort par buildup (poison à
       0 → le PNJ meurt et reste mort), stagger d'électrocution, un lancement
@@ -351,8 +399,8 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U7-2 | ✅ | U7 | high | factor | BinaryFormat.cpp:45 ; TomlWriter.cpp:25 ; PluginLoader.cpp | Switch per-FieldKind répliqué (H-a) | M | oui |
 | U8-3 | ✅ | U8 | high | factor | tools/cooker/Main.cpp:189-205 | Liste `registerXxxFormTypes` recopiée à la main (déjà cause d'un bug) | M | oui |
 | U3-1 |   | U3 | high | factor | GrassSystem.cpp:244 ; TerrainSystem.cpp:223 ; VegetationSystem.cpp:305 | Ring chunk-streaming implémenté 3× | L | non |
-| U4-2 |   | U4 | high | archi | LandscapeScene.cpp:5217,4531,3839 | Seam Phase-5 contourné : `render()` lit le World vivant | L | oui |
-| U4-4 |   | U4 | high | qual | LandscapeScene.cpp:707-858 / hpp:195-663 | ~40 handles GPU bruts, miroir onExit fragile (§8 RAII) | L | oui |
+| U4-2 | ✅ | U4 | high | archi | LandscapeScene.cpp:5217,4531,3839 | Seam Phase-5 contourné : `render()` lit le World vivant | L | oui |
+| U4-4 | ✅ | U4 | high | qual | LandscapeScene.cpp:707-858 / hpp:195-663 | ~40 handles GPU bruts, miroir onExit fragile (§8 RAII) | L | oui |
 | U5-1 | ✅ | U5 | high | factor | PropertyGrid.cpp:69-258 ; EditorScene.cpp:34 | Switch FieldKind écrit 3× (face U5 de H-a) | L | oui |
 | U1-02 | ✅ | U1 | med | qual | reflect/Registry.cpp:7-14 | Collision type-id loggée non assertée ; 2e type droppé | S | non |
 | U1-04 | ✅ | U1 | med | réutil | core/FrameProbe.hpp:20 (+épars) | Aucun clock primitive partagé ; std::chrono re-dérivé 4+ sites | S | oui |
@@ -367,7 +415,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U2-02 |   | U2 | med | réutil | Rhi.hpp:25-31 | 7 handle structs quasi-identiques, aucun type partagé (H-d) | M | oui |
 | U3-3 | ✅ | U3 | med | archi/qual | FrameUniforms.hpp:13 vs common.glsl:3 | Struct C++ ↔ bloc GLSL synchro par commentaire seul (H static_assert) | M | oui |
 | U3-6 |   | U3 | med | factor | PostFx.cpp:199,81 | Targets half-res + somme shaderGeneration écrits en double | M | non |
-| U4-6 |   | U4 | med | archi | LandscapeScene.cpp:4982-5596 | `render()` = 615 l. illisibles | M | non |
+| U4-6 | ✅ | U4 | med | archi | LandscapeScene.cpp:4982-5596 | `render()` = 615 l. illisibles | M | non |
 | U4-7 |   | U4 | med | propreté | LandscapeScene.cpp (~609 littéraux) | Constantes magiques hors Forms de tuning | M | non |
 | U4-9 | ✅ | U4 | med | factor | LandscapeScene.cpp:2589,3310 | ~10 méthodes push-modèle RmlUi mêlées à la logique jeu | M | non |
 | U5-3 | ✅ | U5 | med | factor | CombatArenaScene.cpp:190 ; DemoScenes.cpp:347 | Enregistrement runtime gameplay-tags copié par scène | M | oui |
