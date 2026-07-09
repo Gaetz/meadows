@@ -109,6 +109,9 @@ void NodeCanvas::navigateToContent() {
 void NodeCanvas::end(Actions& out) {
     // New link: a pin->pin drag. Orient output -> input; the panel's
     // canLink adds graph-specific rules (e.g. nothing INTO "Any State").
+    // NB (this develop commit): EndCreate/EndDelete assert unless their
+    // Begin returned true — they go INSIDE the if, unlike upstream's
+    // blueprint example.
     if (ed::BeginCreate()) {
         ed::PinId a, b;
         if (ed::QueryNewLink(&a, &b)) {
@@ -133,8 +136,8 @@ void NodeCanvas::end(Actions& out) {
                 out.linkTo = to->node;
             }
         }
+        ed::EndCreate();
     }
-    ed::EndCreate();
 
     // Deletions (Del key / context): the predicates enforce §5 — only
     // session-created drafts may go; base records reject visibly.
@@ -161,8 +164,8 @@ void NodeCanvas::end(Actions& out) {
                 ed::RejectDeletedItem();
             }
         }
+        ed::EndDelete(); // inside the if — see the EndCreate note above
     }
-    ed::EndDelete();
 
     // Context menus: recorded here (canvas coords are only known inside
     // the frame), opened by the panel as ordinary popups after end().
