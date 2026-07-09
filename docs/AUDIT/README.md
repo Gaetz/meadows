@@ -258,12 +258,28 @@ buildée + 279 tests verts) :
       des resets — un oubli n'est plus une fuite. `boundTexture` reste brut
       (vue non-possédante du cache). **U3-7 (frees PostFx) peut réutiliser
       le wrapper.**
-  - **Reste ouvert (Batch 3) :**
-    1. Transverse hors-U4 : **U3-1** (dédup ring streaming Terrain/Grass/Veg).
-    2. (Panneaux dev : `drawUi`/`drawSkyUi`/`drawGameplayUi` RESTENT scène
-       par décision — hotkeys/overlays = contrôle de scène, ciel/météo =
-       état scène (`atmos`/clock/weather), gameplay-debug = sim ; les
-       panneaux terrain + rendu ont suivi leur état dans le renderer.)
+  - **U3-1 (+ U3-4) — `ChunkStreamer` — FAIT `792bc57` (2026-07-09) —
+    ⚠️ à valider en jeu (streaming terrain/herbe/props, sculpt,
+    Regenerate) :** le ring implémenté 3× quasi-identiquement (queue
+    worker estampillée génération, uploads budgétés compte + cap temps
+    optionnel, requêtes centre-d'abord, éviction hystérésis) devient UN
+    template `ChunkStreamer<Chunk, Payload>`
+    (`engine/render/landscape/ChunkStreamer.hpp`) ; chaque système ne
+    garde que ses différences en lambdas : le worker scatter/mesh,
+    l'upload GPU (instances herbe / packing par variante veg / swap LOD
+    terrain), les règles want/evict (les requêtes de changement de LOD et
+    les compteurs pending du terrain inclus). U3-4 plié dedans :
+    `chunkKey`/`chunkKeyCx`/`chunkKeyCz`/`chunkCoordOf` remplacent la
+    danse pack/unpack u64 recopiée à la main dans les trois systèmes.
+    −175 l. nettes ; **7 doctests headless** verrouillent la mécanique du
+    ring (ordre centre-d'abord, budgets, slot libéré sur rejet, drop des
+    générations périmées, hystérésis, aller-retour requête→worker→pump).
+    Suite : 316 tests verts.
+  - **Batch 3 : CODE TERMINÉ.** (Panneaux dev : `drawUi`/`drawSkyUi`/
+    `drawGameplayUi` RESTENT scène par décision — hotkeys/overlays =
+    contrôle de scène, ciel/météo = état scène (`atmos`/clock/weather),
+    gameplay-debug = sim ; les panneaux terrain + rendu ont suivi leur
+    état dans le renderer.)
   - **À VOIR AVEC LE DEV (non traitables en autonome, classés 2026-07-09) :**
     - *Validation en jeu des briques de nuit* : mort par buildup (poison à
       0 → le PNJ meurt et reste mort), stagger d'électrocution, un lancement
@@ -398,13 +414,13 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U5-2 |   | U5 | high | factor | game/TextureCache.* ; MeshCache.* | Machinerie async-residency dupliquée entre 2 caches | M | non |
 | U7-2 | ✅ | U7 | high | factor | BinaryFormat.cpp:45 ; TomlWriter.cpp:25 ; PluginLoader.cpp | Switch per-FieldKind répliqué (H-a) | M | oui |
 | U8-3 | ✅ | U8 | high | factor | tools/cooker/Main.cpp:189-205 | Liste `registerXxxFormTypes` recopiée à la main (déjà cause d'un bug) | M | oui |
-| U3-1 |   | U3 | high | factor | GrassSystem.cpp:244 ; TerrainSystem.cpp:223 ; VegetationSystem.cpp:305 | Ring chunk-streaming implémenté 3× | L | non |
+| U3-1 | ✅ | U3 | high | factor | GrassSystem.cpp:244 ; TerrainSystem.cpp:223 ; VegetationSystem.cpp:305 | Ring chunk-streaming implémenté 3× | L | non |
 | U4-2 | ✅ | U4 | high | archi | LandscapeScene.cpp:5217,4531,3839 | Seam Phase-5 contourné : `render()` lit le World vivant | L | oui |
 | U4-4 | ✅ | U4 | high | qual | LandscapeScene.cpp:707-858 / hpp:195-663 | ~40 handles GPU bruts, miroir onExit fragile (§8 RAII) | L | oui |
 | U5-1 | ✅ | U5 | high | factor | PropertyGrid.cpp:69-258 ; EditorScene.cpp:34 | Switch FieldKind écrit 3× (face U5 de H-a) | L | oui |
 | U1-02 | ✅ | U1 | med | qual | reflect/Registry.cpp:7-14 | Collision type-id loggée non assertée ; 2e type droppé | S | non |
 | U1-04 | ✅ | U1 | med | réutil | core/FrameProbe.hpp:20 (+épars) | Aucun clock primitive partagé ; std::chrono re-dérivé 4+ sites | S | oui |
-| U3-4 |   | U3 | med | factor | TerrainSystem.hpp:112 (+15 sites) | Pack/unpack clé u64 chunk à la main | S | non |
+| U3-4 | ✅ | U3 | med | factor | TerrainSystem.hpp:112 (+15 sites) | Pack/unpack clé u64 chunk à la main | S | non |
 | U3-5 |   | U3 | med | factor | TerrainSystem.cpp:371 (+5 pipelines) | Layout attributs `MeshVertex` réécrit ~5× | S | non |
 | U4-8 | ✅ | U4 | med | factor | LandscapeScene.cpp:1128-1178,4936 | Crossfade météo lerpe ~18 champs à la main, listés 3× | S | oui |
 | U5-6 |   | U5 | med | qual | game/ui/PropertyGrid.cpp:20 | `ActiveEdit gActive` = global mutable (§8) | S | non |
