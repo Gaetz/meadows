@@ -27,8 +27,10 @@ class Game;
 
 struct EngineConfig {
     str title { "Meadows" };
-    i32 width { 1280 };
-    i32 height { 720 };
+    // Full HD by default (dev request, chantier 8.7b) — the DB editor
+    // needs the room and the game reads better too.
+    i32 width { 1920 };
+    i32 height { 1080 };
     rhi::Backend backend { rhi::Backend::OpenGL };
     rhi::Color clearColor { 0.10f, 0.12f, 0.16f, 1.0f };
 };

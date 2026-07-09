@@ -172,7 +172,10 @@ target_include_directories(stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
 CPMAddPackage(
     NAME imgui
     GITHUB_REPOSITORY ocornut/imgui
-    GIT_TAG v1.92.8
+    # The -docking flavour of the same release (chantier 8.7b): the DB
+    # editor is a dockspace. Same API surface otherwise; ImGuizmo and the
+    # vendored node-editor compile against it unchanged.
+    GIT_TAG v1.92.8-docking
     DOWNLOAD_ONLY TRUE
 )
 add_library(imgui STATIC
