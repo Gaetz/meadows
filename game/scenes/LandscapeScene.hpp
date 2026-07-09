@@ -52,16 +52,7 @@
 #include "game/TextureCache.hpp"
 #include "game/VegetationCollision.hpp"
 #include "game/scenes/LandscapeTuning.hpp"
-#include "engine/render/landscape/ChunkOcclusion.hpp"
-#include "engine/render/landscape/GpuOcclusion.hpp"
-#include "engine/render/landscape/TerrainLightMap.hpp"
-#include "engine/render/landscape/GrassSystem.hpp"
-#include "engine/render/landscape/PostFx.hpp"
-#include "engine/render/landscape/ShadowMapper.hpp"
-#include "engine/render/landscape/SkySystem.hpp"
-#include "engine/render/landscape/TerrainSystem.hpp"
-#include "engine/render/landscape/VegetationSystem.hpp"
-#include "engine/render/landscape/WaterSystem.hpp"
+#include "game/scenes/LandscapeRenderer.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
 
@@ -101,15 +92,10 @@ public:
     void drawUi() override;
 
 private:
-    // Themed panel sections (drawUi wraps them in collapsing headers).
+    // Themed panel sections (drawUi wraps them in collapsing headers; the
+    // terrain/render sections live on the renderer with their state, U4-2c).
     void drawGameplayUi();
     void drawSkyUi();
-    void drawRenderUi();
-
-    // Offscreen color+depth target at window size, recreated on resize.
-    void ensureOffscreenTarget(rhi::Device& device, u32 width, u32 height);
-    void destroyOffscreenTarget(rhi::Device& device);
-    void rebuildBlitPipeline(rhi::Device& device);
 
     engine::Engine* engine { nullptr };
 
@@ -138,60 +124,19 @@ private:
     bool uiSkyOpen { false };
     bool uiRenderOpen { false };
 
-    uptr<render::ShaderLibrary> shaders;
-    render::TerrainSystem terrain;
-    render::GrassSystem grass;
-    render::VegetationSystem vegetation;
-    render::SkySystem sky;
-    render::ChunkOcclusion occlusion;
-    bool occlusionUi { true }; // height-horizon occlusion culling (A/B)
-    render::GpuOcclusion gpuOcclusion;
-    bool gpuOcclusionUi { true }; // Hi-Z compute culling (A/B)
-    std::unordered_set<u64> gpuOccluded;      // last frame's GPU verdict
-    std::unordered_set<u64> combinedOccluded; // CPU horizon ∪ GPU Hi-Z
-    vector<render::TerrainSystem::ChunkAabb> occlusionAabbs;
-    vector<render::GpuOcclusion::Candidate> occlusionCandidates;
-    render::ShadowMapper shadows;
-    render::WaterSystem water;
-    render::PostFx postFx;
-    bool regenerateRequested { false };
-    bool wireframeUi { false };
+    // U4-2c: the whole custom renderer — shader library, render::* systems,
+    // GPU handles, frame graph, terrain/render dev panels and their toggle
+    // state — lives in LandscapeRenderer. The scene reaches the terrain
+    // ground truth via renderer.terrainParams() and hands a RenderView +
+    // the RenderSnapshot to renderer.render() each frame.
+    LandscapeRenderer renderer;
     bool animateTime { false };
-    bool tonemapUi { true };
-    bool stylizedUi { true }; // BotW step lighting vs classic wrap (A/B)
-    bool shadowsUi { true };
-    bool cascadeDebugUi { false };
-    bool reflectionsUi { true };
-    // The hysteresis-quantized sun the shadow cascades follow (a
-    // continuously rotating light re-bases the texel snap every frame —
-    // crawling edges); lighting keeps the smooth skyState sun.
-    Vec3 shadowSunDirection { 0.0f, 1.0f, 0.0f };
-    // Chantier 6 B3 (brick 28): analytical grade — OFF by default, the
-    // dev A/Bs it before it can change the (liked) exterior look.
-    bool gradingUi { false };
-    f32 gradeVibranceUi { 0.3f };
-    f32 gradeSplitToneUi { 0.35f };
-    f32 gradeContrastUi { 1.06f };
-    // Chantier 6 B4 (brick 29): auto-exposure — OFF by default (A/B).
-    bool autoExposureUi { false };
-    f32 autoExposureMinUi { 0.4f };
-    f32 autoExposureMaxUi { 2.5f };
-    f32 exposureUi { 1.0f };
     // Atmospheric render state (sky/fog/weather-driven), grouped so the weather
     // transition can own it (brick 3a). Manual sliders and the crossfade both
-    // write here; render() reads it. stormFront/rainIntensity live here too
-    // (were separate `*Ui` members near the storm/rain resources).
+    // write here; the renderer reads it through the view. stormFront/
+    // rainIntensity live here too.
     AtmosphereParams atmos;
-    f32 ssaoUi { 0.7f };
-    i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 vol, 4 ssao
     f32 windTime { 0.0f }; // accumulated wind phase (dt x strength)
-
-    rhi::BufferHandle frameUbo {};
-    rhi::BindGroupHandle frameBindGroup {};
-    // Chantier 2 B5: local lights UBO (binding 5, same group as FrameUbo).
-    // The 16 nearest LightSource entities, flicker applied CPU-side.
-    rhi::BufferHandle lightsUbo {};
-    static constexpr u32 kMaxLights = 16;
 
     // B1 (chantier 1): the real mesh path replacing the H8 hardcoded cube.
     // A small ECS world spawned from plugin ReferenceForms; extractMeshes
@@ -357,136 +302,22 @@ private:
     // (shared_ptr — worker-held copies keep old instances alive, even
     // across scene teardown).
     sptr<const render::HeightPatches> heightPatches;
-    // Chunks a sculpt changed, awaiting a TARGETED GPU rebuild at the safe
-    // point in render() — so a stroke touches just those chunks, not the whole
-    // world (keys use keyOf()). `sculptDirtyChunks` re-meshes the terrain (live
-    // during a stroke, seamless); `sculptScatterChunks` re-scatters grass/veg
-    // (on commit only — re-seeding every preview frame would flicker them).
-    vector<u64> sculptDirtyChunks;
-    vector<u64> sculptScatterChunks;
     uptr<TextureCache> materialTextures; // SRGBA8 + Linear (3D albedo)
     uptr<MeshCache> meshCache;
     RenderSnapshot snapshot;
-    rhi::TextureHandle whiteTexture {}; // albedoTexture = 0 -> plain tint
-    rhi::SamplerHandle meshSampler {};
-    // Per-snapshot-entry GPU state (tiny N; instancing per model+material
-    // is the planned next step of the contract — HORIZONTAL-PASS note).
-    struct MeshDraw {
-        rhi::BufferHandle ubo {};
-        rhi::BindGroupHandle group {};
-        rhi::TextureHandle boundTexture {};
-        core::Guid material {};
-        rhi::BindGroupHandle casterGroup {}; // B2a: ubo at binding 4
-    };
-    vector<MeshDraw> meshDraws;
-    rhi::PipelineHandle meshPipeline {};
-    u64 meshShaderGeneration { 0 };
-    void buildMeshPipeline(rhi::Device& device);
-    void drawSceneMeshes(engine::FrameContext& frame);
-
-    // Brick 34 (chantier 7.1): dust light shafts — one small additive
-    // blade-prism per shaft light, rebuilt when its direction moves
-    // (sun-linked shafts follow the quantized shadow sun).
-    struct LightShaft {
-        u64 entityId { 0 };
-        bool seen { false }; // mark/sweep against unloaded cells
-        rhi::BufferHandle vertices {};
-        rhi::BufferHandle ubo {};
-        rhi::BindGroupHandle group {};
-        Vec3 cachedDir { 0.0f };
-        u32 vertexCount { 0 };
-    };
-    vector<LightShaft> lightShafts;
-    rhi::PipelineHandle shaftPipeline {};
-    u64 shaftShaderGeneration { 0 };
-    // Brick 32 (chantier 7.4): placed water volumes — one alpha-blended
-    // surface quad per volume + the camera-inside test feeding the
-    // tonemap submersion.
-    struct WaterQuad {
-        u64 entityId { 0 };
-        bool seen { false };
-        rhi::BufferHandle vertices {};
-        rhi::BufferHandle ubo {};
-        rhi::BindGroupHandle group {};
-    };
-    vector<WaterQuad> waterQuads;
-    rhi::PipelineHandle waterVolumePipeline {};
-    u64 waterVolumeShaderGeneration { 0 };
-    void drawWaterVolumes(engine::FrameContext& frame);
-    f32 effectiveWaterSurfaceY() const; // brick 32 submersion input
-    // Brick 30 (chantier 7.6): horizon cumulonimbus — a static buffer of
-    // 8 camera-anchored towers, visible only while stormFront > 0.
-    rhi::BufferHandle stormVertices {};
-    rhi::PipelineHandle stormPipeline {};
-    u64 stormShaderGeneration { 0 };
-    // Brick 31 (chantier 7.7): procedural rain streaks + the top-down
-    // occlusion depth (no rain under roofs) + global wetness.
-    rhi::PipelineHandle rainPipeline {};
-    u64 rainShaderGeneration { 0 };
-    rhi::TextureHandle rainOcclusionTex {};
-    rhi::FramebufferHandle rainOcclusionFb {};
-    rhi::SamplerHandle rainSampler {};
-    rhi::BufferHandle rainOcclusionUbo {};
-    rhi::BindGroupHandle rainCasterGroup {};
-    rhi::BindGroupHandle rainReceiverGroup {};
-    bool shaftsUi { true };
-    bool contactShadowsUi { true }; // brick 33a
-    // Brick 33b/c: worker-baked terrain sun-shadow + sky-openness map.
-    render::TerrainLightMap terrainLightMap;
-    bool terrainLightUi { true };
-    void buildShaftPipeline(rhi::Device& device);
-    void drawLightShafts(engine::FrameContext& frame,
-                         const Vec3& sunColor);
-
-    // Chantier 6 B2a: meshes + skinned NPCs cast into the sun cascades
-    // (depth-only pipelines; the model UBOs are re-used, one frame behind
-    // for NPCs — invisible at shadow resolution). Toggle = the A/B guard.
-    rhi::PipelineHandle meshCasterPipeline {};
-    rhi::PipelineHandle skinnedCasterPipeline {};
-    u64 meshCasterShaderGeneration { 0 };
-    u64 skinnedCasterShaderGeneration { 0 };
-    bool meshShadowCastersUi { true };
-    void buildCasterPipelines(rhi::Device& device);
-    void drawShadowCasters(engine::FrameContext& frame, u32 cascade);
-    void drawCastersInto(engine::FrameContext& frame,
-                         rhi::BindGroupHandle casterGroup, bool refreshUbos);
-    // B2b (chantier 7.5): the interior key-light shadow — ONE perspective
-    // depth layer from the castsShadow light nearest the camera; stops a
-    // candle from lighting through a wall. Never touches kCascadeCount.
-    rhi::TextureHandle keyShadowTex {};
-    rhi::FramebufferHandle keyShadowFb {};
-    rhi::SamplerHandle keyShadowSampler {};
-    rhi::BufferHandle keyShadowUbo {};
-    rhi::BindGroupHandle keyShadowCasterGroup {};
-    rhi::BindGroupHandle keyShadowReceiverGroup {};
-    bool keyShadowUi { true };
 
     // B6 (chantier 1): Forms-driven skinned NPCs — the sim subsystem
     // (rig cache, NPC list, build/AI/schedule/combat) lives in NpcDirector
     // (audit U4-10), behind an NpcContext the scene builds each call. The
     // scene keeps cross-cutting reads via npcDirector.npcs() (player
     // attack/crime, debug UI, editor, console). U4-2b: the DRAW side runs
-    // from snapshot.skinned — per-entity GPU state below, keyed by entity
-    // id, mark/swept against the packet (the lightShafts pattern).
+    // from snapshot.skinned, inside the renderer.
     NpcDirector npcDirector;
     NpcContext makeNpcContext();
     // Thin delegators kept so the many call sites stay unchanged; each just
     // bundles the context and forwards to the director.
     void refreshNpcs(rhi::Device& device);
     void updateNpcs(f32 dt);
-    void drawNpcs(engine::FrameContext& frame); // consumes snapshot.skinned
-    struct SkinnedDraw {
-        u64 entityId { 0 };
-        bool seen { false };
-        rhi::BufferHandle paletteSsbo {};
-        rhi::BufferHandle modelUbo {};
-        rhi::BindGroupHandle group {};
-        rhi::BindGroupHandle casterGroup {}; // B2a: ubo b4 + palette b2
-    };
-    vector<SkinnedDraw> skinnedDraws;
-    rhi::PipelineHandle skinnedPipeline {};
-    u64 skinnedShaderGeneration { 0 };
-    void buildSkinnedPipeline(rhi::Device& device);
 
     // Chantier 3 B2/B3: navigation + furniture (shared with the director via
     // NpcContext; navigator is also the StreamingController's).
@@ -539,30 +370,6 @@ private:
     ecs::Entity playerEntity {};
     const gameplay::EffectForm* sprintCostEffect { nullptr };
     const gameplay::EffectForm* testWoundEffect { nullptr };
-
-    rhi::TextureHandle offscreenColor {};
-    rhi::TextureHandle offscreenDepth {};
-    rhi::FramebufferHandle offscreenFb {};
-    // Pre-water snapshots of the opaque scene (copyTexture targets).
-    rhi::TextureHandle sceneColorCopy {};
-    rhi::TextureHandle sceneDepthCopy {};
-    rhi::BindGroupHandle waterSceneBindGroup {};
-    // Half-res mirrored scene for the water's planar reflection.
-    rhi::TextureHandle reflectionColor {};
-    rhi::TextureHandle reflectionDepth {};
-    rhi::FramebufferHandle reflectionFb {};
-    rhi::BufferHandle reflectionUbo {};
-    rhi::BindGroupHandle reflectionBindGroup {};
-    rhi::SamplerHandle depthSampler {}; // nearest — depth must not filter
-    rhi::SamplerHandle blitSampler {};
-    // B4: one blit group per adaptation ping-pong side (binding 5 = the
-    // exposure texture the tonemap taps); [0] doubles as the only group
-    // on the no-postFx fallback path.
-    array<rhi::BindGroupHandle, 2> blitBindGroups {};
-    rhi::PipelineHandle blitPipeline {};
-    u64 blitShaderGeneration { 0 };
-    u32 offscreenWidth { 0 };
-    u32 offscreenHeight { 0 };
 };
 
 } // namespace game

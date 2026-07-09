@@ -30,6 +30,7 @@ add_executable(true-adventurer
     scenes/EditorScene.cpp
     scenes/GameHud.cpp
     scenes/InteractionController.cpp
+    scenes/LandscapeRenderer.cpp
     scenes/LandscapeScene.cpp
     scenes/NpcDirector.cpp
     scenes/PlayerController.cpp
