@@ -7,6 +7,14 @@
 > briques 8.6-8.11 (plan en fin de document) livrent : graphes nodaux
 > (anim/quêtes/dialogues), timeline des events de clip, builder de
 > conditions, éditeur FX à preview live, éditeurs Effect/Ability.
+>
+> **TOUTES CONSTRUITES au 2026-07-10 (nuit, 8.8-8.11 d'une traite sur le
+> go du dev) — 345 tests verts. Session de validation dev :
+> `docs/chantier8-test.md`** (8.6 déjà validée ; 8.8 `9387619`,
+> 8.9 `1ce5718`, 8.10 `9dae087`, 8.11 `a653126` — voir leurs sections
+> pour le détail ; nouveaux acquis transverses : FieldWidgets partagés,
+> pickers typés dans la grille via FormPicker::pickerTypeFor,
+> effectWarnings + conditionSummary + toEmitterParams doctestés).
 
 > **Briques 8.1-8.5 FAITES (2026-07-07) — exécutées d'une traite sur le
 > go du dev.** 279 tests verts, smoke-run par brique, builds Debug +
