@@ -187,6 +187,12 @@ valident à la main dans l'EditorScene.
 
 ### 8.6 — Fondation node-canvas + éditeur AnimGraph
 
+> **FAITE (2026-07-09, `496af72`) — validation dev en attente** (liste
+> « quoi tester » ci-dessous). 336 tests verts (+10), smoke-run OK.
+> Compat imgui-node-editor × imgui 1.92.8 : develop @ b302971 + patch
+> CPM 9 hunks (`cmake/patches/imgui-node-editor-imgui192.patch`) —
+> l'opérateur float*ImVec2 non gardé et `ImRect::Floor()` disparu.
+
 La fondation et son PREMIER consommateur dans la même brique — pas
 d'échafaudage spéculatif : chaque helper n'existe que parce que
 l'AnimGraph l'exige.
