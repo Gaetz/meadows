@@ -45,6 +45,7 @@ add_executable(true-adventurer
     scenes/UiDemoScene.cpp
     ui/AnimGraphPanel.cpp
     ui/CharacterStatsPanel.cpp
+    ui/ClipTimelinePanel.cpp
     ui/ConsolePanel.cpp
     ui/DialogueGraphPanel.cpp
     ui/EventPicker.cpp

@@ -72,6 +72,7 @@ struct EditorCategory {
         QuestGraph,
         DialogueGraph,
         AnimGraph,
+        ClipTimeline,
         Timeline,
         Generic,
         AllTypes
@@ -86,7 +87,7 @@ constexpr EditorCategory kCategories[] = {
       [] { return &quest::DialogueForm::staticTypeInfo(); } },
     { "Anim Graphs", EditorCategory::AnimGraph,
       [] { return &data::AnimGraphForm::staticTypeInfo(); } },
-    { "Anim Clips", EditorCategory::Generic,
+    { "Anim Clips", EditorCategory::ClipTimeline,
       [] { return &data::AnimClipForm::staticTypeInfo(); } },
     { "Schedules", EditorCategory::Timeline,
       [] { return &gameplay::ScheduleForm::staticTypeInfo(); } },
@@ -148,6 +149,7 @@ void EditorScene::reload() {
         std::make_unique<QuestGraphPanel>(*session, layouts, selected);
     dialogueGraph =
         std::make_unique<DialogueGraphPanel>(*session, layouts, selected);
+    clipTimeline = std::make_unique<ClipTimelinePanel>(*session, selected);
     selected = {};
     itemSelected = {};
     synthPicks.assign(report.conflicts.size(), -1); // -1 = keep load order
@@ -401,6 +403,9 @@ void EditorScene::drawEditor() {
         break;
     case EditorCategory::AnimGraph:
         animGraph->drawCanvas(itemSelected);
+        break;
+    case EditorCategory::ClipTimeline:
+        clipTimeline->drawEditor(itemSelected);
         break;
     case EditorCategory::Timeline:
         drawSchedulesContent();
