@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include "engine/reflect/Visit.hpp"
+#include "game/ui/Keywords.hpp"
 
 namespace game {
 
@@ -146,7 +147,20 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
                     commit(reflect::Value { q });
                 }
             },
-            [&](const str&) { drawText(); },
+            [&](const str& s) {
+                // Closed vocabularies get a dropdown (8.7b dev feedback:
+                // keywords are not typed by heart), Capitalized + blue;
+                // the CANONICAL value is what commits.
+                if (const auto* options =
+                        keywordsFor(type->name, field.name)) {
+                    str picked;
+                    if (drawKeywordCombo("##v", *options, s, picked)) {
+                        commit(reflect::Value { picked });
+                    }
+                } else {
+                    drawText();
+                }
+            },
             [&](const core::Guid&) { drawText(); },
         });
         ImGui::PopID();

@@ -5,6 +5,7 @@
 #include <imgui.h>
 
 #include "data/editor/GraphLayout.hpp"
+#include "game/ui/Keywords.hpp"
 #include "quest/Quest.hpp"
 
 namespace game {
@@ -183,6 +184,8 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
             ImGui::TextColored(kSuccessColor, "Success");
         } else if (state->kind == "Failure") {
             ImGui::TextColored(kFailureColor, "Failure");
+        } else {
+            keywordText(state->kind); // Regular & friends: blue keyword
         }
         // Incomplete branches (no destination = no link to draw) live on
         // their source node, selectable so the grid can fix them.
