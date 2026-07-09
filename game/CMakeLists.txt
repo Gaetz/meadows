@@ -51,6 +51,7 @@ add_executable(true-adventurer
     ui/DialogueGraphPanel.cpp
     ui/EventPicker.cpp
     ui/FormPicker.cpp
+    ui/FxPanel.cpp
     ui/Keywords.cpp
     ui/NodeCanvas.cpp
     ui/PropertyGrid.cpp

@@ -172,10 +172,19 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
             },
             [&](const core::Guid& g) {
                 // Item guid fields (8.7e) pick from the four item
-                // categories instead of pasting a raw guid.
+                // categories; single-type guid fields (8.10: clip, cue
+                // particles/sound, ability effects, schedule package)
+                // get the typed picker. Raw text stays the fallback.
                 if (isItemField(type->name, field.name)) {
                     core::Guid picked;
                     if (drawItemPicker("##v", session, g, picked)) {
+                        commit(reflect::Value { picked });
+                    }
+                } else if (const auto* pickType =
+                               pickerTypeFor(type->name, field.name)) {
+                    core::Guid picked;
+                    if (drawFormPicker("##v", session, pickType->id, g,
+                                       picked)) {
                         commit(reflect::Value { picked });
                     }
                 } else {

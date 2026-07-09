@@ -28,4 +28,19 @@ const data::CueForm* CueTable::find(std::string_view tag) const {
     return nullptr;
 }
 
+fx::EmitterParams toEmitterParams(const data::ParticleForm& form) {
+    fx::EmitterParams params;
+    params.burst = form.burst;
+    params.lifetime = form.lifetime;
+    params.lifetimeJitter = form.lifetimeJitter;
+    params.velocity = form.velocity;
+    params.velocityJitter = form.velocityJitter;
+    params.gravity = form.gravity;
+    params.sizeStart = form.sizeStart;
+    params.sizeEnd = form.sizeEnd;
+    params.colorStart = form.colorStart;
+    params.colorEnd = form.colorEnd;
+    return params;
+}
+
 } // namespace gameplay

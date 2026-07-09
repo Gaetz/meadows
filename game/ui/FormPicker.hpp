@@ -24,4 +24,11 @@ bool isItemField(const str& typeName, const str& fieldName);
 bool drawItemPicker(const char* label, data::EditSession& session,
                     const core::Guid& current, core::Guid& picked);
 
+// 8.10: guid fields that point at ONE known Form type (a state's clip,
+// a cue's particles/sound, an ability's cost/cooldown/effect, a schedule
+// entry's package) — the PropertyGrid shows drawFormPicker for them
+// instead of raw guid text. Null = not a typed field.
+const reflect::TypeInfo* pickerTypeFor(const str& typeName,
+                                       const str& fieldName);
+
 } // namespace game

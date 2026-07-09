@@ -400,20 +400,4 @@ void AnimGraphPanel::drawHierarchy(const core::Guid& graphId) {
     }
 }
 
-void AnimGraphPanel::drawInspectorExtras(const core::Guid& target) {
-    const auto* type = target.isValid() ? session.viewType(target) : nullptr;
-    if (!type || type->id != data::AnimStateForm::staticTypeInfo().id) {
-        return;
-    }
-    const auto* state =
-        static_cast<const data::AnimStateForm*>(session.view(target));
-    core::Guid picked;
-    if (drawFormPicker("clip", session,
-                       data::AnimClipForm::staticTypeInfo().id, state->clip,
-                       picked)) {
-        session.setField(target, core::fnv1a("clip"),
-                         reflect::Value { picked });
-    }
-}
-
 } // namespace game

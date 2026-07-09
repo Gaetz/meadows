@@ -8,6 +8,7 @@
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/VisualForms.hpp"
 #include "engine/core/Defines.hpp"
+#include "engine/fx/Particles.hpp"
 
 // GameplayCues (horizontal pass H7) — THE sim/presentation bridge for
 // feedback. The SIM emits cues by tag name at world positions; it neither
@@ -72,5 +73,12 @@ public:
 private:
     std::unordered_map<str, const data::CueForm*> byTag;
 };
+
+// The ParticleForm -> sim mapping (chantier 8.10, the H7 seam filled):
+// engine/fx never sees data:: (rule n°2) — the runtime layer maps here.
+// Shape/rate/duration/texture/blend are emitter-loop and render-site
+// concerns, deliberately NOT part of EmitterParams (Particles.hpp
+// HOW TO FILL) — callers drive them (the FxPanel preview does).
+fx::EmitterParams toEmitterParams(const data::ParticleForm& form);
 
 } // namespace gameplay

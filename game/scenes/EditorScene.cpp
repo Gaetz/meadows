@@ -10,6 +10,7 @@
 
 #include "data/forms/AnimForms.hpp"
 #include "data/forms/CoreForms.hpp"
+#include "data/forms/VisualForms.hpp"
 #include "data/forms/FormQuery.hpp"
 #include "data/plugins/Synthesis.hpp"
 #include "data/plugins/TomlWriter.hpp"
@@ -75,6 +76,7 @@ struct EditorCategory {
         AnimGraph,
         ClipTimeline,
         Timeline,
+        FxPreview,
         Generic,
         AllTypes
     } kind;
@@ -92,6 +94,10 @@ constexpr EditorCategory kCategories[] = {
       [] { return &data::AnimClipForm::staticTypeInfo(); } },
     { "Schedules", EditorCategory::Timeline,
       [] { return &gameplay::ScheduleForm::staticTypeInfo(); } },
+    { "Particles", EditorCategory::FxPreview,
+      [] { return &data::ParticleForm::staticTypeInfo(); } },
+    { "Cues", EditorCategory::Generic,
+      [] { return &data::CueForm::staticTypeInfo(); } },
     { "Effects", EditorCategory::Generic,
       [] { return &gameplay::EffectForm::staticTypeInfo(); } },
     { "Abilities", EditorCategory::Generic,
@@ -151,6 +157,7 @@ void EditorScene::reload() {
     dialogueGraph =
         std::make_unique<DialogueGraphPanel>(*session, layouts, selected);
     clipTimeline = std::make_unique<ClipTimelinePanel>(*session, selected);
+    fxPanel = std::make_unique<FxPanel>(*session);
     selected = {};
     itemSelected = {};
     synthPicks.assign(report.conflicts.size(), -1); // -1 = keep load order
@@ -411,6 +418,9 @@ void EditorScene::drawEditor() {
     case EditorCategory::Timeline:
         drawSchedulesContent();
         break;
+    case EditorCategory::FxPreview:
+        fxPanel->drawEditor(itemSelected);
+        break;
     default:
         drawGenericSummary();
         break;
@@ -493,7 +503,6 @@ void EditorScene::drawInspector() {
     }
     ImGui::BeginChild("inspector-grid");
     if (selected.isValid()) {
-        animGraph->drawInspectorExtras(selected);
         questGraph->drawInspectorExtras(selected);
         drawPropertyGrid(*session, selected);
         // 8.7c: the quest<->dialogue articulation made visible — who

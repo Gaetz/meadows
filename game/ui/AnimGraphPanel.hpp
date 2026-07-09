@@ -27,7 +27,8 @@ public:
 
     void drawCanvas(const core::Guid& graph);
     void drawHierarchy(const core::Guid& graph);
-    void drawInspectorExtras(const core::Guid& target);
+    // (the state's clip picker moved into the PropertyGrid itself — 8.10
+    // typed-guid pickers, FormPicker::pickerTypeFor)
 
 private:
     data::EditSession& session;

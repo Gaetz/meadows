@@ -4,6 +4,12 @@
 
 #include <imgui.h>
 
+#include "data/forms/AnimForms.hpp"
+#include "data/forms/AudioForms.hpp"
+#include "data/forms/VisualForms.hpp"
+#include "gameplay/ability/GameplayEffects.hpp"
+#include "gameplay/ai/AiForms.hpp"
+
 namespace game {
 
 str formDisplayName(const data::EditSession& session, const core::Guid& id) {
@@ -15,6 +21,28 @@ str formDisplayName(const data::EditSession& session, const core::Guid& id) {
         return id.toString() + " (missing)";
     }
     return form->editorId.empty() ? id.toString() : form->editorId;
+}
+
+const reflect::TypeInfo* pickerTypeFor(const str& typeName,
+                                       const str& fieldName) {
+    if (typeName == "AnimStateForm" && fieldName == "clip") {
+        return &data::AnimClipForm::staticTypeInfo();
+    }
+    if (typeName == "CueForm" && fieldName == "particles") {
+        return &data::ParticleForm::staticTypeInfo();
+    }
+    if (typeName == "CueForm" && fieldName == "sound") {
+        return &data::SoundForm::staticTypeInfo();
+    }
+    if (typeName == "AbilityForm" &&
+        (fieldName == "cost" || fieldName == "cooldown" ||
+         fieldName == "effect")) {
+        return &gameplay::EffectForm::staticTypeInfo();
+    }
+    if (typeName == "ScheduleEntryForm" && fieldName == "package") {
+        return &gameplay::AiPackageForm::staticTypeInfo();
+    }
+    return nullptr;
 }
 
 bool isItemField(const str& typeName, const str& fieldName) {

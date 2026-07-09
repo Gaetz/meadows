@@ -244,3 +244,36 @@ TEST_CASE("grid navigator adapts A* to the nav seam") {
         { { 1.5f, 1.5f, 0.0f }, { 6.5f, 1.5f, 0.0f } });
     CHECK_FALSE(blocked.success);
 }
+
+// 8.10 — the ParticleForm -> fx::EmitterParams mapping (the H7 seam
+// filled: engine/fx never sees data::, the runtime maps here).
+TEST_CASE("toEmitterParams maps every shared field verbatim") {
+    data::ParticleForm form;
+    form.burst = 24;
+    form.lifetime = 2.5f;
+    form.lifetimeJitter = 0.4f;
+    form.velocity = Vec3 { 1.0f, 2.0f, 3.0f };
+    form.velocityJitter = 0.7f;
+    form.gravity = Vec3 { 0.0f, -9.0f, 0.0f };
+    form.sizeStart = 0.5f;
+    form.sizeEnd = 0.1f;
+    form.colorStart = Vec4 { 1.0f, 0.5f, 0.25f, 1.0f };
+    form.colorEnd = Vec4 { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    const fx::EmitterParams params = gameplay::toEmitterParams(form);
+    CHECK(params.burst == 24);
+    CHECK(params.lifetime == doctest::Approx(2.5f));
+    CHECK(params.lifetimeJitter == doctest::Approx(0.4f));
+    CHECK(params.velocity == Vec3 { 1.0f, 2.0f, 3.0f });
+    CHECK(params.velocityJitter == doctest::Approx(0.7f));
+    CHECK(params.gravity.y == doctest::Approx(-9.0f));
+    CHECK(params.sizeStart == doctest::Approx(0.5f));
+    CHECK(params.sizeEnd == doctest::Approx(0.1f));
+    CHECK(params.colorStart == Vec4 { 1.0f, 0.5f, 0.25f, 1.0f });
+    CHECK(params.colorEnd.w == doctest::Approx(0.0f));
+
+    // The mapped params drive the REAL sim (the preview's loop).
+    fx::ParticleSim sim;
+    sim.spawnBurst(params, Vec3 { 0.0f }, 7u);
+    CHECK(sim.count() == 24);
+}

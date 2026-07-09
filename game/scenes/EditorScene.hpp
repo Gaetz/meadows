@@ -13,6 +13,7 @@
 #include "game/ui/ClipTimelinePanel.hpp"
 #include "game/ui/ConsolePanel.hpp"
 #include "game/ui/DialogueGraphPanel.hpp"
+#include "game/ui/FxPanel.hpp"
 #include "game/ui/QuestGraphPanel.hpp"
 #include "script/Vm.hpp"
 
@@ -72,6 +73,7 @@ private:
     uptr<QuestGraphPanel> questGraph;       // 8.7
     uptr<DialogueGraphPanel> dialogueGraph; // 8.7
     uptr<ClipTimelinePanel> clipTimeline;   // 8.8
+    uptr<FxPanel> fxPanel;                  // 8.10: live particle preview
 
     vector<str> typeNames; // sorted, for the "All types" filter combo
     int typeFilter { 0 };  // 0 = All (within the "All types" category)
