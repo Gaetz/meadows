@@ -389,7 +389,13 @@ std::optional<data::Plugin> readSave(const str& slot,
     }
     std::ostringstream text;
     text << in.rdbuf();
-    return data::parsePluginToml(text.str(), types, slot);
+    auto parsed = data::parsePluginToml(text.str(), types, slot);
+    if (!parsed) {
+        // U1-03: a corrupt save now says WHY it will not load.
+        LOG_ERROR("save '{}' unreadable: {}", slot, parsed.error());
+        return std::nullopt;
+    }
+    return std::move(*parsed);
 }
 
 } // namespace game

@@ -55,6 +55,7 @@
     ReflectTest.cpp
     ResolverTest.cpp
     ResonanceDecayTest.cpp
+    ResultTest.cpp
     ResonanceTest.cpp
     RestTest.cpp
     RngTest.cpp

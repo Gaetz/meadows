@@ -61,9 +61,16 @@ void WorldDemoScene::onEnter() {
     textureCache = std::make_unique<game::TextureCache>(
         engine.getDevice(), assetDb, engine.getJobSystem());
 
-    basePlugin = data::loadPluginFile(dataDir / "base" / "base.toml", types);
-    modPlugin = data::loadPluginFile(
-        dataDir / "mods" / "golden-blades" / "mod.toml", types);
+    // U1-03: loadPluginFile returns a core::Result — unwrap into the
+    // optional members (absence stays a legal state for this demo scene).
+    if (auto loaded =
+            data::loadPluginFile(dataDir / "base" / "base.toml", types)) {
+        basePlugin = std::move(*loaded);
+    }
+    if (auto loaded = data::loadPluginFile(
+            dataDir / "mods" / "golden-blades" / "mod.toml", types)) {
+        modPlugin = std::move(*loaded);
+    }
     if (!basePlugin) {
         LOG_CRITICAL("Base plugin failed to load; nothing to show");
     }

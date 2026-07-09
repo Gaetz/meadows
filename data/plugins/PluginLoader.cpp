@@ -108,29 +108,32 @@ std::optional<core::Guid> guidOf(const toml::table& table,
 
 } // namespace
 
-std::optional<Plugin> parsePluginToml(std::string_view text,
-                                      const FormTypeRegistry& types,
-                                      std::string_view sourceName) {
+core::Result<Plugin> parsePluginToml(std::string_view text,
+                                     const FormTypeRegistry& types,
+                                     std::string_view sourceName) {
+    // U1-03: fatal failures return their REASON (still logged here so the
+    // headless tests keep the context in their output).
+    const auto fail = [&](const str& reason) {
+        LOG_ERROR("{}: {}", sourceName, reason);
+        return core::Error { str { sourceName } + ": " + reason };
+    };
     toml::parse_result result = toml::parse(text);
     if (!result) {
         std::ostringstream error;
         error << result.error();
-        LOG_ERROR("{}: TOML parse error: {}", sourceName, error.str());
-        return std::nullopt;
+        return fail("TOML parse error: " + error.str());
     }
     const toml::table& root = result.table();
 
     const toml::table* header = root["plugin"].as_table();
     if (!header) {
-        LOG_ERROR("{}: missing [plugin] header", sourceName);
-        return std::nullopt;
+        return fail("missing [plugin] header");
     }
 
     Plugin plugin;
     const auto pluginId = guidOf(*header, "id");
     if (!pluginId) {
-        LOG_ERROR("{}: [plugin] needs a valid 'id' guid", sourceName);
-        return std::nullopt;
+        return fail("[plugin] needs a valid 'id' guid");
     }
     plugin.id = *pluginId;
     plugin.name = (*header)["name"].value_or(std::string { sourceName });
@@ -226,12 +229,12 @@ std::optional<Plugin> parsePluginToml(std::string_view text,
     return plugin;
 }
 
-std::optional<Plugin> loadPluginFile(const std::filesystem::path& path,
-                                     const FormTypeRegistry& types) {
+core::Result<Plugin> loadPluginFile(const std::filesystem::path& path,
+                                    const FormTypeRegistry& types) {
     std::ifstream file { path, std::ios::binary };
     if (!file) {
         LOG_ERROR("Cannot open plugin file: {}", path.string());
-        return std::nullopt;
+        return core::Error { "cannot open " + path.string() };
     }
     std::ostringstream content;
     content << file.rdbuf();

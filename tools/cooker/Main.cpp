@@ -108,6 +108,7 @@ int cook(const char* inPath, const char* outPath,
          const data::FormTypeRegistry& types) {
     const auto plugin = data::loadPluginFile(inPath, types);
     if (!plugin) {
+        LOG_ERROR("cook failed: {}", plugin.error()); // U1-03: the reason
         return 1;
     }
     const vector<u8> bytes = data::writePluginBinary(*plugin);
