@@ -7,6 +7,7 @@
 #include <queue>
 #include <thread>
 
+#include "engine/core/Assert.hpp"
 #include "engine/core/Defines.hpp"
 
 namespace core {
@@ -15,6 +16,19 @@ namespace core {
 // on the stack only if you JobSystem::wait() on it before leaving scope.
 class JobCounter {
 public:
+    // Lifetime contract enforced (audit U1-06 — it was comment-only):
+    // destroying a counter while enqueued jobs still reference it IS the
+    // dangling-reference UB. Catch it at the source, not as a corrupted
+    // atomic later. Non-copyable/movable: workers hold its address.
+    ~JobCounter() {
+        ENGINE_ASSERT_MSG(done(),
+                          "JobCounter destroyed with jobs in flight — "
+                          "JobSystem::wait() on it before leaving scope");
+    }
+    JobCounter() = default;
+    JobCounter(const JobCounter&) = delete;
+    JobCounter& operator=(const JobCounter&) = delete;
+
     bool done() const { return pending.load(std::memory_order_acquire) == 0; }
 
 private:
