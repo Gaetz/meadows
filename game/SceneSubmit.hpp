@@ -100,6 +100,23 @@ struct RenderSnapshot {
     vector<SceneLight> shadowLights; // every castsShadow light (key shadow)
     vector<ShaftLight> shafts;
     vector<WaterVolumeInstance> waterVolumes;
+
+    // Skinned NPCs (U4-2b): the pose is COPIED (self-owning packet, no
+    // pointer into the director's Npc structs). vertices/indices are
+    // resolved GPU handles, the sprite/TextureHandle precedent — the skin
+    // geometry is residency state built once per NPC by the director; the
+    // renderer owns the per-entity draw state (palette SSBO, model UBO,
+    // bind groups) keyed by entityId, mark/swept against this list.
+    struct SkinnedInstance {
+        u64 entityId { 0 };
+        Mat4 transform { 1.0f }; // translate(position) × rotation
+        Vec4 tint { 1.0f };
+        rhi::BufferHandle vertices {};
+        rhi::BufferHandle indices {};
+        u32 indexCount { 0 };
+        vector<Mat4> palette; // skin matrices, this frame's pose
+    };
+    vector<SkinnedInstance> skinned;
 };
 
 // Pure mapping from scene components to a 2D sprite (no GPU — unit-testable).

@@ -8,16 +8,14 @@
 #include "data/forms/CoreForms.hpp"       // data::ActorForm, WeaponForm
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"       // data::childrenOf
-#include "engine/FrameContext.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/physics/Physics.hpp"     // phys::PhysicsWorld/CharacterBody/RayHit
 #include "engine/assets/MeshData.hpp"     // render::SkinnedVertex
-#include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
-#include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
+#include "game/SceneSubmit.hpp"           // RenderSnapshot (U4-2b extract)
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp" // attr, currentValueOf
 #include "gameplay/actors/ActorState.hpp"
@@ -71,12 +69,8 @@ const RigData* NpcDirector::loadRig(const NpcContext& ctx,
 
 void NpcDirector::destroyNpc(rhi::Device& device, Npc& npc) {
     npc.anim.reset(); // references npc.graph — release first
-    if (npc.casterGroup.id != 0) {
-        device.destroyBindGroup(npc.casterGroup);
-    }
-    device.destroyBindGroup(npc.group);
-    device.destroyBuffer(npc.modelUbo);
-    device.destroyBuffer(npc.paletteSsbo);
+    // U4-2b: the per-entity DRAW state (palette SSBO, model UBO, groups)
+    // is renderer-owned now, swept there when this id leaves the snapshot.
     device.destroyBuffer(npc.indices);
     device.destroyBuffer(npc.vertices);
 }
@@ -224,25 +218,6 @@ void NpcDirector::refreshNpcs(
                   .size = skinned->indices.size() * sizeof(u32) },
                 skinned->indices.data());
             npc->indexCount = static_cast<u32>(skinned->indices.size());
-            npc->paletteSsbo = device.createBuffer(
-                { .usage = rhi::BufferUsage::Storage,
-                  .size = npc->palette.size() * sizeof(Mat4),
-                  .dynamic = true },
-                npc->palette.data());
-            npc->modelUbo = device.createBuffer(
-                { .usage = rhi::BufferUsage::Uniform,
-                  // std140 ModelUbo: mat4 model + vec4 tint + vec4 info.
-                  .size = sizeof(Mat4) + 2 * sizeof(Vec4),
-                  .dynamic = true },
-                nullptr);
-            npc->group = device.createBindGroup(
-                { .entries = { { .binding = 1, .buffer = npc->modelUbo },
-                               { .binding = 0,
-                                 .texture = ctx.whiteTexture,
-                                 .sampler = ctx.meshSampler },
-                               { .binding = 2,
-                                 .buffer = npc->paletteSsbo,
-                                 .storage = true } } });
 
             // Ground the entity (actors have no MeshRender: the B1 snap
             // skipped them).
@@ -574,73 +549,20 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
     }
 }
 
-void NpcDirector::draw(engine::FrameContext& frame, const NpcContext& ctx) {
-    if (npcs_.empty()) {
-        return;
-    }
-    if (ctx.shaders.generation("skinned") != skinnedShaderGeneration) {
-        buildSkinnedPipeline(frame.device, ctx.shaders);
-    }
-    struct ModelUniforms {
-        Mat4 model { 1.0f };
-        Vec4 tint { 1.0f };
-        Vec4 info { 0.0f };
-    };
-    frame.cmd.setPipeline(skinnedPipeline);
-    frame.cmd.setBindGroup(0, ctx.frameBindGroup);
-    for (auto& npcPtr : npcs_) {
-        Npc& npc = *npcPtr;
+void NpcDirector::extract(RenderSnapshot& out) const {
+    for (const auto& npcPtr : npcs_) {
+        const Npc& npc = *npcPtr;
+        if (npc.vertices.id == 0 || !npc.entity.is_alive()) {
+            continue;
+        }
         const auto& transform = npc.entity.get<world::Transform>();
-        ModelUniforms uniforms;
-        uniforms.model = glm::translate(Mat4 { 1.0f }, transform.position) *
-                         glm::mat4_cast(transform.rotation);
-        uniforms.tint = npc.tint;
-        frame.device.updateBuffer(npc.modelUbo, &uniforms, sizeof(uniforms),
-                                  0);
-        frame.device.updateBuffer(npc.paletteSsbo, npc.palette.data(),
-                                  npc.palette.size() * sizeof(Mat4), 0);
-        frame.cmd.setBindGroup(1, npc.group);
-        frame.cmd.setVertexBuffer(0, npc.vertices);
-        frame.cmd.setIndexBuffer(npc.indices, rhi::IndexFormat::U32);
-        frame.cmd.drawIndexed(npc.indexCount);
+        out.skinned.push_back(
+            { npc.entity.id(),
+              glm::translate(Mat4 { 1.0f }, transform.position) *
+                  glm::mat4_cast(transform.rotation),
+              npc.tint, npc.vertices, npc.indices, npc.indexCount,
+              npc.palette });
     }
-}
-
-void NpcDirector::buildSkinnedPipeline(rhi::Device& device,
-                                       render::ShaderLibrary& shaders) {
-    if (skinnedPipeline.id != 0) {
-        device.destroyPipeline(skinnedPipeline);
-    }
-    skinnedPipeline = device.createPipeline(
-        { .shader = shaders.get("skinned"),
-          .vertexBuffers =
-              { { .stride = sizeof(render::SkinnedVertex),
-                  .attributes =
-                      { { .location = 0,
-                          .format = rhi::VertexFormat::F32x3,
-                          .offset =
-                              offsetof(render::SkinnedVertex, position) },
-                        { .location = 1,
-                          .format = rhi::VertexFormat::F32x3,
-                          .offset = offsetof(render::SkinnedVertex, normal) },
-                        { .location = 2,
-                          .format = rhi::VertexFormat::F32x2,
-                          .offset = offsetof(render::SkinnedVertex, uv) },
-                        { .location = 3,
-                          .format = rhi::VertexFormat::F32x3,
-                          .offset = offsetof(render::SkinnedVertex, color) },
-                        { .location = 4,
-                          .format = rhi::VertexFormat::F32x4,
-                          .offset = offsetof(render::SkinnedVertex, joints) },
-                        { .location = 5,
-                          .format = rhi::VertexFormat::F32x4,
-                          .offset =
-                              offsetof(render::SkinnedVertex, weights) } } } },
-          .depth = { .testEnable = true,
-                     .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::Back });
-    skinnedShaderGeneration = shaders.generation("skinned");
 }
 
 void NpcDirector::teardown(rhi::Device& device) {
@@ -650,11 +572,6 @@ void NpcDirector::teardown(rhi::Device& device) {
     npcs_.clear();
     patrolPoints.clear();
     rigCache.clear();
-    if (skinnedPipeline.id != 0) {
-        device.destroyPipeline(skinnedPipeline);
-        skinnedPipeline = {};
-    }
-    skinnedShaderGeneration = 0;
 }
 
 } // namespace game

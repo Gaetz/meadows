@@ -753,7 +753,22 @@ void LandscapeScene::onExit() {
     keyShadowFb = {};
     keyShadowSampler = {};
     keyShadowTex = {};
-    // B6 NPCs: GPU state per NPC, the pipeline, and the CPU-side rig cache.
+    // B6 NPCs: the renderer-owned draw state (U4-2b), then the director's
+    // skin geometry + rig cache.
+    for (SkinnedDraw& draw : skinnedDraws) {
+        if (draw.casterGroup.id != 0) {
+            device.destroyBindGroup(draw.casterGroup);
+        }
+        if (draw.group.id != 0) {
+            device.destroyBindGroup(draw.group);
+            device.destroyBuffer(draw.modelUbo);
+            device.destroyBuffer(draw.paletteSsbo);
+        }
+    }
+    skinnedDraws.clear();
+    device.destroyPipeline(skinnedPipeline);
+    skinnedPipeline = {};
+    skinnedShaderGeneration = 0;
     npcDirector.teardown(device);
     // Chantier 2 B1: cell machinery (references scene members — release
     // before the members are reset on the next onEnter).
@@ -1081,6 +1096,10 @@ void LandscapeScene::update(f32 dt) {
         core::FrameProbe::Scope probe { frameProbe, "npcs" };
         updateNpcs(dt);
     }
+    // U4-2b: the skinned extract runs AFTER the NPC update so the packet
+    // carries this frame's pose (paused sim: the last pose, still valid).
+    snapshot.skinned.clear();
+    npcDirector.extract(snapshot);
     // Wind phase integrates the CURRENT strength: speed changes bend the
     // drift/sway smoothly instead of teleporting the pattern.
     windTime += dt * glm::max(atmos.windStrength, 0.05f);
@@ -2023,8 +2042,9 @@ PlayerContext LandscapeScene::makePlayerContext() {
 // --- B6: Forms-driven NPCs (NpcDirector, audit U4-10) -----------------------
 
 // Bundle the NPC subsystem's dependencies for the director this call —
-// references into the scene plus the player / weapon / clock scalars and the
-// GPU handles it binds. Rebuilt each call (cheap: refs + scalars + handles).
+// references into the scene plus the player / weapon / clock scalars.
+// Rebuilt each call (cheap: refs + scalars). U4-2b: no GPU handles anymore —
+// the director's draw side moved behind the snapshot seam.
 NpcContext LandscapeScene::makeNpcContext() {
     return NpcContext {
         world,
@@ -2045,10 +2065,6 @@ NpcContext LandscapeScene::makeNpcContext() {
         banditWeapon,
         sceneConsole.godMode(),
         timeSeconds,
-        whiteTexture,
-        meshSampler,
-        *shaders,
-        frameBindGroup,
     };
 }
 
@@ -2066,8 +2082,129 @@ void LandscapeScene::updateNpcs(f32 dt) {
     npcDirector.update(dt, makeNpcContext());
 }
 
+// U4-2b: skinned NPCs draw from snapshot.skinned only. The per-entity GPU
+// state (palette SSBO, model UBO, bind groups) lives HERE, keyed by entity
+// id and mark/swept against the packet — the lightShafts/waterQuads pattern.
 void LandscapeScene::drawNpcs(engine::FrameContext& frame) {
-    npcDirector.draw(frame, makeNpcContext());
+    if (snapshot.skinned.empty() && skinnedDraws.empty()) {
+        return;
+    }
+    if (shaders->generation("skinned") != skinnedShaderGeneration) {
+        buildSkinnedPipeline(frame.device);
+    }
+    struct ModelUniforms {
+        Mat4 model { 1.0f };
+        Vec4 tint { 1.0f };
+        Vec4 info { 0.0f };
+    };
+    for (SkinnedDraw& draw : skinnedDraws) {
+        draw.seen = false;
+    }
+    bool any = false;
+    for (const RenderSnapshot::SkinnedInstance& instance : snapshot.skinned) {
+        SkinnedDraw* slot = nullptr;
+        for (SkinnedDraw& draw : skinnedDraws) {
+            if (draw.entityId == instance.entityId) {
+                slot = &draw;
+                break;
+            }
+        }
+        if (!slot) {
+            skinnedDraws.push_back({ instance.entityId });
+            slot = &skinnedDraws.back();
+        }
+        slot->seen = true;
+        if (slot->paletteSsbo.id == 0) {
+            slot->paletteSsbo = frame.device.createBuffer(
+                { .usage = rhi::BufferUsage::Storage,
+                  .size = instance.palette.size() * sizeof(Mat4),
+                  .dynamic = true },
+                instance.palette.data());
+            slot->modelUbo = frame.device.createBuffer(
+                { .usage = rhi::BufferUsage::Uniform,
+                  // std140 ModelUbo: mat4 model + vec4 tint + vec4 info.
+                  .size = sizeof(Mat4) + 2 * sizeof(Vec4),
+                  .dynamic = true },
+                nullptr);
+            slot->group = frame.device.createBindGroup(
+                { .entries = { { .binding = 1, .buffer = slot->modelUbo },
+                               { .binding = 0,
+                                 .texture = whiteTexture,
+                                 .sampler = meshSampler },
+                               { .binding = 2,
+                                 .buffer = slot->paletteSsbo,
+                                 .storage = true } } });
+        }
+        ModelUniforms uniforms;
+        uniforms.model = instance.transform;
+        uniforms.tint = instance.tint;
+        frame.device.updateBuffer(slot->modelUbo, &uniforms,
+                                  sizeof(uniforms), 0);
+        frame.device.updateBuffer(slot->paletteSsbo,
+                                  instance.palette.data(),
+                                  instance.palette.size() * sizeof(Mat4), 0);
+        if (!any) {
+            frame.cmd.setPipeline(skinnedPipeline);
+            frame.cmd.setBindGroup(0, frameBindGroup);
+            any = true;
+        }
+        frame.cmd.setBindGroup(1, slot->group);
+        frame.cmd.setVertexBuffer(0, instance.vertices);
+        frame.cmd.setIndexBuffer(instance.indices, rhi::IndexFormat::U32);
+        frame.cmd.drawIndexed(instance.indexCount);
+    }
+    // Sweep draws whose NPC was pruned (cell unload / death cleanup).
+    for (auto it = skinnedDraws.begin(); it != skinnedDraws.end();) {
+        if (!it->seen) {
+            if (it->casterGroup.id != 0) {
+                frame.device.destroyBindGroup(it->casterGroup);
+            }
+            if (it->group.id != 0) {
+                frame.device.destroyBindGroup(it->group);
+                frame.device.destroyBuffer(it->modelUbo);
+                frame.device.destroyBuffer(it->paletteSsbo);
+            }
+            it = skinnedDraws.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void LandscapeScene::buildSkinnedPipeline(rhi::Device& device) {
+    if (skinnedPipeline.id != 0) {
+        device.destroyPipeline(skinnedPipeline);
+    }
+    skinnedPipeline = device.createPipeline(
+        { .shader = shaders->get("skinned"),
+          .vertexBuffers =
+              { { .stride = sizeof(render::SkinnedVertex),
+                  .attributes =
+                      { { .location = 0,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset =
+                              offsetof(render::SkinnedVertex, position) },
+                        { .location = 1,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset = offsetof(render::SkinnedVertex, normal) },
+                        { .location = 2,
+                          .format = rhi::VertexFormat::F32x2,
+                          .offset = offsetof(render::SkinnedVertex, uv) },
+                        { .location = 3,
+                          .format = rhi::VertexFormat::F32x3,
+                          .offset = offsetof(render::SkinnedVertex, color) },
+                        { .location = 4,
+                          .format = rhi::VertexFormat::F32x4,
+                          .offset = offsetof(render::SkinnedVertex, joints) },
+                        { .location = 5,
+                          .format = rhi::VertexFormat::F32x4,
+                          .offset =
+                              offsetof(render::SkinnedVertex, weights) } } } },
+          .depth = { .testEnable = true,
+                     .writeEnable = true,
+                     .compare = rhi::CompareFunc::Less },
+          .cull = rhi::CullMode::Back });
+    skinnedShaderGeneration = shaders->generation("skinned");
 }
 
 // Bundle the streaming fixups' systems for StreamingController this frame —
@@ -2458,26 +2595,35 @@ void LandscapeScene::drawCastersInto(engine::FrameContext& frame,
 
     // Skinned NPCs: model UBO + palette are last frame's (drawNpcs updates
     // them after the cascades) — one frame of shadow lag, invisible at
-    // 2048px cascade resolution.
-    if (!npcDirector.npcs().empty()) {
+    // 2048px cascade resolution. U4-2b: draws from the snapshot; a
+    // first-frame NPC has no draw state yet and simply skips one shadow.
+    if (!snapshot.skinned.empty()) {
         frame.cmd.setPipeline(skinnedCasterPipeline);
         frame.cmd.setBindGroup(1, casterGroup);
-        for (auto& npcPtr : npcDirector.npcs()) {
-            Npc& npc = *npcPtr;
-            if (npc.modelUbo.id == 0 || !npc.entity.is_alive()) {
-                continue;
+        for (const RenderSnapshot::SkinnedInstance& instance :
+             snapshot.skinned) {
+            SkinnedDraw* slot = nullptr;
+            for (SkinnedDraw& draw : skinnedDraws) {
+                if (draw.entityId == instance.entityId) {
+                    slot = &draw;
+                    break;
+                }
             }
-            if (npc.casterGroup.id == 0) {
-                npc.casterGroup = frame.device.createBindGroup(
-                    { .entries = { { .binding = 4, .buffer = npc.modelUbo },
+            if (!slot || slot->modelUbo.id == 0) {
+                continue; // built by drawNpcs later this frame
+            }
+            if (slot->casterGroup.id == 0) {
+                slot->casterGroup = frame.device.createBindGroup(
+                    { .entries = { { .binding = 4,
+                                     .buffer = slot->modelUbo },
                                    { .binding = 2,
-                                     .buffer = npc.paletteSsbo,
+                                     .buffer = slot->paletteSsbo,
                                      .storage = true } } });
             }
-            frame.cmd.setBindGroup(2, npc.casterGroup);
-            frame.cmd.setVertexBuffer(0, npc.vertices);
-            frame.cmd.setIndexBuffer(npc.indices, rhi::IndexFormat::U32);
-            frame.cmd.drawIndexed(npc.indexCount);
+            frame.cmd.setBindGroup(2, slot->casterGroup);
+            frame.cmd.setVertexBuffer(0, instance.vertices);
+            frame.cmd.setIndexBuffer(instance.indices, rhi::IndexFormat::U32);
+            frame.cmd.drawIndexed(instance.indexCount);
         }
     }
 }

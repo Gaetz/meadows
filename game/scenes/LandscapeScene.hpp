@@ -461,18 +461,32 @@ private:
     rhi::BindGroupHandle keyShadowReceiverGroup {};
     bool keyShadowUi { true };
 
-    // B6 (chantier 1): Forms-driven skinned NPCs — the whole subsystem
-    // (rig cache, NPC list, build/AI/schedule/combat/draw) lives in
-    // NpcDirector (audit U4-10), behind an NpcContext the scene builds each
-    // call. The scene keeps only cross-cutting reads via npcDirector.npcs()
-    // (player attack/crime, shadow caster pass, debug UI, editor, console).
+    // B6 (chantier 1): Forms-driven skinned NPCs — the sim subsystem
+    // (rig cache, NPC list, build/AI/schedule/combat) lives in NpcDirector
+    // (audit U4-10), behind an NpcContext the scene builds each call. The
+    // scene keeps cross-cutting reads via npcDirector.npcs() (player
+    // attack/crime, debug UI, editor, console). U4-2b: the DRAW side runs
+    // from snapshot.skinned — per-entity GPU state below, keyed by entity
+    // id, mark/swept against the packet (the lightShafts pattern).
     NpcDirector npcDirector;
     NpcContext makeNpcContext();
     // Thin delegators kept so the many call sites stay unchanged; each just
     // bundles the context and forwards to the director.
     void refreshNpcs(rhi::Device& device);
     void updateNpcs(f32 dt);
-    void drawNpcs(engine::FrameContext& frame);
+    void drawNpcs(engine::FrameContext& frame); // consumes snapshot.skinned
+    struct SkinnedDraw {
+        u64 entityId { 0 };
+        bool seen { false };
+        rhi::BufferHandle paletteSsbo {};
+        rhi::BufferHandle modelUbo {};
+        rhi::BindGroupHandle group {};
+        rhi::BindGroupHandle casterGroup {}; // B2a: ubo b4 + palette b2
+    };
+    vector<SkinnedDraw> skinnedDraws;
+    rhi::PipelineHandle skinnedPipeline {};
+    u64 skinnedShaderGeneration { 0 };
+    void buildSkinnedPipeline(rhi::Device& device);
 
     // Chantier 3 B2/B3: navigation + furniture (shared with the director via
     // NpcContext; navigator is also the StreamingController's).

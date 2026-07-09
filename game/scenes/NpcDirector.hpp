@@ -16,12 +16,8 @@
 namespace rhi {
 class Device;
 }
-namespace engine {
-struct FrameContext;
-}
 namespace render {
 struct TerrainParams;
-class ShaderLibrary;
 }
 namespace data {
 class FormDatabase;
@@ -48,6 +44,8 @@ struct AiPackageForm;
 
 namespace game {
 
+struct RenderSnapshot; // game/SceneSubmit.hpp — the extract target
+
 // One rig cache entry per glTF asset (skeleton + its clips). Shared by every
 // NPC built from that asset.
 struct RigData {
@@ -57,8 +55,10 @@ struct RigData {
 
 // Per-NPC runtime state (non-reflected, §H5). uptr in the owning vector: the
 // GraphInstance references Npc::graph — addresses must survive vector growth.
-// Mixes render state (buffers, palette, pose) with AI state (schedule, path,
-// combat) — a known tangle (audit U4-13) kept together for now.
+// U4-2b: the DRAW state (palette SSBO, model UBO, bind groups) moved behind
+// the snapshot seam — the renderer owns it, keyed by entity id. The director
+// keeps the skin GEOMETRY (vertices/indices — residency, built once per NPC)
+// whose handles the snapshot carries, plus the CPU pose it extracts.
 struct Npc {
     ecs::Entity entity;
     const RigData* rig { nullptr };
@@ -70,10 +70,6 @@ struct Npc {
     rhi::BufferHandle vertices {};
     rhi::BufferHandle indices {};
     u32 indexCount { 0 };
-    rhi::BufferHandle paletteSsbo {};
-    rhi::BufferHandle modelUbo {};
-    rhi::BindGroupHandle group {};
-    rhi::BindGroupHandle casterGroup {}; // B2a: ubo b4 + palette b2
     // Patrol: walk to patrolPoints[target], pause, swap ends.
     u32 target { 0 };
     f32 pauseTimer { 0.0f };
@@ -128,11 +124,6 @@ struct NpcContext {
     const data::WeaponForm* banditWeapon;
     bool godMode;
     f32 timeSeconds;                   // cosmetic wander hash (not gameplay RNG)
-    // GPU (refresh builds skins; draw binds them):
-    rhi::TextureHandle whiteTexture;
-    rhi::SamplerHandle meshSampler;
-    render::ShaderLibrary& shaders;
-    rhi::BindGroupHandle frameBindGroup;
 };
 
 // The whole Forms-driven NPC subsystem, extracted from LandscapeScene (audit
@@ -154,11 +145,13 @@ public:
     // Per frame: character tick, schedule, path, combat, anim pose.
     void update(f32 dt, const NpcContext& ctx);
 
-    // Opaque pass: one skinned draw per NPC (builds the pipeline on demand).
-    void draw(engine::FrameContext& frame, const NpcContext& ctx);
+    // U4-2b: fills snapshot.skinned (copied pose + resolved geometry
+    // handles) — the renderer draws ONLY from the packet. Called after
+    // update() so the extract carries this frame's pose.
+    void extract(RenderSnapshot& out) const;
 
-    // onExit teardown: destroy every NPC's GPU state, the pipeline, and drop
-    // the caches, so a re-enter starts clean.
+    // onExit teardown: destroy every NPC's skin geometry and drop the
+    // caches, so a re-enter starts clean.
     void teardown(rhi::Device& device);
 
     // The scene reads/mutates the list directly (shadow caster pass creates
@@ -173,14 +166,11 @@ private:
     void updateNpcSchedule(const NpcContext& ctx, Npc& npc, f32 hourOfDay);
     bool moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,
                           f32 speedScale);
-    void buildSkinnedPipeline(rhi::Device& device, render::ShaderLibrary& shaders);
 
     std::unordered_map<core::Guid, RigData> rigCache;
     vector<uptr<Npc>> npcs_;
     vector<Vec3> patrolPoints;   // grounded "patrol" marker positions
     Vec3 characterSpot_ { 0.0f }; // first NPC position (teleport target)
-    rhi::PipelineHandle skinnedPipeline {};
-    u64 skinnedShaderGeneration { 0 };
 };
 
 } // namespace game
