@@ -5,6 +5,7 @@
 
 #include "engine/core/Hash.hpp"
 #include "engine/core/Jobs.hpp"
+#include "engine/render/MeshVertexLayout.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/render/landscape/TreeGenerator.hpp"
@@ -370,19 +371,8 @@ void VegetationSystem::buildPipeline(rhi::Device& device,
     pipeline = device.createPipeline(
         { .shader = shaders.get(kTreeShader),
           .vertexBuffers =
-              { { .stride = sizeof(MeshVertex),
-                  .attributes = { { .location = 0,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = offsetof(MeshVertex, position) },
-                                  { .location = 1,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = offsetof(MeshVertex, normal) },
-                                  { .location = 2,
-                                    .format = rhi::VertexFormat::F32x2,
-                                    .offset = offsetof(MeshVertex, uv) },
-                                  { .location = 3,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = offsetof(MeshVertex, color) } } },
+              { meshVertexLayout(), // U3-5 (the caster keeps its own
+                                    // position+uv layout — sway weights)
                 { .stride = sizeof(Instance),
                   .stepMode = rhi::VertexStepMode::Instance,
                   .attributes = { { .location = 4,

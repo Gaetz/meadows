@@ -11,6 +11,7 @@
 #include "engine/assets/MeshData.hpp" // render::MeshVertex / SkinnedVertex
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
+#include "engine/render/MeshVertexLayout.hpp"
 #include "engine/render/landscape/FrameUniforms.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
@@ -903,13 +904,7 @@ void LandscapeRenderer::buildCasterPipelines(rhi::Device& device) {
     // as the lit pass); depth state mirrors terrain/vegetation casters.
     meshCasterPipeline = { device, device.createPipeline(
         { .shader = shaders->get("shadow_mesh"),
-          .vertexBuffers =
-              { { .stride = sizeof(render::MeshVertex),
-                  .attributes =
-                      { { .location = 0,
-                          .format = rhi::VertexFormat::F32x3,
-                          .offset =
-                              offsetof(render::MeshVertex, position) } } } },
+          .vertexBuffers = { render::meshVertexPositionLayout() }, // U3-5
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
@@ -1033,21 +1028,7 @@ void LandscapeRenderer::drawCastersInto(engine::FrameContext& frame,
 void LandscapeRenderer::buildMeshPipeline(rhi::Device& device) {
     meshPipeline = { device, device.createPipeline(
         { .shader = shaders->get("mesh"),
-          .vertexBuffers =
-              { { .stride = sizeof(render::MeshVertex),
-                  .attributes =
-                      { { .location = 0,
-                          .format = rhi::VertexFormat::F32x3,
-                          .offset = offsetof(render::MeshVertex, position) },
-                        { .location = 1,
-                          .format = rhi::VertexFormat::F32x3,
-                          .offset = offsetof(render::MeshVertex, normal) },
-                        { .location = 2,
-                          .format = rhi::VertexFormat::F32x2,
-                          .offset = offsetof(render::MeshVertex, uv) },
-                        { .location = 3,
-                          .format = rhi::VertexFormat::F32x3,
-                          .offset = offsetof(render::MeshVertex, color) } } } },
+          .vertexBuffers = { render::meshVertexLayout() }, // U3-5
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },

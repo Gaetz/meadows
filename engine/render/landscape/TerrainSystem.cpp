@@ -6,6 +6,7 @@
 #include "engine/core/Clock.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/render/MeshVertexLayout.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/SplatTextures.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
@@ -349,20 +350,7 @@ void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
     }
     pipeline = device.createPipeline(
         { .shader = shaders.get(kTerrainShader),
-          .vertexBuffers =
-              { { .stride = sizeof(MeshVertex),
-                  .attributes = { { .location = 0,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = offsetof(MeshVertex, position) },
-                                  { .location = 1,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = offsetof(MeshVertex, normal) },
-                                  { .location = 2,
-                                    .format = rhi::VertexFormat::F32x2,
-                                    .offset = offsetof(MeshVertex, uv) },
-                                  { .location = 3,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = offsetof(MeshVertex, color) } } } },
+          .vertexBuffers = { meshVertexLayout() }, // U3-5
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
@@ -378,12 +366,7 @@ void TerrainSystem::buildCasterPipeline(rhi::Device& device,
     }
     casterPipeline = device.createPipeline(
         { .shader = shaders.get(kTerrainCasterShader),
-          .vertexBuffers =
-              { { .stride = sizeof(MeshVertex),
-                  .attributes = { { .location = 0,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = offsetof(MeshVertex,
-                                                       position) } } } },
+          .vertexBuffers = { meshVertexPositionLayout() }, // U3-5
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
