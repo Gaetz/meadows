@@ -145,6 +145,10 @@ void ConsolePanel::draw() {
     }
     ImGui::EndChild();
     ImGui::SetNextItemWidth(-1.0f);
+    if (focusRequested) {
+        ImGui::SetKeyboardFocusHere(); // focus the input on open
+        focusRequested = false;
+    }
     if (ImGui::InputText("##input", input, sizeof(input),
                          ImGuiInputTextFlags_EnterReturnsTrue)) {
         if (input[0] != '\0') {

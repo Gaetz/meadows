@@ -672,11 +672,7 @@ void LandscapeScene::onExit() {
     hud.reset(); // dialogue options point into `forms` too
     uiRouter.reset(); // open container/vendor die with the world
     goldForm = nullptr;
-    console.reset(); // references forms/session — before re-resolve
-    consoleVm.reset();
-    consoleSession.reset();
-    consoleVisible = false;
-    godMode = false;
+    sceneConsole.reset(); // panel/VM/session reference forms — before re-resolve
     destroyOffscreenTarget(device);
     device.destroyPipeline(blitPipeline);
     device.destroySampler(blitSampler);
@@ -1088,6 +1084,9 @@ void LandscapeScene::update(f32 dt) {
     // home. Nothing to toggle here anymore.
     if (uiPaused) {
         // A modal screen owns the input; cameras and player hold still.
+    } else if (sceneConsole.visible()) {
+        // The dev console owns the keyboard; the player / camera hold still
+        // (so WASD types instead of walking) while the sim keeps ticking.
     } else if ((mode == SceneMode::Play) && playerController.body()) {
         playerController.update(dt, makePlayerContext());
     } else {
@@ -1825,13 +1824,12 @@ UiRouterContext LandscapeScene::makeUiRouterContext() {
 // --- Chantier 4 B7: console (nameplates -> GameHud, audit U4-9) ----------------------
 
 void LandscapeScene::createConsole() {
-    consoleSession = std::make_unique<data::EditSession>(forms, formTypes);
-    consoleVm = std::make_unique<script::Vm>();
-    console = std::make_unique<ConsolePanel>(*consoleSession, forms,
-                                             formTypes, *consoleVm);
-    // World commands (the H2 note: registered by the scene that owns a
-    // world; reflection stays the backbone for get/set).
-    console->addCommand("spawn", [this](const str& args) -> str {
+    // Infrastructure (session/VM/panel/visibility) lives in SceneConsole;
+    // the scene registers the world commands onto its panel (the H2 note:
+    // registered by the scene that owns a world; reflection stays the
+    // backbone for get/set).
+    ConsolePanel& panel = sceneConsole.create(forms, formTypes);
+    panel.addCommand("spawn", [this](const str& args) -> str {
         if (args.empty()) {
             return "usage: spawn <EditorId>";
         }
@@ -1872,7 +1870,7 @@ void LandscapeScene::createConsole() {
         refreshNpcs(engine->getDevice()); // actors need their rig/brain
         return "spawned " + args + " (transient — not saved)";
     });
-    console->addCommand("tp", [this](const str& args) -> str {
+    panel.addCommand("tp", [this](const str& args) -> str {
         std::istringstream in { args };
         f32 x = 0.0f, z = 0.0f;
         if (!(in >> x >> z)) {
@@ -1888,16 +1886,15 @@ void LandscapeScene::createConsole() {
         std::snprintf(out, sizeof(out), "teleported to %.0f %.0f", x, z);
         return out;
     });
-    console->addCommand("tgm", [this](const str&) -> str {
-        godMode = !godMode;
-        return godMode ? "god mode ON" : "god mode OFF";
+    panel.addCommand("tgm", [this](const str&) -> str {
+        return sceneConsole.toggleGodMode() ? "god mode ON" : "god mode OFF";
     });
-    console->addCommand("save", [this](const str& args) -> str {
+    panel.addCommand("save", [this](const str& args) -> str {
         saveController.performSave(makeSaveContext(),
                                    args.empty() ? "quick" : args);
         return "saved '" + (args.empty() ? str { "quick" } : args) + "'";
     });
-    console->addCommand("load", [this](const str& args) -> str {
+    panel.addCommand("load", [this](const str& args) -> str {
         const str slot = args.empty() ? "quick" : args;
         if (!std::filesystem::exists(savePath(slot))) {
             return "no save named '" + slot + "'";
@@ -1906,7 +1903,7 @@ void LandscapeScene::createConsole() {
             slot, [this](const str& m) { interaction.say(m, 3.0f); });
         return "loading '" + slot + "'...";
     });
-    console->addCommand("startquest", [this](const str& args) -> str {
+    panel.addCommand("startquest", [this](const str& args) -> str {
         const auto* quest =
             data::findByEditorId<quest::QuestForm>(forms, args);
         if (!quest) {
@@ -1920,7 +1917,7 @@ void LandscapeScene::createConsole() {
         questDirector.syncQuestTags(makeQuestContext());
         return "quest '" + args + "' started";
     });
-    console->addCommand("queststate", [this](const str&) -> str {
+    panel.addCommand("queststate", [this](const str&) -> str {
         const auto& log = questDirector.questLog();
         if (log.quests.empty()) {
             return "quest log empty";
@@ -1940,7 +1937,7 @@ void LandscapeScene::createConsole() {
         }
         return out;
     });
-    console->addCommand("settime", [this](const str& args) -> str {
+    panel.addCommand("settime", [this](const str& args) -> str {
         std::istringstream in { args };
         f32 hour = 0.0f;
         if (!(in >> hour) || hour < 0.0f || hour >= 24.0f) {
@@ -2038,7 +2035,7 @@ NpcContext LandscapeScene::makeNpcContext() {
         playerController.body(),
         mode == SceneMode::Play,
         banditWeapon,
-        godMode,
+        sceneConsole.godMode(),
         timeSeconds,
         whiteTexture,
         meshSampler,
@@ -3235,16 +3232,17 @@ void LandscapeScene::drawUi() {
     // F8 toggles the dev console (chantier 4 B7 — spawn/tp/tgm/settime,
     // reflection get/set, Lua).
     if (ImGui::IsKeyPressed(ImGuiKey_F8, false)) {
-        consoleVisible = !consoleVisible;
-        if (!consoleVisible && (mode == SceneMode::Play)) {
-            // Same keyboard-focus latch as enterPlayMode: closing the console
-            // must not leave ImGui nav focus on a panel Play can't click away.
-            ImGui::SetWindowFocus(nullptr);
+        sceneConsole.toggle(mode == SceneMode::Play);
+        if (mode == SceneMode::Play) {
+            // Free the cursor while the console is open (typing needs it and
+            // mouselook must stop); recapture on close unless a modal still
+            // owns the mouse.
+            const bool capture =
+                !sceneConsole.visible() && !screenStack.modalOpen();
+            engine->getWindow().setRelativeMouseMode(capture);
         }
     }
-    if (consoleVisible && console) {
-        console->draw();
-    }
+    sceneConsole.draw();
 
     // F10 hides/shows the whole panel (works even while the mouse is
     // captured in Play — ImGui keeps its own keyboard state).

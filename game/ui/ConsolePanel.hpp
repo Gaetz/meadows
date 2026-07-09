@@ -28,6 +28,11 @@ public:
     // Draws the console window ("Console").
     void draw();
 
+    // Focus the input field on the next draw — the scene calls this when the
+    // console opens so the player can type without clicking (the mouse is
+    // captured for mouselook in Play).
+    void focusInput() { focusRequested = true; }
+
 private:
     void execute(const str& line);
     void print(const str& line) { lines.push_back(line); }
@@ -42,6 +47,7 @@ private:
                         "else runs as Lua." };
     char input[512] {};
     bool scrollToBottom { false };
+    bool focusRequested { false };
 };
 
 } // namespace game

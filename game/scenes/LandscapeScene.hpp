@@ -24,6 +24,7 @@
 #include "game/scenes/PlayerController.hpp"
 #include "game/scenes/QuestDirector.hpp"
 #include "game/scenes/SaveController.hpp"
+#include "game/scenes/SceneConsole.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
 #include "game/scenes/WeatherController.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
@@ -336,14 +337,12 @@ private:
     SaveContext makeSaveContext();
     std::optional<gameplay::WorldStateForm> loadedWorldState;
 
-    // Chantier 4 B7: dev console in the game scene (F8) — the H2 panel
-    // with world commands registered on top (spawn/tp/tgm/settime), plus
-    // god mode and the nameplates over hostile/hurt NPCs.
-    uptr<data::EditSession> consoleSession;
-    uptr<script::Vm> consoleVm;
-    uptr<ConsolePanel> console;
-    bool consoleVisible { false };
-    bool godMode { false };
+    // Chantier 4 B7: dev console in the game scene (F8). The panel / VM /
+    // session infrastructure + visibility + god mode live in SceneConsole
+    // (audit U4-1); createConsole registers the WORLD commands (spawn/tp/
+    // tgm/save/settime) onto its panel — they touch scene internals so they
+    // stay here (the event-subscription rationale).
+    SceneConsole sceneConsole;
     void createConsole();
 
     // Chantier 3 B5/B6: melee combat — everything flows through the GAS

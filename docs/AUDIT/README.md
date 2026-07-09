@@ -185,9 +185,32 @@ buildée + 279 tests verts) :
       `payFine`) avec un contexte frais. **`makeEvalContext` reste dans la
       scène** (contexte de condition joueur générique, nourrit aussi le HUD —
       évite un couplage circulaire Hud↔Quest). Scène : 3605 → 3500 l.
+    - **U4-1 (suite) — `SceneConsole`** (`d5049a7`, validé en jeu
+      2026-07-09) : l'**infrastructure** de la console
+      dev F8 (l'`EditSession` de réflexion, la VM Lua, le `ConsolePanel`, la
+      visibilité + le cycle de vie create/reset/toggle/draw) et le **god
+      mode** extraits — 5 membres épars → un `SceneConsole`. Le combat lit
+      `sceneConsole.godMode()`, F8 fait `toggle(playMode)` (relâche le latch
+      de focus nav en fermeture Play, comme enterPlayMode). **Les corps de
+      commandes** (spawn/tp/tgm/save/load/startquest/queststate/settime)
+      **restent dans `createConsole`** : ils touchent les internes de la
+      scène (spawn dans le monde, tp joueur, horloge), même logique que les
+      souscriptions d'event bus — un contexte de 12 refs/closures serait un
+      déplacement de couplage, pas une réduction. Réduction volontairement
+      modeste (3500 → 3487 l.) : le gain est l'*appartenance* de
+      l'infrastructure, pas le compte de lignes. **+ correctif UX** (signalé
+      dev) : à l'ouverture, la console **prend le focus clavier**
+      (`ConsolePanel::focusInput`) et, en Play, **libère la souris** +
+      **gèle joueur/caméra** (WASD tape au lieu de marcher, plus de
+      mouselook) ; fermeture → reprise de la capture (sauf modal ouvert) +
+      relâche du latch focus. Build vert + 299 tests verts. À valider en
+      jeu : ouvrir la console en Play et **taper directement sans cliquer**
+      (souris libérée, caméra figée), chaque commande (spawn/tp/tgm/save/
+      load/startquest/queststate/settime), Lua libre, `get`/`set` réflexion,
+      tgm actif en combat (invulnérabilité), Escape après fermeture en Play.
   - **Reste ouvert (Batch 3), ordre suggéré (risque croissant) :**
-    1. **U4-1 (suite)** — restant du god-object : console (~190 l.),
-       panneaux dev ImGui (drawUi/drawSkyUi/drawGameplayUi/drawRenderUi).
+    1. **U4-1 (suite)** — restant du god-object : panneaux dev ImGui
+       (drawUi/drawSkyUi/drawGameplayUi/drawRenderUi).
     2. **U4-2 + U4-4 + U4-6** — **le plus structurant, à garder pour la fin** :
        `LandscapeRenderer` qui possède les systèmes `render::*`, les ~40 handles GPU
        (wrapper RAII, U4-4), l'assemblage `FrameUniforms` (U4-6), et **consomme un
