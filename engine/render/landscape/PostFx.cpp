@@ -20,6 +20,23 @@ constexpr const char* kContactShader = "contactshadow"; // brick 33a
 constexpr const char* kLuminanceShader = "luminance"; // brick 29
 constexpr const char* kAdaptShader = "adapt";
 constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
+
+// Every PostFx pass shader, iterated for the generation checksum (U3-6:
+// build and refresh used to spell the 9-term sum out twice — adding a
+// pass needed edits in three places; this table is the single list).
+constexpr const char* kPassShaders[] = {
+    kPrefilterShader, kDownShader,       kUpShader,
+    kGodRaysShader,   kVolumetricShader, kSsaoShader,
+    kContactShader,   kLuminanceShader,  kAdaptShader,
+};
+
+u64 passGenerationSum(ShaderLibrary& shaders) {
+    u64 sum = 0;
+    for (const char* name : kPassShaders) {
+        sum += shaders.generation(name);
+    }
+    return sum;
+}
 } // namespace
 
 void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
@@ -67,28 +84,11 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
     rebuild(contactPipeline, kContactShader, rhi::BlendMode::Opaque);
     rebuild(luminancePipeline, kLuminanceShader, rhi::BlendMode::Opaque);
     rebuild(adaptPipeline, kAdaptShader, rhi::BlendMode::Opaque);
-    shaderGeneration = shaders.generation(kPrefilterShader) +
-                       shaders.generation(kDownShader) +
-                       shaders.generation(kUpShader) +
-                       shaders.generation(kGodRaysShader) +
-                       shaders.generation(kVolumetricShader) +
-                       shaders.generation(kSsaoShader) +
-                       shaders.generation(kContactShader) +
-                       shaders.generation(kLuminanceShader) +
-                       shaders.generation(kAdaptShader);
+    shaderGeneration = passGenerationSum(shaders);
 }
 
 void PostFx::refreshPipelines(rhi::Device& device, ShaderLibrary& shaders) {
-    const u64 current = shaders.generation(kPrefilterShader) +
-                        shaders.generation(kDownShader) +
-                        shaders.generation(kUpShader) +
-                        shaders.generation(kGodRaysShader) +
-                        shaders.generation(kVolumetricShader) +
-                        shaders.generation(kSsaoShader) +
-                        shaders.generation(kContactShader) +
-                        shaders.generation(kLuminanceShader) +
-                        shaders.generation(kAdaptShader);
-    if (current != shaderGeneration) {
+    if (passGenerationSum(shaders) != shaderGeneration) {
         buildPipelines(device, shaders);
     }
 }
@@ -163,16 +163,31 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
                              .sampler = linearSampler } } }) };
     }
 
-    godRayTex = { device, device.createTexture(
-        { .width = std::max(width / 2, 1u),
-          .height = std::max(height / 2, 1u),
-          .format = rhi::TextureFormat::RGBA16F,
-          .filter = rhi::FilterMode::Linear,
-          .usage = rhi::TextureUsage_Sampled |
-                   rhi::TextureUsage_RenderAttachment },
-        nullptr) };
-    godRayFb = { device, device.createFramebuffer(
-        { .colorAttachments = { { .texture = godRayTex } } }) };
+    // U3-6: the four half-res post targets differ only in format; their
+    // sampling groups all tap the scene depth copy (god rays add the color
+    // copy). One helper pair replaces four hand-copied blocks.
+    const auto makeHalfResTarget = [&](rhi::UniqueTexture& tex,
+                                       rhi::UniqueFramebuffer& fb,
+                                       rhi::TextureFormat format) {
+        tex = { device, device.createTexture(
+                            { .width = std::max(width / 2, 1u),
+                              .height = std::max(height / 2, 1u),
+                              .format = format,
+                              .filter = rhi::FilterMode::Linear,
+                              .usage = rhi::TextureUsage_Sampled |
+                                       rhi::TextureUsage_RenderAttachment },
+                            nullptr) };
+        fb = { device, device.createFramebuffer(
+                           { .colorAttachments = { { .texture = tex } } }) };
+    };
+    const auto makeDepthGroup = [&](rhi::UniqueBindGroup& group) {
+        group = { device, device.createBindGroup(
+                              { .entries = { { .binding = 0,
+                                               .texture = sceneDepthCopy,
+                                               .sampler = linearSampler } } }) };
+    };
+
+    makeHalfResTarget(godRayTex, godRayFb, rhi::TextureFormat::RGBA16F);
     godRayGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = sceneColorCopy,
@@ -181,51 +196,16 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
                          .texture = sceneDepthCopy,
                          .sampler = linearSampler } } }) };
 
-    volumetricTex = { device, device.createTexture(
-        { .width = std::max(width / 2, 1u),
-          .height = std::max(height / 2, 1u),
-          .format = rhi::TextureFormat::RGBA16F,
-          .filter = rhi::FilterMode::Linear,
-          .usage = rhi::TextureUsage_Sampled |
-                   rhi::TextureUsage_RenderAttachment },
-        nullptr) };
-    volumetricFb = { device, device.createFramebuffer(
-        { .colorAttachments = { { .texture = volumetricTex } } }) };
-    volumetricGroup = { device, device.createBindGroup(
-        { .entries = { { .binding = 0,
-                         .texture = sceneDepthCopy,
-                         .sampler = linearSampler } } }) };
+    makeHalfResTarget(volumetricTex, volumetricFb,
+                      rhi::TextureFormat::RGBA16F);
+    makeDepthGroup(volumetricGroup);
 
-    ssaoTex = { device, device.createTexture(
-        { .width = std::max(width / 2, 1u),
-          .height = std::max(height / 2, 1u),
-          .format = rhi::TextureFormat::R16F,
-          .filter = rhi::FilterMode::Linear,
-          .usage = rhi::TextureUsage_Sampled |
-                   rhi::TextureUsage_RenderAttachment },
-        nullptr) };
-    ssaoFb = { device, device.createFramebuffer(
-        { .colorAttachments = { { .texture = ssaoTex } } }) };
-    ssaoGroup = { device, device.createBindGroup(
-        { .entries = { { .binding = 0,
-                         .texture = sceneDepthCopy,
-                         .sampler = linearSampler } } }) };
+    makeHalfResTarget(ssaoTex, ssaoFb, rhi::TextureFormat::R16F);
+    makeDepthGroup(ssaoGroup);
 
     // Brick 33a: contact shadows — half-res, same inputs as the SSAO.
-    contactTex = { device, device.createTexture(
-        { .width = std::max(width / 2, 1u),
-          .height = std::max(height / 2, 1u),
-          .format = rhi::TextureFormat::R16F,
-          .filter = rhi::FilterMode::Linear,
-          .usage = rhi::TextureUsage_Sampled |
-                   rhi::TextureUsage_RenderAttachment },
-        nullptr) };
-    contactFb = { device, device.createFramebuffer(
-        { .colorAttachments = { { .texture = contactTex } } }) };
-    contactGroup = { device, device.createBindGroup(
-        { .entries = { { .binding = 0,
-                         .texture = sceneDepthCopy,
-                         .sampler = linearSampler } } }) };
+    makeHalfResTarget(contactTex, contactFb, rhi::TextureFormat::R16F);
+    makeDepthGroup(contactGroup);
 
     // Brick 29: auto-exposure — fixed 64² log-luminance pyramid + the two
     // 1×1 adaptation targets (ping-pong; adapt.frag snaps when the prev
