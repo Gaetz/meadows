@@ -190,12 +190,12 @@ void GrassSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                          core::JobSystem& jobSystem) {
     streamer.create(jobSystem);
 
-    bladeVertexBuffer = device.createBuffer(
+    bladeVertexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex, .size = sizeof(kBladeVertices) },
-        kBladeVertices);
-    bladeIndexBuffer = device.createBuffer(
+        kBladeVertices) };
+    bladeIndexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Index, .size = sizeof(kBladeIndices) },
-        kBladeIndices);
+        kBladeIndices) };
     bladeIndexCount = static_cast<u32>(std::size(kBladeIndices));
 
     shaders.load(kGrassShader, { { "FrameUbo", 0 } },
@@ -204,22 +204,17 @@ void GrassSystem::create(rhi::Device& device, ShaderLibrary& shaders,
 }
 
 void GrassSystem::destroy(rhi::Device& device) {
-    streamer.invalidateAll([&](Chunk& chunk) {
-        device.destroyBuffer(chunk.instanceBuffer);
-    });
+    (void)device; // U3-7: Unique handles free through their device
+    streamer.invalidateAll([](Chunk&) {});
     instances = 0;
-    device.destroyPipeline(pipeline);
-    device.destroyBuffer(bladeIndexBuffer);
-    device.destroyBuffer(bladeVertexBuffer);
-    pipeline = {};
-    bladeIndexBuffer = {};
-    bladeVertexBuffer = {};
+    pipeline.reset();
+    bladeIndexBuffer.reset();
+    bladeVertexBuffer.reset();
 }
 
 void GrassSystem::regenerate(rhi::Device& device) {
-    streamer.invalidateAll([&](Chunk& chunk) {
-        device.destroyBuffer(chunk.instanceBuffer);
-    });
+    (void)device; // U3-7: the erases free the instance buffers
+    streamer.invalidateAll([](Chunk&) {});
     instances = 0;
 }
 
@@ -230,9 +225,9 @@ void GrassSystem::invalidateChunks(rhi::Device& device,
         if (it == streamer.chunks.end() || !it->second.resident) {
             continue; // missing, or still streaming in (no stale swap)
         }
-        device.destroyBuffer(it->second.instanceBuffer);
         instances -= it->second.instanceCount;
-        // update() re-requests + re-scatters with new heights.
+        // update() re-requests + re-scatters with new heights (the erase
+        // frees the instance buffer, U3-7).
         streamer.chunks.erase(it);
     }
 }
@@ -249,10 +244,10 @@ void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
         Chunk& chunk = it->second;
         chunk.instanceCount = static_cast<u32>(built.payload.size());
         if (chunk.instanceCount > 0) {
-            chunk.instanceBuffer = device.createBuffer(
+            chunk.instanceBuffer = { device, device.createBuffer(
                 { .usage = rhi::BufferUsage::Vertex,
                   .size = built.payload.size() * sizeof(Instance) },
-                built.payload.data());
+                built.payload.data()) };
             chunk.minY = built.payload[0].positionScale.y;
             chunk.maxY = chunk.minY;
             for (const Instance& instance : built.payload) {
@@ -283,18 +278,15 @@ void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
 
     // Evict beyond hysteresis.
     streamer.evictFar(camCx, camCz, kEvictRadius, [&](Chunk& chunk) {
+        // U3-7: the erase frees the instance buffer.
         if (chunk.resident) {
-            device.destroyBuffer(chunk.instanceBuffer);
             instances -= chunk.instanceCount;
         }
     });
 }
 
 void GrassSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
-    if (pipeline.id != 0) {
-        device.destroyPipeline(pipeline);
-    }
-    pipeline = device.createPipeline(
+    pipeline = { device, device.createPipeline( // U3-7: frees the old one
         { .shader = shaders.get(kGrassShader),
           .vertexBuffers =
               { { .stride = 2 * sizeof(f32),
@@ -319,7 +311,7 @@ void GrassSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::None });
+          .cull = rhi::CullMode::None }) };
     shaderGeneration = shaders.generation(kGrassShader);
 }
 

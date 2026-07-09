@@ -141,14 +141,14 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
         // prefix is a valid draw range on its own.
         gridIndexCounts[lod] = lodQuads(lod) * lodQuads(lod) * 6;
         indexBuffers[lod] =
-            device.createBuffer({ .usage = rhi::BufferUsage::Index,
+            { device, device.createBuffer({ .usage = rhi::BufferUsage::Index,
                                   .size = indices.size() * sizeof(u32) },
-                                indices.data());
+                                indices.data()) };
     }
 
     if (device.caps().textureArrays) {
         const vector<u8> splatPixels = buildSplatTilePixels();
-        splatTexture = device.createTexture(
+        splatTexture = { device, device.createTexture(
             { .width = kSplatTileSize,
               .height = kSplatTileSize,
               .arrayLayers = SplatLayer_Count,
@@ -159,17 +159,17 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
               .filter = rhi::FilterMode::Linear,
               .wrap = rhi::AddressMode::Repeat,
               .usage = rhi::TextureUsage_Sampled },
-            splatPixels.data());
+            splatPixels.data()) };
         device.generateMipmaps(splatTexture);
-        splatSampler = device.createSampler(
+        splatSampler = { device, device.createSampler(
             { .mipmapFilter = true,
               .addressU = rhi::AddressMode::Repeat,
               .addressV = rhi::AddressMode::Repeat,
-              .maxAnisotropy = 8.0f });
-        splatBindGroup = device.createBindGroup(
+              .maxAnisotropy = 8.0f }) };
+        splatBindGroup = { device, device.createBindGroup(
             { .entries = { { .binding = 0,
                              .texture = splatTexture,
-                             .sampler = splatSampler } } });
+                             .sampler = splatSampler } } }) };
     } else {
         LOG_WARN("TerrainSystem: no texture arrays on this backend — "
                  "terrain splatting disabled");
@@ -186,31 +186,23 @@ void TerrainSystem::destroy(rhi::Device& device) {
     // Orphaned worker jobs keep pushing into the streamer's queue
     // harmlessly; results die with the last reference (TextureCache
     // teardown pattern) and stale generations drop on arrival.
-    streamer.invalidateAll([&](Chunk& chunk) {
-        device.destroyBuffer(chunk.vertexBuffer);
-    });
+    (void)device; // U3-7: Unique handles free through their device
+    streamer.invalidateAll([](Chunk&) {});
     resident = 0;
     pending = 0;
-    device.destroyPipeline(pipeline);
-    pipeline = {};
-    device.destroyPipeline(casterPipeline);
-    casterPipeline = {};
+    pipeline.reset();
+    casterPipeline.reset();
     for (u32 lod = 0; lod < kLodCount; ++lod) {
-        device.destroyBuffer(indexBuffers[lod]);
-        indexBuffers[lod] = {};
+        indexBuffers[lod].reset();
     }
-    device.destroyBindGroup(splatBindGroup);
-    device.destroySampler(splatSampler);
-    device.destroyTexture(splatTexture);
-    splatBindGroup = {};
-    splatSampler = {};
-    splatTexture = {};
+    splatBindGroup.reset();
+    splatSampler.reset();
+    splatTexture.reset();
 }
 
 void TerrainSystem::regenerate(rhi::Device& device) {
-    streamer.invalidateAll([&](Chunk& chunk) {
-        device.destroyBuffer(chunk.vertexBuffer);
-    });
+    (void)device; // U3-7: Unique buffers free through their device
+    streamer.invalidateAll([](Chunk&) {});
     resident = 0;
     pending = 0;
     // update() re-requests the ring with the new params next frame.
@@ -257,16 +249,14 @@ void TerrainSystem::pumpUploads(rhi::Device& device) {
             Chunk& chunk = it->second;
             if (chunk.residentLod == kNoLod) {
                 ++resident;
-            } else {
-                // LOD swap: the old mesh drew until this very frame — no
-                // hole.
-                device.destroyBuffer(chunk.vertexBuffer);
             }
-            chunk.vertexBuffer = device.createBuffer(
+            // LOD swap: the old mesh drew until this very frame — no hole
+            // (the assignment frees it through the Unique wrapper).
+            chunk.vertexBuffer = { device, device.createBuffer(
                 { .usage = rhi::BufferUsage::Vertex,
                   .size = built.payload.vertices.size() *
                           sizeof(MeshVertex) },
-                built.payload.vertices.data());
+                built.payload.vertices.data()) };
             chunk.residentLod = built.payload.lod;
             chunk.queuedLod = kNoLod;
             chunk.minY = built.payload.minY;
@@ -306,7 +296,7 @@ void TerrainSystem::requestMissing(const Vec3& cameraPos) {
             if (it == streamer.chunks.end()) {
                 Chunk chunk;
                 chunk.queuedLod = lod;
-                streamer.chunks.emplace(chunkKey(cx, cz), chunk);
+                streamer.chunks.emplace(chunkKey(cx, cz), std::move(chunk));
             } else {
                 it->second.queuedLod = lod;
             }
@@ -333,8 +323,8 @@ void TerrainSystem::enqueueBuild(i32 cx, i32 cz, u8 lod) {
 void TerrainSystem::evictFar(rhi::Device& device, const Vec3& cameraPos) {
     streamer.evictFar(camChunk(cameraPos.x), camChunk(cameraPos.z),
                       kEvictRadius, [&](Chunk& chunk) {
+                          // U3-7: the erase frees the vertex buffer.
                           if (chunk.residentLod != kNoLod) {
-                              device.destroyBuffer(chunk.vertexBuffer);
                               --resident;
                           }
                           if (chunk.queuedLod != kNoLod) {
@@ -345,26 +335,21 @@ void TerrainSystem::evictFar(rhi::Device& device, const Vec3& cameraPos) {
 }
 
 void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
-    if (pipeline.id != 0) {
-        device.destroyPipeline(pipeline);
-    }
-    pipeline = device.createPipeline(
+    // U3-7: the assignment frees the previous pipeline.
+    pipeline = { device, device.createPipeline(
         { .shader = shaders.get(kTerrainShader),
           .vertexBuffers = { meshVertexLayout() }, // U3-5
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
           .cull = rhi::CullMode::Back,
-          .wireframe = wireframe });
+          .wireframe = wireframe }) };
     shaderGeneration = shaders.generation(kTerrainShader);
 }
 
 void TerrainSystem::buildCasterPipeline(rhi::Device& device,
                                         ShaderLibrary& shaders) {
-    if (casterPipeline.id != 0) {
-        device.destroyPipeline(casterPipeline);
-    }
-    casterPipeline = device.createPipeline(
+    casterPipeline = { device, device.createPipeline(
         { .shader = shaders.get(kTerrainCasterShader),
           .vertexBuffers = { meshVertexPositionLayout() }, // U3-5
           .depth = { .testEnable = true,
@@ -373,7 +358,7 @@ void TerrainSystem::buildCasterPipeline(rhi::Device& device,
           .cull = rhi::CullMode::Back,
           // Polygon offset: the first line of defense against shadow acne.
           .depthBias = 4.0f,
-          .depthBiasSlope = 2.5f });
+          .depthBiasSlope = 2.5f }) };
     casterShaderGeneration = shaders.generation(kTerrainCasterShader);
 }
 
@@ -402,7 +387,7 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
                          const std::unordered_set<u64>* occluded) {
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
-    if (splatBindGroup.id != 0) {
+    if (splatBindGroup.id() != 0) {
         cmd.setBindGroup(1, splatBindGroup);
     }
     if (shadowBindGroup.id != 0) {

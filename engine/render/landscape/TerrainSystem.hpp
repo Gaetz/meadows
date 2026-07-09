@@ -9,6 +9,7 @@
 #include "engine/render/landscape/ChunkStreamer.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 namespace core {
 class JobSystem;
@@ -162,7 +163,7 @@ private:
         // LOD requested from a worker; kNoLod when nothing is in flight
         // (guards to one in-flight job per chunk).
         u8 queuedLod { kNoLod };
-        rhi::BufferHandle vertexBuffer {};
+        rhi::UniqueBuffer vertexBuffer;
         // Meshed height range (skirts included), for the frustum AABB.
         f32 minY { 0.0f };
         f32 maxY { 0.0f };
@@ -192,22 +193,22 @@ private:
     bool wireframe { false };
 
     // Chunks of equal LOD share one index buffer (identical topology).
-    array<rhi::BufferHandle, kLodCount> indexBuffers {};
+    array<rhi::UniqueBuffer, kLodCount> indexBuffers;
     array<u32, kLodCount> indexCounts {};
     // Grid triangles only (skirts excluded): the shadow pass uses this —
     // skirts are vertical walls along chunk borders and would cast shadow
     // lines onto neighboring terrain.
     array<u32, kLodCount> gridIndexCounts {};
-    rhi::PipelineHandle pipeline {};
+    rhi::UniquePipeline pipeline;
     u64 shaderGeneration { 0 };
-    rhi::PipelineHandle casterPipeline {};
+    rhi::UniquePipeline casterPipeline;
     u64 casterShaderGeneration { 0 };
 
     // Splat material array (grass/rock/snow/sand tiles) + anisotropic
     // repeat sampler, bound as bind group 1 by draw().
-    rhi::TextureHandle splatTexture {};
-    rhi::SamplerHandle splatSampler {};
-    rhi::BindGroupHandle splatBindGroup {};
+    rhi::UniqueTexture splatTexture;
+    rhi::UniqueSampler splatSampler;
+    rhi::UniqueBindGroup splatBindGroup;
 };
 
 // Pure CPU chunk meshing, runs on worker threads. Vertices sample

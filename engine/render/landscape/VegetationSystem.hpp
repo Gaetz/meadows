@@ -9,6 +9,7 @@
 #include "engine/render/landscape/ChunkStreamer.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 namespace core {
 class JobSystem;
@@ -114,7 +115,7 @@ public:
 private:
     struct Chunk {
         bool resident { false };
-        rhi::BufferHandle instanceBuffer {};
+        rhi::UniqueBuffer instanceBuffer;
         array<u32, kVariantCount> counts {};
         array<u32, kVariantCount> firstInstance {};
         u32 total { 0 };
@@ -123,12 +124,12 @@ private:
         f32 maxY { 0.0f };
     };
     struct VariantMesh {
-        rhi::BufferHandle vertexBuffer {};
-        rhi::BufferHandle indexBuffer {};
+        rhi::UniqueBuffer vertexBuffer;
+        rhi::UniqueBuffer indexBuffer;
         u32 indexCount { 0 };
         // Low-detail twin (tree variants only; empty = use the main mesh).
-        rhi::BufferHandle lowVertexBuffer {};
-        rhi::BufferHandle lowIndexBuffer {};
+        rhi::UniqueBuffer lowVertexBuffer;
+        rhi::UniqueBuffer lowIndexBuffer;
         u32 lowIndexCount { 0 };
     };
 
@@ -148,9 +149,9 @@ private:
 
     array<VariantMesh, kVariantCount> variantMeshes {};
     std::unordered_map<u32, MeshData> meshOverrides;
-    rhi::PipelineHandle pipeline {};
+    rhi::UniquePipeline pipeline;
     u64 shaderGeneration { 0 };
-    rhi::PipelineHandle casterPipeline {};
+    rhi::UniquePipeline casterPipeline;
     u64 casterShaderGeneration { 0 };
 };
 

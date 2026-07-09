@@ -23,7 +23,7 @@ constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
 } // namespace
 
 void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
-    linearSampler = device.createSampler({});
+    linearSampler = { device, device.createSampler({}) };
     shaders.load(kPrefilterShader, {}, { { "uSource", 0 } }, kFullscreenVert);
     shaders.load(kDownShader, {}, { { "uSource", 0 } }, kFullscreenVert);
     shaders.load(kUpShader, {}, { { "uSource", 0 } }, kFullscreenVert);
@@ -46,28 +46,17 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
 }
 
 void PostFx::destroy(rhi::Device& device) {
-    destroyTargets(device);
-    device.destroyPipeline(adaptPipeline);
-    device.destroyPipeline(luminancePipeline);
-    device.destroyPipeline(contactPipeline);
-    device.destroyPipeline(ssaoPipeline);
-    device.destroyPipeline(volumetricPipeline);
-    device.destroyPipeline(godRayPipeline);
-    device.destroyPipeline(upPipeline);
-    device.destroyPipeline(downPipeline);
-    device.destroyPipeline(prefilterPipeline);
-    device.destroySampler(linearSampler);
-    *this = PostFx {};
+    (void)device; // U3-7: every handle is rhi::Unique — the move-assign
+    *this = PostFx {}; // frees them all through their device
 }
 
 void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
-    const auto rebuild = [&](rhi::PipelineHandle& pipeline, const char* name,
+    const auto rebuild = [&](rhi::UniquePipeline& pipeline, const char* name,
                              rhi::BlendMode blend) {
-        if (pipeline.id != 0) {
-            device.destroyPipeline(pipeline);
-        }
-        pipeline = device.createPipeline(
-            { .shader = shaders.get(name), .blend = blend });
+        // U3-7: the assignment frees the previous pipeline.
+        pipeline = { device, device.createPipeline(
+                                 { .shader = shaders.get(name),
+                                   .blend = blend }) };
     };
     rebuild(prefilterPipeline, kPrefilterShader, rhi::BlendMode::Opaque);
     rebuild(downPipeline, kDownShader, rhi::BlendMode::Opaque);
@@ -105,51 +94,29 @@ void PostFx::refreshPipelines(rhi::Device& device, ShaderLibrary& shaders) {
 }
 
 void PostFx::destroyTargets(rhi::Device& device) {
+    (void)device; // U3-7: assignment frees through the wrapper
     for (u32 i = 0; i < 2; ++i) {
-        device.destroyBindGroup(adaptGroup[i]);
-        device.destroyFramebuffer(adaptFb[i]);
-        device.destroyTexture(adaptTex[i]);
         adaptGroup[i] = {};
         adaptFb[i] = {};
         adaptTex[i] = {};
     }
-    device.destroyBindGroup(luminanceGroup);
-    device.destroyFramebuffer(luminanceFb);
-    device.destroyTexture(luminanceTex);
     luminanceGroup = {};
     luminanceFb = {};
     luminanceTex = {};
-    device.destroyBindGroup(contactGroup);
-    device.destroyFramebuffer(contactFb);
-    device.destroyTexture(contactTex);
     contactGroup = {};
     contactFb = {};
     contactTex = {};
-    device.destroyBindGroup(ssaoGroup);
-    device.destroyFramebuffer(ssaoFb);
-    device.destroyTexture(ssaoTex);
     ssaoGroup = {};
     ssaoFb = {};
     ssaoTex = {};
-    device.destroyBindGroup(volumetricGroup);
-    device.destroyFramebuffer(volumetricFb);
-    device.destroyTexture(volumetricTex);
     volumetricGroup = {};
     volumetricFb = {};
     volumetricTex = {};
-    device.destroyBindGroup(godRayGroup);
-    device.destroyFramebuffer(godRayFb);
-    device.destroyTexture(godRayTex);
     godRayGroup = {};
     godRayFb = {};
     godRayTex = {};
-    device.destroyBindGroup(prefilterGroup);
     prefilterGroup = {};
     for (u32 i = 0; i < kBloomLevels; ++i) {
-        device.destroyBindGroup(downGroup[i]);
-        device.destroyBindGroup(upGroup[i]);
-        device.destroyFramebuffer(bloomFb[i]);
-        device.destroyTexture(bloomTex[i]);
         downGroup[i] = {};
         upGroup[i] = {};
         bloomFb[i] = {};
@@ -166,104 +133,104 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
     u32 levelWidth = std::max(width / 2, 1u);
     u32 levelHeight = std::max(height / 2, 1u);
     for (u32 i = 0; i < kBloomLevels; ++i) {
-        bloomTex[i] = device.createTexture(
+        bloomTex[i] = { device, device.createTexture(
             { .width = levelWidth,
               .height = levelHeight,
               .format = rhi::TextureFormat::RGBA16F,
               .filter = rhi::FilterMode::Linear,
               .usage = rhi::TextureUsage_Sampled |
                        rhi::TextureUsage_RenderAttachment },
-            nullptr);
-        bloomFb[i] = device.createFramebuffer(
-            { .colorAttachments = { { .texture = bloomTex[i] } } });
+            nullptr) };
+        bloomFb[i] = { device, device.createFramebuffer(
+            { .colorAttachments = { { .texture = bloomTex[i] } } }) };
         levelWidth = std::max(levelWidth / 2, 1u);
         levelHeight = std::max(levelHeight / 2, 1u);
     }
-    prefilterGroup = device.createBindGroup(
+    prefilterGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = sceneColor,
-                         .sampler = linearSampler } } });
+                         .sampler = linearSampler } } }) };
     for (u32 i = 1; i < kBloomLevels; ++i) {
-        downGroup[i] = device.createBindGroup(
+        downGroup[i] = { device, device.createBindGroup(
             { .entries = { { .binding = 0,
                              .texture = bloomTex[i - 1],
-                             .sampler = linearSampler } } });
+                             .sampler = linearSampler } } }) };
     }
     for (u32 i = 0; i + 1 < kBloomLevels; ++i) {
-        upGroup[i] = device.createBindGroup(
+        upGroup[i] = { device, device.createBindGroup(
             { .entries = { { .binding = 0,
                              .texture = bloomTex[i + 1],
-                             .sampler = linearSampler } } });
+                             .sampler = linearSampler } } }) };
     }
 
-    godRayTex = device.createTexture(
+    godRayTex = { device, device.createTexture(
         { .width = std::max(width / 2, 1u),
           .height = std::max(height / 2, 1u),
           .format = rhi::TextureFormat::RGBA16F,
           .filter = rhi::FilterMode::Linear,
           .usage = rhi::TextureUsage_Sampled |
                    rhi::TextureUsage_RenderAttachment },
-        nullptr);
-    godRayFb = device.createFramebuffer(
-        { .colorAttachments = { { .texture = godRayTex } } });
-    godRayGroup = device.createBindGroup(
+        nullptr) };
+    godRayFb = { device, device.createFramebuffer(
+        { .colorAttachments = { { .texture = godRayTex } } }) };
+    godRayGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = sceneColorCopy,
                          .sampler = linearSampler },
                        { .binding = 1,
                          .texture = sceneDepthCopy,
-                         .sampler = linearSampler } } });
+                         .sampler = linearSampler } } }) };
 
-    volumetricTex = device.createTexture(
+    volumetricTex = { device, device.createTexture(
         { .width = std::max(width / 2, 1u),
           .height = std::max(height / 2, 1u),
           .format = rhi::TextureFormat::RGBA16F,
           .filter = rhi::FilterMode::Linear,
           .usage = rhi::TextureUsage_Sampled |
                    rhi::TextureUsage_RenderAttachment },
-        nullptr);
-    volumetricFb = device.createFramebuffer(
-        { .colorAttachments = { { .texture = volumetricTex } } });
-    volumetricGroup = device.createBindGroup(
+        nullptr) };
+    volumetricFb = { device, device.createFramebuffer(
+        { .colorAttachments = { { .texture = volumetricTex } } }) };
+    volumetricGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = sceneDepthCopy,
-                         .sampler = linearSampler } } });
+                         .sampler = linearSampler } } }) };
 
-    ssaoTex = device.createTexture(
+    ssaoTex = { device, device.createTexture(
         { .width = std::max(width / 2, 1u),
           .height = std::max(height / 2, 1u),
           .format = rhi::TextureFormat::R16F,
           .filter = rhi::FilterMode::Linear,
           .usage = rhi::TextureUsage_Sampled |
                    rhi::TextureUsage_RenderAttachment },
-        nullptr);
-    ssaoFb = device.createFramebuffer(
-        { .colorAttachments = { { .texture = ssaoTex } } });
-    ssaoGroup = device.createBindGroup(
+        nullptr) };
+    ssaoFb = { device, device.createFramebuffer(
+        { .colorAttachments = { { .texture = ssaoTex } } }) };
+    ssaoGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = sceneDepthCopy,
-                         .sampler = linearSampler } } });
+                         .sampler = linearSampler } } }) };
 
     // Brick 33a: contact shadows — half-res, same inputs as the SSAO.
-    contactTex = device.createTexture(
+    contactTex = { device, device.createTexture(
         { .width = std::max(width / 2, 1u),
           .height = std::max(height / 2, 1u),
           .format = rhi::TextureFormat::R16F,
           .filter = rhi::FilterMode::Linear,
           .usage = rhi::TextureUsage_Sampled |
                    rhi::TextureUsage_RenderAttachment },
-        nullptr);
-    contactFb = device.createFramebuffer(
-        { .colorAttachments = { { .texture = contactTex } } });
-    contactGroup = device.createBindGroup(
+        nullptr) };
+    contactFb = { device, device.createFramebuffer(
+        { .colorAttachments = { { .texture = contactTex } } }) };
+    contactGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = sceneDepthCopy,
-                         .sampler = linearSampler } } });
+                         .sampler = linearSampler } } }) };
 
     // Brick 29: auto-exposure — fixed 64² log-luminance pyramid + the two
     // 1×1 adaptation targets (ping-pong; adapt.frag snaps when the prev
     // side reads 0, so fresh targets need no seeding).
-    luminanceTex = device.createTexture(
+    luminanceTex = { device, device.createTexture(
         { .width = kLuminanceSize,
           .height = kLuminanceSize,
           .mipLevels = 7, // 64 -> 1
@@ -271,40 +238,40 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
           .filter = rhi::FilterMode::Linear,
           .usage = rhi::TextureUsage_Sampled |
                    rhi::TextureUsage_RenderAttachment },
-        nullptr);
-    luminanceFb = device.createFramebuffer(
-        { .colorAttachments = { { .texture = luminanceTex } } });
-    luminanceGroup = device.createBindGroup(
+        nullptr) };
+    luminanceFb = { device, device.createFramebuffer(
+        { .colorAttachments = { { .texture = luminanceTex } } }) };
+    luminanceGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = sceneColor,
-                         .sampler = linearSampler } } });
+                         .sampler = linearSampler } } }) };
     for (u32 i = 0; i < 2; ++i) {
-        adaptTex[i] = device.createTexture(
+        adaptTex[i] = { device, device.createTexture(
             { .width = 1,
               .height = 1,
               .format = rhi::TextureFormat::R16F,
               .filter = rhi::FilterMode::Nearest,
               .usage = rhi::TextureUsage_Sampled |
                        rhi::TextureUsage_RenderAttachment },
-            nullptr);
-        adaptFb[i] = device.createFramebuffer(
-            { .colorAttachments = { { .texture = adaptTex[i] } } });
+            nullptr) };
+        adaptFb[i] = { device, device.createFramebuffer(
+            { .colorAttachments = { { .texture = adaptTex[i] } } }) };
     }
     for (u32 i = 0; i < 2; ++i) {
-        adaptGroup[i] = device.createBindGroup(
+        adaptGroup[i] = { device, device.createBindGroup(
             { .entries = { { .binding = 0,
                              .texture = luminanceTex,
                              .sampler = linearSampler },
                            { .binding = 1,
                              .texture = adaptTex[1 - i],
-                             .sampler = linearSampler } } });
+                             .sampler = linearSampler } } }) };
     }
     adaptSide = 0;
 }
 
 void PostFx::renderContactShadows(rhi::CommandBuffer& cmd,
                                   rhi::BindGroupHandle frameBindGroup) {
-    if (contactTex.id == 0) {
+    if (contactTex.id() == 0) {
         return;
     }
     cmd.beginRenderPass({ .framebuffer = contactFb,
@@ -318,7 +285,7 @@ void PostFx::renderContactShadows(rhi::CommandBuffer& cmd,
 }
 
 void PostFx::clearContactShadows(rhi::CommandBuffer& cmd) {
-    if (contactTex.id == 0) {
+    if (contactTex.id() == 0) {
         return;
     }
     // Toggle-off path: neutral white (there is no free FrameUbo slot for
@@ -332,7 +299,7 @@ void PostFx::clearContactShadows(rhi::CommandBuffer& cmd) {
 
 void PostFx::renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
                                 rhi::BindGroupHandle frameBindGroup) {
-    if (luminanceTex.id == 0) {
+    if (luminanceTex.id() == 0) {
         return;
     }
     // 1. Log-luminance of the HDR scene into the 64² base level.

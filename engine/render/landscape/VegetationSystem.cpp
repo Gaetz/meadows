@@ -209,28 +209,28 @@ void VegetationSystem::uploadVariantMesh(rhi::Device& device, u32 variant,
                                          const MeshData& mesh) {
     variantMeshes[variant].indexCount =
         static_cast<u32>(mesh.indices.size());
-    variantMeshes[variant].vertexBuffer = device.createBuffer(
+    variantMeshes[variant].vertexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex,
           .size = mesh.vertices.size() * sizeof(MeshVertex) },
-        mesh.vertices.data());
-    variantMeshes[variant].indexBuffer = device.createBuffer(
+        mesh.vertices.data()) };
+    variantMeshes[variant].indexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Index,
           .size = mesh.indices.size() * sizeof(u32) },
-        mesh.indices.data());
+        mesh.indices.data()) };
 }
 
 void VegetationSystem::uploadLowDetailMesh(rhi::Device& device, u32 variant,
                                            const MeshData& mesh) {
     variantMeshes[variant].lowIndexCount =
         static_cast<u32>(mesh.indices.size());
-    variantMeshes[variant].lowVertexBuffer = device.createBuffer(
+    variantMeshes[variant].lowVertexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Vertex,
           .size = mesh.vertices.size() * sizeof(MeshVertex) },
-        mesh.vertices.data());
-    variantMeshes[variant].lowIndexBuffer = device.createBuffer(
+        mesh.vertices.data()) };
+    variantMeshes[variant].lowIndexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Index,
           .size = mesh.indices.size() * sizeof(u32) },
-        mesh.indices.data());
+        mesh.indices.data()) };
 }
 
 void VegetationSystem::overrideVariantMesh(rhi::Device& device, u32 variant,
@@ -239,48 +239,30 @@ void VegetationSystem::overrideVariantMesh(rhi::Device& device, u32 variant,
         mesh.indices.empty()) {
         return;
     }
-    if (variantMeshes[variant].vertexBuffer.id != 0) {
-        device.destroyBuffer(variantMeshes[variant].indexBuffer);
-        device.destroyBuffer(variantMeshes[variant].vertexBuffer);
-    }
-    if (variantMeshes[variant].lowVertexBuffer.id != 0) {
-        // Authored meshes come as ONE detail level.
-        device.destroyBuffer(variantMeshes[variant].lowIndexBuffer);
-        device.destroyBuffer(variantMeshes[variant].lowVertexBuffer);
-    }
+    // U3-7: the reset frees both detail levels through their wrappers
+    // (authored meshes come as ONE detail level — low twin stays empty).
     variantMeshes[variant] = {};
     uploadVariantMesh(device, variant, mesh);
     meshOverrides[variant] = std::move(mesh);
 }
 
 void VegetationSystem::destroyVariantMeshes(rhi::Device& device) {
+    (void)device; // U3-7: assignment frees through the wrappers
     for (VariantMesh& variant : variantMeshes) {
-        device.destroyBuffer(variant.indexBuffer);
-        device.destroyBuffer(variant.vertexBuffer);
-        if (variant.lowVertexBuffer.id != 0) {
-            device.destroyBuffer(variant.lowIndexBuffer);
-            device.destroyBuffer(variant.lowVertexBuffer);
-        }
         variant = {};
     }
 }
 
 void VegetationSystem::destroy(rhi::Device& device) {
-    streamer.invalidateAll([&](Chunk& chunk) {
-        device.destroyBuffer(chunk.instanceBuffer);
-    });
+    streamer.invalidateAll([](Chunk&) {}); // erases free the buffers
     instances = 0;
-    device.destroyPipeline(pipeline);
-    pipeline = {};
-    device.destroyPipeline(casterPipeline);
-    casterPipeline = {};
+    pipeline.reset();
+    casterPipeline.reset();
     destroyVariantMeshes(device);
 }
 
 void VegetationSystem::regenerate(rhi::Device& device, u32 terrainSeed) {
-    streamer.invalidateAll([&](Chunk& chunk) {
-        device.destroyBuffer(chunk.instanceBuffer);
-    });
+    streamer.invalidateAll([](Chunk&) {});
     instances = 0;
     destroyVariantMeshes(device);
     createVariantMeshes(device, terrainSeed);
@@ -288,6 +270,7 @@ void VegetationSystem::regenerate(rhi::Device& device, u32 terrainSeed) {
 
 void VegetationSystem::invalidateChunks(rhi::Device& device,
                                         const vector<u64>& keys) {
+    (void)device;
     // The shared variant meshes are height-independent — only per-chunk scatter
     // is dropped so props re-seat on the new terrain.
     for (const u64 key : keys) {
@@ -295,9 +278,9 @@ void VegetationSystem::invalidateChunks(rhi::Device& device,
         if (it == streamer.chunks.end() || !it->second.resident) {
             continue; // missing, or still streaming in (no stale swap)
         }
-        device.destroyBuffer(it->second.instanceBuffer);
         instances -= it->second.total;
-        // update() re-requests + re-scatters with new heights.
+        // update() re-requests + re-scatters with new heights (the erase
+        // frees the instance buffer, U3-7).
         streamer.chunks.erase(it);
     }
 }
@@ -321,10 +304,10 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
         }
         chunk.total = static_cast<u32>(packed.size());
         if (chunk.total > 0) {
-            chunk.instanceBuffer = device.createBuffer(
+            chunk.instanceBuffer = { device, device.createBuffer(
                 { .usage = rhi::BufferUsage::Vertex,
                   .size = packed.size() * sizeof(Instance) },
-                packed.data());
+                packed.data()) };
             chunk.minY = packed[0].positionScale.y;
             chunk.maxY = chunk.minY;
             for (const Instance& instance : packed) {
@@ -356,8 +339,8 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
 
     // Evict beyond hysteresis.
     streamer.evictFar(camCx, camCz, kEvictRadius, [&](Chunk& chunk) {
+        // U3-7: the erase frees the instance buffer.
         if (chunk.resident) {
-            device.destroyBuffer(chunk.instanceBuffer);
             instances -= chunk.total;
         }
     });
@@ -365,10 +348,7 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
 
 void VegetationSystem::buildPipeline(rhi::Device& device,
                                      ShaderLibrary& shaders) {
-    if (pipeline.id != 0) {
-        device.destroyPipeline(pipeline);
-    }
-    pipeline = device.createPipeline(
+    pipeline = { device, device.createPipeline( // U3-7: frees the old one
         { .shader = shaders.get(kTreeShader),
           .vertexBuffers =
               { meshVertexLayout(), // U3-5 (the caster keeps its own
@@ -385,16 +365,13 @@ void VegetationSystem::buildPipeline(rhi::Device& device,
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::Back });
+          .cull = rhi::CullMode::Back }) };
     shaderGeneration = shaders.generation(kTreeShader);
 }
 
 void VegetationSystem::buildCasterPipeline(rhi::Device& device,
                                            ShaderLibrary& shaders) {
-    if (casterPipeline.id != 0) {
-        device.destroyPipeline(casterPipeline);
-    }
-    casterPipeline = device.createPipeline(
+    casterPipeline = { device, device.createPipeline( // U3-7
         { .shader = shaders.get(kPropCasterShader),
           .vertexBuffers =
               { { .stride = sizeof(MeshVertex),
@@ -418,7 +395,7 @@ void VegetationSystem::buildCasterPipeline(rhi::Device& device,
                      .compare = rhi::CompareFunc::Less },
           .cull = rhi::CullMode::Back,
           .depthBias = 4.0f,
-          .depthBiasSlope = 2.5f });
+          .depthBiasSlope = 2.5f }) };
     casterShaderGeneration = shaders.generation(kPropCasterShader);
 }
 

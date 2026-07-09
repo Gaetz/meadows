@@ -5,6 +5,7 @@
 #include "engine/render/landscape/ChunkStreamer.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 namespace core {
 class JobSystem;
@@ -83,7 +84,7 @@ public:
 private:
     struct Chunk {
         bool resident { false };
-        rhi::BufferHandle instanceBuffer {};
+        rhi::UniqueBuffer instanceBuffer;
         u32 instanceCount { 0 };
         // Blade-root height range, for the frustum AABB.
         f32 minY { 0.0f };
@@ -97,10 +98,10 @@ private:
     ChunkStreamer<Chunk, vector<Instance>> streamer;
     u32 instances { 0 };
 
-    rhi::BufferHandle bladeVertexBuffer {};
-    rhi::BufferHandle bladeIndexBuffer {};
+    rhi::UniqueBuffer bladeVertexBuffer;
+    rhi::UniqueBuffer bladeIndexBuffer;
     u32 bladeIndexCount { 0 };
-    rhi::PipelineHandle pipeline {};
+    rhi::UniquePipeline pipeline;
     u64 shaderGeneration { 0 };
 };
 

@@ -2,6 +2,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/rhi/UniqueHandle.hpp"
 
 namespace rhi {
 class CommandBuffer;
@@ -71,57 +72,57 @@ public:
         return adaptTex[side];
     }
 
-    bool ready() const { return bloomTex[0].id != 0; }
+    bool ready() const { return bloomTex[0].id() != 0; }
 
 private:
     void destroyTargets(rhi::Device& device);
     void buildPipelines(rhi::Device& device, ShaderLibrary& shaders);
 
-    rhi::SamplerHandle linearSampler {};
+    rhi::UniqueSampler linearSampler;
 
-    array<rhi::TextureHandle, kBloomLevels> bloomTex {};
-    array<rhi::FramebufferHandle, kBloomLevels> bloomFb {};
+    array<rhi::UniqueTexture, kBloomLevels> bloomTex;
+    array<rhi::UniqueFramebuffer, kBloomLevels> bloomFb;
     // Sampling bind groups: prefilter reads the scene, down[i] reads level
     // i-1, up[i] reads level i+1.
-    rhi::BindGroupHandle prefilterGroup {};
-    array<rhi::BindGroupHandle, kBloomLevels> downGroup {};
-    array<rhi::BindGroupHandle, kBloomLevels> upGroup {};
+    rhi::UniqueBindGroup prefilterGroup;
+    array<rhi::UniqueBindGroup, kBloomLevels> downGroup;
+    array<rhi::UniqueBindGroup, kBloomLevels> upGroup;
 
-    rhi::TextureHandle godRayTex {};
-    rhi::FramebufferHandle godRayFb {};
-    rhi::BindGroupHandle godRayGroup {};
+    rhi::UniqueTexture godRayTex;
+    rhi::UniqueFramebuffer godRayFb;
+    rhi::UniqueBindGroup godRayGroup;
 
-    rhi::TextureHandle volumetricTex {};
-    rhi::FramebufferHandle volumetricFb {};
-    rhi::BindGroupHandle volumetricGroup {};
+    rhi::UniqueTexture volumetricTex;
+    rhi::UniqueFramebuffer volumetricFb;
+    rhi::UniqueBindGroup volumetricGroup;
 
-    rhi::TextureHandle ssaoTex {};
-    rhi::FramebufferHandle ssaoFb {};
-    rhi::BindGroupHandle ssaoGroup {};
+    rhi::UniqueTexture ssaoTex;
+    rhi::UniqueFramebuffer ssaoFb;
+    rhi::UniqueBindGroup ssaoGroup;
 
     // Brick 33a: contact shadows.
-    rhi::TextureHandle contactTex {};
-    rhi::FramebufferHandle contactFb {};
-    rhi::BindGroupHandle contactGroup {};
+    rhi::UniqueTexture contactTex;
+    rhi::UniqueFramebuffer contactFb;
+    rhi::UniqueBindGroup contactGroup;
 
     // Brick 29: auto-exposure targets (window-size independent).
-    rhi::TextureHandle luminanceTex {};
-    rhi::FramebufferHandle luminanceFb {};
-    rhi::BindGroupHandle luminanceGroup {};
-    array<rhi::TextureHandle, 2> adaptTex {};
-    array<rhi::FramebufferHandle, 2> adaptFb {};
-    array<rhi::BindGroupHandle, 2> adaptGroup {};
+    rhi::UniqueTexture luminanceTex;
+    rhi::UniqueFramebuffer luminanceFb;
+    rhi::UniqueBindGroup luminanceGroup;
+    array<rhi::UniqueTexture, 2> adaptTex;
+    array<rhi::UniqueFramebuffer, 2> adaptFb;
+    array<rhi::UniqueBindGroup, 2> adaptGroup;
     u32 adaptSide { 0 };
 
-    rhi::PipelineHandle prefilterPipeline {};
-    rhi::PipelineHandle downPipeline {};
-    rhi::PipelineHandle upPipeline {}; // additive blend
-    rhi::PipelineHandle godRayPipeline {};
-    rhi::PipelineHandle volumetricPipeline {};
-    rhi::PipelineHandle ssaoPipeline {};
-    rhi::PipelineHandle contactPipeline {};
-    rhi::PipelineHandle luminancePipeline {};
-    rhi::PipelineHandle adaptPipeline {};
+    rhi::UniquePipeline prefilterPipeline;
+    rhi::UniquePipeline downPipeline;
+    rhi::UniquePipeline upPipeline; // additive blend
+    rhi::UniquePipeline godRayPipeline;
+    rhi::UniquePipeline volumetricPipeline;
+    rhi::UniquePipeline ssaoPipeline;
+    rhi::UniquePipeline contactPipeline;
+    rhi::UniquePipeline luminancePipeline;
+    rhi::UniquePipeline adaptPipeline;
     u64 shaderGeneration { 0 };
 };
 
