@@ -4,12 +4,7 @@
 
 #include "engine/core/Log.hpp"
 #include "engine/platform/Window.hpp"
-
-// Helper declared in GlDeviceBase.cpp — shared with GlDevice46.
-namespace rhi {
-u32    glVertexFormatComponents(VertexFormat f);
-GLenum glToTopology(PrimitiveTopology t);
-}
+#include "engine/rhi/backends/gl/GlConvert.hpp"
 
 namespace rhi {
 
@@ -102,15 +97,7 @@ PipelineHandle GlDevice41::createPipeline(const PipelineDesc& desc) {
         return {};
     }
 
-    GlPipeline pipeline;
-    pipeline.program        = shaderIt->second;
-    pipeline.blend          = desc.blend;
-    pipeline.glTopology     = glToTopology(desc.topology);
-    pipeline.depth          = desc.depth;
-    pipeline.cull           = desc.cull;
-    pipeline.depthBias      = desc.depthBias;
-    pipeline.depthBiasSlope = desc.depthBiasSlope;
-    pipeline.wireframe      = desc.wireframe;
+    GlPipeline pipeline = makePipelineState(desc, shaderIt->second); // U2-03
 
     // Generate a bare VAO. Attribute format info is stored for later use in
     // implBindVboSlot, where glVertexAttribPointer bakes buffer + format

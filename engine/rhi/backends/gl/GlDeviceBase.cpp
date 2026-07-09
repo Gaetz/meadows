@@ -68,10 +68,26 @@ GLuint compileStage(GLenum stage, const str& source, const str& debugName) {
 
 } // namespace
 
-// Expose helpers to subclass .cpp files without re-declaring them.
+// Shared with the subclass .cpp files through GlConvert.hpp (U2-06).
 u32  glVertexFormatComponents(VertexFormat f) { return vertexFormatComponents(f); }
 GLenum glToTopology(PrimitiveTopology t)      { return toGlTopology(t); }
 GLenum glToCompare(CompareFunc f)             { return toGlCompare(f); }
+
+// The raster-state half of createPipeline, identical in both backends
+// (audit U2-03); each subclass adds only its VAO flavor.
+GlDeviceBase::GlPipeline
+GlDeviceBase::makePipelineState(const PipelineDesc& desc, u32 program) const {
+    GlPipeline pipeline;
+    pipeline.program        = program;
+    pipeline.blend          = desc.blend;
+    pipeline.glTopology     = toGlTopology(desc.topology);
+    pipeline.depth          = desc.depth;
+    pipeline.cull           = desc.cull;
+    pipeline.depthBias      = desc.depthBias;
+    pipeline.depthBiasSlope = desc.depthBiasSlope;
+    pipeline.wireframe      = desc.wireframe;
+    return pipeline;
+}
 
 // --- GlCommandBuffer ----------------------------------------------------------
 

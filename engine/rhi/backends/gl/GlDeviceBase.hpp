@@ -135,6 +135,11 @@ protected:
         vector<u32>          divisors; // per slot
     };
 
+    // The raster-state half of createPipeline, identical in both backends
+    // (audit U2-03): program + the 8 PipelineDesc fields. The subclasses
+    // add only their VAO flavor (legacy re-pointer vs DSA).
+    GlPipeline makePipelineState(const PipelineDesc& desc, u32 program) const;
+
 public:
     // Called by GlCommandBuffer — avoid virtual dispatch per resource entry by
     // passing resolved GL names directly.
