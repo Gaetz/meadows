@@ -304,6 +304,14 @@ re-parenter une réponse au drag → l'arbre suit.
 
 ### 8.7b — La fenêtre unique « True Adventurer DB » (retour dev sur 8.6/8.7)
 
+> **FAITE (2026-07-09, `234d269` + `b5be5a5`) — validation dev en
+> attente.** 337 tests verts, smoke-run OK. Le pin imgui est passé à
+> `v1.92.8-docking` (ImGuizmo + node-editor vendoré compilent inchangés) ;
+> purge `*.dir` faite (layout interne imgui). Les fenêtres autonomes
+> GameDB/Quests/Dialogues/graphes ont disparu — contrat 8.7b des
+> panneaux : `drawCanvas`/`drawHierarchy`/`drawInspectorExtras`, le
+> shell possède les fenêtres.
+
 > Plan écrit 2026-07-09 après validation de la 8.7 : les fenêtres
 > flottantes séparées fonctionnent mais l'interface doit devenir UN
 > éditeur, façon Unity. Arbitrages dev : **ImGui passe au pin
