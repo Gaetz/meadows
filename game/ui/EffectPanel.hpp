@@ -1,0 +1,34 @@
+#pragma once
+
+#include "data/plugins/EditSession.hpp"
+#include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/Attributes.hpp"
+#include "gameplay/ability/GameplayTags.hpp"
+
+namespace game {
+
+// The dedicated EffectForm editor (chantier 8.11): the 17 flat fields
+// organized into the sections that matter (Modifier / Duration / Tags /
+// Expiry / Buildup), each showing ONLY what its kind reads, with the
+// gameplay::effectWarnings lint on top — plus "Test apply": a throwaway
+// AttributeSet/AbilitySystem the effect is applied to through the REAL
+// applyEffect (the session's view, drafts included), attributes shown
+// before/after. Zero new mechanism — the GAS API called directly.
+class EffectPanel {
+public:
+    explicit EffectPanel(data::EditSession& session) : session { session } {}
+
+    void drawEditor(const core::Guid& effect);
+
+private:
+    void resetActor();
+
+    data::EditSession& session;
+    // The test actor (throwaway, editor-only).
+    gameplay::AttributeSet testSet;
+    gameplay::AbilitySystem testSystem;
+    gameplay::GameplayTagRegistry testTags;
+    str lastResult;
+};
+
+} // namespace game

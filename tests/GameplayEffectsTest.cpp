@@ -120,3 +120,50 @@ TEST_CASE("effects: a periodic effect ticks BaseValue then expires") {
     tickEffects(t.set, t.system, 1.0f, t.registry);
     CHECK(baseValueOf(t.set, attr("health")) == 85.0f); // gone, no more ticks
 }
+
+// 8.11 — the EffectPanel's authoring lint.
+TEST_CASE("effectWarnings flags the silent authoring mistakes") {
+    gameplay::EffectForm effect; // defaults: add/instant, all empty
+    // Default form: no attribute, no buildup, no tag -> does nothing.
+    auto warnings = gameplay::effectWarnings(effect);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].find("does nothing") != str::npos);
+
+    effect.attribute = "health";
+    CHECK(gameplay::effectWarnings(effect).empty());
+
+    effect.duration = "periodic"; // period 0, no duration
+    warnings = gameplay::effectWarnings(effect);
+    CHECK(warnings.size() == 2); // never ticks + no duration
+    effect.period = 0.5f;
+    effect.durationSeconds = 3.0f;
+    CHECK(gameplay::effectWarnings(effect).empty());
+
+    effect.duration = "instant"; // duration fields now ignored
+    warnings = gameplay::effectWarnings(effect);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].find("instant ignores") != str::npos);
+    effect.durationSeconds = 0.0f;
+    effect.period = 0.0f;
+
+    effect.buildupType = "poison"; // exclusive with attribute
+    warnings = gameplay::effectWarnings(effect);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].find("buildup") != str::npos);
+    effect.attribute = "";
+    CHECK(gameplay::effectWarnings(effect).empty());
+
+    effect.buildupType = "";
+    effect.attribute = "health";
+    effect.expiryMode = "decay"; // resonance-only
+    warnings = gameplay::effectWarnings(effect);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].find("resonance") != str::npos);
+    effect.attribute = "onyx";
+    CHECK(gameplay::effectWarnings(effect).empty());
+
+    effect.op = "divide"; // unknown keyword
+    warnings = gameplay::effectWarnings(effect);
+    REQUIRE(warnings.size() == 1);
+    CHECK(warnings[0].find("unknown op") != str::npos);
+}

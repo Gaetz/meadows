@@ -9,8 +9,10 @@
 #include "data/plugins/PluginConfig.hpp"
 #include "data/plugins/Resolver.hpp"
 #include "game/Scene.hpp"
+#include "game/ui/AbilityPanel.hpp"
 #include "game/ui/AnimGraphPanel.hpp"
 #include "game/ui/ClipTimelinePanel.hpp"
+#include "game/ui/EffectPanel.hpp"
 #include "game/ui/ConsolePanel.hpp"
 #include "game/ui/DialogueGraphPanel.hpp"
 #include "game/ui/FxPanel.hpp"
@@ -74,6 +76,8 @@ private:
     uptr<DialogueGraphPanel> dialogueGraph; // 8.7
     uptr<ClipTimelinePanel> clipTimeline;   // 8.8
     uptr<FxPanel> fxPanel;                  // 8.10: live particle preview
+    uptr<EffectPanel> effectPanel;          // 8.11: sections + Test apply
+    uptr<AbilityPanel> abilityPanel;        // 8.11: wiring + Test activate
 
     vector<str> typeNames; // sorted, for the "All types" filter combo
     int typeFilter { 0 };  // 0 = All (within the "All types" category)

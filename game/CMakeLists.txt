@@ -43,13 +43,16 @@ add_executable(true-adventurer
     scenes/UiRouter.cpp
     scenes/WeatherController.cpp
     scenes/UiDemoScene.cpp
+    ui/AbilityPanel.cpp
     ui/AnimGraphPanel.cpp
     ui/CharacterStatsPanel.cpp
     ui/ClipTimelinePanel.cpp
     ui/ConditionBuilder.cpp
     ui/ConsolePanel.cpp
     ui/DialogueGraphPanel.cpp
+    ui/EffectPanel.cpp
     ui/EventPicker.cpp
+    ui/FieldWidgets.cpp
     ui/FormPicker.cpp
     ui/FxPanel.cpp
     ui/Keywords.cpp

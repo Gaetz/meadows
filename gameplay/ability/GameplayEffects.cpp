@@ -403,4 +403,46 @@ void removeEffectById(AbilitySystem& system, u32 effectId,
                   [effectId](const ActiveEffect& a) { return a.effectId == effectId; });
 }
 
+vector<str> effectWarnings(const EffectForm& effect) {
+    vector<str> warnings;
+    if (effect.op != "add" && effect.op != "multiply" &&
+        effect.op != "override") {
+        warnings.push_back("unknown op '" + effect.op + "'");
+    }
+    if (effect.duration != "instant" && effect.duration != "duration" &&
+        effect.duration != "infinite" && effect.duration != "periodic") {
+        warnings.push_back("unknown duration kind '" + effect.duration +
+                           "'");
+    }
+    if (effect.duration == "periodic" && effect.period <= 0.0f) {
+        warnings.push_back("periodic with period <= 0 (never ticks)");
+    }
+    if ((effect.duration == "duration" || effect.duration == "periodic") &&
+        effect.durationSeconds <= 0.0f && effect.durationHours <= 0.0f) {
+        warnings.push_back("'" + effect.duration +
+                           "' without durationSeconds or durationHours");
+    }
+    if (effect.duration == "instant" &&
+        (effect.durationSeconds > 0.0f || effect.durationHours > 0.0f)) {
+        warnings.push_back("instant ignores its duration fields");
+    }
+    if (!effect.buildupType.empty() && !effect.attribute.empty()) {
+        warnings.push_back("buildupType AND attribute set - buildup "
+                           "routing wins, the modifier is ignored");
+    }
+    if (effect.attribute.empty() && effect.buildupType.empty() &&
+        effect.grantedTag.empty()) {
+        warnings.push_back("no attribute, no buildup, no granted tag - "
+                           "the effect does nothing");
+    }
+    const bool resonance = effect.attribute == "onyx" ||
+                           effect.attribute == "amber" ||
+                           effect.attribute == "garnet";
+    if (effect.expiryMode == "decay" && !resonance) {
+        warnings.push_back("decay expiry only applies to resonance "
+                           "attributes (onyx/amber/garnet)");
+    }
+    return warnings;
+}
+
 } // namespace gameplay

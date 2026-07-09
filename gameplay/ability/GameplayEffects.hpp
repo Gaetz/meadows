@@ -71,6 +71,10 @@ struct EffectForm : data::Form {
 
 struct StatusBuildup; // forward-declare for buildupType routing
 
+// Authoring lint (chantier 8.11 — the editor's EffectPanel): the
+// mistakes a hand-built effect silently makes. Pure, order-stable.
+vector<str> effectWarnings(const EffectForm& effect);
+
 // Applies an effect to a target (its AttributeSet + AbilitySystem). Returns
 // false if the target's tags fail the effect's required/blocked requirements.
 // Instant → BaseValue (+ `damage` meta-attribute routed to health + clamp);

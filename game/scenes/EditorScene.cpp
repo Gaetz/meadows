@@ -77,6 +77,8 @@ struct EditorCategory {
         ClipTimeline,
         Timeline,
         FxPreview,
+        Effect,
+        Ability,
         Generic,
         AllTypes
     } kind;
@@ -98,9 +100,9 @@ constexpr EditorCategory kCategories[] = {
       [] { return &data::ParticleForm::staticTypeInfo(); } },
     { "Cues", EditorCategory::Generic,
       [] { return &data::CueForm::staticTypeInfo(); } },
-    { "Effects", EditorCategory::Generic,
+    { "Effects", EditorCategory::Effect,
       [] { return &gameplay::EffectForm::staticTypeInfo(); } },
-    { "Abilities", EditorCategory::Generic,
+    { "Abilities", EditorCategory::Ability,
       [] { return &gameplay::AbilityForm::staticTypeInfo(); } },
     { "Weapons", EditorCategory::Generic,
       [] { return &data::WeaponForm::staticTypeInfo(); } },
@@ -158,6 +160,8 @@ void EditorScene::reload() {
         std::make_unique<DialogueGraphPanel>(*session, layouts, selected);
     clipTimeline = std::make_unique<ClipTimelinePanel>(*session, selected);
     fxPanel = std::make_unique<FxPanel>(*session);
+    effectPanel = std::make_unique<EffectPanel>(*session);
+    abilityPanel = std::make_unique<AbilityPanel>(*session, *db);
     selected = {};
     itemSelected = {};
     synthPicks.assign(report.conflicts.size(), -1); // -1 = keep load order
@@ -420,6 +424,12 @@ void EditorScene::drawEditor() {
         break;
     case EditorCategory::FxPreview:
         fxPanel->drawEditor(itemSelected);
+        break;
+    case EditorCategory::Effect:
+        effectPanel->drawEditor(itemSelected);
+        break;
+    case EditorCategory::Ability:
+        abilityPanel->drawEditor(itemSelected);
         break;
     default:
         drawGenericSummary();
