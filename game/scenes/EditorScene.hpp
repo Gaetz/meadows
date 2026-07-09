@@ -11,6 +11,8 @@
 #include "game/Scene.hpp"
 #include "game/ui/AnimGraphPanel.hpp"
 #include "game/ui/ConsolePanel.hpp"
+#include "game/ui/DialogueGraphPanel.hpp"
+#include "game/ui/QuestGraphPanel.hpp"
 #include "script/Vm.hpp"
 
 namespace engine {
@@ -60,7 +62,9 @@ private:
     uptr<script::Vm> vm;
     uptr<ConsolePanel> console;
     data::EditorLayouts layouts; // node x/y side-store (8.6, NOT a plugin)
-    uptr<AnimGraphPanel> animGraph; // 8.6: first game/ui/*Panel editor
+    uptr<AnimGraphPanel> animGraph;         // 8.6
+    uptr<QuestGraphPanel> questGraph;       // 8.7: the structure view
+    uptr<DialogueGraphPanel> dialogueGraph; // 8.7: the tree laid flat
 
     vector<str> typeNames; // sorted, for the filter combo
     int typeFilter { 0 };  // 0 = All

@@ -35,4 +35,12 @@ GraphLayoutResult layoutGraph(
     const vector<core::Guid>& roots,
     const std::unordered_map<core::Guid, i32>* rankOrder = nullptr);
 
+// True when `ancestor` appears on `node`'s parent chain (`node` itself
+// counts). The anti-cycle guard of tree re-parenting (8.7: a dialogue
+// reply may not become a child of its own descendant) — walk-capped, so
+// an already-corrupt cycle can't hang the editor.
+bool isAncestorOf(
+    const std::unordered_map<core::Guid, core::Guid>& parentOf,
+    const core::Guid& ancestor, const core::Guid& node);
+
 } // namespace data

@@ -113,4 +113,18 @@ GraphLayoutResult layoutGraph(
     return result;
 }
 
+bool isAncestorOf(
+    const std::unordered_map<core::Guid, core::Guid>& parentOf,
+    const core::Guid& ancestor, const core::Guid& node) {
+    core::Guid current = node;
+    for (u32 step = 0; step < 256 && current.isValid(); ++step) {
+        if (current == ancestor) {
+            return true;
+        }
+        const auto it = parentOf.find(current);
+        current = it != parentOf.end() ? it->second : core::Guid {};
+    }
+    return false;
+}
+
 } // namespace data

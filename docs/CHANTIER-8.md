@@ -268,6 +268,14 @@ des records anim, aucun x/y.
 
 ### 8.7 — Graphes de quêtes et de dialogues
 
+> **FAITE (2026-07-09) — validation dev en attente** (liste « quoi
+> tester » ci-dessous). 337 tests verts (+1 : isAncestorOf), smoke-run
+> OK. Généricité de NodeCanvas confirmée : AUCUNE retouche du wrapper —
+> seuls ajouts data : `data::isAncestorOf` (garde anti-cycle pure). Les
+> liens de dialogue ne se suppriment jamais (un orphelin est invisible) ;
+> un drag re-parente. La 8.6 avait déjà payé le fix de contrat
+> EndCreate/EndDelete pour tous les canvas.
+
 Deux consommateurs de plus sur le canvas tout chaud — la brique qui
 VALIDE la généricité de NodeCanvas (si elle force des hacks, la
 fondation se corrige ici, tôt).

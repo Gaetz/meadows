@@ -91,6 +91,28 @@ TEST_CASE("graph layout: orphans land in the final layer") {
     CHECK(result.positions.at(lost).x > result.positions.at(a).x);
 }
 
+// Chantier 8.7 — the re-parent anti-cycle guard of the dialogue graph.
+TEST_CASE("isAncestorOf walks the parent chain, survives corrupt cycles") {
+    const Guid root = guid(1), a = guid(2), b = guid(3), other = guid(4);
+    // root <- a <- b (childToParent map).
+    std::unordered_map<Guid, Guid> parentOf { { a, root }, { b, a } };
+
+    CHECK(data::isAncestorOf(parentOf, root, b));  // grandparent
+    CHECK(data::isAncestorOf(parentOf, a, b));     // parent
+    CHECK(data::isAncestorOf(parentOf, b, b));     // self counts
+    CHECK_FALSE(data::isAncestorOf(parentOf, b, a));     // child is not
+    CHECK_FALSE(data::isAncestorOf(parentOf, other, b)); // stranger
+
+    // The re-parent rule it implements: b may move under `other`
+    // (other is no descendant of b), but root may NOT move under b.
+    CHECK_FALSE(data::isAncestorOf(parentOf, other, b));
+    CHECK(data::isAncestorOf(parentOf, root, b)); // would cycle -> refuse
+
+    // A corrupt cycle in the map terminates instead of hanging.
+    std::unordered_map<Guid, Guid> cyclic { { a, b }, { b, a } };
+    CHECK_FALSE(data::isAncestorOf(cyclic, root, a));
+}
+
 TEST_CASE("graph layout: the rank-order key drives rows within a layer") {
     // Dialogue-tree usage (8.7): siblings ordered by `order`, not guid.
     const Guid root = guid(1), a = guid(2), b = guid(3);

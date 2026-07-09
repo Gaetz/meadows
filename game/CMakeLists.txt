@@ -46,9 +46,11 @@ add_executable(true-adventurer
     ui/AnimGraphPanel.cpp
     ui/CharacterStatsPanel.cpp
     ui/ConsolePanel.cpp
+    ui/DialogueGraphPanel.cpp
     ui/FormPicker.cpp
     ui/NodeCanvas.cpp
     ui/PropertyGrid.cpp
+    ui/QuestGraphPanel.cpp
 )
 target_link_libraries(true-adventurer PRIVATE meadows-runtime meadows-data
                       meadows-narrative meadows-script meadows-ui
