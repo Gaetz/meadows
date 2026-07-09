@@ -350,67 +350,37 @@ void LandscapeScene::setupGameplay() {
     // Chantier 4 B5: the currency + the barter trigger (a dialogue node
     // fires "OpenBarter" — the vendor is whoever we're talking to).
     goldForm = data::findByEditorId<data::MiscItemForm>(forms, "GoldCoin");
+    // The eventBus is the scene's central hub (dialogue and combat both
+    // publish into it). QuestDirector owns the quest/crime/dialogue LOGIC;
+    // the subscriptions stay here — `this` is stable for the eventBus
+    // lifetime — and delegate to the director with a fresh context.
     eventBus = gameplay::EventBus {};
     eventBus.subscribe(gameplay::eventKind("OpenBarter"),
                        [this](const gameplay::Event&) {
-                           uiRouter.openBarterScreen(makeUiRouterContext(),
-                                                     dialoguePartner);
+                           uiRouter.openBarterScreen(
+                               makeUiRouterContext(),
+                               questDirector.dialoguePartner());
                        });
-    // Chantier 6 A2: the quest wiring. Gate tags registered up front so
-    // dialogue conditions evaluate before any quest starts.
-    questLog = quest::QuestLog {};
-    easternQuest =
-        data::findByEditorId<quest::QuestForm>(forms, "EasternMenace");
-    for (const char* tag :
-         { "Quest.EasternMenace.Active", "Quest.EasternMenace.Ready",
-           "Quest.EasternMenace.Done", "Crime.Wanted" }) {
-        gameTags.registerTag(tag);
-    }
-    eventBus.subscribe(
-        gameplay::eventKind("OnAcceptEasternMenace"),
-        [this](const gameplay::Event&) {
-            if (!easternQuest ||
-                questLog.quests.contains(easternQuest->id)) {
-                return; // already taken (or done) — never re-begin
-            }
-            quest::beginQuest(questLog, forms, easternQuest->id);
-            syncQuestTags();
-            interaction.say(
-                "Nouvelle quete : La menace de l'est (journal : J).", 4.0f);
-        });
+    questDirector.beginScene(makeQuestContext(),
+                             saveController.loadedFromSave());
+    eventBus.subscribe(gameplay::eventKind("OnAcceptEasternMenace"),
+                       [this](const gameplay::Event&) {
+                           questDirector.acceptDemoQuest(makeQuestContext());
+                       });
     eventBus.subscribe(gameplay::eventKind("OnDeath"),
                        [this](const gameplay::Event& event) {
-                           handleQuestEvent(event);
+                           questDirector.handleQuestEvent(makeQuestContext(),
+                                                          event);
                        });
     eventBus.subscribe(gameplay::eventKind("OnReportBandit"),
                        [this](const gameplay::Event& event) {
-                           handleQuestEvent(event);
+                           questDirector.handleQuestEvent(makeQuestContext(),
+                                                          event);
                        });
-    // Chantier 6 D2: paying the fine clears the bounty. The option is
-    // gated by HasTag Crime.Wanted + HasItem gold ≥ 40 in data, so the
-    // removeItem below can only fail if a mod broke the gate — then it
-    // simply does nothing.
-    eventBus.subscribe(
-        gameplay::eventKind("OnPayFine"), [this](const gameplay::Event&) {
-            if (!playerEntity.is_alive() || !goldForm) {
-                return;
-            }
-            auto& bag = playerEntity.get_mut<gameplay::Inventory>();
-            if (!gameplay::removeItem(bag, goldForm->id, 40)) {
-                return;
-            }
-            if (playerEntity.has<gameplay::Bounty>()) {
-                playerEntity.get_mut<gameplay::Bounty>().bounty = 0.0f;
-            }
-            syncWantedTag();
-            interaction.say("Amende payee. Restez dans le droit chemin.",
-                            4.0f);
-        });
-    // Chantier 6 A4: a loaded save rebuilds the quest log (the tags
-    // mirror re-syncs after the player spawns, below).
-    if (saveController.loadedFromSave()) {
-        quest::applySavedQuests(questLog, forms);
-    }
+    eventBus.subscribe(gameplay::eventKind("OnPayFine"),
+                       [this](const gameplay::Event&) {
+                           questDirector.payFine(makeQuestContext());
+                       });
 }
 
 void LandscapeScene::setupWorldAndStreaming() {
@@ -532,8 +502,9 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
             playerEntity.get_mut<gameplay::Equipment>().weapon =
                 playerWeapon->id;
         }
-        syncQuestTags(); // A4: re-mirror a loaded quest log onto the player
-        syncWantedTag(); // D2: re-mirror a loaded bounty (tag not persisted)
+        // A4/D2: re-mirror a loaded quest log + bounty onto the player.
+        questDirector.syncQuestTags(makeQuestContext());
+        questDirector.syncWantedTag(makeQuestContext());
     } else {
         LOG_WARN("B5.5: no Player actor spawned — controller falls back to "
                  "fixed speeds");
@@ -697,13 +668,10 @@ void LandscapeScene::onExit() {
     shownScreens.clear();
     uiModalWasOpen = false;
     uiTextInputOn = false;
-    dialogueRunner.reset(); // references `forms`, reset before re-resolve
+    questDirector.reset(); // runner/log/demo-quest point into `forms`
     hud.reset(); // dialogue options point into `forms` too
     uiRouter.reset(); // open container/vendor die with the world
-    dialoguePartner = ecs::Entity {};
     goldForm = nullptr;
-    easternQuest = nullptr; // points into `forms`
-    questLog = quest::QuestLog {};
     console.reset(); // references forms/session — before re-resolve
     consoleVm.reset();
     consoleSession.reset();
@@ -1365,8 +1333,8 @@ InteractionContext LandscapeScene::makeInteractionContext() {
         mode == SceneMode::Play,
         [this](const core::Guid& target) { performTravel(target); },
         [this](ecs::Entity partner, const core::Guid& dialogue) {
-            dialoguePartner = partner; // the vendor for B5
-            openDialogue(dialogue);
+            questDirector.setDialoguePartner(partner); // the vendor for B5
+            questDirector.openDialogue(makeQuestContext(), dialogue);
         },
         [this](ecs::Entity container) {
             uiRouter.openContainerScreen(makeUiRouterContext(), container);
@@ -1701,8 +1669,8 @@ HudContext LandscapeScene::makeHudContext() {
         uiRouter.vendorBuyMult(),
         uiRouter.vendorSellMult(),
         goldForm,
-        questLog,
-        dialogueRunner.get(),
+        questDirector.questLog(),
+        questDirector.dialogueRunner(),
         makeEvalContext(),
         screenStack,
     };
@@ -1744,7 +1712,7 @@ SaveContext LandscapeScene::makeSaveContext() {
         forms,
         formTypes,
         gameTags,
-        questLog,
+        questDirector.questLog(),
         gameClock,
         activeWorldspace,
         flyCamera.camera.yaw,
@@ -1832,7 +1800,7 @@ UiRouterContext LandscapeScene::makeUiRouterContext() {
         gameClock,
         lootRng,
         goldForm,
-        dialogueRunner.get(),
+        questDirector.dialogueRunner(),
         playerEntity,
         mode == SceneMode::Play,
         [this] { hud.pushItemModels(makeHudContext()); },
@@ -1944,19 +1912,21 @@ void LandscapeScene::createConsole() {
         if (!quest) {
             return "no quest named '" + args + "'";
         }
-        if (questLog.quests.contains(quest->id)) {
+        auto& log = questDirector.questLog();
+        if (log.quests.contains(quest->id)) {
             return "'" + args + "' already in the log";
         }
-        quest::beginQuest(questLog, forms, quest->id);
-        syncQuestTags();
+        quest::beginQuest(log, forms, quest->id);
+        questDirector.syncQuestTags(makeQuestContext());
         return "quest '" + args + "' started";
     });
     console->addCommand("queststate", [this](const str&) -> str {
-        if (questLog.quests.empty()) {
+        const auto& log = questDirector.questLog();
+        if (log.quests.empty()) {
             return "quest log empty";
         }
         str out;
-        for (const auto& [id, progress] : questLog.quests) {
+        for (const auto& [id, progress] : log.quests) {
             const auto* form = forms.find<quest::QuestForm>(id);
             const auto* state =
                 forms.find<quest::QuestStateForm>(progress.currentState);
@@ -1984,67 +1954,7 @@ void LandscapeScene::createConsole() {
     });
 }
 
-// --- Chantier 6 A2: quests ----------------------------------------------------------
-
-void LandscapeScene::syncQuestTags() {
-    if (!easternQuest || !playerEntity.is_alive() ||
-        !playerEntity.has<gameplay::AbilitySystem>()) {
-        return;
-    }
-    auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-    const auto syncTag = [&](const char* name, bool want) {
-        const auto tag = gameTags.find(name);
-        if (!tag) {
-            return;
-        }
-        const bool have = system.tags.has(*tag);
-        if (want && !have) {
-            system.tags.add(*tag, gameTags);
-        } else if (!want && have) {
-            system.tags.remove(*tag, gameTags);
-        }
-    };
-    const bool active = quest::isActive(questLog, easternQuest->id);
-    const auto* reportState = data::findByEditorId<quest::QuestStateForm>(
-        forms, "EasternMenaceReport");
-    const bool ready =
-        active && reportState &&
-        quest::questState(questLog, easternQuest->id) == reportState->id;
-    const bool done = quest::questStatus(questLog, easternQuest->id) ==
-                      quest::QuestStatus::Succeeded;
-    syncTag("Quest.EasternMenace.Active", active);
-    syncTag("Quest.EasternMenace.Ready", ready);
-    syncTag("Quest.EasternMenace.Done", done);
-}
-
-void LandscapeScene::handleQuestEvent(const gameplay::Event& event) {
-    if (!easternQuest) {
-        return;
-    }
-    const core::Guid stateBefore =
-        quest::questState(questLog, easternQuest->id);
-    quest::onQuestEvent(questLog, forms, event, gameTags);
-    syncQuestTags();
-    const bool succeeded = quest::questStatus(questLog, easternQuest->id) ==
-                           quest::QuestStatus::Succeeded;
-    if (succeeded && stateBefore.isValid() &&
-        quest::questState(questLog, easternQuest->id) != stateBefore) {
-        // The turn-in option fires exactly once (its gate tag drops with
-        // the transition) — the reward lands here, no flag to persist.
-        if (goldForm && playerEntity.is_alive() &&
-            playerEntity.has<gameplay::Inventory>()) {
-            gameplay::addItem(playerEntity.get_mut<gameplay::Inventory>(),
-                              goldForm->id, 50);
-        }
-        interaction.say("Quete accomplie : La menace de l'est (+50 or).",
-                        5.0f);
-    } else if (quest::questState(questLog, easternQuest->id) !=
-               stateBefore) {
-        interaction.say("Journal mis a jour (J).", 4.0f);
-    }
-}
-
-// --- Chantier 4 B4: dialogue --------------------------------------------------------
+// --- Chantier 4 B4: dialogue (opening + runner in QuestDirector) ---------------------
 
 gameplay::EvalContext LandscapeScene::makeEvalContext() const {
     gameplay::EvalContext context;
@@ -2063,24 +1973,24 @@ gameplay::EvalContext LandscapeScene::makeEvalContext() const {
     return context;
 }
 
-void LandscapeScene::openDialogue(const core::Guid& dialogueId) {
-    if (!uiCreated) {
-        return;
-    }
-    if (!dialogueRunner) {
-        dialogueRunner =
-            std::make_unique<quest::DialogueRunner>(forms, eventBus);
-    }
-    if (!dialogueRunner->start(dialogueId)) {
-        LOG_WARN("B4: dialogue {} failed to start", dialogueId.toString());
-        return;
-    }
-    if (const auto* dialogue =
-            forms.find<quest::DialogueForm>(dialogueId)) {
-        uiSystem.setString("dialogue", "npcName", dialogue->displayName);
-    }
-    hud.pushDialogueModel(makeHudContext());
-    screenStack.show("dialogue");
+// Bundle the scene systems the quest / crime / dialogue director touches —
+// references (the eventBus stays a scene hub) plus the two scene actions it
+// needs as closures (the toast, the dialogue model push that needs a
+// HudContext). Rebuilt per call (cheap). Mirrors the other make*Context
+// builders.
+QuestContext LandscapeScene::makeQuestContext() {
+    return QuestContext {
+        forms,
+        gameTags,
+        eventBus,
+        uiSystem,
+        screenStack,
+        playerEntity,
+        goldForm,
+        uiCreated,
+        [this](const str& msg, f32 dur) { interaction.say(msg, dur); },
+        [this] { hud.pushDialogueModel(makeHudContext()); },
+    };
 }
 
 // encumbrance gate, and the Crime.Wanted mirror as a closure (it also
@@ -2101,26 +2011,8 @@ PlayerContext LandscapeScene::makePlayerContext() {
         npcDirector.npcs(),
         interaction,
         playerEncumbrance == gameplay::EncumbranceCategory::Overencumbered,
-        [this] { syncWantedTag(); },
+        [this] { questDirector.syncWantedTag(makeQuestContext()); },
     };
-}
-
-void LandscapeScene::syncWantedTag() {
-    if (!playerEntity.is_alive()) {
-        return;
-    }
-    const auto tag = gameTags.find("Crime.Wanted");
-    if (!tag) {
-        return;
-    }
-    const bool wanted = playerEntity.has<gameplay::Bounty>() &&
-                        playerEntity.get<gameplay::Bounty>().bounty > 0.0f;
-    auto& system = playerEntity.get_mut<gameplay::AbilitySystem>();
-    if (wanted) {
-        system.tags.add(*tag, gameTags);
-    } else {
-        system.tags.remove(*tag, gameTags);
-    }
 }
 
 // --- B6: Forms-driven NPCs (NpcDirector, audit U4-10) -----------------------

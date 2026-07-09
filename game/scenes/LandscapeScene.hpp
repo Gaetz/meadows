@@ -22,6 +22,7 @@
 #include "game/scenes/UiRouter.hpp"
 #include "game/scenes/NpcDirector.hpp"
 #include "game/scenes/PlayerController.hpp"
+#include "game/scenes/QuestDirector.hpp"
 #include "game/scenes/SaveController.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
 #include "game/scenes/WeatherController.hpp"
@@ -299,26 +300,18 @@ private:
     UiRouter uiRouter;
     UiRouterContext makeUiRouterContext();
 
-    // Chantier 6 A2: the quest log (scene-level, like the clock) + the
-    // demo quest. Quest state mirrors into PLAYER tags (Phase-4 pattern)
-    // so dialogue options gate on it through the condition evaluator.
-    quest::QuestLog questLog;
-    const quest::QuestForm* easternQuest { nullptr };
-    void syncQuestTags();
-    void handleQuestEvent(const gameplay::Event& event);
-
-    // Chantier 6 D2 — crime v1: assault on a peaceful NPC in front of a
-    // witness (LOS) = bounty on the reflected Bounty component, mirrored
-    // into the Crime.Wanted tag (conditions can't see components).
-    void syncWantedTag();
-
-    // Chantier 4 B4: dialogue — the Phase-4 tree + condition evaluator,
-    // surfaced by the RmlUi screen.
+    // Chantier 6 A2 / D2 + chantier 4 B4 — quests, crime and dialogue
+    // extracted behind QuestDirector (audit U4-1): the demo quest state
+    // machine, its mirror (and the crime bounty's) into PLAYER tags so
+    // dialogue options gate on them through the condition evaluator, and
+    // the dialogue runner. The eventBus stays a SCENE hub (dialogue and
+    // combat both publish into it); the subscriptions live in onEnter and
+    // delegate to the director. makeEvalContext stays here (generic player
+    // condition context, also feeds the HUD).
+    QuestDirector questDirector;
+    QuestContext makeQuestContext();
     gameplay::EventBus eventBus;
-    uptr<quest::DialogueRunner> dialogueRunner;
-    ecs::Entity dialoguePartner {}; // who [E] Talk opened (vendor for B5)
     gameplay::EvalContext makeEvalContext() const;
-    void openDialogue(const core::Guid& dialogueId);
 
     // Chantier 4 B5: barter data (gold is an ordinary item; the routing
     // and the vendor multipliers live in UiRouter).

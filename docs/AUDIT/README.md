@@ -170,9 +170,24 @@ buildée + 279 tests verts) :
       la scène : streaming, résolution worldspace, heuristique de spawn
       caméra). `finalizeActorSpawn` reste (logique de spawn, appelle
       `pending()`). Scène : 3635 → 3605 l.
+    - **U4-1 (suite) — `QuestDirector`** (`4afe23b`, validé en jeu
+      2026-07-09) : la machine de la quête démo
+      (EasternMenace), son miroir dans les **tags joueur** (les conditions
+      de dialogue ne lisent pas les composants), le miroir crime
+      bounty→`Crime.Wanted`, et le **dialogue** (runner + ouverture) extraits
+      derrière `QuestContext`. Le directeur possède `questLog`, le pointeur
+      quête-démo, le `DialogueRunner` et le `dialoguePartner` ; la scène
+      atteint les bouts partagés (log pour save/HUD/console, runner pour le
+      HUD, partner pour le troc) via accesseurs. **L'`eventBus` reste un hub
+      SCÈNE** (le dialogue ET le combat y publient) : les souscriptions
+      restent dans `onEnter` (le `this` scène est stable pour la vie du bus)
+      et **délèguent** au directeur (`acceptDemoQuest`/`handleQuestEvent`/
+      `payFine`) avec un contexte frais. **`makeEvalContext` reste dans la
+      scène** (contexte de condition joueur générique, nourrit aussi le HUD —
+      évite un couplage circulaire Hud↔Quest). Scène : 3605 → 3500 l.
   - **Reste ouvert (Batch 3), ordre suggéré (risque croissant) :**
-    1. **U4-1 (suite)** — restant du god-object : save/load (performSave/
-       requestLoad/finalizeActorSpawn), quêtes/crime, console, panneaux dev.
+    1. **U4-1 (suite)** — restant du god-object : console (~190 l.),
+       panneaux dev ImGui (drawUi/drawSkyUi/drawGameplayUi/drawRenderUi).
     2. **U4-2 + U4-4 + U4-6** — **le plus structurant, à garder pour la fin** :
        `LandscapeRenderer` qui possède les systèmes `render::*`, les ~40 handles GPU
        (wrapper RAII, U4-4), l'assemblage `FrameUniforms` (U4-6), et **consomme un
