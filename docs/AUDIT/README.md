@@ -348,10 +348,33 @@ buildée + 279 tests verts) :
       par nom, inconsommable par Vulkan. Le remède = cook GLSL→SPIR-V +
       ShaderDesc en bytecode/métadonnées, par nature le travail du
       jour-Vulkan (déjà acté par le commentaire de Rhi.hpp:140).
-    - *Scène/éditeur (avec U4-1 suite)* : U4-7 (constantes → tuning), U4-11
-      (strings FR → localisation : décision d'approche), U4-12/13/14
-      (cleanups scène), U5-4 (3 éditeurs dev), U5-6 (gActive), U5-8/9/10,
-      U9-7 (Value↔widget ImGui).
+    - *Scène/éditeur — LOT TRAITÉ 2026-07-09* (`d0ada12`, `b0e6588`) :
+      **U5-2 FAIT** — `ResidencyCache<Traits>` (la machinerie async copiée
+      entre TextureCache et MeshCache : map + queue estampillée génération
+      + pattern teardown-safe, dans UN template ; APIs publiques et sites
+      d'appel intacts ; ⚠️ chemin GPU → à couvrir dans la prochaine
+      session en jeu : placeholders damier/boîte magenta au streaming).
+      **U5-8 FAIT** — `platform::moveAxis` (la paire d'ifs WASD réécrite
+      par scène ; chaque scène compose avec sa propre base).
+      **U4-12 FAIT** — miroirs std140 ModelUniforms (déclaré 2×) et
+      LightsUniforms hissés hors des corps de fonction.
+      **U4-13/U4-14 RÉSOLUS par la décomposition** (plus un struct runtime
+      dans le header de scène ; les sites des commentaires fossiles
+      n'existent plus).
+      **U9-7 RÉSOLU par H-a** (PropertyGrid passe par `reflect::visit`
+      exhaustif — un kind oublié est une erreur de compilation).
+      **U5-6/U5-9/U5-10 ASSUMÉS documentés** : le cache d'édition unique
+      de PropertyGrid = le modèle un-item-actif d'ImGui (outillage dev,
+      hors du champ §8-déterminisme) ; DemoScenes groupe délibérément des
+      scènes de démo jetables ; le reload sync de l'éditeur GameDB = la
+      simplicité §10 (aucun monde en vol).
+      **U5-4 DIFFÉRÉ au chantier éditeur** : dédupliquer les 3 éditeurs
+      dev (~700 l.) maintenant serait du travail jeté — la vision actée
+      fait de l'éditeur une couche SceneStack sur le jeu ; la refonte les
+      absorbera.
+      **Restent les 2 décisions dev : U4-7** (constantes → tuning :
+      trancher le périmètre) et **U4-11** (strings joueur FR → approche
+      de localisation).
     - *Features absentes reclassées* (chantiers MEADOWS-PLAN, pas des trous
       de test) : U9-6 (alias de quêtes jamais implémentés), U9-8 (pas d'API
       begin/end use mobilier — seule l'occupancy existe).
@@ -464,7 +487,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U7-1 | ✅ | U7 | high | archi | world/terrain/TerrainPatches.hpp:8 | `world/` inclut `engine/render/` (letter-violation §2.10) | S | oui |
 | U4-3 | ✅ | U4 | high | factor | LandscapeScene.cpp:87-707 | `onEnter` = 620 l. séquentielles, ré-entrantes | M | non |
 | U4-5 | ✅ | U4 | high | archi/factor | LandscapeScene.cpp:1592-1863 | Éditeur+sculpt embarqués dans la scène de jeu (double EditorScene) | M | oui |
-| U5-2 |   | U5 | high | factor | game/TextureCache.* ; MeshCache.* | Machinerie async-residency dupliquée entre 2 caches | M | non |
+| U5-2 | ✅ | U5 | high | factor | game/TextureCache.* ; MeshCache.* | Machinerie async-residency dupliquée entre 2 caches | M | non |
 | U7-2 | ✅ | U7 | high | factor | BinaryFormat.cpp:45 ; TomlWriter.cpp:25 ; PluginLoader.cpp | Switch per-FieldKind répliqué (H-a) | M | oui |
 | U8-3 | ✅ | U8 | high | factor | tools/cooker/Main.cpp:189-205 | Liste `registerXxxFormTypes` recopiée à la main (déjà cause d'un bug) | M | oui |
 | U3-1 | ✅ | U3 | high | factor | GrassSystem.cpp:244 ; TerrainSystem.cpp:223 ; VegetationSystem.cpp:305 | Ring chunk-streaming implémenté 3× | L | non |
@@ -476,7 +499,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U3-4 | ✅ | U3 | med | factor | TerrainSystem.hpp:112 (+15 sites) | Pack/unpack clé u64 chunk à la main | S | non |
 | U3-5 | ✅ | U3 | med | factor | TerrainSystem.cpp:371 (+5 pipelines) | Layout attributs `MeshVertex` réécrit ~5× | S | non |
 | U4-8 | ✅ | U4 | med | factor | LandscapeScene.cpp:1128-1178,4936 | Crossfade météo lerpe ~18 champs à la main, listés 3× | S | oui |
-| U5-6 |   | U5 | med | qual | game/ui/PropertyGrid.cpp:20 | `ActiveEdit gActive` = global mutable (§8) | S | non |
+| U5-6 | ✅ | U5 | med | qual | game/ui/PropertyGrid.cpp:20 | `ActiveEdit gActive` = global mutable (§8) | S | non |
 | U7-3 | ✅ | U7 | med | archi | BinaryFormat.cpp:14,45 ; Reflect.hpp:39 | Stream binaire dépend de l'ordre numérique de l'enum FieldKind | S | oui |
 | U8-1 | ✅ | U8 | med | réutil | quest/Quest.cpp:15 ; Dialogue.cpp:14 | `forEachForm<T>` réimplémenté, duplique `data::forEach` | S | oui |
 | U1-03 | ✅ | U1 | med | réutil | (core, absence) | Aucun type Result/expected (§8) ; optional+log perd la raison | M | oui |
@@ -515,12 +538,12 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U2-09 | ✅ | U2 | low | propreté | _old/renderer_test/ | Renderer pré-RHI mort dans l'arbre | S | oui |
 | U3-8 |   | U3 | low | propreté | FrameUniforms.hpp:17 vs common.glsl:7 | Dérive de commentaires entre les 2 miroirs | S | non |
 | U4-11 |   | U4 | low | propreté | LandscapeScene.cpp:3558,2558 | Strings UI en français codées en dur (§8 anglais) | S | non |
-| U4-12 |   | U4 | low | qual | LandscapeScene.cpp:243,5210 | Structs GPU inline dans corps de fonction | S | oui |
-| U4-14 |   | U4 | low | propreté | LandscapeScene.cpp:1197,5119 | Commentaires-fossiles post-refactor | S | non |
+| U4-12 | ✅ | U4 | low | qual | LandscapeScene.cpp:243,5210 | Structs GPU inline dans corps de fonction | S | oui |
+| U4-14 | ✅ | U4 | low | propreté | LandscapeScene.cpp:1197,5119 | Commentaires-fossiles post-refactor | S | non |
 | U5-7 | ✅ | U5 | low | propreté | game/TextureCache.cpp:59-63 | Bloc de commentaire collé en double | S | non |
-| U5-8 |   | U5 | low | factor | CombatArenaScene.cpp:290 ; DemoScenes.cpp:222 | WASD→vecteur réécrit par scène | S | oui |
-| U5-9 |   | U5 | low | propreté | game/scenes/DemoScenes.* | 523 l. groupent 6 classes de scène | S | non |
-| U5-10 |   | U5 | low | qual | EditorScene.cpp:97-108 | `reload()` resolve sync sur thread UI | S | non |
+| U5-8 | ✅ | U5 | low | factor | CombatArenaScene.cpp:290 ; DemoScenes.cpp:222 | WASD→vecteur réécrit par scène | S | oui |
+| U5-9 | ✅ | U5 | low | propreté | game/scenes/DemoScenes.* | 523 l. groupent 6 classes de scène | S | non |
+| U5-10 | ✅ | U5 | low | qual | EditorScene.cpp:97-108 | `reload()` resolve sync sur thread UI | S | non |
 | U6-F6 |   | U6 | low | réutil | EventBus.hpp:34 ; GameplayCues.hpp:46 ; AbilitySystem.hpp:37 | 3 schémas ad-hoc `nextId` (H-d) | S | oui |
 | U6-F8 | ✅ | U6 | low | qual | ability/AbilitySystem.hpp:74 | `setCurrentValue` public bypasse recompute (footgun, test-only) | S | non |
 | U6-F9 | ✅ | U6 | low | propreté | AbilitySystem.hpp:43 (+4) | Commentaires "deferred to Phase 8" périmés (save existe) | S | non |
@@ -533,10 +556,10 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U9-4 |   | U9 | low | factor | tests/*.cpp (~147 occ) | `makeTypes()`/guid/TOML recopiés dans ~30 TUs | S | non |
 | U9-5 | ✅ | U9 | low | qual | tests/GameClockTest.cpp:1 | Seam GameClock→effets game-time non couvert (H-e) | S | oui |
 | U9-6 |   | U9 | low | couverture | tests/QuestTest.cpp | Aucun cas d'alias quête | S | non |
-| U9-7 |   | U9 | low | couverture | game/ui/PropertyGrid.cpp | Value↔widget sans assertion propre (H-a) | S | oui |
+| U9-7 | ✅ | U9 | low | couverture | game/ui/PropertyGrid.cpp | Value↔widget sans assertion propre (H-a) | S | oui |
 | U9-8 |   | U9 | low | couverture | tests/CuesSchedulesTest.cpp:175 | Usage mobilier (begin/end use) non testé | S | non |
 | U1-06 | ✅ | U1 | low | qual | core/Jobs.hpp:14-26 | Durée de vie JobCounter comment-only ; dangling ref UB | M | non |
-| U4-13 |   | U4 | low | réutil | LandscapeScene.hpp:522,417 | Structs runtime (Npc/MeshDraw/…) dans le header de scène | M | non |
+| U4-13 | ✅ | U4 | low | réutil | LandscapeScene.hpp:522,417 | Structs runtime (Npc/MeshDraw/…) dans le header de scène | M | non |
 | U7-6 | ✅ | U7 | low | qual | Resolver.cpp:78 ; Record.hpp:35 | Load order (dependencies) non validé | M | non |
 | U7-7 |   | U7 | low | reuse | data/forms/FormQuery.hpp:23,38,67 | Scans FormQuery non indexés (O(n)) | M | non |
 | U8-6 |   | U8 | low | qual | quest/Quest.cpp:48 ; Dialogue.cpp:65 | Scans O(total forms) par événement quête/dialogue | M | non |
