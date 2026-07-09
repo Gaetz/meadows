@@ -6,21 +6,21 @@
 
 namespace game {
 
-// The quest STRUCTURE view (chantier 8.7): QuestStateForm = node (kind
-// badge, start marker), QuestBranchForm = link (label "n tasks") — the
-// cross-state topology the 8.2 tree cannot show. The tree window stays
-// as the detail view; both share the editor-wide selection. Same rules
-// as every graph editor: EditSession-only writes, §5 deletes (created
-// drafts only), positions in the EditorLayouts side-store keyed by the
-// quest's guid.
+// The quest STRUCTURE editor (chantier 8.7, reshaped by 8.7b): the graph
+// IS the quest editor — states = nodes (kind badge, start marker),
+// branches = links ("n tasks"), everything created here or from the
+// Inspector hierarchy. 8.7b contract: the shell owns the windows —
+// drawCanvas() fills the central Editor window, drawInspectorExtras()
+// adds the branch task list above the PropertyGrid (no-op otherwise);
+// the quest hierarchy tree lives in the shell (EditorScene).
 class QuestGraphPanel {
 public:
     QuestGraphPanel(data::EditSession& session, data::EditorLayouts& layouts,
                     core::Guid& selected)
         : session { session }, layouts { layouts }, selected { selected } {}
 
-    // Draws the "Quest Graph" window.
-    void draw();
+    void drawCanvas(const core::Guid& quest);
+    void drawInspectorExtras(const core::Guid& target);
 
 private:
     data::EditSession& session;
@@ -28,7 +28,6 @@ private:
     core::Guid& selected;
 
     NodeCanvas canvas;
-    core::Guid questSelected;
     core::Guid canvasShown;
     core::Guid pendingPlace;
     Vec2 pendingPlacePos {};

@@ -7,7 +7,6 @@
 #include "data/editor/GraphLayout.hpp"
 #include "data/forms/AnimForms.hpp"
 #include "game/ui/FormPicker.hpp"
-#include "game/ui/PropertyGrid.hpp"
 
 namespace game {
 
@@ -49,63 +48,40 @@ GraphData collectGraph(const data::EditSession& session,
     return data;
 }
 
+const data::AnimGraphForm* graphOf(const data::EditSession& session,
+                                   const core::Guid& id) {
+    const auto* type = id.isValid() ? session.viewType(id) : nullptr;
+    if (!type || type->id != data::AnimGraphForm::staticTypeInfo().id) {
+        return nullptr;
+    }
+    return static_cast<const data::AnimGraphForm*>(session.view(id));
+}
+
 } // namespace
 
-void AnimGraphPanel::draw() {
-    ImGui::Begin("Anim Graph");
-
-    // Left pane: the graph list (the dialogue-editor pattern).
-    ImGui::BeginChild("aglist", ImVec2(220.0f, 0.0f),
-                      ImGuiChildFlags_ResizeX);
-    if (ImGui::Button("+ Graph")) {
-        graphSelected = session.createForm(
-            data::AnimGraphForm::staticTypeInfo().id, "NewAnimGraph");
-        selected = graphSelected;
-    }
-    session.forEachVisible([&](const core::Guid& id, const data::Form& form,
-                               const reflect::TypeInfo& type) {
-        if (type.id != data::AnimGraphForm::staticTypeInfo().id) {
-            return;
-        }
-        const str label =
-            (form.editorId.empty() ? id.toString() : form.editorId) +
-            (session.isDirty(id) ? " *" : "") + "##g" + id.toString();
-        if (ImGui::Selectable(label.c_str(), graphSelected == id)) {
-            graphSelected = id;
-            selected = id;
-        }
-    });
-    ImGui::EndChild();
-    ImGui::SameLine();
-
-    ImGui::BeginChild("agcanvas");
-    const auto* graph = static_cast<const data::AnimGraphForm*>(
-        session.view(graphSelected));
-    if (!graph ||
-        session.viewType(graphSelected)->id !=
-            data::AnimGraphForm::staticTypeInfo().id) {
-        ImGui::TextDisabled("(select an anim graph)");
-        ImGui::EndChild();
-        ImGui::End();
+void AnimGraphPanel::drawCanvas(const core::Guid& graphId) {
+    const data::AnimGraphForm* graphForm = graphOf(session, graphId);
+    if (!graphForm) {
+        ImGui::TextDisabled("(select an anim graph in the Browser)");
         return;
     }
 
-    const GraphData data = collectGraph(session, graphSelected);
+    const GraphData data = collectGraph(session, graphId);
     const auto isState = [&](const core::Guid& id) {
         return std::any_of(data.states.begin(), data.states.end(),
                            [&](const auto& s) { return s.first == id; });
     };
     // "Any State" is keyed by the graph's own guid (positions included).
-    const core::Guid anyState = graphSelected;
+    const core::Guid anyState = graphId;
     const auto nodeKeyOf = [&](const core::Guid& from) {
         return from.isValid() ? from : anyState;
     };
 
     // Warnings line — the §8.6 validation set, inline and cheap.
     vector<str> warnings;
-    if (!graph->initialState.isValid()) {
+    if (!graphForm->initialState.isValid()) {
         warnings.push_back("no initial state");
-    } else if (!isState(graph->initialState)) {
+    } else if (!isState(graphForm->initialState)) {
         warnings.push_back("initialState is not a state of this graph");
     }
     for (const auto& [id, state] : data.states) {
@@ -152,7 +128,7 @@ void AnimGraphPanel::draw() {
 
     // Position pass: stored side-store positions, auto-layout for the
     // rest — on first show of a graph, on request, and for fresh nodes.
-    if (canvasShown != graphSelected || autoLayoutRequested) {
+    if (canvasShown != graphId || autoLayoutRequested) {
         vector<core::Guid> nodes { anyState };
         vector<std::pair<core::Guid, core::Guid>> edges;
         for (const auto& [id, state] : data.states) {
@@ -165,8 +141,8 @@ void AnimGraphPanel::draw() {
             }
         }
         vector<core::Guid> roots { anyState };
-        if (graph->initialState.isValid()) {
-            roots.push_back(graph->initialState);
+        if (graphForm->initialState.isValid()) {
+            roots.push_back(graphForm->initialState);
         }
         const data::GraphLayoutResult layout =
             data::layoutGraph(nodes, edges, roots);
@@ -176,11 +152,11 @@ void AnimGraphPanel::draw() {
                 const auto it = layout.positions.find(node);
                 if (it != layout.positions.end()) {
                     canvas.setNodePosition(node, it->second);
-                    layouts.setPosition(graphSelected, node, it->second);
+                    layouts.setPosition(graphId, node, it->second);
                 }
                 continue;
             }
-            if (const auto stored = layouts.positionOf(graphSelected, node)) {
+            if (const auto stored = layouts.positionOf(graphId, node)) {
                 canvas.setNodePosition(node, *stored);
             } else if (const auto it = layout.positions.find(node);
                        it != layout.positions.end()) {
@@ -190,11 +166,11 @@ void AnimGraphPanel::draw() {
         if (autoLayoutRequested) {
             layouts.save();
         }
-        canvasShown = graphSelected;
+        canvasShown = graphId;
     }
     if (pendingPlace.isValid()) {
         canvas.setNodePosition(pendingPlace, pendingPlacePos);
-        layouts.setPosition(graphSelected, pendingPlace, pendingPlacePos);
+        layouts.setPosition(graphId, pendingPlace, pendingPlacePos);
         layouts.save();
         pendingPlace = {};
     }
@@ -215,7 +191,7 @@ void AnimGraphPanel::draw() {
         ImGui::TextUnformatted(title.c_str());
         ImGui::SameLine();
         canvas.outputPin(id);
-        if (graph->initialState == id) {
+        if (graphForm->initialState == id) {
             ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "* initial");
         }
         ImGui::TextDisabled(
@@ -279,9 +255,9 @@ void AnimGraphPanel::draw() {
     if (actions.linkCreated) {
         const core::Guid id = session.createForm(
             data::AnimTransitionForm::staticTypeInfo().id,
-            graph->editorId + "T" + std::to_string(++stateCounter));
+            graphForm->editorId + "T" + std::to_string(++stateCounter));
         session.setField(id, core::fnv1a("parent"),
-                         reflect::Value { graphSelected });
+                         reflect::Value { graphId });
         session.setField(id, core::fnv1a("from"),
                          reflect::Value { actions.linkFrom == anyState
                                               ? core::Guid {}
@@ -305,7 +281,7 @@ void AnimGraphPanel::draw() {
         session.removeCreated(id);
     }
     for (const auto& [node, position] : actions.movedNodes) {
-        layouts.setPosition(graphSelected, node, position);
+        layouts.setPosition(graphId, node, position);
     }
     if (!actions.movedNodes.empty()) {
         layouts.save();
@@ -329,9 +305,10 @@ void AnimGraphPanel::draw() {
         if (ImGui::MenuItem("+ State")) {
             const core::Guid id = session.createForm(
                 data::AnimStateForm::staticTypeInfo().id,
-                graph->editorId + "State" + std::to_string(++stateCounter));
+                graphForm->editorId + "State" +
+                    std::to_string(++stateCounter));
             session.setField(id, core::fnv1a("parent"),
-                             reflect::Value { graphSelected });
+                             reflect::Value { graphId });
             pendingPlace = id; // placed inside the NEXT ed frame
             pendingPlacePos = contextPos;
             selected = id;
@@ -340,32 +317,64 @@ void AnimGraphPanel::draw() {
     }
     if (ImGui::BeginPopup("ag-node")) {
         if (ImGui::MenuItem("Set as initial")) {
-            session.setField(graphSelected, core::fnv1a("initialState"),
+            session.setField(graphId, core::fnv1a("initialState"),
                              reflect::Value { contextNode });
         }
         ImGui::EndPopup();
     }
+}
 
-    // Inspector: the shared grid, plus a picker for the state's clip
-    // (guid-typed fields are raw text in the grid — the picker resolves).
-    ImGui::Separator();
-    if (selected.isValid()) {
-        if (const auto* type = session.viewType(selected);
-            type && type->id == data::AnimStateForm::staticTypeInfo().id) {
-            const auto* state =
-                static_cast<const data::AnimStateForm*>(session.view(selected));
-            core::Guid picked;
-            if (drawFormPicker("clip", session,
-                               data::AnimClipForm::staticTypeInfo().id,
-                               state->clip, picked)) {
-                session.setField(selected, core::fnv1a("clip"),
-                                 reflect::Value { picked });
-            }
-        }
-        drawPropertyGrid(session, selected);
+void AnimGraphPanel::drawHierarchy(const core::Guid& graphId) {
+    const data::AnimGraphForm* graphForm = graphOf(session, graphId);
+    if (!graphForm) {
+        return;
     }
-    ImGui::EndChild();
-    ImGui::End();
+    const GraphData data = collectGraph(session, graphId);
+    if (ImGui::SmallButton("+ State")) {
+        const core::Guid id = session.createForm(
+            data::AnimStateForm::staticTypeInfo().id,
+            graphForm->editorId + "State" + std::to_string(++stateCounter));
+        session.setField(id, core::fnv1a("parent"),
+                         reflect::Value { graphId });
+        selected = id;
+    }
+    for (const auto& [id, state] : data.states) {
+        str label = state->editorId.empty() ? id.toString() : state->editorId;
+        if (graphForm->initialState == id) {
+            label += "  <- initial";
+        }
+        if (ImGui::Selectable((label + "##hs" + id.toString()).c_str(),
+                              selected == id)) {
+            selected = id;
+        }
+    }
+    for (const auto& [id, transition] : data.transitions) {
+        const str label =
+            (transition->from.isValid()
+                 ? formDisplayName(session, transition->from)
+                 : str { "Any State" }) +
+            " -> " + formDisplayName(session, transition->to) + "##ht" +
+            id.toString();
+        if (ImGui::Selectable(label.c_str(), selected == id)) {
+            selected = id;
+        }
+    }
+}
+
+void AnimGraphPanel::drawInspectorExtras(const core::Guid& target) {
+    const auto* type = target.isValid() ? session.viewType(target) : nullptr;
+    if (!type || type->id != data::AnimStateForm::staticTypeInfo().id) {
+        return;
+    }
+    const auto* state =
+        static_cast<const data::AnimStateForm*>(session.view(target));
+    core::Guid picked;
+    if (drawFormPicker("clip", session,
+                       data::AnimClipForm::staticTypeInfo().id, state->clip,
+                       picked)) {
+        session.setField(target, core::fnv1a("clip"),
+                         reflect::Value { picked });
+    }
 }
 
 } // namespace game

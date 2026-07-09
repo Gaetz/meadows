@@ -21,16 +21,15 @@ class Engine;
 
 namespace game {
 
-// The game-database editor (horizontal pass H2): GameDB browser (every
-// Form type through the reflection property grid), plugin manager (load
-// order + per-field conflict report), and the developer console. All
-// edits flow through ONE EditSession and export as an ordinary plugin —
-// the editor is a plugin author (§5), nothing more.
-//
-// HOW TO FILL (post-7/07): the level editor (MEADOWS-PLAN §A) builds on
-// this scene's pieces — same session, PropertyGrid as the reference
-// inspector, plus a world view with picking/gizmos. Live re-resolve after
-// edits (instead of reload-on-restart) is its own vertical.
+// The game-database editor — since 8.7b, ONE dockspace window ("True
+// Adventurer DB", Unity-style): Browser (left: curated categories + item
+// list), Editor (center: the graph canvas / timeline / summary of the
+// selected item), Inspector (right: the item's HIERARCHY on top — the
+// ex-8.2/8.3 trees — and the PropertyGrid of the selected sub-object
+// below). All edits flow through ONE EditSession and export as an
+// ordinary plugin (§5) via the File menu — the editor is a plugin
+// author, nothing more. Plugins/Console are dockable windows toggled
+// from the Windows menu.
 class EditorScene final : public Scene {
 public:
     explicit EditorScene(engine::Engine& engineContext)
@@ -42,11 +41,17 @@ public:
 
 private:
     void reload();
-    void drawGameDb();
+    void drawShell();   // fullscreen dockspace host + menu bar
+    void buildDockLayout(unsigned int dockId); // default Browser/Editor/Inspector
+    void drawBrowser();
+    void drawEditor();
+    void drawInspector();
+    void drawQuestHierarchy();    // ex-8.2 tree, now the Inspector top
+    void drawDialogueHierarchy(); // ex-8.3 tree, now the Inspector top
+    void drawSchedulesContent();  // 8.4 timeline, now the Editor center
+    void drawGenericSummary();    // non-graph types: record + used-by
     void drawPlugins();
-    void drawQuests();    // 8.2: Quest -> States -> Branches -> Tasks tree
-    void drawDialogues(); // 8.3: DialogueNodeForm tree + conditions
-    void drawSchedules(); // H7 debug: who does what at which hour, and why
+    void exportSessionPlugin();
     void saveConfig() const;
     f32 debugHour { 12.0f };
 
@@ -63,19 +68,21 @@ private:
     uptr<ConsolePanel> console;
     data::EditorLayouts layouts; // node x/y side-store (8.6, NOT a plugin)
     uptr<AnimGraphPanel> animGraph;         // 8.6
-    uptr<QuestGraphPanel> questGraph;       // 8.7: the structure view
-    uptr<DialogueGraphPanel> dialogueGraph; // 8.7: the tree laid flat
+    uptr<QuestGraphPanel> questGraph;       // 8.7
+    uptr<DialogueGraphPanel> dialogueGraph; // 8.7
 
-    vector<str> typeNames; // sorted, for the filter combo
-    int typeFilter { 0 };  // 0 = All
+    vector<str> typeNames; // sorted, for the "All types" filter combo
+    int typeFilter { 0 };  // 0 = All (within the "All types" category)
+    int categorySelected { 0 };
     char search[128] {};
-    core::Guid selected {};
-    core::Guid questSelected {};    // 8.2: the quest whose tree is shown
-    core::Guid dialogueSelected {}; // 8.3: the dialogue whose tree is shown
-    core::Guid schedDragEntry {};   // 8.4: entry whose edge is dragging
-    int schedDragEdge { 0 };        //      0 = startHour, 1 = endHour
-    f32 schedDragHour { 0.0f };     //      live preview value (0.5 h snap)
-    vector<int> synthPicks;         // 8.5: per-conflict pick (-1 = load order)
+    core::Guid itemSelected {}; // the Browser item (quest, graph, form...)
+    core::Guid selected {};     // the Inspector target (sub-object)
+    bool showPlugins { false };
+    bool showConsole { false };
+    core::Guid schedDragEntry {}; // 8.4: entry whose edge is dragging
+    int schedDragEdge { 0 };      //      0 = startHour, 1 = endHour
+    f32 schedDragHour { 0.0f };   //      live preview value (0.5 h snap)
+    vector<int> synthPicks;       // 8.5: per-conflict pick (-1 = load order)
     char exportName[128] { "my-edits" };
     str status;
 };

@@ -6,7 +6,10 @@
 #include <functional>
 
 #include <imgui.h>
+#include <imgui_internal.h> // DockBuilder (8.7b default layout)
 
+#include "data/forms/AnimForms.hpp"
+#include "data/forms/CoreForms.hpp"
 #include "data/forms/FormQuery.hpp"
 #include "data/plugins/Synthesis.hpp"
 #include "data/plugins/TomlWriter.hpp"
@@ -14,6 +17,8 @@
 #include "engine/reflect/Visit.hpp"
 #include "game/AllForms.hpp"
 #include "game/ui/PropertyGrid.hpp"
+#include "gameplay/ability/GameplayAbility.hpp"
+#include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
 #include "gameplay/condition/Condition.hpp"
 #include "quest/Dialogue.hpp"
@@ -55,6 +60,51 @@ str valueRepr(const reflect::Value& value) {
         [&](const core::Guid& g) -> str { return g.toString(); },
     });
 }
+
+// 8.7b — the Browser's curated categories (dev-decided grouping): the
+// ones with a dedicated editing surface first, then the frequent Forms,
+// then "All types" (the ex-GameDB reflection browser) for everything
+// else. A category is a Form type + which center editor serves it.
+struct EditorCategory {
+    const char* name;
+    enum Kind {
+        QuestGraph,
+        DialogueGraph,
+        AnimGraph,
+        Timeline,
+        Generic,
+        AllTypes
+    } kind;
+    const reflect::TypeInfo* (*type)(); // null for AllTypes
+};
+
+constexpr EditorCategory kCategories[] = {
+    { "Quests", EditorCategory::QuestGraph,
+      [] { return &quest::QuestForm::staticTypeInfo(); } },
+    { "Dialogues", EditorCategory::DialogueGraph,
+      [] { return &quest::DialogueForm::staticTypeInfo(); } },
+    { "Anim Graphs", EditorCategory::AnimGraph,
+      [] { return &data::AnimGraphForm::staticTypeInfo(); } },
+    { "Anim Clips", EditorCategory::Generic,
+      [] { return &data::AnimClipForm::staticTypeInfo(); } },
+    { "Schedules", EditorCategory::Timeline,
+      [] { return &gameplay::ScheduleForm::staticTypeInfo(); } },
+    { "Effects", EditorCategory::Generic,
+      [] { return &gameplay::EffectForm::staticTypeInfo(); } },
+    { "Abilities", EditorCategory::Generic,
+      [] { return &gameplay::AbilityForm::staticTypeInfo(); } },
+    { "Weapons", EditorCategory::Generic,
+      [] { return &data::WeaponForm::staticTypeInfo(); } },
+    { "Armors", EditorCategory::Generic,
+      [] { return &data::ArmorForm::staticTypeInfo(); } },
+    { "Consumables", EditorCategory::Generic,
+      [] { return &data::ConsumableForm::staticTypeInfo(); } },
+    { "Actors", EditorCategory::Generic,
+      [] { return &data::ActorForm::staticTypeInfo(); } },
+    { "All types", EditorCategory::AllTypes, nullptr },
+};
+constexpr int kCategoryCount =
+    static_cast<int>(sizeof(kCategories) / sizeof(kCategories[0]));
 
 } // namespace
 
@@ -98,6 +148,7 @@ void EditorScene::reload() {
     dialogueGraph =
         std::make_unique<DialogueGraphPanel>(*session, layouts, selected);
     selected = {};
+    itemSelected = {};
     synthPicks.assign(report.conflicts.size(), -1); // -1 = keep load order
     status = "loaded " + std::to_string(stack.plugins.size()) + " plugins, " +
              std::to_string(db->count()) + " forms, " +
@@ -109,55 +160,476 @@ void EditorScene::saveConfig() const {
     out << data::writePluginConfigToml(config);
 }
 
-void EditorScene::drawUi() {
-    drawGameDb();
-    drawPlugins();
-    drawQuests();
-    drawDialogues();
-    drawSchedules();
-    animGraph->draw();
-    questGraph->draw();
-    dialogueGraph->draw();
-    console->draw();
+void EditorScene::exportSessionPlugin() {
+    const str name = exportName;
+    const data::Plugin plugin =
+        session->exportPlugin(core::Guid::generate(), name);
+    const str toml = data::writePluginToml(plugin, types);
+    const str file = name + ".toml";
+    std::ofstream out { pluginDir / file, std::ios::binary };
+    out << toml;
+    const bool known = std::any_of(
+        config.entries.begin(), config.entries.end(),
+        [&](const data::PluginConfigEntry& e) { return e.file == file; });
+    if (!known) {
+        config.entries.push_back({ file, true });
+        saveConfig();
+    }
+    status = "exported " + std::to_string(plugin.records.size()) +
+             " records to " + file + " (applies on reload)";
 }
 
-// 8.3 — the dialogue editor: DialogueNodeForm records (parent-linked,
-// alternating NPC lines and Player choices) as an indented tree with
-// inline creation, sibling reorder and per-node conditions. Same
-// session/grid/export as everything else.
-void EditorScene::drawDialogues() {
-    ImGui::Begin("Dialogues");
+// ---------------------------------------------------------------------
+// 8.7b — the shell: ONE dockspace window, Unity-style. Browser | Editor
+// | Inspector, menu bar on top; Plugins/Console toggle from the menu.
 
-    ImGui::BeginChild("dlglist", ImVec2(220.0f, 0.0f),
-                      ImGuiChildFlags_ResizeX);
-    if (ImGui::Button("+ Dialogue")) {
-        dialogueSelected = session->createForm(
-            quest::DialogueForm::staticTypeInfo().id, "NewDialogue");
-        selected = dialogueSelected;
+void EditorScene::buildDockLayout(unsigned int dockIdIn) {
+    const ImGuiID dockId = dockIdIn;
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::DockBuilderRemoveNode(dockId);
+    ImGui::DockBuilderAddNode(dockId, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockId, viewport->WorkSize);
+    ImGuiID center = dockId;
+    const ImGuiID left = ImGui::DockBuilderSplitNode(
+        center, ImGuiDir_Left, 0.15f, nullptr, &center);
+    const ImGuiID right = ImGui::DockBuilderSplitNode(
+        center, ImGuiDir_Right, 0.27f, nullptr, &center);
+    const ImGuiID bottom = ImGui::DockBuilderSplitNode(
+        center, ImGuiDir_Down, 0.25f, nullptr, &center);
+    ImGui::DockBuilderDockWindow("Browser", left);
+    ImGui::DockBuilderDockWindow("Inspector", right);
+    ImGui::DockBuilderDockWindow("Plugins", right); // tabbed with Inspector
+    ImGui::DockBuilderDockWindow("Editor", center);
+    ImGui::DockBuilderDockWindow("Console", bottom);
+    ImGui::DockBuilderFinish(dockId);
+}
+
+void EditorScene::drawShell() {
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking |
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+    ImGui::Begin("True Adventurer DB", nullptr, flags);
+    ImGui::PopStyleVar(3);
+
+    const ImGuiID dockId = ImGui::GetID("tadb-dockspace");
+    if (ImGui::DockBuilderGetNode(dockId) == nullptr) {
+        buildDockLayout(dockId); // first run — imgui.ini persists the rest
     }
+    ImGui::DockSpace(dockId);
+
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            ImGui::SetNextItemWidth(180.0f);
+            ImGui::InputText("plugin name", exportName, sizeof(exportName));
+            ImGui::BeginDisabled(session->dirtyCount() == 0);
+            if (ImGui::MenuItem("Export plugin")) {
+                exportSessionPlugin();
+            }
+            ImGui::EndDisabled();
+            if (ImGui::MenuItem("Reload data")) {
+                reload(); // discards pending edits — status says so
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Edit")) {
+            if (ImGui::MenuItem("Undo", "Ctrl+Z", false,
+                                session->canUndo())) {
+                session->undo();
+            }
+            if (ImGui::MenuItem("Redo", "Ctrl+Y", false,
+                                session->canRedo())) {
+                session->redo();
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Windows")) {
+            ImGui::MenuItem("Plugins", nullptr, &showPlugins);
+            ImGui::MenuItem("Console", nullptr, &showConsole);
+            if (ImGui::MenuItem("Reset layout")) {
+                buildDockLayout(dockId);
+            }
+            ImGui::EndMenu();
+        }
+        // Keyboard shortcuts for the menu items above.
+        if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z,
+                            ImGuiInputFlags_RouteGlobal) &&
+            session->canUndo()) {
+            session->undo();
+        }
+        if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Y,
+                            ImGuiInputFlags_RouteGlobal) &&
+            session->canRedo()) {
+            session->redo();
+        }
+        ImGui::TextDisabled("| %u pending edits | %s", session->dirtyCount(),
+                            status.c_str());
+        ImGui::EndMenuBar();
+    }
+    ImGui::End();
+}
+
+void EditorScene::drawUi() {
+    drawShell();
+    drawBrowser();
+    drawEditor();
+    drawInspector();
+    if (showPlugins) {
+        drawPlugins();
+    }
+    if (showConsole) {
+        console->draw();
+    }
+}
+
+// ---------------------------------------------------------------------
+// Browser: categories on top, the item list of the active one below.
+
+void EditorScene::drawBrowser() {
+    ImGui::Begin("Browser");
+    for (int i = 0; i < kCategoryCount; ++i) {
+        if (ImGui::Selectable(kCategories[i].name, categorySelected == i)) {
+            if (categorySelected != i) {
+                categorySelected = i;
+                itemSelected = {};
+                selected = {};
+            }
+        }
+    }
+    ImGui::Separator();
+
+    const EditorCategory& category = kCategories[categorySelected];
+    u32 typeId = 0;
+    str typeName;
+    if (category.kind == EditorCategory::AllTypes) {
+        const str filterName = typeFilter > 0 ? typeNames[typeFilter - 1] : "";
+        if (ImGui::BeginCombo("Type",
+                              typeFilter == 0 ? "All" : filterName.c_str())) {
+            if (ImGui::Selectable("All", typeFilter == 0)) {
+                typeFilter = 0;
+            }
+            for (int i = 0; i < static_cast<int>(typeNames.size()); ++i) {
+                if (ImGui::Selectable(typeNames[i].c_str(),
+                                      typeFilter == i + 1)) {
+                    typeFilter = i + 1;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (typeFilter > 0) {
+            if (const reflect::TypeInfo* type = types.findType(filterName)) {
+                typeId = type->id;
+                typeName = type->name;
+            }
+        }
+    } else {
+        const reflect::TypeInfo& type = *category.type();
+        typeId = type.id;
+        typeName = type.name;
+    }
+    ImGui::InputTextWithHint("##search", "search editorId...", search,
+                             sizeof(search));
+
+    if (typeId != 0) {
+        if (ImGui::Button("+ New")) {
+            itemSelected = session->createForm(typeId, "New" + typeName);
+            selected = itemSelected;
+        }
+        ImGui::SameLine();
+    }
+    if (itemSelected.isValid()) {
+        // 8.1: clone into the session (children NOT copied).
+        if (const data::Form* form = session->view(itemSelected)) {
+            if (ImGui::Button("Duplicate")) {
+                const str baseName =
+                    form->editorId.empty() ? str { "Form" } : form->editorId;
+                const core::Guid copy =
+                    session->duplicateForm(itemSelected, baseName + "Copy");
+                if (copy.isValid()) {
+                    itemSelected = copy;
+                    selected = copy;
+                }
+            }
+        }
+    }
+    ImGui::Separator();
+
+    ImGui::BeginChild("items");
     session->forEachVisible([&](const core::Guid& id, const data::Form& form,
                                 const reflect::TypeInfo& type) {
-        if (type.id != quest::DialogueForm::staticTypeInfo().id) {
+        if (typeId != 0 && type.id != typeId) {
+            return;
+        }
+        if (typeId == 0 && category.kind != EditorCategory::AllTypes) {
+            return;
+        }
+        if (search[0] != '\0' && form.editorId.find(search) == str::npos) {
             return;
         }
         const str label =
             (form.editorId.empty() ? id.toString() : form.editorId) +
-            (session->isDirty(id) ? " *" : "") + "##d" + id.toString();
-        if (ImGui::Selectable(label.c_str(), dialogueSelected == id)) {
-            dialogueSelected = id;
+            (session->isDirty(id) ? " *" : "") + "##i" + id.toString();
+        if (ImGui::Selectable(label.c_str(), itemSelected == id)) {
+            itemSelected = id;
             selected = id;
         }
     });
     ImGui::EndChild();
-    ImGui::SameLine();
+    ImGui::End();
+}
 
-    ImGui::BeginChild("dlgtree");
-    const auto* dialogue = static_cast<const quest::DialogueForm*>(
-        session->view(dialogueSelected));
-    if (!dialogue) {
-        ImGui::TextDisabled("(select a dialogue)");
+// ---------------------------------------------------------------------
+// Editor (center): the editing surface of the active category.
+
+void EditorScene::drawEditor() {
+    ImGui::Begin("Editor");
+    switch (kCategories[categorySelected].kind) {
+    case EditorCategory::QuestGraph:
+        questGraph->drawCanvas(itemSelected);
+        break;
+    case EditorCategory::DialogueGraph:
+        dialogueGraph->drawCanvas(itemSelected);
+        break;
+    case EditorCategory::AnimGraph:
+        animGraph->drawCanvas(itemSelected);
+        break;
+    case EditorCategory::Timeline:
+        drawSchedulesContent();
+        break;
+    default:
+        drawGenericSummary();
+        break;
+    }
+    ImGui::End();
+}
+
+// Non-graph types: what the record is + who points at it. The editing
+// itself happens in the Inspector grid (8.11 will grow dedicated
+// Effect/Ability surfaces here).
+void EditorScene::drawGenericSummary() {
+    if (!itemSelected.isValid()) {
+        ImGui::TextDisabled("(select an item in the Browser)");
+        return;
+    }
+    const data::Form* form = session->view(itemSelected);
+    const reflect::TypeInfo* type = session->viewType(itemSelected);
+    if (!form || !type) {
+        ImGui::TextDisabled("(unknown record)");
+        return;
+    }
+    ImGui::Text("%s  (%s)", form->editorId.c_str(), type->name.c_str());
+    ImGui::TextDisabled("%s", form->id.toString().c_str());
+    ImGui::Separator();
+    ImGui::TextUnformatted("Used by:");
+    const auto hits = data::referencesTo(*db, itemSelected);
+    if (hits.empty()) {
+        ImGui::TextDisabled("(no referencers)");
+    }
+    for (size_t i = 0; i < hits.size(); ++i) {
+        const data::FormReferenceHit& hit = hits[i];
+        const data::Form* from = db->find(hit.from);
+        const str label =
+            (from && !from->editorId.empty() ? from->editorId
+                                             : hit.from.toString()) +
+            "  (" + hit.typeName + "." + hit.fieldName + ")##ub" +
+            std::to_string(i);
+        if (ImGui::Selectable(label.c_str())) {
+            selected = hit.from;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// Inspector (right): the item's HIERARCHY on top (the ex-8.2/8.3 trees),
+// the PropertyGrid of the selected sub-object below — the Unity model.
+
+void EditorScene::drawInspector() {
+    ImGui::Begin("Inspector");
+    const reflect::TypeInfo* itemType =
+        itemSelected.isValid() ? session->viewType(itemSelected) : nullptr;
+    const bool hasHierarchy =
+        itemType && (itemType->id == quest::QuestForm::staticTypeInfo().id ||
+                     itemType->id ==
+                         quest::DialogueForm::staticTypeInfo().id ||
+                     itemType->id == data::AnimGraphForm::staticTypeInfo().id);
+    if (hasHierarchy) {
+        ImGui::BeginChild("hierarchy",
+                          ImVec2(0.0f,
+                                 ImGui::GetContentRegionAvail().y * 0.45f),
+                          ImGuiChildFlags_ResizeY);
+        if (itemType->id == quest::QuestForm::staticTypeInfo().id) {
+            drawQuestHierarchy();
+        } else if (itemType->id == quest::DialogueForm::staticTypeInfo().id) {
+            drawDialogueHierarchy();
+        } else {
+            animGraph->drawHierarchy(itemSelected);
+        }
         ImGui::EndChild();
-        ImGui::End();
+        ImGui::Separator();
+    }
+    ImGui::BeginChild("inspector-grid");
+    if (selected.isValid()) {
+        animGraph->drawInspectorExtras(selected);
+        questGraph->drawInspectorExtras(selected);
+        drawPropertyGrid(*session, selected);
+    } else {
+        ImGui::TextDisabled("(select something)");
+    }
+    ImGui::EndChild();
+    ImGui::End();
+}
+
+// Ex-8.2 quest tree (states -> branches -> tasks), now the Inspector's
+// hierarchy pane. Same creation flows, same session.
+void EditorScene::drawQuestHierarchy() {
+    const auto* questForm =
+        static_cast<const quest::QuestForm*>(session->view(itemSelected));
+    if (!questForm) {
+        return;
+    }
+
+    // Collect the visible children at each level (guid-linked, §C.1).
+    vector<std::pair<core::Guid, const quest::QuestStateForm*>> states;
+    vector<std::pair<core::Guid, const quest::QuestBranchForm*>> branches;
+    vector<std::pair<core::Guid, const quest::QuestTaskForm*>> tasks;
+    session->forEachVisible([&](const core::Guid& id, const data::Form& form,
+                                const reflect::TypeInfo& type) {
+        if (type.id == quest::QuestStateForm::staticTypeInfo().id) {
+            states.emplace_back(
+                id, static_cast<const quest::QuestStateForm*>(&form));
+        } else if (type.id == quest::QuestBranchForm::staticTypeInfo().id) {
+            branches.emplace_back(
+                id, static_cast<const quest::QuestBranchForm*>(&form));
+        } else if (type.id == quest::QuestTaskForm::staticTypeInfo().id) {
+            tasks.emplace_back(
+                id, static_cast<const quest::QuestTaskForm*>(&form));
+        }
+    });
+    const auto nameOf = [&](const core::Guid& id) -> str {
+        const data::Form* form = session->view(id);
+        if (!form) {
+            return "(dangling)";
+        }
+        return form->editorId.empty() ? id.toString() : form->editorId;
+    };
+
+    // Header: the quest itself + its startState health.
+    ImGui::Text("%s", questForm->displayName.empty()
+                          ? questForm->editorId.c_str()
+                          : questForm->displayName.c_str());
+    if (!questForm->startState.isValid()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                           "(!) no startState");
+    } else if (!session->view(questForm->startState)) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f),
+                           "(!) startState dangles");
+    }
+    if (ImGui::Button("+ State")) {
+        const core::Guid id = session->createForm(
+            quest::QuestStateForm::staticTypeInfo().id,
+            questForm->editorId + "State");
+        session->setField(id, core::fnv1a("quest"),
+                          reflect::Value { itemSelected });
+        selected = id;
+    }
+    ImGui::Separator();
+
+    for (const auto& [stateId, state] : states) {
+        if (state->quest != itemSelected) {
+            continue;
+        }
+        str label = nameOf(stateId) + "  [" + state->kind + "]";
+        if (stateId == questForm->startState) {
+            label += "  <- start";
+        }
+        const bool stateOpen = ImGui::TreeNodeEx(
+            (label + "##s" + stateId.toString()).c_str(),
+            ImGuiTreeNodeFlags_OpenOnArrow |
+                (selected == stateId ? ImGuiTreeNodeFlags_Selected
+                                     : ImGuiTreeNodeFlags_None) |
+                ImGuiTreeNodeFlags_DefaultOpen);
+        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+            selected = stateId;
+        }
+        if (!stateOpen) {
+            continue;
+        }
+        if (ImGui::Button(("+ Branch##" + stateId.toString()).c_str())) {
+            const core::Guid id = session->createForm(
+                quest::QuestBranchForm::staticTypeInfo().id,
+                nameOf(stateId) + "Branch");
+            session->setField(id, core::fnv1a("state"),
+                              reflect::Value { stateId });
+            selected = id;
+        }
+        for (const auto& [branchId, branch] : branches) {
+            if (branch->state != stateId) {
+                continue;
+            }
+            str branchLabel = nameOf(branchId) + "  -> ";
+            branchLabel += branch->destination.isValid()
+                               ? nameOf(branch->destination)
+                               : "(!) no destination";
+            const bool branchOpen = ImGui::TreeNodeEx(
+                (branchLabel + "##b" + branchId.toString()).c_str(),
+                ImGuiTreeNodeFlags_OpenOnArrow |
+                    (selected == branchId ? ImGuiTreeNodeFlags_Selected
+                                          : ImGuiTreeNodeFlags_None) |
+                    ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+                selected = branchId;
+            }
+            if (!branchOpen) {
+                continue;
+            }
+            if (ImGui::Button(
+                    ("+ Task##" + branchId.toString()).c_str())) {
+                const core::Guid id = session->createForm(
+                    quest::QuestTaskForm::staticTypeInfo().id,
+                    nameOf(branchId) + "Task");
+                session->setField(id, core::fnv1a("branch"),
+                                  reflect::Value { branchId });
+                selected = id;
+            }
+            for (const auto& [taskId, task] : tasks) {
+                if (task->branch != branchId) {
+                    continue;
+                }
+                str taskLabel = nameOf(taskId);
+                taskLabel += task->event.empty() ? "  (!) no event"
+                                                 : "  on " + task->event;
+                if (task->required > 1) {
+                    taskLabel += " x" + std::to_string(task->required);
+                }
+                if (ImGui::Selectable(
+                        (taskLabel + "##t" + taskId.toString()).c_str(),
+                        selected == taskId)) {
+                    selected = taskId;
+                }
+            }
+            ImGui::TreePop();
+        }
+        ImGui::TreePop();
+    }
+}
+
+// Ex-8.3 dialogue tree (parent-linked, alternating NPC lines and Player
+// choices), now the Inspector's hierarchy pane: inline creation, sibling
+// reorder and per-node conditions.
+void EditorScene::drawDialogueHierarchy() {
+    const auto* dialogue = static_cast<const quest::DialogueForm*>(
+        session->view(itemSelected));
+    if (!dialogue) {
         return;
     }
 
@@ -203,7 +675,7 @@ void EditorScene::drawDialogues() {
             const core::Guid id = session->createForm(
                 quest::DialogueNodeForm::staticTypeInfo().id,
                 dialogue->editorId + "Root");
-            session->setField(dialogueSelected, core::fnv1a("rootNode"),
+            session->setField(itemSelected, core::fnv1a("rootNode"),
                               reflect::Value { id });
             selected = id;
         }
@@ -324,206 +796,20 @@ void EditorScene::drawDialogues() {
     if (dialogue->rootNode.isValid()) {
         drawNode(dialogue->rootNode, 0);
     }
-
-    ImGui::Separator();
-    if (selected.isValid()) {
-        drawPropertyGrid(*session, selected);
-    }
-    ImGui::EndChild();
-    ImGui::End();
-}
-
-// 8.2 — the quest editor: the decomposed records (Quest -> States ->
-// Branches -> Tasks, linked by guid) shown as ONE tree, created with
-// their parent pre-filled, edited through the same PropertyGrid and
-// exported by the same session as everything else (§5: the editor is a
-// plugin author, nothing more).
-void EditorScene::drawQuests() {
-    ImGui::Begin("Quests");
-
-    // Left: every visible QuestForm (base + session-created).
-    ImGui::BeginChild("questlist", ImVec2(220.0f, 0.0f),
-                      ImGuiChildFlags_ResizeX);
-    if (ImGui::Button("+ Quest")) {
-        questSelected = session->createForm(
-            quest::QuestForm::staticTypeInfo().id, "NewQuest");
-        selected = questSelected;
-    }
-    session->forEachVisible([&](const core::Guid& id, const data::Form& form,
-                                const reflect::TypeInfo& type) {
-        if (type.id != quest::QuestForm::staticTypeInfo().id) {
-            return;
-        }
-        const str label =
-            (form.editorId.empty() ? id.toString() : form.editorId) +
-            (session->isDirty(id) ? " *" : "") + "##q" + id.toString();
-        if (ImGui::Selectable(label.c_str(), questSelected == id)) {
-            questSelected = id;
-            selected = id;
-        }
-    });
-    ImGui::EndChild();
-    ImGui::SameLine();
-
-    ImGui::BeginChild("questtree");
-    const auto* questForm = static_cast<const quest::QuestForm*>(
-        session->view(questSelected));
-    if (!questForm) {
-        ImGui::TextDisabled("(select a quest)");
-        ImGui::EndChild();
-        ImGui::End();
-        return;
-    }
-
-    // Collect the visible children at each level (guid-linked, §C.1).
-    vector<std::pair<core::Guid, const quest::QuestStateForm*>> states;
-    vector<std::pair<core::Guid, const quest::QuestBranchForm*>> branches;
-    vector<std::pair<core::Guid, const quest::QuestTaskForm*>> tasks;
-    session->forEachVisible([&](const core::Guid& id, const data::Form& form,
-                                const reflect::TypeInfo& type) {
-        if (type.id == quest::QuestStateForm::staticTypeInfo().id) {
-            states.emplace_back(
-                id, static_cast<const quest::QuestStateForm*>(&form));
-        } else if (type.id == quest::QuestBranchForm::staticTypeInfo().id) {
-            branches.emplace_back(
-                id, static_cast<const quest::QuestBranchForm*>(&form));
-        } else if (type.id == quest::QuestTaskForm::staticTypeInfo().id) {
-            tasks.emplace_back(
-                id, static_cast<const quest::QuestTaskForm*>(&form));
-        }
-    });
-    const auto nameOf = [&](const core::Guid& id) -> str {
-        const data::Form* form = session->view(id);
-        if (!form) {
-            return "(dangling)";
-        }
-        return form->editorId.empty() ? id.toString() : form->editorId;
-    };
-
-    // Header: the quest itself + its startState health.
-    ImGui::Text("%s", questForm->displayName.empty()
-                          ? questForm->editorId.c_str()
-                          : questForm->displayName.c_str());
-    if (!questForm->startState.isValid()) {
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
-                           "(!) no startState");
-    } else if (!session->view(questForm->startState)) {
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f),
-                           "(!) startState dangles");
-    }
-    if (ImGui::Button("+ State")) {
-        const core::Guid id = session->createForm(
-            quest::QuestStateForm::staticTypeInfo().id,
-            questForm->editorId + "State");
-        session->setField(id, core::fnv1a("quest"),
-                          reflect::Value { questSelected });
-        selected = id;
-    }
-    ImGui::Separator();
-
-    for (const auto& [stateId, state] : states) {
-        if (state->quest != questSelected) {
-            continue;
-        }
-        str label = nameOf(stateId) + "  [" + state->kind + "]";
-        if (stateId == questForm->startState) {
-            label += "  <- start";
-        }
-        const bool stateOpen = ImGui::TreeNodeEx(
-            (label + "##s" + stateId.toString()).c_str(),
-            ImGuiTreeNodeFlags_OpenOnArrow |
-                (selected == stateId ? ImGuiTreeNodeFlags_Selected
-                                     : ImGuiTreeNodeFlags_None) |
-                ImGuiTreeNodeFlags_DefaultOpen);
-        if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-            selected = stateId;
-        }
-        if (!stateOpen) {
-            continue;
-        }
-        if (ImGui::Button(("+ Branch##" + stateId.toString()).c_str())) {
-            const core::Guid id = session->createForm(
-                quest::QuestBranchForm::staticTypeInfo().id,
-                nameOf(stateId) + "Branch");
-            session->setField(id, core::fnv1a("state"),
-                              reflect::Value { stateId });
-            selected = id;
-        }
-        for (const auto& [branchId, branch] : branches) {
-            if (branch->state != stateId) {
-                continue;
-            }
-            str branchLabel = nameOf(branchId) + "  -> ";
-            branchLabel += branch->destination.isValid()
-                               ? nameOf(branch->destination)
-                               : "(!) no destination";
-            const bool branchOpen = ImGui::TreeNodeEx(
-                (branchLabel + "##b" + branchId.toString()).c_str(),
-                ImGuiTreeNodeFlags_OpenOnArrow |
-                    (selected == branchId ? ImGuiTreeNodeFlags_Selected
-                                          : ImGuiTreeNodeFlags_None) |
-                    ImGuiTreeNodeFlags_DefaultOpen);
-            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-                selected = branchId;
-            }
-            if (!branchOpen) {
-                continue;
-            }
-            if (ImGui::Button(
-                    ("+ Task##" + branchId.toString()).c_str())) {
-                const core::Guid id = session->createForm(
-                    quest::QuestTaskForm::staticTypeInfo().id,
-                    nameOf(branchId) + "Task");
-                session->setField(id, core::fnv1a("branch"),
-                                  reflect::Value { branchId });
-                selected = id;
-            }
-            for (const auto& [taskId, task] : tasks) {
-                if (task->branch != branchId) {
-                    continue;
-                }
-                str taskLabel = nameOf(taskId);
-                taskLabel += task->event.empty() ? "  (!) no event"
-                                                 : "  on " + task->event;
-                if (task->required > 1) {
-                    taskLabel += " x" + std::to_string(task->required);
-                }
-                if (ImGui::Selectable(
-                        (taskLabel + "##t" + taskId.toString()).c_str(),
-                        selected == taskId)) {
-                    selected = taskId;
-                }
-            }
-            ImGui::TreePop();
-        }
-        ImGui::TreePop();
-    }
-
-    // The clicked node edits in place — same grid, same session.
-    ImGui::Separator();
-    if (selected.isValid()) {
-        drawPropertyGrid(*session, selected);
-    }
-    ImGui::EndChild();
-    ImGui::End();
 }
 
 // 8.4 — the schedule timeline: one 24 h strip per ScheduleForm, one lane
-// per ScheduleEntryForm (no overlap ambiguity — the last-in-load-order
-// rule is what the scrubbed-hour eval line shows). Bars drag by their
-// edges (0.5 h snap, committed as ONE field edit on release so undo
-// stays sane); midnight-wrapping entries render as two segments. The H7
-// debug eval ("who does what at this hour, and why") stays at the top
-// of each strip.
-void EditorScene::drawSchedules() {
-    ImGui::Begin("Schedules");
+// per ScheduleEntryForm. Bars drag by their edges (0.5 h snap, committed
+// as ONE field edit on release); midnight-wrapping entries render as two
+// segments. The H7 debug eval stays at the top of each strip. Since
+// 8.7b: the Editor-center content of the Schedules category.
+void EditorScene::drawSchedulesContent() {
     ImGui::SliderFloat("Hour", &debugHour, 0.0f, 24.0f, "%.1f");
     ImGui::SameLine();
     if (ImGui::Button("+ Schedule")) {
         selected = session->createForm(
             gameplay::ScheduleForm::staticTypeInfo().id, "NewSchedule");
+        itemSelected = selected;
     }
 
     vector<std::pair<core::Guid, const gameplay::ScheduleForm*>> schedules;
@@ -694,155 +980,10 @@ void EditorScene::drawSchedules() {
         ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + stripHeight));
         ImGui::Dummy(ImVec2(width, 4.0f));
     }
-
-    // Edit the clicked entry/schedule in place.
-    ImGui::Separator();
-    if (selected.isValid()) {
-        drawPropertyGrid(*session, selected);
-    }
-    ImGui::End();
-}
-
-void EditorScene::drawGameDb() {
-    ImGui::Begin("Game DB");
-    ImGui::TextDisabled("%s", status.c_str());
-
-    // Type filter + search.
-    const str filterName = typeFilter > 0 ? typeNames[typeFilter - 1] : "";
-    if (ImGui::BeginCombo("Type",
-                          typeFilter == 0 ? "All" : filterName.c_str())) {
-        if (ImGui::Selectable("All", typeFilter == 0)) {
-            typeFilter = 0;
-        }
-        for (int i = 0; i < static_cast<int>(typeNames.size()); ++i) {
-            if (ImGui::Selectable(typeNames[i].c_str(),
-                                  typeFilter == i + 1)) {
-                typeFilter = i + 1;
-            }
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::InputTextWithHint("##search", "search editorId...", search,
-                             sizeof(search));
-
-    // Toolbar: create (needs a concrete type), undo/redo, export.
-    if (typeFilter > 0) {
-        if (ImGui::Button("New")) {
-            const reflect::TypeInfo* type = types.findType(filterName);
-            if (type) {
-                selected =
-                    session->createForm(type->id, "New" + filterName);
-            }
-        }
-        ImGui::SameLine();
-    }
-    ImGui::BeginDisabled(!session->canUndo());
-    if (ImGui::Button("Undo")) { session->undo(); }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::BeginDisabled(!session->canRedo());
-    if (ImGui::Button("Redo")) { session->redo(); }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    ImGui::Text("pending edits: %u", session->dirtyCount());
-
-    ImGui::SetNextItemWidth(160.0f);
-    ImGui::InputText("##exportname", exportName, sizeof(exportName));
-    ImGui::SameLine();
-    ImGui::BeginDisabled(session->dirtyCount() == 0);
-    if (ImGui::Button("Export plugin")) {
-        const str name = exportName;
-        const data::Plugin plugin =
-            session->exportPlugin(core::Guid::generate(), name);
-        const str toml = data::writePluginToml(plugin, types);
-        const str file = name + ".toml";
-        std::ofstream out { pluginDir / file, std::ios::binary };
-        out << toml;
-        const bool known = std::any_of(
-            config.entries.begin(), config.entries.end(),
-            [&](const data::PluginConfigEntry& e) { return e.file == file; });
-        if (!known) {
-            config.entries.push_back({ file, true });
-            saveConfig();
-        }
-        status = "exported " + std::to_string(plugin.records.size()) +
-                 " records to " + file + " (applies on reload)";
-    }
-    ImGui::EndDisabled();
-    ImGui::Separator();
-
-    // Left: form list. Right: the reflection property grid.
-    ImGui::BeginChild("list", ImVec2(260.0f, 0.0f),
-                      ImGuiChildFlags_ResizeX);
-    for (u32 i = 1; i <= db->count(); ++i) {
-        const data::FormHandle handle { i };
-        const data::Form* form = db->get(handle);
-        const reflect::TypeInfo* type = db->typeOf(handle);
-        if (!form || !type) {
-            continue;
-        }
-        if (typeFilter > 0 && type->name != filterName) {
-            continue;
-        }
-        if (search[0] != '\0' && form->editorId.find(search) == str::npos) {
-            continue;
-        }
-        const str label =
-            (form->editorId.empty() ? form->id.toString() : form->editorId) +
-            (session->isDirty(form->id) ? " *" : "") +
-            "##" + std::to_string(i);
-        if (ImGui::Selectable(label.c_str(), selected == form->id)) {
-            selected = form->id;
-        }
-    }
-    // Session-created forms are not in the database yet: list drafts too.
-    ImGui::EndChild();
-    ImGui::SameLine();
-    ImGui::BeginChild("grid");
-    if (selected.isValid()) {
-        // 8.1: clone the selected form into the session (children are NOT
-        // copied — recursive clones are the quest editor's job).
-        if (const data::Form* form = session->view(selected)) {
-            if (ImGui::Button("Duplicate")) {
-                const str baseName =
-                    form->editorId.empty() ? str { "Form" } : form->editorId;
-                const core::Guid copy =
-                    session->duplicateForm(selected, baseName + "Copy");
-                if (copy.isValid()) {
-                    selected = copy;
-                }
-            }
-        }
-        drawPropertyGrid(*session, selected);
-        // 8.1: reverse lookup — who points at this form. Resolved base
-        // only (session drafts are not scanned, v1).
-        if (ImGui::CollapsingHeader("Used by")) {
-            const auto hits = data::referencesTo(*db, selected);
-            if (hits.empty()) {
-                ImGui::TextDisabled("(no referencers)");
-            }
-            for (size_t i = 0; i < hits.size(); ++i) {
-                const data::FormReferenceHit& hit = hits[i];
-                const data::Form* from = db->find(hit.from);
-                const str label =
-                    (from && !from->editorId.empty() ? from->editorId
-                                                     : hit.from.toString()) +
-                    "  (" + hit.typeName + "." + hit.fieldName + ")##ub" +
-                    std::to_string(i);
-                if (ImGui::Selectable(label.c_str())) {
-                    selected = hit.from;
-                }
-            }
-        }
-    } else {
-        ImGui::TextDisabled("(select a form)");
-    }
-    ImGui::EndChild();
-    ImGui::End();
 }
 
 void EditorScene::drawPlugins() {
-    ImGui::Begin("Plugins");
+    ImGui::Begin("Plugins", &showPlugins);
     ImGui::TextUnformatted("Load order (top loads first, last writer wins):");
     for (int i = 0; i < static_cast<int>(config.entries.size()); ++i) {
         data::PluginConfigEntry& entry = config.entries[i];

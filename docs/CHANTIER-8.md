@@ -302,6 +302,56 @@ un lien crée un branch ; le dialogue Villager en graphe = mêmes données
 que l'arbre 8.3 (les deux fenêtres montrent la MÊME sélection) ;
 re-parenter une réponse au drag → l'arbre suit.
 
+### 8.7b — La fenêtre unique « True Adventurer DB » (retour dev sur 8.6/8.7)
+
+> Plan écrit 2026-07-09 après validation de la 8.7 : les fenêtres
+> flottantes séparées fonctionnent mais l'interface doit devenir UN
+> éditeur, façon Unity. Arbitrages dev : **ImGui passe au pin
+> `v1.92.8-docking`** (vraies fenêtres dockables) ; **l'arbre
+> (états→branches→tasks / répliques) devient l'inspecteur VERTICAL de
+> droite** (hiérarchie en haut, PropertyGrid en bas) ; rail gauche =
+> **catégories curées + « All types »** ; le jeu s'ouvre en
+> **1920×1080** (au lieu de 1280×720).
+
+- **Résolution** : défauts `engine/Engine.hpp` → 1920×1080.
+- **Docking** : pin imgui → `v1.92.8-docking` (tag vérifié),
+  `ImGuiConfigFlags_DockingEnable` dans l'ImGuiLayer ; ImGuizmo et le
+  node-editor vendoré compilent contre la même API — à revalider
+  visuellement (panneaux 3D inclus). Pas de multi-viewport (une seule
+  fenêtre OS).
+- **Le shell** : l'EditorScene devient l'hôte d'un dockspace plein
+  écran « True Adventurer DB » avec barre de menu (File : Export /
+  Reload ; Edit : Undo/Redo ; Windows : Plugins, Console) et un layout
+  par défaut posé au DockBuilder : Browser (gauche ~240) / Editor
+  (centre) / Inspector (droite ~380).
+- **Browser (gauche)** : catégories curées — Quests, Dialogues,
+  Anim Graphs, Clips, Schedules, Effects, Abilities, Items, Actors —
+  puis « All types » (l'ancien filtre GameDB) ; recherche, « + New »,
+  Duplicate. Sélection → l'éditeur du centre + l'inspecteur ciblent
+  l'item.
+- **Editor (centre)** : la surface d'édition par type — canvas de
+  graphe (quêtes/dialogues/anim), timeline (schedules, clips en 8.8),
+  et pour les autres types un résumé + « used by » (referencesTo). Les
+  trois panneaux 8.6/8.7 se refactorent : la liste part au Browser, la
+  grille part à l'Inspector, il reste `drawCanvas()`.
+- **Inspector (droite, vertical)** : en haut la HIÉRARCHIE de l'objet
+  sélectionné (la logique des arbres 8.2/8.3 déplacée ici : quête =
+  états→branches→tasks avec + State/+ Branch/+ Task ; dialogue =
+  répliques avec + reply/^ ; anim = états/transitions), sélection
+  partagée avec le canvas ; en bas la PropertyGrid du sous-objet
+  sélectionné + sections contextuelles (picker de clip, tasks d'un
+  branch, conditions — le builder 8.9 s'enfichera ici). TOUTE la quête
+  s'édite depuis le graphe + l'inspecteur ; les fenêtres arbres
+  autonomes disparaissent.
+
+**Quoi tester (dev)** : le jeu s'ouvre en 1080p ; la scène Game DB =
+une seule fenêtre dockée (Browser/Editor/Inspector re-dockables à la
+souris) ; « La menace de l'est » : catégorie Quests → l'item → le
+graphe au centre, l'arbre à droite, clic dans l'un suit dans l'autre ;
+créer state/branch/task/condition sans quitter la fenêtre ; export via
+le menu File ; les panneaux ImGui des scènes 3D inchangés (docking
+n'altère pas leur rendu).
+
 ### 8.8 — Timeline des clips anim (events)
 
 Le pont anim→gameplay (`AnimEventForm` : hit frames, footsteps, FX)

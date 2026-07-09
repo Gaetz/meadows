@@ -6,21 +6,21 @@
 
 namespace game {
 
-// The dialogue tree laid flat (chantier 8.7): DialogueNodeForm = node
-// (speaker + text excerpt + condition badge), the `parent` link = edge.
-// Depth becomes columns, the `order` field ranks the rows — branching
-// conversations finally read at a glance. Dragging a new link RE-PARENTS
-// the target (setField parent, anti-cycle guarded); links themselves are
-// never deletable (an orphan node is invisible). Sibling reorder stays
-// in the 8.3 tree (v1). Same selection as the tree window.
+// The dialogue tree laid flat (chantier 8.7, reshaped by 8.7b):
+// DialogueNodeForm = node (speaker + text excerpt + condition badge),
+// the `parent` link = edge. Depth becomes columns, the `order` field
+// ranks the rows. Dragging a new link RE-PARENTS the target (setField
+// parent, anti-cycle guarded); links themselves are never deletable (an
+// orphan node is invisible). 8.7b contract: the shell owns the windows —
+// drawCanvas() fills the central Editor window; the dialogue hierarchy
+// tree (reorder, + reply, + condition) lives in the shell's Inspector.
 class DialogueGraphPanel {
 public:
     DialogueGraphPanel(data::EditSession& session,
                        data::EditorLayouts& layouts, core::Guid& selected)
         : session { session }, layouts { layouts }, selected { selected } {}
 
-    // Draws the "Dialogue Graph" window.
-    void draw();
+    void drawCanvas(const core::Guid& dialogue);
 
 private:
     data::EditSession& session;
@@ -28,7 +28,6 @@ private:
     core::Guid& selected;
 
     NodeCanvas canvas;
-    core::Guid dialogueSelected;
     core::Guid canvasShown;
     core::Guid contextNode;
     str status; // last refused re-parent, shown above the canvas

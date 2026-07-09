@@ -7,7 +7,6 @@
 #include <imgui.h>
 
 #include "data/editor/GraphLayout.hpp"
-#include "game/ui/PropertyGrid.hpp"
 #include "gameplay/condition/Condition.hpp"
 #include "quest/Dialogue.hpp"
 
@@ -73,45 +72,18 @@ DialogueData collectDialogue(const data::EditSession& session,
 
 } // namespace
 
-void DialogueGraphPanel::draw() {
-    ImGui::Begin("Dialogue Graph");
-
-    ImGui::BeginChild("dgglist", ImVec2(220.0f, 0.0f),
-                      ImGuiChildFlags_ResizeX);
-    session.forEachVisible([&](const core::Guid& id, const data::Form& form,
-                               const reflect::TypeInfo& type) {
-        if (type.id != quest::DialogueForm::staticTypeInfo().id) {
-            return;
-        }
-        const str label =
-            (form.editorId.empty() ? id.toString() : form.editorId) +
-            (session.isDirty(id) ? " *" : "") + "##dg" + id.toString();
-        if (ImGui::Selectable(label.c_str(), dialogueSelected == id)) {
-            dialogueSelected = id;
-            selected = id;
-        }
-    });
-    ImGui::EndChild();
-    ImGui::SameLine();
-
-    ImGui::BeginChild("dggcanvas");
-    const auto* dialogue = static_cast<const quest::DialogueForm*>(
-        session.view(dialogueSelected));
-    if (!dialogue ||
-        session.viewType(dialogueSelected)->id !=
-            quest::DialogueForm::staticTypeInfo().id) {
-        ImGui::TextDisabled(
-            "(select a dialogue — creation lives in the Dialogues tree)");
-        ImGui::EndChild();
-        ImGui::End();
+void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
+    const auto* type =
+        dialogueId.isValid() ? session.viewType(dialogueId) : nullptr;
+    if (!type || type->id != quest::DialogueForm::staticTypeInfo().id) {
+        ImGui::TextDisabled("(select a dialogue in the Browser)");
         return;
     }
+    const auto* dialogue =
+        static_cast<const quest::DialogueForm*>(session.view(dialogueId));
     if (!dialogue->rootNode.isValid() || !session.view(dialogue->rootNode)) {
         ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
-                           "(!) no root node — create it in the Dialogues "
-                           "tree");
-        ImGui::EndChild();
-        ImGui::End();
+                           "(!) no root node — create it in the Inspector");
         return;
     }
 
@@ -142,7 +114,7 @@ void DialogueGraphPanel::draw() {
 
     canvas.begin("dialoguegraph-canvas");
 
-    if (canvasShown != dialogueSelected || autoLayoutRequested) {
+    if (canvasShown != dialogueId || autoLayoutRequested) {
         vector<core::Guid> nodes;
         vector<std::pair<core::Guid, core::Guid>> edges;
         std::unordered_map<core::Guid, i32> rank;
@@ -160,12 +132,11 @@ void DialogueGraphPanel::draw() {
                 const auto it = layout.positions.find(node);
                 if (it != layout.positions.end()) {
                     canvas.setNodePosition(node, it->second);
-                    layouts.setPosition(dialogueSelected, node, it->second);
+                    layouts.setPosition(dialogueId, node, it->second);
                 }
                 continue;
             }
-            if (const auto stored =
-                    layouts.positionOf(dialogueSelected, node)) {
+            if (const auto stored = layouts.positionOf(dialogueId, node)) {
                 canvas.setNodePosition(node, *stored);
             } else if (const auto it = layout.positions.find(node);
                        it != layout.positions.end()) {
@@ -175,7 +146,7 @@ void DialogueGraphPanel::draw() {
         if (autoLayoutRequested) {
             layouts.save();
         }
-        canvasShown = dialogueSelected;
+        canvasShown = dialogueId;
     }
 
     for (const auto& [id, node] : data.nodes) {
@@ -243,7 +214,7 @@ void DialogueGraphPanel::draw() {
         session.removeCreated(id);
     }
     for (const auto& [node, position] : actions.movedNodes) {
-        layouts.setPosition(dialogueSelected, node, position);
+        layouts.setPosition(dialogueId, node, position);
     }
     if (!actions.movedNodes.empty()) {
         layouts.save();
@@ -287,13 +258,6 @@ void DialogueGraphPanel::draw() {
         }
         ImGui::EndPopup();
     }
-
-    ImGui::Separator();
-    if (selected.isValid()) {
-        drawPropertyGrid(session, selected);
-    }
-    ImGui::EndChild();
-    ImGui::End();
 }
 
 } // namespace game

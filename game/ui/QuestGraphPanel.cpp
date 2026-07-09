@@ -5,8 +5,6 @@
 #include <imgui.h>
 
 #include "data/editor/GraphLayout.hpp"
-#include "game/ui/FormPicker.hpp"
-#include "game/ui/PropertyGrid.hpp"
 #include "quest/Quest.hpp"
 
 namespace game {
@@ -58,47 +56,25 @@ QuestData collectQuest(const data::EditSession& session,
     return data;
 }
 
+const quest::QuestForm* questOf(const data::EditSession& session,
+                                const core::Guid& id) {
+    const auto* type = id.isValid() ? session.viewType(id) : nullptr;
+    if (!type || type->id != quest::QuestForm::staticTypeInfo().id) {
+        return nullptr;
+    }
+    return static_cast<const quest::QuestForm*>(session.view(id));
+}
+
 } // namespace
 
-void QuestGraphPanel::draw() {
-    ImGui::Begin("Quest Graph");
-
-    ImGui::BeginChild("qglist", ImVec2(220.0f, 0.0f),
-                      ImGuiChildFlags_ResizeX);
-    session.forEachVisible([&](const core::Guid& id, const data::Form& form,
-                               const reflect::TypeInfo& type) {
-        if (type.id != quest::QuestForm::staticTypeInfo().id) {
-            return;
-        }
-        const auto* questForm = static_cast<const quest::QuestForm*>(&form);
-        const str name = questForm->displayName.empty()
-                             ? (form.editorId.empty() ? id.toString()
-                                                      : form.editorId)
-                             : questForm->displayName;
-        const str label =
-            name + (session.isDirty(id) ? " *" : "") + "##q" + id.toString();
-        if (ImGui::Selectable(label.c_str(), questSelected == id)) {
-            questSelected = id;
-            selected = id;
-        }
-    });
-    ImGui::EndChild();
-    ImGui::SameLine();
-
-    ImGui::BeginChild("qgcanvas");
-    const auto* questForm =
-        static_cast<const quest::QuestForm*>(session.view(questSelected));
-    if (!questForm ||
-        session.viewType(questSelected)->id !=
-            quest::QuestForm::staticTypeInfo().id) {
-        ImGui::TextDisabled(
-            "(select a quest — creation lives in the Quests tree)");
-        ImGui::EndChild();
-        ImGui::End();
+void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
+    const quest::QuestForm* questForm = questOf(session, questId);
+    if (!questForm) {
+        ImGui::TextDisabled("(select a quest in the Browser)");
         return;
     }
 
-    const QuestData data = collectQuest(session, questSelected);
+    const QuestData data = collectQuest(session, questId);
     const auto isState = [&](const core::Guid& id) {
         return std::any_of(data.states.begin(), data.states.end(),
                            [&](const auto& s) { return s.first == id; });
@@ -146,7 +122,7 @@ void QuestGraphPanel::draw() {
 
     canvas.begin("questgraph-canvas");
 
-    if (canvasShown != questSelected || autoLayoutRequested) {
+    if (canvasShown != questId || autoLayoutRequested) {
         vector<core::Guid> nodes;
         vector<std::pair<core::Guid, core::Guid>> edges;
         for (const auto& [id, state] : data.states) {
@@ -168,11 +144,11 @@ void QuestGraphPanel::draw() {
                 const auto it = layout.positions.find(node);
                 if (it != layout.positions.end()) {
                     canvas.setNodePosition(node, it->second);
-                    layouts.setPosition(questSelected, node, it->second);
+                    layouts.setPosition(questId, node, it->second);
                 }
                 continue;
             }
-            if (const auto stored = layouts.positionOf(questSelected, node)) {
+            if (const auto stored = layouts.positionOf(questId, node)) {
                 canvas.setNodePosition(node, *stored);
             } else if (const auto it = layout.positions.find(node);
                        it != layout.positions.end()) {
@@ -182,11 +158,11 @@ void QuestGraphPanel::draw() {
         if (autoLayoutRequested) {
             layouts.save();
         }
-        canvasShown = questSelected;
+        canvasShown = questId;
     }
     if (pendingPlace.isValid()) {
         canvas.setNodePosition(pendingPlace, pendingPlacePos);
-        layouts.setPosition(questSelected, pendingPlace, pendingPlacePos);
+        layouts.setPosition(questId, pendingPlace, pendingPlacePos);
         layouts.save();
         pendingPlace = {};
     }
@@ -279,7 +255,7 @@ void QuestGraphPanel::draw() {
         session.removeCreated(id);
     }
     for (const auto& [node, position] : actions.movedNodes) {
-        layouts.setPosition(questSelected, node, position);
+        layouts.setPosition(questId, node, position);
     }
     if (!actions.movedNodes.empty()) {
         layouts.save();
@@ -306,7 +282,7 @@ void QuestGraphPanel::draw() {
                 questForm->editorId + "State" +
                     std::to_string(++createCounter));
             session.setField(id, core::fnv1a("quest"),
-                             reflect::Value { questSelected });
+                             reflect::Value { questId });
             pendingPlace = id;
             pendingPlacePos = contextPos;
             selected = id;
@@ -315,45 +291,45 @@ void QuestGraphPanel::draw() {
     }
     if (ImGui::BeginPopup("qg-node")) {
         if (ImGui::MenuItem("Set as start state")) {
-            session.setField(questSelected, core::fnv1a("startState"),
+            session.setField(questId, core::fnv1a("startState"),
                              reflect::Value { contextNode });
         }
         ImGui::EndPopup();
     }
+}
 
-    // Inspector: the grid; a selected BRANCH also lists its tasks with
-    // "+ Task" (the 8.2 creation flow, parent pre-filled).
-    ImGui::Separator();
-    if (selected.isValid()) {
-        if (const auto* type = session.viewType(selected);
-            type && type->id == quest::QuestBranchForm::staticTypeInfo().id) {
-            ImGui::TextUnformatted("Branch tasks:");
-            for (const auto& [taskId, task] : data.tasks) {
-                if (task->branch != selected) {
-                    continue;
-                }
-                const str label =
-                    (task->displayName.empty() ? task->editorId
-                                               : task->displayName) +
-                    "  [" + task->event + "]##t" + taskId.toString();
-                if (ImGui::Selectable(label.c_str(), false)) {
-                    selected = taskId;
-                }
-            }
-            if (ImGui::SmallButton("+ Task")) {
-                const core::Guid id = session.createForm(
-                    quest::QuestTaskForm::staticTypeInfo().id,
-                    questForm->editorId + "Task" +
-                        std::to_string(++createCounter));
-                session.setField(id, core::fnv1a("branch"),
-                                 reflect::Value { selected });
-                selected = id;
-            }
-        }
-        drawPropertyGrid(session, selected);
+void QuestGraphPanel::drawInspectorExtras(const core::Guid& target) {
+    const auto* type = target.isValid() ? session.viewType(target) : nullptr;
+    if (!type || type->id != quest::QuestBranchForm::staticTypeInfo().id) {
+        return;
     }
-    ImGui::EndChild();
-    ImGui::End();
+    const auto* branch =
+        static_cast<const quest::QuestBranchForm*>(session.view(target));
+    ImGui::TextUnformatted("Branch tasks:");
+    session.forEachVisible([&](const core::Guid& id, const data::Form& form,
+                               const reflect::TypeInfo& formType) {
+        if (formType.id != quest::QuestTaskForm::staticTypeInfo().id) {
+            return;
+        }
+        const auto* task = static_cast<const quest::QuestTaskForm*>(&form);
+        if (task->branch != target) {
+            return;
+        }
+        const str label =
+            (task->displayName.empty() ? task->editorId : task->displayName) +
+            "  [" + task->event + "]##t" + id.toString();
+        if (ImGui::Selectable(label.c_str(), false)) {
+            selected = id;
+        }
+    });
+    if (ImGui::SmallButton("+ Task")) {
+        const core::Guid id = session.createForm(
+            quest::QuestTaskForm::staticTypeInfo().id,
+            branch->editorId + "Task" + std::to_string(++createCounter));
+        session.setField(id, core::fnv1a("branch"),
+                         reflect::Value { target });
+        selected = id;
+    }
 }
 
 } // namespace game
