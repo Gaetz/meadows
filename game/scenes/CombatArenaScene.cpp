@@ -275,11 +275,8 @@ void CombatArenaScene::updatePlayer(f32 dt) {
     }
 
     // WASD → normalized walk direction (independent of facing, FPS-style).
-    Vec3 walk { 0.0f, 0.0f, 0.0f };
-    if (input.isDown(platform::Key::W)) walk.y += 1.0f;
-    if (input.isDown(platform::Key::S)) walk.y -= 1.0f;
-    if (input.isDown(platform::Key::D)) walk.x += 1.0f;
-    if (input.isDown(platform::Key::A)) walk.x -= 1.0f;
+    const Vec2 axis = platform::moveAxis(input); // U5-8
+    Vec3 walk { axis.x, axis.y, 0.0f };
     const bool moving = (walk.x != 0.0f || walk.y != 0.0f);
     if (moving) {
         walk = glm::normalize(walk);

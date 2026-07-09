@@ -14,6 +14,9 @@ namespace {
 
 // ImGui has one active item at a time: a single in-progress edit cache is
 // enough. Committing on deactivate keeps ONE undo step per interaction.
+// (Audit U5-6: this TU-local mutable is DELIBERATE â€” it mirrors ImGui's own
+// single-active-item global model, and PropertyGrid is dev tooling, where
+// §8's no-global rule for gameplay determinism does not bite.)
 struct ActiveEdit {
     core::Guid form;
     u32 field { 0 };

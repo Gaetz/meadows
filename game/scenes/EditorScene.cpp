@@ -83,6 +83,9 @@ void EditorScene::onEnter() {
 }
 
 void EditorScene::reload() {
+    // Synchronous on purpose (audit U5-10, kept as-is): this is the dev
+    // GameDB editor — a blocking reload is simpler (§10) and safer than
+    // async here (no world in flight, nothing to keep interactive).
     stack = data::loadPluginStack(pluginDir, config, types);
     db = std::make_unique<data::FormDatabase>();
     report = data::resolve(data::pointersOf(stack), types, *db);

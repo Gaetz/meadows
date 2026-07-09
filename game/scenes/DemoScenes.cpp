@@ -218,19 +218,9 @@ void GameplayScene::update(f32 dt) {
 
     // Player input → velocity.
     const platform::Input& input = engine.getInput();
-    Vec3 direction { 0.0f, 0.0f, 0.0f };
-    if (input.isDown(platform::Key::W) || input.isDown(platform::Key::Up)) {
-        direction.y += 1.0f;
-    }
-    if (input.isDown(platform::Key::S) || input.isDown(platform::Key::Down)) {
-        direction.y -= 1.0f;
-    }
-    if (input.isDown(platform::Key::D) || input.isDown(platform::Key::Right)) {
-        direction.x += 1.0f;
-    }
-    if (input.isDown(platform::Key::A) || input.isDown(platform::Key::Left)) {
-        direction.x -= 1.0f;
-    }
+    const Vec2 axis =
+        platform::moveAxis(input, /*includeArrows=*/true); // U5-8
+    Vec3 direction { axis.x, axis.y, 0.0f };
     if (direction.x != 0.0f || direction.y != 0.0f) {
         direction = glm::normalize(direction);
     }

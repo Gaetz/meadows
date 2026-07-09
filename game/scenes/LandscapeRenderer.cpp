@@ -30,6 +30,24 @@ namespace {
 
 constexpr const char* kTonemapShader = "tonemap";
 
+// std140 ModelUbo mirror (model + tint + info), shared by the mesh and
+// skinned draws — it was re-declared inline in each function body (U4-12).
+struct ModelUniforms {
+    Mat4 model { 1.0f };
+    Vec4 tint { 1.0f };
+    Vec4 info { 0.0f }; // x = emissive
+};
+
+// std140 LightsUbo mirror (binding 5 — mirrors locallights.glsl).
+struct LightsUniforms {
+    Vec4 count { 0.0f };
+    Vec4 positionRadius[LandscapeRenderer::kMaxLights] {};
+    Vec4 colorIntensity[LandscapeRenderer::kMaxLights] {};
+    // B1 APPEND: xyz = spot direction, w = cos(half angle); w = -2 marks
+    // a point light.
+    Vec4 directionAngle[LandscapeRenderer::kMaxLights] {};
+};
+
 // Lengyel's oblique near plane: bends the projection's near plane onto an
 // arbitrary view-space plane, so the mirrored render clips everything below
 // the water for free (no user clip distance in the shaders).
@@ -475,11 +493,6 @@ void LandscapeRenderer::drawSceneMeshes(engine::FrameContext& frame,
     if (meshDraws.size() < snapshot.meshes.size()) {
         meshDraws.resize(snapshot.meshes.size());
     }
-    struct ModelUniforms { // std140 ModelUbo: model + tint + info
-        Mat4 model { 1.0f };
-        Vec4 tint { 1.0f };
-        Vec4 info { 0.0f }; // x = emissive
-    };
     frame.cmd.setPipeline(meshPipeline);
     frame.cmd.setBindGroup(0, frameBindGroup);
     for (u32 i = 0; i < snapshot.meshes.size(); ++i) {
@@ -538,11 +551,6 @@ void LandscapeRenderer::drawSkinned(engine::FrameContext& frame,
     if (shaders->generation("skinned") != skinnedShaderGeneration) {
         buildSkinnedPipeline(frame.device);
     }
-    struct ModelUniforms {
-        Mat4 model { 1.0f };
-        Vec4 tint { 1.0f };
-        Vec4 info { 0.0f };
-    };
     for (SkinnedDraw& draw : skinnedDraws) {
         draw.seen = false;
     }
@@ -1207,14 +1215,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     // B5: the 16 nearest local lights, flicker applied CPU-side (sin +
     // per-index phase — cheap and stateless).
     {
-        struct LightsUniforms {
-            Vec4 count { 0.0f };
-            Vec4 positionRadius[kMaxLights] {};
-            Vec4 colorIntensity[kMaxLights] {};
-            // B1 APPEND (mirrors locallights.glsl): xyz = spot direction,
-            // w = cos(half angle); w = -2 marks a point light.
-            Vec4 directionAngle[kMaxLights] {};
-        } lights;
+        LightsUniforms lights;
         const vector<SceneLight>& nearest = snapshot.lights; // U4-2a
         lights.count.x = static_cast<f32>(nearest.size());
         for (u32 i = 0; i < nearest.size(); ++i) {

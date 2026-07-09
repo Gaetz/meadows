@@ -187,19 +187,8 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     const f32 yaw = flyCamera.camera.yaw;
     const Vec3 forward { std::sin(yaw), 0.0f, -std::cos(yaw) };
     const Vec3 right { std::cos(yaw), 0.0f, std::sin(yaw) };
-    Vec3 wish { 0.0f };
-    if (input.isDown(platform::Key::W)) {
-        wish += forward;
-    }
-    if (input.isDown(platform::Key::S)) {
-        wish -= forward;
-    }
-    if (input.isDown(platform::Key::D)) {
-        wish += right;
-    }
-    if (input.isDown(platform::Key::A)) {
-        wish -= right;
-    }
+    const Vec2 axis = platform::moveAxis(input); // U5-8
+    const Vec3 wish = forward * axis.y + right * axis.x;
     const bool moving = glm::dot(wish, wish) > 0.0f;
 
     // B5.5: speeds come from the CURRENT derived stats (docs/STATS.md §3

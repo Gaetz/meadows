@@ -80,4 +80,25 @@ private:
     f32 frameWheel { 0.0f };
 };
 
+// WASD (+ optionally the arrow keys) -> the raw ±1 movement axis
+// (x = right, y = forward). Callers normalize and compose with their own
+// basis — screen axes in 2D, the camera basis in first person (audit
+// U5-8: this pair of ifs was rewritten per scene).
+inline Vec2 moveAxis(const Input& input, bool includeArrows = false) {
+    Vec2 axis { 0.0f, 0.0f };
+    if (input.isDown(Key::W) || (includeArrows && input.isDown(Key::Up))) {
+        axis.y += 1.0f;
+    }
+    if (input.isDown(Key::S) || (includeArrows && input.isDown(Key::Down))) {
+        axis.y -= 1.0f;
+    }
+    if (input.isDown(Key::D) || (includeArrows && input.isDown(Key::Right))) {
+        axis.x += 1.0f;
+    }
+    if (input.isDown(Key::A) || (includeArrows && input.isDown(Key::Left))) {
+        axis.x -= 1.0f;
+    }
+    return axis;
+}
+
 } // namespace platform
