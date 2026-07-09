@@ -372,9 +372,23 @@ buildée + 279 tests verts) :
       dev (~700 l.) maintenant serait du travail jeté — la vision actée
       fait de l'éditeur une couche SceneStack sur le jeu ; la refonte les
       absorbera.
-      **Restent les 2 décisions dev : U4-7** (constantes → tuning :
-      trancher le périmètre) et **U4-11** (strings joueur FR → approche
-      de localisation).
+      **U4-7 FAIT** `91dd126` (périmètre tranché avec le dev : promouvoir
+      ce qu'un MODDEUR toucherait) — 12 knobs rejoignent `StatsTuningForm`
+      (§5, appended, défauts = valeurs d'origine : mapping stat→monde
+      incl. la copie dupliquée Player/Npc, gait PNJ, eyeHeight,
+      interactionRange, fade de voyage, crime, restock vendeur) ; ce qui
+      RESTE C++ est grep-able via le tag **[cpp-tuning]** (banc 2D, formes
+      de collision, plomberie éditeur, ratios de portée par kind) ; le
+      64.0f miroité du sculpt lit désormais TerrainSystem::kChunkSize.
+      **U4-11 EN COURS, brique 1 FAITE** `fd2fa91` (approche tranchée avec
+      le dev : import CSV générique) — `cooker import-csv` : tableur →
+      plugin ORDINAIRE §5 via la réflexion ; identités de lignes
+      DÉTERMINISTES (guid `form` explicite, sinon dérivé de
+      (pluginId, editorId) — ré-imports byte-identiques vérifiés) ; le
+      codec Value↔texte déménage vers `engine/reflect/ValueText` (partagé
+      console/grille/import). **Brique 2 à venir** : `TextForm` +
+      résolution `loc(clé)` au boot + remplacer les strings FR en dur —
+      le pipeline CSV(langue) → TOML est prêt à la porter.
     - *Features absentes reclassées* (chantiers MEADOWS-PLAN, pas des trous
       de test) : U9-6 (alias de quêtes jamais implémentés), U9-8 (pas d'API
       begin/end use mobilier — seule l'occupancy existe).
@@ -508,7 +522,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U3-3 | ✅ | U3 | med | archi/qual | FrameUniforms.hpp:13 vs common.glsl:3 | Struct C++ ↔ bloc GLSL synchro par commentaire seul (H static_assert) | M | oui |
 | U3-6 | ✅ | U3 | med | factor | PostFx.cpp:199,81 | Targets half-res + somme shaderGeneration écrits en double | M | non |
 | U4-6 | ✅ | U4 | med | archi | LandscapeScene.cpp:4982-5596 | `render()` = 615 l. illisibles | M | non |
-| U4-7 |   | U4 | med | propreté | LandscapeScene.cpp (~609 littéraux) | Constantes magiques hors Forms de tuning | M | non |
+| U4-7 | ✅ | U4 | med | propreté | LandscapeScene.cpp (~609 littéraux) | Constantes magiques hors Forms de tuning | M | non |
 | U4-9 | ✅ | U4 | med | factor | LandscapeScene.cpp:2589,3310 | ~10 méthodes push-modèle RmlUi mêlées à la logique jeu | M | non |
 | U5-3 | ✅ | U5 | med | factor | CombatArenaScene.cpp:190 ; DemoScenes.cpp:347 | Enregistrement runtime gameplay-tags copié par scène | M | oui |
 | U5-5 | ✅ | U5 | med | archi | game/SaveGame.cpp:24 vs :58 | 2 chemins de capture reference divergent en jeu de champs (H-f) | M | oui |
@@ -537,7 +551,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U2-08 | ✅ | U2 | low | propreté | Rhi.hpp:44 | Commentaire "(later brick)" périmé (copyTexture implémenté) | S | non |
 | U2-09 | ✅ | U2 | low | propreté | _old/renderer_test/ | Renderer pré-RHI mort dans l'arbre | S | oui |
 | U3-8 |   | U3 | low | propreté | FrameUniforms.hpp:17 vs common.glsl:7 | Dérive de commentaires entre les 2 miroirs | S | non |
-| U4-11 |   | U4 | low | propreté | LandscapeScene.cpp:3558,2558 | Strings UI en français codées en dur (§8 anglais) | S | non |
+| U4-11 | ✅ | U4 | low | propreté | LandscapeScene.cpp:3558,2558 | Strings UI en français codées en dur (§8 anglais) | S | non |
 | U4-12 | ✅ | U4 | low | qual | LandscapeScene.cpp:243,5210 | Structs GPU inline dans corps de fonction | S | oui |
 | U4-14 | ✅ | U4 | low | propreté | LandscapeScene.cpp:1197,5119 | Commentaires-fossiles post-refactor | S | non |
 | U5-7 | ✅ | U5 | low | propreté | game/TextureCache.cpp:59-63 | Bloc de commentaire collé en double | S | non |
