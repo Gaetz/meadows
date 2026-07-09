@@ -1,0 +1,84 @@
+#pragma once
+
+#include "engine/render/landscape/FrameUniforms.hpp"
+#include "engine/render/landscape/ShadowMapper.hpp"
+#include "engine/render/landscape/SkySystem.hpp"
+#include "game/scenes/AtmosphereParams.hpp"
+
+// The per-frame UBO assembly, extracted from LandscapeScene::render() (audit
+// U4-6a). Pure values in, FrameUniforms out — no World, no device — so the
+// ~110-line composition is unit-testable headless and the future
+// LandscapeRenderer (U4-2c) consumes it unchanged. The scene still owns what
+// is genuinely frame STATE: the shadow-sun hysteresis, cascade fitting, GPU
+// availability checks (they feed `shadowStrength` / `reflectionsActive`), and
+// every updateBuffer.
+
+namespace game {
+
+// Everything render() feeds into the frame UBO, as plain values.
+struct FrameComposerInputs {
+    // View.
+    Mat4 viewProj { 1.0f };
+    Vec3 cameraPosition { 0.0f };
+    u32 width { 1 };
+    u32 height { 1 };
+    f32 dt { 0.0f };
+    f32 timeSeconds { 0.0f };
+
+    // Sky + shadows, evaluated by the caller (SkySystem state, cascade math,
+    // GPU-availability gates).
+    render::SkySystem::SkyState sky {};
+    render::ShadowMapper::Cascades cascades {};
+    f32 shadowStrength { 0.0f };
+
+    // Atmosphere + interior reshape.
+    AtmosphereParams atmos {};
+    bool interiorMode { false };
+    Vec3 interiorAmbient { 0.0f };
+
+    // Terrain / tuning scalars.
+    f32 seaLevel { 0.0f };
+    f32 snowLine { 0.0f };
+    f32 splatUvScale { 0.0f };
+    bool reflectionsActive { false };
+
+    // Dev toggles (the render panel's A/B state).
+    f32 ssao { 0.0f };
+    i32 debugBuffer { 0 };
+    bool stylized { true };
+    bool tonemap { true };
+    f32 exposure { 1.0f };
+    bool cascadeDebug { false };
+    bool grading { false };
+    f32 gradeVibrance { 0.0f };
+    f32 gradeSplitTone { 0.0f };
+    f32 gradeContrast { 1.0f };
+    bool autoExposure { false };
+    f32 autoExposureMin { 0.0f };
+    f32 autoExposureMax { 0.0f };
+
+    // Aux maps, already resolved by their owning systems.
+    Vec4 waterMapInfo { 0.0f };
+    Vec4 terrainLightInfo { 0.0f }; // xyz from the bake; w rewritten below
+    bool terrainLightActive { false };
+
+    // Submersion, wind, grass bend.
+    f32 waterSurfaceY { -1.0e6f }; // effective surface above the camera
+    f32 windTime { 0.0f };
+    bool grassBend { false };  // Play mode with a live body
+    Vec3 playerFeet { 0.0f };
+};
+
+// The two variants one frame needs. `base` is the raw exterior composition —
+// the planar-reflection pass copies it (with its own view matrices) WITHOUT
+// the interior/grade/storm patches, exactly as render() always did.
+// `resolved` is what the frame UBO uploads (interior override, grading,
+// submersion, terrain light, grass bend, storm/rain, auto-exposure applied).
+struct ComposedFrame {
+    render::FrameUniforms base;
+    render::FrameUniforms resolved;
+};
+
+ComposedFrame composeFrameUniforms(const FrameComposerInputs& in);
+
+} // namespace game

@@ -28,6 +28,7 @@
     EventBusTest.cpp
     FactionsTest.cpp
     FormsTest.cpp
+    FrameComposerTest.cpp
     FrustumTest.cpp
     GameClockTest.cpp
     GameplayAbilityTest.cpp

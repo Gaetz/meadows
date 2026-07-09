@@ -17,6 +17,7 @@
 #include "data/plugins/Resolver.hpp"
 #include "game/AllForms.hpp"
 #include "game/Barter.hpp"
+#include "game/FrameComposer.hpp"
 #include "game/ui/ConsolePanel.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/assets/Image.hpp"
@@ -2633,131 +2634,56 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         reflectionsUi && reflectionFb.id != 0 && !interiorMode &&
         camera.position.y > terrain.params.seaLevel;
 
-    // Sun position on screen for the god rays; shafts fade as the sun
-    // leaves the frame or dips below the horizon.
-    Vec2 sunUv { 0.5f, 0.5f };
-    f32 shaftFade = 0.0f;
-    {
-        const Vec4 clip =
-            viewProj *
-            Vec4 { camera.position + skyState.sunDirection * 1000.0f, 1.0f };
-        if (clip.w > 0.0f) {
-            const Vec2 ndc { clip.x / clip.w, clip.y / clip.w };
-            sunUv = ndc * 0.5f + Vec2 { 0.5f };
-            const f32 edge = glm::max(std::abs(ndc.x), std::abs(ndc.y));
-            shaftFade =
-                (1.0f - glm::smoothstep(0.85f, 1.35f, edge)) *
-                glm::smoothstep(-0.02f, 0.05f, skyState.sunDirection.y);
-        }
-    }
-
-    const render::FrameUniforms uniforms {
-        .viewProj = viewProj,
-        .invViewProj = glm::inverse(viewProj),
-        .cameraPos = { camera.position, 1.0f },
-        .time = { timeSeconds, ssaoUi, atmos.volumetric,
-                  static_cast<f32>(debugBufferUi) },
-        .sunDirection = { skyState.sunDirection, 0.0f },
-        .sunColor = { skyState.sunColor, skyState.sunDiscIntensity },
-        .sunGlowColor = { skyState.glowColor, 0.0f },
-        .ambientColor = { skyState.ambientColor,
-                          stylizedUi ? 1.0f : 0.0f },
-        .zenithColor = { skyState.zenithColor, 0.0f },
-        .horizonColor = { skyState.horizonColor, 0.0f },
-        .horizonFarColor = { skyState.horizonFarColor, 0.0f },
-        .terrainInfo = { terrain.params.seaLevel, tuning.snowLine,
-                         tuning.splatUvScale,
-                         reflectionsActive ? 1.0f : 0.0f },
-        .postInfo = { tonemapUi ? 1.0f : 0.0f, exposureUi,
-                      cascadeDebugUi ? 1.0f : 0.0f, atmos.bloomIntensity },
-        .fogInfo = { atmos.fogDensity, atmos.fogHeightFalloff, atmos.fogLowBoost,
-                     atmos.fogStart },
-        .sunViewProj = cascades.viewProj,
-        // .w = interior flag (B5): mesh/skinned/locallights switch to the
-        // hemispheric ambient + wrap/bounce indoors; 0 keeps the exterior
-        // byte-identical.
-        .cascadeSplits = { cascades.splitFar[0], cascades.splitFar[1],
-                           cascades.splitFar[2],
-                           interiorMode ? 1.0f : 0.0f },
-        .shadowInfo = { cascades.texelWorld[0], cascades.texelWorld[1],
-                        cascades.texelWorld[2], shadowStrength },
-        .screenInfo = { static_cast<f32>(frame.width),
-                        static_cast<f32>(frame.height),
-                        1.0f / static_cast<f32>(frame.width),
-                        1.0f / static_cast<f32>(frame.height) },
-        .cloudInfo = { atmos.cloudCoverage, atmos.cloudHeight, atmos.cloudScale,
-                       atmos.cloudShadow },
-        .sunScreen = { sunUv.x, sunUv.y, shaftFade, atmos.godRayIntensity },
-        .cloudMapInfo = { std::floor(camera.position.x /
-                                     (render::SkySystem::kCloudMapSpan /
-                                      render::SkySystem::kCloudMapSize)) *
-                              (render::SkySystem::kCloudMapSpan /
-                               render::SkySystem::kCloudMapSize),
-                          std::floor(camera.position.z /
-                                     (render::SkySystem::kCloudMapSpan /
-                                      render::SkySystem::kCloudMapSize)) *
-                              (render::SkySystem::kCloudMapSpan /
-                               render::SkySystem::kCloudMapSize),
-                          1.0f / render::SkySystem::kCloudMapSpan, 0.0f },
-        .waterMapInfo = water.poolMapInfo(),
-        .windInfo = { windTime, atmos.windStrength, atmos.waveChop, 0.0f },
-    };
-    render::FrameUniforms frameData = uniforms;
-    if (interiorMode) {
-        // B7 interior mode: no sun, no sky glow, dim constant ambient, no
-        // fog, no god rays/volumetric — local lights (B5) carry the room.
-        frameData.sunColor = { 0.0f, 0.0f, 0.0f, 0.0f };
-        frameData.sunGlowColor = { 0.0f, 0.0f, 0.0f, 0.0f };
-        frameData.ambientColor = { tuning.interiorAmbient,
-                                   uniforms.ambientColor.w };
-        frameData.fogInfo = { 0.0f, 0.02f, 0.0f, 100000.0f };
-        frameData.sunScreen = { 0.5f, 0.5f, 0.0f, 0.0f };
-        frameData.time.z = 0.0f; // volumetric shafts off
-    }
-    // B3 (brick 28): grade parameters on free .w slots — AFTER the
-    // interior override (which zeroes sunGlowColor), so the grade applies
-    // in both modes. Neutral values when the A/B toggle is off.
-    frameData.sunGlowColor.w = gradingUi ? gradeVibranceUi : 0.0f;
-    frameData.zenithColor.w = gradingUi ? gradeSplitToneUi : 0.0f;
-    frameData.horizonColor.w = gradingUi ? gradeContrastUi : 1.0f;
-    // Brick 32: the effective water surface above the camera (sea /
-    // volume top / dry) — the tonemap submersion input.
-    frameData.submersionInfo.x = effectiveWaterSurfaceY();
-    // 33b/c: the terrain light map info (w = strength, 0 until the first
-    // bake lands or when toggled off / indoors).
-    frameData.terrainLightInfo = terrainLightMap.info();
-    frameData.terrainLightInfo.w =
-        (terrainLightUi && !interiorMode && terrainLightMap.ready()) ? 1.0f
-                                                                     : 0.0f;
-    // 7.8ter: the player's feet part the grass (off in Fly).
+    // The whole UBO composition is pure (audit U4-6a): gather the inputs,
+    // let the composer build both variants, upload. The scene keeps only
+    // the GPU-availability gates and the updateBuffer calls.
     const phys::CharacterBody* playerBody = playerController.body();
-    frameData.grassBendInfo =
-        (mode == SceneMode::Play) && playerBody
-            ? Vec4 { playerBody->position().x, playerBody->position().z,
-                     playerBody->position().y, 0.85f }
-            : Vec4 { 0.0f };
-    // Brick 30/31: the crossfaded storm front + rain intensity, and the
-    // top-down rain-occlusion matrix (ortho, 40 m around the camera).
-    frameData.stormInfo.x = atmos.stormFront;
-    frameData.stormInfo.y = interiorMode ? 0.0f : atmos.rainIntensity;
+    const ComposedFrame composed = composeFrameUniforms({
+        .viewProj = viewProj,
+        .cameraPosition = camera.position,
+        .width = frame.width,
+        .height = frame.height,
+        .dt = frame.dt,
+        .timeSeconds = timeSeconds,
+        .sky = skyState,
+        .cascades = cascades,
+        .shadowStrength = shadowStrength,
+        .atmos = atmos,
+        .interiorMode = interiorMode,
+        .interiorAmbient = tuning.interiorAmbient,
+        .seaLevel = terrain.params.seaLevel,
+        .snowLine = tuning.snowLine,
+        .splatUvScale = tuning.splatUvScale,
+        .reflectionsActive = reflectionsActive,
+        .ssao = ssaoUi,
+        .debugBuffer = debugBufferUi,
+        .stylized = stylizedUi,
+        .tonemap = tonemapUi,
+        .exposure = exposureUi,
+        .cascadeDebug = cascadeDebugUi,
+        .grading = gradingUi,
+        .gradeVibrance = gradeVibranceUi,
+        .gradeSplitTone = gradeSplitToneUi,
+        .gradeContrast = gradeContrastUi,
+        .autoExposure = autoExposureUi,
+        .autoExposureMin = autoExposureMinUi,
+        .autoExposureMax = autoExposureMaxUi,
+        .waterMapInfo = water.poolMapInfo(),
+        .terrainLightInfo = terrainLightMap.info(),
+        .terrainLightActive =
+            terrainLightUi && !interiorMode && terrainLightMap.ready(),
+        .waterSurfaceY = effectiveWaterSurfaceY(),
+        .windTime = windTime,
+        .grassBend = (mode == SceneMode::Play) && playerBody != nullptr,
+        .playerFeet = playerBody ? playerBody->position() : Vec3 { 0.0f },
+    });
+    const render::FrameUniforms& uniforms = composed.base;
+    render::FrameUniforms frameData = composed.resolved;
     if (frameData.stormInfo.y > 0.003f) {
-        const Vec3 eye = camera.position;
-        const Mat4 rainView =
-            glm::lookAt(eye + Vec3 { 0.0f, 60.0f, 0.0f }, eye,
-                        Vec3 { 0.0f, 0.0f, 1.0f });
-        const Mat4 rainProj =
-            glm::ortho(-40.0f, 40.0f, -40.0f, 40.0f, 0.0f, 140.0f);
-        frameData.rainOcclusionViewProj = rainProj * rainView;
         frame.device.updateBuffer(rainOcclusionUbo,
                                   &frameData.rainOcclusionViewProj,
                                   sizeof(Mat4), 0);
     }
-    // B4 (brick 29): auto-exposure parameters on free .w slots (adapt.frag
-    // + the tonemap tap flag).
-    frameData.sunDirection.w = frame.dt;
-    frameData.horizonFarColor.w = autoExposureMinUi;
-    frameData.cloudMapInfo.w = autoExposureMaxUi;
-    frameData.windInfo.w = autoExposureUi ? 1.0f : 0.0f;
     frame.device.updateBuffer(frameUbo, &frameData, sizeof(frameData), 0);
 
     // B5: the 16 nearest local lights, flicker applied CPU-side (sin +

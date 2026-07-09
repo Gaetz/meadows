@@ -4,6 +4,7 @@
 # (in-engine or standalone) reuses this without the game executable.
 add_library(meadows-runtime STATIC
     Barter.cpp
+    FrameComposer.cpp
     InventoryView.cpp
     LevelEditor.cpp
     MeshCache.cpp
