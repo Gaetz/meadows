@@ -114,7 +114,22 @@ void NodeCanvas::end(Actions& out) {
     // blueprint example.
     if (ed::BeginCreate()) {
         ed::PinId a, b;
-        if (ed::QueryNewLink(&a, &b)) {
+        ed::PinId fromPin;
+        if (ed::QueryNewNode(&fromPin)) {
+            // 8.7d: a pin dragged into empty canvas — the panel opens its
+            // "what can be created here" menu, pre-linked to the source.
+            const auto it = pinOfId.find(static_cast<u64>(fromPin.Get()));
+            if (it == pinOfId.end()) {
+                ed::RejectNewItem();
+            } else if (ed::AcceptNewItem()) {
+                out.newNodeRequested = true;
+                out.newNodeFrom = it->second.node;
+                out.newNodeFromOutput = it->second.output;
+                const ImVec2 canvasPos =
+                    ed::ScreenToCanvas(ImGui::GetMousePos());
+                out.newNodePos = Vec2 { canvasPos.x, canvasPos.y };
+            }
+        } else if (ed::QueryNewLink(&a, &b)) {
             const auto ia = pinOfId.find(static_cast<u64>(a.Get()));
             const auto ib = pinOfId.find(static_cast<u64>(b.Get()));
             bool valid = ia != pinOfId.end() && ib != pinOfId.end() &&

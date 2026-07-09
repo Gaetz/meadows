@@ -300,6 +300,12 @@ void AnimGraphPanel::drawCanvas(const core::Guid& graphId) {
         contextNode = actions.contextNode;
         ImGui::OpenPopup("ag-node");
     }
+    if (actions.newNodeRequested) {
+        dragFrom = actions.newNodeFrom;
+        dragFromOutput = actions.newNodeFromOutput;
+        dragPos = actions.newNodePos;
+        ImGui::OpenPopup("ag-newnode");
+    }
 
     if (ImGui::BeginPopup("ag-background")) {
         if (ImGui::MenuItem("+ State")) {
@@ -319,6 +325,39 @@ void AnimGraphPanel::drawCanvas(const core::Guid& graphId) {
         if (ImGui::MenuItem("Set as initial")) {
             session.setField(graphId, core::fnv1a("initialState"),
                              reflect::Value { contextNode });
+        }
+        ImGui::EndPopup();
+    }
+    // 8.7d: pin dragged into empty canvas — state + transition in one
+    // gesture, oriented by which side was dragged ("Any State" only
+    // emits, so an input-side drag from it can't happen).
+    if (ImGui::BeginPopup("ag-newnode")) {
+        const bool fromOutput = dragFromOutput;
+        const str what = fromOutput ? "+ State (transition from here)"
+                                    : "+ State (transition INTO here)";
+        if (ImGui::MenuItem(what.c_str())) {
+            const core::Guid stateId = session.createForm(
+                data::AnimStateForm::staticTypeInfo().id,
+                graphForm->editorId + "State" +
+                    std::to_string(++stateCounter));
+            session.setField(stateId, core::fnv1a("parent"),
+                             reflect::Value { graphId });
+            const core::Guid transitionId = session.createForm(
+                data::AnimTransitionForm::staticTypeInfo().id,
+                graphForm->editorId + "T" + std::to_string(++stateCounter));
+            session.setField(transitionId, core::fnv1a("parent"),
+                             reflect::Value { graphId });
+            const core::Guid fromState =
+                dragFrom == anyState ? core::Guid {} : dragFrom;
+            session.setField(transitionId, core::fnv1a("from"),
+                             reflect::Value { fromOutput ? fromState
+                                                         : stateId });
+            session.setField(transitionId, core::fnv1a("to"),
+                             reflect::Value { fromOutput ? stateId
+                                                         : dragFrom });
+            pendingPlace = stateId;
+            pendingPlacePos = dragPos;
+            selected = stateId;
         }
         ImGui::EndPopup();
     }

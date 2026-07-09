@@ -32,4 +32,10 @@ bool drawEventCombo(const char* imguiLabel,
 void drawEventCrossRef(const data::EditSession& session,
                        const core::Guid& target, core::Guid& selected);
 
+// Orphan checks (8.7d, the lint side of the cross-ref): does anything
+// FIRE this name (a dialogue node or the C++ emitters), does anything
+// REACT to it (a task, a quest startEvent, or the C++ listeners)?
+bool eventHasEmitter(const data::EditSession& session, const str& name);
+bool eventHasListener(const data::EditSession& session, const str& name);
+
 } // namespace game

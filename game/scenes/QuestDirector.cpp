@@ -25,6 +25,18 @@ void QuestDirector::beginScene(const QuestContext& ctx, bool loadedFromSave) {
            "Quest.EasternMenace.Done", "Crime.Wanted" }) {
         ctx.gameTags.registerTag(tag);
     }
+    // 8.7d: generic per-quest gate tags — dialogue conditions can gate on
+    // Quest.<EditorId>.Active / .Done for ANY quest (modded included),
+    // zero C++ per quest. (EasternMenace's .Ready turn-in window above
+    // stays demo-wired until quests can express it in data.)
+    data::forEach<quest::QuestForm>(
+        ctx.forms, [&](const quest::QuestForm& quest) {
+            if (quest.editorId.empty()) {
+                return;
+            }
+            ctx.gameTags.registerTag("Quest." + quest.editorId + ".Active");
+            ctx.gameTags.registerTag("Quest." + quest.editorId + ".Done");
+        });
     // Chantier 6 A4: a loaded save rebuilds the quest log (the tag mirror
     // re-syncs after the player spawns, via syncQuestTags/syncWantedTag).
     if (loadedFromSave) {
@@ -40,12 +52,12 @@ void QuestDirector::reset() {
 }
 
 void QuestDirector::syncQuestTags(const QuestContext& ctx) {
-    if (!easternQuest_ || !ctx.playerEntity.is_alive() ||
+    if (!ctx.playerEntity.is_alive() ||
         !ctx.playerEntity.has<gameplay::AbilitySystem>()) {
         return;
     }
     auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
-    const auto syncTag = [&](const char* name, bool want) {
+    const auto syncTag = [&](const str& name, bool want) {
         const auto tag = ctx.gameTags.find(name);
         if (!tag) {
             return;
@@ -57,17 +69,32 @@ void QuestDirector::syncQuestTags(const QuestContext& ctx) {
             system.tags.remove(*tag, ctx.gameTags);
         }
     };
-    const bool active = quest::isActive(questLog_, easternQuest_->id);
-    const auto* reportState = data::findByEditorId<quest::QuestStateForm>(
-        ctx.forms, "EasternMenaceReport");
-    const bool ready =
-        active && reportState &&
-        quest::questState(questLog_, easternQuest_->id) == reportState->id;
-    const bool done = quest::questStatus(questLog_, easternQuest_->id) ==
-                      quest::QuestStatus::Succeeded;
-    syncTag("Quest.EasternMenace.Active", active);
-    syncTag("Quest.EasternMenace.Ready", ready);
-    syncTag("Quest.EasternMenace.Done", done);
+    // 8.7d: every quest mirrors Active/Done generically (registered in
+    // beginScene) — the gate tags any dialogue condition can use.
+    data::forEach<quest::QuestForm>(
+        ctx.forms, [&](const quest::QuestForm& quest) {
+            if (quest.editorId.empty()) {
+                return;
+            }
+            const bool taken = questLog_.quests.contains(quest.id);
+            const bool active = quest::isActive(questLog_, quest.id);
+            const bool done =
+                taken && quest::questStatus(questLog_, quest.id) ==
+                             quest::QuestStatus::Succeeded;
+            syncTag("Quest." + quest.editorId + ".Active", active);
+            syncTag("Quest." + quest.editorId + ".Done", done);
+        });
+    // EasternMenace's Ready (the turn-in window) stays demo-wired.
+    if (easternQuest_) {
+        const bool active = quest::isActive(questLog_, easternQuest_->id);
+        const auto* reportState = data::findByEditorId<quest::QuestStateForm>(
+            ctx.forms, "EasternMenaceReport");
+        const bool ready =
+            active && reportState &&
+            quest::questState(questLog_, easternQuest_->id) ==
+                reportState->id;
+        syncTag("Quest.EasternMenace.Ready", ready);
+    }
 }
 
 void QuestDirector::syncWantedTag(const QuestContext& ctx) {

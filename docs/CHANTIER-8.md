@@ -402,6 +402,48 @@ dialogue « Puis-je aider le village ? » → la section « Event:
 OnAcceptEasternMenace » liste la quête qui démarre dessus ; créer un
 nom neuf via « create » et le retrouver dans le combo d'une task.
 
+### 8.7d — Workflow UX du graphe de quêtes (retour dev sur 8.7c)
+
+> **FAITE (2026-07-09) — validation dev en attente.** 340 tests verts,
+> smoke-run OK. Prépare le test dev « modifier une quête » puis la
+> création de la quête « 3 rations au garde ».
+
+- **Drag-vers-vide** (les trois canvas) : tirer un pin vers le canvas
+  vide propose la création PRÉ-LIÉE — quêtes : état + branch (orienté
+  selon le côté tiré, la sélection atterrit sur le branch « à remplir
+  de tasks ») ; anim : état + transition ; dialogues : « + reply here »
+  (sortie seulement — un arbre re-parente par l'entrée). Plomberie :
+  `NodeCanvas` remonte `QueryNewNode` en action `newNodeRequested`.
+- **Noms des tâches sur les liens** du graphe de quêtes (3 max +
+  « +n more », `xN` pour required > 1) — la quête se lit de bout en
+  bout sur le canvas.
+- **Lien dialogue→quête en un geste** (idée 1 validée) : sur un nœud de
+  dialogue, « Start a NEW quest on this option » — génère l'événement
+  (`OnAccept<EditorId>`) si absent, crée QuestForm + état initial
+  câblés, et navigue vers la quête.
+- **Lint d'orphelins** (idée 3) : le graphe de quêtes warn sur une task
+  (ou un startEvent) qui écoute un événement que RIEN n'émet ; le
+  graphe de dialogues badge « (!) no listener » sur un nœud dont
+  l'événement n'a aucun réacteur (tasks/startEvents/écouteurs C++
+  OpenBarter·OnPayFine).
+- **Tags de quête génériques** (idée 4, partie tags) :
+  `Quest.<EditorId>.Active` / `.Done` enregistrés et synchronisés pour
+  TOUTES les quêtes (QuestDirector) — une condition de dialogue peut
+  gater sur n'importe quelle quête, moddée incluse. Le `.Ready`
+  d'EasternMenace reste démo (fenêtre de rendu non exprimable en
+  données pour l'instant).
+
+**Éléments pour la quête « 3 rations au garde » (audit)** : EXISTENT —
+`TravelRations` (ConsumableForm, village.toml), conditions HasItem
+(count ≥ N) + HasTag, startEvent (8.7c), task sur événement de
+dialogue, tags Quest.*.Active/Done (ci-dessus). **MANQUE** : un
+mécanisme de REMISE d'items en données (retirer les 3 rations quand
+l'option est choisie — aujourd'hui seul payFine retire des items, en
+dur C++ or/40) et la récompense en données. Proposition pour la suite :
+`DialogueNodeForm.takeItem/takeCount` (APPEND) consommés au pick, et
+`QuestForm.rewardItem/rewardCount` versés à la complétion — à trancher
+avec le dev avant d'écrire.
+
 ### 8.8 — Timeline des clips anim (events)
 
 Le pont anim→gameplay (`AnimEventForm` : hit frames, footsteps, FX)

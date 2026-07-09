@@ -16,6 +16,9 @@ constexpr ImVec4 kEventColor { 0.55f, 0.75f, 1.0f, 1.0f }; // keyword blue
 // Events dispatched from C++ (grep `dispatch({ eventKind(...)`) — they
 // exist even when no record carries them yet. Extend when combat grows.
 const vector<str> kBuiltinEvents { "OnDeath", "OnBanditDeath" };
+// Events the C++ side LISTENS to (scene subscriptions) — a dialogue
+// node firing one is not an orphan even with zero data listeners.
+const vector<str> kBuiltinListeners { "OpenBarter", "OnPayFine" };
 
 // The (type, field) pairs holding an EventBus event name. AnimEventForm
 // `name` is NOT one: anim events fire through the anim runtime callback
@@ -118,6 +121,45 @@ bool drawEventCombo(const char* imguiLabel,
     }
     ImGui::EndCombo();
     return pickedAny;
+}
+
+bool eventHasEmitter(const data::EditSession& session, const str& name) {
+    if (std::find(kBuiltinEvents.begin(), kBuiltinEvents.end(), name) !=
+        kBuiltinEvents.end()) {
+        return true;
+    }
+    bool found = false;
+    session.forEachVisible([&](const core::Guid&, const data::Form& form,
+                               const reflect::TypeInfo& type) {
+        if (found || type.name != "DialogueNodeForm") {
+            return;
+        }
+        found = static_cast<const quest::DialogueNodeForm&>(form).event ==
+                name;
+    });
+    return found;
+}
+
+bool eventHasListener(const data::EditSession& session, const str& name) {
+    if (std::find(kBuiltinListeners.begin(), kBuiltinListeners.end(),
+                  name) != kBuiltinListeners.end()) {
+        return true;
+    }
+    bool found = false;
+    session.forEachVisible([&](const core::Guid&, const data::Form& form,
+                               const reflect::TypeInfo& type) {
+        if (found) {
+            return;
+        }
+        if (type.name == "QuestTaskForm") {
+            found = static_cast<const quest::QuestTaskForm&>(form).event ==
+                    name;
+        } else if (type.name == "QuestForm") {
+            found = static_cast<const quest::QuestForm&>(form).startEvent ==
+                    name;
+        }
+    });
+    return found;
 }
 
 void drawEventCrossRef(const data::EditSession& session,

@@ -30,6 +30,10 @@ private:
     NodeCanvas canvas;
     core::Guid canvasShown;
     core::Guid contextNode;
+    core::Guid pendingPlace;   // reply created by the empty-canvas drag...
+    Vec2 pendingPlacePos {};   // ...placed on the NEXT ed frame
+    core::Guid dragFrom;       // 8.7d: source node of that drag
+    Vec2 dragPos {};
     str status; // last refused re-parent, shown above the canvas
     u32 createCounter { 0 };
 };

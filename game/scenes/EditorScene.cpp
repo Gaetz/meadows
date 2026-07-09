@@ -484,6 +484,40 @@ void EditorScene::drawInspector() {
         // 8.7c: the quest<->dialogue articulation made visible — who
         // fires / listens to / starts on this record's event.
         drawEventCrossRef(*session, selected, selected);
+        // 8.7d: the one-gesture link — a dialogue option becomes the
+        // start of a brand-new quest (event generated when missing),
+        // and the editor navigates to it.
+        if (const auto* selType = session->viewType(selected);
+            selType &&
+            selType->id == quest::DialogueNodeForm::staticTypeInfo().id) {
+            if (ImGui::Button("Start a NEW quest on this option")) {
+                const auto* node =
+                    static_cast<const quest::DialogueNodeForm*>(
+                        session->view(selected));
+                const str base =
+                    node->editorId.empty() ? str { "Quest" } : node->editorId;
+                str eventName = node->event;
+                if (eventName.empty()) {
+                    eventName = "OnAccept" + base;
+                    session->setField(selected, core::fnv1a("event"),
+                                      reflect::Value { eventName });
+                }
+                const core::Guid questId = session->createForm(
+                    quest::QuestForm::staticTypeInfo().id, base + "Quest");
+                session->setField(questId, core::fnv1a("startEvent"),
+                                  reflect::Value { eventName });
+                const core::Guid stateId = session->createForm(
+                    quest::QuestStateForm::staticTypeInfo().id,
+                    base + "QuestStart");
+                session->setField(stateId, core::fnv1a("quest"),
+                                  reflect::Value { questId });
+                session->setField(questId, core::fnv1a("startState"),
+                                  reflect::Value { stateId });
+                categorySelected = 0; // Quests (first category)
+                itemSelected = questId;
+                selected = questId;
+            }
+        }
     } else {
         ImGui::TextDisabled("(select something)");
     }

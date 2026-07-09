@@ -39,6 +39,12 @@ public:
         bool linkCreated { false }; // a pin->pin drag completed...
         core::Guid linkFrom;        // ...from this node's output
         core::Guid linkTo;          // ...to this node's input
+        // A pin->EMPTY-CANVAS drag released (8.7d): the panel proposes
+        // what can be created there, pre-linked to the source.
+        bool newNodeRequested { false };
+        core::Guid newNodeFrom;          // the dragged pin's node
+        bool newNodeFromOutput { false }; // which side was dragged
+        Vec2 newNodePos {};               // canvas coords for the new node
         vector<core::Guid> deletedNodes; // accepted by canDeleteNode
         vector<core::Guid> deletedLinks; // accepted by canDeleteLink
         vector<std::pair<core::Guid, Vec2>> movedNodes; // on drag release

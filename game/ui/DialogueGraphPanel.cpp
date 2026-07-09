@@ -7,8 +7,10 @@
 #include <imgui.h>
 
 #include "data/editor/GraphLayout.hpp"
+#include "game/ui/EventPicker.hpp"
 #include "gameplay/condition/Condition.hpp"
 #include "quest/Dialogue.hpp"
+#include "quest/Quest.hpp"
 
 namespace game {
 
@@ -148,6 +150,29 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
         }
         canvasShown = dialogueId;
     }
+    if (pendingPlace.isValid()) {
+        canvas.setNodePosition(pendingPlace, pendingPlacePos);
+        layouts.setPosition(dialogueId, pendingPlace, pendingPlacePos);
+        layouts.save();
+        pendingPlace = {};
+    }
+
+    // 8.7d lint precompute: which event names anything reacts to (tasks,
+    // quest startEvents, C++ listeners) — one scan, not one per node.
+    std::unordered_set<str> listened;
+    session.forEachVisible([&](const core::Guid&, const data::Form& form,
+                               const reflect::TypeInfo& type) {
+        if (type.id == quest::QuestTaskForm::staticTypeInfo().id) {
+            listened.insert(
+                static_cast<const quest::QuestTaskForm&>(form).event);
+        } else if (type.id == quest::QuestForm::staticTypeInfo().id) {
+            listened.insert(
+                static_cast<const quest::QuestForm&>(form).startEvent);
+        }
+    });
+    for (const char* builtin : { "OpenBarter", "OnPayFine" }) {
+        listened.insert(builtin);
+    }
 
     for (const auto& [id, node] : data.nodes) {
         canvas.beginNode(id);
@@ -166,6 +191,10 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
                                                   : excerpt.c_str());
         if (!node->event.empty()) {
             ImGui::TextDisabled("[%s]", node->event.c_str());
+            if (!listened.contains(node->event)) {
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                                   "(!) no listener");
+            }
         }
         if (const auto it = data.conditionCount.find(id);
             it != data.conditionCount.end()) {
@@ -226,7 +255,46 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
         contextNode = actions.contextNode;
         ImGui::OpenPopup("dgg-node");
     }
+    // 8.7d: dragging from a node's OUTPUT into empty canvas proposes a
+    // new reply there (a tree: input-side drags re-parent, not create).
+    if (actions.newNodeRequested && actions.newNodeFromOutput) {
+        dragFrom = actions.newNodeFrom;
+        dragPos = actions.newNodePos;
+        ImGui::OpenPopup("dgg-newnode");
+    }
 
+    if (ImGui::BeginPopup("dgg-newnode")) {
+        if (ImGui::MenuItem("+ reply here")) {
+            const auto* parentNode =
+                static_cast<const quest::DialogueNodeForm*>(
+                    session.view(dragFrom));
+            if (parentNode) {
+                i32 nextOrder = 0;
+                for (const auto& [id, node] : data.nodes) {
+                    if (node->parent == dragFrom) {
+                        nextOrder = std::max(nextOrder, node->order + 1);
+                    }
+                }
+                const bool parentIsPlayer = parentNode->speaker == "Player";
+                const core::Guid id = session.createForm(
+                    quest::DialogueNodeForm::staticTypeInfo().id,
+                    parentNode->editorId + "Reply" +
+                        std::to_string(++createCounter));
+                session.setField(id, core::fnv1a("parent"),
+                                 reflect::Value { dragFrom });
+                session.setField(
+                    id, core::fnv1a("speaker"),
+                    reflect::Value { parentIsPlayer ? str {}
+                                                    : str { "Player" } });
+                session.setField(id, core::fnv1a("order"),
+                                 reflect::Value { nextOrder });
+                pendingPlace = id;
+                pendingPlacePos = dragPos;
+                selected = id;
+            }
+        }
+        ImGui::EndPopup();
+    }
     if (ImGui::BeginPopup("dgg-node")) {
         if (ImGui::MenuItem("+ reply")) {
             const auto* parentNode =

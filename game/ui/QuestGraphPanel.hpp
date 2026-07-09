@@ -33,6 +33,9 @@ private:
     Vec2 pendingPlacePos {};
     Vec2 contextPos {};
     core::Guid contextNode;
+    core::Guid dragFrom;          // 8.7d: pin dragged into empty canvas...
+    bool dragFromOutput { false }; // ...proposes a pre-linked new state
+    Vec2 dragPos {};
     u32 createCounter { 0 };
 };
 

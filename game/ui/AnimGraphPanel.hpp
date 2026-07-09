@@ -40,6 +40,9 @@ private:
     Vec2 pendingPlacePos {};   // ...placed on the NEXT frame (needs ed frame)
     Vec2 contextPos {};        // canvas pos of the background right-click
     core::Guid contextNode;    // node under the node context popup
+    core::Guid dragFrom;          // 8.7d: pin dragged into empty canvas...
+    bool dragFromOutput { false }; // ...proposes a pre-linked new state
+    Vec2 dragPos {};
     u32 stateCounter { 0 };    // editorId suffixes for + State / new links
 };
 

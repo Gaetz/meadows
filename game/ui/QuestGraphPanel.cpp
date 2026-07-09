@@ -5,6 +5,7 @@
 #include <imgui.h>
 
 #include "data/editor/GraphLayout.hpp"
+#include "game/ui/EventPicker.hpp"
 #include "game/ui/Keywords.hpp"
 #include "quest/Quest.hpp"
 
@@ -105,6 +106,23 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
             warnings.push_back("branch '" + branch->editorId +
                                "' has no task (never completes)");
         }
+        // 8.7d lint: a task listening to an event nothing fires never
+        // progresses — the quest dead-ends silently in game.
+        for (const auto& [taskId, task] : data.tasks) {
+            if (task->branch != id || task->event.empty()) {
+                continue;
+            }
+            if (!eventHasEmitter(session, task->event)) {
+                warnings.push_back("task '" + task->editorId +
+                                   "' listens to '" + task->event +
+                                   "' — nothing fires it");
+            }
+        }
+    }
+    if (!questForm->startEvent.empty() &&
+        !eventHasEmitter(session, questForm->startEvent)) {
+        warnings.push_back("startEvent '" + questForm->startEvent +
+                           "' — nothing fires it (quest can never begin)");
     }
 
     const bool autoLayoutRequested = ImGui::Button("Auto-layout");
@@ -216,18 +234,45 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
                     selected == id ? 3.5f : 2.0f);
     }
 
-    // Link labels: "n tasks" at the midpoint.
+    // Link labels: the branch's TASK NAMES at the midpoint (8.7d — the
+    // quest reads end to end on the canvas), capped to three lines.
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     for (const auto& [id, branch] : data.branches) {
         if (!branch->destination.isValid() || !isState(branch->destination)) {
             continue;
         }
-        const str label = std::to_string(tasksOf(id)) + " tasks";
+        vector<str> lines;
+        u32 extra = 0;
+        for (const auto& [taskId, task] : data.tasks) {
+            if (task->branch != id) {
+                continue;
+            }
+            if (lines.size() >= 3) {
+                ++extra;
+                continue;
+            }
+            str line =
+                task->displayName.empty() ? task->editorId : task->displayName;
+            if (task->required > 1) {
+                line += " x" + std::to_string(task->required);
+            }
+            lines.push_back(std::move(line));
+        }
+        if (lines.empty()) {
+            lines.push_back("(no task)");
+        }
+        if (extra > 0) {
+            lines.push_back("+" + std::to_string(extra) + " more");
+        }
         const Vec2 a = canvas.nodeCenter(branch->state);
         const Vec2 b = canvas.nodeCenter(branch->destination);
         const Vec2 mid = (a + b) * 0.5f;
-        drawList->AddText(ImVec2(mid.x, mid.y - 8.0f),
-                          IM_COL32(200, 200, 160, 220), label.c_str());
+        for (size_t i = 0; i < lines.size(); ++i) {
+            drawList->AddText(
+                ImVec2(mid.x,
+                       mid.y - 8.0f + 15.0f * static_cast<f32>(i)),
+                IM_COL32(200, 200, 160, 220), lines[i].c_str());
+        }
     }
 
     NodeCanvas::Actions actions;
@@ -277,6 +322,12 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
         contextNode = actions.contextNode;
         ImGui::OpenPopup("qg-node");
     }
+    if (actions.newNodeRequested) {
+        dragFrom = actions.newNodeFrom;
+        dragFromOutput = actions.newNodeFromOutput;
+        dragPos = actions.newNodePos;
+        ImGui::OpenPopup("qg-newnode");
+    }
 
     if (ImGui::BeginPopup("qg-background")) {
         if (ImGui::MenuItem("+ State")) {
@@ -296,6 +347,35 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
         if (ImGui::MenuItem("Set as start state")) {
             session.setField(questId, core::fnv1a("startState"),
                              reflect::Value { contextNode });
+        }
+        ImGui::EndPopup();
+    }
+    // 8.7d: a pin dragged into empty canvas — create the state AND the
+    // branch in one gesture, oriented by which side was dragged.
+    if (ImGui::BeginPopup("qg-newnode")) {
+        const bool fromOutput = dragFromOutput;
+        const str what = fromOutput ? "+ State (branch from here)"
+                                    : "+ State (branch INTO here)";
+        if (ImGui::MenuItem(what.c_str())) {
+            const core::Guid stateId = session.createForm(
+                quest::QuestStateForm::staticTypeInfo().id,
+                questForm->editorId + "State" +
+                    std::to_string(++createCounter));
+            session.setField(stateId, core::fnv1a("quest"),
+                             reflect::Value { questId });
+            const core::Guid branchId = session.createForm(
+                quest::QuestBranchForm::staticTypeInfo().id,
+                questForm->editorId + "Branch" +
+                    std::to_string(++createCounter));
+            session.setField(branchId, core::fnv1a("state"),
+                             reflect::Value { fromOutput ? dragFrom
+                                                         : stateId });
+            session.setField(branchId, core::fnv1a("destination"),
+                             reflect::Value { fromOutput ? stateId
+                                                         : dragFrom });
+            pendingPlace = stateId;
+            pendingPlacePos = dragPos;
+            selected = branchId; // the branch is what needs tasks next
         }
         ImGui::EndPopup();
     }
