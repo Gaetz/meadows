@@ -303,9 +303,33 @@ buildée + 279 tests verts) :
   - ✅ Briques de nuit validées en jeu par le dev (2026-07-09) : mort par
     buildup (poison à 0 → mort persistante au reload) et stagger
     d'électrocution confirmés.
+  - **P1 perf — spikes Release mesurés puis corrigés (2026-07-09,
+    session FrameProbe du dev) :** les spikes réguliers `mainPass=25 ms`
+    étaient le **readback synchrone du verdict Hi-Z**
+    (`glGetBufferSubData` pendant que le driver a 1-2 frames d'avance).
+    Fix `fca81f5` : API fences RHI (`insertFence`/`fenceReady`/
+    `destroyFence`, sync objects GL implémentés une fois dans
+    GlDeviceBase) ; `GpuOcclusion::run` pose une fence après la copie et
+    saute le re-dispatch tant qu'elle est pendante (back-pressure) ;
+    `collectResults` ne lit qu'une fois signalée et garde le verdict
+    précédent sinon. + probes `hiz`/`lightmap` séparés. Fix `bb02ccd` :
+    flush À L'INSERTION, poll sans flags (le FLUSH_COMMANDS_BIT dans le
+    poll bloquait 3-25 ms sur la queue du thread driver). 2e session dev :
+    « beaucoup moins de spikes ». **Résiduels connus :** `terrain=133 ms`
+    au boot (one-off, warmup driver + premiers uploads) ; `terrain=14 ms`
+    épisodique en déplacement (stall d'upload de chunk LOD0 — re-mesurer
+    post-bb02ccd avant d'agir).
+  - **⚠️ VISUEL (hors audit, brique 33a) :** artefacts sur l'herbe
+    confirmés A/B par le dev = **contact shadows** (la marche écran-space
+    sur la géométrie fine des lames) ; un « fantôme de silhouette » des
+    personnages signalé mais non reproduit (écran différent). À traiter
+    comme un fix de look 33a (masque/épaisseur de marche, ou exclusion),
+    itération à l'écran avec le dev.
   - **À VOIR AVEC LE DEV (reste, 2026-07-09) :**
     - *Perf : mesurer AVANT d'agir* (FrameProbe en jeu) : U2-01 (`::at` hot
-      path draw), U7-7/U8-6 (scans O(n) FormQuery/quêtes).
+      path draw), U7-7/U8-6 (scans O(n) FormQuery/quêtes) — le FrameProbe
+      Release du dev n'a montré AUCUN coût CPU sim (gameUi/physics ≤ 2 ms) :
+      priorité basse confirmée.
     - *Arbitrage design* : H-c `Signal<T>` (EventBus/CueRegistry/UiModel),
       H-d `Handle<Tag>` (7 handles RHI + nextId — touche l'API RHI publique),
       U1-03 `core::Result` (introduire avec un premier chemin d'appel réel),
