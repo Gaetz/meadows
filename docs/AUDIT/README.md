@@ -259,8 +259,8 @@ buildée + 279 tests verts) :
       (vue non-possédante du cache). **U3-7 (frees PostFx) peut réutiliser
       le wrapper.**
   - **U3-1 (+ U3-4) — `ChunkStreamer` — FAIT `792bc57` (2026-07-09) —
-    ⚠️ à valider en jeu (streaming terrain/herbe/props, sculpt,
-    Regenerate) :** le ring implémenté 3× quasi-identiquement (queue
+    ✅ validé en jeu par le dev (2026-07-09) :** le ring implémenté 3×
+    quasi-identiquement (queue
     worker estampillée génération, uploads budgétés compte + cap temps
     optionnel, requêtes centre-d'abord, éviction hystérésis) devient UN
     template `ChunkStreamer<Chunk, Payload>`
@@ -280,14 +280,13 @@ buildée + 279 tests verts) :
     contrôle de scène, ciel/météo = état scène (`atmos`/clock/weather),
     gameplay-debug = sim ; les panneaux terrain + rendu ont suivi leur
     état dans le renderer.)
-  - **À VOIR AVEC LE DEV (non traitables en autonome, classés 2026-07-09) :**
-    - *Validation en jeu des briques de nuit* : mort par buildup (poison à
-      0 → le PNJ meurt et reste mort), stagger d'électrocution, un lancement
-      du jeu post-split meadows-render.
-    - *Refactors renderer, validation visuelle brique par brique* : U3-1
-      (ChunkStreamer ×3), U3-4/U3-5 (clé chunk + layout MeshVertex),
-      U3-6/U3-7 (PostFx dédup, frees RAII — avec U4-4), U2-03/U2-06
-      (backend GL).
+  - **À VOIR AVEC LE DEV (mis à jour 2026-07-09 — Batch 3 clos, U3-1/U3-4
+    faits, lancement post-split validé de facto par les sessions de jeu) :**
+    - *Validation en jeu des briques de nuit (reste)* : mort par buildup
+      (poison à 0 → le PNJ meurt et reste mort), stagger d'électrocution.
+    - *Refactors renderer, validation visuelle brique par brique* : U3-5
+      (layout MeshVertex ×5), U3-6/U3-7 (PostFx dédup, frees →
+      `rhi::Unique` de U4-4 — devenu S), U2-03/U2-06 (backend GL).
     - *Perf : mesurer AVANT d'agir* (FrameProbe en jeu) : U2-01 (`::at` hot
       path draw), U7-7/U8-6 (scans O(n) FormQuery/quêtes).
     - *Arbitrage design* : H-c `Signal<T>` (EventBus/CueRegistry/UiModel),
