@@ -189,9 +189,13 @@ valident à la main dans l'EditorScene.
 
 > **FAITE (2026-07-09, `496af72`) — validation dev en attente** (liste
 > « quoi tester » ci-dessous). 336 tests verts (+10), smoke-run OK.
-> Compat imgui-node-editor × imgui 1.92.8 : develop @ b302971 + patch
-> CPM 9 hunks (`cmake/patches/imgui-node-editor-imgui192.patch`) —
-> l'opérateur float*ImVec2 non gardé et `ImRect::Floor()` disparu.
+> Compat imgui-node-editor × imgui 1.92.8 : develop @ b302971 + 9 hunks
+> (opérateur float*ImVec2 non gardé, `ImRect::Floor()` disparu).
+> **Post-brique : la lib est VENDORÉE (`extern/imgui-node-editor/`)** —
+> la route CPM+PATCHES cassait le clean rebuild du dev (le step de patch
+> re-court sur la source partagée CPM_SOURCE_CACHE déjà patchée) ; le
+> diff vs upstream reste documenté dans `upstream-imgui192.patch` +
+> README du répertoire.
 
 La fondation et son PREMIER consommateur dans la même brique — pas
 d'échafaudage spéculatif : chaque helper n'existe que parce que
