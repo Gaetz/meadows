@@ -22,6 +22,7 @@
 #include "game/scenes/UiRouter.hpp"
 #include "game/scenes/NpcDirector.hpp"
 #include "game/scenes/PlayerController.hpp"
+#include "game/scenes/SaveController.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
 #include "game/scenes/WeatherController.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
@@ -331,22 +332,16 @@ private:
     bool finalizeActorSpawn(ecs::Entity entity,
                             const core::Guid& actorFormId);
 
-    // Chantier 5 B4: the pending in-memory layer — the memory of unloaded
-    // cells (looted crates stay looted without a disk save). Hooked into
-    // CellLoader (beforeUnload capture, spawnFilter veto) each onEnter.
-    PendingSaveLayer pendingSave;
-
-    // Chantier 5 B5: disk saves. performSave captures everything live +
-    // flushes the pending layer into one ordinary plugin (§5) written to
-    // saves/<slot>.toml. Loading re-enters the scene with the save
-    // resolved as the LAST layer; the WorldStateForm restores clock/
-    // worldspace/camera and skips the boot main menu.
-    str pendingLoadSlot;     // consumed by the next onEnter
-    bool reloadRequested { false }; // exit+enter at the end of update()
-    bool loadedFromSave { false };  // this session came from a save file
+    // Chantier 5 B4/B5 — disk saves + the pending in-memory layer (the
+    // memory of unloaded cells: looted crates stay looted without a disk
+    // save). Extracted behind SaveController (audit U4-1): it owns the
+    // pending layer (hooked into CellLoader each onEnter via pending()),
+    // the queued-reload flags and the capture/flush serialization. The
+    // load-APPLICATION half (WorldStateForm → clock/worldspace/camera)
+    // stays here, woven into onEnter.
+    SaveController saveController;
+    SaveContext makeSaveContext();
     std::optional<gameplay::WorldStateForm> loadedWorldState;
-    void performSave(const str& slot);
-    void requestLoad(const str& slot);
 
     // Chantier 4 B7: dev console in the game scene (F8) — the H2 panel
     // with world commands registered on top (spawn/tp/tgm/settime), plus

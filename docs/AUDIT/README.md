@@ -152,6 +152,24 @@ buildée + 279 tests verts) :
       écrans (containerEntity, barterMode, multiplicateurs vendeur) —
       GameHud le lit via accesseurs pour les prix. L'OUVERTURE du dialogue
       reste dans la scène (territoire quêtes). Scène : 3958 → 3635 l.
+    - **U4-1 (suite) — `SaveController`** (`7e680aa`, validé en jeu
+      2026-07-09) : la sérialisation disque
+      (`performSave` : capture de tout le vivant + flush de la couche
+      pending dans UN plugin ordinaire §5), les drapeaux de reload
+      (`requestLoad`/`takeReloadRequest`) et la résolution du fichier de
+      save que la scène ré-entre en dernière couche (`beginLoad`) extraits
+      derrière `SaveContext` (refs + snapshot du WorldState : horloge/
+      worldspace/caméra/mode/météo, + 2 closures : balayage des références
+      vivantes, toast). **Le contrôleur POSSÈDE la couche pending**
+      (PendingSaveLayer + `pendingLoadSlot`/`reloadRequested`/
+      `loadedFromSave`) — exposée via `pending()` pour le streaming
+      (captureCell/veto) et le spawn d'acteur (applyReferenceOverrides/
+      actorState), les sites d'appel inchangés (pattern `hud.inventory()`).
+      **La moitié load-APPLICATION** (WorldStateForm → restore horloge/
+      worldspace/caméra) **reste dans `onEnter`** (tissée au cycle de vie de
+      la scène : streaming, résolution worldspace, heuristique de spawn
+      caméra). `finalizeActorSpawn` reste (logique de spawn, appelle
+      `pending()`). Scène : 3635 → 3605 l.
   - **Reste ouvert (Batch 3), ordre suggéré (risque croissant) :**
     1. **U4-1 (suite)** — restant du god-object : save/load (performSave/
        requestLoad/finalizeActorSpawn), quêtes/crime, console, panneaux dev.
