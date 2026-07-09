@@ -112,7 +112,39 @@ core::Guid EditSession::duplicateForm(const core::Guid& source,
     return id;
 }
 
+bool EditSession::removeCreated(const core::Guid& id) {
+    const auto it = drafts.find(id);
+    if (it == drafts.end() || !it->second.created) {
+        return false; // base records are immutable-visible (§5)
+    }
+    EditOp op;
+    op.id = id;
+    op.typeId = it->second.type->id;
+    // Full snapshot: undo must restore edited field values, not defaults.
+    sptr<Form> snapshot = types.instantiate(op.typeId);
+    snapshot->id = id;
+    copyFields(*it->second.type, *it->second.form, *snapshot);
+    op.snapshot = std::move(snapshot);
+    drafts.erase(it);
+    undoStack.push_back(std::move(op));
+    redoStack.clear();
+    return true;
+}
+
 void EditSession::apply(const EditOp& op, bool forward) {
+    if (op.snapshot) { // removal of a session-created draft
+        if (forward) {
+            drafts.erase(op.id);
+        } else {
+            const reflect::TypeInfo* type = types.findType(op.typeId);
+            uptr<Form> form = types.instantiate(op.typeId);
+            form->id = op.id;
+            copyFields(*type, *op.snapshot, *form);
+            drafts.emplace(op.id,
+                           Draft { std::move(form), type, /*created=*/true });
+        }
+        return;
+    }
     if (op.fieldId == 0) { // creation (blank or duplicate)
         if (forward) {
             uptr<Form> form = types.instantiate(op.typeId);

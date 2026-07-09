@@ -2,12 +2,14 @@
 
 #include <filesystem>
 
+#include "data/editor/EditorLayouts.hpp"
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormTypeRegistry.hpp"
 #include "data/plugins/EditSession.hpp"
 #include "data/plugins/PluginConfig.hpp"
 #include "data/plugins/Resolver.hpp"
 #include "game/Scene.hpp"
+#include "game/ui/AnimGraphPanel.hpp"
 #include "game/ui/ConsolePanel.hpp"
 #include "script/Vm.hpp"
 
@@ -57,6 +59,8 @@ private:
     uptr<data::EditSession> session;
     uptr<script::Vm> vm;
     uptr<ConsolePanel> console;
+    data::EditorLayouts layouts; // node x/y side-store (8.6, NOT a plugin)
+    uptr<AnimGraphPanel> animGraph; // 8.6: first game/ui/*Panel editor
 
     vector<str> typeNames; // sorted, for the filter combo
     int typeFilter { 0 };  // 0 = All

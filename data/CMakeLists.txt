@@ -2,6 +2,8 @@
 # Depends on the engine core/reflect layers only; rendering must never leak
 # in here (the build enforces what §4 demands).
 add_library(meadows-data STATIC
+    editor/EditorLayouts.cpp
+    editor/GraphLayout.cpp
     forms/AnimForms.cpp
     forms/AudioForms.cpp
     forms/CoreForms.cpp

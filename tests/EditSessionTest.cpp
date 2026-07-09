@@ -126,6 +126,52 @@ TEST_CASE("undo/redo replay field edits and creations") {
     CHECK(session.view(created) != nullptr);
 }
 
+// Chantier 8.6 — the graph editors' "delete node": only session-created
+// drafts may go (§5: a plugin cannot delete a base record), and undo
+// restores the draft WITH its edited field values.
+TEST_CASE("removeCreated drops a session draft, refuses base, undo-safe") {
+    data::FormTypeRegistry types;
+    data::registerCoreFormTypes(types);
+    const auto basePlugin = data::parsePluginToml(kBase, types, "base");
+    data::FormDatabase db;
+    data::resolve({ &*basePlugin }, types, db);
+    data::EditSession session { db, types };
+
+    // A base record never goes — even once edited (dirty != created).
+    CHECK_FALSE(session.removeCreated(kSwordId));
+    session.setField(kSwordId, core::fnv1a("damage"),
+                     reflect::Value { 42.0f });
+    CHECK_FALSE(session.removeCreated(kSwordId));
+    CHECK(session.view(kSwordId) != nullptr);
+
+    // A created draft goes, and its edits go with it...
+    const core::Guid created = session.createForm(
+        data::WeaponForm::staticTypeInfo().id, "Doomed");
+    session.setField(created, core::fnv1a("damage"), reflect::Value { 7.0f });
+    CHECK(session.isCreated(created));
+    REQUIRE(session.removeCreated(created));
+    CHECK(session.view(created) == nullptr);
+    CHECK_FALSE(session.isCreated(created));
+
+    // ...but undo restores the edited VALUES, not the defaults.
+    session.undo();
+    const auto* restored =
+        static_cast<const data::WeaponForm*>(session.view(created));
+    REQUIRE(restored != nullptr);
+    CHECK(restored->damage == doctest::Approx(7.0f));
+    CHECK(restored->editorId == "Doomed");
+    CHECK(session.isCreated(created));
+    session.redo();
+    CHECK(session.view(created) == nullptr);
+
+    // A removed draft is not exported.
+    const data::Plugin exported =
+        session.exportPlugin(core::Guid::generate(), "x");
+    for (const data::Record& record : exported.records) {
+        CHECK(record.formId != created);
+    }
+}
+
 // Chantier 8.1 — the GameDB "duplicate" tool.
 TEST_CASE("duplicate clones every field under a new guid, undo/redo safe") {
     data::FormTypeRegistry types;

@@ -47,12 +47,24 @@ public:
     // the quest editor's job). Null guid when the source is unknown.
     core::Guid duplicateForm(const core::Guid& source, const str& editorId);
 
+    // Removes a form CREATED this session (chantier 8.6 — "delete node").
+    // False on base records: a plugin cannot delete a record (§5), so the
+    // UI only offers delete on session drafts. Undoable — the op snapshots
+    // the draft so undo restores its edited field values, not defaults.
+    bool removeCreated(const core::Guid& id);
+
     bool canUndo() const { return !undoStack.empty(); }
     bool canRedo() const { return !redoStack.empty(); }
     void undo();
     void redo();
 
     bool isDirty(const core::Guid& id) const { return drafts.contains(id); }
+    // Created THIS session (vs an edited base form) — what the graph
+    // editors may delete (§5: a plugin cannot remove a base record).
+    bool isCreated(const core::Guid& id) const {
+        const auto it = drafts.find(id);
+        return it != drafts.end() && it->second.created;
+    }
     u32 dirtyCount() const { return static_cast<u32>(drafts.size()); }
     void discardAll();
 
@@ -96,12 +108,13 @@ private:
     };
     struct EditOp {
         core::Guid id;
-        u32 fieldId { 0 };       // 0 = creation op
+        u32 fieldId { 0 };       // 0 = creation/removal op
         reflect::Value before;
         reflect::Value after;
-        u32 typeId { 0 };        // creation only
+        u32 typeId { 0 };        // creation/removal only
         str editorId;            // creation only
         core::Guid sourceId;     // duplication only: redo re-copies from it
+        sptr<Form> snapshot;     // removal only: undo restores from it
     };
 
     Draft* draftFor(const core::Guid& id); // clone-on-demand

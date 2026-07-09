@@ -91,6 +91,8 @@ void EditorScene::reload() {
     report = data::resolve(data::pointersOf(stack), types, *db);
     session = std::make_unique<data::EditSession>(*db, types);
     console = std::make_unique<ConsolePanel>(*session, *db, types, *vm);
+    layouts.load((pluginDir / "editor-layouts.toml").string());
+    animGraph = std::make_unique<AnimGraphPanel>(*session, layouts, selected);
     selected = {};
     synthPicks.assign(report.conflicts.size(), -1); // -1 = keep load order
     status = "loaded " + std::to_string(stack.plugins.size()) + " plugins, " +
@@ -109,6 +111,7 @@ void EditorScene::drawUi() {
     drawQuests();
     drawDialogues();
     drawSchedules();
+    animGraph->draw();
     console->draw();
 }
 

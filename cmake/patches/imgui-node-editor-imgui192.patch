@@ -1,0 +1,96 @@
+Dear ImGui 1.92 compatibility (chantier 8.6) — two mechanical fixes:
+1. imgui_extra_math.inl: guard operator*(float, ImVec2) — imgui.h defines
+   it itself under IMGUI_DEFINE_MATH_OPERATORS since 1.90.x (its ==/!= and
+   unary- neighbours ARE guarded upstream; this one was missed).
+2. imgui_node_editor.cpp: ImRect::Floor() was removed from imgui_internal.h;
+   replaced by ImFloor on Min/Max at the 8 call sites.
+Upstream: thedmd/imgui-node-editor develop @ b302971.
+
+diff --git a/imgui_extra_math.inl b/imgui_extra_math.inl
+index 8e2347f..7f445ec 100644
+--- a/imgui_extra_math.inl
++++ b/imgui_extra_math.inl
+@@ -31,10 +31,12 @@ inline bool operator!=(const ImVec2& lhs, const ImVec2& rhs)
+ }
+ # endif
+ 
++# if IMGUI_VERSION_NUM < 19002
+ inline ImVec2 operator*(const float lhs, const ImVec2& rhs)
+ {
+     return ImVec2(lhs * rhs.x, lhs * rhs.y);
+ }
++# endif
+ 
+ # if IMGUI_VERSION_NUM < 18955
+ inline ImVec2 operator-(const ImVec2& lhs)
+diff --git a/imgui_node_editor.cpp b/imgui_node_editor.cpp
+index fdb203e..11969a4 100644
+--- a/imgui_node_editor.cpp
++++ b/imgui_node_editor.cpp
+@@ -1608,7 +1608,7 @@ void ed::EditorContext::SetNodePosition(NodeId nodeId, const ImVec2& position)
+     if (node->m_Bounds.Min != position)
+     {
+         node->m_Bounds.Translate(position - node->m_Bounds.Min);
+-        node->m_Bounds.Floor();
++        node->m_Bounds.Min = ImFloor(node->m_Bounds.Min); node->m_Bounds.Max = ImFloor(node->m_Bounds.Max);
+         MakeDirty(NodeEditor::SaveReasonFlags::Position, node);
+     }
+ }
+@@ -1628,7 +1628,7 @@ void ed::EditorContext::SetGroupSize(NodeId nodeId, const ImVec2& size)
+     {
+         node->m_GroupBounds.Min = node->m_Bounds.Min;
+         node->m_GroupBounds.Max = node->m_Bounds.Min + size;
+-        node->m_GroupBounds.Floor();
++        node->m_GroupBounds.Min = ImFloor(node->m_GroupBounds.Min); node->m_GroupBounds.Max = ImFloor(node->m_GroupBounds.Max);
+         MakeDirty(NodeEditor::SaveReasonFlags::Size, node);
+     }
+ }
+@@ -1706,10 +1706,10 @@ void ed::EditorContext::UpdateNodeState(Node* node)
+ 
+     node->m_Bounds.Min      = settings->m_Location;
+     node->m_Bounds.Max      = node->m_Bounds.Min + settings->m_Size;
+-    node->m_Bounds.Floor();
++    node->m_Bounds.Min = ImFloor(node->m_Bounds.Min); node->m_Bounds.Max = ImFloor(node->m_Bounds.Max);
+     node->m_GroupBounds.Min = settings->m_Location;
+     node->m_GroupBounds.Max = node->m_GroupBounds.Min + settings->m_GroupSize;
+-    node->m_GroupBounds.Floor();
++    node->m_GroupBounds.Min = ImFloor(node->m_GroupBounds.Min); node->m_GroupBounds.Max = ImFloor(node->m_GroupBounds.Max);
+ }
+ 
+ void ed::EditorContext::RemoveSettings(Object* object)
+@@ -3759,7 +3759,7 @@ bool ed::SizeAction::Process(const Control& control)
+         if ((m_Pivot & NodeRegion::Right) == NodeRegion::Right)
+             newBounds.Max.x = ImMax(newBounds.Min.x + minimumSize.x, Editor->AlignPointToGrid(newBounds.Max.x + dragOffset.x));
+ 
+-        newBounds.Floor();
++        newBounds.Min = ImFloor(newBounds.Min); newBounds.Max = ImFloor(newBounds.Max);
+ 
+         m_LastSize = newBounds.GetSize();
+ 
+@@ -5269,7 +5269,7 @@ void ed::NodeBuilder::End()
+     ImGui::EndGroup();
+ 
+     m_NodeRect = ImGui_GetItemRect();
+-    m_NodeRect.Floor();
++    m_NodeRect.Min = ImFloor(m_NodeRect.Min); m_NodeRect.Max = ImFloor(m_NodeRect.Max);
+ 
+     if (m_CurrentNode->m_Bounds.GetSize() != m_NodeRect.GetSize())
+     {
+@@ -5377,7 +5377,7 @@ void ed::NodeBuilder::PinRect(const ImVec2& a, const ImVec2& b)
+     IM_ASSERT(nullptr != m_CurrentPin);
+ 
+     m_CurrentPin->m_Bounds = ImRect(a, b);
+-    m_CurrentPin->m_Bounds.Floor();
++    m_CurrentPin->m_Bounds.Min = ImFloor(m_CurrentPin->m_Bounds.Min); m_CurrentPin->m_Bounds.Max = ImFloor(m_CurrentPin->m_Bounds.Max);
+     m_ResolvePinRect     = false;
+ }
+ 
+@@ -5427,7 +5427,7 @@ void ed::NodeBuilder::Group(const ImVec2& size)
+         ImGui::Dummy(size);
+ 
+     m_GroupBounds = ImGui_GetItemRect();
+-    m_GroupBounds.Floor();
++    m_GroupBounds.Min = ImFloor(m_GroupBounds.Min); m_GroupBounds.Max = ImFloor(m_GroupBounds.Max);
+ }
+ 
+ ImDrawList* ed::NodeBuilder::GetUserBackgroundDrawList() const

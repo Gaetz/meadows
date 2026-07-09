@@ -43,13 +43,16 @@ add_executable(true-adventurer
     scenes/UiRouter.cpp
     scenes/WeatherController.cpp
     scenes/UiDemoScene.cpp
+    ui/AnimGraphPanel.cpp
     ui/CharacterStatsPanel.cpp
     ui/ConsolePanel.cpp
+    ui/FormPicker.cpp
+    ui/NodeCanvas.cpp
     ui/PropertyGrid.cpp
 )
 target_link_libraries(true-adventurer PRIVATE meadows-runtime meadows-data
                       meadows-narrative meadows-script meadows-ui
-                      meadows-audio imguizmo)
+                      meadows-audio imguizmo imgui-node-editor)
 meadows_set_warnings(true-adventurer)
 
 # Game data (plugins + assets) and engine shaders ship next to the executable.

@@ -204,6 +204,34 @@ target_include_directories(imguizmo SYSTEM PUBLIC
 target_compile_definitions(imguizmo PRIVATE IMGUI_DEFINE_MATH_OPERATORS)
 target_link_libraries(imguizmo PUBLIC imgui)
 
+# imgui-node-editor (chantier 8.6): the node canvas behind the graph
+# editors (anim graph, quests, dialogues). MIT, plain sources over the
+# imgui headers (uses imgui_internal.h — version-sensitive, hence the
+# pin). Its internal json settings persistence is disabled at runtime
+# (ed::Config::SettingsFile = nullptr) — node positions live in our
+# editor side-store; crude_json.cpp still compiles (internal use).
+CPMAddPackage(
+    NAME imgui-node-editor
+    GITHUB_REPOSITORY thedmd/imgui-node-editor
+    # The v0.9.3 release (2023) and master target imgui <= 1.89 — too old
+    # for our 1.92.8; pin the develop commit (2026-07 state) and patch the
+    # one unguarded ImVec2 operator that 1.92 now defines itself.
+    GIT_TAG b302971455b3719ec9b5fb94b2f92d27c62b9ff0
+    DOWNLOAD_ONLY TRUE
+    PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/imgui-node-editor-imgui192.patch
+)
+add_library(imgui-node-editor STATIC
+    ${imgui-node-editor_SOURCE_DIR}/imgui_node_editor.cpp
+    ${imgui-node-editor_SOURCE_DIR}/imgui_node_editor_api.cpp
+    ${imgui-node-editor_SOURCE_DIR}/imgui_canvas.cpp
+    ${imgui-node-editor_SOURCE_DIR}/crude_json.cpp
+)
+target_include_directories(imgui-node-editor SYSTEM PUBLIC
+    ${imgui-node-editor_SOURCE_DIR})
+target_compile_definitions(imgui-node-editor PRIVATE
+    IMGUI_DEFINE_MATH_OPERATORS)
+target_link_libraries(imgui-node-editor PUBLIC imgui)
+
 function(meadows_set_warnings target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4)

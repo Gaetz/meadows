@@ -24,6 +24,7 @@
     DialogueTest.cpp
     DrugsTest.cpp
     EcsTest.cpp
+    EditorLayoutsTest.cpp
     EditSessionTest.cpp
     EnergyExhaustionTest.cpp
     EquipmentStatsTest.cpp
@@ -37,6 +38,7 @@
     GameplayEffectsTest.cpp
     GameplayTagsTest.cpp
     GltfMeshTest.cpp
+    GraphLayoutTest.cpp
     GuidTest.cpp
     HorizontalFormsTest.cpp
     InjuriesTest.cpp
