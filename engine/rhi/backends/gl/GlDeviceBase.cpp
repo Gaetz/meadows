@@ -540,6 +540,46 @@ void GlDeviceBase::readBuffer(BufferHandle handle, void* dst, u64 size,
     glBindBuffer(GL_COPY_READ_BUFFER, 0);
 }
 
+// --- Fences (P1) ----------------------------------------------------------------
+// GL sync objects (3.2+): the non-blocking gate in front of readBuffer —
+// glGetBufferSubData stalls the CPU until the GPU reaches the last write,
+// and the driver runs 1-2 frames deep (the mainPass=25ms frame spikes).
+
+FenceHandle GlDeviceBase::insertFence() {
+    GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    if (sync == nullptr) {
+        return {};
+    }
+    const u32 id = nextId++;
+    fences.emplace(id, sync);
+    return { id };
+}
+
+bool GlDeviceBase::fenceReady(FenceHandle handle) {
+    const auto it = fences.find(handle.id);
+    if (it == fences.end()) {
+        return true; // no fence = nothing to wait for
+    }
+    // Poll only (timeout 0): never blocks. FLUSH ensures the fence was
+    // submitted to the GPU even if nothing flushed since insertFence.
+    const GLenum state = glClientWaitSync(
+        static_cast<GLsync>(it->second), GL_SYNC_FLUSH_COMMANDS_BIT, 0);
+    if (state == GL_ALREADY_SIGNALED || state == GL_CONDITION_SATISFIED) {
+        glDeleteSync(static_cast<GLsync>(it->second));
+        fences.erase(it);
+        return true;
+    }
+    return false; // still pending (or WAIT_FAILED: retry next frame)
+}
+
+void GlDeviceBase::destroyFence(FenceHandle handle) {
+    const auto it = fences.find(handle.id);
+    if (it != fences.end()) {
+        glDeleteSync(static_cast<GLsync>(it->second));
+        fences.erase(it);
+    }
+}
+
 void GlDeviceBase::destroyShader(ShaderHandle handle) {
     if (auto it = shaders.find(handle.id); it != shaders.end()) {
         glDeleteProgram(it->second);

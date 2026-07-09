@@ -85,6 +85,11 @@ public:
     void readBuffer(BufferHandle handle, void* dst, u64 size,
                     u64 offset) override;
 
+    // Fences (P1): GL sync objects, available since 3.2 — shared.
+    FenceHandle insertFence() override;
+    bool fenceReady(FenceHandle handle) override;
+    void destroyFence(FenceHandle handle) override;
+
     // --- Pure virtual: divergent GL operations --------------------------------
     // Implemented by GlDevice46 (DSA) and GlDevice41 (legacy).
 
@@ -180,6 +185,7 @@ protected:
     std::unordered_map<u32, BindGroupDesc> bindGroups;
     std::unordered_map<u32, u32>       samplers;   // id -> GL sampler
     std::unordered_map<u32, GlFramebuffer> framebuffers;
+    std::unordered_map<u32, void*>     fences;     // id -> GLsync (P1)
     u32 nextId { 1 };
 };
 

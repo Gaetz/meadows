@@ -1074,6 +1074,11 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         {
             core::FrameProbe::Scope probe { *view.probe, "terrain" };
             terrain.update(frame.device, view.camera.position);
+        }
+        {
+            // P1: probed apart from the chunk streaming — a landing bake
+            // recreates the 256² map (upload) and must be attributable.
+            core::FrameProbe::Scope probe { *view.probe, "lightmap" };
             // 33b/c: pump/kick the light-map bake (worker; re-bakes on
             // the quantized sun step or when the focus strays).
             terrainLightMap.update(frame.device, terrain.params,
@@ -1384,6 +1389,16 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         frame.cmd.endRenderPass();
     }
 
+    // P1: the Hi-Z verdict pickup, probed on its own — this is the former
+    // hidden mainPass stall (sync readback). With the fence gate it now
+    // costs ~0 and keeps LAST frame's verdict while the GPU is behind
+    // (`gpuOccluded` persists; collectResults replaces it only when a
+    // fresh verdict is actually ready).
+    {
+        core::FrameProbe::Scope probe { *view.probe, "hiz" };
+        gpuOcclusion.collectResults(frame.device, gpuOccluded);
+    }
+
     // Exterior: the sky covers every background pixel — no color clear.
     // Interior: clear to a near-black room tone instead.
     {
@@ -1407,8 +1422,6 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         // Occlusion applies to the main view only: both sets were built for
         // the real camera, not the mirrored one (the grass ring is too
         // close to ever be ridge-occluded — frustum only). CPU ∪ GPU Hi-Z.
-        gpuOccluded.clear();
-        gpuOcclusion.collectResults(frame.device, gpuOccluded);
         combinedOccluded.clear();
         if (occlusionUi && occlusion.occludedSet()) {
             combinedOccluded = *occlusion.occludedSet();

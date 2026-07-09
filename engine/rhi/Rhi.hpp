@@ -29,6 +29,7 @@ struct ShaderHandle      { u32 id { 0 }; };
 struct PipelineHandle    { u32 id { 0 }; };
 struct BindGroupHandle   { u32 id { 0 }; };
 struct FramebufferHandle { u32 id { 0 }; };
+struct FenceHandle       { u32 id { 0 }; }; // single-use GPU marker (P1)
 
 // --- Capabilities --------------------------------------------------------------
 

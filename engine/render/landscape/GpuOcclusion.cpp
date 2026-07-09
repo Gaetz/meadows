@@ -94,6 +94,8 @@ void GpuOcclusion::destroyPyramid(rhi::Device& device) {
 }
 
 void GpuOcclusion::destroy(rhi::Device& device) {
+    device.destroyFence(fence); // P1: abandon an in-flight verdict
+    fence = {};
     destroyPyramid(device);
     device.destroyBuffer(stagingBuffer);
     device.destroyBuffer(visibilityBuffer);
@@ -173,12 +175,23 @@ void GpuOcclusion::resize(rhi::Device& device, u32 width, u32 height) {
 void GpuOcclusion::collectResults(rhi::Device& device,
                                   std::unordered_set<u64>& occluded) {
     if (pendingKeys.empty()) {
+        occluded.clear();
         lastOccluded = 0;
         return;
     }
+    // P1: the verdict buffer is read ONLY once its fence signals —
+    // glGetBufferSubData on a still-in-flight buffer stalls the CPU until
+    // the GPU catches up (~25 ms mainPass spikes). While pending, the
+    // caller keeps the PREVIOUS verdict (occluded left untouched): the
+    // occlusion set is already temporal, one extra frame is invisible.
+    if (!device.fenceReady(fence)) {
+        return;
+    }
+    fence = {};
     vector<u32> visibility(pendingKeys.size());
     device.readBuffer(stagingBuffer, visibility.data(),
                       visibility.size() * sizeof(u32), 0);
+    occluded.clear();
     u32 count = 0;
     for (size_t i = 0; i < pendingKeys.size(); ++i) {
         if (visibility[i] == 0) {
@@ -195,6 +208,12 @@ void GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
                        const vector<Candidate>& candidates) {
     if (!ready() || hizFirstPipeline.id == 0 || hizDownPipeline.id == 0 ||
         candidates.empty()) {
+        return;
+    }
+    if (fence.id != 0) {
+        // P1 back-pressure: the previous verdict has not been consumed yet
+        // (its fence is still pending) — re-dispatching would overwrite the
+        // staging buffer mid-read window. Skip; the ring re-runs next frame.
         return;
     }
     if (boundDepth.id != sceneDepth.id) {
@@ -253,6 +272,9 @@ void GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
     cmd.dispatch((count + 63) / 64);
     cmd.memoryBarrier(); // SSBO writes visible to the copy
     cmd.copyBuffer(visibilityBuffer, stagingBuffer, count * sizeof(u32));
+    // P1: marker after the copy — collectResults reads only once this
+    // signals (never blocks the frame on the GPU catching up).
+    fence = device.insertFence();
 }
 
 } // namespace render

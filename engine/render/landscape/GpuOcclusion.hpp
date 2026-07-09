@@ -89,6 +89,9 @@ private:
     // Candidates submitted last run, matched to the readback order.
     vector<u64> pendingKeys;
     u32 lastOccluded { 0 };
+    // P1: signals when the staging copy landed; collectResults reads only
+    // then (no CPU stall), run() skips while it is pending (back-pressure).
+    rhi::FenceHandle fence {};
 };
 
 } // namespace render

@@ -158,7 +158,9 @@ private:
     bool occlusionUi { true }; // height-horizon occlusion culling (A/B)
     render::GpuOcclusion gpuOcclusion;
     bool gpuOcclusionUi { true }; // Hi-Z compute culling (A/B)
-    std::unordered_set<u64> gpuOccluded;      // last frame's GPU verdict
+    std::unordered_set<u64> gpuOccluded;      // latest CONSUMED GPU verdict
+                                              // (persists while the P1 fence
+                                              // is pending — no stall)
     std::unordered_set<u64> combinedOccluded; // CPU horizon ∪ GPU Hi-Z
     vector<render::TerrainSystem::ChunkAabb> occlusionAabbs;
     vector<render::GpuOcclusion::Candidate> occlusionCandidates;

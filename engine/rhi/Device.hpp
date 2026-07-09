@@ -70,11 +70,20 @@ public:
     virtual PipelineHandle createComputePipeline(
         const ComputePipelineDesc& desc) = 0;
 
-    // Synchronous GPU->CPU readback (Vulkan: staging copy + fence). Intended
-    // for small buffers written LAST frame (compute culling results): by
-    // then the GPU is done and the stall is negligible.
+    // Synchronous GPU->CPU readback (Vulkan: staging copy + fence). NOTE
+    // (perf P1): "written last frame" is NOT enough to avoid a pipeline
+    // stall — the driver runs 1-2 frames deep. Gate the read behind a
+    // fence (below) and keep the previous result while it is pending.
     virtual void readBuffer(BufferHandle handle, void* dst, u64 size,
                             u64 offset = 0) = 0;
+
+    // GPU progress marker (GL sync object / Vulkan fence): insertFence
+    // drops a marker after everything submitted so far; fenceReady polls
+    // WITHOUT blocking and releases the fence once signaled (a handle is
+    // single-use). destroyFence abandons a pending one (teardown).
+    virtual FenceHandle insertFence() = 0;
+    virtual bool fenceReady(FenceHandle handle) = 0;
+    virtual void destroyFence(FenceHandle handle) = 0;
 
     virtual BindGroupHandle createBindGroup(const BindGroupDesc& desc) = 0;
     virtual void destroyBindGroup(BindGroupHandle handle) = 0;
