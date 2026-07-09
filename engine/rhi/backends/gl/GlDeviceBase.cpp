@@ -550,6 +550,11 @@ FenceHandle GlDeviceBase::insertFence() {
     if (sync == nullptr) {
         return {};
     }
+    // Submit the fence to the GPU NOW: polling with FLUSH_COMMANDS_BIT
+    // instead can block on the driver thread's queue (measured 3-25 ms
+    // 'hiz' spikes) — a flush here is near-free, the frame's swap flushes
+    // right after anyway.
+    glFlush();
     const u32 id = nextId++;
     fences.emplace(id, sync);
     return { id };
@@ -560,10 +565,10 @@ bool GlDeviceBase::fenceReady(FenceHandle handle) {
     if (it == fences.end()) {
         return true; // no fence = nothing to wait for
     }
-    // Poll only (timeout 0): never blocks. FLUSH ensures the fence was
-    // submitted to the GPU even if nothing flushed since insertFence.
-    const GLenum state = glClientWaitSync(
-        static_cast<GLsync>(it->second), GL_SYNC_FLUSH_COMMANDS_BIT, 0);
+    // Pure poll (no flags, timeout 0): never blocks — insertFence already
+    // flushed the fence to the GPU.
+    const GLenum state =
+        glClientWaitSync(static_cast<GLsync>(it->second), 0, 0);
     if (state == GL_ALREADY_SIGNALED || state == GL_CONDITION_SATISFIED) {
         glDeleteSync(static_cast<GLsync>(it->second));
         fences.erase(it);
