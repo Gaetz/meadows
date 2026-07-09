@@ -280,13 +280,30 @@ buildée + 279 tests verts) :
     contrôle de scène, ciel/météo = état scène (`atmos`/clock/weather),
     gameplay-debug = sim ; les panneaux terrain + rendu ont suivi leur
     état dans le renderer.)
-  - **À VOIR AVEC LE DEV (mis à jour 2026-07-09 — Batch 3 clos, U3-1/U3-4
-    faits, lancement post-split validé de facto par les sessions de jeu) :**
-    - *Validation en jeu des briques de nuit (reste)* : mort par buildup
-      (poison à 0 → le PNJ meurt et reste mort), stagger d'électrocution.
-    - *Refactors renderer, validation visuelle brique par brique* : U3-5
-      (layout MeshVertex ×5), U3-6/U3-7 (PostFx dédup, frees →
-      `rhi::Unique` de U4-4 — devenu S), U2-03/U2-06 (backend GL).
+  - **Lot « quick wins renderer » — FAIT 2026-07-09 (4 briques, build +
+    316 tests verts chacune) — ⚠️ à valider en jeu (une session normale
+    suffit : extérieur, hot-reload d'un shader, resize, quit propre) :**
+    - **U3-5** `f030626` : `engine/render/MeshVertexLayout.hpp` — le
+      layout MeshVertex écrit UNE fois (terrain lit+caster, veg lit,
+      meshes de scène lit+caster) ; le caster végétation garde son layout
+      position+uv (sway) — pas un doublon, laissé tel quel.
+    - **U2-03/U2-06** `668254b` : `GlConvert.hpp` déclare les
+      convertisseurs rhi→GL une fois (les 2 backends les re-déclaraient à
+      la main) ; `GlDeviceBase::makePipelineState` porte la moitié
+      raster-state de createPipeline (8 champs identiques 4.1/4.6).
+    - **U3-7** `2ff24d8` : PostFx + Terrain/Grass/Vegetation passent à
+      `rhi::Unique` — `PostFx::destroy` = le move-assign reset (~50 l. de
+      destroy+null appariés supprimées), les buffers de chunks se
+      libèrent à l'erase (les lambdas invalidateAll/evict ne gardent que
+      leurs compteurs), swaps LOD et rebuilds de pipelines libèrent par
+      affectation.
+    - **U3-6** `045b091` : `kPassShaders` = LA liste des passes (la somme
+      de générations était écrite 2×) ; les 4 cibles half-res + leurs
+      groupes depth passent par un couple de helpers.
+  - ✅ Briques de nuit validées en jeu par le dev (2026-07-09) : mort par
+    buildup (poison à 0 → mort persistante au reload) et stagger
+    d'électrocution confirmés.
+  - **À VOIR AVEC LE DEV (reste, 2026-07-09) :**
     - *Perf : mesurer AVANT d'agir* (FrameProbe en jeu) : U2-01 (`::at` hot
       path draw), U7-7/U8-6 (scans O(n) FormQuery/quêtes).
     - *Arbitrage design* : H-c `Signal<T>` (EventBus/CueRegistry/UiModel),
@@ -420,7 +437,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U1-02 | ✅ | U1 | med | qual | reflect/Registry.cpp:7-14 | Collision type-id loggée non assertée ; 2e type droppé | S | non |
 | U1-04 | ✅ | U1 | med | réutil | core/FrameProbe.hpp:20 (+épars) | Aucun clock primitive partagé ; std::chrono re-dérivé 4+ sites | S | oui |
 | U3-4 | ✅ | U3 | med | factor | TerrainSystem.hpp:112 (+15 sites) | Pack/unpack clé u64 chunk à la main | S | non |
-| U3-5 |   | U3 | med | factor | TerrainSystem.cpp:371 (+5 pipelines) | Layout attributs `MeshVertex` réécrit ~5× | S | non |
+| U3-5 | ✅ | U3 | med | factor | TerrainSystem.cpp:371 (+5 pipelines) | Layout attributs `MeshVertex` réécrit ~5× | S | non |
 | U4-8 | ✅ | U4 | med | factor | LandscapeScene.cpp:1128-1178,4936 | Crossfade météo lerpe ~18 champs à la main, listés 3× | S | oui |
 | U5-6 |   | U5 | med | qual | game/ui/PropertyGrid.cpp:20 | `ActiveEdit gActive` = global mutable (§8) | S | non |
 | U7-3 | ✅ | U7 | med | archi | BinaryFormat.cpp:14,45 ; Reflect.hpp:39 | Stream binaire dépend de l'ordre numérique de l'enum FieldKind | S | oui |
@@ -429,7 +446,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U2-01 |   | U2 | med | qual | GlDeviceBase.cpp:134-312 | Hot path draw utilise `unordered_map::at` (exceptions + hash/draw) | M | non |
 | U2-02 |   | U2 | med | réutil | Rhi.hpp:25-31 | 7 handle structs quasi-identiques, aucun type partagé (H-d) | M | oui |
 | U3-3 | ✅ | U3 | med | archi/qual | FrameUniforms.hpp:13 vs common.glsl:3 | Struct C++ ↔ bloc GLSL synchro par commentaire seul (H static_assert) | M | oui |
-| U3-6 |   | U3 | med | factor | PostFx.cpp:199,81 | Targets half-res + somme shaderGeneration écrits en double | M | non |
+| U3-6 | ✅ | U3 | med | factor | PostFx.cpp:199,81 | Targets half-res + somme shaderGeneration écrits en double | M | non |
 | U4-6 | ✅ | U4 | med | archi | LandscapeScene.cpp:4982-5596 | `render()` = 615 l. illisibles | M | non |
 | U4-7 |   | U4 | med | propreté | LandscapeScene.cpp (~609 littéraux) | Constantes magiques hors Forms de tuning | M | non |
 | U4-9 | ✅ | U4 | med | factor | LandscapeScene.cpp:2589,3310 | ~10 méthodes push-modèle RmlUi mêlées à la logique jeu | M | non |
@@ -455,7 +472,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U1-08 | ✅ | U1 | low | archi | assets/GltfMesh.hpp:8 | Loader asset dépend de `render::MeshData` | S | oui |
 | U1-09 | ✅ | U1 | low | propreté | _old/renderer_test/ | Arbre dead-code au racine | S | oui |
 | U2-05 | ✅ | U2 | low | propreté | GlDeviceBase.cpp:46-63 | Compile compute mislabellé "fragment" dans le log | S | non |
-| U2-06 |   | U2 | low | factor | GlDevice41.cpp:9 ; GlDevice46.cpp:11 | Helpers libres re-déclarés à la main par sous-classe | S | non |
+| U2-06 | ✅ | U2 | low | factor | GlDevice41.cpp:9 ; GlDevice46.cpp:11 | Helpers libres re-déclarés à la main par sous-classe | S | non |
 | U2-07 | ✖ | U2 | low | archi | engine/ui/ImGuiLayer.cpp:4 | ImGui bypasse le RHI (exception assumée) | S | oui |
 | U2-08 | ✅ | U2 | low | propreté | Rhi.hpp:44 | Commentaire "(later brick)" périmé (copyTexture implémenté) | S | non |
 | U2-09 | ✅ | U2 | low | propreté | _old/renderer_test/ | Renderer pré-RHI mort dans l'arbre | S | oui |
@@ -488,9 +505,9 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U8-6 |   | U8 | low | qual | quest/Quest.cpp:48 ; Dialogue.cpp:65 | Scans O(total forms) par événement quête/dialogue | M | non |
 | U8-8 |   | U8 | low | factor | engine/ui/UiSystem.hpp:47 | `UiModelEventHandler` = 3e canal dispatch (H-c) | M | oui |
 | U1-10 |   | U1 | low | qual | reflect/Reflect.hpp:94-98 | `std::function` per-field sur hot path save/diff | L | non |
-| U2-03 |   | U2 | low | factor | GlDevice41.cpp:105 ; GlDevice46.cpp:256 | `createPipeline` copie 8 champs identiques dans 2 backends | S | non |
+| U2-03 | ✅ | U2 | low | factor | GlDevice41.cpp:105 ; GlDevice46.cpp:256 | `createPipeline` copie 8 champs identiques dans 2 backends | S | non |
 | U2-04 |   | U2 | low | archi | Rhi.hpp:139-162 | `ShaderDesc` porte du GLSL brut (dette Vulkan-readiness) | L | non |
-| U3-7 |   | U3 | low | qual | PostFx.cpp:107 ; VegetationSystem.cpp:268 | Free RHI par listes manuelles paires (leak invisible) | L | oui |
+| U3-7 | ✅ | U3 | low | qual | PostFx.cpp:107 ; VegetationSystem.cpp:268 | Free RHI par listes manuelles paires (leak invisible) | L | oui |
 | U3-9 | ✖ | U3 | note | archi | ChunkOcclusion.hpp:31 ; GpuOcclusion.hpp:30 | Double producteur d'occlusion (staging intentionnel) | — | oui |
 
 > Note : U2-03 est effort S mais sévérité low (placé après les low-M/L par tri
