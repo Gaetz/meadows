@@ -444,6 +444,41 @@ dur C++ or/40) et la récompense en données. Proposition pour la suite :
 `QuestForm.rewardItem/rewardCount` versés à la complétion — à trancher
 avec le dev avant d'écrire.
 
+### 8.7e — Remise d'items & récompenses en données (les 2 manques de l'audit rations)
+
+> **FAITE (2026-07-10) — validation dev en attente** (test = la quête
+> « 3 rations au garde » de bout en bout). 341 tests verts (+1 :
+> onNodeFired), smoke-run OK. Purge `*.dir` faite (DialogueNodeForm et
+> QuestForm changent de layout — APPEND).
+
+- **`DialogueNodeForm.takeItem` / `takeCount`** (APPEND) : quand le
+  nœud tire (entré ou choisi), les items sont retirés au joueur. Le
+  runner reste headless : hook `DialogueRunner::onNodeFired` (doctesté
+  — tire pour la ligne entrée ET l'option choisie), le QuestDirector y
+  branche l'inventaire du joueur à chaque openDialogue. Gater l'option
+  par une condition HasItem — le retrait ne re-vérifie pas (warn si
+  manque).
+- **`QuestForm.rewardItem` / `rewardCount`** (APPEND) : versés UNE fois
+  au premier passage à Succeeded. `handleQuestEvent` généralisé :
+  snapshot avant/après de TOUTES les quêtes du log → toasts « Quete
+  accomplie » (+récompense, displayName de l'item par réflexion) et
+  « Journal mis a jour » pour n'importe quelle quête — le bloc
+  récompense EasternMenace en dur a disparu, ses +50 or vivent en TOML
+  (`rewardItem = GoldCoin, rewardCount = 50`).
+- **Item picker dans la grille** : takeItem / rewardItem /
+  ConditionForm.item se choisissent dans un combo listant les quatre
+  catégories d'items (« editorId (Type) », filtre) — plus de guid
+  collé à la main.
+
+**Quoi tester (dev)** : LA QUÊTE DES RATIONS, créée entièrement dans
+l'éditeur : nœud garde « Rapporte-moi 3 rations » → Start a NEW quest ;
+option de rendu gated HasItem TravelRations ≥ 3 + HasTag
+Quest.X.Active, avec takeItem = TravelRations ×3 ; task câblée (Wire
+to...) ; état Success ; rewardItem au choix. En jeu : accepter, ramasser
+3 rations, rendre → les rations disparaissent de l'inventaire, la
+récompense tombe, toast de complétion. Et re-vérifier EasternMenace
+(+50 or désormais servi par les données).
+
 ### 8.8 — Timeline des clips anim (events)
 
 Le pont anim→gameplay (`AnimEventForm` : hit frames, footsteps, FX)

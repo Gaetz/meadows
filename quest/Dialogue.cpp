@@ -31,6 +31,9 @@ void DialogueRunner::enter(const core::Guid& nodeId) {
         if (!node->event.empty()) {
             bus.dispatch({ gameplay::eventKind(node->event) });
         }
+        if (onNodeFired) {
+            onNodeFired(*node); // 8.7e: world side effects (takeItem...)
+        }
     } else {
         current = {};
     }
@@ -69,6 +72,9 @@ std::vector<const DialogueNodeForm*> DialogueRunner::options(
 void DialogueRunner::select(const DialogueNodeForm& option) {
     if (!option.event.empty()) {
         bus.dispatch({ gameplay::eventKind(option.event) });
+    }
+    if (onNodeFired) {
+        onNodeFired(option); // 8.7e: world side effects (takeItem...)
     }
     // Advance to the NPC reply that follows this option (lowest order), if any.
     const DialogueNodeForm* reply = nullptr;

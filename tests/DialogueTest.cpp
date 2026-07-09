@@ -99,3 +99,43 @@ TEST_CASE("dialogue: chunk flow, condition-gated options, events on select") {
     // No further options → the conversation can end.
     CHECK(runner.options(ctx).empty());
 }
+
+// 8.7e — the world-side-effect hook: onNodeFired fires for every entered
+// NPC line AND every picked option (where the game layer applies
+// takeItem/takeCount to the player inventory).
+TEST_CASE("dialogue: onNodeFired reports every fired node, with its fields") {
+    data::FormDatabase db = buildDialogueDb();
+    // Give the accept option a hand-over: 3 of some item.
+    const Guid kRation =
+        *Guid::fromString("80000000-0000-4000-8000-0000000000e1");
+    auto* accept =
+        const_cast<DialogueNodeForm*>(db.find<DialogueNodeForm>(kAccept));
+    REQUIRE(accept != nullptr);
+    accept->takeItem = kRation;
+    accept->takeCount = 3;
+
+    gameplay::EventBus bus;
+    DialogueRunner runner { db, bus };
+    vector<Guid> fired;
+    Guid takenItem;
+    i32 takenCount = 0;
+    runner.onNodeFired = [&](const DialogueNodeForm& node) {
+        fired.push_back(node.id);
+        if (node.takeItem.isValid()) {
+            takenItem = node.takeItem;
+            takenCount = node.takeCount;
+        }
+    };
+
+    REQUIRE(runner.start(kDialogue));
+    REQUIRE(fired.size() == 1); // the entered root line
+    CHECK(fired[0] == kRoot);
+
+    runner.select(*accept);
+    // The picked option fires, then the NPC reply it leads to.
+    REQUIRE(fired.size() == 3);
+    CHECK(fired[1] == kAccept);
+    CHECK(fired[2] == kThanks);
+    CHECK(takenItem == kRation); // the hand-over fields reached the hook
+    CHECK(takenCount == 3);
+}

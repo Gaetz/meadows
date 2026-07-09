@@ -29,11 +29,18 @@ struct QuestForm : data::Form {
     // option) — data-driven quest acquisition, no C++ wiring per quest.
     // "" = started by code/script only. Appended (binary ordinals stable).
     str startEvent;
+    // 8.7e: paid to the player ONCE, when the quest first succeeds —
+    // data-driven rewards (the ex-hardcoded EasternMenace +50 gold now
+    // lives here). 0/null = no reward. Appended.
+    core::Guid rewardItem;
+    i32 rewardCount { 0 };
 
     REFLECT_BEGIN(QuestForm, data::Form)
         REFLECT_FIELD(displayName)
         REFLECT_FIELD(startState)
         REFLECT_FIELD(startEvent)
+        REFLECT_FIELD(rewardItem)
+        REFLECT_FIELD(rewardCount)
     REFLECT_END()
 };
 

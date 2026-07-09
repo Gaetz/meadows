@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <vector>
 
 #include "data/forms/Form.hpp"
@@ -38,6 +39,12 @@ struct DialogueNodeForm : data::Form {
     str text;
     str event;         // optional event name dispatched when this node is entered
     i32 order { 0 };   // sibling sort order
+    // 8.7e: hand items over when this node fires ("here are the rations")
+    // — removed from the player through the runner's onNodeFired hook.
+    // Gate the option with a HasItem condition; the removal itself does
+    // not re-check. Appended (binary ordinals stable).
+    core::Guid takeItem;
+    i32 takeCount { 1 };
 
     REFLECT_BEGIN(DialogueNodeForm, data::Form)
         REFLECT_FIELD(parent)
@@ -45,6 +52,8 @@ struct DialogueNodeForm : data::Form {
         REFLECT_FIELD(text)
         REFLECT_FIELD(event)
         REFLECT_FIELD(order)
+        REFLECT_FIELD(takeItem)
+        REFLECT_FIELD(takeCount)
     REFLECT_END()
 };
 
@@ -55,6 +64,12 @@ void registerDialogueFormTypes(data::FormTypeRegistry& registry);
 class DialogueRunner {
 public:
     DialogueRunner(const data::FormDatabase& forms, gameplay::EventBus& bus);
+
+    // 8.7e: called for EVERY node that fires (entered NPC line or picked
+    // option), after its event dispatch. The game layer applies the
+    // node's world side effects here (takeItem/takeCount -> inventory) —
+    // the runner itself stays world-free and headless-testable.
+    std::function<void(const DialogueNodeForm&)> onNodeFired;
 
     bool start(const core::Guid& dialogueId);
     bool active() const;

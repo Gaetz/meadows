@@ -1087,6 +1087,9 @@ startState = "4d7a9b30-0000-4000-8000-0000000000f1"
 # 8.7c: the dialogue option fires this event; the quest starts on it —
 # pure data, no C++ wiring (quest::startQuestsOn).
 startEvent = "OnAcceptEasternMenace"
+# 8.7e: the reward, in data too (was hardcoded +50 gold in C++).
+rewardItem = "5e8bac40-0000-4000-8000-000000000010"   # GoldCoin
+rewardCount = 50
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000000f1"

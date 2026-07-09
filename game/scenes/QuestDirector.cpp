@@ -1,5 +1,7 @@
 #include "game/scenes/QuestDirector.hpp"
 
+#include <unordered_set>
+
 #include "data/forms/CoreForms.hpp" // MiscItemForm
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"
@@ -123,7 +125,9 @@ void QuestDirector::handleQuestEvent(const QuestContext& ctx,
     // old per-quest C++ subscription (acceptDemoQuest) is gone.
     const auto started =
         quest::startQuestsOn(questLog_, ctx.forms, event);
+    std::unordered_set<core::Guid> startedIds;
     for (const quest::QuestForm* quest : started) {
+        startedIds.insert(quest->id);
         syncQuestTags(ctx);
         ctx.say("Nouvelle quete : " +
                     (quest->displayName.empty() ? quest->editorId
@@ -131,27 +135,71 @@ void QuestDirector::handleQuestEvent(const QuestContext& ctx,
                     " (journal : J).",
                 4.0f);
     }
-    if (!easternQuest_) {
-        return;
+
+    // 8.7e — generic progression: snapshot every quest, advance, then
+    // toast state changes and pay DATA rewards (QuestForm.rewardItem/
+    // rewardCount) on the first transition to Succeeded. The turn-in
+    // option fires exactly once (its gate tag drops with the transition),
+    // so the reward needs no persisted flag.
+    std::unordered_map<core::Guid, std::pair<core::Guid, quest::QuestStatus>>
+        before;
+    for (const auto& [id, progress] : questLog_.quests) {
+        before.emplace(id,
+                       std::make_pair(progress.currentState, progress.status));
     }
-    const core::Guid stateBefore =
-        quest::questState(questLog_, easternQuest_->id);
     quest::onQuestEvent(questLog_, ctx.forms, event, ctx.gameTags);
     syncQuestTags(ctx);
-    const bool succeeded = quest::questStatus(questLog_, easternQuest_->id) ==
-                           quest::QuestStatus::Succeeded;
-    if (succeeded && stateBefore.isValid() &&
-        quest::questState(questLog_, easternQuest_->id) != stateBefore) {
-        // The turn-in option fires exactly once (its gate tag drops with
-        // the transition) — the reward lands here, no flag to persist.
-        if (ctx.goldForm && ctx.playerEntity.is_alive() &&
-            ctx.playerEntity.has<gameplay::Inventory>()) {
-            gameplay::addItem(ctx.playerEntity.get_mut<gameplay::Inventory>(),
-                              ctx.goldForm->id, 50);
+    for (const auto& [id, progress] : questLog_.quests) {
+        if (startedIds.contains(id)) {
+            continue; // the "Nouvelle quete" toast already covered it
         }
-        ctx.say("Quete accomplie : La menace de l'est (+50 or).", 5.0f);
-    } else if (quest::questState(questLog_, easternQuest_->id) != stateBefore) {
-        ctx.say("Journal mis a jour (J).", 4.0f);
+        const auto it = before.find(id);
+        if (it == before.end()) {
+            continue;
+        }
+        const quest::QuestForm* quest = ctx.forms.find<quest::QuestForm>(id);
+        if (!quest) {
+            continue;
+        }
+        const str name =
+            quest->displayName.empty() ? quest->editorId : quest->displayName;
+        const bool nowSucceeded =
+            progress.status == quest::QuestStatus::Succeeded &&
+            it->second.second != quest::QuestStatus::Succeeded;
+        if (nowSucceeded) {
+            str rewardText;
+            if (quest->rewardItem.isValid() && quest->rewardCount > 0 &&
+                ctx.playerEntity.is_alive() &&
+                ctx.playerEntity.has<gameplay::Inventory>()) {
+                gameplay::addItem(
+                    ctx.playerEntity.get_mut<gameplay::Inventory>(),
+                    quest->rewardItem, quest->rewardCount);
+                // The item's displayName when it has one (reflection —
+                // item categories differ), else its editorId.
+                str itemName;
+                const data::FormHandle handle =
+                    ctx.forms.handleOf(quest->rewardItem);
+                if (handle.isValid()) {
+                    const data::Form* item = ctx.forms.get(handle);
+                    itemName = item->editorId;
+                    if (const auto* itemType = ctx.forms.typeOf(handle)) {
+                        if (const auto* field = itemType->findField(
+                                core::fnv1a("displayName"))) {
+                            const reflect::Value value = field->get(item);
+                            if (const str* display = std::get_if<str>(&value);
+                                display && !display->empty()) {
+                                itemName = *display;
+                            }
+                        }
+                    }
+                }
+                rewardText = " (+" + std::to_string(quest->rewardCount) +
+                             " " + itemName + ")";
+            }
+            ctx.say("Quete accomplie : " + name + rewardText + ".", 5.0f);
+        } else if (progress.currentState != it->second.first) {
+            ctx.say("Journal mis a jour (J).", 4.0f);
+        }
     }
 }
 
@@ -182,6 +230,23 @@ void QuestDirector::openDialogue(const QuestContext& ctx,
         dialogueRunner_ =
             std::make_unique<quest::DialogueRunner>(ctx.forms, ctx.eventBus);
     }
+    // 8.7e: the node's world side effects — takeItem/takeCount removes
+    // from the player when the node fires ("here are the rations"). Set
+    // per open with the CURRENT player entity; gate the option with a
+    // HasItem condition in data, the removal itself does not re-check.
+    dialogueRunner_->onNodeFired =
+        [player = ctx.playerEntity](const quest::DialogueNodeForm& node) {
+            if (!node.takeItem.isValid() || node.takeCount <= 0 ||
+                !player.is_alive() || !player.has<gameplay::Inventory>()) {
+                return;
+            }
+            auto& bag = player.get_mut<gameplay::Inventory>();
+            if (!gameplay::removeItem(bag, node.takeItem, node.takeCount)) {
+                LOG_WARN("Dialogue takeItem: player lacks {} x{} — gate the "
+                         "option with a HasItem condition",
+                         node.takeItem.toString(), node.takeCount);
+            }
+        };
     if (!dialogueRunner_->start(dialogueId)) {
         LOG_WARN("B4: dialogue {} failed to start", dialogueId.toString());
         return;

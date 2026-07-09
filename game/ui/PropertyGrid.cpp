@@ -8,6 +8,7 @@
 
 #include "engine/reflect/Visit.hpp"
 #include "game/ui/EventPicker.hpp"
+#include "game/ui/FormPicker.hpp"
 #include "game/ui/Keywords.hpp"
 
 namespace game {
@@ -169,7 +170,18 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
                     drawText();
                 }
             },
-            [&](const core::Guid&) { drawText(); },
+            [&](const core::Guid& g) {
+                // Item guid fields (8.7e) pick from the four item
+                // categories instead of pasting a raw guid.
+                if (isItemField(type->name, field.name)) {
+                    core::Guid picked;
+                    if (drawItemPicker("##v", session, g, picked)) {
+                        commit(reflect::Value { picked });
+                    }
+                } else {
+                    drawText();
+                }
+            },
         });
         ImGui::PopID();
     });
