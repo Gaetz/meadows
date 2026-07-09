@@ -7,6 +7,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "data/forms/FormDatabase.hpp"
+#include "data/forms/VisualForms.hpp"
 #include "engine/ecs/World.hpp"
 #include "game/TextureCache.hpp"
 
@@ -96,7 +98,8 @@ vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
                   { transform.position, source.color, source.intensity,
                     source.radius, source.flicker,
                     transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f },
-                    source.spotAngle, source.sunLinked } });
+                    source.spotAngle, source.sunLinked,
+                    source.castsShadow } });
         });
     std::stable_sort(candidates.begin(), candidates.end(),
                      [](const Candidate& a, const Candidate& b) {
@@ -113,6 +116,55 @@ vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
         lights.push_back(candidate.light);
     }
     return lights;
+}
+
+void extractLights(const ecs::World& world, const Vec3& focus, u32 maxLights,
+                   RenderSnapshot& out) {
+    out.lights = collectLights(world, focus, maxLights);
+    world.handle()
+        .query<const world::Transform, const world::LightSource>()
+        .each([&](flecs::entity e, const world::Transform& transform,
+                  const world::LightSource& source) {
+            const Vec3 forward =
+                transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
+            if (source.castsShadow) {
+                out.shadowLights.push_back(
+                    { transform.position, source.color, source.intensity,
+                      source.radius, source.flicker, forward,
+                      source.spotAngle, source.sunLinked, true });
+            }
+            if (source.shaft) {
+                out.shafts.push_back({ e.id(), transform.position, forward,
+                                       source.sunLinked, source.color,
+                                       source.intensity, source.spotAngle,
+                                       source.shaftLength,
+                                       source.shaftSoftness,
+                                       source.dustDensity });
+            }
+        });
+}
+
+void extractWaterVolumes(const ecs::World& world, RenderSnapshot& out) {
+    world.handle()
+        .query<const world::Transform, const world::WaterVolume>()
+        .each([&](flecs::entity e, const world::Transform& transform,
+                  const world::WaterVolume& volume) {
+            out.waterVolumes.push_back({ e.id(), transform.position,
+                                         volume.halfExtents, volume.tint,
+                                         volume.chop });
+        });
+}
+
+void resolveMeshMaterials(const data::FormDatabase& forms,
+                          RenderSnapshot& out) {
+    for (RenderSnapshot::MeshInstance& mesh : out.meshes) {
+        if (const auto* material =
+                forms.find<data::MaterialForm>(mesh.material)) {
+            mesh.tint = material->tint;
+            mesh.emissive = material->emissive;
+            mesh.albedoTexture = material->albedoTexture;
+        }
+    }
 }
 
 void submitSnapshot(const RenderSnapshot& snapshot,

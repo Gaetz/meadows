@@ -16,10 +16,56 @@
 namespace ecs {
 class World;
 }
+namespace data {
+class FormDatabase;
+}
 
 namespace game {
 
 class TextureCache;
+
+// A placed local light, extracted for the renderer (chantier 2 B5).
+// Chantier 6 B1: spots — `direction` is the placement's forward
+// (Transform.rotation × +Z, the scene's yaw convention); spotAngle is the
+// FULL cone angle in degrees, 0 = point light.
+struct SceneLight {
+    Vec3 position { 0.0f };
+    Vec3 color { 1.0f };
+    f32 intensity { 1.0f };
+    f32 radius { 8.0f };
+    f32 flicker { 0.0f };
+    Vec3 direction { 0.0f, 0.0f, 1.0f };
+    f32 spotAngle { 0.0f };
+    // Brick 34: the scene overrides `direction` (and gates intensity by
+    // sun elevation) for sun-linked lights before filling the UBO.
+    bool sunLinked { false };
+    // B2b (U4-2a): interior key-light shadow candidate.
+    bool castsShadow { false };
+};
+
+// A dust-shaft emitter (brick 34), extracted per frame. `entityId` keys the
+// renderer's per-shaft GPU state (mark/sweep against unloaded cells).
+struct ShaftLight {
+    u64 entityId { 0 };
+    Vec3 position { 0.0f };
+    Vec3 direction { 0.0f, 0.0f, 1.0f }; // authored forward (rotation × +Z)
+    bool sunLinked { false };            // follow the quantized shadow sun
+    Vec3 color { 1.0f };
+    f32 intensity { 1.0f };
+    f32 spotAngle { 0.0f };
+    f32 shaftLength { 5.0f };
+    f32 shaftSoftness { 0.5f };
+    f32 dustDensity { 0.6f };
+};
+
+// A placed water volume (brick 32): surface quad + camera submersion test.
+struct WaterVolumeInstance {
+    u64 entityId { 0 };
+    Vec3 position { 0.0f };    // volume BASE (top face = base + 2*halfY)
+    Vec3 halfExtents { 0.0f };
+    Vec3 tint { 0.0f };
+    f32 chop { 0.5f };
+};
 
 // A self-owning render packet — the contractual ECS↔renderer boundary. Extracted
 // from the world once per frame; the renderer consumes ONLY this and has no
@@ -35,12 +81,25 @@ struct RenderSnapshot {
     // owns a mesh/material residency cache (the TextureCache pattern) and
     // resolves them at submit — a pending asset draws a placeholder,
     // never blocks (§7). Transform is fully composed world space.
+    // Material FIELDS are resolved at extract (resolveMeshMaterials) so the
+    // draw needs no FormDatabase access (U4-2a); defaults = the no-material
+    // fallback (white albedo, plain tint).
     struct MeshInstance {
         core::Guid model;    // glTF mesh asset
-        core::Guid material; // MaterialForm
+        core::Guid material; // MaterialForm (keys the bind-group cache)
         Mat4 transform { 1.0f };
+        Vec4 tint { 1.0f };
+        f32 emissive { 0.0f };
+        core::Guid albedoTexture {}; // asset guid; 0 = white
     };
     vector<MeshInstance> meshes;
+
+    // The landscape frame's world-derived render data (U4-2a): render()
+    // consumes these instead of querying the live World.
+    vector<SceneLight> lights;       // the N nearest, for the lights UBO
+    vector<SceneLight> shadowLights; // every castsShadow light (key shadow)
+    vector<ShaftLight> shafts;
+    vector<WaterVolumeInstance> waterVolumes;
 };
 
 // Pure mapping from scene components to a 2D sprite (no GPU — unit-testable).
@@ -60,27 +119,23 @@ RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures);
 // calls it directly; extractScene calls it as part of the full extract.
 void extractMeshes(const ecs::World& world, RenderSnapshot& out);
 
-// A placed local light, extracted for the renderer (chantier 2 B5).
-// Chantier 6 B1: spots — `direction` is the placement's forward
-// (Transform.rotation × +Z, the scene's yaw convention); spotAngle is the
-// FULL cone angle in degrees, 0 = point light.
-struct SceneLight {
-    Vec3 position { 0.0f };
-    Vec3 color { 1.0f };
-    f32 intensity { 1.0f };
-    f32 radius { 8.0f };
-    f32 flicker { 0.0f };
-    Vec3 direction { 0.0f, 0.0f, 1.0f };
-    f32 spotAngle { 0.0f };
-    // Brick 34: the scene overrides `direction` (and gates intensity by
-    // sun elevation) for sun-linked lights before filling the UBO.
-    bool sunLinked { false };
-};
-
 // The `maxLights` LightSource entities nearest to `focus`, nearest first
 // (stable ordering: ties keep query order — deterministic). Headless.
 vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
                                  u32 maxLights);
+
+// The landscape extract (U4-2a), headless like extractMeshes:
+// - extractLights fills `lights` (the maxLights nearest, UBO order),
+//   `shadowLights` (every castsShadow light — key-shadow candidates) and
+//   `shafts` in one LightSource pass;
+// - extractWaterVolumes fills `waterVolumes`;
+// - resolveMeshMaterials folds each mesh's MaterialForm fields into the
+//   instance (tint/emissive/albedo guid), so the draw needs no Forms.
+void extractLights(const ecs::World& world, const Vec3& focus, u32 maxLights,
+                   RenderSnapshot& out);
+void extractWaterVolumes(const ecs::World& world, RenderSnapshot& out);
+void resolveMeshMaterials(const data::FormDatabase& forms,
+                          RenderSnapshot& out);
 
 // Kicks the decode of every sprite asset in the world without drawing anything,
 // so a loading gate can wait for them to become resident before the first frame

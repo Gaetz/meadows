@@ -11,7 +11,6 @@
 
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"
-#include "data/forms/VisualForms.hpp"
 #include "data/plugins/PluginConfig.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
@@ -1056,9 +1055,18 @@ void LandscapeScene::update(f32 dt) {
         }
     }
     {
+        // U4-2a: everything render() needs from the World is extracted HERE —
+        // the render path reads only the snapshot (the Phase-5 seam).
         core::FrameProbe::Scope probe { frameProbe, "extract" };
         snapshot.meshes.clear();
+        snapshot.lights.clear();
+        snapshot.shadowLights.clear();
+        snapshot.shafts.clear();
+        snapshot.waterVolumes.clear();
         extractMeshes(world, snapshot);
+        resolveMeshMaterials(forms, snapshot);
+        extractLights(world, flyCamera.camera.position, kMaxLights, snapshot);
+        extractWaterVolumes(world, snapshot);
     }
     if (debugCapsule) {
         // Visualize as the residency placeholder box (magenta), stretched
@@ -1151,19 +1159,18 @@ void LandscapeScene::drawSceneMeshes(engine::FrameContext& frame) {
         const RenderSnapshot::MeshInstance& instance = snapshot.meshes[i];
         const MeshCache::Gpu& mesh = meshCache->resolve(instance.model);
 
+        // U4-2a: material fields resolved at extract; only the TEXTURE
+        // residency lookup stays draw-side (it is a GPU cache).
         ModelUniforms uniforms;
         uniforms.model = instance.transform;
+        uniforms.tint = instance.tint;
+        uniforms.info.x = instance.emissive;
         rhi::TextureHandle albedo = whiteTexture;
-        if (const auto* material =
-                forms.find<data::MaterialForm>(instance.material)) {
-            uniforms.tint = material->tint;
-            uniforms.info.x = material->emissive;
-            if (material->albedoTexture.isValid()) {
-                const rhi::TextureHandle resolved =
-                    materialTextures->resolve(material->albedoTexture);
-                if (resolved.id != 0) {
-                    albedo = resolved;
-                }
+        if (instance.albedoTexture.isValid()) {
+            const rhi::TextureHandle resolved =
+                materialTextures->resolve(instance.albedoTexture);
+            if (resolved.id != 0) {
+                albedo = resolved;
             }
         }
 
@@ -2119,129 +2126,119 @@ void LandscapeScene::drawLightShafts(engine::FrameContext& frame,
         shaft.seen = false;
     }
     bool any = false;
-    world.handle()
-        .query<const world::Transform, const world::LightSource>()
-        .each([&](flecs::entity e, const world::Transform& transform,
-                  const world::LightSource& light) {
-            if (!light.shaft) {
-                return;
-            }
-            // Direction: authored (reference rotation x +Z) or the
-            // quantized shadow sun (so window shafts follow the day
-            // without re-basing every frame).
-            Vec3 dir = light.sunLinked
-                           ? -shadowSunDirection
-                           : transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
-            if (glm::dot(dir, dir) < 1e-6f) {
-                return;
-            }
-            dir = glm::normalize(dir);
-            f32 gate = 1.0f;
-            Vec3 color = light.color * light.intensity;
-            if (light.sunLinked) {
-                gate = glm::smoothstep(0.05f, 0.20f, -dir.y);
-                color = sunColor * light.intensity;
-            }
-            if (interiorMode == false && light.sunLinked) {
-                // Exterior sun shafts belong to the volumetric pass.
-                return;
-            }
-            if (gate <= 0.001f) {
-                return;
-            }
+    for (const ShaftLight& light : snapshot.shafts) { // U4-2a
+        // Direction: authored (reference rotation x +Z) or the
+        // quantized shadow sun (so window shafts follow the day
+        // without re-basing every frame).
+        Vec3 dir = light.sunLinked ? -shadowSunDirection : light.direction;
+        if (glm::dot(dir, dir) < 1e-6f) {
+            continue;
+        }
+        dir = glm::normalize(dir);
+        f32 gate = 1.0f;
+        Vec3 color = light.color * light.intensity;
+        if (light.sunLinked) {
+            gate = glm::smoothstep(0.05f, 0.20f, -dir.y);
+            color = sunColor * light.intensity;
+        }
+        if (interiorMode == false && light.sunLinked) {
+            // Exterior sun shafts belong to the volumetric pass.
+            continue;
+        }
+        if (gate <= 0.001f) {
+            continue;
+        }
 
-            LightShaft* slot = nullptr;
-            for (LightShaft& shaft : lightShafts) {
-                if (shaft.entityId == e.id()) {
-                    slot = &shaft;
-                    break;
-                }
+        LightShaft* slot = nullptr;
+        for (LightShaft& shaft : lightShafts) {
+            if (shaft.entityId == light.entityId) {
+                slot = &shaft;
+                break;
             }
-            if (!slot) {
-                lightShafts.push_back({ e.id() });
-                slot = &lightShafts.back();
-            }
-            slot->seen = true;
+        }
+        if (!slot) {
+            lightShafts.push_back({ light.entityId });
+            slot = &lightShafts.back();
+        }
+        slot->seen = true;
 
-            // Rebuild the blades when the direction moves (sun steps).
-            if (slot->vertices.id == 0 ||
-                glm::dot(slot->cachedDir, dir) < 0.99995f) {
-                const f32 length = glm::max(light.shaftLength, 0.5f);
-                const f32 halfAngle = glm::radians(
-                    glm::clamp(light.spotAngle > 0.0f ? light.spotAngle
-                                                      : 30.0f,
-                               5.0f, 80.0f) *
-                    0.5f);
-                const f32 w0 = 0.08f;
-                const f32 w1 = std::tan(halfAngle) * length;
-                const Vec3 up = std::abs(dir.y) > 0.95f
-                                    ? Vec3 { 1.0f, 0.0f, 0.0f }
-                                    : Vec3 { 0.0f, 1.0f, 0.0f };
-                const Vec3 s0 = glm::normalize(glm::cross(dir, up));
-                const Vec3 apex = transform.position;
-                const Vec3 end = apex + dir * length;
-                f32 verts[3 * 6 * 5]; // 3 blades x 2 tris x 3 verts x 5f
-                u32 cursor = 0;
-                const auto push = [&](const Vec3& p, f32 u, f32 v) {
-                    verts[cursor++] = p.x;
-                    verts[cursor++] = p.y;
-                    verts[cursor++] = p.z;
-                    verts[cursor++] = u;
-                    verts[cursor++] = v;
-                };
-                for (u32 blade = 0; blade < 3; ++blade) {
-                    const f32 angle =
-                        static_cast<f32>(blade) * glm::radians(60.0f);
-                    const Vec3 side = glm::normalize(
-                        glm::angleAxis(angle, dir) * s0);
-                    const Vec3 a0 = apex - side * w0;
-                    const Vec3 a1 = apex + side * w0;
-                    const Vec3 b0 = end - side * w1;
-                    const Vec3 b1 = end + side * w1;
-                    push(a0, -1.0f, 0.0f);
-                    push(a1, 1.0f, 0.0f);
-                    push(b1, 1.0f, 1.0f);
-                    push(a0, -1.0f, 0.0f);
-                    push(b1, 1.0f, 1.0f);
-                    push(b0, -1.0f, 1.0f);
-                }
-                if (slot->vertices.id == 0) {
-                    slot->vertices = frame.device.createBuffer(
-                        { .usage = rhi::BufferUsage::Vertex,
-                          .size = sizeof(verts),
-                          .dynamic = true },
-                        verts);
-                } else {
-                    frame.device.updateBuffer(slot->vertices, verts,
-                                              sizeof(verts), 0);
-                }
-                slot->vertexCount = 18;
-                slot->cachedDir = dir;
-            }
-            if (slot->ubo.id == 0) {
-                slot->ubo = frame.device.createBuffer(
-                    { .usage = rhi::BufferUsage::Uniform,
-                      .size = 2 * sizeof(Vec4),
-                      .dynamic = true },
-                    nullptr);
-                slot->group = frame.device.createBindGroup(
-                    { .entries = { { .binding = 1, .buffer = slot->ubo } } });
-            }
-            const Vec4 uniforms[2] = {
-                { color * gate, light.shaftSoftness },
-                { light.dustDensity, light.shaftLength, 0.0f, 0.0f }
+        // Rebuild the blades when the direction moves (sun steps).
+        if (slot->vertices.id == 0 ||
+            glm::dot(slot->cachedDir, dir) < 0.99995f) {
+            const f32 length = glm::max(light.shaftLength, 0.5f);
+            const f32 halfAngle = glm::radians(
+                glm::clamp(light.spotAngle > 0.0f ? light.spotAngle : 30.0f,
+                           5.0f, 80.0f) *
+                0.5f);
+            const f32 w0 = 0.08f;
+            const f32 w1 = std::tan(halfAngle) * length;
+            const Vec3 up = std::abs(dir.y) > 0.95f
+                                ? Vec3 { 1.0f, 0.0f, 0.0f }
+                                : Vec3 { 0.0f, 1.0f, 0.0f };
+            const Vec3 s0 = glm::normalize(glm::cross(dir, up));
+            const Vec3 apex = light.position;
+            const Vec3 end = apex + dir * length;
+            f32 verts[3 * 6 * 5]; // 3 blades x 2 tris x 3 verts x 5f
+            u32 cursor = 0;
+            const auto push = [&](const Vec3& p, f32 u, f32 v) {
+                verts[cursor++] = p.x;
+                verts[cursor++] = p.y;
+                verts[cursor++] = p.z;
+                verts[cursor++] = u;
+                verts[cursor++] = v;
             };
-            frame.device.updateBuffer(slot->ubo, uniforms,
-                                      sizeof(uniforms), 0);
-            if (!any) {
-                frame.cmd.setPipeline(shaftPipeline);
-                frame.cmd.setBindGroup(0, frameBindGroup);
-                any = true;
+            for (u32 blade = 0; blade < 3; ++blade) {
+                const f32 angle =
+                    static_cast<f32>(blade) * glm::radians(60.0f);
+                const Vec3 side =
+                    glm::normalize(glm::angleAxis(angle, dir) * s0);
+                const Vec3 a0 = apex - side * w0;
+                const Vec3 a1 = apex + side * w0;
+                const Vec3 b0 = end - side * w1;
+                const Vec3 b1 = end + side * w1;
+                push(a0, -1.0f, 0.0f);
+                push(a1, 1.0f, 0.0f);
+                push(b1, 1.0f, 1.0f);
+                push(a0, -1.0f, 0.0f);
+                push(b1, 1.0f, 1.0f);
+                push(b0, -1.0f, 1.0f);
             }
-            frame.cmd.setBindGroup(1, slot->group);
-            frame.cmd.setVertexBuffer(0, slot->vertices);
-            frame.cmd.draw(slot->vertexCount);
-        });
+            if (slot->vertices.id == 0) {
+                slot->vertices = frame.device.createBuffer(
+                    { .usage = rhi::BufferUsage::Vertex,
+                      .size = sizeof(verts),
+                      .dynamic = true },
+                    verts);
+            } else {
+                frame.device.updateBuffer(slot->vertices, verts,
+                                          sizeof(verts), 0);
+            }
+            slot->vertexCount = 18;
+            slot->cachedDir = dir;
+        }
+        if (slot->ubo.id == 0) {
+            slot->ubo = frame.device.createBuffer(
+                { .usage = rhi::BufferUsage::Uniform,
+                  .size = 2 * sizeof(Vec4),
+                  .dynamic = true },
+                nullptr);
+            slot->group = frame.device.createBindGroup(
+                { .entries = { { .binding = 1, .buffer = slot->ubo } } });
+        }
+        const Vec4 uniforms[2] = {
+            { color * gate, light.shaftSoftness },
+            { light.dustDensity, light.shaftLength, 0.0f, 0.0f }
+        };
+        frame.device.updateBuffer(slot->ubo, uniforms, sizeof(uniforms), 0);
+        if (!any) {
+            frame.cmd.setPipeline(shaftPipeline);
+            frame.cmd.setBindGroup(0, frameBindGroup);
+            any = true;
+        }
+        frame.cmd.setBindGroup(1, slot->group);
+        frame.cmd.setVertexBuffer(0, slot->vertices);
+        frame.cmd.draw(slot->vertexCount);
+    }
     // Sweep shafts whose entity unloaded with its cell.
     for (auto it = lightShafts.begin(); it != lightShafts.end();) {
         if (!it->seen) {
@@ -2265,19 +2262,15 @@ f32 LandscapeScene::effectiveWaterSurfaceY() const {
     // "dry" otherwise. Feeds the tonemap submersion.
     f32 surface = interiorMode ? -1.0e6f : terrain.params.seaLevel;
     const Vec3 eye = flyCamera.camera.position;
-    world.handle()
-        .query<const world::Transform, const world::WaterVolume>()
-        .each([&](flecs::entity, const world::Transform& transform,
-                  const world::WaterVolume& volume) {
-            const Vec3 d = eye - transform.position;
-            if (std::abs(d.x) <= volume.halfExtents.x &&
-                std::abs(d.z) <= volume.halfExtents.z && d.y >= 0.0f &&
-                d.y <= volume.halfExtents.y * 2.0f) {
-                surface = glm::max(
-                    surface,
-                    transform.position.y + volume.halfExtents.y * 2.0f);
-            }
-        });
+    for (const WaterVolumeInstance& volume : snapshot.waterVolumes) { // U4-2a
+        const Vec3 d = eye - volume.position;
+        if (std::abs(d.x) <= volume.halfExtents.x &&
+            std::abs(d.z) <= volume.halfExtents.z && d.y >= 0.0f &&
+            d.y <= volume.halfExtents.y * 2.0f) {
+            surface = glm::max(surface,
+                               volume.position.y + volume.halfExtents.y * 2.0f);
+        }
+    }
     return surface;
 }
 
@@ -2305,59 +2298,52 @@ void LandscapeScene::drawWaterVolumes(engine::FrameContext& frame) {
         quad.seen = false;
     }
     bool any = false;
-    world.handle()
-        .query<const world::Transform, const world::WaterVolume>()
-        .each([&](flecs::entity e, const world::Transform& transform,
-                  const world::WaterVolume& volume) {
-            WaterQuad* slot = nullptr;
-            for (WaterQuad& quad : waterQuads) {
-                if (quad.entityId == e.id()) {
-                    slot = &quad;
-                    break;
-                }
+    for (const WaterVolumeInstance& volume : snapshot.waterVolumes) { // U4-2a
+        WaterQuad* slot = nullptr;
+        for (WaterQuad& quad : waterQuads) {
+            if (quad.entityId == volume.entityId) {
+                slot = &quad;
+                break;
             }
-            if (!slot) {
-                waterQuads.push_back({ e.id() });
-                slot = &waterQuads.back();
-            }
-            slot->seen = true;
-            if (slot->vertices.id == 0) {
-                // The box TOP face, two triangles in world space.
-                const Vec3 c = transform.position +
-                               Vec3 { 0.0f, volume.halfExtents.y * 2.0f,
-                                      0.0f };
-                const f32 hx = volume.halfExtents.x;
-                const f32 hz = volume.halfExtents.z;
-                const f32 verts[18] = {
-                    c.x - hx, c.y, c.z - hz, c.x + hx, c.y, c.z - hz,
-                    c.x + hx, c.y, c.z + hz, c.x - hx, c.y, c.z - hz,
-                    c.x + hx, c.y, c.z + hz, c.x - hx, c.y, c.z + hz,
-                };
-                slot->vertices = frame.device.createBuffer(
-                    { .usage = rhi::BufferUsage::Vertex,
-                      .size = sizeof(verts) },
-                    verts);
-                slot->ubo = frame.device.createBuffer(
-                    { .usage = rhi::BufferUsage::Uniform,
-                      .size = sizeof(Vec4),
-                      .dynamic = true },
-                    nullptr);
-                slot->group = frame.device.createBindGroup(
-                    { .entries = { { .binding = 1,
-                                     .buffer = slot->ubo } } });
-                const Vec4 tint { volume.tint, volume.chop };
-                frame.device.updateBuffer(slot->ubo, &tint, sizeof(tint),
-                                          0);
-            }
-            if (!any) {
-                frame.cmd.setPipeline(waterVolumePipeline);
-                frame.cmd.setBindGroup(0, frameBindGroup);
-                any = true;
-            }
-            frame.cmd.setBindGroup(1, slot->group);
-            frame.cmd.setVertexBuffer(0, slot->vertices);
-            frame.cmd.draw(6);
-        });
+        }
+        if (!slot) {
+            waterQuads.push_back({ volume.entityId });
+            slot = &waterQuads.back();
+        }
+        slot->seen = true;
+        if (slot->vertices.id == 0) {
+            // The box TOP face, two triangles in world space.
+            const Vec3 c = volume.position +
+                           Vec3 { 0.0f, volume.halfExtents.y * 2.0f, 0.0f };
+            const f32 hx = volume.halfExtents.x;
+            const f32 hz = volume.halfExtents.z;
+            const f32 verts[18] = {
+                c.x - hx, c.y, c.z - hz, c.x + hx, c.y, c.z - hz,
+                c.x + hx, c.y, c.z + hz, c.x - hx, c.y, c.z - hz,
+                c.x + hx, c.y, c.z + hz, c.x - hx, c.y, c.z + hz,
+            };
+            slot->vertices = frame.device.createBuffer(
+                { .usage = rhi::BufferUsage::Vertex, .size = sizeof(verts) },
+                verts);
+            slot->ubo = frame.device.createBuffer(
+                { .usage = rhi::BufferUsage::Uniform,
+                  .size = sizeof(Vec4),
+                  .dynamic = true },
+                nullptr);
+            slot->group = frame.device.createBindGroup(
+                { .entries = { { .binding = 1, .buffer = slot->ubo } } });
+            const Vec4 tint { volume.tint, volume.chop };
+            frame.device.updateBuffer(slot->ubo, &tint, sizeof(tint), 0);
+        }
+        if (!any) {
+            frame.cmd.setPipeline(waterVolumePipeline);
+            frame.cmd.setBindGroup(0, frameBindGroup);
+            any = true;
+        }
+        frame.cmd.setBindGroup(1, slot->group);
+        frame.cmd.setVertexBuffer(0, slot->vertices);
+        frame.cmd.draw(6);
+    }
     for (auto it = waterQuads.begin(); it != waterQuads.end();) {
         if (!it->seen) {
             if (it->vertices.id != 0) {
@@ -2697,8 +2683,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
             // w = cos(half angle); w = -2 marks a point light.
             Vec4 directionAngle[kMaxLights] {};
         } lights;
-        const vector<SceneLight> nearest =
-            collectLights(world, camera.position, kMaxLights);
+        const vector<SceneLight>& nearest = snapshot.lights; // U4-2a
         lights.count.x = static_cast<f32>(nearest.size());
         for (u32 i = 0; i < nearest.size(); ++i) {
             const SceneLight& light = nearest[i];
@@ -2738,25 +2723,19 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         Vec3 keyDir { 0.0f, 0.0f, 1.0f };
         f32 keyFov = 100.0f;
         f32 keyRadius = 10.0f;
-        world.handle()
-            .query<const world::Transform, const world::LightSource>()
-            .each([&](flecs::entity, const world::Transform& transform,
-                      const world::LightSource& light) {
-                if (!light.castsShadow) {
-                    return;
-                }
-                const Vec3 d = transform.position - camera.position;
-                const f32 distSq = glm::dot(d, d);
-                if (distSq < bestDistSq) {
-                    bestDistSq = distSq;
-                    keyPos = transform.position;
-                    keyDir = transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
-                    keyFov = light.spotAngle > 0.0f
-                                 ? glm::min(light.spotAngle * 1.3f, 150.0f)
-                                 : 120.0f;
-                    keyRadius = light.radius;
-                }
-            });
+        for (const SceneLight& light : snapshot.shadowLights) { // U4-2a
+            const Vec3 d = light.position - camera.position;
+            const f32 distSq = glm::dot(d, d);
+            if (distSq < bestDistSq) {
+                bestDistSq = distSq;
+                keyPos = light.position;
+                keyDir = light.direction;
+                keyFov = light.spotAngle > 0.0f
+                             ? glm::min(light.spotAngle * 1.3f, 150.0f)
+                             : 120.0f;
+                keyRadius = light.radius;
+            }
+        }
         if (bestDistSq < 1e12f) {
             const Vec3 up = std::abs(keyDir.y) > 0.95f
                                 ? Vec3 { 1.0f, 0.0f, 0.0f }

@@ -197,8 +197,8 @@ private:
     // A small ECS world spawned from plugin ReferenceForms; extractMeshes
     // fills the snapshot each frame; the residency caches resolve guids to
     // GPU resources (placeholders while pending — never block, §7).
-    data::FormDatabase forms;      // resolved plugin stack (member: material
-                                   //   lookups happen at draw time)
+    data::FormDatabase forms;      // resolved plugin stack (material fields
+                                   //   fold into the snapshot at extract)
     data::PluginStack pluginStack; // owns the plugins behind `forms`
     assets::AssetDatabase assetDb; // guid -> file, layered per plugin order
     ecs::World world;
