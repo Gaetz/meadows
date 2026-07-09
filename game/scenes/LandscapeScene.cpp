@@ -363,7 +363,8 @@ void LandscapeScene::setupGameplay() {
     eventBus = gameplay::EventBus {};
     eventBus.subscribe(gameplay::eventKind("OpenBarter"),
                        [this](const gameplay::Event&) {
-                           openBarterScreen(dialoguePartner);
+                           uiRouter.openBarterScreen(makeUiRouterContext(),
+                                                     dialoguePartner);
                        });
     // Chantier 6 A2: the quest wiring. Gate tags registered up front so
     // dialogue conditions evaluate before any quest starts.
@@ -707,9 +708,8 @@ void LandscapeScene::onExit() {
     uiTextInputOn = false;
     dialogueRunner.reset(); // references `forms`, reset before re-resolve
     hud.reset(); // dialogue options point into `forms` too
-    containerEntity = ecs::Entity {};
+    uiRouter.reset(); // open container/vendor die with the world
     dialoguePartner = ecs::Entity {};
-    barterMode = false;
     goldForm = nullptr;
     easternQuest = nullptr; // points into `forms`
     questLog = quest::QuestLog {};
@@ -1378,7 +1378,9 @@ InteractionContext LandscapeScene::makeInteractionContext() {
             dialoguePartner = partner; // the vendor for B5
             openDialogue(dialogue);
         },
-        [this](ecs::Entity container) { openContainerScreen(container); },
+        [this](ecs::Entity container) {
+            uiRouter.openContainerScreen(makeUiRouterContext(), container);
+        },
         [this](const str& screen) {
             if (!screenStack.find(screen)) {
                 return false;
@@ -1532,7 +1534,7 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                            .events = { "journalClose" } });
     uiSystem.setModelEventHandler(
         [this](const str& model, const str& event, const vector<str>& args) {
-            handleUiEvent(model, event, args);
+            uiRouter.handleUiEvent(makeUiRouterContext(), model, event, args);
         });
 
     // Screens from UiScreenForm records — pure data, moddable (§5).
@@ -1608,7 +1610,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
         if (top && (top->name == "inventory" || top->name == "container")) {
             screenStack.closeTop();
         } else if (!screenStack.modalOpen() && playerEntity.is_alive()) {
-            openInventoryScreen();
+            uiRouter.openInventoryScreen(makeUiRouterContext());
         }
     }
     // T: the wait menu (B6) — Play only, nothing else open.
@@ -1704,10 +1706,10 @@ HudContext LandscapeScene::makeHudContext() {
         static_cast<f32>(engine->getWindow().height()),
         playerController.body(),
         npcDirector.npcs(),
-        containerEntity,
-        barterMode,
-        vendorBuyMult,
-        vendorSellMult,
+        uiRouter.containerEntity(),
+        uiRouter.barterMode(),
+        uiRouter.vendorBuyMult(),
+        uiRouter.vendorSellMult(),
         goldForm,
         questLog,
         dialogueRunner.get(),
@@ -1847,343 +1849,39 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
     return false;
 }
 
-// --- Chantier 4 B3: inventory / container ------------------------------------------
+// --- Chantier 4 B3/B5/B6: UI action routing (UiRouter, audit U4-1) -------------------
 
-void LandscapeScene::openInventoryScreen() {
-    containerEntity = ecs::Entity {};
-    barterMode = false;
-    uiSystem.setBool("inventory", "transferMode", false);
-    hud.pushItemModels(makeHudContext());
-    screenStack.show("inventory");
-}
-
-void LandscapeScene::openContainerScreen(ecs::Entity container) {
-    containerEntity = container;
-    barterMode = false;
-    if (containerEntity.is_alive() &&
-        !containerEntity.has<gameplay::Inventory>()) {
-        containerEntity.set<gameplay::Inventory>({});
-    }
-    uiSystem.setBool("inventory", "transferMode", true);
-    hud.pushItemModels(makeHudContext());
-    screenStack.show("container");
-}
-
-void LandscapeScene::openBarterScreen(ecs::Entity vendor) {
-    if (!vendor.is_alive() || !goldForm || !playerEntity.is_alive()) {
-        return;
-    }
-    containerEntity = vendor;
-    barterMode = true;
-    if (!containerEntity.has<gameplay::Inventory>()) {
-        containerEntity.set<gameplay::Inventory>({});
-    }
-    uiSystem.setBool("inventory", "transferMode", true);
-    // The vendor's name for the title + its barter profile (D1).
-    str title = "Merchant";
-    vendorBuyMult = statsTuning.barterBuyMult;
-    vendorSellMult = statsTuning.barterSellMult;
-    core::Guid vendorFormId;
-    if (containerEntity.has<world::RefId>()) {
-        const auto& ref = containerEntity.get<world::RefId>();
-        if (const reflect::TypeInfo* type = forms.typeOf(ref.base);
-            type && type->isA(data::ActorForm::staticTypeInfo().id)) {
-            const auto* actor =
-                static_cast<const data::ActorForm*>(forms.get(ref.base));
-            if (!actor->displayName.empty()) {
-                title = actor->displayName;
-            }
-            if (actor->buyMult > 0.0f) {
-                vendorBuyMult = actor->buyMult;
-            }
-            if (actor->sellMult > 0.0f) {
-                vendorSellMult = actor->sellMult;
-            }
-            vendorFormId = actor->id;
-        }
-    }
-    uiSystem.setString("barter", "title", title);
-
-    // D1: restock — more than kRestockHours of game time since the last
-    // re-roll = clear + a fresh loadout roll (gold re-rolls with it, the
-    // Skyrim behavior). VendorState is a reflected component so the save
-    // layer carries the clock (a scene map would reset on re-enter = a
-    // free-restock exploit).
-    constexpr f64 kRestockHours = 24.0;
-    const f64 nowHours = gameClock.gameHours();
-    if (!containerEntity.has<gameplay::VendorState>()) {
-        containerEntity.set<gameplay::VendorState>({});
-    }
-    auto& vendorState = containerEntity.get_mut<gameplay::VendorState>();
-    if (vendorState.lastRestockHours <= 0.0f) {
-        // First open: stamp the clock, the spawn loadout IS the stock.
-        vendorState.lastRestockHours = static_cast<f32>(nowHours);
-    } else if (vendorFormId.isValid() &&
-               nowHours - vendorState.lastRestockHours > kRestockHours) {
-        auto& stock = containerEntity.get_mut<gameplay::Inventory>();
-        stock.items.clear();
-        gameplay::applyLoadout(forms, vendorFormId, stock, lootRng);
-        vendorState.lastRestockHours = static_cast<f32>(nowHours);
-        LOG_INFO("Vendor restocked ({}h game time)", nowHours);
-    }
-    hud.pushItemModels(makeHudContext());
-    screenStack.show("barter");
-}
-
-void LandscapeScene::barterTrade(const core::Guid& item, bool playerBuys) {
-    if (!barterMode || !goldForm || !containerEntity.is_alive() ||
-        !playerEntity.is_alive()) {
-        return;
-    }
-    // The unit value comes from the view row (already resolved per kind).
-    const InventoryView& side =
-        playerBuys ? hud.loot() : hud.inventory();
-    const InventoryView::Row* row = nullptr;
-    for (const InventoryView::Row& candidate : side.rows()) {
-        if (candidate.id == item) {
-            row = &candidate;
-            break;
-        }
-    }
-    if (!row) {
-        return;
-    }
-    auto& bag = playerEntity.get_mut<gameplay::Inventory>();
-    auto& stock = containerEntity.get_mut<gameplay::Inventory>();
-    if (playerBuys) {
-        const i32 price = barterPrice(row->value, vendorBuyMult);
-        barterBuy(bag, stock, item, price, goldForm->id);
-    } else {
-        const i32 price = barterPrice(row->value, vendorSellMult);
-        barterSell(bag, stock, item, price, goldForm->id);
-    }
-}
-
-void LandscapeScene::handleUiEvent(const str& model, const str& event,
-                                   const vector<str>& args) {
-    const auto argGuid = [&]() -> std::optional<core::Guid> {
-        return args.empty() ? std::nullopt
-                            : core::Guid::fromString(args[0]);
+// Bundle the scene systems the UI action routing touches for UiRouter this
+// dispatch — references plus the scene actions that stay its territory as
+// closures (saves, mode flips, waiting, the model pushes that need a
+// HudContext). Rebuilt per dispatch (cheap). Mirrors the other
+// make*Context builders.
+UiRouterContext LandscapeScene::makeUiRouterContext() {
+    return UiRouterContext {
+        forms,
+        uiSystem,
+        screenStack,
+        hud,
+        gameTags,
+        statsTuning,
+        gameClock,
+        lootRng,
+        goldForm,
+        dialogueRunner.get(),
+        playerEntity,
+        mode == SceneMode::Play,
+        [this] { hud.pushItemModels(makeHudContext()); },
+        [this] { hud.pushDialogueModel(makeHudContext()); },
+        [this] { hud.updateMenuClockLine(makeHudContext()); },
+        [this](const str& slot) { performSave(slot); },
+        [this](const str& slot) { requestLoad(slot); },
+        [this](f32 hours) {
+            interaction.wait(hours, makeInteractionContext());
+        },
+        [this] { enterPlayMode(); },
+        [this] { exitPlayMode(); },
+        [this] { engine->requestQuit(); },
     };
-    if (model == "inventory") {
-        if (event == "tab" && !args.empty()) {
-            using Category = InventoryView::Category;
-            Category category = Category::All;
-            if (args[0] == "weapons") {
-                category = Category::Weapons;
-            } else if (args[0] == "armor") {
-                category = Category::Armor;
-            } else if (args[0] == "consumables") {
-                category = Category::Consumables;
-            } else if (args[0] == "misc") {
-                category = Category::Misc;
-            }
-            hud.inventory().setCategory(category);
-        } else if (event == "sortCol" && !args.empty()) {
-            using Column = InventoryView::Column;
-            Column column = Column::Name;
-            if (args[0] == "weight") {
-                column = Column::Weight;
-            } else if (args[0] == "value") {
-                column = Column::Value;
-            } else if (args[0] == "power") {
-                column = Column::Power;
-            }
-            hud.inventory().sortBy(column);
-        } else if (event == "pick") {
-            if (const auto id = argGuid()) {
-                if (barterMode) {
-                    barterTrade(*id, /*playerBuys=*/false); // sell
-                } else if (containerEntity.is_alive()) {
-                    transferItem(*id, /*fromContainer=*/false);
-                } else {
-                    hud.inventory().select(*id);
-                }
-            }
-        } else if (event == "equipAction") {
-            toggleEquip(hud.inventory().selected());
-        } else if (event == "useAction") {
-            useConsumable(hud.inventory().selected());
-        }
-        hud.pushItemModels(makeHudContext());
-    } else if (model == "container") {
-        if (event == "pickLoot") {
-            if (const auto id = argGuid()) {
-                transferItem(*id, /*fromContainer=*/true);
-            }
-        } else if (event == "takeAll" && containerEntity.is_alive() &&
-                   playerEntity.is_alive()) {
-            auto& loot = containerEntity.get_mut<gameplay::Inventory>();
-            auto& bag = playerEntity.get_mut<gameplay::Inventory>();
-            for (const gameplay::ItemStack& stack : loot.items) {
-                if (stack.count > 0) {
-                    gameplay::addItem(bag, stack.item, stack.count);
-                }
-            }
-            loot.items.clear();
-        }
-        hud.pushItemModels(makeHudContext());
-    } else if (model == "barter") {
-        if (event == "pickBuy") {
-            if (const auto id = argGuid()) {
-                barterTrade(*id, /*playerBuys=*/true);
-            }
-        }
-        hud.pushItemModels(makeHudContext());
-    } else if (model == "menu") {
-        if (event == "menuAction" && !args.empty()) {
-            handleMenuAction(args[0]);
-        }
-    } else if (model == "saves") {
-        if (event == "loadSlot" && !args.empty()) {
-            screenStack.closeAll();
-            requestLoad(args[0]);
-        } else if (event == "loadCancel") {
-            screenStack.closeTop();
-        }
-    } else if (model == "journal") {
-        if (event == "journalClose") {
-            screenStack.closeTop();
-        }
-    } else if (model == "dialogue") {
-        if (event == "choose" && !args.empty() && dialogueRunner) {
-            if (args[0] == "leave") {
-                dialogueRunner->end();
-            } else if (const auto id = core::Guid::fromString(args[0])) {
-                for (const quest::DialogueNodeForm* option :
-                     hud.dialogueOptions()) {
-                    if (option->id == *id) {
-                        dialogueRunner->select(*option);
-                        break;
-                    }
-                }
-            }
-            // Closes the screen when the dialogue ended.
-            hud.pushDialogueModel(makeHudContext());
-        }
-    }
-}
-
-void LandscapeScene::toggleEquip(const core::Guid& id) {
-    if (!id.isValid() || !playerEntity.is_alive() ||
-        !playerEntity.has<gameplay::Equipment>()) {
-        return;
-    }
-    auto& equipment = playerEntity.get_mut<gameplay::Equipment>();
-    const data::FormHandle handle = forms.handleOf(id);
-    const reflect::TypeInfo* type = forms.typeOf(handle);
-    if (!type) {
-        return;
-    }
-    if (type->isA(data::WeaponForm::staticTypeInfo().id)) {
-        equipment.weapon = equipment.weapon == id ? core::Guid {} : id;
-    } else if (type->isA(data::ArmorForm::staticTypeInfo().id)) {
-        const auto* armor =
-            static_cast<const data::ArmorForm*>(forms.get(handle));
-        core::Guid* slot = nullptr;
-        if (armor->slot == "head") {
-            slot = &equipment.head;
-        } else if (armor->slot == "torso") {
-            slot = &equipment.torso;
-        } else if (armor->slot == "arms") {
-            slot = &equipment.arms;
-        } else if (armor->slot == "legs") {
-            slot = &equipment.legs;
-        }
-        if (slot) {
-            *slot = *slot == id ? core::Guid {} : id;
-        }
-    }
-}
-
-void LandscapeScene::useConsumable(const core::Guid& id) {
-    if (!id.isValid() || !playerEntity.is_alive()) {
-        return;
-    }
-    const auto* consumable = forms.find<data::ConsumableForm>(id);
-    if (!consumable || !playerEntity.has<gameplay::Inventory>()) {
-        return;
-    }
-    auto& bag = playerEntity.get_mut<gameplay::Inventory>();
-    if (!gameplay::removeItem(bag, id, 1)) {
-        return;
-    }
-    // Survival needs are component fields (the sleep() precedent);
-    // attribute changes still go through effects only (§2.9).
-    if (playerEntity.has<gameplay::Survival>()) {
-        auto& survival = playerEntity.get_mut<gameplay::Survival>();
-        survival.hunger = glm::min(100.0f, survival.hunger +
-                                               consumable->restoreHunger);
-        survival.thirst = glm::min(100.0f, survival.thirst +
-                                               consumable->restoreThirst);
-    }
-    if (consumable->effect.isValid()) {
-        if (const auto* effect =
-                forms.find<gameplay::EffectForm>(consumable->effect)) {
-            gameplay::applyEffect(
-                playerEntity.get_mut<gameplay::AttributeSet>(),
-                playerEntity.get_mut<gameplay::AbilitySystem>(), *effect,
-                gameTags);
-        }
-    }
-    LOG_INFO("Used: {}", consumable->editorId);
-}
-
-// --- Chantier 4 B6: menus -----------------------------------------------------------
-
-void LandscapeScene::handleMenuAction(const str& action) {
-    if (action == "resume" || action == "cancel") {
-        screenStack.closeTop();
-    } else if (action == "save") {
-        // Timestamped manual slot; F5 owns "quick".
-        char slot[32];
-        const std::time_t now = std::time(nullptr);
-        std::tm local {};
-        if (localtime_s(&local, &now) == 0) {
-            std::strftime(slot, sizeof(slot), "save_%Y%m%d_%H%M%S", &local);
-        } else {
-            std::snprintf(slot, sizeof(slot), "save_manual");
-        }
-        performSave(slot);
-        screenStack.closeTop();
-    } else if (action == "loadmenu") {
-        vector<::ui::UiRow> rows;
-        for (const SaveSlotInfo& info : listSaveSlots()) {
-            ::ui::UiRow row;
-            row.id = info.name;
-            row.c0 = info.name;
-            row.c1 = info.timestamp;
-            rows.push_back(std::move(row));
-        }
-        uiSystem.setBool("saves", "empty", rows.empty());
-        uiSystem.setRows("saves", std::move(rows));
-        screenStack.show("saves");
-    } else if (action == "wait") {
-        hud.updateMenuClockLine(makeHudContext());
-        screenStack.show("wait");
-    } else if (action == "wait1" || action == "wait4" ||
-               action == "wait8") {
-        interaction.wait(action == "wait1" ? 1.0f
-                             : action == "wait4" ? 4.0f
-                                                 : 8.0f,
-                         makeInteractionContext());
-        hud.updateMenuClockLine(makeHudContext());
-        screenStack.closeTop();
-    } else if (action == "play") {
-        screenStack.closeAll();
-        if (!(mode == SceneMode::Play)) {
-            enterPlayMode();
-        }
-    } else if (action == "mainmenu") {
-        if ((mode == SceneMode::Play)) {
-            exitPlayMode();
-        }
-        screenStack.closeAll();
-        hud.updateMenuClockLine(makeHudContext());
-        screenStack.show("mainmenu");
-    } else if (action == "quit") {
-        engine->requestQuit();
-    }
 }
 
 // --- Chantier 4 B7: console (nameplates -> GameHud, audit U4-9) ----------------------
@@ -2413,27 +2111,6 @@ void LandscapeScene::openDialogue(const core::Guid& dialogueId) {
     screenStack.show("dialogue");
 }
 
-void LandscapeScene::transferItem(const core::Guid& id,
-                                  bool fromContainer) {
-    if (!id.isValid() || !containerEntity.is_alive() ||
-        !playerEntity.is_alive()) {
-        return;
-    }
-    if (!containerEntity.has<gameplay::Inventory>() ||
-        !playerEntity.has<gameplay::Inventory>()) {
-        return;
-    }
-    auto& loot = containerEntity.get_mut<gameplay::Inventory>();
-    auto& bag = playerEntity.get_mut<gameplay::Inventory>();
-    auto& source = fromContainer ? loot : bag;
-    auto& target = fromContainer ? bag : loot;
-    if (gameplay::removeItem(source, id, 1)) {
-        gameplay::addItem(target, id, 1);
-    }
-}
-
-// Bundle the scene systems the Play-mode controller touches for
-// PlayerController this frame — references into the scene, the
 // encumbrance gate, and the Crime.Wanted mirror as a closure (it also
 // serves the OnPayFine handler). Rebuilt each call (cheap). Mirrors the
 // other make*Context builders.

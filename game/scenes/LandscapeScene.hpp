@@ -19,6 +19,7 @@
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/SceneEditor.hpp"
 #include "game/scenes/StreamingController.hpp"
+#include "game/scenes/UiRouter.hpp"
 #include "game/scenes/NpcDirector.hpp"
 #include "game/scenes/PlayerController.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
@@ -288,16 +289,14 @@ private:
     GameHud hud;
     HudContext makeHudContext();
 
-    // Chantier 4 B3: inventory + container/loot (SkyUI table logic in
-    // InventoryView; the same component serves the barter screen, B5).
-    ecs::Entity containerEntity {};
-    void openInventoryScreen();
-    void openContainerScreen(ecs::Entity container);
-    void handleUiEvent(const str& model, const str& event,
-                       const vector<str>& args);
-    void toggleEquip(const core::Guid& id);
-    void useConsumable(const core::Guid& id);
-    void transferItem(const core::Guid& id, bool fromContainer);
+    // Chantier 4 B3/B5/B6: the UI ACTION routing (data-event dispatch,
+    // menu actions, item screens' opening, equip/use/transfer/barter) +
+    // its shared state (open container/vendor, barter mults) live in
+    // UiRouter (audit U4-1), wired per dispatch through
+    // makeUiRouterContext(). GameHud reads the pricing state through the
+    // router's accessors; dialogue OPENING stays here (quest territory).
+    UiRouter uiRouter;
+    UiRouterContext makeUiRouterContext();
 
     // Chantier 6 A2: the quest log (scene-level, like the clock) + the
     // demo quest. Quest state mirrors into PLAYER tags (Phase-4 pattern)
@@ -320,23 +319,10 @@ private:
     gameplay::EvalContext makeEvalContext() const;
     void openDialogue(const core::Guid& dialogueId);
 
-    // Chantier 4 B5: barter. Gold is an ordinary item; prices = goldValue
-    // × the StatsTuningForm multipliers; the vendor's stock/wealth is its
-    // LoadoutEntryForm-rolled Inventory (limited — no restock yet).
-    bool barterMode { false };
+    // Chantier 4 B5: barter data (gold is an ordinary item; the routing
+    // and the vendor multipliers live in UiRouter).
     core::Rng lootRng { 0x4d7a9b30u }; // loadout rolls (§8 seeded)
     const data::MiscItemForm* goldForm { nullptr };
-    // D1: the OPEN vendor's effective multipliers (ActorForm override or
-    // the global tuning), captured by openBarterScreen.
-    f32 vendorBuyMult { 1.5f };
-    f32 vendorSellMult { 0.5f };
-    void openBarterScreen(ecs::Entity vendor);
-    void barterTrade(const core::Guid& item, bool playerBuys);
-
-    // Chantier 4 B6: menus (pause / main / wait / workstation screens
-    // share one "menu" data model — the documents differ, the actions
-    // route through handleMenuAction).
-    void handleMenuAction(const str& action);
 
     // Chantier 5 B3: the one post-spawn seam for EVERY actor (player and
     // NPC): stat init, then saved state (when this actor was captured —
