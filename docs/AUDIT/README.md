@@ -380,15 +380,23 @@ buildée + 279 tests verts) :
       RESTE C++ est grep-able via le tag **[cpp-tuning]** (banc 2D, formes
       de collision, plomberie éditeur, ratios de portée par kind) ; le
       64.0f miroité du sculpt lit désormais TerrainSystem::kChunkSize.
-      **U4-11 EN COURS, brique 1 FAITE** `fd2fa91` (approche tranchée avec
-      le dev : import CSV générique) — `cooker import-csv` : tableur →
-      plugin ORDINAIRE §5 via la réflexion ; identités de lignes
-      DÉTERMINISTES (guid `form` explicite, sinon dérivé de
+      **U4-11 FAIT en 2 briques** (approche tranchée avec le dev : import
+      CSV générique). **Brique 1** `fd2fa91` — `cooker import-csv` :
+      tableur → plugin ORDINAIRE §5 via la réflexion ; identités de
+      lignes DÉTERMINISTES (guid `form` explicite, sinon dérivé de
       (pluginId, editorId) — ré-imports byte-identiques vérifiés) ; le
       codec Value↔texte déménage vers `engine/reflect/ValueText` (partagé
-      console/grille/import). **Brique 2 à venir** : `TextForm` +
-      résolution `loc(clé)` au boot + remplacer les strings FR en dur —
-      le pipeline CSV(langue) → TOML est prêt à la porter.
+      console/grille/import). **Brique 2** `6300e32` — le seam H1 rempli :
+      `data::TextTable` (index clé→texte des LocStringForm, rebâti à
+      chaque resolve ; trou = la clé s'affiche, jamais un blanc) ; les
+      strings FR en dur (toast crime, salut PNJ, repos, les 5 libellés de
+      prompt [E]) deviennent des données — source `text-fr.csv` →
+      `text-fr.toml` (dans plugins.toml) ; un pack de langue = un plugin
+      ordinaire qui patche `text` (verrouillé par doctest fr+pack-en).
+      Textes gardés sans accents à l'identique (couverture de police non
+      vérifiée) — les accents sont désormais une édition de DONNÉES.
+      ⚠️ à vérifier en jeu : prompts [E], toast de crime, messages de
+      repos s'affichent comme avant. Suite : 326 tests verts.
     - *Features absentes reclassées* (chantiers MEADOWS-PLAN, pas des trous
       de test) : U9-6 (alias de quêtes jamais implémentés), U9-8 (pas d'API
       begin/end use mobilier — seule l'occupancy existe).
