@@ -330,11 +330,24 @@ buildée + 279 tests verts) :
       path draw), U7-7/U8-6 (scans O(n) FormQuery/quêtes) — le FrameProbe
       Release du dev n'a montré AUCUN coût CPU sim (gameUi/physics ≤ 2 ms) :
       priorité basse confirmée.
-    - *Arbitrage design* : H-c `Signal<T>` (EventBus/CueRegistry/UiModel),
-      H-d `Handle<Tag>` (7 handles RHI + nextId — touche l'API RHI publique),
-      U1-03 `core::Result` (introduire avec un premier chemin d'appel réel),
-      U1-06 (contrat de durée de vie JobCounter), U2-04 (ShaderDesc/GLSL,
-      dette Vulkan).
+    - *Arbitrages design — TRANCHÉS avec le dev (2026-07-09) :*
+      **H-c `Signal<T>` : REJETÉ** (3 sémantiques de dispatch différentes ;
+      la revue a déjà démenti 3 sur-groupements du même genre).
+      **H-d `Handle<Tag>` : DIFFÉRÉ au chantier Vulkan** (churn d'API
+      publique sans bug constaté ; l'API sera retouchée là de toute façon).
+      **U1-03 `core::Result` : FAIT** `8cb5290` — expected-like minimal
+      (API de lecture = optional, migration sans churn) introduit avec le
+      chargeur de plugins : le panneau plugins affiche POURQUOI un mod a
+      échoué, une save corrompue loggue sa raison, le cooker l'imprime.
+      3 doctests.
+      **U1-06 JobCounter : FAIT** `c26926d` — dtor asserte done(),
+      non-copyable (le contrat n'était qu'un commentaire).
+      **U2-04 ShaderDesc : DIFFÉRÉ au chantier Vulkan** — précision : les
+      55 shaders paysage vivent DÉJÀ dans des fichiers (hot-reload) ; la
+      dette est que le TYPE d'interface transporte du texte GLSL + fixups
+      par nom, inconsommable par Vulkan. Le remède = cook GLSL→SPIR-V +
+      ShaderDesc en bytecode/métadonnées, par nature le travail du
+      jour-Vulkan (déjà acté par le commentaire de Rhi.hpp:140).
     - *Scène/éditeur (avec U4-1 suite)* : U4-7 (constantes → tuning), U4-11
       (strings FR → localisation : décision d'approche), U4-12/13/14
       (cleanups scène), U5-4 (3 éditeurs dev), U5-6 (gActive), U5-8/9/10,
@@ -466,7 +479,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U5-6 |   | U5 | med | qual | game/ui/PropertyGrid.cpp:20 | `ActiveEdit gActive` = global mutable (§8) | S | non |
 | U7-3 | ✅ | U7 | med | archi | BinaryFormat.cpp:14,45 ; Reflect.hpp:39 | Stream binaire dépend de l'ordre numérique de l'enum FieldKind | S | oui |
 | U8-1 | ✅ | U8 | med | réutil | quest/Quest.cpp:15 ; Dialogue.cpp:14 | `forEachForm<T>` réimplémenté, duplique `data::forEach` | S | oui |
-| U1-03 |   | U1 | med | réutil | (core, absence) | Aucun type Result/expected (§8) ; optional+log perd la raison | M | oui |
+| U1-03 | ✅ | U1 | med | réutil | (core, absence) | Aucun type Result/expected (§8) ; optional+log perd la raison | M | oui |
 | U2-01 |   | U2 | med | qual | GlDeviceBase.cpp:134-312 | Hot path draw utilise `unordered_map::at` (exceptions + hash/draw) | M | non |
 | U2-02 |   | U2 | med | réutil | Rhi.hpp:25-31 | 7 handle structs quasi-identiques, aucun type partagé (H-d) | M | oui |
 | U3-3 | ✅ | U3 | med | archi/qual | FrameUniforms.hpp:13 vs common.glsl:3 | Struct C++ ↔ bloc GLSL synchro par commentaire seul (H static_assert) | M | oui |
@@ -522,7 +535,7 @@ déjà perdu ~1000 lignes ; se fier aux noms de symboles, pas aux numéros.
 | U9-6 |   | U9 | low | couverture | tests/QuestTest.cpp | Aucun cas d'alias quête | S | non |
 | U9-7 |   | U9 | low | couverture | game/ui/PropertyGrid.cpp | Value↔widget sans assertion propre (H-a) | S | oui |
 | U9-8 |   | U9 | low | couverture | tests/CuesSchedulesTest.cpp:175 | Usage mobilier (begin/end use) non testé | S | non |
-| U1-06 |   | U1 | low | qual | core/Jobs.hpp:14-26 | Durée de vie JobCounter comment-only ; dangling ref UB | M | non |
+| U1-06 | ✅ | U1 | low | qual | core/Jobs.hpp:14-26 | Durée de vie JobCounter comment-only ; dangling ref UB | M | non |
 | U4-13 |   | U4 | low | réutil | LandscapeScene.hpp:522,417 | Structs runtime (Npc/MeshDraw/…) dans le header de scène | M | non |
 | U7-6 | ✅ | U7 | low | qual | Resolver.cpp:78 ; Record.hpp:35 | Load order (dependencies) non validé | M | non |
 | U7-7 |   | U7 | low | reuse | data/forms/FormQuery.hpp:23,38,67 | Scans FormQuery non indexés (O(n)) | M | non |
