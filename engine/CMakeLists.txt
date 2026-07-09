@@ -19,6 +19,7 @@ add_library(meadows STATIC
     core/Jobs.cpp
     core/Log.cpp
     reflect/Registry.cpp
+    reflect/ValueText.cpp
     platform/common/Input.cpp
     platform/common/Paths.cpp
     platform/common/Window.cpp

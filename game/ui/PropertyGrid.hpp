@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data/plugins/EditSession.hpp"
+#include "engine/reflect/ValueText.hpp"
 
 namespace game {
 
@@ -14,9 +15,9 @@ namespace game {
 // Returns true when a field was committed this frame.
 bool drawPropertyGrid(data::EditSession& session, const core::Guid& id);
 
-// Value <-> display helpers shared with the console.
-str valueToString(const reflect::Value& value);
-std::optional<reflect::Value> valueFromString(reflect::FieldKind kind,
-                                              const str& text);
+// The Value <-> text codec moved to engine/reflect/ValueText (U4-11: the
+// CSV importer shares it); these usings keep the console/grid call sites.
+using reflect::valueFromString;
+using reflect::valueToString;
 
 } // namespace game

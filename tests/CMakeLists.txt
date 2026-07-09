@@ -17,6 +17,7 @@
     ConcurrentQueueTest.cpp
     ConditionTest.cpp
     CookerTest.cpp
+    CsvImportTest.cpp
     CuesSchedulesTest.cpp
     DeathPersistenceTest.cpp
     DerivedStatsTest.cpp

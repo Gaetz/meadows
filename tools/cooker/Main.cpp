@@ -1,8 +1,10 @@
 // cooker — text <-> binary plugin tool (§3 on-disk formats).
 //
-//   cooker cook   <in.toml> <out.bin>    text  -> cooked binary
-//   cooker uncook <in.bin>  <out.toml>   cooked binary -> text
-//   cooker new-guid [count]              mint authoring guids
+//   cooker cook       <in.toml> <out.bin>   text  -> cooked binary
+//   cooker uncook     <in.bin>  <out.toml>  cooked binary -> text
+//   cooker new-guid   [count]               mint authoring guids
+//   cooker import-csv <in.csv> <out.toml> <FormType> [pluginGuid]
+//                     spreadsheet -> ordinary plugin (U4-11)
 
 #include <algorithm>
 #include <cmath>
@@ -13,6 +15,7 @@
 #include <string_view>
 
 #include "data/plugins/BinaryFormat.hpp"
+#include "data/plugins/CsvImport.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/core/Log.hpp"
@@ -32,7 +35,12 @@ int usage() {
         "<out.ter>\n"
         "     flattens the rect [x0..x1]x[z0..z1] of terrain chunk "
         "(cx,cz)\n"
-        "     to <height> m (3 m smooth blend ring), demo seed/params\n");
+        "     to <height> m (3 m smooth blend ring), demo seed/params\n"
+        "  cooker import-csv <in.csv> <out.toml> <FormType> [pluginGuid]\n"
+        "     header row = reflected field names; row identity = the\n"
+        "     'form' guid column, else derived from (pluginGuid,\n"
+        "     editorId) — pass the SAME pluginGuid on re-imports (without\n"
+        "     one it derives from <out.toml>'s filename)\n");
     return 2;
 }
 
@@ -121,6 +129,61 @@ int cook(const char* inPath, const char* outPath,
     return 0;
 }
 
+// U4-11: spreadsheet -> ordinary plugin. The default plugin guid derives
+// from the output FILENAME so re-running the same import command yields
+// the same row identities; an explicit guid overrides (recommended once
+// the plugin ships — renaming the file then can't shift identities).
+int importCsv(const char* inPath, const char* outPath, const char* typeName,
+              const char* pluginGuidText,
+              const data::FormTypeRegistry& types) {
+    const reflect::TypeInfo* type = types.findType(typeName);
+    if (!type) {
+        LOG_ERROR("import-csv: unknown form type '{}'", typeName);
+        return 1;
+    }
+    core::Guid pluginId;
+    if (pluginGuidText != nullptr) {
+        const auto parsed = core::Guid::fromString(pluginGuidText);
+        if (!parsed) {
+            LOG_ERROR("import-csv: malformed plugin guid '{}'",
+                      pluginGuidText);
+            return 1;
+        }
+        pluginId = *parsed;
+    } else {
+        const str stem = std::filesystem::path { outPath }.stem().string();
+        pluginId = data::csvRowGuid(core::Guid { 0x6d656164u, 0x6f777321u },
+                                    "csv-plugin:" + stem);
+        LOG_INFO("import-csv: plugin guid {} (derived from '{}' — pass it "
+                 "explicitly to survive a rename)",
+                 pluginId.toString(), stem);
+    }
+    std::ifstream file { inPath, std::ios::binary };
+    if (!file) {
+        LOG_ERROR("Cannot read {}", inPath);
+        return 1;
+    }
+    std::ostringstream content;
+    content << file.rdbuf();
+    const auto plugin =
+        data::importCsv(content.str(), *type, pluginId,
+                        std::filesystem::path { inPath }.filename().string());
+    if (!plugin) {
+        LOG_ERROR("import-csv failed: {}", plugin.error());
+        return 1;
+    }
+    const str toml = data::writePluginToml(*plugin, types);
+    std::ofstream out { outPath, std::ios::trunc };
+    out << toml;
+    if (!out) {
+        LOG_ERROR("Cannot write {}", outPath);
+        return 1;
+    }
+    LOG_INFO("Imported {} -> {} ({} records of {})", inPath, outPath,
+             plugin->records.size(), typeName);
+    return 0;
+}
+
 int uncook(const char* inPath, const char* outPath,
            const data::FormTypeRegistry& types) {
     const auto bytes = readFileBytes(inPath);
@@ -186,6 +249,10 @@ int main(int argc, char** argv) {
     }
     if (command == "uncook" && argc == 4) {
         return uncook(argv[2], argv[3], types);
+    }
+    if (command == "import-csv" && (argc == 5 || argc == 6)) {
+        return importCsv(argv[2], argv[3], argv[4],
+                         argc == 6 ? argv[5] : nullptr, types);
     }
     if (command == "terrain-pad" && argc == 10) {
         return terrainPad(argv);

@@ -13,6 +13,7 @@ add_library(meadows-data STATIC
     plugins/BinaryFormat.cpp
     plugins/EditSession.cpp
     plugins/PluginConfig.cpp
+    plugins/CsvImport.cpp
     plugins/PluginLoader.cpp
     plugins/RecordDiff.cpp
     plugins/Resolver.cpp
