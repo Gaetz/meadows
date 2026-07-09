@@ -210,8 +210,8 @@ buildée + 279 tests verts) :
       tgm actif en combat (invulnérabilité), Escape après fermeture en Play.
   - **Le final U4-2 + U4-4 + U4-6 — FAIT en 5 briques (2026-07-09, session
     autonome à la demande du dev) — build vert + 309 tests verts à chaque
-    brique, un commit/brique révocable individuellement. ⚠️ TOUT LE LOT EST
-    À VALIDER EN JEU (liste de tests remise au dev en fin de session) :**
+    brique, un commit/brique révocable individuellement. ✅ VALIDÉ EN JEU
+    par le dev (2026-07-09 : « pas de bug graphique ») :**
     - **R1 — `composeFrameUniforms` (U4-6a)** `b627161` : l'assemblage
       FrameUniforms (~110 l. : base + override intérieur + grade +
       submersion + terrain-light + grass-bend + storm/rain + auto-expo)
