@@ -38,8 +38,15 @@ public:
     bool setField(const core::Guid& id, u32 fieldId,
                   const reflect::Value& value);
 
-    // A brand-new form (guid minted here — authoring-time act).
-    core::Guid createForm(u32 typeId, const str& editorId);
+    // A brand-new form (guid minted here — authoring-time act). A valid
+    // `imposedId` skips the mint: DERIVED identities (implicit cells,
+    // §2.5 — cellGuidFor) must create under their deterministic guid so
+    // every session/mod talks about the same record. Refused ({}) when a
+    // draft already holds that guid; SHADOWING a base-visible form is
+    // allowed — a live-materialized cell sits in the resolved database
+    // but not in any plugin, and the export must still CREATE it.
+    core::Guid createForm(u32 typeId, const str& editorId,
+                          const core::Guid& imposedId = {});
 
     // A copy of an existing form (base or draft) under a new guid — the
     // GameDB "duplicate" tool (chantier 8.1). Every reflected field is

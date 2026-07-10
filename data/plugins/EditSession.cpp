@@ -77,12 +77,17 @@ bool EditSession::setField(const core::Guid& id, u32 fieldId,
     return true;
 }
 
-core::Guid EditSession::createForm(u32 typeId, const str& editorId) {
+core::Guid EditSession::createForm(u32 typeId, const str& editorId,
+                                   const core::Guid& imposedId) {
+    if (imposedId.isValid() && drafts.contains(imposedId)) {
+        return {}; // a draft already owns this identity
+    }
     uptr<Form> form = types.instantiate(typeId);
     if (!form) {
         return {};
     }
-    const core::Guid id = core::Guid::generate();
+    const core::Guid id =
+        imposedId.isValid() ? imposedId : core::Guid::generate();
     form->id = id;
     form->editorId = editorId;
     drafts.emplace(id, Draft { std::move(form), types.findType(typeId),

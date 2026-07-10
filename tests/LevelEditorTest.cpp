@@ -7,6 +7,7 @@
 #include "data/plugins/Resolver.hpp"
 #include "game/LevelEditor.hpp"
 #include "world/worldspace/WorldForms.hpp"
+#include "world/worldspace/WorldModel.hpp"
 
 // Chantier 2 B3/B4: the level editor edits RECORDS through an EditSession
 // (§5 — the editor is just another plugin author). Headless: move a
@@ -57,6 +58,41 @@ const core::Guid kRefA =
     *core::Guid::fromString("90000000-0000-4000-8000-000000000002");
 const core::Guid kRefB =
     *core::Guid::fromString("90000000-0000-4000-8000-000000000003");
+const core::Guid kRock =
+    *core::Guid::fromString("90000000-0000-4000-8000-000000000001");
+
+// Chantier IMPLICIT-CELLS, brick 2 — a worldspace and ONE authored cell;
+// every other square of the grid is implicit.
+constexpr const char* kWorldExt = R"toml(
+[plugin]
+id = "88888888-8888-4888-8888-888888888888"
+name = "world-ext"
+
+[[records]]
+form = "80000000-0000-4000-8000-000000000001"
+type = "WorldspaceForm"
+new = true
+[records.fields]
+editorId = "Overworld"
+cellSize = 16.0
+
+[[records]]
+form = "80000000-0000-4000-8000-00000000000a"
+type = "CellForm"
+new = true
+[records.fields]
+editorId = "Authored"
+worldspace = "80000000-0000-4000-8000-000000000001"
+gridX = 0
+gridY = 0
+)toml";
+
+const core::Guid kWorld =
+    *core::Guid::fromString("80000000-0000-4000-8000-000000000001");
+const core::Guid kAuthoredCell =
+    *core::Guid::fromString("80000000-0000-4000-8000-00000000000a");
+const core::Guid kModId =
+    *core::Guid::fromString("aaaaaaaa-0000-4000-8000-0000000000ed");
 
 } // namespace
 
@@ -121,4 +157,138 @@ TEST_CASE("editor: create prefab from selection replaces the originals") {
             }
         });
     CHECK(templates == 2);
+}
+
+// --- Chantier IMPLICIT-CELLS, brick 2: the editor places anywhere ---------
+
+TEST_CASE("editor: placing in a virgin square ships the implicit cell") {
+    const data::FormTypeRegistry types = makeTypes();
+    const auto base = data::parsePluginToml(kBase, types, "base");
+    const auto ext = data::parsePluginToml(kWorldExt, types, "ext");
+    REQUIRE(base.has_value());
+    REQUIRE(ext.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*base, &*ext }, types, db);
+    world::WorldModel model = world::WorldModel::build(db);
+    const data::FormHandle ws = db.handleOf(kWorld);
+    REQUIRE(ws.isValid());
+
+    game::LevelEditor editor { db, types };
+    const core::Guid cell = editor.ensureCell(model, db, ws, 5, -3);
+    REQUIRE(cell.isValid());
+    CHECK(cell == world::cellGuidFor(kWorld, 5, -3)); // derived identity
+
+    // Live: index + database resolve it, and the session recorded it.
+    CHECK(model.cellAt(ws, 5, -3).isValid());
+    CHECK(db.find(cell) != nullptr);
+    CHECK(editor.editSession().isCreated(cell));
+
+    // Idempotent: same guid, still ONE session record.
+    CHECK(editor.ensureCell(model, db, ws, 5, -3) == cell);
+    const u32 dirtyAfterOne = editor.editSession().dirtyCount();
+
+    // Place a reference into it, export, re-resolve: the mod SHIPS the
+    // cell, and the reference lands in it on the next run.
+    const core::Guid placed =
+        editor.placeReference(kRock, cell, { 81.0f, 0.0f, -47.0f });
+    REQUIRE(placed.isValid());
+    CHECK(editor.editSession().dirtyCount() == dirtyAfterOne + 1);
+
+    const data::Plugin mod =
+        editor.editSession().exportPlugin(kModId, "edits");
+    data::FormDatabase resolved;
+    data::resolve({ &*base, &*ext, &mod }, types, resolved);
+    world::WorldModel fresh = world::WorldModel::build(resolved);
+    const data::FormHandle reloaded =
+        fresh.cellAt(resolved.handleOf(kWorld), 5, -3);
+    REQUIRE(reloaded.isValid());
+    CHECK(resolved.get(reloaded)->id == cell); // same identity across runs
+    const auto* cellForm =
+        static_cast<const world::CellForm*>(resolved.get(reloaded));
+    CHECK(cellForm->worldspace == kWorld);
+    CHECK(cellForm->gridX == 5);
+    CHECK(cellForm->gridY == -3);
+    REQUIRE(fresh.referencesIn(reloaded).size() == 1);
+    CHECK(resolved.get(fresh.referencesIn(reloaded)[0])->id == placed);
+
+    // Brick 3 core: a NEW session over the reloaded database sees the
+    // square as AUTHORED — same guid back, zero records, no duplicate.
+    game::LevelEditor second { resolved, types };
+    CHECK(second.ensureCell(fresh, resolved, resolved.handleOf(kWorld), 5,
+                            -3) == cell);
+    CHECK(second.editSession().dirtyCount() == 0);
+}
+
+TEST_CASE("editor: ensureCell honours an authored cell's hand-minted guid") {
+    const data::FormTypeRegistry types = makeTypes();
+    const auto base = data::parsePluginToml(kBase, types, "base");
+    const auto ext = data::parsePluginToml(kWorldExt, types, "ext");
+    REQUIRE(base.has_value());
+    REQUIRE(ext.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*base, &*ext }, types, db);
+    world::WorldModel model = world::WorldModel::build(db);
+    const data::FormHandle ws = db.handleOf(kWorld);
+
+    game::LevelEditor editor { db, types };
+    const core::Guid cell = editor.ensureCell(model, db, ws, 0, 0);
+    CHECK(cell == kAuthoredCell); // NOT the derived guid
+    CHECK(cell != world::cellGuidFor(kWorld, 0, 0));
+    CHECK(editor.editSession().dirtyCount() == 0); // nothing to ship
+
+    // A non-worldspace handle refuses.
+    CHECK_FALSE(
+        editor.ensureCell(model, db, db.handleOf(kRock), 1, 1).isValid());
+}
+
+TEST_CASE("editor: an undone cell record re-records on the next placement") {
+    const data::FormTypeRegistry types = makeTypes();
+    const auto base = data::parsePluginToml(kBase, types, "base");
+    const auto ext = data::parsePluginToml(kWorldExt, types, "ext");
+    REQUIRE(base.has_value());
+    REQUIRE(ext.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*base, &*ext }, types, db);
+    world::WorldModel model = world::WorldModel::build(db);
+    const data::FormHandle ws = db.handleOf(kWorld);
+
+    game::LevelEditor editor { db, types };
+    core::Guid cell {};
+    {
+        data::EditSession::Gesture gesture { editor.editSession() };
+        cell = editor.ensureCell(model, db, ws, 5, -3);
+    }
+    REQUIRE(editor.editSession().isCreated(cell));
+
+    // Undo drops the record; the LIVE form cannot be unmade (harmless).
+    editor.editSession().undo();
+    CHECK_FALSE(editor.editSession().isDirty(cell));
+    CHECK(model.cellAt(ws, 5, -3).isValid());
+
+    // Re-placement: the database now "has" the cell, but the session must
+    // re-record it or the export would ship a dangling reference.
+    CHECK(editor.ensureCell(model, db, ws, 5, -3) == cell);
+    CHECK(editor.editSession().isCreated(cell));
+}
+
+TEST_CASE("edit session: createForm under an imposed guid") {
+    const data::FormTypeRegistry types = makeTypes();
+    const auto base = data::parsePluginToml(kBase, types, "base");
+    REQUIRE(base.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*base }, types, db);
+    data::EditSession session { db, types };
+
+    const core::Guid imposed =
+        *core::Guid::fromString("77777777-7777-4777-8777-777777777777");
+    const u32 typeId = world::CellForm::staticTypeInfo().id;
+    CHECK(session.createForm(typeId, "cell", imposed) == imposed);
+    // A second create under the same identity refuses.
+    CHECK_FALSE(session.createForm(typeId, "again", imposed).isValid());
+    // Undo drops the draft; redo restores the SAME identity.
+    session.undo();
+    CHECK(session.view(imposed) == nullptr);
+    session.redo();
+    REQUIRE(session.view(imposed) != nullptr);
+    CHECK(session.view(imposed)->id == imposed);
 }

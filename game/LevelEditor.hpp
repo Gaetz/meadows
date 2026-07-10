@@ -1,9 +1,14 @@
 #pragma once
 
 #include <filesystem>
+#include <unordered_set>
 
 #include "data/plugins/EditSession.hpp"
 #include "engine/core/Defines.hpp"
+
+namespace world {
+class WorldModel;
+}
 
 // The level editor's OPERATIONS (chantier 2 B3/B4) — pure record edits
 // through an EditSession (§5: the editor is just another plugin author),
@@ -38,6 +43,19 @@ public:
     core::Guid placeReference(const core::Guid& baseForm,
                               const core::Guid& cell, const Vec3& position);
 
+    // Implicit cells (IMPLICIT-CELLS brick 2): "place anywhere". Ensures
+    // grid square (gx, gy) of `worldspace` exists BOTH live
+    // (WorldModel::materializeCell — the streamer starts resolving it)
+    // and in the EditSession (a created CellForm under the deterministic
+    // guid, §2.5 — the export must SHIP the cell its references point
+    // to, since the live form exists only in this session's memory).
+    // Authored cells pass through untouched; re-records after an undo
+    // dropped the draft. `db` is the SAME database the session reads —
+    // mutable here because materialization is a live act. Returns the
+    // cell guid (invalid when `worldspace` is not one).
+    core::Guid ensureCell(world::WorldModel& model, data::FormDatabase& db,
+                          data::FormHandle worldspace, i32 gx, i32 gy);
+
     // Disable (works for base AND session-created references; exports as
     // an enabled=false patch either way).
     bool disableReference(const core::Guid& reference);
@@ -66,6 +84,10 @@ private:
     core::Guid selectedRef {};
     vector<core::Guid> group;
     vector<data::AssetEntry> exportAssets;
+    // Cells ensureCell materialized THIS session: once live, the database
+    // can no longer tell them from authored cells, and the session record
+    // may be undone away — this set is what keeps re-placement re-recording.
+    std::unordered_set<core::Guid> materializedCells;
 };
 
 } // namespace game

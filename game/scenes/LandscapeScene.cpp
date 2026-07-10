@@ -795,8 +795,8 @@ EditorContext LandscapeScene::makeEditorContext() {
     return EditorContext {
         flyCamera,       world,           *meshCache,      interiorMode,
         renderer.terrainParams(),  forms,           *levelEditor,    activeWorldspace,
-        worldModel,      categories,      *cellLoader,     spawner,
-        makeSculptContext(),
+        worldModel,      categories,      *cellLoader,     *cellStreamer,
+        spawner,         makeSculptContext(),
     };
 }
 

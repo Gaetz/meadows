@@ -18,6 +18,7 @@
 #include "world/scene/Components.hpp"        // Transform, MeshRender, RefId
 #include "world/scene/Spawner.hpp"           // Spawner, SpawnContext
 #include "world/streaming/CellLoader.hpp"    // CellLoader
+#include "world/streaming/CellStreamer.hpp"  // CellStreamer (adopt)
 #include "world/worldspace/FormCategory.hpp" // FormCategoryRegistry
 #include "world/worldspace/WorldForms.hpp"   // WorldspaceForm, ReferenceForm, PrefabForm
 #include "world/worldspace/WorldModel.hpp"   // WorldModel
@@ -228,7 +229,15 @@ void SceneEditor::draw(const EditorContext& ctx) {
         if (placementBase.isValid()) {
             Vec3 ground;
             if (groundUnderMouse(ctx, mouse, ground)) {
-                // The authored cell under the hit (placement needs one).
+                // The cell under the hit — implicit cells (IMPLICIT-CELLS
+                // brick 2): no more "authored cell or abort". A virgin
+                // square is materialized live + recorded in the session
+                // (ensureCell), then adopted by the streamer so it is
+                // loaded exactly once. One gesture: Ctrl+Z removes the
+                // cell record AND the reference together.
+                data::EditSession::Gesture gesture {
+                    ctx.levelEditor.editSession()
+                };
                 core::Guid cellGuid {};
                 if (const auto* space =
                         static_cast<const world::WorldspaceForm*>(
@@ -237,16 +246,16 @@ void SceneEditor::draw(const EditorContext& ctx) {
                         std::floor(ground.x / space->cellSize));
                     const i32 gy = static_cast<i32>(
                         std::floor(ground.z / space->cellSize));
-                    const data::FormHandle cell =
-                        ctx.worldModel.cellAt(ctx.activeWorldspace, gx, gy);
-                    if (const data::Form* form = ctx.forms.get(cell)) {
-                        cellGuid = form->id;
-                    }
+                    cellGuid = ctx.levelEditor.ensureCell(
+                        ctx.worldModel, ctx.forms, ctx.activeWorldspace,
+                        gx, gy);
                 }
                 if (!cellGuid.isValid()) {
-                    LOG_WARN("Editor: no authored cell here — placement "
-                             "aborted");
+                    LOG_WARN("Editor: no worldspace under the hit — "
+                             "placement aborted");
                 } else {
+                    // Load the (possibly fresh) cell before spawning into it.
+                    ctx.streamer.adopt(ctx.forms.handleOf(cellGuid));
                     // Authored y follows the base's convention: snapping
                     // bases store an offset (0 = on the ground), pad-based
                     // ones (snapToGround = false) store the ABSOLUTE hit.

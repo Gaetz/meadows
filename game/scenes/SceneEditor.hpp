@@ -17,6 +17,7 @@ namespace world {
 class WorldModel;
 class Spawner;
 class CellLoader;
+class CellStreamer;
 class FormCategoryRegistry;
 }
 
@@ -39,9 +40,10 @@ struct EditorContext {
     data::FormDatabase& forms;               // palette, cell + base lookups
     LevelEditor& levelEditor;                // every edit op (EditSession)
     data::FormHandle activeWorldspace;       // cell resolution for placement
-    world::WorldModel& worldModel;           // cellAt
+    world::WorldModel& worldModel;           // cellAt / materializeCell
     world::FormCategoryRegistry& categories; // SpawnContext
     world::CellLoader& cellLoader;           // cellEntity for live placement
+    world::CellStreamer& streamer;           // adopt() — implicit-cell load
     world::Spawner& spawner;                 // live spawn of placed drafts
     SculptContext sculpt;                    // the terrain-sculpt sub-contract
 };

@@ -36,6 +36,13 @@ public:
     bool update(data::FormHandle worldspace, f32 focusX, f32 focusZ,
                 i32 loadRadius = 2, i32 unloadRadius = 3, u32 maxLoads = 0);
 
+    // Editor "load this cell NOW" (IMPLICIT-CELLS brick 2): loads `cell`
+    // through the loader and marks it resident, so the next ring update
+    // never double-loads it. From then on it is an ordinary resident —
+    // hysteresis evicts it when the focus moves away. No-op when already
+    // resident or the handle is invalid.
+    void adopt(data::FormHandle cell);
+
     // Unloads everything this streamer loaded (worldspace transitions).
     void unloadAll();
 

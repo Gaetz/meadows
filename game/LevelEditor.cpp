@@ -5,6 +5,7 @@
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/core/Log.hpp"
 #include "world/worldspace/WorldForms.hpp"
+#include "world/worldspace/WorldModel.hpp"
 
 namespace game {
 
@@ -49,6 +50,56 @@ core::Guid LevelEditor::placeReference(const core::Guid& baseForm,
     session.setField(id, fieldId(type, "position"),
                      reflect::Value { position });
     return id;
+}
+
+core::Guid LevelEditor::ensureCell(world::WorldModel& model,
+                                   data::FormDatabase& db,
+                                   data::FormHandle worldspace, i32 gx,
+                                   i32 gy) {
+    const auto* space =
+        static_cast<const world::WorldspaceForm*>(db.get(worldspace));
+    const reflect::TypeInfo* spaceType = db.typeOf(worldspace);
+    if (!space || !spaceType ||
+        !spaceType->isA(world::WorldspaceForm::staticTypeInfo().id)) {
+        return {};
+    }
+    const core::Guid guid = world::cellGuidFor(space->id, gx, gy);
+    // Authored = the index resolves it AND this session never minted it
+    // (once materialized live, the database alone can't tell the two
+    // apart). An authored cell's guid may be hand-minted, older than the
+    // derived-identity scheme: honour the form's ACTUAL id.
+    if (const data::FormHandle existing = model.cellAt(worldspace, gx, gy);
+        existing.isValid() && !materializedCells.contains(guid)) {
+        const data::Form* form = db.get(existing);
+        return form ? form->id : core::Guid {};
+    }
+    if (!model.materializeCell(db, worldspace, gx, gy).isValid()) {
+        return {};
+    }
+    materializedCells.insert(guid);
+    // Record half — skipped while a draft is alive (isDirty covers both a
+    // created draft and the obscure edge of a field edit shadowing the
+    // live form); re-recorded when an undo dropped it and placement resumes.
+    if (!session.isDirty(guid)) {
+        const reflect::TypeInfo& type = world::CellForm::staticTypeInfo();
+        const core::Guid recorded = session.createForm(
+            type.id,
+            "cell_" + std::to_string(gx) + "_" + std::to_string(gy), guid);
+        if (!recorded.isValid()) {
+            LOG_ERROR("LevelEditor: cannot record implicit cell ({}, {})",
+                      gx, gy);
+            return {};
+        }
+        session.setField(guid, fieldId(type, "worldspace"),
+                         reflect::Value { space->id });
+        session.setField(guid, fieldId(type, "gridX"), reflect::Value { gx });
+        session.setField(guid, fieldId(type, "gridY"), reflect::Value { gy });
+        if (space->interior) {
+            session.setField(guid, fieldId(type, "interior"),
+                             reflect::Value { true });
+        }
+    }
+    return guid;
 }
 
 bool LevelEditor::disableReference(const core::Guid& reference) {

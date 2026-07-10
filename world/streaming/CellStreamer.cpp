@@ -77,6 +77,14 @@ bool CellStreamer::update(data::FormHandle worldspace, f32 focusX,
     return changed;
 }
 
+void CellStreamer::adopt(data::FormHandle cell) {
+    if (!cell.isValid() || resident.contains(cell.value)) {
+        return;
+    }
+    loader.loadCell(cell);
+    resident.insert(cell.value);
+}
+
 void CellStreamer::unloadAll() {
     for (const u32 value : resident) {
         loader.unloadCell(data::FormHandle { value });
