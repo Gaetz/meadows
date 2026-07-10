@@ -44,6 +44,14 @@ struct CellForm : data::Form {
     REFLECT_END()
 };
 
+// Implicit cells (chantier IMPLICIT-CELLS, brick 1): the DETERMINISTIC
+// identity of grid square (gx, gy) in a worldspace — derived, never
+// minted (§2.5). Every session, save and mod that touches the same
+// square talks about the same cell, whatever the load order. Editors
+// materialize a CellForm under this guid on first placement; a plugin
+// that ships the same square patches it (§5) instead of duplicating.
+core::Guid cellGuidFor(const core::Guid& worldspace, i32 gx, i32 gy);
+
 // A placed instance of a base Form (the `baseForm` it instantiates), carrying
 // instance-level overrides. Transform is 3D-ready (§2.6): the 2D phase projects
 // it. `cell` is the owning cell; patching it moves the reference, patching

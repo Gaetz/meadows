@@ -23,6 +23,19 @@ public:
     // none exists.
     data::FormHandle cellAt(data::FormHandle worldspace, i32 x, i32 y) const;
 
+    // Implicit cells (chantier IMPLICIT-CELLS, brick 1): materializes the
+    // (gx, gy) square of `worldspace`. Idempotent — returns the existing
+    // handle when the square already has a CellForm (authored or
+    // previously materialized); otherwise creates one LIVE in `forms`
+    // under its deterministic guid (cellGuidFor, §2.5) and indexes it
+    // here. Interior flag inherited from the worldspace; the streamer
+    // needs no change (cellAt simply starts resolving). Worldspace-
+    // agnostic: exteriors get "edit anywhere", interiors can grow beyond
+    // their authored rooms. Invalid handle if `worldspace` is not one.
+    data::FormHandle materializeCell(data::FormDatabase& forms,
+                                     data::FormHandle worldspace, i32 gx,
+                                     i32 gy);
+
     // References placed in a cell, in deterministic (handle) order. Includes
     // disabled references (ReferenceForm.enabled == false): filtering is the
     // loader's call. Empty list for an unknown or childless cell.

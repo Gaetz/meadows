@@ -193,3 +193,81 @@ TEST_CASE("form category: core base forms map to their category") {
     CHECK_FALSE(
         categories.categoryOf(world::CellForm::staticTypeInfo().id).has_value());
 }
+
+// Chantier IMPLICIT-CELLS, brick 1 — exterior cells become an infinite
+// implicit grid: deterministic identity + lazy materialization.
+TEST_CASE("cellGuidFor is deterministic and collision-shaped") {
+    const Guid a = world::cellGuidFor(kWorldspace, 7, -3);
+    CHECK(a == world::cellGuidFor(kWorldspace, 7, -3)); // stable
+    CHECK(a != world::cellGuidFor(kWorldspace, -3, 7)); // coords ordered
+    CHECK(a != world::cellGuidFor(kWorldspace, 7, -2));
+    const Guid otherSpace =
+        *Guid::fromString("10000000-0000-4000-8000-000000000002");
+    CHECK(a != world::cellGuidFor(otherSpace, 7, -3)); // per worldspace
+    CHECK(a.isValid());
+}
+
+TEST_CASE("materializeCell: idempotent, indexed, worldspace-inherited") {
+    const data::FormTypeRegistry types = makeTypes();
+    const data::Plugin base = parse(types, kBase, "base-world");
+    data::FormDatabase forms;
+    data::resolve({ &base }, types, forms);
+    world::WorldModel model = world::WorldModel::build(forms);
+    const data::FormHandle worldspace = forms.handleOf(kWorldspace);
+    REQUIRE(worldspace.isValid());
+
+    // A wild square has no cell...
+    CHECK_FALSE(model.cellAt(worldspace, 12, -7).isValid());
+    const u32 cellsBefore = static_cast<u32>(model.cells().size());
+
+    // ...materializing creates it LIVE under the deterministic guid.
+    const data::FormHandle cell =
+        model.materializeCell(forms, worldspace, 12, -7);
+    REQUIRE(cell.isValid());
+    const auto* form = static_cast<const world::CellForm*>(forms.get(cell));
+    REQUIRE(form != nullptr);
+    CHECK(form->id == world::cellGuidFor(kWorldspace, 12, -7));
+    CHECK(form->worldspace == kWorldspace);
+    CHECK(form->gridX == 12);
+    CHECK(form->gridY == -7);
+    CHECK_FALSE(form->interior); // inherited from the exterior worldspace
+
+    // The index answers now; the streamer would pick it up untouched.
+    CHECK(model.cellAt(worldspace, 12, -7).value == cell.value);
+    CHECK(model.worldspaceOf(cell).value == worldspace.value);
+    CHECK(model.cells().size() == cellsBefore + 1);
+
+    // Idempotent: the same square returns the SAME handle, no duplicate.
+    CHECK(model.materializeCell(forms, worldspace, 12, -7).value ==
+          cell.value);
+    CHECK(model.cells().size() == cellsBefore + 1);
+
+    // An AUTHORED square materializes to its existing cell.
+    const data::FormHandle authored =
+        model.materializeCell(forms, worldspace, 0, 0);
+    CHECK(authored.value == forms.handleOf(kCellA).value);
+
+    // A non-worldspace handle refuses.
+    CHECK_FALSE(
+        model.materializeCell(forms, forms.handleOf(kSword), 1, 1)
+            .isValid());
+
+    // Untouched wild squares stay virtual (zero cost).
+    CHECK_FALSE(model.cellAt(worldspace, 99, 99).isValid());
+}
+
+TEST_CASE("materializeCell inherits the interior flag") {
+    const data::FormTypeRegistry types = makeTypes();
+    data::FormDatabase forms;
+    auto space = std::make_unique<world::WorldspaceForm>();
+    space->id = *Guid::fromString("10000000-0000-4000-8000-00000000000e");
+    space->cellSize = 64.0f;
+    space->interior = true;
+    const data::FormHandle handle = forms.add(
+        std::move(space), world::WorldspaceForm::staticTypeInfo());
+
+    world::WorldModel model = world::WorldModel::build(forms);
+    const data::FormHandle cell = model.materializeCell(forms, handle, 1, 0);
+    REQUIRE(cell.isValid());
+    CHECK(static_cast<const world::CellForm*>(forms.get(cell))->interior);
+}

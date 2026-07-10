@@ -59,6 +59,49 @@ data::FormHandle WorldModel::cellAt(data::FormHandle worldspace, i32 x,
     return it != cellByCoords.end() ? it->second : data::FormHandle {};
 }
 
+data::FormHandle WorldModel::materializeCell(data::FormDatabase& forms,
+                                             data::FormHandle worldspace,
+                                             i32 gx, i32 gy) {
+    // Already authored/materialized: the index answers.
+    if (const data::FormHandle existing = cellAt(worldspace, gx, gy);
+        existing.isValid()) {
+        return existing;
+    }
+    const auto* space =
+        static_cast<const WorldspaceForm*>(forms.get(worldspace));
+    const reflect::TypeInfo* spaceType = forms.typeOf(worldspace);
+    if (!space || !spaceType ||
+        !spaceType->isA(WorldspaceForm::staticTypeInfo().id)) {
+        return {};
+    }
+    // A plugin may carry this square under its deterministic guid while
+    // the index was built before (paranoia: build() would have indexed
+    // it) — handleOf keeps materialize idempotent across that edge too.
+    const core::Guid guid = cellGuidFor(space->id, gx, gy);
+    if (const data::FormHandle resolved = forms.handleOf(guid);
+        resolved.isValid()) {
+        cellByCoords.emplace(std::make_tuple(worldspace.value, gx, gy),
+                             resolved);
+        worldspaceByCell.emplace(resolved.value, worldspace);
+        return resolved;
+    }
+
+    auto cell = std::make_unique<CellForm>();
+    cell->id = guid;
+    cell->editorId = "cell_" + std::to_string(gx) + "_" +
+                     std::to_string(gy); // authoring aid, not identity
+    cell->worldspace = space->id;
+    cell->gridX = gx;
+    cell->gridY = gy;
+    cell->interior = space->interior;
+    const data::FormHandle handle =
+        forms.add(std::move(cell), CellForm::staticTypeInfo());
+    allCells.push_back(handle);
+    cellByCoords.emplace(std::make_tuple(worldspace.value, gx, gy), handle);
+    worldspaceByCell.emplace(handle.value, worldspace);
+    return handle;
+}
+
 const vector<data::FormHandle>& WorldModel::referencesIn(
     data::FormHandle cell) const {
     static const vector<data::FormHandle> kEmpty;
