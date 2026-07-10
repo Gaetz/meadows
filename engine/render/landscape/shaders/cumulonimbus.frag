@@ -28,7 +28,7 @@ float vnoise(vec2 p) {
 float fbm(vec2 p) {
     float v = 0.0;
     float a = 0.5;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) { // 5th octave: billow detail (dev ask)
         v += vnoise(p) * a;
         p = p * 2.13 + vec2(17.3, 9.1);
         a *= 0.5;
@@ -43,12 +43,20 @@ void main() {
     }
     vec2 p = vec2(vUv.x * 2.2, vUv.y * 2.6) + vSeed * 37.0;
     // A tower: wide anvil base narrowing irregularly with height, eroded
-    // by FBM; drift very slowly with the wind time.
+    // by FBM; drift very slowly with the wind time. Domain warp (dev ask
+    // 2026-07-10): cauliflower billows instead of soft blobs.
     float drift = uWindInfo.x * 0.004;
-    float body = fbm(p + vec2(drift, 0.0));
+    vec2 warp = vec2(fbm(p * 1.7 + vec2(5.2, 1.3)),
+                     fbm(p * 1.7 + vec2(9.7, 3.1)));
+    float body = fbm(p + vec2(drift, 0.0) + (warp - 0.5) * 0.9);
     float taper = 1.0 - vUv.y * (0.55 + 0.30 * vnoise(p * 0.7));
     float mask = body * taper - abs(vUv.x) * (0.55 - 0.25 * body);
-    float alpha = smoothstep(0.18, 0.34, mask) * storm;
+    // Rounded base (dev ask): the cloud floor is an ARC — low at the
+    // center, lifting toward the sides — with a billowed edge, so the
+    // quad's straight bottom never shows against the horizon.
+    float baseLine = 0.04 + 0.22 * vUv.x * vUv.x + 0.06 * vnoise(p * 3.1);
+    float baseFade = smoothstep(baseLine, baseLine + 0.12, vUv.y);
+    float alpha = smoothstep(0.18, 0.30, mask) * storm * baseFade;
     if (alpha <= 0.004) {
         discard;
     }
