@@ -8,6 +8,7 @@
 #include "engine/render/MeshVertexLayout.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
+#include "engine/assets/VertexAo.hpp"
 #include "engine/render/landscape/TreeGenerator.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
@@ -187,20 +188,29 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
 
 void VegetationSystem::createVariantMeshes(rhi::Device& device,
                                            u32 terrainSeed) {
+    // Option B (2026-07-10): ambient grounding is BAKED into the vertex
+    // colors (assets::bakeVertexAo) — canopy interiors and rock creases
+    // darken with zero runtime cost, replacing the screen-space AO in
+    // the default look. [cpp-tuning] strengths below.
+    const auto baked = [](MeshData mesh, f32 strength) {
+        assets::bakeVertexAo(mesh, strength);
+        return mesh;
+    };
     for (u32 i = 0; i < kVariantCount; ++i) {
         if (const auto it = meshOverrides.find(i);
             it != meshOverrides.end()) {
-            uploadVariantMesh(device, i, it->second);
+            uploadVariantMesh(device, i, baked(it->second, 0.55f));
             continue;
         }
         const u32 seed = hashU32(terrainSeed) + i * 977u;
         if (i < kFirstRock) {
-            uploadVariantMesh(device, i, generateTree(seed, 2));
-            uploadLowDetailMesh(device, i, generateTree(seed, 1));
+            uploadVariantMesh(device, i, baked(generateTree(seed, 2), 0.6f));
+            uploadLowDetailMesh(device, i,
+                                baked(generateTree(seed, 1), 0.6f));
         } else if (i < kFirstBush) {
-            uploadVariantMesh(device, i, generateRock(seed));
+            uploadVariantMesh(device, i, baked(generateRock(seed), 0.5f));
         } else {
-            uploadVariantMesh(device, i, generateBush(seed));
+            uploadVariantMesh(device, i, baked(generateBush(seed), 0.55f));
         }
     }
 }

@@ -39,7 +39,11 @@ struct LandscapeTuningForm : Form {
     f32 bloomIntensity { 0.35f };
     f32 godRayIntensity { 0.6f };
     f32 volumetricIntensity { 1.0f };
-    f32 ssaoStrength { 0.7f };
+    // Option B (2026-07-10): screen-space AO is OUT of the default look —
+    // grounding comes from the terrain light map + contact shadows +
+    // per-asset baked vertex AO (assets::bakeVertexAo). The slider/A-B
+    // toggles remain for comparison.
+    f32 ssaoStrength { 0.0f };
     // Clouds.
     f32 cloudCoverage { 0.38f };
     f32 cloudShadowStrength { 0.7f };

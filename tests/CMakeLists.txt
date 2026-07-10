@@ -81,6 +81,7 @@
     TreeGeneratorTest.cpp
     TypedDamageTest.cpp
     VegetationCollisionTest.cpp
+    VertexAoTest.cpp
     WorldModelTest.cpp
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs

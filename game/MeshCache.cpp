@@ -1,6 +1,7 @@
 #include "game/MeshCache.hpp"
 
 #include "engine/assets/GltfMesh.hpp"
+#include "engine/assets/VertexAo.hpp"
 #include "engine/render/MeshBuilder.hpp"
 
 namespace game {
@@ -40,6 +41,11 @@ MeshCacheTraits::decode(const std::filesystem::path& path) {
         // Prop pivot convention: base on the ground, footprint centered
         // (authored scale kept — references carry the instance scale).
         assets::groundMesh(*mesh);
+        // Option B (2026-07-10): ambient grounding baked into the vertex
+        // colors on this decode WORKER — kit recesses and prop creases
+        // darken for free; screen-space AO left the default look.
+        // [cpp-tuning] strength.
+        assets::bakeVertexAo(*mesh, 0.5f);
     }
     return mesh;
 }
