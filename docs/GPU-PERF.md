@@ -62,6 +62,18 @@ INTENSITÉS.
 
 ## Brique P0 — Timers GPU : l'outil avant tout (M)
 
+> **FAITE (2026-07-10, nuit) — baseline dev à relever.** RHI :
+> `insertTimestamp/timestampReady/destroyTimestamp` (GlDeviceBase,
+> caps.timerQueries sur le 4.6) ; `engine/render/GpuProbe` (ring 4
+> frames, jamais bloquant) ; scopes posés (cloudBake, keyShadow,
+> rainOcc, shadows, reflection, mainPass + mainTerrain/mainVeg/
+> mainGrass, copyHizWater, postfx + bloom/godrays/volumetric/ssao/
+> contact/autoExpo, composite) ; HUD = section **« GPU perf [F6] »** du
+> panneau de la scène Landscape (table GPU moy/max + colonne CPU,
+> reset). Builds Debug + Release + 345 tests verts + smoke. **Prochaine
+> étape : le dev relève la table baseline sur les 4 spots (protocole en
+> fin de doc) — elle ordonne P1+.**
+
 **But :** un budget ms/passe GPU, en live et loggé sur frame lente.
 Zéro stall (le sync readback a déjà coûté 25 ms/frame une fois).
 

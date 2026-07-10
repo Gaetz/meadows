@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/render/GpuProbe.hpp" // optional sub-pass timing (P0)
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 
@@ -40,9 +41,13 @@ public:
 
     // Records the bloom chain, god-ray pass and volumetric shafts. Call
     // after the water pass, before the tonemap. `shadowBindGroup` is the CSM
-    // receiver group (the volumetric march taps it per step).
+    // receiver group (the volumetric march taps it per step). Pass a
+    // GpuProbe (+ its device) to time each sub-pass (GPU-PERF P0);
+    // nullptr = no instrumentation.
     void render(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
-                rhi::BindGroupHandle shadowBindGroup);
+                rhi::BindGroupHandle shadowBindGroup,
+                rhi::Device* probeDevice = nullptr,
+                GpuProbe* probe = nullptr);
 
     // Brick 29 (chantier 6 B4): auto-exposure — log-luminance 64² → mips →
     // 1×1 average, then the adaptation micro-pass (1×1 ping-pong with

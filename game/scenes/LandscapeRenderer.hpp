@@ -4,6 +4,7 @@
 
 #include "engine/core/FrameProbe.hpp"
 #include "engine/render/Camera3D.hpp"
+#include "engine/render/GpuProbe.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/ChunkOcclusion.hpp"
 #include "engine/render/landscape/GpuOcclusion.hpp"
@@ -94,6 +95,9 @@ public:
     // Dev panels (ImGui) — the renderer's own debug/tuning state.
     void drawTerrainPanel();                       // stats, seed, occlusion
     void drawRenderPanel(AtmosphereParams& atmos); // toggles + post sliders
+    // GPU-PERF P0: per-pass GPU/CPU budget table ("GPU Perf" window).
+    // `cpuProbe` = the scene's FrameProbe for the CPU column (nullable).
+    void drawPerfPanel(const core::FrameProbe* cpuProbe);
 
     // --- Sim-side access -------------------------------------------------
     // Terrain shape = the world's ground truth (collision, nav, snaps,
@@ -167,6 +171,7 @@ private:
     render::ShadowMapper shadows;
     render::WaterSystem water;
     render::PostFx postFx;
+    render::GpuProbe gpuProbe; // GPU-PERF P0: per-pass GPU budget
     // Brick 33b/c: worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;
     bool terrainLightUi { true };

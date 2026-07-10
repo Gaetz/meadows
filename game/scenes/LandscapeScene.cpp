@@ -1716,6 +1716,12 @@ void LandscapeScene::drawUi() {
     if (section("Rendering & post-FX  [F4]", ImGuiKey_F4, uiRenderOpen)) {
         renderer.drawRenderPanel(atmos); // the *Ui toggles moved with U4-2c
     }
+
+    if (section("GPU perf  [F6]", ImGuiKey_F6, uiPerfOpen)) {
+        // GPU-PERF P0: the per-pass budget table — the baseline that
+        // orders the optimization bricks (docs/GPU-PERF.md).
+        renderer.drawPerfPanel(&frameProbe);
+    }
     ImGui::End();
 }
 

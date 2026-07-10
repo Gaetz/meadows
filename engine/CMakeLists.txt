@@ -58,6 +58,7 @@ meadows_set_warnings(meadows)
 add_library(meadows-render STATIC
     platform/common/GlContext.cpp
     render/FlyCamera.cpp
+    render/GpuProbe.cpp
     render/MeshBuilder.cpp
     render/ShaderLibrary.cpp
     render/SpriteRenderer.cpp

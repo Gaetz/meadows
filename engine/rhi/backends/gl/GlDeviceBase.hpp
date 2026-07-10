@@ -90,6 +90,11 @@ public:
     bool fenceReady(FenceHandle handle) override;
     void destroyFence(FenceHandle handle) override;
 
+    // Timer queries (GPU-PERF P0): GL_TIMESTAMP, since 3.3 — shared.
+    TimestampHandle insertTimestamp() override;
+    bool timestampReady(TimestampHandle handle, u64& nanos) override;
+    void destroyTimestamp(TimestampHandle handle) override;
+
     // --- Pure virtual: divergent GL operations --------------------------------
     // Implemented by GlDevice46 (DSA) and GlDevice41 (legacy).
 
@@ -186,6 +191,7 @@ protected:
     std::unordered_map<u32, u32>       samplers;   // id -> GL sampler
     std::unordered_map<u32, GlFramebuffer> framebuffers;
     std::unordered_map<u32, void*>     fences;     // id -> GLsync (P1)
+    std::unordered_map<u32, u32> timerQueries; // id -> GL query (GPU-PERF)
     u32 nextId { 1 };
 };
 

@@ -75,11 +75,16 @@ public:
                  line.empty() ? " (all blocks < 0.5 ms)" : line.c_str());
     }
 
-private:
     struct Entry {
         const char* name;
         f64 ms;
     };
+    // The current frame's scopes so far — the GPU-PERF HUD reads this for
+    // its CPU column (valid between the scopes and beginFrame; names are
+    // static literals).
+    const vector<Entry>& currentEntries() const { return entries; }
+
+private:
     vector<Entry> entries;
     std::string line;
     TimePoint frameStart {};

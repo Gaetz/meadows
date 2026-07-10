@@ -585,6 +585,49 @@ void GlDeviceBase::destroyFence(FenceHandle handle) {
     }
 }
 
+// GPU-PERF P0 — timer queries, the fence discipline applied to the GPU
+// clock: record now, poll later, NEVER block (results are read frames
+// after the query was reached; GpuProbe rings 4 frames in flight).
+
+TimestampHandle GlDeviceBase::insertTimestamp() {
+    GLuint query = 0;
+    glGenQueries(1, &query);
+    if (query == 0) {
+        return {};
+    }
+    glQueryCounter(query, GL_TIMESTAMP);
+    const u32 id = nextId++;
+    timerQueries.emplace(id, query);
+    return { id };
+}
+
+bool GlDeviceBase::timestampReady(TimestampHandle handle, u64& nanos) {
+    const auto it = timerQueries.find(handle.id);
+    if (it == timerQueries.end()) {
+        nanos = 0;
+        return true; // unknown handle = nothing to wait for
+    }
+    GLuint available = 0;
+    glGetQueryObjectuiv(it->second, GL_QUERY_RESULT_AVAILABLE, &available);
+    if (available == 0) {
+        return false; // still in flight — poll again next frame
+    }
+    GLuint64 result = 0;
+    glGetQueryObjectui64v(it->second, GL_QUERY_RESULT, &result);
+    nanos = result;
+    glDeleteQueries(1, &it->second);
+    timerQueries.erase(it);
+    return true;
+}
+
+void GlDeviceBase::destroyTimestamp(TimestampHandle handle) {
+    const auto it = timerQueries.find(handle.id);
+    if (it != timerQueries.end()) {
+        glDeleteQueries(1, &it->second);
+        timerQueries.erase(it);
+    }
+}
+
 void GlDeviceBase::destroyShader(ShaderHandle handle) {
     if (auto it = shaders.find(handle.id); it != shaders.end()) {
         glDeleteProgram(it->second);

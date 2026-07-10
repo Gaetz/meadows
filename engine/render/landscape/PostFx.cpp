@@ -308,73 +308,87 @@ void PostFx::renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
 
 void PostFx::render(rhi::CommandBuffer& cmd,
                     rhi::BindGroupHandle frameBindGroup,
-                    rhi::BindGroupHandle shadowBindGroup) {
+                    rhi::BindGroupHandle shadowBindGroup,
+                    rhi::Device* probeDevice, GpuProbe* probe) {
     if (!ready()) {
         return;
     }
-    // Prefilter: HDR highlights into level 0.
-    cmd.beginRenderPass({ .framebuffer = bloomFb[0],
-                          .loadOp = rhi::LoadOp::DontCare,
-                          .depthLoadOp = rhi::LoadOp::DontCare });
-    cmd.setPipeline(prefilterPipeline);
-    cmd.setBindGroup(0, prefilterGroup);
-    cmd.draw(3);
-    cmd.endRenderPass();
-
-    // Down the pyramid.
-    for (u32 i = 1; i < kBloomLevels; ++i) {
-        cmd.beginRenderPass({ .framebuffer = bloomFb[i],
+    {
+        GpuProbe::Scope scope { probe, probeDevice, "bloom" };
+        // Prefilter: HDR highlights into level 0.
+        cmd.beginRenderPass({ .framebuffer = bloomFb[0],
                               .loadOp = rhi::LoadOp::DontCare,
                               .depthLoadOp = rhi::LoadOp::DontCare });
-        cmd.setPipeline(downPipeline);
-        cmd.setBindGroup(0, downGroup[i]);
+        cmd.setPipeline(prefilterPipeline);
+        cmd.setBindGroup(0, prefilterGroup);
         cmd.draw(3);
         cmd.endRenderPass();
+
+        // Down the pyramid.
+        for (u32 i = 1; i < kBloomLevels; ++i) {
+            cmd.beginRenderPass({ .framebuffer = bloomFb[i],
+                                  .loadOp = rhi::LoadOp::DontCare,
+                                  .depthLoadOp = rhi::LoadOp::DontCare });
+            cmd.setPipeline(downPipeline);
+            cmd.setBindGroup(0, downGroup[i]);
+            cmd.draw(3);
+            cmd.endRenderPass();
+        }
+
+        // Back up, additively widening the glow.
+        for (i32 i = static_cast<i32>(kBloomLevels) - 2; i >= 0; --i) {
+            cmd.beginRenderPass({ .framebuffer = bloomFb[i],
+                                  .loadOp = rhi::LoadOp::Load,
+                                  .depthLoadOp = rhi::LoadOp::DontCare });
+            cmd.setPipeline(upPipeline);
+            cmd.setBindGroup(0, upGroup[i]);
+            cmd.draw(3);
+            cmd.endRenderPass();
+        }
     }
 
-    // Back up, additively widening the glow.
-    for (i32 i = static_cast<i32>(kBloomLevels) - 2; i >= 0; --i) {
-        cmd.beginRenderPass({ .framebuffer = bloomFb[i],
-                              .loadOp = rhi::LoadOp::Load,
+    {
+        GpuProbe::Scope scope { probe, probeDevice, "godrays" };
+        // God rays from the pre-water scene snapshot.
+        cmd.beginRenderPass({ .framebuffer = godRayFb,
+                              .loadOp = rhi::LoadOp::DontCare,
                               .depthLoadOp = rhi::LoadOp::DontCare });
-        cmd.setPipeline(upPipeline);
-        cmd.setBindGroup(0, upGroup[i]);
+        cmd.setPipeline(godRayPipeline);
+        cmd.setBindGroup(0, frameBindGroup);
+        cmd.setBindGroup(1, godRayGroup);
         cmd.draw(3);
         cmd.endRenderPass();
     }
 
-    // God rays from the pre-water scene snapshot.
-    cmd.beginRenderPass({ .framebuffer = godRayFb,
-                          .loadOp = rhi::LoadOp::DontCare,
-                          .depthLoadOp = rhi::LoadOp::DontCare });
-    cmd.setPipeline(godRayPipeline);
-    cmd.setBindGroup(0, frameBindGroup);
-    cmd.setBindGroup(1, godRayGroup);
-    cmd.draw(3);
-    cmd.endRenderPass();
-
-    // Volumetric shafts: march the air, carved by clouds and CSM geometry.
-    cmd.beginRenderPass({ .framebuffer = volumetricFb,
-                          .loadOp = rhi::LoadOp::DontCare,
-                          .depthLoadOp = rhi::LoadOp::DontCare });
-    cmd.setPipeline(volumetricPipeline);
-    cmd.setBindGroup(0, frameBindGroup);
-    cmd.setBindGroup(1, volumetricGroup);
-    if (shadowBindGroup.id != 0) {
-        cmd.setBindGroup(2, shadowBindGroup);
+    {
+        GpuProbe::Scope scope { probe, probeDevice, "volumetric" };
+        // Volumetric shafts: march the air, carved by clouds and CSM
+        // geometry.
+        cmd.beginRenderPass({ .framebuffer = volumetricFb,
+                              .loadOp = rhi::LoadOp::DontCare,
+                              .depthLoadOp = rhi::LoadOp::DontCare });
+        cmd.setPipeline(volumetricPipeline);
+        cmd.setBindGroup(0, frameBindGroup);
+        cmd.setBindGroup(1, volumetricGroup);
+        if (shadowBindGroup.id != 0) {
+            cmd.setBindGroup(2, shadowBindGroup);
+        }
+        cmd.draw(3);
+        cmd.endRenderPass();
     }
-    cmd.draw(3);
-    cmd.endRenderPass();
 
-    // SSAO: contact darkening from the scene depth.
-    cmd.beginRenderPass({ .framebuffer = ssaoFb,
-                          .loadOp = rhi::LoadOp::DontCare,
-                          .depthLoadOp = rhi::LoadOp::DontCare });
-    cmd.setPipeline(ssaoPipeline);
-    cmd.setBindGroup(0, frameBindGroup);
-    cmd.setBindGroup(1, ssaoGroup);
-    cmd.draw(3);
-    cmd.endRenderPass();
+    {
+        GpuProbe::Scope scope { probe, probeDevice, "ssao" };
+        // SSAO: contact darkening from the scene depth.
+        cmd.beginRenderPass({ .framebuffer = ssaoFb,
+                              .loadOp = rhi::LoadOp::DontCare,
+                              .depthLoadOp = rhi::LoadOp::DontCare });
+        cmd.setPipeline(ssaoPipeline);
+        cmd.setBindGroup(0, frameBindGroup);
+        cmd.setBindGroup(1, ssaoGroup);
+        cmd.draw(3);
+        cmd.endRenderPass();
+    }
 }
 
 } // namespace render

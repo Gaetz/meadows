@@ -124,6 +124,7 @@ private:
     bool uiTerrainOpen { false };
     bool uiSkyOpen { false };
     bool uiRenderOpen { false };
+    bool uiPerfOpen { false }; // GPU-PERF P0: the budget table [F6]
 
     // U4-2c: the whole custom renderer — shader library, render::* systems,
     // GPU handles, frame graph, terrain/render dev panels and their toggle

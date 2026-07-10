@@ -284,6 +284,7 @@ void LandscapeRenderer::destroy(rhi::Device& device) {
     // U4-4: every handle is an rhi::Unique — clearing/resetting frees it
     // through its device; there is no manual destroy mirror to keep in
     // sync anymore. Must run while the device is alive (wrapper contract).
+    gpuProbe.shutdown(device); // abandon in-flight timestamps (P0)
     destroyOffscreenTarget(device);
     blitPipeline.reset();
     blitSampler.reset();
@@ -1047,6 +1048,9 @@ void LandscapeRenderer::buildMeshPipeline(rhi::Device& device) {
 void LandscapeRenderer::render(engine::FrameContext& frame,
                                const RenderSnapshot& snapshot,
                                const RenderView& view) {
+    // GPU-PERF P0: resolve last frames' timestamps (never blocking) and
+    // open this frame's slot — the scopes below feed the budget table.
+    gpuProbe.beginFrame(frame.device);
     shaders->pollHotReload(frame.dt);
     terrain.refreshPipeline(frame.device, *shaders);
     grass.refreshPipeline(frame.device, *shaders);
@@ -1243,6 +1247,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 
     // Bake this frame's cloud field before anything lights with it.
     if (!view.interiorMode) {
+        render::GpuProbe::Scope gpu { gpuProbe, frame.device, "cloudBake" };
         sky.bakeCloudMap(frame.cmd, frameBindGroup);
     }
 
@@ -1283,6 +1288,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             frame.device.updateBuffer(keyShadowUbo,
                                       &frameData.keyShadowViewProj,
                                       sizeof(Mat4), 0);
+            render::GpuProbe::Scope gpu { gpuProbe, frame.device,
+                                          "keyShadow" };
             frame.cmd.beginRenderPass(
                 { .framebuffer = keyShadowFb,
                   .loadOp = rhi::LoadOp::DontCare,
@@ -1297,6 +1304,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 
     // Brick 31: the top-down rain occlusion depth (roof cover).
     if (frameData.stormInfo.y > 0.003f && meshShadowCastersUi) {
+        render::GpuProbe::Scope gpu { gpuProbe, frame.device, "rainOcc" };
         frame.cmd.beginRenderPass({ .framebuffer = rainOcclusionFb,
                                     .loadOp = rhi::LoadOp::DontCare,
                                     .depthLoadOp = rhi::LoadOp::Clear });
@@ -1308,6 +1316,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     // Cascade passes: depth-only casters from the sun's point of view.
     if (shadowStrength > 0.0f) {
         core::FrameProbe::Scope probe { *view.probe, "shadows" };
+        render::GpuProbe::Scope gpu { gpuProbe, frame.device, "shadows" };
         for (u32 i = 0; i < render::ShadowMapper::kCascadeCount; ++i) {
             frame.cmd.beginRenderPass(
                 { .framebuffer = shadows.framebuffer(i),
@@ -1358,6 +1367,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             camera.proj(frame.aspect) * reflectedView);
 
         core::FrameProbe::Scope reflectionProbe { *view.probe, "reflection" };
+        render::GpuProbe::Scope gpu { gpuProbe, frame.device, "reflection" };
     render::FrameUniforms reflectionUniforms = uniforms;
         reflectionUniforms.viewProj = reflectedViewProj;
         reflectionUniforms.invViewProj = glm::inverse(reflectedViewProj);
@@ -1404,6 +1414,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     // Interior: clear to a near-black room tone instead.
     {
         core::FrameProbe::Scope probe { *view.probe, "mainPass" };
+        render::GpuProbe::Scope gpu { gpuProbe, frame.device, "mainPass" };
         frame.cmd.beginRenderPass(
             { .framebuffer =
                   useOffscreen ? offscreenFb : rhi::FramebufferHandle {},
@@ -1433,18 +1444,30 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         const std::unordered_set<u64>* occludedSet =
             combinedOccluded.empty() ? nullptr : &combinedOccluded;
         if (!view.interiorMode) {
-            terrain.draw(frame.cmd, frameBindGroup,
-                         shadows.receiverBindGroup(), &viewFrustum,
-                         occludedSet);
-            vegetation.draw(frame.cmd, frameBindGroup,
-                            shadows.receiverBindGroup(),
-                            render::VegetationSystem::kVariantCount,
-                            camera.position,
-                            /*forceLowDetail=*/false, &viewFrustum,
-                            occludedSet);
-            grass.draw(frame.cmd, frameBindGroup,
-                       shadows.receiverBindGroup(), camera.position,
-                       &viewFrustum);
+            {
+                render::GpuProbe::Scope sub { gpuProbe, frame.device,
+                                              "mainTerrain" };
+                terrain.draw(frame.cmd, frameBindGroup,
+                             shadows.receiverBindGroup(), &viewFrustum,
+                             occludedSet);
+            }
+            {
+                render::GpuProbe::Scope sub { gpuProbe, frame.device,
+                                              "mainVeg" };
+                vegetation.draw(frame.cmd, frameBindGroup,
+                                shadows.receiverBindGroup(),
+                                render::VegetationSystem::kVariantCount,
+                                camera.position,
+                                /*forceLowDetail=*/false, &viewFrustum,
+                                occludedSet);
+            }
+            {
+                render::GpuProbe::Scope sub { gpuProbe, frame.device,
+                                              "mainGrass" };
+                grass.draw(frame.cmd, frameBindGroup,
+                           shadows.receiverBindGroup(), camera.position,
+                           &viewFrustum);
+            }
         }
         drawSceneMeshes(frame, snapshot, view); // B1: the RenderSnapshot.meshes consumer
         drawSkinned(frame, snapshot);        // B6: the Forms-driven skinned NPCs
@@ -1510,6 +1533,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     if (useOffscreen && frame.device.caps().copyTexture &&
         waterSceneBindGroup.id() != 0) {
         core::FrameProbe::Scope probe { *view.probe, "copyHizWater" };
+        render::GpuProbe::Scope gpu { gpuProbe, frame.device,
+                                      "copyHizWater" };
         frame.cmd.copyTexture(offscreenColor, sceneColorCopy);
         frame.cmd.copyTexture(offscreenDepth, sceneDepthCopy);
 
@@ -1548,15 +1573,22 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
         postFx.render(frame.cmd, frameBindGroup,
-                      shadows.receiverBindGroup());
+                      shadows.receiverBindGroup(), &frame.device,
+                      &gpuProbe);
         // 33a: contact shadows (the texture is the toggle — white = off).
-        if (contactShadowsUi && !view.interiorMode) {
-            postFx.renderContactShadows(frame.cmd, frameBindGroup);
-        } else {
-            postFx.clearContactShadows(frame.cmd);
+        {
+            render::GpuProbe::Scope gpu { gpuProbe, frame.device,
+                                          "contact" };
+            if (contactShadowsUi && !view.interiorMode) {
+                postFx.renderContactShadows(frame.cmd, frameBindGroup);
+            } else {
+                postFx.clearContactShadows(frame.cmd);
+            }
         }
         // B4 (brick 29): measure + adapt, before the tonemap taps it.
         if (autoExposureUi) {
+            render::GpuProbe::Scope gpu { gpuProbe, frame.device,
+                                          "autoExpo" };
             postFx.renderAutoExposure(frame.device, frame.cmd,
                                       frameBindGroup);
         }
@@ -1564,6 +1596,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 
     if (useOffscreen) {
         core::FrameProbe::Scope probe { *view.probe, "composite" };
+        render::GpuProbe::Scope gpu { gpuProbe, frame.device, "composite" };
         // Tonemap composite: HDR scene -> filmic curve -> gamma -> backbuffer.
         frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::DontCare,
                                     .depthLoadOp = rhi::LoadOp::DontCare });
@@ -1592,6 +1625,65 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 
 // The renderer's own dev panels (audit U4-1 leftovers: the tuning state
 // they bind lives HERE — the scene keeps the section headers/F-keys).
+// GPU-PERF P0 — the budget table: per-pass GPU average/max over the
+// rolling window, with the CPU FrameProbe column beside it (names match
+// where both sides instrument the same block). This table IS the
+// baseline the optimization bricks are ordered by (docs/GPU-PERF.md).
+void LandscapeRenderer::drawPerfPanel(const core::FrameProbe* cpuProbe) {
+    if (!gpuProbe.active()) {
+        ImGui::TextDisabled("(no GPU timer queries on this device)");
+        return;
+    }
+    ImGui::Text("GPU frame: %.2f ms avg  %.2f ms max",
+                gpuProbe.frameAverageMs(), gpuProbe.frameMaxMs());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("reset window")) {
+        gpuProbe.resetWindow();
+    }
+    if (!ImGui::BeginTable("gpuperf", 4,
+                           ImGuiTableFlags_SizingStretchProp |
+                               ImGuiTableFlags_RowBg)) {
+        return;
+    }
+    ImGui::TableSetupColumn("pass");
+    ImGui::TableSetupColumn("GPU avg (ms)");
+    ImGui::TableSetupColumn("GPU max");
+    ImGui::TableSetupColumn("CPU (ms)");
+    ImGui::TableHeadersRow();
+    for (const render::GpuProbe::PassRow& row : gpuProbe.rows()) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(row.name);
+        ImGui::TableNextColumn();
+        ImGui::Text("%.2f", row.stats.averageMs);
+        ImGui::TableNextColumn();
+        ImGui::Text("%.2f", row.stats.maxMs);
+        ImGui::TableNextColumn();
+        // The CPU column: the FrameProbe scope of the SAME name when one
+        // exists (the CPU probes also cover streaming blocks the GPU
+        // never sees — those rows are simply absent here).
+        f64 cpuMs = -1.0;
+        if (cpuProbe) {
+            for (const core::FrameProbe::Entry& entry :
+                 cpuProbe->currentEntries()) {
+                if (std::strcmp(entry.name, row.name) == 0) {
+                    cpuMs = entry.ms;
+                    break;
+                }
+            }
+        }
+        if (cpuMs >= 0.0) {
+            ImGui::Text("%.2f", cpuMs);
+        } else {
+            ImGui::TextDisabled("-");
+        }
+    }
+    ImGui::EndTable();
+    if (gpuProbe.rows().empty()) {
+        ImGui::TextDisabled("(warming up — first frames resolving)");
+    }
+}
+
 void LandscapeRenderer::drawTerrainPanel() {
         ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
                     terrain.residentCount(), terrain.drawnLastFrame(),

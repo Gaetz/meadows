@@ -30,6 +30,7 @@ struct PipelineHandle    { u32 id { 0 }; };
 struct BindGroupHandle   { u32 id { 0 }; };
 struct FramebufferHandle { u32 id { 0 }; };
 struct FenceHandle       { u32 id { 0 }; }; // single-use GPU marker (P1)
+struct TimestampHandle   { u32 id { 0 }; }; // single-use GPU clock (GPU-PERF P0)
 
 // --- Capabilities --------------------------------------------------------------
 
@@ -45,6 +46,8 @@ struct DeviceCaps {
     bool copyTexture { false };      // CommandBuffer::copyTexture
     bool computeShaders { false };   // compute pipelines + dispatch + SSBOs
                                      // (GL >= 4.3; absent on the 4.1 path)
+    bool timerQueries { false };     // insertTimestamp/timestampReady
+                                     // (GL >= 3.3 timer queries)
 };
 
 // --- Buffers -------------------------------------------------------------------

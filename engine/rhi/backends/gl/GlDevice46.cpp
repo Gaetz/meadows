@@ -21,7 +21,8 @@ GlDevice46::GlDevice46(uptr<platform::GlContext> context,
               .samplerObjects = true,
               .mipmapGeneration = true,
               .copyTexture = true,      // glCopyImageSubData (GL 4.3+)
-              .computeShaders = true }; // glDispatchCompute (GL 4.3+)
+              .computeShaders = true,   // glDispatchCompute (GL 4.3+)
+              .timerQueries = true };   // GL_TIMESTAMP queries (GL 3.3+)
 }
 
 namespace {

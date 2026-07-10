@@ -85,6 +85,16 @@ public:
     virtual bool fenceReady(FenceHandle handle) = 0;
     virtual void destroyFence(FenceHandle handle) = 0;
 
+    // GPU clock marker (GL timer query / Vulkan timestamp — GPU-PERF P0):
+    // insertTimestamp records the GPU clock when the stream REACHES this
+    // point; timestampReady polls WITHOUT blocking and, once available,
+    // writes the time (nanoseconds) and releases the handle (single-use,
+    // like fences). destroyTimestamp abandons a pending one (teardown).
+    // Gate on caps().timerQueries.
+    virtual TimestampHandle insertTimestamp() = 0;
+    virtual bool timestampReady(TimestampHandle handle, u64& nanos) = 0;
+    virtual void destroyTimestamp(TimestampHandle handle) = 0;
+
     virtual BindGroupHandle createBindGroup(const BindGroupDesc& desc) = 0;
     virtual void destroyBindGroup(BindGroupHandle handle) = 0;
 };
