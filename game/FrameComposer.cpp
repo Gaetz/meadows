@@ -105,15 +105,16 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
                      : Vec4 { 0.0f };
     // Brick 30/31: the crossfaded storm front + rain intensity, and the
     // top-down rain-occlusion matrix (ortho, 40 m around the camera).
-    // Cumulonimbus visibility (dev call 2026-07-10): the horizon towers
-    // also show under a PARTLY CLOUDY sky — a coverage band [0.10, 0.40],
-    // ramped in by 0.18 and gone past 0.40 (an overcast sheet hides the
-    // horizon). A storm front still forces them regardless (only
-    // cumulonimbus.frag reads stormInfo.x; rain & wetness ride .y).
+    // Cumulonimbus visibility (dev call 2026-07-10, revised): the horizon
+    // towers show under ANY sky — clear included — and fade out only when
+    // an overcast sheet (coverage > 0.32) hides the horizon. A storm
+    // front still forces them regardless (only cumulonimbus.frag reads
+    // stormInfo.x; rain & wetness ride .y).
     const f32 coverage = in.atmos.cloudCoverage;
-    const f32 cumulusBand = glm::smoothstep(0.10f, 0.18f, coverage) *
-                            (1.0f - glm::smoothstep(0.32f, 0.40f, coverage));
-    resolved.stormInfo.x = glm::max(in.atmos.stormFront, cumulusBand);
+    const f32 cumulusVisibility =
+        1.0f - glm::smoothstep(0.32f, 0.40f, coverage);
+    resolved.stormInfo.x =
+        glm::max(in.atmos.stormFront, cumulusVisibility);
     resolved.stormInfo.y = in.interiorMode ? 0.0f : in.atmos.rainIntensity;
     if (resolved.stormInfo.y > 0.003f) {
         const Vec3 eye = in.cameraPosition;

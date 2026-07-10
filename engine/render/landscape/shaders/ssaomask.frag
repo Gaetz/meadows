@@ -21,7 +21,12 @@ vec3 worldFromDepth(vec2 uv, float depth) {
 
 void main() {
     float depth = texture(uSceneDepth, vUv).r;
-    if (depth >= 0.99995) {
+    // Sky test: non-linear depth 0.99995 sat at ~900 m (farPlane 1600) —
+    // horizon mountains flipped to "sky" mid-slope and the AO CUT them
+    // (dev report 2026-07-10). 0.9999985 pushes the flip past the far
+    // plane's usable range; the smooth distance fade below owns the far
+    // roll-off instead.
+    if (depth >= 0.9999985) {
         fragColor = vec4(1.0); // sky
         return;
     }
@@ -45,7 +50,7 @@ void main() {
             continue;
         }
         float d = texture(uSceneDepth, uv).r;
-        if (d >= 0.99995) {
+        if (d >= 0.9999985) {
             continue; // sky neighbours neither occlude nor brighten
         }
         float s = distance(worldFromDepth(uv, d), uCameraPos.xyz);
@@ -71,6 +76,10 @@ void main() {
     // matters up close, not at 400 m).
     float window = 0.9 + center * 0.015;
     float occlusion = smoothstep(0.05, window, center - avg);
+    // Far roll-off: the ink hands over to the fog smoothly instead of
+    // cutting at the sky-test line (the fade covers every drawn chunk —
+    // terrain ends ~960 m — and dies before the far plane).
+    occlusion *= 1.0 - smoothstep(1000.0, 1400.0, center);
     float ao = 1.0 - occlusion * 0.85;
     fragColor = vec4(ao, ao, ao, 1.0);
 }
