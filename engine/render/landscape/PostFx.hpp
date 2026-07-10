@@ -80,6 +80,10 @@ public:
 
     bool ready() const { return bloomTex[0].id() != 0; }
 
+    // A/B (2026-07-10): depth unsharp-mask AO (no jitter — no speckle,
+    // the BotW-friendly look) vs the sampled-hemisphere SSAO.
+    bool maskAo { true };
+
 private:
     void destroyTargets(rhi::Device& device);
     void buildPipelines(rhi::Device& device, ShaderLibrary& shaders);
@@ -135,6 +139,7 @@ private:
     rhi::UniquePipeline godRayPipeline;
     rhi::UniquePipeline volumetricPipeline;
     rhi::UniquePipeline ssaoPipeline;
+    rhi::UniquePipeline ssaoMaskPipeline; // depth unsharp AO (A/B)
     rhi::UniquePipeline contactPipeline;
     rhi::UniquePipeline blurPipeline; // speckle fix (postblur.frag)
     rhi::UniquePipeline luminancePipeline;

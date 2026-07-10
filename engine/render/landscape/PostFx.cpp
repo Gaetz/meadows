@@ -16,6 +16,7 @@ constexpr const char* kUpShader = "bloom_up";
 constexpr const char* kGodRaysShader = "godrays";
 constexpr const char* kVolumetricShader = "volumetric";
 constexpr const char* kSsaoShader = "ssao";
+constexpr const char* kSsaoMaskShader = "ssaomask"; // depth unsharp AO
 constexpr const char* kContactShader = "contactshadow"; // brick 33a
 constexpr const char* kBlurShader = "postblur"; // speckle fix
 constexpr const char* kLuminanceShader = "luminance"; // brick 29
@@ -28,8 +29,8 @@ constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
 constexpr const char* kPassShaders[] = {
     kPrefilterShader, kDownShader,       kUpShader,
     kGodRaysShader,   kVolumetricShader, kSsaoShader,
-    kContactShader,   kBlurShader,       kLuminanceShader,
-    kAdaptShader,
+    kSsaoMaskShader,  kContactShader,    kBlurShader,
+    kLuminanceShader, kAdaptShader,
 };
 
 u64 passGenerationSum(ShaderLibrary& shaders) {
@@ -53,6 +54,8 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
                  { { "uSceneDepth", 0 }, { "uShadowMap", 1 } },
                  kFullscreenVert);
     shaders.load(kSsaoShader, { { "FrameUbo", 0 } },
+                 { { "uSceneDepth", 0 } }, kFullscreenVert);
+    shaders.load(kSsaoMaskShader, { { "FrameUbo", 0 } },
                  { { "uSceneDepth", 0 } }, kFullscreenVert);
     shaders.load(kContactShader, { { "FrameUbo", 0 } },
                  { { "uSceneDepth", 0 } }, kFullscreenVert);
@@ -84,6 +87,7 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
     rebuild(godRayPipeline, kGodRaysShader, rhi::BlendMode::Opaque);
     rebuild(volumetricPipeline, kVolumetricShader, rhi::BlendMode::Opaque);
     rebuild(ssaoPipeline, kSsaoShader, rhi::BlendMode::Opaque);
+    rebuild(ssaoMaskPipeline, kSsaoMaskShader, rhi::BlendMode::Opaque);
     rebuild(contactPipeline, kContactShader, rhi::BlendMode::Opaque);
     rebuild(blurPipeline, kBlurShader, rhi::BlendMode::Opaque);
     rebuild(luminancePipeline, kLuminanceShader, rhi::BlendMode::Opaque);
@@ -413,11 +417,13 @@ void PostFx::render(rhi::CommandBuffer& cmd,
 
     {
         GpuProbe::Scope scope { probe, probeDevice, "ssao" };
-        // SSAO: contact darkening from the scene depth.
+        // AO: contact darkening from the scene depth. Two techniques,
+        // A/B (maskAo): the depth unsharp-mask (no jitter, no speckle —
+        // the BotW-friendly default) vs the sampled hemisphere.
         cmd.beginRenderPass({ .framebuffer = ssaoFb,
                               .loadOp = rhi::LoadOp::DontCare,
                               .depthLoadOp = rhi::LoadOp::DontCare });
-        cmd.setPipeline(ssaoPipeline);
+        cmd.setPipeline(maskAo ? ssaoMaskPipeline : ssaoPipeline);
         cmd.setBindGroup(0, frameBindGroup);
         cmd.setBindGroup(1, ssaoGroup);
         cmd.draw(3);

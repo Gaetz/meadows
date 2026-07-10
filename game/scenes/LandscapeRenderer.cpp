@@ -1793,6 +1793,10 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
     ImGui::SliderFloat("Volumetric shafts", &atmos.volumetric, 0.0f, 3.0f,
                        "%.2f");
     ImGui::SliderFloat("SSAO strength", &ssaoUi, 0.0f, 1.0f, "%.2f");
+    // A/B (2026-07-10): depth unsharp-mask AO (no jitter, no speckle —
+    // the cel-friendly default) vs the sampled hemisphere.
+    ImGui::SameLine();
+    ImGui::Checkbox("depth-mask AO", &postFx.maskAo);
     ImGui::Combo("Debug buffer", &debugBufferUi,
                  "Off\0Bloom\0God rays\0Volumetric\0SSAO\0");
     ImGui::Checkbox("Shadows", &shadowsUi);
