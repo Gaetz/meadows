@@ -146,3 +146,24 @@ TEST_CASE("frame composer: grass bend follows the player's feet in Play") {
     const auto off = game::composeFrameUniforms(in);
     CHECK(off.resolved.grassBendInfo.w == doctest::Approx(0.0f));
 }
+
+TEST_CASE("frame composer: cumulonimbus follows the partly-cloudy band") {
+    game::FrameComposerInputs in = exteriorDay();
+    in.atmos.stormFront = 0.0f;
+
+    in.atmos.cloudCoverage = 0.05f; // clear sky: no towers
+    CHECK(game::composeFrameUniforms(in).resolved.stormInfo.x ==
+          doctest::Approx(0.0f));
+
+    in.atmos.cloudCoverage = 0.25f; // partly cloudy: full band
+    CHECK(game::composeFrameUniforms(in).resolved.stormInfo.x ==
+          doctest::Approx(1.0f));
+
+    in.atmos.cloudCoverage = 0.6f; // overcast sheet hides the horizon
+    CHECK(game::composeFrameUniforms(in).resolved.stormInfo.x ==
+          doctest::Approx(0.0f));
+
+    in.atmos.stormFront = 1.0f; // a storm forces them regardless
+    CHECK(game::composeFrameUniforms(in).resolved.stormInfo.x ==
+          doctest::Approx(1.0f));
+}

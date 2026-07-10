@@ -1542,8 +1542,10 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             sky.draw(frame.cmd, frameBindGroup); // background only
         }
         // Brick 30: horizon cumulonimbus, right after the sky dome (they
-        // occlude sky, terrain occludes them via the depth test).
-        if (!view.interiorMode && view.atmos.stormFront > 0.003f) {
+        // occlude sky, terrain occludes them via the depth test). The
+        // gate reads the COMPOSED visibility (storm front OR the partly-
+        // cloudy coverage band — FrameComposer).
+        if (!view.interiorMode && frameData.stormInfo.x > 0.003f) {
             if (shaders->generation("cumulonimbus") !=
                     stormShaderGeneration ||
                 stormPipeline.id() == 0) {
