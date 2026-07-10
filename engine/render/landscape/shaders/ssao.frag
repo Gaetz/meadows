@@ -35,9 +35,13 @@ void main() {
     float dist = distance(position, uCameraPos.xyz);
 
     // Sample radius grows gently with distance so the effect stays a
-    // similar on-screen size instead of shrinking to nothing.
-    float radius = 0.9 + dist * 0.02;
-    float bias = 0.04 + dist * 0.004;
+    // similar on-screen size instead of shrinking to nothing — CAPPED
+    // (speckle fix, 2026-07-10): unbounded growth spread the hemisphere
+    // across depth discontinuities at altitude and peppered every
+    // surface with black dots.
+    float grow = min(dist, 120.0);
+    float radius = 0.9 + grow * 0.02;
+    float bias = 0.04 + grow * 0.004;
 
     // Per-pixel kernel rotation (IGN) trades banding for filterable noise.
     float angle = 6.2831853 *
@@ -73,9 +77,12 @@ void main() {
         float sampleDist = distance(samplePoint, uCameraPos.xyz);
         // Occluded when real geometry sits in front of the probe, unless it
         // is far outside the radius (range check kills distant silhouettes).
+        // Smooth onset over the bias window (was a binary step — salt-and-
+        // pepper noise the blur pass could not fully hide).
         float rangeFalloff =
             smoothstep(radius * 2.5, radius * 0.6, abs(surfaceDist - dist));
-        occlusion += step(surfaceDist + bias, sampleDist) * rangeFalloff;
+        occlusion += smoothstep(0.0, bias, sampleDist - surfaceDist - bias) *
+                     rangeFalloff;
     }
     float ao = 1.0 - (occlusion / 10.0) * 0.95;
     fragColor = vec4(ao, ao, ao, 1.0);

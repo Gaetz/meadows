@@ -63,7 +63,12 @@ void main() {
         float surfaceDist = distance(surface, uCameraPos.xyz);
         float probeDist = distance(p, uCameraPos.xyz);
         float ahead = probeDist - surfaceDist; // >0: geometry in front
-        if (ahead > 0.02 && ahead < thickness) {
+        // Distance-scaled floor (speckle fix, 2026-07-10): at range the
+        // depth reconstruction error alone exceeds a fixed 0.02 m and
+        // surfaces self-shadowed into black dots — worst at altitude
+        // where everything is far.
+        float minAhead = 0.02 + dist * 0.0025;
+        if (ahead > minAhead && ahead < thickness) {
             shadow = 1.0;
             break;
         }

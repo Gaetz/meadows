@@ -46,8 +46,8 @@ public:
     // (requestMissing reads the new radius, evictFar drains the excess).
     // NB: the tree FADE tops out at 880 m — radii under ~14 pop at the
     // ring edge instead of fading (a budget-hunting knob, not a look).
-    i32 viewRadius { 14 };        // chunks (~900 m; fade at 880 m)
-    i32 highDetailRadius { 4 };   // 320-face canopies within (x 64 m)
+    i32 viewRadius { 12 };        // chunks (dev pick 2026-07-10)
+    i32 highDetailRadius { 5 };   // 320-face canopies within (x 64 m)
     static constexpr u32 kMaxUploadsPerFrame = 2;
     // Scatter jobs budgeted like uploads (see TerrainSystem — the
     // unbudgeted ring edge was part of the fast-travel stutter).

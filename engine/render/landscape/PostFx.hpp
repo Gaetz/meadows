@@ -64,12 +64,13 @@ public:
                               rhi::BindGroupHandle frameBindGroup);
     void clearContactShadows(rhi::CommandBuffer& cmd);
 
-    // For the tonemap bind group.
+    // For the tonemap bind group. SSAO/contact hand out their BLURRED
+    // targets (speckle fix: the IGN jitter is finally filtered).
     rhi::TextureHandle bloomTexture() const { return bloomTex[0]; }
     rhi::TextureHandle godRayTexture() const { return godRayTex; }
     rhi::TextureHandle volumetricTexture() const { return volumetricTex; }
-    rhi::TextureHandle ssaoTexture() const { return ssaoTex; }
-    rhi::TextureHandle contactTexture() const { return contactTex; }
+    rhi::TextureHandle ssaoTexture() const { return aoBlurTex; }
+    rhi::TextureHandle contactTexture() const { return contactBlurTex; }
     // The ping-pong side renderAutoExposure wrote LAST (the tonemap reads
     // it); the scene keeps one blit group per side.
     u32 exposureSide() const { return adaptSide; }
@@ -110,6 +111,15 @@ private:
     rhi::UniqueFramebuffer contactFb;
     rhi::UniqueBindGroup contactGroup;
 
+    // Speckle fix: 3x3 box blur over the two jittered targets — the
+    // tonemap taps THESE (ssaoTexture/contactTexture above).
+    rhi::UniqueTexture aoBlurTex;
+    rhi::UniqueFramebuffer aoBlurFb;
+    rhi::UniqueBindGroup aoBlurGroup; // samples ssaoTex
+    rhi::UniqueTexture contactBlurTex;
+    rhi::UniqueFramebuffer contactBlurFb;
+    rhi::UniqueBindGroup contactBlurGroup; // samples contactTex
+
     // Brick 29: auto-exposure targets (window-size independent).
     rhi::UniqueTexture luminanceTex;
     rhi::UniqueFramebuffer luminanceFb;
@@ -126,6 +136,7 @@ private:
     rhi::UniquePipeline volumetricPipeline;
     rhi::UniquePipeline ssaoPipeline;
     rhi::UniquePipeline contactPipeline;
+    rhi::UniquePipeline blurPipeline; // speckle fix (postblur.frag)
     rhi::UniquePipeline luminancePipeline;
     rhi::UniquePipeline adaptPipeline;
     u64 shaderGeneration { 0 };

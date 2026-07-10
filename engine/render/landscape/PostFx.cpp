@@ -17,6 +17,7 @@ constexpr const char* kGodRaysShader = "godrays";
 constexpr const char* kVolumetricShader = "volumetric";
 constexpr const char* kSsaoShader = "ssao";
 constexpr const char* kContactShader = "contactshadow"; // brick 33a
+constexpr const char* kBlurShader = "postblur"; // speckle fix
 constexpr const char* kLuminanceShader = "luminance"; // brick 29
 constexpr const char* kAdaptShader = "adapt";
 constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
@@ -27,7 +28,8 @@ constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
 constexpr const char* kPassShaders[] = {
     kPrefilterShader, kDownShader,       kUpShader,
     kGodRaysShader,   kVolumetricShader, kSsaoShader,
-    kContactShader,   kLuminanceShader,  kAdaptShader,
+    kContactShader,   kBlurShader,       kLuminanceShader,
+    kAdaptShader,
 };
 
 u64 passGenerationSum(ShaderLibrary& shaders) {
@@ -54,6 +56,7 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
                  { { "uSceneDepth", 0 } }, kFullscreenVert);
     shaders.load(kContactShader, { { "FrameUbo", 0 } },
                  { { "uSceneDepth", 0 } }, kFullscreenVert);
+    shaders.load(kBlurShader, {}, { { "uSource", 0 } }, kFullscreenVert);
     shaders.load(kLuminanceShader, {}, { { "uSceneColor", 0 } },
                  kFullscreenVert);
     shaders.load(kAdaptShader, { { "FrameUbo", 0 } },
@@ -82,6 +85,7 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
     rebuild(volumetricPipeline, kVolumetricShader, rhi::BlendMode::Opaque);
     rebuild(ssaoPipeline, kSsaoShader, rhi::BlendMode::Opaque);
     rebuild(contactPipeline, kContactShader, rhi::BlendMode::Opaque);
+    rebuild(blurPipeline, kBlurShader, rhi::BlendMode::Opaque);
     rebuild(luminancePipeline, kLuminanceShader, rhi::BlendMode::Opaque);
     rebuild(adaptPipeline, kAdaptShader, rhi::BlendMode::Opaque);
     shaderGeneration = passGenerationSum(shaders);
@@ -103,6 +107,12 @@ void PostFx::destroyTargets(rhi::Device& device) {
     luminanceGroup = {};
     luminanceFb = {};
     luminanceTex = {};
+    contactBlurGroup = {};
+    contactBlurFb = {};
+    contactBlurTex = {};
+    aoBlurGroup = {};
+    aoBlurFb = {};
+    aoBlurTex = {};
     contactGroup = {};
     contactFb = {};
     contactTex = {};
@@ -207,6 +217,19 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
     makeHalfResTarget(contactTex, contactFb, rhi::TextureFormat::R16F);
     makeDepthGroup(contactGroup);
 
+    // Speckle fix: the 3x3 blur targets the tonemap actually taps.
+    makeHalfResTarget(aoBlurTex, aoBlurFb, rhi::TextureFormat::R16F);
+    aoBlurGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = ssaoTex,
+                         .sampler = linearSampler } } }) };
+    makeHalfResTarget(contactBlurTex, contactBlurFb,
+                      rhi::TextureFormat::R16F);
+    contactBlurGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = contactTex,
+                         .sampler = linearSampler } } }) };
+
     // Brick 29: auto-exposure — fixed 64² log-luminance pyramid + the two
     // 1×1 adaptation targets (ping-pong; adapt.frag snaps when the prev
     // side reads 0, so fresh targets need no seeding).
@@ -262,15 +285,26 @@ void PostFx::renderContactShadows(rhi::CommandBuffer& cmd,
     cmd.setBindGroup(1, contactGroup);
     cmd.draw(3);
     cmd.endRenderPass();
+
+    // Speckle fix: filter the marching jitter (the tonemap taps the
+    // blurred target).
+    cmd.beginRenderPass({ .framebuffer = contactBlurFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(blurPipeline);
+    cmd.setBindGroup(0, contactBlurGroup);
+    cmd.draw(3);
+    cmd.endRenderPass();
 }
 
 void PostFx::clearContactShadows(rhi::CommandBuffer& cmd) {
-    if (contactTex.id() == 0) {
+    if (contactBlurTex.id() == 0) {
         return;
     }
     // Toggle-off path: neutral white (there is no free FrameUbo slot for
-    // a flag — the texture itself is the switch).
-    cmd.beginRenderPass({ .framebuffer = contactFb,
+    // a flag — the texture itself is the switch). The tonemap taps the
+    // BLURRED target, so that is the one to neutralize.
+    cmd.beginRenderPass({ .framebuffer = contactBlurFb,
                           .loadOp = rhi::LoadOp::Clear,
                           .clearColor = { 1.0f, 1.0f, 1.0f, 1.0f },
                           .depthLoadOp = rhi::LoadOp::DontCare });
@@ -386,6 +420,15 @@ void PostFx::render(rhi::CommandBuffer& cmd,
         cmd.setPipeline(ssaoPipeline);
         cmd.setBindGroup(0, frameBindGroup);
         cmd.setBindGroup(1, ssaoGroup);
+        cmd.draw(3);
+        cmd.endRenderPass();
+
+        // Speckle fix: filter the IGN jitter (the tonemap taps aoBlurTex).
+        cmd.beginRenderPass({ .framebuffer = aoBlurFb,
+                              .loadOp = rhi::LoadOp::DontCare,
+                              .depthLoadOp = rhi::LoadOp::DontCare });
+        cmd.setPipeline(blurPipeline);
+        cmd.setBindGroup(0, aoBlurGroup);
         cmd.draw(3);
         cmd.endRenderPass();
     }

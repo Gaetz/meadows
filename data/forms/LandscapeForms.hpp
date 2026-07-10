@@ -62,8 +62,8 @@ struct LandscapeTuningForm : Form {
     // Vegetation draw budget (GPU-PERF P1, appended — ordinals stable):
     // the baseline put mainVeg at 1.8 ms — these were compile-time
     // constants; moddable + live-tunable now. Radii in 64 m chunks.
-    i32 vegViewRadius { 14 };       // resident/drawn ring (~900 m)
-    i32 vegHighDetailRadius { 4 };  // 320-face canopies inside (~256 m)
+    i32 vegViewRadius { 12 };       // resident/drawn ring (dev pick)
+    i32 vegHighDetailRadius { 5 };  // 320-face canopies inside (~320 m)
 
     REFLECT_BEGIN(LandscapeTuningForm, Form)
         REFLECT_FIELD(terrainSeed)
