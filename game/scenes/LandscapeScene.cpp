@@ -16,6 +16,8 @@
 #include "data/plugins/Resolver.hpp"
 #include "game/AllForms.hpp"
 #include "game/Barter.hpp"
+#include "game/SceneStack.hpp"        // Edit mode pushes overlays (host())
+#include "game/scenes/EditorScene.hpp" // the Game DB overlay
 #include "game/ui/ConsolePanel.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/Engine.hpp"
@@ -1610,6 +1612,8 @@ void LandscapeScene::drawUi() {
     // Play when pressed again. Both are inert while a modal menu owns the input
     // (grabbing the mouse for Play would fight the menu). F2/F3 (not F11/F12)
     // stay clear of the CLion/VS debugger's global Step Into/Over shortcuts.
+    // Since the interfaces-par-mode pass, the F-keys belong to the MODES
+    // alone — no panel section grabs them anymore.
     if (!screenStack.modalOpen()) {
         if (ImGui::IsKeyPressed(ImGuiKey_F2, false)) {
             if (mode == SceneMode::Spectator) {
@@ -1634,6 +1638,10 @@ void LandscapeScene::drawUi() {
                     exitPlayMode(); // tears down the capsule (the editor flies)
                 }
                 mode = SceneMode::Edit;
+                // Edit mode opens the console by default (dev decision).
+                if (!sceneConsole.visible()) {
+                    sceneConsole.toggle(false);
+                }
             }
         }
     }
@@ -1650,9 +1658,10 @@ void LandscapeScene::drawUi() {
             "quick", [this](const str& m) { interaction.say(m, 3.0f); });
     }
 
-    // F8 toggles the dev console (chantier 4 B7 — spawn/tp/tgm/settime,
-    // reflection get/set, Lua).
-    if (ImGui::IsKeyPressed(ImGuiKey_F8, false)) {
+    // The dev console lives on ` (grave, left of 1 — the PC convention):
+    // the ONLY dev UI allowed in Play mode, drawn as a full-width bottom
+    // strip (SceneConsole::draw).
+    if (ImGui::IsKeyPressed(ImGuiKey_GraveAccent, false)) {
         sceneConsole.toggle(mode == SceneMode::Play);
         if (mode == SceneMode::Play) {
             // Free the cursor while the console is open (typing needs it and
@@ -1665,64 +1674,125 @@ void LandscapeScene::drawUi() {
     }
     sceneConsole.draw();
 
-    // F10 hides/shows the whole panel (works even while the mouse is
-    // captured in Play — ImGui keeps its own keyboard state).
+    // F10 hides/shows the whole dev UI (photo mode; the console stays on
+    // its own key).
     if (ImGui::IsKeyPressed(ImGuiKey_F10, false)) {
         uiPanelVisible = !uiPanelVisible;
     }
     if (!uiPanelVisible) {
         return;
     }
-    // A themed section: header click and F-key both toggle the same state.
-    const auto section = [](const char* label, ImGuiKey key, bool& open) {
-        if (ImGui::IsKeyPressed(key, false)) {
+
+    // PLAY: no panels, no bar — the game (interfaces-par-mode decision).
+    if (mode == SceneMode::Play) {
+        return;
+    }
+
+    // Spectator/Edit: a thin full-width TOP BAR — status on the left,
+    // window toggles on the right side of it. The windows it opens dock
+    // on the RIGHT edge (movable afterwards). (`display` was captured at
+    // the top of drawUi for the HUD/fade drawing.)
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(display.x, 0.0f));
+    ImGui::Begin("##topbar", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                     ImGuiWindowFlags_NoScrollbar |
+                     ImGuiWindowFlags_NoDocking);
+    ImGui::TextUnformatted(mode == SceneMode::Edit ? "EDIT" : "SPECTATOR");
+    ImGui::SameLine();
+    ImGui::TextDisabled("| F2 spectator  F3 edit  ` console  F10 hide UI");
+    ImGui::SameLine();
+    ImGui::Text("| %.1f FPS", ImGui::GetIO().Framerate);
+    const Vec3 p = flyCamera.camera.position;
+    ImGui::SameLine();
+    ImGui::TextDisabled("| %.0f %.0f %.0f", p.x, p.y, p.z);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(130.0f);
+    ImGui::SliderFloat("##flyspeed", &flyCamera.moveSpeed, 2.0f, 150.0f,
+                       "fly %.0f m/s", ImGuiSliderFlags_Logarithmic);
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+
+    // Toggle buttons: lit while their window is open. (Push/pop pairs on
+    // the PRE-click state — the click may flip `open` mid-frame.)
+    const auto barToggle = [](const char* label, bool& open) {
+        ImGui::SameLine();
+        const bool lit = open;
+        if (lit) {
+            ImGui::PushStyleColor(ImGuiCol_Button,
+                                  ImVec4(0.26f, 0.46f, 0.75f, 1.0f));
+        }
+        if (ImGui::SmallButton(label)) {
             open = !open;
         }
-        ImGui::SetNextItemOpen(open, ImGuiCond_Always);
-        open = ImGui::CollapsingHeader(label);
-        return open;
+        if (lit) {
+            ImGui::PopStyleColor();
+        }
     };
-
-    ImGui::Begin("Landscape", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-    ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate,
-                1000.0f / ImGui::GetIO().Framerate);
-    const Vec3 p = flyCamera.camera.position;
-    ImGui::Text("Position: %.1f  %.1f  %.1f", p.x, p.y, p.z);
-    if ((mode == SceneMode::Play)) {
-        ImGui::TextUnformatted(
-            "PLAY  WASD: move | Shift: sprint | Space: jump | F: fly");
-    } else {
-        ImGui::TextUnformatted(
-            "FLY  LMB: look | WASD+E/Q: move | Shift: boost | F: play");
-        ImGui::SliderFloat("Fly speed (m/s)", &flyCamera.moveSpeed, 2.0f,
-                           150.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+    if (mode == SceneMode::Spectator) {
+        // Landscape + graphics performance (dev decision).
+        barToggle("Terrain", uiTerrainOpen);
+        barToggle("Sky & weather", uiSkyOpen);
+        barToggle("Rendering", uiRenderOpen);
+        barToggle("GPU perf", uiPerfOpen);
+    } else { // Edit: editing-related (the SceneEditor windows draw on
+             // their own; these are the extras).
+        barToggle("Gameplay", uiGameplayOpen);
+        barToggle("Terrain", uiTerrainOpen);
+        barToggle("Sky & weather", uiSkyOpen);
     }
-    ImGui::TextDisabled("F1-F4: sections | F10: hide panel");
-    ImGui::Separator();
-
-    if (section("Gameplay — player, NPC, physics  [F1]", ImGuiKey_F1,
-                uiGameplayOpen)) {
-        drawGameplayUi();
+    ImGui::SameLine();
+    if (ImGui::SmallButton(sceneConsole.visible() ? "Console*"
+                                                  : "Console")) {
+        sceneConsole.toggle(false);
     }
-
-    if (section("Terrain & streaming  [F2]", ImGuiKey_F2, uiTerrainOpen)) {
-        renderer.drawTerrainPanel(); // stats/seed/occlusion live with U4-2c
-    }
-
-    if (section("Sky, weather & time  [F3]", ImGuiKey_F3, uiSkyOpen)) {
-        drawSkyUi();
-    }
-
-    if (section("Rendering & post-FX  [F4]", ImGuiKey_F4, uiRenderOpen)) {
-        renderer.drawRenderPanel(atmos); // the *Ui toggles moved with U4-2c
-    }
-
-    if (section("GPU perf  [F6]", ImGuiKey_F6, uiPerfOpen)) {
-        // GPU-PERF P0: the per-pass budget table — the baseline that
-        // orders the optimization bricks (docs/GPU-PERF.md).
-        renderer.drawPerfPanel(&frameProbe);
-    }
+    const f32 barBottom = ImGui::GetWindowSize().y;
     ImGui::End();
+
+    // The right-docked windows the bar toggles.
+    u32 rightSlot = 0;
+    const auto rightWindow = [&](const char* title, bool& open,
+                                 auto&& body) {
+        if (!open) {
+            return;
+        }
+        ImGui::SetNextWindowPos(
+            ImVec2(display.x - 450.0f,
+                   barBottom + 8.0f + 32.0f * static_cast<f32>(rightSlot)),
+            ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(440.0f, display.y * 0.55f),
+                                 ImGuiCond_FirstUseEver);
+        ++rightSlot;
+        if (ImGui::Begin(title, &open)) {
+            body();
+        }
+        ImGui::End();
+    };
+    rightWindow("Gameplay — player, NPC, physics", uiGameplayOpen,
+                [&] { drawGameplayUi(); });
+    rightWindow("Terrain & streaming", uiTerrainOpen,
+                [&] { renderer.drawTerrainPanel(); });
+    rightWindow("Sky, weather & time", uiSkyOpen, [&] { drawSkyUi(); });
+    rightWindow("Rendering & post-FX", uiRenderOpen,
+                [&] { renderer.drawRenderPanel(atmos); });
+    rightWindow("GPU perf", uiPerfOpen,
+                [&] { renderer.drawPerfPanel(&frameProbe); });
+
+    // Edit mode: the scene switcher — a small vertical strip docked
+    // middle-left. Overlays PUSH onto the SceneStack: the world below
+    // pauses but stays WARM (no reload when popping back — the reason
+    // overlay won over scene-unload).
+    if (mode == SceneMode::Edit && host()) {
+        ImGui::SetNextWindowPos(ImVec2(0.0f, display.y * 0.35f),
+                                ImGuiCond_FirstUseEver);
+        ImGui::Begin("Scenes", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::TextDisabled("overlay\n(world pauses)");
+        if (ImGui::Button("Game DB", ImVec2(110.0f, 0.0f))) {
+            host()->push(std::make_unique<EditorScene>(*engine));
+        }
+        ImGui::End();
+    }
 }
 
 void LandscapeScene::drawSkyUi() {

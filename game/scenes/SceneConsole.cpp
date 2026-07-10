@@ -44,9 +44,18 @@ void SceneConsole::toggle(bool playMode) {
 }
 
 void SceneConsole::draw() const {
-    if (visible_ && console_) {
-        console_->draw();
+    if (!visible_ || !console_) {
+        return;
     }
+    // Quake-style: a full-width strip at the BOTTOM of the screen, the
+    // log above the input field (dev decision, interfaces-par-mode) —
+    // the only dev UI allowed in Play mode.
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const f32 height = display.y * 0.35f;
+    ImGui::SetNextWindowPos(ImVec2(0.0f, display.y - height));
+    ImGui::SetNextWindowSize(ImVec2(display.x, height));
+    console_->draw(ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
 }
 
 } // namespace game

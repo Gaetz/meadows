@@ -17,6 +17,7 @@
 #include "engine/platform/Paths.hpp"
 #include "engine/reflect/Visit.hpp"
 #include "game/AllForms.hpp"
+#include "game/SceneStack.hpp" // host()->pop() when stacked over the game
 #include "game/ui/ConditionBuilder.hpp"
 #include "game/ui/EventPicker.hpp"
 #include "game/ui/PropertyGrid.hpp"
@@ -252,6 +253,12 @@ void EditorScene::drawShell() {
             ImGui::EndDisabled();
             if (ImGui::MenuItem("Reload data")) {
                 reload(); // discards pending edits — status says so
+            }
+            // Overlay mode (interfaces-par-mode): pushed over the paused
+            // game world from Edit mode — pop back to it, still warm.
+            if (host() && host()->size() > 1 &&
+                ImGui::MenuItem("Close (back to game)")) {
+                host()->pop();
             }
             ImGui::EndMenu();
         }

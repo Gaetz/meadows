@@ -33,10 +33,12 @@ void SceneStack::applyPending() {
                 scenes.pop_back();
             }
             scenes.push_back(std::move(op.scene));
+            scenes.back()->host_ = this; // scenes push overlays through us
             scenes.back()->onEnter();
             break;
         case Op::Push:
             scenes.push_back(std::move(op.scene));
+            scenes.back()->host_ = this;
             scenes.back()->onEnter();
             break;
         }

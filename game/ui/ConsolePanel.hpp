@@ -25,8 +25,10 @@ public:
         commands[name] = std::move(command);
     }
 
-    // Draws the console window ("Console").
-    void draw();
+    // Draws the console window ("Console"). `windowFlags` lets a host
+    // force a layout (the game scene docks it Quake-style: full-width
+    // bottom strip, log above the input).
+    void draw(int windowFlags = 0);
 
     // Focus the input field on the next draw — the scene calls this when the
     // console opens so the player can type without clicking (the mouse is

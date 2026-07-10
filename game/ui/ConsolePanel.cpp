@@ -131,8 +131,8 @@ void ConsolePanel::execute(const str& line) {
     print(result.ok ? "  ok" : "  lua error: " + result.error);
 }
 
-void ConsolePanel::draw() {
-    ImGui::Begin("Console");
+void ConsolePanel::draw(int windowFlags) {
+    ImGui::Begin("Console", nullptr, windowFlags);
     const float footer = ImGui::GetFrameHeightWithSpacing();
     ImGui::BeginChild("log", ImVec2(0, -footer), ImGuiChildFlags_None,
                       ImGuiWindowFlags_HorizontalScrollbar);

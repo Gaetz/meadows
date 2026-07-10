@@ -11,6 +11,8 @@ class SpriteRenderer;
 
 namespace game {
 
+class SceneStack;
+
 // A layer on the SceneStack. The stack updates/draws from the top down per the
 // opaque / blocksUpdate rules below. Independent scenes own their own state
 // (their own ecs::World, FormDatabase…); overlays that act on the scene below
@@ -20,6 +22,12 @@ namespace game {
 class Scene {
 public:
     virtual ~Scene() = default;
+
+    // The stack this scene lives on (set by the stack itself when the
+    // scene enters, null before/after) — how a scene PUSHES overlays
+    // (Edit mode opens the DB editor OVER the paused, still-warm world)
+    // and how a pushed overlay pops itself back.
+    SceneStack* host() const { return host_; }
 
     virtual void onEnter() {}
     virtual void onExit() {}
@@ -39,6 +47,10 @@ public:
     virtual bool opaque() const { return true; }
     // If false, the scene below also updates (this scene does not pause it).
     virtual bool blocksUpdate() const { return true; }
+
+private:
+    friend class SceneStack;
+    SceneStack* host_ { nullptr };
 };
 
 } // namespace game
