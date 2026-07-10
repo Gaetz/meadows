@@ -8,7 +8,8 @@
 #include "engine/render/MeshVertexLayout.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
-#include "engine/assets/VertexAo.hpp"
+#include "engine/assets/VertexAoCache.hpp"
+#include "engine/platform/Paths.hpp"
 #include "engine/render/landscape/TreeGenerator.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
@@ -189,11 +190,15 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
 void VegetationSystem::createVariantMeshes(rhi::Device& device,
                                            u32 terrainSeed) {
     // Option B (2026-07-10): ambient grounding is BAKED into the vertex
-    // colors (assets::bakeVertexAo) — canopy interiors and rock creases
-    // darken with zero runtime cost, replacing the screen-space AO in
-    // the default look. [cpp-tuning] strengths below.
-    const auto baked = [](MeshData mesh, f32 strength) {
-        assets::bakeVertexAo(mesh, strength);
+    // colors — canopy interiors and rock creases darken with zero
+    // runtime cost. Content-keyed DISK CACHE (same store as the glTF
+    // bakes): these 17 synchronous bakes cost ~a minute in an
+    // unoptimized Debug build — once per geometry now, then loads.
+    // [cpp-tuning] strengths below.
+    const std::filesystem::path aoCacheDir =
+        platform::executableDir() / "data" / "cache" / "ao";
+    const auto baked = [&](MeshData mesh, f32 strength) {
+        assets::applyContentKeyedVertexAo(mesh, aoCacheDir, strength);
         return mesh;
     };
     for (u32 i = 0; i < kVariantCount; ++i) {

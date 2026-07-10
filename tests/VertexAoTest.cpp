@@ -181,3 +181,47 @@ TEST_CASE("vertex AO cache: prune drops orphans, keeps live entries") {
     // Idempotent.
     CHECK(assets::pruneVertexAoCache(temp.dir) == 0);
 }
+
+TEST_CASE("vertex AO cache: content-keyed entries bake once, survive prune") {
+    TempCacheDir temp;
+    const auto build = [] {
+        render::MeshData mesh;
+        appendQuad(mesh, { 0.0f, 0.0f, 0.0f }, { 2.0f, 0.0f, 0.0f },
+                   { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f });
+        appendQuad(mesh, { -0.1f, 0.0f, 0.0f }, { 0.0f, 2.0f, 0.0f },
+                   { 0.0f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f });
+        return mesh;
+    };
+    // First apply bakes + stores one entry (no source file involved).
+    render::MeshData first = build();
+    assets::applyContentKeyedVertexAo(first, temp.dir, 0.8f, { 16, 1.5f });
+    u32 aoEntries = 0;
+    for (const auto& entry : fs::directory_iterator(temp.dir)) {
+        aoEntries += entry.path().extension() == ".ao" ? 1u : 0u;
+    }
+    CHECK(aoEntries == 1);
+
+    // Keyed entries are exempt from the prune (no source to check).
+    CHECK(assets::pruneVertexAoCache(temp.dir) == 0);
+
+    // The second apply LOADS: identical result, entry untouched.
+    render::MeshData second = build();
+    assets::applyContentKeyedVertexAo(second, temp.dir, 0.8f, { 16, 1.5f });
+    for (size_t i = 0; i < first.vertices.size(); ++i) {
+        CHECK(second.vertices[i].color.r ==
+              doctest::Approx(first.vertices[i].color.r));
+    }
+
+    // DIFFERENT geometry = different key = a second entry.
+    render::MeshData other;
+    appendQuad(other, { 5.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f },
+               { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f });
+    appendQuad(other, { 4.9f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f },
+               { 0.0f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f });
+    assets::applyContentKeyedVertexAo(other, temp.dir, 0.8f, { 16, 1.5f });
+    aoEntries = 0;
+    for (const auto& entry : fs::directory_iterator(temp.dir)) {
+        aoEntries += entry.path().extension() == ".ao" ? 1u : 0u;
+    }
+    CHECK(aoEntries == 2);
+}

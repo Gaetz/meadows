@@ -148,6 +148,80 @@ void applyCachedVertexAo(render::MeshData& mesh,
     applyVertexOcclusion(mesh, occlusion, strength);
 }
 
+void applyContentKeyedVertexAo(render::MeshData& mesh,
+                               const std::filesystem::path& cacheDir,
+                               f32 strength,
+                               const VertexAoBakeDesc& desc) {
+    if (strength <= 0.0f || mesh.vertices.empty()) {
+        return;
+    }
+    // Content key: fnv1a over the vertex positions (stride-safe: hash
+    // the position field bytes per vertex, not the padded struct).
+    u32 hash = 2166136261u;
+    for (const render::MeshVertex& vertex : mesh.vertices) {
+        const char* bytes = reinterpret_cast<const char*>(&vertex.position);
+        for (size_t i = 0; i < sizeof(Vec3); ++i) {
+            hash = (hash ^ static_cast<unsigned char>(bytes[i])) *
+                   16777619u;
+        }
+    }
+    char key[64];
+    std::snprintf(key, sizeof(key), "key:%08x:%zu", hash,
+                  mesh.vertices.size());
+    const std::filesystem::path keyPath { str { key } };
+    const u32 vertexCount = static_cast<u32>(mesh.vertices.size());
+    // The keyed path never exists on disk: fingerprintOf would fail, so
+    // load/save go through the header path-match only (mtime/size 0).
+    const str keyUtf8 = keyPath.generic_string();
+    std::ifstream in(entryPathFor(cacheDir, keyUtf8), std::ios::binary);
+    if (in) {
+        Header header;
+        in.read(reinterpret_cast<char*>(&header), sizeof(header));
+        if (in && header.magic == kMagic &&
+            header.rayCount == desc.rayCount &&
+            header.maxDistance == desc.maxDistance &&
+            header.vertexCount == vertexCount && header.pathLength > 0 &&
+            header.pathLength <= 4096) {
+            str storedKey(header.pathLength, '\0');
+            in.read(storedKey.data(), header.pathLength);
+            if (in && storedKey == keyUtf8) {
+                vector<f32> occlusion(vertexCount);
+                in.read(reinterpret_cast<char*>(occlusion.data()),
+                        static_cast<std::streamsize>(vertexCount *
+                                                     sizeof(f32)));
+                if (in) {
+                    applyVertexOcclusion(mesh, occlusion, strength);
+                    return;
+                }
+            }
+        }
+    }
+    const vector<f32> occlusion =
+        computeVertexOcclusion(mesh, desc.rayCount, desc.maxDistance);
+    // Reuse the writer with a zero fingerprint (keyed entries validate
+    // by content hash alone).
+    std::error_code ec;
+    std::filesystem::create_directories(cacheDir, ec);
+    std::ofstream out(entryPathFor(cacheDir, keyUtf8),
+                      std::ios::binary | std::ios::trunc);
+    if (out) {
+        Header header;
+        header.rayCount = desc.rayCount;
+        header.maxDistance = desc.maxDistance;
+        header.sourceMtime = 0;
+        header.sourceSize = 0;
+        header.vertexCount = vertexCount;
+        header.pathLength = static_cast<u32>(keyUtf8.size());
+        out.write(reinterpret_cast<const char*>(&header), sizeof(header));
+        out.write(keyUtf8.data(),
+                  static_cast<std::streamsize>(keyUtf8.size()));
+        out.write(reinterpret_cast<const char*>(occlusion.data()),
+                  static_cast<std::streamsize>(occlusion.size() *
+                                               sizeof(f32)));
+    }
+    applyVertexOcclusion(mesh, occlusion, strength);
+}
+
 u32 pruneVertexAoCache(const std::filesystem::path& cacheDir) {
     std::error_code ec;
     u32 removed = 0;
@@ -164,8 +238,11 @@ u32 pruneVertexAoCache(const std::filesystem::path& cacheDir) {
             header.pathLength <= 4096) {
             str storedPath(header.pathLength, '\0');
             if (in.read(storedPath.data(), header.pathLength)) {
-                drop = !std::filesystem::exists(
-                    std::filesystem::path(storedPath), ec);
+                // Content-keyed entries (procedural meshes) have no
+                // source file — never pruned.
+                drop = storedPath.rfind("key:", 0) != 0 &&
+                       !std::filesystem::exists(
+                           std::filesystem::path(storedPath), ec);
             }
         }
         if (drop) {

@@ -42,7 +42,21 @@ bool saveVertexAoCache(const std::filesystem::path& cacheDir,
                        const vector<f32>& occlusion);
 
 // Startup sweep: deletes every entry whose recorded source mesh no
-// longer exists. Returns the number of entries removed.
+// longer exists. Returns the number of entries removed. Content-keyed
+// entries (below) have no source file and are never pruned (a few KB
+// each; a stale one simply goes unused).
 u32 pruneVertexAoCache(const std::filesystem::path& cacheDir);
+
+// Content-keyed entries — for PROCEDURAL meshes (the vegetation
+// variants: no source file to fingerprint). The key hashes the vertex
+// POSITIONS, so a new seed or a generator change re-bakes by
+// construction, and identical geometry always hits. Same one-call
+// contract as applyCachedVertexAo. (Debug-build discovery 2026-07-10:
+// the 17 synchronous veg bakes at scene create cost ~a minute
+// unoptimized — this makes it a one-time cost per geometry.)
+void applyContentKeyedVertexAo(render::MeshData& mesh,
+                               const std::filesystem::path& cacheDir,
+                               f32 strength,
+                               const VertexAoBakeDesc& desc = {});
 
 } // namespace assets
