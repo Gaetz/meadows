@@ -1149,15 +1149,43 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     // the edges crawl. Hysteresis instead: shadows sit rock-stable, then
     // take an imperceptible ~0.4° step every ~8 real seconds; the VISIBLE
     // sun/lighting keeps moving smoothly.
+    bool sunStepped = false;
     if (glm::dot(shadowSunDirection, skyState.sunDirection) <
         std::cos(glm::radians(0.4f))) {
         shadowSunDirection = skyState.sunDirection;
+        sunStepped = true;
     }
     render::ShadowMapper::Cascades cascades {};
+    // GPU-PERF P5c: which cascades actually re-render this frame. The
+    // baseline showed `shadows` at 5.5 ms — over half of it is the two
+    // far cascades. Round-robin: cascade 0 every frame, cascades 1 and 2
+    // on alternate frames, each keeping its PREVIOUS matrix when skipped
+    // (the stale depth must be sampled with the matrix it was drawn
+    // with). A sun step (or the A/B toggle off) re-renders all three.
+    array<bool, render::ShadowMapper::kCascadeCount> cascadeDue {
+        true, true, true
+    };
     if (shadowStrength > 0.0f) {
         cascades = shadows.computeCascades(camera, frame.aspect,
                                            shadowSunDirection);
+        ++shadowFrame;
+        const bool full =
+            !shadowRoundRobinUi || !lastCascadesValid || sunStepped;
+        if (!full) {
+            for (u32 i = 1; i < render::ShadowMapper::kCascadeCount; ++i) {
+                cascadeDue[i] = (shadowFrame + i) % 2 == 0;
+                if (!cascadeDue[i]) {
+                    cascades.viewProj[i] = lastCascades.viewProj[i];
+                    cascades.splitFar[i] = lastCascades.splitFar[i];
+                    cascades.texelWorld[i] = lastCascades.texelWorld[i];
+                }
+            }
+        }
+        lastCascades = cascades;
+        lastCascadesValid = true;
         shadows.updateCascadeUbos(frame.device, cascades);
+    } else {
+        lastCascadesValid = false; // interiors/night: refit from scratch
     }
 
     // Planar reflection is meaningful only from above the surface.
@@ -1318,6 +1346,9 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         core::FrameProbe::Scope probe { *view.probe, "shadows" };
         render::GpuProbe::Scope gpu { gpuProbe, frame.device, "shadows" };
         for (u32 i = 0; i < render::ShadowMapper::kCascadeCount; ++i) {
+            if (!cascadeDue[i]) {
+                continue; // P5c: kept last frame's depth AND matrix
+            }
             frame.cmd.beginRenderPass(
                 { .framebuffer = shadows.framebuffer(i),
                   .loadOp = rhi::LoadOp::DontCare,
@@ -1724,6 +1755,10 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
     ImGui::Checkbox("Shadows", &shadowsUi);
     ImGui::SameLine();
     ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);
+    // GPU-PERF P5c A/B: far cascades on alternate frames (baseline had
+    // `shadows` at 5.5 ms) — off = every cascade every frame.
+    ImGui::Checkbox("CSM round-robin (far cascades 1/2 rate)",
+                    &shadowRoundRobinUi);
     // B2a A/B: houses/crates/NPCs casting into the sun cascades.
     ImGui::Checkbox("Mesh shadow casters", &meshShadowCastersUi);
     ImGui::SameLine();

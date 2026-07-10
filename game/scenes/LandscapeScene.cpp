@@ -728,6 +728,11 @@ void LandscapeScene::restoreMode(SceneMode target) {
         break;
     case SceneMode::Spectator:
         mode = SceneMode::Spectator;
+        // Spectator flies like Edit: free cursor (LMB-look), no console.
+        engine->getWindow().setRelativeMouseMode(false);
+        if (sceneConsole.visible()) {
+            sceneConsole.toggle(false);
+        }
         break;
     case SceneMode::Edit:
         mode = SceneMode::Edit;

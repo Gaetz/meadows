@@ -51,7 +51,7 @@ void SceneConsole::draw() const {
     // log above the input field (dev decision, interfaces-par-mode) —
     // the only dev UI allowed in Play mode.
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    const f32 height = display.y * 0.35f;
+    const f32 height = display.y * 0.18f; // half the first cut (dev call)
     ImGui::SetNextWindowPos(ImVec2(0.0f, display.y - height));
     ImGui::SetNextWindowSize(ImVec2(display.x, height));
     console_->draw(ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |

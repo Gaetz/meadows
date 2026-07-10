@@ -167,6 +167,19 @@ au premier skip (noir pour les additifs, blanc pour SSAO — motif
   pas en tête de table).
 
 ### P5 — Cache CSM (le gros morceau — SEULEMENT si `shadows` domine)
+
+> **BASELINE DEV (2026-07-10, RTX 4070 SUPER, spot extérieur) : total
+> GPU 10,0 ms, `shadows` = 5,51 ms (55 % !), reflection 1,70, mainVeg
+> 1,81, mainGrass 0,36, postfx cumulé ~0,3 (→ P2 ABANDONNÉE par la
+> règle < 0,5 ms).** L'ordre devient : P5(c) → P3 → knobs veg P1.
+>
+> **P5(c) round-robin FAIT (même jour, toggle « CSM round-robin » du
+> panneau Rendering, ON par défaut — validation visuelle dev en
+> mouvement attendue + relever le nouveau `shadows`)** : cascade 0
+> chaque frame, cascades 1/2 en alternance ; une cascade sautée garde
+> SA matrice précédente (receiver + caster UBO — la depth stale doit
+> être échantillonnée avec la matrice qui l'a dessinée) ; un pas de
+> soleil re-rend tout. Attendu ~-2 ms sur `shadows`.
 **Piège dit honnêtement :** les cascades re-fittent sur le frustum
 caméra chaque frame — en déplacement les matrices changent presque
 chaque frame et invalident tout cache naïf (le snap texel n'absorbe que

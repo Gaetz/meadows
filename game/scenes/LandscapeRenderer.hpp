@@ -169,6 +169,14 @@ private:
     vector<render::TerrainSystem::ChunkAabb> occlusionAabbs;
     vector<render::GpuOcclusion::Candidate> occlusionCandidates;
     render::ShadowMapper shadows;
+    // GPU-PERF P5c — CSM round-robin: cascade 0 renders every frame, the
+    // far cascades alternate. A SKIPPED cascade keeps its previous
+    // matrix (receiver and caster UBOs alike) so the stale depth still
+    // matches; a sun step re-renders everything that frame.
+    bool shadowRoundRobinUi { true };
+    render::ShadowMapper::Cascades lastCascades {};
+    bool lastCascadesValid { false };
+    u64 shadowFrame { 0 };
     render::WaterSystem water;
     render::PostFx postFx;
     render::GpuProbe gpuProbe; // GPU-PERF P0: per-pass GPU budget
