@@ -174,6 +174,14 @@ private:
     // matrix (receiver and caster UBOs alike) so the stale depth still
     // matches; a sun step re-renders everything that frame.
     bool shadowRoundRobinUi { true };
+    // GPU-PERF P3 — the planar reflection levers (baseline: 1.70 ms):
+    // auto-skip renders it only when a RESIDENT below-sea chunk is in
+    // the frustum (edge case: sea at the horizon beyond the ring — the
+    // A/B toggle exists for exactly that check), and the resolution
+    // scale trades mirror sharpness for fill rate.
+    bool reflectionAutoSkipUi { true };
+    f32 reflectionScaleUi { 0.5f };
+    f32 appliedReflectionScale { 0.5f };
     render::ShadowMapper::Cascades lastCascades {};
     bool lastCascadesValid { false };
     u64 shadowFrame { 0 };

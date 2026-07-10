@@ -341,7 +341,8 @@ void LandscapeRenderer::destroy(rhi::Device& device) {
 void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                                            u32 height) {
     if (offscreenFb.id() != 0 && offscreenWidth == width &&
-        offscreenHeight == height) {
+        offscreenHeight == height &&
+        appliedReflectionScale == reflectionScaleUi) {
         return;
     }
     destroyOffscreenTarget(device);
@@ -380,8 +381,16 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
               .format = rhi::TextureFormat::Depth32F,
               .usage = rhi::TextureUsage_Sampled },
             nullptr) };
-        const u32 reflectionWidth = glm::max(width / 2, 1u);
-        const u32 reflectionHeight = glm::max(height / 2, 1u);
+        // GPU-PERF P3: the reflection resolution is a knob (baseline:
+        // 1.70 ms at half res) — 0.5 = the historical half-res look,
+        // 0.25 = quarter res (blurrier mirror, dev judges).
+        const u32 reflectionWidth = glm::max(
+            static_cast<u32>(static_cast<f32>(width) * reflectionScaleUi),
+            1u);
+        const u32 reflectionHeight = glm::max(
+            static_cast<u32>(static_cast<f32>(height) * reflectionScaleUi),
+            1u);
+        appliedReflectionScale = reflectionScaleUi;
         reflectionColor = { device, device.createTexture(
             { .width = reflectionWidth,
               .height = reflectionHeight,
@@ -1188,10 +1197,32 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         lastCascadesValid = false; // interiors/night: refit from scratch
     }
 
-    // Planar reflection is meaningful only from above the surface.
+    // Planar reflection is meaningful only from above the surface —
+    // and (P3 auto-skip) only when some water can actually show: a
+    // RESIDENT chunk dipping below sea level inside the frustum. The
+    // known miss: sea at the horizon beyond the resident ring (~960 m) —
+    // the A/B toggle is there for that exact check.
+    bool waterVisible = true;
+    if (reflectionAutoSkipUi && !view.interiorMode && reflectionsUi) {
+        waterVisible = false;
+        terrain.collectChunkAabbs(occlusionAabbs);
+        const f32 sea = terrain.params.seaLevel;
+        for (const auto& aabb : occlusionAabbs) {
+            if (aabb.lo.y >= sea) {
+                continue; // fully above the water table
+            }
+            // Test the chunk's water RECTANGLE (the sea plane spans it).
+            if (viewFrustum.intersectsAabb(
+                    { aabb.lo.x, sea - 1.0f, aabb.lo.z },
+                    { aabb.hi.x, sea + 1.0f, aabb.hi.z })) {
+                waterVisible = true;
+                break;
+            }
+        }
+    }
     const bool reflectionsActive =
         reflectionsUi && reflectionFb.id() != 0 && !view.interiorMode &&
-        camera.position.y > terrain.params.seaLevel;
+        camera.position.y > terrain.params.seaLevel && waterVisible;
 
     // The whole UBO composition is pure (audit U4-6a): gather the inputs,
     // let the composer build both variants, upload. This side keeps only
@@ -1776,6 +1807,12 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::SliderFloat("Contrast", &gradeContrastUi, 0.8f, 1.4f, "%.2f");
     }
     ImGui::Checkbox("Water reflections", &reflectionsUi);
+    // GPU-PERF P3: skip the mirror render when no resident water is in
+    // view (A/B — the horizon-sea edge case), and trade its resolution.
+    ImGui::SameLine();
+    ImGui::Checkbox("auto-skip", &reflectionAutoSkipUi);
+    ImGui::SliderFloat("Reflection scale", &reflectionScaleUi, 0.25f, 0.5f,
+                       "%.2f");
     ImGui::SliderFloat("Exposure", &exposureUi, 0.25f, 3.0f, "%.2f");
     // B4 A/B (brick 29): eye adaptation; Exposure above becomes the bias.
     ImGui::Checkbox("Auto exposure (brick 29)", &autoExposureUi);

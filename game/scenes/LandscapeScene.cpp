@@ -637,17 +637,18 @@ void LandscapeScene::update(f32 dt) {
         playerController.update(dt, makePlayerContext());
     } else {
         // Don't steal the mouse from ImGui: clicking a panel must not
-        // mouselook. Spectator looks like Play (mouselook always, no button);
-        // Edit looks only while RMB is held, keeping LMB free for pick /
-        // place / sculpt. Hold Alt to free the cursor (reach ImGui panels)
-        // without leaving the mode.
+        // mouselook. Spectator AND Edit look only while RMB is held (dev
+        // decision 2026-07-10: the cursor stays free by default in both,
+        // for the panels/buttons); only the no-capsule Play fallback
+        // keeps continuous mouselook. Hold Alt to free the cursor
+        // mid-look without releasing the button.
         const bool freeMouse = ImGui::GetIO().KeyAlt;
         const bool allowCapture =
             !ImGui::GetIO().WantCaptureMouse && !freeMouse;
         const auto trigger =
-            (mode == SceneMode::Edit)
-                ? render::FlyCamera::LookTrigger::RightButton
-                : render::FlyCamera::LookTrigger::Always;
+            (mode == SceneMode::Play)
+                ? render::FlyCamera::LookTrigger::Always
+                : render::FlyCamera::LookTrigger::RightButton;
         flyCamera.update(engine->getInput(), engine->getWindow(), dt,
                          allowCapture, trigger);
     }

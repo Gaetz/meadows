@@ -146,6 +146,15 @@ au premier skip (noir pour les additifs, blanc pour SSAO — motif
 `clearContactShadows` existant, PostFx.cpp:267-278).
 
 ### P3 — Réflexion planaire (S×3, tout togglé)
+
+> **FAITE (2026-07-10) — validation dev en attente.** P5c mesuré par le
+> dev : `shadows` 5,51 → **3,6 ms** (-1,9 ms, conforme). P3 livre :
+> **auto-skip** (checkbox à côté de Water reflections, ON par défaut —
+> le miroir ne se rend que si un chunk résident sous seaLevel est dans
+> le frustum ; cas limite mer-à-l'horizon = LE point à vérifier sur la
+> crête) et **Reflection scale** (slider 0,25-0,5, recreate du target).
+> À relever : `reflection` en vue mer (inchangé ~1,7 ms), en vue
+> montagne (→ ~0 si le skip mord), et à 0,25 (~0,6 ms attendu).
 1. **Skip si pas d'eau visible** : la mer est le seul consommateur de
    `uReflection` (les volumes placés utilisent le fresnel ciel). Test :
    aucun chunk résident avec `lo.y < seaLevel` dans le frustum →
