@@ -50,9 +50,11 @@ void main() {
         }
         float s = distance(worldFromDepth(uv, d), uCameraPos.xyz);
         // Range guard: geometry far in front/behind is DISCONNECTED
-        // (silhouettes must not halo). Window scales with distance so
-        // it stays meaningful at range.
-        float range = 2.0 + center * 0.08;
+        // (silhouettes must not halo). Window scales with distance —
+        // CAPPED (dev report 2026-07-10: uncapped it reached ~34 m at
+        // 400 m and haloed above every distant object; capped, the far
+        // field keeps the "inked" valley shading without the halos).
+        float range = 2.0 + min(center, 60.0) * 0.08;
         float w = 1.0 - smoothstep(range * 0.5, range * 2.0,
                                    abs(s - center));
         sum += s * w;

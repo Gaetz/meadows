@@ -69,5 +69,10 @@ void main() {
     float rim = smoothstep(0.34, 0.20, mask) * sunSide;
     color += (uSunColor.rgb + vec3(0.25)) * rim * 0.35;
 
-    fragColor = vec4(applyFog(color, vWorldPos), alpha);
+    // Clouds live ABOVE the ground haze: cap the fog dissolve at 45 %
+    // (full applyFog at 3.2 km reached ~98 % and erased the towers
+    // entirely — dev report 2026-07-10). The partial haze keeps them
+    // atmospheric without hiding them.
+    vec3 fogged = applyFog(color, vWorldPos);
+    fragColor = vec4(mix(color, fogged, 0.45), alpha);
 }
