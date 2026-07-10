@@ -43,11 +43,13 @@ public:
     // after the water pass, before the tonemap. `shadowBindGroup` is the CSM
     // receiver group (the volumetric march taps it per step). Pass a
     // GpuProbe (+ its device) to time each sub-pass (GPU-PERF P0);
-    // nullptr = no instrumentation.
+    // nullptr = no instrumentation. `ssaoActive` false (strength 0 — the
+    // default since option B) skips the AO march + blur and clears the
+    // tapped target to neutral white instead (the contact pattern).
     void render(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
                 rhi::BindGroupHandle shadowBindGroup,
                 rhi::Device* probeDevice = nullptr,
-                GpuProbe* probe = nullptr);
+                GpuProbe* probe = nullptr, bool ssaoActive = true);
 
     // Brick 29 (chantier 6 B4): auto-exposure — log-luminance 64² → mips →
     // 1×1 average, then the adaptation micro-pass (1×1 ping-pong with

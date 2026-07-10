@@ -347,7 +347,8 @@ void PostFx::renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
 void PostFx::render(rhi::CommandBuffer& cmd,
                     rhi::BindGroupHandle frameBindGroup,
                     rhi::BindGroupHandle shadowBindGroup,
-                    rhi::Device* probeDevice, GpuProbe* probe) {
+                    rhi::Device* probeDevice, GpuProbe* probe,
+                    bool ssaoActive) {
     if (!ready()) {
         return;
     }
@@ -415,6 +416,17 @@ void PostFx::render(rhi::CommandBuffer& cmd,
         cmd.endRenderPass();
     }
 
+    if (!ssaoActive) {
+        // Early-out (strength 0 — the option-B default): the tonemap
+        // multiplies the AO texture regardless, so the tapped target
+        // must be neutral white (the contact-shadow pattern).
+        cmd.beginRenderPass({ .framebuffer = aoBlurFb,
+                              .loadOp = rhi::LoadOp::Clear,
+                              .clearColor = { 1.0f, 1.0f, 1.0f, 1.0f },
+                              .depthLoadOp = rhi::LoadOp::DontCare });
+        cmd.endRenderPass();
+        return;
+    }
     {
         GpuProbe::Scope scope { probe, probeDevice, "ssao" };
         // AO: contact darkening from the scene depth. Two techniques,

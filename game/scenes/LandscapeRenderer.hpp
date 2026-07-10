@@ -206,13 +206,15 @@ private:
     // continuously rotating light re-bases the texel snap every frame —
     // crawling edges); lighting keeps the smooth skyState sun.
     Vec3 shadowSunDirection { 0.0f, 1.0f, 0.0f };
-    // Chantier 6 B3 (brick 28): analytical grade — OFF by default (A/B).
-    bool gradingUi { false };
+    // Chantier 6 B3 (brick 28): analytical grade — ON by default since
+    // 2026-07-10 (dev call); the A/B checkbox remains.
+    bool gradingUi { true };
     f32 gradeVibranceUi { 0.3f };
     f32 gradeSplitToneUi { 0.35f };
     f32 gradeContrastUi { 1.06f };
-    // Chantier 6 B4 (brick 29): auto-exposure — OFF by default (A/B).
-    bool autoExposureUi { false };
+    // Chantier 6 B4 (brick 29): auto-exposure — ON by default since
+    // 2026-07-10 (dev call); the A/B checkbox remains.
+    bool autoExposureUi { true };
     f32 autoExposureMinUi { 0.4f };
     f32 autoExposureMaxUi { 2.5f };
     f32 exposureUi { 1.0f };

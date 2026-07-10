@@ -1641,7 +1641,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
         postFx.render(frame.cmd, frameBindGroup,
                       shadows.receiverBindGroup(), &frame.device,
-                      &gpuProbe);
+                      &gpuProbe, /*ssaoActive=*/ssaoUi > 0.001f);
         // 33a: contact shadows (the texture is the toggle — white = off).
         {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
