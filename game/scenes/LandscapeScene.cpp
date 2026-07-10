@@ -696,29 +696,44 @@ void LandscapeScene::exitPlayMode() {
     // The camera stays where the player stood — Fly resumes from there.
 }
 
-// Drive the scene into `target` from the current mode, reusing enter/exitPlay-
-// Mode so the capsule and mouse/HUD state stay consistent. Used to restore the
-// pre-menu mode on Escape (and anywhere a mode needs setting programmatically).
+// THE mode transition (dev rule, 2026-07-10: one mode REPLACES the
+// other — every switch funnels here, hotkeys and menu resume alike, and
+// the per-mode side effects live in the two flat switches below, not in
+// nested ifs at the call sites).
 void LandscapeScene::restoreMode(SceneMode target) {
     if (mode == target) {
         return;
     }
-    switch (target) {
+    // Leave the current mode.
+    switch (mode) {
     case SceneMode::Play:
-        enterPlayMode(); // spawns the capsule, grabs the mouse, shows the HUD
-        break;
-    case SceneMode::Spectator:
-        if (mode == SceneMode::Play) {
-            exitPlayMode(); // -> Spectator (tears down the capsule)
-        } else {
-            mode = SceneMode::Spectator; // from Edit
-        }
+        exitPlayMode(); // tears down the capsule, frees the mouse, hides HUD
         break;
     case SceneMode::Edit:
-        if (mode == SceneMode::Play) {
-            exitPlayMode();
+        sceneEditor.deselect();
+        break;
+    case SceneMode::Spectator:
+        break;
+    }
+    // Enter the target.
+    switch (target) {
+    case SceneMode::Play:
+        if (sceneConsole.visible()) {
+            // Play starts CLEAN: an open console would keep the keyboard
+            // focus and eat WASD while the mouse is captured (the
+            // "cannot get back into the game" dev report) — ` reopens it.
+            sceneConsole.toggle(true);
         }
+        enterPlayMode(); // spawns the capsule, grabs the mouse, shows HUD
+        break;
+    case SceneMode::Spectator:
+        mode = SceneMode::Spectator;
+        break;
+    case SceneMode::Edit:
         mode = SceneMode::Edit;
+        if (!sceneConsole.visible()) {
+            sceneConsole.toggle(false); // Edit opens the console by default
+        }
         break;
     }
 }
@@ -1287,8 +1302,18 @@ UiRouterContext LandscapeScene::makeUiRouterContext() {
         [this](f32 hours) {
             interaction.wait(hours, makeInteractionContext());
         },
-        [this] { enterPlayMode(); },
-        [this] { exitPlayMode(); },
+        // Menu resume/leave go through THE transition (restoreMode owns
+        // every mode side effect — dev rule 2026-07-10). restoreMode
+        // no-ops when already in the mode, so resume-from-menu (mode
+        // still Play) keeps its old direct-call behaviour via the else.
+        [this] {
+            if (mode == SceneMode::Play) {
+                enterPlayMode(); // re-grab mouse/HUD after a modal menu
+            } else {
+                restoreMode(SceneMode::Play);
+            }
+        },
+        [this] { restoreMode(SceneMode::Spectator); },
         [this] { engine->requestQuit(); },
     };
 }
@@ -1607,42 +1632,20 @@ void LandscapeScene::drawUi() {
                 ImVec4(0.0f, 0.0f, 0.0f, interaction.fadeAlpha())));
     }
 
-    // Mode hotkeys. Play is home: F2 toggles Spectator (a paused free camera —
-    // the photo-mode base), F3 toggles the level editor. Each key returns to
-    // Play when pressed again. Both are inert while a modal menu owns the input
-    // (grabbing the mouse for Play would fight the menu). F2/F3 (not F11/F12)
-    // stay clear of the CLion/VS debugger's global Step Into/Over shortcuts.
-    // Since the interfaces-par-mode pass, the F-keys belong to the MODES
-    // alone — no panel section grabs them anymore.
+    // Mode hotkeys. Play is home: F2 toggles Play<->Spectator, F3 toggles
+    // Play<->Edit, and from any OTHER mode the key REPLACES it with its
+    // own (dev rule 2026-07-10). All side effects live in restoreMode —
+    // the keys only pick the target. Both are inert while a modal menu
+    // owns the input. F2/F3 (not F11/F12) stay clear of the CLion/VS
+    // debugger's global Step Into/Over shortcuts.
     if (!screenStack.modalOpen()) {
         if (ImGui::IsKeyPressed(ImGuiKey_F2, false)) {
-            if (mode == SceneMode::Spectator) {
-                enterPlayMode(); // back to Play (home)
-            } else {
-                if (mode == SceneMode::Edit) {
-                    sceneEditor.deselect();
-                }
-                if (mode == SceneMode::Play) {
-                    exitPlayMode(); // -> Spectator (tears down the capsule)
-                } else {
-                    mode = SceneMode::Spectator; // from Edit
-                }
-            }
+            restoreMode(mode == SceneMode::Spectator ? SceneMode::Play
+                                                     : SceneMode::Spectator);
         }
         if (ImGui::IsKeyPressed(ImGuiKey_F3, false) && levelEditor) {
-            if (mode == SceneMode::Edit) {
-                sceneEditor.deselect();
-                enterPlayMode(); // editor off -> back to Play (home)
-            } else {
-                if (mode == SceneMode::Play) {
-                    exitPlayMode(); // tears down the capsule (the editor flies)
-                }
-                mode = SceneMode::Edit;
-                // Edit mode opens the console by default (dev decision).
-                if (!sceneConsole.visible()) {
-                    sceneConsole.toggle(false);
-                }
-            }
+            restoreMode(mode == SceneMode::Edit ? SceneMode::Play
+                                                : SceneMode::Edit);
         }
     }
     if (mode == SceneMode::Edit && levelEditor) {
