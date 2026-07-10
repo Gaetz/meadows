@@ -1,5 +1,24 @@
 # Chantier 8 — Session de test dev (briques 8.7 → 8.11)
 
+## 0-bis. Interfaces par mode (8.7f, ajoutée 2026-07-10) — 10 min
+
+Dans la scène Landscape :
+- [ ] **Play** : AUCUN panneau dev ; **`** (touche à gauche du 1) ouvre
+      la console en bande pleine largeur en bas (log au-dessus du champ) ;
+      la fermer recapture la souris. F2/F3 changent de mode sans ouvrir
+      de section. F5/F9 save/load inchangés.
+- [ ] **Spectateur (F2)** : barre fine en haut (mode, fps, position,
+      vitesse de vol) + boutons Terrain / Sky & weather / Rendering /
+      GPU perf / Console → fenêtres dockées à droite (déplaçables), le
+      bouton s'allume quand la fenêtre est ouverte.
+- [ ] **Édition (F3)** : la console s'ouvre TOUTE SEULE ; boutons
+      Gameplay / Terrain / Sky ; les fenêtres du SceneEditor inchangées ;
+      petite bande verticale « Scenes » à gauche → **Game DB** s'ouvre
+      PAR-DESSUS le monde (pausé, PAS déchargé) ; dans l'éditeur,
+      File → « Close (back to game) » → retour instantané au monde
+      chaud, exactement où tu étais.
+- [ ] **F10** masque toute l'UI dev (photo) dans tous les modes.
+
 > Écrit 2026-07-10 (nuit). Tout ce qui suit est **construit, commité,
 > 345 tests headless verts** — mais non validé à la main. La 8.6 est déjà
 > validée. Ordre conseillé : la session suit le flux naturel (éditeur →
