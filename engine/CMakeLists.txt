@@ -16,6 +16,7 @@ add_library(meadows STATIC
     assets/Image.cpp
     assets/StbImpl.cpp
     assets/VertexAo.cpp
+    assets/VertexAoCache.cpp
     core/Guid.cpp
     core/Jobs.cpp
     core/Log.cpp

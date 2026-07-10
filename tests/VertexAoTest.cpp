@@ -79,3 +79,105 @@ TEST_CASE("vertex AO: zero strength is a strict no-op") {
         CHECK(vertex.color.r == doctest::Approx(1.0f));
     }
 }
+
+// The disk cache (dev ask 2026-07-10: authored meshes take seconds to
+// bake — cache across sessions, validate by mtime/size, prune orphans).
+#include <filesystem>
+#include <fstream>
+
+#include "engine/assets/VertexAoCache.hpp"
+
+namespace {
+
+namespace fs = std::filesystem;
+
+struct TempCacheDir {
+    fs::path dir;
+    fs::path source;
+    TempCacheDir() {
+        dir = fs::temp_directory_path() / "meadows-ao-cache-test";
+        fs::remove_all(dir);
+        fs::create_directories(dir);
+        // A real on-disk "source mesh" file (the cache fingerprints it).
+        source = dir / "source-mesh.gltf";
+        std::ofstream(source, std::ios::binary) << "fake gltf bytes";
+    }
+    ~TempCacheDir() { fs::remove_all(dir); }
+};
+
+} // namespace
+
+TEST_CASE("vertex AO cache: save/load round-trip, stale on param change") {
+    TempCacheDir temp;
+    const assets::VertexAoBakeDesc desc { 16, 2.5f };
+    const vector<f32> occlusion { 0.0f, 0.25f, 0.5f, 1.0f };
+
+    // Nothing cached yet.
+    CHECK_FALSE(assets::loadVertexAoCache(temp.dir, temp.source, desc, 4)
+                    .has_value());
+    REQUIRE(assets::saveVertexAoCache(temp.dir, temp.source, desc,
+                                      occlusion));
+    const auto loaded =
+        assets::loadVertexAoCache(temp.dir, temp.source, desc, 4);
+    REQUIRE(loaded.has_value());
+    CHECK((*loaded)[1] == doctest::Approx(0.25f));
+    CHECK((*loaded)[3] == doctest::Approx(1.0f));
+
+    // Different params, vertex count or a rewritten source = stale.
+    CHECK_FALSE(assets::loadVertexAoCache(temp.dir, temp.source,
+                                          { 8, 2.5f }, 4)
+                    .has_value());
+    CHECK_FALSE(assets::loadVertexAoCache(temp.dir, temp.source, desc, 5)
+                    .has_value());
+    std::ofstream(temp.source, std::ios::binary)
+        << "different bytes entirely";
+    CHECK_FALSE(assets::loadVertexAoCache(temp.dir, temp.source, desc, 4)
+                    .has_value());
+}
+
+TEST_CASE("vertex AO cache: applyCached bakes once then reuses the entry") {
+    TempCacheDir temp;
+    const auto build = [] {
+        render::MeshData mesh;
+        appendQuad(mesh, { 0.0f, 0.0f, 0.0f }, { 2.0f, 0.0f, 0.0f },
+                   { 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f });
+        appendQuad(mesh, { -0.1f, 0.0f, 0.0f }, { 0.0f, 2.0f, 0.0f },
+                   { 0.0f, 0.0f, 1.0f }, { 1.0f, 0.0f, 0.0f });
+        return mesh;
+    };
+    render::MeshData first = build();
+    assets::applyCachedVertexAo(first, temp.source, temp.dir, 0.8f,
+                                { 16, 1.5f });
+    // The entry now exists and drives the second apply: TAMPER it via
+    // the public API (same key, different values) — if the second apply
+    // LOADS (instead of re-baking), the tampered values show up.
+    vector<f32> tampered(first.vertices.size(), 0.5f);
+    REQUIRE(assets::saveVertexAoCache(temp.dir, temp.source,
+                                      { 16, 1.5f }, tampered));
+    render::MeshData second = build();
+    assets::applyCachedVertexAo(second, temp.source, temp.dir, 0.8f,
+                                { 16, 1.5f });
+    for (const render::MeshVertex& vertex : second.vertices) {
+        CHECK(vertex.color.r == doctest::Approx(1.0f - 0.8f * 0.5f));
+    }
+}
+
+TEST_CASE("vertex AO cache: prune drops orphans, keeps live entries") {
+    TempCacheDir temp;
+    const assets::VertexAoBakeDesc desc {};
+    const vector<f32> occlusion { 0.1f };
+    // A live entry (source exists) and an orphan (source deleted after).
+    REQUIRE(assets::saveVertexAoCache(temp.dir, temp.source, desc,
+                                      occlusion));
+    const fs::path ghost = temp.dir / "ghost-mesh.gltf";
+    std::ofstream(ghost, std::ios::binary) << "soon gone";
+    REQUIRE(assets::saveVertexAoCache(temp.dir, ghost, desc, occlusion));
+    fs::remove(ghost);
+
+    CHECK(assets::pruneVertexAoCache(temp.dir) == 1);
+    // The live entry survived and still loads.
+    CHECK(assets::loadVertexAoCache(temp.dir, temp.source, desc, 1)
+              .has_value());
+    // Idempotent.
+    CHECK(assets::pruneVertexAoCache(temp.dir) == 0);
+}

@@ -40,8 +40,20 @@ void bakeVertexAo(render::MeshData& mesh, f32 strength, u32 rayCount,
     if (strength <= 0.0f || rayCount == 0 || mesh.indices.size() < 3) {
         return;
     }
+    applyVertexOcclusion(
+        mesh, computeVertexOcclusion(mesh, rayCount, maxDistance), strength);
+}
+
+vector<f32> computeVertexOcclusion(const render::MeshData& mesh,
+                                   u32 rayCount, f32 maxDistance) {
+    vector<f32> result;
+    result.reserve(mesh.vertices.size());
+    if (rayCount == 0 || mesh.indices.size() < 3) {
+        result.assign(mesh.vertices.size(), 0.0f);
+        return result;
+    }
     const f32 goldenAngle = 2.3999632f;
-    for (render::MeshVertex& vertex : mesh.vertices) {
+    for (const render::MeshVertex& vertex : mesh.vertices) {
         const Vec3 normal = glm::normalize(vertex.normal);
         const Vec3 helper = std::abs(normal.y) < 0.9f
                                 ? Vec3 { 0.0f, 1.0f, 0.0f }
@@ -82,10 +94,20 @@ void bakeVertexAo(render::MeshData& mesh, f32 strength, u32 rayCount,
                 occlusion += 1.0f - nearest / maxDistance; // close = dark
             }
         }
-        const f32 ao = glm::clamp(
-            1.0f - strength * (occlusion / static_cast<f32>(rayCount)),
-            0.0f, 1.0f);
-        vertex.color *= ao;
+        result.push_back(occlusion / static_cast<f32>(rayCount));
+    }
+    return result;
+}
+
+void applyVertexOcclusion(render::MeshData& mesh,
+                          const vector<f32>& occlusion, f32 strength) {
+    if (strength <= 0.0f || occlusion.size() != mesh.vertices.size()) {
+        return;
+    }
+    for (size_t i = 0; i < mesh.vertices.size(); ++i) {
+        const f32 ao =
+            glm::clamp(1.0f - strength * occlusion[i], 0.0f, 1.0f);
+        mesh.vertices[i].color *= ao;
     }
 }
 

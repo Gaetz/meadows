@@ -1,7 +1,11 @@
 #include "game/MeshCache.hpp"
 
+#include <mutex>
+
 #include "engine/assets/GltfMesh.hpp"
-#include "engine/assets/VertexAo.hpp"
+#include "engine/assets/VertexAoCache.hpp"
+#include "engine/core/Log.hpp"
+#include "engine/platform/Paths.hpp"
 #include "engine/render/MeshBuilder.hpp"
 
 namespace game {
@@ -42,10 +46,23 @@ MeshCacheTraits::decode(const std::filesystem::path& path) {
         // (authored scale kept — references carry the instance scale).
         assets::groundMesh(*mesh);
         // Option B (2026-07-10): ambient grounding baked into the vertex
-        // colors on this decode WORKER — kit recesses and prop creases
-        // darken for free; screen-space AO left the default look.
-        // [cpp-tuning] strength.
-        assets::bakeVertexAo(*mesh, 0.5f);
+        // colors — kit recesses and prop creases darken for free. The
+        // bake is SECONDS per authored mesh, so it goes through the disk
+        // cache (validated by mtime/size + params; raw fractions, so the
+        // [cpp-tuning] strength below retunes without invalidating). The
+        // first decode of the process sweeps entries whose source mesh
+        // is gone. NB: the bake happens BEFORE grounding would matter —
+        // occlusion is translation-invariant, groundMesh only shifts.
+        static const std::filesystem::path cacheDir =
+            platform::executableDir() / "data" / "cache" / "ao";
+        static std::once_flag pruneOnce;
+        std::call_once(pruneOnce, [] {
+            if (const u32 removed = assets::pruneVertexAoCache(cacheDir)) {
+                LOG_INFO("vertex AO cache: pruned {} orphaned entr{}",
+                         removed, removed == 1 ? "y" : "ies");
+            }
+        });
+        assets::applyCachedVertexAo(*mesh, path, cacheDir, 0.5f);
     }
     return mesh;
 }
