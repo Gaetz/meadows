@@ -18,9 +18,15 @@ void main() {
     float v = aTower.z;
     vSeed = aTower.w;
 
-    float ring = 3200.0; // meters out
-    float width = (700.0 + vSeed * 900.0);
-    float height = (900.0 + vSeed * 1100.0);
+    // Ring INSIDE the camera far plane (dev report 2026-07-10: at the
+    // original 3200 m the towers sat beyond farPlane=1600 and were
+    // clipped SINCE DAY ONE — brick 7.6 had never actually displayed).
+    // Sizes scale with the ring (same perspective, same on-screen
+    // footprint); still behind every drawn chunk (~960 m), so terrain
+    // silhouettes keep occluding them.
+    float ring = 1400.0; // meters out
+    float width = (310.0 + vSeed * 390.0);
+    float height = (400.0 + vSeed * 480.0);
     vec3 dir = vec3(cos(azimuth), 0.0, sin(azimuth));
     vec3 right = vec3(-dir.z, 0.0, dir.x);
     vec3 base = uCameraPos.xyz + dir * ring;
