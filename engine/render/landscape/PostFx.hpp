@@ -43,13 +43,12 @@ public:
     // after the water pass, before the tonemap. `shadowBindGroup` is the CSM
     // receiver group (the volumetric march taps it per step). Pass a
     // GpuProbe (+ its device) to time each sub-pass (GPU-PERF P0);
-    // nullptr = no instrumentation. `ssaoActive` false (strength 0 — the
-    // default since option B) skips the AO march + blur and clears the
-    // tapped target to neutral white instead (the contact pattern).
+    // nullptr = no instrumentation. (Screen-space AO removed 2026-07-10:
+    // grounding = terrain light map + contact shadows + baked vertex AO.)
     void render(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
                 rhi::BindGroupHandle shadowBindGroup,
                 rhi::Device* probeDevice = nullptr,
-                GpuProbe* probe = nullptr, bool ssaoActive = true);
+                GpuProbe* probe = nullptr);
 
     // Brick 29 (chantier 6 B4): auto-exposure — log-luminance 64² → mips →
     // 1×1 average, then the adaptation micro-pass (1×1 ping-pong with
@@ -66,12 +65,11 @@ public:
                               rhi::BindGroupHandle frameBindGroup);
     void clearContactShadows(rhi::CommandBuffer& cmd);
 
-    // For the tonemap bind group. SSAO/contact hand out their BLURRED
-    // targets (speckle fix: the IGN jitter is finally filtered).
+    // For the tonemap bind group. Contact hands out its BLURRED target
+    // (its IGN jitter needs the filter).
     rhi::TextureHandle bloomTexture() const { return bloomTex[0]; }
     rhi::TextureHandle godRayTexture() const { return godRayTex; }
     rhi::TextureHandle volumetricTexture() const { return volumetricTex; }
-    rhi::TextureHandle ssaoTexture() const { return aoBlurTex; }
     rhi::TextureHandle contactTexture() const { return contactBlurTex; }
     // The ping-pong side renderAutoExposure wrote LAST (the tonemap reads
     // it); the scene keeps one blit group per side.
@@ -81,10 +79,6 @@ public:
     }
 
     bool ready() const { return bloomTex[0].id() != 0; }
-
-    // A/B (2026-07-10): depth unsharp-mask AO (no jitter — no speckle,
-    // the BotW-friendly look) vs the sampled-hemisphere SSAO.
-    bool maskAo { true };
 
 private:
     void destroyTargets(rhi::Device& device);
@@ -108,20 +102,11 @@ private:
     rhi::UniqueFramebuffer volumetricFb;
     rhi::UniqueBindGroup volumetricGroup;
 
-    rhi::UniqueTexture ssaoTex;
-    rhi::UniqueFramebuffer ssaoFb;
-    rhi::UniqueBindGroup ssaoGroup;
-
-    // Brick 33a: contact shadows.
+    // Brick 33a: contact shadows + the 3x3 blur that filters their IGN
+    // jitter — the tonemap taps the blurred target (contactTexture()).
     rhi::UniqueTexture contactTex;
     rhi::UniqueFramebuffer contactFb;
     rhi::UniqueBindGroup contactGroup;
-
-    // Speckle fix: 3x3 box blur over the two jittered targets — the
-    // tonemap taps THESE (ssaoTexture/contactTexture above).
-    rhi::UniqueTexture aoBlurTex;
-    rhi::UniqueFramebuffer aoBlurFb;
-    rhi::UniqueBindGroup aoBlurGroup; // samples ssaoTex
     rhi::UniqueTexture contactBlurTex;
     rhi::UniqueFramebuffer contactBlurFb;
     rhi::UniqueBindGroup contactBlurGroup; // samples contactTex
@@ -140,10 +125,8 @@ private:
     rhi::UniquePipeline upPipeline; // additive blend
     rhi::UniquePipeline godRayPipeline;
     rhi::UniquePipeline volumetricPipeline;
-    rhi::UniquePipeline ssaoPipeline;
-    rhi::UniquePipeline ssaoMaskPipeline; // depth unsharp AO (A/B)
     rhi::UniquePipeline contactPipeline;
-    rhi::UniquePipeline blurPipeline; // speckle fix (postblur.frag)
+    rhi::UniquePipeline blurPipeline; // contact jitter filter (postblur)
     rhi::UniquePipeline luminancePipeline;
     rhi::UniquePipeline adaptPipeline;
     u64 shaderGeneration { 0 };

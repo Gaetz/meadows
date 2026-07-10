@@ -43,7 +43,6 @@ struct FrameComposerInputs {
     bool reflectionsActive { false };
 
     // Dev toggles (the render panel's A/B state).
-    f32 ssao { 0.0f };
     i32 debugBuffer { 0 };
     bool stylized { true };
     bool tonemap { true };

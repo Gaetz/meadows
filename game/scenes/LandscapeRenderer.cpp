@@ -81,7 +81,7 @@ void LandscapeRenderer::applyTuning(
     terrain.params.mountainAmplitude = tuning.mountainAmplitude;
     terrain.params.seaLevel = tuning.seaLevel;
     exposureUi = tuning.exposure;
-    ssaoUi = tuning.ssaoStrength;
+    // (tuning.ssaoStrength retired 2026-07-10 — screen-space AO removed.)
     gradeVibranceUi = tuning.gradeVibrance;   // B3 (toggle stays off)
     gradeSplitToneUi = tuning.gradeSplitTone;
     gradeContrastUi = tuning.gradeContrast;
@@ -144,34 +144,9 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
     // Brick 32: placed water surfaces.
     shaders->load("watervolume",
                   { { "FrameUbo", 0 }, { "WaterVolumeUbo", 1 } });
-    // Brick 30: horizon cumulonimbus — 8 towers, static vertex buffer
-    // (the vertex shader anchors the ring to the camera).
-    shaders->load("cumulonimbus", { { "FrameUbo", 0 } });
-    {
-        f32 towers[8 * 6 * 4];
-        u32 cursor = 0;
-        const auto push = [&](f32 azimuth, f32 u, f32 v, f32 seed) {
-            towers[cursor++] = azimuth;
-            towers[cursor++] = u;
-            towers[cursor++] = v;
-            towers[cursor++] = seed;
-        };
-        for (u32 i = 0; i < 8; ++i) {
-            const f32 azimuth =
-                static_cast<f32>(i) * glm::radians(45.0f) + 0.37f;
-            const f32 seed = static_cast<f32>(i) * 0.618f -
-                             std::floor(static_cast<f32>(i) * 0.618f);
-            push(azimuth, -1.0f, 0.0f, seed);
-            push(azimuth, 1.0f, 0.0f, seed);
-            push(azimuth, 1.0f, 1.0f, seed);
-            push(azimuth, -1.0f, 0.0f, seed);
-            push(azimuth, 1.0f, 1.0f, seed);
-            push(azimuth, -1.0f, 1.0f, seed);
-        }
-        stormVertices = { device, device.createBuffer(
-            { .usage = rhi::BufferUsage::Vertex, .size = sizeof(towers) },
-            towers) };
-    }
+    // (Brick 30, cumulonimbus: REMOVED 2026-07-10 — dev call after the
+    // first actual display: cost over look. The cloud MAP keeps the sky
+    // alive; stormFront still drives rain/wetness via stormInfo.y.)
 
     // Brick 31: rain — procedural streaks (no buffers) + the top-down
     // occlusion depth so roofs keep the drops out.
@@ -270,7 +245,7 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
                         { "uBloom", 1 },
                         { "uGodRays", 2 },
                         { "uVolumetric", 3 },
-                        { "uSsao", 4 },
+                        // (binding 4 was uSsao — removed 2026-07-10)
                         { "uExposure", 5 },   // B4: adaptation tap
                         { "uContact", 6 } }); // 33a: contact shadows
         rebuildBlitPipeline(device);
@@ -303,8 +278,6 @@ void LandscapeRenderer::destroy(rhi::Device& device) {
     shaftPipeline.reset();
     waterQuads.clear();   // brick 32
     waterVolumePipeline.reset();
-    stormVertices.reset(); // brick 30
-    stormPipeline.reset();
     rainPipeline.reset();  // brick 31
     rainReceiverGroup.reset();
     rainCasterGroup.reset();
@@ -450,9 +423,6 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                               .sampler = blitSampler },
                             { .binding = 3,
                               .texture = postFx.volumetricTexture(),
-                              .sampler = blitSampler },
-                            { .binding = 4,
-                              .texture = postFx.ssaoTexture(),
                               .sampler = blitSampler },
                             { .binding = 5,
                               .texture = postFx.exposureTexture(side),
@@ -1249,7 +1219,6 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         .snowLine = view.snowLine,
         .splatUvScale = view.splatUvScale,
         .reflectionsActive = reflectionsActive,
-        .ssao = ssaoUi,
         .debugBuffer = debugBufferUi,
         .stylized = stylizedUi,
         .tonemap = tonemapUi,
@@ -1541,35 +1510,6 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         if (!view.interiorMode) {
             sky.draw(frame.cmd, frameBindGroup); // background only
         }
-        // Brick 30: horizon cumulonimbus, right after the sky dome (they
-        // occlude sky, terrain occludes them via the depth test). The
-        // gate reads the COMPOSED visibility (storm front OR the partly-
-        // cloudy coverage band — FrameComposer).
-        if (!view.interiorMode && frameData.stormInfo.x > 0.003f) {
-            if (shaders->generation("cumulonimbus") !=
-                    stormShaderGeneration ||
-                stormPipeline.id() == 0) {
-                stormPipeline = { frame.device, frame.device.createPipeline(
-                    { .shader = shaders->get("cumulonimbus"),
-                      .vertexBuffers =
-                          { { .stride = 4 * sizeof(f32),
-                              .attributes =
-                                  { { .location = 0,
-                                      .format = rhi::VertexFormat::F32x4,
-                                      .offset = 0 } } } },
-                      .blend = rhi::BlendMode::Alpha,
-                      .depth = { .testEnable = true,
-                                 .writeEnable = false,
-                                 .compare = rhi::CompareFunc::Less },
-                      .cull = rhi::CullMode::None }) };
-                stormShaderGeneration =
-                    shaders->generation("cumulonimbus");
-            }
-            frame.cmd.setPipeline(stormPipeline);
-            frame.cmd.setBindGroup(0, frameBindGroup);
-            frame.cmd.setVertexBuffer(0, stormVertices);
-            frame.cmd.draw(8 * 6);
-        }
         // Brick 32: placed water surfaces (alpha), then brick 34:
         // additive dust shafts — both after every opaque.
         drawWaterVolumes(frame, snapshot);
@@ -1643,7 +1583,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
         postFx.render(frame.cmd, frameBindGroup,
                       shadows.receiverBindGroup(), &frame.device,
-                      &gpuProbe, /*ssaoActive=*/ssaoUi > 0.001f);
+                      &gpuProbe);
         // 33a: contact shadows (the texture is the toggle — white = off).
         {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
@@ -1794,13 +1734,8 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
                        "%.2f");
     ImGui::SliderFloat("Volumetric shafts", &atmos.volumetric, 0.0f, 3.0f,
                        "%.2f");
-    ImGui::SliderFloat("SSAO strength", &ssaoUi, 0.0f, 1.0f, "%.2f");
-    // A/B (2026-07-10): depth unsharp-mask AO (no jitter, no speckle —
-    // the cel-friendly default) vs the sampled hemisphere.
-    ImGui::SameLine();
-    ImGui::Checkbox("depth-mask AO", &postFx.maskAo);
     ImGui::Combo("Debug buffer", &debugBufferUi,
-                 "Off\0Bloom\0God rays\0Volumetric\0SSAO\0");
+                 "Off\0Bloom\0God rays\0Volumetric\0");
     ImGui::Checkbox("Shadows", &shadowsUi);
     ImGui::SameLine();
     ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);

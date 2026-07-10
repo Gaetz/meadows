@@ -147,23 +147,12 @@ TEST_CASE("frame composer: grass bend follows the player's feet in Play") {
     CHECK(off.resolved.grassBendInfo.w == doctest::Approx(0.0f));
 }
 
-TEST_CASE("frame composer: cumulonimbus show unless the sky is overcast") {
+TEST_CASE("frame composer: stormInfo.x carries the raw storm front") {
+    // (Cumulonimbus removed 2026-07-10: .x is back to the plain
+    // crossfaded front; rain/wetness/occlusion ride .y.)
     game::FrameComposerInputs in = exteriorDay();
-    in.atmos.stormFront = 0.0f;
-
-    in.atmos.cloudCoverage = 0.05f; // clear sky: towers on the horizon
+    in.atmos.stormFront = 0.35f;
+    in.atmos.cloudCoverage = 0.6f; // coverage no longer feeds .x
     CHECK(game::composeFrameUniforms(in).resolved.stormInfo.x ==
-          doctest::Approx(1.0f));
-
-    in.atmos.cloudCoverage = 0.25f; // partly cloudy: still full
-    CHECK(game::composeFrameUniforms(in).resolved.stormInfo.x ==
-          doctest::Approx(1.0f));
-
-    in.atmos.cloudCoverage = 0.6f; // overcast sheet hides the horizon
-    CHECK(game::composeFrameUniforms(in).resolved.stormInfo.x ==
-          doctest::Approx(0.0f));
-
-    in.atmos.stormFront = 1.0f; // a storm forces them regardless
-    CHECK(game::composeFrameUniforms(in).resolved.stormInfo.x ==
-          doctest::Approx(1.0f));
+          doctest::Approx(0.35f));
 }

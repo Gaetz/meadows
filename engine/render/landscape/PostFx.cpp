@@ -15,10 +15,11 @@ constexpr const char* kDownShader = "bloom_down";
 constexpr const char* kUpShader = "bloom_up";
 constexpr const char* kGodRaysShader = "godrays";
 constexpr const char* kVolumetricShader = "volumetric";
-constexpr const char* kSsaoShader = "ssao";
-constexpr const char* kSsaoMaskShader = "ssaomask"; // depth unsharp AO
+// (Screen-space AO removed 2026-07-10 — dev call: the sampled hemisphere
+// speckles, the depth mask halos, neither fits the stepped-ramp look.
+// Grounding = terrain light map + contact shadows + baked vertex AO.)
 constexpr const char* kContactShader = "contactshadow"; // brick 33a
-constexpr const char* kBlurShader = "postblur"; // speckle fix
+constexpr const char* kBlurShader = "postblur"; // contact jitter filter
 constexpr const char* kLuminanceShader = "luminance"; // brick 29
 constexpr const char* kAdaptShader = "adapt";
 constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
@@ -27,10 +28,9 @@ constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
 // build and refresh used to spell the 9-term sum out twice — adding a
 // pass needed edits in three places; this table is the single list).
 constexpr const char* kPassShaders[] = {
-    kPrefilterShader, kDownShader,       kUpShader,
-    kGodRaysShader,   kVolumetricShader, kSsaoShader,
-    kSsaoMaskShader,  kContactShader,    kBlurShader,
-    kLuminanceShader, kAdaptShader,
+    kPrefilterShader, kDownShader,     kUpShader,
+    kGodRaysShader,   kVolumetricShader, kContactShader,
+    kBlurShader,      kLuminanceShader, kAdaptShader,
 };
 
 u64 passGenerationSum(ShaderLibrary& shaders) {
@@ -53,10 +53,6 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
     shaders.load(kVolumetricShader, { { "FrameUbo", 0 } },
                  { { "uSceneDepth", 0 }, { "uShadowMap", 1 } },
                  kFullscreenVert);
-    shaders.load(kSsaoShader, { { "FrameUbo", 0 } },
-                 { { "uSceneDepth", 0 } }, kFullscreenVert);
-    shaders.load(kSsaoMaskShader, { { "FrameUbo", 0 } },
-                 { { "uSceneDepth", 0 } }, kFullscreenVert);
     shaders.load(kContactShader, { { "FrameUbo", 0 } },
                  { { "uSceneDepth", 0 } }, kFullscreenVert);
     shaders.load(kBlurShader, {}, { { "uSource", 0 } }, kFullscreenVert);
@@ -86,8 +82,6 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
     rebuild(upPipeline, kUpShader, rhi::BlendMode::Additive);
     rebuild(godRayPipeline, kGodRaysShader, rhi::BlendMode::Opaque);
     rebuild(volumetricPipeline, kVolumetricShader, rhi::BlendMode::Opaque);
-    rebuild(ssaoPipeline, kSsaoShader, rhi::BlendMode::Opaque);
-    rebuild(ssaoMaskPipeline, kSsaoMaskShader, rhi::BlendMode::Opaque);
     rebuild(contactPipeline, kContactShader, rhi::BlendMode::Opaque);
     rebuild(blurPipeline, kBlurShader, rhi::BlendMode::Opaque);
     rebuild(luminancePipeline, kLuminanceShader, rhi::BlendMode::Opaque);
@@ -114,15 +108,9 @@ void PostFx::destroyTargets(rhi::Device& device) {
     contactBlurGroup = {};
     contactBlurFb = {};
     contactBlurTex = {};
-    aoBlurGroup = {};
-    aoBlurFb = {};
-    aoBlurTex = {};
     contactGroup = {};
     contactFb = {};
     contactTex = {};
-    ssaoGroup = {};
-    ssaoFb = {};
-    ssaoTex = {};
     volumetricGroup = {};
     volumetricFb = {};
     volumetricTex = {};
@@ -214,19 +202,11 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
                       rhi::TextureFormat::RGBA16F);
     makeDepthGroup(volumetricGroup);
 
-    makeHalfResTarget(ssaoTex, ssaoFb, rhi::TextureFormat::R16F);
-    makeDepthGroup(ssaoGroup);
-
-    // Brick 33a: contact shadows — half-res, same inputs as the SSAO.
+    // Brick 33a: contact shadows — half-res march over the depth copy,
+    // then the 3x3 blur (its IGN jitter needs the filter); the tonemap
+    // taps the BLURRED target.
     makeHalfResTarget(contactTex, contactFb, rhi::TextureFormat::R16F);
     makeDepthGroup(contactGroup);
-
-    // Speckle fix: the 3x3 blur targets the tonemap actually taps.
-    makeHalfResTarget(aoBlurTex, aoBlurFb, rhi::TextureFormat::R16F);
-    aoBlurGroup = { device, device.createBindGroup(
-        { .entries = { { .binding = 0,
-                         .texture = ssaoTex,
-                         .sampler = linearSampler } } }) };
     makeHalfResTarget(contactBlurTex, contactBlurFb,
                       rhi::TextureFormat::R16F);
     contactBlurGroup = { device, device.createBindGroup(
@@ -347,8 +327,7 @@ void PostFx::renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
 void PostFx::render(rhi::CommandBuffer& cmd,
                     rhi::BindGroupHandle frameBindGroup,
                     rhi::BindGroupHandle shadowBindGroup,
-                    rhi::Device* probeDevice, GpuProbe* probe,
-                    bool ssaoActive) {
+                    rhi::Device* probeDevice, GpuProbe* probe) {
     if (!ready()) {
         return;
     }
@@ -416,40 +395,8 @@ void PostFx::render(rhi::CommandBuffer& cmd,
         cmd.endRenderPass();
     }
 
-    if (!ssaoActive) {
-        // Early-out (strength 0 — the option-B default): the tonemap
-        // multiplies the AO texture regardless, so the tapped target
-        // must be neutral white (the contact-shadow pattern).
-        cmd.beginRenderPass({ .framebuffer = aoBlurFb,
-                              .loadOp = rhi::LoadOp::Clear,
-                              .clearColor = { 1.0f, 1.0f, 1.0f, 1.0f },
-                              .depthLoadOp = rhi::LoadOp::DontCare });
-        cmd.endRenderPass();
-        return;
-    }
-    {
-        GpuProbe::Scope scope { probe, probeDevice, "ssao" };
-        // AO: contact darkening from the scene depth. Two techniques,
-        // A/B (maskAo): the depth unsharp-mask (no jitter, no speckle —
-        // the BotW-friendly default) vs the sampled hemisphere.
-        cmd.beginRenderPass({ .framebuffer = ssaoFb,
-                              .loadOp = rhi::LoadOp::DontCare,
-                              .depthLoadOp = rhi::LoadOp::DontCare });
-        cmd.setPipeline(maskAo ? ssaoMaskPipeline : ssaoPipeline);
-        cmd.setBindGroup(0, frameBindGroup);
-        cmd.setBindGroup(1, ssaoGroup);
-        cmd.draw(3);
-        cmd.endRenderPass();
-
-        // Speckle fix: filter the IGN jitter (the tonemap taps aoBlurTex).
-        cmd.beginRenderPass({ .framebuffer = aoBlurFb,
-                              .loadOp = rhi::LoadOp::DontCare,
-                              .depthLoadOp = rhi::LoadOp::DontCare });
-        cmd.setPipeline(blurPipeline);
-        cmd.setBindGroup(0, aoBlurGroup);
-        cmd.draw(3);
-        cmd.endRenderPass();
-    }
+    // (Screen-space AO removed 2026-07-10 — the tonemap no longer taps
+    // an AO texture at all.)
 }
 
 } // namespace render

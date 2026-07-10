@@ -31,7 +31,9 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         .viewProj = in.viewProj,
         .invViewProj = glm::inverse(in.viewProj),
         .cameraPos = { in.cameraPosition, 1.0f },
-        .time = { in.timeSeconds, in.ssao, in.atmos.volumetric,
+        // (time.y was the SSAO strength — retired 2026-07-10, the slot
+        // stays neutral: UBO layout is append-only.)
+        .time = { in.timeSeconds, 0.0f, in.atmos.volumetric,
                   static_cast<f32>(in.debugBuffer) },
         .sunDirection = { in.sky.sunDirection, 0.0f },
         .sunColor = { in.sky.sunColor, in.sky.sunDiscIntensity },
@@ -105,16 +107,9 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
                      : Vec4 { 0.0f };
     // Brick 30/31: the crossfaded storm front + rain intensity, and the
     // top-down rain-occlusion matrix (ortho, 40 m around the camera).
-    // Cumulonimbus visibility (dev call 2026-07-10, revised): the horizon
-    // towers show under ANY sky — clear included — and fade out only when
-    // an overcast sheet (coverage > 0.32) hides the horizon. A storm
-    // front still forces them regardless (only cumulonimbus.frag reads
-    // stormInfo.x; rain & wetness ride .y).
-    const f32 coverage = in.atmos.cloudCoverage;
-    const f32 cumulusVisibility =
-        1.0f - glm::smoothstep(0.32f, 0.40f, coverage);
-    resolved.stormInfo.x =
-        glm::max(in.atmos.stormFront, cumulusVisibility);
+    // (Cumulonimbus removed 2026-07-10 — .x keeps the raw storm front;
+    // rain, wetness and the occlusion matrix all ride .y.)
+    resolved.stormInfo.x = in.atmos.stormFront;
     resolved.stormInfo.y = in.interiorMode ? 0.0f : in.atmos.rainIntensity;
     if (resolved.stormInfo.y > 0.003f) {
         const Vec3 eye = in.cameraPosition;

@@ -41,7 +41,7 @@ exposure = 1.0
 bloomIntensity = 0.35
 godRayIntensity = 0.6
 volumetricIntensity = 1.0   # volumetric light shafts
-ssaoStrength = 0.7
+# ssaoStrength: retired 2026-07-10 (screen-space AO removed)
 
 # --- Clouds --------------------------------------------------------------
 cloudCoverage = 0.38        # 0 = clear sky, 1 = overcast

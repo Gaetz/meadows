@@ -1,11 +1,12 @@
 #version 460 core
 #include "common.glsl"
 
+// (binding 4 was uSsao — screen-space AO removed 2026-07-10; grounding
+// comes from the terrain light map, contact shadows and baked vertex AO.)
 layout(binding = 0) uniform sampler2D uSceneColor;
 layout(binding = 1) uniform sampler2D uBloom;
 layout(binding = 2) uniform sampler2D uGodRays;
 layout(binding = 3) uniform sampler2D uVolumetric;
-layout(binding = 4) uniform sampler2D uSsao;
 layout(binding = 5) uniform sampler2D uExposure; // brick 29: 1x1 adaptation
 layout(binding = 6) uniform sampler2D uContact;  // brick 33a: white = lit
 
@@ -24,29 +25,19 @@ vec3 acesFilm(vec3 x) {
 
 void main() {
     // Debug buffer viewer (uTime.w): 1 = bloom, 2 = god rays,
-    // 3 = volumetric, 4 = SSAO.
+    // 3 = volumetric.
     if (uTime.w > 0.5) {
         vec3 debugColor = uTime.w < 1.5   ? texture(uBloom, vUv).rgb * 2.0
                           : uTime.w < 2.5 ? texture(uGodRays, vUv).rgb * 2.0
-                          : uTime.w < 3.5 ? texture(uVolumetric, vUv).rgb * 2.0
-                                          : texture(uSsao, vUv).rrr;
+                                          : texture(uVolumetric, vUv).rgb * 2.0;
         fragColor = vec4(pow(debugColor, vec3(1.0 / 2.2)), 1.0);
         return;
     }
 
     vec3 hdr = texture(uSceneColor, vUv).rgb;
-    // SSAO first (uTime.y = strength): contact darkening belongs to the
-    // scene's surfaces, not to the added airlight below.
-    vec2 aoTexel = 1.0 / vec2(textureSize(uSsao, 0));
-    float ao = (texture(uSsao, vUv + aoTexel * vec2(0.6, 0.2)).r +
-                texture(uSsao, vUv + aoTexel * vec2(-0.2, 0.6)).r +
-                texture(uSsao, vUv + aoTexel * vec2(-0.6, -0.2)).r +
-                texture(uSsao, vUv + aoTexel * vec2(0.2, -0.6)).r) *
-               0.25;
-    hdr *= mix(1.0, ao, uTime.y);
-    // Brick 33a: screen-space contact shadows — same composition slot as
-    // the SSAO (surface darkening before airlight). The texture is the
-    // toggle: the scene clears it to white when the feature is off.
+    // Brick 33a: screen-space contact shadows — surface darkening before
+    // the added airlight below. The texture is the toggle: the scene
+    // clears it to white when the feature is off.
     hdr *= texture(uContact, vUv).r;
     // Volumetric: alpha REMOVES the fog in-scatter where distant air is
     // cloud-shadowed (dark far curtains), rgb ADDS the near shafts. Then

@@ -218,8 +218,7 @@ private:
     f32 autoExposureMinUi { 0.4f };
     f32 autoExposureMaxUi { 2.5f };
     f32 exposureUi { 1.0f };
-    f32 ssaoUi { 0.7f };
-    i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 vol, 4 ssao
+    i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 volumetric
 
     rhi::UniqueBuffer frameUbo;
     rhi::UniqueBindGroup frameBindGroup;
@@ -286,11 +285,6 @@ private:
     vector<WaterQuad> waterQuads;
     rhi::UniquePipeline waterVolumePipeline;
     u64 waterVolumeShaderGeneration { 0 };
-    // Brick 30 (chantier 7.6): horizon cumulonimbus — a static buffer of
-    // 8 camera-anchored towers, visible only while stormFront > 0.
-    rhi::UniqueBuffer stormVertices;
-    rhi::UniquePipeline stormPipeline;
-    u64 stormShaderGeneration { 0 };
     // Brick 31 (chantier 7.7): procedural rain streaks + the top-down
     // occlusion depth (no rain under roofs) + global wetness.
     rhi::UniquePipeline rainPipeline;
