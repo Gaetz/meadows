@@ -41,8 +41,13 @@ public:
         kTreeVariants + kRockVariants + kBushVariants;
     static constexpr u32 kFirstRock = kTreeVariants;
     static constexpr u32 kFirstBush = kTreeVariants + kRockVariants;
-    static constexpr i32 kViewRadius = 14; // chunks (~900 m; fade at 880 m)
-    static constexpr i32 kEvictRadius = 15;
+    // GPU-PERF P1: runtime knobs (were compile-time — mainVeg measured
+    // 1.8 ms at 14). Live-safe: the ring streamer adapts on its own
+    // (requestMissing reads the new radius, evictFar drains the excess).
+    // NB: the tree FADE tops out at 880 m — radii under ~14 pop at the
+    // ring edge instead of fading (a budget-hunting knob, not a look).
+    i32 viewRadius { 14 };        // chunks (~900 m; fade at 880 m)
+    i32 highDetailRadius { 4 };   // 320-face canopies within (x 64 m)
     static constexpr u32 kMaxUploadsPerFrame = 2;
     // Scatter jobs budgeted like uploads (see TerrainSystem — the
     // unbudgeted ring edge was part of the fast-travel stutter).
@@ -74,11 +79,10 @@ public:
 
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
-    // Canopy LOD: chunks within this Chebyshev radius of the camera draw
-    // the 320-face lobes; everything beyond gets the 80-face LOD (same
-    // seed, same silhouette — 4x fewer vertices where facets are invisible
+    // Canopy LOD: chunks within `highDetailRadius` (above) draw the
+    // 320-face lobes; everything beyond gets the 80-face LOD (same seed,
+    // same silhouette — 4x fewer vertices where facets are invisible
     // anyway). Shadow casters and reflections always use the low LOD.
-    static constexpr i32 kHighDetailRadius = 4; // x 64 m = ~256 m
 
     // `variantLimit` restricts which variants draw (e.g. kTreeVariants for
     // the reflection pass: trees only). Brick 27: trees are single opaque

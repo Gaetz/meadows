@@ -326,7 +326,7 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
     const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
     streamer.requestMissing(
-        camCx, camCz, kViewRadius, kMaxRequestsPerFrame,
+        camCx, camCz, viewRadius, kMaxRequestsPerFrame,
         [&](i32 cx, i32 cz, i32, i32) {
             return !streamer.chunks.contains(chunkKey(cx, cz));
         },
@@ -338,7 +338,7 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
         });
 
     // Evict beyond hysteresis.
-    streamer.evictFar(camCx, camCz, kEvictRadius, [&](Chunk& chunk) {
+    streamer.evictFar(camCx, camCz, viewRadius + 1, [&](Chunk& chunk) {
         // U3-7: the erase frees the instance buffer.
         if (chunk.resident) {
             instances -= chunk.total;
@@ -475,7 +475,7 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         const i32 cx = chunkKeyCx(key);
         const i32 cz = chunkKeyCz(key);
         return std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
-               kHighDetailRadius;
+               highDetailRadius;
     };
     // Variant-major, split by LOD: bind each mesh level once, then one
     // instanced draw per chunk holding that variant (firstInstance =

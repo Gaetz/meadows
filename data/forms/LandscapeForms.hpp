@@ -59,6 +59,11 @@ struct LandscapeTuningForm : Form {
     // becomes the EV bias on top.
     f32 autoExposureMin { 0.4f };
     f32 autoExposureMax { 2.5f };
+    // Vegetation draw budget (GPU-PERF P1, appended — ordinals stable):
+    // the baseline put mainVeg at 1.8 ms — these were compile-time
+    // constants; moddable + live-tunable now. Radii in 64 m chunks.
+    i32 vegViewRadius { 14 };       // resident/drawn ring (~900 m)
+    i32 vegHighDetailRadius { 4 };  // 320-face canopies inside (~256 m)
 
     REFLECT_BEGIN(LandscapeTuningForm, Form)
         REFLECT_FIELD(terrainSeed)
@@ -88,6 +93,8 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(gradeContrast)
         REFLECT_FIELD(autoExposureMin)
         REFLECT_FIELD(autoExposureMax)
+        REFLECT_FIELD(vegViewRadius)
+        REFLECT_FIELD(vegHighDetailRadius)
     REFLECT_END()
 };
 

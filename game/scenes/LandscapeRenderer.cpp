@@ -87,6 +87,11 @@ void LandscapeRenderer::applyTuning(
     gradeContrastUi = tuning.gradeContrast;
     autoExposureMinUi = tuning.autoExposureMin; // B4 (toggle stays off)
     autoExposureMaxUi = tuning.autoExposureMax;
+    // GPU-PERF P1: vegetation draw budget (clamped — the streamer ring
+    // and the Hi-Z candidate cap size the safe range).
+    vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 15);
+    vegetation.highDetailRadius =
+        glm::clamp(tuning.vegHighDetailRadius, 0, 8);
 }
 
 void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
@@ -1758,6 +1763,13 @@ void LandscapeRenderer::drawTerrainPanel() {
         ImGui::Checkbox("GPU Hi-Z", &gpuOcclusionUi);
         ImGui::Text("Grass blades: %u | props: %u", grass.instanceTotal(),
                     vegetation.propTotal());
+        // GPU-PERF P1: the vegetation draw budget, live (baseline:
+        // mainVeg 1.8 ms at 14/4). Shrinking the ring pops at the edge
+        // (the tree fade tops out at 880 m) — a budget-hunting knob.
+        ImGui::SliderInt("Veg view radius (chunks)", &vegetation.viewRadius,
+                         4, 15);
+        ImGui::SliderInt("Veg high-detail radius",
+                         &vegetation.highDetailRadius, 0, 8);
         ImGui::InputScalar("Seed", ImGuiDataType_U32, &terrain.params.seed);
         ImGui::SameLine();
         if (ImGui::Button("Regenerate")) {
