@@ -79,6 +79,7 @@
     TerrainNoiseTest.cpp
     TerrainPatchesTest.cpp
     TreeGeneratorTest.cpp
+    TriggerSystemTest.cpp
     TypedDamageTest.cpp
     VegetationCollisionTest.cpp
     VertexAoTest.cpp

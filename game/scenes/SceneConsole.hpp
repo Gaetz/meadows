@@ -41,6 +41,10 @@ public:
     void draw() const;
     bool visible() const { return visible_; }
 
+    // The scene-shared Lua VM (null before create()/after reset()) — the
+    // trigger volumes run their TriggerForm.script snippets through it.
+    script::Vm* vm() { return vm_.get(); }
+
     bool godMode() const { return godMode_; }
     bool toggleGodMode() {
         godMode_ = !godMode_;

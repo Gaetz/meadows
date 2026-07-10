@@ -41,8 +41,10 @@
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/Rest.hpp"
+#include "script/Vm.hpp"
 #include "world/scene/AnimBridge.hpp"
 #include "world/scene/Spawner.hpp"
+#include "world/scene/TriggerSystem.hpp"
 #include "world/terrain/TerrainPatches.hpp"
 
 namespace game {
@@ -584,6 +586,38 @@ void LandscapeScene::update(f32 dt) {
             }
             gameplay::tickCharacter(playerEntity, dt, gameDt, tickCtx,
                                     equipMods);
+        }
+        // Chantier « volumes de gameplay » : loaded TriggerVolumes vs
+        // actor positions — enter/leave fire the volume's event on the
+        // scene bus (quests/dialogue subscribe there) and its Lua snippet
+        // through the shared VM. NPC positions are last frame's (they
+        // move in updateNpcs, later) — one frame of latency is fine.
+        {
+            world::TriggerCallbacks triggerCb;
+            triggerCb.events = &eventBus;
+            triggerCb.runScript = [this](const str& code, ecs::Entity actor,
+                                         ecs::Entity) {
+                script::Vm* vm = sceneConsole.vm();
+                if (!vm) {
+                    return;
+                }
+                script::ScriptContext ctx;
+                ctx.entity = actor;
+                if (actor.has<gameplay::AttributeSet>()) {
+                    ctx.attributes =
+                        &actor.get_mut<gameplay::AttributeSet>();
+                }
+                if (actor.has<gameplay::AbilitySystem>()) {
+                    ctx.abilitySystem =
+                        &actor.get_mut<gameplay::AbilitySystem>();
+                }
+                ctx.tags = &gameTags;
+                ctx.forms = &forms;
+                if (const auto result = vm->run(code, ctx); !result.ok) {
+                    LOG_WARN("Trigger script failed: {}", result.error);
+                }
+            };
+            world::updateTriggerVolumes(world, triggerCb);
         }
     }
     {
