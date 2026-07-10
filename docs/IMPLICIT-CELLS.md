@@ -93,6 +93,18 @@ distinct. Ici on édite *dans* des worldspaces existants (intérieur ou extérie
 
 ## 5. Plan brique par brique
 
+> **État (nuit du 2026-07-09→10, session autonome)** : briques 1-3 FAITES
+> (commits `e519a94`, `3489567`, brique 3 = tests streamer). 362 tests
+> headless verts. **À valider en jeu** : poser un objet en pleine nature
+> (l'UX du placement), Export → relance → l'objet est toujours là. La
+> brique 4 reste non nécessaire. Réponses aux questions §6 : (1) param
+> `imposedId` ajouté à `createForm` — refuse un draft vivant, peut
+> shadower une forme live-matérialisée ; (2) confirmé par test (reload
+> même GUID, zéro doublon) ; (3) `world/worldspace/WorldForms` ; (4) un
+> `CellForm` ordinaire suffit — MAIS une cellule **autorisée à la main**
+> garde son GUID minté (ensureCell renvoie l'id réel de la forme, pas le
+> GUID dérivé).
+
 ### Brique 1 — Identité déterministe + matérialisation dans WorldModel
 - `world::cellGuidFor(const core::Guid& worldspace, i32 gx, i32 gy) → core::Guid`
   déterministe (dérivé des octets du GUID worldspace + gx/gy).

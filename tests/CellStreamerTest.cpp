@@ -174,3 +174,57 @@ TEST_CASE("cell streamer: a load budget spreads the ring over calls") {
     CHECK_FALSE(streamer.update(space, 8.0f, 8.0f, 2, 3, 1));
     CHECK(streamer.loadedCount() == 2);
 }
+
+// Chantier IMPLICIT-CELLS, brick 3: a materialized cell and the streamer.
+TEST_CASE("cell streamer: adopted implicit cells are ordinary residents") {
+    data::FormTypeRegistry types;
+    world::registerWorldFormTypes(types);
+    const auto plugin = data::parsePluginToml(kToml, types, "stream");
+    REQUIRE(plugin.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*plugin }, types, db);
+
+    ecs::World world;
+    world::registerSceneComponents(world);
+    world::FormCategoryRegistry categories;
+    world::registerCoreCategories(categories);
+    world::Spawner spawner;
+    world::registerCoreSpawners(spawner);
+    world::WorldModel model = world::WorldModel::build(db); // mutable: materialize
+    world::CellLoader loader { world, db, model, spawner, categories };
+    world::CellStreamer streamer { loader, model, db };
+
+    const data::FormHandle space = db.handleOf(
+        *core::Guid::fromString("70000000-0000-4000-8000-000000000001"));
+    REQUIRE(space.isValid());
+
+    // Ring around cell 0: authored 0 and 1 load.
+    CHECK(streamer.update(space, 8.0f, 8.0f));
+    CHECK(streamer.loadedCount() == 2);
+
+    // Editor placement inside the ring: materialize (2, 0) + adopt. Loaded
+    // NOW, once — adopting again is a no-op.
+    const data::FormHandle placed = model.materializeCell(db, space, 2, 0);
+    REQUIRE(placed.isValid());
+    streamer.adopt(placed);
+    CHECK(streamer.loadedCount() == 3);
+    CHECK(loader.cellEntity(placed).is_alive());
+    streamer.adopt(placed);
+    CHECK(streamer.loadedCount() == 3);
+    // The ring did not move: quiet, and no double-load of the adoptee.
+    CHECK_FALSE(streamer.update(space, 8.0f, 8.0f));
+
+    // A materialized cell NOT adopted streams in like an authored one the
+    // moment the ring reaches it (brick 1: the streamer needs no change).
+    const data::FormHandle far = model.materializeCell(db, space, 7, 0);
+    REQUIRE(far.isValid());
+    CHECK_FALSE(loader.cellEntity(far).is_alive());
+
+    // Focus jumps to cell 7 (x = 120): the far square streams in; 0, 1 and
+    // the ADOPTED (2, 0) all sit beyond the unload radius and evict —
+    // eviction manages adoptees exactly like authored residents.
+    CHECK(streamer.update(space, 120.0f, 8.0f));
+    CHECK(loader.cellEntity(far).is_alive());
+    CHECK_FALSE(loader.cellEntity(placed).is_alive());
+    CHECK(streamer.loadedCount() == 2); // (5, 0) at distance 2, and (7, 0)
+}
