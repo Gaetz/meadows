@@ -88,6 +88,7 @@ void drawConditionList(data::EditSession& session, const core::Guid& parent,
     }
 
     if (ImGui::SmallButton("+ condition")) {
+        data::EditSession::Gesture gesture { session };
         const data::Form* parentForm = session.view(parent);
         const core::Guid id = session.createForm(
             gameplay::ConditionForm::staticTypeInfo().id,

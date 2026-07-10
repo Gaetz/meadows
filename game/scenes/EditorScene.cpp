@@ -556,6 +556,7 @@ void EditorScene::drawInspector() {
             selType &&
             selType->id == quest::DialogueNodeForm::staticTypeInfo().id) {
             if (ImGui::Button("Start a NEW quest on this option")) {
+                data::EditSession::Gesture gesture { *session };
                 const auto* node =
                     static_cast<const quest::DialogueNodeForm*>(
                         session->view(selected));
@@ -639,6 +640,7 @@ void EditorScene::drawQuestHierarchy() {
                            "(!) startState dangles");
     }
     if (ImGui::Button("+ State")) {
+        data::EditSession::Gesture gesture { *session };
         const core::Guid id = session->createForm(
             quest::QuestStateForm::staticTypeInfo().id,
             questForm->editorId + "State");
@@ -669,6 +671,7 @@ void EditorScene::drawQuestHierarchy() {
             continue;
         }
         if (ImGui::Button(("+ Branch##" + stateId.toString()).c_str())) {
+            data::EditSession::Gesture gesture { *session };
             const core::Guid id = session->createForm(
                 quest::QuestBranchForm::staticTypeInfo().id,
                 nameOf(stateId) + "Branch");
@@ -698,6 +701,7 @@ void EditorScene::drawQuestHierarchy() {
             }
             if (ImGui::Button(
                     ("+ Task##" + branchId.toString()).c_str())) {
+                data::EditSession::Gesture gesture { *session };
                 const core::Guid id = session->createForm(
                     quest::QuestTaskForm::staticTypeInfo().id,
                     nameOf(branchId) + "Task");
@@ -776,6 +780,7 @@ void EditorScene::drawDialogueHierarchy() {
         ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
                            "(!) no root node");
         if (ImGui::Button("+ Root line")) {
+            data::EditSession::Gesture gesture { *session };
             const core::Guid id = session->createForm(
                 quest::DialogueNodeForm::staticTypeInfo().id,
                 dialogue->editorId + "Root");
@@ -828,6 +833,7 @@ void EditorScene::drawDialogueHierarchy() {
             const auto siblings = childrenOf(nodeId);
             if (ImGui::SmallButton(
                     ("+ reply##" + nodeId.toString()).c_str())) {
+                data::EditSession::Gesture gesture { *session };
                 const core::Guid id = session->createForm(
                     quest::DialogueNodeForm::staticTypeInfo().id,
                     node->editorId + "Reply");
@@ -847,6 +853,7 @@ void EditorScene::drawDialogueHierarchy() {
             ImGui::SameLine();
             if (ImGui::SmallButton(
                     ("+ condition##" + nodeId.toString()).c_str())) {
+                data::EditSession::Gesture gesture { *session };
                 const core::Guid id = session->createForm(
                     gameplay::ConditionForm::staticTypeInfo().id,
                     node->editorId + "Cond");
@@ -962,6 +969,7 @@ void EditorScene::drawSchedulesContent() {
         }
         if (ImGui::SmallButton(
                 ("+ entry##" + scheduleId.toString()).c_str())) {
+            data::EditSession::Gesture gesture { *session };
             const core::Guid id = session->createForm(
                 gameplay::ScheduleEntryForm::staticTypeInfo().id,
                 nameOf(scheduleId) + "Entry");

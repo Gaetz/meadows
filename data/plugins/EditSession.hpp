@@ -55,8 +55,26 @@ public:
 
     bool canUndo() const { return !undoStack.empty(); }
     bool canRedo() const { return !redoStack.empty(); }
+    // Undo/redo work in GESTURES: every op recorded inside a live
+    // Gesture shares one group, and undo/redo pop the WHOLE group (dev
+    // bug 2026-07-10: '+ State' = create + setField, and a lone Ctrl+Z
+    // un-parented the node instead of removing it — a half-created
+    // orphan). Ops recorded outside a gesture group alone, as before.
     void undo();
     void redo();
+
+    class Gesture {
+    public:
+        explicit Gesture(EditSession& session) : session { session } {
+            session.activeGroup = session.nextGroup++;
+        }
+        ~Gesture() { session.activeGroup = 0; }
+        Gesture(const Gesture&) = delete;
+        Gesture& operator=(const Gesture&) = delete;
+
+    private:
+        EditSession& session;
+    };
 
     bool isDirty(const core::Guid& id) const { return drafts.contains(id); }
     // Created THIS session (vs an edited base form) — what the graph
@@ -115,7 +133,11 @@ private:
         str editorId;            // creation only
         core::Guid sourceId;     // duplication only: redo re-copies from it
         sptr<Form> snapshot;     // removal only: undo restores from it
+        u32 group { 0 };         // gesture id: undo/redo pop whole groups
     };
+
+    // The gesture group for the op being recorded NOW.
+    u32 groupForNewOp() { return activeGroup != 0 ? activeGroup : nextGroup++; }
 
     Draft* draftFor(const core::Guid& id); // clone-on-demand
     void apply(const EditOp& op, bool forward);
@@ -125,6 +147,8 @@ private:
     std::unordered_map<core::Guid, Draft> drafts;
     vector<EditOp> undoStack;
     vector<EditOp> redoStack;
+    u32 nextGroup { 1 };
+    u32 activeGroup { 0 }; // non-zero while a Gesture is alive
 };
 
 } // namespace data

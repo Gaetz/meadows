@@ -253,6 +253,7 @@ void AnimGraphPanel::drawCanvas(const core::Guid& graphId) {
     // ---- Frame done: act on what the canvas reported -------------------
 
     if (actions.linkCreated) {
+        data::EditSession::Gesture gesture { session }; // one undo step
         const core::Guid id = session.createForm(
             data::AnimTransitionForm::staticTypeInfo().id,
             graphForm->editorId + "T" + std::to_string(++stateCounter));
@@ -272,6 +273,8 @@ void AnimGraphPanel::drawCanvas(const core::Guid& graphId) {
     for (const core::Guid& id : actions.deletedNodes) {
         // A deleted state takes its session-created transitions along;
         // base transitions stay and surface as dangling warnings (§5).
+        // One undo step for the whole cascade.
+        data::EditSession::Gesture gesture { session };
         for (const auto& [transitionId, transition] : data.transitions) {
             if ((transition->from == id || transition->to == id) &&
                 session.isCreated(transitionId)) {
@@ -309,6 +312,7 @@ void AnimGraphPanel::drawCanvas(const core::Guid& graphId) {
 
     if (ImGui::BeginPopup("ag-background")) {
         if (ImGui::MenuItem("+ State")) {
+            data::EditSession::Gesture gesture { session };
             const core::Guid id = session.createForm(
                 data::AnimStateForm::staticTypeInfo().id,
                 graphForm->editorId + "State" +
@@ -336,6 +340,7 @@ void AnimGraphPanel::drawCanvas(const core::Guid& graphId) {
         const str what = fromOutput ? "+ State (transition from here)"
                                     : "+ State (transition INTO here)";
         if (ImGui::MenuItem(what.c_str())) {
+            data::EditSession::Gesture gesture { session };
             const core::Guid stateId = session.createForm(
                 data::AnimStateForm::staticTypeInfo().id,
                 graphForm->editorId + "State" +
@@ -370,6 +375,7 @@ void AnimGraphPanel::drawHierarchy(const core::Guid& graphId) {
     }
     const GraphData data = collectGraph(session, graphId);
     if (ImGui::SmallButton("+ State")) {
+        data::EditSession::Gesture gesture { session };
         const core::Guid id = session.createForm(
             data::AnimStateForm::staticTypeInfo().id,
             graphForm->editorId + "State" + std::to_string(++stateCounter));

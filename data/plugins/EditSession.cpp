@@ -70,7 +70,9 @@ bool EditSession::setField(const core::Guid& id, u32 fieldId,
     if (!field->set(draft->form.get(), value)) {
         return false; // kind mismatch — untrusted input, caller's log
     }
-    undoStack.push_back({ id, fieldId, before, value, 0, {} });
+    EditOp op { id, fieldId, before, value, 0, {} };
+    op.group = groupForNewOp();
+    undoStack.push_back(std::move(op));
     redoStack.clear();
     return true;
 }
@@ -85,7 +87,9 @@ core::Guid EditSession::createForm(u32 typeId, const str& editorId) {
     form->editorId = editorId;
     drafts.emplace(id, Draft { std::move(form), types.findType(typeId),
                                /*created=*/true });
-    undoStack.push_back({ id, 0, {}, {}, typeId, editorId });
+    EditOp op { id, 0, {}, {}, typeId, editorId };
+    op.group = groupForNewOp();
+    undoStack.push_back(std::move(op));
     redoStack.clear();
     return id;
 }
@@ -107,7 +111,9 @@ core::Guid EditSession::duplicateForm(const core::Guid& source,
     form->id = id;
     form->editorId = editorId; // after copyFields: editorId is reflected
     drafts.emplace(id, Draft { std::move(form), type, /*created=*/true });
-    undoStack.push_back({ id, 0, {}, {}, type->id, editorId, source });
+    EditOp op { id, 0, {}, {}, type->id, editorId, source };
+    op.group = groupForNewOp();
+    undoStack.push_back(std::move(op));
     redoStack.clear();
     return id;
 }
@@ -125,6 +131,7 @@ bool EditSession::removeCreated(const core::Guid& id) {
     snapshot->id = id;
     copyFields(*it->second.type, *it->second.form, *snapshot);
     op.snapshot = std::move(snapshot);
+    op.group = groupForNewOp();
     drafts.erase(it);
     undoStack.push_back(std::move(op));
     redoStack.clear();
@@ -178,20 +185,30 @@ void EditSession::undo() {
     if (undoStack.empty()) {
         return;
     }
-    const EditOp op = undoStack.back();
-    undoStack.pop_back();
-    apply(op, /*forward=*/false);
-    redoStack.push_back(op);
+    // Pop the whole gesture: reversed op order is correct by
+    // construction (field edits revert before their creation drops).
+    const u32 group = undoStack.back().group;
+    while (!undoStack.empty() && undoStack.back().group == group) {
+        const EditOp op = undoStack.back();
+        undoStack.pop_back();
+        apply(op, /*forward=*/false);
+        redoStack.push_back(op);
+    }
 }
 
 void EditSession::redo() {
     if (redoStack.empty()) {
         return;
     }
-    const EditOp op = redoStack.back();
-    redoStack.pop_back();
-    apply(op, /*forward=*/true);
-    undoStack.push_back(op);
+    // The redo stack holds the group reversed, so popping the back
+    // replays in the ORIGINAL order (creation before its field edits).
+    const u32 group = redoStack.back().group;
+    while (!redoStack.empty() && redoStack.back().group == group) {
+        const EditOp op = redoStack.back();
+        redoStack.pop_back();
+        apply(op, /*forward=*/true);
+        undoStack.push_back(op);
+    }
 }
 
 void EditSession::discardAll() {

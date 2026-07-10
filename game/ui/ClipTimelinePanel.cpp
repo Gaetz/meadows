@@ -134,6 +134,7 @@ void ClipTimelinePanel::drawEditor(const core::Guid& clipId) {
     ImGui::InvisibleButton("##strip", ImVec2(width,
                                              kStripHeight - kGridTop));
     if (ImGui::IsItemClicked()) {
+        data::EditSession::Gesture gesture { session };
         const f32 time = timeAt(ImGui::GetMousePos().x);
         const core::Guid id = session.createForm(
             data::AnimEventForm::staticTypeInfo().id,

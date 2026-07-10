@@ -256,3 +256,51 @@ TEST_CASE("referencesTo finds every Guid field pointing at a form") {
     // An unreferenced guid has no referencers.
     CHECK(data::referencesTo(db, core::Guid::generate()).empty());
 }
+
+// Gesture grouping (dev bug 2026-07-10: '+ State' = create + setField,
+// and one Ctrl+Z un-parented the node instead of removing it — undo
+// left a half-created orphan).
+TEST_CASE("a gesture undoes and redoes as ONE step") {
+    data::FormTypeRegistry types;
+    data::registerCoreFormTypes(types);
+    const auto basePlugin = data::parsePluginToml(kBase, types, "base");
+    data::FormDatabase db;
+    data::resolve({ &*basePlugin }, types, db);
+    data::EditSession session { db, types };
+
+    // The panel gesture: create + wire, one Gesture scope.
+    core::Guid created;
+    {
+        data::EditSession::Gesture gesture { session };
+        created = session.createForm(data::WeaponForm::staticTypeInfo().id,
+                                     "GestureSword");
+        session.setField(created, core::fnv1a("damage"),
+                         reflect::Value { 42.0f });
+        session.setField(created, core::fnv1a("weight"),
+                         reflect::Value { 5.0f });
+    }
+    REQUIRE(session.view(created) != nullptr);
+
+    // ONE undo removes the whole gesture — no half-created orphan.
+    session.undo();
+    CHECK(session.view(created) == nullptr);
+
+    // ONE redo restores creation AND both field values, in order.
+    session.redo();
+    const auto* sword =
+        static_cast<const data::WeaponForm*>(session.view(created));
+    REQUIRE(sword != nullptr);
+    CHECK(sword->damage == doctest::Approx(42.0f));
+    CHECK(sword->weight == doctest::Approx(5.0f));
+
+    // Ops OUTSIDE a gesture still undo one by one.
+    session.setField(kSwordId, core::fnv1a("damage"),
+                     reflect::Value { 11.0f });
+    session.setField(kSwordId, core::fnv1a("weight"),
+                     reflect::Value { 9.0f });
+    session.undo(); // weight only
+    CHECK(static_cast<const data::WeaponForm*>(session.view(kSwordId))
+              ->weight == doctest::Approx(3.0f));
+    CHECK(static_cast<const data::WeaponForm*>(session.view(kSwordId))
+              ->damage == doctest::Approx(11.0f));
+}

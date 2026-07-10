@@ -225,6 +225,7 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
                                actions.linkFrom)) {
             status = "(!) refused: would cycle the tree";
         } else {
+            data::EditSession::Gesture gesture { session }; // parent+order
             i32 nextOrder = 0;
             for (const auto& [id, node] : data.nodes) {
                 if (node->parent == actions.linkFrom) {
@@ -265,6 +266,7 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
 
     if (ImGui::BeginPopup("dgg-newnode")) {
         if (ImGui::MenuItem("+ reply here")) {
+            data::EditSession::Gesture gesture { session };
             const auto* parentNode =
                 static_cast<const quest::DialogueNodeForm*>(
                     session.view(dragFrom));
@@ -297,6 +299,7 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
     }
     if (ImGui::BeginPopup("dgg-node")) {
         if (ImGui::MenuItem("+ reply")) {
+            data::EditSession::Gesture gesture { session };
             const auto* parentNode =
                 static_cast<const quest::DialogueNodeForm*>(
                     session.view(contextNode));

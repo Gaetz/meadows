@@ -27,15 +27,15 @@ Dans la scène Landscape :
 
 ## 0. Le shell (8.7b) — 5 min
 
-- [ ] Le jeu s'ouvre en **1920×1080**.
-- [ ] La scène Game DB est UNE fenêtre dockée : Browser | Editor |
+- [x] Le jeu s'ouvre en **1920×1080**.
+- [x] La scène Game DB est UNE fenêtre dockée : Browser | Editor |
       Inspector ; détacher/re-docker un panneau à la souris ;
       `Windows > Reset layout` restaure le défaut.
 - [ ] Menu `File` : nom + Export plugin ; `Edit` : Undo/Redo (**Ctrl+Z /
       Ctrl+Y**) ; `Windows` : Plugins, Console.
-- [ ] La sélection dans l'inspecteur est **dorée** — même teinte que le
+- [x] La sélection dans l'inspecteur est **dorée** — même teinte que le
       cadre du nœud sélectionné dans le graphe.
-- [ ] Les panneaux ImGui des **scènes 3D** n'ont pas changé (le passage
+- [x/u] Les panneaux ImGui des **scènes 3D** n'ont pas changé (le passage
       au pin imgui-docking ne doit rien altérer visuellement).
 
 ## 1. Graphe de quêtes (8.7 + 8.7d) — 10 min

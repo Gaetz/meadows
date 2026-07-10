@@ -279,6 +279,7 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
     canvas.end(actions);
 
     if (actions.linkCreated) {
+        data::EditSession::Gesture gesture { session }; // one undo step
         const core::Guid id = session.createForm(
             quest::QuestBranchForm::staticTypeInfo().id,
             questForm->editorId + "Branch" + std::to_string(++createCounter));
@@ -293,7 +294,9 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
     }
     for (const core::Guid& id : actions.deletedNodes) {
         // A deleted state takes its session-created branches along; base
-        // branches stay and surface as dangling warnings (§5).
+        // branches stay and surface as dangling warnings (§5). One undo
+        // step for the whole cascade.
+        data::EditSession::Gesture gesture { session };
         for (const auto& [branchId, branch] : data.branches) {
             if ((branch->state == id || branch->destination == id) &&
                 session.isCreated(branchId)) {
@@ -331,6 +334,7 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
 
     if (ImGui::BeginPopup("qg-background")) {
         if (ImGui::MenuItem("+ State")) {
+            data::EditSession::Gesture gesture { session };
             const core::Guid id = session.createForm(
                 quest::QuestStateForm::staticTypeInfo().id,
                 questForm->editorId + "State" +
@@ -357,6 +361,7 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
         const str what = fromOutput ? "+ State (branch from here)"
                                     : "+ State (branch INTO here)";
         if (ImGui::MenuItem(what.c_str())) {
+            data::EditSession::Gesture gesture { session };
             const core::Guid stateId = session.createForm(
                 quest::QuestStateForm::staticTypeInfo().id,
                 questForm->editorId + "State" +
@@ -406,6 +411,7 @@ void QuestGraphPanel::drawInspectorExtras(const core::Guid& target) {
         }
     });
     if (ImGui::SmallButton("+ Task")) {
+        data::EditSession::Gesture gesture { session };
         const core::Guid id = session.createForm(
             quest::QuestTaskForm::staticTypeInfo().id,
             branch->editorId + "Task" + std::to_string(++createCounter));

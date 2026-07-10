@@ -233,6 +233,7 @@ void drawEventWiring(data::EditSession& session, const core::Guid& target) {
             for (const auto& [label, id] : tasks) {
                 if (ImGui::Selectable(
                         (label + "##wt" + id.toString()).c_str())) {
+                    data::EditSession::Gesture gesture { session };
                     const str eventName = ensureNodeEvent(session, target);
                     session.setField(id, core::fnv1a("event"),
                                      reflect::Value { eventName });
@@ -279,6 +280,7 @@ void drawEventWiring(data::EditSession& session, const core::Guid& target) {
             for (const auto& [label, id] : nodes) {
                 if (ImGui::Selectable(
                         (label + "##wn" + id.toString()).c_str())) {
+                    data::EditSession::Gesture gesture { session };
                     const str eventName = ensureNodeEvent(session, id);
                     session.setField(target, core::fnv1a("event"),
                                      reflect::Value { eventName });
