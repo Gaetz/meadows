@@ -3,6 +3,8 @@
 #include <cmath>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "data/forms/CoreForms.hpp" // data::WeaponForm
 #include "data/forms/FormDatabase.hpp"
@@ -164,6 +166,20 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
     if (const auto weakness = ctx.gameTags.find("State.CriticalWeakness")) {
         event.critical = block.system.tags.has(*weakness);
     }
+    // A5: a guarding NPC catches front-cone hits — damage shrinks, the
+    // blocked amount runs the guard's POSTURE down instead.
+    if (const auto blockTag = ctx.gameTags.find("State.Blocking");
+        blockTag && block.system.tags.has(*blockTag)) {
+        const auto& targetT = target.entity.get<world::Transform>();
+        const Vec3 facing = targetT.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
+        if (gameplay::applyBlock(event, facing, targetT.position,
+                                 body_->position(),
+                                 ctx.statsTuning.blockAngleDegrees,
+                                 ctx.statsTuning.blockFactor,
+                                 ctx.statsTuning.blockPostureFactor)) {
+            LOG_INFO("Blocked!");
+        }
+    }
     const gameplay::DamageResult result = gameplay::applyDamage(
         block, event, ctx.gameTags, ctx.derivedStats, nullptr,
         ctx.statsTuning);
@@ -220,10 +236,30 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
         return; // frozen during door transitions
     }
     platform::Input& input = ctx.input;
+    // P0 A5: RMB held = raised guard — the State.Blocking tag is the §6
+    // vocabulary the damage paths read (both camps). Guarding excludes
+    // swinging (and vice versa: the guard waits for the swing to land).
+    bool blocking = false;
+    if (ctx.playerEntity.is_alive()) {
+        auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
+        const bool swingIdle =
+            ctx.playerEntity.get<gameplay::MeleeSwing>().phase ==
+            gameplay::SwingPhase::Idle;
+        blocking = input.mouseDown(platform::MouseButton::Right) &&
+                   swingIdle;
+        if (const auto tag = ctx.gameTags.find("State.Blocking")) {
+            const bool tagged = system.tags.has(*tag);
+            if (blocking && !tagged) {
+                system.tags.add(*tag, ctx.gameTags);
+            } else if (!blocking && tagged) {
+                system.tags.remove(*tag, ctx.gameTags);
+            }
+        }
+    }
     // B6: melee swing on LMB (the mouse is captured in Play — ImGui
     // never owns it here). Cadence is the ability's cooldown effect plus
     // the swing itself: no hardcoded timer (P0 A3).
-    if (input.mousePressed(platform::MouseButton::Left)) {
+    if (!blocking && input.mousePressed(platform::MouseButton::Left)) {
         tryAttack(ctx);
     }
     updateSwing(dt, ctx);
@@ -264,10 +300,14 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
         energy = gameplay::currentValueOf(sys, gameplay::attr("energy"));
     }
     // C3: overencumbered = no sprint, no jump (STATS.md §3 Utility).
+    // A5: no sprint behind a raised guard either.
     const bool sprinting = moving && input.isDown(platform::Key::Shift) &&
-                           energy > 1.0f && !ctx.overencumbered;
-    const f32 targetSpeed =
-        sprinting ? jog * tuning.sprintMultiplier : jog;
+                           energy > 1.0f && !ctx.overencumbered &&
+                           !blocking;
+    f32 targetSpeed = sprinting ? jog * tuning.sprintMultiplier : jog;
+    if (blocking) {
+        targetSpeed *= tuning.blockSpeedFactor; // guarding is careful
+    }
     const Vec3 target =
         moving ? glm::normalize(wish) * targetSpeed : Vec3 { 0.0f };
     // Exponential smoothing toward the target: snappy, never binary.
@@ -325,8 +365,13 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     flyCamera.camera.position =
         body_->position() + Vec3 { 0.0f, ctx.statsTuning.eyeHeight, 0.0f };
     if (ctx.playerEntity.is_alive()) {
-        ctx.playerEntity.get_mut<world::Transform>().position =
-            body_->position();
+        auto& transform = ctx.playerEntity.get_mut<world::Transform>();
+        transform.position = body_->position();
+        // A5: the entity FACES where the camera looks (rotation * +Z =
+        // horizontal camera forward, the NPC yaw convention) — the guard
+        // cone and any future sim consumer read this, never the camera.
+        transform.rotation = glm::angleAxis(glm::pi<f32>() - yaw,
+                                            Vec3 { 0.0f, 1.0f, 0.0f });
     }
 }
 

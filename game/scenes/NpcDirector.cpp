@@ -11,6 +11,7 @@
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/core/Log.hpp"
+#include "engine/core/Rng.hpp"            // A5: NPC guard rolls (§8)
 #include "engine/physics/Physics.hpp"     // phys::PhysicsWorld/CharacterBody/RayHit
 #include "engine/assets/MeshData.hpp"     // render::SkinnedVertex
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
@@ -472,6 +473,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                                 // [cpp-tuning] pause between swings (A6
                                 // retunes it from WeaponForm.reach).
                                 npc.attackCooldown = 1.6f;
+                                npc.blocking = false; // guard drops to strike
                             }
                         }
                     }
@@ -479,6 +481,9 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             }
         }
 
+        if (!inCombat) {
+            npc.blocking = false; // A5: the fight is over, lower the guard
+        }
         if (inCombat) {
             // combat overrode the schedule this frame
         } else if (npc.schedule.isValid()) {
@@ -598,6 +603,12 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                 ctx.banditWeapon->swingRecovery
             };
             gameplay::updateSwing(swing, dt, timing);
+            if (swing.phase == gameplay::SwingPhase::Idle) {
+                // A5: the guard window between swings — ONE roll per
+                // window, on the seeded engine RNG (§8).
+                npc.blocking = ctx.combatRng.chance(
+                    static_cast<f64>(ctx.statsTuning.npcBlockChance));
+            }
             if (swing.phase == gameplay::SwingPhase::Active &&
                 npc.handJoint >= 0 && ctx.playMode && ctx.player &&
                 ctx.playerEntity.is_alive() && !ctx.godMode) {
@@ -631,20 +642,50 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                         ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
                         ctx.playerEntity.get_mut<gameplay::CombatState>()
                     };
+                    gameplay::DamageEvent event =
+                        gameplay::weaponDamageEvent(*ctx.banditWeapon,
+                                                    npcSys);
+                    // A5: the player's raised guard catches front-cone
+                    // hits — reduced damage, posture takes the rest.
+                    bool guarded = false;
+                    if (const auto blockTag =
+                            ctx.gameTags.find("State.Blocking");
+                        blockTag && block.system.tags.has(*blockTag)) {
+                        const auto& playerT =
+                            ctx.playerEntity.get<world::Transform>();
+                        const Vec3 playerFacing =
+                            playerT.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
+                        guarded = gameplay::applyBlock(
+                            event, playerFacing, playerT.position,
+                            transform.position,
+                            ctx.statsTuning.blockAngleDegrees,
+                            ctx.statsTuning.blockFactor,
+                            ctx.statsTuning.blockPostureFactor);
+                    }
                     const gameplay::DamageResult result =
-                        gameplay::applyDamage(
-                            block,
-                            gameplay::weaponDamageEvent(*ctx.banditWeapon,
-                                                        npcSys),
-                            ctx.gameTags, ctx.derivedStats, nullptr,
-                            ctx.statsTuning);
-                    LOG_INFO("Bandit's blade lands: {:.0f} damage{}",
+                        gameplay::applyDamage(block, event, ctx.gameTags,
+                                              ctx.derivedStats, nullptr,
+                                              ctx.statsTuning);
+                    LOG_INFO("Bandit's blade lands: {:.0f} damage{}{}",
                              result.healthDamage,
+                             guarded ? " (blocked)" : "",
                              result.staggered ? " (staggered!)" : "");
                 }
             }
         }
         npc.attacking = swing.phase != gameplay::SwingPhase::Idle;
+        // A5: mirror the guard onto the §6 tag vocabulary — the damage
+        // paths (player applyHit, future sources) read State.Blocking,
+        // never the Npc struct.
+        if (const auto blockTag = ctx.gameTags.find("State.Blocking")) {
+            auto& mutableSys = npc.entity.get_mut<gameplay::AbilitySystem>();
+            const bool tagged = mutableSys.tags.has(*blockTag);
+            if (npc.blocking && !tagged) {
+                mutableSys.tags.add(*blockTag, ctx.gameTags);
+            } else if (!npc.blocking && tagged) {
+                mutableSys.tags.remove(*blockTag, ctx.gameTags);
+            }
+        }
 
         // Chantier P0 C4a: drain the anim events the sink buffered onto
         // the bus — ONE kind ("AnimEvent"), the clip's name in `name`;

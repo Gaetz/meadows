@@ -29,7 +29,8 @@ void registerCharacterRuntimeTags(GameplayTagRegistry& tags) {
     // idempotent, so scenes freely add their own vocabulary on top.
     for (const char* tag :
          { "State.Dead", "State.Staggered", "State.Paralyzed",
-           "State.Exhausted", "State.Shaken", "State.CriticalWeakness" }) {
+           "State.Exhausted", "State.Shaken", "State.CriticalWeakness",
+           "State.Blocking" }) { // P0 A5: the raised guard
         tags.registerTag(tag);
     }
     for (const char* statusTag :

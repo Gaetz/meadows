@@ -95,6 +95,15 @@ struct StatsTuningForm : data::Form {
     // player has no walk anim, so footsteps fire every strideLength
     // meters of grounded travel (NPCs use their clips' AnimEvents).
     f32 strideLength { 2.2f };
+    // Chantier P0 A5 (appended): directional blocking. A raised guard
+    // catches hits whose attacker stands inside the front cone: caught
+    // channels shrink by blockFactor, the blocked amount lands on
+    // POSTURE (× blockPostureFactor) — stagger = broken guard.
+    f32 blockAngleDegrees { 120.0f }; // full width of the guard cone
+    f32 blockFactor { 0.7f };         // caught damage reduced by this
+    f32 blockPostureFactor { 0.6f };  // blocked amount -> posture damage
+    f32 blockSpeedFactor { 0.5f };    // move speed while guarding
+    f32 npcBlockChance { 0.35f };     // odds an NPC guards between swings
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -155,6 +164,11 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(crimeWitnessRange)
         REFLECT_FIELD(vendorRestockHours)
         REFLECT_FIELD(strideLength)
+        REFLECT_FIELD(blockAngleDegrees)
+        REFLECT_FIELD(blockFactor)
+        REFLECT_FIELD(blockPostureFactor)
+        REFLECT_FIELD(blockSpeedFactor)
+        REFLECT_FIELD(npcBlockChance)
     REFLECT_END()
 };
 

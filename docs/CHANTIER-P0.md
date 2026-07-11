@@ -69,10 +69,21 @@ fait avec le backend null).
   socket que le test de hit. Doctesté ×5 (phases, override d'events,
   dédup, arc droite→gauche, segment-capsule + tolérance). Reste dev :
   feel (fenêtres du clip, arc du viewmodel, capsule 0.4 [cpp-tuning]).
-- **A5 — Blocage directionnel.** État bloqué (RMB / ability PNJ) : les
-  coups entrants dans le cône avant → dégâts réduits + dégâts de POSTURE
-  (le système posture/stagger de STATS.md est déjà là), garde brisée =
-  stagger. Doctesté (cônes, réductions).
+- **A5 ✅ — Blocage directionnel.** `gameplay::applyBlock` (MeleeSwing) :
+  cône avant HORIZONTAL (largeur `blockAngleDegrees` 120°), canaux
+  ×(1−`blockFactor` 0.7), le bloqué part en POSTURE ×`blockPostureFactor`
+  0.6 — garde brisée = le stagger existant. Les 5 réglages sont des
+  champs `StatsTuningForm` (§5, append). Joueur : RMB tenu = tag
+  `State.Blocking` + vitesse ×`blockSpeedFactor` 0.5, pas de sprint ni
+  d'attaque en garde ; le Transform du joueur gagne enfin sa ROTATION
+  (rotation×+Z = regard horizontal, convention yaw PNJ) — le cône lit le
+  transform, jamais la caméra. PNJ : roll UNE fois par fenêtre
+  inter-swings (`npcBlockChance` 0.35) sur un RNG moteur seedé dédié
+  (`combatRng`, §8), miroir tag State.Blocking ; la garde tombe quand il
+  frappe ou que le combat cesse. Les DEUX chemins de dégâts passent par
+  applyBlock avant applyDamage. Doctesté (dans/hors cône, par-derrière,
+  hauteur ignorée, bout portant, réduction + routage posture). Reste
+  dev : feel + pas d'anim de garde (pas de clip block dans UAL).
 - **A6 — Distances d'engagement par arme.** `WeaponForm.reach` (+ champ
   de préférence de distance) consommé par l'IA (B3) et par le cast A4.
 - **A7 — Projectiles (SI retenu, voir questions).** Entité flèche :

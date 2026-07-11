@@ -268,6 +268,7 @@ private:
     // Chantier 4 B5: barter data (gold is an ordinary item; the routing
     // and the vendor multipliers live in UiRouter).
     core::Rng lootRng { 0x4d7a9b30u }; // loadout rolls (§8 seeded)
+    core::Rng combatRng { 0x50A5B10Cu }; // NPC combat rolls — A5 guards (§8)
     const data::MiscItemForm* goldForm { nullptr };
 
     // Chantier 5 B3: the one post-spawn seam for EVERY actor (player and

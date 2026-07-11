@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 #include "gameplay/combat/MeleeSwing.hpp"
+#include "gameplay/stats/Damage.hpp" // DamageEvent (applyBlock, A5)
 
 // Chantier P0 A3/A4 — the blade-touch melee swing, sim-pure: the phase
 // machine, the anim-event window override, the simulated socket arc, and
@@ -146,4 +147,61 @@ TEST_CASE("the blade segment hits a capsule only when it reaches it") {
     CHECK(gameplay::segmentHitsCapsule({ 0.0f, 1.0f, -1.5f },
                                        { 0.0f, 1.0f, -0.2f }, capA, capB,
                                        radius));
+}
+
+TEST_CASE("a raised guard catches front-cone hits and reroutes them to "
+          "posture") {
+    // Defender at the origin facing +Z; 120-degree guard, 70% reduction,
+    // 60% of the blocked amount lands on posture.
+    const Vec3 facing { 0.0f, 0.0f, 1.0f };
+    const Vec3 defender { 0.0f, 0.0f, 0.0f };
+    const auto freshEvent = [] {
+        gameplay::DamageEvent event;
+        event.channels = { { gameplay::DamageType::Slash, 10.0f },
+                           { gameplay::DamageType::Fire, 4.0f } };
+        event.postureAmount = 5.0f;
+        return event;
+    };
+
+    // Straight ahead: caught. Channels x0.3, posture gains 14x0.7x0.6.
+    gameplay::DamageEvent front = freshEvent();
+    CHECK(gameplay::applyBlock(front, facing, defender,
+                               { 0.0f, 0.0f, 3.0f }, 120.0f, 0.7f, 0.6f));
+    CHECK(front.channels[0].amount == doctest::Approx(3.0f));
+    CHECK(front.channels[1].amount == doctest::Approx(1.2f));
+    CHECK(front.postureAmount == doctest::Approx(5.0f + 9.8f * 0.6f));
+
+    // 50 degrees off-axis is still inside the 120-degree cone...
+    gameplay::DamageEvent inside = freshEvent();
+    CHECK(gameplay::applyBlock(
+        inside, facing, defender,
+        { 3.0f * std::sin(glm::radians(50.0f)), 0.0f,
+          3.0f * std::cos(glm::radians(50.0f)) },
+        120.0f, 0.7f, 0.6f));
+
+    // ...70 degrees is not: the event passes through untouched.
+    gameplay::DamageEvent outside = freshEvent();
+    CHECK(!gameplay::applyBlock(
+        outside, facing, defender,
+        { 3.0f * std::sin(glm::radians(70.0f)), 0.0f,
+          3.0f * std::cos(glm::radians(70.0f)) },
+        120.0f, 0.7f, 0.6f));
+    CHECK(outside.channels[0].amount == doctest::Approx(10.0f));
+    CHECK(outside.postureAmount == doctest::Approx(5.0f));
+
+    // From behind: never caught.
+    gameplay::DamageEvent behind = freshEvent();
+    CHECK(!gameplay::applyBlock(behind, facing, defender,
+                                { 0.0f, 0.0f, -3.0f }, 120.0f, 0.7f, 0.6f));
+
+    // The attacker's HEIGHT is irrelevant (horizontal cone): a hit from
+    // above-front is still caught.
+    gameplay::DamageEvent above = freshEvent();
+    CHECK(gameplay::applyBlock(above, facing, defender,
+                               { 0.0f, 2.0f, 3.0f }, 120.0f, 0.7f, 0.6f));
+
+    // Point-blank counts as in front.
+    gameplay::DamageEvent contact = freshEvent();
+    CHECK(gameplay::applyBlock(contact, facing, defender, defender, 120.0f,
+                               0.7f, 0.6f));
 }

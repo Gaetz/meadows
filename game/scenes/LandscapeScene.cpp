@@ -1618,6 +1618,7 @@ NpcContext LandscapeScene::makeNpcContext() {
         mode == SceneMode::Play,
         banditWeapon,
         attackAbility,
+        combatRng,
         sceneConsole.godMode(),
         timeSeconds,
     };

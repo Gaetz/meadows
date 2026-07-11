@@ -13,6 +13,9 @@
 #include "engine/rhi/Rhi.hpp"            // rhi::*Handle
 #include "gameplay/ability/GameplayTags.hpp" // gameplay::GameplayTag
 
+namespace core {
+class Rng;
+}
 namespace rhi {
 class Device;
 }
@@ -99,6 +102,9 @@ struct Npc {
     // gate (same idiom as `sitting`/`dead` above — the tag-check callback
     // reads these, it never touches gameplay types).
     bool attacking { false };
+    // P0 A5: the guard raised between swings (rolled once per window on
+    // the engine RNG; mirrored onto the State.Blocking tag).
+    bool blocking { false };
     f32 attackCooldown { 0.0f };
 
     // Chantier P0 C4a: anim events land HERE from the GraphInstance sink
@@ -140,6 +146,9 @@ struct NpcContext {
     // P0 A3: the shared melee attack ability — NPCs pay the same energy
     // cost / cooldown effects as the player (§6).
     const gameplay::AbilityForm* attackAbility;
+    // P0 A5: combat decision rolls (guard chance) — the seeded engine
+    // RNG, §8: saves/replays stay reproducible.
+    core::Rng& combatRng;
     bool godMode;
     f32 timeSeconds;                   // cosmetic wander hash (not gameplay RNG)
 };

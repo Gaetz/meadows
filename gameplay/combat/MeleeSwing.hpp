@@ -16,6 +16,8 @@
 
 namespace gameplay {
 
+struct DamageEvent; // stats/Damage.hpp — mutated by applyBlock (A5)
+
 // Idle -> Windup -> Active (the damaging sweep) -> Recovery -> Idle.
 enum class SwingPhase : u8 { Idle, Windup, Active, Recovery };
 
@@ -77,5 +79,17 @@ Mat4 swingSocketLocal(const MeleeSwing& swing, const SwingTiming& timing);
 // segment-segment distance < capsule radius.
 bool segmentHitsCapsule(const Vec3& a0, const Vec3& a1, const Vec3& capA,
                         const Vec3& capB, f32 radius);
+
+// A5 — directional blocking. If the attacker stands inside the
+// defender's front cone (horizontal, blockAngleDegrees full width), the
+// event's damage channels shrink by blockFactor and the blocked amount
+// is rerouted to POSTURE (× blockPostureFactor) — running the guard down
+// until the stagger breaks it (docs/STATS.md posture). Call it before
+// applyDamage on a defender carrying State.Blocking; returns whether the
+// guard caught the hit. Both camps go through this one helper.
+bool applyBlock(DamageEvent& event, const Vec3& defenderFacing,
+                const Vec3& defenderPos, const Vec3& attackerPos,
+                f32 blockAngleDegrees, f32 blockFactor,
+                f32 blockPostureFactor);
 
 } // namespace gameplay

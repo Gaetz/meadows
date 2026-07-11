@@ -1,10 +1,13 @@
 #include "gameplay/combat/MeleeSwing.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+
+#include "gameplay/stats/Damage.hpp" // DamageEvent (applyBlock)
 
 namespace gameplay {
 
@@ -186,6 +189,40 @@ bool segmentHitsCapsule(const Vec3& a0, const Vec3& a1, const Vec3& capA,
     const Vec3 closest2 = capA + d2 * t;
     const Vec3 gap = closest1 - closest2;
     return glm::dot(gap, gap) < radius * radius;
+}
+
+bool applyBlock(DamageEvent& event, const Vec3& defenderFacing,
+                const Vec3& defenderPos, const Vec3& attackerPos,
+                f32 blockAngleDegrees, f32 blockFactor,
+                f32 blockPostureFactor) {
+    // Horizontal cone: guards care about compass direction, not height.
+    Vec3 facing { defenderFacing.x, 0.0f, defenderFacing.z };
+    Vec3 to { attackerPos.x - defenderPos.x, 0.0f,
+              attackerPos.z - defenderPos.z };
+    const f32 facingLen = glm::length(facing);
+    const f32 toLen = glm::length(to);
+    if (facingLen < 1e-4f) {
+        return false; // no facing, no guard
+    }
+    // Point-blank counts as in front: the attacker is ON the defender.
+    if (toLen >= 1e-4f) {
+        const f32 cosHalf =
+            std::cos(glm::radians(glm::clamp(blockAngleDegrees, 0.0f,
+                                             360.0f) *
+                                  0.5f));
+        if (glm::dot(facing / facingLen, to / toLen) < cosHalf) {
+            return false; // outside the guard cone
+        }
+    }
+    f32 blocked = 0.0f;
+    const f32 factor = glm::clamp(blockFactor, 0.0f, 1.0f);
+    for (DamageChannel& channel : event.channels) {
+        const f32 cut = channel.amount * factor;
+        channel.amount -= cut;
+        blocked += cut;
+    }
+    event.postureAmount += blocked * glm::max(blockPostureFactor, 0.0f);
+    return true;
 }
 
 } // namespace gameplay
