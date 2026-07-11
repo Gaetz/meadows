@@ -215,6 +215,10 @@ void NpcDirector::refreshNpcs(
             // A2: the sword hand (UAL rig: "hand_r"); -1 = no weapon shown.
             npc->handJoint = rig->skeleton.findJoint("hand_r");
             npc->tint = visual->tint;
+            // The pose is normally written by update(); a paused sim (boot
+            // = Spectator) extracts BEFORE any update, and the A2 weapon
+            // attach walks the pose — it must be skeleton-sized from birth.
+            anim::bindPose(rig->skeleton, npc->pose);
             npc->palette.assign(rig->skeleton.joints.size(), Mat4 { 1.0f });
             npc->vertices = device.createBuffer(
                 { .usage = rhi::BufferUsage::Vertex,
