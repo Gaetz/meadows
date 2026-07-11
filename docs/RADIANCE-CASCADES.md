@@ -129,10 +129,29 @@ catégorie. Chaque paramètre naît DANS l'UI, jamais en constante.
   volume dans le Debug buffer) + catégorie UI + scopes GpuProbe.
 - **G3** — injection props/PNJ (AABBs) + lumières locales.
 - **G4** — build des cascades ; **G5** — merge N→0 + vue debug cascades.
-- **G6** — gi.glsl + switch GiTechnique dans les 5 shaders de surface.
-  **NON COMMITTÉ avant validation visuelle dev** ; Classic par défaut.
-- **G7** — qualité (multi-bounce par feedback, extension d'intervalle,
-  intérieurs fins) puis **passe de réglage dev** → 3 ms → 1-2 ms.
+- **G6 ✅ validé dev 2026-07-11** — gi.glsl + switch GiTechnique dans
+  terrain/mesh/skinned/grass (l'eau attend) ; Classic par défaut,
+  byte-identique. Retours dev intégrés le jour même :
+  1. *trop fort* → splat des lumières aligné sur l'inverse-square fenêtré
+     de locallights.glsl + intensité défaut 0,7 ;
+  2. *intérieurs* → actifs (tuile terrain = placeholder « no terrain »
+     en intérieur, les boîtes de kit + lumières portent la pièce ;
+     re-bascule automatique en re-sortant) ;
+  3. *ramp BotW* → l'irradiance GI est POSTERISÉE en fin de calcul
+     (3 bandes plates relatives à l'ambiante classique, teinte préservée,
+     gatée par le blend stylisé uAmbientColor.w).
+  **Clarification (question dev)** : dans cette intégration, RC ne
+  remplace que l'INDIRECT (l'ambiante) — les ombres du soleil restent la
+  CSM. Ce que RC « ombre » = l'occlusion directionnelle de l'indirect
+  (d'où la lecture « ambient occlusion ») + le rebond occlus des
+  lumières. Pour de VRAIES ombres RC (pénombres par construction), il
+  faudrait router des lumières EXCLUSIVEMENT par RC (le modèle PoE2) —
+  candidate G7 ci-dessous.
+- **G7** — qualité : multi-bounce par feedback, extension d'intervalle,
+  **lumières « RC-only »** (retirées du direct locallights → leurs ombres
+  et pénombres viennent du volume, à la résolution du voxel — l'expérience
+  qui répond à la question « où sont les ombres ? »), triangles fins en
+  intérieur ; puis **passe de réglage dev** → 3 ms → 1-2 ms.
 - **G8** (si mesuré nécessaire) — accélération spatiale : index spatial
   CPU partagé moteur/gameplay et/ou voxels sparse.
 
