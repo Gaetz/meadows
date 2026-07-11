@@ -136,10 +136,21 @@ fait avec le backend null).
 
 ## Axe C — FX, cues et les consommateurs d'AnimEvents
 
-- **C1 — Particules v2.** `fx::ParticleSim` : émetteurs continus (rate),
-  formes (sphere/cone/box), courbes taille/couleur sur la vie ; RENDU 3D
-  en quads face caméra (instancié, soft particles contre le z-fight sol),
-  budget global. L'éditeur FX (8.10) preview déjà — il suit gratuitement.
+- **C1 ✅ (validation visuelle dev en attente) — Particules v2.**
+  `fx::ParticleSim` : émetteurs CONTINUS (rate×dt accumulé, durée,
+  `stopEmitter`/`moveEmitter`), formes sphere/cone/box (cone = ½-angle,
+  degrés en data → radians sim), budget global 4096 (les spawns en trop
+  sont JETÉS), flag additive par particule. RENDU 3D :
+  `engine/render/landscape/FxRenderer` — quads face caméra depuis un
+  SSBO d'instances (gl_VertexID, pattern rain), 2 batches
+  alpha(trié loin→près à l'extract)/additif, falloff rond au shader
+  (texture + soft-depth = suite si besoin), passe transparente après
+  les shafts. Seam Phase-5 respecté : sim headless → POD
+  `snapshot.fxAlpha/fxAdditive` → renderer. Banc dev : commande console
+  `fx <editorId>` (spawn 4 m devant, au sol) + 2 ParticleForms de démo
+  (`HitSparks` cône additif, `CampfireSmoke` fumée continue). L'éditeur
+  FX (8.10) émule rate/duration lui-même (params neutralisés). Doctesté
+  ×2 (rate/durée/stop/budget ; formes + flag additive).
 - **C2 — Handlers de cues standard.** Le `CueForm` résout enfin ses
   trois canaux : particule (C1), SHAKE caméra (impulsion amortie), son
   (C3 — silencieux tant que pas d'assets). Points d'émission

@@ -15,8 +15,13 @@ void FxPanel::restart(const core::Guid& particleId) {
     const auto* form =
         static_cast<const data::ParticleForm*>(session.view(particleId));
     if (form && form->burst > 0) {
-        sim.spawnBurst(gameplay::toEmitterParams(*form), Vec3 { 0.0f },
-                       seed++);
+        // The panel runs its OWN rate/duration emulation (with its loop
+        // + pause + timescale): strip them so the sim doesn't register a
+        // second, competing emitter.
+        fx::EmitterParams params = gameplay::toEmitterParams(*form);
+        params.rate = 0.0f;
+        params.duration = 0.0f;
+        sim.spawn(params, Vec3 { 0.0f }, seed++);
     }
 }
 
@@ -64,9 +69,11 @@ void FxPanel::drawEditor(const core::Guid& particleId) {
             accumulator += form->rate * dt;
             fx::EmitterParams single = gameplay::toEmitterParams(*form);
             single.burst = 1;
+            single.rate = 0.0f; // the panel IS the emitter loop
+            single.duration = 0.0f;
             while (accumulator >= 1.0f) {
                 accumulator -= 1.0f;
-                sim.spawnBurst(single, Vec3 { 0.0f }, seed++);
+                sim.spawn(single, Vec3 { 0.0f }, seed++);
             }
         }
         sim.update(dt);
@@ -98,7 +105,8 @@ void FxPanel::drawEditor(const core::Guid& particleId) {
     draw->PushClipRect(corner,
                        ImVec2(corner.x + avail.x, corner.y + height), true);
     const bool additive = form->blend == "additive";
-    sim.forEach([&](const Vec3& position, f32 size, const Vec4& color) {
+    sim.forEach([&](const Vec3& position, f32 size, const Vec4& color,
+                    bool) {
         Vec4 shown = color;
         if (additive) { // ImDrawList has no additive blend: brighten
             shown = glm::clamp(Vec4 { color.x * 1.5f, color.y * 1.5f,

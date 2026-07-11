@@ -16,6 +16,7 @@
 #include "engine/render/landscape/TerrainLightMap.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
+#include "engine/render/landscape/FxRenderer.hpp"
 #include "engine/render/landscape/WaterSystem.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
@@ -191,6 +192,7 @@ private:
     bool lastCascadesValid { false };
     u64 shadowFrame { 0 };
     render::WaterSystem water;
+    render::FxRenderer fx; // P0 C1: the CPU-particle pass
     render::PostFx postFx;
     render::GpuProbe gpuProbe; // GPU-PERF P0: per-pass GPU budget
     // Brick 33b/c: worker-baked terrain sun-shadow + sky-openness map.

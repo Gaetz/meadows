@@ -1,5 +1,6 @@
 ﻿#include "game/scenes/LandscapeScene.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <ctime>
 #include <filesystem>
@@ -33,6 +34,7 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
 #include "gameplay/combat/MeleeSwing.hpp" // P0 A3: the viewmodel swing arc
+#include "gameplay/cue/GameplayCues.hpp"  // P0 C1: toEmitterParams (fx cmd)
 #include "gameplay/actors/ActorState.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
@@ -676,6 +678,28 @@ void LandscapeScene::update(f32 dt) {
     if (!simPaused) {
         core::FrameProbe::Scope probe { frameProbe, "npcs" };
         updateNpcs(dt);
+        // P0 C1: the particle sim advances with the world (paused sim =
+        // frozen sparks, like everything else).
+        fxSim.update(dt);
+    }
+    // P0 C1: live particles -> POD batches; the ALPHA batch is sorted
+    // far-to-near around the camera (additive needs no order).
+    snapshot.fxAlpha.clear();
+    snapshot.fxAdditive.clear();
+    fxSim.forEach([&](const Vec3& position, f32 size, const Vec4& color,
+                      bool additive) {
+        (additive ? snapshot.fxAdditive : snapshot.fxAlpha)
+            .push_back({ Vec4 { position, size }, color });
+    });
+    {
+        const Vec3 eye = flyCamera.camera.position;
+        std::sort(snapshot.fxAlpha.begin(), snapshot.fxAlpha.end(),
+                  [&](const render::FxInstance& a,
+                      const render::FxInstance& b) {
+                      const Vec3 da = Vec3 { a.positionSize } - eye;
+                      const Vec3 db = Vec3 { b.positionSize } - eye;
+                      return glm::dot(da, da) > glm::dot(db, db);
+                  });
     }
     // U4-2b: the skinned extract runs AFTER the NPC update so the packet
     // carries this frame's pose (paused sim: the last pose, still valid).
@@ -1514,6 +1538,28 @@ void LandscapeScene::createConsole() {
         char out[64];
         std::snprintf(out, sizeof(out), "teleported to %.0f %.0f", x, z);
         return out;
+    });
+    panel.addCommand("fx", [this](const str& args) -> str {
+        // P0 C1 dev bench: spawns a ParticleForm by editorId 4 m ahead
+        // of the camera (grounded). `fx CampfireSmoke`
+        const auto* form =
+            data::findByEditorId<data::ParticleForm>(forms, args);
+        if (!form) {
+            return "no ParticleForm named '" + args + "'";
+        }
+        const render::Camera3D& cam = flyCamera.camera;
+        Vec3 at = cam.position + cam.forward() * 4.0f;
+        at.y = render::terrain::height(renderer.terrainParams(), at.x,
+                                       at.z) +
+               0.2f;
+        // Cosmetic seed from the spot (§8: never the gameplay RNG).
+        const u32 seed = static_cast<u32>(at.x * 73.0f) ^
+                         (static_cast<u32>(at.z * 179.0f) << 8) ^
+                         fxSim.count();
+        fxSim.spawn(gameplay::toEmitterParams(*form), at, seed);
+        return "fx '" + args + "' spawned (" +
+               std::to_string(fxSim.count()) + " live, " +
+               std::to_string(fxSim.emitterCount()) + " emitter(s))";
     });
     panel.addCommand("tgm", [this](const str&) -> str {
         return sceneConsole.toggleGodMode() ? "god mode ON" : "god mode OFF";

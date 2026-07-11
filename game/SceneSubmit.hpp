@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/render/SpriteRenderer.hpp" // render::Sprite, rhi::TextureHandle
+#include "engine/render/landscape/FxRenderer.hpp" // render::FxInstance (P0 C1)
 #include "world/scene/Components.hpp"        // world::Transform, world::SpriteRender
 
 // The render bridge: the single ECS↔rhi seam (§2.6). Keeping it here, above the
@@ -93,6 +94,12 @@ struct RenderSnapshot {
         core::Guid albedoTexture {}; // asset guid; 0 = white
     };
     vector<MeshInstance> meshes;
+
+    // P0 C1: the frame's live particles, POD copies from fx::ParticleSim
+    // (the extract pre-sorts the ALPHA batch far-to-near; additive is
+    // order-free). The renderer draws only these.
+    vector<render::FxInstance> fxAlpha;
+    vector<render::FxInstance> fxAdditive;
 
     // The landscape frame's world-derived render data (U4-2a): render()
     // consumes these instead of querying the live World.

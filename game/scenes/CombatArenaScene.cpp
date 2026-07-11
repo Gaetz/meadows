@@ -183,7 +183,7 @@ void CombatArenaScene::onEnter() {
         const u32 seed = static_cast<u32>(event.position.x * 73.0f) ^
                          (static_cast<u32>(event.position.y * 179.0f) << 8) ^
                          particles.count();
-        particles.spawnBurst(sparks, event.position, seed);
+        particles.spawn(sparks, event.position, seed);
     });
 
     // The shared character-tick vocabulary (life state, statuses, buildup,
@@ -447,7 +447,7 @@ void CombatArenaScene::draw(render::SpriteRenderer& renderer) {
     WorldDemoScene::draw(renderer);
     // Cue sparks over the world (painter order: after every entity).
     particles.forEach([&](const Vec3& position, f32 size,
-                          const Vec4& color) {
+                          const Vec4& color, bool) {
         renderer.draw({ .position = { position.x, position.y },
                         .size = { size, size },
                         .tint = color,

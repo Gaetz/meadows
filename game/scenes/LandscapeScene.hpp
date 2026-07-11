@@ -37,6 +37,7 @@
 #include "gameplay/interaction/Furniture.hpp"
 #include "gameplay/save/SaveState.hpp"
 #include "engine/core/FrameProbe.hpp"
+#include "engine/fx/Particles.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
@@ -273,6 +274,9 @@ private:
     // P0 B1: the frame's actor snapshot grid — rebuilt once per sim tick,
     // read by the trigger sweep and (B2/B3) perception / combat AI.
     world::SpatialIndex spatialIndex;
+    // P0 C1: the CPU particle sim (headless engine/fx) — updated with
+    // the sim tick, extracted as POD batches, drawn by the FxRenderer.
+    fx::ParticleSim fxSim;
     const data::MiscItemForm* goldForm { nullptr };
 
     // Chantier 5 B3: the one post-spawn seam for EVERY actor (player and

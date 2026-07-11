@@ -196,25 +196,25 @@ TEST_CASE("particles: deterministic bursts, aging, expiry") {
     params.burst = 10;
     params.lifetime = 0.5f;
     params.lifetimeJitter = 0.0f;
-    sim.spawnBurst(params, { 0.0f, 0.0f, 0.0f }, 42);
+    sim.spawn(params, { 0.0f, 0.0f, 0.0f }, 42);
     CHECK(sim.count() == 10);
 
     fx::ParticleSim sim2;
-    sim2.spawnBurst(params, { 0.0f, 0.0f, 0.0f }, 42);
+    sim2.spawn(params, { 0.0f, 0.0f, 0.0f }, 42);
     // Same seed: identical first particle trajectory.
     Vec3 p1 {};
     Vec3 p2 {};
-    sim.forEach([&](const Vec3& p, f32, const Vec4&) {
+    sim.forEach([&](const Vec3& p, f32, const Vec4&, bool) {
         if (p1 == Vec3 { 0.0f }) { p1 = p; }
     });
     sim.update(0.1f);
     sim2.update(0.1f);
     bool first = true;
-    sim.forEach([&](const Vec3& p, f32, const Vec4&) {
+    sim.forEach([&](const Vec3& p, f32, const Vec4&, bool) {
         if (first) { p1 = p; first = false; }
     });
     first = true;
-    sim2.forEach([&](const Vec3& p, f32, const Vec4&) {
+    sim2.forEach([&](const Vec3& p, f32, const Vec4&, bool) {
         if (first) { p2 = p; first = false; }
     });
     CHECK(p1.x == doctest::Approx(p2.x));
@@ -224,6 +224,97 @@ TEST_CASE("particles: deterministic bursts, aging, expiry") {
         sim.update(0.016f); // ~1 s total > 0.5 s lifetime
     }
     CHECK(sim.count() == 0);
+}
+
+TEST_CASE("particles v2: continuous emitters, early stop, and the budget") {
+    // A 100/s emitter for 0.5 s: the accumulator trickles exactly.
+    fx::ParticleSim sim;
+    fx::EmitterParams params;
+    params.burst = 0;
+    params.rate = 100.0f;
+    params.duration = 0.5f;
+    params.lifetime = 30.0f;
+    params.lifetimeJitter = 0.0f;
+    const u32 id = sim.spawn(params, { 0.0f, 0.0f, 0.0f }, 7);
+    CHECK(id != 0);
+    CHECK(sim.emitterCount() == 1);
+    sim.update(0.1f);
+    CHECK(sim.count() == 10);
+    // The duration gates the SLICE: only 0.4 s of the next 0.5 s emits.
+    sim.update(0.5f);
+    CHECK(sim.count() == 50);
+    CHECK(sim.emitterCount() == 0); // expired and swept
+    sim.update(0.1f);
+    CHECK(sim.count() == 50);
+
+    // stopEmitter ends the stream early; live particles stay.
+    fx::ParticleSim early;
+    const u32 stream = early.spawn(params, { 0.0f, 0.0f, 0.0f }, 8);
+    early.update(0.1f);
+    CHECK(early.count() == 10);
+    early.stopEmitter(stream);
+    early.update(0.2f);
+    CHECK(early.count() == 10);
+
+    // The budget drops spawns, never grows the frame.
+    fx::ParticleSim capped;
+    capped.setBudget(5);
+    fx::EmitterParams big;
+    big.burst = 20;
+    capped.spawn(big, { 0.0f, 0.0f, 0.0f }, 9);
+    CHECK(capped.count() == 5);
+}
+
+TEST_CASE("particles v2: spawn shapes scatter position or velocity") {
+    // Sphere: every spawn inside the radius, none exactly stacked.
+    fx::ParticleSim sim;
+    fx::EmitterParams sphere;
+    sphere.shape = fx::EmitterShape::Sphere;
+    sphere.shapeRadius = 2.0f;
+    sphere.burst = 32;
+    sphere.velocity = { 0.0f, 0.0f, 0.0f };
+    sphere.velocityJitter = 0.0f;
+    sim.spawn(sphere, { 0.0f, 0.0f, 0.0f }, 3);
+    u32 offCenter = 0;
+    sim.forEach([&](const Vec3& p, f32, const Vec4&, bool) {
+        CHECK(glm::length(p) <= 2.0f + 1e-4f);
+        if (glm::length(p) > 0.05f) {
+            ++offCenter;
+        }
+    });
+    CHECK(offCenter > 20);
+
+    // Cone: velocities fan around the axis inside the half-angle.
+    fx::ParticleSim coneSim;
+    fx::EmitterParams cone;
+    cone.shape = fx::EmitterShape::Cone;
+    cone.shapeRadius = glm::radians(20.0f);
+    cone.burst = 1; // inspect one velocity through its first step
+    cone.velocity = { 0.0f, 5.0f, 0.0f };
+    cone.velocityJitter = 0.0f;
+    cone.gravity = { 0.0f, 0.0f, 0.0f };
+    cone.lifetime = 10.0f;
+    cone.lifetimeJitter = 0.0f;
+    const f32 cosHalf = std::cos(glm::radians(20.0f) + 1e-3f);
+    for (u32 seed = 0; seed < 16; ++seed) {
+        coneSim.clear();
+        coneSim.spawn(cone, { 0.0f, 0.0f, 0.0f }, seed);
+        coneSim.update(1.0f); // position = velocity after one second
+        coneSim.forEach([&](const Vec3& p, f32, const Vec4&, bool) {
+            CHECK(glm::length(p) == doctest::Approx(5.0f).epsilon(0.01));
+            CHECK(glm::normalize(p).y >= cosHalf);
+        });
+    }
+
+    // The additive flag rides each particle to the render batches.
+    fx::ParticleSim blend;
+    fx::EmitterParams add;
+    add.burst = 1;
+    add.additive = true;
+    blend.spawn(add, { 0.0f, 0.0f, 0.0f }, 1);
+    blend.forEach([&](const Vec3&, f32, const Vec4&, bool additive) {
+        CHECK(additive);
+    });
 }
 
 TEST_CASE("grid navigator adapts A* to the nav seam") {
@@ -274,6 +365,6 @@ TEST_CASE("toEmitterParams maps every shared field verbatim") {
 
     // The mapped params drive the REAL sim (the preview's loop).
     fx::ParticleSim sim;
-    sim.spawnBurst(params, Vec3 { 0.0f }, 7u);
+    sim.spawn(params, Vec3 { 0.0f }, 7u);
     CHECK(sim.count() == 24);
 }

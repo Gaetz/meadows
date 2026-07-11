@@ -227,6 +227,7 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
     }
     if (device.caps().copyTexture) {
         water.create(device, *shaders, jobs);
+    fx.create(device, *shaders); // P0 C1: the particle pass
         depthSampler = { device, device.createSampler(
             { .minFilter = rhi::FilterMode::Nearest,
               .magFilter = rhi::FilterMode::Nearest }) };
@@ -302,6 +303,7 @@ void LandscapeRenderer::destroy(rhi::Device& device) {
     radianceCascades.destroy(device); // chantier RC
     postFx.destroy(device);
     water.destroy(device);
+    fx.destroy(device);
     reflectionBindGroup.reset();
     reflectionUbo.reset();
     depthSampler.reset();
@@ -1679,6 +1681,10 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         // additive dust shafts — both after every opaque.
         drawWaterVolumes(frame, snapshot);
         drawLightShafts(frame, snapshot, view, skyState.sunColor);
+        // P0 C1: the frame's particles (camera-facing quads; the
+        // extract sorted the alpha batch, additive is order-free).
+        fx.draw(frame, *shaders, frameBindGroup, snapshot.fxAlpha,
+                snapshot.fxAdditive);
         // Brick 31: rain streaks (procedural, camera cylinder).
         if (frameData.stormInfo.y > 0.003f) {
             if (shaders->generation("rain") != rainShaderGeneration ||

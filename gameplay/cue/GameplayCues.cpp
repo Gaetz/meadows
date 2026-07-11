@@ -30,6 +30,19 @@ const data::CueForm* CueTable::find(std::string_view tag) const {
 
 fx::EmitterParams toEmitterParams(const data::ParticleForm& form) {
     fx::EmitterParams params;
+    // C1: the full authoring surface maps now — shape, continuous rate,
+    // duration and the blend batch key (texture stays a render concern).
+    params.shape = form.shape == "sphere" ? fx::EmitterShape::Sphere
+                   : form.shape == "cone" ? fx::EmitterShape::Cone
+                   : form.shape == "box"  ? fx::EmitterShape::Box
+                                          : fx::EmitterShape::Point;
+    // The form authors the cone in DEGREES of half-angle; the sim takes
+    // radians (and meters for the volume shapes).
+    params.shapeRadius = params.shape == fx::EmitterShape::Cone
+                             ? glm::radians(form.shapeRadius)
+                             : form.shapeRadius;
+    params.rate = form.rate;
+    params.duration = form.duration;
     params.burst = form.burst;
     params.lifetime = form.lifetime;
     params.lifetimeJitter = form.lifetimeJitter;
@@ -40,6 +53,7 @@ fx::EmitterParams toEmitterParams(const data::ParticleForm& form) {
     params.sizeEnd = form.sizeEnd;
     params.colorStart = form.colorStart;
     params.colorEnd = form.colorEnd;
+    params.additive = form.blend == "additive";
     return params;
 }
 

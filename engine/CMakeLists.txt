@@ -65,6 +65,7 @@ add_library(meadows-render STATIC
     render/ShaderLibrary.cpp
     render/SpriteRenderer.cpp
     render/landscape/ChunkOcclusion.cpp
+    render/landscape/FxRenderer.cpp
     render/landscape/GpuOcclusion.cpp
     render/landscape/GrassSystem.cpp
     render/landscape/PostFx.cpp
