@@ -56,7 +56,14 @@ struct RcTuning {
     // the adaptive chain — bands must be PREDICTABLE): the GI luminance
     // snaps to absolute exposure steps, day/night/torch alike.
     f32 bandStops { 0.85f };  // stops per band (bigger = fewer, bolder)
-    f32 bandAa { 0.15f };     // anti-aliasing width across a band edge
+    f32 bandAa { 0.3f };      // anti-aliasing width across a band edge
+                              // (dev pick 2026-07-11)
+    // G7c — interval extension (§2.3.3 du papier): levels whose full
+    // march is >= 8 steps raymarch a QUARTER of their interval and
+    // double it twice by shift+merge (x4 reach per marched step).
+    // STRUCTURAL (recreates the scratch ping-pong textures); an
+    // approximation — A/B it on the F6 rcBuild line.
+    bool intervalExtension { false };
     f32 emitterBoost { 1.0f };  // radiance of the light-source blobs in
                                 // the field (0 = surfaces-only, the old
                                 // behavior)
@@ -193,6 +200,8 @@ private:
     u64 buildGeneration { 0 };
     rhi::UniquePipeline mergePipeline;  // G5
     u64 mergeGeneration { 0 };
+    rhi::UniquePipeline extendPipeline; // G7c
+    u64 extendGeneration { 0 };
 
     // G4/G5: one texture + one build group per cascade; merge groups pair
     // level i (image) with level i+1 (sampled src). Level layouts per
@@ -207,9 +216,15 @@ private:
         u32 width { 0 };   // texture dims
         u32 height { 0 };
         u32 depth { 0 };
+        // G7c: extension ping-pong (texture -> scratch -> texture).
+        bool extended { false }; // full march >= 8 steps at these knobs
+        rhi::UniqueTexture scratch;
+        rhi::UniqueBindGroup extendToScratch;
+        rhi::UniqueBindGroup extendToTexture;
     };
     vector<CascadeLevel> levels;
     i32 appliedCascadeCount { 0 };
+    bool appliedExtension { false };
     rhi::UniqueBindGroup applyGroup_; // G6: cascade 0 at binding 11
     Vec3 lastFineOrigin { 0.0f };     // this frame's grid origin (prepare)
     Vec3 lastCoarseOrigin { 0.0f };

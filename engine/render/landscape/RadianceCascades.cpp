@@ -15,6 +15,7 @@ namespace {
 constexpr const char* kInjectShader = "rc_inject";
 constexpr const char* kBuildShader = "rc_build";
 constexpr const char* kMergeShader = "rc_merge";
+constexpr const char* kExtendShader = "rc_extend";
 constexpr const char* kDebugShader = "rc_debug";
 constexpr const char* kFullscreenVert = "fullscreen";
 
@@ -42,11 +43,13 @@ struct RcUniforms {
                    // w = its probe spacing — where uRcPrev's content is
 };
 
-// std140 mirror of RcCascadeUbo (rc_build.comp / rc_merge.comp).
+// std140 mirror of RcCascadeUbo (rc_build/rc_merge/rc_extend.comp).
 struct RcCascadeUniforms {
     Vec4 a; // x = cascade index, y = probes/axis, z/w = dir grid W/H
     Vec4 b; // build: x = interval0, y = march step, z = spacing, w = dirMajor
             // merge: x = interval0, y = sky flag,   z = spacing, w = dirMajor
+    Vec4 c; // build: x = marched interval fraction (G7c)
+            // extend: x = this pass's shift distance (m)
 };
 
 } // namespace
@@ -72,6 +75,10 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
                           { "RcCascadeUbo", 4 } },
                         { { "uRcClipFineS", 5 }, { "uRcClipCoarseS", 6 } });
     shaders.loadCompute(kMergeShader,
+                        { { "FrameUbo", 0 }, { "RcUbo", 2 },
+                          { "RcCascadeUbo", 4 } },
+                        { { "uRcSrc", 7 } });
+    shaders.loadCompute(kExtendShader,
                         { { "FrameUbo", 0 }, { "RcUbo", 2 },
                           { "RcCascadeUbo", 4 } },
                         { { "uRcSrc", 7 } });
@@ -147,6 +154,11 @@ void RadianceCascades::refreshPipelines(rhi::Device& device,
         mergePipeline = { device, device.createComputePipeline(
             { shaders.get(kMergeShader) }) };
         mergeGeneration = shaders.generation(kMergeShader);
+    }
+    if (shaders.generation(kExtendShader) != extendGeneration) {
+        extendPipeline = { device, device.createComputePipeline(
+            { shaders.get(kExtendShader) }) };
+        extendGeneration = shaders.generation(kExtendShader);
     }
     if (shaders.generation(kDebugShader) != debugGeneration) {
         debugPipeline = { device, device.createPipeline(
@@ -241,6 +253,39 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
                            { .binding = 7, .texture = src,
                              .sampler = volumeSampler.get() } } }) };
     }
+    // G7c: extension ping-pong. Scratch twins exist only while the knob
+    // is on (structural — roughly doubles the cascade memory); which
+    // levels actually use them is decided per frame (interval0 is live).
+    if (tuning.intervalExtension) {
+        for (CascadeLevel& level : levels) {
+            level.scratch = { device, device.createTexture(
+                { .width = level.width, .height = level.height,
+                  .depth = level.depth,
+                  .format = rhi::TextureFormat::RGBA16F,
+                  .filter = rhi::FilterMode::Linear }, nullptr) };
+            level.extendToScratch = { device, device.createBindGroup(
+                { .entries = { { .binding = 2, .buffer = rcUbo.get() },
+                               { .binding = 4,
+                                 .buffer = cascadeUbo.get() },
+                               { .binding = 0,
+                                 .texture = level.scratch.get(),
+                                 .storageImage = true },
+                               { .binding = 7,
+                                 .texture = level.texture.get(),
+                                 .sampler = volumeSampler.get() } } }) };
+            level.extendToTexture = { device, device.createBindGroup(
+                { .entries = { { .binding = 2, .buffer = rcUbo.get() },
+                               { .binding = 4,
+                                 .buffer = cascadeUbo.get() },
+                               { .binding = 0,
+                                 .texture = level.texture.get(),
+                                 .storageImage = true },
+                               { .binding = 7,
+                                 .texture = level.scratch.get(),
+                                 .sampler = volumeSampler.get() } } }) };
+        }
+    }
+    appliedExtension = tuning.intervalExtension;
     appliedCascadeCount = tuning.cascadeCount;
 
     // The injection — after the levels: uRcPrev (binding 10) is LAST
@@ -425,7 +470,8 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
     if (appliedResolution != tuning.resolution ||
         appliedFineVoxel != tuning.fineVoxel ||
         appliedCoarseVoxel != tuning.coarseVoxel ||
-        appliedCascadeCount != tuning.cascadeCount) {
+        appliedCascadeCount != tuning.cascadeCount ||
+        appliedExtension != tuning.intervalExtension) {
         createVolumes(device); // knob moved (or tile textures recreated)
         recreated = true;
     }
@@ -508,11 +554,23 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
         cu.b = { tuning.interval0, flagB,
                  appliedFineVoxel * static_cast<f32>(1 << i),
                  i == 0 ? 1.0f : 0.0f };
+        cu.c = Vec4 { 1.0f, 0.0f, 0.0f, 0.0f };
         return cu;
+    };
+    // G7c eligibility, per frame (interval0 is a live knob): extend the
+    // levels whose FULL march would take >= 8 steps.
+    const auto extendedLevel = [&](size_t i) {
+        if (!appliedExtension || extendPipeline.id() == 0) {
+            return false;
+        }
+        const f32 step = i <= 1 ? appliedFineVoxel : appliedCoarseVoxel;
+        const f32 length = tuning.interval0 * static_cast<f32>(1u << i);
+        return length / step >= 8.0f;
     };
 
     // G4: build every cascade (each marches the fresh clipmap; levels are
-    // independent — one barrier after the batch).
+    // independent — one barrier after the batch). G7c levels march only
+    // a QUARTER of their interval; the extension doubles it twice below.
     {
         GpuProbe::Scope gpu { probe, probeDevice, "rcBuild" };
         cmd.setPipeline(buildPipeline);
@@ -520,14 +578,47 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
         for (size_t i = 0; i < levels.size(); ++i) {
             const CascadeLevel& level = levels[i];
             // b.y = march step: fine voxels near, coarse for far levels.
-            const RcCascadeUniforms cu = levelUniforms(
+            RcCascadeUniforms cu = levelUniforms(
                 i, i <= 1 ? appliedFineVoxel : appliedCoarseVoxel);
+            cu.c.x = extendedLevel(i) ? 0.25f : 1.0f;
             device.updateBuffer(cascadeUbo, &cu, sizeof(cu), 0);
             cmd.setBindGroup(1, level.buildGroup);
             cmd.dispatch((level.width + 3) / 4, (level.height + 3) / 4,
                          (level.depth + 3) / 4);
         }
         cmd.memoryBarrier();
+    }
+
+    // G7c: shift+merge the short fields with themselves, twice (x4 —
+    // texture -> scratch -> texture, barrier between passes).
+    {
+        GpuProbe::Scope gpu { probe, probeDevice, "rcExtend" };
+        bool any = false;
+        for (size_t i = 0; i < levels.size(); ++i) {
+            if (!extendedLevel(i)) {
+                continue;
+            }
+            if (!any) {
+                cmd.setPipeline(extendPipeline);
+                cmd.setBindGroup(0, frameBindGroup);
+                any = true;
+            }
+            const CascadeLevel& level = levels[i];
+            const f32 length =
+                tuning.interval0 * static_cast<f32>(1u << i);
+            const f32 shortLen = length * 0.25f;
+            for (u32 pass = 0; pass < 2; ++pass) {
+                RcCascadeUniforms cu = levelUniforms(i, 0.0f);
+                cu.c.x = shortLen * static_cast<f32>(1u << pass);
+                device.updateBuffer(cascadeUbo, &cu, sizeof(cu), 0);
+                cmd.setBindGroup(1, pass == 0 ? level.extendToScratch
+                                              : level.extendToTexture);
+                cmd.dispatch((level.width + 3) / 4,
+                             (level.height + 3) / 4,
+                             (level.depth + 3) / 4);
+                cmd.memoryBarrier(); // pass 2 / merge reads this write
+            }
+        }
     }
 
     // G5: merge top -> 0. The top absorbs the SKY; each level below

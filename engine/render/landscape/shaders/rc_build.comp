@@ -21,6 +21,8 @@ layout(std140, binding = 4) uniform RcCascadeUbo {
                      // z = dir grid W, w = dir grid H
     vec4 uRcCascadeB; // x = interval0 (m), y = march step (m),
                       // z = probe spacing (m), w = dir-major flag (c0)
+    vec4 uRcCascadeC; // x = marched FRACTION of the interval (1 = all;
+                      // 0.25 = the G7c extension doubles it twice after)
 };
 
 layout(binding = 0, rgba16f) uniform writeonly image3D uRcDst;
@@ -82,7 +84,9 @@ void main() {
     const int cascade = int(uRcCascade.x);
     const float interval0 = uRcCascadeB.x;
     const float tStart = rcIntervalStart(cascade, interval0);
-    const float tEnd = rcIntervalEnd(cascade, interval0);
+    const float tEnd =
+        tStart + (rcIntervalEnd(cascade, interval0) - tStart) *
+                     max(uRcCascadeC.x, 0.01); // G7c: march a fraction
     const float step = uRcCascadeB.y;
 
     vec3 radiance = vec3(0.0);

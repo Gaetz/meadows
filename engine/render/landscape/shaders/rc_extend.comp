@@ -1,0 +1,115 @@
+#version 460 core
+#include "common.glsl"
+#include "rc_common.glsl"
+
+// Radiance cascades G7c — INTERVAL EXTENSION (paper §2.3.3): a known
+// interval field L[a, a+x] doubles its own range in O(1):
+//   L[a, a+2x](p) = L[a, a+x](p) + β(p) · L[a, a+x](p + x·dir)
+// The build marched only a fraction of the interval; each extension
+// pass shifts-and-merges the field with itself (ping-pong: texture ->
+// scratch -> texture), doubling the covered range. Possible on
+// rectilinear probe grids only — the shifted sample interpolates the
+// SAME direction at neighboring probes.
+
+layout(std140, binding = 2) uniform RcUbo {
+    vec4 uRcClipInfo[2]; // [0].xyz = fine grid origin
+    vec4 uRcTileInfo;
+    vec4 uRcMisc;
+    vec4 uRcLightPosRadius[16];
+    vec4 uRcLightColor[16];
+    vec4 uRcMisc3;
+    vec4 uRcPrevGrid;
+};
+
+layout(std140, binding = 4) uniform RcCascadeUbo {
+    vec4 uRcCascade;  // x = cascade index, y = probes/axis,
+                      // z = dir grid W, w = dir grid H
+    vec4 uRcCascadeB; // z = probe spacing, w = dir-major flag
+    vec4 uRcCascadeC; // x = shift distance for THIS pass (meters)
+};
+
+layout(binding = 0, rgba16f) uniform writeonly image3D uRcDst;
+layout(binding = 7) uniform sampler3D uRcSrc; // the field being doubled
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+// Sample the source field at an arbitrary position for ONE direction:
+// trilinear over the probe grid, exact direction texel.
+vec4 fieldSample(vec3 probeCoord, ivec2 dir, int probes, bool dirMajor) {
+    vec3 pc = clamp(probeCoord, vec3(0.0), vec3(float(probes) - 1.0));
+    if (dirMajor) { // c0 slabs: hardware trilinear inside the dir slab
+        float res = float(probes);
+        int dirIndex = dir.y * int(uRcCascade.z) + dir.x;
+        vec3 uvw = vec3((pc.xy + 0.5) / res,
+                        (clamp(pc.z + 0.5, 0.5, res - 0.5) +
+                         float(dirIndex) * res) /
+                            (res * uRcCascade.z * uRcCascade.w));
+        return texture(uRcSrc, uvw);
+    }
+    // Tiled: manual trilinear (the merge's gather pattern).
+    ivec3 base = ivec3(floor(pc));
+    vec3 f = pc - vec3(base);
+    vec4 sum = vec4(0.0);
+    for (int oz = 0; oz < 2; ++oz)
+    for (int oy = 0; oy < 2; ++oy)
+    for (int ox = 0; ox < 2; ++ox) {
+        ivec3 p = clamp(base + ivec3(ox, oy, oz), ivec3(0),
+                        ivec3(probes - 1));
+        float w = (ox == 1 ? f.x : 1.0 - f.x) *
+                  (oy == 1 ? f.y : 1.0 - f.y) *
+                  (oz == 1 ? f.z : 1.0 - f.z);
+        sum += w * texelFetch(uRcSrc,
+                              ivec3(dir.x * probes + p.x,
+                                    dir.y * probes + p.y, p.z), 0);
+    }
+    return sum;
+}
+
+void main() {
+    const int probes = int(uRcCascade.y);
+    const ivec2 dirGrid = ivec2(uRcCascade.z, uRcCascade.w);
+    const bool dirMajor = uRcCascadeB.w > 0.5;
+
+    ivec3 texel = ivec3(gl_GlobalInvocationID);
+    ivec3 probe;
+    ivec2 dir;
+    if (dirMajor) {
+        if (texel.x >= probes || texel.y >= probes ||
+            texel.z >= probes * dirGrid.x * dirGrid.y) {
+            return;
+        }
+        probe = ivec3(texel.x, texel.y, texel.z % probes);
+        int dirIndex = texel.z / probes;
+        dir = ivec2(dirIndex % dirGrid.x, dirIndex / dirGrid.x);
+    } else {
+        if (texel.x >= probes * dirGrid.x || texel.y >= probes * dirGrid.y ||
+            texel.z >= probes) {
+            return;
+        }
+        probe = ivec3(texel.x % probes, texel.y % probes, texel.z);
+        dir = ivec2(texel.x / probes, texel.y / probes);
+    }
+
+    vec4 self;
+    if (dirMajor) {
+        int dirIndex = dir.y * dirGrid.x + dir.x;
+        self = texelFetch(uRcSrc,
+                          ivec3(probe.xy, dirIndex * probes + probe.z), 0);
+    } else {
+        self = texelFetch(uRcSrc, texel, 0);
+    }
+    if (self.a < 0.005) {
+        imageStore(uRcDst, texel, self); // opaque: nothing behind counts
+        return;
+    }
+
+    // The far half: the SAME field, sampled one range-length downstream.
+    const float spacing = uRcCascadeB.z;
+    const vec3 rayDir = rcOctDecode(vec2(dir), vec2(dirGrid));
+    const vec3 probeCoord =
+        vec3(probe) + rayDir * (uRcCascadeC.x / spacing);
+    const vec4 far = fieldSample(probeCoord, dir, probes, dirMajor);
+
+    imageStore(uRcDst, texel,
+               vec4(self.rgb + self.a * far.rgb, self.a * far.a));
+}

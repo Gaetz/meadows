@@ -1997,6 +1997,9 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::SliderFloat("Band size (stops)", &rc.bandStops, 0.0f, 2.0f,
                            "%.2f");
         ImGui::SliderFloat("Band AA", &rc.bandAa, 0.02f, 0.45f, "%.2f");
+        // G7c: x4 reach per marched step on long levels (A/B on rcBuild).
+        ImGui::Checkbox("Interval extension (x4 march reach)",
+                        &rc.intervalExtension);
         ImGui::Combo("Debug view", &rc.debugView,
                      "Off\0Fine clip (raymarch)\0Coarse clip (raymarch)\0"
                      "Cascade 0 irradiance\0");
