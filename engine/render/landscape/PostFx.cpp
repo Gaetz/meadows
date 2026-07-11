@@ -54,7 +54,8 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
                  { { "uSceneDepth", 0 }, { "uShadowMap", 1 } },
                  kFullscreenVert);
     shaders.load(kContactShader, { { "FrameUbo", 0 } },
-                 { { "uSceneDepth", 0 } }, kFullscreenVert);
+                 { { "uSceneDepth", 0 }, { "uShadowMap", 1 } },
+                 kFullscreenVert);
     shaders.load(kBlurShader, {}, { { "uSource", 0 } }, kFullscreenVert);
     shaders.load(kLuminanceShader, {}, { { "uSceneColor", 0 } },
                  kFullscreenVert);
@@ -257,7 +258,8 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
 }
 
 void PostFx::renderContactShadows(rhi::CommandBuffer& cmd,
-                                  rhi::BindGroupHandle frameBindGroup) {
+                                  rhi::BindGroupHandle frameBindGroup,
+                                  rhi::BindGroupHandle shadowBindGroup) {
     if (contactTex.id() == 0) {
         return;
     }
@@ -266,6 +268,12 @@ void PostFx::renderContactShadows(rhi::CommandBuffer& cmd,
                           .depthLoadOp = rhi::LoadOp::DontCare });
     cmd.setPipeline(contactPipeline);
     cmd.setBindGroup(0, frameBindGroup);
+    if (shadowBindGroup.id != 0) {
+        // Dev ask 2026-07-11: the pass reads the CSM so contact and sun
+        // shadows COMBINE AS A MAX instead of multiplying (no double
+        // darkening at shadowed feet) — see contactshadow.frag.
+        cmd.setBindGroup(2, shadowBindGroup);
+    }
     cmd.setBindGroup(1, contactGroup);
     cmd.draw(3);
     cmd.endRenderPass();

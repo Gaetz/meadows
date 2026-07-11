@@ -177,7 +177,8 @@ private:
     bool shadowRoundRobinUi { true };
     // CSM sharpness (dev ask 2026-07-11): texels per cascade side —
     // recreate keyed on the applied value (the reflectionScale pattern).
-    i32 shadowResolutionUi { 2048 };
+    // 4096 validated by the dev same day.
+    i32 shadowResolutionUi { 4096 };
     // GPU-PERF P3 — the planar reflection levers (baseline: 1.70 ms):
     // auto-skip renders it only when a RESIDENT below-sea chunk is in
     // the frustum (edge case: sea at the horizon beyond the ring — the

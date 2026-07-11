@@ -11,6 +11,8 @@
 // and clears the target to WHITE when the toggle is off (no free
 // FrameUbo slot for a flag).
 layout(binding = 0) uniform sampler2D uSceneDepth;
+layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
+#include "shadow.glsl"
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -76,5 +78,14 @@ void main() {
     // Soft floor: contact shadows darken, never black out (the CSM and
     // ambient own the real shadow terms).
     float lit = 1.0 - shadow * 0.45;
-    fragColor = vec4(lit, lit, lit, 1.0);
+
+    // Dev ask 2026-07-11: contact and CSM combine as a MAX, not a
+    // product — the tonemap multiplies our output over a color that
+    // already carries the sun shadow, so we emit the RATIO
+    // min(1, contact/sun): full CSM shadow -> 1 (contact adds nothing),
+    // full sun -> the raw contact term. Offset toward the sun replaces
+    // the normal bias (we have no normals here).
+    float sun = shadowFactor(position + uSunDirection.xyz * 0.3,
+                             uSunDirection.xyz);
+    fragColor = vec4(vec3(sun < 0.05 ? 1.0 : min(1.0, lit / sun)), 1.0);
 }

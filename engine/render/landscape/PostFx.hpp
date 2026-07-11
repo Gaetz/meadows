@@ -61,8 +61,11 @@ public:
     // Brick 33a — screen-space contact shadows (Bend march over the depth
     // copy, SSAO pattern). The TOGGLE is the texture: when the scene turns
     // the feature off it calls clearContactShadows (neutral white) instead.
+    // `shadowBindGroup` (the CSM receiver) lets the pass combine contact
+    // and sun shadows as a MAX instead of multiplying (dev 2026-07-11).
     void renderContactShadows(rhi::CommandBuffer& cmd,
-                              rhi::BindGroupHandle frameBindGroup);
+                              rhi::BindGroupHandle frameBindGroup,
+                              rhi::BindGroupHandle shadowBindGroup);
     void clearContactShadows(rhi::CommandBuffer& cmd);
 
     // For the tonemap bind group. Contact hands out its BLURRED target

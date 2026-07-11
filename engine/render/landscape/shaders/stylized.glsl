@@ -17,9 +17,10 @@ float stylizedDiffuse(float ndl, float classic) {
 }
 
 // The article's round(atten): CSM attenuation snaps to shadow / lit, so
-// cast shadows read as flat pools instead of PCF gradients.
+// cast shadows read as flat pools instead of PCF gradients. (Window
+// tightened 0.35-0.65 -> 0.45-0.55, dev 2026-07-11: crisper edges.)
 float stylizedShadow(float shadow) {
-    return mix(shadow, smoothstep(0.35, 0.65, shadow), uAmbientColor.w);
+    return mix(shadow, smoothstep(0.45, 0.55, shadow), uAmbientColor.w);
 }
 
 // Fake SSS: pow(dot(view, -light)) — sun punching through thin vegetation

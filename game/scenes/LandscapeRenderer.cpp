@@ -1754,7 +1754,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
                                           "contact" };
             if (contactShadowsUi && !view.interiorMode) {
-                postFx.renderContactShadows(frame.cmd, frameBindGroup);
+                postFx.renderContactShadows(frame.cmd, frameBindGroup,
+                                            shadows.receiverBindGroup());
             } else {
                 postFx.clearContactShadows(frame.cmd);
             }
