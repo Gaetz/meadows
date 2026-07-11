@@ -125,18 +125,21 @@ A1 → A2 → A3 → A4 (le combat sent bon) → A5/A6 → B1 → B2 → B3 (les
 répondent) → C1 → C2 → C4 (ça claque à l'écran) → C3 → D1 → D2 → D3 → A7
 si retenu → E si le temps.
 
-## Questions de cadrage (à trancher au go)
+## Cadrage TRANCHÉ (dev, 2026-07-11)
 
-1. **Kill-z** : mort (damage massif → pipeline normal, loot perdu ?) ou
-   téléport au dernier sol sûr + dégâts ? (Zelda fait téléport+dégâts.)
-2. **Projectiles (A7)** : dans ce chantier ou différé P1 ? (La démo
-   a-t-elle un archer ?)
-3. **Lock-on** : utile en première personne ? Proposition : ABANDON (le
-   lock-on est un pattern 3e personne ; le cône de mêlée A4 suffit).
-4. **Nage (D2)** : vraie flottaison/nage (contrôleur + anims) ou v1
-   barrière/dégâts ? La vraie nage est un morceau (anims, stamina).
-5. **Assets audio** : quand tu déposes des sons (même 3-4 placeholders
-   CC0 : pas, coup, porte), C3/C4 se valident dans la foulée.
+1. **Kill-z = MORT FRANCHE** : dégâts massifs par le pipeline GAS →
+   mort normale.
+2. **Projectiles (A7) : RETENUS** dans ce chantier (flèche balistique,
+   ennemi archer possible).
+3. **Lock-on : ABANDONNÉ** (pattern 3e personne ; le cône de mêlée
+   suffit en vue subjective). Rayé du catalogue.
+4. **Nage : VRAIE NAGE maintenant.** D2 s'étend : détection d'eau
+   (WaterVolume + mer), flottaison + contrôleur de nage première
+   personne (la submersion visuelle — brique 32 — existe déjà), drain
+   d'énergie par effect, noyade à énergie nulle → dégâts. Anims de nage
+   PNJ : différées P1 (le joueur est en vue subjective).
+5. **Assets audio** : quand le dev dépose des sons (même 3-4
+   placeholders CC0 : pas, coup, porte), C3/C4 se valident.
 
 ## Vérification
 
