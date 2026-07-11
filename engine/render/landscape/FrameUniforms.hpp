@@ -78,6 +78,12 @@ struct FrameUniforms {
     // rgb = blade base albedo, w = distance fade start (m)
     Vec4 grassTipColor { 0.095f, 0.200f, 0.045f, 190.0f };
     // rgb = blade tip albedo, w = distance fade end (m)
+    // Chantier RC G6 (APPENDED): the GiTechnique switch — surface shaders
+    // swap their ambient term for the merged cascade-0 sample (gi.glsl)
+    // when x = 1. Zero = Classic, byte-identical exterior.
+    Vec4 giInfo {};     // x = technique (0/1), y = intensity,
+                        // z = edge fade width (m), w = grid resolution
+    Vec4 giGridInfo {}; // xyz = cascade-0 grid origin, w = probe spacing
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -123,7 +129,9 @@ static_assert(offsetof(FrameUniforms, grassShapeInfo) == 848);
 static_assert(offsetof(FrameUniforms, grassLodInfo) == 864);
 static_assert(offsetof(FrameUniforms, grassBaseColor) == 880);
 static_assert(offsetof(FrameUniforms, grassTipColor) == 896);
-static_assert(sizeof(FrameUniforms) == 912,
+static_assert(offsetof(FrameUniforms, giInfo) == 912);
+static_assert(offsetof(FrameUniforms, giGridInfo) == 928);
+static_assert(sizeof(FrameUniforms) == 944,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

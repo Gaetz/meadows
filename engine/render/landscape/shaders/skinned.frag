@@ -4,6 +4,7 @@
 #include "stylized.glsl"
 #include "locallights.glsl"
 #include "terrainlight.glsl"
+#include "gi.glsl"
 
 // Shading twin of mesh.frag (albedo texture x tint x vertex color, shared
 // BotW ramp, shared fog) — KEEP IN SYNC with mesh.frag; only the vertex
@@ -40,7 +41,9 @@ void main() {
     }
     // 33b/c — KEEP IN SYNC with mesh.frag.
     vec2 tl = terrainLightFactors(vWorldPos);
-    vec3 lit = albedo * (ambient * tl.y + uSunColor.rgb * (diffuse * tl.x) +
+    // Chantier RC (G6) — KEEP IN SYNC with mesh.frag.
+    vec3 lit = albedo * (giAmbient(vWorldPos, n, ambient * tl.y) +
+                         uSunColor.rgb * (diffuse * tl.x) +
                          localLights(vWorldPos, n)) +
                albedo * uMeshInfo.x;
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);

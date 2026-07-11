@@ -73,6 +73,12 @@ struct FrameComposerInputs {
     Vec4 grassLodInfo { 10.0f, 70.0f, 0.20f, 1.7f };
     Vec4 grassBaseColor { 0.012f, 0.040f, 0.008f, 140.0f };
     Vec4 grassTipColor { 0.095f, 0.200f, 0.045f, 190.0f };
+
+    // Chantier RC G6: the GI switch, RESOLVED only — the reflection pass
+    // (which copies `base`) keeps the Classic ambient, so it never needs
+    // the cascade sampler bound. Defaults = Classic (x = 0).
+    Vec4 giInfo {};
+    Vec4 giGridInfo {};
 };
 
 // The two variants one frame needs. `base` is the raw exterior composition —

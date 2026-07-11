@@ -80,8 +80,7 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
         { .minFilter = rhi::FilterMode::Linear,
           .magFilter = rhi::FilterMode::Linear }) };
 
-    // heightTex/albedoTex are created WITH pixels at the first bake upload
-    // (pumpTileBake); the bind groups follow in createVolumes.
+    makePlaceholderTile(device);
 
     rcUbo = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform, .size = sizeof(RcUniforms),
@@ -102,6 +101,7 @@ void RadianceCascades::destroy(rhi::Device& device) {
     buildPipeline.reset();
     debugPipeline.reset();
     injectPipeline.reset();
+    applyGroup_.reset();
     levels.clear();
     debugGroup.reset();
     injectGroup.reset();
@@ -149,6 +149,25 @@ void RadianceCascades::refreshPipelines(rhi::Device& device,
               .cull = rhi::CullMode::None }) };
         debugGeneration = shaders.generation(kDebugShader);
     }
+}
+
+void RadianceCascades::makePlaceholderTile(rhi::Device& device) {
+    // "No terrain": height far below any voxel — INTERIORS run on this
+    // permanently (kit boxes + lights carry the room, dev feedback
+    // 2026-07-11); exteriors swap in the worker bake via pumpTileBake.
+    const f32 kNoTerrain = -1.0e4f;
+    heightTex = { device, device.createTexture(
+        { .width = 1, .height = 1, .format = rhi::TextureFormat::R16F },
+        &kNoTerrain) };
+    const u32 kGray = 0xFF808080;
+    albedoTex = { device, device.createTexture(
+        { .width = 1, .height = 1, .format = rhi::TextureFormat::RGBA8 },
+        &kGray) };
+    tileSpan = 1.0f;
+    tileCenter = Vec2 { 0.0f };
+    tileUploaded = true;
+    tileIsPlaceholder = true;
+    appliedResolution = 0; // bind groups reference the NEW tile textures
 }
 
 void RadianceCascades::createVolumes(rhi::Device& device) {
@@ -237,6 +256,10 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
                          .sampler = volumeSampler.get() },
                        { .binding = 10, .texture = levels[0].texture.get(),
                          .sampler = volumeSampler.get() } } }) };
+    // G6: the surface shaders' sampler (gi.glsl, binding 11).
+    applyGroup_ = { device, device.createBindGroup(
+        { .entries = { { .binding = 11, .texture = levels[0].texture.get(),
+                         .sampler = volumeSampler.get() } } }) };
 
     appliedResolution = tuning.resolution;
     appliedFineVoxel = tuning.fineVoxel;
@@ -270,6 +293,7 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
         tileCenter = tile.center;
         tileInFlight = false;
         tileUploaded = true;
+        tileIsPlaceholder = false;
     }
 
     // Kick a re-bake when the camera strays from the tile center.
@@ -346,6 +370,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
                               const Vec3& cameraPos,
                               const vector<RcBox>& boxes,
                               const vector<RcLight>& lights,
+                              bool bakeTerrain,
                               rhi::BindGroupHandle frameBindGroup,
                               rhi::BindGroupHandle shadowBindGroup,
                               rhi::BindGroupHandle terrainLightGroup,
@@ -353,9 +378,12 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
     if (!jobs || injectPipeline.id() == 0) {
         return;
     }
-    pumpTileBake(device, params, cameraPos);
-    if (!tileUploaded) {
-        return; // first bake still on the worker
+    if (bakeTerrain) {
+        pumpTileBake(device, params, cameraPos);
+    } else if (!tileIsPlaceholder) {
+        // Interior entered with the exterior tile still loaded: its
+        // heights belong to another worldspace — back to "no terrain".
+        makePlaceholderTile(device);
     }
     if (appliedResolution != tuning.resolution ||
         appliedFineVoxel != tuning.fineVoxel ||
@@ -381,6 +409,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
     RcUniforms uniforms;
     const Vec3 fineOrigin = snap(appliedFineVoxel);
     const Vec3 coarseOrigin = snap(appliedCoarseVoxel);
+    lastFineOrigin = fineOrigin; // giGridInfo() hands it to the apply
     uniforms.clipInfo[0] = { fineOrigin, appliedFineVoxel };
     uniforms.clipInfo[1] = { coarseOrigin, appliedCoarseVoxel };
     uniforms.tileInfo = { tileCenter.x, tileCenter.y, 1.0f / tileSpan,

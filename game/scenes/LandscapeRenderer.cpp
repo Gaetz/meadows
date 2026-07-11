@@ -1259,6 +1259,10 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                             grass.renderTuning.fadeStart },
         .grassTipColor = { grass.renderTuning.tipColor,
                            grass.renderTuning.fadeEnd },
+        // Chantier RC G6 (+ interiors, dev feedback 2026-07-11):
+        // giInfo() gates on ready() itself.
+        .giInfo = radianceCascades.giInfo(),
+        .giGridInfo = radianceCascades.giGridInfo(),
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;
@@ -1394,9 +1398,9 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 
     // Chantier RC (G2/G3): re-inject the GI voxel clipmap — after the CSM
     // passes (the inject samples fresh shadow maps), outside any render
-    // pass (compute). Exterior only for now: the injection is terrain-fed
-    // (the interior story needs the kit boxes to carry the room).
-    if (!view.interiorMode) {
+    // pass (compute). Interiors too (dev feedback 2026-07-11): no terrain
+    // there, the kit boxes + local lights carry the room.
+    {
         // G3: props/kits as world AABBs (v1 box occlusion — assumed
         // stylized), NPCs as capsuloid boxes, the frame's local lights.
         rcBoxes.clear();
@@ -1456,6 +1460,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
         radianceCascades.update(frame.device, frame.cmd, terrain.params,
                                 camera.position, rcBoxes, rcLights,
+                                /*bakeTerrain=*/!view.interiorMode,
                                 frameBindGroup,
                                 shadows.receiverBindGroup(),
                                 terrainLightMap.bindGroup(), &frame.device,
@@ -1556,6 +1561,10 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
         if (keyShadowReceiverGroup.id() != 0) {
             frame.cmd.setBindGroup(5, keyShadowReceiverGroup); // B2b
+        }
+        if (radianceCascades.applyGroup().id != 0) {
+            // Chantier RC G6: the merged cascade 0 for gi.glsl (unit 11).
+            frame.cmd.setBindGroup(6, radianceCascades.applyGroup());
         }
         // Occlusion applies to the main view only: both sets were built for
         // the real camera, not the mirrored one (the grass ring is too
@@ -1916,8 +1925,10 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
                                  1.0f));
         ImGui::SeparatorText("Injection");
         ImGui::SliderFloat("Sky factor", &rc.skyFactor, 0.0f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Intensity (apply, G6)", &rc.intensity, 0.0f,
-                           2.0f, "%.2f");
+        ImGui::SeparatorText("Apply");
+        ImGui::SliderFloat("Intensity", &rc.intensity, 0.0f, 2.0f, "%.2f");
+        ImGui::SliderFloat("Edge fade (m)", &rc.edgeFade, 1.0f, 16.0f,
+                           "%.0f");
         ImGui::Combo("Debug view", &rc.debugView,
                      "Off\0Fine clip (raymarch)\0Coarse clip (raymarch)\0"
                      "Cascade 0 irradiance\0");

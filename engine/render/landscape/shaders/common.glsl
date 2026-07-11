@@ -57,4 +57,8 @@ layout(std140, binding = 0) uniform FrameUbo {
                           // z = far density floor, w = width compensation
     vec4 uGrassBaseColor; // rgb = base albedo, w = fade start (m)
     vec4 uGrassTipColor;  // rgb = tip albedo, w = fade end (m)
+    // Chantier RC G6 (APPENDED): the GI technique switch (gi.glsl).
+    vec4 uGiInfo;     // x = technique (0 classic / 1 RC), y = intensity,
+                      // z = edge fade width (m), w = grid resolution
+    vec4 uGiGridInfo; // xyz = cascade-0 grid origin, w = probe spacing
 };

@@ -106,6 +106,10 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     // bake lands or when toggled off / indoors).
     resolved.terrainLightInfo = in.terrainLightInfo;
     resolved.terrainLightInfo.w = in.terrainLightActive ? 1.0f : 0.0f;
+    // Chantier RC G6: the GI switch rides RESOLVED only (base = the
+    // reflection pass stays Classic — no cascade sampler needed there).
+    resolved.giInfo = in.giInfo;
+    resolved.giGridInfo = in.giGridInfo;
     // 7.8ter: the player's feet part the grass (off in Fly).
     resolved.grassBendInfo =
         in.grassBend ? Vec4 { in.playerFeet.x, in.playerFeet.z,

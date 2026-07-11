@@ -4,6 +4,7 @@
 #include "stylized.glsl"
 #include "locallights.glsl"
 #include "terrainlight.glsl"
+#include "gi.glsl"
 
 // Textured stylized mesh (H8): flat albedo texture x material tint x
 // vertex color, lit by the shared BotW ramp, faded by the shared fog.
@@ -44,7 +45,9 @@ void main() {
     }
     // 33b/c: long-range terrain sun shadow (x) + sky openness (y).
     vec2 tl = terrainLightFactors(vWorldPos);
-    vec3 lit = albedo * (ambient * tl.y + uSunColor.rgb * (diffuse * tl.x) +
+    // Chantier RC (G6): the ONE technique branch — Classic stays intact.
+    vec3 lit = albedo * (giAmbient(vWorldPos, n, ambient * tl.y) +
+                         uSunColor.rgb * (diffuse * tl.x) +
                          localLights(vWorldPos, n)) +
                albedo * uMeshInfo.x;
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);

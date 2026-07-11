@@ -9,6 +9,7 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "clouds.glsl"
 #include "stylized.glsl"
 #include "terrainlight.glsl"
+#include "gi.glsl"
 
 in vec3 vNormal;
 in vec3 vColor;
@@ -60,7 +61,8 @@ void main() {
                    cloudShadowFactor(vWorldPos);
     // 33b/c: long-range terrain sun shadow (x) + sky openness (y).
     vec2 tl = terrainLightFactors(vWorldPos);
-    vec3 lit = albedo * (uAmbientColor.rgb * tl.y +
+    // Chantier RC (G6): the ONE technique branch — Classic stays intact.
+    vec3 lit = albedo * (giAmbient(vWorldPos, n, uAmbientColor.rgb * tl.y) +
                          uSunColor.rgb * (diffuse * shadow * tl.x));
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

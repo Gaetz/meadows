@@ -7,6 +7,7 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "clouds.glsl"
 #include "stylized.glsl"
 #include "terrainlight.glsl"
+#include "gi.glsl"
 
 // Grass redo #2 (2026-07-11, dev-validated) — the Quick_Grass lighting
 // model on our frame machinery (shadows, clouds, terrain light map,
@@ -65,8 +66,9 @@ void main() {
                    cloudShadowFactor(vWorldPos);
     // 33b/c: distant terrain shadow + sky openness (kept).
     vec2 tl = terrainLightFactors(vWorldPos);
+    // Chantier RC (G6): the ONE technique branch — Classic stays intact.
     vec3 lit = albedo * ao *
-                   (uAmbientColor.rgb * tl.y +
+                   (giAmbient(vWorldPos, n, uAmbientColor.rgb * tl.y) +
                     uSunColor.rgb *
                         ((diffuse + scatter) * shadow * tl.x)) +
                uSunColor.rgb * sheen * ao * shadow * tl.x;

@@ -107,15 +107,19 @@ void main() {
             const vec2 tl = terrainLightFactors(world);
             radiance += albedo * (uSunColor.rgb * (ndl * sun * tl.x) +
                                   uAmbientColor.rgb * (uRcMisc.y * tl.y));
-            // Local lights (torches, spells): quadratic falloff splat.
+            // Local lights (torches, spells) — SAME windowed inverse-
+            // square as locallights.glsl (dev feedback 2026-07-11: the
+            // fatter quadratic splat made the bounce read too strong
+            // against the direct light).
             const int lightCount = int(uRcMisc.w);
             for (int l = 0; l < lightCount; ++l) {
                 const vec3 toLight = uRcLightPosRadius[l].xyz - world;
                 const float dist = length(toLight);
                 const float radius = uRcLightPosRadius[l].w;
                 if (dist < radius) {
-                    float att = 1.0 - dist / radius;
-                    att *= att;
+                    float window =
+                        clamp(1.0 - pow(dist / radius, 4.0), 0.0, 1.0);
+                    float att = (window * window) / (dist * dist + 1.0);
                     radiance += albedo * uRcLightColor[l].rgb * att;
                 }
             }

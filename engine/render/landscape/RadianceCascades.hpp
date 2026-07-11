@@ -43,10 +43,13 @@ struct RcTuning {
     i32 cascadeCount { 5 };   // levels (clamped so the top keeps ≥2 probes)
     // Live:
     GiTechnique technique { GiTechnique::Classic }; // apply switch (G6)
-    f32 intensity { 1.0f };   // indirect strength at apply (G6)
+    f32 intensity { 0.7f };   // indirect strength at apply (dev feedback:
+                              // 1.0 read too strong vs the direct light)
     f32 skyFactor { 0.5f };   // sky ambient folded into injected surfaces
     f32 interval0 { 1.0f };   // cascade-0 interval length (m); reach =
                               // interval0 × (2^count − 1)
+    f32 edgeFade { 8.0f };    // meters of blend back to Classic at the
+                              // grid border (G6)
     i32 updateInterval { 1 }; // inject every N frames (1 = every frame)
     i32 debugView { 0 };      // 0 off, 1 fine clip, 2 coarse clip,
                               // 3 merged cascade-0 irradiance
@@ -90,10 +93,12 @@ public:
     // RC UBO and dispatches the injection. Requires the frame UBO already
     // uploaded and the CSM rendered (the inject samples uShadowMap).
     // `terrainLightGroup` may be null (far-sun falls back to the CSM only).
+    // `bakeTerrain` = false (interiors) keeps the "no terrain" placeholder
+    // tile — the kit boxes and lights carry the room.
     void update(rhi::Device& device, rhi::CommandBuffer& cmd,
                 const TerrainParams& params, const Vec3& cameraPos,
                 const vector<RcBox>& boxes, const vector<RcLight>& lights,
-                rhi::BindGroupHandle frameBindGroup,
+                bool bakeTerrain, rhi::BindGroupHandle frameBindGroup,
                 rhi::BindGroupHandle shadowBindGroup,
                 rhi::BindGroupHandle terrainLightGroup,
                 rhi::Device* probeDevice = nullptr,
@@ -105,10 +110,25 @@ public:
                    rhi::BindGroupHandle frameBindGroup);
 
     bool ready() const { return tileUploaded && clipFine.id() != 0; }
+
+    // --- G6 apply: what the surface shaders consume ----------------------
+    // The merged cascade-0 sampler (binding 11), bound once per main pass.
+    rhi::BindGroupHandle applyGroup() const { return applyGroup_; }
+    // uGiInfo — technique forced to Classic until the volumes are live.
+    Vec4 giInfo() const {
+        const bool active = tuning.technique == GiTechnique::RadianceCascades
+                            && ready() && !levels.empty();
+        return { active ? 1.0f : 0.0f, tuning.intensity, tuning.edgeFade,
+                 static_cast<f32>(appliedResolution) };
+    }
+    // uGiGridInfo — the cascade-0 grid this frame (origin snaps in update).
+    Vec4 giGridInfo() const { return { lastFineOrigin, appliedFineVoxel }; }
+
     RcTuning tuning;
 
 private:
     void createVolumes(rhi::Device& device);
+    void makePlaceholderTile(rhi::Device& device); // "no terrain" (interiors)
     void pumpTileBake(rhi::Device& device, const TerrainParams& params,
                       const Vec3& cameraPos);
 
@@ -129,6 +149,7 @@ private:
     f32 tileSpan { 0.0f };
     bool tileInFlight { false };
     bool tileUploaded { false };
+    bool tileIsPlaceholder { true }; // "no terrain" tile (interiors/boot)
     u64 tileGeneration { 0 };
 
     rhi::UniqueTexture clipFine;   // res³ RGBA16F: rgb radiance, a occupancy
@@ -163,6 +184,8 @@ private:
     };
     vector<CascadeLevel> levels;
     i32 appliedCascadeCount { 0 };
+    rhi::UniqueBindGroup applyGroup_; // G6: cascade 0 at binding 11
+    Vec3 lastFineOrigin { 0.0f };     // the grid origin uploaded last
 
     // Applied structural knobs (recreate when the tuning diverges).
     i32 appliedResolution { 0 };
