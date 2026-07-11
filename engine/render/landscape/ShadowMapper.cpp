@@ -15,10 +15,11 @@ constexpr f32 kSplits[ShadowMapper::kCascadeCount + 1] = { 0.5f, 45.0f,
 constexpr f32 kCasterReach = 350.0f;
 } // namespace
 
-void ShadowMapper::create(rhi::Device& device) {
+void ShadowMapper::create(rhi::Device& device, u32 resolution) {
+    resolution_ = glm::clamp(resolution, 512u, 8192u);
     shadowMap = device.createTexture(
-        { .width = kResolution,
-          .height = kResolution,
+        { .width = resolution_,
+          .height = resolution_,
           .arrayLayers = kCascadeCount,
           .format = rhi::TextureFormat::Depth32F,
           .usage = rhi::TextureUsage_Sampled |
@@ -109,16 +110,16 @@ ShadowMapper::computeCascades(const Camera3D& camera, f32 aspect,
         Mat4 viewProj = proj * view;
         const Vec4 origin =
             viewProj * Vec4 { 0.0f, 0.0f, 0.0f, 1.0f } *
-            (static_cast<f32>(kResolution) * 0.5f);
+            (static_cast<f32>(resolution_) * 0.5f);
         const Vec2 rounded { std::round(origin.x), std::round(origin.y) };
         const Vec2 offset = (rounded - Vec2 { origin.x, origin.y }) *
-                            (2.0f / static_cast<f32>(kResolution));
+                            (2.0f / static_cast<f32>(resolution_));
         proj[3][0] += offset.x;
         proj[3][1] += offset.y;
 
         result.viewProj[i] = proj * view;
         result.texelWorld[i] =
-            (2.0f * radius) / static_cast<f32>(kResolution);
+            (2.0f * radius) / static_cast<f32>(resolution_);
     }
     return result;
 }

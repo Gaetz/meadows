@@ -1061,6 +1061,15 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         grassRescatterRequested = false;
         grass.regenerate(frame.device);
     }
+    // CSM resolution knob (dev ask 2026-07-11): recreate on change; the
+    // round-robin then re-renders every cascade next frames (the fresh
+    // maps start empty — one frame of unshadowed sun at worst).
+    if (static_cast<u32>(shadowResolutionUi) != shadows.resolution()) {
+        shadows.destroy(frame.device);
+        shadows.create(frame.device,
+                       static_cast<u32>(shadowResolutionUi));
+        lastCascadesValid = false; // force a full cascade re-render
+    }
     // Terrain sculpt: re-mesh JUST the chunks a stroke touched (in place, no
     // hole) — runs live during the stroke for real-time feedback. Grass/veg
     // re-scatter only on commit (`sculptScatterChunks`) so they don't flicker
@@ -2020,6 +2029,15 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         // `shadows` at 5.5 ms) — off = every cascade every frame.
         ImGui::Checkbox("CSM round-robin (far cascades 1/2 rate)",
                         &shadowRoundRobinUi);
+        // Sharpness: texels per cascade side (4096 = 2x definition
+        // everywhere, ~150 MB more; the far cascade profits most).
+        int shadowRes = shadowResolutionUi >= 4096 ? 2
+                        : shadowResolutionUi >= 2048 ? 1 : 0;
+        if (ImGui::Combo("Shadow map resolution", &shadowRes,
+                         "1024\0002048\0004096\000")) {
+            shadowResolutionUi = shadowRes == 2 ? 4096
+                                 : shadowRes == 1 ? 2048 : 1024;
+        }
         // B2a A/B: houses/crates/NPCs casting into the sun cascades.
         ImGui::Checkbox("Mesh shadow casters", &meshShadowCastersUi);
         ImGui::Checkbox("Contact shadows", &contactShadowsUi); // brick 33a

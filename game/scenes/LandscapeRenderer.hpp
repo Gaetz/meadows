@@ -175,6 +175,9 @@ private:
     // matrix (receiver and caster UBOs alike) so the stale depth still
     // matches; a sun step re-renders everything that frame.
     bool shadowRoundRobinUi { true };
+    // CSM sharpness (dev ask 2026-07-11): texels per cascade side —
+    // recreate keyed on the applied value (the reflectionScale pattern).
+    i32 shadowResolutionUi { 2048 };
     // GPU-PERF P3 — the planar reflection levers (baseline: 1.70 ms):
     // auto-skip renders it only when a RESIDENT below-sea chunk is in
     // the frustum (edge case: sea at the horizon beyond the ring — the

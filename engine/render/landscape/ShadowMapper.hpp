@@ -19,7 +19,7 @@ namespace render {
 class ShadowMapper {
 public:
     static constexpr u32 kCascadeCount = 3;
-    static constexpr u32 kResolution = 2048;
+    static constexpr u32 kDefaultResolution = 2048;
 
     struct Cascades {
         array<Mat4, kCascadeCount> viewProj {};
@@ -27,8 +27,13 @@ public:
         array<f32, kCascadeCount> texelWorld {}; // world size of one texel
     };
 
-    void create(rhi::Device& device);
+    // `resolution` = texels per cascade side (dev sharpness knob — 4096
+    // doubles definition everywhere for ~150 MB more; recreate to change).
+    void create(rhi::Device& device,
+                u32 resolution = kDefaultResolution);
     void destroy(rhi::Device& device);
+
+    u32 resolution() const { return resolution_; }
 
     // Fits the cascades for this camera/sun. Pure math (no GPU).
     Cascades computeCascades(const Camera3D& camera, f32 aspect,
@@ -47,6 +52,7 @@ public:
     rhi::BindGroupHandle receiverBindGroup() const { return receiverGroup; }
 
 private:
+    u32 resolution_ { kDefaultResolution };
     rhi::TextureHandle shadowMap {};
     rhi::SamplerHandle compareSampler {};
     array<rhi::FramebufferHandle, kCascadeCount> framebuffers_ {};
