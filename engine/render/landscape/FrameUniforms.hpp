@@ -67,6 +67,17 @@ struct FrameUniforms {
     // 7.8ter (APPENDED): interactive grass bending — xy = the player's
     // feet XZ, z = feet Y, w = bend radius (0 = off, e.g. Fly mode).
     Vec4 grassBendInfo {};
+    // Grass redo #2 (2026-07-11, APPENDED): the meadow's tuning, live
+    // from the render panel's "Grass" category (GrassRenderTuning).
+    Vec4 grassShapeInfo { 0.95f, 0.045f, 12.5f, 25.0f };
+    // x = blade height (m), y = half width (m), z/w = high-detail near/far
+    Vec4 grassLodInfo { 10.0f, 70.0f, 0.20f, 1.7f };
+    // x/y = density thinning start/end (m), z = far density floor,
+    // w = width compensation at far density (wider blades, same mass)
+    Vec4 grassBaseColor { 0.012f, 0.040f, 0.008f, 140.0f };
+    // rgb = blade base albedo, w = distance fade start (m)
+    Vec4 grassTipColor { 0.095f, 0.200f, 0.045f, 190.0f };
+    // rgb = blade tip albedo, w = distance fade end (m)
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -108,7 +119,11 @@ static_assert(offsetof(FrameUniforms, keyShadowInfo) == 736);
 static_assert(offsetof(FrameUniforms, stormInfo) == 752);
 static_assert(offsetof(FrameUniforms, rainOcclusionViewProj) == 768);
 static_assert(offsetof(FrameUniforms, grassBendInfo) == 832);
-static_assert(sizeof(FrameUniforms) == 848,
+static_assert(offsetof(FrameUniforms, grassShapeInfo) == 848);
+static_assert(offsetof(FrameUniforms, grassLodInfo) == 864);
+static_assert(offsetof(FrameUniforms, grassBaseColor) == 880);
+static_assert(offsetof(FrameUniforms, grassTipColor) == 896);
+static_assert(sizeof(FrameUniforms) == 912,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

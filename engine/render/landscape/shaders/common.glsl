@@ -50,4 +50,11 @@ layout(std140, binding = 0) uniform FrameUbo {
     // 7.8ter (APPENDED): grass bending — xy = feet XZ, z = feet Y,
     // w = radius (0 = off).
     vec4 uGrassBendInfo;
+    // Grass redo #2 (APPENDED): meadow tuning, live from the render panel.
+    vec4 uGrassShapeInfo; // x = blade height, y = half width,
+                          // zw = high-detail near/far (m)
+    vec4 uGrassLodInfo;   // xy = density thinning start/end (m),
+                          // z = far density floor, w = width compensation
+    vec4 uGrassBaseColor; // rgb = base albedo, w = fade start (m)
+    vec4 uGrassTipColor;  // rgb = tip albedo, w = fade end (m)
 };

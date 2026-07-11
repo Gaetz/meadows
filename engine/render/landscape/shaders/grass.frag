@@ -8,60 +8,67 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "stylized.glsl"
 #include "terrainlight.glsl"
 
-// Grass redo (chantier 7.8) — BotW palette: dark rooted base rising to a
-// warm yellow-green tip, tips catching extra light when a wind wave
-// passes (the reference's gust highlight). Terrain light map (33b/c) and
-// rain wetness (31) fold in like the other surfaces.
+// Grass redo #2 (2026-07-11, dev-validated) — the Quick_Grass lighting
+// model on our frame machinery (shadows, clouds, terrain light map,
+// wetness, fog):
+//  - WRAP DIFFUSE (wrap 0.5) — soft carpet lighting.
+//  - BACKSCATTER — light bleeding THROUGH blades when looking toward the
+//    sun (the reference's "backscatter fakery"), high-detail range only.
+//  - ROOT AO — a deep occlusion ramp (easeIn^2) rising along the blade;
+//    this is what makes the reference's meadow read dense.
+//  - BLADE MIDDLE SHADING — the width-center darkens slightly, selling
+//    the rounded cross-section together with the two blended normals.
 
+in vec3 vColor;
 in float vT;
-in float vSide;
-in float vTint;
-in float vGust;
-in vec3 vNormal;
+in float vXSide;
+in float vLodOut;
+in vec3 vNormal1;
+in vec3 vNormal2;
 in vec3 vWorldPos;
 
 out vec4 fragColor;
 
 void main() {
-    // 7.8bis palette: MATCHED to the grass splat tile family (the meadow
-    // must blend into the terrain it stands on — in BotW the field and
-    // the ground are one color). Tips only mildly fresher; the gust
-    // shimmer stays the accent.
-    vec3 baseColor = mix(vec3(0.020, 0.052, 0.010),
-                         vec3(0.032, 0.070, 0.014), vTint);
-    vec3 tipColor = mix(vec3(0.070, 0.150, 0.032),
-                        vec3(0.095, 0.170, 0.040), vTint);
-    vec3 albedo = mix(baseColor, tipColor, vT * vT * (3.0 - 2.0 * vT));
-    albedo += vec3(0.024, 0.024, 0.005) * (vGust * vT); // gust shimmer
-    // Brick 31 wetness: rain darkens and cools the meadow.
+    vec3 albedo = vColor;
+    // Brick 31 wetness: rain darkens and cools the meadow (kept).
     albedo *= mix(vec3(1.0), vec3(0.66, 0.72, 0.72),
                   clamp(uStormInfo.y, 0.0, 1.0));
 
-    // Grounded look: gentle root occlusion (too dark reads as noise).
-    float ao = mix(0.62, 1.0, vT);
+    // Blade middle darkening (near only — flattens out with the LOD).
+    float acrossEdge = abs(vXSide * 2.0 - 1.0); // 0 center, 1 edges
+    float middle = 1.0 - 0.15 * (1.0 - acrossEdge) * (1.0 - acrossEdge);
+    albedo *= mix(middle, 1.0, vLodOut);
 
-    vec3 n = normalize(vNormal);
-    // Classic mode: wrap diffuse (carpet-like). Stylized mode: the shared
-    // BotW step ramp — the meadow becomes flat lit/shade fields.
+    // Deep root occlusion (the reference's density AO, easeIn^2 up).
+    float ao = mix(0.30, 1.0, vT * vT);
+
+    // The two rounded normals blend across the width.
+    vec3 n = normalize(mix(vNormal1, vNormal2, vXSide));
+
+    // Wrap diffuse; the shared stylized ramp keeps the BotW A/B working.
     float ndl = dot(n, uSunDirection.xyz);
     float wrap = clamp((ndl + 0.5) / 1.5, 0.0, 1.0);
     float diffuse = stylizedDiffuse(ndl, wrap);
 
-    // Backlight translucency (fake SSS) + a thin view-dependent sheen
-    // along the blade, strongest near the tips.
+    // Backscatter: view toward the sun lights the blade interior.
     vec3 viewDir = normalize(vWorldPos - uCameraPos.xyz);
-    float backlight = stylizedSss(vWorldPos) * 0.30 * vT;
+    float backLight =
+        clamp((dot(viewDir, uSunDirection.xyz) + 0.5) / 1.5, 0.0, 1.0);
+    float scatter = backLight * 0.5 * (1.0 - vLodOut);
+
+    // Thin sheen along the blade, strongest at the tips (kept).
     vec3 halfDir = normalize(uSunDirection.xyz - viewDir);
-    float sheen = pow(max(dot(n, halfDir), 0.0), 24.0) * 0.18 * vT;
+    float sheen = pow(max(dot(n, halfDir), 0.0), 32.0) * 0.25 * vT;
 
     float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
                    cloudShadowFactor(vWorldPos);
-    // 33b/c: distant terrain shadow + sky openness.
+    // 33b/c: distant terrain shadow + sky openness (kept).
     vec2 tl = terrainLightFactors(vWorldPos);
     vec3 lit = albedo * ao *
                    (uAmbientColor.rgb * tl.y +
                     uSunColor.rgb *
-                        ((diffuse + backlight) * shadow * tl.x)) +
+                        ((diffuse + scatter) * shadow * tl.x)) +
                uSunColor.rgb * sheen * ao * shadow * tl.x;
 
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);

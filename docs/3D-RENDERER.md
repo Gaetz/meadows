@@ -26,7 +26,7 @@
 | 28-29 | Grading + auto-exposition | ✅ FAITES (chantier 6 B3/B4, 2026-07-07) — NON COMMITÉES, toggles A/B défaut OFF, validation dev en cours. Journal : `docs/CHANTIER-6.md`. |
 | 32 | **Eau plaçable (`WaterVolumeForm`)** — lacs d'altitude, grottes inondées | 📋 SPEC DÉCIDÉE 2026-07-07 (voir brique 32 ci-dessous) — à planifier |
 | 28-31 | Grading BotW, auto-exposition, cumulonimbus, pluie | ⏸️ à faire (28-29 courts ; 30-31 branchés sur WeatherForm) — planifiées via MEADOWS-PLAN chantier 6 |
-| — | Refonte herbe | ⏸️ en attente des recherches du dev (il revient avec une référence shader — ne pas itérer sans lui) |
+| — | Refonte herbe | ✅ FAITE ×2 — 7.8 (daniel-ilett) puis **redo #2 2026-07-11 validé dev** : port du modèle SimonDev Quick_Grass (lame 6 segments courbée, taper 1-t², vent 2 bruits, épaississement edge-on, normales ±54°, wrap+backscatter+AO racine) ; TOUTES les constantes (rendu via FrameUbo `uGrass*`, répartition via re-scatter) dans la catégorie « Grass » du render panel |
 
 ## Ce qui est construit (briques 1-26, résumé architectural)
 
@@ -39,8 +39,8 @@ reste headless.
 - `TerrainSystem` — chunks 64 m streamés (workers → ConcurrentQueue → upload
   budgété, pattern TextureCache), LOD 4 niveaux + skirts, bruit world-space
   déterministe (`TerrainNoise`, bords bit-exacts), splat array sRGB 4 couches.
-- `GrassSystem` — brins-rubans instanciés par chunk (rendu à refondre, infra
-  agnostique au style) ; `VegetationSystem` — 12 variantes (5 arbres, 4
+- `GrassSystem` — lames Quick_Grass instanciées par chunk (redo #2, voir
+  tableau ci-dessus ; tuning live `GrassRenderTuning`/`GrassScatterTuning`) ; `VegetationSystem` — 12 variantes (5 arbres, 4
   rochers dont 1 glTF CC0, 3 buissons), scatter déterministe en ceintures de
   forêt, draws variant-major avec baseInstance ; `TreeGenerator`.
 - `SkySystem` — palette jour/nuit analytique (aube ≠ crépuscule, entre chien

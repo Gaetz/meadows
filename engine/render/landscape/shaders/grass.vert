@@ -1,35 +1,46 @@
 #version 460 core
 #include "common.glsl"
 
-// Grass redo (chantier 7.8) — the daniel-ilett/shaders-botw-grass look,
-// ported to our instanced ribbons (the geometry-shader parts become
-// vertex-shader math over the same 5-triangle tapered blade):
-//  - WIND FIELD: a scrolling 2-octave world-space noise (the "scrolled
-//    distortion texture" of the reference, procedural here) — gusts roll
-//    across the meadow as organic waves instead of one global sine.
-//  - CURVATURE: every blade arcs forward along its face direction with a
-//    smooth profile, the reference's signature rounded silhouette.
-//  - EDGE THICKENING: blades seen edge-on widen slightly so the meadow
-//    never dissolves into hairlines.
+// Grass redo #2 (2026-07-11, dev-validated) — the SimonDev Quick_Grass
+// model (github.com/simondevyoutube/Quick_Grass), ported from three.js to
+// our instanced scatter; it REPLACES the 7.8 daniel-ilett ribbons. Every
+// shaping constant now lives in the FrameUbo (uGrassShapeInfo/uGrassLod-
+// Info/uGrass*Color), driven live from the render panel's "Grass"
+// category. Per blade:
+//  - SHAPE: 6-segment strip, width tapered 1-t^2 (rounded tip) near,
+//    linear far; the blade ARCS forward by rotating each vertex around
+//    the blade's side axis by an angle growing with eased height.
+//  - WIND: two independent noises — a slow DIRECTION field (gusts change
+//    heading) and a busier STRENGTH field eased so gusts bite, lulls rest.
+//  - VIEW-SPACE THICKENING: blades seen edge-on widen (easeOut^4) so the
+//    meadow never dissolves into hairlines.
+//  - NORMALS: two per blade, the curve normal rotated ±54° around the
+//    blade axis, blended across the width in the fragment; both pulled
+//    toward the GROUND normal (dominant far, 35% blade near) — keeps the
+//    validated BotW "meadow lights as one surface" grounding.
+//  - COLOR: dark rooted base to bright tip, easeIn^4 ramp; per-blade tint
+//    and shade hashes; far LOD flattens to a cheap linear ramp.
+//
+// KEPT CONTRACTS (do not break):
+//  - density-LOD clip: instances are SORTED by aParams.y; the curve here
+//    must stay identical to GrassSystem::draw()'s prefix cut (both read
+//    the same tuning: uGrassLodInfo here, renderTuning there).
+//  - the distance fade (uGrass*Color.w) matches draw()'s fadeEnd cull.
+//  - uGrassBendInfo player push (7.8ter, validated feel).
 
-layout(location = 0) in vec2 aBlade;    // x = side [-1,1] (taper baked), y = t
+layout(location = 0) in vec2 aBlade;    // x = side [-1,1], y = t [0,1]
 layout(location = 2) in vec4 aPosScale; // xyz = terrain point, w = height scale
-layout(location = 3) in vec4 aParams;   // x = yaw, y = flutter phase,
+layout(location = 3) in vec4 aParams;   // x = yaw, y = keep key (sorted),
                                         // z = tint jitter, w = lean
-layout(location = 4) in vec4 aGroundNormal; // xyz = terrain normal (7.8bis)
+layout(location = 4) in vec4 aGroundNormal; // xyz = terrain normal at root
 
+out vec3 vColor;
 out float vT;
-out float vSide;
-out float vTint;
-out float vGust; // wind wave strength at this blade (tip lightening)
-out vec3 vNormal;
+out float vXSide;  // 0..1 across the blade width
+out float vLodOut; // high-detail fade-out [0,1]
+out vec3 vNormal1;
+out vec3 vNormal2;
 out vec3 vWorldPos;
-
-// 7.8 follow-up, matched to the reference's Properties: blade width
-// 0.02-0.05 TOTAL (we draw half-width × the per-blade variation below),
-// forward bend 0.38 with a pow(t, 2) curve.
-const float kBladeHeight = 0.62;     // meters at scale 1
-const float kBladeHalfWidth = 0.022; // -> 0.03-0.055 m total per blade
 
 float hash21(vec2 p) {
     p = fract(p * vec2(234.34, 435.345));
@@ -44,18 +55,29 @@ float vnoise(vec2 p) {
                mix(hash21(i + vec2(0, 1)), hash21(i + vec2(1, 1)), s.x),
                s.y);
 }
+mat3 rotAxis(vec3 axis, float angle) {
+    float s = sin(angle), c = cos(angle);
+    float oc = 1.0 - c;
+    return mat3(oc * axis.x * axis.x + c,
+                oc * axis.x * axis.y + axis.z * s,
+                oc * axis.z * axis.x - axis.y * s,
+                oc * axis.x * axis.y - axis.z * s,
+                oc * axis.y * axis.y + c,
+                oc * axis.y * axis.z + axis.x * s,
+                oc * axis.z * axis.x + axis.y * s,
+                oc * axis.y * axis.z - axis.x * s,
+                oc * axis.z * axis.z + c);
+}
+mat3 rotX(float angle) {
+    float s = sin(angle), c = cos(angle);
+    return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c);
+}
 
 void main() {
-    // Metric density LOD (perf: a grass wall seen from 20-100 m is
-    // hundreds of thousands of SUBPIXEL triangles — one full 2x2 quad
-    // per micro-triangle, the worst raster case). Fewer, WIDER blades
-    // with distance: same visual mass, triangles stay near pixel size.
-    // Keep key = flutter phase / 2pi (uniform per blade); the instance
-    // buffer is SORTED by it, and GrassSystem::draw() cuts the prefix
-    // with THIS SAME curve — keep the two in sync.
+    // Density-LOD clip — SAME curve as GrassSystem::draw()'s prefix cut.
     float dist = distance(aPosScale.xyz, uCameraPos.xyz);
-    float thin = smoothstep(10.0, 70.0, dist);
-    float density = mix(1.0, 0.20, thin);
+    float thin = smoothstep(uGrassLodInfo.x, uGrassLodInfo.y, dist);
+    float density = mix(1.0, uGrassLodInfo.z, thin);
     if (aParams.y * 0.15915494 > density) {
         gl_Position = vec4(2.0, 0.0, 2.0, 1.0); // off-clip, zero raster
         return;
@@ -63,69 +85,98 @@ void main() {
 
     float t = aBlade.y;
     vT = t;
-    vSide = aBlade.x;
-    vTint = aParams.z;
+    vXSide = aBlade.x * 0.5 + 0.5;
+    float lodOut = smoothstep(uGrassShapeInfo.z, uGrassShapeInfo.w, dist);
+    vLodOut = lodOut;
 
-    float yaw = aParams.x;
-    vec3 sideDir = vec3(cos(yaw), 0.0, -sin(yaw));
-    vec3 faceDir = vec3(sin(yaw), 0.0, cos(yaw));
+    // Extra per-blade hashes (stable: seeded by the root position).
+    float hashColor1 = hash21(aPosScale.xz * 3.17);
+    float hashColor2 = hash21(aPosScale.xz * 7.91);
+    float shade = mix(0.65, 1.0, hash21(aPosScale.xz * 5.53));
 
-    // Distance fade: blades shrink into the ground instead of popping.
-    float fade = 1.0 - smoothstep(140.0, 190.0, dist);
-    float height = kBladeHeight * aPosScale.w * fade;
+    // Distance fade: blades sink into the ground (matches draw()'s cull).
+    float fade =
+        1.0 - smoothstep(uGrassBaseColor.w, uGrassTipColor.w, dist);
+    float height = uGrassShapeInfo.x * aPosScale.w * fade;
 
-    // The wind FIELD (the reference's scrolled distortion, procedural):
-    // one broad wave layer + one busier layer, both drifting downwind.
-    vec3 windDir = normalize(vec3(1.0, 0.0, 0.35));
-    vec2 flow = aPosScale.xz * 0.055 - windDir.xz * (uWindInfo.x * 0.35);
-    float wave = vnoise(flow) * 0.72 + vnoise(flow * 3.1 + 17.7) * 0.28;
-    wave = wave * wave * 1.6; // gusts bite, lulls really rest
-    float flutter =
-        sin(uWindInfo.x * 5.3 + aParams.y * 6.2831853) * 0.05;
-    float gust = (wave * 0.34 + flutter) * uWindInfo.y;
-    vGust = clamp(wave * uWindInfo.y, 0.0, 1.0);
-
-    // Curvature: pow(t, 2) forward arc (the reference's _BladeBendCurve
-    // default), forward amount 0.38 ± the per-blade bend variation; wind
-    // bends on top along its own direction.
-    float curveT = t * t;
-    vec3 bend = faceDir * ((0.38 * (0.8 + aParams.w * 0.4)) * curveT) +
-                windDir * (gust * curveT);
-
-    // Per-blade width variation (the reference's WidthMin..WidthMax) +
-    // edge-on thickening so thin blades keep a body seen down the plane.
-    vec3 toCam = normalize(uCameraPos.xyz - aPosScale.xyz);
-    float edge = 1.0 - abs(dot(toCam.xz, normalize(faceDir.xz)));
-    float width = kBladeHalfWidth * mix(0.7, 1.3, aParams.z) *
-                  (1.0 + edge * 0.35) *
-                  (1.0 + thin * 1.7); // density-LOD width compensation
-
-    // 7.8ter — interactive bending (the Velorexe/BotW walk-through): the
-    // player's feet push nearby blades outward and down; recovery is
-    // implicit (the push follows the feet, blades spring back behind).
+    // Player push (7.8ter, kept): compute from the root before shaping.
+    float push = 0.0;
+    vec2 pushDir = vec2(0.0);
     if (uGrassBendInfo.w > 0.0) {
         vec2 away = aPosScale.xz - uGrassBendInfo.xy;
         float d = length(away);
         if (d < uGrassBendInfo.w &&
             abs(aPosScale.y - uGrassBendInfo.z) < 2.0) {
-            float push = 1.0 - d / uGrassBendInfo.w;
+            push = 1.0 - d / uGrassBendInfo.w;
             push *= push;
-            bend += vec3(away.x / max(d, 0.05), 0.0,
-                         away.y / max(d, 0.05)) *
-                    (push * 0.9 * t);
+            pushDir = away / max(d, 0.05);
             height *= 1.0 - push * 0.45; // squash under the step
         }
     }
 
-    vec3 world = aPosScale.xyz + sideDir * (aBlade.x * width) +
-                 vec3(0.0, height * t, 0.0) + bend * height;
+    // Width: rounded taper near (1 - t^2), linear far; per-blade width
+    // jitter; wider blades compensate the far density floor (kept).
+    float taper = mix(1.0 - t * t, 1.0 - t, lodOut);
+    float halfWidth = uGrassShapeInfo.y * mix(0.7, 1.3, aParams.z) *
+                      (1.0 + thin * uGrassLodInfo.w);
 
-    // 7.8bis — THE BotW trick: shade with the GROUND normal, barely
-    // perturbed. The meadow lights as one continuous rolling surface
-    // (like the terrain under it); blades exist as silhouettes and
-    // motion, not as thousands of individually lit slivers.
-    vNormal = normalize(aGroundNormal.xyz +
-                        sideDir * (aBlade.x * 0.08) - bend * 0.15);
+    // WIND — the reference's two-noise model on our shared wind clock.
+    float dirNoise = vnoise(aPosScale.xz * 0.05 + uWindInfo.x * 0.05);
+    float windAngle = 0.34 + (dirNoise * 2.0 - 1.0) * 0.9; // around heading
+    vec3 windAxis = vec3(cos(windAngle), 0.0, sin(windAngle));
+    float gustNoise = vnoise(aPosScale.xz * 0.25 + uWindInfo.x);
+    float windLean = mix(0.25, 1.0, gustNoise);
+    windLean = windLean * windLean * 1.25 * t * uWindInfo.y;
+
+    // Per-blade lean + the slow "breathing" wobble.
+    float leanAnim =
+        (vnoise(vec2(uWindInfo.x * 0.35) + aPosScale.xz * 137.423) * 2.0 -
+         1.0) * 0.1;
+    float lean = mix(0.15, 0.45, aParams.w) + leanAnim;
+
+    // Blade frame: local x = width, y = up, faces +Z before yaw.
+    mat3 grassMat = rotAxis(windAxis, -windLean) *
+                    rotAxis(vec3(0.0, 1.0, 0.0), aParams.x);
+
+    // View-space thickening: widen edge-on blades (reference curve).
+    vec3 faceNormal = grassMat * vec3(0.0, 0.0, 1.0);
+    vec3 viewDirXZ =
+        normalize(vec3(uCameraPos.x - aPosScale.x, 0.0,
+                       uCameraPos.z - aPosScale.z));
+    float viewDot =
+        abs(dot(normalize(vec3(faceNormal.x, 0.0, faceNormal.z)), viewDirXZ));
+    float thicken = (1.0 - pow(viewDot, 4.0)); // easeOut(1-viewDot, 4)
+    thicken *= smoothstep(0.0, 0.2, viewDot);
+    halfWidth *= 1.0 + thicken * 0.6;
+
+    // The forward ARC: each vertex rotates around the blade side axis by
+    // an angle growing with eased height (easeIn^2 near, linear far).
+    float easedT = mix(t * t, t, lodOut);
+    float curve = -lean * easedT;
+    vec3 local = vec3(aBlade.x * halfWidth * taper, t * height, 0.0);
+    local = rotX(curve) * local;
+    vec3 world = aPosScale.xyz + grassMat * local;
+    world.xz += pushDir * (push * 0.9 * t * height); // player push (kept)
+
+    // Rounded normals: the curved face normal rotated ±54° around the
+    // blade axis, blended across the width in the fragment; both pulled
+    // toward the GROUND normal (dominant far — the BotW grounding).
+    vec3 nLocal = rotX(curve) * vec3(0.0, 0.0, 1.0);
+    vec3 n1 = grassMat * (rotAxis(vec3(0.0, 1.0, 0.0), 0.94) * nLocal);
+    vec3 n2 = grassMat * (rotAxis(vec3(0.0, 1.0, 0.0), -0.94) * nLocal);
+    float bladeRatio = (1.0 - lodOut) * 0.35;
+    vNormal1 = normalize(mix(aGroundNormal.xyz, n1, bladeRatio));
+    vNormal2 = normalize(mix(aGroundNormal.xyz, n2, bladeRatio));
+
+    // COLOR — steep dark-base -> bright-tip ramp (easeIn^4: the base stays
+    // dark deep up the blade, the last quarter ignites). The panel colors
+    // are the LOW end; per-blade hashes push up to ~1.3x brighter.
+    vec3 base = uGrassBaseColor.rgb * mix(1.0, 1.3, hashColor1);
+    vec3 tip = uGrassTipColor.rgb * mix(1.0, 1.3, hashColor2);
+    float ramp = t * t * t * t;
+    vec3 highColor = mix(base, tip, ramp) * shade;
+    vec3 lowColor = mix(uGrassBaseColor.rgb, uGrassTipColor.rgb, t);
+    vColor = mix(highColor, lowColor, lodOut);
 
     vWorldPos = world;
     gl_Position = uViewProj * vec4(world, 1.0);

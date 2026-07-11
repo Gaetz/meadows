@@ -1053,6 +1053,11 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         vegetation.regenerate(frame.device, terrain.params.seed);
         occlusion.invalidate();
     }
+    // Grass panel: a scatter knob moved — re-scatter the meadow only.
+    if (grassRescatterRequested) {
+        grassRescatterRequested = false;
+        grass.regenerate(frame.device);
+    }
     // Terrain sculpt: re-mesh JUST the chunks a stroke touched (in place, no
     // hole) — runs live during the stroke for real-time feedback. Grass/veg
     // re-scatter only on commit (`sculptScatterChunks`) so they don't flicker
@@ -1239,6 +1244,18 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         .windTime = view.windTime,
         .grassBend = view.grassBend,
         .playerFeet = view.playerFeet,
+        .grassShapeInfo = { grass.renderTuning.bladeHeight,
+                            grass.renderTuning.bladeHalfWidth,
+                            grass.renderTuning.detailNear,
+                            grass.renderTuning.detailFar },
+        .grassLodInfo = { grass.renderTuning.thinStart,
+                          grass.renderTuning.thinEnd,
+                          grass.renderTuning.farDensity,
+                          grass.renderTuning.widthCompensation },
+        .grassBaseColor = { grass.renderTuning.baseColor,
+                            grass.renderTuning.fadeStart },
+        .grassTipColor = { grass.renderTuning.tipColor,
+                           grass.renderTuning.fadeEnd },
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;
@@ -1726,6 +1743,64 @@ void LandscapeRenderer::drawTerrainPanel() {
 }
 
 void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
+    // Grass redo #2 (2026-07-11): every meadow constant, live. The render
+    // half rides the FrameUbo; a scatter knob queues a grass-only
+    // re-scatter on release (budgeted — the ring rebuilds over frames).
+    if (ImGui::CollapsingHeader("Grass")) {
+        render::GrassRenderTuning& gt = grass.renderTuning;
+        ImGui::SeparatorText("Blade");
+        ImGui::SliderFloat("Height (m)", &gt.bladeHeight, 0.2f, 2.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Half width (m)", &gt.bladeHalfWidth, 0.01f,
+                           0.12f, "%.3f");
+        ImGui::ColorEdit3("Base color", &gt.baseColor.x,
+                          ImGuiColorEditFlags_Float);
+        ImGui::ColorEdit3("Tip color", &gt.tipColor.x,
+                          ImGuiColorEditFlags_Float);
+        ImGui::SeparatorText("Detail / distance");
+        ImGui::SliderFloat("Detail near (m)", &gt.detailNear, 2.0f, 60.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Detail far (m)", &gt.detailFar, 5.0f, 120.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Thin start (m)", &gt.thinStart, 2.0f, 100.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Thin end (m)", &gt.thinEnd, 20.0f, 200.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Far density", &gt.farDensity, 0.05f, 1.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Far width comp", &gt.widthCompensation, 0.0f,
+                           3.0f, "%.1f");
+        ImGui::SliderFloat("Fade start (m)", &gt.fadeStart, 40.0f, 300.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Fade end (m)", &gt.fadeEnd, 60.0f, 350.0f,
+                           "%.0f");
+        ImGui::SeparatorText("Scatter (re-bakes on release)");
+        render::GrassScatterTuning& st = grass.scatterTuning;
+        bool scatterEdited = false;
+        ImGui::SliderFloat("Blade spacing (m)", &st.spacing, 0.08f, 0.5f,
+                           "%.2f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Patch scale (m)", &st.patchBroadScale, 4.0f,
+                           60.0f, "%.0f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Clump detail (m)", &st.patchDetailScale, 1.0f,
+                           20.0f, "%.0f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::DragFloatRange2("Patch threshold", &st.patchThresholdLo,
+                               &st.patchThresholdHi, 0.005f, 0.0f, 1.0f,
+                               "lo %.2f", "hi %.2f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::DragFloatRange2("Presence window", &st.presenceLo,
+                               &st.presenceHi, 0.005f, 0.0f, 1.0f,
+                               "rim %.2f", "solid %.2f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Material cutoff", &st.materialCutoff, 0.0f,
+                           1.0f, "%.2f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        if (scatterEdited || ImGui::Button("Rescatter now")) {
+            grassRescatterRequested = true;
+        }
+    }
     ImGui::Checkbox("Stylized lighting (BotW A/B)", &stylizedUi);
     ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
     ImGui::SliderFloat("Bloom intensity", &atmos.bloomIntensity, 0.0f, 1.5f,

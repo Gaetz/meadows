@@ -74,6 +74,12 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         .waterMapInfo = in.waterMapInfo,
         .windInfo = { in.windTime, in.atmos.windStrength, in.atmos.waveChop,
                       0.0f },
+        // Grass redo #2: in BASE so the planar-reflection pass gets the
+        // same meadow tuning as the main view.
+        .grassShapeInfo = in.grassShapeInfo,
+        .grassLodInfo = in.grassLodInfo,
+        .grassBaseColor = in.grassBaseColor,
+        .grassTipColor = in.grassTipColor,
     };
 
     render::FrameUniforms resolved = base;

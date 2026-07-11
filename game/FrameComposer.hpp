@@ -66,6 +66,13 @@ struct FrameComposerInputs {
     f32 windTime { 0.0f };
     bool grassBend { false };  // Play mode with a live body
     Vec3 playerFeet { 0.0f };
+
+    // Grass redo #2: the meadow tuning, pre-packed by the renderer from
+    // GrassRenderTuning (see FrameUniforms for the lane meanings).
+    Vec4 grassShapeInfo { 0.95f, 0.045f, 12.5f, 25.0f };
+    Vec4 grassLodInfo { 10.0f, 70.0f, 0.20f, 1.7f };
+    Vec4 grassBaseColor { 0.012f, 0.040f, 0.008f, 140.0f };
+    Vec4 grassTipColor { 0.095f, 0.200f, 0.045f, 190.0f };
 };
 
 // The two variants one frame needs. `base` is the raw exterior composition —

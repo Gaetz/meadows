@@ -192,6 +192,8 @@ private:
     render::TerrainLightMap terrainLightMap;
     bool terrainLightUi { true };
     bool regenerateRequested { false };
+    // Grass panel: a scatter knob moved — grass-only re-scatter next frame.
+    bool grassRescatterRequested { false };
     bool wireframeUi { false };
     bool tonemapUi { true };
     bool stylizedUi { true }; // BotW step lighting vs classic wrap (A/B)

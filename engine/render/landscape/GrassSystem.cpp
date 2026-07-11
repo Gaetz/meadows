@@ -15,59 +15,57 @@ namespace render {
 namespace {
 
 constexpr const char* kGrassShader = "grass";
-// 7.8quinquies (dev): the patch DISTRIBUTION across the map is right —
-// what was missing is the volume INSIDE a patch. A BotW clump reads as
-// one SOLID mass of grass with blades poking out of its top and sides,
-// so inside the mask the grid is packed tight (blades overlap); the
-// distance density LOD in draw() keeps the vertex budget in check.
-constexpr f32 kBladeSpacing = 0.15f; // meters between candidates (in-patch)
 
 // BotW-style patch layout: grass gathers in dense clumps with bare meadow
 // between them. Two noise scales — broad patches and small clump detail —
 // thresholded into a [0,1] density mask (0 = bare, 1 = heart of a patch).
-f32 patchMask(u32 seed, f32 x, f32 z) {
-    const f32 broad = terrain::noise01(seed ^ 0x1f123bb5u, x / 21.0f,
-                                       z / 21.0f);
-    const f32 detail = terrain::noise01(seed ^ 0x9d2c5680u, x / 6.0f,
-                                        z / 6.0f);
-    return glm::smoothstep(0.47f, 0.60f, broad * 0.72f + detail * 0.28f);
+// Every knob lives in GrassScatterTuning (render panel, "Grass").
+f32 patchMask(u32 seed, const GrassScatterTuning& tuning, f32 x, f32 z) {
+    const f32 broad = terrain::noise01(seed ^ 0x1f123bb5u,
+                                       x / tuning.patchBroadScale,
+                                       z / tuning.patchBroadScale);
+    const f32 detail = terrain::noise01(seed ^ 0x9d2c5680u,
+                                        x / tuning.patchDetailScale,
+                                        z / tuning.patchDetailScale);
+    return glm::smoothstep(tuning.patchThresholdLo, tuning.patchThresholdHi,
+                           broad * 0.72f + detail * 0.28f);
 }
 
 // hashU32 / HashRng now live in engine/core/Hash.hpp (shared scatter hash family).
 using core::hashU32;
 using core::HashRng;
 
-// One blade = a tapered 7-triangle ribbon, REAL geometry (no alpha test):
-// vertex = (side in [-1,1] with the taper baked in, t along the blade).
-// 7.8: matched to the daniel-ilett reference — BLADE_SEGMENTS 4 with a
-// LINEAR taper to a sharp point (width × (1 - t)), which is what reads
-// as "thin blades"; the vertex shader gives it width, height, curvature
-// and wind.
+// One blade (redo #2, the SimonDev Quick_Grass model): 6 straight
+// segments, sides at ±1 with NO baked taper — grass.vert shapes the
+// 1-t^2 taper and the forward arc per vertex. 13 vertices, 11 triangles;
+// one-sided strip, cull off (the fragment normals are ground-dominated,
+// no back-face flip needed).
 constexpr f32 kBladeVertices[] = {
     // side,  t
-    -1.00f, 0.00f,
-     1.00f, 0.00f,
-    -0.75f, 0.25f,
-     0.75f, 0.25f,
-    -0.50f, 0.50f,
-     0.50f, 0.50f,
-    -0.25f, 0.75f,
-     0.25f, 0.75f,
-     0.00f, 1.00f, // the point
+    -1.0f, 0.0f,       1.0f, 0.0f,
+    -1.0f, 1.0f/6.0f,  1.0f, 1.0f/6.0f,
+    -1.0f, 2.0f/6.0f,  1.0f, 2.0f/6.0f,
+    -1.0f, 3.0f/6.0f,  1.0f, 3.0f/6.0f,
+    -1.0f, 4.0f/6.0f,  1.0f, 4.0f/6.0f,
+    -1.0f, 5.0f/6.0f,  1.0f, 5.0f/6.0f,
+     0.0f, 1.0f, // the tip
 };
 constexpr u16 kBladeIndices[] = {
-    0, 1, 2,  1, 3, 2,  2, 3, 4,  3, 5, 4,
-    4, 5, 6,  5, 7, 6,  6, 7, 8,
+    0, 1, 2,   1, 3, 2,   2, 3, 4,   3, 5, 4,
+    4, 5, 6,   5, 7, 6,   6, 7, 8,   7, 9, 8,
+    8, 9, 10,  9, 11, 10, 10, 11, 12,
 };
 
 } // namespace
 
 vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
+                                           const GrassScatterTuning& tuning,
                                            i32 cx, i32 cz) {
     const f32 originX = static_cast<f32>(cx) * TerrainSystem::kChunkSize;
     const f32 originZ = static_cast<f32>(cz) * TerrainSystem::kChunkSize;
+    const f32 spacing = glm::max(0.05f, tuning.spacing);
     const u32 perSide =
-        static_cast<u32>(TerrainSystem::kChunkSize / kBladeSpacing);
+        static_cast<u32>(TerrainSystem::kChunkSize / spacing);
 
     // CELL-MAJOR scatter (startup-cost fix: the 0.15 m grid made the
     // per-candidate noise evals saturate every worker for seconds at
@@ -79,7 +77,7 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
     // candidate.
     constexpr u32 kCell = 4; // candidates per cell side (0.6 m cells)
     const u32 cells = (perSide + kCell - 1) / kCell;
-    const f32 cellSize = kBladeSpacing * static_cast<f32>(kCell);
+    const f32 cellSize = spacing * static_cast<f32>(kCell);
 
     vector<f32> cornerH((cells + 1) * (cells + 1));
     for (u32 gz = 0; gz <= cells; ++gz) {
@@ -98,10 +96,11 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             // the mask the clump is at FULL density (the solid volume);
             // only the rim thins, fast, so patches keep their silhouette.
             const f32 patch = patchMask(
-                params.seed,
+                params.seed, tuning,
                 originX + (static_cast<f32>(cgx) + 0.5f) * cellSize,
                 originZ + (static_cast<f32>(cgz) + 0.5f) * cellSize);
-            const f32 presence = glm::smoothstep(0.08f, 0.40f, patch);
+            const f32 presence = glm::smoothstep(tuning.presenceLo,
+                                                 tuning.presenceHi, patch);
             if (presence < 0.02f) {
                 continue;
             }
@@ -117,7 +116,8 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             const f32 hMid = 0.25f * (h00 + h10 + h01 + h11);
             // HARD material cutoff: grass only on solidly grassy ground —
             // never on the sand/snow/rock transition fringes.
-            if (terrain::materialWeights(params, hMid, n).grass < 0.72f) {
+            if (terrain::materialWeights(params, hMid, n).grass <
+                tuning.materialCutoff) {
                 continue;
             }
             for (u32 sz = 0; sz < kCell; ++sz) {
@@ -133,10 +133,10 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                                           (gz * perSide + gx)) };
                     const f32 x = originX +
                                   (static_cast<f32>(gx) + rng.next()) *
-                                      kBladeSpacing;
+                                      spacing;
                     const f32 z = originZ +
                                   (static_cast<f32>(gz) + rng.next()) *
-                                      kBladeSpacing;
+                                      spacing;
                     if (rng.next() >= presence) {
                         continue;
                     }
@@ -271,8 +271,9 @@ void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
         },
         [&](i32 cx, i32 cz, i32, i32) {
             streamer.chunks.emplace(chunkKey(cx, cz), Chunk {});
-            streamer.enqueueBuild(cx, cz, [params, cx, cz] {
-                return scatterGrass(params, cx, cz);
+            streamer.enqueueBuild(cx, cz,
+                                  [params, tuning = scatterTuning, cx, cz] {
+                return scatterGrass(params, tuning, cx, cz);
             });
         });
 
@@ -307,7 +308,7 @@ void GrassSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
                                     .offset = offsetof(
                                         Instance, groundNormal) } } } },
           // Pure geometry, opaque: depth-write on so blades sort against the
-          // terrain and each other; ribbons visible from both sides.
+          // terrain and each other; visible from both sides.
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
@@ -357,14 +358,15 @@ void GrassSystem::draw(rhi::CommandBuffer& cmd,
                      cameraPos.z - (minZ + TerrainSystem::kChunkSize)),
             0.0f);
         const f32 nearest = std::sqrt(dx * dx + dz * dz);
-        if (nearest > kFadeEnd) {
+        if (nearest > renderTuning.fadeEnd) {
             continue; // every blade fully sunk into the ground
         }
         if (frustum) {
-            // +1.5 m headroom over the blade roots (height × scale + wind).
+            // Headroom over the blade roots (height × scale + wind).
             if (!frustum->intersectsAabb(
                     { minX, chunk.minY - 0.5f, minZ },
-                    { minX + TerrainSystem::kChunkSize, chunk.maxY + 1.5f,
+                    { minX + TerrainSystem::kChunkSize,
+                      chunk.maxY + renderTuning.bladeHeight + 0.8f,
                       minZ + TerrainSystem::kChunkSize })) {
                 continue;
             }
@@ -373,10 +375,12 @@ void GrassSystem::draw(rhi::CommandBuffer& cmd,
         // drawing the first N is exactly the set grass.vert keeps at
         // this chunk's NEAREST distance (density is monotonic in dist —
         // every blade in the chunk is at least that far). Same curve as
-        // the shader: density = mix(1.0, 0.20, smoothstep(10, 70, d)),
-        // +3% margin for the key distribution's sampling noise.
-        const f32 thin = glm::smoothstep(10.0f, 70.0f, nearest);
-        const f32 density = glm::min(1.0f, 1.0f - 0.80f * thin + 0.03f);
+        // the shader (both read the SAME tuning — grass.vert through
+        // uGrassLodInfo), +3% margin for the key sampling noise.
+        const f32 thin = glm::smoothstep(renderTuning.thinStart,
+                                         renderTuning.thinEnd, nearest);
+        const f32 density = glm::min(
+            1.0f, glm::mix(1.0f, renderTuning.farDensity, thin) + 0.03f);
         const u32 count = glm::min(
             chunk.instanceCount,
             1u + static_cast<u32>(
