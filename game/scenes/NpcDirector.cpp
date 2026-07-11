@@ -389,6 +389,7 @@ void NpcDirector::moveNpcDirect(const NpcContext& ctx, Npc& npc, f32 dt,
     npc.yaw = faceYaw;
     transform.rotation = glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
     npc.speed += (walkSpeed - npc.speed) * (1.0f - std::exp(-10.0f * dt));
+    npc.steered = true; // pathless but MOVING: skip the idle speed decay
 }
 
 void NpcDirector::callForHelp(const NpcContext& ctx, const Npc& caller,
@@ -805,8 +806,13 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                 moveNpcAlongPath(ctx, npc, dt, 1.0f);
             }
         }
+        // Standing = no path AND no direct steering this frame (strafe
+        // and flee move pathless — their run must reach the anim).
         npc.speed -= npc.speed * (1.0f - std::exp(-idleDecay * dt)) *
-                     (npc.pathIndex >= npc.path.size() ? 1.0f : 0.0f);
+                     (npc.pathIndex >= npc.path.size() && !npc.steered
+                          ? 1.0f
+                          : 0.0f);
+        npc.steered = false; // consumed — re-armed by the next steer
 
         // Anim: real speed feeds the param (transitions) AND the
         // referenceSpeed sync (anti-foot-sliding).

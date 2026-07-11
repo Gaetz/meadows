@@ -695,9 +695,22 @@ void LandscapeScene::update(f32 dt) {
         const Mat4 basis { Vec4 { right, 0.0f }, Vec4 { up, 0.0f },
                            Vec4 { -fwd, 0.0f },
                            Vec4 { cam.position, 1.0f } };
-        const data::WeaponForm& weapon =
-            playerController.swingWeapon() ? *playerController.swingWeapon()
-                                           : *playerWeapon;
+        // The viewmodel shows the EQUIPPED weapon (loot a club, equip
+        // it, see it) — the swing's weapon while one is in flight, the
+        // scene fallback only without any equipment.
+        const data::WeaponForm* shown = playerWeapon;
+        if (playerController.swingWeapon()) {
+            shown = playerController.swingWeapon();
+        } else if (playerEntity.has<gameplay::Equipment>()) {
+            const auto& equipment = playerEntity.get<gameplay::Equipment>();
+            if (equipment.weapon.isValid()) {
+                if (const auto* form =
+                        forms.find<data::WeaponForm>(equipment.weapon)) {
+                    shown = form;
+                }
+            }
+        }
+        const data::WeaponForm& weapon = *shown;
         const gameplay::SwingTiming timing { weapon.swingWindup,
                                              weapon.swingActive,
                                              weapon.swingRecovery };

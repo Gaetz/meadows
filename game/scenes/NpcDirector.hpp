@@ -133,6 +133,10 @@ struct Npc {
     // Drawn only while combat says so (update mirrors it, extract reads
     // it — a calm bandit keeps the club on his belt).
     bool weaponDrawn { false };
+    // Set by moveNpcDirect each frame it steers (strafe/flee — PATHLESS
+    // movement): the idle speed decay must not eat the anim speed of an
+    // NPC that is very much running.
+    bool steered { false };
     // The EQUIPPED weapon's model guid, resolved in update() where the
     // FormDatabase lives (extract has no forms access).
     core::Guid weaponModel;
