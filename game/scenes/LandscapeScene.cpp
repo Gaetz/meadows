@@ -602,6 +602,9 @@ void LandscapeScene::update(f32 dt) {
         // through the shared VM. NPC positions are last frame's (they
         // move in updateNpcs, later) — one frame of latency is fine.
         {
+            // P0 B1: ONE actor snapshot per frame, shared by the trigger
+            // sweep now and perception/combat AI (B2/B3) next.
+            spatialIndex.rebuild(world);
             world::TriggerCallbacks triggerCb;
             triggerCb.events = &eventBus;
             triggerCb.runScript = [this](const str& code, ecs::Entity actor,
@@ -626,7 +629,7 @@ void LandscapeScene::update(f32 dt) {
                     LOG_WARN("Trigger script failed: {}", result.error);
                 }
             };
-            world::updateTriggerVolumes(world, triggerCb);
+            world::updateTriggerVolumes(world, triggerCb, &spatialIndex);
         }
     }
     {

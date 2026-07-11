@@ -12,6 +12,7 @@ add_library(meadows-world STATIC
     scene/Movement.cpp
     scene/Collision.cpp
     scene/TriggerSystem.cpp
+    scene/SpatialIndex.cpp
     ai/Pathfinding.cpp
     ai/AiController.cpp
     ai/GridNavigator.cpp

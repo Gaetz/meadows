@@ -1,11 +1,14 @@
 #include "world/scene/TriggerSystem.hpp"
 
 #include <algorithm>
+#include <cstddef>
 
+#include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include "gameplay/event/EventBus.hpp"
 #include "world/scene/Components.hpp"
+#include "world/scene/SpatialIndex.hpp" // B1: the near-actors fast path
 
 namespace world {
 
@@ -23,21 +26,26 @@ bool insideOrientedBox(const Vec3& point, const Transform& box,
 
 } // namespace
 
-void updateTriggerVolumes(ecs::World& world, const TriggerCallbacks& cb) {
+void updateTriggerVolumes(ecs::World& world, const TriggerCallbacks& cb,
+                          const SpatialIndex* index) {
     // Snapshot both sides before dispatching: handlers/scripts may add or
     // remove entities, which must not perturb THIS tick's iteration.
+    // (With an index the snapshot was taken at its rebuild.)
     struct Actor {
         ecs::Entity entity;
         Vec3 position;
     };
     vector<Actor> actors;
-    world.handle()
-        .query_builder<const Transform>()
-        .with<ActorMarker>()
-        .build()
-        .each([&](flecs::entity entity, const Transform& transform) {
-            actors.push_back({ entity, transform.position });
-        });
+    if (!index) {
+        world.handle()
+            .query_builder<const Transform>()
+            .with<ActorMarker>()
+            .build()
+            .each([&](flecs::entity entity, const Transform& transform) {
+                actors.push_back({ entity, transform.position });
+            });
+    }
+    vector<SpatialIndex::Entry> nearby; // per-volume scratch (B1 path)
 
     vector<ecs::Entity> triggers;
     world.handle()
@@ -58,7 +66,23 @@ void updateTriggerVolumes(ecs::World& world, const TriggerCallbacks& cb) {
         TriggerOccupancy occupancy = trigger.ensure<TriggerOccupancy>();
         bool fired = volume.fired;
 
-        for (const Actor& actor : actors) {
+        // B1: with an index, only the actors within the box's bounding
+        // sphere are candidates — anyone further out is outside for sure.
+        vector<Actor> candidates;
+        if (index) {
+            nearby.clear();
+            index->queryRadius(transform.position,
+                               glm::length(volume.halfExtents *
+                                           transform.scale),
+                               nearby);
+            candidates.reserve(nearby.size());
+            for (const SpatialIndex::Entry& entry : nearby) {
+                candidates.push_back({ entry.entity, entry.position });
+            }
+        }
+        const vector<Actor>& tested = index ? candidates : actors;
+
+        for (const Actor& actor : tested) {
             if (!actor.entity.is_alive()) {
                 continue;
             }
@@ -95,6 +119,41 @@ void updateTriggerVolumes(ecs::World& world, const TriggerCallbacks& cb) {
             }
             if (now && volume.once) {
                 fired = true;
+            }
+        }
+
+        // B1 leave-sweep: an occupant no longer among the candidates left
+        // the neighborhood entirely — that IS a leave (the full scan got
+        // this for free by testing every actor).
+        if (index) {
+            for (size_t i = occupancy.inside.size(); i-- > 0;) {
+                const u64 id = occupancy.inside[i];
+                const bool seen =
+                    std::any_of(tested.begin(), tested.end(),
+                                [&](const Actor& actor) {
+                                    return actor.entity.id() == id;
+                                });
+                if (seen) {
+                    continue;
+                }
+                const ecs::Entity actor { world.handle().get_alive(id) };
+                if (!actor.is_alive()) {
+                    continue; // despawned occupants linger (full-scan parity)
+                }
+                occupancy.inside.erase(occupancy.inside.begin() +
+                                       static_cast<std::ptrdiff_t>(i));
+                if (volume.once && fired) {
+                    continue;
+                }
+                if (cb.events && !volume.event.empty()) {
+                    gameplay::Event event;
+                    event.kind = gameplay::eventKind(volume.event);
+                    event.name = volume.event;
+                    event.source = actor;
+                    event.target = trigger;
+                    event.value = 0.0f;
+                    cb.events->dispatch(event);
+                }
             }
         }
 

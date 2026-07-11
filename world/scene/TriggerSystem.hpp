@@ -54,7 +54,16 @@ struct TriggerCallbacks {
 //  - `once`: the first ENTER runs the callbacks then latches
 //    TriggerVolume.fired (reflected → save-persistent); a fired
 //    once-trigger never dispatches again.
-// Deterministic (§8): triggers and actors iterate in flecs query order.
-void updateTriggerVolumes(ecs::World& world, const TriggerCallbacks& cb);
+// Deterministic (§8): triggers iterate in flecs query order; actors in
+// flecs query order, or in grid order when `index` is supplied (both
+// stable for a given world state).
+//
+// P0 B1: pass the frame's SpatialIndex to test only the actors NEAR each
+// volume (bounding-sphere radius query) instead of every loaded actor.
+// Occupants no longer among the candidates are swept as LEAVE — stepping
+// out of the neighborhood IS stepping out of the box. Null = full scan.
+class SpatialIndex;
+void updateTriggerVolumes(ecs::World& world, const TriggerCallbacks& cb,
+                          const SpatialIndex* index = nullptr);
 
 } // namespace world

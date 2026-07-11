@@ -4,6 +4,7 @@
 
 #include "gameplay/event/EventBus.hpp"
 #include "world/scene/Components.hpp"
+#include "world/scene/SpatialIndex.hpp"
 #include "world/scene/TriggerSystem.hpp"
 
 // Chantier « volumes de gameplay » (MEADOWS-PLAN §A, P0): loaded
@@ -199,4 +200,45 @@ TEST_CASE("trigger volumes: two actors are tracked independently") {
     REQUIRE(f.received.size() == 3);
     CHECK(f.received[2].source == first);
     CHECK(f.received[2].value == 0.0f);
+}
+
+TEST_CASE("trigger volumes: the B1 spatial-index path matches the full "
+          "scan, leave-sweep included") {
+    Fixture f;
+    ecs::Entity actor = f.makeActor({ 50.0f, 0.0f, 0.0f });
+    f.makeTrigger({ 0.0f, 0.0f, 0.0f }, { 2.0f, 2.0f, 2.0f },
+                  "OnEnterShrine");
+    world::SpatialIndex index;
+    const auto tick = [&] {
+        index.rebuild(f.world);
+        world::updateTriggerVolumes(f.world, f.callbacks, &index);
+    };
+
+    // Outside (far outside the bounding radius): silence.
+    tick();
+    CHECK(f.received.empty());
+
+    // Step in: one enter.
+    f.moveActor(actor, { 1.0f, 0.5f, -1.0f });
+    tick();
+    REQUIRE(f.received.size() == 1);
+    CHECK(f.received[0].value == 1.0f);
+
+    // Linger: no re-fire.
+    tick();
+    CHECK(f.received.size() == 1);
+
+    // Jump FAR away in one tick — outside the query neighborhood
+    // entirely: the leave-sweep must still fire the leave.
+    f.moveActor(actor, { 200.0f, 0.0f, 200.0f });
+    tick();
+    REQUIRE(f.received.size() == 2);
+    CHECK(f.received[1].value == 0.0f);
+    CHECK(f.received[1].source == actor);
+
+    // And a re-entry works after the sweep (occupancy was cleaned).
+    f.moveActor(actor, { 0.0f, 0.5f, 0.0f });
+    tick();
+    REQUIRE(f.received.size() == 3);
+    CHECK(f.received[2].value == 1.0f);
 }

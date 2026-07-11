@@ -84,18 +84,25 @@ fait avec le backend null).
   applyBlock avant applyDamage. Doctesté (dans/hors cône, par-derrière,
   hauteur ignorée, bout portant, réduction + routage posture). Reste
   dev : feel + pas d'anim de garde (pas de clip block dans UAL).
-- **A6 — Distances d'engagement par arme.** `WeaponForm.reach` (+ champ
-  de préférence de distance) consommé par l'IA (B3) et par le cast A4.
+- **A6 ✅ — Distances d'engagement par arme.** L'IA s'arrête et frappe à
+  `WeaponForm.reach − 0.3` (BanditClub : reach 2.0 en data) au lieu du
+  1,8 codé en dur. La distance de préférence de strafe (reach + 1)
+  arrive avec B3.
 - **A7 — Projectiles (SI retenu, voir questions).** Entité flèche :
   spawn au socket, balistique simple (gravité + vitesse), impact par
   raycast segmentaire → damage pipeline ; pickup de la flèche plantée P1.
 
 ## Axe B — Perception, IA de combat, et l'index spatial partagé
 
-- **B1 — Index spatial partagé (l'infra promise).** `world/scene/`
-  gagne une grille spatiale d'entités (hash grid AABB, rebuild/maj par
-  frame — simple avant octree) avec des requêtes `queryRadius`,
-  `queryCone`. Consommateurs immédiats : B2 (perception), TriggerSystem
+- **B1 ✅ — Index spatial partagé (l'infra promise).**
+  `world/scene/SpatialIndex` : hash grid XZ (cellule 4 m), snapshot
+  entité+position au `rebuild` (1×/frame scène — la sémantique snapshot
+  des triggers est préservée), `queryRadius` / `queryCone` (distances
+  3D, bucketing planaire, bout portant = vu). Premier consommateur :
+  `updateTriggerVolumes(…, index)` — candidats = rayon englobant du
+  volume, et un LEAVE-SWEEP couvre l'acteur qui a quitté le voisinage
+  d'un coup (téléport). Doctesté (bords de cellules, cône avant/arrière/
+  étroit, parité enter/leave via index). B2 (perception) le consomme
   (remplace le scan linéaire), le pick éditeur ensuite. Doctesté.
 - **B2 — Composant Perception dédié.** Extrait de l'inline NpcDirector :
   cône de vue (angle/portée) + LOS raycast, OUÏE (les événements bruit —

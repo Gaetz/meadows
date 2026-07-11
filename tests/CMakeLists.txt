@@ -70,6 +70,7 @@
     SceneSubmitTest.cpp
     ScreenStackTest.cpp
     ScriptTest.cpp
+    SpatialIndexTest.cpp
     SpawnerTest.cpp
     StatsTuningTest.cpp
     StatusBuildupTest.cpp
