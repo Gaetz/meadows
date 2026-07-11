@@ -1547,6 +1547,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
         interaction,
         playerEncumbrance == gameplay::EncumbranceCategory::Overencumbered,
         [this] { questDirector.syncWantedTag(makeQuestContext()); },
+        &eventBus, // C4a: synthesized player footsteps
     };
 }
 

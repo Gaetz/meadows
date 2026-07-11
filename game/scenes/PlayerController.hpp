@@ -23,6 +23,7 @@ class CharacterBody;
 namespace gameplay {
 class GameplayTagRegistry;
 class DerivedStatRegistry;
+class EventBus;
 struct StatsTuningForm;
 struct EffectForm;
 }
@@ -55,6 +56,9 @@ struct PlayerContext {
                          //   equipMods site — it also feeds the tick)
     std::function<void()> syncWantedTag; // Crime.Wanted mirror stays with the
                                          //   scene's quest/crime wiring
+    // Chantier P0 C4a: the player has no walk clip — footsteps fire as
+    // "AnimEvent"/Footstep on the bus every strideLength meters walked.
+    gameplay::EventBus* eventBus { nullptr };
 };
 
 // The first-person Play-mode controller extracted from LandscapeScene
@@ -94,6 +98,7 @@ private:
     f32 jumpSpeed { 5.0f };  // fallback only — jumpPower stat drives it (C3)
     f32 attackCooldown { 0.0f };
     f32 sprintCostAccumulator { 0.0f };
+    f32 strideAccumulator { 0.0f }; // C4a: grounded meters since last step
 };
 
 } // namespace game

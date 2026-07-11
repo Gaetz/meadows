@@ -91,6 +91,10 @@ struct StatsTuningForm : data::Form {
     f32 crimeBountyAssault { 40.0f };   // bounty per witnessed assault
     f32 crimeWitnessRange { 20.0f };    // witness detection radius (m)
     f32 vendorRestockHours { 24.0f };   // vendor inventory restock period
+    // Chantier P0 C4a (appended — ordinals stable): the first-person
+    // player has no walk anim, so footsteps fire every strideLength
+    // meters of grounded travel (NPCs use their clips' AnimEvents).
+    f32 strideLength { 2.2f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -150,6 +154,7 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(crimeBountyAssault)
         REFLECT_FIELD(crimeWitnessRange)
         REFLECT_FIELD(vendorRestockHours)
+        REFLECT_FIELD(strideLength)
     REFLECT_END()
 };
 

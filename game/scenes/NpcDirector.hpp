@@ -95,6 +95,12 @@ struct Npc {
     bool guard { false };   // D2: "Faction.VillageGuard" — hostile while Wanted
     bool dead { false };    // mirrors the GAS State.Dead tag
     f32 attackCooldown { 0.0f };
+
+    // Chantier P0 C4a: anim events land HERE from the GraphInstance sink
+    // (set at creation, before any EventBus exists for the capture) and
+    // are drained onto the bus each update — hit windows (A4) and
+    // footsteps (C4b) consume them from there.
+    vector<str> pendingAnimEvents;
     // Chantier 6 A1: the first Faction.* tag — what the OnDeath event carries
     // (quest kill filters, crime factions).
     gameplay::GameplayTag factionTag {};

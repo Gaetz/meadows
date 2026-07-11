@@ -204,6 +204,13 @@ void NpcDirector::refreshNpcs(
                     }
                     return false;
                 });
+            // Chantier P0 C4a: the sink FINALLY gets a runtime consumer —
+            // events buffer on the Npc (uptr = stable address) and drain
+            // onto the EventBus in update(), where the context lives.
+            npc->anim->setEventSink(
+                [raw = npc.get()](std::string_view name) {
+                    raw->pendingAnimEvents.emplace_back(name);
+                });
             npc->tint = visual->tint;
             npc->palette.assign(rig->skeleton.joints.size(), Mat4 { 1.0f });
             npc->vertices = device.createBuffer(
@@ -361,6 +368,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             anim::bindPose(npc.rig->skeleton, npc.pose);
             npc.anim->evaluate(npc.pose);
             anim::skinMatrices(npc.rig->skeleton, npc.pose, npc.palette);
+            npc.pendingAnimEvents.clear(); // dead men fire no events
             continue;
         }
 
@@ -545,6 +553,18 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         anim::bindPose(npc.rig->skeleton, npc.pose);
         npc.anim->evaluate(npc.pose);
         anim::skinMatrices(npc.rig->skeleton, npc.pose, npc.palette);
+
+        // Chantier P0 C4a: drain the anim events the sink buffered onto
+        // the bus — ONE kind ("AnimEvent"), the clip's name in `name`;
+        // hit windows (A4) and footsteps (C4b) filter on it.
+        for (str& name : npc.pendingAnimEvents) {
+            gameplay::Event event;
+            event.kind = gameplay::eventKind("AnimEvent");
+            event.source = npc.entity;
+            event.name = std::move(name);
+            ctx.eventBus.dispatch(event);
+        }
+        npc.pendingAnimEvents.clear();
     }
 }
 

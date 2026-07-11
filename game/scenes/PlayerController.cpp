@@ -15,6 +15,7 @@
 #include "game/scenes/NpcDirector.hpp" // Npc
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
+#include "gameplay/event/EventBus.hpp"
 #include "gameplay/actors/ActorState.hpp" // gameplay::Bounty
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Damage.hpp"
@@ -229,6 +230,25 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
         body_->jump(jump);
     }
     body_->move(velocity, dt);
+
+    // Chantier P0 C4a: the first-person player has no walk clip, so the
+    // footstep AnimEvent is synthesized every strideLength meters of
+    // grounded travel (NPCs get theirs from their clips' events).
+    if (ctx.eventBus && body_->onGround()) {
+        strideAccumulator +=
+            glm::length(Vec2 { velocity.x, velocity.z }) * dt;
+        const f32 stride = glm::max(tuning.strideLength, 0.5f);
+        while (strideAccumulator >= stride) {
+            strideAccumulator -= stride;
+            gameplay::Event step;
+            step.kind = gameplay::eventKind("AnimEvent");
+            step.source = ctx.playerEntity;
+            step.name = "Footstep";
+            ctx.eventBus->dispatch(step);
+        }
+    } else if (!body_->onGround()) {
+        strideAccumulator = 0.0f; // airborne: restart the stride
+    }
 
     // Sprint cost: one instant GameplayEffect per half second (§2.9 — the
     // ONLY way energy moves; the spend also pauses regen for a beat).
