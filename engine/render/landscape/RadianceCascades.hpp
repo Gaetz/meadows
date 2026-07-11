@@ -52,10 +52,12 @@ struct RcTuning {
                               // grid border (G6)
     // Adaptive stylized ramp (dev design 2026-07-11): the GI posterizes
     // in log-stops around the MEASURED scene irradiance (rc_adapt.comp).
-    i32 bands { 3 };            // flat pools across the measured contrast
+    i32 bands { 3 };            // pools between the measured mean and max
     f32 contrastFloor { 1.0f }; // min half-window (log2 stops) — a flat
                                 // scene must not amplify noise into bands
     f32 adaptSpeed { 0.05f };   // temporal inertia per injected frame
+    f32 dimBand { 0.6f };       // the below-mean pool's depth (0..1 of
+                                // the window) — the RC zone's dark floor
     i32 updateInterval { 1 }; // inject every N frames (1 = every frame)
     i32 debugView { 0 };      // 0 off, 1 fine clip, 2 coarse clip,
                               // 3 merged cascade-0 irradiance

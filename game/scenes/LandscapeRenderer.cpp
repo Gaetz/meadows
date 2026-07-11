@@ -1975,7 +1975,9 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::SliderFloat("Edge fade (m)", &rc.edgeFade, 1.0f, 16.0f,
                            "%.0f");
         // Adaptive stylized ramp: flat pools over the MEASURED contrast.
-        ImGui::SliderInt("Stylized bands", &rc.bands, 2, 5);
+        ImGui::SliderInt("Stylized bands (mean->max)", &rc.bands, 2, 5);
+        ImGui::SliderFloat("Dim band depth", &rc.dimBand, 0.05f, 0.95f,
+                           "%.2f");
         ImGui::SliderFloat("Contrast floor (stops)", &rc.contrastFloor,
                            0.25f, 3.0f, "%.2f");
         ImGui::SliderFloat("Adapt speed", &rc.adaptSpeed, 0.01f, 0.30f,

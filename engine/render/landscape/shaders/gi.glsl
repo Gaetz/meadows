@@ -59,19 +59,28 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
     vec3 irradiance = sum / max(weightSum, 1e-3) * uGiInfo.y;
 
     // ADAPTIVE stylized ramp (dev design 2026-07-11): posterize the GI in
-    // log-stops anchored on the MEASURED scene range (rc_adapt.comp) —
-    // a forest's subtle green bounce spreads across the flat pools, a
-    // torch in the night keeps its full contrast; no fixed thresholds,
-    // no reference to the (possibly black) classic ambient. Hue kept;
-    // narrow smoothstep = anti-aliasing (the stylized.glsl language).
+    // log-stops anchored on the MEASURED scene range (rc_adapt.comp).
+    // ASYMMETRIC split (dev 2026-07-11b): at night the log-mean sits near
+    // black, so symmetric bands wasted half the pools below it — now the
+    // N-1 bands spread from the MEAN to the MAX (where the light lives,
+    // countering the inverse-square crush), and everything below the
+    // mean gathers into ONE dim band: the RC zone's low ambient floor.
+    // Hue kept; narrow smoothstep = AA (the stylized.glsl language).
     float lum = dot(irradiance, vec3(0.299, 0.587, 0.114));
     if (uAmbientColor.w > 0.0 && uRcStats.w > 0.5 && lum > 1e-5) {
         float window = max(uRcStats.y, 0.1);
-        float bands = max(uRcStats.z, 2.0);
+        float bands = max(floor(uRcStats.z), 2.0);
+        float dimLevel = fract(uRcStats.z); // packed by rc_adapt.comp
         float x = clamp((log2(lum) - uRcStats.x) / window, -1.0, 1.0);
-        float t = (x + 1.0) * 0.5 * (bands - 1.0); // 0 .. bands-1
-        float tq = floor(t) + smoothstep(0.35, 0.65, fract(t));
-        float xq = tq / (bands - 1.0) * 2.0 - 1.0;
+        float xq;
+        if (x >= 0.0) {
+            float upper = bands - 1.0; // pools between mean and max
+            float t = x * upper;
+            xq = (floor(t) + smoothstep(0.35, 0.65, fract(t))) / upper;
+        } else {
+            // The last dim band, AA'd at the mean crossing.
+            xq = -dimLevel * smoothstep(0.0, 0.15, -x);
+        }
         float lumQ = exp2(uRcStats.x + xq * window);
         irradiance *= mix(1.0, lumQ / lum, uAmbientColor.w);
     }
