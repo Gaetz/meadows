@@ -166,6 +166,7 @@ protected:
         u32 width { 0 };
         u32 height { 0 };
         u32 arrayLayers { 1 };
+        u32 depth { 1 }; // > 1 = GL_TEXTURE_3D (G0): image binds layered
         TextureFormat format { TextureFormat::RGBA8 };
     };
     struct GlFramebuffer {

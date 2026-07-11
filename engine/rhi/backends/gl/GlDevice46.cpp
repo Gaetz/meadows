@@ -22,7 +22,8 @@ GlDevice46::GlDevice46(uptr<platform::GlContext> context,
               .mipmapGeneration = true,
               .copyTexture = true,      // glCopyImageSubData (GL 4.3+)
               .computeShaders = true,   // glDispatchCompute (GL 4.3+)
-              .timerQueries = true };   // GL_TIMESTAMP queries (GL 3.3+)
+              .timerQueries = true,     // GL_TIMESTAMP queries (GL 3.3+)
+              .volumeTextures = true }; // GL_TEXTURE_3D (GI, chantier RC)
 }
 
 namespace {
@@ -105,14 +106,32 @@ TextureHandle GlDevice46::createTexture(const TextureDesc& desc,
     }
 
     const bool isArray = desc.arrayLayers > 1;
+    const bool isVolume = desc.depth > 1; // G0: 3D textures (GI clipmap)
+    if (isVolume && isArray) {
+        LOG_ERROR("createTexture: depth and arrayLayers are exclusive");
+        return {};
+    }
+    if (isVolume && pixels) {
+        LOG_ERROR("createTexture: volumes are GPU-written (storageImage), "
+                  "initial pixels unsupported");
+        return {};
+    }
     const GLenum internal = toGlInternalFormat(desc.format);
     GLenum pixelFormat = GL_RGBA;
     GLenum pixelType = GL_UNSIGNED_BYTE;
     uploadFormatFor(desc.format, pixelFormat, pixelType);
     GLuint texture = 0;
-    glCreateTextures(isArray ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D, 1,
-                     &texture);
-    if (isArray) {
+    glCreateTextures(isVolume  ? GL_TEXTURE_3D
+                     : isArray ? GL_TEXTURE_2D_ARRAY
+                               : GL_TEXTURE_2D,
+                     1, &texture);
+    if (isVolume) {
+        glTextureStorage3D(texture, static_cast<GLsizei>(desc.mipLevels),
+                           internal, static_cast<GLsizei>(desc.width),
+                           static_cast<GLsizei>(desc.height),
+                           static_cast<GLsizei>(desc.depth));
+        glTextureParameteri(texture, GL_TEXTURE_WRAP_R, toGlWrap(desc.wrap));
+    } else if (isArray) {
         glTextureStorage3D(texture, static_cast<GLsizei>(desc.mipLevels),
                            internal, static_cast<GLsizei>(desc.width),
                            static_cast<GLsizei>(desc.height),
@@ -151,6 +170,7 @@ TextureHandle GlDevice46::createTexture(const TextureDesc& desc,
                                      .width = desc.width,
                                      .height = desc.height,
                                      .arrayLayers = desc.arrayLayers,
+                                     .depth = desc.depth,
                                      .format = desc.format });
     return { id };
 }
@@ -169,6 +189,7 @@ SamplerHandle GlDevice46::createSampler(const SamplerDesc& desc) {
         desc.magFilter == FilterMode::Nearest ? GL_NEAREST : GL_LINEAR);
     glSamplerParameteri(sampler, GL_TEXTURE_WRAP_S, toGlWrap(desc.addressU));
     glSamplerParameteri(sampler, GL_TEXTURE_WRAP_T, toGlWrap(desc.addressV));
+    glSamplerParameteri(sampler, GL_TEXTURE_WRAP_R, toGlWrap(desc.addressW));
     if (desc.compare != CompareFunc::Never) {
         glSamplerParameteri(sampler, GL_TEXTURE_COMPARE_MODE,
                             GL_COMPARE_REF_TO_TEXTURE);

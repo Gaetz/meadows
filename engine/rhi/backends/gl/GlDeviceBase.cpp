@@ -227,9 +227,12 @@ void GlCommandBuffer::setBindGroup(u32 /*index*/, BindGroupHandle group) {
             case TextureFormat::RGBA16F: imageFormat = GL_RGBA16F; break;
             default: break;
             }
+            // 3D textures bind LAYERED so imageStore reaches every Z slice
+            // (G0 — non-layered binds expose only slice 0 of a volume).
             glBindImageTexture(entry.binding, texture.name,
-                               static_cast<GLint>(entry.imageMip), GL_FALSE,
-                               0, GL_READ_WRITE, imageFormat);
+                               static_cast<GLint>(entry.imageMip),
+                               texture.depth > 1 ? GL_TRUE : GL_FALSE, 0,
+                               GL_READ_WRITE, imageFormat);
         } else {
             device.implBindTexture(entry.binding,
                                    device.textures.at(entry.texture.id).name);

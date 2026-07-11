@@ -48,6 +48,8 @@ struct DeviceCaps {
                                      // (GL >= 4.3; absent on the 4.1 path)
     bool timerQueries { false };     // insertTimestamp/timestampReady
                                      // (GL >= 3.3 timer queries)
+    bool volumeTextures { false };   // TextureDesc::depth > 1 (3D textures —
+                                     // GI voxel clipmap / radiance cascades)
 };
 
 // --- Buffers -------------------------------------------------------------------
@@ -106,6 +108,10 @@ struct TextureDesc {
     u32 width { 0 };
     u32 height { 0 };
     u32 arrayLayers { 1 }; // > 1 = texture array (splat layers, CSM cascades)
+    // > 1 = 3D VOLUME texture (Vulkan VK_IMAGE_TYPE_3D) — GI voxel clipmap
+    // and radiance cascades (chantier RC, G0). Exclusive with arrayLayers;
+    // GPU-written via storageImage, never uploaded; caps().volumeTextures.
+    u32 depth { 1 };
     u32 mipLevels { 1 };   // storage levels; fill base, then generateMipmaps()
     TextureFormat format { TextureFormat::RGBA8 };
     FilterMode filter { FilterMode::Nearest };
@@ -134,6 +140,7 @@ struct SamplerDesc {
     bool mipmapFilter { false }; // trilinear across mips when true
     AddressMode addressU { AddressMode::ClampToEdge };
     AddressMode addressV { AddressMode::ClampToEdge };
+    AddressMode addressW { AddressMode::ClampToEdge }; // 3D volumes (G0)
     CompareFunc compare { CompareFunc::Never }; // Never = regular sampler
     f32 maxAnisotropy { 1.0f };
 };

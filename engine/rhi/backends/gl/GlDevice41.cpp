@@ -55,8 +55,8 @@ TextureHandle GlDevice41::createTexture(const TextureDesc& desc,
     // 3D-path texture features are not implemented on the legacy backend
     // yet (future degraded mode); the 2D path only uses RGBA8/1-mip/1-layer.
     if (desc.format != TextureFormat::RGBA8 || desc.arrayLayers > 1 ||
-        desc.mipLevels > 1) {
-        LOG_ERROR("createTexture: only RGBA8, single-mip, single-layer "
+        desc.mipLevels > 1 || desc.depth > 1) {
+        LOG_ERROR("createTexture: only RGBA8, single-mip, single-layer 2D "
                   "textures are supported on the GL 4.1 backend");
         return {};
     }
