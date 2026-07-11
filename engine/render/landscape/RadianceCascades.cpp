@@ -1,0 +1,314 @@
+#include "engine/render/landscape/RadianceCascades.hpp"
+
+#include <glm/glm.hpp>
+
+#include "engine/core/Jobs.hpp"
+#include "engine/core/Log.hpp"
+#include "engine/render/ShaderLibrary.hpp"
+#include "engine/rhi/CommandBuffer.hpp"
+#include "engine/rhi/Device.hpp"
+
+namespace render {
+
+namespace {
+
+constexpr const char* kInjectShader = "rc_inject";
+constexpr const char* kDebugShader = "rc_debug";
+constexpr const char* kFullscreenVert = "fullscreen";
+
+// Flat proxy albedos per terrain material — GI only needs the broad hue
+// of what the light bounces off (the real splat tiles never leave the
+// terrain shader). Rough matches of the splat family averages.
+constexpr Vec3 kGrassAlbedo { 0.065f, 0.110f, 0.040f };
+constexpr Vec3 kRockAlbedo { 0.180f, 0.165f, 0.150f };
+constexpr Vec3 kSandAlbedo { 0.420f, 0.360f, 0.250f };
+constexpr Vec3 kSnowAlbedo { 0.620f, 0.660f, 0.720f };
+
+// The std140 mirror of the RcUbo block in rc_inject.comp / rc_debug.frag.
+struct RcUniforms {
+    Vec4 clipInfo[2]; // xyz = min-corner origin, w = voxel size
+    Vec4 tileInfo;    // xy = tile center XZ, z = 1/span, w = resolution
+    Vec4 misc;        // x = debug clip index, y = sky factor, zw free
+};
+
+} // namespace
+
+void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
+                              core::JobSystem& jobSystem) {
+    if (!device.caps().volumeTextures || !device.caps().computeShaders) {
+        LOG_WARN("RadianceCascades: volume textures / compute unavailable "
+                 "— GI disabled");
+        return;
+    }
+    jobs = &jobSystem;
+    baked = std::make_shared<core::ConcurrentQueue<BakedTile>>();
+
+    shaders.loadCompute(kInjectShader, { { "FrameUbo", 0 }, { "RcUbo", 2 } },
+                        { { "uShadowMap", 1 },
+                          { "uTerrainLight", 7 },
+                          { "uRcHeight", 8 },
+                          { "uRcAlbedo", 9 } });
+    shaders.load(kDebugShader, { { "FrameUbo", 0 }, { "RcUbo", 2 } },
+                 { { "uRcClipFine", 5 }, { "uRcClipCoarse", 6 } },
+                 kFullscreenVert);
+
+    tileSampler = { device, device.createSampler(
+        { .minFilter = rhi::FilterMode::Linear,
+          .magFilter = rhi::FilterMode::Linear }) };
+    volumeSampler = { device, device.createSampler(
+        { .minFilter = rhi::FilterMode::Linear,
+          .magFilter = rhi::FilterMode::Linear }) };
+
+    // heightTex/albedoTex are created WITH pixels at the first bake upload
+    // (pumpTileBake); the bind groups follow in createVolumes.
+
+    rcUbo = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Uniform, .size = sizeof(RcUniforms),
+          .dynamic = true }, nullptr) };
+
+    refreshPipelines(device, shaders);
+}
+
+void RadianceCascades::destroy(rhi::Device& device) {
+    (void)device; // Unique handles free through their device
+    debugPipeline.reset();
+    injectPipeline.reset();
+    debugGroup.reset();
+    injectGroup.reset();
+    rcUbo.reset();
+    clipCoarse.reset();
+    clipFine.reset();
+    albedoTex.reset();
+    heightTex.reset();
+    volumeSampler.reset();
+    tileSampler.reset();
+    baked.reset();
+    jobs = nullptr;
+    tileUploaded = false;
+    tileInFlight = false;
+    appliedResolution = 0;
+}
+
+void RadianceCascades::refreshPipelines(rhi::Device& device,
+                                        ShaderLibrary& shaders) {
+    if (!jobs) {
+        return; // create() bailed (no caps)
+    }
+    if (shaders.generation(kInjectShader) != injectGeneration) {
+        injectPipeline = { device, device.createComputePipeline(
+            { shaders.get(kInjectShader) }) };
+        injectGeneration = shaders.generation(kInjectShader);
+    }
+    if (shaders.generation(kDebugShader) != debugGeneration) {
+        debugPipeline = { device, device.createPipeline(
+            { .shader = shaders.get(kDebugShader),
+              .blend = rhi::BlendMode::Alpha,
+              .depth = { .testEnable = false, .writeEnable = false },
+              .cull = rhi::CullMode::None }) };
+        debugGeneration = shaders.generation(kDebugShader);
+    }
+}
+
+void RadianceCascades::createVolumes(rhi::Device& device) {
+    const u32 res = static_cast<u32>(glm::clamp(tuning.resolution, 16, 128));
+    clipFine = { device, device.createTexture(
+        { .width = res, .height = res, .depth = res,
+          .format = rhi::TextureFormat::RGBA16F,
+          .filter = rhi::FilterMode::Linear }, nullptr) };
+    clipCoarse = { device, device.createTexture(
+        { .width = res, .height = res, .depth = res,
+          .format = rhi::TextureFormat::RGBA16F,
+          .filter = rhi::FilterMode::Linear }, nullptr) };
+
+    injectGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 2, .buffer = rcUbo.get() },
+                       { .binding = 0, .texture = clipFine.get(),
+                         .storageImage = true },
+                       { .binding = 1, .texture = clipCoarse.get(),
+                         .storageImage = true },
+                       { .binding = 8, .texture = heightTex.get(),
+                         .sampler = tileSampler.get() },
+                       { .binding = 9, .texture = albedoTex.get(),
+                         .sampler = tileSampler.get() } } }) };
+    debugGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 2, .buffer = rcUbo.get() },
+                       { .binding = 5, .texture = clipFine.get(),
+                         .sampler = volumeSampler.get() },
+                       { .binding = 6, .texture = clipCoarse.get(),
+                         .sampler = volumeSampler.get() } } }) };
+
+    appliedResolution = tuning.resolution;
+    appliedFineVoxel = tuning.fineVoxel;
+    appliedCoarseVoxel = tuning.coarseVoxel;
+    // (A coarse-span change re-kicks the tile bake through pumpTileBake's
+    // own spanChanged check — the current tile keeps serving meanwhile.)
+}
+
+void RadianceCascades::pumpTileBake(rhi::Device& device,
+                                    const TerrainParams& params,
+                                    const Vec3& cameraPos) {
+    // Upload a finished bake. R16F accepts tightly packed f32 uploads (the
+    // GL converts) — plenty for terrain heights; textures are recreated
+    // with initial pixels (no updateTexture in the RHI), and the bind
+    // group is rebuilt below through the appliedResolution reset.
+    BakedTile tile;
+    while (baked->tryPop(tile)) {
+        if (tile.gen != tileGeneration) {
+            continue; // stale (params/knobs changed since the kick)
+        }
+        heightTex = { device, device.createTexture(
+            { .width = kTileSize, .height = kTileSize,
+              .format = rhi::TextureFormat::R16F },
+            tile.height.data()) };
+        albedoTex = { device, device.createTexture(
+            { .width = kTileSize, .height = kTileSize,
+              .format = rhi::TextureFormat::RGBA8 },
+            tile.albedo.data()) };
+        // The bind group references the OLD textures — rebuild it.
+        appliedResolution = 0; // forces createVolumes' group rebuild below
+        tileCenter = tile.center;
+        tileInFlight = false;
+        tileUploaded = true;
+    }
+
+    // Kick a re-bake when the camera strays from the tile center.
+    const f32 span =
+        static_cast<f32>(tuning.resolution) * tuning.coarseVoxel * 1.25f;
+    const Vec2 focus { cameraPos.x, cameraPos.z };
+    const bool spanChanged = glm::abs(span - tileSpan) > 0.01f;
+    if (!tileInFlight &&
+        (spanChanged ||
+         glm::distance(focus, tileCenter) > span * 0.10f)) {
+        tileSpan = span;
+        tileInFlight = true;
+        const u64 gen = ++tileGeneration;
+        auto queue = baked;
+        const TerrainParams paramsCopy = params;
+        jobs->enqueue([queue, paramsCopy, focus, span, gen] {
+            BakedTile out;
+            out.center = focus;
+            out.gen = gen;
+            out.height.resize(kTileSize * kTileSize);
+            out.albedo.resize(kTileSize * kTileSize * 4);
+            const f32 texel = span / static_cast<f32>(kTileSize);
+            for (u32 ty = 0; ty < kTileSize; ++ty) {
+                for (u32 tx = 0; tx < kTileSize; ++tx) {
+                    const f32 wx = focus.x +
+                                   (static_cast<f32>(tx) + 0.5f -
+                                    kTileSize * 0.5f) * texel;
+                    const f32 wz = focus.y +
+                                   (static_cast<f32>(ty) + 0.5f -
+                                    kTileSize * 0.5f) * texel;
+                    out.height[ty * kTileSize + tx] =
+                        terrain::height(paramsCopy, wx, wz);
+                }
+            }
+            for (u32 ty = 0; ty < kTileSize; ++ty) {
+                for (u32 tx = 0; tx < kTileSize; ++tx) {
+                    const u32 i = ty * kTileSize + tx;
+                    const f32 h = out.height[i];
+                    const u32 xn = tx > 0 ? i - 1 : i;
+                    const u32 xp = tx < kTileSize - 1 ? i + 1 : i;
+                    const u32 zn = ty > 0 ? i - kTileSize : i;
+                    const u32 zp = ty < kTileSize - 1 ? i + kTileSize : i;
+                    const Vec3 n = glm::normalize(
+                        Vec3 { -(out.height[xp] - out.height[xn]) /
+                                   (2.0f * texel),
+                               1.0f,
+                               -(out.height[zp] - out.height[zn]) /
+                                   (2.0f * texel) });
+                    const terrain::MaterialWeights w =
+                        terrain::materialWeights(paramsCopy, h, n);
+                    Vec3 albedo = kGrassAlbedo * w.grass +
+                                  kRockAlbedo * w.rock +
+                                  kSandAlbedo * w.sand +
+                                  kSnowAlbedo * w.snow;
+                    const f32 sum =
+                        glm::max(w.grass + w.rock + w.sand + w.snow, 1e-3f);
+                    albedo /= sum;
+                    out.albedo[i * 4 + 0] = static_cast<u8>(
+                        glm::clamp(albedo.x, 0.0f, 1.0f) * 255.0f);
+                    out.albedo[i * 4 + 1] = static_cast<u8>(
+                        glm::clamp(albedo.y, 0.0f, 1.0f) * 255.0f);
+                    out.albedo[i * 4 + 2] = static_cast<u8>(
+                        glm::clamp(albedo.z, 0.0f, 1.0f) * 255.0f);
+                    out.albedo[i * 4 + 3] = 255;
+                }
+            }
+            queue->push(std::move(out));
+        });
+    }
+}
+
+void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
+                              const TerrainParams& params,
+                              const Vec3& cameraPos,
+                              rhi::BindGroupHandle frameBindGroup,
+                              rhi::BindGroupHandle shadowBindGroup,
+                              rhi::BindGroupHandle terrainLightGroup,
+                              rhi::Device* probeDevice, GpuProbe* probe) {
+    if (!jobs || injectPipeline.id() == 0) {
+        return;
+    }
+    pumpTileBake(device, params, cameraPos);
+    if (!tileUploaded) {
+        return; // first bake still on the worker
+    }
+    if (appliedResolution != tuning.resolution ||
+        appliedFineVoxel != tuning.fineVoxel ||
+        appliedCoarseVoxel != tuning.coarseVoxel) {
+        createVolumes(device); // knob moved (or tile textures recreated)
+    }
+    ++frameCounter;
+    if (tuning.updateInterval > 1 &&
+        (frameCounter % static_cast<u32>(tuning.updateInterval)) != 0) {
+        return; // budget knob: hold last frame's volumes
+    }
+
+    const u32 res = static_cast<u32>(appliedResolution);
+    const auto snap = [&](f32 voxel) {
+        // Snap the clip origin to the voxel grid (stability under motion),
+        // centered on the camera.
+        const f32 half = static_cast<f32>(res) * voxel * 0.5f;
+        return Vec3 { std::floor((cameraPos.x - half) / voxel) * voxel,
+                      std::floor((cameraPos.y - half) / voxel) * voxel,
+                      std::floor((cameraPos.z - half) / voxel) * voxel };
+    };
+    RcUniforms uniforms;
+    const Vec3 fineOrigin = snap(appliedFineVoxel);
+    const Vec3 coarseOrigin = snap(appliedCoarseVoxel);
+    uniforms.clipInfo[0] = { fineOrigin, appliedFineVoxel };
+    uniforms.clipInfo[1] = { coarseOrigin, appliedCoarseVoxel };
+    uniforms.tileInfo = { tileCenter.x, tileCenter.y, 1.0f / tileSpan,
+                          static_cast<f32>(res) };
+    uniforms.misc = { static_cast<f32>(glm::max(tuning.debugView - 1, 0)),
+                      tuning.skyFactor, 0.0f, 0.0f };
+    device.updateBuffer(rcUbo, &uniforms, sizeof(uniforms), 0);
+
+    GpuProbe::Scope gpu { probe, probeDevice, "rcInject" };
+    cmd.setPipeline(injectPipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    if (shadowBindGroup.id != 0) {
+        cmd.setBindGroup(2, shadowBindGroup);
+    }
+    if (terrainLightGroup.id != 0) {
+        cmd.setBindGroup(4, terrainLightGroup);
+    }
+    cmd.setBindGroup(1, injectGroup);
+    cmd.dispatch((res + 3) / 4, (res + 3) / 4, (res * 2 + 3) / 4);
+    cmd.memoryBarrier(); // volumes visible to the samplers below
+}
+
+void RadianceCascades::drawDebug(rhi::CommandBuffer& cmd,
+                                 rhi::BindGroupHandle frameBindGroup) {
+    if (tuning.debugView == 0 || debugPipeline.id() == 0 ||
+        debugGroup.id() == 0 || !tileUploaded) {
+        return;
+    }
+    cmd.setPipeline(debugPipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    cmd.setBindGroup(1, debugGroup);
+    cmd.draw(3);
+}
+
+} // namespace render

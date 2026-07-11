@@ -1,0 +1,84 @@
+#version 460 core
+#include "common.glsl"
+
+// Radiance cascades G2 (docs/RADIANCE-CASCADES.md) — voxel clipmap
+// injection: one thread per voxel, both clips in one dispatch (z stacks
+// clip 0 then clip 1). Terrain surface comes from the worker-baked
+// height/albedo tile (patch/sculpt-aware — terrain::height ran on the
+// CPU); sun visibility from the CSM (the volumetric-march pattern) times
+// the terrain light map's far-field sun. Output: rgb = direct radiance
+// leaving the voxel, a = occupancy (solid below ground blocks intervals).
+
+layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
+#include "shadow.glsl"
+#include "terrainlight.glsl"
+
+layout(std140, binding = 2) uniform RcUbo {
+    vec4 uRcClipInfo[2]; // xyz = min-corner origin, w = voxel size
+    vec4 uRcTileInfo;    // xy = tile center XZ, z = 1/span,
+                         // w = CLIP resolution (voxels per axis)
+    vec4 uRcMisc;        // x = debug clip index, y = sky factor
+};
+
+layout(binding = 0, rgba16f) uniform writeonly image3D uClipFine;
+layout(binding = 1, rgba16f) uniform writeonly image3D uClipCoarse;
+layout(binding = 8) uniform sampler2D uRcHeight;
+layout(binding = 9) uniform sampler2D uRcAlbedo;
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+float tileHeight(vec2 worldXz) {
+    vec2 uv = (worldXz - uRcTileInfo.xy) * uRcTileInfo.z + 0.5;
+    return texture(uRcHeight, uv).r;
+}
+
+void main() {
+    const int res = int(uRcTileInfo.w);
+    const int clip = int(gl_GlobalInvocationID.z) / res;
+    const ivec3 voxel = ivec3(gl_GlobalInvocationID.x,
+                              gl_GlobalInvocationID.y,
+                              int(gl_GlobalInvocationID.z) - clip * res);
+    if (voxel.x >= res || voxel.y >= res || clip > 1) {
+        return;
+    }
+
+    const vec4 info = uRcClipInfo[clip];
+    const float voxelSize = info.w;
+    const vec3 world = info.xyz + (vec3(voxel) + 0.5) * voxelSize;
+
+    const float h = tileHeight(world.xz);
+    vec4 result = vec4(0.0);
+    const float halfVoxel = voxelSize * 0.5;
+    if (world.y < h - halfVoxel) {
+        // Solid underground: pure occluder (blocks downward intervals).
+        result = vec4(0.0, 0.0, 0.0, 1.0);
+    } else if (abs(world.y - h) <= halfVoxel + voxelSize * 0.25) {
+        // Surface voxel: lit albedo. Normal from the height tile.
+        const float texel = 1.0 / uRcTileInfo.z / 256.0; // span / kTileSize
+        const float hx = tileHeight(world.xz + vec2(texel, 0.0)) -
+                         tileHeight(world.xz - vec2(texel, 0.0));
+        const float hz = tileHeight(world.xz + vec2(0.0, texel)) -
+                         tileHeight(world.xz - vec2(0.0, texel));
+        const vec3 n =
+            normalize(vec3(-hx / (2.0 * texel), 1.0, -hz / (2.0 * texel)));
+
+        vec2 uv = (world.xz - uRcTileInfo.xy) * uRcTileInfo.z + 0.5;
+        const vec3 albedo = texture(uRcAlbedo, uv).rgb;
+
+        // Sun: CSM (offset off the surface against acne) x the terrain
+        // light map's long-range shadow; sky: ambient x openness. (Cloud
+        // shadows deliberately skipped — too soft to matter in indirect.)
+        const float ndl = max(dot(n, uSunDirection.xyz), 0.0);
+        const float sun = shadowFactor(world + n * voxelSize, n);
+        const vec2 tl = terrainLightFactors(world);
+        const vec3 direct = uSunColor.rgb * (ndl * sun * tl.x) +
+                            uAmbientColor.rgb * (uRcMisc.y * tl.y);
+        result = vec4(albedo * direct, 1.0);
+    }
+
+    if (clip == 0) {
+        imageStore(uClipFine, voxel, result);
+    } else {
+        imageStore(uClipCoarse, voxel, result);
+    }
+}

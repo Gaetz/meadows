@@ -116,6 +116,7 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
     terrain.create(device, *shaders, jobs);
     occlusion.create(jobs);
     terrainLightMap.create(device, jobs); // 33b/c
+    radianceCascades.create(device, *shaders, jobs); // chantier RC
     grass.create(device, *shaders, jobs);
     vegetation.create(device, *shaders, jobs,
                       terrain.params.seed);
@@ -298,6 +299,7 @@ void LandscapeRenderer::destroy(rhi::Device& device) {
     whiteTexture.reset();
     gpuOcclusion.destroy(device);
     terrainLightMap.destroy(device); // 33b/c
+    radianceCascades.destroy(device); // chantier RC
     postFx.destroy(device);
     water.destroy(device);
     reflectionBindGroup.reset();
@@ -1045,6 +1047,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     }
     postFx.refreshPipelines(frame.device, *shaders);
     gpuOcclusion.refreshPipelines(frame.device, *shaders);
+    radianceCascades.refreshPipelines(frame.device, *shaders);
     terrain.setWireframe(wireframeUi, frame.device, *shaders);
     if (regenerateRequested) {
         regenerateRequested = false;
@@ -1389,6 +1392,18 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
     }
 
+    // Chantier RC (G2): re-inject the GI voxel clipmap — after the CSM
+    // passes (the inject samples fresh shadow maps), outside any render
+    // pass (compute). Exterior only: the injection is terrain-fed (the
+    // interior story arrives with the props brick, G3).
+    if (!view.interiorMode) {
+        radianceCascades.update(frame.device, frame.cmd, terrain.params,
+                                camera.position, frameBindGroup,
+                                shadows.receiverBindGroup(),
+                                terrainLightMap.bindGroup(), &frame.device,
+                                &gpuProbe);
+    }
+
     const bool useOffscreen = frame.device.caps().offscreenTargets;
     if (useOffscreen) {
         ensureOffscreenTarget(frame.device, frame.width, frame.height);
@@ -1631,6 +1646,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         // B4: the side the adaptation pass just wrote.
         frame.cmd.setBindGroup(1, blitBindGroups[postFx.exposureSide()]);
         frame.cmd.draw(3);
+        // Chantier RC: debug raymarch of a clip volume over the frame.
+        radianceCascades.drawDebug(frame.cmd, frameBindGroup);
         // Chantier 4: the game UI composes over the tonemapped scene,
         // under the dev ImGui layer.
         if (view.gameUi) {
@@ -1807,6 +1824,41 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
         if (scatterEdited || ImGui::Button("Rescatter now")) {
             grassRescatterRequested = true;
+        }
+    }
+    // Chantier RC: every cost-affecting GI parameter is a live knob (dev
+    // workflow: quality first, HE does the perf descent here, watching
+    // the rcInject/rcBuild lines of the F6 table).
+    if (ImGui::CollapsingHeader("Global illumination")) {
+        render::RcTuning& rc = radianceCascades.tuning;
+        int technique = rc.technique == render::GiTechnique::RadianceCascades
+                            ? 1 : 0;
+        if (ImGui::Combo("Technique", &technique,
+                         "Classic (ambient x light map)\0"
+                         "Radiance cascades (WIP)\0")) {
+            rc.technique = technique == 1
+                               ? render::GiTechnique::RadianceCascades
+                               : render::GiTechnique::Classic;
+        }
+        ImGui::SeparatorText("Voxel clipmap");
+        ImGui::SliderInt("Resolution (voxels)", &rc.resolution, 32, 96);
+        ImGui::SliderFloat("Fine voxel (m)", &rc.fineVoxel, 0.25f, 1.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Coarse voxel (m)", &rc.coarseVoxel, 1.0f, 4.0f,
+                           "%.1f");
+        ImGui::SliderInt("Update every N frames", &rc.updateInterval, 1, 4);
+        ImGui::SeparatorText("Injection");
+        ImGui::SliderFloat("Sky factor", &rc.skyFactor, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Intensity (apply, G6)", &rc.intensity, 0.0f,
+                           2.0f, "%.2f");
+        ImGui::Combo("Debug view", &rc.debugView,
+                     "Off\0Fine clip (raymarch)\0Coarse clip (raymarch)\0");
+        // The GPU cost lines, in place (the full table stays on F6).
+        for (const auto& row : gpuProbe.rows()) {
+            if (row.name && str(row.name).rfind("rc", 0) == 0) {
+                ImGui::TextDisabled("%s: %.2f ms (max %.2f)", row.name,
+                                    row.stats.averageMs, row.stats.maxMs);
+            }
         }
     }
     if (ImGui::CollapsingHeader("Lighting & shadows")) {

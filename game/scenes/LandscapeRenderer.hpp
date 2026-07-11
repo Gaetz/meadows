@@ -10,6 +10,7 @@
 #include "engine/render/landscape/GpuOcclusion.hpp"
 #include "engine/render/landscape/GrassSystem.hpp"
 #include "engine/render/landscape/PostFx.hpp"
+#include "engine/render/landscape/RadianceCascades.hpp"
 #include "engine/render/landscape/ShadowMapper.hpp"
 #include "engine/render/landscape/SkySystem.hpp"
 #include "engine/render/landscape/TerrainLightMap.hpp"
@@ -191,6 +192,9 @@ private:
     // Brick 33b/c: worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;
     bool terrainLightUi { true };
+    // Chantier RC (docs/RADIANCE-CASCADES.md): the GI voxel clipmap +
+    // cascades; its tuning is the render panel's "Global illumination".
+    render::RadianceCascades radianceCascades;
     bool regenerateRequested { false };
     // Grass panel: a scatter knob moved — grass-only re-scatter next frame.
     bool grassRescatterRequested { false };
