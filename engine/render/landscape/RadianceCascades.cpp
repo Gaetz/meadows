@@ -40,7 +40,10 @@ struct RcUniforms {
     Vec4 misc2; // APPENDED (adaptive ramp): x = band count,
                 // y = contrast floor (log2 stops), z = adapt speed,
                 // w = dim-band level
-    Vec4 misc3; // APPENDED: x = light emitter boost (blob radiance)
+    Vec4 misc3; // APPENDED: x = light emitter boost (blob radiance),
+                // y = bounce feedback (0 = single bounce / no prev)
+    Vec4 prevGrid; // APPENDED (G7a): xyz = LAST inject's fine origin,
+                   // w = its probe spacing — where uRcPrev's content is
 };
 
 // std140 mirror of RcCascadeUbo (rc_build.comp / rc_merge.comp).
@@ -66,7 +69,8 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
                         { { "uShadowMap", 1 },
                           { "uTerrainLight", 7 },
                           { "uRcHeight", 8 },
-                          { "uRcAlbedo", 9 } });
+                          { "uRcAlbedo", 9 },
+                          { "uRcPrev", 10 } });
     shaders.loadCompute(kBuildShader,
                         { { "FrameUbo", 0 }, { "RcUbo", 2 },
                           { "RcCascadeUbo", 4 } },
@@ -204,18 +208,6 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
           .format = rhi::TextureFormat::RGBA16F,
           .filter = rhi::FilterMode::Linear }, nullptr) };
 
-    injectGroup = { device, device.createBindGroup(
-        { .entries = { { .binding = 2, .buffer = rcUbo.get() },
-                       { .binding = 3, .buffer = boxBuffer.get(),
-                         .storage = true },
-                       { .binding = 0, .texture = clipFine.get(),
-                         .storageImage = true },
-                       { .binding = 1, .texture = clipCoarse.get(),
-                         .storageImage = true },
-                       { .binding = 8, .texture = heightTex.get(),
-                         .sampler = tileSampler.get() },
-                       { .binding = 9, .texture = albedoTex.get(),
-                         .sampler = tileSampler.get() } } }) };
     // --- Cascade levels (G4/G5) ------------------------------------------
     // Count clamped so the top level keeps >= 2 probes per axis, and the
     // dir-major cascade 0 stays under common GL_MAX_3D_TEXTURE_SIZE.
@@ -270,6 +262,24 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
                              .sampler = volumeSampler.get() } } }) };
     }
     appliedCascadeCount = tuning.cascadeCount;
+
+    // The injection — after the levels: uRcPrev (binding 10) is LAST
+    // frame's merged cascade 0, the multi-bounce feedback (G7a).
+    injectGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 2, .buffer = rcUbo.get() },
+                       { .binding = 3, .buffer = boxBuffer.get(),
+                         .storage = true },
+                       { .binding = 0, .texture = clipFine.get(),
+                         .storageImage = true },
+                       { .binding = 1, .texture = clipCoarse.get(),
+                         .storageImage = true },
+                       { .binding = 8, .texture = heightTex.get(),
+                         .sampler = tileSampler.get() },
+                       { .binding = 9, .texture = albedoTex.get(),
+                         .sampler = tileSampler.get() },
+                       { .binding = 10, .texture = levels[0].texture.get(),
+                         .sampler = volumeSampler.get() } } }) };
+    havePrev = false; // fresh cascade textures hold garbage until merged
 
     debugGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 2, .buffer = rcUbo.get() },
@@ -488,8 +498,12 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
                        glm::max(tuning.contrastFloor, 0.1f),
                        glm::clamp(tuning.adaptSpeed, 0.005f, 1.0f),
                        glm::clamp(tuning.dimBand, 0.05f, 3.0f) };
-    uniforms.misc3 = { glm::max(tuning.emitterBoost, 0.0f), 0.0f, 0.0f,
-                       0.0f };
+    uniforms.misc3 = { glm::max(tuning.emitterBoost, 0.0f),
+                       havePrev ? glm::clamp(tuning.bounceFeedback, 0.0f,
+                                             0.95f)
+                                : 0.0f,
+                       0.0f, 0.0f };
+    uniforms.prevGrid = { prevFineOrigin, prevFineSpacing };
     for (u32 i = 0; i < lightCount; ++i) {
         uniforms.lightPosRadius[i] = lights[i].positionRadius;
         uniforms.lightColor[i] = lights[i].color;
@@ -578,6 +592,12 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
         cmd.dispatch(1, 1, 1);
         cmd.memoryBarrier(); // stats visible to the surface shaders
     }
+
+    // G7a: the merged cascade 0 now holds THIS inject's world — next
+    // frame's injection may feed it back as the extra bounce.
+    prevFineOrigin = lastFineOrigin;
+    prevFineSpacing = appliedFineVoxel;
+    havePrev = true;
 }
 
 void RadianceCascades::drawDebug(rhi::CommandBuffer& cmd,

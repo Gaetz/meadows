@@ -43,9 +43,10 @@ struct RcTuning {
     i32 cascadeCount { 5 };   // levels (clamped so the top keeps ≥2 probes)
     // Live:
     GiTechnique technique { GiTechnique::Classic }; // apply switch (G6)
-    f32 intensity { 0.7f };   // indirect strength at apply (dev feedback:
-                              // 1.0 read too strong vs the direct light)
-    f32 skyFactor { 0.5f };   // sky ambient folded into injected surfaces
+    f32 intensity { 1.0f };   // indirect strength at apply (dev pick
+                              // 2026-07-11, G7 baseline)
+    f32 skyFactor { 1.0f };   // sky ambient folded into injected surfaces
+                              // (dev pick 2026-07-11, G7 baseline)
     f32 interval0 { 1.0f };   // cascade-0 interval length (m); reach =
                               // interval0 × (2^count − 1)
     f32 edgeFade { 8.0f };    // meters of blend back to Classic at the
@@ -63,6 +64,14 @@ struct RcTuning {
     f32 emitterBoost { 1.0f };  // radiance of the light-source blobs in
                                 // the field (0 = surfaces-only, the old
                                 // behavior)
+    // G7a — multi-bounce: surfaces also receive LAST frame's merged GI
+    // (one extra bounce per frame, converges geometrically; adds ~a
+    // frame of light latency per bounce). 0 = single bounce.
+    f32 bounceFeedback { 0.5f };
+    // G7b — the penumbra experiment: local lights removed from the
+    // DIRECT path (locallights.glsl sees none), living only in the GI —
+    // their shadows/penumbras come from the cascades, voxel-resolution.
+    bool rcOnlyLights { false };
     i32 updateInterval { 1 }; // inject every N frames (1 = every frame)
     i32 debugView { 0 };      // 0 off, 1 fine clip, 2 coarse clip,
                               // 3 merged cascade-0 irradiance
@@ -213,6 +222,11 @@ private:
     Vec3 lastFineOrigin { 0.0f };     // this frame's grid origin (prepare)
     Vec3 lastCoarseOrigin { 0.0f };
     bool injectThisFrame { true };    // prepare()'s updateInterval verdict
+    // G7a: where LAST inject's merged cascade 0 lives (bounce feedback);
+    // false until one full inject+merge exists (fresh textures = garbage).
+    Vec3 prevFineOrigin { 0.0f };
+    f32 prevFineSpacing { 0.0f };
+    bool havePrev { false };
 
     // Applied structural knobs (recreate when the tuning diverges).
     i32 appliedResolution { 0 };

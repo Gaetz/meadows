@@ -1283,7 +1283,17 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     {
         LightsUniforms lights;
         const vector<SceneLight>& nearest = snapshot.lights; // U4-2a
-        lights.count.x = static_cast<f32>(nearest.size());
+        // G7b — the penumbra experiment: with "lights via RC only", the
+        // DIRECT contribution is cut (count 0 -> localLights() adds
+        // nothing) and the lights exist purely in the GI volume: their
+        // occlusion and penumbras come from the cascades, at voxel
+        // resolution. Only meaningful while the RC technique is active.
+        const bool rcOnly =
+            radianceCascades.tuning.rcOnlyLights &&
+            radianceCascades.tuning.technique ==
+                render::GiTechnique::RadianceCascades;
+        lights.count.x = rcOnly ? 0.0f
+                                : static_cast<f32>(nearest.size());
         for (u32 i = 0; i < nearest.size(); ++i) {
             const SceneLight& light = nearest[i];
             f32 intensity = light.intensity;
@@ -1972,6 +1982,11 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::SliderFloat("Sky factor", &rc.skyFactor, 0.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Light emitter boost", &rc.emitterBoost, 0.0f,
                            4.0f, "%.2f");
+        // G7a/G7b.
+        ImGui::SliderFloat("Bounce feedback", &rc.bounceFeedback, 0.0f,
+                           0.9f, "%.2f");
+        ImGui::Checkbox("Lights via RC only (penumbra experiment)",
+                        &rc.rcOnlyLights);
         ImGui::SeparatorText("Apply");
         ImGui::SliderFloat("Intensity", &rc.intensity, 0.0f, 2.0f, "%.2f");
         ImGui::SliderFloat("Edge fade (m)", &rc.edgeFade, 1.0f, 16.0f,

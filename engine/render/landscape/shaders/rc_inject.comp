@@ -12,6 +12,7 @@
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
 #include "terrainlight.glsl"
+#include "rc_common.glsl"
 
 layout(std140, binding = 2) uniform RcUbo {
     vec4 uRcClipInfo[2]; // xyz = min-corner origin, w = voxel size
@@ -22,7 +23,10 @@ layout(std140, binding = 2) uniform RcUbo {
     vec4 uRcLightPosRadius[16]; // G3: local lights (xyz, w = radius)
     vec4 uRcLightColor[16];     // rgb premultiplied by intensity
     vec4 uRcMisc2; // adaptive ramp (rc_adapt.comp)
-    vec4 uRcMisc3; // x = light emitter boost (the blob's radiance scale)
+    vec4 uRcMisc3; // x = light emitter boost (the blob's radiance scale),
+                   // y = bounce feedback (0 = single bounce)
+    vec4 uRcPrevGrid; // G7a: xyz = LAST inject's fine-grid origin,
+                      // w = its probe spacing (uRcPrev's frame of ref)
 };
 
 // G3: props/kits/NPCs as AABBs — two vec4 bounds + albedo/emissive.
@@ -34,12 +38,41 @@ layout(binding = 0, rgba16f) uniform writeonly image3D uClipFine;
 layout(binding = 1, rgba16f) uniform writeonly image3D uClipCoarse;
 layout(binding = 8) uniform sampler2D uRcHeight;
 layout(binding = 9) uniform sampler2D uRcAlbedo;
+layout(binding = 10) uniform sampler3D uRcPrev; // LAST merged cascade 0
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 float tileHeight(vec2 worldXz) {
     vec2 uv = (worldXz - uRcTileInfo.xy) * uRcTileInfo.z + 0.5;
     return texture(uRcHeight, uv).r;
+}
+
+// G7a multi-bounce: LAST frame's merged GI arriving at this surface —
+// the same 8-slab cosine gather as gi.glsl, over uRcPrev's grid.
+vec3 prevBounce(vec3 world, vec3 n) {
+    float res = uRcTileInfo.w;
+    float spacing = uRcPrevGrid.w;
+    if (spacing <= 0.0) {
+        return vec3(0.0);
+    }
+    float span = res * spacing;
+    vec3 uvw = (world + n * spacing - uRcPrevGrid.xyz) / span;
+    if (any(lessThan(uvw, vec3(0.01))) ||
+        any(greaterThan(uvw, vec3(0.99)))) {
+        return vec3(0.0);
+    }
+    float zProbe = clamp(uvw.z * res, 0.5, res - 0.5);
+    vec2 uvXY = clamp(uvw.xy, vec2(0.5 / res), vec2(1.0 - 0.5 / res));
+    vec3 sum = vec3(0.0);
+    float weightSum = 0.0;
+    for (int d = 0; d < 8; ++d) {
+        vec3 dir = rcOctDecode(vec2(d % 4, d / 4), vec2(4.0, 2.0));
+        float w = max(dot(n, dir), 0.0) + 0.05;
+        float z = (zProbe + float(d) * res) / (res * 8.0);
+        sum += w * texture(uRcPrev, vec3(uvXY, z)).rgb;
+        weightSum += w;
+    }
+    return sum / max(weightSum, 1e-3);
 }
 
 void main() {
@@ -131,6 +164,11 @@ void main() {
             const vec2 tl = terrainLightFactors(world);
             radiance += albedo * (uSunColor.rgb * (ndl * sun * tl.x) +
                                   uAmbientColor.rgb * (uRcMisc.y * tl.y));
+            // G7a: last frame's GI bounces once more off this surface.
+            if (uRcMisc3.y > 0.0) {
+                radiance += albedo * prevBounce(world, normal) *
+                            uRcMisc3.y;
+            }
             // Local lights (torches, spells) — SAME windowed inverse-
             // square as locallights.glsl (dev feedback 2026-07-11: the
             // fatter quadratic splat made the bounce read too strong
