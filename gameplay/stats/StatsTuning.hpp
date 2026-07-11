@@ -107,6 +107,12 @@ struct StatsTuningForm : data::Form {
     // Chantier P0 B3 (appended): entering Alert shouts — same-faction
     // allies within this radius of the caller join the hunt.
     f32 helpCallRadius { 20.0f };
+    // Perfect parry (appended, dev design 2026-07-11): a guard raised at
+    // most `window` seconds before the hit negates it entirely and costs
+    // the ATTACKER `posture` poise (through applyDamage — stagger =
+    // riposte opening).
+    f32 perfectParryWindow { 0.2f };
+    f32 perfectParryPosture { 10.0f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -173,6 +179,8 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(blockSpeedFactor)
         REFLECT_FIELD(npcBlockChance)
         REFLECT_FIELD(helpCallRadius)
+        REFLECT_FIELD(perfectParryWindow)
+        REFLECT_FIELD(perfectParryPosture)
     REFLECT_END()
 };
 

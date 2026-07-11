@@ -167,16 +167,34 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
         event.critical = block.system.tags.has(*weakness);
     }
     // A5: a guarding NPC catches front-cone hits — damage shrinks, the
-    // blocked amount runs the guard's POSTURE down instead.
+    // blocked amount runs the guard's POSTURE down instead. A guard
+    // raised inside the perfect window parries CLEAN and the PLAYER'S
+    // poise pays for the read attack.
     if (const auto blockTag = ctx.gameTags.find("State.Blocking");
         blockTag && block.system.tags.has(*blockTag)) {
         const auto& targetT = target.entity.get<world::Transform>();
         const Vec3 facing = targetT.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
-        if (gameplay::applyBlock(event, facing, targetT.position,
-                                 body_->position(),
-                                 ctx.statsTuning.blockAngleDegrees,
-                                 ctx.statsTuning.blockFactor,
-                                 ctx.statsTuning.blockPostureFactor)) {
+        const gameplay::BlockResult guard = gameplay::applyBlock(
+            event, facing, targetT.position, body_->position(),
+            ctx.statsTuning.blockAngleDegrees, ctx.statsTuning.blockFactor,
+            ctx.statsTuning.blockPostureFactor,
+            target.entity.get<gameplay::MeleeSwing>().guardSeconds,
+            ctx.statsTuning.perfectParryWindow);
+        if (guard.perfect) {
+            gameplay::StatBlock attacker {
+                ctx.playerEntity.get_mut<gameplay::CoreAttributes>(),
+                ctx.playerEntity.get_mut<gameplay::AttributeSet>(),
+                ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
+                ctx.playerEntity.get_mut<gameplay::CombatState>()
+            };
+            gameplay::DamageEvent parry;
+            parry.postureAmount = ctx.statsTuning.perfectParryPosture;
+            gameplay::applyDamage(attacker, parry, ctx.gameTags,
+                                  ctx.derivedStats, nullptr,
+                                  ctx.statsTuning);
+            LOG_INFO("PERFECT PARRY — your poise takes {}",
+                     ctx.statsTuning.perfectParryPosture);
+        } else if (guard.caught) {
             LOG_INFO("Blocked!");
         }
     }
@@ -242,11 +260,12 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     bool blocking = false;
     if (ctx.playerEntity.is_alive()) {
         auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
-        const bool swingIdle =
-            ctx.playerEntity.get<gameplay::MeleeSwing>().phase ==
-            gameplay::SwingPhase::Idle;
+        auto& swing = ctx.playerEntity.get_mut<gameplay::MeleeSwing>();
         blocking = input.mouseDown(platform::MouseButton::Right) &&
-                   swingIdle;
+                   swing.phase == gameplay::SwingPhase::Idle;
+        // The guard clock: a hit landing inside the fresh window is a
+        // PERFECT parry (applyBlock reads guardSeconds).
+        gameplay::tickGuard(swing, blocking, dt);
         if (const auto tag = ctx.gameTags.find("State.Blocking")) {
             const bool tagged = system.tags.has(*tag);
             if (blocking && !tagged) {

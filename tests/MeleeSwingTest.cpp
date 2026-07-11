@@ -166,7 +166,8 @@ TEST_CASE("a raised guard catches front-cone hits and reroutes them to "
     // Straight ahead: caught. Channels x0.3, posture gains 14x0.7x0.6.
     gameplay::DamageEvent front = freshEvent();
     CHECK(gameplay::applyBlock(front, facing, defender,
-                               { 0.0f, 0.0f, 3.0f }, 120.0f, 0.7f, 0.6f));
+                               { 0.0f, 0.0f, 3.0f }, 120.0f, 0.7f, 0.6f)
+              .caught);
     CHECK(front.channels[0].amount == doctest::Approx(3.0f));
     CHECK(front.channels[1].amount == doctest::Approx(1.2f));
     CHECK(front.postureAmount == doctest::Approx(5.0f + 9.8f * 0.6f));
@@ -174,34 +175,89 @@ TEST_CASE("a raised guard catches front-cone hits and reroutes them to "
     // 50 degrees off-axis is still inside the 120-degree cone...
     gameplay::DamageEvent inside = freshEvent();
     CHECK(gameplay::applyBlock(
-        inside, facing, defender,
-        { 3.0f * std::sin(glm::radians(50.0f)), 0.0f,
-          3.0f * std::cos(glm::radians(50.0f)) },
-        120.0f, 0.7f, 0.6f));
+              inside, facing, defender,
+              { 3.0f * std::sin(glm::radians(50.0f)), 0.0f,
+                3.0f * std::cos(glm::radians(50.0f)) },
+              120.0f, 0.7f, 0.6f)
+              .caught);
 
     // ...70 degrees is not: the event passes through untouched.
     gameplay::DamageEvent outside = freshEvent();
     CHECK(!gameplay::applyBlock(
-        outside, facing, defender,
-        { 3.0f * std::sin(glm::radians(70.0f)), 0.0f,
-          3.0f * std::cos(glm::radians(70.0f)) },
-        120.0f, 0.7f, 0.6f));
+               outside, facing, defender,
+               { 3.0f * std::sin(glm::radians(70.0f)), 0.0f,
+                 3.0f * std::cos(glm::radians(70.0f)) },
+               120.0f, 0.7f, 0.6f)
+               .caught);
     CHECK(outside.channels[0].amount == doctest::Approx(10.0f));
     CHECK(outside.postureAmount == doctest::Approx(5.0f));
 
     // From behind: never caught.
     gameplay::DamageEvent behind = freshEvent();
     CHECK(!gameplay::applyBlock(behind, facing, defender,
-                                { 0.0f, 0.0f, -3.0f }, 120.0f, 0.7f, 0.6f));
+                                { 0.0f, 0.0f, -3.0f }, 120.0f, 0.7f, 0.6f)
+               .caught);
 
     // The attacker's HEIGHT is irrelevant (horizontal cone): a hit from
     // above-front is still caught.
     gameplay::DamageEvent above = freshEvent();
     CHECK(gameplay::applyBlock(above, facing, defender,
-                               { 0.0f, 2.0f, 3.0f }, 120.0f, 0.7f, 0.6f));
+                               { 0.0f, 2.0f, 3.0f }, 120.0f, 0.7f, 0.6f)
+              .caught);
 
     // Point-blank counts as in front.
     gameplay::DamageEvent contact = freshEvent();
     CHECK(gameplay::applyBlock(contact, facing, defender, defender, 120.0f,
-                               0.7f, 0.6f));
+                               0.7f, 0.6f)
+              .caught);
+}
+
+TEST_CASE("a FRESH guard perfect-parries: nothing through, and the guard "
+          "clock decides") {
+    const Vec3 facing { 0.0f, 0.0f, 1.0f };
+    const Vec3 defender { 0.0f, 0.0f, 0.0f };
+    const Vec3 attacker { 0.0f, 0.0f, 2.0f };
+    const auto freshEvent = [] {
+        gameplay::DamageEvent event;
+        event.channels = { { gameplay::DamageType::Blunt, 8.0f } };
+        event.postureAmount = 25.0f; // the weapon's own posture damage
+        return event;
+    };
+
+    // Guard raised 0.1 s ago, window 0.2: PERFECT — channels AND the
+    // weapon's posture damage both zeroed (the defender takes nothing).
+    gameplay::DamageEvent parried = freshEvent();
+    const gameplay::BlockResult perfect = gameplay::applyBlock(
+        parried, facing, defender, attacker, 120.0f, 0.7f, 0.6f, 0.1f,
+        0.2f);
+    CHECK(perfect.caught);
+    CHECK(perfect.perfect);
+    CHECK(parried.channels[0].amount == doctest::Approx(0.0f));
+    CHECK(parried.postureAmount == doctest::Approx(0.0f));
+
+    // A guard held too long is an ordinary block.
+    gameplay::DamageEvent held = freshEvent();
+    const gameplay::BlockResult ordinary = gameplay::applyBlock(
+        held, facing, defender, attacker, 120.0f, 0.7f, 0.6f, 1.5f, 0.2f);
+    CHECK(ordinary.caught);
+    CHECK(!ordinary.perfect);
+    CHECK(held.channels[0].amount == doctest::Approx(2.4f));
+
+    // A fresh guard facing the WRONG way parries nothing.
+    gameplay::DamageEvent behind = freshEvent();
+    CHECK(!gameplay::applyBlock(behind, facing, defender,
+                                { 0.0f, 0.0f, -2.0f }, 120.0f, 0.7f, 0.6f,
+                                0.1f, 0.2f)
+               .caught);
+
+    // The guard clock: down -> raised opens at 0 and ages; dropping
+    // resets to -1 (the sentinel applyBlock reads as "no guard").
+    gameplay::MeleeSwing swing;
+    CHECK(swing.guardSeconds == doctest::Approx(-1.0f));
+    gameplay::tickGuard(swing, true, 0.5f); // raised THIS frame
+    CHECK(swing.guardSeconds == doctest::Approx(0.0f));
+    gameplay::tickGuard(swing, true, 0.16f);
+    CHECK(swing.guardSeconds == doctest::Approx(0.16f));
+    gameplay::tickGuard(swing, false, 0.16f);
+    CHECK(swing.guardSeconds == doctest::Approx(-1.0f));
 }

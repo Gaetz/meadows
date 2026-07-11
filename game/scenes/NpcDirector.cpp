@@ -58,6 +58,14 @@ namespace {
 const Mat4 kSwordGrip = glm::rotate(
     Mat4 { 1.0f }, glm::radians(90.0f), Vec3 { 1.0f, 0.0f, 0.0f });
 
+// A5+ [cpp-tuning] — the raised-guard grip (dev design: the hand turns
+// a little INWARD so the blade lies oblique across the front). An extra
+// roll about the fist axis on top of kSwordGrip; drawn while
+// npc.blocking (the hit test never runs during a guard).
+const Mat4 kSwordGuardGrip =
+    kSwordGrip * glm::rotate(Mat4 { 1.0f }, glm::radians(-40.0f),
+                             Vec3 { 0.0f, 0.0f, 1.0f });
+
 } // namespace
 
 const RigData* NpcDirector::loadRig(const NpcContext& ctx,
@@ -800,8 +808,11 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                         gameplay::weaponDamageEvent(*ctx.banditWeapon,
                                                     npcSys);
                     // A5: the player's raised guard catches front-cone
-                    // hits — reduced damage, posture takes the rest.
-                    bool guarded = false;
+                    // hits — reduced damage, posture takes the rest. A
+                    // guard raised inside the perfect window parries
+                    // CLEAN and the BANDIT'S poise pays (riposte window
+                    // when the stagger lands).
+                    gameplay::BlockResult guarded;
                     if (const auto blockTag =
                             ctx.gameTags.find("State.Blocking");
                         blockTag && block.system.tags.has(*blockTag)) {
@@ -814,20 +825,51 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                             transform.position,
                             ctx.statsTuning.blockAngleDegrees,
                             ctx.statsTuning.blockFactor,
-                            ctx.statsTuning.blockPostureFactor);
+                            ctx.statsTuning.blockPostureFactor,
+                            ctx.playerEntity.get<gameplay::MeleeSwing>()
+                                .guardSeconds,
+                            ctx.statsTuning.perfectParryWindow);
                     }
-                    const gameplay::DamageResult result =
-                        gameplay::applyDamage(block, event, ctx.gameTags,
-                                              ctx.derivedStats, nullptr,
-                                              ctx.statsTuning);
-                    LOG_INFO("Bandit's blade lands: {:.0f} damage{}{}",
-                             result.healthDamage,
-                             guarded ? " (blocked)" : "",
-                             result.staggered ? " (staggered!)" : "");
+                    if (guarded.perfect) {
+                        gameplay::StatBlock attacker {
+                            npc.entity
+                                .get_mut<gameplay::CoreAttributes>(),
+                            npc.entity.get_mut<gameplay::AttributeSet>(),
+                            npc.entity.get_mut<gameplay::AbilitySystem>(),
+                            npc.entity.get_mut<gameplay::CombatState>()
+                        };
+                        gameplay::DamageEvent parry;
+                        parry.postureAmount =
+                            ctx.statsTuning.perfectParryPosture;
+                        const gameplay::DamageResult riposte =
+                            gameplay::applyDamage(attacker, parry,
+                                                  ctx.gameTags,
+                                                  ctx.derivedStats,
+                                                  nullptr,
+                                                  ctx.statsTuning);
+                        LOG_INFO("PERFECT PARRY — bandit poise -{}{}",
+                                 ctx.statsTuning.perfectParryPosture,
+                                 riposte.staggered ? " (STAGGERED!)"
+                                                   : "");
+                    } else {
+                        const gameplay::DamageResult result =
+                            gameplay::applyDamage(block, event,
+                                                  ctx.gameTags,
+                                                  ctx.derivedStats,
+                                                  nullptr,
+                                                  ctx.statsTuning);
+                        LOG_INFO("Bandit's blade lands: {:.0f} damage{}{}",
+                                 result.healthDamage,
+                                 guarded.caught ? " (blocked)" : "",
+                                 result.staggered ? " (staggered!)" : "");
+                    }
                 }
             }
         }
         npc.attacking = swing.phase != gameplay::SwingPhase::Idle;
+        // A5+: the guard clock — a player hit landing while this guard
+        // is FRESH gets perfect-parried (applyHit reads guardSeconds).
+        gameplay::tickGuard(swing, npc.blocking, dt);
         // A5: mirror the guard onto the §6 tag vocabulary — the damage
         // paths (player applyHit, future sources) read State.Blocking,
         // never the Npc struct.
@@ -870,14 +912,15 @@ void NpcDirector::extract(RenderSnapshot& out) const {
                                 npc.palette });
         // Chantier P0 A2: hostiles carry the VISIBLE sword in hand_r —
         // the blade the hit test follows (blade-touch combat). kSwordGrip
-        // stands the blade up out of the fist (dev feel pass).
+        // stands the blade up out of the fist; a raised guard turns it
+        // oblique across the front (A5+).
         if (npc.hostile && !npc.dead && npc.handJoint >= 0) {
             anim::modelMatrices(npc.rig->skeleton, npc.pose, jointScratch);
             out.meshes.push_back(
                 { swordMeshGuid(), core::Guid {},
                   world *
                       jointScratch[static_cast<size_t>(npc.handJoint)] *
-                      kSwordGrip });
+                      (npc.blocking ? kSwordGuardGrip : kSwordGrip) });
         }
     }
 }

@@ -191,10 +191,11 @@ bool segmentHitsCapsule(const Vec3& a0, const Vec3& a1, const Vec3& capA,
     return glm::dot(gap, gap) < radius * radius;
 }
 
-bool applyBlock(DamageEvent& event, const Vec3& defenderFacing,
-                const Vec3& defenderPos, const Vec3& attackerPos,
-                f32 blockAngleDegrees, f32 blockFactor,
-                f32 blockPostureFactor) {
+BlockResult applyBlock(DamageEvent& event, const Vec3& defenderFacing,
+                       const Vec3& defenderPos, const Vec3& attackerPos,
+                       f32 blockAngleDegrees, f32 blockFactor,
+                       f32 blockPostureFactor, f32 guardSeconds,
+                       f32 perfectWindow) {
     // Horizontal cone: guards care about compass direction, not height.
     Vec3 facing { defenderFacing.x, 0.0f, defenderFacing.z };
     Vec3 to { attackerPos.x - defenderPos.x, 0.0f,
@@ -202,7 +203,7 @@ bool applyBlock(DamageEvent& event, const Vec3& defenderFacing,
     const f32 facingLen = glm::length(facing);
     const f32 toLen = glm::length(to);
     if (facingLen < 1e-4f) {
-        return false; // no facing, no guard
+        return {}; // no facing, no guard
     }
     // Point-blank counts as in front: the attacker is ON the defender.
     if (toLen >= 1e-4f) {
@@ -211,8 +212,19 @@ bool applyBlock(DamageEvent& event, const Vec3& defenderFacing,
                                              360.0f) *
                                   0.5f));
         if (glm::dot(facing / facingLen, to / toLen) < cosHalf) {
-            return false; // outside the guard cone
+            return {}; // outside the guard cone
         }
+    }
+    // A freshly raised guard parries CLEAN: nothing through — not even
+    // the weapon's own posture damage — and the caller punishes the
+    // attacker's poise instead.
+    if (guardSeconds >= 0.0f && perfectWindow > 0.0f &&
+        guardSeconds <= perfectWindow) {
+        for (DamageChannel& channel : event.channels) {
+            channel.amount = 0.0f;
+        }
+        event.postureAmount = 0.0f;
+        return { true, true };
     }
     f32 blocked = 0.0f;
     const f32 factor = glm::clamp(blockFactor, 0.0f, 1.0f);
@@ -222,7 +234,29 @@ bool applyBlock(DamageEvent& event, const Vec3& defenderFacing,
         blocked += cut;
     }
     event.postureAmount += blocked * glm::max(blockPostureFactor, 0.0f);
-    return true;
+    return { true, false };
+}
+
+void tickGuard(MeleeSwing& swing, bool blocking, f32 dt) {
+    if (!blocking) {
+        swing.guardSeconds = -1.0f;
+    } else if (swing.guardSeconds < 0.0f) {
+        swing.guardSeconds = 0.0f; // raised THIS frame: the window opens
+    } else {
+        swing.guardSeconds += dt;
+    }
+}
+
+Mat4 guardSocketLocal() {
+    // Oblique across the front: hand pulled center-low, blade rolled so
+    // the tip points up-left over the shoulder line, slightly laid
+    // forward. [cpp-tuning]
+    return glm::translate(Mat4 { 1.0f }, Vec3 { 0.16f, -0.34f, -0.50f }) *
+           glm::mat4_cast(
+               glm::angleAxis(glm::radians(-18.0f),
+                              Vec3 { 1.0f, 0.0f, 0.0f }) *
+               glm::angleAxis(glm::radians(52.0f),
+                              Vec3 { 0.0f, 0.0f, 1.0f }));
 }
 
 } // namespace gameplay

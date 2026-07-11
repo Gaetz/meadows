@@ -36,7 +36,14 @@ struct MeleeSwing {
     SwingPhase phase { SwingPhase::Idle };
     f32 t { 0.0f };     // seconds into the current phase
     vector<u64> struck; // entities already hit THIS swing (once per swing)
+    // A5+ perfect parry: how long the guard has been up (-1 = down).
+    // A block landing while this is inside the perfect window parries.
+    f32 guardSeconds { -1.0f };
 };
+
+// Per-frame guard clock (call from the same place that decides
+// `blocking`): counts up while the guard is raised, -1 when down.
+void tickGuard(MeleeSwing& swing, bool blocking, f32 dt);
 
 // THE phase transition (dev rule: enum + flat switches, every change goes
 // through one function). Resets the phase clock; entering Windup clears
@@ -85,11 +92,27 @@ bool segmentHitsCapsule(const Vec3& a0, const Vec3& a1, const Vec3& capA,
 // event's damage channels shrink by blockFactor and the blocked amount
 // is rerouted to POSTURE (× blockPostureFactor) — running the guard down
 // until the stagger breaks it (docs/STATS.md posture). Call it before
-// applyDamage on a defender carrying State.Blocking; returns whether the
-// guard caught the hit. Both camps go through this one helper.
-bool applyBlock(DamageEvent& event, const Vec3& defenderFacing,
-                const Vec3& defenderPos, const Vec3& attackerPos,
-                f32 blockAngleDegrees, f32 blockFactor,
-                f32 blockPostureFactor);
+// applyDamage on a defender carrying State.Blocking; both camps go
+// through this one helper.
+//
+// PERFECT PARRY (dev design 2026-07-11): a guard raised within
+// `perfectWindow` seconds of the hit (guardSeconds fresh) catches it
+// CLEAN — every channel zeroed, nothing on the defender's posture — and
+// the caller punishes the ATTACKER's poise (perfectParryPosture through
+// applyDamage). Pass guardSeconds < 0 or window <= 0 to disable.
+struct BlockResult {
+    bool caught { false };  // the guard cone caught the hit
+    bool perfect { false }; // ...within the perfect-parry window
+};
+BlockResult applyBlock(DamageEvent& event, const Vec3& defenderFacing,
+                       const Vec3& defenderPos, const Vec3& attackerPos,
+                       f32 blockAngleDegrees, f32 blockFactor,
+                       f32 blockPostureFactor, f32 guardSeconds = -1.0f,
+                       f32 perfectWindow = 0.0f);
+
+// The raised-guard pose for the simulated socket (dev design: the sword
+// held OBLIQUE across the front — bottom-right toward top-left). The
+// viewmodel shows it whenever State.Blocking is up. [cpp-tuning]
+Mat4 guardSocketLocal();
 
 } // namespace gameplay

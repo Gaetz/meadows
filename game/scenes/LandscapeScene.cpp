@@ -696,8 +696,12 @@ void LandscapeScene::update(f32 dt) {
                                              weapon.swingActive,
                                              weapon.swingRecovery };
         const auto& swing = playerEntity.get<gameplay::MeleeSwing>();
+        // A raised guard shows the parry pose (sword oblique across the
+        // front); otherwise the socket follows the swing arc.
         const Mat4 pose =
-            basis * gameplay::swingSocketLocal(swing, timing);
+            basis * (swing.guardSeconds >= 0.0f
+                         ? gameplay::guardSocketLocal()
+                         : gameplay::swingSocketLocal(swing, timing));
         const core::Guid model =
             weapon.model.isValid() ? weapon.model : swordMeshGuid();
         snapshot.meshes.push_back({ model, core::Guid {}, pose });
