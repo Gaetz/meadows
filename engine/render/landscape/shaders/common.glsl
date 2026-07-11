@@ -61,4 +61,6 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uGiInfo;     // x = technique (0 classic / 1 RC), y = intensity,
                       // z = edge fade width (m), w = grid resolution
     vec4 uGiGridInfo; // xyz = cascade-0 grid origin, w = probe spacing
+    // (APPENDED) Fixed log-step GI ramp: x = stops per band, y = AA.
+    vec4 uGiBandInfo;
 };

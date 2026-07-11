@@ -51,16 +51,11 @@ struct RcTuning {
                               // interval0 × (2^count − 1)
     f32 edgeFade { 8.0f };    // meters of blend back to Classic at the
                               // grid border (G6)
-    // Adaptive stylized ramp (dev design 2026-07-11): the GI posterizes
-    // in log-stops around the MEASURED scene irradiance (rc_adapt.comp).
-    i32 bands { 3 };            // pools between the measured mean and max
-    f32 contrastFloor { 1.0f }; // min half-window (log2 stops) — a flat
-                                // scene must not amplify noise into bands
-    f32 adaptSpeed { 0.05f };   // temporal inertia per injected frame
-    f32 dimBand { 0.75f };      // dim range BELOW the mean (log2 stops):
-                                // the shade side of the band domain — the
-                                // RC zone's dark floor at night, the
-                                // banded shade by day
+    // FIXED log-step stylized ramp (dev decision 2026-07-11, replacing
+    // the adaptive chain — bands must be PREDICTABLE): the GI luminance
+    // snaps to absolute exposure steps, day/night/torch alike.
+    f32 bandStops { 0.85f };  // stops per band (bigger = fewer, bolder)
+    f32 bandAa { 0.15f };     // anti-aliasing width across a band edge
     f32 emitterBoost { 1.0f };  // radiance of the light-source blobs in
                                 // the field (0 = surfaces-only, the old
                                 // behavior)
@@ -197,10 +192,6 @@ private:
     u64 buildGeneration { 0 };
     rhi::UniquePipeline mergePipeline;  // G5
     u64 mergeGeneration { 0 };
-    rhi::UniquePipeline adaptPipeline;  // adaptive-ramp reduction
-    u64 adaptGeneration { 0 };
-    rhi::UniqueBuffer statsBuffer;      // SSBO: measured log-mean/window
-    rhi::UniqueBindGroup adaptGroup;
 
     // G4/G5: one texture + one build group per cascade; merge groups pair
     // level i (image) with level i+1 (sampled src). Level layouts per

@@ -217,7 +217,9 @@ private:
     Vec3 shadowSunDirection { 0.0f, 1.0f, 0.0f };
     // Chantier 6 B3 (brick 28): analytical grade — ON by default since
     // 2026-07-10 (dev call); the A/B checkbox remains.
-    bool gradingUi { true };
+    // Off by default while the GI is tuned (dev 2026-07-11: the grade
+    // masks what the light bounces are doing; revisit later).
+    bool gradingUi { false };
     f32 gradeVibranceUi { 0.3f };
     f32 gradeSplitToneUi { 0.35f };
     f32 gradeContrastUi { 1.06f };

@@ -84,6 +84,9 @@ struct FrameUniforms {
     Vec4 giInfo {};     // x = technique (0/1), y = intensity,
                         // z = edge fade width (m), w = grid resolution
     Vec4 giGridInfo {}; // xyz = cascade-0 grid origin, w = probe spacing
+    // (APPENDED) The fixed log-step GI ramp: x = stops per band
+    // (0 = continuous), y = anti-aliasing width across a band edge.
+    Vec4 giBandInfo { 0.85f, 0.15f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -131,7 +134,8 @@ static_assert(offsetof(FrameUniforms, grassBaseColor) == 880);
 static_assert(offsetof(FrameUniforms, grassTipColor) == 896);
 static_assert(offsetof(FrameUniforms, giInfo) == 912);
 static_assert(offsetof(FrameUniforms, giGridInfo) == 928);
-static_assert(sizeof(FrameUniforms) == 944,
+static_assert(offsetof(FrameUniforms, giBandInfo) == 944);
+static_assert(sizeof(FrameUniforms) == 960,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

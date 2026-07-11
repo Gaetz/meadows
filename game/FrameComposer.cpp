@@ -110,6 +110,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     // reflection pass stays Classic — no cascade sampler needed there).
     resolved.giInfo = in.giInfo;
     resolved.giGridInfo = in.giGridInfo;
+    resolved.giBandInfo = in.giBandInfo;
     // 7.8ter: the player's feet part the grass (off in Fly).
     resolved.grassBendInfo =
         in.grassBend ? Vec4 { in.playerFeet.x, in.playerFeet.z,
