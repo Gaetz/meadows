@@ -720,6 +720,8 @@ bladeLength = 0.8
 swingWindup = 0.55
 swingActive = 0.4
 swingRecovery = 0.58
+# P0 A6: a club is short — the AI closes to reach - 0.3 before swinging.
+reach = 2.0
 
 # The bandit: same rig as the villager, a darker soul (Faction.Bandits
 # child tag makes it hostile — §C.1 tag records). Lurks east of the

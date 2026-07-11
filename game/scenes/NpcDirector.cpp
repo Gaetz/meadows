@@ -427,12 +427,20 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                     npc.sitting = false;
                     npc.attackCooldown -= dt;
                     npc.repathTimer -= dt;
+                    // P0 A6: the engagement distance comes from the
+                    // WEAPON (reach minus a step of margin, §5 moddable)
+                    // — a spear-armed NPC will stand off further than a
+                    // knife mugger, no code change.
+                    const f32 attackRange =
+                        ctx.banditWeapon
+                            ? glm::max(ctx.banditWeapon->reach - 0.3f, 0.8f)
+                            : 1.8f;
                     // P0 A3: a swing in flight roots the NPC (the clip
                     // plays out; the blade does the hitting below).
                     const bool swinging =
                         npc.entity.get<gameplay::MeleeSwing>().phase !=
                         gameplay::SwingPhase::Idle;
-                    if (distance > 1.8f && !swinging) {
+                    if (distance > attackRange && !swinging) {
                         if (npc.repathTimer <= 0.0f) {
                             const nav::PathResult found =
                                 ctx.navigator->findPath({ transform.position,
@@ -453,7 +461,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                         // P0 A3: instant damage became an ability-gated
                         // MeleeSwing — the Sword_Attack clip carries the
                         // hand, and the blade must TOUCH (below).
-                        if (!swinging && distance <= 1.8f &&
+                        if (!swinging && distance <= attackRange &&
                             npc.attackCooldown <= 0.0f && ctx.banditWeapon &&
                             ctx.playerEntity.is_alive() && !ctx.godMode) {
                             auto& set =
