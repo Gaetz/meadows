@@ -43,10 +43,11 @@ struct RcTuning {
     i32 cascadeCount { 5 };   // levels (clamped so the top keeps ≥2 probes)
     // Live:
     GiTechnique technique { GiTechnique::Classic }; // apply switch (G6)
-    f32 intensity { 1.0f };   // indirect strength at apply (dev pick
-                              // 2026-07-11, G7 baseline)
-    f32 skyFactor { 1.0f };   // sky ambient folded into injected surfaces
-                              // (dev pick 2026-07-11, G7 baseline)
+    f32 intensity { 0.7f };   // indirect strength at apply (dev pick
+                              // 2026-07-11, post fixed-step ramp)
+    f32 skyFactor { 0.6f };   // sky ambient folded into injected surfaces
+                              // (dev pick 2026-07-11, post fixed-step
+                              // ramp — bounce 0.5 returns sky too)
     f32 interval0 { 1.0f };   // cascade-0 interval length (m); reach =
                               // interval0 × (2^count − 1)
     f32 edgeFade { 8.0f };    // meters of blend back to Classic at the
