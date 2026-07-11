@@ -15,6 +15,7 @@ add_library(meadows-runtime STATIC
     TerrainCollision.cpp
     TextureCache.cpp
     VegetationCollision.cpp
+    WeaponMeshes.cpp
     WorldEditor.cpp
 )
 target_link_libraries(meadows-runtime PUBLIC meadows-render meadows-world

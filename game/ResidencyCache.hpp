@@ -125,6 +125,23 @@ public:
     // to know when the visible set is ready (§7).
     u32 pendingCount() const { return pending; }
 
+    // Chantier P0 A2: registers PROCEDURAL data under a guid — resident
+    // immediately, no AssetDatabase involved (generated meshes: the
+    // sword). Replaces any previous entry for the guid; a stale in-flight
+    // decode is dropped on arrival (state left Pending is decremented).
+    void inject(const core::Guid& guid, DecodedData&& data) {
+        const auto it = byGuid.find(guid);
+        if (it != byGuid.end()) {
+            if (it->second.state == Residency::Pending) {
+                --pending;
+            } else if (it->second.state == Residency::Resident) {
+                traits_.destroyPayload(device, it->second.payload);
+            }
+        }
+        byGuid[guid] = Entry { traits_.upload(device, std::move(data)),
+                               Residency::Resident };
+    }
+
     void clear() {
         for (auto& [guid, entry] : byGuid) {
             // Only resident entries own GPU resources; the others hold the

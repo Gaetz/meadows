@@ -41,6 +41,7 @@
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/Rest.hpp"
+#include "game/WeaponMeshes.hpp" // A2: the procedural sword
 #include "script/Vm.hpp"
 #include "world/scene/AnimBridge.hpp"
 #include "world/scene/Spawner.hpp"
@@ -150,6 +151,9 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
                                    .filter = rhi::FilterMode::Linear });
     meshCache =
         std::make_unique<MeshCache>(device, assetDb, engine->getJobSystem());
+    // Chantier P0 A2: the procedural sword — the default visible weapon
+    // (WeaponForms without a `model` fall back to this guid).
+    meshCache->injectProcedural(swordMeshGuid(), makeSwordMesh(0.9f));
     renderer.create(device, engine->getJobSystem());
 
     // Chantier 4 B2: the RmlUi game UI (screens from UiScreenForm records,
@@ -652,6 +656,27 @@ void LandscapeScene::update(f32 dt) {
     // carries this frame's pose (paused sim: the last pose, still valid).
     snapshot.skinned.clear();
     npcDirector.extract(snapshot);
+    // Chantier P0 A2: the first-person viewmodel — the player's sword,
+    // camera-relative (idle guard pose bottom-right; the A3 swing will
+    // drive this transform along the attack arc). Pose constants are
+    // [cpp-tuning: adjust on the dev's visual pass].
+    if (mode == SceneMode::Play && playerWeapon) {
+        const render::Camera3D& cam = flyCamera.camera;
+        const Vec3 fwd = cam.forward();
+        const Vec3 right = cam.right();
+        const Vec3 up = glm::normalize(glm::cross(right, fwd));
+        const Vec3 hand =
+            cam.position + fwd * 0.55f + right * 0.30f - up * 0.34f;
+        const Mat4 basis { Vec4 { right, 0.0f }, Vec4 { up, 0.0f },
+                           Vec4 { -fwd, 0.0f }, Vec4 { hand, 1.0f } };
+        const Mat4 pose =
+            basis * glm::rotate(Mat4 { 1.0f }, glm::radians(28.0f),
+                                Vec3 { 1.0f, 0.0f, 0.0f });
+        const core::Guid model = playerWeapon->model.isValid()
+                                     ? playerWeapon->model
+                                     : swordMeshGuid();
+        snapshot.meshes.push_back({ model, core::Guid {}, pose });
+    }
     // Wind phase integrates the CURRENT strength: speed changes bend the
     // drift/sway smoothly instead of teleporting the pattern.
     windTime += dt * glm::max(atmos.windStrength, 0.05f);

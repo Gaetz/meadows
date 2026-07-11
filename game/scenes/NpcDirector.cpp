@@ -16,6 +16,7 @@
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
 #include "engine/rhi/Device.hpp"
 #include "game/SceneSubmit.hpp"           // RenderSnapshot (U4-2b extract)
+#include "game/WeaponMeshes.hpp"          // A2: the visible sword guid
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp" // attr, currentValueOf
 #include "gameplay/actors/ActorState.hpp"
@@ -211,6 +212,8 @@ void NpcDirector::refreshNpcs(
                 [raw = npc.get()](std::string_view name) {
                     raw->pendingAnimEvents.emplace_back(name);
                 });
+            // A2: the sword hand (UAL rig: "hand_r"); -1 = no weapon shown.
+            npc->handJoint = rig->skeleton.findJoint("hand_r");
             npc->tint = visual->tint;
             npc->palette.assign(rig->skeleton.joints.size(), Mat4 { 1.0f });
             npc->vertices = device.createBuffer(
@@ -575,12 +578,23 @@ void NpcDirector::extract(RenderSnapshot& out) const {
             continue;
         }
         const auto& transform = npc.entity.get<world::Transform>();
-        out.skinned.push_back(
-            { npc.entity.id(),
-              glm::translate(Mat4 { 1.0f }, transform.position) *
-                  glm::mat4_cast(transform.rotation),
-              npc.tint, npc.vertices, npc.indices, npc.indexCount,
-              npc.palette });
+        const Mat4 world =
+            glm::translate(Mat4 { 1.0f }, transform.position) *
+            glm::mat4_cast(transform.rotation);
+        out.skinned.push_back({ npc.entity.id(), world, npc.tint,
+                                npc.vertices, npc.indices, npc.indexCount,
+                                npc.palette });
+        // Chantier P0 A2: hostiles carry the VISIBLE sword in hand_r —
+        // the blade the hit test follows (blade-touch combat). The grip
+        // correction is identity v1 [cpp-tuning: rig-specific, adjust on
+        // the dev's visual pass].
+        if (npc.hostile && !npc.dead && npc.handJoint >= 0) {
+            anim::modelMatrices(npc.rig->skeleton, npc.pose, jointScratch);
+            out.meshes.push_back(
+                { swordMeshGuid(), core::Guid {},
+                  world *
+                      jointScratch[static_cast<size_t>(npc.handJoint)] });
+        }
     }
 }
 

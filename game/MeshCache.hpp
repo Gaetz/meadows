@@ -75,6 +75,12 @@ public:
         const Payload* payload = residentPayload(model);
         return payload ? payload->cpu.get() : nullptr;
     }
+
+    // Chantier P0 A2: a PROCEDURAL mesh (the sword) under a guid —
+    // resident immediately, drawable through resolve() like any asset.
+    void injectProcedural(const core::Guid& guid, render::MeshData mesh) {
+        inject(guid, DecodedData { std::move(mesh) });
+    }
 };
 
 } // namespace game

@@ -39,6 +39,15 @@ struct WeaponForm : Form {
     // step of EquipmentVisuals (§C.1): the drawn/sheathed weapon mesh.
     core::Guid model;
     core::Guid material;
+    // Chantier P0 A2-A7 (appended — ordinals stable): the blade-touch
+    // combat (docs/CHANTIER-P0.md — the VISIBLE blade is what hits).
+    f32 bladeLength { 0.9f };     // grip -> tip (m): the hit segment
+    f32 hitTolerance { 1.2f };    // blade-length multiplier for the test
+    f32 swingWindup { 0.25f };    // seconds: raise
+    f32 swingActive { 0.20f };    // seconds: the damaging sweep
+    f32 swingRecovery { 0.35f };  // seconds: back to guard
+    f32 reach { 2.4f };           // AI engagement distance (A6)
+    f32 projectileSpeed { 0.0f }; // > 0 = ranged (A7): launch m/s
 
     REFLECT_BEGIN(WeaponForm, Form)
         REFLECT_FIELD(displayName)
@@ -59,6 +68,13 @@ struct WeaponForm : Form {
         REFLECT_FIELD(buildupAmount)
         REFLECT_FIELD(model)
         REFLECT_FIELD(material)
+        REFLECT_FIELD(bladeLength)
+        REFLECT_FIELD(hitTolerance)
+        REFLECT_FIELD(swingWindup)
+        REFLECT_FIELD(swingActive)
+        REFLECT_FIELD(swingRecovery)
+        REFLECT_FIELD(reach)
+        REFLECT_FIELD(projectileSpeed)
     REFLECT_END()
 };
 

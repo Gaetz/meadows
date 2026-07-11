@@ -83,6 +83,7 @@
     TypedDamageTest.cpp
     VegetationCollisionTest.cpp
     VertexAoTest.cpp
+    WeaponMeshesTest.cpp
     WorldModelTest.cpp
 )
 target_link_libraries(meadows-tests PRIVATE meadows meadows-data meadows-ecs

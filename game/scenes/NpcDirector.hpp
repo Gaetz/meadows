@@ -101,6 +101,10 @@ struct Npc {
     // are drained onto the bus each update — hit windows (A4) and
     // footsteps (C4b) consume them from there.
     vector<str> pendingAnimEvents;
+
+    // Chantier P0 A2: the hand bone index ("hand_r", -1 = rig has none) —
+    // hostiles carry the VISIBLE sword there (blade-touch combat).
+    i32 handJoint { -1 };
     // Chantier 6 A1: the first Faction.* tag — what the OnDeath event carries
     // (quest kill filters, crime factions).
     gameplay::GameplayTag factionTag {};
@@ -177,6 +181,8 @@ private:
     vector<uptr<Npc>> npcs_;
     vector<Vec3> patrolPoints;   // grounded "patrol" marker positions
     Vec3 characterSpot_ { 0.0f }; // first NPC position (teleport target)
+    // A2: per-extract scratch for anim::modelMatrices (weapon attach).
+    mutable vector<Mat4> jointScratch;
 };
 
 } // namespace game
