@@ -75,20 +75,21 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
     // Hue kept; narrow smoothstep = AA (the stylized.glsl language).
     float lum = dot(irradiance, vec3(0.299, 0.587, 0.114));
     if (uAmbientColor.w > 0.0 && uRcStats.w > 0.5 && lum > 1e-5) {
-        float window = max(uRcStats.y, 0.1);
+        float window = max(uRcStats.y, 0.1);      // mean -> max (measured)
         float bands = max(floor(uRcStats.z), 2.0);
-        float dimLevel = fract(uRcStats.z); // packed by rc_adapt.comp
-        float x = clamp((log2(lum) - uRcStats.x) / window, -1.0, 1.0);
-        float xq;
-        if (x >= 0.0) {
-            float upper = bands - 1.0; // pools between mean and max
-            float t = x * upper;
-            xq = (floor(t) + smoothstep(0.35, 0.65, fract(t))) / upper;
-        } else {
-            // The last dim band, AA'd at the mean crossing.
-            xq = -dimLevel * smoothstep(0.0, 0.15, -x);
-        }
-        float lumQ = exp2(uRcStats.x + xq * window);
+        float dimStops = fract(uRcStats.z) * 4.0; // packed by rc_adapt
+        // Uniform log bands over the ASYMMETRIC domain
+        // [mean - dimStops, max] (dev iteration 2026-07-11c): at night
+        // the measured upper window dwarfs the dim range, so most bands
+        // serve the light and the bottom shares one dim pool; by day the
+        // window is narrow and the bands come back down to cover the
+        // shade — the green bounce under trees stays banded at 0.7.
+        float lo = uRcStats.x - dimStops;
+        float range = dimStops + window;
+        float u = clamp((log2(lum) - lo) / range, 0.0, 1.0);
+        float t = u * (bands - 1.0);
+        float tq = floor(t) + smoothstep(0.35, 0.65, fract(t));
+        float lumQ = exp2(lo + tq / (bands - 1.0) * range);
         irradiance *= mix(1.0, lumQ / lum, uAmbientColor.w);
     }
     return mix(classicAmbient, irradiance, fade);

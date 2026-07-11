@@ -14,8 +14,8 @@ layout(std140, binding = 2) uniform RcUbo {
     vec4 uRcLightPosRadius[16];
     vec4 uRcLightColor[16];
     vec4 uRcMisc2; // x = band count, y = contrast floor (log2 stops),
-                   // z = adapt speed, w = dim-band level (0..1, the
-                   //     depth of the below-mean pool)
+                   // z = adapt speed, w = dim range below the mean
+                   //     (log2 stops, the shade side of the band domain)
 };
 
 layout(binding = 10) uniform sampler3D uRcCascade0; // merged, dir-major
@@ -73,8 +73,9 @@ void main() {
     if (uRcStats.w > 0.5) {
         adapted = mix(uRcStats.xy, adapted, speed); // inertia
     }
-    // z packs bands (integer part) + dim-band level (fraction) for
-    // gi.glsl, which only sees this SSBO.
+    // z packs bands (integer part) + dim range / 4 (fraction — gi.glsl
+    // multiplies back; the SSBO is its only view of these knobs).
     uRcStats = vec4(adapted,
-                    uRcMisc2.x + clamp(uRcMisc2.w, 0.05, 0.95), 1.0);
+                    uRcMisc2.x + clamp(uRcMisc2.w, 0.05, 3.0) * 0.25,
+                    1.0);
 }

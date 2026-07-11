@@ -56,8 +56,10 @@ struct RcTuning {
     f32 contrastFloor { 1.0f }; // min half-window (log2 stops) — a flat
                                 // scene must not amplify noise into bands
     f32 adaptSpeed { 0.05f };   // temporal inertia per injected frame
-    f32 dimBand { 0.6f };       // the below-mean pool's depth (0..1 of
-                                // the window) — the RC zone's dark floor
+    f32 dimBand { 0.75f };      // dim range BELOW the mean (log2 stops):
+                                // the shade side of the band domain — the
+                                // RC zone's dark floor at night, the
+                                // banded shade by day
     f32 emitterBoost { 1.0f };  // radiance of the light-source blobs in
                                 // the field (0 = surfaces-only, the old
                                 // behavior)

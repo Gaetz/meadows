@@ -487,7 +487,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
     uniforms.misc2 = { static_cast<f32>(glm::clamp(tuning.bands, 2, 5)),
                        glm::max(tuning.contrastFloor, 0.1f),
                        glm::clamp(tuning.adaptSpeed, 0.005f, 1.0f),
-                       glm::clamp(tuning.dimBand, 0.05f, 0.95f) };
+                       glm::clamp(tuning.dimBand, 0.05f, 3.0f) };
     uniforms.misc3 = { glm::max(tuning.emitterBoost, 0.0f), 0.0f, 0.0f,
                        0.0f };
     for (u32 i = 0; i < lightCount; ++i) {
