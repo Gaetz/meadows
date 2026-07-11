@@ -163,9 +163,18 @@ catégorie. Chaque paramètre naît DANS l'UI, jamais en constante.
   Prévisible par construction ; ne PAS ré-introduire de mesure globale
   sans relire cette leçon. Grading OFF par défaut pendant le tuning GI ;
   l'auto-exposure (brique 29) reste (adaptation uniforme d'affichage).
-- **G7c (restant)** — extension d'intervalle (l'optim majeure du build,
-  à faire pendant/avant la **passe de réglage dev** → 3 ms → 1-2 ms) ;
-  triangles fins en intérieur si les boîtes de kit leakent.
+- **G7c ✅ (`69e139f`)** — extension d'intervalle (§2.3.3) : les niveaux
+  dont la marche complète ferait ≥ 8 pas marchent UN QUART de leur
+  intervalle puis le doublent deux fois par shift+merge (ping-pong
+  texture↔scratch ; trilinéaire hardware sur les slabs c0). Checkbox
+  A/B structurelle « Interval extension » — aux knobs par défaut seul le
+  dernier niveau est éligible ; le gain réel = rendre interval0 2-4 m
+  (portée ×2-4) abordable pendant la passe perf. Band AA défaut 0.3 ;
+  skyFactor 0.6, intensity 0.7 (picks dev).
+- **Restant** — la **passe de réglage dev** (3 ms → 1-2 ms au F6, tous
+  les leviers dans la catégorie UI) ; G8 (index spatial / voxels sparse)
+  si la mesure le demande ; triangles fins en intérieur si les boîtes de
+  kit leakent.
 - **G8** (si mesuré nécessaire) — accélération spatiale : index spatial
   CPU partagé moteur/gameplay et/ou voxels sparse.
 
