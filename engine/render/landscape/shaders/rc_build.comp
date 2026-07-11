@@ -1,0 +1,99 @@
+#version 460 core
+#include "common.glsl"
+#include "rc_common.glsl"
+
+// Radiance cascades G4 — BUILD one cascade: every texel raymarches its
+// radiance interval [start, end) through the voxel clipmap and stores
+// (interval radiance, β transparency). One dispatch per cascade; the
+// per-cascade parameters ride RcCascadeUbo (updated between dispatches —
+// the GL backend executes immediately).
+
+layout(std140, binding = 2) uniform RcUbo {
+    vec4 uRcClipInfo[2]; // xyz = min-corner origin, w = voxel size
+    vec4 uRcTileInfo;    // w = clip resolution
+    vec4 uRcMisc;
+    vec4 uRcLightPosRadius[16];
+    vec4 uRcLightColor[16];
+};
+
+layout(std140, binding = 4) uniform RcCascadeUbo {
+    vec4 uRcCascade; // x = cascade index, y = probe count per axis,
+                     // z = dir grid W, w = dir grid H
+    vec4 uRcCascadeB; // x = interval0 (m), y = march step (m),
+                      // z = probe spacing (m), w = dir-major flag (c0)
+};
+
+layout(binding = 0, rgba16f) uniform writeonly image3D uRcDst;
+layout(binding = 5) uniform sampler3D uRcClipFineS;
+layout(binding = 6) uniform sampler3D uRcClipCoarseS;
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+// Sample the scene volume at a world position: fine clip inside its box,
+// else coarse clip, else empty air. a = occupancy.
+vec4 rcScene(vec3 world) {
+    const float res = uRcTileInfo.w;
+    for (int clip = 0; clip < 2; ++clip) {
+        vec3 origin = uRcClipInfo[clip].xyz;
+        float span = res * uRcClipInfo[clip].w;
+        vec3 uvw = (world - origin) / span;
+        if (all(greaterThan(uvw, vec3(0.001))) &&
+            all(lessThan(uvw, vec3(0.999)))) {
+            return clip == 0 ? texture(uRcClipFineS, uvw)
+                             : texture(uRcClipCoarseS, uvw);
+        }
+    }
+    return vec4(0.0);
+}
+
+void main() {
+    const int probes = int(uRcCascade.y);
+    const ivec2 dirGrid = ivec2(uRcCascade.z, uRcCascade.w);
+    const bool dirMajor = uRcCascadeB.w > 0.5;
+
+    // Decode texel -> (probe, direction) for either layout.
+    ivec3 texel = ivec3(gl_GlobalInvocationID);
+    ivec3 probe;
+    ivec2 dir;
+    if (dirMajor) { // c0: z = dirIndex·probes + probeZ
+        if (texel.x >= probes || texel.y >= probes ||
+            texel.z >= probes * dirGrid.x * dirGrid.y) {
+            return;
+        }
+        probe = ivec3(texel.x, texel.y, texel.z % probes);
+        int dirIndex = texel.z / probes;
+        dir = ivec2(dirIndex % dirGrid.x, dirIndex / dirGrid.x);
+    } else { // tiled: xy = (tile · probes + probe), z = probeZ
+        if (texel.x >= probes * dirGrid.x || texel.y >= probes * dirGrid.y ||
+            texel.z >= probes) {
+            return;
+        }
+        probe = ivec3(texel.x % probes, texel.y % probes, texel.z);
+        dir = ivec2(texel.x / probes, texel.y / probes);
+    }
+
+    // Probe world position: cascades share the FINE clip's extent.
+    const float spacing = uRcCascadeB.z;
+    const vec3 gridOrigin = uRcClipInfo[0].xyz;
+    const vec3 origin = gridOrigin + (vec3(probe) + 0.5) * spacing;
+    const vec3 rayDir = rcOctDecode(vec2(dir), vec2(dirGrid));
+
+    // March the interval front-to-back through the clipmap.
+    const int cascade = int(uRcCascade.x);
+    const float interval0 = uRcCascadeB.x;
+    const float tStart = rcIntervalStart(cascade, interval0);
+    const float tEnd = rcIntervalEnd(cascade, interval0);
+    const float step = uRcCascadeB.y;
+
+    vec3 radiance = vec3(0.0);
+    float beta = 1.0; // transparency of the interval
+    for (float t = tStart + step * 0.5; t < tEnd; t += step) {
+        vec4 s = rcScene(origin + rayDir * t);
+        radiance += beta * s.rgb * s.a;
+        beta *= 1.0 - s.a;
+        if (beta < 0.005) {
+            break;
+        }
+    }
+    imageStore(uRcDst, texel, vec4(radiance, beta));
+}

@@ -15,12 +15,28 @@ layout(std140, binding = 2) uniform RcUbo {
 
 layout(binding = 5) uniform sampler3D uRcClipFine;
 layout(binding = 6) uniform sampler3D uRcClipCoarse;
+layout(binding = 10) uniform sampler3D uRcCascade0; // merged (G5), dir-major
+
+// Merged cascade-0 irradiance at a fine-clip point: average of the 8
+// direction slabs (hardware trilinear per slab, z clamped inside it).
+vec3 cascadeIrradiance(vec3 uvw, float res) {
+    float zProbe = clamp(uvw.z * res, 0.5, res - 0.5);
+    vec3 sum = vec3(0.0);
+    for (int d = 0; d < 8; ++d) {
+        float z = (zProbe + float(d) * res) / (res * 8.0);
+        sum += texture(uRcCascade0, vec3(uvw.xy, z)).rgb;
+    }
+    return sum / 8.0;
+}
 
 in vec2 vUv;
 out vec4 fragColor;
 
 void main() {
-    const int clip = int(uRcMisc.x + 0.5);
+    // View 1 = fine clip, 2 = coarse clip, 3 = merged cascade-0
+    // irradiance (marched on the FINE clip's occupancy).
+    const int view = int(uRcMisc.x + 0.5);
+    const int clip = view == 2 ? 1 : 0;
     const vec4 info = uRcClipInfo[clip];
     const float res = uRcTileInfo.w;
     const float span = res * info.w;
@@ -45,7 +61,7 @@ void main() {
         discard; // volume not on this ray
     }
 
-    // March at half-voxel steps; show the first occupied voxel's radiance.
+    // March at half-voxel steps; show the first occupied voxel.
     float t = max(tEnter, 0.0) + info.w * 0.25;
     const float step = info.w * 0.5;
     for (int i = 0; i < 512 && t < tExit; ++i, t += step) {
@@ -54,8 +70,16 @@ void main() {
         vec4 texel = clip == 0 ? texture(uRcClipFine, uvw)
                                : texture(uRcClipCoarse, uvw);
         if (texel.a > 0.5) {
-            // Radiance is HDR — rough-tonemap it for the debug overlay.
-            vec3 c = texel.rgb / (texel.rgb + vec3(0.6));
+            vec3 c;
+            if (view == 3) {
+                // The merged GI arriving just above the hit surface.
+                vec3 above = uvw + vec3(0.0, info.w * 1.5 / span, 0.0);
+                c = cascadeIrradiance(above, res);
+            } else {
+                c = texel.rgb; // the injected direct radiance
+            }
+            // Radiance is HDR — rough-tonemap for the debug overlay.
+            c = c / (c + vec3(0.6));
             fragColor = vec4(c, 0.85);
             return;
         }

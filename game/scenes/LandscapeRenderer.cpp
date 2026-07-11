@@ -1905,12 +1905,22 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::SliderFloat("Coarse voxel (m)", &rc.coarseVoxel, 1.0f, 4.0f,
                            "%.1f");
         ImGui::SliderInt("Update every N frames", &rc.updateInterval, 1, 4);
+        ImGui::SeparatorText("Cascades");
+        ImGui::SliderInt("Cascade count", &rc.cascadeCount, 2, 6);
+        ImGui::SliderFloat("Interval 0 (m)", &rc.interval0, 0.25f, 4.0f,
+                           "%.2f");
+        ImGui::TextDisabled("reach: %.0f m",
+                            rc.interval0 *
+                                (std::pow(2.0f, static_cast<f32>(
+                                                    rc.cascadeCount)) -
+                                 1.0f));
         ImGui::SeparatorText("Injection");
         ImGui::SliderFloat("Sky factor", &rc.skyFactor, 0.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Intensity (apply, G6)", &rc.intensity, 0.0f,
                            2.0f, "%.2f");
         ImGui::Combo("Debug view", &rc.debugView,
-                     "Off\0Fine clip (raymarch)\0Coarse clip (raymarch)\0");
+                     "Off\0Fine clip (raymarch)\0Coarse clip (raymarch)\0"
+                     "Cascade 0 irradiance\0");
         // The GPU cost lines, in place (the full table stays on F6).
         for (const auto& row : gpuProbe.rows()) {
             if (row.name && str(row.name).rfind("rc", 0) == 0) {

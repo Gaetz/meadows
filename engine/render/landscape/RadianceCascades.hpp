@@ -37,15 +37,19 @@ enum class GiTechnique : u32 {
 // change (the reflectionScale pattern).
 struct RcTuning {
     // Structural (recreate):
-    i32 resolution { 64 };    // voxels per axis, both clips
+    i32 resolution { 64 };    // voxels/probes per axis, clips + cascade 0
     f32 fineVoxel { 0.5f };   // meters — interiors / near detail
     f32 coarseVoxel { 2.0f }; // meters — mid-field (span = res × voxel)
+    i32 cascadeCount { 5 };   // levels (clamped so the top keeps ≥2 probes)
     // Live:
     GiTechnique technique { GiTechnique::Classic }; // apply switch (G6)
     f32 intensity { 1.0f };   // indirect strength at apply (G6)
     f32 skyFactor { 0.5f };   // sky ambient folded into injected surfaces
+    f32 interval0 { 1.0f };   // cascade-0 interval length (m); reach =
+                              // interval0 × (2^count − 1)
     i32 updateInterval { 1 }; // inject every N frames (1 = every frame)
-    i32 debugView { 0 };      // 0 off, 1 = fine clip, 2 = coarse clip
+    i32 debugView { 0 };      // 0 off, 1 fine clip, 2 coarse clip,
+                              // 3 merged cascade-0 irradiance
 };
 
 // One world-space occluder/emitter BOX for the injection (G3): props,
@@ -131,12 +135,34 @@ private:
     rhi::UniqueTexture clipCoarse;
     rhi::UniqueBuffer rcUbo;
     rhi::UniqueBuffer boxBuffer;   // G3: SSBO of RcBox, kMaxBoxes
+    rhi::UniqueBuffer cascadeUbo;  // G4: per-dispatch level parameters
     rhi::UniqueBindGroup injectGroup;
     rhi::UniqueBindGroup debugGroup;
     rhi::UniquePipeline injectPipeline;
     u64 injectGeneration { 0 };
     rhi::UniquePipeline debugPipeline;
     u64 debugGeneration { 0 };
+    rhi::UniquePipeline buildPipeline;  // G4
+    u64 buildGeneration { 0 };
+    rhi::UniquePipeline mergePipeline;  // G5
+    u64 mergeGeneration { 0 };
+
+    // G4/G5: one texture + one build group per cascade; merge groups pair
+    // level i (image) with level i+1 (sampled src). Level layouts per
+    // docs/RADIANCE-CASCADES.md §2.2 (c0 dir-major, c1+ dir-tiled).
+    struct CascadeLevel {
+        rhi::UniqueTexture texture;
+        rhi::UniqueBindGroup buildGroup;
+        rhi::UniqueBindGroup mergeGroup;
+        u32 probes { 0 };  // per axis
+        u32 dirsW { 0 };   // octahedral direction grid
+        u32 dirsH { 0 };
+        u32 width { 0 };   // texture dims
+        u32 height { 0 };
+        u32 depth { 0 };
+    };
+    vector<CascadeLevel> levels;
+    i32 appliedCascadeCount { 0 };
 
     // Applied structural knobs (recreate when the tuning diverges).
     i32 appliedResolution { 0 };
