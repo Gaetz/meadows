@@ -116,6 +116,19 @@ public:
     // Worker output: instances bucketed per mesh variant.
     using VariantBuckets = array<vector<Instance>, kVariantCount>;
 
+    // Chantier RC (dev report 2026-07-11: forests bounced no green — the
+    // vegetation never entered the GI volume): a compact CPU copy of each
+    // chunk's props survives the GPU upload so the injection can box them.
+    struct GiProp {
+        Vec3 position; // terrain point (prop base)
+        f32 scale;     // uniform scale
+        u8 kind;       // 0 = tree, 1 = rock, 2 = bush
+    };
+    // Appends props within `halfSpan` (Chebyshev) of `center`, nearest
+    // chunks first, until `out` reaches `maxProps`.
+    void collectGiProps(const Vec3& center, f32 halfSpan,
+                        vector<GiProp>& out, size_t maxProps) const;
+
 private:
     struct Chunk {
         bool resident { false };
@@ -126,6 +139,7 @@ private:
         // Prop-base height range, for the frustum AABB.
         f32 minY { 0.0f };
         f32 maxY { 0.0f };
+        vector<GiProp> giProps; // chantier RC: CPU copy for the injection
     };
     struct VariantMesh {
         rhi::UniqueBuffer vertexBuffer;

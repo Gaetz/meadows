@@ -311,11 +311,19 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
         }
         Chunk& chunk = it->second;
         vector<Instance> packed;
+        chunk.giProps.clear();
         for (u32 v = 0; v < kVariantCount; ++v) {
             chunk.firstInstance[v] = static_cast<u32>(packed.size());
             chunk.counts[v] = static_cast<u32>(built.payload[v].size());
             packed.insert(packed.end(), built.payload[v].begin(),
                           built.payload[v].end());
+            // Chantier RC: the compact CPU copy the GI injection boxes.
+            const u8 kind = v < kFirstRock ? 0 : v < kFirstBush ? 1 : 2;
+            for (const Instance& instance : built.payload[v]) {
+                chunk.giProps.push_back(
+                    { Vec3 { instance.positionScale },
+                      instance.positionScale.w, kind });
+            }
         }
         chunk.total = static_cast<u32>(packed.size());
         if (chunk.total > 0) {
@@ -334,6 +342,8 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
         instances += chunk.total;
         return true;
     });
+
+    // (giProps live in the Chunk: eviction frees them with it.)
 
     // Request missing chunks — nearest first, budgeted (the rest is
     // re-detected next frame; the state IS the queue). See TerrainSystem:
@@ -566,6 +576,47 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
             cmd.setVertexBuffer(1, chunk.instanceBuffer);
             cmd.drawIndexed(indexCount, chunk.counts[v], 0,
                             chunk.firstInstance[v]);
+        }
+    }
+}
+
+void VegetationSystem::collectGiProps(const Vec3& center, f32 halfSpan,
+                                      vector<GiProp>& out,
+                                      size_t maxProps) const {
+    // Nearest chunks first so the box cap keeps the props that matter.
+    struct Near {
+        f32 distance;
+        const Chunk* chunk;
+    };
+    vector<Near> near;
+    for (const auto& [key, chunk] : streamer.chunks) {
+        if (!chunk.resident || chunk.giProps.empty()) {
+            continue;
+        }
+        const f32 cx = (static_cast<f32>(chunkKeyCx(key)) + 0.5f) *
+                       TerrainSystem::kChunkSize;
+        const f32 cz = (static_cast<f32>(chunkKeyCz(key)) + 0.5f) *
+                       TerrainSystem::kChunkSize;
+        const f32 distance = glm::max(glm::abs(cx - center.x),
+                                      glm::abs(cz - center.z));
+        if (distance > halfSpan + TerrainSystem::kChunkSize) {
+            continue;
+        }
+        near.push_back({ distance, &chunk });
+    }
+    std::sort(near.begin(), near.end(),
+              [](const Near& a, const Near& b) {
+                  return a.distance < b.distance;
+              });
+    for (const Near& entry : near) {
+        for (const GiProp& prop : entry.chunk->giProps) {
+            if (out.size() >= maxProps) {
+                return;
+            }
+            if (glm::max(glm::abs(prop.position.x - center.x),
+                         glm::abs(prop.position.z - center.z)) <= halfSpan) {
+                out.push_back(prop);
+            }
         }
     }
 }

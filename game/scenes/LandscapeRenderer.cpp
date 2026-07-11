@@ -1445,7 +1445,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             // Albedo proxy: the material tint over a mid gray (real splat
             // colors never leave the mesh shader); emissive feeds the GI.
             rcBoxes.push_back(
-                { { lo, 0.0f },
+                { { lo, 1.0f },
                   { hi, 0.0f },
                   { Vec3 { mesh.tint } * 0.35f, mesh.emissive } });
         }
@@ -1454,9 +1454,49 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                 break;
             }
             const Vec3 feet { npc.transform[3] };
-            rcBoxes.push_back({ { feet - Vec3 { 0.4f, 0.0f, 0.4f }, 0.0f },
+            rcBoxes.push_back({ { feet - Vec3 { 0.4f, 0.0f, 0.4f }, 1.0f },
                                 { feet + Vec3 { 0.4f, 1.8f, 0.4f }, 0.0f },
                                 { Vec3 { 0.10f }, 0.0f } });
+        }
+        // Chantier RC (dev report 2026-07-11): the vegetation joins the
+        // volume — forests get green bounce and canopy sky occlusion.
+        // Trees inject their CANOPY as a semi-transparent green box (the
+        // march filters through, soft light under the crowns); rocks and
+        // bushes as small solid/soft boxes. Nearest chunks first, capped
+        // by the shared box budget.
+        if (!view.interiorMode) {
+            vegGiProps.clear();
+            vegetation.collectGiProps(
+                camera.position, clipHalf, vegGiProps,
+                render::RadianceCascades::kMaxBoxes - rcBoxes.size());
+            for (const auto& prop : vegGiProps) {
+                const f32 s = prop.scale;
+                const Vec3 p = prop.position;
+                switch (prop.kind) {
+                case 0: // tree canopy (leaf-green, filters light)
+                    rcBoxes.push_back(
+                        { { p + Vec3 { -2.2f * s, 2.2f * s, -2.2f * s },
+                            0.7f },
+                          { p + Vec3 { 2.2f * s, 5.8f * s, 2.2f * s },
+                            0.0f },
+                          { Vec3 { 0.055f, 0.115f, 0.032f }, 0.0f } });
+                    break;
+                case 1: // rock
+                    rcBoxes.push_back(
+                        { { p + Vec3 { -1.1f * s, 0.0f, -1.1f * s }, 1.0f },
+                          { p + Vec3 { 1.1f * s, 1.6f * s, 1.1f * s },
+                            0.0f },
+                          { Vec3 { 0.17f, 0.16f, 0.15f }, 0.0f } });
+                    break;
+                default: // bush
+                    rcBoxes.push_back(
+                        { { p + Vec3 { -0.9f * s, 0.0f, -0.9f * s }, 0.8f },
+                          { p + Vec3 { 0.9f * s, 1.2f * s, 0.9f * s },
+                            0.0f },
+                          { Vec3 { 0.050f, 0.105f, 0.030f }, 0.0f } });
+                    break;
+                }
+            }
         }
         for (const auto& light : snapshot.lights) {
             rcLights.push_back(

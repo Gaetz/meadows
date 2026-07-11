@@ -60,7 +60,8 @@ struct RcTuning {
 // engine never sees the game's caches). v1 boxes occlude as their AABB
 // (assumed stylized; real triangles are a later brick).
 struct RcBox {
-    Vec4 boundsMin;      // xyz; w unused
+    Vec4 boundsMin;      // xyz; w = opacity (1 = solid, <1 = the interval
+                         //     march filters through — tree canopies)
     Vec4 boundsMax;      // xyz; w unused
     Vec4 albedoEmissive; // rgb = albedo proxy, a = emissive multiplier
 };

@@ -21,7 +21,9 @@ constexpr const char* kFullscreenVert = "fullscreen";
 // Flat proxy albedos per terrain material — GI only needs the broad hue
 // of what the light bounces off (the real splat tiles never leave the
 // terrain shader). Rough matches of the splat family averages.
-constexpr Vec3 kGrassAlbedo { 0.065f, 0.110f, 0.040f };
+// (Grass slightly brighter than the raw splat average — the visible
+// green bounce was too subtle, dev report 2026-07-11.)
+constexpr Vec3 kGrassAlbedo { 0.090f, 0.155f, 0.052f };
 constexpr Vec3 kRockAlbedo { 0.180f, 0.165f, 0.150f };
 constexpr Vec3 kSandAlbedo { 0.420f, 0.360f, 0.250f };
 constexpr Vec3 kSnowAlbedo { 0.620f, 0.660f, 0.720f };

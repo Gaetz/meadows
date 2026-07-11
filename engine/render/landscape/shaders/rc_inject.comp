@@ -78,15 +78,17 @@ void main() {
         albedo = texture(uRcAlbedo, uv).rgb;
     }
 
-    // Boxes override/add (props, kits, NPCs — v1 AABB occlusion).
+    // Boxes override/add (props, kits, NPCs, canopies — v1 AABB
+    // occlusion; boundsMin.w < 1 = semi-transparent, the march filters).
     const int boxCount = int(uRcMisc.z);
     for (int b = 0; b < boxCount; ++b) {
-        const vec3 bmin = uRcBoxData[b * 3 + 0].xyz - halfVoxel;
+        const vec4 bminO = uRcBoxData[b * 3 + 0];
+        const vec3 bmin = bminO.xyz - halfVoxel;
         const vec3 bmax = uRcBoxData[b * 3 + 1].xyz + halfVoxel;
         if (all(greaterThanEqual(world, bmin)) &&
             all(lessThanEqual(world, bmax))) {
             const vec4 boxAlbedo = uRcBoxData[b * 3 + 2];
-            occupancy = 1.0;
+            occupancy = max(occupancy, bminO.w);
             albedo = boxAlbedo.rgb;
             normal = vec3(0.0, 1.0, 0.0); // stylized: boxes light as tops
             emissive += boxAlbedo.rgb * boxAlbedo.a;
@@ -124,7 +126,7 @@ void main() {
                 }
             }
         }
-        result = vec4(radiance, 1.0);
+        result = vec4(radiance, occupancy);
     }
 
     if (clip == 0) {

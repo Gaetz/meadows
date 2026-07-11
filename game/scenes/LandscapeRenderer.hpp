@@ -197,6 +197,7 @@ private:
     render::RadianceCascades radianceCascades;
     vector<render::RcBox> rcBoxes;     // per-frame injection lists (G3),
     vector<render::RcLight> rcLights;  // reused to avoid re-allocations
+    vector<render::VegetationSystem::GiProp> vegGiProps; // forests -> GI
     bool regenerateRequested { false };
     // Grass panel: a scatter knob moved — grass-only re-scatter next frame.
     bool grassRescatterRequested { false };
