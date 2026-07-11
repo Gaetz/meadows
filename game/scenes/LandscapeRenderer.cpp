@@ -1711,24 +1711,17 @@ void LandscapeRenderer::drawPerfPanel(const core::FrameProbe* cpuProbe) {
 }
 
 void LandscapeRenderer::drawTerrainPanel() {
-        ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
-                    terrain.residentCount(), terrain.drawnLastFrame(),
-                    terrain.pendingCount(), terrain.uploadsLastFrame());
-        ImGui::Text("Prop chunks drawn: %u | occluded CPU: %u | GPU: %u",
-                    vegetation.drawnLastFrame(), occlusion.occludedCount(),
-                    gpuOcclusion.lastOccludedCount());
-        ImGui::Checkbox("Occlusion culling (A/B)", &occlusionUi);
-        ImGui::SameLine();
-        ImGui::Checkbox("GPU Hi-Z", &gpuOcclusionUi);
-        ImGui::Text("Grass blades: %u | props: %u", grass.instanceTotal(),
-                    vegetation.propTotal());
-        // GPU-PERF P1: the vegetation draw budget, live (baseline:
-        // mainVeg 1.8 ms at 14/4). Shrinking the ring pops at the edge
-        // (the tree fade tops out at 880 m) — a budget-hunting knob.
-        ImGui::SliderInt("Veg view radius (chunks)", &vegetation.viewRadius,
-                         4, 15);
-        ImGui::SliderInt("Veg high-detail radius",
-                         &vegetation.highDetailRadius, 0, 8);
+    // Live stats stay on top, always visible; the knobs group below.
+    ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
+                terrain.residentCount(), terrain.drawnLastFrame(),
+                terrain.pendingCount(), terrain.uploadsLastFrame());
+    ImGui::Text("Prop chunks drawn: %u | occluded CPU: %u | GPU: %u",
+                vegetation.drawnLastFrame(), occlusion.occludedCount(),
+                gpuOcclusion.lastOccludedCount());
+    ImGui::Text("Grass blades: %u | props: %u", grass.instanceTotal(),
+                vegetation.propTotal());
+    if (ImGui::CollapsingHeader("Terrain",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::InputScalar("Seed", ImGuiDataType_U32, &terrain.params.seed);
         ImGui::SameLine();
         if (ImGui::Button("Regenerate")) {
@@ -1739,7 +1732,22 @@ void LandscapeRenderer::drawTerrainPanel() {
         // re-align it.
         ImGui::SliderFloat("Sea level (m)", &terrain.params.seaLevel, 0.0f,
                            40.0f, "%.0f");
+    }
+    if (ImGui::CollapsingHeader("Vegetation")) {
+        // GPU-PERF P1: the vegetation draw budget, live (baseline:
+        // mainVeg 1.8 ms at 14/4). Shrinking the ring pops at the edge
+        // (the tree fade tops out at 880 m) — a budget-hunting knob.
+        ImGui::SliderInt("Veg view radius (chunks)", &vegetation.viewRadius,
+                         4, 15);
+        ImGui::SliderInt("Veg high-detail radius",
+                         &vegetation.highDetailRadius, 0, 8);
+    }
+    if (ImGui::CollapsingHeader("Culling & debug")) {
+        ImGui::Checkbox("Occlusion culling (A/B)", &occlusionUi);
+        ImGui::SameLine();
+        ImGui::Checkbox("GPU Hi-Z", &gpuOcclusionUi);
         ImGui::Checkbox("Wireframe (LOD debug)", &wireframeUi);
+    }
 }
 
 void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
@@ -1801,66 +1809,79 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
             grassRescatterRequested = true;
         }
     }
-    ImGui::Checkbox("Stylized lighting (BotW A/B)", &stylizedUi);
-    ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
-    ImGui::SliderFloat("Bloom intensity", &atmos.bloomIntensity, 0.0f, 1.5f,
-                       "%.2f");
-    ImGui::SliderFloat("God rays intensity", &atmos.godRayIntensity, 0.0f, 2.0f,
-                       "%.2f");
-    ImGui::SliderFloat("Volumetric shafts", &atmos.volumetric, 0.0f, 3.0f,
-                       "%.2f");
-    ImGui::Combo("Debug buffer", &debugBufferUi,
-                 "Off\0Bloom\0God rays\0Volumetric\0");
-    ImGui::Checkbox("Shadows", &shadowsUi);
-    ImGui::SameLine();
-    ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);
-    // GPU-PERF P5c A/B: far cascades on alternate frames (baseline had
-    // `shadows` at 5.5 ms) — off = every cascade every frame.
-    ImGui::Checkbox("CSM round-robin (far cascades 1/2 rate)",
-                    &shadowRoundRobinUi);
-    // B2a A/B: houses/crates/NPCs casting into the sun cascades.
-    ImGui::Checkbox("Mesh shadow casters", &meshShadowCastersUi);
-    ImGui::SameLine();
-    ImGui::Checkbox("Light shafts", &shaftsUi); // brick 34
-    ImGui::Checkbox("Contact shadows", &contactShadowsUi); // brick 33a
-    ImGui::SameLine();
-    ImGui::Checkbox("Terrain light map", &terrainLightUi); // brick 33b/c
-    ImGui::Checkbox("Key light shadow", &keyShadowUi); // B2b (interiors)
-    // B3 A/B (brick 28): the analytical grade, off by default.
-    ImGui::Checkbox("Grading (brick 28)", &gradingUi);
-    if (gradingUi) {
-        ImGui::SliderFloat("Vibrance", &gradeVibranceUi, 0.0f, 1.0f, "%.2f");
-        ImGui::SliderFloat("Split tone", &gradeSplitToneUi, 0.0f, 1.0f,
-                           "%.2f");
-        ImGui::SliderFloat("Contrast", &gradeContrastUi, 0.8f, 1.4f, "%.2f");
+    if (ImGui::CollapsingHeader("Lighting & shadows")) {
+        ImGui::Checkbox("Stylized lighting (BotW A/B)", &stylizedUi);
+        ImGui::Checkbox("Shadows", &shadowsUi);
+        ImGui::SameLine();
+        ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);
+        // GPU-PERF P5c A/B: far cascades on alternate frames (baseline had
+        // `shadows` at 5.5 ms) — off = every cascade every frame.
+        ImGui::Checkbox("CSM round-robin (far cascades 1/2 rate)",
+                        &shadowRoundRobinUi);
+        // B2a A/B: houses/crates/NPCs casting into the sun cascades.
+        ImGui::Checkbox("Mesh shadow casters", &meshShadowCastersUi);
+        ImGui::Checkbox("Contact shadows", &contactShadowsUi); // brick 33a
+        ImGui::SameLine();
+        ImGui::Checkbox("Terrain light map", &terrainLightUi); // brick 33b/c
+        ImGui::Checkbox("Key light shadow", &keyShadowUi); // B2b (interiors)
     }
-    ImGui::Checkbox("Water reflections", &reflectionsUi);
-    // GPU-PERF P3: skip the mirror render when no resident water is in
-    // view (A/B — the horizon-sea edge case), and trade its resolution.
-    ImGui::SameLine();
-    ImGui::Checkbox("auto-skip", &reflectionAutoSkipUi);
-    ImGui::SliderFloat("Reflection scale", &reflectionScaleUi, 0.25f, 0.5f,
-                       "%.2f");
-    ImGui::SliderFloat("Exposure", &exposureUi, 0.25f, 3.0f, "%.2f");
-    // B4 A/B (brick 29): eye adaptation; Exposure above becomes the bias.
-    ImGui::Checkbox("Auto exposure (brick 29)", &autoExposureUi);
-    if (autoExposureUi) {
-        ImGui::SliderFloat("Auto-expo min", &autoExposureMinUi, 0.1f, 1.0f,
-                           "%.2f");
-        ImGui::SliderFloat("Auto-expo max", &autoExposureMaxUi, 1.0f, 6.0f,
-                           "%.2f");
+    if (ImGui::CollapsingHeader("Sun FX")) {
+        ImGui::SliderFloat("God rays intensity", &atmos.godRayIntensity,
+                           0.0f, 2.0f, "%.2f");
+        ImGui::SliderFloat("Volumetric shafts", &atmos.volumetric, 0.0f,
+                           3.0f, "%.2f");
+        ImGui::Checkbox("Light shafts (dust, brick 34)", &shaftsUi);
     }
-    ImGui::SliderFloat("Fog density", &atmos.fogDensity, 0.0f, 0.004f, "%.4f",
-                       ImGuiSliderFlags_Logarithmic);
-    ImGui::SliderFloat("Fog height falloff", &atmos.fogHeightFalloff, 0.001f,
-                       0.08f, "%.3f", ImGuiSliderFlags_Logarithmic);
-    ImGui::SliderFloat("Fog low-altitude boost", &atmos.fogLowBoost, 0.0f, 5.0f,
-                       "%.1f");
-    ImGui::SliderFloat("Fog start (m)", &atmos.fogStart, 0.0f, 500.0f, "%.0f");
-    ImGui::SliderFloat("Cloud coverage", &atmos.cloudCoverage, 0.0f, 1.0f,
-                       "%.2f");
-    ImGui::SliderFloat("Cloud shadow strength", &atmos.cloudShadow, 0.0f, 1.0f,
-                       "%.2f");
+    if (ImGui::CollapsingHeader("Fog & clouds")) {
+        ImGui::SliderFloat("Fog density", &atmos.fogDensity, 0.0f, 0.004f,
+                           "%.4f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Fog height falloff", &atmos.fogHeightFalloff,
+                           0.001f, 0.08f, "%.3f",
+                           ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Fog low-altitude boost", &atmos.fogLowBoost,
+                           0.0f, 5.0f, "%.1f");
+        ImGui::SliderFloat("Fog start (m)", &atmos.fogStart, 0.0f, 500.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Cloud coverage", &atmos.cloudCoverage, 0.0f,
+                           1.0f, "%.2f");
+        ImGui::SliderFloat("Cloud shadow strength", &atmos.cloudShadow,
+                           0.0f, 1.0f, "%.2f");
+    }
+    if (ImGui::CollapsingHeader("Water")) {
+        ImGui::Checkbox("Reflections", &reflectionsUi);
+        // GPU-PERF P3: skip the mirror render when no resident water is in
+        // view (A/B — the horizon-sea edge case), and trade its resolution.
+        ImGui::SameLine();
+        ImGui::Checkbox("auto-skip", &reflectionAutoSkipUi);
+        ImGui::SliderFloat("Reflection scale", &reflectionScaleUi, 0.25f,
+                           0.5f, "%.2f");
+    }
+    if (ImGui::CollapsingHeader("Post-processing")) {
+        ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
+        ImGui::SliderFloat("Exposure", &exposureUi, 0.25f, 3.0f, "%.2f");
+        // B4 A/B (brick 29): eye adaptation; Exposure becomes the bias.
+        ImGui::Checkbox("Auto exposure (brick 29)", &autoExposureUi);
+        if (autoExposureUi) {
+            ImGui::SliderFloat("Auto-expo min", &autoExposureMinUi, 0.1f,
+                               1.0f, "%.2f");
+            ImGui::SliderFloat("Auto-expo max", &autoExposureMaxUi, 1.0f,
+                               6.0f, "%.2f");
+        }
+        ImGui::SliderFloat("Bloom intensity", &atmos.bloomIntensity, 0.0f,
+                           1.5f, "%.2f");
+        // B3 A/B (brick 28): the analytical grade, off by default.
+        ImGui::Checkbox("Grading (brick 28)", &gradingUi);
+        if (gradingUi) {
+            ImGui::SliderFloat("Vibrance", &gradeVibranceUi, 0.0f, 1.0f,
+                               "%.2f");
+            ImGui::SliderFloat("Split tone", &gradeSplitToneUi, 0.0f, 1.0f,
+                               "%.2f");
+            ImGui::SliderFloat("Contrast", &gradeContrastUi, 0.8f, 1.4f,
+                               "%.2f");
+        }
+        ImGui::Combo("Debug buffer", &debugBufferUi,
+                     "Off\0Bloom\0God rays\0Volumetric\0");
+    }
 }
 
 } // namespace game

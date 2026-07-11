@@ -1839,18 +1839,23 @@ void LandscapeScene::drawUi() {
 }
 
 void LandscapeScene::drawSkyUi() {
-    // The clock is the source of truth: the slider WRITES it (day count
-    // preserved), the sky follows in update().
-    f32 hour = static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
-    if (ImGui::SliderFloat("Time of day (h)", &hour, 0.0f, 24.0f, "%.1f")) {
-        const f64 days = std::floor(gameClock.gameHours() / 24.0);
-        gameClock.gameSeconds = (days * 24.0 + hour) * 3600.0;
+    if (ImGui::CollapsingHeader("Time", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // The clock is the source of truth: the slider WRITES it (day
+        // count preserved), the sky follows in update().
+        f32 hour = static_cast<f32>(std::fmod(gameClock.gameHours(), 24.0));
+        if (ImGui::SliderFloat("Time of day (h)", &hour, 0.0f, 24.0f,
+                               "%.1f")) {
+            const f64 days = std::floor(gameClock.gameHours() / 24.0);
+            gameClock.gameSeconds = (days * 24.0 + hour) * 3600.0;
+        }
+        ImGui::Checkbox("Animate (24 h in 2 min)", &animateTime);
+        ImGui::SameLine();
+        ImGui::TextDisabled("day %d, x%.0f",
+                            static_cast<int>(gameClock.gameDays()),
+                            gameClock.timescale);
     }
-    ImGui::Checkbox("Animate (24 h in 2 min)", &animateTime);
-    ImGui::SameLine();
-    ImGui::TextDisabled("day %d, x%.0f", static_cast<int>(gameClock.gameDays()),
-                        gameClock.timescale);
-    if (!weather.states().empty()) {
+    if (!weather.states().empty() &&
+        ImGui::CollapsingHeader("Weather", ImGuiTreeNodeFlags_DefaultOpen)) {
         // "(manual)" entry + one per WeatherForm, separated by '\0' as
         // ImGui::Combo expects (c_str() supplies the double terminator).
         str items = "(manual)";
@@ -1874,6 +1879,9 @@ void LandscapeScene::drawSkyUi() {
         ImGui::SliderFloat("Wind strength", &atmos.windStrength, 0.0f, 2.5f,
                            "%.2f");
         ImGui::SliderFloat("Wave chop", &atmos.waveChop, 0.0f, 2.5f, "%.2f");
+    }
+    if (!weather.states().empty() &&
+        ImGui::CollapsingHeader("Light & color")) {
         ImGui::SliderFloat("Sun intensity", &atmos.sunIntensity, 0.0f, 1.5f,
                            "%.2f");
         ImGui::SliderFloat("Ambient intensity", &atmos.ambientIntensity, 0.0f,
@@ -1885,33 +1893,8 @@ void LandscapeScene::drawSkyUi() {
 }
 
 void LandscapeScene::drawGameplayUi() {
-    if (!npcDirector.npcs().empty()) {
-        // B6: the Forms-driven NPC — patrol state + locomotion graph live.
-        static constexpr const char* kStateNames[] = { "idle", "walk",
-                                                       "run" };
-        const Npc& npc = *npcDirector.npcs().front();
-        const u32 state = npc.anim->currentState();
-        ImGui::Text("NPC: %s%s | %.1f m/s",
-                    state < 3 ? kStateNames[state] : "sit/other",
-                    npc.anim->blending() ? " (blending)" : "", npc.speed);
-        if (!npc.intentReason.empty()) {
-            // The P0 schedule tool: where is this NPC going, and why.
-            ImGui::TextDisabled("intent: %s", npc.intentReason.c_str());
-        }
-        if (ImGui::Button("Teleport to NPC")) {
-            // Stand 6 m south, eyes 2 m up, looking at the NPC's CURRENT
-            // position (it walks).
-            const Vec3 spot = npc.entity.get<world::Transform>().position;
-            flyCamera.camera.position = spot + Vec3 { 0.0f, 2.0f, 6.0f };
-            const Vec3 dir =
-                glm::normalize(spot + Vec3 { 0.0f, 1.0f, 0.0f } -
-                               flyCamera.camera.position);
-            flyCamera.camera.yaw = std::atan2(dir.x, -dir.z);
-            flyCamera.camera.pitch = std::asin(dir.y);
-        }
-        ImGui::Separator();
-    }
-    if (physics) {
+    if (physics &&
+        ImGui::CollapsingHeader("Player", ImGuiTreeNodeFlags_DefaultOpen)) {
         // B5: first-person Play mode.
         bool play = (mode == SceneMode::Play);
         if (ImGui::Checkbox("Play mode — F2 Spectator / F3 Editor", &play)) {
@@ -1941,6 +1924,34 @@ void LandscapeScene::drawGameplayUi() {
                 gameplay::applyEffect(set, asys, *testWoundEffect, gameTags);
             }
         }
+    }
+    if (!npcDirector.npcs().empty() &&
+        ImGui::CollapsingHeader("NPC", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // B6: the Forms-driven NPC — patrol state + locomotion graph live.
+        static constexpr const char* kStateNames[] = { "idle", "walk",
+                                                       "run" };
+        const Npc& npc = *npcDirector.npcs().front();
+        const u32 state = npc.anim->currentState();
+        ImGui::Text("NPC: %s%s | %.1f m/s",
+                    state < 3 ? kStateNames[state] : "sit/other",
+                    npc.anim->blending() ? " (blending)" : "", npc.speed);
+        if (!npc.intentReason.empty()) {
+            // The P0 schedule tool: where is this NPC going, and why.
+            ImGui::TextDisabled("intent: %s", npc.intentReason.c_str());
+        }
+        if (ImGui::Button("Teleport to NPC")) {
+            // Stand 6 m south, eyes 2 m up, looking at the NPC's CURRENT
+            // position (it walks).
+            const Vec3 spot = npc.entity.get<world::Transform>().position;
+            flyCamera.camera.position = spot + Vec3 { 0.0f, 2.0f, 6.0f };
+            const Vec3 dir =
+                glm::normalize(spot + Vec3 { 0.0f, 1.0f, 0.0f } -
+                               flyCamera.camera.position);
+            flyCamera.camera.yaw = std::atan2(dir.x, -dir.z);
+            flyCamera.camera.pitch = std::asin(dir.y);
+        }
+    }
+    if (physics && ImGui::CollapsingHeader("Physics debug")) {
         // B4: drop a kinematic capsule from the camera — it falls, lands
         // on the height-field tiles, and rides slopes (magenta box).
         if (ImGui::Button("Drop capsule here (B4)")) {
