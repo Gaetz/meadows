@@ -1970,6 +1970,8 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
                                  1.0f));
         ImGui::SeparatorText("Injection");
         ImGui::SliderFloat("Sky factor", &rc.skyFactor, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Light emitter boost", &rc.emitterBoost, 0.0f,
+                           4.0f, "%.2f");
         ImGui::SeparatorText("Apply");
         ImGui::SliderFloat("Intensity", &rc.intensity, 0.0f, 2.0f, "%.2f");
         ImGui::SliderFloat("Edge fade (m)", &rc.edgeFade, 1.0f, 16.0f,

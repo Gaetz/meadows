@@ -38,7 +38,9 @@ struct RcUniforms {
     Vec4 lightPosRadius[RadianceCascades::kMaxLights]; // G3
     Vec4 lightColor[RadianceCascades::kMaxLights];
     Vec4 misc2; // APPENDED (adaptive ramp): x = band count,
-                // y = contrast floor (log2 stops), z = adapt speed
+                // y = contrast floor (log2 stops), z = adapt speed,
+                // w = dim-band level
+    Vec4 misc3; // APPENDED: x = light emitter boost (blob radiance)
 };
 
 // std140 mirror of RcCascadeUbo (rc_build.comp / rc_merge.comp).
@@ -486,6 +488,8 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
                        glm::max(tuning.contrastFloor, 0.1f),
                        glm::clamp(tuning.adaptSpeed, 0.005f, 1.0f),
                        glm::clamp(tuning.dimBand, 0.05f, 0.95f) };
+    uniforms.misc3 = { glm::max(tuning.emitterBoost, 0.0f), 0.0f, 0.0f,
+                       0.0f };
     for (u32 i = 0; i < lightCount; ++i) {
         uniforms.lightPosRadius[i] = lights[i].positionRadius;
         uniforms.lightColor[i] = lights[i].color;

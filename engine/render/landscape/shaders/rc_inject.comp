@@ -21,6 +21,8 @@ layout(std140, binding = 2) uniform RcUbo {
                          // z = box count, w = light count (G3)
     vec4 uRcLightPosRadius[16]; // G3: local lights (xyz, w = radius)
     vec4 uRcLightColor[16];     // rgb premultiplied by intensity
+    vec4 uRcMisc2; // adaptive ramp (rc_adapt.comp)
+    vec4 uRcMisc3; // x = light emitter boost (the blob's radiance scale)
 };
 
 // G3: props/kits/NPCs as AABBs — two vec4 bounds + albedo/emissive.
@@ -92,6 +94,26 @@ void main() {
             albedo = boxAlbedo.rgb;
             normal = vec3(0.0, 1.0, 0.0); // stylized: boxes light as tops
             emissive += boxAlbedo.rgb * boxAlbedo.a;
+        }
+    }
+
+    // The lights THEMSELVES enter the field as small emissive blobs (dev
+    // bug 2026-07-11: interiors banded, open terrain did not — surface
+    // splats only light SURFACES and a flat floor cannot see itself;
+    // walls/ceilings carried the light indoors). A finite-size emitter is
+    // also what the penumbra hypothesis wants; the 1/d² falloff emerges
+    // from the source's solid angle across the cascades.
+    {
+        const int lightCount = int(uRcMisc.w);
+        const float blob = voxelSize * 1.5;
+        for (int l = 0; l < lightCount; ++l) {
+            const float dist =
+                distance(uRcLightPosRadius[l].xyz, world);
+            if (dist < blob) {
+                const float soft = 1.0 - dist / blob;
+                occupancy = max(occupancy, 0.5 * soft);
+                emissive += uRcLightColor[l].rgb * (uRcMisc3.x * soft);
+            }
         }
     }
 
