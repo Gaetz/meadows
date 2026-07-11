@@ -88,19 +88,23 @@ SocketPose guardPose() {
                             Vec3 { 1.0f, 0.0f, 0.0f }) };
 }
 
-// Armed: pulled high right, blade rolled to point up-right — the start
-// of the slash arc.
+// Armed: pulled high right, blade PITCHED FORWARD for the strike (dev
+// feel pass 2026-07-11: ~90 degrees about the actor's left-right axis —
+// local -X pitch, since local -Z is forward) and rolled right.
 SocketPose armedPose() {
     return { Vec3 { 0.45f, -0.18f, -0.50f },
-             glm::angleAxis(glm::radians(40.0f), Vec3 { 1.0f, 0.0f, 0.0f }) *
+             glm::angleAxis(glm::radians(-80.0f),
+                            Vec3 { 1.0f, 0.0f, 0.0f }) *
                  glm::angleAxis(glm::radians(-65.0f),
                                 Vec3 { 0.0f, 0.0f, 1.0f }) };
 }
 
-// Follow-through: mirrored low left, blade rolled up-left.
+// Follow-through: mirrored low left, blade still forward; Recovery's
+// interpolation back to guard is what stands the sword upright again.
 SocketPose throughPose() {
     return { Vec3 { -0.45f, -0.28f, -0.50f },
-             glm::angleAxis(glm::radians(40.0f), Vec3 { 1.0f, 0.0f, 0.0f }) *
+             glm::angleAxis(glm::radians(-80.0f),
+                            Vec3 { 1.0f, 0.0f, 0.0f }) *
                  glm::angleAxis(glm::radians(65.0f),
                                 Vec3 { 0.0f, 0.0f, 1.0f }) };
 }

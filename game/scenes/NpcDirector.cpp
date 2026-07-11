@@ -44,6 +44,17 @@ namespace {
 // StatsTuningForm (§5 moddable) — the same scale the player uses, no more
 // hand-mirrored copy.
 
+// P0 A2/A3 [cpp-tuning] — the sword grip correction for the UAL hand_r
+// joint (dev feel pass 2026-07-11). Hand-local: fingers run along +Y,
+// the thumb sits on +Z, X pierces the palm. Identity put the blade in
+// the FOREARM'S prolongation (along the fingers); +90 degrees about X —
+// "the axis through the hand" — stands it up out of the fist on the
+// thumb side, where a gripped handle actually exits. Applied to the
+// DRAWN sword (extract) and the HIT segment (update) alike: the blade
+// that hits stays the blade you see.
+const Mat4 kSwordGrip = glm::rotate(
+    Mat4 { 1.0f }, glm::radians(90.0f), Vec3 { 1.0f, 0.0f, 0.0f });
+
 } // namespace
 
 const RigData* NpcDirector::loadRig(const NpcContext& ctx,
@@ -596,7 +607,9 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                 anim::modelMatrices(npc.rig->skeleton, npc.pose,
                                     jointScratch);
                 const Mat4 hand =
-                    world * jointScratch[static_cast<size_t>(npc.handJoint)];
+                    world *
+                    jointScratch[static_cast<size_t>(npc.handJoint)] *
+                    kSwordGrip;
                 const Vec3 grip { hand[3] };
                 const Vec3 bladeDir = glm::normalize(Vec3 { hand[1] });
                 const Vec3 tip =
@@ -661,15 +674,15 @@ void NpcDirector::extract(RenderSnapshot& out) const {
                                 npc.vertices, npc.indices, npc.indexCount,
                                 npc.palette });
         // Chantier P0 A2: hostiles carry the VISIBLE sword in hand_r —
-        // the blade the hit test follows (blade-touch combat). The grip
-        // correction is identity v1 [cpp-tuning: rig-specific, adjust on
-        // the dev's visual pass].
+        // the blade the hit test follows (blade-touch combat). kSwordGrip
+        // stands the blade up out of the fist (dev feel pass).
         if (npc.hostile && !npc.dead && npc.handJoint >= 0) {
             anim::modelMatrices(npc.rig->skeleton, npc.pose, jointScratch);
             out.meshes.push_back(
                 { swordMeshGuid(), core::Guid {},
                   world *
-                      jointScratch[static_cast<size_t>(npc.handJoint)] });
+                      jointScratch[static_cast<size_t>(npc.handJoint)] *
+                      kSwordGrip });
         }
     }
 }
