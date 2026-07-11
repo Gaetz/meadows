@@ -7,6 +7,24 @@
 
 namespace gameplay {
 
+const char* damageTypeName(DamageType type) {
+    switch (type) {
+    case DamageType::Slash:     return "Slash";
+    case DamageType::Pierce:    return "Pierce";
+    case DamageType::Blunt:     return "Blunt";
+    case DamageType::Fire:      return "Fire";
+    case DamageType::Cold:      return "Cold";
+    case DamageType::Lightning: return "Lightning";
+    case DamageType::Sonic:     return "Sonic";
+    case DamageType::Chemical:  return "Chemical";
+    case DamageType::Psychic:   return "Psychic";
+    case DamageType::Holy:      return "Holy";
+    case DamageType::Dark:      return "Dark";
+    case DamageType::Ether:     return "Ether";
+    }
+    return "Unknown";
+}
+
 namespace {
 bool isPhysical(DamageType type) {
     return type == DamageType::Slash || type == DamageType::Pierce ||

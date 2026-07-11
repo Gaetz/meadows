@@ -207,6 +207,9 @@ void LandscapeScene::setupGameplay() {
     // cost/cooldown/i-frames all live in its effects.
     dodgeAbility =
         data::findByEditorId<gameplay::AbilityForm>(forms, "Dodge");
+    // P0 C2: cue handlers over the resolved CueForms — combat feedback
+    // (hit sparks, parry shake) is data from here on.
+    fxDirector.create(forms, fxSim);
     // Chantier 4 B5: the currency + the barter trigger (a dialogue node
     // fires "OpenBarter" — the vendor is whoever we're talking to).
     goldForm = data::findByEditorId<data::MiscItemForm>(forms, "GoldCoin");
@@ -682,6 +685,9 @@ void LandscapeScene::update(f32 dt) {
         // frozen sparks, like everything else).
         fxSim.update(dt);
     }
+    // P0 C2: shake decay + the transient camera offset (removed first
+    // each frame, so paused sims and fly cameras never accumulate it).
+    fxDirector.update(dt, flyCamera);
     // P0 C1: live particles -> POD batches; the ALPHA batch is sorted
     // far-to-near around the camera (additive needs no order).
     snapshot.fxAlpha.clear();
@@ -1688,6 +1694,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
         playerEncumbrance == gameplay::EncumbranceCategory::Overencumbered,
         [this] { questDirector.syncWantedTag(makeQuestContext()); },
         &eventBus, // C4a: synthesized player footsteps
+        &fxDirector.cues(), // C2: hit/block/parry feedback
     };
 }
 
@@ -1718,6 +1725,7 @@ NpcContext LandscapeScene::makeNpcContext() {
         attackAbility,
         combatRng,
         sceneConsole.vm(), // brain scripts (docs/BOSS-SCRIPTING.md)
+        &fxDirector.cues(), // C2: hit/block/parry/death feedback
         sceneConsole.godMode(),
         timeSeconds,
     };

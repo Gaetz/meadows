@@ -25,6 +25,7 @@
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/combat/CombatAi.hpp"         // chooseCombatMove (B3)
+#include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions (C2)
 #include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing (A4)
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
@@ -447,6 +448,12 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             ctx.eventBus.dispatch({ gameplay::eventKind("OnDeath"),
                                     ecs::Entity {}, npc.entity,
                                     npc.factionTag });
+            if (ctx.cues) { // C2: the fall's LOOK (dust puff by default)
+                ctx.cues->emit({ "Cue.Death",
+                                 transform.position +
+                                     Vec3 { 0.0f, 0.6f, 0.0f },
+                                 0.0f });
+            }
         }
         // (The corpse is lootable — its Inventory was rolled from the
         // LoadoutEntryForm children at build, chantier 4 B5.)
@@ -944,6 +951,12 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                                 { gameplay::eventKind("OnStagger"),
                                   ecs::Entity {}, npc.entity });
                         }
+                        if (ctx.cues) { // C2: the parry's LOOK
+                            ctx.cues->emit(
+                                { "Cue.Parry",
+                                  feet + Vec3 { 0.0f, 1.2f, 0.0f },
+                                  ctx.statsTuning.perfectParryPosture });
+                        }
                     } else {
                         const gameplay::DamageResult result =
                             gameplay::applyDamage(block, event,
@@ -965,6 +978,23 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                             ctx.eventBus.dispatch(
                                 { gameplay::eventKind("OnStagger"),
                                   npc.entity, ctx.playerEntity });
+                        }
+                        if (ctx.cues) { // C2: the exchange's LOOK
+                            const Vec3 chest =
+                                feet + Vec3 { 0.0f, 1.2f, 0.0f };
+                            if (guarded.caught) {
+                                ctx.cues->emit({ "Cue.Block", chest,
+                                                 result.postureDamage });
+                            } else {
+                                const gameplay::DamageType type =
+                                    event.channels.empty()
+                                        ? gameplay::DamageType::Blunt
+                                        : event.channels[0].type;
+                                ctx.cues->emit(
+                                    { str { "Cue.Hit." } +
+                                          gameplay::damageTypeName(type),
+                                      chest, result.healthDamage });
+                            }
                         }
                     }
                 }

@@ -55,6 +55,7 @@
 #include "game/TextureCache.hpp"
 #include "game/VegetationCollision.hpp"
 #include "game/scenes/LandscapeTuning.hpp"
+#include "game/scenes/FxDirector.hpp"
 #include "game/scenes/LandscapeRenderer.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
@@ -277,6 +278,9 @@ private:
     // P0 C1: the CPU particle sim (headless engine/fx) — updated with
     // the sim tick, extracted as POD batches, drawn by the FxRenderer.
     fx::ParticleSim fxSim;
+    // P0 C2: the standard cue handlers (CueForm -> particles/shake) —
+    // combat emits into fxDirector.cues(), presentation follows.
+    FxDirector fxDirector;
     const data::MiscItemForm* goldForm { nullptr };
 
     // Chantier 5 B3: the one post-spawn seam for EVERY actor (player and

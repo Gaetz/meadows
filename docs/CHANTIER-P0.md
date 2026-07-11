@@ -151,7 +151,17 @@ fait avec le backend null).
   (`HitSparks` cône additif, `CampfireSmoke` fumée continue). L'éditeur
   FX (8.10) émule rate/duration lui-même (params neutralisés). Doctesté
   ×2 (rate/durée/stop/budget ; formes + flag additive).
-- **C2 — Handlers de cues standard.** Le `CueForm` résout enfin ses
+- **C2 ✅ (validation visuelle dev en attente) — Handlers de cues
+  standard.** `game/scenes/FxDirector` (pattern *Director) : LE handler
+  CueRegistry→CueTable (fallback hiérarchique)→CueForm → burst/émetteur
+  C1 + camera shake amorti (impulsion, offset caméra TRANSIENT retiré
+  chaque frame — pas d'accumulation en flycam ; deux fréquences
+  incommensurables [cpp-tuning]) ; le son attend C3. Émissions :
+  `Cue.Hit.<TypeDégât>` (fallback data Cue.Hit), `Cue.Block`,
+  `Cue.Parry`, `Cue.Death` — des DEUX côtés (applyHit joueur, lame
+  bandit, front de mort). `damageTypeName` ajouté au module stats. Data :
+  4 CueForms + DeathPuff dans base.toml — le look du combat est
+  ENTIÈREMENT moddable désormais. Original : Le `CueForm` résout enfin ses
   trois canaux : particule (C1), SHAKE caméra (impulsion amortie), son
   (C3 — silencieux tant que pas d'assets). Points d'émission
   systématiques : hit mêlée, mort, block/garde brisée, pas (C4).

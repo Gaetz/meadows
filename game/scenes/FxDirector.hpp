@@ -1,0 +1,52 @@
+#pragma once
+
+#include "engine/core/Defines.hpp"
+#include "engine/fx/Particles.hpp"
+#include "gameplay/cue/GameplayCues.hpp"
+
+namespace data {
+class FormDatabase;
+}
+namespace render {
+class FlyCamera;
+}
+
+namespace game {
+
+// Chantier P0 C2 — the standard cue handlers (pattern *Director): THE
+// place where a sim-side `cues.emit("Cue.Hit.Slash", pos, damage)`
+// becomes presentation. The handler resolves the tag through the
+// CueTable (data, hierarchical fallback — mods override the specific)
+// and fires the CueForm's pieces:
+//   particles   -> a ParticleForm burst/emitter on the C1 sim,
+//   cameraShake -> a damped impulse on the fly camera,
+//   sound       -> C3 (the resolver lands next; silent until then).
+// The sim never includes this: headless = zero handlers = zero work.
+class FxDirector {
+public:
+    // Builds the cue table from the resolved database and installs the
+    // standard handler onto the registry the sim-side emitters use.
+    void create(const data::FormDatabase& forms, fx::ParticleSim& sim);
+
+    gameplay::CueRegistry& cues() { return registry; }
+
+    // Per frame: decays the shake and applies the camera offset. The
+    // offset is TRANSIENT — the previous frame's is removed first, so
+    // fly-mode cameras (whose position persists) never accumulate it.
+    void update(f32 dt, render::FlyCamera& camera);
+
+    // Direct impulse (cue handler uses it; scripts may later).
+    void addShake(f32 strength) { shake = glm::min(shake + strength, 1.5f); }
+
+private:
+    const data::FormDatabase* forms { nullptr };
+    fx::ParticleSim* sim { nullptr };
+    gameplay::CueRegistry registry;
+    gameplay::CueTable table;
+    f32 shake { 0.0f };      // current amplitude (m), decays per frame
+    f32 shakeTime { 0.0f };  // drives the wobble phase
+    Vec3 appliedOffset { 0.0f }; // last frame's camera offset, removed first
+    u32 spawnCounter { 0 };  // cosmetic seed stream (never gameplay RNG, §8)
+};
+
+} // namespace game

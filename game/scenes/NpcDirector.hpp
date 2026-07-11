@@ -45,6 +45,7 @@ namespace gameplay {
 class DerivedStatRegistry;
 struct StatsTuningForm;
 class EventBus;
+class CueRegistry;
 struct GameClock;
 class FurnitureOccupancy;
 struct AiPackageForm;
@@ -176,6 +177,8 @@ struct NpcContext {
     // Brain scripts (docs/BOSS-SCRIPTING.md): the ONE shared Lua VM;
     // null = every actor runs the C++ brain.
     script::Vm* vm;
+    // P0 C2: feedback cues (hit/block/parry/death) — may be null (tests).
+    gameplay::CueRegistry* cues;
     bool godMode;
     f32 timeSeconds;                   // cosmetic wander hash (not gameplay RNG)
 };

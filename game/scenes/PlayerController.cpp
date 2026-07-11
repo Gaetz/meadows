@@ -19,6 +19,7 @@
 #include "gameplay/ability/GameplayAbility.hpp" // tryActivate (P0 A3)
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing (A4)
+#include "gameplay/cue/GameplayCues.hpp"        // Cue.Hit/Block/Parry (C2)
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/actors/ActorState.hpp" // gameplay::Bounty
 #include "gameplay/stats/CoreAttributes.hpp"
@@ -176,11 +177,14 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
     // blocked amount runs the guard's POSTURE down instead. A guard
     // raised inside the perfect window parries CLEAN and the PLAYER'S
     // poise pays for the read attack.
+    gameplay::BlockResult guard;
+    const Vec3 targetChest = target.entity.get<world::Transform>().position +
+                             Vec3 { 0.0f, 1.2f, 0.0f };
     if (const auto blockTag = ctx.gameTags.find("State.Blocking");
         blockTag && block.system.tags.has(*blockTag)) {
         const auto& targetT = target.entity.get<world::Transform>();
         const Vec3 facing = targetT.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
-        const gameplay::BlockResult guard = gameplay::applyBlock(
+        guard = gameplay::applyBlock(
             event, facing, targetT.position, body_->position(),
             ctx.statsTuning.blockAngleDegrees, ctx.statsTuning.blockFactor,
             ctx.statsTuning.blockPostureFactor,
@@ -230,6 +234,24 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
         if (result.staggered) {
             ctx.eventBus->dispatch({ gameplay::eventKind("OnStagger"),
                                      ctx.playerEntity, target.entity });
+        }
+    }
+    // P0 C2: the LOOK of the exchange — one cue per outcome, resolved
+    // through CueForms (data): a parry beats a block beats a plain hit.
+    if (ctx.cues) {
+        if (guard.perfect) {
+            ctx.cues->emit({ "Cue.Parry", targetChest,
+                             ctx.statsTuning.perfectParryPosture });
+        } else if (guard.caught) {
+            ctx.cues->emit({ "Cue.Block", targetChest,
+                             result.postureDamage });
+        } else {
+            const gameplay::DamageType type =
+                event.channels.empty() ? gameplay::DamageType::Slash
+                                       : event.channels[0].type;
+            ctx.cues->emit({ str { "Cue.Hit." } +
+                                 gameplay::damageTypeName(type),
+                             targetChest, result.healthDamage });
         }
     }
 

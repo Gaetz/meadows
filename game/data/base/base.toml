@@ -570,3 +570,65 @@ sizeEnd = 0.9
 colorStart = [0.35, 0.33, 0.30, 0.55]
 colorEnd = [0.5, 0.5, 0.52, 0.0]
 blend = "alpha"
+
+[[records]]
+form = "fe000000-0000-4000-8000-000000000003"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "DeathPuff"
+shape = "sphere"
+shapeRadius = 0.35
+burst = 16
+lifetime = 1.1
+lifetimeJitter = 0.3
+velocity = [0.0, 0.8, 0.0]
+velocityJitter = 0.5
+gravity = [0.0, -0.4, 0.0]
+sizeStart = 0.2
+sizeEnd = 0.55
+colorStart = [0.45, 0.42, 0.38, 0.5]
+colorEnd = [0.5, 0.48, 0.45, 0.0]
+blend = "alpha"
+
+# --- Cues (chantier P0 C2): the combat feedback LOOK, pure data. The
+# FxDirector resolves emitted tags hierarchically ("Cue.Hit.Slash" falls
+# back to "Cue.Hit") — a mod overrides the specific without touching C++.
+[[records]]
+form = "fc000000-0000-4000-8000-000000000001"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueHit"
+tag = "Cue.Hit"
+particles = "fe000000-0000-4000-8000-000000000001" # HitSparks
+cameraShake = 0.15
+
+[[records]]
+form = "fc000000-0000-4000-8000-000000000002"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueBlock"
+tag = "Cue.Block"
+particles = "fe000000-0000-4000-8000-000000000001" # HitSparks (guard scrape)
+cameraShake = 0.08
+
+[[records]]
+form = "fc000000-0000-4000-8000-000000000003"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueParry"
+tag = "Cue.Parry"
+particles = "fe000000-0000-4000-8000-000000000001" # HitSparks
+cameraShake = 0.5
+
+[[records]]
+form = "fc000000-0000-4000-8000-000000000004"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueDeath"
+tag = "Cue.Death"
+particles = "fe000000-0000-4000-8000-000000000003" # DeathPuff

@@ -26,6 +26,10 @@ enum class DamageType {
     Sonic, Chemical, Psychic, Holy, Dark, Ether,
 };
 
+// The type's name, matching the enum spelling — tag composition
+// ("Cue.Hit." + name, the C2 cue emission points) and logs.
+const char* damageTypeName(DamageType type);
+
 struct DamageChannel {
     DamageType type { DamageType::Slash };
     f32 amount { 0.0f };

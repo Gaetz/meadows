@@ -24,6 +24,7 @@ namespace gameplay {
 class GameplayTagRegistry;
 class DerivedStatRegistry;
 class EventBus;
+class CueRegistry;
 struct StatsTuningForm;
 struct EffectForm;
 struct AbilityForm;
@@ -66,6 +67,8 @@ struct PlayerContext {
     // Chantier P0 C4a: the player has no walk clip — footsteps fire as
     // "AnimEvent"/Footstep on the bus every strideLength meters walked.
     gameplay::EventBus* eventBus { nullptr };
+    // P0 C2: feedback cues (hit/block/parry) — the FxDirector's registry.
+    gameplay::CueRegistry* cues { nullptr };
 };
 
 // The first-person Play-mode controller extracted from LandscapeScene
