@@ -1392,13 +1392,71 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
     }
 
-    // Chantier RC (G2): re-inject the GI voxel clipmap — after the CSM
+    // Chantier RC (G2/G3): re-inject the GI voxel clipmap — after the CSM
     // passes (the inject samples fresh shadow maps), outside any render
-    // pass (compute). Exterior only: the injection is terrain-fed (the
-    // interior story arrives with the props brick, G3).
+    // pass (compute). Exterior only for now: the injection is terrain-fed
+    // (the interior story needs the kit boxes to carry the room).
     if (!view.interiorMode) {
+        // G3: props/kits as world AABBs (v1 box occlusion — assumed
+        // stylized), NPCs as capsuloid boxes, the frame's local lights.
+        rcBoxes.clear();
+        rcLights.clear();
+        const f32 clipHalf = static_cast<f32>(radianceCascades.tuning
+                                                  .resolution) *
+                             radianceCascades.tuning.coarseVoxel * 0.5f;
+        const Vec3 clipMin = camera.position - Vec3 { clipHalf };
+        const Vec3 clipMax = camera.position + Vec3 { clipHalf };
+        for (const auto& mesh : snapshot.meshes) {
+            if (rcBoxes.size() >= render::RadianceCascades::kMaxBoxes) {
+                break;
+            }
+            const MeshCache::CpuMesh* cpu =
+                view.meshCache ? view.meshCache->cpuMesh(mesh.model)
+                               : nullptr;
+            if (!cpu) {
+                continue; // not resident yet — next inject picks it up
+            }
+            Vec3 lo { 1e9f };
+            Vec3 hi { -1e9f };
+            for (u32 corner = 0; corner < 8; ++corner) {
+                const Vec3 local {
+                    (corner & 1) ? cpu->boundsMax.x : cpu->boundsMin.x,
+                    (corner & 2) ? cpu->boundsMax.y : cpu->boundsMin.y,
+                    (corner & 4) ? cpu->boundsMax.z : cpu->boundsMin.z
+                };
+                const Vec3 world =
+                    Vec3(mesh.transform * Vec4 { local, 1.0f });
+                lo = glm::min(lo, world);
+                hi = glm::max(hi, world);
+            }
+            if (glm::any(glm::lessThan(hi, clipMin)) ||
+                glm::any(glm::greaterThan(lo, clipMax))) {
+                continue; // outside the coarse clip
+            }
+            // Albedo proxy: the material tint over a mid gray (real splat
+            // colors never leave the mesh shader); emissive feeds the GI.
+            rcBoxes.push_back(
+                { { lo, 0.0f },
+                  { hi, 0.0f },
+                  { Vec3 { mesh.tint } * 0.35f, mesh.emissive } });
+        }
+        for (const auto& npc : snapshot.skinned) {
+            if (rcBoxes.size() >= render::RadianceCascades::kMaxBoxes) {
+                break;
+            }
+            const Vec3 feet { npc.transform[3] };
+            rcBoxes.push_back({ { feet - Vec3 { 0.4f, 0.0f, 0.4f }, 0.0f },
+                                { feet + Vec3 { 0.4f, 1.8f, 0.4f }, 0.0f },
+                                { Vec3 { 0.10f }, 0.0f } });
+        }
+        for (const auto& light : snapshot.lights) {
+            rcLights.push_back(
+                { { light.position, light.radius },
+                  { light.color * light.intensity, 0.0f } });
+        }
         radianceCascades.update(frame.device, frame.cmd, terrain.params,
-                                camera.position, frameBindGroup,
+                                camera.position, rcBoxes, rcLights,
+                                frameBindGroup,
                                 shadows.receiverBindGroup(),
                                 terrainLightMap.bindGroup(), &frame.device,
                                 &gpuProbe);

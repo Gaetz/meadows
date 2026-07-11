@@ -48,6 +48,22 @@ struct RcTuning {
     i32 debugView { 0 };      // 0 off, 1 = fine clip, 2 = coarse clip
 };
 
+// One world-space occluder/emitter BOX for the injection (G3): props,
+// kit modules, NPCs — built by the renderer from the snapshot (the
+// engine never sees the game's caches). v1 boxes occlude as their AABB
+// (assumed stylized; real triangles are a later brick).
+struct RcBox {
+    Vec4 boundsMin;      // xyz; w unused
+    Vec4 boundsMax;      // xyz; w unused
+    Vec4 albedoEmissive; // rgb = albedo proxy, a = emissive multiplier
+};
+
+// A local light splatted into the volume (G3): torches, lamps, spells.
+struct RcLight {
+    Vec4 positionRadius; // xyz = world position, w = radius (m)
+    Vec4 color;          // rgb premultiplied by intensity; w unused
+};
+
 // Radiance cascades GI — G2 scope: the camera-centered voxel CLIPMAP
 // (2 levels) fed by an analytic terrain height/albedo tile (worker-baked,
 // the TerrainLightMap pattern — patch/sculpt-aware since terrain::height
@@ -57,6 +73,8 @@ struct RcTuning {
 class RadianceCascades {
 public:
     static constexpr u32 kTileSize = 256; // height/albedo bake tile (texels)
+    static constexpr u32 kMaxBoxes = 256; // per-frame injected AABBs (G3)
+    static constexpr u32 kMaxLights = 16; // matches the scene's lights UBO
 
     void create(rhi::Device& device, ShaderLibrary& shaders,
                 core::JobSystem& jobs);
@@ -70,6 +88,7 @@ public:
     // `terrainLightGroup` may be null (far-sun falls back to the CSM only).
     void update(rhi::Device& device, rhi::CommandBuffer& cmd,
                 const TerrainParams& params, const Vec3& cameraPos,
+                const vector<RcBox>& boxes, const vector<RcLight>& lights,
                 rhi::BindGroupHandle frameBindGroup,
                 rhi::BindGroupHandle shadowBindGroup,
                 rhi::BindGroupHandle terrainLightGroup,
@@ -111,6 +130,7 @@ private:
     rhi::UniqueTexture clipFine;   // res³ RGBA16F: rgb radiance, a occupancy
     rhi::UniqueTexture clipCoarse;
     rhi::UniqueBuffer rcUbo;
+    rhi::UniqueBuffer boxBuffer;   // G3: SSBO of RcBox, kMaxBoxes
     rhi::UniqueBindGroup injectGroup;
     rhi::UniqueBindGroup debugGroup;
     rhi::UniquePipeline injectPipeline;

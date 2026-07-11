@@ -195,6 +195,8 @@ private:
     // Chantier RC (docs/RADIANCE-CASCADES.md): the GI voxel clipmap +
     // cascades; its tuning is the render panel's "Global illumination".
     render::RadianceCascades radianceCascades;
+    vector<render::RcBox> rcBoxes;     // per-frame injection lists (G3),
+    vector<render::RcLight> rcLights;  // reused to avoid re-allocations
     bool regenerateRequested { false };
     // Grass panel: a scatter knob moved — grass-only re-scatter next frame.
     bool grassRescatterRequested { false };

@@ -28,7 +28,10 @@ constexpr Vec3 kSnowAlbedo { 0.620f, 0.660f, 0.720f };
 struct RcUniforms {
     Vec4 clipInfo[2]; // xyz = min-corner origin, w = voxel size
     Vec4 tileInfo;    // xy = tile center XZ, z = 1/span, w = resolution
-    Vec4 misc;        // x = debug clip index, y = sky factor, zw free
+    Vec4 misc;        // x = debug clip index, y = sky factor,
+                      // z = box count, w = light count (G3)
+    Vec4 lightPosRadius[RadianceCascades::kMaxLights]; // G3
+    Vec4 lightColor[RadianceCascades::kMaxLights];
 };
 
 } // namespace
@@ -65,6 +68,9 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
     rcUbo = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform, .size = sizeof(RcUniforms),
           .dynamic = true }, nullptr) };
+    boxBuffer = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Storage,
+          .size = kMaxBoxes * sizeof(RcBox), .dynamic = true }, nullptr) };
 
     refreshPipelines(device, shaders);
 }
@@ -75,6 +81,7 @@ void RadianceCascades::destroy(rhi::Device& device) {
     injectPipeline.reset();
     debugGroup.reset();
     injectGroup.reset();
+    boxBuffer.reset();
     rcUbo.reset();
     clipCoarse.reset();
     clipFine.reset();
@@ -122,6 +129,8 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
 
     injectGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 2, .buffer = rcUbo.get() },
+                       { .binding = 3, .buffer = boxBuffer.get(),
+                         .storage = true },
                        { .binding = 0, .texture = clipFine.get(),
                          .storageImage = true },
                        { .binding = 1, .texture = clipCoarse.get(),
@@ -243,6 +252,8 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
 void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
                               const TerrainParams& params,
                               const Vec3& cameraPos,
+                              const vector<RcBox>& boxes,
+                              const vector<RcLight>& lights,
                               rhi::BindGroupHandle frameBindGroup,
                               rhi::BindGroupHandle shadowBindGroup,
                               rhi::BindGroupHandle terrainLightGroup,
@@ -281,9 +292,22 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
     uniforms.clipInfo[1] = { coarseOrigin, appliedCoarseVoxel };
     uniforms.tileInfo = { tileCenter.x, tileCenter.y, 1.0f / tileSpan,
                           static_cast<f32>(res) };
+    const u32 boxCount =
+        glm::min(static_cast<u32>(boxes.size()), kMaxBoxes);
+    const u32 lightCount =
+        glm::min(static_cast<u32>(lights.size()), kMaxLights);
     uniforms.misc = { static_cast<f32>(glm::max(tuning.debugView - 1, 0)),
-                      tuning.skyFactor, 0.0f, 0.0f };
+                      tuning.skyFactor, static_cast<f32>(boxCount),
+                      static_cast<f32>(lightCount) };
+    for (u32 i = 0; i < lightCount; ++i) {
+        uniforms.lightPosRadius[i] = lights[i].positionRadius;
+        uniforms.lightColor[i] = lights[i].color;
+    }
     device.updateBuffer(rcUbo, &uniforms, sizeof(uniforms), 0);
+    if (boxCount > 0) {
+        device.updateBuffer(boxBuffer, boxes.data(),
+                            boxCount * sizeof(RcBox), 0);
+    }
 
     GpuProbe::Scope gpu { probe, probeDevice, "rcInject" };
     cmd.setPipeline(injectPipeline);
