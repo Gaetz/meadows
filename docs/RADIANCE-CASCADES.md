@@ -151,9 +151,18 @@ catégorie. Chaque paramètre naît DANS l'UI, jamais en constante.
   inject relit la cascade 0 fusionnée de la frame précédente, knob
   « Bounce feedback » 0.5) et **« Lights via RC only »** (le direct des
   lumières coupé — pénombres par le volume). Baseline dev : intensity
-  1.0, skyFactor 1.0. Itérations rampe du jour : domaine asymétrique
-  unifié `[moyenne−dimRange, max]`, blobs émetteurs des lumières
-  (« Light emitter boost »), offset normal à l'apply.
+  1.0, skyFactor 1.0. Blobs émetteurs des lumières (« Light emitter
+  boost »), offset normal à l'apply.
+- **Rampe stylisée : PAS FIXE (`01c1f35`, revue post-G7 demandée par le
+  dev).** Toute la chaîne ADAPTATIVE (rc_adapt, SSBO de stats, 4 knobs)
+  a été RETIRÉE — elle mesurait l'air (stats dominées par le ciel, pas
+  les surfaces), bougeait avec la météo et se couplait au multi-bounce.
+  La quantification est celle du cel-shading : paliers ABSOLUS
+  d'exposition (`lumQ = 2^(round(log2(lum)/pas)·pas)`), knobs « Band
+  size (stops) » (0.85) + « Band AA » via `uGiBandInfo` (FrameUbo).
+  Prévisible par construction ; ne PAS ré-introduire de mesure globale
+  sans relire cette leçon. Grading OFF par défaut pendant le tuning GI ;
+  l'auto-exposure (brique 29) reste (adaptation uniforme d'affichage).
 - **G7c (restant)** — extension d'intervalle (l'optim majeure du build,
   à faire pendant/avant la **passe de réglage dev** → 3 ms → 1-2 ms) ;
   triangles fins en intérieur si les boîtes de kit leakent.
