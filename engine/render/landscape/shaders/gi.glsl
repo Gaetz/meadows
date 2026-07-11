@@ -57,13 +57,16 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
     // the same flat-pool language as the sun ramp, so it is posterized AT
     // THE END: luminance relative to the flat classic ambient snaps to
     // three bands (shade 0.55 / neutral 1.0 / bounce highlight 1.5), hue
-    // preserved, narrow smoothsteps as anti-aliasing (stylized.glsl).
+    // preserved. LIGHT BRIGHTER than the top band passes CONTINUOUSLY —
+    // pinning to the bands crushed torch halos to black at night, when
+    // the classic ambient reference is nearly zero (dev bug report).
     float lum = dot(irradiance, vec3(0.299, 0.587, 0.114));
     float classicLum = dot(classicAmbient, vec3(0.299, 0.587, 0.114));
     if (lum > 1e-4 && classicLum > 1e-4) {
         float ratio = lum / classicLum;
         float stepped = 0.55 + 0.45 * smoothstep(0.70, 0.85, ratio) +
                         0.50 * smoothstep(1.30, 1.55, ratio);
+        stepped = mix(stepped, ratio, smoothstep(1.55, 2.5, ratio));
         irradiance *= mix(1.0, (stepped * classicLum) / lum,
                           uAmbientColor.w);
     }

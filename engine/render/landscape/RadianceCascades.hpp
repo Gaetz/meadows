@@ -88,6 +88,13 @@ public:
     void destroy(rhi::Device& device);
     void refreshPipelines(rhi::Device& device, ShaderLibrary& shaders);
 
+    // Call BEFORE composing the frame UBO: decides whether this frame
+    // re-injects (updateInterval) and, if so, snaps the clip origins the
+    // frame will use — giGridInfo() then matches the volume content the
+    // apply samples (dev bug 2026-07-11: composing with LAST frame's
+    // origin displaced light opposite to the camera motion for a frame).
+    void prepare(const Vec3& cameraPos);
+
     // Main thread, once per frame, OUTSIDE any render pass (compute):
     // pumps the tile bake, recreates volumes on knob changes, uploads the
     // RC UBO and dispatches the injection. Requires the frame UBO already
@@ -185,7 +192,9 @@ private:
     vector<CascadeLevel> levels;
     i32 appliedCascadeCount { 0 };
     rhi::UniqueBindGroup applyGroup_; // G6: cascade 0 at binding 11
-    Vec3 lastFineOrigin { 0.0f };     // the grid origin uploaded last
+    Vec3 lastFineOrigin { 0.0f };     // this frame's grid origin (prepare)
+    Vec3 lastCoarseOrigin { 0.0f };
+    bool injectThisFrame { true };    // prepare()'s updateInterval verdict
 
     // Applied structural knobs (recreate when the tuning diverges).
     i32 appliedResolution { 0 };

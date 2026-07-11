@@ -1207,6 +1207,11 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         reflectionsUi && reflectionFb.id() != 0 && !view.interiorMode &&
         camera.position.y > terrain.params.seaLevel && waterVisible;
 
+    // Chantier RC: decide this frame's inject + snap the grid origins
+    // BEFORE the UBO composition so uGiGridInfo matches the volume
+    // content the apply will sample (the moving-halo lag fix).
+    radianceCascades.prepare(camera.position);
+
     // The whole UBO composition is pure (audit U4-6a): gather the inputs,
     // let the composer build both variants, upload. This side keeps only
     // the GPU-availability gates and the updateBuffer calls.

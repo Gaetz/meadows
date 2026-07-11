@@ -365,6 +365,29 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
     }
 }
 
+void RadianceCascades::prepare(const Vec3& cameraPos) {
+    if (appliedResolution <= 0) {
+        injectThisFrame = true; // first frames: update() creates volumes
+        return;
+    }
+    ++frameCounter;
+    injectThisFrame =
+        tuning.updateInterval <= 1 ||
+        (frameCounter % static_cast<u32>(tuning.updateInterval)) == 0;
+    if (!injectThisFrame) {
+        return; // origins keep matching the volumes' last inject
+    }
+    const u32 res = static_cast<u32>(appliedResolution);
+    const auto snap = [&](f32 voxel) {
+        const f32 half = static_cast<f32>(res) * voxel * 0.5f;
+        return Vec3 { std::floor((cameraPos.x - half) / voxel) * voxel,
+                      std::floor((cameraPos.y - half) / voxel) * voxel,
+                      std::floor((cameraPos.z - half) / voxel) * voxel };
+    };
+    lastFineOrigin = snap(appliedFineVoxel);
+    lastCoarseOrigin = snap(appliedCoarseVoxel);
+}
+
 void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
                               const TerrainParams& params,
                               const Vec3& cameraPos,
@@ -385,33 +408,40 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
         // heights belong to another worldspace — back to "no terrain".
         makePlaceholderTile(device);
     }
+    bool recreated = false;
     if (appliedResolution != tuning.resolution ||
         appliedFineVoxel != tuning.fineVoxel ||
         appliedCoarseVoxel != tuning.coarseVoxel ||
         appliedCascadeCount != tuning.cascadeCount) {
         createVolumes(device); // knob moved (or tile textures recreated)
+        recreated = true;
     }
-    ++frameCounter;
-    if (tuning.updateInterval > 1 &&
-        (frameCounter % static_cast<u32>(tuning.updateInterval)) != 0) {
-        return; // budget knob: hold last frame's volumes
+    if (!injectThisFrame) {
+        return; // budget knob: hold last frame's volumes (prepare() kept
+                // the origins matching their content)
+    }
+    if (recreated) {
+        // prepare() snapped with the PREVIOUS applied values (boot / knob
+        // change): re-snap. The frame UBO is one frame stale here — a
+        // single-frame glitch on the knob-change frame, accepted.
+        const u32 r = static_cast<u32>(appliedResolution);
+        const auto snap = [&](f32 voxel) {
+            const f32 half = static_cast<f32>(r) * voxel * 0.5f;
+            return Vec3 { std::floor((cameraPos.x - half) / voxel) * voxel,
+                          std::floor((cameraPos.y - half) / voxel) * voxel,
+                          std::floor((cameraPos.z - half) / voxel) *
+                              voxel };
+        };
+        lastFineOrigin = snap(appliedFineVoxel);
+        lastCoarseOrigin = snap(appliedCoarseVoxel);
     }
 
     const u32 res = static_cast<u32>(appliedResolution);
-    const auto snap = [&](f32 voxel) {
-        // Snap the clip origin to the voxel grid (stability under motion),
-        // centered on the camera.
-        const f32 half = static_cast<f32>(res) * voxel * 0.5f;
-        return Vec3 { std::floor((cameraPos.x - half) / voxel) * voxel,
-                      std::floor((cameraPos.y - half) / voxel) * voxel,
-                      std::floor((cameraPos.z - half) / voxel) * voxel };
-    };
     RcUniforms uniforms;
-    const Vec3 fineOrigin = snap(appliedFineVoxel);
-    const Vec3 coarseOrigin = snap(appliedCoarseVoxel);
-    lastFineOrigin = fineOrigin; // giGridInfo() hands it to the apply
-    uniforms.clipInfo[0] = { fineOrigin, appliedFineVoxel };
-    uniforms.clipInfo[1] = { coarseOrigin, appliedCoarseVoxel };
+    // The origins prepare() snapped BEFORE the frame UBO was composed —
+    // uGiGridInfo and the volume content stay in lockstep (dev bug).
+    uniforms.clipInfo[0] = { lastFineOrigin, appliedFineVoxel };
+    uniforms.clipInfo[1] = { lastCoarseOrigin, appliedCoarseVoxel };
     uniforms.tileInfo = { tileCenter.x, tileCenter.y, 1.0f / tileSpan,
                           static_cast<f32>(res) };
     const u32 boxCount =
