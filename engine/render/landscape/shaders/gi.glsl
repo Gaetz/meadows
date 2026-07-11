@@ -34,7 +34,14 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
     float res = uGiInfo.w;
     float spacing = uGiGridInfo.w;
     float span = res * spacing;
-    vec3 uvw = (worldPos - uGiGridInfo.xyz) / span;
+    // Sample ONE probe step off the surface (dev bug 2026-07-11: at the
+    // terrain floor, half the trilinear neighbors are BURIED probes —
+    // black, beta 0 — which crushed the ground's GI toward the dim band
+    // while walls and interiors banded fine). Off-surface, the clean air
+    // probes carry the full range, and the downward directions see the
+    // lit floor: the ground gets its own bounce back.
+    vec3 samplePos = worldPos + normal * spacing;
+    vec3 uvw = (samplePos - uGiGridInfo.xyz) / span;
 
     // Fade to the classic ambient at the grid border (far-field fallback).
     vec3 edge = min(uvw, vec3(1.0) - uvw);
