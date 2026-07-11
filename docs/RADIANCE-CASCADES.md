@@ -147,11 +147,16 @@ catégorie. Chaque paramètre naît DANS l'UI, jamais en constante.
   lumières. Pour de VRAIES ombres RC (pénombres par construction), il
   faudrait router des lumières EXCLUSIVEMENT par RC (le modèle PoE2) —
   candidate G7 ci-dessous.
-- **G7** — qualité : multi-bounce par feedback, extension d'intervalle,
-  **lumières « RC-only »** (retirées du direct locallights → leurs ombres
-  et pénombres viennent du volume, à la résolution du voxel — l'expérience
-  qui répond à la question « où sont les ombres ? »), triangles fins en
-  intérieur ; puis **passe de réglage dev** → 3 ms → 1-2 ms.
+- **G7a/G7b ✅ (2026-07-11)** — multi-bounce par feedback temporel (le
+  inject relit la cascade 0 fusionnée de la frame précédente, knob
+  « Bounce feedback » 0.5) et **« Lights via RC only »** (le direct des
+  lumières coupé — pénombres par le volume). Baseline dev : intensity
+  1.0, skyFactor 1.0. Itérations rampe du jour : domaine asymétrique
+  unifié `[moyenne−dimRange, max]`, blobs émetteurs des lumières
+  (« Light emitter boost »), offset normal à l'apply.
+- **G7c (restant)** — extension d'intervalle (l'optim majeure du build,
+  à faire pendant/avant la **passe de réglage dev** → 3 ms → 1-2 ms) ;
+  triangles fins en intérieur si les boîtes de kit leakent.
 - **G8** (si mesuré nécessaire) — accélération spatiale : index spatial
   CPU partagé moteur/gameplay et/ou voxels sparse.
 
