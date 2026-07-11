@@ -74,3 +74,14 @@ TEST_CASE("a comrade's call is fresh intel: straight to Alert at the "
     world::updatePerception(p, false, {}, 1.0f);
     CHECK(world::awareState(p) == world::AwareState::Searching);
 }
+
+TEST_CASE("brain move names map back to moves; anything else falls "
+          "through") {
+    CHECK(gameplay::parseCombatMove("approach") == CombatMove::Approach);
+    CHECK(gameplay::parseCombatMove("strike") == CombatMove::Strike);
+    CHECK(gameplay::parseCombatMove("strafe") == CombatMove::Strafe);
+    CHECK(gameplay::parseCombatMove("flee") == CombatMove::Flee);
+    CHECK(!gameplay::parseCombatMove("").has_value());
+    CHECK(!gameplay::parseCombatMove("Strike").has_value()); // exact names
+    CHECK(!gameplay::parseCombatMove("dance").has_value());
+}

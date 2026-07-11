@@ -33,6 +33,7 @@
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/EquipmentStats.hpp" // weaponDamageEvent
 #include "gameplay/stats/GameClock.hpp"
+#include "script/Vm.hpp"               // brain scripts (BOSS-SCRIPTING.md)
 #include "world/ai/Perception.hpp"     // B2: vision cone + aware states
 #include "world/ai/TerrainNavigator.hpp"
 #include "world/scene/AnimBridge.hpp"     // resolveActorVisual, buildAnimGraph
@@ -196,6 +197,11 @@ void NpcDirector::refreshNpcs(
             // (sitting from furniture use, dead from the GAS life state).
             npc->schedule = actor.schedule;
             npc->courage = actor.courage; // B3: flees below (1 - courage)
+            // Brain script: Lua decides this actor's combat moves
+            // (docs/BOSS-SCRIPTING.md); keyed by the FORM — every
+            // instance shares one compiled decide.
+            npc->brainScript = actor.brainScript;
+            npc->brainKey = actor.id;
             // Chantier 6 A1: ActorTagForm children become REAL gameplay tags
             // on the actor's system (registerTag is idempotent and
             // auto-registers ancestors); the first Faction.* tag is what
@@ -539,7 +545,37 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                         maxHealth,
                     npc.courage
                 };
-                switch (gameplay::chooseCombatMove(situation)) {
+                // The C++ brain by default; a brain SCRIPT (Lua, decision
+                // tick — never per frame) overrides the move when it
+                // returns a valid name. Errors fall back silently
+                // (callBrain logs once and drops the script).
+                gameplay::CombatMove move =
+                    gameplay::chooseCombatMove(situation);
+                if (!npc.brainScript.empty() && ctx.vm) {
+                    npc.brainTimer -= dt;
+                    if (npc.brainTimer <= 0.0f) {
+                        npc.brainTimer = 0.25f; // [cpp-tuning] ~4 Hz
+                        script::ScriptContext sctx;
+                        sctx.entity = npc.entity;
+                        sctx.attributes =
+                            &npc.entity.get_mut<gameplay::AttributeSet>();
+                        sctx.abilitySystem =
+                            &npc.entity.get_mut<gameplay::AbilitySystem>();
+                        sctx.tags = &ctx.gameTags;
+                        sctx.forms = &ctx.forms;
+                        npc.brainMove = gameplay::parseCombatMove(
+                            ctx.vm->callBrain(
+                                npc.brainKey, npc.brainScript, sctx,
+                                situation,
+                                aware == world::AwareState::Alert
+                                    ? "alert"
+                                    : "searching"));
+                    }
+                    if (npc.brainMove) {
+                        move = *npc.brainMove;
+                    }
+                }
+                switch (move) {
                 case gameplay::CombatMove::Strike: {
                     npc.path.clear();
                     // Face the player and swing.
@@ -605,7 +641,13 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                             ? -toPlayer / playerDistance
                             : Vec3 { std::sin(npc.yaw), 0.0f,
                                      std::cos(npc.yaw) };
-                    moveNpcDirect(ctx, npc, dt, away, 1.8f,
+                    // A broken fighter RUNS (dev feel pass): cancel the
+                    // NPC walk factor so he flees at full jog speed —
+                    // solidly inside the run anim's threshold.
+                    const f32 runScale =
+                        1.0f /
+                        glm::max(ctx.statsTuning.npcWalkFactor, 0.05f);
+                    moveNpcDirect(ctx, npc, dt, away, runScale,
                                   std::atan2(away.x, away.z));
                     break;
                 }
@@ -862,6 +904,16 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                                  ctx.statsTuning.perfectParryPosture,
                                  riposte.staggered ? " (STAGGERED!)"
                                                    : "");
+                        // Combat lifecycle events (BOSS-SCRIPTING §1):
+                        // source = the parrier, target = the parried.
+                        ctx.eventBus.dispatch(
+                            { gameplay::eventKind("OnParried"),
+                              ctx.playerEntity, npc.entity });
+                        if (riposte.staggered) {
+                            ctx.eventBus.dispatch(
+                                { gameplay::eventKind("OnStagger"),
+                                  ecs::Entity {}, npc.entity });
+                        }
                     } else {
                         const gameplay::DamageResult result =
                             gameplay::applyDamage(block, event,
@@ -873,6 +925,17 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                                  result.healthDamage,
                                  guarded.caught ? " (blocked)" : "",
                                  result.staggered ? " (staggered!)" : "");
+                        gameplay::Event hit;
+                        hit.kind = gameplay::eventKind("OnHitTaken");
+                        hit.source = npc.entity;
+                        hit.target = ctx.playerEntity;
+                        hit.value = result.healthDamage;
+                        ctx.eventBus.dispatch(hit);
+                        if (result.staggered) {
+                            ctx.eventBus.dispatch(
+                                { gameplay::eventKind("OnStagger"),
+                                  npc.entity, ctx.playerEntity });
+                        }
                     }
                 }
             }

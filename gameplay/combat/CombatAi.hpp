@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <string_view>
+
 #include "engine/core/Defines.hpp"
 
 // Chantier P0 B3 — the melee combat move decision, sim-pure. ONE flat
@@ -29,5 +32,10 @@ struct CombatSituation {
 };
 
 CombatMove chooseCombatMove(const CombatSituation& situation);
+
+// The brain-script contract (docs/BOSS-SCRIPTING.md): a Lua decide()
+// returns a move NAME — this maps it back, nullopt for anything else
+// (nil, a typo, an error) so the caller falls back to chooseCombatMove.
+std::optional<CombatMove> parseCombatMove(std::string_view name);
 
 } // namespace gameplay

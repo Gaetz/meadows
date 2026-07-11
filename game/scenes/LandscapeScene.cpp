@@ -1642,6 +1642,7 @@ NpcContext LandscapeScene::makeNpcContext() {
         banditWeapon,
         attackAbility,
         combatRng,
+        sceneConsole.vm(), // brain scripts (docs/BOSS-SCRIPTING.md)
         sceneConsole.godMode(),
         timeSeconds,
     };

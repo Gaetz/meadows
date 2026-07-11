@@ -3,6 +3,7 @@
 #include <list>
 #include <optional>
 #include <stdexcept>
+#include <unordered_map>
 #include <variant>
 
 #include <sol/sol.hpp>
@@ -16,6 +17,7 @@
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/combat/CombatAi.hpp" // CombatSituation (brain scripts)
 #include "gameplay/event/EventBus.hpp"
 #include "script/ScriptVars.hpp"
 
@@ -193,6 +195,10 @@ struct Vm::Impl {
     sol::state lua;
     core::Rng rng; // the shared engine RNG (§8); seeded from the engine's stream
     std::list<Coro> coros; // suspended ability coroutines (stable addresses)
+    // Brain scripts: ONE compiled decide function per ActorForm, shared
+    // by every instance (stateless, §2.8). An invalid entry caches a
+    // compile/runtime failure so the C++ fallback takes over silently.
+    std::unordered_map<core::Guid, sol::protected_function> brains;
 };
 
 Vm::Vm() : impl(std::make_unique<Impl>()) {
@@ -262,6 +268,57 @@ RunResult Vm::run(const std::string& code) {
         return { false, err.what() };
     }
     return { true, {} };
+}
+
+str Vm::callBrain(const core::Guid& key, const std::string& code,
+                  ScriptContext& context,
+                  const gameplay::CombatSituation& situation,
+                  std::string_view awareState) {
+    auto it = impl->brains.find(key);
+    if (it == impl->brains.end()) {
+        sol::protected_function decide;
+        const sol::protected_function_result compiled =
+            impl->lua.safe_script(code, sol::script_pass_on_error);
+        if (!compiled.valid()) {
+            const sol::error err = compiled;
+            LOG_WARN("brain {} failed to compile — C++ brain takes over: {}",
+                     key.toString(), err.what());
+        } else if (const sol::object value = compiled;
+                   value.is<sol::protected_function>()) {
+            decide = value.as<sol::protected_function>();
+        } else {
+            LOG_WARN("brain {} must RETURN a decide function — C++ brain "
+                     "takes over",
+                     key.toString());
+        }
+        it = impl->brains.emplace(key, std::move(decide)).first;
+    }
+    if (!it->second.valid()) {
+        return {}; // cached failure: the fallback rules
+    }
+    sol::table sit = impl->lua.create_table();
+    sit["distance"] = situation.distance;
+    sit["attackRange"] = situation.attackRange;
+    sit["preferredRange"] = situation.preferredRange;
+    sit["canSee"] = situation.canSee;
+    sit["swinging"] = situation.swinging;
+    sit["cooldown"] = situation.cooldownSeconds;
+    sit["healthFraction"] = situation.healthFraction;
+    sit["courage"] = situation.courage;
+    sit["aware"] = str { awareState };
+    impl->lua["self"] = ScriptSelf { &context };
+    const sol::protected_function_result result = it->second(sit);
+    impl->lua["self"] = sol::lua_nil;
+    if (!result.valid()) {
+        const sol::error err = result;
+        LOG_WARN("brain {} errored — C++ brain takes over: {}",
+                 key.toString(), err.what());
+        it->second = sol::protected_function {}; // stop the 4 Hz spam
+        return {};
+    }
+    const sol::object value = result;
+    return value.is<std::string>() ? str { value.as<std::string>() }
+                                   : str {};
 }
 
 void Vm::bindEvents(gameplay::EventBus& bus) {

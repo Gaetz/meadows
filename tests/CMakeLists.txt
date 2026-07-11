@@ -7,6 +7,7 @@
     AudioTest.cpp
     AssetsTest.cpp
     BarterTest.cpp
+    BrainScriptTest.cpp
     CellDeltaTest.cpp
     CellLoaderTest.cpp
     CellStreamerTest.cpp

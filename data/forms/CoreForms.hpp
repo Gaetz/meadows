@@ -215,6 +215,11 @@ struct ActorForm : Form {
     // Chantier P0 B3 (appended): grit in combat — the actor flees below
     // (1 - courage) of its max health (0.75 = runs under 25%).
     f32 courage { 0.75f };
+    // Brain script (appended — docs/BOSS-SCRIPTING.md, dev 2026-07-11):
+    // Lua source RETURNING a decide(situation) -> move-name function,
+    // called on low-frequency decision ticks. Empty = the C++ brain
+    // (chooseCombatMove). Works for ANY hostile actor, boss or mugger.
+    str brainScript;
 
     REFLECT_BEGIN(ActorForm, Form)
         REFLECT_FIELD(displayName)
@@ -228,6 +233,7 @@ struct ActorForm : Form {
         REFLECT_FIELD(buyMult)
         REFLECT_FIELD(sellMult)
         REFLECT_FIELD(courage)
+        REFLECT_FIELD(brainScript)
     REFLECT_END()
 };
 

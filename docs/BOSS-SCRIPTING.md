@@ -1,9 +1,24 @@
-# Boss behaviors in Lua — design reflection (NOT implemented)
+# Boss behaviors in Lua — design + v1 implementation
 
-> Status: **réflexion demandée par le dev (2026-07-11), à discuter avant
-> tout code.** Objectif : que les joueurs/moddeurs écrivent des
-> comportements de boss en Lua, sans mettre de script dans la boucle
-> chaude de l'IA.
+> Status : **briques 1-2 IMPLÉMENTÉES (2026-07-11, décision dev : « pour
+> tous les types d'adversaires, bandit en exemple »)** — événements de
+> combat sur le bus + `ActorForm.brainScript` avec tick de décision et
+> retours de MOVES. Les briques 3-4 (API d'actions, boss de démo)
+> restent à ouvrir.
+>
+> **Ce qui marche aujourd'hui** : tout ActorForm hostile peut porter un
+> `brainScript` (source Lua qui RETOURNE `function(situation) ->
+> "approach"|"strike"|"strafe"|"flee"`). Le director l'appelle à ~4 Hz
+> (jamais par frame), compile UNE fois par form (toutes les instances
+> partagent), exécute le move retourné ; erreur de compilation ou
+> d'exécution → log UNE fois puis repli définitif sur le cerveau C++
+> (`chooseCombatMove`). `self` est lié (hasTag/applyEffect/attributs en
+> lecture) ; la table situation : {distance, attackRange,
+> preferredRange, canSee, swinging, cooldown, healthFraction, courage,
+> aware}. Les événements `OnHitTaken`/`OnStagger`/`OnParried` partent
+> sur le bus depuis les deux chemins de dégâts. **L'exemple vivant : le
+> Bandit de village.toml** — même réflexes que le C++ mais il craque à
+> 40 % de santé ; supprimer le champ le rend au C++ pur.
 
 ## Le problème, et l'intuition du dev
 

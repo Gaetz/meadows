@@ -736,6 +736,25 @@ displayName = "Bandit"
 maxHealth = 45.0
 appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
 animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
+# Brain script (docs/BOSS-SCRIPTING.md — the modder example): Lua RETURNS
+# a decide(situation) function; the director calls it on ~4 Hz decision
+# ticks and EXECUTES the returned move ("approach"/"strike"/"strafe"/
+# "flee" — anything else falls back to the C++ brain). `situation` =
+# {distance, attackRange, preferredRange, canSee, swinging, cooldown,
+# healthFraction, courage, aware}; `self` is the usual script handle
+# (self:hasTag, self:applyEffect...). This one mirrors the C++ reflexes
+# but breaks EARLIER (40% health, vs 25% from courage) — delete the
+# field and the bandit reverts to pure C++.
+brainScript = '''
+return function(s)
+  if s.healthFraction < 0.4 then return "flee" end
+  if s.swinging then return "strike" end
+  if not s.canSee then return "approach" end
+  if s.distance <= s.attackRange and s.cooldown <= 0 then return "strike" end
+  if s.distance <= s.preferredRange then return "strafe" end
+  return "approach"
+end
+'''
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000093"

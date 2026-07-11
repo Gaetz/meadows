@@ -3,8 +3,10 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "engine/core/Defines.hpp"
+#include "engine/core/Guid.hpp" // brain-script cache key
 #include "engine/ecs/World.hpp" // ecs::Entity (flecs name confined to meadows-ecs)
 
 // The Lua scripting VM (Phase 4, §2.8). ONE shared, sandboxed Lua state; scripts
@@ -18,6 +20,7 @@ struct AttributeSet;
 struct AbilitySystem;
 class GameplayTagRegistry;
 class EventBus;
+struct CombatSituation;
 }
 namespace data {
 class FormDatabase;
@@ -98,6 +101,23 @@ public:
     // Deterministic RNG exposed to Lua as `rng()` -> [0, 1). Seed it from the
     // engine RNG so saves/replays reproduce.
     void seedRng(u64 seed);
+
+    // --- Brain scripts (enemy/boss behaviors — docs/BOSS-SCRIPTING.md) ---
+
+    // `code` must RETURN a decide function `(situation) -> move string`
+    // ("approach"/"strike"/"strafe"/"flee" — the C++ executes it; any
+    // other/nil return falls back to the C++ brain). Compiled ONCE and
+    // cached under `key` (the ActorForm guid — shared by every instance
+    // of that actor); called with `self` bound and the situation as a
+    // flat table {distance, attackRange, preferredRange, canSee,
+    // swinging, cooldown, healthFraction, courage, aware}. Returns ""
+    // on compile/runtime error (logged; a runtime error also drops the
+    // cached function so the fallback takes over for good). Call this
+    // on DECISION TICKS, never per frame.
+    str callBrain(const core::Guid& key, const std::string& code,
+                  ScriptContext& context,
+                  const gameplay::CombatSituation& situation,
+                  std::string_view awareState);
 
 private:
     f64 nextRandom();

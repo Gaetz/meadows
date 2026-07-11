@@ -80,7 +80,8 @@ struct StatsTuningForm : data::Form {
     // constants, promoted from scattered C++ constexprs so modders can
     // retune them. What deliberately STAYS C++ is tagged [cpp-tuning].
     f32 movementSpeedScale3D { 1.0f / 20.0f }; // movementSpeed stat -> m/s
-    f32 sprintMultiplier { 1.6f };             // "sprint multiplies" (STATS.md)
+    f32 sprintMultiplier { 2.0f };             // "sprint multiplies" (STATS.md;
+                                               //  dev feel pass 2026-07-11)
     f32 jumpPowerScale3D { 1.0f / 20.8f };     // jumpPower stat -> jump m/s
     f32 accelerationRate3D { 0.12f };          // acceleration stat -> 1/s ramp
     f32 npcWalkFactor { 0.35f };        // NPC walk = jog × this (STATS.md)
@@ -119,7 +120,7 @@ struct StatsTuningForm : data::Form {
     // the i-frames/cost/cooldown are the Dodge ability's effects.
     f32 dodgeTapSeconds { 0.25f };
     f32 dodgeDurationSeconds { 0.28f }; // match DodgeIFrames.durationSeconds
-    f32 dodgeSpeedMultiplier { 2.6f };
+    f32 dodgeSpeedMultiplier { 2.08f }; // dev feel pass: -20% dodge length
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)

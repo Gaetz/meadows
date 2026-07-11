@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -12,6 +13,7 @@
 #include "engine/ecs/World.hpp"          // ecs::Entity, ecs::World
 #include "engine/rhi/Rhi.hpp"            // rhi::*Handle
 #include "gameplay/ability/GameplayTags.hpp" // gameplay::GameplayTag
+#include "gameplay/combat/CombatAi.hpp"      // gameplay::CombatMove (brains)
 
 namespace core {
 class Rng;
@@ -35,6 +37,9 @@ class CharacterBody;
 }
 namespace world {
 class TerrainNavigator;
+}
+namespace script {
+class Vm;
 }
 namespace gameplay {
 class DerivedStatRegistry;
@@ -108,6 +113,13 @@ struct Npc {
     f32 attackCooldown { 0.0f };
     // P0 B3: grit from the ActorForm — flees below (1 - courage) health.
     f32 courage { 0.75f };
+    // Brain script (docs/BOSS-SCRIPTING.md): Lua decides the combat move
+    // on low-frequency ticks; empty = the C++ chooseCombatMove. The key
+    // is the ActorForm guid (the Vm caches ONE compiled decide per form).
+    str brainScript;
+    core::Guid brainKey;
+    f32 brainTimer { 0.0f };
+    std::optional<gameplay::CombatMove> brainMove;
 
     // Chantier P0 C4a: anim events land HERE from the GraphInstance sink
     // (set at creation, before any EventBus exists for the capture) and
@@ -151,6 +163,9 @@ struct NpcContext {
     // P0 A5: combat decision rolls (guard chance) — the seeded engine
     // RNG, §8: saves/replays stay reproducible.
     core::Rng& combatRng;
+    // Brain scripts (docs/BOSS-SCRIPTING.md): the ONE shared Lua VM;
+    // null = every actor runs the C++ brain.
+    script::Vm* vm;
     bool godMode;
     f32 timeSeconds;                   // cosmetic wander hash (not gameplay RNG)
 };

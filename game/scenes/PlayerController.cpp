@@ -196,6 +196,11 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
                                   ctx.statsTuning);
             LOG_INFO("PERFECT PARRY — your poise takes {}",
                      ctx.statsTuning.perfectParryPosture);
+            if (ctx.eventBus) {
+                ctx.eventBus->dispatch(
+                    { gameplay::eventKind("OnParried"),
+                      target.entity, ctx.playerEntity });
+            }
         } else if (guard.caught) {
             LOG_INFO("Blocked!");
         }
@@ -209,6 +214,20 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
              gameplay::currentValueOf(
                  best->entity.get<gameplay::AbilitySystem>(),
                  gameplay::attr("health")));
+    // Combat lifecycle events (BOSS-SCRIPTING §1) — quests, cues and
+    // future brains listen on the bus.
+    if (ctx.eventBus) {
+        gameplay::Event hit;
+        hit.kind = gameplay::eventKind("OnHitTaken");
+        hit.source = ctx.playerEntity;
+        hit.target = target.entity;
+        hit.value = result.healthDamage;
+        ctx.eventBus->dispatch(hit);
+        if (result.staggered) {
+            ctx.eventBus->dispatch({ gameplay::eventKind("OnStagger"),
+                                     ctx.playerEntity, target.entity });
+        }
+    }
 
     // D2 — crime v1: assaulting a peaceful NPC in front of a witness.
     // Witnesses = the victim (if still alive) or any living NPC within

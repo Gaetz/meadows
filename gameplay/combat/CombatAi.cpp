@@ -29,4 +29,20 @@ CombatMove chooseCombatMove(const CombatSituation& s) {
     return CombatMove::Approach;
 }
 
+std::optional<CombatMove> parseCombatMove(std::string_view name) {
+    if (name == "approach") {
+        return CombatMove::Approach;
+    }
+    if (name == "strike") {
+        return CombatMove::Strike;
+    }
+    if (name == "strafe") {
+        return CombatMove::Strafe;
+    }
+    if (name == "flee") {
+        return CombatMove::Flee;
+    }
+    return std::nullopt;
+}
+
 } // namespace gameplay
