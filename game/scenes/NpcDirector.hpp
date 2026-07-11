@@ -40,6 +40,7 @@ class EventBus;
 struct GameClock;
 class FurnitureOccupancy;
 struct AiPackageForm;
+struct AbilityForm;
 } // namespace gameplay
 
 namespace game {
@@ -94,6 +95,10 @@ struct Npc {
     bool hostile { false }; // ActorTagForm child "Faction.Bandits"
     bool guard { false };   // D2: "Faction.VillageGuard" — hostile while Wanted
     bool dead { false };    // mirrors the GAS State.Dead tag
+    // P0 A3: mirrors "MeleeSwing in flight" for the State.Attacking anim
+    // gate (same idiom as `sitting`/`dead` above — the tag-check callback
+    // reads these, it never touches gameplay types).
+    bool attacking { false };
     f32 attackCooldown { 0.0f };
 
     // Chantier P0 C4a: anim events land HERE from the GraphInstance sink
@@ -132,6 +137,9 @@ struct NpcContext {
     phys::CharacterBody* player;
     bool playMode;                     // mode == Play (combat hunts the player)
     const data::WeaponForm* banditWeapon;
+    // P0 A3: the shared melee attack ability — NPCs pay the same energy
+    // cost / cooldown effects as the player (§6).
+    const gameplay::AbilityForm* attackAbility;
     bool godMode;
     f32 timeSeconds;                   // cosmetic wander hash (not gameplay RNG)
 };

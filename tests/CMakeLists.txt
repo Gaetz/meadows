@@ -47,6 +47,7 @@
     JobsTest.cpp
     LevelEditorTest.cpp
     LocTextTest.cpp
+    MeleeSwingTest.cpp
     MovementTest.cpp
     OffensiveStatsTest.cpp
     PhysicsTest.cpp

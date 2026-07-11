@@ -26,6 +26,7 @@ class DerivedStatRegistry;
 class EventBus;
 struct StatsTuningForm;
 struct EffectForm;
+struct AbilityForm;
 }
 
 namespace game {
@@ -50,6 +51,9 @@ struct PlayerContext {
     const data::TextTable& texts; // U4-11: player-facing strings by key
     const gameplay::EffectForm* sprintCostEffect; // §2.9: energy only moves here
     const data::WeaponForm* fallbackWeapon;       // pre-equipment default
+    // P0 A3: the melee attack ability (energy cost + cooldown effects, §6)
+    // gates every swing; the swing itself is the MeleeSwing component.
+    const gameplay::AbilityForm* attackAbility;
     vector<uptr<Npc>>& npcs;          // melee targets + crime witnesses
     InteractionController& interaction; // fading gate + the crime toast
     bool overencumbered; // C3: no sprint, no jump (computed at the
@@ -63,10 +67,11 @@ struct PlayerContext {
 
 // The first-person Play-mode controller extracted from LandscapeScene
 // (audit U4-1): owns the kinematic capsule and the movement state
-// (smoothed velocity, attack cooldown, sprint-cost accumulator), runs
+// (smoothed velocity, swing weapon, sprint-cost accumulator), runs
 // mouselook / camera-relative movement / jump / sprint cost (through the
-// SprintCost GameplayEffect, §2.9) and the LMB melee swing with the D2
-// crime-witnessing pass. MODE transitions stay in the scene (enter/exit/
+// SprintCost GameplayEffect, §2.9) and the LMB melee swing — P0 A3/A4:
+// the ability-gated MeleeSwing whose blade must TOUCH (segment vs
+// capsule) — with the D2 crime-witnessing pass. MODE transitions stay in the scene (enter/exit/
 // restoreMode are SceneMode plumbing); they and travel/tp drive the body
 // through spawnBody/destroyBody.
 class PlayerController {
@@ -90,13 +95,25 @@ public:
     // sync. Frozen while the interaction fade runs.
     void update(f32 dt, const PlayerContext& ctx);
 
+    // P0 A3: the weapon the in-flight swing was activated with (null when
+    // Idle) — the scene's viewmodel takes its timings and model from it.
+    const data::WeaponForm* swingWeapon() const { return swingWeapon_; }
+
 private:
     void tryAttack(const PlayerContext& ctx);
+    // A4: advances the MeleeSwing machine and, through the Active window,
+    // sweeps the blade segment against the NPC capsules (one code path
+    // with the NPCs: gameplay/combat/MeleeSwing).
+    void updateSwing(f32 dt, const PlayerContext& ctx);
+    // The moved B6 hit: weapon damage through the GAS pipeline + the D2
+    // crime-witnessing pass. Fires once per target per swing.
+    void applyHit(const PlayerContext& ctx, Npc& target,
+                  const data::WeaponForm& weapon);
 
     uptr<phys::CharacterBody> body_;
     Vec3 velocity { 0.0f };  // smoothed horizontal velocity (m/s)
     f32 jumpSpeed { 5.0f };  // fallback only — jumpPower stat drives it (C3)
-    f32 attackCooldown { 0.0f };
+    const data::WeaponForm* swingWeapon_ { nullptr };
     f32 sprintCostAccumulator { 0.0f };
     f32 strideAccumulator { 0.0f }; // C4a: grounded meters since last step
 };

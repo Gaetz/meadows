@@ -1,0 +1,187 @@
+#include "gameplay/combat/MeleeSwing.hpp"
+
+#include <algorithm>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+
+namespace gameplay {
+
+void setSwingPhase(MeleeSwing& swing, SwingPhase phase) {
+    if (phase == SwingPhase::Windup) {
+        swing.struck.clear(); // a fresh swing hits everyone once again
+    }
+    swing.phase = phase;
+    swing.t = 0.0f;
+}
+
+bool startSwing(MeleeSwing& swing) {
+    if (swing.phase != SwingPhase::Idle) {
+        return false;
+    }
+    setSwingPhase(swing, SwingPhase::Windup);
+    return true;
+}
+
+void updateSwing(MeleeSwing& swing, f32 dt, const SwingTiming& timing) {
+    swing.t += dt;
+    switch (swing.phase) {
+    case SwingPhase::Idle:
+        swing.t = 0.0f;
+        break;
+    case SwingPhase::Windup:
+        if (swing.t >= timing.windup) {
+            setSwingPhase(swing, SwingPhase::Active);
+        }
+        break;
+    case SwingPhase::Active:
+        if (swing.t >= timing.active) {
+            setSwingPhase(swing, SwingPhase::Recovery);
+        }
+        break;
+    case SwingPhase::Recovery:
+        if (swing.t >= timing.recovery) {
+            setSwingPhase(swing, SwingPhase::Idle);
+        }
+        break;
+    }
+}
+
+void onSwingAnimEvent(MeleeSwing& swing, std::string_view name) {
+    if (name == "HitOpen" && swing.phase == SwingPhase::Windup) {
+        setSwingPhase(swing, SwingPhase::Active);
+    } else if (name == "HitClose" && swing.phase == SwingPhase::Active) {
+        setSwingPhase(swing, SwingPhase::Recovery);
+    }
+}
+
+f32 swingSweepT(const MeleeSwing& swing, const SwingTiming& timing) {
+    if (swing.phase != SwingPhase::Active || timing.active <= 0.0f) {
+        return 0.0f;
+    }
+    return glm::clamp(swing.t / timing.active, 0.0f, 1.0f);
+}
+
+bool registerStrike(MeleeSwing& swing, u64 targetId) {
+    if (std::find(swing.struck.begin(), swing.struck.end(), targetId) !=
+        swing.struck.end()) {
+        return false;
+    }
+    swing.struck.push_back(targetId);
+    return true;
+}
+
+namespace {
+
+// The three authored poses of the simulated swing, actor-local
+// [cpp-tuning]. Guard matches the A2 static viewmodel (hand 0.30 right,
+// 0.34 below, 0.55 ahead, blade tilted 28 degrees forward).
+struct SocketPose {
+    Vec3 position;
+    Quat rotation;
+};
+
+SocketPose guardPose() {
+    return { Vec3 { 0.30f, -0.34f, -0.55f },
+             glm::angleAxis(glm::radians(28.0f),
+                            Vec3 { 1.0f, 0.0f, 0.0f }) };
+}
+
+// Armed: pulled high right, blade rolled to point up-right — the start
+// of the slash arc.
+SocketPose armedPose() {
+    return { Vec3 { 0.45f, -0.18f, -0.50f },
+             glm::angleAxis(glm::radians(40.0f), Vec3 { 1.0f, 0.0f, 0.0f }) *
+                 glm::angleAxis(glm::radians(-65.0f),
+                                Vec3 { 0.0f, 0.0f, 1.0f }) };
+}
+
+// Follow-through: mirrored low left, blade rolled up-left.
+SocketPose throughPose() {
+    return { Vec3 { -0.45f, -0.28f, -0.50f },
+             glm::angleAxis(glm::radians(40.0f), Vec3 { 1.0f, 0.0f, 0.0f }) *
+                 glm::angleAxis(glm::radians(65.0f),
+                                Vec3 { 0.0f, 0.0f, 1.0f }) };
+}
+
+Mat4 compose(const SocketPose& a, const SocketPose& b, f32 t) {
+    const Vec3 position = glm::mix(a.position, b.position, t);
+    const Quat rotation = glm::slerp(a.rotation, b.rotation, t);
+    return glm::translate(Mat4 { 1.0f }, position) * glm::mat4_cast(rotation);
+}
+
+// Ease-in-out keeps the simulated hand from teleporting between keys.
+f32 smooth(f32 t) {
+    t = glm::clamp(t, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+} // namespace
+
+Mat4 swingSocketLocal(const MeleeSwing& swing, const SwingTiming& timing) {
+    switch (swing.phase) {
+    case SwingPhase::Idle:
+        return compose(guardPose(), guardPose(), 0.0f);
+    case SwingPhase::Windup: {
+        const f32 t = timing.windup > 0.0f ? swing.t / timing.windup : 1.0f;
+        return compose(guardPose(), armedPose(), smooth(t));
+    }
+    case SwingPhase::Active:
+        // Linear across the damage window: the sweep IS the hit test's
+        // travel — easing here would bunch the samples at the edges.
+        return compose(armedPose(), throughPose(),
+                       swingSweepT(swing, timing));
+    case SwingPhase::Recovery: {
+        const f32 t =
+            timing.recovery > 0.0f ? swing.t / timing.recovery : 1.0f;
+        return compose(throughPose(), guardPose(), smooth(t));
+    }
+    }
+    return Mat4 { 1.0f };
+}
+
+bool segmentHitsCapsule(const Vec3& a0, const Vec3& a1, const Vec3& capA,
+                        const Vec3& capB, f32 radius) {
+    // Closest distance between segments (Ericson, Real-Time Collision
+    // Detection 5.1.9), squared against the capsule radius.
+    const Vec3 d1 = a1 - a0;
+    const Vec3 d2 = capB - capA;
+    const Vec3 r = a0 - capA;
+    const f32 a = glm::dot(d1, d1);
+    const f32 e = glm::dot(d2, d2);
+    const f32 f = glm::dot(d2, r);
+    f32 s = 0.0f;
+    f32 t = 0.0f;
+    constexpr f32 kEpsilon = 1e-8f;
+    if (a <= kEpsilon && e <= kEpsilon) {
+        // Both degenerate: point vs point.
+    } else if (a <= kEpsilon) {
+        t = glm::clamp(f / e, 0.0f, 1.0f);
+    } else {
+        const f32 c = glm::dot(d1, r);
+        if (e <= kEpsilon) {
+            s = glm::clamp(-c / a, 0.0f, 1.0f);
+        } else {
+            const f32 b = glm::dot(d1, d2);
+            const f32 denom = a * e - b * b;
+            s = denom > kEpsilon
+                    ? glm::clamp((b * f - c * e) / denom, 0.0f, 1.0f)
+                    : 0.0f;
+            t = (b * s + f) / e;
+            if (t < 0.0f) {
+                t = 0.0f;
+                s = glm::clamp(-c / a, 0.0f, 1.0f);
+            } else if (t > 1.0f) {
+                t = 1.0f;
+                s = glm::clamp((b - c) / a, 0.0f, 1.0f);
+            }
+        }
+    }
+    const Vec3 closest1 = a0 + d1 * s;
+    const Vec3 closest2 = capA + d2 * t;
+    const Vec3 gap = closest1 - closest2;
+    return glm::dot(gap, gap) < radius * radius;
+}
+
+} // namespace gameplay

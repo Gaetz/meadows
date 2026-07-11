@@ -714,6 +714,12 @@ weight = 2.5
 goldValue = 8
 bluntAttack = 8.0
 postureDamage = 25.0
+# P0 A3: swing windows matched to the Sword_Attack clip (1.533 s) the
+# bandit plays; the clip's HitOpen/HitClose events refine Active live.
+bladeLength = 0.8
+swingWindup = 0.55
+swingActive = 0.4
+swingRecovery = 0.58
 
 # The bandit: same rig as the villager, a darker soul (Faction.Bandits
 # child tag makes it hostile — §C.1 tag records). Lurks east of the

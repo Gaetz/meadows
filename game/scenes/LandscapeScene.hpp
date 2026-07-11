@@ -65,6 +65,9 @@ struct WeaponForm;   // CoreForms — pointers only in this header
 struct MiscItemForm; // (gold, chantier 4 B5)
 class EditSession;   // console (chantier 4 B7)
 }
+namespace gameplay {
+struct AbilityForm;  // the shared melee attack (P0 A3) — pointer only
+}
 namespace script {
 class Vm;
 }
@@ -295,9 +298,11 @@ private:
 
     // Chantier 3 B5/B6: melee combat — everything flows through the GAS
     // damage pipeline (weaponDamageEvent -> applyDamage), like the 2D
-    // CombatArena. First-person: no player swing anim needed in v1.
+    // CombatArena. P0 A3: swings are MeleeSwing state machines gated by
+    // the shared attack ability; damage lands where the blade passes.
     const data::WeaponForm* playerWeapon { nullptr };
     const data::WeaponForm* banditWeapon { nullptr };
+    const gameplay::AbilityForm* attackAbility { nullptr };
 
     // Chantier 2 B8: the authored-terrain overlay. IMMUTABLE once
     // published; the sculpt tool edits a working copy then publishes a

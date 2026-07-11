@@ -32,6 +32,7 @@
 #include "engine/rhi/Device.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
+#include "gameplay/combat/MeleeSwing.hpp" // P0 A3: the viewmodel swing arc
 #include "gameplay/actors/ActorState.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
@@ -194,6 +195,10 @@ void LandscapeScene::setupGameplay() {
         data::findByEditorId<data::WeaponForm>(forms, "RustySword");
     banditWeapon =
         data::findByEditorId<data::WeaponForm>(forms, "BanditClub");
+    // P0 A3: the melee attack ability — SHARED by player and NPCs; its
+    // cost/cooldown effects (§6) are the only cadence gates.
+    attackAbility =
+        data::findByEditorId<gameplay::AbilityForm>(forms, "PlayerAttack");
     // Chantier 4 B5: the currency + the barter trigger (a dialogue node
     // fires "OpenBarter" — the vendor is whoever we're talking to).
     goldForm = data::findByEditorId<data::MiscItemForm>(forms, "GoldCoin");
@@ -656,25 +661,31 @@ void LandscapeScene::update(f32 dt) {
     // carries this frame's pose (paused sim: the last pose, still valid).
     snapshot.skinned.clear();
     npcDirector.extract(snapshot);
-    // Chantier P0 A2: the first-person viewmodel — the player's sword,
-    // camera-relative (idle guard pose bottom-right; the A3 swing will
-    // drive this transform along the attack arc). Pose constants are
-    // [cpp-tuning: adjust on the dev's visual pass].
-    if (mode == SceneMode::Play && playerWeapon) {
+    // Chantier P0 A2/A3: the first-person viewmodel — the player's sword
+    // rides the simulated swing socket (guard pose bottom-right when
+    // Idle; the LMB swing sweeps it right-to-left along the same arc the
+    // hit test travels). Socket constants live in swingSocketLocal
+    // [cpp-tuning: dev visual pass].
+    if (mode == SceneMode::Play && playerWeapon &&
+        playerEntity.is_alive()) {
         const render::Camera3D& cam = flyCamera.camera;
         const Vec3 fwd = cam.forward();
         const Vec3 right = cam.right();
         const Vec3 up = glm::normalize(glm::cross(right, fwd));
-        const Vec3 hand =
-            cam.position + fwd * 0.55f + right * 0.30f - up * 0.34f;
         const Mat4 basis { Vec4 { right, 0.0f }, Vec4 { up, 0.0f },
-                           Vec4 { -fwd, 0.0f }, Vec4 { hand, 1.0f } };
+                           Vec4 { -fwd, 0.0f },
+                           Vec4 { cam.position, 1.0f } };
+        const data::WeaponForm& weapon =
+            playerController.swingWeapon() ? *playerController.swingWeapon()
+                                           : *playerWeapon;
+        const gameplay::SwingTiming timing { weapon.swingWindup,
+                                             weapon.swingActive,
+                                             weapon.swingRecovery };
+        const auto& swing = playerEntity.get<gameplay::MeleeSwing>();
         const Mat4 pose =
-            basis * glm::rotate(Mat4 { 1.0f }, glm::radians(28.0f),
-                                Vec3 { 1.0f, 0.0f, 0.0f });
-        const core::Guid model = playerWeapon->model.isValid()
-                                     ? playerWeapon->model
-                                     : swordMeshGuid();
+            basis * gameplay::swingSocketLocal(swing, timing);
+        const core::Guid model =
+            weapon.model.isValid() ? weapon.model : swordMeshGuid();
         snapshot.meshes.push_back({ model, core::Guid {}, pose });
     }
     // Wind phase integrates the CURRENT strength: speed changes bend the
@@ -1288,6 +1299,11 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
     const gameplay::CharacterTickContext tickCtx { derivedStats, gameTags,
                                                    statsTuning };
     gameplay::initializeActorStats(entity, tickCtx);
+    // P0 A3: every actor can swing — the shared melee state machine
+    // (player LMB and NPC AI go through the same component).
+    if (!entity.has<gameplay::MeleeSwing>()) {
+        entity.set<gameplay::MeleeSwing>({});
+    }
     if (!entity.has<gameplay::Inventory>()) {
         entity.set<gameplay::Inventory>({});
     }
@@ -1568,6 +1584,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
         texts,
         sprintCostEffect,
         playerWeapon,
+        attackAbility,
         npcDirector.npcs(),
         interaction,
         playerEncumbrance == gameplay::EncumbranceCategory::Overencumbered,
@@ -1600,6 +1617,7 @@ NpcContext LandscapeScene::makeNpcContext() {
         playerController.body(),
         mode == SceneMode::Play,
         banditWeapon,
+        attackAbility,
         sceneConsole.godMode(),
         timeSeconds,
     };

@@ -389,6 +389,74 @@ to = "2b5e7d10-0000-4000-8000-0000000000fb"
 requiredTag = "State.Dead"
 blendTime = 0.15
 
+# Melee attack (chantier P0 A3/A4): tag-gated like sit/death — the runtime
+# raises State.Attacking while a MeleeSwing is in flight. The clip's
+# authored HitOpen/HitClose events drive the DAMAGE window (they override
+# the WeaponForm's data timings through the anim-event sink), and the
+# hand joint carries the visible sword through the arc — the blade the
+# hit test follows. Declared AFTER the death transitions: file order is
+# priority, dying still wins.
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000e8"
+type = "AnimClipForm"
+new = true
+[records.fields]
+editorId = "CharAttack"
+asset = "2b5e7d10-0000-4000-8000-0000000000e0"
+animationName = "Sword_Attack"
+loop = false
+
+# Window guesses over the 1.533 s clip — retune with the visual pass.
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000e9"
+type = "AnimEventForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000e8"
+time = 0.55
+name = "HitOpen"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000ea"
+type = "AnimEventForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000e8"
+time = 0.95
+name = "HitClose"
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000fe"
+type = "AnimStateForm"
+new = true
+[records.fields]
+editorId = "CharStateAttack"
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+clip = "2b5e7d10-0000-4000-8000-0000000000e8"
+
+# From ANY state (no `from`): the bandit may be idle or mid-chase when
+# the swing starts.
+[[records]]
+form = "2b5e7d10-0000-4000-8000-0000000000ff"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+to = "2b5e7d10-0000-4000-8000-0000000000fe"
+requiredTag = "State.Attacking"
+blendTime = 0.08
+
+[[records]]
+form = "2b5e7d10-0000-4000-8000-000000000100"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000f0"
+from = "2b5e7d10-0000-4000-8000-0000000000fe"
+to = "2b5e7d10-0000-4000-8000-0000000000f1"
+blockedTag = "State.Attacking"
+blendTime = 0.25
+
 # --- The showcase NPC (B6) --------------------------------------------------
 # A full Forms-driven character: ActorForm (the character definition hub,
 # MEADOWS-PLAN §C.1) -> AppearanceForm (rig + body mesh + tint) + the B3

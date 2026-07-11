@@ -35,27 +35,40 @@ fait avec le backend null).
 
 ## Axe A — Le combat de mêlée complet (le cœur du feel)
 
-- **A1 — Shape casts Jolt.** La façade `phys::` gagne `sphereCast`
-  (miroir de rayCast, headless-testé). Sert aux PROJECTILES vs monde
-  statique — pas aux hits d'acteurs : les `CharacterVirtual` sont HORS
-  broadphase, un cast physique ne les voit pas.
-- **A2 — L'épée visible et son socket (design dev 2026-07-11).** Asset
-  épée PROCÉDURAL simple (lame+garde+poignée, pattern TreeGenerator)
-  injecté au MeshCache ; `WeaponForm` += `model`, `bladeLength`. Le
-  socket est un transform ANIMÉ PAR CODE (pas d'anim d'attaque en
-  stock) : arc droite→gauche paramétré par la phase du swing — joueur =
-  socket relatif caméra (viewmodel 1re personne), PNJ = relatif au
-  facing ; si un clip d'attaque existe dans le glTF (à vérifier), la
-  main (`anim::modelMatrices`) remplace la simulation.
-- **A3+A4 — Ability GAS + hit À LA LAME.** Machine windup → active →
-  recovery (enum + une fonction), activation = `tryActivate` (coût
-  énergie/cooldown en effects). **Le hit = la lame TOUCHE** : pendant
-  Active, le segment de lame (longueur × `hitTolerance` {1.2}, champ de
-  Form réglable) est testé ANALYTIQUEMENT contre les capsules d'acteurs,
-  chaque cible touchée une fois par swing → `weaponDamageEvent` →
-  applyDamage. AnimEvents HitOpen/Close pilotent la phase quand un clip
-  les porte. Joueur et PNJ = un seul chemin. Doctesté (arc, hit,
-  tolérance, déduplication).
+- **A1 ✅ (`21626e6`) — Shape casts Jolt.** La façade `phys::` gagne
+  `sphereCast` (miroir de rayCast, headless-testé). Sert aux PROJECTILES
+  vs monde statique — pas aux hits d'acteurs : les `CharacterVirtual`
+  sont HORS broadphase, un cast physique ne les voit pas.
+- **A2 ✅ (`af51d62`, + fix boot `a23b5d6`) — L'épée visible et son
+  socket (design dev 2026-07-11).** Asset épée PROCÉDURAL simple
+  (lame+garde+poignée, `game/WeaponMeshes`, lame sur +Y depuis la
+  poignée) injecté au MeshCache (`injectProcedural`) ; `WeaponForm` +=
+  champs combat (bladeLength/hitTolerance/timings/reach/projectileSpeed).
+  DÉCOUVERTE : le rig UAL A un clip `Sword_Attack` (1,533 s) + le joint
+  `hand_r` — les PNJ hostiles portent l'épée dans la main (extract =
+  `anim::modelMatrices`), le joueur a son viewmodel caméra. Leçon boot :
+  la pose est bind-initialisée à la construction (l'extract tourne en
+  Spectator où update() ne passe pas). Reste dev : correction de grip
+  éventuelle (~90°) dans la main du bandit.
+- **A3+A4 ✅ — Ability GAS + hit À LA LAME.**
+  `gameplay/combat/MeleeSwing` : machine Idle→Windup→Active→Recovery
+  (enum + UNE fonction de transition `setSwingPhase`), timings =
+  `WeaponForm` (BanditClub calé sur le clip : 0.55/0.40/0.58) ;
+  activation = `tryActivate` de l'ability "PlayerAttack" PARTAGÉE
+  joueur/PNJ (coût énergie + cooldown en effects, §6). **Le hit = la
+  lame TOUCHE** : pendant Active, segment de lame (× `hitTolerance`)
+  contre capsule ANALYTIQUE (`segmentHitsCapsule`, Ericson — les
+  CharacterVirtual sont hors broadphase), une touche par swing
+  (`registerStrike`) → `weaponDamageEvent` → `applyDamage` (passe crime
+  conservée). PNJ : le graph data gagne l'état `CharStateAttack`
+  (Sword_Attack, gate `State.Attacking`, transitions APRÈS la mort dans
+  le fichier = priorité) ; les AnimEvents authorés `HitOpen` 0.55 /
+  `HitClose` 0.95 pilotent la fenêtre via le sink C4a ; la lame de hit =
+  la lame VISIBLE (world × hand_r × +Y). Joueur : viewmodel balayé par
+  `swingSocketLocal` (garde → armé droite → balayage → retour), le même
+  socket que le test de hit. Doctesté ×5 (phases, override d'events,
+  dédup, arc droite→gauche, segment-capsule + tolérance). Reste dev :
+  feel (fenêtres du clip, arc du viewmodel, capsule 0.4 [cpp-tuning]).
 - **A5 — Blocage directionnel.** État bloqué (RMB / ability PNJ) : les
   coups entrants dans le cône avant → dégâts réduits + dégâts de POSTURE
   (le système posture/stagger de STATS.md est déjà là), garde brisée =

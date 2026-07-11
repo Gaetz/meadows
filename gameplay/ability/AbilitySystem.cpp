@@ -1,12 +1,14 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 
 #include "engine/ecs/World.hpp"
+#include "gameplay/combat/MeleeSwing.hpp"
 
 namespace gameplay {
 
 void registerGameplayComponents(ecs::World& world) {
     world.registerComponent<AttributeSet>();   // reflected: base values serialize
     world.handle().component<AbilitySystem>(); // runtime-only state
+    world.handle().component<MeleeSwing>();    // runtime-only (P0 A3)
 }
 
 std::optional<f32> baseValueOf(const AttributeSet& set, u32 attrId) {

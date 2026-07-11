@@ -14,7 +14,9 @@
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/NpcDirector.hpp" // Npc
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/GameplayAbility.hpp" // tryActivate (P0 A3)
 #include "gameplay/ability/GameplayEffects.hpp"
+#include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing (A4)
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/actors/ActorState.hpp" // gameplay::Bounty
 #include "gameplay/stats/CoreAttributes.hpp"
@@ -46,11 +48,11 @@ void PlayerController::destroyBody() {
     body_.reset();
 }
 
-// Chantier 3 B6: first-person melee — LMB swings the equipped weapon at
-// the nearest living NPC in reach and roughly in front. Damage flows
-// through the SAME GAS pipeline as the 2D arena (§2.9: no hand-rolled
-// numbers). v1 has no swing animation (no visible body) — the cooldown
-// and the hit feedback carry the feel until the FX/audio brick.
+// P0 A3 (replaces the B6 cone pick): LMB starts an ability-gated
+// MeleeSwing — energy cost and cooldown are the AbilityForm's effects
+// (§6), the swing phases are the weapon's data timings, and damage lands
+// in updateSwing only where the VISIBLE blade passes (dev design: the
+// blade must touch).
 void PlayerController::tryAttack(const PlayerContext& ctx) {
     if (!ctx.playerEntity.is_alive() || !body_) {
         return;
@@ -68,34 +70,87 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
         LOG_INFO("Swing: no weapon equipped");
         return;
     }
-    attackCooldown = 0.7f; // [cpp-tuning] melee swing cadence
-    const Vec3 eye =
-        body_->position() + Vec3 { 0.0f, ctx.statsTuning.eyeHeight, 0.0f };
-    const Vec3 forward = ctx.flyCamera.camera.forward();
-    Npc* best = nullptr;
-    f32 bestScore = 0.45f;
-    for (auto& npcPtr : ctx.npcs) {
-        Npc& npc = *npcPtr;
-        if (npc.dead || !npc.entity.is_alive()) {
-            continue;
-        }
-        const Vec3 position =
-            npc.entity.get<world::Transform>().position;
-        const Vec3 to = position + Vec3 { 0.0f, 1.1f, 0.0f } - eye;
-        const f32 distance = glm::length(to);
-        if (distance > 2.4f || distance < 1e-3f) {
-            continue;
-        }
-        const f32 facing = glm::dot(to / distance, forward);
-        if (facing > bestScore) {
-            bestScore = facing;
-            best = &npc;
+    auto& swing = ctx.playerEntity.get_mut<gameplay::MeleeSwing>();
+    if (swing.phase != gameplay::SwingPhase::Idle) {
+        return; // one swing in flight
+    }
+    if (ctx.attackAbility) {
+        auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
+        auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
+        if (!gameplay::tryActivate(*ctx.attackAbility, set, system, set,
+                                   system,
+                                   { ctx.forms, ctx.gameTags })) {
+            return; // on cooldown or exhausted
         }
     }
-    if (!best) {
-        LOG_INFO("Swing: nothing in reach");
+    swingWeapon_ = weapon;
+    gameplay::startSwing(swing);
+}
+
+// P0 A4: the swing machine + the blade-touch hit test. The blade segment
+// (grip -> +Y x bladeLength x hitTolerance — the sword mesh grows along
+// +Y) rides the simulated camera socket through the Active sweep and is
+// tested ANALYTICALLY against the NPC capsules: CharacterVirtual bodies
+// are outside the Jolt broadphase, no physics cast can do this.
+void PlayerController::updateSwing(f32 dt, const PlayerContext& ctx) {
+    if (!ctx.playerEntity.is_alive()) {
         return;
     }
+    auto& swing = ctx.playerEntity.get_mut<gameplay::MeleeSwing>();
+    if (swing.phase == gameplay::SwingPhase::Idle || !swingWeapon_) {
+        swingWeapon_ = nullptr;
+        return;
+    }
+    const gameplay::SwingTiming timing { swingWeapon_->swingWindup,
+                                         swingWeapon_->swingActive,
+                                         swingWeapon_->swingRecovery };
+    gameplay::updateSwing(swing, dt, timing);
+    if (swing.phase == gameplay::SwingPhase::Active) {
+        const render::Camera3D& cam = ctx.flyCamera.camera;
+        const Vec3 fwd = cam.forward();
+        const Vec3 right = cam.right();
+        const Vec3 up = glm::normalize(glm::cross(right, fwd));
+        const Mat4 basis { Vec4 { right, 0.0f }, Vec4 { up, 0.0f },
+                           Vec4 { -fwd, 0.0f },
+                           Vec4 { cam.position, 1.0f } };
+        const Mat4 socket =
+            basis * gameplay::swingSocketLocal(swing, timing);
+        const Vec3 grip { socket[3] };
+        const Vec3 bladeDir = glm::normalize(Vec3 { socket[1] });
+        const Vec3 tip = grip + bladeDir * (swingWeapon_->bladeLength *
+                                            swingWeapon_->hitTolerance);
+        for (auto& npcPtr : ctx.npcs) {
+            Npc& npc = *npcPtr;
+            if (npc.dead || !npc.entity.is_alive()) {
+                continue;
+            }
+            const Vec3 feet = npc.entity.get<world::Transform>().position;
+            // [cpp-tuning] the shared humanoid capsule (feet-anchored).
+            constexpr f32 kRadius = 0.4f;
+            constexpr f32 kHeight = 1.8f;
+            if (!gameplay::segmentHitsCapsule(
+                    grip, tip, feet + Vec3 { 0.0f, kRadius, 0.0f },
+                    feet + Vec3 { 0.0f, kHeight - kRadius, 0.0f },
+                    kRadius)) {
+                continue;
+            }
+            if (gameplay::registerStrike(swing, npc.entity.id())) {
+                applyHit(ctx, npc, *swingWeapon_);
+            }
+        }
+    }
+    if (swing.phase == gameplay::SwingPhase::Idle) {
+        swingWeapon_ = nullptr; // swing completed this frame
+    }
+}
+
+// The B6 weapon hit, unchanged in substance: typed damage through the GAS
+// pipeline (§2.9) + the D2 crime pass — now fired by blade CONTACT.
+void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
+                                const data::WeaponForm& weapon) {
+    Npc* best = &target;
+    const Vec3 eye =
+        body_->position() + Vec3 { 0.0f, ctx.statsTuning.eyeHeight, 0.0f };
     gameplay::StatBlock block {
         best->entity.get_mut<gameplay::CoreAttributes>(),
         best->entity.get_mut<gameplay::AttributeSet>(),
@@ -104,7 +159,7 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
     };
     const auto& playerSys = ctx.playerEntity.get<gameplay::AbilitySystem>();
     gameplay::DamageEvent event =
-        gameplay::weaponDamageEvent(*weapon, playerSys);
+        gameplay::weaponDamageEvent(weapon, playerSys);
     // C1: a target in its critical window eats the critical execution.
     if (const auto weakness = ctx.gameTags.find("State.CriticalWeakness")) {
         event.critical = block.system.tags.has(*weakness);
@@ -166,12 +221,12 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     }
     platform::Input& input = ctx.input;
     // B6: melee swing on LMB (the mouse is captured in Play — ImGui
-    // never owns it here).
-    attackCooldown -= dt;
-    if (attackCooldown <= 0.0f &&
-        input.mousePressed(platform::MouseButton::Left)) {
+    // never owns it here). Cadence is the ability's cooldown effect plus
+    // the swing itself: no hardcoded timer (P0 A3).
+    if (input.mousePressed(platform::MouseButton::Left)) {
         tryAttack(ctx);
     }
+    updateSwing(dt, ctx);
 
     // Mouselook, always captured in Play (no LMB gymnastics in a game).
     render::FlyCamera& flyCamera = ctx.flyCamera;

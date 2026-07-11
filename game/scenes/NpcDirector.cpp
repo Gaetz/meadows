@@ -19,9 +19,11 @@
 #include "game/WeaponMeshes.hpp"          // A2: the visible sword guid
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp" // attr, currentValueOf
+#include "gameplay/ability/GameplayAbility.hpp" // tryActivate (P0 A3)
 #include "gameplay/actors/ActorState.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
+#include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing (A4)
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
 #include "gameplay/event/EventBus.hpp"
@@ -203,6 +205,9 @@ void NpcDirector::refreshNpcs(
                     if (tag == "State.Dead") {
                         return raw->dead;
                     }
+                    if (tag == "State.Attacking") { // P0 A3: swing gate
+                        return raw->attacking;
+                    }
                     return false;
                 });
             // Chantier P0 C4a: the sink FINALLY gets a runtime consumer —
@@ -368,6 +373,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             // The death transition (anim graph, State.Dead gate) plays; the
             // body stays. Despawn: a later slice.
             npc.sitting = false;
+            npc.attacking = false; // a death mid-swing cancels it
             npc.path.clear();
             npc.speed = 0.0f;
             npc.anim->setParam("speed", 0.0f);
@@ -409,7 +415,12 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                     npc.sitting = false;
                     npc.attackCooldown -= dt;
                     npc.repathTimer -= dt;
-                    if (distance > 1.8f) {
+                    // P0 A3: a swing in flight roots the NPC (the clip
+                    // plays out; the blade does the hitting below).
+                    const bool swinging =
+                        npc.entity.get<gameplay::MeleeSwing>().phase !=
+                        gameplay::SwingPhase::Idle;
+                    if (distance > 1.8f && !swinging) {
                         if (npc.repathTimer <= 0.0f) {
                             const nav::PathResult found =
                                 ctx.navigator->findPath({ transform.position,
@@ -427,30 +438,30 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                         npc.yaw = goalYaw;
                         transform.rotation = glm::angleAxis(
                             npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
-                        if (npc.attackCooldown <= 0.0f && ctx.banditWeapon &&
+                        // P0 A3: instant damage became an ability-gated
+                        // MeleeSwing — the Sword_Attack clip carries the
+                        // hand, and the blade must TOUCH (below).
+                        if (!swinging && distance <= 1.8f &&
+                            npc.attackCooldown <= 0.0f && ctx.banditWeapon &&
                             ctx.playerEntity.is_alive() && !ctx.godMode) {
-                            npc.attackCooldown = 1.6f;
-                            gameplay::StatBlock block {
-                                ctx.playerEntity
-                                    .get_mut<gameplay::CoreAttributes>(),
-                                ctx.playerEntity
-                                    .get_mut<gameplay::AttributeSet>(),
-                                ctx.playerEntity
-                                    .get_mut<gameplay::AbilitySystem>(),
-                                ctx.playerEntity
-                                    .get_mut<gameplay::CombatState>()
-                            };
-                            const gameplay::DamageResult result =
-                                gameplay::applyDamage(
-                                    block,
-                                    gameplay::weaponDamageEvent(
-                                        *ctx.banditWeapon, npcSys),
-                                    ctx.gameTags, ctx.derivedStats, nullptr,
-                                    ctx.statsTuning);
-                            LOG_INFO("Bandit hits you: {:.0f} damage{}",
-                                     result.healthDamage,
-                                     result.staggered ? " (staggered!)"
-                                                      : "");
+                            auto& set =
+                                npc.entity.get_mut<gameplay::AttributeSet>();
+                            auto& system =
+                                npc.entity
+                                    .get_mut<gameplay::AbilitySystem>();
+                            const bool activated =
+                                !ctx.attackAbility ||
+                                gameplay::tryActivate(
+                                    *ctx.attackAbility, set, system, set,
+                                    system, { ctx.forms, ctx.gameTags });
+                            if (activated) {
+                                gameplay::startSwing(
+                                    npc.entity
+                                        .get_mut<gameplay::MeleeSwing>());
+                                // [cpp-tuning] pause between swings (A6
+                                // retunes it from WeaponForm.reach).
+                                npc.attackCooldown = 1.6f;
+                            }
                         }
                     }
                 }
@@ -561,9 +572,70 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         npc.anim->evaluate(npc.pose);
         anim::skinMatrices(npc.rig->skeleton, npc.pose, npc.palette);
 
+        // P0 A3/A4: the swing machine + the blade-touch hit (the SAME
+        // MeleeSwing code path as the player). The clip's authored
+        // HitOpen/HitClose events override the data windows; the hit
+        // segment is the VISIBLE blade — world x hand joint x +Y, exactly
+        // what extract() draws — against the player capsule.
+        auto& swing = npc.entity.get_mut<gameplay::MeleeSwing>();
+        if (swing.phase != gameplay::SwingPhase::Idle && ctx.banditWeapon) {
+            for (const str& name : npc.pendingAnimEvents) {
+                gameplay::onSwingAnimEvent(swing, name);
+            }
+            const gameplay::SwingTiming timing {
+                ctx.banditWeapon->swingWindup, ctx.banditWeapon->swingActive,
+                ctx.banditWeapon->swingRecovery
+            };
+            gameplay::updateSwing(swing, dt, timing);
+            if (swing.phase == gameplay::SwingPhase::Active &&
+                npc.handJoint >= 0 && ctx.playMode && ctx.player &&
+                ctx.playerEntity.is_alive() && !ctx.godMode) {
+                const Mat4 world =
+                    glm::translate(Mat4 { 1.0f }, transform.position) *
+                    glm::mat4_cast(transform.rotation);
+                anim::modelMatrices(npc.rig->skeleton, npc.pose,
+                                    jointScratch);
+                const Mat4 hand =
+                    world * jointScratch[static_cast<size_t>(npc.handJoint)];
+                const Vec3 grip { hand[3] };
+                const Vec3 bladeDir = glm::normalize(Vec3 { hand[1] });
+                const Vec3 tip =
+                    grip + bladeDir * (ctx.banditWeapon->bladeLength *
+                                       ctx.banditWeapon->hitTolerance);
+                const Vec3 feet = ctx.player->position();
+                // [cpp-tuning] the shared humanoid capsule (feet-anchored).
+                constexpr f32 kRadius = 0.4f;
+                constexpr f32 kHeight = 1.8f;
+                if (gameplay::segmentHitsCapsule(
+                        grip, tip, feet + Vec3 { 0.0f, kRadius, 0.0f },
+                        feet + Vec3 { 0.0f, kHeight - kRadius, 0.0f },
+                        kRadius) &&
+                    gameplay::registerStrike(swing,
+                                             ctx.playerEntity.id())) {
+                    gameplay::StatBlock block {
+                        ctx.playerEntity.get_mut<gameplay::CoreAttributes>(),
+                        ctx.playerEntity.get_mut<gameplay::AttributeSet>(),
+                        ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
+                        ctx.playerEntity.get_mut<gameplay::CombatState>()
+                    };
+                    const gameplay::DamageResult result =
+                        gameplay::applyDamage(
+                            block,
+                            gameplay::weaponDamageEvent(*ctx.banditWeapon,
+                                                        npcSys),
+                            ctx.gameTags, ctx.derivedStats, nullptr,
+                            ctx.statsTuning);
+                    LOG_INFO("Bandit's blade lands: {:.0f} damage{}",
+                             result.healthDamage,
+                             result.staggered ? " (staggered!)" : "");
+                }
+            }
+        }
+        npc.attacking = swing.phase != gameplay::SwingPhase::Idle;
+
         // Chantier P0 C4a: drain the anim events the sink buffered onto
         // the bus — ONE kind ("AnimEvent"), the clip's name in `name`;
-        // hit windows (A4) and footsteps (C4b) filter on it.
+        // hit windows (A4, routed above) and footsteps (C4b) filter on it.
         for (str& name : npc.pendingAnimEvents) {
             gameplay::Event event;
             event.kind = gameplay::eventKind("AnimEvent");
