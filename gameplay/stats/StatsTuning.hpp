@@ -104,6 +104,9 @@ struct StatsTuningForm : data::Form {
     f32 blockPostureFactor { 0.6f };  // blocked amount -> posture damage
     f32 blockSpeedFactor { 0.5f };    // move speed while guarding
     f32 npcBlockChance { 0.35f };     // odds an NPC guards between swings
+    // Chantier P0 B3 (appended): entering Alert shouts — same-faction
+    // allies within this radius of the caller join the hunt.
+    f32 helpCallRadius { 20.0f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -169,6 +172,7 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(blockPostureFactor)
         REFLECT_FIELD(blockSpeedFactor)
         REFLECT_FIELD(npcBlockChance)
+        REFLECT_FIELD(helpCallRadius)
     REFLECT_END()
 };
 

@@ -106,6 +106,8 @@ struct Npc {
     // the engine RNG; mirrored onto the State.Blocking tag).
     bool blocking { false };
     f32 attackCooldown { 0.0f };
+    // P0 B3: grit from the ActorForm — flees below (1 - courage) health.
+    f32 courage { 0.75f };
 
     // Chantier P0 C4a: anim events land HERE from the GraphInstance sink
     // (set at creation, before any EventBus exists for the capture) and
@@ -197,6 +199,15 @@ private:
     void updateNpcSchedule(const NpcContext& ctx, Npc& npc, f32 hourOfDay);
     bool moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,
                           f32 speedScale);
+    // B3: pathless steering (strafe orbits, flee) — same stat-driven
+    // speed as the path walker, explicit facing (a strafer keeps its
+    // eyes on the target, a runner looks where it runs).
+    void moveNpcDirect(const NpcContext& ctx, Npc& npc, f32 dt,
+                       const Vec3& direction, f32 speedScale, f32 faceYaw);
+    // B3: entering Alert shouts — same-faction allies in
+    // StatsTuningForm.helpCallRadius get the target position (alertTo).
+    void callForHelp(const NpcContext& ctx, const Npc& caller,
+                     const Vec3& targetPos);
 
     std::unordered_map<core::Guid, RigData> rigCache;
     vector<uptr<Npc>> npcs_;

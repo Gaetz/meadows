@@ -24,6 +24,7 @@
 #include "gameplay/actors/ActorState.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
+#include "gameplay/combat/CombatAi.hpp"         // chooseCombatMove (B3)
 #include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing (A4)
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
@@ -186,6 +187,7 @@ void NpcDirector::refreshNpcs(
             // Chantier 3 B3/B6: the daily routine + the anim tag gates
             // (sitting from furniture use, dead from the GAS life state).
             npc->schedule = actor.schedule;
+            npc->courage = actor.courage; // B3: flees below (1 - courage)
             // Chantier 6 A1: ActorTagForm children become REAL gameplay tags
             // on the actor's system (registerTag is idempotent and
             // auto-registers ancestors); the first Faction.* tag is what
@@ -357,6 +359,51 @@ bool NpcDirector::moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,
     return false;
 }
 
+void NpcDirector::moveNpcDirect(const NpcContext& ctx, Npc& npc, f32 dt,
+                                const Vec3& direction, f32 speedScale,
+                                f32 faceYaw) {
+    auto& transform = npc.entity.get_mut<world::Transform>();
+    const auto& sys = npc.entity.get<gameplay::AbilitySystem>();
+    const f32 walkSpeed =
+        gameplay::currentValueOf(sys, gameplay::attr("movementSpeed")) *
+        ctx.statsTuning.movementSpeedScale3D * ctx.statsTuning.npcWalkFactor *
+        speedScale;
+    transform.position += direction * walkSpeed * dt;
+    transform.position.y = render::terrain::height(
+        ctx.terrainParams, transform.position.x, transform.position.z);
+    npc.yaw = faceYaw;
+    transform.rotation = glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
+    npc.speed += (walkSpeed - npc.speed) * (1.0f - std::exp(-10.0f * dt));
+}
+
+void NpcDirector::callForHelp(const NpcContext& ctx, const Npc& caller,
+                              const Vec3& targetPos) {
+    // The shout on the bus first: quests/scripts/mods can listen.
+    ctx.eventBus.dispatch({ gameplay::eventKind("CallForHelp"),
+                            caller.entity, ecs::Entity {},
+                            caller.factionTag });
+    if (!caller.factionTag.isValid()) {
+        return; // no faction, no friends
+    }
+    const Vec3 callerPos = caller.entity.get<world::Transform>().position;
+    const f32 radius = ctx.statsTuning.helpCallRadius;
+    for (auto& allyPtr : npcs_) {
+        Npc& ally = *allyPtr;
+        if (&ally == &caller || ally.dead || !ally.entity.is_alive() ||
+            ally.factionTag != caller.factionTag ||
+            !ally.entity.has<world::Perception>()) {
+            continue;
+        }
+        const Vec3 gap =
+            ally.entity.get<world::Transform>().position - callerPos;
+        if (glm::dot(gap, gap) > radius * radius) {
+            continue;
+        }
+        world::alertTo(ally.entity.get_mut<world::Perception>(), targetPos);
+        ally.sitting = false; // an alerted ally stands up
+    }
+}
+
 void NpcDirector::update(f32 dt, const NpcContext& ctx) {
     const f32 hourOfDay =
         static_cast<f32>(std::fmod(ctx.gameClock.gameHours(), 24.0));
@@ -436,38 +483,56 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                                                               sight);
                 canSee = !(hit.hit && hit.distance < sight - 0.6f);
             }
+            const world::AwareState wasAware = world::awareState(perception);
             world::updatePerception(perception, canSee, playerPos, dt);
             const world::AwareState aware = world::awareState(perception);
+            // B3: entering Alert shouts — a bus event for listeners, and
+            // same-faction allies in earshot join the hunt.
+            if (aware == world::AwareState::Alert &&
+                wasAware != world::AwareState::Alert) {
+                callForHelp(ctx, npc, perception.lastKnownPos);
+            }
             if (aware == world::AwareState::Alert ||
                 aware == world::AwareState::Searching) {
                 inCombat = true;
                 npc.sitting = false;
                 npc.attackCooldown -= dt;
                 npc.repathTimer -= dt;
-                // P0 A6: the engagement distance comes from the WEAPON
-                // (reach minus a step of margin, §5 moddable) — a
-                // spear-armed NPC will stand off further than a knife
-                // mugger, no code change.
-                const f32 attackRange =
-                    ctx.banditWeapon
-                        ? glm::max(ctx.banditWeapon->reach - 0.3f, 0.8f)
-                        : 1.8f;
+                // P0 A6: the engagement distances come from the WEAPON
+                // (§5 moddable) — a spear-armed NPC stands off further
+                // than a knife mugger, no code change.
+                const f32 reach =
+                    ctx.banditWeapon ? ctx.banditWeapon->reach : 2.1f;
+                const f32 attackRange = glm::max(reach - 0.3f, 0.8f);
                 // P0 A3: a swing in flight roots the NPC (the clip plays
                 // out; the blade does the hitting below).
                 const bool swinging =
                     npc.entity.get<gameplay::MeleeSwing>().phase !=
                     gameplay::SwingPhase::Idle;
-                // Hunt the player while seen; investigate the last known
-                // position otherwise (B2 — no more perfect knowledge).
-                const Vec3 goal =
-                    canSee ? playerPos : perception.lastKnownPos;
-                Vec3 toGoal = goal - transform.position;
-                toGoal.y = 0.0f;
-                const f32 goalDistance = glm::length(toGoal);
                 Vec3 toPlayer = playerPos - transform.position;
                 toPlayer.y = 0.0f;
                 const f32 playerDistance = glm::length(toPlayer);
-                if (canSee && playerDistance <= attackRange) {
+                // B3: the whole behavior choice is ONE sim-pure function
+                // (gameplay/combat/CombatAi) — this block only executes
+                // the move it returns.
+                const f32 maxHealth = glm::max(
+                    gameplay::currentValueOf(npcSys,
+                                             gameplay::attr("maxHealth")),
+                    1.0f);
+                const gameplay::CombatSituation situation {
+                    playerDistance,
+                    attackRange,
+                    reach + 1.0f,
+                    canSee,
+                    swinging,
+                    npc.attackCooldown,
+                    gameplay::currentValueOf(npcSys,
+                                             gameplay::attr("health")) /
+                        maxHealth,
+                    npc.courage
+                };
+                switch (gameplay::chooseCombatMove(situation)) {
+                case gameplay::CombatMove::Strike: {
                     npc.path.clear();
                     // Face the player and swing.
                     npc.yaw = std::atan2(toPlayer.x, toPlayer.z);
@@ -498,25 +563,74 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                             npc.blocking = false; // guard drops to strike
                         }
                     }
-                } else if (!swinging && goalDistance > 0.6f) {
-                    if (npc.repathTimer <= 0.0f) {
-                        const nav::PathResult found = ctx.navigator->findPath(
-                            { transform.position, goal, 1.2f });
-                        npc.path = found.success ? found.waypoints
-                                                 : vector<Vec3> {};
-                        npc.pathIndex = 0;
-                        npc.repathTimer = 1.0f;
-                    }
-                    // Alert hurries; a search walks (it may be nothing).
-                    moveNpcAlongPath(ctx, npc, dt,
-                                     aware == world::AwareState::Alert
-                                         ? 1.8f
-                                         : 1.0f);
-                } else if (!canSee) {
-                    // Arrived where the target was last known and no one
-                    // is here: stand — the search patience runs out on
-                    // its own (updatePerception).
+                    break;
+                }
+                case gameplay::CombatMove::Strafe: {
                     npc.path.clear();
+                    // Orbit the target: a tangent direction whose side is
+                    // picked by entity-id parity (stable per NPC — two
+                    // bandits circle opposite ways) plus a radial drift
+                    // holding the middle of the weapon band.
+                    const Vec3 radial =
+                        toPlayer / glm::max(playerDistance, 1e-3f);
+                    const f32 side =
+                        (npc.entity.id() & 1u) != 0u ? 1.0f : -1.0f;
+                    const f32 band = (attackRange + reach + 1.0f) * 0.5f;
+                    Vec3 dir =
+                        glm::cross(Vec3 { 0.0f, 1.0f, 0.0f }, radial) *
+                            side +
+                        radial * glm::clamp(playerDistance - band, -1.0f,
+                                            1.0f) *
+                            0.6f;
+                    dir.y = 0.0f;
+                    const f32 len = glm::length(dir);
+                    if (len > 1e-4f) {
+                        moveNpcDirect(ctx, npc, dt, dir / len, 1.0f,
+                                      std::atan2(toPlayer.x, toPlayer.z));
+                    }
+                    break;
+                }
+                case gameplay::CombatMove::Flee: {
+                    npc.path.clear();
+                    const Vec3 away =
+                        playerDistance > 1e-3f
+                            ? -toPlayer / playerDistance
+                            : Vec3 { std::sin(npc.yaw), 0.0f,
+                                     std::cos(npc.yaw) };
+                    moveNpcDirect(ctx, npc, dt, away, 1.8f,
+                                  std::atan2(away.x, away.z));
+                    break;
+                }
+                case gameplay::CombatMove::Approach: {
+                    // Hunt the player while seen; investigate the last
+                    // known position otherwise (B2).
+                    const Vec3 goal =
+                        canSee ? playerPos : perception.lastKnownPos;
+                    Vec3 toGoal = goal - transform.position;
+                    toGoal.y = 0.0f;
+                    const f32 goalDistance = glm::length(toGoal);
+                    if (!swinging && goalDistance > 0.6f) {
+                        if (npc.repathTimer <= 0.0f) {
+                            const nav::PathResult found =
+                                ctx.navigator->findPath(
+                                    { transform.position, goal, 1.2f });
+                            npc.path = found.success ? found.waypoints
+                                                     : vector<Vec3> {};
+                            npc.pathIndex = 0;
+                            npc.repathTimer = 1.0f;
+                        }
+                        // Alert hurries; a search walks (may be nothing).
+                        moveNpcAlongPath(ctx, npc, dt,
+                                         aware == world::AwareState::Alert
+                                             ? 1.8f
+                                             : 1.0f);
+                    } else if (!canSee) {
+                        // Arrived at the last known spot and no one is
+                        // here: stand — the patience runs out on its own.
+                        npc.path.clear();
+                    }
+                    break;
+                }
                 }
             }
         }

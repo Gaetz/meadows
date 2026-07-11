@@ -119,11 +119,20 @@ fait avec le backend null).
   abandonne ; l'attaque exige la VUE. La furtivité P1 s'appuiera dessus.
   Doctesté ×4 (cône, mémoire/dégradation, ouïe à portée seulement,
   re-visée qui relance la patience, Alert sourd au bruit).
-- **B3 — Comportements de combat.** Sur la perception B2 et les
-  distances A6 : strafe autour de la cible à portée, fuite quand
-  courage/santé bas (attributs GAS — le seuil est un Form), appel à
-  l'aide (broadcast aux alliés de faction dans un rayon via B1 → ils
-  passent en alerte). Doctesté en sim.
+- **B3 ✅ — Comportements de combat.**
+  `gameplay/combat/CombatAi::chooseCombatMove` : LA décision (enum
+  Approach/Strike/Strafe/Flee, une fonction plate sim-pure) —
+  NpcDirector ne fait qu'EXÉCUTER. Strafe : orbite tangentielle (sens
+  par parité d'id — deux bandits tournent en sens opposés) + dérive
+  radiale qui tient le milieu de la bande d'arme [attackRange,
+  reach+1], face à la cible, quand l'attaque recharge. Fuite :
+  `ActorForm.courage` {0.75, §5 append} — il craque sous (1−courage) de
+  santé et court à l'opposé. Appel à l'aide : front montant d'Alert →
+  event `CallForHelp` sur le bus + les alliés de MÊME factionTag sous
+  `helpCallRadius` {20, StatsTuningForm} reçoivent `alertTo`
+  (l'info fraîche du camarade : Alert direct sur la position).
+  Doctesté ×2 (matrice de décision portée/cooldown/vue/courage ;
+  alertTo = mémoire pleine avant dégradation).
 
 ## Axe C — FX, cues et les consommateurs d'AnimEvents
 

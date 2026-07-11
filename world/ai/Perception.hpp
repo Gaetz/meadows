@@ -73,4 +73,9 @@ void updatePerception(Perception& perception, bool canSee,
 void hearNoise(Perception& perception, const Vec3& selfPos,
                const Vec3& position);
 
+// B3 call-for-help: an ally REPORTED the target at `position` — treated
+// as fresh intel (straight to Alert, memory refreshed), no earshot gate:
+// the caller's shout already did the range check.
+void alertTo(Perception& perception, const Vec3& position);
+
 } // namespace world

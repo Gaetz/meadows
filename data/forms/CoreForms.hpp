@@ -212,6 +212,9 @@ struct ActorForm : Form {
     // 0 = use the global StatsTuningForm barterBuyMult/barterSellMult.
     f32 buyMult { 0.0f };
     f32 sellMult { 0.0f };
+    // Chantier P0 B3 (appended): grit in combat — the actor flees below
+    // (1 - courage) of its max health (0.75 = runs under 25%).
+    f32 courage { 0.75f };
 
     REFLECT_BEGIN(ActorForm, Form)
         REFLECT_FIELD(displayName)
@@ -224,6 +227,7 @@ struct ActorForm : Form {
         REFLECT_FIELD(dialogue)
         REFLECT_FIELD(buyMult)
         REFLECT_FIELD(sellMult)
+        REFLECT_FIELD(courage)
     REFLECT_END()
 };
 

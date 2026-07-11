@@ -92,4 +92,10 @@ void hearNoise(Perception& perception, const Vec3& selfPos,
     }
 }
 
+void alertTo(Perception& perception, const Vec3& position) {
+    perception.lastKnownPos = position;
+    perception.sinceSeen = 0.0f; // a comrade's report is fresh intel
+    setAwareState(perception, AwareState::Alert);
+}
+
 } // namespace world

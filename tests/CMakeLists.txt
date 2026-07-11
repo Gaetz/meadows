@@ -13,6 +13,7 @@
     ChunkOcclusionTest.cpp
     ChunkStreamerTest.cpp
     CollisionTest.cpp
+    CombatAiTest.cpp
     CombatTest.cpp
     ConcurrentQueueTest.cpp
     ConditionTest.cpp
