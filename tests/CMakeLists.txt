@@ -50,6 +50,7 @@
     MeleeSwingTest.cpp
     MovementTest.cpp
     OffensiveStatsTest.cpp
+    PerceptionTest.cpp
     PhysicsTest.cpp
     PluginConfigTest.cpp
     PrefabChildSaveTest.cpp

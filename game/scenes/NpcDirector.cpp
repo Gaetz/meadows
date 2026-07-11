@@ -32,6 +32,7 @@
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/EquipmentStats.hpp" // weaponDamageEvent
 #include "gameplay/stats/GameClock.hpp"
+#include "world/ai/Perception.hpp"     // B2: vision cone + aware states
 #include "world/ai/TerrainNavigator.hpp"
 #include "world/scene/AnimBridge.hpp"     // resolveActorVisual, buildAnimGraph
 #include "world/scene/Components.hpp"
@@ -231,6 +232,11 @@ void NpcDirector::refreshNpcs(
                 });
             // A2: the sword hand (UAL rig: "hand_r"); -1 = no weapon shown.
             npc->handJoint = rig->skeleton.findJoint("hand_r");
+            // B2: every built NPC perceives (a reload keeps a saved
+            // state through the reflected component; a fresh one is Calm).
+            if (!entity.has<world::Perception>()) {
+                entity.set<world::Perception>({});
+            }
             npc->tint = visual->tint;
             // The pose is normally written by update(); a paused sim (boot
             // = Spectator) extracts BEFORE any update, and the A2 weapon
@@ -397,10 +403,11 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             continue;
         }
 
-        // B5: hostile actors hunt the player on sight (distance + a clear line
-        // — the perception cone can refine later). D2: a guard turns hostile
-        // while the player carries a bounty (tag-based — the relations table
-        // stays a later pass).
+        // B5→B2: hostile actors perceive the player — vision cone + LOS
+        // feed the Perception state machine; Alert hunts, Searching walks
+        // to the last known position and gives up on a timeout. D2: a
+        // guard turns hostile while the player carries a bounty
+        // (tag-based — the relations table stays a later pass).
         bool wanted = false;
         if (npc.guard && ctx.playerEntity.is_alive()) {
             if (const auto tag = ctx.gameTags.find("Crime.Wanted")) {
@@ -411,80 +418,105 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         bool inCombat = false;
         if ((npc.hostile || wanted) && ctx.playMode && ctx.player) {
             const Vec3 playerPos = ctx.player->position();
-            Vec3 to = playerPos - transform.position;
-            to.y = 0.0f;
-            const f32 distance = glm::length(to);
-            if (distance < 16.0f) {
+            auto& perception = npc.entity.get_mut<world::Perception>();
+            // Vision verdict: cone from the NPC's facing, then the LOS
+            // raycast (world geometry only — actors are out of the
+            // broadphase anyway).
+            const Vec3 facing { std::sin(npc.yaw), 0.0f,
+                                std::cos(npc.yaw) };
+            bool canSee = world::inViewCone(perception, transform.position,
+                                            facing, playerPos);
+            if (canSee && ctx.physics) {
                 const Vec3 eye =
                     transform.position + Vec3 { 0.0f, 1.5f, 0.0f };
                 const Vec3 target = playerPos + Vec3 { 0.0f, 1.2f, 0.0f };
                 const Vec3 dir = glm::normalize(target - eye);
                 const f32 sight = glm::length(target - eye);
-                const phys::RayHit hit = ctx.physics->rayCast(eye, dir, sight);
-                const bool blocked = hit.hit && hit.distance < sight - 0.6f;
-                if (!blocked) {
-                    inCombat = true;
-                    npc.sitting = false;
-                    npc.attackCooldown -= dt;
-                    npc.repathTimer -= dt;
-                    // P0 A6: the engagement distance comes from the
-                    // WEAPON (reach minus a step of margin, §5 moddable)
-                    // — a spear-armed NPC will stand off further than a
-                    // knife mugger, no code change.
-                    const f32 attackRange =
-                        ctx.banditWeapon
-                            ? glm::max(ctx.banditWeapon->reach - 0.3f, 0.8f)
-                            : 1.8f;
-                    // P0 A3: a swing in flight roots the NPC (the clip
-                    // plays out; the blade does the hitting below).
-                    const bool swinging =
-                        npc.entity.get<gameplay::MeleeSwing>().phase !=
-                        gameplay::SwingPhase::Idle;
-                    if (distance > attackRange && !swinging) {
-                        if (npc.repathTimer <= 0.0f) {
-                            const nav::PathResult found =
-                                ctx.navigator->findPath({ transform.position,
-                                                          playerPos, 1.2f });
-                            npc.path = found.success ? found.waypoints
-                                                     : vector<Vec3> {};
-                            npc.pathIndex = 0;
-                            npc.repathTimer = 1.0f;
-                        }
-                        moveNpcAlongPath(ctx, npc, dt, 1.8f); // hurry
-                    } else {
-                        npc.path.clear();
-                        // Face the player and swing.
-                        const f32 goalYaw = std::atan2(to.x, to.z);
-                        npc.yaw = goalYaw;
-                        transform.rotation = glm::angleAxis(
-                            npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
-                        // P0 A3: instant damage became an ability-gated
-                        // MeleeSwing — the Sword_Attack clip carries the
-                        // hand, and the blade must TOUCH (below).
-                        if (!swinging && distance <= attackRange &&
-                            npc.attackCooldown <= 0.0f && ctx.banditWeapon &&
-                            ctx.playerEntity.is_alive() && !ctx.godMode) {
-                            auto& set =
-                                npc.entity.get_mut<gameplay::AttributeSet>();
-                            auto& system =
+                const phys::RayHit hit = ctx.physics->rayCast(eye, dir,
+                                                              sight);
+                canSee = !(hit.hit && hit.distance < sight - 0.6f);
+            }
+            world::updatePerception(perception, canSee, playerPos, dt);
+            const world::AwareState aware = world::awareState(perception);
+            if (aware == world::AwareState::Alert ||
+                aware == world::AwareState::Searching) {
+                inCombat = true;
+                npc.sitting = false;
+                npc.attackCooldown -= dt;
+                npc.repathTimer -= dt;
+                // P0 A6: the engagement distance comes from the WEAPON
+                // (reach minus a step of margin, §5 moddable) — a
+                // spear-armed NPC will stand off further than a knife
+                // mugger, no code change.
+                const f32 attackRange =
+                    ctx.banditWeapon
+                        ? glm::max(ctx.banditWeapon->reach - 0.3f, 0.8f)
+                        : 1.8f;
+                // P0 A3: a swing in flight roots the NPC (the clip plays
+                // out; the blade does the hitting below).
+                const bool swinging =
+                    npc.entity.get<gameplay::MeleeSwing>().phase !=
+                    gameplay::SwingPhase::Idle;
+                // Hunt the player while seen; investigate the last known
+                // position otherwise (B2 — no more perfect knowledge).
+                const Vec3 goal =
+                    canSee ? playerPos : perception.lastKnownPos;
+                Vec3 toGoal = goal - transform.position;
+                toGoal.y = 0.0f;
+                const f32 goalDistance = glm::length(toGoal);
+                Vec3 toPlayer = playerPos - transform.position;
+                toPlayer.y = 0.0f;
+                const f32 playerDistance = glm::length(toPlayer);
+                if (canSee && playerDistance <= attackRange) {
+                    npc.path.clear();
+                    // Face the player and swing.
+                    npc.yaw = std::atan2(toPlayer.x, toPlayer.z);
+                    transform.rotation = glm::angleAxis(
+                        npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
+                    // P0 A3: instant damage became an ability-gated
+                    // MeleeSwing — the Sword_Attack clip carries the
+                    // hand, and the blade must TOUCH (below).
+                    if (!swinging && npc.attackCooldown <= 0.0f &&
+                        ctx.banditWeapon && ctx.playerEntity.is_alive() &&
+                        !ctx.godMode) {
+                        auto& set =
+                            npc.entity.get_mut<gameplay::AttributeSet>();
+                        auto& system =
+                            npc.entity.get_mut<gameplay::AbilitySystem>();
+                        const bool activated =
+                            !ctx.attackAbility ||
+                            gameplay::tryActivate(*ctx.attackAbility, set,
+                                                  system, set, system,
+                                                  { ctx.forms,
+                                                    ctx.gameTags });
+                        if (activated) {
+                            gameplay::startSwing(
                                 npc.entity
-                                    .get_mut<gameplay::AbilitySystem>();
-                            const bool activated =
-                                !ctx.attackAbility ||
-                                gameplay::tryActivate(
-                                    *ctx.attackAbility, set, system, set,
-                                    system, { ctx.forms, ctx.gameTags });
-                            if (activated) {
-                                gameplay::startSwing(
-                                    npc.entity
-                                        .get_mut<gameplay::MeleeSwing>());
-                                // [cpp-tuning] pause between swings (A6
-                                // retunes it from WeaponForm.reach).
-                                npc.attackCooldown = 1.6f;
-                                npc.blocking = false; // guard drops to strike
-                            }
+                                    .get_mut<gameplay::MeleeSwing>());
+                            // [cpp-tuning] pause between swings.
+                            npc.attackCooldown = 1.6f;
+                            npc.blocking = false; // guard drops to strike
                         }
                     }
+                } else if (!swinging && goalDistance > 0.6f) {
+                    if (npc.repathTimer <= 0.0f) {
+                        const nav::PathResult found = ctx.navigator->findPath(
+                            { transform.position, goal, 1.2f });
+                        npc.path = found.success ? found.waypoints
+                                                 : vector<Vec3> {};
+                        npc.pathIndex = 0;
+                        npc.repathTimer = 1.0f;
+                    }
+                    // Alert hurries; a search walks (it may be nothing).
+                    moveNpcAlongPath(ctx, npc, dt,
+                                     aware == world::AwareState::Alert
+                                         ? 1.8f
+                                         : 1.0f);
+                } else if (!canSee) {
+                    // Arrived where the target was last known and no one
+                    // is here: stand — the search patience runs out on
+                    // its own (updatePerception).
+                    npc.path.clear();
                 }
             }
         }
@@ -733,6 +765,22 @@ void NpcDirector::extract(RenderSnapshot& out) const {
                       jointScratch[static_cast<size_t>(npc.handJoint)] *
                       kSwordGrip });
         }
+    }
+}
+
+void NpcDirector::onNoise(const Vec3& position) {
+    // B2 hearing: every living perceiver within ITS hearing radius turns
+    // toward the noise (Calm -> Suspicious; searches re-aim; Alert
+    // ignores it). Dispatchers: player footsteps and combat cues (C4b).
+    for (auto& npcPtr : npcs_) {
+        Npc& npc = *npcPtr;
+        if (npc.dead || !npc.entity.is_alive() ||
+            !npc.entity.has<world::Perception>()) {
+            continue;
+        }
+        world::hearNoise(npc.entity.get_mut<world::Perception>(),
+                         npc.entity.get<world::Transform>().position,
+                         position);
     }
 }
 

@@ -172,6 +172,10 @@ public:
     // Per frame: character tick, schedule, path, combat, anim pose.
     void update(f32 dt, const NpcContext& ctx);
 
+    // P0 B2 hearing: routes an OnNoise position to every perceiver (the
+    // scene subscribes it on the EventBus).
+    void onNoise(const Vec3& position);
+
     // U4-2b: fills snapshot.skinned (copied pose + resolved geometry
     // handles) — the renderer draws ONLY from the packet. Called after
     // update() so the extract carries this frame's pose.

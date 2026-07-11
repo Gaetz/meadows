@@ -225,6 +225,17 @@ void LandscapeScene::setupGameplay() {
                        [this](const gameplay::Event&) {
                            questDirector.payFine(makeQuestContext());
                        });
+    // P0 B2 hearing: any OnNoise event turns nearby perceivers'
+    // heads — the noise position is the SOURCE entity's transform
+    // (dispatchers land with C4b footsteps/combat cues).
+    eventBus.subscribe(
+        gameplay::eventKind("OnNoise"), [this](const gameplay::Event& event) {
+            if (event.source.is_alive() &&
+                event.source.has<world::Transform>()) {
+                npcDirector.onNoise(
+                    event.source.get<world::Transform>().position);
+            }
+        });
 }
 
 void LandscapeScene::setupWorldAndStreaming() {

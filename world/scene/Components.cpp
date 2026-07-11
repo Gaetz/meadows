@@ -1,6 +1,7 @@
 #include "world/scene/Components.hpp"
 
 #include "engine/ecs/World.hpp"
+#include "world/ai/Perception.hpp"
 
 namespace world {
 
@@ -17,6 +18,7 @@ void registerSceneComponents(ecs::World& world) {
     world.registerComponent<MarkerKind>();
     world.registerComponent<FurnitureRef>();
     world.registerComponent<DoorTarget>(); // chantier 2 B7
+    world.registerComponent<Perception>(); // P0 B2 (reflected: alerts persist)
     // Marker tags (StaticMarker/ItemMarker/ActorMarker) carry no fields and are
     // never serialized, so flecs auto-registers them on first use — they do not
     // go through the reflected-component bridge.

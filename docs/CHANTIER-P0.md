@@ -104,12 +104,21 @@ fait avec le backend null).
   d'un coup (téléport). Doctesté (bords de cellules, cône avant/arrière/
   étroit, parité enter/leave via index). B2 (perception) le consomme
   (remplace le scan linéaire), le pick éditeur ensuite. Doctesté.
-- **B2 — Composant Perception dédié.** Extrait de l'inline NpcDirector :
-  cône de vue (angle/portée) + LOS raycast, OUÏE (les événements bruit —
-  combat, pas, sprint — émis sur l'EventBus avec position/rayon),
-  mémoire de dernière position connue + états alerte
-  (calme → suspicion → alerte → recherche). La furtivité P1 s'appuiera
-  dessus. Headless : cônes, occlusion, décroissance mémoire.
+- **B2 ✅ — Composant Perception dédié.** `world/ai/Perception` (PAS
+  gameplay/ai : meadows-world dépend de meadows-gameplay, jamais
+  l'inverse). Composant REFLÉTÉ (un camp alerté le reste à travers une
+  save) : viewDistance 14 / viewAngle 140° / hearingRadius 12 /
+  memorySeconds 5 / searchSeconds 8 + état/lastKnownPos/timers. Machine
+  Calm→Suspicious→Alert→Searching, transitions par UNE fonction
+  (`setAwareState`). Vision = `inViewCone` + LOS raycast du CALLER
+  (pattern TriggerSystem — world/ ne touche pas la physique de game/) ;
+  ouïe = `hearNoise` routé par la scène depuis les events `OnNoise`
+  (position = transform de la source ; les ÉMETTEURS arrivent en C4b).
+  NpcDirector : le bloc inline distance<16 est remplacé — Alert chasse,
+  vue perdue → il ENQUÊTE sur la dernière position connue (marche) puis
+  abandonne ; l'attaque exige la VUE. La furtivité P1 s'appuiera dessus.
+  Doctesté ×4 (cône, mémoire/dégradation, ouïe à portée seulement,
+  re-visée qui relance la patience, Alert sourd au bruit).
 - **B3 — Comportements de combat.** Sur la perception B2 et les
   distances A6 : strafe autour de la cible à portée, fuite quand
   courage/santé bas (attributs GAS — le seuil est un Form), appel à
