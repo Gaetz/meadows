@@ -199,6 +199,10 @@ void LandscapeScene::setupGameplay() {
     // cost/cooldown effects (§6) are the only cadence gates.
     attackAbility =
         data::findByEditorId<gameplay::AbilityForm>(forms, "PlayerAttack");
+    // Dodge (dev design 2026-07-11): the 2D arena ability, now in 3D —
+    // cost/cooldown/i-frames all live in its effects.
+    dodgeAbility =
+        data::findByEditorId<gameplay::AbilityForm>(forms, "Dodge");
     // Chantier 4 B5: the currency + the barter trigger (a dialogue node
     // fires "OpenBarter" — the vendor is whoever we're talking to).
     goldForm = data::findByEditorId<data::MiscItemForm>(forms, "GoldCoin");
@@ -1603,6 +1607,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
         sprintCostEffect,
         playerWeapon,
         attackAbility,
+        dodgeAbility,
         npcDirector.npcs(),
         interaction,
         playerEncumbrance == gameplay::EncumbranceCategory::Overencumbered,

@@ -792,7 +792,18 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                 // [cpp-tuning] the shared humanoid capsule (feet-anchored).
                 constexpr f32 kRadius = 0.4f;
                 constexpr f32 kHeight = 1.8f;
-                if (gameplay::segmentHitsCapsule(
+                // Dodge i-frames: State.Dodging means the blade passes
+                // through — and does NOT register, so the same Active
+                // window can still connect once the i-frames expire.
+                bool dodging = false;
+                if (const auto dodgeTag =
+                        ctx.gameTags.find("State.Dodging")) {
+                    dodging = ctx.playerEntity
+                                  .get<gameplay::AbilitySystem>()
+                                  .tags.has(*dodgeTag);
+                }
+                if (!dodging &&
+                    gameplay::segmentHitsCapsule(
                         grip, tip, feet + Vec3 { 0.0f, kRadius, 0.0f },
                         feet + Vec3 { 0.0f, kHeight - kRadius, 0.0f },
                         kRadius) &&

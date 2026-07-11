@@ -30,7 +30,11 @@ void registerCharacterRuntimeTags(GameplayTagRegistry& tags) {
     for (const char* tag :
          { "State.Dead", "State.Staggered", "State.Paralyzed",
            "State.Exhausted", "State.Shaken", "State.CriticalWeakness",
-           "State.Blocking" }) { // P0 A5: the raised guard
+           "State.Blocking",  // P0 A5: the raised guard
+           "State.Dodging",   // dodge i-frames (grantedTag — a tag the
+                              // registry doesn't know is granted SILENTLY
+                              // as nothing, the A3 cooldown lesson)
+           "Cooldown.Dodge", "Cooldown.Attack" }) {
         tags.registerTag(tag);
     }
     for (const char* statusTag :

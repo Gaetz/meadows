@@ -54,6 +54,9 @@ struct PlayerContext {
     // P0 A3: the melee attack ability (energy cost + cooldown effects, §6)
     // gates every swing; the swing itself is the MeleeSwing component.
     const gameplay::AbilityForm* attackAbility;
+    // Dodge (the 2D arena ability in 3D): cost/cooldown/i-frames are its
+    // effects; the controller only drives the burst.
+    const gameplay::AbilityForm* dodgeAbility;
     vector<uptr<Npc>>& npcs;          // melee targets + crime witnesses
     InteractionController& interaction; // fading gate + the crime toast
     bool overencumbered; // C3: no sprint, no jump (computed at the
@@ -116,6 +119,10 @@ private:
     const data::WeaponForm* swingWeapon_ { nullptr };
     f32 sprintCostAccumulator { 0.0f };
     f32 strideAccumulator { 0.0f }; // C4a: grounded meters since last step
+    // Dodge: tap-vs-hold on the sprint key, then the burst window.
+    f32 shiftHeldSeconds { 0.0f };
+    f32 dodgeTimer { 0.0f };
+    Vec3 dodgeDir { 0.0f };
 };
 
 } // namespace game

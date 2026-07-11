@@ -113,6 +113,13 @@ struct StatsTuningForm : data::Form {
     // riposte opening).
     f32 perfectParryWindow { 0.2f };
     f32 perfectParryPosture { 10.0f };
+    // Dodge (appended, dev design 2026-07-11 — the 2D arena move in 3D):
+    // TAPPING sprint (released within dodgeTapSeconds) bursts in the held
+    // move direction, backward when none. Speed = jog × the multiplier;
+    // the i-frames/cost/cooldown are the Dodge ability's effects.
+    f32 dodgeTapSeconds { 0.25f };
+    f32 dodgeDurationSeconds { 0.28f }; // match DodgeIFrames.durationSeconds
+    f32 dodgeSpeedMultiplier { 2.6f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -181,6 +188,9 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(helpCallRadius)
         REFLECT_FIELD(perfectParryWindow)
         REFLECT_FIELD(perfectParryPosture)
+        REFLECT_FIELD(dodgeTapSeconds)
+        REFLECT_FIELD(dodgeDurationSeconds)
+        REFLECT_FIELD(dodgeSpeedMultiplier)
     REFLECT_END()
 };
 

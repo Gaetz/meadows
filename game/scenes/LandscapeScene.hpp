@@ -308,6 +308,7 @@ private:
     const data::WeaponForm* playerWeapon { nullptr };
     const data::WeaponForm* banditWeapon { nullptr };
     const gameplay::AbilityForm* attackAbility { nullptr };
+    const gameplay::AbilityForm* dodgeAbility { nullptr };
 
     // Chantier 2 B8: the authored-terrain overlay. IMMUTABLE once
     // published; the sculpt tool edits a working copy then publishes a

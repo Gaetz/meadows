@@ -44,6 +44,8 @@ void PlayerController::spawnBody(phys::PhysicsWorld& physics,
     body_ = std::make_unique<phys::CharacterBody>(physics, 0.3f, 1.8f,
                                                   position);
     velocity = Vec3 { 0.0f };
+    dodgeTimer = 0.0f;
+    shiftHeldSeconds = 0.0f;
 }
 
 void PlayerController::destroyBody() {
@@ -318,6 +320,36 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
             tuning.accelerationRate3D;
         energy = gameplay::currentValueOf(sys, gameplay::attr("energy"));
     }
+    // Dodge (dev design 2026-07-11, the 2D arena move in 3D): a TAP on
+    // the sprint key — released within dodgeTapSeconds — bursts in the
+    // held move direction, backward when none. Cost, cooldown and the
+    // State.Dodging i-frames are the Dodge ability's effects (§6).
+    if (input.isDown(platform::Key::Shift)) {
+        shiftHeldSeconds += dt;
+    } else {
+        if (shiftHeldSeconds > 0.0f &&
+            shiftHeldSeconds <= tuning.dodgeTapSeconds &&
+            dodgeTimer <= 0.0f && ctx.playerEntity.is_alive() &&
+            ctx.playerEntity.get<gameplay::MeleeSwing>().phase ==
+                gameplay::SwingPhase::Idle) {
+            bool activated = true;
+            if (ctx.dodgeAbility) {
+                auto& set =
+                    ctx.playerEntity.get_mut<gameplay::AttributeSet>();
+                auto& system =
+                    ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
+                activated = gameplay::tryActivate(
+                    *ctx.dodgeAbility, set, system, set, system,
+                    { ctx.forms, ctx.gameTags });
+            }
+            if (activated) {
+                dodgeDir = moving ? glm::normalize(wish) : -forward;
+                dodgeTimer = tuning.dodgeDurationSeconds;
+            }
+        }
+        shiftHeldSeconds = 0.0f;
+    }
+
     // C3: overencumbered = no sprint, no jump (STATS.md §3 Utility).
     // A5: no sprint behind a raised guard either.
     const bool sprinting = moving && input.isDown(platform::Key::Shift) &&
@@ -331,6 +363,12 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
         moving ? glm::normalize(wish) * targetSpeed : Vec3 { 0.0f };
     // Exponential smoothing toward the target: snappy, never binary.
     velocity += (target - velocity) * (1.0f - std::exp(-accelRate * dt));
+    // The dodge burst OVERRIDES the smoothed intent: crisp in, smooth
+    // out (the smoothing above resumes from the burst velocity).
+    if (dodgeTimer > 0.0f) {
+        dodgeTimer -= dt;
+        velocity = dodgeDir * (jog * tuning.dodgeSpeedMultiplier);
+    }
     if (input.wasPressed(platform::Key::Space) && !ctx.overencumbered) {
         // C3: jump velocity from the jumpPower stat (default sheet 104
         // → the previous hand-tuned 5.0 m/s via jumpPowerScale3D).
