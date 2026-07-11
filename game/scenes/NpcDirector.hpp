@@ -128,8 +128,14 @@ struct Npc {
     vector<str> pendingAnimEvents;
 
     // Chantier P0 A2: the hand bone index ("hand_r", -1 = rig has none) —
-    // hostiles carry the VISIBLE sword there (blade-touch combat).
+    // hostiles carry the VISIBLE weapon there (blade-touch combat).
     i32 handJoint { -1 };
+    // Drawn only while combat says so (update mirrors it, extract reads
+    // it — a calm bandit keeps the club on his belt).
+    bool weaponDrawn { false };
+    // The EQUIPPED weapon's model guid, resolved in update() where the
+    // FormDatabase lives (extract has no forms access).
+    core::Guid weaponModel;
     // Chantier 6 A1: the first Faction.* tag — what the OnDeath event carries
     // (quest kill filters, crime factions).
     gameplay::GameplayTag factionTag {};

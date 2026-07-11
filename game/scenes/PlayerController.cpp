@@ -61,6 +61,10 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
     if (!ctx.playerEntity.is_alive() || !body_) {
         return;
     }
+    if (!weaponDrawn_) {
+        weaponDrawn_ = true; // the first press draws; the next one swings
+        return;
+    }
     // Chantier 4 B3: the swing uses the EQUIPPED weapon (inventory screen
     // can swap/unequip it); bare hands don't attack in v1.
     const data::WeaponForm* weapon = ctx.fallbackWeapon;
@@ -278,11 +282,19 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     // P0 A5: RMB held = raised guard — the State.Blocking tag is the §6
     // vocabulary the damage paths read (both camps). Guarding excludes
     // swinging (and vice versa: the guard waits for the swing to land).
+    // R: draw/sheathe (dev design 2026-07-11) — never mid-swing.
+    if (input.wasPressed(platform::Key::R) &&
+        (!ctx.playerEntity.is_alive() ||
+         ctx.playerEntity.get<gameplay::MeleeSwing>().phase ==
+             gameplay::SwingPhase::Idle)) {
+        weaponDrawn_ = !weaponDrawn_;
+    }
     bool blocking = false;
     if (ctx.playerEntity.is_alive()) {
         auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
         auto& swing = ctx.playerEntity.get_mut<gameplay::MeleeSwing>();
-        blocking = input.mouseDown(platform::MouseButton::Right) &&
+        blocking = weaponDrawn_ && // no guard behind a sheathed blade
+                   input.mouseDown(platform::MouseButton::Right) &&
                    swing.phase == gameplay::SwingPhase::Idle;
         // The guard clock: a hit landing inside the fresh window is a
         // PERFECT parry (applyBlock reads guardSeconds).

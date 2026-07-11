@@ -20,6 +20,7 @@ enum class Key : u16 {
     Tab, Backspace, Delete, Home, End, PageUp, PageDown,
     I, T,
     J, // quest journal (chantier 6)
+    R, // draw/sheathe the weapon (P0 combat)
     Count
 };
 

@@ -17,4 +17,11 @@ render::MeshData makeSwordMesh(f32 bladeLength);
 // back to it.
 const core::Guid& swordMeshGuid();
 
+// The procedural club (dev design 2026-07-11: a wooden shaft with a
+// bigger metal head) — same conventions: grip at the origin, business
+// end along +Y up to `length`. BanditClub points its `model` at
+// clubMeshGuid in data.
+render::MeshData makeClubMesh(f32 length);
+const core::Guid& clubMeshGuid();
+
 } // namespace game

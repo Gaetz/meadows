@@ -86,4 +86,31 @@ const core::Guid& swordMeshGuid() {
     return guid;
 }
 
+render::MeshData makeClubMesh(f32 length) {
+    const f32 total = glm::max(length, 0.4f);
+    const Vec3 kWood { 0.36f, 0.24f, 0.13f };
+    const Vec3 kIron { 0.42f, 0.43f, 0.46f };
+
+    render::MeshData mesh;
+    // Wooden shaft: from below the fist up into the head (dev design:
+    // "un manche et un bout plus grand en métal").
+    const f32 headLen = total * 0.32f;
+    const f32 shaftTop = total - headLen * 0.6f; // buried in the head
+    addBox(mesh, { 0.0f, (shaftTop - 0.14f) * 0.5f, 0.0f },
+           { 0.026f, (shaftTop + 0.14f) * 0.5f, 0.026f }, kWood);
+    // The metal head: a fatter block at the tip, with a small collar
+    // where it meets the wood.
+    addBox(mesh, { 0.0f, total - headLen * 0.5f, 0.0f },
+           { 0.062f, headLen * 0.5f, 0.062f }, kIron);
+    addBox(mesh, { 0.0f, total - headLen - 0.012f, 0.0f },
+           { 0.042f, 0.014f, 0.042f }, kIron);
+    return mesh;
+}
+
+const core::Guid& clubMeshGuid() {
+    static const core::Guid guid =
+        *core::Guid::fromString("a2b1ade0-0000-4000-8000-00000000501e");
+    return guid;
+}
+
 } // namespace game

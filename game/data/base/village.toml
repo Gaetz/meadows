@@ -722,6 +722,8 @@ swingActive = 0.4
 swingRecovery = 0.58
 # P0 A6: a club is short — the AI closes to reach - 0.3 before swinging.
 reach = 2.0
+# The procedural club mesh (game/WeaponMeshes, injected at scene boot).
+model = "a2b1ade0-0000-4000-8000-00000000501e"
 
 # The bandit: same rig as the villager, a darker soul (Faction.Bandits
 # child tag makes it hostile — §C.1 tag records). Lurks east of the

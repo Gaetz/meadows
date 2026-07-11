@@ -152,9 +152,11 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
                                    .filter = rhi::FilterMode::Linear });
     meshCache =
         std::make_unique<MeshCache>(device, assetDb, engine->getJobSystem());
-    // Chantier P0 A2: the procedural sword — the default visible weapon
-    // (WeaponForms without a `model` fall back to this guid).
+    // Chantier P0 A2: the procedural weapons — the sword is the default
+    // (WeaponForms without a `model` fall back to it); the club is what
+    // BanditClub's `model` points at in data.
     meshCache->injectProcedural(swordMeshGuid(), makeSwordMesh(0.9f));
+    meshCache->injectProcedural(clubMeshGuid(), makeClubMesh(0.8f));
     renderer.create(device, engine->getJobSystem());
 
     // Chantier 4 B2: the RmlUi game UI (screens from UiScreenForm records,
@@ -685,7 +687,7 @@ void LandscapeScene::update(f32 dt) {
     // hit test travels). Socket constants live in swingSocketLocal
     // [cpp-tuning: dev visual pass].
     if (mode == SceneMode::Play && playerWeapon &&
-        playerEntity.is_alive()) {
+        playerEntity.is_alive() && playerController.weaponDrawn()) {
         const render::Camera3D& cam = flyCamera.camera;
         const Vec3 fwd = cam.forward();
         const Vec3 right = cam.right();
@@ -1367,6 +1369,20 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
         gameplay::applyLoadout(forms, actorFormId,
                                entity.get_mut<gameplay::Inventory>(),
                                lootRng);
+        // The actor EQUIPS the first weapon its loadout rolled (the
+        // player overrides this with the starting-kit equip): combat
+        // stats AND the drawn model come from Equipment — the inventory
+        // link the dev asked about (2026-07-11).
+        auto& equipment = entity.get_mut<gameplay::Equipment>();
+        if (!equipment.weapon.isValid()) {
+            for (const auto& stack :
+                 entity.get<gameplay::Inventory>().items) {
+                if (forms.find<data::WeaponForm>(stack.item)) {
+                    equipment.weapon = stack.item;
+                    break;
+                }
+            }
+        }
     }
     return false;
 }

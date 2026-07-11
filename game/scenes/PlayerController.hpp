@@ -102,6 +102,10 @@ public:
     // Idle) — the scene's viewmodel takes its timings and model from it.
     const data::WeaponForm* swingWeapon() const { return swingWeapon_; }
 
+    // R toggles drawn/sheathed; sheathed = no viewmodel, no guard, and
+    // the first LMB draws instead of swinging.
+    bool weaponDrawn() const { return weaponDrawn_; }
+
 private:
     void tryAttack(const PlayerContext& ctx);
     // A4: advances the MeleeSwing machine and, through the Active window,
@@ -123,6 +127,7 @@ private:
     f32 shiftHeldSeconds { 0.0f };
     f32 dodgeTimer { 0.0f };
     Vec3 dodgeDir { 0.0f };
+    bool weaponDrawn_ { true }; // R toggles; starts drawn (adventurer)
 };
 
 } // namespace game

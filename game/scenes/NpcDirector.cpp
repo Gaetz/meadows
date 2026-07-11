@@ -30,6 +30,7 @@
 #include "gameplay/ai/ScheduleSystem.hpp"
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/interaction/Furniture.hpp"
+#include "gameplay/inventory/Inventory.hpp" // Equipment (the weapon link)
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/EquipmentStats.hpp" // weaponDamageEvent
 #include "gameplay/stats/GameClock.hpp"
@@ -452,7 +453,8 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             // The death transition (anim graph, State.Dead gate) plays; the
             // body stays. Despawn: a later slice.
             npc.sitting = false;
-            npc.attacking = false; // a death mid-swing cancels it
+            npc.attacking = false;   // a death mid-swing cancels it
+            npc.weaponDrawn = false; // the club drops with him (visually)
             npc.path.clear();
             npc.speed = 0.0f;
             npc.anim->setParam("speed", 0.0f);
@@ -463,6 +465,25 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             npc.pendingAnimEvents.clear(); // dead men fire no events
             continue;
         }
+
+        // The NPC fights with the weapon it EQUIPPED (the loadout equips
+        // the first weapon it rolled — the inventory link): stats, reach,
+        // timings AND the drawn model all come from this one form.
+        // banditWeapon stays the armed-and-equipmentless fallback.
+        const data::WeaponForm* npcWeapon = ctx.banditWeapon;
+        if (npc.entity.has<gameplay::Equipment>()) {
+            const core::Guid equipped =
+                npc.entity.get<gameplay::Equipment>().weapon;
+            if (equipped.isValid()) {
+                if (const auto* form =
+                        ctx.forms.find<data::WeaponForm>(equipped)) {
+                    npcWeapon = form;
+                }
+            }
+        }
+        npc.weaponModel = npcWeapon && npcWeapon->model.isValid()
+                              ? npcWeapon->model
+                              : core::Guid {};
 
         // B5→B2: hostile actors perceive the player — vision cone + LOS
         // feed the Perception state machine; Alert hunts, Searching walks
@@ -516,7 +537,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                 // (§5 moddable) — a spear-armed NPC stands off further
                 // than a knife mugger, no code change.
                 const f32 reach =
-                    ctx.banditWeapon ? ctx.banditWeapon->reach : 2.1f;
+                    npcWeapon ? npcWeapon->reach : 2.1f;
                 const f32 attackRange = glm::max(reach - 0.3f, 0.8f);
                 // P0 A3: a swing in flight roots the NPC (the clip plays
                 // out; the blade does the hitting below).
@@ -586,7 +607,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                     // MeleeSwing — the Sword_Attack clip carries the
                     // hand, and the blade must TOUCH (below).
                     if (!swinging && npc.attackCooldown <= 0.0f &&
-                        ctx.banditWeapon && ctx.playerEntity.is_alive() &&
+                        npcWeapon && ctx.playerEntity.is_alive() &&
                         !ctx.godMode) {
                         auto& set =
                             npc.entity.get_mut<gameplay::AttributeSet>();
@@ -688,6 +709,9 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         if (!inCombat) {
             npc.blocking = false; // A5: the fight is over, lower the guard
         }
+        // Drawn while fighting, back on the belt when it calms down —
+        // extract reads this (the sim decides, the renderer shows).
+        npc.weaponDrawn = inCombat;
         if (inCombat) {
             // combat overrode the schedule this frame
         } else if (npc.schedule.isValid()) {
@@ -798,13 +822,13 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         // segment is the VISIBLE blade — world x hand joint x +Y, exactly
         // what extract() draws — against the player capsule.
         auto& swing = npc.entity.get_mut<gameplay::MeleeSwing>();
-        if (swing.phase != gameplay::SwingPhase::Idle && ctx.banditWeapon) {
+        if (swing.phase != gameplay::SwingPhase::Idle && npcWeapon) {
             for (const str& name : npc.pendingAnimEvents) {
                 gameplay::onSwingAnimEvent(swing, name);
             }
             const gameplay::SwingTiming timing {
-                ctx.banditWeapon->swingWindup, ctx.banditWeapon->swingActive,
-                ctx.banditWeapon->swingRecovery
+                npcWeapon->swingWindup, npcWeapon->swingActive,
+                npcWeapon->swingRecovery
             };
             gameplay::updateSwing(swing, dt, timing);
             if (swing.phase == gameplay::SwingPhase::Idle) {
@@ -828,8 +852,8 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                 const Vec3 grip { hand[3] };
                 const Vec3 bladeDir = glm::normalize(Vec3 { hand[1] });
                 const Vec3 tip =
-                    grip + bladeDir * (ctx.banditWeapon->bladeLength *
-                                       ctx.banditWeapon->hitTolerance);
+                    grip + bladeDir * (npcWeapon->bladeLength *
+                                       npcWeapon->hitTolerance);
                 const Vec3 feet = ctx.player->position();
                 // [cpp-tuning] the shared humanoid capsule (feet-anchored).
                 constexpr f32 kRadius = 0.4f;
@@ -858,7 +882,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                         ctx.playerEntity.get_mut<gameplay::CombatState>()
                     };
                     gameplay::DamageEvent event =
-                        gameplay::weaponDamageEvent(*ctx.banditWeapon,
+                        gameplay::weaponDamageEvent(*npcWeapon,
                                                     npcSys);
                     // A5: the player's raised guard catches front-cone
                     // hits — reduced damage, posture takes the rest. A
@@ -984,14 +1008,17 @@ void NpcDirector::extract(RenderSnapshot& out) const {
         out.skinned.push_back({ npc.entity.id(), world, npc.tint,
                                 npc.vertices, npc.indices, npc.indexCount,
                                 npc.palette });
-        // Chantier P0 A2: hostiles carry the VISIBLE sword in hand_r —
-        // the blade the hit test follows (blade-touch combat). kSwordGrip
-        // stands the blade up out of the fist; a raised guard turns it
-        // oblique across the front (A5+).
-        if (npc.hostile && !npc.dead && npc.handJoint >= 0) {
+        // Chantier P0 A2: a fighting NPC carries its EQUIPPED weapon in
+        // hand_r — the very blade the hit test follows (blade-touch
+        // combat). Drawn only while the sim says so (weaponDrawn);
+        // kSwordGrip stands it up out of the fist; a raised guard turns
+        // it oblique across the front (A5+).
+        if (npc.weaponDrawn && !npc.dead && npc.handJoint >= 0) {
             anim::modelMatrices(npc.rig->skeleton, npc.pose, jointScratch);
             out.meshes.push_back(
-                { swordMeshGuid(), core::Guid {},
+                { npc.weaponModel.isValid() ? npc.weaponModel
+                                            : swordMeshGuid(),
+                  core::Guid {},
                   world *
                       jointScratch[static_cast<size_t>(npc.handJoint)] *
                       (npc.blocking ? kSwordGuardGrip : kSwordGrip) });
