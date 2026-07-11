@@ -9,13 +9,16 @@
 #include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/ShapeCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
@@ -241,6 +244,31 @@ RayHit PhysicsWorld::rayCast(const Vec3& from, const Vec3& direction,
             hit.normal = toGlm(lock.GetBody().GetWorldSpaceSurfaceNormal(
                 result.mSubShapeID2, ray.GetPointOnRay(result.mFraction)));
         }
+    }
+    return hit;
+}
+
+RayHit PhysicsWorld::sphereCast(const Vec3& from, const Vec3& direction,
+                                f32 maxDistance, f32 radius) const {
+    const JPH::SphereShape sphere { radius };
+    const JPH::RShapeCast cast = JPH::RShapeCast::sFromWorldTransform(
+        &sphere, JPH::Vec3::sReplicate(1.0f),
+        JPH::RMat44::sTranslation(toJph(from)),
+        toJph(direction * maxDistance));
+    JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector> collector;
+    pimpl->system.GetNarrowPhaseQuery().CastShape(
+        cast, JPH::ShapeCastSettings {}, JPH::RVec3::sZero(), collector);
+    RayHit hit;
+    if (collector.HadHit()) {
+        hit.hit = true;
+        hit.distance = collector.mHit.mFraction * maxDistance;
+        hit.position = toGlm(collector.mHit.mContactPointOn2);
+        // Penetration axis points from the sphere INTO the surface.
+        const JPH::Vec3 axis = collector.mHit.mPenetrationAxis;
+        if (axis.LengthSq() > 1.0e-12f) {
+            hit.normal = toGlm(-axis.Normalized());
+        }
+        hit.body = collector.mHit.mBodyID2.GetIndexAndSequenceNumber();
     }
     return hit;
 }

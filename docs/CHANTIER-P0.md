@@ -35,23 +35,27 @@ fait avec le backend null).
 
 ## Axe A — Le combat de mêlée complet (le cœur du feel)
 
-- **A1 — Shape casts Jolt.** La façade `phys::` gagne
-  `sphereCast`/`capsuleCast` (miroir de rayCast, pimpl, headless-testé
-  contre des boîtes posées). Le primitif de requête du combat.
-- **A2 — Attach points.** Sockets sur os dans l'anim runtime (transform
-  monde d'un joint × offset authoré) : `AttachPointForm` (os, offset) ;
-  les PNJ portent leur arme VISIBLE (main droite dégainée / dos rangée,
-  switch par tag `State.InCombat`). Le snapshot gagne les instances
-  d'armes attachées (mesh + transform par frame).
-- **A3 — L'attaque devient une ability GAS formelle.** `AbilityForm`
-  d'attaque (coût énergie + cooldown = effects, tags d'activation/refus),
-  machine d'état windup → active → recovery pilotée par les états d'anim
-  — remplace le LMB inline du joueur ET l'attaque PNJ (un seul chemin).
-- **A4 — Fenêtres de hit par AnimEvents.** `AnimEventForm` « HitOpen » /
-  « HitClose » sur les clips d'attaque ; pendant la fenêtre, un capsule
-  cast balaye l'arc de l'arme chaque tick, chaque cible touchée UNE fois
-  (set par activation) → `weaponDamageEvent` → applyDamage. Headless :
-  fenêtre + déduplication doctestées.
+- **A1 — Shape casts Jolt.** La façade `phys::` gagne `sphereCast`
+  (miroir de rayCast, headless-testé). Sert aux PROJECTILES vs monde
+  statique — pas aux hits d'acteurs : les `CharacterVirtual` sont HORS
+  broadphase, un cast physique ne les voit pas.
+- **A2 — L'épée visible et son socket (design dev 2026-07-11).** Asset
+  épée PROCÉDURAL simple (lame+garde+poignée, pattern TreeGenerator)
+  injecté au MeshCache ; `WeaponForm` += `model`, `bladeLength`. Le
+  socket est un transform ANIMÉ PAR CODE (pas d'anim d'attaque en
+  stock) : arc droite→gauche paramétré par la phase du swing — joueur =
+  socket relatif caméra (viewmodel 1re personne), PNJ = relatif au
+  facing ; si un clip d'attaque existe dans le glTF (à vérifier), la
+  main (`anim::modelMatrices`) remplace la simulation.
+- **A3+A4 — Ability GAS + hit À LA LAME.** Machine windup → active →
+  recovery (enum + une fonction), activation = `tryActivate` (coût
+  énergie/cooldown en effects). **Le hit = la lame TOUCHE** : pendant
+  Active, le segment de lame (longueur × `hitTolerance` {1.2}, champ de
+  Form réglable) est testé ANALYTIQUEMENT contre les capsules d'acteurs,
+  chaque cible touchée une fois par swing → `weaponDamageEvent` →
+  applyDamage. AnimEvents HitOpen/Close pilotent la phase quand un clip
+  les porte. Joueur et PNJ = un seul chemin. Doctesté (arc, hit,
+  tolérance, déduplication).
 - **A5 — Blocage directionnel.** État bloqué (RMB / ability PNJ) : les
   coups entrants dans le cône avant → dégâts réduits + dégâts de POSTURE
   (le système posture/stagger de STATS.md est déjà là), garde brisée =

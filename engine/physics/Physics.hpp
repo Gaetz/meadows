@@ -71,6 +71,13 @@ public:
     RayHit rayCast(const Vec3& from, const Vec3& direction,
                    f32 maxDistance) const;
 
+    // First hit of a swept SPHERE (chantier P0 A1): the melee arc sweep
+    // (A4 hit windows) and projectile thickness. The sphere of `radius`
+    // travels from `from` along `direction` for `maxDistance`; hit
+    // position = contact point on the struck surface.
+    RayHit sphereCast(const Vec3& from, const Vec3& direction,
+                      f32 maxDistance, f32 radius) const;
+
     struct Impl;
     Impl& impl() { return *pimpl; }
 

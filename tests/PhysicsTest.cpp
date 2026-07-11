@@ -140,3 +140,39 @@ TEST_CASE("raycasts hit static geometry and miss empty space") {
         world.rayCast({ 0.0f, 5.0f, 0.0f }, { 0.0f, -1.0f, 0.0f }, 20.0f);
     CHECK_FALSE(afterRemove.hit);
 }
+
+// Chantier P0 A1 — the melee/projectile sweep primitive.
+TEST_CASE("sphere casts sweep into geometry a ray would miss") {
+    phys::PhysicsWorld world;
+    const phys::BodyId post =
+        world.addStaticBox({ 0.2f, 2.0f, 0.2f }, { 0.0f, 2.0f, 0.0f });
+
+    // Straight at the post: the swept sphere touches ~radius short of
+    // the surface a ray reaches.
+    const phys::RayHit swept = world.sphereCast(
+        { 0.0f, 2.0f, 5.0f }, { 0.0f, 0.0f, -1.0f }, 10.0f, 0.5f);
+    REQUIRE(swept.hit);
+    CHECK(swept.body == post);
+    CHECK(swept.distance == doctest::Approx(4.3f).epsilon(0.02));
+    const phys::RayHit ray = world.rayCast({ 0.0f, 2.0f, 5.0f },
+                                           { 0.0f, 0.0f, -1.0f }, 10.0f);
+    REQUIRE(ray.hit);
+    CHECK(swept.distance < ray.distance);
+    // The contact sits on the struck surface, facing the sweep.
+    CHECK(swept.position.z == doctest::Approx(0.2f).epsilon(0.05));
+    CHECK(swept.normal.z == doctest::Approx(1.0f).epsilon(0.05));
+
+    // Off to the side: a RAY misses the post, the fat sweep clips it —
+    // exactly the melee-arc forgiveness the hit windows want (A4).
+    const phys::RayHit grazeRay = world.rayCast(
+        { 0.55f, 2.0f, 5.0f }, { 0.0f, 0.0f, -1.0f }, 10.0f);
+    CHECK_FALSE(grazeRay.hit);
+    const phys::RayHit graze = world.sphereCast(
+        { 0.55f, 2.0f, 5.0f }, { 0.0f, 0.0f, -1.0f }, 10.0f, 0.5f);
+    CHECK(graze.hit);
+
+    // Far to the side: even the sweep misses.
+    const phys::RayHit wide = world.sphereCast(
+        { 2.0f, 2.0f, 5.0f }, { 0.0f, 0.0f, -1.0f }, 10.0f, 0.5f);
+    CHECK_FALSE(wide.hit);
+}
