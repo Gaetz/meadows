@@ -15,6 +15,7 @@ namespace {
 constexpr const char* kInjectShader = "rc_inject";
 constexpr const char* kBuildShader = "rc_build";
 constexpr const char* kMergeShader = "rc_merge";
+constexpr const char* kAdaptShader = "rc_adapt";
 constexpr const char* kDebugShader = "rc_debug";
 constexpr const char* kFullscreenVert = "fullscreen";
 
@@ -36,6 +37,8 @@ struct RcUniforms {
                       // z = box count, w = light count (G3)
     Vec4 lightPosRadius[RadianceCascades::kMaxLights]; // G3
     Vec4 lightColor[RadianceCascades::kMaxLights];
+    Vec4 misc2; // APPENDED (adaptive ramp): x = band count,
+                // y = contrast floor (log2 stops), z = adapt speed
 };
 
 // std140 mirror of RcCascadeUbo (rc_build.comp / rc_merge.comp).
@@ -70,6 +73,8 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
                         { { "FrameUbo", 0 }, { "RcUbo", 2 },
                           { "RcCascadeUbo", 4 } },
                         { { "uRcSrc", 7 } });
+    shaders.loadCompute(kAdaptShader, { { "RcUbo", 2 } },
+                        { { "uRcCascade0", 10 } });
     shaders.load(kDebugShader, { { "FrameUbo", 0 }, { "RcUbo", 2 } },
                  { { "uRcClipFine", 5 }, { "uRcClipCoarse", 6 },
                    { "uRcCascade0", 10 } },
@@ -93,17 +98,26 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
     cascadeUbo = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform,
           .size = sizeof(RcCascadeUniforms), .dynamic = true }, nullptr) };
+    // Adaptive-ramp stats (GPU-written, never read back): zero-init so
+    // the reduce SNAPS on its first run (w = 0 sentinel).
+    const Vec4 zeroStats { 0.0f };
+    statsBuffer = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Storage, .size = sizeof(Vec4) },
+        &zeroStats) };
 
     refreshPipelines(device, shaders);
 }
 
 void RadianceCascades::destroy(rhi::Device& device) {
     (void)device; // Unique handles free through their device
+    adaptPipeline.reset();
     mergePipeline.reset();
     buildPipeline.reset();
     debugPipeline.reset();
     injectPipeline.reset();
+    adaptGroup.reset();
     applyGroup_.reset();
+    statsBuffer.reset();
     levels.clear();
     debugGroup.reset();
     injectGroup.reset();
@@ -142,6 +156,11 @@ void RadianceCascades::refreshPipelines(rhi::Device& device,
         mergePipeline = { device, device.createComputePipeline(
             { shaders.get(kMergeShader) }) };
         mergeGeneration = shaders.generation(kMergeShader);
+    }
+    if (shaders.generation(kAdaptShader) != adaptGeneration) {
+        adaptPipeline = { device, device.createComputePipeline(
+            { shaders.get(kAdaptShader) }) };
+        adaptGeneration = shaders.generation(kAdaptShader);
     }
     if (shaders.generation(kDebugShader) != debugGeneration) {
         debugPipeline = { device, device.createPipeline(
@@ -258,9 +277,19 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
                          .sampler = volumeSampler.get() },
                        { .binding = 10, .texture = levels[0].texture.get(),
                          .sampler = volumeSampler.get() } } }) };
-    // G6: the surface shaders' sampler (gi.glsl, binding 11).
+    // G6: the surface shaders' sampler (gi.glsl, binding 11) + the
+    // adaptive-ramp stats SSBO (binding 12).
     applyGroup_ = { device, device.createBindGroup(
         { .entries = { { .binding = 11, .texture = levels[0].texture.get(),
+                         .sampler = volumeSampler.get() },
+                       { .binding = 12, .buffer = statsBuffer.get(),
+                         .storage = true } } }) };
+    // The adaptive-ramp reduction: strided samples of merged cascade 0.
+    adaptGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 2, .buffer = rcUbo.get() },
+                       { .binding = 12, .buffer = statsBuffer.get(),
+                         .storage = true },
+                       { .binding = 10, .texture = levels[0].texture.get(),
                          .sampler = volumeSampler.get() } } }) };
 
     appliedResolution = tuning.resolution;
@@ -453,6 +482,9 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
     uniforms.misc = { static_cast<f32>(tuning.debugView), tuning.skyFactor,
                       static_cast<f32>(boxCount),
                       static_cast<f32>(lightCount) };
+    uniforms.misc2 = { static_cast<f32>(glm::clamp(tuning.bands, 2, 5)),
+                       glm::max(tuning.contrastFloor, 0.1f),
+                       glm::clamp(tuning.adaptSpeed, 0.005f, 1.0f), 0.0f };
     for (u32 i = 0; i < lightCount; ++i) {
         uniforms.lightPosRadius[i] = lights[i].positionRadius;
         uniforms.lightColor[i] = lights[i].color;
@@ -530,6 +562,16 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
                          (level.depth + 3) / 4);
             cmd.memoryBarrier(); // the level below reads this one
         }
+    }
+
+    // Adaptive ramp: measure the merged cascade 0's irradiance range
+    // (log-mean + contrast window, temporal inertia) — gi.glsl anchors
+    // its flat bands on it (dev design 2026-07-11).
+    if (adaptPipeline.id() != 0) {
+        cmd.setPipeline(adaptPipeline);
+        cmd.setBindGroup(1, adaptGroup);
+        cmd.dispatch(1, 1, 1);
+        cmd.memoryBarrier(); // stats visible to the surface shaders
     }
 }
 

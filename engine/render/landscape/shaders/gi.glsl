@@ -7,6 +7,11 @@
 
 layout(binding = 11) uniform sampler3D uGiCascade0;
 
+// Adaptive-ramp stats, measured by rc_adapt.comp on the merged cascade:
+// x = log2 mean irradiance, y = contrast half-window (log2 stops),
+// z = band count, w = 1 once initialized.
+layout(std430, binding = 12) readonly buffer RcStatsBuf { vec4 uRcStats; };
+
 // Direction of cascade-0 slab d — KEEP IN SYNC with rcOctDecode
 // (rc_common.glsl) over the fixed 4x2 grid.
 vec3 giSlabDir(int d) {
@@ -53,22 +58,22 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
     }
     vec3 irradiance = sum / max(weightSum, 1e-3) * uGiInfo.y;
 
-    // Stylized (BotW) mode — dev feedback 2026-07-11: the GI must speak
-    // the same flat-pool language as the sun ramp, so it is posterized AT
-    // THE END: luminance relative to the flat classic ambient snaps to
-    // three bands (shade 0.55 / neutral 1.0 / bounce highlight 1.5), hue
-    // preserved. LIGHT BRIGHTER than the top band passes CONTINUOUSLY —
-    // pinning to the bands crushed torch halos to black at night, when
-    // the classic ambient reference is nearly zero (dev bug report).
+    // ADAPTIVE stylized ramp (dev design 2026-07-11): posterize the GI in
+    // log-stops anchored on the MEASURED scene range (rc_adapt.comp) —
+    // a forest's subtle green bounce spreads across the flat pools, a
+    // torch in the night keeps its full contrast; no fixed thresholds,
+    // no reference to the (possibly black) classic ambient. Hue kept;
+    // narrow smoothstep = anti-aliasing (the stylized.glsl language).
     float lum = dot(irradiance, vec3(0.299, 0.587, 0.114));
-    float classicLum = dot(classicAmbient, vec3(0.299, 0.587, 0.114));
-    if (lum > 1e-4 && classicLum > 1e-4) {
-        float ratio = lum / classicLum;
-        float stepped = 0.55 + 0.45 * smoothstep(0.70, 0.85, ratio) +
-                        0.50 * smoothstep(1.30, 1.55, ratio);
-        stepped = mix(stepped, ratio, smoothstep(1.55, 2.5, ratio));
-        irradiance *= mix(1.0, (stepped * classicLum) / lum,
-                          uAmbientColor.w);
+    if (uAmbientColor.w > 0.0 && uRcStats.w > 0.5 && lum > 1e-5) {
+        float window = max(uRcStats.y, 0.1);
+        float bands = max(uRcStats.z, 2.0);
+        float x = clamp((log2(lum) - uRcStats.x) / window, -1.0, 1.0);
+        float t = (x + 1.0) * 0.5 * (bands - 1.0); // 0 .. bands-1
+        float tq = floor(t) + smoothstep(0.35, 0.65, fract(t));
+        float xq = tq / (bands - 1.0) * 2.0 - 1.0;
+        float lumQ = exp2(uRcStats.x + xq * window);
+        irradiance *= mix(1.0, lumQ / lum, uAmbientColor.w);
     }
     return mix(classicAmbient, irradiance, fade);
 }

@@ -50,6 +50,12 @@ struct RcTuning {
                               // interval0 × (2^count − 1)
     f32 edgeFade { 8.0f };    // meters of blend back to Classic at the
                               // grid border (G6)
+    // Adaptive stylized ramp (dev design 2026-07-11): the GI posterizes
+    // in log-stops around the MEASURED scene irradiance (rc_adapt.comp).
+    i32 bands { 3 };            // flat pools across the measured contrast
+    f32 contrastFloor { 1.0f }; // min half-window (log2 stops) — a flat
+                                // scene must not amplify noise into bands
+    f32 adaptSpeed { 0.05f };   // temporal inertia per injected frame
     i32 updateInterval { 1 }; // inject every N frames (1 = every frame)
     i32 debugView { 0 };      // 0 off, 1 fine clip, 2 coarse clip,
                               // 3 merged cascade-0 irradiance
@@ -175,6 +181,10 @@ private:
     u64 buildGeneration { 0 };
     rhi::UniquePipeline mergePipeline;  // G5
     u64 mergeGeneration { 0 };
+    rhi::UniquePipeline adaptPipeline;  // adaptive-ramp reduction
+    u64 adaptGeneration { 0 };
+    rhi::UniqueBuffer statsBuffer;      // SSBO: measured log-mean/window
+    rhi::UniqueBindGroup adaptGroup;
 
     // G4/G5: one texture + one build group per cascade; merge groups pair
     // level i (image) with level i+1 (sampled src). Level layouts per
