@@ -15,7 +15,7 @@
 		</div>
 		<div class="muted" data-if="empty">No saves yet — F5 quicksaves.</div>
 		<div class="menu-buttons">
-			<button data-event-click="loadCancel()">Back</button>
+			<button id="btn-back" data-event-click="loadCancel()">Back</button>
 		</div>
 	</div>
 </body>

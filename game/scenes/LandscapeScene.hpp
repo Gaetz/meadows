@@ -233,6 +233,14 @@ private:
     bool uiCreated { false };
     bool uiModalWasOpen { false };
     bool uiTextInputOn { false };
+    // C9.3: pad-driven UI navigation state — the left-stick repeat
+    // cooldown, and the A/B edges the UI consumed. Those buttons stay
+    // "owned by the UI" until physically released, so closing a menu
+    // with B cannot tap-dodge, nor activating with A jump (A = Jump,
+    // B = SprintDodge in the default pad bindings).
+    f32 uiStickCooldown { 0.0f };
+    bool uiPadConsumedA { false };
+    bool uiPadConsumedB { false };
     vector<str> shownScreens; // documents currently shown (sync state)
     // onEnter phases (brick U4-3): onEnter() runs these in order. Split for
     // readability only — behaviour is identical to the former 620-line body.

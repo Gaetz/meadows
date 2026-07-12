@@ -885,8 +885,11 @@ void LandscapeScene::update(f32 dt) {
 
     // Mode switching lives with the F2/F3 hotkeys (drawn overlay); Play is
     // home. Nothing to toggle here anymore.
-    if (uiPaused) {
+    if (uiPaused || uiPadConsumedA || uiPadConsumedB) {
         // A modal screen owns the input; cameras and player hold still.
+        // C9.3: a pad edge the UI consumed keeps its button until the
+        // physical release — otherwise closing a menu with B would
+        // tap-dodge, and activating with A would jump, the same frame.
     } else if (sceneConsole.visible()) {
         // The dev console owns the keyboard; the player / camera hold still
         // (so WASD types instead of walking) while the sim keeps ticking.
@@ -1300,6 +1303,23 @@ void LandscapeScene::updateGameUi(f32 dt) {
     platform::Input& input = engine->getInput();
     const bool imguiOwnsKeys = ImGui::GetIO().WantCaptureKeyboard;
 
+    // C9.3: A/B edges the UI consumed release their gameplay hold the
+    // frame the button physically comes back up (see update()'s gate).
+    if (uiPadConsumedA && !input.padDown(platform::PadButton::A)) {
+        uiPadConsumedA = false;
+    }
+    if (uiPadConsumedB && !input.padDown(platform::PadButton::B)) {
+        uiPadConsumedB = false;
+    }
+    // C9.3: while a modal is open the d-pad drives the RmlUi focus, so
+    // a pad-bound hotkey must not ALSO fire its toggle (d-pad up would
+    // close the very inventory it navigates). Keyboard keeps today's
+    // toggles; the pad closes with B below.
+    const auto keyPressedOnly = [&](InputAction action) {
+        const platform::Key key = actionMap.binding(action).key;
+        return key != platform::Key::Count && input.wasPressed(key);
+    };
+
     // Tab: back/close the top screen (dev request 2026-07-07 — the
     // Skyrim reflex). Escape only drives the pause/main menus below.
     if (!imguiOwnsKeys && !uiSystem.textFieldFocused() &&
@@ -1323,8 +1343,12 @@ void LandscapeScene::updateGameUi(f32 dt) {
         }
     }
     // I: toggle the inventory (B3) — not while typing in a text field.
+    // C9.3: keyboard-only while a modal is open (pad binding = d-pad up,
+    // which is navigation there).
     if (!imguiOwnsKeys && !uiSystem.textFieldFocused() &&
-        actionMap.pressed(input, InputAction::Inventory)) {
+        (screenStack.modalOpen()
+             ? keyPressedOnly(InputAction::Inventory)
+             : actionMap.pressed(input, InputAction::Inventory))) {
         const ScreenStack::Screen* top = screenStack.topModal();
         if (top && (top->name == "inventory" || top->name == "container")) {
             screenStack.closeTop();
@@ -1352,6 +1376,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
     }
 
     const bool modal = screenStack.modalOpen();
+    const bool modalJustOpened = modal && !uiModalWasOpen;
     if (modal != uiModalWasOpen) {
         // A modal frees the mouse (and pauses the sim, handled in
         // update()); closing it restores the Play capture.
@@ -1383,6 +1408,61 @@ void LandscapeScene::updateGameUi(f32 dt) {
             uiSystem.processKey(event.key, event.down);
         }
         uiSystem.processTextInput(input.textInput());
+
+        // C9.3: pad -> UI. The d-pad and the left stick pulse the arrow
+        // keys through RmlUi (its spatial navigation moves the focus,
+        // exactly like keyboard arrows), A clicks the focused element,
+        // B is the Tab reflex (close the top screen). Start already
+        // works: the Pause action above fires from Escape OR Start.
+        // Skipped on the opening frame so the pad edge that opened a
+        // screen (d-pad up = inventory) does not also navigate it.
+        if (!modalJustOpened) {
+            using platform::PadButton;
+            const auto pulse = [&](platform::Key key) {
+                uiSystem.processKey(key, true);
+                uiSystem.processKey(key, false);
+            };
+            if (input.padPressed(PadButton::DPadUp)) {
+                pulse(platform::Key::Up);
+            }
+            if (input.padPressed(PadButton::DPadDown)) {
+                pulse(platform::Key::Down);
+            }
+            if (input.padPressed(PadButton::DPadLeft)) {
+                pulse(platform::Key::Left);
+            }
+            if (input.padPressed(PadButton::DPadRight)) {
+                pulse(platform::Key::Right);
+            }
+            // Left stick: past the threshold it pulses the dominant
+            // axis, then repeats while held (the menu-scroll feel);
+            // recentering rearms an immediate pulse.
+            constexpr f32 kStickNavThreshold = 0.6f;
+            constexpr f32 kStickNavRepeat = 0.25f; // seconds between pulses
+            const Vec2 stick = input.leftStick();
+            uiStickCooldown -= dt;
+            if (std::abs(stick.x) < kStickNavThreshold &&
+                std::abs(stick.y) < kStickNavThreshold) {
+                uiStickCooldown = 0.0f;
+            } else if (uiStickCooldown <= 0.0f) {
+                if (std::abs(stick.y) >= std::abs(stick.x)) {
+                    pulse(stick.y > 0.0f ? platform::Key::Up
+                                         : platform::Key::Down);
+                } else {
+                    pulse(stick.x > 0.0f ? platform::Key::Right
+                                         : platform::Key::Left);
+                }
+                uiStickCooldown = kStickNavRepeat;
+            }
+            if (input.padPressed(PadButton::A)) {
+                uiSystem.activateFocused();
+                uiPadConsumedA = true;
+            }
+            if (input.padPressed(PadButton::B)) {
+                screenStack.closeTop();
+                uiPadConsumedB = true;
+            }
+        }
     }
     // OS text events only while an Rml text field holds the focus.
     const bool wantText = modal && uiSystem.textFieldFocused();
@@ -1407,6 +1487,19 @@ void LandscapeScene::updateGameUi(f32 dt) {
     hud.updateHudModel(makeHudContext());
     syncScreens();
     uiSystem.update(dt);
+
+    // C9.3: give the pad somewhere to land. Whenever a modal is open
+    // and no navigable element holds the focus — the screen just
+    // opened, a data-for rebuild destroyed the focused row, a click
+    // landed on dead space — focus the top screen's first (or
+    // "selected") element. After update(): a freshly shown document
+    // only has computed styles and its data-for rows once the context
+    // updated.
+    if (modal && !uiSystem.hasNavigableFocus()) {
+        if (const ScreenStack::Screen* top = screenStack.topModal()) {
+            uiSystem.focusFirst(top->document);
+        }
+    }
 }
 
 // Bundle the scene systems the RmlUi presenter reads for GameHud this frame

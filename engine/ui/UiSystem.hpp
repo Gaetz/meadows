@@ -106,6 +106,28 @@ public:
     // enable Window::setTextInput while it holds).
     bool textFieldFocused() const;
 
+    // --- Gamepad / keyboard focus navigation (C9.3) --------------------------
+    // RmlUi 6.1 moves the focus spatially on arrow keydowns when the
+    // focused element carries the `nav`/`nav-*` RCSS properties and the
+    // targets are `tab-index: auto`; Enter/Space click the focused
+    // element. These three close the loop for a pad: land the focus,
+    // detect it got lost, activate.
+    //
+    // Focuses the first focusable element of a shown document (by the
+    // path it was shown with), preferring one carrying the "selected"
+    // class so a rebuilt item list puts the pad back on the picked row.
+    // Call after update() — a freshly shown document only has computed
+    // styles (and its data-for rows) once the context updated.
+    bool focusFirst(const str& documentPath);
+    // True while a visible, navigable (tab-index: auto) element holds
+    // the focus — when false the pad has nowhere to move from and the
+    // caller should focusFirst() the top screen.
+    bool hasNavigableFocus() const;
+    // Clicks the focused element (pad A): dispatches the same click a
+    // mouse press would, exactly like RmlUi's built-in Enter handling.
+    // False when nothing navigable holds the focus.
+    bool activateFocused();
+
     // --- Data models (B2) ---------------------------------------------------
     // Create before the documents that reference them load; set* pushes a
     // value and dirties the binding. All Rml types stay in the .cpp.

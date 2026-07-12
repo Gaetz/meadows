@@ -69,6 +69,73 @@ input.text:focus {
 	border-color: #d9b96c;
 }
 
+/* C9.3 — gamepad / keyboard navigation. Everything clickable becomes a
+   focus target (tab-index) and a spatial-navigation source (nav): on an
+   arrow keydown RmlUi walks from the focused element to the nearest
+   `tab-index: auto` element in that direction, and Enter/Space click
+   it. The d-pad and left stick pulse the same arrow keys. */
+
+[data-event-click], button, .button {
+	tab-index: auto;
+	nav: auto;
+}
+
+input.text {
+	nav: auto; /* already focusable (form control); Up/Down leave it */
+}
+
+/* Spatial search stops at scroll containers, so lists need explicit
+   exits (ids live in the documents): inventory rows go left to the
+   tabs and right to the detail buttons, save slots right to Back,
+   loot rows right to Take all. */
+#items .row {
+	nav-left: #tab-all;
+	nav-right: #btn-equip;
+}
+
+#slots .slot {
+	nav-right: #btn-back;
+}
+
+#lootlist .row {
+	nav-right: #btn-takeall;
+}
+
+/* The focus ring — keyboard/pad focus only (:focus-visible; a mouse
+   click focuses without it), mirroring each element's hover look. */
+button:focus-visible, .button:focus-visible {
+	border-color: #d9b96c;
+	color: #f5f2e9;
+}
+
+.tab:focus-visible {
+	color: #f0ede4;
+	border-bottom-color: #d9b96c;
+}
+
+.tablehead .col:focus-visible {
+	color: #d9b96c;
+}
+
+.row:focus-visible {
+	background-color: #23262ce0;
+	border-left: 2dp #d9b96c;
+}
+
+.option:focus-visible {
+	color: #f5f2e9;
+	background-color: #23262ce0;
+}
+
+.slot:focus-visible {
+	background-color: #23262ce0;
+	border-left: 2dp #d9b96c;
+}
+
+input.text:focus-visible {
+	border-color: #d9b96c;
+}
+
 scrollbarvertical {
 	width: 8dp;
 }

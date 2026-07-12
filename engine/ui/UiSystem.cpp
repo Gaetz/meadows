@@ -597,6 +597,89 @@ bool UiSystem::textFieldFocused() const {
     return tag == "input" || tag == "textarea";
 }
 
+// --- Gamepad / keyboard focus navigation (C9.3) -------------------------------
+
+namespace {
+
+// A navigation target the way RmlUi's own spatial search defines one
+// (ElementDocument's CanFocusElement): visible + `tab-index: auto`.
+bool isNavigable(Rml::Element* element) {
+    return element->IsVisible() &&
+           element->GetComputedValues().tab_index() ==
+               Rml::Style::TabIndex::Auto;
+}
+
+// First navigable element in document order; with preferSelected, only
+// one that also carries the "selected" class (item rows keep the pad on
+// the picked row across a data-for rebuild).
+Rml::Element* findFocusable(Rml::Element* element, bool preferSelected) {
+    const int count = element->GetNumChildren();
+    for (int i = 0; i < count; ++i) {
+        Rml::Element* child = element->GetChild(i);
+        if (!child->IsVisible()) {
+            continue; // display:none subtree (data-if off, hidden doc)
+        }
+        if (isNavigable(child) &&
+            (!preferSelected || child->IsClassSet("selected"))) {
+            return child;
+        }
+        if (Rml::Element* inner = findFocusable(child, preferSelected)) {
+            return inner;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
+
+bool UiSystem::focusFirst(const str& documentPath) {
+    if (!pimpl || !pimpl->context) {
+        return false;
+    }
+    const auto it = pimpl->documents.find(documentPath);
+    if (it == pimpl->documents.end()) {
+        return false;
+    }
+    Rml::Element* target = findFocusable(it->second, true);
+    if (!target) {
+        target = findFocusable(it->second, false);
+    }
+    if (!target || !target->Focus(true)) {
+        return false; // screen with nothing focusable (plain text)
+    }
+    target->ScrollIntoView(Rml::ScrollAlignment::Nearest);
+    return true;
+}
+
+bool UiSystem::hasNavigableFocus() const {
+    if (!pimpl || !pimpl->context) {
+        return false;
+    }
+    // Walk up like RmlUi's arrow handling does (GetNearestFocusable):
+    // a click can land the focus on a row's inner column div.
+    for (Rml::Element* e = pimpl->context->GetFocusElement(); e;
+         e = e->GetParentNode()) {
+        if (isNavigable(e)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool UiSystem::activateFocused() {
+    if (!pimpl || !pimpl->context) {
+        return false;
+    }
+    for (Rml::Element* e = pimpl->context->GetFocusElement(); e;
+         e = e->GetParentNode()) {
+        if (isNavigable(e)) {
+            e->Click(); // the same click event a mouse press dispatches
+            return true;
+        }
+    }
+    return false;
+}
+
 // --- Data models ------------------------------------------------------------
 
 bool UiSystem::createModel(const UiModelDesc& desc) {
