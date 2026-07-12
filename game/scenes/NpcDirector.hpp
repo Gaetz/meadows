@@ -7,11 +7,13 @@
 #include <vector>
 
 #include "engine/anim/Anim.hpp"          // anim::GraphDesc/GraphInstance/Pose/Skeleton
-#include "engine/assets/GltfMesh.hpp"    // assets::GltfClip
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 #include "engine/ecs/World.hpp"          // ecs::Entity, ecs::World
 #include "engine/rhi/Rhi.hpp"            // rhi::*Handle
+#include "game/scenes/NpcCombatController.hpp" // R4: the in-combat half
+#include "game/scenes/NpcScheduleController.hpp" // R4: the peaceful-life half
+#include "game/scenes/NpcSpawner.hpp"    // R4: RigData + the Forms->NPC build
 #include "gameplay/ability/GameplayTags.hpp" // gameplay::GameplayTag
 #include "gameplay/combat/CombatAi.hpp"      // gameplay::CombatMove (brains)
 
@@ -58,12 +60,12 @@ namespace game {
 struct RenderSnapshot; // game/SceneSubmit.hpp — the extract target
 class ProjectileDirector; // A7: archer NPCs
 
-// One rig cache entry per glTF asset (skeleton + its clips). Shared by every
-// NPC built from that asset.
-struct RigData {
-    anim::Skeleton skeleton;
-    vector<assets::GltfClip> clips;
-};
+// P0 A2/A3 [cpp-tuning] — the sword grip corrections (see the definitions
+// in NpcDirector.cpp). ONE definition shared by the extract (the drawn
+// blade) and the combat controller (the hit segment): the blade that hits
+// stays the blade you see.
+extern const Mat4 kSwordGrip;
+extern const Mat4 kSwordGuardGrip;
 
 // Per-NPC runtime state (non-reflected, §H5). uptr in the owning vector: the
 // GraphInstance references Npc::graph — addresses must survive vector growth.
@@ -196,16 +198,17 @@ struct NpcContext {
 };
 
 // The whole Forms-driven NPC subsystem, extracted from LandscapeScene (audit
-// U4-10): owns the rig cache, the NPC list, and the skinned pipeline; builds
-// newcomers on cell changes, runs their AI/schedule/combat each frame, and
-// draws them. The scene still reads the list (npcs()) for player attack/crime,
-// the shadow caster pass, the debug UI, the editor pick and the console.
+// U4-10): owns the NPC list and the skinned pipeline; builds newcomers on
+// cell changes (NpcSpawner, which owns the rig cache), runs their
+// AI/schedule/combat each frame (NpcCombatController /
+// NpcScheduleController, R4), and draws them. The scene still reads the
+// list (npcs()) for player attack/crime, the shadow caster pass, the debug
+// UI, the editor pick and the console.
 class NpcDirector {
 public:
     // Cell streaming makes NPC entities come and go: prune dead ones (freeing
-    // their GPU state) and build newcomers. finalizeActorSpawn adds the stats /
-    // saved-state / loadout components (shared with the player — stays in the
-    // scene), applied deferred (a table move on the locked iteration).
+    // their GPU state) and build newcomers — delegated to NpcSpawner (R4),
+    // which fills the director-owned lists below.
     void refreshNpcs(
         rhi::Device& device, const NpcContext& ctx,
         const std::function<void(ecs::Entity, const core::Guid&)>&
@@ -235,30 +238,18 @@ public:
     Vec3 characterSpot() const { return characterSpot_; } // first NPC (teleport)
 
 private:
-    const RigData* loadRig(const NpcContext& ctx, const core::Guid& asset);
-    void destroyNpc(rhi::Device& device, Npc& npc);
-    void updateNpcSchedule(const NpcContext& ctx, Npc& npc, f32 hourOfDay);
-    bool moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,
-                          f32 speedScale);
-    // B3: pathless steering (strafe orbits, flee) — same stat-driven
-    // speed as the path walker, explicit facing (a strafer keeps its
-    // eyes on the target, a runner looks where it runs).
-    void moveNpcDirect(const NpcContext& ctx, Npc& npc, f32 dt,
-                       const Vec3& direction, f32 speedScale, f32 faceYaw);
-    // B3: entering Alert shouts — same-faction allies in
-    // StatsTuningForm.helpCallRadius get the target position (alertTo).
-    void callForHelp(const NpcContext& ctx, const Npc& caller,
-                     const Vec3& targetPos);
-    // D1: the ONE way out of furniture — frees the occupancy point,
-    // removes the furniture's GAS effect, clears the anim gate.
-    void releaseFurniture(const NpcContext& ctx, Npc& npc);
-
     // R3: entity id -> Npc record, for mapping SpatialIndex hits back to
     // the director's structs. Rebuilt whenever npcs_ changes (refreshNpcs
     // is the only mutation point; uptr keeps the pointers stable).
     Npc* findNpc(u64 entityId) const;
 
-    std::unordered_map<core::Guid, RigData> rigCache;
+    // R4: the three halves of the subsystem — build (Forms -> NPC, owns
+    // the rig cache), combat, peaceful life. The director stays the
+    // orchestrator and keeps owning the lists below.
+    NpcSpawner spawner_;
+    NpcCombatController combat_;
+    NpcScheduleController schedule_;
+
     vector<uptr<Npc>> npcs_;
     std::unordered_map<u64, Npc*> npcByEntity_;
     vector<Vec3> patrolPoints;   // grounded "patrol" marker positions
