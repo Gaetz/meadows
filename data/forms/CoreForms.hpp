@@ -229,6 +229,18 @@ struct ActorForm : Form {
     // called on low-frequency decision ticks. Empty = the C++ brain
     // (chooseCombatMove). Works for ANY hostile actor, boss or mugger.
     str brainScript;
+    // FOLLOWERS É0 (appended — docs/CHANTIER-FOLLOWERS.md): the authored
+    // follower identity. All optional (empty/0 = not a follower); the
+    // runtime state lives in gameplay::FollowerState, never here (§2.2).
+    str followerCategory;      // "" | "major" | "minor" | "mount"
+    core::Guid followerClass;  // gameplay::FollowerClassForm (level curves)
+    f32 age { 0.0f };          // years; 0 = ageless (no age effects, É5)
+    f32 minLevel { 1.0f };     // recruit gate (condition evaluator, É4)
+    bool mainCharacter { false }; // full level catch-up on re-recruit (É5)
+    core::Guid homeMarker;     // where a dismissed follower returns (É1)
+    core::Guid recruitDialogue; // if distinct from `dialogue` (É1)
+    core::Guid buryMarker;     // authored grave spot (É8)
+    core::Guid buryContact;    // NPC who buries a nearby dead follower (É8)
 
     REFLECT_BEGIN(ActorForm, Form)
         REFLECT_FIELD(displayName)
@@ -243,6 +255,15 @@ struct ActorForm : Form {
         REFLECT_FIELD(sellMult)
         REFLECT_FIELD(courage)
         REFLECT_FIELD(brainScript)
+        REFLECT_FIELD(followerCategory)
+        REFLECT_FIELD(followerClass)
+        REFLECT_FIELD(age)
+        REFLECT_FIELD(minLevel)
+        REFLECT_FIELD(mainCharacter)
+        REFLECT_FIELD(homeMarker)
+        REFLECT_FIELD(recruitDialogue)
+        REFLECT_FIELD(buryMarker)
+        REFLECT_FIELD(buryContact)
     REFLECT_END()
 };
 

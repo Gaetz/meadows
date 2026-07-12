@@ -32,6 +32,7 @@
     EquipmentStatsTest.cpp
     EventBusTest.cpp
     FactionsTest.cpp
+    FollowerFormsTest.cpp
     FormsTest.cpp
     FrameComposerTest.cpp
     FrustumTest.cpp

@@ -32,4 +32,34 @@ struct Bounty {
     REFLECT_END()
 };
 
+// Follower runtime state (FOLLOWERS É0 — docs/CHANTIER-FOLLOWERS.md).
+// Same pattern as VendorState/Bounty above: reflected, present on every
+// actor, captured by the SavedStatsForm name-match sweep. Fields carry the
+// `follower` prefix because SavedStatsForm field names must stay globally
+// unique across every captured component (`level`/`active` are too
+// generic to claim). Hour fields are GameClock game-time stamps (the
+// VendorState.lastRestockHours idiom). §2.9 note: affinity is NOT a GAS
+// attribute — it never moves through applyEffect.
+struct FollowerState {
+    bool followerActive { false };  // currently in the player's party
+    f32 followerLevel { 1.0f };
+    f32 followerAffinity { 0.0f };
+    f32 followerHoursTogether { 0.0f };
+    f32 followerContractExpiryHours { 0.0f };  // 0 = no contract (É10)
+    f32 followerLastLevelSyncedFrom { 0.0f };  // player level at last sync
+    f32 followerLastHomeUpgradeHours { 0.0f };
+    f32 followerDownedRecoveryHours { 0.0f };  // convalescence timer (É3)
+
+    REFLECT_BEGIN(FollowerState, void)
+        REFLECT_FIELD(followerActive)
+        REFLECT_FIELD(followerLevel)
+        REFLECT_FIELD(followerAffinity)
+        REFLECT_FIELD(followerHoursTogether)
+        REFLECT_FIELD(followerContractExpiryHours)
+        REFLECT_FIELD(followerLastLevelSyncedFrom)
+        REFLECT_FIELD(followerLastHomeUpgradeHours)
+        REFLECT_FIELD(followerDownedRecoveryHours)
+    REFLECT_END()
+};
+
 } // namespace gameplay

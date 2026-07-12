@@ -35,6 +35,13 @@ struct AttributeSet {
     // progresses with attributes). Resonance's % still applies after.
     // Appended (binary ordinals stable).
     f32 maxHealthOverride { 0.0f };
+    // FOLLOWERS É0 (appended — docs/CHANTIER-FOLLOWERS.md): the MINIMAL
+    // character level. A plain attribute: it rides the overlay
+    // (initializeCurrent copies every f32 field) so `AttributeAtLeast
+    // level` conditions work immediately. No derived formula, no gain
+    // logic — player progression (skills-by-use) is its own chantier;
+    // follower levels sync from FollowerState (É5).
+    f32 level { 1.0f };
 
     REFLECT_BEGIN(AttributeSet, void)
         REFLECT_FIELD(health)
@@ -46,6 +53,7 @@ struct AttributeSet {
         REFLECT_FIELD(armorRating)
         REFLECT_FIELD(damage)
         REFLECT_FIELD(maxHealthOverride)
+        REFLECT_FIELD(level)
     REFLECT_END()
 };
 

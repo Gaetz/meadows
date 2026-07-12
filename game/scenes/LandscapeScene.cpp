@@ -1751,6 +1751,11 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
     if (!entity.has<gameplay::VendorState>()) {
         entity.set<gameplay::VendorState>({});
     }
+    // FOLLOWERS É0: same rule — the follower* SavedStatsForm fields need
+    // the component present before the saved-state apply to land.
+    if (!entity.has<gameplay::FollowerState>()) {
+        entity.set<gameplay::FollowerState>({});
+    }
     core::Guid refGuid;
     if (entity.has<world::RefId>()) {
         refGuid = entity.get<world::RefId>().referenceId;

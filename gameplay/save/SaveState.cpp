@@ -135,6 +135,7 @@ vector<data::Record> captureActor(ecs::Entity entity,
     componentToSaved<Equipment>(entity, stats);
     componentToSaved<VendorState>(entity, stats);
     componentToSaved<Bounty>(entity, stats);
+    componentToSaved<FollowerState>(entity, stats); // FOLLOWERS É0
     records.push_back(
         createRecord(stats, core::Guid::combine(kSavedStatsNs, refGuid)));
     // The sentinel must survive resolution even for a pristine actor: an
@@ -223,6 +224,7 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
     savedToComponent<Equipment>(*saved.stats, entity);
     savedToComponent<VendorState>(*saved.stats, entity);
     savedToComponent<Bounty>(*saved.stats, entity);
+    savedToComponent<FollowerState>(*saved.stats, entity); // FOLLOWERS É0
 
     if (entity.has<Inventory>()) {
         auto& bag = entity.get_mut<Inventory>();

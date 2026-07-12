@@ -15,4 +15,16 @@
 - Ta save existante doit continuer de charger à chaque étape (reflets
   APPEND only). Si une étape casse ta save, c'est un bug à me remonter.
 
+## É0 — Socle data (rien de visible en jeu)
+
+Étape purement data-model : champs follower sur ActorForm,
+FollowerClassForm/ClassPerkForm (courbes de classe), composant
+FollowerState (préfixé follower* dans la save), attribut `level` (base
+1) sur tout acteur.
+
+**À tester :**
+1. Ta save existante charge sans erreur ni régression (F9) — c'est LE
+   test de l'étape (reflets append-only).
+2. Boot : toujours `7 plugins, 412 forms`, zéro warning.
+
 <!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->

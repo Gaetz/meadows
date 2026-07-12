@@ -9,6 +9,7 @@
 #include "data/forms/VisualForms.hpp"
 #include "gameplay/ability/GameplayAbility.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
+#include "gameplay/actors/FollowerForms.hpp"
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/faction/Factions.hpp"
 #include "gameplay/interaction/FurnitureForms.hpp"
@@ -33,6 +34,7 @@ void registerAllFormTypes(data::FormTypeRegistry& types) {
     gameplay::registerStatsFormTypes(types);
     gameplay::registerFactionFormTypes(types);
     gameplay::registerCharacterFormTypes(types);
+    gameplay::registerFollowerFormTypes(types); // FOLLOWERS É0
     gameplay::registerAiFormTypes(types);
     gameplay::registerFurnitureFormTypes(types);
     gameplay::registerSaveFormTypes(types); // chantier 5: save records

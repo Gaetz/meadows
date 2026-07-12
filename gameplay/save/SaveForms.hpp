@@ -81,6 +81,17 @@ struct SavedStatsForm : data::Form {
     f32 shakenSeconds { 0.0f };
     f32 lastRestockHours { 0.0f };
     f32 bounty { 0.0f };
+    // FOLLOWERS É0 APPENDs (ordinals stable): FollowerState mirror. The
+    // `follower` prefix keeps the names unique across every captured
+    // component (docs/CHANTIER-FOLLOWERS.md).
+    bool followerActive { false };
+    f32 followerLevel { 1.0f };
+    f32 followerAffinity { 0.0f };
+    f32 followerHoursTogether { 0.0f };
+    f32 followerContractExpiryHours { 0.0f };
+    f32 followerLastLevelSyncedFrom { 0.0f };
+    f32 followerLastHomeUpgradeHours { 0.0f };
+    f32 followerDownedRecoveryHours { 0.0f };
 
     REFLECT_BEGIN(SavedStatsForm, data::Form)
         REFLECT_FIELD(parent)
@@ -128,6 +139,14 @@ struct SavedStatsForm : data::Form {
         REFLECT_FIELD(shakenSeconds)
         REFLECT_FIELD(lastRestockHours)
         REFLECT_FIELD(bounty)
+        REFLECT_FIELD(followerActive)
+        REFLECT_FIELD(followerLevel)
+        REFLECT_FIELD(followerAffinity)
+        REFLECT_FIELD(followerHoursTogether)
+        REFLECT_FIELD(followerContractExpiryHours)
+        REFLECT_FIELD(followerLastLevelSyncedFrom)
+        REFLECT_FIELD(followerLastHomeUpgradeHours)
+        REFLECT_FIELD(followerDownedRecoveryHours)
     REFLECT_END()
 };
 
