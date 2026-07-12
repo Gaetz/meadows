@@ -196,6 +196,23 @@ void updateCritWindow(CombatState& combat, AbilitySystem& system, f32 dt,
     }
 }
 
+bool updateDowned(CombatState& combat, AbilitySystem& system, f32 dt,
+                  const GameplayTagRegistry& tags) {
+    // Only ticks while the actor is actually down — the tag is the state
+    // (granted by updateLifeState under Follower.Protected), the timer is
+    // only its bleedout clock.
+    const auto downed = tags.find("State.Downed");
+    if (!downed || !system.tags.has(*downed) || combat.downedSeconds <= 0.0f) {
+        return false;
+    }
+    combat.downedSeconds -= dt;
+    if (combat.downedSeconds <= 0.0f) {
+        combat.downedSeconds = 0.0f;
+        return true; // bleedout due — the caller rolls the outcome
+    }
+    return false;
+}
+
 void updateShaken(CombatState& combat, AbilitySystem& system, f32 dt,
                   const GameplayTagRegistry& tags) {
     if (combat.shakenSeconds <= 0.0f) {

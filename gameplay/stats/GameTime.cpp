@@ -16,6 +16,15 @@ bool isDead(const GameTimeTickArgs& a) {
     return dead && a.system.tags.has(*dead);
 }
 
+// FOLLOWERS É3: a DOWNED actor must not regenerate either — health
+// creeping over 0 would silently stand him back up mid-bleedout (the
+// revive/bleedout paths own the exit from Downed, exactly like the
+// corpse-regen gate above owns Dead).
+bool isDowned(const GameTimeTickArgs& a) {
+    const auto downed = a.tags.find("State.Downed");
+    return downed && a.system.tags.has(*downed);
+}
+
 } // namespace
 
 bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
@@ -113,7 +122,8 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
     // the corpse, and — worse — that regenerated BASE health persists, so a slain
     // NPC reloads ALIVE across a cell unload/reload (the save layer re-derives the
     // life state from health, §5/§6). This is the gate `isDead` was written for.
-    if (!isDead(a)) {
+    // É3: Downed gates it too — no silent self-revive mid-bleedout.
+    if (!isDead(a) && !isDowned(a)) {
         a.vitals.health  = std::min(cur("maxHealth"),  a.vitals.health  + cur("healthRegen")  * gdt);
         a.vitals.essence = std::min(cur("maxEssence"), a.vitals.essence + cur("essenceRegen") * gdt);
     }

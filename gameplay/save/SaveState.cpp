@@ -252,6 +252,14 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
         // §6: currents are DERIVED — seed from the restored bases, fold
         // the restored modifiers back in, then re-derive the life state
         // (a dead actor must load dead; initializeActorStats cleared it).
+        // FOLLOWERS É3: re-mirror Follower.Protected from the restored
+        // FollowerState BEFORE the life-state derive — a follower saved
+        // DOWNED (0 HP under protection) must reload downed, not dead.
+        // Owned tags are not captured state; this is their re-derivation.
+        if (entity.has<FollowerState>()) {
+            syncStateTag(system, registry, "Follower.Protected",
+                         entity.get<FollowerState>().followerActive);
+        }
         const auto& set = entity.get<AttributeSet>();
         initializeCurrent(system, set);
         recomputeCurrent(set, system);

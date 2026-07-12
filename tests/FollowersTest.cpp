@@ -3,13 +3,22 @@
 #include "data/forms/CoreForms.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
+#include "engine/core/Rng.hpp"
 #include "engine/ecs/World.hpp"
 #include "game/SaveGame.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/actors/ActorState.hpp"
 #include "gameplay/actors/Followers.hpp"
+#include "gameplay/combat/Combat.hpp"       // updateLifeState (É3 routing)
+#include "gameplay/condition/Condition.hpp" // the recruit-refusal gate (É3)
 #include "gameplay/save/SaveForms.hpp"
+#include "gameplay/stats/CharacterStats.hpp" // recomputeStats
+#include "gameplay/stats/CoreAttributes.hpp"
+#include "gameplay/stats/Damage.hpp"   // CombatState, updateDowned (É3)
+#include "gameplay/stats/GameTime.hpp" // tickGameTime (the regen gate, É3)
+#include "gameplay/stats/Injuries.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
+#include "gameplay/stats/Survival.hpp"
 #include "world/scene/Components.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/streaming/CellLoader.hpp"
@@ -343,4 +352,272 @@ TEST_CASE("followers É2: death disengages whoever targeted the dead") {
     CHECK(gameplay::disengageOnDeath(kHostile, kHostile));
     CHECK_FALSE(gameplay::disengageOnDeath(kHostile, kHostile2));
     CHECK_FALSE(gameplay::disengageOnDeath(kHostile, 0)); // no target: no-op
+}
+
+// --- É3: à terre, soin, survie, rotation ------------------------------------
+// The sim rules (docs/CHANTIER-FOLLOWERS.md É3): 0 HP under the
+// Follower.Protected mirror routes to State.Downed in updateLifeState (the
+// ONE life-state write point); the CombatState bleedout clock (the stagger
+// timer pattern) resolves through resolveBleedout on the seeded engine RNG.
+
+namespace {
+
+using gameplay::attr;
+using gameplay::currentValueOf;
+
+// The TypedDamageTest fixture, plus the É3 vocabulary.
+struct DownFixture {
+    gameplay::CoreAttributes core;
+    gameplay::AttributeSet vitals;
+    gameplay::AbilitySystem system;
+    gameplay::CombatState combat;
+    gameplay::Injuries injuries;
+    gameplay::DerivedStatRegistry derived;
+    gameplay::GameplayTagRegistry tags;
+    gameplay::GameplayTag dead {};
+    gameplay::GameplayTag downed {};
+    gameplay::GameplayTag shield {};
+    gameplay::StatsTuningForm tuning;
+
+    DownFixture() {
+        core.strength = core.constitution = core.grace = 20.0f;
+        core.dexterity = core.alacrity = core.perception = 20.0f;
+        core.charisma = core.ego = core.insight = 20.0f;
+        gameplay::registerCoreDerivedStats(derived);
+        dead = tags.registerTag("State.Dead");
+        downed = tags.registerTag("State.Downed");
+        shield = tags.registerTag("Follower.Protected");
+        gameplay::registerStatsRuntimeTags(tags); // injury + survival tags
+        recompute();
+        vitals.health = currentValueOf(system, attr("maxHealth"));
+        recompute();
+    }
+    void recompute() {
+        gameplay::recomputeStats(core, vitals, system, derived, nullptr);
+    }
+    // A lethal blow's terminal write (the §2.9 execution-calc idiom).
+    void hitToZero() {
+        vitals.health = 0.0f;
+        recompute();
+        gameplay::updateLifeState(system, tags);
+    }
+    void protect() { system.tags.add(shield, tags); }
+    gameplay::StatBlock block() {
+        return gameplay::StatBlock { core, vitals, system, combat };
+    }
+};
+
+// The first seed whose opening chance(p) draw comes out `wanted`.
+u64 seedWithFirstDraw(f64 p, bool wanted) {
+    u64 seed = 1;
+    while (core::Rng { seed }.chance(p) != wanted) {
+        ++seed;
+    }
+    return seed;
+}
+
+} // namespace
+
+TEST_CASE("followers É3: 0 HP routes to Downed under protection, Dead otherwise") {
+    // The bandit path is untouched: no protection tag, he just dies.
+    DownFixture bandit;
+    bandit.hitToZero();
+    CHECK(bandit.system.tags.has(bandit.dead));
+    CHECK_FALSE(bandit.system.tags.has(bandit.downed));
+
+    // The active follower goes DOWN instead — not dead, revivable.
+    DownFixture ally;
+    ally.protect();
+    ally.hitToZero();
+    CHECK(ally.system.tags.has(ally.downed));
+    CHECK_FALSE(ally.system.tags.has(ally.dead));
+
+    // A heal above 0 stands him up (the revive path: applyEffect on his
+    // stats, then the life-state derive drops the tag).
+    ally.vitals.health = 10.0f;
+    ally.recompute();
+    gameplay::updateLifeState(ally.system, ally.tags);
+    CHECK_FALSE(ally.system.tags.has(ally.downed));
+    CHECK_FALSE(ally.system.tags.has(ally.dead));
+}
+
+TEST_CASE("followers É3: updateDowned counts the bleedout window ONCE") {
+    DownFixture f;
+    f.protect();
+    f.hitToZero();
+    REQUIRE(f.system.tags.has(f.downed));
+    f.combat.downedSeconds = 2.0f;
+    CHECK_FALSE(gameplay::updateDowned(f.combat, f.system, 1.0f, f.tags));
+    CHECK(f.combat.downedSeconds == doctest::Approx(1.0f));
+    CHECK(gameplay::updateDowned(f.combat, f.system, 1.5f, f.tags));
+    CHECK(f.combat.downedSeconds == doctest::Approx(0.0f));
+    // No re-fire once resolved, and the tag stays (the RESOLUTION owns it).
+    CHECK_FALSE(gameplay::updateDowned(f.combat, f.system, 1.0f, f.tags));
+    CHECK(f.system.tags.has(f.downed));
+
+    // Without the tag the clock never ticks (a standing actor).
+    DownFixture up;
+    up.combat.downedSeconds = 2.0f;
+    CHECK_FALSE(gameplay::updateDowned(up.combat, up.system, 1.0f, up.tags));
+    CHECK(up.combat.downedSeconds == doctest::Approx(2.0f));
+}
+
+TEST_CASE("followers É3: the aggravation roll is gated, seeded, distributed") {
+    const gameplay::StatsTuningForm tuning; // death 0.15, worse 0.4
+    // Unwounded: no aggravation AND no draw (the stream stays untouched).
+    core::Rng gated { 42 };
+    const u64 before = gated.rawState();
+    CHECK(gameplay::rollAggravation(false, gated, tuning) ==
+          gameplay::Aggravation::None);
+    CHECK(gated.rawState() == before);
+
+    // Determinism (§8): the same seed replays the same outcomes.
+    core::Rng a { 7 };
+    core::Rng b { 7 };
+    for (int i = 0; i < 64; ++i) {
+        CHECK(gameplay::rollAggravation(true, a, tuning) ==
+              gameplay::rollAggravation(true, b, tuning));
+    }
+
+    // Distribution: death ~15%, worse ~(0.85 x 0.4) = 34% of 10000 draws.
+    core::Rng rng { 1234 };
+    int deaths = 0;
+    int worse = 0;
+    for (int i = 0; i < 10000; ++i) {
+        switch (gameplay::rollAggravation(true, rng, tuning)) {
+        case gameplay::Aggravation::Death:       ++deaths; break;
+        case gameplay::Aggravation::WorseInjury: ++worse; break;
+        case gameplay::Aggravation::None:        break;
+        }
+    }
+    CHECK(deaths > 1200);
+    CHECK(deaths < 1800);
+    CHECK(worse > 3000);
+    CHECK(worse < 3800);
+}
+
+TEST_CASE("followers É3: bleedout recovery — 1 HP, a fresh wound, back up") {
+    DownFixture f;
+    f.protect();
+    f.hitToZero();
+    // A seed whose opening death roll (chance downedDeathChance) fails.
+    core::Rng rng { seedWithFirstDraw(f.tuning.downedDeathChance, false) };
+    gameplay::StatBlock block = f.block();
+    const gameplay::BleedoutResult result = gameplay::resolveBleedout(
+        block, f.injuries, rng, f.tags, f.tuning);
+    CHECK(result.outcome == gameplay::BleedoutOutcome::Recovered);
+    CHECK_FALSE(result.aggravated); // no prior wound: no aggravation draw
+    CHECK(f.vitals.health == doctest::Approx(1.0f));
+    CHECK_FALSE(f.system.tags.has(f.downed));
+    CHECK_FALSE(f.system.tags.has(f.dead));
+    REQUIRE(f.injuries.list.size() == 1); // the down always costs a wound
+    CHECK(f.injuries.list[0].severity == 0);
+    // A light first wound does not force convalescence — the rotation
+    // milestone needs a SECOND fall for that.
+    CHECK_FALSE(gameplay::needsConvalescence(f.injuries));
+}
+
+TEST_CASE("followers É3: bleedout death — the roll kills through the normal path") {
+    DownFixture f;
+    f.protect();
+    f.hitToZero();
+    core::Rng rng { seedWithFirstDraw(f.tuning.downedDeathChance, true) };
+    gameplay::StatBlock block = f.block();
+    const gameplay::BleedoutResult result = gameplay::resolveBleedout(
+        block, f.injuries, rng, f.tags, f.tuning);
+    CHECK(result.outcome == gameplay::BleedoutOutcome::Died);
+    CHECK(f.system.tags.has(f.dead));         // the normal OnDeath flow
+    CHECK_FALSE(f.system.tags.has(f.downed)); // a corpse is not downed
+    CHECK_FALSE(f.system.tags.has(f.shield)); // protection lifted
+}
+
+TEST_CASE("followers É3: a wound on a wounded body can aggravate") {
+    DownFixture f;
+    f.protect();
+    f.hitToZero();
+    gameplay::addInjury(f.injuries, gameplay::InjuryType::Cut,
+                        gameplay::BodyPart::Torso); // already wounded
+    // Seed: death roll fails, aggravation-death fails, worse-injury hits.
+    u64 seed = 1;
+    for (;; ++seed) {
+        core::Rng probe { seed };
+        if (!probe.chance(f.tuning.downedDeathChance) &&
+            !probe.chance(f.tuning.aggravationDeathChance) &&
+            probe.chance(f.tuning.aggravationWorseChance)) {
+            break;
+        }
+    }
+    core::Rng rng { seed };
+    gameplay::StatBlock block = f.block();
+    const gameplay::BleedoutResult result = gameplay::resolveBleedout(
+        block, f.injuries, rng, f.tags, f.tuning);
+    CHECK(result.outcome == gameplay::BleedoutOutcome::Recovered);
+    CHECK(result.aggravated);
+    REQUIRE(f.injuries.list.size() == 1);   // same type+part stacks severity
+    CHECK(f.injuries.list[0].severity == 2); // 0 -> +1 (fresh) -> +1 (worse)
+    // Past the severity bar: he demands rest.
+    CHECK(gameplay::needsConvalescence(f.injuries));
+    CHECK(gameplay::convalescenceHours(f.injuries) == doctest::Approx(48.0f));
+}
+
+TEST_CASE("followers É3: convalescence stamps and the recruit-refusal gate") {
+    gameplay::FollowerState state;
+    CHECK_FALSE(gameplay::followerConvalescent(state, 0.0)); // never downed
+    state.followerDownedRecoveryHours = 100.0f;
+    CHECK(gameplay::followerConvalescent(state, 50.0));
+    CHECK_FALSE(gameplay::followerConvalescent(state, 100.0)); // healed up
+
+    // The dialogue gate is the É1 mirror-tag + the Phase-4 evaluator, as-is.
+    gameplay::GameplayTagRegistry tags;
+    const gameplay::GameplayTag tag =
+        tags.registerTag("Follower.Convalescent");
+    gameplay::AbilitySystem player;
+    player.tags.add(tag, tags);
+    gameplay::EvalContext context;
+    context.abilitySystem = &player;
+    context.tags = &tags;
+    gameplay::ConditionForm clause;
+    clause.kind = "HasTag";
+    clause.tag = "Follower.Convalescent";
+    CHECK(gameplay::evaluateClause(clause, context)); // the refusal shows
+    clause.negate = true;
+    CHECK_FALSE(gameplay::evaluateClause(clause, context)); // recruit hides
+}
+
+TEST_CASE("followers É3: survival extremes drive resonance, never health") {
+    // The 'survival floor' is STRUCTURAL: hunger/thirst feed amber and
+    // sleep feeds garnet (energy/essence maxima) — no survival path
+    // touches health or onyx, so survival alone cannot kill a follower.
+    DownFixture f;
+    gameplay::Survival survival;
+    survival.hunger = survival.thirst = survival.sleep = 0.0f;
+    gameplay::updateSurvivalEffects(survival, f.system, f.vitals, f.tags,
+                                    f.tuning);
+    for (const gameplay::ActiveEffect& active : f.system.activeEffects) {
+        const bool resonanceOnly = active.attribute == attr("amber") ||
+                                   active.attribute == attr("garnet");
+        CHECK(resonanceOnly);
+    }
+    f.recompute();
+    gameplay::updateLifeState(f.system, f.tags);
+    CHECK(f.vitals.health > 0.0f);
+    CHECK_FALSE(f.system.tags.has(f.dead));
+}
+
+TEST_CASE("followers É3: no health regen while downed") {
+    DownFixture f;
+    f.protect();
+    f.hitToZero();
+    REQUIRE(f.system.tags.has(f.downed));
+    gameplay::StatusBuildup buildup;
+    gameplay::Resonance resonance;
+    gameplay::ResonanceDecays decays;
+    gameplay::Survival survival;
+    gameplay::GameTimeTickArgs args { f.core,    f.vitals,  f.system,
+                                      f.combat,  buildup,   survival,
+                                      f.injuries, resonance, decays,
+                                      f.derived, f.tags,    f.tuning };
+    const gameplay::StatModifiers mods;
+    gameplay::tickGameTime(args, 3600.0, mods); // one game-hour
+    CHECK(f.vitals.health == doctest::Approx(0.0f)); // no silent self-revive
 }

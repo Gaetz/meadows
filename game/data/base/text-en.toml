@@ -1045,3 +1045,66 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'ui.map.interior'
     text = 'You are inside — the map shows the world above.'
+
+[[records]]
+form = '3d027de9-c5f3-41ac-b5e8-1093ea815f60'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.heal'
+    text = '[E] Heal {} (potion)'
+
+[[records]]
+form = '3f29d4fb-348f-4b77-b263-0b9d3f038d59'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.heal.name'
+    text = 'your ally'
+
+[[records]]
+form = '11a1b688-8cb6-4546-9791-84da6daf3bfd'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.noPotion'
+    text = 'You carry nothing that can heal.'
+
+[[records]]
+form = 'b925076c-0b5a-40f9-97a7-1b4719b07fb2'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.revived'
+    text = '{} is back on his feet.'
+
+[[records]]
+form = 'ab6d43cd-02f5-4ce9-9b0b-0c5b9953ba01'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.died'
+    text = '{} has succumbed to his wounds.'
+
+[[records]]
+form = '1e927989-f3c6-47f1-9e30-2e8177dbd5cc'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.convalescence'
+    text = '{} returns home to recover ({} h).'
+
+[[records]]
+form = 'edc6cce2-cf95-4e05-ab93-212196630e0b'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.status'
+    text = '{}: health {}%, {} injury(ies), rest {} h'

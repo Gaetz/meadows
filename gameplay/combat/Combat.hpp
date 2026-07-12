@@ -13,6 +13,11 @@ namespace gameplay {
 
 // Derived life-state change hook: grants `State.Dead` when current health has
 // reached 0, clears it when the actor is alive again. Idempotent.
+// FOLLOWERS É3: an actor holding `Follower.Protected` (the mirror of
+// FollowerState.followerActive) gets `State.Downed` at 0 HP instead —
+// out of the fight, revivable — and only the bleedout resolution
+// (gameplay::resolveBleedout) turns that into a real death. Without the
+// É3 tags registered the behavior is the exact historical one.
 void updateLifeState(AbilitySystem& system, const GameplayTagRegistry& registry);
 
 // An attack = activate an ability from caster onto target, then refresh the

@@ -1,13 +1,20 @@
 #pragma once
 
+#include <functional>
+
 #include "engine/core/Defines.hpp"
 #include "engine/ecs/World.hpp" // ecs::Entity, ecs::World
 
+namespace core {
+class Rng;
+}
 namespace data {
 class FormDatabase;
+class TextTable;
 }
 namespace gameplay {
 struct Event;
+struct GameClock;
 class GameplayTagRegistry;
 struct StatsTuningForm;
 }
@@ -37,6 +44,11 @@ struct FollowerContext {
     PendingSaveLayer& pendingSave;   // the chantier-5 persistence contract
     ecs::Entity playerEntity;
     NpcDirector& npcDirector;        // the live Npc records (teleport/path)
+    // É3 additions:
+    gameplay::GameClock& gameClock;  // convalescence stamps (game-hours)
+    core::Rng& rng;                  // bleedout/aggravation rolls (§8 seeded)
+    const data::TextTable* texts { nullptr }; // toast lines (loc keys)
+    std::function<void(str line)> say;        // HUD toast (may be empty)
 };
 
 // Recruit/dismiss + the party teleports (FOLLOWERS É1). The persistence is
@@ -91,6 +103,35 @@ public:
     // too-far case): grounded next to `anchor`, path cleared.
     static void teleportNear(const Vec3& anchor,
                              const render::TerrainParams& terrain, Npc& npc);
+
+    // ---- É3: downed / revive / convalescence / consultation ---------------
+    // Per frame (after the director's update): mirrors Follower.Protected
+    // onto each follower's OWN tags (the syncStateTag idiom — what routes
+    // 0 HP to Downed in updateLifeState), ticks the bleedout clock
+    // (gameplay::updateDowned) and resolves timeouts through
+    // gameplay::resolveBleedout: real death, or recovery-with-injury —
+    // and, past the severity bar, CONVALESCENCE: the É1 dismiss walks him
+    // home and followerDownedRecoveryHours stamps his unavailability.
+    // Returns true when the NPC list needs a refresh (a dismiss to a
+    // non-resident home despawns the entity).
+    bool updateDowned(const FollowerContext& ctx, f32 dt);
+
+    // [E] on a downed ally: the useConsumable path re-aimed at HIM — the
+    // first health-restoring ConsumableForm in the PLAYER's bag is
+    // consumed and its own EffectForm applies to the follower's stats
+    // (§2.9: healing through applyEffect); the life-state derive then
+    // drops State.Downed and he stands back up. No potion = a toast.
+    void reviveDownedAlly(const FollowerContext& ctx, ecs::Entity follower);
+
+    // Consultation dialogue ("Comment te sens-tu ?" -> OnFollowerStatus):
+    // v1 = a HUD toast (TextTable N-args) with health %, injury count and
+    // remaining recovery hours — no new screen.
+    void consultFollower(const FollowerContext& ctx, ecs::Entity follower);
+
+    // Mirror "any follower convalescent" onto the player's
+    // Follower.Convalescent tag (the Follower.Active precedent) so the
+    // recruit dialogue's refusal option gates on it.
+    void syncConvalescentTag(const FollowerContext& ctx);
 };
 
 } // namespace game

@@ -256,6 +256,20 @@ void NpcSpawner::refreshNpcs(
             }
         }
     }
+    // FOLLOWERS É3: same seeding for the downed mirror — a follower
+    // reloaded mid-bleedout (applySavedState re-derived State.Downed)
+    // must not fire a spurious downed edge that would RESET the saved
+    // bleedout clock (CombatState.downedSeconds is captured state).
+    if (const auto downedTag = ctx.gameTags.find("State.Downed")) {
+        for (auto& npcPtr : npcs) {
+            if (npcPtr->entity.is_alive() &&
+                npcPtr->entity.has<gameplay::AbilitySystem>()) {
+                npcPtr->downed =
+                    npcPtr->entity.get<gameplay::AbilitySystem>().tags.has(
+                        *downedTag);
+            }
+        }
+    }
     // R3: refresh the entity->Npc map (this is the only place npcs
     // changes; the uptr targets keep their addresses).
     npcByEntity.clear();

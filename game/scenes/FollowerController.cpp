@@ -2,16 +2,24 @@
 
 #include <glm/glm.hpp>
 
-#include "data/forms/CoreForms.hpp" // data::ActorForm
+#include "data/forms/CoreForms.hpp" // data::ActorForm, ConsumableForm
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/LocForms.hpp" // data::TextTable (É3 toasts)
 #include "engine/core/Log.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
 #include "game/SaveGame.hpp"                        // PendingSaveLayer
 #include "game/scenes/NpcDirector.hpp"              // Npc, NpcDirector
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/GameplayEffects.hpp" // applyEffect (É3 revive)
 #include "gameplay/actors/ActorState.hpp" // gameplay::FollowerState
-#include "gameplay/actors/Followers.hpp"  // followTuning, adoptOnHit (É2)
+#include "gameplay/actors/Followers.hpp"  // followTuning, adoptOnHit (É2),
+                                          //   resolveBleedout (É3)
+#include "gameplay/combat/Combat.hpp"     // updateLifeState (É3 revive)
 #include "gameplay/event/EventBus.hpp"    // gameplay::Event (É2 aggro)
+#include "gameplay/inventory/Inventory.hpp" // the player's bag (É3 revive)
+#include "gameplay/stats/Damage.hpp"        // CombatState, updateDowned (É3)
+#include "gameplay/stats/GameClock.hpp"     // convalescence stamps (É3)
+#include "gameplay/stats/Injuries.hpp"      // Injuries (É3)
 #include "world/scene/Components.hpp"
 #include "world/streaming/CellLoader.hpp"
 #include "world/worldspace/WorldForms.hpp" // world::ReferenceForm
@@ -39,6 +47,19 @@ const data::ActorForm* followerActorForm(const FollowerContext& ctx,
     return actor->followerCategory.empty() ? nullptr : actor;
 }
 
+// The toast line, when the scene wired one (tests run without).
+void toast(const FollowerContext& ctx, str line) {
+    if (ctx.say && !line.empty()) {
+        ctx.say(std::move(line));
+    }
+}
+
+// The follower's display name for toasts (his ActorForm's, like the HUD).
+str followerDisplayName(const FollowerContext& ctx, ecs::Entity follower) {
+    const data::ActorForm* actor = followerActorForm(ctx, follower);
+    return actor ? actor->displayName : str { "?" };
+}
+
 } // namespace
 
 void FollowerController::recruit(const FollowerContext& ctx,
@@ -51,7 +72,22 @@ void FollowerController::recruit(const FollowerContext& ctx,
     if (state.followerActive) {
         return;
     }
+    // É3: a convalescent follower refuses (the dialogue's refusal option
+    // is the UX; this is the belt-and-braces code gate).
+    if (gameplay::followerConvalescent(state, ctx.gameClock.gameHours())) {
+        LOG_INFO("É3: recruit refused — '{}' is convalescent for {:.1f} h",
+                 actor->editorId,
+                 state.followerDownedRecoveryHours -
+                     ctx.gameClock.gameHours());
+        return;
+    }
     state.followerActive = true;
+    // É3: mirror the protection onto HIS tags right away — 0 HP routes
+    // to Downed from the very first hit (updateDowned re-syncs per frame).
+    if (follower.has<gameplay::AbilitySystem>()) {
+        gameplay::syncStateTag(follower.get_mut<gameplay::AbilitySystem>(),
+                               ctx.gameTags, "Follower.Protected", true);
+    }
     // The chantier-5 contract: the live entity joins the persistent set —
     // cell -> 0 like the player. captureEntity diffs the live RefId.cell
     // (now null) against the resolved ReferenceForm and writes the
@@ -80,6 +116,11 @@ void FollowerController::dismiss(const FollowerContext& ctx,
         return;
     }
     state.followerActive = false;
+    // É3: off duty = back to the mortal rules (bandit-identical deaths).
+    if (follower.has<gameplay::AbilitySystem>()) {
+        gameplay::syncStateTag(follower.get_mut<gameplay::AbilitySystem>(),
+                               ctx.gameTags, "Follower.Protected", false);
+    }
 
     // Home = the authored homeMarker reference; fallback: the authored
     // spawn reference itself (both are ReferenceForms — §5 records).
@@ -142,7 +183,8 @@ void FollowerController::repositionActiveFollowers(const FollowerContext& ctx,
         gameplay::followTuning(ctx.statsTuning);
     for (auto& npcPtr : ctx.npcDirector.npcs()) {
         Npc& npc = *npcPtr;
-        if (npc.dead || !npc.entity.is_alive() ||
+        // É3: a downed follower stays where he fell — no teleport.
+        if (npc.dead || npc.downed || !npc.entity.is_alive() ||
             !npc.entity.has<gameplay::FollowerState>() ||
             !npc.entity.get<gameplay::FollowerState>().followerActive) {
             continue;
@@ -221,20 +263,21 @@ void FollowerController::onHitTaken(const FollowerContext& ctx,
     }
     for (auto& npcPtr : ctx.npcDirector.npcs()) {
         Npc& npc = *npcPtr;
-        if (npc.dead || !npc.entity.is_alive()) {
+        // É3: the downed adopt nothing — they are out of the fight.
+        if (npc.dead || npc.downed || !npc.entity.is_alive()) {
             continue;
         }
         roles.self = npc.entity.id();
         roles.selfFollower = isActiveFollower(npc);
         roles.selfHostile = npc.hostile;
         // "Live target" = the adopted entity still stands (alive AND its
-        // director record — if it has one — isn't dead yet).
+        // director record — if it has one — isn't dead or downed yet).
         bool liveTarget = false;
         if (npc.combatTarget.id() != 0 && npc.combatTarget.is_alive()) {
             liveTarget = true;
             for (const auto& other : ctx.npcDirector.npcs()) {
                 if (other->entity.id() == npc.combatTarget.id()) {
-                    liveTarget = !other->dead;
+                    liveTarget = !other->dead && !other->downed;
                     break;
                 }
             }
@@ -262,6 +305,207 @@ void FollowerController::onDeath(const FollowerContext& ctx,
         if (gameplay::disengageOnDeath(dead, npcPtr->combatTarget.id())) {
             npcPtr->combatTarget = ecs::Entity {};
         }
+    }
+}
+
+// ---- É3: downed / revive / convalescence / consultation --------------------
+
+bool FollowerController::updateDowned(const FollowerContext& ctx, f32 dt) {
+    bool refreshNeeded = false;
+    const auto downedTag = ctx.gameTags.find("State.Downed");
+    for (auto& npcPtr : ctx.npcDirector.npcs()) {
+        Npc& npc = *npcPtr;
+        if (npc.dead || !npc.entity.is_alive() ||
+            !npc.entity.has<gameplay::FollowerState>() ||
+            !npc.entity.has<gameplay::AbilitySystem>()) {
+            continue;
+        }
+        auto& state = npc.entity.get_mut<gameplay::FollowerState>();
+        auto& system = npc.entity.get_mut<gameplay::AbilitySystem>();
+        // The routing mirror, re-synced every frame (F9 reloads drop
+        // owned tags): ONLY an active follower is protected — a bandit
+        // never carries the tag, so he still just dies (iso-behavior).
+        gameplay::syncStateTag(system, ctx.gameTags, "Follower.Protected",
+                               state.followerActive);
+        if (!npc.downed || !downedTag || !system.tags.has(*downedTag)) {
+            continue;
+        }
+        auto& combat = npc.entity.get_mut<gameplay::CombatState>();
+        if (combat.downedSeconds <= 0.0f) {
+            // Odd save / missed edge: re-arm rather than hang downed.
+            combat.downedSeconds = ctx.statsTuning.downedBleedoutSeconds;
+        }
+        if (!gameplay::updateDowned(combat, system, dt, ctx.gameTags)) {
+            continue;
+        }
+        // Bleedout due — resolve on the seeded engine RNG (§8).
+        gameplay::StatBlock block {
+            npc.entity.get_mut<gameplay::CoreAttributes>(),
+            npc.entity.get_mut<gameplay::AttributeSet>(), system, combat
+        };
+        auto& injuries = npc.entity.get_mut<gameplay::Injuries>();
+        const gameplay::BleedoutResult result = gameplay::resolveBleedout(
+            block, injuries, ctx.rng, ctx.gameTags, ctx.statsTuning);
+        const str name = followerDisplayName(ctx, npc.entity);
+        npc.downed = false;
+        npc.sitting = false;
+        if (result.outcome == gameplay::BleedoutOutcome::Died) {
+            // Real death: the protection is lifted, State.Dead is on —
+            // the director's next update mirrors npc.dead and fires the
+            // normal OnDeath edge (event, cue, death anim, lootable).
+            state.followerActive = false;
+            syncActiveTag(ctx);
+            if (ctx.texts) {
+                toast(ctx, ctx.texts->format("follower.died", name));
+            }
+            LOG_INFO("É3: {} bled out — real death (aggravation roll)",
+                     npc.editorId);
+            continue;
+        }
+        // Recovered at 1 HP with a fresh wound (aggravated if rolled).
+        LOG_INFO("É3: {} recovers at 1 HP with a {} wound", npc.editorId,
+                 result.aggravated ? "WORSENED" : "fresh");
+        if (gameplay::needsConvalescence(injuries)) {
+            // Wounded past the bar: he demands rest — the É1 dismiss
+            // walks him home; the game-hour stamp gates re-recruiting.
+            const f32 restHours = gameplay::convalescenceHours(injuries);
+            state.followerDownedRecoveryHours =
+                static_cast<f32>(ctx.gameClock.gameHours()) + restHours;
+            if (ctx.texts) {
+                toast(ctx, ctx.texts->format(
+                              "follower.convalescence",
+                              { std::string_view { name },
+                                std::to_string(static_cast<i32>(
+                                    restHours + 0.5f)) }));
+            }
+            LOG_INFO("É3: {} needs {:.0f} h of convalescence — dismissed "
+                     "home",
+                     npc.editorId, restHours);
+            ecs::Entity follower = npc.entity;
+            dismiss(ctx, follower); // may despawn npc.entity
+            refreshNeeded = true;   // the caller prunes the director list
+        } else if (ctx.texts) {
+            toast(ctx, ctx.texts->format("follower.revived", name));
+        }
+    }
+    syncConvalescentTag(ctx);
+    return refreshNeeded;
+}
+
+void FollowerController::reviveDownedAlly(const FollowerContext& ctx,
+                                          ecs::Entity follower) {
+    if (!follower.is_alive() || !follower.has<gameplay::AbilitySystem>() ||
+        !follower.has<gameplay::AttributeSet>()) {
+        return;
+    }
+    auto& system = follower.get_mut<gameplay::AbilitySystem>();
+    const auto downedTag = ctx.gameTags.find("State.Downed");
+    if (!downedTag || !system.tags.has(*downedTag)) {
+        return; // he already stood up (or was never down)
+    }
+    // The first health-restoring consumable in the PLAYER's bag — the
+    // UiRouter::useConsumable identification (a ConsumableForm whose
+    // EffectForm adds health), re-aimed at the follower.
+    const data::ConsumableForm* potion = nullptr;
+    const gameplay::EffectForm* heal = nullptr;
+    if (ctx.playerEntity.is_alive() &&
+        ctx.playerEntity.has<gameplay::Inventory>()) {
+        for (const gameplay::ItemStack& stack :
+             ctx.playerEntity.get<gameplay::Inventory>().items) {
+            if (stack.count <= 0) {
+                continue;
+            }
+            const auto* consumable =
+                ctx.forms.find<data::ConsumableForm>(stack.item);
+            if (!consumable || !consumable->effect.isValid()) {
+                continue;
+            }
+            const auto* effect =
+                ctx.forms.find<gameplay::EffectForm>(consumable->effect);
+            if (effect && effect->attribute == "health" &&
+                effect->op == "add" && effect->magnitude > 0.0f) {
+                potion = consumable;
+                heal = effect;
+                break;
+            }
+        }
+    }
+    if (!potion) {
+        if (ctx.texts) {
+            toast(ctx, ctx.texts->get("follower.noPotion"));
+        }
+        return;
+    }
+    gameplay::removeItem(ctx.playerEntity.get_mut<gameplay::Inventory>(),
+                         potion->id, 1);
+    // §2.9: the heal is the consumable's OWN GameplayEffect, applied to
+    // the FOLLOWER's stats — partial restoration is the potion's call.
+    gameplay::applyEffect(follower.get_mut<gameplay::AttributeSet>(), system,
+                          *heal, ctx.gameTags);
+    gameplay::recomputeCurrent(follower.get<gameplay::AttributeSet>(),
+                               system);
+    gameplay::updateLifeState(system, ctx.gameTags); // drops State.Downed
+    if (follower.has<gameplay::CombatState>()) {
+        follower.get_mut<gameplay::CombatState>().downedSeconds = 0.0f;
+    }
+    if (ctx.texts) {
+        toast(ctx, ctx.texts->format("follower.revived",
+                                     followerDisplayName(ctx, follower)));
+    }
+    LOG_INFO("É3: revived downed ally with '{}'", potion->editorId);
+}
+
+void FollowerController::consultFollower(const FollowerContext& ctx,
+                                         ecs::Entity follower) {
+    if (!follower.is_alive() || !follower.has<gameplay::AbilitySystem>() ||
+        !ctx.texts) {
+        return;
+    }
+    const auto& system = follower.get<gameplay::AbilitySystem>();
+    const f32 health =
+        gameplay::currentValueOf(system, gameplay::attr("health"));
+    const f32 maxHealth = glm::max(
+        gameplay::currentValueOf(system, gameplay::attr("maxHealth")), 1.0f);
+    const i32 pct = static_cast<i32>(
+        glm::clamp(100.0f * health / maxHealth, 0.0f, 100.0f));
+    u64 injuryCount = 0;
+    f32 restHours = 0.0f;
+    if (follower.has<gameplay::Injuries>()) {
+        const auto& injuries = follower.get<gameplay::Injuries>();
+        injuryCount = injuries.list.size();
+        restHours = gameplay::convalescenceHours(injuries);
+    }
+    toast(ctx, ctx.texts->format(
+                   "follower.status",
+                   { std::string_view {
+                         followerDisplayName(ctx, follower) },
+                     std::to_string(pct), std::to_string(injuryCount),
+                     std::to_string(
+                         static_cast<i32>(restHours + 0.5f)) }));
+}
+
+void FollowerController::syncConvalescentTag(const FollowerContext& ctx) {
+    // The Follower.Active precedent: conditions read PLAYER tags, so the
+    // recruit-refusal option gates on this mirror. V1 scope: the mirror
+    // is exact whenever the follower's cell is resident — which it always
+    // is when you are close enough to TALK to him.
+    if (!ctx.playerEntity.is_alive() ||
+        !ctx.playerEntity.has<gameplay::AbilitySystem>()) {
+        return;
+    }
+    const gameplay::GameplayTag tag =
+        ctx.gameTags.registerTag("Follower.Convalescent");
+    const f64 now = ctx.gameClock.gameHours();
+    bool any = false;
+    ctx.world.handle().each(
+        [&](flecs::entity, const gameplay::FollowerState& state) {
+            any = any || gameplay::followerConvalescent(state, now);
+        });
+    auto& sys = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
+    if (any && !sys.tags.has(tag)) {
+        sys.tags.add(tag, ctx.gameTags);
+    } else if (!any && sys.tags.has(tag)) {
+        sys.tags.remove(tag, ctx.gameTags);
     }
 }
 

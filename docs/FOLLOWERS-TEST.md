@@ -73,4 +73,33 @@ bandits attaquent, le garde/villageois vaquent).
 encore) ; pas d'IA d'archer follower ; le tag `Combat.FriendlyTrial`
 sur le joueur coupe l'adoption (pour les futures épreuves amicales).
 
+## É3 — À terre, soin, survie, rotation
+
+Tu démarres avec **2 Potions de soin** dans l'inventaire (loadout).
+
+**À tester (Aldric recruté, combat au camp) :**
+1. Laisse Aldric encaisser jusqu'à 0 PV → il tombe **à terre**
+   (posture assise v1 — pas d'anim agenouillé en stock), sort du
+   combat, les ennemis le LÂCHENT et se retournent vers toi.
+2. Approche-toi → prompt « [E] Soigner Aldric (potion) » → consomme
+   une potion, il se relève avec un partiel de vie et te resuit. Sans
+   potion : toast d'excuse.
+3. Ne le soigne PAS (~30 s à terre) → tirage seedé : soit il MEURT
+   pour de vrai (mort normale : loot, cadavre), soit il se relève à
+   1 PV avec une **blessure** (torse). Blessé une deuxième fois : le
+   tirage d'aggravation peut empirer la blessure ou le tuer.
+4. Blessé → il exige le repos : il rentre CHEZ LUI tout seul
+   (auto-renvoi) et refuse le re-recrutement (« Follower.Convalescent »
+   — l'option de dialogue le dit) tant que la guérison court.
+5. « Comment te sens-tu ? » dans son dialogue → toast avec vie %,
+   blessures, heures de repos restantes.
+6. La survie ne peut PAS le tuer (elle ne touche que la résonance —
+   prouvé par doctest, rien à voir de spécial en jeu).
+7. F5/F9 pendant qu'il est à terre → il RECHARGE à terre, chrono
+   intact.
+
+**Réserves :** visuel « à terre » = pose assise (l'anim viendra) ; le
+miroir Convalescent est exact quand sa cellule est résidente (le cas
+dès que tu peux lui parler).
+
 <!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->

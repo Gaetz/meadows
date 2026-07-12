@@ -92,6 +92,9 @@ struct SavedStatsForm : data::Form {
     f32 followerLastLevelSyncedFrom { 0.0f };
     f32 followerLastHomeUpgradeHours { 0.0f };
     f32 followerDownedRecoveryHours { 0.0f };
+    // FOLLOWERS É3 APPEND (ordinals stable): CombatState.downedSeconds —
+    // a downed follower reloads mid-bleedout, clock intact.
+    f32 downedSeconds { 0.0f };
 
     REFLECT_BEGIN(SavedStatsForm, data::Form)
         REFLECT_FIELD(parent)
@@ -147,6 +150,7 @@ struct SavedStatsForm : data::Form {
         REFLECT_FIELD(followerLastLevelSyncedFrom)
         REFLECT_FIELD(followerLastHomeUpgradeHours)
         REFLECT_FIELD(followerDownedRecoveryHours)
+        REFLECT_FIELD(downedSeconds)
     REFLECT_END()
 };
 

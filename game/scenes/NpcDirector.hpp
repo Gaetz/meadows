@@ -116,6 +116,11 @@ struct Npc {
     bool hostile { false }; // ActorTagForm child "Faction.Bandits"
     bool guard { false };   // D2: "Faction.VillageGuard" — hostile while Wanted
     bool dead { false };    // mirrors the GAS State.Dead tag
+    // FOLLOWERS É3: mirrors State.Downed (an active follower at 0 HP —
+    // kneeling, out of the fight, revivable). Same idiom as `dead` above:
+    // the director mirrors the tag each frame, everything game-side (the
+    // [E] prompt, combat targeting, the party frame) reads the bool.
+    bool downed { false };
     // P0 A3: mirrors "MeleeSwing in flight" for the State.Attacking anim
     // gate (same idiom as `sitting`/`dead` above — the tag-check callback
     // reads these, it never touches gameplay types).

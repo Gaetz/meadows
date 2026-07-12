@@ -814,3 +814,52 @@ type = 'LocStringForm'
 
     [records.fields]
     text = "Vous êtes à l'intérieur — la carte montre le monde du dehors."
+
+[[records]]
+form = '3d027de9-c5f3-41ac-b5e8-1093ea815f60'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = '[E] Soigner {} (potion)'
+
+[[records]]
+form = '3f29d4fb-348f-4b77-b263-0b9d3f038d59'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'votre allié'
+
+[[records]]
+form = '11a1b688-8cb6-4546-9791-84da6daf3bfd'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = "Vous n'avez aucun objet de soin."
+
+[[records]]
+form = 'b925076c-0b5a-40f9-97a7-1b4719b07fb2'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = '{} se relève.'
+
+[[records]]
+form = 'ab6d43cd-02f5-4ce9-9b0b-0c5b9953ba01'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = '{} a succombé à ses blessures.'
+
+[[records]]
+form = '1e927989-f3c6-47f1-9e30-2e8177dbd5cc'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = '{} rentre se soigner ({} h).'
+
+[[records]]
+form = 'edc6cce2-cf95-4e05-ab93-212196630e0b'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = '{} : santé {}%, {} blessure(s), repos {} h'

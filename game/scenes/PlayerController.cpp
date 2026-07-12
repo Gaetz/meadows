@@ -238,7 +238,9 @@ void PlayerController::updateSwing(f32 dt, const PlayerContext& ctx) {
                                             swingWeapon_->hitTolerance);
         for (auto& npcPtr : ctx.npcs) {
             Npc& npc = *npcPtr;
-            if (npc.dead || !npc.entity.is_alive()) {
+            // É3: a DOWNED ally is no target — the blade passes (revive
+            // him with [E] instead; aggravation is the bleedout's job).
+            if (npc.dead || npc.downed || !npc.entity.is_alive()) {
                 continue;
             }
             const Vec3 feet = npc.entity.get<world::Transform>().position;

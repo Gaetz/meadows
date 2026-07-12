@@ -115,3 +115,10 @@ ui.options.action.pause,Pause
 ui.map.title,Carte
 ui.map.close,Fermer
 ui.map.interior,Vous êtes à l'intérieur — la carte montre le monde du dehors.
+prompt.heal,[E] Soigner {} (potion)
+prompt.heal.name,votre allié
+follower.noPotion,Vous n'avez aucun objet de soin.
+follower.revived,{} se relève.
+follower.died,{} a succombé à ses blessures.
+follower.convalescence,{} rentre se soigner ({} h).
+follower.status,"{} : santé {}%, {} blessure(s), repos {} h"

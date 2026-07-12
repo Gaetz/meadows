@@ -85,6 +85,11 @@ struct CombatState {
     // `shakenSeconds` is the short accuracy debuff from a heavy posture hit.
     f32 critWindowSeconds { 0.0f };
     f32 shakenSeconds { 0.0f };
+    // FOLLOWERS É3 (APPENDED — ordinals stable): the bleedout window while
+    // State.Downed (an active follower at 0 HP goes DOWN, not dead — the
+    // updateLifeState routing). Counts down in updateDowned; the caller
+    // resolves the timeout (recover with an injury / real death roll).
+    f32 downedSeconds { 0.0f };
 
     REFLECT_BEGIN(CombatState, void)
         REFLECT_FIELD(posture)
@@ -93,6 +98,7 @@ struct CombatState {
         REFLECT_FIELD(restSeconds)
         REFLECT_FIELD(critWindowSeconds)
         REFLECT_FIELD(shakenSeconds)
+        REFLECT_FIELD(downedSeconds)
     REFLECT_END()
 };
 
@@ -131,6 +137,15 @@ void updateCritWindow(CombatState& combat, AbilitySystem& system, f32 dt,
 
 // Counts down the shaken debuff; drops State.Shaken when it elapses.
 void updateShaken(CombatState& combat, AbilitySystem& system, f32 dt,
+                  const GameplayTagRegistry& tags);
+
+// FOLLOWERS É3 — counts down the bleedout window while State.Downed is
+// held (the updateStagger timer pattern). Unlike the other timers it does
+// NOT drop the tag itself: it returns true ONCE when the window elapses
+// and the CALLER resolves the outcome (gameplay::resolveBleedout — a
+// recovery revives above 0 HP and updateLifeState drops the tag; a real
+// death lifts the protection and the same single write point kills).
+bool updateDowned(CombatState& combat, AbilitySystem& system, f32 dt,
                   const GameplayTagRegistry& tags);
 
 } // namespace gameplay

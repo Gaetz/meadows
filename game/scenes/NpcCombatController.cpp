@@ -88,7 +88,10 @@ bool NpcCombatController::update(
     if (npc.combatTarget.id() != 0) {
         const auto it = npcByEntity.find(npc.combatTarget.id());
         const Npc* targetNpc = it != npcByEntity.end() ? it->second : nullptr;
-        if (!npc.combatTarget.is_alive() || !targetNpc || targetNpc->dead) {
+        // É3: DOWNED reads as not-alive-for-combat — the attacker
+        // disengages instead of beating a kneeling ally/enemy.
+        if (!npc.combatTarget.is_alive() || !targetNpc || targetNpc->dead ||
+            targetNpc->downed) {
             npc.combatTarget = ecs::Entity {};
         }
     }
@@ -540,7 +543,8 @@ void NpcCombatController::updateSwing(
             npc.entity.has<gameplay::FollowerState>() &&
             npc.entity.get<gameplay::FollowerState>().followerActive;
         const bool defenderValid =
-            entityTarget ? (defenderNpc && !defenderNpc->dead)
+            entityTarget ? (defenderNpc && !defenderNpc->dead &&
+                            !defenderNpc->downed) // É3: blades skip the downed
                          : (!followerActive && ctx.player &&
                             ctx.playerEntity.is_alive() && !ctx.godMode);
         if (swing.phase == gameplay::SwingPhase::Active &&

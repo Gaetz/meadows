@@ -2076,7 +2076,114 @@ parent = "6a1dc0de-0000-4000-8000-00000000000c"
 speaker = "Aldric"
 text = "Entendu. Je retourne au village. Reviens me chercher quand tu veux."
 
-# Option 3: goodbye (no reply node -> the conversation ends).
+# --- FOLLOWERS É3: à terre, soin, convalescence ------------------------------
+# A downed follower ([E] Soigner) is revived with a health-restoring
+# consumable: the potion below is the ONE new item (its heal is an
+# ordinary instant EffectForm — §2.9, the useConsumable path re-aimed).
+# The recruit option gains a convalescence gate; a refusal option (same
+# question, inverted condition) carries Aldric's answer; a consultation
+# option fires OnFollowerStatus (v1 = HUD toast with his state).
+
+# The heal itself: +35 health, instant (clamped to max by the pipeline).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000010"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "HealPotionEffect"
+attribute = "health"
+op = "add"
+magnitude = 35.0
+duration = "instant"
+
+# The potion (category treatment); crate placeholder visual like the rest.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000011"
+type = "ConsumableForm"
+new = true
+[records.fields]
+editorId = "HealingPotion"
+displayName = "Potion de soin"
+category = "treatment"
+effect = "6a1dc0de-0000-4000-8000-000000000010"
+weight = 0.3
+model = "4d7a9b30-0000-4000-8000-0000000000a8"
+goldValue = 20
+
+# The player starts with two (the É3 milestone must be playable).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000012"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000a0"   # Player
+item = "6a1dc0de-0000-4000-8000-000000000011"     # HealingPotion
+count = 2
+
+# The recruit option also requires him NOT convalescent...
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000013"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000009"
+kind = "HasTag"
+tag = "Follower.Convalescent"
+negate = true
+
+# ...and the SAME question while he is: the refusal (inverted condition).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000014"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000008"
+speaker = "Player"
+text = "Voyagerons-nous ensemble ?"
+order = 1
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000015"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000014"
+kind = "HasTag"
+tag = "Follower.Convalescent"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000016"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000014"
+kind = "HasTag"
+tag = "Follower.Active"
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000017"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000014"
+speaker = "Aldric"
+text = "Pas encore, l'ami. Mes blessures doivent se refermer — laisse-moi me reposer quelques jours."
+
+# Consultation: his state (the scene answers with a toast — santé %,
+# blessures, heures de repos restantes).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000018"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000008"
+speaker = "Player"
+text = "Comment te sens-tu ?"
+event = "OnFollowerStatus"
+order = 3
+
+# Option 4: goodbye (no reply node -> the conversation ends).
 [[records]]
 form = "6a1dc0de-0000-4000-8000-00000000000f"
 type = "DialogueNodeForm"
@@ -2085,4 +2192,4 @@ new = true
 parent = "6a1dc0de-0000-4000-8000-000000000008"
 speaker = "Player"
 text = "Bonne route, Aldric."
-order = 3
+order = 4

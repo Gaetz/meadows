@@ -29,6 +29,9 @@ void registerCharacterRuntimeTags(GameplayTagRegistry& tags) {
     // idempotent, so scenes freely add their own vocabulary on top.
     for (const char* tag :
          { "State.Dead", "State.Staggered", "State.Paralyzed",
+           "State.Downed",       // FOLLOWERS É3: 0 HP under protection
+           "Follower.Protected", // É3: the followerActive mirror routing
+                                 // 0 HP to Downed (updateLifeState)
            "State.Exhausted", "State.Shaken", "State.CriticalWeakness",
            "State.Blocking",  // P0 A5: the raised guard
            "State.Dodging",   // dodge i-frames (grantedTag — a tag the

@@ -332,6 +332,16 @@ void LandscapeScene::setupGameplay() {
                            followerController.onDeath(makeFollowerContext(),
                                                       event);
                        });
+    // FOLLOWERS É3: the consultation dialogue option ("Comment te
+    // sens-tu ?") rides the same dialogue-event channel as
+    // recruit/dismiss; v1 answer = a HUD toast (health %, injuries,
+    // remaining rest), no new screen.
+    eventBus.subscribe(gameplay::eventKind("OnFollowerStatus"),
+                       [this](const gameplay::Event&) {
+                           followerController.consultFollower(
+                               makeFollowerContext(),
+                               questDirector.dialoguePartner());
+                       });
     // P0 B2 hearing: any OnNoise event turns nearby perceivers'
     // heads — the noise position is the SOURCE entity's transform.
     eventBus.subscribe(
@@ -844,6 +854,13 @@ void LandscapeScene::update(f32 dt) {
     if (!simPaused) {
         core::FrameProbe::Scope probe { frameProbe, "npcs" };
         updateNpcs(dt);
+        // FOLLOWERS É3: after the tick mirrored State.Downed, run the
+        // follower half — protection sync, bleedout clock, resolution
+        // (recover / convalescence dismiss / real death). A dismiss to a
+        // non-resident home despawns the entity: prune the list NOW.
+        if (followerController.updateDowned(makeFollowerContext(), dt)) {
+            refreshNpcs(engine->getDevice());
+        }
         // P0 A7: arrows fly with the sim.
         projectileDirector.update(
             dt, ProjectileContext { physics.get(), npcDirector.npcs(),
@@ -1187,6 +1204,12 @@ InteractionContext LandscapeScene::makeInteractionContext() {
             }
             screenStack.show(screen);
             return true;
+        },
+        // É3: [E] on a downed follower — potion from the bag, his own
+        // heal effect through applyEffect (§2.9), back on his feet.
+        [this](ecs::Entity ally) {
+            followerController.reviveDownedAlly(makeFollowerContext(),
+                                                ally);
         },
         &actionMap, // C9.2: [E]/[X] through the action layer
     };
@@ -2267,6 +2290,12 @@ FollowerContext LandscapeScene::makeFollowerContext() {
         saveController.pending(),
         playerEntity,
         npcDirector,
+        // É3: bleedout/convalescence — game clock stamps, the seeded
+        // combat RNG (§8), and the HUD toast for the loc'd feedback.
+        gameClock,
+        combatRng,
+        &texts,
+        [this](str line) { interaction.say(std::move(line), 4.0f); },
     };
 }
 

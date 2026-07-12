@@ -7,6 +7,7 @@
 
 #include "data/forms/CoreForms.hpp"       // data::WeaponForm
 #include "data/forms/FormDatabase.hpp"
+#include "engine/core/Log.hpp"            // the É3 downed-edge trace
 #include "game/SceneSubmit.hpp"           // RenderSnapshot (U4-2b extract)
 #include "game/WeaponMeshes.hpp"          // A2: the visible sword guid
 #include "gameplay/ability/AbilitySystem.hpp"
@@ -15,6 +16,7 @@
 #include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions (C2)
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp" // Equipment (the weapon link)
+#include "gameplay/stats/Damage.hpp"    // CombatState (É3 bleedout clock)
 #include "gameplay/stats/GameClock.hpp"
 #include "world/ai/Perception.hpp"      // B2: hearing (onNoise)
 #include "world/scene/Components.hpp"
@@ -66,6 +68,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                                                    ctx.gameTags,
                                                    ctx.statsTuning };
     const auto deadTag = ctx.gameTags.find("State.Dead");
+    const auto downedTag = ctx.gameTags.find("State.Downed"); // É3
     // Sneak: a crouched player is HALF the target — sight range, the
     // LOS aim point and the blade capsule all read this one bool.
     bool playerSneaking = false;
@@ -117,6 +120,45 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             npc.anim->evaluate(npc.pose);
             anim::skinMatrices(npc.rig->skeleton, npc.pose, npc.palette);
             npc.pendingAnimEvents.clear(); // dead men fire no events
+            continue;
+        }
+
+        // FOLLOWERS É3: a DOWNED actor (an active follower at 0 HP — the
+        // Follower.Protected routing in updateLifeState) is out of the
+        // fight but not dead. The downed EDGE (the dead-edge idiom above)
+        // seeds the bleedout clock and announces it on the bus; the
+        // resolution (revive / recover-with-injury / real death) lives in
+        // FollowerController::updateDowned. Visual v1: the SIT anim gate
+        // stands in for a kneel (the villager graph has no kneel clip).
+        const bool wasDowned = npc.downed;
+        npc.downed = downedTag && npcSys.tags.has(*downedTag);
+        if (npc.downed && !wasDowned) {
+            npc.entity.get_mut<gameplay::CombatState>().downedSeconds =
+                ctx.statsTuning.downedBleedoutSeconds;
+            npc.combatTarget = ecs::Entity {};
+            ctx.eventBus.dispatch({ gameplay::eventKind("OnDowned"),
+                                    ecs::Entity {}, npc.entity,
+                                    npc.factionTag });
+            LOG_INFO("É3: {} is DOWN ({:.0f}s bleedout window)",
+                     npc.editorId, ctx.statsTuning.downedBleedoutSeconds);
+        } else if (!npc.downed && wasDowned) {
+            npc.sitting = false; // back up: drop the kneel-proxy pose
+        }
+        if (npc.downed) {
+            schedule_.releaseFurniture(ctx, npc);
+            npc.attacking = false;
+            npc.weaponDrawn = false;
+            npc.blocking = false;
+            npc.combatMove.reset();
+            npc.sitting = true; // v1 kneel = the sit gate (see above)
+            npc.path.clear();
+            npc.speed = 0.0f;
+            npc.anim->setParam("speed", 0.0f);
+            npc.anim->update(dt, 0.0f);
+            anim::bindPose(npc.rig->skeleton, npc.pose);
+            npc.anim->evaluate(npc.pose);
+            anim::skinMatrices(npc.rig->skeleton, npc.pose, npc.palette);
+            npc.pendingAnimEvents.clear();
             continue;
         }
 

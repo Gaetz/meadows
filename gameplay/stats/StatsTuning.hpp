@@ -164,6 +164,16 @@ struct StatsTuningForm : data::Form {
     f32 followCatchupSpeed { 1.25f };
     f32 followTeleportRadius { 40.0f };
     f32 followRepathSeconds { 0.75f };
+    // FOLLOWERS É3 (appended — ordinals stable): downed / bleedout /
+    // aggravation. An un-revived downed follower rolls at the end of the
+    // bleedout window: downedDeathChance = real death, otherwise he gets
+    // back up at 1 HP with a fresh injury. A wound landing on an
+    // already-wounded body rolls aggravation (worse injury / death) —
+    // seeded engine RNG (§8) in both cases.
+    f32 downedBleedoutSeconds { 30.0f };
+    f32 downedDeathChance { 0.35f };
+    f32 aggravationWorseChance { 0.4f };
+    f32 aggravationDeathChance { 0.15f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -256,6 +266,10 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(followCatchupSpeed)
         REFLECT_FIELD(followTeleportRadius)
         REFLECT_FIELD(followRepathSeconds)
+        REFLECT_FIELD(downedBleedoutSeconds)
+        REFLECT_FIELD(downedDeathChance)
+        REFLECT_FIELD(aggravationWorseChance)
+        REFLECT_FIELD(aggravationDeathChance)
     REFLECT_END()
 };
 

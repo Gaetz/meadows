@@ -56,6 +56,9 @@ struct InteractionContext {
         openDialogue;
     std::function<void(ecs::Entity container)> openContainer;
     std::function<bool(const str& screen)> tryShowScreen; // workstation UI
+    // FOLLOWERS É3: [E] on a DOWNED ally — the scene routes it to
+    // FollowerController::reviveDownedAlly (potion from the player's bag).
+    std::function<void(ecs::Entity ally)> reviveAlly;
     // C9.2: [E]/[X] fires through the action layer, never a raw key.
     const ActionMap* actions { nullptr };
 };
@@ -108,7 +111,8 @@ private:
     // Chantier 3 B1: GENERIC interaction (E) — doors travel, items land
     // in the inventory, actors talk, furniture rests (B7).
     enum class PromptKind : u8 { None, Door, Item, Actor, Corpse,
-                                 Furniture };
+                                 Furniture,
+                                 DownedAlly }; // É3: heal a downed follower
     ecs::Entity promptEntity {};
     PromptKind promptKind { PromptKind::None };
     str promptLabel_;

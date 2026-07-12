@@ -68,16 +68,21 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                              reach * (2.4f / 3.0f));
                 } else if (entity.has<world::ActorMarker>() &&
                            entity != ctx.playerEntity) {
-                    // Chantier 4 B3: a dead actor is searched, not talked to.
+                    // Chantier 4 B3: a dead actor is searched, not talked
+                    // to. É3: a DOWNED one (follower at 0 HP) is healed.
                     bool isDead = false;
+                    bool isDowned = false;
                     for (const auto& npc : ctx.npcs) {
                         if (npc->entity == entity) {
                             isDead = npc->dead;
+                            isDowned = npc->downed;
                             break;
                         }
                     }
                     consider(e, transform.position,
-                             isDead ? PromptKind::Corpse : PromptKind::Actor,
+                             isDowned ? PromptKind::DownedAlly
+                             : isDead ? PromptKind::Corpse
+                                      : PromptKind::Actor,
                              reach * (2.8f / 3.0f));
                 } else if (entity.has<world::FurnitureMarker>()) {
                     consider(e, transform.position, PromptKind::Furniture,
@@ -122,6 +127,9 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 break;
             case PromptKind::Furniture:
                 promptLabel_ = label("prompt.use", "prompt.use.name");
+                break;
+            case PromptKind::DownedAlly: // É3: "[E] Soigner {} (potion)"
+                promptLabel_ = label("prompt.heal", "prompt.heal.name");
                 break;
             default:
                 break;
@@ -181,6 +189,11 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
             }
             case PromptKind::Corpse:
                 ctx.openContainer(promptEntity);
+                break;
+            case PromptKind::DownedAlly: // É3: heal him back up
+                if (ctx.reviveAlly) {
+                    ctx.reviveAlly(promptEntity);
+                }
                 break;
             case PromptKind::Furniture: {
                 // B7-lite: beds sleep 8h, seats rest 1h — both through the

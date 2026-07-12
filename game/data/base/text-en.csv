@@ -115,3 +115,10 @@ ui.options.action.pause,Pause
 ui.map.title,Map
 ui.map.close,Close
 ui.map.interior,You are inside — the map shows the world above.
+prompt.heal,[E] Heal {} (potion)
+prompt.heal.name,your ally
+follower.noPotion,You carry nothing that can heal.
+follower.revived,{} is back on his feet.
+follower.died,{} has succumbed to his wounds.
+follower.convalescence,{} returns home to recover ({} h).
+follower.status,"{}: health {}%, {} injury(ies), rest {} h"
