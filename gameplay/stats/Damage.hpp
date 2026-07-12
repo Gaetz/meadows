@@ -30,6 +30,19 @@ enum class DamageType {
 // ("Cue.Hit." + name, the C2 cue emission points) and logs.
 const char* damageTypeName(DamageType type);
 
+class DerivedStatRegistry;
+struct StatBlock;
+struct StatModifiers;
+struct StatsTuningForm;
+class GameplayTagRegistry;
+
+// P0 D2a — an outright kill through the NORMAL pipeline (kill-z, future
+// scripted executions): a damage event no mitigation survives, so death
+// flows exactly like any other (life state, OnDeath, persistence).
+void killOutright(StatBlock& target, const GameplayTagRegistry& tags,
+                  const DerivedStatRegistry& derived,
+                  const StatsTuningForm& tuning);
+
 struct DamageChannel {
     DamageType type { DamageType::Slash };
     f32 amount { 0.0f };

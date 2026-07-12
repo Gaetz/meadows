@@ -19,10 +19,14 @@ namespace world {
 struct WorldspaceForm : data::Form {
     f32 cellSize { 16.0f };
     bool interior { false };
+    // Chantier P0 D2a (appended — ordinals stable): the hard death
+    // floor — an actor below it dies outright (dev: mort franche).
+    f32 killZ { -200.0f };
 
     REFLECT_BEGIN(WorldspaceForm, data::Form)
         REFLECT_FIELD(cellSize)
         REFLECT_FIELD(interior)
+        REFLECT_FIELD(killZ)
     REFLECT_END()
 };
 

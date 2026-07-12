@@ -25,6 +25,19 @@ const char* damageTypeName(DamageType type) {
     return "Unknown";
 }
 
+void killOutright(StatBlock& target, const GameplayTagRegistry& tags,
+                  const DerivedStatRegistry& derived,
+                  const StatsTuningForm& tuning) {
+    // Every physical channel at once, at a magnitude no armor stack can
+    // mitigate away — the normal pipeline does the rest (health to 0,
+    // life state, the caller's OnDeath machinery).
+    DamageEvent lethal;
+    lethal.channels = { { DamageType::Slash, 1.0e7f },
+                        { DamageType::Blunt, 1.0e7f },
+                        { DamageType::Pierce, 1.0e7f } };
+    applyDamage(target, lethal, tags, derived, nullptr, tuning);
+}
+
 namespace {
 bool isPhysical(DamageType type) {
     return type == DamageType::Slash || type == DamageType::Pierce ||

@@ -5,6 +5,7 @@
 #include "gameplay/stats/CharacterStats.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Damage.hpp"
+#include "gameplay/stats/StatsTuning.hpp"
 
 using namespace gameplay;
 
@@ -144,4 +145,14 @@ TEST_CASE("posture: a heavy non-breaking hit grants a short Shaken (C2)") {
 
     updateShaken(f.combat, f.system, 1.0f, f.tags);
     CHECK_FALSE(f.system.tags.has(*shaken));
+}
+
+TEST_CASE("killOutright ends anyone through the normal pipeline (D2a)") {
+    Fixture f;
+    StatBlock b = f.block();
+    killOutright(b, f.tags, f.derived, StatsTuningForm {});
+    CHECK(f.vitals.health == doctest::Approx(0.0f));
+    const auto dead = f.tags.find("State.Dead");
+    REQUIRE(dead.has_value());
+    CHECK(f.system.tags.has(*dead));
 }

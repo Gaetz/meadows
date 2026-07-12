@@ -723,6 +723,43 @@ void LandscapeScene::update(f32 dt) {
         // P0 C1: the particle sim advances with the world (paused sim =
         // frozen sparks, like everything else).
         fxSim.update(dt);
+        // P0 D2a: the kill-z floor (WorldspaceForm.killZ) — falling out
+        // of the world is an outright death through the NORMAL pipeline
+        // (dev: mort franche), never a teleport-back.
+        f32 killZ = -200.0f;
+        if (const data::Form* space = forms.get(activeWorldspace)) {
+            const reflect::TypeInfo* type = forms.typeOf(activeWorldspace);
+            if (type &&
+                type->isA(world::WorldspaceForm::staticTypeInfo().id)) {
+                killZ = static_cast<const world::WorldspaceForm*>(space)
+                            ->killZ;
+            }
+        }
+        const auto killBelow = [&](ecs::Entity entity, f32 y) {
+            if (y >= killZ || !entity.is_alive() ||
+                !entity.has<gameplay::AbilitySystem>()) {
+                return;
+            }
+            gameplay::StatBlock block {
+                entity.get_mut<gameplay::CoreAttributes>(),
+                entity.get_mut<gameplay::AttributeSet>(),
+                entity.get_mut<gameplay::AbilitySystem>(),
+                entity.get_mut<gameplay::CombatState>()
+            };
+            gameplay::killOutright(block, gameTags, derivedStats,
+                                   statsTuning);
+            LOG_INFO("D2a: an actor fell below killZ ({:.0f})", killZ);
+        };
+        if (mode == SceneMode::Play && playerController.body() &&
+            !sceneConsole.godMode()) {
+            killBelow(playerEntity, playerController.body()->position().y);
+        }
+        for (const auto& npcPtr : npcDirector.npcs()) {
+            if (!npcPtr->dead) {
+                killBelow(npcPtr->entity,
+                          npcPtr->entity.get<world::Transform>().position.y);
+            }
+        }
     }
     // P0 C2: shake decay + the transient camera offset (removed first
     // each frame, so paused sims and fly cameras never accumulate it).
