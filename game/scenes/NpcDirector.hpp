@@ -75,6 +75,9 @@ extern const Mat4 kSwordGuardGrip;
 // whose handles the snapshot carries, plus the CPU pose it extracts.
 struct Npc {
     ecs::Entity entity;
+    // The ActorForm's editorId — logs and debug views name the NPC
+    // instead of an entity id (dev report 2026-07-12).
+    str editorId;
     const RigData* rig { nullptr };
     anim::GraphDesc graph; // owns the clips; `anim` references it
     uptr<anim::GraphInstance> anim;
@@ -130,6 +133,11 @@ struct Npc {
     core::Guid brainKey;
     f32 brainTimer { 0.0f };
     std::optional<gameplay::CombatMove> brainMove;
+    // The move currently executed (nullopt out of combat) — the combat
+    // controller logs its TRANSITIONS with the health fraction, so "the
+    // archer flees" vs "the archer holds his bow band" is one log read
+    // (a strafe back to reach 12 looks like a flee from the outside).
+    std::optional<gameplay::CombatMove> combatMove;
 
     // Chantier P0 C4a: anim events land HERE from the GraphInstance sink
     // (set at creation, before any EventBus exists for the capture) and

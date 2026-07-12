@@ -140,6 +140,7 @@ void NpcSpawner::refreshNpcs(
 
             auto npc = std::make_unique<Npc>();
             npc->entity = entity;
+            npc->editorId = actor.editorId; // logs/debug name the NPC
             npc->rig = rig;
             npc->graph = std::move(*graph);
             npc->anim = std::make_unique<anim::GraphInstance>(npc->graph);

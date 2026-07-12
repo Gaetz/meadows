@@ -45,4 +45,14 @@ std::optional<CombatMove> parseCombatMove(std::string_view name) {
     return std::nullopt;
 }
 
+const char* combatMoveName(CombatMove move) {
+    switch (move) {
+    case CombatMove::Approach: return "approach";
+    case CombatMove::Strike:   return "strike";
+    case CombatMove::Strafe:   return "strafe";
+    case CombatMove::Flee:     return "flee";
+    }
+    return "?";
+}
+
 } // namespace gameplay

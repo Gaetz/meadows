@@ -38,4 +38,9 @@ CombatMove chooseCombatMove(const CombatSituation& situation);
 // (nil, a typo, an error) so the caller falls back to chooseCombatMove.
 std::optional<CombatMove> parseCombatMove(std::string_view name);
 
+// The move's name, parseCombatMove's vocabulary backward — the combat
+// intent log/view ("why is this NPC running?", dev report 2026-07-12:
+// a bow-band strafe reads as a flee without it).
+const char* combatMoveName(CombatMove move);
+
 } // namespace gameplay

@@ -146,6 +146,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
 
         if (!inCombat) {
             npc.blocking = false; // A5: the fight is over, lower the guard
+            npc.combatMove.reset(); // the intent trace re-logs next fight
         }
         // Drawn while fighting, back on the belt when it calms down —
         // extract reads this (the sim decides, the renderer shows).

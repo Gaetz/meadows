@@ -213,6 +213,17 @@ bool NpcCombatController::update(
                 move = *npc.brainMove;
             }
         }
+        // Intent trace (dev report 2026-07-12: a bow-band strafe reads
+        // as a flee from the outside) — one line per TRANSITION, with
+        // the health fraction so a real flee is self-explaining.
+        if (npc.combatMove != move) {
+            npc.combatMove = move;
+            npc.intentReason =
+                str { "combat: " } + gameplay::combatMoveName(move);
+            LOG_INFO("B3: {} -> {} (health {:.0f}%, dist {:.1f} m)",
+                     npc.editorId, gameplay::combatMoveName(move),
+                     situation.healthFraction * 100.0f, playerDistance);
+        }
         switch (move) {
         case gameplay::CombatMove::Strike:
             strike(ctx, npc, transform, npcWeapon, swinging, quiverDry,
