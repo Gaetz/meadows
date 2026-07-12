@@ -122,6 +122,8 @@ follower.revived,{} is back on his feet.
 follower.died,{} has succumbed to his wounds.
 follower.convalescence,{} returns home to recover ({} h).
 follower.status,"{}: health {}%, {} injury(ies), rest {} h"
+follower.perkLearned,You learn: {}.
+follower.perkNone,{} has nothing more to teach you.
 ui.recruit.title,Abilities
 ui.recruit.class,Class: {}
 ui.recruit.level,Level {}

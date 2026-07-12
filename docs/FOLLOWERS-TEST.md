@@ -149,4 +149,23 @@ niveau fait monter attaque/défense/posture mais PAS la vie max.
 Retirer `maxHealth` de leur ActorForm les fait passer à la formule
 d'attributs (~100 au niveau 1). Une ligne de data, à ton choix.
 
+## É6 — Pouvoirs spéciaux + perks réciproques
+
+**À tester :**
+1. Recrute Aldric, engage un combat → il déclenche son **Cri de
+   guerre** (log « É6: Aldric unleashes his power ») : buff +force
+   +régén posture 20 s, cooldown 45 s (coût énergie — les mêmes règles
+   GAS que toi).
+2. Recrute Maela, laisse ta vie passer sous 50 % en combat → elle te
+   **soigne** à distance (+30 vie, coût essence, cooldown 12 s) ; elle
+   soigne aussi Aldric et se tient à ~8 m du danger (style healer).
+3. **Apprends une perk** : affinité Aldric ≥ 25, place du village (la
+   zone calme — un volume trigger, extensible en data) → option
+   « Apprends-moi quelque chose. » → tu gagnes « Second souffle »
+   (+5 régén d'énergie, permanent, tag Perk.SecondSouffle). Hors de la
+   zone : la réplique t'indique de trouver un endroit tranquille.
+4. F5/F9 : les abilities accordées (pouvoirs ET perks) survivent —
+   c'était un trou identifié (grantedAbilities n'était pas sauvegardé).
+5. Une perk ne s'apprend qu'UNE fois (le tag dédoublonne).
+
 <!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->

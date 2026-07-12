@@ -2188,7 +2188,7 @@ event = "OnFollowerStatus"
 order = 3
 
 # Goodbye (no reply node -> the conversation ends). É4 moved it to order
-# 5 — the recruit preview (« Parle-moi de tes aptitudes ») takes slot 4.
+# 5 (preview takes 4); É6 moves it to 7 — the learn-a-perk pair takes 5/6.
 [[records]]
 form = "6a1dc0de-0000-4000-8000-00000000000f"
 type = "DialogueNodeForm"
@@ -2197,7 +2197,7 @@ new = true
 parent = "6a1dc0de-0000-4000-8000-000000000008"
 speaker = "Player"
 text = "Bonne route, Aldric."
-order = 5
+order = 7
 
 # --- FOLLOWERS É4: recrutement conditionnel + affinité -----------------------
 # Maela, the healer: THE conditions demo. Her recruit option requires
@@ -2222,6 +2222,7 @@ new = true
 [records.fields]
 editorId = "ClassHealer"
 displayName = "Guerisseuse"
+combatStyle = "healer"
 strengthBase = 5.0
 constitutionBase = 5.0
 graceBase = 7.0
@@ -2582,3 +2583,253 @@ new = true
 parent = "6a1dc0de-0000-4000-8000-00000000003f"
 speaker = "Aldric"
 text = "Regarde par toi-meme : une lame solide et un bras qui ne tremble pas."
+
+# --- FOLLOWERS É6: pouvoirs speciaux + perks reciproques ----------------------
+# Reuse map (§2.11): powers ARE AbilityForms activated by the NPC combat AI
+# (the P0 A3 tryActivate precedent), granted through the É0 ClassPerkForm
+# children; buffs/heals ride applyEffect (§2.9); the quiet place is a
+# TriggerForm volume (chantier « volumes de gameplay ») mirrored as the
+# player's Zone.Calme tag; the learn dialogue is a plain conditioned option
+# firing OnLearnPerk (the OpenBarter event channel); persistence = the É6
+# SavedAbilityForm child records (pattern B).
+
+# Cri de guerre (Aldric, ClassWarrior level 1): a self buff — +3 strength
+# (weapon scaling reads it) and +5 posture regen for 20 s. Costs energy,
+# 45 s cooldown; tryActivate's cost/cooldown effects gate the AI cadence.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000050"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "CriDeGuerreCost"
+attribute = "energy"
+op = "add"
+magnitude = -20.0
+duration = "instant"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000051"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "CriDeGuerreCooldown"
+duration = "duration"
+durationSeconds = 45.0
+grantedTag = "Cooldown.CriDeGuerre"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000052"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "CriDeGuerreBuff"
+attribute = "strength"
+op = "add"
+magnitude = 3.0
+attribute2 = "postureRegen"
+magnitude2 = 5.0
+duration = "duration"
+durationSeconds = 20.0
+grantedTag = "Status.CriDeGuerre"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000053"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "CriDeGuerre"
+cost = "6a1dc0de-0000-4000-8000-000000000050"
+cooldown = "6a1dc0de-0000-4000-8000-000000000051"
+effect = "6a1dc0de-0000-4000-8000-000000000052"
+blockedTag = "State.Exhausted"
+
+# The warrior class grants it at level 1 (É0 ClassPerkForm children).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000054"
+type = "ClassPerkForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000001"
+level = 1.0
+ability = "6a1dc0de-0000-4000-8000-000000000053"
+
+# Soin (Maela, ClassHealer level 1): +30 health, instant, cast ON an ally
+# (the healer AI picks the lowest party member below 50%). Costs essence
+# (strict policy by default), 12 s cooldown.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000055"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SoinCost"
+attribute = "essence"
+op = "add"
+magnitude = -15.0
+duration = "instant"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000056"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SoinCooldown"
+duration = "duration"
+durationSeconds = 12.0
+grantedTag = "Cooldown.Soin"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000057"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SoinHeal"
+attribute = "health"
+op = "add"
+magnitude = 30.0
+duration = "instant"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000058"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "Soin"
+cost = "6a1dc0de-0000-4000-8000-000000000055"
+cooldown = "6a1dc0de-0000-4000-8000-000000000056"
+effect = "6a1dc0de-0000-4000-8000-000000000057"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000059"
+type = "ClassPerkForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000020"
+level = 1.0
+ability = "6a1dc0de-0000-4000-8000-000000000058"
+
+# The quiet place: a trigger volume over the village square (it covers
+# Aldric's and Maela's home spots). Enter/leave fires OnQuietZone with
+# value 1/0; the scene mirrors it as the player's Zone.Calme tag. The tall
+# Y half-extent makes the terrain height irrelevant.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000005a"
+type = "TriggerForm"
+new = true
+[records.fields]
+editorId = "QuietZoneVillageSquare"
+halfExtents = [16.0, 50.0, 16.0]
+event = "OnQuietZone"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000005b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "6a1dc0de-0000-4000-8000-00000000005a"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [48.0, 0.0, 370.0]
+
+# Second souffle — the perk Aldric teaches (TaughtPerkForm child of his
+# ActorForm): a modest infinite +5 energy regen. The grantedTag is the É6
+# dedup discipline (FollowerForms.hpp): it marks the perk as learned,
+# survives the save (SavedEffectForm keeps it) and blocks a re-stack.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000005c"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SecondSouffle"
+attribute = "energyRegen"
+op = "add"
+magnitude = 5.0
+duration = "infinite"
+grantedTag = "Perk.SecondSouffle"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000005d"
+type = "TaughtPerkForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000003"
+displayName = "Second souffle"
+effect = "6a1dc0de-0000-4000-8000-00000000005c"
+
+# The learn option (order 5): affinity >= 25 AND the quiet place. Fires
+# OnLearnPerk; the scene grants the first unlearned TaughtPerkForm.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000005e"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000008"
+speaker = "Player"
+text = "Apprends-moi quelque chose."
+event = "OnLearnPerk"
+order = 5
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000005f"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-00000000005e"
+kind = "FollowerAffinityAtLeast"
+value = 25.0
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000060"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-00000000005e"
+kind = "HasTag"
+tag = "Zone.Calme"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000061"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-00000000005e"
+speaker = "Aldric"
+text = "Assieds-toi, ecoute bien. Quand le souffle manque, laisse les epaules retomber et respire par le ventre. Voila mon second souffle."
+
+# The same question in the WRONG place (order 6, negated zone clause):
+# the doc's notification — the player learns WHERE to come back.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000062"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000008"
+speaker = "Player"
+text = "Apprends-moi quelque chose."
+order = 6
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000063"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000062"
+kind = "FollowerAffinityAtLeast"
+value = 25.0
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000064"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000062"
+kind = "HasTag"
+tag = "Zone.Calme"
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000065"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000062"
+speaker = "Aldric"
+text = "Pas ici, l'ami. Retrouvons le calme de la place du village et je te montrerai."

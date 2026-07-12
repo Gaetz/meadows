@@ -167,6 +167,17 @@ public:
     // recruit dialogue's refusal option gates on it.
     void syncConvalescentTag(const FollowerContext& ctx);
 
+    // ---- É6: the player learns a perk (réciproque) -------------------------
+    // Dialogue "OnLearnPerk" (« Apprends-moi quelque chose ») — the option
+    // itself is gated in DATA by ConditionForm children (affinity >= 25 +
+    // HasTag Zone.Calme, the quiet-place mirror; a sibling refusal with the
+    // negated zone clause carries the "not here" hint — the doc's
+    // notification). This handler resolves the PARTNER's TaughtPerkForm
+    // children and grants the FIRST unlearned one to the PLAYER through
+    // gameplay::grantPerk (§2.9: the effect path is applyEffect; dedup =
+    // the effect's grantedTag / the granted-ability list), then toasts.
+    void teachPerk(const FollowerContext& ctx, ecs::Entity follower);
+
 private:
     // ---- É5: classes, levels, evolution ----------------------------------
     // The rules are the pure gameplay layer (syncFollowerLevel /

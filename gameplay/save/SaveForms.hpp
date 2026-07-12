@@ -228,6 +228,22 @@ struct SavedInjuryForm : data::Form {
     REFLECT_END()
 };
 
+// One per granted ability (FOLLOWERS É6 — the identified gap: everything
+// else on the AbilitySystem persisted, grantedAbilities did not, so a
+// follower's special power and the player's learned perks vanished across
+// F5/F9). Pattern B child records like SavedItemForm above; applied on
+// load through grantAbility (idempotent — re-applying on top of a class
+// perk sync never duplicates).
+struct SavedAbilityForm : data::Form {
+    core::Guid parent;  // the actor's ReferenceForm
+    core::Guid ability; // the AbilityForm guid
+
+    REFLECT_BEGIN(SavedAbilityForm, data::Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(ability)
+    REFLECT_END()
+};
+
 // One per save: the world-level state (clock, worldspace, camera).
 struct WorldStateForm : data::Form {
     f64 gameSeconds { 0.0 };

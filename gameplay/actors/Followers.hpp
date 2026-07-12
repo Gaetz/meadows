@@ -6,6 +6,7 @@
 #include <glm/glm.hpp> // Vec3 by value (Defines only forward-declares glm)
 
 #include "engine/core/Defines.hpp"
+#include "engine/core/Guid.hpp"              // ability guids (É6 perks)
 #include "gameplay/ability/GameplayTags.hpp" // GameplayTag (É4 rule matching)
 
 // The follow decision (FOLLOWERS É1 — docs/CHANTIER-FOLLOWERS.md). Pure and
@@ -16,6 +17,9 @@
 
 namespace core {
 class Rng;
+}
+namespace data {
+class FormDatabase; // perk children lookups (É6)
 }
 
 namespace gameplay {
@@ -262,5 +266,58 @@ LevelSync syncFollowerLevel(f32 followerLevel, f32 lastSyncedFrom,
 // (the doc's implicit no-point case). Returns the canonical index.
 std::optional<u32> bonusAttribute(const CoreAttributes& player,
                                     const CoreAttributes& follower);
+
+// ---- É6: special powers, class perks, taught perks --------------------------
+// Reused systems (§2.11): perks and powers ARE the GAS (§6) — AbilityForm
+// granted through grantAbility (the NPC tryActivate precedent) and
+// EffectForm applied through applyEffect (§2.9, nothing else ever moves
+// an attribute); the perk tables are the É0 ClassPerkForm children and
+// the É6 TaughtPerkForm children (childrenOf pattern); persistence is the
+// É6 SavedAbilityForm child records (pattern B, the SavedItemForm mirror)
+// plus the effects the save already carried. All pure/headless, doctested.
+
+struct AttributeSet;
+struct AbilitySystem;
+struct ClassPerkForm;
+
+// Grants one perk's payload — ability and/or effect, either may be null.
+//   ability : grantAbility (idempotent — the É6 dedup).
+//   effect  : REQUIRES a grantedTag (the FollowerForms.hpp discipline).
+//             Tag already on the target -> AlreadyKnown (a re-sync or a
+//             reload never stacks the infinite modifier); no grantedTag
+//             -> Skipped with one warning (data bug, visible).
+// Granted = at least one payload newly landed.
+enum class PerkGrant : u8 { Granted, AlreadyKnown, Skipped };
+PerkGrant grantPerk(const data::FormDatabase& forms,
+                    const core::Guid& ability, const core::Guid& effect,
+                    AttributeSet& set, AbilitySystem& system,
+                    const GameplayTagRegistry& tags);
+
+// Applies every ClassPerkForm child of `classGuid` with perk.level <=
+// level through grantPerk. Idempotent by construction (grantAbility dedup
+// + the grantedTag discipline), so it runs at EVERY spawn exit (fresh,
+// pending, saved — old saves without ability rows still get their powers)
+// and again on each level-up. Returns how many perks newly granted.
+i32 syncClassPerks(const data::FormDatabase& forms,
+                   const core::Guid& classGuid, f32 level,
+                   AttributeSet& set, AbilitySystem& system,
+                   const GameplayTagRegistry& tags);
+
+// The follower's SPECIAL POWER among his granted abilities: the first one
+// that is not the shared attack ability (v1 — one power per follower; the
+// class perk grants it at level 1). Invalid guid = none.
+core::Guid pickPower(const vector<core::Guid>& granted,
+                     const core::Guid& attackAbility);
+
+// The healer's target pick (pure, order-independent): the ally with the
+// LOWEST health fraction strictly below `threshold`; ties break on the
+// smaller id so the unordered sweep stays deterministic (§8). 0 = nobody
+// needs healing. The caller filters the dead/downed (revive is its own
+// mechanic) and includes the player and the healer herself.
+struct AllyVitals {
+    u64 id { 0 };
+    f32 healthFraction { 1.0f };
+};
+u64 pickHealTarget(const vector<AllyVitals>& allies, f32 threshold);
 
 } // namespace gameplay

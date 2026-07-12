@@ -1,5 +1,7 @@
 #include "gameplay/ability/GameplayAbility.hpp"
 
+#include <algorithm>
+
 #include "data/forms/FormTypeRegistry.hpp"
 #include "gameplay/condition/Condition.hpp"
 
@@ -38,6 +40,14 @@ void registerGameplayFormTypes(data::FormTypeRegistry& registry) {
 }
 
 void grantAbility(AbilitySystem& system, const core::Guid& ability) {
+    // Idempotent (FOLLOWERS É6): perk syncs re-run at spawn, on level-up
+    // and after a load (SavedAbilityForm re-applies on top of a sync) — a
+    // duplicate grant must be a no-op, never a second entry.
+    if (std::find(system.grantedAbilities.begin(),
+                  system.grantedAbilities.end(),
+                  ability) != system.grantedAbilities.end()) {
+        return;
+    }
     system.grantedAbilities.push_back(ability);
 }
 

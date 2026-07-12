@@ -70,6 +70,14 @@ struct FollowerClassForm : data::Form {
 // A class perk unlocked at a level tier: CHILD record of the class (the
 // childrenOf pattern). Grants an ability and/or an infinite effect through
 // the existing GAS (§6) — either guid may be null.
+//
+// É6 DATA DISCIPLINE — perk `effect`s MUST carry a grantedTag. The sync
+// re-runs at spawn, on every level-up and after a load; the EffectForm's
+// own grantedTag is the dedup key ("already on the target -> skip") AND
+// the thing that makes the dedup survive saves for free (SavedEffectForm
+// persists the tag; restore re-adds it). An infinite perk effect WITHOUT
+// a grantedTag would stack on every sync — grantPerk skips it and warns.
+// The same discipline applies to TaughtPerkForm below.
 struct ClassPerkForm : data::Form {
     core::Guid parent; // FollowerClassForm
     f32 level { 1.0f };
@@ -106,6 +114,29 @@ struct AffinityRuleForm : data::Form {
         REFLECT_FIELD(sourcePlayer)
         REFLECT_FIELD(targetSelf)
         REFLECT_FIELD(delta)
+    REFLECT_END()
+};
+
+// FOLLOWERS É6 — a perk the PLAYER can learn from this follower (the
+// réciproque of docs/FOLLOWERS.md §3): CHILD record of the ActorForm
+// (childrenOf, like AffinityRuleForm above). The teaching rides the
+// existing dialogue machinery — a dialogue option gated by ConditionForm
+// children (affinity, the quiet-place zone tag) fires OnLearnPerk; the
+// scene resolves the PARTNER's TaughtPerkForm children and grants the
+// first unlearned one to the player (grantPerk — ability and/or effect,
+// same grantedTag dedup discipline as ClassPerkForm).
+struct TaughtPerkForm : data::Form {
+    core::Guid parent;  // the teaching follower's ActorForm
+    str displayName;    // the toast line names the perk
+    core::Guid ability; // AbilityForm granted to the player (or null)
+    core::Guid effect;  // EffectForm applied to the player (or null;
+                        //   infinite + grantedTag — the É6 discipline)
+
+    REFLECT_BEGIN(TaughtPerkForm, data::Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(displayName)
+        REFLECT_FIELD(ability)
+        REFLECT_FIELD(effect)
     REFLECT_END()
 };
 

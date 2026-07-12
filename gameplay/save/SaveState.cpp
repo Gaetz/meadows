@@ -5,6 +5,7 @@
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/GameplayAbility.hpp" // grantAbility (É6)
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/actors/ActorState.hpp"
@@ -27,6 +28,7 @@ constexpr core::Guid kSavedEffectNs { 0x5344454646454354ull, 0x0000000000000001u
 constexpr core::Guid kSavedStatsNs  { 0x5344535441545321ull, 0x0000000000000002ull };
 constexpr core::Guid kSavedItemNs   { 0x53444954454d2121ull, 0x0000000000000003ull };
 constexpr core::Guid kSavedInjuryNs { 0x5344494e4a555259ull, 0x0000000000000004ull };
+constexpr core::Guid kSavedAbilityNs { 0x534441424c545921ull, 0x0000000000000005ull };
 
 // Copies a component's fields into the SavedStatsForm (capture) or back
 // (apply) when the entity carries it.
@@ -149,6 +151,22 @@ vector<data::Record> captureActor(ecs::Entity entity,
             entity.get<AbilitySystem>(), refGuid, registry);
         records.insert(records.end(), effectRecords.begin(),
                        effectRecords.end());
+        // FOLLOWERS É6: the granted abilities (the one AbilitySystem piece
+        // the save didn't carry). Sorted by guid: deterministic identities
+        // and diffs (§8 — the SavedItemForm idiom); grant ORDER is not
+        // load-bearing (pickPower reads "first non-attack", and the class
+        // perk sync re-derives the set anyway).
+        vector<core::Guid> granted = entity.get<AbilitySystem>().grantedAbilities;
+        std::sort(granted.begin(), granted.end());
+        for (const core::Guid& ability : granted) {
+            SavedAbilityForm row;
+            row.parent = refGuid;
+            row.ability = ability;
+            records.push_back(createRecord(
+                row, core::Guid::combine(
+                         core::Guid::combine(kSavedAbilityNs, refGuid),
+                         ability)));
+        }
     }
 
     if (entity.has<Inventory>()) {
@@ -207,6 +225,9 @@ SavedActorRecords savedRecordsFor(const data::FormDatabase& forms,
     data::childrenOf<SavedInjuryForm>(
         forms, refGuid,
         [&](const SavedInjuryForm& form) { saved.injuries.push_back(&form); });
+    data::childrenOf<SavedAbilityForm>( // FOLLOWERS É6
+        forms, refGuid,
+        [&](const SavedAbilityForm& form) { saved.abilities.push_back(&form); });
     return saved;
 }
 
@@ -246,6 +267,12 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
 
     if (entity.has<AbilitySystem>() && entity.has<AttributeSet>()) {
         auto& system = entity.get_mut<AbilitySystem>();
+        // FOLLOWERS É6: re-grant the saved abilities (grantAbility is
+        // idempotent — a class-perk sync running before or after this
+        // never doubles an entry).
+        for (const SavedAbilityForm* row : saved.abilities) {
+            grantAbility(system, row->ability);
+        }
         for (const SavedEffectForm* row : saved.effects) {
             restoreActiveEffect(system, *row, registry);
         }

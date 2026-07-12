@@ -9,6 +9,7 @@ void registerSaveFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<SavedEffectForm>();
     registry.registerFormType<SavedItemForm>();
     registry.registerFormType<SavedInjuryForm>();
+    registry.registerFormType<SavedAbilityForm>(); // FOLLOWERS É6
     registry.registerFormType<WorldStateForm>();
 }
 

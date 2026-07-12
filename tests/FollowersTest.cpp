@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <algorithm> // std::find (É6 granted-abilities round-trip)
+
 #include "data/forms/CoreForms.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
@@ -7,6 +9,7 @@
 #include "engine/ecs/World.hpp"
 #include "game/SaveGame.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/ability/GameplayAbility.hpp" // grantAbility, form types (É6)
 #include "gameplay/actors/ActorState.hpp"
 #include "gameplay/actors/FollowerForms.hpp" // AffinityRuleForm (É4)
 #include "gameplay/actors/Followers.hpp"
@@ -990,4 +993,253 @@ TEST_CASE("followers É5: curves at spawn, DELTA on level-up — bonuses and vit
     f.recompute();
     CHECK(f.vitals.health == doctest::Approx(12.0f));
     CHECK(currentValueOf(f.system, attr("maxHealth")) > maxBefore);
+}
+
+// ---- É6: powers, class perks, taught perks -----------------------------------
+
+namespace {
+
+Guid guid(const char* text) { return *Guid::fromString(text); }
+
+// A minimal É6 data plugin: a class whose level-1 perk grants an ability
+// and whose level-3 perk applies a tagged infinite effect — plus one
+// DISCIPLINE-BREAKING perk effect (no grantedTag) that must be skipped.
+constexpr const char* kPerkPlugin = R"([plugin]
+id = "60000000-0000-4000-8000-000000000001"
+name = "perk-data"
+
+[[records]]
+form = "60000000-0000-4000-8000-000000000010"
+type = "FollowerClassForm"
+new = true
+[records.fields]
+editorId = "TestWarrior"
+combatStyle = "melee"
+
+[[records]]
+form = "60000000-0000-4000-8000-000000000011"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "TestPowerCooldown"
+duration = "duration"
+durationSeconds = 30.0
+grantedTag = "Cooldown.TestPower"
+
+[[records]]
+form = "60000000-0000-4000-8000-000000000012"
+type = "AbilityForm"
+new = true
+[records.fields]
+editorId = "TestPower"
+cooldown = "60000000-0000-4000-8000-000000000011"
+
+[[records]]
+form = "60000000-0000-4000-8000-000000000013"
+type = "ClassPerkForm"
+new = true
+[records.fields]
+parent = "60000000-0000-4000-8000-000000000010"
+level = 1.0
+ability = "60000000-0000-4000-8000-000000000012"
+
+[[records]]
+form = "60000000-0000-4000-8000-000000000014"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "TestPerkBuff"
+attribute = "energyRegen"
+op = "add"
+magnitude = 5.0
+duration = "infinite"
+grantedTag = "Perk.TestBuff"
+
+[[records]]
+form = "60000000-0000-4000-8000-000000000015"
+type = "ClassPerkForm"
+new = true
+[records.fields]
+parent = "60000000-0000-4000-8000-000000000010"
+level = 3.0
+effect = "60000000-0000-4000-8000-000000000014"
+
+[[records]]
+form = "60000000-0000-4000-8000-000000000016"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "TestUntaggedBuff"
+attribute = "energyRegen"
+op = "add"
+magnitude = 99.0
+duration = "infinite"
+
+[[records]]
+form = "60000000-0000-4000-8000-000000000017"
+type = "ClassPerkForm"
+new = true
+[records.fields]
+parent = "60000000-0000-4000-8000-000000000010"
+level = 1.0
+effect = "60000000-0000-4000-8000-000000000016"
+)";
+
+data::FormDatabase buildPerkDb(data::FormTypeRegistry& types) {
+    gameplay::registerFollowerFormTypes(types);
+    gameplay::registerGameplayFormTypes(types); // EffectForm, AbilityForm
+    const auto plugin = data::parsePluginToml(kPerkPlugin, types, "perks");
+    REQUIRE(plugin.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*plugin }, types, db);
+    return db;
+}
+
+} // namespace
+
+TEST_CASE("followers É6: syncClassPerks gates by level and never doubles") {
+    data::FormTypeRegistry types;
+    data::FormDatabase db = buildPerkDb(types);
+    gameplay::GameplayTagRegistry tags;
+    tags.registerTag("Perk.TestBuff");
+    tags.registerTag("Cooldown.TestPower");
+    const Guid classGuid = guid("60000000-0000-4000-8000-000000000010");
+    const Guid power = guid("60000000-0000-4000-8000-000000000012");
+
+    gameplay::AttributeSet set;
+    gameplay::AbilitySystem system;
+    gameplay::initializeCurrent(system, set);
+
+    // Level 1: the ability perk lands; the level-3 effect stays locked;
+    // the DISCIPLINE-BREAKING untagged effect is skipped (never applied).
+    CHECK(gameplay::syncClassPerks(db, classGuid, 1.0f, set, system, tags) ==
+          1);
+    REQUIRE(system.grantedAbilities.size() == 1);
+    CHECK(system.grantedAbilities[0] == power);
+    CHECK(system.activeEffects.empty());
+
+    // Re-sync at the same level: fully idempotent.
+    CHECK(gameplay::syncClassPerks(db, classGuid, 1.0f, set, system, tags) ==
+          0);
+    CHECK(system.grantedAbilities.size() == 1);
+    CHECK(system.activeEffects.empty());
+
+    // Level 3 (a level-up re-sync): the tagged infinite effect lands ONCE.
+    CHECK(gameplay::syncClassPerks(db, classGuid, 3.0f, set, system, tags) ==
+          1);
+    CHECK(system.grantedAbilities.size() == 1);
+    CHECK(system.activeEffects.size() == 1);
+    CHECK(system.tags.has(*tags.find("Perk.TestBuff")));
+
+    // Re-sync: the grantedTag dedup blocks the re-stack (§2.9 stays sane).
+    CHECK(gameplay::syncClassPerks(db, classGuid, 3.0f, set, system, tags) ==
+          0);
+    CHECK(system.activeEffects.size() == 1);
+}
+
+TEST_CASE("followers É6: grantPerk — the learned-perk dedup (grantedTag)") {
+    data::FormTypeRegistry types;
+    data::FormDatabase db = buildPerkDb(types);
+    gameplay::GameplayTagRegistry tags;
+    tags.registerTag("Perk.TestBuff");
+
+    gameplay::AttributeSet set;
+    gameplay::AbilitySystem system;
+    gameplay::initializeCurrent(system, set);
+    const Guid effect = guid("60000000-0000-4000-8000-000000000014");
+
+    // First lesson: learned. Second: already known — nothing stacks.
+    CHECK(gameplay::grantPerk(db, Guid {}, effect, set, system, tags) ==
+          gameplay::PerkGrant::Granted);
+    CHECK(gameplay::grantPerk(db, Guid {}, effect, set, system, tags) ==
+          gameplay::PerkGrant::AlreadyKnown);
+    CHECK(system.activeEffects.size() == 1);
+
+    // An untagged effect is a data bug: skipped, applied zero times.
+    const Guid untagged = guid("60000000-0000-4000-8000-000000000016");
+    CHECK(gameplay::grantPerk(db, Guid {}, untagged, set, system, tags) ==
+          gameplay::PerkGrant::Skipped);
+    CHECK(system.activeEffects.size() == 1);
+}
+
+TEST_CASE("followers É6: grantedAbilities round-trip the save layer") {
+    gameplay::GameplayTagRegistry tags;
+    tags.registerTag("State.Dead");
+    const Guid ref = guid("60000000-0000-4000-8000-0000000000aa");
+    const Guid attack = guid("60000000-0000-4000-8000-0000000000ab");
+    const Guid power = guid("60000000-0000-4000-8000-0000000000ac");
+
+    ecs::World worldA;
+    gameplay::registerGameplayComponents(worldA);
+    ecs::Entity actorA = worldA.create();
+    actorA.set<gameplay::AttributeSet>({});
+    actorA.set<gameplay::AbilitySystem>({});
+    {
+        auto& system = actorA.get_mut<gameplay::AbilitySystem>();
+        gameplay::grantAbility(system, attack);
+        gameplay::grantAbility(system, power);
+        gameplay::grantAbility(system, power); // the É6 dedup: no double
+        REQUIRE(system.grantedAbilities.size() == 2);
+        gameplay::initializeCurrent(system,
+                                    actorA.get<gameplay::AttributeSet>());
+    }
+
+    // Capture -> resolve (a save is an ordinary plugin, §5) -> apply.
+    data::FormTypeRegistry types;
+    gameplay::registerSaveFormTypes(types);
+    data::Plugin save;
+    save.records = gameplay::captureActor(actorA, ref, tags);
+    data::FormDatabase db;
+    data::resolve({ &save }, types, db);
+
+    const auto saved = gameplay::savedRecordsFor(db, ref);
+    REQUIRE(saved.stats != nullptr);
+    REQUIRE(saved.abilities.size() == 2);
+
+    ecs::World worldB;
+    gameplay::registerGameplayComponents(worldB);
+    ecs::Entity actorB = worldB.create();
+    actorB.set<gameplay::AttributeSet>({});
+    actorB.set<gameplay::AbilitySystem>({});
+    gameplay::applySavedState(actorB, saved, tags);
+    {
+        const auto& granted =
+            actorB.get<gameplay::AbilitySystem>().grantedAbilities;
+        REQUIRE(granted.size() == 2);
+        CHECK(std::find(granted.begin(), granted.end(), attack) !=
+              granted.end());
+        CHECK(std::find(granted.begin(), granted.end(), power) !=
+              granted.end());
+    }
+    // Re-applying (a spawn-exit perk sync after the restore, a second
+    // load) never doubles — grantAbility is idempotent.
+    gameplay::applySavedState(actorB, saved, tags);
+    CHECK(actorB.get<gameplay::AbilitySystem>().grantedAbilities.size() ==
+          2);
+}
+
+TEST_CASE("followers É6: the healer's pick — lowest ally below the bar") {
+    using gameplay::pickHealTarget;
+    const f32 bar = 0.5f;
+    // Nobody below the threshold: keep the essence.
+    CHECK(pickHealTarget({ { 1, 1.0f }, { 2, 0.5f } }, bar) == 0);
+    // The LOWEST fraction wins, not the first found.
+    CHECK(pickHealTarget({ { 1, 0.45f }, { 2, 0.2f }, { 3, 0.3f } }, bar) ==
+          2);
+    // Order-independent (the unordered sweep): same verdict reversed.
+    CHECK(pickHealTarget({ { 3, 0.3f }, { 2, 0.2f }, { 1, 0.45f } }, bar) ==
+          2);
+    // Exact ties break on the smaller id (§8 determinism).
+    CHECK(pickHealTarget({ { 7, 0.25f }, { 4, 0.25f } }, bar) == 4);
+    // The threshold is strict: exactly-at-the-bar is healthy enough.
+    CHECK(pickHealTarget({ { 1, 0.5f } }, bar) == 0);
+}
+
+TEST_CASE("followers É6: pickPower skips the shared attack ability") {
+    const Guid attack = guid("60000000-0000-4000-8000-0000000000ab");
+    const Guid power = guid("60000000-0000-4000-8000-0000000000ac");
+    CHECK(gameplay::pickPower({}, attack) == Guid {});
+    CHECK(gameplay::pickPower({ attack }, attack) == Guid {});
+    CHECK(gameplay::pickPower({ attack, power }, attack) == power);
+    CHECK(gameplay::pickPower({ power, attack }, attack) == power);
 }

@@ -187,6 +187,15 @@ struct StatsTuningForm : data::Form {
     f32 agePhysicalPerYear { 0.008f };
     f32 ageMentalPerYear { 0.005f };
     f32 ageFloor { 0.5f };
+    // FOLLOWERS É6 (appended — ordinals stable): follower special powers.
+    // A follower in combat re-tries his power every retry window
+    // (tryActivate's own cooldown/cost effects gate the cadence — the
+    // timer only bounds the call rate); a "healer" heals the lowest ally
+    // strictly below the threshold and holds the preferred distance from
+    // its combat target instead of closing in.
+    f32 followerPowerRetrySeconds { 2.0f };
+    f32 followerHealThreshold { 0.5f };
+    f32 healerPreferredDistance { 8.0f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -288,6 +297,9 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(agePhysicalPerYear)
         REFLECT_FIELD(ageMentalPerYear)
         REFLECT_FIELD(ageFloor)
+        REFLECT_FIELD(followerPowerRetrySeconds)
+        REFLECT_FIELD(followerHealThreshold)
+        REFLECT_FIELD(healerPreferredDistance)
     REFLECT_END()
 };
 

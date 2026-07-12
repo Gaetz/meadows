@@ -19,6 +19,7 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp" // attr, currentValueOf
 #include "gameplay/actors/ActorState.hpp"  // FollowerState (É2 defender gate)
+#include "gameplay/actors/Followers.hpp"   // pickPower, pickHealTarget (É6)
 #include "gameplay/ability/GameplayAbility.hpp" // tryActivate (P0 A3)
 #include "gameplay/combat/CombatAi.hpp"         // chooseCombatMove (B3)
 #include "gameplay/combat/MeleeStrike.hpp"      // the ONE strike resolution
@@ -66,6 +67,102 @@ void NpcCombatController::callForHelp(
         world::alertTo(ally->entity.get_mut<world::Perception>(),
                        targetPos);
         ally->sitting = false; // an alerted ally stands up
+    }
+}
+
+void NpcCombatController::tryUsePower(
+    f32 dt, const NpcContext& ctx, Npc& npc,
+    const std::unordered_map<u64, Npc*>& npcByEntity) {
+    npc.powerRetryTimer -= dt;
+    if (npc.powerRetryTimer > 0.0f) {
+        return;
+    }
+    if (!npc.entity.has<gameplay::FollowerState>() ||
+        !npc.entity.get<gameplay::FollowerState>().followerActive) {
+        return;
+    }
+    // The power = the first granted ability that isn't the shared attack
+    // (v1 — granted by the class's level-1 ClassPerkForm, persisted as
+    // SavedAbilityForm rows).
+    const core::Guid power = gameplay::pickPower(
+        npc.entity.get<gameplay::AbilitySystem>().grantedAbilities,
+        ctx.attackAbility ? ctx.attackAbility->id : core::Guid {});
+    if (!power.isValid()) {
+        return; // his class grants no power — nothing to retry
+    }
+    const auto* ability = ctx.forms.find<gameplay::AbilityForm>(power);
+    if (!ability) {
+        return;
+    }
+    // Bound the call rate; the REAL cadence gates are the ability's own
+    // cost/cooldown effects — tryActivate refuses on either (§6).
+    npc.powerRetryTimer = ctx.statsTuning.followerPowerRetrySeconds;
+    auto& casterSet = npc.entity.get_mut<gameplay::AttributeSet>();
+    auto& casterSystem = npc.entity.get_mut<gameplay::AbilitySystem>();
+    const gameplay::AbilityContext abilityCtx { ctx.forms, ctx.gameTags };
+    if (npc.combatStyle == "healer") {
+        // The party's vitals — player, active followers, herself. The
+        // downed/dead are excluded: reviving is the potion mechanic (É3),
+        // not a spell target.
+        const auto fractionOf = [](const gameplay::AbilitySystem& system) {
+            const f32 maxHealth = glm::max(
+                gameplay::currentValueOf(system,
+                                         gameplay::attr("maxHealth")),
+                1.0f);
+            return gameplay::currentValueOf(system,
+                                            gameplay::attr("health")) /
+                   maxHealth;
+        };
+        vector<gameplay::AllyVitals> allies;
+        if (ctx.playerEntity.is_alive() &&
+            ctx.playerEntity.has<gameplay::AbilitySystem>() &&
+            !ctx.godMode) {
+            allies.push_back(
+                { ctx.playerEntity.id(),
+                  fractionOf(
+                      ctx.playerEntity.get<gameplay::AbilitySystem>()) });
+        }
+        for (const auto& [id, ally] : npcByEntity) {
+            if (!ally || ally->dead || ally->downed ||
+                !ally->entity.is_alive() ||
+                !ally->entity.has<gameplay::FollowerState>() ||
+                !ally->entity.get<gameplay::FollowerState>()
+                     .followerActive) {
+                continue;
+            }
+            allies.push_back(
+                { id,
+                  fractionOf(
+                      ally->entity.get<gameplay::AbilitySystem>()) });
+        }
+        // Order-independent pick (lowest fraction, ties on id) — the
+        // unordered map sweep stays deterministic (§8).
+        const u64 pick = gameplay::pickHealTarget(
+            allies, ctx.statsTuning.followerHealThreshold);
+        if (pick == 0) {
+            return; // everyone healthy: keep the essence
+        }
+        const ecs::Entity target = pick == ctx.playerEntity.id()
+                                       ? ctx.playerEntity
+                                       : npcByEntity.at(pick)->entity;
+        auto& targetSet = target.get_mut<gameplay::AttributeSet>();
+        auto& targetSystem = target.get_mut<gameplay::AbilitySystem>();
+        if (gameplay::tryActivate(*ability, casterSet, casterSystem,
+                                  targetSet, targetSystem, abilityCtx)) {
+            // Instant heals write the BaseValue; re-derive the currents
+            // (the reviveDownedAlly idiom).
+            gameplay::recomputeCurrent(targetSet, targetSystem);
+            LOG_INFO("É6: {} casts her power on {} (heal)", npc.editorId,
+                     pick == ctx.playerEntity.id()
+                         ? str { "the player" }
+                         : npcByEntity.at(pick)->editorId);
+        }
+        return;
+    }
+    // Default / "melee": the self-buff on engaging (Aldric's war cry).
+    if (gameplay::tryActivate(*ability, casterSet, casterSystem, casterSet,
+                              casterSystem, abilityCtx)) {
+        LOG_INFO("É6: {} unleashes his power (self-buff)", npc.editorId);
     }
 }
 
@@ -185,6 +282,10 @@ bool NpcCombatController::update(
         schedule.releaseFurniture(ctx, npc); // D1: combat stands him up
         npc.attackCooldown -= dt;
         npc.repathTimer -= dt;
+        // FOLLOWERS É6: an active follower tries his special power (the
+        // class-perk ability) — self-buff or ally heal per combat style;
+        // tryActivate's cost/cooldown effects are the real gate.
+        tryUsePower(dt, ctx, npc, npcByEntity);
         // A7+: an archer's quiver is REAL — the loadout rolls his
         // arrows and each shot consumes one. Dry (or no Inventory
         // at all) = no ranged option: the reach collapses to melee
@@ -261,6 +362,28 @@ bool NpcCombatController::update(
                 move = *npc.brainMove;
             }
         }
+        // FOLLOWERS É6: a "healer" holds a SUPPORT band instead of
+        // closing in — Strike/Approach re-route onto the existing
+        // strafe/flee machinery around healerPreferredDistance (the
+        // archer-band idea; docs/FOLLOWERS.md §7 tactical roles). Only
+        // for an ACTIVE follower — a hostile with the style keeps the
+        // default brain (iso-behavior).
+        f32 strafeRange = attackRange;
+        f32 strafeReach = reach;
+        if (npc.combatStyle == "healer" &&
+            npc.entity.has<gameplay::FollowerState>() &&
+            npc.entity.get<gameplay::FollowerState>().followerActive) {
+            const f32 preferred =
+                glm::max(ctx.statsTuning.healerPreferredDistance, 2.0f);
+            strafeRange = preferred - 0.5f;
+            strafeReach = preferred - 0.5f;
+            if (move == gameplay::CombatMove::Strike ||
+                move == gameplay::CombatMove::Approach) {
+                move = targetDistance < preferred * 0.75f
+                           ? gameplay::CombatMove::Flee
+                           : gameplay::CombatMove::Strafe;
+            }
+        }
         // Intent trace (dev report 2026-07-12: a bow-band strafe reads
         // as a flee from the outside) — one line per TRANSITION, with
         // the health fraction so a real flee is self-explaining.
@@ -279,7 +402,7 @@ bool NpcCombatController::update(
             break;
         case gameplay::CombatMove::Strafe:
             strafe(dt, ctx, npc, transform, toTarget, targetDistance,
-                   attackRange, reach);
+                   strafeRange, strafeReach); // É6: the healer's wide band
             break;
         case gameplay::CombatMove::Flee:
             flee(dt, ctx, npc, transform, toTarget, targetDistance);

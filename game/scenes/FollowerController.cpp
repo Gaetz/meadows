@@ -128,6 +128,19 @@ void FollowerController::applyLevelSync(const FollowerContext& ctx,
     if (follower.has<gameplay::AttributeSet>()) {
         follower.get_mut<gameplay::AttributeSet>().level = sync.level;
     }
+    // É6: newly reached tiers unlock their class perks (idempotent —
+    // grantAbility dedup + the grantedTag discipline skip what he has).
+    if (follower.has<gameplay::AttributeSet>() &&
+        follower.has<gameplay::AbilitySystem>()) {
+        const i32 granted = gameplay::syncClassPerks(
+            ctx.forms, actor.followerClass, sync.level,
+            follower.get_mut<gameplay::AttributeSet>(),
+            follower.get_mut<gameplay::AbilitySystem>(), ctx.gameTags);
+        if (granted > 0) {
+            LOG_INFO("É6: {} unlocks {} class perk(s) at level {:.0f}",
+                     actor.editorId, granted, sync.level);
+        }
+    }
     LOG_INFO("É5: {} level {:.0f} -> {:.0f}{}", actor.editorId, fromLevel,
              sync.level, bonusText);
 }
@@ -721,6 +734,44 @@ void FollowerController::openRecruitPreview(const FollowerContext& ctx,
     }
     ui.setRows("recruit", std::move(rows));
     ctx.screenStack->show("recruit");
+}
+
+// ---- É6: the player learns a perk (réciproque) -------------------------------
+
+void FollowerController::teachPerk(const FollowerContext& ctx,
+                                   ecs::Entity follower) {
+    const data::ActorForm* actor = followerActorForm(ctx, follower);
+    if (!actor || !ctx.playerEntity.is_alive() ||
+        !ctx.playerEntity.has<gameplay::AttributeSet>() ||
+        !ctx.playerEntity.has<gameplay::AbilitySystem>()) {
+        return;
+    }
+    // His teachable perks (TaughtPerkForm children — childrenOf order =
+    // plugin order, deterministic §8): the first UNLEARNED one lands.
+    const vector<const gameplay::TaughtPerkForm*> perks =
+        data::collectChildren<gameplay::TaughtPerkForm>(ctx.forms,
+                                                        actor->id);
+    auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
+    auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
+    for (const gameplay::TaughtPerkForm* perk : perks) {
+        if (gameplay::grantPerk(ctx.forms, perk->ability, perk->effect, set,
+                                system,
+                                ctx.gameTags) != gameplay::PerkGrant::Granted) {
+            continue; // already known (or a skipped data bug): next one
+        }
+        if (ctx.texts) {
+            toast(ctx, ctx.texts->format("follower.perkLearned",
+                                         perk->displayName));
+        }
+        LOG_INFO("É6: the player learns '{}' from {}", perk->displayName,
+                 actor->editorId);
+        return;
+    }
+    // Nothing new to teach: say so (the option stays visible — v1).
+    if (ctx.texts) {
+        toast(ctx, ctx.texts->format("follower.perkNone",
+                                     actor->displayName));
+    }
 }
 
 void FollowerController::teleportNear(const Vec3& anchor,

@@ -107,6 +107,7 @@ private:
         vector<gameplay::SavedEffectForm> effects;
         vector<gameplay::SavedItemForm> items;
         vector<gameplay::SavedInjuryForm> injuries;
+        vector<gameplay::SavedAbilityForm> abilities; // FOLLOWERS É6
         bool materialized { false };
     };
     Entry& entryFor(const core::Guid& referenceId);

@@ -177,6 +177,14 @@ struct Npc {
     // Chantier 6 A1: the first Faction.* tag — what the OnDeath event carries
     // (quest kill filters, crime factions).
     gameplay::GameplayTag factionTag {};
+
+    // FOLLOWERS É6: the class's combat style ("melee", "healer"... —
+    // FollowerClassForm.combatStyle, resolved at build) drives how the
+    // follower USES his special power in combat; empty = default (self).
+    str combatStyle;
+    // Bounds the tryActivate call rate for the power (the ability's own
+    // cost/cooldown effects are the real gate — tryActivate refuses).
+    f32 powerRetryTimer { 0.0f };
 };
 
 // The scene systems the NPC subsystem touches, bundled so the whole NPC

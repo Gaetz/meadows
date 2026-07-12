@@ -241,6 +241,29 @@ void LandscapeScene::setupGameplay() {
     gameplay::registerCoreDerivedStats(derivedStats, statsTuning);
     gameTags = gameplay::GameplayTagRegistry {};
     gameplay::registerCharacterRuntimeTags(gameTags); // audit U5-3
+    // FOLLOWERS É6: register every DATA-declared effect/ability tag from
+    // the resolved DB (grantedTag/required/blocked — Status.CriDeGuerre,
+    // Cooldown.Soin, Perk.SecondSouffle...). Generalizes the "A3 cooldown
+    // lesson" (an unregistered grantedTag is granted silently as nothing):
+    // modded effects need zero C++ here.
+    data::forEach<gameplay::EffectForm>(
+        forms, [&](const gameplay::EffectForm& effect) {
+            for (const str& tag : { effect.grantedTag, effect.requiredTag,
+                                    effect.blockedTag }) {
+                if (!tag.empty()) {
+                    gameTags.registerTag(tag);
+                }
+            }
+        });
+    data::forEach<gameplay::AbilityForm>(
+        forms, [&](const gameplay::AbilityForm& ability) {
+            for (const str& tag : { ability.requiredTag,
+                                    ability.blockedTag }) {
+                if (!tag.empty()) {
+                    gameTags.registerTag(tag);
+                }
+            }
+        });
     sprintCostEffect =
         data::findByEditorId<gameplay::EffectForm>(forms, "SprintCost");
     swimCostEffect = // D2b: the swim drain (combat.toml)
@@ -353,6 +376,32 @@ void LandscapeScene::setupGameplay() {
                                makeFollowerContext(),
                                questDirector.dialoguePartner());
                        });
+    // FOLLOWERS É6: « Apprends-moi quelque chose » — the same
+    // dialogue-event channel; the partner's TaughtPerkForm children name
+    // what he can teach, the option's ConditionForm children (affinity +
+    // Zone.Calme) gate WHEN.
+    eventBus.subscribe(gameplay::eventKind("OnLearnPerk"),
+                       [this](const gameplay::Event&) {
+                           followerController.teachPerk(
+                               makeFollowerContext(),
+                               questDirector.dialoguePartner());
+                       });
+    // FOLLOWERS É6: the quiet-place condition. A TriggerForm volume fires
+    // OnQuietZone with value 1/0 on enter/leave (the trigger system's
+    // standing contract); this mirrors it onto the PLAYER's Zone.Calme
+    // tag (the Crime.Wanted syncTag pattern) so dialogue conditions can
+    // read it. Data adds more quiet zones with zero C++.
+    gameTags.registerTag("Zone.Calme");
+    eventBus.subscribe(
+        gameplay::eventKind("OnQuietZone"),
+        [this](const gameplay::Event& event) {
+            if (event.source == playerEntity && playerEntity.is_alive() &&
+                playerEntity.has<gameplay::AbilitySystem>()) {
+                gameplay::syncStateTag(
+                    playerEntity.get_mut<gameplay::AbilitySystem>(),
+                    gameTags, "Zone.Calme", event.value > 0.5f);
+            }
+        });
     // FOLLOWERS É4: affinity rules — ONE generic subscription (the 8.7c
     // subscribeAll precedent): AffinityRuleForm children of each follower's
     // ActorForm name the events they react to (open, data-defined
@@ -1914,15 +1963,43 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
     // cell loader respawns the resolved record). finalize runs AFTER
     // refreshNpcs grounds the actor's Y, so the captured position wins.
     saveController.pending().applyReferenceOverrides(entity, refGuid);
+    // FOLLOWERS É6: class perks land at EVERY spawn exit — fresh, pending,
+    // saved. Idempotent by construction (grantAbility dedup + the
+    // grantedTag discipline), so a saved actor whose SavedAbilityForm rows
+    // and effect rows were just restored gains nothing twice — and an
+    // actor saved BEFORE É6 still receives his power here.
+    const auto syncClassPerks = [&] {
+        if (!actorFormId.isValid() ||
+            !entity.has<gameplay::AttributeSet>() ||
+            !entity.has<gameplay::AbilitySystem>() ||
+            !entity.has<gameplay::FollowerState>()) {
+            return;
+        }
+        const auto* actor = forms.find<data::ActorForm>(actorFormId);
+        if (!actor || !actor->followerClass.isValid()) {
+            return;
+        }
+        const i32 granted = gameplay::syncClassPerks(
+            forms, actor->followerClass,
+            entity.get<gameplay::FollowerState>().followerLevel,
+            entity.get_mut<gameplay::AttributeSet>(),
+            entity.get_mut<gameplay::AbilitySystem>(), gameTags);
+        if (granted > 0) {
+            LOG_INFO("É6: '{}' granted {} class perk(s) at spawn",
+                     actor->editorId, granted);
+        }
+    };
     // The sentinel resolved at the top: a captured actor restores its
     // saved state instead of rolling a loadout (§8) or re-curving (É5).
     if (hasPendingState) {
         gameplay::applySavedState(
             entity, saveController.pending().actorState(refGuid), gameTags);
+        syncClassPerks();
         return true;
     }
     if (saved.stats) {
         gameplay::applySavedState(entity, saved, gameTags);
+        syncClassPerks();
         return true;
     }
     if (actorFormId.isValid()) {
@@ -1944,6 +2021,7 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
             }
         }
     }
+    syncClassPerks(); // É6: the fresh-actor exit
     return false;
 }
 

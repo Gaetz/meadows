@@ -11,6 +11,7 @@
 #include "game/scenes/NpcDirector.hpp"    // Npc, NpcContext
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/actors/CharacterForms.hpp" // gameplay::ActorTagForm
+#include "gameplay/actors/FollowerForms.hpp"  // FollowerClassForm (É6 style)
 #include "world/ai/Perception.hpp"      // B2: every built NPC perceives
 #include "world/scene/AnimBridge.hpp"     // resolveActorVisual, buildAnimGraph
 #include "world/scene/Components.hpp"
@@ -149,6 +150,15 @@ void NpcSpawner::refreshNpcs(
             npc->schedule = actor.schedule;
             npc->courage = actor.courage; // B3: flees below (1 - courage)
             npc->age = actor.age; // É5: per-tick age mods (0 = ageless)
+            // É6: the class combat style steers the special-power use
+            // (and the healer's stand-off band) in NpcCombatController.
+            if (actor.followerClass.isValid()) {
+                if (const auto* followerClass =
+                        forms.find<gameplay::FollowerClassForm>(
+                            actor.followerClass)) {
+                    npc->combatStyle = followerClass->combatStyle;
+                }
+            }
             // Brain script: Lua decides this actor's combat moves
             // (docs/BOSS-SCRIPTING.md); keyed by the FORM — every
             // instance shares one compiled decide.

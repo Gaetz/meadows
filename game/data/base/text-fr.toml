@@ -865,6 +865,20 @@ type = 'LocStringForm'
     text = '{} : santé {}%, {} blessure(s), repos {} h'
 
 [[records]]
+form = 'b0105d5a-abc0-4889-b22d-ec69413b6c18'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Vous apprenez : {}.'
+
+[[records]]
+form = '40d3cf18-13f6-4a02-9f64-f07e44158edf'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = "{} n'a plus rien à vous apprendre."
+
+[[records]]
 form = '836d02b7-daea-44af-b96b-37d3d223474e'
 type = 'LocStringForm'
 

@@ -5,8 +5,13 @@
 
 #include <glm/glm.hpp>
 
+#include "data/forms/FormDatabase.hpp"       // perk lookups (É6)
+#include "data/forms/FormQuery.hpp"          // childrenOf (É6)
+#include "engine/core/Log.hpp"               // the grantedTag discipline warn (É6)
 #include "engine/core/Rng.hpp"
 #include "gameplay/ability/DerivedStats.hpp" // StatModifiers, attr (É5)
+#include "gameplay/ability/GameplayAbility.hpp" // grantAbility (É6)
+#include "gameplay/ability/GameplayEffects.hpp" // applyEffect (É6, §2.9)
 #include "gameplay/actors/ActorState.hpp"    // FollowerState
 #include "gameplay/actors/FollowerForms.hpp" // AffinityRuleForm (É4),
                                              //   classAttributesAt (É5)
@@ -338,6 +343,105 @@ std::optional<u32> bonusAttribute(const CoreAttributes& player,
         }
     }
     return std::nullopt; // the follower matches him everywhere: no point
+}
+
+// ---- É6: special powers, class perks, taught perks --------------------------
+
+PerkGrant grantPerk(const data::FormDatabase& forms,
+                    const core::Guid& ability, const core::Guid& effect,
+                    AttributeSet& set, AbilitySystem& system,
+                    const GameplayTagRegistry& tags) {
+    bool granted = false;
+    bool known = false;
+    if (ability.isValid()) {
+        const bool already =
+            std::find(system.grantedAbilities.begin(),
+                      system.grantedAbilities.end(),
+                      ability) != system.grantedAbilities.end();
+        if (already) {
+            known = true;
+        } else {
+            grantAbility(system, ability);
+            granted = true;
+        }
+    }
+    if (effect.isValid()) {
+        if (const EffectForm* form = forms.find<EffectForm>(effect)) {
+            // The É6 discipline (FollowerForms.hpp): the effect's OWN
+            // grantedTag is the dedup key — and the save-proof one
+            // (SavedEffectForm persists it; restore re-adds the tag).
+            std::optional<GameplayTag> tag;
+            if (!form->grantedTag.empty()) {
+                tag = tags.find(form->grantedTag);
+            }
+            if (!tag) {
+                LOG_WARN("É6: perk effect '{}' has no (registered) "
+                         "grantedTag — skipped (it would stack on every "
+                         "sync; see FollowerForms.hpp)",
+                         form->editorId);
+            } else if (system.tags.has(*tag)) {
+                known = true;
+            } else if (applyEffect(set, system, *form, tags)) {
+                granted = true;
+            }
+        } else {
+            LOG_WARN("É6: perk effect {} not found", effect.toString());
+        }
+    }
+    if (granted) {
+        return PerkGrant::Granted;
+    }
+    return known ? PerkGrant::AlreadyKnown : PerkGrant::Skipped;
+}
+
+i32 syncClassPerks(const data::FormDatabase& forms,
+                   const core::Guid& classGuid, f32 level,
+                   AttributeSet& set, AbilitySystem& system,
+                   const GameplayTagRegistry& tags) {
+    if (!classGuid.isValid()) {
+        return 0;
+    }
+    i32 newlyGranted = 0;
+    // childrenOf iterates in plugin/creation order — deterministic (§8).
+    data::childrenOf<ClassPerkForm>(
+        forms, classGuid, [&](const ClassPerkForm& perk) {
+            if (perk.level > level) {
+                return; // not unlocked yet — the next level-up re-syncs
+            }
+            if (grantPerk(forms, perk.ability, perk.effect, set, system,
+                          tags) == PerkGrant::Granted) {
+                ++newlyGranted;
+            }
+        });
+    return newlyGranted;
+}
+
+core::Guid pickPower(const vector<core::Guid>& granted,
+                     const core::Guid& attackAbility) {
+    for (const core::Guid& ability : granted) {
+        if (ability.isValid() && ability != attackAbility) {
+            return ability;
+        }
+    }
+    return core::Guid {};
+}
+
+u64 pickHealTarget(const vector<AllyVitals>& allies, f32 threshold) {
+    u64 best = 0;
+    f32 bestFraction = threshold;
+    for (const AllyVitals& ally : allies) {
+        if (ally.id == 0 || ally.healthFraction >= threshold) {
+            continue;
+        }
+        // Strictly lower fraction wins; a tie keeps the smaller id, so
+        // the verdict is independent of the sweep order (§8).
+        if (best == 0 || ally.healthFraction < bestFraction ||
+            (ally.healthFraction == bestFraction && ally.id < best)) {
+            best = ally.id;
+            bestFraction = ally.healthFraction;
+        }
+    }
+    return best;
 }
 
 } // namespace gameplay

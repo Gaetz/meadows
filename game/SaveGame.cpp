@@ -267,6 +267,7 @@ gameplay::SavedActorRecords PendingSaveLayer::actorState(
         entry.effects.clear();
         entry.items.clear();
         entry.injuries.clear();
+        entry.abilities.clear(); // FOLLOWERS É6
         bool hasStats = false;
         for (const data::Record& record : entry.actorRecords) {
             if (record.typeId ==
@@ -290,6 +291,11 @@ gameplay::SavedActorRecords PendingSaveLayer::actorState(
                 entry.injuries.push_back(
                     gameplay::formFromRecord<gameplay::SavedInjuryForm>(
                         record));
+            } else if (record.typeId ==
+                       gameplay::SavedAbilityForm::staticTypeInfo().id) {
+                entry.abilities.push_back( // FOLLOWERS É6
+                    gameplay::formFromRecord<gameplay::SavedAbilityForm>(
+                        record));
             }
         }
         entry.materialized = hasStats;
@@ -304,6 +310,9 @@ gameplay::SavedActorRecords PendingSaveLayer::actorState(
         }
         for (const auto& injury : entry.injuries) {
             saved.injuries.push_back(&injury);
+        }
+        for (const auto& ability : entry.abilities) { // FOLLOWERS É6
+            saved.abilities.push_back(&ability);
         }
     }
     return saved;

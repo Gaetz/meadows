@@ -1110,6 +1110,24 @@ type = 'LocStringForm'
     text = '{}: health {}%, {} injury(ies), rest {} h'
 
 [[records]]
+form = 'b0105d5a-abc0-4889-b22d-ec69413b6c18'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.perkLearned'
+    text = 'You learn: {}.'
+
+[[records]]
+form = '40d3cf18-13f6-4a02-9f64-f07e44158edf'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.perkNone'
+    text = '{} has nothing more to teach you.'
+
+[[records]]
 form = '836d02b7-daea-44af-b96b-37d3d223474e'
 new = true
 type = 'LocStringForm'

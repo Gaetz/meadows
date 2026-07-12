@@ -93,6 +93,18 @@ private:
                      const Vec3& targetPos,
                      const std::unordered_map<u64, Npc*>& npcByEntity);
 
+    // FOLLOWERS É6: an ACTIVE follower in combat tries his special power
+    // (the first granted ability that isn't the shared attack — granted by
+    // his class perks). Policy per FollowerClassForm.combatStyle:
+    //   "healer"        -> tryActivate the power ON the lowest ally
+    //                      strictly below followerHealThreshold (player,
+    //                      followers, herself — gameplay::pickHealTarget);
+    //   anything else   -> self-cast when engaging ("melee" war cry).
+    // The ability's own cost/cooldown effects gate the cadence
+    // (tryActivate refuses); powerRetryTimer only bounds the call rate.
+    void tryUsePower(f32 dt, const NpcContext& ctx, Npc& npc,
+                     const std::unordered_map<u64, Npc*>& npcByEntity);
+
     // A2: per-strike scratch for anim::modelMatrices (the hit segment).
     vector<Mat4> jointScratch;
 };
