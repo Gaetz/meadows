@@ -137,6 +137,7 @@ struct StatsTuningForm : data::Form {
     f32 sneakDetectionFactor { 0.5f };
     f32 sneakVolumeFactor { 0.5f };
     f32 sneakPitchFactor { 0.85f };
+    f32 sneakSpeedFactor { 0.75f }; // dev 2026-07-12 (absent de STATS.md)
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -215,6 +216,7 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(sneakDetectionFactor)
         REFLECT_FIELD(sneakVolumeFactor)
         REFLECT_FIELD(sneakPitchFactor)
+        REFLECT_FIELD(sneakSpeedFactor)
     REFLECT_END()
 };
 

@@ -247,6 +247,11 @@ low-posture). A light-attack combo averages motion value 1.
 
 - Attacks/actions (except move & parry) cost energy; at 0 energy, no action.
   Energy regen halves while parrying.
+- **Sneak** (decided 2026-07-12, implemented): a toggle that crouches the
+  character to half height. Moving while sneaked drains energy (3/s, the
+  SneakCost effect); standing still is free. Speed ×0.75; footsteps play
+  softer/lower and carry half as far; sight detection range ×0.5. The
+  0.5 detection factor becomes a function of the sneak SKILL later.
 - A hit while parrying with no energy **staggers** the character (loses posture %
   = critical sensitivity, plus normal posture damage).
 - **States:** normal, **staggered** (can't act/parry/dodge, very slow), **shaken**

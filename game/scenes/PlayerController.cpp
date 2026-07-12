@@ -573,6 +573,9 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     if (blocking) {
         targetSpeed *= tuning.blockSpeedFactor; // guarding is careful
     }
+    if (sneaking_) {
+        targetSpeed *= tuning.sneakSpeedFactor; // crouched = deliberate
+    }
     if (staggered) {
         targetSpeed *= tuning.staggerSpeedFactor; // §4: reeling is slow
     }
