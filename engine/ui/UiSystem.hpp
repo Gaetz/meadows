@@ -143,6 +143,17 @@ public:
     // False when nothing navigable holds the focus.
     bool activateFocused();
 
+    // --- Runtime textures (C9.6) ----------------------------------------------
+    // CPU-generated pixels a document shows via <img src="runtime://name">
+    // (the in-game map). `rgba` = tightly packed RGBA8, width*height*4
+    // bytes, COPIED (call-and-forget). Re-setting the same name releases
+    // RmlUi's cached texture entry for that source, so the next frame the
+    // <img> renders it re-asks the render interface and picks up the new
+    // pixels — no per-element dirtying. Bytes + a name only: this lib
+    // stays data/game-free.
+    void setRuntimeTexture(const str& name, const u8* rgba, u32 width,
+                           u32 height);
+
     // --- Data models (B2) ---------------------------------------------------
     // Create before the documents that reference them load; set* pushes a
     // value and dirties the binding. All Rml types stay in the .cpp.

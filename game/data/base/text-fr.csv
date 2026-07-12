@@ -112,3 +112,6 @@ ui.options.action.journal,Journal
 ui.options.action.wait,Attendre
 ui.options.action.map,Carte
 ui.options.action.pause,Pause
+ui.map.title,Carte
+ui.map.close,Fermer
+ui.map.interior,Vous êtes à l'intérieur — la carte montre le monde du dehors.

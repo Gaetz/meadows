@@ -1018,3 +1018,30 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'ui.options.action.pause'
     text = 'Pause'
+
+[[records]]
+form = 'c9b59743-6a95-42a8-bc8b-292302abadd3'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.map.title'
+    text = 'Map'
+
+[[records]]
+form = 'a672ceab-aadc-46e6-9cb7-cd830863009a'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.map.close'
+    text = 'Close'
+
+[[records]]
+form = '9089d580-afc8-4a5a-88f2-68a280c6976a'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.map.interior'
+    text = 'You are inside — the map shows the world above.'

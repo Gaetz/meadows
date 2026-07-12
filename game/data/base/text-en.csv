@@ -112,3 +112,6 @@ ui.options.action.journal,Journal
 ui.options.action.wait,Wait
 ui.options.action.map,Map
 ui.options.action.pause,Pause
+ui.map.title,Map
+ui.map.close,Close
+ui.map.interior,You are inside — the map shows the world above.

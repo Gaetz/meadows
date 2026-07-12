@@ -40,6 +40,13 @@ struct UiVertex {
 
 constexpr const char* kUiShader = "ui";
 
+// C9.6: sources of the form "runtime://<name>" resolve to CPU pixels
+// pushed through UiSystem::setRuntimeTexture instead of a file. RmlUi's
+// SystemInterface::JoinPath passes the scheme through untouched (the ':'
+// before the first '/' reads as a Windows drive), so LoadTexture sees the
+// source verbatim.
+constexpr std::string_view kRuntimeTexturePrefix = "runtime://";
+
 // std140 mirror of the UiUbo block in ui.vert.
 struct UiUniforms {
     Vec4 transform; // xy = translation (px), zw = viewport size (px)
@@ -78,6 +85,16 @@ public:
     };
     std::unordered_map<uintptr_t, Texture> textures;
     uintptr_t nextHandle { 1 };
+
+    // C9.6: name -> CPU pixels behind runtime:// sources. Kept (not
+    // consumed) so a released document reloading the texture still finds
+    // them.
+    struct RuntimePixels {
+        vector<u8> rgba;
+        u32 width { 0 };
+        u32 height { 0 };
+    };
+    std::unordered_map<str, RuntimePixels> runtimePixels;
 
     void createPipeline() {
         if (pipeline.id != 0) {
@@ -178,6 +195,24 @@ public:
 
     Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions,
                                    const Rml::String& source) override {
+        // C9.6: runtime-generated pixels (setRuntimeTexture).
+        if (source.starts_with(kRuntimeTexturePrefix)) {
+            const auto it = runtimePixels.find(
+                str { source.substr(kRuntimeTexturePrefix.size()) });
+            if (it == runtimePixels.end() || it->second.rgba.empty()) {
+                return 0; // not pushed yet — RmlUi logs the source
+            }
+            const RuntimePixels& px = it->second;
+            dimensions = { static_cast<int>(px.width),
+                           static_cast<int>(px.height) };
+            const rhi::TextureHandle texture = device->createTexture(
+                { .width = px.width,
+                  .height = px.height,
+                  .format = rhi::TextureFormat::RGBA8,
+                  .filter = rhi::FilterMode::Linear },
+                px.rgba.data());
+            return registerTexture(texture);
+        }
         // Resolve through the roots, last root first (mod override).
         std::filesystem::path resolved;
         for (auto it = roots.rbegin(); it != roots.rend(); ++it) {
@@ -504,6 +539,26 @@ void UiSystem::relocalize() {
     for (auto& [path, document] : pimpl->documents) {
         localizeTree(document, pimpl->localizer);
     }
+}
+
+void UiSystem::setRuntimeTexture(const str& name, const u8* rgba, u32 width,
+                                 u32 height) {
+    if (!pimpl || !rgba || width == 0 || height == 0) {
+        return;
+    }
+    auto& entry = pimpl->renderInterface.runtimePixels[name];
+    entry.rgba.assign(rgba,
+                      rgba + static_cast<size_t>(width) * height * 4u);
+    entry.width = width;
+    entry.height = height;
+    // Invalidate RmlUi's per-source cache (FileTextureDatabase): this
+    // releases the old GPU texture through our ReleaseTexture and blanks
+    // the entry, so the next time an <img> with this source renders,
+    // EnsureLoaded re-calls LoadTexture and picks up the new pixels. The
+    // element keeps its texture index — no dirtying needed. NOTE: push
+    // pixels BEFORE first showing a document that uses them — a load that
+    // failed latches (load_texture_failed) and never retries.
+    Rml::ReleaseTexture(str { kRuntimeTexturePrefix } + name);
 }
 
 bool UiSystem::showDocument(const str& path) {

@@ -576,6 +576,7 @@ void LandscapeScene::onExit() {
     hud.reset(); // dialogue options point into `forms` too
     uiRouter.reset(); // open container/vendor die with the world
     optionsController.reset(); // C9.4: drop any armed rebind capture
+    mapController.reset(); // C9.6: runtime pixels died with the UiSystem
     goldForm = nullptr;
     sceneConsole.reset(); // panel/VM/session reference forms — before re-resolve
     // U4-2c: every GPU resource and render system is the renderer's; the
@@ -1294,11 +1295,29 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                            .events = { "adjust", "toggleInvert",
                                        "toggleLanguage", "rebind",
                                        "optionsBack" } });
+    // C9.6: the map — marker/POI positions as percentages of the raster
+    // (data-style-left/top), door POIs as rows.
+    uiSystem.createModel({ .name = "map",
+                           .numbers = { "playerX", "playerY" },
+                           .bools = { "playerVisible", "interiorNote" },
+                           .rows = true,
+                           .events = { "mapBack" } });
+    // C9.6: seed runtime://map with a placeholder BEFORE the preload
+    // below — a backend load that finds no pixels fails, and RmlUi
+    // latches failed sources forever (FileTextureDatabase never
+    // retries). One dark texel is enough; MapController pushes the real
+    // raster before the screen ever shows.
+    const u8 mapPlaceholder[4] = { 20, 22, 26, 255 };
+    uiSystem.setRuntimeTexture("map", mapPlaceholder, 1, 1);
     uiSystem.setModelEventHandler(
         [this](const str& model, const str& event, const vector<str>& args) {
             if (model == "options") { // C9.4: settings territory
                 optionsController.handleEvent(makeOptionsContext(), event,
                                               args);
+                return;
+            }
+            if (model == "map") { // C9.6
+                mapController.handleEvent(makeMapContext(), event);
                 return;
             }
             uiRouter.handleUiEvent(makeUiRouterContext(), model, event, args);
@@ -1439,6 +1458,20 @@ void LandscapeScene::updateGameUi(f32 dt) {
             screenStack.show("journal");
         }
     }
+    // M: the map (C9.6) — the I-key idiom, Play only (the raster shows
+    // the world the PLAYER walks). Keyboard-only while a modal is open:
+    // the pad binding is d-pad LEFT, which is navigation there.
+    if (!imguiOwnsKeys && !uiSystem.textFieldFocused() &&
+        (screenStack.modalOpen()
+             ? keyPressedOnly(InputAction::Map)
+             : actionMap.pressed(input, InputAction::Map))) {
+        const ScreenStack::Screen* top = screenStack.topModal();
+        if (top && top->name == "map") {
+            screenStack.closeTop();
+        } else if (!screenStack.modalOpen() && (mode == SceneMode::Play)) {
+            mapController.open(makeMapContext());
+        }
+    }
 
     const bool modal = screenStack.modalOpen();
     const bool modalJustOpened = modal && !uiModalWasOpen;
@@ -1546,6 +1579,12 @@ void LandscapeScene::updateGameUi(f32 dt) {
                 hud.inventory().setSearch(search);
                 hud.pushItemModels(makeHudContext());
             }
+        }
+        // C9.6: the player marker follows while the map is up (a modal
+        // pauses the sim, but travel fades / Escape-close paths keep the
+        // marker honest on reopen anyway — this is one cheap deduped push).
+        if (top && top->name == "map") {
+            mapController.updateOpen(makeMapContext());
         }
     }
 
@@ -1786,6 +1825,26 @@ OptionsContext LandscapeScene::makeOptionsContext() {
     return OptionsContext { settings,    actionMap,   engine->getInput(),
                             uiSystem,    screenStack, audioSystem,
                             texts,       [this] { applyLanguage(); } };
+}
+
+// C9.6: the map screen's slice — resolved records + the terrain ground
+// truth + which worldspace the player is in. The marker follows the Play
+// capsule (the map only opens in Play mode; the Fly camera fallback keeps
+// the context total anyway).
+MapContext LandscapeScene::makeMapContext() {
+    const Vec3 playerPos =
+        (mode == SceneMode::Play) && playerController.body()
+            ? playerController.body()->position()
+            : flyCamera.camera.position;
+    return MapContext { forms,
+                        renderer.terrainParams(),
+                        engine->getJobSystem(),
+                        uiSystem,
+                        screenStack,
+                        activeWorldspace,
+                        overworldHandle,
+                        interiorMode,
+                        playerPos };
 }
 
 // C9.5: the LIVE half of the language switch (the toggle already flipped

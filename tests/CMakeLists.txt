@@ -52,6 +52,7 @@
     KillZTest.cpp
     LevelEditorTest.cpp
     LocTextTest.cpp
+    MapRasterTest.cpp
     MeleeStrikeTest.cpp
     MeleeSwingTest.cpp
     MovementTest.cpp

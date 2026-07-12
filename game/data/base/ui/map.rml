@@ -1,0 +1,96 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="menus.rcss"/>
+	<style>
+		#map {
+			width: 560dp;
+			margin: auto;
+			margin-top: 24dp;
+		}
+		/* The raster + its markers share one positioned box: the CSS
+		   left/top percentages the model pushes are mapUv * 100, so a
+		   marker lands on its world position's texel. */
+		#mapview {
+			position: relative;
+			width: 512dp;
+			height: 512dp;
+			margin: 0 auto;
+			border: 1dp #3c4046;
+		}
+		#mapview img {
+			width: 512dp;
+			height: 512dp;
+		}
+		.poi {
+			position: absolute;
+			width: 0;
+			height: 0;
+		}
+		.poi .dot {
+			position: absolute;
+			left: -3dp;
+			top: -3dp;
+			width: 6dp;
+			height: 6dp;
+			border-radius: 3dp;
+			background-color: #d9b96c;
+			border: 1dp #14161a;
+		}
+		.poi .poiname {
+			position: absolute;
+			left: 6dp;
+			top: -9dp;
+			font-size: 12dp;
+			color: #e6e3dc;
+		}
+		#player {
+			position: absolute;
+			width: 0;
+			height: 0;
+		}
+		#player .pdot {
+			position: absolute;
+			left: -4dp;
+			top: -4dp;
+			width: 8dp;
+			height: 8dp;
+			border-radius: 4dp;
+			background-color: #e0563c;
+			border: 1dp #f0ede4;
+		}
+		.interior-note {
+			margin-top: 6dp;
+			text-align: center;
+		}
+		#map .menu-buttons {
+			margin: 6dp 0 0 0;
+		}
+	</style>
+</head>
+<body>
+	<div id="map" class="panel" data-model="map">
+		<div class="title" data-loc="ui.map.title">Map</div>
+		<div id="mapview">
+			<!-- width/height attributes matter: without them the layout
+			     asks the TEXTURE for intrinsic dimensions, which would
+			     backend-load runtime://map during the startup preload —
+			     before any pixels exist — and RmlUi latches a failed
+			     load (never retried). The scene also pre-pushes a
+			     placeholder so that class of failure cannot happen. -->
+			<img src="runtime://map" width="512" height="512"/>
+			<div class="poi" data-for="d : rows" data-style-left="d.c1 + '%'" data-style-top="d.c2 + '%'">
+				<div class="dot"/>
+				<div class="poiname">{{ d.c0 }}</div>
+			</div>
+			<div id="player" data-if="playerVisible" data-style-left="playerX + '%'" data-style-top="playerY + '%'">
+				<div class="pdot"/>
+			</div>
+		</div>
+		<div class="muted interior-note" data-if="interiorNote" data-loc="ui.map.interior">You are inside — the map shows the world above.</div>
+		<div class="menu-buttons">
+			<button id="btn-map-back" data-event-click="mapBack()" data-loc="ui.map.close">Close</button>
+		</div>
+	</div>
+</body>
+</rml>

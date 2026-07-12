@@ -8,6 +8,7 @@ add_library(meadows-runtime STATIC
     InputActions.cpp
     InventoryView.cpp
     LevelEditor.cpp
+    MapRaster.cpp
     MeshCache.cpp
     SaveGame.cpp
     SceneStack.cpp
@@ -40,6 +41,7 @@ add_executable(true-adventurer
     scenes/InteractionController.cpp
     scenes/LandscapeRenderer.cpp
     scenes/LandscapeScene.cpp
+    scenes/MapController.cpp
     scenes/NpcCombatController.cpp
     scenes/NpcDirector.cpp
     scenes/NpcMovement.cpp

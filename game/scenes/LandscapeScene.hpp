@@ -20,6 +20,7 @@
 #include "game/Settings.hpp"     // C9.2
 #include "game/scenes/GameHud.hpp"
 #include "game/scenes/InteractionController.hpp"
+#include "game/scenes/MapController.hpp"
 #include "game/scenes/OptionsController.hpp"
 #include "game/scenes/SceneEditor.hpp"
 #include "game/scenes/StreamingController.hpp"
@@ -279,6 +280,11 @@ private:
     // pad->UI routing on optionsController.capturing().
     OptionsController optionsController;
     OptionsContext makeOptionsContext();
+    // C9.6: the in-game map — CPU raster of the exterior worldspace
+    // (game/MapRaster) behind the runtime://map texture, player marker +
+    // door POIs through the shared mapUv mapping.
+    MapController mapController;
+    MapContext makeMapContext();
     // C9.5: the language machinery. loadGatedPluginConfig = plugins.toml
     // with every text-<code>.toml pack enabled iff <code> ==
     // settings.language; applyLanguage = the options screen's LIVE switch

@@ -127,5 +127,17 @@ screen = "options"
 document = "options.rml"
 modal = true
 
+# C9.6: the in-game map (CPU-rastered from the terrain functions; the
+# document shows it through the runtime://map texture).
+[[records]]
+form = "5e8bac40-0000-4000-8000-00000000000d"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenMap"
+screen = "map"
+document = "map.rml"
+modal = true
+
 # (The GoldCoin currency lives in village.toml with the rest of the
 # economy content — this plugin only registers SCREENS.)

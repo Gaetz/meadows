@@ -793,3 +793,24 @@ type = 'LocStringForm'
 
     [records.fields]
     text = 'Pause'
+
+[[records]]
+form = 'c9b59743-6a95-42a8-bc8b-292302abadd3'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Carte'
+
+[[records]]
+form = 'a672ceab-aadc-46e6-9cb7-cd830863009a'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Fermer'
+
+[[records]]
+form = '9089d580-afc8-4a5a-88f2-68a280c6976a'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = "Vous êtes à l'intérieur — la carte montre le monde du dehors."
