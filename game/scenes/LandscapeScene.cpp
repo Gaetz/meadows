@@ -111,6 +111,11 @@ void LandscapeScene::bootstrapData() {
     tuning = resolveLandscapeTuning(forms);
     weather.init(forms);
     texts.build(forms); // U4-11: LocStringForm index (key -> text)
+    // C9.2: machine preferences (settings.toml beside saves/) — bindings
+    // land in the ActionMap, the deadzone feeds the input layer. Reload
+    // on every enter is harmless: the file is the source of truth.
+    loadSettings(settingsPath(), settings, actionMap);
+    engine->getInput().setStickDeadzone(settings.stickDeadzone);
     LOG_INFO("Landscape tuning: seed={} seaLevel={} fogDensity={} "
              "coverage={} | {} weather states",
              tuning.terrainSeed, tuning.seaLevel, tuning.fogDensity,
@@ -1090,6 +1095,7 @@ InteractionContext LandscapeScene::makeInteractionContext() {
             screenStack.show(screen);
             return true;
         },
+        &actionMap, // C9.2: [E]/[X] through the action layer
     };
 }
 
@@ -1302,7 +1308,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
     }
     // Escape: toggle the pause menu in Play (and still dismiss the boot
     // main menu for the dev tools); Fly/Edit keep Escape free for tools.
-    if (!imguiOwnsKeys && input.wasPressed(platform::Key::Escape)) {
+    if (!imguiOwnsKeys && actionMap.pressed(input, InputAction::Pause)) {
         const ScreenStack::Screen* top = screenStack.topModal();
         if (top && (top->name == "pause" || top->name == "mainmenu")) {
             screenStack.closeTop();
@@ -1318,7 +1324,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
     }
     // I: toggle the inventory (B3) — not while typing in a text field.
     if (!imguiOwnsKeys && !uiSystem.textFieldFocused() &&
-        input.wasPressed(platform::Key::I)) {
+        actionMap.pressed(input, InputAction::Inventory)) {
         const ScreenStack::Screen* top = screenStack.topModal();
         if (top && (top->name == "inventory" || top->name == "container")) {
             screenStack.closeTop();
@@ -1328,13 +1334,14 @@ void LandscapeScene::updateGameUi(f32 dt) {
     }
     // T: the wait menu (B6) — Play only, nothing else open.
     if (!imguiOwnsKeys && !uiSystem.textFieldFocused() && (mode == SceneMode::Play) &&
-        input.wasPressed(platform::Key::T) && !screenStack.modalOpen()) {
+        actionMap.pressed(input, InputAction::WaitMenu) &&
+        !screenStack.modalOpen()) {
         hud.updateMenuClockLine(makeHudContext());
         screenStack.show("wait");
     }
     // J: the quest journal (chantier 6 A3) — the I-key idiom.
     if (!imguiOwnsKeys && !uiSystem.textFieldFocused() &&
-        input.wasPressed(platform::Key::J)) {
+        actionMap.pressed(input, InputAction::Journal)) {
         const ScreenStack::Screen* top = screenStack.topModal();
         if (top && top->name == "journal") {
             screenStack.closeTop();
@@ -1851,6 +1858,8 @@ PlayerContext LandscapeScene::makePlayerContext() {
         sneakCostEffect,
         &projectileDirector, // A7: the bow
         bowDrawCostEffect,   // A7+: the drawn-bow drain
+        &actionMap, // C9.2: intentions, not raw keys
+        &settings,  // C9.2: look feel (sens/invert/stick)
     };
 }
 

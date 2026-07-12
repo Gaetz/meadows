@@ -22,6 +22,7 @@ enum class Key : u16 {
     I, T,
     J, // quest journal (chantier 6)
     R, // draw/sheathe the weapon (P0 combat)
+    M, // the in-game map (chantier 9)
     Count
 };
 

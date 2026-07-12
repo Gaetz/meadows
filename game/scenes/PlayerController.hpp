@@ -5,6 +5,8 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/ecs/World.hpp" // ecs::Entity
+#include "game/InputActions.hpp" // game::ActionMap (C9.2)
+#include "game/Settings.hpp"     // game::Settings (C9.2)
 #include "gameplay/actors/Swimming.hpp" // gameplay::MoveMode (D2b)
 #include "gameplay/combat/PlayerAction.hpp" // gameplay::PlayerAction (R5)
 
@@ -85,6 +87,12 @@ struct PlayerContext {
     ProjectileDirector* projectiles { nullptr };
     // A7+: the drain while the bow is DRAWN (3 energy/s, data).
     const gameplay::EffectForm* bowDrawCostEffect { nullptr };
+    // C9.2: the action layer + machine preferences — the controller reads
+    // INTENTIONS (attack/block/dodge...), never raw keys; the settings
+    // drive look sensitivity / invert / stick feel. Both owned by the
+    // scene, always set (null only in never-built test contexts).
+    const ActionMap* actions { nullptr };
+    const Settings* settings { nullptr };
 };
 
 // The first-person Play-mode controller extracted from LandscapeScene

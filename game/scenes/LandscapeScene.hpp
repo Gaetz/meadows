@@ -16,6 +16,8 @@
 #include "engine/physics/Physics.hpp"
 #include "game/LevelEditor.hpp"
 #include "game/MeshCache.hpp"
+#include "game/InputActions.hpp" // C9.2
+#include "game/Settings.hpp"     // C9.2
 #include "game/scenes/GameHud.hpp"
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/SceneEditor.hpp"
@@ -156,6 +158,10 @@ private:
     data::FormDatabase forms;      // resolved plugin stack (material fields
                                    //   fold into the snapshot at extract)
     data::TextTable texts;         // U4-11: LocStringForm key -> text index
+    // C9.2: machine preferences + the action layer — loaded from
+    // settings.toml at enter, written back by the options screen.
+    game::Settings settings;
+    game::ActionMap actionMap;
     data::PluginStack pluginStack; // owns the plugins behind `forms`
     assets::AssetDatabase assetDb; // guid -> file, layered per plugin order
     ecs::World world;

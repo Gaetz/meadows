@@ -5,6 +5,7 @@
 add_library(meadows-runtime STATIC
     Barter.cpp
     FrameComposer.cpp
+    InputActions.cpp
     InventoryView.cpp
     LevelEditor.cpp
     MeshCache.cpp
@@ -12,6 +13,7 @@ add_library(meadows-runtime STATIC
     SceneStack.cpp
     SceneSubmit.cpp
     ScreenStack.cpp
+    Settings.cpp
     SoundResolver.cpp
     TerrainCollision.cpp
     TextureCache.cpp
@@ -20,7 +22,10 @@ add_library(meadows-runtime STATIC
     WorldEditor.cpp
 )
 target_link_libraries(meadows-runtime PUBLIC meadows-render meadows-world
-                      meadows-physics meadows-audio)
+                      meadows-physics meadows-audio
+                      PRIVATE tomlplusplus::tomlplusplus) # settings.toml (C9.2)
+# Same no-exceptions toml++ mode as meadows-data (parse_result error path).
+target_compile_definitions(meadows-runtime PRIVATE TOML_EXCEPTIONS=0)
 meadows_set_warnings(meadows-runtime)
 
 add_executable(true-adventurer

@@ -158,7 +158,7 @@ void PlayerController::updateBowDraw(f32 dt, const PlayerContext& ctx,
         // Not drawing: LMB starts the draw (never inhibited, sheathed,
         // mid-swing, or with a dry quiver — refused before any cost).
         if (inhibited || !weaponDrawn_ ||
-            !ctx.input.mousePressed(platform::MouseButton::Left) ||
+            !ctx.actions->pressed(ctx.input, InputAction::Attack) ||
             !ctx.playerEntity.is_alive() ||
             ctx.playerEntity.get<gameplay::MeleeSwing>().phase !=
                 gameplay::SwingPhase::Idle) {
@@ -199,7 +199,7 @@ void PlayerController::updateBowDraw(f32 dt, const PlayerContext& ctx,
                             .tags.has(*tag);
         }
     }
-    if (!ctx.input.mouseDown(platform::MouseButton::Left) || exhausted) {
+    if (!ctx.actions->down(ctx.input, InputAction::Attack) || exhausted) {
         release(true);
     }
 }
@@ -389,8 +389,8 @@ bool PlayerController::updateSwimming(f32 dt, const PlayerContext& ctx,
     const Vec3 right = cam.right();
     const Vec2 axis = platform::moveAxis(ctx.input);
     Vec3 wish3 = fwd3 * axis.y + right * axis.x;
-    if (ctx.input.isDown(platform::Key::Space)) {
-        wish3.y += 1.0f;
+    if (ctx.actions->down(ctx.input, InputAction::Jump)) {
+        wish3.y += 1.0f; // Space/A paddles up
     }
     const f32 swimSpeed = jog * tuning.swimSpeedFactor;
     Vec3 target = glm::dot(wish3, wish3) > 1e-6f
@@ -466,7 +466,7 @@ PlayerController::updateStance(f32 dt, const PlayerContext& ctx) {
     // vocabulary the damage paths read (both camps). Guarding excludes
     // swinging (and vice versa: the guard waits for the swing to land).
     // R: draw/sheathe (dev design 2026-07-11) — never mid-swing.
-    if (input.wasPressed(platform::Key::R) &&
+    if (ctx.actions->pressed(input, InputAction::DrawSheathe) &&
         (!ctx.playerEntity.is_alive() ||
          ctx.playerEntity.get<gameplay::MeleeSwing>().phase ==
              gameplay::SwingPhase::Idle)) {
@@ -475,7 +475,7 @@ PlayerController::updateStance(f32 dt, const PlayerContext& ctx) {
     // Ctrl: sneak toggle (dev design 2026-07-12) — the body CROUCHES to
     // half height (standing back up can be refused by a low ceiling),
     // steps soften, detection halves (State.Sneaking drives it all).
-    if (input.wasPressed(platform::Key::Ctrl)) {
+    if (ctx.actions->pressed(input, InputAction::Sneak)) {
         const bool want = !sneaking_;
         if (body_->setCrouched(want)) {
             sneaking_ = want;
@@ -511,7 +511,7 @@ PlayerController::updateStance(f32 dt, const PlayerContext& ctx) {
         in.weaponDrawn = weaponDrawn_;
         in.rangedWeapon = frame.rangedWeapon;
         in.staggered = frame.staggered;
-        in.blockHeld = input.mouseDown(platform::MouseButton::Right);
+        in.blockHeld = ctx.actions->down(input, InputAction::Block);
         in.swingInFlight = swing.phase != gameplay::SwingPhase::Idle;
         in.drawingBow = bowCharge_ >= 0.0f;
         frame.action = gameplay::decidePlayerAction(in);
@@ -530,7 +530,7 @@ PlayerController::updateStance(f32 dt, const PlayerContext& ctx) {
     // the bow path never had that gate.
     bool drewThisFrame = false;
     if (!weaponDrawn_ && !frame.staggered &&
-        input.mousePressed(platform::MouseButton::Left) &&
+        ctx.actions->pressed(input, InputAction::Attack) &&
         (frame.rangedWeapon ? bowCharge_ < 0.0f
                             : ctx.playerEntity.is_alive())) {
         weaponDrawn_ = true;
@@ -552,7 +552,7 @@ PlayerController::updateStance(f32 dt, const PlayerContext& ctx) {
         }
         if (frame.action == gameplay::PlayerAction::Idle &&
             !frame.staggered && !drewThisFrame &&
-            input.mousePressed(platform::MouseButton::Left)) {
+            ctx.actions->pressed(input, InputAction::Attack)) {
             tryAttack(ctx);
         }
     }
@@ -566,12 +566,25 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
     const bool staggered = frame.staggered;
     const bool blocking =
         frame.action == gameplay::PlayerAction::Blocking;
-    // Mouselook, always captured in Play (no LMB gymnastics in a game).
+    // Look, always captured in Play (no LMB gymnastics in a game).
+    // C9.2: mouse (pixels x base sens x user multiplier) + right stick
+    // (rad/s at full deflection x dt); one invert-Y switch covers both.
     render::FlyCamera& flyCamera = ctx.flyCamera;
-    const Vec2 look = input.mouseDelta();
-    flyCamera.camera.yaw += look.x * flyCamera.lookSensitivity;
+    const f32 mouseSens =
+        flyCamera.lookSensitivity *
+        (ctx.settings ? ctx.settings->mouseSensitivity : 1.0f);
+    Vec2 look = input.mouseDelta() * mouseSens; // radians; +y = look down
+    if (ctx.settings) {
+        const Vec2 stick = input.rightStick(); // +y = stick up = look up
+        look.x += stick.x * ctx.settings->stickSensitivity * dt;
+        look.y -= stick.y * ctx.settings->stickSensitivity * dt;
+        if (ctx.settings->invertLookY) {
+            look.y = -look.y;
+        }
+    }
+    flyCamera.camera.yaw += look.x;
     flyCamera.camera.pitch = glm::clamp(
-        flyCamera.camera.pitch - look.y * flyCamera.lookSensitivity,
+        flyCamera.camera.pitch - look.y,
         glm::radians(-89.0f), glm::radians(89.0f));
 
     // Camera-relative intent, flattened to the horizontal plane (§ the
@@ -621,7 +634,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
     // the sprint key — released within dodgeTapSeconds — bursts in the
     // held move direction, backward when none. Cost, cooldown and the
     // State.Dodging i-frames are the Dodge ability's effects (§6).
-    if (input.isDown(platform::Key::Shift)) {
+    if (ctx.actions->down(input, InputAction::SprintDodge)) {
         shiftHeldSeconds += dt;
     } else {
         if (shiftHeldSeconds > 0.0f &&
@@ -635,7 +648,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
             in.weaponDrawn = weaponDrawn_;
             in.rangedWeapon = frame.rangedWeapon;
             in.staggered = staggered;
-            in.blockHeld = input.mouseDown(platform::MouseButton::Right);
+            in.blockHeld = ctx.actions->down(input, InputAction::Block);
             in.swingInFlight =
                 ctx.playerEntity.get<gameplay::MeleeSwing>().phase !=
                 gameplay::SwingPhase::Idle;
@@ -664,7 +677,9 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
 
     // C3: overencumbered = no sprint, no jump (STATS.md §3 Utility).
     // A5: no sprint behind a raised guard either.
-    const bool sprinting = moving && input.isDown(platform::Key::Shift) &&
+    const bool sprinting = moving &&
+                           ctx.actions->down(input,
+                                             InputAction::SprintDodge) &&
                            energy > 1.0f && !ctx.overencumbered &&
                            !blocking;
     f32 targetSpeed = sprinting ? jog * tuning.sprintMultiplier : jog;
@@ -687,7 +702,8 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
         dodgeTimer -= dt;
         velocity = dodgeDir * (jog * tuning.dodgeSpeedMultiplier);
     }
-    if (input.wasPressed(platform::Key::Space) && !ctx.overencumbered) {
+    if (ctx.actions->pressed(input, InputAction::Jump) &&
+        !ctx.overencumbered) {
         // C3: jump velocity from the jumpPower stat (default sheet 104
         // → the previous hand-tuned 5.0 m/s via jumpPowerScale3D).
         f32 jump = jumpSpeed; // fallback without a Player actor

@@ -44,6 +44,7 @@
     GuidTest.cpp
     HorizontalFormsTest.cpp
     InjuriesTest.cpp
+    InputActionsTest.cpp
     InputTest.cpp
     InventoryTest.cpp
     InventoryViewTest.cpp

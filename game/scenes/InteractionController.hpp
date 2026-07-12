@@ -5,6 +5,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 #include "engine/ecs/World.hpp"       // ecs::Entity, flecs::query
+#include "game/InputActions.hpp"      // game::ActionMap (C9.2)
 #include "world/scene/Components.hpp" // world::Transform, DoorTarget, RefId
 
 namespace platform {
@@ -55,6 +56,8 @@ struct InteractionContext {
         openDialogue;
     std::function<void(ecs::Entity container)> openContainer;
     std::function<bool(const str& screen)> tryShowScreen; // workstation UI
+    // C9.2: [E]/[X] fires through the action layer, never a raw key.
+    const ActionMap* actions { nullptr };
 };
 
 // Generic interaction extracted from LandscapeScene (audit U4-10): the aim

@@ -129,7 +129,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
         }
 
         if (promptEntity.is_alive() &&
-            ctx.input.wasPressed(platform::Key::E)) {
+            ctx.actions->pressed(ctx.input, InputAction::Interact)) {
             switch (promptKind) {
             case PromptKind::Door:
                 pendingTravel =
