@@ -749,7 +749,7 @@ animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
 # field and the bandit reverts to pure C++.
 brainScript = '''
 return function(s)
-  if s.healthFraction < 0.4 then return "flee" end
+  if s.healthFraction < 0.05 then return "flee" end
   if s.swinging then return "strike" end
   if not s.canSee then return "approach" end
   if s.distance <= s.attackRange and s.cooldown <= 0 then return "strike" end

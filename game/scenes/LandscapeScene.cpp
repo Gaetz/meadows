@@ -1074,8 +1074,18 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
     // bindings at creation). One "hud" model for B2; screens add theirs.
     uiSystem.createModel(
         { .name = "hud",
-          .numbers = { "healthPct", "energyPct", "essencePct",
-                       "posturePct" },
+          // Vitals bars (dev design 2026-07-12): per stat, the OUTER bar
+          // width scales with the THEORETICAL max (1000 = the full
+          // half-screen container), plus fill / resonance-bonus /
+          // resonance-malus segments as % of that bar.
+          .numbers = { "healthBarPct",  "healthFillPct",  "healthBonusPct",
+                       "healthMalusLeft",  "healthMalusPct",
+                       "energyBarPct",  "energyFillPct",  "energyBonusPct",
+                       "energyMalusLeft",  "energyMalusPct",
+                       "essenceBarPct", "essenceFillPct", "essenceBonusPct",
+                       "essenceMalusLeft", "essenceMalusPct",
+                       "postureBarPct", "postureFillPct", "postureBonusPct",
+                       "postureMalusLeft", "postureMalusPct" },
           .strings = { "healthText", "energyText", "essenceText", "clock",
                        "prompt", "talk" },
           .bools = { "promptVisible", "talkVisible" },

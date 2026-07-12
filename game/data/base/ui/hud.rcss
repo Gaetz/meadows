@@ -52,11 +52,14 @@ body {
 	letter-spacing: 1dp;
 }
 
+/* Vitals (dev design 2026-07-12): the container spans HALF the screen —
+   a 1000-max stat fills it entirely; the outer bar width scales with the
+   theoretical max (C++ feeds it in %). */
 #vitals {
 	position: absolute;
 	left: 18dp;
 	bottom: 16dp;
-	width: 240dp;
+	width: 50%;
 }
 
 .stat {
@@ -64,22 +67,36 @@ body {
 }
 
 .bar {
-	width: 240dp;
-	height: 7dp;
+	position: relative;
+	height: 8dp;
 	background-color: #14161ab0;
 	border: 1dp #3c4046;
 	border-radius: 2dp;
 }
 
-.bar .fill {
+/* Segments: fill = current; bonus = a LIGHTER fill past the default max
+   (resonance up); malus = a DARKER slice over the capacity a resonance
+   malus locked away. */
+.bar .fill, .bar .bonus, .bar .malus {
+	position: absolute;
+	top: 0;
 	height: 100%;
 	border-radius: 2dp;
 }
+.bar .fill { left: 0; }
 
-.bar.health .fill  { background-color: #a8483f; }
-.bar.energy .fill  { background-color: #5d8a4e; }
-.bar.essence .fill { background-color: #4e6e8a; }
-.bar.posture .fill { background-color: #b8a15e; }
+.bar.health .fill   { background-color: #a8483f; }
+.bar.health .bonus  { background-color: #d98a80; }
+.bar.health .malus  { background-color: #55231f; }
+.bar.energy .fill   { background-color: #5d8a4e; }
+.bar.energy .bonus  { background-color: #94c483; }
+.bar.energy .malus  { background-color: #2d4426; }
+.bar.essence .fill  { background-color: #4e6e8a; }
+.bar.essence .bonus { background-color: #86a9c6; }
+.bar.essence .malus { background-color: #263749; }
+.bar.posture .fill  { background-color: #b8a15e; }
+.bar.posture .bonus { background-color: #e2cf94; }
+.bar.posture .malus { background-color: #5c502c; }
 
 .value {
 	font-size: 12dp;
@@ -104,7 +121,8 @@ body {
 	color: #d98c7a;
 }
 
-.phealth {
+/* The two CONSTANT-length bars over characters: health then poise. */
+.phealth, .pposture {
 	width: 90dp;
 	height: 4dp;
 	margin: 1dp auto;
@@ -112,7 +130,16 @@ body {
 	border: 1dp #3c4046;
 }
 
+.pposture {
+	height: 3dp;
+}
+
 .pfill {
 	height: 100%;
 	background-color: #a8483f;
+}
+
+.ppfill {
+	height: 100%;
+	background-color: #b8a15e;
 }

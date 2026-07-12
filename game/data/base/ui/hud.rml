@@ -14,23 +14,42 @@
 		<div class="plate" data-for="p : rows" data-class-hostile="p.tag == 'hostile'" data-style-left="p.c2 + 'px'" data-style-top="p.c3 + 'px'">
 			<div class="pname">{{ p.c0 }}</div>
 			<div class="phealth"><div class="pfill" data-style-width="p.c1 + '%'"/></div>
+			<div class="pposture"><div class="ppfill" data-style-width="p.c4 + '%'"/></div>
 		</div>
 	</div>
+	<!-- Vitals (dev design 2026-07-12): the OUTER width of each bar is the
+	     stat's THEORETICAL max (1000 = the whole container = half the
+	     screen); fill = current; a darker slice = capacity a resonance
+	     malus locked; a lighter fill = a bonus past the default max. -->
 	<div id="vitals">
 		<div class="stat">
-			<div class="bar health"><div class="fill" data-style-width="healthPct + '%'"/></div>
+			<div class="bar health" data-style-width="healthBarPct + '%'">
+				<div class="fill" data-style-width="healthFillPct + '%'"/>
+				<div class="bonus" data-style-left="healthFillPct + '%'" data-style-width="healthBonusPct + '%'"/>
+				<div class="malus" data-style-left="healthMalusLeft + '%'" data-style-width="healthMalusPct + '%'"/>
+			</div>
 			<div class="value">{{ healthText }}</div>
 		</div>
 		<div class="stat">
-			<div class="bar energy"><div class="fill" data-style-width="energyPct + '%'"/></div>
+			<div class="bar energy" data-style-width="energyBarPct + '%'">
+				<div class="fill" data-style-width="energyFillPct + '%'"/>
+				<div class="bonus" data-style-left="energyFillPct + '%'" data-style-width="energyBonusPct + '%'"/>
+				<div class="malus" data-style-left="energyMalusLeft + '%'" data-style-width="energyMalusPct + '%'"/>
+			</div>
 			<div class="value">{{ energyText }}</div>
 		</div>
 		<div class="stat">
-			<div class="bar essence"><div class="fill" data-style-width="essencePct + '%'"/></div>
+			<div class="bar essence" data-style-width="essenceBarPct + '%'">
+				<div class="fill" data-style-width="essenceFillPct + '%'"/>
+				<div class="bonus" data-style-left="essenceFillPct + '%'" data-style-width="essenceBonusPct + '%'"/>
+				<div class="malus" data-style-left="essenceMalusLeft + '%'" data-style-width="essenceMalusPct + '%'"/>
+			</div>
 			<div class="value">{{ essenceText }}</div>
 		</div>
 		<div class="stat">
-			<div class="bar posture"><div class="fill" data-style-width="posturePct + '%'"/></div>
+			<div class="bar posture" data-style-width="postureBarPct + '%'">
+				<div class="fill" data-style-width="postureFillPct + '%'"/>
+			</div>
 		</div>
 	</div>
 	</div>

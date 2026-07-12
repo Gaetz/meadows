@@ -26,7 +26,8 @@ struct StatsTuningForm : data::Form {
     f32 posturePerAlacrity { 1.0f };
     f32 postureRegenBase { 2.0f };
     f32 postureRegenPerAlacrity { 0.333333f };
-    f32 energyRegenBase { 35.0f };      // energy/s base (docs/STATS.md §3)
+    f32 energyRegenBase { 17.5f };      // energy/s base (docs/STATS.md §3;
+                                        // halved 2026-07-12, dev feel pass)
     f32 energyRegenPerAlacrity { 1.0f };
     f32 healthRegenPerGrace { 0.0002f };    // HP/s per grace (very slow; food raises it)
     f32 essenceRegenBase { 0.01f };         // essence/s base (docs/STATS.md §3)

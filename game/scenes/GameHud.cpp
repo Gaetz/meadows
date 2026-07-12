@@ -36,28 +36,53 @@ void GameHud::updateHudModel(const HudContext& ctx) {
         ctx.playerEntity.has<gameplay::AttributeSet>()) {
         const auto& sys = ctx.playerEntity.get<gameplay::AbilitySystem>();
         const auto& vitals = ctx.playerEntity.get<gameplay::AttributeSet>();
-        const auto pct = [](f32 value, f32 max) {
-            return max > 0.0f ? glm::clamp(100.0f * value / max, 0.0f,
-                                           100.0f)
-                              : 0.0f;
+        // Dev design 2026-07-12 — each bar tells three truths at once:
+        //   outer width  = the THEORETICAL max (BaseValue; 1000 points =
+        //                  the whole half-screen container),
+        //   fill         = the current value (background = what's lost),
+        //   resonance    = a DARKER slice for capacity the malus locked
+        //                  ([effective max .. base max]), a LIGHTER fill
+        //                  past the base max when a bonus extends it.
+        const auto pushBar = [&](const str& prefix, f32 current,
+                                 f32 baseMax, f32 effMax) {
+            const f32 rendered =
+                glm::max(glm::max(baseMax, effMax), 1.0f);
+            const auto pct = [&](f32 v) {
+                return glm::clamp(100.0f * v / rendered, 0.0f, 100.0f);
+            };
+            // 1000 stat points = 100% of the (half-screen) container.
+            ctx.ui.setNumber("hud", prefix + "BarPct",
+                             glm::clamp(rendered / 10.0f, 2.0f, 100.0f));
+            const f32 fill = pct(glm::min(current, baseMax));
+            ctx.ui.setNumber("hud", prefix + "FillPct", fill);
+            ctx.ui.setNumber("hud", prefix + "BonusPct",
+                             pct(glm::max(current - baseMax, 0.0f)));
+            ctx.ui.setNumber("hud", prefix + "MalusLeft", pct(effMax));
+            ctx.ui.setNumber("hud", prefix + "MalusPct",
+                             pct(glm::max(baseMax - effMax, 0.0f)));
         };
-        const f32 maxHealth =
-            gameplay::currentValueOf(sys, gameplay::attr("maxHealth"));
-        const f32 maxEnergy =
-            gameplay::currentValueOf(sys, gameplay::attr("maxEnergy"));
-        const f32 maxEssence =
-            gameplay::currentValueOf(sys, gameplay::attr("maxEssence"));
+        const auto maxes = [&](const char* name, f32& base, f32& eff) {
+            eff = gameplay::currentValueOf(sys, gameplay::attr(name));
+            base = gameplay::baseValueOf(vitals, gameplay::attr(name))
+                       .value_or(eff);
+        };
+        f32 baseMaxHealth, maxHealth, baseMaxEnergy, maxEnergy;
+        f32 baseMaxEssence, maxEssence;
+        maxes("maxHealth", baseMaxHealth, maxHealth);
+        maxes("maxEnergy", baseMaxEnergy, maxEnergy);
+        maxes("maxEssence", baseMaxEssence, maxEssence);
+        pushBar("health", vitals.health, baseMaxHealth, maxHealth);
+        pushBar("energy", vitals.energy, baseMaxEnergy, maxEnergy);
+        pushBar("essence", vitals.essence, baseMaxEssence, maxEssence);
+        // Posture is a DERIVED stat (no BaseValue of its own): the bar
+        // scales with the current max, no resonance slices.
         const f32 maxPosture =
             gameplay::currentValueOf(sys, gameplay::attr("maxPosture"));
-        ctx.ui.setNumber("hud", "healthPct", pct(vitals.health, maxHealth));
-        ctx.ui.setNumber("hud", "energyPct", pct(vitals.energy, maxEnergy));
-        ctx.ui.setNumber("hud", "essencePct",
-                         pct(vitals.essence, maxEssence));
         f32 posture = maxPosture;
         if (ctx.playerEntity.has<gameplay::CombatState>()) {
             posture = ctx.playerEntity.get<gameplay::CombatState>().posture;
         }
-        ctx.ui.setNumber("hud", "posturePct", pct(posture, maxPosture));
+        pushBar("posture", posture, maxPosture, maxPosture);
         const auto text = [](f32 value, f32 max) {
             return std::to_string(static_cast<i32>(value + 0.5f)) + " / " +
                    std::to_string(static_cast<i32>(max + 0.5f));
@@ -145,6 +170,18 @@ void GameHud::updateNameplates(const HudContext& ctx) {
                 100.0f)));
             plate.c2 = std::to_string(static_cast<i32>(px - 60.0f));
             plate.c3 = std::to_string(static_cast<i32>(py));
+            // Dev design 2026-07-12: the second small bar — POISE.
+            f32 posturePct = 100.0f;
+            if (npc.entity.has<gameplay::CombatState>()) {
+                const f32 maxPosture = gameplay::currentValueOf(
+                    sys, gameplay::attr("maxPosture"));
+                posturePct = glm::clamp(
+                    100.0f *
+                        npc.entity.get<gameplay::CombatState>().posture /
+                        glm::max(maxPosture, 1.0f),
+                    0.0f, 100.0f);
+            }
+            plate.c4 = std::to_string(static_cast<i32>(posturePct));
             plate.tag = npc.hostile ? "hostile" : "";
             plates.push_back(std::move(plate));
         }
