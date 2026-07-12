@@ -130,6 +130,15 @@ approval.
     coupling to remove on sight — it is what keeps the post-demo Godot
     option (and any other frontend swap) open.
 
+11. **Reuse before build.** Before writing any new system, name the
+    existing one that covers the need (GAS effects/abilities, the
+    condition evaluator, dialogue events, child-record data patterns,
+    the pending save layer, schedules/AI packages, game-clock
+    timestamps, the container/barter UI, RmlUi screen controllers…).
+    New code is an EXTENSION of the nearest existing pattern, never a
+    parallel mechanism. If nothing fits, say so explicitly and ask
+    before inventing. (Dev directive 2026-07-12, FOLLOWERS planning.)
+
 ---
 
 ## 3. Tech stack
@@ -577,5 +586,7 @@ touching the corresponding systems.
 - If you're about to make the **renderer fancier** while core systems are
   incomplete, stop and reprioritize.
 - Never set an attribute directly — apply a **GameplayEffect** (§2.9, §6).
+- If a new feature seems to need a **new system**, re-read §2.11 first —
+  name the existing mechanism it extends before writing anything.
 - Prefer the **simplest thing that exercises the concept**; this is a prototype
   for a solo developer, not a production engine.
