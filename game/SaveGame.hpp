@@ -114,8 +114,36 @@ struct SaveSlotInfo {
     str timestamp; // "YYYY-MM-DD HH:MM" local time, for the list screen
 };
 vector<SaveSlotInfo> listSaveSlots(); // newest first
+// C9.7: the disk write split so the frame never blocks on it.
+// serializeSave is PURE (worker-safe: touches only its arguments);
+// writeSaveText does the file IO ATOMICALLY — saves/<slot>.toml.tmp then
+// rename over the final path, so a killed process never leaves a
+// truncated save. writeSave stays the synchronous composition of the two
+// (tests / one-shot tools).
+str serializeSave(const data::Plugin& plugin,
+                  const data::FormTypeRegistry& types);
+bool writeSaveText(const str& slot, const str& text);
 bool writeSave(const str& slot, const data::Plugin& plugin,
                const data::FormTypeRegistry& types);
+
+// C9.7: the single-flight save gate — at most ONE async save in flight.
+// A request while busy remembers the LAST slot (F5 spam = last wins, no
+// queue growth); the completion pump relaunches it with a FRESH capture.
+// Pure state machine (main thread only) so it doctests headless.
+class SaveFlightGate {
+public:
+    // true = start this save now (the gate is yours until onComplete);
+    // false = one is in flight — the slot is remembered instead.
+    bool requestStart(const str& slot);
+    // The in-flight save finished: the gate reopens; returns the deferred
+    // slot to relaunch (nullopt when none was requested meanwhile).
+    std::optional<str> onComplete();
+    bool busy() const { return inFlight; }
+
+private:
+    bool inFlight { false };
+    std::optional<str> deferred;
+};
 std::optional<data::Plugin> readSave(const str& slot,
                                      const data::FormTypeRegistry& types);
 

@@ -1,12 +1,15 @@
 #include "game/scenes/SaveController.hpp"
 
+#include <chrono>
 #include <filesystem>
 
 #include "data/forms/Form.hpp"
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/FormTypeRegistry.hpp" // copied into the save worker
 #include "data/forms/LocForms.hpp" // TextTable (C9.5)
 #include "data/plugins/Record.hpp"
 #include "engine/core/Guid.hpp"
+#include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
 #include "gameplay/save/SaveForms.hpp"  // WorldStateForm
 #include "gameplay/save/SaveState.hpp"  // createRecord
@@ -15,11 +18,27 @@
 
 namespace game {
 
+namespace {
+
+f64 msSince(const std::chrono::steady_clock::time_point& start) {
+    return std::chrono::duration<f64, std::milli> {
+        std::chrono::steady_clock::now() - start
+    }.count();
+}
+
+} // namespace
+
 void SaveController::performSave(const SaveContext& ctx, const str& slot) {
+    if (!flightGate_.requestStart(slot)) {
+        return; // one save in flight — the slot is remembered (last wins)
+                // and relaunched by pumpCompletions with a fresh capture
+    }
     // Capture EVERYTHING live (loaded cells' entities + the persistent
     // player) into the pending layer, then flush it plus the world state
-    // into one ordinary plugin (§5). Sweep order is the flush's sorted
-    // order — deterministic (§8).
+    // into one ordinary plugin (§5). This half stays ON the frame — the
+    // world must not move under the capture, and the sweep order is the
+    // flush's sorted order — deterministic (§8).
+    const auto captureStart = std::chrono::steady_clock::now();
     ctx.forEachLiveRef([&](ecs::Entity entity) {
         pendingSave_.captureEntity(entity, ctx.forms, ctx.gameTags);
     });
@@ -50,10 +69,56 @@ void SaveController::performSave(const SaveContext& ctx, const str& slot) {
     plugin.records.push_back(gameplay::createRecord(
         state, *core::Guid::fromString(
                    "5a5e0000-0000-4000-8000-0000000000ff")));
+    const f64 captureMs = msSince(captureStart);
 
-    if (writeSave(slot, plugin, ctx.formTypes)) {
-        ctx.notify(ctx.texts.format("save.saved", slot)); // C9.5
+    // C9.7: the serialization + file IO leave the frame. The worker owns
+    // an INDEPENDENT plugin (moved — pendingSave_ keeps mutating after
+    // this frame; flush() already built a fresh vector) and a COPY of the
+    // type registry (pointer maps over static TypeInfos — cheap), and it
+    // captures the shared completion queue, NEVER `this` (the
+    // ResidencyCache teardown idiom).
+    auto work = [sharedRef = shared_, slot, plugin = std::move(plugin),
+                 types = ctx.formTypes, captureMs] {
+        SaveCompletion done;
+        done.slot = slot;
+        done.recordCount = static_cast<u32>(plugin.records.size());
+        done.captureMs = captureMs;
+        const auto serializeStart = std::chrono::steady_clock::now();
+        const str text = serializeSave(plugin, types);
+        done.serializeMs = msSince(serializeStart);
+        const auto writeStart = std::chrono::steady_clock::now();
+        done.ok = writeSaveText(slot, text); // tmp + rename — atomic
+        done.writeMs = msSince(writeStart);
+        sharedRef->completions.push(std::move(done));
+    };
+    if (ctx.jobs) {
+        ctx.jobs->enqueue(std::move(work));
+    } else {
+        work(); // headless / no JobSystem: same path, on the caller
     }
+}
+
+std::optional<str> SaveController::pumpCompletions(
+    const data::TextTable& texts,
+    const std::function<void(const str&)>& notify) {
+    std::optional<str> relaunch;
+    shared_->completions.drain([&](SaveCompletion&& done) {
+        if (done.ok) {
+            LOG_INFO("Saved '{}': {} records (capture {:.1f} ms, "
+                     "serialize {:.1f} ms, write {:.1f} ms)",
+                     done.slot, done.recordCount, done.captureMs,
+                     done.serializeMs, done.writeMs);
+            if (notify) {
+                notify(texts.format("save.saved", done.slot)); // C9.5
+            }
+        } // (failure already LOG_ERRORed by writeSaveText, no toast)
+        // The gate reopens; a save requested while this one flew is
+        // relaunched by the SCENE with a fresh SaveContext (fresh capture).
+        if (auto deferred = flightGate_.onComplete()) {
+            relaunch = std::move(*deferred);
+        }
+    });
+    return relaunch;
 }
 
 void SaveController::requestLoad(

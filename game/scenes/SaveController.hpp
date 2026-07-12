@@ -3,11 +3,15 @@
 #include <functional>
 #include <optional>
 
+#include "engine/core/ConcurrentQueue.hpp" // C9.7: save completions
 #include "engine/core/Defines.hpp"
 #include "engine/ecs/World.hpp" // ecs::Entity
 #include "data/forms/Form.hpp"  // data::FormHandle (by value)
-#include "game/SaveGame.hpp"    // PendingSaveLayer, data::Plugin
+#include "game/SaveGame.hpp"    // PendingSaveLayer, SaveFlightGate, data::Plugin
 
+namespace core {
+class JobSystem;
+}
 namespace data {
 class FormDatabase;
 class FormTypeRegistry;
@@ -44,6 +48,10 @@ struct SaveContext {
     // persistent player) so performSave can capture each into the layer.
     std::function<void(const std::function<void(ecs::Entity)>&)> forEachLiveRef;
     std::function<void(const str&)> notify; // interaction.say(msg, 3s)
+    // C9.7: where the serialize + file IO run. Null = synchronous on the
+    // calling thread (headless tests, one-shot tools) — same code path,
+    // the completion still lands in the pump.
+    core::JobSystem* jobs { nullptr };
 };
 
 // The disk-save orchestration extracted from LandscapeScene (audit U4-1):
@@ -58,8 +66,22 @@ struct SaveContext {
 class SaveController {
 public:
     // Capture everything live + flush the pending layer into one ordinary
-    // plugin (§5) written to saves/<slot>.toml.
+    // plugin (§5) written to saves/<slot>.toml. C9.7: the capture + plugin
+    // build stay ON the frame (sim coherence §8, same order as always);
+    // the TOML serialization + file IO run on ctx.jobs — the completion
+    // (timing log + toast) lands in pumpCompletions. Single-flight: a
+    // request while one is in flight remembers the LAST slot, relaunched
+    // on completion with a fresh capture.
     void performSave(const SaveContext& ctx, const str& slot);
+
+    // Main thread, once per frame at a fixed point (next to the residency
+    // pumps): drains finished saves — the timing log and the save.saved
+    // toast fire HERE, at completion. Returns the deferred slot to
+    // re-save (nullopt when none): the scene relaunches performSave with
+    // a FRESH context so the deferred save captures the current world.
+    std::optional<str> pumpCompletions(
+        const data::TextTable& texts,
+        const std::function<void(const str&)>& notify);
 
     // Queue a reload: notifies (and does nothing else) when the slot has no
     // file; otherwise the next update() re-enters the scene with the save
@@ -82,7 +104,25 @@ public:
     PendingSaveLayer& pending() { return pendingSave_; }
 
 private:
+    // C9.7: what the worker reports back through the completion queue.
+    struct SaveCompletion {
+        str slot;
+        bool ok { false };
+        u32 recordCount { 0 };
+        f64 captureMs { 0.0 };   // frame-side: capture + flush + build
+        f64 serializeMs { 0.0 }; // worker-side: TOML text
+        f64 writeMs { 0.0 };     // worker-side: tmp write + rename
+    };
+    // Outlives the controller: workers capture the shared_ptr, never
+    // `this` (the ResidencyCache teardown idiom — a save finishing after
+    // scene teardown pushes harmlessly into a queue only it still owns).
+    struct Shared {
+        core::ConcurrentQueue<SaveCompletion> completions;
+    };
+
     PendingSaveLayer pendingSave_;
+    sptr<Shared> shared_ { std::make_shared<Shared>() };
+    SaveFlightGate flightGate_;      // C9.7: one save in flight, last wins
     str pendingLoadSlot_;            // consumed by the next onEnter
     bool reloadRequested_ { false }; // exit+enter at the end of update()
     bool loadedFromSave_ { false };  // this session came from a save file

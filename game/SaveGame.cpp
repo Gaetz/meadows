@@ -366,19 +366,76 @@ vector<SaveSlotInfo> listSaveSlots() {
     return infos;
 }
 
-bool writeSave(const str& slot, const data::Plugin& plugin,
-               const data::FormTypeRegistry& types) {
+str serializeSave(const data::Plugin& plugin,
+                  const data::FormTypeRegistry& types) {
+    // Pure — this is the seam the async save runs on a worker (C9.7).
+    return data::writePluginToml(plugin, types);
+}
+
+bool writeSaveText(const str& slot, const str& text) {
     std::error_code ec;
     std::filesystem::create_directories(savesDirectory(), ec);
-    std::ofstream out { savePath(slot), std::ios::binary };
+    const std::filesystem::path target = savePath(slot);
+    std::filesystem::path tmp = target;
+    tmp += ".tmp"; // saves/<slot>.toml.tmp
+    std::ofstream out { tmp, std::ios::binary };
     if (!out) {
-        LOG_ERROR("save: cannot write {}", savePath(slot).string());
+        LOG_ERROR("save: cannot write {}", tmp.string());
         return false;
     }
-    out << data::writePluginToml(plugin, types);
+    out << text;
+    out.close(); // flush BEFORE the publish — the rename is the commit
+    if (out.fail()) {
+        LOG_ERROR("save: write failed for {}", tmp.string());
+        std::filesystem::remove(tmp, ec);
+        return false;
+    }
+    // Atomic publish. std::filesystem::rename replaces an existing target
+    // on POSIX; on Windows it can refuse when the target exists — fall
+    // back to remove + rename (a crash between the two loses only the OLD
+    // file while the new one is complete in .tmp).
+    std::filesystem::rename(tmp, target, ec);
+    if (ec) {
+        std::error_code removeEc;
+        std::filesystem::remove(target, removeEc);
+        ec.clear();
+        std::filesystem::rename(tmp, target, ec);
+        if (ec) {
+            LOG_ERROR("save: cannot publish {} ({})", target.string(),
+                      ec.message());
+            std::filesystem::remove(tmp, removeEc);
+            return false;
+        }
+    }
+    return true;
+}
+
+bool writeSave(const str& slot, const data::Plugin& plugin,
+               const data::FormTypeRegistry& types) {
+    if (!writeSaveText(slot, serializeSave(plugin, types))) {
+        return false;
+    }
     LOG_INFO("Saved: {} ({} records)", savePath(slot).string(),
              plugin.records.size());
     return true;
+}
+
+// --- SaveFlightGate (C9.7) ------------------------------------------------------------
+
+bool SaveFlightGate::requestStart(const str& slot) {
+    if (inFlight) {
+        deferred = slot; // last wins — F5 spam never grows a queue
+        return false;
+    }
+    inFlight = true;
+    return true;
+}
+
+std::optional<str> SaveFlightGate::onComplete() {
+    inFlight = false;
+    std::optional<str> next;
+    std::swap(next, deferred);
+    return next;
 }
 
 std::optional<data::Plugin> readSave(const str& slot,

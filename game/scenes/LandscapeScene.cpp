@@ -1,6 +1,7 @@
 ﻿#include "game/scenes/LandscapeScene.hpp"
 
 #include <algorithm>
+#include <chrono> // C9.7: save/load timing baselines
 #include <cmath>
 #include <ctime>
 #include <filesystem>
@@ -59,12 +60,20 @@ namespace game {
 // LandscapeRenderer, audit U4-2c.)
 
 void LandscapeScene::onEnter() {
+    // C9.7: the load-side measurement baseline — a load IS a scene
+    // reload (F9 = onExit + onEnter), so its total is timed here;
+    // bootstrapData logs the parse and resolve slices.
+    const auto enterStart = std::chrono::steady_clock::now();
     rhi::Device& device = engine->getDevice();
     bootstrapData();
     createRenderResources(device);
     setupGameplay();
     setupWorldAndStreaming();
     spawnInitialWorld(device);
+    LOG_INFO("Load: scene rebuild {:.1f} ms total",
+             std::chrono::duration<f64, std::milli> {
+                 std::chrono::steady_clock::now() - enterStart }
+                 .count());
 }
 
 // C9.5: the plugin config with the language gate applied — every
@@ -106,7 +115,15 @@ void LandscapeScene::bootstrapData() {
     game::registerAllFormTypes(formTypes);
     const auto dataDir = platform::executableDir() / "data";
     const data::PluginConfig pluginConfig = loadGatedPluginConfig(dataDir);
+    // C9.7: load-side timings (the chantier's measurement baseline) —
+    // the TOML parse of the whole stack, then the §5 resolve.
+    const auto parseStart = std::chrono::steady_clock::now();
     pluginStack = data::loadPluginStack(dataDir, pluginConfig, formTypes);
+    LOG_INFO("Load: plugin stack parsed in {:.1f} ms ({} plugins)",
+             std::chrono::duration<f64, std::milli> {
+                 std::chrono::steady_clock::now() - parseStart }
+                 .count(),
+             pluginStack.plugins.size());
     for (const str& error : pluginStack.errors) {
         LOG_WARN("plugin stack: {}", error);
     }
@@ -121,7 +138,13 @@ void LandscapeScene::bootstrapData() {
     if (savePlugin) {
         loadOrder.push_back(&*savePlugin);
     }
+    const auto resolveStart = std::chrono::steady_clock::now();
     data::resolve(loadOrder, formTypes, forms);
+    LOG_INFO("Load: resolve {:.1f} ms ({} forms)",
+             std::chrono::duration<f64, std::milli> {
+                 std::chrono::steady_clock::now() - resolveStart }
+                 .count(),
+             forms.count());
     for (const data::Plugin& plugin : pluginStack.plugins) {
         for (const data::AssetEntry& entry : plugin.assets) {
             assetDb.add(entry.id, plugin.baseDir, entry.path);
@@ -616,6 +639,14 @@ void LandscapeScene::update(f32 dt) {
         if (meshCache) {
             meshCache->pumpUploads();
         }
+    }
+    // C9.7: async disk saves complete at the same fixed point — the
+    // timing log and the save.saved toast fire here, at completion. A
+    // save requested while one was in flight (F5 spam, last slot wins)
+    // relaunches NOW with a FRESH capture of the current world.
+    if (const auto slot = saveController.pumpCompletions(
+            texts, [this](const str& m) { interaction.say(m, 3.0f); })) {
+        saveController.performSave(makeSaveContext(), *slot);
     }
     // Chantier 4 B2: the game UI runs first — an open MODAL screen pauses
     // the sim below (UiScreenForm.modal) and owns mouse/keyboard; the HUD
@@ -1692,6 +1723,7 @@ SaveContext LandscapeScene::makeSaveContext() {
             });
         },
         [this](const str& msg) { interaction.say(msg, 3.0f); },
+        &engine->getJobSystem(), // C9.7: serialize + write off the frame
     };
 }
 
@@ -1965,7 +1997,10 @@ void LandscapeScene::createConsole() {
     panel.addCommand("save", [this](const str& args) -> str {
         saveController.performSave(makeSaveContext(),
                                    args.empty() ? "quick" : args);
-        return "saved '" + (args.empty() ? str { "quick" } : args) + "'";
+        // C9.7: the write is async — the toast + timing log land at
+        // completion (pumpCompletions).
+        return "saving '" + (args.empty() ? str { "quick" } : args) +
+               "'...";
     });
     panel.addCommand("load", [this](const str& args) -> str {
         const str slot = args.empty() ? "quick" : args;

@@ -73,6 +73,7 @@
     ResonanceTest.cpp
     RestTest.cpp
     RngTest.cpp
+    SaveAsyncTest.cpp
     SaveFormsTest.cpp
     SaveStateTest.cpp
     SceneStackTest.cpp
