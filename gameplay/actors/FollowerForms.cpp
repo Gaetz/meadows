@@ -9,6 +9,7 @@ namespace gameplay {
 void registerFollowerFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<FollowerClassForm>(); // FOLLOWERS É0
     registry.registerFormType<ClassPerkForm>();     // FOLLOWERS É0
+    registry.registerFormType<AffinityRuleForm>();  // FOLLOWERS É4
 }
 
 CoreAttributes classAttributesAt(const FollowerClassForm& cls, f32 level) {

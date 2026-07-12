@@ -1,0 +1,59 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="menus.rcss"/>
+	<style>
+		#recruit {
+			width: 360dp;
+			margin: auto;
+			margin-top: 48dp;
+		}
+		#recruit .line {
+			margin: 2dp 0;
+		}
+		#attributes {
+			margin: 8dp 0;
+		}
+		.attr {
+			display: block;
+			margin: 1dp 0;
+		}
+		.attr .attrname {
+			display: inline-block;
+			width: 160dp;
+		}
+		.attr .attrvalue {
+			display: inline-block;
+			width: 60dp;
+			text-align: right;
+		}
+		#recruit .menu-buttons {
+			margin: 8dp 0 0 0;
+		}
+	</style>
+</head>
+<body>
+	<!-- FOLLOWERS É4: the recruit preview. Static labels ride data-loc
+	     (C9.5, EN inline / FR pack); the values are preformatted loc
+	     strings pushed by FollowerController::openRecruitPreview. -->
+	<div id="recruit" class="panel" data-model="recruit">
+		<div class="title">{{ name }}</div>
+		<div class="muted line" data-loc="ui.recruit.title">Abilities</div>
+		<div class="line">{{ classText }}</div>
+		<div class="line">{{ levelText }}</div>
+		<div class="line accent">{{ affinityText }}</div>
+		<div id="attributes">
+			<div class="attr" data-for="row : rows">
+				<span class="attrname">{{ row.c0 }}</span>
+				<span class="attrvalue accent">{{ row.c1 }}</span>
+			</div>
+		</div>
+		<div class="line">{{ healthText }}</div>
+		<div class="line">{{ energyText }}</div>
+		<div class="line">{{ essenceText }}</div>
+		<div class="menu-buttons">
+			<button id="btn-recruit-back" data-event-click="recruitBack()" data-loc="ui.recruit.close">Close</button>
+		</div>
+	</div>
+</body>
+</rml>

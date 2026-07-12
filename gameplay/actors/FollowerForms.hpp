@@ -84,6 +84,31 @@ struct ClassPerkForm : data::Form {
     REFLECT_END()
 };
 
+// FOLLOWERS É4 — an affinity reaction: CHILD record of the ActorForm (the
+// childrenOf pattern, like ClassPerkForm above). When the named bus event
+// fires, an eligible follower whose ActorForm owns matching rules moves
+// its FollowerState.followerAffinity by `delta` (clamped ±100 — §2.9:
+// affinity is NOT a GAS attribute, it never rides applyEffect). Matching
+// mirrors QuestTaskForm: event name equality + optional filterTag the
+// event's tag must DESCEND from; the two bools narrow the parties.
+struct AffinityRuleForm : data::Form {
+    core::Guid parent;   // the ActorForm this rule belongs to
+    str event;           // bus event name ("OnParried", "OnHitTaken"…)
+    str filterTag;       // optional: event.tag must be a descendant of this
+    bool sourcePlayer { false }; // require event.source == the player
+    bool targetSelf { false };   // require event.target == this follower
+    f32 delta { 0.0f };  // signed affinity change
+
+    REFLECT_BEGIN(AffinityRuleForm, data::Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(event)
+        REFLECT_FIELD(filterTag)
+        REFLECT_FIELD(sourcePlayer)
+        REFLECT_FIELD(targetSelf)
+        REFLECT_FIELD(delta)
+    REFLECT_END()
+};
+
 void registerFollowerFormTypes(data::FormTypeRegistry& registry);
 
 // Resolves the class curves at `level`: base + perLevel × (level - 1),

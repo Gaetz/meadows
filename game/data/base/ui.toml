@@ -141,3 +141,16 @@ modal = true
 
 # (The GoldCoin currency lives in village.toml with the rest of the
 # economy content — this plugin only registers SCREENS.)
+
+# FOLLOWERS É4: the recruit-preview panel (« Parle-moi de tes aptitudes »
+# in a follower's dialogue) — name, class, level, the nine attributes,
+# vitals and affinity of the prospective companion.
+[[records]]
+form = "5e8bac40-0000-4000-8000-00000000000e"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenRecruit"
+screen = "recruit"
+document = "recruit.rml"
+modal = true

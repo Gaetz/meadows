@@ -174,6 +174,9 @@ struct StatsTuningForm : data::Form {
     f32 downedDeathChance { 0.35f };
     f32 aggravationWorseChance { 0.4f };
     f32 aggravationDeathChance { 0.15f };
+    // FOLLOWERS É4 (appended — ordinals stable): passive affinity growth
+    // per game-hour spent traveling together (accrueTimeTogether).
+    f32 affinityPerHourTogether { 0.5f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -270,6 +273,7 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(downedDeathChance)
         REFLECT_FIELD(aggravationWorseChance)
         REFLECT_FIELD(aggravationDeathChance)
+        REFLECT_FIELD(affinityPerHourTogether)
     REFLECT_END()
 };
 

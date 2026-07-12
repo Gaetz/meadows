@@ -6,6 +6,8 @@
 
 #include "engine/core/Rng.hpp"
 #include "gameplay/actors/ActorState.hpp"    // FollowerState
+#include "gameplay/actors/FollowerForms.hpp" // AffinityRuleForm (É4)
+#include "gameplay/event/EventBus.hpp"       // eventKind (É4 rule matching)
 #include "gameplay/combat/Combat.hpp"        // updateLifeState (the ONE write point)
 #include "gameplay/stats/Damage.hpp"         // StatBlock, CombatState
 #include "gameplay/stats/Injuries.hpp"       // addInjury, syncInjuryEffects
@@ -156,6 +158,52 @@ f32 convalescenceHours(const Injuries& injuries) {
 bool followerConvalescent(const FollowerState& state, f64 nowHours) {
     return state.followerDownedRecoveryHours > 0.0f &&
            nowHours < static_cast<f64>(state.followerDownedRecoveryHours);
+}
+
+// ---- É4: affinity ----------------------------------------------------------
+
+f32 addAffinity(FollowerState& state, f32 delta) {
+    const f32 before = state.followerAffinity;
+    state.followerAffinity =
+        std::clamp(before + delta, kAffinityMin, kAffinityMax);
+    return state.followerAffinity - before;
+}
+
+f32 accrueTimeTogether(FollowerState& state, f32 deltaHours,
+                       f32 affinityPerHour) {
+    if (deltaHours <= 0.0f) {
+        return 0.0f; // clock hiccup / first stamp: inert
+    }
+    state.followerHoursTogether += deltaHours;
+    return addAffinity(state, deltaHours * affinityPerHour);
+}
+
+f32 affinityDelta(const vector<const AffinityRuleForm*>& rules,
+                  const AffinityEventView& event,
+                  const GameplayTagRegistry& tags) {
+    f32 sum = 0.0f;
+    for (const AffinityRuleForm* rule : rules) {
+        if (!rule || eventKind(rule->event) != event.kind) {
+            continue;
+        }
+        if (!rule->filterTag.empty()) {
+            // The QuestTaskForm matching: the event's tag must DESCEND
+            // from the filter (an unknown filter or a tagless event fails).
+            const auto filter = tags.find(rule->filterTag);
+            if (!filter || !event.tag.isValid() ||
+                !tags.isA(event.tag, *filter)) {
+                continue;
+            }
+        }
+        if (rule->sourcePlayer && !event.sourceIsPlayer) {
+            continue;
+        }
+        if (rule->targetSelf && !event.targetIsSelf) {
+            continue;
+        }
+        sum += rule->delta;
+    }
+    return sum;
 }
 
 } // namespace gameplay

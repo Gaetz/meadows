@@ -2183,7 +2183,8 @@ text = "Comment te sens-tu ?"
 event = "OnFollowerStatus"
 order = 3
 
-# Option 4: goodbye (no reply node -> the conversation ends).
+# Goodbye (no reply node -> the conversation ends). É4 moved it to order
+# 5 — the recruit preview (« Parle-moi de tes aptitudes ») takes slot 4.
 [[records]]
 form = "6a1dc0de-0000-4000-8000-00000000000f"
 type = "DialogueNodeForm"
@@ -2192,4 +2193,382 @@ new = true
 parent = "6a1dc0de-0000-4000-8000-000000000008"
 speaker = "Player"
 text = "Bonne route, Aldric."
+order = 5
+
+# --- FOLLOWERS É4: recrutement conditionnel + affinité -----------------------
+# Maela, the healer: THE conditions demo. Her recruit option requires
+# FollowerAffinityAtLeast 10 (the É4 evaluator clause reading the DIALOGUE
+# PARTNER's FollowerState) AND AttributeAtLeast level 2 (the É0 minimal
+# level — the player boots at 1). Two SIBLING refusal options carry the
+# hint for the failing condition (negate combinations — the evaluator ANDs
+# clauses per option, so exactly one of the three shows):
+#   recruit    : affinity >= 10 AND level >= 2
+#   refusal A  : NOT affinity >= 10                (« reviens me parler »)
+#   refusal B  : affinity >= 10 AND NOT level >= 2 (« manque d'expérience »)
+# Her greeting fires OnFollowerChat; an AffinityRuleForm child of her
+# ActorForm turns each chat into +5 affinity — talking to her IS the way
+# to unlock her. Aldric gets two demo rules on combat events instead.
+
+# The healer class (É0 curves — grace/insight forward).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000020"
+type = "FollowerClassForm"
+new = true
+[records.fields]
+editorId = "ClassHealer"
+displayName = "Guerisseuse"
+strengthBase = 5.0
+constitutionBase = 5.0
+graceBase = 7.0
+gracePerLevel = 0.5
+insightBase = 4.0
+insightPerLevel = 0.5
+
+# Her home spot, by the village square (the future tavern corner).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000021"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000080"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [52.0, 0.0, 372.0]
+
+# Maela: villager rig, a healer's calling (followerCategory major — É0).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000022"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "Maela"
+displayName = "Maela"
+maxHealth = 45.0
+appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
+animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
+courage = 0.4
+followerCategory = "major"
+followerClass = "6a1dc0de-0000-4000-8000-000000000020"
+homeMarker = "6a1dc0de-0000-4000-8000-000000000021"
+dialogue = "6a1dc0de-0000-4000-8000-000000000025"
+schedule = "6a1dc0de-0000-4000-8000-000000000023"
+
+# Her day: tend her corner (the stand package anchored on her home spot —
+# which also walks her back after a dismissal, the Aldric pattern).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000023"
+type = "ScheduleForm"
+new = true
+[records.fields]
+editorId = "MaelaDay"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000024"
+type = "ScheduleEntryForm"
+new = true
+[records.fields]
+editorId = "MaelaStandHome"
+parent = "6a1dc0de-0000-4000-8000-000000000023"
+startHour = 0.0
+endHour = 24.0
+package = "4d7a9b30-0000-4000-8000-000000000088"
+location = "6a1dc0de-0000-4000-8000-000000000021"
+
+# Placed at her home, in the village cell.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000026"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "6a1dc0de-0000-4000-8000-000000000022"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [51.0, 0.0, 371.0]
+
+# Her conversation. The GREETING fires OnFollowerChat — the affinity rule
+# below turns each chat into +5 (the way to reach the recruit threshold).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000025"
+type = "DialogueForm"
+new = true
+[records.fields]
+editorId = "MaelaChat"
+displayName = "Maela"
+rootNode = "6a1dc0de-0000-4000-8000-000000000027"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000027"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+speaker = "Maela"
+text = "Bienvenue, voyageur. Je soigne ceux qui en ont besoin — assieds-toi un instant si tu veux parler."
+event = "OnFollowerChat"
+
+# Option 1 — recruit: affinity >= 10 AND level >= 2 (plus the standard
+# not-already-following / not-convalescent gates).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000028"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000027"
+speaker = "Player"
+text = "Voyagerons-nous ensemble ?"
+event = "OnRecruitFollower"
+order = 1
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000029"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000028"
+kind = "FollowerAffinityAtLeast"
+value = 10.0
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000002a"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000028"
+kind = "AttributeAtLeast"
+attribute = "level"
+value = 2.0
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000002b"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000028"
+kind = "HasTag"
+tag = "Follower.Active"
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000002c"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000028"
+kind = "HasTag"
+tag = "Follower.Convalescent"
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000002d"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000028"
+speaker = "Maela"
+text = "Avec plaisir. Mes remedes voyageront avec toi."
+
+# Refusal A — the affinity hint (NOT affinity >= 10): the most common
+# case, first among the refusals (order 2, right after the recruit slot).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000002e"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000027"
+speaker = "Player"
+text = "Voyagerons-nous ensemble ?"
+order = 2
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000002f"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-00000000002e"
+kind = "FollowerAffinityAtLeast"
+value = 10.0
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000030"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-00000000002e"
+kind = "HasTag"
+tag = "Follower.Active"
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000031"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-00000000002e"
+speaker = "Maela"
+text = "Nous nous connaissons a peine... reviens me parler plus tard."
+
+# Refusal B — the level hint (affinity met AND NOT level >= 2): the MORE
+# SPECIFIC refusal, shown once the affinity work is done.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000032"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000027"
+speaker = "Player"
+text = "Voyagerons-nous ensemble ?"
+order = 3
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000033"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000032"
+kind = "FollowerAffinityAtLeast"
+value = 10.0
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000034"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000032"
+kind = "AttributeAtLeast"
+attribute = "level"
+value = 2.0
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000035"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000032"
+kind = "HasTag"
+tag = "Follower.Active"
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000036"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000032"
+speaker = "Maela"
+text = "Tu manques d'experience pour la route. Reviens plus aguerri."
+
+# Dismiss (while she follows).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000037"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000027"
+speaker = "Player"
+text = "Reste ici pour l'instant."
+event = "OnDismissFollower"
 order = 4
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000038"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000037"
+kind = "HasTag"
+tag = "Follower.Active"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000039"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000037"
+speaker = "Maela"
+text = "Je retourne a mes plantes. Prends soin de toi."
+
+# The recruit preview (É4): fires OnFollowerPreview -> the RmlUi panel.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000003a"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000027"
+speaker = "Player"
+text = "Parle-moi de tes aptitudes."
+event = "OnFollowerPreview"
+order = 5
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000003b"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-00000000003a"
+speaker = "Maela"
+text = "Voici ce que je sais faire."
+
+# Goodbye (no reply node -> the conversation ends).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000040"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000027"
+speaker = "Player"
+text = "A bientot, Maela."
+order = 6
+
+# Maela's affinity rule: each chat (her greeting's OnFollowerChat) is +5 —
+# two conversations reach the recruit threshold of 10.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000003c"
+type = "AffinityRuleForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000022"
+event = "OnFollowerChat"
+delta = 5.0
+
+# Aldric's demo rules (É4): a perfect parry anywhere in the party pleases
+# him (+5); friendly fire — the PLAYER landing a hit ON HIM — displeases
+# him (-10). Combat events the bus already carries (OnParried/OnHitTaken).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000003d"
+type = "AffinityRuleForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000003"
+event = "OnParried"
+delta = 5.0
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000003e"
+type = "AffinityRuleForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000003"
+event = "OnHitTaken"
+sourcePlayer = true
+targetSelf = true
+delta = -10.0
+
+# Aldric also offers the preview (order 4; his goodbye moves to 5).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000003f"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000008"
+speaker = "Player"
+text = "Parle-moi de tes aptitudes."
+event = "OnFollowerPreview"
+order = 4
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000041"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-00000000003f"
+speaker = "Aldric"
+text = "Regarde par toi-meme : une lame solide et un bras qui ne tremble pas."

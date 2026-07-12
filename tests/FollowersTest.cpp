@@ -8,7 +8,9 @@
 #include "game/SaveGame.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/actors/ActorState.hpp"
+#include "gameplay/actors/FollowerForms.hpp" // AffinityRuleForm (É4)
 #include "gameplay/actors/Followers.hpp"
+#include "gameplay/event/EventBus.hpp" // eventKind (É4 rule matching)
 #include "gameplay/combat/Combat.hpp"       // updateLifeState (É3 routing)
 #include "gameplay/condition/Condition.hpp" // the recruit-refusal gate (É3)
 #include "gameplay/save/SaveForms.hpp"
@@ -19,6 +21,7 @@
 #include "gameplay/stats/Injuries.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 #include "gameplay/stats/Survival.hpp"
+#include "quest/Dialogue.hpp" // DialogueRunner (É4 refusal picking)
 #include "world/scene/Components.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/streaming/CellLoader.hpp"
@@ -620,4 +623,209 @@ TEST_CASE("followers É3: no health regen while downed") {
     const gameplay::StatModifiers mods;
     gameplay::tickGameTime(args, 3600.0, mods); // one game-hour
     CHECK(f.vitals.health == doctest::Approx(0.0f)); // no silent self-revive
+}
+
+// --- É4: recrutement complet + affinité --------------------------------------
+// The new evaluator clause (FollowerAffinityAtLeast — one entry in the OCP
+// dispatch table, reading the DIALOGUE PARTNER half of EvalContext), the
+// AffinityRuleForm matcher (the QuestTaskForm event+filterTag matching) and
+// the passive time-together accrual (the VendorState hour-stamp idiom).
+
+TEST_CASE("followers É4: FollowerAffinityAtLeast reads the dialogue partner") {
+    gameplay::ConditionForm clause;
+    clause.kind = "FollowerAffinityAtLeast";
+    clause.value = 10.0f;
+
+    gameplay::EvalContext context; // player-only context: no partner
+    CHECK_FALSE(gameplay::evaluateClause(clause, context)); // fails closed
+
+    gameplay::FollowerState partner;
+    context.partnerFollower = &partner;
+    partner.followerAffinity = 9.9f;
+    CHECK_FALSE(gameplay::evaluateClause(clause, context));
+    partner.followerAffinity = 10.0f;
+    CHECK(gameplay::evaluateClause(clause, context)); // inclusive threshold
+
+    // negate flips the clause — the refusal-option combination.
+    clause.negate = true;
+    CHECK_FALSE(gameplay::evaluateClause(clause, context));
+    partner.followerAffinity = 0.0f;
+    CHECK(gameplay::evaluateClause(clause, context));
+
+    // The one-line editor reading (chantier 8.9 contract).
+    clause.negate = false;
+    CHECK(gameplay::conditionSummary(clause) == "if affinity >= 10");
+}
+
+TEST_CASE("followers É4: affinity rules match event, filterTag and parties") {
+    gameplay::GameplayTagRegistry tags;
+    const gameplay::GameplayTag bandit = tags.registerTag("Faction.Bandits.East");
+
+    gameplay::AffinityRuleForm chat;      // any OnFollowerChat: +5
+    chat.event = "OnFollowerChat";
+    chat.delta = 5.0f;
+    gameplay::AffinityRuleForm friendly;  // player hits ME: -10
+    friendly.event = "OnHitTaken";
+    friendly.sourcePlayer = true;
+    friendly.targetSelf = true;
+    friendly.delta = -10.0f;
+    gameplay::AffinityRuleForm banditSlain; // a Faction.Bandits* death: +2
+    banditSlain.event = "OnDeath";
+    banditSlain.filterTag = "Faction.Bandits";
+    banditSlain.delta = 2.0f;
+    const vector<const gameplay::AffinityRuleForm*> rules {
+        &chat, &friendly, &banditSlain
+    };
+
+    gameplay::AffinityEventView view;
+    view.kind = gameplay::eventKind("OnFollowerChat");
+    CHECK(gameplay::affinityDelta(rules, view, tags) == doctest::Approx(5.0f));
+
+    // OnHitTaken needs BOTH party filters.
+    view.kind = gameplay::eventKind("OnHitTaken");
+    CHECK(gameplay::affinityDelta(rules, view, tags) == doctest::Approx(0.0f));
+    view.sourceIsPlayer = true;
+    CHECK(gameplay::affinityDelta(rules, view, tags) == doctest::Approx(0.0f));
+    view.targetIsSelf = true;
+    CHECK(gameplay::affinityDelta(rules, view, tags) ==
+          doctest::Approx(-10.0f));
+
+    // filterTag: the event's tag must DESCEND from it (tags.isA — the
+    // QuestTaskForm matching); a tagless event never matches a filter.
+    view = {};
+    view.kind = gameplay::eventKind("OnDeath");
+    CHECK(gameplay::affinityDelta(rules, view, tags) == doctest::Approx(0.0f));
+    view.tag = bandit; // Faction.Bandits.East isA Faction.Bandits
+    CHECK(gameplay::affinityDelta(rules, view, tags) == doctest::Approx(2.0f));
+    view.tag = tags.registerTag("Faction.CityGuard");
+    CHECK(gameplay::affinityDelta(rules, view, tags) == doctest::Approx(0.0f));
+
+    // Unknown event: nothing moves.
+    view = {};
+    view.kind = gameplay::eventKind("OnNoise");
+    CHECK(gameplay::affinityDelta(rules, view, tags) == doctest::Approx(0.0f));
+}
+
+TEST_CASE("followers É4: passive accrual math and the ±100 clamp") {
+    gameplay::FollowerState state;
+    // The first stamp (delta 0) and clock hiccups are inert.
+    CHECK(gameplay::accrueTimeTogether(state, 0.0f, 0.5f) ==
+          doctest::Approx(0.0f));
+    CHECK(gameplay::accrueTimeTogether(state, -1.0f, 0.5f) ==
+          doctest::Approx(0.0f));
+    CHECK(state.followerHoursTogether == doctest::Approx(0.0f));
+
+    // 2 game-hours at 0.5/h: hours accumulate, affinity follows.
+    CHECK(gameplay::accrueTimeTogether(state, 2.0f, 0.5f) ==
+          doctest::Approx(1.0f));
+    CHECK(state.followerHoursTogether == doctest::Approx(2.0f));
+    CHECK(state.followerAffinity == doctest::Approx(1.0f));
+
+    // The clamp: growth saturates at +100 (hours keep counting).
+    state.followerAffinity = 99.5f;
+    CHECK(gameplay::accrueTimeTogether(state, 2.0f, 0.5f) ==
+          doctest::Approx(0.5f));
+    CHECK(state.followerAffinity == doctest::Approx(100.0f));
+    CHECK(state.followerHoursTogether == doctest::Approx(4.0f));
+
+    // addAffinity clamps the floor too and reports the APPLIED change.
+    CHECK(gameplay::addAffinity(state, -300.0f) == doctest::Approx(-200.0f));
+    CHECK(state.followerAffinity == doctest::Approx(-100.0f));
+}
+
+namespace {
+
+// The Maela demo (village.toml É4), rebuilt headless: one question, three
+// mutually exclusive gatings — recruit (affinity>=10 AND level>=2),
+// refusal A (NOT affinity>=10), refusal B (affinity>=10 AND NOT level>=2).
+const Guid kMaelaDialogue = *Guid::fromString("6a1dc0de-0000-4000-8000-0000000000e0");
+const Guid kMaelaRoot = *Guid::fromString("6a1dc0de-0000-4000-8000-0000000000e1");
+const Guid kRecruitOpt = *Guid::fromString("6a1dc0de-0000-4000-8000-0000000000e2");
+const Guid kRefusalA = *Guid::fromString("6a1dc0de-0000-4000-8000-0000000000e3");
+const Guid kRefusalB = *Guid::fromString("6a1dc0de-0000-4000-8000-0000000000e4");
+
+data::FormDatabase buildRecruitDialogueDb() {
+    data::FormDatabase db;
+    auto dialogue = std::make_unique<quest::DialogueForm>();
+    dialogue->id = kMaelaDialogue;
+    dialogue->rootNode = kMaelaRoot;
+    db.add(std::move(dialogue), quest::DialogueForm::staticTypeInfo());
+
+    u64 nextGuid = 0xf0;
+    const auto addNode = [&](const Guid& id, const Guid& parent,
+                             const char* speaker, i32 order) {
+        auto node = std::make_unique<quest::DialogueNodeForm>();
+        node->id = id;
+        node->parent = parent;
+        node->speaker = speaker;
+        node->order = order;
+        db.add(std::move(node), quest::DialogueNodeForm::staticTypeInfo());
+    };
+    const auto addClause = [&](const Guid& parent, const char* kind,
+                               const char* attribute, f32 value,
+                               bool negate) {
+        auto clause = std::make_unique<gameplay::ConditionForm>();
+        clause->id = Guid { 0x6a1dc0de00004000ull,
+                            0x8000000000000000ull + nextGuid++ };
+        clause->parent = parent;
+        clause->kind = kind;
+        clause->attribute = attribute;
+        clause->value = value;
+        clause->negate = negate;
+        db.add(std::move(clause), gameplay::ConditionForm::staticTypeInfo());
+    };
+
+    addNode(kMaelaRoot, {}, "Maela", 0);
+    addNode(kRecruitOpt, kMaelaRoot, "Player", 1);
+    addClause(kRecruitOpt, "FollowerAffinityAtLeast", "", 10.0f, false);
+    addClause(kRecruitOpt, "AttributeAtLeast", "level", 2.0f, false);
+    addNode(kRefusalA, kMaelaRoot, "Player", 2);
+    addClause(kRefusalA, "FollowerAffinityAtLeast", "", 10.0f, true);
+    addNode(kRefusalB, kMaelaRoot, "Player", 3);
+    addClause(kRefusalB, "FollowerAffinityAtLeast", "", 10.0f, false);
+    addClause(kRefusalB, "AttributeAtLeast", "level", 2.0f, true);
+    return db;
+}
+
+} // namespace
+
+TEST_CASE("followers É4: the failing condition picks the refusal option") {
+    const data::FormDatabase db = buildRecruitDialogueDb();
+    gameplay::EventBus bus;
+    gameplay::GameplayTagRegistry tags;
+
+    gameplay::AttributeSet attributes; // level defaults to 1 (the É0 boot)
+    gameplay::AbilitySystem player;
+    gameplay::initializeCurrent(player, attributes);
+    gameplay::FollowerState partner;
+
+    gameplay::EvalContext context;
+    context.abilitySystem = &player;
+    context.tags = &tags;
+    context.partnerFollower = &partner;
+
+    quest::DialogueRunner runner { db, bus };
+    REQUIRE(runner.start(kMaelaDialogue));
+
+    const auto only = [&]() -> Guid {
+        const auto options = runner.options(context);
+        REQUIRE(options.size() == 1); // the gatings are mutually exclusive
+        return options[0]->id;
+    };
+
+    // Fresh save: affinity 0, level 1 -> the affinity hint (refusal A).
+    CHECK(only() == kRefusalA);
+
+    // Affinity earned, level still 1 -> the MORE SPECIFIC level hint (B).
+    partner.followerAffinity = 15.0f;
+    CHECK(only() == kRefusalB);
+
+    // Both met -> the real recruit option.
+    gameplay::setBaseValue(attributes, gameplay::attr("level"), 2.0f);
+    gameplay::initializeCurrent(player, attributes);
+    CHECK(only() == kRecruitOpt);
+
+    // And back below the affinity bar (a friendly-fire slide): A again.
+    partner.followerAffinity = 5.0f;
+    CHECK(only() == kRefusalA);
 }

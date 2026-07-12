@@ -21,6 +21,9 @@ struct StatsTuningForm;
 namespace render {
 struct TerrainParams;
 }
+namespace ui {
+class UiSystem;
+}
 namespace world {
 class CellLoader;
 }
@@ -30,6 +33,7 @@ namespace game {
 class NpcDirector;
 struct Npc;
 class PendingSaveLayer;
+class ScreenStack;
 
 // The scene systems recruit/dismiss touch, bundled so the follower logic is
 // decoupled from LandscapeScene (the *Controller pattern — mirrors
@@ -49,6 +53,9 @@ struct FollowerContext {
     core::Rng& rng;                  // bleedout/aggravation rolls (§8 seeded)
     const data::TextTable* texts { nullptr }; // toast lines (loc keys)
     std::function<void(str line)> say;        // HUD toast (may be empty)
+    // É4 additions (the recruit-preview screen — null in headless use):
+    ::ui::UiSystem* ui { nullptr };
+    ScreenStack* screenStack { nullptr };
 };
 
 // Recruit/dismiss + the party teleports (FOLLOWERS É1). The persistence is
@@ -104,17 +111,42 @@ public:
     static void teleportNear(const Vec3& anchor,
                              const render::TerrainParams& terrain, Npc& npc);
 
-    // ---- É3: downed / revive / convalescence / consultation ---------------
-    // Per frame (after the director's update): mirrors Follower.Protected
-    // onto each follower's OWN tags (the syncStateTag idiom — what routes
-    // 0 HP to Downed in updateLifeState), ticks the bleedout clock
+    // ---- É3/É4: the per-frame follower sweep -------------------------------
+    // Per frame (after the director's update) — renamed from updateDowned
+    // when É4 added the affinity accrual. Mirrors Follower.Protected onto
+    // each follower's OWN tags (the syncStateTag idiom — what routes 0 HP
+    // to Downed in updateLifeState), accrues time-together affinity for
+    // the ACTIVE ones (gameplay::accrueTimeTogether on GameClock deltas —
+    // the VendorState hour-stamp idiom), ticks the bleedout clock
     // (gameplay::updateDowned) and resolves timeouts through
     // gameplay::resolveBleedout: real death, or recovery-with-injury —
     // and, past the severity bar, CONVALESCENCE: the É1 dismiss walks him
     // home and followerDownedRecoveryHours stamps his unavailability.
     // Returns true when the NPC list needs a refresh (a dismiss to a
     // non-resident home despawns the entity).
-    bool updateDowned(const FollowerContext& ctx, f32 dt);
+    bool updateFollowers(const FollowerContext& ctx, f32 dt);
+
+    // ---- É4: affinity + the recruit preview --------------------------------
+    // The generic bus handler (ONE subscribeAll on the scene hub — the
+    // QuestDirector.handleQuestEvent precedent): for every follower whose
+    // ActorForm owns AffinityRuleForm children, a matching event moves his
+    // affinity (the pure gameplay::affinityDelta, clamped ±100). Eligible:
+    // ACTIVE followers — plus the current dialogue partner, so a chat rule
+    // (Maela's OnFollowerChat) can grow affinity BEFORE recruitment.
+    void onAffinityEvent(const FollowerContext& ctx,
+                         const gameplay::Event& event,
+                         ecs::Entity dialoguePartner);
+
+    // Dialogue "OnFollowerPreview" (« Parle-moi de tes aptitudes ») — the
+    // recruit-preview screen (the MapController screen idiom: push the
+    // "recruit" model, show the UiScreenForm screen): name, class, level,
+    // the 9 attributes (currentValueOf on the PARTNER entity), vitals,
+    // affinity. Loc'd through the TextTable (C9.5 keys, ui.recruit.*).
+    void openRecruitPreview(const FollowerContext& ctx, ecs::Entity follower);
+
+    // onExit: drop the accrual stamp (the game clock restarts with the
+    // next scene enter).
+    void reset() { lastAccrualHours_ = -1.0; }
 
     // [E] on a downed ally: the useConsumable path re-aimed at HIM — the
     // first health-restoring ConsumableForm in the PLAYER's bag is
@@ -132,6 +164,12 @@ public:
     // Follower.Convalescent tag (the Follower.Active precedent) so the
     // recruit dialogue's refusal option gates on it.
     void syncConvalescentTag(const FollowerContext& ctx);
+
+private:
+    // É4: the last game-hour the sweep accrued time-together at (-1 = not
+    // stamped yet — the first sweep stamps without accruing, so a scene
+    // enter or F9 reload never credits the whole clock).
+    f64 lastAccrualHours_ { -1.0 };
 };
 
 } // namespace game

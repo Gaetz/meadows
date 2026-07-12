@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 #include "data/forms/FormDatabase.hpp"
+#include "gameplay/actors/ActorState.hpp" // FollowerState (É4 partner clause)
 
 namespace gameplay {
 
@@ -43,6 +44,15 @@ bool luaPredicate(const ConditionForm& clause, const EvalContext& ctx) {
     return ctx.luaPredicate && ctx.luaPredicate(clause.lua);
 }
 
+// FOLLOWERS É4: reads the DIALOGUE PARTNER's affinity (EvalContext.
+// partnerFollower — the player context carries no affinity). Fails closed
+// when no partner (or a non-follower partner) filled the context.
+bool followerAffinityAtLeast(const ConditionForm& clause,
+                             const EvalContext& ctx) {
+    return ctx.partnerFollower &&
+           ctx.partnerFollower->followerAffinity >= clause.value;
+}
+
 using ClauseFn = bool (*)(const ConditionForm&, const EvalContext&);
 const std::unordered_map<std::string_view, ClauseFn> kClauseEvaluators {
     { "HasTag", &hasTag },
@@ -50,6 +60,7 @@ const std::unordered_map<std::string_view, ClauseFn> kClauseEvaluators {
     { "AttributeAtMost", &attributeAtMost },
     { "HasItem", &hasItem },
     { "Lua", &luaPredicate },
+    { "FollowerAffinityAtLeast", &followerAffinityAtLeast }, // É4
 };
 
 } // namespace
@@ -107,6 +118,9 @@ str conditionSummary(const ConditionForm& clause) {
         return prefix + "has item x" + num(clause.value < 1.0f
                                                ? 1.0f
                                                : clause.value);
+    }
+    if (clause.kind == "FollowerAffinityAtLeast") {
+        return prefix + "affinity >= " + num(clause.value);
     }
     if (clause.kind == "Lua") {
         const str expr = clause.lua.size() > 24

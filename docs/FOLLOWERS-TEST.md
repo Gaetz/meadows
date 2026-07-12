@@ -102,4 +102,25 @@ Tu démarres avec **2 Potions de soin** dans l'inventaire (loadout).
 miroir Convalescent est exact quand sa cellule est résidente (le cas
 dès que tu peux lui parler).
 
+## É4 — Recrutement conditionnel + affinité (Maela)
+
+**Maela** (guérisseuse) est près du coin de la place d'Aldric.
+
+**À tester :**
+1. Parle-lui direct → REFUS avec indice : « Nous nous connaissons à
+   peine… » (affinité insuffisante). Chaque salut lui donne +5
+   d'affinité : au 2e passage l'affinité atteint 10 → le refus change :
+   « Tu manques d'expérience pour la route. » (niveau 2 requis — ton
+   niveau est 1, l'attribut `level` d'É0 ; console pour le poser à 2 en
+   attendant le chantier progression).
+2. Niveau ≥ 2 + affinité ≥ 10 → l'option de recrutement apparaît.
+3. « Parle-moi de tes aptitudes » (elle ET Aldric) → l'écran
+   d'aperçu : classe, niveau, les 9 attributs, vitals, affinité.
+4. Affinité par actions : une parade parfaite d'un ennemi devant
+   Aldric = +5 ; le FRAPPER toi-même = −10 (logs « affinity » au
+   passage).
+5. Le temps ensemble compte : +0,5/heure de jeu avec un follower actif
+   (attends au menu T pour le voir grimper via l'aperçu).
+6. F5/F9 : l'affinité et les heures survivent.
+
 <!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->

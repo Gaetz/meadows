@@ -1108,3 +1108,156 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'follower.status'
     text = '{}: health {}%, {} injury(ies), rest {} h'
+
+[[records]]
+form = '836d02b7-daea-44af-b96b-37d3d223474e'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.recruit.title'
+    text = 'Abilities'
+
+[[records]]
+form = 'a3681fc1-d1cf-43da-bdd3-4d05e831197e'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.recruit.class'
+    text = 'Class: {}'
+
+[[records]]
+form = '3905d63c-dc39-4734-b227-edb17607d9b3'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.recruit.level'
+    text = 'Level {}'
+
+[[records]]
+form = '87557403-28d7-4e51-a9c5-f0dbbb0be760'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.recruit.affinity'
+    text = 'Affinity {}'
+
+[[records]]
+form = '3703e630-5f9e-4ff7-83e4-a6ea7d453f9f'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.recruit.health'
+    text = 'Health {} / {}'
+
+[[records]]
+form = 'd64ac915-e86b-4a1d-b089-494d45044a08'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.recruit.energy'
+    text = 'Energy {} / {}'
+
+[[records]]
+form = '53330e76-2aaa-4322-b627-8df61e256046'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.recruit.essence'
+    text = 'Essence {} / {}'
+
+[[records]]
+form = '9095ab2a-ece8-4fa0-a99c-2ed4b8f87f3c'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.recruit.close'
+    text = 'Close'
+
+[[records]]
+form = '390f7ed6-c0a9-4e4a-824d-72618567e71e'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.attr.strength'
+    text = 'Strength'
+
+[[records]]
+form = 'acad8d43-db11-4857-b569-43307e4a88e0'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.attr.constitution'
+    text = 'Constitution'
+
+[[records]]
+form = '4679d7ef-1d12-4e13-b53c-f93f6615425a'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.attr.grace'
+    text = 'Grace'
+
+[[records]]
+form = '42a8e9c4-a8ea-4b4a-b6ce-35fe30bdb1ec'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.attr.dexterity'
+    text = 'Dexterity'
+
+[[records]]
+form = '9102f665-8574-4de0-b1e2-9d3a93876be7'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.attr.alacrity'
+    text = 'Alacrity'
+
+[[records]]
+form = 'aa7ff66a-0916-4e4f-83ac-b671b2b461c6'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.attr.perception'
+    text = 'Perception'
+
+[[records]]
+form = '3aa7a775-835c-40c0-8fbb-f801eee64777'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.attr.charisma'
+    text = 'Charisma'
+
+[[records]]
+form = '9ccdbd05-9a40-4716-82b8-700f229d07dc'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.attr.ego'
+    text = 'Ego'
+
+[[records]]
+form = 'b710152e-17ce-4de4-9bfb-c84071fc4eda'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.attr.insight'
+    text = 'Insight'

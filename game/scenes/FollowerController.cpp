@@ -4,16 +4,22 @@
 
 #include "data/forms/CoreForms.hpp" // data::ActorForm, ConsumableForm
 #include "data/forms/FormDatabase.hpp"
-#include "data/forms/LocForms.hpp" // data::TextTable (É3 toasts)
+#include "data/forms/FormQuery.hpp" // collectChildren (É4 affinity rules)
+#include "data/forms/LocForms.hpp"  // data::TextTable (É3 toasts)
 #include "engine/core/Log.hpp"
+#include "engine/ui/UiSystem.hpp" // the recruit-preview model (É4)
+#include "game/ScreenStack.hpp"   // show("recruit") (É4)
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
 #include "game/SaveGame.hpp"                        // PendingSaveLayer
 #include "game/scenes/NpcDirector.hpp"              // Npc, NpcDirector
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayEffects.hpp" // applyEffect (É3 revive)
 #include "gameplay/actors/ActorState.hpp" // gameplay::FollowerState
+#include "gameplay/actors/FollowerForms.hpp" // FollowerClassForm,
+                                             //   AffinityRuleForm (É4)
 #include "gameplay/actors/Followers.hpp"  // followTuning, adoptOnHit (É2),
-                                          //   resolveBleedout (É3)
+                                          //   resolveBleedout (É3),
+                                          //   affinityDelta (É4)
 #include "gameplay/combat/Combat.hpp"     // updateLifeState (É3 revive)
 #include "gameplay/event/EventBus.hpp"    // gameplay::Event (É2 aggro)
 #include "gameplay/inventory/Inventory.hpp" // the player's bag (É3 revive)
@@ -308,11 +314,20 @@ void FollowerController::onDeath(const FollowerContext& ctx,
     }
 }
 
-// ---- É3: downed / revive / convalescence / consultation --------------------
+// ---- É3/É4: the per-frame follower sweep ------------------------------------
 
-bool FollowerController::updateDowned(const FollowerContext& ctx, f32 dt) {
+bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
     bool refreshNeeded = false;
     const auto downedTag = ctx.gameTags.find("State.Downed");
+    // É4: the passive-affinity clock — ONE stamp for the whole sweep (the
+    // VendorState.lastRestockHours idiom on the shared GameClock). The
+    // first frame after enter/reset only stamps.
+    const f64 nowHours = ctx.gameClock.gameHours();
+    const f32 deltaHours =
+        lastAccrualHours_ < 0.0
+            ? 0.0f
+            : static_cast<f32>(nowHours - lastAccrualHours_);
+    lastAccrualHours_ = nowHours;
     for (auto& npcPtr : ctx.npcDirector.npcs()) {
         Npc& npc = *npcPtr;
         if (npc.dead || !npc.entity.is_alive() ||
@@ -327,6 +342,12 @@ bool FollowerController::updateDowned(const FollowerContext& ctx, f32 dt) {
         // never carries the tag, so he still just dies (iso-behavior).
         gameplay::syncStateTag(system, ctx.gameTags, "Follower.Protected",
                                state.followerActive);
+        // É4: an ACTIVE, standing follower earns time together (hours +
+        // affinity, clamped — gameplay::accrueTimeTogether, doctested).
+        if (state.followerActive && !npc.downed) {
+            gameplay::accrueTimeTogether(
+                state, deltaHours, ctx.statsTuning.affinityPerHourTogether);
+        }
         if (!npc.downed || !downedTag || !system.tags.has(*downedTag)) {
             continue;
         }
@@ -507,6 +528,115 @@ void FollowerController::syncConvalescentTag(const FollowerContext& ctx) {
     } else if (!any && sys.tags.has(tag)) {
         sys.tags.remove(tag, ctx.gameTags);
     }
+}
+
+// ---- É4: affinity rules + the recruit preview -------------------------------
+
+void FollowerController::onAffinityEvent(const FollowerContext& ctx,
+                                         const gameplay::Event& event,
+                                         ecs::Entity dialoguePartner) {
+    for (auto& npcPtr : ctx.npcDirector.npcs()) {
+        Npc& npc = *npcPtr;
+        if (npc.dead || !npc.entity.is_alive() ||
+            !npc.entity.has<gameplay::FollowerState>()) {
+            continue;
+        }
+        auto& state = npc.entity.get_mut<gameplay::FollowerState>();
+        // Eligible: traveling together — or the one being TALKED to (his
+        // chat rules must run before recruitment, or affinity-gated
+        // recruiting could never unlock).
+        if (!state.followerActive && npc.entity != dialoguePartner) {
+            continue;
+        }
+        const data::ActorForm* actor = followerActorForm(ctx, npc.entity);
+        if (!actor) {
+            continue;
+        }
+        // His ActorForm's rules (the childrenOf pattern); most actors have
+        // none — the sweep stays cheap on this early exit.
+        const vector<const gameplay::AffinityRuleForm*> rules =
+            data::collectChildren<gameplay::AffinityRuleForm>(ctx.forms,
+                                                              actor->id);
+        if (rules.empty()) {
+            continue;
+        }
+        gameplay::AffinityEventView view;
+        view.kind = event.kind;
+        view.tag = event.tag;
+        view.sourceIsPlayer = event.source == ctx.playerEntity;
+        view.targetIsSelf = event.target == npc.entity;
+        const f32 delta = gameplay::affinityDelta(rules, view, ctx.gameTags);
+        if (delta == 0.0f) {
+            continue;
+        }
+        const f32 applied = gameplay::addAffinity(state, delta);
+        if (applied != 0.0f) {
+            LOG_INFO("É4: {} affinity {:+.1f} -> {:.1f}", npc.editorId,
+                     applied, state.followerAffinity);
+        }
+    }
+}
+
+void FollowerController::openRecruitPreview(const FollowerContext& ctx,
+                                            ecs::Entity follower) {
+    if (!ctx.ui || !ctx.screenStack || !ctx.texts ||
+        !follower.is_alive() || !follower.has<gameplay::AbilitySystem>() ||
+        !follower.has<gameplay::FollowerState>()) {
+        return;
+    }
+    const data::ActorForm* actor = followerActorForm(ctx, follower);
+    if (!actor) {
+        return;
+    }
+    const auto& system = follower.get<gameplay::AbilitySystem>();
+    const auto& state = follower.get<gameplay::FollowerState>();
+    const auto current = [&](const char* name) {
+        return gameplay::currentValueOf(system, gameplay::attr(name));
+    };
+    const auto whole = [](f32 value) {
+        return std::to_string(static_cast<i32>(value + 0.5f));
+    };
+
+    ::ui::UiSystem& ui = *ctx.ui;
+    ui.setString("recruit", "name", actor->displayName);
+    const auto* cls =
+        ctx.forms.find<gameplay::FollowerClassForm>(actor->followerClass);
+    ui.setString("recruit", "classText",
+                 ctx.texts->format("ui.recruit.class",
+                                   cls ? cls->displayName : str { "-" }));
+    ui.setString("recruit", "levelText",
+                 ctx.texts->format("ui.recruit.level",
+                                   whole(current("level"))));
+    ui.setString("recruit", "affinityText",
+                 ctx.texts->format("ui.recruit.affinity",
+                                   whole(state.followerAffinity)));
+    const auto vital = [&](const char* slot, const char* key,
+                           const char* attrName, const char* maxName) {
+        ui.setString("recruit", slot,
+                     ctx.texts->format(key, { whole(current(attrName)),
+                                              whole(current(maxName)) }));
+    };
+    vital("healthText", "ui.recruit.health", "health", "maxHealth");
+    vital("energyText", "ui.recruit.energy", "energy", "maxEnergy");
+    vital("essenceText", "ui.recruit.essence", "essence", "maxEssence");
+
+    // The nine attributes (docs/STATS.md §1), one row each — CURRENT
+    // values on the partner entity, labels from the loc table (C9.5).
+    static constexpr const char* kAttributes[] = {
+        "strength",   "constitution", "grace", "dexterity", "alacrity",
+        "perception", "charisma",     "ego",   "insight",
+    };
+    vector<::ui::UiRow> rows;
+    rows.reserve(9);
+    for (const char* name : kAttributes) {
+        ::ui::UiRow row;
+        row.id = name;
+        row.c0 = ctx.texts->get(str { "ui.attr." } + name);
+        row.c1 = whole(current(name));
+        rows.push_back(std::move(row));
+    }
+    ui.setRows("recruit", std::move(rows));
+    ctx.screenStack->show("recruit");
 }
 
 void FollowerController::teleportNear(const Vec3& anchor,

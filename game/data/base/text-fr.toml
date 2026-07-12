@@ -863,3 +863,122 @@ type = 'LocStringForm'
 
     [records.fields]
     text = '{} : santé {}%, {} blessure(s), repos {} h'
+
+[[records]]
+form = '836d02b7-daea-44af-b96b-37d3d223474e'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Aptitudes'
+
+[[records]]
+form = 'a3681fc1-d1cf-43da-bdd3-4d05e831197e'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Classe : {}'
+
+[[records]]
+form = '3905d63c-dc39-4734-b227-edb17607d9b3'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Niveau {}'
+
+[[records]]
+form = '87557403-28d7-4e51-a9c5-f0dbbb0be760'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Affinité {}'
+
+[[records]]
+form = '3703e630-5f9e-4ff7-83e4-a6ea7d453f9f'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Santé {} / {}'
+
+[[records]]
+form = 'd64ac915-e86b-4a1d-b089-494d45044a08'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Énergie {} / {}'
+
+[[records]]
+form = '53330e76-2aaa-4322-b627-8df61e256046'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Essence {} / {}'
+
+[[records]]
+form = '9095ab2a-ece8-4fa0-a99c-2ed4b8f87f3c'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Fermer'
+
+[[records]]
+form = '390f7ed6-c0a9-4e4a-824d-72618567e71e'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Force'
+
+[[records]]
+form = 'acad8d43-db11-4857-b569-43307e4a88e0'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Constitution'
+
+[[records]]
+form = '4679d7ef-1d12-4e13-b53c-f93f6615425a'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Grâce'
+
+[[records]]
+form = '42a8e9c4-a8ea-4b4a-b6ce-35fe30bdb1ec'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Dextérité'
+
+[[records]]
+form = '9102f665-8574-4de0-b1e2-9d3a93876be7'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Alacrité'
+
+[[records]]
+form = 'aa7ff66a-0916-4e4f-83ac-b671b2b461c6'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Perception'
+
+[[records]]
+form = '3aa7a775-835c-40c0-8fbb-f801eee64777'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Charisme'
+
+[[records]]
+form = '9ccdbd05-9a40-4716-82b8-700f229d07dc'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Ego'
+
+[[records]]
+form = 'b710152e-17ce-4de4-9bfb-c84071fc4eda'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Clairvoyance'

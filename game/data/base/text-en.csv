@@ -122,3 +122,20 @@ follower.revived,{} is back on his feet.
 follower.died,{} has succumbed to his wounds.
 follower.convalescence,{} returns home to recover ({} h).
 follower.status,"{}: health {}%, {} injury(ies), rest {} h"
+ui.recruit.title,Abilities
+ui.recruit.class,Class: {}
+ui.recruit.level,Level {}
+ui.recruit.affinity,Affinity {}
+ui.recruit.health,Health {} / {}
+ui.recruit.energy,Energy {} / {}
+ui.recruit.essence,Essence {} / {}
+ui.recruit.close,Close
+ui.attr.strength,Strength
+ui.attr.constitution,Constitution
+ui.attr.grace,Grace
+ui.attr.dexterity,Dexterity
+ui.attr.alacrity,Alacrity
+ui.attr.perception,Perception
+ui.attr.charisma,Charisma
+ui.attr.ego,Ego
+ui.attr.insight,Insight

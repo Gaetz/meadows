@@ -342,6 +342,23 @@ void LandscapeScene::setupGameplay() {
                                makeFollowerContext(),
                                questDirector.dialoguePartner());
                        });
+    // FOLLOWERS É4: « Parle-moi de tes aptitudes » — the recruit-preview
+    // screen on the same dialogue-event channel (partner = whoever [E]
+    // Talk opened).
+    eventBus.subscribe(gameplay::eventKind("OnFollowerPreview"),
+                       [this](const gameplay::Event&) {
+                           followerController.openRecruitPreview(
+                               makeFollowerContext(),
+                               questDirector.dialoguePartner());
+                       });
+    // FOLLOWERS É4: affinity rules — ONE generic subscription (the 8.7c
+    // subscribeAll precedent): AffinityRuleForm children of each follower's
+    // ActorForm name the events they react to (open, data-defined
+    // vocabulary — modded rules need zero C++).
+    eventBus.subscribeAll([this](const gameplay::Event& event) {
+        followerController.onAffinityEvent(makeFollowerContext(), event,
+                                           questDirector.dialoguePartner());
+    });
     // P0 B2 hearing: any OnNoise event turns nearby perceivers'
     // heads — the noise position is the SOURCE entity's transform.
     eventBus.subscribe(
@@ -646,6 +663,7 @@ void LandscapeScene::onExit() {
     uiRouter.reset(); // open container/vendor die with the world
     optionsController.reset(); // C9.4: drop any armed rebind capture
     mapController.reset(); // C9.6: runtime pixels died with the UiSystem
+    followerController.reset(); // É4: drop the affinity-accrual stamp
     goldForm = nullptr;
     sceneConsole.reset(); // panel/VM/session reference forms — before re-resolve
     // U4-2c: every GPU resource and render system is the renderer's; the
@@ -854,11 +872,12 @@ void LandscapeScene::update(f32 dt) {
     if (!simPaused) {
         core::FrameProbe::Scope probe { frameProbe, "npcs" };
         updateNpcs(dt);
-        // FOLLOWERS É3: after the tick mirrored State.Downed, run the
-        // follower half — protection sync, bleedout clock, resolution
-        // (recover / convalescence dismiss / real death). A dismiss to a
-        // non-resident home despawns the entity: prune the list NOW.
-        if (followerController.updateDowned(makeFollowerContext(), dt)) {
+        // FOLLOWERS É3/É4: after the tick mirrored State.Downed, run the
+        // follower sweep — protection sync, time-together affinity (É4),
+        // bleedout clock, resolution (recover / convalescence dismiss /
+        // real death). A dismiss to a non-resident home despawns the
+        // entity: prune the list NOW.
+        if (followerController.updateFollowers(makeFollowerContext(), dt)) {
             refreshNpcs(engine->getDevice());
         }
         // P0 A7: arrows fly with the sim.
@@ -1399,6 +1418,14 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                            .bools = { "playerVisible", "interiorNote" },
                            .rows = true,
                            .events = { "mapBack" } });
+    // FOLLOWERS É4: the recruit-preview panel — name/class/level/affinity
+    // + vitals as preformatted loc strings, the 9 attributes as rows.
+    uiSystem.createModel({ .name = "recruit",
+                           .strings = { "name", "classText", "levelText",
+                                        "affinityText", "healthText",
+                                        "energyText", "essenceText" },
+                           .rows = true,
+                           .events = { "recruitBack" } });
     // C9.6: seed runtime://map with a placeholder BEFORE the preload
     // below — a backend load that finds no pixels fails, and RmlUi
     // latches failed sources forever (FileTextureDatabase never
@@ -1415,6 +1442,12 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
             }
             if (model == "map") { // C9.6
                 mapController.handleEvent(makeMapContext(), event);
+                return;
+            }
+            if (model == "recruit") { // FOLLOWERS É4: close is all it does
+                if (event == "recruitBack") {
+                    screenStack.closeTop();
+                }
                 return;
             }
             uiRouter.handleUiEvent(makeUiRouterContext(), model, event, args);
@@ -2145,6 +2178,14 @@ gameplay::EvalContext LandscapeScene::makeEvalContext() const {
             context.inventory = &playerEntity.get<gameplay::Inventory>();
         }
     }
+    // FOLLOWERS É4: the DIALOGUE PARTNER's follower state — affinity lives
+    // on the follower being talked to, not on the player. Filled whenever
+    // a partner with FollowerState is open, so dialogue options can gate
+    // on FollowerAffinityAtLeast; everywhere else the clause fails closed.
+    const ecs::Entity partner = questDirector.dialoguePartner();
+    if (partner.is_alive() && partner.has<gameplay::FollowerState>()) {
+        context.partnerFollower = &partner.get<gameplay::FollowerState>();
+    }
     // Lua clauses: no predicate callback wired in the scene yet — such a
     // clause fails closed (the shared VM hookup is a later slice).
     return context;
@@ -2296,6 +2337,9 @@ FollowerContext LandscapeScene::makeFollowerContext() {
         combatRng,
         &texts,
         [this](str line) { interaction.say(std::move(line), 4.0f); },
+        // É4: the recruit-preview screen (model push + show).
+        &uiSystem,
+        &screenStack,
     };
 }
 
