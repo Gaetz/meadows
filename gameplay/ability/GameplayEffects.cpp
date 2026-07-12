@@ -340,6 +340,20 @@ void ageAndExpireEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
 
 } // namespace
 
+void tickPeriodicEffect(f32& accumulator, f32 dt, f32 period,
+                        AttributeSet& set, AbilitySystem& system,
+                        const EffectForm& effect,
+                        const GameplayTagRegistry& registry) {
+    if (period <= 0.0f) {
+        return;
+    }
+    accumulator += dt;
+    while (accumulator >= period) {
+        accumulator -= period;
+        applyEffect(set, system, effect, registry);
+    }
+}
+
 void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
                  const GameplayTagRegistry& registry) {
     for (ActiveEffect& active : system.activeEffects) {

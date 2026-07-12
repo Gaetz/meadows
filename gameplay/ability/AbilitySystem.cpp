@@ -48,4 +48,18 @@ f32 currentValueOf(const AbilitySystem& system, u32 attrId) {
     return it != system.current.end() ? it->second : 0.0f;
 }
 
+void syncStateTag(AbilitySystem& system, const GameplayTagRegistry& registry,
+                  std::string_view name, bool on) {
+    const auto tag = registry.find(name);
+    if (!tag) {
+        return;
+    }
+    const bool tagged = system.tags.has(*tag);
+    if (on && !tagged) {
+        system.tags.add(*tag, registry);
+    } else if (!on && tagged) {
+        system.tags.remove(*tag, registry);
+    }
+}
+
 } // namespace gameplay

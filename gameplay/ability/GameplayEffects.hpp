@@ -92,6 +92,16 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
 void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
                  const GameplayTagRegistry& registry);
 
+// THE cost-accumulator pattern (§2.9 — only effects move attributes):
+// the sprint/sneak/swim/bow-draw drains all tick ONE instant effect per
+// `period` seconds of accumulated activity. The caller owns the
+// accumulator (and resets it when the activity stops); this owns the
+// cadence.
+void tickPeriodicEffect(f32& accumulator, f32 dt, f32 period,
+                        AttributeSet& set, AbilitySystem& system,
+                        const EffectForm& effect,
+                        const GameplayTagRegistry& registry);
+
 // Toggles the shared "State.Exhausted" gate on `system` from current energy,
 // with hysteresis: added when energy reaches 0, removed once energy recovers
 // above `recoverFraction` of maxEnergy. Energy-costed abilities (dodge, attack,

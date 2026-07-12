@@ -14,6 +14,7 @@
 #include "engine/platform/Input.hpp"
 #include "engine/render/FlyCamera.hpp"
 #include "game/scenes/InteractionController.hpp"
+#include "game/scenes/LineOfSight.hpp" // hasLineOfSight (R2)
 #include "game/scenes/NpcDirector.hpp" // Npc
 #include "game/scenes/ProjectileDirector.hpp" // A7: the bow
 #include "gameplay/ability/AbilitySystem.hpp"
@@ -188,14 +189,11 @@ void PlayerController::updateBowDraw(f32 dt, const PlayerContext& ctx,
     // Holding the draw is effortful: the BowDrawCost effect ticks the
     // usual half-second accumulator (§2.9 — only effects move energy).
     if (ctx.bowDrawCostEffect && ctx.playerEntity.is_alive()) {
-        bowDrawAccumulator += dt;
-        while (bowDrawAccumulator >= 0.5f) {
-            bowDrawAccumulator -= 0.5f;
-            auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
-            auto& sys = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
-            gameplay::applyEffect(set, sys, *ctx.bowDrawCostEffect,
-                                  ctx.gameTags);
-        }
+        gameplay::tickPeriodicEffect(
+            bowDrawAccumulator, dt, 0.5f,
+            ctx.playerEntity.get_mut<gameplay::AttributeSet>(),
+            ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
+            *ctx.bowDrawCostEffect, ctx.gameTags);
     }
     // Exhausted arms give in — the arrow flies at the current draw.
     bool exhausted = false;
@@ -328,14 +326,11 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
             const Vec3 witnessEye =
                 witness.entity.get<world::Transform>().position +
                 Vec3 { 0.0f, 1.5f, 0.0f };
-            const Vec3 toPlayer = eye - witnessEye;
-            const f32 sight = glm::length(toPlayer);
-            if (sight > witnessRange || sight < 1e-3f) {
+            const f32 range = glm::length(eye - witnessEye);
+            if (range > witnessRange || range < 1e-3f) {
                 continue;
             }
-            const phys::RayHit hit =
-                ctx.physics->rayCast(witnessEye, toPlayer / sight, sight);
-            witnessed = !(hit.hit && hit.distance < sight - 0.6f);
+            witnessed = hasLineOfSight(*ctx.physics, witnessEye, eye);
         }
         if (witnessed && ctx.playerEntity.is_alive()) {
             auto& bounty = ctx.playerEntity.get_mut<gameplay::Bounty>();
@@ -357,7 +352,6 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
 // drains energy on the sprint-cost accumulator pattern (§2.9); an
 // exhausted swimmer SINKS and drowns on a periodic unmitigated tick.
 bool PlayerController::updateSwimming(f32 dt, const PlayerContext& ctx,
-                                      const Vec3& wish, bool moving,
                                       f32 jog, f32 accelRate) {
     const gameplay::StatsTuningForm& tuning = ctx.statsTuning;
     const std::optional<f32> surface =
@@ -393,8 +387,6 @@ bool PlayerController::updateSwimming(f32 dt, const PlayerContext& ctx,
     if (ctx.input.isDown(platform::Key::Space)) {
         wish3.y += 1.0f;
     }
-    (void)wish;
-    (void)moving;
     const f32 swimSpeed = jog * tuning.swimSpeedFactor;
     Vec3 target = glm::dot(wish3, wish3) > 1e-6f
                       ? glm::normalize(wish3) * swimSpeed
@@ -416,14 +408,11 @@ bool PlayerController::updateSwimming(f32 dt, const PlayerContext& ctx,
     // Energy drain: one instant effect per half second (§2.9 — the only
     // way energy moves), the sprint-cost pattern.
     if (ctx.swimCostEffect && ctx.playerEntity.is_alive() && !exhausted) {
-        swimCostAccumulator += dt;
-        while (swimCostAccumulator >= 0.5f) {
-            swimCostAccumulator -= 0.5f;
-            auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
-            auto& sys = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
-            gameplay::applyEffect(set, sys, *ctx.swimCostEffect,
-                                  ctx.gameTags);
-        }
+        gameplay::tickPeriodicEffect(
+            swimCostAccumulator, dt, 0.5f,
+            ctx.playerEntity.get_mut<gameplay::AttributeSet>(),
+            ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
+            *ctx.swimCostEffect, ctx.gameTags);
     }
     // Drowning: exhausted underwater = an unmitigated tick per second
     // (resist penetration eats the target's own mitigation, never
@@ -482,15 +471,9 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
         }
     }
     if (ctx.playerEntity.is_alive()) {
-        auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
-        if (const auto tag = ctx.gameTags.find("State.Sneaking")) {
-            const bool tagged = system.tags.has(*tag);
-            if (sneaking_ && !tagged) {
-                system.tags.add(*tag, ctx.gameTags);
-            } else if (!sneaking_ && tagged) {
-                system.tags.remove(*tag, ctx.gameTags);
-            }
-        }
+        gameplay::syncStateTag(
+            ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
+            ctx.gameTags, "State.Sneaking", sneaking_);
     }
     // STATS.md §4: staggered = can't act, parry or dodge, very slow.
     bool staggered = false;
@@ -510,14 +493,8 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
         // The guard clock: a hit landing inside the fresh window is a
         // PERFECT parry (applyBlock reads guardSeconds).
         gameplay::tickGuard(swing, blocking, dt);
-        if (const auto tag = ctx.gameTags.find("State.Blocking")) {
-            const bool tagged = system.tags.has(*tag);
-            if (blocking && !tagged) {
-                system.tags.add(*tag, ctx.gameTags);
-            } else if (!blocking && tagged) {
-                system.tags.remove(*tag, ctx.gameTags);
-            }
-        }
+        gameplay::syncStateTag(system, ctx.gameTags, "State.Blocking",
+                               blocking);
     }
     // B6: melee swing on LMB (the mouse is captured in Play — ImGui
     // never owns it here). Cadence is the ability's cooldown effect plus
@@ -576,7 +553,7 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     // P0 D2b: swimming consumes the whole ground-movement section (no
     // jump/dodge/sprint/strides in the water); the camera/transform sync
     // at the tail still runs.
-    if (updateSwimming(dt, ctx, wish, moving, jog, accelRate)) {
+    if (updateSwimming(dt, ctx, jog, accelRate)) {
         flyCamera.camera.position =
             body_->position() +
             Vec3 { 0.0f, ctx.statsTuning.eyeHeight, 0.0f };
@@ -681,14 +658,11 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     // Sprint cost: one instant GameplayEffect per half second (§2.9 — the
     // ONLY way energy moves; the spend also pauses regen for a beat).
     if (sprinting && ctx.sprintCostEffect && ctx.playerEntity.is_alive()) {
-        sprintCostAccumulator += dt;
-        while (sprintCostAccumulator >= 0.5f) {
-            sprintCostAccumulator -= 0.5f;
-            auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
-            auto& sys = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
-            gameplay::applyEffect(set, sys, *ctx.sprintCostEffect,
-                                  ctx.gameTags);
-        }
+        gameplay::tickPeriodicEffect(
+            sprintCostAccumulator, dt, 0.5f,
+            ctx.playerEntity.get_mut<gameplay::AttributeSet>(),
+            ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
+            *ctx.sprintCostEffect, ctx.gameTags);
     } else {
         sprintCostAccumulator = 0.0f;
     }
@@ -696,14 +670,11 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     // still and watching is free (dev design 2026-07-12).
     if (sneaking_ && moving && ctx.sneakCostEffect &&
         ctx.playerEntity.is_alive()) {
-        sneakCostAccumulator += dt;
-        while (sneakCostAccumulator >= 0.5f) {
-            sneakCostAccumulator -= 0.5f;
-            auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
-            auto& sys = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
-            gameplay::applyEffect(set, sys, *ctx.sneakCostEffect,
-                                  ctx.gameTags);
-        }
+        gameplay::tickPeriodicEffect(
+            sneakCostAccumulator, dt, 0.5f,
+            ctx.playerEntity.get_mut<gameplay::AttributeSet>(),
+            ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
+            *ctx.sneakCostEffect, ctx.gameTags);
     } else if (!moving) {
         sneakCostAccumulator = 0.0f;
     }

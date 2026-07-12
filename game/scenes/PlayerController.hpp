@@ -145,8 +145,8 @@ private:
     // D2b: decides the mode, swims when swimming (3D wish toward the
     // look, surface clamp, energy drain, drowning once exhausted).
     // True = the frame's movement was consumed (no jump/dodge/sprint).
-    bool updateSwimming(f32 dt, const PlayerContext& ctx, const Vec3& wish,
-                        bool moving, f32 jog, f32 accelRate);
+    bool updateSwimming(f32 dt, const PlayerContext& ctx, f32 jog,
+                        f32 accelRate);
     // A4: advances the MeleeSwing machine and, through the Active window,
     // sweeps the blade segment against the NPC capsules (one code path
     // with the NPCs: gameplay/combat/MeleeSwing).

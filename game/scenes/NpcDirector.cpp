@@ -29,6 +29,7 @@
 #include "gameplay/combat/MeleeStrike.hpp"      // the ONE strike resolution
 #include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing (A4)
 #include "gameplay/combat/Projectile.hpp"       // archer NPCs (A7)
+#include "game/scenes/LineOfSight.hpp"          // hasLineOfSight (R2)
 #include "game/scenes/ProjectileDirector.hpp"   // archer NPCs (A7)
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
@@ -567,16 +568,11 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             bool canSee = world::inViewCone(sight, transform.position,
                                             facing, playerPos);
             if (canSee && ctx.physics) {
-                const Vec3 eye =
-                    transform.position + Vec3 { 0.0f, 1.5f, 0.0f };
-                const Vec3 target =
-                    playerPos +
-                    Vec3 { 0.0f, playerSneaking ? 0.6f : 1.2f, 0.0f };
-                const Vec3 dir = glm::normalize(target - eye);
-                const f32 sight = glm::length(target - eye);
-                const phys::RayHit hit = ctx.physics->rayCast(eye, dir,
-                                                              sight);
-                canSee = !(hit.hit && hit.distance < sight - 0.6f);
+                canSee = hasLineOfSight(
+                    *ctx.physics,
+                    transform.position + Vec3 { 0.0f, 1.5f, 0.0f },
+                    playerPos + Vec3 { 0.0f, playerSneaking ? 0.6f : 1.2f,
+                                       0.0f });
             }
             const world::AwareState wasAware = world::awareState(perception);
             world::updatePerception(perception, canSee, playerPos, dt);
@@ -1155,15 +1151,9 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         // A5: mirror the guard onto the §6 tag vocabulary — the damage
         // paths (player applyHit, future sources) read State.Blocking,
         // never the Npc struct.
-        if (const auto blockTag = ctx.gameTags.find("State.Blocking")) {
-            auto& mutableSys = npc.entity.get_mut<gameplay::AbilitySystem>();
-            const bool tagged = mutableSys.tags.has(*blockTag);
-            if (npc.blocking && !tagged) {
-                mutableSys.tags.add(*blockTag, ctx.gameTags);
-            } else if (!npc.blocking && tagged) {
-                mutableSys.tags.remove(*blockTag, ctx.gameTags);
-            }
-        }
+        gameplay::syncStateTag(
+            npc.entity.get_mut<gameplay::AbilitySystem>(), ctx.gameTags,
+            "State.Blocking", npc.blocking);
 
         // Chantier P0 C4a: drain the anim events the sink buffered onto
         // the bus — ONE kind ("AnimEvent"), the clip's name in `name`;

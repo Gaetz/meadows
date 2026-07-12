@@ -45,6 +45,42 @@ TEST_CASE("effects: health is clamped to [0, maxHealth]") {
     CHECK(baseValueOf(t.set, attr("health")) == 100.0f); // capped at maxHealth
 }
 
+TEST_CASE("effects: the periodic-cost accumulator ticks one instant "
+          "effect per period (the sprint/sneak/swim/bow drain)") {
+    Target t;
+    const EffectForm cost = instantOn("energy", "add", -3.0f);
+    f32 acc = 0.0f;
+
+    // Sub-period frames accumulate without paying.
+    tickPeriodicEffect(acc, 0.2f, 0.5f, t.set, t.system, cost, t.registry);
+    CHECK(baseValueOf(t.set, attr("energy")) == 100.0f);
+    // Crossing the period pays exactly once and keeps the remainder.
+    tickPeriodicEffect(acc, 0.4f, 0.5f, t.set, t.system, cost, t.registry);
+    CHECK(baseValueOf(t.set, attr("energy")) == 97.0f);
+    CHECK(acc == doctest::Approx(0.1f));
+    // A long hitch pays every missed tick, none forgotten.
+    tickPeriodicEffect(acc, 1.4f, 0.5f, t.set, t.system, cost, t.registry);
+    CHECK(baseValueOf(t.set, attr("energy")) == 88.0f);
+    // A non-positive period is inert (bad data never spins the loop).
+    tickPeriodicEffect(acc, 1.0f, 0.0f, t.set, t.system, cost, t.registry);
+    CHECK(baseValueOf(t.set, attr("energy")) == 88.0f);
+}
+
+TEST_CASE("effects: syncStateTag mirrors a boolean without churn") {
+    Target t;
+    t.registry.registerTag("State.Blocking");
+    const GameplayTag blocking = *t.registry.find("State.Blocking");
+
+    syncStateTag(t.system, t.registry, "State.Blocking", true);
+    CHECK(t.system.tags.has(blocking));
+    syncStateTag(t.system, t.registry, "State.Blocking", true); // idempotent
+    CHECK(t.system.tags.has(blocking));
+    syncStateTag(t.system, t.registry, "State.Blocking", false);
+    CHECK_FALSE(t.system.tags.has(blocking));
+    // An unregistered name is a no-op, never a crash.
+    syncStateTag(t.system, t.registry, "State.Nonexistent", true);
+}
+
 TEST_CASE("effects: an infinite modifier raises CurrentValue, not BaseValue") {
     Target t;
     EffectForm buff = instantOn("maxHealth", "add", 50.0f);

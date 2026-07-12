@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <string_view>
 #include <unordered_map>
 
 #include "engine/core/Defines.hpp"
@@ -81,5 +82,11 @@ bool setBaseValue(AttributeSet& set, u32 attrId, f32 value);
 void initializeCurrent(AbilitySystem& system, const AttributeSet& set);
 
 f32 currentValueOf(const AbilitySystem& system, u32 attrId); // 0 if absent
+
+// Mirrors a boolean onto a state tag (§6 vocabulary): added when `on`,
+// removed when not, no churn when already in sync. No-op if the name is
+// not registered. The Blocking/Sneaking mirrors all go through here.
+void syncStateTag(AbilitySystem& system, const GameplayTagRegistry& registry,
+                  std::string_view name, bool on);
 
 } // namespace gameplay
