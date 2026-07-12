@@ -603,11 +603,24 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                 releaseFurniture(ctx, npc); // D1: combat stands him up
                 npc.attackCooldown -= dt;
                 npc.repathTimer -= dt;
+                // A7+: an archer's quiver is REAL — the loadout rolls his
+                // arrows and each shot consumes one. Dry (or no Inventory
+                // at all) = no ranged option: the reach collapses to melee
+                // so the combat brain closes in and clubs with the bow.
+                bool quiverDry = false;
+                if (npcWeapon && npcWeapon->projectileSpeed > 0.0f &&
+                    npcWeapon->ammo.isValid()) {
+                    quiverDry =
+                        !npc.entity.has<gameplay::Inventory>() ||
+                        gameplay::itemCount(
+                            npc.entity.get<gameplay::Inventory>(),
+                            npcWeapon->ammo) <= 0;
+                }
                 // P0 A6: the engagement distances come from the WEAPON
                 // (§5 moddable) — a spear-armed NPC stands off further
                 // than a knife mugger, no code change.
                 const f32 reach =
-                    npcWeapon ? npcWeapon->reach : 2.1f;
+                    npcWeapon && !quiverDry ? npcWeapon->reach : 2.1f;
                 const f32 attackRange = glm::max(reach - 0.3f, 0.8f);
                 // P0 A3: a swing in flight roots the NPC (the clip plays
                 // out; the blade does the hitting below).
@@ -691,7 +704,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                                                     ctx.gameTags });
                         if (activated &&
                             npcWeapon->projectileSpeed > 0.0f &&
-                            ctx.projectiles) {
+                            !quiverDry && ctx.projectiles) {
                             // A7: an ARCHER — loose from the chest at
                             // the player's chest, with a hair of spread
                             // (deterministic combat RNG, §8).
@@ -715,9 +728,17 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                             arrow.shooter = npc.entity.id();
                             arrow.payload = gameplay::weaponDamageEvent(
                                 *npcWeapon, npcSys);
-                            // NPC quivers are bottomless (v1), but their
-                            // planted arrows ARE loot for the player.
+                            // A7+: the shot spends an arrow from HIS
+                            // inventory (quiverDry gated above); planted
+                            // arrows stay loot for whoever walks by.
                             arrow.ammoItem = npcWeapon->ammo;
+                            if (npcWeapon->ammo.isValid() &&
+                                npc.entity.has<gameplay::Inventory>()) {
+                                gameplay::removeItem(
+                                    npc.entity
+                                        .get_mut<gameplay::Inventory>(),
+                                    npcWeapon->ammo);
+                            }
                             ctx.projectiles->spawn(arrow);
                             npc.attackCooldown = 2.2f; // [cpp-tuning]
                             npc.blocking = false;

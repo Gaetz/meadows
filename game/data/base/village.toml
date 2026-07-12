@@ -775,6 +775,68 @@ baseForm = "4d7a9b30-0000-4000-8000-000000000092"
 cell = "3c6f8e20-0000-4000-8000-000000000015"
 position = [82.0, 0.0, 372.0]
 
+# The bandit ARCHER (A7+): same rig, a hunting bow and a REAL quiver —
+# his loadout rolls the arrows and every shot spends one. Dry quiver =
+# he closes in and clubs with the bow. Softer than his club-swinging
+# friend, and less brave (flees under 40%).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000220"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "BanditArcher"
+displayName = "Bandit archer"
+maxHealth = 35.0
+appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
+animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
+courage = 0.6
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000221"
+type = "ActorTagForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000220"
+tag = "Faction.Bandits"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000222"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000220"
+cell = "3c6f8e20-0000-4000-8000-000000000015"
+position = [86.0, 0.0, 376.0]
+
+# His kit: the bow (first weapon rolled = equipped), 8 arrows, small
+# pockets. All lootable off the corpse — arrows he planted are too.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000223"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000220"   # BanditArcher
+item = "4d7a9b30-0000-4000-8000-000000000210"     # HuntingBow
+count = 1
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000224"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000220"   # BanditArcher
+item = "4d7a9b30-0000-4000-8000-000000000211"     # Arrow
+count = 8
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000225"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-000000000220"   # BanditArcher
+item = "5e8bac40-0000-4000-8000-000000000010"     # GoldCoin
+count = 8
+
 # --- The villager's day (chantier 3 B3) --------------------------------------
 # Spot markers, a seat, packages, the schedule — and a §5 CROSS-PLUGIN
 # PATCH: this plugin gives adventure.toml's Villager its `schedule` field.
