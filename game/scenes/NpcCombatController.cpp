@@ -18,6 +18,7 @@
 #include "game/scenes/ProjectileDirector.hpp"   // archer NPCs (A7)
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp" // attr, currentValueOf
+#include "gameplay/actors/ActorState.hpp"  // FollowerState (É2 defender gate)
 #include "gameplay/ability/GameplayAbility.hpp" // tryActivate (P0 A3)
 #include "gameplay/combat/CombatAi.hpp"         // chooseCombatMove (B3)
 #include "gameplay/combat/MeleeStrike.hpp"      // the ONE strike resolution
@@ -80,42 +81,86 @@ bool NpcCombatController::update(
                          .tags.has(*tag);
         }
     }
-    if (!((npc.hostile || wanted) && ctx.playMode && ctx.player)) {
-        return false;
+    // É2: validate the adopted combat target — an entity may die or
+    // despawn (cell unload) between frames. The aggro handler
+    // (FollowerController) adopts, OnDeath clears; this is the
+    // belt-and-braces sweep before any read.
+    if (npc.combatTarget.id() != 0) {
+        const auto it = npcByEntity.find(npc.combatTarget.id());
+        const Npc* targetNpc = it != npcByEntity.end() ? it->second : nullptr;
+        if (!npc.combatTarget.is_alive() || !targetNpc || targetNpc->dead) {
+            npc.combatTarget = ecs::Entity {};
+        }
+    }
+    const bool entityTarget = npc.combatTarget.id() != 0 && ctx.playMode;
+    if (!entityTarget &&
+        !((npc.hostile || wanted) && ctx.playMode && ctx.player)) {
+        return false; // the exact pre-É2 gate (iso-behavior)
     }
     bool inCombat = false;
     auto& transform = npc.entity.get_mut<world::Transform>();
     const auto& npcSys = npc.entity.get<gameplay::AbilitySystem>();
-    const Vec3 playerPos = ctx.player->position();
-    auto& perception = npc.entity.get_mut<world::Perception>();
-    // Vision verdict: cone from the NPC's facing, then the LOS
-    // raycast (world geometry only — actors are out of the
-    // broadphase anyway). A SNEAKING target is spotted at half
-    // range (the sneak skill will drive the factor later), and
-    // the LOS aims at the CROUCHED chest — a low wall now hides.
-    world::Perception sight = perception;
-    if (playerSneaking) {
-        sight.viewDistance *= ctx.statsTuning.sneakDetectionFactor;
-    }
-    const Vec3 facing { std::sin(npc.yaw), 0.0f,
-                        std::cos(npc.yaw) };
-    bool canSee = world::inViewCone(sight, transform.position,
-                                    facing, playerPos);
-    if (canSee && ctx.physics) {
-        canSee = hasLineOfSight(
-            *ctx.physics,
-            transform.position + Vec3 { 0.0f, 1.5f, 0.0f },
-            playerPos + Vec3 { 0.0f, playerSneaking ? 0.6f : 1.2f,
-                               0.0f });
-    }
-    const world::AwareState wasAware = world::awareState(perception);
-    world::updatePerception(perception, canSee, playerPos, dt);
-    const world::AwareState aware = world::awareState(perception);
-    // B3: entering Alert shouts — a bus event for listeners, and
-    // same-faction allies in earshot join the hunt.
-    if (aware == world::AwareState::Alert &&
-        wasAware != world::AwareState::Alert) {
-        callForHelp(ctx, npc, perception.lastKnownPos, npcByEntity);
+    // É2: resolve the frame's CombatTarget. The PLAYER path keeps every
+    // historical read byte-for-byte (perception cone + LOS + the state
+    // machine + the B3 help shout). An ENTITY target is already KNOWN —
+    // it was adopted from a landed hit on the bus — so there is no
+    // vision cone and no perception mutation; the LOS raycast still
+    // gates strikes/approach so walls keep mattering.
+    CombatTarget target;
+    bool canSee = false;
+    world::AwareState aware = world::AwareState::Alert;
+    Vec3 lastKnownPos { 0.0f };
+    if (entityTarget) {
+        target.entity = npc.combatTarget;
+        target.position = npc.combatTarget.get<world::Transform>().position;
+        target.feet = target.position;
+        target.crouched = false; // NPCs don't sneak (yet)
+        target.alive = true;     // validated above
+        canSee = true;
+        if (ctx.physics) {
+            canSee = hasLineOfSight(
+                *ctx.physics,
+                transform.position + Vec3 { 0.0f, 1.5f, 0.0f },
+                target.position + Vec3 { 0.0f, 1.2f, 0.0f });
+        }
+        lastKnownPos = target.position;
+    } else {
+        target.entity = ctx.playerEntity;
+        target.position = ctx.player->position();
+        target.feet = target.position;
+        target.crouched = playerSneaking;
+        target.alive = ctx.playerEntity.is_alive();
+        auto& perception = npc.entity.get_mut<world::Perception>();
+        // Vision verdict: cone from the NPC's facing, then the LOS
+        // raycast (world geometry only — actors are out of the
+        // broadphase anyway). A SNEAKING target is spotted at half
+        // range (the sneak skill will drive the factor later), and
+        // the LOS aims at the CROUCHED chest — a low wall now hides.
+        world::Perception sight = perception;
+        if (playerSneaking) {
+            sight.viewDistance *= ctx.statsTuning.sneakDetectionFactor;
+        }
+        const Vec3 facing { std::sin(npc.yaw), 0.0f,
+                            std::cos(npc.yaw) };
+        canSee = world::inViewCone(sight, transform.position,
+                                   facing, target.position);
+        if (canSee && ctx.physics) {
+            canSee = hasLineOfSight(
+                *ctx.physics,
+                transform.position + Vec3 { 0.0f, 1.5f, 0.0f },
+                target.position +
+                    Vec3 { 0.0f, playerSneaking ? 0.6f : 1.2f, 0.0f });
+        }
+        const world::AwareState wasAware = world::awareState(perception);
+        world::updatePerception(perception, canSee, target.position, dt);
+        aware = world::awareState(perception);
+        // B3: entering Alert shouts — a bus event for listeners, and
+        // same-faction allies in earshot join the hunt.
+        if (aware == world::AwareState::Alert &&
+            wasAware != world::AwareState::Alert) {
+            callForHelp(ctx, npc, perception.lastKnownPos, npcByEntity);
+        }
+        lastKnownPos = perception.lastKnownPos;
     }
     // STATS.md §4: a staggered actor can't act, parry or dodge
     // and moves at a crawl — the bandit just STANDS there,
@@ -161,9 +206,9 @@ bool NpcCombatController::update(
         const bool swinging =
             npc.entity.get<gameplay::MeleeSwing>().phase !=
             gameplay::SwingPhase::Idle;
-        Vec3 toPlayer = playerPos - transform.position;
-        toPlayer.y = 0.0f;
-        const f32 playerDistance = glm::length(toPlayer);
+        Vec3 toTarget = target.position - transform.position;
+        toTarget.y = 0.0f;
+        const f32 targetDistance = glm::length(toTarget);
         // B3: the whole behavior choice is ONE sim-pure function
         // (gameplay/combat/CombatAi) — this block only executes
         // the move it returns.
@@ -172,7 +217,7 @@ bool NpcCombatController::update(
                                      gameplay::attr("maxHealth")),
             1.0f);
         const gameplay::CombatSituation situation {
-            playerDistance,
+            targetDistance,
             attackRange,
             reach + 1.0f,
             canSee,
@@ -222,23 +267,23 @@ bool NpcCombatController::update(
                 str { "combat: " } + gameplay::combatMoveName(move);
             LOG_INFO("B3: {} -> {} (health {:.0f}%, dist {:.1f} m)",
                      npc.editorId, gameplay::combatMoveName(move),
-                     situation.healthFraction * 100.0f, playerDistance);
+                     situation.healthFraction * 100.0f, targetDistance);
         }
         switch (move) {
         case gameplay::CombatMove::Strike:
             strike(ctx, npc, transform, npcWeapon, swinging, quiverDry,
-                   toPlayer, playerPos);
+                   toTarget, target);
             break;
         case gameplay::CombatMove::Strafe:
-            strafe(dt, ctx, npc, transform, toPlayer, playerDistance,
+            strafe(dt, ctx, npc, transform, toTarget, targetDistance,
                    attackRange, reach);
             break;
         case gameplay::CombatMove::Flee:
-            flee(dt, ctx, npc, transform, toPlayer, playerDistance);
+            flee(dt, ctx, npc, transform, toTarget, targetDistance);
             break;
         case gameplay::CombatMove::Approach:
-            approach(dt, ctx, npc, transform, canSee, swinging, playerPos,
-                     perception.lastKnownPos, aware);
+            approach(dt, ctx, npc, transform, canSee, swinging,
+                     target.position, lastKnownPos, aware);
             break;
         }
     }
@@ -249,19 +294,23 @@ void NpcCombatController::strike(const NpcContext& ctx, Npc& npc,
                                  world::Transform& transform,
                                  const data::WeaponForm* npcWeapon,
                                  bool swinging, bool quiverDry,
-                                 const Vec3& toPlayer,
-                                 const Vec3& playerPos) {
+                                 const Vec3& toTarget,
+                                 const CombatTarget& target) {
     npc.path.clear();
-    // Face the player and swing.
-    npc.yaw = std::atan2(toPlayer.x, toPlayer.z);
+    // Face the target and swing.
+    npc.yaw = std::atan2(toTarget.x, toTarget.z);
     transform.rotation = glm::angleAxis(
         npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
+    // É2: god mode shields the PLAYER only — an adopted entity target
+    // has no such armor (identical to the pre-É2 line when the target
+    // is the player: target.alive == playerEntity.is_alive()).
+    const bool shielded =
+        target.entity == ctx.playerEntity && ctx.godMode;
     // P0 A3: instant damage became an ability-gated
     // MeleeSwing — the Sword_Attack clip carries the
     // hand, and the blade must TOUCH (updateSwing).
     if (!swinging && npc.attackCooldown <= 0.0f &&
-        npcWeapon && ctx.playerEntity.is_alive() &&
-        !ctx.godMode) {
+        npcWeapon && target.alive && !shielded) {
         auto& set =
             npc.entity.get_mut<gameplay::AttributeSet>();
         auto& system =
@@ -275,7 +324,7 @@ void NpcCombatController::strike(const NpcContext& ctx, Npc& npc,
         if (activated &&
             npcWeapon->projectileSpeed > 0.0f &&
             !quiverDry && ctx.projectiles) {
-            fireArrow(ctx, npc, transform, *npcWeapon, playerPos);
+            fireArrow(ctx, npc, transform, *npcWeapon, target.position);
         } else if (activated) {
             gameplay::startSwing(
                 npc.entity
@@ -294,15 +343,16 @@ void NpcCombatController::strike(const NpcContext& ctx, Npc& npc,
 void NpcCombatController::fireArrow(const NpcContext& ctx, Npc& npc,
                                     world::Transform& transform,
                                     const data::WeaponForm& npcWeapon,
-                                    const Vec3& playerPos) {
+                                    const Vec3& targetPos) {
     // A7: an ARCHER — loose from the chest at
-    // the player's chest, with a hair of spread
+    // the target's chest (player or É2 entity
+    // target alike), with a hair of spread
     // (deterministic combat RNG, §8).
     gameplay::Projectile arrow;
     arrow.position = transform.position +
                      Vec3 { 0.0f, 1.4f, 0.0f };
     Vec3 aim =
-        (playerPos + Vec3 { 0.0f, 1.0f, 0.0f }) -
+        (targetPos + Vec3 { 0.0f, 1.0f, 0.0f }) -
         arrow.position;
     aim = glm::normalize(aim);
     aim.x += (static_cast<f32>(
@@ -339,7 +389,7 @@ void NpcCombatController::fireArrow(const NpcContext& ctx, Npc& npc,
 
 void NpcCombatController::strafe(f32 dt, const NpcContext& ctx, Npc& npc,
                                  world::Transform& transform,
-                                 const Vec3& toPlayer, f32 playerDistance,
+                                 const Vec3& toTarget, f32 targetDistance,
                                  f32 attackRange, f32 reach) {
     npc.path.clear();
     // Orbit the target: a tangent direction whose side is
@@ -347,39 +397,39 @@ void NpcCombatController::strafe(f32 dt, const NpcContext& ctx, Npc& npc,
     // bandits circle opposite ways) plus a radial drift
     // holding the middle of the weapon band.
     const Vec3 radial =
-        toPlayer / glm::max(playerDistance, 1e-3f);
+        toTarget / glm::max(targetDistance, 1e-3f);
     const f32 side =
         (npc.entity.id() & 1u) != 0u ? 1.0f : -1.0f;
     const f32 band = (attackRange + reach + 1.0f) * 0.5f;
     Vec3 dir =
         glm::cross(Vec3 { 0.0f, 1.0f, 0.0f }, radial) *
             side +
-        radial * glm::clamp(playerDistance - band, -1.0f,
+        radial * glm::clamp(targetDistance - band, -1.0f,
                             1.0f) *
             0.6f;
     dir.y = 0.0f;
     const f32 len = glm::length(dir);
     // Wall guard: direct steering skips the navigator,
     // so probe the step — blocked = hold ground (still
-    // facing the player).
+    // facing the target).
     if (len > 1e-4f &&
         !steerBlocked(ctx, transform.position,
                       dir / len)) {
         moveNpcDirect(ctx, npc, dt, dir / len, 1.0f,
-                      std::atan2(toPlayer.x, toPlayer.z));
+                      std::atan2(toTarget.x, toTarget.z));
     }
 }
 
 void NpcCombatController::flee(f32 dt, const NpcContext& ctx, Npc& npc,
                                world::Transform& transform,
-                               const Vec3& toPlayer, f32 playerDistance) {
+                               const Vec3& toTarget, f32 targetDistance) {
     // Flee through the NAVIGATOR (dev report 2026-07-12:
     // direct steering ran straight through buildings) —
-    // path to a spot away from the player, repathed as
+    // path to a spot away from the target, repathed as
     // the flight goes on; obstacles are its job.
     const Vec3 away =
-        playerDistance > 1e-3f
-            ? -toPlayer / playerDistance
+        targetDistance > 1e-3f
+            ? -toTarget / targetDistance
             : Vec3 { std::sin(npc.yaw), 0.0f,
                      std::cos(npc.yaw) };
     // A broken fighter RUNS (dev feel pass): cancel the
@@ -413,13 +463,13 @@ void NpcCombatController::flee(f32 dt, const NpcContext& ctx, Npc& npc,
 
 void NpcCombatController::approach(f32 dt, const NpcContext& ctx, Npc& npc,
                                    world::Transform& transform, bool canSee,
-                                   bool swinging, const Vec3& playerPos,
+                                   bool swinging, const Vec3& targetPos,
                                    const Vec3& lastKnownPos,
                                    world::AwareState aware) {
-    // Hunt the player while seen; investigate the last
+    // Hunt the target while seen; investigate the last
     // known position otherwise (B2).
     const Vec3 goal =
-        canSee ? playerPos : lastKnownPos;
+        canSee ? targetPos : lastKnownPos;
     Vec3 toGoal = goal - transform.position;
     toGoal.y = 0.0f;
     const f32 goalDistance = glm::length(toGoal);
@@ -445,15 +495,19 @@ void NpcCombatController::approach(f32 dt, const NpcContext& ctx, Npc& npc,
     }
 }
 
-void NpcCombatController::updateSwing(f32 dt, const NpcContext& ctx,
-                                      Npc& npc,
-                                      const data::WeaponForm* npcWeapon,
-                                      bool playerSneaking) {
+void NpcCombatController::updateSwing(
+    f32 dt, const NpcContext& ctx, Npc& npc,
+    const data::WeaponForm* npcWeapon, bool playerSneaking,
+    const std::unordered_map<u64, Npc*>& npcByEntity) {
     // P0 A3/A4: the swing machine + the blade-touch hit (the SAME
     // MeleeSwing code path as the player). The clip's authored
     // HitOpen/HitClose events override the data windows; the hit
     // segment is the VISIBLE blade — world x hand joint x +Y, exactly
-    // what extract() draws — against the player capsule.
+    // what extract() draws — against the DEFENDER's capsule. É2: the
+    // defender is the combat target — the player by default (every
+    // pre-É2 read intact: godMode gate, sneak capsule, dodge i-frames),
+    // the adopted entity otherwise (godMode and dodging are PLAYER
+    // concepts; NPCs don't dodge yet).
     auto& swing = npc.entity.get_mut<gameplay::MeleeSwing>();
     if (swing.phase != gameplay::SwingPhase::Idle && npcWeapon) {
         for (const str& name : npc.pendingAnimEvents) {
@@ -470,9 +524,27 @@ void NpcCombatController::updateSwing(f32 dt, const NpcContext& ctx,
             npc.blocking = ctx.combatRng.chance(
                 static_cast<f64>(ctx.statsTuning.npcBlockChance));
         }
+        const bool entityTarget =
+            npc.combatTarget.id() != 0 && npc.combatTarget.is_alive();
+        const ecs::Entity defenderEntity =
+            entityTarget ? npc.combatTarget : ctx.playerEntity;
+        const Npc* defenderNpc = nullptr;
+        if (entityTarget) {
+            const auto it = npcByEntity.find(defenderEntity.id());
+            defenderNpc = it != npcByEntity.end() ? it->second : nullptr;
+        }
+        // An ACTIVE FOLLOWER only ever hits its adopted target — if the
+        // target died mid-swing (OnDeath cleared it), the rest of the
+        // Active window must NOT fall back onto the player's capsule.
+        const bool followerActive =
+            npc.entity.has<gameplay::FollowerState>() &&
+            npc.entity.get<gameplay::FollowerState>().followerActive;
+        const bool defenderValid =
+            entityTarget ? (defenderNpc && !defenderNpc->dead)
+                         : (!followerActive && ctx.player &&
+                            ctx.playerEntity.is_alive() && !ctx.godMode);
         if (swing.phase == gameplay::SwingPhase::Active &&
-            npc.handJoint >= 0 && ctx.playMode && ctx.player &&
-            ctx.playerEntity.is_alive() && !ctx.godMode) {
+            npc.handJoint >= 0 && ctx.playMode && defenderValid) {
             const auto& transform = npc.entity.get<world::Transform>();
             const Mat4 world =
                 glm::translate(Mat4 { 1.0f }, transform.position) *
@@ -488,31 +560,37 @@ void NpcCombatController::updateSwing(f32 dt, const NpcContext& ctx,
             const Vec3 tip =
                 grip + bladeDir * (npcWeapon->bladeLength *
                                    npcWeapon->hitTolerance);
-            const Vec3 feet = ctx.player->position();
+            const Vec3 feet =
+                entityTarget
+                    ? defenderEntity.get<world::Transform>().position
+                    : ctx.player->position();
             // Dodge i-frames: State.Dodging means the blade passes
             // through — and does NOT register, so the same Active
             // window can still connect once the i-frames expire.
+            // (Player only: NPCs have no dodge yet.)
             bool dodging = false;
-            if (const auto dodgeTag =
-                    ctx.gameTags.find("State.Dodging")) {
-                dodging = ctx.playerEntity
-                              .get<gameplay::AbilitySystem>()
-                              .tags.has(*dodgeTag);
+            if (!entityTarget) {
+                if (const auto dodgeTag =
+                        ctx.gameTags.find("State.Dodging")) {
+                    dodging = ctx.playerEntity
+                                  .get<gameplay::AbilitySystem>()
+                                  .tags.has(*dodgeTag);
+                }
             }
             // A crouched player is half the target (sneak rule).
+            const bool crouched = !entityTarget && playerSneaking;
             if (!dodging &&
-                gameplay::segmentHitsActor(grip, tip, feet,
-                                           playerSneaking) &&
-                gameplay::registerStrike(swing,
-                                         ctx.playerEntity.id())) {
+                gameplay::segmentHitsActor(grip, tip, feet, crouched) &&
+                gameplay::registerStrike(swing, defenderEntity.id())) {
                 // The exchange rules (crit window, guard cone,
                 // perfect parry, events, cues) live in ONE place,
-                // resolveMeleeStrike, shared with the player side.
+                // resolveMeleeStrike, shared with the player side —
+                // and target-agnostic since R1 (É2 leans on that).
                 gameplay::StatBlock defender {
-                    ctx.playerEntity.get_mut<gameplay::CoreAttributes>(),
-                    ctx.playerEntity.get_mut<gameplay::AttributeSet>(),
-                    ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
-                    ctx.playerEntity.get_mut<gameplay::CombatState>()
+                    defenderEntity.get_mut<gameplay::CoreAttributes>(),
+                    defenderEntity.get_mut<gameplay::AttributeSet>(),
+                    defenderEntity.get_mut<gameplay::AbilitySystem>(),
+                    defenderEntity.get_mut<gameplay::CombatState>()
                 };
                 gameplay::StatBlock attacker {
                     npc.entity.get_mut<gameplay::CoreAttributes>(),
@@ -520,12 +598,12 @@ void NpcCombatController::updateSwing(f32 dt, const NpcContext& ctx,
                     npc.entity.get_mut<gameplay::AbilitySystem>(),
                     npc.entity.get_mut<gameplay::CombatState>()
                 };
-                const auto& playerT =
-                    ctx.playerEntity.get<world::Transform>();
+                const auto& defenderT =
+                    defenderEntity.get<world::Transform>();
                 const gameplay::StrikeGeometry geo {
-                    transform.position, playerT.position,
-                    playerT.rotation * Vec3 { 0.0f, 0.0f, 1.0f },
-                    ctx.playerEntity.get<gameplay::MeleeSwing>()
+                    transform.position, defenderT.position,
+                    defenderT.rotation * Vec3 { 0.0f, 0.0f, 1.0f },
+                    defenderEntity.get<gameplay::MeleeSwing>()
                         .guardSeconds,
                     feet + Vec3 { 0.0f, 1.2f, 0.0f }
                 };
@@ -536,17 +614,21 @@ void NpcCombatController::updateSwing(f32 dt, const NpcContext& ctx,
                 const gameplay::StrikeOutcome outcome =
                     gameplay::resolveMeleeStrike(
                         attacker, defender, npc.entity,
-                        ctx.playerEntity,
+                        defenderEntity,
                         gameplay::weaponDamageEvent(*npcWeapon,
                                                     attacker.system),
                         geo, strikeCtx);
+                const str defenderName =
+                    entityTarget ? defenderNpc->editorId : str { "you" };
                 if (outcome.guard.perfect) {
-                    LOG_INFO("PERFECT PARRY — bandit poise -{}{}",
+                    LOG_INFO("PERFECT PARRY by {} — {}'s poise -{}{}",
+                             defenderName, npc.editorId,
                              ctx.statsTuning.perfectParryPosture,
                              outcome.riposte.staggered
                                  ? " (STAGGERED!)" : "");
                 } else {
-                    LOG_INFO("Bandit's blade lands: {:.0f} damage{}{}",
+                    LOG_INFO("{}'s blade lands on {}: {:.0f} damage{}{}",
+                             npc.editorId, defenderName,
                              outcome.damage.healthDamage,
                              outcome.guard.caught ? " (blocked)" : "",
                              outcome.damage.staggered

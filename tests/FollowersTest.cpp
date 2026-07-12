@@ -246,3 +246,101 @@ TEST_CASE("followers: recruit/dismiss ride the pending layer's cell patch") {
     CHECK(countByRef(world, kFollowerRef) == 1);
     (void)cellEntity;
 }
+
+// --- É2: the aggro table (gameplay::adoptOnHit — pure, headless) ------------
+// Entity ids stand in for the cast: 1 = player, 2/3 = active followers,
+// 10/11 = hostiles, 20 = a villager (no roles).
+
+namespace {
+
+constexpr u64 kPlayer = 1;
+constexpr u64 kFollower = 2;
+constexpr u64 kFollower2 = 3;
+constexpr u64 kHostile = 10;
+constexpr u64 kHostile2 = 11;
+
+// Roles for `self`, given the cast above.
+gameplay::AggroRoles rolesFor(u64 self, u64 source, u64 target,
+                              bool selfHasLiveTarget = false,
+                              bool friendlyTrial = false) {
+    const auto isFollower = [](u64 id) {
+        return id == kFollower || id == kFollower2;
+    };
+    const auto isHostile = [](u64 id) {
+        return id == kHostile || id == kHostile2;
+    };
+    gameplay::AggroRoles roles;
+    roles.self = self;
+    roles.selfFollower = isFollower(self);
+    roles.selfHostile = isHostile(self);
+    roles.selfHasLiveTarget = selfHasLiveTarget;
+    roles.sourcePlayer = source == kPlayer;
+    roles.sourceFollower = isFollower(source);
+    roles.sourceHostile = isHostile(source);
+    roles.targetPlayer = target == kPlayer;
+    roles.targetFollower = isFollower(target);
+    roles.targetHostile = isHostile(target);
+    roles.friendlyTrial = friendlyTrial;
+    return roles;
+}
+
+u64 adopt(u64 self, u64 source, u64 target, bool selfHasLiveTarget = false,
+          bool friendlyTrial = false) {
+    return gameplay::adoptOnHit(
+        source, target,
+        rolesFor(self, source, target, selfHasLiveTarget, friendlyTrial));
+}
+
+} // namespace
+
+TEST_CASE("followers É2: a follower defends the party") {
+    // A hostile hits the player -> the idle follower adopts the hostile.
+    CHECK(adopt(kFollower, kHostile, kPlayer) == kHostile);
+    // A hostile hits a FELLOW follower -> same adoption.
+    CHECK(adopt(kFollower, kHostile, kFollower2) == kHostile);
+    // Already committed to a live target: no target hopping.
+    CHECK(adopt(kFollower, kHostile2, kPlayer, true) == 0);
+    // ...unless HE is the one being hit: the victim re-aims.
+    CHECK(adopt(kFollower, kHostile2, kFollower, true) == kHostile2);
+    // The player's own hits on the party never get adopted (brawl,
+    // friendly fire): the source must be a hostile.
+    CHECK(adopt(kFollower, kPlayer, kFollower2) == 0);
+    // A villager (no follower/hostile role) reacts to nothing.
+    CHECK(adopt(20, kHostile, kPlayer) == 0);
+}
+
+TEST_CASE("followers É2: the player's initiative is followed") {
+    // The player strikes a hostile first -> followers adopt it.
+    CHECK(adopt(kFollower, kPlayer, kHostile) == kHostile);
+    // But not when committed elsewhere...
+    CHECK(adopt(kFollower, kPlayer, kHostile, true) == 0);
+    // ...and never a NON-hostile victim (a crime is not an order).
+    CHECK(adopt(kFollower, kPlayer, 20) == 0);
+}
+
+TEST_CASE("followers É2: hostiles fight followers back") {
+    // A follower hits a hostile -> the hostile re-aims at the follower.
+    CHECK(adopt(kHostile, kFollower, kHostile) == kFollower);
+    // Hit by the PLAYER: keep the default player targeting (no
+    // combatTarget — the exact pre-É2 behavior).
+    CHECK(adopt(kHostile, kPlayer, kHostile) == 0);
+    // Another hostile's brawl is not his problem.
+    CHECK(adopt(kHostile, kFollower, kHostile2) == 0);
+    // Self-targeting guard: a hostile "hitting itself" adopts nothing.
+    CHECK(adopt(kHostile, kHostile, kHostile) == 0);
+}
+
+TEST_CASE("followers É2: Combat.FriendlyTrial gates follower adoption") {
+    // Every follower adoption path is suppressed...
+    CHECK(adopt(kFollower, kHostile, kPlayer, false, true) == 0);
+    CHECK(adopt(kFollower, kPlayer, kHostile, false, true) == 0);
+    CHECK(adopt(kFollower, kHostile, kFollower, false, true) == 0);
+    // ...but hostile retaliation is not (a real enemy stays real).
+    CHECK(adopt(kHostile, kFollower, kHostile, false, true) == kFollower);
+}
+
+TEST_CASE("followers É2: death disengages whoever targeted the dead") {
+    CHECK(gameplay::disengageOnDeath(kHostile, kHostile));
+    CHECK_FALSE(gameplay::disengageOnDeath(kHostile, kHostile2));
+    CHECK_FALSE(gameplay::disengageOnDeath(kHostile, 0)); // no target: no-op
+}

@@ -112,6 +112,9 @@ public:
 
 private:
     void updateNameplates(const HudContext& ctx);
+    // FOLLOWERS É2: the party frame — one row per active follower, name +
+    // health (the nameplate pattern over the same Npc list).
+    void updatePartyModel(const HudContext& ctx);
 
     InventoryView invView;
     InventoryView lootView;

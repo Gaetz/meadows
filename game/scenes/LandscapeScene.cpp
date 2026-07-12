@@ -318,6 +318,20 @@ void LandscapeScene::setupGameplay() {
                            // assumes live entities).
                            refreshNpcs(engine->getDevice());
                        });
+    // FOLLOWERS É2: the aggro table rides the signals combat ALREADY
+    // publishes (§2.11 — resolveMeleeStrike/resolveStrikeDamage dispatch
+    // OnHitTaken, the director dispatches OnDeath): followers defend the
+    // player, hostiles fight back, a death disengages whoever targeted it.
+    eventBus.subscribe(gameplay::eventKind("OnHitTaken"),
+                       [this](const gameplay::Event& event) {
+                           followerController.onHitTaken(
+                               makeFollowerContext(), event);
+                       });
+    eventBus.subscribe(gameplay::eventKind("OnDeath"),
+                       [this](const gameplay::Event& event) {
+                           followerController.onDeath(makeFollowerContext(),
+                                                      event);
+                       });
     // P0 B2 hearing: any OnNoise event turns nearby perceivers'
     // heads — the noise position is the SOURCE entity's transform.
     eventBus.subscribe(
@@ -1301,6 +1315,9 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                        "postureText", "clock", "prompt", "talk" },
           .bools = { "promptVisible", "talkVisible", "chargeVisible" },
           .rows = true }); // B7: nameplates over hostile/hurt NPCs
+    // FOLLOWERS É2: the party frame — one row per ACTIVE follower (name +
+    // health), its own model (a document allows one rows array per model).
+    uiSystem.createModel({ .name = "party", .rows = true });
     // B3: the player-side item table (inventory screen + the player panel
     // of the container/barter screens) and the loot side.
     uiSystem.createModel(

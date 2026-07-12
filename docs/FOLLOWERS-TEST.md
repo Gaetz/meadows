@@ -50,4 +50,27 @@ FollowerState (préfixé follower* dans la save), attribut `level` (base
 **Comportement attendu ailleurs :** les 4 autres PNJ inchangés (les
 bandits attaquent, le garde/villageois vaquent).
 
+## É2 — Il se bat à tes côtés
+
+**À tester (avec Aldric recruté) :**
+1. Va au camp est ; laisse un bandit t'attaquer → au premier coup reçu
+   (ou dès que TU frappes un bandit), Aldric ENGAGE l'agresseur : il
+   court dessus, dégaine et échange des coups (logs « É2: Aldric
+   engages Bandit » puis « Aldric's blade lands on Bandit »).
+2. Le bandit frappé par Aldric se retourne CONTRE lui (il ne reste pas
+   fixé sur toi) ; l'archer qui te touche d'une flèche déclenche aussi
+   la défense.
+3. Le **party frame** en haut à gauche montre « Aldric » + sa barre de
+   vie qui bouge pendant l'échange.
+4. Mort de la cible → Aldric désengage et revient te suivre.
+5. Hors combat : rien ne change (villageois/garde inertes, pas
+   d'aggro fantôme) ; les bandits SANS follower se comportent comme
+   avant (régression : leurs lignes B3 habituelles).
+6. F5/F9 en plein combat → au reload, plus de cible (elle se ré-acquiert
+   au prochain coup) — voulu, la cible n'est pas persistée.
+
+**Réserves connues :** Aldric ne dodge pas (les PNJ n'esquivent pas
+encore) ; pas d'IA d'archer follower ; le tag `Combat.FriendlyTrial`
+sur le joueur coupe l'adoption (pour les futures épreuves amicales).
+
 <!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->

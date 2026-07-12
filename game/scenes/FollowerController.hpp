@@ -7,6 +7,7 @@ namespace data {
 class FormDatabase;
 }
 namespace gameplay {
+struct Event;
 class GameplayTagRegistry;
 struct StatsTuningForm;
 }
@@ -71,6 +72,20 @@ public:
     // (registerTag is idempotent). Re-run after spawns/reloads — owned
     // tags are not part of the captured actor state.
     void syncActiveTag(const FollowerContext& ctx);
+
+    // É2 — the aggro table, on the signals combat ALREADY publishes
+    // (§2.11: resolveMeleeStrike's OnHitTaken / the director's OnDeath —
+    // the R1 strike resolution was target-agnostic from day one). The
+    // per-NPC decision is the pure gameplay::adoptOnHit (doctested
+    // headless); this handler only resolves the parties' roles and
+    // writes Npc.combatTarget (runtime-only — never saved, re-acquired
+    // after load from the next landed hit). The Combat.FriendlyTrial
+    // tag on the PLAYER suppresses follower adoption (the brawl case).
+    void onHitTaken(const FollowerContext& ctx, const gameplay::Event& event);
+
+    // A dead entity is nobody's target: clear every matching
+    // combatTarget — followers fall back to the follow package.
+    void onDeath(const FollowerContext& ctx, const gameplay::Event& event);
 
     // The one teleport routine (travel arrivals AND the follow package's
     // too-far case): grounded next to `anchor`, path cleared.

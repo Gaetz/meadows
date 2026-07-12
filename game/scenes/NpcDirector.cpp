@@ -187,8 +187,10 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
 
         // R4: the swing machine + the blade-touch hit + the A5 guard
         // roll/mirror — after the pose evaluation (the hit segment
-        // follows the hand joint through this frame's pose).
-        combat_.updateSwing(dt, ctx, npc, npcWeapon, playerSneaking);
+        // follows the hand joint through this frame's pose). É2: the
+        // map resolves an NPC defender (combat target) back to its record.
+        combat_.updateSwing(dt, ctx, npc, npcWeapon, playerSneaking,
+                            npcByEntity_);
 
         // Chantier P0 C4a: drain the anim events the sink buffered onto
         // the bus — ONE kind ("AnimEvent"), the clip's name in `name`;

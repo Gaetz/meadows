@@ -184,3 +184,38 @@ body {
 .ppfill {
 	background-color: #b8a15e;
 }
+
+/* FOLLOWERS É2: the party frame — one block per active follower, top-left
+   (the clock holds top-right). Same proven bar pattern as the nameplates. */
+#party {
+	position: absolute;
+	left: 18dp;
+	top: 14dp;
+}
+
+.member {
+	margin-bottom: 6dp;
+}
+
+.mname {
+	font-size: 13dp;
+	color: #e6e3dc;
+}
+
+.mhealth {
+	position: relative;
+	display: block;
+	width: 110dp;
+	height: 5dp;
+	margin-top: 2dp;
+	background-color: #14161ab0;
+	border: 1dp #3c4046;
+}
+
+.mfill {
+	position: absolute;
+	left: 0;
+	top: 0;
+	height: 100%;
+	background-color: #a8483f;
+}

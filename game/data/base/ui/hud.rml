@@ -58,5 +58,13 @@
 		</div>
 	</div>
 	</div>
+	<!-- FOLLOWERS É2: the party frame — active followers, name + health.
+	     Own data model (models can't nest), sibling wrapper like #hud. -->
+	<div id="party" data-model="party">
+		<div class="member" data-for="m : rows">
+			<div class="mname">{{ m.c0 }}</div>
+			<div class="mhealth"><div class="mfill" data-style-width="m.c1 + '%'"/></div>
+		</div>
+	</div>
 </body>
 </rml>

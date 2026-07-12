@@ -10,7 +10,8 @@
 #include "game/scenes/NpcDirector.hpp"              // Npc, NpcDirector
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/actors/ActorState.hpp" // gameplay::FollowerState
-#include "gameplay/actors/Followers.hpp"  // followTuning (teleport radius)
+#include "gameplay/actors/Followers.hpp"  // followTuning, adoptOnHit (É2)
+#include "gameplay/event/EventBus.hpp"    // gameplay::Event (É2 aggro)
 #include "world/scene/Components.hpp"
 #include "world/streaming/CellLoader.hpp"
 #include "world/worldspace/WorldForms.hpp" // world::ReferenceForm
@@ -174,6 +175,93 @@ void FollowerController::syncActiveTag(const FollowerContext& ctx) {
         sys.tags.add(tag, ctx.gameTags);
     } else if (!any && sys.tags.has(tag)) {
         sys.tags.remove(tag, ctx.gameTags);
+    }
+}
+
+void FollowerController::onHitTaken(const FollowerContext& ctx,
+                                    const gameplay::Event& event) {
+    const u64 source = event.source.id();
+    const u64 target = event.target.id();
+    if (source == 0 || target == 0 || source == target) {
+        return; // sourceless hits (despawned shooter) drive no aggro
+    }
+    const auto isActiveFollower = [](const Npc& npc) {
+        return npc.entity.is_alive() &&
+               npc.entity.has<gameplay::FollowerState>() &&
+               npc.entity.get<gameplay::FollowerState>().followerActive;
+    };
+    // Resolve the two parties' roles ONCE (a plain sweep of the director
+    // list — hits are rare events, no index needed).
+    const Npc* sourceNpc = nullptr;
+    const Npc* targetNpc = nullptr;
+    for (const auto& npcPtr : ctx.npcDirector.npcs()) {
+        if (npcPtr->entity.id() == source) {
+            sourceNpc = npcPtr.get();
+        }
+        if (npcPtr->entity.id() == target) {
+            targetNpc = npcPtr.get();
+        }
+    }
+    gameplay::AggroRoles roles;
+    roles.sourcePlayer = event.source == ctx.playerEntity;
+    roles.sourceFollower = sourceNpc && isActiveFollower(*sourceNpc);
+    roles.sourceHostile = sourceNpc && sourceNpc->hostile;
+    roles.targetPlayer = event.target == ctx.playerEntity;
+    roles.targetFollower = targetNpc && isActiveFollower(*targetNpc);
+    roles.targetHostile = targetNpc && targetNpc->hostile;
+    // Friendly trial (the doc's brawl case): the PLAYER tag suppresses
+    // follower adoption — the gate only, no content sets it yet.
+    if (ctx.playerEntity.is_alive() &&
+        ctx.playerEntity.has<gameplay::AbilitySystem>()) {
+        if (const auto tag = ctx.gameTags.find("Combat.FriendlyTrial")) {
+            roles.friendlyTrial =
+                ctx.playerEntity.get<gameplay::AbilitySystem>().tags.has(
+                    *tag);
+        }
+    }
+    for (auto& npcPtr : ctx.npcDirector.npcs()) {
+        Npc& npc = *npcPtr;
+        if (npc.dead || !npc.entity.is_alive()) {
+            continue;
+        }
+        roles.self = npc.entity.id();
+        roles.selfFollower = isActiveFollower(npc);
+        roles.selfHostile = npc.hostile;
+        // "Live target" = the adopted entity still stands (alive AND its
+        // director record — if it has one — isn't dead yet).
+        bool liveTarget = false;
+        if (npc.combatTarget.id() != 0 && npc.combatTarget.is_alive()) {
+            liveTarget = true;
+            for (const auto& other : ctx.npcDirector.npcs()) {
+                if (other->entity.id() == npc.combatTarget.id()) {
+                    liveTarget = !other->dead;
+                    break;
+                }
+            }
+        }
+        roles.selfHasLiveTarget = liveTarget;
+        const u64 adopt = gameplay::adoptOnHit(source, target, roles);
+        if (adopt == 0 || adopt == npc.combatTarget.id()) {
+            continue;
+        }
+        // adoptOnHit only ever returns an NPC entity (never the player).
+        const Npc* adopted = adopt == source ? sourceNpc : targetNpc;
+        npc.combatTarget = adopt == source ? event.source : event.target;
+        LOG_INFO("É2: {} engages {} (aggro on hit)", npc.editorId,
+                 adopted ? adopted->editorId : str { "?" });
+    }
+}
+
+void FollowerController::onDeath(const FollowerContext& ctx,
+                                 const gameplay::Event& event) {
+    const u64 dead = event.target.id();
+    if (dead == 0) {
+        return;
+    }
+    for (auto& npcPtr : ctx.npcDirector.npcs()) {
+        if (gameplay::disengageOnDeath(dead, npcPtr->combatTarget.id())) {
+            npcPtr->combatTarget = ecs::Entity {};
+        }
     }
 }
 

@@ -18,6 +18,7 @@
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/NpcDirector.hpp" // Npc (nameplates)
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/actors/ActorState.hpp" // FollowerState (É2 party frame)
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/Damage.hpp" // gameplay::CombatState
 #include "gameplay/stats/EquipmentStats.hpp"
@@ -27,6 +28,23 @@
 #include "world/scene/Components.hpp"
 
 namespace game {
+
+namespace {
+
+// The NPC's authored displayName (nameplates, the É2 party frame).
+str actorDisplayName(const data::FormDatabase& forms, const Npc& npc) {
+    if (npc.entity.has<world::RefId>()) {
+        const auto& ref = npc.entity.get<world::RefId>();
+        if (const reflect::TypeInfo* type = forms.typeOf(ref.base);
+            type && type->isA(data::ActorForm::staticTypeInfo().id)) {
+            return static_cast<const data::ActorForm*>(forms.get(ref.base))
+                ->displayName;
+        }
+    }
+    return "?";
+}
+
+} // namespace
 
 void GameHud::updateHudModel(const HudContext& ctx) {
     if (!ctx.uiCreated) {
@@ -132,7 +150,39 @@ void GameHud::updateHudModel(const HudContext& ctx) {
     ctx.ui.setBool("hud", "talkVisible", talkOn);
     ctx.ui.setString("hud", "talk",
                      talkOn ? ctx.interaction.talkLine() : str {});
-    updateNameplates(ctx); // B7
+    updateNameplates(ctx);  // B7
+    updatePartyModel(ctx);  // FOLLOWERS É2
+}
+
+void GameHud::updatePartyModel(const HudContext& ctx) {
+    // FOLLOWERS É2: one row per ACTIVE follower — displayName + health %
+    // (currentValueOf, the nameplate pattern). Fixed top-left block; the
+    // names are data (ActorForm), nothing to localize here.
+    vector<::ui::UiRow> rows;
+    if (ctx.playMode) {
+        for (const auto& npcPtr : ctx.npcs) {
+            const Npc& npc = *npcPtr;
+            if (npc.dead || !npc.entity.is_alive() ||
+                !npc.entity.has<gameplay::FollowerState>() ||
+                !npc.entity.get<gameplay::FollowerState>().followerActive ||
+                !npc.entity.has<gameplay::AbilitySystem>()) {
+                continue;
+            }
+            const auto& sys = npc.entity.get<gameplay::AbilitySystem>();
+            const f32 health =
+                gameplay::currentValueOf(sys, gameplay::attr("health"));
+            const f32 maxHealth =
+                gameplay::currentValueOf(sys, gameplay::attr("maxHealth"));
+            ::ui::UiRow row;
+            row.id = std::to_string(npc.entity.id());
+            row.c0 = actorDisplayName(ctx.forms, npc);
+            row.c1 = std::to_string(static_cast<i32>(glm::clamp(
+                100.0f * health / glm::max(maxHealth, 1.0f), 0.0f,
+                100.0f)));
+            rows.push_back(std::move(row));
+        }
+    }
+    ctx.ui.setRows("party", std::move(rows));
 }
 
 void GameHud::updateNameplates(const HudContext& ctx) {
@@ -175,19 +225,7 @@ void GameHud::updateNameplates(const HudContext& ctx) {
                 (1.0f - (clip.y / clip.w * 0.5f + 0.5f)) * height;
             ::ui::UiRow plate;
             plate.id = std::to_string(npc.entity.id());
-            str name = "?";
-            if (npc.entity.has<world::RefId>()) {
-                const auto& ref = npc.entity.get<world::RefId>();
-                if (const reflect::TypeInfo* type =
-                        ctx.forms.typeOf(ref.base);
-                    type &&
-                    type->isA(data::ActorForm::staticTypeInfo().id)) {
-                    name = static_cast<const data::ActorForm*>(
-                               ctx.forms.get(ref.base))
-                               ->displayName;
-                }
-            }
-            plate.c0 = name;
+            plate.c0 = actorDisplayName(ctx.forms, npc);
             plate.c1 = std::to_string(static_cast<i32>(glm::clamp(
                 100.0f * health / glm::max(maxHealth, 1.0f), 0.0f,
                 100.0f)));

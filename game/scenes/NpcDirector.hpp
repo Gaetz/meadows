@@ -138,6 +138,13 @@ struct Npc {
     // archer flees" vs "the archer holds his bow band" is one log read
     // (a strafe back to reach 12 looks like a flee from the outside).
     std::optional<gameplay::CombatMove> combatMove;
+    // FOLLOWERS É2: the adopted combat TARGET (a follower defending the
+    // player, a hostile fighting a follower back). Unset = the pre-É2
+    // default (hostiles hunt the player by perception). Written by the
+    // aggro handler (FollowerController, gameplay::adoptOnHit), cleared
+    // on the target's OnDeath. RUNTIME ONLY — never saved; re-acquired
+    // after load from the next landed hit.
+    ecs::Entity combatTarget {};
 
     // Chantier P0 C4a: anim events land HERE from the GraphInstance sink
     // (set at creation, before any EventBus exists for the capture) and

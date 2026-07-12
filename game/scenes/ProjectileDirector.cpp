@@ -39,10 +39,27 @@ void strike(const ProjectileContext& ctx, ecs::Entity target,
         ctx.gameTags, ctx.derivedStats, ctx.statsTuning, &ctx.eventBus,
         ctx.cues
     };
-    // Source = empty: the shooter may be long gone (payload captured at
-    // fire time).
+    // É2: resolve the shooter back to a LIVE entity so the OnHitTaken
+    // this dispatches carries a real source — the follower aggro table
+    // listens on it. The payload stays captured at fire time; a
+    // long-gone shooter degrades to the old empty source.
+    ecs::Entity shooter {};
+    if (arrow.shooter != 0) {
+        if (ctx.playerEntity.is_alive() &&
+            ctx.playerEntity.id() == arrow.shooter) {
+            shooter = ctx.playerEntity;
+        } else {
+            for (const auto& npcPtr : ctx.npcs) {
+                if (npcPtr->entity.id() == arrow.shooter &&
+                    npcPtr->entity.is_alive()) {
+                    shooter = npcPtr->entity;
+                    break;
+                }
+            }
+        }
+    }
     const gameplay::DamageResult result = gameplay::resolveStrikeDamage(
-        defender, ecs::Entity {}, target, arrow.payload, at, strikeCtx);
+        defender, shooter, target, arrow.payload, at, strikeCtx);
     LOG_INFO("A7: arrow hits for {:.0f}", result.healthDamage);
 }
 

@@ -41,4 +41,43 @@ struct FollowIntent {
 FollowIntent decideFollow(const Vec3& followerPos, const Vec3& playerPos,
                           const FollowTuning& tuning);
 
+// ---- É2: the aggro table --------------------------------------------------
+// Pure per-event decision for OnHitTaken{source, target} (§2.11: the bus
+// already carries the signal — resolveMeleeStrike dispatches it; this is
+// only the reaction table). The caller resolves the ROLES (follower =
+// FollowerState.followerActive, hostile = Npc.hostile, friendlyTrial =
+// the Combat.FriendlyTrial tag on the PLAYER) and writes the returned
+// entity into Npc.combatTarget. The rules, flat:
+//   - a hostile struck BY A FOLLOWER fights that follower back (struck
+//     by the player it keeps its DEFAULT player targeting — iso É2);
+//   - a follower struck by a hostile re-aims at its attacker, even
+//     mid-fight;
+//   - a follower with no live target defends the party: it adopts a
+//     hostile that hit the player or a fellow follower, and adopts the
+//     hostile the PLAYER strikes first;
+//   - Combat.FriendlyTrial suppresses every follower adoption (the
+//     doc's brawl case); hostile retaliation is never suppressed;
+//   - nobody ever targets itself, and the player is never adopted.
+struct AggroRoles {
+    u64 self { 0 };
+    bool selfFollower { false };
+    bool selfHostile { false };
+    bool selfHasLiveTarget { false };
+    bool sourcePlayer { false };
+    bool sourceFollower { false };
+    bool sourceHostile { false };
+    bool targetPlayer { false };
+    bool targetFollower { false };
+    bool targetHostile { false };
+    bool friendlyTrial { false };
+};
+
+// The entity `self` should adopt as its combat target (the event's
+// source or target id), or 0 = keep the current one.
+u64 adoptOnHit(u64 source, u64 target, const AggroRoles& roles);
+
+// OnDeath{target}: should a combat target pointing at `dead` be cleared?
+// (A cleared follower falls back to the follow package next frame.)
+bool disengageOnDeath(u64 dead, u64 combatTarget);
+
 } // namespace gameplay
