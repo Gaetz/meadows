@@ -52,6 +52,11 @@ approval.
    interface + factory, chosen at startup from config/availability) — distinct
    from OS selection, which is compile-time (§3.1).
    **Do not write a Vulkan backend yet.**
+   Decision (2026-07-12): the **macOS path is a Vulkan backend + MoltenVK**
+   as a dedicated **post-demo** chantier — no GL 4.1 down-port of the 3D
+   renderer (Apple GL is deprecated and lacks compute/SSBO/bindless), no
+   native Metal backend (SPIRV-Cross can derive one later if ever needed).
+   Until then: new RHI-facing code stays behind the capability flags.
 
 2. **Data model = Forms vs References.**
    - A **Form** is a *definition* (what an "iron sword" IS). Forms are data,

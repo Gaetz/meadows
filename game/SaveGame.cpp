@@ -355,12 +355,12 @@ vector<SaveSlotInfo> listSaveSlots() {
         const auto system = std::chrono::clock_cast<std::chrono::system_clock>(
             slot.time);
         const std::time_t t = std::chrono::system_clock::to_time_t(system);
-        std::tm local {};
-        if (localtime_s(&local, &t) == 0) {
-            char buffer[24];
-            std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", &local);
-            stamp = buffer;
-        }
+        // C9.8: platform::localTime — localtime_s is MSVC-only (glibc
+        // has localtime_r with reversed arguments).
+        const std::tm local = platform::localTime(t);
+        char buffer[24];
+        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", &local);
+        stamp = buffer;
         infos.push_back({ std::move(slot.name), std::move(stamp) });
     }
     return infos;

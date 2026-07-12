@@ -10,6 +10,7 @@
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/LocForms.hpp" // TextTable (C9.5)
 #include "engine/core/Log.hpp"
+#include "engine/platform/Paths.hpp" // platform::localTime (C9.8)
 #include "engine/ui/UiSystem.hpp"
 #include "game/Barter.hpp"
 #include "game/SaveGame.hpp" // listSaveSlots
@@ -348,12 +349,9 @@ void UiRouter::handleMenuAction(const UiRouterContext& ctx,
         // Timestamped manual slot; F5 owns "quick".
         char slot[32];
         const std::time_t now = std::time(nullptr);
-        std::tm local {};
-        if (localtime_s(&local, &now) == 0) {
-            std::strftime(slot, sizeof(slot), "save_%Y%m%d_%H%M%S", &local);
-        } else {
-            std::snprintf(slot, sizeof(slot), "save_manual");
-        }
+        // C9.8: platform::localTime (portable — localtime_s is MSVC-only).
+        const std::tm local = platform::localTime(now);
+        std::strftime(slot, sizeof(slot), "save_%Y%m%d_%H%M%S", &local);
         ctx.performSave(slot);
         ctx.screenStack.closeTop();
     } else if (action == "loadmenu") {
