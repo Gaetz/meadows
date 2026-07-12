@@ -304,41 +304,49 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
                      gameplay::attr("health")));
     }
 
-    // D2 — crime v1: assaulting a peaceful NPC in front of a witness.
-    // Witnesses = the victim (if still alive) or any living NPC within
-    // earshot with a clear line to the player (the B5 raycast idiom).
+    // The strike resolved; the crime pass is its own concern (review C2:
+    // applyHit used to weld the two together).
     if (!target.hostile) {
-        const f32 witnessRange = ctx.statsTuning.crimeWitnessRange; // U4-7
-        bool witnessed = !target.dead && target.entity.is_alive();
-        for (const auto& witnessPtr : ctx.npcs) {
-            if (witnessed) {
-                break;
-            }
-            const Npc& witness = *witnessPtr;
-            if (&witness == &target || witness.dead ||
-                !witness.entity.is_alive()) {
-                continue;
-            }
-            const Vec3 witnessEye =
-                witness.entity.get<world::Transform>().position +
-                Vec3 { 0.0f, 1.5f, 0.0f };
-            const f32 range = glm::length(eye - witnessEye);
-            if (range > witnessRange || range < 1e-3f) {
-                continue;
-            }
-            witnessed = hasLineOfSight(*ctx.physics, witnessEye, eye);
+        witnessCrime(ctx, target, eye);
+    }
+}
+
+// D2 — crime v1: assaulting a peaceful NPC in front of a witness.
+// Witnesses = the victim (if still alive) or any living NPC within
+// earshot with a clear line to the player (the B5 raycast idiom).
+void PlayerController::witnessCrime(const PlayerContext& ctx,
+                                    const Npc& target,
+                                    const Vec3& playerEye) {
+    const f32 witnessRange = ctx.statsTuning.crimeWitnessRange; // U4-7
+    bool witnessed = !target.dead && target.entity.is_alive();
+    for (const auto& witnessPtr : ctx.npcs) {
+        if (witnessed) {
+            break;
         }
-        if (witnessed && ctx.playerEntity.is_alive()) {
-            auto& bounty = ctx.playerEntity.get_mut<gameplay::Bounty>();
-            bounty.bounty += ctx.statsTuning.crimeBountyAssault; // U4-7
-            ctx.syncWantedTag();
-            ctx.interaction.say(
-                ctx.texts.format(
-                    "crime.observed",
-                    std::to_string(static_cast<i32>(bounty.bounty))),
-                4.0f);
-            LOG_INFO("Crime witnessed — bounty {:.0f}", bounty.bounty);
+        const Npc& witness = *witnessPtr;
+        if (&witness == &target || witness.dead ||
+            !witness.entity.is_alive()) {
+            continue;
         }
+        const Vec3 witnessEye =
+            witness.entity.get<world::Transform>().position +
+            Vec3 { 0.0f, 1.5f, 0.0f };
+        const f32 range = glm::length(playerEye - witnessEye);
+        if (range > witnessRange || range < 1e-3f) {
+            continue;
+        }
+        witnessed = hasLineOfSight(*ctx.physics, witnessEye, playerEye);
+    }
+    if (witnessed && ctx.playerEntity.is_alive()) {
+        auto& bounty = ctx.playerEntity.get_mut<gameplay::Bounty>();
+        bounty.bounty += ctx.statsTuning.crimeBountyAssault; // U4-7
+        ctx.syncWantedTag();
+        ctx.interaction.say(
+            ctx.texts.format(
+                "crime.observed",
+                std::to_string(static_cast<i32>(bounty.bounty))),
+            4.0f);
+        LOG_INFO("Crime witnessed — bounty {:.0f}", bounty.bounty);
     }
 }
 

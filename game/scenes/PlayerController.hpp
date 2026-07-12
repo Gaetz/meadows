@@ -169,10 +169,14 @@ private:
     // sweeps the blade segment against the NPC capsules (one code path
     // with the NPCs: gameplay/combat/MeleeSwing).
     void updateSwing(f32 dt, const PlayerContext& ctx);
-    // The moved B6 hit: weapon damage through the GAS pipeline + the D2
-    // crime-witnessing pass. Fires once per target per swing.
+    // The moved B6 hit: weapon damage through resolveMeleeStrike (R1).
+    // Fires once per target per swing.
     void applyHit(const PlayerContext& ctx, Npc& target,
                   const data::WeaponForm& weapon);
+    // D2 crime v1: hitting a peaceful NPC in front of a witness raises
+    // the bounty (its own pass — review C2).
+    void witnessCrime(const PlayerContext& ctx, const Npc& target,
+                      const Vec3& playerEye);
 
     uptr<phys::CharacterBody> body_;
     Vec3 velocity { 0.0f };  // smoothed horizontal velocity (m/s)

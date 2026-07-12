@@ -152,6 +152,8 @@ struct StatsTuningForm : data::Form {
     // R7: HUD vitals-bar scale — stat points per 1% of the (half-screen)
     // bar container (5 -> 500 points = full width).
     f32 hudStatPointsScale { 5.0f };
+    // A7+: walking within this of a planted arrow recovers it (m).
+    f32 arrowPickupRadius { 1.5f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -238,6 +240,7 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(swimExhaustedSink)
         REFLECT_FIELD(archerSpread)
         REFLECT_FIELD(hudStatPointsScale)
+        REFLECT_FIELD(arrowPickupRadius)
     REFLECT_END()
 };
 

@@ -58,7 +58,8 @@ void ProjectileDirector::update(f32 dt, const ProjectileContext& ctx) {
                 ctx.playerEntity.is_alive() &&
                 ctx.playerEntity.has<gameplay::Inventory>()) {
                 const Vec3 gap = arrow.position - ctx.player->position();
-                if (glm::dot(gap, gap) < 1.5f * 1.5f) {
+                const f32 reach = ctx.statsTuning.arrowPickupRadius;
+                if (glm::dot(gap, gap) < reach * reach) {
                     gameplay::addItem(
                         ctx.playerEntity.get_mut<gameplay::Inventory>(),
                         arrow.ammoItem, 1);

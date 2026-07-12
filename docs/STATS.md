@@ -337,6 +337,13 @@ maluses need a `movementSpeed` derived stat (added with N2; full utility later).
   formulas assume attributes 1–20; a monster (e.g. 90% armor) or legendary item
   authors a per-stat override/offset in data → the formula is bypassed. Keeps
   recomputation (never stale) while covering out-of-range stats.
+  **IMPLEMENTED for maxHealth (2026-07-12, the archer-flees bug):**
+  `ActorForm.maxHealth > 0` = the balance override — the Spawner seeds
+  `AttributeSet.maxHealthOverride` and the calculator returns it instead of
+  the formula (a bandit really has its authored 35); `0` = the attribute
+  formula (the Player's record — his max progresses with attributes).
+  Resonance's % and effect modifiers still apply after, per the order above.
+  Other stats keep the infinite-Override-effect route until a case bites.
 - **Resonance** integrates into the derived pass: scales maxima by `(1 +
   resonance%/100)`, offsets linked attributes by `trunc(resonance/15)`, applies
   the Harmony cascade.
