@@ -1086,8 +1086,8 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                        "essenceMalusLeft", "essenceMalusPct",
                        "postureBarPct", "postureFillPct", "postureBonusPct",
                        "postureMalusLeft", "postureMalusPct" },
-          .strings = { "healthText", "energyText", "essenceText", "clock",
-                       "prompt", "talk" },
+          .strings = { "healthText", "energyText", "essenceText",
+                       "postureText", "clock", "prompt", "talk" },
           .bools = { "promptVisible", "talkVisible" },
           .rows = true }); // B7: nameplates over hostile/hurt NPCs
     // B3: the player-side item table (inventory screen + the player panel

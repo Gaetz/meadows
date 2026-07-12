@@ -27,28 +27,29 @@
 				<div class="fill" data-style-width="healthFillPct + '%'"/>
 				<div class="bonus" data-style-left="healthFillPct + '%'" data-style-width="healthBonusPct + '%'"/>
 				<div class="malus" data-style-left="healthMalusLeft + '%'" data-style-width="healthMalusPct + '%'"/>
+				<div class="value">{{ healthText }}</div>
 			</div>
-			<div class="value">{{ healthText }}</div>
 		</div>
 		<div class="stat">
 			<div class="bar energy" data-style-width="energyBarPct + '%'">
 				<div class="fill" data-style-width="energyFillPct + '%'"/>
 				<div class="bonus" data-style-left="energyFillPct + '%'" data-style-width="energyBonusPct + '%'"/>
 				<div class="malus" data-style-left="energyMalusLeft + '%'" data-style-width="energyMalusPct + '%'"/>
+				<div class="value">{{ energyText }}</div>
 			</div>
-			<div class="value">{{ energyText }}</div>
 		</div>
 		<div class="stat">
 			<div class="bar essence" data-style-width="essenceBarPct + '%'">
 				<div class="fill" data-style-width="essenceFillPct + '%'"/>
 				<div class="bonus" data-style-left="essenceFillPct + '%'" data-style-width="essenceBonusPct + '%'"/>
 				<div class="malus" data-style-left="essenceMalusLeft + '%'" data-style-width="essenceMalusPct + '%'"/>
+				<div class="value">{{ essenceText }}</div>
 			</div>
-			<div class="value">{{ essenceText }}</div>
 		</div>
-		<div class="stat compact">
+		<div class="stat">
 			<div class="bar posture" data-style-width="postureBarPct + '%'">
 				<div class="fill" data-style-width="postureFillPct + '%'"/>
+				<div class="value">{{ postureText }}</div>
 			</div>
 		</div>
 	</div>

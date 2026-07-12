@@ -63,14 +63,10 @@ body {
 }
 
 /* Explicit heights: the bars' absolute segments don't grow the layout
-   (RmlUi), so each .stat block sizes itself — bar 16dp + value line.
-   (Dev feel pass 2026-07-12: bars doubled in height and length.) */
+   (RmlUi), so each .stat block sizes itself — the value now lives
+   INSIDE the bar (dev pass), so a stat is just its 16dp bar. */
 .stat {
 	margin-top: 4dp;
-	height: 33dp;
-}
-
-.stat.compact {
 	height: 18dp;
 }
 
@@ -107,10 +103,15 @@ body {
 .bar.posture .bonus { background-color: #e2cf94; }
 .bar.posture .malus { background-color: #5c502c; }
 
-.value {
-	font-size: 12dp;
-	color: #b9b5ac;
-	margin-top: 1dp;
+/* The value line rides INSIDE its bar, centered. */
+.bar .value {
+	position: absolute;
+	left: 0;
+	top: 1dp;
+	width: 100%;
+	text-align: center;
+	font-size: 11dp;
+	color: #f0ede4;
 }
 
 /* B7: nameplates over hostile/hurt characters (screen-space, C++ feeds

@@ -21,6 +21,7 @@
 #include "gameplay/stats/Damage.hpp" // gameplay::CombatState
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
+#include "gameplay/stats/Resonance.hpp" // harmonyEffective (HUD slices)
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
 #include "world/scene/Components.hpp"
@@ -62,19 +63,39 @@ void GameHud::updateHudModel(const HudContext& ctx) {
             ctx.ui.setNumber("hud", prefix + "MalusPct",
                              pct(glm::max(baseMax - effMax, 0.0f)));
         };
-        const auto maxes = [&](const char* name, f32& base, f32& eff) {
-            eff = gameplay::currentValueOf(sys, gameplay::attr(name));
-            base = gameplay::baseValueOf(vitals, gameplay::attr(name))
-                       .value_or(eff);
+        // The resonance % is the ONLY thing separating the effective max
+        // from the theoretical one (the derived maxima read BASE
+        // attributes; resonance multiplies them by 1 + r/100 — §2). So
+        // theoretical = current / that factor, channel by channel — no
+        // resonance, no slice.
+        gameplay::Resonance eff {};
+        if (ctx.playerEntity.has<gameplay::Resonance>()) {
+            const auto& res = ctx.playerEntity.get<gameplay::Resonance>();
+            bool broken = false;
+            if (ctx.evalContext.tags) {
+                if (const auto tag =
+                        ctx.evalContext.tags->find("Status.HarmonyBroken")) {
+                    broken = sys.tags.has(*tag);
+                }
+            }
+            eff = broken ? res : gameplay::harmonyEffective(res);
+        }
+        const auto theoretical = [](f32 effMax, f32 resonance) {
+            const f32 factor = glm::max(1.0f + resonance / 100.0f, 0.05f);
+            return effMax / factor;
         };
-        f32 baseMaxHealth, maxHealth, baseMaxEnergy, maxEnergy;
-        f32 baseMaxEssence, maxEssence;
-        maxes("maxHealth", baseMaxHealth, maxHealth);
-        maxes("maxEnergy", baseMaxEnergy, maxEnergy);
-        maxes("maxEssence", baseMaxEssence, maxEssence);
-        pushBar("health", vitals.health, baseMaxHealth, maxHealth);
-        pushBar("energy", vitals.energy, baseMaxEnergy, maxEnergy);
-        pushBar("essence", vitals.essence, baseMaxEssence, maxEssence);
+        const f32 maxHealth =
+            gameplay::currentValueOf(sys, gameplay::attr("maxHealth"));
+        const f32 maxEnergy =
+            gameplay::currentValueOf(sys, gameplay::attr("maxEnergy"));
+        const f32 maxEssence =
+            gameplay::currentValueOf(sys, gameplay::attr("maxEssence"));
+        pushBar("health", vitals.health, theoretical(maxHealth, eff.onyx),
+                maxHealth);
+        pushBar("energy", vitals.energy, theoretical(maxEnergy, eff.amber),
+                maxEnergy);
+        pushBar("essence", vitals.essence,
+                theoretical(maxEssence, eff.garnet), maxEssence);
         // Posture is a DERIVED stat (no BaseValue of its own): the bar
         // scales with the current max, no resonance slices.
         const f32 maxPosture =
@@ -94,6 +115,7 @@ void GameHud::updateHudModel(const HudContext& ctx) {
                          text(vitals.energy, maxEnergy));
         ctx.ui.setString("hud", "essenceText",
                          text(vitals.essence, maxEssence));
+        ctx.ui.setString("hud", "postureText", text(posture, maxPosture));
     }
     const f64 hours = std::fmod(ctx.gameClock.gameHours(), 24.0);
     const i32 hh = static_cast<i32>(hours);
