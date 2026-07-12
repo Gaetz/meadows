@@ -254,11 +254,6 @@ void NpcDirector::refreshNpcs(
                 });
             // A2: the sword hand (UAL rig: "hand_r"); -1 = no weapon shown.
             npc->handJoint = rig->skeleton.findJoint("hand_r");
-            // B2: every built NPC perceives (a reload keeps a saved
-            // state through the reflected component; a fresh one is Calm).
-            if (!entity.has<world::Perception>()) {
-                entity.set<world::Perception>({});
-            }
             npc->tint = visual->tint;
             // The pose is normally written by update(); a paused sim (boot
             // = Spectator) extracts BEFORE any update, and the A2 weapon
@@ -295,6 +290,14 @@ void NpcDirector::refreshNpcs(
                          ->editorId);
         });
     for (auto& [entity, actorId] : pendingLoadouts) {
+        // B2: every built NPC perceives (a reload keeps a saved state
+        // through the reflected component; a fresh one is Calm). ADDING
+        // the component is a table move — it must run out here with the
+        // loadouts, never inside the locked .each above (flecs
+        // LOCKED_STORAGE: fatal in Debug, silent corruption in Release).
+        if (!entity.has<world::Perception>()) {
+            entity.set<world::Perception>({});
+        }
         finalizeActorSpawn(entity, actorId);
     }
     // Chantier 6 A1: seed the death flag from the (possibly restored) life
