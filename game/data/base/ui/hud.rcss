@@ -63,23 +63,24 @@ body {
 }
 
 /* Explicit heights: the bars' absolute segments don't grow the layout
-   (RmlUi), so each .stat block sizes itself — bar 8dp + value line. */
+   (RmlUi), so each .stat block sizes itself — bar 16dp + value line.
+   (Dev feel pass 2026-07-12: bars doubled in height and length.) */
 .stat {
 	margin-top: 4dp;
-	height: 25dp;
+	height: 33dp;
 }
 
 .stat.compact {
-	height: 10dp;
+	height: 18dp;
 }
 
 .bar {
 	position: relative;
 	display: block;
-	height: 8dp;
+	height: 16dp;
 	background-color: #14161ab0;
 	border: 1dp #3c4046;
-	border-radius: 2dp;
+	border-radius: 3dp;
 }
 
 /* Segments: fill = current; bonus = a LIGHTER fill past the default max
@@ -129,25 +130,35 @@ body {
 	color: #d98c7a;
 }
 
-/* The two CONSTANT-length bars over characters: health then poise. */
+/* The two CONSTANT-length bars over characters: health then poise —
+   the PROVEN vitals pattern (relative box + absolute fill + explicit
+   sizes; the old in-flow fill never rendered). */
 .phealth, .pposture {
+	position: relative;
+	display: block;
 	width: 90dp;
-	height: 4dp;
-	margin: 1dp auto;
+	height: 5dp;
+	margin-top: 2dp;
+	margin-left: 15dp;
 	background-color: #14161ab0;
 	border: 1dp #3c4046;
 }
 
 .pposture {
-	height: 3dp;
+	height: 4dp;
+}
+
+.pfill, .ppfill {
+	position: absolute;
+	left: 0;
+	top: 0;
+	height: 100%;
 }
 
 .pfill {
-	height: 100%;
 	background-color: #a8483f;
 }
 
 .ppfill {
-	height: 100%;
 	background-color: #b8a15e;
 }

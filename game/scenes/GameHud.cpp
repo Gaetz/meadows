@@ -50,9 +50,10 @@ void GameHud::updateHudModel(const HudContext& ctx) {
             const auto pct = [&](f32 v) {
                 return glm::clamp(100.0f * v / rendered, 0.0f, 100.0f);
             };
-            // 1000 stat points = 100% of the (half-screen) container.
+            // 500 stat points = 100% of the (half-screen) container
+            // (dev feel pass 2026-07-12: bars doubled in length).
             ctx.ui.setNumber("hud", prefix + "BarPct",
-                             glm::clamp(rendered / 10.0f, 2.0f, 100.0f));
+                             glm::clamp(rendered / 5.0f, 2.0f, 100.0f));
             const f32 fill = pct(glm::min(current, baseMax));
             ctx.ui.setNumber("hud", prefix + "FillPct", fill);
             ctx.ui.setNumber("hud", prefix + "BonusPct",
