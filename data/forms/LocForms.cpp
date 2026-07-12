@@ -24,9 +24,20 @@ str TextTable::get(std::string_view key) const {
 }
 
 str TextTable::format(std::string_view key, const str& arg) const {
+    return format(key, { std::string_view { arg } });
+}
+
+str TextTable::format(std::string_view key,
+                      std::initializer_list<std::string_view> args) const {
     str text = get(key);
-    if (const size_t slot = text.find("{}"); slot != str::npos) {
+    size_t from = 0;
+    for (const std::string_view arg : args) {
+        const size_t slot = text.find("{}", from);
+        if (slot == str::npos) {
+            break; // more args than slots: the extras are dropped
+        }
         text.replace(slot, 2, arg);
+        from = slot + arg.size(); // an arg containing "{}" stays literal
     }
     return text;
 }

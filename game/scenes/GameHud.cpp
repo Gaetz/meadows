@@ -9,6 +9,7 @@
 #include "data/forms/CoreForms.hpp" // data::ActorForm, MiscItemForm
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp" // data::forEach
+#include "data/forms/LocForms.hpp"  // TextTable (C9.5)
 #include "engine/physics/Physics.hpp"
 #include "engine/render/FlyCamera.hpp"
 #include "engine/ui/UiSystem.hpp"
@@ -259,39 +260,50 @@ void GameHud::pushItemModels(const HudContext& ctx) {
     pushRows(invView, "inventory",
              ctx.barterMode ? ctx.vendorSellMult : 0.0f);
 
-    // C3: weight / max + the encumbrance category.
-    char footer[96];
+    // C3: weight / max + the encumbrance category. C9.5: every label the
+    // C++ side formats is a LocStringForm key (languages layer, §5); the
+    // category label reuses the stable encumbranceLabel() vocabulary.
+    char number[32];
+    std::snprintf(number, sizeof(number), "%.1f", invView.totalWeight());
+    char maxText[32];
     f32 maxEncumbrance = 0.0f;
     if (ctx.playerEntity.is_alive()) {
         maxEncumbrance = gameplay::currentValueOf(
             ctx.playerEntity.get<gameplay::AbilitySystem>(),
             gameplay::attr("maxEncumbrance"));
     }
-    std::snprintf(footer, sizeof(footer),
-                  "Carried weight  %.1f / %.0f  (%s)", invView.totalWeight(),
-                  maxEncumbrance,
-                  gameplay::encumbranceLabel(gameplay::encumbranceCategory(
-                      invView.totalWeight(), maxEncumbrance)));
-    ctx.ui.setString("inventory", "weightText", footer);
+    std::snprintf(maxText, sizeof(maxText), "%.0f", maxEncumbrance);
+    const str category = ctx.texts.get(
+        str { "ui.hud.encumbrance." } +
+        gameplay::encumbranceLabel(gameplay::encumbranceCategory(
+            invView.totalWeight(), maxEncumbrance)));
+    ctx.ui.setString("inventory", "weightText",
+                     ctx.texts.format("ui.hud.carriedWeight",
+                                      { number, maxText, category }));
 
     const InventoryView::Row* selected = invView.selectedRow();
     ctx.ui.setBool("inventory", "hasSelection", selected != nullptr);
     if (selected) {
         ctx.ui.setString("inventory", "detailName", selected->name);
-        char info[96];
-        std::snprintf(info, sizeof(info),
-                      "Weight %.1f   Value %d%s%s", selected->weight,
-                      selected->value,
-                      selected->power > 0.0f ? "   Power " : "",
-                      selected->power > 0.0f
-                          ? std::to_string(
-                                static_cast<i32>(selected->power + 0.5f))
-                                .c_str()
-                          : "");
-        ctx.ui.setString("inventory", "detailInfo", info);
+        char weight[32];
+        std::snprintf(weight, sizeof(weight), "%.1f", selected->weight);
+        const str power =
+            selected->power > 0.0f
+                ? ctx.texts.format(
+                      "ui.inventory.detailPower",
+                      std::to_string(
+                          static_cast<i32>(selected->power + 0.5f)))
+                : str {};
+        ctx.ui.setString(
+            "inventory", "detailInfo",
+            ctx.texts.format(
+                "ui.inventory.detail",
+                { weight, std::to_string(selected->value), power }));
         ctx.ui.setBool("inventory", "selUsable", selected->usable);
         ctx.ui.setString("inventory", "equipLabel",
-                         selected->equipped ? "Unequip" : "Equip");
+                         ctx.texts.get(selected->equipped
+                                           ? "ui.inventory.unequip"
+                                           : "ui.inventory.equip"));
     }
 
     if (ctx.containerEntity.is_alive() &&
@@ -315,7 +327,8 @@ void GameHud::pushItemModels(const HudContext& ctx) {
             }
         } else {
             pushRows(lootView, "container", 0.0f);
-            ctx.ui.setString("container", "title", "Loot");
+            ctx.ui.setString("container", "title",
+                             ctx.texts.get("ui.container.loot"));
         }
     }
 }
@@ -344,10 +357,10 @@ void GameHud::pushJournalModel(const HudContext& ctx) {
         header.id = questId.toString();
         header.c0 = questForm->displayName;
         if (progress.status == quest::QuestStatus::Succeeded) {
-            header.c1 = "Accomplie";
+            header.c1 = ctx.texts.get("ui.journal.done");
             header.tag = "done";
         } else if (progress.status == quest::QuestStatus::Failed) {
-            header.c1 = "Echouee";
+            header.c1 = ctx.texts.get("ui.journal.failed");
             header.tag = "done";
         }
         rows.push_back(std::move(header));
@@ -402,7 +415,8 @@ void GameHud::pushDialogueModel(const HudContext& ctx) {
     }
     ::ui::UiRow leave;
     leave.id = "leave";
-    leave.c0 = std::to_string(index) + ".  (Leave)";
+    leave.c0 = std::to_string(index) + ".  " +
+               ctx.texts.get("ui.dialogue.leave");
     leave.tag = "leave";
     rows.push_back(std::move(leave));
     ctx.ui.setRows("dialogue", std::move(rows));
@@ -413,9 +427,11 @@ void GameHud::updateMenuClockLine(const HudContext& ctx) {
     const i32 hh = static_cast<i32>(hours);
     const i32 mm = static_cast<i32>((hours - hh) * 60.0);
     const i32 day = static_cast<i32>(ctx.gameClock.gameDays()) + 1;
-    char line[48];
-    std::snprintf(line, sizeof(line), "Day %d — %02d:%02d", day, hh, mm);
-    ctx.ui.setString("menu", "clockLine", line);
+    char clock[16];
+    std::snprintf(clock, sizeof(clock), "%02d:%02d", hh, mm);
+    ctx.ui.setString("menu", "clockLine",
+                     ctx.texts.format("ui.menu.day",
+                                      { std::to_string(day), clock }));
 }
 
 void GameHud::reset() {

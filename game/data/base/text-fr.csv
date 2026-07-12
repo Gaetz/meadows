@@ -1,5 +1,6 @@
 editorId,text
 crime.observed,"Crime observe ! Prime : {} pieces d'or."
+crime.finePaid,Amende payee. Restez dans le droit chemin.
 talk.greeting,"Belle journee, voyageur."
 rest.sleep,Vous dormez profondement (8 h).
 rest.nap,Vous vous reposez un moment (1 h).
@@ -13,3 +14,101 @@ prompt.search,[E] Fouiller {}
 prompt.search.name,le corps
 prompt.use,[E] Utiliser {}
 prompt.use.name,ceci
+quest.new,Nouvelle quete : {} (journal : J).
+quest.done,Quete accomplie : {}{}.
+quest.reward, (+{} {})
+quest.failed,Quete echouee : {}.
+quest.journalUpdated,Journal mis a jour (J).
+save.saved,Partie sauvegardee ({}).
+save.missing,Aucune sauvegarde '{}'.
+ui.hud.carriedWeight,Charge portee  {} / {}  ({})
+ui.hud.encumbrance.light,legere
+ui.hud.encumbrance.medium,moyenne
+ui.hud.encumbrance.heavy,lourde
+ui.hud.encumbrance.overencumbered,surcharge
+ui.cols.name,Nom
+ui.cols.weight,Poids
+ui.cols.value,Valeur
+ui.cols.power,Puissance
+ui.cols.price,Prix
+ui.common.you,Vous
+ui.inventory.title,Inventaire
+ui.inventory.tab.all,Tout
+ui.inventory.tab.weapons,Armes
+ui.inventory.tab.armor,Armures
+ui.inventory.tab.consumables,Consommables
+ui.inventory.tab.misc,Divers
+ui.inventory.use,Utiliser
+ui.inventory.close,[I] fermer
+ui.inventory.detail,Poids {}   Valeur {}{}
+ui.inventory.detailPower,   Puissance {}
+ui.inventory.equip,Equiper
+ui.inventory.unequip,Retirer
+ui.barter.merchant,Marchand
+ui.barter.vendorGold,Or du marchand
+ui.barter.yourGold,Votre or
+ui.barter.buyHint,Cliquez un objet pour l'acheter.
+ui.barter.sellHint,Cliquez un objet pour le vendre.
+ui.container.loot,Butin
+ui.container.takeAll,Tout prendre
+ui.container.moveHint,cliquez un objet pour le deplacer
+ui.dialogue.leave,(Partir)
+ui.journal.title,Journal
+ui.journal.done,Accomplie
+ui.journal.failed,Echouee
+ui.journal.empty,Aucune quete pour l'instant.
+ui.journal.close,Fermer
+ui.menu.day,Jour {} — {}
+ui.mainmenu.title,True Adventurer
+ui.mainmenu.play,Entrer dans le monde
+ui.mainmenu.load,Charger une partie
+ui.mainmenu.options,Options
+ui.mainmenu.quit,Quitter
+ui.mainmenu.hint,"F5 sauvegarde rapide, F9 chargement rapide."
+ui.pause.title,Pause
+ui.pause.resume,Reprendre
+ui.pause.save,Sauvegarder
+ui.pause.load,Charger une partie
+ui.pause.options,Options
+ui.pause.mainmenu,Menu principal
+ui.pause.quit,Quitter
+ui.wait.title,Attendre
+ui.wait.wait1,Attendre 1 heure
+ui.wait.wait4,Attendre 4 heures
+ui.wait.wait8,Attendre 8 heures
+ui.wait.cancel,Annuler
+ui.wait.hint,attendre fait passer le temps sans la recuperation d'un lit.
+ui.workshop.title,Etabli
+ui.workshop.blurb,Les outils sont prets. L'artisanat arrive dans une verticale ulterieure — cet ecran prouve le crochet FurnitureForm.screen (un poste de travail ouvre son interface).
+ui.workshop.leave,S'eloigner
+ui.saves.title,Charger une partie
+ui.saves.empty,Aucune sauvegarde — F5 sauvegarde rapide.
+ui.saves.back,Retour
+ui.options.title,Options
+ui.options.look,Visee
+ui.options.mouseSens,Sensibilite souris
+ui.options.stickSens,Sensibilite stick
+ui.options.deadzone,Zone morte du stick
+ui.options.invert,Inverser l'axe Y
+ui.options.audio,Audio
+ui.options.volume,Volume general
+ui.options.general,General
+ui.options.language,Langue
+ui.options.bindings,Commandes
+ui.options.captureBanner,Appuyez sur une touche ou un bouton... (Echap annule)
+ui.options.rebindHint,Cliquez une action pour la reassigner.
+ui.options.back,Retour
+ui.options.on,Oui
+ui.options.off,Non
+ui.options.action.attack,Attaquer
+ui.options.action.block,Parer
+ui.options.action.drawSheathe,Degainer / rengainer
+ui.options.action.sneak,Furtivite
+ui.options.action.sprintDodge,Sprint / esquive
+ui.options.action.jump,Sauter
+ui.options.action.interact,Interagir
+ui.options.action.inventory,Inventaire
+ui.options.action.journal,Journal
+ui.options.action.wait,Attendre
+ui.options.action.map,Carte
+ui.options.action.pause,Pause

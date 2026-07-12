@@ -370,6 +370,11 @@ struct UiSystem::Impl {
     // Documents kept by the path they were shown with (screen stack).
     std::unordered_map<str, Rml::ElementDocument*> documents;
 
+    // C9.5: key -> text, provided by the scene (a lambda over its
+    // TextTable — this lib never sees data/). Applied to data-loc
+    // elements on document load and on relocalize().
+    std::function<str(std::string_view)> localizer;
+
     // Data models: map nodes give the bound values stable addresses.
     struct ModelStore {
         std::map<str, double> numbers;
@@ -463,6 +468,44 @@ bool UiSystem::loadFont(const std::filesystem::path& path) {
     return Rml::LoadFontFace(path.string());
 }
 
+namespace {
+
+// C9.5: the data-loc pass. Every element carrying data-loc="key" gets its
+// inner RML replaced by localizer(key) — the authored English text is the
+// fallback the localizer overrides. A localized element is a LEAF (its
+// content was just replaced): no recursion below it. RmlUi silently
+// ignores unregistered data-* view types, so the attribute is free.
+void localizeTree(Rml::Element* element,
+                  const std::function<str(std::string_view)>& localizer) {
+    const Rml::Variant* key = element->GetAttribute("data-loc");
+    if (key) {
+        element->SetInnerRML(Rml::String { localizer(
+            key->Get<Rml::String>()) });
+        return;
+    }
+    const int count = element->GetNumChildren();
+    for (int i = 0; i < count; ++i) {
+        localizeTree(element->GetChild(i), localizer);
+    }
+}
+
+} // namespace
+
+void UiSystem::setLocalizer(std::function<str(std::string_view)> localizer) {
+    if (pimpl) {
+        pimpl->localizer = std::move(localizer);
+    }
+}
+
+void UiSystem::relocalize() {
+    if (!pimpl || !pimpl->localizer) {
+        return;
+    }
+    for (auto& [path, document] : pimpl->documents) {
+        localizeTree(document, pimpl->localizer);
+    }
+}
+
 bool UiSystem::showDocument(const str& path) {
     if (!pimpl || !pimpl->context) {
         return false;
@@ -475,6 +518,9 @@ bool UiSystem::showDocument(const str& path) {
     Rml::ElementDocument* document = pimpl->context->LoadDocument(path);
     if (!document) {
         return false;
+    }
+    if (pimpl->localizer) {
+        localizeTree(document, pimpl->localizer); // C9.5, before first show
     }
     document->Show();
     pimpl->documents.emplace(path, document);

@@ -26,10 +26,18 @@ namespace data {
 // unknown column / transient field / unparsable value = logged warning,
 // the cell is skipped, the import continues. A malformed header is fatal
 // (the Result carries the reason).
+//
+// PATCH mode (C9.5, language packs): pass `patchTarget` = the plugin guid
+// whose rows this sheet overrides. Rows then derive their identity from
+// (patchTarget, editorId) — the TARGET plugin's csvRowGuid — and become
+// ordinary §5 patch records (new = false) carrying only the value columns
+// (the editorId column is identity-only, not re-written). An explicit
+// `form` column still wins, as in create mode.
 core::Result<Plugin> importCsv(std::string_view csv,
                                const reflect::TypeInfo& type,
                                const core::Guid& pluginId,
-                               std::string_view sourceName);
+                               std::string_view sourceName,
+                               const core::Guid& patchTarget = {});
 
 // The deterministic row identity used above, exposed for tools/tests:
 // a name-derived guid combined with the plugin's (stable across runs).

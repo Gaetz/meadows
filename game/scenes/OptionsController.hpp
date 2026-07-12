@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 
 #include "engine/core/Defines.hpp"
@@ -7,6 +8,9 @@
 
 namespace audio {
 class AudioSystem;
+}
+namespace data {
+class TextTable;
 }
 namespace ui {
 class UiSystem;
@@ -29,6 +33,11 @@ struct OptionsContext {
     ::ui::UiSystem& ui;        // the "options" data model
     ScreenStack& screenStack;  // Back pops to the menu underneath
     audio::AudioSystem& audio; // master volume across the fixed buses
+    const data::TextTable& texts; // C9.5: On/Off + action labels
+    // C9.5: the scene's LIVE language application — rebuild the TextTable
+    // from the re-gated plugin stack + relocalize every loaded document
+    // (settings.language was already flipped and saved when this fires).
+    std::function<void()> applyLanguage;
 };
 
 // The capture verdict for one polled frame — PURE (doctested). Priority:

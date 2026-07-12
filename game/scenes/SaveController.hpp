@@ -11,6 +11,7 @@
 namespace data {
 class FormDatabase;
 class FormTypeRegistry;
+class TextTable;
 }
 namespace gameplay {
 class GameplayTagRegistry;
@@ -30,6 +31,7 @@ namespace game {
 struct SaveContext {
     data::FormDatabase& forms;
     const data::FormTypeRegistry& formTypes;
+    const data::TextTable& texts; // C9.5: the save.saved toast
     const gameplay::GameplayTagRegistry& gameTags;
     const quest::QuestLog& questLog;
     const gameplay::GameClock& gameClock;
@@ -61,8 +63,8 @@ public:
 
     // Queue a reload: notifies (and does nothing else) when the slot has no
     // file; otherwise the next update() re-enters the scene with the save
-    // resolved as the LAST layer.
-    void requestLoad(const str& slot,
+    // resolved as the LAST layer. `texts` localizes the missing-slot toast.
+    void requestLoad(const str& slot, const data::TextTable& texts,
                      const std::function<void(const str&)>& notify);
     // update() end: true (once) when a reload is queued — the scene then
     // exits+re-enters.

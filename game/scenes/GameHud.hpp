@@ -14,6 +14,7 @@ class FlyCamera;
 namespace data {
 class FormDatabase;
 struct MiscItemForm;
+class TextTable;
 }
 namespace phys {
 class CharacterBody;
@@ -42,6 +43,7 @@ struct HudContext {
     ::ui::UiSystem& ui;
     bool uiCreated;
     data::FormDatabase& forms;
+    const data::TextTable& texts; // C9.5: ui.* strings the C++ side formats
     ecs::Entity playerEntity;
     const gameplay::GameClock& gameClock;
     const InteractionController& interaction; // prompt/talk slots

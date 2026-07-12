@@ -1,0 +1,114 @@
+editorId,text
+crime.observed,Crime observed! Bounty: {} gold pieces.
+crime.finePaid,Fine paid. Stay out of trouble.
+talk.greeting,"Fine day, traveler."
+rest.sleep,You sleep deeply (8 h).
+rest.nap,You rest a while (1 h).
+prompt.door,[E] {}
+prompt.door.name,Use the door
+prompt.take,[E] Take {}
+prompt.take.name,the item
+prompt.talk,[E] Talk to {}
+prompt.talk.name,this person
+prompt.search,[E] Search {}
+prompt.search.name,the body
+prompt.use,[E] Use {}
+prompt.use.name,this
+quest.new,New quest: {} (journal: J).
+quest.done,Quest complete: {}{}.
+quest.reward, (+{} {})
+quest.failed,Quest failed: {}.
+quest.journalUpdated,Journal updated (J).
+save.saved,Game saved ({}).
+save.missing,No save '{}'.
+ui.hud.carriedWeight,Carried weight  {} / {}  ({})
+ui.hud.encumbrance.light,light
+ui.hud.encumbrance.medium,medium
+ui.hud.encumbrance.heavy,heavy
+ui.hud.encumbrance.overencumbered,overencumbered
+ui.cols.name,Name
+ui.cols.weight,Weight
+ui.cols.value,Value
+ui.cols.power,Power
+ui.cols.price,Price
+ui.common.you,You
+ui.inventory.title,Inventory
+ui.inventory.tab.all,All
+ui.inventory.tab.weapons,Weapons
+ui.inventory.tab.armor,Armor
+ui.inventory.tab.consumables,Consumables
+ui.inventory.tab.misc,Misc
+ui.inventory.use,Use
+ui.inventory.close,[I] close
+ui.inventory.detail,Weight {}   Value {}{}
+ui.inventory.detailPower,   Power {}
+ui.inventory.equip,Equip
+ui.inventory.unequip,Unequip
+ui.barter.merchant,Merchant
+ui.barter.vendorGold,Vendor gold
+ui.barter.yourGold,Your gold
+ui.barter.buyHint,Click an item to buy it.
+ui.barter.sellHint,Click an item to sell it.
+ui.container.loot,Loot
+ui.container.takeAll,Take all
+ui.container.moveHint,click an item to move it
+ui.dialogue.leave,(Leave)
+ui.journal.title,Journal
+ui.journal.done,Done
+ui.journal.failed,Failed
+ui.journal.empty,No quests yet.
+ui.journal.close,Close
+ui.menu.day,Day {} — {}
+ui.mainmenu.title,True Adventurer
+ui.mainmenu.play,Enter the world
+ui.mainmenu.load,Load game
+ui.mainmenu.options,Options
+ui.mainmenu.quit,Quit
+ui.mainmenu.hint,"F5 quicksaves, F9 quickloads."
+ui.pause.title,Paused
+ui.pause.resume,Resume
+ui.pause.save,Save game
+ui.pause.load,Load game
+ui.pause.options,Options
+ui.pause.mainmenu,Main menu
+ui.pause.quit,Quit
+ui.wait.title,Wait
+ui.wait.wait1,Wait 1 hour
+ui.wait.wait4,Wait 4 hours
+ui.wait.wait8,Wait 8 hours
+ui.wait.cancel,Cancel
+ui.wait.hint,waiting passes game time without the recovery of a bed.
+ui.workshop.title,Workbench
+ui.workshop.blurb,The tools are laid out and ready. Crafting arrives with a later vertical — this screen proves the FurnitureForm.screen hook (a workstation opens its UI for the player).
+ui.workshop.leave,Step away
+ui.saves.title,Load game
+ui.saves.empty,No saves yet — F5 quicksaves.
+ui.saves.back,Back
+ui.options.title,Options
+ui.options.look,Look
+ui.options.mouseSens,Mouse sensitivity
+ui.options.stickSens,Stick sensitivity
+ui.options.deadzone,Stick deadzone
+ui.options.invert,Invert look Y
+ui.options.audio,Audio
+ui.options.volume,Master volume
+ui.options.general,General
+ui.options.language,Language
+ui.options.bindings,Bindings
+ui.options.captureBanner,Press a key or button... (Escape cancels)
+ui.options.rebindHint,Click an action to rebind it.
+ui.options.back,Back
+ui.options.on,On
+ui.options.off,Off
+ui.options.action.attack,Attack
+ui.options.action.block,Block
+ui.options.action.drawSheathe,Draw / sheathe
+ui.options.action.sneak,Sneak
+ui.options.action.sprintDodge,Sprint / dodge
+ui.options.action.jump,Jump
+ui.options.action.interact,Interact
+ui.options.action.inventory,Inventory
+ui.options.action.journal,Journal
+ui.options.action.wait,Wait
+ui.options.action.map,Map
+ui.options.action.pause,Pause

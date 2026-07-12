@@ -4,6 +4,7 @@
 
 #include "data/forms/CoreForms.hpp" // MiscItemForm
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/LocForms.hpp" // TextTable (C9.5)
 #include "data/forms/FormQuery.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/ui/UiSystem.hpp"
@@ -129,10 +130,11 @@ void QuestDirector::handleQuestEvent(const QuestContext& ctx,
     for (const quest::QuestForm* quest : started) {
         startedIds.insert(quest->id);
         syncQuestTags(ctx);
-        ctx.say("Nouvelle quete : " +
-                    (quest->displayName.empty() ? quest->editorId
-                                                : quest->displayName) +
-                    " (journal : J).",
+        // C9.5: every toast is a LocStringForm key — languages layer (§5).
+        ctx.say(ctx.texts.format("quest.new",
+                                 quest->displayName.empty()
+                                     ? quest->editorId
+                                     : quest->displayName),
                 4.0f);
     }
 
@@ -193,17 +195,19 @@ void QuestDirector::handleQuestEvent(const QuestContext& ctx,
                         }
                     }
                 }
-                rewardText = " (+" + std::to_string(quest->rewardCount) +
-                             " " + itemName + ")";
+                rewardText = ctx.texts.format(
+                    "quest.reward",
+                    { std::to_string(quest->rewardCount), itemName });
             }
-            ctx.say("Quete accomplie : " + name + rewardText + ".", 5.0f);
+            ctx.say(ctx.texts.format("quest.done", { name, rewardText }),
+                    5.0f);
         } else if (progress.status == quest::QuestStatus::Failed &&
                    it->second.second != quest::QuestStatus::Failed) {
             // 8.7e follow-up: failing through a Failure state announces
             // itself (no reward, obviously).
-            ctx.say("Quete echouee : " + name + ".", 5.0f);
+            ctx.say(ctx.texts.format("quest.failed", name), 5.0f);
         } else if (progress.currentState != it->second.first) {
-            ctx.say("Journal mis a jour (J).", 4.0f);
+            ctx.say(ctx.texts.get("quest.journalUpdated"), 4.0f);
         }
     }
 }
@@ -223,7 +227,7 @@ void QuestDirector::payFine(const QuestContext& ctx) {
         ctx.playerEntity.get_mut<gameplay::Bounty>().bounty = 0.0f;
     }
     syncWantedTag(ctx);
-    ctx.say("Amende payee. Restez dans le droit chemin.", 4.0f);
+    ctx.say(ctx.texts.get("crime.finePaid"), 4.0f);
 }
 
 void QuestDirector::openDialogue(const QuestContext& ctx,

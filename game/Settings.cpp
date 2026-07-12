@@ -14,6 +14,31 @@ std::filesystem::path settingsPath() {
     return platform::executableDir() / "settings.toml";
 }
 
+std::optional<str> languagePackCode(std::string_view pluginFile) {
+    // Filename part only (entries are "base/text-fr.toml"-style paths).
+    const size_t slash = pluginFile.find_last_of("/\\");
+    std::string_view name = slash == std::string_view::npos
+                                ? pluginFile
+                                : pluginFile.substr(slash + 1);
+    constexpr std::string_view prefix = "text-";
+    constexpr std::string_view suffix = ".toml";
+    if (name.size() <= prefix.size() + suffix.size() ||
+        !name.starts_with(prefix) || !name.ends_with(suffix)) {
+        return std::nullopt;
+    }
+    const std::string_view code = name.substr(
+        prefix.size(), name.size() - prefix.size() - suffix.size());
+    if (code == "en") {
+        return std::nullopt; // the base language, not a pack
+    }
+    for (const char c : code) {
+        if (c < 'a' || c > 'z') {
+            return std::nullopt; // "text-tables.toml" is not a pack
+        }
+    }
+    return str { code };
+}
+
 void loadSettings(const std::filesystem::path& path, Settings& settings,
                   ActionMap& actions) {
     if (!std::filesystem::exists(path)) {

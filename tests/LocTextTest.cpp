@@ -4,6 +4,7 @@
 #include "data/forms/LocForms.hpp"
 #include "data/plugins/CsvImport.hpp"
 #include "data/plugins/Resolver.hpp"
+#include "game/Settings.hpp" // languagePackCode (C9.5)
 
 // The localisation seam filled (H1 + audit U4-11 brick 2): LocStringForm
 // records (key = editorId) -> TextTable index -> loc lookups, fed by the
@@ -46,6 +47,50 @@ TEST_CASE("loc: a missing key falls back to the key itself") {
     CHECK(texts.get("no.such.key") == "no.such.key");
     // format on a template-less text leaves it untouched.
     CHECK(texts.format("no.such.key", "x") == "no.such.key");
+}
+
+TEST_CASE("loc: format fills N slots left to right (C9.5)") {
+    data::FormTypeRegistry types;
+    data::registerLocFormTypes(types);
+    const auto* type = types.findType("LocStringForm");
+
+    const char* csv = "editorId,text\n"
+                      "quest.done,\"Quest complete: {}{}.\"\n"
+                      "quest.reward,\" (+{} {})\"\n"
+                      "plain,No slots here.\n";
+    const auto plugin = data::importCsv(csv, *type, kPluginId, "t.csv");
+    REQUIRE(plugin.has_value());
+    data::FormDatabase db;
+    const vector<const data::Plugin*> order { &*plugin };
+    data::resolve(order, types, db);
+    data::TextTable texts;
+    texts.build(db);
+
+    CHECK(texts.format("quest.reward", { "3", "Gold" }) == " (+3 Gold)");
+    CHECK(texts.format("quest.done", { "The Long Road", " (+3 Gold)" }) ==
+          "Quest complete: The Long Road (+3 Gold).");
+    // Fewer args than slots: the extra "{}" stays literal (visible hole).
+    CHECK(texts.format("quest.done", { "The Long Road" }) ==
+          "Quest complete: The Long Road{}.");
+    // No args / extra args on a slotless text: untouched, extras dropped.
+    CHECK(texts.format("plain", {}) == "No slots here.");
+    CHECK(texts.format("plain", { "x", "y" }) == "No slots here.");
+    // An arg that CONTAINS "{}" is data, never a new slot.
+    CHECK(texts.format("quest.reward", { "{}", "Gold" }) == " (+{} Gold)");
+    // The 1-arg overload keeps its historical behavior.
+    CHECK(texts.format("quest.reward", str { "9" }) == " (+9 {})");
+}
+
+TEST_CASE("loc: language packs are text-<code>.toml, English is the base") {
+    CHECK(game::languagePackCode("base/text-fr.toml") == "fr");
+    CHECK(game::languagePackCode("text-de.toml") == "de");
+    CHECK(game::languagePackCode("mods\\text-eo.toml") == "eo");
+    // The base language and non-pack files gate nothing.
+    CHECK_FALSE(game::languagePackCode("base/text-en.toml").has_value());
+    CHECK_FALSE(game::languagePackCode("base/village.toml").has_value());
+    CHECK_FALSE(game::languagePackCode("text-.toml").has_value());
+    CHECK_FALSE(game::languagePackCode("text-Tables2.toml").has_value());
+    CHECK_FALSE(game::languagePackCode("context-fr.toml").has_value());
 }
 
 TEST_CASE("loc: a language pack patches text through §5 layering") {

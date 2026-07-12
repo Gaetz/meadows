@@ -8,6 +8,7 @@
 
 #include "data/forms/CoreForms.hpp" // ActorForm, WeaponForm, ArmorForm...
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/LocForms.hpp" // TextTable (C9.5)
 #include "engine/core/Log.hpp"
 #include "engine/ui/UiSystem.hpp"
 #include "game/Barter.hpp"
@@ -64,7 +65,7 @@ void UiRouter::openBarterScreen(const UiRouterContext& ctx,
     }
     ctx.ui.setBool("inventory", "transferMode", true);
     // The vendor's name for the title + its barter profile (D1).
-    str title = "Merchant";
+    str title = ctx.texts.get("ui.barter.merchant"); // C9.5 fallback
     vendorBuyMult_ = ctx.statsTuning.barterBuyMult;
     vendorSellMult_ = ctx.statsTuning.barterSellMult;
     core::Guid vendorFormId;

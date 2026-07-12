@@ -279,6 +279,14 @@ private:
     // pad->UI routing on optionsController.capturing().
     OptionsController optionsController;
     OptionsContext makeOptionsContext();
+    // C9.5: the language machinery. loadGatedPluginConfig = plugins.toml
+    // with every text-<code>.toml pack enabled iff <code> ==
+    // settings.language; applyLanguage = the options screen's LIVE switch
+    // (TextTable rebuild from a temp resolve + relocalize — no resolved
+    // Form pointer moves; `forms` re-resolves gated on the next enter).
+    data::PluginConfig loadGatedPluginConfig(
+        const std::filesystem::path& dataDir) const;
+    void applyLanguage();
 
     // Chantier 6 A2 / D2 + chantier 4 B4 — quests, crime and dialogue
     // extracted behind QuestDirector (audit U4-1): the demo quest state

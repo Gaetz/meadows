@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <string_view>
 
 #include "engine/core/Defines.hpp"
 #include "engine/platform/Input.hpp"
@@ -64,8 +65,7 @@ using UiModelEventHandler = std::function<void(
 //  - input: route mouse/keyboard/gamepad from platform::Input into
 //    processMouse*/processKey/processText below;
 //  - data binding: Rml data models bound to game state (health bars,
-//    inventory grids) — add a DataModel facade here, keep Rml types out;
-//  - localization: resolve loc keys in documents via LocStringForm.
+//    inventory grids) — add a DataModel facade here, keep Rml types out.
 class UiSystem {
 public:
     UiSystem();
@@ -80,6 +80,21 @@ public:
 
     // Fonts must load before the first document (RmlUi requirement).
     bool loadFont(const std::filesystem::path& path);
+
+    // --- Localization (C9.5) --------------------------------------------------
+    // Documents mark localizable labels with data-loc="key"; on (re)load,
+    // each marked element's inner RML is replaced by localizer(key). The
+    // authored inner text is the English fallback the localizer overrides
+    // — a missing key shows the key (the TextTable contract upstream).
+    // The SCENE passes a lambda over its TextTable: meadows-ui stays
+    // data-free. Set it after create() and BEFORE the first document
+    // loads. (No data-loc-attr pass: RmlUi has no placeholder/title
+    // attributes our documents use — add one the day an attribute needs
+    // localizing.)
+    void setLocalizer(std::function<str(std::string_view)> localizer);
+    // Re-runs the data-loc pass on every loaded document (language
+    // switch): call after the localizer's underlying table changed.
+    void relocalize();
 
     // Loads + shows a document by root-relative path ("hud.rml"). Loaded
     // documents are kept by path: showing an already-loaded document just

@@ -4,7 +4,10 @@
 //   cooker uncook     <in.bin>  <out.toml>  cooked binary -> text
 //   cooker new-guid   [count]               mint authoring guids
 //   cooker import-csv <in.csv> <out.toml> <FormType> [pluginGuid]
-//                     spreadsheet -> ordinary plugin (U4-11)
+//                     [--patch <targetPluginGuid>]
+//                     spreadsheet -> ordinary plugin (U4-11); with --patch,
+//                     rows become §5 patches on the target plugin's records
+//                     (language packs, C9.5)
 
 #include <algorithm>
 #include <cmath>
@@ -37,10 +40,13 @@ int usage() {
         "(cx,cz)\n"
         "     to <height> m (3 m smooth blend ring), demo seed/params\n"
         "  cooker import-csv <in.csv> <out.toml> <FormType> [pluginGuid]\n"
+        "                    [--patch <targetPluginGuid>]\n"
         "     header row = reflected field names; row identity = the\n"
         "     'form' guid column, else derived from (pluginGuid,\n"
         "     editorId) — pass the SAME pluginGuid on re-imports (without\n"
-        "     one it derives from <out.toml>'s filename)\n");
+        "     one it derives from <out.toml>'s filename). With --patch,\n"
+        "     rows derive their identity from the TARGET plugin instead\n"
+        "     and become field patches (language packs)\n");
     return 2;
 }
 
@@ -134,7 +140,7 @@ int cook(const char* inPath, const char* outPath,
 // the same row identities; an explicit guid overrides (recommended once
 // the plugin ships — renaming the file then can't shift identities).
 int importCsv(const char* inPath, const char* outPath, const char* typeName,
-              const char* pluginGuidText,
+              const char* pluginGuidText, const char* patchTargetText,
               const data::FormTypeRegistry& types) {
     const reflect::TypeInfo* type = types.findType(typeName);
     if (!type) {
@@ -158,6 +164,16 @@ int importCsv(const char* inPath, const char* outPath, const char* typeName,
                  "explicitly to survive a rename)",
                  pluginId.toString(), stem);
     }
+    core::Guid patchTarget;
+    if (patchTargetText != nullptr) {
+        const auto parsed = core::Guid::fromString(patchTargetText);
+        if (!parsed) {
+            LOG_ERROR("import-csv: malformed --patch target guid '{}'",
+                      patchTargetText);
+            return 1;
+        }
+        patchTarget = *parsed;
+    }
     std::ifstream file { inPath, std::ios::binary };
     if (!file) {
         LOG_ERROR("Cannot read {}", inPath);
@@ -167,7 +183,8 @@ int importCsv(const char* inPath, const char* outPath, const char* typeName,
     content << file.rdbuf();
     const auto plugin =
         data::importCsv(content.str(), *type, pluginId,
-                        std::filesystem::path { inPath }.filename().string());
+                        std::filesystem::path { inPath }.filename().string(),
+                        patchTarget);
     if (!plugin) {
         LOG_ERROR("import-csv failed: {}", plugin.error());
         return 1;
@@ -252,7 +269,11 @@ int main(int argc, char** argv) {
     }
     if (command == "import-csv" && (argc == 5 || argc == 6)) {
         return importCsv(argv[2], argv[3], argv[4],
-                         argc == 6 ? argv[5] : nullptr, types);
+                         argc == 6 ? argv[5] : nullptr, nullptr, types);
+    }
+    if (command == "import-csv" && argc == 8 &&
+        std::string_view { argv[6] } == "--patch") {
+        return importCsv(argv[2], argv[3], argv[4], argv[5], argv[7], types);
     }
     if (command == "terrain-pad" && argc == 10) {
         return terrainPad(argv);

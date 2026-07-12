@@ -13,6 +13,7 @@ class UiSystem;
 namespace data {
 class FormDatabase;
 struct MiscItemForm;
+class TextTable;
 }
 namespace gameplay {
 class GameplayTagRegistry;
@@ -36,6 +37,7 @@ class ScreenStack;
 // (saves, mode flips, waiting, the model pushes that need a HudContext).
 struct UiRouterContext {
     data::FormDatabase& forms;
+    const data::TextTable& texts; // C9.5: ui.* fallback strings
     ::ui::UiSystem& ui;
     ScreenStack& screenStack;
     GameHud& hud; // view-model state (inventory()/loot()/dialogueOptions())

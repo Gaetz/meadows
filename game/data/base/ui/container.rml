@@ -8,10 +8,10 @@
 		<div class="panel side" data-model="container">
 			<div class="title">{{ title }}</div>
 			<div class="tablehead">
-				<div class="col name">Name</div>
-				<div class="col num">Weight</div>
-				<div class="col num">Value</div>
-				<div class="col num">Power</div>
+				<div class="col name" data-loc="ui.cols.name">Name</div>
+				<div class="col num" data-loc="ui.cols.weight">Weight</div>
+				<div class="col num" data-loc="ui.cols.value">Value</div>
+				<div class="col num" data-loc="ui.cols.power">Power</div>
 			</div>
 			<!-- C9.3: lootlist/btn-takeall = the pad's exit out of the
 			     scrollable list (theme.rcss #lootlist .row). -->
@@ -23,15 +23,15 @@
 					<div class="col num">{{ row.c3 }}</div>
 				</div>
 			</div>
-			<button id="btn-takeall" data-event-click="takeAll()">Take all</button>
+			<button id="btn-takeall" data-event-click="takeAll()" data-loc="ui.container.takeAll">Take all</button>
 		</div>
 		<div class="panel side" data-model="inventory">
-			<div class="title">You</div>
+			<div class="title" data-loc="ui.common.you">You</div>
 			<div class="tablehead">
-				<div class="col name" data-event-click="sortCol('name')">Name</div>
-				<div class="col num" data-event-click="sortCol('weight')">Weight</div>
-				<div class="col num" data-event-click="sortCol('value')">Value</div>
-				<div class="col num" data-event-click="sortCol('power')">Power</div>
+				<div class="col name" data-event-click="sortCol('name')" data-loc="ui.cols.name">Name</div>
+				<div class="col num" data-event-click="sortCol('weight')" data-loc="ui.cols.weight">Weight</div>
+				<div class="col num" data-event-click="sortCol('value')" data-loc="ui.cols.value">Value</div>
+				<div class="col num" data-event-click="sortCol('power')" data-loc="ui.cols.power">Power</div>
 			</div>
 			<div class="itemlist">
 				<div class="row" data-for="row : rows" data-class-equipped="row.tag == 'equipped'" data-event-click="pick(row.id)">
@@ -41,7 +41,7 @@
 					<div class="col num">{{ row.c3 }}</div>
 				</div>
 			</div>
-			<div class="muted">{{ weightText }} &nbsp;&mdash;&nbsp; click an item to move it</div>
+			<div class="muted">{{ weightText }} &nbsp;&mdash;&nbsp; <span data-loc="ui.container.moveHint">click an item to move it</span></div>
 		</div>
 	</div>
 </body>

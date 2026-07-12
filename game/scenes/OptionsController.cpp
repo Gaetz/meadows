@@ -4,6 +4,7 @@
 
 #include <glm/glm.hpp>
 
+#include "data/forms/LocForms.hpp" // TextTable (C9.5)
 #include "engine/audio/Audio.hpp"
 #include "engine/ui/UiSystem.hpp"
 #include "game/ScreenStack.hpp"
@@ -18,25 +19,28 @@ namespace {
 constexpr const char* kBuses[] = { "sfx", "music", "voice", "ambient",
                                    "ui" };
 
-// Human labels for the bindings table (actionName() is the settings.toml
-// vocabulary — stable and lowercase; this is presentation only).
-const char* actionLabel(InputAction action) {
-    switch (action) {
-    case InputAction::Attack:      return "Attack";
-    case InputAction::Block:       return "Block";
-    case InputAction::DrawSheathe: return "Draw / sheathe";
-    case InputAction::Sneak:       return "Sneak";
-    case InputAction::SprintDodge: return "Sprint / dodge";
-    case InputAction::Jump:        return "Jump";
-    case InputAction::Interact:    return "Interact";
-    case InputAction::Inventory:   return "Inventory";
-    case InputAction::Journal:     return "Journal";
-    case InputAction::WaitMenu:    return "Wait";
-    case InputAction::Map:         return "Map";
-    case InputAction::Pause:       return "Pause";
-    case InputAction::Count:       break;
+// The languages the toggle cycles through. Language NAMES stay in their
+// own language on purpose (the one label a lost player must always read).
+constexpr const char* kLanguages[][2] = { { "en", "English" },
+                                          { "fr", "Francais" } };
+
+str languageLabel(std::string_view code) {
+    for (const auto& [name, label] : kLanguages) {
+        if (code == name) {
+            return label;
+        }
     }
-    return "?";
+    return str { code }; // a modded pack shows its raw code
+}
+
+str nextLanguage(std::string_view code) {
+    constexpr size_t count = sizeof(kLanguages) / sizeof(kLanguages[0]);
+    for (size_t i = 0; i < count; ++i) {
+        if (code == kLanguages[i][0]) {
+            return kLanguages[(i + 1) % count][0];
+        }
+    }
+    return kLanguages[0][0]; // unknown code: back to the base language
 }
 
 str fmt1(f32 value) {
@@ -75,7 +79,10 @@ void OptionsController::pushModel(const OptionsContext& ctx) {
     ctx.ui.setString("options", "stickSensText", fmt1(s.stickSensitivity));
     ctx.ui.setString("options", "deadzoneText", fmt2(s.stickDeadzone));
     ctx.ui.setString("options", "volumeText", fmt1(s.masterVolume));
-    ctx.ui.setString("options", "invertText", s.invertLookY ? "On" : "Off");
+    ctx.ui.setString("options", "invertText",
+                     ctx.texts.get(s.invertLookY ? "ui.options.on"
+                                                 : "ui.options.off"));
+    ctx.ui.setString("options", "languageText", languageLabel(s.language));
     ctx.ui.setBool("options", "capturing", capturing_.has_value());
 
     vector<::ui::UiRow> rows;
@@ -84,7 +91,11 @@ void OptionsController::pushModel(const OptionsContext& ctx) {
         const Binding& b = ctx.actions.binding(action);
         ::ui::UiRow row;
         row.id = actionName(action);
-        row.c0 = actionLabel(action);
+        // C9.5: the human label is loc data keyed on the STABLE action
+        // name (ui.options.action.attack...) — one key per action, no
+        // per-language C++.
+        row.c0 = ctx.texts.get(str { "ui.options.action." } +
+                               str { actionName(action) });
         row.c1 = cell(keyName(b.key), b.key != platform::Key::Count);
         row.c2 = cell(mouseButtonName(b.mouse),
                       b.mouse != platform::MouseButton::Count);
@@ -131,6 +142,16 @@ void OptionsController::handleEvent(const OptionsContext& ctx,
     } else if (event == "toggleInvert") {
         ctx.settings.invertLookY = !ctx.settings.invertLookY;
         applyAndSave(ctx);
+    } else if (event == "toggleLanguage") {
+        // C9.5: flip + persist, then the scene rebuilds the TextTable from
+        // the re-gated plugin stack and relocalizes every open document —
+        // pushModel LAST so this screen's C++-pushed strings follow too.
+        ctx.settings.language = nextLanguage(ctx.settings.language);
+        saveSettings(settingsPath(), ctx.settings, ctx.actions);
+        if (ctx.applyLanguage) {
+            ctx.applyLanguage();
+        }
+        pushModel(ctx);
     } else if (event == "rebind" && !args.empty()) {
         if (const auto action = parseAction(args[0])) {
             capturing_ = *action;

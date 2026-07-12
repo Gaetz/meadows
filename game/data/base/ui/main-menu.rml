@@ -5,14 +5,14 @@
 </head>
 <body>
 	<div id="menu" class="panel" data-model="menu">
-		<div class="title">True Adventurer</div>
+		<div class="title" data-loc="ui.mainmenu.title">True Adventurer</div>
 		<div class="menu-buttons">
-			<button data-event-click="menuAction('play')">Enter the world</button>
-			<button data-event-click="menuAction('loadmenu')">Load game</button>
-			<button data-event-click="menuAction('options')">Options</button>
-			<button data-event-click="menuAction('quit')">Quit</button>
+			<button data-event-click="menuAction('play')" data-loc="ui.mainmenu.play">Enter the world</button>
+			<button data-event-click="menuAction('loadmenu')" data-loc="ui.mainmenu.load">Load game</button>
+			<button data-event-click="menuAction('options')" data-loc="ui.mainmenu.options">Options</button>
+			<button data-event-click="menuAction('quit')" data-loc="ui.mainmenu.quit">Quit</button>
 		</div>
-		<div class="muted">F5 quicksaves, F9 quickloads.</div>
+		<div class="muted" data-loc="ui.mainmenu.hint">F5 quicksaves, F9 quickloads.</div>
 	</div>
 </body>
 </rml>

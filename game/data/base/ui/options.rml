@@ -44,7 +44,9 @@
 			margin: 4dp 0;
 		}
 		#bindlist {
-			height: 240dp;
+			/* 240dp before C9.5 — the General/Language section above
+			   takes its room so the panel keeps fitting the window. */
+			height: 190dp;
 			overflow-y: auto;
 			border: 1dp #2c2f34;
 			margin: 4dp 0;
@@ -78,35 +80,43 @@
 </head>
 <body>
 	<div id="options" class="panel" data-model="options">
-		<div class="title">Options</div>
+		<div class="title" data-loc="ui.options.title">Options</div>
 
-		<div class="section">Look</div>
+		<div class="section" data-loc="ui.options.look">Look</div>
 		<div class="setting">
-			<span class="label">Mouse sensitivity</span>
+			<span class="label" data-loc="ui.options.mouseSens">Mouse sensitivity</span>
 			<button class="step" data-event-click="adjust('mouse','-')">-</button><span class="value">{{ mouseSensText }}</span><button class="step" data-event-click="adjust('mouse','+')">+</button>
 		</div>
 		<div class="setting">
-			<span class="label">Stick sensitivity</span>
+			<span class="label" data-loc="ui.options.stickSens">Stick sensitivity</span>
 			<button class="step" data-event-click="adjust('stick','-')">-</button><span class="value">{{ stickSensText }}</span><button class="step" data-event-click="adjust('stick','+')">+</button>
 		</div>
 		<div class="setting">
-			<span class="label">Stick deadzone</span>
+			<span class="label" data-loc="ui.options.deadzone">Stick deadzone</span>
 			<button class="step" data-event-click="adjust('deadzone','-')">-</button><span class="value">{{ deadzoneText }}</span><button class="step" data-event-click="adjust('deadzone','+')">+</button>
 		</div>
 		<div class="setting">
-			<span class="label">Invert look Y</span>
+			<span class="label" data-loc="ui.options.invert">Invert look Y</span>
 			<button class="toggle" data-event-click="toggleInvert()">{{ invertText }}</button>
 		</div>
 
-		<div class="section">Audio</div>
+		<div class="section" data-loc="ui.options.audio">Audio</div>
 		<div class="setting">
-			<span class="label">Master volume</span>
+			<span class="label" data-loc="ui.options.volume">Master volume</span>
 			<button class="step" data-event-click="adjust('volume','-')">-</button><span class="value">{{ volumeText }}</span><button class="step" data-event-click="adjust('volume','+')">+</button>
 		</div>
 
-		<div class="section">Bindings</div>
-		<div class="capture-banner accent" data-if="capturing">Press a key or button... (Escape cancels)</div>
-		<div class="capture-banner muted" data-if="!capturing">Click an action to rebind it.</div>
+		<!-- C9.5: the language toggle — flips settings.language, saves, and
+		     applies LIVE (TextTable rebuild + relocalize). -->
+		<div class="section" data-loc="ui.options.general">General</div>
+		<div class="setting">
+			<span class="label" data-loc="ui.options.language">Language</span>
+			<button class="toggle" data-event-click="toggleLanguage()">{{ languageText }}</button>
+		</div>
+
+		<div class="section" data-loc="ui.options.bindings">Bindings</div>
+		<div class="capture-banner accent" data-if="capturing" data-loc="ui.options.captureBanner">Press a key or button... (Escape cancels)</div>
+		<div class="capture-banner muted" data-if="!capturing" data-loc="ui.options.rebindHint">Click an action to rebind it.</div>
 		<div id="bindlist">
 			<div class="row" data-for="b : rows" data-class-capturing="b.tag == 'capturing'" data-event-click="rebind(b.id)">
 				<span class="bind-action">{{ b.c0 }}</span>
@@ -117,7 +127,7 @@
 		</div>
 
 		<div class="menu-buttons">
-			<button id="btn-options-back" data-event-click="optionsBack()">Back</button>
+			<button id="btn-options-back" data-event-click="optionsBack()" data-loc="ui.options.back">Back</button>
 		</div>
 	</div>
 </body>

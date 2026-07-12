@@ -67,13 +67,12 @@ void LandscapeScene::onEnter() {
     spawnInitialWorld(device);
 }
 
-void LandscapeScene::bootstrapData() {
-    // Load the moddable data (§5) through the plugin stack (chantier 4 B1):
-    // data/plugins.toml declares the load order, the resolver layers every
-    // plugin's fields last-writer-wins. One registration site for all
-    // families (AllForms) — UI/quest/dialogue records now resolve here too.
-    game::registerAllFormTypes(formTypes);
-    const auto dataDir = platform::executableDir() / "data";
+// C9.5: the plugin config with the language gate applied — every
+// text-<code>.toml pack (English is the BASE, never a pack) is enabled
+// exactly when <code> is settings.language. Shared by bootstrapData and
+// the options screen's live language switch.
+data::PluginConfig LandscapeScene::loadGatedPluginConfig(
+    const std::filesystem::path& dataDir) const {
     data::PluginConfig pluginConfig;
     if (const auto loaded =
             data::loadPluginConfigFile(dataDir / "plugins.toml")) {
@@ -85,6 +84,28 @@ void LandscapeScene::bootstrapData() {
             entry.file = "base/" + entry.file;
         }
     }
+    for (auto& entry : pluginConfig.entries) {
+        if (const auto code = languagePackCode(entry.file)) {
+            entry.enabled = (*code == settings.language);
+        }
+    }
+    return pluginConfig;
+}
+
+void LandscapeScene::bootstrapData() {
+    // C9.2: machine preferences FIRST (settings.toml beside saves/) —
+    // bindings land in the ActionMap, the deadzone feeds the input layer,
+    // and (C9.5) settings.language gates the language-pack plugins below.
+    // Reload on every enter is harmless: the file is the source of truth.
+    loadSettings(settingsPath(), settings, actionMap);
+    engine->getInput().setStickDeadzone(settings.stickDeadzone);
+    // Load the moddable data (§5) through the plugin stack (chantier 4 B1):
+    // data/plugins.toml declares the load order, the resolver layers every
+    // plugin's fields last-writer-wins. One registration site for all
+    // families (AllForms) — UI/quest/dialogue records now resolve here too.
+    game::registerAllFormTypes(formTypes);
+    const auto dataDir = platform::executableDir() / "data";
+    const data::PluginConfig pluginConfig = loadGatedPluginConfig(dataDir);
     pluginStack = data::loadPluginStack(dataDir, pluginConfig, formTypes);
     for (const str& error : pluginStack.errors) {
         LOG_WARN("plugin stack: {}", error);
@@ -111,11 +132,8 @@ void LandscapeScene::bootstrapData() {
     tuning = resolveLandscapeTuning(forms);
     weather.init(forms);
     texts.build(forms); // U4-11: LocStringForm index (key -> text)
-    // C9.2: machine preferences (settings.toml beside saves/) — bindings
-    // land in the ActionMap, the deadzone feeds the input layer. Reload
-    // on every enter is harmless: the file is the source of truth.
-    loadSettings(settingsPath(), settings, actionMap);
-    engine->getInput().setStickDeadzone(settings.stickDeadzone);
+    LOG_INFO("Loc: {} strings, language '{}' (packs gated in plugins.toml)",
+             texts.size(), settings.language);
     LOG_INFO("Landscape tuning: seed={} seaLevel={} fogDensity={} "
              "coverage={} | {} weather states",
              tuning.terrainSeed, tuning.seaLevel, tuning.fogDensity,
@@ -1184,6 +1202,12 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
         LOG_WARN("Game UI unavailable (UiSystem creation failed)");
         return;
     }
+    // C9.5: the loc pass — BEFORE any document loads, so the preload below
+    // localizes on the way in. The lambda closes over the scene's
+    // TextTable (rebuilt on resolve/language switch); meadows-ui itself
+    // never sees data/.
+    uiSystem.setLocalizer(
+        [this](std::string_view key) { return texts.get(key); });
     // Fonts before documents (RmlUi requirement): every plugin may add
     // faces under ui/fonts/.
     for (const auto& root : fontRoots) {
@@ -1260,13 +1284,15 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                            .events = { "journalClose" } });
     // C9.4: the options screen — look/audio steppers + the bindings
     // table (one row per action; clicking a row arms a rebind capture).
+    // C9.5 adds the language toggle.
     uiSystem.createModel({ .name = "options",
                            .strings = { "mouseSensText", "stickSensText",
                                         "deadzoneText", "volumeText",
-                                        "invertText" },
+                                        "invertText", "languageText" },
                            .bools = { "capturing" },
                            .rows = true,
-                           .events = { "adjust", "toggleInvert", "rebind",
+                           .events = { "adjust", "toggleInvert",
+                                       "toggleLanguage", "rebind",
                                        "optionsBack" } });
     uiSystem.setModelEventHandler(
         [this](const str& model, const str& event, const vector<str>& args) {
@@ -1549,6 +1575,7 @@ HudContext LandscapeScene::makeHudContext() {
         uiSystem,
         uiCreated,
         forms,
+        texts, // C9.5: the C++-formatted ui.* strings
         playerEntity,
         gameClock,
         interaction,
@@ -1607,6 +1634,7 @@ SaveContext LandscapeScene::makeSaveContext() {
     return SaveContext {
         forms,
         formTypes,
+        texts, // C9.5: the save.saved toast
         gameTags,
         questDirector.questLog(),
         gameClock,
@@ -1707,6 +1735,7 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
 UiRouterContext LandscapeScene::makeUiRouterContext() {
     return UiRouterContext {
         forms,
+        texts, // C9.5: ui.* fallback strings
         uiSystem,
         screenStack,
         hud,
@@ -1726,7 +1755,8 @@ UiRouterContext LandscapeScene::makeUiRouterContext() {
         },
         [this](const str& slot) {
             saveController.requestLoad(
-                slot, [this](const str& m) { interaction.say(m, 3.0f); });
+                slot, texts,
+                [this](const str& m) { interaction.say(m, 3.0f); });
         },
         [this](f32 hours) {
             interaction.wait(hours, makeInteractionContext());
@@ -1750,10 +1780,37 @@ UiRouterContext LandscapeScene::makeUiRouterContext() {
 }
 
 // C9.4: the options screen's slice — the settings + the ActionMap plus
-// their live application points (input deadzone, the audio buses).
+// their live application points (input deadzone, the audio buses; C9.5
+// adds the loc table and the live language application).
 OptionsContext LandscapeScene::makeOptionsContext() {
     return OptionsContext { settings,    actionMap,   engine->getInput(),
-                            uiSystem,    screenStack, audioSystem };
+                            uiSystem,    screenStack, audioSystem,
+                            texts,       [this] { applyLanguage(); } };
+}
+
+// C9.5: the LIVE half of the language switch (the toggle already flipped
+// and saved settings.language). Only the TextTable is rebuilt — it holds
+// string COPIES, so no resolved Form pointer held by any controller moves
+// (playerWeapon, effects... stay put; the full stack under `forms`
+// re-resolves gated on the next scene enter as always). The re-gated
+// stack resolves into a TEMPORARY database texts.build reads once; the
+// data-loc pass then re-runs over every loaded document. C++-pushed model
+// strings refresh on their next push (per frame for the HUD, on reopen
+// for the screens; the options screen re-pushes right after this).
+void LandscapeScene::applyLanguage() {
+    const auto dataDir = platform::executableDir() / "data";
+    const data::PluginConfig config = loadGatedPluginConfig(dataDir);
+    const data::PluginStack stack =
+        data::loadPluginStack(dataDir, config, formTypes);
+    for (const str& error : stack.errors) {
+        LOG_WARN("language switch: {}", error);
+    }
+    data::FormDatabase strings;
+    data::resolve(data::pointersOf(stack), formTypes, strings);
+    texts.build(strings);
+    uiSystem.relocalize();
+    LOG_INFO("Language '{}' applied live: {} strings", settings.language,
+             texts.size());
 }
 
 // --- Chantier 4 B7: console (nameplates -> GameHud, audit U4-9) ----------------------
@@ -1857,7 +1914,8 @@ void LandscapeScene::createConsole() {
             return "no save named '" + slot + "'";
         }
         saveController.requestLoad(
-            slot, [this](const str& m) { interaction.say(m, 3.0f); });
+            slot, texts,
+            [this](const str& m) { interaction.say(m, 3.0f); });
         return "loading '" + slot + "'...";
     });
     panel.addCommand("startquest", [this](const str& args) -> str {
@@ -1935,6 +1993,7 @@ gameplay::EvalContext LandscapeScene::makeEvalContext() const {
 QuestContext LandscapeScene::makeQuestContext() {
     return QuestContext {
         forms,
+        texts, // C9.5: quest.* toast strings
         gameTags,
         eventBus,
         uiSystem,
@@ -2158,7 +2217,8 @@ void LandscapeScene::drawUi() {
     }
     if (ImGui::IsKeyPressed(ImGuiKey_F9, false)) {
         saveController.requestLoad(
-            "quick", [this](const str& m) { interaction.say(m, 3.0f); });
+            "quick", texts,
+            [this](const str& m) { interaction.say(m, 3.0f); });
     }
 
     // The dev console lives on ` (grave, left of 1 — the PC convention):

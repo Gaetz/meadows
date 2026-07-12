@@ -60,7 +60,8 @@ core::Guid csvRowGuid(const core::Guid& pluginId, std::string_view editorId) {
 core::Result<Plugin> importCsv(std::string_view csv,
                                const reflect::TypeInfo& type,
                                const core::Guid& pluginId,
-                               std::string_view sourceName) {
+                               std::string_view sourceName,
+                               const core::Guid& patchTarget) {
     if (!pluginId.isValid()) {
         return core::Error { str { sourceName } +
                              ": import needs a valid plugin guid (row "
@@ -120,6 +121,10 @@ core::Result<Plugin> importCsv(std::string_view csv,
     Plugin plugin;
     plugin.id = pluginId;
     plugin.name = str { sourceName };
+    if (patchTarget.isValid()) {
+        // A pack requires its target (load-order validation material).
+        plugin.dependencies.push_back(patchTarget);
+    }
     for (size_t rowIndex = 1; rowIndex < lines.size(); ++rowIndex) {
         const vector<str> cells = splitCsvLine(lines[rowIndex]);
 
@@ -139,7 +144,11 @@ core::Result<Plugin> importCsv(std::string_view csv,
         } else if (editorIdColumn >= 0 &&
                    static_cast<size_t>(editorIdColumn) < cells.size() &&
                    !cells[editorIdColumn].empty()) {
-            formId = csvRowGuid(pluginId, cells[editorIdColumn]);
+            // Patch mode derives the TARGET plugin's row identity — the
+            // record then layers onto the row that plugin created (§5).
+            formId = csvRowGuid(
+                patchTarget.isValid() ? patchTarget : pluginId,
+                cells[editorIdColumn]);
         } else {
             LOG_WARN("{}: row {}: no 'form' nor 'editorId' — skipped",
                      sourceName, rowIndex + 1);
@@ -149,10 +158,14 @@ core::Result<Plugin> importCsv(std::string_view csv,
         Record record;
         record.formId = formId;
         record.typeId = type.id;
-        record.creates = true;
+        record.creates = !patchTarget.isValid();
         for (size_t i = 0; i < cells.size() && i < columns.size(); ++i) {
             if (!columns[i] || cells[i].empty()) {
                 continue; // empty cell = keep the field's default
+            }
+            if (patchTarget.isValid() &&
+                static_cast<i32>(i) == editorIdColumn) {
+                continue; // identity-only on a patch: keep the target's
             }
             auto value =
                 reflect::valueFromString(columns[i]->kind, cells[i]);

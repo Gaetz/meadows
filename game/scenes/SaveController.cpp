@@ -4,6 +4,7 @@
 
 #include "data/forms/Form.hpp"
 #include "data/forms/FormDatabase.hpp"
+#include "data/forms/LocForms.hpp" // TextTable (C9.5)
 #include "data/plugins/Record.hpp"
 #include "engine/core/Guid.hpp"
 #include "engine/core/Log.hpp"
@@ -51,14 +52,15 @@ void SaveController::performSave(const SaveContext& ctx, const str& slot) {
                    "5a5e0000-0000-4000-8000-0000000000ff")));
 
     if (writeSave(slot, plugin, ctx.formTypes)) {
-        ctx.notify("Partie sauvegardee (" + slot + ").");
+        ctx.notify(ctx.texts.format("save.saved", slot)); // C9.5
     }
 }
 
 void SaveController::requestLoad(
-    const str& slot, const std::function<void(const str&)>& notify) {
+    const str& slot, const data::TextTable& texts,
+    const std::function<void(const str&)>& notify) {
     if (!std::filesystem::exists(savePath(slot))) {
-        notify("Aucune sauvegarde '" + slot + "'.");
+        notify(texts.format("save.missing", slot)); // C9.5
         return;
     }
     pendingLoadSlot_ = slot;

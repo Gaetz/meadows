@@ -90,6 +90,46 @@ TEST_CASE("csv import: explicit form guid wins; bad rows are skipped") {
     CHECK(plugin->records[1].formId == data::csvRowGuid(kPluginId, "Derived"));
 }
 
+TEST_CASE("csv import: patch mode targets another plugin's rows (C9.5)") {
+    const data::FormTypeRegistry types = makeTypes();
+    const auto* type = types.findType("WeaponForm");
+
+    // The base plugin creates the rows (the text-en model).
+    const char* baseCsv = "editorId,displayName,damage\n"
+                          "IronSword,Iron sword,12\n";
+    const auto base = data::importCsv(baseCsv, *type, kPluginId, "base.csv");
+    REQUIRE(base.has_value());
+
+    // The pack patches them: same editorId column, but identities derive
+    // from the TARGET plugin and the records are field patches.
+    const char* packCsv = "editorId,displayName\n"
+                          "IronSword,Epee de fer\n";
+    const Guid packId =
+        *Guid::fromString("c5000000-0000-4000-8000-000000000003");
+    const auto pack = data::importCsv(packCsv, *type, packId, "pack.csv",
+                                      kPluginId);
+    REQUIRE(pack.has_value());
+    REQUIRE(pack->records.size() == 1);
+    CHECK_FALSE(pack->records[0].creates);
+    // The pack declares its target (load-order validation material).
+    REQUIRE(pack->dependencies.size() == 1);
+    CHECK(pack->dependencies[0] == kPluginId);
+    CHECK(pack->records[0].formId == data::csvRowGuid(kPluginId, "IronSword"));
+    // The editorId column is identity-only on a patch: exactly ONE field
+    // (displayName) rides the record.
+    CHECK(pack->records[0].fields.size() == 1);
+
+    // Resolved with the pack after the base: the patched field wins, the
+    // untouched ones (editorId, damage) keep the base's values (§5).
+    data::FormDatabase db;
+    const vector<const data::Plugin*> order { &*base, &*pack };
+    data::resolve(order, types, db);
+    const auto* sword = db.find<data::WeaponForm>(pack->records[0].formId);
+    REQUIRE(sword != nullptr);
+    CHECK(sword->displayName == "Epee de fer");
+    CHECK(sword->editorId == "IronSword");
+}
+
 TEST_CASE("csv import: a header without identity is a reasoned failure") {
     const data::FormTypeRegistry types = makeTypes();
     const auto* type = types.findType("WeaponForm");

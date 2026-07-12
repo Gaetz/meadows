@@ -8,11 +8,14 @@
 // layering gives localization for free, and mods can localize themselves
 // by shipping their own LocStringForms.
 //
-// FILLED (audit U4-11 brick 2): TextTable below is the cached index; the
-// authoring pipeline is a CSV (editorId,text) imported by
-// `cooker import-csv <csv> <toml> LocStringForm <pluginGuid>` — see
-// game/data/base/text-fr.csv.
+// FILLED (audit U4-11 brick 2 + C9.5): TextTable below is the cached
+// index; the authoring pipeline is a CSV (editorId,text) imported by
+// `cooker import-csv <csv> <toml> LocStringForm <pluginGuid>`. English is
+// the BASE (game/data/base/text-en.csv creates every record); a language
+// pack re-imports its CSV with `--patch <base plugin guid>` so its rows
+// patch the SAME records (see text-fr.csv / userdoc/localization.md).
 
+#include <initializer_list>
 #include <string_view>
 #include <unordered_map>
 
@@ -43,6 +46,12 @@ public:
 
     // get(key) with the first "{}" replaced by `arg`.
     str format(std::string_view key, const str& arg) const;
+
+    // get(key) with successive "{}" slots replaced by `args` left to
+    // right (C9.5). Fewer args than slots leaves the extra "{}" literal
+    // (visible and greppable, the get() contract); extra args are dropped.
+    str format(std::string_view key,
+               std::initializer_list<std::string_view> args) const;
 
     u32 size() const { return static_cast<u32>(entries.size()); }
 

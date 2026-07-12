@@ -14,6 +14,7 @@ class UiSystem;
 namespace data {
 class FormDatabase;
 struct MiscItemForm;
+class TextTable;
 }
 namespace gameplay {
 class GameplayTagRegistry;
@@ -33,6 +34,7 @@ class ScreenStack;
 // director only reads/subscribes through it.
 struct QuestContext {
     data::FormDatabase& forms;
+    const data::TextTable& texts;            // C9.5: quest.* toast strings
     gameplay::GameplayTagRegistry& gameTags; // registerTag mutates
     gameplay::EventBus& eventBus;            // DialogueRunner publishes here
     ::ui::UiSystem& ui;

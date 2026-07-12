@@ -1,6 +1,8 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
+#include <string_view>
 
 #include "engine/core/Defines.hpp"
 #include "game/InputActions.hpp"
@@ -22,6 +24,14 @@ struct Settings {
 };
 
 std::filesystem::path settingsPath(); // executableDir()/settings.toml
+
+// C9.5 — the language-pack naming convention: a plugin file whose name is
+// text-<code>.toml (any directory prefix) is the string pack for <code>.
+// English is the BASE language (text-en.toml carries the records every
+// pack patches, §5), so "en" is NOT a pack: returns the code for packs
+// only ("base/text-fr.toml" -> "fr"), nullopt otherwise. The scene gates
+// each pack's enabled flag on settings.language before loadPluginStack.
+std::optional<str> languagePackCode(std::string_view pluginFile);
 
 // Missing file / missing field / unknown name = the defaults (and the
 // ActionMap's default layout) stand — a stale or hand-edited file can

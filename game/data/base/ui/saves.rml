@@ -6,16 +6,16 @@
 </head>
 <body>
 	<div id="menu" class="panel" data-model="saves">
-		<div class="title">Load game</div>
+		<div class="title" data-loc="ui.saves.title">Load game</div>
 		<div id="slots">
 			<div class="slot" data-for="slot : rows" data-event-click="loadSlot(slot.id)">
 				<span class="slot-name">{{ slot.c0 }}</span>
 				<span class="slot-date muted">{{ slot.c1 }}</span>
 			</div>
 		</div>
-		<div class="muted" data-if="empty">No saves yet — F5 quicksaves.</div>
+		<div class="muted" data-if="empty" data-loc="ui.saves.empty">No saves yet &mdash; F5 quicksaves.</div>
 		<div class="menu-buttons">
-			<button id="btn-back" data-event-click="loadCancel()">Back</button>
+			<button id="btn-back" data-event-click="loadCancel()" data-loc="ui.saves.back">Back</button>
 		</div>
 	</div>
 </body>
