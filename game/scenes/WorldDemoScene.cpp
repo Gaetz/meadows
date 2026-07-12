@@ -67,6 +67,12 @@ void WorldDemoScene::onEnter() {
             data::loadPluginFile(dataDir / "base" / "base.toml", types)) {
         basePlugin = std::move(*loaded);
     }
+    // P0: the shared combat data (abilities, fx, cues) moved to its own
+    // plugin — the 3D stack enables it while base.toml stays 2D-only.
+    if (auto loaded = data::loadPluginFile(
+            dataDir / "base" / "combat.toml", types)) {
+        combatPlugin = std::move(*loaded);
+    }
     if (auto loaded = data::loadPluginFile(
             dataDir / "mods" / "golden-blades" / "mod.toml", types)) {
         modPlugin = std::move(*loaded);
@@ -171,6 +177,9 @@ void WorldDemoScene::rebuild() {
     vector<const data::Plugin*> loadOrder;
     if (basePlugin) {
         loadOrder.push_back(&*basePlugin);
+    }
+    if (combatPlugin) {
+        loadOrder.push_back(&*combatPlugin);
     }
     if (modEnabled && modPlugin) {
         loadOrder.push_back(&*modPlugin);

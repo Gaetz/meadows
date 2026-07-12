@@ -10,6 +10,11 @@ file = "base/landscape.toml"
 [[plugins]]
 file = "base/adventure.toml"
 
+# Shared combat data (P0): abilities + fx/cue records used by BOTH the 3D
+# game and the 2D benches (base.toml below is 2D-only and disabled here).
+[[plugins]]
+file = "base/combat.toml"
+
 [[plugins]]
 file = "base/village.toml"
 
