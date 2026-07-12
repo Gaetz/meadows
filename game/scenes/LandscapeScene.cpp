@@ -237,14 +237,47 @@ void LandscapeScene::setupGameplay() {
                            questDirector.payFine(makeQuestContext());
                        });
     // P0 B2 hearing: any OnNoise event turns nearby perceivers'
-    // heads — the noise position is the SOURCE entity's transform
-    // (dispatchers land with C4b footsteps/combat cues).
+    // heads — the noise position is the SOURCE entity's transform.
     eventBus.subscribe(
         gameplay::eventKind("OnNoise"), [this](const gameplay::Event& event) {
             if (event.source.is_alive() &&
                 event.source.has<world::Transform>()) {
                 npcDirector.onNoise(
                     event.source.get<world::Transform>().position);
+            }
+        });
+    // P0 C4b: footsteps become MATERIAL cues + noise. "Footstep"
+    // AnimEvents flow from the NPC clips (C4a) and the player's stride
+    // synthesizer; the material is the terrain splat's verdict (ONE
+    // definition of what grows where) — interiors step on wood. The
+    // CueTable's hierarchical fallback covers unauthored materials
+    // (Cue.Footstep.Snow -> Cue.Footstep).
+    eventBus.subscribe(
+        gameplay::eventKind("AnimEvent"),
+        [this](const gameplay::Event& event) {
+            if (event.name != "Footstep" || !event.source.is_alive() ||
+                !event.source.has<world::Transform>()) {
+                return;
+            }
+            const Vec3 at = event.source.get<world::Transform>().position;
+            const char* material = "Wood";
+            if (!interiorMode) {
+                const auto& params = renderer.terrainParams();
+                const auto weights = render::terrain::materialWeights(
+                    params, at.y,
+                    render::terrain::normal(params, at.x, at.z));
+                material = "Grass";
+                f32 best = weights.grass;
+                if (weights.rock > best) { best = weights.rock; material = "Rock"; }
+                if (weights.snow > best) { best = weights.snow; material = "Snow"; }
+                if (weights.sand > best) { best = weights.sand; material = "Sand"; }
+            }
+            fxDirector.cues().emit(
+                { str { "Cue.Footstep." } + material, at, 0.0f });
+            // Only the PLAYER'S steps are heard (B2 sneaking hook):
+            // villagers must not investigate each other's strolls.
+            if (event.source == playerEntity) {
+                npcDirector.onNoise(at);
             }
         });
 }

@@ -194,3 +194,35 @@ new = true
 editorId = "CueDeath"
 tag = "Cue.Death"
 particles = "fe000000-0000-4000-8000-000000000003" # DeathPuff
+
+# --- Footsteps (chantier P0 C4b): the generic fallback cue — a small
+# dust puff at the foot. Author Cue.Footstep.Grass / .Rock / .Sand /
+# .Snow / .Wood records to specialize per material (sounds join with C3).
+[[records]]
+form = "fe000000-0000-4000-8000-000000000004"
+type = "ParticleForm"
+new = true
+[records.fields]
+editorId = "StepDust"
+shape = "sphere"
+shapeRadius = 0.12
+burst = 4
+lifetime = 0.55
+lifetimeJitter = 0.15
+velocity = [0.0, 0.5, 0.0]
+velocityJitter = 0.3
+gravity = [0.0, -0.5, 0.0]
+sizeStart = 0.08
+sizeEnd = 0.22
+colorStart = [0.5, 0.46, 0.4, 0.32]
+colorEnd = [0.55, 0.52, 0.47, 0.0]
+blend = "alpha"
+
+[[records]]
+form = "fc000000-0000-4000-8000-000000000005"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueFootstep"
+tag = "Cue.Footstep"
+particles = "fe000000-0000-4000-8000-000000000004" # StepDust
