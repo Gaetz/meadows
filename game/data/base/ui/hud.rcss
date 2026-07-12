@@ -66,8 +66,8 @@ body {
    (RmlUi), so each .stat block sizes itself — the value now lives
    INSIDE the bar (dev pass), so a stat is just its 16dp bar. */
 .stat {
-	margin-top: 4dp;
-	height: 18dp;
+	margin-top: 5dp; /* dev pass: 5px between bars */
+	height: 18dp;    /* the 16dp bar + its 1dp borders */
 }
 
 .bar {
