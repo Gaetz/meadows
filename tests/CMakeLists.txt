@@ -47,6 +47,7 @@
     InventoryTest.cpp
     InventoryViewTest.cpp
     JobsTest.cpp
+    KillZTest.cpp
     LevelEditorTest.cpp
     LocTextTest.cpp
     MeleeStrikeTest.cpp

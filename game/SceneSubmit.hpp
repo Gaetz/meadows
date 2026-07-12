@@ -1,7 +1,7 @@
 #pragma once
 
 #include "engine/render/SpriteRenderer.hpp" // render::Sprite, rhi::TextureHandle
-#include "engine/render/landscape/FxRenderer.hpp" // render::FxInstance (P0 C1)
+#include "engine/render/landscape/FxInstance.hpp" // render::FxInstance (P0 C1)
 #include "world/scene/Components.hpp"        // world::Transform, world::SpriteRender
 
 // The render bridge: the single ECS↔rhi seam (§2.6). Keeping it here, above the

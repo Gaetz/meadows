@@ -11,6 +11,7 @@ add_library(meadows-world STATIC
     scene/Spawner.cpp
     scene/Movement.cpp
     scene/Collision.cpp
+    scene/KillZ.cpp
     scene/TriggerSystem.cpp
     scene/SpatialIndex.cpp
     ai/Pathfinding.cpp

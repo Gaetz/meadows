@@ -5,9 +5,22 @@
 #include "data/forms/FormDatabase.hpp"
 #include "engine/core/Hash.hpp"
 #include "engine/render/FlyCamera.hpp"
+#include "engine/render/landscape/TerrainNoise.hpp" // MaterialWeights
 #include "game/SoundResolver.hpp" // C3: cue sounds
 
 namespace game {
+
+const char* FxDirector::footstepMaterial(
+    const render::terrain::MaterialWeights& weights) {
+    // 4-way max over the splat weights: the step sounds like what the
+    // ground LOOKS covered with (grass wins ties, the dominant ground).
+    const char* material = "Grass";
+    f32 best = weights.grass;
+    if (weights.rock > best) { best = weights.rock; material = "Rock"; }
+    if (weights.snow > best) { best = weights.snow; material = "Snow"; }
+    if (weights.sand > best) { best = weights.sand; material = "Sand"; }
+    return material;
+}
 
 void FxDirector::create(const data::FormDatabase& formsIn,
                         fx::ParticleSim& simIn, SoundResolver* soundsIn) {
@@ -45,11 +58,18 @@ void FxDirector::create(const data::FormDatabase& formsIn,
             addShake(cue->cameraShake * scale);
         }
         if (cue->sound.isValid() && sounds) {
-            // C3: the SoundForm resolver — weighted variant + jitter,
-            // seeded from the same cosmetic stream as the particles;
-            // the emitter's scales soften sneaked steps.
-            sounds->play(cue->sound, event.position,
-                         core::hashU32(spawnCounter ^ 0xac00571cu),
+            // C3: the SoundForm resolver — weighted variant + jitter.
+            // Its OWN always-incremented counter (review bug 7a: the
+            // spawn counter only moved in the particle branch, freezing
+            // sound-only cues on one variant) + the spot hash, mirroring
+            // the particle seed; the emitter's scales soften sneaked
+            // steps.
+            const u32 seed =
+                core::hashU32(static_cast<u32>(event.position.x * 73.0f) ^
+                              (static_cast<u32>(event.position.z * 179.0f)
+                               << 8) ^
+                              ++soundCounter ^ 0xac00571cu);
+            sounds->play(cue->sound, event.position, seed,
                          event.volumeScale, event.pitchScale);
         }
     });

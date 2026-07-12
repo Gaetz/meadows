@@ -9,6 +9,9 @@ class FormDatabase;
 }
 namespace render {
 class FlyCamera;
+namespace terrain {
+struct MaterialWeights;
+}
 }
 
 namespace game {
@@ -42,6 +45,13 @@ public:
     // Direct impulse (cue handler uses it; scripts may later).
     void addShake(f32 strength) { shake = glm::min(shake + strength, 1.5f); }
 
+    // P0 C4b (audit R6, out of LandscapeScene): the footstep material —
+    // the dominant terrain splat weight names the cue suffix
+    // (Cue.Footstep.<Mat>). The SCENE keeps the terrain query (it owns
+    // the renderer access); this is the pure weights -> name verdict.
+    static const char* footstepMaterial(
+        const render::terrain::MaterialWeights& weights);
+
 private:
     const data::FormDatabase* forms { nullptr };
     fx::ParticleSim* sim { nullptr };
@@ -52,6 +62,8 @@ private:
     f32 shakeTime { 0.0f };  // drives the wobble phase
     Vec3 appliedOffset { 0.0f }; // last frame's camera offset, removed first
     u32 spawnCounter { 0 };  // cosmetic seed stream (never gameplay RNG, §8)
+    u32 soundCounter { 0 };  // sound-path stream — advances on EVERY play
+                             //   (review bug 7a: sound-only cues varied not)
 };
 
 } // namespace game

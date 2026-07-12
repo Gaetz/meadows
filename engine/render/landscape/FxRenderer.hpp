@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"
+#include "engine/render/landscape/FxInstance.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 
@@ -27,11 +28,8 @@ class ShaderLibrary;
 // Renderer-side only: the SIM stays fx::ParticleSim (headless); the
 // scene's extract copies live particles into FxInstance PODs on the
 // snapshot — this class never sees the sim or the world (Phase-5 seam).
-struct FxInstance {
-    Vec4 positionSize; // xyz = world center, w = quad size (m)
-    Vec4 color;        // premultiplied nothing — straight RGBA
-};
-
+// FxInstance itself lives in FxInstance.hpp (audit R6) so snapshot
+// carriers include the POD without this renderer header.
 class FxRenderer {
 public:
     void create(rhi::Device& device, ShaderLibrary& shaders);

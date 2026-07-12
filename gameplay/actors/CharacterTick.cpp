@@ -15,6 +15,26 @@
 
 namespace gameplay {
 
+namespace {
+
+// R6 (review 7c): publish the Phase-A primary maxima — the derived
+// formulas over BASE attributes plus plain GAS modifiers, BEFORE the
+// resonance/cascade mods scale them — under synthetic overlay ids (the
+// `damage` meta-attribute precedent: an entry without a reflected
+// field). The HUD sizes its bars from these instead of re-deriving the
+// theoretical max as effectiveMax / (1 + r/100) — the sim's rule stays
+// in ONE place (buildResonanceModifiers).
+void publishTheoreticalMaxima(AbilitySystem& system) {
+    system.current[attr("theoreticalMaxHealth")] =
+        currentValueOf(system, attr("maxHealth"));
+    system.current[attr("theoreticalMaxEnergy")] =
+        currentValueOf(system, attr("maxEnergy"));
+    system.current[attr("theoreticalMaxEssence")] =
+        currentValueOf(system, attr("maxEssence"));
+}
+
+} // namespace
+
 void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
                    const CharacterTickContext& ctx,
                    const StatModifiers& equipmentMods) {
@@ -57,6 +77,7 @@ void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
 
     // Phase A — resonance current values: Resonance BaseValues + GAS activeEffects.
     recomputeStats(core, vitals, resonance, system, ctx.derived, nullptr);
+    publishTheoreticalMaxima(system); // pre-resonance maxima, for the HUD
 
     // Phase B — full character mods from GAS resonance + cascade + equipment.
     GameTimeTickArgs args { core, vitals, system, combat, buildup, survival,
@@ -136,6 +157,7 @@ void initializeActorStats(ecs::Entity entity,
 
     // Phase A — resonance values from GAS (no cascade yet).
     recomputeStats(core, vitals, resonance, system, ctx.derived, nullptr);
+    publishTheoreticalMaxima(system); // seeded before the first HUD read
 
     GameTimeTickArgs args { core, vitals, system, combat, buildup, survival,
                             injuries, resonance, resoDecays,

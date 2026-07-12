@@ -47,6 +47,7 @@
 #include "game/WeaponMeshes.hpp" // A2: the procedural sword
 #include "script/Vm.hpp"
 #include "world/scene/AnimBridge.hpp"
+#include "world/scene/KillZ.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/scene/TriggerSystem.hpp"
 #include "world/terrain/TerrainPatches.hpp"
@@ -278,15 +279,13 @@ void LandscapeScene::setupGameplay() {
             if (!interiorMode) {
                 // The SHADED weights (wander included): the step sounds
                 // like the ground LOOKS, not like the altitude contour.
+                // The scene queries the terrain (it owns the renderer);
+                // the weights -> name verdict lives on FxDirector (R6).
                 const auto weights =
                     render::terrain::materialWeightsShaded(
                         renderer.terrainParams(), at.x, at.z,
                         tuning.splatUvScale);
-                material = "Grass";
-                f32 best = weights.grass;
-                if (weights.rock > best) { best = weights.rock; material = "Rock"; }
-                if (weights.snow > best) { best = weights.snow; material = "Snow"; }
-                if (weights.sand > best) { best = weights.sand; material = "Sand"; }
+                material = FxDirector::footstepMaterial(weights);
             }
             // Sneaked steps are softer, lower and carry half as far.
             const bool sneaked = event.source == playerEntity &&
@@ -762,8 +761,11 @@ void LandscapeScene::update(f32 dt) {
         fxSim.update(dt);
         // P0 D2a: the kill-z floor (WorldspaceForm.killZ) — falling out
         // of the world is an outright death through the NORMAL pipeline
-        // (dev: mort franche), never a teleport-back.
-        f32 killZ = -200.0f;
+        // (dev: mort franche), never a teleport-back. The sweep itself
+        // is headless in world/scene/KillZ (audit R6); the scene only
+        // resolves the worldspace's killZ (fallback = the Form's own
+        // default, never a re-hardcoded literal) and gates the player.
+        f32 killZ = world::WorldspaceForm {}.killZ;
         if (const data::Form* space = forms.get(activeWorldspace)) {
             const reflect::TypeInfo* type = forms.typeOf(activeWorldspace);
             if (type &&
@@ -772,31 +774,12 @@ void LandscapeScene::update(f32 dt) {
                             ->killZ;
             }
         }
-        const auto killBelow = [&](ecs::Entity entity, f32 y) {
-            if (y >= killZ || !entity.is_alive() ||
-                !entity.has<gameplay::AbilitySystem>()) {
-                return;
-            }
-            gameplay::StatBlock block {
-                entity.get_mut<gameplay::CoreAttributes>(),
-                entity.get_mut<gameplay::AttributeSet>(),
-                entity.get_mut<gameplay::AbilitySystem>(),
-                entity.get_mut<gameplay::CombatState>()
-            };
-            gameplay::killOutright(block, gameTags, derivedStats,
-                                   statsTuning);
-            LOG_INFO("D2a: an actor fell below killZ ({:.0f})", killZ);
-        };
-        if (mode == SceneMode::Play && playerController.body() &&
-            !sceneConsole.godMode()) {
-            killBelow(playerEntity, playerController.body()->position().y);
-        }
-        for (const auto& npcPtr : npcDirector.npcs()) {
-            if (!npcPtr->dead) {
-                killBelow(npcPtr->entity,
-                          npcPtr->entity.get<world::Transform>().position.y);
-            }
-        }
+        const bool sweepPlayer = mode == SceneMode::Play &&
+                                 playerController.body() &&
+                                 !sceneConsole.godMode();
+        world::enforceKillZ(world, killZ, gameTags, derivedStats,
+                            statsTuning,
+                            sweepPlayer ? ecs::Entity {} : playerEntity);
     }
     // P0 C2: shake decay + the transient camera offset (removed first
     // each frame, so paused sims and fly cameras never accumulate it).

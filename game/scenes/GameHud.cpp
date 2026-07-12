@@ -21,7 +21,6 @@
 #include "gameplay/stats/Damage.hpp" // gameplay::CombatState
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
-#include "gameplay/stats/Resonance.hpp" // harmonyEffective (HUD slices)
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
 #include "world/scene/Components.hpp"
@@ -65,24 +64,16 @@ void GameHud::updateHudModel(const HudContext& ctx) {
         };
         // The resonance % is the ONLY thing separating the effective max
         // from the theoretical one (the derived maxima read BASE
-        // attributes; resonance multiplies them by 1 + r/100 — §2). So
-        // theoretical = current / that factor, channel by channel — no
-        // resonance, no slice.
-        gameplay::Resonance eff {};
-        if (ctx.playerEntity.has<gameplay::Resonance>()) {
-            const auto& res = ctx.playerEntity.get<gameplay::Resonance>();
-            bool broken = false;
-            if (ctx.evalContext.tags) {
-                if (const auto tag =
-                        ctx.evalContext.tags->find("Status.HarmonyBroken")) {
-                    broken = sys.tags.has(*tag);
-                }
-            }
-            eff = broken ? res : gameplay::harmonyEffective(res);
-        }
-        const auto theoretical = [](f32 effMax, f32 resonance) {
-            const f32 factor = glm::max(1.0f + resonance / 100.0f, 0.05f);
-            return effMax / factor;
+        // attributes; resonance multiplies them by 1 + r/100 — §2). The
+        // HUD does NOT re-derive that rule (review 7c): the character
+        // tick publishes the pre-resonance maxima (its Phase-A
+        // recompute) under the theoreticalMax* overlay ids — read them.
+        // Fallback = the effective max (an actor that never ticked has
+        // no published value; no resonance slice then).
+        const auto theoretical = [&](const char* id, f32 effMax) {
+            const f32 value = gameplay::currentValueOf(sys,
+                                                       gameplay::attr(id));
+            return value > 0.0f ? value : effMax;
         };
         const f32 maxHealth =
             gameplay::currentValueOf(sys, gameplay::attr("maxHealth"));
@@ -90,12 +81,13 @@ void GameHud::updateHudModel(const HudContext& ctx) {
             gameplay::currentValueOf(sys, gameplay::attr("maxEnergy"));
         const f32 maxEssence =
             gameplay::currentValueOf(sys, gameplay::attr("maxEssence"));
-        pushBar("health", vitals.health, theoretical(maxHealth, eff.onyx),
-                maxHealth);
-        pushBar("energy", vitals.energy, theoretical(maxEnergy, eff.amber),
-                maxEnergy);
+        pushBar("health", vitals.health,
+                theoretical("theoreticalMaxHealth", maxHealth), maxHealth);
+        pushBar("energy", vitals.energy,
+                theoretical("theoreticalMaxEnergy", maxEnergy), maxEnergy);
         pushBar("essence", vitals.essence,
-                theoretical(maxEssence, eff.garnet), maxEssence);
+                theoretical("theoreticalMaxEssence", maxEssence),
+                maxEssence);
         // Posture is a DERIVED stat (no BaseValue of its own): the bar
         // scales with the current max, no resonance slices.
         const f32 maxPosture =
