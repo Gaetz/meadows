@@ -2,6 +2,8 @@
 
 #include <string_view>
 
+#include <glm/glm.hpp>
+
 #include "engine/core/Defines.hpp"
 
 // Chantier P0 A3/A4 — the melee swing (docs/CHANTIER-P0.md, dev design
@@ -86,6 +88,20 @@ Mat4 swingSocketLocal(const MeleeSwing& swing, const SwingTiming& timing);
 // segment-segment distance < capsule radius.
 bool segmentHitsCapsule(const Vec3& a0, const Vec3& a1, const Vec3& capA,
                         const Vec3& capB, f32 radius);
+
+// THE humanoid hit capsule (feet-anchored), shared by every strike test —
+// player melee, NPC melee, both arrow paths. A crouched target is half
+// height (the sneak rule). [cpp-tuning] radius 0.4, height 1.8 / 0.9.
+struct CapsuleSegment {
+    Vec3 a {};
+    Vec3 b {};
+    f32 radius { 0.0f };
+};
+CapsuleSegment humanoidCapsule(const Vec3& feet, bool crouched = false);
+
+// The two above composed: does the blade/arrow segment touch the actor?
+bool segmentHitsActor(const Vec3& a0, const Vec3& a1, const Vec3& feet,
+                      bool crouched = false);
 
 // A5 — directional blocking. If the attacker stands inside the
 // defender's front cone (horizontal, blockAngleDegrees full width), the

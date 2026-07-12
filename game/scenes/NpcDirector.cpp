@@ -26,6 +26,7 @@
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/combat/CombatAi.hpp"         // chooseCombatMove (B3)
 #include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions (C2)
+#include "gameplay/combat/MeleeStrike.hpp"      // the ONE strike resolution
 #include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing (A4)
 #include "gameplay/combat/Projectile.hpp"       // archer NPCs (A7)
 #include "game/scenes/ProjectileDirector.hpp"   // archer NPCs (A7)
@@ -1081,10 +1082,6 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                     grip + bladeDir * (npcWeapon->bladeLength *
                                        npcWeapon->hitTolerance);
                 const Vec3 feet = ctx.player->position();
-                // [cpp-tuning] the shared humanoid capsule (feet-anchored;
-                // a crouched player is half the target).
-                constexpr f32 kRadius = 0.4f;
-                const f32 kHeight = playerSneaking ? 0.9f : 1.8f;
                 // Dodge i-frames: State.Dodging means the blade passes
                 // through — and does NOT register, so the same Active
                 // window can still connect once the i-frames expire.
@@ -1095,134 +1092,58 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                                   .get<gameplay::AbilitySystem>()
                                   .tags.has(*dodgeTag);
                 }
+                // A crouched player is half the target (sneak rule).
                 if (!dodging &&
-                    gameplay::segmentHitsCapsule(
-                        grip, tip, feet + Vec3 { 0.0f, kRadius, 0.0f },
-                        feet + Vec3 { 0.0f, kHeight - kRadius, 0.0f },
-                        kRadius) &&
+                    gameplay::segmentHitsActor(grip, tip, feet,
+                                               playerSneaking) &&
                     gameplay::registerStrike(swing,
                                              ctx.playerEntity.id())) {
-                    gameplay::StatBlock block {
+                    // The exchange rules (crit window, guard cone,
+                    // perfect parry, events, cues) live in ONE place,
+                    // resolveMeleeStrike, shared with the player side.
+                    gameplay::StatBlock defender {
                         ctx.playerEntity.get_mut<gameplay::CoreAttributes>(),
                         ctx.playerEntity.get_mut<gameplay::AttributeSet>(),
                         ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
                         ctx.playerEntity.get_mut<gameplay::CombatState>()
                     };
-                    gameplay::DamageEvent event =
-                        gameplay::weaponDamageEvent(*npcWeapon,
-                                                    npcSys);
-                    // A5: the player's raised guard catches front-cone
-                    // hits — reduced damage, posture takes the rest. A
-                    // guard raised inside the perfect window parries
-                    // CLEAN and the BANDIT'S poise pays (riposte window
-                    // when the stagger lands).
-                    gameplay::BlockResult guarded;
-                    if (const auto blockTag =
-                            ctx.gameTags.find("State.Blocking");
-                        blockTag && block.system.tags.has(*blockTag)) {
-                        const auto& playerT =
-                            ctx.playerEntity.get<world::Transform>();
-                        const Vec3 playerFacing =
-                            playerT.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
-                        const auto& defSys =
-                            ctx.playerEntity
-                                .get<gameplay::AbilitySystem>();
-                        guarded = gameplay::applyBlock(
-                            event, playerFacing, playerT.position,
-                            transform.position,
-                            ctx.statsTuning.blockAngleDegrees,
-                            ctx.statsTuning.blockFactor,
-                            ctx.statsTuning.blockPostureFactor,
-                            ctx.playerEntity.get<gameplay::MeleeSwing>()
-                                .guardSeconds,
-                            ctx.statsTuning.perfectParryWindow,
-                            gameplay::currentValueOf(
-                                defSys, gameplay::attr("energy")),
-                            // STATS.md §4: the empty-guard punish.
-                            gameplay::currentValueOf(
-                                defSys, gameplay::attr("maxPosture")) *
-                                gameplay::currentValueOf(
-                                    defSys,
-                                    gameplay::attr(
-                                        "criticalSensitivity")) /
-                                100.0f);
-                    }
-                    if (guarded.perfect) {
-                        gameplay::StatBlock attacker {
-                            npc.entity
-                                .get_mut<gameplay::CoreAttributes>(),
-                            npc.entity.get_mut<gameplay::AttributeSet>(),
-                            npc.entity.get_mut<gameplay::AbilitySystem>(),
-                            npc.entity.get_mut<gameplay::CombatState>()
-                        };
-                        gameplay::DamageEvent parry;
-                        parry.postureAmount =
-                            ctx.statsTuning.perfectParryPosture;
-                        const gameplay::DamageResult riposte =
-                            gameplay::applyDamage(attacker, parry,
-                                                  ctx.gameTags,
-                                                  ctx.derivedStats,
-                                                  nullptr,
-                                                  ctx.statsTuning);
+                    gameplay::StatBlock attacker {
+                        npc.entity.get_mut<gameplay::CoreAttributes>(),
+                        npc.entity.get_mut<gameplay::AttributeSet>(),
+                        npc.entity.get_mut<gameplay::AbilitySystem>(),
+                        npc.entity.get_mut<gameplay::CombatState>()
+                    };
+                    const auto& playerT =
+                        ctx.playerEntity.get<world::Transform>();
+                    const gameplay::StrikeGeometry geo {
+                        transform.position, playerT.position,
+                        playerT.rotation * Vec3 { 0.0f, 0.0f, 1.0f },
+                        ctx.playerEntity.get<gameplay::MeleeSwing>()
+                            .guardSeconds,
+                        feet + Vec3 { 0.0f, 1.2f, 0.0f }
+                    };
+                    const gameplay::StrikeContext strikeCtx {
+                        ctx.gameTags, ctx.derivedStats, ctx.statsTuning,
+                        &ctx.eventBus, ctx.cues
+                    };
+                    const gameplay::StrikeOutcome outcome =
+                        gameplay::resolveMeleeStrike(
+                            attacker, defender, npc.entity,
+                            ctx.playerEntity,
+                            gameplay::weaponDamageEvent(*npcWeapon,
+                                                        attacker.system),
+                            geo, strikeCtx);
+                    if (outcome.guard.perfect) {
                         LOG_INFO("PERFECT PARRY — bandit poise -{}{}",
                                  ctx.statsTuning.perfectParryPosture,
-                                 riposte.staggered ? " (STAGGERED!)"
-                                                   : "");
-                        // Combat lifecycle events (BOSS-SCRIPTING §1):
-                        // source = the parrier, target = the parried.
-                        ctx.eventBus.dispatch(
-                            { gameplay::eventKind("OnParried"),
-                              ctx.playerEntity, npc.entity });
-                        if (riposte.staggered) {
-                            ctx.eventBus.dispatch(
-                                { gameplay::eventKind("OnStagger"),
-                                  ecs::Entity {}, npc.entity });
-                        }
-                        if (ctx.cues) { // C2: the parry's LOOK
-                            ctx.cues->emit(
-                                { "Cue.Parry",
-                                  feet + Vec3 { 0.0f, 1.2f, 0.0f },
-                                  ctx.statsTuning.perfectParryPosture });
-                        }
+                                 outcome.riposte.staggered
+                                     ? " (STAGGERED!)" : "");
                     } else {
-                        const gameplay::DamageResult result =
-                            gameplay::applyDamage(block, event,
-                                                  ctx.gameTags,
-                                                  ctx.derivedStats,
-                                                  nullptr,
-                                                  ctx.statsTuning);
                         LOG_INFO("Bandit's blade lands: {:.0f} damage{}{}",
-                                 result.healthDamage,
-                                 guarded.caught ? " (blocked)" : "",
-                                 result.staggered ? " (staggered!)" : "");
-                        gameplay::Event hit;
-                        hit.kind = gameplay::eventKind("OnHitTaken");
-                        hit.source = npc.entity;
-                        hit.target = ctx.playerEntity;
-                        hit.value = result.healthDamage;
-                        ctx.eventBus.dispatch(hit);
-                        if (result.staggered) {
-                            ctx.eventBus.dispatch(
-                                { gameplay::eventKind("OnStagger"),
-                                  npc.entity, ctx.playerEntity });
-                        }
-                        if (ctx.cues) { // C2: the exchange's LOOK
-                            const Vec3 chest =
-                                feet + Vec3 { 0.0f, 1.2f, 0.0f };
-                            if (guarded.caught) {
-                                ctx.cues->emit({ "Cue.Block", chest,
-                                                 result.postureDamage });
-                            } else {
-                                const gameplay::DamageType type =
-                                    event.channels.empty()
-                                        ? gameplay::DamageType::Blunt
-                                        : event.channels[0].type;
-                                ctx.cues->emit(
-                                    { str { "Cue.Hit." } +
-                                          gameplay::damageTypeName(type),
-                                      chest, result.healthDamage });
-                            }
-                        }
+                                 outcome.damage.healthDamage,
+                                 outcome.guard.caught ? " (blocked)" : "",
+                                 outcome.damage.staggered
+                                     ? " (staggered!)" : "");
                     }
                 }
             }

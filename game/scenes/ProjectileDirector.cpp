@@ -13,7 +13,8 @@
 #include "game/WeaponMeshes.hpp" // arrowMeshGuid
 #include "game/scenes/NpcDirector.hpp" // Npc
 #include "gameplay/ability/AbilitySystem.hpp"
-#include "gameplay/combat/MeleeSwing.hpp" // segmentHitsCapsule
+#include "gameplay/combat/MeleeStrike.hpp" // resolveStrikeDamage
+#include "gameplay/combat/MeleeSwing.hpp"  // segmentHitsActor
 #include "gameplay/cue/GameplayCues.hpp"
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp" // arrow pickup (A7+)
@@ -24,34 +25,25 @@ namespace game {
 
 namespace {
 
-// The one damage application for whatever the arrow found.
+// The one damage application for whatever the arrow found — the shared
+// strike tail (damage -> events -> cue); arrows skip the guard stage.
 void strike(const ProjectileContext& ctx, ecs::Entity target,
             const gameplay::Projectile& arrow, const Vec3& at) {
-    gameplay::StatBlock block {
+    gameplay::StatBlock defender {
         target.get_mut<gameplay::CoreAttributes>(),
         target.get_mut<gameplay::AttributeSet>(),
         target.get_mut<gameplay::AbilitySystem>(),
         target.get_mut<gameplay::CombatState>()
     };
-    gameplay::DamageEvent event = arrow.payload; // captured at fire time
-    const gameplay::DamageResult result =
-        gameplay::applyDamage(block, event, ctx.gameTags,
-                              ctx.derivedStats, nullptr, ctx.statsTuning);
+    const gameplay::StrikeContext strikeCtx {
+        ctx.gameTags, ctx.derivedStats, ctx.statsTuning, &ctx.eventBus,
+        ctx.cues
+    };
+    // Source = empty: the shooter may be long gone (payload captured at
+    // fire time).
+    const gameplay::DamageResult result = gameplay::resolveStrikeDamage(
+        defender, ecs::Entity {}, target, arrow.payload, at, strikeCtx);
     LOG_INFO("A7: arrow hits for {:.0f}", result.healthDamage);
-    gameplay::Event hit;
-    hit.kind = gameplay::eventKind("OnHitTaken");
-    hit.source = ecs::Entity {}; // the shooter may be long gone
-    hit.target = target;
-    hit.value = result.healthDamage;
-    ctx.eventBus.dispatch(hit);
-    if (ctx.cues) {
-        const gameplay::DamageType type =
-            event.channels.empty() ? gameplay::DamageType::Pierce
-                                   : event.channels[0].type;
-        ctx.cues->emit({ str { "Cue.Hit." } +
-                             gameplay::damageTypeName(type),
-                         at, result.healthDamage });
-    }
 }
 
 } // namespace
@@ -88,7 +80,6 @@ void ProjectileDirector::update(f32 dt, const ProjectileContext& ctx) {
         // enough that actor-first keeps the code flat. [cpp-tuning]
         // Actors: analytic capsules (outside the broadphase).
         bool consumed = false;
-        constexpr f32 kRadius = 0.4f;
         for (const auto& npcPtr : ctx.npcs) {
             const Npc& npc = *npcPtr;
             if (npc.dead || !npc.entity.is_alive() ||
@@ -96,26 +87,19 @@ void ProjectileDirector::update(f32 dt, const ProjectileContext& ctx) {
                 continue;
             }
             const Vec3 feet = npc.entity.get<world::Transform>().position;
-            if (gameplay::segmentHitsCapsule(
-                    from, arrow.position,
-                    feet + Vec3 { 0.0f, kRadius, 0.0f },
-                    feet + Vec3 { 0.0f, 1.8f - kRadius, 0.0f }, kRadius)) {
+            if (gameplay::segmentHitsActor(from, arrow.position, feet)) {
                 strike(ctx, npc.entity, arrow, arrow.position);
                 consumed = true;
                 break;
             }
         }
-        // The player is a target too (NPC archers) — god mode excluded.
+        // The player is a target too (NPC archers) — god mode excluded;
+        // a crouched player is half the target.
         if (!consumed && ctx.player && ctx.playerEntity.is_alive() &&
             ctx.playerEntity.id() != arrow.shooter && !ctx.godMode) {
-            const Vec3 feet = ctx.player->position();
-            const f32 height =
-                ctx.player->isCrouched() ? 0.9f : 1.8f; // half the target
-            if (gameplay::segmentHitsCapsule(
-                    from, arrow.position,
-                    feet + Vec3 { 0.0f, kRadius, 0.0f },
-                    feet + Vec3 { 0.0f, height - kRadius, 0.0f },
-                    kRadius)) {
+            if (gameplay::segmentHitsActor(from, arrow.position,
+                                           ctx.player->position(),
+                                           ctx.player->isCrouched())) {
                 strike(ctx, ctx.playerEntity, arrow, arrow.position);
                 consumed = true;
             }

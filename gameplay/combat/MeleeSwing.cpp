@@ -191,6 +191,19 @@ bool segmentHitsCapsule(const Vec3& a0, const Vec3& a1, const Vec3& capA,
     return glm::dot(gap, gap) < radius * radius;
 }
 
+CapsuleSegment humanoidCapsule(const Vec3& feet, bool crouched) {
+    constexpr f32 kRadius = 0.4f;
+    const f32 height = crouched ? 0.9f : 1.8f;
+    return { feet + Vec3 { 0.0f, kRadius, 0.0f },
+             feet + Vec3 { 0.0f, height - kRadius, 0.0f }, kRadius };
+}
+
+bool segmentHitsActor(const Vec3& a0, const Vec3& a1, const Vec3& feet,
+                      bool crouched) {
+    const CapsuleSegment capsule = humanoidCapsule(feet, crouched);
+    return segmentHitsCapsule(a0, a1, capsule.a, capsule.b, capsule.radius);
+}
+
 BlockResult applyBlock(DamageEvent& event, const Vec3& defenderFacing,
                        const Vec3& defenderPos, const Vec3& attackerPos,
                        f32 blockAngleDegrees, f32 blockFactor,
