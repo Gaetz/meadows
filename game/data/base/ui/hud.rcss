@@ -23,6 +23,27 @@ body {
 	color: #e6e3dc99;
 }
 
+/* A7+: the bow-draw gauge — bottom center, only while drawing. */
+#charge {
+	position: absolute;
+	left: 50%;
+	bottom: 12%;
+	margin-left: -80dp;
+	width: 160dp;
+	height: 7dp;
+	background-color: #14161ab0;
+	border: 1dp #3c4046;
+	border-radius: 2dp;
+}
+
+.chargefill {
+	position: absolute;
+	left: 0;
+	top: 0;
+	height: 100%;
+	background-color: #d8c27a;
+}
+
 #prompt {
 	position: absolute;
 	left: 0;

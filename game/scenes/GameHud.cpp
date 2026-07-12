@@ -117,6 +117,10 @@ void GameHud::updateHudModel(const HudContext& ctx) {
                          text(vitals.essence, maxEssence));
         ctx.ui.setString("hud", "postureText", text(posture, maxPosture));
     }
+    // A7+: the bow-draw gauge, bottom center while drawing.
+    ctx.ui.setBool("hud", "chargeVisible", ctx.bowCharge >= 0.0f);
+    ctx.ui.setNumber("hud", "chargePct",
+                     glm::clamp(ctx.bowCharge, 0.0f, 1.0f) * 100.0f);
     const f64 hours = std::fmod(ctx.gameClock.gameHours(), 24.0);
     const i32 hh = static_cast<i32>(hours);
     const i32 mm = static_cast<i32>((hours - hh) * 60.0);

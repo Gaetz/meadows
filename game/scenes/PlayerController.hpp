@@ -82,6 +82,8 @@ struct PlayerContext {
     const gameplay::EffectForm* sneakCostEffect { nullptr };
     // A7: where fired arrows go (a ranged weapon = projectileSpeed > 0).
     ProjectileDirector* projectiles { nullptr };
+    // A7+: the drain while the bow is DRAWN (3 energy/s, data).
+    const gameplay::EffectForm* bowDrawCostEffect { nullptr };
 };
 
 // The first-person Play-mode controller extracted from LandscapeScene
@@ -126,8 +128,20 @@ public:
     // at the price of a slow energy drain while moving.
     bool sneaking() const { return sneaking_; }
 
+    // A7+: the bow draw — 0..1 while LMB is held on a ranged weapon,
+    // -1 when not drawing (the HUD gauge and the viewmodel arrow read
+    // this).
+    f32 bowCharge() const { return bowCharge_; }
+
 private:
     void tryAttack(const PlayerContext& ctx);
+    // The equipped weapon (inventory), or the context fallback.
+    const data::WeaponForm* equippedWeapon(const PlayerContext& ctx) const;
+    // A7+: the charged shot — LMB held draws (gauge + drain), release
+    // fires at a force proportional to the draw; exhaustion or a
+    // stagger lets go early. `inhibited` = guarding or reeling.
+    void updateBowDraw(f32 dt, const PlayerContext& ctx,
+                       const data::WeaponForm& weapon, bool inhibited);
     // D2b: decides the mode, swims when swimming (3D wish toward the
     // look, surface clamp, energy drain, drowning once exhausted).
     // True = the frame's movement was consumed (no jump/dodge/sprint).
@@ -160,6 +174,9 @@ private:
     // Sneak toggle (Ctrl) + its moving-only drain accumulator.
     bool sneaking_ { false };
     f32 sneakCostAccumulator { 0.0f };
+    // A7+: the bow draw (charge -1 = idle) + its drain accumulator.
+    f32 bowCharge_ { -1.0f };
+    f32 bowDrawAccumulator { 0.0f };
 };
 
 } // namespace game

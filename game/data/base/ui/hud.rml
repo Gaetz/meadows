@@ -7,6 +7,10 @@
 	<!-- data-model on a wrapper div, not on body (see inventory.rml). -->
 	<div id="hud" data-model="hud">
 	<div id="crosshair">+</div>
+	<!-- A7+: the bow-draw gauge — bottom center while LMB is held. -->
+	<div id="charge" data-if="chargeVisible">
+		<div class="chargefill" data-style-width="chargePct + '%'"/>
+	</div>
 	<div id="prompt" data-if="promptVisible">{{ prompt }}</div>
 	<div id="talk" data-if="talkVisible">{{ talk }}</div>
 	<div id="clock">{{ clock }}</div>

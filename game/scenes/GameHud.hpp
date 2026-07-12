@@ -64,6 +64,8 @@ struct HudContext {
     gameplay::EvalContext evalContext; // scene-built (player tags/bag); by
                                        //   value — pointers, cheap, no dangling
     ScreenStack& screenStack; // pushDialogueModel closes "dialogue" when done
+    // A7+: the bow-draw gauge (0..1 while drawing, < 0 = hidden).
+    f32 bowCharge;
 };
 
 // The RmlUi presenter extracted from LandscapeScene (audit U4-9): every

@@ -138,6 +138,11 @@ struct StatsTuningForm : data::Form {
     f32 sneakVolumeFactor { 0.5f };
     f32 sneakPitchFactor { 0.85f };
     f32 sneakSpeedFactor { 0.75f }; // dev 2026-07-12 (absent de STATS.md)
+    // A7+ (appended): the charged bow shot — seconds to a full draw and
+    // the speed floor a bare tap still looses at (the drain is the
+    // BowDrawCost effect, data).
+    f32 bowDrawSeconds { 1.1f };
+    f32 bowMinChargeFactor { 0.3f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -217,6 +222,8 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(sneakVolumeFactor)
         REFLECT_FIELD(sneakPitchFactor)
         REFLECT_FIELD(sneakSpeedFactor)
+        REFLECT_FIELD(bowDrawSeconds)
+        REFLECT_FIELD(bowMinChargeFactor)
     REFLECT_END()
 };
 

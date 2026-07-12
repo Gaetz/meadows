@@ -549,3 +549,16 @@ displayName = "Arrow"
 weight = 0.05
 goldValue = 1
 model = "a2b1ade0-0000-4000-8000-000000005020"
+
+# Drawing the bow is effortful: 3 energy/s while drawn (two half-second
+# ticks; moddable — dev design 2026-07-12).
+[[records]]
+form = "e0000000-0000-4000-8000-000000000032"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "BowDrawCost"
+attribute = "energy"
+op = "add"
+magnitude = -1.5
+duration = "instant"

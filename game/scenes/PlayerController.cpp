@@ -60,6 +60,21 @@ void PlayerController::destroyBody() {
 // (§6), the swing phases are the weapon's data timings, and damage lands
 // in updateSwing only where the VISIBLE blade passes (dev design: the
 // blade must touch).
+const data::WeaponForm* PlayerController::equippedWeapon(
+    const PlayerContext& ctx) const {
+    // Chantier 4 B3: the EQUIPPED weapon (the inventory screen swaps it);
+    // the context fallback covers a bagless bootstrap.
+    const data::WeaponForm* weapon = ctx.fallbackWeapon;
+    if (ctx.playerEntity.is_alive() &&
+        ctx.playerEntity.has<gameplay::Equipment>()) {
+        const auto& equipment = ctx.playerEntity.get<gameplay::Equipment>();
+        weapon = equipment.weapon.isValid()
+                     ? ctx.forms.find<data::WeaponForm>(equipment.weapon)
+                     : nullptr;
+    }
+    return weapon;
+}
+
 void PlayerController::tryAttack(const PlayerContext& ctx) {
     if (!ctx.playerEntity.is_alive() || !body_) {
         return;
@@ -68,15 +83,7 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
         weaponDrawn_ = true; // the first press draws; the next one swings
         return;
     }
-    // Chantier 4 B3: the swing uses the EQUIPPED weapon (inventory screen
-    // can swap/unequip it); bare hands don't attack in v1.
-    const data::WeaponForm* weapon = ctx.fallbackWeapon;
-    if (ctx.playerEntity.has<gameplay::Equipment>()) {
-        const auto& equipment = ctx.playerEntity.get<gameplay::Equipment>();
-        weapon = equipment.weapon.isValid()
-                     ? ctx.forms.find<data::WeaponForm>(equipment.weapon)
-                     : nullptr;
-    }
+    const data::WeaponForm* weapon = equippedWeapon(ctx);
     if (!weapon) {
         LOG_INFO("Swing: no weapon equipped");
         return;
@@ -84,15 +91,6 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
     auto& swing = ctx.playerEntity.get_mut<gameplay::MeleeSwing>();
     if (swing.phase != gameplay::SwingPhase::Idle) {
         return; // one swing in flight
-    }
-    // A7+: a ranged weapon with an ammo item needs one IN THE BAG —
-    // checked before the ability so a dry fire costs nothing.
-    if (weapon->projectileSpeed > 0.0f && weapon->ammo.isValid() &&
-        ctx.playerEntity.has<gameplay::Inventory>() &&
-        gameplay::itemCount(ctx.playerEntity.get<gameplay::Inventory>(),
-                            weapon->ammo) <= 0) {
-        LOG_INFO("A7: out of arrows");
-        return;
     }
     if (ctx.attackAbility) {
         auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
@@ -103,29 +101,112 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
             return; // on cooldown or exhausted
         }
     }
-    // A7: a RANGED weapon (projectileSpeed > 0) fires instead of
-    // swinging — the arrow leaves from the eye, along the look, with the
-    // weapon's damage captured at release.
-    if (weapon->projectileSpeed > 0.0f && ctx.projectiles) {
+    swingWeapon_ = weapon;
+    gameplay::startSwing(swing);
+}
+
+void PlayerController::updateBowDraw(f32 dt, const PlayerContext& ctx,
+                                     const data::WeaponForm& weapon,
+                                     bool inhibited) {
+    const gameplay::StatsTuningForm& tuning = ctx.statsTuning;
+    const auto release = [&](bool fire) {
+        const f32 charge = bowCharge_;
+        bowCharge_ = -1.0f;
+        bowDrawAccumulator = 0.0f;
+        if (!fire || charge < 0.0f || !ctx.playerEntity.is_alive() ||
+            !ctx.projectiles) {
+            return;
+        }
+        // Ability gates at RELEASE (cost + cooldown, §6).
+        if (ctx.attackAbility) {
+            auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
+            auto& system =
+                ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
+            if (!gameplay::tryActivate(*ctx.attackAbility, set, system,
+                                       set, system,
+                                       { ctx.forms, ctx.gameTags })) {
+                return;
+            }
+        }
+        // The force is the DRAW: a tap looses a weak lob, a full draw
+        // flies at the weapon's speed (dev design 2026-07-12).
+        const f32 factor =
+            glm::mix(tuning.bowMinChargeFactor, 1.0f,
+                     glm::clamp(charge, 0.0f, 1.0f));
         const render::Camera3D& cam = ctx.flyCamera.camera;
         gameplay::Projectile arrow;
         arrow.position = cam.position + cam.forward() * 0.6f;
-        arrow.velocity = cam.forward() * weapon->projectileSpeed;
+        arrow.velocity = cam.forward() * weapon.projectileSpeed * factor;
         arrow.shooter = ctx.playerEntity.id();
         arrow.payload = gameplay::weaponDamageEvent(
-            *weapon, ctx.playerEntity.get<gameplay::AbilitySystem>());
-        arrow.ammoItem = weapon->ammo; // recoverable once planted
+            weapon, ctx.playerEntity.get<gameplay::AbilitySystem>());
+        arrow.ammoItem = weapon.ammo; // recoverable once planted
         ctx.projectiles->spawn(arrow);
-        if (weapon->ammo.isValid() &&
+        if (weapon.ammo.isValid() &&
             ctx.playerEntity.has<gameplay::Inventory>()) {
             gameplay::removeItem(
                 ctx.playerEntity.get_mut<gameplay::Inventory>(),
-                weapon->ammo, 1);
+                weapon.ammo, 1);
         }
+    };
+
+    if (bowCharge_ < 0.0f) {
+        // A sheathed bow: the first press unsheathes (the melee idiom).
+        if (!inhibited && !weaponDrawn_ &&
+            ctx.input.mousePressed(platform::MouseButton::Left)) {
+            weaponDrawn_ = true;
+            return;
+        }
+        // Not drawing: LMB starts the draw (never inhibited, sheathed,
+        // mid-swing, or with a dry quiver — refused before any cost).
+        if (inhibited || !weaponDrawn_ ||
+            !ctx.input.mousePressed(platform::MouseButton::Left) ||
+            !ctx.playerEntity.is_alive() ||
+            ctx.playerEntity.get<gameplay::MeleeSwing>().phase !=
+                gameplay::SwingPhase::Idle) {
+            return;
+        }
+        if (weapon.ammo.isValid() &&
+            ctx.playerEntity.has<gameplay::Inventory>() &&
+            gameplay::itemCount(
+                ctx.playerEntity.get<gameplay::Inventory>(),
+                weapon.ammo) <= 0) {
+            LOG_INFO("A7: out of arrows");
+            return;
+        }
+        bowCharge_ = 0.0f;
         return;
     }
-    swingWeapon_ = weapon;
-    gameplay::startSwing(swing);
+    // Drawing. A stagger breaks the draw — the arrow stays nocked.
+    if (inhibited) {
+        release(false);
+        return;
+    }
+    bowCharge_ = glm::min(
+        1.0f, bowCharge_ + dt / glm::max(tuning.bowDrawSeconds, 0.05f));
+    // Holding the draw is effortful: the BowDrawCost effect ticks the
+    // usual half-second accumulator (§2.9 — only effects move energy).
+    if (ctx.bowDrawCostEffect && ctx.playerEntity.is_alive()) {
+        bowDrawAccumulator += dt;
+        while (bowDrawAccumulator >= 0.5f) {
+            bowDrawAccumulator -= 0.5f;
+            auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
+            auto& sys = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
+            gameplay::applyEffect(set, sys, *ctx.bowDrawCostEffect,
+                                  ctx.gameTags);
+        }
+    }
+    // Exhausted arms give in — the arrow flies at the current draw.
+    bool exhausted = false;
+    if (ctx.playerEntity.is_alive()) {
+        if (const auto tag = ctx.gameTags.find("State.Exhausted")) {
+            exhausted = ctx.playerEntity.get<gameplay::AbilitySystem>()
+                            .tags.has(*tag);
+        }
+    }
+    if (!ctx.input.mouseDown(platform::MouseButton::Left) || exhausted) {
+        release(true);
+    }
 }
 
 // P0 A4: the swing machine + the blade-touch hit test. The blade segment
@@ -507,9 +588,19 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     // B6: melee swing on LMB (the mouse is captured in Play — ImGui
     // never owns it here). Cadence is the ability's cooldown effect plus
     // the swing itself: no hardcoded timer (P0 A3).
-    if (!blocking && !staggered &&
-        input.mousePressed(platform::MouseButton::Left)) {
-        tryAttack(ctx);
+    const data::WeaponForm* held = equippedWeapon(ctx);
+    if (held && held->projectileSpeed > 0.0f) {
+        // A7+: ranged = the CHARGED shot (hold to draw, release to
+        // loose); melee inputs stay out of the way.
+        updateBowDraw(dt, ctx, *held, blocking || staggered);
+    } else {
+        if (bowCharge_ >= 0.0f) {
+            bowCharge_ = -1.0f; // weapon swapped mid-draw: let it down
+        }
+        if (!blocking && !staggered &&
+            input.mousePressed(platform::MouseButton::Left)) {
+            tryAttack(ctx);
+        }
     }
     updateSwing(dt, ctx);
 

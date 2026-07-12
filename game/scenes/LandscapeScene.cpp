@@ -198,6 +198,8 @@ void LandscapeScene::setupGameplay() {
         data::findByEditorId<gameplay::EffectForm>(forms, "SwimCost");
     sneakCostEffect = // sneak: the moving drain (combat.toml)
         data::findByEditorId<gameplay::EffectForm>(forms, "SneakCost");
+    bowDrawCostEffect = // A7+: the drawn-bow drain (combat.toml)
+        data::findByEditorId<gameplay::EffectForm>(forms, "BowDrawCost");
     testWoundEffect =
         data::findByEditorId<gameplay::EffectForm>(forms, "TestLegWound");
     // Chantier 3 B6: the melee weapons (data — retune in village.toml).
@@ -869,6 +871,20 @@ void LandscapeScene::update(f32 dt) {
         const core::Guid model =
             weapon.model.isValid() ? weapon.model : swordMeshGuid();
         snapshot.meshes.push_back({ model, core::Guid {}, pose });
+        // A7+: while the bow is drawn, a nocked arrow rides the viewmodel
+        // and slides BACK with the charge ("la flèche recule") — Rx(-90°)
+        // turns the +Y shaft toward -Z (the aim direction).
+        const f32 charge = playerController.bowCharge();
+        if (charge >= 0.0f) {
+            const Mat4 arrowLocal =
+                glm::translate(Mat4 { 1.0f },
+                               Vec3 { 0.13f, -0.30f,
+                                      -0.42f + charge * 0.22f }) *
+                glm::rotate(Mat4 { 1.0f }, glm::radians(-90.0f),
+                            Vec3 { 1.0f, 0.0f, 0.0f });
+            snapshot.meshes.push_back(
+                { arrowMeshGuid(), core::Guid {}, basis * arrowLocal });
+        }
     }
     // Wind phase integrates the CURRENT strength: speed changes bend the
     // drift/sway smoothly instead of teleporting the pattern.
@@ -1193,7 +1209,8 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
           // width scales with the THEORETICAL max (1000 = the full
           // half-screen container), plus fill / resonance-bonus /
           // resonance-malus segments as % of that bar.
-          .numbers = { "healthBarPct",  "healthFillPct",  "healthBonusPct",
+          .numbers = { "chargePct", // A7+: the bow-draw gauge
+                       "healthBarPct",  "healthFillPct",  "healthBonusPct",
                        "healthMalusLeft",  "healthMalusPct",
                        "energyBarPct",  "energyFillPct",  "energyBonusPct",
                        "energyMalusLeft",  "energyMalusPct",
@@ -1203,7 +1220,7 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                        "postureMalusLeft", "postureMalusPct" },
           .strings = { "healthText", "energyText", "essenceText",
                        "postureText", "clock", "prompt", "talk" },
-          .bools = { "promptVisible", "talkVisible" },
+          .bools = { "promptVisible", "talkVisible", "chargeVisible" },
           .rows = true }); // B7: nameplates over hostile/hurt NPCs
     // B3: the player-side item table (inventory screen + the player panel
     // of the container/barter screens) and the loot side.
@@ -1427,6 +1444,7 @@ HudContext LandscapeScene::makeHudContext() {
         questDirector.dialogueRunner(),
         makeEvalContext(),
         screenStack,
+        playerController.bowCharge(), // A7+: the draw gauge
     };
 }
 
@@ -1847,6 +1865,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
         swimCostEffect, // D2b: §2.9 — only effects move energy
         sneakCostEffect,
         &projectileDirector, // A7: the bow
+        bowDrawCostEffect,   // A7+: the drawn-bow drain
     };
 }
 
