@@ -36,6 +36,7 @@ add_executable(true-adventurer
     scenes/DemoScenes.cpp
     scenes/CombatArenaScene.cpp
     scenes/EditorScene.cpp
+    scenes/FollowerController.cpp
     scenes/FxDirector.cpp
     scenes/GameHud.cpp
     scenes/InteractionController.cpp

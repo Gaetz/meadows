@@ -154,6 +154,16 @@ struct StatsTuningForm : data::Form {
     f32 hudStatPointsScale { 5.0f };
     // A7+: walking within this of a planted arrow recovers it (m).
     f32 arrowPickupRadius { 1.5f };
+    // FOLLOWERS É1 (appended — ordinals stable): the follow feel
+    // (gameplay/actors/Followers.hpp bands). Near = stand and face the
+    // player; near→catchup = walk; catchup→teleport = hurry; beyond
+    // teleport = reposition next to the player. Repath cadence bounds
+    // the per-follower pathfinding cost.
+    f32 followNearRadius { 3.5f };
+    f32 followCatchupRadius { 8.0f };
+    f32 followCatchupSpeed { 1.25f };
+    f32 followTeleportRadius { 40.0f };
+    f32 followRepathSeconds { 0.75f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -241,6 +251,11 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(archerSpread)
         REFLECT_FIELD(hudStatPointsScale)
         REFLECT_FIELD(arrowPickupRadius)
+        REFLECT_FIELD(followNearRadius)
+        REFLECT_FIELD(followCatchupRadius)
+        REFLECT_FIELD(followCatchupSpeed)
+        REFLECT_FIELD(followTeleportRadius)
+        REFLECT_FIELD(followRepathSeconds)
     REFLECT_END()
 };
 

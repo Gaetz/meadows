@@ -1910,3 +1910,179 @@ op = "add"
 magnitude = 10.0
 duration = "infinite"
 grantedTag = "State.Resting"
+
+# --- FOLLOWERS É1: Aldric, the recruitable warrior ---------------------------
+# The É1 vertical: an authored follower (ActorForm follower* fields, É0) +
+# a recruitment dialogue whose options are gated by the CONDITION evaluator
+# on the player's Follower.Active mirror tag (the Crime.Wanted syncTag
+# pattern), firing the OnRecruitFollower / OnDismissFollower scene events
+# (the OpenBarter precedent). His class is a FollowerClassForm record; his
+# home is a spot-marker reference his guard schedule anchors to — dismissed,
+# he walks back there.
+
+# The warrior class (É0 curves; É5 applies them on level changes).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000001"
+type = "FollowerClassForm"
+new = true
+[records.fields]
+editorId = "ClassWarrior"
+displayName = "Guerrier"
+combatStyle = "melee"
+strengthBase = 7.0
+strengthPerLevel = 0.5
+constitutionBase = 7.0
+constitutionPerLevel = 0.5
+
+# His home spot, near the village square (reuses the SpotMarker form).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000002"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000080"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [45.0, 0.0, 368.0]
+
+# Aldric: villager rig, a warrior's heart. followerCategory makes him
+# recruitable (the controller's identity check); homeMarker is where a
+# dismissal sends him; his dialogue below carries the recruit options.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000003"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "Aldric"
+displayName = "Aldric"
+maxHealth = 60.0
+appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
+animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
+courage = 0.7
+followerCategory = "major"
+followerClass = "6a1dc0de-0000-4000-8000-000000000001"
+homeMarker = "6a1dc0de-0000-4000-8000-000000000002"
+dialogue = "6a1dc0de-0000-4000-8000-000000000007"
+schedule = "6a1dc0de-0000-4000-8000-000000000004"
+
+# His day: stand guard at his home spot (all day) — which is also what
+# walks him home after a dismissal (the schedule anchor = the home marker).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000004"
+type = "ScheduleForm"
+new = true
+[records.fields]
+editorId = "AldricDay"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000005"
+type = "ScheduleEntryForm"
+new = true
+[records.fields]
+editorId = "AldricStandHome"
+parent = "6a1dc0de-0000-4000-8000-000000000004"
+startHour = 0.0
+endHour = 24.0
+package = "4d7a9b30-0000-4000-8000-000000000088"
+location = "6a1dc0de-0000-4000-8000-000000000002"
+
+# Placed at his home, in the village cell.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000006"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "6a1dc0de-0000-4000-8000-000000000003"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [44.0, 0.0, 367.0]
+
+# The recruitment conversation. Option 1 shows while the player travels
+# WITHOUT him (no Follower.Active tag), option 2 while WITH him — the
+# same condition, negated: the evaluator picks the right one.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000007"
+type = "DialogueForm"
+new = true
+[records.fields]
+editorId = "AldricChat"
+displayName = "Aldric"
+rootNode = "6a1dc0de-0000-4000-8000-000000000008"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000008"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+speaker = "Aldric"
+text = "Salut, voyageur. Si tu cherches un bras solide, on dit que je manie l'epee mieux que personne au village."
+
+# Option 1: recruit (only while he is NOT already following).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000009"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000008"
+speaker = "Player"
+text = "Voyagerons-nous ensemble ?"
+event = "OnRecruitFollower"
+order = 1
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000000a"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000009"
+kind = "HasTag"
+tag = "Follower.Active"
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000000b"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000009"
+speaker = "Aldric"
+text = "Je prends mon epee. Montre le chemin !"
+
+# Option 2: dismiss (only while he follows).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000000c"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000008"
+speaker = "Player"
+text = "Reste ici pour l'instant."
+event = "OnDismissFollower"
+order = 2
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000000d"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-00000000000c"
+kind = "HasTag"
+tag = "Follower.Active"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000000e"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-00000000000c"
+speaker = "Aldric"
+text = "Entendu. Je retourne au village. Reviens me chercher quand tu veux."
+
+# Option 3: goodbye (no reply node -> the conversation ends).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000000f"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000008"
+speaker = "Player"
+text = "Bonne route, Aldric."
+order = 3

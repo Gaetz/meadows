@@ -3,13 +3,16 @@
 #include <cmath>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp> // angleAxis (the É1 face-the-player)
 
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"       // data::childrenOf
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
+#include "game/scenes/FollowerController.hpp" // teleportNear (É1)
 #include "game/scenes/NpcDirector.hpp"    // Npc, NpcContext
 #include "game/scenes/NpcMovement.hpp"    // moveNpcAlongPath/Direct, steerBlocked
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/actors/Followers.hpp"  // decideFollow (É1)
 #include "gameplay/ability/GameplayEffects.hpp" // applyEffect/removeById (D1)
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
@@ -205,6 +208,64 @@ void NpcScheduleController::update(f32 dt, const NpcContext& ctx, Npc& npc,
     } else { // travel / guard / unknown: reach the spot and stand
         goTo(anchor);
         moveNpcAlongPath(ctx, npc, dt, package ? package->speed : 1.0f);
+    }
+}
+
+// FOLLOWERS É1: the follow package. Same building blocks as the schedule
+// walker above — findPath + moveNpcAlongPath — pointed at the player by
+// the pure decideFollow intent (gameplay/actors/Followers). Feel knobs =
+// StatsTuningForm.follow* (§5).
+void NpcScheduleController::followPlayer(f32 dt, const NpcContext& ctx,
+                                         Npc& npc) {
+    if (!ctx.playerEntity.is_alive() ||
+        !ctx.playerEntity.has<world::Transform>()) {
+        return;
+    }
+    auto& transform = npc.entity.get_mut<world::Transform>();
+    if (npc.furnitureClaimed || npc.sitting) {
+        releaseFurniture(ctx, npc); // recruited off a bench: stand up
+    }
+    const Vec3 playerPos =
+        ctx.playerEntity.get<world::Transform>().position;
+    const gameplay::FollowIntent intent = gameplay::decideFollow(
+        transform.position, playerPos,
+        gameplay::followTuning(ctx.statsTuning));
+    npc.repathTimer -= dt;
+    if (intent.teleport) {
+        // Lost him (a door, a sprint across the ridge): pop in next to
+        // the player — the same routine travel arrivals use.
+        FollowerController::teleportNear(playerPos, ctx.terrainParams, npc);
+        return;
+    }
+    if (intent.move) {
+        if (npc.repathTimer <= 0.0f && ctx.navigator) {
+            const nav::PathResult found = ctx.navigator->findPath(
+                { transform.position, intent.target, 0.8f });
+            npc.path = found.success ? found.waypoints : vector<Vec3> {};
+            npc.pathIndex = 0;
+            npc.repathTimer = ctx.statsTuning.followRepathSeconds;
+        }
+        moveNpcAlongPath(ctx, npc, dt, intent.speedScale);
+        return;
+    }
+    // Near enough: stand and face the player (the moveNpcAlongPath yaw
+    // smoothing, without the step).
+    npc.path.clear();
+    npc.pathIndex = 0;
+    Vec3 to = playerPos - transform.position;
+    to.y = 0.0f;
+    if (glm::length(to) > 0.1f) {
+        const f32 goalYaw = std::atan2(to.x, to.z);
+        f32 delta = goalYaw - npc.yaw;
+        while (delta > glm::pi<f32>()) {
+            delta -= glm::two_pi<f32>();
+        }
+        while (delta < -glm::pi<f32>()) {
+            delta += glm::two_pi<f32>();
+        }
+        npc.yaw += delta * (1.0f - std::exp(-8.0f * dt));
+        transform.rotation =
+            glm::angleAxis(npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
     }
 }
 

@@ -24,6 +24,14 @@ public:
     void patrol(f32 dt, const NpcContext& ctx, Npc& npc,
                 const vector<Vec3>& patrolPoints);
 
+    // --- The `follow` package (FOLLOWERS É1) --- an ACTIVE follower
+    // overrides its schedule with this (NpcDirector dispatches it; combat
+    // still wins). Reuses the goTo/moveNpcAlongPath idiom driven by the
+    // pure decideFollow intent: repath toward the player every
+    // followRepathSeconds, hurry beyond the catchup radius, face the
+    // player when idle-near, teleport-near when lost.
+    void followPlayer(f32 dt, const NpcContext& ctx, Npc& npc);
+
     // D1: the ONE way out of furniture — frees the occupancy point,
     // removes the furniture's GAS effect, clears the anim gate. Public:
     // combat and death stand the NPC up too (director / combat side).

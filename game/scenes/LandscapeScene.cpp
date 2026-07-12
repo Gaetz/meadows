@@ -300,6 +300,24 @@ void LandscapeScene::setupGameplay() {
                        [this](const gameplay::Event&) {
                            questDirector.payFine(makeQuestContext());
                        });
+    // FOLLOWERS É1: recruit/dismiss ride the same dialogue-event channel
+    // as OpenBarter/OnPayFine — the partner is whoever [E] Talk opened.
+    eventBus.subscribe(gameplay::eventKind("OnRecruitFollower"),
+                       [this](const gameplay::Event&) {
+                           followerController.recruit(
+                               makeFollowerContext(),
+                               questDirector.dialoguePartner());
+                       });
+    eventBus.subscribe(gameplay::eventKind("OnDismissFollower"),
+                       [this](const gameplay::Event&) {
+                           followerController.dismiss(
+                               makeFollowerContext(),
+                               questDirector.dialoguePartner());
+                           // A dismiss to a non-resident home despawns the
+                           // entity: prune the director list NOW (update()
+                           // assumes live entities).
+                           refreshNpcs(engine->getDevice());
+                       });
     // P0 B2 hearing: any OnNoise event turns nearby perceivers'
     // heads — the noise position is the SOURCE entity's transform.
     eventBus.subscribe(
@@ -388,7 +406,11 @@ void LandscapeScene::setupWorldAndStreaming() {
                                              gameTags);
     };
     cellLoader->spawnFilter = [this](const core::Guid& referenceId) {
-        return saveController.pending().isEnabled(referenceId);
+        // FOLLOWERS É1: a re-homed reference (recruited -> cell 0) must
+        // not respawn from its authored cell — the live entity travels
+        // with the player (PendingSaveLayer::isRehomed).
+        return saveController.pending().isEnabled(referenceId) &&
+               !saveController.pending().isRehomed(referenceId);
     };
     overworldHandle = data::FormHandle {};
     if (const auto* overworld =
@@ -1205,6 +1227,10 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     flyCamera.camera.pitch = 0.0f;
     flyCamera.camera.position =
         marker->position + Vec3 { 0.0f, 1.95f, 0.0f };
+    // FOLLOWERS É1: the party arrives with you — any active follower left
+    // beyond the teleport radius pops in next to the arrival marker.
+    followerController.repositionActiveFollowers(makeFollowerContext(),
+                                                 marker->position);
     LOG_INFO("B7: traveled to {} ({}), interior = {}",
              cellForm->editorId,
              marker->position.x, interiorMode);
@@ -2205,6 +2231,26 @@ void LandscapeScene::refreshNpcs(rhi::Device& device) {
         [this](ecs::Entity entity, const core::Guid& actorFormId) {
             finalizeActorSpawn(entity, actorFormId);
         });
+    // FOLLOWERS É1: owned tags are not captured actor state — re-mirror
+    // Follower.Active onto the player after every spawn/reload sweep so
+    // the dialogue conditions stay truthful across F9 and streaming.
+    followerController.syncActiveTag(makeFollowerContext());
+}
+
+// FOLLOWERS É1: bundle the systems recruit/dismiss touch. Rebuilt per call
+// (cheap). Mirrors the other make*Context builders.
+FollowerContext LandscapeScene::makeFollowerContext() {
+    return FollowerContext {
+        world,
+        forms,
+        gameTags,
+        statsTuning,
+        renderer.terrainParams(),
+        cellLoader.get(),
+        saveController.pending(),
+        playerEntity,
+        npcDirector,
+    };
 }
 
 void LandscapeScene::updateNpcs(f32 dt) {

@@ -33,6 +33,7 @@
     EventBusTest.cpp
     FactionsTest.cpp
     FollowerFormsTest.cpp
+    FollowersTest.cpp
     FormsTest.cpp
     FrameComposerTest.cpp
     FrustumTest.cpp

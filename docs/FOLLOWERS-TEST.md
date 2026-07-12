@@ -27,4 +27,27 @@ FollowerState (préfixé follower* dans la save), attribut `level` (base
    test de l'étape (reflets append-only).
 2. Boot : toujours `7 plugins, 412 forms`, zéro warning.
 
+## É1 — Le follower marche (Aldric)
+
+**Aldric** est sur la place du village (~x44 z367), tenue de villageois.
+
+**À tester :**
+1. Parle-lui [E] → « Voyagerons-nous ensemble ? » → il te suit :
+   marche quand tu marches, ACCÉLÈRE (+25 %) quand tu le sèmes, te
+   regarde quand tu t'arrêtes à côté.
+2. Sème-le franchement (> ~40 m ou sprint prolongé) → il se TÉLÉPORTE
+   près de toi (posé au sol, pas dans un mur).
+3. Passe une porte (intérieur/extérieur) → il réapparaît près de toi
+   à l'arrivée.
+4. F5 puis F9 pendant qu'il te suit → il est toujours là, toujours
+   actif (le contrat cell=0 du chantier 5 porte tout).
+5. Re-parle-lui → « Reste ici pour l'instant. » → il rentre vers son
+   marker de la place (son schedule le garde là) ; F5/F9 → il est chez
+   lui, plus actif.
+6. Vérifie qu'il ne se DUPLIQUE jamais (recruté puis retour au village
+   d'origine — le garde anti-double est doctesté mais l'œil confirme).
+
+**Comportement attendu ailleurs :** les 4 autres PNJ inchangés (les
+bandits attaquent, le garde/villageois vaquent).
+
 <!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->

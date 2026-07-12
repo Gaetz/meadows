@@ -10,6 +10,7 @@
 #include "game/SceneSubmit.hpp"           // RenderSnapshot (U4-2b extract)
 #include "game/WeaponMeshes.hpp"          // A2: the visible sword guid
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/actors/ActorState.hpp" // FollowerState (É1 dispatch)
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions (C2)
 #include "gameplay/event/EventBus.hpp"
@@ -151,8 +152,16 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         // Drawn while fighting, back on the belt when it calms down —
         // extract reads this (the sim decides, the renderer shows).
         npc.weaponDrawn = inCombat;
+        // FOLLOWERS É1: an ACTIVE follower overrides his schedule with the
+        // follow package (combat still wins the frame). Non-followers keep
+        // the exact prior dispatch (iso-behavior).
+        const bool following =
+            npc.entity.has<gameplay::FollowerState>() &&
+            npc.entity.get<gameplay::FollowerState>().followerActive;
         if (inCombat) {
             // combat overrode the schedule this frame
+        } else if (following) {
+            schedule_.followPlayer(dt, ctx, npc);
         } else if (npc.schedule.isValid()) {
             // --- Schedule-driven day (B3) ---
             schedule_.update(dt, ctx, npc, hourOfDay, idleDecay);

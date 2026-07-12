@@ -25,6 +25,7 @@
 #include "game/scenes/SceneEditor.hpp"
 #include "game/scenes/StreamingController.hpp"
 #include "game/scenes/UiRouter.hpp"
+#include "game/scenes/FollowerController.hpp"
 #include "game/scenes/NpcDirector.hpp"
 #include "game/scenes/PlayerController.hpp"
 #include "game/scenes/QuestDirector.hpp"
@@ -388,6 +389,14 @@ private:
     // bundles the context and forwards to the director.
     void refreshNpcs(rhi::Device& device);
     void updateNpcs(f32 dt);
+
+    // FOLLOWERS É1: recruit/dismiss (the chantier-5 cell->0 persistence
+    // contract through the pending layer) + the party teleports, behind
+    // the usual *Controller pattern; wired per call through
+    // makeFollowerContext(). The dialogue events OnRecruitFollower /
+    // OnDismissFollower subscribe in onEnter (the OpenBarter precedent).
+    FollowerController followerController;
+    FollowerContext makeFollowerContext();
 
     // Chantier 3 B2/B3: navigation + furniture (shared with the director via
     // NpcContext; navigator is also the StreamingController's).

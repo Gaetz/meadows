@@ -200,6 +200,20 @@ bool PendingSaveLayer::isEnabled(const core::Guid& referenceId) const {
     return it == entries.end() || !it->second.disabled;
 }
 
+bool PendingSaveLayer::isRehomed(const core::Guid& referenceId) const {
+    // FOLLOWERS É1: read the answer off the captured patch itself — a
+    // `cell` diff means the reference lives somewhere else now (see the
+    // header). No parallel state to keep in sync with captureEntity; a
+    // later capture that homes it back (dismiss) lifts the veto.
+    const auto it = entries.find(referenceId);
+    if (it == entries.end() || !it->second.referencePatch) {
+        return false;
+    }
+    const u32 cellFieldId =
+        world::ReferenceForm::staticTypeInfo().findField("cell")->id;
+    return it->second.referencePatch->fields.contains(cellFieldId);
+}
+
 void PendingSaveLayer::applyReferenceOverrides(
     ecs::Entity entity, const core::Guid& referenceId) const {
     const auto it = entries.find(referenceId);

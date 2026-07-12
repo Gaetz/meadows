@@ -63,6 +63,17 @@ public:
                           ecs::Entity entity = {});
     bool isEnabled(const core::Guid& referenceId) const;
 
+    // FOLLOWERS É1 — the re-home veto. True when this reference's captured
+    // patch carries a `cell` diff: its live home differs from the resolved
+    // record (recruited follower -> cell 0 / the persistent set, exactly
+    // like the player — the chantier-5 contract). The cell loader only
+    // ever spawns a reference from its AUTHORED cell, so "the patch moves
+    // it elsewhere" means "do not respawn it here": the live entity
+    // travels with the player. The scene's spawnFilter ANDs this with
+    // isEnabled. Derived from the captured patch — no parallel state; a
+    // later capture that re-homes it back (dismiss) lifts the veto.
+    bool isRehomed(const core::Guid& referenceId) const;
+
     // Applies any captured instance-field overrides (position/rotation) for
     // this reference onto a freshly (re)spawned entity — the within-session
     // equivalent of re-resolving the reference patch over the authored record.
