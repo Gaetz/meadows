@@ -165,7 +165,7 @@ fait avec le backend null).
   trois canaux : particule (C1), SHAKE caméra (impulsion amortie), son
   (C3 — silencieux tant que pas d'assets). Points d'émission
   systématiques : hit mêlée, mort, block/garde brisée, pas (C4).
-- **C3 — Résolveur `SoundForm`.** Variantes pondérées + jitter
+- **C3 ✅ (`08d0b24`) — Résolveur `SoundForm`.** Variantes pondérées + jitter
   pitch/volume + chemin AssetDatabase → l'API play du seam H6. Headless
   avec le backend null ; la validation audio attend le dépôt d'assets.
 - **C4 — Footsteps par matériau.** L'AnimEvent « Footstep » (déjà sur le
@@ -175,7 +175,7 @@ fait avec le backend null).
 
 ## Axe D — Mobilier, volumes, journal
 
-- **D1 — Mobilier : effet GAS pendant l'usage + anims d'entrée/sortie.**
+- **D1 ✅ (`3727da6`) — Mobilier : effet GAS pendant l'usage + anims d'entrée/sortie.**
   `FurnitureForm.useEffect` appliqué à l'occupation, retiré à la sortie
   (repos = regen boostée — les effects existent) ; transitions assis/
   debout par états d'anim au claim/release.
@@ -183,7 +183,7 @@ fait avec le backend null).
   (sémantique à trancher, voir questions). Eau : le `WaterVolumeInstance`
   existe côté rendu — v1 gameplay = flottaison/nage simple OU dégâts/
   respawn (à trancher).
-- **D3 — Journal de quêtes.** L'écran P0 restant (chantier 4 pattern
+- **D3 ✅ (déjà livré, chantier 6 A3 : écran J/journal.rml) — Journal de quêtes.** L'écran P0 restant (chantier 4 pattern
   RmlUi) : quêtes actives/terminées + étapes depuis l'état quest
   existant.
 
