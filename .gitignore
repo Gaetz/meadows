@@ -53,3 +53,6 @@ cmake-build-debug/
 
 smoke.log
 smoke-err.log
+
+# Dev-UI layout state (machine-local)
+imgui.ini

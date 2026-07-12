@@ -722,6 +722,8 @@ swingActive = 0.4
 swingRecovery = 0.58
 # P0 A6: a club is short — the AI closes to reach - 0.3 before swinging.
 reach = 2.0
+# R7: the bandit's pause between swings (was C++-hardcoded).
+attackCooldown = 1.6
 # The procedural club mesh (game/WeaponMeshes, injected at scene boot).
 model = "a2b1ade0-0000-4000-8000-00000000501e"
 
@@ -985,7 +987,7 @@ location = "4d7a9b30-0000-4000-8000-000000000024"
 # §5 cross-plugin patch: the Villager (declared in adventure.toml) gains
 # its daily routine AND its conversation from THIS plugin — two fields,
 # last writer wins. D1: he's also the vendor — a slightly friendlier
-# barter profile than the global tuning (1.5 / 0.5).
+# barter profile (1.4 / 0.55) than the global tuning (1.5 / 0.5).
 [[records]]
 form = "2b5e7d10-0000-4000-8000-0000000000b1"
 type = "ActorForm"

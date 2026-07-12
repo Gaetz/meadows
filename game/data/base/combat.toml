@@ -534,6 +534,8 @@ postureDamage = 10.0
 scalingAttribute = "dexterity"
 reach = 12.0
 projectileSpeed = 35.0
+# R7: the archer's pause between shots (was C++-hardcoded).
+attackCooldown = 2.2
 model = "a2b1ade0-0000-4000-8000-00000000501f"
 ammo = "4d7a9b30-0000-4000-8000-000000000211" # one Arrow per shot
 

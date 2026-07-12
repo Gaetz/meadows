@@ -355,7 +355,8 @@ bool PlayerController::updateSwimming(f32 dt, const PlayerContext& ctx,
                            : std::nullopt;
     const gameplay::MoveMode next = gameplay::decideMoveMode(
         moveMode_, surface, body_->position().y, tuning.eyeHeight,
-        body_->onGround());
+        body_->onGround(), tuning.swimSubmergeDepth,
+        tuning.swimWadeOutRatio);
     if (next != moveMode_) {
         // THE transition (dev rule): the facade follows the mode.
         moveMode_ = next;
@@ -389,7 +390,7 @@ bool PlayerController::updateSwimming(f32 dt, const PlayerContext& ctx,
                       : Vec3 { 0.0f };
     if (exhausted) {
         // No strength left: the water wins (STATS.md survival loop).
-        target.y = glm::min(target.y, 0.0f) - 1.2f;
+        target.y = glm::min(target.y, 0.0f) - tuning.swimExhaustedSink;
     }
     // Surface clamp: swimming never breaches — decideMoveMode handles
     // the actual exit (shallows, or the head clearing the surface).

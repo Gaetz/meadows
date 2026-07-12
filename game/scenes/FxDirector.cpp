@@ -49,13 +49,17 @@ void FxDirector::create(const data::FormDatabase& formsIn,
             }
         }
         if (cue->cameraShake > 0.0f) {
-            // Damage-ish magnitudes scale the punch a little (10 damage
-            // = authored strength), clamped so a crit doesn't nauseate.
+            // Damage-ish magnitudes scale the punch a little (shakeScale
+            // damage = authored strength), clamped so a crit doesn't
+            // nauseate. All four knobs are CueForm fields (R7).
             const f32 scale =
                 event.magnitude > 0.0f
-                    ? glm::clamp(event.magnitude / 10.0f, 0.5f, 2.0f)
+                    ? glm::clamp(event.magnitude /
+                                     glm::max(cue->shakeScale, 0.001f),
+                                 cue->shakeScaleMin, cue->shakeScaleMax)
                     : 1.0f;
-            addShake(cue->cameraShake * scale);
+            addShake(cue->cameraShake * scale, cue->shakeAmplitude,
+                     cue->shakeDecay);
         }
         if (cue->sound.isValid() && sounds) {
             // C3: the SoundForm resolver — weighted variant + jitter.
@@ -86,13 +90,14 @@ void FxDirector::update(f32 dt, render::FlyCamera& camera) {
     }
     shakeTime += dt;
     // Damped wobble: two incommensurate frequencies so it reads as a
-    // jolt, not a metronome. [cpp-tuning]
-    const f32 amplitude = shake * 0.05f;
+    // jolt, not a metronome. [cpp-tuning] (the frequencies; amplitude
+    // and decay come from the triggering CueForm — R7).
+    const f32 amplitude = shake * shakeAmplitude;
     appliedOffset = Vec3 { std::sin(shakeTime * 71.0f),
                            std::cos(shakeTime * 47.0f) * 0.6f, 0.0f } *
                     amplitude;
     camera.camera.position += appliedOffset;
-    shake *= std::exp(-9.0f * dt); // ~110 ms half-life
+    shake *= std::exp(-shakeDecay * dt); // ~110 ms half-life at 9/s
 }
 
 } // namespace game

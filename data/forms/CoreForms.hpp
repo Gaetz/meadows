@@ -51,6 +51,10 @@ struct WeaponForm : Form {
     // A7+ (appended — ordinals stable): the ITEM one shot consumes;
     // invalid = no ammo needed. Planted arrows give it back on pickup.
     core::Guid ammo;
+    // R7 (appended — ordinals stable): AI pause between attacks, seconds.
+    // 0 = the C++ fallback (2.2 ranged / 1.6 melee) so unmodded weapons
+    // keep today's behavior.
+    f32 attackCooldown { 0.0f };
 
     REFLECT_BEGIN(WeaponForm, Form)
         REFLECT_FIELD(displayName)
@@ -79,6 +83,7 @@ struct WeaponForm : Form {
         REFLECT_FIELD(reach)
         REFLECT_FIELD(projectileSpeed)
         REFLECT_FIELD(ammo)
+        REFLECT_FIELD(attackCooldown)
     REFLECT_END()
 };
 

@@ -1429,6 +1429,7 @@ HudContext LandscapeScene::makeHudContext() {
         makeEvalContext(),
         screenStack,
         playerController.bowCharge(), // A7+: the draw gauge
+        statsTuning.hudStatPointsScale, // R7: vitals-bar scale
     };
 }
 

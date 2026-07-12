@@ -165,6 +165,16 @@ struct CueForm : Form {
     core::Guid sound;     // SoundForm (optional)
     f32 cameraShake { 0.0f };
     bool attachToTarget { false }; // follow the entity vs spawn at position
+    // R7 (appended — ordinals stable): the camera-shake feel, promoted
+    // from FxDirector literals (defaults = the old hardcoded values).
+    // cameraShake is scaled by magnitude / shakeScale, clamped to
+    // [shakeScaleMin, shakeScaleMax]; the impulse wobbles at
+    // shakeAmplitude m per strength unit and decays exp(-shakeDecay·t).
+    f32 shakeScale { 10.0f };    // magnitude at which shake = authored strength
+    f32 shakeScaleMin { 0.5f };  // floor of the magnitude scaling
+    f32 shakeScaleMax { 2.0f };  // ceiling (a crit doesn't nauseate)
+    f32 shakeAmplitude { 0.05f }; // meters of offset per strength unit
+    f32 shakeDecay { 9.0f };     // 1/s exponential decay (~110 ms half-life)
 
     REFLECT_BEGIN(CueForm, Form)
         REFLECT_FIELD(tag)
@@ -172,6 +182,11 @@ struct CueForm : Form {
         REFLECT_FIELD(sound)
         REFLECT_FIELD(cameraShake)
         REFLECT_FIELD(attachToTarget)
+        REFLECT_FIELD(shakeScale)
+        REFLECT_FIELD(shakeScaleMin)
+        REFLECT_FIELD(shakeScaleMax)
+        REFLECT_FIELD(shakeAmplitude)
+        REFLECT_FIELD(shakeDecay)
     REFLECT_END()
 };
 

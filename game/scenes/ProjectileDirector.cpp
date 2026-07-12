@@ -75,9 +75,11 @@ void ProjectileDirector::update(f32 dt, const ProjectileContext& ctx) {
         }
         const Vec3 dir = sweep / sweepLen;
 
-        // Static world first: the closest of both hit kinds should win,
-        // but a world hit inside the same step as an actor hit is rare
-        // enough that actor-first keeps the code flat. [cpp-tuning]
+        // TODO(P1): actor-first + first-in-iteration is a known
+        // correctness compromise — an arrow should bury in a wall
+        // between shooter and NPC (world hit in the same step loses to
+        // the actor hit), and among several actors on the sweep the
+        // first in list order wins over the closest.
         // Actors: analytic capsules (outside the broadphase).
         bool consumed = false;
         for (const auto& npcPtr : ctx.npcs) {

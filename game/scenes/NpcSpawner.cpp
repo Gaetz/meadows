@@ -229,9 +229,7 @@ void NpcSpawner::refreshNpcs(
                 characterSpot = transform.position;
             }
             npcs.push_back(std::move(npc));
-            LOG_INFO("B6: NPC '{}' built from Forms",
-                     static_cast<const data::ActorForm*>(forms.get(ref.base))
-                         ->editorId);
+            LOG_INFO("B6: NPC '{}' built from Forms", actor.editorId);
         });
     for (auto& [entity, actorId] : pendingLoadouts) {
         // B2: every built NPC perceives (a reload keeps a saved state

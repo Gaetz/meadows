@@ -143,6 +143,15 @@ struct StatsTuningForm : data::Form {
     // BowDrawCost effect, data).
     f32 bowDrawSeconds { 1.1f };
     f32 bowMinChargeFactor { 0.3f };
+    // R7 (appended — ordinals stable): swim + archer feel, promoted from
+    // C++ literals (defaults = the old hardcoded values).
+    f32 swimSubmergeDepth { 0.3f };  // head this far under the surface -> Swim
+    f32 swimWadeOutRatio { 0.65f };  // grounded + depth < body × this -> wade out
+    f32 swimExhaustedSink { 1.2f };  // m/s downward pull once exhausted
+    f32 archerSpread { 0.06f };      // NPC arrow aim jitter (per axis)
+    // R7: HUD vitals-bar scale — stat points per 1% of the (half-screen)
+    // bar container (5 -> 500 points = full width).
+    f32 hudStatPointsScale { 5.0f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -224,6 +233,11 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(sneakSpeedFactor)
         REFLECT_FIELD(bowDrawSeconds)
         REFLECT_FIELD(bowMinChargeFactor)
+        REFLECT_FIELD(swimSubmergeDepth)
+        REFLECT_FIELD(swimWadeOutRatio)
+        REFLECT_FIELD(swimExhaustedSink)
+        REFLECT_FIELD(archerSpread)
+        REFLECT_FIELD(hudStatPointsScale)
     REFLECT_END()
 };
 

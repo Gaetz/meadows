@@ -269,8 +269,12 @@ void NpcCombatController::strike(const NpcContext& ctx, Npc& npc,
             gameplay::startSwing(
                 npc.entity
                     .get_mut<gameplay::MeleeSwing>());
-            // [cpp-tuning] pause between swings.
-            npc.attackCooldown = 1.6f;
+            // Pause between swings: the weapon's field, or
+            // the melee fallback when unset (R7).
+            npc.attackCooldown =
+                npcWeapon->attackCooldown > 0.0f
+                    ? npcWeapon->attackCooldown
+                    : 1.6f;
             npc.blocking = false; // guard drops to strike
         }
     }
@@ -293,11 +297,11 @@ void NpcCombatController::fireArrow(const NpcContext& ctx, Npc& npc,
     aim.x += (static_cast<f32>(
                   ctx.combatRng.unit()) -
               0.5f) *
-             0.06f;
+             ctx.statsTuning.archerSpread;
     aim.z += (static_cast<f32>(
                   ctx.combatRng.unit()) -
               0.5f) *
-             0.06f;
+             ctx.statsTuning.archerSpread;
     arrow.velocity = glm::normalize(aim) *
                      npcWeapon.projectileSpeed;
     arrow.shooter = npc.entity.id();
@@ -315,7 +319,10 @@ void NpcCombatController::fireArrow(const NpcContext& ctx, Npc& npc,
             npcWeapon.ammo);
     }
     ctx.projectiles->spawn(arrow);
-    npc.attackCooldown = 2.2f; // [cpp-tuning]
+    // Pause between shots: the weapon's field, or the ranged fallback (R7).
+    npc.attackCooldown = npcWeapon.attackCooldown > 0.0f
+                             ? npcWeapon.attackCooldown
+                             : 2.2f;
     npc.blocking = false;
 }
 

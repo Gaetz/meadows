@@ -42,8 +42,14 @@ public:
     // fly-mode cameras (whose position persists) never accumulate it.
     void update(f32 dt, render::FlyCamera& camera);
 
-    // Direct impulse (cue handler uses it; scripts may later).
-    void addShake(f32 strength) { shake = glm::min(shake + strength, 1.5f); }
+    // Direct impulse (cue handler uses it; scripts may later). The
+    // amplitude/decay of the LAST impulse drive the wobble (R7: CueForm
+    // fields; the defaults are the historic feel).
+    void addShake(f32 strength, f32 amplitude = 0.05f, f32 decay = 9.0f) {
+        shake = glm::min(shake + strength, 1.5f);
+        shakeAmplitude = amplitude;
+        shakeDecay = decay;
+    }
 
     // P0 C4b (audit R6, out of LandscapeScene): the footstep material —
     // the dominant terrain splat weight names the cue suffix
@@ -60,6 +66,8 @@ private:
     gameplay::CueTable table;
     f32 shake { 0.0f };      // current amplitude (m), decays per frame
     f32 shakeTime { 0.0f };  // drives the wobble phase
+    f32 shakeAmplitude { 0.05f }; // m per strength unit (last cue's, R7)
+    f32 shakeDecay { 9.0f };      // 1/s exponential decay (last cue's, R7)
     Vec3 appliedOffset { 0.0f }; // last frame's camera offset, removed first
     u32 spawnCounter { 0 };  // cosmetic seed stream (never gameplay RNG, §8)
     u32 soundCounter { 0 };  // sound-path stream — advances on EVERY play
