@@ -4,9 +4,12 @@
 
 #include "game/InputActions.hpp"
 #include "game/Settings.hpp"
+#include "game/scenes/OptionsController.hpp" // decideCapture (header-only)
 
 // Chantier 9 C9.2 — the action layer: default bindings, the steal-on-
 // rebind rule, name round-trips, and settings.toml persistence.
+// C9.4 appends the options screen's pure half: the rebind-capture
+// decision (which pressed input wins, Escape cancels).
 
 using namespace game;
 using platform::Key;
@@ -102,4 +105,46 @@ TEST_CASE("settings: a missing file leaves the defaults standing") {
                  s, map);
     CHECK(s.mouseSensitivity == doctest::Approx(1.0f));
     CHECK(map.binding(InputAction::Interact).key == Key::E);
+}
+
+TEST_CASE("options capture: the rebind decision table (C9.4)") {
+    using Kind = CaptureResult::Kind;
+    // Nothing pressed: keep waiting.
+    CHECK(decideCapture(std::nullopt, std::nullopt, std::nullopt).kind ==
+          Kind::None);
+    // Escape cancels — even when other inputs land the same frame.
+    CHECK(decideCapture(Key::Escape, std::nullopt, std::nullopt).kind ==
+          Kind::Cancel);
+    CHECK(decideCapture(Key::Escape, MouseButton::Left, PadButton::A)
+              .kind == Kind::Cancel);
+    // A key wins over a mouse button over a pad button (one device
+    // slot rebinds per capture; the others keep theirs).
+    const CaptureResult key =
+        decideCapture(Key::F, MouseButton::Left, PadButton::A);
+    CHECK(key.kind == Kind::Key);
+    CHECK(key.key == Key::F);
+    const CaptureResult mouse =
+        decideCapture(std::nullopt, MouseButton::Middle, PadButton::A);
+    CHECK(mouse.kind == Kind::Mouse);
+    CHECK(mouse.mouse == MouseButton::Middle);
+    // B and Start ARE capturable — the scene gates the C9.3 UI pad
+    // routing while a capture is armed, so they reach only the rebind.
+    const CaptureResult pad =
+        decideCapture(std::nullopt, std::nullopt, PadButton::B);
+    CHECK(pad.kind == Kind::Pad);
+    CHECK(pad.pad == PadButton::B);
+    CHECK(decideCapture(std::nullopt, std::nullopt, PadButton::Start)
+              .pad == PadButton::Start);
+}
+
+TEST_CASE("options capture: applying the verdict steals like any rebind") {
+    // The capture path ends in the ActionMap's rebind* mutation points —
+    // the steal rule holds: binding Jump's capture to E blanks Interact.
+    ActionMap map;
+    const CaptureResult verdict =
+        decideCapture(Key::E, std::nullopt, std::nullopt);
+    REQUIRE(verdict.kind == CaptureResult::Kind::Key);
+    map.rebindKey(InputAction::Jump, verdict.key);
+    CHECK(map.binding(InputAction::Jump).key == Key::E);
+    CHECK(map.binding(InputAction::Interact).key == Key::Count);
 }

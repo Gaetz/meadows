@@ -226,6 +226,9 @@ void LandscapeScene::setupGameplay() {
     if (!audioSystem.ready()) {
         audioSystem.create();
     }
+    // C9.4: the persisted master volume applies at boot (settings were
+    // loaded in bootstrapData); the options screen re-applies on change.
+    applyMasterVolume(audioSystem, settings.masterVolume);
     soundResolver.create(forms, assetDb, &audioSystem);
     // P0 C2: cue handlers over the resolved CueForms — combat feedback
     // (hit sparks, parry shake, C3 sounds) is data from here on.
@@ -554,6 +557,7 @@ void LandscapeScene::onExit() {
     questDirector.reset(); // runner/log/demo-quest point into `forms`
     hud.reset(); // dialogue options point into `forms` too
     uiRouter.reset(); // open container/vendor die with the world
+    optionsController.reset(); // C9.4: drop any armed rebind capture
     goldForm = nullptr;
     sceneConsole.reset(); // panel/VM/session reference forms — before re-resolve
     // U4-2c: every GPU resource and render system is the renderer's; the
@@ -1254,8 +1258,23 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
                            .bools = { "empty" },
                            .rows = true,
                            .events = { "journalClose" } });
+    // C9.4: the options screen — look/audio steppers + the bindings
+    // table (one row per action; clicking a row arms a rebind capture).
+    uiSystem.createModel({ .name = "options",
+                           .strings = { "mouseSensText", "stickSensText",
+                                        "deadzoneText", "volumeText",
+                                        "invertText" },
+                           .bools = { "capturing" },
+                           .rows = true,
+                           .events = { "adjust", "toggleInvert", "rebind",
+                                       "optionsBack" } });
     uiSystem.setModelEventHandler(
         [this](const str& model, const str& event, const vector<str>& args) {
+            if (model == "options") { // C9.4: settings territory
+                optionsController.handleEvent(makeOptionsContext(), event,
+                                              args);
+                return;
+            }
             uiRouter.handleUiEvent(makeUiRouterContext(), model, event, args);
         });
 
@@ -1311,6 +1330,25 @@ void LandscapeScene::updateGameUi(f32 dt) {
     if (uiPadConsumedB && !input.padDown(platform::PadButton::B)) {
         uiPadConsumedB = false;
     }
+    // C9.4: an armed rebind capture owns the WHOLE input frame — it eats
+    // the first pressed key/button here, BEFORE the Tab close, the Pause
+    // toggle and the C9.3 pad->UI routing below, so binding B/Start/Tab
+    // to an action doesn't also close or navigate the screen, and the
+    // Escape cancel doesn't also toggle pause. Sampled at frame start so
+    // the frame that completes a capture stays fully consumed.
+    const bool capturingBind = optionsController.capturing();
+    if (capturingBind) {
+        // A/B grabbed by a capture stay UI-owned until physically
+        // released (the C9.3 idiom) — the captured tap must not dodge
+        // or jump when the screen closes.
+        if (input.padPressed(platform::PadButton::A)) {
+            uiPadConsumedA = true;
+        }
+        if (input.padPressed(platform::PadButton::B)) {
+            uiPadConsumedB = true;
+        }
+        optionsController.updateCapture(makeOptionsContext());
+    }
     // C9.3: while a modal is open the d-pad drives the RmlUi focus, so
     // a pad-bound hotkey must not ALSO fire its toggle (d-pad up would
     // close the very inventory it navigates). Keyboard keeps today's
@@ -1322,13 +1360,14 @@ void LandscapeScene::updateGameUi(f32 dt) {
 
     // Tab: back/close the top screen (dev request 2026-07-07 — the
     // Skyrim reflex). Escape only drives the pause/main menus below.
-    if (!imguiOwnsKeys && !uiSystem.textFieldFocused() &&
+    if (!imguiOwnsKeys && !uiSystem.textFieldFocused() && !capturingBind &&
         input.wasPressed(platform::Key::Tab)) {
         screenStack.closeTop();
     }
     // Escape: toggle the pause menu in Play (and still dismiss the boot
     // main menu for the dev tools); Fly/Edit keep Escape free for tools.
-    if (!imguiOwnsKeys && actionMap.pressed(input, InputAction::Pause)) {
+    if (!imguiOwnsKeys && !capturingBind &&
+        actionMap.pressed(input, InputAction::Pause)) {
         const ScreenStack::Screen* top = screenStack.topModal();
         if (top && (top->name == "pause" || top->name == "mainmenu")) {
             screenStack.closeTop();
@@ -1385,7 +1424,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
         }
         uiModalWasOpen = modal;
     }
-    if (modal) {
+    if (modal && !capturingBind) { // C9.4: a capture eats mouse/keys too
         // The open screen owns the input.
         const Vec2 mouse = input.mousePosition();
         uiSystem.processMouseMove(static_cast<i32>(mouse.x),
@@ -1705,7 +1744,16 @@ UiRouterContext LandscapeScene::makeUiRouterContext() {
         },
         [this] { restoreMode(SceneMode::Spectator); },
         [this] { engine->requestQuit(); },
+        // C9.4: menuAction("options") — fresh values, then the screen.
+        [this] { optionsController.open(makeOptionsContext()); },
     };
+}
+
+// C9.4: the options screen's slice — the settings + the ActionMap plus
+// their live application points (input deadzone, the audio buses).
+OptionsContext LandscapeScene::makeOptionsContext() {
+    return OptionsContext { settings,    actionMap,   engine->getInput(),
+                            uiSystem,    screenStack, audioSystem };
 }
 
 // --- Chantier 4 B7: console (nameplates -> GameHud, audit U4-9) ----------------------

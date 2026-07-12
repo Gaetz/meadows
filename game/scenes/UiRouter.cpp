@@ -388,6 +388,10 @@ void UiRouter::handleMenuAction(const UiRouterContext& ctx,
         ctx.screenStack.closeAll();
         ctx.updateMenuClockLine();
         ctx.screenStack.show("mainmenu");
+    } else if (action == "options") {
+        // C9.4: the scene fills the "options" model (settings + bindings
+        // are its state) and shows the screen over the current menu.
+        ctx.openOptions();
     } else if (action == "quit") {
         ctx.requestQuit();
     }

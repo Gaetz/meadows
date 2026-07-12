@@ -45,6 +45,7 @@ add_executable(true-adventurer
     scenes/NpcMovement.cpp
     scenes/NpcScheduleController.cpp
     scenes/NpcSpawner.cpp
+    scenes/OptionsController.cpp
     scenes/PlayerController.cpp
     scenes/ProjectileDirector.cpp
     scenes/QuestDirector.cpp

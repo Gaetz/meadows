@@ -1,0 +1,124 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="menus.rcss"/>
+	<style>
+		#options {
+			width: 540dp;
+			margin: auto;
+			margin-top: 60dp;
+		}
+		.section {
+			font-size: 17dp;
+			color: #d9b96c;
+			letter-spacing: 1dp;
+			margin: 10dp 0 4dp 0;
+			text-align: left;
+		}
+		.setting {
+			display: block;
+			text-align: left;
+			margin: 2dp 0;
+		}
+		.setting .label {
+			display: inline-block;
+			width: 230dp;
+		}
+		.setting .value {
+			display: inline-block;
+			width: 64dp;
+			text-align: center;
+		}
+		button.step {
+			padding: 2dp 10dp;
+			margin: 1dp 2dp;
+		}
+		button.toggle {
+			padding: 2dp 10dp;
+			margin: 1dp 2dp;
+			width: 84dp;
+		}
+		.capture-banner {
+			display: block;
+			text-align: left;
+			margin: 4dp 0;
+		}
+		#bindlist {
+			height: 240dp;
+			overflow-y: auto;
+			border: 1dp #2c2f34;
+			margin: 4dp 0;
+		}
+		#bindlist .row {
+			display: block;
+			text-align: left;
+			padding: 3dp 6dp;
+			cursor: pointer;
+			/* Spatial search stops at scroll containers (theme.rcss) —
+			   give the rows an explicit exit to Back. */
+			nav-right: #btn-options-back;
+		}
+		#bindlist .row:hover {
+			background-color: #23262ce0;
+		}
+		#bindlist .row.capturing {
+			background-color: #2c2a20e0;
+			border-left: 2dp #d9b96c;
+		}
+		.bind-action {
+			display: inline-block;
+			width: 170dp;
+		}
+		.bind-key, .bind-mouse, .bind-pad {
+			display: inline-block;
+			width: 100dp;
+			color: #b9bdc4;
+		}
+	</style>
+</head>
+<body>
+	<div id="options" class="panel" data-model="options">
+		<div class="title">Options</div>
+
+		<div class="section">Look</div>
+		<div class="setting">
+			<span class="label">Mouse sensitivity</span>
+			<button class="step" data-event-click="adjust('mouse','-')">-</button><span class="value">{{ mouseSensText }}</span><button class="step" data-event-click="adjust('mouse','+')">+</button>
+		</div>
+		<div class="setting">
+			<span class="label">Stick sensitivity</span>
+			<button class="step" data-event-click="adjust('stick','-')">-</button><span class="value">{{ stickSensText }}</span><button class="step" data-event-click="adjust('stick','+')">+</button>
+		</div>
+		<div class="setting">
+			<span class="label">Stick deadzone</span>
+			<button class="step" data-event-click="adjust('deadzone','-')">-</button><span class="value">{{ deadzoneText }}</span><button class="step" data-event-click="adjust('deadzone','+')">+</button>
+		</div>
+		<div class="setting">
+			<span class="label">Invert look Y</span>
+			<button class="toggle" data-event-click="toggleInvert()">{{ invertText }}</button>
+		</div>
+
+		<div class="section">Audio</div>
+		<div class="setting">
+			<span class="label">Master volume</span>
+			<button class="step" data-event-click="adjust('volume','-')">-</button><span class="value">{{ volumeText }}</span><button class="step" data-event-click="adjust('volume','+')">+</button>
+		</div>
+
+		<div class="section">Bindings</div>
+		<div class="capture-banner accent" data-if="capturing">Press a key or button... (Escape cancels)</div>
+		<div class="capture-banner muted" data-if="!capturing">Click an action to rebind it.</div>
+		<div id="bindlist">
+			<div class="row" data-for="b : rows" data-class-capturing="b.tag == 'capturing'" data-event-click="rebind(b.id)">
+				<span class="bind-action">{{ b.c0 }}</span>
+				<span class="bind-key">{{ b.c1 }}</span>
+				<span class="bind-mouse">{{ b.c2 }}</span>
+				<span class="bind-pad">{{ b.c3 }}</span>
+			</div>
+		</div>
+
+		<div class="menu-buttons">
+			<button id="btn-options-back" data-event-click="optionsBack()">Back</button>
+		</div>
+	</div>
+</body>
+</rml>

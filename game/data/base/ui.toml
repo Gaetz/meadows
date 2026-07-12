@@ -117,5 +117,15 @@ screen = "journal"
 document = "journal.rml"
 modal = true
 
+[[records]]
+form = "5e8bac40-0000-4000-8000-00000000000c"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenOptions"
+screen = "options"
+document = "options.rml"
+modal = true
+
 # (The GoldCoin currency lives in village.toml with the rest of the
 # economy content — this plugin only registers SCREENS.)

@@ -20,6 +20,7 @@
 #include "game/Settings.hpp"     // C9.2
 #include "game/scenes/GameHud.hpp"
 #include "game/scenes/InteractionController.hpp"
+#include "game/scenes/OptionsController.hpp"
 #include "game/scenes/SceneEditor.hpp"
 #include "game/scenes/StreamingController.hpp"
 #include "game/scenes/UiRouter.hpp"
@@ -271,6 +272,13 @@ private:
     // router's accessors; dialogue OPENING stays here (quest territory).
     UiRouter uiRouter;
     UiRouterContext makeUiRouterContext();
+
+    // C9.4: the options screen (look/volume steppers, bindings table,
+    // press-to-rebind capture). While a capture is armed it owns the
+    // whole input frame — updateGameUi gates Tab/Pause and the C9.3
+    // pad->UI routing on optionsController.capturing().
+    OptionsController optionsController;
+    OptionsContext makeOptionsContext();
 
     // Chantier 6 A2 / D2 + chantier 4 B4 — quests, crime and dialogue
     // extracted behind QuestDirector (audit U4-1): the demo quest state

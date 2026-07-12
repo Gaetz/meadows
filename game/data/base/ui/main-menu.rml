@@ -9,6 +9,7 @@
 		<div class="menu-buttons">
 			<button data-event-click="menuAction('play')">Enter the world</button>
 			<button data-event-click="menuAction('loadmenu')">Load game</button>
+			<button data-event-click="menuAction('options')">Options</button>
 			<button data-event-click="menuAction('quit')">Quit</button>
 		</div>
 		<div class="muted">F5 quicksaves, F9 quickloads.</div>

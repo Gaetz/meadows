@@ -57,6 +57,7 @@ struct UiRouterContext {
     std::function<void()> enterPlayMode;
     std::function<void()> exitPlayMode;
     std::function<void()> requestQuit;
+    std::function<void()> openOptions; // C9.4: push model + show screen
 };
 
 // The UI action router extracted from LandscapeScene (audit U4-1): the

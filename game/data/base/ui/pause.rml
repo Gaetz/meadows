@@ -10,6 +10,7 @@
 			<button data-event-click="menuAction('resume')">Resume</button>
 			<button data-event-click="menuAction('save')">Save game</button>
 			<button data-event-click="menuAction('loadmenu')">Load game</button>
+			<button data-event-click="menuAction('options')">Options</button>
 			<button data-event-click="menuAction('mainmenu')">Main menu</button>
 			<button data-event-click="menuAction('quit')">Quit</button>
 		</div>
