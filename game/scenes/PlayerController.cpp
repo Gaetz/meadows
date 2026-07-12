@@ -422,11 +422,18 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
              gameplay::SwingPhase::Idle)) {
         weaponDrawn_ = !weaponDrawn_;
     }
-    // Ctrl: sneak toggle (dev design 2026-07-12) — quieter, harder to
-    // spot (the perception/footstep paths read State.Sneaking).
+    // Ctrl: sneak toggle (dev design 2026-07-12) — the body CROUCHES to
+    // half height (standing back up can be refused by a low ceiling),
+    // steps soften, detection halves (State.Sneaking drives it all).
     if (input.wasPressed(platform::Key::Ctrl)) {
-        sneaking_ = !sneaking_;
-        sneakCostAccumulator = 0.0f;
+        const bool want = !sneaking_;
+        if (body_->setCrouched(want)) {
+            sneaking_ = want;
+            sneakCostAccumulator = 0.0f;
+            LOG_INFO("Sneak {}", sneaking_ ? "ON" : "off");
+        } else {
+            LOG_INFO("Sneak: no room to stand up here");
+        }
     }
     if (ctx.playerEntity.is_alive()) {
         auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
@@ -642,10 +649,14 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
         sneakCostAccumulator = 0.0f;
     }
 
-    // Eyes above the feet (eyeHeight, §5 U4-7); the ENTITY transform tracks
-    // the capsule (the sim's view — extract/saves read this, not Jolt).
+    // Eyes above the feet (eyeHeight, §5 U4-7; a crouch halves it —
+    // give the sneaker a hair over the capsule's half height); the
+    // ENTITY transform tracks the capsule (the sim's view).
     flyCamera.camera.position =
-        body_->position() + Vec3 { 0.0f, ctx.statsTuning.eyeHeight, 0.0f };
+        body_->position() +
+        Vec3 { 0.0f,
+               ctx.statsTuning.eyeHeight * (sneaking_ ? 0.5f : 1.0f),
+               0.0f };
     if (ctx.playerEntity.is_alive()) {
         auto& transform = ctx.playerEntity.get_mut<world::Transform>();
         transform.position = body_->position();

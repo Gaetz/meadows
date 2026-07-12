@@ -458,6 +458,16 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                                                    ctx.gameTags,
                                                    ctx.statsTuning };
     const auto deadTag = ctx.gameTags.find("State.Dead");
+    // Sneak: a crouched player is HALF the target — sight range, the
+    // LOS aim point and the blade capsule all read this one bool.
+    bool playerSneaking = false;
+    if (ctx.playerEntity.is_alive()) {
+        if (const auto sneakTag = ctx.gameTags.find("State.Sneaking")) {
+            playerSneaking =
+                ctx.playerEntity.get<gameplay::AbilitySystem>().tags.has(
+                    *sneakTag);
+        }
+    }
     for (auto& npcPtr : npcs_) {
         Npc& npc = *npcPtr;
         auto& transform = npc.entity.get_mut<world::Transform>();
@@ -540,12 +550,10 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             // Vision verdict: cone from the NPC's facing, then the LOS
             // raycast (world geometry only — actors are out of the
             // broadphase anyway). A SNEAKING target is spotted at half
-            // range (the sneak skill will drive the factor later).
+            // range (the sneak skill will drive the factor later), and
+            // the LOS aims at the CROUCHED chest — a low wall now hides.
             world::Perception sight = perception;
-            if (const auto sneakTag = ctx.gameTags.find("State.Sneaking");
-                sneakTag && ctx.playerEntity.is_alive() &&
-                ctx.playerEntity.get<gameplay::AbilitySystem>().tags.has(
-                    *sneakTag)) {
+            if (playerSneaking) {
                 sight.viewDistance *= ctx.statsTuning.sneakDetectionFactor;
             }
             const Vec3 facing { std::sin(npc.yaw), 0.0f,
@@ -555,7 +563,9 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             if (canSee && ctx.physics) {
                 const Vec3 eye =
                     transform.position + Vec3 { 0.0f, 1.5f, 0.0f };
-                const Vec3 target = playerPos + Vec3 { 0.0f, 1.2f, 0.0f };
+                const Vec3 target =
+                    playerPos +
+                    Vec3 { 0.0f, playerSneaking ? 0.6f : 1.2f, 0.0f };
                 const Vec3 dir = glm::normalize(target - eye);
                 const f32 sight = glm::length(target - eye);
                 const phys::RayHit hit = ctx.physics->rayCast(eye, dir,
@@ -1013,9 +1023,10 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                     grip + bladeDir * (npcWeapon->bladeLength *
                                        npcWeapon->hitTolerance);
                 const Vec3 feet = ctx.player->position();
-                // [cpp-tuning] the shared humanoid capsule (feet-anchored).
+                // [cpp-tuning] the shared humanoid capsule (feet-anchored;
+                // a crouched player is half the target).
                 constexpr f32 kRadius = 0.4f;
-                constexpr f32 kHeight = 1.8f;
+                const f32 kHeight = playerSneaking ? 0.9f : 1.8f;
                 // Dodge i-frames: State.Dodging means the blade passes
                 // through — and does NOT register, so the same Active
                 // window can still connect once the i-frames expire.

@@ -280,23 +280,36 @@ struct CharacterBody::Impl {
     JPH::Ref<JPH::CharacterVirtual> character;
     f32 verticalVelocity { 0.0f };
     bool swimming { false }; // P0 D2b: gravity off, full-3D velocity
+    bool crouched { false }; // sneak: the half-height capsule is active
+    JPH::RefConst<JPH::Shape> standingShape;
+    JPH::RefConst<JPH::Shape> crouchedShape;
     explicit Impl(PhysicsWorld& world) : world { world } {}
 };
+
+namespace {
+
+// Feet-origin capsule (shared by the standing and crouched shapes).
+JPH::RefConst<JPH::Shape> makeFeetCapsule(f32 radius, f32 height) {
+    const f32 cylinderHalf = glm::max(height * 0.5f - radius, 0.01f);
+    return JPH::RotatedTranslatedShapeSettings(
+               JPH::Vec3(0.0f, cylinderHalf + radius, 0.0f),
+               JPH::Quat::sIdentity(),
+               new JPH::CapsuleShape(cylinderHalf, radius))
+        .Create()
+        .Get();
+}
+
+} // namespace
 
 CharacterBody::CharacterBody(PhysicsWorld& world, f32 radius, f32 height,
                              const Vec3& position) {
     pimpl = std::make_unique<Impl>(world);
-    const f32 cylinderHalf = glm::max(height * 0.5f - radius, 0.01f);
+    // Shape origin at the FEET; the crouched twin is HALF height (sneak).
+    pimpl->standingShape = makeFeetCapsule(radius, height);
+    pimpl->crouchedShape = makeFeetCapsule(radius, height * 0.5f);
     JPH::Ref<JPH::CharacterVirtualSettings> settings =
         new JPH::CharacterVirtualSettings();
-    // Shape origin at the FEET: capsule center lifted by half height.
-    settings->mShape =
-        JPH::RotatedTranslatedShapeSettings(
-            JPH::Vec3(0.0f, cylinderHalf + radius, 0.0f),
-            JPH::Quat::sIdentity(),
-            new JPH::CapsuleShape(cylinderHalf, radius))
-            .Create()
-            .Get();
+    settings->mShape = pimpl->standingShape;
     settings->mMaxSlopeAngle = JPH::DegreesToRadians(50.0f);
     pimpl->character = new JPH::CharacterVirtual(
         settings, toJph(position), JPH::Quat::sIdentity(),
@@ -350,6 +363,29 @@ void CharacterBody::setSwimming(bool swimming) {
 }
 
 bool CharacterBody::isSwimming() const { return pimpl->swimming; }
+
+bool CharacterBody::setCrouched(bool crouched) {
+    auto& impl = *pimpl;
+    if (impl.crouched == crouched) {
+        return true;
+    }
+    // Jolt refuses the swap when the new shape would penetrate (standing
+    // up under a low ceiling) — the caller keeps the current stance.
+    const bool swapped = impl.character->SetShape(
+        crouched ? impl.crouchedShape : impl.standingShape,
+        1.5f * impl.world.impl().system.GetPhysicsSettings()
+                   .mPenetrationSlop,
+        impl.world.impl().system.GetDefaultBroadPhaseLayerFilter(
+            kLayerMoving),
+        impl.world.impl().system.GetDefaultLayerFilter(kLayerMoving), {},
+        {}, *impl.world.impl().tempAllocator);
+    if (swapped) {
+        impl.crouched = crouched;
+    }
+    return swapped;
+}
+
+bool CharacterBody::isCrouched() const { return pimpl->crouched; }
 
 void CharacterBody::jump(f32 speed) {
     if (onGround()) {

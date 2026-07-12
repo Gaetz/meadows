@@ -107,6 +107,12 @@ public:
     void setSwimming(bool swimming);
     bool isSwimming() const;
 
+    // Sneak: swaps the capsule for a HALF-height one (and back). False
+    // when standing back up is blocked (a low ceiling) — the caller
+    // stays crouched.
+    bool setCrouched(bool crouched);
+    bool isCrouched() const;
+
     Vec3 position() const; // feet position
     bool onGround() const;
 
