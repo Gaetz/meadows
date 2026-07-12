@@ -184,12 +184,20 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
         blockTag && block.system.tags.has(*blockTag)) {
         const auto& targetT = target.entity.get<world::Transform>();
         const Vec3 facing = targetT.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
+        const auto& defSys = target.entity.get<gameplay::AbilitySystem>();
         guard = gameplay::applyBlock(
             event, facing, targetT.position, body_->position(),
             ctx.statsTuning.blockAngleDegrees, ctx.statsTuning.blockFactor,
             ctx.statsTuning.blockPostureFactor,
             target.entity.get<gameplay::MeleeSwing>().guardSeconds,
-            ctx.statsTuning.perfectParryWindow);
+            ctx.statsTuning.perfectParryWindow,
+            gameplay::currentValueOf(defSys, gameplay::attr("energy")),
+            // STATS.md §4: the empty-guard punish.
+            gameplay::currentValueOf(defSys,
+                                     gameplay::attr("maxPosture")) *
+                gameplay::currentValueOf(
+                    defSys, gameplay::attr("criticalSensitivity")) /
+                100.0f);
         if (guard.perfect) {
             gameplay::StatBlock attacker {
                 ctx.playerEntity.get_mut<gameplay::CoreAttributes>(),

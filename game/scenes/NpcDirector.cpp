@@ -375,6 +375,20 @@ bool NpcDirector::moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,
     return false;
 }
 
+// B3+: is a pathless steering step about to walk into a wall? Direct
+// moves (strafe, cornered flee) bypass the navigator, so probe the way
+// with a chest-height ray — buildings are static colliders, the ray
+// sees them (actors are NOT in the broadphase; other NPCs don't block).
+static bool steerBlocked(const NpcContext& ctx, const Vec3& from,
+                         const Vec3& direction) {
+    if (!ctx.physics) {
+        return false;
+    }
+    const Vec3 chest = from + Vec3 { 0.0f, 0.9f, 0.0f };
+    const phys::RayHit hit = ctx.physics->rayCast(chest, direction, 0.9f);
+    return hit.hit;
+}
+
 void NpcDirector::moveNpcDirect(const NpcContext& ctx, Npc& npc, f32 dt,
                                 const Vec3& direction, f32 speedScale,
                                 f32 faceYaw) {
@@ -657,14 +671,22 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                             0.6f;
                     dir.y = 0.0f;
                     const f32 len = glm::length(dir);
-                    if (len > 1e-4f) {
+                    // Wall guard: direct steering skips the navigator,
+                    // so probe the step — blocked = hold ground (still
+                    // facing the player).
+                    if (len > 1e-4f &&
+                        !steerBlocked(ctx, transform.position,
+                                      dir / len)) {
                         moveNpcDirect(ctx, npc, dt, dir / len, 1.0f,
                                       std::atan2(toPlayer.x, toPlayer.z));
                     }
                     break;
                 }
                 case gameplay::CombatMove::Flee: {
-                    npc.path.clear();
+                    // Flee through the NAVIGATOR (dev report 2026-07-12:
+                    // direct steering ran straight through buildings) —
+                    // path to a spot away from the player, repathed as
+                    // the flight goes on; obstacles are its job.
                     const Vec3 away =
                         playerDistance > 1e-3f
                             ? -toPlayer / playerDistance
@@ -676,8 +698,27 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                     const f32 runScale =
                         1.0f /
                         glm::max(ctx.statsTuning.npcWalkFactor, 0.05f);
-                    moveNpcDirect(ctx, npc, dt, away, runScale,
-                                  std::atan2(away.x, away.z));
+                    if (npc.pathIndex >= npc.path.size() ||
+                        npc.repathTimer <= 0.0f) {
+                        Vec3 spot = transform.position + away * 12.0f;
+                        spot.y = render::terrain::height(ctx.terrainParams,
+                                                         spot.x, spot.z);
+                        const nav::PathResult found =
+                            ctx.navigator->findPath(
+                                { transform.position, spot, 2.0f });
+                        npc.path = found.success ? found.waypoints
+                                                 : vector<Vec3> {};
+                        npc.pathIndex = 0;
+                        npc.repathTimer = 0.8f;
+                    }
+                    if (npc.pathIndex < npc.path.size()) {
+                        moveNpcAlongPath(ctx, npc, dt, runScale);
+                    } else if (!steerBlocked(ctx, transform.position,
+                                             away)) {
+                        // No path (cornered): raw retreat, wall-guarded.
+                        moveNpcDirect(ctx, npc, dt, away, runScale,
+                                      std::atan2(away.x, away.z));
+                    }
                     break;
                 }
                 case gameplay::CombatMove::Approach: {
@@ -910,6 +951,9 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                             ctx.playerEntity.get<world::Transform>();
                         const Vec3 playerFacing =
                             playerT.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
+                        const auto& defSys =
+                            ctx.playerEntity
+                                .get<gameplay::AbilitySystem>();
                         guarded = gameplay::applyBlock(
                             event, playerFacing, playerT.position,
                             transform.position,
@@ -918,7 +962,17 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                             ctx.statsTuning.blockPostureFactor,
                             ctx.playerEntity.get<gameplay::MeleeSwing>()
                                 .guardSeconds,
-                            ctx.statsTuning.perfectParryWindow);
+                            ctx.statsTuning.perfectParryWindow,
+                            gameplay::currentValueOf(
+                                defSys, gameplay::attr("energy")),
+                            // STATS.md §4: the empty-guard punish.
+                            gameplay::currentValueOf(
+                                defSys, gameplay::attr("maxPosture")) *
+                                gameplay::currentValueOf(
+                                    defSys,
+                                    gameplay::attr(
+                                        "criticalSensitivity")) /
+                                100.0f);
                     }
                     if (guarded.perfect) {
                         gameplay::StatBlock attacker {

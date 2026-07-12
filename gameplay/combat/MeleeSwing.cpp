@@ -195,7 +195,8 @@ BlockResult applyBlock(DamageEvent& event, const Vec3& defenderFacing,
                        const Vec3& defenderPos, const Vec3& attackerPos,
                        f32 blockAngleDegrees, f32 blockFactor,
                        f32 blockPostureFactor, f32 guardSeconds,
-                       f32 perfectWindow) {
+                       f32 perfectWindow, f32 defenderEnergy,
+                       f32 emptyGuardPosture) {
     // Horizontal cone: guards care about compass direction, not height.
     Vec3 facing { defenderFacing.x, 0.0f, defenderFacing.z };
     Vec3 to { attackerPos.x - defenderPos.x, 0.0f,
@@ -215,16 +216,18 @@ BlockResult applyBlock(DamageEvent& event, const Vec3& defenderFacing,
             return {}; // outside the guard cone
         }
     }
+    const bool exhausted = defenderEnergy <= 0.0f;
     // A freshly raised guard parries CLEAN: nothing through — not even
     // the weapon's own posture damage — and the caller punishes the
-    // attacker's poise instead.
-    if (guardSeconds >= 0.0f && perfectWindow > 0.0f &&
+    // attacker's poise instead. An EMPTY guard never parries (STATS.md
+    // §4: no energy, no finesse).
+    if (!exhausted && guardSeconds >= 0.0f && perfectWindow > 0.0f &&
         guardSeconds <= perfectWindow) {
         for (DamageChannel& channel : event.channels) {
             channel.amount = 0.0f;
         }
         event.postureAmount = 0.0f;
-        return { true, true };
+        return { true, true, false };
     }
     f32 blocked = 0.0f;
     const f32 factor = glm::clamp(blockFactor, 0.0f, 1.0f);
@@ -234,7 +237,12 @@ BlockResult applyBlock(DamageEvent& event, const Vec3& defenderFacing,
         blocked += cut;
     }
     event.postureAmount += blocked * glm::max(blockPostureFactor, 0.0f);
-    return { true, false };
+    if (exhausted) {
+        // The empty-guard punish: crit-sensitivity% of max posture on
+        // top of the normal routing — the broken guard staggers.
+        event.postureAmount += glm::max(emptyGuardPosture, 0.0f);
+    }
+    return { true, false, exhausted };
 }
 
 void tickGuard(MeleeSwing& swing, bool blocking, f32 dt) {

@@ -94,7 +94,14 @@ void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
         if (system.energyRegenDelay > 0.0f) {
             system.energyRegenDelay = std::max(0.0f, system.energyRegenDelay - dt);
         } else {
-            vitals.energy = std::min(maxE, vitals.energy + regen * dt);
+            // STATS.md §4: energy regen halves while the guard is up
+            // (holding the parry is effortful, turtling starves you).
+            f32 rate = regen;
+            if (const auto blocking = ctx.tags.find("State.Blocking");
+                blocking && system.tags.has(*blocking)) {
+                rate *= ctx.tuning.blockEnergyRegenFactor;
+            }
+            vitals.energy = std::min(maxE, vitals.energy + rate * dt);
         }
 
         // Exhaustion gate: energy-costed abilities (dodge, attack, sprint) carry

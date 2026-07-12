@@ -100,15 +100,24 @@ bool segmentHitsCapsule(const Vec3& a0, const Vec3& a1, const Vec3& capA,
 // CLEAN — every channel zeroed, nothing on the defender's posture — and
 // the caller punishes the ATTACKER's poise (perfectParryPosture through
 // applyDamage). Pass guardSeconds < 0 or window <= 0 to disable.
+//
+// EMPTY-GUARD PUNISH (STATS.md §4): a hit caught while the defender has
+// NO energy can never perfect-parry, and `emptyGuardPosture` (the
+// caller precomputes maxPosture x criticalSensitivity%) lands on the
+// defender's posture ON TOP of the normal blocked routing — the stagger
+// that usually follows is the broken guard.
 struct BlockResult {
-    bool caught { false };  // the guard cone caught the hit
-    bool perfect { false }; // ...within the perfect-parry window
+    bool caught { false };    // the guard cone caught the hit
+    bool perfect { false };   // ...within the perfect-parry window
+    bool exhausted { false }; // ...held with no energy: guard punished
 };
 BlockResult applyBlock(DamageEvent& event, const Vec3& defenderFacing,
                        const Vec3& defenderPos, const Vec3& attackerPos,
                        f32 blockAngleDegrees, f32 blockFactor,
                        f32 blockPostureFactor, f32 guardSeconds = -1.0f,
-                       f32 perfectWindow = 0.0f);
+                       f32 perfectWindow = 0.0f,
+                       f32 defenderEnergy = 1.0e6f,
+                       f32 emptyGuardPosture = 0.0f);
 
 // The raised-guard pose for the simulated socket (dev design: the sword
 // held OBLIQUE across the front — bottom-right toward top-left). The

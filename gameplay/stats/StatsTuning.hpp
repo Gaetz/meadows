@@ -121,6 +121,9 @@ struct StatsTuningForm : data::Form {
     f32 dodgeTapSeconds { 0.25f };
     f32 dodgeDurationSeconds { 0.28f }; // match DodgeIFrames.durationSeconds
     f32 dodgeSpeedMultiplier { 2.08f }; // dev feel pass: -20% dodge length
+    // STATS.md §4 (appended — ordinals stable): holding the guard is
+    // effortful — energy regen halves while State.Blocking is up.
+    f32 blockEnergyRegenFactor { 0.5f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -192,6 +195,7 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(dodgeTapSeconds)
         REFLECT_FIELD(dodgeDurationSeconds)
         REFLECT_FIELD(dodgeSpeedMultiplier)
+        REFLECT_FIELD(blockEnergyRegenFactor)
     REFLECT_END()
 };
 

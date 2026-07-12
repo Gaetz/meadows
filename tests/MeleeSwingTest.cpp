@@ -261,3 +261,36 @@ TEST_CASE("a FRESH guard perfect-parries: nothing through, and the guard "
     gameplay::tickGuard(swing, false, 0.16f);
     CHECK(swing.guardSeconds == doctest::Approx(-1.0f));
 }
+
+TEST_CASE("an EMPTY guard never parries and eats the crit-sens posture "
+          "punish (STATS.md 4)") {
+    const Vec3 facing { 0.0f, 0.0f, 1.0f };
+    const Vec3 defender { 0.0f, 0.0f, 0.0f };
+    const Vec3 attacker { 0.0f, 0.0f, 2.0f };
+    gameplay::DamageEvent event;
+    event.channels = { { gameplay::DamageType::Blunt, 10.0f } };
+    event.postureAmount = 20.0f;
+
+    // Fresh guard, perfect window open — but ZERO energy: no parry, the
+    // hit is blocked normally AND the guard takes the punish (12.5 =
+    // maxPosture 50 x critSens 25%).
+    const gameplay::BlockResult broke = gameplay::applyBlock(
+        event, facing, defender, attacker, 120.0f, 0.7f, 0.6f,
+        /*guardSeconds=*/0.05f, /*perfectWindow=*/0.2f,
+        /*defenderEnergy=*/0.0f, /*emptyGuardPosture=*/12.5f);
+    CHECK(broke.caught);
+    CHECK(!broke.perfect);
+    CHECK(broke.exhausted);
+    CHECK(event.channels[0].amount == doctest::Approx(3.0f));
+    // 20 weapon posture + 7x0.6 routed + 12.5 punish.
+    CHECK(event.postureAmount == doctest::Approx(20.0f + 4.2f + 12.5f));
+
+    // With energy in the tank the same timing parries clean.
+    gameplay::DamageEvent parried;
+    parried.channels = { { gameplay::DamageType::Blunt, 10.0f } };
+    const gameplay::BlockResult fine = gameplay::applyBlock(
+        parried, facing, defender, attacker, 120.0f, 0.7f, 0.6f, 0.05f,
+        0.2f, /*defenderEnergy=*/40.0f, 12.5f);
+    CHECK(fine.perfect);
+    CHECK(!fine.exhausted);
+}
