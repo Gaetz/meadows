@@ -88,7 +88,7 @@ fait avec le backend null).
   `WeaponForm.reach − 0.3` (BanditClub : reach 2.0 en data) au lieu du
   1,8 codé en dur. La distance de préférence de strafe (reach + 1)
   arrive avec B3.
-- **A7 — Projectiles (SI retenu, voir questions).** Entité flèche :
+- **A7 ✅ — Projectiles + l'arc.** Entité flèche :
   spawn au socket, balistique simple (gravité + vitesse), impact par
   raycast segmentaire → damage pipeline ; pickup de la flèche plantée P1.
 

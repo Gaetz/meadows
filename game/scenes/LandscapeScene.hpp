@@ -59,6 +59,7 @@
 #include "game/SoundResolver.hpp"
 #include "game/scenes/FxDirector.hpp"
 #include "game/scenes/LandscapeRenderer.hpp"
+#include "game/scenes/ProjectileDirector.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
 
@@ -287,6 +288,8 @@ private:
     // resolver maps SoundForms onto it; cue sounds ride the FxDirector.
     audio::AudioSystem audioSystem;
     SoundResolver soundResolver;
+    // P0 A7: arrows in flight (player bow, archer NPCs).
+    ProjectileDirector projectileDirector;
     const data::MiscItemForm* goldForm { nullptr };
 
     // Chantier 5 B3: the one post-spawn seam for EVERY actor (player and

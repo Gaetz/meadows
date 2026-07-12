@@ -73,3 +73,30 @@ TEST_CASE("the procedural club is a shaft with a fatter metal head") {
     CHECK(game::clubMeshGuid().isValid());
     CHECK(game::clubMeshGuid() != game::swordMeshGuid());
 }
+
+TEST_CASE("the bow and arrow meshes follow the +Y weapon convention") {
+    const render::MeshData bow = game::makeBowMesh(1.3f);
+    REQUIRE(!bow.vertices.empty());
+    Vec3 lo { 1e9f };
+    Vec3 hi { -1e9f };
+    for (const render::MeshVertex& v : bow.vertices) {
+        lo = glm::min(lo, v.position);
+        hi = glm::max(hi, v.position);
+    }
+    // Limbs sweep BOTH ways from the grip; the belly bows forward (+Z).
+    CHECK(hi.y > 0.5f);
+    CHECK(lo.y < -0.5f);
+    CHECK(hi.z > 0.05f);
+    for (const u32 index : bow.indices) {
+        CHECK(index < bow.vertices.size());
+    }
+
+    const render::MeshData arrow = game::makeArrowMesh(0.6f);
+    REQUIRE(!arrow.vertices.empty());
+    Vec3 ahi { -1e9f };
+    for (const render::MeshVertex& v : arrow.vertices) {
+        ahi = glm::max(ahi, v.position);
+    }
+    CHECK(ahi.y == doctest::Approx(0.6f)); // tip at +Y length
+    CHECK(game::bowMeshGuid() != game::arrowMeshGuid());
+}

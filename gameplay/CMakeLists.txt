@@ -18,6 +18,7 @@ add_library(meadows-gameplay STATIC
     combat/Combat.cpp
     combat/CombatAi.cpp
     combat/MeleeSwing.cpp
+    combat/Projectile.cpp
     stats/CharacterStats.cpp
     stats/StatsTuning.cpp
     stats/Resonance.cpp

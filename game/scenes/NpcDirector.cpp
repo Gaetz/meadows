@@ -27,6 +27,8 @@
 #include "gameplay/combat/CombatAi.hpp"         // chooseCombatMove (B3)
 #include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions (C2)
 #include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing (A4)
+#include "gameplay/combat/Projectile.hpp"       // archer NPCs (A7)
+#include "game/scenes/ProjectileDirector.hpp"   // archer NPCs (A7)
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
 #include "gameplay/event/EventBus.hpp"
@@ -687,7 +689,36 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                                                   system, set, system,
                                                   { ctx.forms,
                                                     ctx.gameTags });
-                        if (activated) {
+                        if (activated &&
+                            npcWeapon->projectileSpeed > 0.0f &&
+                            ctx.projectiles) {
+                            // A7: an ARCHER — loose from the chest at
+                            // the player's chest, with a hair of spread
+                            // (deterministic combat RNG, §8).
+                            gameplay::Projectile arrow;
+                            arrow.position = transform.position +
+                                             Vec3 { 0.0f, 1.4f, 0.0f };
+                            Vec3 aim =
+                                (playerPos + Vec3 { 0.0f, 1.0f, 0.0f }) -
+                                arrow.position;
+                            aim = glm::normalize(aim);
+                            aim.x += (static_cast<f32>(
+                                          ctx.combatRng.unit()) -
+                                      0.5f) *
+                                     0.06f;
+                            aim.z += (static_cast<f32>(
+                                          ctx.combatRng.unit()) -
+                                      0.5f) *
+                                     0.06f;
+                            arrow.velocity = glm::normalize(aim) *
+                                             npcWeapon->projectileSpeed;
+                            arrow.shooter = npc.entity.id();
+                            arrow.payload = gameplay::weaponDamageEvent(
+                                *npcWeapon, npcSys);
+                            ctx.projectiles->spawn(arrow);
+                            npc.attackCooldown = 2.2f; // [cpp-tuning]
+                            npc.blocking = false;
+                        } else if (activated) {
                             gameplay::startSwing(
                                 npc.entity
                                     .get_mut<gameplay::MeleeSwing>());

@@ -159,6 +159,8 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
     // BanditClub's `model` points at in data.
     meshCache->injectProcedural(swordMeshGuid(), makeSwordMesh(0.9f));
     meshCache->injectProcedural(clubMeshGuid(), makeClubMesh(0.8f));
+    meshCache->injectProcedural(bowMeshGuid(), makeBowMesh(1.3f));   // A7
+    meshCache->injectProcedural(arrowMeshGuid(), makeArrowMesh(0.6f));
     renderer.create(device, engine->getJobSystem());
 
     // Chantier 4 B2: the RmlUi game UI (screens from UiScreenForm records,
@@ -421,6 +423,12 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
             }
             playerEntity.get_mut<gameplay::Equipment>().weapon =
                 playerWeapon->id;
+            // A7: the bow rides in the bag too (equip it to fire).
+            if (const auto* bow = data::findByEditorId<data::WeaponForm>(
+                    forms, "HuntingBow");
+                bow && gameplay::itemCount(bag, bow->id) == 0) {
+                gameplay::addItem(bag, bow->id, 1);
+            }
         }
         // A4/D2: re-mirror a loaded quest log + bounty onto the player.
         questDirector.syncQuestTags(makeQuestContext());
@@ -735,6 +743,13 @@ void LandscapeScene::update(f32 dt) {
     if (!simPaused) {
         core::FrameProbe::Scope probe { frameProbe, "npcs" };
         updateNpcs(dt);
+        // P0 A7: arrows fly with the sim.
+        projectileDirector.update(
+            dt, ProjectileContext { physics.get(), npcDirector.npcs(),
+                                    playerEntity, playerController.body(),
+                                    gameTags, derivedStats, statsTuning,
+                                    eventBus, &fxDirector.cues(),
+                                    sceneConsole.godMode() });
         // P0 C1: the particle sim advances with the world (paused sim =
         // frozen sparks, like everything else).
         fxSim.update(dt);
@@ -806,6 +821,7 @@ void LandscapeScene::update(f32 dt) {
     // carries this frame's pose (paused sim: the last pose, still valid).
     snapshot.skinned.clear();
     npcDirector.extract(snapshot);
+    projectileDirector.extract(snapshot); // A7: arrows in flight/planted
     // Chantier P0 A2/A3: the first-person viewmodel — the player's sword
     // rides the simulated swing socket (guard pose bottom-right when
     // Idle; the LMB swing sweeps it right-to-left along the same arc the
@@ -1826,6 +1842,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
         },
         swimCostEffect, // D2b: §2.9 — only effects move energy
         sneakCostEffect,
+        &projectileDirector, // A7: the bow
     };
 }
 
@@ -1857,6 +1874,7 @@ NpcContext LandscapeScene::makeNpcContext() {
         combatRng,
         sceneConsole.vm(), // brain scripts (docs/BOSS-SCRIPTING.md)
         &fxDirector.cues(), // C2: hit/block/parry/death feedback
+        &projectileDirector, // A7: archer NPCs
         sceneConsole.godMode(),
         timeSeconds,
     };

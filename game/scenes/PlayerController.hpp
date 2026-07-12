@@ -36,6 +36,7 @@ namespace game {
 
 struct Npc;
 class InteractionController;
+class ProjectileDirector;
 
 // The scene systems the first-person player touches, bundled so the whole
 // Play-mode controller (movement / jump / sprint cost / melee + crime) is
@@ -79,6 +80,8 @@ struct PlayerContext {
     const gameplay::EffectForm* swimCostEffect { nullptr };
     // Sneak: the drain while MOVING sneaked (SneakCost, ~3 energy/s).
     const gameplay::EffectForm* sneakCostEffect { nullptr };
+    // A7: where fired arrows go (a ranged weapon = projectileSpeed > 0).
+    ProjectileDirector* projectiles { nullptr };
 };
 
 // The first-person Play-mode controller extracted from LandscapeScene

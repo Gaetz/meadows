@@ -1,5 +1,7 @@
 #include "game/WeaponMeshes.hpp"
 
+#include <cmath>
+
 namespace game {
 
 namespace {
@@ -110,6 +112,73 @@ render::MeshData makeClubMesh(f32 length) {
 const core::Guid& clubMeshGuid() {
     static const core::Guid guid =
         *core::Guid::fromString("a2b1ade0-0000-4000-8000-00000000501e");
+    return guid;
+}
+
+render::MeshData makeBowMesh(f32 length) {
+    const f32 half = glm::max(length, 0.6f) * 0.5f;
+    const Vec3 kWood { 0.32f, 0.21f, 0.11f };
+    const Vec3 kString { 0.85f, 0.83f, 0.78f };
+    const Vec3 kLeather { 0.34f, 0.22f, 0.12f };
+
+    render::MeshData mesh;
+    // Grip block at the origin.
+    addBox(mesh, { 0.0f, 0.0f, 0.0f }, { 0.02f, 0.09f, 0.03f }, kLeather);
+    // Each limb: segments sweeping up/down with a forward (+Z) belly —
+    // a shallow arc of boxes reads as a curve at this poly budget.
+    constexpr u32 kSegments = 5;
+    for (u32 side = 0; side < 2; ++side) {
+        const f32 sign = side == 0 ? 1.0f : -1.0f;
+        for (u32 i = 0; i < kSegments; ++i) {
+            const f32 t0 = static_cast<f32>(i) / kSegments;
+            const f32 t1 = static_cast<f32>(i + 1) / kSegments;
+            const f32 midT = (t0 + t1) * 0.5f;
+            const f32 y = sign * (0.09f + midT * (half - 0.09f));
+            // The belly: strongest mid-limb, back to 0 at the tip.
+            const f32 z = 0.10f * std::sin(midT * 3.14159f * 0.85f);
+            const f32 thick = glm::mix(0.016f, 0.008f, midT);
+            addBox(mesh, { 0.0f, y, z },
+                   { thick, (t1 - t0) * (half - 0.09f) * 0.55f,
+                     thick * 1.4f },
+                   kWood);
+        }
+    }
+    // The string: one thin box tip to tip (behind the grip, z = 0).
+    addBox(mesh, { 0.0f, 0.0f, -0.015f }, { 0.004f, half, 0.004f },
+           kString);
+    return mesh;
+}
+
+const core::Guid& bowMeshGuid() {
+    static const core::Guid guid =
+        *core::Guid::fromString("a2b1ade0-0000-4000-8000-00000000501f");
+    return guid;
+}
+
+render::MeshData makeArrowMesh(f32 length) {
+    const f32 total = glm::max(length, 0.3f);
+    const Vec3 kShaft { 0.45f, 0.33f, 0.18f };
+    const Vec3 kSteel { 0.62f, 0.64f, 0.68f };
+    const Vec3 kFeather { 0.82f, 0.80f, 0.72f };
+
+    render::MeshData mesh;
+    const f32 tipLen = 0.06f;
+    // Shaft from the nock to the head.
+    addBox(mesh, { 0.0f, (total - tipLen) * 0.5f, 0.0f },
+           { 0.008f, (total - tipLen) * 0.5f, 0.008f }, kShaft);
+    // The head: a small pyramid.
+    addTip(mesh, total - tipLen, total, 0.018f, 0.018f, kSteel);
+    // Fletching: two crossed vanes near the nock.
+    addBox(mesh, { 0.0f, 0.06f, 0.0f }, { 0.030f, 0.045f, 0.003f },
+           kFeather);
+    addBox(mesh, { 0.0f, 0.06f, 0.0f }, { 0.003f, 0.045f, 0.030f },
+           kFeather);
+    return mesh;
+}
+
+const core::Guid& arrowMeshGuid() {
+    static const core::Guid guid =
+        *core::Guid::fromString("a2b1ade0-0000-4000-8000-000000005020");
     return guid;
 }
 

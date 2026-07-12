@@ -55,6 +55,7 @@ struct AbilityForm;
 namespace game {
 
 struct RenderSnapshot; // game/SceneSubmit.hpp — the extract target
+class ProjectileDirector; // A7: archer NPCs
 
 // One rig cache entry per glTF asset (skeleton + its clips). Shared by every
 // NPC built from that asset.
@@ -184,6 +185,8 @@ struct NpcContext {
     script::Vm* vm;
     // P0 C2: feedback cues (hit/block/parry/death) — may be null (tests).
     gameplay::CueRegistry* cues;
+    // A7: where an ARCHER's arrows go (weapon projectileSpeed > 0).
+    ProjectileDirector* projectiles;
     bool godMode;
     f32 timeSeconds;                   // cosmetic wander hash (not gameplay RNG)
 };

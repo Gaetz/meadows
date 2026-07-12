@@ -24,4 +24,15 @@ const core::Guid& swordMeshGuid();
 render::MeshData makeClubMesh(f32 length);
 const core::Guid& clubMeshGuid();
 
+// P0 A7 — the bow: grip at the origin, limbs sweeping along ±Y with a
+// forward (+Z) belly curve, string across the tips. `length` = tip to
+// tip. HuntingBow points its `model` here.
+render::MeshData makeBowMesh(f32 length);
+const core::Guid& bowMeshGuid();
+
+// The arrow: nock at the origin, tip at +Y `length` — the same +Y
+// convention as every weapon, so the flight code orients ONE way.
+render::MeshData makeArrowMesh(f32 length);
+const core::Guid& arrowMeshGuid();
+
 } // namespace game

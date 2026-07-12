@@ -515,3 +515,23 @@ attribute = "energy"
 op = "add"
 magnitude = -1.5
 duration = "instant"
+
+# --- The bow (chantier P0 A7): projectileSpeed > 0 makes a weapon
+# RANGED — LMB fires an arrow along the look instead of swinging. The
+# player starts with one in the bag (equip it from the inventory);
+# give it to any actor's loadout to make an archer.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000210"
+type = "WeaponForm"
+new = true
+[records.fields]
+editorId = "HuntingBow"
+displayName = "Hunting bow"
+weight = 1.8
+goldValue = 40
+pierceAttack = 14.0
+postureDamage = 10.0
+scalingAttribute = "dexterity"
+reach = 12.0
+projectileSpeed = 35.0
+model = "a2b1ade0-0000-4000-8000-00000000501f"

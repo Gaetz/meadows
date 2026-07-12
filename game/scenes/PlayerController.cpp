@@ -15,6 +15,7 @@
 #include "engine/render/FlyCamera.hpp"
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/NpcDirector.hpp" // Npc
+#include "game/scenes/ProjectileDirector.hpp" // A7: the bow
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayAbility.hpp" // tryActivate (P0 A3)
 #include "gameplay/ability/GameplayEffects.hpp"
@@ -92,6 +93,20 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
                                    { ctx.forms, ctx.gameTags })) {
             return; // on cooldown or exhausted
         }
+    }
+    // A7: a RANGED weapon (projectileSpeed > 0) fires instead of
+    // swinging — the arrow leaves from the eye, along the look, with the
+    // weapon's damage captured at release.
+    if (weapon->projectileSpeed > 0.0f && ctx.projectiles) {
+        const render::Camera3D& cam = ctx.flyCamera.camera;
+        gameplay::Projectile arrow;
+        arrow.position = cam.position + cam.forward() * 0.6f;
+        arrow.velocity = cam.forward() * weapon->projectileSpeed;
+        arrow.shooter = ctx.playerEntity.id();
+        arrow.payload = gameplay::weaponDamageEvent(
+            *weapon, ctx.playerEntity.get<gameplay::AbilitySystem>());
+        ctx.projectiles->spawn(arrow);
+        return;
     }
     swingWeapon_ = weapon;
     gameplay::startSwing(swing);

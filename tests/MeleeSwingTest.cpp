@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 
 #include "gameplay/combat/MeleeSwing.hpp"
+#include "gameplay/combat/Projectile.hpp"
 #include "gameplay/stats/Damage.hpp" // DamageEvent (applyBlock, A5)
 
 // Chantier P0 A3/A4 — the blade-touch melee swing, sim-pure: the phase
@@ -293,4 +294,37 @@ TEST_CASE("an EMPTY guard never parries and eats the crit-sens posture "
         0.2f, /*defenderEnergy=*/40.0f, 12.5f);
     CHECK(fine.perfect);
     CHECK(!fine.exhausted);
+}
+
+TEST_CASE("projectile ballistics: gravity arc, plant, expiry (P0 A7)") {
+    gameplay::Projectile arrow;
+    arrow.position = { 0.0f, 2.0f, 0.0f };
+    arrow.velocity = { 10.0f, 0.0f, 0.0f };
+    arrow.gravity = 10.0f;
+    arrow.ttl = 1.0f;
+
+    // One step: the returned segment start is the PREVIOUS position.
+    const Vec3 from = gameplay::stepProjectile(arrow, 0.1f);
+    CHECK(from.x == doctest::Approx(0.0f));
+    CHECK(arrow.position.x == doctest::Approx(1.0f));
+    // Gravity bends the arc down.
+    CHECK(arrow.velocity.y == doctest::Approx(-1.0f));
+    CHECK(arrow.position.y < 2.0f);
+
+    // Flight ttl runs out -> expired.
+    gameplay::stepProjectile(arrow, 1.0f);
+    CHECK(gameplay::projectileExpired(arrow));
+
+    // A planted arrow stops flying and lingers on its own clock.
+    gameplay::Projectile stuck;
+    stuck.position = { 3.0f, 1.0f, 0.0f };
+    stuck.velocity = { 20.0f, 0.0f, 0.0f };
+    stuck.planted = true;
+    stuck.plantedTtl = 0.5f;
+    const Vec3 at = stuck.position;
+    gameplay::stepProjectile(stuck, 0.2f);
+    CHECK(stuck.position.x == doctest::Approx(at.x)); // frozen
+    CHECK(!gameplay::projectileExpired(stuck));
+    gameplay::stepProjectile(stuck, 0.4f);
+    CHECK(gameplay::projectileExpired(stuck));
 }

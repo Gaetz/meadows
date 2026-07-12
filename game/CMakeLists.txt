@@ -37,6 +37,7 @@ add_executable(true-adventurer
     scenes/LandscapeScene.cpp
     scenes/NpcDirector.cpp
     scenes/PlayerController.cpp
+    scenes/ProjectileDirector.cpp
     scenes/QuestDirector.cpp
     scenes/SaveController.cpp
     scenes/SceneConsole.cpp
