@@ -818,7 +818,7 @@ displayName = "Crate seat"
 category = "seat"
 model = "4d7a9b30-0000-4000-8000-0000000000a8"
 # P0 D1: seated actors rest — the effect holds while the seat is held.
-effect = "4d7a9b30-0000-4000-8000-0000000000f5"
+effect = "4d7a9b30-0000-4000-8000-000000000200"
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000084"
@@ -1836,7 +1836,7 @@ position = [5.0, 0.5, -11.0]
 # P0 D1: the seat's rest effect — infinite while seated (removed on
 # release), a gentle energy-regen boost with a readable tag.
 [[records]]
-form = "4d7a9b30-0000-4000-8000-0000000000f5"
+form = "4d7a9b30-0000-4000-8000-000000000200"
 type = "EffectForm"
 new = true
 [records.fields]

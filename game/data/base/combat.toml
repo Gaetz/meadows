@@ -8,6 +8,34 @@
 id = "c04ba7e0-1d52-4f6b-9a38-2e91c5d7f4b2"
 name = "true-adventurer-combat"
 
+[assets]
+# Footstep wavs (dev drop 2026-07-12): default=dirt, grass, snow — one
+# guid per file; the SoundForm variants below weight-pick among them.
+"fa570000-0000-4000-8000-000000000010" = "sounds/footsteps/default/footsteps-dirt_00.wav"
+"fa570000-0000-4000-8000-000000000011" = "sounds/footsteps/default/footsteps-dirt_01.wav"
+"fa570000-0000-4000-8000-000000000012" = "sounds/footsteps/default/footsteps-dirt_02.wav"
+"fa570000-0000-4000-8000-000000000013" = "sounds/footsteps/default/footsteps-dirt_03.wav"
+"fa570000-0000-4000-8000-000000000014" = "sounds/footsteps/default/footsteps-dirt_04.wav"
+"fa570000-0000-4000-8000-000000000015" = "sounds/footsteps/default/footsteps-dirt_05.wav"
+"fa570000-0000-4000-8000-000000000030" = "sounds/footsteps/grass/footsteps-grass_00.wav"
+"fa570000-0000-4000-8000-000000000031" = "sounds/footsteps/grass/footsteps-grass_01.wav"
+"fa570000-0000-4000-8000-000000000032" = "sounds/footsteps/grass/footsteps-grass_02.wav"
+"fa570000-0000-4000-8000-000000000033" = "sounds/footsteps/grass/footsteps-grass_03.wav"
+"fa570000-0000-4000-8000-000000000034" = "sounds/footsteps/grass/footsteps-grass_04.wav"
+"fa570000-0000-4000-8000-000000000035" = "sounds/footsteps/grass/footsteps-grass_05.wav"
+"fa570000-0000-4000-8000-000000000050" = "sounds/footsteps/snow/footsteps-snow_00.wav"
+"fa570000-0000-4000-8000-000000000051" = "sounds/footsteps/snow/footsteps-snow_01.wav"
+"fa570000-0000-4000-8000-000000000052" = "sounds/footsteps/snow/footsteps-snow_02.wav"
+"fa570000-0000-4000-8000-000000000053" = "sounds/footsteps/snow/footsteps-snow_03.wav"
+"fa570000-0000-4000-8000-000000000054" = "sounds/footsteps/snow/footsteps-snow_04.wav"
+"fa570000-0000-4000-8000-000000000055" = "sounds/footsteps/snow/footsteps-snow_05.wav"
+"fa570000-0000-4000-8000-000000000056" = "sounds/footsteps/snow/footsteps-snow_06.wav"
+"fa570000-0000-4000-8000-000000000057" = "sounds/footsteps/snow/footsteps-snow_07.wav"
+"fa570000-0000-4000-8000-000000000058" = "sounds/footsteps/snow/footsteps-snow_08.wav"
+"fa570000-0000-4000-8000-000000000059" = "sounds/footsteps/snow/footsteps-snow_09.wav"
+"fa570000-0000-4000-8000-00000000005a" = "sounds/footsteps/snow/footsteps-snow_10.wav"
+"fa570000-0000-4000-8000-00000000005b" = "sounds/footsteps/snow/footsteps-snow_11.wav"
+
 # --- Dodge (Phase 8 Step 2): a self ability. Cost = energy; cooldown + i-frames
 # are granted-tag effects; blockedTag=State.Exhausted gates it when out of energy.
 [[records]]
@@ -226,6 +254,7 @@ new = true
 editorId = "CueFootstep"
 tag = "Cue.Footstep"
 particles = "fe000000-0000-4000-8000-000000000004" # StepDust
+sound = "f5000000-0000-4000-8000-000000000001" # FootstepDirt (default)
 
 # --- Swimming (chantier P0 D2b): the drain — one instant effect per
 # half second while swimming (the sprint-cost pattern; 2.9: only effects
@@ -240,3 +269,235 @@ attribute = "energy"
 op = "add"
 magnitude = -4.0
 duration = "instant"
+
+# --- Per-material footstep sounds (C3 + the dev wavs) ---
+[[records]]
+form = "f5000000-0000-4000-8000-000000000001"
+type = "SoundForm"
+new = true
+[records.fields]
+editorId = "FootstepDirt"
+bus = "sfx"
+volume = 0.8
+volumeJitter = 0.1
+pitch = 1.0
+pitchJitter = 0.12
+is3d = true
+minDistance = 1.5
+maxDistance = 18.0
+[[records]]
+form = "f5100000-0000-4000-8000-000000000001"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000001"
+asset = "fa570000-0000-4000-8000-000000000010"
+[[records]]
+form = "f5110000-0000-4000-8000-000000000001"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000001"
+asset = "fa570000-0000-4000-8000-000000000011"
+[[records]]
+form = "f5120000-0000-4000-8000-000000000001"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000001"
+asset = "fa570000-0000-4000-8000-000000000012"
+[[records]]
+form = "f5130000-0000-4000-8000-000000000001"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000001"
+asset = "fa570000-0000-4000-8000-000000000013"
+[[records]]
+form = "f5140000-0000-4000-8000-000000000001"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000001"
+asset = "fa570000-0000-4000-8000-000000000014"
+[[records]]
+form = "f5150000-0000-4000-8000-000000000001"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000001"
+asset = "fa570000-0000-4000-8000-000000000015"
+[[records]]
+form = "f5000000-0000-4000-8000-000000000002"
+type = "SoundForm"
+new = true
+[records.fields]
+editorId = "FootstepGrass"
+bus = "sfx"
+volume = 0.8
+volumeJitter = 0.1
+pitch = 1.0
+pitchJitter = 0.12
+is3d = true
+minDistance = 1.5
+maxDistance = 18.0
+[[records]]
+form = "f5300000-0000-4000-8000-000000000002"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000002"
+asset = "fa570000-0000-4000-8000-000000000030"
+[[records]]
+form = "f5310000-0000-4000-8000-000000000002"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000002"
+asset = "fa570000-0000-4000-8000-000000000031"
+[[records]]
+form = "f5320000-0000-4000-8000-000000000002"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000002"
+asset = "fa570000-0000-4000-8000-000000000032"
+[[records]]
+form = "f5330000-0000-4000-8000-000000000002"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000002"
+asset = "fa570000-0000-4000-8000-000000000033"
+[[records]]
+form = "f5340000-0000-4000-8000-000000000002"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000002"
+asset = "fa570000-0000-4000-8000-000000000034"
+[[records]]
+form = "f5350000-0000-4000-8000-000000000002"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000002"
+asset = "fa570000-0000-4000-8000-000000000035"
+[[records]]
+form = "f5000000-0000-4000-8000-000000000003"
+type = "SoundForm"
+new = true
+[records.fields]
+editorId = "FootstepSnow"
+bus = "sfx"
+volume = 0.8
+volumeJitter = 0.1
+pitch = 1.0
+pitchJitter = 0.12
+is3d = true
+minDistance = 1.5
+maxDistance = 18.0
+[[records]]
+form = "f5500000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-000000000050"
+[[records]]
+form = "f5510000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-000000000051"
+[[records]]
+form = "f5520000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-000000000052"
+[[records]]
+form = "f5530000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-000000000053"
+[[records]]
+form = "f5540000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-000000000054"
+[[records]]
+form = "f5550000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-000000000055"
+[[records]]
+form = "f5560000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-000000000056"
+[[records]]
+form = "f5570000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-000000000057"
+[[records]]
+form = "f5580000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-000000000058"
+[[records]]
+form = "f5590000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-000000000059"
+[[records]]
+form = "f55a0000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-00000000005a"
+[[records]]
+form = "f55b0000-0000-4000-8000-000000000003"
+type = "SoundVariantForm"
+new = true
+[records.fields]
+parent = "f5000000-0000-4000-8000-000000000003"
+asset = "fa570000-0000-4000-8000-00000000005b"
+
+[[records]]
+form = "fc000000-0000-4000-8000-000000000006"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueFootstepGrass"
+tag = "Cue.Footstep.Grass"
+particles = "fe000000-0000-4000-8000-000000000004" # StepDust
+sound = "f5000000-0000-4000-8000-000000000002"     # FootstepGrass
+
+[[records]]
+form = "fc000000-0000-4000-8000-000000000007"
+type = "CueForm"
+new = true
+[records.fields]
+editorId = "CueFootstepSnow"
+tag = "Cue.Footstep.Snow"
+particles = "fe000000-0000-4000-8000-000000000004" # StepDust
+sound = "f5000000-0000-4000-8000-000000000003"     # FootstepSnow
