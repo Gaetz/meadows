@@ -55,6 +55,8 @@
 #include "game/TextureCache.hpp"
 #include "game/VegetationCollision.hpp"
 #include "game/scenes/LandscapeTuning.hpp"
+#include "engine/audio/Audio.hpp"
+#include "game/SoundResolver.hpp"
 #include "game/scenes/FxDirector.hpp"
 #include "game/scenes/LandscapeRenderer.hpp"
 #include "engine/rhi/Rhi.hpp"
@@ -281,6 +283,10 @@ private:
     // P0 C2: the standard cue handlers (CueForm -> particles/shake) —
     // combat emits into fxDirector.cues(), presentation follows.
     FxDirector fxDirector;
+    // P0 C3: the audio seam — the real backend in-game (H6 facade), the
+    // resolver maps SoundForms onto it; cue sounds ride the FxDirector.
+    audio::AudioSystem audioSystem;
+    SoundResolver soundResolver;
     const data::MiscItemForm* goldForm { nullptr };
 
     // Chantier 5 B3: the one post-spawn seam for EVERY actor (player and

@@ -207,9 +207,15 @@ void LandscapeScene::setupGameplay() {
     // cost/cooldown/i-frames all live in its effects.
     dodgeAbility =
         data::findByEditorId<gameplay::AbilityForm>(forms, "Dodge");
+    // P0 C3: the audio backend + the SoundForm resolver (idempotent on
+    // re-enter: create() is a no-op once ready).
+    if (!audioSystem.ready()) {
+        audioSystem.create();
+    }
+    soundResolver.create(forms, assetDb, &audioSystem);
     // P0 C2: cue handlers over the resolved CueForms — combat feedback
-    // (hit sparks, parry shake) is data from here on.
-    fxDirector.create(forms, fxSim);
+    // (hit sparks, parry shake, C3 sounds) is data from here on.
+    fxDirector.create(forms, fxSim, &soundResolver);
     // Chantier 4 B5: the currency + the barter trigger (a dialogue node
     // fires "OpenBarter" — the vendor is whoever we're talking to).
     goldForm = data::findByEditorId<data::MiscItemForm>(forms, "GoldCoin");
@@ -721,6 +727,10 @@ void LandscapeScene::update(f32 dt) {
     // P0 C2: shake decay + the transient camera offset (removed first
     // each frame, so paused sims and fly cameras never accumulate it).
     fxDirector.update(dt, flyCamera);
+    // P0 C3: reap finished one-shots; the listener rides the camera.
+    audioSystem.update(dt);
+    audioSystem.setListener(flyCamera.camera.position,
+                            flyCamera.camera.forward());
     // P0 C1: live particles -> POD batches; the ALPHA batch is sorted
     // far-to-near around the camera (additive needs no order).
     snapshot.fxAlpha.clear();

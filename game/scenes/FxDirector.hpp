@@ -13,6 +13,8 @@ class FlyCamera;
 
 namespace game {
 
+class SoundResolver;
+
 // Chantier P0 C2 — the standard cue handlers (pattern *Director): THE
 // place where a sim-side `cues.emit("Cue.Hit.Slash", pos, damage)`
 // becomes presentation. The handler resolves the tag through the
@@ -20,13 +22,15 @@ namespace game {
 // and fires the CueForm's pieces:
 //   particles   -> a ParticleForm burst/emitter on the C1 sim,
 //   cameraShake -> a damped impulse on the fly camera,
-//   sound       -> C3 (the resolver lands next; silent until then).
+//   sound       -> the C3 SoundResolver (weighted variants + jitter).
 // The sim never includes this: headless = zero handlers = zero work.
 class FxDirector {
 public:
     // Builds the cue table from the resolved database and installs the
     // standard handler onto the registry the sim-side emitters use.
-    void create(const data::FormDatabase& forms, fx::ParticleSim& sim);
+    // `sounds` may be null (no audio in this scene).
+    void create(const data::FormDatabase& forms, fx::ParticleSim& sim,
+                SoundResolver* sounds = nullptr);
 
     gameplay::CueRegistry& cues() { return registry; }
 
@@ -41,6 +45,7 @@ public:
 private:
     const data::FormDatabase* forms { nullptr };
     fx::ParticleSim* sim { nullptr };
+    SoundResolver* sounds { nullptr };
     gameplay::CueRegistry registry;
     gameplay::CueTable table;
     f32 shake { 0.0f };      // current amplitude (m), decays per frame

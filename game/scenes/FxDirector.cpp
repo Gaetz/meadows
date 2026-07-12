@@ -5,13 +5,15 @@
 #include "data/forms/FormDatabase.hpp"
 #include "engine/core/Hash.hpp"
 #include "engine/render/FlyCamera.hpp"
+#include "game/SoundResolver.hpp" // C3: cue sounds
 
 namespace game {
 
 void FxDirector::create(const data::FormDatabase& formsIn,
-                        fx::ParticleSim& simIn) {
+                        fx::ParticleSim& simIn, SoundResolver* soundsIn) {
     forms = &formsIn;
     sim = &simIn;
+    sounds = soundsIn;
     registry = {}; // a scene re-enter must not stack handlers
     table.build(formsIn);
     registry.addHandler([this](const gameplay::CueEvent& event) {
@@ -42,7 +44,12 @@ void FxDirector::create(const data::FormDatabase& formsIn,
                     : 1.0f;
             addShake(cue->cameraShake * scale);
         }
-        // cue->sound: C3 (the SoundForm resolver) plugs in here.
+        if (cue->sound.isValid() && sounds) {
+            // C3: the SoundForm resolver — weighted variant + jitter,
+            // seeded from the same cosmetic stream as the particles.
+            sounds->play(cue->sound, event.position,
+                         core::hashU32(spawnCounter ^ 0xac00571cu));
+        }
     });
 }
 

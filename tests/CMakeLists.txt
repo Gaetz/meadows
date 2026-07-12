@@ -71,6 +71,7 @@
     SaveStateTest.cpp
     SceneStackTest.cpp
     SceneSubmitTest.cpp
+    SoundResolverTest.cpp
     ScreenStackTest.cpp
     ScriptTest.cpp
     SpatialIndexTest.cpp

@@ -12,6 +12,7 @@ add_library(meadows-runtime STATIC
     SceneStack.cpp
     SceneSubmit.cpp
     ScreenStack.cpp
+    SoundResolver.cpp
     TerrainCollision.cpp
     TextureCache.cpp
     VegetationCollision.cpp
@@ -19,7 +20,7 @@ add_library(meadows-runtime STATIC
     WorldEditor.cpp
 )
 target_link_libraries(meadows-runtime PUBLIC meadows-render meadows-world
-                      meadows-physics)
+                      meadows-physics meadows-audio)
 meadows_set_warnings(meadows-runtime)
 
 add_executable(true-adventurer
