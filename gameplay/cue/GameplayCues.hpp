@@ -37,6 +37,10 @@ struct CueEvent {
     str tag;               // hierarchical name, e.g. "Cue.Hit.Slash"
     Vec3 position {};      // world position of the feedback
     f32 magnitude { 0.0f }; // damage amount, intensity...
+    // Sneak & co: the emitter can soften its own feedback (sound volume
+    // and pitch multipliers over the SoundForm's authored values).
+    f32 volumeScale { 1.0f };
+    f32 pitchScale { 1.0f };
 };
 
 class CueRegistry {

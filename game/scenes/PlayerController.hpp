@@ -77,6 +77,8 @@ struct PlayerContext {
     std::function<std::optional<f32>(const Vec3&)> waterSurfaceAt;
     // Energy drain while swimming (§2.9: only effects move energy).
     const gameplay::EffectForm* swimCostEffect { nullptr };
+    // Sneak: the drain while MOVING sneaked (SneakCost, ~3 energy/s).
+    const gameplay::EffectForm* sneakCostEffect { nullptr };
 };
 
 // The first-person Play-mode controller extracted from LandscapeScene
@@ -117,6 +119,10 @@ public:
     // the first LMB draws instead of swinging.
     bool weaponDrawn() const { return weaponDrawn_; }
 
+    // Ctrl toggles sneak: softer, quieter steps and halved detection —
+    // at the price of a slow energy drain while moving.
+    bool sneaking() const { return sneaking_; }
+
 private:
     void tryAttack(const PlayerContext& ctx);
     // D2b: decides the mode, swims when swimming (3D wish toward the
@@ -148,6 +154,9 @@ private:
     gameplay::MoveMode moveMode_ { gameplay::MoveMode::Ground };
     f32 swimCostAccumulator { 0.0f };
     f32 drownAccumulator { 0.0f };
+    // Sneak toggle (Ctrl) + its moving-only drain accumulator.
+    bool sneaking_ { false };
+    f32 sneakCostAccumulator { 0.0f };
 };
 
 } // namespace game

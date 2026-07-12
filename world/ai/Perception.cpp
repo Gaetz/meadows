@@ -69,11 +69,11 @@ void updatePerception(Perception& perception, bool canSee,
 }
 
 void hearNoise(Perception& perception, const Vec3& selfPos,
-               const Vec3& position) {
+               const Vec3& position, f32 loudness) {
     const Vec3 gap = position - selfPos;
-    if (glm::dot(gap, gap) >
-        perception.hearingRadius * perception.hearingRadius) {
-        return; // too far to hear
+    const f32 reach = perception.hearingRadius * glm::max(loudness, 0.0f);
+    if (glm::dot(gap, gap) > reach * reach) {
+        return; // too far (or too quiet) to hear
     }
     switch (awareState(perception)) {
     case AwareState::Calm:

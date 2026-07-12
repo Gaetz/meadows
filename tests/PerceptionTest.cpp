@@ -74,6 +74,14 @@ TEST_CASE("noise makes a calm perceiver suspicious — within earshot only") {
     // Suspicion decays to Calm without confirmation.
     world::updatePerception(p, false, {}, p.searchSeconds + 0.1f);
     CHECK(world::awareState(p) == AwareState::Calm);
+
+    // A sneaked noise (loudness 0.5) carries HALF as far: 8 m is
+    // outside the effective 6 m, 5 m is inside.
+    Perception q;
+    world::hearNoise(q, self, { 8.0f, 0.0f, 0.0f }, 0.5f);
+    CHECK(world::awareState(q) == AwareState::Calm);
+    world::hearNoise(q, self, { 5.0f, 0.0f, 0.0f }, 0.5f);
+    CHECK(world::awareState(q) == AwareState::Suspicious);
 }
 
 TEST_CASE("noise re-aims a search and restarts its patience; Alert "

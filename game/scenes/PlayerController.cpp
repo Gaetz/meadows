@@ -422,6 +422,23 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
              gameplay::SwingPhase::Idle)) {
         weaponDrawn_ = !weaponDrawn_;
     }
+    // Ctrl: sneak toggle (dev design 2026-07-12) — quieter, harder to
+    // spot (the perception/footstep paths read State.Sneaking).
+    if (input.wasPressed(platform::Key::Ctrl)) {
+        sneaking_ = !sneaking_;
+        sneakCostAccumulator = 0.0f;
+    }
+    if (ctx.playerEntity.is_alive()) {
+        auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
+        if (const auto tag = ctx.gameTags.find("State.Sneaking")) {
+            const bool tagged = system.tags.has(*tag);
+            if (sneaking_ && !tagged) {
+                system.tags.add(*tag, ctx.gameTags);
+            } else if (!sneaking_ && tagged) {
+                system.tags.remove(*tag, ctx.gameTags);
+            }
+        }
+    }
     // STATS.md §4: staggered = can't act, parry or dodge, very slow.
     bool staggered = false;
     if (ctx.playerEntity.is_alive()) {
@@ -608,6 +625,21 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
         }
     } else {
         sprintCostAccumulator = 0.0f;
+    }
+    // Sneak drain: MOVING sneaked pays (SneakCost, ~3/s, data); holding
+    // still and watching is free (dev design 2026-07-12).
+    if (sneaking_ && moving && ctx.sneakCostEffect &&
+        ctx.playerEntity.is_alive()) {
+        sneakCostAccumulator += dt;
+        while (sneakCostAccumulator >= 0.5f) {
+            sneakCostAccumulator -= 0.5f;
+            auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
+            auto& sys = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
+            gameplay::applyEffect(set, sys, *ctx.sneakCostEffect,
+                                  ctx.gameTags);
+        }
+    } else if (!moving) {
+        sneakCostAccumulator = 0.0f;
     }
 
     // Eyes above the feet (eyeHeight, §5 U4-7); the ENTITY transform tracks

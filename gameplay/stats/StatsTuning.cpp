@@ -35,6 +35,7 @@ void registerCharacterRuntimeTags(GameplayTagRegistry& tags) {
                               // registry doesn't know is granted SILENTLY
                               // as nothing, the A3 cooldown lesson)
            "State.Resting",   // D1: furniture effects (SeatRest...)
+           "State.Sneaking",  // sneak toggle (detection + step audio)
            "Cooldown.Dodge", "Cooldown.Attack" }) {
         tags.registerTag(tag);
     }

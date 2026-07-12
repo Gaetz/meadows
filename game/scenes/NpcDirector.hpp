@@ -208,8 +208,9 @@ public:
     void update(f32 dt, const NpcContext& ctx);
 
     // P0 B2 hearing: routes an OnNoise position to every perceiver (the
-    // scene subscribes it on the EventBus).
-    void onNoise(const Vec3& position);
+    // scene subscribes it on the EventBus). `loudness` scales each
+    // perceiver's hearing radius — a sneaked step carries half as far.
+    void onNoise(const Vec3& position, f32 loudness = 1.0f);
 
     // U4-2b: fills snapshot.skinned (copied pose + resolved geometry
     // handles) — the renderer draws ONLY from the packet. Called after

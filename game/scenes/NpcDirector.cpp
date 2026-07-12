@@ -539,10 +539,18 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             auto& perception = npc.entity.get_mut<world::Perception>();
             // Vision verdict: cone from the NPC's facing, then the LOS
             // raycast (world geometry only — actors are out of the
-            // broadphase anyway).
+            // broadphase anyway). A SNEAKING target is spotted at half
+            // range (the sneak skill will drive the factor later).
+            world::Perception sight = perception;
+            if (const auto sneakTag = ctx.gameTags.find("State.Sneaking");
+                sneakTag && ctx.playerEntity.is_alive() &&
+                ctx.playerEntity.get<gameplay::AbilitySystem>().tags.has(
+                    *sneakTag)) {
+                sight.viewDistance *= ctx.statsTuning.sneakDetectionFactor;
+            }
             const Vec3 facing { std::sin(npc.yaw), 0.0f,
                                 std::cos(npc.yaw) };
-            bool canSee = world::inViewCone(perception, transform.position,
+            bool canSee = world::inViewCone(sight, transform.position,
                                             facing, playerPos);
             if (canSee && ctx.physics) {
                 const Vec3 eye =
@@ -1212,7 +1220,7 @@ void NpcDirector::extract(RenderSnapshot& out) const {
     }
 }
 
-void NpcDirector::onNoise(const Vec3& position) {
+void NpcDirector::onNoise(const Vec3& position, f32 loudness) {
     // B2 hearing: every living perceiver within ITS hearing radius turns
     // toward the noise (Calm -> Suspicious; searches re-aim; Alert
     // ignores it). Dispatchers: player footsteps and combat cues (C4b).
@@ -1224,7 +1232,7 @@ void NpcDirector::onNoise(const Vec3& position) {
         }
         world::hearNoise(npc.entity.get_mut<world::Perception>(),
                          npc.entity.get<world::Transform>().position,
-                         position);
+                         position, loudness);
     }
 }
 

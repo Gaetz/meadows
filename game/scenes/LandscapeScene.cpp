@@ -194,6 +194,8 @@ void LandscapeScene::setupGameplay() {
         data::findByEditorId<gameplay::EffectForm>(forms, "SprintCost");
     swimCostEffect = // D2b: the swim drain (combat.toml)
         data::findByEditorId<gameplay::EffectForm>(forms, "SwimCost");
+    sneakCostEffect = // sneak: the moving drain (combat.toml)
+        data::findByEditorId<gameplay::EffectForm>(forms, "SneakCost");
     testWoundEffect =
         data::findByEditorId<gameplay::EffectForm>(forms, "TestLegWound");
     // Chantier 3 B6: the melee weapons (data — retune in village.toml).
@@ -282,12 +284,21 @@ void LandscapeScene::setupGameplay() {
                 if (weights.snow > best) { best = weights.snow; material = "Snow"; }
                 if (weights.sand > best) { best = weights.sand; material = "Sand"; }
             }
-            fxDirector.cues().emit(
-                { str { "Cue.Footstep." } + material, at, 0.0f });
+            // Sneaked steps are softer, lower and carry half as far.
+            const bool sneaked = event.source == playerEntity &&
+                                 playerController.sneaking();
+            gameplay::CueEvent step { str { "Cue.Footstep." } + material,
+                                      at, 0.0f };
+            if (sneaked) {
+                step.volumeScale = statsTuning.sneakVolumeFactor;
+                step.pitchScale = statsTuning.sneakPitchFactor;
+            }
+            fxDirector.cues().emit(step);
             // Only the PLAYER'S steps are heard (B2 sneaking hook):
             // villagers must not investigate each other's strolls.
             if (event.source == playerEntity) {
-                npcDirector.onNoise(at);
+                npcDirector.onNoise(
+                    at, sneaked ? statsTuning.sneakDetectionFactor : 1.0f);
             }
         });
 }
@@ -1814,6 +1825,7 @@ PlayerContext LandscapeScene::makePlayerContext() {
             return best;
         },
         swimCostEffect, // D2b: §2.9 — only effects move energy
+        sneakCostEffect,
     };
 }
 

@@ -19,7 +19,8 @@ void SoundResolver::create(const data::FormDatabase& formsIn,
 }
 
 std::optional<audio::SoundParams> SoundResolver::resolve(
-    const core::Guid& sound, const Vec3& position, u32 seed) const {
+    const core::Guid& sound, const Vec3& position, u32 seed,
+    f32 volumeScale, f32 pitchScale) const {
     if (!forms || !assets || !sound.isValid()) {
         return std::nullopt;
     }
@@ -64,9 +65,13 @@ std::optional<audio::SoundParams> SoundResolver::resolve(
     params.file = picked->file;
     params.bus = form->bus;
     params.volume =
-        glm::max(form->volume + rng.spread() * form->volumeJitter, 0.0f);
+        glm::max((form->volume + rng.spread() * form->volumeJitter) *
+                     glm::max(volumeScale, 0.0f),
+                 0.0f);
     params.pitch =
-        glm::max(form->pitch + rng.spread() * form->pitchJitter, 0.05f);
+        glm::max((form->pitch + rng.spread() * form->pitchJitter) *
+                     glm::max(pitchScale, 0.05f),
+                 0.05f);
     params.is3d = form->is3d;
     params.position = position;
     params.minDistance = form->minDistance;
@@ -76,11 +81,12 @@ std::optional<audio::SoundParams> SoundResolver::resolve(
 }
 
 bool SoundResolver::play(const core::Guid& sound, const Vec3& position,
-                         u32 seed) {
+                         u32 seed, f32 volumeScale, f32 pitchScale) {
     if (!audio || !audio->ready()) {
         return false;
     }
-    const auto params = resolve(sound, position, seed);
+    const auto params =
+        resolve(sound, position, seed, volumeScale, pitchScale);
     return params && audio->play(*params);
 }
 

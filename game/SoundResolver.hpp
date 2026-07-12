@@ -29,13 +29,18 @@ public:
                 audio::AudioSystem* audio);
 
     // Resolve without playing (tests / inspection). nullopt = unknown
-    // form, or no variant whose asset the VFS can resolve.
+    // form, or no variant whose asset the VFS can resolve. The scales
+    // multiply the authored volume/pitch AFTER the jitter (sneaked
+    // steps: softer and lower).
     std::optional<audio::SoundParams> resolve(const core::Guid& sound,
                                               const Vec3& position,
-                                              u32 seed) const;
+                                              u32 seed,
+                                              f32 volumeScale = 1.0f,
+                                              f32 pitchScale = 1.0f) const;
 
     // Fire-and-forget at `position` (used when the form says 3D).
-    bool play(const core::Guid& sound, const Vec3& position, u32 seed);
+    bool play(const core::Guid& sound, const Vec3& position, u32 seed,
+              f32 volumeScale = 1.0f, f32 pitchScale = 1.0f);
 
 private:
     const data::FormDatabase* forms { nullptr };

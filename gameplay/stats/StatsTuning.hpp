@@ -131,6 +131,12 @@ struct StatsTuningForm : data::Form {
     // once energy is gone (the SwimCost effect drains it, data).
     f32 swimSpeedFactor { 0.7f };
     f32 drownDamagePerSecond { 8.0f };
+    // Sneak (appended, dev design 2026-07-12): detection ranges (sight
+    // AND hearing) scale by this while State.Sneaking — 0.5 for now,
+    // the sneak SKILL will drive it later. Footstep sounds soften too.
+    f32 sneakDetectionFactor { 0.5f };
+    f32 sneakVolumeFactor { 0.5f };
+    f32 sneakPitchFactor { 0.85f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -206,6 +212,9 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(staggerSpeedFactor)
         REFLECT_FIELD(swimSpeedFactor)
         REFLECT_FIELD(drownDamagePerSecond)
+        REFLECT_FIELD(sneakDetectionFactor)
+        REFLECT_FIELD(sneakVolumeFactor)
+        REFLECT_FIELD(sneakPitchFactor)
     REFLECT_END()
 };
 

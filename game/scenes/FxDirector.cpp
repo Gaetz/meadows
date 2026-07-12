@@ -46,9 +46,11 @@ void FxDirector::create(const data::FormDatabase& formsIn,
         }
         if (cue->sound.isValid() && sounds) {
             // C3: the SoundForm resolver — weighted variant + jitter,
-            // seeded from the same cosmetic stream as the particles.
+            // seeded from the same cosmetic stream as the particles;
+            // the emitter's scales soften sneaked steps.
             sounds->play(cue->sound, event.position,
-                         core::hashU32(spawnCounter ^ 0xac00571cu));
+                         core::hashU32(spawnCounter ^ 0xac00571cu),
+                         event.volumeScale, event.pitchScale);
         }
     });
 }

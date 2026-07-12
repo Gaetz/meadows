@@ -67,11 +67,12 @@ bool inViewCone(const Perception& perception, const Vec3& selfPos,
 void updatePerception(Perception& perception, bool canSee,
                       const Vec3& targetPos, f32 dt);
 
-// A noise at `position` (heard only within hearingRadius of `selfPos`):
-// Calm turns Suspicious toward it; Suspicious/Searching re-aim at it;
-// Alert doesn't care (it KNOWS where the target is).
+// A noise at `position` (heard only within hearingRadius x `loudness`
+// of `selfPos` — a sneaking step carries half as far): Calm turns
+// Suspicious toward it; Suspicious/Searching re-aim at it; Alert
+// doesn't care (it KNOWS where the target is).
 void hearNoise(Perception& perception, const Vec3& selfPos,
-               const Vec3& position);
+               const Vec3& position, f32 loudness = 1.0f);
 
 // B3 call-for-help: an ally REPORTED the target at `position` — treated
 // as fresh intel (straight to Alert, memory refreshed), no earshot gate:
