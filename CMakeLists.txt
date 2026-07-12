@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.25)
+# 3.26: copy_directory_if_different (the per-build game-data sync).
+cmake_minimum_required(VERSION 3.26)
 # C is needed for vendored C sources (glad).
 project(true-adventurer LANGUAGES C CXX)
 

@@ -67,12 +67,19 @@ target_link_libraries(true-adventurer PRIVATE meadows-runtime meadows-data
                       meadows-audio imguizmo imgui-node-editor)
 meadows_set_warnings(true-adventurer)
 
-# Game data (plugins + assets) and engine shaders ship next to the executable.
-add_custom_command(TARGET true-adventurer POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
+# Game data (plugins + assets) and engine shaders ship next to the
+# executable — as a custom target the exe DEPENDS on, so it runs on EVERY
+# build (a POST_BUILD only fired when the exe relinked: a data-only edit
+# left the build dir stale — the 2026-07-12 lesson). `_if_different`
+# (CMake 3.26) only rewrites what changed.
+add_custom_target(game-data
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
             ${CMAKE_CURRENT_SOURCE_DIR}/data
             $<TARGET_FILE_DIR:true-adventurer>/data
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
             ${PROJECT_SOURCE_DIR}/engine/render/landscape/shaders
             $<TARGET_FILE_DIR:true-adventurer>/data/shaders
+    COMMENT "Syncing game data + shaders"
+    VERBATIM
 )
+add_dependencies(true-adventurer game-data)
