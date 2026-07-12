@@ -7,7 +7,7 @@
 #include "world/scene/Components.hpp"
 #include "world/scene/SpatialIndex.hpp"
 
-// Chantier P0 B1 — the shared actor grid: radius and cone queries over a
+// Chantier P0 B1 — the shared actor grid: radius queries over a
 // per-frame snapshot, cell boundaries included.
 
 namespace {
@@ -61,41 +61,4 @@ TEST_CASE("the spatial index answers radius queries across cell borders") {
     const_cast<ecs::Entity&>(far).destruct();
     index.rebuild(world);
     CHECK(index.size() == 3);
-}
-
-TEST_CASE("the cone query sees ahead, not behind") {
-    ecs::World world;
-    world::registerSceneComponents(world);
-    const ecs::Entity ahead = spawnActor(world, { 0.0f, 0.0f, 8.0f });
-    const ecs::Entity offAxis = spawnActor(world, { 5.0f, 0.0f, 6.0f });
-    const ecs::Entity behind = spawnActor(world, { 0.0f, 0.0f, -4.0f });
-    const ecs::Entity tooFar = spawnActor(world, { 0.0f, 0.0f, 30.0f });
-
-    world::SpatialIndex index;
-    index.rebuild(world);
-
-    // 90-degree cone (cos 45 half-angle) looking +Z, 20 m.
-    const f32 cosHalf = std::cos(glm::radians(45.0f));
-    vector<world::SpatialIndex::Entry> seen;
-    index.queryCone({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, 20.0f,
-                    cosHalf, seen);
-    CHECK(contains(seen, ahead));
-    CHECK(contains(seen, offAxis)); // atan(5/6) ~ 40 degrees: inside
-    CHECK(!contains(seen, behind));
-    CHECK(!contains(seen, tooFar));
-
-    // Narrow the cone to 30 degrees: the off-axis actor drops out.
-    seen.clear();
-    index.queryCone({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, 20.0f,
-                    std::cos(glm::radians(15.0f)), seen);
-    CHECK(contains(seen, ahead));
-    CHECK(!contains(seen, offAxis));
-
-    // Point-blank: an actor ON the apex is always seen.
-    const ecs::Entity contact = spawnActor(world, { 0.0f, 0.0f, 0.0f });
-    index.rebuild(world);
-    seen.clear();
-    index.queryCone({ 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f }, 20.0f,
-                    cosHalf, seen);
-    CHECK(contains(seen, contact));
 }

@@ -42,7 +42,8 @@
 #include "gameplay/stats/EquipmentStats.hpp" // weaponDamageEvent
 #include "gameplay/stats/GameClock.hpp"
 #include "script/Vm.hpp"               // brain scripts (BOSS-SCRIPTING.md)
-#include "world/ai/Perception.hpp"     // B2: vision cone + aware states
+#include "world/ai/Perception.hpp"      // B2: vision cone + aware states
+#include "world/scene/SpatialIndex.hpp" // R3: the shared actor snapshot
 #include "world/ai/TerrainNavigator.hpp"
 #include "world/scene/AnimBridge.hpp"     // resolveActorVisual, buildAnimGraph
 #include "world/scene/Components.hpp"
@@ -315,6 +316,12 @@ void NpcDirector::refreshNpcs(
             }
         }
     }
+    // R3: refresh the entity->Npc map (this is the only place npcs_
+    // changes; the uptr targets keep their addresses).
+    npcByEntity_.clear();
+    for (auto& npcPtr : npcs_) {
+        npcByEntity_[npcPtr->entity.id()] = npcPtr.get();
+    }
 }
 
 // Chantier 3 B3: re-evaluate the schedule every 10 game minutes; execute the
@@ -434,26 +441,32 @@ void NpcDirector::callForHelp(const NpcContext& ctx, const Npc& caller,
     ctx.eventBus.dispatch({ gameplay::eventKind("CallForHelp"),
                             caller.entity, ecs::Entity {},
                             caller.factionTag });
-    if (!caller.factionTag.isValid()) {
-        return; // no faction, no friends
+    if (!caller.factionTag.isValid() || !ctx.actorIndex) {
+        return; // no faction, no friends (the index is the scene's)
     }
+    // R3 (B1 adopted): the shared actor snapshot answers "who is in
+    // earshot"; entity hits map back to the director's Npc records.
     const Vec3 callerPos = caller.entity.get<world::Transform>().position;
-    const f32 radius = ctx.statsTuning.helpCallRadius;
-    for (auto& allyPtr : npcs_) {
-        Npc& ally = *allyPtr;
-        if (&ally == &caller || ally.dead || !ally.entity.is_alive() ||
-            ally.factionTag != caller.factionTag ||
-            !ally.entity.has<world::Perception>()) {
+    vector<world::SpatialIndex::Entry> inEarshot;
+    ctx.actorIndex->queryRadius(callerPos, ctx.statsTuning.helpCallRadius,
+                                inEarshot);
+    for (const auto& entry : inEarshot) {
+        Npc* ally = findNpc(entry.entity.id());
+        if (!ally || ally == &caller || ally->dead ||
+            !ally->entity.is_alive() ||
+            ally->factionTag != caller.factionTag ||
+            !ally->entity.has<world::Perception>()) {
             continue;
         }
-        const Vec3 gap =
-            ally.entity.get<world::Transform>().position - callerPos;
-        if (glm::dot(gap, gap) > radius * radius) {
-            continue;
-        }
-        world::alertTo(ally.entity.get_mut<world::Perception>(), targetPos);
-        ally.sitting = false; // an alerted ally stands up
+        world::alertTo(ally->entity.get_mut<world::Perception>(),
+                       targetPos);
+        ally->sitting = false; // an alerted ally stands up
     }
+}
+
+Npc* NpcDirector::findNpc(u64 entityId) const {
+    const auto it = npcByEntity_.find(entityId);
+    return it != npcByEntity_.end() ? it->second : nullptr;
 }
 
 void NpcDirector::update(f32 dt, const NpcContext& ctx) {
@@ -1204,6 +1217,9 @@ void NpcDirector::onNoise(const Vec3& position, f32 loudness) {
     // B2 hearing: every living perceiver within ITS hearing radius turns
     // toward the noise (Calm -> Suspicious; searches re-aim; Alert
     // ignores it). Dispatchers: player footsteps and combat cues (C4b).
+    // Deliberately NOT a SpatialIndex query (R3): the radius is per-
+    // PERCEIVER (hearingRadius x loudness), so one shared-radius query
+    // can't answer it — the plain sweep stays until NPC counts bite.
     for (auto& npcPtr : npcs_) {
         Npc& npc = *npcPtr;
         if (npc.dead || !npc.entity.is_alive() ||
@@ -1221,6 +1237,7 @@ void NpcDirector::teardown(rhi::Device& device) {
         destroyNpc(device, *npc);
     }
     npcs_.clear();
+    npcByEntity_.clear();
     patrolPoints.clear();
     rigCache.clear();
 }

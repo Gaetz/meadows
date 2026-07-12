@@ -51,39 +51,4 @@ void SpatialIndex::queryRadius(const Vec3& center, f32 radius,
     }
 }
 
-void SpatialIndex::queryCone(const Vec3& apex, const Vec3& direction,
-                             f32 range, f32 cosHalfAngle,
-                             vector<Entry>& out) const {
-    if (range < 0.0f) {
-        return;
-    }
-    const f32 rangeSq = range * range;
-    const i32 minX = cellOf(apex.x - range);
-    const i32 maxX = cellOf(apex.x + range);
-    const i32 minZ = cellOf(apex.z - range);
-    const i32 maxZ = cellOf(apex.z + range);
-    for (i32 x = minX; x <= maxX; ++x) {
-        for (i32 z = minZ; z <= maxZ; ++z) {
-            const auto it = cells.find(key(x, z));
-            if (it == cells.end()) {
-                continue;
-            }
-            for (const Entry& entry : it->second) {
-                const Vec3 to = entry.position - apex;
-                const f32 distanceSq = glm::dot(to, to);
-                if (distanceSq > rangeSq) {
-                    continue;
-                }
-                // Point-blank counts as seen: no direction to compare.
-                if (distanceSq > 1e-8f &&
-                    glm::dot(to / std::sqrt(distanceSq), direction) <
-                        cosHalfAngle) {
-                    continue;
-                }
-                out.push_back(entry);
-            }
-        }
-    }
-}
-
 } // namespace world

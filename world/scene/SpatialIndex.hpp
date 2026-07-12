@@ -14,9 +14,11 @@
 // stable even when handlers spawn or despawn entities mid-tick.
 //
 // v1 indexes ACTORS (Transform + ActorMarker) — the consumers are the
-// trigger sweep, perception (B2) and combat AI (B3). Distances are full
-// 3D; only the BUCKETING is planar. Upgrade path: more archetypes, or an
-// octree, the day a profile asks for it.
+// trigger sweep and the faction shout (callForHelp). Perception stays a
+// direct NPC-vs-player check and hearing a per-perceiver sweep (its
+// radius is per-NPC) until NPC counts bite. Distances are full 3D; only
+// the BUCKETING is planar. Upgrade path: more archetypes, a cone query,
+// or an octree, the day a profile asks for it.
 
 namespace world {
 
@@ -36,12 +38,6 @@ public:
     // Appends to `out` (callers reuse a scratch vector).
     void queryRadius(const Vec3& center, f32 radius,
                      vector<Entry>& out) const;
-
-    // Every actor within `range` of `apex` AND inside the cone around
-    // `direction` (normalized) of half-angle cosine `cosHalfAngle`.
-    // The apex itself (distance ~0) counts as inside.
-    void queryCone(const Vec3& apex, const Vec3& direction, f32 range,
-                   f32 cosHalfAngle, vector<Entry>& out) const;
 
     u32 size() const { return count; }
 

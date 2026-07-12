@@ -37,6 +37,7 @@ class CharacterBody;
 }
 namespace world {
 class TerrainNavigator;
+class SpatialIndex;
 }
 namespace script {
 class Vm;
@@ -189,6 +190,9 @@ struct NpcContext {
     ProjectileDirector* projectiles;
     bool godMode;
     f32 timeSeconds;                   // cosmetic wander hash (not gameplay RNG)
+    // R3 (B1 adopted): the scene's per-frame actor snapshot — radius
+    // queries (the faction shout) go through it, not a full-list sweep.
+    const world::SpatialIndex* actorIndex;
 };
 
 // The whole Forms-driven NPC subsystem, extracted from LandscapeScene (audit
@@ -249,8 +253,14 @@ private:
     // removes the furniture's GAS effect, clears the anim gate.
     void releaseFurniture(const NpcContext& ctx, Npc& npc);
 
+    // R3: entity id -> Npc record, for mapping SpatialIndex hits back to
+    // the director's structs. Rebuilt whenever npcs_ changes (refreshNpcs
+    // is the only mutation point; uptr keeps the pointers stable).
+    Npc* findNpc(u64 entityId) const;
+
     std::unordered_map<core::Guid, RigData> rigCache;
     vector<uptr<Npc>> npcs_;
+    std::unordered_map<u64, Npc*> npcByEntity_;
     vector<Vec3> patrolPoints;   // grounded "patrol" marker positions
     Vec3 characterSpot_ { 0.0f }; // first NPC position (teleport target)
     // A2: per-extract scratch for anim::modelMatrices (weapon attach).

@@ -692,8 +692,9 @@ void LandscapeScene::update(f32 dt) {
         // through the shared VM. NPC positions are last frame's (they
         // move in updateNpcs, later) — one frame of latency is fine.
         {
-            // P0 B1: ONE actor snapshot per frame, shared by the trigger
-            // sweep now and perception/combat AI (B2/B3) next.
+            // P0 B1: ONE actor snapshot per frame — the trigger sweep
+            // and the faction shout (callForHelp, R3) query it. Hearing
+            // stays a per-perceiver sweep (its radius is per-NPC).
             spatialIndex.rebuild(world);
             world::TriggerCallbacks triggerCb;
             triggerCb.events = &eventBus;
@@ -1900,6 +1901,7 @@ NpcContext LandscapeScene::makeNpcContext() {
         &projectileDirector, // A7: archer NPCs
         sceneConsole.godMode(),
         timeSeconds,
+        &spatialIndex, // R3: radius queries (faction shout) share it
     };
 }
 
