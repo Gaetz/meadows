@@ -1,5 +1,7 @@
 #include "engine/render/landscape/TerrainNoise.hpp"
 
+#include "engine/render/landscape/SplatTextures.hpp" // splatWander
+
 #include <cmath>
 
 #include "engine/core/Hash.hpp"
@@ -100,6 +102,33 @@ MaterialWeights materialWeights(const TerrainParams& params, f32 height,
     weights.sand = (1.0f - glm::smoothstep(params.seaLevel + 1.0f,
                                            params.seaLevel + 8.0f, height)) *
                    (1.0f - weights.rock);
+    weights.grass = glm::max(
+        1.0f - weights.rock - weights.snow - weights.sand, 0.0f);
+    return weights;
+}
+
+MaterialWeights materialWeightsShaded(const TerrainParams& params, f32 x,
+                                      f32 z, f32 splatUvScale) {
+    // Keep in LOCKSTEP with terrain.frag: uv = xz * scale; wander =
+    // splat green at uv * 0.06 - 0.5; the snow/sand altitudes shift by
+    // wander * 26 / * 5 before the same smoothsteps.
+    const f32 h = height(params, x, z);
+    const Vec3 n = normal(params, x, z);
+    const f32 slope = 1.0f - n.y;
+    const f32 u = x * splatUvScale * 0.06f;
+    const f32 v = z * splatUvScale * 0.06f;
+    const f32 wander =
+        splatWander(u - std::floor(u), v - std::floor(v)) - 0.5f;
+    MaterialWeights weights;
+    weights.rock = glm::smoothstep(0.18f, 0.35f, slope);
+    weights.snow = glm::smoothstep(kSnowLine - 12.0f, kSnowLine + 42.0f,
+                                   h + wander * 26.0f) *
+                   (1.0f - glm::smoothstep(0.25f, 0.45f, slope));
+    weights.sand =
+        (1.0f - glm::smoothstep(params.seaLevel + 1.0f,
+                                params.seaLevel + 8.0f,
+                                h + wander * 5.0f)) *
+        (1.0f - weights.rock);
     weights.grass = glm::max(
         1.0f - weights.rock - weights.snow - weights.sand, 0.0f);
     return weights;

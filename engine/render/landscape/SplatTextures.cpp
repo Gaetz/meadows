@@ -138,4 +138,14 @@ vector<u8> buildSplatTilePixels() {
     return pixels;
 }
 
+
+f32 splatWander(f32 u, f32 v) {
+    // The texture stores DISPLAY-space bytes in an SRGBA8 view; the
+    // shader's sampler hands back linear — decode the same way.
+    const f32 display = glm::clamp(grassTexel(u, v).y, 0.0f, 1.0f);
+    return display <= 0.04045f
+               ? display / 12.92f
+               : std::pow((display + 0.055f) / 1.055f, 2.4f);
+}
+
 } // namespace render

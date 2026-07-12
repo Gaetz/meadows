@@ -849,12 +849,30 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             } else if (kind == "useFurniture" || kind == "sleep" ||
                        kind == "eat" || kind == "work") {
                 goTo(anchor);
-                if (moveNpcAlongPath(ctx, npc, dt,
-                                     package ? package->speed : 1.0f)) {
-                    // Arrived: claim a point and sit. D1: the claimed
-                    // POINT's animTag drives the anim gate ("State." +
-                    // tag), and the furniture's GAS effect (rest regen,
-                    // warmth...) applies for as long as the seat is held.
+                const bool pathDone = moveNpcAlongPath(
+                    ctx, npc, dt, package ? package->speed : 1.0f);
+                Vec3 toAnchor = anchor - transform.position;
+                toAnchor.y = 0.0f;
+                const f32 anchorDist = glm::length(toAnchor);
+                // The grid path often can't END on the furniture (the
+                // prop is its own nav obstacle): close the last meters
+                // DIRECTLY, collider-guarded — flush against the crate
+                // counts as arrived (dev report 2026-07-12).
+                bool arrived = pathDone && anchorDist <= 0.9f;
+                if (pathDone && !arrived) {
+                    const Vec3 dir = toAnchor / glm::max(anchorDist, 1e-4f);
+                    if (steerBlocked(ctx, transform.position, dir)) {
+                        arrived = anchorDist <= 1.6f; // against the prop
+                    } else {
+                        moveNpcDirect(ctx, npc, dt, dir, 1.0f,
+                                      std::atan2(dir.x, dir.z));
+                    }
+                }
+                if (arrived) {
+                    // Claim a point and sit. D1: the claimed POINT's
+                    // animTag drives the anim gate ("State." + tag), and
+                    // the furniture's GAS effect (rest regen, warmth...)
+                    // applies for as long as the seat is held.
                     if (!npc.furnitureClaimed) {
                         npc.sitGate = "State.Sitting";
                         const gameplay::FurnitureForm* furniture = nullptr;
@@ -879,14 +897,19 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                         npc.furnitureClaimed = true;
                         if (furniture) {
                             u32 index = 0;
+                            Vec3 seatOffset { 0.0f };
                             data::childrenOf<gameplay::FurniturePointForm>(
                                 ctx.forms, furniture->id,
                                 [&](const gameplay::FurniturePointForm& p) {
                                     if (point && index == *point) {
                                         npc.sitGate = "State." + p.animTag;
+                                        seatOffset = p.offset;
                                     }
                                     ++index;
                                 });
+                            // Sit ON the point (the crate top), not
+                            // beside it — release paths re-ground him.
+                            transform.position = anchor + seatOffset;
                             if (furniture->effect.isValid()) {
                                 if (const auto* effect =
                                         ctx.forms

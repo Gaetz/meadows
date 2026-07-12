@@ -270,10 +270,12 @@ void LandscapeScene::setupGameplay() {
             const Vec3 at = event.source.get<world::Transform>().position;
             const char* material = "Wood";
             if (!interiorMode) {
-                const auto& params = renderer.terrainParams();
-                const auto weights = render::terrain::materialWeights(
-                    params, at.y,
-                    render::terrain::normal(params, at.x, at.z));
+                // The SHADED weights (wander included): the step sounds
+                // like the ground LOOKS, not like the altitude contour.
+                const auto weights =
+                    render::terrain::materialWeightsShaded(
+                        renderer.terrainParams(), at.x, at.z,
+                        tuning.splatUvScale);
                 material = "Grass";
                 f32 best = weights.grass;
                 if (weights.rock > best) { best = weights.rock; material = "Rock"; }

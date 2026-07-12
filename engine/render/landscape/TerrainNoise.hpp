@@ -80,6 +80,15 @@ constexpr f32 kSnowLine = 110.0f; // meters; matches uTerrainInfo.y
 MaterialWeights materialWeights(const TerrainParams& params, f32 height,
                                 const Vec3& normal);
 
+// The weights as the SHADER shows them (P0 C4b follow-up): the raw
+// altitude borders perturbed by the splat wander term (terrain.frag) so
+// a footstep on VISIBLE snow sounds like snow, not like the contour
+// line. `splatUvScale` = uTerrainInfo.z (tiles/meter, the render knob).
+// Scatter rules keep using materialWeights above (their masks predate
+// the wander and reseeding them would move every bush).
+MaterialWeights materialWeightsShaded(const TerrainParams& params, f32 x,
+                                      f32 z, f32 splatUvScale);
+
 } // namespace terrain
 
 } // namespace render
