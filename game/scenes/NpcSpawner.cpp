@@ -148,6 +148,7 @@ void NpcSpawner::refreshNpcs(
             // (sitting from furniture use, dead from the GAS life state).
             npc->schedule = actor.schedule;
             npc->courage = actor.courage; // B3: flees below (1 - courage)
+            npc->age = actor.age; // É5: per-tick age mods (0 = ageless)
             // Brain script: Lua decides this actor's combat moves
             // (docs/BOSS-SCRIPTING.md); keyed by the FORM — every
             // instance shares one compiled decide.

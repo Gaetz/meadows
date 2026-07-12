@@ -123,4 +123,30 @@ dès que tu peux lui parler).
    (attends au menu T pour le voir grimper via l'aperçu).
 6. F5/F9 : l'affinité et les heures survivent.
 
+## É5 — Classes, niveaux, évolution
+
+Le niveau JOUEUR ne monte pas encore tout seul (chantier progression) :
+la console (F8) a maintenant **`player.level <n>`** pour tester.
+
+**À tester :**
+1. `player.level 3` → recrute Aldric → log « É5: Aldric level 1 -> 3
+   (+1 strength) … » : il suit ton niveau, ses attributs montent selon
+   sa classe (guerrier : force/constitution), et chaque niveau gagné
+   ACTIF lui donne +1 dans ta meilleure stat supérieure à la sienne.
+2. Renvoie-le, `player.level 6`, re-recrute → il rattrape la MOITIÉ de
+   l'écart (l'exception mainCharacter — rattrapage complet — est un
+   flag data, aucun follower de test ne l'a).
+3. L'aperçu de Maela (52 ans) montre ses attributs COURANTS réduits par
+   l'âge (~-5 % physique / -3,5 % mental) ; Aldric (28 ans) : aucun
+   effet (seuil 45 ans).
+4. Un level-up ne SOIGNE pas : la vie courante est préservée, seuls
+   les maxima/stats dérivées bougent.
+5. F5/F9 : niveaux (joueur et follower) et bonus accumulés survivent.
+
+**Note design à trancher :** les followers gardent leur maxHealth
+autoré (60/45) qui ÉPINGLE leur vie max (le mécanisme override) — le
+niveau fait monter attaque/défense/posture mais PAS la vie max.
+Retirer `maxHealth` de leur ActorForm les fait passer à la formule
+d'attributs (~100 au niveau 1). Une ligne de data, à ton choix.
+
 <!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->

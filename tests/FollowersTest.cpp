@@ -829,3 +829,165 @@ TEST_CASE("followers É4: the failing condition picks the refusal option") {
     partner.followerAffinity = 5.0f;
     CHECK(only() == kRefusalA);
 }
+
+// --- É5: classes, niveaux, évolution ------------------------------------------
+// The pure rules (docs/CHANTIER-FOLLOWERS.md É5): the age curve applied as
+// per-tick StatModifiers (the equipmentMods fold — §2.9: nothing persisted,
+// no synthetic effects), the player-linked level sync, the +1 attribute
+// point walk, and the curve DELTA on level changes (bonus points survive;
+// the recompute path preserves vitals — no mid-game full heal).
+
+TEST_CASE("followers É5: age multipliers — ageless, onset, slope, floor") {
+    const gameplay::StatsTuningForm tuning; // onset 45, .008/.005, floor .5
+    // Ageless (ActorForm.age default 0) and below onset: both stay 1.
+    CHECK(gameplay::ageMultipliers(0.0f, tuning).physical == 1.0f);
+    CHECK(gameplay::ageMultipliers(0.0f, tuning).mental == 1.0f);
+    CHECK(gameplay::ageMultipliers(28.0f, tuning).physical == 1.0f); // Aldric
+    CHECK(gameplay::ageMultipliers(45.0f, tuning).mental == 1.0f);   // the edge
+    // Maela (52): seven years past the onset, body ages faster than mind.
+    const gameplay::AgeMultipliers maela =
+        gameplay::ageMultipliers(52.0f, tuning);
+    CHECK(maela.physical == doctest::Approx(1.0f - 7.0f * 0.008f));
+    CHECK(maela.mental == doctest::Approx(1.0f - 7.0f * 0.005f));
+    CHECK(maela.mental > maela.physical);
+    // Methuselah: both clamp at the floor.
+    const gameplay::AgeMultipliers ancient =
+        gameplay::ageMultipliers(500.0f, tuning);
+    CHECK(ancient.physical == doctest::Approx(tuning.ageFloor));
+    CHECK(ancient.mental == doctest::Approx(tuning.ageFloor));
+}
+
+TEST_CASE("followers É5: age mods shrink CURRENT attributes, never the maxima") {
+    const gameplay::StatsTuningForm tuning;
+    // The fold contract (armorModifiers): multiply into existing entries.
+    gameplay::StatModifiers mods;
+    mods.mul[attr("strength")] = 0.5f;
+    gameplay::foldAgeModifiers(52.0f, tuning, mods);
+    CHECK(mods.mul[attr("strength")] ==
+          doctest::Approx(0.5f * (1.0f - 7.0f * 0.008f)));
+    CHECK(mods.mul[attr("insight")] ==
+          doctest::Approx(1.0f - 7.0f * 0.005f));
+    // Ageless: a strict no-op.
+    gameplay::StatModifiers none;
+    gameplay::foldAgeModifiers(0.0f, tuning, none);
+    CHECK(none.mul.empty());
+    CHECK(none.add.empty());
+
+    // Through the recompute: current strength drops, but the primary
+    // maxima derive from BASE attributes (docs/STATS.md §2) — the doc's
+    // « compétence_effective = base × multiplicateur », not a health nerf.
+    DownFixture f;
+    const f32 maxBefore = currentValueOf(f.system, attr("maxHealth"));
+    const f32 strengthBefore = currentValueOf(f.system, attr("strength"));
+    gameplay::StatModifiers age;
+    gameplay::foldAgeModifiers(52.0f, tuning, age);
+    gameplay::recomputeStats(f.core, f.vitals, f.system, f.derived, &age);
+    CHECK(currentValueOf(f.system, attr("strength")) <
+          strengthBefore - 0.5f);
+    CHECK(currentValueOf(f.system, attr("maxHealth")) ==
+          doctest::Approx(maxBefore));
+}
+
+TEST_CASE("followers É5: level sync — tracking, catch-up, first meet, stamps") {
+    using gameplay::syncFollowerLevel;
+    // First meeting (lastSyncedFrom 0, the É0 default): stamp only — no
+    // retroactive gain from the player's pre-acquaintance levels.
+    gameplay::LevelSync s = syncFollowerLevel(1.0f, 0.0f, 4.0f, true, false);
+    CHECK(s.level == 1.0f);
+    CHECK(s.syncedFrom == 4.0f);
+    CHECK(s.pointsGained == 0);
+    // Active: 1:1 tracking, one +1 point per level gained together.
+    s = syncFollowerLevel(2.0f, 2.0f, 5.0f, true, false);
+    CHECK(s.level == 5.0f);
+    CHECK(s.syncedFrom == 5.0f);
+    CHECK(s.pointsGained == 3);
+    // No player movement: nothing moves.
+    s = syncFollowerLevel(3.0f, 5.0f, 5.0f, true, false);
+    CHECK(s.level == 3.0f);
+    CHECK(s.pointsGained == 0);
+    // The re-meet: half the gap accrued apart, FLOORED, no points.
+    s = syncFollowerLevel(2.0f, 2.0f, 7.0f, false, false); // gap 5 -> +2
+    CHECK(s.level == 4.0f);
+    CHECK(s.syncedFrom == 7.0f);
+    CHECK(s.pointsGained == 0);
+    s = syncFollowerLevel(2.0f, 2.0f, 3.0f, false, false); // gap 1 -> +0
+    CHECK(s.level == 2.0f);
+    // mainCharacter (the story exception): full catch-up, still no points.
+    s = syncFollowerLevel(2.0f, 2.0f, 7.0f, false, true);
+    CHECK(s.level == 7.0f);
+    CHECK(s.pointsGained == 0);
+    // Console-lowered player: stamp the new value, gain nothing.
+    s = syncFollowerLevel(4.0f, 6.0f, 3.0f, true, false);
+    CHECK(s.level == 4.0f);
+    CHECK(s.syncedFrom == 3.0f);
+    CHECK(s.pointsGained == 0);
+}
+
+TEST_CASE("followers É5: the +1 point walks the player's attributes descending") {
+    gameplay::CoreAttributes player;   // defaults: 6s, insight 0
+    gameplay::CoreAttributes follower; // same
+    // Equal everywhere: no attribute is strictly greater -> no point.
+    CHECK_FALSE(gameplay::bonusAttribute(player, follower).has_value());
+    // The player's best attribute above the follower's takes it.
+    player.strength = 10.0f;
+    auto pick = gameplay::bonusAttribute(player, follower);
+    REQUIRE(pick.has_value());
+    CHECK(str { gameplay::kCoreAttributeNames[*pick] } == "strength");
+    // The follower already better there: the walk continues DESCENDING —
+    // the player's second-best wins.
+    follower.strength = 12.0f;
+    player.ego = 9.0f;
+    player.grace = 8.0f;
+    pick = gameplay::bonusAttribute(player, follower);
+    REQUIRE(pick.has_value());
+    CHECK(str { gameplay::kCoreAttributeNames[*pick] } == "ego");
+    // Ties keep the canonical field order (strength before ego).
+    gameplay::CoreAttributes tied;
+    tied.strength = 8.0f;
+    tied.ego = 8.0f;
+    gameplay::CoreAttributes fresh;
+    pick = gameplay::bonusAttribute(tied, fresh);
+    REQUIRE(pick.has_value());
+    CHECK(str { gameplay::kCoreAttributeNames[*pick] } == "strength");
+    // A follower above the player EVERYWHERE: the implicit no-point case.
+    gameplay::CoreAttributes titan;
+    for (u32 i = 0; i < gameplay::kCoreAttributeCount; ++i) {
+        gameplay::coreAttributeRef(titan, i) = 20.0f;
+    }
+    CHECK_FALSE(gameplay::bonusAttribute(player, titan).has_value());
+}
+
+TEST_CASE("followers É5: curves at spawn, DELTA on level-up — bonuses and vitals survive") {
+    gameplay::FollowerClassForm cls; // the ClassWarrior shape
+    cls.strengthBase = 7.0f;
+    cls.strengthPerLevel = 1.5f;
+    cls.constitutionBase = 7.0f;
+    cls.constitutionPerLevel = 1.0f;
+
+    DownFixture f;
+    // Spawn: the ABSOLUTE write (before initializeActorStats fills vitals).
+    gameplay::applyFollowerClass(f.core, cls, 1.0f);
+    CHECK(f.core.strength == 7.0f);
+    CHECK(f.core.constitution == 7.0f);
+    CHECK(f.core.grace == 6.0f); // class defaults = villager defaults
+    f.recompute();
+    const f32 maxBefore = currentValueOf(f.system, attr("maxHealth"));
+
+    // Mid-game: wounded, and a bonus point earned earlier.
+    f.vitals.health = 12.0f;
+    f.core.strength += 1.0f; // the É5 +1 (now 8)
+
+    // Level 1 -> 3 applies the curve DELTA — the bonus point SURVIVES
+    // (an absolute overwrite would erase it).
+    gameplay::applyClassLevelChange(f.core, cls, 1.0f, 3.0f);
+    CHECK(f.core.strength == doctest::Approx(8.0f + 2.0f * 1.5f));
+    CHECK(f.core.constitution == doctest::Approx(7.0f + 2.0f * 1.0f));
+    CHECK(f.core.grace == 6.0f); // flat curves stay put
+
+    // The vitals-preserving recompute (the level-change path): health
+    // stays where the fight left it while the maxima grew — never
+    // initializeActorStats (which would full-heal, spawn-only).
+    f.recompute();
+    CHECK(f.vitals.health == doctest::Approx(12.0f));
+    CHECK(currentValueOf(f.system, attr("maxHealth")) > maxBefore);
+}

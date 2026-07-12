@@ -13,6 +13,7 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/actors/ActorState.hpp" // FollowerState (É1 dispatch)
 #include "gameplay/actors/CharacterTick.hpp"
+#include "gameplay/actors/Followers.hpp"  // foldAgeModifiers (É5)
 #include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions (C2)
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp" // Equipment (the weapon link)
@@ -86,7 +87,17 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
 
         // B6: NPCs run the full character pipeline too (effects, stagger, life
         // state) — that's where State.Dead comes from.
-        gameplay::tickCharacter(npc.entity, dt, gameDt, tickCtx);
+        // FOLLOWERS É5: age applies its two < 1 multipliers through the
+        // SAME StatModifiers channel the player's equipment uses (§2.9:
+        // mods rebuilt from data each tick, nothing persisted, no
+        // synthetic effects). Ageless actors keep the empty default.
+        if (npc.age > 0.0f) {
+            gameplay::StatModifiers ageMods;
+            gameplay::foldAgeModifiers(npc.age, ctx.statsTuning, ageMods);
+            gameplay::tickCharacter(npc.entity, dt, gameDt, tickCtx, ageMods);
+        } else {
+            gameplay::tickCharacter(npc.entity, dt, gameDt, tickCtx);
+        }
         const auto& npcSys = npc.entity.get<gameplay::AbilitySystem>();
         const bool wasDead = npc.dead;
         npc.dead = deadTag && npcSys.tags.has(*deadTag);

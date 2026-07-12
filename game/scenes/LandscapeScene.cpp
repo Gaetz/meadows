@@ -39,6 +39,8 @@
 #include "gameplay/actors/ActorState.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/actors/CharacterTick.hpp"
+#include "gameplay/actors/FollowerForms.hpp" // É5: spawn-time class curves
+#include "gameplay/actors/Followers.hpp"     // É5: applyFollowerClass
 #include "gameplay/interaction/FurnitureForms.hpp"
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/CharacterStats.hpp"
@@ -1830,6 +1832,58 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
                                         const core::Guid& actorFormId) {
     const gameplay::CharacterTickContext tickCtx { derivedStats, gameTags,
                                                    statsTuning };
+    core::Guid refGuid;
+    if (entity.has<world::RefId>()) {
+        refGuid = entity.get<world::RefId>().referenceId;
+    }
+    // The "was captured" sentinel, resolved ONCE and reused below: pending
+    // layer first (a cell reloading in THIS session), then the resolved
+    // database (a loaded save). A captured actor never re-rolls its
+    // loadout (§8) NOR re-curves its attributes (É5) — saved bases win.
+    const bool hasPendingState =
+        saveController.pending().hasActorState(refGuid);
+    const gameplay::SavedActorRecords saved =
+        hasPendingState ? gameplay::SavedActorRecords {}
+                        : gameplay::savedRecordsFor(forms, refGuid);
+    const bool fromSave = hasPendingState || saved.stats != nullptr;
+    // FOLLOWERS É5: a FRESH actor with a follower class draws his 9
+    // attribute BASES from the class curves at his starting level, BEFORE
+    // initializeActorStats derives the maxima from those bases and fills
+    // vitals to full (right at spawn — level CHANGES go through the
+    // vitals-preserving path in FollowerController instead). §2.9: this
+    // is the sanctioned spawn-time init write (the É0 classAttributesAt
+    // curves), gated by the same sentinel as the loadout re-roll.
+    if (const data::FormHandle actorHandle =
+            (!fromSave && actorFormId.isValid()) ? forms.handleOf(actorFormId)
+                                                 : data::FormHandle {};
+        actorHandle.isValid()) {
+        const data::Form* baseForm = forms.get(actorHandle);
+        const reflect::TypeInfo* formType = forms.typeOf(actorHandle);
+        if (baseForm && formType &&
+            formType->isA(data::ActorForm::staticTypeInfo().id)) {
+            const auto* actor =
+                static_cast<const data::ActorForm*>(baseForm);
+            const auto* followerClass =
+                forms.find<gameplay::FollowerClassForm>(
+                    actor->followerClass);
+            if (followerClass && entity.has<gameplay::CoreAttributes>()) {
+                if (!entity.has<gameplay::FollowerState>()) {
+                    entity.set<gameplay::FollowerState>({});
+                }
+                auto& state = entity.get_mut<gameplay::FollowerState>();
+                // Doc §2: followers start at their authored minimum level.
+                state.followerLevel = std::max(1.0f, actor->minLevel);
+                gameplay::applyFollowerClass(
+                    entity.get_mut<gameplay::CoreAttributes>(),
+                    *followerClass, state.followerLevel);
+                if (entity.has<gameplay::AttributeSet>()) {
+                    // The level attribute mirrors FollowerState (É0 note).
+                    entity.get_mut<gameplay::AttributeSet>().level =
+                        state.followerLevel;
+                }
+            }
+        }
+    }
     gameplay::initializeActorStats(entity, tickCtx);
     // P0 A3: every actor can swing — the shared melee state machine
     // (player LMB and NPC AI go through the same component).
@@ -1855,25 +1909,18 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
     if (!entity.has<gameplay::FollowerState>()) {
         entity.set<gameplay::FollowerState>({});
     }
-    core::Guid refGuid;
-    if (entity.has<world::RefId>()) {
-        refGuid = entity.get<world::RefId>().referenceId;
-    }
     // Re-apply captured instance overrides: a moved/killed actor keeps the
     // spot it died at instead of snapping back to its authored spawn (the
     // cell loader respawns the resolved record). finalize runs AFTER
     // refreshNpcs grounds the actor's Y, so the captured position wins.
     saveController.pending().applyReferenceOverrides(entity, refGuid);
-    // Pending layer first (a cell reloading in THIS session), then the
-    // resolved database (a loaded save). The SavedStatsForm existence is
-    // the sentinel — a captured actor never re-rolls its loadout (§8).
-    if (saveController.pending().hasActorState(refGuid)) {
+    // The sentinel resolved at the top: a captured actor restores its
+    // saved state instead of rolling a loadout (§8) or re-curving (É5).
+    if (hasPendingState) {
         gameplay::applySavedState(
             entity, saveController.pending().actorState(refGuid), gameTags);
         return true;
     }
-    const gameplay::SavedActorRecords saved =
-        gameplay::savedRecordsFor(forms, refGuid);
     if (saved.stats) {
         gameplay::applySavedState(entity, saved, gameTags);
         return true;
@@ -2148,6 +2195,27 @@ void LandscapeScene::createConsole() {
                               : (state ? state->editorId : "?")) +
                    "  ";
         }
+        return out;
+    });
+    panel.addCommand("player.level", [this](const str& args) -> str {
+        // FOLLOWERS É5 — the dev lever: player progression (skills-by-use)
+        // is its own chantier, so until then the level only moves here.
+        // §2.9: the sanctioned console/init base-write class (the tgm
+        // registration pattern); the frame's tickCharacter recomputes the
+        // currents, and the follower sweep (updateFollowers) syncs party
+        // levels + the +1 attribute point off the new value.
+        std::istringstream in { args };
+        f32 level = 0.0f;
+        if (!(in >> level) || level < 1.0f) {
+            return "usage: player.level <n >= 1>";
+        }
+        if (!playerEntity.is_alive() ||
+            !playerEntity.has<gameplay::AttributeSet>()) {
+            return "no player";
+        }
+        playerEntity.get_mut<gameplay::AttributeSet>().level = level;
+        char out[48];
+        std::snprintf(out, sizeof(out), "player level = %.0f", level);
         return out;
     });
     panel.addCommand("settime", [this](const str& args) -> str {

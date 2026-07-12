@@ -9,11 +9,13 @@ namespace core {
 class Rng;
 }
 namespace data {
+struct ActorForm;
 class FormDatabase;
 class TextTable;
 }
 namespace gameplay {
 struct Event;
+struct FollowerState;
 struct GameClock;
 class GameplayTagRegistry;
 struct StatsTuningForm;
@@ -166,6 +168,21 @@ public:
     void syncConvalescentTag(const FollowerContext& ctx);
 
 private:
+    // ---- É5: classes, levels, evolution ----------------------------------
+    // The rules are the pure gameplay layer (syncFollowerLevel /
+    // applyClassLevelChange / bonusAttribute — doctested headless); this
+    // helper only resolves the entities and performs the §2.9-sanctioned
+    // level-up BASE writes (curve delta + level attribute + the +1
+    // points), logging "É5: Aldric level 2 -> 3 (+1 strength)". The next
+    // tickCharacter recomputes the currents with vitals PRESERVED — never
+    // initializeActorStats (no mid-game full heal). Two callers: the
+    // per-frame sweep (active = true — 1:1 tracking, points granted) and
+    // recruit (active = false — the re-meet catch-up: half the gap
+    // floored, full for a mainCharacter, no points).
+    void applyLevelSync(const FollowerContext& ctx, ecs::Entity follower,
+                        const data::ActorForm& actor,
+                        gameplay::FollowerState& state, bool active);
+
     // É4: the last game-hour the sweep accrued time-together at (-1 = not
     // stamped yet — the first sweep stamps without accruing, so a scene
     // enter or F9 reload never credits the whole clock).

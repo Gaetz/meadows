@@ -23,6 +23,7 @@
 #include "gameplay/combat/Combat.hpp"     // updateLifeState (É3 revive)
 #include "gameplay/event/EventBus.hpp"    // gameplay::Event (É2 aggro)
 #include "gameplay/inventory/Inventory.hpp" // the player's bag (É3 revive)
+#include "gameplay/stats/CoreAttributes.hpp" // the 9 bases (É5 level-ups)
 #include "gameplay/stats/Damage.hpp"        // CombatState, updateDowned (É3)
 #include "gameplay/stats/GameClock.hpp"     // convalescence stamps (É3)
 #include "gameplay/stats/Injuries.hpp"      // Injuries (É3)
@@ -68,6 +69,69 @@ str followerDisplayName(const FollowerContext& ctx, ecs::Entity follower) {
 
 } // namespace
 
+// ---- É5: classes, levels, evolution -----------------------------------------
+
+void FollowerController::applyLevelSync(const FollowerContext& ctx,
+                                        ecs::Entity follower,
+                                        const data::ActorForm& actor,
+                                        gameplay::FollowerState& state,
+                                        bool active) {
+    if (!ctx.playerEntity.is_alive() ||
+        !ctx.playerEntity.has<gameplay::AttributeSet>()) {
+        return;
+    }
+    const f32 playerLevel =
+        ctx.playerEntity.get<gameplay::AttributeSet>().level;
+    if (playerLevel == state.followerLastLevelSyncedFrom) {
+        return; // already synced from this value
+    }
+    const gameplay::LevelSync sync = gameplay::syncFollowerLevel(
+        state.followerLevel, state.followerLastLevelSyncedFrom, playerLevel,
+        active, actor.mainCharacter);
+    const f32 fromLevel = state.followerLevel;
+    state.followerLastLevelSyncedFrom = sync.syncedFrom;
+    state.followerLevel = sync.level;
+    if (sync.level == fromLevel && sync.pointsGained == 0) {
+        return; // stamp only (first meeting / lowered player level)
+    }
+    // §2.9: the sanctioned level-up base writes — the curve DELTA (so
+    // earlier +1 points and instant-effect history survive), the level
+    // attribute, then the +1 point walk. The follower's next
+    // tickCharacter recomputes the currents with vitals PRESERVED (the
+    // recomputeStats path — never initializeActorStats mid-game).
+    str bonusText;
+    if (follower.has<gameplay::CoreAttributes>()) {
+        auto& core = follower.get_mut<gameplay::CoreAttributes>();
+        if (const auto* cls = ctx.forms.find<gameplay::FollowerClassForm>(
+                actor.followerClass)) {
+            gameplay::applyClassLevelChange(core, *cls, fromLevel,
+                                            sync.level);
+        }
+        // The doc §3 algorithm, v1 on ATTRIBUTES (skills are their own
+        // chantier): the player's best attribute still above the
+        // follower's takes the point.
+        if (sync.pointsGained > 0 &&
+            ctx.playerEntity.has<gameplay::CoreAttributes>()) {
+            const auto& playerCore =
+                ctx.playerEntity.get<gameplay::CoreAttributes>();
+            for (i32 i = 0; i < sync.pointsGained; ++i) {
+                const auto pick = gameplay::bonusAttribute(playerCore, core);
+                if (!pick) {
+                    break; // he matches the player everywhere: no point
+                }
+                gameplay::coreAttributeRef(core, *pick) += 1.0f;
+                bonusText += str { " (+1 " } +
+                             gameplay::kCoreAttributeNames[*pick] + ")";
+            }
+        }
+    }
+    if (follower.has<gameplay::AttributeSet>()) {
+        follower.get_mut<gameplay::AttributeSet>().level = sync.level;
+    }
+    LOG_INFO("É5: {} level {:.0f} -> {:.0f}{}", actor.editorId, fromLevel,
+             sync.level, bonusText);
+}
+
 void FollowerController::recruit(const FollowerContext& ctx,
                                  ecs::Entity follower) {
     const data::ActorForm* actor = followerActorForm(ctx, follower);
@@ -94,6 +158,12 @@ void FollowerController::recruit(const FollowerContext& ctx,
         gameplay::syncStateTag(follower.get_mut<gameplay::AbilitySystem>(),
                                ctx.gameTags, "Follower.Protected", true);
     }
+    // É5: the re-meet catch-up — half the level gap accrued apart
+    // (floored), FULL for a mainCharacter (docs/FOLLOWERS.md §2); no +1
+    // points for catch-up levels (those are earned traveling together).
+    // Runs BEFORE captureEntity so the pending layer carries the new
+    // level and attributes.
+    applyLevelSync(ctx, follower, *actor, state, /*active=*/false);
     // The chantier-5 contract: the live entity joins the persistent set —
     // cell -> 0 like the player. captureEntity diffs the live RefId.cell
     // (now null) against the resolved ReferenceForm and writes the
@@ -347,6 +417,20 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
         if (state.followerActive && !npc.downed) {
             gameplay::accrueTimeTogether(
                 state, deltaHours, ctx.statsTuning.affinityPerHourTogether);
+        }
+        // É5: an ACTIVE follower's level tracks the player's 1:1 (the
+        // pure gameplay::syncFollowerLevel), each level gained granting
+        // the doc's +1 attribute point. The ActorForm resolve only runs
+        // on the rare frame the player's level actually moved.
+        if (state.followerActive && ctx.playerEntity.is_alive() &&
+            ctx.playerEntity.has<gameplay::AttributeSet>() &&
+            ctx.playerEntity.get<gameplay::AttributeSet>().level !=
+                state.followerLastLevelSyncedFrom) {
+            if (const data::ActorForm* actor =
+                    followerActorForm(ctx, npc.entity)) {
+                applyLevelSync(ctx, npc.entity, *actor, state,
+                               /*active=*/true);
+            }
         }
         if (!npc.downed || !downedTag || !system.tags.has(*downedTag)) {
             continue;

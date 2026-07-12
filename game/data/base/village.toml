@@ -1920,7 +1920,9 @@ grantedTag = "State.Resting"
 # home is a spot-marker reference his guard schedule anchors to — dismissed,
 # he walks back there.
 
-# The warrior class (É0 curves; É5 applies them on level changes).
+# The warrior class (É0 curves; É5 applies them at spawn and on level
+# changes). Bases sit near the villager defaults (6) so a level-1 warrior
+# keeps ~today's power; the perLevel slopes are where growth lives.
 [[records]]
 form = "6a1dc0de-0000-4000-8000-000000000001"
 type = "FollowerClassForm"
@@ -1930,9 +1932,10 @@ editorId = "ClassWarrior"
 displayName = "Guerrier"
 combatStyle = "melee"
 strengthBase = 7.0
-strengthPerLevel = 0.5
+strengthPerLevel = 1.5
 constitutionBase = 7.0
-constitutionPerLevel = 0.5
+constitutionPerLevel = 1.0
+dexterityPerLevel = 0.5
 
 # His home spot, near the village square (reuses the SpotMarker form).
 [[records]]
@@ -1958,6 +1961,7 @@ maxHealth = 60.0
 appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
 animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
 courage = 0.7
+age = 28.0
 followerCategory = "major"
 followerClass = "6a1dc0de-0000-4000-8000-000000000001"
 homeMarker = "6a1dc0de-0000-4000-8000-000000000002"
@@ -2209,7 +2213,8 @@ order = 5
 # ActorForm turns each chat into +5 affinity — talking to her IS the way
 # to unlock her. Aldric gets two demo rules on combat events instead.
 
-# The healer class (É0 curves — grace/insight forward).
+# The healer class (É0 curves — insight/charisma forward; É5 applies them
+# at spawn and on level changes). Bases near the villager defaults.
 [[records]]
 form = "6a1dc0de-0000-4000-8000-000000000020"
 type = "FollowerClassForm"
@@ -2222,7 +2227,9 @@ constitutionBase = 5.0
 graceBase = 7.0
 gracePerLevel = 0.5
 insightBase = 4.0
-insightPerLevel = 0.5
+insightPerLevel = 1.5
+charismaBase = 7.0
+charismaPerLevel = 1.0
 
 # Her home spot, by the village square (the future tavern corner).
 [[records]]
@@ -2246,6 +2253,9 @@ maxHealth = 45.0
 appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
 animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
 courage = 0.4
+# É5: age 52 sits past the onset (45) — her physical/mental multipliers
+# (0.944 / 0.965) show in the recruit preview. Aldric (28) is unaffected.
+age = 52.0
 followerCategory = "major"
 followerClass = "6a1dc0de-0000-4000-8000-000000000020"
 homeMarker = "6a1dc0de-0000-4000-8000-000000000021"

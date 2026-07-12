@@ -131,6 +131,10 @@ struct Npc {
     f32 attackCooldown { 0.0f };
     // P0 B3: grit from the ActorForm — flees below (1 - courage) health.
     f32 courage { 0.75f };
+    // FOLLOWERS É5: ActorForm.age (0 = ageless). Folded per tick into the
+    // character mods (gameplay::foldAgeModifiers — the equipmentMods
+    // StatModifiers channel): two < 1 multipliers, physical and mental.
+    f32 age { 0.0f };
     // Brain script (docs/BOSS-SCRIPTING.md): Lua decides the combat move
     // on low-frequency ticks; empty = the C++ chooseCombatMove. The key
     // is the ActorForm guid (the Vm caches ONE compiled decide per form).

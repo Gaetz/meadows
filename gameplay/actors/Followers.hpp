@@ -1,5 +1,8 @@
 #pragma once
 
+#include <array>
+#include <optional>
+
 #include <glm/glm.hpp> // Vec3 by value (Defines only forward-declares glm)
 
 #include "engine/core/Defines.hpp"
@@ -181,5 +184,83 @@ struct AffinityEventView {
 f32 affinityDelta(const vector<const AffinityRuleForm*>& rules,
                   const AffinityEventView& event,
                   const GameplayTagRegistry& tags);
+
+// ---- É5: classes, levels, evolution -----------------------------------------
+// Reused systems (§2.11): the É0 classAttributesAt curves, the equipmentMods
+// StatModifiers fold (buildCharacterMods' external-mods channel), the
+// recomputeStats machinery (efdf8e7 override ?? formula), and the seeded
+// determinism (§8 — nothing here draws randomness). All pure and headless.
+
+struct CoreAttributes;
+struct FollowerClassForm;
+struct StatModifiers;
+
+// The nine core attributes by canonical index (the CoreAttributes field
+// order — the same order classAttributesAt and SavedStatsForm use).
+inline constexpr u32 kCoreAttributeCount { 9 };
+extern const std::array<const char*, kCoreAttributeCount> kCoreAttributeNames;
+f32 coreAttributeValue(const CoreAttributes& core, u32 index);
+f32& coreAttributeRef(CoreAttributes& core, u32 index);
+
+// Writes the 9 CoreAttributes BASE fields from the class curves at `level`
+// (§2.9: the sanctioned SPAWN-time init write — like the Spawner's field
+// apply, it seeds bases once, before initializeActorStats derives the
+// maxima and fills vitals). Fresh actors only: a saved actor keeps his
+// captured bases (the SavedStatsForm sentinel, same gate as loadouts).
+void applyFollowerClass(CoreAttributes& core, const FollowerClassForm& cls,
+                        f32 level);
+
+// The LEVEL-CHANGE write: adds the curve DELTA between the two levels to
+// the current bases instead of overwriting them, so accumulated +1 bonus
+// points (bonusAttribute below) and instant-effect history SURVIVE the
+// level-up. §2.9: a sanctioned level-up base write — the caller recomputes
+// through the standard vitals-PRESERVING path (recomputeStats / the next
+// tickCharacter), NEVER initializeActorStats (which restores vitals to
+// full: right at spawn, a free heal mid-game).
+void applyClassLevelChange(CoreAttributes& core, const FollowerClassForm& cls,
+                           f32 fromLevel, f32 toLevel);
+
+// Age (docs/FOLLOWERS.md §2): two multipliers < 1 — one physical, one
+// mental — from the ActorForm.age years against the StatsTuningForm curve:
+//   mult = max(ageFloor, 1 - max(0, age - ageOnsetYears) × agePerYear)
+// age <= 0 = ageless (both stay 1). Applied per tick as StatModifiers (the
+// equipmentMods fold — §2.9: mods recomputed from data each tick, nothing
+// persisted, no synthetic effects), so CURRENT attributes shrink while the
+// BASE-derived primary maxima stay untouched — exactly the doc's
+// « compétence_effective = compétence_base × multiplicateur ».
+struct AgeMultipliers {
+    f32 physical { 1.0f }; // strength, constitution, grace, dexterity
+    f32 mental { 1.0f };   // alacrity, perception, charisma, ego, insight
+};
+AgeMultipliers ageMultipliers(f32 age, const StatsTuningForm& tuning);
+
+// Folds the two multipliers into `mods.mul` (multiplying into existing
+// entries — the armorModifiers fold contract). No-op for the ageless.
+void foldAgeModifiers(f32 age, const StatsTuningForm& tuning,
+                      StatModifiers& mods);
+
+// Level linkage (docs/FOLLOWERS.md §2). One pure decision for both call
+// sites: the per-frame sweep of ACTIVE followers (active = true — the
+// level tracks the player's 1:1, and each level gained grants a +1
+// attribute point) and the RE-RECRUIT catch-up (active = false — half the
+// gap accrued apart, floored; a mainCharacter catches up fully; no points
+// for catch-up levels). lastSyncedFrom < 1 means "never met": stamp the
+// player's level without any retroactive gain (fresh spawns default 0).
+// A negative gap (console-lowered player) stamps and gains nothing.
+struct LevelSync {
+    f32 level { 1.0f };      // the follower's new level
+    f32 syncedFrom { 0.0f }; // store into followerLastLevelSyncedFrom
+    i32 pointsGained { 0 };  // +1 attribute points earned (active only)
+};
+LevelSync syncFollowerLevel(f32 followerLevel, f32 lastSyncedFrom,
+                            f32 playerLevel, bool active, bool mainCharacter);
+
+// The +1 attribute point (docs/FOLLOWERS.md §3, v1 on ATTRIBUTES — skills
+// don't exist yet): walk the player's 9 attributes in DESCENDING value
+// order (ties keep the canonical field order); the FIRST one strictly
+// greater than the follower's same attribute wins. None greater = nullopt
+// (the doc's implicit no-point case). Returns the canonical index.
+std::optional<u32> bonusAttribute(const CoreAttributes& player,
+                                    const CoreAttributes& follower);
 
 } // namespace gameplay

@@ -1,14 +1,18 @@
 #include "gameplay/actors/Followers.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include <glm/glm.hpp>
 
 #include "engine/core/Rng.hpp"
+#include "gameplay/ability/DerivedStats.hpp" // StatModifiers, attr (É5)
 #include "gameplay/actors/ActorState.hpp"    // FollowerState
-#include "gameplay/actors/FollowerForms.hpp" // AffinityRuleForm (É4)
+#include "gameplay/actors/FollowerForms.hpp" // AffinityRuleForm (É4),
+                                             //   classAttributesAt (É5)
 #include "gameplay/event/EventBus.hpp"       // eventKind (É4 rule matching)
 #include "gameplay/combat/Combat.hpp"        // updateLifeState (the ONE write point)
+#include "gameplay/stats/CoreAttributes.hpp" // the 9 bases (É5 curves)
 #include "gameplay/stats/Damage.hpp"         // StatBlock, CombatState
 #include "gameplay/stats/Injuries.hpp"       // addInjury, syncInjuryEffects
 #include "gameplay/stats/StatsTuning.hpp"
@@ -204,6 +208,136 @@ f32 affinityDelta(const vector<const AffinityRuleForm*>& rules,
         sum += rule->delta;
     }
     return sum;
+}
+
+// ---- É5: classes, levels, evolution -----------------------------------------
+
+namespace {
+
+// Canonical field order — MUST match CoreAttributes / classAttributesAt.
+constexpr std::array<f32 CoreAttributes::*, kCoreAttributeCount> kCoreFields {
+    &CoreAttributes::strength,   &CoreAttributes::constitution,
+    &CoreAttributes::grace,      &CoreAttributes::dexterity,
+    &CoreAttributes::alacrity,   &CoreAttributes::perception,
+    &CoreAttributes::charisma,   &CoreAttributes::ego,
+    &CoreAttributes::insight,
+};
+
+// The doc's physical/mental split (docs/FOLLOWERS.md §2: « un physique,
+// un mental ») over the canonical indices above.
+constexpr std::array<u32, 4> kPhysicalAttrs { 0, 1, 2, 3 }; // str/con/gra/dex
+constexpr std::array<u32, 5> kMentalAttrs { 4, 5, 6, 7, 8 }; // ala/per/cha/ego/ins
+
+// The armorModifiers fold contract: multiply into an existing entry.
+void foldMul(StatModifiers& mods, u32 attrId, f32 factor) {
+    const auto [it, inserted] = mods.mul.try_emplace(attrId, factor);
+    if (!inserted) {
+        it->second *= factor;
+    }
+}
+
+} // namespace
+
+const std::array<const char*, kCoreAttributeCount> kCoreAttributeNames {
+    "strength", "constitution", "grace",    "dexterity", "alacrity",
+    "perception", "charisma",   "ego",      "insight",
+};
+
+f32 coreAttributeValue(const CoreAttributes& core, u32 index) {
+    return core.*kCoreFields[index];
+}
+
+f32& coreAttributeRef(CoreAttributes& core, u32 index) {
+    return core.*kCoreFields[index];
+}
+
+void applyFollowerClass(CoreAttributes& core, const FollowerClassForm& cls,
+                        f32 level) {
+    // §2.9: the sanctioned spawn-time init write — bases only, before
+    // initializeActorStats derives the maxima from them.
+    core = classAttributesAt(cls, level);
+}
+
+void applyClassLevelChange(CoreAttributes& core, const FollowerClassForm& cls,
+                           f32 fromLevel, f32 toLevel) {
+    // §2.9: the sanctioned level-up base write — the curve DELTA, so
+    // accumulated bonus points / instant-effect history survive. The
+    // caller recomputes through the vitals-preserving path.
+    const CoreAttributes from = classAttributesAt(cls, fromLevel);
+    const CoreAttributes to = classAttributesAt(cls, toLevel);
+    for (u32 i = 0; i < kCoreAttributeCount; ++i) {
+        core.*kCoreFields[i] += to.*kCoreFields[i] - from.*kCoreFields[i];
+    }
+}
+
+AgeMultipliers ageMultipliers(f32 age, const StatsTuningForm& tuning) {
+    AgeMultipliers result;
+    if (age <= 0.0f) {
+        return result; // ageless (ActorForm.age default)
+    }
+    const f32 past = std::max(0.0f, age - tuning.ageOnsetYears);
+    result.physical =
+        std::max(tuning.ageFloor, 1.0f - past * tuning.agePhysicalPerYear);
+    result.mental =
+        std::max(tuning.ageFloor, 1.0f - past * tuning.ageMentalPerYear);
+    return result;
+}
+
+void foldAgeModifiers(f32 age, const StatsTuningForm& tuning,
+                      StatModifiers& mods) {
+    const AgeMultipliers m = ageMultipliers(age, tuning);
+    if (m.physical < 1.0f) {
+        for (const u32 i : kPhysicalAttrs) {
+            foldMul(mods, attr(kCoreAttributeNames[i]), m.physical);
+        }
+    }
+    if (m.mental < 1.0f) {
+        for (const u32 i : kMentalAttrs) {
+            foldMul(mods, attr(kCoreAttributeNames[i]), m.mental);
+        }
+    }
+}
+
+LevelSync syncFollowerLevel(f32 followerLevel, f32 lastSyncedFrom,
+                            f32 playerLevel, bool active, bool mainCharacter) {
+    LevelSync result { followerLevel, playerLevel, 0 };
+    if (lastSyncedFrom < 1.0f) {
+        return result; // never met: stamp only, no retroactive gain
+    }
+    const f32 gap = playerLevel - lastSyncedFrom;
+    if (gap <= 0.0f) {
+        return result; // console-lowered player: stamp, gain nothing
+    }
+    if (active) {
+        // Traveling together: 1:1 tracking, each level earns a +1 point.
+        result.level = followerLevel + gap;
+        result.pointsGained = static_cast<i32>(gap + 0.5f);
+    } else if (mainCharacter) {
+        // The story exception (docs/FOLLOWERS.md §2): full catch-up.
+        result.level = followerLevel + gap;
+    } else {
+        // The re-meet: half the gap accrued apart, floored.
+        result.level = followerLevel + std::floor(gap * 0.5f);
+    }
+    return result;
+}
+
+std::optional<u32> bonusAttribute(const CoreAttributes& player,
+                                    const CoreAttributes& follower) {
+    std::array<u32, kCoreAttributeCount> order {};
+    for (u32 i = 0; i < kCoreAttributeCount; ++i) {
+        order[i] = i;
+    }
+    // Descending player value; stable = ties keep the canonical order.
+    std::stable_sort(order.begin(), order.end(), [&](u32 a, u32 b) {
+        return coreAttributeValue(player, a) > coreAttributeValue(player, b);
+    });
+    for (const u32 i : order) {
+        if (coreAttributeValue(player, i) > coreAttributeValue(follower, i)) {
+            return i;
+        }
+    }
+    return std::nullopt; // the follower matches him everywhere: no point
 }
 
 } // namespace gameplay

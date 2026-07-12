@@ -177,6 +177,16 @@ struct StatsTuningForm : data::Form {
     // FOLLOWERS É4 (appended — ordinals stable): passive affinity growth
     // per game-hour spent traveling together (accrueTimeTogether).
     f32 affinityPerHourTogether { 0.5f };
+    // FOLLOWERS É5 (appended — ordinals stable): the age curve (docs/
+    // FOLLOWERS.md §2 — one physical, one mental multiplier < 1):
+    //   mult = max(ageFloor, 1 - max(0, age - ageOnsetYears) × perYear)
+    // Applied per tick as StatModifiers (gameplay::foldAgeModifiers — the
+    // equipmentMods fold; §2.9: never a direct attribute write, nothing
+    // persisted). ActorForm.age 0 = ageless.
+    f32 ageOnsetYears { 45.0f };
+    f32 agePhysicalPerYear { 0.008f };
+    f32 ageMentalPerYear { 0.005f };
+    f32 ageFloor { 0.5f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -274,6 +284,10 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(aggravationWorseChance)
         REFLECT_FIELD(aggravationDeathChance)
         REFLECT_FIELD(affinityPerHourTogether)
+        REFLECT_FIELD(ageOnsetYears)
+        REFLECT_FIELD(agePhysicalPerYear)
+        REFLECT_FIELD(ageMentalPerYear)
+        REFLECT_FIELD(ageFloor)
     REFLECT_END()
 };
 

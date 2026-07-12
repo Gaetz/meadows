@@ -95,6 +95,11 @@ struct SavedStatsForm : data::Form {
     // FOLLOWERS É3 APPEND (ordinals stable): CombatState.downedSeconds —
     // a downed follower reloads mid-bleedout, clock intact.
     f32 downedSeconds { 0.0f };
+    // FOLLOWERS É5 APPEND (ordinals stable): AttributeSet.level — the
+    // console-set player level and the follower's class level survive
+    // the save (name-matched like every field above; the É0 append only
+    // carried FollowerState.followerLevel, not the attribute itself).
+    f32 level { 1.0f };
 
     REFLECT_BEGIN(SavedStatsForm, data::Form)
         REFLECT_FIELD(parent)
@@ -151,6 +156,7 @@ struct SavedStatsForm : data::Form {
         REFLECT_FIELD(followerLastHomeUpgradeHours)
         REFLECT_FIELD(followerDownedRecoveryHours)
         REFLECT_FIELD(downedSeconds)
+        REFLECT_FIELD(level)
     REFLECT_END()
 };
 
