@@ -28,6 +28,13 @@ struct AttributeSet {
     f32 maxEssence { 50.0f };
     f32 armorRating { 0.0f };
     f32 damage { 0.0f }; // meta-attribute (transient)
+    // The STATS.md balance override (`derived value = override ?? formula`,
+    // decided Phase 6): > 0 pins maxHealth past the humanoid attribute
+    // formula — the Spawner seeds it from ActorForm.maxHealth (a bandit
+    // really has its authored 35). 0 = the formula (the Player: his max
+    // progresses with attributes). Resonance's % still applies after.
+    // Appended (binary ordinals stable).
+    f32 maxHealthOverride { 0.0f };
 
     REFLECT_BEGIN(AttributeSet, void)
         REFLECT_FIELD(health)
@@ -38,6 +45,7 @@ struct AttributeSet {
         REFLECT_FIELD(maxEssence)
         REFLECT_FIELD(armorRating)
         REFLECT_FIELD(damage)
+        REFLECT_FIELD(maxHealthOverride)
     REFLECT_END()
 };
 

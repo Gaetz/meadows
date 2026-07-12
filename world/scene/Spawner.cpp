@@ -104,6 +104,13 @@ void spawnActor(SpawnContext&, ecs::Entity entity, const data::Form& base,
                                    *maxHealth);
             gameplay::setBaseValue(attributes, gameplay::attr("health"),
                                    *maxHealth);
+            // STATS.md balance override (`override ?? formula`): a
+            // POSITIVE authored max pins the derived maxHealth — a
+            // bandit really has its authored 35. 0 = the attribute
+            // formula (the Player).
+            gameplay::setBaseValue(attributes,
+                                   gameplay::attr("maxHealthOverride"),
+                                   *maxHealth);
         }
     }
     gameplay::AbilitySystem system;

@@ -60,18 +60,33 @@ void routeDamageMeta(AttributeSet& set) {
     setBaseValue(set, attr("damage"), 0.0f);
 }
 
-void clampBasePair(AttributeSet& set, u32 valueId, u32 maxId) {
+void clampBasePair(AttributeSet& set, const AbilitySystem& system,
+                   u32 valueId, u32 maxId) {
     const auto value = baseValueOf(set, valueId);
-    const auto max = baseValueOf(set, maxId);
-    if (value && max) {
-        setBaseValue(set, valueId, std::clamp(*value, 0.0f, *max));
+    if (!value) {
+        return;
     }
+    // The CURRENT max is the truth (derived formula, the STATS.md
+    // balance override, buffs); the BASE max may be a stale seed — the
+    // Spawner's authored value predates the derived pass, and the
+    // Player authors 0 (= "use the formula"). This mismatch is what
+    // snapped a fresh 90-health NPC to its authored 35 on its FIRST
+    // instant effect (the archer-flees bug, 2026-07-12). Fall back to
+    // the base max only while no recompute has run yet; with neither
+    // positive, only floor at zero.
+    f32 upper = currentValueOf(system, maxId);
+    if (upper <= 0.0f) {
+        const auto baseMax = baseValueOf(set, maxId);
+        upper = baseMax && *baseMax > 0.0f ? *baseMax : *value;
+    }
+    setBaseValue(set, valueId,
+                 std::clamp(*value, 0.0f, std::max(upper, 0.0f)));
 }
 
-void clampBaseVitals(AttributeSet& set) {
-    clampBasePair(set, attr("health"), attr("maxHealth"));
-    clampBasePair(set, attr("energy"), attr("maxEnergy"));
-    clampBasePair(set, attr("essence"), attr("maxEssence"));
+void clampBaseVitals(AttributeSet& set, const AbilitySystem& system) {
+    clampBasePair(set, system, attr("health"), attr("maxHealth"));
+    clampBasePair(set, system, attr("energy"), attr("maxEnergy"));
+    clampBasePair(set, system, attr("essence"), attr("maxEssence"));
 }
 
 // Aggregates the non-periodic effect modifiers (plus any continuous `extra`
@@ -248,7 +263,7 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
     if (!isGameTime && policy == DurationPolicy::Instant) {
         applyModifierToBase(set, attrId, op, effect.magnitude);
         routeDamageMeta(set);
-        clampBaseVitals(set);
+        clampBaseVitals(set, system);
         recomputeCurrent(set, system);
         return true;
     }
@@ -365,7 +380,7 @@ void tickEffects(AttributeSet& set, AbilitySystem& system, f32 dt,
             applyModifierToBase(set, active.attribute, active.op,
                                 active.magnitude);
             routeDamageMeta(set);
-            clampBaseVitals(set);
+            clampBaseVitals(set, system);
             active.sinceLastTick -= active.period;
         }
     }

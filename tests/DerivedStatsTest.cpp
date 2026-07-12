@@ -46,6 +46,64 @@ TEST_CASE("derived stats: bumping an attribute recomputes its maximum") {
           doctest::Approx((10.0f + 6.0f + 6.0f) * 5.0f)); // 110
 }
 
+TEST_CASE("derived stats: the AUTHORED balance override pins maxHealth "
+          "(STATS.md `override ?? formula` — the archer-flees bug)") {
+    DerivedStatRegistry reg;
+    registerCoreDerivedStats(reg);
+    CoreAttributes core;
+    AttributeSet vitals; // struct default maxHealth 100 does NOT pin...
+    AbilitySystem sys;
+
+    recompute(sys, core, vitals, reg);
+    CHECK(currentValueOf(sys, attr("maxHealth")) == doctest::Approx(90.0f));
+
+    // ...the dedicated override field does (the Spawner seeds it from
+    // ActorForm.maxHealth): the bandit really has its authored 35.
+    vitals.maxHealthOverride = 35.0f;
+    recompute(sys, core, vitals, reg);
+    CHECK(currentValueOf(sys, attr("maxHealth")) == doctest::Approx(35.0f));
+
+    // 0 = back to the attribute formula (the Player's record).
+    vitals.maxHealthOverride = 0.0f;
+    recompute(sys, core, vitals, reg);
+    CHECK(currentValueOf(sys, attr("maxHealth")) == doctest::Approx(90.0f));
+}
+
+TEST_CASE("effects: an instant effect no longer snaps health to a stale "
+          "base max (the archer fled at 39% after ONE attack cost)") {
+    DerivedStatRegistry reg;
+    registerCoreDerivedStats(reg);
+    GameplayTagRegistry tags;
+    CoreAttributes core; // defaults: derived maxHealth would be 90
+    AttributeSet vitals;
+    AbilitySystem sys;
+
+    // The Spawner's archer seed: authored 35 into max/health/override...
+    vitals.maxHealth = 35.0f;
+    vitals.health = 35.0f;
+    vitals.maxHealthOverride = 35.0f;
+    initializeCurrent(sys, vitals);
+    recompute(sys, core, vitals, reg);
+    // ...the override makes the max REALLY 35: full health, no 35/90.
+    CHECK(currentValueOf(sys, attr("maxHealth")) == doctest::Approx(35.0f));
+    vitals.health = currentValueOf(sys, attr("maxHealth"));
+    recompute(sys, core, vitals, reg);
+
+    // The first instant effect (the attack ability's energy cost) used
+    // to clampBaseVitals health against the stale BASE max — the fresh
+    // 90 snapped to 35 (fraction 39% -> the archer fled). Now the clamp
+    // reads the CURRENT max: full health stays full.
+    EffectForm cost;
+    cost.attribute = "energy";
+    cost.op = "add";
+    cost.magnitude = -5.0f;
+    cost.duration = "instant";
+    CHECK(applyEffect(vitals, sys, cost, tags));
+    const f32 fraction = currentValueOf(sys, attr("health")) /
+                         currentValueOf(sys, attr("maxHealth"));
+    CHECK(fraction == doctest::Approx(1.0f));
+}
+
 TEST_CASE("derived stats: an infinite Override effect pins a stat (non-humanoid)") {
     DerivedStatRegistry reg;
     registerCoreDerivedStats(reg);

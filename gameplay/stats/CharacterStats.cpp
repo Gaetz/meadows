@@ -29,7 +29,19 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
     // — a temporary attribute change (Resonance, buffs) does not move the max; only
     // Resonance's % does (§2). The Resonance offset still flows into the secondary
     // stats below, which read the CURRENT value (so Resonance weakens them).
+    //
+    // maxHealth carries the DOCUMENTED balance override (STATS.md: derived
+    // value = `override ?? formula`, decided Phase 6, unimplemented until
+    // the archer-flees bug 2026-07-12): an ActorForm authoring a POSITIVE
+    // maxHealth pins the max past the humanoid formula (the Spawner seeds
+    // maxHealthOverride); 0 = the attribute formula (the Player: his max
+    // progresses with attributes). Resonance's % and other effect
+    // modifiers still apply AFTER, per the documented order.
     registry.add({ attr("maxHealth"), core, [t](const StatView& v) {
+        const f32 authored = v.base("maxHealthOverride");
+        if (authored > 0.0f) {
+            return authored; // balance override wins over the formula
+        }
         return (v.base("strength") + v.base("constitution") + v.base("grace")) *
                t.attributeToMax;
     } });

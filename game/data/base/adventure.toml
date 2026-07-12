@@ -128,7 +128,9 @@ new = true
 [records.fields]
 editorId = "Player"
 displayName = "The Adventurer"
-maxHealth = 100.0
+# 0 = the STATS.md attribute formula drives the max (progression);
+# a positive value would PIN it (the NPC balance override).
+maxHealth = 0.0
 
 [[records]]
 form = "2b5e7d10-0000-4000-8000-0000000000a1"
