@@ -97,8 +97,13 @@ struct Npc {
     u32 pathIndex { 0 };
     f32 repathTimer { 0.0f };
     f32 wanderTimer { 0.0f };
-    bool sitting { false };         // drives the State.Sitting anim gate
+    bool sitting { false };  // drives the sitGate anim gate below
     bool furnitureClaimed { false };
+    // P0 D1: the furniture's GAS effect (infinite while seated; removed
+    // by id on release) and the claimed POINT's anim gate ("State." +
+    // FurniturePointForm.animTag — no more hardcoded State.Sitting).
+    u32 furnitureEffectId { 0 };
+    str sitGate { "State.Sitting" };
 
     // Chantier 3 B5/B6: combat.
     bool hostile { false }; // ActorTagForm child "Faction.Bandits"
@@ -236,6 +241,9 @@ private:
     // StatsTuningForm.helpCallRadius get the target position (alertTo).
     void callForHelp(const NpcContext& ctx, const Npc& caller,
                      const Vec3& targetPos);
+    // D1: the ONE way out of furniture — frees the occupancy point,
+    // removes the furniture's GAS effect, clears the anim gate.
+    void releaseFurniture(const NpcContext& ctx, Npc& npc);
 
     std::unordered_map<core::Guid, RigData> rigCache;
     vector<uptr<Npc>> npcs_;

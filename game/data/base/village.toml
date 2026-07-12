@@ -817,6 +817,8 @@ editorId = "CrateSeat"
 displayName = "Crate seat"
 category = "seat"
 model = "4d7a9b30-0000-4000-8000-0000000000a8"
+# P0 D1: seated actors rest — the effect holds while the seat is held.
+effect = "4d7a9b30-0000-4000-8000-0000000000f5"
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000084"
@@ -825,7 +827,7 @@ new = true
 [records.fields]
 parent = "4d7a9b30-0000-4000-8000-000000000083"
 offset = [0.0, 0.55, 0.0]
-animTag = "Sit"
+animTag = "Sitting"
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000085"
@@ -1261,7 +1263,7 @@ new = true
 [records.fields]
 parent = "4d7a9b30-0000-4000-8000-0000000000e5"
 offset = [0.0, 0.9, 0.0]
-animTag = "Sit"
+animTag = "Sitting"
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000000e7"
@@ -1348,7 +1350,7 @@ new = true
 [records.fields]
 parent = "4d7a9b30-0000-4000-8000-000000000095"
 offset = [0.0, 0.45, 0.0]
-animTag = "Sit"
+animTag = "Sitting"
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000097"
@@ -1830,3 +1832,17 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-00000000012c"
 cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [5.0, 0.5, -11.0]
+
+# P0 D1: the seat's rest effect — infinite while seated (removed on
+# release), a gentle energy-regen boost with a readable tag.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000000f5"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SeatRest"
+attribute = "energyRegen"
+op = "add"
+magnitude = 10.0
+duration = "infinite"
+grantedTag = "State.Resting"

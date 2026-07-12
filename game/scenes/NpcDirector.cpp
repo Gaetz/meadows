@@ -30,7 +30,9 @@
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
 #include "gameplay/event/EventBus.hpp"
+#include "gameplay/ability/GameplayEffects.hpp" // applyEffect/removeById (D1)
 #include "gameplay/interaction/Furniture.hpp"
+#include "gameplay/interaction/FurnitureForms.hpp" // FurnitureForm (D1)
 #include "gameplay/inventory/Inventory.hpp" // Equipment (the weapon link)
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/EquipmentStats.hpp" // weaponDamageEvent
@@ -230,8 +232,8 @@ void NpcDirector::refreshNpcs(
                 });
             npc->anim->setTagCheck(
                 [raw = npc.get()](std::string_view tag) {
-                    if (tag == "State.Sitting") {
-                        return raw->sitting;
+                    if (raw->sitting && tag == raw->sitGate) {
+                        return true; // D1: the claimed point's animTag
                     }
                     if (tag == "State.Dead") {
                         return raw->dead;
@@ -329,11 +331,7 @@ void NpcDirector::updateNpcSchedule(const NpcContext& ctx, Npc& npc,
         npc.intentReason = intent ? intent->reason : "(no schedule entry)";
         npc.path.clear();
         npc.pathIndex = 0;
-        npc.sitting = false;
-        if (npc.furnitureClaimed) {
-            ctx.furnitureOccupancy.release(npc.entity.id());
-            npc.furnitureClaimed = false;
-        }
+        releaseFurniture(ctx, npc); // D1: occupancy + effect + gate
     }
 }
 
@@ -407,6 +405,22 @@ void NpcDirector::moveNpcDirect(const NpcContext& ctx, Npc& npc, f32 dt,
     npc.steered = true; // pathless but MOVING: skip the idle speed decay
 }
 
+void NpcDirector::releaseFurniture(const NpcContext& ctx, Npc& npc) {
+    if (npc.furnitureClaimed) {
+        ctx.furnitureOccupancy.release(npc.entity.id());
+        npc.furnitureClaimed = false;
+    }
+    if (npc.furnitureEffectId != 0 &&
+        npc.entity.has<gameplay::AbilitySystem>()) {
+        // D1: standing up ends the furniture's effect (rest regen...).
+        gameplay::removeEffectById(
+            npc.entity.get_mut<gameplay::AbilitySystem>(),
+            npc.furnitureEffectId, ctx.gameTags);
+        npc.furnitureEffectId = 0;
+    }
+    npc.sitting = false;
+}
+
 void NpcDirector::callForHelp(const NpcContext& ctx, const Npc& caller,
                               const Vec3& targetPos) {
     // The shout on the bus first: quests/scripts/mods can listen.
@@ -474,7 +488,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         if (npc.dead) {
             // The death transition (anim graph, State.Dead gate) plays; the
             // body stays. Despawn: a later slice.
-            npc.sitting = false;
+            releaseFurniture(ctx, npc); // D1: a corpse frees its seat
             npc.attacking = false;   // a death mid-swing cancels it
             npc.weaponDrawn = false; // the club drops with him (visually)
             npc.path.clear();
@@ -559,14 +573,14 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             }
             if (npcStaggered) {
                 inCombat = true; // reeling still overrides the schedule
-                npc.sitting = false;
+                releaseFurniture(ctx, npc); // D1: knocked off the seat
                 npc.blocking = false;
                 npc.path.clear();
                 npc.attackCooldown -= dt;
             } else if (aware == world::AwareState::Alert ||
                        aware == world::AwareState::Searching) {
                 inCombat = true;
-                npc.sitting = false;
+                releaseFurniture(ctx, npc); // D1: combat stands him up
                 npc.attackCooldown -= dt;
                 npc.repathTimer -= dt;
                 // P0 A6: the engagement distances come from the WEAPON
@@ -837,12 +851,57 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                 goTo(anchor);
                 if (moveNpcAlongPath(ctx, npc, dt,
                                      package ? package->speed : 1.0f)) {
-                    // Arrived: claim a point and sit (the anim graph's
-                    // State.Sitting gate does the rest).
+                    // Arrived: claim a point and sit. D1: the claimed
+                    // POINT's animTag drives the anim gate ("State." +
+                    // tag), and the furniture's GAS effect (rest regen,
+                    // warmth...) applies for as long as the seat is held.
                     if (!npc.furnitureClaimed) {
-                        ctx.furnitureOccupancy.claim(npc.activeLocation, 1,
-                                                     npc.entity.id());
+                        npc.sitGate = "State.Sitting";
+                        const gameplay::FurnitureForm* furniture = nullptr;
+                        if (const auto* ref =
+                                ctx.forms.find<world::ReferenceForm>(
+                                    npc.activeLocation)) {
+                            furniture =
+                                ctx.forms.find<gameplay::FurnitureForm>(
+                                    ref->baseForm);
+                        }
+                        u32 pointCount = 0;
+                        if (furniture) {
+                            data::childrenOf<gameplay::FurniturePointForm>(
+                                ctx.forms, furniture->id,
+                                [&](const gameplay::FurniturePointForm&) {
+                                    ++pointCount;
+                                });
+                        }
+                        const auto point = ctx.furnitureOccupancy.claim(
+                            npc.activeLocation, glm::max(pointCount, 1u),
+                            npc.entity.id());
                         npc.furnitureClaimed = true;
+                        if (furniture) {
+                            u32 index = 0;
+                            data::childrenOf<gameplay::FurniturePointForm>(
+                                ctx.forms, furniture->id,
+                                [&](const gameplay::FurniturePointForm& p) {
+                                    if (point && index == *point) {
+                                        npc.sitGate = "State." + p.animTag;
+                                    }
+                                    ++index;
+                                });
+                            if (furniture->effect.isValid()) {
+                                if (const auto* effect =
+                                        ctx.forms
+                                            .find<gameplay::EffectForm>(
+                                                furniture->effect)) {
+                                    gameplay::applyEffect(
+                                        npc.entity.get_mut<
+                                            gameplay::AttributeSet>(),
+                                        npc.entity.get_mut<
+                                            gameplay::AbilitySystem>(),
+                                        *effect, ctx.gameTags, nullptr,
+                                        &npc.furnitureEffectId);
+                                }
+                            }
+                        }
                     }
                     npc.sitting = true;
                 }

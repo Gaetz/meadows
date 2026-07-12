@@ -34,6 +34,7 @@ void registerCharacterRuntimeTags(GameplayTagRegistry& tags) {
            "State.Dodging",   // dodge i-frames (grantedTag — a tag the
                               // registry doesn't know is granted SILENTLY
                               // as nothing, the A3 cooldown lesson)
+           "State.Resting",   // D1: furniture effects (SeatRest...)
            "Cooldown.Dodge", "Cooldown.Attack" }) {
         tags.registerTag(tag);
     }

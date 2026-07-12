@@ -44,7 +44,7 @@ struct FurniturePointForm : data::Form {
     core::Guid parent; // FurnitureForm
     Vec3 offset { 0.0f, 0.0f, 0.0f };
     f32 facing { 0.0f };   // yaw radians in local space
-    str animTag { "Sit" }; // anim-graph tag gate while used
+    str animTag { "Sitting" }; // "State." + this = the anim gate (D1)
 
     REFLECT_BEGIN(FurniturePointForm, data::Form)
         REFLECT_FIELD(parent)
