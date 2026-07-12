@@ -65,7 +65,45 @@ int sdlButtonFor(MouseButton button) {
     return 0;
 }
 
+// Chantier 9: Xbox naming -> SDL_Gamepad's positional layout. The
+// triggers are handled as axes below (they have no SDL button).
+SDL_GamepadButton sdlPadButtonFor(PadButton button) {
+    switch (button) {
+    case PadButton::A:               return SDL_GAMEPAD_BUTTON_SOUTH;
+    case PadButton::B:               return SDL_GAMEPAD_BUTTON_EAST;
+    case PadButton::X:               return SDL_GAMEPAD_BUTTON_WEST;
+    case PadButton::Y:               return SDL_GAMEPAD_BUTTON_NORTH;
+    case PadButton::LeftShoulder:    return SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
+    case PadButton::RightShoulder:   return SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER;
+    case PadButton::Start:           return SDL_GAMEPAD_BUTTON_START;
+    case PadButton::Back:            return SDL_GAMEPAD_BUTTON_BACK;
+    case PadButton::DPadUp:          return SDL_GAMEPAD_BUTTON_DPAD_UP;
+    case PadButton::DPadDown:        return SDL_GAMEPAD_BUTTON_DPAD_DOWN;
+    case PadButton::DPadLeft:        return SDL_GAMEPAD_BUTTON_DPAD_LEFT;
+    case PadButton::DPadRight:       return SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
+    case PadButton::LeftStickClick:  return SDL_GAMEPAD_BUTTON_LEFT_STICK;
+    case PadButton::RightStickClick: return SDL_GAMEPAD_BUTTON_RIGHT_STICK;
+    case PadButton::LeftTrigger:
+    case PadButton::RightTrigger:
+    case PadButton::Count:           break;
+    }
+    return SDL_GAMEPAD_BUTTON_INVALID;
+}
+
+// The analog trigger reads as a logical button past this. [cpp-tuning]
+constexpr f32 kTriggerButtonThreshold = 0.5f;
+
+f32 normalizedAxis(SDL_Gamepad* pad, SDL_GamepadAxis axis) {
+    return static_cast<f32>(SDL_GetGamepadAxis(pad, axis)) / 32767.0f;
+}
+
 } // namespace
+
+Input::~Input() {
+    if (gamepad) {
+        SDL_CloseGamepad(static_cast<SDL_Gamepad*>(gamepad));
+    }
+}
 
 void Input::handleEvent(const void* nativeEvent) {
     const auto* event = static_cast<const SDL_Event*>(nativeEvent);
@@ -84,6 +122,24 @@ void Input::handleEvent(const void* nativeEvent) {
         break;
     case SDL_EVENT_MOUSE_WHEEL:
         pendingWheel += event->wheel.y;
+        break;
+    // Chantier 9: hotplug — the FIRST pad that appears becomes the
+    // active one (SDL3 also fires ADDED for pads present at init);
+    // its removal frees the slot for the next.
+    case SDL_EVENT_GAMEPAD_ADDED:
+        if (!gamepad) {
+            gamepad = SDL_OpenGamepad(event->gdevice.which);
+            if (gamepad) {
+                gamepadId = event->gdevice.which;
+            }
+        }
+        break;
+    case SDL_EVENT_GAMEPAD_REMOVED:
+        if (gamepad && event->gdevice.which == gamepadId) {
+            SDL_CloseGamepad(static_cast<SDL_Gamepad*>(gamepad));
+            gamepad = nullptr;
+            gamepadId = 0;
+        }
         break;
     default:
         break;
@@ -120,10 +176,74 @@ void Input::update() {
         mouseCurrent[i] =
             (mask & SDL_BUTTON_MASK(sdlButtonFor(static_cast<MouseButton>(i)))) != 0;
     }
+    // Gamepad snapshot (chantier 9) — polled like the keyboard; all
+    // dead when no pad is connected.
+    padPrevious = padCurrent;
+    if (auto* pad = static_cast<SDL_Gamepad*>(gamepad)) {
+        leftTriggerValue =
+            normalizedAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
+        rightTriggerValue =
+            normalizedAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+        // SDL's stick Y is positive DOWN; gameplay reads y = up/forward.
+        leftStickValue = applyDeadzone(
+            { normalizedAxis(pad, SDL_GAMEPAD_AXIS_LEFTX),
+              -normalizedAxis(pad, SDL_GAMEPAD_AXIS_LEFTY) },
+            stickDeadzone);
+        rightStickValue = applyDeadzone(
+            { normalizedAxis(pad, SDL_GAMEPAD_AXIS_RIGHTX),
+              -normalizedAxis(pad, SDL_GAMEPAD_AXIS_RIGHTY) },
+            stickDeadzone);
+        for (size_t i = 0; i < padCurrent.size(); ++i) {
+            const auto button = static_cast<PadButton>(i);
+            if (button == PadButton::LeftTrigger) {
+                padCurrent[i] = leftTriggerValue >= kTriggerButtonThreshold;
+            } else if (button == PadButton::RightTrigger) {
+                padCurrent[i] = rightTriggerValue >= kTriggerButtonThreshold;
+            } else {
+                padCurrent[i] =
+                    SDL_GetGamepadButton(pad, sdlPadButtonFor(button));
+            }
+        }
+    } else {
+        padCurrent = {};
+        leftStickValue = {};
+        rightStickValue = {};
+        leftTriggerValue = 0.0f;
+        rightTriggerValue = 0.0f;
+    }
 }
 
 bool Input::isDown(Key key) const {
     return current[static_cast<size_t>(key)];
+}
+
+bool Input::padConnected() const {
+    return gamepad != nullptr;
+}
+
+bool Input::padDown(PadButton button) const {
+    return padCurrent[static_cast<size_t>(button)];
+}
+
+bool Input::padPressed(PadButton button) const {
+    const auto index = static_cast<size_t>(button);
+    return padCurrent[index] && !padPrevious[index];
+}
+
+Vec2 Input::leftStick() const {
+    return leftStickValue;
+}
+
+Vec2 Input::rightStick() const {
+    return rightStickValue;
+}
+
+f32 Input::leftTrigger() const {
+    return leftTriggerValue;
+}
+
+f32 Input::rightTrigger() const {
+    return rightTriggerValue;
 }
 
 bool Input::wasPressed(Key key) const {
