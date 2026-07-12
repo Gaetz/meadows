@@ -46,7 +46,7 @@
 			</div>
 			<div class="value">{{ essenceText }}</div>
 		</div>
-		<div class="stat">
+		<div class="stat compact">
 			<div class="bar posture" data-style-width="postureBarPct + '%'">
 				<div class="fill" data-style-width="postureFillPct + '%'"/>
 			</div>

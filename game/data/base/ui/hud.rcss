@@ -62,12 +62,20 @@ body {
 	width: 50%;
 }
 
+/* Explicit heights: the bars' absolute segments don't grow the layout
+   (RmlUi), so each .stat block sizes itself — bar 8dp + value line. */
 .stat {
-	margin-top: 5dp;
+	margin-top: 4dp;
+	height: 25dp;
+}
+
+.stat.compact {
+	height: 10dp;
 }
 
 .bar {
 	position: relative;
+	display: block;
 	height: 8dp;
 	background-color: #14161ab0;
 	border: 1dp #3c4046;
