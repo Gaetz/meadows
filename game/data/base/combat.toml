@@ -535,3 +535,17 @@ scalingAttribute = "dexterity"
 reach = 12.0
 projectileSpeed = 35.0
 model = "a2b1ade0-0000-4000-8000-00000000501f"
+ammo = "4d7a9b30-0000-4000-8000-000000000211" # one Arrow per shot
+
+# The arrow ITEM: consumed per shot, recovered by walking over a planted
+# one. The model guid is the procedural arrow (WeaponMeshes).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000211"
+type = "MiscItemForm"
+new = true
+[records.fields]
+editorId = "Arrow"
+displayName = "Arrow"
+weight = 0.05
+goldValue = 1
+model = "a2b1ade0-0000-4000-8000-000000005020"

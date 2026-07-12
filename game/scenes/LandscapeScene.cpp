@@ -423,11 +423,15 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
             }
             playerEntity.get_mut<gameplay::Equipment>().weapon =
                 playerWeapon->id;
-            // A7: the bow rides in the bag too (equip it to fire).
+            // A7: the bow rides in the bag too (equip it to fire),
+            // with a starting quiver of arrows.
             if (const auto* bow = data::findByEditorId<data::WeaponForm>(
                     forms, "HuntingBow");
                 bow && gameplay::itemCount(bag, bow->id) == 0) {
                 gameplay::addItem(bag, bow->id, 1);
+                if (bow->ammo.isValid()) {
+                    gameplay::addItem(bag, bow->ammo, 12);
+                }
             }
         }
         // A4/D2: re-mirror a loaded quest log + bounty onto the player.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/core/Guid.hpp"
 #include "gameplay/stats/Damage.hpp" // DamageEvent (the captured payload)
 
 // Chantier P0 A7 — projectiles, the sim-pure half: plain ballistics.
@@ -19,9 +20,11 @@ struct Projectile {
     f32 ttl { 8.0f };       // seconds of flight before it fizzles
     u64 shooter { 0 };      // entity id — never hits its own archer
     DamageEvent payload;    // captured at fire time
-    // Planted (stuck in the world): flight ends, the mesh lingers.
+    // Planted (stuck in the world): flight ends, the mesh lingers and
+    // can be PICKED UP — walking over it returns `ammoItem` to the bag.
     bool planted { false };
-    f32 plantedTtl { 20.0f };
+    f32 plantedTtl { 45.0f };
+    core::Guid ammoItem; // captured from WeaponForm.ammo at fire time
 };
 
 // One integration step. Returns the segment START (the previous

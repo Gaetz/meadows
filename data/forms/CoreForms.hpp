@@ -48,6 +48,9 @@ struct WeaponForm : Form {
     f32 swingRecovery { 0.35f };  // seconds: back to guard
     f32 reach { 2.4f };           // AI engagement distance (A6)
     f32 projectileSpeed { 0.0f }; // > 0 = ranged (A7): launch m/s
+    // A7+ (appended — ordinals stable): the ITEM one shot consumes;
+    // invalid = no ammo needed. Planted arrows give it back on pickup.
+    core::Guid ammo;
 
     REFLECT_BEGIN(WeaponForm, Form)
         REFLECT_FIELD(displayName)
@@ -75,6 +78,7 @@ struct WeaponForm : Form {
         REFLECT_FIELD(swingRecovery)
         REFLECT_FIELD(reach)
         REFLECT_FIELD(projectileSpeed)
+        REFLECT_FIELD(ammo)
     REFLECT_END()
 };
 

@@ -16,6 +16,7 @@
 #include "gameplay/combat/MeleeSwing.hpp" // segmentHitsCapsule
 #include "gameplay/cue/GameplayCues.hpp"
 #include "gameplay/event/EventBus.hpp"
+#include "gameplay/inventory/Inventory.hpp" // arrow pickup (A7+)
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "world/scene/Components.hpp"
 
@@ -59,6 +60,20 @@ void ProjectileDirector::update(f32 dt, const ProjectileContext& ctx) {
     for (gameplay::Projectile& arrow : projectiles) {
         const Vec3 from = gameplay::stepProjectile(arrow, dt);
         if (arrow.planted) {
+            // A7+: walking over a planted arrow returns its ammo item to
+            // the bag — anyone's arrow (an archer's misses are loot).
+            if (arrow.ammoItem.isValid() && ctx.player &&
+                ctx.playerEntity.is_alive() &&
+                ctx.playerEntity.has<gameplay::Inventory>()) {
+                const Vec3 gap = arrow.position - ctx.player->position();
+                if (glm::dot(gap, gap) < 1.5f * 1.5f) {
+                    gameplay::addItem(
+                        ctx.playerEntity.get_mut<gameplay::Inventory>(),
+                        arrow.ammoItem, 1);
+                    arrow.plantedTtl = 0.0f; // picked: gone this frame
+                    LOG_INFO("A7: arrow recovered");
+                }
+            }
             continue;
         }
         const Vec3 sweep = arrow.position - from;

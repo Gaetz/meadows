@@ -715,6 +715,9 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                             arrow.shooter = npc.entity.id();
                             arrow.payload = gameplay::weaponDamageEvent(
                                 *npcWeapon, npcSys);
+                            // NPC quivers are bottomless (v1), but their
+                            // planted arrows ARE loot for the player.
+                            arrow.ammoItem = npcWeapon->ammo;
                             ctx.projectiles->spawn(arrow);
                             npc.attackCooldown = 2.2f; // [cpp-tuning]
                             npc.blocking = false;

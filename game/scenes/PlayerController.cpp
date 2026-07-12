@@ -85,6 +85,15 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
     if (swing.phase != gameplay::SwingPhase::Idle) {
         return; // one swing in flight
     }
+    // A7+: a ranged weapon with an ammo item needs one IN THE BAG —
+    // checked before the ability so a dry fire costs nothing.
+    if (weapon->projectileSpeed > 0.0f && weapon->ammo.isValid() &&
+        ctx.playerEntity.has<gameplay::Inventory>() &&
+        gameplay::itemCount(ctx.playerEntity.get<gameplay::Inventory>(),
+                            weapon->ammo) <= 0) {
+        LOG_INFO("A7: out of arrows");
+        return;
+    }
     if (ctx.attackAbility) {
         auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
         auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
@@ -105,7 +114,14 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
         arrow.shooter = ctx.playerEntity.id();
         arrow.payload = gameplay::weaponDamageEvent(
             *weapon, ctx.playerEntity.get<gameplay::AbilitySystem>());
+        arrow.ammoItem = weapon->ammo; // recoverable once planted
         ctx.projectiles->spawn(arrow);
+        if (weapon->ammo.isValid() &&
+            ctx.playerEntity.has<gameplay::Inventory>()) {
+            gameplay::removeItem(
+                ctx.playerEntity.get_mut<gameplay::Inventory>(),
+                weapon->ammo, 1);
+        }
         return;
     }
     swingWeapon_ = weapon;
