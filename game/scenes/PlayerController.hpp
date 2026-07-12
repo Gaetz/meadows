@@ -1,9 +1,11 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 
 #include "engine/core/Defines.hpp"
 #include "engine/ecs/World.hpp" // ecs::Entity
+#include "gameplay/actors/Swimming.hpp" // gameplay::MoveMode (D2b)
 
 namespace platform {
 class Input;
@@ -69,6 +71,12 @@ struct PlayerContext {
     gameplay::EventBus* eventBus { nullptr };
     // P0 C2: feedback cues (hit/block/parry) — the FxDirector's registry.
     gameplay::CueRegistry* cues { nullptr };
+    // P0 D2b: the water surface (if any) over a world position — sea
+    // level + placed WaterVolumes; the scene owns the geometry, the
+    // controller only asks (the TriggerSystem callback pattern).
+    std::function<std::optional<f32>(const Vec3&)> waterSurfaceAt;
+    // Energy drain while swimming (§2.9: only effects move energy).
+    const gameplay::EffectForm* swimCostEffect { nullptr };
 };
 
 // The first-person Play-mode controller extracted from LandscapeScene
@@ -111,6 +119,11 @@ public:
 
 private:
     void tryAttack(const PlayerContext& ctx);
+    // D2b: decides the mode, swims when swimming (3D wish toward the
+    // look, surface clamp, energy drain, drowning once exhausted).
+    // True = the frame's movement was consumed (no jump/dodge/sprint).
+    bool updateSwimming(f32 dt, const PlayerContext& ctx, const Vec3& wish,
+                        bool moving, f32 jog, f32 accelRate);
     // A4: advances the MeleeSwing machine and, through the Active window,
     // sweeps the blade segment against the NPC capsules (one code path
     // with the NPCs: gameplay/combat/MeleeSwing).
@@ -131,6 +144,10 @@ private:
     f32 dodgeTimer { 0.0f };
     Vec3 dodgeDir { 0.0f };
     bool weaponDrawn_ { true }; // R toggles; starts drawn (adventurer)
+    // P0 D2b: swimming (decideMoveMode owns the transitions).
+    gameplay::MoveMode moveMode_ { gameplay::MoveMode::Ground };
+    f32 swimCostAccumulator { 0.0f };
+    f32 drownAccumulator { 0.0f };
 };
 
 } // namespace game

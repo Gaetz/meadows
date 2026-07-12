@@ -47,6 +47,7 @@ void PlayerController::spawnBody(phys::PhysicsWorld& physics,
     velocity = Vec3 { 0.0f };
     dodgeTimer = 0.0f;
     shiftHeldSeconds = 0.0f;
+    moveMode_ = gameplay::MoveMode::Ground; // a fresh body spawns dry
 }
 
 void PlayerController::destroyBody() {
@@ -304,6 +305,108 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
     }
 }
 
+// P0 D2b — the swim branch: decideMoveMode owns WHEN (sim-pure,
+// doctested), this owns HOW. Full-3D wish toward the look, clamped so
+// the head never breaches the surface from below; the SwimCost effect
+// drains energy on the sprint-cost accumulator pattern (§2.9); an
+// exhausted swimmer SINKS and drowns on a periodic unmitigated tick.
+bool PlayerController::updateSwimming(f32 dt, const PlayerContext& ctx,
+                                      const Vec3& wish, bool moving,
+                                      f32 jog, f32 accelRate) {
+    const gameplay::StatsTuningForm& tuning = ctx.statsTuning;
+    const std::optional<f32> surface =
+        ctx.waterSurfaceAt ? ctx.waterSurfaceAt(body_->position())
+                           : std::nullopt;
+    const gameplay::MoveMode next = gameplay::decideMoveMode(
+        moveMode_, surface, body_->position().y, tuning.eyeHeight,
+        body_->onGround());
+    if (next != moveMode_) {
+        // THE transition (dev rule): the facade follows the mode.
+        moveMode_ = next;
+        body_->setSwimming(moveMode_ == gameplay::MoveMode::Swim);
+        swimCostAccumulator = 0.0f;
+        drownAccumulator = 0.0f;
+    }
+    if (moveMode_ != gameplay::MoveMode::Swim) {
+        return false;
+    }
+
+    bool exhausted = false;
+    if (ctx.playerEntity.is_alive()) {
+        if (const auto tag = ctx.gameTags.find("State.Exhausted")) {
+            exhausted = ctx.playerEntity.get<gameplay::AbilitySystem>()
+                            .tags.has(*tag);
+        }
+    }
+    // Swim toward the LOOK (pitch included); Space paddles up.
+    const render::Camera3D& cam = ctx.flyCamera.camera;
+    const Vec3 fwd3 = cam.forward();
+    const Vec3 right = cam.right();
+    const Vec2 axis = platform::moveAxis(ctx.input);
+    Vec3 wish3 = fwd3 * axis.y + right * axis.x;
+    if (ctx.input.isDown(platform::Key::Space)) {
+        wish3.y += 1.0f;
+    }
+    (void)wish;
+    (void)moving;
+    const f32 swimSpeed = jog * tuning.swimSpeedFactor;
+    Vec3 target = glm::dot(wish3, wish3) > 1e-6f
+                      ? glm::normalize(wish3) * swimSpeed
+                      : Vec3 { 0.0f };
+    if (exhausted) {
+        // No strength left: the water wins (STATS.md survival loop).
+        target.y = glm::min(target.y, 0.0f) - 1.2f;
+    }
+    // Surface clamp: swimming never breaches — decideMoveMode handles
+    // the actual exit (shallows, or the head clearing the surface).
+    if (surface &&
+        body_->position().y + tuning.eyeHeight > *surface - 0.05f &&
+        target.y > 0.0f) {
+        target.y = 0.0f;
+    }
+    velocity += (target - velocity) * (1.0f - std::exp(-accelRate * dt));
+    body_->move(velocity, dt);
+
+    // Energy drain: one instant effect per half second (§2.9 — the only
+    // way energy moves), the sprint-cost pattern.
+    if (ctx.swimCostEffect && ctx.playerEntity.is_alive() && !exhausted) {
+        swimCostAccumulator += dt;
+        while (swimCostAccumulator >= 0.5f) {
+            swimCostAccumulator -= 0.5f;
+            auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
+            auto& sys = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
+            gameplay::applyEffect(set, sys, *ctx.swimCostEffect,
+                                  ctx.gameTags);
+        }
+    }
+    // Drowning: exhausted underwater = an unmitigated tick per second
+    // (resist penetration eats the target's own mitigation, never
+    // amplifies) — death flows through the normal pipeline.
+    if (exhausted && ctx.playerEntity.is_alive()) {
+        drownAccumulator += dt;
+        while (drownAccumulator >= 1.0f) {
+            drownAccumulator -= 1.0f;
+            gameplay::StatBlock block {
+                ctx.playerEntity.get_mut<gameplay::CoreAttributes>(),
+                ctx.playerEntity.get_mut<gameplay::AttributeSet>(),
+                ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
+                ctx.playerEntity.get_mut<gameplay::CombatState>()
+            };
+            gameplay::DamageEvent drown;
+            drown.channels = { { gameplay::DamageType::Chemical,
+                                 tuning.drownDamagePerSecond } };
+            drown.resistPenetration = 1000.0f;
+            gameplay::applyDamage(block, drown, ctx.gameTags,
+                                  ctx.derivedStats, nullptr, tuning);
+            LOG_INFO("D2b: drowning — {:.0f} damage",
+                     tuning.drownDamagePerSecond);
+        }
+    } else {
+        drownAccumulator = 0.0f;
+    }
+    return true;
+}
+
 void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     if (!body_ || ctx.interaction.fading()) {
         return; // frozen during door transitions
@@ -389,6 +492,22 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
             gameplay::currentValueOf(sys, gameplay::attr("acceleration")) *
             tuning.accelerationRate3D;
         energy = gameplay::currentValueOf(sys, gameplay::attr("energy"));
+    }
+    // P0 D2b: swimming consumes the whole ground-movement section (no
+    // jump/dodge/sprint/strides in the water); the camera/transform sync
+    // at the tail still runs.
+    if (updateSwimming(dt, ctx, wish, moving, jog, accelRate)) {
+        flyCamera.camera.position =
+            body_->position() +
+            Vec3 { 0.0f, ctx.statsTuning.eyeHeight, 0.0f };
+        if (ctx.playerEntity.is_alive()) {
+            auto& transform =
+                ctx.playerEntity.get_mut<world::Transform>();
+            transform.position = body_->position();
+            transform.rotation = glm::angleAxis(
+                glm::pi<f32>() - yaw, Vec3 { 0.0f, 1.0f, 0.0f });
+        }
+        return;
     }
     // Dodge (dev design 2026-07-11, the 2D arena move in 3D): a TAP on
     // the sprint key — released within dodgeTapSeconds — bursts in the

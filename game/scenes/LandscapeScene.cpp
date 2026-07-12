@@ -192,6 +192,8 @@ void LandscapeScene::setupGameplay() {
     gameplay::registerCharacterRuntimeTags(gameTags); // audit U5-3
     sprintCostEffect =
         data::findByEditorId<gameplay::EffectForm>(forms, "SprintCost");
+    swimCostEffect = // D2b: the swim drain (combat.toml)
+        data::findByEditorId<gameplay::EffectForm>(forms, "SwimCost");
     testWoundEffect =
         data::findByEditorId<gameplay::EffectForm>(forms, "TestLegWound");
     // Chantier 3 B6: the melee weapons (data — retune in village.toml).
@@ -1785,6 +1787,31 @@ PlayerContext LandscapeScene::makePlayerContext() {
         [this] { questDirector.syncWantedTag(makeQuestContext()); },
         &eventBus, // C4a: synthesized player footsteps
         &fxDirector.cues(), // C2: hit/block/parry feedback
+        // D2b: the water surface over a spot — sea level + the placed
+        // volumes (the extract's snapshot copies, fresh this frame).
+        [this](const Vec3& at) -> std::optional<f32> {
+            std::optional<f32> best;
+            if (!interiorMode) {
+                const f32 sea = renderer.terrainParams().seaLevel;
+                if (at.y < sea + 2.0f) {
+                    best = sea;
+                }
+            }
+            for (const auto& volume : snapshot.waterVolumes) {
+                if (std::abs(at.x - volume.position.x) <=
+                        volume.halfExtents.x &&
+                    std::abs(at.z - volume.position.z) <=
+                        volume.halfExtents.z) {
+                    const f32 top =
+                        volume.position.y + 2.0f * volume.halfExtents.y;
+                    if (at.y < top + 0.5f && (!best || top > *best)) {
+                        best = top;
+                    }
+                }
+            }
+            return best;
+        },
+        swimCostEffect, // D2b: §2.9 — only effects move energy
     };
 }
 

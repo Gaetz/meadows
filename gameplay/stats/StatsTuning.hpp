@@ -127,6 +127,10 @@ struct StatsTuningForm : data::Form {
     f32 blockEnergyRegenFactor { 0.5f };
     // STATS.md §4: staggered = can't act/parry/dodge and VERY slow.
     f32 staggerSpeedFactor { 0.3f };
+    // P0 D2b (appended): swimming — speed vs jog, and the drowning tick
+    // once energy is gone (the SwimCost effect drains it, data).
+    f32 swimSpeedFactor { 0.7f };
+    f32 drownDamagePerSecond { 8.0f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -200,6 +204,8 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(dodgeSpeedMultiplier)
         REFLECT_FIELD(blockEnergyRegenFactor)
         REFLECT_FIELD(staggerSpeedFactor)
+        REFLECT_FIELD(swimSpeedFactor)
+        REFLECT_FIELD(drownDamagePerSecond)
     REFLECT_END()
 };
 

@@ -226,3 +226,17 @@ new = true
 editorId = "CueFootstep"
 tag = "Cue.Footstep"
 particles = "fe000000-0000-4000-8000-000000000004" # StepDust
+
+# --- Swimming (chantier P0 D2b): the drain — one instant effect per
+# half second while swimming (the sprint-cost pattern; 2.9: only effects
+# move energy). Out of energy = State.Exhausted = sinking + drowning.
+[[records]]
+form = "e0000000-0000-4000-8000-000000000030"
+type = "EffectForm"
+new = true
+[records.fields]
+editorId = "SwimCost"
+attribute = "energy"
+op = "add"
+magnitude = -4.0
+duration = "instant"

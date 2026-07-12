@@ -98,8 +98,14 @@ public:
     CharacterBody& operator=(const CharacterBody&) = delete;
 
     // Desired HORIZONTAL velocity (m/s); jumps add vertical impulse.
+    // While SWIMMING the desired velocity is taken in FULL 3D instead
+    // (gravity off — the controller owns buoyancy and surface clamping).
     void move(const Vec3& desiredVelocity, f32 dt);
     void jump(f32 speed);
+
+    // P0 D2b: swim mode — gravity off, vertical control to the caller.
+    void setSwimming(bool swimming);
+    bool isSwimming() const;
 
     Vec3 position() const; // feet position
     bool onGround() const;

@@ -279,6 +279,7 @@ struct CharacterBody::Impl {
     PhysicsWorld& world;
     JPH::Ref<JPH::CharacterVirtual> character;
     f32 verticalVelocity { 0.0f };
+    bool swimming { false }; // P0 D2b: gravity off, full-3D velocity
     explicit Impl(PhysicsWorld& world) : world { world } {}
 };
 
@@ -306,6 +307,22 @@ CharacterBody::~CharacterBody() = default;
 
 void CharacterBody::move(const Vec3& desiredVelocity, f32 dt) {
     auto& impl = *pimpl;
+    if (impl.swimming) {
+        // P0 D2b: the water carries the body — no gravity, the caller's
+        // 3D velocity is the whole story (buoyancy and surface clamping
+        // are its job). Collisions still resolve (banks, the bottom).
+        impl.verticalVelocity = desiredVelocity.y;
+        impl.character->SetLinearVelocity(JPH::Vec3(
+            desiredVelocity.x, desiredVelocity.y, desiredVelocity.z));
+        JPH::CharacterVirtual::ExtendedUpdateSettings updateSettings;
+        impl.character->ExtendedUpdate(
+            dt, JPH::Vec3::sZero(), updateSettings,
+            impl.world.impl().system.GetDefaultBroadPhaseLayerFilter(
+                kLayerMoving),
+            impl.world.impl().system.GetDefaultLayerFilter(kLayerMoving),
+            {}, {}, *impl.world.impl().tempAllocator);
+        return;
+    }
     const JPH::Vec3 gravity { 0.0f, -9.81f, 0.0f };
     if (onGround() && impl.verticalVelocity < 0.0f) {
         impl.verticalVelocity = 0.0f;
@@ -324,6 +341,15 @@ void CharacterBody::move(const Vec3& desiredVelocity, f32 dt) {
         impl.world.impl().system.GetDefaultLayerFilter(kLayerMoving), {},
         {}, *impl.world.impl().tempAllocator);
 }
+
+void CharacterBody::setSwimming(bool swimming) {
+    if (pimpl->swimming != swimming) {
+        pimpl->swimming = swimming;
+        pimpl->verticalVelocity = 0.0f; // no gravity carry across modes
+    }
+}
+
+bool CharacterBody::isSwimming() const { return pimpl->swimming; }
 
 void CharacterBody::jump(f32 speed) {
     if (onGround()) {
