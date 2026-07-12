@@ -81,10 +81,9 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
     if (!ctx.playerEntity.is_alive() || !body_) {
         return;
     }
-    if (!weaponDrawn_) {
-        weaponDrawn_ = true; // the first press draws; the next one swings
-        return;
-    }
+    // R5: the first press on a holstered weapon DRAWS instead — that
+    // path now lives in updateStance (the one weaponDrawn_ writer); the
+    // dispatch never sends a sheathed press here.
     const data::WeaponForm* weapon = equippedWeapon(ctx);
     if (!weapon) {
         LOG_INFO("Swing: no weapon equipped");
@@ -153,12 +152,9 @@ void PlayerController::updateBowDraw(f32 dt, const PlayerContext& ctx,
     };
 
     if (bowCharge_ < 0.0f) {
-        // A sheathed bow: the first press unsheathes (the melee idiom).
-        if (!inhibited && !weaponDrawn_ &&
-            ctx.input.mousePressed(platform::MouseButton::Left)) {
-            weaponDrawn_ = true;
-            return;
-        }
+        // A sheathed bow: the first press unsheathes (the melee idiom) —
+        // handled in updateStance (the one weaponDrawn_ writer), which
+        // skips this call on the frame it draws.
         // Not drawing: LMB starts the draw (never inhibited, sheathed,
         // mid-swing, or with a dry quiver — refused before any cost).
         if (inhibited || !weaponDrawn_ ||
@@ -446,7 +442,17 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     if (!body_ || ctx.interaction.fading()) {
         return; // frozen during door transitions
     }
+    // R5: two halves, same per-frame order as the former god-method —
+    // stance (toggles, THE action decision, combat input dispatch) then
+    // locomotion (look, move, dodge, drains, camera sync).
+    const StanceFrame frame = updateStance(dt, ctx);
+    updateLocomotion(dt, ctx, frame);
+}
+
+PlayerController::StanceFrame
+PlayerController::updateStance(f32 dt, const PlayerContext& ctx) {
     platform::Input& input = ctx.input;
+    StanceFrame frame;
     // P0 A5: RMB held = raised guard — the State.Blocking tag is the §6
     // vocabulary the damage paths read (both camps). Guarding excludes
     // swinging (and vice versa: the guard waits for the swing to land).
@@ -476,45 +482,81 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
             ctx.gameTags, "State.Sneaking", sneaking_);
     }
     // STATS.md §4: staggered = can't act, parry or dodge, very slow.
-    bool staggered = false;
     if (ctx.playerEntity.is_alive()) {
         if (const auto tag = ctx.gameTags.find("State.Staggered")) {
-            staggered = ctx.playerEntity.get<gameplay::AbilitySystem>()
-                            .tags.has(*tag);
+            frame.staggered =
+                ctx.playerEntity.get<gameplay::AbilitySystem>().tags.has(
+                    *tag);
         }
     }
-    bool blocking = false;
+    const data::WeaponForm* held = equippedWeapon(ctx);
+    frame.rangedWeapon = held && held->projectileSpeed > 0.0f;
+    // R5: THE action decision — every exclusion (guard vs swing,
+    // stagger, bow draw, dodge) lives in gameplay::decidePlayerAction;
+    // nothing below re-derives one. A dead player stays Idle (the old
+    // `blocking = false` path).
     if (ctx.playerEntity.is_alive()) {
         auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
         auto& swing = ctx.playerEntity.get_mut<gameplay::MeleeSwing>();
-        blocking = weaponDrawn_ && !staggered && // no guard while reeling
-                   input.mouseDown(platform::MouseButton::Right) &&
-                   swing.phase == gameplay::SwingPhase::Idle;
+        gameplay::PlayerActionInputs in;
+        in.weaponDrawn = weaponDrawn_;
+        in.rangedWeapon = frame.rangedWeapon;
+        in.staggered = frame.staggered;
+        in.blockHeld = input.mouseDown(platform::MouseButton::Right);
+        in.swingInFlight = swing.phase != gameplay::SwingPhase::Idle;
+        in.drawingBow = bowCharge_ >= 0.0f;
+        frame.action = gameplay::decidePlayerAction(in);
+        const bool blocking =
+            frame.action == gameplay::PlayerAction::Blocking;
         // The guard clock: a hit landing inside the fresh window is a
         // PERFECT parry (applyBlock reads guardSeconds).
         gameplay::tickGuard(swing, blocking, dt);
         gameplay::syncStateTag(system, ctx.gameTags, "State.Blocking",
                                blocking);
     }
+    // The first press on a holstered weapon DRAWS it and does nothing
+    // else that frame (no swing, no charge) — folded here from
+    // tryAttack/updateBowDraw so weaponDrawn_ has exactly ONE writer.
+    // The melee path needs a live actor (the old tryAttack early-out);
+    // the bow path never had that gate.
+    bool drewThisFrame = false;
+    if (!weaponDrawn_ && !frame.staggered &&
+        input.mousePressed(platform::MouseButton::Left) &&
+        (frame.rangedWeapon ? bowCharge_ < 0.0f
+                            : ctx.playerEntity.is_alive())) {
+        weaponDrawn_ = true;
+        drewThisFrame = true;
+    }
     // B6: melee swing on LMB (the mouse is captured in Play — ImGui
     // never owns it here). Cadence is the ability's cooldown effect plus
     // the swing itself: no hardcoded timer (P0 A3).
-    const data::WeaponForm* held = equippedWeapon(ctx);
-    if (held && held->projectileSpeed > 0.0f) {
+    if (frame.rangedWeapon) {
         // A7+: ranged = the CHARGED shot (hold to draw, release to
-        // loose); melee inputs stay out of the way.
-        updateBowDraw(dt, ctx, *held, blocking || staggered);
+        // loose); melee inputs stay out of the way. 7b: a bow raises no
+        // guard, so only the stagger inhibits/cuts the draw.
+        if (!drewThisFrame) {
+            updateBowDraw(dt, ctx, *held, frame.staggered);
+        }
     } else {
         if (bowCharge_ >= 0.0f) {
             bowCharge_ = -1.0f; // weapon swapped mid-draw: let it down
         }
-        if (!blocking && !staggered &&
+        if (frame.action == gameplay::PlayerAction::Idle &&
+            !frame.staggered && !drewThisFrame &&
             input.mousePressed(platform::MouseButton::Left)) {
             tryAttack(ctx);
         }
     }
     updateSwing(dt, ctx);
+    return frame;
+}
 
+void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
+                                        const StanceFrame& frame) {
+    platform::Input& input = ctx.input;
+    const bool staggered = frame.staggered;
+    const bool blocking =
+        frame.action == gameplay::PlayerAction::Blocking;
     // Mouselook, always captured in Play (no LMB gymnastics in a game).
     render::FlyCamera& flyCamera = ctx.flyCamera;
     const Vec2 look = input.mouseDelta();
@@ -575,23 +617,37 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     } else {
         if (shiftHeldSeconds > 0.0f &&
             shiftHeldSeconds <= tuning.dodgeTapSeconds &&
-            dodgeTimer <= 0.0f && !staggered && // §4: no dodge while reeling
-            ctx.playerEntity.is_alive() &&
-            ctx.playerEntity.get<gameplay::MeleeSwing>().phase ==
-                gameplay::SwingPhase::Idle) {
-            bool activated = true;
-            if (ctx.dodgeAbility) {
-                auto& set =
-                    ctx.playerEntity.get_mut<gameplay::AttributeSet>();
-                auto& system =
-                    ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
-                activated = gameplay::tryActivate(
-                    *ctx.dodgeAbility, set, system, set, system,
-                    { ctx.forms, ctx.gameTags });
-            }
-            if (activated) {
-                dodgeDir = moving ? glm::normalize(wish) : -forward;
-                dodgeTimer = tuning.dodgeDurationSeconds;
+            dodgeTimer <= 0.0f && ctx.playerEntity.is_alive()) {
+            // R5: the tap is only a REQUEST — the same arbiter that owns
+            // every exclusion (stagger, swing in flight, guard, draw)
+            // answers it; no guard is re-checked here. Swing state is
+            // re-read: a swing may have STARTED in this frame's stance.
+            gameplay::PlayerActionInputs in;
+            in.weaponDrawn = weaponDrawn_;
+            in.rangedWeapon = frame.rangedWeapon;
+            in.staggered = staggered;
+            in.blockHeld = input.mouseDown(platform::MouseButton::Right);
+            in.swingInFlight =
+                ctx.playerEntity.get<gameplay::MeleeSwing>().phase !=
+                gameplay::SwingPhase::Idle;
+            in.drawingBow = bowCharge_ >= 0.0f;
+            in.dodgeRequested = true;
+            if (gameplay::decidePlayerAction(in) ==
+                gameplay::PlayerAction::Dodging) {
+                bool activated = true;
+                if (ctx.dodgeAbility) {
+                    auto& set =
+                        ctx.playerEntity.get_mut<gameplay::AttributeSet>();
+                    auto& system =
+                        ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
+                    activated = gameplay::tryActivate(
+                        *ctx.dodgeAbility, set, system, set, system,
+                        { ctx.forms, ctx.gameTags });
+                }
+                if (activated) {
+                    dodgeDir = moving ? glm::normalize(wish) : -forward;
+                    dodgeTimer = tuning.dodgeDurationSeconds;
+                }
             }
         }
         shiftHeldSeconds = 0.0f;

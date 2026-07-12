@@ -55,6 +55,7 @@
     OffensiveStatsTest.cpp
     PerceptionTest.cpp
     PhysicsTest.cpp
+    PlayerActionTest.cpp
     PluginConfigTest.cpp
     PrefabChildSaveTest.cpp
     PrefabTest.cpp

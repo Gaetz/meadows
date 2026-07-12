@@ -6,6 +6,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/ecs/World.hpp" // ecs::Entity
 #include "gameplay/actors/Swimming.hpp" // gameplay::MoveMode (D2b)
+#include "gameplay/combat/PlayerAction.hpp" // gameplay::PlayerAction (R5)
 
 namespace platform {
 class Input;
@@ -134,6 +135,23 @@ public:
     f32 bowCharge() const { return bowCharge_; }
 
 private:
+    // R5: what the stance half hands the locomotion half — the frame's
+    // ONE action (gameplay::decidePlayerAction owns every exclusion)
+    // plus the facts both halves read.
+    struct StanceFrame {
+        gameplay::PlayerAction action { gameplay::PlayerAction::Idle };
+        bool staggered { false };    // State.Staggered, read once (§4)
+        bool rangedWeapon { false }; // equipped weapon fires projectiles
+    };
+    // R5: the stance half of the frame — R draw/sheathe (the ONLY
+    // weaponDrawn_ writer), Ctrl sneak, the action decision, the guard
+    // clock + State.Blocking sync, and the bow-vs-melee input dispatch.
+    StanceFrame updateStance(f32 dt, const PlayerContext& ctx);
+    // R5: the locomotion half — mouselook, wish/speeds, the swim
+    // early-out, dodge tap + burst, jump, strides, drains, and the
+    // camera/entity-transform sync tail.
+    void updateLocomotion(f32 dt, const PlayerContext& ctx,
+                          const StanceFrame& frame);
     void tryAttack(const PlayerContext& ctx);
     // The equipped weapon (inventory), or the context fallback.
     const data::WeaponForm* equippedWeapon(const PlayerContext& ctx) const;
