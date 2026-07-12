@@ -549,8 +549,22 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                 wasAware != world::AwareState::Alert) {
                 callForHelp(ctx, npc, perception.lastKnownPos);
             }
-            if (aware == world::AwareState::Alert ||
-                aware == world::AwareState::Searching) {
+            // STATS.md §4: a staggered actor can't act, parry or dodge
+            // and moves at a crawl — the bandit just STANDS there,
+            // reeling (the riposte window the parry earns).
+            bool npcStaggered = false;
+            if (const auto staggerTag =
+                    ctx.gameTags.find("State.Staggered")) {
+                npcStaggered = npcSys.tags.has(*staggerTag);
+            }
+            if (npcStaggered) {
+                inCombat = true; // reeling still overrides the schedule
+                npc.sitting = false;
+                npc.blocking = false;
+                npc.path.clear();
+                npc.attackCooldown -= dt;
+            } else if (aware == world::AwareState::Alert ||
+                       aware == world::AwareState::Searching) {
                 inCombat = true;
                 npc.sitting = false;
                 npc.attackCooldown -= dt;

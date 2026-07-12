@@ -124,6 +124,8 @@ struct StatsTuningForm : data::Form {
     // STATS.md §4 (appended — ordinals stable): holding the guard is
     // effortful — energy regen halves while State.Blocking is up.
     f32 blockEnergyRegenFactor { 0.5f };
+    // STATS.md §4: staggered = can't act/parry/dodge and VERY slow.
+    f32 staggerSpeedFactor { 0.3f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -196,6 +198,7 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(dodgeDurationSeconds)
         REFLECT_FIELD(dodgeSpeedMultiplier)
         REFLECT_FIELD(blockEnergyRegenFactor)
+        REFLECT_FIELD(staggerSpeedFactor)
     REFLECT_END()
 };
 

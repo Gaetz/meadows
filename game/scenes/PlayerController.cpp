@@ -319,11 +319,19 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
              gameplay::SwingPhase::Idle)) {
         weaponDrawn_ = !weaponDrawn_;
     }
+    // STATS.md §4: staggered = can't act, parry or dodge, very slow.
+    bool staggered = false;
+    if (ctx.playerEntity.is_alive()) {
+        if (const auto tag = ctx.gameTags.find("State.Staggered")) {
+            staggered = ctx.playerEntity.get<gameplay::AbilitySystem>()
+                            .tags.has(*tag);
+        }
+    }
     bool blocking = false;
     if (ctx.playerEntity.is_alive()) {
         auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
         auto& swing = ctx.playerEntity.get_mut<gameplay::MeleeSwing>();
-        blocking = weaponDrawn_ && // no guard behind a sheathed blade
+        blocking = weaponDrawn_ && !staggered && // no guard while reeling
                    input.mouseDown(platform::MouseButton::Right) &&
                    swing.phase == gameplay::SwingPhase::Idle;
         // The guard clock: a hit landing inside the fresh window is a
@@ -341,7 +349,8 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     // B6: melee swing on LMB (the mouse is captured in Play — ImGui
     // never owns it here). Cadence is the ability's cooldown effect plus
     // the swing itself: no hardcoded timer (P0 A3).
-    if (!blocking && input.mousePressed(platform::MouseButton::Left)) {
+    if (!blocking && !staggered &&
+        input.mousePressed(platform::MouseButton::Left)) {
         tryAttack(ctx);
     }
     updateSwing(dt, ctx);
@@ -390,7 +399,8 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     } else {
         if (shiftHeldSeconds > 0.0f &&
             shiftHeldSeconds <= tuning.dodgeTapSeconds &&
-            dodgeTimer <= 0.0f && ctx.playerEntity.is_alive() &&
+            dodgeTimer <= 0.0f && !staggered && // §4: no dodge while reeling
+            ctx.playerEntity.is_alive() &&
             ctx.playerEntity.get<gameplay::MeleeSwing>().phase ==
                 gameplay::SwingPhase::Idle) {
             bool activated = true;
@@ -419,6 +429,9 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     f32 targetSpeed = sprinting ? jog * tuning.sprintMultiplier : jog;
     if (blocking) {
         targetSpeed *= tuning.blockSpeedFactor; // guarding is careful
+    }
+    if (staggered) {
+        targetSpeed *= tuning.staggerSpeedFactor; // §4: reeling is slow
     }
     const Vec3 target =
         moving ? glm::normalize(wish) * targetSpeed : Vec3 { 0.0f };
