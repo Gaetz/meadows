@@ -996,3 +996,52 @@ type = 'LocStringForm'
 
     [records.fields]
     text = 'Clairvoyance'
+
+[[records]]
+form = '6bde42a7-128e-41c3-804b-a1e1425b1ad2'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = ' — [F] Équipement'
+
+[[records]]
+form = '0b485d7e-08ab-4ff4-9c07-96853925890b'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = '{} refuse que vous touchiez à son équipement.'
+
+[[records]]
+form = '45beb013-e4aa-4f01-a5ff-5471601105af'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = '{} ne peut pas porter davantage.'
+
+[[records]]
+form = 'ccebf75e-379f-47f4-8832-60cb41bfd777'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = "C'est l'équipement de base de {} — il le garde."
+
+[[records]]
+form = '56d0310b-5c51-41b0-a1d1-68b21dffa65d'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = "{} s'équipe : {}"
+
+[[records]]
+form = '5f3c0b4a-32c0-4302-8078-ba0178e742d1'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = "L'équipement de {} a été amélioré à la forge."
+
+[[records]]
+form = '1314350f-6b03-499e-bfc4-d0139bfa03e8'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = "{} n'a rien à améliorer."

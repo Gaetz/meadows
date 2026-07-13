@@ -12,6 +12,7 @@
 #include "engine/platform/Input.hpp"
 #include "game/SaveGame.hpp" // PendingSaveLayer
 #include "game/scenes/NpcDirector.hpp" // Npc (dead-actor check)
+#include "gameplay/actors/ActorState.hpp" // FollowerState (É7 gear access)
 #include "gameplay/interaction/FurnitureForms.hpp"
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/Damage.hpp" // gameplay::CombatState
@@ -21,6 +22,31 @@
 #include "gameplay/stats/Survival.hpp"
 
 namespace game {
+
+namespace {
+
+// FOLLOWERS É7: the prompted actor's authored follower identity — any
+// actor you COULD recruit exposes his gear ([F]), not just an active
+// party member (followerCategory != "" — the É0 identity check, the
+// FollowerController::followerActorForm resolution mirrored). Null for
+// non-followers and non-actors.
+const data::ActorForm* followerActor(const InteractionContext& ctx,
+                                     ecs::Entity entity) {
+    if (!entity.is_alive() || !entity.has<world::RefId>() ||
+        !entity.has<gameplay::FollowerState>()) {
+        return nullptr;
+    }
+    const auto& refId = entity.get<world::RefId>();
+    const data::Form* base = ctx.forms.get(refId.base);
+    const reflect::TypeInfo* type = ctx.forms.typeOf(refId.base);
+    if (!base || !type || !type->isA(data::ActorForm::staticTypeInfo().id)) {
+        return nullptr;
+    }
+    const auto* actor = static_cast<const data::ActorForm*>(base);
+    return actor->followerCategory.empty() ? nullptr : actor;
+}
+
+} // namespace
 
 // --- B7: doors & worldspace travel ---------------------------------------------------
 
@@ -121,6 +147,12 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 break;
             case PromptKind::Actor:
                 promptLabel_ = label("prompt.talk", "prompt.talk.name");
+                // É7: a LIVING follower actor also offers his gear on the
+                // alternate action — the hint rides the same label (least
+                // invasive: one suffix key, loc'd like the rest).
+                if (followerActor(ctx, promptEntity)) {
+                    promptLabel_ += ctx.texts.get("prompt.gear");
+                }
                 break;
             case PromptKind::Corpse:
                 promptLabel_ = label("prompt.search", "prompt.search.name");
@@ -201,6 +233,8 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 // Chantier 4 B6: a WORKSTATION opens its UI screen instead
                 // (FurnitureForm.screen — crafting tables are furniture +
                 // a screen).
+                // (É7's [F] gear access lives after this switch — the
+                // alternate action, same prompt scan.)
                 const auto& ref = promptEntity.get<world::RefId>();
                 f32 hours = 1.0f;
                 str screen;
@@ -222,6 +256,28 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
             }
             default:
                 break;
+            }
+        }
+
+        // FOLLOWERS É7: [F] on a LIVING follower actor opens his
+        // gear — THE existing two-panel container screen (transfer +
+        // the base-kit/carry guards live in UiRouter). Gated by his
+        // opinion: negative affinity = a refusal toast (docs/FOLLOWERS.md
+        // §5 — "avis négatif" = followerAffinity < 0, the É4 scale's
+        // neutral point).
+        if (promptEntity.is_alive() && promptKind == PromptKind::Actor &&
+            ctx.actions->pressed(ctx.input, InputAction::InteractAlt)) {
+            if (const data::ActorForm* actor =
+                    followerActor(ctx, promptEntity)) {
+                const auto& state =
+                    promptEntity.get<gameplay::FollowerState>();
+                if (state.followerAffinity < 0.0f) {
+                    say(ctx.texts.format("follower.gearRefused",
+                                         actor->displayName),
+                        4.0f);
+                } else if (ctx.openContainer) {
+                    ctx.openContainer(promptEntity);
+                }
             }
         }
     }

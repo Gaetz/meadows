@@ -141,3 +141,10 @@ ui.attr.perception,Perception
 ui.attr.charisma,Charisme
 ui.attr.ego,Ego
 ui.attr.insight,Clairvoyance
+prompt.gear, — [F] Équipement
+follower.gearRefused,{} refuse que vous touchiez à son équipement.
+follower.gearTooHeavy,{} ne peut pas porter davantage.
+follower.unremovable,"C'est l'équipement de base de {} — il le garde."
+follower.autoEquip,{} s'équipe : {}
+follower.forgeUpgraded,L'équipement de {} a été amélioré à la forge.
+follower.forgeNothing,{} n'a rien à améliorer.

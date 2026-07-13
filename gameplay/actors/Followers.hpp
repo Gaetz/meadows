@@ -320,4 +320,22 @@ struct AllyVitals {
 };
 u64 pickHealTarget(const vector<AllyVitals>& allies, f32 threshold);
 
+// ---- É7: follower carry weight ----------------------------------------------
+// docs/FOLLOWERS.md §5: « poids limité par ses caractéristiques et son
+// modificateur d'âge ». Reused systems (§2.11): the É5 age curve (the
+// PHYSICAL multiplier — carrying is a body matter) and the chantier-6
+// encumbrance helpers (inventoryWeight / the maxEncumbrance derived stat);
+// this only adds the pure accept/reject decision at the transfer site.
+
+// The age factor on carry capacity = ageMultipliers(...).physical.
+f32 followerCarryFactor(f32 age, const StatsTuningForm& tuning);
+
+// Can `itemWeight` more land on a follower already carrying
+// `currentWeight`, given his maxEncumbrance and age factor? The player has
+// no hard cap (encumbrance only slows him); a follower REFUSES the excess
+// item instead. maxEncumbrance <= 0 = stats not computed yet: accept (the
+// encumbranceCategory grace).
+bool canCarry(f32 currentWeight, f32 itemWeight, f32 maxEncumbrance,
+              f32 ageFactor);
+
 } // namespace gameplay

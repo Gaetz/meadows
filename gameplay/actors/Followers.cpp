@@ -444,4 +444,18 @@ u64 pickHealTarget(const vector<AllyVitals>& allies, f32 threshold) {
     return best;
 }
 
+// ---- É7: follower carry weight ----------------------------------------------
+
+f32 followerCarryFactor(f32 age, const StatsTuningForm& tuning) {
+    return ageMultipliers(age, tuning).physical;
+}
+
+bool canCarry(f32 currentWeight, f32 itemWeight, f32 maxEncumbrance,
+              f32 ageFactor) {
+    if (maxEncumbrance <= 0.0f) {
+        return true; // stats not computed yet — the encumbranceCategory grace
+    }
+    return currentWeight + itemWeight <= maxEncumbrance * ageFactor;
+}
+
 } // namespace gameplay

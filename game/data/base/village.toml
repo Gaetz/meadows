@@ -2833,3 +2833,165 @@ new = true
 parent = "6a1dc0de-0000-4000-8000-000000000062"
 speaker = "Aldric"
 text = "Pas ici, l'ami. Retrouvons le calme de la place du village et je te montrerai."
+
+# --- FOLLOWERS É7: équipement du follower -------------------------------------
+# Reuse map (§2.11): the gear screen IS the container two-panel screen
+# (openContainerScreen, [F] via the C9.2 action layer); the base-kit lock
+# is the new `unremovable` item flag guarded in the SAME transferItem/
+# takeAll; carry weight = the chantier-6 encumbrance helpers × the É5 age
+# physical multiplier; the forge place is a TriggerForm volume mirrored as
+# Zone.Forge (the É6 Zone.Calme pattern); the upgrade dialogue rides the
+# OpenBarter event channel and charges gold the payFine way. §2.2: Forms
+# never mutate — the forge upgrade REPLACES the base sword with the next
+# tier below (upgradesTo), both unremovable.
+
+# Aldric's base sword — the kit he never gives up. Stats sit near the
+# RustySword (slash 14) but a notch under (12): a found RustySword is
+# already an upgrade he will gladly equip (the floor-not-lock rule).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000070"
+type = "WeaponForm"
+new = true
+[records.fields]
+editorId = "ArmeDAldric"
+displayName = "Lame d'Aldric"
+weight = 3.0
+goldValue = 0
+slashAttack = 12.0
+postureDamage = 18.0
+scalingAttribute = "strength"
+unremovable = true
+upgradesTo = "6a1dc0de-0000-4000-8000-000000000071"
+
+# The forge tier (v1: ONE palier — the level thresholds are the stated
+# data TODO). No upgradesTo: a second forge visit finds nothing to do
+# and charges nothing.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000071"
+type = "WeaponForm"
+new = true
+[records.fields]
+editorId = "ArmeDAldricPlus"
+displayName = "Lame d'Aldric affutee"
+weight = 3.0
+goldValue = 0
+slashAttack = 18.0
+postureDamage = 22.0
+scalingAttribute = "strength"
+unremovable = true
+
+# His loadout: the base sword lands in his inventory at spawn and the
+# finalize step equips the first weapon rolled — he now fights with HIS
+# blade instead of the bandit-club fallback.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000072"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000003"   # Aldric
+item = "6a1dc0de-0000-4000-8000-000000000070"     # ArmeDAldric
+count = 1
+
+# The forge place: a trigger volume over the village workbench (the É6
+# quiet-zone pattern — enter/leave fires OnForgeZone, the scene mirrors
+# the player's Zone.Forge tag). Tall Y: terrain height stays irrelevant.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000073"
+type = "TriggerForm"
+new = true
+[records.fields]
+editorId = "ForgeZoneVillage"
+halfExtents = [10.0, 50.0, 10.0]
+event = "OnForgeZone"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000074"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "6a1dc0de-0000-4000-8000-000000000073"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [49.5, 0.0, 366.5]
+
+# The upgrade option (order 7): gold in hand AND at the forge. The gold
+# is charged by the handler (payFine idiom) so a nothing-to-upgrade
+# answer stays free; keep the HasItem gate mirrored on the C++ price.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000075"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000008"
+speaker = "Player"
+text = "Ameliorons ton equipement a la forge. (50 pieces d'or)"
+event = "OnForgeUpgrade"
+order = 7
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000076"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000075"
+kind = "HasItem"
+item = "5e8bac40-0000-4000-8000-000000000010"     # GoldCoin
+value = 50.0
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000077"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000075"
+kind = "HasTag"
+tag = "Zone.Forge"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000078"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000075"
+speaker = "Aldric"
+text = "Voila un bon investissement. Le forgeron va me faire une lame du tonnerre !"
+
+# The same offer in the WRONG place (order 8, negated zone — the É6
+# wrong-place notification pattern): the player learns where to go.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000079"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000008"
+speaker = "Player"
+text = "Ameliorons ton equipement."
+order = 8
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000007a"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000079"
+kind = "HasItem"
+item = "5e8bac40-0000-4000-8000-000000000010"     # GoldCoin
+value = 50.0
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000007b"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000079"
+kind = "HasTag"
+tag = "Zone.Forge"
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000007c"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000079"
+speaker = "Aldric"
+text = "Pas sans forge. Passons voir l'etabli du village, pres de la place."

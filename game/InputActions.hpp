@@ -29,6 +29,12 @@ enum class InputAction : u8 {
     WaitMenu,    // T / d-pad down
     Map,         // M / d-pad left (screen lands with C9.6)
     Pause,       // Escape / Start
+    // FOLLOWERS É7 (appended): the ALTERNATE interaction on the prompted
+    // entity — a follower's gear screen today, the grave's container later
+    // (É8). Bindings are single inputs (one key, one pad button), so the
+    // doc's Shift+E chord becomes F / LB; a chord-modifier extension of
+    // Binding stays possible later without touching callers.
+    InteractAlt, // F / LB
     Count
 };
 

@@ -17,6 +17,7 @@
 #include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions (C2)
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp" // Equipment (the weapon link)
+#include "gameplay/stats/EquipmentStats.hpp" // É7: armor protects NPCs too
 #include "gameplay/stats/Damage.hpp"    // CombatState (É3 bleedout clock)
 #include "gameplay/stats/GameClock.hpp"
 #include "world/ai/Perception.hpp"      // B2: hearing (onNoise)
@@ -91,13 +92,21 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         // SAME StatModifiers channel the player's equipment uses (§2.9:
         // mods rebuilt from data each tick, nothing persisted, no
         // synthetic effects). Ageless actors keep the empty default.
-        if (npc.age > 0.0f) {
-            gameplay::StatModifiers ageMods;
-            gameplay::foldAgeModifiers(npc.age, ctx.statsTuning, ageMods);
-            gameplay::tickCharacter(npc.entity, dt, gameDt, tickCtx, ageMods);
-        } else {
-            gameplay::tickCharacter(npc.entity, dt, gameDt, tickCtx);
+        // FOLLOWERS É7: equipped ARMOR folds in too (the player's
+        // LandscapeScene equipMods fold, mirrored) — armor now protects
+        // NPCs. Iso note: today's loadouts hand out weapons only, so no
+        // existing NPC's numbers move until armor is actually given
+        // (applyEquipmentModifiers resolves the four armor slots; the
+        // weapon contributes through the damage path, not here).
+        gameplay::StatModifiers npcMods;
+        if (npc.entity.has<gameplay::Equipment>()) {
+            gameplay::applyEquipmentModifiers(
+                npc.entity.get<gameplay::Equipment>(), ctx.forms, npcMods);
         }
+        if (npc.age > 0.0f) {
+            gameplay::foldAgeModifiers(npc.age, ctx.statsTuning, npcMods);
+        }
+        gameplay::tickCharacter(npc.entity, dt, gameDt, tickCtx, npcMods);
         const auto& npcSys = npc.entity.get<gameplay::AbilitySystem>();
         const bool wasDead = npc.dead;
         npc.dead = deadTag && npcSys.tags.has(*deadTag);

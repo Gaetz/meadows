@@ -33,6 +33,9 @@ ActionMap::ActionMap() {
     set(InputAction::Map, Key::M, MouseButton::Count, PadButton::DPadLeft);
     set(InputAction::Pause, Key::Escape, MouseButton::Count,
         PadButton::Start);
+    // É7: F was free on the keyboard; LB was free on the pad.
+    set(InputAction::InteractAlt, Key::F, MouseButton::Count,
+        PadButton::LeftShoulder);
 }
 
 bool ActionMap::down(const platform::Input& input,
@@ -98,6 +101,7 @@ std::string_view actionName(InputAction action) {
     case InputAction::WaitMenu:    return "wait";
     case InputAction::Map:         return "map";
     case InputAction::Pause:       return "pause";
+    case InputAction::InteractAlt: return "interactAlt";
     case InputAction::Count:       break;
     }
     return "?";

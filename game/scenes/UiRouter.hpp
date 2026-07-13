@@ -60,6 +60,9 @@ struct UiRouterContext {
     std::function<void()> exitPlayMode;
     std::function<void()> requestQuit;
     std::function<void()> openOptions; // C9.4: push model + show screen
+    // FOLLOWERS É7 (appended): the HUD toast — the transfer guards talk
+    // back (refused base-kit item, overweight follower, auto-equip).
+    std::function<void(str line)> say;
 };
 
 // The UI action router extracted from LandscapeScene (audit U4-1): the

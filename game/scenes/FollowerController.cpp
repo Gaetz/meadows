@@ -774,6 +774,74 @@ void FollowerController::teachPerk(const FollowerContext& ctx,
     }
 }
 
+// ---- É7: the forge upgrade of the base kit -----------------------------------
+
+void FollowerController::forgeUpgrade(const FollowerContext& ctx,
+                                      ecs::Entity follower) {
+    // [cpp-tuning] the forge price — mirrored by the option's HasItem
+    // gate in data (the payFine 40-gold precedent). Data TODO (v1 scope):
+    // per-follower obsolescence tiers (level paliers) as child records,
+    // and the follower/player-BOTH-at-the-forge check (v1 gates on the
+    // player's Zone.Forge tag — the follower walks with him).
+    constexpr i32 kForgeCost = 50;
+    const data::ActorForm* actor = followerActorForm(ctx, follower);
+    if (!actor || !ctx.playerEntity.is_alive() || !ctx.goldForm ||
+        !follower.has<gameplay::Inventory>() ||
+        !ctx.playerEntity.has<gameplay::Inventory>()) {
+        return;
+    }
+    auto& items = follower.get_mut<gameplay::Inventory>();
+    // The swap list first (§2.2: the upgrade IS the next-tier Form —
+    // ArmeDAldric -> ArmeDAldricPlus in data): every unremovable weapon
+    // that names a valid upgradesTo tier.
+    struct Swap {
+        core::Guid from, to;
+        i32 count;
+    };
+    vector<Swap> swaps;
+    for (const gameplay::ItemStack& stack : items.items) {
+        if (stack.count <= 0) {
+            continue;
+        }
+        const auto* weapon = ctx.forms.find<data::WeaponForm>(stack.item);
+        if (weapon && weapon->unremovable && weapon->upgradesTo.isValid() &&
+            ctx.forms.find<data::WeaponForm>(weapon->upgradesTo)) {
+            swaps.push_back({ stack.item, weapon->upgradesTo, stack.count });
+        }
+    }
+    if (swaps.empty()) {
+        // Already at the top tier: refuse WITHOUT charging (why the gold
+        // moves here and not through the node's takeItem).
+        if (ctx.texts) {
+            toast(ctx, ctx.texts->format("follower.forgeNothing",
+                                         actor->displayName));
+        }
+        return;
+    }
+    // Charge (the payFine idiom — the option's HasItem >= 50 gate makes a
+    // failure here a modded-data breakage: then do nothing).
+    auto& bag = ctx.playerEntity.get_mut<gameplay::Inventory>();
+    if (!gameplay::removeItem(bag, ctx.goldForm->id, kForgeCost)) {
+        return;
+    }
+    for (const Swap& swap : swaps) {
+        gameplay::removeItem(items, swap.from, swap.count);
+        gameplay::addItem(items, swap.to, swap.count);
+        if (follower.has<gameplay::Equipment>()) {
+            auto& equipment = follower.get_mut<gameplay::Equipment>();
+            if (equipment.weapon == swap.from) {
+                equipment.weapon = swap.to;
+            }
+        }
+        LOG_INFO("É7: {} forge upgrade {} -> {}", actor->editorId,
+                 swap.from.toString(), swap.to.toString());
+    }
+    if (ctx.texts) {
+        toast(ctx, ctx.texts->format("follower.forgeUpgraded",
+                                     actor->displayName));
+    }
+}
+
 void FollowerController::teleportNear(const Vec3& anchor,
                                       const render::TerrainParams& terrain,
                                       Npc& npc) {

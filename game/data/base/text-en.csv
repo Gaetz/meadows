@@ -141,3 +141,10 @@ ui.attr.perception,Perception
 ui.attr.charisma,Charisma
 ui.attr.ego,Ego
 ui.attr.insight,Insight
+prompt.gear, — [F] Gear
+follower.gearRefused,{} won't let you touch his gear.
+follower.gearTooHeavy,{} cannot carry that much.
+follower.unremovable,"This is {}'s own gear — it stays with him."
+follower.autoEquip,{} equips: {}
+follower.forgeUpgraded,{}'s gear has been upgraded at the forge.
+follower.forgeNothing,{} has nothing left to upgrade.

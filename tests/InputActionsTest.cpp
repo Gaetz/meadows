@@ -27,6 +27,10 @@ TEST_CASE("actions: the default layout is today's keyboard + a full pad") {
     CHECK(map.binding(InputAction::Jump).key == Key::Space);
     CHECK(map.binding(InputAction::Interact).key == Key::E);
     CHECK(map.binding(InputAction::Pause).key == Key::Escape);
+    // É7: the alternate interaction (a follower's gear) — F / LB.
+    CHECK(map.binding(InputAction::InteractAlt).key == Key::F);
+    CHECK(map.binding(InputAction::InteractAlt).pad ==
+          PadButton::LeftShoulder);
     // Every action has at least a pad binding (full-gamepad play).
     for (u8 i = 0; i < static_cast<u8>(InputAction::Count); ++i) {
         CHECK(map.binding(static_cast<InputAction>(i)).pad !=

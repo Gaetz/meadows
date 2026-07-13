@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "data/forms/CoreForms.hpp"           // WeaponForm, ArmorForm
 #include "gameplay/ability/AbilitySystem.hpp"  // AbilitySystem, attr
 #include "gameplay/ability/DerivedStats.hpp"   // StatModifiers
@@ -50,5 +52,33 @@ const char* encumbranceLabel(EncumbranceCategory category);
 // Folds the category's speed/acceleration penalties into `mods`
 // (medium −25%/−44%, heavy −50%/−75%, overencumbered −75%/−75%).
 void encumbranceModifiers(EncumbranceCategory category, StatModifiers& mods);
+
+// ---- FOLLOWERS É7: base-kit lock + the auto-equip comparison ----------------
+
+// The item's `unremovable` flag, whatever its form type (the itemWeight
+// resolution pattern). Unknown guid = false.
+bool itemUnremovable(const data::FormDatabase& forms, const core::Guid& item);
+
+// The item's headline power — the SAME datum the inventory UI's Power
+// column shows (weapon: strongest typed channel, legacy `damage` as the
+// 2D-era fallback; armor: slash mitigation). 0 for everything else.
+f32 gearPower(const data::FormDatabase& forms, const core::Guid& item);
+
+// The Equipment slot an item goes to (weapon, or the ArmorForm.slot name).
+enum class GearSlot : u8 { Weapon, Head, Torso, Arms, Legs };
+
+// The slot `item` would upgrade: its gearPower must STRICTLY beat the
+// current occupant's (an empty slot counts 0 — any positive-power item
+// beats it). nullopt = not equippable gear, an unknown slot name, or not
+// better. The strict compare is what lets an unremovable base item act as
+// a FLOOR, not a lock: only a genuinely better piece replaces it in-slot
+// (the base item itself stays in the inventory — the transfer guard is
+// separate).
+std::optional<GearSlot> isUpgrade(const data::FormDatabase& forms,
+                                  const core::Guid& item,
+                                  const Equipment& equipment);
+
+// The Equipment field for a slot (the toggleEquip slot mapping, shared).
+core::Guid& gearSlotRef(Equipment& equipment, GearSlot slot);
 
 } // namespace gameplay

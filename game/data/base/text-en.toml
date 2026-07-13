@@ -1279,3 +1279,66 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'ui.attr.insight'
     text = 'Insight'
+
+[[records]]
+form = '6bde42a7-128e-41c3-804b-a1e1425b1ad2'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.gear'
+    text = ' — [F] Gear'
+
+[[records]]
+form = '0b485d7e-08ab-4ff4-9c07-96853925890b'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.gearRefused'
+    text = "{} won't let you touch his gear."
+
+[[records]]
+form = '45beb013-e4aa-4f01-a5ff-5471601105af'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.gearTooHeavy'
+    text = '{} cannot carry that much.'
+
+[[records]]
+form = 'ccebf75e-379f-47f4-8832-60cb41bfd777'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.unremovable'
+    text = "This is {}'s own gear — it stays with him."
+
+[[records]]
+form = '56d0310b-5c51-41b0-a1d1-68b21dffa65d'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.autoEquip'
+    text = '{} equips: {}'
+
+[[records]]
+form = '5f3c0b4a-32c0-4302-8078-ba0178e742d1'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.forgeUpgraded'
+    text = "{}'s gear has been upgraded at the forge."
+
+[[records]]
+form = '1314350f-6b03-499e-bfc4-d0139bfa03e8'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.forgeNothing'
+    text = '{} has nothing left to upgrade.'

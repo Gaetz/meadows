@@ -6,6 +6,7 @@
 #include "data/forms/CoreForms.hpp"
 #include "data/forms/FormDatabase.hpp"
 #include "gameplay/inventory/Inventory.hpp"
+#include "gameplay/stats/EquipmentStats.hpp" // gearPower (É7: one source)
 
 namespace game {
 
@@ -46,18 +47,17 @@ void InventoryView::build(const data::FormDatabase& forms,
             row.name = weapon->displayName;
             row.weight = weapon->weight;
             row.value = weapon->goldValue;
-            // Headline power: the strongest typed channel (legacy `damage`
-            // as fallback for 2D-era records).
-            row.power = std::max({ weapon->slashAttack, weapon->pierceAttack,
-                                   weapon->bluntAttack, weapon->fireAttack,
-                                   weapon->lightningAttack, weapon->damage });
+            // Headline power: gameplay::gearPower — the SAME datum the É7
+            // auto-equip comparison uses (strongest typed channel, legacy
+            // `damage` as fallback for 2D-era records).
+            row.power = gameplay::gearPower(forms, stack.item);
             row.kind = Category::Weapons;
         } else if (type->isA(data::ArmorForm::staticTypeInfo().id)) {
             const auto* armor = static_cast<const data::ArmorForm*>(base);
             row.name = armor->displayName;
             row.weight = armor->weight;
             row.value = armor->goldValue;
-            row.power = armor->armorSlash;
+            row.power = gameplay::gearPower(forms, stack.item);
             row.kind = Category::Armor;
         } else if (type->isA(data::ConsumableForm::staticTypeInfo().id)) {
             const auto* item = static_cast<const data::ConsumableForm*>(base);

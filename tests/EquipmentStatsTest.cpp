@@ -172,3 +172,98 @@ TEST_CASE("equipment: applyEquipmentModifiers resolves slots from the database")
     applyEquipmentModifiers(equipment, forms, mods);
     CHECK(mods.add[attr("armorBlunt")] == doctest::Approx(15.0f));
 }
+
+// ---- FOLLOWERS É7: base-kit lock + the auto-equip comparison ------------------
+
+namespace {
+
+core::Guid e7guid(const char* text) { return *core::Guid::fromString(text); }
+
+// A small item shelf: base sword (unremovable, power 12), better sword
+// (power 18), weaker sword (power 5), torso armor (power = armorSlash 10).
+struct GearShelf {
+    data::FormDatabase forms;
+    core::Guid baseSword = e7guid("e7000000-0000-4000-8000-000000000001");
+    core::Guid betterSword = e7guid("e7000000-0000-4000-8000-000000000002");
+    core::Guid weakSword = e7guid("e7000000-0000-4000-8000-000000000003");
+    core::Guid torso = e7guid("e7000000-0000-4000-8000-000000000004");
+    core::Guid ration = e7guid("e7000000-0000-4000-8000-000000000005");
+
+    GearShelf() {
+        const auto weapon = [&](const core::Guid& id, f32 slash,
+                                bool unremovable) {
+            auto form = std::make_unique<data::WeaponForm>();
+            form->id = id;
+            form->damage = 0.0f; // no legacy fallback: slash IS the power
+            form->slashAttack = slash;
+            form->unremovable = unremovable;
+            forms.add(std::move(form), data::WeaponForm::staticTypeInfo());
+        };
+        weapon(baseSword, 12.0f, true);
+        weapon(betterSword, 18.0f, false);
+        weapon(weakSword, 5.0f, false);
+        auto armor = std::make_unique<data::ArmorForm>();
+        armor->id = torso;
+        armor->slot = "torso";
+        armor->armorSlash = 10.0f;
+        forms.add(std::move(armor), data::ArmorForm::staticTypeInfo());
+        auto food = std::make_unique<data::ConsumableForm>();
+        food->id = ration;
+        food->unremovable = true; // an unremovable consumable, why not
+        forms.add(std::move(food), data::ConsumableForm::staticTypeInfo());
+    }
+};
+
+} // namespace
+
+TEST_CASE("É7: itemUnremovable reads the flag across item form types") {
+    GearShelf shelf;
+    CHECK(itemUnremovable(shelf.forms, shelf.baseSword));
+    CHECK_FALSE(itemUnremovable(shelf.forms, shelf.betterSword));
+    CHECK(itemUnremovable(shelf.forms, shelf.ration));
+    CHECK_FALSE(itemUnremovable(shelf.forms, core::Guid {})); // unknown
+}
+
+TEST_CASE("É7: gearPower — strongest weapon channel, armor slash, else 0") {
+    GearShelf shelf;
+    CHECK(gearPower(shelf.forms, shelf.baseSword) == doctest::Approx(12.0f));
+    CHECK(gearPower(shelf.forms, shelf.torso) == doctest::Approx(10.0f));
+    CHECK(gearPower(shelf.forms, shelf.ration) == doctest::Approx(0.0f));
+    // The legacy 2D `damage` field still counts as a channel.
+    auto legacy = std::make_unique<data::WeaponForm>();
+    legacy->id = e7guid("e7000000-0000-4000-8000-000000000006");
+    legacy->damage = 25.0f;
+    const core::Guid id = legacy->id;
+    shelf.forms.add(std::move(legacy), data::WeaponForm::staticTypeInfo());
+    CHECK(gearPower(shelf.forms, id) == doctest::Approx(25.0f));
+}
+
+TEST_CASE("É7: isUpgrade — strictly better fills the right slot") {
+    GearShelf shelf;
+    Equipment equipment;
+    equipment.weapon = shelf.baseSword; // his unremovable floor, power 12
+
+    // Strictly better beats the base kit (floor, not lock)...
+    auto slot = isUpgrade(shelf.forms, shelf.betterSword, equipment);
+    REQUIRE(slot.has_value());
+    CHECK(*slot == GearSlot::Weapon);
+    // ...weaker or equal never replaces it.
+    CHECK_FALSE(isUpgrade(shelf.forms, shelf.weakSword, equipment));
+    CHECK_FALSE(isUpgrade(shelf.forms, shelf.baseSword, equipment));
+
+    // An EMPTY armor slot: any positive-power piece is an upgrade.
+    slot = isUpgrade(shelf.forms, shelf.torso, equipment);
+    REQUIRE(slot.has_value());
+    CHECK(*slot == GearSlot::Torso);
+    equipment.torso = shelf.torso;
+    CHECK_FALSE(isUpgrade(shelf.forms, shelf.torso, equipment)); // worn
+
+    // Not gear at all.
+    CHECK_FALSE(isUpgrade(shelf.forms, shelf.ration, equipment));
+
+    // gearSlotRef maps every slot to its Equipment field.
+    gearSlotRef(equipment, GearSlot::Weapon) = shelf.betterSword;
+    CHECK(equipment.weapon == shelf.betterSword);
+    gearSlotRef(equipment, GearSlot::Head) = shelf.torso;
+    CHECK(equipment.head == shelf.torso);
+}

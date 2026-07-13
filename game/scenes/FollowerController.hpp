@@ -11,6 +11,7 @@ class Rng;
 namespace data {
 struct ActorForm;
 class FormDatabase;
+struct MiscItemForm;
 class TextTable;
 }
 namespace gameplay {
@@ -58,6 +59,9 @@ struct FollowerContext {
     // É4 additions (the recruit-preview screen — null in headless use):
     ::ui::UiSystem* ui { nullptr };
     ScreenStack* screenStack { nullptr };
+    // É7 addition (appended): the currency — the forge upgrade charges
+    // through it (the payFine idiom).
+    const data::MiscItemForm* goldForm { nullptr };
 };
 
 // Recruit/dismiss + the party teleports (FOLLOWERS É1). The persistence is
@@ -177,6 +181,20 @@ public:
     // gameplay::grantPerk (§2.9: the effect path is applyEffect; dedup =
     // the effect's grantedTag / the granted-ability list), then toasts.
     void teachPerk(const FollowerContext& ctx, ecs::Entity follower);
+
+    // ---- É7: the forge upgrade of the base kit -----------------------------
+    // Dialogue "OnForgeUpgrade" (« Améliorons ton équipement à la forge »)
+    // — the option is gated in DATA (HasItem gold >= 50 + HasTag
+    // Zone.Forge, the É6 quiet-zone trigger mirror). §2.2: a Form never
+    // mutates — the upgrade REPLACES each unremovable weapon that names
+    // an `upgradesTo` tier with that next-tier record (both unremovable),
+    // and re-equips it if the old one was drawn. The gold moves HERE (the
+    // payFine idiom — chosen over the node's takeItem because select()
+    // dispatches the event BEFORE onNodeFired's removal, and this handler
+    // must be able to refuse — nothing to upgrade — without charging).
+    // Mercenaries (É10) will get a free variant: gate their option in
+    // data without the HasItem clause and skip the charge here.
+    void forgeUpgrade(const FollowerContext& ctx, ecs::Entity follower);
 
 private:
     // ---- É5: classes, levels, evolution ----------------------------------

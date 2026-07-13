@@ -55,6 +55,12 @@ struct WeaponForm : Form {
     // 0 = the C++ fallback (2.2 ranged / 1.6 melee) so unmodded weapons
     // keep today's behavior.
     f32 attackCooldown { 0.0f };
+    // FOLLOWERS É7 (appended — ordinals stable): a follower's BASE-KIT
+    // item cannot be transferred out of his inventory (docs/FOLLOWERS.md
+    // §5); `upgradesTo` names the next tier the forge dialogue swaps it
+    // for (§2.2: Forms never mutate — an upgrade IS a different Form).
+    bool unremovable { false };
+    core::Guid upgradesTo;
 
     REFLECT_BEGIN(WeaponForm, Form)
         REFLECT_FIELD(displayName)
@@ -84,6 +90,8 @@ struct WeaponForm : Form {
         REFLECT_FIELD(projectileSpeed)
         REFLECT_FIELD(ammo)
         REFLECT_FIELD(attackCooldown)
+        REFLECT_FIELD(unremovable)
+        REFLECT_FIELD(upgradesTo)
     REFLECT_END()
 };
 
@@ -124,6 +132,8 @@ struct ArmorForm : Form {
     f32 enduranceDeath { 0.0f };
     // Trade value (chantier 4 barter, appended — ordinals stable).
     i32 goldValue { 0 };
+    // FOLLOWERS É7 (appended): follower base-kit lock — see WeaponForm.
+    bool unremovable { false };
 
     REFLECT_BEGIN(ArmorForm, Form)
         REFLECT_FIELD(displayName)
@@ -151,6 +161,7 @@ struct ArmorForm : Form {
         REFLECT_FIELD(enduranceCurse)
         REFLECT_FIELD(enduranceDeath)
         REFLECT_FIELD(goldValue)
+        REFLECT_FIELD(unremovable)
     REFLECT_END()
 };
 
@@ -171,6 +182,8 @@ struct ConsumableForm : Form {
     f32 restoreHunger { 0.0f };
     f32 restoreThirst { 0.0f };
     i32 goldValue { 0 };
+    // FOLLOWERS É7 (appended): follower base-kit lock — see WeaponForm.
+    bool unremovable { false };
 
     REFLECT_BEGIN(ConsumableForm, Form)
         REFLECT_FIELD(displayName)
@@ -182,6 +195,7 @@ struct ConsumableForm : Form {
         REFLECT_FIELD(restoreHunger)
         REFLECT_FIELD(restoreThirst)
         REFLECT_FIELD(goldValue)
+        REFLECT_FIELD(unremovable)
     REFLECT_END()
 };
 
@@ -194,6 +208,8 @@ struct MiscItemForm : Form {
     i32 goldValue { 0 };
     core::Guid model;
     core::Guid material;
+    // FOLLOWERS É7 (appended): follower base-kit lock — see WeaponForm.
+    bool unremovable { false };
 
     REFLECT_BEGIN(MiscItemForm, Form)
         REFLECT_FIELD(displayName)
@@ -201,6 +217,7 @@ struct MiscItemForm : Form {
         REFLECT_FIELD(goldValue)
         REFLECT_FIELD(model)
         REFLECT_FIELD(material)
+        REFLECT_FIELD(unremovable)
     REFLECT_END()
 };
 

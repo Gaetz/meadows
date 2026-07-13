@@ -16,7 +16,7 @@
 			<!-- C9.3: lootlist/btn-takeall = the pad's exit out of the
 			     scrollable list (theme.rcss #lootlist .row). -->
 			<div class="itemlist" id="lootlist">
-				<div class="row" data-for="row : rows" data-event-click="pickLoot(row.id)">
+				<div class="row" data-for="row : rows" data-class-equipped="row.tag == 'equipped'" data-event-click="pickLoot(row.id)">
 					<div class="col name">{{ row.c0 }}</div>
 					<div class="col num">{{ row.c1 }}</div>
 					<div class="col num">{{ row.c2 }}</div>

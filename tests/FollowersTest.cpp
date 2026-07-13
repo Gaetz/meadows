@@ -1243,3 +1243,24 @@ TEST_CASE("followers É6: pickPower skips the shared attack ability") {
     CHECK(gameplay::pickPower({ attack, power }, attack) == power);
     CHECK(gameplay::pickPower({ power, attack }, attack) == power);
 }
+
+// ---- É7: follower carry weight ------------------------------------------------
+
+TEST_CASE("followers É7: carry factor is the É5 physical age multiplier") {
+    const gameplay::StatsTuningForm tuning;
+    CHECK(gameplay::followerCarryFactor(0.0f, tuning) == 1.0f);  // ageless
+    CHECK(gameplay::followerCarryFactor(28.0f, tuning) == 1.0f); // Aldric
+    CHECK(gameplay::followerCarryFactor(52.0f, tuning) ==
+          doctest::Approx(gameplay::ageMultipliers(52.0f, tuning).physical));
+}
+
+TEST_CASE("followers É7: canCarry — the follower refuses the excess item") {
+    // Player-style grace: stats not computed yet (max <= 0) accepts.
+    CHECK(gameplay::canCarry(100.0f, 50.0f, 0.0f, 1.0f));
+    // Exact fit is allowed; one gram over is refused.
+    CHECK(gameplay::canCarry(45.0f, 5.0f, 50.0f, 1.0f));
+    CHECK_FALSE(gameplay::canCarry(45.0f, 5.1f, 50.0f, 1.0f));
+    // Age shrinks the capacity: the same load stops fitting at 0.9.
+    CHECK(gameplay::canCarry(40.0f, 5.0f, 50.0f, 0.9f));
+    CHECK_FALSE(gameplay::canCarry(41.0f, 5.0f, 50.0f, 0.9f));
+}

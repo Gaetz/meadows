@@ -346,9 +346,13 @@ void GameHud::pushItemModels(const HudContext& ctx) {
 
     if (ctx.containerEntity.is_alive() &&
         ctx.containerEntity.has<gameplay::Inventory>()) {
+        // É7: an actor container (a follower's gear, a corpse) shows what
+        // he WEARS — same "equipped" flag the player side has.
         lootView.build(ctx.forms,
                        ctx.containerEntity.get<gameplay::Inventory>(),
-                       nullptr);
+                       ctx.containerEntity.has<gameplay::Equipment>()
+                           ? &ctx.containerEntity.get<gameplay::Equipment>()
+                           : nullptr);
         if (ctx.barterMode) {
             pushRows(lootView, "barter", ctx.vendorBuyMult);
             if (ctx.goldForm) {
@@ -365,8 +369,21 @@ void GameHud::pushItemModels(const HudContext& ctx) {
             }
         } else {
             pushRows(lootView, "container", 0.0f);
-            ctx.ui.setString("container", "title",
-                             ctx.texts.get("ui.container.loot"));
+            // É7: an ACTOR's panel is titled with his name (a follower's
+            // gear, a corpse) — plain containers keep the loot title.
+            str title = ctx.texts.get("ui.container.loot");
+            if (ctx.containerEntity.has<world::RefId>()) {
+                const auto& ref = ctx.containerEntity.get<world::RefId>();
+                if (const reflect::TypeInfo* type = ctx.forms.typeOf(ref.base);
+                    type && type->isA(data::ActorForm::staticTypeInfo().id)) {
+                    const auto* actor = static_cast<const data::ActorForm*>(
+                        ctx.forms.get(ref.base));
+                    if (actor && !actor->displayName.empty()) {
+                        title = actor->displayName;
+                    }
+                }
+            }
+            ctx.ui.setString("container", "title", title);
         }
     }
 }

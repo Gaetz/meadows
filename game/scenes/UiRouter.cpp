@@ -20,6 +20,7 @@
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/actors/ActorState.hpp"     // gameplay::VendorState
 #include "gameplay/actors/CharacterForms.hpp" // gameplay::applyLoadout
+#include "gameplay/actors/Followers.hpp"      // canCarry (É7)
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
@@ -29,6 +30,92 @@
 #include "world/scene/Components.hpp"
 
 namespace game {
+
+namespace {
+
+// FOLLOWERS É7: is the open container a LIVING follower actor? His gear
+// obeys the base-kit lock, the carry-weight cap and the auto-equip; a
+// corpse (or a plain chest) keeps the old free-transfer behavior — É8
+// owns graves. Resolution = the É0 identity check (ActorForm.
+// followerCategory != "", the FollowerController::followerActorForm
+// mirror), aliveness = the State.Dead tag the whole scene reads.
+const data::ActorForm* livingFollower(const UiRouterContext& ctx,
+                                      ecs::Entity entity) {
+    if (!entity.is_alive() || !entity.has<world::RefId>() ||
+        !entity.has<gameplay::FollowerState>()) {
+        return nullptr;
+    }
+    if (entity.has<gameplay::AbilitySystem>()) {
+        if (const auto dead = ctx.gameTags.find("State.Dead");
+            dead && entity.get<gameplay::AbilitySystem>().tags.has(*dead)) {
+            return nullptr;
+        }
+    }
+    const auto& refId = entity.get<world::RefId>();
+    const data::Form* base = ctx.forms.get(refId.base);
+    const reflect::TypeInfo* type = ctx.forms.typeOf(refId.base);
+    if (!base || !type || !type->isA(data::ActorForm::staticTypeInfo().id)) {
+        return nullptr;
+    }
+    const auto* actor = static_cast<const data::ActorForm*>(base);
+    return actor->followerCategory.empty() ? nullptr : actor;
+}
+
+// An item's display name for the É7 toasts, whatever its form type
+// (reflection — the InteractionController prompt-label pattern).
+str itemDisplayName(const UiRouterContext& ctx, const core::Guid& id) {
+    const data::FormHandle handle = ctx.forms.handleOf(id);
+    if (const data::Form* base = ctx.forms.get(handle)) {
+        if (const reflect::TypeInfo* type = ctx.forms.typeOf(handle)) {
+            if (const reflect::FieldInfo* field =
+                    type->findField("displayName");
+                field && field->kind == reflect::FieldKind::Str) {
+                const str name = std::get<str>(field->get(base));
+                if (!name.empty()) {
+                    return name;
+                }
+            }
+        }
+        return base->editorId;
+    }
+    return "?";
+}
+
+void toast(const UiRouterContext& ctx, str line) {
+    if (ctx.say && !line.empty()) {
+        ctx.say(std::move(line));
+    }
+}
+
+// É7: after items LEFT a follower, his equipment re-aims — a slot whose
+// item is gone empties, then the best remaining piece per slot re-equips
+// (the auto-equip comparison, reused; his unremovable base kit is the
+// usual floor it lands back on).
+void reequipFromInventory(const UiRouterContext& ctx,
+                          const gameplay::Inventory& items,
+                          gameplay::Equipment& equipment) {
+    const auto fix = [&](core::Guid& slot) {
+        if (slot.isValid() && gameplay::itemCount(items, slot) <= 0) {
+            slot = core::Guid {};
+        }
+    };
+    fix(equipment.weapon);
+    fix(equipment.head);
+    fix(equipment.torso);
+    fix(equipment.arms);
+    fix(equipment.legs);
+    for (const gameplay::ItemStack& stack : items.items) {
+        if (stack.count <= 0) {
+            continue;
+        }
+        if (const auto slot =
+                gameplay::isUpgrade(ctx.forms, stack.item, equipment)) {
+            gameplay::gearSlotRef(equipment, *slot) = stack.item;
+        }
+    }
+}
+
+} // namespace
 
 // --- Chantier 4 B3: inventory / container --------------------------------------------
 
@@ -161,8 +248,55 @@ void UiRouter::transferItem(const UiRouterContext& ctx, const core::Guid& id,
     auto& bag = ctx.playerEntity.get_mut<gameplay::Inventory>();
     auto& source = fromContainer ? loot : bag;
     auto& target = fromContainer ? bag : loot;
+    // FOLLOWERS É7: a LIVING follower's gear has house rules — his
+    // base kit never leaves him, his carry weight (× the É5 age factor)
+    // rejects the excess, and a strictly better piece auto-equips.
+    const data::ActorForm* follower = livingFollower(ctx, containerEntity_);
+    if (follower && fromContainer &&
+        gameplay::itemUnremovable(ctx.forms, id)) {
+        toast(ctx, ctx.texts.format("follower.unremovable",
+                                    follower->displayName));
+        return;
+    }
+    if (follower && !fromContainer &&
+        containerEntity_.has<gameplay::AbilitySystem>()) {
+        const f32 carried = gameplay::inventoryWeight(ctx.forms, loot);
+        const f32 unit = gameplay::itemWeight(ctx.forms, id);
+        const f32 maxEncumbrance = gameplay::currentValueOf(
+            containerEntity_.get<gameplay::AbilitySystem>(),
+            gameplay::attr("maxEncumbrance"));
+        const f32 ageFactor = gameplay::followerCarryFactor(
+            follower->age, ctx.statsTuning);
+        if (!gameplay::canCarry(carried, unit, maxEncumbrance, ageFactor)) {
+            toast(ctx, ctx.texts.format("follower.gearTooHeavy",
+                                        follower->displayName));
+            return;
+        }
+    }
     if (gameplay::removeItem(source, id, 1)) {
         gameplay::addItem(target, id, 1);
+        // Auto-equip (docs/FOLLOWERS.md §5): the follower puts on the
+        // upgrade the player hands him — strictly better per the SAME
+        // power datum the UI's Power column shows (gearPower). The base
+        // kit is a floor, not a lock: better replaces it in-slot, the
+        // base item just stays in his inventory (unremovable).
+        if (follower && containerEntity_.has<gameplay::Equipment>()) {
+            auto& equipment =
+                containerEntity_.get_mut<gameplay::Equipment>();
+            if (!fromContainer) {
+                if (const auto slot =
+                        gameplay::isUpgrade(ctx.forms, id, equipment)) {
+                    gameplay::gearSlotRef(equipment, *slot) = id;
+                    toast(ctx, ctx.texts.format(
+                                  "follower.autoEquip",
+                                  { follower->displayName,
+                                    itemDisplayName(ctx, id) }));
+                }
+            } else {
+                // Taking back what he wore: never leave a dangling slot.
+                reequipFromInventory(ctx, loot, equipment);
+            }
+        }
     }
 }
 
@@ -290,12 +424,28 @@ void UiRouter::handleUiEvent(const UiRouterContext& ctx, const str& model,
                    ctx.playerEntity.is_alive()) {
             auto& loot = containerEntity_.get_mut<gameplay::Inventory>();
             auto& bag = ctx.playerEntity.get_mut<gameplay::Inventory>();
+            // É7: a LIVING follower keeps his base kit — unremovable
+            // stacks stay put; everything else moves as before.
+            const data::ActorForm* follower =
+                livingFollower(ctx, containerEntity_);
+            vector<gameplay::ItemStack> kept;
             for (const gameplay::ItemStack& stack : loot.items) {
-                if (stack.count > 0) {
-                    gameplay::addItem(bag, stack.item, stack.count);
+                if (stack.count <= 0) {
+                    continue;
                 }
+                if (follower &&
+                    gameplay::itemUnremovable(ctx.forms, stack.item)) {
+                    kept.push_back(stack);
+                    continue;
+                }
+                gameplay::addItem(bag, stack.item, stack.count);
             }
-            loot.items.clear();
+            loot.items = std::move(kept);
+            if (follower && containerEntity_.has<gameplay::Equipment>()) {
+                reequipFromInventory(
+                    ctx, loot,
+                    containerEntity_.get_mut<gameplay::Equipment>());
+            }
         }
         ctx.pushItemModels();
     } else if (model == "barter") {

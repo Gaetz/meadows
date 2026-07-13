@@ -402,6 +402,29 @@ void LandscapeScene::setupGameplay() {
                     gameTags, "Zone.Calme", event.value > 0.5f);
             }
         });
+    // FOLLOWERS É7: the forge-place condition — the SAME trigger-volume
+    // mirror as Zone.Calme (a TriggerForm firing OnForgeZone covers the
+    // village forge); the upgrade dialogue option gates on it.
+    gameTags.registerTag("Zone.Forge");
+    eventBus.subscribe(
+        gameplay::eventKind("OnForgeZone"),
+        [this](const gameplay::Event& event) {
+            if (event.source == playerEntity && playerEntity.is_alive() &&
+                playerEntity.has<gameplay::AbilitySystem>()) {
+                gameplay::syncStateTag(
+                    playerEntity.get_mut<gameplay::AbilitySystem>(),
+                    gameTags, "Zone.Forge", event.value > 0.5f);
+            }
+        });
+    // FOLLOWERS É7: « Améliorons ton équipement à la forge » — the same
+    // dialogue-event channel; the handler swaps the partner's base kit
+    // for its upgradesTo tier and charges the gold (payFine idiom).
+    eventBus.subscribe(gameplay::eventKind("OnForgeUpgrade"),
+                       [this](const gameplay::Event&) {
+                           followerController.forgeUpgrade(
+                               makeFollowerContext(),
+                               questDirector.dialoguePartner());
+                       });
     // FOLLOWERS É4: affinity rules — ONE generic subscription (the 8.7c
     // subscribeAll precedent): AffinityRuleForm children of each follower's
     // ActorForm name the events they react to (open, data-defined
@@ -2076,6 +2099,9 @@ UiRouterContext LandscapeScene::makeUiRouterContext() {
         [this] { engine->requestQuit(); },
         // C9.4: menuAction("options") — fresh values, then the screen.
         [this] { optionsController.open(makeOptionsContext()); },
+        // É7: the transfer guards' toasts (base kit, carry weight,
+        // auto-equip) ride the one HUD toast channel.
+        [this](str line) { interaction.say(std::move(line), 4.0f); },
     };
 }
 
@@ -2486,6 +2512,8 @@ FollowerContext LandscapeScene::makeFollowerContext() {
         // É4: the recruit-preview screen (model push + show).
         &uiSystem,
         &screenStack,
+        // É7: the forge upgrade charges gold (the payFine idiom).
+        goldForm,
     };
 }
 

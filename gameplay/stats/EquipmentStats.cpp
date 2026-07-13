@@ -159,4 +159,81 @@ void encumbranceModifiers(EncumbranceCategory category, StatModifiers& mods) {
     fold("acceleration", accel);
 }
 
+// ---- FOLLOWERS É7 -----------------------------------------------------------
+
+bool itemUnremovable(const data::FormDatabase& forms, const core::Guid& item) {
+    if (const auto* weapon = forms.find<data::WeaponForm>(item)) {
+        return weapon->unremovable;
+    }
+    if (const auto* armor = forms.find<data::ArmorForm>(item)) {
+        return armor->unremovable;
+    }
+    if (const auto* consumable = forms.find<data::ConsumableForm>(item)) {
+        return consumable->unremovable;
+    }
+    if (const auto* misc = forms.find<data::MiscItemForm>(item)) {
+        return misc->unremovable;
+    }
+    return false;
+}
+
+f32 gearPower(const data::FormDatabase& forms, const core::Guid& item) {
+    if (const auto* weapon = forms.find<data::WeaponForm>(item)) {
+        f32 power = weapon->damage; // legacy 2D-era fallback channel
+        power = power < weapon->slashAttack ? weapon->slashAttack : power;
+        power = power < weapon->pierceAttack ? weapon->pierceAttack : power;
+        power = power < weapon->bluntAttack ? weapon->bluntAttack : power;
+        power = power < weapon->fireAttack ? weapon->fireAttack : power;
+        power = power < weapon->lightningAttack ? weapon->lightningAttack
+                                                : power;
+        return power;
+    }
+    if (const auto* armor = forms.find<data::ArmorForm>(item)) {
+        return armor->armorSlash;
+    }
+    return 0.0f;
+}
+
+std::optional<GearSlot> isUpgrade(const data::FormDatabase& forms,
+                                  const core::Guid& item,
+                                  const Equipment& equipment) {
+    std::optional<GearSlot> slot;
+    const core::Guid* current = nullptr;
+    if (forms.find<data::WeaponForm>(item)) {
+        slot = GearSlot::Weapon;
+        current = &equipment.weapon;
+    } else if (const auto* armor = forms.find<data::ArmorForm>(item)) {
+        if (armor->slot == "head") {
+            slot = GearSlot::Head;
+            current = &equipment.head;
+        } else if (armor->slot == "torso") {
+            slot = GearSlot::Torso;
+            current = &equipment.torso;
+        } else if (armor->slot == "arms") {
+            slot = GearSlot::Arms;
+            current = &equipment.arms;
+        } else if (armor->slot == "legs") {
+            slot = GearSlot::Legs;
+            current = &equipment.legs;
+        }
+    }
+    if (!slot || *current == item) {
+        return std::nullopt; // not gear / unknown slot / already worn
+    }
+    const f32 incumbent =
+        current->isValid() ? gearPower(forms, *current) : 0.0f;
+    return gearPower(forms, item) > incumbent ? slot : std::nullopt;
+}
+
+core::Guid& gearSlotRef(Equipment& equipment, GearSlot slot) {
+    switch (slot) {
+    case GearSlot::Weapon: return equipment.weapon;
+    case GearSlot::Head:   return equipment.head;
+    case GearSlot::Torso:  return equipment.torso;
+    case GearSlot::Arms:   return equipment.arms;
+    case GearSlot::Legs:   return equipment.legs;
+    }
+    return equipment.weapon; // unreachable
+}
+
 } // namespace gameplay

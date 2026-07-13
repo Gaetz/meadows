@@ -168,4 +168,33 @@ d'attributs (~100 au niveau 1). Une ligne de data, à ton choix.
    c'était un trou identifié (grantedAbilities n'était pas sauvegardé).
 5. Une perk ne s'apprend qu'UNE fois (le tag dédoublonne).
 
+## É7 — Équipement du follower
+
+Nouvelle action **InteractAlt** : **F** au clavier, **LB** à la manette
+(le Shift+E du doc demanderait des chords — extension possible plus
+tard ; remappable dans les options comme le reste).
+
+**À tester :**
+1. Vise Aldric → le prompt affiche aussi « [F] Équipement » → **F**
+   ouvre son inventaire/équipement (l'écran conteneur habituel :
+   transfert + équiper). Son ÉPÉE DE BASE (« Arme d'Aldric »,
+   non-retirable) ne peut pas lui être prise ; s'il t'en veut
+   (affinité < 0, frappe-le plusieurs fois), il REFUSE l'accès.
+2. Donne-lui une meilleure arme/armure → il s'équipe TOUT SEUL avec un
+   toast poli ; reprends-la → il retombe sur son épée de base.
+3. Surcharge : impossible de lui transférer au-delà de son poids max
+   (stat × facteur d'âge — Maela porte un peu moins).
+4. L'armure PROTÈGE désormais les PNJ (donne un plastron à Aldric et
+   compare les dégâts qu'il encaisse).
+5. **Forge** : près de l'établi du village (zone), avec ≥ 50 or,
+   l'option « Améliorer ton équipement (50 or) » apparaît dans son
+   dialogue → son épée passe au palier supérieur (« Arme d'Aldric+ »),
+   l'or est débité ; rien à améliorer = pas de débit. Hors zone : la
+   réplique t'oriente vers la forge.
+6. F5/F9 : équipement, épée de palier et refus persistent.
+
+**Réserves v1 (notées en TODO data) :** palier d'obsolescence par
+niveau, le follower qui MARCHE à la forge, l'auto-amélioration à 30
+jours, la gratuité mercenaire (É10).
+
 <!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->
