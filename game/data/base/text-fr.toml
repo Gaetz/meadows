@@ -1045,3 +1045,59 @@ type = 'LocStringForm'
 
     [records.fields]
     text = "{} n'a rien à améliorer."
+
+[[records]]
+form = '6ca92648-c122-4b71-9139-9fa4b8bec011'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = '[E] Se recueillir sur {}'
+
+[[records]]
+form = 'f92bccfb-4a2a-427d-8e13-e5e26f4cd65d'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'la tombe'
+
+[[records]]
+form = '8dd8f136-25a1-4789-9a85-926e4dbcb3d4'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = ' — [F] Dépôt'
+
+[[records]]
+form = '277e6655-031b-4ad7-a623-b85fd7ebae01'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = ' — [F] Enterrer'
+
+[[records]]
+form = 'e6b1fcd6-10fd-4ded-80f4-f67874f0fc61'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Vous vous recueillez sur la tombe de {}.'
+
+[[records]]
+form = '3a891957-64d5-45cd-b5d5-0423b417464f'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Vous vous recueillez un instant.'
+
+[[records]]
+form = '06875cad-0a7b-4b58-8388-cd8884eee22f'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = '{} repose ici désormais.'
+
+[[records]]
+form = '81ef8d8e-d482-49aa-bb42-ab7bb2be4eb3'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Personne à enterrer.'

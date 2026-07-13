@@ -197,4 +197,31 @@ tard ; remappable dans les options comme le reste).
 niveau, le follower qui MARCHE à la forge, l'auto-amélioration à 30
 jours, la gratuité mercenaire (É10).
 
+## É8 — Mort, tombe, enterrement
+
+Tu démarres avec **2 Fleurs** (loadout). La tombe utilise le rocher
+moussu en placeholder de stèle (l'asset viendra).
+
+**À tester (il faut une VRAIE mort — laisse Aldric à terre sans potion
+et perds le tirage, ou recommence) :**
+1. Sur son cadavre : [E] = fouiller (comme avant) ; **[F] = « Enterrer
+   ici »** → une tombe apparaît sur place, TOUT son inventaire y est
+   transféré, le cadavre disparaît.
+2. Sur la tombe : **[E] = hommage** (toast avec son nom + cue) ;
+   **[F] = le conteneur** → dépose une Fleur (et reprends-la si tu
+   veux — le transfert marche dans les deux sens).
+3. **Par le contact** : au lieu d'enterrer toi-même, parle au
+   Villageois (le contact d'Aldric) → « Un compagnon du village est
+   tombé... » → la tombe apparaît au petit cimetière du village
+   ([38, 377]), inventaire transféré, cadavre retiré même si sa
+   cellule n'est pas chargée. Sans mort à enterrer : « Personne à
+   enterrer ».
+4. **F5/F9 : la tombe SURVIT** (référence persistante créée au
+   runtime — le mécanisme de la couche pending généralisé), avec son
+   contenu et les fleurs déposées.
+
+**Différé (TODO noté) :** porter la dépouille pour l'enterrer à
+l'endroit de ton choix — demande une mécanique de placement au sol qui
+n'existe pas encore.
+
 <!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->

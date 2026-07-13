@@ -148,3 +148,11 @@ follower.unremovable,"This is {}'s own gear — it stays with him."
 follower.autoEquip,{} equips: {}
 follower.forgeUpgraded,{}'s gear has been upgraded at the forge.
 follower.forgeNothing,{} has nothing left to upgrade.
+prompt.homage,[E] Pay respects at {}
+prompt.homage.name,the grave
+prompt.grave, — [F] Deposit
+prompt.bury, — [F] Bury
+follower.homage,You pay your respects to {}.
+follower.homage.unknown,You pay your respects a moment.
+follower.buried,{} rests here now.
+follower.buryNone,No one needs burying.

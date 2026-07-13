@@ -61,6 +61,11 @@ struct InteractionContext {
     std::function<void(ecs::Entity ally)> reviveAlly;
     // C9.2: [E]/[X] fires through the action layer, never a raw key.
     const ActionMap* actions { nullptr };
+    // FOLLOWERS É8 (appended): [E] on a grave = the homage (toast + cue —
+    // scene territory); [F] on a dead FOLLOWER's corpse = bury him here
+    // (FollowerController::buryOnSpot behind the closure).
+    std::function<void(ecs::Entity grave)> homage;
+    std::function<void(ecs::Entity corpse)> buryCorpse;
 };
 
 // Generic interaction extracted from LandscapeScene (audit U4-10): the aim
@@ -112,7 +117,8 @@ private:
     // in the inventory, actors talk, furniture rests (B7).
     enum class PromptKind : u8 { None, Door, Item, Actor, Corpse,
                                  Furniture,
-                                 DownedAlly }; // É3: heal a downed follower
+                                 DownedAlly, // É3: heal a downed follower
+                                 Grave };    // É8: homage [E] / deposit [F]
     ecs::Entity promptEntity {};
     PromptKind promptKind { PromptKind::None };
     str promptLabel_;

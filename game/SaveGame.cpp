@@ -12,6 +12,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/inventory/Inventory.hpp" // É8: grave capture gate
 #include "world/scene/Components.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
@@ -141,7 +142,12 @@ void PendingSaveLayer::captureEntity(ecs::Entity entity,
     entry.referencePatch = captureReference(entity, forms);
     entry.materialized = false;
     entry.actorRecords.clear();
-    if (entity.has<gameplay::AbilitySystem>()) {
+    // FOLLOWERS É8 (appended clause): an Inventory-only entity — a grave —
+    // captures too. captureActor skips every missing component and still
+    // emits the SavedStatsForm sentinel + the SavedItemForm rows, so the
+    // grave's content survives the flush/re-resolve round trip.
+    if (entity.has<gameplay::AbilitySystem>() ||
+        entity.has<gameplay::Inventory>()) {
         entry.actorRecords = gameplay::captureActor(entity, refGuid, tags);
     }
     if (!entry.referencePatch && entry.actorRecords.empty() &&
@@ -193,6 +199,27 @@ void PendingSaveLayer::disableReference(const core::Guid& referenceId,
         world::ReferenceForm::staticTypeInfo().findField("enabled")->id,
         reflect::Value { false });
     entry.referencePatch = std::move(patch);
+}
+
+void PendingSaveLayer::createReference(const core::Guid& referenceId,
+                                       const core::Guid& baseForm,
+                                       const core::Guid& cell,
+                                       const Vec3& position,
+                                       const Quat& rotation) {
+    // FOLLOWERS É8: the materializeReference idiom without a live entity —
+    // build the full ReferenceForm and diff it into a `creates` record
+    // (createRecord drops default-equal fields; a null cell therefore
+    // resolves back to the persistent set). Idempotent per guid: a second
+    // call simply rewrites the same record.
+    world::ReferenceForm created;
+    created.id = referenceId;
+    created.baseForm = baseForm;
+    created.cell = cell;
+    created.position = position;
+    created.rotation = rotation;
+    Entry& entry = entryFor(referenceId);
+    entry.disabled = false;
+    entry.referencePatch = gameplay::createRecord(created, created.id);
 }
 
 bool PendingSaveLayer::isEnabled(const core::Guid& referenceId) const {

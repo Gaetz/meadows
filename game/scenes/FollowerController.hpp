@@ -29,6 +29,7 @@ class UiSystem;
 }
 namespace world {
 class CellLoader;
+struct ReferenceForm; // É8: the grave's runtime-created reference
 }
 
 namespace game {
@@ -62,6 +63,10 @@ struct FollowerContext {
     // É7 addition (appended): the currency — the forge upgrade charges
     // through it (the payFine idiom).
     const data::MiscItemForm* goldForm { nullptr };
+    // É8 addition (appended): live-spawn a runtime-created PERSISTENT
+    // reference (the grave) through the scene's Spawner — the
+    // spawnInitialWorld idiom (parent cell = none). Null in headless use.
+    std::function<ecs::Entity(const world::ReferenceForm&)> spawnPersistent;
 };
 
 // Recruit/dismiss + the party teleports (FOLLOWERS É1). The persistence is
@@ -195,6 +200,45 @@ public:
     // Mercenaries (É10) will get a free variant: gate their option in
     // data without the HasItem clause and skip the charge here.
     void forgeUpgrade(const FollowerContext& ctx, ecs::Entity follower);
+
+    // ---- É8: mort, tombe, enterrement --------------------------------------
+    // V1 scope (stated): of the doc's three burials, (a) on the spot and
+    // (c) the bury contact ship; (b) CARRY the corpse and bury at a chosen
+    // spot is DEFERRED — it needs a ground-placement mechanic (aim a spot,
+    // validate it) that nothing else requires yet. TODO(followers É8b):
+    // when a placement mechanic exists, add the corpse-as-item flow
+    // (« Dépouille de {} », heavy MiscItemForm) on top of buryOnSpot.
+    //
+    // The grave reference's DETERMINISTIC guid: Guid::combine of the dead
+    // follower's reference guid and the grave namespace (the prefab-child
+    // derivation idiom) — burying the same follower twice re-targets the
+    // same record, and the guid is recomputable forever (graveOwnerName).
+    static core::Guid graveGuidFor(const core::Guid& followerReference);
+
+    // The buried follower's display name, recovered FROM the grave guid:
+    // scan the resolved references and match combine(ref, ns) — zero extra
+    // persisted state, works across any number of reloads. Empty when the
+    // grave's owner is unresolvable (a modded/foreign grave).
+    static str graveOwnerName(const data::FormDatabase& forms,
+                              const core::Guid& graveReference);
+
+    // [F] « Enterrer ici » on a DEAD follower's corpse (the É7 InteractAlt
+    // action — free on corpses): creates the grave AT the corpse (§2.11 —
+    // the generalized pending-layer materialization + the persistent-pass
+    // spawn idiom), moves the corpse's whole inventory into it
+    // (transferAllItems), then removes the corpse the picked-up-item way
+    // (disableReference + destruct). Returns true when the NPC list needs
+    // a refresh (the corpse entity was destructed).
+    bool buryOnSpot(const FollowerContext& ctx, ecs::Entity corpse);
+
+    // Dialogue "OnBuryFollower" on a bury contact (É0's ActorForm data):
+    // finds the dead follower whose buryContact IS the partner and buries
+    // him at his authored buryMarker (fallback: where he lies). No new
+    // condition kind (v1): the HANDLER checks and answers with a toast
+    // when there is nobody to bury. Resident corpses only (v1 — a corpse
+    // always is: dead followers stay in the persistent set or lie in the
+    // player's cell ring).
+    bool buryByContact(const FollowerContext& ctx, ecs::Entity partner);
 
 private:
     // ---- É5: classes, levels, evolution ----------------------------------

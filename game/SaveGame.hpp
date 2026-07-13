@@ -63,6 +63,20 @@ public:
                           ecs::Entity entity = {});
     bool isEnabled(const core::Guid& referenceId) const;
 
+    // FOLLOWERS É8 — the disableReference materialization GENERALIZED
+    // (§2.11): a RUNTIME-CREATED persistent reference (a follower's grave)
+    // becomes a full `creates` ReferenceForm record in this layer. The
+    // flush carries it into the disk save like any §5 record; re-resolving
+    // on load creates the real reference, and a null `cell` puts it in the
+    // persistent set (spawnInitialWorld's pass — the player's own idiom).
+    // Callers pick a DETERMINISTIC guid (Guid::combine of the source
+    // reference and a namespace) so re-burials never mint a second grave.
+    // The caller live-spawns the same ReferenceForm through the Spawner.
+    void createReference(const core::Guid& referenceId,
+                         const core::Guid& baseForm, const core::Guid& cell,
+                         const Vec3& position,
+                         const Quat& rotation = { 1.0f, 0.0f, 0.0f, 0.0f });
+
     // FOLLOWERS É1 — the re-home veto. True when this reference's captured
     // patch carries a `cell` diff: its live home differs from the resolved
     // record (recruited follower -> cell 0 / the persistent set, exactly

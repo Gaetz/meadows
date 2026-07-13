@@ -49,6 +49,10 @@ void addItem(Inventory& inventory, const core::Guid& item, i32 count = 1);
 // Removes `count`; returns false (and removes nothing) if the stack is short.
 bool removeItem(Inventory& inventory, const core::Guid& item, i32 count = 1);
 i32 itemCount(const Inventory& inventory, const core::Guid& item);
+// Moves EVERY stack of `from` into `to` (stacking onto existing stacks) and
+// leaves `from` empty — the burial transfer (FOLLOWERS É8): a corpse's whole
+// inventory lands in the grave. Pure and headless.
+void transferAllItems(Inventory& from, Inventory& to);
 
 void equip(Equipment& equipment, const core::Guid& weapon);
 void unequip(Equipment& equipment);

@@ -425,6 +425,20 @@ void LandscapeScene::setupGameplay() {
                                makeFollowerContext(),
                                questDirector.dialoguePartner());
                        });
+    // FOLLOWERS É8: « ... peux-tu t'occuper de lui ? » — the same
+    // dialogue-event channel. The partner is the bury CONTACT (É0's
+    // ActorForm.buryContact on the dead follower); the handler finds the
+    // corpse, raises the grave at the authored buryMarker and removes the
+    // body (v1: no "follower X is dead" condition kind — the handler
+    // answers with a toast when there is nobody to bury).
+    eventBus.subscribe(gameplay::eventKind("OnBuryFollower"),
+                       [this](const gameplay::Event&) {
+                           if (followerController.buryByContact(
+                                   makeFollowerContext(),
+                                   questDirector.dialoguePartner())) {
+                               refreshNpcs(engine->getDevice());
+                           }
+                       });
     // FOLLOWERS É4: affinity rules — ONE generic subscription (the 8.7c
     // subscribeAll precedent): AffinityRuleForm children of each follower's
     // ActorForm name the events they react to (open, data-defined
@@ -593,6 +607,22 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
                 ++persistent;
                 if (playerForm && reference.baseForm == playerForm->id) {
                     playerEntity = entity;
+                }
+                // FOLLOWERS É8: a persistent GRAVE (runtime-created
+                // furniture reference from a save) reloads its content —
+                // the SavedItemForm children of its guid, applied through
+                // the standard saved-state path (stats sentinel present =
+                // it was captured; every actor component is absent, so
+                // only the inventory lands).
+                if (entity.has<world::FurnitureMarker>()) {
+                    const gameplay::SavedActorRecords saved =
+                        gameplay::savedRecordsFor(forms, reference.id);
+                    if (saved.stats) {
+                        if (!entity.has<gameplay::Inventory>()) {
+                            entity.set<gameplay::Inventory>({});
+                        }
+                        gameplay::applySavedState(entity, saved, gameTags);
+                    }
                 }
             }
         });
@@ -1305,6 +1335,36 @@ InteractionContext LandscapeScene::makeInteractionContext() {
                                                 ally);
         },
         &actionMap, // C9.2: [E]/[X] through the action layer
+        // É8: [E] on a grave — the homage: the buried follower's name is
+        // re-derived from the grave guid (no persisted state), the toast
+        // rides the one HUD channel, and a gentle cue tag goes out on the
+        // cue bus (no CueForm ships for it yet — data can author
+        // "Cue.Homage" later with zero C++).
+        [this](ecs::Entity grave) {
+            str name;
+            if (grave.is_alive() && grave.has<world::RefId>()) {
+                name = FollowerController::graveOwnerName(
+                    forms, grave.get<world::RefId>().referenceId);
+            }
+            interaction.say(
+                name.empty()
+                    ? texts.get("follower.homage.unknown")
+                    : texts.format("follower.homage", name),
+                4.0f);
+            if (grave.is_alive() && grave.has<world::Transform>()) {
+                fxDirector.cues().emit(
+                    { "Cue.Homage",
+                      grave.get<world::Transform>().position, 0.0f });
+            }
+        },
+        // É8: [F] on a dead follower's corpse — bury him on the spot; the
+        // corpse entity is destructed, so the director list refreshes.
+        [this](ecs::Entity corpse) {
+            if (followerController.buryOnSpot(makeFollowerContext(),
+                                              corpse)) {
+                refreshNpcs(engine->getDevice());
+            }
+        },
     };
 }
 
@@ -2514,6 +2574,12 @@ FollowerContext LandscapeScene::makeFollowerContext() {
         &screenStack,
         // É7: the forge upgrade charges gold (the payFine idiom).
         goldForm,
+        // É8: the grave's live spawn — the spawnInitialWorld idiom (the
+        // persistent pass: no parent cell), through the scene's Spawner.
+        [this](const world::ReferenceForm& reference) {
+            world::SpawnContext spawnCtx { world, forms, categories };
+            return spawner.spawn(spawnCtx, reference, ecs::Entity {});
+        },
     };
 }
 

@@ -1156,7 +1156,8 @@ parent = "4d7a9b30-0000-4000-8000-0000000000ea"
 speaker = "Villager"
 text = "Le village respire enfin ! Voici votre recompense, avec toute notre gratitude."
 
-# Option 6: goodbye (no reply node -> the conversation ends).
+# Option 6 (É8 moved it to 8 so goodbye stays last): goodbye (no reply
+# node -> the conversation ends).
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000000d7"
 type = "DialogueNodeForm"
@@ -1165,7 +1166,7 @@ new = true
 parent = "4d7a9b30-0000-4000-8000-0000000000d1"
 speaker = "Player"
 text = "Bonne journee a vous."
-order = 6
+order = 8
 
 # --- The quest « La menace de l'est » (chantier 6 A2) — the Phase-4
 # state machine as records: two Regular states (hunt, report), a Success
@@ -1967,6 +1968,10 @@ followerClass = "6a1dc0de-0000-4000-8000-000000000001"
 homeMarker = "6a1dc0de-0000-4000-8000-000000000002"
 dialogue = "6a1dc0de-0000-4000-8000-000000000007"
 schedule = "6a1dc0de-0000-4000-8000-000000000004"
+# É8: his resting place (the graveyard spot below) and the friend who
+# takes care of his body (the Villager, via the OnBuryFollower option).
+buryMarker = "6a1dc0de-0000-4000-8000-000000000080"
+buryContact = "2b5e7d10-0000-4000-8000-0000000000b1"
 
 # His day: stand guard at his home spot (all day) — which is also what
 # walks him home after a dismissal (the schedule anchor = the home marker).
@@ -2995,3 +3000,83 @@ new = true
 parent = "6a1dc0de-0000-4000-8000-000000000079"
 speaker = "Aldric"
 text = "Pas sans forge. Passons voir l'etabli du village, pres de la place."
+
+# --- FOLLOWERS É8: mort, tombe, enterrement ------------------------------------
+# Reuse map (§2.11): the grave is FURNITURE of category "grave" (the
+# container-like slot the FurnitureForm enum documents) — the Furniture
+# spawn category gives it its mesh and its prompt for free; its content
+# rides the standard SavedItemForm children; the reference itself is a
+# RUNTIME-created persistent record (cell = none) through the generalized
+# pending-layer materialization (PendingSaveLayer::createReference), spawned
+# live by the persistent-pass idiom. Homage = [E], the dead follower's
+# inventory (deposits AND retrievals — flowers) = [F], the container screen.
+# VISUAL PLACEHOLDER: the CC0 rock scan (MossyRock's model/material) stands
+# in for a headstone mesh.
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000007d"
+type = "FurnitureForm"
+new = true
+[records.fields]
+editorId = "Grave"
+displayName = "Tombe"
+category = "grave"
+model = "2b5e7d10-0000-4000-8000-0000000000c1"
+material = "2b5e7d10-0000-4000-8000-0000000000c2"
+
+# A modest flower to lay on a grave.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000007e"
+type = "MiscItemForm"
+new = true
+[records.fields]
+editorId = "Fleur"
+displayName = "Fleur"
+weight = 0.1
+goldValue = 1
+
+# Two flowers in the player's starting kit (fresh games only — the
+# loadout roll is gated by the was-captured sentinel).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000007f"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "2b5e7d10-0000-4000-8000-0000000000a0"
+item = "6a1dc0de-0000-4000-8000-00000000007e"
+count = 2
+
+# The village graveyard spot (a SpotMarker reference) — Aldric's authored
+# resting place (ActorForm.buryMarker), off the square, under the trees.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000080"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000080"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [38.0, 0.0, 377.0]
+
+# The burial request on the VILLAGER (Aldric's buryContact) — order 7,
+# before the goodbye. V1: no "follower X is dead" condition kind — the
+# option stays visible and the OnBuryFollower handler answers with a
+# toast when there is nobody to bury; the reply is therefore neutral.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000081"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "4d7a9b30-0000-4000-8000-0000000000d1"
+speaker = "Player"
+text = "Un compagnon du village est tombe... peux-tu t'occuper de lui ?"
+event = "OnBuryFollower"
+order = 7
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000082"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000081"
+speaker = "Villager"
+text = "S'il est arrive malheur a l'un des notres, je m'en occupe. Il reposera pres de la place, sous les arbres."

@@ -5,6 +5,9 @@
 #include "data/forms/CoreForms.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
+#include "data/plugins/TomlWriter.hpp" // É8: the save round trip
+#include "gameplay/interaction/FurnitureForms.hpp" // É8: the grave form
+#include "gameplay/inventory/Inventory.hpp" // É8: the burial transfer
 #include "engine/core/Rng.hpp"
 #include "engine/ecs/World.hpp"
 #include "game/SaveGame.hpp"
@@ -1263,4 +1266,219 @@ TEST_CASE("followers É7: canCarry — the follower refuses the excess item") {
     // Age shrinks the capacity: the same load stops fitting at 0.9.
     CHECK(gameplay::canCarry(40.0f, 5.0f, 50.0f, 0.9f));
     CHECK_FALSE(gameplay::canCarry(41.0f, 5.0f, 50.0f, 0.9f));
+}
+
+// ---- É8: mort, tombe, enterrement ----------------------------------------------
+// The grave contract at the model level (the É1 precedent — the scene
+// controller resolves entities, the LAYER carries the persistence):
+// createReference generalizes the disableReference materialization into a
+// full `creates` ReferenceForm record; flushed and re-resolved, a null
+// cell lands the grave in the PERSISTENT set (spawnInitialWorld's pass).
+
+namespace {
+
+constexpr const char* kGravePlugin = R"toml(
+[plugin]
+id = "eeee0000-0000-4000-8000-000000000001"
+name = "grave-base"
+
+[[records]]
+form = "eeee0001-0000-4000-8000-000000000001"
+type = "FurnitureForm"
+new = true
+[records.fields]
+editorId = "Grave"
+displayName = "Tombe"
+category = "grave"
+
+[[records]]
+form = "eeee0002-0000-4000-8000-000000000001"
+type = "MiscItemForm"
+new = true
+[records.fields]
+editorId = "Fleur"
+displayName = "Fleur"
+weight = 0.1
+goldValue = 1
+)toml";
+
+const Guid kGraveBase =
+    *Guid::fromString("eeee0001-0000-4000-8000-000000000001");
+const Guid kFleur =
+    *Guid::fromString("eeee0002-0000-4000-8000-000000000001");
+// The grave namespace idiom (FollowerController::graveGuidFor lives in the
+// scene target; the derivation is Guid::combine — tested as such here).
+const Guid kGraveNs =
+    *Guid::fromString("6a1dc0de-e8e8-4000-8000-6772617665f0");
+
+struct GraveFixture {
+    data::FormTypeRegistry types;
+    data::Plugin base;
+
+    GraveFixture() {
+        data::registerCoreFormTypes(types);
+        world::registerWorldFormTypes(types);
+        gameplay::registerFurnitureFormTypes(types);
+        gameplay::registerSaveFormTypes(types);
+        base = *data::parsePluginToml(kGravePlugin, types, "grave-base");
+    }
+};
+
+} // namespace
+
+TEST_CASE("followers É8: the grave guid derivation is deterministic") {
+    const Guid corpseRef = kFollowerRef;
+    const Guid grave = Guid::combine(corpseRef, kGraveNs);
+    // Stable across calls ("sessions"), never the source, unique per
+    // follower — the record can be re-targeted and re-derived forever.
+    CHECK(grave == Guid::combine(corpseRef, kGraveNs));
+    CHECK(grave != corpseRef);
+    CHECK(grave != kGraveNs);
+    CHECK(grave !=
+          Guid::combine(guid("6a1dc0de-0000-4000-8000-0000000000f3"),
+                        kGraveNs));
+    CHECK(grave.isValid());
+}
+
+TEST_CASE("followers É8: createReference -> flush -> re-resolve = a "
+          "persistent reference") {
+    GraveFixture fx;
+    const Guid graveRef = Guid::combine(kFollowerRef, kGraveNs);
+
+    game::PendingSaveLayer pending;
+    pending.createReference(graveRef, kGraveBase, Guid {},
+                            Vec3 { 12.0f, 3.5f, -7.0f });
+
+    // The flush carries ONE full `creates` ReferenceForm record.
+    const vector<data::Record> flushed = pending.flush();
+    REQUIRE(flushed.size() == 1);
+    const data::Record& record = flushed.front();
+    CHECK(record.creates);
+    CHECK(record.formId == graveRef);
+    CHECK(record.typeId == world::ReferenceForm::staticTypeInfo().id);
+    const reflect::TypeInfo& refType =
+        world::ReferenceForm::staticTypeInfo();
+    CHECK(record.fields.contains(refType.findField("baseForm")->id));
+    CHECK(record.fields.contains(refType.findField("position")->id));
+    // Null cell = default = dropped from the record: the resolved
+    // reference belongs to NO cell — the persistent set.
+    CHECK_FALSE(record.fields.contains(refType.findField("cell")->id));
+
+    // Disk round trip (writePluginToml/parsePluginToml — a save IS a
+    // plugin, §5), then a fresh resolve with the save layer last.
+    data::Plugin save;
+    save.name = "slot";
+    save.records = flushed;
+    const str toml = data::writePluginToml(save, fx.types);
+    const auto reparsed = data::parsePluginToml(toml, fx.types, "slot");
+    REQUIRE(reparsed.has_value());
+    data::FormDatabase db;
+    data::resolve({ &fx.base, &*reparsed }, fx.types, db);
+
+    const auto* resolved = db.find<world::ReferenceForm>(graveRef);
+    REQUIRE(resolved != nullptr);
+    CHECK(resolved->baseForm == kGraveBase);
+    CHECK_FALSE(resolved->cell.isValid()); // persistent (cell = none)
+    CHECK(resolved->enabled);
+    CHECK_FALSE(resolved->prefab.isValid());
+    CHECK(resolved->position.x == doctest::Approx(12.0f));
+    CHECK(resolved->position.y == doctest::Approx(3.5f));
+    CHECK(resolved->position.z == doctest::Approx(-7.0f));
+
+    // The persistent-pass spawn idiom (spawnInitialWorld: no parent cell)
+    // raises real furniture at the recorded spot.
+    ecs::World world;
+    world::registerSceneComponents(world);
+    gameplay::registerGameplayComponents(world);
+    world::FormCategoryRegistry categories;
+    world::registerCoreCategories(categories);
+    world::Spawner spawner;
+    world::registerCoreSpawners(spawner);
+    world::SpawnContext spawnCtx { world, db, categories };
+    const ecs::Entity grave =
+        spawner.spawn(spawnCtx, *resolved, ecs::Entity {});
+    REQUIRE(grave.is_alive());
+    CHECK(grave.has<world::FurnitureMarker>());
+    CHECK(grave.get<world::Transform>().position.x ==
+          doctest::Approx(12.0f));
+    CHECK(grave.get<world::RefId>().referenceId == graveRef);
+}
+
+TEST_CASE("followers É8: a grave's content survives capture -> re-resolve") {
+    GraveFixture fx;
+    const Guid graveRef = Guid::combine(kFollowerRef, kGraveNs);
+
+    // Session 1: the grave stands (created + spawned at burial) and holds
+    // the dead follower's flowers.
+    data::FormDatabase db;
+    data::resolve({ &fx.base }, fx.types, db);
+    ecs::World world;
+    world::registerSceneComponents(world);
+    gameplay::registerGameplayComponents(world);
+    ecs::Entity grave = world.create();
+    world::RefId refId;
+    refId.referenceId = graveRef;
+    refId.base = db.handleOf(kGraveBase);
+    grave.set<world::RefId>(refId);
+    world::Transform transform;
+    transform.position = { 1.0f, 2.0f, 3.0f };
+    grave.set<world::Transform>(transform);
+    gameplay::Inventory content;
+    gameplay::addItem(content, kFleur, 2);
+    grave.set<gameplay::Inventory>(content);
+
+    gameplay::GameplayTagRegistry tags;
+    game::PendingSaveLayer pending;
+    pending.createReference(graveRef, kGraveBase, Guid {},
+                            transform.position);
+    // The save-time capture (SaveController captures every live RefId
+    // entity): an Inventory-ONLY entity captures too — the É8 gate.
+    pending.captureEntity(grave, db, tags);
+
+    data::Plugin save;
+    save.name = "slot";
+    save.records = pending.flush();
+    const str toml = data::writePluginToml(save, fx.types);
+    const auto reparsed = data::parsePluginToml(toml, fx.types, "slot");
+    REQUIRE(reparsed.has_value());
+
+    // Session 2: re-resolve; the reference exists AND its SavedItemForm
+    // children refill a fresh spawn's inventory (the spawnInitialWorld
+    // grave-restore path applies them through applySavedState).
+    data::FormDatabase db2;
+    data::resolve({ &fx.base, &*reparsed }, fx.types, db2);
+    REQUIRE(db2.find<world::ReferenceForm>(graveRef) != nullptr);
+    const gameplay::SavedActorRecords saved =
+        gameplay::savedRecordsFor(db2, graveRef);
+    REQUIRE(saved.stats != nullptr); // the was-captured sentinel
+    REQUIRE(saved.items.size() == 1);
+    CHECK(saved.items.front()->item == kFleur);
+    CHECK(saved.items.front()->count == 2);
+
+    ecs::World world2;
+    world::registerSceneComponents(world2);
+    gameplay::registerGameplayComponents(world2);
+    ecs::Entity reloaded = world2.create();
+    reloaded.set<gameplay::Inventory>({});
+    gameplay::applySavedState(reloaded, saved, tags);
+    CHECK(gameplay::itemCount(reloaded.get<gameplay::Inventory>(),
+                              kFleur) == 2);
+}
+
+TEST_CASE("followers É8: transferAllItems empties the corpse into the grave") {
+    const Guid sword = guid("eeee0003-0000-4000-8000-000000000001");
+    gameplay::Inventory corpse;
+    gameplay::addItem(corpse, kFleur, 1);
+    gameplay::addItem(corpse, sword, 1);
+    gameplay::Inventory grave;
+    gameplay::addItem(grave, kFleur, 2); // earlier deposits merge
+
+    gameplay::transferAllItems(corpse, grave);
+    CHECK(corpse.items.empty());
+    CHECK(gameplay::itemCount(grave, kFleur) == 3);
+    CHECK(gameplay::itemCount(grave, sword) == 1);
+
+    // Idempotent on an already-empty source.
+    gameplay::transferAllItems(corpse, grave);
+    CHECK(gameplay::itemCount(grave, kFleur) == 3);
 }

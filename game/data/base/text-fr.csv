@@ -148,3 +148,11 @@ follower.unremovable,"C'est l'équipement de base de {} — il le garde."
 follower.autoEquip,{} s'équipe : {}
 follower.forgeUpgraded,L'équipement de {} a été amélioré à la forge.
 follower.forgeNothing,{} n'a rien à améliorer.
+prompt.homage,[E] Se recueillir sur {}
+prompt.homage.name,la tombe
+prompt.grave, — [F] Dépôt
+prompt.bury, — [F] Enterrer
+follower.homage,Vous vous recueillez sur la tombe de {}.
+follower.homage.unknown,Vous vous recueillez un instant.
+follower.buried,{} repose ici désormais.
+follower.buryNone,Personne à enterrer.

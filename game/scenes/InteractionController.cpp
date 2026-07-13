@@ -46,6 +46,21 @@ const data::ActorForm* followerActor(const InteractionContext& ctx,
     return actor->followerCategory.empty() ? nullptr : actor;
 }
 
+// FOLLOWERS É8: a grave is furniture of category "grave" (the
+// container-like slot the FurnitureForm enum documents) — homage on [E],
+// the dead follower's inventory on [F], never the rest/sleep path.
+bool isGraveForm(const InteractionContext& ctx,
+                 const data::FormHandle& base) {
+    const reflect::TypeInfo* type = ctx.forms.typeOf(base);
+    if (!type ||
+        !type->isA(gameplay::FurnitureForm::staticTypeInfo().id)) {
+        return false;
+    }
+    const auto* furniture =
+        static_cast<const gameplay::FurnitureForm*>(ctx.forms.get(base));
+    return furniture && furniture->category == "grave";
+}
+
 } // namespace
 
 // --- B7: doors & worldspace travel ---------------------------------------------------
@@ -87,7 +102,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
         });
         ctx.interactQuery.each([&](flecs::entity e,
                                    const world::Transform& transform,
-                                   const world::RefId&) {
+                                   const world::RefId& refId) {
                 const ecs::Entity entity { e };
                 if (entity.has<world::ItemMarker>()) {
                     consider(e, transform.position, PromptKind::Item,
@@ -111,7 +126,11 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                                       : PromptKind::Actor,
                              reach * (2.8f / 3.0f));
                 } else if (entity.has<world::FurnitureMarker>()) {
-                    consider(e, transform.position, PromptKind::Furniture,
+                    // É8: a grave prompts homage, never the rest path.
+                    consider(e, transform.position,
+                             isGraveForm(ctx, refId.base)
+                                 ? PromptKind::Grave
+                                 : PromptKind::Furniture,
                              reach * (2.4f / 3.0f));
                 }
             });
@@ -156,12 +175,21 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 break;
             case PromptKind::Corpse:
                 promptLabel_ = label("prompt.search", "prompt.search.name");
+                // É8: a dead FOLLOWER's corpse offers the burial on the
+                // alternate action (the É7 gear-suffix idiom).
+                if (followerActor(ctx, promptEntity)) {
+                    promptLabel_ += ctx.texts.get("prompt.bury");
+                }
                 break;
             case PromptKind::Furniture:
                 promptLabel_ = label("prompt.use", "prompt.use.name");
                 break;
             case PromptKind::DownedAlly: // É3: "[E] Soigner {} (potion)"
                 promptLabel_ = label("prompt.heal", "prompt.heal.name");
+                break;
+            case PromptKind::Grave: // É8: "[E] Se recueillir... — [F] Dépôt"
+                promptLabel_ = label("prompt.homage", "prompt.homage.name");
+                promptLabel_ += ctx.texts.get("prompt.grave");
                 break;
             default:
                 break;
@@ -227,6 +255,11 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                     ctx.reviveAlly(promptEntity);
                 }
                 break;
+            case PromptKind::Grave: // É8: [E] = the homage, NOT the loot
+                if (ctx.homage) {
+                    ctx.homage(promptEntity);
+                }
+                break;
             case PromptKind::Furniture: {
                 // B7-lite: beds sleep 8h, seats rest 1h — both through the
                 // Phase-7 gameplay::sleep() at the black of the fade.
@@ -265,18 +298,36 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
         // opinion: negative affinity = a refusal toast (docs/FOLLOWERS.md
         // §5 — "avis négatif" = followerAffinity < 0, the É4 scale's
         // neutral point).
-        if (promptEntity.is_alive() && promptKind == PromptKind::Actor &&
+        if (promptEntity.is_alive() &&
             ctx.actions->pressed(ctx.input, InputAction::InteractAlt)) {
-            if (const data::ActorForm* actor =
-                    followerActor(ctx, promptEntity)) {
-                const auto& state =
-                    promptEntity.get<gameplay::FollowerState>();
-                if (state.followerAffinity < 0.0f) {
-                    say(ctx.texts.format("follower.gearRefused",
-                                         actor->displayName),
-                        4.0f);
-                } else if (ctx.openContainer) {
+            if (promptKind == PromptKind::Actor) {
+                if (const data::ActorForm* actor =
+                        followerActor(ctx, promptEntity)) {
+                    const auto& state =
+                        promptEntity.get<gameplay::FollowerState>();
+                    if (state.followerAffinity < 0.0f) {
+                        say(ctx.texts.format("follower.gearRefused",
+                                             actor->displayName),
+                            4.0f);
+                    } else if (ctx.openContainer) {
+                        ctx.openContainer(promptEntity);
+                    }
+                }
+            } else if (promptKind == PromptKind::Grave) {
+                // É8: the special interaction = the dead follower's
+                // inventory — THE two-panel container screen, deposits
+                // (flowers) and retrievals both ways.
+                if (ctx.openContainer) {
                     ctx.openContainer(promptEntity);
+                }
+            } else if (promptKind == PromptKind::Corpse) {
+                // É8: « Enterrer ici » — dead FOLLOWERS only (a bandit
+                // stays plain lootable). The closure destructs the
+                // corpse: drop the prompt reference right away.
+                if (ctx.buryCorpse && followerActor(ctx, promptEntity)) {
+                    ctx.buryCorpse(promptEntity);
+                    promptEntity = ecs::Entity {};
+                    promptKind = PromptKind::None;
                 }
             }
         }

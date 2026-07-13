@@ -22,6 +22,7 @@
                                           //   affinityDelta (É4)
 #include "gameplay/combat/Combat.hpp"     // updateLifeState (É3 revive)
 #include "gameplay/event/EventBus.hpp"    // gameplay::Event (É2 aggro)
+#include "gameplay/interaction/FurnitureForms.hpp" // the grave form (É8)
 #include "gameplay/inventory/Inventory.hpp" // the player's bag (É3 revive)
 #include "gameplay/stats/CoreAttributes.hpp" // the 9 bases (É5 level-ups)
 #include "gameplay/stats/Damage.hpp"        // CombatState, updateDowned (É3)
@@ -840,6 +841,165 @@ void FollowerController::forgeUpgrade(const FollowerContext& ctx,
         toast(ctx, ctx.texts->format("follower.forgeUpgraded",
                                      actor->displayName));
     }
+}
+
+// ---- É8: mort, tombe, enterrement --------------------------------------------
+
+namespace {
+
+// The grave guid namespace — the prefab-child derivation idiom (§2.11):
+// combine(followerReference, kGraveNamespace) is stable forever.
+const core::Guid kGraveNamespace =
+    *core::Guid::fromString("6a1dc0de-e8e8-4000-8000-6772617665f0");
+
+// The shared burial core: create the persistent grave reference at
+// `gravePos` (pending layer + live spawn), move the corpse's inventory
+// into it, remove the corpse (the picked-up-item idiom). Returns true
+// when the corpse entity was destructed (NPC list refresh needed).
+bool buryFollower(const FollowerContext& ctx, ecs::Entity corpse,
+                  const Vec3& gravePos) {
+    const data::ActorForm* actor = followerActorForm(ctx, corpse);
+    if (!actor || !corpse.has<world::RefId>()) {
+        return false;
+    }
+    const auto* grave =
+        data::findByEditorId<gameplay::FurnitureForm>(ctx.forms, "Grave");
+    if (!grave) {
+        LOG_WARN("É8: no 'Grave' FurnitureForm in the data — burial skipped");
+        return false;
+    }
+    const core::Guid corpseRef = corpse.get<world::RefId>().referenceId;
+    if (!corpseRef.isValid()) {
+        return false; // identity-less corpse: nothing to disable or derive
+    }
+    const core::Guid graveRef = FollowerController::graveGuidFor(corpseRef);
+
+    // 1) The persistent record (§2.11: the generalized disableReference
+    // materialization). Null cell = the persistent set — the grave
+    // streams with nobody and survives every reload like the player.
+    ctx.pendingSave.createReference(graveRef, grave->id, core::Guid {},
+                                    gravePos);
+
+    // 2) The live spawn — the spawnInitialWorld idiom through the scene's
+    // Spawner (parent cell = none). Headless callers may skip it.
+    ecs::Entity graveEntity {};
+    if (ctx.spawnPersistent) {
+        world::ReferenceForm reference;
+        reference.id = graveRef;
+        reference.baseForm = grave->id;
+        reference.position = gravePos;
+        graveEntity = ctx.spawnPersistent(reference);
+    }
+
+    // 3) The corpse's whole inventory moves into the grave (the container
+    // screen later deposits/retrieves through the same Inventory).
+    if (graveEntity.is_alive()) {
+        if (!graveEntity.has<gameplay::Inventory>()) {
+            graveEntity.set<gameplay::Inventory>({});
+        }
+        if (corpse.has<gameplay::Inventory>()) {
+            gameplay::transferAllItems(
+                corpse.get_mut<gameplay::Inventory>(),
+                graveEntity.get_mut<gameplay::Inventory>());
+        }
+        // Capture NOW: the grave's creates record + its SavedItemForm
+        // children live in the pending layer from this frame on.
+        ctx.pendingSave.captureEntity(graveEntity, ctx.forms, ctx.gameTags);
+    }
+
+    // 4) The corpse leaves the world the picked-up-item way: enabled =
+    // false in the pending layer (his authored record never respawns
+    // him), then the entity goes.
+    ctx.pendingSave.disableReference(corpseRef, ctx.forms, corpse);
+    corpse.destruct();
+
+    if (ctx.texts) {
+        toast(ctx, ctx.texts->format("follower.buried", actor->displayName));
+    }
+    LOG_INFO("É8: {} buried — grave {} at ({:.1f}, {:.1f}, {:.1f})",
+             actor->editorId, graveRef.toString(), gravePos.x, gravePos.y,
+             gravePos.z);
+    return true;
+}
+
+} // namespace
+
+core::Guid FollowerController::graveGuidFor(
+    const core::Guid& followerReference) {
+    return core::Guid::combine(followerReference, kGraveNamespace);
+}
+
+str FollowerController::graveOwnerName(const data::FormDatabase& forms,
+                                       const core::Guid& graveReference) {
+    // Recompute the derivation over the resolved references — the grave
+    // guid IS the link, so no owner field needs persisting. References
+    // are few (a hand-authored world); this runs on an [E] press.
+    str name;
+    data::forEach<world::ReferenceForm>(
+        forms, [&](const world::ReferenceForm& reference) {
+            if (core::Guid::combine(reference.id, kGraveNamespace) !=
+                graveReference) {
+                return;
+            }
+            const data::FormHandle baseHandle =
+                forms.handleOf(reference.baseForm);
+            const data::Form* base = forms.get(baseHandle);
+            const reflect::TypeInfo* type = forms.typeOf(baseHandle);
+            if (base && type &&
+                type->isA(data::ActorForm::staticTypeInfo().id)) {
+                name = static_cast<const data::ActorForm*>(base)->displayName;
+            }
+        });
+    return name;
+}
+
+bool FollowerController::buryOnSpot(const FollowerContext& ctx,
+                                    ecs::Entity corpse) {
+    if (!corpse.is_alive() || !corpse.has<world::Transform>()) {
+        return false;
+    }
+    return buryFollower(ctx, corpse, corpse.get<world::Transform>().position);
+}
+
+bool FollowerController::buryByContact(const FollowerContext& ctx,
+                                       ecs::Entity partner) {
+    // The partner's ActorForm identity — buryContact on the DEAD
+    // follower's form points at it (É0 data).
+    core::Guid partnerForm;
+    if (partner.is_alive() && partner.has<world::RefId>()) {
+        if (const data::Form* base =
+                ctx.forms.get(partner.get<world::RefId>().base)) {
+            partnerForm = base->id;
+        }
+    }
+    if (partnerForm.isValid()) {
+        for (const auto& npcPtr : ctx.npcDirector.npcs()) {
+            const Npc& npc = *npcPtr;
+            if (!npc.dead || !npc.entity.is_alive()) {
+                continue;
+            }
+            const data::ActorForm* actor = followerActorForm(ctx, npc.entity);
+            if (!actor || actor->buryContact != partnerForm) {
+                continue;
+            }
+            // The authored grave spot (buryMarker reference), grounded on
+            // the terrain like every NPC build; fallback: where he lies.
+            Vec3 gravePos = npc.entity.get<world::Transform>().position;
+            if (const auto* marker = ctx.forms.find<world::ReferenceForm>(
+                    actor->buryMarker)) {
+                gravePos = marker->position;
+                gravePos.y = render::terrain::height(
+                    ctx.terrainParams, gravePos.x, gravePos.z);
+            }
+            return buryFollower(ctx, npc.entity, gravePos);
+        }
+    }
+    // Nobody to bury: the option stays visible (v1 — no "follower X is
+    // dead" condition kind), so the handler answers.
+    if (ctx.texts) {
+        toast(ctx, ctx.texts->get("follower.buryNone"));
+    }
+    return false;
 }
 
 void FollowerController::teleportNear(const Vec3& anchor,

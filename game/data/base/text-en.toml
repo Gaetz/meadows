@@ -1342,3 +1342,75 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'follower.forgeNothing'
     text = '{} has nothing left to upgrade.'
+
+[[records]]
+form = '6ca92648-c122-4b71-9139-9fa4b8bec011'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.homage'
+    text = '[E] Pay respects at {}'
+
+[[records]]
+form = 'f92bccfb-4a2a-427d-8e13-e5e26f4cd65d'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.homage.name'
+    text = 'the grave'
+
+[[records]]
+form = '8dd8f136-25a1-4789-9a85-926e4dbcb3d4'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.grave'
+    text = ' — [F] Deposit'
+
+[[records]]
+form = '277e6655-031b-4ad7-a623-b85fd7ebae01'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.bury'
+    text = ' — [F] Bury'
+
+[[records]]
+form = 'e6b1fcd6-10fd-4ded-80f4-f67874f0fc61'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.homage'
+    text = 'You pay your respects to {}.'
+
+[[records]]
+form = '3a891957-64d5-45cd-b5d5-0423b417464f'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.homage.unknown'
+    text = 'You pay your respects a moment.'
+
+[[records]]
+form = '06875cad-0a7b-4b58-8388-cd8884eee22f'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.buried'
+    text = '{} rests here now.'
+
+[[records]]
+form = '81ef8d8e-d482-49aa-bb42-ab7bb2be4eb3'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.buryNone'
+    text = 'No one needs burying.'
