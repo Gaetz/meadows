@@ -37,6 +37,12 @@ public:
     // combat and death stand the NPC up too (director / combat side).
     void releaseFurniture(const NpcContext& ctx, Npc& npc);
 
+    // Interruption over (combat/dialogue cleared — the director's
+    // updateInterruption falling edge): re-evaluate the schedule NOW
+    // (the slot may have changed mid-fight) and repath from wherever the
+    // override left the NPC.
+    void resume(Npc& npc);
+
 private:
     void updateNpcSchedule(const NpcContext& ctx, Npc& npc, f32 hourOfDay);
 };

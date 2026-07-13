@@ -19,8 +19,13 @@
 // HOW TO FILL (post-7/07):
 //  - a ScheduleAgent component per NPC caches the current intent and
 //    re-evaluates on the game clock's hour change (not every frame);
-//  - interruptions: combat/dialogue push their own intent, the schedule
-//    resumes when they clear (intent stack);
+//  - interruptions: DONE v1 (2026-07-13) — combat overrides frame by
+//    frame (the director's dispatch already gives it the frame);
+//    updateInterruption() below detects the edges so the executor stands
+//    the NPC up on entry and forces an immediate re-evaluation on exit
+//    (a fight spanning a slot boundary resumes on the CURRENT entry).
+//    Dialogue joins when a reliable "dialogue open with X" signal exists
+//    (QuestDirector::dialoguePartner is never cleared on close);
 //  - the debug view ("where is this NPC going and why") reads
 //    ScheduleIntent::reason — keep it filled.
 
@@ -35,5 +40,13 @@ struct ScheduleIntent {
 std::optional<ScheduleIntent> evaluateSchedule(
     const data::FormDatabase& forms, const core::Guid& scheduleId,
     f32 hourOfDay, const EvalContext* conditions = nullptr);
+
+// Interruption edges (v1 of the promised intent hook): `interrupted` is
+// the NPC's persistent flag, `busyNow` the frame's override (combat, later
+// dialogue). Returns Interrupted exactly once on the rising edge (stand
+// up: release furniture, drop the path) and Resumed exactly once on the
+// falling edge (force an immediate schedule re-evaluation). Pure.
+enum class ScheduleSignal { None, Interrupted, Resumed };
+ScheduleSignal updateInterruption(bool& interrupted, bool busyNow);
 
 } // namespace gameplay

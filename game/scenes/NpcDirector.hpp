@@ -96,6 +96,7 @@ struct Npc {
     // Chantier 3 B3: schedule-driven life (replaces the patrol when the
     // ActorForm carries a schedule; patrol stays the fallback).
     core::Guid schedule {};
+    bool scheduleInterrupted { false }; // combat/dialogue override edge
     i32 lastEvaluatedSlot { -1 }; // 10-game-minute re-eval granularity
     const gameplay::AiPackageForm* activePackage { nullptr };
     core::Guid activeLocation {};
@@ -227,6 +228,11 @@ struct NpcContext {
     // R3 (B1 adopted): the scene's per-frame actor snapshot — radius
     // queries (the faction shout) go through it, not a full-list sweep.
     const world::SpatialIndex* actorIndex;
+    // Schedule interruption (2026-07-13): the actor the player is TALKING
+    // to right now — set only while the DialogueRunner is active (the
+    // QuestDirector partner alone is never cleared on close). Invalid =
+    // no dialogue open.
+    ecs::Entity dialoguePartner {};
 };
 
 // The whole Forms-driven NPC subsystem, extracted from LandscapeScene (audit

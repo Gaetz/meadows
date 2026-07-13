@@ -2651,6 +2651,13 @@ NpcContext LandscapeScene::makeNpcContext() {
         sceneConsole.godMode(),
         timeSeconds,
         &spatialIndex, // R3: radius queries (faction shout) share it
+        // Schedule interruption: the partner counts only WHILE the
+        // dialogue is open (the runner's active flag — the stored partner
+        // alone survives the close, deliberately, for barter).
+        questDirector.dialogueRunner() &&
+                questDirector.dialogueRunner()->active()
+            ? questDirector.dialoguePartner()
+            : ecs::Entity {},
     };
 }
 

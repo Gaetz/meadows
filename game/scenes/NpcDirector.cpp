@@ -12,6 +12,7 @@
 #include "game/WeaponMeshes.hpp"          // A2: the visible sword guid
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/actors/ActorState.hpp" // FollowerState (É1 dispatch)
+#include "gameplay/ai/ScheduleSystem.hpp" // updateInterruption edges
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/actors/Followers.hpp"  // foldAgeModifiers (É5)
 #include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions (C2)
@@ -231,8 +232,31 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                 following = !staying;
             }
         }
+        // Interruption/reprise (E-catalogue leftover, 2026-07-13): combat
+        // and an OPEN dialogue override the schedule; the pure edge
+        // detector stands the walker's state up on entry (drop the stale
+        // path — combat already frees the seat where it must) and forces
+        // an immediate re-evaluation on exit, so a fight spanning a
+        // 10-min slot boundary resumes on the CURRENT entry.
+        const bool inDialogue = ctx.dialoguePartner.is_alive() &&
+                                ctx.dialoguePartner == npc.entity;
+        switch (gameplay::updateInterruption(npc.scheduleInterrupted,
+                                             inCombat || inDialogue)) {
+        case gameplay::ScheduleSignal::Interrupted:
+            npc.path.clear();
+            npc.pathIndex = 0;
+            break;
+        case gameplay::ScheduleSignal::Resumed:
+            schedule_.resume(npc);
+            break;
+        case gameplay::ScheduleSignal::None:
+            break;
+        }
         if (inCombat) {
             // combat overrode the schedule this frame
+        } else if (inDialogue) {
+            // held still while the player talks to him (seated stays
+            // seated — only the walking stops)
         } else if (staying) {
             // stand where ordered (no follow, no schedule)
         } else if (following) {

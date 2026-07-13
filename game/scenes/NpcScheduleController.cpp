@@ -67,6 +67,13 @@ void NpcScheduleController::releaseFurniture(const NpcContext& ctx,
     npc.sitting = false;
 }
 
+void NpcScheduleController::resume(Npc& npc) {
+    npc.lastEvaluatedSlot = -1; // updateNpcSchedule re-evaluates next tick
+    npc.path.clear();
+    npc.pathIndex = 0;
+    npc.repathTimer = 0.0f; // repath immediately from where the fight ended
+}
+
 void NpcScheduleController::update(f32 dt, const NpcContext& ctx, Npc& npc,
                                    f32 hourOfDay, f32& idleDecay) {
     auto& transform = npc.entity.get_mut<world::Transform>();

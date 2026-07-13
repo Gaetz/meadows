@@ -368,3 +368,25 @@ TEST_CASE("toEmitterParams maps every shared field verbatim") {
     sim.spawn(params, Vec3 { 0.0f }, 7u);
     CHECK(sim.count() == 24);
 }
+
+TEST_CASE("schedule interruption edges fire exactly once each way") {
+    // E-catalogue leftover (2026-07-13): the pure edge detector behind
+    // combat/dialogue overriding the schedule — Interrupted once on the
+    // rising edge, Resumed once on the falling edge, silent otherwise.
+    bool interrupted = false;
+    using gameplay::ScheduleSignal;
+    using gameplay::updateInterruption;
+
+    CHECK(updateInterruption(interrupted, false) == ScheduleSignal::None);
+    CHECK(updateInterruption(interrupted, true) ==
+          ScheduleSignal::Interrupted);
+    CHECK(interrupted);
+    CHECK(updateInterruption(interrupted, true) == ScheduleSignal::None);
+    CHECK(updateInterruption(interrupted, false) == ScheduleSignal::Resumed);
+    CHECK_FALSE(interrupted);
+    CHECK(updateInterruption(interrupted, false) == ScheduleSignal::None);
+    // A one-frame skirmish still produces both edges.
+    CHECK(updateInterruption(interrupted, true) ==
+          ScheduleSignal::Interrupted);
+    CHECK(updateInterruption(interrupted, false) == ScheduleSignal::Resumed);
+}

@@ -52,4 +52,16 @@ std::optional<ScheduleIntent> evaluateSchedule(
     return intent;
 }
 
+ScheduleSignal updateInterruption(bool& interrupted, bool busyNow) {
+    if (busyNow && !interrupted) {
+        interrupted = true;
+        return ScheduleSignal::Interrupted;
+    }
+    if (!busyNow && interrupted) {
+        interrupted = false;
+        return ScheduleSignal::Resumed;
+    }
+    return ScheduleSignal::None;
+}
+
 } // namespace gameplay
