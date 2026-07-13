@@ -4,6 +4,7 @@
 
 #include "data/forms/FormTypeRegistry.hpp"
 #include "gameplay/condition/Condition.hpp"
+#include "gameplay/event/EventBus.hpp"
 
 namespace gameplay {
 
@@ -105,6 +106,17 @@ bool tryActivate(const AbilityForm& ability,
         if (const EffectForm* primary = ctx.forms.find<EffectForm>(ability.effect)) {
             applyEffect(targetSet, targetSystem, *primary, ctx.tags);
         }
+    }
+    // Usage event (skills-by-use + open quest vocabulary): fires only on a
+    // COMMITTED activation, from call sites that opted into the channel.
+    if (ctx.events) {
+        Event used;
+        used.kind = eventKind("OnAbilityUsed");
+        used.source = ctx.caster;
+        used.target = ctx.caster;
+        used.name = ability.editorId;
+        used.value = 1.0f;
+        ctx.events->dispatch(used);
     }
     return true;
 }

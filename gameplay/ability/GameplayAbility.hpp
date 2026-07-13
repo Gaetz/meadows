@@ -2,6 +2,7 @@
 
 #include "data/forms/Form.hpp"
 #include "data/forms/FormDatabase.hpp"
+#include "engine/ecs/World.hpp" // AbilityContext.caster (usage events)
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
@@ -13,6 +14,7 @@ class FormTypeRegistry;
 namespace gameplay {
 
 struct EvalContext;
+class EventBus;
 
 // A minimal GameplayAbility (§6): an activatable action. Faithful to GAS in that
 // **cost and cooldown are themselves GameplayEffects**. Phase 3 keeps it flat
@@ -37,6 +39,11 @@ struct AbilityForm : data::Form {
     //   "strict"      require the FULL cost (current >= cost). Magic model.
     str costPolicy;
 
+    // Skills-by-use (APPEND, ordinals stable): the SkillForm this ability
+    // trains. Each successful activation grants the skill's xpPerUse
+    // through the OnAbilityUsed event (gameplay/stats/Skills.hpp).
+    core::Guid skill;
+
     REFLECT_BEGIN(AbilityForm, data::Form)
         REFLECT_FIELD(requiredTag)
         REFLECT_FIELD(blockedTag)
@@ -45,6 +52,7 @@ struct AbilityForm : data::Form {
         REFLECT_FIELD(effect)
         REFLECT_FIELD(script)
         REFLECT_FIELD(costPolicy)
+        REFLECT_FIELD(skill)
     REFLECT_END()
 };
 
@@ -64,6 +72,12 @@ struct AbilityContext {
     // Optional: when set, the caster's ConditionForms (parent == ability.id)
     // must also pass for activation. Null = Phase-3 behaviour (tags/cost only).
     const EvalContext* eval { nullptr };
+    // Optional usage-event channel (skills-by-use + open quest vocabulary):
+    // when set, a successful activation dispatches OnAbilityUsed with
+    // source = caster and name = the ability's editorId. Call sites that
+    // don't care (tests, tools) leave both unset — zero behavior change.
+    EventBus* events { nullptr };
+    ecs::Entity caster {};
 };
 
 // Tries to activate `ability` from caster onto target (caster == target for a

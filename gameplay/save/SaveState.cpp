@@ -15,6 +15,7 @@
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/Injuries.hpp"
 #include "gameplay/stats/Resonance.hpp"
+#include "gameplay/stats/Skills.hpp"
 #include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/stats/Survival.hpp"
 
@@ -29,6 +30,7 @@ constexpr core::Guid kSavedStatsNs  { 0x5344535441545321ull, 0x0000000000000002u
 constexpr core::Guid kSavedItemNs   { 0x53444954454d2121ull, 0x0000000000000003ull };
 constexpr core::Guid kSavedInjuryNs { 0x5344494e4a555259ull, 0x0000000000000004ull };
 constexpr core::Guid kSavedAbilityNs { 0x534441424c545921ull, 0x0000000000000005ull };
+constexpr core::Guid kSavedSkillNs  { 0x5344534b494c4c21ull, 0x0000000000000006ull };
 
 // Copies a component's fields into the SavedStatsForm (capture) or back
 // (apply) when the entity carries it.
@@ -191,6 +193,32 @@ vector<data::Record> captureActor(ecs::Entity entity,
         }
     }
 
+    if (entity.has<SkillProgress>()) {
+        // Sorted by skill guid: deterministic identities and diffs (§8).
+        vector<std::pair<core::Guid, SkillEntry>> entries {
+            entity.get<SkillProgress>().skills.begin(),
+            entity.get<SkillProgress>().skills.end()
+        };
+        std::sort(entries.begin(), entries.end(),
+                  [](const auto& a, const auto& b) {
+                      return a.first < b.first;
+                  });
+        for (const auto& [skill, entry] : entries) {
+            if (entry.xp <= 0.0f && entry.granted == 0) {
+                continue;
+            }
+            SavedSkillForm row;
+            row.parent = refGuid;
+            row.skill = skill;
+            row.xp = entry.xp;
+            row.granted = entry.granted;
+            records.push_back(createRecord(
+                row, core::Guid::combine(
+                         core::Guid::combine(kSavedSkillNs, refGuid),
+                         skill)));
+        }
+    }
+
     if (entity.has<Injuries>()) {
         u64 index = 0;
         for (const Injury& injury : entity.get<Injuries>().list) {
@@ -228,6 +256,9 @@ SavedActorRecords savedRecordsFor(const data::FormDatabase& forms,
     data::childrenOf<SavedAbilityForm>( // FOLLOWERS É6
         forms, refGuid,
         [&](const SavedAbilityForm& form) { saved.abilities.push_back(&form); });
+    data::childrenOf<SavedSkillForm>( // skills-by-use
+        forms, refGuid,
+        [&](const SavedSkillForm& form) { saved.skills.push_back(&form); });
     return saved;
 }
 
@@ -252,6 +283,13 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
         bag.items.clear();
         for (const SavedItemForm* item : saved.items) {
             addItem(bag, item->item, item->count);
+        }
+    }
+    if (entity.has<SkillProgress>()) {
+        auto& progress = entity.get_mut<SkillProgress>();
+        progress.skills.clear();
+        for (const SavedSkillForm* row : saved.skills) {
+            progress.skills[row->skill] = { row->xp, row->granted };
         }
     }
     if (entity.has<Injuries>()) {

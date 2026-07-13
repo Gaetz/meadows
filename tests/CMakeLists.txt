@@ -81,6 +81,7 @@
     SaveStateTest.cpp
     SceneStackTest.cpp
     SceneSubmitTest.cpp
+    SkillsTest.cpp
     SoundResolverTest.cpp
     ScreenStackTest.cpp
     ScriptTest.cpp

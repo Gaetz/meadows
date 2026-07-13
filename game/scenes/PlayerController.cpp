@@ -40,6 +40,15 @@ namespace {
 // (Dev feel pass 2026-07-06: +50% — the unencumbered adventurer is brisk;
 // encumbrance will pull it back down when the P1 utility pass lands.)
 
+// Skills-by-use: the player's activations opt into the usage-event channel
+// (OnAbilityUsed -> skill XP + open quest vocabulary).
+gameplay::AbilityContext playerAbilityContext(const PlayerContext& ctx) {
+    gameplay::AbilityContext ability { ctx.forms, ctx.gameTags };
+    ability.events = ctx.eventBus;
+    ability.caster = ctx.playerEntity;
+    return ability;
+}
+
 } // namespace
 
 void PlayerController::spawnBody(phys::PhysicsWorld& physics,
@@ -97,8 +106,7 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
         auto& set = ctx.playerEntity.get_mut<gameplay::AttributeSet>();
         auto& system = ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
         if (!gameplay::tryActivate(*ctx.attackAbility, set, system, set,
-                                   system,
-                                   { ctx.forms, ctx.gameTags })) {
+                                   system, playerAbilityContext(ctx))) {
             return; // on cooldown or exhausted
         }
     }
@@ -125,7 +133,7 @@ void PlayerController::updateBowDraw(f32 dt, const PlayerContext& ctx,
                 ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
             if (!gameplay::tryActivate(*ctx.attackAbility, set, system,
                                        set, system,
-                                       { ctx.forms, ctx.gameTags })) {
+                                       playerAbilityContext(ctx))) {
                 return;
             }
         }
@@ -666,7 +674,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
                         ctx.playerEntity.get_mut<gameplay::AbilitySystem>();
                     activated = gameplay::tryActivate(
                         *ctx.dodgeAbility, set, system, set, system,
-                        { ctx.forms, ctx.gameTags });
+                        playerAbilityContext(ctx));
                 }
                 if (activated) {
                     dodgeDir = moving ? glm::normalize(wish) : -forward;

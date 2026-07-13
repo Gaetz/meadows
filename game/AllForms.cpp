@@ -14,6 +14,7 @@
 #include "gameplay/faction/Factions.hpp"
 #include "gameplay/interaction/FurnitureForms.hpp"
 #include "gameplay/save/SaveForms.hpp"
+#include "gameplay/stats/Skills.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 #include "quest/Dialogue.hpp"
 #include "quest/Quest.hpp"
@@ -32,6 +33,8 @@ void registerAllFormTypes(data::FormTypeRegistry& types) {
     world::registerWorldFormTypes(types);
     gameplay::registerGameplayFormTypes(types);
     gameplay::registerStatsFormTypes(types);
+    gameplay::registerSkillFormTypes(types); // skills-by-use
+
     gameplay::registerFactionFormTypes(types);
     gameplay::registerCharacterFormTypes(types);
     gameplay::registerFollowerFormTypes(types); // FOLLOWERS É0

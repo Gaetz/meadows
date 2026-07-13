@@ -25,6 +25,7 @@ add_library(meadows-gameplay STATIC
     combat/PlayerAction.cpp
     combat/Projectile.cpp
     stats/CharacterStats.cpp
+    stats/Skills.cpp
     stats/StatsTuning.cpp
     stats/Resonance.cpp
     stats/ResonanceDecays.cpp

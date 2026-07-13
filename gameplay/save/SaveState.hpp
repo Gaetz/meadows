@@ -98,6 +98,7 @@ struct SavedActorRecords {
     vector<const SavedItemForm*> items;
     vector<const SavedInjuryForm*> injuries;
     vector<const SavedAbilityForm*> abilities; // FOLLOWERS É6 (appended)
+    vector<const SavedSkillForm*> skills;      // skills-by-use (appended)
 };
 void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
                      const GameplayTagRegistry& registry);

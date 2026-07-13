@@ -248,6 +248,25 @@ struct SavedAbilityForm : data::Form {
     REFLECT_END()
 };
 
+// One per trained skill (skills-by-use, 2026-07-13). Mirrors one
+// SkillProgress map entry — Pattern B child records like SavedItemForm.
+// Threshold effects are NOT re-applied on load: instant ones are baked
+// into the saved BaseValues, durational ones ride as SavedEffectForm rows;
+// `granted` restores the applied-prefix count so they never double.
+struct SavedSkillForm : data::Form {
+    core::Guid parent; // the actor's ReferenceForm
+    core::Guid skill;  // the SkillForm guid
+    f32 xp { 0.0f };
+    i32 granted { 0 };
+
+    REFLECT_BEGIN(SavedSkillForm, data::Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(skill)
+        REFLECT_FIELD(xp)
+        REFLECT_FIELD(granted)
+    REFLECT_END()
+};
+
 // One per save: the world-level state (clock, worldspace, camera).
 struct WorldStateForm : data::Form {
     f64 gameSeconds { 0.0 };

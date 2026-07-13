@@ -47,6 +47,7 @@
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/Rest.hpp"
+#include "gameplay/stats/Skills.hpp" // skills-by-use wiring
 #include "game/WeaponMeshes.hpp" // A2: the procedural sword
 #include "script/Vm.hpp"
 #include "world/scene/AnimBridge.hpp"
@@ -309,6 +310,10 @@ void LandscapeScene::setupGameplay() {
     // the subscriptions stay here — `this` is stable for the eventBus
     // lifetime — and delegate to the director with a fresh context.
     eventBus = gameplay::EventBus {};
+    // Skills-by-use: OnAbilityUsed (dispatched by tryActivate for call
+    // sites that opted in — the player paths) feeds skill XP + threshold
+    // perks. forms/gameTags are scene members, stable for the bus lifetime.
+    gameplay::bindSkillProgression(eventBus, forms, gameTags);
     eventBus.subscribe(gameplay::eventKind("OpenBarter"),
                        [this](const gameplay::Event&) {
                            uiRouter.openBarterScreen(
@@ -2144,6 +2149,12 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
     // the component present before the saved-state apply to land.
     if (!entity.has<gameplay::FollowerState>()) {
         entity.set<gameplay::FollowerState>({});
+    }
+    // Skills-by-use: present before the saved-state apply so the
+    // SavedSkillForm rows land (the bindSkillProgression handler never
+    // ADDS the component — locked-iteration rule).
+    if (!entity.has<gameplay::SkillProgress>()) {
+        entity.set<gameplay::SkillProgress>({});
     }
     // Re-apply captured instance overrides: a moved/killed actor keeps the
     // spot it died at instead of snapping back to its authored spawn (the
