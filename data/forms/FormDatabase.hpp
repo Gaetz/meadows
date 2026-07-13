@@ -35,14 +35,38 @@ public:
 
     u32 count() const { return static_cast<u32>(entries.size()); }
 
+    // --- Secondary indexes (J-catalogue P1, decision 2026-07-05: the
+    // resolved FormDatabase IS the base — scalability comes from in-memory
+    // indexes, not SQL). Both return handles in HANDLE ORDER (= creation
+    // order = plugin load order — the forEach/childrenOf contract).
+    // add() maintains them: the resolver materializes every field WRITE
+    // (patches included) BEFORE adding, so the indexed `parent` is final.
+    // Nothing mutates resolved forms in place today (§2.2 — the editor
+    // edits EditSession drafts); rebuildIndexes() is the safety hatch if
+    // a tool ever does.
+
+    // Every form whose type isA(typeId) — the whole inheritance chain is
+    // bucketed at add, so base-type queries are one lookup.
+    const vector<FormHandle>& handlesByType(u32 typeId) const;
+    // Every form whose reflected `parent` guid field equals `parent` (the
+    // child-record convention).
+    const vector<FormHandle>& childHandles(const core::Guid& parent) const;
+    // Re-derives both indexes from the entries.
+    void rebuildIndexes();
+
 private:
     struct Entry {
         uptr<Form> form;
         const reflect::TypeInfo* type { nullptr };
     };
 
+    void indexForm(FormHandle handle, const Form& form,
+                   const reflect::TypeInfo& type);
+
     vector<Entry> entries; // FormHandle::value = index + 1
     std::unordered_map<core::Guid, u32> indexByGuid;
+    std::unordered_map<u32, vector<FormHandle>> byType;
+    std::unordered_map<core::Guid, vector<FormHandle>> byParent;
 };
 
 } // namespace data

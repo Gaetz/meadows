@@ -35,6 +35,7 @@
     FollowerFormsTest.cpp
     FollowersTest.cpp
     FormsTest.cpp
+    FormIndexTest.cpp
     FrameComposerTest.cpp
     FrustumTest.cpp
     GameClockTest.cpp

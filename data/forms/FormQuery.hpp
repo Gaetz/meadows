@@ -18,30 +18,30 @@
 
 namespace data {
 
-// Calls `fn(const T&)` for every form of type T (or derived).
+// Calls `fn(const T&)` for every form of type T (or derived). Backed by
+// the database's type index (J-catalogue P1) — same handle order as the
+// historical full scan, without touching the other N-1 types.
 template<typename T, typename Fn>
 void forEach(const FormDatabase& database, Fn&& fn) {
-    const u32 typeId = T::staticTypeInfo().id;
-    for (u32 i = 1; i <= database.count(); ++i) {
-        const FormHandle handle { i };
-        const reflect::TypeInfo* type = database.typeOf(handle);
-        if (!type || !type->isA(typeId)) {
-            continue;
-        }
+    for (const FormHandle handle :
+         database.handlesByType(T::staticTypeInfo().id)) {
         fn(*static_cast<const T*>(database.get(handle)));
     }
 }
 
 // Calls `fn(const T&)` for every T whose `parent` field equals `parent`.
 // T must expose a public `core::Guid parent` member (the child convention).
+// Backed by the parent index: one bucket walk instead of a full scan.
 template<typename T, typename Fn>
 void childrenOf(const FormDatabase& database, const core::Guid& parent,
                 Fn&& fn) {
-    forEach<T>(database, [&](const T& form) {
-        if (form.parent == parent) {
-            fn(form);
+    const u32 typeId = T::staticTypeInfo().id;
+    for (const FormHandle handle : database.childHandles(parent)) {
+        const reflect::TypeInfo* type = database.typeOf(handle);
+        if (type && type->isA(typeId)) {
+            fn(*static_cast<const T*>(database.get(handle)));
         }
-    });
+    }
 }
 
 // Convenience: collect instead of visit.
