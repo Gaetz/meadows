@@ -23,6 +23,9 @@ struct ConditionForm : data::Form {
     core::Guid parent;      // the gated node (ability / quest stage / dialogue node)
     str kind { "HasTag" };  // HasTag | AttributeAtLeast | AttributeAtMost | HasItem
                             //   | Lua | FollowerAffinityAtLeast (É4)
+                            //   | FollowerActive | FollowerConvalescent
+                            //   (dev report 2026-07-13: per-PARTNER, not
+                            //   the player's global mirror tags)
     str tag;                // HasTag
     str attribute;          // AttributeAtLeast / AttributeAtMost
     f32 value { 0.0f };     // threshold (attributes / affinity) / min count (HasItem)
@@ -58,6 +61,10 @@ struct EvalContext {
     // dialogue evaluates its options. Null everywhere else (abilities,
     // schedules) — a FollowerAffinityAtLeast clause then fails closed.
     const FollowerState* partnerFollower { nullptr };
+    // Appended (dev report 2026-07-13): the game clock, for clauses with
+    // time semantics (FollowerConvalescent compares the partner's
+    // recovery stamp). Filled by the scene next to partnerFollower.
+    f64 gameHours { 0.0 };
 };
 
 bool evaluateClause(const ConditionForm& clause, const EvalContext& context);

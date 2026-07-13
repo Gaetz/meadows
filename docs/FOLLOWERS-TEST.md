@@ -299,6 +299,22 @@ coin de la taverne (62, 377).
    seulement, voyage = descente automatique. Sifflet/écurie/fuite au
    combat : la suite d'É11, à planifier avec toi.
 
+## Correctifs post-retour dev (13/07)
+
+1. **Dialogues par-partenaire** : recruter Aldric ne fait plus
+   apparaître « Reste ici » chez Maela/Corvin — les options
+   recruter/renvoyer/refus/prolongation lisent maintenant l'état DU
+   PARTENAIRE (clauses `FollowerActive`/`FollowerConvalescent`), plus
+   le tag global du joueur. « Consignes de groupe » reste volontairement
+   global (commander la troupe via n'importe quel follower actif).
+   Re-teste : Aldric recruté → Maela propose bien « Voyagerons-nous
+   ensemble ? » (ou ses refus), pas « Reste ici ».
+2. **Vie max en formule** : les trois followers suivent désormais les
+   FORMULES comme toi (maxHealth autoré = 0) — leur vie max vient des
+   attributs de classe et MONTE avec le niveau. Ta save existante
+   bascule d'elle-même au rechargement (l'override n'était pas capturé).
+   Aldric niveau 1 ≈ 100+ PV (au lieu de 60 épinglés).
+
 ## Bilan de la nuit
 
 É0→É10 COMPLÈTES + É11 v1, un commit par étape (`git log --oneline`

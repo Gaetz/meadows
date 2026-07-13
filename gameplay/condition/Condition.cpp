@@ -6,6 +6,7 @@
 
 #include "data/forms/FormDatabase.hpp"
 #include "gameplay/actors/ActorState.hpp" // FollowerState (É4 partner clause)
+#include "gameplay/actors/Followers.hpp"  // followerConvalescent (2026-07-13)
 
 namespace gameplay {
 
@@ -53,6 +54,21 @@ bool followerAffinityAtLeast(const ConditionForm& clause,
            ctx.partnerFollower->followerAffinity >= clause.value;
 }
 
+// Dev report 2026-07-13: recruit/dismiss options gated on the PLAYER's
+// global Follower.Active mirror flipped for EVERY follower once ONE was
+// recruited (Maela offered « Reste ici » with only Aldric hired). These
+// two read the DIALOGUE PARTNER's own state instead — the mirrors stay
+// for genuinely party-wide gates (the group-command submenu).
+bool followerActive(const ConditionForm&, const EvalContext& ctx) {
+    return ctx.partnerFollower && ctx.partnerFollower->followerActive;
+}
+
+bool followerConvalescentClause(const ConditionForm&,
+                                const EvalContext& ctx) {
+    return ctx.partnerFollower &&
+           followerConvalescent(*ctx.partnerFollower, ctx.gameHours);
+}
+
 using ClauseFn = bool (*)(const ConditionForm&, const EvalContext&);
 const std::unordered_map<std::string_view, ClauseFn> kClauseEvaluators {
     { "HasTag", &hasTag },
@@ -61,6 +77,8 @@ const std::unordered_map<std::string_view, ClauseFn> kClauseEvaluators {
     { "HasItem", &hasItem },
     { "Lua", &luaPredicate },
     { "FollowerAffinityAtLeast", &followerAffinityAtLeast }, // É4
+    { "FollowerActive", &followerActive },                   // 2026-07-13
+    { "FollowerConvalescent", &followerConvalescentClause }, // 2026-07-13
 };
 
 } // namespace
@@ -121,6 +139,12 @@ str conditionSummary(const ConditionForm& clause) {
     }
     if (clause.kind == "FollowerAffinityAtLeast") {
         return prefix + "affinity >= " + num(clause.value);
+    }
+    if (clause.kind == "FollowerActive") {
+        return prefix + "partner follows";
+    }
+    if (clause.kind == "FollowerConvalescent") {
+        return prefix + "partner convalescent";
     }
     if (clause.kind == "Lua") {
         const str expr = clause.lua.size() > 24

@@ -1958,7 +1958,9 @@ new = true
 [records.fields]
 editorId = "Aldric"
 displayName = "Aldric"
-maxHealth = 60.0
+# 2026-07-13 (dev): followers follow the FORMULAS like the player
+# (0 = attribute-derived maxima; the class curves drive growth).
+maxHealth = 0.0
 appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
 animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
 courage = 0.7
@@ -2042,8 +2044,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-000000000009"
-kind = "HasTag"
-tag = "Follower.Active"
+kind = "FollowerActive"
 negate = true
 
 [[records]]
@@ -2073,8 +2074,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-00000000000c"
-kind = "HasTag"
-tag = "Follower.Active"
+kind = "FollowerActive"
 
 [[records]]
 form = "6a1dc0de-0000-4000-8000-00000000000e"
@@ -2136,8 +2136,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-000000000009"
-kind = "HasTag"
-tag = "Follower.Convalescent"
+kind = "FollowerConvalescent"
 negate = true
 
 # ...and the SAME question while he is: the refusal (inverted condition).
@@ -2157,8 +2156,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-000000000014"
-kind = "HasTag"
-tag = "Follower.Convalescent"
+kind = "FollowerConvalescent"
 
 [[records]]
 form = "6a1dc0de-0000-4000-8000-000000000016"
@@ -2166,8 +2164,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-000000000014"
-kind = "HasTag"
-tag = "Follower.Active"
+kind = "FollowerActive"
 negate = true
 
 [[records]]
@@ -2256,7 +2253,9 @@ new = true
 [records.fields]
 editorId = "Maela"
 displayName = "Maela"
-maxHealth = 45.0
+# 2026-07-13 (dev): followers follow the FORMULAS like the player
+# (0 = attribute-derived maxima; the class curves drive growth).
+maxHealth = 0.0
 appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
 animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
 courage = 0.4
@@ -2358,8 +2357,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-000000000028"
-kind = "HasTag"
-tag = "Follower.Active"
+kind = "FollowerActive"
 negate = true
 
 [[records]]
@@ -2368,8 +2366,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-000000000028"
-kind = "HasTag"
-tag = "Follower.Convalescent"
+kind = "FollowerConvalescent"
 negate = true
 
 [[records]]
@@ -2409,8 +2406,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-00000000002e"
-kind = "HasTag"
-tag = "Follower.Active"
+kind = "FollowerActive"
 negate = true
 
 [[records]]
@@ -2460,8 +2456,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-000000000032"
-kind = "HasTag"
-tag = "Follower.Active"
+kind = "FollowerActive"
 negate = true
 
 [[records]]
@@ -2491,8 +2486,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-000000000037"
-kind = "HasTag"
-tag = "Follower.Active"
+kind = "FollowerActive"
 
 [[records]]
 form = "6a1dc0de-0000-4000-8000-000000000039"
@@ -3382,7 +3376,9 @@ new = true
 [records.fields]
 editorId = "Corvin"
 displayName = "Corvin"
-maxHealth = 50.0
+# 2026-07-13 (dev): followers follow the FORMULAS like the player
+# (0 = attribute-derived maxima; the class curves drive growth).
+maxHealth = 0.0
 appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
 animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
 courage = 0.8
@@ -3475,8 +3471,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-0000000000b7"
-kind = "HasTag"
-tag = "Follower.Active"
+kind = "FollowerActive"
 negate = true
 
 [[records]]
@@ -3517,8 +3512,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-0000000000bc"
-kind = "HasTag"
-tag = "Follower.Active"
+kind = "FollowerActive"
 negate = true
 
 [[records]]
@@ -3551,8 +3545,7 @@ type = "ConditionForm"
 new = true
 [records.fields]
 parent = "6a1dc0de-0000-4000-8000-0000000000c0"
-kind = "HasTag"
-tag = "Follower.Active"
+kind = "FollowerActive"
 
 [[records]]
 form = "6a1dc0de-0000-4000-8000-0000000000c2"

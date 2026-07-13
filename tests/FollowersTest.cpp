@@ -1752,3 +1752,35 @@ TEST_CASE("followers É10: extendContract — from max(now, expiry)") {
     CHECK(gameplay::extendContract(168.0, 168.0f, 7.0f) ==
           doctest::Approx(336.0f));
 }
+
+TEST_CASE("conditions: FollowerActive/Convalescent read the PARTNER, "
+          "never the player's global mirror (dev report 2026-07-13)") {
+    // The bug: with Aldric recruited, Maela's dialogue showed the
+    // dismiss option — HasTag Follower.Active on the PLAYER is global.
+    gameplay::ConditionForm active;
+    active.kind = "FollowerActive";
+    gameplay::ConditionForm conval;
+    conval.kind = "FollowerConvalescent";
+
+    gameplay::EvalContext ctx; // no partner: both fail closed
+    CHECK(!gameplay::evaluateClause(active, ctx));
+    CHECK(!gameplay::evaluateClause(conval, ctx));
+
+    gameplay::FollowerState aldric;
+    aldric.followerActive = true;
+    gameplay::FollowerState maela; // NOT recruited
+    ctx.partnerFollower = &maela;
+    CHECK(!gameplay::evaluateClause(active, ctx)); // Maela stays neutral
+    ctx.partnerFollower = &aldric;
+    CHECK(gameplay::evaluateClause(active, ctx)); // Aldric shows dismiss
+    active.negate = true; // the recruit option's gate
+    CHECK(!gameplay::evaluateClause(active, ctx));
+
+    // Convalescence compares the PARTNER's stamp to the context clock.
+    maela.followerDownedRecoveryHours = 30.0f;
+    ctx.partnerFollower = &maela;
+    ctx.gameHours = 20.0;
+    CHECK(gameplay::evaluateClause(conval, ctx)); // still resting
+    ctx.gameHours = 31.0;
+    CHECK(!gameplay::evaluateClause(conval, ctx)); // recovered
+}

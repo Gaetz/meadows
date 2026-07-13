@@ -2522,6 +2522,9 @@ gameplay::EvalContext LandscapeScene::makeEvalContext() const {
     if (partner.is_alive() && partner.has<gameplay::FollowerState>()) {
         context.partnerFollower = &partner.get<gameplay::FollowerState>();
     }
+    // 2026-07-13: the clock, for time-aware partner clauses
+    // (FollowerConvalescent reads the recovery stamp).
+    context.gameHours = gameClock.gameHours();
     // Lua clauses: no predicate callback wired in the scene yet — such a
     // clause fails closed (the shared VM hookup is a later slice).
     return context;
