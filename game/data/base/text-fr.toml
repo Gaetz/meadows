@@ -1101,3 +1101,52 @@ type = 'LocStringForm'
 
     [records.fields]
     text = 'Personne à enterrer.'
+
+[[records]]
+form = '29860086-0f7f-48b2-99d1-9f31f1eeea44'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Votre groupe est au complet — {} ne peut pas vous suivre.'
+
+[[records]]
+form = 'cb20bb8b-396d-4f95-93cb-ddb2472dc170'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = '{} : {}'
+
+[[records]]
+form = 'ecde6e5a-a222-4bf3-a273-e567e99504e4'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Le groupe vous suit.'
+
+[[records]]
+form = 'f3498322-aff1-4d8e-8192-24bc96c1bb4a'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Le groupe reste sur place.'
+
+[[records]]
+form = 'a6a4fecb-af1a-462c-a00a-d7f0c87fa4d9'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Le groupe attaque votre cible.'
+
+[[records]]
+form = '9deba0ec-3a49-4307-9828-b54b0653d66b'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Le groupe cherche votre cible, sans la trouver.'
+
+[[records]]
+form = '20db03cb-32e8-4bd9-aedf-8fce19f98a9d'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Le groupe se tient prêt à vous défendre.'

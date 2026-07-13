@@ -49,6 +49,15 @@ struct FollowerState {
     f32 followerLastLevelSyncedFrom { 0.0f };  // player level at last sync
     f32 followerLastHomeUpgradeHours { 0.0f };
     f32 followerDownedRecoveryHours { 0.0f };  // convalescence timer (É3)
+    // FOLLOWERS É9 (APPEND — ordinals stable): the group-command stance.
+    // f32 like every sibling so the SavedStatsForm name-match sweep carries
+    // it unchanged; read/written ONLY through gameplay::followerStance /
+    // setFollowerStance (Followers.hpp — enum + one transition point).
+    //   0 = follow (default), 1 = stay (hold position; the schedule takes
+    //   over only on a DISMISS), 2 = attack (one-shot adoption of the
+    //   player's current target at command time, then behaves as follow),
+    //   3 = defend (never adopts on the player's initiative — rule 4 off).
+    f32 followerStance { 0.0f };
 
     REFLECT_BEGIN(FollowerState, void)
         REFLECT_FIELD(followerActive)
@@ -59,6 +68,7 @@ struct FollowerState {
         REFLECT_FIELD(followerLastLevelSyncedFrom)
         REFLECT_FIELD(followerLastHomeUpgradeHours)
         REFLECT_FIELD(followerDownedRecoveryHours)
+        REFLECT_FIELD(followerStance)
     REFLECT_END()
 };
 

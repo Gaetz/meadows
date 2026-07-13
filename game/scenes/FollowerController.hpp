@@ -1,9 +1,12 @@
 #pragma once
 
 #include <functional>
+#include <unordered_map>
 
 #include "engine/core/Defines.hpp"
+#include "engine/core/Guid.hpp"  // É9: the anti-repeat clock map keys
 #include "engine/ecs/World.hpp" // ecs::Entity, ecs::World
+#include "gameplay/actors/Followers.hpp" // É9: FollowerStance, CommentClock
 
 namespace core {
 class Rng;
@@ -155,9 +158,48 @@ public:
     // affinity. Loc'd through the TextTable (C9.5 keys, ui.recruit.*).
     void openRecruitPreview(const FollowerContext& ctx, ecs::Entity follower);
 
+    // ---- É9: group commands, banter, ambient comments ----------------------
+    // Dialogue "OnPartyFollow/Stay/Attack/Defend" (« Consignes de
+    // groupe... » submenu nodes — zero new UI surface; the doc's radial
+    // menu is the stated TODO): ONE stance write point for EVERY active
+    // follower. Semantics (v1, stated):
+    //   Follow — the default É1 follow package + the full É2 aggro table.
+    //   Stay   — he stands where he is (the follow dispatch skips him);
+    //            his home SCHEDULE takes over only on a DISMISS — staying
+    //            keeps him active at his spot. Sandbox v1 (stated): the
+    //            home schedules ARE the town life — a dismissed follower
+    //            resumes his scheduled day; contextual sandboxing while
+    //            grouped comes later.
+    //   Attack — one-shot adoption of the player's CURRENT combat target
+    //            (the last hostile the player struck — the É2 signal),
+    //            then behaves as Follow.
+    //   Defend — the É2 default MINUS rule 4: no adoption on the player's
+    //            initiative (AggroRoles.defendOnly); only attackers of
+    //            the party engage him.
+    void partyCommand(const FollowerContext& ctx,
+                      gameplay::FollowerStance stance);
+
+    // É9 ambient comments (docs/FOLLOWERS.md §6.1) — the SAME generic bus
+    // channel as onAffinityEvent (the É4 subscribeAll precedent): a
+    // matching CommentForm child of an ACTIVE follower's ActorForm toasts
+    // « {Name} : {line} », gated by the pure gameplay::decideComment
+    // (10-game-hour anti-repeat, oneShot, ordered chaining) — never while
+    // the player sneaks. Anti-repeat clocks are RUNTIME-ONLY v1 (stated:
+    // they reset on load; oneShot is not persisted either).
+    void onAmbientEvent(const FollowerContext& ctx,
+                        const gameplay::Event& event);
+
     // onExit: drop the accrual stamp (the game clock restarts with the
-    // next scene enter).
-    void reset() { lastAccrualHours_ = -1.0; }
+    // next scene enter) and the É9 runtime clocks (anti-repeat is
+    // per-session v1 — stated).
+    void reset() {
+        lastAccrualHours_ = -1.0;
+        commentClocks_.clear();
+        lastBanterHours_ = -1.0;
+        pendingReplyLine_.clear();
+        pendingReplySeconds_ = 0.0f;
+        playerTarget_ = ecs::Entity {};
+    }
 
     // [E] on a downed ally: the useConsumable path re-aimed at HIM — the
     // first health-restoring ConsumableForm in the PLAYER's bag is
@@ -256,10 +298,31 @@ private:
                         const data::ActorForm& actor,
                         gameplay::FollowerState& state, bool active);
 
+    // É9: the banter tick of the per-frame sweep — >= 2 active followers
+    // near each other, out of combat, not sneaking, every
+    // banterIntervalHours: the first eligible BanterForm (plugin order —
+    // deterministic §8) toasts lineA and queues lineB.
+    void updateBanter(const FollowerContext& ctx, f32 dt, f64 nowHours);
+
     // É4: the last game-hour the sweep accrued time-together at (-1 = not
     // stamped yet — the first sweep stamps without accruing, so a scene
     // enter or F9 reload never credits the whole clock).
     f64 lastAccrualHours_ { -1.0 };
+
+    // ---- É9 runtime-only state (v1, stated: none of it persists) ----------
+    // Anti-repeat clocks, one per BanterForm/CommentForm guid.
+    std::unordered_map<core::Guid, gameplay::CommentClock> commentClocks_;
+    // The banter cadence stamp (the VendorState hour idiom; -1 = the
+    // first sweep stamps without chatting).
+    f64 lastBanterHours_ { -1.0 };
+    // The queued banter REPLY (interaction.say shows one line at a time —
+    // v1: lineB lands ~3 s after lineA through this small timer).
+    str pendingReplyLine_;
+    f32 pendingReplySeconds_ { 0.0f };
+    // É9 « attaquez ma cible » : the last hostile the PLAYER struck (the
+    // É2 OnHitTaken signal), adopted one-shot at command time. Runtime
+    // only — cleared on its death and on reset().
+    ecs::Entity playerTarget_ {};
 };
 
 } // namespace game

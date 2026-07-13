@@ -196,6 +196,16 @@ struct StatsTuningForm : data::Form {
     f32 followerPowerRetrySeconds { 2.0f };
     f32 followerHealThreshold { 0.5f };
     f32 healerPreferredDistance { 8.0f };
+    // FOLLOWERS É9 (appended — ordinals stable): party caps by
+    // ActorForm.followerCategory ("major"/"minor"; "mount" is exempt —
+    // docs/FOLLOWERS.md §8), checked at recruit time; and the banter
+    // cadence — two active followers within banterRangeMeters of each
+    // other, out of combat and not sneaking, chat every
+    // banterIntervalHours of game time (the VendorState hour-stamp idiom).
+    f32 followerMajorCap { 5.0f };
+    f32 followerMinorCap { 6.0f };
+    f32 banterIntervalHours { 2.0f };
+    f32 banterRangeMeters { 8.0f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -300,6 +310,10 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(followerPowerRetrySeconds)
         REFLECT_FIELD(followerHealThreshold)
         REFLECT_FIELD(healerPreferredDistance)
+        REFLECT_FIELD(followerMajorCap)
+        REFLECT_FIELD(followerMinorCap)
+        REFLECT_FIELD(banterIntervalHours)
+        REFLECT_FIELD(banterRangeMeters)
     REFLECT_END()
 };
 

@@ -447,6 +447,41 @@ void LandscapeScene::setupGameplay() {
         followerController.onAffinityEvent(makeFollowerContext(), event,
                                            questDirector.dialoguePartner());
     });
+    // FOLLOWERS É9: ambient comments — the SAME generic channel (the É4
+    // precedent): CommentForm children of each follower's ActorForm name
+    // the events they speak on (place tags, kills…); the anti-repeat /
+    // one-shot / chaining gates are the pure gameplay::decideComment.
+    eventBus.subscribeAll([this](const gameplay::Event& event) {
+        followerController.onAmbientEvent(makeFollowerContext(), event);
+    });
+    // FOLLOWERS É9: group commands — the same dialogue-event channel as
+    // recruit/dismiss (« Consignes de groupe... » submenu options in each
+    // follower's dialogue; the doc's RADIAL menu stays the deferred
+    // TODO). One stance write point for every active follower.
+    eventBus.subscribe(gameplay::eventKind("OnPartyFollow"),
+                       [this](const gameplay::Event&) {
+                           followerController.partyCommand(
+                               makeFollowerContext(),
+                               gameplay::FollowerStance::Follow);
+                       });
+    eventBus.subscribe(gameplay::eventKind("OnPartyStay"),
+                       [this](const gameplay::Event&) {
+                           followerController.partyCommand(
+                               makeFollowerContext(),
+                               gameplay::FollowerStance::Stay);
+                       });
+    eventBus.subscribe(gameplay::eventKind("OnPartyAttack"),
+                       [this](const gameplay::Event&) {
+                           followerController.partyCommand(
+                               makeFollowerContext(),
+                               gameplay::FollowerStance::Attack);
+                       });
+    eventBus.subscribe(gameplay::eventKind("OnPartyDefend"),
+                       [this](const gameplay::Event&) {
+                           followerController.partyCommand(
+                               makeFollowerContext(),
+                               gameplay::FollowerStance::Defend);
+                       });
     // P0 B2 hearing: any OnNoise event turns nearby perceivers'
     // heads — the noise position is the SOURCE entity's transform.
     eventBus.subscribe(

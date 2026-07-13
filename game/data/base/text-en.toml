@@ -1414,3 +1414,66 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'follower.buryNone'
     text = 'No one needs burying.'
+
+[[records]]
+form = '29860086-0f7f-48b2-99d1-9f31f1eeea44'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.partyFull'
+    text = 'Your party is full — {} cannot join you.'
+
+[[records]]
+form = 'cb20bb8b-396d-4f95-93cb-ddb2472dc170'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.says'
+    text = '{}: {}'
+
+[[records]]
+form = 'ecde6e5a-a222-4bf3-a273-e567e99504e4'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.partyFollow'
+    text = 'The party follows you.'
+
+[[records]]
+form = 'f3498322-aff1-4d8e-8192-24bc96c1bb4a'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.partyStay'
+    text = 'The party holds position.'
+
+[[records]]
+form = 'a6a4fecb-af1a-462c-a00a-d7f0c87fa4d9'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.partyAttack'
+    text = 'The party attacks your target.'
+
+[[records]]
+form = '9deba0ec-3a49-4307-9828-b54b0653d66b'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.partyNoTarget'
+    text = 'The party looks for your target, and finds none.'
+
+[[records]]
+form = '20db03cb-32e8-4bd9-aedf-8fce19f98a9d'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.partyDefend'
+    text = 'The party stands ready to defend you.'

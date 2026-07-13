@@ -224,4 +224,36 @@ et perds le tirage, ou recommence) :**
 l'endroit de ton choix — demande une mécanique de placement au sol qui
 n'existe pas encore.
 
+## É9 — Multi-followers, consignes, vie ambiante
+
+**À tester (Aldric ET Maela recrutés — monte l'affinité de Maela en lui
+parlant 2×, niveau 2 via `player.level 2`) :**
+1. Les DEUX te suivent, le party frame liste les deux ; caps : 5
+   majeurs / 6 mineurs (les placeholders n'y touchent pas — le refus
+   « groupe complet » est doctesté).
+2. **« Consignes de groupe… »** dans le dialogue de chaque follower
+   (visible seulement s'il est actif) : Tous suivre / rester /
+   attaquer ma cible / me défendre.
+   - « Rester » : ils tiennent leur position (même à travers un
+     voyage) ; « Suivre » reprend.
+   - « Attaquer ma cible » : ils adoptent le DERNIER hostile que tu as
+     frappé ; sans cible : toast dédié.
+   - « Me défendre » : ils n'engagent PLUS sur ta simple initiative
+     (frapper un bandit ne les lance pas), mais ripostent toujours si
+     toi ou eux êtes touchés.
+3. **Banter** : les deux proches (< 8 m), hors combat/sneak, toutes
+   les ~2 h de jeu (menu T pour avancer) → un échange en deux toasts
+   (« Aldric: … » puis Maela 3 s après). L'une des deux répliques est
+   one-shot et gated par leur lien (BondAldricMaela 15).
+4. **Commentaires ambiants** : Aldric commente l'arrivée sur la place
+   (zone calme) et la mort d'un bandit (« Un de moins. ») ; le
+   commentaire de Maela est CHAÎNÉ (il ne vient qu'après celui
+   d'Aldric, ≥ 1 h plus tard, one-shot). Anti-répétition 10 h par
+   commentaire ; jamais en sneak.
+
+**V1 assumés :** menu radial différé (les consignes vivent dans le
+dialogue) ; horloges anti-répétition non persistées (reset au load) ;
+lien inter-followers = valeur autorée (pas encore de dynamique) ;
+« rester » = l'état sandbox v1 (la vraie vie en ville groupée viendra).
+
 <!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->

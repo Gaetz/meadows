@@ -2193,7 +2193,8 @@ event = "OnFollowerStatus"
 order = 3
 
 # Goodbye (no reply node -> the conversation ends). É4 moved it to order
-# 5 (preview takes 4); É6 moves it to 7 — the learn-a-perk pair takes 5/6.
+# 5 (preview takes 4); É6 moved it to 7 (learn-a-perk pair = 5/6); É9
+# moves it to 10 — the forge pair took 7/8, « Consignes de groupe » takes 9.
 [[records]]
 form = "6a1dc0de-0000-4000-8000-00000000000f"
 type = "DialogueNodeForm"
@@ -2202,7 +2203,7 @@ new = true
 parent = "6a1dc0de-0000-4000-8000-000000000008"
 speaker = "Player"
 text = "Bonne route, Aldric."
-order = 7
+order = 10
 
 # --- FOLLOWERS É4: recrutement conditionnel + affinité -----------------------
 # Maela, the healer: THE conditions demo. Her recruit option requires
@@ -2523,7 +2524,8 @@ parent = "6a1dc0de-0000-4000-8000-00000000003a"
 speaker = "Maela"
 text = "Voici ce que je sais faire."
 
-# Goodbye (no reply node -> the conversation ends).
+# Goodbye (no reply node -> the conversation ends). É9 moves it to 10 —
+# « Consignes de groupe » takes 7.
 [[records]]
 form = "6a1dc0de-0000-4000-8000-000000000040"
 type = "DialogueNodeForm"
@@ -2532,7 +2534,7 @@ new = true
 parent = "6a1dc0de-0000-4000-8000-000000000027"
 speaker = "Player"
 text = "A bientot, Maela."
-order = 6
+order = 10
 
 # Maela's affinity rule: each chat (her greeting's OnFollowerChat) is +5 —
 # two conversations reach the recruit threshold of 10.
@@ -3080,3 +3082,246 @@ new = true
 parent = "6a1dc0de-0000-4000-8000-000000000081"
 speaker = "Villager"
 text = "S'il est arrive malheur a l'un des notres, je m'en occupe. Il reposera pres de la place, sous les arbres."
+
+# --- FOLLOWERS É9: multi-followers, commandes de groupe, vie ambiante ---------
+# Reuse map (§2.11): the group commands are ORDINARY dialogue options —
+# a « Consignes de groupe » submenu in each follower's dialogue (the
+# recruit/dismiss OpenBarter event channel; the doc's RADIAL menu is the
+# stated deferred TODO), firing OnPartyFollow/Stay/Attack/Defend; the caps
+# read É0's followerCategory against §5 tuning knobs; banter and ambient
+# comments are data records on the VendorState hour-stamp anti-repeat
+# (10 h default, oneShot, ordered chaining) matched the AffinityRuleForm /
+# QuestTaskForm way. FollowerBondForm v1 = authored INITIAL pair affinity
+# only (no runtime mutation yet) consumed as a banter gate.
+
+# Aldric's « Consignes de groupe » submenu (order 9; goodbye moved to 10).
+# Visible only while someone follows (the Follower.Active mirror tag).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000090"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000008"
+speaker = "Player"
+text = "Consignes de groupe."
+order = 9
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000091"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000090"
+kind = "HasTag"
+tag = "Follower.Active"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000092"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000090"
+speaker = "Aldric"
+text = "A tes ordres. Que fait-on ?"
+
+# The four commands (picking one fires the event and ends the talk).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000093"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000092"
+speaker = "Player"
+text = "Tous : suivez-moi."
+event = "OnPartyFollow"
+order = 1
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000094"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000092"
+speaker = "Player"
+text = "Tous : restez ici."
+event = "OnPartyStay"
+order = 2
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000095"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000092"
+speaker = "Player"
+text = "Tous : attaquez ma cible !"
+event = "OnPartyAttack"
+order = 3
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000096"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000092"
+speaker = "Player"
+text = "Tous : defendez-moi."
+event = "OnPartyDefend"
+order = 4
+
+# Maela's « Consignes de groupe » submenu (order 7; goodbye moved to 10).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000097"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000027"
+speaker = "Player"
+text = "Consignes de groupe."
+order = 7
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000098"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000097"
+kind = "HasTag"
+tag = "Follower.Active"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-000000000099"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000097"
+speaker = "Maela"
+text = "Dis-nous quoi faire."
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000009a"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000099"
+speaker = "Player"
+text = "Tous : suivez-moi."
+event = "OnPartyFollow"
+order = 1
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000009b"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000099"
+speaker = "Player"
+text = "Tous : restez ici."
+event = "OnPartyStay"
+order = 2
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000009c"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000099"
+speaker = "Player"
+text = "Tous : attaquez ma cible !"
+event = "OnPartyAttack"
+order = 3
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-00000000009d"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-000000000099"
+speaker = "Player"
+text = "Tous : defendez-moi."
+event = "OnPartyDefend"
+order = 4
+
+# The Aldric<->Maela bond: the authored INITIAL pair affinity (v1, no
+# runtime mutation) — old comrades of the village square. The second
+# banter below gates on 10: the bond already clears it.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000a0"
+type = "FollowerBondForm"
+new = true
+[records.fields]
+editorId = "BondAldricMaela"
+a = "6a1dc0de-0000-4000-8000-000000000003"
+b = "6a1dc0de-0000-4000-8000-000000000022"
+affinity = 15.0
+
+# Banter 1 — the road teasing (repeatable, 10 h anti-repeat).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000a1"
+type = "BanterForm"
+new = true
+[records.fields]
+editorId = "BanterAldricMaelaRoute"
+a = "6a1dc0de-0000-4000-8000-000000000003"
+b = "6a1dc0de-0000-4000-8000-000000000022"
+lineA = "Tu marches d'un bon pas pour une herboriste, Maela."
+lineB = "Et toi tu souffles comme un buffle, Aldric. Bois plus d'eau."
+
+# Banter 2 — the blade quarrel (one-shot, gated on their bond >= 10).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000a2"
+type = "BanterForm"
+new = true
+[records.fields]
+editorId = "BanterMaelaAldricLame"
+a = "6a1dc0de-0000-4000-8000-000000000022"
+b = "6a1dc0de-0000-4000-8000-000000000003"
+lineA = "Ta lame grince, Aldric. Je l'entends d'ici."
+lineB = "Et toi tu parles trop. Mais... tu n'as pas tort."
+oneShot = true
+minPairAffinity = 10.0
+
+# Ambient comments (CommentForm children of the ActorForm — the
+# AffinityRuleForm idiom). Aldric on entering the quiet square (the É6
+# trigger volume fires OnQuietZone value 1/0; sourcePlayer scopes it to
+# the PLAYER's crossing), and on a bandit's death (OnDeath carries the
+# faction tag).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000a3"
+type = "CommentForm"
+new = true
+[records.fields]
+editorId = "AldricQuietZone"
+parent = "6a1dc0de-0000-4000-8000-000000000003"
+event = "OnQuietZone"
+minValue = 1.0
+sourcePlayer = true
+line = "La place du village... on respire, ici."
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000a4"
+type = "CommentForm"
+new = true
+[records.fields]
+editorId = "AldricBanditDown"
+parent = "6a1dc0de-0000-4000-8000-000000000003"
+event = "OnDeath"
+filterTag = "Faction.Bandits"
+line = "Un de moins."
+
+# The ordered-chaining demo: Maela echoes Aldric's square comment — only
+# once HIS has fired, at least a game-hour earlier, and only once ever.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000a5"
+type = "CommentForm"
+new = true
+[records.fields]
+editorId = "MaelaQuietZoneEcho"
+parent = "6a1dc0de-0000-4000-8000-000000000022"
+event = "OnQuietZone"
+minValue = 1.0
+sourcePlayer = true
+oneShot = true
+requiresComment = "6a1dc0de-0000-4000-8000-0000000000a3"
+minGapHours = 1.0
+line = "Aldric a raison — cet endroit apaise."

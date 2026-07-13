@@ -75,8 +75,11 @@ u64 adoptOnHit(u64 source, u64 target, const AggroRoles& roles) {
         (roles.targetPlayer || roles.targetFollower) && source != roles.self) {
         return source;
     }
-    // Follow the player's initiative: he struck a hostile first.
-    if (roles.sourcePlayer && roles.targetHostile && target != roles.self) {
+    // Follow the player's initiative: he struck a hostile first. É9: the
+    // « me défendre » stance turns exactly this rule off — a defender
+    // only ever engages attackers of the party (the rules above).
+    if (roles.sourcePlayer && roles.targetHostile && target != roles.self &&
+        !roles.defendOnly) {
         return target;
     }
     return 0;
@@ -456,6 +459,135 @@ bool canCarry(f32 currentWeight, f32 itemWeight, f32 maxEncumbrance,
         return true; // stats not computed yet — the encumbranceCategory grace
     }
     return currentWeight + itemWeight <= maxEncumbrance * ageFactor;
+}
+
+// ---- É9: party caps, stances, banter, ambient comments ----------------------
+
+void countPartyMember(PartyCounts& counts, const str& category) {
+    if (category == "mount") {
+        return; // exempt from both caps (docs/FOLLOWERS.md §8)
+    }
+    if (category == "minor") {
+        ++counts.minors;
+    } else {
+        ++counts.majors; // "major" and anything unrecognized: strict bucket
+    }
+}
+
+RecruitVerdict canJoinParty(const str& category, const PartyCounts& counts,
+                            i32 majorCap, i32 minorCap) {
+    if (category == "mount") {
+        return RecruitVerdict::Ok; // never counts
+    }
+    if (category == "minor") {
+        return counts.minors < minorCap ? RecruitVerdict::Ok
+                                        : RecruitVerdict::MinorsFull;
+    }
+    return counts.majors < majorCap ? RecruitVerdict::Ok
+                                    : RecruitVerdict::MajorsFull;
+}
+
+FollowerStance followerStance(const FollowerState& state) {
+    // The ONE f32 -> enum decode point. Out-of-range (a modded save, a
+    // NaN) decays to Follow — never a wedged follower.
+    const f32 v = state.followerStance;
+    if (v == 1.0f) {
+        return FollowerStance::Stay;
+    }
+    if (v == 2.0f) {
+        return FollowerStance::Attack;
+    }
+    if (v == 3.0f) {
+        return FollowerStance::Defend;
+    }
+    return FollowerStance::Follow;
+}
+
+void setFollowerStance(FollowerState& state, FollowerStance stance) {
+    state.followerStance = static_cast<f32>(static_cast<u8>(stance));
+}
+
+bool commentMatches(const CommentForm& comment, u32 kind,
+                    const GameplayTag& eventTag, f32 eventValue,
+                    bool sourceIsPlayer, const GameplayTagRegistry& tags) {
+    if (eventKind(comment.event) != kind) {
+        return false;
+    }
+    if (!comment.filterTag.empty()) {
+        // The QuestTaskForm matching: the event's tag must DESCEND from
+        // the filter (unknown filter or tagless event fails).
+        const auto filter = tags.find(comment.filterTag);
+        if (!filter || !eventTag.isValid() || !tags.isA(eventTag, *filter)) {
+            return false;
+        }
+    }
+    if (comment.sourcePlayer && !sourceIsPlayer) {
+        return false; // a place comment tracks the PLAYER's crossing
+    }
+    return eventValue >= comment.minValue;
+}
+
+bool decideComment(const CommentForm& comment, f64 nowHours, bool sneaking,
+                   const CommentClock& own, const CommentClock& prerequisite) {
+    if (sneaking) {
+        return false; // never in sneak (docs/FOLLOWERS.md §6.1)
+    }
+    if (own.fired) {
+        if (comment.oneShot) {
+            return false;
+        }
+        if (nowHours - own.lastHours <
+            static_cast<f64>(comment.cooldownHours)) {
+            return false; // the 10-game-hour anti-repeat (data default)
+        }
+    }
+    if (comment.requiresComment.isValid()) {
+        // Ordered chaining: the prerequisite must HAVE fired, at least
+        // minGapHours ago.
+        if (!prerequisite.fired ||
+            nowHours - prerequisite.lastHours <
+                static_cast<f64>(comment.minGapHours)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+f32 pairAffinity(const vector<const FollowerBondForm*>& bonds,
+                 const core::Guid& a, const core::Guid& b) {
+    for (const FollowerBondForm* bond : bonds) {
+        if (!bond) {
+            continue;
+        }
+        if ((bond->a == a && bond->b == b) ||
+            (bond->a == b && bond->b == a)) {
+            return bond->affinity;
+        }
+    }
+    return 0.0f; // strangers (no authored bond)
+}
+
+bool banterPairMatches(const BanterForm& banter, const core::Guid& x,
+                       const core::Guid& y) {
+    return (banter.a == x && banter.b == y) ||
+           (banter.a == y && banter.b == x);
+}
+
+bool decideBanter(const BanterForm& banter, f32 pairAffinityValue,
+                  f64 nowHours, const CommentClock& clock) {
+    if (pairAffinityValue < banter.minPairAffinity) {
+        return false; // the pair isn't close enough for this exchange
+    }
+    if (clock.fired) {
+        if (banter.oneShot) {
+            return false;
+        }
+        if (nowHours - clock.lastHours <
+            static_cast<f64>(banter.cooldownHours)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 } // namespace gameplay

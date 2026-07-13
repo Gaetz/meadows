@@ -8,6 +8,7 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/actors/ActorState.hpp"
 #include "gameplay/actors/FollowerForms.hpp"
+#include "gameplay/actors/Followers.hpp" // É9: followerStance round-trip
 #include "gameplay/save/SaveForms.hpp"
 #include "gameplay/save/SaveState.hpp"
 
@@ -153,6 +154,7 @@ TEST_CASE("follower forms: FollowerState round-trips the save bridge") {
     state.followerLastLevelSyncedFrom = 6.0f;
     state.followerLastHomeUpgradeHours = 90.0f;
     state.followerDownedRecoveryHours = 8.0f;
+    gameplay::setFollowerStance(state, gameplay::FollowerStance::Stay); // É9
 
     gameplay::SavedStatsForm saved;
     gameplay::copyMatchingFields(
@@ -180,6 +182,10 @@ TEST_CASE("follower forms: FollowerState round-trips the save bridge") {
           doctest::Approx(state.followerLastHomeUpgradeHours));
     CHECK(restored.followerDownedRecoveryHours ==
           doctest::Approx(state.followerDownedRecoveryHours));
+    // É9: a « rester » order survives the save (the appended field rides
+    // the same name-match bridge).
+    CHECK(gameplay::followerStance(restored) ==
+          gameplay::FollowerStance::Stay);
 }
 
 TEST_CASE("follower forms: the minimal level attribute rides the overlay") {

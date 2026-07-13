@@ -156,3 +156,10 @@ follower.homage,Vous vous recueillez sur la tombe de {}.
 follower.homage.unknown,Vous vous recueillez un instant.
 follower.buried,{} repose ici désormais.
 follower.buryNone,Personne à enterrer.
+follower.partyFull,Votre groupe est au complet — {} ne peut pas vous suivre.
+follower.says,{} : {}
+follower.partyFollow,Le groupe vous suit.
+follower.partyStay,Le groupe reste sur place.
+follower.partyAttack,Le groupe attaque votre cible.
+follower.partyNoTarget,"Le groupe cherche votre cible, sans la trouver."
+follower.partyDefend,Le groupe se tient prêt à vous défendre.

@@ -156,3 +156,10 @@ follower.homage,You pay your respects to {}.
 follower.homage.unknown,You pay your respects a moment.
 follower.buried,{} rests here now.
 follower.buryNone,No one needs burying.
+follower.partyFull,Your party is full — {} cannot join you.
+follower.says,{}: {}
+follower.partyFollow,The party follows you.
+follower.partyStay,The party holds position.
+follower.partyAttack,The party attacks your target.
+follower.partyNoTarget,"The party looks for your target, and finds none."
+follower.partyDefend,The party stands ready to defend you.

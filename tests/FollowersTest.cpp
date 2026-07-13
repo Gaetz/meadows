@@ -1482,3 +1482,184 @@ TEST_CASE("followers É8: transferAllItems empties the corpse into the grave") {
     gameplay::transferAllItems(corpse, grave);
     CHECK(gameplay::itemCount(grave, kFleur) == 3);
 }
+
+// --- É9: multi-followers, commandes, vie ambiante ----------------------------
+// The pure layer (docs/CHANTIER-FOLLOWERS.md É9): party caps by É0
+// category against the §5 tuning knobs; the stance vocabulary (one
+// decode/encode point); defend = the É2 aggro table minus rule 4; ambient
+// comments and banter on the 10-game-hour anti-repeat with oneShot and
+// ordered chaining. Anti-repeat clocks are runtime-only v1 (stated).
+
+TEST_CASE("followers É9: party caps — census and the recruit gate") {
+    gameplay::PartyCounts counts;
+    gameplay::countPartyMember(counts, "major");
+    gameplay::countPartyMember(counts, "minor");
+    gameplay::countPartyMember(counts, "mount"); // exempt, never counted
+    gameplay::countPartyMember(counts, "weird"); // unknown -> the strict bucket
+    CHECK(counts.majors == 2);
+    CHECK(counts.minors == 1);
+
+    const auto verdict = [](const char* category, i32 majors, i32 minors) {
+        const gameplay::PartyCounts full { majors, minors };
+        return gameplay::canJoinParty(category, full, 5, 6);
+    };
+    CHECK(verdict("major", 4, 0) == gameplay::RecruitVerdict::Ok);
+    CHECK(verdict("major", 5, 0) == gameplay::RecruitVerdict::MajorsFull);
+    CHECK(verdict("minor", 5, 5) == gameplay::RecruitVerdict::Ok);
+    CHECK(verdict("minor", 0, 6) == gameplay::RecruitVerdict::MinorsFull);
+    // The minor cap never blocks a major and vice versa.
+    CHECK(verdict("major", 0, 6) == gameplay::RecruitVerdict::Ok);
+    // Mounts ride outside both caps (docs/FOLLOWERS.md §8).
+    CHECK(verdict("mount", 5, 6) == gameplay::RecruitVerdict::Ok);
+    // An unrecognized category counts against the strict (major) cap.
+    CHECK(verdict("", 5, 0) == gameplay::RecruitVerdict::MajorsFull);
+}
+
+TEST_CASE("followers É9: the stance vocabulary — one transition point") {
+    gameplay::FollowerState state;
+    CHECK(gameplay::followerStance(state) ==
+          gameplay::FollowerStance::Follow);
+    gameplay::setFollowerStance(state, gameplay::FollowerStance::Stay);
+    CHECK(state.followerStance == doctest::Approx(1.0f));
+    CHECK(gameplay::followerStance(state) == gameplay::FollowerStance::Stay);
+    gameplay::setFollowerStance(state, gameplay::FollowerStance::Attack);
+    CHECK(gameplay::followerStance(state) ==
+          gameplay::FollowerStance::Attack);
+    gameplay::setFollowerStance(state, gameplay::FollowerStance::Defend);
+    CHECK(state.followerStance == doctest::Approx(3.0f));
+    CHECK(gameplay::followerStance(state) ==
+          gameplay::FollowerStance::Defend);
+    // A modded/corrupt float decays to Follow — never a wedged follower.
+    state.followerStance = 7.5f;
+    CHECK(gameplay::followerStance(state) ==
+          gameplay::FollowerStance::Follow);
+    state.followerStance = -1.0f;
+    CHECK(gameplay::followerStance(state) ==
+          gameplay::FollowerStance::Follow);
+}
+
+TEST_CASE("followers É9: defend disables the player-initiative adoption") {
+    // Follow(0) vs defend(3) differ in exactly rule 4: the player strikes
+    // a hostile first — a defender stays put...
+    gameplay::AggroRoles roles = rolesFor(kFollower, kPlayer, kHostile);
+    roles.defendOnly = true;
+    CHECK(gameplay::adoptOnHit(kPlayer, kHostile, roles) == 0);
+    // ...where the default follower follows the initiative (É2 baseline).
+    CHECK(adopt(kFollower, kPlayer, kHostile) == kHostile);
+    // Party defense stays ON for a defender: a hostile strikes the player.
+    roles = rolesFor(kFollower, kHostile, kPlayer);
+    roles.defendOnly = true;
+    CHECK(gameplay::adoptOnHit(kHostile, kPlayer, roles) == kHostile);
+    // The victim re-aim stays on too (being hit beats any stance).
+    roles = rolesFor(kFollower, kHostile2, kFollower, true);
+    roles.defendOnly = true;
+    CHECK(gameplay::adoptOnHit(kHostile2, kFollower, roles) == kHostile2);
+}
+
+TEST_CASE("followers É9: commentMatches — event, filterTag, minValue, source") {
+    gameplay::GameplayTagRegistry tags;
+    const gameplay::GameplayTag bandits = tags.registerTag("Faction.Bandits");
+    const gameplay::GameplayTag guards = tags.registerTag("Faction.Guards");
+
+    gameplay::CommentForm kill;
+    kill.event = "OnDeath";
+    kill.filterTag = "Faction.Bandits";
+    const u32 death = gameplay::eventKind("OnDeath");
+    CHECK(gameplay::commentMatches(kill, death, bandits, 0.0f, false, tags));
+    // Wrong event kind, wrong faction, or a tagless event: no match.
+    CHECK_FALSE(gameplay::commentMatches(
+        kill, gameplay::eventKind("OnHitTaken"), bandits, 0.0f, false, tags));
+    CHECK_FALSE(
+        gameplay::commentMatches(kill, death, guards, 0.0f, false, tags));
+    CHECK_FALSE(gameplay::commentMatches(
+        kill, death, gameplay::GameplayTag {}, 0.0f, false, tags));
+
+    // minValue: the OnQuietZone enter(1) / leave(0) split.
+    gameplay::CommentForm zone;
+    zone.event = "OnQuietZone";
+    zone.minValue = 1.0f;
+    const u32 quiet = gameplay::eventKind("OnQuietZone");
+    CHECK(gameplay::commentMatches(zone, quiet, gameplay::GameplayTag {},
+                                   1.0f, false, tags));
+    CHECK_FALSE(gameplay::commentMatches(zone, quiet,
+                                         gameplay::GameplayTag {}, 0.0f,
+                                         false, tags));
+    // sourcePlayer scopes a place comment to the PLAYER's crossing
+    // (trigger volumes fire per crossing actor).
+    zone.sourcePlayer = true;
+    CHECK_FALSE(gameplay::commentMatches(zone, quiet,
+                                         gameplay::GameplayTag {}, 1.0f,
+                                         false, tags));
+    CHECK(gameplay::commentMatches(zone, quiet, gameplay::GameplayTag {},
+                                   1.0f, true, tags));
+}
+
+TEST_CASE("followers É9: decideComment — cooldown, one-shot, sneak, chaining") {
+    gameplay::CommentForm comment; // cooldownHours defaults to the doc's 10
+    const gameplay::CommentClock never {};
+
+    // A fresh comment fires — but never in sneak (docs/FOLLOWERS.md §6.1).
+    CHECK(gameplay::decideComment(comment, 100.0, false, never, never));
+    CHECK_FALSE(gameplay::decideComment(comment, 100.0, true, never, never));
+
+    // The 10-game-hour anti-repeat (timestamp per interaction).
+    const gameplay::CommentClock fired { true, 95.0 };
+    CHECK_FALSE(gameplay::decideComment(comment, 100.0, false, fired, never));
+    CHECK(gameplay::decideComment(comment, 105.5, false, fired, never));
+
+    // One-shot never refires, however long ago.
+    comment.oneShot = true;
+    CHECK_FALSE(
+        gameplay::decideComment(comment, 9999.0, false, fired, never));
+    comment.oneShot = false;
+
+    // Ordered chaining: the prerequisite must HAVE fired, at least
+    // minGapHours earlier.
+    comment.requiresComment = guid("eeee0009-0000-4000-8000-000000000001");
+    comment.minGapHours = 2.0f;
+    CHECK_FALSE(gameplay::decideComment(comment, 100.0, false, never, never));
+    const gameplay::CommentClock prerequisite { true, 99.0 };
+    CHECK_FALSE(gameplay::decideComment(comment, 100.0, false, never,
+                                        prerequisite)); // 1 h < the 2 h gap
+    CHECK(gameplay::decideComment(comment, 101.5, false, never,
+                                  prerequisite));
+}
+
+TEST_CASE("followers É9: banter — pair matching, bond gate, anti-repeat") {
+    const Guid aldric = guid("eeee0009-0000-4000-8000-00000000000a");
+    const Guid maela = guid("eeee0009-0000-4000-8000-00000000000b");
+    const Guid other = guid("eeee0009-0000-4000-8000-00000000000c");
+
+    gameplay::BanterForm banter;
+    banter.a = aldric;
+    banter.b = maela;
+    CHECK(gameplay::banterPairMatches(banter, aldric, maela));
+    CHECK(gameplay::banterPairMatches(banter, maela, aldric)); // order-free
+    CHECK_FALSE(gameplay::banterPairMatches(banter, aldric, other));
+
+    // The bond lookup is symmetric; strangers default to 0 (v1: authored
+    // initial values only — no runtime mutation, stated).
+    gameplay::FollowerBondForm bond;
+    bond.a = aldric;
+    bond.b = maela;
+    bond.affinity = 15.0f;
+    const vector<const gameplay::FollowerBondForm*> bonds { &bond };
+    CHECK(gameplay::pairAffinity(bonds, aldric, maela) ==
+          doctest::Approx(15.0f));
+    CHECK(gameplay::pairAffinity(bonds, maela, aldric) ==
+          doctest::Approx(15.0f));
+    CHECK(gameplay::pairAffinity(bonds, aldric, other) ==
+          doctest::Approx(0.0f));
+
+    // The gate: bond >= minPairAffinity, then the anti-repeat clock.
+    banter.minPairAffinity = 10.0f;
+    const gameplay::CommentClock never {};
+    CHECK(gameplay::decideBanter(banter, 15.0f, 50.0, never));
+    CHECK_FALSE(gameplay::decideBanter(banter, 5.0f, 50.0, never));
+    const gameplay::CommentClock played { true, 45.0 };
+    CHECK_FALSE(
+        gameplay::decideBanter(banter, 15.0f, 50.0, played)); // < 10 h
+    CHECK(gameplay::decideBanter(banter, 15.0f, 55.5, played));
+    banter.oneShot = true;
+    CHECK_FALSE(gameplay::decideBanter(banter, 15.0f, 9999.0, played));
+}

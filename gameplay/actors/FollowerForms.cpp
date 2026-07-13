@@ -11,6 +11,9 @@ void registerFollowerFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<ClassPerkForm>();     // FOLLOWERS É0
     registry.registerFormType<AffinityRuleForm>();  // FOLLOWERS É4
     registry.registerFormType<TaughtPerkForm>();    // FOLLOWERS É6
+    registry.registerFormType<FollowerBondForm>();  // FOLLOWERS É9
+    registry.registerFormType<BanterForm>();        // FOLLOWERS É9
+    registry.registerFormType<CommentForm>();       // FOLLOWERS É9
 }
 
 CoreAttributes classAttributesAt(const FollowerClassForm& cls, f32 level) {

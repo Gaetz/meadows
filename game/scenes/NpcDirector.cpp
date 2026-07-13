@@ -216,12 +216,25 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         npc.weaponDrawn = inCombat;
         // FOLLOWERS É1: an ACTIVE follower overrides his schedule with the
         // follow package (combat still wins the frame). Non-followers keep
-        // the exact prior dispatch (iso-behavior).
-        const bool following =
-            npc.entity.has<gameplay::FollowerState>() &&
-            npc.entity.get<gameplay::FollowerState>().followerActive;
+        // the exact prior dispatch (iso-behavior). É9: the « rester »
+        // stance HOLDS him instead — active, standing at his spot; his
+        // schedule takes over only on a DISMISS (v1 sandbox statement:
+        // the home schedules are the town life of dismissed followers).
+        bool following = false;
+        bool staying = false;
+        if (npc.entity.has<gameplay::FollowerState>()) {
+            const auto& followerState =
+                npc.entity.get<gameplay::FollowerState>();
+            if (followerState.followerActive) {
+                staying = gameplay::followerStance(followerState) ==
+                          gameplay::FollowerStance::Stay;
+                following = !staying;
+            }
+        }
         if (inCombat) {
             // combat overrode the schedule this frame
+        } else if (staying) {
+            // stand where ordered (no follow, no schedule)
         } else if (following) {
             schedule_.followPlayer(dt, ctx, npc);
         } else if (npc.schedule.isValid()) {

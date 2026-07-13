@@ -68,6 +68,35 @@ str followerDisplayName(const FollowerContext& ctx, ecs::Entity follower) {
     return actor ? actor->displayName : str { "?" };
 }
 
+// É9: the party census — every ACTIVE follower in the world, bucketed by
+// his É0 category (actives always live: they travel with the player).
+gameplay::PartyCounts countActiveParty(const FollowerContext& ctx) {
+    gameplay::PartyCounts counts;
+    ctx.world.handle().each(
+        [&](flecs::entity entity, const gameplay::FollowerState& state) {
+            if (!state.followerActive) {
+                return;
+            }
+            if (const data::ActorForm* actor =
+                    followerActorForm(ctx, ecs::Entity { entity })) {
+                gameplay::countPartyMember(counts, actor->followerCategory);
+            }
+        });
+    return counts;
+}
+
+// É9: comments/banter never fire in sneak (docs/FOLLOWERS.md §6.1) — the
+// player's State.Sneaking tag is the one signal (PlayerController syncs it).
+bool playerSneaking(const FollowerContext& ctx) {
+    if (!ctx.playerEntity.is_alive() ||
+        !ctx.playerEntity.has<gameplay::AbilitySystem>()) {
+        return false;
+    }
+    const auto tag = ctx.gameTags.find("State.Sneaking");
+    return tag &&
+           ctx.playerEntity.get<gameplay::AbilitySystem>().tags.has(*tag);
+}
+
 } // namespace
 
 // ---- É5: classes, levels, evolution -----------------------------------------
@@ -165,7 +194,28 @@ void FollowerController::recruit(const FollowerContext& ctx,
                      ctx.gameClock.gameHours());
         return;
     }
+    // É9: the party caps (docs/FOLLOWERS.md §1 — 5 majors + 6 minors;
+    // mounts exempt). The census and the gate are the pure doctested
+    // layer; the caps are §5 tuning knobs.
+    const gameplay::RecruitVerdict verdict = gameplay::canJoinParty(
+        actor->followerCategory, countActiveParty(ctx),
+        static_cast<i32>(ctx.statsTuning.followerMajorCap),
+        static_cast<i32>(ctx.statsTuning.followerMinorCap));
+    if (verdict != gameplay::RecruitVerdict::Ok) {
+        if (ctx.texts) {
+            toast(ctx, ctx.texts->format("follower.partyFull",
+                                         actor->displayName));
+        }
+        LOG_INFO("É9: recruit refused — party {} cap reached ('{}')",
+                 verdict == gameplay::RecruitVerdict::MajorsFull ? "major"
+                                                                 : "minor",
+                 actor->editorId);
+        return;
+    }
     state.followerActive = true;
+    // É9: a fresh recruit always starts on the default stance (a stayed
+    // then dismissed follower must not reload wedged in « rester »).
+    gameplay::setFollowerStance(state, gameplay::FollowerStance::Follow);
     // É3: mirror the protection onto HIS tags right away — 0 HP routes
     // to Downed from the very first hit (updateDowned re-syncs per frame).
     if (follower.has<gameplay::AbilitySystem>()) {
@@ -279,6 +329,13 @@ void FollowerController::repositionActiveFollowers(const FollowerContext& ctx,
             !npc.entity.get<gameplay::FollowerState>().followerActive) {
             continue;
         }
+        // É9: « restez ici » means it — a stayed follower holds his spot
+        // through the player's travels.
+        if (gameplay::followerStance(
+                npc.entity.get<gameplay::FollowerState>()) ==
+            gameplay::FollowerStance::Stay) {
+            continue;
+        }
         Vec3 to = anchor - npc.entity.get<world::Transform>().position;
         to.y = 0.0f;
         if (glm::length(to) > tuning.teleportRadius) {
@@ -351,6 +408,13 @@ void FollowerController::onHitTaken(const FollowerContext& ctx,
                     *tag);
         }
     }
+    // É9: remember the player's CURRENT target (the last hostile he
+    // struck — the same É2 signal rule 4 reads) for the one-shot
+    // « attaquez ma cible » adoption at command time.
+    if (roles.sourcePlayer && targetNpc && targetNpc->hostile &&
+        !targetNpc->dead) {
+        playerTarget_ = event.target;
+    }
     for (auto& npcPtr : ctx.npcDirector.npcs()) {
         Npc& npc = *npcPtr;
         // É3: the downed adopt nothing — they are out of the fight.
@@ -360,6 +424,13 @@ void FollowerController::onHitTaken(const FollowerContext& ctx,
         roles.self = npc.entity.id();
         roles.selfFollower = isActiveFollower(npc);
         roles.selfHostile = npc.hostile;
+        // É9: the « me défendre » stance turns rule 4 (player-initiative
+        // adoption) off for THIS follower (gameplay::adoptOnHit).
+        roles.defendOnly =
+            roles.selfFollower &&
+            gameplay::followerStance(
+                npc.entity.get<gameplay::FollowerState>()) ==
+                gameplay::FollowerStance::Defend;
         // "Live target" = the adopted entity still stands (alive AND its
         // director record — if it has one — isn't dead or downed yet).
         bool liveTarget = false;
@@ -395,6 +466,10 @@ void FollowerController::onDeath(const FollowerContext& ctx,
         if (gameplay::disengageOnDeath(dead, npcPtr->combatTarget.id())) {
             npcPtr->combatTarget = ecs::Entity {};
         }
+    }
+    // É9: a dead hostile is no longer « ma cible ».
+    if (playerTarget_.id() == dead) {
+        playerTarget_ = ecs::Entity {};
     }
 }
 
@@ -507,8 +582,246 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
             toast(ctx, ctx.texts->format("follower.revived", name));
         }
     }
+    // É9: the ambient-life tick — inter-follower banter (and its queued
+    // reply line) rides the same per-frame sweep.
+    updateBanter(ctx, dt, nowHours);
     syncConvalescentTag(ctx);
     return refreshNeeded;
+}
+
+// ---- É9: group commands, banter, ambient comments ----------------------------
+
+void FollowerController::partyCommand(const FollowerContext& ctx,
+                                      gameplay::FollowerStance stance) {
+    // É9 « attaquez ma cible » : resolve the one-shot adoption target —
+    // the last hostile the player struck (the É2 signal), still standing.
+    ecs::Entity attackTarget {};
+    if (stance == gameplay::FollowerStance::Attack &&
+        playerTarget_.is_alive()) {
+        for (const auto& npcPtr : ctx.npcDirector.npcs()) {
+            if (npcPtr->entity.id() == playerTarget_.id()) {
+                if (npcPtr->hostile && !npcPtr->dead && !npcPtr->downed) {
+                    attackTarget = playerTarget_;
+                }
+                break;
+            }
+        }
+    }
+    i32 commanded = 0;
+    for (auto& npcPtr : ctx.npcDirector.npcs()) {
+        Npc& npc = *npcPtr;
+        if (npc.dead || !npc.entity.is_alive() ||
+            !npc.entity.has<gameplay::FollowerState>()) {
+            continue;
+        }
+        auto& state = npc.entity.get_mut<gameplay::FollowerState>();
+        if (!state.followerActive) {
+            continue;
+        }
+        gameplay::setFollowerStance(state, stance);
+        if (stance == gameplay::FollowerStance::Stay) {
+            // Hold position: stop the current walk — the follow dispatch
+            // skips him from now on; his schedule stays out of it until
+            // a DISMISS (staying keeps him active, standing at his spot).
+            npc.path.clear();
+            npc.pathIndex = 0;
+            npc.speed = 0.0f;
+        } else if (stance == gameplay::FollowerStance::Attack &&
+                   attackTarget.is_alive() && !npc.downed &&
+                   npc.entity != attackTarget) {
+            // One shot at command time; afterwards the stance behaves as
+            // Follow (the standing É2 aggro table).
+            npc.combatTarget = attackTarget;
+        }
+        // The stance travels with the save (the chantier-5 contract —
+        // FollowerState rides the SavedStatsForm name-match sweep).
+        ctx.pendingSave.captureEntity(npc.entity, ctx.forms, ctx.gameTags);
+        ++commanded;
+    }
+    if (commanded == 0) {
+        return; // no active follower heard the order
+    }
+    if (ctx.texts) {
+        switch (stance) {
+        case gameplay::FollowerStance::Follow:
+            toast(ctx, ctx.texts->get("follower.partyFollow"));
+            break;
+        case gameplay::FollowerStance::Stay:
+            toast(ctx, ctx.texts->get("follower.partyStay"));
+            break;
+        case gameplay::FollowerStance::Attack:
+            toast(ctx, ctx.texts->get(attackTarget.is_alive()
+                                          ? "follower.partyAttack"
+                                          : "follower.partyNoTarget"));
+            break;
+        case gameplay::FollowerStance::Defend:
+            toast(ctx, ctx.texts->get("follower.partyDefend"));
+            break;
+        }
+    }
+    LOG_INFO("É9: party command stance={} ({} follower(s))",
+             static_cast<i32>(stance), commanded);
+}
+
+void FollowerController::onAmbientEvent(const FollowerContext& ctx,
+                                        const gameplay::Event& event) {
+    // Never in sneak (docs/FOLLOWERS.md §6.1) — one check for the sweep.
+    if (playerSneaking(ctx)) {
+        return;
+    }
+    const f64 nowHours = ctx.gameClock.gameHours();
+    for (const auto& npcPtr : ctx.npcDirector.npcs()) {
+        const Npc& npc = *npcPtr;
+        if (npc.dead || npc.downed || !npc.entity.is_alive() ||
+            !npc.entity.has<gameplay::FollowerState>() ||
+            !npc.entity.get<gameplay::FollowerState>().followerActive) {
+            continue;
+        }
+        const data::ActorForm* actor = followerActorForm(ctx, npc.entity);
+        if (!actor) {
+            continue;
+        }
+        // His ActorForm's comments (the childrenOf pattern, like the É4
+        // affinity rules); most actors have none — the early exit keeps
+        // the generic-subscription sweep cheap.
+        const vector<const gameplay::CommentForm*> comments =
+            data::collectChildren<gameplay::CommentForm>(ctx.forms,
+                                                         actor->id);
+        for (const gameplay::CommentForm* comment : comments) {
+            if (!gameplay::commentMatches(*comment, event.kind, event.tag,
+                                          event.value,
+                                          event.source == ctx.playerEntity,
+                                          ctx.gameTags)) {
+                continue;
+            }
+            const gameplay::CommentClock prerequisite =
+                comment->requiresComment.isValid()
+                    ? commentClocks_[comment->requiresComment]
+                    : gameplay::CommentClock {};
+            if (!gameplay::decideComment(*comment, nowHours,
+                                         /*sneaking=*/false,
+                                         commentClocks_[comment->id],
+                                         prerequisite)) {
+                continue;
+            }
+            commentClocks_[comment->id] = { true, nowHours };
+            if (ctx.texts) {
+                toast(ctx, ctx.texts->format(
+                               "follower.says",
+                               { std::string_view { actor->displayName },
+                                 std::string_view { comment->line } }));
+            }
+            LOG_INFO("É9: {} comments on {} ('{}')", actor->editorId,
+                     comment->event, comment->editorId);
+            break; // one line per follower per event — no monologue walls
+        }
+    }
+}
+
+void FollowerController::updateBanter(const FollowerContext& ctx, f32 dt,
+                                      f64 nowHours) {
+    // The queued REPLY first: interaction.say shows one line at a time,
+    // so lineB lands a beat after lineA. [cpp-tuning] the 3 s beat.
+    constexpr f32 kBanterReplySeconds = 3.0f;
+    if (!pendingReplyLine_.empty()) {
+        pendingReplySeconds_ -= dt;
+        if (pendingReplySeconds_ <= 0.0f) {
+            toast(ctx, std::move(pendingReplyLine_));
+            pendingReplyLine_.clear();
+        }
+    }
+    if (lastBanterHours_ < 0.0) {
+        lastBanterHours_ = nowHours; // first sweep stamps, never chats
+        return;
+    }
+    if (nowHours - lastBanterHours_ <
+        static_cast<f64>(ctx.statsTuning.banterIntervalHours)) {
+        return;
+    }
+    if (playerSneaking(ctx)) {
+        return; // the §6.1 sneak rule covers banter too
+    }
+    // The candidates: ACTIVE, standing, out-of-combat followers.
+    struct Chatter {
+        const Npc* npc;
+        const data::ActorForm* actor;
+    };
+    vector<Chatter> chatters;
+    for (const auto& npcPtr : ctx.npcDirector.npcs()) {
+        const Npc& npc = *npcPtr;
+        if (npc.dead || npc.downed || npc.weaponDrawn ||
+            npc.combatTarget.id() != 0 || !npc.entity.is_alive() ||
+            !npc.entity.has<gameplay::FollowerState>() ||
+            !npc.entity.get<gameplay::FollowerState>().followerActive ||
+            !npc.entity.has<world::Transform>()) {
+            continue;
+        }
+        if (const data::ActorForm* actor =
+                followerActorForm(ctx, npc.entity)) {
+            chatters.push_back({ &npc, actor });
+        }
+    }
+    // The window is due either way: re-stamp so an empty/ineligible party
+    // waits a full interval, not a per-frame rescan at the boundary.
+    lastBanterHours_ = nowHours;
+    if (chatters.size() < 2) {
+        return; // banter needs company (docs/FOLLOWERS.md §6.2)
+    }
+    // The authored bonds (É9 v1: initial values only, no runtime
+    // mutation — the doc's evolving matrix comes later).
+    vector<const gameplay::FollowerBondForm*> bonds;
+    data::forEach<gameplay::FollowerBondForm>(
+        ctx.forms, [&](const gameplay::FollowerBondForm& bond) {
+            bonds.push_back(&bond);
+        });
+    // First eligible banter in plugin order (deterministic §8): both of
+    // the pair active and NEAR each other, the pure gate passed.
+    vector<const gameplay::BanterForm*> banters;
+    data::forEach<gameplay::BanterForm>(
+        ctx.forms, [&](const gameplay::BanterForm& banter) {
+            banters.push_back(&banter);
+        });
+    for (const gameplay::BanterForm* banterPtr : banters) {
+        const gameplay::BanterForm& banter = *banterPtr;
+        const Chatter* a = nullptr;
+        const Chatter* b = nullptr;
+        for (const Chatter& chatter : chatters) {
+            if (chatter.actor->id == banter.a) {
+                a = &chatter;
+            } else if (chatter.actor->id == banter.b) {
+                b = &chatter;
+            }
+        }
+        if (!a || !b) {
+            continue; // the pair isn't (fully) traveling along
+        }
+        Vec3 gap = a->npc->entity.get<world::Transform>().position -
+                   b->npc->entity.get<world::Transform>().position;
+        gap.y = 0.0f;
+        if (glm::length(gap) > ctx.statsTuning.banterRangeMeters) {
+            continue;
+        }
+        if (!gameplay::decideBanter(
+                banter, gameplay::pairAffinity(bonds, banter.a, banter.b),
+                nowHours, commentClocks_[banter.id])) {
+            continue;
+        }
+        commentClocks_[banter.id] = { true, nowHours };
+        if (ctx.texts) {
+            toast(ctx, ctx.texts->format(
+                           "follower.says",
+                           { std::string_view { a->actor->displayName },
+                             std::string_view { banter.lineA } }));
+            pendingReplyLine_ = ctx.texts->format(
+                "follower.says",
+                { std::string_view { b->actor->displayName },
+                  std::string_view { banter.lineB } });
+            pendingReplySeconds_ = kBanterReplySeconds;
+        }
+        LOG_INFO("É9: banter '{}' — {} then {}", banter.editorId,
+                 a->actor->editorId, b->actor->editorId);
+        return; // one exchange per window
+    }
 }
 
 void FollowerController::reviveDownedAlly(const FollowerContext& ctx,

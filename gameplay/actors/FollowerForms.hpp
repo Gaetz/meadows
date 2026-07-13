@@ -140,6 +140,86 @@ struct TaughtPerkForm : data::Form {
     REFLECT_END()
 };
 
+// FOLLOWERS É9 — the follower-to-follower bond: a data-authored INITIAL
+// pair affinity, consumed as a banter gate (BanterForm.minPairAffinity).
+// V1 scope (stated in docs/CHANTIER-FOLLOWERS.md É9): no runtime mutation —
+// the doc's evolving matrix comes later; the pure gameplay::pairAffinity
+// resolves the pair symmetrically ({a,b} order-free), absent pair = 0.
+struct FollowerBondForm : data::Form {
+    core::Guid a; // one follower's ActorForm
+    core::Guid b; // the other's
+    f32 affinity { 0.0f };
+
+    REFLECT_BEGIN(FollowerBondForm, data::Form)
+        REFLECT_FIELD(a)
+        REFLECT_FIELD(b)
+        REFLECT_FIELD(affinity)
+    REFLECT_END()
+};
+
+// FOLLOWERS É9 — an inter-follower banter (docs/FOLLOWERS.md §6.2): two
+// lines, one exchange. TOP-LEVEL record (not a child — the pair spans two
+// actors), filtered at runtime by "both of the pair are active and near".
+// The anti-repeat clock is the ambient-comment one (default 10 game hours,
+// the VendorState hour-stamp idiom); oneShot plays once per session (v1:
+// the clock map is runtime-only — stated deviation).
+struct BanterForm : data::Form {
+    core::Guid a;     // the OPENING follower's ActorForm (says lineA)
+    core::Guid b;     // the replying follower's ActorForm (says lineB)
+    str lineA;
+    str lineB;
+    bool oneShot { false };
+    f32 minPairAffinity { 0.0f }; // gate on the FollowerBondForm affinity
+    f32 cooldownHours { 10.0f };  // the doc's 10-game-hour anti-repeat
+
+    REFLECT_BEGIN(BanterForm, data::Form)
+        REFLECT_FIELD(a)
+        REFLECT_FIELD(b)
+        REFLECT_FIELD(lineA)
+        REFLECT_FIELD(lineB)
+        REFLECT_FIELD(oneShot)
+        REFLECT_FIELD(minPairAffinity)
+        REFLECT_FIELD(cooldownHours)
+    REFLECT_END()
+};
+
+// FOLLOWERS É9 — an ambient one-liner (docs/FOLLOWERS.md §6.1): CHILD
+// record of the ActorForm (the AffinityRuleForm idiom). Fires on a
+// matching bus event (name + optional filterTag descent + minValue floor
+// — OnQuietZone enter is value 1, leave is 0) for an ACTIVE follower,
+// never in sneak. Anti-repeat: cooldownHours (the doc's 10 h default) and
+// oneShot on a runtime clock map (v1 — resets on load, stated). Ordered
+// chaining: with requiresComment set, this comment fires only once its
+// prerequisite HAS fired at least minGapHours earlier.
+struct CommentForm : data::Form {
+    core::Guid parent;  // the commenting follower's ActorForm
+    str event;          // bus event name ("OnQuietZone", "OnDeath"…)
+    str filterTag;      // optional: event.tag must descend from this
+    f32 minValue { 0.0f };       // event.value floor (enter-only = 1)
+    // Require event.source == the player (the AffinityRuleForm idiom).
+    // Trigger volumes fire per crossing ACTOR: a place comment wants the
+    // PLAYER's entry, not the follower's own.
+    bool sourcePlayer { false };
+    str line;           // the spoken line (authored language — data)
+    bool oneShot { false };
+    f32 cooldownHours { 10.0f };
+    core::Guid requiresComment;  // optional prerequisite CommentForm
+    f32 minGapHours { 0.0f };    // minimum hours after the prerequisite
+
+    REFLECT_BEGIN(CommentForm, data::Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(event)
+        REFLECT_FIELD(filterTag)
+        REFLECT_FIELD(minValue)
+        REFLECT_FIELD(sourcePlayer)
+        REFLECT_FIELD(line)
+        REFLECT_FIELD(oneShot)
+        REFLECT_FIELD(cooldownHours)
+        REFLECT_FIELD(requiresComment)
+        REFLECT_FIELD(minGapHours)
+    REFLECT_END()
+};
+
 void registerFollowerFormTypes(data::FormTypeRegistry& registry);
 
 // Resolves the class curves at `level`: base + perLevel × (level - 1),

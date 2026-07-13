@@ -104,6 +104,13 @@ void NpcCombatController::tryUsePower(
         // The party's vitals — player, active followers, herself. The
         // downed/dead are excluded: reviving is the potion mechanic (É3),
         // not a spell target.
+        // É9 NOTE — the doc's « garde toujours un objet de soin en
+        // réserve pour le joueur » (docs/FOLLOWERS.md §6.2) is a stated
+        // DEVIATION here: Maela heals by POWER (essence-costed ability),
+        // not by items, so there is no item stock to reserve. The rule
+        // becomes relevant the day a follower heals from his inventory;
+        // its spirit already holds — pickHealTarget includes the player,
+        // and the essence cost is the natural reserve.
         const auto fractionOf = [](const gameplay::AbilitySystem& system) {
             const f32 maxHealth = glm::max(
                 gameplay::currentValueOf(system,
