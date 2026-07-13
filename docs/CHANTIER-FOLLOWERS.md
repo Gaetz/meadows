@@ -6,7 +6,22 @@
 > É4 `09483b6`, É5 `f063be8`, É6 `ba6384e`, É7 `9af8f93`, É8 `2a99c38`,
 > É9 `550cffb`, É10 `ce04ca2`, É11v1 `89418d7`. Suite 445 → 497 cas /
 > 81 760 assertions. **Validation dev en jeu = `FOLLOWERS-TEST.md`**
-> (protocole complet, réserves v1 déclarées par étape). Restes connus :
+> (protocole complet, réserves v1 déclarées par étape).
+>
+> **Correctifs post-retour dev 13/07 (`5456c6c`, suite → 498 cas /
+> 81 767 assertions)** : (1) les gates recruter/renvoyer/refus étaient
+> sur le tag `Follower.Active` miroité GLOBALEMENT sur le joueur —
+> recruter Aldric basculait les dialogues de TOUS (Maela disait
+> « Reste ici ») ; deux clauses PAR-PARTENAIRE ajoutées à l'évaluateur
+> (`FollowerActive` / `FollowerConvalescent`, lisant
+> `EvalContext.partnerFollower` + `gameHours` appendé), 13 conditions de
+> village.toml basculées — les 2 gates « Consignes de groupe » restent
+> volontairement globales, commander la troupe via n'importe quel
+> follower actif est voulu. (2) `maxHealth = 0` sur les trois
+> followers : leurs maxima suivent les FORMULES (courbes de classe)
+> comme le joueur, au lieu d'être épinglés par l'override `efdf8e7` ;
+> les saves existantes basculent seules (l'override n'est jamais
+> capturé). Restes connus :
 > porter la dépouille (É8b, mécanique de placement), radial des
 > consignes, matrice d'affinité dynamique, persistance des horloges
 > anti-répétition, la suite montures (sifflet/écurie/anim/combat), axe
