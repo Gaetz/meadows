@@ -4,9 +4,11 @@
 
 #include "data/forms/AnimForms.hpp"
 #include "data/forms/FormTypeRegistry.hpp"
+#include "data/plugins/EditSession.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
 #include "engine/anim/Anim.hpp"
+#include "engine/core/Hash.hpp"
 #include "world/scene/AnimBridge.hpp"
 
 // H5: the anim runtime is pure and deterministic — synthetic skeleton +
@@ -346,4 +348,109 @@ blendTime = 0.1
     CHECK(instance.currentState() == 1); // back to walk ("less")
     settle(0.0f);
     CHECK(instance.currentState() == 0); // and idle
+}
+
+TEST_CASE("session-aware AnimBridge previews drafts and created children") {
+    // Chantier 8 anim preview: the EditSession overload must see UNSAVED
+    // work — a draft field edit and session-created state/event records —
+    // while the database overload keeps seeing only the resolved base.
+    constexpr const char* kToml = R"(
+[plugin]
+id = "dddd0000-0000-4000-8000-000000000003"
+name = "anim-session"
+
+[[records]]
+form = "dddd0005-0000-4000-8000-000000000001"
+type = "AnimClipForm"
+new = true
+[records.fields]
+editorId = "Swing"
+
+[[records]]
+form = "dddd0006-0000-4000-8000-000000000001"
+type = "AnimGraphForm"
+new = true
+[records.fields]
+editorId = "Graph"
+initialState = "dddd0006-0000-4000-8000-000000000002"
+
+[[records]]
+form = "dddd0006-0000-4000-8000-000000000002"
+type = "AnimStateForm"
+new = true
+[records.fields]
+editorId = "Idle"
+parent = "dddd0006-0000-4000-8000-000000000001"
+clip = "dddd0005-0000-4000-8000-000000000001"
+
+[[records]]
+form = "dddd0006-0000-4000-8000-000000000003"
+type = "AnimTransitionForm"
+new = true
+[records.fields]
+parent = "dddd0006-0000-4000-8000-000000000001"
+from = "dddd0006-0000-4000-8000-000000000002"
+to = "dddd0006-0000-4000-8000-000000000002"
+param = "speed"
+threshold = 0.5
+)";
+    data::FormTypeRegistry types;
+    data::registerAnimFormTypes(types);
+    const auto plugin = data::parsePluginToml(kToml, types, "anim-session");
+    REQUIRE(plugin.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*plugin }, types, db);
+
+    const auto graphId =
+        *core::Guid::fromString("dddd0006-0000-4000-8000-000000000001");
+    const auto clipId =
+        *core::Guid::fromString("dddd0005-0000-4000-8000-000000000001");
+    const auto transitionId =
+        *core::Guid::fromString("dddd0006-0000-4000-8000-000000000003");
+
+    data::EditSession session { db, types };
+    // Draft edit on a base record (not exported).
+    REQUIRE(session.setField(transitionId, core::fnv1a("threshold"),
+                             reflect::Value { 2.5f }));
+    // Session-created state on the same graph...
+    const core::Guid newState = session.createForm(
+        data::AnimStateForm::staticTypeInfo().id, "Run");
+    REQUIRE(newState.isValid());
+    REQUIRE(session.setField(newState, core::fnv1a("parent"),
+                             reflect::Value { graphId }));
+    REQUIRE(session.setField(newState, core::fnv1a("clip"),
+                             reflect::Value { clipId }));
+    REQUIRE(session.setField(newState, core::fnv1a("speed"),
+                             reflect::Value { 2.0f }));
+    // ...and a session-created timeline event on the clip.
+    const core::Guid newEvent = session.createForm(
+        data::AnimEventForm::staticTypeInfo().id, "HitEvent");
+    REQUIRE(session.setField(newEvent, core::fnv1a("parent"),
+                             reflect::Value { clipId }));
+    REQUIRE(session.setField(newEvent, core::fnv1a("time"),
+                             reflect::Value { 0.25f }));
+    REQUIRE(session.setField(newEvent, core::fnv1a("name"),
+                             reflect::Value { str { "Hit" } }));
+
+    const auto resolver = [](const core::Guid&, const str&) {
+        return armSwingClip();
+    };
+    const auto live = world::buildAnimGraph(session, graphId, resolver);
+    REQUIRE(live.has_value());
+    REQUIRE(live->states.size() == 2); // base Idle + created Run (after)
+    CHECK(live->states[1].speed == doctest::Approx(2.0f));
+    REQUIRE(live->transitions.size() == 1);
+    CHECK(live->transitions[0].threshold == doctest::Approx(2.5f)); // draft
+    REQUIRE(live->clipEvents.size() == 1);
+    REQUIRE(live->clipEvents[0].size() == 1);
+    CHECK(live->clipEvents[0][0].name == "Hit");
+    CHECK(live->initialState == 0);
+
+    // The resolved database is untouched by session drafts (§2.2).
+    const auto base = world::buildAnimGraph(db, graphId, resolver);
+    REQUIRE(base.has_value());
+    CHECK(base->states.size() == 1);
+    REQUIRE(base->transitions.size() == 1);
+    CHECK(base->transitions[0].threshold == doctest::Approx(0.5f));
+    CHECK(base->clipEvents[0].empty());
 }

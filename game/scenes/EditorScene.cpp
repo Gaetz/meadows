@@ -14,7 +14,10 @@
 #include "data/forms/FormQuery.hpp"
 #include "data/plugins/Synthesis.hpp"
 #include "data/plugins/TomlWriter.hpp"
+#include "engine/Engine.hpp"
+#include "engine/FrameContext.hpp"
 #include "engine/platform/Paths.hpp"
+#include "engine/rhi/CommandBuffer.hpp"
 #include "engine/reflect/Visit.hpp"
 #include "game/AllForms.hpp"
 #include "game/SceneStack.hpp" // host()->pop() when stacked over the game
@@ -160,6 +163,17 @@ void EditorScene::reload() {
     dialogueGraph =
         std::make_unique<DialogueGraphPanel>(*session, layouts, selected);
     clipTimeline = std::make_unique<ClipTimelinePanel>(*session, selected);
+    // The asset VFS, layered like the game builds it (chantier 4 B1: the
+    // editor edits exactly what the game runs) — the anim preview resolves
+    // rigs and skinned meshes through it.
+    assetDb = assets::AssetDatabase {};
+    for (const data::Plugin& plugin : stack.plugins) {
+        for (const data::AssetEntry& entry : plugin.assets) {
+            assetDb.add(entry.id, plugin.baseDir, entry.path);
+        }
+    }
+    animPreview = std::make_unique<AnimPreviewPanel>(engine->getDevice(),
+                                                     *session, *db, assetDb);
     fxPanel = std::make_unique<FxPanel>(*session);
     effectPanel = std::make_unique<EffectPanel>(*session);
     abilityPanel = std::make_unique<AbilityPanel>(*session, *db);
@@ -217,6 +231,7 @@ void EditorScene::buildDockLayout(unsigned int dockIdIn) {
     ImGui::DockBuilderDockWindow("Plugins", right); // tabbed with Inspector
     ImGui::DockBuilderDockWindow("Editor", center);
     ImGui::DockBuilderDockWindow("Console", bottom);
+    ImGui::DockBuilderDockWindow("Anim Preview", bottom); // tabbed w/ Console
     ImGui::DockBuilderFinish(dockId);
 }
 
@@ -276,6 +291,7 @@ void EditorScene::drawShell() {
         if (ImGui::BeginMenu("Windows")) {
             ImGui::MenuItem("Plugins", nullptr, &showPlugins);
             ImGui::MenuItem("Console", nullptr, &showConsole);
+            ImGui::MenuItem("Anim Preview", nullptr, &showAnimPreview);
             if (ImGui::MenuItem("Reset layout")) {
                 buildDockLayout(dockId);
             }
@@ -310,6 +326,25 @@ void EditorScene::drawUi() {
     if (showConsole) {
         console->draw();
     }
+    if (showAnimPreview) {
+        if (ImGui::Begin("Anim Preview", &showAnimPreview)) {
+            animPreview->drawEditor(itemSelected);
+        }
+        ImGui::End();
+    }
+}
+
+void EditorScene::render(engine::FrameContext& frame) {
+    // The preview's offscreen pass must record BEFORE the stack's sprite
+    // pass (passes don't nest), hence the frame ownership: draw the
+    // preview target, then leave the backbuffer cleared as the contract
+    // demands (the ImGui shell draws over it afterwards).
+    if (animPreview) {
+        animPreview->render(frame);
+    }
+    frame.cmd.beginRenderPass({ .loadOp = rhi::LoadOp::Clear,
+                                .clearColor = frame.clearColor });
+    frame.cmd.endRenderPass();
 }
 
 // ---------------------------------------------------------------------

@@ -70,6 +70,7 @@ public:
     void destroyBindGroup(BindGroupHandle handle) override;
     void destroySampler(SamplerHandle handle) override;
     void destroyFramebuffer(FramebufferHandle handle) override;
+    u64 nativeTextureId(TextureHandle handle) const override;
 
     // --- 3D-path features: logged stubs here, real implementations in
     // GlDevice46 (the future 4.1 degraded mode promotes them one by one).

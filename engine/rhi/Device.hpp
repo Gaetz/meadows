@@ -34,6 +34,13 @@ public:
     // the flags they need instead of testing GL versions.
     virtual const DeviceCaps& caps() const = 0;
 
+    // Dev-tool escape hatch (chantier 8, anim preview): the backend-native
+    // name behind a TextureHandle, so offscreen targets can be handed to the
+    // ImGui backend (imgui_impl_opengl3 wants the raw GLuint as ImTextureID).
+    // 0 = unknown handle or a backend without a meaningful native id. NOT a
+    // rendering path — engine draws keep going through bind groups.
+    virtual u64 nativeTextureId(TextureHandle /*handle*/) const { return 0; }
+
     // --- Resources -----------------------------------------------------------
     // All creation functions return a 0 handle (with a logged error) on
     // failure. Destroying a 0 handle is a no-op.

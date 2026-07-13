@@ -8,9 +8,11 @@
 #include "data/plugins/EditSession.hpp"
 #include "data/plugins/PluginConfig.hpp"
 #include "data/plugins/Resolver.hpp"
+#include "engine/assets/AssetDatabase.hpp"
 #include "game/Scene.hpp"
 #include "game/ui/AbilityPanel.hpp"
 #include "game/ui/AnimGraphPanel.hpp"
+#include "game/ui/AnimPreviewPanel.hpp"
 #include "game/ui/ClipTimelinePanel.hpp"
 #include "game/ui/EffectPanel.hpp"
 #include "game/ui/ConsolePanel.hpp"
@@ -42,6 +44,10 @@ public:
     void onEnter() override;
     void update(f32) override {}
     void drawUi() override;
+    // The anim preview (chantier 8 follow-up) records an offscreen pass:
+    // the editor owns the frame and clears the backbuffer itself.
+    bool ownsFrame() const override { return true; }
+    void render(engine::FrameContext& frame) override;
 
 private:
     void reload();
@@ -75,6 +81,8 @@ private:
     uptr<QuestGraphPanel> questGraph;       // 8.7
     uptr<DialogueGraphPanel> dialogueGraph; // 8.7
     uptr<ClipTimelinePanel> clipTimeline;   // 8.8
+    uptr<AnimPreviewPanel> animPreview;     // offscreen 3D anim preview
+    assets::AssetDatabase assetDb;          // guid -> file, per plugin order
     uptr<FxPanel> fxPanel;                  // 8.10: live particle preview
     uptr<EffectPanel> effectPanel;          // 8.11: sections + Test apply
     uptr<AbilityPanel> abilityPanel;        // 8.11: wiring + Test activate
@@ -87,6 +95,7 @@ private:
     core::Guid selected {};     // the Inspector target (sub-object)
     bool showPlugins { false };
     bool showConsole { false };
+    bool showAnimPreview { true };
     core::Guid schedDragEntry {}; // 8.4: entry whose edge is dragging
     int schedDragEdge { 0 };      //      0 = startHour, 1 = endHour
     f32 schedDragHour { 0.0f };   //      live preview value (0.5 h snap)

@@ -1,19 +1,38 @@
 #include "world/scene/AnimBridge.hpp"
 
+#include <algorithm>
+#include <tuple>
 #include <unordered_map>
 
 #include "data/forms/AnimForms.hpp"
 #include "data/forms/CoreForms.hpp"
 #include "data/forms/FormQuery.hpp"
+#include "data/plugins/EditSession.hpp"
 #include "engine/core/Log.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
 
 namespace world {
 
-std::optional<anim::GraphDesc> buildAnimGraph(
-    const data::FormDatabase& forms, const core::Guid& graphId,
-    const ClipResolver& resolveClip) {
-    const auto* graph = forms.find<data::AnimGraphForm>(graphId);
+namespace {
+
+// The Form->GraphDesc mapping, parameterized over HOW forms are looked up:
+// the resolved-database path (runtime) and the EditSession path (chantier 8
+// anim preview — unsaved drafts included) build through this ONE mapping.
+struct GraphForms {
+    std::function<const data::AnimGraphForm*(const core::Guid&)> graph;
+    std::function<const data::AnimClipForm*(const core::Guid&)> clip;
+    std::function<vector<const data::AnimEventForm*>(const core::Guid&)>
+        events;
+    std::function<vector<const data::AnimStateForm*>(const core::Guid&)>
+        states;
+    std::function<vector<const data::AnimTransitionForm*>(const core::Guid&)>
+        transitions;
+};
+
+std::optional<anim::GraphDesc> buildFromForms(const GraphForms& source,
+                                              const core::Guid& graphId,
+                                              const ClipResolver& resolveClip) {
+    const data::AnimGraphForm* graph = source.graph(graphId);
     if (!graph) {
         LOG_ERROR("AnimBridge: no AnimGraphForm {}", graphId.toString());
         return std::nullopt;
@@ -31,7 +50,7 @@ std::optional<anim::GraphDesc> buildAnimGraph(
             it != clipIndex.end()) {
             return it->second;
         }
-        const auto* clipForm = forms.find<data::AnimClipForm>(clipId);
+        const data::AnimClipForm* clipForm = source.clip(clipId);
         if (!clipForm) {
             return std::nullopt;
         }
@@ -44,68 +63,145 @@ std::optional<anim::GraphDesc> buildAnimGraph(
         const u32 index = static_cast<u32>(desc.clips.size());
         desc.clips.push_back(std::move(*clip));
         desc.clipEvents.emplace_back();
-        data::childrenOf<data::AnimEventForm>(
-            forms, clipId, [&](const data::AnimEventForm& event) {
-                desc.clipEvents.back().push_back(
-                    { event.time, event.name });
-            });
+        for (const data::AnimEventForm* event : source.events(clipId)) {
+            desc.clipEvents.back().push_back({ event->time, event->name });
+        }
         clipIndex.emplace(clipId, index);
         return index;
     };
 
-    data::childrenOf<data::AnimStateForm>(
-        forms, graphId, [&](const data::AnimStateForm& state) {
-            const auto clip = clipFor(state.clip);
-            if (!clip) {
-                LOG_WARN("AnimBridge: state '{}' skipped (clip missing)",
-                         state.editorId);
-                return;
-            }
-            const auto* clipForm =
-                forms.find<data::AnimClipForm>(state.clip);
-            anim::GraphState runtime;
-            runtime.clip = *clip;
-            runtime.speed = state.speed * (clipForm ? clipForm->rate : 1.0f);
-            runtime.loop = clipForm ? clipForm->loop : true;
-            runtime.referenceSpeed = state.referenceSpeed;
-            stateIndex.emplace(state.id,
-                               static_cast<u32>(desc.states.size()));
-            desc.states.push_back(runtime);
-        });
+    for (const data::AnimStateForm* state : source.states(graphId)) {
+        const auto clip = clipFor(state->clip);
+        if (!clip) {
+            LOG_WARN("AnimBridge: state '{}' skipped (clip missing)",
+                     state->editorId);
+            continue;
+        }
+        const data::AnimClipForm* clipForm = source.clip(state->clip);
+        anim::GraphState runtime;
+        runtime.clip = *clip;
+        runtime.speed = state->speed * (clipForm ? clipForm->rate : 1.0f);
+        runtime.loop = clipForm ? clipForm->loop : true;
+        runtime.referenceSpeed = state->referenceSpeed;
+        stateIndex.emplace(state->id, static_cast<u32>(desc.states.size()));
+        desc.states.push_back(runtime);
+    }
     if (desc.states.empty()) {
         LOG_ERROR("AnimBridge: graph '{}' has no usable states",
                   graph->editorId);
         return std::nullopt;
     }
 
-    data::childrenOf<data::AnimTransitionForm>(
-        forms, graphId, [&](const data::AnimTransitionForm& transition) {
-            const auto to = stateIndex.find(transition.to);
-            if (to == stateIndex.end()) {
-                return;
-            }
-            anim::GraphTransition runtime;
-            runtime.from = -1;
-            if (const auto from = stateIndex.find(transition.from);
-                from != stateIndex.end()) {
-                runtime.from = static_cast<i32>(from->second);
-            }
-            runtime.to = to->second;
-            runtime.param = transition.param;
-            runtime.greater = transition.compare != "less";
-            runtime.threshold = transition.threshold;
-            runtime.requiredTag = transition.requiredTag;
-            runtime.blockedTag = transition.blockedTag;
-            runtime.blendTime = transition.blendTime;
-            runtime.waitForEnd = transition.waitForEnd;
-            desc.transitions.push_back(std::move(runtime));
-        });
+    for (const data::AnimTransitionForm* transition :
+         source.transitions(graphId)) {
+        const auto to = stateIndex.find(transition->to);
+        if (to == stateIndex.end()) {
+            continue;
+        }
+        anim::GraphTransition runtime;
+        runtime.from = -1;
+        if (const auto from = stateIndex.find(transition->from);
+            from != stateIndex.end()) {
+            runtime.from = static_cast<i32>(from->second);
+        }
+        runtime.to = to->second;
+        runtime.param = transition->param;
+        runtime.greater = transition->compare != "less";
+        runtime.threshold = transition->threshold;
+        runtime.requiredTag = transition->requiredTag;
+        runtime.blockedTag = transition->blockedTag;
+        runtime.blendTime = transition->blendTime;
+        runtime.waitForEnd = transition->waitForEnd;
+        desc.transitions.push_back(std::move(runtime));
+    }
 
     if (const auto initial = stateIndex.find(graph->initialState);
         initial != stateIndex.end()) {
         desc.initialState = initial->second;
     }
     return desc;
+}
+
+// EditSession lookups: view() serves drafts over base forms; children come
+// from forEachVisible so session-CREATED records participate before export.
+template <typename T>
+const T* viewAs(const data::EditSession& session, const core::Guid& id) {
+    const reflect::TypeInfo* type = session.viewType(id);
+    if (!type || !type->isA(T::staticTypeInfo().id)) {
+        return nullptr;
+    }
+    return static_cast<const T*>(session.view(id));
+}
+
+template <typename T>
+vector<const T*> visibleChildren(const data::EditSession& session,
+                                 const core::Guid& parent) {
+    vector<const T*> base;
+    vector<const T*> created;
+    session.forEachVisible([&](const core::Guid& id, const data::Form& form,
+                               const reflect::TypeInfo& type) {
+        if (!type.isA(T::staticTypeInfo().id)) {
+            return;
+        }
+        const T& child = static_cast<const T&>(form);
+        if (child.parent != parent) {
+            return;
+        }
+        (session.isCreated(id) ? created : base).push_back(&child);
+    });
+    std::sort(created.begin(), created.end(), [](const T* a, const T* b) {
+        return std::tie(a->editorId, a->id) < std::tie(b->editorId, b->id);
+    });
+    base.insert(base.end(), created.begin(), created.end());
+    return base;
+}
+
+} // namespace
+
+std::optional<anim::GraphDesc> buildAnimGraph(
+    const data::FormDatabase& forms, const core::Guid& graphId,
+    const ClipResolver& resolveClip) {
+    const GraphForms source {
+        .graph = [&](const core::Guid& id) {
+            return forms.find<data::AnimGraphForm>(id);
+        },
+        .clip = [&](const core::Guid& id) {
+            return forms.find<data::AnimClipForm>(id);
+        },
+        .events = [&](const core::Guid& id) {
+            return data::collectChildren<data::AnimEventForm>(forms, id);
+        },
+        .states = [&](const core::Guid& id) {
+            return data::collectChildren<data::AnimStateForm>(forms, id);
+        },
+        .transitions = [&](const core::Guid& id) {
+            return data::collectChildren<data::AnimTransitionForm>(forms, id);
+        },
+    };
+    return buildFromForms(source, graphId, resolveClip);
+}
+
+std::optional<anim::GraphDesc> buildAnimGraph(
+    const data::EditSession& session, const core::Guid& graphId,
+    const ClipResolver& resolveClip) {
+    const GraphForms source {
+        .graph = [&](const core::Guid& id) {
+            return viewAs<data::AnimGraphForm>(session, id);
+        },
+        .clip = [&](const core::Guid& id) {
+            return viewAs<data::AnimClipForm>(session, id);
+        },
+        .events = [&](const core::Guid& id) {
+            return visibleChildren<data::AnimEventForm>(session, id);
+        },
+        .states = [&](const core::Guid& id) {
+            return visibleChildren<data::AnimStateForm>(session, id);
+        },
+        .transitions = [&](const core::Guid& id) {
+            return visibleChildren<data::AnimTransitionForm>(session, id);
+        },
+    };
+    return buildFromForms(source, graphId, resolveClip);
 }
 
 std::optional<ActorVisual> resolveActorVisual(const data::FormDatabase& forms,

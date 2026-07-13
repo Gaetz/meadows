@@ -411,6 +411,11 @@ void GlDeviceBase::destroyFramebuffer(FramebufferHandle handle) {
     }
 }
 
+u64 GlDeviceBase::nativeTextureId(TextureHandle handle) const {
+    const auto it = textures.find(handle.id);
+    return it != textures.end() ? it->second.name : 0u;
+}
+
 // 3D-path features: real implementations live in GlDevice46. These logged
 // stubs are what the GL 4.1 backend reports until a degraded mode promotes
 // them (callers must check Device::caps() first).

@@ -21,6 +21,7 @@
 
 namespace data {
 struct ActorForm;
+class EditSession;
 }
 
 namespace world {
@@ -32,6 +33,15 @@ using ClipResolver = std::function<std::optional<anim::AnimClip>(
 
 std::optional<anim::GraphDesc> buildAnimGraph(
     const data::FormDatabase& forms, const core::Guid& graphId,
+    const ClipResolver& resolveClip);
+
+// Session-aware variant (chantier 8, anim preview): the SAME mapping, but
+// forms are read through an EditSession so unsaved drafts and
+// session-created states/transitions/events preview live before export.
+// Child order: base handle order first, then session-created children
+// sorted by (editorId, guid) — deterministic within a session.
+std::optional<anim::GraphDesc> buildAnimGraph(
+    const data::EditSession& session, const core::Guid& graphId,
     const ClipResolver& resolveClip);
 
 // Actor visual resolution (chantier 1, B6): ActorForm.appearance ->
