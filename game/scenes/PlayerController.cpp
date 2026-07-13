@@ -342,6 +342,12 @@ void PlayerController::witnessCrime(const PlayerContext& ctx,
                                     const Vec3& playerEye) {
     const f32 witnessRange = ctx.statsTuning.crimeWitnessRange; // U4-7
     bool witnessed = !target.dead && target.entity.is_alive();
+    // Per-faction crime (2026-07-13): the bounty goes to the WITNESS's
+    // faction — the victim's if it saw its own assault, else the
+    // bystander's. A factionless witness raises the unattributed total
+    // (every guard reacts — the pre-migration behavior).
+    gameplay::GameplayTag witnessFaction =
+        witnessed ? target.factionTag : gameplay::GameplayTag {};
     for (const auto& witnessPtr : ctx.npcs) {
         if (witnessed) {
             break;
@@ -359,10 +365,14 @@ void PlayerController::witnessCrime(const PlayerContext& ctx,
             continue;
         }
         witnessed = hasLineOfSight(*ctx.physics, witnessEye, playerEye);
+        if (witnessed) {
+            witnessFaction = witness.factionTag;
+        }
     }
     if (witnessed && ctx.playerEntity.is_alive()) {
         auto& bounty = ctx.playerEntity.get_mut<gameplay::Bounty>();
-        bounty.bounty += ctx.statsTuning.crimeBountyAssault; // U4-7
+        gameplay::addBounty(bounty, witnessFaction,
+                            ctx.statsTuning.crimeBountyAssault); // U4-7
         ctx.syncWantedTag();
         ctx.interaction.say(
             ctx.texts.format(

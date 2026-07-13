@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "data/forms/FormDatabase.hpp"
+#include "engine/core/Hash.hpp" // deterministic SavedBountyForm row guids
 #include "data/forms/FormQuery.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayAbility.hpp" // grantAbility (É6)
@@ -31,6 +32,7 @@ constexpr core::Guid kSavedItemNs   { 0x53444954454d2121ull, 0x0000000000000003u
 constexpr core::Guid kSavedInjuryNs { 0x5344494e4a555259ull, 0x0000000000000004ull };
 constexpr core::Guid kSavedAbilityNs { 0x534441424c545921ull, 0x0000000000000005ull };
 constexpr core::Guid kSavedSkillNs  { 0x5344534b494c4c21ull, 0x0000000000000006ull };
+constexpr core::Guid kSavedBountyNs { 0x5344424f554e5459ull, 0x0000000000000007ull };
 
 // Copies a component's fields into the SavedStatsForm (capture) or back
 // (apply) when the entity carries it.
@@ -219,6 +221,31 @@ vector<data::Record> captureActor(ecs::Entity entity,
         }
     }
 
+    if (entity.has<Bounty>()) {
+        // Per-faction slices by dotted NAME, sorted for determinism (§8);
+        // the total already rides SavedStatsForm.bounty (name-matched).
+        vector<std::pair<str, f32>> rows;
+        for (const FactionBounty& slice : entity.get<Bounty>().perFaction) {
+            if (slice.amount <= 0.0f) {
+                continue;
+            }
+            if (const str* name = registry.nameOf(slice.faction)) {
+                rows.emplace_back(*name, slice.amount);
+            }
+        }
+        std::sort(rows.begin(), rows.end());
+        for (const auto& [faction, amount] : rows) {
+            SavedBountyForm row;
+            row.parent = refGuid;
+            row.faction = faction;
+            row.amount = amount;
+            records.push_back(createRecord(
+                row, core::Guid::combine(
+                         core::Guid::combine(kSavedBountyNs, refGuid),
+                         core::Guid { core::fnv1a(faction), 0x424e5459u })));
+        }
+    }
+
     if (entity.has<Injuries>()) {
         u64 index = 0;
         for (const Injury& injury : entity.get<Injuries>().list) {
@@ -259,6 +286,9 @@ SavedActorRecords savedRecordsFor(const data::FormDatabase& forms,
     data::childrenOf<SavedSkillForm>( // skills-by-use
         forms, refGuid,
         [&](const SavedSkillForm& form) { saved.skills.push_back(&form); });
+    data::childrenOf<SavedBountyForm>( // per-faction crime
+        forms, refGuid,
+        [&](const SavedBountyForm& form) { saved.bounties.push_back(&form); });
     return saved;
 }
 
@@ -290,6 +320,18 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
         progress.skills.clear();
         for (const SavedSkillForm* row : saved.skills) {
             progress.skills[row->skill] = { row->xp, row->granted };
+        }
+    }
+    if (entity.has<Bounty>()) {
+        // The total was restored by the name-match sweep above; rows
+        // re-attribute it. A faction from an unloaded mod folds back into
+        // the unattributed remainder (§5: never fatal).
+        auto& bounty = entity.get_mut<Bounty>();
+        bounty.perFaction.clear();
+        for (const SavedBountyForm* row : saved.bounties) {
+            if (const auto faction = registry.find(row->faction)) {
+                bounty.perFaction.push_back({ *faction, row->amount });
+            }
         }
     }
     if (entity.has<Injuries>()) {

@@ -11,6 +11,7 @@ void registerSaveFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<SavedInjuryForm>();
     registry.registerFormType<SavedAbilityForm>(); // FOLLOWERS É6
     registry.registerFormType<SavedSkillForm>();   // skills-by-use
+    registry.registerFormType<SavedBountyForm>();  // per-faction crime
     registry.registerFormType<WorldStateForm>();
 }
 

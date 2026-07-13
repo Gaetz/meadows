@@ -184,6 +184,14 @@ bool NpcCombatController::update(
             wanted = ctx.playerEntity.get<gameplay::AbilitySystem>()
                          .tags.has(*tag);
         }
+        // Per-faction bounty (2026-07-13): a guard hunts only when HIS
+        // faction holds a slice (an old save's unattributed total counts
+        // toward every faction — bountyToward folds the remainder in).
+        if (wanted && ctx.playerEntity.has<gameplay::Bounty>()) {
+            wanted = gameplay::bountyToward(
+                         ctx.playerEntity.get<gameplay::Bounty>(),
+                         npc.factionTag) > 0.0f;
+        }
     }
     // É2: validate the adopted combat target — an entity may die or
     // despawn (cell unload) between frames. The aggro handler

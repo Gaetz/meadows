@@ -2,6 +2,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/reflect/Reflect.hpp"
+#include "gameplay/ability/GameplayTags.hpp" // FactionBounty.faction
 
 // Small per-actor runtime state components (chantier 6). Reflected so the
 // save layer captures them by field name through the captureActor sweep —
@@ -24,13 +25,64 @@ struct VendorState {
 // Crime bounty (D2) — the per-entity faction state CLAUDE.md §6.1
 // sanctions as a thin component. Conditions can't see components, so the
 // scene mirrors bounty > 0 into the Crime.Wanted tag (syncTag pattern).
+//
+// Per-faction (2026-07-13, the F-catalogue "bounty PAR FACTION" leftover):
+// `bounty` stays the TOTAL (the legacy name-matched save field, the HUD
+// and the fine gate); `perFaction` slices attribute it to the WITNESS's
+// faction. sum(slices) <= total; any remainder is UNATTRIBUTED (an old
+// save) and counts toward every faction — no amnesty on migration.
+// Slices are not flat-reflectable: they persist as SavedBountyForm rows
+// keyed by tag NAME (runtime tag ids aren't stable across runs).
+struct FactionBounty {
+    GameplayTag faction {};
+    f32 amount { 0.0f };
+};
+
 struct Bounty {
-    f32 bounty { 0.0f };
+    f32 bounty { 0.0f }; // total
+    vector<FactionBounty> perFaction;
 
     REFLECT_BEGIN(Bounty, void)
         REFLECT_FIELD(bounty)
     REFLECT_END()
 };
+
+// An invalid faction (no witness tag) raises the total only —
+// unattributed, so it angers every guard (the pre-migration behavior).
+inline void addBounty(Bounty& bounty, GameplayTag faction, f32 amount) {
+    bounty.bounty += amount;
+    if (!faction.isValid()) {
+        return;
+    }
+    for (FactionBounty& row : bounty.perFaction) {
+        if (row.faction == faction) {
+            row.amount += amount;
+            return;
+        }
+    }
+    bounty.perFaction.push_back({ faction, amount });
+}
+
+inline f32 unattributedBounty(const Bounty& bounty) {
+    f32 attributed = 0.0f;
+    for (const FactionBounty& row : bounty.perFaction) {
+        attributed += row.amount;
+    }
+    const f32 rest = bounty.bounty - attributed;
+    return rest > 0.0f ? rest : 0.0f;
+}
+
+// What `faction` holds against the actor: its own slice + the
+// unattributed remainder.
+inline f32 bountyToward(const Bounty& bounty, GameplayTag faction) {
+    f32 amount = unattributedBounty(bounty);
+    for (const FactionBounty& row : bounty.perFaction) {
+        if (row.faction == faction) {
+            amount += row.amount;
+        }
+    }
+    return amount;
+}
 
 // Follower runtime state (FOLLOWERS É0 — docs/CHANTIER-FOLLOWERS.md).
 // Same pattern as VendorState/Bounty above: reflected, present on every

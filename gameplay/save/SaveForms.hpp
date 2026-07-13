@@ -267,6 +267,21 @@ struct SavedSkillForm : data::Form {
     REFLECT_END()
 };
 
+// One per faction holding a bounty slice (per-faction crime, 2026-07-13).
+// The total stays SavedStatsForm.bounty (name-matched); rows carry the
+// attribution by dotted tag NAME (runtime tag ids aren't stable).
+struct SavedBountyForm : data::Form {
+    core::Guid parent; // the actor's ReferenceForm
+    str faction;       // dotted tag name ("Faction.VillageGuard")
+    f32 amount { 0.0f };
+
+    REFLECT_BEGIN(SavedBountyForm, data::Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(faction)
+        REFLECT_FIELD(amount)
+    REFLECT_END()
+};
+
 // One per save: the world-level state (clock, worldspace, camera).
 struct WorldStateForm : data::Form {
     f64 gameSeconds { 0.0 };
