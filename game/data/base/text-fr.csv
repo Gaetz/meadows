@@ -163,3 +163,8 @@ follower.partyStay,Le groupe reste sur place.
 follower.partyAttack,Le groupe attaque votre cible.
 follower.partyNoTarget,"Le groupe cherche votre cible, sans la trouver."
 follower.partyDefend,Le groupe se tient prêt à vous défendre.
+follower.contractShort,"{} demande {} pièces d'or pour la route — il vous en manque."
+follower.contractHired,"{} entre à votre service : {} jours pour {} pièces d'or."
+follower.contractRenewed,"Contrat prolongé : {} reste {} jours de plus pour {} pièces d'or."
+follower.contractWarning,Le contrat de {} s'achève dans {} h.
+follower.contractOver,Le contrat de {} est terminé — il rentre chez lui.

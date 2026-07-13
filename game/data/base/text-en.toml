@@ -1477,3 +1477,48 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'follower.partyDefend'
     text = 'The party stands ready to defend you.'
+
+[[records]]
+form = 'fc01a8f0-9b80-470d-9bcd-7dd99ae3dde7'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.contractShort'
+    text = '{} asks {} gold pieces for the road — you are short.'
+
+[[records]]
+form = '601c49bd-b8ba-4e1f-a80e-96b0bad7c32b'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.contractHired'
+    text = '{} joins you under contract: {} days for {} gold pieces.'
+
+[[records]]
+form = '42602d4b-0e0b-44a8-9fe9-65b168e6daa2'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.contractRenewed'
+    text = 'Contract extended: {} stays {} more days for {} gold pieces.'
+
+[[records]]
+form = '002d3b3c-6502-4a6f-8df6-684b1419a3df'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.contractWarning'
+    text = "{}'s contract ends in {} h."
+
+[[records]]
+form = 'daed3e59-1398-4b83-8c8a-7cc21857e3d7'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'follower.contractOver'
+    text = "{}'s contract has ended — he heads home."

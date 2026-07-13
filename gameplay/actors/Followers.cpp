@@ -590,4 +590,49 @@ bool decideBanter(const BanterForm& banter, f32 pairAffinityValue,
     return true;
 }
 
+// ---- É10: mercenaries --------------------------------------------------------
+
+i32 mercenaryPrice(f32 basePrice, f32 playerLevel, i32 playerGold,
+                   const StatsTuningForm& tuning) {
+    // The documented v1 formula (Followers.hpp): a level axis (linear per
+    // level above 1) times a wealth axis (linear in gold, SATURATING at
+    // the pivot). Both clamp so bad inputs never discount below base.
+    const f32 level = glm::max(playerLevel, 1.0f);
+    const f32 levelTerm =
+        1.0f + (level - 1.0f) * tuning.mercenaryLevelPricePerLevel;
+    f32 wealthTerm = 1.0f;
+    if (tuning.mercenaryWealthPivot > 0.0f) {
+        const f32 gold = static_cast<f32>(glm::max(playerGold, 0));
+        wealthTerm = 1.0f + glm::min(gold / tuning.mercenaryWealthPivot,
+                                     1.0f) *
+                                tuning.mercenaryWealthFactor;
+    }
+    // Nearest gold piece (half rounds up — lround, not a float trunc).
+    return static_cast<i32>(
+        std::lround(static_cast<f64>(basePrice) * levelTerm * wealthTerm));
+}
+
+ContractPhase contractPhase(f64 nowHours, f32 expiryHours,
+                            f32 warningHours) {
+    if (expiryHours <= 0.0f) {
+        return ContractPhase::None; // no stamp = not under contract
+    }
+    if (nowHours >= static_cast<f64>(expiryHours)) {
+        return ContractPhase::Expired;
+    }
+    if (nowHours >= static_cast<f64>(expiryHours) -
+                        static_cast<f64>(glm::max(warningHours, 0.0f))) {
+        return ContractPhase::Warning;
+    }
+    return ContractPhase::Engaged;
+}
+
+f32 extendContract(f64 nowHours, f32 expiryHours, f32 contractDays) {
+    // Renewals stack on the RUNNING contract (max — early gold buys no
+    // dead hours); a fresh hire (expiry 0) or a lapsed one starts at now.
+    const f64 from = glm::max(nowHours, static_cast<f64>(expiryHours));
+    return static_cast<f32>(from +
+                            static_cast<f64>(contractDays) * 24.0);
+}
+
 } // namespace gameplay

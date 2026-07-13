@@ -3325,3 +3325,317 @@ oneShot = true
 requiresComment = "6a1dc0de-0000-4000-8000-0000000000a3"
 minGapHours = 1.0
 line = "Aldric a raison — cet endroit apaise."
+
+# --- FOLLOWERS É10: mercenaires -------------------------------------------------
+# Reuse map (§2.11): hiring IS the É1 recruit path behind a paid dialogue
+# option (the OpenBarter/OnPayFine event channel; gold charged handler-side,
+# the payFine idiom, so a refusal stays free); the contract clock is É0's
+# followerContractExpiryHours (the VendorState game-hour idiom) swept by
+# the É3/É4 per-frame sweep; the archer machinery is the A7+ BanditArcher
+# path unchanged (projectileSpeed weapon + a REAL quiver — the É2 entity
+# target aims his arrows); the base kit lock is the É7 `unremovable` flag
+# (a DEDICATED bow form, the ArmeDAldric precedent — the shared HuntingBow
+# stays tradable). DECISION (stated): the hire option is gated by a COARSE
+# `HasItem gold >= contractBasePrice`; the HANDLER computes the real
+# scaled price and refuses with a toast QUOTING it when short.
+
+# The archer class: dexterity does the shooting (bow scaling), perception
+# the spotting. combatStyle "archer" is recorded for the class vocabulary;
+# the RANGED behavior itself comes from the WEAPON (projectileSpeed > 0 —
+# the A7 rule), so no C++ branch reads this string today.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000b0"
+type = "FollowerClassForm"
+new = true
+[records.fields]
+editorId = "ClassArcher"
+displayName = "Archer"
+combatStyle = "archer"
+strengthBase = 5.0
+constitutionBase = 5.0
+dexterityBase = 8.0
+dexterityPerLevel = 1.5
+perceptionBase = 7.0
+perceptionPerLevel = 1.0
+alacrityBase = 6.0
+alacrityPerLevel = 0.5
+
+# His home spot: the tavern corner of the square (Maela's side, one house
+# over — the future tavern).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000b1"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000080"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [56.0, 0.0, 374.0]
+
+# Corvin: a mercenary archer — he follows for GOLD, seven game days at a
+# time (É10 ActorForm fields). contractBasePrice is the formula's base
+# AND the coarse HasItem gate below; the real price scales on the
+# player's level and wealth (gameplay::mercenaryPrice).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000b2"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "Corvin"
+displayName = "Corvin"
+maxHealth = 50.0
+appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
+animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
+courage = 0.8
+age = 35.0
+followerCategory = "major"
+followerClass = "6a1dc0de-0000-4000-8000-0000000000b0"
+homeMarker = "6a1dc0de-0000-4000-8000-0000000000b1"
+dialogue = "6a1dc0de-0000-4000-8000-0000000000b5"
+schedule = "6a1dc0de-0000-4000-8000-0000000000b3"
+mercenary = true
+contractDays = 7.0
+contractBasePrice = 100.0
+
+# His day: hold the tavern corner (the stand package on his home spot —
+# also what walks him home when a contract ends, the Aldric pattern).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000b3"
+type = "ScheduleForm"
+new = true
+[records.fields]
+editorId = "CorvinDay"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000b4"
+type = "ScheduleEntryForm"
+new = true
+[records.fields]
+editorId = "CorvinStandHome"
+parent = "6a1dc0de-0000-4000-8000-0000000000b3"
+startHour = 0.0
+endHour = 24.0
+package = "4d7a9b30-0000-4000-8000-000000000088"
+location = "6a1dc0de-0000-4000-8000-0000000000b1"
+
+# Placed at his corner, in the village cell.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000b8"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "6a1dc0de-0000-4000-8000-0000000000b2"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [55.0, 0.0, 373.0]
+
+# His conversation. The greeting names his BASE price coarsely — the
+# exact scaled price shows through the handler's refusal toast.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000b5"
+type = "DialogueForm"
+new = true
+[records.fields]
+editorId = "CorvinChat"
+displayName = "Corvin"
+rootNode = "6a1dc0de-0000-4000-8000-0000000000b6"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000b6"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+speaker = "Corvin"
+text = "Corvin, arc a louer. Cent pieces la semaine pour un debutant sans le sou — plus si tu as fait fortune ou parle de toi dans le pays."
+
+# Option 1 — the hire (only while NOT already followed; the HasItem gate
+# is the COARSE base price, the handler re-checks the scaled one).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000b7"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000b6"
+speaker = "Player"
+text = "Engage-moi. (contrat 7 jours)"
+event = "OnHireMercenary"
+order = 1
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000b9"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000b7"
+kind = "HasItem"
+item = "5e8bac40-0000-4000-8000-000000000010"     # GoldCoin
+value = 100.0
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000ba"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000b7"
+kind = "HasTag"
+tag = "Follower.Active"
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000bb"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000b7"
+speaker = "Corvin"
+text = "Marche conclu. Mon arc est a toi — sept jours, pas un de plus sans rallonge."
+
+# Refusal — too poor for even the base price (the É4 inverted-gate
+# pattern): Corvin restates his floor.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000bc"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000b6"
+speaker = "Player"
+text = "Engage-moi. (contrat 7 jours)"
+order = 2
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000bd"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000bc"
+kind = "HasItem"
+item = "5e8bac40-0000-4000-8000-000000000010"     # GoldCoin
+value = 100.0
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000be"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000bc"
+kind = "HasTag"
+tag = "Follower.Active"
+negate = true
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000bf"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000bc"
+speaker = "Corvin"
+text = "Cent pieces, c'est mon prix de base. Reviens quand ta bourse sonnera."
+
+# Renewal — the SAME event while he serves: the handler extends from
+# max(now, expiry). The option exists only on Corvin's dialogue — the
+# evaluator cannot read `mercenary` (per-actor data), authoring carries
+# that half (stated in FollowerController.hpp).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000c0"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000b6"
+speaker = "Player"
+text = "Prolonger le contrat. (7 jours de plus)"
+event = "OnHireMercenary"
+order = 3
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000c1"
+type = "ConditionForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000c0"
+kind = "HasTag"
+tag = "Follower.Active"
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000c2"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000c0"
+speaker = "Corvin"
+text = "Bien vu. Une corde neuve, et on repart."
+
+# The recruit preview (the É4 option, verbatim pattern).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000c3"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000b6"
+speaker = "Player"
+text = "Parle-moi de tes aptitudes."
+event = "OnFollowerPreview"
+order = 4
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000c4"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000c3"
+speaker = "Corvin"
+text = "Juge sur pieces : un oeil sur, vingt fleches, et l'habitude de viser juste."
+
+# Goodbye (no reply node -> the conversation ends).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000c5"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000b6"
+speaker = "Player"
+text = "A plus tard, Corvin."
+order = 10
+
+# His bow — the É7 base-kit lock on a DEDICATED form (the ArmeDAldric
+# precedent; the shared HuntingBow stays tradable). Same ranged stats as
+# the HuntingBow: projectileSpeed makes it a bow, `ammo` makes the quiver
+# REAL — each shot spends one Arrow from HIS inventory (A7+), so topping
+# up his arrows through the É7 gear screen IS the quiver economy.
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000c6"
+type = "WeaponForm"
+new = true
+[records.fields]
+editorId = "ArcDeCorvin"
+displayName = "Arc de Corvin"
+weight = 1.8
+goldValue = 0
+pierceAttack = 14.0
+postureDamage = 10.0
+scalingAttribute = "dexterity"
+reach = 12.0
+projectileSpeed = 35.0
+attackCooldown = 2.2
+model = "a2b1ade0-0000-4000-8000-00000000501f"
+ammo = "4d7a9b30-0000-4000-8000-000000000211"     # Arrow
+unremovable = true
+
+# His kit: the bow (first weapon rolled = equipped, the loadout finalize)
+# and a straight 20-arrow quiver. Arrows are ORDINARY items — lootable,
+# spendable, refillable (and recoverable planted, the A7+ pickup).
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000c7"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000b2"   # Corvin
+item = "6a1dc0de-0000-4000-8000-0000000000c6"     # ArcDeCorvin
+count = 1
+
+[[records]]
+form = "6a1dc0de-0000-4000-8000-0000000000c8"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "6a1dc0de-0000-4000-8000-0000000000b2"   # Corvin
+item = "4d7a9b30-0000-4000-8000-000000000211"     # Arrow
+count = 20

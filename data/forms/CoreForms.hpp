@@ -258,6 +258,14 @@ struct ActorForm : Form {
     core::Guid recruitDialogue; // if distinct from `dialogue` (É1)
     core::Guid buryMarker;     // authored grave spot (É8)
     core::Guid buryContact;    // NPC who buries a nearby dead follower (É8)
+    // FOLLOWERS É10 (appended — ordinals stable): the mercenary identity.
+    // A mercenary follows for GOLD over a fixed game-time span; the real
+    // price scales on the player (gameplay::mercenaryPrice), this is only
+    // the base the formula starts from (and the coarse HasItem gate the
+    // hire option mirrors in data).
+    bool mercenary { false };
+    f32 contractDays { 7.0f };       // contract length, game DAYS
+    f32 contractBasePrice { 100.0f };// gold at level 1, empty pockets
 
     REFLECT_BEGIN(ActorForm, Form)
         REFLECT_FIELD(displayName)
@@ -281,6 +289,9 @@ struct ActorForm : Form {
         REFLECT_FIELD(recruitDialogue)
         REFLECT_FIELD(buryMarker)
         REFLECT_FIELD(buryContact)
+        REFLECT_FIELD(mercenary)
+        REFLECT_FIELD(contractDays)
+        REFLECT_FIELD(contractBasePrice)
     REFLECT_END()
 };
 

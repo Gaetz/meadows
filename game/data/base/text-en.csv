@@ -163,3 +163,8 @@ follower.partyStay,The party holds position.
 follower.partyAttack,The party attacks your target.
 follower.partyNoTarget,"The party looks for your target, and finds none."
 follower.partyDefend,The party stands ready to defend you.
+follower.contractShort,"{} asks {} gold pieces for the road — you are short."
+follower.contractHired,"{} joins you under contract: {} days for {} gold pieces."
+follower.contractRenewed,"Contract extended: {} stays {} more days for {} gold pieces."
+follower.contractWarning,{}'s contract ends in {} h.
+follower.contractOver,"{}'s contract has ended — he heads home."

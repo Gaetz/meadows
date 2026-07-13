@@ -206,6 +206,14 @@ struct StatsTuningForm : data::Form {
     f32 followerMinorCap { 6.0f };
     f32 banterIntervalHours { 2.0f };
     f32 banterRangeMeters { 8.0f };
+    // FOLLOWERS É10 (appended — ordinals stable): the mercenary price
+    // formula (gameplay::mercenaryPrice — level and wealth axes; the
+    // reputation/faction axis joins when that system exists) and the
+    // near-expiry warning window of the contract sweep.
+    f32 mercenaryLevelPricePerLevel { 0.15f }; // +15% per player level > 1
+    f32 mercenaryWealthPivot { 1000.0f };      // gold where wealth saturates
+    f32 mercenaryWealthFactor { 0.5f };        // +50% at/after the pivot
+    f32 mercenaryWarningHours { 12.0f };       // one toast this far ahead
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -314,6 +322,10 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(followerMinorCap)
         REFLECT_FIELD(banterIntervalHours)
         REFLECT_FIELD(banterRangeMeters)
+        REFLECT_FIELD(mercenaryLevelPricePerLevel)
+        REFLECT_FIELD(mercenaryWealthPivot)
+        REFLECT_FIELD(mercenaryWealthFactor)
+        REFLECT_FIELD(mercenaryWarningHours)
     REFLECT_END()
 };
 

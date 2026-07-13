@@ -191,7 +191,8 @@ public:
 
     // onExit: drop the accrual stamp (the game clock restarts with the
     // next scene enter) and the É9 runtime clocks (anti-repeat is
-    // per-session v1 — stated).
+    // per-session v1 — stated). É10: the warned-contract flags go too —
+    // v1, stated: not persisted, a reload may repeat the one warning.
     void reset() {
         lastAccrualHours_ = -1.0;
         commentClocks_.clear();
@@ -199,6 +200,7 @@ public:
         pendingReplyLine_.clear();
         pendingReplySeconds_ = 0.0f;
         playerTarget_ = ecs::Entity {};
+        warnedContracts_.clear();
     }
 
     // [E] on a downed ally: the useConsumable path re-aimed at HIM — the
@@ -242,6 +244,25 @@ public:
     // Mercenaries (É10) will get a free variant: gate their option in
     // data without the HasItem clause and skip the charge here.
     void forgeUpgrade(const FollowerContext& ctx, ecs::Entity follower);
+
+    // ---- É10: mercenaries ---------------------------------------------------
+    // Dialogue "OnHireMercenary" (« Engage-moi (contrat 7 jours) » /
+    // « Prolonger le contrat » — BOTH options fire the same event; the
+    // renewal option simply also exists, gated Follower.Active, on the
+    // mercenary's own dialogue: `mercenary` is per-actor DATA the
+    // condition evaluator cannot read, so authoring carries that half).
+    // DECISION (stated): the hire option is gated in data by a COARSE
+    // `HasItem gold >= contractBasePrice` — the REAL price is dynamic
+    // (gameplay::mercenaryPrice on the player's level and wealth), so the
+    // HANDLER re-checks it and refuses with a toast QUOTING the price
+    // when the coarse gate passed but the scaled price doesn't — that
+    // refusal toast doubles as the price display. The charge is the
+    // payFine idiom (handler-side removeItem — a refusal, or a recruit
+    // the É9 caps/É3 convalescence bounce, stays FREE); the join is the
+    // É1 recruit path unchanged; the expiry stamp is É0's
+    // followerContractExpiryHours (GameClock game-hours, the VendorState
+    // idiom) written through gameplay::extendContract.
+    void hireMercenary(const FollowerContext& ctx, ecs::Entity follower);
 
     // ---- É8: mort, tombe, enterrement --------------------------------------
     // V1 scope (stated): of the doc's three burials, (a) on the spot and
@@ -323,6 +344,11 @@ private:
     // É2 OnHitTaken signal), adopted one-shot at command time. Runtime
     // only — cleared on its death and on reset().
     ecs::Entity playerTarget_ {};
+    // É10: which mercenaries already got their ONE near-expiry warning,
+    // keyed by ActorForm guid (stable across despawns). Runtime-only v1
+    // (stated: a reload may re-warn once); cleared on renewal — a fresh
+    // contract earns a fresh warning.
+    std::unordered_map<core::Guid, bool> warnedContracts_;
 };
 
 } // namespace game

@@ -521,6 +521,55 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
                                /*active=*/true);
             }
         }
+        // É10: the mercenary contract clock (the VendorState game-hour
+        // idiom on É0's followerContractExpiryHours; the phase decision is
+        // the pure gameplay::contractPhase, doctested). One warning toast
+        // inside the last mercenaryWarningHours (the once-flag is runtime
+        // v1 — stated: a reload may re-warn); at expiry the É1/É3 dismiss
+        // walks him home and the stamp clears. V1 scope (stated): this
+        // sweep sees RESIDENT followers only — an ACTIVE mercenary always
+        // is (he travels with the player); a contract that lapses while
+        // he is despawned resolves on next sight.
+        if (state.followerActive &&
+            state.followerContractExpiryHours > 0.0f && !npc.downed) {
+            const data::ActorForm* actor = followerActorForm(ctx, npc.entity);
+            if (actor && actor->mercenary) {
+                const gameplay::ContractPhase phase = gameplay::contractPhase(
+                    nowHours, state.followerContractExpiryHours,
+                    ctx.statsTuning.mercenaryWarningHours);
+                if (phase == gameplay::ContractPhase::Warning &&
+                    !warnedContracts_[actor->id]) {
+                    warnedContracts_[actor->id] = true;
+                    const i32 hoursLeft = static_cast<i32>(
+                        static_cast<f64>(state.followerContractExpiryHours) -
+                        nowHours + 0.5);
+                    if (ctx.texts) {
+                        toast(ctx,
+                              ctx.texts->format(
+                                  "follower.contractWarning",
+                                  { std::string_view { actor->displayName },
+                                    std::to_string(hoursLeft) }));
+                    }
+                    LOG_INFO("É10: {}'s contract ends in {} h", npc.editorId,
+                             hoursLeft);
+                } else if (phase == gameplay::ContractPhase::Expired) {
+                    // Clear BEFORE the dismiss: its captureEntity carries
+                    // the ended contract into the pending layer.
+                    state.followerContractExpiryHours = 0.0f;
+                    warnedContracts_.erase(actor->id);
+                    if (ctx.texts) {
+                        toast(ctx, ctx.texts->format("follower.contractOver",
+                                                     actor->displayName));
+                    }
+                    LOG_INFO("É10: {}'s contract expired — dismissed home",
+                             npc.editorId);
+                    ecs::Entity follower = npc.entity;
+                    dismiss(ctx, follower); // may despawn npc.entity
+                    refreshNeeded = true;   // the caller prunes the list
+                    continue;
+                }
+            }
+        }
         if (!npc.downed || !downedTag || !system.tags.has(*downedTag)) {
             continue;
         }
@@ -1154,6 +1203,78 @@ void FollowerController::forgeUpgrade(const FollowerContext& ctx,
         toast(ctx, ctx.texts->format("follower.forgeUpgraded",
                                      actor->displayName));
     }
+}
+
+// ---- É10: mercenaries ----------------------------------------------------------
+
+void FollowerController::hireMercenary(const FollowerContext& ctx,
+                                       ecs::Entity follower) {
+    const data::ActorForm* actor = followerActorForm(ctx, follower);
+    if (!actor || !actor->mercenary || !ctx.goldForm ||
+        !ctx.playerEntity.is_alive() ||
+        !ctx.playerEntity.has<gameplay::Inventory>() ||
+        !ctx.playerEntity.has<gameplay::AttributeSet>()) {
+        return; // not a mercenary (or no live economy): the option is a no-op
+    }
+    // The REAL price — the pure É10 formula on the player's level and
+    // wealth (the option's HasItem gate in data is only the COARSE
+    // base-price floor; this is where the scaling bites).
+    const f32 playerLevel =
+        ctx.playerEntity.get<gameplay::AttributeSet>().level;
+    const i32 playerGold = gameplay::itemCount(
+        ctx.playerEntity.get<gameplay::Inventory>(), ctx.goldForm->id);
+    const i32 price = gameplay::mercenaryPrice(
+        actor->contractBasePrice, playerLevel, playerGold, ctx.statsTuning);
+    if (playerGold < price) {
+        // Short on the SCALED price: refuse, quoting it — this toast IS
+        // the price display (v1, stated in the header).
+        if (ctx.texts) {
+            toast(ctx, ctx.texts->format(
+                           "follower.contractShort",
+                           { std::string_view { actor->displayName },
+                             std::to_string(price) }));
+        }
+        LOG_INFO("É10: {} refuses — {} gold asked, {} in the bag",
+                 actor->editorId, price, playerGold);
+        return;
+    }
+    const bool renewal =
+        follower.get<gameplay::FollowerState>().followerActive;
+    if (!renewal) {
+        // The É1 recruit path unchanged (§2.11) — with its OWN gates
+        // (É9 party caps, É3 convalescence) and their toasts. Bounced =
+        // no charge (the payFine-idiom reason the gold moves here).
+        recruit(ctx, follower);
+        if (!follower.get<gameplay::FollowerState>().followerActive) {
+            return;
+        }
+    }
+    // Component refs are fetched AFTER recruit(): dropping InCell moved
+    // the entity's archetype — an earlier reference would dangle.
+    auto& state = follower.get_mut<gameplay::FollowerState>();
+    auto& bag = ctx.playerEntity.get_mut<gameplay::Inventory>();
+    if (!gameplay::removeItem(bag, ctx.goldForm->id, price)) {
+        return; // counted above — only modded data mid-frame gets here
+    }
+    // The contract stamp: contractDays on top of max(now, current expiry)
+    // (gameplay::extendContract) — an early renewal loses no paid hours,
+    // a fresh hire (stamp 0) starts from now. Captured so F5/F9 carry it.
+    state.followerContractExpiryHours = gameplay::extendContract(
+        ctx.gameClock.gameHours(), state.followerContractExpiryHours,
+        actor->contractDays);
+    warnedContracts_.erase(actor->id); // a new window, a new (one) warning
+    ctx.pendingSave.captureEntity(follower, ctx.forms, ctx.gameTags);
+    const i32 days = static_cast<i32>(actor->contractDays + 0.5f);
+    if (ctx.texts) {
+        toast(ctx, ctx.texts->format(
+                       renewal ? "follower.contractRenewed"
+                               : "follower.contractHired",
+                       { std::string_view { actor->displayName },
+                         std::to_string(days), std::to_string(price) }));
+    }
+    LOG_INFO("É10: {} {} for {} gold — contract ends at {:.1f} h",
+             actor->editorId, renewal ? "renewed" : "hired", price,
+             state.followerContractExpiryHours);
 }
 
 // ---- É8: mort, tombe, enterrement --------------------------------------------

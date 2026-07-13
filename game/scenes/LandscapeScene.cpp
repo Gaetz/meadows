@@ -425,6 +425,17 @@ void LandscapeScene::setupGameplay() {
                                makeFollowerContext(),
                                questDirector.dialoguePartner());
                        });
+    // FOLLOWERS É10: « Engage-moi » / « Prolonger le contrat » — the same
+    // dialogue-event channel. The option's HasItem gate in data is the
+    // COARSE base price; the handler computes the REAL scaled price
+    // (level + wealth), refuses-with-price when short, charges the
+    // payFine way, recruits through the É1 path and stamps the contract.
+    eventBus.subscribe(gameplay::eventKind("OnHireMercenary"),
+                       [this](const gameplay::Event&) {
+                           followerController.hireMercenary(
+                               makeFollowerContext(),
+                               questDirector.dialoguePartner());
+                       });
     // FOLLOWERS É8: « ... peux-tu t'occuper de lui ? » — the same
     // dialogue-event channel. The partner is the bury CONTACT (É0's
     // ActorForm.buryContact on the dead follower); the handler finds the

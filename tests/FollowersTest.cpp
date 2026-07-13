@@ -1663,3 +1663,92 @@ TEST_CASE("followers É9: banter — pair matching, bond gate, anti-repeat") {
     banter.oneShot = true;
     CHECK_FALSE(gameplay::decideBanter(banter, 15.0f, 9999.0, played));
 }
+
+// FOLLOWERS É10 (docs/CHANTIER-FOLLOWERS.md): the mercenary math — the
+// hire price (level and wealth axes, saturation, rounding), the contract
+// phase walk (engaged -> warning -> expired), and the renewal extension
+// (max(now, expiry) + days). All pure, headless (§2.10).
+
+TEST_CASE("followers É10: mercenaryPrice — level axis, wealth axis, rounding") {
+    gameplay::StatsTuningForm tuning; // 0.15 / 1000 / 0.5 defaults
+
+    // The floor: level 1, empty pockets = exactly the base.
+    CHECK(gameplay::mercenaryPrice(100.0f, 1.0f, 0, tuning) == 100);
+    // Levels below 1 (fresh spawn quirks) clamp — never a discount.
+    CHECK(gameplay::mercenaryPrice(100.0f, 0.0f, 0, tuning) == 100);
+    CHECK(gameplay::mercenaryPrice(100.0f, 1.0f, -50, tuning) == 100);
+
+    // The level axis alone: +15% per level above 1.
+    CHECK(gameplay::mercenaryPrice(100.0f, 2.0f, 0, tuning) == 115);
+    CHECK(gameplay::mercenaryPrice(100.0f, 5.0f, 0, tuning) == 160);
+
+    // The wealth axis alone: linear to the pivot, then SATURATED —
+    // 500/1000 gold = +25%, 1000 = +50%, a dragon's hoard still +50%.
+    CHECK(gameplay::mercenaryPrice(100.0f, 1.0f, 500, tuning) == 125);
+    CHECK(gameplay::mercenaryPrice(100.0f, 1.0f, 1000, tuning) == 150);
+    CHECK(gameplay::mercenaryPrice(100.0f, 1.0f, 100000, tuning) == 150);
+
+    // Both axes multiply: level 5 (×1.6) and rich (×1.5) = 240.
+    CHECK(gameplay::mercenaryPrice(100.0f, 5.0f, 1000, tuning) == 240);
+
+    // Rounding lands on the NEAREST gold piece (lround, not a trunc):
+    // 100 × 1.15 × 1.0005 = 115.05... -> down to 115; 733 gold makes
+    // 1.3665 -> 136.65 -> UP to 137 (a trunc would say 136). Exact .5
+    // boundaries are deliberately untested — 0.15 is not a binary float.
+    CHECK(gameplay::mercenaryPrice(100.0f, 2.0f, 1, tuning) == 115);
+    CHECK(gameplay::mercenaryPrice(100.0f, 1.0f, 733, tuning) == 137);
+
+    // A non-positive pivot disables the wealth axis (modded-data safety).
+    tuning.mercenaryWealthPivot = 0.0f;
+    CHECK(gameplay::mercenaryPrice(100.0f, 1.0f, 100000, tuning) == 100);
+}
+
+TEST_CASE("followers É10: contractPhase — the hire -> warning -> expiry walk") {
+    // No stamp = not under contract (the É0 default 0).
+    CHECK(gameplay::contractPhase(50.0, 0.0f, 12.0f) ==
+          gameplay::ContractPhase::None);
+    CHECK(gameplay::contractPhase(50.0, -1.0f, 12.0f) ==
+          gameplay::ContractPhase::None);
+
+    // A 7-day contract stamped at hour 0: expiry 168, warning window 12.
+    const f32 expiry = 168.0f;
+    CHECK(gameplay::contractPhase(0.0, expiry, 12.0f) ==
+          gameplay::ContractPhase::Engaged);
+    CHECK(gameplay::contractPhase(155.9, expiry, 12.0f) ==
+          gameplay::ContractPhase::Engaged);
+    // The warning boundary is INCLUSIVE at expiry - warning.
+    CHECK(gameplay::contractPhase(156.0, expiry, 12.0f) ==
+          gameplay::ContractPhase::Warning);
+    CHECK(gameplay::contractPhase(167.9, expiry, 12.0f) ==
+          gameplay::ContractPhase::Warning);
+    // Expiry is inclusive too: at 168.0 he goes home.
+    CHECK(gameplay::contractPhase(168.0, expiry, 12.0f) ==
+          gameplay::ContractPhase::Expired);
+    CHECK(gameplay::contractPhase(500.0, expiry, 12.0f) ==
+          gameplay::ContractPhase::Expired);
+
+    // A negative warning window (modded data) degrades to no warning
+    // band — engaged right up to expiry.
+    CHECK(gameplay::contractPhase(167.9, expiry, -5.0f) ==
+          gameplay::ContractPhase::Engaged);
+}
+
+TEST_CASE("followers É10: extendContract — from max(now, expiry)") {
+    // A fresh hire (stamp 0) starts from NOW: 7 days on hour 10 = 178.
+    CHECK(gameplay::extendContract(10.0, 0.0f, 7.0f) ==
+          doctest::Approx(178.0f));
+
+    // An EARLY renewal stacks on the running expiry — no paid hours lost:
+    // now 100, expiry 168, +7 days = 336.
+    CHECK(gameplay::extendContract(100.0, 168.0f, 7.0f) ==
+          doctest::Approx(336.0f));
+
+    // A LATE renewal (contract lapsed, stamp still set mid-frame) starts
+    // from now: now 200 > expiry 168 -> 368.
+    CHECK(gameplay::extendContract(200.0, 168.0f, 7.0f) ==
+          doctest::Approx(368.0f));
+
+    // The boundary: now == expiry — the two agree (168 + 168).
+    CHECK(gameplay::extendContract(168.0, 168.0f, 7.0f) ==
+          doctest::Approx(336.0f));
+}

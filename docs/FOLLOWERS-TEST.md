@@ -256,4 +256,29 @@ dialogue) ; horloges anti-répétition non persistées (reset au load) ;
 lien inter-followers = valeur autorée (pas encore de dynamique) ;
 « rester » = l'état sandbox v1 (la vraie vie en ville groupée viendra).
 
+## É10 — Mercenaires (Corvin)
+
+**Corvin**, archer mercenaire, traîne au coin de la taverne.
+
+**À tester :**
+1. Parle-lui : son salut annonce l'ordre de prix. « Engage-moi.
+   (contrat 7 jours) » → le PRIX RÉEL dépend de ton niveau et de ta
+   richesse (base 100, +15 %/niveau, jusqu'à +50 % selon l'or — la
+   formule est en tuning). Trop pauvre → le refus CITE le prix exact.
+   Payé → l'or est débité, il te suit 7 jours de jeu.
+2. Il se bat À L'ARC comme follower : flèches consommées de SON
+   carquois (20 au départ — recharge-le via [F], l'écran équipement),
+   à sec il charge au corps à corps avec son arc. Son arc de base est
+   non-retirable.
+3. **Contrat** : à 12 h de la fin → UN toast d'avertissement ; à
+   échéance → toast + il rentre chez lui tout seul. « Prolonger le
+   contrat » (visible tant qu'il est actif) → re-paye, prolonge depuis
+   la fin de contrat (jamais de temps perdu). Le menu T accélère tout
+   ça.
+4. F5/F9 : le contrat (échéance) survit ; l'avertissement peut se
+   répéter une fois après reload (flag runtime v1, assumé).
+
+**Différé :** l'axe réputation/factions du prix (le système n'existe
+pas — gabarit Bounty noté).
+
 <!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->

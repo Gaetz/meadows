@@ -1150,3 +1150,38 @@ type = 'LocStringForm'
 
     [records.fields]
     text = 'Le groupe se tient prêt à vous défendre.'
+
+[[records]]
+form = 'fc01a8f0-9b80-470d-9bcd-7dd99ae3dde7'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = "{} demande {} pièces d'or pour la route — il vous en manque."
+
+[[records]]
+form = '601c49bd-b8ba-4e1f-a80e-96b0bad7c32b'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = "{} entre à votre service : {} jours pour {} pièces d'or."
+
+[[records]]
+form = '42602d4b-0e0b-44a8-9fe9-65b168e6daa2'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = "Contrat prolongé : {} reste {} jours de plus pour {} pièces d'or."
+
+[[records]]
+form = '002d3b3c-6502-4a6f-8df6-684b1419a3df'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = "Le contrat de {} s'achève dans {} h."
+
+[[records]]
+form = 'daed3e59-1398-4b83-8c8a-7cc21857e3d7'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Le contrat de {} est terminé — il rentre chez lui.'

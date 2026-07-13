@@ -420,4 +420,43 @@ bool banterPairMatches(const BanterForm& banter, const core::Guid& x,
 bool decideBanter(const BanterForm& banter, f32 pairAffinityValue,
                   f64 nowHours, const CommentClock& clock);
 
+// ---- É10: mercenaries --------------------------------------------------------
+// Reused systems (§2.11): the É1 recruit/dismiss contract does the joining
+// and the going-home; the gold moves the payFine way (removeItem, handler-
+// side so a refusal stays free); the contract clock is one GameClock
+// game-hour stamp on FollowerState (the VendorState.lastRestockHours
+// idiom, É0's followerContractExpiryHours — reserved since É0, live now);
+// the hire/renew options ride the dialogue-event channel (OnHireMercenary);
+// the toasts ride the C9.5 loc pipeline. This block is the PURE math only,
+// doctested headless (§2.10).
+
+// The hire price, v1 formula (documented — reputation/factions join when
+// that system exists, the Bounty score-mirror being the stated template):
+//   price = base × (1 + (level - 1) × mercenaryLevelPricePerLevel)
+//                × (1 + min(gold / mercenaryWealthPivot, 1)
+//                       × mercenaryWealthFactor)
+// rounded to the nearest gold piece. Level clamps to >= 1 (a fresh save's
+// level 1 pays exactly `base` when broke); gold clamps to >= 0; the wealth
+// axis SATURATES at the pivot (a dragon's hoard never scales past
+// base × levelTerm × (1 + factor)); a non-positive pivot disables the
+// wealth axis (modded-data safety).
+i32 mercenaryPrice(f32 basePrice, f32 playerLevel, i32 playerGold,
+                   const StatsTuningForm& tuning);
+
+// Where a contract stands at `nowHours` (game hours, the GameClock):
+//   None    — no stamp (expiryHours <= 0): not under contract.
+//   Engaged — running, expiry further than the warning window.
+//   Warning — inside the last `warningHours` before expiry: the sweep
+//             toasts ONCE (the once-flag is controller runtime, v1 —
+//             stated: not persisted, a reload may re-warn).
+//   Expired — nowHours >= expiryHours: auto-dismiss home, stamp cleared.
+enum class ContractPhase : u8 { None, Engaged, Warning, Expired };
+ContractPhase contractPhase(f64 nowHours, f32 expiryHours, f32 warningHours);
+
+// The new expiry stamp for a hire OR a renewal: `contractDays` game days
+// on top of max(now, current expiry) — renewing early ADDS to the running
+// contract (no paid hours lost), renewing late (or hiring fresh, expiry
+// 0) starts from now.
+f32 extendContract(f64 nowHours, f32 expiryHours, f32 contractDays);
+
 } // namespace gameplay
