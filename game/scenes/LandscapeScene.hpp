@@ -29,6 +29,7 @@
 #include "game/scenes/NpcDirector.hpp"
 #include "game/scenes/PlayerController.hpp"
 #include "game/scenes/QuestDirector.hpp"
+#include "game/scenes/RideController.hpp"
 #include "game/scenes/SaveController.hpp"
 #include "game/scenes/SceneConsole.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
@@ -430,6 +431,13 @@ private:
     // focus/context sites read playerController.body().
     PlayerController playerController;
     PlayerContext makePlayerContext();
+    // FOLLOWERS É11 v1 (tech proof): while mounted the capsule is
+    // destroyed and RideController runs INSTEAD of PlayerController —
+    // one if/else at the update call site, PlayerController untouched.
+    // Mount/dismount arrive through the interaction closure; travel and
+    // mode exits force a dismount first.
+    RideController rideController;
+    RideContext makeRideContext();
     // C3: refreshed each frame at the equipMods site; gates jump/sprint
     // (through the context) and feeds the equip modifiers.
     gameplay::EncumbranceCategory playerEncumbrance {

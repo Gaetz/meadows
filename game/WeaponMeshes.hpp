@@ -35,4 +35,13 @@ const core::Guid& bowMeshGuid();
 render::MeshData makeArrowMesh(f32 length);
 const core::Guid& arrowMeshGuid();
 
+// FOLLOWERS É11 (tech proof): the crude pony — box body, four legs, neck,
+// head, saddle. Feet at y = 0 (ground the origin like kit statics), nose
+// toward +Z (the NPC facing convention). `shoulderHeight` scales the whole
+// animal (canonical pony = 1.2 m at the withers). The « Poney » furniture
+// form points its `model` here — v1 has no horse rig, so the mount rides
+// the same injectProcedural path as the sword.
+render::MeshData makeHorseMesh(f32 shoulderHeight);
+const core::Guid& horseMeshGuid();
+
 } // namespace game

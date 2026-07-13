@@ -1185,3 +1185,24 @@ type = 'LocStringForm'
 
     [records.fields]
     text = 'Le contrat de {} est terminé — il rentre chez lui.'
+
+[[records]]
+form = '23ef7b8d-b9fa-4f82-aec1-d6513568a2eb'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = '[E] Monter {}'
+
+[[records]]
+form = '7cc85652-98ae-4a0c-a8d1-85d0b14927df'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'la monture'
+
+[[records]]
+form = 'fd386eac-2e1e-4b9c-b71e-6d51183b608e'
+type = 'LocStringForm'
+
+    [records.fields]
+    text = 'Appuyez encore sur E pour descendre.'

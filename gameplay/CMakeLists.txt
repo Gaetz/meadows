@@ -7,6 +7,7 @@ add_library(meadows-gameplay STATIC
     actors/CharacterTick.cpp
     actors/FollowerForms.cpp
     actors/Followers.cpp
+    actors/Riding.cpp
     actors/Swimming.cpp
     ai/AiForms.cpp
     ai/ScheduleSystem.cpp

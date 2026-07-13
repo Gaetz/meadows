@@ -3639,3 +3639,31 @@ new = true
 parent = "6a1dc0de-0000-4000-8000-0000000000b2"   # Corvin
 item = "4d7a9b30-0000-4000-8000-000000000211"     # Arrow
 count = 20
+
+# ------------------------------------------------------------------
+# FOLLOWERS E11 v1 (tech proof) — le poney du village. La monture v1
+# est un FurnitureForm de categorie "mount" (l'idiome "grave" de E8) :
+# mesh procedural (pas de rig cheval), prompt [E] Monter, deplacee par
+# RideController. La VRAIE monture deviendra un ActorForm
+# (followerCategory = "mount", reserve depuis E0) quand un rig existera.
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000230"
+type = "FurnitureForm"
+new = true
+[records.fields]
+editorId = "Poney"
+displayName = "Poney"
+category = "mount"
+model = "a2b1ade0-0000-4000-8000-000000005021"    # makeHorseMesh (injecte)
+mountSpeed = 9.0
+
+# Attache au coin taverne de la place (le coin de Jorun/Corvin).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000231"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000230"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [62.0, 0.0, 377.0]

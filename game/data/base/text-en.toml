@@ -1522,3 +1522,30 @@ type = 'LocStringForm'
     [records.fields]
     editorId = 'follower.contractOver'
     text = "{}'s contract has ended — he heads home."
+
+[[records]]
+form = '23ef7b8d-b9fa-4f82-aec1-d6513568a2eb'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.mount'
+    text = '[E] Ride {}'
+
+[[records]]
+form = '7cc85652-98ae-4a0c-a8d1-85d0b14927df'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'prompt.mount.name'
+    text = 'the mount'
+
+[[records]]
+form = 'fd386eac-2e1e-4b9c-b71e-6d51183b608e'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'mount.hint'
+    text = 'Press E again to dismount.'

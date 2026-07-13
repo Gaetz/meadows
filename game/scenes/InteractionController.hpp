@@ -66,6 +66,10 @@ struct InteractionContext {
     // (FollowerController::buryOnSpot behind the closure).
     std::function<void(ecs::Entity grave)> homage;
     std::function<void(ecs::Entity corpse)> buryCorpse;
+    // FOLLOWERS É11 v1 (appended): [E] on a mount (furniture category
+    // "mount", the grave idiom) — the scene destroys the capsule and
+    // hands the frame over to RideController.
+    std::function<void(ecs::Entity mount)> mountRide;
 };
 
 // Generic interaction extracted from LandscapeScene (audit U4-10): the aim
@@ -118,7 +122,8 @@ private:
     enum class PromptKind : u8 { None, Door, Item, Actor, Corpse,
                                  Furniture,
                                  DownedAlly, // É3: heal a downed follower
-                                 Grave };    // É8: homage [E] / deposit [F]
+                                 Grave,      // É8: homage [E] / deposit [F]
+                                 Mount };    // É11: ride it (tech proof)
     ecs::Entity promptEntity {};
     PromptKind promptKind { PromptKind::None };
     str promptLabel_;

@@ -182,4 +182,49 @@ const core::Guid& arrowMeshGuid() {
     return guid;
 }
 
+render::MeshData makeHorseMesh(f32 shoulderHeight) {
+    // Canonical pony: withers (body top) at 1.2 m; everything scales
+    // uniformly from there. Feet at y = 0, nose toward +Z.
+    const f32 s = glm::max(shoulderHeight, 0.5f) / 1.2f;
+    const Vec3 kCoat { 0.45f, 0.30f, 0.18f };    // bay coat
+    const Vec3 kDark { 0.20f, 0.13f, 0.09f };    // mane / tail / legs
+    const Vec3 kLeather { 0.30f, 0.18f, 0.10f }; // saddle
+    const Vec3 kBlanket { 0.55f, 0.20f, 0.16f }; // saddle blanket
+
+    render::MeshData mesh;
+    const auto box = [&](const Vec3& center, const Vec3& half,
+                         const Vec3& color) {
+        addBox(mesh, center * s, half * s, color);
+    };
+    // Barrel body, top at 1.2 (the withers).
+    box({ 0.0f, 0.95f, 0.0f }, { 0.22f, 0.25f, 0.55f }, kCoat);
+    // Four legs, ground to belly.
+    for (const f32 x : { -0.14f, 0.14f }) {
+        for (const f32 z : { -0.38f, 0.38f }) {
+            box({ x, 0.36f, z }, { 0.065f, 0.36f, 0.065f }, kDark);
+        }
+    }
+    // Neck rising from the chest, then the head with a muzzle bias
+    // forward — enough silhouette to read « poney » at a glance.
+    box({ 0.0f, 1.34f, 0.58f }, { 0.10f, 0.26f, 0.13f }, kCoat);
+    box({ 0.0f, 1.60f, 0.82f }, { 0.085f, 0.12f, 0.22f }, kCoat);
+    // Mane ridge along the neck's back edge + two ear nubs.
+    box({ 0.0f, 1.46f, 0.44f }, { 0.03f, 0.20f, 0.06f }, kDark);
+    for (const f32 x : { -0.05f, 0.05f }) {
+        box({ x, 1.76f, 0.72f }, { 0.02f, 0.06f, 0.03f }, kDark);
+    }
+    // Tail.
+    box({ 0.0f, 0.82f, -0.62f }, { 0.05f, 0.24f, 0.06f }, kDark);
+    // Saddle over a blanket, mid-back — where the rider sits.
+    box({ 0.0f, 1.22f, -0.05f }, { 0.24f, 0.02f, 0.22f }, kBlanket);
+    box({ 0.0f, 1.27f, -0.05f }, { 0.16f, 0.05f, 0.17f }, kLeather);
+    return mesh;
+}
+
+const core::Guid& horseMeshGuid() {
+    static const core::Guid guid =
+        *core::Guid::fromString("a2b1ade0-0000-4000-8000-000000005021");
+    return guid;
+}
+
 } // namespace game

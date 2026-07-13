@@ -168,3 +168,6 @@ follower.contractHired,"{} joins you under contract: {} days for {} gold pieces.
 follower.contractRenewed,"Contract extended: {} stays {} more days for {} gold pieces."
 follower.contractWarning,{}'s contract ends in {} h.
 follower.contractOver,"{}'s contract has ended — he heads home."
+prompt.mount,[E] Ride {}
+prompt.mount.name,the mount
+mount.hint,Press E again to dismount.

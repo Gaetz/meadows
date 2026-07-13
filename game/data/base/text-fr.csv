@@ -168,3 +168,6 @@ follower.contractHired,"{} entre à votre service : {} jours pour {} pièces d'o
 follower.contractRenewed,"Contrat prolongé : {} reste {} jours de plus pour {} pièces d'or."
 follower.contractWarning,Le contrat de {} s'achève dans {} h.
 follower.contractOver,Le contrat de {} est terminé — il rentre chez lui.
+prompt.mount,[E] Monter {}
+prompt.mount.name,la monture
+mount.hint,Appuyez encore sur E pour descendre.

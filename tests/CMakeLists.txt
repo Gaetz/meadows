@@ -74,6 +74,7 @@
     ResultTest.cpp
     ResonanceTest.cpp
     RestTest.cpp
+    RidingTest.cpp
     RngTest.cpp
     SaveAsyncTest.cpp
     SaveFormsTest.cpp

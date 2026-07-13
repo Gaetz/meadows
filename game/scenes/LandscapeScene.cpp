@@ -210,6 +210,8 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
     meshCache->injectProcedural(clubMeshGuid(), makeClubMesh(0.8f));
     meshCache->injectProcedural(bowMeshGuid(), makeBowMesh(1.3f));   // A7
     meshCache->injectProcedural(arrowMeshGuid(), makeArrowMesh(0.6f));
+    // É11 v1: the pony — the « Poney » FurnitureForm's `model` points here.
+    meshCache->injectProcedural(horseMeshGuid(), makeHorseMesh(1.2f));
     renderer.create(device, engine->getJobSystem());
 
     // Chantier 4 B2: the RmlUi game UI (screens from UiScreenForm records,
@@ -597,6 +599,7 @@ void LandscapeScene::setupWorldAndStreaming() {
     activeWorldspace = overworldHandle;
     interiorMode = false;
     interaction.reset();
+    rideController.reset(); // É11: a scene re-enter starts on foot
     // Chantier 3 B1: start the day at 10:00, ~7.5 real minutes per game
     // hour (timescale 12 — "Animate" boosts it).
     gameClock = gameplay::GameClock {};
@@ -1169,6 +1172,12 @@ void LandscapeScene::update(f32 dt) {
     } else if (sceneConsole.visible()) {
         // The dev console owns the keyboard; the player / camera hold still
         // (so WASD types instead of walking) while the sim keeps ticking.
+    } else if ((mode == SceneMode::Play) && rideController.mounted()) {
+        // FOLLOWERS É11 v1 — THE contained hook: while mounted the
+        // capsule is destroyed, so the ride runs INSTEAD of the player
+        // update (PlayerController itself is untouched; on foot the
+        // branch below is byte-identical to before).
+        rideController.update(dt, makeRideContext());
     } else if ((mode == SceneMode::Play) && playerController.body()) {
         playerController.update(dt, makePlayerContext());
     } else {
@@ -1227,6 +1236,9 @@ void LandscapeScene::enterPlayMode() {
 
 void LandscapeScene::exitPlayMode() {
     mode = SceneMode::Spectator;
+    // É11: leaving Play while mounted just releases the mount (no body to
+    // tear down; re-entering Play spawns the capsule under the camera).
+    rideController.reset();
     playerController.destroyBody();
     engine->getWindow().setRelativeMouseMode(false);
     screenStack.close("hud");
@@ -1411,10 +1423,56 @@ InteractionContext LandscapeScene::makeInteractionContext() {
                 refreshNpcs(engine->getDevice());
             }
         },
+        // É11 v1: [E] on a mount — destroy the capsule (the travel
+        // precedent: no body while riding) and hand the frame slot to
+        // RideController; speed comes from the FurnitureForm.
+        [this](ecs::Entity mount) {
+            f32 speed = gameplay::FurnitureForm {}.mountSpeed;
+            if (mount.is_alive() && mount.has<world::RefId>()) {
+                const auto& ref = mount.get<world::RefId>();
+                const reflect::TypeInfo* type = forms.typeOf(ref.base);
+                if (type &&
+                    type->isA(
+                        gameplay::FurnitureForm::staticTypeInfo().id)) {
+                    speed = static_cast<const gameplay::FurnitureForm*>(
+                                forms.get(ref.base))
+                                ->mountSpeed;
+                }
+            }
+            playerController.destroyBody();
+            rideController.mount(mount, speed);
+            interaction.say(texts.get("mount.hint"), 4.0f);
+        },
+    };
+}
+
+// FOLLOWERS É11 v1: bundle what the ride touches — camera/input/tuning
+// references plus the one scene action (respawn the capsule at dismount).
+// Rebuilt each call (cheap). Mirrors the other make*Context builders.
+RideContext LandscapeScene::makeRideContext() {
+    return RideContext {
+        flyCamera,
+        engine->getInput(),
+        &actionMap,
+        &settings,
+        statsTuning,
+        renderer.terrainParams(),
+        playerEntity,
+        [this](const Vec3& feet) {
+            if (physics) {
+                playerController.spawnBody(*physics, feet);
+            }
+        },
     };
 }
 
 void LandscapeScene::performTravel(const core::Guid& targetReference) {
+    // É11 v1: travel dismounts first (stated scope decision) — the pony
+    // stays where it was ridden; the respawned capsule is then teleported
+    // by the normal path below.
+    if (rideController.mounted()) {
+        rideController.dismount(makeRideContext());
+    }
     const auto* marker = forms.find<world::ReferenceForm>(targetReference);
     if (!marker) {
         LOG_WARN("B7: travel target {} not found",

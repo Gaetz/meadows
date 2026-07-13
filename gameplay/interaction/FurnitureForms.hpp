@@ -26,6 +26,11 @@ struct FurnitureForm : data::Form {
     core::Guid sprite;       // 2D fallback
     core::Guid effect;       // EffectForm applied while in use (rest...)
     str screen;              // UI screen opened for the player ("" = none)
+    // FOLLOWERS E11 v1 (appended - ordinals stable): the ridden run speed
+    // in m/s, read only for category "mount" (the tech-proof pony is
+    // furniture with a procedural mesh; the REAL mount becomes an
+    // ActorForm - followerCategory "mount" - once a horse rig exists).
+    f32 mountSpeed { 9.0f };
 
     REFLECT_BEGIN(FurnitureForm, data::Form)
         REFLECT_FIELD(displayName)
@@ -35,6 +40,7 @@ struct FurnitureForm : data::Form {
         REFLECT_FIELD(sprite)
         REFLECT_FIELD(effect)
         REFLECT_FIELD(screen)
+        REFLECT_FIELD(mountSpeed)
     REFLECT_END()
 };
 

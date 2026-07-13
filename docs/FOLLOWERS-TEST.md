@@ -281,4 +281,31 @@ lien inter-followers = valeur autorée (pas encore de dynamique) ;
 **Différé :** l'axe réputation/factions du prix (le système n'existe
 pas — gabarit Bounty noté).
 
-<!-- Les sections d'étapes s'ajoutent ci-dessous au fur et à mesure. -->
+## É11 v1 — Monture (preuve de tech, feel À RETOUCHER ensemble)
+
+Un **Poney** (mesh procédural boîte — placeholder assumé) attend au
+coin de la taverne (62, 377).
+
+**À tester :**
+1. [E] « Monter Poney » → tu es en selle : déplacement au stick/WASD à
+   la vitesse du poney (9 m/s, champ de Form), caméra en selle,
+   mouselook OK, le terrain est suivi sans à-coups (doctesté sur
+   pente). Les followers actifs te SUIVENT à cheval.
+2. [E] → tu descends à côté, tout redevient exactement comme à pied
+   (PlayerController est intact au octet près — la monte est un
+   contrôleur séparé branché par UN seul hook de scène).
+3. Limites v1 assumées : pas d'anim, pas de collision du poney,
+   attaques désactivées en selle, nameplates masqués, extérieur
+   seulement, voyage = descente automatique. Sifflet/écurie/fuite au
+   combat : la suite d'É11, à planifier avec toi.
+
+## Bilan de la nuit
+
+É0→É10 COMPLÈTES + É11 v1, un commit par étape (`git log --oneline`
+pour les points de retour). Suite : 445 → 497 cas / 81 760 assertions.
+Le tour complet à jouer : recruter Aldric et Maela, consignes de
+groupe, combat au camp (pouvoirs !), Aldric à terre → potion, blessure
+→ convalescence → rotation vers Corvin (contrat), équipement [F] +
+forge, une vraie mort → tombe → fleur, F5/F9 partout. Bonne session !
+
+<!-- fin du protocole -->

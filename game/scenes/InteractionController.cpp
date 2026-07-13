@@ -46,11 +46,12 @@ const data::ActorForm* followerActor(const InteractionContext& ctx,
     return actor->followerCategory.empty() ? nullptr : actor;
 }
 
-// FOLLOWERS É8: a grave is furniture of category "grave" (the
-// container-like slot the FurnitureForm enum documents) — homage on [E],
-// the dead follower's inventory on [F], never the rest/sleep path.
-bool isGraveForm(const InteractionContext& ctx,
-                 const data::FormHandle& base) {
+// FOLLOWERS É8/É11: the furniture CATEGORY routes special furniture off
+// the rest/sleep path — "grave" (homage on [E], the dead follower's
+// inventory on [F]) and "mount" (É11 v1: ride it).
+bool furnitureCategoryIs(const InteractionContext& ctx,
+                         const data::FormHandle& base,
+                         std::string_view category) {
     const reflect::TypeInfo* type = ctx.forms.typeOf(base);
     if (!type ||
         !type->isA(gameplay::FurnitureForm::staticTypeInfo().id)) {
@@ -58,7 +59,7 @@ bool isGraveForm(const InteractionContext& ctx,
     }
     const auto* furniture =
         static_cast<const gameplay::FurnitureForm*>(ctx.forms.get(base));
-    return furniture && furniture->category == "grave";
+    return furniture && furniture->category == category;
 }
 
 } // namespace
@@ -126,10 +127,14 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                                       : PromptKind::Actor,
                              reach * (2.8f / 3.0f));
                 } else if (entity.has<world::FurnitureMarker>()) {
-                    // É8: a grave prompts homage, never the rest path.
+                    // É8: a grave prompts homage, É11: a mount prompts
+                    // the ride — neither ever the rest path.
                     consider(e, transform.position,
-                             isGraveForm(ctx, refId.base)
+                             furnitureCategoryIs(ctx, refId.base, "grave")
                                  ? PromptKind::Grave
+                             : furnitureCategoryIs(ctx, refId.base,
+                                                   "mount")
+                                 ? PromptKind::Mount
                                  : PromptKind::Furniture,
                              reach * (2.4f / 3.0f));
                 }
@@ -190,6 +195,9 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
             case PromptKind::Grave: // É8: "[E] Se recueillir... — [F] Dépôt"
                 promptLabel_ = label("prompt.homage", "prompt.homage.name");
                 promptLabel_ += ctx.texts.get("prompt.grave");
+                break;
+            case PromptKind::Mount: // É11: "[E] Monter {}"
+                promptLabel_ = label("prompt.mount", "prompt.mount.name");
                 break;
             default:
                 break;
@@ -258,6 +266,13 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
             case PromptKind::Grave: // É8: [E] = the homage, NOT the loot
                 if (ctx.homage) {
                     ctx.homage(promptEntity);
+                }
+                break;
+            case PromptKind::Mount: // É11: the scene hands over the frame
+                if (ctx.mountRide) {
+                    ctx.mountRide(promptEntity);
+                    promptEntity = ecs::Entity {};
+                    promptKind = PromptKind::None;
                 }
                 break;
             case PromptKind::Furniture: {
