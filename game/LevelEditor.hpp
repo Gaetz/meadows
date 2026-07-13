@@ -43,6 +43,13 @@ public:
     core::Guid placeReference(const core::Guid& baseForm,
                               const core::Guid& cell, const Vec3& position);
 
+    // Duplicates a placed reference (chantier 2 leftover, 2026-07-13):
+    // session.duplicateForm clones every reflected field (the 8.1 tool),
+    // the offset nudges the copy so it never hides its original. ONE undo
+    // gesture; the copy becomes the selection. Returns 0 on a non-ref.
+    core::Guid duplicateReference(const core::Guid& reference,
+                                  const Vec3& offset);
+
     // Implicit cells (IMPLICIT-CELLS brick 2): "place anywhere". Ensures
     // grid square (gx, gy) of `worldspace` exists BOTH live
     // (WorldModel::materializeCell — the streamer starts resolving it)

@@ -52,6 +52,34 @@ core::Guid LevelEditor::placeReference(const core::Guid& baseForm,
     return id;
 }
 
+core::Guid LevelEditor::duplicateReference(const core::Guid& reference,
+                                           const Vec3& offset) {
+    const reflect::TypeInfo* type = session.viewType(reference);
+    if (!type || !type->isA(world::ReferenceForm::staticTypeInfo().id)) {
+        return {};
+    }
+    const auto* source =
+        static_cast<const world::ReferenceForm*>(session.view(reference));
+    if (!source) {
+        return {};
+    }
+    // Copy BEFORE duplicating: the new draft may rehash the session's
+    // draft map and dangle the source view.
+    const Vec3 position = source->position + offset;
+    const str editorId =
+        (source->editorId.empty() ? str { "placed" } : source->editorId) +
+        "_copy";
+    data::EditSession::Gesture gesture { session }; // one Ctrl+Z, whole copy
+    const core::Guid copy = session.duplicateForm(reference, editorId);
+    if (!copy.isValid()) {
+        return {};
+    }
+    session.setField(copy, fieldId(*type, "position"),
+                     reflect::Value { position });
+    selectedRef = copy;
+    return copy;
+}
+
 core::Guid LevelEditor::ensureCell(world::WorldModel& model,
                                    data::FormDatabase& db,
                                    data::FormHandle worldspace, i32 gx,

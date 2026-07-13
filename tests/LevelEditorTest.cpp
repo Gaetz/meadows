@@ -292,3 +292,35 @@ TEST_CASE("edit session: createForm under an imposed guid") {
     REQUIRE(session.view(imposed) != nullptr);
     CHECK(session.view(imposed)->id == imposed);
 }
+
+TEST_CASE("level editor: duplicate clones the reference, offset, one undo") {
+    // Chantier 2 leftover (2026-07-13): duplicateReference = the 8.1
+    // duplicateForm clone + a position nudge, ONE undo gesture.
+    const data::FormTypeRegistry types = makeTypes();
+    const auto plugin = data::parsePluginToml(kBase, types, "base");
+    REQUIRE(plugin.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*plugin }, types, db);
+
+    game::LevelEditor editor { db, types };
+    const core::Guid copy = editor.duplicateReference(
+        kRefA, Vec3 { 1.0f, 0.0f, 1.0f });
+    REQUIRE(copy.isValid());
+    CHECK(copy != kRefA);
+    CHECK(editor.selected() == copy); // the copy becomes the selection
+
+    const auto* form = static_cast<const world::ReferenceForm*>(
+        editor.editSession().view(copy));
+    REQUIRE(form != nullptr);
+    CHECK(form->baseForm == kRock); // every reflected field cloned
+    CHECK(form->position.x == doctest::Approx(2.0f)); // 1 + offset
+    CHECK(form->position.z == doctest::Approx(2.0f));
+
+    // One Ctrl+Z removes the WHOLE copy (create + the position edit).
+    editor.editSession().undo();
+    CHECK(editor.editSession().view(copy) == nullptr);
+
+    // A non-reference target is refused.
+    CHECK_FALSE(
+        editor.duplicateReference(kRock, Vec3 { 0.0f }).isValid());
+}

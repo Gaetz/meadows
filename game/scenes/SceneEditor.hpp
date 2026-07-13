@@ -74,6 +74,10 @@ private:
     core::Guid placementBase {}; // armed palette entry (0 = none)
     i32 gizmoOperation { 0 };    // 0 translate, 1 rotate, 2 scale
     bool gizmoWasUsing { false };
+    // Grid snap (chantier 2 leftover, 2026-07-13): fed to ImGuizmo while
+    // manipulating — translate steps snapStep meters, rotate a 15° lattice.
+    bool snapEnabled { false };
+    f32 snapStep { 1.0f };
     TerrainSculptTool sculptTool;
 };
 

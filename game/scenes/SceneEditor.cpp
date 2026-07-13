@@ -180,8 +180,19 @@ void SceneEditor::draw(const EditorContext& ctx) {
             gizmoOperation == 0   ? ImGuizmo::TRANSLATE
             : gizmoOperation == 1 ? ImGuizmo::ROTATE
                                   : ImGuizmo::SCALE;
+        // Grid snap: ImGuizmo's own snapping — meters on translate, a
+        // 15° lattice on rotate (scale stays free).
+        const f32 translateSnap[3] = { snapStep, snapStep, snapStep };
+        const f32 rotateSnap[3] = { 15.0f, 15.0f, 15.0f };
+        const f32* snap = nullptr;
+        if (snapEnabled && op == ImGuizmo::TRANSLATE) {
+            snap = translateSnap;
+        } else if (snapEnabled && op == ImGuizmo::ROTATE) {
+            snap = rotateSnap;
+        }
         if (ImGuizmo::Manipulate(&view[0][0], &proj[0][0], op,
-                                 ImGuizmo::WORLD, &model[0][0])) {
+                                 ImGuizmo::WORLD, &model[0][0], nullptr,
+                                 snap)) {
             // Manual decompose (translation / per-column scale / rotation).
             transform.position = Vec3 { model[3] };
             Vec3 scale { glm::length(Vec3 { model[0] }),
@@ -333,6 +344,10 @@ void SceneEditor::draw(const EditorContext& ctx) {
                                      "aaaaaaaa-0000-4000-8000-0000000000ed"),
                                  "level-edits");
     }
+    ImGui::Checkbox("Snap", &snapEnabled);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90.0f);
+    ImGui::DragFloat("##snapstep", &snapStep, 0.25f, 0.25f, 8.0f, "%.2f m");
     if (editSelection.is_alive()) {
         const auto& ref = editSelection.get<world::RefId>();
         ImGui::Separator();
@@ -341,6 +356,34 @@ void SceneEditor::draw(const EditorContext& ctx) {
             ctx.levelEditor.disableReference(ref.referenceId);
             editSelection.destruct();
             editSelection = ecs::Entity {};
+        }
+        ImGui::SameLine();
+        // Duplicate (chantier 2 leftover): record copy through the
+        // session (one undo gesture) + a live spawn beside the original.
+        if (ImGui::Button("Duplicate") ||
+            (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false))) {
+            const Vec3 offset { 1.0f, 0.0f, 1.0f };
+            const core::Guid copy = ctx.levelEditor.duplicateReference(
+                ref.referenceId, offset);
+            const auto* draft = static_cast<const world::ReferenceForm*>(
+                ctx.levelEditor.editSession().view(copy));
+            if (draft) {
+                world::ReferenceForm live = *draft;
+                // Live position = the live original's spot + the offset
+                // (the record may store a snapToGround offset, not the
+                // grounded y).
+                live.position =
+                    editSelection.get<world::Transform>().position + offset;
+                world::SpawnContext spawnCtx { ctx.world, ctx.forms,
+                                               ctx.categories };
+                const ecs::Entity entity = ctx.spawner.spawn(
+                    spawnCtx, live,
+                    ctx.cellLoader.cellEntity(
+                        ctx.forms.handleOf(live.cell)));
+                if (entity.is_alive()) {
+                    editSelection = entity;
+                }
+            }
         }
     }
     ImGui::Separator();
