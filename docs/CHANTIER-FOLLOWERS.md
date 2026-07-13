@@ -1,9 +1,16 @@
 # Chantier FOLLOWERS — plan d'implémentation par étapes (réutilisation d'abord)
 
-> Planifié le 2026-07-12 (3 agents d'exploration ont vérifié la carte de
-> réutilisation). Exécution : session de nuit autonome du 2026-07-12,
-> un commit par étape ; protocole de validation dev = `FOLLOWERS-TEST.md`.
-> Design source : `docs/FOLLOWERS.md`.
+> Planifié le 2026-07-12 ; **EXÉCUTÉ dans la nuit du 12 au 13** — toutes
+> les étapes É0→É10 LIVRÉES + É11 v1 (preuve de tech monture), un commit
+> par étape : É0 `bbfe01a`, É1 `f04da89`, É2 `5acdf94`, É3 `d96422d`,
+> É4 `09483b6`, É5 `f063be8`, É6 `ba6384e`, É7 `9af8f93`, É8 `2a99c38`,
+> É9 `550cffb`, É10 `ce04ca2`, É11v1 `89418d7`. Suite 445 → 497 cas /
+> 81 760 assertions. **Validation dev en jeu = `FOLLOWERS-TEST.md`**
+> (protocole complet, réserves v1 déclarées par étape). Restes connus :
+> porter la dépouille (É8b, mécanique de placement), radial des
+> consignes, matrice d'affinité dynamique, persistance des horloges
+> anti-répétition, la suite montures (sifflet/écurie/anim/combat), axe
+> réputation des prix mercenaires. Design source : `docs/FOLLOWERS.md`.
 
 ## Contexte
 
