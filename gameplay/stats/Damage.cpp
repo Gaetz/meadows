@@ -38,6 +38,13 @@ void killOutright(StatBlock& target, const GameplayTagRegistry& tags,
     applyDamage(target, lethal, tags, derived, nullptr, tuning);
 }
 
+f32 fallDamage(f32 fallHeight, const StatsTuningForm& tuning) {
+    if (fallHeight < tuning.fallMinHeight) {
+        return 0.0f;
+    }
+    return (fallHeight - tuning.fallMinHeight) * tuning.fallDamagePerMeter;
+}
+
 namespace {
 bool isPhysical(DamageType type) {
     return type == DamageType::Slash || type == DamageType::Pierce ||

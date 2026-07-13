@@ -385,6 +385,8 @@ bool PlayerController::updateSwimming(f32 dt, const PlayerContext& ctx,
     if (moveMode_ != gameplay::MoveMode::Swim) {
         return false;
     }
+    // Water absorbs the landing: no fall damage out of a swim.
+    wasGrounded_ = true;
 
     bool exhausted = false;
     if (ctx.playerEntity.is_alive()) {
@@ -726,6 +728,42 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
         body_->jump(jump);
     }
     body_->move(velocity, dt);
+
+    // Fall damage (D-catalogue leftover, 2026-07-13): track the airborne
+    // peak, pay on the landing edge. Blunt and unmitigated (the drowning
+    // idiom); a lethal height goes through killOutright (the kill-z
+    // idiom) so death flows through the normal pipeline.
+    const bool grounded = body_->onGround();
+    const f32 feetY = body_->position().y;
+    if (!grounded) {
+        fallPeakY_ = wasGrounded_ ? feetY : glm::max(fallPeakY_, feetY);
+    } else if (!wasGrounded_ && ctx.playerEntity.is_alive()) {
+        const f32 fallHeight = fallPeakY_ - feetY;
+        if (fallHeight >= tuning.fallMinHeight) {
+            gameplay::StatBlock block {
+                ctx.playerEntity.get_mut<gameplay::CoreAttributes>(),
+                ctx.playerEntity.get_mut<gameplay::AttributeSet>(),
+                ctx.playerEntity.get_mut<gameplay::AbilitySystem>(),
+                ctx.playerEntity.get_mut<gameplay::CombatState>()
+            };
+            if (fallHeight >= tuning.fallLethalHeight) {
+                gameplay::killOutright(block, ctx.gameTags,
+                                       ctx.derivedStats, tuning);
+                LOG_INFO("Fall: lethal landing after {:.1f} m", fallHeight);
+            } else {
+                gameplay::DamageEvent fall;
+                fall.channels = { { gameplay::DamageType::Blunt,
+                                    gameplay::fallDamage(fallHeight,
+                                                         tuning) } };
+                fall.armorPenetration = 1000.0f; // the ground ignores armor
+                gameplay::applyDamage(block, fall, ctx.gameTags,
+                                      ctx.derivedStats, nullptr, tuning);
+                LOG_INFO("Fall: {:.1f} m — {:.0f} damage", fallHeight,
+                         gameplay::fallDamage(fallHeight, tuning));
+            }
+        }
+    }
+    wasGrounded_ = grounded;
 
     // Chantier P0 C4a: the first-person player has no walk clip, so the
     // footstep AnimEvent is synthesized every strideLength meters of

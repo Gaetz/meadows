@@ -2,6 +2,7 @@
 
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/combat/Combat.hpp" // updateLifeState (fall lethal case)
 #include "gameplay/stats/CharacterStats.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Damage.hpp"
@@ -155,4 +156,33 @@ TEST_CASE("killOutright ends anyone through the normal pipeline (D2a)") {
     const auto dead = f.tags.find("State.Dead");
     REQUIRE(dead.has_value());
     CHECK(f.system.tags.has(*dead));
+}
+
+TEST_CASE("fall damage: free below the floor, linear above, lethal past cap") {
+    // D-catalogue leftover (2026-07-13): pure curve + the full pipeline.
+    StatsTuningForm tuning; // fallMinHeight 4, perMeter 10, lethal 30
+    CHECK(fallDamage(0.0f, tuning) == doctest::Approx(0.0f));
+    CHECK(fallDamage(3.9f, tuning) == doctest::Approx(0.0f));
+    CHECK(fallDamage(4.0f, tuning) == doctest::Approx(0.0f));
+    CHECK(fallDamage(9.0f, tuning) == doctest::Approx(50.0f));
+    CHECK(fallDamage(14.0f, tuning) == doctest::Approx(100.0f));
+
+    // A 9 m drop through applyDamage (blunt, unmitigated — the drowning
+    // idiom): exactly the curve's output lands on health.
+    Fixture f;
+    StatBlock b = f.block();
+    DamageEvent fall;
+    fall.channels = { { DamageType::Blunt, fallDamage(9.0f, tuning) } };
+    fall.armorPenetration = 1000.0f;
+    const DamageResult r = applyDamage(b, fall, f.tags, f.derived);
+    CHECK(r.healthDamage > 0.0f);
+    CHECK(currentValueOf(f.system, attr("health")) < 300.0f);
+
+    // A lethal drop kills outright through the normal pipeline.
+    Fixture g;
+    StatBlock lethalBlock = g.block();
+    killOutright(lethalBlock, g.tags, g.derived, tuning);
+    updateLifeState(g.system, g.tags); // the caller's usual follow-up
+    CHECK(currentValueOf(g.system, attr("health")) <= 0.0f);
+    CHECK(g.system.tags.has(*g.tags.find("State.Dead")));
 }

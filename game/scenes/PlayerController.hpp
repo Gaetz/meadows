@@ -201,6 +201,11 @@ private:
     gameplay::MoveMode moveMode_ { gameplay::MoveMode::Ground };
     f32 swimCostAccumulator { 0.0f };
     f32 drownAccumulator { 0.0f };
+    // Fall damage: highest airborne Y since leaving the ground; the
+    // air->ground edge pays fallDamage(peak - landing) through applyDamage
+    // (water landings never hurt — the swim path resets the tracker).
+    bool wasGrounded_ { true };
+    f32 fallPeakY_ { 0.0f };
     // Sneak toggle (Ctrl) + its moving-only drain accumulator.
     bool sneaking_ { false };
     f32 sneakCostAccumulator { 0.0f };

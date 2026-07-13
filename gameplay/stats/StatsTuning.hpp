@@ -214,6 +214,14 @@ struct StatsTuningForm : data::Form {
     f32 mercenaryWealthPivot { 1000.0f };      // gold where wealth saturates
     f32 mercenaryWealthFactor { 0.5f };        // +50% at/after the pivot
     f32 mercenaryWarningHours { 12.0f };       // one toast this far ahead
+    // Fall damage (appended — ordinals stable; D-catalogue leftover,
+    // 2026-07-13): below minHeight a landing is free; above it, blunt
+    // damage per meter (unmitigated — the drowning idiom); at/past
+    // lethalHeight the landing kills outright (the kill-z idiom, death
+    // through the normal pipeline).
+    f32 fallMinHeight { 4.0f };
+    f32 fallDamagePerMeter { 10.0f };
+    f32 fallLethalHeight { 30.0f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -326,6 +334,9 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(mercenaryWealthPivot)
         REFLECT_FIELD(mercenaryWealthFactor)
         REFLECT_FIELD(mercenaryWarningHours)
+        REFLECT_FIELD(fallMinHeight)
+        REFLECT_FIELD(fallDamagePerMeter)
+        REFLECT_FIELD(fallLethalHeight)
     REFLECT_END()
 };
 

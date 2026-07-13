@@ -43,6 +43,12 @@ void killOutright(StatBlock& target, const GameplayTagRegistry& tags,
                   const DerivedStatRegistry& derived,
                   const StatsTuningForm& tuning);
 
+// Fall damage (D-catalogue leftover, 2026-07-13): blunt damage for a
+// landing after `fallHeight` meters. 0 below tuning.fallMinHeight, then
+// linear per meter. At/past tuning.fallLethalHeight the caller uses
+// killOutright instead — no curve survives that. Pure and headless.
+f32 fallDamage(f32 fallHeight, const StatsTuningForm& tuning);
+
 struct DamageChannel {
     DamageType type { DamageType::Slash };
     f32 amount { 0.0f };
