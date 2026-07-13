@@ -44,4 +44,11 @@ const core::Guid& arrowMeshGuid();
 render::MeshData makeHorseMesh(f32 shoulderHeight);
 const core::Guid& horseMeshGuid();
 
+// Every guid the RUNTIME injects a procedural mesh under (the
+// injectProcedural set above): data may reference them (WeaponForm.model,
+// FurnitureForm.model) though no plugin declares them as assets. The mod
+// lint (cooker validate) treats them as known — keep this list in sync
+// when a new procedural mesh joins.
+vector<core::Guid> runtimeMeshGuids();
+
 } // namespace game

@@ -8,6 +8,11 @@
 //                     spreadsheet -> ordinary plugin (U4-11); with --patch,
 //                     rows become §5 patches on the target plugin's records
 //                     (language packs, C9.5)
+//   cooker validate   <plugin.toml...>       mod lint (2026-07-13): loads
+//                     the plugins IN ARGUMENT ORDER, resolves, and reports
+//                     orphan patches, dependency violations, dangling guid
+//                     references (reflection sweep) and field conflicts
+//                     (informational — §5 layering). Exit 1 on errors.
 
 #include <algorithm>
 #include <cmath>
@@ -21,9 +26,11 @@
 #include "data/plugins/CsvImport.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/TomlWriter.hpp"
+#include "data/plugins/Validate.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "game/AllForms.hpp" // registerAllFormTypes — the single registration site
+#include "game/WeaponMeshes.hpp" // runtimeMeshGuids (validate whitelist)
 #include "world/terrain/TerrainPatches.hpp"
 
 namespace {
@@ -39,6 +46,10 @@ int usage() {
         "     flattens the rect [x0..x1]x[z0..z1] of terrain chunk "
         "(cx,cz)\n"
         "     to <height> m (3 m smooth blend ring), demo seed/params\n"
+        "  cooker validate <plugin.toml...>\n"
+        "     mod lint: resolve the plugins in argument order and report\n"
+        "     orphan patches, dependency violations, dangling guid refs\n"
+        "     and field conflicts (informational). Exit 1 on errors\n"
         "  cooker import-csv <in.csv> <out.toml> <FormType> [pluginGuid]\n"
         "                    [--patch <targetPluginGuid>]\n"
         "     header row = reflected field names; row identity = the\n"
@@ -201,6 +212,73 @@ int importCsv(const char* inPath, const char* outPath, const char* typeName,
     return 0;
 }
 
+// Mod lint (J-catalogue, 2026-07-13): the reusable data::validatePlugins
+// pass behind a CLI a mod CI can gate on.
+int validate(int argc, char** argv, const data::FormTypeRegistry& types) {
+    vector<data::Plugin> plugins;
+    plugins.reserve(static_cast<size_t>(argc - 2));
+    for (int i = 2; i < argc; ++i) {
+        auto plugin = data::loadPluginFile(argv[i], types);
+        if (!plugin) {
+            LOG_ERROR("validate: cannot load {}: {}", argv[i],
+                      plugin.error());
+            return 1;
+        }
+        plugins.push_back(std::move(*plugin));
+    }
+    vector<const data::Plugin*> loadOrder;
+    loadOrder.reserve(plugins.size());
+    for (const data::Plugin& plugin : plugins) {
+        loadOrder.push_back(&plugin);
+    }
+    // The engine injects procedural meshes under fixed guids at runtime
+    // (sword/club/bow/arrow/pony): data legitimately references them
+    // though no plugin declares them as assets.
+    const data::ValidationReport report =
+        data::validatePlugins(loadOrder, types, game::runtimeMeshGuids());
+
+    LOG_INFO("validate: {} plugins, {} forms created, {} records applied",
+             plugins.size(), report.resolve.formsCreated,
+             report.resolve.recordsApplied);
+    if (report.resolve.recordsSkipped > 0) {
+        LOG_WARN("  {} records SKIPPED (unknown type / type mismatch)",
+                 report.resolve.recordsSkipped);
+    }
+    if (report.resolve.orphanPatches > 0) {
+        LOG_ERROR("  {} ORPHAN patches (target guid never created)",
+                  report.resolve.orphanPatches);
+    }
+    if (report.resolve.dependencyViolations > 0) {
+        LOG_ERROR("  {} DEPENDENCY violations (missing or loaded after "
+                  "their dependent)",
+                  report.resolve.dependencyViolations);
+    }
+    for (const data::DanglingReference& ref : report.danglingRefs) {
+        LOG_ERROR("  dangling ref: {} ({}) field '{}' -> {}",
+                  ref.form.toString(), ref.typeName, ref.fieldName,
+                  ref.target.toString());
+    }
+    // Conflicts are §5 layering facts, not errors — the synthesis tool
+    // (8.5) arbitrates them; here they are surfaced for information.
+    for (const data::FieldConflict& conflict : report.resolve.conflicts) {
+        str writers;
+        for (const data::FieldWrite& write : conflict.writers) {
+            writers += writers.empty() ? write.plugin : " -> " + write.plugin;
+        }
+        LOG_INFO("  conflict: {} ({}) field '{}': {}",
+                 conflict.formId.toString(), conflict.typeName,
+                 conflict.fieldName, writers);
+    }
+    if (report.hasErrors()) {
+        LOG_ERROR("validate: FAILED ({} dangling refs)",
+                  report.danglingRefs.size());
+        return 1;
+    }
+    LOG_INFO("validate: OK ({} field conflicts, informational)",
+             report.resolve.conflicts.size());
+    return 0;
+}
+
 int uncook(const char* inPath, const char* outPath,
            const data::FormTypeRegistry& types) {
     const auto bytes = readFileBytes(inPath);
@@ -266,6 +344,9 @@ int main(int argc, char** argv) {
     }
     if (command == "uncook" && argc == 4) {
         return uncook(argv[2], argv[3], types);
+    }
+    if (command == "validate" && argc >= 3) {
+        return validate(argc, argv, types);
     }
     if (command == "import-csv" && (argc == 5 || argc == 6)) {
         return importCsv(argv[2], argv[3], argv[4],

@@ -91,6 +91,7 @@
     StatusBuildupTest.cpp
     SurvivalTest.cpp
     SynthesisTest.cpp
+    ValidateTest.cpp
     TerrainCollisionTest.cpp
     TerrainNavigatorTest.cpp
     TerrainNoiseTest.cpp

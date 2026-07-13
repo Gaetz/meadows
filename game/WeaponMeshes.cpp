@@ -227,4 +227,9 @@ const core::Guid& horseMeshGuid() {
     return guid;
 }
 
+vector<core::Guid> runtimeMeshGuids() {
+    return { swordMeshGuid(), clubMeshGuid(), bowMeshGuid(),
+             arrowMeshGuid(), horseMeshGuid() };
+}
+
 } // namespace game

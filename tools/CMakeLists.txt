@@ -6,7 +6,10 @@
 # meadows-render: the `terrain-pad` subcommand bakes heights through
 # render::terrain::height — a TOOL may use the renderer's CPU functions;
 # the sim libs themselves stay render-free (see tests/meadows-simlink).
-add_executable(cooker cooker/Main.cpp ${PROJECT_SOURCE_DIR}/game/AllForms.cpp)
+# WeaponMeshes: the validate subcommand whitelists the runtime-injected
+# procedural mesh guids (headless mesh builders — CPU MeshData only).
+add_executable(cooker cooker/Main.cpp ${PROJECT_SOURCE_DIR}/game/AllForms.cpp
+               ${PROJECT_SOURCE_DIR}/game/WeaponMeshes.cpp)
 target_link_libraries(cooker PRIVATE meadows-data meadows-world
                       meadows-narrative meadows-render)
 meadows_set_warnings(cooker)
