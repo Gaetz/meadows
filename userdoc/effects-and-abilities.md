@@ -36,6 +36,39 @@ Key ideas:
 - **Costs and cooldowns are themselves effects**, so anything can tweak
   them.
 
+## Skills (progression by use)
+
+Skills are data too. A `SkillForm` names a skill and how much XP one use
+grants; `SkillThresholdForm` child records are its ranks — each carries
+an XP threshold and the `EffectForm` applied (once, permanently) when it
+is crossed. Point an ability at its skill with the `skill` field:
+
+```toml
+[[records]]
+form = "GUID-SKILL"
+type = "SkillForm"
+new = true
+[records.fields]
+editorId = "OneHanded"
+xpPerUse = 1.0
+
+[[records]]
+form = "GUID-RANK1"
+type = "SkillThresholdForm"
+new = true
+[records.fields]
+parent = "GUID-SKILL"        # the skill
+xp = 25.0
+effect = "GUID-PERK-EFFECT"  # any EffectForm — perks ARE passive effects
+
+# on the ability that trains it:
+#   skill = "GUID-SKILL"
+```
+
+Every successful activation of that ability grants the XP (and fires an
+`OnAbilityUsed` event quests can listen to). A mod adds a rank by adding
+one threshold record — the skill itself is never touched.
+
 ➡ **The complete reference lives in
 [MODDING-EFFECTS.md](../docs/MODDING-EFFECTS.md)** — every field of
 `EffectForm`/`AbilityForm`, the full attribute list, and recipes for

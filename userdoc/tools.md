@@ -16,6 +16,12 @@ database — every record of every type, from every enabled plugin.
   file, added to the load order, containing ONLY what you changed. This
   is the fastest way to make a tweak mod: edit, export, done. Edits apply
   after *Reload data* (or a relaunch).
+- **Anim Preview** (Windows menu): select an anim clip or an anim graph —
+  it plays on its skinned mesh in 3D (drag to orbit, wheel to zoom). A
+  clip scrubs with its timeline events highlighted; a graph runs LIVE
+  with sliders for its parameters and checkboxes for its tag gates, so
+  you can trigger transitions and watch the cross-fades. Your unsaved
+  edits preview immediately.
 
 ## The level editor (in the 3D scene)
 
@@ -25,7 +31,10 @@ loaded on the next run — your level edits ARE a plugin.
 
 - **Pick**: left-click an object. **Gizmo**: move/rotate/scale with the
   handles; `1`/`2`/`3` switch the operation. The record is patched when
-  you release.
+  you release. Tick **Snap** to move on a metric grid (step configurable)
+  and rotate on a 15° lattice.
+- **Duplicate**: with an object selected, the *Duplicate* button (or
+  **Ctrl+D**) clones it one meter aside — one Ctrl+Z removes the copy.
 - **Place**: arm a palette entry (Statics / Lights / Prefabs), click the
   ground. `Esc` cancels.
 - **Group into a prefab**: Ctrl+click several objects, name it, *Create
@@ -78,6 +87,31 @@ The **Console** window understands:
 
 `set` goes through the same edit session as the Game DB editor: console
 tweaks export to a plugin exactly the same way.
+
+The IN-GAME console (F8, Landscape scene) adds `spawn`, `tp`, `tgm`,
+`settime`, `startquest`, and `setstage <quest> <state>` (jump a quest to
+any of its states by editorId).
+
+## Checking a mod: `cooker validate`
+
+The command-line cooker can lint a load order before you ship it:
+
+```
+cooker validate base.toml my-mod.toml
+```
+
+It resolves the plugins IN THAT ORDER and reports:
+
+- **errors** (exit code 1 — fix before shipping): patches to records
+  nothing creates, missing/misordered dependencies, and **dangling
+  references** — any GUID field pointing at a record or asset that no
+  listed plugin provides;
+- **information**: per-field conflicts. Two plugins writing the same
+  field is normal layering (the last one wins) — the report just shows
+  who wrote what, in order.
+
+Validate your mod TOGETHER with the plugins it builds on, or references
+into them will (correctly) show up as dangling.
 
 Related: [How plugins work](plugins.md) ·
 [Load order & conflicts](load-order.md)
