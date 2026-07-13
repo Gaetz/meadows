@@ -198,6 +198,10 @@ void GraphInstance::checkTransitions() {
             tagCheck(transition.blockedTag)) {
             continue;
         }
+        if (!transition.conditionRef.empty() &&
+            (!conditionCheck || !conditionCheck(transition.conditionRef))) {
+            continue; // fails closed, like requiredTag without a tagCheck
+        }
         startTransition(transition);
         return;
     }

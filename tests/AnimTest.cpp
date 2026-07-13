@@ -9,6 +9,7 @@
 #include "data/plugins/Resolver.hpp"
 #include "engine/anim/Anim.hpp"
 #include "engine/core/Hash.hpp"
+#include "gameplay/condition/Condition.hpp"
 #include "world/scene/AnimBridge.hpp"
 
 // H5: the anim runtime is pure and deterministic — synthetic skeleton +
@@ -453,4 +454,114 @@ threshold = 0.5
     REQUIRE(base->transitions.size() == 1);
     CHECK(base->transitions[0].threshold == doctest::Approx(0.5f));
     CHECK(base->clipEvents[0].empty());
+}
+
+TEST_CASE("graph transitions honor the condition callback seam") {
+    // Chantier 8 follow-up: a transition carrying a conditionRef fires only
+    // when the runtime callback approves it — and fails CLOSED without a
+    // callback, exactly like requiredTag without a tagCheck.
+    anim::GraphDesc desc;
+    desc.clips.push_back(armSwingClip());
+    desc.clipEvents.emplace_back();
+    desc.states.push_back({ 0, 1.0f, true, 0.0f });
+    desc.states.push_back({ 0, 2.0f, true, 0.0f });
+    anim::GraphTransition gated;
+    gated.from = 0;
+    gated.to = 1;
+    gated.param = "speed";
+    gated.threshold = 0.5f;
+    gated.blendTime = 0.0f;
+    gated.conditionRef = "cond-1";
+    desc.transitions.push_back(gated);
+
+    {
+        anim::GraphInstance instance { desc }; // no callback set
+        instance.setParam("speed", 1.0f);
+        for (int i = 0; i < 10; ++i) {
+            instance.update(0.016f);
+        }
+        CHECK(instance.currentState() == 0); // fails closed
+    }
+    {
+        anim::GraphInstance instance { desc };
+        bool allow = false;
+        str seen;
+        instance.setConditionCheck([&](std::string_view ref) {
+            seen = str { ref };
+            return allow;
+        });
+        instance.setParam("speed", 1.0f);
+        for (int i = 0; i < 5; ++i) {
+            instance.update(0.016f);
+        }
+        CHECK(instance.currentState() == 0); // callback vetoes
+        CHECK(seen == "cond-1");             // the opaque ref round-trips
+        allow = true;
+        for (int i = 0; i < 5; ++i) {
+            instance.update(0.016f);
+        }
+        CHECK(instance.currentState() == 1); // callback approves
+    }
+}
+
+TEST_CASE("AnimBridge flags condition-gated transitions with their guid") {
+    // Only transitions carrying ConditionForm children pay the runtime
+    // callback: the bridge stamps conditionRef = the transition's own guid
+    // (conditionsPass then evaluates its children — the shared pattern).
+    data::FormDatabase db;
+    const auto clipId =
+        *core::Guid::fromString("dddd0007-0000-4000-8000-000000000001");
+    const auto graphId =
+        *core::Guid::fromString("dddd0007-0000-4000-8000-000000000002");
+    const auto stateA =
+        *core::Guid::fromString("dddd0007-0000-4000-8000-000000000003");
+    const auto stateB =
+        *core::Guid::fromString("dddd0007-0000-4000-8000-000000000004");
+    const auto gatedId =
+        *core::Guid::fromString("dddd0007-0000-4000-8000-000000000005");
+    const auto freeId =
+        *core::Guid::fromString("dddd0007-0000-4000-8000-000000000006");
+
+    auto clip = std::make_unique<data::AnimClipForm>();
+    clip->id = clipId;
+    db.add(std::move(clip), data::AnimClipForm::staticTypeInfo());
+    auto graph = std::make_unique<data::AnimGraphForm>();
+    graph->id = graphId;
+    graph->initialState = stateA;
+    db.add(std::move(graph), data::AnimGraphForm::staticTypeInfo());
+    for (const auto& stateId : { stateA, stateB }) {
+        auto state = std::make_unique<data::AnimStateForm>();
+        state->id = stateId;
+        state->parent = graphId;
+        state->clip = clipId;
+        db.add(std::move(state), data::AnimStateForm::staticTypeInfo());
+    }
+    for (const auto& [id, from, to] :
+         { std::tuple { gatedId, stateA, stateB },
+           std::tuple { freeId, stateB, stateA } }) {
+        auto transition = std::make_unique<data::AnimTransitionForm>();
+        transition->id = id;
+        transition->parent = graphId;
+        transition->from = from;
+        transition->to = to;
+        transition->param = "speed";
+        db.add(std::move(transition),
+               data::AnimTransitionForm::staticTypeInfo());
+    }
+    auto condition = std::make_unique<gameplay::ConditionForm>();
+    condition->id =
+        *core::Guid::fromString("dddd0007-0000-4000-8000-000000000007");
+    condition->parent = gatedId; // gates the FIRST transition only
+    condition->kind = "HasTag";
+    condition->tag = "State.InCombat";
+    db.add(std::move(condition), gameplay::ConditionForm::staticTypeInfo());
+
+    const auto desc = world::buildAnimGraph(
+        db, graphId, [](const core::Guid&, const str&) {
+            return armSwingClip();
+        });
+    REQUIRE(desc.has_value());
+    REQUIRE(desc->transitions.size() == 2);
+    CHECK(desc->transitions[0].conditionRef == gatedId.toString());
+    CHECK(desc->transitions[1].conditionRef.empty());
 }

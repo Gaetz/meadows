@@ -10,6 +10,7 @@
 #include "data/plugins/EditSession.hpp"
 #include "engine/core/Log.hpp"
 #include "gameplay/actors/CharacterForms.hpp"
+#include "gameplay/condition/Condition.hpp"
 
 namespace world {
 
@@ -27,6 +28,10 @@ struct GraphForms {
         states;
     std::function<vector<const data::AnimTransitionForm*>(const core::Guid&)>
         transitions;
+    // Whether a transition record carries ConditionForm children (the §2.11
+    // shared predicate engine): decided at BUILD time so ungated
+    // transitions never pay the runtime condition callback.
+    std::function<bool(const core::Guid&)> hasConditions;
 };
 
 std::optional<anim::GraphDesc> buildFromForms(const GraphForms& source,
@@ -112,6 +117,12 @@ std::optional<anim::GraphDesc> buildFromForms(const GraphForms& source,
         runtime.blockedTag = transition->blockedTag;
         runtime.blendTime = transition->blendTime;
         runtime.waitForEnd = transition->waitForEnd;
+        if (source.hasConditions(transition->id)) {
+            // The opaque ref handed back through the condition callback IS
+            // the transition's guid: conditionsPass evaluates its
+            // ConditionForm children (the dialogue/quest/ability pattern).
+            runtime.conditionRef = transition->id.toString();
+        }
         desc.transitions.push_back(std::move(runtime));
     }
 
@@ -177,6 +188,10 @@ std::optional<anim::GraphDesc> buildAnimGraph(
         .transitions = [&](const core::Guid& id) {
             return data::collectChildren<data::AnimTransitionForm>(forms, id);
         },
+        .hasConditions = [&](const core::Guid& id) {
+            return !data::collectChildren<gameplay::ConditionForm>(forms, id)
+                        .empty();
+        },
     };
     return buildFromForms(source, graphId, resolveClip);
 }
@@ -199,6 +214,10 @@ std::optional<anim::GraphDesc> buildAnimGraph(
         },
         .transitions = [&](const core::Guid& id) {
             return visibleChildren<data::AnimTransitionForm>(session, id);
+        },
+        .hasConditions = [&](const core::Guid& id) {
+            return !visibleChildren<gameplay::ConditionForm>(session, id)
+                        .empty();
         },
     };
     return buildFromForms(source, graphId, resolveClip);

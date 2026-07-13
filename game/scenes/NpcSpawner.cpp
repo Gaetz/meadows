@@ -12,6 +12,7 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/actors/CharacterForms.hpp" // gameplay::ActorTagForm
 #include "gameplay/actors/FollowerForms.hpp"  // FollowerClassForm (É6 style)
+#include "gameplay/condition/Condition.hpp"   // transition condition gates
 #include "world/ai/Perception.hpp"      // B2: every built NPC perceives
 #include "world/scene/AnimBridge.hpp"     // resolveActorVisual, buildAnimGraph
 #include "world/scene/Components.hpp"
@@ -200,6 +201,31 @@ void NpcSpawner::refreshNpcs(
                         return raw->attacking;
                     }
                     return false;
+                });
+            // Full condition-evaluator gate on transitions (chantier 8
+            // follow-up): the opaque ref is the transition's guid, its
+            // ConditionForm children evaluate against THIS actor. forms and
+            // gameTags are scene members outliving every Npc. Lua clauses
+            // stay unwired here (fail closed) until a brain-VM need shows.
+            npc->anim->setConditionCheck(
+                [raw = npc.get(), &conditionForms = ctx.forms,
+                 &gameTags = ctx.gameTags](std::string_view ref) {
+                    const auto conditionId = core::Guid::fromString(ref);
+                    if (!conditionId || !raw->entity.is_alive()) {
+                        return false;
+                    }
+                    gameplay::EvalContext context;
+                    context.tags = &gameTags;
+                    if (raw->entity.has<gameplay::AbilitySystem>()) {
+                        context.abilitySystem =
+                            &raw->entity.get<gameplay::AbilitySystem>();
+                    }
+                    if (raw->entity.has<gameplay::Inventory>()) {
+                        context.inventory =
+                            &raw->entity.get<gameplay::Inventory>();
+                    }
+                    return gameplay::conditionsPass(conditionForms,
+                                                    *conditionId, context);
                 });
             // Chantier P0 C4a: the sink FINALLY gets a runtime consumer —
             // events buffer on the Npc (uptr = stable address) and drain

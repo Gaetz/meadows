@@ -103,6 +103,11 @@ struct GraphTransition {
     str blockedTag;
     f32 blendTime { 0.15f };
     bool waitForEnd { false };
+    // Full condition-evaluator gate (chantier 8 follow-up): an opaque id the
+    // runtime hands back through the condition callback — the graph never
+    // sees gameplay types, same seam as tags. "" = ungated (the common
+    // case pays no callback). Fails closed when set without a callback.
+    str conditionRef;
 };
 
 struct GraphDesc {
@@ -119,6 +124,7 @@ struct GraphDesc {
 class GraphInstance {
 public:
     using TagCheck = std::function<bool(std::string_view tag)>;
+    using ConditionCheck = std::function<bool(std::string_view conditionRef)>;
     using EventSink = std::function<void(std::string_view name)>;
 
     explicit GraphInstance(const GraphDesc& desc);
@@ -126,6 +132,9 @@ public:
     void setParam(std::string_view name, f32 value);
     f32 param(std::string_view name) const;
     void setTagCheck(TagCheck check) { tagCheck = std::move(check); }
+    void setConditionCheck(ConditionCheck check) {
+        conditionCheck = std::move(check);
+    }
     void setEventSink(EventSink sink) { eventSink = std::move(sink); }
 
     // Advances time (firing crossed events), evaluates transitions, and
@@ -153,6 +162,7 @@ private:
     f32 blendDuration { 0.0f };
     std::unordered_map<str, f32> params;
     TagCheck tagCheck;
+    ConditionCheck conditionCheck;
     EventSink eventSink;
 };
 
