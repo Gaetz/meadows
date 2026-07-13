@@ -19,6 +19,7 @@
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp" // arrow pickup (A7+)
 #include "gameplay/stats/CoreAttributes.hpp"
+#include "world/ai/Perception.hpp" // sneak shot: unaware gate
 #include "world/scene/Components.hpp"
 
 namespace game {
@@ -58,8 +59,28 @@ void strike(const ProjectileContext& ctx, ecs::Entity target,
             }
         }
     }
+    // Sneak attack (furtivité, 2026-07-13): same rule as the blade — a
+    // State.Sneaking shooter hitting a target whose Perception never left
+    // Calm multiplies the payload (arrows skip the guard stage, so the
+    // multiplier applies here rather than in resolveMeleeStrike).
+    gameplay::DamageEvent payload = arrow.payload;
+    if (shooter.is_alive() && target.has<world::Perception>() &&
+        world::awareState(target.get<world::Perception>()) ==
+            world::AwareState::Calm &&
+        shooter.has<gameplay::AbilitySystem>()) {
+        if (const auto sneaking = ctx.gameTags.find("State.Sneaking");
+            sneaking &&
+            shooter.get<gameplay::AbilitySystem>().tags.has(*sneaking)) {
+            for (gameplay::DamageChannel& channel : payload.channels) {
+                channel.amount *= ctx.statsTuning.sneakAttackMultiplier;
+            }
+            payload.postureAmount *= ctx.statsTuning.sneakAttackMultiplier;
+            LOG_INFO("SNEAK SHOT — x{:.1f}",
+                     ctx.statsTuning.sneakAttackMultiplier);
+        }
+    }
     const gameplay::DamageResult result = gameplay::resolveStrikeDamage(
-        defender, shooter, target, arrow.payload, at, strikeCtx);
+        defender, shooter, target, payload, at, strikeCtx);
     LOG_INFO("A7: arrow hits for {:.0f}", result.healthDamage);
 }
 

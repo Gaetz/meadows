@@ -23,6 +23,7 @@
 #include "gameplay/combat/MeleeStrike.hpp"      // the ONE strike resolution
 #include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing (A4)
 #include "gameplay/cue/GameplayCues.hpp"        // Cue.Hit/Block/Parry (C2)
+#include "world/ai/Perception.hpp"              // sneak attack: unaware gate
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/actors/ActorState.hpp" // gameplay::Bounty
 #include "gameplay/stats/CoreAttributes.hpp"
@@ -286,18 +287,30 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
         ctx.playerEntity.get_mut<gameplay::CombatState>()
     };
     const auto& targetT = target.entity.get<world::Transform>();
-    const gameplay::StrikeGeometry geo {
+    gameplay::StrikeGeometry geo {
         body_->position(), targetT.position,
         targetT.rotation * Vec3 { 0.0f, 0.0f, 1.0f },
         target.entity.get<gameplay::MeleeSwing>().guardSeconds,
         targetT.position + Vec3 { 0.0f, 1.2f, 0.0f }
     };
+    // Sneak attack: the flat seam — the defender's world-layer Perception
+    // is read HERE (Calm = he never noticed you); the strike rules only
+    // ever see the bool + the attacker's State.Sneaking tag.
+    if (target.entity.has<world::Perception>()) {
+        geo.targetUnaware =
+            world::awareState(target.entity.get<world::Perception>()) ==
+            world::AwareState::Calm;
+    }
     const gameplay::StrikeContext strike { ctx.gameTags, ctx.derivedStats,
                                            ctx.statsTuning, ctx.eventBus,
                                            ctx.cues };
     const gameplay::StrikeOutcome outcome = gameplay::resolveMeleeStrike(
         attacker, defender, ctx.playerEntity, target.entity,
         gameplay::weaponDamageEvent(weapon, attacker.system), geo, strike);
+    if (outcome.sneakAttack) {
+        LOG_INFO("SNEAK ATTACK — x{:.1f}",
+                 ctx.statsTuning.sneakAttackMultiplier);
+    }
     if (outcome.guard.perfect) {
         LOG_INFO("PERFECT PARRY — your poise takes {}",
                  ctx.statsTuning.perfectParryPosture);

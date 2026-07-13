@@ -38,6 +38,11 @@ struct StrikeGeometry {
     // < 0 = guard down.
     f32 defenderGuardSeconds { -1.0f };
     Vec3 impact {}; // cue anchor (the defender's chest)
+    // Sneak attack (furtivité, 2026-07-13): the defender never noticed
+    // the attacker (world-layer Perception AwareState::Calm — the caller
+    // passes the flat bool, the rules never see world types). Combined
+    // with a State.Sneaking attacker it multiplies the strike.
+    bool targetUnaware { false };
 };
 
 struct StrikeOutcome {
@@ -45,6 +50,7 @@ struct StrikeOutcome {
     DamageResult damage {};  // landed on the DEFENDER (empty on a parry)
     DamageResult riposte {}; // perfect parry: the ATTACKER's poise hit
     bool critical { false }; // the crit execution fired (C1 window)
+    bool sneakAttack { false }; // the sneak multiplier applied
 };
 
 // The full melee exchange, both camps (docs/STATS.md §4):

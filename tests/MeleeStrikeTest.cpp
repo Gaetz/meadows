@@ -254,3 +254,39 @@ TEST_CASE("humanoid capsule: one shared shape, crouched = half height") {
     CHECK(!segmentHitsActor(Vec3 { -1.0f, 1.2f, 5.0f },
                             Vec3 { 1.0f, 1.2f, 5.0f }, feet));
 }
+
+TEST_CASE("strike: sneak attack multiplies only when sneaking AND unaware") {
+    // Furtivité leftover (2026-07-13): State.Sneaking attacker + a
+    // defender whose Perception never left Calm (the caller passes the
+    // flat targetUnaware bool) -> every channel x sneakAttackMultiplier.
+    Duel d;
+    d.tags.registerTag("State.Sneaking");
+    StatBlock atk = d.attacker.block();
+    StatBlock def = d.defender.block();
+
+    // Unaware target but a NON-sneaking attacker: normal hit (81).
+    StrikeGeometry unaware = d.frontal();
+    unaware.targetUnaware = true;
+    StrikeOutcome out =
+        resolveMeleeStrike(atk, def, {}, {}, slash100(), unaware, d.ctx());
+    CHECK_FALSE(out.sneakAttack);
+    CHECK(out.damage.healthDamage == doctest::Approx(81.0f));
+
+    // Sneaking attacker + AWARE target: still a normal hit.
+    d.attacker.system.tags.add(*d.tags.find("State.Sneaking"), d.tags);
+    Actor& fresh = d.defender;
+    d.setup(fresh); // reset health/posture between exchanges
+    StatBlock def2 = d.defender.block();
+    out = resolveMeleeStrike(atk, def2, {}, {}, slash100(), d.frontal(),
+                             d.ctx());
+    CHECK_FALSE(out.sneakAttack);
+    CHECK(out.damage.healthDamage == doctest::Approx(81.0f));
+
+    // Sneaking + unaware: slash 300 -> flat 10 -> 290 -> armor 10% = 261.
+    d.setup(fresh);
+    StatBlock def3 = d.defender.block();
+    out = resolveMeleeStrike(atk, def3, {}, {}, slash100(), unaware,
+                             d.ctx());
+    CHECK(out.sneakAttack);
+    CHECK(out.damage.healthDamage == doctest::Approx(261.0f));
+}

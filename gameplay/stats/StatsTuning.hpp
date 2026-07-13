@@ -222,6 +222,10 @@ struct StatsTuningForm : data::Form {
     f32 fallMinHeight { 4.0f };
     f32 fallDamagePerMeter { 10.0f };
     f32 fallLethalHeight { 30.0f };
+    // Sneak attack (appended — ordinals stable): the multiplier a
+    // State.Sneaking attacker lands on an UNAWARE defender (Perception
+    // Calm) — resolveMeleeStrike, arrows included.
+    f32 sneakAttackMultiplier { 3.0f };
 
     REFLECT_BEGIN(StatsTuningForm, data::Form)
         REFLECT_FIELD(attributeToMax)
@@ -337,6 +341,7 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(fallMinHeight)
         REFLECT_FIELD(fallDamagePerMeter)
         REFLECT_FIELD(fallLethalHeight)
+        REFLECT_FIELD(sneakAttackMultiplier)
     REFLECT_END()
 };
 

@@ -51,6 +51,21 @@ StrikeOutcome resolveMeleeStrike(StatBlock& attacker, StatBlock& defender,
                                  const StrikeGeometry& geo,
                                  const StrikeContext& ctx) {
     StrikeOutcome out;
+    // Sneak attack (furtivité leftover, 2026-07-13): a State.Sneaking
+    // attacker striking an UNAWARE defender multiplies every channel and
+    // the posture hit (sneakAttackMultiplier — §5 moddable). An unaware
+    // defender has no guard up in practice, so the block stage below
+    // stays untouched.
+    if (geo.targetUnaware) {
+        if (const auto sneaking = ctx.tags.find("State.Sneaking");
+            sneaking && attacker.system.tags.has(*sneaking)) {
+            out.sneakAttack = true;
+            for (DamageChannel& channel : event.channels) {
+                channel.amount *= ctx.tuning.sneakAttackMultiplier;
+            }
+            event.postureAmount *= ctx.tuning.sneakAttackMultiplier;
+        }
+    }
     // C1: a defender in its critical window eats the critical execution
     // (both camps — the NPC->player copy had drifted and skipped this).
     if (const auto weakness = ctx.tags.find("State.CriticalWeakness")) {
