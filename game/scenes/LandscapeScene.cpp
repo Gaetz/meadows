@@ -2456,6 +2456,38 @@ void LandscapeScene::createConsole() {
         questDirector.syncQuestTags(makeQuestContext());
         return "quest '" + args + "' started";
     });
+    panel.addCommand("setstage", [this](const str& args) -> str {
+        // Dev jump: setstage <quest> <state> (editorIds). Starts the quest
+        // if needed; a Success/Failure state finishes it normally.
+        std::istringstream in { args };
+        str questName;
+        str stateName;
+        if (!(in >> questName >> stateName)) {
+            return "usage: setstage <questEditorId> <stateEditorId>";
+        }
+        const auto* quest =
+            data::findByEditorId<quest::QuestForm>(forms, questName);
+        if (!quest) {
+            return "no quest named '" + questName + "'";
+        }
+        const quest::QuestStateForm* target = nullptr;
+        data::forEach<quest::QuestStateForm>(
+            forms, [&](const quest::QuestStateForm& state) {
+                if (!target && state.quest == quest->id &&
+                    state.editorId == stateName) {
+                    target = &state;
+                }
+            });
+        if (!target) {
+            return "'" + questName + "' has no state '" + stateName + "'";
+        }
+        auto& log = questDirector.questLog();
+        if (!quest::setQuestState(log, forms, quest->id, target->id)) {
+            return "setstage refused (state/quest mismatch)";
+        }
+        questDirector.syncQuestTags(makeQuestContext());
+        return questName + " -> " + stateName;
+    });
     panel.addCommand("queststate", [this](const str&) -> str {
         const auto& log = questDirector.questLog();
         if (log.quests.empty()) {

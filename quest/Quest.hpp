@@ -112,6 +112,14 @@ void onQuestEvent(QuestLog& log, const data::FormDatabase& forms,
                   const gameplay::Event& event,
                   const gameplay::GameplayTagRegistry& tags);
 
+// Dev/console jump (the `setstage` command, 2026-07-13): forces the quest
+// onto `stateId` — starts it if it was never taken, clears task progress,
+// and a Success/Failure state kind finishes it exactly like a normal
+// transition. False (no change) when the state is unknown or belongs to
+// another quest.
+bool setQuestState(QuestLog& log, const data::FormDatabase& forms,
+                   const core::Guid& questId, const core::Guid& stateId);
+
 bool isActive(const QuestLog& log, const core::Guid& questId);
 core::Guid questState(const QuestLog& log, const core::Guid& questId);
 i32 taskProgress(const QuestLog& log, const core::Guid& questId,

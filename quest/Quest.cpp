@@ -90,6 +90,24 @@ void advanceCompletedBranch(const data::FormDatabase& forms,
 
 } // namespace
 
+bool setQuestState(QuestLog& log, const data::FormDatabase& forms,
+                   const core::Guid& questId, const core::Guid& stateId) {
+    const QuestStateForm* state = forms.find<QuestStateForm>(stateId);
+    if (!state || state->quest != questId) {
+        return false;
+    }
+    QuestProgress& progress = log.quests[questId]; // enlists if never taken
+    progress.currentState = stateId;
+    progress.taskProgress.clear();
+    progress.status = QuestStatus::Active; // jumping BACK re-opens it
+    if (state->kind == "Success") {
+        progress.status = QuestStatus::Succeeded;
+    } else if (state->kind == "Failure") {
+        progress.status = QuestStatus::Failed;
+    }
+    return true;
+}
+
 void registerQuestFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<QuestForm>();
     registry.registerFormType<QuestStateForm>();

@@ -178,3 +178,31 @@ TEST_CASE("a branch into a Failure state fails the quest") {
         startQuestsOn(log, db, { gameplay::eventKind("OnAcceptSlay") });
     CHECK(started.empty());
 }
+
+TEST_CASE("setQuestState jumps stages: enlists, re-opens, finishes (setstage)") {
+    const data::FormDatabase db = buildQuestDb();
+    QuestLog log;
+
+    // Never taken: setstage enlists the quest directly on the target state.
+    CHECK(setQuestState(log, db, kQuest, kStart));
+    CHECK(isActive(log, kQuest));
+    CHECK(questState(log, kQuest) == kStart);
+
+    // Jump to the Success state: finishes exactly like a normal transition.
+    CHECK(setQuestState(log, db, kQuest, kDone));
+    CHECK(questStatus(log, kQuest) == QuestStatus::Succeeded);
+    CHECK_FALSE(isActive(log, kQuest));
+
+    // Jump BACK re-opens it and clears task progress.
+    log.quests[kQuest].taskProgress[kTask] = 1;
+    CHECK(setQuestState(log, db, kQuest, kStart));
+    CHECK(isActive(log, kQuest));
+    CHECK(taskProgress(log, kQuest, kTask) == 0);
+
+    // A state of ANOTHER quest (or an unknown guid) is refused, no change.
+    const Guid other =
+        *Guid::fromString("90000000-0000-4000-8000-0000000000ee");
+    CHECK_FALSE(setQuestState(log, db, other, kDone));
+    CHECK_FALSE(setQuestState(log, db, kQuest, other));
+    CHECK(questState(log, kQuest) == kStart);
+}
