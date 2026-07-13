@@ -252,6 +252,16 @@ low-posture). A light-attack combo averages motion value 1.
   SneakCost effect); standing still is free. Speed ×0.75; footsteps play
   softer/lower and carry half as far; sight detection range ×0.5. The
   0.5 detection factor becomes a function of the sneak SKILL later.
+- **Sneak attack** (2026-07-13, implemented): a sneaking attacker striking
+  a target whose perception never left Calm multiplies every damage
+  channel and the posture hit by `sneakAttackMultiplier` (default ×3,
+  StatsTuningForm). Applies to melee (the single strike resolution) AND
+  arrows. Becomes skill-scaled with the sneak skill later.
+- **Fall damage** (2026-07-13, implemented): landings are free below
+  `fallMinHeight` (4 m), then blunt and UNMITIGATED (the drowning idiom)
+  at `fallDamagePerMeter` (10/m) above the floor; at `fallLethalHeight`
+  (30 m) the landing kills outright through the normal pipeline (the
+  kill-z idiom). Water absorbs any fall.
 - A hit while parrying with no energy **staggers** the character (loses posture %
   = critical sensitivity, plus normal posture damage).
 - **States:** normal, **staggered** (can't act/parry/dodge, very slow), **shaken**
