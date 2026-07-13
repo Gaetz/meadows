@@ -84,6 +84,27 @@ inline f32 bountyToward(const Bounty& bounty, GameplayTag faction) {
     return amount;
 }
 
+// Pays `faction` off: clears its slice AND the unattributed remainder
+// (the fine settles everything nobody else specifically holds). Slices
+// of OTHER factions survive — their guards stay hostile. An invalid
+// faction clears the whole bounty (the unknown-arrester fallback).
+inline void clearBountyToward(Bounty& bounty, GameplayTag faction) {
+    f32 cleared = unattributedBounty(bounty);
+    for (auto it = bounty.perFaction.begin();
+         it != bounty.perFaction.end();) {
+        if (!faction.isValid() || it->faction == faction) {
+            cleared += it->amount;
+            it = bounty.perFaction.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    bounty.bounty -= cleared;
+    if (bounty.bounty < 0.0f) {
+        bounty.bounty = 0.0f;
+    }
+}
+
 // Follower runtime state (FOLLOWERS É0 — docs/CHANTIER-FOLLOWERS.md).
 // Same pattern as VendorState/Bounty above: reflected, present on every
 // actor, captured by the SavedStatsForm name-match sweep. Fields carry the

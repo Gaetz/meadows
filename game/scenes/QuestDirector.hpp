@@ -5,6 +5,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 #include "engine/ecs/World.hpp" // ecs::Entity
+#include "gameplay/ability/GameplayTags.hpp" // QuestContext.factionOf
 #include "quest/Dialogue.hpp"   // DialogueRunner (held by uptr — full type)
 #include "quest/Quest.hpp"      // QuestLog (value member)
 
@@ -44,6 +45,10 @@ struct QuestContext {
     bool uiCreated;
     std::function<void(const str&, f32)> say; // interaction.say
     std::function<void()> pushDialogueModel;  // hud.pushDialogueModel(HudCtx)
+    // Per-faction crime (2026-07-13): resolves an actor entity to its
+    // faction tag (the scene's Npc registry) — payFine settles the
+    // ARRESTING guard's faction. Null/invalid = clear the whole bounty.
+    std::function<gameplay::GameplayTag(ecs::Entity)> factionOf;
 };
 
 // The quest / crime / dialogue director extracted from LandscapeScene (audit

@@ -2591,6 +2591,10 @@ QuestContext LandscapeScene::makeQuestContext() {
         uiCreated,
         [this](const str& msg, f32 dur) { interaction.say(msg, dur); },
         [this] { hud.pushDialogueModel(makeHudContext()); },
+        // Per-faction crime: entity -> its Faction.* tag (Npc registry).
+        [this](ecs::Entity entity) {
+            return npcDirector.factionOf(entity.id());
+        },
     };
 }
 

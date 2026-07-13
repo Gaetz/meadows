@@ -275,6 +275,14 @@ public:
     const std::vector<uptr<Npc>>& npcs() const { return npcs_; }
     Vec3 characterSpot() const { return characterSpot_; } // first NPC (teleport)
 
+    // Per-faction crime (2026-07-13): an actor entity's Faction.* tag
+    // (invalid for the player / an unknown entity) — payFine settles the
+    // arresting guard's faction through this.
+    gameplay::GameplayTag factionOf(u64 entityId) const {
+        const Npc* npc = findNpc(entityId);
+        return npc ? npc->factionTag : gameplay::GameplayTag {};
+    }
+
 private:
     // R3: entity id -> Npc record, for mapping SpatialIndex hits back to
     // the director's structs. Rebuilt whenever npcs_ changes (refreshNpcs

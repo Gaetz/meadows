@@ -129,3 +129,28 @@ TEST_CASE("per-faction bounty: capture/apply round-trips the slices") {
     CHECK(gameplay::bountyToward(restored, guards) == doctest::Approx(50.0f));
     CHECK(gameplay::unattributedBounty(restored) == doctest::Approx(10.0f));
 }
+
+TEST_CASE("per-faction bounty: the fine settles the arresting faction only") {
+    gameplay::GameplayTagRegistry tags;
+    const gameplay::GameplayTag guards = tags.registerTag("Faction.VillageGuard");
+    const gameplay::GameplayTag militia = tags.registerTag("Faction.Militia");
+
+    gameplay::Bounty bounty;
+    gameplay::addBounty(bounty, guards, 40.0f);
+    gameplay::addBounty(bounty, militia, 30.0f);
+    gameplay::addBounty(bounty, {}, 10.0f); // unattributed
+
+    // Paying the guard clears HIS slice + the unattributed part; the
+    // militia's slice survives (its guards stay hostile, Wanted holds).
+    gameplay::clearBountyToward(bounty, guards);
+    CHECK(bounty.bounty == doctest::Approx(30.0f));
+    CHECK(gameplay::bountyToward(bounty, guards) == doctest::Approx(0.0f));
+    CHECK(gameplay::bountyToward(bounty, militia) == doctest::Approx(30.0f));
+    CHECK(gameplay::unattributedBounty(bounty) == doctest::Approx(0.0f));
+
+    // An unknown arrester (invalid faction) wipes everything — the
+    // legacy fallback.
+    gameplay::clearBountyToward(bounty, {});
+    CHECK(bounty.bounty == doctest::Approx(0.0f));
+    CHECK(bounty.perFaction.empty());
+}

@@ -224,7 +224,14 @@ void QuestDirector::payFine(const QuestContext& ctx) {
         return;
     }
     if (ctx.playerEntity.has<gameplay::Bounty>()) {
-        ctx.playerEntity.get_mut<gameplay::Bounty>().bounty = 0.0f;
+        // Per-faction crime (2026-07-13): the fine settles the ARRESTING
+        // guard's faction (the dialogue partner) + the unattributed part;
+        // another faction's slice survives — its own guards stay hostile
+        // and the Wanted mirror below keeps the tag while any remains.
+        gameplay::clearBountyToward(
+            ctx.playerEntity.get_mut<gameplay::Bounty>(),
+            ctx.factionOf ? ctx.factionOf(dialoguePartner_)
+                          : gameplay::GameplayTag {});
     }
     syncWantedTag(ctx);
     ctx.say(ctx.texts.get("crime.finePaid"), 4.0f);
