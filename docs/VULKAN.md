@@ -197,7 +197,41 @@ explicites dans le corpus et SPIR-V les lit directement.
 > création des `VkDescriptorSetLayout` en V4. Compiler n'est pas valider :
 > prévoir un remapping (par exemple par offset de plage selon le type de
 > descripteur) au moment de V4.
-### V4 — Pipelines / render passes / bind groups (Y-flip, depth 0..1) — À FAIRE
+### V4 — Pipelines / render passes / bind groups — 🔨 EN COURS
+
+**Fait : le remap de bindings + la réflexion** (le risque laissé ouvert par V3
+est résolu).
+
+Le risque était réel, mesuré : **11 shaders** utilisent un même numéro de
+binding pour deux classes de descripteurs dans le même stage (typiquement
+`binding = 0` à la fois UBO et sampler). En GL ce sont des espaces de nommage
+séparés ; en Vulkan, un seul par descriptor set.
+
+Chemins écartés, et pourquoi :
+- **Les « binding shifts » de glslang/shaderc** (`--shift-sampler-binding`…) :
+  testés en ligne de commande, **sans effet sur les bindings explicites** —
+  ils ne servent qu'à l'auto-assignation. Sortie SPIR-V identique.
+- **Un descriptor set par classe** (`set = N`) : casserait le modèle du RHI, où
+  un `BindGroup` mélange les classes et doit rester **un seul** descriptor set.
+  De plus `set=` n'est pas de la syntaxe GLSL valide côté OpenGL.
+
+**Retenu : décalage par classe**, appliqué à la source GLSL dans le backend
+Vulkan uniquement (UBO +0, sampler +16, SSBO +32, image +48 ; plages de 16, le
+corpus culmine à UBO 5 / sampler 11 / SSBO 3 / image 0). Les mêmes offsets
+seront appliqués à la construction des descriptor sets, donc **les appelants
+gardent les numéros GL et ne voient rien**. Le backend GL n'est pas touché.
+
+Bénéfice : en parsant la source pour remapper, on obtient la **réflexion
+gratuitement** (classe + binding par ressource), ce dont `createPipeline` a
+besoin pour son `VkPipelineLayout` — sans dépendance de réflexion SPIR-V.
+
+Garde : après remap, `createShader` **échoue bruyamment** si deux ressources
+partagent un binding, plutôt que de laisser le défaut surgir bien plus tard à
+la création d'un descriptor set layout invalide.
+
+**Reste V4** : `createFramebuffer`, `createPipeline`/`createComputePipeline`,
+`createBindGroup`, l'enregistrement des draws, et les conventions de repère
+(Y-flip par viewport à hauteur négative, profondeur 0..1).
 ### V5 — CommandBuffer recording — À FAIRE
 ### V6 — Fences / timestamps / ImGui Vulkan / nativeTextureId — À FAIRE
 ### V7 — Bring-up LandscapeScene sur M1 + parité GL46 — À FAIRE

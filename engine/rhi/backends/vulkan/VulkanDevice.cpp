@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <string>
 #include <unordered_map>
 
 #include <vulkan/vulkan.h>
@@ -235,14 +236,157 @@ struct VulkanTexture {
     VkImageLayout layout { VK_IMAGE_LAYOUT_UNDEFINED };
 };
 
+// --- Descriptor binding remap (V4) -------------------------------------------
+//
+// OpenGL gives UBOs, texture units, SSBOs and image units SEPARATE binding
+// namespaces, and the shader corpus relies on it: `binding = 0` is legitimately
+// both a UBO and a sampler in 11 shaders. Vulkan has ONE namespace per
+// descriptor set, so those declarations collide.
+//
+// Rather than edit the corpus (which would break the GL backend, where
+// `set=` is not even valid syntax), the Vulkan backend shifts each descriptor
+// type into its own range while translating the source. The same offsets are
+// applied when a BindGroupDesc is turned into a descriptor set, so callers
+// keep using the GL-style numbers and never see this.
+//
+// Ranges are 16 wide; the corpus currently peaks at UBO 5, sampler 11, SSBO 3,
+// image 0.
+enum class DescriptorClass { Uniform, Sampler, Storage, StorageImage };
+
+constexpr u32 kBindingRange = 16;
+
+u32 bindingOffset(DescriptorClass klass) {
+    switch (klass) {
+    case DescriptorClass::Uniform:      return 0 * kBindingRange;
+    case DescriptorClass::Sampler:      return 1 * kBindingRange;
+    case DescriptorClass::Storage:      return 2 * kBindingRange;
+    case DescriptorClass::StorageImage: return 3 * kBindingRange;
+    }
+    return 0;
+}
+
+VkDescriptorType toVkDescriptorType(DescriptorClass klass) {
+    switch (klass) {
+    case DescriptorClass::Uniform: return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    case DescriptorClass::Sampler:
+        return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    case DescriptorClass::Storage: return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    case DescriptorClass::StorageImage:
+        return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    }
+    return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+}
+
+// One resource a shader declares, discovered while remapping its bindings.
+// This doubles as the reflection createPipeline needs to build its descriptor
+// set layout — parsing the GLSL we already rewrite is cheaper (and one fewer
+// dependency) than reflecting the SPIR-V afterwards.
+struct ShaderResource {
+    u32 binding { 0 }; // already offset
+    DescriptorClass klass { DescriptorClass::Uniform };
+};
+
 // A linked program in RHI terms: either a vertex+fragment pair or a lone
 // compute stage. Vulkan has no "program" object — the modules are combined at
-// pipeline creation (V4) — so this just owns the modules.
+// pipeline creation — so this owns the modules plus the reflection.
 struct VulkanShader {
     VkShaderModule vertex { VK_NULL_HANDLE };
     VkShaderModule fragment { VK_NULL_HANDLE };
     VkShaderModule compute { VK_NULL_HANDLE };
+    vector<ShaderResource> resources;
 };
+
+// Rewrites every `layout(... binding = N ...)` so each descriptor class lands
+// in its own range, and records what it found. The declarations in the corpus
+// are regular enough for this to be exact: a binding qualifier is always
+// followed by `uniform <Block|samplerX|imageX>` or `buffer <Block>`.
+str remapBindings(const str& source, vector<ShaderResource>& resources) {
+    str out;
+    out.reserve(source.size() + 64);
+
+    size_t pos = 0;
+    while (true) {
+        const size_t layoutAt = source.find("layout(", pos);
+        if (layoutAt == str::npos) {
+            out.append(source, pos, str::npos);
+            break;
+        }
+        const size_t close = source.find(')', layoutAt);
+        if (close == str::npos) {
+            out.append(source, pos, str::npos);
+            break;
+        }
+        const str layout = source.substr(layoutAt, close - layoutAt + 1);
+        const size_t bindingAt = layout.find("binding");
+        if (bindingAt == str::npos) {
+            out.append(source, pos, close - pos + 1); // location=, std140-only…
+            pos = close + 1;
+            continue;
+        }
+
+        // Parse the binding number out of the qualifier list.
+        const size_t digit = layout.find_first_of("0123456789", bindingAt);
+        if (digit == str::npos) {
+            out.append(source, pos, close - pos + 1);
+            pos = close + 1;
+            continue;
+        }
+        size_t digitEnd = layout.find_first_not_of("0123456789", digit);
+        if (digitEnd == str::npos) {
+            digitEnd = layout.size();
+        }
+        const u32 original = static_cast<u32>(
+            std::stoul(layout.substr(digit, digitEnd - digit)));
+
+        // Classify from the declaration that follows the qualifier, by reading
+        // words until the `uniform` or `buffer` keyword: memory qualifiers
+        // (readonly/writeonly/coherent) may sit in between.
+        DescriptorClass klass = DescriptorClass::Uniform;
+        size_t at = close + 1;
+        auto nextWord = [&]() -> str {
+            at = source.find_first_not_of(" \t\r\n", at);
+            if (at == str::npos) {
+                return {};
+            }
+            const size_t end = source.find_first_of(" \t\r\n;{(", at);
+            const str word = source.substr(
+                at, end == str::npos ? str::npos : end - at);
+            at = (end == str::npos) ? source.size() : end;
+            return word;
+        };
+        for (u32 guard = 0; guard < 4; ++guard) {
+            const str word = nextWord();
+            if (word.empty() || word == "buffer") {
+                klass = DescriptorClass::Storage;
+                break;
+            }
+            if (word == "uniform") {
+                const str type = nextWord();
+                if (type.rfind("sampler", 0) == 0 ||
+                    type.rfind("texture", 0) == 0) {
+                    klass = DescriptorClass::Sampler;
+                } else if (type.rfind("image", 0) == 0) {
+                    klass = DescriptorClass::StorageImage;
+                } else {
+                    klass = DescriptorClass::Uniform; // uniform block
+                }
+                break;
+            }
+            // readonly / writeonly / coherent / restrict — keep looking.
+        }
+
+        const u32 shifted = original + bindingOffset(klass);
+        resources.push_back({ shifted, klass });
+
+        // Emit the qualifier with the shifted number.
+        out.append(source, pos, layoutAt - pos);
+        out.append(layout, 0, digit);
+        out.append(std::to_string(shifted));
+        out.append(layout, digitEnd, str::npos);
+        pos = close + 1;
+    }
+    return out;
+}
 
 // Compiles one GLSL stage to SPIR-V. The sources are the SAME GLSL 460 the GL
 // backend consumes (ShaderLibrary has already expanded the #includes): the
@@ -1307,10 +1451,17 @@ ShaderHandle VulkanDevice::createShader(const ShaderDesc& desc) {
         return {};
     }
 
+    VulkanShader shader {};
+
     auto build = [&](const str& source, shaderc_shader_kind kind,
                      const char* stage, VkShaderModule& module) {
+        // Shift each descriptor class into its own binding range (GL's
+        // separate namespaces do not survive into Vulkan) and record what the
+        // stage declares, for the pipeline layout.
+        const str translated = remapBindings(source, shader.resources);
         vector<u32> spv;
-        if (!compileToSpv(source, kind, desc.debugName + "." + stage, spv)) {
+        if (!compileToSpv(translated, kind, desc.debugName + "." + stage,
+                          spv)) {
             return false;
         }
         VkShaderModuleCreateInfo info {};
@@ -1321,7 +1472,6 @@ ShaderHandle VulkanDevice::createShader(const ShaderDesc& desc) {
                     "vkCreateShaderModule");
     };
 
-    VulkanShader shader {};
     bool ok = true;
     if (isCompute) {
         ok = build(desc.computeSource, shaderc_compute_shader, "comp",
@@ -1338,6 +1488,32 @@ ShaderHandle VulkanDevice::createShader(const ShaderDesc& desc) {
         vkDestroyShaderModule(d.device, shader.fragment, nullptr);
         vkDestroyShaderModule(d.device, shader.compute, nullptr);
         return {};
+    }
+
+    // Vertex and fragment legitimately declare the same resource (FrameUbo…):
+    // collapse duplicates, then assert the remap actually separated the
+    // classes. A leftover clash would only surface as an invalid descriptor
+    // set layout much later, so it is caught loudly here instead.
+    std::sort(shader.resources.begin(), shader.resources.end(),
+              [](const ShaderResource& a, const ShaderResource& b) {
+                  return a.binding < b.binding;
+              });
+    shader.resources.erase(
+        std::unique(shader.resources.begin(), shader.resources.end(),
+                    [](const ShaderResource& a, const ShaderResource& b) {
+                        return a.binding == b.binding && a.klass == b.klass;
+                    }),
+        shader.resources.end());
+    for (size_t i = 1; i < shader.resources.size(); ++i) {
+        if (shader.resources[i].binding == shader.resources[i - 1].binding) {
+            LOG_ERROR("Vulkan createShader '{}': binding {} claimed by two "
+                      "descriptor classes after remap",
+                      desc.debugName, shader.resources[i].binding);
+            vkDestroyShaderModule(d.device, shader.vertex, nullptr);
+            vkDestroyShaderModule(d.device, shader.fragment, nullptr);
+            vkDestroyShaderModule(d.device, shader.compute, nullptr);
+            return {};
+        }
     }
 
     const u32 id = d.nextId++;
