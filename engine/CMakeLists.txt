@@ -104,6 +104,8 @@ if(MEADOWS_RHI_VULKAN)
         rhi/backends/vulkan/VulkanDevice.cpp)
     target_link_libraries(meadows-render PRIVATE Vulkan::Vulkan)
     target_compile_definitions(meadows-render PRIVATE MEADOWS_RHI_VULKAN)
+    target_include_directories(meadows-render SYSTEM PRIVATE
+        ${VulkanMemoryAllocator_SOURCE_DIR}/include)
 endif()
 
 # Debug builds hot-reload shaders straight from the repo's source directory

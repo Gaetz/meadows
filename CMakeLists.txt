@@ -241,6 +241,16 @@ if(MEADOWS_RHI_VULKAN)
     # inherit it.
     get_filename_component(MEADOWS_VULKAN_LIBDIR "${Vulkan_LIBRARY}" DIRECTORY)
     list(APPEND CMAKE_BUILD_RPATH "${MEADOWS_VULKAN_LIBDIR}")
+
+    # VMA — GPU memory sub-allocation (V2). Header-only, so DOWNLOAD_ONLY keeps
+    # it out of the build graph: one TU defines VMA_IMPLEMENTATION.
+    CPMAddPackage(
+        NAME VulkanMemoryAllocator
+        GITHUB_REPOSITORY GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+        GIT_TAG v3.1.0
+        GIT_SHALLOW TRUE
+        DOWNLOAD_ONLY TRUE
+    )
 endif()
 
 add_subdirectory(extern/glad)

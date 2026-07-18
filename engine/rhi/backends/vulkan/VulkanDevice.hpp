@@ -73,14 +73,18 @@ public:
     BindGroupHandle createBindGroup(const BindGroupDesc& desc) override;
     void destroyBindGroup(BindGroupHandle handle) override;
 
+    // Every Vulkan handle (instance, device, swapchain, command pools…) lives
+    // behind this pimpl so no <vulkan/*> type leaks into a header (§3.1). Only
+    // the NAME is public — the type stays incomplete outside VulkanDevice.cpp,
+    // where the backend's own CommandBuffer needs to name it to reach the
+    // resource tables.
+    struct Impl;
+
 private:
     VulkanDevice();
 
     DeviceCaps caps_ {};
 
-    // Every Vulkan handle (instance, device, swapchain, command pools…) lives
-    // behind this pimpl so no <vulkan/*> type leaks into a header (§3.1).
-    struct Impl;
     uptr<Impl> impl;
 };
 

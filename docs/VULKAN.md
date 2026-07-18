@@ -110,7 +110,42 @@ v-syncé à 60 Hz. **Validation layer active, zéro erreur.**
   ferait appeler des no-ops.
 - Init des structs en `{}` puis `sType =` (pas `{ VK_STRUCTURE_TYPE_… }`) :
   `-Wextra` réclame sinon `pNext` (`missing field initializer`).
-### V2 — Ressources (VMA) — À FAIRE
+### V2 — Ressources (VMA) — ✅ FAIT (2026-07-18)
+
+Auto-test `vksmoke` : **12/12 PASS**, validation layer silencieuse, présentation
+toujours à ~58 fps.
+
+- **VMA** (`GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator` v3.1.0, header-only,
+  `DOWNLOAD_ONLY`) ; `VMA_IMPLEMENTATION` dans le seul TU du backend.
+- **Buffers** : device-local par défaut (upload via staging + copie GPU) ;
+  host-visible **persistantly mapped** quand `dynamic` ou `readback`.
+  `updateBuffer`/`readBuffer` prennent automatiquement la bonne voie.
+- **Textures** : tous les formats (RGBA8/SRGBA8/RGBA16F/R16F/R32F/Depth32F),
+  `arrayLayers` (cascades CSM, splat), `depth>1` = **volumes 3D** (clipmap GI,
+  cascades — `STORAGE_BIT`), mips. Upload par staging + transitions de layout.
+  `generateMipmaps` = chaîne de `vkCmdBlitImage`.
+- **Samplers** : filtres, adressage, anisotropie (si le GPU l'expose), et
+  **samplers de comparaison** pour le PCF des ombres.
+- **`copyBuffer`/`copyTexture`** enregistrés dans le command buffer de la frame.
+- `immediateSubmit` : submit bloquant sur un pool **transient** séparé, pour que
+  le staging ne réinitialise jamais le command buffer d'une frame.
+
+**Vérification sans pipelines.** Rien ne peut encore être *dessiné* avec un
+buffer ou une texture, donc la correction se prouve par **aller-retour mémoire**
+(écriture → GPU → readback → `memcmp`), sur les deux chemins (mappé et
+device-local), plus la copie GPU enregistrée dans une frame. Les textures se
+valident par création + mips sans erreur de validation.
+
+**Leçons :**
+- `CompareFunc::Never` du RHI signifie « pas un sampler de comparaison », donc
+  il mappe sur `compareEnable = FALSE`, **pas** sur `VK_COMPARE_OP_NEVER`.
+- `VulkanDevice::Impl` doit être **nommable** par le CommandBuffer du backend
+  (il lit les tables de ressources) : la déclaration est publique, le type
+  reste incomplet hors du `.cpp`, le membre `impl` reste privé.
+- Piège de diagnostic : un `GITHUB_REPOSITORY` erroné (`…-LibrariesAndTools` au
+  lieu de `…-LibrariesAndSDKs`) fait répondre à GitHub un challenge d'auth sur
+  un dépôt inexistant → git réclame un *username* et l'erreur ressemble à une
+  panne réseau/credentials. **Vérifier l'URL avant de suspecter le réseau.**
 ### V3 — Shaders GLSL 460 → SPIR-V (point dur) — À FAIRE
 ### V4 — Pipelines / render passes / bind groups (Y-flip, depth 0..1) — À FAIRE
 ### V5 — CommandBuffer recording — À FAIRE
