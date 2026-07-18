@@ -232,6 +232,38 @@ la création d'un descriptor set layout invalide.
 **Reste V4** : `createFramebuffer`, `createPipeline`/`createComputePipeline`,
 `createBindGroup`, l'enregistrement des draws, et les conventions de repère
 (Y-flip par viewport à hauteur négative, profondeur 0..1).
+
+#### Conception arrêtée pour la suite de V4 (extensions VÉRIFIÉES sur le M1)
+
+Sonde écrite et exécutée sur l'Apple M1 — MoltenVK expose **les deux** :
+`VK_KHR_dynamic_rendering` et `VK_KHR_push_descriptor`. Cela tranche deux
+problèmes de conception qui, sinon, coûtaient cher en machinerie.
+
+1. **`VK_KHR_dynamic_rendering` → abandonner les render passes classiques.**
+   Le plan prévoyait `VkRenderPass` + `VkFramebuffer` « pour la portabilité
+   MoltenVK » ; la sonde montre que l'hypothèse est caduque. Avec le dynamic
+   rendering il n'y a **ni objet render pass ni framebuffer** :
+   `vkCmdBeginRendering` prend directement les image views et les load/store
+   ops. Cela **supprime** le cache de render passes (variantes par formats ×
+   load ops) et le problème de compatibilité render-pass/pipeline.
+   `createFramebuffer` se réduit à mémoriser des vues + formats.
+2. **`VK_KHR_push_descriptor` → régler le décalage bind group / pipeline.**
+   Vulkan veut qu'un descriptor set soit alloué depuis un layout compatible
+   avec celui du pipeline, or `BindGroupDesc` ne référence aucun shader et
+   `PipelineDesc` aucune cible. Avec les push descriptors, `setBindGroup`
+   **pousse les writes** en utilisant le layout du pipeline courant : plus de
+   set pré-alloué, plus d'appariement de layouts, et le modèle « bind group =
+   simple liste d'entrées » du RHI est respecté tel quel.
+   (Garde-fou : `maxPushDescriptors` — largement au-dessus de nos comptes.)
+
+Reste que **`createPipeline` a besoin des formats de la cible** (via
+`VkPipelineRenderingCreateInfo`), que `PipelineDesc` ne porte pas → créer le
+`VkPipeline` **paresseusement** au premier `setPipeline`, mis en cache par jeu
+de formats de la cible courante.
+
+> Ces deux extensions sont **optionnelles** dans Vulkan : les demander à la
+> création du device et **échouer proprement** si absentes (un GPU PC récent
+> les a toutes deux ; `dynamic_rendering` est même cœur en Vulkan 1.3).
 ### V5 — CommandBuffer recording — À FAIRE
 ### V6 — Fences / timestamps / ImGui Vulkan / nativeTextureId — À FAIRE
 ### V7 — Bring-up LandscapeScene sur M1 + parité GL46 — À FAIRE
