@@ -96,7 +96,11 @@ target_link_libraries(meadows-render
 # switch. Vulkan types stay confined to this TU (pimpl, §3.1); SDL3 (already
 # linked) provides the Vulkan surface + loader glue.
 if(MEADOWS_RHI_VULKAN)
+    # VulkanSurface.cpp is the Vulkan half of the platform layer, and lives
+    # here for the same reason GlContext.cpp does: it needs the graphics API's
+    # headers, which the base lib must stay free of.
     target_sources(meadows-render PRIVATE
+        platform/common/VulkanSurface.cpp
         rhi/backends/vulkan/VulkanDevice.cpp)
     target_link_libraries(meadows-render PRIVATE Vulkan::Vulkan)
     target_compile_definitions(meadows-render PRIVATE MEADOWS_RHI_VULKAN)

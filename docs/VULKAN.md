@@ -73,7 +73,43 @@ Vulkan-ready (interface explicite, chaque commentaire donne l'équivalent VK).
    found ») — y compris `meadows-tests`. `CMAKE_BUILD_RPATH` reçoit le dossier
    de `${Vulkan_LIBRARY}`, posé AVANT la définition des targets.
 
-### V1 — Instance / device / swapchain / surface (frame « clear ») — À FAIRE
+### V1 — Instance / device / swapchain / surface (frame « clear ») — ✅ FAIT (2026-07-18)
+
+**Vulkan tourne sur le M1 via MoltenVK** : `Vulkan device ready: Apple M1 —
+1280x720, 3 swapchain images`, **296 frames en 5,00 s (59,2 fps)** = FIFO
+v-syncé à 60 Hz. **Validation layer active, zéro erreur.**
+
+- `platform/VulkanSurface` : seam surface (SDL `GetInstanceExtensions` +
+  `CreateSurface`), handles opaques (`void*` instance, `u64` surface) → aucun
+  type Vulkan dans un header (§3.1). Compilé dans `meadows-render`, comme
+  `GlContext.cpp` (la moitié GL de la couche platform).
+- `VulkanDevice` : instance (+ validation en debug), surface, choix du GPU
+  (graphics+present+swapchain, discret préféré), device logique, swapchain
+  (BGRA8 UNORM, FIFO), render pass, framebuffers, command pool, et la
+  synchronisation `kFramesInFlight = 2`.
+- `beginFrame`/`endFrame` : acquire → record → submit → present, avec
+  recréation de swapchain sur `OUT_OF_DATE`/`SUBOPTIMAL` et sortie propre si
+  l'acquire échoue (`frameActive`).
+- `beginRenderPass` honore `RenderPassDesc::clearColor` (le reste du
+  CommandBuffer reste no-op jusqu'à V4/V5).
+- **`tools/vksmoke`** : harnais de bring-up (fenêtre + device + boucle de clear
+  animée) — la boucle `Engine` dépend encore du `SpriteRenderer` GL et de
+  l'ImGui GL (portés en V3/V6), donc V1 se valide hors `Engine`.
+
+**Choix notables :**
+- **Swapchain en `B8G8R8A8_UNORM`, pas `_SRGB`** : le pipeline couleur du moteur
+  gère son propre gamma ; un backbuffer sRGB double-corrigerait.
+- **Sémaphore `renderFinished` PAR IMAGE** (pas par frame-in-flight) : un
+  sémaphore ne doit pas être réutilisé tant qu'un present précédent l'attend
+  encore.
+- **Portabilité MoltenVK** : `VK_KHR_portability_enumeration` + le flag
+  d'instance (sans quoi le GPU n'est même pas énuméré), et
+  `VK_KHR_portability_subset` côté device quand il est exposé.
+- **`DeviceCaps` reste tout à `false`** : les systèmes du renderer se gatent
+  dessus ; annoncer une capacité avant que V2/V3/V4 ne l'implémentent les
+  ferait appeler des no-ops.
+- Init des structs en `{}` puis `sType =` (pas `{ VK_STRUCTURE_TYPE_… }`) :
+  `-Wextra` réclame sinon `pNext` (`missing field initializer`).
 ### V2 — Ressources (VMA) — À FAIRE
 ### V3 — Shaders GLSL 460 → SPIR-V (point dur) — À FAIRE
 ### V4 — Pipelines / render passes / bind groups (Y-flip, depth 0..1) — À FAIRE

@@ -13,3 +13,12 @@ add_executable(cooker cooker/Main.cpp ${PROJECT_SOURCE_DIR}/game/AllForms.cpp
 target_link_libraries(cooker PRIVATE meadows-data meadows-world
                       meadows-narrative meadows-render)
 meadows_set_warnings(cooker)
+
+# vksmoke — Vulkan bring-up harness (chantier VULKAN, V1). Drives the backend's
+# presentation path without the Engine loop, which is still tied to the GL
+# SpriteRenderer/ImGui until V3/V6. Built only with the Vulkan backend.
+if(MEADOWS_RHI_VULKAN)
+    add_executable(vksmoke vksmoke/Main.cpp)
+    target_link_libraries(vksmoke PRIVATE meadows-render)
+    meadows_set_warnings(vksmoke)
+endif()
