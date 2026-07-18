@@ -10,6 +10,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Dependencies are pinned here and fetched at configure time, identically on
 # every OS (§3.1). Set the CPM_SOURCE_CACHE env var to share downloads between
 # build directories.
+# Every dependency below is pinned to an exact tag or commit, so re-querying
+# each remote on every configure buys nothing — and it cost ~5 min 40 s per
+# no-op configure (8 `git fetch` round-trips), besides failing outright when
+# the network hiccups. Skipping the update stage takes that to seconds; the
+# download stage still runs for anything not yet populated.
+# NOTE: after CHANGING a pin, if a dependency does not re-populate, delete
+# cmake-build-*/\_deps/<name>-* to force it.
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL
+    "Skip git update for already-populated pinned dependencies")
+
 include(cmake/CPM.cmake)
 
 CPMAddPackage(
