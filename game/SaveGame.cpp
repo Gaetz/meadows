@@ -402,8 +402,14 @@ vector<SaveSlotInfo> listSaveSlots() {
     infos.reserve(slots.size());
     for (Slot& slot : slots) {
         str stamp;
-        const auto system = std::chrono::clock_cast<std::chrono::system_clock>(
-            slot.time);
+        // std::chrono::clock_cast is unimplemented in Apple's libc++, so the
+        // file clock is rebased on the system clock by shifting through both
+        // clocks' "now" (the portable idiom). Sub-second drift only — this
+        // timestamp is display-only, for the save-slot list.
+        const auto system =
+            std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                slot.time - std::filesystem::file_time_type::clock::now() +
+                std::chrono::system_clock::now());
         const std::time_t t = std::chrono::system_clock::to_time_t(system);
         // C9.8: platform::localTime — localtime_s is MSVC-only (glibc
         // has localtime_r with reversed arguments).

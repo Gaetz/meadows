@@ -28,6 +28,8 @@ constexpr f32 kSunIntensity = 2.6f;
 
 } // namespace
 
+SkySystem::SkyState SkySystem::evaluate() const { return evaluate(Weather {}); }
+
 SkySystem::SkyState SkySystem::evaluate(const Weather& weather) const {
     // Sun path: rises +X at 6h, zenith at 12h, sets -X at 18h; a slight +Z
     // tilt keeps noon shadows from degenerating to a point.

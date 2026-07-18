@@ -72,7 +72,12 @@ public:
     };
 
     // Pure function of timeOfDay — headless-testable.
-    SkyState evaluate(const Weather& weather = {}) const;
+    // Two overloads rather than a `= {}` default argument: forming `{}` there
+    // needs Weather's default member initializers, which are not available
+    // inside the enclosing class definition (Apple clang enforces this rule;
+    // gcc accepted it). Callers are unaffected.
+    SkyState evaluate(const Weather& weather) const;
+    SkyState evaluate() const; // clear-weather defaults
 
     f32 timeOfDay { 10.5f }; // hours, [0, 24)
 
