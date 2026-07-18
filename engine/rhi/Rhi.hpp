@@ -5,10 +5,12 @@
 namespace rhi {
 
 // Which graphics API drives the Device. Chosen at runtime (§2.1); one binary
-// holds every backend it was compiled with.
+// holds every backend it was compiled with (which ones are compiled is a
+// compile-time CMake gate — MEADOWS_RHI_VULKAN / _GL46 / _GL41). The startup
+// selection is a preference/fallback chain (Vulkan -> GL); see Device::create.
 enum class Backend {
-    OpenGL,
-    // Vulkan comes later, behind the same interface.
+    OpenGL, // GL 4.6 (DSA) with a GL 4.1 fallback inside createGlDevice
+    Vulkan, // Vulkan 1.x (+ MoltenVK on macOS), behind the same interface
 };
 
 struct Color {

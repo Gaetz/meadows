@@ -216,6 +216,33 @@ function(meadows_set_warnings target)
     endif()
 endfunction()
 
+# --- RHI backend gating (§2.1) --------------------------------------------
+# Backend *selection* is runtime (a preference/fallback chain, Vulkan->GL);
+# WHICH backends are compiled into the binary is this compile-time gate. The
+# GL backends are always built for now (the demo and the 2D/dev-UI path run on
+# them); Vulkan is the intended FINAL renderer, brought up brick by brick
+# (docs/VULKAN.md). Defaults: ON on macOS (Apple GL 4.1 cannot run the 3D
+# renderer, so Vulkan is the only path there); opt-in elsewhere until it is
+# functional. macOS ships MoltenVK; Linux/Windows use their native loader.
+if(APPLE)
+    option(MEADOWS_RHI_VULKAN "Build the Vulkan RHI backend (+ MoltenVK)" ON)
+else()
+    option(MEADOWS_RHI_VULKAN "Build the Vulkan RHI backend" OFF)
+endif()
+
+if(MEADOWS_RHI_VULKAN)
+    # Locates the headers + loader (Vulkan::Vulkan). On this dev Mac the LunarG
+    # SDK installs under /usr/local; hint it in case VULKAN_SDK is unset.
+    find_package(Vulkan REQUIRED)
+    message(STATUS "Meadows: Vulkan RHI backend ON — ${Vulkan_LIBRARY}")
+    # The loader's install name is @rpath/libvulkan.1.dylib, so every executable
+    # linking it needs an RPATH to the SDK's lib dir or it fails to start
+    # ("no LC_RPATH's found"). Set before any target is defined so they all
+    # inherit it.
+    get_filename_component(MEADOWS_VULKAN_LIBDIR "${Vulkan_LIBRARY}" DIRECTORY)
+    list(APPEND CMAKE_BUILD_RPATH "${MEADOWS_VULKAN_LIBDIR}")
+endif()
+
 add_subdirectory(extern/glad)
 # imgui-node-editor (chantier 8.6): the node canvas behind the graph
 # editors — VENDORED with two imgui-1.92 fixes, see its README.md. Its

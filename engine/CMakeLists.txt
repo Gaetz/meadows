@@ -92,6 +92,16 @@ target_link_libraries(meadows-render
     PRIVATE SDL3::SDL3 glad stb
 )
 
+# Vulkan RHI backend (docs/VULKAN.md), gated by the top-level compile-time
+# switch. Vulkan types stay confined to this TU (pimpl, §3.1); SDL3 (already
+# linked) provides the Vulkan surface + loader glue.
+if(MEADOWS_RHI_VULKAN)
+    target_sources(meadows-render PRIVATE
+        rhi/backends/vulkan/VulkanDevice.cpp)
+    target_link_libraries(meadows-render PRIVATE Vulkan::Vulkan)
+    target_compile_definitions(meadows-render PRIVATE MEADOWS_RHI_VULKAN)
+endif()
+
 # Debug builds hot-reload shaders straight from the repo's source directory
 # (editing a .vert/.frag reloads live); other builds read <exe>/data/shaders.
 target_compile_definitions(meadows-render PRIVATE

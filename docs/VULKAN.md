@@ -1,0 +1,82 @@
+# Chantier VULKAN — backend Vulkan + MoltenVK (renderer final)
+
+> Journal du chantier. Plan complet approuvé le 2026-07-18. Vulkan est le
+> renderer **final** (pas seulement un shim macOS) : GL4.6 en fallback PC,
+> GL4.1 low-spec un jour, macOS = Vulkan seul. Sélection **runtime** (§2.1,
+> chaîne de préférence Vulkan→GL) + gating **compile-time** de quels backends
+> sont compilés (`MEADOWS_RHI_VULKAN`). Voir aussi la mémoire projet
+> `renderer-backend-lineup`.
+
+## Pourquoi
+
+Dev passé sur MacBook Air M1 : Apple GL figé à 4.1 (pas de compute/SSBO/HDR/
+volumes) → le renderer 3D (GI Radiance Cascades, culling GPU, postfx) ne peut
+tourner que via **Vulkan + MoltenVK**. Le RHI (`engine/rhi/`) était déjà conçu
+Vulkan-ready (interface explicite, chaque commentaire donne l'équivalent VK).
+
+## Environnement (vérifié 2026-07-18)
+
+- SDK LunarG installé : `~/VulkanSDK/1.4.335/`, loader `/usr/local/lib/
+  libvulkan.dylib` (1.4.335), `libMoltenVK.dylib`, headers `/usr/local/include/
+  vulkan`, `glslang` + SPIRV-Tools présents. `VULKAN_SDK` non exporté mais tout
+  est sous `/usr/local` → `find_package(Vulkan)` le trouve.
+- Socle GL41/2D compile et tourne déjà sur ce Mac (824 objets, binaires
+  présents).
+
+## Décisions d'implémentation
+
+- **volk reporté** : V0-V1 utilisent le loader lié (`Vulkan::Vulkan` via
+  `find_package`), pas volk. volk (chargement dynamique, moins d'overhead de
+  dispatch) = optimisation ultérieure, pas un besoin de bring-up.
+- **Ordre fenêtre/device** : le flag SDL (`SDL_WINDOW_OPENGL`/`_VULKAN`) est
+  figé à la création → le backend est résolu **avant** `Window::create`.
+  `WindowDesc.api` (enum `platform::GraphicsApi`, platform-clean) porte le
+  choix. La chaîne de fallback Vulkan→GL (avec recréation de fenêtre si l'API
+  diffère) arrive en **V1**, quand Vulkan peut présenter.
+- **GL non gaté pour l'instant** : les backends GL restent toujours compilés
+  (le 2D/dev-UI/démo tournent dessus) ; seul Vulkan est derrière
+  `MEADOWS_RHI_VULKAN`. Le gating macOS = Vulkan-seul viendra quand Vulkan sera
+  fonctionnel (sinon on casserait le build GL41 qui tourne).
+
+## Avancement
+
+### V0 — Build, deps & câblage de sélection — ✅ FAIT (2026-07-18, `76004a7`)
+- `Rhi.hpp` : `Backend::Vulkan` ajouté.
+- `platform` : `WindowDesc.api` (`GraphicsApi::OpenGL|Vulkan`) → flag SDL suit
+  le backend (`Window.cpp`).
+- CMake : option `MEADOWS_RHI_VULKAN` (défaut ON sur APPLE), `find_package(
+  Vulkan)`, source `backends/vulkan/VulkanDevice.cpp` + lien `Vulkan::Vulkan`
+  + define `MEADOWS_RHI_VULKAN` sur `meadows-render`.
+- `Device.cpp` : branche factory `case Backend::Vulkan` (gatée).
+- `Engine.cpp` : API fenêtre dérivée de `config.backend` avant `Window::create`.
+- **Backend Vulkan** : `VulkanDevice` (pimpl, toutes les virtuelles stubées) +
+  `createVulkanDevice`. V0 : `create()` prouve que le loader linke
+  (`vkEnumerateInstanceVersion`, log la version) puis **décline → fallback GL**.
+  Défaut backend inchangé (GL) → le Mac continue de tourner en GL41.
+- **Validé sur M1** : Vulkan 1.4.335 trouvé, `VulkanDevice.cpp` compilé dans
+  `libmeadows-render.a` (symbole `rhi::createVulkanDevice` exporté), build
+  complet vert, suite headless **516/516**.
+
+**Deux leçons de bring-up (coûteuses à redécouvrir) :**
+
+1. **Prérequis imprévu — le M1 ne compilait rien.** `develop` n'avait jamais été
+   bâti sous **Apple clang 21** (code écrit sous gcc/clang plus ancien). Deux
+   constructions non conformes bloquaient TOUT le build (même le GL41/2D) :
+   `SkySystem::evaluate(const Weather& = {})` (les initialiseurs par défaut
+   d'une classe imbriquée ne sont pas disponibles dans la classe englobante —
+   règle standard qu'Apple clang applique) et `std::chrono::clock_cast`
+   (non implémenté dans la libc++ d'Apple). Corrigés à part (`db2eb94`).
+   → *Toute validation M1 suppose ce build vert ; re-vérifier après un merge
+   venant d'une session Linux.*
+2. **RPATH du loader Vulkan.** L'install name est `@rpath/libvulkan.1.dylib` :
+   sans `LC_RPATH`, les exécutables refusent de démarrer (« no LC_RPATH's
+   found ») — y compris `meadows-tests`. `CMAKE_BUILD_RPATH` reçoit le dossier
+   de `${Vulkan_LIBRARY}`, posé AVANT la définition des targets.
+
+### V1 — Instance / device / swapchain / surface (frame « clear ») — À FAIRE
+### V2 — Ressources (VMA) — À FAIRE
+### V3 — Shaders GLSL 460 → SPIR-V (point dur) — À FAIRE
+### V4 — Pipelines / render passes / bind groups (Y-flip, depth 0..1) — À FAIRE
+### V5 — CommandBuffer recording — À FAIRE
+### V6 — Fences / timestamps / ImGui Vulkan / nativeTextureId — À FAIRE
+### V7 — Bring-up LandscapeScene sur M1 + parité GL46 — À FAIRE

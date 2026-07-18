@@ -32,11 +32,15 @@ uptr<Window> Window::create(const WindowDesc& desc) {
         return nullptr;
     }
 
-    // SDL_WINDOW_OPENGL matches the only RHI backend for now; once more
-    // backends exist this flag must follow the runtime backend choice (§2.1).
+    // The surface flag is fixed at creation and must follow the RHI backend
+    // chosen at startup (§2.1): OPENGL for the GL backends, VULKAN for the
+    // Vulkan backend (+ MoltenVK on macOS).
+    const SDL_WindowFlags apiFlag = desc.api == GraphicsApi::Vulkan
+                                        ? SDL_WINDOW_VULKAN
+                                        : SDL_WINDOW_OPENGL;
     SDL_Window* sdlWindow = SDL_CreateWindow(
         desc.title.c_str(), desc.width, desc.height,
-        SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
+        SDL_WINDOW_RESIZABLE | apiFlag);
     if (!sdlWindow) {
         LOG_ERROR("Window creation failed: {}", SDL_GetError());
         SDL_QuitSubSystem(kSubsystems);

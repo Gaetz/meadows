@@ -6,10 +6,20 @@
 
 namespace platform {
 
+// Which client API the window's surface must be created for. The SDL window
+// flag differs (SDL_WINDOW_OPENGL vs SDL_WINDOW_VULKAN) and is fixed at
+// creation, so the RHI backend has to be decided before Window::create (§2.1).
+// A platform-local enum keeps platform/ free of any rhi:: dependency.
+enum class GraphicsApi {
+    OpenGL,
+    Vulkan,
+};
+
 struct WindowDesc {
     str title { "Meadows" };
     i32 width { 1280 };
     i32 height { 720 };
+    GraphicsApi api { GraphicsApi::OpenGL };
 };
 
 // Application window + OS event pump, SDL3-backed (platform/common/Window.cpp).

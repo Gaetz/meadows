@@ -41,9 +41,18 @@ bool Engine::init(const EngineConfig& engineConfig) {
     config = engineConfig;
 
     jobSystem = std::make_unique<core::JobSystem>();
+    // The SDL surface flag is fixed at window creation and must match the RHI
+    // backend (§2.1), so it is derived here before the window exists. (The
+    // Vulkan->GL fallback chain lands with V1, once Vulkan can actually
+    // present — until then createVulkanDevice declines and the default backend
+    // stays GL.)
+    const platform::GraphicsApi api =
+        config.backend == rhi::Backend::Vulkan ? platform::GraphicsApi::Vulkan
+                                                : platform::GraphicsApi::OpenGL;
     window = platform::Window::create({ .title = config.title,
                                         .width = config.width,
-                                        .height = config.height });
+                                        .height = config.height,
+                                        .api = api });
     if (!window) {
         return false;
     }
