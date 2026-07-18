@@ -1,14 +1,15 @@
 #version 460 core
+#include "compat.glsl"
 #include "common.glsl"
 
-// Brick 31 — rain streaks, fully procedural (gl_VertexID, no buffers):
+// Brick 31 — rain streaks, fully procedural (MEADOWS_VERTEX_INDEX, no buffers):
 // hash(i) positions in a camera cylinder, scrolled by time (zero CPU
 // sim), tilted by the wind, killed under roofs by the top-down
 // occlusion depth (the Community-Shaders idea, our bake pattern).
 
 layout(binding = 9) uniform sampler2D uRainOcclusion;
 
-out float vAlpha;
+layout(location = 0) out float vAlpha;
 
 float hash11(float p) {
     p = fract(p * 0.1031);
@@ -19,8 +20,8 @@ float hash11(float p) {
 void main() {
     const float kRadius = 26.0;
     const float kHeight = 24.0;
-    int streak = gl_VertexID / 6;
-    int corner = gl_VertexID % 6;
+    int streak = MEADOWS_VERTEX_INDEX / 6;
+    int corner = MEADOWS_VERTEX_INDEX % 6;
     float fi = float(streak);
     float h1 = hash11(fi + 0.13);
     float h2 = hash11(fi + 7.77);

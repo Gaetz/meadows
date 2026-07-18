@@ -6,8 +6,8 @@
 
 layout(binding = 0) uniform sampler2D uSceneColor;
 
-in vec2 vUv;
-out vec4 fragColor;
+layout(location = 0) in vec2 vUv;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec3 hdr = texture(uSceneColor, vUv).rgb;

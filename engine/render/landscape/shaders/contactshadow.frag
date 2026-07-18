@@ -14,8 +14,8 @@ layout(binding = 0) uniform sampler2D uSceneDepth;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
 
-in vec2 vUv;
-out vec4 fragColor;
+layout(location = 0) in vec2 vUv;
+layout(location = 0) out vec4 fragColor;
 
 vec3 worldFromDepth(vec2 uv, float depth) {
     vec4 ndc = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);

@@ -29,8 +29,8 @@ vec3 cascadeIrradiance(vec3 uvw, float res) {
     return sum / 8.0;
 }
 
-in vec2 vUv;
-out vec4 fragColor;
+layout(location = 0) in vec2 vUv;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     // View 1 = fine clip, 2 = coarse clip, 3 = merged cascade-0

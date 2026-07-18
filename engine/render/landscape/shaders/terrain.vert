@@ -6,9 +6,9 @@ layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aUv;
 layout(location = 3) in vec3 aColor;
 
-out vec3 vNormal;
-out vec3 vColor;
-out vec3 vWorldPos;
+layout(location = 0) out vec3 vNormal;
+layout(location = 1) out vec3 vColor;
+layout(location = 2) out vec3 vWorldPos;
 
 void main() {
     vNormal = aNormal;

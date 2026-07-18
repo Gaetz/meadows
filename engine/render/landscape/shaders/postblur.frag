@@ -6,8 +6,8 @@
 // this is the filter that was missing. Single channel (R16F targets).
 layout(binding = 0) uniform sampler2D uSource;
 
-in vec2 vUv;
-out vec4 fragColor;
+layout(location = 0) in vec2 vUv;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec2 texel = 1.0 / vec2(textureSize(uSource, 0));

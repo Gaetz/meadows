@@ -20,15 +20,15 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 //  - BLADE MIDDLE SHADING — the width-center darkens slightly, selling
 //    the rounded cross-section together with the two blended normals.
 
-in vec3 vColor;
-in float vT;
-in float vXSide;
-in float vLodOut;
-in vec3 vNormal1;
-in vec3 vNormal2;
-in vec3 vWorldPos;
+layout(location = 0) in vec3 vColor;
+layout(location = 1) in float vT;
+layout(location = 2) in float vXSide;
+layout(location = 3) in float vLodOut;
+layout(location = 4) in vec3 vNormal1;
+layout(location = 5) in vec3 vNormal2;
+layout(location = 6) in vec3 vWorldPos;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec3 albedo = vColor;

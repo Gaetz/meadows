@@ -4,9 +4,9 @@
 // Chantier P0 C1 — soft round particle: radial falloff in the shader
 // (no texture until an asset asks; ParticleForm.texture waits there).
 
-in vec2 vUv;
-in vec4 vColor;
-out vec4 fragColor;
+layout(location = 0) in vec2 vUv;
+layout(location = 1) in vec4 vColor;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     float r = length(vUv);

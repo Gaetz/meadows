@@ -11,9 +11,9 @@ layout(std140, binding = 1) uniform ShaftUbo {
     vec4 uShaftParams; // x = dust density, y = length (m), z/w free
 };
 
-in vec2 vUv;
-in vec3 vWorldPos;
-out vec4 fragColor;
+layout(location = 0) in vec2 vUv;
+layout(location = 1) in vec3 vWorldPos;
+layout(location = 0) out vec4 fragColor;
 
 // Cheap 2D value noise (hash lattice, bilinear) — enough for dust.
 float hash21(vec2 p) {

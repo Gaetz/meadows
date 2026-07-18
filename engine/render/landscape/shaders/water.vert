@@ -3,7 +3,7 @@
 
 layout(location = 0) in vec2 aGrid; // unit quad [-1,1]²
 
-out vec3 vWorldPos;
+layout(location = 0) out vec3 vWorldPos;
 
 void main() {
     // A 3.2 km sheet following the camera, snapped to the chunk grid so the

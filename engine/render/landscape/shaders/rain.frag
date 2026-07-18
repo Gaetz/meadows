@@ -3,8 +3,8 @@
 
 // Brick 31 — rain streak: a soft translucent sliver tinted by the sky.
 
-in float vAlpha;
-out vec4 fragColor;
+layout(location = 0) in float vAlpha;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     if (vAlpha <= 0.003) {

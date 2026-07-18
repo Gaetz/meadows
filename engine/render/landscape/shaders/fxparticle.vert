@@ -1,20 +1,21 @@
 #version 460 core
+#include "compat.glsl"
 #include "common.glsl"
 
 // Chantier P0 C1 — CPU-simulated particles as camera-facing quads: six
-// verts per instance from gl_VertexID (the rain pattern), instance data
+// verts per instance from MEADOWS_VERTEX_INDEX (the rain pattern), instance data
 // pulled from the FxInstances SSBO the FxRenderer refills per batch.
 
 layout(std430, binding = 2) readonly buffer FxInstances {
     vec4 data[]; // pairs: [posSize, color] per particle
 };
 
-out vec2 vUv;    // -1..1 across the quad
-out vec4 vColor;
+layout(location = 0) out vec2 vUv;    // -1..1 across the quad
+layout(location = 1) out vec4 vColor;
 
 void main() {
-    int particle = gl_VertexID / 6;
-    int corner = gl_VertexID % 6;
+    int particle = MEADOWS_VERTEX_INDEX / 6;
+    int corner = MEADOWS_VERTEX_INDEX % 6;
     vec4 posSize = data[particle * 2 + 0];
     vColor = data[particle * 2 + 1];
 

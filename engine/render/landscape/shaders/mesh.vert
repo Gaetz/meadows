@@ -16,10 +16,10 @@ layout(std140, binding = 1) uniform ModelUbo {
     vec4 uMeshInfo;  // x = emissive
 };
 
-out vec3 vNormal;
-out vec3 vWorldPos;
-out vec2 vUv;
-out vec3 vColor;
+layout(location = 0) out vec3 vNormal;
+layout(location = 1) out vec3 vWorldPos;
+layout(location = 2) out vec2 vUv;
+layout(location = 3) out vec3 vColor;
 
 void main() {
     const vec4 world = uModel * vec4(aPos, 1.0);

@@ -14,8 +14,8 @@ layout(binding = 2) uniform sampler2D uReflection;
 // view-independent, unlike screen-space probing.
 layout(binding = 3) uniform sampler2D uPoolDepth;
 
-in vec3 vWorldPos;
-out vec4 fragColor;
+layout(location = 0) in vec3 vWorldPos;
+layout(location = 0) out vec4 fragColor;
 
 vec3 worldFromDepth(vec2 uv, float depth) {
     vec4 ndc = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);

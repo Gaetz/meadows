@@ -9,8 +9,8 @@
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec2 aUv;
 
-out vec2 vUv;
-out vec3 vWorldPos;
+layout(location = 0) out vec2 vUv;
+layout(location = 1) out vec3 vWorldPos;
 
 void main() {
     vUv = aUv;

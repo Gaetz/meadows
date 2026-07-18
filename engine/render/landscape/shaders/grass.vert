@@ -34,13 +34,13 @@ layout(location = 3) in vec4 aParams;   // x = yaw, y = keep key (sorted),
                                         // z = tint jitter, w = lean
 layout(location = 4) in vec4 aGroundNormal; // xyz = terrain normal at root
 
-out vec3 vColor;
-out float vT;
-out float vXSide;  // 0..1 across the blade width
-out float vLodOut; // high-detail fade-out [0,1]
-out vec3 vNormal1;
-out vec3 vNormal2;
-out vec3 vWorldPos;
+layout(location = 0) out vec3 vColor;
+layout(location = 1) out float vT;
+layout(location = 2) out float vXSide;  // 0..1 across the blade width
+layout(location = 3) out float vLodOut; // high-detail fade-out [0,1]
+layout(location = 4) out vec3 vNormal1;
+layout(location = 5) out vec3 vNormal2;
+layout(location = 6) out vec3 vWorldPos;
 
 float hash21(vec2 p) {
     p = fract(p * vec2(234.34, 435.345));

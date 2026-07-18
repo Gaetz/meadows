@@ -9,10 +9,10 @@ layout(location = 4) in vec4 aPosScale; // xyz = terrain point, w = scale
 layout(location = 5) in vec4 aParams;   // x = yaw, y = tint, z = sway phase,
                                         // w = fade-end distance (m)
 
-out vec3 vNormal;
-out vec3 vColor;
-out vec3 vWorldPos;
-out float vTint;
+layout(location = 0) out vec3 vNormal;
+layout(location = 1) out vec3 vColor;
+layout(location = 2) out vec3 vWorldPos;
+layout(location = 3) out float vTint;
 
 void main() {
     float yaw = aParams.x;

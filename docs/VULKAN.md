@@ -146,7 +146,57 @@ valident par création + mips sans erreur de validation.
   lieu de `…-LibrariesAndSDKs`) fait répondre à GitHub un challenge d'auth sur
   un dépôt inexistant → git réclame un *username* et l'erreur ressemble à une
   panne réseau/credentials. **Vérifier l'URL avant de suspecter le réseau.**
-### V3 — Shaders GLSL 460 → SPIR-V (point dur) — À FAIRE
+### V3 — Shaders GLSL 460 → SPIR-V — ✅ FAIT (2026-07-18)
+
+**Le point dur du chantier s'est révélé bien plus petit qu'annoncé.**
+Auto-test `vksmoke` : **28/28 paires graphiques + 7/7 compute** compilées en
+SPIR-V par le VRAI chemin (`ShaderLibrary` → `createShader` → shaderc →
+`VkShaderModule`).
+
+**Décision (le point de décision du plan est tranché) : PAS de shim, PAS de jeu
+de shaders Vulkan dédié — UN SEUL corpus sert les deux backends.**
+
+Le spike (`glslangValidator` sur les 53 shaders, avant toute ligne de C++) a
+montré que le corpus était déjà écrit en GLSL moderne et explicite :
+`layout(binding=)` partout, `std140/std430` explicites, attributs de sommet
+déjà localisés, aucun `gl_FragColor` ni `texture2D()`. **Les 7 compute
+shaders compilaient déjà sans rien changer** — le plus gros risque supposé
+(GI, culling, Hi-Z) est tombé immédiatement.
+
+Deux écarts réels, et deux seulement :
+1. **Varyings sans `layout(location=)`** (38 fichiers, 104 déclarations) : GL
+   les apparie par nom, SPIR-V exige des locations. Corrigé par numérotation
+   dans l'ordre de déclaration — les `.vert`/`.frag` déclarent leurs varyings
+   dans le même ordre, donc l'appariement est cohérent par construction.
+   **Ces locations sont valides en GLSL 460 pour OpenGL aussi**, d'où le corpus
+   unique.
+2. **`gl_VertexID` vs `gl_VertexIndex`** (5 fichiers) : seule vraie divergence
+   de dialecte. Neutralisée par `shaders/compat.glsl`
+   (`MEADOWS_VERTEX_INDEX`), qui bascule sur la macro **`VULKAN` que
+   shaderc/glslang prédéfinit** — donc **le backend GL n'a rien à injecter ni
+   à changer**.
+
+**Non-régression GL :** 43 fichiers de shaders modifiés dont dépend le renderer
+GL 4.6, qui ne tourne PAS sur ce Mac. Vérifié en revalidant les 53 shaders en
+sémantique OpenGL (`glslangValidator` sans `--target-env vulkan`) : **53/53
+passent**. À confirmer visuellement au premier run GL 4.6 sur PC.
+
+**Implémentation :** `shaderc` (API C, dylib du SDK) compile au **runtime**,
+ce qui **préserve le hot-reload** de `ShaderLibrary` — un pré-cook `.spv` au
+build l'aurait tué. `shaderc_combined.a` évité (archive de 1,3 Go).
+`ShaderDesc::uniformBlocks`/`::samplers` sont **ignorés** côté Vulkan : ils
+n'existent que pour l'assignation post-link du GL 4.1 ; les bindings sont déjà
+explicites dans le corpus et SPIR-V les lit directement.
+
+> **RISQUE ENCORE OUVERT pour V4 — collisions de bindings.** En GL, UBO,
+> unités de texture et SSBO sont des espaces de nommage SÉPARÉS ; le corpus en
+> profite (`binding = 0` est à la fois un UBO et un sampler dans plusieurs
+> shaders). En Vulkan, **un seul espace par descriptor set**. glslang n'a rien
+> signalé parce que ce n'est PAS une erreur de compilation d'un stage isolé —
+> c'est un problème de *pipeline layout*, qui ne se manifestera qu'à la
+> création des `VkDescriptorSetLayout` en V4. Compiler n'est pas valider :
+> prévoir un remapping (par exemple par offset de plage selon le type de
+> descripteur) au moment de V4.
 ### V4 — Pipelines / render passes / bind groups (Y-flip, depth 0..1) — À FAIRE
 ### V5 — CommandBuffer recording — À FAIRE
 ### V6 — Fences / timestamps / ImGui Vulkan / nativeTextureId — À FAIRE

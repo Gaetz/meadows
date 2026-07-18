@@ -23,10 +23,10 @@ layout(std430, binding = 2) readonly buffer BonePalette {
     mat4 uBones[];
 };
 
-out vec3 vNormal;
-out vec3 vWorldPos;
-out vec2 vUv;
-out vec3 vColor;
+layout(location = 0) out vec3 vNormal;
+layout(location = 1) out vec3 vWorldPos;
+layout(location = 2) out vec2 vUv;
+layout(location = 3) out vec3 vColor;
 
 void main() {
     mat4 skin = aWeights.x * uBones[int(aJoints.x)] +

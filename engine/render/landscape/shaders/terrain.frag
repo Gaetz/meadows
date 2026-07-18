@@ -11,11 +11,11 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "terrainlight.glsl"
 #include "gi.glsl"
 
-in vec3 vNormal;
-in vec3 vColor;
-in vec3 vWorldPos;
+layout(location = 0) in vec3 vNormal;
+layout(location = 1) in vec3 vColor;
+layout(location = 2) in vec3 vWorldPos;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec3 n = normalize(vNormal);

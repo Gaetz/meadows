@@ -11,8 +11,8 @@
 layout(binding = 0) uniform sampler2D uLuminance;
 layout(binding = 1) uniform sampler2D uPrevExposure;
 
-in vec2 vUv;
-out vec4 fragColor;
+layout(location = 0) in vec2 vUv;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     // Mip 6 of a 64x64 pyramid = the 1x1 log-average.

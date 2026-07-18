@@ -2,8 +2,8 @@
 
 layout(binding = 0) uniform sampler2D uSource;
 
-in vec2 vUv;
-out vec4 fragColor;
+layout(location = 0) in vec2 vUv;
+layout(location = 0) out vec4 fragColor;
 
 // Soft-knee threshold: only HDR highlights (sun disc, glints, embers) feed
 // the bloom chain; regular scene colors stay out.

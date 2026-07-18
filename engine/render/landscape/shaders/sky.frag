@@ -3,8 +3,8 @@
 #include "sky.glsl"
 #include "clouds.glsl"
 
-in vec3 vRay;
-out vec4 fragColor;
+layout(location = 0) in vec3 vRay;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec3 dir = normalize(vRay);

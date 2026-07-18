@@ -7,6 +7,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include <shaderc/shaderc.h>
+
 // VMA is header-only; this is the single TU that emits its implementation.
 #define VMA_IMPLEMENTATION
 #define VMA_STATIC_VULKAN_FUNCTIONS 1
@@ -233,6 +235,50 @@ struct VulkanTexture {
     VkImageLayout layout { VK_IMAGE_LAYOUT_UNDEFINED };
 };
 
+// A linked program in RHI terms: either a vertex+fragment pair or a lone
+// compute stage. Vulkan has no "program" object — the modules are combined at
+// pipeline creation (V4) — so this just owns the modules.
+struct VulkanShader {
+    VkShaderModule vertex { VK_NULL_HANDLE };
+    VkShaderModule fragment { VK_NULL_HANDLE };
+    VkShaderModule compute { VK_NULL_HANDLE };
+};
+
+// Compiles one GLSL stage to SPIR-V. The sources are the SAME GLSL 460 the GL
+// backend consumes (ShaderLibrary has already expanded the #includes): the
+// corpus carries explicit layout(location=)/layout(binding=) everywhere, and
+// the only builtin that differs between the dialects is spelled through
+// compat.glsl, keyed on the VULKAN macro that shaderc/glslang predefines.
+bool compileToSpv(const str& source, shaderc_shader_kind kind,
+                  const str& debugName, vector<u32>& out) {
+    shaderc_compiler_t compiler = shaderc_compiler_initialize();
+    shaderc_compile_options_t options = shaderc_compile_options_initialize();
+    shaderc_compile_options_set_target_env(options, shaderc_target_env_vulkan,
+                                           shaderc_env_version_vulkan_1_2);
+    shaderc_compile_options_set_optimization_level(
+        options, shaderc_optimization_level_performance);
+
+    shaderc_compilation_result_t result =
+        shaderc_compile_into_spv(compiler, source.c_str(), source.size(), kind,
+                                 debugName.c_str(), "main", options);
+
+    const bool ok = shaderc_result_get_compilation_status(result) ==
+                    shaderc_compilation_status_success;
+    if (ok) {
+        const auto* bytes =
+            reinterpret_cast<const u32*>(shaderc_result_get_bytes(result));
+        const size_t words = shaderc_result_get_length(result) / sizeof(u32);
+        out.assign(bytes, bytes + words);
+    } else {
+        LOG_ERROR("Vulkan shader '{}' failed to compile:\n{}", debugName,
+                  shaderc_result_get_error_message(result));
+    }
+    shaderc_result_release(result);
+    shaderc_compile_options_release(options);
+    shaderc_compiler_release(compiler);
+    return ok;
+}
+
 class VulkanCommandBuffer;
 
 } // namespace
@@ -284,6 +330,7 @@ struct VulkanDevice::Impl {
     std::unordered_map<u32, VulkanBuffer> buffers;
     std::unordered_map<u32, VulkanTexture> textures;
     std::unordered_map<u32, VkSampler> samplers;
+    std::unordered_map<u32, VulkanShader> shaders;
 
     uptr<VulkanCommandBuffer> cmd;
 
@@ -714,6 +761,11 @@ VulkanDevice::~VulkanDevice() {
     if (impl->device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(impl->device);
 
+        for (auto& [id, shader] : impl->shaders) {
+            vkDestroyShaderModule(impl->device, shader.vertex, nullptr);
+            vkDestroyShaderModule(impl->device, shader.fragment, nullptr);
+            vkDestroyShaderModule(impl->device, shader.compute, nullptr);
+        }
         for (auto& [id, sampler] : impl->samplers) {
             vkDestroySampler(impl->device, sampler, nullptr);
         }
@@ -1234,8 +1286,76 @@ FramebufferHandle VulkanDevice::createFramebuffer(const FramebufferDesc&) {
 }
 void VulkanDevice::destroyFramebuffer(FramebufferHandle) {}
 
-ShaderHandle VulkanDevice::createShader(const ShaderDesc&) { return {}; }
-void VulkanDevice::destroyShader(ShaderHandle) {}
+// ShaderDesc::uniformBlocks / ::samplers are deliberately ignored here: they
+// exist so the GL backend can assign bindings AFTER link (GLSL 4.10 has no
+// layout(binding=)). The shader corpus already carries explicit binding
+// qualifiers, which SPIR-V reads directly — so on Vulkan there is nothing to
+// patch up.
+ShaderHandle VulkanDevice::createShader(const ShaderDesc& desc) {
+    Impl& d = *impl;
+    const bool isCompute = !desc.computeSource.empty();
+    if (isCompute &&
+        (!desc.vertexSource.empty() || !desc.fragmentSource.empty())) {
+        LOG_ERROR("Vulkan createShader '{}': compute excludes vertex/fragment",
+                  desc.debugName);
+        return {};
+    }
+    if (!isCompute &&
+        (desc.vertexSource.empty() || desc.fragmentSource.empty())) {
+        LOG_ERROR("Vulkan createShader '{}': needs vertex + fragment",
+                  desc.debugName);
+        return {};
+    }
+
+    auto build = [&](const str& source, shaderc_shader_kind kind,
+                     const char* stage, VkShaderModule& module) {
+        vector<u32> spv;
+        if (!compileToSpv(source, kind, desc.debugName + "." + stage, spv)) {
+            return false;
+        }
+        VkShaderModuleCreateInfo info {};
+        info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        info.codeSize = spv.size() * sizeof(u32);
+        info.pCode = spv.data();
+        return vkOk(vkCreateShaderModule(d.device, &info, nullptr, &module),
+                    "vkCreateShaderModule");
+    };
+
+    VulkanShader shader {};
+    bool ok = true;
+    if (isCompute) {
+        ok = build(desc.computeSource, shaderc_compute_shader, "comp",
+                   shader.compute);
+    } else {
+        ok = build(desc.vertexSource, shaderc_vertex_shader, "vert",
+                   shader.vertex) &&
+             build(desc.fragmentSource, shaderc_fragment_shader, "frag",
+                   shader.fragment);
+    }
+    if (!ok) {
+        // Partial success still leaves a module behind; drop it.
+        vkDestroyShaderModule(d.device, shader.vertex, nullptr);
+        vkDestroyShaderModule(d.device, shader.fragment, nullptr);
+        vkDestroyShaderModule(d.device, shader.compute, nullptr);
+        return {};
+    }
+
+    const u32 id = d.nextId++;
+    d.shaders.emplace(id, shader);
+    return { id };
+}
+
+void VulkanDevice::destroyShader(ShaderHandle handle) {
+    Impl& d = *impl;
+    auto it = d.shaders.find(handle.id);
+    if (it == d.shaders.end()) {
+        return;
+    }
+    vkDestroyShaderModule(d.device, it->second.vertex, nullptr);
+    vkDestroyShaderModule(d.device, it->second.fragment, nullptr);
+    vkDestroyShaderModule(d.device, it->second.compute, nullptr);
+    d.shaders.erase(it);
+}
 
 PipelineHandle VulkanDevice::createPipeline(const PipelineDesc&) { return {}; }
 void VulkanDevice::destroyPipeline(PipelineHandle) {}

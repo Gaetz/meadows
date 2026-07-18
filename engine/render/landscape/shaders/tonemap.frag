@@ -10,8 +10,8 @@ layout(binding = 3) uniform sampler2D uVolumetric;
 layout(binding = 5) uniform sampler2D uExposure; // brick 29: 1x1 adaptation
 layout(binding = 6) uniform sampler2D uContact;  // brick 33a: white = lit
 
-in vec2 vUv;
-out vec4 fragColor;
+layout(location = 0) in vec2 vUv;
+layout(location = 0) out vec4 fragColor;
 
 // ACES-fitted filmic curve (Krzysztof Narkowicz).
 vec3 acesFilm(vec3 x) {

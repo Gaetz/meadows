@@ -242,6 +242,19 @@ if(MEADOWS_RHI_VULKAN)
     get_filename_component(MEADOWS_VULKAN_LIBDIR "${Vulkan_LIBRARY}" DIRECTORY)
     list(APPEND CMAKE_BUILD_RPATH "${MEADOWS_VULKAN_LIBDIR}")
 
+    # shaderc — GLSL -> SPIR-V at runtime (V3), so ShaderLibrary's hot reload
+    # keeps working on Vulkan (a build-time .spv step would kill it). Ships
+    # with the Vulkan SDK; the shared lib is linked rather than
+    # shaderc_combined.a, which is a 1.3 GB archive.
+    find_library(MEADOWS_SHADERC_LIBRARY NAMES shaderc_shared shaderc
+                 HINTS "${MEADOWS_VULKAN_LIBDIR}")
+    if(NOT MEADOWS_SHADERC_LIBRARY)
+        message(FATAL_ERROR
+            "Meadows: shaderc not found next to the Vulkan loader "
+            "(${MEADOWS_VULKAN_LIBDIR}). It ships with the LunarG SDK.")
+    endif()
+    message(STATUS "Meadows: shaderc — ${MEADOWS_SHADERC_LIBRARY}")
+
     # VMA — GPU memory sub-allocation (V2). Header-only, so DOWNLOAD_ONLY keeps
     # it out of the build graph: one TU defines VMA_IMPLEMENTATION.
     CPMAddPackage(

@@ -7,12 +7,12 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "clouds.glsl"
 #include "stylized.glsl"
 
-in vec3 vNormal;
-in vec3 vColor;
-in vec3 vWorldPos;
-in float vTint;
+layout(location = 0) in vec3 vNormal;
+layout(location = 1) in vec3 vColor;
+layout(location = 2) in vec3 vWorldPos;
+layout(location = 3) in float vTint;
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     // Per-instance hue roll: some trees lean yellow-green, some deep green.

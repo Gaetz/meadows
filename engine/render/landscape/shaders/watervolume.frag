@@ -10,9 +10,9 @@ layout(std140, binding = 1) uniform WaterVolumeUbo {
     vec4 uWaterTint; // rgb = linear water color, a = chop
 };
 
-in vec2 vUv;       // world XZ / 4 (ripple space)
-in vec3 vWorldPos;
-out vec4 fragColor;
+layout(location = 0) in vec2 vUv;       // world XZ / 4 (ripple space)
+layout(location = 1) in vec3 vWorldPos;
+layout(location = 0) out vec4 fragColor;
 
 float hash21(vec2 p) {
     p = fract(p * vec2(234.34, 435.345));

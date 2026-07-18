@@ -2,8 +2,8 @@
 
 layout(binding = 0) uniform sampler2D uSource;
 
-in vec2 vUv;
-out vec4 fragColor;
+layout(location = 0) in vec2 vUv;
+layout(location = 0) out vec4 fragColor;
 
 // Tent upsample, ADDED into the target level (additive pipeline): each level
 // spreads its glow into the finer one on the way back up.

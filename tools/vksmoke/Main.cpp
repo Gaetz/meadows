@@ -1,4 +1,4 @@
-// vksmoke — Vulkan bring-up harness (chantier VULKAN, briques V1-V2).
+// vksmoke — Vulkan bring-up harness (chantier VULKAN, briques V1-V3).
 //
 // Drives the Vulkan backend end to end WITHOUT the Engine loop, which still
 // depends on the GL SpriteRenderer and the GL ImGui layer (ported in V3/V6).
@@ -9,17 +9,22 @@
 //  * V2: a resource self-test. With no pipelines yet, nothing can be *drawn*
 //    with a buffer or texture, so correctness is proven the only way left:
 //    round-tripping memory through the GPU and comparing it byte for byte.
+//  * V3: compiles the whole production shader corpus to SPIR-V through the
+//    real ShaderLibrary path — what the GL backend can load, this must too.
 //
 // Run: ./vksmoke [seconds]   (default 5; 0 = until the window is closed)
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 
 #include "engine/core/Clock.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Window.hpp"
+#include "engine/render/ShaderLibrary.hpp"
 #include "engine/rhi/Device.hpp"
 
 namespace {
@@ -174,6 +179,63 @@ void testTextures(rhi::Device& device) {
     device.destroyTexture(tex2d);
 }
 
+// Compiles the WHOLE production shader corpus through the real path:
+// ShaderLibrary (include expansion, pairing) -> Device::createShader ->
+// glslang/shaderc -> VkShaderModule. Anything the GL backend can load, the
+// Vulkan backend must load too — that is the V3 contract.
+void testShaders(rhi::Device& device) {
+    render::ShaderLibrary shaders(device);
+    const std::filesystem::path root = shaders.root();
+    if (!std::filesystem::exists(root)) {
+        check(false, "shader root exists");
+        return;
+    }
+
+    vector<str> fragments;
+    vector<str> computes;
+    for (const auto& entry : std::filesystem::directory_iterator(root)) {
+        const std::filesystem::path& p = entry.path();
+        if (p.extension() == ".frag") {
+            fragments.push_back(p.stem().string());
+        } else if (p.extension() == ".comp") {
+            computes.push_back(p.stem().string());
+        }
+    }
+    std::sort(fragments.begin(), fragments.end());
+    std::sort(computes.begin(), computes.end());
+
+    u32 okPairs = 0;
+    for (const str& name : fragments) {
+        // Post-process passes share the fullscreen triangle instead of
+        // carrying their own vertex stage.
+        const bool ownVertex =
+            std::filesystem::exists(root / (name + ".vert"));
+        const rhi::ShaderHandle handle =
+            ownVertex ? shaders.load(name)
+                      : shaders.load(name, {}, {}, "fullscreen");
+        if (handle.id != 0) {
+            ++okPairs;
+        } else {
+            LOG_ERROR("    shader pair failed: {}", name);
+        }
+    }
+    check(okPairs == fragments.size(),
+          "compile every graphics shader pair to SPIR-V");
+    LOG_INFO("    {}/{} graphics pairs", okPairs, fragments.size());
+
+    u32 okCompute = 0;
+    for (const str& name : computes) {
+        if (shaders.loadCompute(name).id != 0) {
+            ++okCompute;
+        } else {
+            LOG_ERROR("    compute shader failed: {}", name);
+        }
+    }
+    check(okCompute == computes.size(),
+          "compile every compute shader to SPIR-V");
+    LOG_INFO("    {}/{} compute shaders", okCompute, computes.size());
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -210,6 +272,7 @@ int main(int argc, char** argv) {
                         true);
     testGpuCopy(*device);
     testTextures(*device);
+    testShaders(*device);
     LOG_INFO("vksmoke: self-test {} ({} failure(s))",
              failures == 0 ? "PASSED" : "FAILED", failures);
 

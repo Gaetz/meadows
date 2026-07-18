@@ -10,8 +10,8 @@ layout(std140, binding = 0) uniform UiUbo {
     vec4 uTransform; // xy = translation (px), zw = viewport size (px)
 };
 
-out vec4 vColor;
-out vec2 vUv;
+layout(location = 0) out vec4 vColor;
+layout(location = 1) out vec2 vUv;
 
 void main() {
     vec2 pos = aPos + uTransform.xy;

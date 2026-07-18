@@ -18,11 +18,11 @@ layout(std140, binding = 1) uniform ModelUbo {
     vec4 uMeshInfo; // x = emissive
 };
 
-in vec3 vNormal;
-in vec3 vWorldPos;
-in vec2 vUv;
-in vec3 vColor;
-out vec4 fragColor;
+layout(location = 0) in vec3 vNormal;
+layout(location = 1) in vec3 vWorldPos;
+layout(location = 2) in vec2 vUv;
+layout(location = 3) in vec3 vColor;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec3 albedo = texture(uAlbedo, vUv).rgb * uTint.rgb * vColor;
