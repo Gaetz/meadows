@@ -1390,16 +1390,22 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             if (!cascadeDue[i]) {
                 continue; // P5c: kept last frame's depth AND matrix
             }
+            // V8b: cull casters against THIS cascade's ortho volume — the
+            // near cascades cover a fraction of the 9-chunk ring, and the
+            // CSM cost is vertex-bound (M1 measure: shadows 37 ms with
+            // every cascade drawing the full ring).
+            const render::Frustum cascadeFrustum =
+                render::Frustum::fromViewProj(cascades.viewProj[i]);
             frame.cmd.beginRenderPass(
                 { .framebuffer = shadows.framebuffer(i),
                   .loadOp = rhi::LoadOp::DontCare,
                   .depthLoadOp = rhi::LoadOp::Clear });
             terrain.drawDepth(frame.cmd, shadows.casterBindGroup(i),
-                              camera.position, 9);
+                              camera.position, 9, &cascadeFrustum);
             // Same 9-chunk cap: the last cascade ends at 480 m.
             vegetation.drawDepth(frame.cmd, frameBindGroup,
                                  shadows.casterBindGroup(i),
-                                 camera.position, 9);
+                                 camera.position, 9, &cascadeFrustum);
             // B2a: scene meshes + NPCs join the casters (A/B toggle).
             if (meshShadowCastersUi) {
                 drawShadowCasters(frame, snapshot, view, i);

@@ -140,10 +140,15 @@ public:
 
     // Depth-only caster pass into one shadow cascade. `casterBindGroup`
     // carries the cascade's light matrix; chunks beyond `maxChunkDistance`
-    // (Chebyshev, from the camera chunk) are skipped.
+    // (Chebyshev, from the camera chunk) are skipped. `frustum` = the
+    // cascade's ortho volume (V8b): a caster outside it cannot write a
+    // useful texel — without this test every cascade paid the full ring's
+    // vertex work (cascade 0 covers ~45 m but drew 576 m of chunks; the
+    // CSM cost is vertex-bound, which is why the resolution knob did
+    // not move it).
     void drawDepth(rhi::CommandBuffer& cmd,
                    rhi::BindGroupHandle casterBindGroup, const Vec3& cameraPos,
-                   i32 maxChunkDistance);
+                   i32 maxChunkDistance, const Frustum* frustum = nullptr);
 
     // Streaming stats for the debug panel.
     u32 residentCount() const { return resident; }

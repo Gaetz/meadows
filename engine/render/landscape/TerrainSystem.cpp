@@ -433,7 +433,8 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
 // vertical walls along chunk borders and would print shadow lines.
 void TerrainSystem::drawDepth(rhi::CommandBuffer& cmd,
                               rhi::BindGroupHandle casterBindGroup,
-                              const Vec3& cameraPos, i32 maxChunkDistance) {
+                              const Vec3& cameraPos, i32 maxChunkDistance,
+                              const Frustum* frustum) {
     const i32 camCx = camChunk(cameraPos.x);
     const i32 camCz = camChunk(cameraPos.z);
     cmd.setPipeline(casterPipeline);
@@ -449,6 +450,15 @@ void TerrainSystem::drawDepth(rhi::CommandBuffer& cmd,
             if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
                 maxChunkDistance) {
                 continue; // beyond the last cascade
+            }
+            if (frustum != nullptr) {
+                const f32 x0 = static_cast<f32>(cx) * kChunkSize;
+                const f32 z0 = static_cast<f32>(cz) * kChunkSize;
+                if (!frustum->intersectsAabb(
+                        { x0, chunk.minY, z0 },
+                        { x0 + kChunkSize, chunk.maxY, z0 + kChunkSize })) {
+                    continue; // outside this cascade's ortho volume
+                }
             }
             if (!indexBufferBound) {
                 cmd.setIndexBuffer(indexBuffers[lod], rhi::IndexFormat::U32);

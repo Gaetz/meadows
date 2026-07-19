@@ -100,11 +100,14 @@ public:
     // Depth-only caster pass into one shadow cascade (frameBindGroup feeds
     // the sway/fade math, casterBindGroup the cascade's light matrix).
     // Chunks beyond `maxChunkDistance` (Chebyshev) are skipped — cascades
-    // only reach so far.
+    // only reach so far. `frustum` = the cascade's ortho volume (V8b):
+    // trees outside it cannot shadow anything in the cascade, and the
+    // near cascades cover a fraction of the ring (same rationale as
+    // TerrainSystem::drawDepth).
     void drawDepth(rhi::CommandBuffer& cmd,
                    rhi::BindGroupHandle frameBindGroup,
                    rhi::BindGroupHandle casterBindGroup, const Vec3& cameraPos,
-                   i32 maxChunkDistance);
+                   i32 maxChunkDistance, const Frustum* frustum = nullptr);
 
     u32 propTotal() const { return instances; }
 

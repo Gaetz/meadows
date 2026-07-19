@@ -732,8 +732,12 @@ puis prouvé par l'expérience `kFramesInFlight = 1` (plaques éteintes) :
 
 Reliquats connus au démarrage du chantier : parité visuelle à l'œil sur M1 ;
 mesure Release (le grief V7b « 25 ms/frame » était du Debug) ;
+**render scale** (rendre les passes 3D sous la résolution fenêtre, upscale au
+composite — le levier mainPass, demande dev 2026-07-19) ;
 `SpriteRenderer::instanceBuffer` (le « 1 reste » V6c, voie `firstInstance`) ;
-pré-chauffe des variantes de pipeline (V7c-3) ; puis post-démo/PC : queue de
+pré-chauffe des variantes de pipeline (V7c-3) ; réparer les sous-probes GPU
+imbriquées (mainTerrain/mainVeg/mainGrass lisent 0,01 ms sur Vulkan — à
+faire avant de disséquer le mainPass) ; puis post-démo/PC : queue de
 transfert, parité GL 4.6 PC, timeline semaphores, upload ImGui deux phases.
 
 #### V8a — Synchronization validation : câblée, backend purgé — FAIT (2026-07-19)
@@ -775,3 +779,38 @@ sous sync validation ; 2 warnings bénins restants (« vertex attribute at
 location 2 not consumed », les casters sur layout mesh complet —
 cosmétique). Workflow futur : tout nouveau chantier RHI se relit avec
 `MEADOWS_VK_SYNC_VALIDATION=1 ./tools/vksmoke` + une passe de scène.
+
+#### V8b — Le poste « shadows » : cull par cascade — FAIT (2026-07-19)
+
+**La mesure d'abord** (HUD GPU dev, M1 Debug, monde ENTIÈREMENT streamé —
+les chiffres V7 « shadows=5.4 » étaient pris avant la fin du streaming,
+le régime stationnaire arrive vers la frame 300) : frame GPU ~87 ms avg,
+dont shadows 37,5 (43 %), mainPass 27,5, reflection 10-21. Swapchain
+réelle : **1440×797** (l'EngineConfig demande 1920×1080 mais l'écran M1
+fait 1440×900 points ; pas de sur-résolution Retina, SDL est créé sans
+HIGH_PIXEL_DENSITY). A/B au passage : les barrières V7e/V8a ne coûtent
+rien (HEAD 111,7 ms vs backend pré-V7e 121,3 ms à la même frame).
+
+**L'indice dev qui a tout donné : le curseur de résolution de la shadow
+map ne changeait RIEN, sur M1 comme sur PC.** Le curseur fonctionne (la
+texture est bien recréée) — c'est le coût qui n'est pas dans les pixels :
+le CSM était **vertex-bound**, parce que chaque cascade dessinait
+terrain + végétation sur tout le ring de 9 chunks Chebyshev (576 m),
+**cascade 0 (0,5-45 m, ortho ~30 m de rayon) comprise** — ~99 % des
+sommets payés puis clippés, ×3 cascades.
+
+**Fix** : cull des casters contre le volume ortho DE CHAQUE cascade —
+`Frustum::fromViewProj(cascades.viewProj[i])` + test AABB par chunk dans
+`TerrainSystem::drawDepth` et `VegetationSystem::drawDepth` (mêmes
+conventions AABB que leurs draw normaux ; le cap Chebyshev 9 reste en
+préfiltre). Exact par construction : le volume ortho INCLUT le caster
+reach vers le soleil (`kCasterReach` est dans la matrice), donc les
+ombres portées par les montagnes lointaines survivent à tout angle.
+
+**Résultat** (même protocole 75 s) : shadows 35-50 ms → **~5 ms**
+stationnaire (÷7) ; frame spike 111,7 → **51,6 ms**. Le nouveau n°1 est
+le mainPass (~24,6 ms à 1,15 Mpx, coût par pixel : GI apply/splat/herbe)
+→ briques suivantes : render scale + réparation des sous-probes (liste
+V8). Restes shadows connus : `drawShadowCasters` (meshes/PNJ, toggle B2a)
+ne cull pas encore par cascade ; un spike shadows ~18 ms subsiste sur les
+frames de re-fit complet (sun step).

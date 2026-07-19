@@ -539,7 +539,8 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
                                  rhi::BindGroupHandle frameBindGroup,
                                  rhi::BindGroupHandle casterBindGroup,
                                  const Vec3& cameraPos,
-                                 i32 maxChunkDistance) {
+                                 i32 maxChunkDistance,
+                                 const Frustum* frustum) {
     const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
     const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
     cmd.setPipeline(casterPipeline);
@@ -556,6 +557,21 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
             if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
                 maxChunkDistance) {
                 continue; // beyond the last shadow cascade
+            }
+            if (frustum != nullptr) {
+                // Same AABB convention as draw(): XZ pad for canopy
+                // overhang, +14 m for prop height above its base.
+                const f32 x0 =
+                    static_cast<f32>(cx) * TerrainSystem::kChunkSize;
+                const f32 z0 =
+                    static_cast<f32>(cz) * TerrainSystem::kChunkSize;
+                if (!frustum->intersectsAabb(
+                        { x0 - 4.0f, chunk.minY - 1.0f, z0 - 4.0f },
+                        { x0 + TerrainSystem::kChunkSize + 4.0f,
+                          chunk.maxY + 14.0f,
+                          z0 + TerrainSystem::kChunkSize + 4.0f })) {
+                    continue; // outside this cascade's ortho volume
+                }
             }
             if (!meshBound) {
                 // Casters always use the low-detail twin when there is
