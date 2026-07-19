@@ -76,6 +76,8 @@ void LandscapeRenderer::applyTuning(
     vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 15);
     vegetation.highDetailRadius =
         glm::clamp(tuning.vegHighDetailRadius, 0, 8);
+    vegetation.lowDetailRadius =
+        glm::clamp(tuning.vegLowDetailRadius, 2, 12); // V8f
 }
 
 void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {

@@ -68,6 +68,9 @@ struct LandscapeTuningForm : Form {
     // constants; moddable + live-tunable now. Radii in 64 m chunks.
     i32 vegViewRadius { 12 };       // resident/drawn ring (dev pick)
     i32 vegHighDetailRadius { 5 };  // 320-face canopies inside (~320 m)
+    // V8f (appended — ordinals stable): 80-face twins inside; 20-face
+    // ultra lobes beyond (dev pick 2026-07-19 after the visual check).
+    i32 vegLowDetailRadius { 4 };
 
     REFLECT_BEGIN(LandscapeTuningForm, Form)
         REFLECT_FIELD(terrainSeed)
@@ -99,6 +102,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(autoExposureMax)
         REFLECT_FIELD(vegViewRadius)
         REFLECT_FIELD(vegHighDetailRadius)
+        REFLECT_FIELD(vegLowDetailRadius)
     REFLECT_END()
 };
 

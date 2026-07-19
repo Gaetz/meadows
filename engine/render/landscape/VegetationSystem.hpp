@@ -52,7 +52,8 @@ public:
     // generateTree(seed, 0)): ~150 tris/tree vs ~600 on the low twin.
     // The trees carried 24 of the 30 Mtri/frame (V8e counters, M1) and
     // the far ring is where the instances are.
-    i32 lowDetailRadius { 8 };    // 80-face twins within; ultra beyond
+    i32 lowDetailRadius { 4 };    // 80-face twins within; ultra beyond
+                                  // (dev pick 2026-07-19, visual check OK)
     static constexpr u32 kMaxUploadsPerFrame = 2;
     // Scatter jobs budgeted like uploads (see TerrainSystem — the
     // unbudgeted ring edge was part of the fast-travel stutter).

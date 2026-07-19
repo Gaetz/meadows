@@ -914,10 +914,12 @@ sont invisibles.
 - Compteur ultra dans le bloc géométrie du panneau perf.
 
 **Mesure (protocole 75-100 s, M1 Debug)** : frame spike 51,6 →
-**~39,5 ms** (re-fit : 63,9 → ~45,5) ; mainPass 24,6 → 20,5 ms. La
-descente CONTINUE au curseur (dev) : `lowDetailRadius` 8 → 5-6 met
-l'ultra sur tout le mid-ring ; les compteurs high/low/ultra disent en
-live ce que chaque cran achète. Si le plancher mesh ne suffit pas, les
-imposteurs restent listés — le pipeline 3 niveaux leur a préparé le
-branchement (un 4e niveau quad serait local à draw()).
+**~39,5 ms** (re-fit : 63,9 → ~45,5) ; mainPass 24,6 → 20,5 ms.
+**Descente dev (vérif visuelle OK, 2026-07-19)** : `lowDetailRadius`
+8 → **4** (défaut, porté par `vegLowDetailRadius` appendu au
+`LandscapeTuningForm` — moddable §5, suite headless 81 925/81 925) →
+frame spike **37,1 ms** (re-fit ~42,7), mainPass 18,4. Bilan de la
+journée : 87 → 37 ms (~10 → ~27 fps Debug M1). Si le plancher mesh ne
+suffit pas, les imposteurs restent listés — le pipeline 3 niveaux leur
+a préparé le branchement (un 4e niveau quad serait local à draw()).
 
