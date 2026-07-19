@@ -412,8 +412,12 @@ void main() {
         u64 nanos = 0;
         u32 tries = 0;
         // Results land a frame or two later; drive frames while polling.
+        // Regression guard: this flaked ~1 run in 5 until the backend
+        // harvested pending timestamps at slot-recycle time — before that,
+        // polling one frame too late hit the query-pool reset and the value
+        // was gone for good (backend fix in beginFrame, V7).
         while (stamp.id != 0 && !device.timestampReady(stamp, nanos) &&
-               tries < 8) {
+               tries < 30) {
             auto& idle = device.beginFrame();
             idle.beginRenderPass({ .clearColor = { 0.0f, 0.0f, 0.0f, 1.0f } });
             idle.endRenderPass();

@@ -676,6 +676,12 @@ struct VulkanDevice::Impl {
         u32 query { 0 };
         u32 frameSlot { 0 };
         u32 generation { 0 };
+        // Harvested at slot-recycle time (see beginFrame): once the region
+        // resets, the pool result is gone, but the fence wait that precedes
+        // the reset proves the GPU finished — so the value is read into here
+        // first and timestampReady can still deliver it.
+        u64 cachedTicks { 0 };
+        bool cached { false };
     };
     std::unordered_map<u32, PendingTimestamp> timestamps;
 
@@ -1792,8 +1798,25 @@ CommandBuffer& VulkanDevice::beginFrame() {
                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
     // Recycle this slot's timestamp region: reset is illegal inside a render
-    // pass, so it has to happen here, before any beginRenderPass.
+    // pass, so it has to happen here, before any beginRenderPass. First,
+    // harvest every still-pending timestamp of this slot into its handle —
+    // the fence wait above proves the GPU retired the slot, so the results
+    // are available NOW and would be wiped by the reset (this was a 1-in-5
+    // vksmoke flake: a caller polling one frame too late lost the value).
     if (d.queryPool != VK_NULL_HANDLE) {
+        for (auto& [id, pending] : d.timestamps) {
+            if (pending.cached || pending.frameSlot != d.frame ||
+                pending.generation != d.regionGeneration[d.frame]) {
+                continue;
+            }
+            u64 ticks = 0;
+            if (vkGetQueryPoolResults(d.device, d.queryPool, pending.query, 1,
+                                      sizeof(ticks), &ticks, sizeof(ticks),
+                                      VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
+                pending.cachedTicks = ticks;
+                pending.cached = true;
+            }
+        }
         vkCmdResetQueryPool(d.commandBuffers[d.frame], d.queryPool,
                             d.frame * kTimestampsPerFrame, kTimestampsPerFrame);
         ++d.regionGeneration[d.frame];
@@ -2909,6 +2932,12 @@ bool VulkanDevice::timestampReady(TimestampHandle handle, u64& nanos) {
         return false;
     }
     const Impl::PendingTimestamp pending = it->second;
+    if (pending.cached) { // harvested at slot recycle, before the pool reset
+        nanos = static_cast<u64>(static_cast<f64>(pending.cachedTicks) *
+                                 d.timestampPeriod);
+        d.timestamps.erase(it);
+        return true;
+    }
     // Its region has been recycled since: the result is gone for good, so
     // release the handle rather than reporting another frame's number.
     if (pending.generation != d.regionGeneration[pending.frameSlot]) {
