@@ -10,11 +10,18 @@ layout(std430, binding = 2) readonly buffer FxInstances {
     vec4 data[]; // pairs: [posSize, color] per particle
 };
 
+// Alpha and additive particles share one SSBO, packed back to back, so the
+// buffer is never rewritten between the two draws (a Vulkan hazard: recorded
+// draws would all read the last batch). x = this batch's first particle.
+MEADOWS_PUSH_CONSTANTS(FxPush) {
+    ivec4 uFxBase;
+};
+
 layout(location = 0) out vec2 vUv;    // -1..1 across the quad
 layout(location = 1) out vec4 vColor;
 
 void main() {
-    int particle = MEADOWS_VERTEX_INDEX / 6;
+    int particle = MEADOWS_VERTEX_INDEX / 6 + uFxBase.x;
     int corner = MEADOWS_VERTEX_INDEX % 6;
     vec4 posSize = data[particle * 2 + 0];
     vColor = data[particle * 2 + 1];

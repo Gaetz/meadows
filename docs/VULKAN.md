@@ -441,4 +441,41 @@ la même passe est un motif que GL pardonne et que Vulkan punit *silencieusement
 le renderer paysage a bien plus de raisons d'écrire des uniformes par draw, et
 il échouerait de la même façon, en beaucoup moins lisible.
 
+#### V6c — Chasse aux `updateBuffer` par draw — FAIT (1 reste)
+
+Audit des **29** appels à `updateBuffer` hors backend. Le critère qui tranche :
+
+- **Buffer par draw / par slot** (`draw.ubo`, `slot->modelUbo`, `slot->ubo`,
+  `ShadowMapper::cascadeUbos[i]`) → **sûr**, chaque draw a le sien.
+- **Buffer écrit une fois par frame** (`frameUbo`, `lightsUbo`,
+  `reflectionUbo`, `rainOcclusionUbo`, `GpuOcclusion`, `AnimPreviewPanel`) →
+  **sûr**. Vérifié pour `frameUbo`, réécrit en deux points : aucun draw entre
+  les deux.
+- **Buffer PARTAGÉ réécrit entre des draws** → **cassé en Vulkan**. 3 sites.
+
+**1. `RadianceCascades::cascadeUbo` — corrigé.** Un seul UBO réécrit par niveau
+dans 3 boucles, avec un `dispatch` entre chaque : tous les dispatches auraient
+lu les paramètres du DERNIER niveau. C'était déjà signalé en commentaire comme
+déviation connue. → push constants (48 o), ce qui les sort aussi des 4 bind
+groups. A nécessité d'**étendre les push constants au compute**
+(`ComputePipelineDesc::pushConstantSize`, `stageFlags` selon le type de
+pipeline).
+
+**2. `FxRenderer::instances` — corrigé.** Un SSBO écrit pour le lot alpha, puis
+réécrit pour l'additif, avec un draw entre : les deux draws auraient rendu
+l'additif. → les deux lots empaquetés bout à bout dans le SSBO, écrit **une
+fois**, et un push constant `uFxBase` décale l'indexation par lot.
+
+**3. `SpriteRenderer::instanceBuffer` — PAS ENCORE CORRIGÉ.** Même motif, un
+`updateBuffer` par batch avec un `drawIndexed` entre. C'est le renderer 2D,
+donc hors chemin V7, mais le bug est réel. Le correctif tient dans le même
+patron : uploader toutes les instances une fois et décaler par push constant
+(`gl_InstanceIndex + uBase`) — ce qui règle au passage la raison d'être du
+motif actuel, à savoir éviter `glDrawElementsInstancedBaseInstance`
+indisponible en GL 4.1.
+
+**Vérifié** : build complet vert, vksmoke 0 erreur de validation, headless
+516/516, et les 5 shaders touchés compilés par `glslangValidator` sous
+sémantique **GL et Vulkan**. La parité visuelle GL reste à confirmer sur PC.
+
 ### V7 — Bring-up LandscapeScene sur M1 + parité GL46 — À FAIRE

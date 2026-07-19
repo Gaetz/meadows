@@ -268,6 +268,9 @@ constexpr u32 kPushConstantBinding = 15;
 // vertex layout, no raster state. Dispatched via CommandBuffer::dispatch.
 struct ComputePipelineDesc {
     ShaderHandle shader;
+    // Same contract as PipelineDesc::pushConstantSize: per-dispatch constants
+    // that stick to the dispatches following each setPushConstants.
+    u32 pushConstantSize { 0 };
 };
 
 // --- Bind groups -----------------------------------------------------------------

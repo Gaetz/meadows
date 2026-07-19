@@ -102,9 +102,6 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
     boxBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Storage,
           .size = kMaxBoxes * sizeof(RcBox), .dynamic = true }, nullptr) };
-    cascadeUbo = { device, device.createBuffer(
-        { .usage = rhi::BufferUsage::Uniform,
-          .size = sizeof(RcCascadeUniforms), .dynamic = true }, nullptr) };
 
     refreshPipelines(device, shaders);
 }
@@ -119,7 +116,6 @@ void RadianceCascades::destroy(rhi::Device& device) {
     levels.clear();
     debugGroup.reset();
     injectGroup.reset();
-    cascadeUbo.reset();
     boxBuffer.reset();
     rcUbo.reset();
     clipCoarse.reset();
@@ -147,17 +143,20 @@ void RadianceCascades::refreshPipelines(rhi::Device& device,
     }
     if (shaders.generation(kBuildShader) != buildGeneration) {
         buildPipeline = { device, device.createComputePipeline(
-            { shaders.get(kBuildShader) }) };
+            { .shader = shaders.get(kBuildShader),
+              .pushConstantSize = sizeof(RcCascadeUniforms) }) };
         buildGeneration = shaders.generation(kBuildShader);
     }
     if (shaders.generation(kMergeShader) != mergeGeneration) {
         mergePipeline = { device, device.createComputePipeline(
-            { shaders.get(kMergeShader) }) };
+            { .shader = shaders.get(kMergeShader),
+              .pushConstantSize = sizeof(RcCascadeUniforms) }) };
         mergeGeneration = shaders.generation(kMergeShader);
     }
     if (shaders.generation(kExtendShader) != extendGeneration) {
         extendPipeline = { device, device.createComputePipeline(
-            { shaders.get(kExtendShader) }) };
+            { .shader = shaders.get(kExtendShader),
+              .pushConstantSize = sizeof(RcCascadeUniforms) }) };
         extendGeneration = shaders.generation(kExtendShader);
     }
     if (shaders.generation(kDebugShader) != debugGeneration) {
@@ -230,7 +229,6 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
               .filter = rhi::FilterMode::Linear }, nullptr) };
         level.buildGroup = { device, device.createBindGroup(
             { .entries = { { .binding = 2, .buffer = rcUbo.get() },
-                           { .binding = 4, .buffer = cascadeUbo.get() },
                            { .binding = 0, .texture = level.texture.get(),
                              .storageImage = true },
                            { .binding = 5, .texture = clipFine.get(),
@@ -247,7 +245,6 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
                           : clipFine.get();
         level.mergeGroup = { device, device.createBindGroup(
             { .entries = { { .binding = 2, .buffer = rcUbo.get() },
-                           { .binding = 4, .buffer = cascadeUbo.get() },
                            { .binding = 0, .texture = level.texture.get(),
                              .storageImage = true },
                            { .binding = 7, .texture = src,
@@ -265,8 +262,6 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
                   .filter = rhi::FilterMode::Linear }, nullptr) };
             level.extendToScratch = { device, device.createBindGroup(
                 { .entries = { { .binding = 2, .buffer = rcUbo.get() },
-                               { .binding = 4,
-                                 .buffer = cascadeUbo.get() },
                                { .binding = 0,
                                  .texture = level.scratch.get(),
                                  .storageImage = true },
@@ -275,8 +270,6 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
                                  .sampler = volumeSampler.get() } } }) };
             level.extendToTexture = { device, device.createBindGroup(
                 { .entries = { { .binding = 2, .buffer = rcUbo.get() },
-                               { .binding = 4,
-                                 .buffer = cascadeUbo.get() },
                                { .binding = 0,
                                  .texture = level.texture.get(),
                                  .storageImage = true },
@@ -541,10 +534,11 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
         cmd.memoryBarrier(); // clips visible to the cascade builds
     }
 
-    // Per-level dispatch parameters. NOTE: reusing ONE ubo with an
-    // updateBuffer between dispatches relies on the GL backend executing
-    // immediately — a Vulkan backend would want per-level UBOs or dynamic
-    // offsets (documented deviation, revisit with the backend).
+    // Per-level dispatch parameters, carried by push constants. They used to
+    // be ONE ubo rewritten between dispatches, which only worked because GL
+    // executes immediately: on Vulkan every recorded dispatch would have read
+    // the LAST level's parameters. Push constants are captured into the
+    // command stream, so each dispatch keeps its own.
     const auto levelUniforms = [&](size_t i, f32 flagB) {
         const CascadeLevel& level = levels[i];
         RcCascadeUniforms cu;
@@ -581,7 +575,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
             RcCascadeUniforms cu = levelUniforms(
                 i, i <= 1 ? appliedFineVoxel : appliedCoarseVoxel);
             cu.c.x = extendedLevel(i) ? 0.25f : 1.0f;
-            device.updateBuffer(cascadeUbo, &cu, sizeof(cu), 0);
+            cmd.setPushConstants(&cu, sizeof(cu));
             cmd.setBindGroup(1, level.buildGroup);
             cmd.dispatch((level.width + 3) / 4, (level.height + 3) / 4,
                          (level.depth + 3) / 4);
@@ -610,7 +604,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
             for (u32 pass = 0; pass < 2; ++pass) {
                 RcCascadeUniforms cu = levelUniforms(i, 0.0f);
                 cu.c.x = shortLen * static_cast<f32>(1u << pass);
-                device.updateBuffer(cascadeUbo, &cu, sizeof(cu), 0);
+                cmd.setPushConstants(&cu, sizeof(cu));
                 cmd.setBindGroup(1, pass == 0 ? level.extendToScratch
                                               : level.extendToTexture);
                 cmd.dispatch((level.width + 3) / 4,
@@ -632,7 +626,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
             const bool top = i == static_cast<i32>(levels.size()) - 1;
             const RcCascadeUniforms cu =
                 levelUniforms(static_cast<size_t>(i), top ? 1.0f : 0.0f);
-            device.updateBuffer(cascadeUbo, &cu, sizeof(cu), 0);
+            cmd.setPushConstants(&cu, sizeof(cu));
             cmd.setBindGroup(1, level.mergeGroup);
             cmd.dispatch((level.width + 3) / 4, (level.height + 3) / 4,
                          (level.depth + 3) / 4);

@@ -910,7 +910,9 @@ void VulkanCommandBuffer::setPushConstants(const void* data, u32 size,
     }
     // Recorded INTO the command buffer, so the value sticks to the draws that
     // follow it — the whole point (a UBO write would not).
-    vkCmdPushConstants(cb_, boundPipeline_->layout, VK_SHADER_STAGE_ALL_GRAPHICS,
+    vkCmdPushConstants(cb_, boundPipeline_->layout,
+                       boundPipeline_->compute ? VK_SHADER_STAGE_COMPUTE_BIT
+                                               : VK_SHADER_STAGE_ALL_GRAPHICS,
                        offset, size, data);
 }
 
@@ -2326,9 +2328,10 @@ bool buildLayouts(VkDevice device, const VulkanShader& shader,
     // storage is part of the layout itself.
     VkPushConstantRange pushRange {};
     if (pipeline.desc.pushConstantSize > 0) {
-        // Visible to every graphics stage — the RHI does not model per-stage
-        // visibility, and a compute pipeline never reaches this path.
-        pushRange.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+        // The RHI does not model per-stage visibility, so every stage of the
+        // pipeline's own kind sees the range.
+        pushRange.stageFlags = pipeline.compute ? VK_SHADER_STAGE_COMPUTE_BIT
+                                                : VK_SHADER_STAGE_ALL_GRAPHICS;
         pushRange.offset = 0;
         pushRange.size = pipeline.desc.pushConstantSize;
         layoutInfo.pushConstantRangeCount = 1;
@@ -2369,6 +2372,7 @@ PipelineHandle VulkanDevice::createComputePipeline(
     VulkanPipeline pipeline {};
     pipeline.compute = true;
     pipeline.desc.shader = desc.shader;
+    pipeline.desc.pushConstantSize = desc.pushConstantSize;
     if (!buildLayouts(d.device, *shader, pipeline)) {
         return {};
     }

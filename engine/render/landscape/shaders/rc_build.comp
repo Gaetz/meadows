@@ -1,11 +1,12 @@
 #version 460 core
+#include "compat.glsl"
 #include "common.glsl"
 #include "rc_common.glsl"
 
 // Radiance cascades G4 — BUILD one cascade: every texel raymarches its
 // radiance interval [start, end) through the voxel clipmap and stores
 // (interval radiance, β transparency). One dispatch per cascade; the
-// per-cascade parameters ride RcCascadeUbo (updated between dispatches —
+// per-cascade parameters ride push constants (per-dispatch, Vulkan-safe —
 // the GL backend executes immediately).
 
 layout(std140, binding = 2) uniform RcUbo {
@@ -16,7 +17,7 @@ layout(std140, binding = 2) uniform RcUbo {
     vec4 uRcLightColor[16];
 };
 
-layout(std140, binding = 4) uniform RcCascadeUbo {
+MEADOWS_PUSH_CONSTANTS(RcCascadeUbo) {
     vec4 uRcCascade; // x = cascade index, y = probe count per axis,
                      // z = dir grid W, w = dir grid H
     vec4 uRcCascadeB; // x = interval0 (m), y = march step (m),

@@ -189,7 +189,6 @@ private:
     rhi::UniqueTexture clipCoarse;
     rhi::UniqueBuffer rcUbo;
     rhi::UniqueBuffer boxBuffer;   // G3: SSBO of RcBox, kMaxBoxes
-    rhi::UniqueBuffer cascadeUbo;  // G4: per-dispatch level parameters
     rhi::UniqueBindGroup injectGroup;
     rhi::UniqueBindGroup debugGroup;
     rhi::UniquePipeline injectPipeline;

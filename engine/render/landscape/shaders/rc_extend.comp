@@ -1,4 +1,5 @@
 #version 460 core
+#include "compat.glsl"
 #include "common.glsl"
 #include "rc_common.glsl"
 
@@ -21,7 +22,7 @@ layout(std140, binding = 2) uniform RcUbo {
     vec4 uRcPrevGrid;
 };
 
-layout(std140, binding = 4) uniform RcCascadeUbo {
+MEADOWS_PUSH_CONSTANTS(RcCascadeUbo) {
     vec4 uRcCascade;  // x = cascade index, y = probes/axis,
                       // z = dir grid W, w = dir grid H
     vec4 uRcCascadeB; // z = probe spacing, w = dir-major flag

@@ -47,7 +47,7 @@ private:
     // Uploads the batch at the SSBO's base and issues 6 verts/instance —
     // called once per blend batch (GL keeps the two draws coherent).
     void drawBatch(engine::FrameContext& frame,
-                   const vector<FxInstance>& batch,
+                   const vector<FxInstance>& batch, u32 baseInstance,
                    rhi::PipelineHandle pipeline,
                    rhi::BindGroupHandle frameGroup);
 
