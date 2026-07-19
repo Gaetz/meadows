@@ -802,6 +802,20 @@ private:
     bool scissorSet_ { false };
     VkRect2D scissor_ {};
     VkFrontFace frontFace_ { VK_FRONT_FACE_COUNTER_CLOCKWISE };
+    // GL-meaning winding -> Vulkan winding for the CURRENT target. Offscreen
+    // renders through a positive viewport (Vulkan Y-down = one mirror vs GL
+    // clip space) so the winding inverts; the swapchain's negative-height
+    // viewport cancels that mirror and keeps the GL winding as-is. The old
+    // code inverted unconditionally — wrong on the swapchain, invisible only
+    // because those passes cull nothing.
+    VkFrontFace effectiveFrontFace() const {
+        if (target_ == nullptr) {
+            return frontFace_;
+        }
+        return frontFace_ == VK_FRONT_FACE_COUNTER_CLOCKWISE
+                   ? VK_FRONT_FACE_CLOCKWISE
+                   : VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    }
     VulkanPipeline* boundPipeline_ { nullptr };
     array<BindGroupHandle, 4> boundGroups_ {}; // per RHI slot, for replay
     u64 pushedMask_ { 0 }; // bindings pushed since the current pipeline bind
@@ -946,20 +960,35 @@ void VulkanCommandBuffer::applyViewport() {
 }
 
 void VulkanCommandBuffer::setViewport(u32 x, u32 y, u32 width, u32 height) {
-    // Bottom-left origin in, negative-height Vulkan viewport out.
+    // The negative-height flip applies ONLY to the swapchain pass. Offscreen
+    // passes render Vulkan-natural: GL clip content then lands in GL memory
+    // order (row 0 = scene bottom), so every GL-convention shader SAMPLING an
+    // offscreen target reads it correctly — flipping everywhere kept each
+    // pass upright but inverted the sampling convention, and an odd number
+    // of fullscreen hops (tonemap) put the whole image on screen upside
+    // down. Only the final swapchain pass needs the flip to turn GL memory
+    // order into what the surface presents.
     viewport_.x = static_cast<f32>(x);
-    viewport_.y = static_cast<f32>(y + height);
+    if (target_ == nullptr) {
+        viewport_.y = static_cast<f32>(y + height);
+        viewport_.height = -static_cast<f32>(height);
+    } else {
+        viewport_.y = static_cast<f32>(y);
+        viewport_.height = static_cast<f32>(height);
+    }
     viewport_.width = static_cast<f32>(width);
-    viewport_.height = -static_cast<f32>(height);
     viewport_.minDepth = 0.0f;
     viewport_.maxDepth = 1.0f;
     applyViewport();
 }
 
 void VulkanCommandBuffer::setScissor(u32 x, u32 y, u32 width, u32 height) {
-    // Same origin flip as the viewport.
-    const u32 top = extent_.height > (y + height) ? extent_.height - (y + height)
-                                                  : 0u;
+    // Same per-target rule as the viewport: offscreen rows are already
+    // bottom-origin (GL memory order), only the swapchain needs the flip.
+    const u32 top =
+        target_ != nullptr ? y
+        : extent_.height > (y + height) ? extent_.height - (y + height)
+                                        : 0u;
     scissor_.offset = { static_cast<i32>(x), static_cast<i32>(top) };
     scissor_.extent = { width, height };
     scissorSet_ = true;
@@ -995,7 +1024,7 @@ void VulkanCommandBuffer::setFrontFace(FrontFace frontFace) {
         boundPipeline_ = nullptr;
         const VkPipeline vk =
             d_->pipelineFor(*pipeline, colorFormats_, depthFormat_,
-                            frontFace_);
+                            effectiveFrontFace());
         if (vk != VK_NULL_HANDLE) {
             vkCmdBindPipeline(cb_, VK_PIPELINE_BIND_POINT_GRAPHICS, vk);
             boundPipeline_ = pipeline;
@@ -1026,7 +1055,8 @@ void VulkanCommandBuffer::setPipeline(PipelineHandle handle) {
     }
     // Graphics pipelines are specialized per target format set.
     const VkPipeline vk =
-        d_->pipelineFor(*pipeline, colorFormats_, depthFormat_, frontFace_);
+        d_->pipelineFor(*pipeline, colorFormats_, depthFormat_,
+                        effectiveFrontFace());
     if (vk == VK_NULL_HANDLE) {
         return;
     }
@@ -2590,11 +2620,9 @@ VkPipeline VulkanDevice::Impl::pipelineFor(VulkanPipeline& pipeline,
     raster.polygonMode = pipeline.desc.wireframe ? VK_POLYGON_MODE_LINE
                                                  : VK_POLYGON_MODE_FILL;
     raster.cullMode = toVkCullMode(pipeline.desc.cull);
-    // The negative-height viewport mirrors triangles, so the requested winding
-    // is inverted here to preserve the GL-facing meaning of FrontFace.
-    raster.frontFace = frontFace == VK_FRONT_FACE_COUNTER_CLOCKWISE
-                           ? VK_FRONT_FACE_CLOCKWISE
-                           : VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    // Already the EFFECTIVE winding (per-target mirror folded in by
+    // effectiveFrontFace() at the call sites).
+    raster.frontFace = frontFace;
     raster.lineWidth = 1.0f;
     if (pipeline.desc.depthBias != 0.0f ||
         pipeline.desc.depthBiasSlope != 0.0f) {
