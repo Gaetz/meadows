@@ -245,6 +245,11 @@ struct VulkanTexture {
     // contract ("the texture's own creation-time parameters apply"), which GL
     // gets for free from glTexParameter and Vulkan has to spell out.
     VkSampler defaultSampler { VK_NULL_HANDLE };
+    // Per-mip views, created lazily for storage-image bindings: a storage
+    // descriptor must view EXACTLY ONE mip (GL's glBindImageTexture(level)).
+    // Binding the whole-texture view silently made every hiz_down pass write
+    // mip 0 — mips 1..N stayed garbage and the Hi-Z cull ate distant chunks.
+    vector<VkImageView> mipViews;
 };
 
 // --- Descriptor binding remap (V4) -------------------------------------------
@@ -610,7 +615,7 @@ struct VulkanDevice::Impl {
     // here and freed once the frame slot cycles (fence-proven done).
     struct PendingTexture {
         VkImage image; VmaAllocation alloc; VkImageView view;
-        VkSampler sampler; u64 frame;
+        VkSampler sampler; vector<VkImageView> mipViews; u64 frame;
     };
     struct PendingBuffer {
         VkBuffer buffer; VmaAllocation alloc; u64 frame;
@@ -624,6 +629,11 @@ struct VulkanDevice::Impl {
         };
         std::erase_if(pendingTextures, [&](const PendingTexture& t) {
             if (!done(t.frame)) { return false; }
+            for (VkImageView v : t.mipViews) {
+                if (v != VK_NULL_HANDLE) {
+                    vkDestroyImageView(device, v, nullptr);
+                }
+            }
             vkDestroyImageView(device, t.view, nullptr);
             if (t.sampler != VK_NULL_HANDLE) {
                 vkDestroySampler(device, t.sampler, nullptr);
@@ -728,6 +738,33 @@ struct VulkanDevice::Impl {
     VulkanTexture* findTexture(TextureHandle handle) {
         auto it = textures.find(handle.id);
         return it == textures.end() ? nullptr : &it->second;
+    }
+
+    // Single-mip view for storage-image bindings (created on first use).
+    VkImageView textureMipView(VulkanTexture& tex, u32 mip) {
+        if (mip >= tex.mipLevels) {
+            mip = tex.mipLevels - 1;
+        }
+        if (tex.mipViews.empty()) {
+            tex.mipViews.resize(tex.mipLevels, VK_NULL_HANDLE);
+        }
+        if (tex.mipViews[mip] != VK_NULL_HANDLE) {
+            return tex.mipViews[mip];
+        }
+        VkImageViewCreateInfo info {};
+        info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        info.image = tex.image;
+        info.viewType = tex.extent.depth > 1  ? VK_IMAGE_VIEW_TYPE_3D
+                        : tex.arrayLayers > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
+                                              : VK_IMAGE_VIEW_TYPE_2D;
+        info.format = tex.format;
+        info.subresourceRange.aspectMask = tex.aspect;
+        info.subresourceRange.baseMipLevel = mip;
+        info.subresourceRange.levelCount = 1;
+        info.subresourceRange.layerCount = tex.arrayLayers;
+        vkOk(vkCreateImageView(device, &info, nullptr, &tex.mipViews[mip]),
+             "vkCreateImageView (storage mip)");
+        return tex.mipViews[mip];
     }
 
     // Allocates a host-visible scratch buffer for one upload/readback.
@@ -1211,6 +1248,10 @@ void VulkanCommandBuffer::pushGroup(BindGroupHandle group) {
                     tex->layout = VK_IMAGE_LAYOUT_GENERAL;
                 }
                 image.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+                // ONE mip exactly (GL: glBindImageTexture(level)): with the
+                // whole-texture view, writes land in mip 0 whatever
+                // entry.imageMip says — the Hi-Z pyramid bug.
+                image.imageView = d_->textureMipView(*tex, entry.imageMip);
             } else {
                 // The texture's ACTUAL layout, not an assumed one: GPU-written
                 // volumes (GI clipmaps, cascades) live in GENERAL for good and
@@ -1722,6 +1763,11 @@ VulkanDevice::~VulkanDevice() {
             vkDestroySampler(impl->device, impl->pcfSampler, nullptr);
         }
         for (auto& [id, tex] : impl->textures) {
+            for (VkImageView v : tex.mipViews) {
+                if (v != VK_NULL_HANDLE) {
+                    vkDestroyImageView(impl->device, v, nullptr);
+                }
+            }
             vkDestroyImageView(impl->device, tex.view, nullptr);
             if (tex.defaultSampler != VK_NULL_HANDLE) {
                 // The per-texture default sampler (V7) — destroyTexture
@@ -2200,9 +2246,15 @@ void VulkanDevice::destroyTexture(TextureHandle handle) {
         d.pendingTextures.push_back({ it->second.image, it->second.allocation,
                                       it->second.view,
                                       it->second.defaultSampler,
+                                      it->second.mipViews,
                                       d.frameCounter });
         d.textures.erase(it);
         return;
+    }
+    for (VkImageView v : it->second.mipViews) {
+        if (v != VK_NULL_HANDLE) {
+            vkDestroyImageView(d.device, v, nullptr);
+        }
     }
     vkDestroyImageView(d.device, it->second.view, nullptr);
     if (it->second.defaultSampler != VK_NULL_HANDLE) {

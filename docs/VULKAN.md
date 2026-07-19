@@ -642,11 +642,16 @@ le GL 4.1 fallback n'est plus atteignable que si Vulkan manque.
   n'étaient libérés que par destroyTexture, pas par le teardown du device.
 - **Spam `gpu frame spike`** étranglé à ~1 ligne/5 s (chaque frame Debug/M1
   dépasse 25 ms — le panneau perf porte les chiffres vivants).
-- **BUG CONFIRMÉ à creuser (bloquant V8) : le culling GPU Hi-Z sur-culle les
-  chunks de terrain lointains sur Vulkan** — décocher « GPU Hi-Z » dans le
-  panneau rendu fait réapparaître le fond du décor (test dev). Suspects :
-  chaîne copyTexture(depth) → hiz_first/hiz_down → chunk_cull (échantillonnage
-  de la pyramide, sampler par défaut mip-LINEAR vs GL base-mip textureLod,
-  convention de lignes) → readback du verdict.
+- **Bug Hi-Z (terrain lointain culler) — TROUVÉ ET CORRIGÉ** : le backend
+  ignorait `BindGroupEntry::imageMip` — `pushGroup` liait la VUE COMPLÈTE de
+  la texture pour les storage images, donc chaque passe `hiz_down` réécrivait
+  le mip 0 et les mips 1..N restaient du garbage. Les chunks lointains
+  (petite empreinte → lod élevé → mip garbage → farDepth≈0) étaient cullés ;
+  les proches survivaient par la sortie « bord d'écran = visible ». GL liait
+  le bon niveau via `glBindImageTexture(level)` — d'où un bug Vulkan-only.
+  Fix : vues PAR MIP paresseuses (`textureMipView`), libérées par les trois
+  chemins de destruction (immédiat, deletion queue, teardown). Un descripteur
+  storage doit viser exactement un mip — c'est la règle Vulkan que GL rendait
+  implicite.
 
 ### V8 — Parité visuelle + perfs (reste du chantier)
