@@ -732,13 +732,16 @@ puis prouvé par l'expérience `kFramesInFlight = 1` (plaques éteintes) :
 
 Reliquats connus au démarrage du chantier : parité visuelle à l'œil sur M1 ;
 mesure Release (le grief V7b « 25 ms/frame » était du Debug) ;
-**render scale** (rendre les passes 3D sous la résolution fenêtre, upscale au
-composite — le levier mainPass, demande dev 2026-07-19) ;
+**imposteurs végétation distante** (arbre lointain = 1 quad alpha-testé
+depuis une texture bakée par variante — le levier vertex identifié en V8c ;
+décision différée, dev 2026-07-19 ; en attendant, curseurs existants :
+`highDetailRadius` 5, `viewRadius` arbres 12) ;
 `SpriteRenderer::instanceBuffer` (le « 1 reste » V6c, voie `firstInstance`) ;
 pré-chauffe des variantes de pipeline (V7c-3) ; réparer les sous-probes GPU
 imbriquées (mainTerrain/mainVeg/mainGrass lisent 0,01 ms sur Vulkan — à
-faire avant de disséquer le mainPass) ; puis post-démo/PC : queue de
-transfert, parité GL 4.6 PC, timeline semaphores, upload ImGui deux phases.
+faire avant de disséquer le mainPass) + compteurs CPU instances×indices par
+système ; puis post-démo/PC : queue de transfert, parité GL 4.6 PC, timeline
+semaphores, upload ImGui deux phases.
 
 #### V8a — Synchronization validation : câblée, backend purgé — FAIT (2026-07-19)
 
@@ -814,7 +817,14 @@ sous-probes (liste V8). Restes shadows connus : `drawShadowCasters`
 (meshes/PNJ, toggle B2a) ne cull pas encore par cascade ; un spike
 shadows ~18 ms subsiste sur les frames de re-fit complet (sun step).
 
-#### V8c — Render scale + verdict : le mainPass M1 est VERTEX-bound — FAIT (2026-07-19)
+#### V8c — Render scale (RETIRÉ) + verdict : le mainPass M1 est VERTEX-bound (2026-07-19)
+
+> **RETIRÉ le jour même** (verdict dev) : aucun gain fps — la mesure
+> ci-dessous a prouvé le vertex-bound — et l'upscale linéaire est jugé
+> moche. Le code est reverti (le boot log « Offscreen scene target »
+> reste) ; **l'acquis de la brique est la MESURE**, qui redirige la perf
+> M1 vers la géométrie (→ imposteurs, liste V8). L'historique
+> d'implémentation ci-dessous est conservé pour référence.
 
 **Render scale livré** (demande dev) : les passes 3D (cible offscreen,
 copies scène, pyramide Hi-Z, `uScreenInfo`) rendent à
