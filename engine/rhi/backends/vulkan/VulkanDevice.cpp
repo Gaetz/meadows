@@ -2046,6 +2046,10 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
     std::memcpy(mapped, data, size);
     vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
 
+    // Async ONLY while a frame is being recorded: the frame-slot fences are
+    // what let the deletion queue prove the copy retired. Outside a frame
+    // (init, tools) nothing ever waits, so block as before.
+    const bool async = d.frameActive;
     d.immediateSubmit(
         [&](VkCommandBuffer cb) {
             VkBufferCopy region {};
@@ -2053,8 +2057,12 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
             region.size = size;
             vkCmdCopyBuffer(cb, staging, buffer->buffer, 1, &region);
         },
-        /*wait=*/false); // queue order covers later frames; staging parked
-    d.pendingBuffers.push_back({ staging, stagingAlloc, d.frameCounter });
+        /*wait=*/!async);
+    if (async) {
+        d.pendingBuffers.push_back({ staging, stagingAlloc, d.frameCounter });
+    } else {
+        vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
+    }
 }
 
 // Destroying a resource still referenced by an in-flight command buffer is
