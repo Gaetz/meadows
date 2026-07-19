@@ -552,7 +552,7 @@ void AnimPreviewPanel::drawStage() {
     const f32 side =
         std::clamp(std::min(avail.x, avail.y), 160.0f, 720.0f);
     const u64 native =
-        colorTex ? device.nativeTextureId(colorTex.get()) : 0;
+        colorTex ? colorTex.get().id : 0;
     if (native == 0) {
         ImGui::TextDisabled("(warming up)"); // first frame: pass not recorded yet
         return;

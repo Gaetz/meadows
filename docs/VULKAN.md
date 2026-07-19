@@ -484,4 +484,38 @@ drapeau `baseInstance` pour ça, donc le repli existe mais est à câbler.
 516/516, et les 5 shaders touchés compilés par `glslangValidator` sous
 sémantique **GL et Vulkan**. La parité visuelle GL reste à confirmer sur PC.
 
+#### V6d — Le renderer ImGui sur le RHI — FAIT (GL 4.1 dégradé)
+
+`engine/ui/ImGuiLayer.cpp` porte désormais son propre renderer écrit sur le
+RHI, calqué sur `RhiRenderInterface` (RmlUi) : pipeline + atlas de polices +
+bind groups par texture + scissor, et l'aplatissement de toutes les
+`ImDrawList` en UN upload par frame, chaque commande sélectionnant sa tranche
+par offset de vertex buffer + firstIndex (le motif V6c — jamais de réécriture
+de buffer entre les draws). `imgui_impl_opengl3` est SUPPRIMÉ du build ; seul
+`imgui_impl_sdl3` reste (la moitié plateforme, légitimement SDL, §3.1).
+`imgui_impl_vulkan` n'entrera jamais. imgui-node-editor est servi par le même
+chemin (il n'émet que des `ImDrawList`).
+
+**`ImTextureID` change de sens** : c'est maintenant un id de
+`rhi::TextureHandle`, plus un nom GL natif. Un seul site utilisait
+`nativeTextureId` pour ça (`AnimPreviewPanel`) — mis à jour ; `ImGui::Image`
+devient identique sur tous les backends.
+
+**Décision — GL 4.1 dégradé, pas supporté** (dev, 2026-07-19). Le shader ImGui
+utilise `layout(binding=)` sur bloc uniforme et sampler : GLSL 420+, donc
+impossible en GL 4.1 sans chirurgie (`glUniformBlockBinding` après link,
+`compat.glsl` à bloc nommé fixe — la piste reste notée dans le commit
+`wip/imgui-on-rhi` d'origine si un jour le low-spec 4.1 veut ses panneaux
+dev). Plutôt que de retarder le chantier Vulkan : **sur GL 4.1 l'UI dev est
+absente et le jeu tourne** — `ImGuiLayer::create` dégrade au lieu d'échouer
+(atlas construit d'abord pour garder `NewFrame` légal ; `render()` enregistre
+rien si le pipeline manque). Sur macOS l'UI dev vit sur le backend Vulkan ;
+GL 4.1 reste le low-spec « jeu seul ».
+
+**Vérifié** : vksmoke enregistre une vraie frame de widgets ImGui sur Vulkan
+(`testImGui`, 0 erreur de validation) ; `true-adventurer` démarre sur M1 en
+GL 4.1 avec le warning et 12 s de frames sans crash ; headless 516/516. La
+parité GL 4.6 (où le shader 460 compile normalement) reste à confirmer
+visuellement sur PC, comme le reste du chantier.
+
 ### V7 — Bring-up LandscapeScene sur M1 + parité GL46 — À FAIRE

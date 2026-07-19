@@ -64,7 +64,7 @@ bool Engine::init(const EngineConfig& engineConfig) {
     if (!spriteRenderer) {
         return false;
     }
-    imgui = ui::ImGuiLayer::create(*window);
+    imgui = ui::ImGuiLayer::create(*window, *device);
     if (!imgui) {
         return false;
     }
@@ -107,7 +107,7 @@ void Engine::loop(Game& game) {
         // Dev UI renders after the scene, straight into the backbuffer.
         imgui->beginFrame();
         game.drawUi();
-        imgui->render();
+        imgui->render(cmd);
 
         device->endFrame();
     }

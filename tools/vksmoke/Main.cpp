@@ -26,7 +26,10 @@
 #include "engine/platform/Window.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/ui/ImGuiLayer.hpp"
 #include "engine/ui/UiSystem.hpp"
+
+#include <imgui.h>
 
 namespace {
 
@@ -433,6 +436,30 @@ void main() {
 // that seam is honest this works with no backend-specific code at all — and
 // that is also the evidence that an ImGui renderer written the same way would.
 // Loads an actual game screen rather than a synthetic document.
+// The dev UI on Vulkan: the ImGui renderer is written on the RHI (no
+// imgui_impl_vulkan), so recording a real widget frame through the backend is
+// the whole test — the validation layer judges it.
+void testImGui(platform::Window& window, rhi::Device& device) {
+    auto imgui = ui::ImGuiLayer::create(window, device);
+    check(imgui != nullptr, "ImGuiLayer::create on Vulkan (renderer on the RHI)");
+    if (!imgui) {
+        return;
+    }
+    for (u32 i = 0; i < 3; ++i) {
+        imgui->beginFrame();
+        ImGui::Begin("vksmoke");
+        ImGui::Text("ImGui rendered through the RHI on Vulkan");
+        ImGui::Button("a button, for vertices");
+        ImGui::End();
+        auto& cmd = device.beginFrame();
+        cmd.beginRenderPass({ .clearColor = { 0.05f, 0.06f, 0.09f, 1.0f } });
+        imgui->render(cmd);
+        cmd.endRenderPass();
+        device.endFrame();
+    }
+    check(true, "ImGuiLayer::render recorded on Vulkan (no validation error)");
+}
+
 void testInGameUi(rhi::Device& device) {
     render::ShaderLibrary shaders(device);
     // <repo>/engine/render/landscape/shaders -> <repo>
@@ -552,6 +579,9 @@ int main(int argc, char** argv) {
     testShaders(*device);
     LOG_INFO("vksmoke: in-game UI (RmlUi) on Vulkan");
     testInGameUi(*device);
+
+    LOG_INFO("vksmoke: dev UI (ImGui on the RHI) on Vulkan");
+    testImGui(*window, *device);
 
     LOG_INFO("vksmoke: V6 markers + compute");
     testMarkersAndCompute(*device);

@@ -195,8 +195,9 @@ add_library(imgui STATIC
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    # Only the PLATFORM backend: the renderer is ours, written on the RHI
+    # (engine/ui/ImGuiLayer.cpp) — no imgui_impl_opengl3 / imgui_impl_vulkan.
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
 )
 target_include_directories(imgui SYSTEM PUBLIC
     ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
