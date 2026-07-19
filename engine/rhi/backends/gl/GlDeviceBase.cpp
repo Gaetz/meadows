@@ -265,11 +265,12 @@ void GlCommandBuffer::setBindGroup(u32 /*index*/, BindGroupHandle group) {
     }
 }
 
-void GlCommandBuffer::setVertexBuffer(u32 slot, BufferHandle buffer) {
+void GlCommandBuffer::setVertexBuffer(u32 slot, BufferHandle buffer,
+                                      u64 offset) {
     ENGINE_ASSERT_MSG(currentPipelineId != 0,
                       "setVertexBuffer requires a bound pipeline");
     const auto& p = device.pipelines.at(currentPipelineId);
-    device.implBindVboSlot(p, slot, device.buffers.at(buffer.id));
+    device.implBindVboSlot(p, slot, device.buffers.at(buffer.id), offset);
 }
 
 void GlCommandBuffer::setIndexBuffer(BufferHandle buffer, IndexFormat format) {

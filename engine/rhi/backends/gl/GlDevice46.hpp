@@ -26,7 +26,8 @@ public:
     FramebufferHandle createFramebuffer(const FramebufferDesc& desc) override;
 
     void implBindTexture(u32 binding, u32 glTexId) override;
-    void implBindVboSlot(const GlPipeline& p, u32 slot, u32 glBufId) override;
+    void implBindVboSlot(const GlPipeline& p, u32 slot, u32 glBufId,
+                         u64 offset) override;
     void implBindEbo(const GlPipeline& p, u32 glBufId) override;
 };
 

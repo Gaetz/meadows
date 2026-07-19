@@ -299,8 +299,10 @@ void GlDevice46::implBindTexture(u32 binding, u32 glTexId) {
     glBindTextureUnit(binding, glTexId);
 }
 
-void GlDevice46::implBindVboSlot(const GlPipeline& p, u32 slot, u32 glBufId) {
-    glVertexArrayVertexBuffer(p.vao, slot, glBufId, 0,
+void GlDevice46::implBindVboSlot(const GlPipeline& p, u32 slot, u32 glBufId,
+                                 u64 offset) {
+    glVertexArrayVertexBuffer(p.vao, slot, glBufId,
+                              static_cast<GLintptr>(offset),
                               static_cast<GLsizei>(p.strides[slot]));
 }
 

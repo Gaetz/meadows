@@ -27,7 +27,7 @@ public:
     void setPipeline(PipelineHandle pipeline) override;
     void setBindGroup(u32 index, BindGroupHandle group) override;
     void setPushConstants(const void* data, u32 size, u32 offset) override;
-    void setVertexBuffer(u32 slot, BufferHandle buffer) override;
+    void setVertexBuffer(u32 slot, BufferHandle buffer, u64 offset) override;
     void setIndexBuffer(BufferHandle buffer, IndexFormat format) override;
 
     void draw(u32 vertexCount, u32 instanceCount, u32 firstVertex) override;
@@ -157,7 +157,7 @@ public:
     // passing resolved GL names directly.
     virtual void implBindTexture(u32 binding, u32 glTexId) = 0;
     virtual void implBindVboSlot(const GlPipeline& p, u32 slot,
-                                 u32 glBufId) = 0;
+                                 u32 glBufId, u64 offset) = 0;
     virtual void implBindEbo(const GlPipeline& p, u32 glBufId) = 0;
 
 protected:

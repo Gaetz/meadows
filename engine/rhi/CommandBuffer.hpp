@@ -42,7 +42,13 @@ public:
                                   u32 offset = 0) = 0;
 
     // `slot` matches PipelineDesc::vertexBuffers. Call after setPipeline.
-    virtual void setVertexBuffer(u32 slot, BufferHandle buffer) = 0;
+    // `offset` (bytes) shifts where the slot starts reading — how a batch
+    // selects its slice of a shared instance buffer without the buffer being
+    // rewritten between draws (a Vulkan hazard). Native on all three backends:
+    // vkCmdBindVertexBuffers offsets, glVertexArrayVertexBuffer's offset,
+    // glVertexAttribPointer's pointer.
+    virtual void setVertexBuffer(u32 slot, BufferHandle buffer,
+                                 u64 offset = 0) = 0;
     virtual void setIndexBuffer(BufferHandle buffer, IndexFormat format) = 0;
 
     virtual void draw(u32 vertexCount, u32 instanceCount = 1,

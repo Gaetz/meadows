@@ -130,7 +130,8 @@ void GlDevice41::implBindTexture(u32 binding, u32 glTexId) {
     glBindTexture(GL_TEXTURE_2D, glTexId);
 }
 
-void GlDevice41::implBindVboSlot(const GlPipeline& p, u32 slot, u32 glBufId) {
+void GlDevice41::implBindVboSlot(const GlPipeline& p, u32 slot, u32 glBufId,
+                                 u64 offset) {
     // VAO is bound from GlCommandBuffer::setPipeline. Re-issue
     // glVertexAttribPointer to bake this buffer's binding + format into the VAO.
     glBindBuffer(GL_ARRAY_BUFFER, glBufId);
@@ -142,7 +143,9 @@ void GlDevice41::implBindVboSlot(const GlPipeline& p, u32 slot, u32 glBufId) {
         }
         glVertexAttribPointer(
             attr.location, attr.components, GL_FLOAT, GL_FALSE, stride,
-            reinterpret_cast<const void*>(static_cast<uintptr_t>(attr.offset)));
+            reinterpret_cast<const void*>(
+                static_cast<uintptr_t>(attr.offset) +
+                static_cast<uintptr_t>(offset)));
         glEnableVertexAttribArray(attr.location);
         glVertexAttribDivisor(attr.location, divisor);
     }

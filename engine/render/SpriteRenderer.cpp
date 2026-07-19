@@ -197,15 +197,20 @@ void SpriteRenderer::end(rhi::CommandBuffer& cmd) {
 
     cmd.setPipeline(pipeline);
     cmd.setVertexBuffer(0, quadVertices);
-    cmd.setVertexBuffer(1, instanceBuffer);
     cmd.setIndexBuffer(quadIndices, rhi::IndexFormat::U16);
 
-    // Upload per-batch so firstInstance is always 0 — avoids requiring
-    // GL_ARB_base_instance (unavailable on macOS GL 4.1).
+    // ONE upload for the whole frame, before any draw is recorded; each batch
+    // then selects its slice with a vertex-buffer offset. Uploading per batch
+    // (the previous shape) only worked because GL executes in order — on
+    // Vulkan every recorded draw would read the LAST batch's instances.
+    // The offset also replaces the firstInstance this used to avoid, so
+    // GL_ARB_base_instance stays unnecessary (absent on macOS GL 4.1).
+    device.updateBuffer(instanceBuffer, instances.data(),
+                        instances.size() * sizeof(Instance));
     for (const Batch& batch : batches) {
-        device.updateBuffer(instanceBuffer,
-                            instances.data() + batch.firstInstance,
-                            batch.instanceCount * sizeof(Instance));
+        cmd.setVertexBuffer(1, instanceBuffer,
+                            static_cast<u64>(batch.firstInstance) *
+                                sizeof(Instance));
         cmd.setBindGroup(0, bindGroupFor({ batch.textureId }));
         cmd.drawIndexed(6, batch.instanceCount, 0, 0);
     }

@@ -78,7 +78,7 @@ uptr<GlDevice> createGlDevice(platform::Window& window) {
     }
     if (!baseInstance) {
         LOG_DEBUG("GL_ARB_base_instance unavailable — drawIndexed firstInstance "
-                  "must be 0 (SpriteRenderer uses per-batch upload to satisfy this)");
+                  "must be 0 (SpriteRenderer uses a vertex-buffer offset instead)");
     }
 
 #ifndef NDEBUG

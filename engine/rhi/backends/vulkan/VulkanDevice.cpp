@@ -633,7 +633,7 @@ public:
     void setPipeline(PipelineHandle pipeline) override;
     void setBindGroup(u32 index, BindGroupHandle group) override;
     void setPushConstants(const void* data, u32 size, u32 offset) override;
-    void setVertexBuffer(u32 slot, BufferHandle buffer) override;
+    void setVertexBuffer(u32 slot, BufferHandle buffer, u64 offset) override;
     void setIndexBuffer(BufferHandle buffer, IndexFormat format) override;
     void draw(u32 vertexCount, u32 instanceCount, u32 firstVertex) override;
     void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex,
@@ -990,12 +990,13 @@ void VulkanCommandBuffer::setBindGroup(u32 index, BindGroupHandle group) {
         writes.data());
 }
 
-void VulkanCommandBuffer::setVertexBuffer(u32 slot, BufferHandle handle) {
+void VulkanCommandBuffer::setVertexBuffer(u32 slot, BufferHandle handle,
+                                          u64 bufferOffset) {
     VulkanBuffer* buffer = d_->findBuffer(handle);
     if (cb_ == VK_NULL_HANDLE || buffer == nullptr) {
         return;
     }
-    const VkDeviceSize offset = 0;
+    const VkDeviceSize offset = bufferOffset;
     vkCmdBindVertexBuffers(cb_, slot, 1, &buffer->buffer, &offset);
 }
 
