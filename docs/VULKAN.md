@@ -696,4 +696,36 @@ courtes → vague plus courte), (b) budget d'injection par frame, (c) fallback
 d'éclairage pendant la convergence. Ce n'est PAS un bug de justesse Vulkan :
 la validation est silencieuse et le rendu converge vers le bon résultat.
 
+#### V7e — « Surface sombre » RÉSOLU : course CPU/GPU sur les buffers dynamiques
+
+L'hypothèse GI de V7d était fausse — et réfutable sur plan : `prepare()`
+snappe les origines des clips sur la POSITION caméra, un pano (rotation) ne
+déplace donc rien côté GI. Le vrai coupable, désigné par la dichotomie du
+dev (plaques disparues « Shadows » OFF, insensibles au toggle round-robin)
+puis prouvé par l'expérience `kFramesInFlight = 1` (plaques éteintes) :
+
+- **`updateBuffer` sur un buffer host-visible faisait un memcpy EN PLACE,
+  immédiat**, sans versionnement par frame en vol. Avec 2 frames en vol, la
+  frame N−1 s'exécute encore quand le CPU de N écrit ses UBOs : son main
+  pass échantillonne ses depth maps CSM avec **les matrices de N** →
+  mismatch matrice/carte → projections hors carte → clamp sur les texels de
+  bord → plaques d'ombre arbitraires. Visible seulement quand les matrices
+  changent fort d'une frame à l'autre (pano/translation rapides), jusqu'à
+  la distance CSM, par bandes de cascade — d'où le clignotement « pas tous
+  les chunks en même temps ». GL est immunisé : le driver versionne les
+  `glBufferSubData` ; et la validation standard ne voit rien (il faudrait
+  la couche *synchronization validation*).
+- **Fix** : pendant l'enregistrement d'une frame, l'update d'un buffer
+  mappé passe par un staging + `vkCmdCopyBuffer` enregistré **dans le
+  command buffer de la frame courante** (`recordHostUpdate`), encadré de
+  barrières : dépendance d'exécution WAR contre les lectures de la frame en
+  vol (une pipeline barrier couvre tout ce qui a été soumis avant), puis
+  transfer→reads pour les consommateurs de la frame. Le staging est parqué
+  dans la deletion queue (motif V7). L'écriture en place reste pour
+  l'init/les tools (rien en vol) et les updates EN PASSE (copie illégale) —
+  concrètement les vertex streams ImGui, qui tolèrent la course (dev UI) ;
+  le jour où ça gêne : scinder l'upload ImGui hors passe (deux phases).
+- **Vérifié** : vksmoke PASS complet, 0 erreur de validation, présentation
+  59,8 fps. Confirmation visuelle au pano : le dev.
+
 ### V8 — Parité visuelle + perfs (reste du chantier)

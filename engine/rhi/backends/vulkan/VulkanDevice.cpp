@@ -820,6 +820,17 @@ public:
                     u64 dstOffset) override;
     void copyTexture(TextureHandle src, TextureHandle dst) override;
 
+    // Host-visible-buffer update routed through the FRAME command buffer:
+    // the barrier orders the copy after every read the in-flight frame may
+    // still be doing. updateBuffer's in-place memcpy raced that frame — its
+    // passes sampled values meant for the NEXT frame (the CSM matrices
+    // flipped mid-frame: flickering dark shadow plates on fast pans,
+    // 2026-07-19). Returns false inside a pass (copies are illegal there)
+    // or when nothing is being recorded.
+    bool recordHostUpdate(VkBuffer staging, VkBuffer dst, u64 size,
+                          u64 dstOffset);
+    bool insidePass() const { return inPass_; }
+
     void setViewport(u32 x, u32 y, u32 width, u32 height) override;
     void setScissor(u32 x, u32 y, u32 width, u32 height) override;
     void clearScissor() override;
@@ -1491,6 +1502,48 @@ void VulkanCommandBuffer::copyBuffer(BufferHandle src, BufferHandle dst,
     vkCmdCopyBuffer(cb_, s->buffer, t->buffer, 1, &region);
 }
 
+bool VulkanCommandBuffer::recordHostUpdate(VkBuffer staging, VkBuffer dst,
+                                           u64 size, u64 dstOffset) {
+    if (cb_ == VK_NULL_HANDLE || inPass_) {
+        return false;
+    }
+    const VkPipelineStageFlags readStages =
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+
+    // A pipeline barrier's execution dependency covers every command
+    // submitted earlier on the queue — i.e. the previous frame's reads of
+    // this buffer. WAR needs the execution ordering only, no source access.
+    VkBufferMemoryBarrier barrier {};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = dst;
+    barrier.offset = dstOffset;
+    barrier.size = size;
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(cb_, readStages, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
+                         nullptr, 1, &barrier, 0, nullptr);
+
+    VkBufferCopy region {};
+    region.dstOffset = dstOffset;
+    region.size = size;
+    vkCmdCopyBuffer(cb_, staging, dst, 1, &region);
+
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask =
+        VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT |
+        VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT |
+        VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_TRANSFER_BIT, readStages, 0, 0,
+                         nullptr, 1, &barrier, 0, nullptr);
+    return true;
+}
+
 void VulkanCommandBuffer::copyTexture(TextureHandle src, TextureHandle dst) {
     VulkanTexture* s = d_->findTexture(src);
     VulkanTexture* t = d_->findTexture(dst);
@@ -2054,6 +2107,32 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
     }
 
     if (buffer->mapped != nullptr) {
+        // The in-place memcpy races the frame still in flight
+        // (kFramesInFlight > 1): its passes then read values meant for the
+        // NEXT frame — the CSM matrices flipped mid-frame and cast
+        // flickering dark plates on fast pans (2026-07-19; GL is immune,
+        // the driver versions buffer updates). While recording, route the
+        // update through a staged copy in the frame's own command buffer.
+        // In-place remains for init/tools (nothing consuming yet) and
+        // mid-pass updates (copies are illegal inside a pass — ImGui's
+        // vertex streams, which tolerate the race).
+        if (d.frameActive && d.cmd && !d.cmd->insidePass()) {
+            VkBuffer staging = VK_NULL_HANDLE;
+            VmaAllocation stagingAlloc = nullptr;
+            void* mapped = nullptr;
+            if (d.createStaging(size, false, staging, stagingAlloc,
+                                &mapped)) {
+                std::memcpy(mapped, data, size);
+                vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
+                if (d.cmd->recordHostUpdate(staging, buffer->buffer, size,
+                                            offset)) {
+                    d.pendingBuffers.push_back(
+                        { staging, stagingAlloc, d.frameCounter });
+                    return;
+                }
+                vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
+            }
+        }
         std::memcpy(static_cast<u8*>(buffer->mapped) + offset, data, size);
         vmaFlushAllocation(d.allocator, buffer->allocation, offset, size);
         return;
