@@ -809,8 +809,32 @@ ombres portées par les montagnes lointaines survivent à tout angle.
 
 **Résultat** (même protocole 75 s) : shadows 35-50 ms → **~5 ms**
 stationnaire (÷7) ; frame spike 111,7 → **51,6 ms**. Le nouveau n°1 est
-le mainPass (~24,6 ms à 1,15 Mpx, coût par pixel : GI apply/splat/herbe)
-→ briques suivantes : render scale + réparation des sous-probes (liste
-V8). Restes shadows connus : `drawShadowCasters` (meshes/PNJ, toggle B2a)
-ne cull pas encore par cascade ; un spike shadows ~18 ms subsiste sur les
-frames de re-fit complet (sun step).
+le mainPass (~24,6 ms) → brique suivante : render scale + réparation des
+sous-probes (liste V8). Restes shadows connus : `drawShadowCasters`
+(meshes/PNJ, toggle B2a) ne cull pas encore par cascade ; un spike
+shadows ~18 ms subsiste sur les frames de re-fit complet (sun step).
+
+#### V8c — Render scale + verdict : le mainPass M1 est VERTEX-bound — FAIT (2026-07-19)
+
+**Render scale livré** (demande dev) : les passes 3D (cible offscreen,
+copies scène, pyramide Hi-Z, `uScreenInfo`) rendent à
+`renderScale × fenêtre` ; le blit tonemap vers le backbuffer natif
+upscale linéairement, l'UI (ImGui/RmlUi) reste native. Slider
+« Render scale » (0.4-1.0) dans le panneau Rendering, motif
+reflectionScale (le changement de dims déclenche la recréation). La
+réflexion se scale en cascade (reflectionScale × scène). Boot log :
+« Offscreen scene target: WxH » (la preuve de mesure).
+
+**Le verdict de la mesure, plus précieux que la brique** : à 0.5
+(720×399, ¼ des pixels, vérifié au boot log), mainPass 25,1 → 23,9 ms et
+reflection inchangée (9,5) — **le mainPass et la réflexion sont
+vertex-bound sur M1, comme l'était le CSM avant V8b**. Le render scale
+reste utile (PC, futures charges fragment) mais le levier M1 est la
+GÉOMÉTRIE : ~24 ms de vertex shading pour arbres pleine définition à
+toute distance + brins d'herbe + chunks terrain, payés une 2e fois par
+la réflexion. Pistes suivantes, par ROI : (a) végétation du mainPass sur
+le jumeau low-poly au-delà d'une distance (les `lowVertexBuffer`
+EXISTENT — les casters les utilisent déjà) ; (b) la réflexion en
+low-twin/sans végétation ; (c) densité/distance herbe. Vérifs : scale
+1.0 = chiffres identiques à V8b (52,2 ms fr. 405) ; 0 hazard, 2 warnings
+cosmétiques inchangés.

@@ -425,6 +425,7 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
     }
     offscreenWidth = width;
     offscreenHeight = height;
+    LOG_INFO("Offscreen scene target: {}x{}", width, height);
 }
 
 void LandscapeRenderer::destroyOffscreenTarget(rhi::Device& device) {
@@ -1207,14 +1208,25 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     // content the apply will sample (the moving-halo lag fix).
     radianceCascades.prepare(camera.position);
 
+    // V8c render scale: every 3D pass (offscreen target, its copies, the
+    // Hi-Z pyramid, uScreenInfo) uses THESE dims; the tonemap blit into
+    // the native-size backbuffer upscales linearly, and the UI layers
+    // (ImGui/RmlUi) stay native.
+    const u32 sceneWidth = glm::max(
+        1u, static_cast<u32>(std::round(static_cast<f32>(frame.width) *
+                                        renderScaleUi)));
+    const u32 sceneHeight = glm::max(
+        1u, static_cast<u32>(std::round(static_cast<f32>(frame.height) *
+                                        renderScaleUi)));
+
     // The whole UBO composition is pure (audit U4-6a): gather the inputs,
     // let the composer build both variants, upload. This side keeps only
     // the GPU-availability gates and the updateBuffer calls.
     const ComposedFrame composed = composeFrameUniforms({
         .viewProj = viewProj,
         .cameraPosition = camera.position,
-        .width = frame.width,
-        .height = frame.height,
+        .width = sceneWidth,
+        .height = sceneHeight,
         .dt = frame.dt,
         .timeSeconds = view.timeSeconds,
         .sky = skyState,
@@ -1527,7 +1539,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 
     const bool useOffscreen = frame.device.caps().offscreenTargets;
     if (useOffscreen) {
-        ensureOffscreenTarget(frame.device, frame.width, frame.height);
+        ensureOffscreenTarget(frame.device, sceneWidth, sceneHeight);
         if (shaders->generation(kTonemapShader) != blitShaderGeneration) {
             rebuildBlitPipeline(frame.device);
         }
@@ -1711,7 +1723,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         // GPU Hi-Z occlusion (brick 26): pyramid from this frame's depth
         // snapshot + cull dispatch; the verdict is read back NEXT frame.
         if (!view.interiorMode && frame.device.caps().computeShaders) {
-            gpuOcclusion.resize(frame.device, frame.width, frame.height);
+            // Hi-Z pyramid over sceneDepthCopy — must match ITS size.
+            gpuOcclusion.resize(frame.device, sceneWidth, sceneHeight);
             terrain.collectChunkAabbs(occlusionAabbs);
             occlusionCandidates.clear();
             occlusionCandidates.reserve(occlusionAabbs.size());
@@ -2072,6 +2085,10 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::Checkbox("auto-skip", &reflectionAutoSkipUi);
         ImGui::SliderFloat("Reflection scale", &reflectionScaleUi, 0.25f,
                            0.5f, "%.2f");
+        // V8c: fraction of the window the 3D scene renders at (the
+        // tonemap upscales linearly; UI stays native).
+        ImGui::SliderFloat("Render scale", &renderScaleUi, 0.4f, 1.0f,
+                           "%.2f");
     }
     if (ImGui::CollapsingHeader("Post-processing")) {
         ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);

@@ -187,6 +187,10 @@ private:
     // scale trades mirror sharpness for fill rate.
     bool reflectionAutoSkipUi { true };
     f32 reflectionScaleUi { 0.5f };
+    // V8c: the 3D scene renders at renderScale × window size and the
+    // tonemap blit upscales linearly (mainPass is per-pixel bound — M1
+    // measure 24.6 ms at 1.15 Mpx). 1.0 = native. UI stays native.
+    f32 renderScaleUi { 1.0f };
     f32 appliedReflectionScale { 0.5f };
     render::ShadowMapper::Cascades lastCascades {};
     bool lastCascadesValid { false };
