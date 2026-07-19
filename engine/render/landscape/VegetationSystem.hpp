@@ -96,6 +96,11 @@ public:
 
     // Chunks the last culled draw() recorded (for the debug panel).
     u32 drawnLastFrame() const { return lastDrawn; }
+    // CPU-side geometry counters, summed across every pass this frame
+    // (V8e — mid-pass GPU timestamps are meaningless on Metal).
+    u32 indicesThisFrame() const { return frameIndices; }
+    u32 highDetailInstancesThisFrame() const { return frameHighInstances; }
+    u32 lowDetailInstancesThisFrame() const { return frameLowInstances; }
 
     // Depth-only caster pass into one shadow cascade (frameBindGroup feeds
     // the sway/fade math, casterBindGroup the cascade's light matrix).
@@ -167,6 +172,9 @@ private:
     ChunkStreamer<Chunk, VariantBuckets> streamer;
     u32 instances { 0 };
     u32 lastDrawn { 0 };
+    u32 frameIndices { 0 };       // reset in update(), summed by draw*()
+    u32 frameHighInstances { 0 }; // 320-face canopies drawn this frame
+    u32 frameLowInstances { 0 };  // low-twin instances drawn this frame
 
     array<VariantMesh, kVariantCount> variantMeshes {};
     std::unordered_map<u32, MeshData> meshOverrides;

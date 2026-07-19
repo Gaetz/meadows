@@ -23,6 +23,7 @@ GlDevice46::GlDevice46(uptr<platform::GlContext> context,
               .copyTexture = true,      // glCopyImageSubData (GL 4.3+)
               .computeShaders = true,   // glDispatchCompute (GL 4.3+)
               .timerQueries = true,     // GL_TIMESTAMP queries (GL 3.3+)
+              .midPassTimestamps = true, // IMR GPU: in-pass queries measure
               .volumeTextures = true }; // GL_TEXTURE_3D (GI, chantier RC)
     // Depth 0..1 (chantier VULKAN): GLM_FORCE_DEPTH_ZERO_TO_ONE is global,
     // so projections emit 0..1 clip z; this remaps GL's NDC->window transform

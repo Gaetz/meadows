@@ -302,6 +302,9 @@ void VegetationSystem::invalidateChunks(rhi::Device& device,
 
 void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
                               const Vec3& cameraPos) {
+    frameIndices = 0; // the frame's draw*() calls sum into these
+    frameHighInstances = 0;
+    frameLowInstances = 0;
     // Budgeted uploads (U3-1: ring mechanics in ChunkStreamer; this lambda
     // is the vegetation-specific accept — variant packing + GPU upload).
     streamer.pump(kMaxUploadsPerFrame, 0.0, [&](u64 key, auto& built) {
@@ -527,6 +530,11 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                 cmd.drawIndexed(lowPass ? mesh.lowIndexCount
                                         : mesh.indexCount,
                                 chunk.counts[v], 0, chunk.firstInstance[v]);
+                frameIndices += (lowPass ? mesh.lowIndexCount
+                                         : mesh.indexCount) *
+                                chunk.counts[v];
+                (lowPass ? frameLowInstances : frameHighInstances) +=
+                    chunk.counts[v];
             }
             if (mesh.lowIndexCount == 0) {
                 break; // single-LOD variant: one pass covers every chunk
@@ -592,6 +600,8 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
             cmd.setVertexBuffer(1, chunk.instanceBuffer);
             cmd.drawIndexed(indexCount, chunk.counts[v], 0,
                             chunk.firstInstance[v]);
+            frameIndices += indexCount * chunk.counts[v];
+            frameLowInstances += chunk.counts[v]; // casters use the twin
         }
     }
 }

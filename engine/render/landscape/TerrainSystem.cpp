@@ -227,6 +227,7 @@ void TerrainSystem::remeshChunks(const vector<u64>& keys) {
 }
 
 void TerrainSystem::update(rhi::Device& device, const Vec3& cameraPos) {
+    frameIndices = 0; // the frame's draw*() calls sum into it
     pumpUploads(device);
     requestMissing(cameraPos);
     evictFar(device, cameraPos);
@@ -421,6 +422,7 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
             }
             cmd.setVertexBuffer(0, chunk.vertexBuffer);
             cmd.drawIndexed(indexCounts[lod]);
+            frameIndices += indexCounts[lod];
             ++drawn;
         }
     }
@@ -466,6 +468,7 @@ void TerrainSystem::drawDepth(rhi::CommandBuffer& cmd,
             }
             cmd.setVertexBuffer(0, chunk.vertexBuffer);
             cmd.drawIndexed(gridIndexCounts[lod]);
+            frameIndices += gridIndexCounts[lod];
         }
     }
 }

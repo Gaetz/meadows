@@ -101,6 +101,10 @@ public:
               const Frustum* frustum = nullptr);
 
     u32 instanceTotal() const { return instances; }
+    // CPU-side geometry counters for the frame's culled+thinned draw
+    // (V8e — mid-pass GPU timestamps are meaningless on Metal).
+    u32 indicesThisFrame() const { return frameIndices; }
+    u32 bladesThisFrame() const { return frameBlades; }
 
     // The render panel's "Grass" category writes both; renderTuning is
     // live (FrameUbo + draw()'s prefix), scatterTuning applies on the
@@ -135,6 +139,8 @@ private:
     // queue + budgeted request/evict live in ChunkStreamer.
     ChunkStreamer<Chunk, vector<Instance>> streamer;
     u32 instances { 0 };
+    u32 frameIndices { 0 }; // reset in update(), summed by draw()
+    u32 frameBlades { 0 };
 
     rhi::UniqueBuffer bladeVertexBuffer;
     rhi::UniqueBuffer bladeIndexBuffer;

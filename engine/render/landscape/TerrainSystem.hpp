@@ -156,6 +156,10 @@ public:
     u32 uploadsLastFrame() const { return lastUploads; }
     // Chunks the last culled draw() actually recorded (main pass runs last).
     u32 drawnLastFrame() const { return lastDrawn; }
+    // Indices recorded this frame across EVERY pass (casters, reflection,
+    // main) — the CPU-side geometry counter (V8e: mid-pass GPU timestamps
+    // are meaningless on Metal, this is how the vertex load is dissected).
+    u32 indicesThisFrame() const { return frameIndices; }
 
     TerrainParams params {};
 
@@ -195,6 +199,7 @@ private:
     u32 pending { 0 };
     u32 lastUploads { 0 };
     u32 lastDrawn { 0 };
+    u32 frameIndices { 0 }; // reset in update(), summed by draw*()
     bool wireframe { false };
 
     // Chunks of equal LOD share one index buffer (identical topology).

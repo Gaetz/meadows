@@ -739,11 +739,10 @@ mesure Release (le grief V7b « 25 ms/frame » était du Debug) ;
 depuis une texture bakée par variante — le levier vertex identifié en V8c ;
 décision différée, dev 2026-07-19 ; en attendant, curseurs existants :
 `highDetailRadius` 5, `viewRadius` arbres 12) ;
-pré-chauffe des variantes de pipeline (V7c-3) ; réparer les sous-probes GPU
-imbriquées (mainTerrain/mainVeg/mainGrass lisent 0,01 ms sur Vulkan — à
-faire avant de disséquer le mainPass) + compteurs CPU instances×indices par
-système ; puis post-démo/PC : queue de transfert, parité GL 4.6 PC, timeline
-semaphores, upload ImGui deux phases.
+puis post-démo/PC : queue de transfert, parité GL 4.6 PC, timeline
+semaphores, upload ImGui deux phases. (Faits depuis : SpriteRenderer →
+V8d ; sous-probes honnêtes + compteurs de géométrie et pré-chauffe close
+sans code → V8e.)
 
 #### V8a — Synchronization validation : câblée, backend purgé — FAIT (2026-07-19)
 
@@ -864,4 +863,33 @@ passe via le chemin barriéré V7e, `end()` n'enregistre que les draws. Les
 deux appelants (SceneStack::render, Game::render par défaut) collectent
 puis uploadent AVANT `beginRenderPass`. Le renderer 2D est désormais
 correct sur Vulkan au même titre que le 3D ; vérification visuelle d'une
-scène 2D (CombatArena) : au dev.
+scène 2D (CombatArena) : validée dev 2026-07-19.
+
+#### V8e — Sous-probes honnêtes + compteurs de géométrie ; pré-chauffe close — FAIT (2026-07-19)
+
+- **Les sous-probes du mainPass ne peuvent PAS mesurer sur Metal** : un
+  GPU tuilé exécute la passe entière comme une unité (tout le vertex,
+  puis le fragment par tuile) — un timestamp au milieu de l'encoder
+  n'échantillonne rien (les 0,01 ms constatés). Ce n'est pas réparable,
+  c'est structurel. → cap `DeviceCaps::midPassTimestamps` (GL 4.6 : true ;
+  Vulkan : false) ; les scopes mainTerrain/mainVeg/mainGrass ne
+  s'enregistrent que là où ils mesurent, leurs lignes disparaissent du
+  panneau sur Vulkan au lieu de mentir.
+- **La dissection passe par des compteurs CPU** (panneau GPU perf,
+  bloc « Geometry this frame ») : indices sommés sur TOUTES les passes
+  (casters, reflet, main) par système — terrain (Mtri), arbres (Mtri +
+  instances high/low), herbe (Mtri + brins), total. Reset dans les
+  update(), sommés dans les draw*(). C'est l'entrée de la décision
+  imposteurs : le total dira qui porte les ~24 ms du mainPass.
+- **Pré-chauffe des variantes (V7c-3) : CLOSE sans code.** Le cache
+  VkPipelineCache persisté déplace déjà la compilation Metal au premier
+  lancement seul, et l'écran titre rend le paysage complet — les
+  variantes du chemin principal se compilent dans les premières frames.
+  Une pré-chauffe explicite exigerait de persister les paires
+  pipeline×formats à travers les runs (les handles ne sont pas stables)
+  pour ne couvrir que les à-coups de premier lancement des scènes
+  secondaires. À rouvrir seulement si un à-coup premier-run gêne
+  réellement (test : supprimer `vulkan-pipeline-cache.bin` et jouer).
+
+Vérifié : boot + 40 s propres (0 erreur validation), spikes inchangés.
+

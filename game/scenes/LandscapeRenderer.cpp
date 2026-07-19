@@ -1638,15 +1638,24 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         const std::unordered_set<u64>* occludedSet =
             combinedOccluded.empty() ? nullptr : &combinedOccluded;
         if (!view.interiorMode) {
+            // Sub-probes only where they MEASURE: inside a pass, Metal
+            // executes the whole encoder as one tiled unit and mid-pass
+            // timestamps collapse (~0.01 ms) — the V8e cap gates them.
+            // The geometry counters (perf panel) carry the dissection on
+            // Vulkan instead.
+            render::GpuProbe* subProbe =
+                frame.device.caps().midPassTimestamps ? &gpuProbe : nullptr;
+            rhi::Device* subDevice =
+                subProbe != nullptr ? &frame.device : nullptr;
             {
-                render::GpuProbe::Scope sub { gpuProbe, frame.device,
+                render::GpuProbe::Scope sub { subProbe, subDevice,
                                               "mainTerrain" };
                 terrain.draw(frame.cmd, frameBindGroup,
                              shadows.receiverBindGroup(), &viewFrustum,
                              occludedSet);
             }
             {
-                render::GpuProbe::Scope sub { gpuProbe, frame.device,
+                render::GpuProbe::Scope sub { subProbe, subDevice,
                                               "mainVeg" };
                 vegetation.draw(frame.cmd, frameBindGroup,
                                 shadows.receiverBindGroup(),
@@ -1656,7 +1665,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                                 occludedSet);
             }
             {
-                render::GpuProbe::Scope sub { gpuProbe, frame.device,
+                render::GpuProbe::Scope sub { subProbe, subDevice,
                                               "mainGrass" };
                 grass.draw(frame.cmd, frameBindGroup,
                            shadows.receiverBindGroup(), camera.position,
@@ -1856,6 +1865,25 @@ void LandscapeRenderer::drawPerfPanel(const core::FrameProbe* cpuProbe) {
     if (gpuProbe.rows().empty()) {
         ImGui::TextDisabled("(warming up — first frames resolving)");
     }
+
+    // V8e: CPU-side geometry counters, ALL passes summed (casters,
+    // reflection, main). This is the mainPass dissection on Vulkan, where
+    // mid-pass GPU timestamps cannot measure (Metal runs a pass as one
+    // tiled unit) — and the input to the impostor decision.
+    ImGui::SeparatorText("Geometry this frame (all passes)");
+    const f32 terrainMTri =
+        static_cast<f32>(terrain.indicesThisFrame()) / 3.0e6f;
+    const f32 vegMTri =
+        static_cast<f32>(vegetation.indicesThisFrame()) / 3.0e6f;
+    const f32 grassMTri =
+        static_cast<f32>(grass.indicesThisFrame()) / 3.0e6f;
+    ImGui::Text("terrain: %.2f Mtri", terrainMTri);
+    ImGui::Text("trees: %.2f Mtri (%u high + %u low instances)", vegMTri,
+                vegetation.highDetailInstancesThisFrame(),
+                vegetation.lowDetailInstancesThisFrame());
+    ImGui::Text("grass: %.2f Mtri (%u blades)", grassMTri,
+                grass.bladesThisFrame());
+    ImGui::Text("total: %.2f Mtri", terrainMTri + vegMTri + grassMTri);
 }
 
 void LandscapeRenderer::drawTerrainPanel() {

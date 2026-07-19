@@ -234,6 +234,8 @@ void GrassSystem::invalidateChunks(rhi::Device& device,
 
 void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
                          const Vec3& cameraPos) {
+    frameIndices = 0; // the frame's draw() sums into these
+    frameBlades = 0;
     // Budgeted uploads (U3-1: the ring mechanics live in ChunkStreamer;
     // this lambda is the grass-specific accept + GPU upload).
     streamer.pump(kMaxUploadsPerFrame, 0.0, [&](u64 key, auto& built) {
@@ -396,6 +398,8 @@ void GrassSystem::draw(rhi::CommandBuffer& cmd,
     for (const Draw& d : draws) {
         cmd.setVertexBuffer(1, d.chunk->instanceBuffer);
         cmd.drawIndexed(bladeIndexCount, d.count);
+        frameIndices += bladeIndexCount * d.count;
+        frameBlades += d.count;
     }
 }
 

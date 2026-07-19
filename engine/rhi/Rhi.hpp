@@ -50,6 +50,11 @@ struct DeviceCaps {
                                      // (GL >= 4.3; absent on the 4.1 path)
     bool timerQueries { false };     // insertTimestamp/timestampReady
                                      // (GL >= 3.3 timer queries)
+    bool midPassTimestamps { false }; // timestamps INSIDE a render pass
+                                     // measure real GPU time. False on
+                                     // Vulkan/MoltenVK: Metal executes a
+                                     // pass as one tiled unit, mid-encoder
+                                     // samples collapse (~0.01 ms deltas)
     bool volumeTextures { false };   // TextureDesc::depth > 1 (3D textures —
                                      // GI voxel clipmap / radiance cascades)
 };
