@@ -558,4 +558,72 @@ Les shaders touchés + leurs consommateurs (mesh/terrain/skinned.frag, includes
 expansés) compilent sous les deux sémantiques. Parité visuelle GL 4.6 sur PC :
 toujours le même caveat de chantier.
 
-### V7 — Bring-up LandscapeScene sur M1 + parité GL46 — À FAIRE
+### V7 — Bring-up LandscapeScene sur M1 — FAIT (2026-07-19)
+
+**`true-adventurer` fait tourner la LandscapeScene complète sur Vulkan/M1 :
+0 erreur de validation**, et le GpuProbe mesure le vrai pipeline —
+`shadows=5.4 rcBuild=9.7 rcMerge=5.8 mainPass volumetric` — donc CSM, les
+Radiance Cascades (compute), la passe principale et les volumétriques
+s'exécutent tous. **Vulkan est le backend PAR DÉFAUT** (`EngineConfig`), avec
+la chaîne §2.1 dans `Engine::init` : si Vulkan échoue ou n'est pas compilé,
+la fenêtre est recréée (le flag de surface SDL est figé) et GL prend le
+relais.
+
+Le bring-up a été une remontée de couches, chacune un écart GL↔Vulkan réel.
+Dans l'ordre de découverte :
+
+1. **shaderc gate les features sur le `#version` déclaré** : les shaders 2D
+   inline (sprite, 410 pour GL 4.1) refusent `binding=` même en mode Vulkan.
+   → `promoteVersion()` : le backend promeut toute source à 460 avant
+   compilation (SPIR-V se moque de la version GLSL). Les sources sprite sont
+   passées en duale (`#ifdef VULKAN` pour les bindings, locations partout).
+2. **`remapBindings` classait mal `uniform writeonly image3D`** — le
+   qualificateur mémoire APRÈS `uniform` faisait classer les storage images
+   du RC en uniform block → collisions de bindings. → skip des
+   qualificateurs, et `find()` au lieu d'un test de préfixe (i/u-variantes).
+3. **Les slots de groupe ne sont PAS des sets Vulkan** : l'espace de noms du
+   RHI est le binding (offsets par classe) ; tout se pousse sur le set 0.
+4. **Les push descriptors meurent au changement de pipeline** ; le contrat
+   GL (les groupes survivent) est restauré par un REJEU : le command buffer
+   retient les 4 slots et les re-pousse à chaque `setPipeline` (motif RC :
+   frame group lié une fois, puis build/extend/merge alternent).
+5. **Features du portability subset = opt-in** à la création du device
+   (query `vkGetPhysicalDeviceFeatures2` → chain). MoltenVK/M1 n'offre PAS
+   `mutableComparisonSamplers` → les samplers de comparaison (PCF) sont
+   IMMUTABLES dans les layouts : la réflexion marque `sampler*Shadow`, un
+   sampler PCF du device (linear, LESS_OR_EQUAL) est fixé à ces bindings.
+6. **Layouts d'image honnêtes** : le descripteur dit `tex->layout` (les
+   volumes GI vivent en GENERAL) ; transition automatique vers GENERAL au
+   premier usage storage (hors passe) ; `SAMPLED_BIT` et `STORAGE_BIT`
+   posés partout où le format le permet (parité GL : tout est
+   échantillonnable, le compute écrit aussi des cibles 2D — Hi-Z, neige).
+7. **Mini deletion queue** (la dette V4 payée où elle a mordu) : détruire
+   pendant l'ENREGISTREMENT est unsafe même après un idle — les commandes
+   qui référencent la ressource ne sont pas encore soumises. Les destroys
+   mid-frame sont parqués et libérés quand le slot de frame recycle
+   (prouvé par fence).
+8. **La sémantique GL « tout binding lu est lié à QUELQUE CHOSE »** est
+   restaurée par des dummies : la réflexion enregistre la dimensionnalité
+   (2D/2DArray/3D/Cube) et la comparaison ; au draw/dispatch, tout binding
+   déclaré que nul groupe n'a poussé reçoit un dummy de la bonne forme
+   (blanc 2D/array/3D, buffer 256 o, **Depth32F pour les bindings de
+   comparaison** — un RGBA8 ne supporte pas le depth-compare). Les groupes
+   rejoués sur un pipeline où le numéro a un autre sens (3D vs 2D) sont
+   également substitués — GL échantillonnait du garbage en silence dans
+   tous ces cas.
+9. **ImGui s'enregistre dans une passe Load** sur le backbuffer
+   (`Engine::loop`) — GL tolérait les draws nus, Vulkan exige une passe.
+10. **`ImTextureID`/sampler-less** : sampler par défaut PAR TEXTURE, créé
+    depuis `TextureDesc::filter/wrap` (le contrat « les paramètres de
+    création s'appliquent » que GL donnait gratuitement).
+
+**Vérifié** : LandscapeScene 35 s sans erreur de validation ; vksmoke 30
+PASS ; headless 519/519. **Piège d'outillage** : un build ninja tué en plein
+FetchContent laisse le clone git de VMA corrompu (« Failed to get the hash
+for HEAD ») — purger `_deps/vulkanmemoryallocator-*` et reconfigurer.
+
+**Reste (hors bring-up)** : la parité VISUELLE se juge à l'œil (le M1 du dev
+— c'est désormais possible) ; la parité GL 4.6 sur PC (caveat inchangé) ;
+le GL 4.1 fallback n'est plus atteignable que si Vulkan manque.
+
+### V8 — Parité visuelle + perfs (reste du chantier)

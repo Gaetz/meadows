@@ -41,11 +41,11 @@ bool Engine::init(const EngineConfig& engineConfig) {
     config = engineConfig;
 
     jobSystem = std::make_unique<core::JobSystem>();
-    // The SDL surface flag is fixed at window creation and must match the RHI
-    // backend (§2.1), so it is derived here before the window exists. (The
-    // Vulkan->GL fallback chain lands with V1, once Vulkan can actually
-    // present — until then createVulkanDevice declines and the default backend
-    // stays GL.)
+    // §2.1 preference chain: try the configured backend (Vulkan by default),
+    // fall back to GL. The SDL surface flag is fixed at window creation and
+    // must match the backend, so falling back means recreating the window —
+    // acceptable at init, and the reason the chain lives HERE and not in the
+    // Device factory.
     const platform::GraphicsApi api =
         config.backend == rhi::Backend::Vulkan ? platform::GraphicsApi::Vulkan
                                                 : platform::GraphicsApi::OpenGL;
@@ -57,6 +57,18 @@ bool Engine::init(const EngineConfig& engineConfig) {
         return false;
     }
     device = rhi::Device::create(config.backend, *window);
+    if (!device && config.backend == rhi::Backend::Vulkan) {
+        LOG_WARN("Vulkan unavailable — falling back to OpenGL");
+        window.reset(); // surface flag mismatch: a GL device needs a GL window
+        window = platform::Window::create({ .title = config.title,
+                                            .width = config.width,
+                                            .height = config.height,
+                                            .api = platform::GraphicsApi::OpenGL });
+        if (!window) {
+            return false;
+        }
+        device = rhi::Device::create(rhi::Backend::OpenGL, *window);
+    }
     if (!device) {
         return false;
     }
@@ -104,10 +116,15 @@ void Engine::loop(Game& game) {
                              .height = static_cast<u32>(window->height()) };
         game.render(frame);
 
-        // Dev UI renders after the scene, straight into the backbuffer.
+        // Dev UI renders after the scene, into the backbuffer, inside its
+        // own Load pass: GL tolerated bare draws, Vulkan requires an active
+        // render pass — Load preserves whatever the scene just rendered.
         imgui->beginFrame();
         game.drawUi();
+        cmd.beginRenderPass({ .loadOp = rhi::LoadOp::Load,
+                              .depthLoadOp = rhi::LoadOp::DontCare });
         imgui->render(cmd);
+        cmd.endRenderPass();
 
         device->endFrame();
     }

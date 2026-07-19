@@ -6,6 +6,8 @@
 #include <string>
 #include <unordered_map>
 
+// Portability-subset structs (MoltenVK feature opt-in) live in vulkan_beta.h.
+#define VK_ENABLE_BETA_EXTENSIONS
 #include <vulkan/vulkan.h>
 
 #include <shaderc/shaderc.h>
@@ -238,6 +240,11 @@ struct VulkanTexture {
     // the whole image: this backend never leaves mips in mixed layouts outside
     // of generateMipmaps, which restores a uniform one before returning.
     VkImageLayout layout { VK_IMAGE_LAYOUT_UNDEFINED };
+    // Built from TextureDesc::filter/wrap at creation. Used when a bind-group
+    // entry carries a texture WITHOUT a sampler — the RHI's legacy 2D
+    // contract ("the texture's own creation-time parameters apply"), which GL
+    // gets for free from glTexParameter and Vulkan has to spell out.
+    VkSampler defaultSampler { VK_NULL_HANDLE };
 };
 
 // --- Descriptor binding remap (V4) -------------------------------------------
@@ -285,9 +292,20 @@ VkDescriptorType toVkDescriptorType(DescriptorClass klass) {
 // This doubles as the reflection createPipeline needs to build its descriptor
 // set layout — parsing the GLSL we already rewrite is cheaper (and one fewer
 // dependency) than reflecting the SPIR-V afterwards.
+// Sampled-image dimensionality, from the GLSL type name. Binding NUMBERS are
+// reused with different meanings across shaders (GL semantics), so a group
+// replayed onto another pipeline may pair a 3D texture with a 2D binding —
+// pushGroup skips those writes (sampling them was undefined in GL too).
+enum class ImageDim { Any, T2D, T2DArray, T3D, Cube };
+
 struct ShaderResource {
     u32 binding { 0 }; // already offset
     DescriptorClass klass { DescriptorClass::Uniform };
+    // sampler*Shadow: needs the device's immutable PCF sampler (MoltenVK
+    // exposes no mutableComparisonSamplers, so a comparison sampler cannot
+    // be pushed as a normal descriptor).
+    bool comparison { false };
+    ImageDim dim { ImageDim::Any };
 };
 
 // A linked program in RHI terms: either a vertex+fragment pair or a lone
@@ -304,6 +322,25 @@ struct VulkanShader {
 // in its own range, and records what it found. The declarations in the corpus
 // are regular enough for this to be exact: a binding qualifier is always
 // followed by `uniform <Block|samplerX|imageX>` or `buffer <Block>`.
+// SPIR-V does not care which GLSL #version a source declares, but shaderc
+// gates features SYNTACTICALLY on it: explicit bindings are 420+, and the
+// dual-source 2D shaders declare 410 for the GL 4.1 driver's sake. Promote
+// everything to 460 (the corpus standard) before compiling — the GL backends
+// never see this rewrite.
+str promoteVersion(const str& source) {
+    const size_t at = source.find("#version");
+    if (at == str::npos) {
+        return source;
+    }
+    const size_t eol = source.find('\n', at);
+    if (eol == str::npos) {
+        return source;
+    }
+    str out = source;
+    out.replace(at, eol - at, "#version 460 core");
+    return out;
+}
+
 str remapBindings(const str& source, vector<ShaderResource>& resources) {
     str out;
     out.reserve(source.size() + 64);
@@ -346,6 +383,8 @@ str remapBindings(const str& source, vector<ShaderResource>& resources) {
         // words until the `uniform` or `buffer` keyword: memory qualifiers
         // (readonly/writeonly/coherent) may sit in between.
         DescriptorClass klass = DescriptorClass::Uniform;
+        bool comparison = false;
+        ImageDim dim = ImageDim::Any;
         size_t at = close + 1;
         auto nextWord = [&]() -> str {
             at = source.find_first_not_of(" \t\r\n", at);
@@ -365,12 +404,44 @@ str remapBindings(const str& source, vector<ShaderResource>& resources) {
                 break;
             }
             if (word == "uniform") {
-                const str type = nextWord();
-                if (type.rfind("sampler", 0) == 0 ||
-                    type.rfind("texture", 0) == 0) {
+                // Memory qualifiers sit on EITHER side of `uniform`
+                // (`writeonly uniform image3D` and `uniform writeonly
+                // image3D` are both legal GLSL): skip them before reading
+                // the type, or a storage image classifies as a uniform
+                // block and its binding collides with the real UBOs
+                // (found the hard way on rc_inject.comp, V7).
+                str type = nextWord();
+                for (u32 skip = 0; skip < 4; ++skip) {
+                    if (type == "readonly" || type == "writeonly" ||
+                        type == "coherent" || type == "volatile" ||
+                        type == "restrict") {
+                        type = nextWord();
+                        continue;
+                    }
+                    break;
+                }
+                // find(), not a prefix test: isampler/usampler/uimage/
+                // iimage must classify like their float cousins.
+                if (type.find("sampler") != str::npos ||
+                    type.find("texture") != str::npos) {
                     klass = DescriptorClass::Sampler;
-                } else if (type.rfind("image", 0) == 0) {
+                    comparison = type.find("Shadow") != str::npos;
+                    if (type.find("Cube") != str::npos) {
+                        dim = ImageDim::Cube;
+                    } else if (type.find("3D") != str::npos) {
+                        dim = ImageDim::T3D;
+                    } else if (type.find("2DArray") != str::npos) {
+                        dim = ImageDim::T2DArray;
+                    } else if (type.find("2D") != str::npos) {
+                        dim = ImageDim::T2D;
+                    }
+                } else if (type.find("image") != str::npos) {
                     klass = DescriptorClass::StorageImage;
+                    if (type.find("3D") != str::npos) {
+                        dim = ImageDim::T3D;
+                    } else if (type.find("2D") != str::npos) {
+                        dim = ImageDim::T2D;
+                    }
                 } else {
                     klass = DescriptorClass::Uniform; // uniform block
                 }
@@ -380,7 +451,7 @@ str remapBindings(const str& source, vector<ShaderResource>& resources) {
         }
 
         const u32 shifted = original + bindingOffset(klass);
-        resources.push_back({ shifted, klass });
+        resources.push_back({ shifted, klass, comparison, dim });
 
         // Emit the qualifier with the shifted number.
         out.append(source, pos, layoutAt - pos);
@@ -446,6 +517,17 @@ struct VulkanFramebuffer {
 struct VulkanPipeline {
     PipelineDesc desc;
     bool compute { false };
+    // Bit i = the shader declares binding i (remapped bindings top out at 63:
+    // 4 descriptor classes x kBindingRange). setBindGroup filters against
+    // this — shared bind groups legitimately carry MORE entries than a given
+    // pipeline uses (frame group vs the caster pipelines), which GL ignores
+    // and a Vulkan push descriptor would reject.
+    u64 bindingMask { 0 };
+    // Bindings whose layout carries the immutable PCF sampler: the pushed
+    // write's sampler is ignored there, so pushGroup substitutes a plain one
+    // (a pushed COMPARISON sampler trips the portability validation).
+    u64 comparisonMask { 0 };
+    vector<ShaderResource> resources; // for push-time dim checks
     VkDescriptorSetLayout setLayout { VK_NULL_HANDLE };
     VkPipelineLayout layout { VK_NULL_HANDLE };
     std::unordered_map<u64, VkPipeline> variants; // key = target formats
@@ -520,12 +602,60 @@ struct VulkanDevice::Impl {
     u32 frame { 0 };            // frame-in-flight slot being recorded
     u32 imageIndex { 0 };       // swapchain image acquired this frame
     bool frameActive { false }; // false when acquire failed -> endFrame skips
+    u64 frameCounter { 0 };     // absolute, for the deferred-free queue
+
+    // Mini deletion queue (the V4 'vkDeviceWaitIdle in destroy*' debt, paid
+    // where it bit): destroying mid-RECORDING is unsafe even after an idle —
+    // the commands referencing the resource are not submitted yet. Parked
+    // here and freed once the frame slot cycles (fence-proven done).
+    struct PendingTexture {
+        VkImage image; VmaAllocation alloc; VkImageView view;
+        VkSampler sampler; u64 frame;
+    };
+    struct PendingBuffer {
+        VkBuffer buffer; VmaAllocation alloc; u64 frame;
+    };
+    vector<PendingTexture> pendingTextures;
+    vector<PendingBuffer> pendingBuffers;
+
+    void flushPendingFrees(bool force) {
+        const auto done = [&](u64 parked) {
+            return force || frameCounter >= parked + kFramesInFlight;
+        };
+        std::erase_if(pendingTextures, [&](const PendingTexture& t) {
+            if (!done(t.frame)) { return false; }
+            vkDestroyImageView(device, t.view, nullptr);
+            if (t.sampler != VK_NULL_HANDLE) {
+                vkDestroySampler(device, t.sampler, nullptr);
+            }
+            vmaDestroyImage(allocator, t.image, t.alloc);
+            return true;
+        });
+        std::erase_if(pendingBuffers, [&](const PendingBuffer& b) {
+            if (!done(b.frame)) { return false; }
+            vmaDestroyBuffer(allocator, b.buffer, b.alloc);
+            return true;
+        });
+    }
 
     // Handle tables. Ids start at 1 so 0 stays the invalid handle (§ Rhi.hpp).
     u32 nextId { 1 };
     std::unordered_map<u32, VulkanBuffer> buffers;
     std::unordered_map<u32, VulkanTexture> textures;
     std::unordered_map<u32, VkSampler> samplers;
+    // Device-owned comparison sampler baked into layouts as IMMUTABLE for
+    // every sampler*Shadow binding (linear + LESS_OR_EQUAL: matches the
+    // ShadowMapper's and the key light's PCF samplers).
+    VkSampler pcfSampler { VK_NULL_HANDLE };
+    // GL keeps SOMETHING bound on every unit; these stand in whenever a
+    // group entry cannot legally be pushed (declared-dim mismatch, texture
+    // busy as an attachment, or destroyed) so no descriptor stays unset.
+    TextureHandle dummy2D {};
+    TextureHandle dummyArray {};
+    TextureHandle dummy3D {};
+    TextureHandle dummyDepth {}; // comparison bindings need a depth format
+    BufferHandle dummyUniform {};
+    BufferHandle dummyStorage {};
     std::unordered_map<u32, VulkanShader> shaders;
     // GPU markers. A fence is signalled by an empty submit, which the spec
     // says completes only after everything already submitted — exactly the
@@ -617,6 +747,8 @@ public:
         swapchainExtent_ = extent;
         inPass_ = false;
         boundPipeline_ = nullptr;
+        boundGroups_ = {};
+        pushedMask_ = 0;
     }
 
     void beginRenderPass(const RenderPassDesc& desc) override;
@@ -632,6 +764,8 @@ public:
     void setFrontFace(FrontFace frontFace) override;
     void setPipeline(PipelineHandle pipeline) override;
     void setBindGroup(u32 index, BindGroupHandle group) override;
+    void pushGroup(BindGroupHandle group);
+    void bindMissingDummies();
     void setPushConstants(const void* data, u32 size, u32 offset) override;
     void setVertexBuffer(u32 slot, BufferHandle buffer, u64 offset) override;
     void setIndexBuffer(BufferHandle buffer, IndexFormat format) override;
@@ -669,6 +803,8 @@ private:
     VkRect2D scissor_ {};
     VkFrontFace frontFace_ { VK_FRONT_FACE_COUNTER_CLOCKWISE };
     VulkanPipeline* boundPipeline_ { nullptr };
+    array<BindGroupHandle, 4> boundGroups_ {}; // per RHI slot, for replay
+    u64 pushedMask_ { 0 }; // bindings pushed since the current pipeline bind
 };
 
 VkAttachmentLoadOp toVkLoadOp(LoadOp op) {
@@ -879,6 +1015,12 @@ void VulkanCommandBuffer::setPipeline(PipelineHandle handle) {
             vkCmdBindPipeline(cb_, VK_PIPELINE_BIND_POINT_COMPUTE,
                               pipeline->computePipeline);
             boundPipeline_ = pipeline;
+            pushedMask_ = 0;
+            for (const BindGroupHandle g : boundGroups_) {
+                if (g.id != 0) {
+                    pushGroup(g);
+                }
+            }
         }
         return;
     }
@@ -893,6 +1035,12 @@ void VulkanCommandBuffer::setPipeline(PipelineHandle handle) {
     // Dynamic state does not survive a pipeline bind.
     applyViewport();
     vkCmdSetScissor(cb_, 0, 1, &scissor_);
+    pushedMask_ = 0;
+    for (const BindGroupHandle g : boundGroups_) {
+        if (g.id != 0) {
+            pushGroup(g);
+        }
+    }
 }
 
 void VulkanCommandBuffer::setPushConstants(const void* data, u32 size,
@@ -917,6 +1065,17 @@ void VulkanCommandBuffer::setPushConstants(const void* data, u32 size,
 }
 
 void VulkanCommandBuffer::setBindGroup(u32 index, BindGroupHandle group) {
+    // Remembered per slot: push descriptors die with the pipeline layout
+    // they were pushed against, but the RHI contract (from GL) is that bind
+    // groups SURVIVE a pipeline change — RC binds its frame group once, then
+    // switches build/extend/merge pipelines. setPipeline replays these.
+    if (index < boundGroups_.size()) {
+        boundGroups_[index] = group;
+    }
+    pushGroup(group);
+}
+
+void VulkanCommandBuffer::pushGroup(BindGroupHandle group) {
     auto it = d_->bindGroups.find(group.id);
     if (cb_ == VK_NULL_HANDLE || it == d_->bindGroups.end() ||
         boundPipeline_ == nullptr) {
@@ -953,21 +1112,87 @@ void VulkanCommandBuffer::setBindGroup(u32 index, BindGroupHandle group) {
             write.pBufferInfo = &bufferInfos.back();
         } else if (entry.texture.id != 0) {
             VulkanTexture* tex = d_->findTexture(entry.texture);
-            if (tex == nullptr) {
-                continue;
-            }
             const DescriptorClass klass = entry.storageImage
                                               ? DescriptorClass::StorageImage
                                               : DescriptorClass::Sampler;
+            if (klass == DescriptorClass::Sampler) {
+                // Three situations where THIS texture cannot legally back the
+                // binding: it was destroyed; it is still bound as an
+                // attachment; or the binding's declared dimensionality
+                // differs (binding numbers are reused across shaders — a
+                // replayed group may pair a 3D texture with a 2D binding).
+                // GL sampled garbage silently in all three; here a dummy of
+                // the DECLARED shape stands in so no descriptor stays unset
+                // (an unset one is invalid the moment the shader statically
+                // reads it).
+                const u32 dst = entry.binding + bindingOffset(klass);
+                ImageDim declared = ImageDim::Any;
+                bool declaredComparison = false;
+                for (const ShaderResource& r : boundPipeline_->resources) {
+                    if (r.binding == dst) {
+                        declared = r.dim;
+                        declaredComparison = r.comparison;
+                        break;
+                    }
+                }
+                const bool busy =
+                    tex != nullptr &&
+                    (tex->layout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL ||
+                     tex->layout ==
+                         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+                const ImageDim actual =
+                    tex == nullptr           ? ImageDim::Any
+                    : tex->extent.depth > 1  ? ImageDim::T3D
+                    : tex->arrayLayers > 1   ? ImageDim::T2DArray
+                                             : ImageDim::T2D;
+                const bool mismatch = tex != nullptr &&
+                                      declared != ImageDim::Any &&
+                                      actual != declared;
+                if (tex == nullptr || busy || mismatch) {
+                    const TextureHandle dummy =
+                        declaredComparison               ? d_->dummyDepth
+                        : declared == ImageDim::T3D      ? d_->dummy3D
+                        : declared == ImageDim::T2DArray ? d_->dummyArray
+                                                         : d_->dummy2D;
+                    tex = d_->findTexture(dummy);
+                    if (tex == nullptr) {
+                        continue; // device init itself — dummies not built yet
+                    }
+                }
+            } else if (tex == nullptr) {
+                continue;
+            }
             VkDescriptorImageInfo image {};
             image.imageView = tex->view;
             if (klass == DescriptorClass::StorageImage) {
+                // First storage use moves the image to GENERAL. Legal here:
+                // compute runs outside render passes, where barriers are
+                // allowed (graphics never binds storage images).
+                if (tex->layout != VK_IMAGE_LAYOUT_GENERAL && !inPass_) {
+                    transitionLayout(cb_, tex->image, tex->aspect, 0,
+                                     tex->mipLevels, tex->arrayLayers,
+                                     tex->layout, VK_IMAGE_LAYOUT_GENERAL);
+                    tex->layout = VK_IMAGE_LAYOUT_GENERAL;
+                }
                 image.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
             } else {
-                image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                // The texture's ACTUAL layout, not an assumed one: GPU-written
+                // volumes (GI clipmaps, cascades) live in GENERAL for good and
+                // are legally sampled from it.
+                image.imageLayout = tex->layout;
                 auto sampler = d_->samplers.find(entry.sampler.id);
-                if (sampler != d_->samplers.end()) {
-                    image.sampler = sampler->second;
+                // No sampler in the entry -> the texture's creation-time
+                // parameters apply (legacy 2D contract).
+                image.sampler = sampler != d_->samplers.end()
+                                    ? sampler->second
+                                    : tex->defaultSampler;
+                const u32 dst = entry.binding + bindingOffset(klass);
+                if (dst < 64 &&
+                    ((boundPipeline_->comparisonMask >> dst) & 1ull) != 0) {
+                    // The layout's immutable PCF sampler wins; push a plain
+                    // sampler so the portability check never sees a mutable
+                    // comparison one.
+                    image.sampler = tex->defaultSampler;
                 }
             }
             imageInfos.push_back(image);
@@ -977,6 +1202,108 @@ void VulkanCommandBuffer::setBindGroup(u32 index, BindGroupHandle group) {
         } else {
             continue;
         }
+        // GL semantics: entries the shader does not declare are ignored.
+        if (write.dstBinding >= 64 ||
+            ((boundPipeline_->bindingMask >> write.dstBinding) & 1ull) == 0) {
+            if (!bufferInfos.empty() && write.pBufferInfo != nullptr) {
+                bufferInfos.pop_back();
+            }
+            if (!imageInfos.empty() && write.pImageInfo != nullptr) {
+                imageInfos.pop_back();
+            }
+            continue;
+        }
+        writes.push_back(write);
+    }
+    if (writes.empty()) {
+        return;
+    }
+    for (const VkWriteDescriptorSet& w : writes) {
+        if (w.dstBinding < 64) {
+            pushedMask_ |= 1ull << w.dstBinding;
+        }
+    }
+    // Set 0 ALWAYS: the RHI's namespace is the (class-offset) binding
+    // number, not the group slot — the GL backend ignores `index` for the
+    // same reason (CommandBuffer.hpp), and every layout here has exactly one
+    // set. Slots 0/1/2 (frame / object / caster groups) merge into it.
+    d_->cmdPushDescriptorSet(
+        cb_,
+        boundPipeline_->compute ? VK_PIPELINE_BIND_POINT_COMPUTE
+                                : VK_PIPELINE_BIND_POINT_GRAPHICS,
+        boundPipeline_->layout, 0, static_cast<u32>(writes.size()),
+        writes.data());
+}
+
+// GL's contract: every statically-read binding is bound to SOMETHING (an
+// unbound unit reads garbage but is legal). Vulkan invalidates the whole
+// draw/dispatch instead. Any binding the pipeline declares that no group
+// pushed gets a dummy of the declared class/shape — GI-off sampling black,
+// optional textures, etc. keep working exactly as they did on GL.
+void VulkanCommandBuffer::bindMissingDummies() {
+    if (cb_ == VK_NULL_HANDLE || boundPipeline_ == nullptr) {
+        return;
+    }
+    const u64 missing = boundPipeline_->bindingMask & ~pushedMask_;
+    if (missing == 0) {
+        return;
+    }
+    vector<VkWriteDescriptorSet> writes;
+    vector<VkDescriptorBufferInfo> bufferInfos;
+    vector<VkDescriptorImageInfo> imageInfos;
+    const size_t count = boundPipeline_->resources.size();
+    writes.reserve(count);
+    bufferInfos.reserve(count);
+    imageInfos.reserve(count);
+    for (const ShaderResource& r : boundPipeline_->resources) {
+        if (r.binding >= 64 || ((missing >> r.binding) & 1ull) == 0) {
+            continue;
+        }
+        VkWriteDescriptorSet write {};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstBinding = r.binding;
+        write.descriptorCount = 1;
+        write.descriptorType = toVkDescriptorType(r.klass);
+        if (r.klass == DescriptorClass::Uniform ||
+            r.klass == DescriptorClass::Storage) {
+            VulkanBuffer* buf = d_->findBuffer(
+                r.klass == DescriptorClass::Uniform ? d_->dummyUniform
+                                                    : d_->dummyStorage);
+            if (buf == nullptr) {
+                continue;
+            }
+            VkDescriptorBufferInfo info {};
+            info.buffer = buf->buffer;
+            info.range = VK_WHOLE_SIZE;
+            bufferInfos.push_back(info);
+            write.pBufferInfo = &bufferInfos.back();
+        } else {
+            VulkanTexture* tex = d_->findTexture(
+                r.comparison                  ? d_->dummyDepth
+                : r.dim == ImageDim::T3D      ? d_->dummy3D
+                : r.dim == ImageDim::T2DArray ? d_->dummyArray
+                                              : d_->dummy2D);
+            if (tex == nullptr) {
+                continue;
+            }
+            VkDescriptorImageInfo image {};
+            image.imageView = tex->view;
+            if (r.klass == DescriptorClass::StorageImage) {
+                if (tex->layout != VK_IMAGE_LAYOUT_GENERAL && !inPass_) {
+                    transitionLayout(cb_, tex->image, tex->aspect, 0,
+                                     tex->mipLevels, tex->arrayLayers,
+                                     tex->layout, VK_IMAGE_LAYOUT_GENERAL);
+                    tex->layout = VK_IMAGE_LAYOUT_GENERAL;
+                }
+                image.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            } else {
+                image.imageLayout = tex->layout;
+                image.sampler = tex->defaultSampler;
+            }
+            imageInfos.push_back(image);
+            write.pImageInfo = &imageInfos.back();
+        }
+        pushedMask_ |= 1ull << r.binding;
         writes.push_back(write);
     }
     if (writes.empty()) {
@@ -986,7 +1313,7 @@ void VulkanCommandBuffer::setBindGroup(u32 index, BindGroupHandle group) {
         cb_,
         boundPipeline_->compute ? VK_PIPELINE_BIND_POINT_COMPUTE
                                 : VK_PIPELINE_BIND_POINT_GRAPHICS,
-        boundPipeline_->layout, index, static_cast<u32>(writes.size()),
+        boundPipeline_->layout, 0, static_cast<u32>(writes.size()),
         writes.data());
 }
 
@@ -1014,6 +1341,7 @@ void VulkanCommandBuffer::setIndexBuffer(BufferHandle handle,
 void VulkanCommandBuffer::draw(u32 vertexCount, u32 instanceCount,
                                u32 firstVertex) {
     if (cb_ != VK_NULL_HANDLE) {
+        bindMissingDummies();
         vkCmdDraw(cb_, vertexCount, instanceCount, firstVertex, 0);
     }
 }
@@ -1021,6 +1349,7 @@ void VulkanCommandBuffer::draw(u32 vertexCount, u32 instanceCount,
 void VulkanCommandBuffer::drawIndexed(u32 indexCount, u32 instanceCount,
                                       u32 firstIndex, u32 firstInstance) {
     if (cb_ != VK_NULL_HANDLE) {
+        bindMissingDummies();
         // firstInstance is native here — no GL_ARB_base_instance dance.
         vkCmdDrawIndexed(cb_, indexCount, instanceCount, firstIndex, 0,
                          firstInstance);
@@ -1029,6 +1358,7 @@ void VulkanCommandBuffer::drawIndexed(u32 indexCount, u32 instanceCount,
 
 void VulkanCommandBuffer::dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) {
     if (cb_ != VK_NULL_HANDLE) {
+        bindMissingDummies();
         vkCmdDispatch(cb_, groupsX, groupsY, groupsZ);
     }
 }
@@ -1348,8 +1678,12 @@ VulkanDevice::~VulkanDevice() {
             vkDestroyShaderModule(impl->device, shader.fragment, nullptr);
             vkDestroyShaderModule(impl->device, shader.compute, nullptr);
         }
+        impl->flushPendingFrees(true);
         for (auto& [id, sampler] : impl->samplers) {
             vkDestroySampler(impl->device, sampler, nullptr);
+        }
+        if (impl->pcfSampler != VK_NULL_HANDLE) {
+            vkDestroySampler(impl->device, impl->pcfSampler, nullptr);
         }
         for (auto& [id, tex] : impl->textures) {
             vkDestroyImageView(impl->device, tex.view, nullptr);
@@ -1390,6 +1724,8 @@ CommandBuffer& VulkanDevice::beginFrame() {
     d.frameActive = false;
 
     vkWaitForFences(d.device, 1, &d.inFlight[d.frame], VK_TRUE, UINT64_MAX);
+    d.frameCounter++;
+    d.flushPendingFrees(false); // slot fence passed: old parked frees are safe
 
     VkResult acquired =
         vkAcquireNextImageKHR(d.device, d.swapchain, UINT64_MAX,
@@ -1595,11 +1931,17 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
 // acceptable for bring-up. Revisit if a profile ever shows it.
 void VulkanDevice::destroyBuffer(BufferHandle handle) {
     Impl& d = *impl;
-    vkDeviceWaitIdle(d.device);
     auto it = d.buffers.find(handle.id);
     if (it == d.buffers.end()) {
         return;
     }
+    if (d.frameActive) { // recorded-but-unsubmitted commands may reference it
+        d.pendingBuffers.push_back({ it->second.buffer, it->second.allocation,
+                                     d.frameCounter });
+        d.buffers.erase(it);
+        return;
+    }
+    vkDeviceWaitIdle(d.device);
     vmaDestroyBuffer(d.allocator, it->second.buffer, it->second.allocation);
     d.buffers.erase(it);
 }
@@ -1666,18 +2008,23 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
     tex.aspect = isDepthFormat(desc.format) ? VK_IMAGE_ASPECT_DEPTH_BIT
                                             : VK_IMAGE_ASPECT_COLOR_BIT;
 
-    VkImageUsageFlags usage =
-        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    if (desc.usage & TextureUsage_Sampled) {
-        usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    }
+    // SAMPLED unconditionally: in GL every texture is samplable, and the
+    // renderer relies on it (shadow depth, scene depth, Hi-Z source are all
+    // sampled whatever their declared usage). endRenderPass counts on it too
+    // (attachments hand back as SHADER_READ_ONLY).
+    VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                              VK_IMAGE_USAGE_SAMPLED_BIT;
     if (desc.usage & TextureUsage_RenderAttachment) {
         usage |= isDepthFormat(desc.format)
                      ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
                      : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     }
-    // Volumes are GPU-written through storage images (GI clipmap, cascades).
-    if (volume) {
+    // STORAGE wherever the format allows it (GL parity: compute writes 2D
+    // targets too — Hi-Z mips, snow mask, cloud bake — not just volumes).
+    // SRGB and depth formats do not support storage use.
+    if (desc.format != TextureFormat::SRGBA8 &&
+        !isDepthFormat(desc.format)) {
         usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     }
 
@@ -1764,6 +2111,21 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
         tex.layout = initial;
     }
 
+    // The creation-time sampler for sampler-less bind entries (legacy 2D).
+    VkSamplerCreateInfo samplerInfo {};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.minFilter = toVkFilter(desc.filter);
+    samplerInfo.magFilter = toVkFilter(desc.filter);
+    samplerInfo.mipmapMode = desc.mipLevels > 1
+                                 ? VK_SAMPLER_MIPMAP_MODE_LINEAR
+                                 : VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.addressModeU = toVkAddressMode(desc.wrap);
+    samplerInfo.addressModeV = toVkAddressMode(desc.wrap);
+    samplerInfo.addressModeW = toVkAddressMode(desc.wrap);
+    samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
+    vkOk(vkCreateSampler(d.device, &samplerInfo, nullptr, &tex.defaultSampler),
+         "vkCreateSampler (texture default)");
+
     const u32 id = d.nextId++;
     d.textures.emplace(id, tex);
     return { id };
@@ -1776,7 +2138,18 @@ void VulkanDevice::destroyTexture(TextureHandle handle) {
     if (it == d.textures.end()) {
         return;
     }
+    if (d.frameActive) {
+        d.pendingTextures.push_back({ it->second.image, it->second.allocation,
+                                      it->second.view,
+                                      it->second.defaultSampler,
+                                      d.frameCounter });
+        d.textures.erase(it);
+        return;
+    }
     vkDestroyImageView(d.device, it->second.view, nullptr);
+    if (it->second.defaultSampler != VK_NULL_HANDLE) {
+        vkDestroySampler(d.device, it->second.defaultSampler, nullptr);
+    }
     vmaDestroyImage(d.allocator, it->second.image, it->second.allocation);
     d.textures.erase(it);
 }
@@ -2004,7 +2377,8 @@ ShaderHandle VulkanDevice::createShader(const ShaderDesc& desc) {
         // Shift each descriptor class into its own binding range (GL's
         // separate namespaces do not survive into Vulkan) and record what the
         // stage declares, for the pipeline layout.
-        const str translated = remapBindings(source, shader.resources);
+        const str translated =
+            remapBindings(promoteVersion(source), shader.resources);
         vector<u32> spv;
         if (!compileToSpv(translated, kind, desc.debugName + "." + stage,
                           spv)) {
@@ -2297,8 +2671,9 @@ VkPipeline VulkanDevice::Impl::pipelineFor(VulkanPipeline& pipeline,
 // Builds the descriptor set layout + pipeline layout from the shader's
 // reflection. PUSH_DESCRIPTOR_BIT is what lets setBindGroup write through it
 // without ever allocating a VkDescriptorSet.
-bool buildLayouts(VkDevice device, const VulkanShader& shader,
-                  VulkanPipeline& pipeline) {
+bool buildLayouts(VkDevice device, VkSampler pcfSampler,
+                  const VulkanShader& shader, VulkanPipeline& pipeline) {
+    pipeline.resources = shader.resources;
     vector<VkDescriptorSetLayoutBinding> bindings;
     bindings.reserve(shader.resources.size());
     for (const ShaderResource& resource : shader.resources) {
@@ -2307,7 +2682,18 @@ bool buildLayouts(VkDevice device, const VulkanShader& shader,
         binding.descriptorType = toVkDescriptorType(resource.klass);
         binding.descriptorCount = 1;
         binding.stageFlags = VK_SHADER_STAGE_ALL;
+        if (resource.comparison && pcfSampler != VK_NULL_HANDLE) {
+            // Immutable: MoltenVK cannot take comparison samplers as pushed
+            // descriptors (mutableComparisonSamplers unsupported on M1).
+            binding.pImmutableSamplers = &pcfSampler;
+            if (resource.binding < 64) {
+                pipeline.comparisonMask |= 1ull << resource.binding;
+            }
+        }
         bindings.push_back(binding);
+        if (resource.binding < 64) {
+            pipeline.bindingMask |= 1ull << resource.binding;
+        }
     }
 
     VkDescriptorSetLayoutCreateInfo setInfo {};
@@ -2352,7 +2738,7 @@ PipelineHandle VulkanDevice::createPipeline(const PipelineDesc& desc) {
     }
     VulkanPipeline pipeline {};
     pipeline.desc = desc;
-    if (!buildLayouts(d.device, *shader, pipeline)) {
+    if (!buildLayouts(d.device, d.pcfSampler, *shader, pipeline)) {
         return {};
     }
     // The VkPipeline itself waits for the first setPipeline, when the target's
@@ -2374,7 +2760,7 @@ PipelineHandle VulkanDevice::createComputePipeline(
     pipeline.compute = true;
     pipeline.desc.shader = desc.shader;
     pipeline.desc.pushConstantSize = desc.pushConstantSize;
-    if (!buildLayouts(d.device, *shader, pipeline)) {
+    if (!buildLayouts(d.device, d.pcfSampler, *shader, pipeline)) {
         return {};
     }
 
@@ -2661,8 +3047,21 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         deviceExtensionProperties(d.gpu);
     // Mandatory when present (MoltenVK): the spec requires enabling it on a
     // portability driver.
-    if (hasExtension(devExt, "VK_KHR_portability_subset")) {
+    VkPhysicalDevicePortabilitySubsetFeaturesKHR portability {};
+    portability.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR;
+    const bool onPortability =
+        hasExtension(devExt, "VK_KHR_portability_subset");
+    if (onPortability) {
         deviceExtensions.push_back("VK_KHR_portability_subset");
+        // Features default to FALSE unless explicitly enabled at device
+        // creation: query what the driver supports and enable ALL of it.
+        // The one that bites first is mutableComparisonSamplers — without it
+        // MoltenVK rejects pushing PCF (comparison) samplers as descriptors.
+        VkPhysicalDeviceFeatures2 query {};
+        query.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        query.pNext = &portability;
+        vkGetPhysicalDeviceFeatures2(d.gpu, &query);
     }
     // Both verified present on MoltenVK/M1 (docs/VULKAN.md). Dynamic rendering
     // removes VkRenderPass/VkFramebuffer entirely; push descriptors let
@@ -2704,6 +3103,10 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     VkDeviceCreateInfo deviceInfo {};
     deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceInfo.pNext = &dynamicRendering;
+    if (onPortability) {
+        portability.pNext = const_cast<void*>(deviceInfo.pNext);
+        deviceInfo.pNext = &portability;
+    }
     deviceInfo.queueCreateInfoCount = static_cast<u32>(queueInfos.size());
     deviceInfo.pQueueCreateInfos = queueInfos.data();
     deviceInfo.enabledExtensionCount = static_cast<u32>(deviceExtensions.size());
@@ -2822,6 +3225,18 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     // caps go on as a set — renderer systems gate on these to decide whether
     // to run, so advertising one whose path is still a no-op would be worse
     // than reporting false.
+    VkSamplerCreateInfo pcfInfo {};
+    pcfInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    pcfInfo.minFilter = VK_FILTER_LINEAR;
+    pcfInfo.magFilter = VK_FILTER_LINEAR;
+    pcfInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    pcfInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    pcfInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    pcfInfo.compareEnable = VK_TRUE;
+    pcfInfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    vkOk(vkCreateSampler(d.device, &pcfInfo, nullptr, &d.pcfSampler),
+         "vkCreateSampler (immutable PCF)");
+
     self->caps_ = { .offscreenTargets = true,
                     .textureArrays = true,
                     .hdrFormats = true,
@@ -2831,6 +3246,22 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
                     .computeShaders = true,
                     .timerQueries = timestampsUsable,
                     .volumeTextures = true };
+
+    {
+        const u32 white[2] = { 0xffffffffu, 0xffffffffu };
+        d.dummy2D = self->createTexture({ .width = 1, .height = 1 }, white);
+        d.dummyArray = self->createTexture(
+            { .width = 1, .height = 1, .arrayLayers = 2 }, white);
+        d.dummy3D = self->createTexture(
+            { .width = 1, .height = 1, .depth = 2 }, nullptr);
+        d.dummyDepth = self->createTexture(
+            { .width = 1, .height = 1, .format = TextureFormat::Depth32F },
+            nullptr);
+        d.dummyUniform = self->createBuffer(
+            { .usage = BufferUsage::Uniform, .size = 256 }, nullptr);
+        d.dummyStorage = self->createBuffer(
+            { .usage = BufferUsage::Storage, .size = 256 }, nullptr);
+    }
 
     LOG_INFO("Vulkan device ready: {} — {}x{}, {} swapchain images "
              "(V4: pipelines + draws)",

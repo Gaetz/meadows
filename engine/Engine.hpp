@@ -31,7 +31,9 @@ struct EngineConfig {
     // needs the room and the game reads better too.
     i32 width { 1920 };
     i32 height { 1080 };
-    rhi::Backend backend { rhi::Backend::OpenGL };
+    // Vulkan first (the FINAL renderer — chantier VULKAN); Engine::init
+    // falls back to GL at runtime if it is unavailable or not compiled in.
+    rhi::Backend backend { rhi::Backend::Vulkan };
     rhi::Color clearColor { 0.10f, 0.12f, 0.16f, 1.0f };
 };
 

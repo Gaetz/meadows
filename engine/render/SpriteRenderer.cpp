@@ -22,12 +22,20 @@ layout(location = 3) in vec4 aUvRect;
 layout(location = 4) in vec4 aTint;
 layout(location = 5) in float aRotation;
 
+// VULKAN is predefined by shaderc (compat.glsl's key): explicit bindings are
+// GLSL 420+, so GL 4.1 keeps the bare block (bound by name after link).
+#ifdef VULKAN
+layout(std140, binding = 0) uniform Camera {
+    mat4 uViewProj;
+};
+#else
 layout(std140) uniform Camera {
     mat4 uViewProj;
 };
+#endif
 
-out vec2 vUv;
-out vec4 vTint;
+layout(location = 0) out vec2 vUv;
+layout(location = 1) out vec4 vTint;
 
 void main() {
     vec2 local = aCorner * aPosSize.zw;
@@ -43,12 +51,16 @@ void main() {
 
 const char* kFragmentShader = R"glsl(
 #version 410 core
-in vec2 vUv;
-in vec4 vTint;
+layout(location = 0) in vec2 vUv;
+layout(location = 1) in vec4 vTint;
 
+#ifdef VULKAN
+layout(binding = 0) uniform sampler2D uTexture;
+#else
 uniform sampler2D uTexture;
+#endif
 
-out vec4 fragColor;
+layout(location = 0) out vec4 fragColor;
 
 void main() {
     fragColor = texture(uTexture, vUv) * vTint;
