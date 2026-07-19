@@ -1723,6 +1723,11 @@ VulkanDevice::~VulkanDevice() {
         }
         for (auto& [id, tex] : impl->textures) {
             vkDestroyImageView(impl->device, tex.view, nullptr);
+            if (tex.defaultSampler != VK_NULL_HANDLE) {
+                // The per-texture default sampler (V7) — destroyTexture
+                // frees it, but textures alive at shutdown reach here.
+                vkDestroySampler(impl->device, tex.defaultSampler, nullptr);
+            }
             vmaDestroyImage(impl->allocator, tex.image, tex.allocation);
         }
         for (auto& [id, buf] : impl->buffers) {

@@ -626,4 +626,27 @@ for HEAD ») — purger `_deps/vulkanmemoryallocator-*` et reconfigurer.
 — c'est désormais possible) ; la parité GL 4.6 sur PC (caveat inchangé) ;
 le GL 4.1 fallback n'est plus atteignable que si Vulkan manque.
 
+#### V7b — Session de test M1 (2026-07-19) : clavier macOS, Y-flip, divers
+
+- **Y-flip validé à l'écran** (axe Y bon après le fix par-cible).
+- **Clavier macOS** : aucun événement clavier ne parvenait à l'app — la
+  barre de menus restait sur CLion : un binaire HORS BUNDLE ne devient pas
+  l'application ACTIVE, et macOS ne livre le clavier qu'à l'app active (la
+  souris suit le curseur, d'où l'asymétrie trompeuse clics-OK/touches-mortes).
+  `SDL_RaiseWindow` ne suffit pas, et l'activation Cocoa one-shot est
+  IGNORÉE avant le premier tour de runloop (activation coopérative) ; le fix
+  est `platform/macos/Activation.mm` (premier per-OS .cpp du motif §3.1) +
+  RETRY à chaque pumpEvents jusqu'à `[NSApp isActive]`. F2/F3 sur MacBook =
+  touches média : Fn+F2, ou l'option clavier « touches de fonction standard ».
+- **Fuite de samplers à la sortie** : les defaultSampler par-texture (V7)
+  n'étaient libérés que par destroyTexture, pas par le teardown du device.
+- **Spam `gpu frame spike`** étranglé à ~1 ligne/5 s (chaque frame Debug/M1
+  dépasse 25 ms — le panneau perf porte les chiffres vivants).
+- **BUG CONFIRMÉ à creuser (bloquant V8) : le culling GPU Hi-Z sur-culle les
+  chunks de terrain lointains sur Vulkan** — décocher « GPU Hi-Z » dans le
+  panneau rendu fait réapparaître le fond du décor (test dev). Suspects :
+  chaîne copyTexture(depth) → hiz_first/hiz_down → chunk_cull (échantillonnage
+  de la pyramide, sampler par défaut mip-LINEAR vs GL base-mip textureLod,
+  convention de lignes) → readback du verdict.
+
 ### V8 — Parité visuelle + perfs (reste du chantier)

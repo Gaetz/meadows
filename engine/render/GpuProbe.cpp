@@ -110,12 +110,21 @@ void GpuProbe::resolveOldest(rhi::Device& device) {
     frameAccum.max = std::max(frameAccum.max, totalMs);
     ++frameAccum.count;
     if (totalMs > 25.0) {
-        // The CPU FrameProbe logged its half 2-4 frames earlier; the
-        // frame index pairs them.
-        LOG_WARN("gpu frame spike {:.1f} ms (frame {}):{}", totalMs,
-                 slot.frameIndex,
-                 spikeLine.empty() ? " (all passes < 0.5 ms)"
-                                   : spikeLine.c_str());
+        // Throttled to one line every ~5 s: on a machine where EVERY frame
+        // exceeds the budget (M1 Debug through MoltenVK), per-frame spike
+        // lines drown the log without adding information — the perf panel
+        // carries the live numbers.
+        static u64 lastSpikeLogFrame = 0;
+        if (slot.frameIndex > lastSpikeLogFrame + 300 ||
+            lastSpikeLogFrame == 0) {
+            lastSpikeLogFrame = slot.frameIndex;
+            // The CPU FrameProbe logged its half 2-4 frames earlier; the
+            // frame index pairs them.
+            LOG_WARN("gpu frame spike {:.1f} ms (frame {}):{}", totalMs,
+                     slot.frameIndex,
+                     spikeLine.empty() ? " (all passes < 0.5 ms)"
+                                       : spikeLine.c_str());
+        }
     }
 
     slot.open = false;

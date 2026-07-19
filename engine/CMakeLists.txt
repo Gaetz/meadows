@@ -87,6 +87,12 @@ add_library(meadows-render STATIC
     rhi/backends/gl/GlDevice41.cpp
     ui/ImGuiLayer.cpp
 )
+if(APPLE)
+    # §3.1 first per-OS source: Cocoa activation (keyboard needs the app to
+    # be ACTIVE — see platform/macos/Activation.mm).
+    target_sources(meadows-render PRIVATE platform/macos/Activation.mm)
+    target_link_libraries(meadows-render PUBLIC "-framework AppKit")
+endif()
 target_link_libraries(meadows-render
     PUBLIC meadows
     PRIVATE SDL3::SDL3 glad stb

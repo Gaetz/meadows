@@ -1,5 +1,9 @@
 #include "engine/platform/Window.hpp"
 
+#ifdef __APPLE__
+extern "C" bool meadowsMacosActivate(); // platform/macos/Activation.mm
+#endif
+
 #include <SDL3/SDL.h>
 
 #include "engine/core/Log.hpp"
@@ -47,6 +51,17 @@ uptr<Window> Window::create(const WindowDesc& desc) {
         return nullptr;
     }
 
+    // macOS: an unbundled binary does not become the ACTIVE application by
+    // itself, and only the active app's key window receives KEYBOARD events
+    // (mouse follows the cursor regardless — which is exactly the confusing
+    // symptom: clicks work, keys never arrive; the menu bar keeps showing
+    // the launcher). SDL_RaiseWindow is not enough: the activation policy
+    // must be set from Cocoa (platform/macos/Activation.mm, §3.1).
+    SDL_RaiseWindow(sdlWindow);
+#ifdef __APPLE__
+    meadowsMacosActivate();
+#endif
+
     auto window = uptr<Window> { new Window() };
     window->impl->window = sdlWindow;
     window->impl->width = desc.width;
@@ -55,6 +70,14 @@ uptr<Window> Window::create(const WindowDesc& desc) {
 }
 
 bool Window::pumpEvents() {
+#ifdef __APPLE__
+    // Cooperative activation (see Activation.mm): retry each pump until the
+    // app actually becomes active — the pre-runloop attempt is ignored.
+    static bool active = false;
+    if (!active) {
+        active = meadowsMacosActivate();
+    }
+#endif
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (impl->eventHook) {
