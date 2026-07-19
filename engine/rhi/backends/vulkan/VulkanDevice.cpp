@@ -620,6 +620,10 @@ struct VulkanDevice::Impl {
     struct PendingBuffer {
         VkBuffer buffer; VmaAllocation alloc; u64 frame;
     };
+    struct PendingCmd {
+        VkCommandBuffer cb; u64 frame;
+    };
+    vector<PendingCmd> pendingCmds; // async transfer cbs (see immediateSubmit)
     vector<PendingTexture> pendingTextures;
     vector<PendingBuffer> pendingBuffers;
 
@@ -644,6 +648,11 @@ struct VulkanDevice::Impl {
         std::erase_if(pendingBuffers, [&](const PendingBuffer& b) {
             if (!done(b.frame)) { return false; }
             vmaDestroyBuffer(allocator, b.buffer, b.alloc);
+            return true;
+        });
+        std::erase_if(pendingCmds, [&](const PendingCmd& c) {
+            if (!done(c.frame)) { return false; }
+            vkFreeCommandBuffers(device, transferPool, 1, &c.cb);
             return true;
         });
     }
@@ -729,7 +738,7 @@ struct VulkanDevice::Impl {
     // blocking submit is the right trade; the async transfer queue (a reserved
     // lever, docs/VULKAN.md) can replace it later without touching callers.
     template <typename F>
-    bool immediateSubmit(F&& record);
+    bool immediateSubmit(F&& record, bool wait = true);
 
     VulkanBuffer* findBuffer(BufferHandle handle) {
         auto it = buffers.find(handle.id);
@@ -1510,7 +1519,7 @@ void VulkanCommandBuffer::copyTexture(TextureHandle src, TextureHandle dst) {
 // --- Transfer helpers ----------------------------------------------------------
 
 template <typename F>
-bool VulkanDevice::Impl::immediateSubmit(F&& record) {
+bool VulkanDevice::Impl::immediateSubmit(F&& record, bool wait) {
     VkCommandBufferAllocateInfo alloc {};
     alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     alloc.commandPool = transferPool;
@@ -1529,15 +1538,34 @@ bool VulkanDevice::Impl::immediateSubmit(F&& record) {
     record(cb);
     vkEndCommandBuffer(cb);
 
-    VkFenceCreateInfo fenceInfo {};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    VkFence fence = VK_NULL_HANDLE;
-    vkCreateFence(device, &fenceInfo, nullptr, &fence);
-
     VkSubmitInfo submit {};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &cb;
+
+    if (!wait) {
+        // Async path (buffer uploads): submission ORDER on the single queue
+        // already guarantees this copy executes before any later frame's
+        // submit, so nothing needs to block — the per-upload fence wait was
+        // costing ~1-3 ms on MoltenVK and starved the terrain streamer's
+        // 2 ms budget down to one chunk per frame. The cb (and the caller's
+        // staging, parked in pendingBuffers) is freed once the frame slot
+        // cycles, which happens-after the copy by the same ordering.
+        const bool ok = vkOk(vkQueueSubmit(graphicsQueue, 1, &submit,
+                                           VK_NULL_HANDLE),
+                             "vkQueueSubmit(transfer)");
+        if (ok) {
+            pendingCmds.push_back({ cb, frameCounter });
+        } else {
+            vkFreeCommandBuffers(device, transferPool, 1, &cb);
+        }
+        return ok;
+    }
+
+    VkFenceCreateInfo fenceInfo {};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    VkFence fence = VK_NULL_HANDLE;
+    vkCreateFence(device, &fenceInfo, nullptr, &fence);
     const bool ok = vkOk(vkQueueSubmit(graphicsQueue, 1, &submit, fence),
                          "vkQueueSubmit(transfer)");
     if (ok) {
@@ -2018,13 +2046,15 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
     std::memcpy(mapped, data, size);
     vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
 
-    d.immediateSubmit([&](VkCommandBuffer cb) {
-        VkBufferCopy region {};
-        region.dstOffset = offset;
-        region.size = size;
-        vkCmdCopyBuffer(cb, staging, buffer->buffer, 1, &region);
-    });
-    vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
+    d.immediateSubmit(
+        [&](VkCommandBuffer cb) {
+            VkBufferCopy region {};
+            region.dstOffset = offset;
+            region.size = size;
+            vkCmdCopyBuffer(cb, staging, buffer->buffer, 1, &region);
+        },
+        /*wait=*/false); // queue order covers later frames; staging parked
+    d.pendingBuffers.push_back({ staging, stagingAlloc, d.frameCounter });
 }
 
 // Destroying a resource still referenced by an in-flight command buffer is
