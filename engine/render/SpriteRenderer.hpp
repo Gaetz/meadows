@@ -28,7 +28,12 @@ public:
 
     void begin(const Camera2D& camera, f32 aspect);
     void draw(const Sprite& sprite);
-    // Uploads the frame's instance data and records the draw calls.
+    // Uploads the frame's camera UBO + instance data. Call AFTER the last
+    // draw() and BEFORE the render pass opens: buffer updates inside a
+    // pass fall back to an in-place write on Vulkan, which races the
+    // frame still in flight (the V7e class — docs/VULKAN.md V8a).
+    void upload();
+    // Records the draw calls (upload() must have run this frame).
     void end(rhi::CommandBuffer& cmd);
 
     static constexpr u32 kMaxSprites = 8192;
@@ -65,6 +70,7 @@ private:
 
     vector<Instance> instances;
     vector<Batch> batches;
+    Mat4 pendingViewProj { 1.0f }; // begin() stores, upload() writes
     bool overflowWarned { false };
 };
 

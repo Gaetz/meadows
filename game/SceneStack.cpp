@@ -80,15 +80,18 @@ void SceneStack::render(engine::FrameContext& frame) {
     }
 
     // Sprite pass over every drawn scene (a frame owner's default draw() is a
-    // no-op). Load preserves the owner's backbuffer; a pure-2D stack clears,
-    // exactly as the pre-seam loop did.
-    frame.cmd.beginRenderPass({ .loadOp = frameOwned ? rhi::LoadOp::Load
-                                                     : rhi::LoadOp::Clear,
-                                .clearColor = frame.clearColor });
+    // no-op). Collect + upload BEFORE the pass opens (Vulkan: in-pass buffer
+    // writes race the in-flight frame — SpriteRenderer::upload); Load
+    // preserves the owner's backbuffer; a pure-2D stack clears, exactly as
+    // the pre-seam loop did.
     frame.sprites.begin(frame.camera2d, frame.aspect);
     for (size_t i = first; i < scenes.size(); ++i) {
         scenes[i]->draw(frame.sprites);
     }
+    frame.sprites.upload();
+    frame.cmd.beginRenderPass({ .loadOp = frameOwned ? rhi::LoadOp::Load
+                                                     : rhi::LoadOp::Clear,
+                                .clearColor = frame.clearColor });
     frame.sprites.end(frame.cmd);
     frame.cmd.endRenderPass();
 }

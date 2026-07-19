@@ -465,9 +465,12 @@ réécrit pour l'additif, avec un draw entre : les deux draws auraient rendu
 l'additif. → les deux lots empaquetés bout à bout dans le SSBO, écrit **une
 fois**, et un push constant `uFxBase` décale l'indexation par lot.
 
-**3. `SpriteRenderer::instanceBuffer` — PAS ENCORE CORRIGÉ.** Même motif, un
-`updateBuffer` par batch avec un `drawIndexed` entre. C'est le renderer 2D,
-donc hors chemin V7, mais le bug est réel.
+**3. `SpriteRenderer::instanceBuffer` — CORRIGÉ en deux temps.** Même motif,
+un `updateBuffer` par batch avec un `drawIndexed` entre. (a) `e7c5fcd` :
+upload unique + tranche par OFFSET de vertex buffer (voir la note
+ci-dessous — pas `firstInstance` finalement, l'offset couvre aussi GL 4.1) ;
+(b) V8d : l'upload sorti de la passe (begin/upload/end), sinon il retombait
+sur l'écriture en place et gardait la course inter-frame V7e.
 
 **Le correctif n'est PAS celui de FxRenderer** (correction d'une première
 estimation trop rapide) : les sprites ne *pull* pas depuis un SSBO, ils
@@ -736,7 +739,6 @@ mesure Release (le grief V7b « 25 ms/frame » était du Debug) ;
 depuis une texture bakée par variante — le levier vertex identifié en V8c ;
 décision différée, dev 2026-07-19 ; en attendant, curseurs existants :
 `highDetailRadius` 5, `viewRadius` arbres 12) ;
-`SpriteRenderer::instanceBuffer` (le « 1 reste » V6c, voie `firstInstance`) ;
 pré-chauffe des variantes de pipeline (V7c-3) ; réparer les sous-probes GPU
 imbriquées (mainTerrain/mainVeg/mainGrass lisent 0,01 ms sur Vulkan — à
 faire avant de disséquer le mainPass) + compteurs CPU instances×indices par
@@ -848,3 +850,18 @@ EXISTENT — les casters les utilisent déjà) ; (b) la réflexion en
 low-twin/sans végétation ; (c) densité/distance herbe. Vérifs : scale
 1.0 = chiffres identiques à V8b (52,2 ms fr. 405) ; 0 hazard, 2 warnings
 cosmétiques inchangés.
+
+#### V8d — SpriteRenderer : upload hors passe — FAIT (2026-07-19)
+
+Le « 1 reste » V6c était en fait déjà à moitié réglé le matin même
+(`e7c5fcd` : upload unique + tranche par offset de vertex buffer — GL 4.1
+couvert sans `GL_ARB_base_instance`). Restait la moitié V7e : l'upload se
+faisait DANS la passe sprite (SceneStack/Game ouvraient la passe avant
+`end()`), donc retombait sur l'écriture en place → course inter-frame sur
+`instanceBuffer` ET `cameraUbo`. Découpe begin/upload/end : `begin()` ne
+fait plus que la collecte, `upload()` (nouveau) écrit les deux buffers HORS
+passe via le chemin barriéré V7e, `end()` n'enregistre que les draws. Les
+deux appelants (SceneStack::render, Game::render par défaut) collectent
+puis uploadent AVANT `beginRenderPass`. Le renderer 2D est désormais
+correct sur Vulkan au même titre que le 3D ; vérification visuelle d'une
+scène 2D (CombatArena) : au dev.

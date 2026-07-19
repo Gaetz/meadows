@@ -167,10 +167,23 @@ SpriteRenderer::~SpriteRenderer() {
 }
 
 void SpriteRenderer::begin(const Camera2D& camera, f32 aspect) {
-    const Mat4 viewProj = camera.viewProj(aspect);
-    device.updateBuffer(cameraUbo, &viewProj, sizeof(Mat4));
+    // Pure collection reset — the GPU writes happen in upload(), which the
+    // caller runs OUTSIDE the render pass (see the header note).
+    pendingViewProj = camera.viewProj(aspect);
     instances.clear();
     batches.clear();
+}
+
+void SpriteRenderer::upload() {
+    device.updateBuffer(cameraUbo, &pendingViewProj, sizeof(Mat4));
+    if (!instances.empty()) {
+        // ONE upload for the whole frame; each batch then selects its
+        // slice with a vertex-buffer offset in end(). Uploading per batch
+        // (the pre-V6c shape) only worked because GL executes in order —
+        // on Vulkan every recorded draw would read the LAST batch.
+        device.updateBuffer(instanceBuffer, instances.data(),
+                            instances.size() * sizeof(Instance));
+    }
 }
 
 void SpriteRenderer::draw(const Sprite& sprite) {
@@ -211,14 +224,9 @@ void SpriteRenderer::end(rhi::CommandBuffer& cmd) {
     cmd.setVertexBuffer(0, quadVertices);
     cmd.setIndexBuffer(quadIndices, rhi::IndexFormat::U16);
 
-    // ONE upload for the whole frame, before any draw is recorded; each batch
-    // then selects its slice with a vertex-buffer offset. Uploading per batch
-    // (the previous shape) only worked because GL executes in order — on
-    // Vulkan every recorded draw would read the LAST batch's instances.
-    // The offset also replaces the firstInstance this used to avoid, so
+    // Draws only — the data went up in upload(), outside the pass. The
+    // per-batch vertex-buffer offset replaces firstInstance, so
     // GL_ARB_base_instance stays unnecessary (absent on macOS GL 4.1).
-    device.updateBuffer(instanceBuffer, instances.data(),
-                        instances.size() * sizeof(Instance));
     for (const Batch& batch : batches) {
         cmd.setVertexBuffer(1, instanceBuffer,
                             static_cast<u64>(batch.firstInstance) *
