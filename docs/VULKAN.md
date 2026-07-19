@@ -923,3 +923,23 @@ journée : 87 → 37 ms (~10 → ~27 fps Debug M1). Si le plancher mesh ne
 suffit pas, les imposteurs restent listés — le pipeline 3 niveaux leur
 a préparé le branchement (un 4e niveau quad serait local à draw()).
 
+#### V8g — Mesure Release : GPU-bound confirmé, le mur est la vsync — FAIT (2026-07-19)
+
+Même protocole (75 s, monde streamé), binaire Release (`cmake-build-release`,
+profil CLion créé le matin même) :
+
+- **Timings GPU identiques au Debug** (~37 ms stationnaire, ~43-45 au
+  re-fit, mêmes postes) — logique, le GPU exécute les mêmes shaders. Le
+  grief V7b (« le coût MoltenVK par frame Debug ») est RÉFUTÉ par la
+  mesure : le CPU Debug n'était pas le goulot, la frame est GPU-bound.
+- **FPS réels (horodatages du log, 301 frames/ligne)** : Release
+  ~21,0 fps, Debug ~22,7 — égaux au bruit près, et QUANTIFIÉS par la
+  présentation FIFO (vsync) : une frame GPU de 37 ms rate le créneau de
+  33,3 ms et attend celui de 50 ms (60/3 = 20 fps).
+- **Conséquences** : (a) le prochain palier de fps réel est net — passer
+  le GPU sous 33,3 ms (→ 30 fps vsync) : il manque ~4 ms, le mainPass
+  (18,4) reste le poste ; (b) pour des MESURES non quantifiées, un
+  présent-mode IMMEDIATE optionnel (knob dev) serait utile — brique
+  facultative ; (c) inutile d'attendre de la perf du profil Release côté
+  rendu — il servira au CPU (sim, streaming, bakes AO).
+
