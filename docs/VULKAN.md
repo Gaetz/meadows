@@ -197,7 +197,54 @@ explicites dans le corpus et SPIR-V les lit directement.
 > création des `VkDescriptorSetLayout` en V4. Compiler n'est pas valider :
 > prévoir un remapping (par exemple par offset de plage selon le type de
 > descripteur) au moment de V4.
-### V4 — Pipelines / render passes / bind groups — 🔨 EN COURS
+### V4 — Pipelines / render passes / bind groups — ✅ FAIT (2026-07-19)
+
+**Un triangle s'affiche en Vulkan sur le M1**, ~60 fps, **zéro erreur de
+validation**. C'est la première fois que le chemin graphique complet
+(pipeline → vertex buffer → descripteurs → draw) tourne.
+
+Livré :
+- **Dynamic rendering** : `VkRenderPass`/`VkFramebuffer` supprimés du backend.
+  Les transitions de layout que le render pass faisait implicitement sont
+  devenues des barrières explicites (backbuffer en `beginFrame`/`endFrame`,
+  cibles offscreen en `begin`/`endRenderPass`).
+- **`createPipeline`** : PSO complet (layout de sommets, blend, depth, cull,
+  depthBias, wireframe, topology), créé **paresseusement** au premier
+  `setPipeline` et mis en cache par jeu de formats de cible — `PipelineDesc`
+  ne dit pas sur quoi il dessinera. `createComputePipeline` immédiat.
+- **`createFramebuffer`** : une image view par attache (mip + layer
+  sélectionnables), plus les formats ; aucun objet Vulkan de framebuffer.
+- **`createBindGroup`** : rien à allouer — le bind group EST la liste de
+  writes, poussée via `vkCmdPushDescriptorSetKHR` avec le layout du pipeline
+  courant, en réappliquant les offsets de binding de V4a.
+- **Draws** : `setVertexBuffer`/`setIndexBuffer`, `draw`/`drawIndexed`
+  (`firstInstance` natif), `dispatch`, `memoryBarrier`, viewport/scissor.
+
+**Conventions de repère :**
+- **Y-flip** par **viewport à hauteur négative** — absorbé dans le backend, ni
+  les shaders partagés ni le gameplay n'en savent rien. Le winding étant
+  miroité par ce flip, `frontFace` est **inversé** à la construction du
+  pipeline pour préserver le sens GL de `FrontFace`.
+- **`setFrontFace` = variante de pipeline, pas d'état dynamique** :
+  `vkCmdSetFrontFace` est du cœur Vulkan 1.3 (ou extended_dynamic_state) et on
+  cible 1.2. Le winding entre donc dans la clé du cache de pipelines, ce qui
+  ne coûte rien puisque ce cache existe déjà.
+- ⚠️ **Profondeur 0..1 PAS ENCORE traitée.** GL projette en -1..1, Vulkan
+  attend 0..1. Les matrices de projection viennent du renderer (GLM), pas du
+  backend. À corriger au branchement du vrai renderer (V7) par une correction
+  clip-space centralisée — surtout **pas** `GLM_FORCE_DEPTH_ZERO_TO_ONE`
+  global, qui casserait le backend GL.
+
+**Limite connue — pas de deletion queue.** Détruire une ressource encore
+référencée par un command buffer en vol est indéfini (la validation l'a
+signalé au premier essai) ; OpenGL masquait le problème en différant en
+interne. En attendant une vraie file de destruction (détruire après
+`kFramesInFlight` frames), les `destroy*` **drainent le GPU**
+(`vkDeviceWaitIdle`). Les destructions sont rares — hot reload de shader,
+éviction de texture, redimensionnement — jamais par frame, donc le stall est
+acceptable pour le bring-up.
+
+### V4 (historique) — le remap de bindings
 
 **Fait : le remap de bindings + la réflexion** (le risque laissé ouvert par V3
 est résolu).

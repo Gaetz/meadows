@@ -423,6 +423,51 @@ bool compileToSpv(const str& source, shaderc_shader_kind kind,
     return ok;
 }
 
+// An offscreen target. With dynamic rendering there is no VkFramebuffer: this
+// only owns the per-subresource image views (a FramebufferAttachment selects a
+// mip and a layer) and remembers the formats a pipeline must be built against.
+struct VulkanFramebuffer {
+    vector<VkImageView> colorViews;
+    vector<VkFormat> colorFormats;
+    vector<TextureHandle> colorTextures;
+    VkImageView depthView { VK_NULL_HANDLE };
+    VkFormat depthFormat { VK_FORMAT_UNDEFINED };
+    TextureHandle depthTexture {};
+    VkExtent2D extent {};
+};
+
+// PipelineDesc says nothing about the render target, but a VkPipeline must be
+// built against concrete attachment formats. So the state is kept here and the
+// VkPipeline is created lazily on first use with a given target, then cached.
+struct VulkanPipeline {
+    PipelineDesc desc;
+    bool compute { false };
+    VkDescriptorSetLayout setLayout { VK_NULL_HANDLE };
+    VkPipelineLayout layout { VK_NULL_HANDLE };
+    std::unordered_map<u64, VkPipeline> variants; // key = target formats
+    VkPipeline computePipeline { VK_NULL_HANDLE };
+};
+
+// Push descriptors mean a bind group never owns a VkDescriptorSet: it is just
+// the list of writes, replayed against whatever pipeline layout is bound.
+struct VulkanBindGroup {
+    vector<BindGroupEntry> entries;
+};
+
+// Identifies a render target by its attachment formats, which is exactly what
+// pipeline compatibility depends on under dynamic rendering.
+u64 targetKey(const vector<VkFormat>& colorFormats, VkFormat depthFormat) {
+    u64 key = 1469598103934665603ull; // FNV-1a
+    auto mix = [&key](u64 value) {
+        key = (key ^ value) * 1099511628211ull;
+    };
+    for (VkFormat f : colorFormats) {
+        mix(static_cast<u64>(f));
+    }
+    mix(static_cast<u64>(depthFormat) ^ 0x9e3779b9ull);
+    return key;
+}
+
 class VulkanCommandBuffer;
 
 } // namespace
@@ -449,14 +494,17 @@ struct VulkanDevice::Impl {
     VkExtent2D extent {};
     vector<VkImage> images;
     vector<VkImageView> imageViews;
-    vector<VkFramebuffer> framebuffers;
     // Signalled when the frame targeting this IMAGE is done; present waits on
     // it. Per-image (not per-frame) so a semaphore is never reused while a
     // previous present is still pending on it.
     vector<VkSemaphore> renderFinished;
 
-    VkRenderPass renderPass { VK_NULL_HANDLE };
     VkCommandPool commandPool { VK_NULL_HANDLE };
+
+    // Extension entry points (loaded in create()).
+    PFN_vkCmdBeginRenderingKHR cmdBeginRendering { nullptr };
+    PFN_vkCmdEndRenderingKHR cmdEndRendering { nullptr };
+    PFN_vkCmdPushDescriptorSetKHR cmdPushDescriptorSet { nullptr };
     // Separate transient pool for the blocking upload/readback submits, so
     // staging work never resets a frame's command buffer.
     VkCommandPool transferPool { VK_NULL_HANDLE };
@@ -475,6 +523,28 @@ struct VulkanDevice::Impl {
     std::unordered_map<u32, VulkanTexture> textures;
     std::unordered_map<u32, VkSampler> samplers;
     std::unordered_map<u32, VulkanShader> shaders;
+    std::unordered_map<u32, VulkanFramebuffer> targets;
+    std::unordered_map<u32, VulkanPipeline> pipelines;
+    std::unordered_map<u32, VulkanBindGroup> bindGroups;
+
+    VulkanShader* findShader(ShaderHandle handle) {
+        auto it = shaders.find(handle.id);
+        return it == shaders.end() ? nullptr : &it->second;
+    }
+    VulkanPipeline* findPipeline(PipelineHandle handle) {
+        auto it = pipelines.find(handle.id);
+        return it == pipelines.end() ? nullptr : &it->second;
+    }
+    VulkanFramebuffer* findTarget(FramebufferHandle handle) {
+        auto it = targets.find(handle.id);
+        return it == targets.end() ? nullptr : &it->second;
+    }
+
+    // Builds (or returns) the VkPipeline of `pipeline` for a target described
+    // by its attachment formats.
+    VkPipeline pipelineFor(VulkanPipeline& pipeline,
+                           const vector<VkFormat>& colorFormats,
+                           VkFormat depthFormat, VkFrontFace frontFace);
 
     uptr<VulkanCommandBuffer> cmd;
 
@@ -513,70 +583,424 @@ class VulkanCommandBuffer final : public CommandBuffer {
 public:
     explicit VulkanCommandBuffer(VulkanDevice::Impl& device) : d_ { &device } {}
 
-    void begin(VkCommandBuffer cb, VkRenderPass pass, VkFramebuffer fb,
-               VkExtent2D extent) {
+    void begin(VkCommandBuffer cb, VkImageView swapchainView,
+               VkFormat swapchainFormat, VkExtent2D extent) {
         cb_ = cb;
-        pass_ = pass;
-        framebuffer_ = fb;
-        extent_ = extent;
+        swapchainView_ = swapchainView;
+        swapchainFormat_ = swapchainFormat;
+        swapchainExtent_ = extent;
         inPass_ = false;
+        boundPipeline_ = nullptr;
     }
 
-    void beginRenderPass(const RenderPassDesc& desc) override {
-        if (cb_ == VK_NULL_HANDLE || inPass_) {
-            return;
-        }
-        // V1/V2 target the swapchain only (desc.framebuffer is ignored until
-        // V4 creates real VkFramebuffers for offscreen targets).
-        VkClearValue clear {};
-        clear.color = { { desc.clearColor.r, desc.clearColor.g,
-                          desc.clearColor.b, desc.clearColor.a } };
-
-        VkRenderPassBeginInfo info {};
-        info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        info.renderPass = pass_;
-        info.framebuffer = framebuffer_;
-        info.renderArea.offset = { 0, 0 };
-        info.renderArea.extent = extent_;
-        info.clearValueCount = 1;
-        info.pClearValues = &clear;
-        vkCmdBeginRenderPass(cb_, &info, VK_SUBPASS_CONTENTS_INLINE);
-        inPass_ = true;
-    }
-
-    void endRenderPass() override {
-        if (cb_ != VK_NULL_HANDLE && inPass_) {
-            vkCmdEndRenderPass(cb_);
-            inPass_ = false;
-        }
-    }
+    void beginRenderPass(const RenderPassDesc& desc) override;
+    void endRenderPass() override;
 
     void copyBuffer(BufferHandle src, BufferHandle dst, u64 size, u64 srcOffset,
                     u64 dstOffset) override;
     void copyTexture(TextureHandle src, TextureHandle dst) override;
 
-    // --- Not implemented before V4/V5 ---------------------------------------
-    void setViewport(u32, u32, u32, u32) override {}
-    void setScissor(u32, u32, u32, u32) override {}
-    void clearScissor() override {}
-    void setFrontFace(FrontFace) override {}
-    void setPipeline(PipelineHandle) override {}
-    void setBindGroup(u32, BindGroupHandle) override {}
-    void setVertexBuffer(u32, BufferHandle) override {}
-    void setIndexBuffer(BufferHandle, IndexFormat) override {}
-    void draw(u32, u32, u32) override {}
-    void drawIndexed(u32, u32, u32, u32) override {}
-    void dispatch(u32, u32, u32) override {}
-    void memoryBarrier() override {}
+    void setViewport(u32 x, u32 y, u32 width, u32 height) override;
+    void setScissor(u32 x, u32 y, u32 width, u32 height) override;
+    void clearScissor() override;
+    void setFrontFace(FrontFace frontFace) override;
+    void setPipeline(PipelineHandle pipeline) override;
+    void setBindGroup(u32 index, BindGroupHandle group) override;
+    void setVertexBuffer(u32 slot, BufferHandle buffer) override;
+    void setIndexBuffer(BufferHandle buffer, IndexFormat format) override;
+    void draw(u32 vertexCount, u32 instanceCount, u32 firstVertex) override;
+    void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex,
+                     u32 firstInstance) override;
+    void dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) override;
+    void memoryBarrier() override;
 
 private:
+    // The RHI's viewport origin is bottom-left (the GL convention). Vulkan's
+    // is top-left, so every viewport is submitted with a NEGATIVE height,
+    // which flips clip space back. Doing it here keeps the flip out of the
+    // shared shaders and out of gameplay.
+    void applyViewport();
+
     VulkanDevice::Impl* d_ { nullptr };
     VkCommandBuffer cb_ { VK_NULL_HANDLE };
-    VkRenderPass pass_ { VK_NULL_HANDLE };
-    VkFramebuffer framebuffer_ { VK_NULL_HANDLE };
+
+    // The frame's backbuffer (framebuffer handle 0 targets it).
+    VkImageView swapchainView_ { VK_NULL_HANDLE };
+    VkFormat swapchainFormat_ { VK_FORMAT_UNDEFINED };
+    VkExtent2D swapchainExtent_ {};
+
+    // Target currently being rendered into.
     VkExtent2D extent_ {};
+    vector<VkFormat> colorFormats_;
+    VkFormat depthFormat_ { VK_FORMAT_UNDEFINED };
+    VulkanFramebuffer* target_ { nullptr }; // null = swapchain
     bool inPass_ { false };
+
+    // Dynamic state, re-applied whenever a pipeline is bound.
+    VkViewport viewport_ {};
+    bool scissorSet_ { false };
+    VkRect2D scissor_ {};
+    VkFrontFace frontFace_ { VK_FRONT_FACE_COUNTER_CLOCKWISE };
+    VulkanPipeline* boundPipeline_ { nullptr };
 };
+
+VkAttachmentLoadOp toVkLoadOp(LoadOp op) {
+    switch (op) {
+    case LoadOp::Clear:    return VK_ATTACHMENT_LOAD_OP_CLEAR;
+    case LoadOp::Load:     return VK_ATTACHMENT_LOAD_OP_LOAD;
+    case LoadOp::DontCare: return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    }
+    return VK_ATTACHMENT_LOAD_OP_CLEAR;
+}
+
+void VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
+    if (cb_ == VK_NULL_HANDLE || inPass_) {
+        return;
+    }
+    target_ = desc.framebuffer.id == 0 ? nullptr
+                                       : d_->findTarget(desc.framebuffer);
+    colorFormats_.clear();
+    depthFormat_ = VK_FORMAT_UNDEFINED;
+
+    vector<VkRenderingAttachmentInfo> colorAttachments;
+    VkRenderingAttachmentInfo depthAttachment {};
+    bool hasDepth = false;
+
+    VkClearValue clearColor {};
+    clearColor.color = { { desc.clearColor.r, desc.clearColor.g,
+                           desc.clearColor.b, desc.clearColor.a } };
+
+    if (target_ == nullptr) {
+        // Backbuffer: already moved to COLOR_ATTACHMENT_OPTIMAL by beginFrame.
+        extent_ = swapchainExtent_;
+        colorFormats_.push_back(swapchainFormat_);
+        VkRenderingAttachmentInfo color {};
+        color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        color.imageView = swapchainView_;
+        color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color.loadOp = toVkLoadOp(desc.loadOp);
+        color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color.clearValue = clearColor;
+        colorAttachments.push_back(color);
+    } else {
+        extent_ = target_->extent;
+        colorFormats_ = target_->colorFormats;
+        depthFormat_ = target_->depthFormat;
+        // Offscreen attachments live in SHADER_READ_ONLY between passes.
+        for (size_t i = 0; i < target_->colorViews.size(); ++i) {
+            VulkanTexture* tex = d_->findTexture(target_->colorTextures[i]);
+            if (tex != nullptr) {
+                transitionLayout(cb_, tex->image, tex->aspect, 0,
+                                 tex->mipLevels, tex->arrayLayers, tex->layout,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+                tex->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            }
+            VkRenderingAttachmentInfo color {};
+            color.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            color.imageView = target_->colorViews[i];
+            color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            color.loadOp = toVkLoadOp(desc.loadOp);
+            color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            color.clearValue = clearColor;
+            colorAttachments.push_back(color);
+        }
+        if (target_->depthView != VK_NULL_HANDLE) {
+            VulkanTexture* tex = d_->findTexture(target_->depthTexture);
+            if (tex != nullptr) {
+                transitionLayout(
+                    cb_, tex->image, tex->aspect, 0, tex->mipLevels,
+                    tex->arrayLayers, tex->layout,
+                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+                tex->layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            }
+            depthAttachment.sType =
+                VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+            depthAttachment.imageView = target_->depthView;
+            depthAttachment.imageLayout =
+                VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            depthAttachment.loadOp = toVkLoadOp(desc.depthLoadOp);
+            depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            depthAttachment.clearValue.depthStencil = { desc.clearDepth, 0 };
+            hasDepth = true;
+        }
+    }
+
+    VkRenderingInfo info {};
+    info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    info.renderArea.offset = { 0, 0 };
+    info.renderArea.extent = extent_;
+    info.layerCount = 1;
+    info.colorAttachmentCount = static_cast<u32>(colorAttachments.size());
+    info.pColorAttachments = colorAttachments.data();
+    info.pDepthAttachment = hasDepth ? &depthAttachment : nullptr;
+    d_->cmdBeginRendering(cb_, &info);
+    inPass_ = true;
+
+    // beginRenderPass resets the dynamic state (CommandBuffer contract).
+    boundPipeline_ = nullptr;
+    frontFace_ = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    scissorSet_ = false;
+    setViewport(0, 0, extent_.width, extent_.height);
+    clearScissor();
+}
+
+void VulkanCommandBuffer::endRenderPass() {
+    if (cb_ == VK_NULL_HANDLE || !inPass_) {
+        return;
+    }
+    d_->cmdEndRendering(cb_);
+    inPass_ = false;
+    boundPipeline_ = nullptr;
+
+    // Offscreen attachments are sampled by later passes: hand them back in the
+    // layout the rest of the backend expects to find them in.
+    if (target_ != nullptr) {
+        for (TextureHandle handle : target_->colorTextures) {
+            VulkanTexture* tex = d_->findTexture(handle);
+            if (tex != nullptr) {
+                transitionLayout(cb_, tex->image, tex->aspect, 0,
+                                 tex->mipLevels, tex->arrayLayers, tex->layout,
+                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                tex->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            }
+        }
+        VulkanTexture* depth = d_->findTexture(target_->depthTexture);
+        if (depth != nullptr) {
+            transitionLayout(cb_, depth->image, depth->aspect, 0,
+                             depth->mipLevels, depth->arrayLayers,
+                             depth->layout,
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            depth->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        }
+    }
+    target_ = nullptr;
+}
+
+void VulkanCommandBuffer::applyViewport() {
+    if (cb_ != VK_NULL_HANDLE) {
+        vkCmdSetViewport(cb_, 0, 1, &viewport_);
+    }
+}
+
+void VulkanCommandBuffer::setViewport(u32 x, u32 y, u32 width, u32 height) {
+    // Bottom-left origin in, negative-height Vulkan viewport out.
+    viewport_.x = static_cast<f32>(x);
+    viewport_.y = static_cast<f32>(y + height);
+    viewport_.width = static_cast<f32>(width);
+    viewport_.height = -static_cast<f32>(height);
+    viewport_.minDepth = 0.0f;
+    viewport_.maxDepth = 1.0f;
+    applyViewport();
+}
+
+void VulkanCommandBuffer::setScissor(u32 x, u32 y, u32 width, u32 height) {
+    // Same origin flip as the viewport.
+    const u32 top = extent_.height > (y + height) ? extent_.height - (y + height)
+                                                  : 0u;
+    scissor_.offset = { static_cast<i32>(x), static_cast<i32>(top) };
+    scissor_.extent = { width, height };
+    scissorSet_ = true;
+    if (cb_ != VK_NULL_HANDLE) {
+        vkCmdSetScissor(cb_, 0, 1, &scissor_);
+    }
+}
+
+void VulkanCommandBuffer::clearScissor() {
+    scissor_.offset = { 0, 0 };
+    scissor_.extent = extent_;
+    scissorSet_ = false;
+    if (cb_ != VK_NULL_HANDLE) {
+        vkCmdSetScissor(cb_, 0, 1, &scissor_);
+    }
+}
+
+void VulkanCommandBuffer::setFrontFace(FrontFace frontFace) {
+    // vkCmdSetFrontFace is core only in Vulkan 1.3 (or via
+    // extended_dynamic_state), and this backend targets 1.2 — so winding is
+    // baked into the pipeline and selected through the variant cache instead,
+    // which costs nothing since that cache already exists for target formats.
+    const VkFrontFace wanted = frontFace == FrontFace::Clockwise
+                                   ? VK_FRONT_FACE_CLOCKWISE
+                                   : VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    if (wanted == frontFace_) {
+        return;
+    }
+    frontFace_ = wanted;
+    if (boundPipeline_ != nullptr && !boundPipeline_->compute) {
+        // Re-resolve the bound pipeline against the new winding.
+        VulkanPipeline* pipeline = boundPipeline_;
+        boundPipeline_ = nullptr;
+        const VkPipeline vk =
+            d_->pipelineFor(*pipeline, colorFormats_, depthFormat_,
+                            frontFace_);
+        if (vk != VK_NULL_HANDLE) {
+            vkCmdBindPipeline(cb_, VK_PIPELINE_BIND_POINT_GRAPHICS, vk);
+            boundPipeline_ = pipeline;
+            applyViewport();
+            vkCmdSetScissor(cb_, 0, 1, &scissor_);
+        }
+    }
+}
+
+void VulkanCommandBuffer::setPipeline(PipelineHandle handle) {
+    VulkanPipeline* pipeline = d_->findPipeline(handle);
+    if (cb_ == VK_NULL_HANDLE || pipeline == nullptr) {
+        return;
+    }
+    if (pipeline->compute) {
+        if (pipeline->computePipeline != VK_NULL_HANDLE) {
+            vkCmdBindPipeline(cb_, VK_PIPELINE_BIND_POINT_COMPUTE,
+                              pipeline->computePipeline);
+            boundPipeline_ = pipeline;
+        }
+        return;
+    }
+    // Graphics pipelines are specialized per target format set.
+    const VkPipeline vk =
+        d_->pipelineFor(*pipeline, colorFormats_, depthFormat_, frontFace_);
+    if (vk == VK_NULL_HANDLE) {
+        return;
+    }
+    vkCmdBindPipeline(cb_, VK_PIPELINE_BIND_POINT_GRAPHICS, vk);
+    boundPipeline_ = pipeline;
+    // Dynamic state does not survive a pipeline bind.
+    applyViewport();
+    vkCmdSetScissor(cb_, 0, 1, &scissor_);
+}
+
+void VulkanCommandBuffer::setBindGroup(u32 index, BindGroupHandle group) {
+    auto it = d_->bindGroups.find(group.id);
+    if (cb_ == VK_NULL_HANDLE || it == d_->bindGroups.end() ||
+        boundPipeline_ == nullptr) {
+        return;
+    }
+    const vector<BindGroupEntry>& entries = it->second.entries;
+
+    // Push descriptors: the writes go straight out against the bound
+    // pipeline's layout, so no VkDescriptorSet is ever allocated and there is
+    // no layout to match against (docs/VULKAN.md, V4 design).
+    vector<VkWriteDescriptorSet> writes;
+    vector<VkDescriptorBufferInfo> bufferInfos;
+    vector<VkDescriptorImageInfo> imageInfos;
+    writes.reserve(entries.size());
+    bufferInfos.reserve(entries.size());
+    imageInfos.reserve(entries.size());
+
+    for (const BindGroupEntry& entry : entries) {
+        VkWriteDescriptorSet write {};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.descriptorCount = 1;
+
+        if (entry.buffer.id != 0) {
+            VulkanBuffer* buffer = d_->findBuffer(entry.buffer);
+            if (buffer == nullptr) {
+                continue;
+            }
+            const DescriptorClass klass = entry.storage
+                                              ? DescriptorClass::Storage
+                                              : DescriptorClass::Uniform;
+            bufferInfos.push_back({ buffer->buffer, 0, VK_WHOLE_SIZE });
+            write.dstBinding = entry.binding + bindingOffset(klass);
+            write.descriptorType = toVkDescriptorType(klass);
+            write.pBufferInfo = &bufferInfos.back();
+        } else if (entry.texture.id != 0) {
+            VulkanTexture* tex = d_->findTexture(entry.texture);
+            if (tex == nullptr) {
+                continue;
+            }
+            const DescriptorClass klass = entry.storageImage
+                                              ? DescriptorClass::StorageImage
+                                              : DescriptorClass::Sampler;
+            VkDescriptorImageInfo image {};
+            image.imageView = tex->view;
+            if (klass == DescriptorClass::StorageImage) {
+                image.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            } else {
+                image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                auto sampler = d_->samplers.find(entry.sampler.id);
+                if (sampler != d_->samplers.end()) {
+                    image.sampler = sampler->second;
+                }
+            }
+            imageInfos.push_back(image);
+            write.dstBinding = entry.binding + bindingOffset(klass);
+            write.descriptorType = toVkDescriptorType(klass);
+            write.pImageInfo = &imageInfos.back();
+        } else {
+            continue;
+        }
+        writes.push_back(write);
+    }
+    if (writes.empty()) {
+        return;
+    }
+    d_->cmdPushDescriptorSet(
+        cb_,
+        boundPipeline_->compute ? VK_PIPELINE_BIND_POINT_COMPUTE
+                                : VK_PIPELINE_BIND_POINT_GRAPHICS,
+        boundPipeline_->layout, index, static_cast<u32>(writes.size()),
+        writes.data());
+}
+
+void VulkanCommandBuffer::setVertexBuffer(u32 slot, BufferHandle handle) {
+    VulkanBuffer* buffer = d_->findBuffer(handle);
+    if (cb_ == VK_NULL_HANDLE || buffer == nullptr) {
+        return;
+    }
+    const VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cb_, slot, 1, &buffer->buffer, &offset);
+}
+
+void VulkanCommandBuffer::setIndexBuffer(BufferHandle handle,
+                                         IndexFormat format) {
+    VulkanBuffer* buffer = d_->findBuffer(handle);
+    if (cb_ == VK_NULL_HANDLE || buffer == nullptr) {
+        return;
+    }
+    vkCmdBindIndexBuffer(cb_, buffer->buffer, 0,
+                         format == IndexFormat::U16 ? VK_INDEX_TYPE_UINT16
+                                                    : VK_INDEX_TYPE_UINT32);
+}
+
+void VulkanCommandBuffer::draw(u32 vertexCount, u32 instanceCount,
+                               u32 firstVertex) {
+    if (cb_ != VK_NULL_HANDLE) {
+        vkCmdDraw(cb_, vertexCount, instanceCount, firstVertex, 0);
+    }
+}
+
+void VulkanCommandBuffer::drawIndexed(u32 indexCount, u32 instanceCount,
+                                      u32 firstIndex, u32 firstInstance) {
+    if (cb_ != VK_NULL_HANDLE) {
+        // firstInstance is native here — no GL_ARB_base_instance dance.
+        vkCmdDrawIndexed(cb_, indexCount, instanceCount, firstIndex, 0,
+                         firstInstance);
+    }
+}
+
+void VulkanCommandBuffer::dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) {
+    if (cb_ != VK_NULL_HANDLE) {
+        vkCmdDispatch(cb_, groupsX, groupsY, groupsZ);
+    }
+}
+
+void VulkanCommandBuffer::memoryBarrier() {
+    if (cb_ == VK_NULL_HANDLE) {
+        return;
+    }
+    // Deliberately broad: makes compute writes (SSBOs, storage images) visible
+    // to everything that follows, which is what the RHI contract promises.
+    VkMemoryBarrier barrier {};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT |
+                            VK_ACCESS_UNIFORM_READ_BIT |
+                            VK_ACCESS_INDIRECT_COMMAND_READ_BIT |
+                            VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &barrier, 0,
+                         nullptr, 0, nullptr);
+}
 
 void VulkanCommandBuffer::copyBuffer(BufferHandle src, BufferHandle dst,
                                      u64 size, u64 srcOffset, u64 dstOffset) {
@@ -795,65 +1219,12 @@ bool VulkanDevice::Impl::createSwapchain() {
         }
     }
 
-    // Render pass: one color attachment, cleared on load, left ready to
-    // present. V4 generalizes this to RenderPassDesc's load ops and to
-    // offscreen targets with depth.
-    VkAttachmentDescription color {};
-    color.format = colorFormat;
-    color.samples = VK_SAMPLE_COUNT_1_BIT;
-    color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    VkAttachmentReference colorRef {};
-    colorRef.attachment = 0;
-    colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription subpass {};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorRef;
-
-    // Keep the pass from starting to write before the image is acquired.
-    VkSubpassDependency dep {};
-    dep.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dep.dstSubpass = 0;
-    dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dep.srcAccessMask = 0;
-    dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    VkRenderPassCreateInfo pass {};
-    pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    pass.attachmentCount = 1;
-    pass.pAttachments = &color;
-    pass.subpassCount = 1;
-    pass.pSubpasses = &subpass;
-    pass.dependencyCount = 1;
-    pass.pDependencies = &dep;
-    if (!vkOk(vkCreateRenderPass(device, &pass, nullptr, &renderPass),
-              "vkCreateRenderPass")) {
-        return false;
-    }
-
-    framebuffers.resize(count);
+    // No VkRenderPass and no VkFramebuffer: with dynamic rendering the
+    // attachment, its load/store ops and its clear value are given straight to
+    // vkCmdBeginRendering. The layout transitions the render pass used to
+    // perform implicitly are issued as explicit barriers in beginFrame/endFrame.
     renderFinished.resize(count);
     for (u32 i = 0; i < count; ++i) {
-        VkFramebufferCreateInfo fb {};
-        fb.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        fb.renderPass = renderPass;
-        fb.attachmentCount = 1;
-        fb.pAttachments = &imageViews[i];
-        fb.width = extent.width;
-        fb.height = extent.height;
-        fb.layers = 1;
-        if (!vkOk(vkCreateFramebuffer(device, &fb, nullptr, &framebuffers[i]),
-                  "vkCreateFramebuffer")) {
-            return false;
-        }
         VkSemaphoreCreateInfo sem {};
         sem.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         if (!vkOk(vkCreateSemaphore(device, &sem, nullptr, &renderFinished[i]),
@@ -872,14 +1243,6 @@ void VulkanDevice::Impl::destroySwapchain() {
         vkDestroySemaphore(device, s, nullptr);
     }
     renderFinished.clear();
-    for (VkFramebuffer fb : framebuffers) {
-        vkDestroyFramebuffer(device, fb, nullptr);
-    }
-    framebuffers.clear();
-    if (renderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(device, renderPass, nullptr);
-        renderPass = VK_NULL_HANDLE;
-    }
     for (VkImageView v : imageViews) {
         vkDestroyImageView(device, v, nullptr);
     }
@@ -905,6 +1268,26 @@ VulkanDevice::~VulkanDevice() {
     if (impl->device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(impl->device);
 
+        for (auto& [id, pipeline] : impl->pipelines) {
+            for (auto& [key, variant] : pipeline.variants) {
+                vkDestroyPipeline(impl->device, variant, nullptr);
+            }
+            if (pipeline.computePipeline != VK_NULL_HANDLE) {
+                vkDestroyPipeline(impl->device, pipeline.computePipeline,
+                                  nullptr);
+            }
+            vkDestroyPipelineLayout(impl->device, pipeline.layout, nullptr);
+            vkDestroyDescriptorSetLayout(impl->device, pipeline.setLayout,
+                                         nullptr);
+        }
+        for (auto& [id, target] : impl->targets) {
+            for (VkImageView view : target.colorViews) {
+                vkDestroyImageView(impl->device, view, nullptr);
+            }
+            if (target.depthView != VK_NULL_HANDLE) {
+                vkDestroyImageView(impl->device, target.depthView, nullptr);
+            }
+        }
         for (auto& [id, shader] : impl->shaders) {
             vkDestroyShaderModule(impl->device, shader.vertex, nullptr);
             vkDestroyShaderModule(impl->device, shader.fragment, nullptr);
@@ -979,8 +1362,16 @@ CommandBuffer& VulkanDevice::beginFrame() {
         return *d.cmd;
     }
 
-    d.cmd->begin(d.commandBuffers[d.frame], d.renderPass,
-                 d.framebuffers[d.imageIndex], d.extent);
+    // A render pass used to transition the acquired image implicitly; with
+    // dynamic rendering it is an explicit barrier. UNDEFINED as the source is
+    // correct here — the previous contents are not preserved.
+    transitionLayout(d.commandBuffers[d.frame], d.images[d.imageIndex],
+                     VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1,
+                     VK_IMAGE_LAYOUT_UNDEFINED,
+                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+    d.cmd->begin(d.commandBuffers[d.frame], d.imageViews[d.imageIndex],
+                 d.colorFormat, d.extent);
     d.frameActive = true;
     return *d.cmd;
 }
@@ -995,6 +1386,10 @@ void VulkanDevice::endFrame() {
     d.cmd->endRenderPass();
 
     VkCommandBuffer cb = d.commandBuffers[d.frame];
+    // Presentable layout — again explicit, since no render pass does it.
+    transitionLayout(cb, d.images[d.imageIndex], VK_IMAGE_ASPECT_COLOR_BIT, 0,
+                     1, 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                     VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     if (!vkOk(vkEndCommandBuffer(cb), "vkEndCommandBuffer")) {
         d.frameActive = false;
         return;
@@ -1128,8 +1523,15 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
     vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
 }
 
+// Destroying a resource still referenced by an in-flight command buffer is
+// undefined, and OpenGL hid the problem by deferring internally. Until the
+// backend keeps a deletion queue (destroy after kFramesInFlight frames), the
+// safe move is to drain the GPU first. Destroys are rare — shader hot reload,
+// texture eviction, swapchain resize — never per-frame, so the stall is
+// acceptable for bring-up. Revisit if a profile ever shows it.
 void VulkanDevice::destroyBuffer(BufferHandle handle) {
     Impl& d = *impl;
+    vkDeviceWaitIdle(d.device);
     auto it = d.buffers.find(handle.id);
     if (it == d.buffers.end()) {
         return;
@@ -1305,6 +1707,7 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
 
 void VulkanDevice::destroyTexture(TextureHandle handle) {
     Impl& d = *impl;
+    vkDeviceWaitIdle(d.device);
     auto it = d.textures.find(handle.id);
     if (it == d.textures.end()) {
         return;
@@ -1415,6 +1818,7 @@ SamplerHandle VulkanDevice::createSampler(const SamplerDesc& desc) {
 
 void VulkanDevice::destroySampler(SamplerHandle handle) {
     Impl& d = *impl;
+    vkDeviceWaitIdle(d.device);
     auto it = d.samplers.find(handle.id);
     if (it == d.samplers.end()) {
         return;
@@ -1425,10 +1829,88 @@ void VulkanDevice::destroySampler(SamplerHandle handle) {
 
 // --- Pipelines / bind groups / queries (V3, V4, V6) ---------------------------
 
-FramebufferHandle VulkanDevice::createFramebuffer(const FramebufferDesc&) {
-    return {};
+// --- Render targets -------------------------------------------------------
+
+FramebufferHandle VulkanDevice::createFramebuffer(const FramebufferDesc& desc) {
+    Impl& d = *impl;
+    VulkanFramebuffer target {};
+
+    // A FramebufferAttachment selects one mip of one layer, so each needs its
+    // own view rather than the texture's whole-resource view.
+    auto makeView = [&](const FramebufferAttachment& attachment,
+                        VkImageView& out, VkFormat& format,
+                        u32& width, u32& height) {
+        VulkanTexture* tex = d.findTexture(attachment.texture);
+        if (tex == nullptr) {
+            return false;
+        }
+        VkImageViewCreateInfo info {};
+        info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        info.image = tex->image;
+        info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        info.format = tex->format;
+        info.subresourceRange.aspectMask = tex->aspect;
+        info.subresourceRange.baseMipLevel = attachment.mipLevel;
+        info.subresourceRange.levelCount = 1;
+        info.subresourceRange.baseArrayLayer = attachment.arrayLayer;
+        info.subresourceRange.layerCount = 1;
+        if (!vkOk(vkCreateImageView(d.device, &info, nullptr, &out),
+                  "vkCreateImageView(attachment)")) {
+            return false;
+        }
+        format = tex->format;
+        width = std::max(1u, tex->extent.width >> attachment.mipLevel);
+        height = std::max(1u, tex->extent.height >> attachment.mipLevel);
+        return true;
+    };
+
+    u32 width = 0;
+    u32 height = 0;
+    for (const FramebufferAttachment& attachment : desc.colorAttachments) {
+        VkImageView view = VK_NULL_HANDLE;
+        VkFormat format = VK_FORMAT_UNDEFINED;
+        if (!makeView(attachment, view, format, width, height)) {
+            LOG_ERROR("Vulkan createFramebuffer: bad color attachment");
+            return {};
+        }
+        target.colorViews.push_back(view);
+        target.colorFormats.push_back(format);
+        target.colorTextures.push_back(attachment.texture);
+    }
+    if (desc.depthAttachment.texture.id != 0) {
+        if (!makeView(desc.depthAttachment, target.depthView,
+                      target.depthFormat, width, height)) {
+            LOG_ERROR("Vulkan createFramebuffer: bad depth attachment");
+            return {};
+        }
+        target.depthTexture = desc.depthAttachment.texture;
+    }
+    if (width == 0 || height == 0) {
+        LOG_ERROR("Vulkan createFramebuffer: no attachments");
+        return {};
+    }
+    target.extent = { width, height };
+
+    const u32 id = d.nextId++;
+    d.targets.emplace(id, std::move(target));
+    return { id };
 }
-void VulkanDevice::destroyFramebuffer(FramebufferHandle) {}
+
+void VulkanDevice::destroyFramebuffer(FramebufferHandle handle) {
+    Impl& d = *impl;
+    vkDeviceWaitIdle(d.device);
+    auto it = d.targets.find(handle.id);
+    if (it == d.targets.end()) {
+        return;
+    }
+    for (VkImageView view : it->second.colorViews) {
+        vkDestroyImageView(d.device, view, nullptr);
+    }
+    if (it->second.depthView != VK_NULL_HANDLE) {
+        vkDestroyImageView(d.device, it->second.depthView, nullptr);
+    }
+    d.targets.erase(it);
+}
 
 // ShaderDesc::uniformBlocks / ::samplers are deliberately ignored here: they
 // exist so the GL backend can assign bindings AFTER link (GLSL 4.10 has no
@@ -1523,6 +2005,7 @@ ShaderHandle VulkanDevice::createShader(const ShaderDesc& desc) {
 
 void VulkanDevice::destroyShader(ShaderHandle handle) {
     Impl& d = *impl;
+    vkDeviceWaitIdle(d.device);
     auto it = d.shaders.find(handle.id);
     if (it == d.shaders.end()) {
         return;
@@ -1533,10 +2016,329 @@ void VulkanDevice::destroyShader(ShaderHandle handle) {
     d.shaders.erase(it);
 }
 
-PipelineHandle VulkanDevice::createPipeline(const PipelineDesc&) { return {}; }
-void VulkanDevice::destroyPipeline(PipelineHandle) {}
-PipelineHandle VulkanDevice::createComputePipeline(const ComputePipelineDesc&) {
-    return {};
+// --- Pipelines --------------------------------------------------------------
+
+namespace {
+
+VkPrimitiveTopology toVkTopology(PrimitiveTopology topology) {
+    switch (topology) {
+    case PrimitiveTopology::Triangles:
+        return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    case PrimitiveTopology::TriangleStrip:
+        return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+    case PrimitiveTopology::Lines: return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    }
+    return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+}
+
+VkFormat toVkVertexFormat(VertexFormat format) {
+    switch (format) {
+    case VertexFormat::F32x1: return VK_FORMAT_R32_SFLOAT;
+    case VertexFormat::F32x2: return VK_FORMAT_R32G32_SFLOAT;
+    case VertexFormat::F32x3: return VK_FORMAT_R32G32B32_SFLOAT;
+    case VertexFormat::F32x4: return VK_FORMAT_R32G32B32A32_SFLOAT;
+    }
+    return VK_FORMAT_R32G32B32A32_SFLOAT;
+}
+
+VkCullModeFlags toVkCullMode(CullMode cull) {
+    switch (cull) {
+    case CullMode::None:  return VK_CULL_MODE_NONE;
+    case CullMode::Back:  return VK_CULL_MODE_BACK_BIT;
+    case CullMode::Front: return VK_CULL_MODE_FRONT_BIT;
+    }
+    return VK_CULL_MODE_NONE;
+}
+
+void applyBlend(BlendMode mode, VkPipelineColorBlendAttachmentState& state) {
+    state.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    state.blendEnable = mode == BlendMode::Opaque ? VK_FALSE : VK_TRUE;
+    state.colorBlendOp = VK_BLEND_OP_ADD;
+    state.alphaBlendOp = VK_BLEND_OP_ADD;
+    state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    switch (mode) {
+    case BlendMode::Opaque:
+        break;
+    case BlendMode::Alpha:
+        state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        break;
+    case BlendMode::Additive:
+        state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        break;
+    case BlendMode::PremultipliedAlpha:
+        state.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+        state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        break;
+    }
+}
+
+} // namespace
+
+VkPipeline VulkanDevice::Impl::pipelineFor(VulkanPipeline& pipeline,
+                                           const vector<VkFormat>& colorFormats,
+                                           VkFormat depthFormat,
+                                           VkFrontFace frontFace) {
+    const u64 key = targetKey(colorFormats, depthFormat) ^
+                    (frontFace == VK_FRONT_FACE_CLOCKWISE ? 0x5bf03635ull : 0);
+    auto cached = pipeline.variants.find(key);
+    if (cached != pipeline.variants.end()) {
+        return cached->second;
+    }
+
+    VulkanShader* shader = findShader(pipeline.desc.shader);
+    if (shader == nullptr || shader->vertex == VK_NULL_HANDLE) {
+        LOG_ERROR("Vulkan pipeline: shader has no graphics stages");
+        return VK_NULL_HANDLE;
+    }
+
+    std::array<VkPipelineShaderStageCreateInfo, 2> stages {};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = shader->vertex;
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = shader->fragment;
+    stages[1].pName = "main";
+
+    vector<VkVertexInputBindingDescription> bindings;
+    vector<VkVertexInputAttributeDescription> attributes;
+    for (size_t slot = 0; slot < pipeline.desc.vertexBuffers.size(); ++slot) {
+        const VertexBufferLayout& layout = pipeline.desc.vertexBuffers[slot];
+        VkVertexInputBindingDescription binding {};
+        binding.binding = static_cast<u32>(slot);
+        binding.stride = layout.stride;
+        binding.inputRate = layout.stepMode == VertexStepMode::Instance
+                                ? VK_VERTEX_INPUT_RATE_INSTANCE
+                                : VK_VERTEX_INPUT_RATE_VERTEX;
+        bindings.push_back(binding);
+        for (const VertexAttribute& attr : layout.attributes) {
+            VkVertexInputAttributeDescription a {};
+            a.location = attr.location;
+            a.binding = static_cast<u32>(slot);
+            a.format = toVkVertexFormat(attr.format);
+            a.offset = attr.offset;
+            attributes.push_back(a);
+        }
+    }
+
+    VkPipelineVertexInputStateCreateInfo vertexInput {};
+    vertexInput.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = static_cast<u32>(bindings.size());
+    vertexInput.pVertexBindingDescriptions = bindings.data();
+    vertexInput.vertexAttributeDescriptionCount =
+        static_cast<u32>(attributes.size());
+    vertexInput.pVertexAttributeDescriptions = attributes.data();
+
+    VkPipelineInputAssemblyStateCreateInfo assembly {};
+    assembly.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    assembly.topology = toVkTopology(pipeline.desc.topology);
+
+    VkPipelineViewportStateCreateInfo viewportState {};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo raster {};
+    raster.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    raster.polygonMode = pipeline.desc.wireframe ? VK_POLYGON_MODE_LINE
+                                                 : VK_POLYGON_MODE_FILL;
+    raster.cullMode = toVkCullMode(pipeline.desc.cull);
+    // The negative-height viewport mirrors triangles, so the requested winding
+    // is inverted here to preserve the GL-facing meaning of FrontFace.
+    raster.frontFace = frontFace == VK_FRONT_FACE_COUNTER_CLOCKWISE
+                           ? VK_FRONT_FACE_CLOCKWISE
+                           : VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.lineWidth = 1.0f;
+    if (pipeline.desc.depthBias != 0.0f ||
+        pipeline.desc.depthBiasSlope != 0.0f) {
+        raster.depthBiasEnable = VK_TRUE;
+        raster.depthBiasConstantFactor = pipeline.desc.depthBias;
+        raster.depthBiasSlopeFactor = pipeline.desc.depthBiasSlope;
+    }
+
+    VkPipelineMultisampleStateCreateInfo multisample {};
+    multisample.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil {};
+    depthStencil.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable =
+        pipeline.desc.depth.testEnable ? VK_TRUE : VK_FALSE;
+    depthStencil.depthWriteEnable =
+        pipeline.desc.depth.writeEnable ? VK_TRUE : VK_FALSE;
+    depthStencil.depthCompareOp = toVkCompareOp(pipeline.desc.depth.compare);
+
+    vector<VkPipelineColorBlendAttachmentState> blendStates(
+        std::max<size_t>(1, colorFormats.size()));
+    for (VkPipelineColorBlendAttachmentState& state : blendStates) {
+        applyBlend(pipeline.desc.blend, state);
+    }
+    VkPipelineColorBlendStateCreateInfo blend {};
+    blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blend.attachmentCount = static_cast<u32>(colorFormats.size());
+    blend.pAttachments = blendStates.data();
+
+    const std::array<VkDynamicState, 2> dynamicStates {
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR
+    };
+    VkPipelineDynamicStateCreateInfo dynamic {};
+    dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic.dynamicStateCount = static_cast<u32>(dynamicStates.size());
+    dynamic.pDynamicStates = dynamicStates.data();
+
+    // Dynamic rendering replaces the render pass: the pipeline is told the
+    // attachment formats directly.
+    VkPipelineRenderingCreateInfo rendering {};
+    rendering.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    rendering.colorAttachmentCount = static_cast<u32>(colorFormats.size());
+    rendering.pColorAttachmentFormats = colorFormats.data();
+    rendering.depthAttachmentFormat = depthFormat;
+
+    VkGraphicsPipelineCreateInfo info {};
+    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    info.pNext = &rendering;
+    info.stageCount = 2;
+    info.pStages = stages.data();
+    info.pVertexInputState = &vertexInput;
+    info.pInputAssemblyState = &assembly;
+    info.pViewportState = &viewportState;
+    info.pRasterizationState = &raster;
+    info.pMultisampleState = &multisample;
+    info.pDepthStencilState = &depthStencil;
+    info.pColorBlendState = &blend;
+    info.pDynamicState = &dynamic;
+    info.layout = pipeline.layout;
+
+    VkPipeline vk = VK_NULL_HANDLE;
+    if (!vkOk(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info,
+                                        nullptr, &vk),
+              "vkCreateGraphicsPipelines")) {
+        return VK_NULL_HANDLE;
+    }
+    pipeline.variants.emplace(key, vk);
+    return vk;
+}
+
+// Builds the descriptor set layout + pipeline layout from the shader's
+// reflection. PUSH_DESCRIPTOR_BIT is what lets setBindGroup write through it
+// without ever allocating a VkDescriptorSet.
+bool buildLayouts(VkDevice device, const VulkanShader& shader,
+                  VulkanPipeline& pipeline) {
+    vector<VkDescriptorSetLayoutBinding> bindings;
+    bindings.reserve(shader.resources.size());
+    for (const ShaderResource& resource : shader.resources) {
+        VkDescriptorSetLayoutBinding binding {};
+        binding.binding = resource.binding;
+        binding.descriptorType = toVkDescriptorType(resource.klass);
+        binding.descriptorCount = 1;
+        binding.stageFlags = VK_SHADER_STAGE_ALL;
+        bindings.push_back(binding);
+    }
+
+    VkDescriptorSetLayoutCreateInfo setInfo {};
+    setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    setInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+    setInfo.bindingCount = static_cast<u32>(bindings.size());
+    setInfo.pBindings = bindings.data();
+    if (!vkOk(vkCreateDescriptorSetLayout(device, &setInfo, nullptr,
+                                          &pipeline.setLayout),
+              "vkCreateDescriptorSetLayout")) {
+        return false;
+    }
+
+    VkPipelineLayoutCreateInfo layoutInfo {};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &pipeline.setLayout;
+    return vkOk(vkCreatePipelineLayout(device, &layoutInfo, nullptr,
+                                       &pipeline.layout),
+                "vkCreatePipelineLayout");
+}
+
+PipelineHandle VulkanDevice::createPipeline(const PipelineDesc& desc) {
+    Impl& d = *impl;
+    VulkanShader* shader = d.findShader(desc.shader);
+    if (shader == nullptr || shader->vertex == VK_NULL_HANDLE) {
+        LOG_ERROR("Vulkan createPipeline: invalid or non-graphics shader");
+        return {};
+    }
+    VulkanPipeline pipeline {};
+    pipeline.desc = desc;
+    if (!buildLayouts(d.device, *shader, pipeline)) {
+        return {};
+    }
+    // The VkPipeline itself waits for the first setPipeline, when the target's
+    // attachment formats are known (PipelineDesc does not carry them).
+    const u32 id = d.nextId++;
+    d.pipelines.emplace(id, std::move(pipeline));
+    return { id };
+}
+
+PipelineHandle VulkanDevice::createComputePipeline(
+    const ComputePipelineDesc& desc) {
+    Impl& d = *impl;
+    VulkanShader* shader = d.findShader(desc.shader);
+    if (shader == nullptr || shader->compute == VK_NULL_HANDLE) {
+        LOG_ERROR("Vulkan createComputePipeline: shader has no compute stage");
+        return {};
+    }
+    VulkanPipeline pipeline {};
+    pipeline.compute = true;
+    pipeline.desc.shader = desc.shader;
+    if (!buildLayouts(d.device, *shader, pipeline)) {
+        return {};
+    }
+
+    VkPipelineShaderStageCreateInfo stage {};
+    stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stage.module = shader->compute;
+    stage.pName = "main";
+
+    VkComputePipelineCreateInfo info {};
+    info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    info.stage = stage;
+    info.layout = pipeline.layout;
+    if (!vkOk(vkCreateComputePipelines(d.device, VK_NULL_HANDLE, 1, &info,
+                                       nullptr, &pipeline.computePipeline),
+              "vkCreateComputePipelines")) {
+        vkDestroyPipelineLayout(d.device, pipeline.layout, nullptr);
+        vkDestroyDescriptorSetLayout(d.device, pipeline.setLayout, nullptr);
+        return {};
+    }
+
+    const u32 id = d.nextId++;
+    d.pipelines.emplace(id, std::move(pipeline));
+    return { id };
+}
+
+void VulkanDevice::destroyPipeline(PipelineHandle handle) {
+    Impl& d = *impl;
+    vkDeviceWaitIdle(d.device);
+    auto it = d.pipelines.find(handle.id);
+    if (it == d.pipelines.end()) {
+        return;
+    }
+    for (auto& [key, variant] : it->second.variants) {
+        vkDestroyPipeline(d.device, variant, nullptr);
+    }
+    if (it->second.computePipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(d.device, it->second.computePipeline, nullptr);
+    }
+    vkDestroyPipelineLayout(d.device, it->second.layout, nullptr);
+    vkDestroyDescriptorSetLayout(d.device, it->second.setLayout, nullptr);
+    d.pipelines.erase(it);
 }
 
 FenceHandle VulkanDevice::insertFence() { return {}; }
@@ -1547,10 +2349,18 @@ TimestampHandle VulkanDevice::insertTimestamp() { return {}; }
 bool VulkanDevice::timestampReady(TimestampHandle, u64&) { return false; }
 void VulkanDevice::destroyTimestamp(TimestampHandle) {}
 
-BindGroupHandle VulkanDevice::createBindGroup(const BindGroupDesc&) {
-    return {};
+// Push descriptors mean there is nothing to allocate here: a bind group is the
+// list of writes, replayed against whatever pipeline layout is bound.
+BindGroupHandle VulkanDevice::createBindGroup(const BindGroupDesc& desc) {
+    Impl& d = *impl;
+    const u32 id = d.nextId++;
+    d.bindGroups.emplace(id, VulkanBindGroup { desc.entries });
+    return { id };
 }
-void VulkanDevice::destroyBindGroup(BindGroupHandle) {}
+
+void VulkanDevice::destroyBindGroup(BindGroupHandle handle) {
+    impl->bindGroups.erase(handle.id);
+}
 
 // --- Creation ----------------------------------------------------------------
 
@@ -1686,6 +2496,18 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     if (hasExtension(devExt, "VK_KHR_portability_subset")) {
         deviceExtensions.push_back("VK_KHR_portability_subset");
     }
+    // Both verified present on MoltenVK/M1 (docs/VULKAN.md). Dynamic rendering
+    // removes VkRenderPass/VkFramebuffer entirely; push descriptors let
+    // setBindGroup write through the bound pipeline's layout, which is what
+    // makes the RHI's shader-agnostic BindGroupDesc expressible at all.
+    if (!hasExtension(devExt, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME) ||
+        !hasExtension(devExt, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME)) {
+        LOG_ERROR("Vulkan: device lacks dynamic_rendering and/or "
+                  "push_descriptor — both are required by this backend");
+        return nullptr;
+    }
+    deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
+    deviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
 
     // Only anisotropy is requested, and only if the GPU has it — samplers fall
     // back to isotropic filtering otherwise.
@@ -1706,8 +2528,14 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         queueInfos.push_back(presentQueueInfo);
     }
 
+    VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamicRendering {};
+    dynamicRendering.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;
+    dynamicRendering.dynamicRendering = VK_TRUE;
+
     VkDeviceCreateInfo deviceInfo {};
     deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    deviceInfo.pNext = &dynamicRendering;
     deviceInfo.queueCreateInfoCount = static_cast<u32>(queueInfos.size());
     deviceInfo.pQueueCreateInfos = queueInfos.data();
     deviceInfo.enabledExtensionCount = static_cast<u32>(deviceExtensions.size());
@@ -1719,6 +2547,19 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     }
     vkGetDeviceQueue(d.device, d.graphicsFamily, 0, &d.graphicsQueue);
     vkGetDeviceQueue(d.device, d.presentFamily, 0, &d.presentQueue);
+
+    // Extension entry points are not exported by the loader's static symbols.
+    d.cmdBeginRendering = reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(
+        vkGetDeviceProcAddr(d.device, "vkCmdBeginRenderingKHR"));
+    d.cmdEndRendering = reinterpret_cast<PFN_vkCmdEndRenderingKHR>(
+        vkGetDeviceProcAddr(d.device, "vkCmdEndRenderingKHR"));
+    d.cmdPushDescriptorSet = reinterpret_cast<PFN_vkCmdPushDescriptorSetKHR>(
+        vkGetDeviceProcAddr(d.device, "vkCmdPushDescriptorSetKHR"));
+    if (!d.cmdBeginRendering || !d.cmdEndRendering || !d.cmdPushDescriptorSet) {
+        LOG_ERROR("Vulkan: could not load dynamic-rendering / push-descriptor "
+                  "entry points");
+        return nullptr;
+    }
 
     // --- Allocator ---
     VmaAllocatorCreateInfo allocatorInfo {};

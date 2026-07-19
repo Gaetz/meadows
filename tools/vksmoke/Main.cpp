@@ -236,6 +236,99 @@ void testShaders(rhi::Device& device) {
     LOG_INFO("    {}/{} compute shaders", okCompute, computes.size());
 }
 
+// V4: an actual draw. Exercises pipeline creation (lazily specialized against
+// the swapchain's format), a vertex buffer, and a UBO delivered through push
+// descriptors. A colored triangle on screen is the proof the whole graphics
+// path works; the clear alone never touched any of it.
+struct TriangleDemo {
+    rhi::ShaderHandle shader {};
+    rhi::PipelineHandle pipeline {};
+    rhi::BufferHandle vertices {};
+    rhi::BufferHandle tint {};
+    rhi::BindGroupHandle bindGroup {};
+    bool ready { false };
+
+    void create(rhi::Device& device) {
+        const str vertexSource = R"(#version 460 core
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec3 aColor;
+layout(std140, binding = 0) uniform TintUbo { vec4 uTint; };
+layout(location = 0) out vec3 vColor;
+void main() {
+    vColor = aColor * uTint.rgb;
+    gl_Position = vec4(aPos, 0.0, 1.0);
+})";
+        const str fragmentSource = R"(#version 460 core
+layout(location = 0) in vec3 vColor;
+layout(location = 0) out vec4 fragColor;
+void main() { fragColor = vec4(vColor, 1.0); })";
+
+        shader = device.createShader({ .debugName = "vksmoke.triangle",
+                                       .vertexSource = vertexSource,
+                                       .fragmentSource = fragmentSource });
+        check(shader.id != 0, "createShader (inline triangle GLSL)");
+        if (shader.id == 0) {
+            return;
+        }
+
+        // Deliberately asymmetric so a vertical flip would be obvious: the
+        // apex sits high and off-centre.
+        const f32 vertexData[] = {
+            //  x      y      r     g     b
+            -0.6f, -0.5f, 1.0f, 0.2f, 0.2f,
+             0.6f, -0.5f, 0.2f, 1.0f, 0.3f,
+            -0.1f,  0.7f, 0.3f, 0.4f, 1.0f,
+        };
+        vertices = device.createBuffer(
+            { .usage = rhi::BufferUsage::Vertex, .size = sizeof(vertexData) },
+            vertexData);
+        check(vertices.id != 0, "createBuffer (triangle vertices)");
+
+        const f32 tintData[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+        tint = device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
+                                     .size = sizeof(tintData),
+                                     .dynamic = true },
+                                   tintData);
+        bindGroup = device.createBindGroup({ .entries = { { .binding = 0,
+                                                            .buffer = tint } } });
+        check(bindGroup.id != 0, "createBindGroup (UBO, push descriptor)");
+
+        pipeline = device.createPipeline(
+            { .shader = shader,
+              .vertexBuffers = { { .stride = 5 * sizeof(f32),
+                                   .attributes = {
+                                       { .location = 0,
+                                         .format = rhi::VertexFormat::F32x2,
+                                         .offset = 0 },
+                                       { .location = 1,
+                                         .format = rhi::VertexFormat::F32x3,
+                                         .offset = 2 * sizeof(f32) } } } },
+              .cull = rhi::CullMode::None });
+        check(pipeline.id != 0, "createPipeline (graphics)");
+        ready = shader.id != 0 && vertices.id != 0 && pipeline.id != 0 &&
+                bindGroup.id != 0;
+    }
+
+    void draw(rhi::CommandBuffer& cmd, f32 pulse) {
+        if (!ready) {
+            return;
+        }
+        cmd.setPipeline(pipeline);
+        cmd.setBindGroup(0, bindGroup);
+        cmd.setVertexBuffer(0, vertices);
+        cmd.draw(3);
+        (void)pulse;
+    }
+
+    void destroy(rhi::Device& device) {
+        device.destroyBindGroup(bindGroup);
+        device.destroyBuffer(tint);
+        device.destroyBuffer(vertices);
+        device.destroyPipeline(pipeline);
+        device.destroyShader(shader);
+    }
+};
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -273,6 +366,10 @@ int main(int argc, char** argv) {
     testGpuCopy(*device);
     testTextures(*device);
     testShaders(*device);
+    LOG_INFO("vksmoke: V4 graphics path");
+    TriangleDemo triangle;
+    triangle.create(*device);
+
     LOG_INFO("vksmoke: self-test {} ({} failure(s))",
              failures == 0 ? "PASSED" : "FAILED", failures);
 
@@ -292,11 +389,13 @@ int main(int argc, char** argv) {
         cmd.beginRenderPass({ .clearColor = { 0.10f + 0.35f * pulse,
                                               0.12f + 0.20f * pulse,
                                               0.30f + 0.45f * pulse, 1.0f } });
+        triangle.draw(cmd, pulse);
         cmd.endRenderPass();
         device->endFrame();
         ++frames;
     }
 
+    triangle.destroy(*device);
     LOG_INFO("vksmoke: {} frames in {:.2f}s ({:.1f} fps) — presentation path OK",
              frames, elapsed, elapsed > 0.0 ? frames / elapsed : 0.0);
     return failures == 0 ? 0 : 1;
