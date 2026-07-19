@@ -729,3 +729,49 @@ puis prouvé par l'expérience `kFramesInFlight = 1` (plaques éteintes) :
   59,8 fps. Confirmation visuelle au pano : le dev.
 
 ### V8 — Parité visuelle + perfs (reste du chantier)
+
+Reliquats connus au démarrage du chantier : parité visuelle à l'œil sur M1 ;
+mesure Release (le grief V7b « 25 ms/frame » était du Debug) ;
+`SpriteRenderer::instanceBuffer` (le « 1 reste » V6c, voie `firstInstance`) ;
+pré-chauffe des variantes de pipeline (V7c-3) ; puis post-démo/PC : queue de
+transfert, parité GL 4.6 PC, timeline semaphores, upload ImGui deux phases.
+
+#### V8a — Synchronization validation : câblée, backend purgé — FAIT (2026-07-19)
+
+La leçon V7e industrialisée : la validation standard ne voit AUCUNE course —
+la *synchronization validation* de VVL les voit toutes. Câblage :
+
+- **Opt-in par run** : `MEADOWS_VK_SYNC_VALIDATION=1` chaîne
+  `VkValidationFeaturesEXT` (SYNC) à la création d'instance (Debug + layer
+  présent). Pas un défaut permanent : ce mode coûte plusieurs ms par frame.
+- **Messenger `VK_EXT_debug_utils`** : les messages de validation partent
+  dans spdlog (`[vk-validation]`, ERROR/WARN) au lieu de stdout, comptés, et
+  le teardown loggue le verdict du run en une ligne (« clean run » ou
+  « N error(s), M warning(s) »).
+
+L'audit a trouvé et purgé **trois classes réelles** (aucune n'était visible
+à l'œil sauf indice ; toutes du même genre que V7e) :
+
+1. **WAR sur l'image swapchain acquise** (14×/run vksmoke) : la transition
+   UNDEFINED→COLOR passait par le `transitionLayout` générique, srcStage
+   TOP_OF_PIPE — non chaînée à l'attente du sémaphore d'acquisition
+   (`pWaitDstStageMask` = COLOR_ATTACHMENT_OUTPUT). → barrière dédiée dans
+   `beginFrame`, srcStage = COLOR_ATTACHMENT_OUTPUT (la règle canonique).
+2. **RAW sur les uploads device-local mid-frame** (le streaming terrain) :
+   le submit async V7 (`immediateSubmit(wait=false)`) ne portait AUCUN
+   ordering contre les draws de la frame qui consomment le buffer. → unifié
+   sur `recordHostUpdate` (V7e) : copie enregistrée dans le command buffer
+   de la frame, barrières des deux côtés, staging parqué — même propriété
+   « zéro stall », ordering en plus. Le submit bloquant ne reste que pour
+   l'init/les tools.
+3. **`layoutMasks` trop étroits** (LandscapeScene, 2 formes) : depth =
+   EARLY_FRAGMENT_TESTS seul → la transition de fin de passe CSM raçait le
+   store depth (LATE) ; et les accès attachment n'incluaient pas `*_READ` →
+   un `loadOp LOAD` relisait l'attachement hors du scope de la barrière.
+   → EARLY|LATE et WRITE|READ sur les deux layouts attachment.
+
+**Vérifié** : vksmoke ET LandscapeScene (60 s, boot complet) **0 hazard**
+sous sync validation ; 2 warnings bénins restants (« vertex attribute at
+location 2 not consumed », les casters sur layout mesh complet —
+cosmétique). Workflow futur : tout nouveau chantier RHI se relit avec
+`MEADOWS_VK_SYNC_VALIDATION=1 ./tools/vksmoke` + une passe de scène.

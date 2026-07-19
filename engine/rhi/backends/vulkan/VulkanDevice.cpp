@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <string>
@@ -172,12 +173,20 @@ void layoutMasks(VkImageLayout layout, VkAccessFlags& access,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
         break;
     case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-        access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        // READ too: a loadOp LOAD reads the attachment (V8a sync audit —
+        // the load raced the transition when only WRITE was in scope).
+        access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                 VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
         stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         break;
     case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-        access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        // LATE too: depth writes/stores happen in BOTH fragment-test
+        // stages — EARLY alone let the end-of-pass transition race the
+        // store (V8a sync audit, WAW on the CSM depth). READ for LOAD.
+        access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+        stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         break;
     case VK_IMAGE_LAYOUT_GENERAL:
         access = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
@@ -566,10 +575,37 @@ class VulkanCommandBuffer;
 
 // --- Device state -------------------------------------------------------------
 
+// Validation message tally, filled by the debug-utils callback (V8a). File-
+// scope type so the C callback can name it (Impl is a private nested type).
+struct ValidationCounters {
+    u32 errors { 0 };
+    u32 warnings { 0 };
+};
+
+// Routes validation-layer messages into spdlog (they went to stdout before —
+// invisible in log captures) and counts them, so a run can be judged by two
+// numbers at teardown. Installed only when the validation layer is on.
+VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT /*type*/,
+    const VkDebugUtilsMessengerCallbackDataEXT* data, void* userData) {
+    auto* counters = static_cast<ValidationCounters*>(userData);
+    if ((severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0) {
+        ++counters->errors;
+        LOG_ERROR("[vk-validation] {}", data->pMessage);
+    } else {
+        ++counters->warnings;
+        LOG_WARN("[vk-validation] {}", data->pMessage);
+    }
+    return VK_FALSE;
+}
+
 struct VulkanDevice::Impl {
     platform::Window* window { nullptr };
 
     VkInstance instance { VK_NULL_HANDLE };
+    VkDebugUtilsMessengerEXT debugMessenger { VK_NULL_HANDLE };
+    ValidationCounters validationCounts;
     VkSurfaceKHR surface { VK_NULL_HANDLE };
     VkPhysicalDevice gpu { VK_NULL_HANDLE };
     VkDevice device { VK_NULL_HANDLE };
@@ -1901,6 +1937,27 @@ VulkanDevice::~VulkanDevice() {
         vkDestroyDevice(impl->device, nullptr);
     }
     if (impl->instance != VK_NULL_HANDLE) {
+        if (impl->debugMessenger != VK_NULL_HANDLE) {
+            auto destroyMessenger =
+                reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+                    vkGetInstanceProcAddr(
+                        impl->instance, "vkDestroyDebugUtilsMessengerEXT"));
+            if (destroyMessenger != nullptr) {
+                destroyMessenger(impl->instance, impl->debugMessenger,
+                                 nullptr);
+            }
+            // The run's verdict in two numbers (the V8a audit workflow).
+            if (impl->validationCounts.errors +
+                    impl->validationCounts.warnings >
+                0) {
+                LOG_WARN("Vulkan validation: {} error(s), {} warning(s) "
+                         "this run",
+                         impl->validationCounts.errors,
+                         impl->validationCounts.warnings);
+            } else {
+                LOG_INFO("Vulkan validation: clean run (0 message)");
+            }
+        }
         if (impl->surface != VK_NULL_HANDLE) {
             vkDestroySurfaceKHR(impl->instance, impl->surface, nullptr);
         }
@@ -1946,11 +2003,29 @@ CommandBuffer& VulkanDevice::beginFrame() {
 
     // A render pass used to transition the acquired image implicitly; with
     // dynamic rendering it is an explicit barrier. UNDEFINED as the source is
-    // correct here — the previous contents are not preserved.
-    transitionLayout(d.commandBuffers[d.frame], d.images[d.imageIndex],
-                     VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1,
-                     VK_IMAGE_LAYOUT_UNDEFINED,
-                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    // correct here — the previous contents are not preserved. NOT the generic
+    // transitionLayout: its UNDEFINED source stage is TOP_OF_PIPE, which does
+    // not chain to the acquire-semaphore wait (pWaitDstStageMask =
+    // COLOR_ATTACHMENT_OUTPUT at submit) — the layout write then races the
+    // presentation engine's read (V8a: the one hazard class sync validation
+    // found, WRITE_AFTER_READ vs vkAcquireNextImageKHR, 14×/run in vksmoke).
+    // Matching srcStage chains the barrier after the wait.
+    {
+        VkImageMemoryBarrier barrier {};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = d.images[d.imageIndex];
+        barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        vkCmdPipelineBarrier(d.commandBuffers[d.frame],
+                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0,
+                             0, nullptr, 0, nullptr, 1, &barrier);
+    }
 
     // Recycle this slot's timestamp region: reset is illegal inside a render
     // pass, so it has to happen here, before any beginRenderPass. First,
@@ -2148,10 +2223,20 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
     std::memcpy(mapped, data, size);
     vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
 
-    // Async ONLY while a frame is being recorded: the frame-slot fences are
-    // what let the deletion queue prove the copy retired. Outside a frame
-    // (init, tools) nothing ever waits, so block as before.
-    const bool async = d.frameActive;
+    // While a frame is being recorded, the copy goes into the FRAME command
+    // buffer (recordHostUpdate) — same mechanism as the dynamic-UBO path.
+    // The V7 async submit (immediateSubmit(wait=false)) carried no ordering
+    // against the frame's own draws: sync validation caught the frame
+    // reading vertex buffers still being written by the transfer (V8a,
+    // READ_AFTER_WRITE, 4×/run in vksmoke). In-frame recording keeps the
+    // no-stall property AND the ordering; the staging is parked in the
+    // deletion queue. Outside a frame (init, tools) nothing ever waits,
+    // so block as before.
+    if (d.frameActive && d.cmd && !d.cmd->insidePass() &&
+        d.cmd->recordHostUpdate(staging, buffer->buffer, size, offset)) {
+        d.pendingBuffers.push_back({ staging, stagingAlloc, d.frameCounter });
+        return;
+    }
     d.immediateSubmit(
         [&](VkCommandBuffer cb) {
             VkBufferCopy region {};
@@ -2159,12 +2244,8 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
             region.size = size;
             vkCmdCopyBuffer(cb, staging, buffer->buffer, 1, &region);
         },
-        /*wait=*/!async);
-    if (async) {
-        d.pendingBuffers.push_back({ staging, stagingAlloc, d.frameCounter });
-    } else {
-        vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
-    }
+        /*wait=*/true);
+    vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
 }
 
 // Destroying a resource still referenced by an in-flight command buffer is
@@ -3195,12 +3276,30 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     }
 
     vector<const char*> layers;
+    bool syncValidation = false;
 #ifndef NDEBUG
     if (validationLayerAvailable()) {
         layers.push_back("VK_LAYER_KHRONOS_validation");
         LOG_DEBUG("Vulkan: validation layer enabled");
+        // V8a: synchronization validation, opt-in PER RUN — missing-barrier
+        // races are silent under standard validation (the V7e lesson: the
+        // dynamic-UBO race rendered wrong for days with a clean layer), and
+        // this mode costs several ms per frame, too slow to leave on.
+        syncValidation = std::getenv("MEADOWS_VK_SYNC_VALIDATION") != nullptr;
+        if (syncValidation) {
+            LOG_INFO("Vulkan: SYNCHRONIZATION validation on "
+                     "(MEADOWS_VK_SYNC_VALIDATION) — expect slow frames");
+        }
     }
 #endif
+    // Debug-utils messenger: validation messages into spdlog + counted
+    // (see debugUtilsCallback). Only meaningful when a layer emits them.
+    const bool debugUtils =
+        !layers.empty() &&
+        hasExtension(availableExt, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    if (debugUtils) {
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
 
     VkApplicationInfo app {};
     app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -3215,9 +3314,38 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     instanceInfo.ppEnabledExtensionNames = extensions.data();
     instanceInfo.enabledLayerCount = static_cast<u32>(layers.size());
     instanceInfo.ppEnabledLayerNames = layers.data();
+    const VkValidationFeatureEnableEXT syncEnable =
+        VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;
+    VkValidationFeaturesEXT validationFeatures {};
+    validationFeatures.sType = VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT;
+    validationFeatures.enabledValidationFeatureCount = 1;
+    validationFeatures.pEnabledValidationFeatures = &syncEnable;
+    if (syncValidation) {
+        instanceInfo.pNext = &validationFeatures;
+    }
     if (!vkOk(vkCreateInstance(&instanceInfo, nullptr, &d.instance),
               "vkCreateInstance")) {
         return nullptr;
+    }
+    if (debugUtils) {
+        auto createMessenger =
+            reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+                vkGetInstanceProcAddr(d.instance,
+                                      "vkCreateDebugUtilsMessengerEXT"));
+        if (createMessenger != nullptr) {
+            VkDebugUtilsMessengerCreateInfoEXT msgInfo {};
+            msgInfo.sType =
+                VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+            msgInfo.messageSeverity =
+                VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+            msgInfo.messageType =
+                VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+            msgInfo.pfnUserCallback = debugUtilsCallback;
+            msgInfo.pUserData = &d.validationCounts;
+            createMessenger(d.instance, &msgInfo, nullptr, &d.debugMessenger);
+        }
     }
 
     // --- Surface ---
