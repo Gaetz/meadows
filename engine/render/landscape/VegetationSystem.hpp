@@ -54,6 +54,10 @@ public:
     // the far ring is where the instances are.
     i32 lowDetailRadius { 4 };    // 80-face twins within; ultra beyond
                                   // (dev pick 2026-07-19, visual check OK)
+    // EXPERIMENT (feature/space-colonization-trees): A/B — tree variants
+    // regenerate through generateColonizedTree (Runions skeleton +
+    // SDF-normal cross-plane foliage). Flip via reseedVariantMeshes.
+    bool colonizationTrees { false };
     static constexpr u32 kMaxUploadsPerFrame = 2;
     // Scatter jobs budgeted like uploads (see TerrainSystem — the
     // unbudgeted ring edge was part of the fast-travel stutter).
@@ -75,6 +79,14 @@ public:
     // the current terrain — the sculpt path. Non-resident chunks are left to
     // finish streaming. Keys share the terrain chunk grid (keyOf).
     void invalidateChunks(rhi::Device& device, const vector<u64>& keys);
+
+    // Mesh-only swap (the colonizationTrees A/B): variant meshes rebuild
+    // with the current seed, chunks and instance buffers stay resident
+    // (instances reference variants by index — nothing to re-scatter).
+    void reseedVariantMeshes(rhi::Device& device) {
+        destroyVariantMeshes(device);
+        createVariantMeshes(device, meshSeed);
+    }
 
     // Replaces one variant's mesh with an authored one (brick 23: glTF
     // rock). The CPU copy is kept so regenerate() re-uploads it after a
@@ -188,6 +200,7 @@ private:
 
     // The shared ring mechanics (audit U3-1) live in ChunkStreamer.
     ChunkStreamer<Chunk, VariantBuckets> streamer;
+    u32 meshSeed { 0 }; // last create/regenerate seed (reseedVariantMeshes)
     u32 instances { 0 };
     u32 lastDrawn { 0 };
     u32 frameIndices { 0 };       // reset in update(), summed by draw*()

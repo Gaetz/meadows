@@ -179,6 +179,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
 void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                               core::JobSystem& jobSystem, u32 terrainSeed) {
     streamer.create(jobSystem);
+    meshSeed = terrainSeed;
     createVariantMeshes(device, terrainSeed);
     shaders.load(kTreeShader, { { "FrameUbo", 0 } },
                  { { "uShadowMap", 1 } });
@@ -209,13 +210,17 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
         }
         const u32 seed = hashU32(terrainSeed) + i * 977u;
         if (i < kFirstRock) {
-            uploadVariantMesh(device, i, baked(generateTree(seed, 2), 0.6f));
-            uploadLowDetailMesh(device, i,
-                                baked(generateTree(seed, 1), 0.6f));
+            // EXPERIMENT A/B (feature/space-colonization-trees): the
+            // Runions/SDF-card generator swaps in for all three levels.
+            const auto tree = [&](u32 lod) {
+                return colonizationTrees ? generateColonizedTree(seed, lod)
+                                         : generateTree(seed, lod);
+            };
+            uploadVariantMesh(device, i, baked(tree(2), 0.6f));
+            uploadLowDetailMesh(device, i, baked(tree(1), 0.6f));
             // V8f: bare-icosahedron lobes (~150 tris/tree) for the far
             // ring — same seed, same composition, facets invisible there.
-            uploadUltraDetailMesh(device, i,
-                                  baked(generateTree(seed, 0), 0.6f));
+            uploadUltraDetailMesh(device, i, baked(tree(0), 0.6f));
         } else if (i < kFirstBush) {
             uploadVariantMesh(device, i, baked(generateRock(seed), 0.5f));
         } else {
@@ -297,6 +302,7 @@ void VegetationSystem::destroy(rhi::Device& device) {
 void VegetationSystem::regenerate(rhi::Device& device, u32 terrainSeed) {
     streamer.invalidateAll([](Chunk&) {});
     instances = 0;
+    meshSeed = terrainSeed;
     destroyVariantMeshes(device);
     createVariantMeshes(device, terrainSeed);
 }

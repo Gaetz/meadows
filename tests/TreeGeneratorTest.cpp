@@ -64,3 +64,42 @@ TEST_CASE("generated trees are well-formed solid-canopy meshes (brick 27)") {
         CHECK(canopyVertices > tree.vertices.size() / 2);
     }
 }
+
+// EXPERIMENT (feature/space-colonization-trees): the Runions/SDF-card
+// generator honors the same contracts as generateTree — determinism per
+// seed, well-formed mesh, LOD levels sharing one seed, unit SDF normals
+// on the foliage cards, uv in range.
+TEST_CASE("same seed generates a bit-identical colonized tree") {
+    for (u32 seed : { 3u, 977u, 424242u }) {
+        CHECK(sameMesh(render::generateColonizedTree(seed),
+                       render::generateColonizedTree(seed)));
+    }
+}
+
+TEST_CASE("colonized trees are well-formed at every detail level") {
+    for (u32 seed : { 3u, 977u, 424242u }) {
+        for (u32 detail : { 0u, 1u, 2u }) {
+            const MeshData tree =
+                render::generateColonizedTree(seed, detail);
+            checkWellFormed(tree);
+            for (const render::MeshVertex& vertex : tree.vertices) {
+                CHECK(glm::length(vertex.normal) ==
+                      doctest::Approx(1.0f).epsilon(0.01));
+                CHECK(vertex.uv.x >= 0.0f);
+                CHECK(vertex.uv.x <= 1.0f);
+                CHECK(vertex.uv.y >= 0.0f);
+                CHECK(vertex.uv.y <= 1.0f);
+            }
+        }
+        // Coarser levels never carry MORE geometry.
+        CHECK(render::generateColonizedTree(seed, 0).indices.size() <=
+              render::generateColonizedTree(seed, 1).indices.size());
+        CHECK(render::generateColonizedTree(seed, 1).indices.size() <=
+              render::generateColonizedTree(seed, 2).indices.size());
+    }
+}
+
+TEST_CASE("different seeds generate different colonized trees") {
+    CHECK(!sameMesh(render::generateColonizedTree(3u),
+                    render::generateColonizedTree(4u)));
+}

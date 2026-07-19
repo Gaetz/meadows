@@ -205,6 +205,9 @@ private:
     vector<render::RcLight> rcLights;  // reused to avoid re-allocations
     vector<render::VegetationSystem::GiProp> vegGiProps; // forests -> GI
     bool regenerateRequested { false };
+    // EXPERIMENT (feature/space-colonization-trees): A/B checkbox flips
+    // this; render() swaps the variant meshes at its safe point.
+    bool reseedVegetation { false };
     // Grass panel: a scatter knob moved — grass-only re-scatter next frame.
     bool grassRescatterRequested { false };
     bool wireframeUi { false };

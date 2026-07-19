@@ -1045,6 +1045,12 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         vegetation.regenerate(frame.device, terrain.params.seed);
         occlusion.invalidate();
     }
+    // EXPERIMENT A/B (feature/space-colonization-trees): mesh-only swap at
+    // the safe point — instance buffers and scatter stay resident.
+    if (reseedVegetation) {
+        reseedVegetation = false;
+        vegetation.reseedVariantMeshes(frame.device);
+    }
     // Grass panel: a scatter knob moved — re-scatter the meadow only.
     if (grassRescatterRequested) {
         grassRescatterRequested = false;
@@ -1925,6 +1931,13 @@ void LandscapeRenderer::drawTerrainPanel() {
         // V8f: 80-face twins within; 20-face ultra beyond.
         ImGui::SliderInt("Veg low-detail radius",
                          &vegetation.lowDetailRadius, 2, 12);
+        // EXPERIMENT (feature/space-colonization-trees): Runions skeleton
+        // + SDF-normal cross-plane foliage vs the solid-lobe trees. The
+        // swap re-bakes AO for the new meshes (disk-cached after once).
+        if (ImGui::Checkbox("Space-colonization trees (A/B)",
+                            &vegetation.colonizationTrees)) {
+            reseedVegetation = true; // applied at the render()-top safe point
+        }
     }
     if (ImGui::CollapsingHeader("Culling & debug")) {
         ImGui::Checkbox("Occlusion culling (A/B)", &occlusionUi);

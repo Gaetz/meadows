@@ -25,6 +25,19 @@ namespace render {
 // only the lobe tessellation changes.
 MeshData generateTree(u32 seed, u32 lobeSubdivisions = 2);
 
+// EXPERIMENT (feature/space-colonization-trees): alternative tree —
+// skeleton grown by the Runions et al. 2007 space colonization algorithm
+// (attraction points in a crown envelope, iterative growth, pipe-model
+// radii), foliage as CROSS-PLANE clusters scattered inside an SDF built
+// from smooth-merged metaballs at the branch tips (radius weighted by
+// branch order so deep twigs don't inflate the volume). The card normals
+// are the SDF GRADIENT — the canopy shades as one smooth volume (the
+// Genshin/BotW trick, this time on cards instead of solid lobes).
+// `detail` mirrors the LOD contract: 2 near, 1 mid, 0 far (tube sides
+// and cluster count scale; skeleton and silhouette are seed-stable
+// across levels). Deterministic per seed, worker-safe.
+MeshData generateColonizedTree(u32 seed, u32 detail = 2);
+
 // Squashed craggy boulder, meant to be sunk slightly into the ground.
 MeshData generateRock(u32 seed);
 
