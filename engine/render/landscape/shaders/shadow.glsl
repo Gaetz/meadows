@@ -33,7 +33,8 @@ float shadowFactor(vec3 worldPos, vec3 normal) {
     vec3 offsetPos = worldPos + normal * (texelWorld * 1.5);
 
     vec4 lightClip = uSunViewProj[cascade] * vec4(offsetPos, 1.0);
-    vec3 proj = lightClip.xyz / lightClip.w * 0.5 + 0.5;
+    vec3 proj = lightClip.xyz / lightClip.w;
+    proj.xy = proj.xy * 0.5 + 0.5; // 0..1 clip: only xy needs NDC->UV
     if (proj.z >= 1.0) {
         return 1.0;
     }

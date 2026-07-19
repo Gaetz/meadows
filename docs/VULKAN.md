@@ -229,11 +229,10 @@ Livré :
   `vkCmdSetFrontFace` est du cœur Vulkan 1.3 (ou extended_dynamic_state) et on
   cible 1.2. Le winding entre donc dans la clé du cache de pipelines, ce qui
   ne coûte rien puisque ce cache existe déjà.
-- ⚠️ **Profondeur 0..1 PAS ENCORE traitée.** GL projette en -1..1, Vulkan
-  attend 0..1. Les matrices de projection viennent du renderer (GLM), pas du
-  backend. À corriger au branchement du vrai renderer (V7) par une correction
-  clip-space centralisée — surtout **pas** `GLM_FORCE_DEPTH_ZERO_TO_ONE`
-  global, qui casserait le backend GL.
+- **Profondeur 0..1 : traitée en V6e** — et par le mécanisme que cette note
+  déconseillait. `GLM_FORCE_DEPTH_ZERO_TO_ONE` global « casserait GL » *sans
+  clip control* ; **avec** `glClipControl(GL_ZERO_TO_ONE)` (GL 4.5+) il ne
+  casse rien : GL 4.6 adopte la convention Vulkan. Voir V6e.
 
 **Limite connue — pas de deletion queue.** Détruire une ressource encore
 référencée par un command buffer en vol est indéfini (la validation l'a
@@ -517,5 +516,46 @@ GL 4.1 reste le low-spec « jeu seul ».
 GL 4.1 avec le warning et 12 s de frames sans crash ; headless 516/516. La
 parité GL 4.6 (où le shader 460 compile normalement) reste à confirmer
 visuellement sur PC, comme le reste du chantier.
+
+#### V6e — Profondeur 0..1 partout — FAIT
+
+**Le mécanisme : UNE convention, pas un fixup par backend.**
+`GLM_FORCE_DEPTH_ZERO_TO_ONE` est défini **globalement** (racine du CMake —
+la macro change du code inline glm, donc chaque TU doit être d'accord : ODR) ;
+le backend GL 4.6 appelle `glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE)` à
+l'init. Vulkan est natif 0..1 ; GL 4.6 est *converti* ; GL 4.1 (pas de clip
+control) n'exécute jamais le 3D (shaders 460) et ses pipelines 2D n'ont aucun
+état depth (vérifié). L'alternative — matrice de correction côté Vulkan —
+aurait laissé deux conventions vivantes : chaque reconstruction de profondeur
+dans les shaders aurait exigé un `#ifdef VULKAN`, et chaque futur site de
+projection un branchement. Révision assumée de la note V4 ci-dessus (le
+« pas de GLM_FORCE » était vrai sans clip control, faux avec). Bonus align
+avec la cible « Vulkan renderer final » : le reverse-Z (précision depth, un
+prérequis GPU-driven) devient un switch au lieu d'une migration.
+
+**Les sites -1..1 corrigés** (l'hypothèse était disséminée, pas centralisée) :
+- `worldFromDepth` ×3 (water, contactshadow, volumetric) : `depth*2-1` → `depth`.
+- `shadow.glsl` / `locallights.glsl` / `volumetric.frag` : le remap `*0.5+0.5`
+  ne s'applique plus qu'à **xy** (UV) ; z est déjà la profondeur fenêtre.
+- `chunk_cull.comp` (Hi-Z) et `rain.vert` (occlusion pluie) : `ndc.z` direct.
+- `rc_debug.frag` : near à `0.0` (au lieu de -1).
+- `Frustum::fromViewProj` : plan near = `r2` seul (0 ≤ z_clip), plus `r3+r2`.
+- **`obliqueProjection` re-dérivée en ZO** et sortie dans
+  `engine/render/Projection.hpp` (header pur math) : sous 0..1 la nouvelle
+  ligne z est directement *proportionnelle au plan* (z_clip = 0 sur le plan) —
+  plus simple que la variante -1..1 (`c*2`, `+1`). Sites épargnés d'office :
+  sky (`z=w` → far = 1 dans les deux conventions), godrays (`step(0.99995,d)` —
+  la profondeur *fenêtre* est [0,1] quelle que soit la convention NDC), et
+  toutes les conversions `*2-1` d'UV.
+
+**Preuve headless — rien de tout ça n'est visible à l'œil sur M1.** Trois
+tests ajoutés (`FrustumTest.cpp`) : glm projette near→0/far→1 (échoue si la
+macro saute), le plan near du frustum cull e derrière l'œil (l'extraction
+-1..1 ne l'aurait PAS cullé — le test distingue les deux), et l'oblique ZO
+(z_ndc=0 exactement sur le plan, >0 au-dessus, <0 dessous, xy/w intacts).
+**519/519.** vksmoke : 0 erreur de validation. `true-adventurer` GL 4.1 : OK.
+Les shaders touchés + leurs consommateurs (mesh/terrain/skinned.frag, includes
+expansés) compilent sous les deux sémantiques. Parité visuelle GL 4.6 sur PC :
+toujours le même caveat de chantier.
 
 ### V7 — Bring-up LandscapeScene sur M1 + parité GL46 — À FAIRE

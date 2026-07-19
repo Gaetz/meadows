@@ -48,7 +48,7 @@ void main() {
         all(lessThan(occUv, vec2(1.0)))) {
         float coverDepth = texture(uRainOcclusion, occUv).r;
         // Ortho: ndc z of the streak vs the first blocker from above.
-        if (occ.z * 0.5 + 0.5 > coverDepth + 0.002) {
+        if (occ.z > coverDepth + 0.002) { // 0..1: ortho ndc z IS depth
             gl_Position = vec4(0.0, 0.0, 2.0, 1.0); // clipped away
             vAlpha = 0.0;
             return;

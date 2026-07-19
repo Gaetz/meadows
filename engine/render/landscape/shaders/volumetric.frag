@@ -14,7 +14,8 @@ layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
 
 vec3 worldFromDepth(vec2 uv, float depth) {
-    vec4 ndc = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    // 0..1 clip: the stored depth IS ndc z (no *2-1 remap).
+    vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
     vec4 world = uInvViewProj * ndc;
     return world.xyz / world.w;
 }
@@ -30,7 +31,8 @@ float shaftShadow(vec3 p) {
     }
     int cascade = d < uCascadeSplits.x ? 0 : d < uCascadeSplits.y ? 1 : 2;
     vec4 lightClip = uSunViewProj[cascade] * vec4(p, 1.0);
-    vec3 proj = lightClip.xyz / lightClip.w * 0.5 + 0.5;
+    vec3 proj = lightClip.xyz / lightClip.w;
+    proj.xy = proj.xy * 0.5 + 0.5; // 0..1 clip: only xy needs NDC->UV
     if (proj.z >= 1.0 || any(lessThan(proj.xy, vec2(0.0))) ||
         any(greaterThan(proj.xy, vec2(1.0)))) {
         return 1.0;

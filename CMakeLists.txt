@@ -5,6 +5,13 @@ project(true-adventurer LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Depth 0..1 on EVERY backend (chantier VULKAN, V7): glm emits 0..1 clip z —
+# native for Vulkan, remapped on GL 4.6 by glClipControl (GlDevice46 ctor).
+# Global on purpose: the macro changes inline glm code, so every TU must
+# agree (ODR). GL 4.1 has no glClipControl but never runs the 3D renderer
+# (460 shaders) and its 2D pipelines carry no depth state.
+add_compile_definitions(GLM_FORCE_DEPTH_ZERO_TO_ONE)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Dependencies are pinned here and fetched at configure time, identically on

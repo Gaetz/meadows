@@ -63,7 +63,8 @@ vec3 localLights(vec3 worldPos, vec3 n) {
                 0.05) {
             vec4 lc = uKeyShadowViewProj * vec4(worldPos, 1.0);
             if (lc.w > 0.0) {
-                vec3 proj = lc.xyz / lc.w * 0.5 + 0.5;
+                vec3 proj = lc.xyz / lc.w;
+                proj.xy = proj.xy * 0.5 + 0.5; // 0..1: xy only
                 if (proj.z < 1.0 &&
                     all(greaterThan(proj.xy, vec2(0.0))) &&
                     all(lessThan(proj.xy, vec2(1.0)))) {

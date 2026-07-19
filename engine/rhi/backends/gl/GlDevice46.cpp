@@ -24,6 +24,12 @@ GlDevice46::GlDevice46(uptr<platform::GlContext> context,
               .computeShaders = true,   // glDispatchCompute (GL 4.3+)
               .timerQueries = true,     // GL_TIMESTAMP queries (GL 3.3+)
               .volumeTextures = true }; // GL_TEXTURE_3D (GI, chantier RC)
+    // Depth 0..1 (chantier VULKAN): GLM_FORCE_DEPTH_ZERO_TO_ONE is global,
+    // so projections emit 0..1 clip z; this remaps GL's NDC->window transform
+    // to match (GL 4.5+). ONE convention across GL 4.6 and Vulkan — shaders
+    // reconstruct depth identically on both, and reverse-Z stays one switch
+    // away. Y stays lower-left (the RHI's viewport convention).
+    glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
 }
 
 namespace {

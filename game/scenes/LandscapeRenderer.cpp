@@ -12,6 +12,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
 #include "engine/render/MeshVertexLayout.hpp"
+#include "engine/render/Projection.hpp"
 #include "engine/render/landscape/FrameUniforms.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
@@ -47,23 +48,6 @@ struct LightsUniforms {
     // a point light.
     Vec4 directionAngle[LandscapeRenderer::kMaxLights] {};
 };
-
-// Lengyel's oblique near plane: bends the projection's near plane onto an
-// arbitrary view-space plane, so the mirrored render clips everything below
-// the water for free (no user clip distance in the shaders).
-Mat4 obliqueProjection(Mat4 proj, const Vec4& clipPlaneView) {
-    Vec4 q;
-    q.x = (glm::sign(clipPlaneView.x) + proj[2][0]) / proj[0][0];
-    q.y = (glm::sign(clipPlaneView.y) + proj[2][1]) / proj[1][1];
-    q.z = -1.0f;
-    q.w = (1.0f + proj[2][2]) / proj[3][2];
-    const Vec4 c = clipPlaneView * (2.0f / glm::dot(clipPlaneView, q));
-    proj[0][2] = c.x;
-    proj[1][2] = c.y;
-    proj[2][2] = c.z + 1.0f;
-    proj[3][2] = c.w;
-    return proj;
-}
 
 } // namespace
 
@@ -1558,7 +1542,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         const Vec4 planeView =
             glm::transpose(glm::inverse(reflectedView)) * planeWorld;
         const Mat4 reflectedProj =
-            obliqueProjection(camera.proj(frame.aspect), planeView);
+            render::obliqueProjection(camera.proj(frame.aspect), planeView);
         const Mat4 reflectedViewProj = reflectedProj * reflectedView;
         // Cull with the NON-oblique projection: Lengyel's trick corrupts
         // the far plane, and the regular frustum is a superset (safe).

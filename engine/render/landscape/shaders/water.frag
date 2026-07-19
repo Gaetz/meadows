@@ -18,7 +18,8 @@ layout(location = 0) in vec3 vWorldPos;
 layout(location = 0) out vec4 fragColor;
 
 vec3 worldFromDepth(vec2 uv, float depth) {
-    vec4 ndc = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    // 0..1 clip: the stored depth IS ndc z (no *2-1 remap).
+    vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
     vec4 world = uInvViewProj * ndc;
     return world.xyz / world.w;
 }

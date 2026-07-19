@@ -42,7 +42,7 @@ void main() {
     const float span = res * info.w;
 
     // Camera ray through this pixel (the god-ray/volumetric pattern).
-    vec4 nearW = uInvViewProj * vec4(vUv * 2.0 - 1.0, -1.0, 1.0);
+    vec4 nearW = uInvViewProj * vec4(vUv * 2.0 - 1.0, 0.0, 1.0); // 0..1 near
     vec4 farW = uInvViewProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
     vec3 origin = nearW.xyz / nearW.w;
     vec3 dir = normalize(farW.xyz / farW.w - origin);
