@@ -654,4 +654,33 @@ le GL 4.1 fallback n'est plus atteignable que si Vulkan manque.
   storage doit viser exactement un mip — c'est la règle Vulkan que GL rendait
   implicite.
 
+#### V7c — VkPipelineCache persisté + revue de structure (2026-07-19)
+
+**Cache de pipelines sur disque** (`vulkan-pipeline-cache.bin`, à côté du
+binaire) : MoltenVK compile le shader Metal au PREMIER usage d'un pipeline
+(10-100 ms), et les variantes étant créées paresseusement par jeu de formats
+de cible, un panoramique caméra rapide pendant les premières minutes traverse
+des combinaisons jamais vues — à-coups qui « guérissent » une fois tout
+compilé (le symptôme « surface sombre 1-2 min » du test dev). Le cache déplace
+ce coût au premier lancement. L'en-tête du blob est validé par Vulkan
+(UUID driver/device) : fichier périmé = ignoré.
+
+**Revue de structure — améliorations classées (V8+)** :
+1. FAIT : cache de pipelines persisté (ci-dessus).
+2. FAIT : uploads async in-frame (V7, `immediateSubmit(wait=false)`).
+3. **Pré-chauffe des variantes** au chargement (compiler les paires
+   pipeline×formats connues pendant l'écran de titre) — supprime même le
+   coût du premier lancement.
+4. **Queue de transfert dédiée** (la plupart des GPU discrets en ont une ;
+   M1 n'en a qu'une famille) : uploads en vrai parallèle + ownership
+   transfer — à faire quand le PC discret redevient la cible active.
+5. **Enregistrement parallèle des command buffers** (secondaires ou
+   multi-primaires) : prématuré — le grief V8 est le coût MoltenVK par
+   frame Debug, pas la saturation d'un thread d'enregistrement.
+6. **Timeline semaphores** (cœur 1.2) pour remplacer le couple
+   fences/sémaphores binaires — simplification, pas un gain de perf.
+7. Le fichier `VulkanDevice.cpp` (~3400 lignes) reste UN TU par choix
+   (VMA_IMPLEMENTATION, types partagés) ; à découper seulement si un
+   second backend (PC) le rend pénible.
+
 ### V8 — Parité visuelle + perfs (reste du chantier)

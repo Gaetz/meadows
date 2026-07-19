@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <unordered_map>
 
@@ -666,6 +667,15 @@ struct VulkanDevice::Impl {
     // every sampler*Shadow binding (linear + LESS_OR_EQUAL: matches the
     // ShadowMapper's and the key light's PCF samplers).
     VkSampler pcfSampler { VK_NULL_HANDLE };
+    // Disk-persisted pipeline cache: MoltenVK compiles the Metal shader at
+    // FIRST pipeline use (10-100 ms stalls). Variants are created lazily per
+    // target-format set, so a fast camera pan during the first minutes walks
+    // through never-seen combinations — visible hitches that self-heal once
+    // everything compiled. Persisting the cache moves that cost to the first
+    // run only.
+    VkPipelineCache pipelineCache { VK_NULL_HANDLE };
+    static constexpr const char* kPipelineCacheFile =
+        "vulkan-pipeline-cache.bin";
     // GL keeps SOMETHING bound on every unit; these stand in whenever a
     // group entry cannot legally be pushed (declared-dim mismatch, texture
     // busy as an attachment, or destroyed) so no descriptor stays unset.
@@ -1783,6 +1793,19 @@ VulkanDevice::~VulkanDevice() {
             vkDestroyShaderModule(impl->device, shader.fragment, nullptr);
             vkDestroyShaderModule(impl->device, shader.compute, nullptr);
         }
+        if (impl->pipelineCache != VK_NULL_HANDLE) {
+            size_t size = 0;
+            vkGetPipelineCacheData(impl->device, impl->pipelineCache, &size,
+                                   nullptr);
+            std::string blob(size, '\0');
+            if (size > 0 &&
+                vkGetPipelineCacheData(impl->device, impl->pipelineCache,
+                                       &size, blob.data()) == VK_SUCCESS) {
+                std::ofstream out(Impl::kPipelineCacheFile, std::ios::binary);
+                out.write(blob.data(), static_cast<std::streamsize>(size));
+            }
+            vkDestroyPipelineCache(impl->device, impl->pipelineCache, nullptr);
+        }
         impl->flushPendingFrees(true);
         for (auto& [id, sampler] : impl->samplers) {
             vkDestroySampler(impl->device, sampler, nullptr);
@@ -2805,7 +2828,7 @@ VkPipeline VulkanDevice::Impl::pipelineFor(VulkanPipeline& pipeline,
     info.layout = pipeline.layout;
 
     VkPipeline vk = VK_NULL_HANDLE;
-    if (!vkOk(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info,
+    if (!vkOk(vkCreateGraphicsPipelines(device, pipelineCache, 1, &info,
                                         nullptr, &vk),
               "vkCreateGraphicsPipelines")) {
         return VK_NULL_HANDLE;
@@ -2920,7 +2943,7 @@ PipelineHandle VulkanDevice::createComputePipeline(
     info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
     info.stage = stage;
     info.layout = pipeline.layout;
-    if (!vkOk(vkCreateComputePipelines(d.device, VK_NULL_HANDLE, 1, &info,
+    if (!vkOk(vkCreateComputePipelines(d.device, d.pipelineCache, 1, &info,
                                        nullptr, &pipeline.computePipeline),
               "vkCreateComputePipelines")) {
         vkDestroyPipelineLayout(d.device, pipeline.layout, nullptr);
@@ -3377,6 +3400,26 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     // caps go on as a set — renderer systems gate on these to decide whether
     // to run, so advertising one whose path is still a no-op would be worse
     // than reporting false.
+    {
+        std::ifstream in(Impl::kPipelineCacheFile,
+                         std::ios::binary | std::ios::ate);
+        std::string blob;
+        if (in) {
+            blob.resize(static_cast<size_t>(in.tellg()));
+            in.seekg(0);
+            in.read(blob.data(), static_cast<std::streamsize>(blob.size()));
+        }
+        VkPipelineCacheCreateInfo cacheInfo {};
+        cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+        // Vulkan validates the blob header itself (device/driver UUID):
+        // a stale or foreign file is simply ignored.
+        cacheInfo.initialDataSize = blob.size();
+        cacheInfo.pInitialData = blob.empty() ? nullptr : blob.data();
+        vkOk(vkCreatePipelineCache(d.device, &cacheInfo, nullptr,
+                                   &d.pipelineCache),
+             "vkCreatePipelineCache");
+    }
+
     VkSamplerCreateInfo pcfInfo {};
     pcfInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     pcfInfo.minFilter = VK_FILTER_LINEAR;
