@@ -683,4 +683,17 @@ ce coût au premier lancement. L'en-tête du blob est validé par Vulkan
    (VMA_IMPLEMENTATION, types partagés) ; à découper seulement si un
    second backend (PC) le rend pénible.
 
+#### V7d — « Surface sombre » : compilation ÉLIMINÉE, cap sur le GI
+
+Le cache de pipelines n'a PAS éteint le symptôme (surfaces sombres
+transitoires au pano rapide, vertical ou latéral) — la compilation Metal est
+donc hors de cause. Hypothèse restante la plus forte : la **latence de
+convergence des Radiance Cascades** — l'injection du clipmap suit la caméra
+avec un budget par frame ; à ~25 ms/frame (Debug M1 MoltenVK), la vague
+sombre dans la direction nouvellement révélée devient visible, là où le PC
+GL à 60+ fps la masquait. À vérifier en V8 : (a) profil Release (frames plus
+courtes → vague plus courte), (b) budget d'injection par frame, (c) fallback
+d'éclairage pendant la convergence. Ce n'est PAS un bug de justesse Vulkan :
+la validation est silencieuse et le rendu converge vers le bon résultat.
+
 ### V8 — Parité visuelle + perfs (reste du chantier)
