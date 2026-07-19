@@ -468,11 +468,17 @@ fois**, et un push constant `uFxBase` décale l'indexation par lot.
 
 **3. `SpriteRenderer::instanceBuffer` — PAS ENCORE CORRIGÉ.** Même motif, un
 `updateBuffer` par batch avec un `drawIndexed` entre. C'est le renderer 2D,
-donc hors chemin V7, mais le bug est réel. Le correctif tient dans le même
-patron : uploader toutes les instances une fois et décaler par push constant
-(`gl_InstanceIndex + uBase`) — ce qui règle au passage la raison d'être du
-motif actuel, à savoir éviter `glDrawElementsInstancedBaseInstance`
-indisponible en GL 4.1.
+donc hors chemin V7, mais le bug est réel.
+
+**Le correctif n'est PAS celui de FxRenderer** (correction d'une première
+estimation trop rapide) : les sprites ne *pull* pas depuis un SSBO, ils
+reçoivent leurs données par **attributs de sommet instanciés** (locations 2-5,
+divisor 1). Un push constant ne peut donc pas décaler l'indexation depuis le
+shader. La vraie voie est `firstInstance`, **que le RHI expose déjà** dans
+`drawIndexed` : uploader toutes les instances une fois, puis
+`drawIndexed(6, count, 0, batch.firstInstance)`. Reste à traiter GL 4.1, qui
+n'a pas `glDrawElementsInstancedBaseInstance` — `GlDeviceBase` porte déjà un
+drapeau `baseInstance` pour ça, donc le repli existe mais est à câbler.
 
 **Vérifié** : build complet vert, vksmoke 0 erreur de validation, headless
 516/516, et les 5 shaders touchés compilés par `glslangValidator` sous
