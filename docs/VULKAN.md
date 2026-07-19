@@ -341,7 +341,38 @@ au fil des frames, ce qui est aussi l'usage réel.
 **Reste V6 : le port ImGui Vulkan** — et il porte une vraie décision
 d'architecture, à trancher avec le dev (voir ci-dessous).
 
-#### Décision en attente — comment rendre ImGui en Vulkan
+#### ⚡ L'UI IN-GAME MARCHE DÉJÀ EN VULKAN (vérifié 2026-07-19)
+
+Question du dev : « on n'utilise pas seulement ImGui, il y a aussi l'éditeur
+nodal et l'interface in-game — quelle est la meilleure solution pour les
+trois ? » Vérification faite, **ce ne sont pas trois problèmes** :
+
+1. **RmlUi (UI in-game) — DÉJÀ agnostique du backend.** `engine/ui/
+   UiSystem.cpp` implémente `RhiRenderInterface : public Rml::RenderInterface`
+   entièrement sur `rhi::`. **Testé sur Vulkan** avec un vrai écran du jeu
+   (`main-menu.rml`) : create + loadFont + showDocument + render, **zéro
+   ligne de code spécifique au backend, zéro erreur de validation**. Le
+   harnais le rend maintenant dans la boucle d'affichage.
+2. **imgui-node-editor — rien à faire de spécifique.** C'est une extension
+   ImGui vendorisée : elle émet des `ImDrawList`. Ce qui rend ImGui rend
+   l'éditeur nodal.
+3. **ImGui (panneaux dev) — le seul restant**, encore sur
+   `imgui_impl_opengl3`.
+
+**Conséquence : écrire le renderer ImGui sur le RHI, sans hésiter.** Le
+comparatif « rapide mais perce l'abstraction » / « propre mais long et
+risqué » était mal posé : ce n'est pas une invention mais une **copie d'un
+seam éprouvé** (§2.11 « reuse before build »). `RhiRenderInterface` fait déjà
+exactement la même chose — buffers sommets/indices, un pipeline, textures,
+scissor, premultiplied alpha — et ImGui produit la même forme de données. Un
+seul motif de rendu d'UI dans le moteur, `imgui_impl_opengl3` ET
+`imgui_impl_vulkan` supprimés, aucune trappe native, §3.1 intacte.
+
+> Preuve indirecte importante : que RmlUi — une UI complète, avec polices,
+> textures, scissor et transparence — passe sur Vulkan sans modification
+> valide le RHI de bout en bout. Le même chemin portera ImGui.
+
+#### Décision tranchée — comment rendre ImGui en Vulkan
 
 `imgui_impl_vulkan` exige les handles Vulkan bruts (instance, physical device,
 device, queue, descriptor pool). Or le RHI les cache derrière un pimpl (§3.1).

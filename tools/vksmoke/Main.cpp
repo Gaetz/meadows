@@ -26,6 +26,7 @@
 #include "engine/platform/Window.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/rhi/Device.hpp"
+#include "engine/ui/UiSystem.hpp"
 
 namespace {
 
@@ -427,6 +428,91 @@ void main() {
     device.destroyShader(shader);
 }
 
+// Does the REAL in-game UI render on Vulkan? RmlUi already goes through the
+// RHI (engine/ui/UiSystem.cpp implements Rml::RenderInterface on rhi::), so if
+// that seam is honest this works with no backend-specific code at all — and
+// that is also the evidence that an ImGui renderer written the same way would.
+// Loads an actual game screen rather than a synthetic document.
+void testInGameUi(rhi::Device& device) {
+    render::ShaderLibrary shaders(device);
+    // <repo>/engine/render/landscape/shaders -> <repo>
+    std::filesystem::path repo = shaders.root();
+    for (int i = 0; i < 4; ++i) {
+        repo = repo.parent_path();
+    }
+    const std::filesystem::path uiRoot = repo / "game" / "data" / "base" / "ui";
+    if (!std::filesystem::exists(uiRoot)) {
+        LOG_INFO("  SKIP  in-game UI (no {} )", uiRoot.string());
+        return;
+    }
+
+    ui::UiSystem uiSystem;
+    const bool created =
+        uiSystem.create(device, shaders, { uiRoot }, 1280, 720);
+    check(created, "UiSystem::create on Vulkan (RmlUi through the RHI)");
+    if (!created) {
+        return;
+    }
+    // Fonts must load before the first document (RmlUi requirement).
+    check(uiSystem.loadFont(uiRoot / "fonts" / "DemoFont.ttf"),
+          "UiSystem::loadFont");
+    check(uiSystem.showDocument("main-menu.rml"),
+          "showDocument (real game screen: main-menu.rml)");
+
+    uiSystem.update(1.0f / 60.0f);
+    // Draw it for a few frames, inside the backbuffer pass as the contract says.
+    for (u32 i = 0; i < 3; ++i) {
+        auto& cmd = device.beginFrame();
+        cmd.beginRenderPass({ .clearColor = { 0.05f, 0.06f, 0.09f, 1.0f } });
+        uiSystem.render(cmd, device, 1280, 720);
+        cmd.endRenderPass();
+        device.endFrame();
+    }
+    check(true, "UiSystem::render recorded on Vulkan (no validation error)");
+    uiSystem.destroy(device);
+}
+
+// Same thing, but kept alive so the display loop shows it: recording without a
+// validation error proves the plumbing, only pixels prove the result.
+struct UiDemo {
+    uptr<render::ShaderLibrary> shaders;
+    uptr<ui::UiSystem> uiSystem;
+    bool ready { false };
+
+    void create(rhi::Device& device) {
+        shaders = std::make_unique<render::ShaderLibrary>(device);
+        std::filesystem::path repo = shaders->root();
+        for (int i = 0; i < 4; ++i) {
+            repo = repo.parent_path();
+        }
+        const std::filesystem::path uiRoot =
+            repo / "game" / "data" / "base" / "ui";
+        if (!std::filesystem::exists(uiRoot)) {
+            return;
+        }
+        uiSystem = std::make_unique<ui::UiSystem>();
+        if (!uiSystem->create(device, *shaders, { uiRoot }, 1280, 720)) {
+            return;
+        }
+        uiSystem->loadFont(uiRoot / "fonts" / "DemoFont.ttf");
+        ready = uiSystem->showDocument("main-menu.rml");
+    }
+
+    void draw(rhi::CommandBuffer& cmd, rhi::Device& device, f32 dt) {
+        if (!ready) {
+            return;
+        }
+        uiSystem->update(dt);
+        uiSystem->render(cmd, device, 1280, 720);
+    }
+
+    void destroy(rhi::Device& device) {
+        if (uiSystem) {
+            uiSystem->destroy(device);
+        }
+    }
+};
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -464,12 +550,17 @@ int main(int argc, char** argv) {
     testGpuCopy(*device);
     testTextures(*device);
     testShaders(*device);
+    LOG_INFO("vksmoke: in-game UI (RmlUi) on Vulkan");
+    testInGameUi(*device);
+
     LOG_INFO("vksmoke: V6 markers + compute");
     testMarkersAndCompute(*device);
 
     LOG_INFO("vksmoke: V4 graphics path");
     TriangleDemo triangle;
     triangle.create(*device);
+    UiDemo uiDemo;
+    uiDemo.create(*device);
 
     LOG_INFO("vksmoke: self-test {} ({} failure(s))",
              failures == 0 ? "PASSED" : "FAILED", failures);
@@ -491,11 +582,13 @@ int main(int argc, char** argv) {
                                               0.12f + 0.20f * pulse,
                                               0.30f + 0.45f * pulse, 1.0f } });
         triangle.draw(cmd, pulse);
+        uiDemo.draw(cmd, *device, 1.0f / 60.0f);
         cmd.endRenderPass();
         device->endFrame();
         ++frames;
     }
 
+    uiDemo.destroy(*device);
     triangle.destroy(*device);
     LOG_INFO("vksmoke: {} frames in {:.2f}s ({:.1f} fps) — presentation path OK",
              frames, elapsed, elapsed > 0.0 ? frames / elapsed : 0.0);

@@ -19,6 +19,8 @@ meadows_set_warnings(cooker)
 # SpriteRenderer/ImGui until V3/V6. Built only with the Vulkan backend.
 if(MEADOWS_RHI_VULKAN)
     add_executable(vksmoke vksmoke/Main.cpp)
-    target_link_libraries(vksmoke PRIVATE meadows-render)
+    # meadows-ui too: the harness checks the in-game UI renders on Vulkan
+    # (RmlUi already goes through the RHI).
+    target_link_libraries(vksmoke PRIVATE meadows-render meadows-ui)
     meadows_set_warnings(vksmoke)
 endif()
