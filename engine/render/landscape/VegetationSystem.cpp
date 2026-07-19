@@ -212,6 +212,10 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
             uploadVariantMesh(device, i, baked(generateTree(seed, 2), 0.6f));
             uploadLowDetailMesh(device, i,
                                 baked(generateTree(seed, 1), 0.6f));
+            // V8f: bare-icosahedron lobes (~150 tris/tree) for the far
+            // ring — same seed, same composition, facets invisible there.
+            uploadUltraDetailMesh(device, i,
+                                  baked(generateTree(seed, 0), 0.6f));
         } else if (i < kFirstBush) {
             uploadVariantMesh(device, i, baked(generateRock(seed), 0.5f));
         } else {
@@ -243,6 +247,20 @@ void VegetationSystem::uploadLowDetailMesh(rhi::Device& device, u32 variant,
           .size = mesh.vertices.size() * sizeof(MeshVertex) },
         mesh.vertices.data()) };
     variantMeshes[variant].lowIndexBuffer = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Index,
+          .size = mesh.indices.size() * sizeof(u32) },
+        mesh.indices.data()) };
+}
+
+void VegetationSystem::uploadUltraDetailMesh(rhi::Device& device, u32 variant,
+                                             const MeshData& mesh) {
+    variantMeshes[variant].ultraIndexCount =
+        static_cast<u32>(mesh.indices.size());
+    variantMeshes[variant].ultraVertexBuffer = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Vertex,
+          .size = mesh.vertices.size() * sizeof(MeshVertex) },
+        mesh.vertices.data()) };
+    variantMeshes[variant].ultraIndexBuffer = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Index,
           .size = mesh.indices.size() * sizeof(u32) },
         mesh.indices.data()) };
@@ -305,6 +323,7 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     frameIndices = 0; // the frame's draw*() calls sum into these
     frameHighInstances = 0;
     frameLowInstances = 0;
+    frameUltraInstances = 0;
     // Budgeted uploads (U3-1: ring mechanics in ChunkStreamer; this lambda
     // is the vegetation-specific accept — variant packing + GPU upload).
     streamer.pump(kMaxUploadsPerFrame, 0.0, [&](u64 key, auto& built) {
@@ -488,22 +507,30 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     if (shadowBindGroup.id != 0) {
         cmd.setBindGroup(2, shadowBindGroup);
     }
-    // Canopy LOD pick, per chunk: high detail near the camera only (and
-    // never in mirrored/downsampled passes). Variants without a low twin
+    // Canopy LOD pick, per chunk — THREE levels (V8f): 320-face lobes
+    // near, 80-face twins mid, 20-face ultra beyond lowDetailRadius (and
+    // always in mirrored/downsampled passes). Variants without twins
     // (rocks, bushes, authored overrides) always use their main mesh.
     const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
     const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
-    const auto lowDetail = [&](u64 key, const VariantMesh& mesh) {
+    const auto detailLevel = [&](u64 key, const VariantMesh& mesh) -> u32 {
         if (mesh.lowIndexCount == 0) {
-            return false;
+            return 0u;
         }
         if (forceLowDetail) {
-            return true;
+            return mesh.ultraIndexCount != 0 ? 2u : 1u;
         }
         const i32 cx = chunkKeyCx(key);
         const i32 cz = chunkKeyCz(key);
-        return std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
-               highDetailRadius;
+        const i32 cheb =
+            std::max(std::abs(cx - camCx), std::abs(cz - camCz));
+        if (cheb <= highDetailRadius) {
+            return 0u;
+        }
+        if (mesh.ultraIndexCount == 0 || cheb <= lowDetailRadius) {
+            return 1u;
+        }
+        return 2u;
     };
     // Variant-major, split by LOD: bind each mesh level once, then one
     // instanced draw per chunk holding that variant (firstInstance =
@@ -511,33 +538,39 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     // present on 4.6).
     for (u32 v = 0; v < variantLimit; ++v) {
         const VariantMesh& mesh = variantMeshes[v];
-        for (const bool lowPass : { false, true }) {
+        const u32 levels = mesh.lowIndexCount == 0
+                               ? 1u
+                               : (mesh.ultraIndexCount == 0 ? 2u : 3u);
+        for (u32 level = 0; level < levels; ++level) {
+            const rhi::BufferHandle vb =
+                level == 0 ? mesh.vertexBuffer.get()
+                : level == 1 ? mesh.lowVertexBuffer.get()
+                             : mesh.ultraVertexBuffer.get();
+            const rhi::BufferHandle ib =
+                level == 0 ? mesh.indexBuffer.get()
+                : level == 1 ? mesh.lowIndexBuffer.get()
+                             : mesh.ultraIndexBuffer.get();
+            const u32 indexCount = level == 0 ? mesh.indexCount
+                                   : level == 1 ? mesh.lowIndexCount
+                                                : mesh.ultraIndexCount;
             bool meshBound = false;
             for (const auto& [key, chunk] : streamer.chunks) {
                 if (!chunk.resident || chunk.counts[v] == 0 ||
-                    culled(key) || lowDetail(key, mesh) != lowPass) {
+                    culled(key) || detailLevel(key, mesh) != level) {
                     continue;
                 }
                 if (!meshBound) {
-                    cmd.setVertexBuffer(0, lowPass ? mesh.lowVertexBuffer
-                                                   : mesh.vertexBuffer);
-                    cmd.setIndexBuffer(lowPass ? mesh.lowIndexBuffer
-                                               : mesh.indexBuffer,
-                                       rhi::IndexFormat::U32);
+                    cmd.setVertexBuffer(0, vb);
+                    cmd.setIndexBuffer(ib, rhi::IndexFormat::U32);
                     meshBound = true;
                 }
                 cmd.setVertexBuffer(1, chunk.instanceBuffer);
-                cmd.drawIndexed(lowPass ? mesh.lowIndexCount
-                                        : mesh.indexCount,
-                                chunk.counts[v], 0, chunk.firstInstance[v]);
-                frameIndices += (lowPass ? mesh.lowIndexCount
-                                         : mesh.indexCount) *
-                                chunk.counts[v];
-                (lowPass ? frameLowInstances : frameHighInstances) +=
-                    chunk.counts[v];
-            }
-            if (mesh.lowIndexCount == 0) {
-                break; // single-LOD variant: one pass covers every chunk
+                cmd.drawIndexed(indexCount, chunk.counts[v], 0,
+                                chunk.firstInstance[v]);
+                frameIndices += indexCount * chunk.counts[v];
+                (level == 0   ? frameHighInstances
+                 : level == 1 ? frameLowInstances
+                              : frameUltraInstances) += chunk.counts[v];
             }
         }
     }
@@ -548,7 +581,7 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
                                  rhi::BindGroupHandle casterBindGroup,
                                  const Vec3& cameraPos,
                                  i32 maxChunkDistance,
-                                 const Frustum* frustum) {
+                                 const Frustum* frustum, bool ultraDetail) {
     const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
     const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
     cmd.setPipeline(casterPipeline);
@@ -581,27 +614,32 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
                     continue; // outside this cascade's ortho volume
                 }
             }
+            // Casters use the cheapest twin the cascade tolerates: the
+            // 80-face lobe throws the same soft shadow as a 320-face one;
+            // the far cascades (ultraDetail, V8f) drop to the 20-face
+            // level — their texels are meters wide anyway.
+            const VariantMesh& mesh = variantMeshes[v];
+            const bool ultra = ultraDetail && mesh.ultraIndexCount != 0;
+            const bool low = !ultra && mesh.lowIndexCount != 0;
             if (!meshBound) {
-                // Casters always use the low-detail twin when there is
-                // one: an 80-face lobe throws the same soft shadow as a
-                // 320-face lobe, three cascades cheaper.
-                const bool low = variantMeshes[v].lowIndexCount != 0;
-                cmd.setVertexBuffer(0, low
-                                           ? variantMeshes[v].lowVertexBuffer
-                                           : variantMeshes[v].vertexBuffer);
-                cmd.setIndexBuffer(low ? variantMeshes[v].lowIndexBuffer
-                                       : variantMeshes[v].indexBuffer,
+                cmd.setVertexBuffer(0, ultra ? mesh.ultraVertexBuffer.get()
+                                    : low    ? mesh.lowVertexBuffer.get()
+                                             : mesh.vertexBuffer.get());
+                cmd.setIndexBuffer(ultra ? mesh.ultraIndexBuffer.get()
+                                   : low ? mesh.lowIndexBuffer.get()
+                                         : mesh.indexBuffer.get(),
                                    rhi::IndexFormat::U32);
                 meshBound = true;
             }
-            const u32 indexCount = variantMeshes[v].lowIndexCount != 0
-                                       ? variantMeshes[v].lowIndexCount
-                                       : variantMeshes[v].indexCount;
+            const u32 indexCount = ultra ? mesh.ultraIndexCount
+                                   : low ? mesh.lowIndexCount
+                                         : mesh.indexCount;
             cmd.setVertexBuffer(1, chunk.instanceBuffer);
             cmd.drawIndexed(indexCount, chunk.counts[v], 0,
                             chunk.firstInstance[v]);
             frameIndices += indexCount * chunk.counts[v];
-            frameLowInstances += chunk.counts[v]; // casters use the twin
+            (ultra ? frameUltraInstances : frameLowInstances) +=
+                chunk.counts[v];
         }
     }
 }

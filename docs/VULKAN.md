@@ -893,3 +893,31 @@ scène 2D (CombatArena) : validée dev 2026-07-19.
 
 Vérifié : boot + 40 s propres (0 erreur validation), spikes inchangés.
 
+#### V8f — Arbres : 3e niveau de LOD mesh (ultra, 20 faces/lobe) — FAIT (2026-07-19)
+
+Les compteurs V8e ont tranché (lecture dev) : **24 des ~30 Mtri/frame
+sont les arbres**, 6 l'herbe. Le levier « arbres lointains » validé par
+le dev s'implémente SANS nouvelle tech (§2.11) : `appendBlob` est un
+icosaèdre subdivisé récursivement, donc `generateTree(seed, 0)` existe
+déjà — lobes à 20 faces, ~150 tris/arbre contre ~600 au jumeau low.
+Même seed = même composition/couleurs/silhouette ; à 500 m les facettes
+sont invisibles.
+
+- `VariantMesh` gagne le trio ultra (buffers + count) ; `draw()` passe à
+  TROIS niveaux : 320 faces ≤ `highDetailRadius` (5), 80 faces ≤
+  `lowDetailRadius` (8, slider « Veg low-detail radius »), 20 faces
+  au-delà. Variantes sans jumeaux (rochers, buissons, meshes auteurs) :
+  inchangées.
+- Le REFLET force l'ultra (miroir mi-res : 9,5 → 3,7 ms, ÷2,5) ; les
+  CASCADES lointaines (1-2) castent en ultra, la 0 garde le low
+  (shadows 5,1 → 3,2 ms typique ; 17,9 → ~9 sur les frames de re-fit).
+- Compteur ultra dans le bloc géométrie du panneau perf.
+
+**Mesure (protocole 75-100 s, M1 Debug)** : frame spike 51,6 →
+**~39,5 ms** (re-fit : 63,9 → ~45,5) ; mainPass 24,6 → 20,5 ms. La
+descente CONTINUE au curseur (dev) : `lowDetailRadius` 8 → 5-6 met
+l'ultra sur tout le mid-ring ; les compteurs high/low/ultra disent en
+live ce que chaque cran achète. Si le plancher mesh ne suffit pas, les
+imposteurs restent listés — le pipeline 3 niveaux leur a préparé le
+branchement (un 4e niveau quad serait local à draw()).
+

@@ -48,6 +48,11 @@ public:
     // ring edge instead of fading (a budget-hunting knob, not a look).
     i32 viewRadius { 12 };        // chunks (dev pick 2026-07-10)
     i32 highDetailRadius { 5 };   // 320-face canopies within (x 64 m)
+    // V8f: third mesh level beyond — bare-icosahedron lobes (20 faces,
+    // generateTree(seed, 0)): ~150 tris/tree vs ~600 on the low twin.
+    // The trees carried 24 of the 30 Mtri/frame (V8e counters, M1) and
+    // the far ring is where the instances are.
+    i32 lowDetailRadius { 8 };    // 80-face twins within; ultra beyond
     static constexpr u32 kMaxUploadsPerFrame = 2;
     // Scatter jobs budgeted like uploads (see TerrainSystem — the
     // unbudgeted ring edge was part of the fast-travel stutter).
@@ -79,15 +84,17 @@ public:
 
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
-    // Canopy LOD: chunks within `highDetailRadius` (above) draw the
-    // 320-face lobes; everything beyond gets the 80-face LOD (same seed,
-    // same silhouette — 4x fewer vertices where facets are invisible
-    // anyway). Shadow casters and reflections always use the low LOD.
+    // Canopy LOD, three mesh levels from the SAME seed (composition and
+    // colors match; only lobe tessellation changes): 320-face lobes within
+    // `highDetailRadius`, 80-face twins to `lowDetailRadius`, 20-face
+    // ultra beyond (V8f). Reflections force ultra (half-res mirror);
+    // shadow casters use low near, ultra for the far cascades.
 
     // `variantLimit` restricts which variants draw (e.g. kTreeVariants for
     // the reflection pass: trees only). Brick 27: trees are single opaque
     // meshes — no leaf-card overlay pass anymore. `cameraPos` drives the
-    // per-chunk LOD pick; `forceLowDetail` = mirrored/downsampled passes.
+    // per-chunk LOD pick; `forceLowDetail` = mirrored/downsampled passes
+    // (resolves to the ultra level when the variant has one).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle shadowBindGroup,
               u32 variantLimit = kVariantCount, const Vec3& cameraPos = {},
@@ -101,6 +108,7 @@ public:
     u32 indicesThisFrame() const { return frameIndices; }
     u32 highDetailInstancesThisFrame() const { return frameHighInstances; }
     u32 lowDetailInstancesThisFrame() const { return frameLowInstances; }
+    u32 ultraDetailInstancesThisFrame() const { return frameUltraInstances; }
 
     // Depth-only caster pass into one shadow cascade (frameBindGroup feeds
     // the sway/fade math, casterBindGroup the cascade's light matrix).
@@ -109,10 +117,13 @@ public:
     // trees outside it cannot shadow anything in the cascade, and the
     // near cascades cover a fraction of the ring (same rationale as
     // TerrainSystem::drawDepth).
+    // `ultraDetail` = far cascades: the 20-face level throws the same
+    // soft shadow (V8f) — cascade 0 keeps the 80-face twin (close-ups).
     void drawDepth(rhi::CommandBuffer& cmd,
                    rhi::BindGroupHandle frameBindGroup,
                    rhi::BindGroupHandle casterBindGroup, const Vec3& cameraPos,
-                   i32 maxChunkDistance, const Frustum* frustum = nullptr);
+                   i32 maxChunkDistance, const Frustum* frustum = nullptr,
+                   bool ultraDetail = false);
 
     u32 propTotal() const { return instances; }
 
@@ -157,6 +168,10 @@ private:
         rhi::UniqueBuffer lowVertexBuffer;
         rhi::UniqueBuffer lowIndexBuffer;
         u32 lowIndexCount { 0 };
+        // V8f ultra twin (bare-icosahedron lobes; empty = stop at low).
+        rhi::UniqueBuffer ultraVertexBuffer;
+        rhi::UniqueBuffer ultraIndexBuffer;
+        u32 ultraIndexCount { 0 };
     };
 
     void createVariantMeshes(rhi::Device& device, u32 terrainSeed);
@@ -165,6 +180,8 @@ private:
                            const MeshData& mesh);
     void uploadLowDetailMesh(rhi::Device& device, u32 variant,
                              const MeshData& mesh);
+    void uploadUltraDetailMesh(rhi::Device& device, u32 variant,
+                               const MeshData& mesh);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
@@ -173,8 +190,9 @@ private:
     u32 instances { 0 };
     u32 lastDrawn { 0 };
     u32 frameIndices { 0 };       // reset in update(), summed by draw*()
-    u32 frameHighInstances { 0 }; // 320-face canopies drawn this frame
-    u32 frameLowInstances { 0 };  // low-twin instances drawn this frame
+    u32 frameHighInstances { 0 };  // 320-face canopies drawn this frame
+    u32 frameLowInstances { 0 };   // low-twin instances drawn this frame
+    u32 frameUltraInstances { 0 }; // ultra-twin instances drawn this frame
 
     array<VariantMesh, kVariantCount> variantMeshes {};
     std::unordered_map<u32, MeshData> meshOverrides;

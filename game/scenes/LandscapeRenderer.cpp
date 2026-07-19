@@ -1403,10 +1403,12 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                   .depthLoadOp = rhi::LoadOp::Clear });
             terrain.drawDepth(frame.cmd, shadows.casterBindGroup(i),
                               camera.position, 9, &cascadeFrustum);
-            // Same 9-chunk cap: the last cascade ends at 480 m.
+            // Same 9-chunk cap: the last cascade ends at 480 m. Far
+            // cascades cast with the 20-face ultra twin (V8f).
             vegetation.drawDepth(frame.cmd, frameBindGroup,
                                  shadows.casterBindGroup(i),
-                                 camera.position, 9, &cascadeFrustum);
+                                 camera.position, 9, &cascadeFrustum,
+                                 /*ultraDetail=*/i > 0);
             // B2a: scene meshes + NPCs join the casters (A/B toggle).
             if (meshShadowCastersUi) {
                 drawShadowCasters(frame, snapshot, view, i);
@@ -1878,9 +1880,10 @@ void LandscapeRenderer::drawPerfPanel(const core::FrameProbe* cpuProbe) {
     const f32 grassMTri =
         static_cast<f32>(grass.indicesThisFrame()) / 3.0e6f;
     ImGui::Text("terrain: %.2f Mtri", terrainMTri);
-    ImGui::Text("trees: %.2f Mtri (%u high + %u low instances)", vegMTri,
-                vegetation.highDetailInstancesThisFrame(),
-                vegetation.lowDetailInstancesThisFrame());
+    ImGui::Text("trees: %.2f Mtri (%u high + %u low + %u ultra instances)",
+                vegMTri, vegetation.highDetailInstancesThisFrame(),
+                vegetation.lowDetailInstancesThisFrame(),
+                vegetation.ultraDetailInstancesThisFrame());
     ImGui::Text("grass: %.2f Mtri (%u blades)", grassMTri,
                 grass.bladesThisFrame());
     ImGui::Text("total: %.2f Mtri", terrainMTri + vegMTri + grassMTri);
@@ -1917,6 +1920,9 @@ void LandscapeRenderer::drawTerrainPanel() {
                          4, 15);
         ImGui::SliderInt("Veg high-detail radius",
                          &vegetation.highDetailRadius, 0, 8);
+        // V8f: 80-face twins within; 20-face ultra beyond.
+        ImGui::SliderInt("Veg low-detail radius",
+                         &vegetation.lowDetailRadius, 2, 12);
     }
     if (ImGui::CollapsingHeader("Culling & debug")) {
         ImGui::Checkbox("Occlusion culling (A/B)", &occlusionUi);
