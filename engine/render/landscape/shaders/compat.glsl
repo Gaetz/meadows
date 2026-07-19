@@ -16,3 +16,17 @@
 #else
 #define MEADOWS_VERTEX_INDEX gl_VertexID
 #endif
+
+// Small per-draw constants. Vulkan has real push constants; GL has no
+// equivalent, so the GL backends back them with a reserved uniform block
+// (binding 15 = rhi::kPushConstantBinding) that CommandBuffer::setPushConstants
+// updates. Usage is identical on both sides:
+//
+//     MEADOWS_PUSH_CONSTANTS(UiPush) { vec4 uTransform; };
+//
+// Keep blocks <= 128 bytes (the guaranteed Vulkan minimum) and std140-friendly.
+#ifdef VULKAN
+#define MEADOWS_PUSH_CONSTANTS(Name) layout(push_constant) uniform Name
+#else
+#define MEADOWS_PUSH_CONSTANTS(Name) layout(std140, binding = 15) uniform Name
+#endif

@@ -26,6 +26,7 @@ public:
 
     void setPipeline(PipelineHandle pipeline) override;
     void setBindGroup(u32 index, BindGroupHandle group) override;
+    void setPushConstants(const void* data, u32 size, u32 offset) override;
     void setVertexBuffer(u32 slot, BufferHandle buffer) override;
     void setIndexBuffer(BufferHandle buffer, IndexFormat format) override;
 
@@ -186,6 +187,12 @@ protected:
 
     // GL object registries, keyed by handle id (0 = invalid, shared counter).
     std::unordered_map<u32, u32>       buffers;    // id -> GL buffer
+    // GL has no push constants: setPushConstants updates this buffer and
+    // binds it at kPushConstantBinding. Created on first use (createBuffer is
+    // the subclass's, so it cannot run in this constructor). 128 bytes = the
+    // guaranteed Vulkan push-constant minimum, so a block that fits Vulkan
+    // fits here too.
+    BufferHandle pushConstants {};
     std::unordered_map<u32, GlTexture> textures;
     std::unordered_map<u32, u32>       shaders;    // id -> GL program
     std::unordered_map<u32, GlPipeline> pipelines;

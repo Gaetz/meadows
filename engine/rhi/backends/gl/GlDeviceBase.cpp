@@ -210,6 +210,24 @@ void GlCommandBuffer::setPipeline(PipelineHandle pipeline) {
     currentPipelineId = pipeline.id;
 }
 
+void GlCommandBuffer::setPushConstants(const void* data, u32 size, u32 offset) {
+    if (data == nullptr || size == 0) {
+        return;
+    }
+    // Emulated with a reserved uniform block. Writing it between draws is
+    // correct HERE and only here: the GL command stream is in-order, so each
+    // draw observes the value written before it. That is precisely the
+    // guarantee Vulkan does NOT give a plain UBO, which is why callers must
+    // route per-draw constants through this entry point on both backends.
+    if (device.pushConstants.id == 0) {
+        device.pushConstants = device.createBuffer(
+            { .usage = BufferUsage::Uniform, .size = 128 }, nullptr);
+    }
+    device.updateBuffer(device.pushConstants, data, size, offset);
+    glBindBufferBase(GL_UNIFORM_BUFFER, kPushConstantBinding,
+                     device.buffers.at(device.pushConstants.id));
+}
+
 void GlCommandBuffer::setBindGroup(u32 /*index*/, BindGroupHandle group) {
     const auto& desc = device.bindGroups.at(group.id);
     for (const BindGroupEntry& entry : desc.entries) {

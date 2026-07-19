@@ -32,6 +32,15 @@ public:
     // The GL backend ignores it: entries carry explicit binding points.
     virtual void setBindGroup(u32 index, BindGroupHandle group) = 0;
 
+    // Small per-draw constants (Vulkan vkCmdPushConstants), declared by
+    // PipelineDesc::pushConstantSize. Unlike updateBuffer, the value is
+    // captured INTO the command stream, so each draw keeps the value that was
+    // set before it — the reason this exists. Writing a UBO between draws of
+    // the same pass does NOT work on Vulkan: recorded draws all read the
+    // buffer's final contents. Call after setPipeline.
+    virtual void setPushConstants(const void* data, u32 size,
+                                  u32 offset = 0) = 0;
+
     // `slot` matches PipelineDesc::vertexBuffers. Call after setPipeline.
     virtual void setVertexBuffer(u32 slot, BufferHandle buffer) = 0;
     virtual void setIndexBuffer(BufferHandle buffer, IndexFormat format) = 0;

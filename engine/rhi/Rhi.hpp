@@ -253,7 +253,16 @@ struct PipelineDesc {
     f32 depthBiasSlope { 0.0f };
     // Debug rasterization (Vulkan polygonMode = LINE).
     bool wireframe { false };
+    // Bytes of push-constant data the shader declares (0 = none). Vulkan
+    // needs the range at pipeline-layout creation, which is why this is
+    // pipeline state and not a draw-time argument. Keep it <= 128: that is
+    // the minimum every Vulkan implementation guarantees.
+    u32 pushConstantSize { 0 };
 };
+
+// Reserved GL uniform-block binding backing push constants (see
+// MEADOWS_PUSH_CONSTANTS in compat.glsl). Bind groups must not use it.
+constexpr u32 kPushConstantBinding = 15;
 
 // A compute pipeline is just its program (Vulkan VkComputePipeline): no
 // vertex layout, no raster state. Dispatched via CommandBuffer::dispatch.

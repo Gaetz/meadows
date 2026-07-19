@@ -632,6 +632,7 @@ public:
     void setFrontFace(FrontFace frontFace) override;
     void setPipeline(PipelineHandle pipeline) override;
     void setBindGroup(u32 index, BindGroupHandle group) override;
+    void setPushConstants(const void* data, u32 size, u32 offset) override;
     void setVertexBuffer(u32 slot, BufferHandle buffer) override;
     void setIndexBuffer(BufferHandle buffer, IndexFormat format) override;
     void draw(u32 vertexCount, u32 instanceCount, u32 firstVertex) override;
@@ -892,6 +893,25 @@ void VulkanCommandBuffer::setPipeline(PipelineHandle handle) {
     // Dynamic state does not survive a pipeline bind.
     applyViewport();
     vkCmdSetScissor(cb_, 0, 1, &scissor_);
+}
+
+void VulkanCommandBuffer::setPushConstants(const void* data, u32 size,
+                                           u32 offset) {
+    if (cb_ == VK_NULL_HANDLE || boundPipeline_ == nullptr || data == nullptr
+        || size == 0) {
+        return;
+    }
+    const u32 declared = boundPipeline_->desc.pushConstantSize;
+    if (offset + size > declared) {
+        LOG_ERROR("Vulkan setPushConstants: range {}+{} exceeds the pipeline's "
+                  "declared pushConstantSize {}",
+                  offset, size, declared);
+        return;
+    }
+    // Recorded INTO the command buffer, so the value sticks to the draws that
+    // follow it — the whole point (a UBO write would not).
+    vkCmdPushConstants(cb_, boundPipeline_->layout, VK_SHADER_STAGE_ALL_GRAPHICS,
+                       offset, size, data);
 }
 
 void VulkanCommandBuffer::setBindGroup(u32 index, BindGroupHandle group) {
@@ -2302,6 +2322,18 @@ bool buildLayouts(VkDevice device, const VulkanShader& shader,
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layoutInfo.setLayoutCount = 1;
     layoutInfo.pSetLayouts = &pipeline.setLayout;
+    // The range must be declared here: unlike a descriptor, push-constant
+    // storage is part of the layout itself.
+    VkPushConstantRange pushRange {};
+    if (pipeline.desc.pushConstantSize > 0) {
+        // Visible to every graphics stage — the RHI does not model per-stage
+        // visibility, and a compute pipeline never reaches this path.
+        pushRange.stageFlags = VK_SHADER_STAGE_ALL_GRAPHICS;
+        pushRange.offset = 0;
+        pushRange.size = pipeline.desc.pushConstantSize;
+        layoutInfo.pushConstantRangeCount = 1;
+        layoutInfo.pPushConstantRanges = &pushRange;
+    }
     return vkOk(vkCreatePipelineLayout(device, &layoutInfo, nullptr,
                                        &pipeline.layout),
                 "vkCreatePipelineLayout");

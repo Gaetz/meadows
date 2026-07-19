@@ -387,4 +387,58 @@ Deux voies :
    Cela remplacerait `imgui_impl_opengl3` **et** `imgui_impl_vulkan` par un
    seul chemin servant les deux backends, sans rien percer. Plus de travail, et
    un risque de régression sur l'UI dev GL qui marche aujourd'hui.
+#### V6b — Push constants (bug d'alignement de l'UI) — FAIT
+
+**Symptôme.** À l'écran, les éléments de l'UI in-game apparaissaient tous, bien
+texturés, mais empilés au mauvais endroit. Le self-test ne le voyait pas : il
+prouvait l'absence d'erreur de validation, pas la justesse des pixels.
+
+**Cause — une hypothèse GL cachée dans du code prétendument agnostique.**
+`RhiRenderInterface::RenderGeometry` faisait, par élément :
+
+```cpp
+device->updateBuffer(ubo, &uniforms, ...);  // translation de CET élément
+cmd->drawIndexed(...);
+```
+
+En GL le flux est immédiat et dans l'ordre : chaque draw voit la valeur écrite
+avant lui. En Vulkan `updateBuffer` est un `memcpy` **à l'enregistrement**,
+alors que les draws s'exécutent à la soumission — tous lisent le contenu
+**final** du buffer. Chaque élément héritait donc de la translation du dernier.
+
+**Deux hypothèses écartées avant de trouver** (les deux « évidentes », les deux
+fausses — d'où leur mention) : le facteur Retina (`currentExtent` vaut bien
+1280x720, pas de HiDPI sans `SDL_WINDOW_HIGH_PIXEL_DENSITY`) et le scissor
+(`UiSystem` passe en origine bas-gauche, le backend re-flippe — cohérent).
+
+**Correctif — les push constants entrent dans le RHI**, le mécanisme fait pour
+les constantes par draw :
+
+- `PipelineDesc::pushConstantSize` (Vulkan exige la plage au *pipeline layout*,
+  d'où un état de pipeline et non un argument de draw ; ≤ 128 octets = le
+  minimum garanti par toute implémentation Vulkan).
+- `CommandBuffer::setPushConstants(data, size, offset)`.
+- **Vulkan** : `VkPushConstantRange` (`ALL_GRAPHICS`) + `vkCmdPushConstants` —
+  la valeur est capturée *dans* le flux de commandes, donc elle colle aux draws
+  qui suivent.
+- **GL 4.6 et 4.1** : pas d'équivalent → bloc uniforme réservé à
+  `rhi::kPushConstantBinding` (15), mis à jour via `updateBuffer`. Comme
+  celui-ci est déjà virtuel, **les deux backends GL sont servis d'un coup**.
+  Vérifié : aucune collision, les bindings 10/11 déjà pris sont des *samplers*.
+- **Shaders** : macro `MEADOWS_PUSH_CONSTANTS(Name)` dans `compat.glsl` —
+  `layout(push_constant)` en Vulkan, `layout(std140, binding = 15)` en GL. Un
+  seul corpus, écriture identique des deux côtés.
+
+**Vérification.** vksmoke : 0 erreur de validation, tous les PASS. `ui.vert`
+compilé par `glslangValidator` sous sémantique **GL** *et* **Vulkan**. Build
+complet vert, suite headless 516/516. La non-régression GL reste à confirmer
+visuellement sur PC (impossible ici : `ui.vert` est en `#version 460`, le M1
+plafonne à 4.1).
+
+**Leçon pour la suite — plus large que l'UI.** `updateBuffer` puis `draw` dans
+la même passe est un motif que GL pardonne et que Vulkan punit *silencieusement*
+(pas d'erreur de validation, juste un résultat faux). **À chasser avant V7** :
+le renderer paysage a bien plus de raisons d'écrire des uniformes par draw, et
+il échouerait de la même façon, en beaucoup moins lisible.
+
 ### V7 — Bring-up LandscapeScene sur M1 + parité GL46 — À FAIRE

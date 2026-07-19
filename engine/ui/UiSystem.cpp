@@ -47,7 +47,7 @@ constexpr const char* kUiShader = "ui";
 // source verbatim.
 constexpr std::string_view kRuntimeTexturePrefix = "runtime://";
 
-// std140 mirror of the UiUbo block in ui.vert.
+// std140 mirror of the UiPush push-constant block in ui.vert.
 struct UiUniforms {
     Vec4 transform; // xy = translation (px), zw = viewport size (px)
 };
@@ -65,7 +65,7 @@ public:
     render::ShaderLibrary* shaders { nullptr };
     rhi::PipelineHandle pipeline {};
     u64 shaderGeneration { 0 };
-    rhi::BufferHandle ubo {};
+
     rhi::SamplerHandle sampler {};
     rhi::TextureHandle whiteTexture {};
     rhi::BindGroupHandle whiteGroup {};
@@ -114,7 +114,8 @@ public:
                             { .location = 2,
                               .format = rhi::VertexFormat::F32x2,
                               .offset = offsetof(UiVertex, uv) } } } },
-              .blend = rhi::BlendMode::PremultipliedAlpha });
+              .blend = rhi::BlendMode::PremultipliedAlpha,
+              .pushConstantSize = sizeof(UiUniforms) });
         shaderGeneration = shaders->generation(kUiShader);
     }
 
@@ -156,9 +157,13 @@ public:
         const UiUniforms uniforms { { translation.x, translation.y,
                                       static_cast<f32>(viewportWidth),
                                       static_cast<f32>(viewportHeight) } };
-        device->updateBuffer(ubo, &uniforms, sizeof(uniforms), 0);
         const auto texIt = textures.find(texture);
         cmd->setPipeline(pipeline);
+        // Push constants, not a UBO write: RmlUi issues one draw per element
+        // and each needs ITS translation. A rewritten UBO only works because
+        // GL executes in order; on Vulkan every recorded draw would read the
+        // last element's translation and the UI would come out misaligned.
+        cmd->setPushConstants(&uniforms, sizeof(uniforms));
         cmd->setBindGroup(0, texIt != textures.end() ? texIt->second.group
                                                      : whiteGroup);
         cmd->setVertexBuffer(0, it->second.vertices);
@@ -179,13 +184,10 @@ public:
     Rml::TextureHandle registerTexture(rhi::TextureHandle texture) {
         Texture entry;
         entry.texture = texture;
-        // The UiUbo rides in EVERY group: buffer binding 0 (UBO index)
-        // and texture binding 0 (texture unit) are distinct GL namespaces.
-        // Without it the vertex shader reads an unbound block — invisible
-        // UI the moment another pass bound its own UBO at index 0.
+        // Texture only: the per-draw transform moved to push constants, so
+        // nothing here needs a buffer any more.
         entry.group = device->createBindGroup(
-            { .entries = { { .binding = 0, .buffer = ubo },
-                           { .binding = 0,
+            { .entries = { { .binding = 0,
                              .texture = texture,
                              .sampler = sampler } } });
         const uintptr_t handle = nextHandle++;
@@ -451,13 +453,8 @@ bool UiSystem::create(rhi::Device& device, render::ShaderLibrary& shaders,
     impl.renderInterface.viewportHeight = height;
     impl.fileInterface.roots = std::move(documentRoots);
 
-    shaders.load(kUiShader, { { "UiUbo", 0 } }, { { "uTexture", 0 } });
+    shaders.load(kUiShader, {}, { { "uTexture", 0 } });
     impl.renderInterface.createPipeline();
-    impl.renderInterface.ubo = device.createBuffer(
-        { .usage = rhi::BufferUsage::Uniform,
-          .size = sizeof(UiUniforms),
-          .dynamic = true },
-        nullptr);
     impl.renderInterface.sampler = device.createSampler({});
     const u32 white[1] = { 0xffffffffu };
     impl.renderInterface.whiteTexture = device.createTexture(
@@ -465,8 +462,6 @@ bool UiSystem::create(rhi::Device& device, render::ShaderLibrary& shaders,
         white);
     impl.renderInterface.whiteGroup = device.createBindGroup(
         { .entries = { { .binding = 0,
-                         .buffer = impl.renderInterface.ubo },
-                       { .binding = 0,
                          .texture = impl.renderInterface.whiteTexture,
                          .sampler = impl.renderInterface.sampler } } });
 
@@ -492,7 +487,7 @@ void UiSystem::destroy(rhi::Device& device) {
     device.destroyBindGroup(pimpl->renderInterface.whiteGroup);
     device.destroyTexture(pimpl->renderInterface.whiteTexture);
     device.destroySampler(pimpl->renderInterface.sampler);
-    device.destroyBuffer(pimpl->renderInterface.ubo);
+
     device.destroyPipeline(pimpl->renderInterface.pipeline);
     pimpl.reset();
     created = false;
