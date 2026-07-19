@@ -30,6 +30,10 @@ namespace {
 // render data by value, so deeper pipelining stays a scheduling choice.
 constexpr u32 kFramesInFlight = 2;
 
+// Timestamp slots reserved per frame-in-flight. The GPU-PERF HUD samples a
+// handful of scopes per frame; overflowing warns rather than corrupting.
+constexpr u32 kTimestampsPerFrame = 64;
+
 bool vkOk(VkResult result, const char* what) {
     if (result != VK_SUCCESS) {
         LOG_ERROR("Vulkan: {} failed (VkResult {})", what,
@@ -523,6 +527,28 @@ struct VulkanDevice::Impl {
     std::unordered_map<u32, VulkanTexture> textures;
     std::unordered_map<u32, VkSampler> samplers;
     std::unordered_map<u32, VulkanShader> shaders;
+    // GPU markers. A fence is signalled by an empty submit, which the spec
+    // says completes only after everything already submitted — exactly the
+    // "marker after all prior work" the RHI promises.
+    std::unordered_map<u32, VkFence> fences;
+
+    // Timestamps live in a per-frame region of one pool: vkCmdResetQueryPool
+    // is illegal inside a render pass, so a region can only be reset at
+    // beginFrame — by which point its results are two frames old and either
+    // polled or abandoned.
+    VkQueryPool queryPool { VK_NULL_HANDLE };
+    f32 timestampPeriod { 1.0f }; // nanoseconds per tick
+    u32 timestampCursor { 0 };    // next slot within the current region
+    // Bumped when a region is reset, so a handle from an older generation is
+    // recognised as stale instead of reading someone else's result.
+    std::array<u32, kFramesInFlight> regionGeneration {};
+    struct PendingTimestamp {
+        u32 query { 0 };
+        u32 frameSlot { 0 };
+        u32 generation { 0 };
+    };
+    std::unordered_map<u32, PendingTimestamp> timestamps;
+
     std::unordered_map<u32, VulkanFramebuffer> targets;
     std::unordered_map<u32, VulkanPipeline> pipelines;
     std::unordered_map<u32, VulkanBindGroup> bindGroups;
@@ -1268,6 +1294,12 @@ VulkanDevice::~VulkanDevice() {
     if (impl->device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(impl->device);
 
+        for (auto& [id, fence] : impl->fences) {
+            vkDestroyFence(impl->device, fence, nullptr);
+        }
+        if (impl->queryPool != VK_NULL_HANDLE) {
+            vkDestroyQueryPool(impl->device, impl->queryPool, nullptr);
+        }
         for (auto& [id, pipeline] : impl->pipelines) {
             for (auto& [key, variant] : pipeline.variants) {
                 vkDestroyPipeline(impl->device, variant, nullptr);
@@ -1369,6 +1401,15 @@ CommandBuffer& VulkanDevice::beginFrame() {
                      VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 1,
                      VK_IMAGE_LAYOUT_UNDEFINED,
                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+    // Recycle this slot's timestamp region: reset is illegal inside a render
+    // pass, so it has to happen here, before any beginRenderPass.
+    if (d.queryPool != VK_NULL_HANDLE) {
+        vkCmdResetQueryPool(d.commandBuffers[d.frame], d.queryPool,
+                            d.frame * kTimestampsPerFrame, kTimestampsPerFrame);
+        ++d.regionGeneration[d.frame];
+        d.timestampCursor = 0;
+    }
 
     d.cmd->begin(d.commandBuffers[d.frame], d.imageViews[d.imageIndex],
                  d.colorFormat, d.extent);
@@ -2341,13 +2382,103 @@ void VulkanDevice::destroyPipeline(PipelineHandle handle) {
     d.pipelines.erase(it);
 }
 
-FenceHandle VulkanDevice::insertFence() { return {}; }
-bool VulkanDevice::fenceReady(FenceHandle) { return true; }
-void VulkanDevice::destroyFence(FenceHandle) {}
+// --- GPU markers ------------------------------------------------------------
 
-TimestampHandle VulkanDevice::insertTimestamp() { return {}; }
-bool VulkanDevice::timestampReady(TimestampHandle, u64&) { return false; }
-void VulkanDevice::destroyTimestamp(TimestampHandle) {}
+FenceHandle VulkanDevice::insertFence() {
+    Impl& d = *impl;
+    VkFenceCreateInfo info {};
+    info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    VkFence fence = VK_NULL_HANDLE;
+    if (!vkOk(vkCreateFence(d.device, &info, nullptr, &fence),
+              "vkCreateFence(marker)")) {
+        return {};
+    }
+    // An empty submit signals only once every previously submitted command has
+    // completed — the GL sync-object semantics the RHI describes.
+    if (!vkOk(vkQueueSubmit(d.graphicsQueue, 0, nullptr, fence),
+              "vkQueueSubmit(fence marker)")) {
+        vkDestroyFence(d.device, fence, nullptr);
+        return {};
+    }
+    const u32 id = d.nextId++;
+    d.fences.emplace(id, fence);
+    return { id };
+}
+
+bool VulkanDevice::fenceReady(FenceHandle handle) {
+    Impl& d = *impl;
+    auto it = d.fences.find(handle.id);
+    if (it == d.fences.end()) {
+        return true; // unknown or already consumed
+    }
+    // Polling only: never block the frame thread (Phase-5 completion queue).
+    if (vkGetFenceStatus(d.device, it->second) != VK_SUCCESS) {
+        return false;
+    }
+    vkDestroyFence(d.device, it->second, nullptr); // handles are single-use
+    d.fences.erase(it);
+    return true;
+}
+
+void VulkanDevice::destroyFence(FenceHandle handle) {
+    Impl& d = *impl;
+    auto it = d.fences.find(handle.id);
+    if (it == d.fences.end()) {
+        return;
+    }
+    vkDestroyFence(d.device, it->second, nullptr);
+    d.fences.erase(it);
+}
+
+TimestampHandle VulkanDevice::insertTimestamp() {
+    Impl& d = *impl;
+    if (d.queryPool == VK_NULL_HANDLE || !d.frameActive) {
+        return {}; // only meaningful while a frame is recording
+    }
+    if (d.timestampCursor >= kTimestampsPerFrame) {
+        LOG_WARN("Vulkan: more than {} timestamps in one frame — dropping",
+                 kTimestampsPerFrame);
+        return {};
+    }
+    const u32 query = d.frame * kTimestampsPerFrame + d.timestampCursor++;
+    // BOTTOM_OF_PIPE: the clock is taken when the stream REACHES this point.
+    vkCmdWriteTimestamp(d.commandBuffers[d.frame],
+                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, d.queryPool,
+                        query);
+    const u32 id = d.nextId++;
+    d.timestamps.emplace(id, Impl::PendingTimestamp {
+                                 query, d.frame, d.regionGeneration[d.frame] });
+    return { id };
+}
+
+bool VulkanDevice::timestampReady(TimestampHandle handle, u64& nanos) {
+    Impl& d = *impl;
+    auto it = d.timestamps.find(handle.id);
+    if (it == d.timestamps.end()) {
+        return false;
+    }
+    const Impl::PendingTimestamp pending = it->second;
+    // Its region has been recycled since: the result is gone for good, so
+    // release the handle rather than reporting another frame's number.
+    if (pending.generation != d.regionGeneration[pending.frameSlot]) {
+        d.timestamps.erase(it);
+        return false;
+    }
+    u64 ticks = 0;
+    const VkResult result = vkGetQueryPoolResults(
+        d.device, d.queryPool, pending.query, 1, sizeof(ticks), &ticks,
+        sizeof(ticks), VK_QUERY_RESULT_64_BIT);
+    if (result != VK_SUCCESS) {
+        return false; // VK_NOT_READY — poll again next frame, never block
+    }
+    nanos = static_cast<u64>(static_cast<f64>(ticks) * d.timestampPeriod);
+    d.timestamps.erase(it); // single-use, like fences
+    return true;
+}
+
+void VulkanDevice::destroyTimestamp(TimestampHandle handle) {
+    impl->timestamps.erase(handle.id);
+}
 
 // Push descriptors mean there is nothing to allocate here: a bind group is the
 // list of writes, replayed against whatever pipeline layout is bound.
@@ -2622,14 +2753,50 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         }
     }
 
+    // Timestamps need a non-zero timestampPeriod and a queue that supports
+    // them; both are reported per-device, so caps().timerQueries follows.
+    u32 familyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount, nullptr);
+    vector<VkQueueFamilyProperties> families(familyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount,
+                                             families.data());
+    const bool timestampsUsable =
+        props.limits.timestampPeriod > 0.0f &&
+        d.graphicsFamily < familyCount &&
+        families[d.graphicsFamily].timestampValidBits > 0;
+    if (timestampsUsable) {
+        d.timestampPeriod = props.limits.timestampPeriod;
+        VkQueryPoolCreateInfo queryInfo {};
+        queryInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        queryInfo.queryCount = kFramesInFlight * kTimestampsPerFrame;
+        if (!vkOk(vkCreateQueryPool(d.device, &queryInfo, nullptr,
+                                    &d.queryPool),
+                  "vkCreateQueryPool")) {
+            return nullptr;
+        }
+    } else {
+        LOG_WARN("Vulkan: GPU timestamps unavailable on this queue");
+    }
+
     d.cmd = std::make_unique<VulkanCommandBuffer>(d);
 
-    // Caps stay all-false until pipelines exist (V4): renderer systems gate on
-    // these flags to decide whether to run, and every draw path they would
-    // take is still a no-op. Resources (V2) work, but nothing can draw with
-    // them yet — they are flipped on as a set when V4 lands.
+    // Now that resources (V2), shaders (V3) and pipelines (V4) are real, the
+    // caps go on as a set — renderer systems gate on these to decide whether
+    // to run, so advertising one whose path is still a no-op would be worse
+    // than reporting false.
+    self->caps_ = { .offscreenTargets = true,
+                    .textureArrays = true,
+                    .hdrFormats = true,
+                    .samplerObjects = true,
+                    .mipmapGeneration = true,
+                    .copyTexture = true,
+                    .computeShaders = true,
+                    .timerQueries = timestampsUsable,
+                    .volumeTextures = true };
+
     LOG_INFO("Vulkan device ready: {} — {}x{}, {} swapchain images "
-             "(V2: resources, no pipelines yet)",
+             "(V4: pipelines + draws)",
              props.deviceName, d.extent.width, d.extent.height,
              static_cast<u32>(d.images.size()));
     return self;

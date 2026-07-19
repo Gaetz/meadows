@@ -329,6 +329,104 @@ void main() { fragColor = vec4(vColor, 1.0); })";
     }
 };
 
+// V6: the GPU markers the engine polls without ever blocking the frame thread
+// (the Phase-5 completion-queue rule), plus a compute dispatch that proves the
+// compute pipeline path end to end by writing an SSBO the CPU reads back.
+void testMarkersAndCompute(rhi::Device& device) {
+    // --- Compute: square 256 values on the GPU, read them back. ---
+    const str computeSource = R"(#version 460 core
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) buffer Values { uint values[]; };
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i < 256u) { values[i] = values[i] * values[i]; }
+})";
+    const rhi::ShaderHandle shader = device.createShader(
+        { .debugName = "vksmoke.square", .computeSource = computeSource });
+    check(shader.id != 0, "createShader (compute)");
+
+    const rhi::PipelineHandle pipeline =
+        device.createComputePipeline({ .shader = shader });
+    check(pipeline.id != 0, "createComputePipeline");
+
+    constexpr u32 kCount = 256;
+    vector<u32> input(kCount);
+    for (u32 i = 0; i < kCount; ++i) {
+        input[i] = i;
+    }
+    const rhi::BufferHandle buffer = device.createBuffer(
+        { .usage = rhi::BufferUsage::Storage,
+          .size = kCount * sizeof(u32),
+          .readback = true },
+        input.data());
+    const rhi::BindGroupHandle bindGroup = device.createBindGroup(
+        { .entries = { { .binding = 0, .buffer = buffer, .storage = true } } });
+
+    rhi::FenceHandle fence {};
+    rhi::TimestampHandle stamp {};
+    if (pipeline.id != 0 && buffer.id != 0) {
+        auto& cmd = device.beginFrame();
+        // Compute runs outside a render pass.
+        cmd.setPipeline(pipeline);
+        cmd.setBindGroup(0, bindGroup);
+        cmd.dispatch(kCount / 64);
+        cmd.memoryBarrier();
+        stamp = device.insertTimestamp();
+        cmd.beginRenderPass({ .clearColor = { 0.0f, 0.0f, 0.0f, 1.0f } });
+        cmd.endRenderPass();
+        device.endFrame();
+        fence = device.insertFence();
+    }
+
+    // Poll ACROSS FRAMES, never blocking — the way the engine consumes these.
+    // A tight spin would be wrong twice over: it is not the real usage, and it
+    // burns through its budget in a few ms while a v-synced frame needs ~16.
+    bool retired = false;
+    for (u32 tries = 0; fence.id != 0 && tries < 8 && !retired; ++tries) {
+        retired = device.fenceReady(fence);
+        if (!retired) {
+            auto& idle = device.beginFrame();
+            idle.beginRenderPass({ .clearColor = { 0.0f, 0.0f, 0.0f, 1.0f } });
+            idle.endRenderPass();
+            device.endFrame();
+        }
+    }
+    check(retired, "insertFence / fenceReady (polled across frames)");
+
+    vector<u32> got(kCount, 0);
+    device.readBuffer(buffer, got.data(), kCount * sizeof(u32));
+    bool squared = true;
+    for (u32 i = 0; i < kCount; ++i) {
+        if (got[i] != i * i) {
+            squared = false;
+            break;
+        }
+    }
+    check(squared, "compute dispatch wrote the SSBO (values squared)");
+
+    if (device.caps().timerQueries) {
+        u64 nanos = 0;
+        u32 tries = 0;
+        // Results land a frame or two later; drive frames while polling.
+        while (stamp.id != 0 && !device.timestampReady(stamp, nanos) &&
+               tries < 8) {
+            auto& idle = device.beginFrame();
+            idle.beginRenderPass({ .clearColor = { 0.0f, 0.0f, 0.0f, 1.0f } });
+            idle.endRenderPass();
+            device.endFrame();
+            ++tries;
+        }
+        check(nanos > 0, "insertTimestamp / timestampReady (GPU clock)");
+    } else {
+        LOG_INFO("  SKIP  timestamps (caps.timerQueries is false)");
+    }
+
+    device.destroyBindGroup(bindGroup);
+    device.destroyBuffer(buffer);
+    device.destroyPipeline(pipeline);
+    device.destroyShader(shader);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -366,6 +464,9 @@ int main(int argc, char** argv) {
     testGpuCopy(*device);
     testTextures(*device);
     testShaders(*device);
+    LOG_INFO("vksmoke: V6 markers + compute");
+    testMarkersAndCompute(*device);
+
     LOG_INFO("vksmoke: V4 graphics path");
     TriangleDemo triangle;
     triangle.create(*device);

@@ -312,5 +312,48 @@ de formats de la cible courante.
 > création du device et **échouer proprement** si absentes (un GPU PC récent
 > les a toutes deux ; `dynamic_rendering` est même cœur en Vulkan 1.3).
 ### V5 — CommandBuffer recording — À FAIRE
-### V6 — Fences / timestamps / ImGui Vulkan / nativeTextureId — À FAIRE
+### V6 — Fences / timestamps / ImGui Vulkan — 🔨 MOITIÉ FAITE (2026-07-19)
+
+**Fait : marqueurs GPU + compute de bout en bout + `DeviceCaps` activées.**
+
+- **Fences** : `insertFence` fait un **submit vide**, que la spec ne signale
+  qu'une fois tout le travail déjà soumis terminé — précisément la sémantique
+  « marqueur après tout ce qui précède » du RHI. `fenceReady` **sonde** via
+  `vkGetFenceStatus` et libère le handle (usage unique) ; il ne bloque jamais
+  (règle de la file de complétion, Phase 5).
+- **Timestamps** : `VkQueryPool`, une **région par frame-in-flight**.
+  `vkCmdResetQueryPool` étant interdit dans un render pass, une région ne peut
+  être réinitialisée qu'en `beginFrame` — moment où ses résultats ont deux
+  frames et sont déjà lus ou abandonnés. Une **génération par région** fait
+  qu'un handle périmé est reconnu comme tel au lieu de lire le résultat d'une
+  autre frame. Conversion par `timestampPeriod`.
+- **Compute vérifié de bout en bout** : dispatch qui élève 256 valeurs au carré
+  dans un SSBO, relu et comparé par le CPU.
+- **`DeviceCaps` activées en bloc** (elles étaient volontairement toutes
+  fausses depuis V1) : offscreen, arrays, HDR, samplers, mipmaps, copy,
+  **compute**, volumes, et `timerQueries` selon le support réel de la queue.
+
+**Leçon de test** : le premier essai sondait la fence dans une boucle serrée de
+10 000 itérations — épuisées en ~7 ms alors qu'une frame v-syncée en demande
+~16. L'implémentation était bonne, **le test était faux** ; il sonde désormais
+au fil des frames, ce qui est aussi l'usage réel.
+
+**Reste V6 : le port ImGui Vulkan** — et il porte une vraie décision
+d'architecture, à trancher avec le dev (voir ci-dessous).
+
+#### Décision en attente — comment rendre ImGui en Vulkan
+
+`imgui_impl_vulkan` exige les handles Vulkan bruts (instance, physical device,
+device, queue, descriptor pool). Or le RHI les cache derrière un pimpl (§3.1).
+Deux voies :
+
+1. **Trappe d'accès native** : exposer une petite structure de handles réservée
+   à `ImGuiLayer`, dans l'esprit de `nativeTextureId` qui existe déjà pour ce
+   motif. Rapide, mais **perce l'abstraction** — le CMake assume déjà une
+   « exception dev-UI GL », donc ce ne serait pas un précédent nouveau.
+2. **Renderer ImGui écrit sur le RHI** : ImGui produit des listes de sommets/
+   indices avec scissor et une texture — tout est déjà exprimable avec V2-V4.
+   Cela remplacerait `imgui_impl_opengl3` **et** `imgui_impl_vulkan` par un
+   seul chemin servant les deux backends, sans rien percer. Plus de travail, et
+   un risque de régression sur l'UI dev GL qui marche aujourd'hui.
 ### V7 — Bring-up LandscapeScene sur M1 + parité GL46 — À FAIRE
