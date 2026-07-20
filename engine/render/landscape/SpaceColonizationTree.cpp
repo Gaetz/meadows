@@ -325,7 +325,8 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
         static_cast<u32>(static_cast<f32>(baseClusters) *
                          glm::clamp(foliageDensity, 0.1f, 8.0f)),
         1u, 4000u);
-    for (u32 c = 0; c < clusterCount; ++c) {
+    u32 emitted = 0;
+    for (u32 c = 0; c < clusterCount * 4u && emitted < clusterCount; ++c) {
         // The scatter stream runs the SAME sequence at every detail level
         // (clusterCount only truncates it): LODs agree on where the
         // canopy mass sits.
@@ -347,6 +348,17 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
             }
         }
 
+        const Vec3 normal = canopySdfGradient(balls, position);
+        // Light-seeking density gradient (dev 2026-07-20): the card
+        // count is FIXED (the loop draws candidates until clusterCount
+        // land — same cost), but acceptance follows the canopy's outward
+        // direction: exp2(normal.y) = x2 where it faces up, x1 on the
+        // sides, x0.5 underneath. Leaves seek light; undersides thin out.
+        const f32 weight = std::exp2(normal.y); // 0.5 .. 2.0
+        if (scatterRng.next() * 2.0f > weight) {
+            continue;
+        }
+
         const f32 hue = scatterRng.next();
         Vec3 leafColor =
             glm::mix(Vec3 { 0.030f, 0.095f, 0.018f },
@@ -355,9 +367,9 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
         // wood-only now — card uv carries the billboard corner).
         leafColor *= 1.0f + 0.25f * glm::clamp(position.y / totalHeight,
                                                0.0f, 1.0f);
-        const Vec3 normal = canopySdfGradient(balls, position);
         const f32 halfSize = 0.042f + scatterRng.next() * 0.030f;
         appendBillboardCard(mesh, position, halfSize, normal, leafColor);
+        ++emitted;
     }
 
     // --- Wind weights + vertical gradient — WOOD ONLY (card uv is the
