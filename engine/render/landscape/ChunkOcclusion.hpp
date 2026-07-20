@@ -33,7 +33,9 @@ public:
     static constexpr u32 kRayCount = 180;      // 2° azimuth fan
     static constexpr f32 kRingStep = 32.0f;    // meters between samples
     static constexpr u32 kRingCount = 30;      // reach: 960 m (view ring)
-    static constexpr f32 kPropHeadroom = 14.0f; // tallest scaled tree
+    static constexpr f32 kPropHeadroom = 86.0f; // tallest scaled tree
+                                                // (x8 realistic trees,
+                                                // dev 2026-07-20)
     static constexpr f32 kRebuildDistance = 8.0f; // camera delta triggering
 
     // Snapshot handed to the worker. `chunkTops` maps chunk key

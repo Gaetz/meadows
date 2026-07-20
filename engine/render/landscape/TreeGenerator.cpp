@@ -15,22 +15,29 @@ using core::HashRng;
 
 } // namespace
 
-MeshData generateTree(u32 seed, u32 lobeSubdivisions) {
+MeshData generateTree(u32 seed, u32 lobeSubdivisions,
+                      const LobeTreeParams& params) {
     HashRng rng { hashU32(seed ^ 0x7ea3c1b9u) };
     MeshData mesh;
 
     // Tall, elegant silhouette (validated composition): one proper trunk
     // column, short upward branches near the top, one full foliage lobe
     // per branch tip plus a crown (brick 27: solid canopy, no cards).
-    const f32 trunkHeight = 4.2f + rng.next() * 1.9f; // 4.2–6.1 m
-    const f32 trunkRadius = 0.17f + rng.next() * 0.07f;
-    const Vec3 lean { (rng.next() - 0.5f) * 0.16f, 1.0f,
-                      (rng.next() - 0.5f) * 0.16f };
+    // Every artistic constant now rides LobeTreeParams (tree builder,
+    // 2026-07-20) — defaults reproduce the historical look.
+    const f32 trunkHeight =
+        params.trunkHeightMin +
+        rng.next() * (params.trunkHeightMax - params.trunkHeightMin);
+    const f32 trunkRadius =
+        params.trunkRadiusMin +
+        rng.next() * (params.trunkRadiusMax - params.trunkRadiusMin);
+    const Vec3 lean { (rng.next() - 0.5f) * params.lean, 1.0f,
+                      (rng.next() - 0.5f) * params.lean };
     const Vec3 up = glm::normalize(lean);
     const Vec3 trunkTop = up * trunkHeight;
     const Vec3 trunkColor { 0.085f, 0.048f, 0.026f }; // linear bark brown
     appendTaperedTube(mesh, Vec3 { 0.0f }, trunkTop, trunkRadius,
-                      trunkRadius * 0.42f, 6, trunkColor);
+                      trunkRadius * params.trunkTaper, 6, trunkColor);
     const u32 trunkVertexCount = static_cast<u32>(mesh.vertices.size());
 
     // Foliage lobes: one crown on the trunk top, one at each branch tip.
@@ -42,11 +49,19 @@ MeshData generateTree(u32 seed, u32 lobeSubdivisions) {
     Lobe lobes[7];
     u32 lobeCount = 0;
     lobes[lobeCount++] = { trunkTop + up * 0.45f,
-                           0.85f + rng.next() * 0.40f, 0 };
+                           params.crownLobeRadiusMin +
+                               rng.next() * (params.crownLobeRadiusMax -
+                                             params.crownLobeRadiusMin),
+                           0 };
 
     // Short branches spread around the upper trunk, tilted well upward,
     // staggered in height so the canopy layers instead of forming a ball.
-    const u32 branchCount = 3 + static_cast<u32>(rng.next() * 3.0f); // 3-5
+    const i32 branchSpan =
+        glm::max(params.branchCountMax - params.branchCountMin + 1, 1);
+    const u32 branchCount = static_cast<u32>(glm::clamp(
+        params.branchCountMin +
+            static_cast<i32>(rng.next() * static_cast<f32>(branchSpan)),
+        1, 6)); // the lobes array holds crown + 6
     for (u32 i = 0; i < branchCount; ++i) {
         const f32 along = 0.58f + 0.34f * (static_cast<f32>(i) + rng.next()) /
                                       static_cast<f32>(branchCount);
@@ -57,14 +72,19 @@ MeshData generateTree(u32 seed, u32 lobeSubdivisions) {
         const Vec3 dir = glm::normalize(
             Vec3 { std::cos(azimuth) * std::cos(tilt), std::sin(tilt),
                    std::sin(azimuth) * std::cos(tilt) });
-        const f32 length = 0.9f + rng.next() * 0.8f;
+        const f32 length =
+            params.branchLengthMin +
+            rng.next() * (params.branchLengthMax - params.branchLengthMin);
         const f32 branchRadius =
             trunkRadius * (0.40f + rng.next() * 0.15f);
         const Vec3 branchTip = branchBase + dir * length;
         appendTaperedTube(mesh, branchBase, branchTip, branchRadius,
                           branchRadius * 0.4f, 5, trunkColor);
         // The lobe sits mostly beyond the tip, hiding the joint.
-        const f32 radius = 0.60f + rng.next() * 0.38f;
+        const f32 radius =
+            params.branchLobeRadiusMin +
+            rng.next() * (params.branchLobeRadiusMax -
+                          params.branchLobeRadiusMin);
         lobes[lobeCount++] = { branchTip + dir * (radius * 0.35f), radius,
                                0 };
     }
@@ -94,13 +114,14 @@ MeshData generateTree(u32 seed, u32 lobeSubdivisions) {
             MeshVertex& vertex = mesh.vertices[v];
             vertex.position.y =
                 lobes[i].center.y +
-                (vertex.position.y - lobes[i].center.y) * 0.85f;
+                (vertex.position.y - lobes[i].center.y) *
+                    params.lobeFlatten;
             const Vec3 fromLobe =
                 glm::normalize(vertex.position - lobes[i].center);
             const Vec3 fromCanopy =
                 glm::normalize(vertex.position - canopyCenter);
-            vertex.normal = glm::normalize(glm::mix(fromLobe, fromCanopy,
-                                                    0.4f));
+            vertex.normal = glm::normalize(
+                glm::mix(fromLobe, fromCanopy, params.normalSpherize));
         }
     }
 

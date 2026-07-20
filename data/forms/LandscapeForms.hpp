@@ -67,7 +67,9 @@ struct LandscapeTuningForm : Form {
     // the baseline put mainVeg at 1.8 ms — these were compile-time
     // constants; moddable + live-tunable now. Radii in 64 m chunks.
     i32 vegViewRadius { 12 };       // resident/drawn ring (dev pick)
-    i32 vegHighDetailRadius { 5 };  // 320-face canopies inside (~320 m)
+    i32 vegHighDetailRadius { 2 };  // full-detail canopies inside (~128 m)
+                                    // (dev 2026-07-20: 2/4 ladder with
+                                    // vegLowDetailRadius below)
     // V8f (appended — ordinals stable): 80-face twins inside; 20-face
     // ultra lobes beyond (dev pick 2026-07-19 after the visual check).
     i32 vegLowDetailRadius { 4 };
@@ -103,6 +105,91 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(vegViewRadius)
         REFLECT_FIELD(vegHighDetailRadius)
         REFLECT_FIELD(vegLowDetailRadius)
+    REFLECT_END()
+};
+
+// Tree builder (2026-07-20): the generation knobs of each procedural tree
+// type, as ordinary records (§5 — a mod retunes a species in pure TOML).
+// Mirrors render::LobeTreeParams field-for-field; the scene maps Form ->
+// flat engine params (engine/* never includes data/*, §4).
+struct LobeTreeTuningForm : Form {
+    f32 trunkHeightMin { 4.2f };
+    f32 trunkHeightMax { 6.1f };
+    f32 trunkRadiusMin { 0.17f };
+    f32 trunkRadiusMax { 0.24f };
+    f32 trunkTaper { 0.42f };
+    f32 lean { 0.16f };
+    i32 branchCountMin { 3 };
+    i32 branchCountMax { 5 };
+    f32 branchLengthMin { 0.9f };
+    f32 branchLengthMax { 1.7f };
+    f32 crownLobeRadiusMin { 0.85f };
+    f32 crownLobeRadiusMax { 1.25f };
+    f32 branchLobeRadiusMin { 0.60f };
+    f32 branchLobeRadiusMax { 0.98f };
+    f32 lobeFlatten { 0.85f };
+    f32 normalSpherize { 0.4f };
+
+    REFLECT_BEGIN(LobeTreeTuningForm, Form)
+        REFLECT_FIELD(trunkHeightMin)
+        REFLECT_FIELD(trunkHeightMax)
+        REFLECT_FIELD(trunkRadiusMin)
+        REFLECT_FIELD(trunkRadiusMax)
+        REFLECT_FIELD(trunkTaper)
+        REFLECT_FIELD(lean)
+        REFLECT_FIELD(branchCountMin)
+        REFLECT_FIELD(branchCountMax)
+        REFLECT_FIELD(branchLengthMin)
+        REFLECT_FIELD(branchLengthMax)
+        REFLECT_FIELD(crownLobeRadiusMin)
+        REFLECT_FIELD(crownLobeRadiusMax)
+        REFLECT_FIELD(branchLobeRadiusMin)
+        REFLECT_FIELD(branchLobeRadiusMax)
+        REFLECT_FIELD(lobeFlatten)
+        REFLECT_FIELD(normalSpherize)
+    REFLECT_END()
+};
+
+// Mirrors render::ColonizedTreeParams (the Runions/SDF-card tree).
+struct ColonizedTreeTuningForm : Form {
+    f32 segment { 0.28f };
+    f32 killDistance { 0.70f };
+    i32 attractorCount { 350 };
+    f32 pipeExponent { 2.6f };
+    f32 tropism { 0.14f };
+    f32 trunkBaseMin { 1.6f };
+    f32 trunkBaseMax { 2.5f };
+    f32 crownHeightMin { 2.6f };
+    f32 crownHeightMax { 3.8f };
+    f32 crownRadiusMin { 1.9f };
+    f32 crownRadiusMax { 3.0f };
+    f32 tipBallRadius { 0.95f };
+    f32 tipOrderFalloff { 0.78f };
+    f32 smoothK { 0.7f };
+    f32 cardHalfSizeMin { 0.042f };
+    f32 cardHalfSizeMax { 0.072f };
+    f32 densityGradient { 3.0f };
+    f32 foliageDensity { 3.2f };
+
+    REFLECT_BEGIN(ColonizedTreeTuningForm, Form)
+        REFLECT_FIELD(segment)
+        REFLECT_FIELD(killDistance)
+        REFLECT_FIELD(attractorCount)
+        REFLECT_FIELD(pipeExponent)
+        REFLECT_FIELD(tropism)
+        REFLECT_FIELD(trunkBaseMin)
+        REFLECT_FIELD(trunkBaseMax)
+        REFLECT_FIELD(crownHeightMin)
+        REFLECT_FIELD(crownHeightMax)
+        REFLECT_FIELD(crownRadiusMin)
+        REFLECT_FIELD(crownRadiusMax)
+        REFLECT_FIELD(tipBallRadius)
+        REFLECT_FIELD(tipOrderFalloff)
+        REFLECT_FIELD(smoothK)
+        REFLECT_FIELD(cardHalfSizeMin)
+        REFLECT_FIELD(cardHalfSizeMax)
+        REFLECT_FIELD(densityGradient)
+        REFLECT_FIELD(foliageDensity)
     REFLECT_END()
 };
 
@@ -167,6 +254,11 @@ void registerLandscapeFormTypes(FormTypeRegistry& registry);
 
 // Resolves the tuning from the database (canonical guid), or defaults.
 LandscapeTuningForm resolveLandscapeTuning(const FormDatabase& forms);
+
+// Tree builder: fixed-GUID singletons like the landscape tuning —
+// defaults when the record is absent (older plugin stacks).
+LobeTreeTuningForm resolveLobeTreeTuning(const FormDatabase& forms);
+ColonizedTreeTuningForm resolveColonizedTreeTuning(const FormDatabase& forms);
 
 // Every WeatherForm in the database, sorted by sortOrder — feeds the
 // weather dropdown. Empty if the plugin ships none.

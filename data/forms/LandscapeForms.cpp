@@ -11,10 +11,17 @@ namespace data {
 namespace {
 const core::Guid kLandscapeTuningGuid =
     *core::Guid::fromString("1a4d5c00-0000-4000-8000-000000000001");
+// Tree builder (2026-07-20): one tuning record per procedural tree type.
+const core::Guid kLobeTreeTuningGuid =
+    *core::Guid::fromString("1a4d5c00-0000-4000-8000-0000000000b1");
+const core::Guid kColonizedTreeTuningGuid =
+    *core::Guid::fromString("1a4d5c00-0000-4000-8000-0000000000b2");
 } // namespace
 
 void registerLandscapeFormTypes(FormTypeRegistry& registry) {
     registry.registerFormType<LandscapeTuningForm>();
+    registry.registerFormType<LobeTreeTuningForm>();
+    registry.registerFormType<ColonizedTreeTuningForm>();
     registry.registerFormType<WeatherForm>();
 }
 
@@ -24,6 +31,23 @@ LandscapeTuningForm resolveLandscapeTuning(const FormDatabase& forms) {
         return *tuning;
     }
     return LandscapeTuningForm {};
+}
+
+LobeTreeTuningForm resolveLobeTreeTuning(const FormDatabase& forms) {
+    if (const LobeTreeTuningForm* tuning =
+            forms.find<LobeTreeTuningForm>(kLobeTreeTuningGuid)) {
+        return *tuning;
+    }
+    return LobeTreeTuningForm {};
+}
+
+ColonizedTreeTuningForm
+resolveColonizedTreeTuning(const FormDatabase& forms) {
+    if (const ColonizedTreeTuningForm* tuning =
+            forms.find<ColonizedTreeTuningForm>(kColonizedTreeTuningGuid)) {
+        return *tuning;
+    }
+    return ColonizedTreeTuningForm {};
 }
 
 vector<WeatherForm> resolveWeatherForms(const FormDatabase& forms) {

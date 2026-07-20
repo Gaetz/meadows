@@ -23,6 +23,14 @@ void main() {
     vec3 normal = vec3(aNormal.x * c - aNormal.z * s, aNormal.y,
                        aNormal.x * s + aNormal.z * c);
 
+    // Billboard leaf card (space-colonization trees): the mesh stores a
+    // DEGENERATE quad at the clump center; uv.x < -5 flags it and carries
+    // the corner (see appendBillboardCard). The card expands toward the
+    // CAMERA here; its lighting normal stays the SDF gradient (rotated
+    // with the instance like everything else).
+    bool leafCard = aUv.x < -5.0;
+    float sway = leafCard ? 0.85 : aUv.x;
+
     // Distance fade, per category (aParams.w): trees carry to the fog line,
     // rocks and bushes bow out earlier.
     float dist = distance(aPosScale.xyz, uCameraPos.xyz);
@@ -34,7 +42,19 @@ void main() {
     float gust = sin(uWindInfo.x * 1.1 + aParams.z +
                      (aPosScale.x + aPosScale.z * 0.7) * 0.05);
     world.xz += vec2(0.9, 0.35) *
-                (gust * 0.07 * uWindInfo.y * aUv.x * aPosScale.w * fade);
+                (gust * 0.07 * uWindInfo.y * sway * aPosScale.w * fade);
+
+    if (leafCard) {
+        // Screen-aligned expansion: viewProj rows 0/1 are the camera
+        // right/up directions (projection only scales them).
+        vec3 camRight = normalize(
+            vec3(uViewProj[0][0], uViewProj[1][0], uViewProj[2][0]));
+        vec3 camUp = normalize(
+            vec3(uViewProj[0][1], uViewProj[1][1], uViewProj[2][1]));
+        vec2 corner = vec2(aUv.x + 10.0, aUv.y);
+        world += (camRight * corner.x + camUp * corner.y) *
+                 (aPosScale.w * fade);
+    }
 
     vNormal = normal;
     vColor = aColor;

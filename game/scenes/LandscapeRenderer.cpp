@@ -80,6 +80,49 @@ void LandscapeRenderer::applyTuning(
         glm::clamp(tuning.vegLowDetailRadius, 2, 12); // V8f
 }
 
+void LandscapeRenderer::applyTreeTuning(
+    const data::LobeTreeTuningForm& lobes,
+    const data::ColonizedTreeTuningForm& colonized) {
+    // Field-for-field Form -> flat engine params (§4: engine never sees
+    // data/). The Trees panel then edits the params live.
+    render::LobeTreeParams& l = vegetation.lobeTreeParams;
+    l.trunkHeightMin = lobes.trunkHeightMin;
+    l.trunkHeightMax = lobes.trunkHeightMax;
+    l.trunkRadiusMin = lobes.trunkRadiusMin;
+    l.trunkRadiusMax = lobes.trunkRadiusMax;
+    l.trunkTaper = lobes.trunkTaper;
+    l.lean = lobes.lean;
+    l.branchCountMin = lobes.branchCountMin;
+    l.branchCountMax = lobes.branchCountMax;
+    l.branchLengthMin = lobes.branchLengthMin;
+    l.branchLengthMax = lobes.branchLengthMax;
+    l.crownLobeRadiusMin = lobes.crownLobeRadiusMin;
+    l.crownLobeRadiusMax = lobes.crownLobeRadiusMax;
+    l.branchLobeRadiusMin = lobes.branchLobeRadiusMin;
+    l.branchLobeRadiusMax = lobes.branchLobeRadiusMax;
+    l.lobeFlatten = lobes.lobeFlatten;
+    l.normalSpherize = lobes.normalSpherize;
+    render::ColonizedTreeParams& c = vegetation.colonizedTreeParams;
+    c.segment = colonized.segment;
+    c.killDistance = colonized.killDistance;
+    c.attractorCount = colonized.attractorCount;
+    c.pipeExponent = colonized.pipeExponent;
+    c.tropism = colonized.tropism;
+    c.trunkBaseMin = colonized.trunkBaseMin;
+    c.trunkBaseMax = colonized.trunkBaseMax;
+    c.crownHeightMin = colonized.crownHeightMin;
+    c.crownHeightMax = colonized.crownHeightMax;
+    c.crownRadiusMin = colonized.crownRadiusMin;
+    c.crownRadiusMax = colonized.crownRadiusMax;
+    c.tipBallRadius = colonized.tipBallRadius;
+    c.tipOrderFalloff = colonized.tipOrderFalloff;
+    c.smoothK = colonized.smoothK;
+    c.cardHalfSizeMin = colonized.cardHalfSizeMin;
+    c.cardHalfSizeMax = colonized.cardHalfSizeMax;
+    c.densityGradient = colonized.densityGradient;
+    c.foliageDensity = colonized.foliageDensity;
+}
+
 void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
     frameUbo = { device, device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
                                      .size = sizeof(render::FrameUniforms),
@@ -1045,6 +1088,12 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         vegetation.regenerate(frame.device, terrain.params.seed);
         occlusion.invalidate();
     }
+    // EXPERIMENT A/B (feature/space-colonization-trees): mesh-only swap at
+    // the safe point — instance buffers and scatter stay resident.
+    if (reseedVegetation) {
+        reseedVegetation = false;
+        vegetation.reseedVariantMeshes(frame.device);
+    }
     // Grass panel: a scatter knob moved — re-scatter the meadow only.
     if (grassRescatterRequested) {
         grassRescatterRequested = false;
@@ -1891,6 +1940,117 @@ void LandscapeRenderer::drawPerfPanel(const core::FrameProbe* cpuProbe) {
     ImGui::Text("total: %.2f Mtri", terrainMTri + vegMTri + grassMTri);
 }
 
+void LandscapeRenderer::drawTreeBuilderPanel() {
+    // Every knob regenerates on RELEASE (reseedVariantMeshes at the
+    // render()-top safe point): meshes only — scatter/instances stay.
+    // New content re-bakes AO once (content-keyed disk cache).
+    bool dirty = false;
+    const auto knob = [&](const char* label, f32& value, f32 lo, f32 hi) {
+        ImGui::SliderFloat(label, &value, lo, hi, "%.3f");
+        dirty |= ImGui::IsItemDeactivatedAfterEdit();
+    };
+    const auto knobInt = [&](const char* label, i32& value, i32 lo,
+                             i32 hi) {
+        ImGui::SliderInt(label, &value, lo, hi);
+        dirty |= ImGui::IsItemDeactivatedAfterEdit();
+    };
+
+    if (ImGui::Checkbox("Space-colonization trees (A/B)",
+                        &vegetation.colonizationTrees)) {
+        dirty = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Regenerate")) {
+        dirty = true;
+    }
+
+    if (ImGui::CollapsingHeader("Lobe trees (classic)")) {
+        render::LobeTreeParams& p = vegetation.lobeTreeParams;
+        knob("Trunk height min", p.trunkHeightMin, 1.0f, 12.0f);
+        knob("Trunk height max", p.trunkHeightMax, 1.0f, 14.0f);
+        knob("Trunk radius min", p.trunkRadiusMin, 0.05f, 0.6f);
+        knob("Trunk radius max", p.trunkRadiusMax, 0.05f, 0.8f);
+        knob("Trunk taper", p.trunkTaper, 0.1f, 1.0f);
+        knob("Lean", p.lean, 0.0f, 0.5f);
+        knobInt("Branches min", p.branchCountMin, 1, 6);
+        knobInt("Branches max", p.branchCountMax, 1, 6);
+        knob("Branch length min", p.branchLengthMin, 0.3f, 3.0f);
+        knob("Branch length max", p.branchLengthMax, 0.3f, 4.0f);
+        knob("Crown lobe min", p.crownLobeRadiusMin, 0.3f, 2.5f);
+        knob("Crown lobe max", p.crownLobeRadiusMax, 0.3f, 3.0f);
+        knob("Branch lobe min", p.branchLobeRadiusMin, 0.2f, 2.0f);
+        knob("Branch lobe max", p.branchLobeRadiusMax, 0.2f, 2.5f);
+        knob("Lobe flatten", p.lobeFlatten, 0.5f, 1.0f);
+        knob("Normal spherize", p.normalSpherize, 0.0f, 1.0f);
+    }
+    if (ImGui::CollapsingHeader("Space colonization",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        render::ColonizedTreeParams& p = vegetation.colonizedTreeParams;
+        ImGui::SeparatorText("Skeleton (Runions)");
+        knob("Growth step D (m)", p.segment, 0.1f, 0.8f);
+        knob("Kill distance (m)", p.killDistance, 0.2f, 2.0f);
+        knobInt("Attractors", p.attractorCount, 50, 2000);
+        knob("Pipe exponent", p.pipeExponent, 2.0f, 3.0f);
+        knob("Tropism (up bias)", p.tropism, 0.0f, 0.6f);
+        ImGui::SeparatorText("Crown envelope");
+        knob("Bare trunk min (m)", p.trunkBaseMin, 0.5f, 5.0f);
+        knob("Bare trunk max (m)", p.trunkBaseMax, 0.5f, 6.0f);
+        knob("Crown height min", p.crownHeightMin, 1.0f, 7.0f);
+        knob("Crown height max", p.crownHeightMax, 1.0f, 8.0f);
+        knob("Crown radius min", p.crownRadiusMin, 0.8f, 5.0f);
+        knob("Crown radius max", p.crownRadiusMax, 0.8f, 6.0f);
+        ImGui::SeparatorText("Foliage SDF + cards");
+        knob("Tip ball radius", p.tipBallRadius, 0.3f, 2.0f);
+        knob("Tip order falloff", p.tipOrderFalloff, 0.5f, 1.0f);
+        knob("Smooth-min k", p.smoothK, 0.1f, 2.0f);
+        knob("Card size min", p.cardHalfSizeMin, 0.01f, 0.25f);
+        knob("Card size max", p.cardHalfSizeMax, 0.01f, 0.35f);
+        knob("Density gradient G", p.densityGradient, 1.0f, 6.0f);
+        knob("Card density x", p.foliageDensity, 0.25f, 8.0f);
+    }
+
+    // The §5 round trip, v1: paste-ready records for landscape.toml (the
+    // editor's EditSession can take over later — same fields, same GUIDs).
+    if (ImGui::Button("Log TOML records")) {
+        const render::LobeTreeParams& l = vegetation.lobeTreeParams;
+        const render::ColonizedTreeParams& c = vegetation.colonizedTreeParams;
+        LOG_INFO("[records.fields]  # LobeTreeTuningForm\n"
+                 "trunkHeightMin = {}\ntrunkHeightMax = {}\n"
+                 "trunkRadiusMin = {}\ntrunkRadiusMax = {}\n"
+                 "trunkTaper = {}\nlean = {}\n"
+                 "branchCountMin = {}\nbranchCountMax = {}\n"
+                 "branchLengthMin = {}\nbranchLengthMax = {}\n"
+                 "crownLobeRadiusMin = {}\ncrownLobeRadiusMax = {}\n"
+                 "branchLobeRadiusMin = {}\nbranchLobeRadiusMax = {}\n"
+                 "lobeFlatten = {}\nnormalSpherize = {}",
+                 l.trunkHeightMin, l.trunkHeightMax, l.trunkRadiusMin,
+                 l.trunkRadiusMax, l.trunkTaper, l.lean, l.branchCountMin,
+                 l.branchCountMax, l.branchLengthMin, l.branchLengthMax,
+                 l.crownLobeRadiusMin, l.crownLobeRadiusMax,
+                 l.branchLobeRadiusMin, l.branchLobeRadiusMax,
+                 l.lobeFlatten, l.normalSpherize);
+        LOG_INFO("[records.fields]  # ColonizedTreeTuningForm\n"
+                 "segment = {}\nkillDistance = {}\nattractorCount = {}\n"
+                 "pipeExponent = {}\ntropism = {}\n"
+                 "trunkBaseMin = {}\ntrunkBaseMax = {}\n"
+                 "crownHeightMin = {}\ncrownHeightMax = {}\n"
+                 "crownRadiusMin = {}\ncrownRadiusMax = {}\n"
+                 "tipBallRadius = {}\ntipOrderFalloff = {}\nsmoothK = {}\n"
+                 "cardHalfSizeMin = {}\ncardHalfSizeMax = {}\n"
+                 "densityGradient = {}\nfoliageDensity = {}",
+                 c.segment, c.killDistance, c.attractorCount,
+                 c.pipeExponent, c.tropism, c.trunkBaseMin, c.trunkBaseMax,
+                 c.crownHeightMin, c.crownHeightMax, c.crownRadiusMin,
+                 c.crownRadiusMax, c.tipBallRadius, c.tipOrderFalloff,
+                 c.smoothK, c.cardHalfSizeMin, c.cardHalfSizeMax,
+                 c.densityGradient, c.foliageDensity);
+    }
+
+    if (dirty) {
+        reseedVegetation = true;
+    }
+}
+
 void LandscapeRenderer::drawTerrainPanel() {
     // Live stats stay on top, always visible; the knobs group below.
     ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
@@ -1925,6 +2085,14 @@ void LandscapeRenderer::drawTerrainPanel() {
         // V8f: 80-face twins within; 20-face ultra beyond.
         ImGui::SliderInt("Veg low-detail radius",
                          &vegetation.lowDetailRadius, 2, 12);
+        // EXPERIMENT (feature/space-colonization-trees): Runions skeleton
+        // + SDF-normal cross-plane foliage vs the solid-lobe trees. The
+        // swap re-bakes AO for the new meshes (disk-cached after once).
+        if (ImGui::Checkbox("Space-colonization trees (A/B)",
+                            &vegetation.colonizationTrees)) {
+            reseedVegetation = true; // applied at the render()-top safe point
+        }
+        ImGui::TextDisabled("(generation knobs: Trees panel)");
     }
     if (ImGui::CollapsingHeader("Culling & debug")) {
         ImGui::Checkbox("Occlusion culling (A/B)", &occlusionUi);

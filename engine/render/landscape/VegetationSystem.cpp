@@ -20,7 +20,10 @@ namespace {
 
 constexpr const char* kTreeShader = "tree";
 constexpr const char* kPropCasterShader = "shadow_prop";
-constexpr f32 kTreeSpacing = 4.0f; // meters between scatter candidates
+// Realistic-scale trees (dev 2026-07-20): x8 height against the player,
+// so 2x the candidate spacing = 1/4 the density — giant forests, not
+// hedges of them.
+constexpr f32 kTreeSpacing = 8.0f; // meters between scatter candidates
 
 // hashU32 / HashRng now live in engine/core/Hash.hpp (shared scatter hash family).
 using core::hashU32;
@@ -90,7 +93,11 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                      rng.next()) *
                                         kTreeSpacing;
             const f32 forest = forestMask(params.seed, x, z);
-            if (forest < 0.05f || rng.next() >= forest * 0.95f) {
+            // 0.475: half the pre-2026-07-20 acceptance — the second
+            // density halving (after kTreeSpacing 4->8) requested once
+            // the x8 giants stood; done on the acceptance so the grid
+            // keeps its resolution (spacing x sqrt(2) would truncate).
+            if (forest < 0.05f || rng.next() >= forest * 0.475f) {
                 continue;
             }
             const f32 h = terrain::height(params, x, z);
@@ -99,9 +106,10 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             if (h < params.seaLevel + 3.0f || h > 92.0f || slope > 0.22f) {
                 continue;
             }
-            // Sink slightly so leaning trunks never float on slopes.
-            place(0, VegetationSystem::kTreeVariants, rng, x, h - 0.15f, z,
-                  0.8f, 1.4f, 880.0f);
+            // Sink slightly so leaning trunks never float on slopes
+            // (scaled with the x8 trees — their footprint is meters wide).
+            place(0, VegetationSystem::kTreeVariants, rng, x, h - 1.2f, z,
+                  6.4f, 11.2f, 880.0f); // x8 of the 0.8-1.4 hedge scale
         }
     }
 
@@ -179,6 +187,7 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
 void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                               core::JobSystem& jobSystem, u32 terrainSeed) {
     streamer.create(jobSystem);
+    meshSeed = terrainSeed;
     createVariantMeshes(device, terrainSeed);
     shaders.load(kTreeShader, { { "FrameUbo", 0 } },
                  { { "uShadowMap", 1 } });
@@ -209,13 +218,19 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
         }
         const u32 seed = hashU32(terrainSeed) + i * 977u;
         if (i < kFirstRock) {
-            uploadVariantMesh(device, i, baked(generateTree(seed, 2), 0.6f));
-            uploadLowDetailMesh(device, i,
-                                baked(generateTree(seed, 1), 0.6f));
+            // EXPERIMENT A/B (feature/space-colonization-trees): the
+            // Runions/SDF-card generator swaps in for all three levels.
+            const auto tree = [&](u32 lod) {
+                return colonizationTrees
+                           ? generateColonizedTree(seed, lod,
+                                                   colonizedTreeParams)
+                           : generateTree(seed, lod, lobeTreeParams);
+            };
+            uploadVariantMesh(device, i, baked(tree(2), 0.6f));
+            uploadLowDetailMesh(device, i, baked(tree(1), 0.6f));
             // V8f: bare-icosahedron lobes (~150 tris/tree) for the far
             // ring — same seed, same composition, facets invisible there.
-            uploadUltraDetailMesh(device, i,
-                                  baked(generateTree(seed, 0), 0.6f));
+            uploadUltraDetailMesh(device, i, baked(tree(0), 0.6f));
         } else if (i < kFirstBush) {
             uploadVariantMesh(device, i, baked(generateRock(seed), 0.5f));
         } else {
@@ -297,6 +312,7 @@ void VegetationSystem::destroy(rhi::Device& device) {
 void VegetationSystem::regenerate(rhi::Device& device, u32 terrainSeed) {
     streamer.invalidateAll([](Chunk&) {});
     instances = 0;
+    meshSeed = terrainSeed;
     destroyVariantMeshes(device);
     createVariantMeshes(device, terrainSeed);
 }
@@ -477,9 +493,10 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         const f32 z0 =
             static_cast<f32>(chunkKeyCz(key)) * TerrainSystem::kChunkSize;
         return frustum->intersectsAabb(
-            { x0 - 4.0f, chunk.minY - 1.0f, z0 - 4.0f },
-            { x0 + TerrainSystem::kChunkSize + 4.0f, chunk.maxY + 14.0f,
-              z0 + TerrainSystem::kChunkSize + 4.0f });
+            { x0 - kPropPadXz, chunk.minY - 1.0f, z0 - kPropPadXz },
+            { x0 + TerrainSystem::kChunkSize + kPropPadXz,
+              chunk.maxY + kPropPadY,
+              z0 + TerrainSystem::kChunkSize + kPropPadXz });
     };
     const bool culling = frustum != nullptr || occluded != nullptr;
     std::unordered_map<u64, bool> visible;
@@ -600,17 +617,18 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
                 continue; // beyond the last shadow cascade
             }
             if (frustum != nullptr) {
-                // Same AABB convention as draw(): XZ pad for canopy
-                // overhang, +14 m for prop height above its base.
+                // Same AABB convention as draw() (kPropPad*: canopy
+                // overhang in XZ, tallest scaled tree in Y).
                 const f32 x0 =
                     static_cast<f32>(cx) * TerrainSystem::kChunkSize;
                 const f32 z0 =
                     static_cast<f32>(cz) * TerrainSystem::kChunkSize;
                 if (!frustum->intersectsAabb(
-                        { x0 - 4.0f, chunk.minY - 1.0f, z0 - 4.0f },
-                        { x0 + TerrainSystem::kChunkSize + 4.0f,
-                          chunk.maxY + 14.0f,
-                          z0 + TerrainSystem::kChunkSize + 4.0f })) {
+                        { x0 - kPropPadXz, chunk.minY - 1.0f,
+                          z0 - kPropPadXz },
+                        { x0 + TerrainSystem::kChunkSize + kPropPadXz,
+                          chunk.maxY + kPropPadY,
+                          z0 + TerrainSystem::kChunkSize + kPropPadXz })) {
                     continue; // outside this cascade's ortho volume
                 }
             }

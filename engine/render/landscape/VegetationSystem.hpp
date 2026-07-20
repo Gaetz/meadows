@@ -8,6 +8,7 @@
 #include "engine/assets/MeshData.hpp"
 #include "engine/render/landscape/ChunkStreamer.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
+#include "engine/render/landscape/TreeGenerator.hpp" // *TreeParams (builder)
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 
@@ -47,13 +48,30 @@ public:
     // NB: the tree FADE tops out at 880 m — radii under ~14 pop at the
     // ring edge instead of fading (a budget-hunting knob, not a look).
     i32 viewRadius { 12 };        // chunks (dev pick 2026-07-10)
-    i32 highDetailRadius { 5 };   // 320-face canopies within (x 64 m)
+    i32 highDetailRadius { 2 };   // full-detail canopies within (x 64 m)
+                                  // (dev pick 2026-07-20: 2/4 ladder —
+                                  // the old 5/4 left the low band empty)
     // V8f: third mesh level beyond — bare-icosahedron lobes (20 faces,
     // generateTree(seed, 0)): ~150 tris/tree vs ~600 on the low twin.
     // The trees carried 24 of the 30 Mtri/frame (V8e counters, M1) and
     // the far ring is where the instances are.
     i32 lowDetailRadius { 4 };    // 80-face twins within; ultra beyond
                                   // (dev pick 2026-07-19, visual check OK)
+    // EXPERIMENT (feature/space-colonization-trees): A/B — tree variants
+    // regenerate through generateColonizedTree (Runions skeleton +
+    // SDF-normal billboard-card foliage). Flip via reseedVariantMeshes.
+    bool colonizationTrees { false };
+    // Tree builder (2026-07-20): the generators' knobs, mapped from the
+    // *TreeTuningForm records by the scene and edited live by the panel
+    // (apply through reseedVariantMeshes). Defaults = shipped look.
+    LobeTreeParams lobeTreeParams {};
+    ColonizedTreeParams colonizedTreeParams {};
+    // Chunk-AABB pads for the culling tests (draw/drawDepth): chunk
+    // min/maxY track prop BASES, so Y must absorb the tallest scaled
+    // tree (~7.5 m mesh x 11.2 scale) and XZ the widest canopy overhang
+    // (x8 realistic trees, dev 2026-07-20).
+    static constexpr f32 kPropPadXz = 26.0f;
+    static constexpr f32 kPropPadY = 86.0f;
     static constexpr u32 kMaxUploadsPerFrame = 2;
     // Scatter jobs budgeted like uploads (see TerrainSystem — the
     // unbudgeted ring edge was part of the fast-travel stutter).
@@ -75,6 +93,14 @@ public:
     // the current terrain — the sculpt path. Non-resident chunks are left to
     // finish streaming. Keys share the terrain chunk grid (keyOf).
     void invalidateChunks(rhi::Device& device, const vector<u64>& keys);
+
+    // Mesh-only swap (the colonizationTrees A/B): variant meshes rebuild
+    // with the current seed, chunks and instance buffers stay resident
+    // (instances reference variants by index — nothing to re-scatter).
+    void reseedVariantMeshes(rhi::Device& device) {
+        destroyVariantMeshes(device);
+        createVariantMeshes(device, meshSeed);
+    }
 
     // Replaces one variant's mesh with an authored one (brick 23: glTF
     // rock). The CPU copy is kept so regenerate() re-uploads it after a
@@ -188,6 +214,7 @@ private:
 
     // The shared ring mechanics (audit U3-1) live in ChunkStreamer.
     ChunkStreamer<Chunk, VariantBuckets> streamer;
+    u32 meshSeed { 0 }; // last create/regenerate seed (reseedVariantMeshes)
     u32 instances { 0 };
     u32 lastDrawn { 0 };
     u32 frameIndices { 0 };       // reset in update(), summed by draw*()

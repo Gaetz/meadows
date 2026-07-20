@@ -37,6 +37,8 @@ class UiSystem;
 }
 namespace data {
 struct LandscapeTuningForm;
+struct LobeTreeTuningForm;
+struct ColonizedTreeTuningForm;
 }
 
 namespace game {
@@ -87,6 +89,11 @@ public:
     // the TOML sets where everything starts).
     void applyTuning(const data::LandscapeTuningForm& tuning,
                      const sptr<const render::HeightPatches>& patches);
+    // Tree builder (2026-07-20): the two *TreeTuningForm records mapped
+    // onto the generators' flat engine params (§4 seam, TerrainParams
+    // pattern) — startup values; the Trees panel edits them live.
+    void applyTreeTuning(const data::LobeTreeTuningForm& lobes,
+                         const data::ColonizedTreeTuningForm& colonized);
 
     // The whole frame: pipeline refresh, ring streaming, cascades,
     // reflection, opaque+sky+effects, copy/Hi-Z/water, post FX, tonemap
@@ -97,6 +104,10 @@ public:
     // Dev panels (ImGui) — the renderer's own debug/tuning state.
     void drawTerrainPanel();                       // stats, seed, occlusion
     void drawRenderPanel(AtmosphereParams& atmos); // toggles + post sliders
+    // Tree builder: every generation knob of both tree types, live —
+    // regen on slider release; "Log TOML" prints paste-ready records
+    // (the §5 round trip until the editor's EditSession takes over).
+    void drawTreeBuilderPanel();
     // GPU-PERF P0: per-pass GPU/CPU budget table ("GPU Perf" window).
     // `cpuProbe` = the scene's FrameProbe for the CPU column (nullable).
     void drawPerfPanel(const core::FrameProbe* cpuProbe);
@@ -205,6 +216,9 @@ private:
     vector<render::RcLight> rcLights;  // reused to avoid re-allocations
     vector<render::VegetationSystem::GiProp> vegGiProps; // forests -> GI
     bool regenerateRequested { false };
+    // EXPERIMENT (feature/space-colonization-trees): A/B checkbox flips
+    // this; render() swaps the variant meshes at its safe point.
+    bool reseedVegetation { false };
     // Grass panel: a scatter knob moved — grass-only re-scatter next frame.
     bool grassRescatterRequested { false };
     bool wireframeUi { false };

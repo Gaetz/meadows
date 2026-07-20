@@ -178,6 +178,10 @@ void LandscapeScene::bootstrapData() {
     // renderer's half (terrain/exposure/ssao/grade) through applyTuning,
     // the atmosphere half here (the weather crossfade owns `atmos`).
     renderer.applyTuning(tuning, heightPatches);
+    // Tree builder (2026-07-20): generation knobs ride two ordinary
+    // records (§5) — mods retune the species; the Trees panel edits live.
+    renderer.applyTreeTuning(data::resolveLobeTreeTuning(forms),
+                             data::resolveColonizedTreeTuning(forms));
     atmos.fogDensity = tuning.fogDensity;
     atmos.fogHeightFalloff = tuning.fogHeightFalloff;
     atmos.fogLowBoost = tuning.fogLowBoost;
@@ -2937,6 +2941,7 @@ void LandscapeScene::drawUi() {
         barToggle("Terrain", uiTerrainOpen);
         barToggle("Sky & weather", uiSkyOpen);
         barToggle("Rendering", uiRenderOpen);
+        barToggle("Trees", uiTreesOpen);
         barToggle("GPU perf", uiPerfOpen);
     } else { // Edit: editing-related (the SceneEditor windows draw on
              // their own; these are the extras).
@@ -2978,6 +2983,8 @@ void LandscapeScene::drawUi() {
     rightWindow("Sky, weather & time", uiSkyOpen, [&] { drawSkyUi(); });
     rightWindow("Rendering & post-FX", uiRenderOpen,
                 [&] { renderer.drawRenderPanel(atmos); });
+    rightWindow("Tree builder", uiTreesOpen,
+                [&] { renderer.drawTreeBuilderPanel(); });
     rightWindow("GPU perf", uiPerfOpen,
                 [&] { renderer.drawPerfPanel(&frameProbe); });
 
