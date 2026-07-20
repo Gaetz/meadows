@@ -82,14 +82,25 @@ TEST_CASE("colonized trees are well-formed at every detail level") {
             const MeshData tree =
                 render::generateColonizedTree(seed, detail);
             checkWellFormed(tree);
+            u32 cardVertices = 0;
             for (const render::MeshVertex& vertex : tree.vertices) {
                 CHECK(glm::length(vertex.normal) ==
                       doctest::Approx(1.0f).epsilon(0.01));
-                CHECK(vertex.uv.x >= 0.0f);
-                CHECK(vertex.uv.x <= 1.0f);
-                CHECK(vertex.uv.y >= 0.0f);
-                CHECK(vertex.uv.y <= 1.0f);
+                if (vertex.uv.x < -5.0f) {
+                    // Billboard leaf card: uv encodes the corner around
+                    // the -10 flag bias (see appendBillboardCard).
+                    ++cardVertices;
+                    CHECK(std::abs(vertex.uv.x + 10.0f) < 0.1f);
+                    CHECK(std::abs(vertex.uv.y) < 0.1f);
+                } else {
+                    CHECK(vertex.uv.x >= 0.0f);
+                    CHECK(vertex.uv.x <= 1.0f);
+                    CHECK(vertex.uv.y >= 0.0f);
+                    CHECK(vertex.uv.y <= 1.0f);
+                }
             }
+            CHECK(cardVertices > 0);
+            CHECK(cardVertices % 4 == 0); // degenerate quads, 4 verts each
         }
         // Coarser levels never carry MORE geometry.
         CHECK(render::generateColonizedTree(seed, 0).indices.size() <=

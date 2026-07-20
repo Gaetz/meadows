@@ -75,25 +75,30 @@ Vec3 canopySdfGradient(const vector<Metaball>& balls, const Vec3& p) {
     return len > 1e-6f ? g / len : Vec3 { 0.0f, 1.0f, 0.0f };
 }
 
-// One double-sided quad (two windings, SAME normal — the SDF shading must
-// hold from every side). `right`/`up` are half-extent edge vectors.
-void appendCard(MeshData& mesh, const Vec3& center, const Vec3& right,
-                const Vec3& up, const Vec3& normal, const Vec3& color) {
-    const Vec3 p0 = center - right - up;
-    const Vec3 p1 = center + right - up;
-    const Vec3 p2 = center + right + up;
-    const Vec3 p3 = center - right + up;
-    const auto vertex = [&](const Vec3& p) {
-        return MeshVertex { p, normal, { 0.0f, 0.0f }, color };
-    };
+// One BILLBOARD leaf card (dev feedback 2026-07-20: a single card facing
+// the player beats the mechanical 60° cross). The mesh stores a
+// DEGENERATE quad — four vertices at the cluster center — and encodes
+// the corner in uv: uv.x = -10 + cornerX·halfSize (the -10 bias is the
+// card FLAG, unambiguous against wood/lobe uv in [0,1]), uv.y =
+// cornerY·halfSize. tree.vert expands toward the camera at render time
+// (shadow_prop.vert toward the light), and the LIGHTING normal stays the
+// SDF gradient — the whole point of the technique.
+constexpr f32 kCardFlagBias = -10.0f;
+
+void appendBillboardCard(MeshData& mesh, const Vec3& center, f32 halfSize,
+                         const Vec3& normal, const Vec3& color) {
     const u32 base = static_cast<u32>(mesh.vertices.size());
-    mesh.vertices.push_back(vertex(p0));
-    mesh.vertices.push_back(vertex(p1));
-    mesh.vertices.push_back(vertex(p2));
-    mesh.vertices.push_back(vertex(p3));
-    // Front winding then back winding — pipeline culls back faces.
-    const u32 quads[12] = { 0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2 };
-    for (u32 i : quads) {
+    for (const Vec2 corner : { Vec2 { -1.0f, -1.0f }, Vec2 { 1.0f, -1.0f },
+                               Vec2 { 1.0f, 1.0f }, Vec2 { -1.0f, 1.0f } }) {
+        mesh.vertices.push_back(
+            { center, normal,
+              { kCardFlagBias + corner.x * halfSize,
+                corner.y * halfSize },
+              color });
+    }
+    // CCW after the camera-facing expansion (right×up points at the eye).
+    const u32 quad[6] = { 0, 1, 2, 0, 2, 3 };
+    for (u32 i : quad) {
         mesh.indices.push_back(base + i);
     }
 }
@@ -247,7 +252,6 @@ MeshData generateColonizedTree(u32 seed, u32 detail) {
         // Ascend toward the root until the previous chain end.
         u32 cursor = n;
         while (cursor != 0) {
-            const u32 parent = static_cast<u32>(nodes[cursor].parent);
             // Collapse while the parent is a pass-through node whose
             // direction stays aligned and the run stays short.
             u32 runTop = cursor;
@@ -311,12 +315,12 @@ MeshData generateColonizedTree(u32 seed, u32 detail) {
         balls.resize(64);
     }
 
-    // --- Foliage: cross-plane clusters in the SDF shell -------------------
-    // Dev feedback 2026-07-20: leaf-CLUMP sized cards, lots of them —
-    // 1/10 the size, 10x the count of the first cut (huge planes read as
-    // paper; ~1 m clumps on a x8 tree read as foliage).
+    // --- Foliage: billboard leaf cards in the SDF shell -------------------
+    // Dev feedback 2026-07-20 (bis): ONE camera-facing card per clump
+    // (the 60° crosses read mechanical), leaf-clump sized, shell
+    // TIGHTENED against the surface — the silhouette is where cards pay,
+    // and a sparse interior never shows.
     const u32 clusterCount = detail >= 2 ? 560u : detail == 1 ? 260u : 120u;
-    constexpr f32 kTau = 6.2831853f;
     for (u32 c = 0; c < clusterCount; ++c) {
         // The scatter stream runs the SAME sequence at every detail level
         // (clusterCount only truncates it): LODs agree on where the
@@ -326,55 +330,39 @@ MeshData generateColonizedTree(u32 seed, u32 detail) {
                                    static_cast<f32>(balls.size())) %
                   balls.size()];
         Vec3 position = ball.center;
-        for (u32 attempt = 0; attempt < 16; ++attempt) {
+        for (u32 attempt = 0; attempt < 24; ++attempt) {
             const Vec3 candidate =
                 ball.center + Vec3 { (scatterRng.next() * 2.0f - 1.0f),
                                      (scatterRng.next() * 2.0f - 1.0f),
                                      (scatterRng.next() * 2.0f - 1.0f) } *
-                                  (ball.radius * 1.15f);
+                                  (ball.radius * 1.10f);
             const f32 d = canopySdf(balls, candidate);
-            // Shell bias: clusters live near the surface — the silhouette
-            // is where cards pay, the deep interior is never seen.
-            if (d > -0.60f && d < -0.06f) {
+            if (d > -0.30f && d < -0.02f) {
                 position = candidate;
                 break;
             }
         }
 
         const f32 hue = scatterRng.next();
-        const Vec3 leafColor =
+        Vec3 leafColor =
             glm::mix(Vec3 { 0.030f, 0.095f, 0.018f },
                      Vec3 { 0.075f, 0.130f, 0.020f }, hue); // tree palette
+        // Sunlit-crown gradient, baked here (the uv loop below is
+        // wood-only now — card uv carries the billboard corner).
+        leafColor *= 1.0f + 0.25f * glm::clamp(position.y / totalHeight,
+                                               0.0f, 1.0f);
         const Vec3 normal = canopySdfGradient(balls, position);
-        const f32 size = 0.042f + scatterRng.next() * 0.030f;
-        const f32 baseYaw = scatterRng.next() * kTau;
-        const f32 tilt = (scatterRng.next() - 0.5f) * 0.7f;
-        // Three planes crossed at 60°, all shading with the SDF normal.
-        for (u32 plane = 0; plane < 3; ++plane) {
-            const f32 yaw =
-                baseYaw + static_cast<f32>(plane) * (kTau / 6.0f);
-            const Vec3 right { std::cos(yaw) * size, std::sin(tilt) * 0.2f,
-                               std::sin(yaw) * size };
-            const Vec3 planeUp { -std::sin(yaw) * std::sin(tilt) * size *
-                                     0.35f,
-                                 size * 0.85f,
-                                 std::cos(yaw) * std::sin(tilt) * size *
-                                     0.35f };
-            appendCard(mesh, position, right, planeUp, normal, leafColor);
-        }
+        const f32 halfSize = 0.042f + scatterRng.next() * 0.030f;
+        appendBillboardCard(mesh, position, halfSize, normal, leafColor);
     }
 
-    // --- Wind weights + vertical gradient (the generateTree contract) ----
-    for (u32 i = 0; i < mesh.vertices.size(); ++i) {
+    // --- Wind weights + vertical gradient — WOOD ONLY (card uv is the
+    // billboard encoding; tree.vert gives cards a fixed sway weight). ----
+    for (u32 i = 0; i < woodVertexCount; ++i) {
         MeshVertex& vertex = mesh.vertices[i];
         const f32 height01 =
             glm::clamp(vertex.position.y / totalHeight, 0.0f, 1.0f);
-        const bool isWood = i < woodVertexCount;
-        const f32 sway = isWood ? height01 * 0.30f : 0.5f + height01 * 0.5f;
-        vertex.uv = { sway, height01 };
-        if (!isWood) {
-            vertex.color *= 1.0f + 0.25f * height01; // sunlit crown
-        }
+        vertex.uv = { height01 * 0.30f, height01 };
     }
     return mesh;
 }
