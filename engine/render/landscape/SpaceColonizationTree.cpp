@@ -105,7 +105,7 @@ void appendBillboardCard(MeshData& mesh, const Vec3& center, f32 halfSize,
 
 } // namespace
 
-MeshData generateColonizedTree(u32 seed, u32 detail) {
+MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
     // Independent streams so the SKELETON never depends on `detail` —
     // the three LODs of one seed must share silhouette and colors.
     HashRng shapeRng { hashU32(seed ^ 0x5c01a11eu) };
@@ -320,7 +320,11 @@ MeshData generateColonizedTree(u32 seed, u32 detail) {
     // (the 60° crosses read mechanical), leaf-clump sized, shell
     // TIGHTENED against the surface — the silhouette is where cards pay,
     // and a sparse interior never shows.
-    const u32 clusterCount = detail >= 2 ? 560u : detail == 1 ? 260u : 120u;
+    const u32 baseClusters = detail >= 2 ? 560u : detail == 1 ? 260u : 120u;
+    const u32 clusterCount = glm::clamp(
+        static_cast<u32>(static_cast<f32>(baseClusters) *
+                         glm::clamp(foliageDensity, 0.1f, 8.0f)),
+        1u, 4000u);
     for (u32 c = 0; c < clusterCount; ++c) {
         // The scatter stream runs the SAME sequence at every detail level
         // (clusterCount only truncates it): LODs agree on where the

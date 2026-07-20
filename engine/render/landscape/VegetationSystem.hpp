@@ -56,8 +56,12 @@ public:
                                   // (dev pick 2026-07-19, visual check OK)
     // EXPERIMENT (feature/space-colonization-trees): A/B — tree variants
     // regenerate through generateColonizedTree (Runions skeleton +
-    // SDF-normal cross-plane foliage). Flip via reseedVariantMeshes.
+    // SDF-normal billboard-card foliage). Flip via reseedVariantMeshes.
     bool colonizationTrees { false };
+    // Live card-count multiplier for the colonized foliage (dev knob —
+    // apply through reseedVariantMeshes; same scatter stream truncated,
+    // silhouette stable).
+    f32 colonizationFoliage { 1.0f };
     // Chunk-AABB pads for the culling tests (draw/drawDepth): chunk
     // min/maxY track prop BASES, so Y must absorb the tallest scaled
     // tree (~7.5 m mesh x 11.2 scale) and XZ the widest canopy overhang

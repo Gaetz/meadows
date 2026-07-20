@@ -217,8 +217,10 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
             // EXPERIMENT A/B (feature/space-colonization-trees): the
             // Runions/SDF-card generator swaps in for all three levels.
             const auto tree = [&](u32 lod) {
-                return colonizationTrees ? generateColonizedTree(seed, lod)
-                                         : generateTree(seed, lod);
+                return colonizationTrees
+                           ? generateColonizedTree(seed, lod,
+                                                   colonizationFoliage)
+                           : generateTree(seed, lod);
             };
             uploadVariantMesh(device, i, baked(tree(2), 0.6f));
             uploadLowDetailMesh(device, i, baked(tree(1), 0.6f));

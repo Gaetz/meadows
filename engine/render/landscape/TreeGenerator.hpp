@@ -35,8 +35,11 @@ MeshData generateTree(u32 seed, u32 lobeSubdivisions = 2);
 // Genshin/BotW trick, this time on cards instead of solid lobes).
 // `detail` mirrors the LOD contract: 2 near, 1 mid, 0 far (tube sides
 // and cluster count scale; skeleton and silhouette are seed-stable
-// across levels). Deterministic per seed, worker-safe.
-MeshData generateColonizedTree(u32 seed, u32 detail = 2);
+// across levels). `foliageDensity` multiplies the per-level card count
+// (live tuning knob — truncates the same scatter stream, so the
+// silhouette stays put). Deterministic per seed, worker-safe.
+MeshData generateColonizedTree(u32 seed, u32 detail = 2,
+                               f32 foliageDensity = 1.0f);
 
 // Squashed craggy boulder, meant to be sunk slightly into the ground.
 MeshData generateRock(u32 seed);

@@ -1938,6 +1938,14 @@ void LandscapeRenderer::drawTerrainPanel() {
                             &vegetation.colonizationTrees)) {
             reseedVegetation = true; // applied at the render()-top safe point
         }
+        // Live card-count multiplier: regen on slider RELEASE (each new
+        // value re-bakes AO once, then the disk cache makes it instant).
+        ImGui::SliderFloat("Card density x", &vegetation.colonizationFoliage,
+                           0.25f, 4.0f, "%.2f");
+        if (ImGui::IsItemDeactivatedAfterEdit() &&
+            vegetation.colonizationTrees) {
+            reseedVegetation = true;
+        }
     }
     if (ImGui::CollapsingHeader("Culling & debug")) {
         ImGui::Checkbox("Occlusion culling (A/B)", &occlusionUi);
