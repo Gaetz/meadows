@@ -259,3 +259,55 @@ windStrength = 1.3
 waveChop = 1.4
 stormFront = 0.25
 rainIntensity = 0.75
+
+# --- Tree builder (2026-07-20) -------------------------------------------
+# Generation knobs of each procedural tree type. The in-game Tree builder
+# panel edits these live; a mod patches any field below (last writer wins).
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b1"
+type = "LobeTreeTuningForm"
+new = true
+[records.fields]
+editorId = "LobeTreeTuning"
+trunkHeightMin = 4.2
+trunkHeightMax = 6.1
+trunkRadiusMin = 0.17
+trunkRadiusMax = 0.24
+trunkTaper = 0.42
+lean = 0.16
+branchCountMin = 3
+branchCountMax = 5
+branchLengthMin = 0.9
+branchLengthMax = 1.7
+crownLobeRadiusMin = 0.85
+crownLobeRadiusMax = 1.25
+branchLobeRadiusMin = 0.6
+branchLobeRadiusMax = 0.98
+lobeFlatten = 0.85
+normalSpherize = 0.4
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b2"
+type = "ColonizedTreeTuningForm"
+new = true
+[records.fields]
+editorId = "ColonizedTreeTuning"
+segment = 0.28
+killDistance = 0.7
+attractorCount = 350
+pipeExponent = 2.6
+tropism = 0.14
+trunkBaseMin = 1.6
+trunkBaseMax = 2.5
+crownHeightMin = 2.6
+crownHeightMax = 3.8
+crownRadiusMin = 1.9
+crownRadiusMax = 3.0
+tipBallRadius = 0.95
+tipOrderFalloff = 0.78
+smoothK = 0.7
+cardHalfSizeMin = 0.042
+cardHalfSizeMax = 0.072
+densityGradient = 3.0
+foliageDensity = 3.2

@@ -223,8 +223,8 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
             const auto tree = [&](u32 lod) {
                 return colonizationTrees
                            ? generateColonizedTree(seed, lod,
-                                                   colonizationFoliage)
-                           : generateTree(seed, lod);
+                                                   colonizedTreeParams)
+                           : generateTree(seed, lod, lobeTreeParams);
             };
             uploadVariantMesh(device, i, baked(tree(2), 0.6f));
             uploadLowDetailMesh(device, i, baked(tree(1), 0.6f));

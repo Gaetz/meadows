@@ -25,13 +25,10 @@ namespace {
 using core::hashU32;
 using core::HashRng;
 
-constexpr f32 kSegment = 0.28f;        // D — growth step (m)
-constexpr f32 kKillDistance = 0.70f;   // d_k = 2.5 D
-constexpr u32 kAttractorCount = 350;   // N — enough for a clean mid tree
+// Artistic knobs live in ColonizedTreeParams (tree builder 2026-07-20);
+// only the truly structural constants stay here.
 constexpr u32 kMaxIterations = 120;
-constexpr f32 kPipeExponent = 2.6f;    // pipe model n (2..3, Mac83)
 constexpr f32 kTipRadius = 0.020f;     // r0 at every branch tip (m)
-constexpr f32 kSmoothK = 0.7f;         // metaball smooth-min width (m)
 
 struct Node {
     Vec3 position;
@@ -53,23 +50,24 @@ struct Metaball {
     f32 radius;
 };
 
-f32 canopySdf(const vector<Metaball>& balls, const Vec3& p) {
+f32 canopySdf(const vector<Metaball>& balls, const Vec3& p, f32 smoothK) {
     f32 d = 1e9f;
     for (const Metaball& ball : balls) {
         d = smoothMin(d, glm::length(p - ball.center) - ball.radius,
-                      kSmoothK);
+                      smoothK);
     }
     return d;
 }
 
-Vec3 canopySdfGradient(const vector<Metaball>& balls, const Vec3& p) {
+Vec3 canopySdfGradient(const vector<Metaball>& balls, const Vec3& p,
+                       f32 smoothK) {
     constexpr f32 kEps = 0.15f; // wide taps: SMOOTH normals are the point
-    const f32 dx = canopySdf(balls, p + Vec3 { kEps, 0.0f, 0.0f }) -
-                   canopySdf(balls, p - Vec3 { kEps, 0.0f, 0.0f });
-    const f32 dy = canopySdf(balls, p + Vec3 { 0.0f, kEps, 0.0f }) -
-                   canopySdf(balls, p - Vec3 { 0.0f, kEps, 0.0f });
-    const f32 dz = canopySdf(balls, p + Vec3 { 0.0f, 0.0f, kEps }) -
-                   canopySdf(balls, p - Vec3 { 0.0f, 0.0f, kEps });
+    const f32 dx = canopySdf(balls, p + Vec3 { kEps, 0.0f, 0.0f }, smoothK) -
+                   canopySdf(balls, p - Vec3 { kEps, 0.0f, 0.0f }, smoothK);
+    const f32 dy = canopySdf(balls, p + Vec3 { 0.0f, kEps, 0.0f }, smoothK) -
+                   canopySdf(balls, p - Vec3 { 0.0f, kEps, 0.0f }, smoothK);
+    const f32 dz = canopySdf(balls, p + Vec3 { 0.0f, 0.0f, kEps }, smoothK) -
+                   canopySdf(balls, p - Vec3 { 0.0f, 0.0f, kEps }, smoothK);
     const Vec3 g { dx, dy, dz };
     const f32 len = glm::length(g);
     return len > 1e-6f ? g / len : Vec3 { 0.0f, 1.0f, 0.0f };
@@ -105,7 +103,8 @@ void appendBillboardCard(MeshData& mesh, const Vec3& center, f32 halfSize,
 
 } // namespace
 
-MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
+MeshData generateColonizedTree(u32 seed, u32 detail,
+                               const ColonizedTreeParams& params) {
     // Independent streams so the SKELETON never depends on `detail` —
     // the three LODs of one seed must share silhouette and colors.
     HashRng shapeRng { hashU32(seed ^ 0x5c01a11eu) };
@@ -113,17 +112,25 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
     MeshData mesh;
 
     // --- Crown envelope + attraction points ------------------------------
-    const f32 trunkBase = 1.6f + shapeRng.next() * 0.9f;  // bare trunk (m)
-    const f32 crownHeight = 2.6f + shapeRng.next() * 1.2f;
-    const f32 crownRadius = 1.9f + shapeRng.next() * 1.1f;
+    const f32 trunkBase =
+        params.trunkBaseMin +
+        shapeRng.next() * (params.trunkBaseMax - params.trunkBaseMin);
+    const f32 crownHeight =
+        params.crownHeightMin +
+        shapeRng.next() * (params.crownHeightMax - params.crownHeightMin);
+    const f32 crownRadius =
+        params.crownRadiusMin +
+        shapeRng.next() * (params.crownRadiusMax - params.crownRadiusMin);
     const Vec3 crownCenter { (shapeRng.next() - 0.5f) * 0.5f,
                              trunkBase + crownHeight * 0.55f,
                              (shapeRng.next() - 0.5f) * 0.5f };
     const f32 totalHeight = trunkBase + crownHeight + 0.4f;
 
+    const u32 attractorCount =
+        static_cast<u32>(glm::clamp(params.attractorCount, 50, 2000));
     vector<Vec3> attractors;
-    attractors.reserve(kAttractorCount);
-    while (attractors.size() < kAttractorCount) {
+    attractors.reserve(attractorCount);
+    while (attractors.size() < attractorCount) {
         // Rejection-sample the ellipsoid (deterministic sequence).
         const Vec3 unit { shapeRng.next() * 2.0f - 1.0f,
                           shapeRng.next() * 2.0f - 1.0f,
@@ -144,7 +151,7 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
 
     vector<Vec3> pullSum;   // per node, this iteration
     vector<u32> pullCount;
-    const Vec3 tropism { 0.0f, 0.14f, 0.0f }; // slight upward bias (eq. 3)
+    const Vec3 tropism { 0.0f, params.tropism, 0.0f }; // upward bias (eq. 3)
     for (u32 iteration = 0; iteration < kMaxIterations; ++iteration) {
         pullSum.assign(nodes.size(), Vec3 { 0.0f });
         pullCount.assign(nodes.size(), 0u);
@@ -179,13 +186,13 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
             const Vec3 direction =
                 glm::normalize(pullSum[n] / pullLen + tropism);
             const Vec3 position =
-                nodes[n].position + direction * kSegment;
+                nodes[n].position + direction * params.segment;
             // Degenerate-growth guard: don't stack a node onto a sibling.
             bool duplicate = false;
             for (u32 m = nodeCountBefore; m < nodes.size(); ++m) {
                 if (glm::dot(position - nodes[m].position,
                              position - nodes[m].position) <
-                    (0.5f * kSegment) * (0.5f * kSegment)) {
+                    (0.5f * params.segment) * (0.5f * params.segment)) {
                     duplicate = true;
                     break;
                 }
@@ -204,13 +211,13 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
             for (u32 m = nodeCountBefore; m < nodes.size(); ++m) {
                 if (glm::dot(attractor - nodes[m].position,
                              attractor - nodes[m].position) <
-                    kKillDistance * kKillDistance) {
+                    params.killDistance * params.killDistance) {
                     return true;
                 }
             }
             return false;
         });
-        if (attractors.size() < kAttractorCount / 20) {
+        if (attractors.size() < attractorCount / 20) {
             break; // crown filled
         }
     }
@@ -229,9 +236,9 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
     for (u32 n = static_cast<u32>(nodes.size()); n-- > 1;) {
         Node& parent = nodes[static_cast<u32>(nodes[n].parent)];
         parent.radius = std::pow(
-            std::pow(parent.radius, kPipeExponent) +
-                std::pow(nodes[n].radius, kPipeExponent),
-            1.0f / kPipeExponent);
+            std::pow(parent.radius, params.pipeExponent) +
+                std::pow(nodes[n].radius, params.pipeExponent),
+            1.0f / params.pipeExponent);
     }
     for (Node& node : nodes) {
         node.radius = glm::min(node.radius, 0.30f);
@@ -255,7 +262,7 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
             // Collapse while the parent is a pass-through node whose
             // direction stays aligned and the run stays short.
             u32 runTop = cursor;
-            f32 runLength = kSegment;
+            f32 runLength = params.segment;
             while (nodes[runTop].parent > 0) {
                 const u32 next = static_cast<u32>(nodes[runTop].parent);
                 if (nodes[next].childCount != 1 ||
@@ -265,7 +272,7 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
                     break;
                 }
                 runTop = next;
-                runLength += kSegment;
+                runLength += params.segment;
             }
             const u32 top =
                 nodes[runTop].parent >= 0
@@ -299,8 +306,10 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
         // tip carries the same weight and the SDF collapses back into
         // one uniform blob.
         const f32 radius = glm::clamp(
-            0.95f * std::pow(0.78f, static_cast<f32>(node.order)), 0.30f,
-            1.05f);
+            params.tipBallRadius *
+                std::pow(params.tipOrderFalloff,
+                         static_cast<f32>(node.order)),
+            0.30f, glm::max(params.tipBallRadius, 0.35f));
         balls.push_back({ node.position, radius });
     }
     if (balls.empty()) { // degenerate seed: keep the mesh valid
@@ -323,7 +332,7 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
     const u32 baseClusters = detail >= 2 ? 560u : detail == 1 ? 260u : 120u;
     const u32 clusterCount = glm::clamp(
         static_cast<u32>(static_cast<f32>(baseClusters) *
-                         glm::clamp(foliageDensity, 0.1f, 8.0f)),
+                         glm::clamp(params.foliageDensity, 0.1f, 8.0f)),
         1u, 4000u);
     u32 emitted = 0;
     for (u32 c = 0; c < clusterCount * 6u && emitted < clusterCount; ++c) {
@@ -341,22 +350,23 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
                                      (scatterRng.next() * 2.0f - 1.0f),
                                      (scatterRng.next() * 2.0f - 1.0f) } *
                                   (ball.radius * 1.10f);
-            const f32 d = canopySdf(balls, candidate);
+            const f32 d = canopySdf(balls, candidate, params.smoothK);
             if (d > -0.30f && d < -0.02f) {
                 position = candidate;
                 break;
             }
         }
 
-        const Vec3 normal = canopySdfGradient(balls, position);
+        const Vec3 normal = canopySdfGradient(balls, position, params.smoothK);
         // Light-seeking density gradient (dev 2026-07-20, accentué) :
         // the card count is FIXED (the loop draws candidates until
         // clusterCount land — same cost), but acceptance follows the
         // canopy's outward direction: 3^normal.y = x3 where it faces
         // up, x1 on the sides, x0.33 underneath. Leaves seek light;
         // undersides thin out.
-        const f32 weight = std::pow(3.0f, normal.y); // 0.33 .. 3.0
-        if (scatterRng.next() * 3.0f > weight) {
+        const f32 gradient = glm::max(params.densityGradient, 1.0f);
+        const f32 weight = std::pow(gradient, normal.y); // 1/G .. G
+        if (scatterRng.next() * gradient > weight) {
             continue;
         }
 
@@ -368,9 +378,10 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
         // wood-only now — card uv carries the billboard corner).
         leafColor *= 1.0f + 0.25f * glm::clamp(position.y / totalHeight,
                                                0.0f, 1.0f);
-        const f32 halfSize = 0.042f + scatterRng.next() * 0.030f;
-        // Dev iterations 2026-07-20: 0.42 (paper planes) -> 0.042 ->
-        // 0.021 (too fine with the x3 gradient) -> back to ~0.06 mean.
+        const f32 halfSize =
+            params.cardHalfSizeMin +
+            scatterRng.next() *
+                (params.cardHalfSizeMax - params.cardHalfSizeMin);
         appendBillboardCard(mesh, position, halfSize, normal, leafColor);
         ++emitted;
     }

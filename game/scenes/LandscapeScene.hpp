@@ -139,6 +139,7 @@ private:
     bool uiTerrainOpen { false };
     bool uiSkyOpen { false };
     bool uiRenderOpen { false };
+    bool uiTreesOpen { false }; // Tree builder (generation knobs, live)
     bool uiPerfOpen { false }; // GPU-PERF P0: the budget table [F6]
 
     // U4-2c: the whole custom renderer — shader library, render::* systems,

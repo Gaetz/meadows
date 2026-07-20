@@ -8,6 +8,7 @@
 #include "engine/assets/MeshData.hpp"
 #include "engine/render/landscape/ChunkStreamer.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
+#include "engine/render/landscape/TreeGenerator.hpp" // *TreeParams (builder)
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 
@@ -60,10 +61,11 @@ public:
     // regenerate through generateColonizedTree (Runions skeleton +
     // SDF-normal billboard-card foliage). Flip via reseedVariantMeshes.
     bool colonizationTrees { false };
-    // Live card-count multiplier for the colonized foliage (dev knob —
-    // apply through reseedVariantMeshes; same scatter stream truncated,
-    // silhouette stable). 3.2 = dev pick 2026-07-20 (full canopy).
-    f32 colonizationFoliage { 3.2f };
+    // Tree builder (2026-07-20): the generators' knobs, mapped from the
+    // *TreeTuningForm records by the scene and edited live by the panel
+    // (apply through reseedVariantMeshes). Defaults = shipped look.
+    LobeTreeParams lobeTreeParams {};
+    ColonizedTreeParams colonizedTreeParams {};
     // Chunk-AABB pads for the culling tests (draw/drawDepth): chunk
     // min/maxY track prop BASES, so Y must absorb the tallest scaled
     // tree (~7.5 m mesh x 11.2 scale) and XZ the widest canopy overhang
