@@ -368,8 +368,9 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
         // wood-only now — card uv carries the billboard corner).
         leafColor *= 1.0f + 0.25f * glm::clamp(position.y / totalHeight,
                                                0.0f, 1.0f);
-        const f32 halfSize = 0.021f + scatterRng.next() * 0.015f; // dev:
-        // -50% 2026-07-20 (finer leaf grain against the x3 top density)
+        const f32 halfSize = 0.042f + scatterRng.next() * 0.030f;
+        // Dev iterations 2026-07-20: 0.42 (paper planes) -> 0.042 ->
+        // 0.021 (too fine with the x3 gradient) -> back to ~0.06 mean.
         appendBillboardCard(mesh, position, halfSize, normal, leafColor);
         ++emitted;
     }
