@@ -93,7 +93,11 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                      rng.next()) *
                                         kTreeSpacing;
             const f32 forest = forestMask(params.seed, x, z);
-            if (forest < 0.05f || rng.next() >= forest * 0.95f) {
+            // 0.475: half the pre-2026-07-20 acceptance — the second
+            // density halving (after kTreeSpacing 4->8) requested once
+            // the x8 giants stood; done on the acceptance so the grid
+            // keeps its resolution (spacing x sqrt(2) would truncate).
+            if (forest < 0.05f || rng.next() >= forest * 0.475f) {
                 continue;
             }
             const f32 h = terrain::height(params, x, z);

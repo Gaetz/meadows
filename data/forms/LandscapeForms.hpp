@@ -67,7 +67,9 @@ struct LandscapeTuningForm : Form {
     // the baseline put mainVeg at 1.8 ms — these were compile-time
     // constants; moddable + live-tunable now. Radii in 64 m chunks.
     i32 vegViewRadius { 12 };       // resident/drawn ring (dev pick)
-    i32 vegHighDetailRadius { 5 };  // 320-face canopies inside (~320 m)
+    i32 vegHighDetailRadius { 2 };  // full-detail canopies inside (~128 m)
+                                    // (dev 2026-07-20: 2/4 ladder with
+                                    // vegLowDetailRadius below)
     // V8f (appended — ordinals stable): 80-face twins inside; 20-face
     // ultra lobes beyond (dev pick 2026-07-19 after the visual check).
     i32 vegLowDetailRadius { 4 };

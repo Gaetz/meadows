@@ -47,7 +47,9 @@ public:
     // NB: the tree FADE tops out at 880 m — radii under ~14 pop at the
     // ring edge instead of fading (a budget-hunting knob, not a look).
     i32 viewRadius { 12 };        // chunks (dev pick 2026-07-10)
-    i32 highDetailRadius { 5 };   // 320-face canopies within (x 64 m)
+    i32 highDetailRadius { 2 };   // full-detail canopies within (x 64 m)
+                                  // (dev pick 2026-07-20: 2/4 ladder —
+                                  // the old 5/4 left the low band empty)
     // V8f: third mesh level beyond — bare-icosahedron lobes (20 faces,
     // generateTree(seed, 0)): ~150 tris/tree vs ~600 on the low twin.
     // The trees carried 24 of the 30 Mtri/frame (V8e counters, M1) and
@@ -60,8 +62,8 @@ public:
     bool colonizationTrees { false };
     // Live card-count multiplier for the colonized foliage (dev knob —
     // apply through reseedVariantMeshes; same scatter stream truncated,
-    // silhouette stable).
-    f32 colonizationFoliage { 1.0f };
+    // silhouette stable). 3.2 = dev pick 2026-07-20 (full canopy).
+    f32 colonizationFoliage { 3.2f };
     // Chunk-AABB pads for the culling tests (draw/drawDepth): chunk
     // min/maxY track prop BASES, so Y must absorb the tallest scaled
     // tree (~7.5 m mesh x 11.2 scale) and XZ the widest canopy overhang
