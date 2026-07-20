@@ -20,7 +20,10 @@ namespace {
 
 constexpr const char* kTreeShader = "tree";
 constexpr const char* kPropCasterShader = "shadow_prop";
-constexpr f32 kTreeSpacing = 4.0f; // meters between scatter candidates
+// Realistic-scale trees (dev 2026-07-20): x8 height against the player,
+// so 2x the candidate spacing = 1/4 the density — giant forests, not
+// hedges of them.
+constexpr f32 kTreeSpacing = 8.0f; // meters between scatter candidates
 
 // hashU32 / HashRng now live in engine/core/Hash.hpp (shared scatter hash family).
 using core::hashU32;
@@ -99,9 +102,10 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             if (h < params.seaLevel + 3.0f || h > 92.0f || slope > 0.22f) {
                 continue;
             }
-            // Sink slightly so leaning trunks never float on slopes.
-            place(0, VegetationSystem::kTreeVariants, rng, x, h - 0.15f, z,
-                  0.8f, 1.4f, 880.0f);
+            // Sink slightly so leaning trunks never float on slopes
+            // (scaled with the x8 trees — their footprint is meters wide).
+            place(0, VegetationSystem::kTreeVariants, rng, x, h - 1.2f, z,
+                  6.4f, 11.2f, 880.0f); // x8 of the 0.8-1.4 hedge scale
         }
     }
 
@@ -483,9 +487,10 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         const f32 z0 =
             static_cast<f32>(chunkKeyCz(key)) * TerrainSystem::kChunkSize;
         return frustum->intersectsAabb(
-            { x0 - 4.0f, chunk.minY - 1.0f, z0 - 4.0f },
-            { x0 + TerrainSystem::kChunkSize + 4.0f, chunk.maxY + 14.0f,
-              z0 + TerrainSystem::kChunkSize + 4.0f });
+            { x0 - kPropPadXz, chunk.minY - 1.0f, z0 - kPropPadXz },
+            { x0 + TerrainSystem::kChunkSize + kPropPadXz,
+              chunk.maxY + kPropPadY,
+              z0 + TerrainSystem::kChunkSize + kPropPadXz });
     };
     const bool culling = frustum != nullptr || occluded != nullptr;
     std::unordered_map<u64, bool> visible;
@@ -606,17 +611,18 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
                 continue; // beyond the last shadow cascade
             }
             if (frustum != nullptr) {
-                // Same AABB convention as draw(): XZ pad for canopy
-                // overhang, +14 m for prop height above its base.
+                // Same AABB convention as draw() (kPropPad*: canopy
+                // overhang in XZ, tallest scaled tree in Y).
                 const f32 x0 =
                     static_cast<f32>(cx) * TerrainSystem::kChunkSize;
                 const f32 z0 =
                     static_cast<f32>(cz) * TerrainSystem::kChunkSize;
                 if (!frustum->intersectsAabb(
-                        { x0 - 4.0f, chunk.minY - 1.0f, z0 - 4.0f },
-                        { x0 + TerrainSystem::kChunkSize + 4.0f,
-                          chunk.maxY + 14.0f,
-                          z0 + TerrainSystem::kChunkSize + 4.0f })) {
+                        { x0 - kPropPadXz, chunk.minY - 1.0f,
+                          z0 - kPropPadXz },
+                        { x0 + TerrainSystem::kChunkSize + kPropPadXz,
+                          chunk.maxY + kPropPadY,
+                          z0 + TerrainSystem::kChunkSize + kPropPadXz })) {
                     continue; // outside this cascade's ortho volume
                 }
             }

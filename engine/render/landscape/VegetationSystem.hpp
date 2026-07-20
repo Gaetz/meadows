@@ -58,6 +58,12 @@ public:
     // regenerate through generateColonizedTree (Runions skeleton +
     // SDF-normal cross-plane foliage). Flip via reseedVariantMeshes.
     bool colonizationTrees { false };
+    // Chunk-AABB pads for the culling tests (draw/drawDepth): chunk
+    // min/maxY track prop BASES, so Y must absorb the tallest scaled
+    // tree (~7.5 m mesh x 11.2 scale) and XZ the widest canopy overhang
+    // (x8 realistic trees, dev 2026-07-20).
+    static constexpr f32 kPropPadXz = 26.0f;
+    static constexpr f32 kPropPadY = 86.0f;
     static constexpr u32 kMaxUploadsPerFrame = 2;
     // Scatter jobs budgeted like uploads (see TerrainSystem — the
     // unbudgeted ring edge was part of the fast-travel stutter).
