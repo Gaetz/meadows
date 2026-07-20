@@ -326,7 +326,7 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
                          glm::clamp(foliageDensity, 0.1f, 8.0f)),
         1u, 4000u);
     u32 emitted = 0;
-    for (u32 c = 0; c < clusterCount * 4u && emitted < clusterCount; ++c) {
+    for (u32 c = 0; c < clusterCount * 6u && emitted < clusterCount; ++c) {
         // The scatter stream runs the SAME sequence at every detail level
         // (clusterCount only truncates it): LODs agree on where the
         // canopy mass sits.
@@ -349,13 +349,14 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
         }
 
         const Vec3 normal = canopySdfGradient(balls, position);
-        // Light-seeking density gradient (dev 2026-07-20): the card
-        // count is FIXED (the loop draws candidates until clusterCount
-        // land — same cost), but acceptance follows the canopy's outward
-        // direction: exp2(normal.y) = x2 where it faces up, x1 on the
-        // sides, x0.5 underneath. Leaves seek light; undersides thin out.
-        const f32 weight = std::exp2(normal.y); // 0.5 .. 2.0
-        if (scatterRng.next() * 2.0f > weight) {
+        // Light-seeking density gradient (dev 2026-07-20, accentué) :
+        // the card count is FIXED (the loop draws candidates until
+        // clusterCount land — same cost), but acceptance follows the
+        // canopy's outward direction: 3^normal.y = x3 where it faces
+        // up, x1 on the sides, x0.33 underneath. Leaves seek light;
+        // undersides thin out.
+        const f32 weight = std::pow(3.0f, normal.y); // 0.33 .. 3.0
+        if (scatterRng.next() * 3.0f > weight) {
             continue;
         }
 
@@ -367,7 +368,8 @@ MeshData generateColonizedTree(u32 seed, u32 detail, f32 foliageDensity) {
         // wood-only now — card uv carries the billboard corner).
         leafColor *= 1.0f + 0.25f * glm::clamp(position.y / totalHeight,
                                                0.0f, 1.0f);
-        const f32 halfSize = 0.042f + scatterRng.next() * 0.030f;
+        const f32 halfSize = 0.021f + scatterRng.next() * 0.015f; // dev:
+        // -50% 2026-07-20 (finer leaf grain against the x3 top density)
         appendBillboardCard(mesh, position, halfSize, normal, leafColor);
         ++emitted;
     }
