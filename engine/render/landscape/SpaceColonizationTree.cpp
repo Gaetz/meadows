@@ -312,7 +312,10 @@ MeshData generateColonizedTree(u32 seed, u32 detail) {
     }
 
     // --- Foliage: cross-plane clusters in the SDF shell -------------------
-    const u32 clusterCount = detail >= 2 ? 56u : detail == 1 ? 26u : 12u;
+    // Dev feedback 2026-07-20: leaf-CLUMP sized cards, lots of them —
+    // 1/10 the size, 10x the count of the first cut (huge planes read as
+    // paper; ~1 m clumps on a x8 tree read as foliage).
+    const u32 clusterCount = detail >= 2 ? 560u : detail == 1 ? 260u : 120u;
     constexpr f32 kTau = 6.2831853f;
     for (u32 c = 0; c < clusterCount; ++c) {
         // The scatter stream runs the SAME sequence at every detail level
@@ -343,7 +346,7 @@ MeshData generateColonizedTree(u32 seed, u32 detail) {
             glm::mix(Vec3 { 0.030f, 0.095f, 0.018f },
                      Vec3 { 0.075f, 0.130f, 0.020f }, hue); // tree palette
         const Vec3 normal = canopySdfGradient(balls, position);
-        const f32 size = 0.42f + scatterRng.next() * 0.30f;
+        const f32 size = 0.042f + scatterRng.next() * 0.030f;
         const f32 baseYaw = scatterRng.next() * kTau;
         const f32 tilt = (scatterRng.next() - 0.5f) * 0.7f;
         // Three planes crossed at 60°, all shading with the SDF normal.
