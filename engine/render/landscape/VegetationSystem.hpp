@@ -93,9 +93,11 @@ public:
     // Mesh-only swap (the colonizationTrees A/B): variant meshes rebuild
     // with the current seed, chunks and instance buffers stay resident
     // (instances reference variants by index — nothing to re-scatter).
+    // The leaf mask rebuilds too — its knobs ride the same panel.
     void reseedVariantMeshes(rhi::Device& device) {
         destroyVariantMeshes(device);
         createVariantMeshes(device, meshSeed);
+        rebuildLeafMask(device);
     }
 
     // Replaces one variant's mesh with an authored one (glTF
@@ -195,6 +197,12 @@ private:
         rhi::UniqueBuffer ultraVertexBuffer;
         rhi::UniqueBuffer ultraIndexBuffer;
         u32 ultraIndexCount { 0 };
+        // Shadow proxy for the far cascades (colonized trees: solid
+        // metaball blobs instead of the card cloud — see
+        // generateColonizedTreeShadowProxy). Empty = cast with the LODs.
+        rhi::UniqueBuffer casterVertexBuffer;
+        rhi::UniqueBuffer casterIndexBuffer;
+        u32 casterIndexCount { 0 };
     };
 
     void createVariantMeshes(rhi::Device& device, u32 terrainSeed);
@@ -205,8 +213,13 @@ private:
                              const MeshData& mesh);
     void uploadUltraDetailMesh(rhi::Device& device, u32 variant,
                                const MeshData& mesh);
+    void uploadShadowProxyMesh(rhi::Device& device, u32 variant,
+                               const MeshData& mesh);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
+    // (Re)generates the shared leaf-cluster cutout mask the foliage cards
+    // sample (generateLeafMaskPixels) and its bind group.
+    void rebuildLeafMask(rhi::Device& device);
 
     // The shared ring mechanics live in ChunkStreamer.
     ChunkStreamer<Chunk, VariantBuckets> streamer;
@@ -220,6 +233,10 @@ private:
 
     array<VariantMesh, kVariantCount> variantMeshes {};
     std::unordered_map<u32, MeshData> meshOverrides;
+    // Shared leaf-cluster cutout mask (all tree variants; cards only).
+    rhi::UniqueTexture leafMask;
+    rhi::UniqueSampler leafMaskSampler;
+    rhi::UniqueBindGroup leafMaskGroup;
     rhi::UniquePipeline pipeline;
     u64 shaderGeneration { 0 };
     rhi::UniquePipeline casterPipeline;

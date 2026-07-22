@@ -87,11 +87,13 @@ TEST_CASE("colonized trees are well-formed at every detail level") {
                 CHECK(glm::length(vertex.normal) ==
                       doctest::Approx(1.0f).epsilon(0.01));
                 if (vertex.uv.x < -5.0f) {
-                    // Billboard leaf card: uv encodes the corner around
-                    // the -10 flag bias (see appendBillboardCard).
+                    // Billboard leaf card: uv encodes corner x halfSize
+                    // around the -10 flag bias (see appendBillboardCard).
+                    // The encoding stays unambiguous against wood uv
+                    // ([0,1]) for any halfSize below 1.
                     ++cardVertices;
-                    CHECK(std::abs(vertex.uv.x + 10.0f) < 0.1f);
-                    CHECK(std::abs(vertex.uv.y) < 0.1f);
+                    CHECK(std::abs(vertex.uv.x + 10.0f) < 1.0f);
+                    CHECK(std::abs(vertex.uv.y) < 1.0f);
                 } else {
                     CHECK(vertex.uv.x >= 0.0f);
                     CHECK(vertex.uv.x <= 1.0f);

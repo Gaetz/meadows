@@ -160,10 +160,15 @@ struct ColonizedTreeTuningForm : Form {
     f32 tipBallRadius { 0.95f };
     f32 tipOrderFalloff { 0.78f };
     f32 smoothK { 0.7f };
-    f32 cardHalfSizeMin { 0.042f };
-    f32 cardHalfSizeMax { 0.072f };
+    f32 cardHalfSizeMin { 0.084f };
+    f32 cardHalfSizeMax { 0.144f };
     f32 densityGradient { 3.0f };
-    f32 foliageDensity { 3.2f };
+    f32 foliageDensity { 2.5f };
+    i32 leafCount { 60 };
+    f32 leafSizeMin { 0.10f };
+    f32 leafSizeMax { 0.25f };
+    f32 leafSolidStart { 4.0f };
+    f32 leafSolidEnd { 7.0f };
 
     REFLECT_BEGIN(ColonizedTreeTuningForm, Form)
         REFLECT_FIELD(segment)
@@ -184,6 +189,11 @@ struct ColonizedTreeTuningForm : Form {
         REFLECT_FIELD(cardHalfSizeMax)
         REFLECT_FIELD(densityGradient)
         REFLECT_FIELD(foliageDensity)
+        REFLECT_FIELD(leafCount)
+        REFLECT_FIELD(leafSizeMin)
+        REFLECT_FIELD(leafSizeMax)
+        REFLECT_FIELD(leafSolidStart)
+        REFLECT_FIELD(leafSolidEnd)
     REFLECT_END()
 };
 

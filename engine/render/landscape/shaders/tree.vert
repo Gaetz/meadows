@@ -13,6 +13,8 @@ layout(location = 0) out vec3 vNormal;
 layout(location = 1) out vec3 vColor;
 layout(location = 2) out vec3 vWorldPos;
 layout(location = 3) out float vTint;
+// Leaf-mask uv for cards; x < 0 = not a card (wood/lobes/rocks).
+layout(location = 4) out vec2 vCardUv;
 
 void main() {
     float yaw = aParams.x;
@@ -44,6 +46,7 @@ void main() {
     world.xz += vec2(0.9, 0.35) *
                 (gust * 0.07 * uWindInfo.y * sway * aPosScale.w * fade);
 
+    vCardUv = vec2(-1.0);
     if (leafCard) {
         // Screen-aligned expansion: viewProj rows 0/1 are the camera
         // right/up directions (projection only scales them).
@@ -54,6 +57,8 @@ void main() {
         vec2 corner = vec2(aUv.x + 10.0, aUv.y);
         world += (camRight * corner.x + camUp * corner.y) *
                  (aPosScale.w * fade);
+        // Corners are exactly +-halfSize: the sign recovers the mask uv.
+        vCardUv = sign(corner) * 0.5 + 0.5;
     }
 
     vNormal = normal;

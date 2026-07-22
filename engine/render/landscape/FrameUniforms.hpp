@@ -89,6 +89,9 @@ struct FrameUniforms {
     // The fixed log-step GI ramp: x = stops per band
     // (0 = continuous), y = anti-aliasing width across a band edge.
     Vec4 giBandInfo { 0.85f, 0.15f, 0.0f, 0.0f };
+    // Foliage-card leaf cutout -> solid ramp (tree.frag/shadow_prop.frag):
+    // xy = mip window start/end of the blend, zw free.
+    Vec4 leafLodInfo { 4.0f, 7.0f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -137,7 +140,8 @@ static_assert(offsetof(FrameUniforms, grassTipColor) == 896);
 static_assert(offsetof(FrameUniforms, giInfo) == 912);
 static_assert(offsetof(FrameUniforms, giGridInfo) == 928);
 static_assert(offsetof(FrameUniforms, giBandInfo) == 944);
-static_assert(sizeof(FrameUniforms) == 960,
+static_assert(offsetof(FrameUniforms, leafLodInfo) == 960);
+static_assert(sizeof(FrameUniforms) == 976,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

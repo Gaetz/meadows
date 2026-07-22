@@ -189,11 +189,45 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     streamer.create(jobSystem);
     meshSeed = terrainSeed;
     createVariantMeshes(device, terrainSeed);
+    rebuildLeafMask(device);
     shaders.load(kTreeShader, { { "FrameUbo", 0 } },
-                 { { "uShadowMap", 1 } });
+                 { { "uLeafMask", 0 }, { "uShadowMap", 1 } });
     buildPipeline(device, shaders);
-    shaders.load(kPropCasterShader, { { "FrameUbo", 0 }, { "ShadowUbo", 1 } });
+    shaders.load(kPropCasterShader, { { "FrameUbo", 0 }, { "ShadowUbo", 1 } },
+                 { { "uLeafMask", 0 } });
     buildCasterPipeline(device, shaders);
+}
+
+void VegetationSystem::rebuildLeafMask(rhi::Device& device) {
+    constexpr u32 kMaskSize = 256;
+    // Full mip chain when the device can fill it — alpha-tested cards
+    // shrink to a few pixels at the ring edge; base-level-only sampling
+    // there is pure shimmer.
+    const bool mips = device.caps().mipmapGeneration;
+    const u32 mipLevels =
+        mips ? 1 + static_cast<u32>(std::log2(static_cast<f32>(kMaskSize)))
+             : 1;
+    const vector<u8> pixels =
+        generateLeafMaskPixels(kMaskSize, meshSeed, colonizedTreeParams);
+    leafMask = { device, device.createTexture(
+        { .width = kMaskSize,
+          .height = kMaskSize,
+          .mipLevels = mipLevels,
+          .format = rhi::TextureFormat::RGBA8,
+          .filter = rhi::FilterMode::Linear },
+        pixels.data()) };
+    if (mips) {
+        device.generateMipmaps(leafMask.get());
+    }
+    if (leafMaskSampler.get().id == 0) {
+        leafMaskSampler = { device,
+                            device.createSampler(
+                                { .mipmapFilter = mips }) }; // linear clamp
+    }
+    leafMaskGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = leafMask.get(),
+                         .sampler = leafMaskSampler.get() } } }) };
 }
 
 void VegetationSystem::createVariantMeshes(rhi::Device& device,
@@ -231,6 +265,14 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
             // Bare-icosahedron lobes (~150 tris/tree) for the far
             // ring — same seed, same composition, facets invisible there.
             uploadUltraDetailMesh(device, i, baked(tree(0), 0.6f));
+            if (colonizationTrees) {
+                // Far-cascade caster: solid metaball blobs, no AO bake
+                // (depth-only) — see generateColonizedTreeShadowProxy.
+                uploadShadowProxyMesh(
+                    device, i,
+                    generateColonizedTreeShadowProxy(seed,
+                                                     colonizedTreeParams));
+            }
         } else if (i < kFirstBush) {
             uploadVariantMesh(device, i, baked(generateRock(seed), 0.5f));
         } else {
@@ -281,6 +323,21 @@ void VegetationSystem::uploadUltraDetailMesh(rhi::Device& device, u32 variant,
         mesh.indices.data()) };
 }
 
+void VegetationSystem::uploadShadowProxyMesh(rhi::Device& device,
+                                             u32 variant,
+                                             const MeshData& mesh) {
+    variantMeshes[variant].casterIndexCount =
+        static_cast<u32>(mesh.indices.size());
+    variantMeshes[variant].casterVertexBuffer = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Vertex,
+          .size = mesh.vertices.size() * sizeof(MeshVertex) },
+        mesh.vertices.data()) };
+    variantMeshes[variant].casterIndexBuffer = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Index,
+          .size = mesh.indices.size() * sizeof(u32) },
+        mesh.indices.data()) };
+}
+
 void VegetationSystem::overrideVariantMesh(rhi::Device& device, u32 variant,
                                            MeshData mesh) {
     if (variant >= kVariantCount || mesh.vertices.empty() ||
@@ -306,6 +363,9 @@ void VegetationSystem::destroy(rhi::Device& device) {
     instances = 0;
     pipeline.reset();
     casterPipeline.reset();
+    leafMaskGroup.reset();
+    leafMaskSampler.reset();
+    leafMask.reset();
     destroyVariantMeshes(device);
 }
 
@@ -521,6 +581,7 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
 
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
+    cmd.setBindGroup(1, leafMaskGroup);
     if (shadowBindGroup.id != 0) {
         cmd.setBindGroup(2, shadowBindGroup);
     }
@@ -604,6 +665,7 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
     cmd.setPipeline(casterPipeline);
     cmd.setBindGroup(0, frameBindGroup);
     cmd.setBindGroup(1, casterBindGroup);
+    cmd.setBindGroup(2, leafMaskGroup);
     for (u32 v = 0; v < kVariantCount; ++v) {
         bool meshBound = false;
         for (const auto& [key, chunk] : streamer.chunks) {
@@ -634,29 +696,36 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
             }
             // Casters use the cheapest twin the cascade tolerates: the
             // 80-face lobe throws the same soft shadow as a 320-face one;
-            // the far cascades (ultraDetail) drop to the 20-face
-            // level — their texels are meters wide anyway.
+            // the far cascades (ultraDetail) prefer the SOLID shadow
+            // proxy (metaball blobs — no cards, no cutout), else the
+            // 20-face level — their texels are meters wide anyway.
             const VariantMesh& mesh = variantMeshes[v];
-            const bool ultra = ultraDetail && mesh.ultraIndexCount != 0;
-            const bool low = !ultra && mesh.lowIndexCount != 0;
+            const bool proxy = ultraDetail && mesh.casterIndexCount != 0;
+            const bool ultra =
+                !proxy && ultraDetail && mesh.ultraIndexCount != 0;
+            const bool low = !proxy && !ultra && mesh.lowIndexCount != 0;
             if (!meshBound) {
-                cmd.setVertexBuffer(0, ultra ? mesh.ultraVertexBuffer.get()
-                                    : low    ? mesh.lowVertexBuffer.get()
-                                             : mesh.vertexBuffer.get());
-                cmd.setIndexBuffer(ultra ? mesh.ultraIndexBuffer.get()
-                                   : low ? mesh.lowIndexBuffer.get()
-                                         : mesh.indexBuffer.get(),
+                cmd.setVertexBuffer(0,
+                                    proxy   ? mesh.casterVertexBuffer.get()
+                                    : ultra ? mesh.ultraVertexBuffer.get()
+                                    : low   ? mesh.lowVertexBuffer.get()
+                                            : mesh.vertexBuffer.get());
+                cmd.setIndexBuffer(proxy   ? mesh.casterIndexBuffer.get()
+                                   : ultra ? mesh.ultraIndexBuffer.get()
+                                   : low   ? mesh.lowIndexBuffer.get()
+                                           : mesh.indexBuffer.get(),
                                    rhi::IndexFormat::U32);
                 meshBound = true;
             }
-            const u32 indexCount = ultra ? mesh.ultraIndexCount
-                                   : low ? mesh.lowIndexCount
-                                         : mesh.indexCount;
+            const u32 indexCount = proxy   ? mesh.casterIndexCount
+                                   : ultra ? mesh.ultraIndexCount
+                                   : low   ? mesh.lowIndexCount
+                                           : mesh.indexCount;
             cmd.setVertexBuffer(1, chunk.instanceBuffer);
             cmd.drawIndexed(indexCount, chunk.counts[v], 0,
                             chunk.firstInstance[v]);
             frameIndices += indexCount * chunk.counts[v];
-            (ultra ? frameUltraInstances : frameLowInstances) +=
+            (proxy || ultra ? frameUltraInstances : frameLowInstances) +=
                 chunk.counts[v];
         }
     }

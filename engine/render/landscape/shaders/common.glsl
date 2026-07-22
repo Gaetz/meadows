@@ -64,4 +64,6 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uGiGridInfo; // xyz = cascade-0 grid origin, w = probe spacing
     // Fixed log-step GI ramp: x = stops per band, y = AA.
     vec4 uGiBandInfo;
+    // Foliage-card leaf cutout -> solid ramp: xy = mip window.
+    vec4 uLeafLodInfo;
 };

@@ -10,6 +10,10 @@ layout(location = 5) in vec4 aParams;
 
 layout(std140, binding = 1) uniform ShadowUbo { mat4 uLightViewProj; };
 
+// Leaf-mask uv for cards; x < 0 = not a card. The caster must cut the
+// same holes as tree.frag or canopy shadows stay full rectangles.
+layout(location = 0) out vec2 vCardUv;
+
 void main() {
     float yaw = aParams.x;
     float c = cos(yaw);
@@ -31,6 +35,7 @@ void main() {
     world.xz += vec2(0.9, 0.35) *
                 (gust * 0.07 * uWindInfo.y * sway * aPosScale.w * fade);
 
+    vCardUv = vec2(-1.0);
     if (leafCard) {
         vec3 lightRight = normalize(vec3(uLightViewProj[0][0],
                                          uLightViewProj[1][0],
@@ -41,6 +46,7 @@ void main() {
         vec2 corner = vec2(aUv.x + 10.0, aUv.y);
         world += (lightRight * corner.x + lightUp * corner.y) *
                  (aPosScale.w * fade);
+        vCardUv = sign(corner) * 0.5 + 0.5; // corners are +-halfSize
     }
 
     gl_Position = uLightViewProj * vec4(world, 1.0);

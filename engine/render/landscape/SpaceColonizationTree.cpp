@@ -101,15 +101,18 @@ void appendBillboardCard(MeshData& mesh, const Vec3& center, f32 halfSize,
     }
 }
 
-} // namespace
+// The seed-stable core every consumer shares — the visual mesh LODs and
+// the shadow proxy must agree on silhouette. Grown from the SHAPE stream
+// only, so it never depends on detail level or card scatter.
+struct GrownTree {
+    vector<Node> nodes;
+    vector<Metaball> balls; // largest-first, capped (SDF cost)
+    f32 trunkBase { 0.0f };
+    f32 totalHeight { 0.0f };
+};
 
-MeshData generateColonizedTree(u32 seed, u32 detail,
-                               const ColonizedTreeParams& params) {
-    // Independent streams so the SKELETON never depends on `detail` —
-    // the three LODs of one seed must share silhouette and colors.
+GrownTree growColonizedTree(u32 seed, const ColonizedTreeParams& params) {
     HashRng shapeRng { hashU32(seed ^ 0x5c01a11eu) };
-    HashRng scatterRng { hashU32(seed ^ 0xf011a9e5u) };
-    MeshData mesh;
 
     // --- Crown envelope + attraction points ------------------------------
     const f32 trunkBase =
@@ -244,7 +247,42 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
         node.radius = glm::min(node.radius, 0.30f);
     }
 
-    // --- Wood: chain-decimated tapered tubes ------------------------------
+    // --- Metaballs at the tips, order-weighted ----------------------------
+    vector<Metaball> balls;
+    for (const Node& node : nodes) {
+        if (node.childCount != 0 || node.position.y < trunkBase) {
+            continue;
+        }
+        // The colleague's key detail: weight by branch order, or every
+        // tip carries the same weight and the SDF collapses back into
+        // one uniform blob.
+        const f32 radius = glm::clamp(
+            params.tipBallRadius *
+                std::pow(params.tipOrderFalloff,
+                         static_cast<f32>(node.order)),
+            0.30f, glm::max(params.tipBallRadius, 0.35f));
+        balls.push_back({ node.position, radius });
+    }
+    if (balls.empty()) { // degenerate seed: keep the result valid
+        balls.push_back({ crownCenter, crownRadius * 0.7f });
+    }
+    // Cap the SDF cost: keep the LARGEST balls (they define the volume).
+    std::sort(balls.begin(), balls.end(),
+              [](const Metaball& a, const Metaball& b) {
+                  return a.radius > b.radius;
+              });
+    if (balls.size() > 64) {
+        balls.resize(64);
+    }
+
+    return { std::move(nodes), std::move(balls), trunkBase, totalHeight };
+}
+
+// Wood: chain-decimated tapered tubes. `detail` picks tube sides and the
+// twig-culling radius floor (past the near level, sub-centimeter wood
+// reads as noise and costs like geometry).
+void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
+                f32 segment) {
     const Vec3 barkColor { 0.085f, 0.048f, 0.026f }; // generateTree's bark
     const u32 tubeSides = detail >= 2 ? 5u : detail == 1 ? 4u : 3u;
     // Walk each chain from a branching point (or tip) down to the previous
@@ -262,7 +300,7 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
             // Collapse while the parent is a pass-through node whose
             // direction stays aligned and the run stays short.
             u32 runTop = cursor;
-            f32 runLength = params.segment;
+            f32 runLength = segment;
             while (nodes[runTop].parent > 0) {
                 const u32 next = static_cast<u32>(nodes[runTop].parent);
                 if (nodes[next].childCount != 1 ||
@@ -272,14 +310,12 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
                     break;
                 }
                 runTop = next;
-                runLength += params.segment;
+                runLength += segment;
             }
             const u32 top =
                 nodes[runTop].parent >= 0
                     ? static_cast<u32>(nodes[runTop].parent)
                     : 0u;
-            // Twig culling by LOD: past the near level, sub-centimeter
-            // wood reads as noise and costs like geometry.
             const f32 minRadius =
                 detail >= 2 ? 0.012f : detail == 1 ? 0.025f : 0.045f;
             if (nodes[cursor].radius >= minRadius) {
@@ -294,35 +330,23 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
             }
         }
     }
-    const u32 woodVertexCount = static_cast<u32>(mesh.vertices.size());
+}
 
-    // --- Metaballs at the tips, order-weighted ----------------------------
-    vector<Metaball> balls;
-    for (const Node& node : nodes) {
-        if (node.childCount != 0 || node.position.y < trunkBase) {
-            continue;
-        }
-        // The colleague's key detail: weight by branch order, or every
-        // tip carries the same weight and the SDF collapses back into
-        // one uniform blob.
-        const f32 radius = glm::clamp(
-            params.tipBallRadius *
-                std::pow(params.tipOrderFalloff,
-                         static_cast<f32>(node.order)),
-            0.30f, glm::max(params.tipBallRadius, 0.35f));
-        balls.push_back({ node.position, radius });
-    }
-    if (balls.empty()) { // degenerate seed: keep the mesh valid
-        balls.push_back({ crownCenter, crownRadius * 0.7f });
-    }
-    // Cap the SDF cost: keep the LARGEST balls (they define the volume).
-    std::sort(balls.begin(), balls.end(),
-              [](const Metaball& a, const Metaball& b) {
-                  return a.radius > b.radius;
-              });
-    if (balls.size() > 64) {
-        balls.resize(64);
-    }
+} // namespace
+
+MeshData generateColonizedTree(u32 seed, u32 detail,
+                               const ColonizedTreeParams& params) {
+    // The scatter stream is independent from the shape stream, so the
+    // SKELETON never depends on `detail` — the three LODs of one seed
+    // must share silhouette and colors.
+    HashRng scatterRng { hashU32(seed ^ 0xf011a9e5u) };
+    const GrownTree tree = growColonizedTree(seed, params);
+    const vector<Metaball>& balls = tree.balls;
+    const f32 totalHeight = tree.totalHeight;
+
+    MeshData mesh;
+    appendWood(mesh, tree.nodes, detail, params.segment);
+    const u32 woodVertexCount = static_cast<u32>(mesh.vertices.size());
 
     // --- Foliage: billboard leaf cards in the SDF shell -------------------
     // ONE camera-facing card per clump, leaf-clump sized, in a shell
@@ -394,6 +418,95 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
         vertex.uv = { height01 * 0.30f, height01 };
     }
     return mesh;
+}
+
+MeshData generateColonizedTreeShadowProxy(u32 seed,
+                                          const ColonizedTreeParams& params) {
+    const GrownTree tree = growColonizedTree(seed, params);
+    MeshData mesh;
+    appendWood(mesh, tree.nodes, 0, params.segment);
+    // The canopy metaballs ARE the shadow volume: one 20-face icosahedron
+    // per ball (largest first — they define the mass) instead of the card
+    // cloud. Opaque, so shadow_prop skips the leaf-mask cutout entirely.
+    const Vec3 leafColor { 0.045f, 0.105f, 0.019f };
+    const size_t ballCount = std::min<size_t>(tree.balls.size(), 16);
+    for (size_t i = 0; i < ballCount; ++i) {
+        appendBlob(mesh,
+                   hashU32(seed ^ (0xb10bca57u + static_cast<u32>(i))),
+                   tree.balls[i].center, tree.balls[i].radius,
+                   0.10f, leafColor, 0);
+    }
+    return mesh;
+}
+
+vector<u8> generateLeafMaskPixels(u32 size, u32 seed,
+                                  const ColonizedTreeParams& params) {
+    // r = brightness (0 = x0.7, 255 = x1.3 in tree.frag), g/b unused,
+    // a = coverage. Painter's order: a later leaf overwrites the shade
+    // where it covers more than what's already there.
+    vector<u8> pixels(static_cast<size_t>(size) * size * 4, 0);
+    HashRng rng { hashU32(seed ^ 0x1eafca9du) };
+    const f32 fsize = static_cast<f32>(size);
+    const i32 leafCount = std::max(1, params.leafCount);
+    for (i32 leaf = 0; leaf < leafCount; ++leaf) {
+        const f32 length =
+            params.leafSizeMin +
+            rng.next() * (params.leafSizeMax - params.leafSizeMin);
+        const f32 width = length * (0.34f + rng.next() * 0.14f);
+        // Radial placement, denser toward the center, capped so the whole
+        // leaf stays inside the card (no straight clip at the border).
+        const f32 maxRadius = std::max(0.0f, 0.5f - length * 0.55f);
+        const f32 radius = std::sqrt(rng.next()) * maxRadius;
+        const f32 angle = rng.next() * 6.2831853f;
+        const Vec2 center { 0.5f + std::cos(angle) * radius,
+                            0.5f + std::sin(angle) * radius };
+        // Leaves lean outward from the cluster center, with jitter — reads
+        // as a clump rather than confetti.
+        const f32 lean = angle + rng.spread() * 0.9f;
+        const f32 c = std::cos(lean);
+        const f32 s = std::sin(lean);
+        const u8 shade = static_cast<u8>(rng.next() * 255.0f);
+
+        const f32 reach = length * 0.5f + 1.5f / fsize; // + AA margin
+        const i32 x0 = std::max(0, static_cast<i32>((center.x - reach) * fsize));
+        const i32 x1 = std::min(static_cast<i32>(size) - 1,
+                                static_cast<i32>((center.x + reach) * fsize) + 1);
+        const i32 y0 = std::max(0, static_cast<i32>((center.y - reach) * fsize));
+        const i32 y1 = std::min(static_cast<i32>(size) - 1,
+                                static_cast<i32>((center.y + reach) * fsize) + 1);
+        for (i32 py = y0; py <= y1; ++py) {
+            for (i32 px = x0; px <= x1; ++px) {
+                const Vec2 p { (static_cast<f32>(px) + 0.5f) / fsize - center.x,
+                               (static_cast<f32>(py) + 0.5f) / fsize -
+                                   center.y };
+                // Leaf frame: x along the axis in [0, length].
+                const f32 lx = p.x * c + p.y * s + length * 0.5f;
+                const f32 ly = -p.x * s + p.y * c;
+                if (lx < 0.0f || lx > length) {
+                    continue;
+                }
+                // Pointed at both ends: half-width follows sin^0.75.
+                const f32 t = lx / length;
+                const f32 halfWidth =
+                    width * 0.5f *
+                    std::pow(std::sin(t * 3.1415927f), 0.75f);
+                // AA over one texel around the edge.
+                const f32 coverage = glm::clamp(
+                    (halfWidth - std::abs(ly)) * fsize + 0.5f, 0.0f, 1.0f);
+                if (coverage <= 0.0f) {
+                    continue;
+                }
+                u8* texel =
+                    &pixels[(static_cast<size_t>(py) * size + px) * 4];
+                const u8 alpha = static_cast<u8>(coverage * 255.0f);
+                if (alpha >= texel[3]) {
+                    texel[0] = shade;
+                }
+                texel[3] = std::max(texel[3], alpha);
+            }
+        }
+    }
+    return pixels;
 }
 
 } // namespace render

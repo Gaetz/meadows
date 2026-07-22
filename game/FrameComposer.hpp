@@ -73,6 +73,8 @@ struct FrameComposerInputs {
     Vec4 grassLodInfo { 10.0f, 70.0f, 0.20f, 1.7f };
     Vec4 grassBaseColor { 0.012f, 0.040f, 0.008f, 140.0f };
     Vec4 grassTipColor { 0.095f, 0.200f, 0.045f, 190.0f };
+    // Foliage-card leaf cutout -> solid mip window (Tree builder).
+    Vec4 leafLodInfo { 4.0f, 7.0f, 0.0f, 0.0f };
 
     // The GI switch, RESOLVED only — the reflection pass
     // (which copies `base`) keeps the Classic ambient, so it never needs

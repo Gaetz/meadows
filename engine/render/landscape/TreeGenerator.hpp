@@ -77,10 +77,20 @@ struct ColonizedTreeParams {
     f32 tipOrderFalloff { 0.78f };// radius x falloff^branchOrder
     f32 smoothK { 0.7f };         // metaball smooth-min width (m)
     // Billboard cards.
-    f32 cardHalfSizeMin { 0.042f };
-    f32 cardHalfSizeMax { 0.072f };
+    f32 cardHalfSizeMin { 0.084f };
+    f32 cardHalfSizeMax { 0.144f };
     f32 densityGradient { 3.0f }; // xG top, x1 sides, x1/G underneath
-    f32 foliageDensity { 3.2f };  // card-count multiplier (per-LOD bases)
+    f32 foliageDensity { 2.5f };  // card-count multiplier (per-LOD bases)
+    // Leaf mask (the shared cutout texture every card samples).
+    i32 leafCount { 60 };         // leaves scattered into the mask
+    f32 leafSizeMin { 0.10f };    // leaf length, fraction of the card
+    f32 leafSizeMax { 0.25f };
+    // Cutout -> solid ramp against the sampled MIP (log2 of the card's
+    // on-screen footprint, so distance and tree scale are both in):
+    // below start = crisp leaves, past end = full card (the distant
+    // canopy mass). Rendered live via uLeafLodInfo, not baked.
+    f32 leafSolidStart { 4.0f };
+    f32 leafSolidEnd { 7.0f };
 };
 
 // `detail` mirrors the LOD contract: 2 near, 1 mid, 0 far (tube sides
@@ -89,6 +99,24 @@ struct ColonizedTreeParams {
 // set). Deterministic per (seed, params), worker-safe.
 MeshData generateColonizedTree(u32 seed, u32 detail = 2,
                                const ColonizedTreeParams& params = {});
+
+// Shadow-caster proxy for the far cascades: the same seed-stable skeleton
+// with coarse wood, but the canopy as SOLID 20-face icosahedra on the SDF
+// metaballs instead of the billboard-card cloud — ~6x fewer vertices, no
+// alpha test, and a stable full-mass shadow (cards re-aim at the light
+// every frame; blobs don't). Cascade 0 keeps the leafy cutout casters.
+MeshData generateColonizedTreeShadowProxy(u32 seed,
+                                          const ColonizedTreeParams& params
+                                          = {});
+
+// The leaf-cluster cutout mask every foliage card samples (ONE texture,
+// shared — card color stays per-clump vertex color). RGBA8, size x size:
+// r = per-leaf brightness (remapped in tree.frag), a = coverage. Pointed
+// ellipse leaves at random rotation/size/shade, scattered radially so none
+// crosses the card edge (the rectangle silhouette must not survive).
+// Deterministic per (seed, params).
+vector<u8> generateLeafMaskPixels(u32 size, u32 seed,
+                                  const ColonizedTreeParams& params = {});
 
 // Squashed craggy boulder, meant to be sunk slightly into the ground.
 MeshData generateRock(u32 seed);

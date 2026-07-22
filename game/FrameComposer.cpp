@@ -80,6 +80,8 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         .grassLodInfo = in.grassLodInfo,
         .grassBaseColor = in.grassBaseColor,
         .grassTipColor = in.grassTipColor,
+        // BASE too: the reflection pass draws the tree cards.
+        .leafLodInfo = in.leafLodInfo,
     };
 
     render::FrameUniforms resolved = base;
