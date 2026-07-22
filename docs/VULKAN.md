@@ -424,6 +424,9 @@ les constantes par draw :
   `rhi::kPushConstantBinding` (15), mis à jour via `updateBuffer`. Comme
   celui-ci est déjà virtuel, **les deux backends GL sont servis d'un coup**.
   Vérifié : aucune collision, les bindings 10/11 déjà pris sont des *samplers*.
+  **Contrat de taille inter-backends** : l'émulation GL est dimensionnée à
+  **128 octets = le minimum garanti Vulkan** (`maxPushConstantsSize`), pour
+  qu'un payload qui passe en GL passe partout (`GlDeviceBase.hpp`).
 - **Shaders** : macro `MEADOWS_PUSH_CONSTANTS(Name)` dans `compat.glsl` —
   `layout(push_constant)` en Vulkan, `layout(std140, binding = 15)` en GL. Un
   seul corpus, écriture identique des deux côtés.

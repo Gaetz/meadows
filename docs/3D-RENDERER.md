@@ -27,6 +27,7 @@
 | 32 | **Eau plaçable (`WaterVolumeForm`)** — lacs d'altitude, grottes inondées | 📋 SPEC DÉCIDÉE 2026-07-07 (voir brique 32 ci-dessous) — à planifier |
 | 28-31 | Grading BotW, auto-exposition, cumulonimbus, pluie | ⏸️ à faire (28-29 courts ; 30-31 branchés sur WeatherForm) — planifiées via MEADOWS-PLAN chantier 6 |
 | — | Refonte herbe | ✅ FAITE ×2 — 7.8 (daniel-ilett) puis **redo #2 2026-07-11 validé dev** : port du modèle SimonDev Quick_Grass (lame 6 segments courbée, taper 1-t², vent 2 bruits, épaississement edge-on, normales ±54°, wrap+backscatter+AO racine) ; TOUTES les constantes (rendu via FrameUbo `uGrass*`, répartition via re-scatter) dans la catégorie « Grass » du render panel |
+| 27b | **Arbres par colonisation d'espace + tree builder** | ✅ FAITE (branche `feature/space-colonization-trees`, mergée 2026-07-21) — **DÉFAUT depuis le 2026-07-21** (`colonizationTrees = true`), les arbres à lobes restent en A/B (une checkbox). Voir section 27b ci-dessous. |
 
 ## Ce qui est construit (briques 1-26, résumé architectural)
 
@@ -56,6 +57,16 @@ reste headless.
   fog), SSAO ; tonemap ACES + debug buffers.
 - `ChunkOcclusion` (CPU, horizon de hauteur sur worker) + `GpuOcclusion`
   (Hi-Z compute) + `Frustum` (`engine/render/`).
+- **Collision des props** (`game/VegetationCollision`) : re-exécution CPU
+  déterministe de `scatterProps` autour du joueur, une boîte Jolt statique
+  par tronc/rocher, anneau 3×3 chunks avec éviction à hystérésis ; les
+  **buissons restent traversables** (choix délibéré).
+- **AO vertex bakée** (`engine/assets/VertexAo*` + `game/MeshCache`) :
+  l'ancrage ambiant est cuit dans les couleurs de vertex au decode, avec
+  cache disque `data/cache/ao` (validé par mtime/taille+params ; stocke
+  des fractions brutes pour qu'un retuning de force n'invalide pas le
+  bake ; orphelins purgés une fois par process ; bake invariant par
+  translation, donc exécuté avant l'ancrage au sol).
 - `stylized.glsl` — passe BotW partagée terrain/arbre/herbe/feuille :
   rampe à 2 steps, `round(atten)` sur les ombres CSM, SSS gaté, rim steppé ;
   flag `uAmbientColor.w`, checkbox A/B.
@@ -137,6 +148,71 @@ hautes tiltées, un lobe par branche + couronne). Ce qui change :
 **Validation.** Silhouettes élancées de près et à 880 m ; flaques lit/ombre
 par lobe au soleil rasant ; rim contre le ciel ; FPS ≈ état « cards off » ;
 doctest déterminisme à jour. Casters d'ombre = le même mesh (rien à faire).
+
+## Brique 27b — Arbres par colonisation d'espace + tree builder (2026-07-19 → 21)
+
+**Décision.** Expérience lancée sur `feature/space-colonization-trees`
+(2026-07-19), validée et mergée : `generateColonizedTree` est le générateur
+d'arbres **par défaut** depuis le 2026-07-21 (`VegetationSystem::
+colonizationTrees = true`) ; les arbres à lobes (brique 27, `generateTree`)
+restent l'A/B — bascule live par `reseedVariantMeshes` (mesh-only swap :
+chunks et instances restent résidents, les instances référencent les
+variantes par index).
+
+**Squelette — Runions et al. 2007, « Modeling Trees with a Space
+Colonization Algorithm ».** Enveloppe de couronne ellipsoïdale (tronc nu +
+hauteur/rayon tirés par seed) → points d'attraction (rejection sampling)
+→ croissance itérative : chaque attracteur tire son nœud le PLUS PROCHE
+(rayon d'influence illimité — fig. 5a du papier : c'est ce qui donne le
+tronc net), les nœuds poussent des segments de longueur D vers la
+traction moyenne + tropisme vertical, les attracteurs meurent dans la
+kill distance → rayons pipe-model (r^n = Σ enfants, balayage basipétal)
+→ ordre de branche incrémenté sur les enfants latéraux (divergence
+d'alignement < 0.85) → décimation de chaînes quasi-colinéaires → tubes
+effilés pour le bois, twigs sous-centimétriques culés par LOD.
+
+**Feuillage — SDF de métaballes + cartes billboard.** Métaballes aux
+bouts de branches, rayon **pondéré par l'ordre de branche**
+(`tipBallRadius × falloff^ordre` — sinon chaque brindille pèse comme une
+branche maîtresse et le SDF s'effondre en blob) ; fusion smooth-min
+(Quilez) ; plafond 64 balles (les plus grosses). Les cartes de feuilles
+sont dispersées dans la **coquille resserrée** du SDF (d ∈ [−0.30, −0.02]
+— la silhouette est là où les cartes paient, un intérieur clairsemé ne se
+voit jamais) et leur **normale d'éclairage = ∇SDF** : la canopée s'éclaire
+comme un volume lisse (le truc Genshin/BotW, appliqué à des cartes au lieu
+des lobes pleins). Deux itérations dev (2026-07-20) : les croix à 60°
+rendaient « mécanique » → **UNE carte billboard face caméra par clump**,
+taille clump de feuilles ; puis gradient de densité **héliotrope**
+`G^normal.y` (défaut G=3 : ×3 vers le haut, ×1 sur les flancs, ×0.33
+dessous) à nombre de cartes FIXE. Encodage : quad DÉGÉNÉRÉ (4 sommets au
+centre), coin porté par l'uv avec biais −10 comme FLAG (sans ambiguïté
+face aux uv bois/lobe ∈ [0,1]) ; `tree.vert` déplie vers la caméra,
+`shadow_prop.vert` vers la lumière.
+
+**LOD & déterminisme.** Trois niveaux (`detail` 2/1/0 : côtés de tube
+5/4/3, bases de clusters 560/260/120 × `foliageDensity`) issus du MÊME
+seed : streams RNG séparés forme/scatter, le squelette ne dépend jamais
+de `detail`, et la séquence de scatter est identique à tous les niveaux
+(seul le compte la tronque) — silhouette et masse de canopée stables
+entre LODs. Arbres à lobes : 3e niveau « ultra » 20 faces au loin
+(20/80/320 — mesuré V8e/V8f `docs/VULKAN.md` : les arbres portaient 24
+des 30 Mtri/frame).
+
+**Échelle réaliste (2026-07-20).** Arbres ×8 en hauteur face au joueur,
+densité de scatter ÷4 (acceptation 0.475 = moitié de l'ancienne),
+treeline ×1.5 avec les amplitudes de terrain (2026-07-21) ; les pads
+d'AABB de chunk (`kPropPadXz`/`kPropPadY`) absorbent la canopée la plus
+large et l'arbre le plus haut à cette échelle.
+
+**Tree builder (2026-07-20) — knobs moddables + panneau live.** Tous les
+réglages artistiques des deux générateurs sont des structs plats moteur
+(`LobeTreeParams` / `ColonizedTreeParams`, défauts = look shippé) ; la
+source de vérité moddable est `LobeTreeTuningForm` / `ColonizedTreeTuningForm`
+(§5, `landscape.toml`), mappée par la scène (pattern TerrainParams — le
+moteur ne voit jamais un Form) ; le panneau « Tree builder » édite en
+live et applique via `reseedVariantMeshes`. Défauts dev-tunés 2026-07-20/21
+(`foliageDensity` 3.2, `densityGradient` 3.0, cartes ~0.04-0.07 m) —
+l'historique fin des retunes est dans git.
 
 ## Brique 28 — Grading BotW (fin de la passe stylisée)
 

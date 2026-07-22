@@ -245,6 +245,10 @@ Quand plusieurs followers sont dans le groupe du joueur, plusieurs interactions 
 - Deux followers peuvent déclencher un dialogue entre eux, s'ils sont présents au même évènement de scénario, ou régulièrement au cours du jeu.
 - Si un follower est à terre et qu'un autre a des objets de guérison, il peut en utiliser un pour sauver le premier follower — ou le joueur d'ailleurs. Il doit d'abord se débarrasser des ennemis qui se battent au corps à corps.
 - Un combat ne finit pas tant qu'un follower peut soigner d'autres membres du groupe grâce à un objet de soin. Il garde toujours un objet de soin pour pouvoir soigner le joueur en priorité.
+  - **Déviation implémentée (Maela)** : Maela soigne par POUVOIR, pas par
+    objet — elle n'a pas de stock à réserver, la règle « garde un objet en
+    réserve » ne s'applique donc volontairement pas à elle
+    (`game/scenes/NpcCombatController.cpp`).
 
 **Points dev :**
 

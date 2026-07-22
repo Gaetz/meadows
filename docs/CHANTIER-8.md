@@ -248,6 +248,9 @@ d'imgui — c'est la lib nodale qui s'adapte.
   `deleteRequest{guid}`, sélection). Le contenu des nœuds reste dessiné
   par chaque éditeur — pas de méga-abstraction, trois consommateurs en
   8.6-8.7 la calibrent.
+  **Piège d'API à retenir** (contredit l'exemple blueprint upstream) :
+  `ed::EndCreate`/`ed::EndDelete` assertent si leur `Begin*` a rendu
+  false — ils doivent rester DANS le `if` (`NodeCanvas.cpp`).
 - `game/ui/FormPicker.{hpp,cpp}` — combo « choisir un form de type T »
   (forEachVisible + filtre texte, affiche editorId). Réutilisé partout
   ensuite (8.9, 8.10, 8.11).

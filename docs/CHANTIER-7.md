@@ -24,6 +24,10 @@ spécifiées mais non construites, plus le backlog météo.
   Banc : HallWindowShaft (mur est du hall, kind=spot → éclaire ET montre).
 - **7.2 Contact shadows (33a)** : marche Bend 12 pas demi-res sur la
   depth copy (clone SSAO), assombrit 45 % max ; toggle = clear-blanc.
+  Règle de composition avec la CSM : la passe émet `min(1, contact/sun)`
+  (le tonemap multiplie sur une couleur qui porte DÉJÀ l'ombre soleil) —
+  contact et CSM se combinent donc en MAX, jamais en double
+  assombrissement (`contactshadow.frag`).
 - **7.3 TerrainLightMap (33b/c)** : bake worker 256²/1,5 km, R =
   visibilité soleil (marche géométrique ~1 km), G = ouverture ciel (8
   horizons) ; re-bake au pas du soleil quantifié ; texture unit 7, slot 4.

@@ -264,6 +264,17 @@ low-posture). A light-attack combo averages motion value 1.
   kill-z idiom). Water absorbs any fall.
 - A hit while parrying with no energy **staggers** the character (loses posture %
   = critical sensitivity, plus normal posture damage).
+- **Perfect parry** (decided 2026-07-11, implemented): a guard raised at most
+  `perfectParryWindow` seconds (0.2) before the hit negates it entirely and
+  costs the ATTACKER `perfectParryPosture` poise (10, through the normal
+  `applyDamage` path — a stagger is the riposte opening). Tuning in
+  `StatsTuningForm`.
+- **Dodge move** (decided 2026-07-11, implemented — the 2D arena move carried
+  to 3D): TAPPING sprint (released within `dodgeTapSeconds`, 0.25) bursts in
+  the held move direction, backward when none. Speed = jog ×
+  `dodgeSpeedMultiplier`; duration `dodgeDurationSeconds`. The i-frames, cost
+  and cooldown are the `Dodge` ability's effects (data, `base.toml` — see
+  `docs/PHASE-8.md` step 2); distinct from the **dodge** *stat* (§3, % chance).
 - **States:** normal, **staggered** (can't act/parry/dodge, very slow), **shaken**
   (like stagger but fast recovery, dodge-cancellable), **critical weakness**
   (posture at 0 → prostrate 5 s; open to a charged heavy = critical attack:
