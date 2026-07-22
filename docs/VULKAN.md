@@ -310,8 +310,14 @@ de formats de la cible courante.
 > Ces deux extensions sont **optionnelles** dans Vulkan : les demander à la
 > création du device et **échouer proprement** si absentes (un GPU PC récent
 > les a toutes deux ; `dynamic_rendering` est même cœur en Vulkan 1.3).
-### V5 — CommandBuffer recording — À FAIRE
-### V6 — Fences / timestamps / ImGui Vulkan — 🔨 MOITIÉ FAITE (2026-07-19)
+### V5 — CommandBuffer recording — ✅ FAIT (absorbé par V4b→V7)
+
+Jamais rédigée comme brique séparée : l'enregistrement (passes, draws,
+copies, dispatchs, barrières) a été livré au fil de V4b (pipelines + draws),
+V6a (compute) et V7 (bring-up LandscapeScene complète) — V7 en est la preuve
+de bout en bout.
+
+### V6 — Fences / timestamps / ImGui Vulkan — ✅ FAITE (2026-07-19)
 
 **Fait : marqueurs GPU + compute de bout en bout + `DeviceCaps` activées.**
 
@@ -338,7 +344,8 @@ de formats de la cible courante.
 au fil des frames, ce qui est aussi l'usage réel.
 
 **Reste V6 : le port ImGui Vulkan** — et il porte une vraie décision
-d'architecture, à trancher avec le dev (voir ci-dessous).
+d'architecture, à trancher avec le dev (voir ci-dessous). *(Réglé : décision
+tranchée plus bas, port livré en V6d.)*
 
 #### ⚡ L'UI IN-GAME MARCHE DÉJÀ EN VULKAN (vérifié 2026-07-19)
 
