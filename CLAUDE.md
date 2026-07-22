@@ -426,126 +426,72 @@ the **history** of the phased 2D build-up — kept because each phase's
 journal (`docs/PHASE-*.md`) documents decisions you must read before
 touching the corresponding systems.
 
-- **Phase 0 — Foundations** (done 2026-06-12): CMake+CPM.cmake, SDL3
+- **Phase 0 — Foundations** (2026-06-12): CMake+CPM.cmake, SDL3
   window/input, logging, job system, math, RHI interface + GL 4.6 backend,
   instanced 2D sprite renderer, ImGui integration.
-- **Phase 1 — Data model** (done 2026-06-12): reflection system, Forms,
+- **Phase 1 — Data model** (2026-06-12): reflection system, Forms,
   **field-level patch resolution**, text↔binary cooker, GUID asset DB.
   **Journal: `docs/PHASE-1.md` — read it before touching the data/modding
   model** (the non-obvious decisions live there).
-- **Phase 2 — ECS + world model** (done 2026-06-13): entities/components,
-  worldspace→cell→reference hierarchy, 2D world populated. Key: flecs
-  confined to `meadows-ecs` (meadows + meadows-data stay flecs-free);
-  Reference = a `ReferenceForm` (place/move/disable = field patches); cells
-  = ephemeral flecs entities, never persisted; GameplayTags ≠ flecs tags.
+- **Phase 2 — ECS + world model** (2026-06-13): entities/components,
+  worldspace→cell→reference hierarchy, 2D world populated.
   **Journal: `docs/PHASE-2.md` — read before touching ecs/world.**
-- **Phase 3 — Gameplay 2D + GAS core** (done 2026-06-14): player controller,
+- **Phase 3 — Gameplay 2D + GAS core** (2026-06-14): player controller,
   2D collision/triggers, inventory/items, simplified GAS (attributes +
   effects + tags + abilities), combat as effects, grid-A* AI, factions,
-  perception. Key: the GAS core is inseparable (built together); damage =
-  transient meta-attribute + PostExecute → Health; effect pipeline is flat
-  linear (not a node-graph); lib `meadows-gameplay`. **Journal:
-  `docs/PHASE-3.md` — read before touching gameplay/GAS.**
-- **Phase 4 — Scripting, abilities & quests** (done 2026-06-14): Lua (sol2)
+  perception. Lib `meadows-gameplay`. **Journal: `docs/PHASE-3.md` — read
+  before touching gameplay/GAS.**
+- **Phase 4 — Scripting, abilities & quests** (2026-06-14): Lua (sol2)
   VM, event dispatch, scripts on forms/refs, tag-based condition evaluator,
-  quest state machines + aliases, dialogue trees. Key: ONE shared Lua VM,
-  scripts stateless, `self` = entity handle; latent `wait()` = coroutines +
-  central scheduler; conditions = structured clauses + Lua escape;
-  quests/dialogue = decomposed records linked by id; libs `meadows-script`
-  + `meadows-narrative`. **Journal: `docs/PHASE-4.md`.**
-- **Phase 5 — Multithreading architecture** (done 2026-06-15): the thread
+  quest state machines + aliases, dialogue trees. Libs `meadows-script` +
+  `meadows-narrative`. **Journal: `docs/PHASE-4.md`.**
+- **Phase 5 — Multithreading architecture** (2026-06-15): the thread
   model, the **JobSystem-vs-flecs-scheduler boundary**, and the async
   asset-residency path (§7: background decode → main-thread GPU upload,
-  never block spawn or the frame). Decided with the dev; load-bearing:
-  - **Decouple ≠ thread.** The sim produces a **render snapshot** each frame
-    (an *extract* phase): a self-owning POD packet of draw data (resolved
-    texture handles, no live pointers into the ECS world or asset internals).
-    The renderer reads **only** this packet — it has no access to the `World`.
-    Implemented as `extractScene` → `RenderSnapshot` → `submitSnapshot`
-    (`game/SceneSubmit`) — the contractual boundary. **Strict** decoupling:
-    the packet is passed by value, so where its consumer runs (same thread,
-    a render thread, a pipeline of frames) is a **scheduling policy, not an
-    architectural invariant**.
-  - **Same thread is the default, not a law.** Keeping sim+render on the main
-    thread stays the default (a render thread buys ~nothing for an instanced 2D
-    renderer and would only cost state double-buffering + a frame of latency).
-    The strict snapshot is what keeps a render thread *cheap to add later*.
-  - **GL caveat.** The GL context is thread-affine: *if* a render thread is
-    ever introduced it becomes *the* GL thread, and asset uploads migrate to it
-    (uploads are GL calls). Keep uploads **behind the RHI** so this stays a
-    backend detail (and so a Vulkan backend can use parallel command recording
-    + a transfer queue instead — the render-thread model is a GL-era optim).
-  - **JobSystem owns task parallelism** (I/O, asset decode, per-cell
-    resolution); **flecs systems stay single-threaded** until profiling
-    justifies parallel systems. These are **orthogonal
-    axes** — heterogeneous-task parallelism (JobSystem) vs. intra-system
-    parallelism over entities (flecs scheduler); do not conflate them.
-  - **Main owns the ECS world and the GPU; a worker touches neither.** Workers
-    produce results into a **non-blocking completion queue** (MPSC, drained at a
-    fixed point each frame) — never `JobSystem::wait()` on the frame thread.
-    The main thread applies results in a **deterministic order** (e.g. sort by
-    GUID) so completion order never perturbs the engine RNG or saves (§8).
-  - Phase-5 scope was the **seam** only: the strict render snapshot, the
-    non-blocking completion queue, and one asset-residency path (decode in a
-    worker → upload on main → flip handle to resident). **No render thread.**
-    Real cell streaming belongs to the « persistance » chantier. Gameplay
-    randomness stays on the engine RNG (§8) so saves/replays remain
-    reproducible.
+  never block spawn or the frame). Three rules constrain new code daily:
+  - **Decouple ≠ thread.** The sim produces a self-owning **render
+    snapshot** each frame (`extractScene` → `RenderSnapshot` →
+    `submitSnapshot`, `game/SceneSubmit`); the renderer never touches the
+    `World`. So where the consumer runs is a **scheduling policy, not an
+    architectural invariant** — sim+render on the main thread stays the
+    default, and the strict snapshot keeps a render thread cheap to add.
+  - **JobSystem owns task parallelism; flecs systems stay
+    single-threaded** until profiling says otherwise. Orthogonal axes —
+    do not conflate them.
+  - **Main owns the ECS world and the GPU; a worker touches neither.**
+    Workers publish into a non-blocking completion queue, drained at a
+    fixed point each frame in a **deterministic order** (never
+    `JobSystem::wait()` on the frame thread) so completion order never
+    perturbs the engine RNG or saves (§8).
 
   **Journal + crash postmortem: `docs/PHASE-5.md` — read before touching
   `game/SceneSubmit`, `engine/core/`, or `game/TextureCache`.** Build
   lesson: after a shared-type layout change, do a **clean rebuild** (ninja
   header-dep miss → stale-obj heap corruption).
-- **Phase 6 — Character stats: vertical slice** (done 2026-06-15): 9
+- **Phase 6 — Character stats: vertical slice** (2026-06-15): 9
   attributes → 3 primary stats (Health/Energy/Essence), **Resonance**
-  (hidden signed stat, Onyx/Amber/Garnet spheres) + **Harmony** cascade,
-  derived secondary stats via **C++ calculators + data constants** with
-  per-stat **override/offset** for non-humanoids, typed-damage →
-  armor/resistance → health+posture pipeline with stagger, game clock,
-  survival→resonance loop, ImGui `StatsScene`. Key: two-pass
-  `recomputeCurrent` (`DerivedStats`); primary maxima from BASE (Resonance
-  doesn't move the max), secondary stats from CURRENT; `f64` added to
-  reflection appended last (binary ordinals stable). **Journal:
-  `docs/PHASE-6.md`; design: `docs/STATS.md`.**
-- **Phase 7 — Permanent-status & resonance mechanics** (done 2026-06-17,
-  value-first scope decided with the dev — the rest of the `docs/STATS.md`
-  tail is the ex-Phase 9, now in MEADOWS-PLAN): seeded engine RNG
-  (`core::Rng`, §8), `StatsTuningForm` (Phase-6 constants → moddable data,
-  §5), stat-bearing **items/equipment** (weapons with typed attack +
-  scaling, armor/clothing per slot, consumables), **rest/sleep** recovery,
-  status **buildup** (poison/bleed/…), **body-part injuries** +
-  **diseases/psychoses** (permanent-status system, RNG-rolled, gated by
-  resonance-resistance), **drugs + harmony break**. Post-phase:
-  `healthRegen`/`essenceRegen`/`resistCold`, `State.Paralyzed` (glaciation
-  ≠ stagger), `DamageType::Cold`, `CharacterTick` extracted from the scene;
-  `AfflictionForm` + `DrugForm` removed — everything goes through
-  `EffectForm`/`applyEffect` (GAS unification); `ResonanceDecays` for the
-  post-expiration fade. **Journal: `docs/PHASE-7.md`; design:
-  `docs/STATS.md`; modder reference: `docs/MODDING-EFFECTS.md`.**
-- **Phase 8 — Combat 2D dynamique (PARTIELLE, absorbée) :** steps 1-3 faits
-  (tick multi-combattants, contrôleur joueur move/dodge, attaque mêlée à
-  dégâts typés — brick journal `docs/PHASE-8.md`, scène CombatArena qui
-  reste le banc d'essai GAS). Le reliquat (IA ennemie chase+attaque, PNJ
-  repos/marchand) est absorbé par le **chantier « vivant »** de
-  `docs/MEADOWS-PLAN.md`.
-- **Phases 8.5 → 14 — ABSORBÉES par `docs/MEADOWS-PLAN.md` (2026-07-06).**
-  Depuis le pivot (démo dans Meadows, 2026-07-05), la roadmap vit dans les
-  chantiers de MEADOWS-PLAN. Mapping :
-  - *Phase 8.5 (validation Godot)* → **reportée post-démo** ; le seam
-    sim/présentation (§2.10) reste un invariant prouvé par les tests
-    headless ; le scope d'origine est conservé dans
-    `docs/SIMULATION-AND-PRESENTATION.md`.
-  - *Phase 9 (stats avancées : machine d'état de combat, stats
-    offensives/sociales/utilitaires, blessures avancées)* → chantier
-    « P1 par valeur », après la boucle de combat 3D ; le design complet
-    reste `docs/STATS.md`.
-  - *Phase 10 (streaming & persistence, save = couche de patches)* →
-    chantier « persistance », inchangée sur le fond.
-  - *Phases 11-14 (frontend 3D, lighting/physique/audio/éditeur)* → le
-    chemin custom est EN COURS de fait : renderer paysage
-    (`docs/3D-RENDERER.md`), seams Jolt/miniaudio/éditeur posés par la
-    passe horizontale (`docs/HORIZONTAL-PASS.md`) ; la suite se déroule
-    chantier par chantier.
+  (hidden signed stat) + **Harmony** cascade, derived secondary stats via
+  C++ calculators + data constants, typed-damage → armor/resistance →
+  health+posture pipeline with stagger, game clock, survival→resonance
+  loop. **Journal: `docs/PHASE-6.md`; design: `docs/STATS.md`.**
+- **Phase 7 — Permanent-status & resonance mechanics** (2026-06-17):
+  seeded engine RNG (`core::Rng`, §8), `StatsTuningForm` (Phase-6
+  constants → moddable data, §5), stat-bearing **items/equipment**,
+  **rest/sleep** recovery, status **buildup**, body-part **injuries**,
+  **diseases/psychoses**, **drugs + harmony break**. Everything routes
+  through `EffectForm`/`applyEffect` (GAS unification). **Journal:
+  `docs/PHASE-7.md`; design: `docs/STATS.md`; modder reference:
+  `docs/MODDING-EFFECTS.md`.**
+- **Phase 8 — Combat 2D dynamique (PARTIELLE, absorbée) :** steps 1-3
+  faits (tick multi-combattants, contrôleur joueur move/dodge, attaque
+  mêlée à dégâts typés) ; la scène CombatArena reste le banc d'essai GAS.
+  Le reliquat (IA ennemie, PNJ repos/marchand) est absorbé par le
+  **chantier « vivant »**. **Journal: `docs/PHASE-8.md`.**
+- **Phases 8.5 → 14 — ABSORBÉES par `docs/MEADOWS-PLAN.md` (2026-07-06)**,
+  à une exception près : la *validation Godot* (ex-Phase 8.5) est
+  **reportée post-démo**, son scope conservé dans
+  `docs/SIMULATION-AND-PRESENTATION.md` — le seam sim/présentation (§2.10)
+  reste un invariant prouvé par les tests headless.
 
 > **WHERE THE PROJECT IS (2026-07-06) — the roadmap now has ONE driver:**
 > **`docs/MEADOWS-PLAN.md`** (décision 2026-07-05 : la démo de gameplay se
