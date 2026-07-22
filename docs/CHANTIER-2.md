@@ -10,7 +10,7 @@
 >   valeur jusque dans les workers → zéro changement de signature) ; les
 >   instances publiées sont IMMUABLES et jamais libérées avant la fin du
 >   process (workers). Outil offline : `cooker terrain-pad` (a généré
->   l'esplanade du village, 134.6 m — hauteur gardée par un doctest).
+>   l'esplanade du village, 109.6 m — hauteur gardée par un doctest).
 > - **B6** : kit = MedievalVillageMegaKit (glTF, mètres) ; ses textures
 >   sont bakées en COULEUR MOYENNE par matériau dans les vertex colors à
 >   l'import (look albédo plat ; l'échantillonnage réel = pipeline KTX2

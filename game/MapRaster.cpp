@@ -13,7 +13,7 @@ namespace {
 // the map lives here.
 const Vec3 kWaterShallow { 0.26f, 0.47f, 0.58f };
 const Vec3 kWaterDeep { 0.12f, 0.26f, 0.42f };
-constexpr f32 kWaterDepthRange = 14.0f; // meters shallow->deep blend
+constexpr f32 kWaterDepthRange = 21.0f; // meters shallow->deep blend
 
 const Vec3 kGrassColor { 0.35f, 0.52f, 0.29f };
 const Vec3 kRockColor { 0.47f, 0.44f, 0.41f };
@@ -27,7 +27,7 @@ constexpr f32 kShadeSpan = 0.48f;
 
 // Hypsometric bands: every kBandStep meters above sea level lifts the
 // tint by kBandLift, capped at kBandLiftMax (subtle terracing).
-constexpr f32 kBandStep = 18.0f;
+constexpr f32 kBandStep = 27.0f;
 constexpr f32 kBandLift = 0.025f;
 constexpr f32 kBandLiftMax = 0.20f;
 

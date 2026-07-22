@@ -91,16 +91,22 @@ TEST_CASE("the village site level is what village.toml was authored for") {
     // The house modules are placed at ABSOLUTE heights (snapToGround =
     // false): this pins the terrain level under them at seed 1337. If the
     // noise or seed ever changes, this fails BEFORE the village floats.
-    // Values recorded 2026-07-06; the village pad levels this to 134.6 m.
+    // Values first recorded 2026-07-06, re-recorded 2026-07-21 after the
+    // terrain retune (amplitudes x1.5 THEN wavelengths x1.5 — the longer
+    // wavelengths move the whole relief, so these are sampled, not derived).
+    // The pad level follows the ground it sits on (134.6 -> 109.6 m) and
+    // village.toml's absolute module heights were TRANSLATED by the same
+    // delta (the house geometry does not scale). Re-cooked with:
+    //   cooker terrain-pad 0 5 45 355 59 369 109.6
     render::TerrainParams params; // demo defaults, seed 1337
     CHECK(render::terrain::height(params, 46.0f, 356.0f) ==
-          doctest::Approx(133.537f).epsilon(0.001));
+          doctest::Approx(105.694f).epsilon(0.001));
     CHECK(render::terrain::height(params, 58.0f, 356.0f) ==
-          doctest::Approx(135.435f).epsilon(0.001));
+          doctest::Approx(105.151f).epsilon(0.001));
     CHECK(render::terrain::height(params, 46.0f, 368.0f) ==
-          doctest::Approx(133.281f).epsilon(0.001));
+          doctest::Approx(113.801f).epsilon(0.001));
     CHECK(render::terrain::height(params, 58.0f, 368.0f) ==
-          doctest::Approx(135.884f).epsilon(0.001));
+          doctest::Approx(113.900f).epsilon(0.001));
 }
 
 TEST_CASE(".ter round-trip and Forms -> overlay build") {

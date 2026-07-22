@@ -103,13 +103,15 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const f32 h = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
             const f32 slope = 1.0f - n.y;
-            if (h < params.seaLevel + 3.0f || h > 92.0f || slope > 0.22f) {
+            // Treeline scaled with the terrain amplitudes (x1.5, 2026-07-21).
+            if (h < params.seaLevel + 3.0f || h > 138.0f || slope > 0.22f) {
                 continue;
             }
-            // Sink slightly so leaning trunks never float on slopes
-            // (scaled with the x8 trees — their footprint is meters wide).
-            place(0, VegetationSystem::kTreeVariants, rng, x, h - 1.2f, z,
-                  6.4f, 11.2f, 880.0f); // x8 of the 0.8-1.4 hedge scale
+            // Sink slightly so leaning trunks never float on slopes; the
+            // offset follows the scale (their footprint is meters wide).
+            place(0, VegetationSystem::kTreeVariants, rng, x, h - 0.9f, z,
+                  4.8f, 8.4f, 880.0f); // -25% on the x8 hedge scale
+                                       // (dev pick 2026-07-21)
         }
     }
 

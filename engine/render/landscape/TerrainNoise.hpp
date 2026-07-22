@@ -35,20 +35,20 @@ struct TerrainParams {
     sptr<const HeightPatches> patches;
 
     // Rolling hills: FBM value noise.
-    f32 hillWavelength { 400.0f }; // meters per base octave
-    f32 hillAmplitude { 50.0f };
+    f32 hillWavelength { 500.0f }; // meters per base octave
+    f32 hillAmplitude { 75.0f };
     i32 octaves { 5 };
     f32 lacunarity { 2.0f };
     f32 gain { 0.5f };
 
     // Ridged mountains, gated by a low-frequency mask so ranges rise in
     // some regions and leave plains elsewhere.
-    f32 mountainWavelength { 1500.0f };
-    f32 mountainAmplitude { 180.0f };
+    f32 mountainWavelength { 2000.0f };
+    f32 mountainAmplitude { 270.0f };
     f32 mountainMaskLow { 0.45f };  // mask noise below this -> plains
     f32 mountainMaskHigh { 0.75f }; // above this -> full mountains
 
-    f32 seaLevel { 14.0f };
+    f32 seaLevel { 21.0f };
 };
 
 namespace terrain {
@@ -76,7 +76,7 @@ struct MaterialWeights {
     f32 snow { 0.0f };
     f32 sand { 0.0f };
 };
-constexpr f32 kSnowLine = 110.0f; // meters; matches uTerrainInfo.y
+constexpr f32 kSnowLine = 165.0f; // meters; matches uTerrainInfo.y
 MaterialWeights materialWeights(const TerrainParams& params, f32 height,
                                 const Vec3& normal);
 

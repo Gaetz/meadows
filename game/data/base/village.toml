@@ -6,10 +6,10 @@
 #
 # Authoring conventions:
 #  - kit building modules: snapToGround = false, ABSOLUTE y (the pad is
-#    leveled to 134.6 m by terrain/village_pad_0_5.ter);
+#    leveled to 109.6 m by terrain/village_pad_0_5.ter);
 #  - props (crates, wagon...): snapToGround = true, y = offset above soil;
 #  - interior worldspace: its own absolute frame, room anchored at (8,0,8).
-# House anchor (exterior): (52, 134.6, 362). Wall modules are 2 m wide,
+# House anchor (exterior): (52, 109.6, 362). Wall modules are 2 m wide,
 # 3.12 m tall; the house is 4 m (x) by 8 m (z).
 
 [plugin]
@@ -28,7 +28,7 @@ name = "true-adventurer-village"
 "4d7a9b30-0000-4000-8000-0000000000a8" = "models/kit/MedievalVillageMegaKit/glTF/Prop_Crate.gltf"
 "4d7a9b30-0000-4000-8000-0000000000a9" = "models/kit/MedievalVillageMegaKit/glTF/Prop_Wagon.gltf"
 "4d7a9b30-0000-4000-8000-0000000000aa" = "models/kit/MedievalVillageMegaKit/glTF/Prop_WoodenFence_Single.gltf"
-# The leveled village pad (cooker terrain-pad, 134.6 m).
+# The leveled village pad (cooker terrain-pad, 109.6 m).
 "4d7a9b30-0000-4000-8000-0000000000ab" = "terrain/village_pad_0_5.ter"
 
 # --- Terrain: the village esplanade ------------------------------------------
@@ -183,7 +183,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000022"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [53.0, 134.65, 367.6]
+position = [53.0, 109.65, 367.6]
 
 # --- Doors -------------------------------------------------------------------------
 
@@ -215,7 +215,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000025"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [52.45, 134.6, 366.0]
+position = [52.45, 109.6, 366.0]
 
 # Interior door leaf, mirrored in the interior doorway wall.
 [[records]]
@@ -227,7 +227,7 @@ baseForm = "4d7a9b30-0000-4000-8000-000000000026"
 cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [8.45, 0.0, 12.0]
 
-# --- House shell (Overworld, anchor 52 / 134.6 / 362) -------------------------
+# --- House shell (Overworld, anchor 52 / 109.6 / 362) -------------------------
 # North gable wall (z = 358).
 
 [[records]]
@@ -237,7 +237,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [51.0, 134.6, 358.0]
+position = [51.0, 109.6, 358.0]
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000031"
@@ -246,7 +246,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [53.0, 134.6, 358.0]
+position = [53.0, 109.6, 358.0]
 
 # South wall: plain + doorway (z = 366).
 [[records]]
@@ -256,7 +256,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [51.0, 134.6, 366.0]
+position = [51.0, 109.6, 366.0]
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000033"
@@ -265,7 +265,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000013"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [53.0, 134.6, 366.0]
+position = [53.0, 109.6, 366.0]
 
 # West side (x = 50), four modules rotated 90°, two with windows.
 [[records]]
@@ -275,7 +275,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [50.0, 134.6, 359.0]
+position = [50.0, 109.6, 359.0]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 
 [[records]]
@@ -285,7 +285,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000014"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [50.0, 134.6, 361.0]
+position = [50.0, 109.6, 361.0]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 
 [[records]]
@@ -295,7 +295,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000014"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [50.0, 134.6, 363.0]
+position = [50.0, 109.6, 363.0]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 
 [[records]]
@@ -305,7 +305,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [50.0, 134.6, 365.0]
+position = [50.0, 109.6, 365.0]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 
 # East side (x = 54).
@@ -316,7 +316,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [54.0, 134.6, 359.0]
+position = [54.0, 109.6, 359.0]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 
 [[records]]
@@ -326,7 +326,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000014"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [54.0, 134.6, 361.0]
+position = [54.0, 109.6, 361.0]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 
 [[records]]
@@ -336,7 +336,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [54.0, 134.6, 363.0]
+position = [54.0, 109.6, 363.0]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 
 [[records]]
@@ -346,7 +346,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [54.0, 134.6, 365.0]
+position = [54.0, 109.6, 365.0]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 
 # Gables + roof.
@@ -357,7 +357,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000016"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [52.0, 137.72, 358.0]
+position = [52.0, 112.72, 358.0]
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-00000000003d"
@@ -366,7 +366,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000016"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [52.0, 137.72, 366.0]
+position = [52.0, 112.72, 366.0]
 rotation = [0.0, 1.0, 0.0, 0.0]
 
 [[records]]
@@ -376,7 +376,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000015"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [52.0, 137.6, 362.0]
+position = [52.0, 112.6, 362.0]
 
 # Village props on the pad (snapToGround = true).
 [[records]]

@@ -57,10 +57,11 @@ public:
     // the far ring is where the instances are.
     i32 lowDetailRadius { 4 };    // 80-face twins within; ultra beyond
                                   // (dev pick 2026-07-19, visual check OK)
-    // EXPERIMENT (feature/space-colonization-trees): A/B — tree variants
-    // regenerate through generateColonizedTree (Runions skeleton +
-    // SDF-normal billboard-card foliage). Flip via reseedVariantMeshes.
-    bool colonizationTrees { false };
+    // A/B — tree variants regenerate through generateColonizedTree (Runions
+    // skeleton + SDF-normal billboard-card foliage). Flip via
+    // reseedVariantMeshes. DEFAULT since 2026-07-21 (dev pick); the lobe
+    // trees stay one checkbox away in the Vegetation / Tree builder panels.
+    bool colonizationTrees { true };
     // Tree builder (2026-07-20): the generators' knobs, mapped from the
     // *TreeTuningForm records by the scene and edited live by the panel
     // (apply through reseedVariantMeshes). Defaults = shipped look.

@@ -21,13 +21,13 @@ class FormDatabase;
 struct LandscapeTuningForm : Form {
     // Terrain shape (render::TerrainParams).
     u32 terrainSeed { 1337 };
-    f32 hillWavelength { 400.0f };
-    f32 hillAmplitude { 50.0f };
-    f32 mountainWavelength { 1500.0f };
-    f32 mountainAmplitude { 180.0f };
-    f32 seaLevel { 14.0f };
+    f32 hillWavelength { 500.0f };
+    f32 hillAmplitude { 75.0f };
+    f32 mountainWavelength { 2000.0f };
+    f32 mountainAmplitude { 270.0f };
+    f32 seaLevel { 21.0f };
     // Terrain materials.
-    f32 snowLine { 110.0f };     // meters
+    f32 snowLine { 165.0f };     // meters
     f32 splatUvScale { 0.25f };  // tiles per meter
     // Fog / atmosphere.
     f32 fogDensity { 0.0014f };
@@ -47,7 +47,7 @@ struct LandscapeTuningForm : Form {
     // Clouds.
     f32 cloudCoverage { 0.38f };
     f32 cloudShadowStrength { 0.7f };
-    f32 cloudHeight { 520.0f };   // meters
+    f32 cloudHeight { 780.0f };   // meters
     f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
     // Interior ambient (chantier 6 B1, appended — ordinals stable):
     // replaces the hardcoded interior-mode constant; moddable per §5.
@@ -201,7 +201,7 @@ struct WeatherForm : Form {
     // Clouds.
     f32 cloudCoverage { 0.38f };
     f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
-    f32 cloudHeight { 520.0f };   // meters
+    f32 cloudHeight { 780.0f };   // meters
     f32 cloudShadowStrength { 0.7f };
     // Fog / atmosphere.
     f32 fogDensity { 0.0014f };

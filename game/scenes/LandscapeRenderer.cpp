@@ -2072,7 +2072,7 @@ void LandscapeRenderer::drawTerrainPanel() {
         // scatter (grass/trees/props) is baked per chunk — Regenerate to
         // re-align it.
         ImGui::SliderFloat("Sea level (m)", &terrain.params.seaLevel, 0.0f,
-                           40.0f, "%.0f");
+                           60.0f, "%.0f"); // range x1.5 with the amplitudes
     }
     if (ImGui::CollapsingHeader("Vegetation")) {
         // GPU-PERF P1: the vegetation draw budget, live (baseline:

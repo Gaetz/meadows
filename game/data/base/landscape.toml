@@ -20,14 +20,14 @@ editorId = "LandscapeTuning"
 
 # --- Terrain shape ------------------------------------------------------
 terrainSeed = 1337
-hillWavelength = 400.0      # meters per base noise octave
-hillAmplitude = 50.0        # rolling-hill height range (+/- m)
-mountainWavelength = 1500.0
-mountainAmplitude = 180.0
-seaLevel = 14.0             # meters
+hillWavelength = 500.0      # meters per base noise octave
+hillAmplitude = 75.0        # rolling-hill height range (+/- m)
+mountainWavelength = 2000.0
+mountainAmplitude = 270.0
+seaLevel = 21.0             # meters
 
 # --- Terrain materials ---------------------------------------------------
-snowLine = 110.0            # snow above this altitude (m)
+snowLine = 165.0            # snow above this altitude (m)
 splatUvScale = 0.25         # ground texture tiles per meter
 
 # --- Fog / atmosphere ----------------------------------------------------
@@ -46,7 +46,7 @@ volumetricIntensity = 1.0   # volumetric light shafts
 # --- Clouds --------------------------------------------------------------
 cloudCoverage = 0.38        # 0 = clear sky, 1 = overcast
 cloudShadowStrength = 0.7
-cloudHeight = 520.0         # cloud layer altitude (m)
+cloudHeight = 780.0         # cloud layer altitude (m)
 cloudScale = 0.0011         # pattern frequency (1/m)
 
 # --- Interiors (chantier 6 B1) --------------------------------------------
@@ -89,7 +89,7 @@ editorId = "Clear"
 sortOrder = 0
 cloudCoverage = 0.12
 cloudScale = 0.0011
-cloudHeight = 560.0
+cloudHeight = 840.0
 cloudShadowStrength = 0.7
 fogDensity = 0.0010
 fogHeightFalloff = 0.02
@@ -114,7 +114,7 @@ editorId = "Morning Mist"
 sortOrder = 1
 cloudCoverage = 0.25
 cloudScale = 0.0013
-cloudHeight = 480.0
+cloudHeight = 720.0
 cloudShadowStrength = 0.6
 fogDensity = 0.0026
 fogHeightFalloff = 0.035
@@ -139,7 +139,7 @@ editorId = "Hazy"
 sortOrder = 2
 cloudCoverage = 0.45
 cloudScale = 0.0009          # broader, softer veils
-cloudHeight = 540.0
+cloudHeight = 810.0
 cloudShadowStrength = 0.6
 fogDensity = 0.0020
 fogHeightFalloff = 0.025
@@ -164,7 +164,7 @@ editorId = "Cloudy"
 sortOrder = 3
 cloudCoverage = 0.58
 cloudScale = 0.0012
-cloudHeight = 520.0
+cloudHeight = 780.0
 cloudShadowStrength = 0.75
 fogDensity = 0.0015
 fogHeightFalloff = 0.02
@@ -189,7 +189,7 @@ editorId = "Overcast"
 sortOrder = 4
 cloudCoverage = 0.85
 cloudScale = 0.0014
-cloudHeight = 460.0
+cloudHeight = 690.0
 cloudShadowStrength = 0.8
 fogDensity = 0.0018
 fogHeightFalloff = 0.022
@@ -214,7 +214,7 @@ editorId = "Storm"
 sortOrder = 5
 cloudCoverage = 0.97
 cloudScale = 0.0016
-cloudHeight = 400.0          # low, heavy ceiling
+cloudHeight = 600.0          # low, heavy ceiling
 cloudShadowStrength = 0.9
 fogDensity = 0.0022
 fogHeightFalloff = 0.025
@@ -242,7 +242,7 @@ editorId = "Rain"
 sortOrder = 6
 cloudCoverage = 0.85
 cloudScale = 0.0013
-cloudHeight = 460.0
+cloudHeight = 690.0
 cloudShadowStrength = 0.8
 fogDensity = 0.0018
 fogHeightFalloff = 0.022

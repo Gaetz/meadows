@@ -26,7 +26,7 @@ class ShaderLibrary;
 // same curve as grass.vert's clip.
 struct GrassRenderTuning {
     f32 bladeHeight { 0.95f };    // meters at scale 1
-    f32 bladeHalfWidth { 0.045f };
+    f32 bladeHalfWidth { 0.03f }; // thinned 0.045 -> 0.03 (dev 2026-07-22)
     f32 detailNear { 12.5f };     // full quick-grass shading inside...
     f32 detailFar { 25.0f };      // ...flattened LOD beyond
     f32 thinStart { 10.0f };      // density LOD: thinning begins (m)
