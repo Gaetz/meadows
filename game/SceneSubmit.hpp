@@ -1,5 +1,7 @@
 #pragma once
 
+// Subsystem map: docs/AUDIT/U5-runtime-scenes-ui.md
+
 #include "engine/render/SpriteRenderer.hpp" // render::Sprite, rhi::TextureHandle
 #include "engine/render/landscape/FxInstance.hpp" // render::FxInstance
 #include "world/scene/Components.hpp"        // world::Transform, world::SpriteRender

@@ -1,5 +1,7 @@
 #pragma once
 
+// Subsystem map: docs/AUDIT/U3-renderer-landscape.md
+
 #include <unordered_map>
 #include <unordered_set>
 

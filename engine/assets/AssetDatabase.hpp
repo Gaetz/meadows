@@ -1,5 +1,7 @@
 #pragma once
 
+// Subsystem map: docs/AUDIT/U1-foundations.md
+
 #include <filesystem>
 #include <optional>
 #include <unordered_map>

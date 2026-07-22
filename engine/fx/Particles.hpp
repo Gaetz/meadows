@@ -1,5 +1,7 @@
 #pragma once
 
+// Subsystem map: docs/AUDIT/U1-foundations.md
+
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"

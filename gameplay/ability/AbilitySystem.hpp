@@ -1,5 +1,7 @@
 #pragma once
 
+// Subsystem map: docs/AUDIT/U6-gas-stats.md
+
 #include <optional>
 #include <string_view>
 #include <unordered_map>

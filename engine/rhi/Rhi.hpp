@@ -1,5 +1,7 @@
 #pragma once
 
+// Subsystem map: docs/AUDIT/U2-rhi-gl.md
+
 #include "engine/core/Defines.hpp"
 
 namespace rhi {

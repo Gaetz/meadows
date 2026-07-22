@@ -1,5 +1,7 @@
 #pragma once
 
+// Subsystem map: docs/AUDIT/U8-narrative-script-seams.md
+
 #include <unordered_map>
 
 #include "data/forms/Form.hpp"

@@ -1,5 +1,7 @@
 #pragma once
 
+// Subsystem map: docs/AUDIT/U5-runtime-scenes-ui.md
+
 #include "engine/core/Defines.hpp"
 #include "engine/platform/Input.hpp"
 #include "engine/render/Camera2D.hpp"
