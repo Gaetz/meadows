@@ -1,4 +1,26 @@
-﻿#include "game/scenes/LandscapeScene.hpp"
+﻿// LandscapeScene — the 3D demo scene, kept as a THIN ORCHESTRATOR: every
+// subsystem lives in its own controller (game/scenes/*), the scene owns
+// them, wires them through make*Context() adapters and sequences the frame.
+// Monolith audit + decomposition map: docs/AUDIT/U4-landscapescene.md.
+//
+// Table of contents (file order — grep the method name):
+//   1. Lifecycle   onEnter -> bootstrapData / createRenderResources /
+//                  setupGameplay / setupWorldAndStreaming /
+//                  spawnInitialWorld ; onExit
+//   2. Frame       update (input, sim tick, streaming, controllers),
+//                  updateNpcs ; render (delegates to LandscapeRenderer)
+//   3. Modes       enterPlayMode / exitPlayMode / restoreMode (the ONE
+//                  mode transition — every mode side effect lives there)
+//   4. Contexts    make*Context() — one adapter per controller: Sculpt,
+//                  Editor, Interaction, Ride, Hud, Save, UiRouter,
+//                  Options, Map, Quest, Player, Npc, Follower, Streaming
+//   5. Game UI     createGameUi / updateGameUi / syncScreens /
+//                  applyLanguage (RmlUi screens; HUD models in GameHud)
+//   6. World glue  finalizeActorSpawn / refreshNpcs / performTravel
+//   7. Console     createConsole (dev commands; panel = ui/ConsolePanel)
+//   8. Dev panels  drawUi / drawSkyUi / drawGameplayUi (ImGui)
+
+#include "game/scenes/LandscapeScene.hpp"
 
 #include <algorithm>
 #include <chrono> // Save/load timing baselines
