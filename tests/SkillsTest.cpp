@@ -12,7 +12,7 @@
 #include "gameplay/save/SaveState.hpp"
 #include "gameplay/stats/Skills.hpp"
 
-// Skills-by-use v1 (acted decision 2026-07-05): usage events -> skill XP ->
+// Skills-by-use v1: usage events -> skill XP ->
 // thresholds = GameplayEffects. All headless: forms + components + bus.
 
 using core::Guid;

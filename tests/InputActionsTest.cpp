@@ -6,9 +6,9 @@
 #include "game/Settings.hpp"
 #include "game/scenes/OptionsController.hpp" // decideCapture (header-only)
 
-// Chantier 9 C9.2 — the action layer: default bindings, the steal-on-
+// The action layer: default bindings, the steal-on-
 // rebind rule, name round-trips, and settings.toml persistence.
-// C9.4 appends the options screen's pure half: the rebind-capture
+// Plus the options screen's pure half: the rebind-capture
 // decision (which pressed input wins, Escape cancels).
 
 using namespace game;
@@ -27,7 +27,7 @@ TEST_CASE("actions: the default layout is today's keyboard + a full pad") {
     CHECK(map.binding(InputAction::Jump).key == Key::Space);
     CHECK(map.binding(InputAction::Interact).key == Key::E);
     CHECK(map.binding(InputAction::Pause).key == Key::Escape);
-    // É7: the alternate interaction (a follower's gear) — F / LB.
+    // The alternate interaction (a follower's gear) — F / LB.
     CHECK(map.binding(InputAction::InteractAlt).key == Key::F);
     CHECK(map.binding(InputAction::InteractAlt).pad ==
           PadButton::LeftShoulder);
@@ -131,7 +131,7 @@ TEST_CASE("options capture: the rebind decision table (C9.4)") {
         decideCapture(std::nullopt, MouseButton::Middle, PadButton::A);
     CHECK(mouse.kind == Kind::Mouse);
     CHECK(mouse.mouse == MouseButton::Middle);
-    // B and Start ARE capturable — the scene gates the C9.3 UI pad
+    // B and Start ARE capturable — the scene gates the UI pad
     // routing while a capture is armed, so they reach only the rebind.
     const CaptureResult pad =
         decideCapture(std::nullopt, std::nullopt, PadButton::B);

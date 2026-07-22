@@ -1,6 +1,6 @@
 #version 460 core
 
-// Hi-Z pyramid downsample (brick 26): mip N = max depth of the region mip
+// Hi-Z pyramid downsample: mip N = max depth of the region mip
 // N-1 covers, via image load/store (no sampler feedback games). The 3x3
 // clamped window absorbs odd-size remainders conservatively.
 

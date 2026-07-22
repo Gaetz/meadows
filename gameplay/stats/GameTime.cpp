@@ -16,7 +16,7 @@ bool isDead(const GameTimeTickArgs& a) {
     return dead && a.system.tags.has(*dead);
 }
 
-// FOLLOWERS É3: a DOWNED actor must not regenerate either — health
+// A DOWNED actor must not regenerate either — health
 // creeping over 0 would silently stand him back up mid-bleedout (the
 // revive/bleedout paths own the exit from Downed, exactly like the
 // corpse-regen gate above owns Dead).
@@ -32,7 +32,7 @@ bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
     // §2.9 execution calc: buildup DoT / lethal zeroing drain BaseValues
     // directly (final per-tick amounts — resistance acts on buildup
     // accumulation, not the tick). ONE implementation for the real-time
-    // (tickCharacter) and time-skip (advanceGameTime) paths (audit U6-F2).
+    // (tickCharacter) and time-skip (advanceGameTime) paths.
     if (br.poisonHealthDamage > 0.0f || br.ignitionHealthDamage > 0.0f) {
         a.vitals.health = std::max(0.0f,
             a.vitals.health - br.poisonHealthDamage - br.ignitionHealthDamage);
@@ -54,8 +54,8 @@ bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
         const f32 maxP = currentValueOf(a.system, attr("maxPosture"));
         a.combat.posture = std::max(0.0f,
             a.combat.posture - maxP * a.tuning.electrocutionPostureDrainPercent);
-        // The jolt also breaks the stance — was only on the real-time path
-        // (audit U6-F2).
+        // The jolt also breaks the stance — on BOTH the real-time and
+        // time-skip paths.
         a.combat.staggerSeconds =
             std::max(a.combat.staggerSeconds, a.tuning.staggerSeconds);
         if (const auto staggered = a.tags.find("State.Staggered")) {
@@ -70,10 +70,10 @@ bool applyBuildupResult(GameTimeTickArgs& a, const BuildupTickResult& br,
         }
     }
     if (br.deathTriggered) {
-        // Lethal zeroing writes the BASE (§2.9): the State.Dead tag alone
-        // (the old real-time behavior) left health > 0, so the next
-        // life-state sync resurrected the actor and it reloaded ALIVE
-        // across a save (audit U6-F7 — the regen-revive bug's sibling).
+        // Lethal zeroing writes the BASE (§2.9): setting the State.Dead
+        // tag alone would leave health > 0, so the next
+        // life-state sync would resurrect the actor and it would reload
+        // ALIVE across a save.
         a.vitals.health = 0.0f;
     }
     if (a.vitals.health <= 0.0f) {
@@ -122,7 +122,7 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
     // the corpse, and — worse — that regenerated BASE health persists, so a slain
     // NPC reloads ALIVE across a cell unload/reload (the save layer re-derives the
     // life state from health, §5/§6). This is the gate `isDead` was written for.
-    // É3: Downed gates it too — no silent self-revive mid-bleedout.
+    // Downed gates it too — no silent self-revive mid-bleedout.
     if (!isDead(a) && !isDowned(a)) {
         a.vitals.health  = std::min(cur("maxHealth"),  a.vitals.health  + cur("healthRegen")  * gdt);
         a.vitals.essence = std::min(cur("maxEssence"), a.vitals.essence + cur("essenceRegen") * gdt);
@@ -169,7 +169,7 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
 
     // Re-run the derived formulas after all game-time effects have
     // ticked/expired (the partial recomputes above PRESERVE the previous
-    // derived currents — audit U6-F10 — but only a full recompute refreshes
+    // derived currents — but only a full recompute refreshes
     // them against the new modifier set).
     recomputeStats(a.core, a.vitals, a.resonance, a.system, a.derived, &mods);
 }

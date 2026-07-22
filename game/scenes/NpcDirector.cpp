@@ -7,31 +7,31 @@
 
 #include "data/forms/CoreForms.hpp"       // data::WeaponForm
 #include "data/forms/FormDatabase.hpp"
-#include "engine/core/Log.hpp"            // the É3 downed-edge trace
-#include "game/SceneSubmit.hpp"           // RenderSnapshot (U4-2b extract)
-#include "game/WeaponMeshes.hpp"          // A2: the visible sword guid
+#include "engine/core/Log.hpp"            // the downed-edge trace
+#include "game/SceneSubmit.hpp"           // RenderSnapshot extract
+#include "game/WeaponMeshes.hpp"          // the visible sword guid
 #include "gameplay/ability/AbilitySystem.hpp"
-#include "gameplay/actors/ActorState.hpp" // FollowerState (É1 dispatch)
+#include "gameplay/actors/ActorState.hpp" // FollowerState (follow dispatch)
 #include "gameplay/ai/ScheduleSystem.hpp" // updateInterruption edges
 #include "gameplay/actors/CharacterTick.hpp"
-#include "gameplay/actors/Followers.hpp"  // foldAgeModifiers (É5)
+#include "gameplay/actors/Followers.hpp"  // foldAgeModifiers
 #include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions (C2)
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp" // Equipment (the weapon link)
-#include "gameplay/stats/EquipmentStats.hpp" // É7: armor protects NPCs too
-#include "gameplay/stats/Damage.hpp"    // CombatState (É3 bleedout clock)
+#include "gameplay/stats/EquipmentStats.hpp" // armor protects NPCs too
+#include "gameplay/stats/Damage.hpp"    // CombatState (bleedout clock)
 #include "gameplay/stats/GameClock.hpp"
-#include "world/ai/Perception.hpp"      // B2: hearing (onNoise)
+#include "world/ai/Perception.hpp"      // hearing (onNoise)
 #include "world/scene/Components.hpp"
 
 namespace game {
 
-// U4-7: the stat-space -> world mapping and the NPC gait now come from
+// The stat-space -> world mapping and the NPC gait now come from
 // StatsTuningForm (§5 moddable) — the same scale the player uses, no more
 // hand-mirrored copy.
 
-// P0 A2/A3 [cpp-tuning] — the sword grip correction for the UAL hand_r
-// joint (dev feel pass 2026-07-11). Hand-local: fingers run along +Y,
+// [cpp-tuning] — the sword grip correction for the UAL hand_r
+// joint. Hand-local: fingers run along +Y,
 // the thumb sits on +Z, X pierces the palm. Identity put the blade in
 // the FOREARM'S prolongation (along the fingers); +90 degrees about X —
 // "the axis through the hand" — stands it up out of the fist on the
@@ -41,7 +41,7 @@ namespace game {
 const Mat4 kSwordGrip = glm::rotate(
     Mat4 { 1.0f }, glm::radians(90.0f), Vec3 { 1.0f, 0.0f, 0.0f });
 
-// A5+ [cpp-tuning] — the raised-guard grip (dev design: the hand turns
+// [cpp-tuning] — the raised-guard grip (the hand turns
 // a little INWARD so the blade lies oblique across the front). An extra
 // roll about the fist axis on top of kSwordGrip; drawn while
 // npc.blocking (the hit test never runs during a guard).
@@ -71,7 +71,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                                                    ctx.gameTags,
                                                    ctx.statsTuning };
     const auto deadTag = ctx.gameTags.find("State.Dead");
-    const auto downedTag = ctx.gameTags.find("State.Downed"); // É3
+    const auto downedTag = ctx.gameTags.find("State.Downed");
     // Sneak: a crouched player is HALF the target — sight range, the
     // LOS aim point and the blade capsule all read this one bool.
     bool playerSneaking = false;
@@ -87,13 +87,13 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         auto& transform = npc.entity.get_mut<world::Transform>();
         f32 idleDecay = 10.0f;
 
-        // B6: NPCs run the full character pipeline too (effects, stagger, life
+        // NPCs run the full character pipeline too (effects, stagger, life
         // state) — that's where State.Dead comes from.
-        // FOLLOWERS É5: age applies its two < 1 multipliers through the
+        // Age applies its two < 1 multipliers through the
         // SAME StatModifiers channel the player's equipment uses (§2.9:
         // mods rebuilt from data each tick, nothing persisted, no
         // synthetic effects). Ageless actors keep the empty default.
-        // FOLLOWERS É7: equipped ARMOR folds in too (the player's
+        // Equipped ARMOR folds in too (the player's
         // LandscapeScene equipMods fold, mirrored) — armor now protects
         // NPCs. Iso note: today's loadouts hand out weapons only, so no
         // existing NPC's numbers move until armor is actually given
@@ -111,7 +111,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         const auto& npcSys = npc.entity.get<gameplay::AbilitySystem>();
         const bool wasDead = npc.dead;
         npc.dead = deadTag && npcSys.tags.has(*deadTag);
-        // Chantier 6 A1: the live->dead EDGE is the gameplay event — quests
+        // The live->dead EDGE is the gameplay event — quests
         // (kill tasks) and crime listen on the bus. Reload paths never fire
         // it: refreshNpcs seeds npc.dead from the tag.
         if (npc.dead && !wasDead) {
@@ -126,7 +126,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             }
         }
         // (The corpse is lootable — its Inventory was rolled from the
-        // LoadoutEntryForm children at build, chantier 4 B5.)
+        // LoadoutEntryForm children at build.)
         if (npc.dead) {
             // The death transition (anim graph, State.Dead gate) plays; the
             // body stays. Despawn: a later slice.
@@ -144,7 +144,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             continue;
         }
 
-        // FOLLOWERS É3: a DOWNED actor (an active follower at 0 HP — the
+        // A DOWNED actor (an active follower at 0 HP — the
         // Follower.Protected routing in updateLifeState) is out of the
         // fight but not dead. The downed EDGE (the dead-edge idiom above)
         // seeds the bleedout clock and announces it on the bus; the
@@ -202,22 +202,22 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                               ? npcWeapon->model
                               : core::Guid {};
 
-        // R4: perception -> decision -> move lives in the combat
+        // Perception -> decision -> move lives in the combat
         // controller; true = combat overrode the schedule this frame.
         const bool inCombat = combat_.update(dt, ctx, npc, npcWeapon,
                                              playerSneaking, schedule_,
                                              npcByEntity_);
 
         if (!inCombat) {
-            npc.blocking = false; // A5: the fight is over, lower the guard
+            npc.blocking = false; // The fight is over, lower the guard
             npc.combatMove.reset(); // the intent trace re-logs next fight
         }
         // Drawn while fighting, back on the belt when it calms down —
         // extract reads this (the sim decides, the renderer shows).
         npc.weaponDrawn = inCombat;
-        // FOLLOWERS É1: an ACTIVE follower overrides his schedule with the
+        // An ACTIVE follower overrides his schedule with the
         // follow package (combat still wins the frame). Non-followers keep
-        // the exact prior dispatch (iso-behavior). É9: the « rester »
+        // the exact prior dispatch (iso-behavior). The « rester »
         // stance HOLDS him instead — active, standing at his spot; his
         // schedule takes over only on a DISMISS (v1 sandbox statement:
         // the home schedules are the town life of dismissed followers).
@@ -232,7 +232,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
                 following = !staying;
             }
         }
-        // Interruption/reprise (E-catalogue leftover, 2026-07-13): combat
+        // Interruption/reprise: combat
         // and an OPEN dialogue override the schedule; the pure edge
         // detector stands the walker's state up on entry (drop the stale
         // path — combat already frees the seat where it must) and forces
@@ -262,10 +262,10 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         } else if (following) {
             schedule_.followPlayer(dt, ctx, npc);
         } else if (npc.schedule.isValid()) {
-            // --- Schedule-driven day (B3) ---
+            // --- Schedule-driven day ---
             schedule_.update(dt, ctx, npc, hourOfDay, idleDecay);
         } else if (patrolPoints.size() >= 2) {
-            // --- Legacy patrol fallback (chantier 1 B6) ---
+            // --- Legacy patrol fallback ---
             schedule_.patrol(dt, ctx, npc, patrolPoints);
         }
         // Standing = no path AND no direct steering this frame (strafe
@@ -284,16 +284,16 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         npc.anim->evaluate(npc.pose);
         anim::skinMatrices(npc.rig->skeleton, npc.pose, npc.palette);
 
-        // R4: the swing machine + the blade-touch hit + the A5 guard
+        // The swing machine + the blade-touch hit + the guard
         // roll/mirror — after the pose evaluation (the hit segment
-        // follows the hand joint through this frame's pose). É2: the
+        // follows the hand joint through this frame's pose). : the
         // map resolves an NPC defender (combat target) back to its record.
         combat_.updateSwing(dt, ctx, npc, npcWeapon, playerSneaking,
                             npcByEntity_);
 
-        // Chantier P0 C4a: drain the anim events the sink buffered onto
+        // Drain the anim events the sink buffered onto
         // the bus — ONE kind ("AnimEvent"), the clip's name in `name`;
-        // hit windows (A4, routed above) and footsteps (C4b) filter on it.
+        // hit windows (routed above) and footsteps filter on it.
         for (str& name : npc.pendingAnimEvents) {
             gameplay::Event event;
             event.kind = gameplay::eventKind("AnimEvent");
@@ -318,11 +318,11 @@ void NpcDirector::extract(RenderSnapshot& out) const {
         out.skinned.push_back({ npc.entity.id(), world, npc.tint,
                                 npc.vertices, npc.indices, npc.indexCount,
                                 npc.palette });
-        // Chantier P0 A2: a fighting NPC carries its EQUIPPED weapon in
+        // A fighting NPC carries its EQUIPPED weapon in
         // hand_r — the very blade the hit test follows (blade-touch
         // combat). Drawn only while the sim says so (weaponDrawn);
         // kSwordGrip stands it up out of the fist; a raised guard turns
-        // it oblique across the front (A5+).
+        // it oblique across the front.
         if (npc.weaponDrawn && !npc.dead && npc.handJoint >= 0) {
             anim::modelMatrices(npc.rig->skeleton, npc.pose, jointScratch);
             out.meshes.push_back(
@@ -337,10 +337,10 @@ void NpcDirector::extract(RenderSnapshot& out) const {
 }
 
 void NpcDirector::onNoise(const Vec3& position, f32 loudness) {
-    // B2 hearing: every living perceiver within ITS hearing radius turns
+    // Hearing: every living perceiver within ITS hearing radius turns
     // toward the noise (Calm -> Suspicious; searches re-aim; Alert
     // ignores it). Dispatchers: player footsteps and combat cues (C4b).
-    // Deliberately NOT a SpatialIndex query (R3): the radius is per-
+    // Deliberately NOT a SpatialIndex query: the radius is per-
     // PERCEIVER (hearingRadius x loudness), so one shared-radius query
     // can't answer it — the plain sweep stays until NPC counts bite.
     for (auto& npcPtr : npcs_) {

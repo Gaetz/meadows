@@ -2,7 +2,7 @@
 
 #include "game/WeaponMeshes.hpp"
 
-// Chantier P0 A2 — the procedural sword: grip at the origin, blade along
+// The procedural sword: grip at the origin, blade along
 // +Y up to bladeLength. Headless geometry sanity (the visual look is the
 // dev's pass).
 

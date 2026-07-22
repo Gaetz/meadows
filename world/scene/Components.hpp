@@ -5,7 +5,7 @@
 #include "engine/core/Guid.hpp"
 #include "engine/reflect/Reflect.hpp"
 
-// The shared scene representation (Phase 2, brick d's data; spawned by brick b).
+// The shared scene representation, spawned by the Spawner.
 // These are plain reflected structs — no rhi/render types — so the world stays
 // render-free (§4) and the renderer observes them from above. flecs does not
 // appear here; only `registerSceneComponents` (in the .cpp) touches the ECS.
@@ -48,7 +48,7 @@ struct SpriteRender {
         REFLECT_FIELD(size)
         REFLECT_FIELD(tint)
         REFLECT_FIELD(layer)
-        REFLECT_FIELD(uvRect) // appended last: binary ordinals stay stable
+        REFLECT_FIELD(uvRect)
     REFLECT_END()
 };
 
@@ -110,13 +110,13 @@ struct LightSource {
     f32 radius { 8.0f };
     f32 spotAngle { 0.0f }; // 0 = point light
     f32 flicker { 0.0f };
-    // Brick 34 (appended): dust shaft prism + sun-linked direction.
+    // Dust shaft prism + sun-linked direction.
     bool shaft { false };
     f32 shaftLength { 5.0f };
     f32 shaftSoftness { 0.5f };
     f32 dustDensity { 0.6f };
     bool sunLinked { false };
-    // B2b (appended): the interior key-light shadow candidate flag.
+    // The interior key-light shadow candidate flag.
     bool castsShadow { false };
 
     REFLECT_BEGIN(LightSource, void)
@@ -134,7 +134,7 @@ struct LightSource {
     REFLECT_END()
 };
 
-// A placed water volume (brick 32): the box top = the surface, the box =
+// A placed water volume: the box top = the surface, the box =
 // the "in water" test. Seeded from WaterVolumeForm by the spawner.
 struct WaterVolume {
     Vec3 halfExtents { 4.0f, 1.0f, 4.0f };
@@ -175,7 +175,7 @@ struct MarkerKind {
     REFLECT_END()
 };
 
-// A traversable door (chantier 2 B7): the transition target is the GUID
+// A traversable door: the transition target is the GUID
 // of a placed marker REFERENCE — resolved from records at travel time.
 struct DoorTarget {
     core::Guid targetReference;

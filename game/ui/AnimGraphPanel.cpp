@@ -77,7 +77,7 @@ void AnimGraphPanel::drawCanvas(const core::Guid& graphId) {
         return from.isValid() ? from : anyState;
     };
 
-    // Warnings line — the §8.6 validation set, inline and cheap.
+    // Warnings line — the graph validation set, inline and cheap.
     vector<str> warnings;
     if (!graphForm->initialState.isValid()) {
         warnings.push_back("no initial state");
@@ -332,7 +332,7 @@ void AnimGraphPanel::drawCanvas(const core::Guid& graphId) {
         }
         ImGui::EndPopup();
     }
-    // 8.7d: pin dragged into empty canvas — state + transition in one
+    // A pin dragged into empty canvas — state + transition in one
     // gesture, oriented by which side was dragged ("Any State" only
     // emits, so an input-side drag from it can't happen).
     if (ImGui::BeginPopup("ag-newnode")) {

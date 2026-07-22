@@ -1,7 +1,7 @@
 #version 460 core
 #include "common.glsl"
 
-// Radiance cascades G2 (docs/RADIANCE-CASCADES.md) — voxel clipmap
+// Radiance cascades injection (docs/RADIANCE-CASCADES.md) — voxel clipmap
 // injection: one thread per voxel, both clips in one dispatch (z stacks
 // clip 0 then clip 1). Terrain surface comes from the worker-baked
 // height/albedo tile (patch/sculpt-aware — terrain::height ran on the
@@ -19,16 +19,16 @@ layout(std140, binding = 2) uniform RcUbo {
     vec4 uRcTileInfo;    // xy = tile center XZ, z = 1/span,
                          // w = CLIP resolution (voxels per axis)
     vec4 uRcMisc;        // x = debug clip index, y = sky factor,
-                         // z = box count, w = light count (G3)
-    vec4 uRcLightPosRadius[16]; // G3: local lights (xyz, w = radius)
+                         // z = box count, w = light count
+    vec4 uRcLightPosRadius[16]; // local lights (xyz, w = radius)
     vec4 uRcLightColor[16];     // rgb premultiplied by intensity
     vec4 uRcMisc3; // x = light emitter boost (the blob's radiance scale),
                    // y = bounce feedback (0 = single bounce)
-    vec4 uRcPrevGrid; // G7a: xyz = LAST inject's fine-grid origin,
+    vec4 uRcPrevGrid; // xyz = LAST inject's fine-grid origin,
                       // w = its probe spacing (uRcPrev's frame of ref)
 };
 
-// G3: props/kits/NPCs as AABBs — two vec4 bounds + albedo/emissive.
+// Props/kits/NPCs as AABBs — two vec4 bounds + albedo/emissive.
 layout(std430, binding = 3) readonly buffer RcBoxes {
     vec4 uRcBoxData[]; // triples: min, max, albedo(rgb)+emissive(a)
 };
@@ -46,7 +46,7 @@ float tileHeight(vec2 worldXz) {
     return texture(uRcHeight, uv).r;
 }
 
-// G7a multi-bounce: LAST frame's merged GI arriving at this surface —
+// Multi-bounce: LAST frame's merged GI arriving at this surface —
 // the same 8-slab cosine gather as gi.glsl, over uRcPrev's grid.
 vec3 prevBounce(vec3 world, vec3 n) {
     float res = uRcTileInfo.w;
@@ -88,7 +88,7 @@ void main() {
     const float voxelSize = info.w;
     const vec3 world = info.xyz + (vec3(voxel) + 0.5) * voxelSize;
 
-    // --- Classify the voxel: terrain surface / underground / box (G3) ---
+    // --- Classify the voxel: terrain surface / underground / box ---
     const float h = tileHeight(world.xz);
     const float halfVoxel = voxelSize * 0.5;
     float occupancy = 0.0;
@@ -112,7 +112,7 @@ void main() {
         albedo = texture(uRcAlbedo, uv).rgb;
     }
 
-    // Boxes override/add (props, kits, NPCs, canopies — v1 AABB
+    // Boxes override/add (props, kits, NPCs, canopies — coarse AABB
     // occlusion; boundsMin.w < 1 = semi-transparent, the march filters).
     const int boxCount = int(uRcMisc.z);
     for (int b = 0; b < boxCount; ++b) {
@@ -129,10 +129,10 @@ void main() {
         }
     }
 
-    // The lights THEMSELVES enter the field as small emissive blobs (dev
-    // bug 2026-07-11: interiors banded, open terrain did not — surface
-    // splats only light SURFACES and a flat floor cannot see itself;
-    // walls/ceilings carried the light indoors). A finite-size emitter is
+    // The lights THEMSELVES enter the field as small emissive blobs
+    // (surface splats only light SURFACES and a flat floor cannot see
+    // itself — without this, interiors band while open terrain does not,
+    // since walls/ceilings carried the light indoors). A finite-size emitter is
     // also what the penumbra hypothesis wants; the 1/d² falloff emerges
     // from the source's solid angle across the cascades.
     {
@@ -163,15 +163,14 @@ void main() {
             const vec2 tl = terrainLightFactors(world);
             radiance += albedo * (uSunColor.rgb * (ndl * sun * tl.x) +
                                   uAmbientColor.rgb * (uRcMisc.y * tl.y));
-            // G7a: last frame's GI bounces once more off this surface.
+            // Last frame's GI bounces once more off this surface.
             if (uRcMisc3.y > 0.0) {
                 radiance += albedo * prevBounce(world, normal) *
                             uRcMisc3.y;
             }
             // Local lights (torches, spells) — SAME windowed inverse-
-            // square as locallights.glsl (dev feedback 2026-07-11: the
-            // fatter quadratic splat made the bounce read too strong
-            // against the direct light).
+            // square as locallights.glsl (a fatter quadratic splat makes
+            // the bounce read too strong against the direct light).
             const int lightCount = int(uRcMisc.w);
             for (int l = 0; l < lightCount; ++l) {
                 const vec3 toLight = uRcLightPosRadius[l].xyz - world;

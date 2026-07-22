@@ -3,7 +3,7 @@
 #include "common.glsl"
 #include "rc_common.glsl"
 
-// Radiance cascades G7c — INTERVAL EXTENSION (paper §2.3.3): a known
+// Radiance cascades INTERVAL EXTENSION (paper §2.3.3): a known
 // interval field L[a, a+x] doubles its own range in O(1):
 //   L[a, a+2x](p) = L[a, a+x](p) + β(p) · L[a, a+x](p + x·dir)
 // The build marched only a fraction of the interval; each extension

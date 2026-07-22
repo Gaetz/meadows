@@ -27,7 +27,7 @@ ResolveReport resolve(const vector<const Plugin*>& loadOrder,
                       FormDatabase& outDatabase) {
     ResolveReport report;
 
-    // --- Load-order sanity (audit U7-6): every declared dependency must be
+    // --- Load-order sanity: every declared dependency must be
     // present AND earlier in the load order. Violations don't abort — the
     // field-level layering below still resolves deterministically — but they
     // are exactly the "works by accident" setups a modlist tool must surface.

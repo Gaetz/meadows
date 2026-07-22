@@ -269,7 +269,7 @@ TEST_CASE("status buildup: ignition/electrocution DoT scale with vitality, not w
     CHECK(elVit  <  elBase);
 }
 
-// --- applyBuildupResult: the ONE shared consequence path (audit U6-F2/U6-F7) --------
+// --- applyBuildupResult: the ONE shared consequence path ----------------------------
 
 #include "gameplay/combat/Combat.hpp"   // updateLifeState
 #include "gameplay/stats/GameTime.hpp"  // applyBuildupResult, GameTimeTickArgs

@@ -4,7 +4,7 @@
 
 #include "engine/core/Defines.hpp"
 
-// Authored-terrain delta-overlay data (chantier 2 B8). Headless data structs
+// Authored-terrain delta-overlay data. Headless data structs
 // shared by the terrain noise/height code (engine/render/landscape/TerrainNoise)
 // and the world authoring layer (world/terrain/TerrainPatches) that BUILDS them
 // from TerrainPatchForm records. Extracted to this headless home so world/ needs

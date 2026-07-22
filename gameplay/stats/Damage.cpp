@@ -94,7 +94,7 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
         // Negative resistance = vulnerability: it amplifies the hit (e.g. iron
         // armor conducts electricity). Floor at -100% so the worst case is ×2.
         f32 percent = std::clamp(mitigationPercent(sys, ch.type), -100.0f, 100.0f);
-        // Chantier 6 C1: penetration eats POSITIVE protection only — it
+        // Penetration eats POSITIVE protection only — it
         // never turns a vulnerability into a bigger one.
         const f32 pen =
             physical ? event.armorPenetration : event.resistPenetration;
@@ -104,7 +104,7 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
         totalHealth += afterFlat * (1.0f - percent / 100.0f);
     }
 
-    // Chantier 6 C1: the critical execution — criticalSensitivity% of the
+    // The critical execution — criticalSensitivity% of the
     // target's max health × the attacker's multiplier, bypassing armor
     // entirely (docs/STATS.md §4). Fired by the attack site when the
     // target sits in its critical window.
@@ -132,7 +132,7 @@ DamageResult applyDamage(StatBlock& target, const DamageEvent& event,
     result.healthDamage = totalHealth;
     result.postureDamage = event.postureAmount;
 
-    // Posture break → stagger + critical window (chantier 6 C2): posture
+    // Posture break → stagger + critical window (docs/STATS.md §4): posture
     // SITS at 0 for critWindowSeconds (updateCritWindow refills it on
     // expiry) and the target is open to the critical execution.
     if (target.combat.posture <= 0.0f && event.postureAmount > 0.0f) {

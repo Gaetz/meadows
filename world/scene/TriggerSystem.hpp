@@ -58,7 +58,7 @@ struct TriggerCallbacks {
 // flecs query order, or in grid order when `index` is supplied (both
 // stable for a given world state).
 //
-// P0 B1: pass the frame's SpatialIndex to test only the actors NEAR each
+// Pass the frame's SpatialIndex to test only the actors NEAR each
 // volume (bounding-sphere radius query) instead of every loaded actor.
 // Occupants no longer among the candidates are swept as LEAVE — stepping
 // out of the neighborhood IS stepping out of the box. Null = full scan.

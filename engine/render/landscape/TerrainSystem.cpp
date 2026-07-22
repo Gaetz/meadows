@@ -19,8 +19,8 @@ namespace {
 constexpr const char* kTerrainShader = "terrain";
 constexpr const char* kTerrainCasterShader = "shadow_terrain";
 
-// Per-vertex material color until the splatting brick replaces it with
-// blended tiling textures: sand at the shoreline, grass on plains, rock on
+// Per-vertex material color — the base tint the splat tiles blend over:
+// sand at the shoreline, grass on plains, rock on
 // slopes, snow on high flats.
 Vec3 terrainColor(f32 height, const Vec3& normal, f32 seaLevel) {
     constexpr Vec3 kSand { 0.76f, 0.70f, 0.50f };
@@ -154,7 +154,7 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
               .arrayLayers = SplatLayer_Count,
               .mipLevels = 9, // full chain for a 256 tile
               // sRGB: tiles are authored in display space, decoded to linear
-              // on sample — the HDR pipeline lights in linear (brick 12).
+              // on sample — the HDR pipeline lights in linear.
               .format = rhi::TextureFormat::SRGBA8,
               .filter = rhi::FilterMode::Linear,
               .wrap = rhi::AddressMode::Repeat,
@@ -186,7 +186,7 @@ void TerrainSystem::destroy(rhi::Device& device) {
     // Orphaned worker jobs keep pushing into the streamer's queue
     // harmlessly; results die with the last reference (TextureCache
     // teardown pattern) and stale generations drop on arrival.
-    (void)device; // U3-7: Unique handles free through their device
+    (void)device; // Unique handles free through their device
     streamer.invalidateAll([](Chunk&) {});
     resident = 0;
     pending = 0;
@@ -201,7 +201,7 @@ void TerrainSystem::destroy(rhi::Device& device) {
 }
 
 void TerrainSystem::regenerate(rhi::Device& device) {
-    (void)device; // U3-7: Unique buffers free through their device
+    (void)device; // Unique buffers free through their device
     streamer.invalidateAll([](Chunk&) {});
     resident = 0;
     pending = 0;
@@ -237,7 +237,7 @@ void TerrainSystem::pumpUploads(rhi::Device& device) {
     // Time-budgeted on top of the count cap: 8 LOD0 uploads cost far more
     // than 8 LOD3 ones (the frame probe showed the count cap alone
     // spiking past 30 ms in Debug). At least one upload always lands, so
-    // progress is guaranteed. (U3-1: budget loop in ChunkStreamer; this
+    // progress is guaranteed. (Budget loop in ChunkStreamer; this
     // lambda is the terrain-specific accept — the LOD-swap upload.)
     lastUploads = streamer.pump(
         kMaxUploadsPerFrame, kUploadMsBudget, [&](u64 key, auto& built) {
@@ -403,7 +403,7 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
                 continue;
             }
             if (occluded && occluded->contains(key)) {
-                continue; // hidden behind a ridge (brick 26)
+                continue; // hidden behind a ridge (GpuOcclusion)
             }
             if (frustum) {
                 const f32 x0 =

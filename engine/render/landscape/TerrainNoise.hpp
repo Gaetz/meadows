@@ -7,13 +7,13 @@
 
 namespace render {
 
-// Authored terrain overrides (chantier 2 B8): per-chunk DELTA grids added
+// Authored terrain overrides: per-chunk DELTA grids added
 // on top of the procedural base — final height = noise + bilinear(delta).
 // The world layer builds this from TerrainPatchForm records + `.ter`
-// assets (the engine never sees Forms — rule n°2, HORIZONTAL-PASS);
+// assets (the engine never sees Forms — docs/HORIZONTAL-PASS.md);
 // sculpting edits grids then publishes a NEW immutable instance, so
 // workers holding the old pointer stay race-free.
-// HeightPatch / HeightPatches now live in engine/terrain/HeightPatches.hpp
+// HeightPatch / HeightPatches live in engine/terrain/HeightPatches.hpp
 // (a headless home) so the world layer can build them without depending on
 // engine/render/. They still ride inside TerrainParams below.
 
@@ -28,8 +28,8 @@ struct TerrainParams {
     // observer with a "the scene keeps it alive" contract, and the scene
     // broke it at teardown — quitting while scatter jobs held copied
     // TerrainParams read a freed HeightPatches and crashed). Every copy,
-    // worker-held ones included, now keeps the data alive by itself.
-    // Null = pure procedural, bit-identical to the pre-B8 behavior (the
+    // worker-held ones included, keeps the data alive by itself.
+    // Null = pure procedural, bit-identical to the patch-free behavior (the
     // non-regression contract). Riding inside TerrainParams means every
     // consumer (workers included) is patched without a signature change.
     sptr<const HeightPatches> patches;
@@ -80,7 +80,7 @@ constexpr f32 kSnowLine = 165.0f; // meters; matches uTerrainInfo.y
 MaterialWeights materialWeights(const TerrainParams& params, f32 height,
                                 const Vec3& normal);
 
-// The weights as the SHADER shows them (P0 C4b follow-up): the raw
+// The weights as the SHADER shows them: the raw
 // altitude borders perturbed by the splat wander term (terrain.frag) so
 // a footstep on VISIBLE snow sounds like snow, not like the contour
 // line. `splatUvScale` = uTerrainInfo.z (tiles/meter, the render knob).

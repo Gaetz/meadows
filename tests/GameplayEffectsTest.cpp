@@ -157,7 +157,7 @@ TEST_CASE("effects: a periodic effect ticks BaseValue then expires") {
     CHECK(baseValueOf(t.set, attr("health")) == 85.0f); // gone, no more ticks
 }
 
-// 8.11 — the EffectPanel's authoring lint.
+// The EffectPanel's authoring lint.
 TEST_CASE("effectWarnings flags the silent authoring mistakes") {
     gameplay::EffectForm effect; // defaults: add/instant, all empty
     // Default form: no attribute, no buildup, no tag -> does nothing.

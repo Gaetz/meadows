@@ -35,7 +35,7 @@ std::optional<anim::GraphDesc> buildAnimGraph(
     const data::FormDatabase& forms, const core::Guid& graphId,
     const ClipResolver& resolveClip);
 
-// Session-aware variant (chantier 8, anim preview): the SAME mapping, but
+// Session-aware variant (anim preview): the SAME mapping, but
 // forms are read through an EditSession so unsaved drafts and
 // session-created states/transitions/events preview live before export.
 // Child order: base handle order first, then session-created children
@@ -44,7 +44,7 @@ std::optional<anim::GraphDesc> buildAnimGraph(
     const data::EditSession& session, const core::Guid& graphId,
     const ClipResolver& resolveClip);
 
-// Actor visual resolution (chantier 1, B6): ActorForm.appearance ->
+// Actor visual resolution: ActorForm.appearance ->
 // what to draw. v1 picks the FIRST filled slot mesh (a single body mesh);
 // full per-slot compositing (equipment swaps a slot's mesh) is the
 // EquipmentVisuals vertical. nullopt = no 3D visual (2D/legacy actor).

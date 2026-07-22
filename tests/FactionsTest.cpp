@@ -54,7 +54,7 @@ TEST_CASE("factions: membership is gameplay tags; relations come from the table"
 }
 
 TEST_CASE("per-faction bounty: attribution, guard gate math, legacy total") {
-    // F-catalogue leftover (2026-07-13): the witness's faction holds the
+    // The witness's faction holds the
     // slice; an unattributed total (old saves / factionless witness)
     // counts toward EVERY faction — no amnesty on migration.
     gameplay::GameplayTagRegistry tags;

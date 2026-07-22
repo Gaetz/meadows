@@ -10,7 +10,7 @@
 #include "game/scenes/NpcDirector.hpp"    // Npc, NpcContext
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp" // attr, currentValueOf
-#include "gameplay/stats/StatsTuning.hpp"  // movementSpeedScale3D (U4-7)
+#include "gameplay/stats/StatsTuning.hpp"  // movementSpeedScale3D
 #include "world/scene/Components.hpp"
 
 namespace game {
@@ -25,7 +25,7 @@ bool moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,
     const f32 walkSpeed =
         gameplay::currentValueOf(sys, gameplay::attr("movementSpeed")) *
         ctx.statsTuning.movementSpeedScale3D * ctx.statsTuning.npcWalkFactor *
-        speedScale; // U4-7: §5-tunable
+        speedScale; // §5-tunable
 
     const Vec3 goal = npc.path[npc.pathIndex];
     Vec3 to = goal - transform.position;

@@ -4,7 +4,7 @@
 
 namespace game {
 
-// The gameplay-event vocabulary of the editor (chantier 8.7c). Events
+// The gameplay-event vocabulary of the editor. Events
 // are NAMES that exist only through use: a dialogue node fires one, a
 // quest task listens for one, a quest starts on one (startEvent), and a
 // few come from C++ (combat). The editor makes that articulation
@@ -32,13 +32,13 @@ bool drawEventCombo(const char* imguiLabel,
 void drawEventCrossRef(const data::EditSession& session,
                        const core::Guid& target, core::Guid& selected);
 
-// Orphan checks (8.7d, the lint side of the cross-ref): does anything
+// Orphan checks (the lint side of the cross-ref): does anything
 // FIRE this name (a dialogue node or the C++ emitters), does anything
 // REACT to it (a task, a quest startEvent, or the C++ listeners)?
 bool eventHasEmitter(const data::EditSession& session, const str& name);
 bool eventHasListener(const data::EditSession& session, const str& name);
 
-// The explicit wiring gesture (dev feedback on 8.7d — "how do I create
+// The explicit wiring gesture (answers "how do I create
 // an event from the dialogue to the quest?"): on a dialogue node, "Wire
 // to a quest task..." picks a task and gives BOTH sides the same event
 // (generated from the node's editorId when missing); on a quest task,

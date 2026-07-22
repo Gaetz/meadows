@@ -6,8 +6,8 @@
 
 #include "engine/core/Defines.hpp"
 
-// FOLLOWERS É11 (tech proof) — riding, the sim-pure half: HOW a mounted
-// body moves. Same split as Swimming.hpp (P0 D2b): the pure step lives
+// Riding, the sim-pure half: HOW a mounted
+// body moves. Same split as Swimming.hpp: the pure step lives
 // here so the kinematics are headless-testable; the game-side
 // RideController only feeds it input/camera and writes the transforms.
 

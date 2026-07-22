@@ -18,7 +18,7 @@ namespace render {
 
 class ShaderLibrary;
 
-// Chantier P0 C1 — the 3D particle pass: camera-facing quads pulled from
+// The 3D particle pass: camera-facing quads pulled from
 // an instance SSBO (gl_VertexID corners, no vertex buffers — the rain
 // pattern with CPU-simulated data). Two batches per frame: ALPHA drawn
 // far-to-near (the caller pre-sorts), then ADDITIVE (order-free). Soft
@@ -27,8 +27,8 @@ class ShaderLibrary;
 //
 // Renderer-side only: the SIM stays fx::ParticleSim (headless); the
 // scene's extract copies live particles into FxInstance PODs on the
-// snapshot — this class never sees the sim or the world (Phase-5 seam).
-// FxInstance itself lives in FxInstance.hpp (audit R6) so snapshot
+// snapshot — this class never sees the sim or the world (the docs/PHASE-5.md
+// seam). FxInstance itself lives in FxInstance.hpp so snapshot
 // carriers include the POD without this renderer header.
 class FxRenderer {
 public:

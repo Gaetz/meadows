@@ -2,7 +2,7 @@
 #include "compat.glsl"
 #include "common.glsl"
 
-// Brick 31 — rain streaks, fully procedural (MEADOWS_VERTEX_INDEX, no buffers):
+// Rain streaks, fully procedural (MEADOWS_VERTEX_INDEX, no buffers):
 // hash(i) positions in a camera cylinder, scrolled by time (zero CPU
 // sim), tilted by the wind, killed under roofs by the top-down
 // occlusion depth (the Community-Shaders idea, our bake pattern).

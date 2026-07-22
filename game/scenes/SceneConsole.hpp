@@ -15,8 +15,8 @@ namespace game {
 
 class ConsolePanel;
 
-// The F8 dev console's infrastructure extracted from LandscapeScene (audit
-// U4-1): the reflection edit-session, the shared Lua VM, the ConsolePanel
+// The F8 dev console's infrastructure extracted from LandscapeScene:
+// the reflection edit-session, the shared Lua VM, the ConsolePanel
 // and the visibility toggle. The WORLD commands (spawn/tp/tgm/save/settime…)
 // are registered by the scene onto panel() — they touch scene internals
 // (spawn into the world, teleport the player), so they stay where `this` is

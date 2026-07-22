@@ -70,8 +70,8 @@ void clampBasePair(AttributeSet& set, const AbilitySystem& system,
     // balance override, buffs); the BASE max may be a stale seed — the
     // Spawner's authored value predates the derived pass, and the
     // Player authors 0 (= "use the formula"). This mismatch is what
-    // snapped a fresh 90-health NPC to its authored 35 on its FIRST
-    // instant effect (the archer-flees bug, 2026-07-12). Fall back to
+    // would snap a fresh 90-health NPC to its authored 35 on its FIRST
+    // instant effect. Fall back to
     // the base max only while no recompute has run yet; with neither
     // positive, only floor at zero.
     f32 upper = currentValueOf(system, maxId);
@@ -175,7 +175,7 @@ void recomputeCurrent(AbilitySystem& system, std::span<const AttrSetRef> sets,
         // Refresh the actor's derived-target cache: a later PARTIAL recompute
         // (2-arg form, no registry at hand) skips these ids in pass 1 instead
         // of clobbering the formula results with the raw AttributeSet field
-        // defaults (audit U6-F10). Without a registry the cache from the last
+        // defaults. Without a registry the cache from the last
         // full recompute stands.
         system.derivedTargetIds.clear();
         for (const DerivedStat* stat : applied) {
@@ -322,7 +322,7 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
 
 namespace {
 
-// The shared age/expire/sweep half of the two tick clocks (audit U6-F3):
+// The shared age/expire/sweep half of the two tick clocks:
 // decrement `remaining` for every effect on the requested clock, fire the
 // expiry side effects, erase the expired, recompute. The real-time path
 // additionally re-applies PERIODIC effects before aging (game-time effects

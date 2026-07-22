@@ -241,7 +241,7 @@ std::optional<render::MeshData> loadGltfMeshFromMemory(const void* bytes,
     return buildMesh(*data, "<memory>", nullptr);
 }
 
-// --- Skeletal data (H5) ---------------------------------------------------------
+// --- Skeletal data ----------------------------------------------------------------
 
 namespace {
 
@@ -417,7 +417,7 @@ vector<GltfClip> loadGltfAnimations(const std::filesystem::path& path,
     return clips;
 }
 
-// --- Skinned mesh (chantier 1, B2) ----------------------------------------------
+// --- Skinned mesh ----------------------------------------------------------
 
 namespace {
 

@@ -2,11 +2,11 @@
 
 #include "data/forms/Form.hpp"
 
-// The save-game record types (chantier 5). A SAVE IS AN ORDINARY PLUGIN
+// The save-game record types. A SAVE IS AN ORDINARY PLUGIN
 // (§2.4/§5 — the non-negotiable): these Forms are its records, resolved by
 // the same resolver as every mod, written by the same TomlWriter, cooked
 // by the same cooker. Per-actor state rides as CHILD records keyed by
-// `parent` = the actor's ReferenceForm guid (the §C.1 convention);
+// `parent` = the actor's ReferenceForm guid (the child-record convention);
 // reference-level changes (position, enabled, count, cell) are plain
 // ReferenceForm field PATCHES in the same plugin.
 //
@@ -75,13 +75,13 @@ struct SavedStatsForm : data::Form {
     core::Guid torso;
     core::Guid arms;
     core::Guid legs;
-    // Chantier 6 APPENDs (ordinals stable): CombatState timers, vendor
-    // restock clock, crime bounty (name-mirrored like everything above).
+    // CombatState timers, vendor restock clock, crime bounty
+    // (name-mirrored like everything above).
     f32 critWindowSeconds { 0.0f };
     f32 shakenSeconds { 0.0f };
     f32 lastRestockHours { 0.0f };
     f32 bounty { 0.0f };
-    // FOLLOWERS É0 APPENDs (ordinals stable): FollowerState mirror. The
+    // FollowerState mirror. The
     // `follower` prefix keeps the names unique across every captured
     // component (docs/CHANTIER-FOLLOWERS.md).
     bool followerActive { false };
@@ -92,15 +92,15 @@ struct SavedStatsForm : data::Form {
     f32 followerLastLevelSyncedFrom { 0.0f };
     f32 followerLastHomeUpgradeHours { 0.0f };
     f32 followerDownedRecoveryHours { 0.0f };
-    // FOLLOWERS É3 APPEND (ordinals stable): CombatState.downedSeconds —
+    // CombatState.downedSeconds —
     // a downed follower reloads mid-bleedout, clock intact.
     f32 downedSeconds { 0.0f };
-    // FOLLOWERS É5 APPEND (ordinals stable): AttributeSet.level — the
+    // AttributeSet.level — the
     // console-set player level and the follower's class level survive
-    // the save (name-matched like every field above; the É0 append only
-    // carried FollowerState.followerLevel, not the attribute itself).
+    // the save (name-matched like every field above; distinct from
+    // FollowerState.followerLevel).
     f32 level { 1.0f };
-    // FOLLOWERS É9 APPEND (ordinals stable): FollowerState.followerStance
+    // FollowerState.followerStance
     // — a « rester » order survives the save (name-matched sweep).
     f32 followerStance { 0.0f };
 
@@ -232,12 +232,12 @@ struct SavedInjuryForm : data::Form {
     REFLECT_END()
 };
 
-// One per granted ability (FOLLOWERS É6 — the identified gap: everything
-// else on the AbilitySystem persisted, grantedAbilities did not, so a
-// follower's special power and the player's learned perks vanished across
-// F5/F9). Pattern B child records like SavedItemForm above; applied on
-// load through grantAbility (idempotent — re-applying on top of a class
-// perk sync never duplicates).
+// One per granted ability — without these rows, everything
+// else on the AbilitySystem persists but grantedAbilities would not, and
+// a follower's special power and the player's learned perks would vanish
+// across a save/load. Pattern B child records like SavedItemForm above;
+// applied on load through grantAbility (idempotent — re-applying on top
+// of a class perk sync never duplicates).
 struct SavedAbilityForm : data::Form {
     core::Guid parent;  // the actor's ReferenceForm
     core::Guid ability; // the AbilityForm guid
@@ -248,7 +248,7 @@ struct SavedAbilityForm : data::Form {
     REFLECT_END()
 };
 
-// One per trained skill (skills-by-use, 2026-07-13). Mirrors one
+// One per trained skill (skills-by-use). Mirrors one
 // SkillProgress map entry — Pattern B child records like SavedItemForm.
 // Threshold effects are NOT re-applied on load: instant ones are baked
 // into the saved BaseValues, durational ones ride as SavedEffectForm rows;
@@ -267,7 +267,7 @@ struct SavedSkillForm : data::Form {
     REFLECT_END()
 };
 
-// One per faction holding a bounty slice (per-faction crime, 2026-07-13).
+// One per faction holding a bounty slice (per-faction crime).
 // The total stays SavedStatsForm.bounty (name-matched); rows carry the
 // attribution by dotted tag NAME (runtime tag ids aren't stable).
 struct SavedBountyForm : data::Form {

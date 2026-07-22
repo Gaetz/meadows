@@ -1,7 +1,7 @@
 #version 460 core
 #include "common.glsl"
 
-// Brick 33a — screen-space contact shadows (the Bend Studio GDC
+// Screen-space contact shadows (the Bend Studio GDC
 // technique, reimplemented): from each pixel, march a short distance
 // TOWARD the sun in world space; if the depth buffer holds geometry in
 // front of a marched probe (within a thickness window, against haloing),
@@ -66,7 +66,7 @@ void main() {
         float surfaceDist = distance(surface, uCameraPos.xyz);
         float probeDist = distance(p, uCameraPos.xyz);
         float ahead = probeDist - surfaceDist; // >0: geometry in front
-        // Distance-scaled floor (speckle fix, 2026-07-10): at range the
+        // Distance-scaled floor (speckle fix): at range the
         // depth reconstruction error alone exceeds a fixed 0.02 m and
         // surfaces self-shadowed into black dots — worst at altitude
         // where everything is far.
@@ -80,7 +80,7 @@ void main() {
     // ambient own the real shadow terms).
     float lit = 1.0 - shadow * 0.45;
 
-    // Dev ask 2026-07-11: contact and CSM combine as a MAX, not a
+    // Contact and CSM combine as a MAX, not a
     // product — the tonemap multiplies our output over a color that
     // already carries the sun shadow, so we emit the RATIO
     // min(1, contact/sun): full CSM shadow -> 1 (contact adds nothing),

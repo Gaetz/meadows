@@ -25,7 +25,7 @@ struct RigData {
     vector<assets::GltfClip> clips;
 };
 
-// R4: the Forms->NPC build path, split out of NpcDirector. Owns the rig
+// The Forms->NPC build path, split out of NpcDirector. Owns the rig
 // cache; builds newcomers (and frees the per-NPC GPU state). It FILLS the
 // director's lists — npcs / entity map / patrol points / character spot —
 // passed by reference: the director keeps owning them.

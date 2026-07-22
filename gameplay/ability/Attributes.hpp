@@ -12,12 +12,12 @@
 // AbilitySystem, recomputed from base + active modifiers (§2.9). An attribute is
 // addressed by the fnv1a id of its field name, resolved through reflection
 // (`TypeInfo::findField`) — the same idea as UE's FGameplayAttribute (a
-// reflected property reference). Effects (brick 3c) target attributes by that id.
+// reflected property reference). Effects target attributes by that id.
 
 namespace gameplay {
 
 // The core attribute set (Vitals). `damage` is a transient meta-attribute:
-// effects write it and a PostExecute hook (3c) routes it into health, keeping
+// effects write it and a PostExecute hook routes it into health, keeping
 // the damage formula data-driven.
 struct AttributeSet {
     f32 health { 100.0f };
@@ -28,19 +28,18 @@ struct AttributeSet {
     f32 maxEssence { 50.0f };
     f32 armorRating { 0.0f };
     f32 damage { 0.0f }; // meta-attribute (transient)
-    // The STATS.md balance override (`derived value = override ?? formula`,
-    // decided Phase 6): > 0 pins maxHealth past the humanoid attribute
+    // The STATS.md balance override (`derived value = override ?? formula`):
+    // > 0 pins maxHealth past the humanoid attribute
     // formula — the Spawner seeds it from ActorForm.maxHealth (a bandit
     // really has its authored 35). 0 = the formula (the Player: his max
     // progresses with attributes). Resonance's % still applies after.
-    // Appended (binary ordinals stable).
     f32 maxHealthOverride { 0.0f };
-    // FOLLOWERS É0 (appended — docs/CHANTIER-FOLLOWERS.md): the MINIMAL
-    // character level. A plain attribute: it rides the overlay
+    // The MINIMAL character level (docs/CHANTIER-FOLLOWERS.md).
+    // A plain attribute: it rides the overlay
     // (initializeCurrent copies every f32 field) so `AttributeAtLeast
     // level` conditions work immediately. No derived formula, no gain
-    // logic — player progression (skills-by-use) is its own chantier;
-    // follower levels sync from FollowerState (É5).
+    // logic — player progression is skills-by-use;
+    // follower levels sync from FollowerState.
     f32 level { 1.0f };
 
     REFLECT_BEGIN(AttributeSet, void)

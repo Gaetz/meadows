@@ -14,7 +14,7 @@
 #include "engine/core/Jobs.hpp"
 #include "game/SaveGame.hpp"
 
-// C9.7: the async disk save — the split write (pure serializeSave +
+// The async disk save — the split write (pure serializeSave +
 // atomic writeSaveText), the single-flight gate, and the real
 // JobSystem -> ConcurrentQueue round trip the SaveController runs.
 

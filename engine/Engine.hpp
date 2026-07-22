@@ -27,11 +27,11 @@ class Game;
 
 struct EngineConfig {
     str title { "Meadows" };
-    // Full HD by default (dev request, chantier 8.7b) — the DB editor
-    // needs the room and the game reads better too.
+    // Full HD by default — the DB editor needs the room and the game
+    // reads better too.
     i32 width { 1920 };
     i32 height { 1080 };
-    // Vulkan first (the FINAL renderer — chantier VULKAN); Engine::init
+    // Vulkan first (the FINAL renderer — docs/VULKAN.md); Engine::init
     // falls back to GL at runtime if it is unavailable or not compiled in.
     rhi::Backend backend { rhi::Backend::Vulkan };
     rhi::Color clearColor { 0.10f, 0.12f, 0.16f, 1.0f };
@@ -56,7 +56,7 @@ public:
     core::JobSystem& getJobSystem() { return *jobSystem; }
 
     // Ends the frame loop after the current frame (the in-game Quit
-    // button — Escape belongs to the game UI since chantier 4).
+    // button — Escape belongs to the game UI, not the engine).
     void requestQuit() { quitRequested = true; }
 
 private:

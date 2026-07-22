@@ -5,13 +5,13 @@
 
 namespace game {
 
-// The developer console (horizontal pass H2) — Skyrim's console, powered
+// The developer console (docs/HORIZONTAL-PASS.md) — Skyrim's console, powered
 // by reflection: `set` and `get` work on EVERY form field of every type
 // with zero per-type code, and anything that is not a command is Lua (the
 // shared VM). Edits go through the EditSession, so console tweaks export
 // to a plugin exactly like GameDB edits.
 //
-// HOW TO FILL (post-7/07): world commands (spawn/tp/tgm) need a live
+// HOW TO FILL: world commands (spawn/tp/tgm) need a live
 // world — register extra commands from the scene that owns one via
 // addCommand; keep reflection as the backbone (no per-field code, ever).
 class ConsolePanel {

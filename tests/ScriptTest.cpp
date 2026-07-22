@@ -169,7 +169,7 @@ TEST_CASE("script: a coroutine ability waits then applies an effect") {
     CHECK(gameplay::baseValueOf(targetAttrs, gameplay::attr("health")) == 70.0f);
 }
 
-// --- Coroutine liveness (audit U8-4) -------------------------------------------------
+// --- Coroutine liveness ---------------------------------------------------------------
 
 #include "engine/ecs/World.hpp"
 
@@ -254,6 +254,6 @@ TEST_CASE("script: a coroutine erroring on resume is dropped, not retried") {
     script::ScriptContext none;
     vm.startCoroutine("wait(0.5)\nerror('boom')", none, none);
     REQUIRE(vm.pendingCoroutines() == 1);
-    vm.tickCoroutines(1.0f); // resume raises — logged (U8-7) and dropped
+    vm.tickCoroutines(1.0f); // resume raises — logged and dropped
     CHECK(vm.pendingCoroutines() == 0);
 }

@@ -4,10 +4,11 @@
 #include "engine/core/Guid.hpp"
 #include "gameplay/stats/Damage.hpp" // DamageEvent (the captured payload)
 
-// Chantier P0 A7 — projectiles, the sim-pure half: plain ballistics.
+// Projectiles, the sim-pure half: plain ballistics.
 // The DIRECTOR (game side) owns collision — a segment raycast against
 // the static world per step, and the analytic capsule test against
-// actors (CharacterVirtual is outside the broadphase, the A4 lesson).
+// actors (CharacterVirtual is outside the Jolt broadphase, so physics
+// casts can never hit actors).
 // The damage payload is CAPTURED at fire time (weaponDamageEvent of the
 // shooter) — an arrow in flight doesn't care what its archer does next.
 

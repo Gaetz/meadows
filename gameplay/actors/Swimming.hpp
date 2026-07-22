@@ -4,8 +4,8 @@
 
 #include "engine/core/Defines.hpp"
 
-// Chantier P0 D2b — swimming, the sim-pure half: WHEN a body swims. The
-// dev rule holds: the mode is an enum and ONE flat function decides the
+// Swimming, the sim-pure half: WHEN a body swims.
+// The mode is an enum and ONE flat function decides the
 // transitions; the controller only executes (3D wish, drain, drowning)
 // and the physics facade only obeys (setSwimming).
 
@@ -19,8 +19,8 @@ enum class MoveMode : u8 { Ground, Swim };
 //                    ground in water shallower than wadeOutRatio of a body
 //                    (wading out).
 // No surface (dry land, interiors) always grounds. The thresholds are
-// StatsTuningForm fields (R7); the defaults keep the historic feel for
-// callers/tests that don't pass them.
+// StatsTuningForm fields; the defaults cover callers/tests that don't
+// pass them.
 MoveMode decideMoveMode(MoveMode current, std::optional<f32> surfaceY,
                         f32 feetY, f32 headHeight, bool onGround,
                         f32 submergeDepth = 0.3f, f32 wadeOutRatio = 0.65f);

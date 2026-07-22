@@ -9,7 +9,7 @@ struct Inventory;
 
 namespace game {
 
-// Barter transactions (chantier 4 B5) — PURE and headless-testable. Gold
+// Barter transactions — PURE and headless-testable. Gold
 // is an ordinary MiscItemForm stack (no parallel money system): a trade
 // just moves an item one way and coins the other, and fails untouched
 // when either side cannot pay. Prices come from the caller (goldValue ×
@@ -23,7 +23,7 @@ bool barterBuy(gameplay::Inventory& playerBag, gameplay::Inventory& vendorBag,
                const core::Guid& item, i32 price, const core::Guid& gold);
 
 // The player sells one `item` to the vendor at `price` coins. The vendor
-// must afford it (limited wealth — restocking is the P1 economy pass).
+// must afford it (limited wealth — restocking is a future economy pass).
 bool barterSell(gameplay::Inventory& playerBag,
                 gameplay::Inventory& vendorBag, const core::Guid& item,
                 i32 price, const core::Guid& gold);

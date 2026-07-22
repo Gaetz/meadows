@@ -7,7 +7,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/reflect/Reflect.hpp"
 
-// The ECS layer (Phase 2). flecs is the storage/query engine, used directly in
+// The ECS layer (docs/PHASE-2.md). flecs is the storage/query engine, used directly in
 // systems (it is deliberately NOT hidden behind an RHI-style interface — only
 // the renderer earns that, §2.1). flecs is confined to the runtime: the data
 // model (Forms, resolver, save-as-patch) stays flecs-free, and our reflection
@@ -47,7 +47,7 @@ public:
     Entity create() { return world.entity(); }
 
     // Registers a component in BOTH systems at once: flecs storage AND our
-    // reflected-component registry, so Phase 8 saves can serialize component
+    // reflected-component registry, so saves can serialize component
     // state through the same reflect::Value pipeline as Forms (§2.8). The
     // single registration point that keeps the two from diverging.
     template<typename T>
@@ -59,7 +59,7 @@ public:
 
     // Reflection type info for a flecs component id, or nullptr if it was not
     // registered through registerComponent (e.g. an internal flecs component).
-    // Drives generic component serialization (Phase 8).
+    // Drives generic component serialization for saves.
     const reflect::TypeInfo* reflectedComponent(flecs::id_t componentId) const;
 
 private:

@@ -2,9 +2,9 @@
 
 #include "data/forms/Form.hpp"
 
-// Early sample form types that exercise the data model. The real gameplay
-// roster (containers, doors, effects, abilities...) lands with Phase 3;
-// keep these two honest in the meantime.
+// The core item/actor form types (weapons, armor, consumables, misc
+// items, actors). New kinds of behavior come from effects/scripts, not
+// new component types (§2.7).
 
 namespace data {
 
@@ -31,31 +31,30 @@ struct WeaponForm : Form {
     f32 postureDamage { 0.0f };
     // Status buildup applied on hit (docs/STATS.md §3): buildupType routes through
     // parseStatusType ("poison"|"bleed"|"ignition"|…); buildupAmount = points per
-    // hit. Empty = no status. Appended last so binary ordinals stay stable.
+    // hit. Empty = no status.
     str buildupType;
     f32 buildupAmount { 0.0f };
-    // 3D world visual (chantier 3, appended — ordinals stable): wired by
+    // 3D world visual: wired by
     // the universal reflected model/material spawner path. Also the first
-    // step of EquipmentVisuals (§C.1): the drawn/sheathed weapon mesh.
+    // step of EquipmentVisuals: the drawn/sheathed weapon mesh.
     core::Guid model;
     core::Guid material;
-    // Chantier P0 A2-A7 (appended — ordinals stable): the blade-touch
+    // The blade-touch
     // combat (docs/CHANTIER-P0.md — the VISIBLE blade is what hits).
     f32 bladeLength { 0.9f };     // grip -> tip (m): the hit segment
     f32 hitTolerance { 1.2f };    // blade-length multiplier for the test
     f32 swingWindup { 0.25f };    // seconds: raise
     f32 swingActive { 0.20f };    // seconds: the damaging sweep
     f32 swingRecovery { 0.35f };  // seconds: back to guard
-    f32 reach { 2.4f };           // AI engagement distance (A6)
-    f32 projectileSpeed { 0.0f }; // > 0 = ranged (A7): launch m/s
-    // A7+ (appended — ordinals stable): the ITEM one shot consumes;
+    f32 reach { 2.4f };           // AI engagement distance
+    f32 projectileSpeed { 0.0f }; // > 0 = ranged: launch m/s
+    // The ITEM one shot consumes;
     // invalid = no ammo needed. Planted arrows give it back on pickup.
     core::Guid ammo;
-    // R7 (appended — ordinals stable): AI pause between attacks, seconds.
-    // 0 = the C++ fallback (2.2 ranged / 1.6 melee) so unmodded weapons
-    // keep today's behavior.
+    // AI pause between attacks, seconds.
+    // 0 = the C++ fallback (2.2 ranged / 1.6 melee) for unmodded weapons.
     f32 attackCooldown { 0.0f };
-    // FOLLOWERS É7 (appended — ordinals stable): a follower's BASE-KIT
+    // A follower's BASE-KIT
     // item cannot be transferred out of his inventory (docs/FOLLOWERS.md
     // §5); `upgradesTo` names the next tier the forge dialogue swaps it
     // for (§2.2: Forms never mutate — an upgrade IS a different Form).
@@ -111,9 +110,9 @@ struct ArmorForm : Form {
     f32 heatExposure { 0.0f };
     f32 weight { 2.0f };
     core::Guid sprite;
-    // The remaining elemental resistances (docs/STATS.md §3). Appended after the
-    // original fields so binary ordinals stay stable. resistCold completes the
-    // core trio; sonic/chemical/psychic/holy/dark/ether cover the full element set.
+    // The remaining elemental resistances (docs/STATS.md §3). resistCold
+    // completes the core trio; sonic/chemical/psychic/holy/dark/ether
+    // cover the full element set.
     f32 resistCold { 0.0f };
     f32 resistSonic { 0.0f };
     f32 resistChemical { 0.0f };
@@ -130,9 +129,9 @@ struct ArmorForm : Form {
     f32 enduranceDisease { 0.0f };
     f32 enduranceCurse { 0.0f };
     f32 enduranceDeath { 0.0f };
-    // Trade value (chantier 4 barter, appended — ordinals stable).
+    // Trade value (barter).
     i32 goldValue { 0 };
-    // FOLLOWERS É7 (appended): follower base-kit lock — see WeaponForm.
+    // Follower base-kit lock — see WeaponForm.
     bool unremovable { false };
 
     REFLECT_BEGIN(ArmorForm, Form)
@@ -167,22 +166,23 @@ struct ArmorForm : Form {
 
 // A consumable (food / drug / treatment). It applies `effect` (a GameplayEffect
 // guid) when used; the drug/treatment semantics (harmony break, aftershock,
-// injury cure) are wired by the Phase-7 mechanics that consume it.
+// injury cure) are wired by the status mechanics that consume it
+// (docs/STATS.md).
 struct ConsumableForm : Form {
     str displayName;
     str category { "food" }; // food | drug | treatment
     core::Guid effect;       // the GameplayEffect applied on use
     f32 weight { 0.1f };
-    // 3D world visual (chantier 3, appended — ordinals stable).
+    // 3D world visual.
     core::Guid model;
     core::Guid material;
-    // Chantier 4 (appended): survival restoration on use (needs are
+    // Survival restoration on use (needs are
     // component fields, not attributes — the sleep()/rest precedent) and
     // trade value for the barter screen.
     f32 restoreHunger { 0.0f };
     f32 restoreThirst { 0.0f };
     i32 goldValue { 0 };
-    // FOLLOWERS É7 (appended): follower base-kit lock — see WeaponForm.
+    // Follower base-kit lock — see WeaponForm.
     bool unremovable { false };
 
     REFLECT_BEGIN(ConsumableForm, Form)
@@ -199,8 +199,8 @@ struct ConsumableForm : Form {
     REFLECT_END()
 };
 
-// A plain tradable/carryable item with no behavior — Skyrim's MISC record
-// (chantier 4): gold coins, trinkets, crafting junk. New kinds of behavior
+// A plain tradable/carryable item with no behavior — Skyrim's MISC
+// record: gold coins, trinkets, crafting junk. New kinds of behavior
 // come from effects/scripts, not new component types (§2.7).
 struct MiscItemForm : Form {
     str displayName;
@@ -208,7 +208,7 @@ struct MiscItemForm : Form {
     i32 goldValue { 0 };
     core::Guid model;
     core::Guid material;
-    // FOLLOWERS É7 (appended): follower base-kit lock — see WeaponForm.
+    // Follower base-kit lock — see WeaponForm.
     bool unremovable { false };
 
     REFLECT_BEGIN(MiscItemForm, Form)
@@ -226,39 +226,38 @@ struct ActorForm : Form {
     f32 maxHealth { 100.0f };
     f32 walkSpeed { 3.0f };
     core::Guid sprite;
-    // 3D-demo hooks (horizontal pass H1), appended so binary ordinals stay
-    // stable. All optional (0 = the 2D/legacy path).
+    // 3D-demo hooks. All optional (0 = the 2D/legacy path).
     core::Guid appearance; // gameplay::AppearanceForm (modular visual)
     core::Guid animGraph;  // AnimGraphForm (animation controller)
     core::Guid schedule;   // gameplay::ScheduleForm (daily routine)
-    // Chantier 4 B4 (appended — §C.1 mapping): the conversation opened by
+    // The conversation opened by
     // [E] Talk (a quest::DialogueForm guid; invalid = a placeholder line).
     core::Guid dialogue;
-    // Chantier 6 D1 (appended): per-vendor barter multipliers.
+    // Per-vendor barter multipliers.
     // 0 = use the global StatsTuningForm barterBuyMult/barterSellMult.
     f32 buyMult { 0.0f };
     f32 sellMult { 0.0f };
-    // Chantier P0 B3 (appended): grit in combat — the actor flees below
+    // Grit in combat — the actor flees below
     // (1 - courage) of its max health (0.75 = runs under 25%).
     f32 courage { 0.75f };
-    // Brain script (appended — docs/BOSS-SCRIPTING.md, dev 2026-07-11):
+    // Brain script (docs/BOSS-SCRIPTING.md):
     // Lua source RETURNING a decide(situation) -> move-name function,
     // called on low-frequency decision ticks. Empty = the C++ brain
     // (chooseCombatMove). Works for ANY hostile actor, boss or mugger.
     str brainScript;
-    // FOLLOWERS É0 (appended — docs/CHANTIER-FOLLOWERS.md): the authored
-    // follower identity. All optional (empty/0 = not a follower); the
+    // The authored follower identity (docs/CHANTIER-FOLLOWERS.md).
+    // All optional (empty/0 = not a follower); the
     // runtime state lives in gameplay::FollowerState, never here (§2.2).
     str followerCategory;      // "" | "major" | "minor" | "mount"
     core::Guid followerClass;  // gameplay::FollowerClassForm (level curves)
-    f32 age { 0.0f };          // years; 0 = ageless (no age effects, É5)
-    f32 minLevel { 1.0f };     // recruit gate (condition evaluator, É4)
-    bool mainCharacter { false }; // full level catch-up on re-recruit (É5)
-    core::Guid homeMarker;     // where a dismissed follower returns (É1)
-    core::Guid recruitDialogue; // if distinct from `dialogue` (É1)
-    core::Guid buryMarker;     // authored grave spot (É8)
-    core::Guid buryContact;    // NPC who buries a nearby dead follower (É8)
-    // FOLLOWERS É10 (appended — ordinals stable): the mercenary identity.
+    f32 age { 0.0f };          // years; 0 = ageless (no age effects)
+    f32 minLevel { 1.0f };     // recruit gate (condition evaluator)
+    bool mainCharacter { false }; // full level catch-up on re-recruit
+    core::Guid homeMarker;     // where a dismissed follower returns
+    core::Guid recruitDialogue; // if distinct from `dialogue`
+    core::Guid buryMarker;     // authored grave spot
+    core::Guid buryContact;    // NPC who buries a nearby dead follower
+    // The mercenary identity.
     // A mercenary follows for GOLD over a fixed game-time span; the real
     // price scales on the player (gameplay::mercenaryPrice), this is only
     // the base the formula starts from (and the coarse HasItem gate the

@@ -12,7 +12,7 @@
 #include "gameplay/save/SaveState.hpp"
 #include "gameplay/stats/Damage.hpp"
 
-// Chantier 5 B1: the save record types are ORDINARY forms — they resolve
+// The save record types are ORDINARY forms — they resolve
 // through §5 (create/patch/childrenOf), write through the TomlWriter, and
 // an active-effect row survives its capture->restore mirror.
 

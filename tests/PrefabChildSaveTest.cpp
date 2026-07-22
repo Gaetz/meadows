@@ -12,7 +12,7 @@
 #include "world/worldspace/FormCategory.hpp"
 #include "world/worldspace/WorldModel.hpp"
 
-// Chantier 5 B7: prefab-derived children persist. Their references exist
+// Prefab-derived children persist. Their references exist
 // in NO plugin (derived guids), so the save materializes them as full
 // `creates` records — and the expansion steps aside when such a record
 // exists (or the pending layer vetoes them in-session).

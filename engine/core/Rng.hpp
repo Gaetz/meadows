@@ -8,7 +8,7 @@ namespace core {
 // through a `core::Rng` instance passed by reference — never a global, never
 // wall-clock entropy — so saves and replays reproduce. The generator is
 // xorshift64* (fast, good enough for gameplay; not crypto). State is a plain u64;
-// serialize it (Phase 8) to checkpoint the random stream. `script::Vm` reuses it.
+// serialize it to checkpoint the random stream. `script::Vm` reuses it.
 class Rng {
 public:
     Rng() = default;
@@ -50,7 +50,7 @@ public:
         return unit() < p;
     }
 
-    // For save/replay (Phase 8): snapshot / restore the stream position.
+    // For save/replay: snapshot / restore the stream position.
     u64 rawState() const { return state; }
     void setRawState(u64 s) { state = s != 0 ? s : 1; }
 

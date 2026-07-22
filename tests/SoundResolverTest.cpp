@@ -9,7 +9,7 @@
 #include "engine/assets/AssetDatabase.hpp"
 #include "game/SoundResolver.hpp"
 
-// Chantier P0 C3 — the SoundForm resolver on the NULL audio backend:
+// The SoundForm resolver on the NULL audio backend:
 // weighted variant picks (deterministic per seed), volume/pitch jitter
 // within bounds, VFS-resolved paths, graceful nothing on bad data.
 

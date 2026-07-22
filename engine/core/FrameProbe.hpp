@@ -79,7 +79,7 @@ public:
         const char* name;
         f64 ms;
     };
-    // The current frame's scopes so far — the GPU-PERF HUD reads this for
+    // The current frame's scopes so far — the perf HUD reads this for
     // its CPU column (valid between the scopes and beginFrame; names are
     // static literals).
     const vector<Entry>& currentEntries() const { return entries; }

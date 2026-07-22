@@ -1,5 +1,6 @@
 // Per-frame constants shared by every landscape shader. Must match
-// render::FrameUniforms (engine/render/landscape/FrameUniforms.hpp) exactly.
+// render::FrameUniforms (engine/render/landscape/FrameUniforms.hpp) exactly;
+// new fields are only ever APPENDED at the end (never inserted).
 layout(std140, binding = 0) uniform FrameUbo {
     mat4 uViewProj;
     mat4 uInvViewProj;   // NDC -> world, for fullscreen ray reconstruction
@@ -34,33 +35,33 @@ layout(std140, binding = 0) uniform FrameUbo {
                             // z = 1/span
     vec4 uWindInfo;         // x = accumulated wind time (s, speed-scaled),
                             // y = sway strength, z = water chop multiplier
-    // Brick 33b/c (APPENDED — the UBO lesson): terrain light map.
+    // Terrain light map.
     vec4 uTerrainLightInfo; // xy = map center (world XZ), z = 1/span,
                             // w = strength (0 = feature off)
-    // Brick 32 (APPENDED): x = effective water surface Y for the camera
+    // x = effective water surface Y for the camera
     // (sea outdoors, a volume top inside one, -1e6 = dry).
     vec4 uSubmersionInfo;
-    // B2b (APPENDED): the interior key-light shadow.
+    // The interior key-light shadow.
     mat4 uKeyShadowViewProj;
     vec4 uKeyShadowInfo; // xyz = that light's position, w = active
-    // Brick 30/31 (APPENDED): x = storm front, y = rain intensity.
+    // x = storm front, y = rain intensity.
     vec4 uStormInfo;
-    // Brick 31 (APPENDED): world -> top-down rain-occlusion clip.
+    // world -> top-down rain-occlusion clip.
     mat4 uRainOcclusionViewProj;
-    // 7.8ter (APPENDED): grass bending — xy = feet XZ, z = feet Y,
+    // Grass bending — xy = feet XZ, z = feet Y,
     // w = radius (0 = off).
     vec4 uGrassBendInfo;
-    // Grass redo #2 (APPENDED): meadow tuning, live from the render panel.
+    // Meadow tuning, live from the render panel.
     vec4 uGrassShapeInfo; // x = blade height, y = half width,
                           // zw = high-detail near/far (m)
     vec4 uGrassLodInfo;   // xy = density thinning start/end (m),
                           // z = far density floor, w = width compensation
     vec4 uGrassBaseColor; // rgb = base albedo, w = fade start (m)
     vec4 uGrassTipColor;  // rgb = tip albedo, w = fade end (m)
-    // Chantier RC G6 (APPENDED): the GI technique switch (gi.glsl).
+    // The GI technique switch (gi.glsl).
     vec4 uGiInfo;     // x = technique (0 classic / 1 RC), y = intensity,
                       // z = edge fade width (m), w = grid resolution
     vec4 uGiGridInfo; // xyz = cascade-0 grid origin, w = probe spacing
-    // (APPENDED) Fixed log-step GI ramp: x = stops per band, y = AA.
+    // Fixed log-step GI ramp: x = stops per band, y = AA.
     vec4 uGiBandInfo;
 };

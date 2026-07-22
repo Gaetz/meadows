@@ -59,7 +59,7 @@ DamageEvent weaponDamageEvent(const data::WeaponForm& weapon,
     add(DamageType::Lightning, weapon.lightningAttack);
     event.postureAmount = weapon.postureDamage * scale;
 
-    // Chantier 6 C1: the attacker's flat `attack` folds into the
+    // The attacker's flat `attack` folds into the
     // strongest PHYSICAL channel (a weapon's physical type is exclusive
     // per swing, docs/STATS.md §3); bare fists get a blunt channel.
     const f32 attack = currentValueOf(attacker, attr("attack"));
@@ -159,7 +159,7 @@ void encumbranceModifiers(EncumbranceCategory category, StatModifiers& mods) {
     fold("acceleration", accel);
 }
 
-// ---- FOLLOWERS É7 -----------------------------------------------------------
+// ---- Follower base-kit lock + auto-equip ------------------------------------
 
 bool itemUnremovable(const data::FormDatabase& forms, const core::Guid& item) {
     if (const auto* weapon = forms.find<data::WeaponForm>(item)) {

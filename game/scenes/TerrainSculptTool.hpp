@@ -18,10 +18,10 @@ namespace game {
 class LevelEditor;
 
 // The scene systems the sculpt tool reads and affects, bundled so the tool
-// stays decoupled from LandscapeScene (audit U4-5). The scene rebuilds it each
+// stays decoupled from LandscapeScene. The scene rebuilds it each
 // frame from its own members — cheap: two refs, a pointer and one std::function.
-// This is the first slice of the editor↔scene contract; brick B widens it (into
-// EditorContext) for the rest of the editor (pick / place / gizmo / palette).
+// This is the first slice of the editor↔scene contract; EditorContext
+// carries the rest of the editor (pick / place / gizmo / palette).
 struct SculptContext {
     const render::TerrainParams& terrainParams;    // height() reads (live base + patches)
     const render::HeightPatches* publishedPatches; // current overlay, may be null
@@ -39,8 +39,8 @@ struct SculptContext {
         republishTerrain;
 };
 
-// Chantier 2 B9 terrain sculpt, extracted verbatim from LandscapeScene (audit
-// U4-5). Brushes edit WORKING grids; a stroke's release publishes a fresh
+// Terrain sculpt, extracted from LandscapeScene.
+// Brushes edit WORKING grids; a stroke's release publishes a fresh
 // immutable HeightPatches (in-flight workers stay race-free). "Save terrain"
 // writes .ter files + TerrainPatchForm records into the mod. Owns all sculpt
 // state; the scene owns interaction (ray under cursor) and the publish effects.

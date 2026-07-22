@@ -49,11 +49,10 @@ struct AppearanceForm : data::Form {
     REFLECT_END()
 };
 
-// Default gameplay tags of an actor (chantier 3 — the §C.1 NarrativePro
-// mapping, first slice): CHILD records — a mod adds a faction membership
-// ("Faction.Bandits") with one record. v1: the runtime reads them for
-// hostility; the full grant-into-GAS (with the loadout/grants records)
-// is the next slice of the character-definition work.
+// Default gameplay tags of an actor: CHILD records — a mod adds a faction
+// membership ("Faction.Bandits") with one record. The runtime reads them
+// for hostility; the full grant-into-GAS (with the loadout/grants
+// records) is a later slice of the character-definition work.
 struct ActorTagForm : data::Form {
     core::Guid parent; // ActorForm
     str tag;           // "Faction.Bandits", "State.Invulnerable"...
@@ -64,7 +63,7 @@ struct ActorTagForm : data::Form {
     REFLECT_END()
 };
 
-// Starting items of an actor (chantier 4 — the §C.1 LoadoutEntryForm):
+// Starting items of an actor:
 // CHILD records rolled once when the actor spawns. `chance` in [0,1] with
 // the engine RNG (§8 determinism); a mod adds a loadout line with one
 // record. Feeds vendors' stock, bandits' pockets, the player's kit.

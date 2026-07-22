@@ -6,7 +6,7 @@
 #include "engine/core/Hash.hpp" // deterministic SavedBountyForm row guids
 #include "data/forms/FormQuery.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
-#include "gameplay/ability/GameplayAbility.hpp" // grantAbility (É6)
+#include "gameplay/ability/GameplayAbility.hpp" // grantAbility
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/actors/ActorState.hpp"
@@ -141,7 +141,7 @@ vector<data::Record> captureActor(ecs::Entity entity,
     componentToSaved<Equipment>(entity, stats);
     componentToSaved<VendorState>(entity, stats);
     componentToSaved<Bounty>(entity, stats);
-    componentToSaved<FollowerState>(entity, stats); // FOLLOWERS É0
+    componentToSaved<FollowerState>(entity, stats);
     records.push_back(
         createRecord(stats, core::Guid::combine(kSavedStatsNs, refGuid)));
     // The sentinel must survive resolution even for a pristine actor: an
@@ -155,8 +155,7 @@ vector<data::Record> captureActor(ecs::Entity entity,
             entity.get<AbilitySystem>(), refGuid, registry);
         records.insert(records.end(), effectRecords.begin(),
                        effectRecords.end());
-        // FOLLOWERS É6: the granted abilities (the one AbilitySystem piece
-        // the save didn't carry). Sorted by guid: deterministic identities
+        // The granted abilities. Sorted by guid: deterministic identities
         // and diffs (§8 — the SavedItemForm idiom); grant ORDER is not
         // load-bearing (pickPower reads "first non-attack", and the class
         // perk sync re-derives the set anyway).
@@ -280,7 +279,7 @@ SavedActorRecords savedRecordsFor(const data::FormDatabase& forms,
     data::childrenOf<SavedInjuryForm>(
         forms, refGuid,
         [&](const SavedInjuryForm& form) { saved.injuries.push_back(&form); });
-    data::childrenOf<SavedAbilityForm>( // FOLLOWERS É6
+    data::childrenOf<SavedAbilityForm>(
         forms, refGuid,
         [&](const SavedAbilityForm& form) { saved.abilities.push_back(&form); });
     data::childrenOf<SavedSkillForm>( // skills-by-use
@@ -306,7 +305,7 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
     savedToComponent<Equipment>(*saved.stats, entity);
     savedToComponent<VendorState>(*saved.stats, entity);
     savedToComponent<Bounty>(*saved.stats, entity);
-    savedToComponent<FollowerState>(*saved.stats, entity); // FOLLOWERS É0
+    savedToComponent<FollowerState>(*saved.stats, entity);
 
     if (entity.has<Inventory>()) {
         auto& bag = entity.get_mut<Inventory>();
@@ -347,7 +346,7 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
 
     if (entity.has<AbilitySystem>() && entity.has<AttributeSet>()) {
         auto& system = entity.get_mut<AbilitySystem>();
-        // FOLLOWERS É6: re-grant the saved abilities (grantAbility is
+        // Re-grant the saved abilities (grantAbility is
         // idempotent — a class-perk sync running before or after this
         // never doubles an entry).
         for (const SavedAbilityForm* row : saved.abilities) {
@@ -359,7 +358,7 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
         // §6: currents are DERIVED — seed from the restored bases, fold
         // the restored modifiers back in, then re-derive the life state
         // (a dead actor must load dead; initializeActorStats cleared it).
-        // FOLLOWERS É3: re-mirror Follower.Protected from the restored
+        // Re-mirror Follower.Protected from the restored
         // FollowerState BEFORE the life-state derive — a follower saved
         // DOWNED (0 HP under protection) must reload downed, not dead.
         // Owned tags are not captured state; this is their re-derivation.

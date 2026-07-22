@@ -49,12 +49,12 @@ public:
                           const core::Guid& imposedId = {});
 
     // A copy of an existing form (base or draft) under a new guid — the
-    // GameDB "duplicate" tool (chantier 8.1). Every reflected field is
+    // GameDB "duplicate" tool. Every reflected field is
     // cloned; CHILD records are NOT duplicated (v1 — recursive clones are
     // the quest editor's job). Null guid when the source is unknown.
     core::Guid duplicateForm(const core::Guid& source, const str& editorId);
 
-    // Removes a form CREATED this session (chantier 8.6 — "delete node").
+    // Removes a form CREATED this session (the editors' "delete node").
     // False on base records: a plugin cannot delete a record (§5), so the
     // UI only offers delete on session drafts. Undoable — the op snapshots
     // the draft so undo restores its edited field values, not defaults.
@@ -63,10 +63,10 @@ public:
     bool canUndo() const { return !undoStack.empty(); }
     bool canRedo() const { return !redoStack.empty(); }
     // Undo/redo work in GESTURES: every op recorded inside a live
-    // Gesture shares one group, and undo/redo pop the WHOLE group (dev
-    // bug 2026-07-10: '+ State' = create + setField, and a lone Ctrl+Z
-    // un-parented the node instead of removing it — a half-created
-    // orphan). Ops recorded outside a gesture group alone, as before.
+    // Gesture shares one group, and undo/redo pop the WHOLE group —
+    // '+ State' = create + setField, and a lone Ctrl+Z would un-parent
+    // the node instead of removing it (a half-created orphan).
+    // Ops recorded outside a gesture group alone.
     void undo();
     void redo();
 
@@ -96,7 +96,7 @@ public:
     // Visits every form the session can see: the resolved base (a dirty
     // form is visited through its draft) plus the session-CREATED forms —
     // what tool lists must iterate so fresh records show up before the
-    // next resolve (chantier 8.2). Order: base handle order, then created
+    // next resolve. Order: base handle order, then created
     // drafts (unordered — tools sort by their own keys).
     template<typename Fn> // Fn(const Guid&, const Form&, const TypeInfo&)
     void forEachVisible(Fn&& fn) const {

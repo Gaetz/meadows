@@ -10,10 +10,9 @@ namespace world {
 class WorldModel;
 }
 
-// The level editor's OPERATIONS (chantier 2 B3/B4) — pure record edits
+// The level editor's OPERATIONS — pure record edits
 // through an EditSession (§5: the editor is just another plugin author),
 // no ImGui/gizmo code here (the scene owns interaction and rendering).
-// Replaces the pre-EditSession WorldEditor embryo.
 //
 // Live entities are the CALLER's concern: after an op, the scene updates
 // or respawns the affected entities (records are the truth; the world is
@@ -35,7 +34,7 @@ public:
     vector<core::Guid>& groupSelection() { return group; }
 
     // Writes a gizmo-committed transform into the ReferenceForm draft
-    // (three field edits — one undo step each, v1).
+    // (three field edits — one undo step each).
     bool commitTransform(const core::Guid& reference, const Vec3& position,
                          const Quat& rotation, const Vec3& scale);
 
@@ -43,14 +42,14 @@ public:
     core::Guid placeReference(const core::Guid& baseForm,
                               const core::Guid& cell, const Vec3& position);
 
-    // Duplicates a placed reference (chantier 2 leftover, 2026-07-13):
-    // session.duplicateForm clones every reflected field (the 8.1 tool),
+    // Duplicates a placed reference:
+    // session.duplicateForm clones every reflected field,
     // the offset nudges the copy so it never hides its original. ONE undo
     // gesture; the copy becomes the selection. Returns 0 on a non-ref.
     core::Guid duplicateReference(const core::Guid& reference,
                                   const Vec3& offset);
 
-    // Implicit cells (IMPLICIT-CELLS brick 2): "place anywhere". Ensures
+    // Implicit cells (docs/IMPLICIT-CELLS.md): "place anywhere". Ensures
     // grid square (gx, gy) of `worldspace` exists BOTH live
     // (WorldModel::materializeCell — the streamer starts resolving it)
     // and in the EditSession (a created CellForm under the deterministic

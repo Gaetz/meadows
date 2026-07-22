@@ -2,8 +2,8 @@
 
 #include "engine/assets/VertexAo.hpp"
 
-// Option B (2026-07-10): per-asset baked vertex AO — the grounding that
-// replaced screen-space AO in the default look. Pure geometry in, vertex
+// Per-asset baked vertex AO — the grounding of the default look
+// (chosen over screen-space AO). Pure geometry in, vertex
 // colors out; deterministic (fixed golden-spiral rays).
 
 using render::MeshData;
@@ -80,7 +80,7 @@ TEST_CASE("vertex AO: zero strength is a strict no-op") {
     }
 }
 
-// The disk cache (dev ask 2026-07-10: authored meshes take seconds to
+// The disk cache (authored meshes take seconds to
 // bake — cache across sessions, validate by mtime/size, prune orphans).
 #include <filesystem>
 #include <fstream>

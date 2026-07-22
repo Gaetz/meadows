@@ -17,7 +17,7 @@
 #include "gameplay/combat/MeleeSwing.hpp"  // segmentHitsActor
 #include "gameplay/cue/GameplayCues.hpp"
 #include "gameplay/event/EventBus.hpp"
-#include "gameplay/inventory/Inventory.hpp" // arrow pickup (A7+)
+#include "gameplay/inventory/Inventory.hpp" // arrow pickup
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "world/ai/Perception.hpp" // sneak shot: unaware gate
 #include "world/scene/Components.hpp"
@@ -40,7 +40,7 @@ void strike(const ProjectileContext& ctx, ecs::Entity target,
         ctx.gameTags, ctx.derivedStats, ctx.statsTuning, &ctx.eventBus,
         ctx.cues
     };
-    // É2: resolve the shooter back to a LIVE entity so the OnHitTaken
+    // Resolve the shooter back to a LIVE entity so the OnHitTaken
     // this dispatches carries a real source — the follower aggro table
     // listens on it. The payload stays captured at fire time; a
     // long-gone shooter degrades to the old empty source.
@@ -59,7 +59,7 @@ void strike(const ProjectileContext& ctx, ecs::Entity target,
             }
         }
     }
-    // Sneak attack (furtivité, 2026-07-13): same rule as the blade — a
+    // Sneak attack: same rule as the blade — a
     // State.Sneaking shooter hitting a target whose Perception never left
     // Calm multiplies the payload (arrows skip the guard stage, so the
     // multiplier applies here rather than in resolveMeleeStrike).
@@ -90,7 +90,7 @@ void ProjectileDirector::update(f32 dt, const ProjectileContext& ctx) {
     for (gameplay::Projectile& arrow : projectiles) {
         const Vec3 from = gameplay::stepProjectile(arrow, dt);
         if (arrow.planted) {
-            // A7+: walking over a planted arrow returns its ammo item to
+            // Walking over a planted arrow returns its ammo item to
             // the bag — anyone's arrow (an archer's misses are loot).
             if (arrow.ammoItem.isValid() && ctx.player &&
                 ctx.playerEntity.is_alive() &&

@@ -4,7 +4,7 @@
 
 #include "data/forms/CoreForms.hpp" // MiscItemForm
 #include "data/forms/FormDatabase.hpp"
-#include "data/forms/LocForms.hpp" // TextTable (C9.5)
+#include "data/forms/LocForms.hpp" // TextTable
 #include "data/forms/FormQuery.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/ui/UiSystem.hpp"
@@ -18,7 +18,7 @@
 namespace game {
 
 void QuestDirector::beginScene(const QuestContext& ctx, bool loadedFromSave) {
-    // Chantier 6 A2: gate tags registered up front so dialogue conditions
+    // Gate tags registered up front so dialogue conditions
     // evaluate before any quest starts.
     questLog_ = quest::QuestLog {};
     easternQuest_ =
@@ -28,7 +28,7 @@ void QuestDirector::beginScene(const QuestContext& ctx, bool loadedFromSave) {
            "Quest.EasternMenace.Done", "Crime.Wanted" }) {
         ctx.gameTags.registerTag(tag);
     }
-    // 8.7d: generic per-quest gate tags — dialogue conditions can gate on
+    // Generic per-quest gate tags — dialogue conditions can gate on
     // Quest.<EditorId>.Active / .Done for ANY quest (modded included),
     // zero C++ per quest. (EasternMenace's .Ready turn-in window above
     // stays demo-wired until quests can express it in data.)
@@ -40,7 +40,7 @@ void QuestDirector::beginScene(const QuestContext& ctx, bool loadedFromSave) {
             ctx.gameTags.registerTag("Quest." + quest.editorId + ".Active");
             ctx.gameTags.registerTag("Quest." + quest.editorId + ".Done");
         });
-    // Chantier 6 A4: a loaded save rebuilds the quest log (the tag mirror
+    // A loaded save rebuilds the quest log (the tag mirror
     // re-syncs after the player spawns, via syncQuestTags/syncWantedTag).
     if (loadedFromSave) {
         quest::applySavedQuests(questLog_, ctx.forms);
@@ -72,7 +72,7 @@ void QuestDirector::syncQuestTags(const QuestContext& ctx) {
             system.tags.remove(*tag, ctx.gameTags);
         }
     };
-    // 8.7d: every quest mirrors Active/Done generically (registered in
+    // Every quest mirrors Active/Done generically (registered in
     // beginScene) — the gate tags any dialogue condition can use.
     data::forEach<quest::QuestForm>(
         ctx.forms, [&](const quest::QuestForm& quest) {
@@ -121,7 +121,7 @@ void QuestDirector::syncWantedTag(const QuestContext& ctx) {
 
 void QuestDirector::handleQuestEvent(const QuestContext& ctx,
                                      const gameplay::Event& event) {
-    // 8.7c — data-driven quest starts: any quest whose startEvent matches
+    // Data-driven quest starts: any quest whose startEvent matches
     // begins now (never re-begins: the log keeps finished entries). The
     // old per-quest C++ subscription (acceptDemoQuest) is gone.
     const auto started =
@@ -130,7 +130,7 @@ void QuestDirector::handleQuestEvent(const QuestContext& ctx,
     for (const quest::QuestForm* quest : started) {
         startedIds.insert(quest->id);
         syncQuestTags(ctx);
-        // C9.5: every toast is a LocStringForm key — languages layer (§5).
+        // Every toast is a LocStringForm key — languages layer (§5).
         ctx.say(ctx.texts.format("quest.new",
                                  quest->displayName.empty()
                                      ? quest->editorId
@@ -138,7 +138,7 @@ void QuestDirector::handleQuestEvent(const QuestContext& ctx,
                 4.0f);
     }
 
-    // 8.7e — generic progression: snapshot every quest, advance, then
+    // Generic progression: snapshot every quest, advance, then
     // toast state changes and pay DATA rewards (QuestForm.rewardItem/
     // rewardCount) on the first transition to Succeeded. The turn-in
     // option fires exactly once (its gate tag drops with the transition),
@@ -203,7 +203,7 @@ void QuestDirector::handleQuestEvent(const QuestContext& ctx,
                     5.0f);
         } else if (progress.status == quest::QuestStatus::Failed &&
                    it->second.second != quest::QuestStatus::Failed) {
-            // 8.7e follow-up: failing through a Failure state announces
+            // Failing through a Failure state announces
             // itself (no reward, obviously).
             ctx.say(ctx.texts.format("quest.failed", name), 5.0f);
         } else if (progress.currentState != it->second.first) {
@@ -213,7 +213,7 @@ void QuestDirector::handleQuestEvent(const QuestContext& ctx,
 }
 
 void QuestDirector::payFine(const QuestContext& ctx) {
-    // Chantier 6 D2: paying the fine clears the bounty. The option is gated
+    // Paying the fine clears the bounty. The option is gated
     // by HasTag Crime.Wanted + HasItem gold ≥ 40 in data, so the removeItem
     // below can only fail if a mod broke the gate — then it does nothing.
     if (!ctx.playerEntity.is_alive() || !ctx.goldForm) {
@@ -224,7 +224,7 @@ void QuestDirector::payFine(const QuestContext& ctx) {
         return;
     }
     if (ctx.playerEntity.has<gameplay::Bounty>()) {
-        // Per-faction crime (2026-07-13): the fine settles the ARRESTING
+        // Per-faction crime: the fine settles the ARRESTING
         // guard's faction (the dialogue partner) + the unattributed part;
         // another faction's slice survives — its own guards stay hostile
         // and the Wanted mirror below keeps the tag while any remains.
@@ -246,7 +246,7 @@ void QuestDirector::openDialogue(const QuestContext& ctx,
         dialogueRunner_ =
             std::make_unique<quest::DialogueRunner>(ctx.forms, ctx.eventBus);
     }
-    // 8.7e: the node's world side effects — takeItem/takeCount removes
+    // The node's world side effects — takeItem/takeCount removes
     // from the player when the node fires ("here are the rations"). Set
     // per open with the CURRENT player entity; gate the option with a
     // HasItem condition in data, the removal itself does not re-check.

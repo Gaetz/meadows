@@ -1,7 +1,7 @@
 #version 460 core
 #include "common.glsl"
 
-// Chantier P0 C1 — soft round particle: radial falloff in the shader
+// Soft round particle: radial falloff in the shader
 // (no texture until an asset asks; ParticleForm.texture waits there).
 
 layout(location = 0) in vec2 vUv;

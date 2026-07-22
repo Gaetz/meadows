@@ -1,5 +1,5 @@
 #include <doctest/doctest.h>
-#include "gameplay/actors/Swimming.hpp" // P0 D2b
+#include "gameplay/actors/Swimming.hpp"
 
 #include "engine/ecs/World.hpp"
 #include "world/scene/Components.hpp"

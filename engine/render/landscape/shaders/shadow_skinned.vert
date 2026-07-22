@@ -1,6 +1,6 @@
 #version 460 core
 
-// Chantier 6 B2a: skinned characters cast into the sun cascades. Depth-only
+// Skinned characters cast into the sun cascades. Depth-only
 // mirror of skinned.vert — the bone palette (SSBO binding 2, same buffer as
 // the lit pass) then the per-NPC model matrix (CasterModelUbo binding 4;
 // ShadowUbo keeps binding 1 per the caster group contract).

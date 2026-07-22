@@ -4,9 +4,9 @@
 #include <unordered_map>
 
 #include "engine/core/Defines.hpp"
-#include "engine/core/Guid.hpp"  // É9: the anti-repeat clock map keys
+#include "engine/core/Guid.hpp"  // the anti-repeat clock map keys
 #include "engine/ecs/World.hpp" // ecs::Entity, ecs::World
-#include "gameplay/actors/Followers.hpp" // É9: FollowerStance, CommentClock
+#include "gameplay/actors/Followers.hpp" // FollowerStance, CommentClock
 
 namespace core {
 class Rng;
@@ -32,7 +32,7 @@ class UiSystem;
 }
 namespace world {
 class CellLoader;
-struct ReferenceForm; // É8: the grave's runtime-created reference
+struct ReferenceForm; // The grave's runtime-created reference
 }
 
 namespace game {
@@ -52,28 +52,27 @@ struct FollowerContext {
     const gameplay::StatsTuningForm& statsTuning;
     const render::TerrainParams& terrainParams;
     world::CellLoader* cellLoader;   // resident check for the dismiss home
-    PendingSaveLayer& pendingSave;   // the chantier-5 persistence contract
+    PendingSaveLayer& pendingSave;   // the pending-save persistence contract
     ecs::Entity playerEntity;
     NpcDirector& npcDirector;        // the live Npc records (teleport/path)
-    // É3 additions:
     gameplay::GameClock& gameClock;  // convalescence stamps (game-hours)
     core::Rng& rng;                  // bleedout/aggravation rolls (§8 seeded)
     const data::TextTable* texts { nullptr }; // toast lines (loc keys)
     std::function<void(str line)> say;        // HUD toast (may be empty)
-    // É4 additions (the recruit-preview screen — null in headless use):
+    // The recruit-preview screen — null in headless use:
     ::ui::UiSystem* ui { nullptr };
     ScreenStack* screenStack { nullptr };
-    // É7 addition (appended): the currency — the forge upgrade charges
+    // The currency — the forge upgrade charges
     // through it (the payFine idiom).
     const data::MiscItemForm* goldForm { nullptr };
-    // É8 addition (appended): live-spawn a runtime-created PERSISTENT
+    // Live-spawn a runtime-created PERSISTENT
     // reference (the grave) through the scene's Spawner — the
     // spawnInitialWorld idiom (parent cell = none). Null in headless use.
     std::function<ecs::Entity(const world::ReferenceForm&)> spawnPersistent;
 };
 
-// Recruit/dismiss + the party teleports (FOLLOWERS É1). The persistence is
-// the chantier-5 contract, NOT a new mechanism (§2.11): recruiting patches
+// Recruit/dismiss + the party teleports (docs/FOLLOWERS.md). The persistence
+// is the pending-save contract, NOT a new mechanism (§2.11): recruiting patches
 // the follower's ReferenceForm.cell -> 0 (the persistent set — the player's
 // own status) THROUGH the pending save layer (captureEntity diffs the live
 // RefId.cell against the resolved record) and drops the ecs::InCell
@@ -106,9 +105,9 @@ public:
     // tags are not part of the captured actor state.
     void syncActiveTag(const FollowerContext& ctx);
 
-    // É2 — the aggro table, on the signals combat ALREADY publishes
+    // The aggro table, on the signals combat ALREADY publishes
     // (§2.11: resolveMeleeStrike's OnHitTaken / the director's OnDeath —
-    // the R1 strike resolution was target-agnostic from day one). The
+    // the strike resolution was target-agnostic from day one). The
     // per-NPC decision is the pure gameplay::adoptOnHit (doctested
     // headless); this handler only resolves the parties' roles and
     // writes Npc.combatTarget (runtime-only — never saved, re-acquired
@@ -125,22 +124,21 @@ public:
     static void teleportNear(const Vec3& anchor,
                              const render::TerrainParams& terrain, Npc& npc);
 
-    // ---- É3/É4: the per-frame follower sweep -------------------------------
-    // Per frame (after the director's update) — renamed from updateDowned
-    // when É4 added the affinity accrual. Mirrors Follower.Protected onto
+    // ---- The per-frame follower sweep -------------------------------
+    // Per frame (after the director's update). Mirrors Follower.Protected onto
     // each follower's OWN tags (the syncStateTag idiom — what routes 0 HP
     // to Downed in updateLifeState), accrues time-together affinity for
     // the ACTIVE ones (gameplay::accrueTimeTogether on GameClock deltas —
     // the VendorState hour-stamp idiom), ticks the bleedout clock
     // (gameplay::updateDowned) and resolves timeouts through
     // gameplay::resolveBleedout: real death, or recovery-with-injury —
-    // and, past the severity bar, CONVALESCENCE: the É1 dismiss walks him
+    // and, past the severity bar, CONVALESCENCE: the dismiss walks him
     // home and followerDownedRecoveryHours stamps his unavailability.
     // Returns true when the NPC list needs a refresh (a dismiss to a
     // non-resident home despawns the entity).
     bool updateFollowers(const FollowerContext& ctx, f32 dt);
 
-    // ---- É4: affinity + the recruit preview --------------------------------
+    // ---- Affinity + the recruit preview --------------------------------
     // The generic bus handler (ONE subscribeAll on the scene hub — the
     // QuestDirector.handleQuestEvent precedent): for every follower whose
     // ActorForm owns AffinityRuleForm children, a matching event moves his
@@ -155,32 +153,32 @@ public:
     // recruit-preview screen (the MapController screen idiom: push the
     // "recruit" model, show the UiScreenForm screen): name, class, level,
     // the 9 attributes (currentValueOf on the PARTNER entity), vitals,
-    // affinity. Loc'd through the TextTable (C9.5 keys, ui.recruit.*).
+    // affinity. Loc'd through the TextTable (ui.recruit.* keys).
     void openRecruitPreview(const FollowerContext& ctx, ecs::Entity follower);
 
-    // ---- É9: group commands, banter, ambient comments ----------------------
+    // ---- Group commands, banter, ambient comments ----------------------
     // Dialogue "OnPartyFollow/Stay/Attack/Defend" (« Consignes de
     // groupe... » submenu nodes — zero new UI surface; the doc's radial
     // menu is the stated TODO): ONE stance write point for EVERY active
-    // follower. Semantics (v1, stated):
-    //   Follow — the default É1 follow package + the full É2 aggro table.
+    // follower. Semantics (v1):
+    //   Follow — the default follow package + the full aggro table.
     //   Stay   — he stands where he is (the follow dispatch skips him);
     //            his home SCHEDULE takes over only on a DISMISS — staying
-    //            keeps him active at his spot. Sandbox v1 (stated): the
+    //            keeps him active at his spot. Sandbox v1: the
     //            home schedules ARE the town life — a dismissed follower
     //            resumes his scheduled day; contextual sandboxing while
     //            grouped comes later.
     //   Attack — one-shot adoption of the player's CURRENT combat target
-    //            (the last hostile the player struck — the É2 signal),
+    //            (the last hostile the player struck — the aggro signal),
     //            then behaves as Follow.
-    //   Defend — the É2 default MINUS rule 4: no adoption on the player's
+    //   Defend — the default MINUS rule 4: no adoption on the player's
     //            initiative (AggroRoles.defendOnly); only attackers of
     //            the party engage him.
     void partyCommand(const FollowerContext& ctx,
                       gameplay::FollowerStance stance);
 
-    // É9 ambient comments (docs/FOLLOWERS.md §6.1) — the SAME generic bus
-    // channel as onAffinityEvent (the É4 subscribeAll precedent): a
+    // Ambient comments (docs/FOLLOWERS.md §6.1) — the SAME generic bus
+    // channel as onAffinityEvent (the subscribeAll precedent): a
     // matching CommentForm child of an ACTIVE follower's ActorForm toasts
     // « {Name} : {line} », gated by the pure gameplay::decideComment
     // (10-game-hour anti-repeat, oneShot, ordered chaining) — never while
@@ -190,9 +188,9 @@ public:
                         const gameplay::Event& event);
 
     // onExit: drop the accrual stamp (the game clock restarts with the
-    // next scene enter) and the É9 runtime clocks (anti-repeat is
-    // per-session v1 — stated). É10: the warned-contract flags go too —
-    // v1, stated: not persisted, a reload may repeat the one warning.
+    // next scene enter) and the runtime clocks (anti-repeat is
+    // per-session v1). The warned-contract flags go too —
+    // v1: not persisted, a reload may repeat the one warning.
     void reset() {
         lastAccrualHours_ = -1.0;
         commentClocks_.clear();
@@ -220,7 +218,7 @@ public:
     // recruit dialogue's refusal option gates on it.
     void syncConvalescentTag(const FollowerContext& ctx);
 
-    // ---- É6: the player learns a perk (réciproque) -------------------------
+    // ---- The player learns a perk (réciproque) -------------------------
     // Dialogue "OnLearnPerk" (« Apprends-moi quelque chose ») — the option
     // itself is gated in DATA by ConditionForm children (affinity >= 25 +
     // HasTag Zone.Calme, the quiet-place mirror; a sibling refusal with the
@@ -231,44 +229,44 @@ public:
     // the effect's grantedTag / the granted-ability list), then toasts.
     void teachPerk(const FollowerContext& ctx, ecs::Entity follower);
 
-    // ---- É7: the forge upgrade of the base kit -----------------------------
+    // ---- The forge upgrade of the base kit -----------------------------
     // Dialogue "OnForgeUpgrade" (« Améliorons ton équipement à la forge »)
     // — the option is gated in DATA (HasItem gold >= 50 + HasTag
-    // Zone.Forge, the É6 quiet-zone trigger mirror). §2.2: a Form never
+    // Zone.Forge, the quiet-zone trigger mirror). §2.2: a Form never
     // mutates — the upgrade REPLACES each unremovable weapon that names
     // an `upgradesTo` tier with that next-tier record (both unremovable),
     // and re-equips it if the old one was drawn. The gold moves HERE (the
     // payFine idiom — chosen over the node's takeItem because select()
     // dispatches the event BEFORE onNodeFired's removal, and this handler
     // must be able to refuse — nothing to upgrade — without charging).
-    // Mercenaries (É10) will get a free variant: gate their option in
+    // Mercenaries will get a free variant: gate their option in
     // data without the HasItem clause and skip the charge here.
     void forgeUpgrade(const FollowerContext& ctx, ecs::Entity follower);
 
-    // ---- É10: mercenaries ---------------------------------------------------
+    // ---- Mercenaries ---------------------------------------------------
     // Dialogue "OnHireMercenary" (« Engage-moi (contrat 7 jours) » /
     // « Prolonger le contrat » — BOTH options fire the same event; the
     // renewal option simply also exists, gated Follower.Active, on the
     // mercenary's own dialogue: `mercenary` is per-actor DATA the
     // condition evaluator cannot read, so authoring carries that half).
-    // DECISION (stated): the hire option is gated in data by a COARSE
+    // DECISION: the hire option is gated in data by a COARSE
     // `HasItem gold >= contractBasePrice` — the REAL price is dynamic
     // (gameplay::mercenaryPrice on the player's level and wealth), so the
     // HANDLER re-checks it and refuses with a toast QUOTING the price
     // when the coarse gate passed but the scaled price doesn't — that
     // refusal toast doubles as the price display. The charge is the
     // payFine idiom (handler-side removeItem — a refusal, or a recruit
-    // the É9 caps/É3 convalescence bounce, stays FREE); the join is the
-    // É1 recruit path unchanged; the expiry stamp is É0's
+    // the caps/convalescence bounce, stays FREE); the join is the
+    // recruit path unchanged; the expiry stamp is
     // followerContractExpiryHours (GameClock game-hours, the VendorState
     // idiom) written through gameplay::extendContract.
     void hireMercenary(const FollowerContext& ctx, ecs::Entity follower);
 
-    // ---- É8: mort, tombe, enterrement --------------------------------------
-    // V1 scope (stated): of the doc's three burials, (a) on the spot and
+    // ---- Mort, tombe, enterrement --------------------------------------
+    // V1 scope: of the doc's three burials, (a) on the spot and
     // (c) the bury contact ship; (b) CARRY the corpse and bury at a chosen
     // spot is DEFERRED — it needs a ground-placement mechanic (aim a spot,
-    // validate it) that nothing else requires yet. TODO(followers É8b):
+    // validate it) that nothing else requires yet. TODO(followers):
     // when a placement mechanic exists, add the corpse-as-item flow
     // (« Dépouille de {} », heavy MiscItemForm) on top of buryOnSpot.
     //
@@ -285,7 +283,7 @@ public:
     static str graveOwnerName(const data::FormDatabase& forms,
                               const core::Guid& graveReference);
 
-    // [F] « Enterrer ici » on a DEAD follower's corpse (the É7 InteractAlt
+    // [F] « Enterrer ici » on a DEAD follower's corpse (the InteractAlt
     // action — free on corpses): creates the grave AT the corpse (§2.11 —
     // the generalized pending-layer materialization + the persistent-pass
     // spawn idiom), moves the corpse's whole inventory into it
@@ -294,7 +292,7 @@ public:
     // a refresh (the corpse entity was destructed).
     bool buryOnSpot(const FollowerContext& ctx, ecs::Entity corpse);
 
-    // Dialogue "OnBuryFollower" on a bury contact (É0's ActorForm data):
+    // Dialogue "OnBuryFollower" on a bury contact (the ActorForm data):
     // finds the dead follower whose buryContact IS the partner and buries
     // him at his authored buryMarker (fallback: where he lies). No new
     // condition kind (v1): the HANDLER checks and answers with a toast
@@ -304,7 +302,7 @@ public:
     bool buryByContact(const FollowerContext& ctx, ecs::Entity partner);
 
 private:
-    // ---- É5: classes, levels, evolution ----------------------------------
+    // ---- Classes, levels, evolution ----------------------------------
     // The rules are the pure gameplay layer (syncFollowerLevel /
     // applyClassLevelChange / bonusAttribute — doctested headless); this
     // helper only resolves the entities and performs the §2.9-sanctioned
@@ -319,18 +317,18 @@ private:
                         const data::ActorForm& actor,
                         gameplay::FollowerState& state, bool active);
 
-    // É9: the banter tick of the per-frame sweep — >= 2 active followers
+    // The banter tick of the per-frame sweep — >= 2 active followers
     // near each other, out of combat, not sneaking, every
     // banterIntervalHours: the first eligible BanterForm (plugin order —
     // deterministic §8) toasts lineA and queues lineB.
     void updateBanter(const FollowerContext& ctx, f32 dt, f64 nowHours);
 
-    // É4: the last game-hour the sweep accrued time-together at (-1 = not
+    // The last game-hour the sweep accrued time-together at (-1 = not
     // stamped yet — the first sweep stamps without accruing, so a scene
     // enter or F9 reload never credits the whole clock).
     f64 lastAccrualHours_ { -1.0 };
 
-    // ---- É9 runtime-only state (v1, stated: none of it persists) ----------
+    // ---- runtime-only state (v1: none of it persists) ----------
     // Anti-repeat clocks, one per BanterForm/CommentForm guid.
     std::unordered_map<core::Guid, gameplay::CommentClock> commentClocks_;
     // The banter cadence stamp (the VendorState hour idiom; -1 = the
@@ -340,13 +338,13 @@ private:
     // v1: lineB lands ~3 s after lineA through this small timer).
     str pendingReplyLine_;
     f32 pendingReplySeconds_ { 0.0f };
-    // É9 « attaquez ma cible » : the last hostile the PLAYER struck (the
-    // É2 OnHitTaken signal), adopted one-shot at command time. Runtime
+    // « attaquez ma cible » : the last hostile the PLAYER struck (the
+    // OnHitTaken signal), adopted one-shot at command time. Runtime
     // only — cleared on its death and on reset().
     ecs::Entity playerTarget_ {};
-    // É10: which mercenaries already got their ONE near-expiry warning,
+    // Which mercenaries already got their ONE near-expiry warning,
     // keyed by ActorForm guid (stable across despawns). Runtime-only v1
-    // (stated: a reload may re-warn once); cleared on renewal — a fresh
+    // (a reload may re-warn once); cleared on renewal — a fresh
     // contract earns a fresh warning.
     std::unordered_map<core::Guid, bool> warnedContracts_;
 };

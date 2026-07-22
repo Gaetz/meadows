@@ -143,7 +143,7 @@ damage = 7.5
     CHECK(conflict.writers[0].plugin == "base-game");
     CHECK(conflict.writers[1].plugin == "modA");
     CHECK(conflict.writers[2].plugin == "modB"); // last entry = winner
-    // 8.5: each writer's VALUE rides along (what the synthesis tool shows).
+    // Each writer's VALUE rides along (what the synthesis tool shows).
     CHECK(std::get<f32>(conflict.writers[1].value) == 20.0f);
     CHECK(std::get<f32>(conflict.writers[2].value) == 7.5f);
     CHECK(conflict.fieldId == core::fnv1a("damage"));

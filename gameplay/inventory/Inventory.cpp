@@ -45,7 +45,7 @@ i32 itemCount(const Inventory& inventory, const core::Guid& item) {
 }
 
 void transferAllItems(Inventory& from, Inventory& to) {
-    // FOLLOWERS É8: the burial transfer. Route through addItem so a stack
+    // The burial transfer. Route through addItem so a stack
     // of an item the target already holds merges instead of doubling.
     for (const ItemStack& stack : from.items) {
         if (stack.count > 0) {

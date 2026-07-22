@@ -22,8 +22,8 @@ constexpr const char* kFullscreenVert = "fullscreen";
 // Flat proxy albedos per terrain material — GI only needs the broad hue
 // of what the light bounces off (the real splat tiles never leave the
 // terrain shader). Rough matches of the splat family averages.
-// (Grass slightly brighter than the raw splat average — the visible
-// green bounce was too subtle, dev report 2026-07-11.)
+// (Grass slightly brighter than the raw splat average — otherwise the
+// visible green bounce is too subtle.)
 constexpr Vec3 kGrassAlbedo { 0.090f, 0.155f, 0.052f };
 constexpr Vec3 kRockAlbedo { 0.180f, 0.165f, 0.150f };
 constexpr Vec3 kSandAlbedo { 0.420f, 0.360f, 0.250f };
@@ -171,8 +171,8 @@ void RadianceCascades::refreshPipelines(rhi::Device& device,
 
 void RadianceCascades::makePlaceholderTile(rhi::Device& device) {
     // "No terrain": height far below any voxel — INTERIORS run on this
-    // permanently (kit boxes + lights carry the room, dev feedback
-    // 2026-07-11); exteriors swap in the worker bake via pumpTileBake.
+    // permanently (kit boxes + lights carry the room);
+    // exteriors swap in the worker bake via pumpTileBake.
     const f32 kNoTerrain = -1.0e4f;
     heightTex = { device, device.createTexture(
         { .width = 1, .height = 1, .format = rhi::TextureFormat::R16F },
@@ -491,7 +491,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
     const u32 res = static_cast<u32>(appliedResolution);
     RcUniforms uniforms;
     // The origins prepare() snapped BEFORE the frame UBO was composed —
-    // uGiGridInfo and the volume content stay in lockstep (dev bug).
+    // uGiGridInfo and the volume content stay in lockstep.
     uniforms.clipInfo[0] = { lastFineOrigin, appliedFineVoxel };
     uniforms.clipInfo[1] = { lastCoarseOrigin, appliedCoarseVoxel };
     uniforms.tileInfo = { tileCenter.x, tileCenter.y, 1.0f / tileSpan,

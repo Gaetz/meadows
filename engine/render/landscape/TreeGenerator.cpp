@@ -20,11 +20,11 @@ MeshData generateTree(u32 seed, u32 lobeSubdivisions,
     HashRng rng { hashU32(seed ^ 0x7ea3c1b9u) };
     MeshData mesh;
 
-    // Tall, elegant silhouette (validated composition): one proper trunk
+    // Tall, elegant silhouette: one proper trunk
     // column, short upward branches near the top, one full foliage lobe
-    // per branch tip plus a crown (brick 27: solid canopy, no cards).
-    // Every artistic constant now rides LobeTreeParams (tree builder,
-    // 2026-07-20) — defaults reproduce the historical look.
+    // per branch tip plus a crown (solid canopy, no cards).
+    // Every artistic constant rides LobeTreeParams —
+    // defaults reproduce the shipped look.
     const f32 trunkHeight =
         params.trunkHeightMin +
         rng.next() * (params.trunkHeightMax - params.trunkHeightMin);

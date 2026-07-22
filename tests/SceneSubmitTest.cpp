@@ -39,10 +39,10 @@ TEST_CASE("scene submit: 2D rotation is the yaw of the 3D quaternion") {
     CHECK(out.rotation == doctest::Approx(angle));
 }
 
-// --- The headless halves of the extract (audit U9-1) ---------------------------------
+// --- The headless halves of the extract ---------------------------------------------
 // extractMeshes and collectLights are the snapshot's 3D feeders — pure guids
-// and PODs, no GPU — and had no coverage while LandscapeScene::render() is
-// being rebuilt onto them (U4-2).
+// and PODs, no GPU — locked headless while LandscapeScene::render() is
+// rebuilt onto them.
 
 #include "engine/ecs/World.hpp"
 #include "world/scene/AnimBridge.hpp" // registerSceneComponents
@@ -105,7 +105,7 @@ TEST_CASE("scene submit: collectLights returns the nearest lights first") {
     CHECK(lights[1].position.x == doctest::Approx(20.0f));
 }
 
-// --- The U4-2a extract extensions -----------------------------------------------------
+// --- The extract extensions ------------------------------------------------------------
 // render() consumes ONLY these packet sections instead of querying the live
 // World: lights UBO, key-shadow candidates, dust shafts, water volumes and
 // resolved mesh materials.

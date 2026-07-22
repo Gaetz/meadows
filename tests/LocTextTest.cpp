@@ -4,9 +4,9 @@
 #include "data/forms/LocForms.hpp"
 #include "data/plugins/CsvImport.hpp"
 #include "data/plugins/Resolver.hpp"
-#include "game/Settings.hpp" // languagePackCode (C9.5)
+#include "game/Settings.hpp" // languagePackCode
 
-// The localisation seam filled (H1 + audit U4-11 brick 2): LocStringForm
+// The localisation seam: LocStringForm
 // records (key = editorId) -> TextTable index -> loc lookups, fed by the
 // CSV import pipeline end to end.
 

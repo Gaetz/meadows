@@ -2,7 +2,7 @@
 
 #include "game/FrameComposer.hpp"
 
-// The per-frame UBO composition (audit U4-6a) — extracted from
+// The per-frame UBO composition — extracted from
 // LandscapeScene::render() precisely so these invariants get locked
 // headless: the interior reshape, the A/B-neutral toggles, the reflection
 // contract (base stays unpatched) and the .w-slot appends (the UBO lesson:
@@ -148,8 +148,7 @@ TEST_CASE("frame composer: grass bend follows the player's feet in Play") {
 }
 
 TEST_CASE("frame composer: stormInfo.x carries the raw storm front") {
-    // (Cumulonimbus removed 2026-07-10: .x is back to the plain
-    // crossfaded front; rain/wetness/occlusion ride .y.)
+    // (.x is the plain crossfaded front; rain/wetness/occlusion ride .y.)
     game::FrameComposerInputs in = exteriorDay();
     in.atmos.stormFront = 0.35f;
     in.atmos.cloudCoverage = 0.6f; // coverage no longer feeds .x

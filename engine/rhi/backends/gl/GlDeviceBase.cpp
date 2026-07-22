@@ -68,13 +68,13 @@ GLuint compileStage(GLenum stage, const str& source, const str& debugName) {
 
 } // namespace
 
-// Shared with the subclass .cpp files through GlConvert.hpp (U2-06).
+// Shared with the subclass .cpp files through GlConvert.hpp.
 u32  glVertexFormatComponents(VertexFormat f) { return vertexFormatComponents(f); }
 GLenum glToTopology(PrimitiveTopology t)      { return toGlTopology(t); }
 GLenum glToCompare(CompareFunc f)             { return toGlCompare(f); }
 
-// The raster-state half of createPipeline, identical in both backends
-// (audit U2-03); each subclass adds only its VAO flavor.
+// The raster-state half of createPipeline, identical in both backends;
+// each subclass adds only its VAO flavor.
 GlDeviceBase::GlPipeline
 GlDeviceBase::makePipelineState(const PipelineDesc& desc, u32 program) const {
     GlPipeline pipeline;
@@ -246,7 +246,7 @@ void GlCommandBuffer::setBindGroup(u32 /*index*/, BindGroupHandle group) {
             default: break;
             }
             // 3D textures bind LAYERED so imageStore reaches every Z slice
-            // (G0 — non-layered binds expose only slice 0 of a volume).
+            // (non-layered binds expose only slice 0 of a volume).
             glBindImageTexture(entry.binding, texture.name,
                                static_cast<GLint>(entry.imageMip),
                                texture.depth > 1 ? GL_TRUE : GL_FALSE, 0,
@@ -567,7 +567,7 @@ void GlDeviceBase::readBuffer(BufferHandle handle, void* dst, u64 size,
     glBindBuffer(GL_COPY_READ_BUFFER, 0);
 }
 
-// --- Fences (P1) ----------------------------------------------------------------
+// --- Fences -----------------------------------------------------------------------
 // GL sync objects (3.2+): the non-blocking gate in front of readBuffer —
 // glGetBufferSubData stalls the CPU until the GPU reaches the last write,
 // and the driver runs 1-2 frames deep (the mainPass=25ms frame spikes).
@@ -612,7 +612,7 @@ void GlDeviceBase::destroyFence(FenceHandle handle) {
     }
 }
 
-// GPU-PERF P0 — timer queries, the fence discipline applied to the GPU
+// Timer queries — the fence discipline applied to the GPU
 // clock: record now, poll later, NEVER block (results are read frames
 // after the query was reached; GpuProbe rings 4 frames in flight).
 

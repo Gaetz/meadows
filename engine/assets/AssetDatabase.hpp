@@ -14,8 +14,8 @@ namespace assets {
 // mental model as record fields. Knows nothing about plugins; the data
 // layer (or game startup) feeds it.
 //
-// Phase-1 scope: identity + layering + synchronous resolution. Async
-// loading, residency, and placeholders are Phase 8 / §7 concerns.
+// Scope: identity + layering + synchronous resolution. Async loading,
+// residency, and placeholders live in the streaming path (§7).
 class AssetDatabase {
 public:
     // Registers or overrides an asset. `path` may be relative to `baseDir`.

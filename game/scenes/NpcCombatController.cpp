@@ -8,34 +8,34 @@
 #include "data/forms/CoreForms.hpp"       // data::WeaponForm
 #include "data/forms/FormDatabase.hpp"
 #include "engine/core/Log.hpp"
-#include "engine/core/Rng.hpp"            // A5: NPC guard rolls (§8)
+#include "engine/core/Rng.hpp"            // NPC guard rolls (§8)
 #include "engine/physics/Physics.hpp"     // phys::PhysicsWorld/CharacterBody
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
-#include "game/scenes/LineOfSight.hpp"          // hasLineOfSight (R2)
+#include "game/scenes/LineOfSight.hpp"          // hasLineOfSight
 #include "game/scenes/NpcDirector.hpp"          // Npc, NpcContext, kSwordGrip
 #include "game/scenes/NpcMovement.hpp"    // moveNpc*, steerBlocked
 #include "game/scenes/NpcScheduleController.hpp" // releaseFurniture (D1)
-#include "game/scenes/ProjectileDirector.hpp"   // archer NPCs (A7)
+#include "game/scenes/ProjectileDirector.hpp"   // archer NPCs
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp" // attr, currentValueOf
-#include "gameplay/actors/ActorState.hpp"  // FollowerState (É2 defender gate)
-#include "gameplay/actors/Followers.hpp"   // pickPower, pickHealTarget (É6)
-#include "gameplay/ability/GameplayAbility.hpp" // tryActivate (P0 A3)
-#include "gameplay/combat/CombatAi.hpp"         // chooseCombatMove (B3)
+#include "gameplay/actors/ActorState.hpp"  // FollowerState (defender gate)
+#include "gameplay/actors/Followers.hpp"   // pickPower, pickHealTarget
+#include "gameplay/ability/GameplayAbility.hpp" // tryActivate
+#include "gameplay/combat/CombatAi.hpp"         // chooseCombatMove
 #include "gameplay/combat/MeleeStrike.hpp"      // the ONE strike resolution
-#include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing (A4)
-#include "gameplay/combat/Projectile.hpp"       // archer NPCs (A7)
+#include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing
+#include "gameplay/combat/Projectile.hpp"       // archer NPCs
 #include "gameplay/event/EventBus.hpp"
-#include "gameplay/inventory/Inventory.hpp" // the quiver (A7+)
+#include "gameplay/inventory/Inventory.hpp" // the quiver
 #include "gameplay/stats/CoreAttributes.hpp"    // StatBlock pieces
 #include "gameplay/stats/Damage.hpp"            // gameplay::CombatState
 #include "gameplay/stats/EquipmentStats.hpp" // weaponDamageEvent
 #include "gameplay/stats/StatsTuning.hpp"
 #include "script/Vm.hpp"               // brain scripts (BOSS-SCRIPTING.md)
-#include "world/ai/Perception.hpp"      // B2: vision cone + aware states
+#include "world/ai/Perception.hpp"      // vision cone + aware states
 #include "world/ai/TerrainNavigator.hpp"
 #include "world/scene/Components.hpp"
-#include "world/scene/SpatialIndex.hpp" // R3: the shared actor snapshot
+#include "world/scene/SpatialIndex.hpp" // the shared actor snapshot
 
 namespace game {
 
@@ -49,7 +49,7 @@ void NpcCombatController::callForHelp(
     if (!caller.factionTag.isValid() || !ctx.actorIndex) {
         return; // no faction, no friends (the index is the scene's)
     }
-    // R3 (B1 adopted): the shared actor snapshot answers "who is in
+    // The shared actor snapshot answers "who is in
     // earshot"; entity hits map back to the director's Npc records.
     const Vec3 callerPos = caller.entity.get<world::Transform>().position;
     vector<world::SpatialIndex::Entry> inEarshot;
@@ -102,10 +102,10 @@ void NpcCombatController::tryUsePower(
     const gameplay::AbilityContext abilityCtx { ctx.forms, ctx.gameTags };
     if (npc.combatStyle == "healer") {
         // The party's vitals — player, active followers, herself. The
-        // downed/dead are excluded: reviving is the potion mechanic (É3),
+        // downed/dead are excluded: reviving is the potion mechanic,
         // not a spell target.
-        // É9 NOTE — the doc's « garde toujours un objet de soin en
-        // réserve pour le joueur » (docs/FOLLOWERS.md §6.2) is a stated
+        // NOTE — the doc's « garde toujours un objet de soin en
+        // réserve pour le joueur » (docs/FOLLOWERS.md §6.2) is a deliberate
         // DEVIATION here: Maela heals by POWER (essence-costed ability),
         // not by items, so there is no item stock to reserve. The rule
         // becomes relevant the day a follower heals from his inventory;
@@ -184,7 +184,7 @@ bool NpcCombatController::update(
             wanted = ctx.playerEntity.get<gameplay::AbilitySystem>()
                          .tags.has(*tag);
         }
-        // Per-faction bounty (2026-07-13): a guard hunts only when HIS
+        // Per-faction bounty: a guard hunts only when HIS
         // faction holds a slice (an old save's unattributed total counts
         // toward every faction — bountyToward folds the remainder in).
         if (wanted && ctx.playerEntity.has<gameplay::Bounty>()) {
@@ -193,14 +193,14 @@ bool NpcCombatController::update(
                          npc.factionTag) > 0.0f;
         }
     }
-    // É2: validate the adopted combat target — an entity may die or
+    // Validate the adopted combat target — an entity may die or
     // despawn (cell unload) between frames. The aggro handler
     // (FollowerController) adopts, OnDeath clears; this is the
     // belt-and-braces sweep before any read.
     if (npc.combatTarget.id() != 0) {
         const auto it = npcByEntity.find(npc.combatTarget.id());
         const Npc* targetNpc = it != npcByEntity.end() ? it->second : nullptr;
-        // É3: DOWNED reads as not-alive-for-combat — the attacker
+        // DOWNED reads as not-alive-for-combat — the attacker
         // disengages instead of beating a kneeling ally/enemy.
         if (!npc.combatTarget.is_alive() || !targetNpc || targetNpc->dead ||
             targetNpc->downed) {
@@ -210,14 +210,14 @@ bool NpcCombatController::update(
     const bool entityTarget = npc.combatTarget.id() != 0 && ctx.playMode;
     if (!entityTarget &&
         !((npc.hostile || wanted) && ctx.playMode && ctx.player)) {
-        return false; // the exact pre-É2 gate (iso-behavior)
+        return false; // the exact pre-gate (iso-behavior)
     }
     bool inCombat = false;
     auto& transform = npc.entity.get_mut<world::Transform>();
     const auto& npcSys = npc.entity.get<gameplay::AbilitySystem>();
-    // É2: resolve the frame's CombatTarget. The PLAYER path keeps every
+    // Resolve the frame's CombatTarget. The PLAYER path keeps every
     // historical read byte-for-byte (perception cone + LOS + the state
-    // machine + the B3 help shout). An ENTITY target is already KNOWN —
+    // machine + the help shout). An ENTITY target is already KNOWN —
     // it was adopted from a landed hit on the bus — so there is no
     // vision cone and no perception mutation; the LOS raycast still
     // gates strikes/approach so walls keep mattering.
@@ -269,7 +269,7 @@ bool NpcCombatController::update(
         const world::AwareState wasAware = world::awareState(perception);
         world::updatePerception(perception, canSee, target.position, dt);
         aware = world::awareState(perception);
-        // B3: entering Alert shouts — a bus event for listeners, and
+        // Entering Alert shouts — a bus event for listeners, and
         // same-faction allies in earshot join the hunt.
         if (aware == world::AwareState::Alert &&
             wasAware != world::AwareState::Alert) {
@@ -297,11 +297,11 @@ bool NpcCombatController::update(
         schedule.releaseFurniture(ctx, npc); // D1: combat stands him up
         npc.attackCooldown -= dt;
         npc.repathTimer -= dt;
-        // FOLLOWERS É6: an active follower tries his special power (the
+        // An active follower tries his special power (the
         // class-perk ability) — self-buff or ally heal per combat style;
         // tryActivate's cost/cooldown effects are the real gate.
         tryUsePower(dt, ctx, npc, npcByEntity);
-        // A7+: an archer's quiver is REAL — the loadout rolls his
+        // An archer's quiver is REAL — the loadout rolls his
         // arrows and each shot consumes one. Dry (or no Inventory
         // at all) = no ranged option: the reach collapses to melee
         // so the combat brain closes in and clubs with the bow.
@@ -314,13 +314,13 @@ bool NpcCombatController::update(
                     npc.entity.get<gameplay::Inventory>(),
                     npcWeapon->ammo) <= 0;
         }
-        // P0 A6: the engagement distances come from the WEAPON
+        // The engagement distances come from the WEAPON
         // (§5 moddable) — a spear-armed NPC stands off further
         // than a knife mugger, no code change.
         const f32 reach =
             npcWeapon && !quiverDry ? npcWeapon->reach : 2.1f;
         const f32 attackRange = glm::max(reach - 0.3f, 0.8f);
-        // P0 A3: a swing in flight roots the NPC (the clip plays
+        // A swing in flight roots the NPC (the clip plays
         // out; the blade does the hitting below).
         const bool swinging =
             npc.entity.get<gameplay::MeleeSwing>().phase !=
@@ -328,7 +328,7 @@ bool NpcCombatController::update(
         Vec3 toTarget = target.position - transform.position;
         toTarget.y = 0.0f;
         const f32 targetDistance = glm::length(toTarget);
-        // B3: the whole behavior choice is ONE sim-pure function
+        // The whole behavior choice is ONE sim-pure function
         // (gameplay/combat/CombatAi) — this block only executes
         // the move it returns.
         const f32 maxHealth = glm::max(
@@ -377,7 +377,7 @@ bool NpcCombatController::update(
                 move = *npc.brainMove;
             }
         }
-        // FOLLOWERS É6: a "healer" holds a SUPPORT band instead of
+        // A "healer" holds a SUPPORT band instead of
         // closing in — Strike/Approach re-route onto the existing
         // strafe/flee machinery around healerPreferredDistance (the
         // archer-band idea; docs/FOLLOWERS.md §7 tactical roles). Only
@@ -399,7 +399,7 @@ bool NpcCombatController::update(
                            : gameplay::CombatMove::Strafe;
             }
         }
-        // Intent trace (dev report 2026-07-12: a bow-band strafe reads
+        // Intent trace (a bow-band strafe reads
         // as a flee from the outside) — one line per TRANSITION, with
         // the health fraction so a real flee is self-explaining.
         if (npc.combatMove != move) {
@@ -417,7 +417,7 @@ bool NpcCombatController::update(
             break;
         case gameplay::CombatMove::Strafe:
             strafe(dt, ctx, npc, transform, toTarget, targetDistance,
-                   strafeRange, strafeReach); // É6: the healer's wide band
+                   strafeRange, strafeReach); // The healer's wide band
             break;
         case gameplay::CombatMove::Flee:
             flee(dt, ctx, npc, transform, toTarget, targetDistance);
@@ -442,12 +442,12 @@ void NpcCombatController::strike(const NpcContext& ctx, Npc& npc,
     npc.yaw = std::atan2(toTarget.x, toTarget.z);
     transform.rotation = glm::angleAxis(
         npc.yaw, Vec3 { 0.0f, 1.0f, 0.0f });
-    // É2: god mode shields the PLAYER only — an adopted entity target
-    // has no such armor (identical to the pre-É2 line when the target
+    // God mode shields the PLAYER only — an adopted entity target
+    // has no such armor (identical to the pre-line when the target
     // is the player: target.alive == playerEntity.is_alive()).
     const bool shielded =
         target.entity == ctx.playerEntity && ctx.godMode;
-    // P0 A3: instant damage became an ability-gated
+    // Instant damage became an ability-gated
     // MeleeSwing — the Sword_Attack clip carries the
     // hand, and the blade must TOUCH (updateSwing).
     if (!swinging && npc.attackCooldown <= 0.0f &&
@@ -471,7 +471,7 @@ void NpcCombatController::strike(const NpcContext& ctx, Npc& npc,
                 npc.entity
                     .get_mut<gameplay::MeleeSwing>());
             // Pause between swings: the weapon's field, or
-            // the melee fallback when unset (R7).
+            // the melee fallback when unset.
             npc.attackCooldown =
                 npcWeapon->attackCooldown > 0.0f
                     ? npcWeapon->attackCooldown
@@ -485,8 +485,8 @@ void NpcCombatController::fireArrow(const NpcContext& ctx, Npc& npc,
                                     world::Transform& transform,
                                     const data::WeaponForm& npcWeapon,
                                     const Vec3& targetPos) {
-    // A7: an ARCHER — loose from the chest at
-    // the target's chest (player or É2 entity
+    // An ARCHER — loose from the chest at
+    // the target's chest (player or entity
     // target alike), with a hair of spread
     // (deterministic combat RNG, §8).
     gameplay::Projectile arrow;
@@ -509,7 +509,7 @@ void NpcCombatController::fireArrow(const NpcContext& ctx, Npc& npc,
     arrow.shooter = npc.entity.id();
     arrow.payload = gameplay::weaponDamageEvent(
         npcWeapon, npc.entity.get<gameplay::AbilitySystem>());
-    // A7+: the shot spends an arrow from HIS
+    // The shot spends an arrow from HIS
     // inventory (quiverDry gated above); planted
     // arrows stay loot for whoever walks by.
     arrow.ammoItem = npcWeapon.ammo;
@@ -521,7 +521,7 @@ void NpcCombatController::fireArrow(const NpcContext& ctx, Npc& npc,
             npcWeapon.ammo);
     }
     ctx.projectiles->spawn(arrow);
-    // Pause between shots: the weapon's field, or the ranged fallback (R7).
+    // Pause between shots: the weapon's field, or the ranged fallback.
     npc.attackCooldown = npcWeapon.attackCooldown > 0.0f
                              ? npcWeapon.attackCooldown
                              : 2.2f;
@@ -564,7 +564,7 @@ void NpcCombatController::strafe(f32 dt, const NpcContext& ctx, Npc& npc,
 void NpcCombatController::flee(f32 dt, const NpcContext& ctx, Npc& npc,
                                world::Transform& transform,
                                const Vec3& toTarget, f32 targetDistance) {
-    // Flee through the NAVIGATOR (dev report 2026-07-12:
+    // Flee through the NAVIGATOR (
     // direct steering ran straight through buildings) —
     // path to a spot away from the target, repathed as
     // the flight goes on; obstacles are its job.
@@ -573,7 +573,7 @@ void NpcCombatController::flee(f32 dt, const NpcContext& ctx, Npc& npc,
             ? -toTarget / targetDistance
             : Vec3 { std::sin(npc.yaw), 0.0f,
                      std::cos(npc.yaw) };
-    // A broken fighter RUNS (dev feel pass): cancel the
+    // A broken fighter RUNS: cancel the
     // NPC walk factor so he flees at full jog speed —
     // solidly inside the run anim's threshold.
     const f32 runScale =
@@ -608,7 +608,7 @@ void NpcCombatController::approach(f32 dt, const NpcContext& ctx, Npc& npc,
                                    const Vec3& lastKnownPos,
                                    world::AwareState aware) {
     // Hunt the target while seen; investigate the last
-    // known position otherwise (B2).
+    // known position otherwise.
     const Vec3 goal =
         canSee ? targetPos : lastKnownPos;
     Vec3 toGoal = goal - transform.position;
@@ -640,13 +640,13 @@ void NpcCombatController::updateSwing(
     f32 dt, const NpcContext& ctx, Npc& npc,
     const data::WeaponForm* npcWeapon, bool playerSneaking,
     const std::unordered_map<u64, Npc*>& npcByEntity) {
-    // P0 A3/A4: the swing machine + the blade-touch hit (the SAME
+    // The swing machine + the blade-touch hit (the SAME
     // MeleeSwing code path as the player). The clip's authored
     // HitOpen/HitClose events override the data windows; the hit
     // segment is the VISIBLE blade — world x hand joint x +Y, exactly
-    // what extract() draws — against the DEFENDER's capsule. É2: the
+    // what extract() draws — against the DEFENDER's capsule. : the
     // defender is the combat target — the player by default (every
-    // pre-É2 read intact: godMode gate, sneak capsule, dodge i-frames),
+    // pre-read intact: godMode gate, sneak capsule, dodge i-frames),
     // the adopted entity otherwise (godMode and dodging are PLAYER
     // concepts; NPCs don't dodge yet).
     auto& swing = npc.entity.get_mut<gameplay::MeleeSwing>();
@@ -660,7 +660,7 @@ void NpcCombatController::updateSwing(
         };
         gameplay::updateSwing(swing, dt, timing);
         if (swing.phase == gameplay::SwingPhase::Idle) {
-            // A5: the guard window between swings — ONE roll per
+            // The guard window between swings — ONE roll per
             // window, on the seeded engine RNG (§8).
             npc.blocking = ctx.combatRng.chance(
                 static_cast<f64>(ctx.statsTuning.npcBlockChance));
@@ -682,7 +682,7 @@ void NpcCombatController::updateSwing(
             npc.entity.get<gameplay::FollowerState>().followerActive;
         const bool defenderValid =
             entityTarget ? (defenderNpc && !defenderNpc->dead &&
-                            !defenderNpc->downed) // É3: blades skip the downed
+                            !defenderNpc->downed) // Blades skip the downed
                          : (!followerActive && ctx.player &&
                             ctx.playerEntity.is_alive() && !ctx.godMode);
         if (swing.phase == gameplay::SwingPhase::Active &&
@@ -727,7 +727,7 @@ void NpcCombatController::updateSwing(
                 // The exchange rules (crit window, guard cone,
                 // perfect parry, events, cues) live in ONE place,
                 // resolveMeleeStrike, shared with the player side —
-                // and target-agnostic since R1 (É2 leans on that).
+                // and target-agnostic (leans on that).
                 gameplay::StatBlock defender {
                     defenderEntity.get_mut<gameplay::CoreAttributes>(),
                     defenderEntity.get_mut<gameplay::AttributeSet>(),
@@ -780,10 +780,10 @@ void NpcCombatController::updateSwing(
         }
     }
     npc.attacking = swing.phase != gameplay::SwingPhase::Idle;
-    // A5+: the guard clock — a player hit landing while this guard
+    // The guard clock — a player hit landing while this guard
     // is FRESH gets perfect-parried (applyHit reads guardSeconds).
     gameplay::tickGuard(swing, npc.blocking, dt);
-    // A5: mirror the guard onto the §6 tag vocabulary — the damage
+    // Mirror the guard onto the §6 tag vocabulary — the damage
     // paths (player applyHit, future sources) read State.Blocking,
     // never the Npc struct.
     gameplay::syncStateTag(

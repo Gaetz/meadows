@@ -39,7 +39,7 @@ void ClipTimelinePanel::drawEditor(const core::Guid& clipId) {
               });
 
     // View length: auto from the events (the real duration lives in the
-    // glTF — assumed 8.8 gap), overridable.
+    // glTF — a known, accepted gap), overridable.
     f32 maxTime = 0.0f;
     for (const auto& [id, event] : events) {
         maxTime = glm::max(maxTime, event->time);

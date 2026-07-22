@@ -47,7 +47,7 @@ class MeshCache;
 class TextureCache;
 
 // Per-frame view: everything the SIM side decides, passed by value/pointer —
-// the renderer never reads the scene (audit U4-2c, the Phase-5 seam's GPU
+// the renderer never reads the scene (the Phase-5 seam's GPU
 // half). Snapshot + view in, frames out.
 struct RenderView {
     render::Camera3D camera {};   // the frame's viewpoint (POD copy)
@@ -59,7 +59,7 @@ struct RenderView {
     f32 snowLine { 110.0f };
     f32 splatUvScale { 0.25f };
     Vec3 interiorAmbient { 0.16f, 0.15f, 0.14f };
-    // 7.8ter: the player's feet part the grass (Play mode only).
+    // The player's feet part the grass (Play mode only).
     bool grassBend { false };
     Vec3 playerFeet { 0.0f };
     // Residency caches (scene-owned — the editor and streaming share them).
@@ -71,8 +71,8 @@ struct RenderView {
     core::FrameProbe* probe { nullptr };
 };
 
-// The custom 3D landscape renderer, extracted from LandscapeScene (audit
-// U4-2c/U4-4/U4-6): owns the shader library, the render::* systems, every
+// The custom 3D landscape renderer, extracted from LandscapeScene:
+// owns the shader library, the render::* systems, every
 // GPU handle and the frame graph (shadow cascades, reflection, main pass,
 // water composite, post FX, tonemap). Consumes ONLY the RenderSnapshot and
 // the RenderView. The sim side reaches the world ground truth through
@@ -89,7 +89,7 @@ public:
     // the TOML sets where everything starts).
     void applyTuning(const data::LandscapeTuningForm& tuning,
                      const sptr<const render::HeightPatches>& patches);
-    // Tree builder (2026-07-20): the two *TreeTuningForm records mapped
+    // Tree builder: the two *TreeTuningForm records mapped
     // onto the generators' flat engine params (§4 seam, TerrainParams
     // pattern) — startup values; the Trees panel edits them live.
     void applyTreeTuning(const data::LobeTreeTuningForm& lobes,
@@ -108,7 +108,7 @@ public:
     // regen on slider release; "Log TOML" prints paste-ready records
     // (the §5 round trip until the editor's EditSession takes over).
     void drawTreeBuilderPanel();
-    // GPU-PERF P0: per-pass GPU/CPU budget table ("GPU Perf" window).
+    // Per-pass GPU/CPU budget table ("GPU Perf" window).
     // `cpuProbe` = the scene's FrameProbe for the CPU column (nullable).
     void drawPerfPanel(const core::FrameProbe* cpuProbe);
 
@@ -132,7 +132,7 @@ public:
     vector<u64>& sculptRemeshQueue() { return sculptDirtyChunks; }
     vector<u64>& sculptScatterQueue() { return sculptScatterChunks; }
 
-    // Chantier 2 B5: the lights-UBO capacity (the extract collects this
+    // The lights-UBO capacity (the extract collects this
     // many nearest LightSource entities into the snapshot).
     static constexpr u32 kMaxLights = 16;
 
@@ -162,7 +162,7 @@ private:
                          const RenderSnapshot& snapshot,
                          const RenderView& view,
                          rhi::BindGroupHandle casterGroup, bool refreshUbos);
-    // Brick 32: the water surface the camera sits under (submersion input).
+    // The water surface the camera sits under (submersion input).
     f32 effectiveWaterSurfaceY(const RenderSnapshot& snapshot,
                                const RenderView& view) const;
 
@@ -176,22 +176,21 @@ private:
     render::GpuOcclusion gpuOcclusion;
     bool gpuOcclusionUi { true }; // Hi-Z compute culling (A/B)
     std::unordered_set<u64> gpuOccluded;      // latest CONSUMED GPU verdict
-                                              // (persists while the P1 fence
+                                              // (persists while the readback fence
                                               // is pending — no stall)
     std::unordered_set<u64> combinedOccluded; // CPU horizon ∪ GPU Hi-Z
     vector<render::TerrainSystem::ChunkAabb> occlusionAabbs;
     vector<render::GpuOcclusion::Candidate> occlusionCandidates;
     render::ShadowMapper shadows;
-    // GPU-PERF P5c — CSM round-robin: cascade 0 renders every frame, the
+    // CSM round-robin (docs/GPU-PERF.md): cascade 0 renders every frame, the
     // far cascades alternate. A SKIPPED cascade keeps its previous
     // matrix (receiver and caster UBOs alike) so the stale depth still
     // matches; a sun step re-renders everything that frame.
     bool shadowRoundRobinUi { true };
-    // CSM sharpness (dev ask 2026-07-11): texels per cascade side —
+    // CSM sharpness: texels per cascade side —
     // recreate keyed on the applied value (the reflectionScale pattern).
-    // 4096 validated by the dev same day.
     i32 shadowResolutionUi { 4096 };
-    // GPU-PERF P3 — the planar reflection levers (baseline: 1.70 ms):
+    // The planar reflection levers:
     // auto-skip renders it only when a RESIDENT below-sea chunk is in
     // the frustum (edge case: sea at the horizon beyond the ring — the
     // A/B toggle exists for exactly that check), and the resolution
@@ -203,16 +202,16 @@ private:
     bool lastCascadesValid { false };
     u64 shadowFrame { 0 };
     render::WaterSystem water;
-    render::FxRenderer fx; // P0 C1: the CPU-particle pass
+    render::FxRenderer fx; // the CPU-particle pass
     render::PostFx postFx;
-    render::GpuProbe gpuProbe; // GPU-PERF P0: per-pass GPU budget
-    // Brick 33b/c: worker-baked terrain sun-shadow + sky-openness map.
+    render::GpuProbe gpuProbe; // per-pass GPU budget (docs/GPU-PERF.md)
+    // Worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;
     bool terrainLightUi { true };
-    // Chantier RC (docs/RADIANCE-CASCADES.md): the GI voxel clipmap +
+    // The GI voxel clipmap (docs/RADIANCE-CASCADES.md) +
     // cascades; its tuning is the render panel's "Global illumination".
     render::RadianceCascades radianceCascades;
-    vector<render::RcBox> rcBoxes;     // per-frame injection lists (G3),
+    vector<render::RcBox> rcBoxes;     // per-frame injection lists,
     vector<render::RcLight> rcLights;  // reused to avoid re-allocations
     vector<render::VegetationSystem::GiProp> vegGiProps; // forests -> GI
     bool regenerateRequested { false };
@@ -228,23 +227,21 @@ private:
     bool cascadeDebugUi { false };
     bool reflectionsUi { true };
     bool shaftsUi { true };
-    bool contactShadowsUi { true }; // brick 33a
-    bool keyShadowUi { true };      // B2b (interiors)
+    bool contactShadowsUi { true };
+    bool keyShadowUi { true };      // interiors
     bool meshShadowCastersUi { true };
     // The hysteresis-quantized sun the shadow cascades follow (a
     // continuously rotating light re-bases the texel snap every frame —
     // crawling edges); lighting keeps the smooth skyState sun.
     Vec3 shadowSunDirection { 0.0f, 1.0f, 0.0f };
-    // Chantier 6 B3 (brick 28): analytical grade — ON by default since
-    // 2026-07-10 (dev call); the A/B checkbox remains.
-    // Off by default while the GI is tuned (dev 2026-07-11: the grade
-    // masks what the light bounces are doing; revisit later).
+    // Analytical grade — OFF by default while the GI is tuned (the
+    // grade masks what the light bounces are doing; revisit later);
+    // the A/B checkbox remains.
     bool gradingUi { false };
     f32 gradeVibranceUi { 0.3f };
     f32 gradeSplitToneUi { 0.35f };
     f32 gradeContrastUi { 1.06f };
-    // Chantier 6 B4 (brick 29): auto-exposure — ON by default since
-    // 2026-07-10 (dev call); the A/B checkbox remains.
+    // Auto-exposure — ON by default; the A/B checkbox remains.
     bool autoExposureUi { true };
     f32 autoExposureMinUi { 0.4f };
     f32 autoExposureMaxUi { 2.5f };
@@ -253,7 +250,7 @@ private:
 
     rhi::UniqueBuffer frameUbo;
     rhi::UniqueBindGroup frameBindGroup;
-    // Chantier 2 B5: local lights UBO (binding 5, same group as FrameUbo).
+    // Local lights UBO (binding 5, same group as FrameUbo).
     rhi::UniqueBuffer lightsUbo;
 
     // Chunks a sculpt changed, awaiting the safe-point rebuild in render().
@@ -264,19 +261,19 @@ private:
     rhi::UniqueSampler meshSampler;
     // Per-snapshot-entry GPU state (tiny N; instancing per model+material
     // is the planned next step of the contract — HORIZONTAL-PASS note).
-    // U4-4: Unique members — vector erase/clear frees the GPU state.
+    // Unique members — vector erase/clear frees the GPU state.
     struct MeshDraw {
         rhi::UniqueBuffer ubo;
         rhi::UniqueBindGroup group;
         rhi::TextureHandle boundTexture {}; // NON-owning (residency cache)
         core::Guid material {};
-        rhi::UniqueBindGroup casterGroup; // B2a: ubo at binding 4
+        rhi::UniqueBindGroup casterGroup; // ubo at binding 4
     };
     vector<MeshDraw> meshDraws;
     rhi::UniquePipeline meshPipeline;
     u64 meshShaderGeneration { 0 };
 
-    // U4-2b: per-NPC draw state, keyed by entity id, mark/swept against
+    // Per-NPC draw state, keyed by entity id, mark/swept against
     // snapshot.skinned (the lightShafts pattern).
     struct SkinnedDraw {
         u64 entityId { 0 };
@@ -284,13 +281,13 @@ private:
         rhi::UniqueBuffer paletteSsbo;
         rhi::UniqueBuffer modelUbo;
         rhi::UniqueBindGroup group;
-        rhi::UniqueBindGroup casterGroup; // B2a: ubo b4 + palette b2
+        rhi::UniqueBindGroup casterGroup; // ubo b4 + palette b2
     };
     vector<SkinnedDraw> skinnedDraws;
     rhi::UniquePipeline skinnedPipeline;
     u64 skinnedShaderGeneration { 0 };
 
-    // Brick 34 (chantier 7.1): dust light shafts — one small additive
+    // Dust light shafts — one small additive
     // blade-prism per shaft light, rebuilt when its direction moves.
     struct LightShaft {
         u64 entityId { 0 };
@@ -304,7 +301,7 @@ private:
     vector<LightShaft> lightShafts;
     rhi::UniquePipeline shaftPipeline;
     u64 shaftShaderGeneration { 0 };
-    // Brick 32 (chantier 7.4): placed water volumes — one alpha-blended
+    // Placed water volumes — one alpha-blended
     // surface quad per volume.
     struct WaterQuad {
         u64 entityId { 0 };
@@ -316,7 +313,7 @@ private:
     vector<WaterQuad> waterQuads;
     rhi::UniquePipeline waterVolumePipeline;
     u64 waterVolumeShaderGeneration { 0 };
-    // Brick 31 (chantier 7.7): procedural rain streaks + the top-down
+    // Procedural rain streaks + the top-down
     // occlusion depth (no rain under roofs) + global wetness.
     rhi::UniquePipeline rainPipeline;
     u64 rainShaderGeneration { 0 };
@@ -327,14 +324,14 @@ private:
     rhi::UniqueBindGroup rainCasterGroup;
     rhi::UniqueBindGroup rainReceiverGroup;
 
-    // Chantier 6 B2a: meshes + skinned NPCs cast into the sun cascades
+    // Meshes + skinned NPCs cast into the sun cascades
     // (depth-only pipelines; the model UBOs are re-used, one frame behind
     // for NPCs — invisible at shadow resolution).
     rhi::UniquePipeline meshCasterPipeline;
     rhi::UniquePipeline skinnedCasterPipeline;
     u64 meshCasterShaderGeneration { 0 };
     u64 skinnedCasterShaderGeneration { 0 };
-    // B2b (chantier 7.5): the interior key-light shadow — ONE perspective
+    // The interior key-light shadow — ONE perspective
     // depth layer from the castsShadow light nearest the camera.
     rhi::UniqueTexture keyShadowTex;
     rhi::UniqueFramebuffer keyShadowFb;
@@ -358,7 +355,7 @@ private:
     rhi::UniqueBindGroup reflectionBindGroup;
     rhi::UniqueSampler depthSampler; // nearest — depth must not filter
     rhi::UniqueSampler blitSampler;
-    // B4: one blit group per adaptation ping-pong side (binding 5 = the
+    // One blit group per adaptation ping-pong side (binding 5 = the
     // exposure texture the tonemap taps); [0] doubles as the only group
     // on the no-postFx fallback path.
     array<rhi::UniqueBindGroup, 2> blitBindGroups;

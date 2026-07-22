@@ -10,11 +10,11 @@
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 
-// Chantier « propreté P0 » R1 — the ONE strike resolution shared by the
+// The ONE strike resolution shared by the
 // player, the NPCs and the arrows: crit window, guard cone, perfect
-// parry, empty-guard punish, event dispatch and cue selection. These
-// exchange rules used to live copy-pasted in two frontend controllers,
-// untested; the extraction is what makes them testable.
+// parry, empty-guard punish, event dispatch and cue selection. A single
+// owner keeps the two camps' exchange rules from drifting; extracting it
+// from the frontend controllers is what makes them testable here.
 
 using namespace gameplay;
 
@@ -256,7 +256,7 @@ TEST_CASE("humanoid capsule: one shared shape, crouched = half height") {
 }
 
 TEST_CASE("strike: sneak attack multiplies only when sneaking AND unaware") {
-    // Furtivité leftover (2026-07-13): State.Sneaking attacker + a
+    // A State.Sneaking attacker + a
     // defender whose Perception never left Calm (the caller passes the
     // flat targetUnaware bool) -> every channel x sneakAttackMultiplier.
     Duel d;

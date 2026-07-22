@@ -4,7 +4,7 @@
 
 #include "world/ai/Perception.hpp"
 
-// Chantier P0 B2 — the perception state machine, sim-pure: the vision
+// The perception state machine, sim-pure: the vision
 // cone, sight memory (Alert -> Searching -> Calm), and hearing.
 
 using world::AwareState;

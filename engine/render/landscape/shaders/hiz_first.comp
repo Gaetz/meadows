@@ -1,6 +1,6 @@
 #version 460 core
 
-// Hi-Z pyramid, level 0 (brick 26): half-res MAX-depth reduction of the
+// Hi-Z pyramid, level 0: half-res MAX-depth reduction of the
 // scene depth snapshot. Max (not min) because the cull asks "is the chunk's
 // nearest point farther than EVERYTHING drawn over its footprint?" — only a
 // conservative max keeps false culls impossible. The 3x3 clamped fetch

@@ -2,7 +2,7 @@
 
 #include "data/forms/Form.hpp"
 
-// The world data model (Phase 2, brick c). These are ordinary Forms — reflected,
+// The world data model. These are ordinary Forms — reflected,
 // moddable, resolved by the §5 plugin resolver like any other record. A placed
 // instance (ReferenceForm) is therefore a Form too, so placement, move, disable
 // and (later) saves are all field-level patches through the existing resolver
@@ -19,8 +19,7 @@ namespace world {
 struct WorldspaceForm : data::Form {
     f32 cellSize { 16.0f };
     bool interior { false };
-    // Chantier P0 D2a (appended — ordinals stable): the hard death
-    // floor — an actor below it dies outright (dev: mort franche).
+    // The hard death floor — an actor below it dies outright.
     f32 killZ { -200.0f };
 
     REFLECT_BEGIN(WorldspaceForm, data::Form)
@@ -48,7 +47,7 @@ struct CellForm : data::Form {
     REFLECT_END()
 };
 
-// Implicit cells (chantier IMPLICIT-CELLS, brick 1): the DETERMINISTIC
+// Implicit cells: the DETERMINISTIC
 // identity of grid square (gx, gy) in a worldspace — derived, never
 // minted (§2.5). Every session, save and mod that touches the same
 // square talks about the same cell, whatever the load order. Editors
@@ -68,12 +67,12 @@ struct ReferenceForm : data::Form {
     Vec3 scale { 1.0f, 1.0f, 1.0f };
     bool enabled { true };
     i32 count { 1 };
-    // Prefab membership (H1, appended — ordinals stable). A reference with
+    // Prefab membership. A reference with
     // `prefab` set is a TEMPLATE child of that PrefabForm: its transform is
     // relative to the prefab pivot, it belongs to no cell, and the
     // CellLoader never spawns it directly. Placing a reference whose
     // baseForm IS a PrefabForm instantiates every template child with a
-    // deterministic derived guid (see Spawner, H8).
+    // deterministic derived guid (see Spawner).
     core::Guid prefab;
 
     REFLECT_BEGIN(ReferenceForm, data::Form)
@@ -88,7 +87,7 @@ struct ReferenceForm : data::Form {
     REFLECT_END()
 };
 
-// A reusable group of references (H1). The form itself is just the group's
+// A reusable group of references. The form itself is just the group's
 // identity: its content is every ReferenceForm whose `prefab` points here
 // (child-record convention, data::childrenOf). Authoring lives in the
 // level editor ("create prefab from selection"); nesting = a template
@@ -129,7 +128,7 @@ struct TriggerForm : data::Form {
     REFLECT_END()
 };
 
-// A traversable door (chantier 2 B7). Visual through the universal
+// A traversable door. Visual through the universal
 // reflected model/material wiring (like StaticForm); `targetMarker` is the
 // GUID of a placed marker REFERENCE (a ReferenceForm record) — the arrival
 // spot. Its record carries position AND cell, whose CellForm names the
@@ -153,7 +152,7 @@ struct DoorForm : data::Form {
     REFLECT_END()
 };
 
-// An authored terrain override (chantier 2 B8): one record per sculpted
+// An authored terrain override: one record per sculpted
 // 64 m terrain chunk, pointing at a `.ter` delta-grid ASSET (reflection is
 // flat — grids never live in Forms). Final height = procedural noise +
 // bilinear(delta). Mods override the grid by shipping the asset guid (§5

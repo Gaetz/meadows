@@ -16,7 +16,7 @@ namespace render {
 
 class ShaderLibrary;
 
-// Hi-Z GPU occlusion culling (brick 26, compute stage — the first compute
+// Hi-Z GPU occlusion culling (docs/3D-RENDERER.md — the first compute
 // user in the engine). Each frame, after the opaque pass snapshots the
 // scene depth:
 //   1. hiz_first/hiz_down build a half-res MAX-depth pyramid in compute
@@ -89,7 +89,7 @@ private:
     // Candidates submitted last run, matched to the readback order.
     vector<u64> pendingKeys;
     u32 lastOccluded { 0 };
-    // P1: signals when the staging copy landed; collectResults reads only
+    // Signals when the staging copy landed; collectResults reads only
     // then (no CPU stall), run() skips while it is pending (back-pressure).
     rhi::FenceHandle fence {};
 };

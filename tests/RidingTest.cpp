@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 
-#include "gameplay/actors/Riding.hpp" // FOLLOWERS É11 (tech proof)
+#include "gameplay/actors/Riding.hpp"
 
 using gameplay::RideState;
 using gameplay::stepRide;

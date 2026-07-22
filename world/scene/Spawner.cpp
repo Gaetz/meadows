@@ -36,12 +36,12 @@ void spawnLight(SpawnContext&, ecs::Entity entity, const data::Form& base,
     source.radius = light.radius;
     source.spotAngle = light.kind == "spot" ? light.spotAngle : 0.0f;
     source.flicker = light.flicker;
-    source.shaft = light.shaft; // brick 34
+    source.shaft = light.shaft;
     source.shaftLength = light.shaftLength;
     source.shaftSoftness = light.shaftSoftness;
     source.dustDensity = light.dustDensity;
     source.sunLinked = light.sunLinked;
-    source.castsShadow = light.castsShadow; // B2b
+    source.castsShadow = light.castsShadow;
     entity.set<LightSource>(source);
 }
 
@@ -57,7 +57,7 @@ void spawnMarker(SpawnContext&, ecs::Entity entity, const data::Form& base,
     entity.set<MarkerKind>({ marker.kind });
 }
 
-// Chantier 2 B7: doors get their visual from the universal model/material
+// Doors get their visual from the universal model/material
 // wiring; the category hook only adds the travel target.
 void spawnDoor(SpawnContext&, ecs::Entity entity, const data::Form& base,
                const reflect::TypeInfo&) {
@@ -177,7 +177,7 @@ ecs::Entity Spawner::spawn(SpawnContext& ctx, const ReferenceForm& reference,
                 }
                 ReferenceForm derived = child;
                 derived.id = core::Guid::combine(reference.id, child.id);
-                // Chantier 5 B7: a SAVE materializes a touched derived
+                // A SAVE materializes a touched derived
                 // child as a real record under this same guid (a patch to
                 // a record no plugin creates would be dropped as an
                 // orphan). When that record exists in the database, IT is

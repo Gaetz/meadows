@@ -144,7 +144,7 @@ TEST_CASE("condition: gates ability activation through AbilityContext.eval") {
     CHECK_FALSE(tryActivate(form, attributes, system, attributes, system, ctx)); // 10 < 50
 }
 
-// 8.9 — the editor's one-line clause reading (shared by the condition
+// The editor's one-line clause reading (shared by the condition
 // builder and the dialogue hierarchy).
 TEST_CASE("conditionSummary reads every kind, negate included") {
     ConditionForm clause;

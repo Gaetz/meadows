@@ -6,7 +6,7 @@
 
 // CPU mesh data, shared by the asset loaders (GltfMesh) and the renderer's
 // mesh builders. Home is engine/assets/ so the loaders never include
-// engine/render/ (audit U1-08 — the HeightPatches precedent, U7-1). The
+// engine/render/ (same dependency direction as HeightPatches). The
 // namespace stays `render` to avoid churning every consumer; these are plain
 // CPU structs with no GPU dependency.
 
@@ -28,7 +28,7 @@ struct MeshData {
     vector<u32> indices;
 };
 
-// Skinned variant (chantier 1, B2): the static layout + joint influences.
+// Skinned variant: the static layout + joint influences.
 // Joints ride as floats because the RHI's vertex formats are float-only —
 // exact up to 2^24 joints, i.e. forever. Matches skinned.vert locations
 // 0..5; the bone palette itself is an SSBO, not a vertex stream.

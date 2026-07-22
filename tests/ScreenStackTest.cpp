@@ -2,7 +2,7 @@
 
 #include "game/ScreenStack.hpp"
 
-// Chantier 4 B1: the pure screen-stack logic behind the RmlUi screens.
+// The pure screen-stack logic behind the RmlUi screens.
 
 namespace {
 

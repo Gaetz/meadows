@@ -63,7 +63,7 @@ RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures) {
     return snapshot;
 }
 
-// Mesh section (H8): composed world transforms + resource guids only.
+// Mesh section: composed world transforms + resource guids only.
 // The 3D frontend resolves guids through its residency caches (§7:
 // pending assets draw placeholders, never block).
 void extractMeshes(const ecs::World& world, RenderSnapshot& out) {

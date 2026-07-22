@@ -107,7 +107,7 @@ PluginStack loadPluginStack(const std::filesystem::path& directory,
         }
         auto plugin = loadPluginFile(directory / entry.file, types);
         if (!plugin) {
-            // U1-03: carry the parse reason to the plugin panel.
+            // Carry the parse reason to the plugin panel.
             stack.errors.push_back(entry.file + ": " + plugin.error());
             continue; // resolve proceeds without it — never fatal (§5)
         }

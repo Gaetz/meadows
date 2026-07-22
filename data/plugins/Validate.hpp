@@ -4,7 +4,7 @@
 #include "data/plugins/Record.hpp"
 #include "data/plugins/Resolver.hpp"
 
-// Plugin/mod lint (J-catalogue "Validation de mods", 2026-07-13): one
+// Plugin/mod lint: one
 // reusable pass over a load order — resolve through THE §5 resolver (its
 // report already carries orphan patches, dependency violations and the
 // per-field conflicts), then a reflection-driven sweep for DANGLING GUID

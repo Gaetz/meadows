@@ -17,16 +17,16 @@ enum class Key : u16 {
     Space, Enter, Escape,
     E, F, Q, Shift, Ctrl,
     Num1, Num2, Num3, Num4, Num5,
-    // UI keys (chantier 4): text editing + game-screen hotkeys.
+    // UI keys: text editing + game-screen hotkeys.
     Tab, Backspace, Delete, Home, End, PageUp, PageDown,
     I, T,
-    J, // quest journal (chantier 6)
-    R, // draw/sheathe the weapon (P0 combat)
-    M, // the in-game map (chantier 9)
+    J, // quest journal
+    R, // draw/sheathe the weapon
+    M, // the in-game map
     // Option on macOS, Alt elsewhere. Either side reports down (see
     // Input::update) — it is a modifier, not a handed key. Used by the
     // editor/spectator camera as the Alt+LMB stand-in for the right
-    // button (macOS trackpads, dev pick 2026-07-22).
+    // button (macOS trackpads).
     Alt,
     Count
 };
@@ -37,7 +37,7 @@ enum class MouseButton : u8 {
     Count
 };
 
-// Logical gamepad buttons (chantier 9) — Xbox naming over SDL_Gamepad's
+// Logical gamepad buttons — Xbox naming over SDL_Gamepad's
 // positional layout, mapped in the .cpp (§3.1: the header stays
 // platform-clean). The triggers are analog axes; past a threshold they
 // ALSO read as logical buttons, so bindings can treat them like any
@@ -65,7 +65,7 @@ public:
     bool isDown(Key key) const;     // held this frame
     bool wasPressed(Key key) const; // edge: down this frame, up last frame
 
-    // --- Gamepad (chantier 9) — ONE active pad, hotplugged ------------------
+    // --- Gamepad — ONE active pad, hotplugged --------------------------------
     // handleEvent opens the first pad that appears and follows removal;
     // update() polls it like the keyboard. All dead when no pad is on.
     bool padConnected() const;
@@ -90,7 +90,7 @@ public:
     bool mousePressed(MouseButton button) const;  // edge: down this, up last
     bool mouseReleased(MouseButton button) const; // edge: up this, down last
 
-    // --- Event-fed channel (chantier 4, game UI) -----------------------------
+    // --- Event-fed channel (game UI) -----------------------------------------
     // Engine's event hook feeds raw platform events here during pumpEvents;
     // update() then publishes what accumulated as this frame's data. Unlike
     // the polled snapshot above, this preserves ordering and OS key repeat —
@@ -113,7 +113,7 @@ private:
     Vec2 mousePos {};      // screen pixels
     Vec2 mouseDeltaPx {};  // pixels moved since last update()
 
-    // Gamepad state (chantier 9). The handle is opaque (§3.1: no SDL type
+    // Gamepad state. The handle is opaque (§3.1: no SDL type
     // in this header); id tracks which device we own for hotplug removal.
     array<bool, static_cast<size_t>(PadButton::Count)> padCurrent {};
     array<bool, static_cast<size_t>(PadButton::Count)> padPrevious {};
@@ -134,7 +134,7 @@ private:
     f32 frameWheel { 0.0f };
 };
 
-// The RADIAL stick deadzone (chantier 9): kills drift below `zone`, then
+// The RADIAL stick deadzone: kills drift below `zone`, then
 // rescales the live band to 0..1 so full deflection stays reachable and
 // the response has no step at the zone edge. Pure — doctested (tests
 // have no SDL; this is the testable half of the gamepad channel).

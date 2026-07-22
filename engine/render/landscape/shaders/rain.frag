@@ -1,7 +1,7 @@
 #version 460 core
 #include "common.glsl"
 
-// Brick 31 — rain streak: a soft translucent sliver tinted by the sky.
+// Rain streak: a soft translucent sliver tinted by the sky.
 
 layout(location = 0) in float vAlpha;
 layout(location = 0) out vec4 fragColor;

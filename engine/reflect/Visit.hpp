@@ -6,7 +6,7 @@
 
 // One place to type-dispatch a reflect::Value. Every system that must act
 // per-FieldKind (binary/TOML serialization, the editor property grid, the
-// console, the Lua bridge) used to hand-write the same 11-case `switch` with
+// console, the Lua bridge) would otherwise hand-write the same 11-case `switch` with
 // redundant std::get<> — and, crucially, WITHOUT a default, so adding a new
 // FieldKind silently skipped a case and could corrupt a cooked plugin or save.
 //

@@ -13,7 +13,7 @@ namespace data {
 //
 // Error policy — mod data is untrusted (§5):
 //   - malformed TOML / missing [plugin] header: fatal for THIS plugin —
-//     the Result carries the reason (U1-03: the plugin panel / cooker /
+//     the Result carries the reason (the plugin panel / cooker /
 //     save loader can show WHY, not just "failed");
 //   - unknown record type, bad guid, unknown field, kind mismatch:
 //     logged warning, the record/field is skipped, loading continues.

@@ -94,7 +94,7 @@ void GpuOcclusion::destroyPyramid(rhi::Device& device) {
 }
 
 void GpuOcclusion::destroy(rhi::Device& device) {
-    device.destroyFence(fence); // P1: abandon an in-flight verdict
+    device.destroyFence(fence); // abandon an in-flight verdict
     fence = {};
     destroyPyramid(device);
     device.destroyBuffer(stagingBuffer);
@@ -179,7 +179,7 @@ void GpuOcclusion::collectResults(rhi::Device& device,
         lastOccluded = 0;
         return;
     }
-    // P1: the verdict buffer is read ONLY once its fence signals —
+    // The verdict buffer is read ONLY once its fence signals —
     // glGetBufferSubData on a still-in-flight buffer stalls the CPU until
     // the GPU catches up (~25 ms mainPass spikes). While pending, the
     // caller keeps the PREVIOUS verdict (occluded left untouched): the
@@ -211,7 +211,7 @@ void GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
         return;
     }
     if (fence.id != 0) {
-        // P1 back-pressure: the previous verdict has not been consumed yet
+        // Back-pressure: the previous verdict has not been consumed yet
         // (its fence is still pending) — re-dispatching would overwrite the
         // staging buffer mid-read window. Skip; the ring re-runs next frame.
         return;
@@ -272,7 +272,7 @@ void GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
     cmd.dispatch((count + 63) / 64);
     cmd.memoryBarrier(); // SSBO writes visible to the copy
     cmd.copyBuffer(visibilityBuffer, stagingBuffer, count * sizeof(u32));
-    // P1: marker after the copy — collectResults reads only once this
+    // Marker after the copy — collectResults reads only once this
     // signals (never blocks the frame on the GPU catching up).
     fence = device.insertFence();
 }

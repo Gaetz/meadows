@@ -5,10 +5,10 @@
 //   cooker new-guid   [count]               mint authoring guids
 //   cooker import-csv <in.csv> <out.toml> <FormType> [pluginGuid]
 //                     [--patch <targetPluginGuid>]
-//                     spreadsheet -> ordinary plugin (U4-11); with --patch,
+//                     spreadsheet -> ordinary plugin; with --patch,
 //                     rows become §5 patches on the target plugin's records
-//                     (language packs, C9.5)
-//   cooker validate   <plugin.toml...>       mod lint (2026-07-13): loads
+//                     (language packs)
+//   cooker validate   <plugin.toml...>       mod lint: loads
 //                     the plugins IN ARGUMENT ORDER, resolves, and reports
 //                     orphan patches, dependency violations, dangling guid
 //                     references (reflection sweep) and field conflicts
@@ -61,7 +61,7 @@ int usage() {
     return 2;
 }
 
-// Authored-terrain helper (chantier 2 B6/B8): computes the delta grid that
+// Authored-terrain helper: computes the delta grid that
 // levels a rectangle of the DEMO terrain (default TerrainParams — matches
 // landscape.toml) to a target height, feathered over 3 m. The output .ter
 // ships as a plugin asset referenced by a TerrainPatchForm.
@@ -133,7 +133,7 @@ int cook(const char* inPath, const char* outPath,
          const data::FormTypeRegistry& types) {
     const auto plugin = data::loadPluginFile(inPath, types);
     if (!plugin) {
-        LOG_ERROR("cook failed: {}", plugin.error()); // U1-03: the reason
+        LOG_ERROR("cook failed: {}", plugin.error()); // the reason, not just "failed"
         return 1;
     }
     const vector<u8> bytes = data::writePluginBinary(*plugin);
@@ -146,7 +146,7 @@ int cook(const char* inPath, const char* outPath,
     return 0;
 }
 
-// U4-11: spreadsheet -> ordinary plugin. The default plugin guid derives
+// Spreadsheet -> ordinary plugin. The default plugin guid derives
 // from the output FILENAME so re-running the same import command yields
 // the same row identities; an explicit guid overrides (recommended once
 // the plugin ships — renaming the file then can't shift identities).
@@ -212,7 +212,7 @@ int importCsv(const char* inPath, const char* outPath, const char* typeName,
     return 0;
 }
 
-// Mod lint (J-catalogue, 2026-07-13): the reusable data::validatePlugins
+// Mod lint: the reusable data::validatePlugins
 // pass behind a CLI a mod CI can gate on.
 int validate(int argc, char** argv, const data::FormTypeRegistry& types) {
     vector<data::Plugin> plugins;
@@ -259,7 +259,7 @@ int validate(int argc, char** argv, const data::FormTypeRegistry& types) {
                   ref.target.toString());
     }
     // Conflicts are §5 layering facts, not errors — the synthesis tool
-    // (8.5) arbitrates them; here they are surfaced for information.
+    // (§5.1) arbitrates them; here they are surfaced for information.
     for (const data::FieldConflict& conflict : report.resolve.conflicts) {
         str writers;
         for (const data::FieldWrite& write : conflict.writers) {
@@ -316,7 +316,7 @@ int main(int argc, char** argv) {
         int count = 1;
         if (argc >= 3) {
             // atoi returns 0 on garbage and anything on overflow — bound it
-            // instead of looping on whatever the shell passed (audit U8-10).
+            // instead of looping on whatever the shell passed.
             count = std::atoi(argv[2]);
             if (count < 1 || count > 1000) {
                 std::fprintf(stderr,
@@ -335,7 +335,7 @@ int main(int argc, char** argv) {
     // skip with a warning). Single source of truth: game::registerAllFormTypes
     // — the same aggregator the game exe uses, compiled into the cooker (see
     // tools/CMakeLists.txt). A family added there is cooked here for free; the
-    // two can no longer drift (audit U8-3, 2026-07-08).
+    // two can no longer drift.
     data::FormTypeRegistry types;
     game::registerAllFormTypes(types);
 

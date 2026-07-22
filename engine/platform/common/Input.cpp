@@ -69,7 +69,7 @@ int sdlButtonFor(MouseButton button) {
     return 0;
 }
 
-// Chantier 9: Xbox naming -> SDL_Gamepad's positional layout. The
+// Xbox naming -> SDL_Gamepad's positional layout. The
 // triggers are handled as axes below (they have no SDL button).
 SDL_GamepadButton sdlPadButtonFor(PadButton button) {
     switch (button) {
@@ -127,7 +127,7 @@ void Input::handleEvent(const void* nativeEvent) {
     case SDL_EVENT_MOUSE_WHEEL:
         pendingWheel += event->wheel.y;
         break;
-    // Chantier 9: hotplug — the FIRST pad that appears becomes the
+    // Hotplug — the FIRST pad that appears becomes the
     // active one (SDL3 also fires ADDED for pads present at init);
     // its removal frees the slot for the next.
     case SDL_EVENT_GAMEPAD_ADDED:
@@ -183,7 +183,7 @@ void Input::update() {
         mouseCurrent[i] =
             (mask & SDL_BUTTON_MASK(sdlButtonFor(static_cast<MouseButton>(i)))) != 0;
     }
-    // Gamepad snapshot (chantier 9) — polled like the keyboard; all
+    // Gamepad snapshot — polled like the keyboard; all
     // dead when no pad is connected.
     padPrevious = padCurrent;
     if (auto* pad = static_cast<SDL_Gamepad*>(gamepad)) {

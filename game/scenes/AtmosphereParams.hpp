@@ -6,8 +6,8 @@ namespace game {
 
 // The scene's current atmospheric render state: the 19 sky/fog/weather-driven
 // parameters that render() consumes and that BOTH the manual sliders and the
-// weather crossfade write into. Grouped out of LandscapeScene (brick 3a) so a
-// WeatherController (brick 3b) can own the transition without reaching into the
+// weather crossfade write into. Grouped out of LandscapeScene so a
+// WeatherController can own the transition without reaching into the
 // scene's members. Field names and defaults mirror the former `*Ui` members;
 // they also mirror WeatherForm's fields (capture/apply convert between the two).
 struct AtmosphereParams {

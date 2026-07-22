@@ -10,9 +10,9 @@
 namespace gameplay {
 
 // A GameplayEffect definition (Form, moddable) — the ONLY way to change an
-// attribute (§2.9). Phase 3 keeps it flat: ONE modifier and ONE tag per slot
+// attribute (§2.9). Kept flat: ONE modifier and ONE tag per slot
 // (multi-modifier / multi-tag effects compose several effects; lists await the
-// reflection container story, Phase 8). Application is a fixed linear pipeline
+// reflection container story). Application is a fixed linear pipeline
 // (no node-graph); branching is expressed by required/blocked tags.
 struct EffectForm : data::Form {
     str attribute;              // target attribute field name ("health", "damage"…)
@@ -71,7 +71,7 @@ struct EffectForm : data::Form {
 
 struct StatusBuildup; // forward-declare for buildupType routing
 
-// Authoring lint (chantier 8.11 — the editor's EffectPanel): the
+// Authoring lint (the editor's EffectPanel): the
 // mistakes a hand-built effect silently makes. Pure, order-stable.
 vector<str> effectWarnings(const EffectForm& effect);
 

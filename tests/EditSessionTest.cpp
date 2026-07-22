@@ -126,7 +126,7 @@ TEST_CASE("undo/redo replay field edits and creations") {
     CHECK(session.view(created) != nullptr);
 }
 
-// Chantier 8.6 — the graph editors' "delete node": only session-created
+// The graph editors' "delete node": only session-created
 // drafts may go (§5: a plugin cannot delete a base record), and undo
 // restores the draft WITH its edited field values.
 TEST_CASE("removeCreated drops a session draft, refuses base, undo-safe") {
@@ -172,7 +172,7 @@ TEST_CASE("removeCreated drops a session draft, refuses base, undo-safe") {
     }
 }
 
-// Chantier 8.1 — the GameDB "duplicate" tool.
+// The GameDB "duplicate" tool.
 TEST_CASE("duplicate clones every field under a new guid, undo/redo safe") {
     data::FormTypeRegistry types;
     data::registerCoreFormTypes(types);
@@ -225,7 +225,7 @@ TEST_CASE("duplicate clones every field under a new guid, undo/redo safe") {
     CHECK(foundHot);
 }
 
-// Chantier 8.1 — the GameDB "used by" tool.
+// The GameDB "used by" tool.
 TEST_CASE("referencesTo finds every Guid field pointing at a form") {
     const core::Guid questId =
         *core::Guid::fromString("cccc0002-0000-4000-8000-000000000001");
@@ -257,9 +257,9 @@ TEST_CASE("referencesTo finds every Guid field pointing at a form") {
     CHECK(data::referencesTo(db, core::Guid::generate()).empty());
 }
 
-// Gesture grouping (dev bug 2026-07-10: '+ State' = create + setField,
-// and one Ctrl+Z un-parented the node instead of removing it — undo
-// left a half-created orphan).
+// Gesture grouping: '+ State' = create + setField;
+// without grouping, one Ctrl+Z would un-parent the node instead of
+// removing it — undo would leave a half-created orphan.
 TEST_CASE("a gesture undoes and redoes as ONE step") {
     data::FormTypeRegistry types;
     data::registerCoreFormTypes(types);

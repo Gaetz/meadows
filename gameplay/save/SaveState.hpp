@@ -5,7 +5,7 @@
 #include "engine/ecs/World.hpp" // ecs::Entity (flecs name confined to meadows-ecs)
 #include "gameplay/save/SaveForms.hpp"
 
-// Capture/apply between live actor state and save records (chantier 5).
+// Capture/apply between live actor state and save records.
 // Headless by construction: everything here reads/writes components and
 // Records — no scene, no renderer. The scene only decides WHEN (on cell
 // unload, on save, after spawn).
@@ -97,9 +97,9 @@ struct SavedActorRecords {
     vector<const SavedEffectForm*> effects;
     vector<const SavedItemForm*> items;
     vector<const SavedInjuryForm*> injuries;
-    vector<const SavedAbilityForm*> abilities; // FOLLOWERS É6 (appended)
-    vector<const SavedSkillForm*> skills;      // skills-by-use (appended)
-    vector<const SavedBountyForm*> bounties;   // per-faction crime (appended)
+    vector<const SavedAbilityForm*> abilities; // granted abilities
+    vector<const SavedSkillForm*> skills;      // skills-by-use
+    vector<const SavedBountyForm*> bounties;   // per-faction crime
 };
 void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
                      const GameplayTagRegistry& registry);

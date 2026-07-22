@@ -21,9 +21,9 @@ TEST_CASE("game clock: hours and days derive from game seconds") {
     CHECK(clock.gameDays() == doctest::Approx(1.0));
 }
 
-// --- The clock -> game-time-effects seam (audit U9-5) --------------------------------
-// tickGameTimeEffects itself is covered by AfflictionsTest/DrugsTest; what was
-// not covered is the CHAIN: advance() converts real dt at the timescale, that
+// --- The clock -> game-time-effects seam ---------------------------------------------
+// tickGameTimeEffects itself is covered by AfflictionsTest/DrugsTest; what
+// this locks is the CHAIN: advance() converts real dt at the timescale, that
 // gameDt drives game-time expiry, and the two tick paths stay watertight
 // (a game-time effect must never expire on REAL seconds and vice versa).
 

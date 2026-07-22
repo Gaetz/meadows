@@ -15,12 +15,12 @@ constexpr const char* kDownShader = "bloom_down";
 constexpr const char* kUpShader = "bloom_up";
 constexpr const char* kGodRaysShader = "godrays";
 constexpr const char* kVolumetricShader = "volumetric";
-// (Screen-space AO removed 2026-07-10 — dev call: the sampled hemisphere
+// (No screen-space AO — the sampled hemisphere
 // speckles, the depth mask halos, neither fits the stepped-ramp look.
 // Grounding = terrain light map + contact shadows + baked vertex AO.)
-constexpr const char* kContactShader = "contactshadow"; // brick 33a
+constexpr const char* kContactShader = "contactshadow";
 constexpr const char* kBlurShader = "postblur"; // contact jitter filter
-constexpr const char* kLuminanceShader = "luminance"; // brick 29
+constexpr const char* kLuminanceShader = "luminance"; // auto-exposure
 constexpr const char* kAdaptShader = "adapt";
 constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
 
@@ -203,7 +203,7 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
                       rhi::TextureFormat::RGBA16F);
     makeDepthGroup(volumetricGroup);
 
-    // Brick 33a: contact shadows — half-res march over the depth copy,
+    // Contact shadows — half-res march over the depth copy,
     // then the 3x3 blur (its IGN jitter needs the filter); the tonemap
     // taps the BLURRED target.
     makeHalfResTarget(contactTex, contactFb, rhi::TextureFormat::R16F);
@@ -215,7 +215,7 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
                          .texture = contactTex,
                          .sampler = linearSampler } } }) };
 
-    // Brick 29: auto-exposure — fixed 64² log-luminance pyramid + the two
+    // Auto-exposure — fixed 64² log-luminance pyramid + the two
     // 1×1 adaptation targets (ping-pong; adapt.frag snaps when the prev
     // side reads 0, so fresh targets need no seeding).
     luminanceTex = { device, device.createTexture(
@@ -269,7 +269,7 @@ void PostFx::renderContactShadows(rhi::CommandBuffer& cmd,
     cmd.setPipeline(contactPipeline);
     cmd.setBindGroup(0, frameBindGroup);
     if (shadowBindGroup.id != 0) {
-        // Dev ask 2026-07-11: the pass reads the CSM so contact and sun
+        // The pass reads the CSM so contact and sun
         // shadows COMBINE AS A MAX instead of multiplying (no double
         // darkening at shadowed feet) — see contactshadow.frag.
         cmd.setBindGroup(2, shadowBindGroup);
@@ -403,8 +403,7 @@ void PostFx::render(rhi::CommandBuffer& cmd,
         cmd.endRenderPass();
     }
 
-    // (Screen-space AO removed 2026-07-10 — the tonemap no longer taps
-    // an AO texture at all.)
+    // (No screen-space AO — the tonemap does not tap an AO texture.)
 }
 
 } // namespace render

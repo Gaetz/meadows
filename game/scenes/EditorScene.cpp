@@ -6,7 +6,7 @@
 #include <functional>
 
 #include <imgui.h>
-#include <imgui_internal.h> // DockBuilder (8.7b default layout)
+#include <imgui_internal.h> // DockBuilder (default layout)
 
 #include "data/forms/AnimForms.hpp"
 #include "data/forms/CoreForms.hpp"
@@ -35,7 +35,7 @@ namespace game {
 
 namespace {
 
-// Short display form of a reflected value (8.5: the conflict view shows
+// Short display form of a reflected value (the conflict view shows
 // what each plugin wrote). Distinct from PropertyGrid::valueToString, which
 // must stay round-trippable by valueFromString — here quotes and parentheses
 // are for human reading only. Exhaustive per kind (engine/reflect/Visit.hpp).
@@ -68,9 +68,9 @@ str valueRepr(const reflect::Value& value) {
     });
 }
 
-// 8.7b — the Browser's curated categories (dev-decided grouping): the
+// The Browser's curated categories: the
 // ones with a dedicated editing surface first, then the frequent Forms,
-// then "All types" (the ex-GameDB reflection browser) for everything
+// then "All types" (the generic reflection browser) for everything
 // else. A category is a Form type + which center editor serves it.
 struct EditorCategory {
     const char* name;
@@ -124,7 +124,7 @@ constexpr int kCategoryCount =
 } // namespace
 
 void EditorScene::onEnter() {
-    // The WHOLE game database: the shared registration site (chantier 4 B1).
+    // The WHOLE game database: the shared registration site.
     game::registerAllFormTypes(types);
 
     types.forEachType(
@@ -132,7 +132,7 @@ void EditorScene::onEnter() {
     std::sort(typeNames.begin(), typeNames.end());
 
     // Same stack as the game: data/plugins.toml over the data/ root
-    // (chantier 4 B1 — the editor edits exactly what the game runs).
+    // (the editor edits exactly what the game runs).
     pluginDir = platform::executableDir() / "data";
     if (const auto loaded =
             data::loadPluginConfigFile(pluginDir / "plugins.toml")) {
@@ -148,7 +148,7 @@ void EditorScene::onEnter() {
 }
 
 void EditorScene::reload() {
-    // Synchronous on purpose (audit U5-10, kept as-is): this is the dev
+    // Synchronous on purpose: this is the dev
     // GameDB editor — a blocking reload is simpler (§10) and safer than
     // async here (no world in flight, nothing to keep interactive).
     stack = data::loadPluginStack(pluginDir, config, types);
@@ -163,8 +163,8 @@ void EditorScene::reload() {
     dialogueGraph =
         std::make_unique<DialogueGraphPanel>(*session, layouts, selected);
     clipTimeline = std::make_unique<ClipTimelinePanel>(*session, selected);
-    // The asset VFS, layered like the game builds it (chantier 4 B1: the
-    // editor edits exactly what the game runs) — the anim preview resolves
+    // The asset VFS, layered like the game builds it (the editor edits
+    // exactly what the game runs) — the anim preview resolves
     // rigs and skinned meshes through it.
     assetDb = assets::AssetDatabase {};
     for (const data::Plugin& plugin : stack.plugins) {
@@ -210,7 +210,7 @@ void EditorScene::exportSessionPlugin() {
 }
 
 // ---------------------------------------------------------------------
-// 8.7b — the shell: ONE dockspace window, Unity-style. Browser | Editor
+// The shell: ONE dockspace window, Unity-style. Browser | Editor
 // | Inspector, menu bar on top; Plugins/Console toggle from the menu.
 
 void EditorScene::buildDockLayout(unsigned int dockIdIn) {
@@ -403,7 +403,7 @@ void EditorScene::drawBrowser() {
         ImGui::SameLine();
     }
     if (itemSelected.isValid()) {
-        // 8.1: clone into the session (children NOT copied).
+        // Clone into the session (children NOT copied).
         if (const data::Form* form = session->view(itemSelected)) {
             if (ImGui::Button("Duplicate")) {
                 const str baseName =
@@ -481,7 +481,7 @@ void EditorScene::drawEditor() {
 }
 
 // Non-graph types: what the record is + who points at it. The editing
-// itself happens in the Inspector grid (8.11 will grow dedicated
+// itself happens in the Inspector grid (later work may grow dedicated
 // Effect/Ability surfaces here).
 void EditorScene::drawGenericSummary() {
     if (!itemSelected.isValid()) {
@@ -517,14 +517,14 @@ void EditorScene::drawGenericSummary() {
 }
 
 // ---------------------------------------------------------------------
-// Inspector (right): the item's HIERARCHY on top (the ex-8.2/8.3 trees),
+// Inspector (right): the item's HIERARCHY on top,
 // the PropertyGrid of the selected sub-object below — the Unity model.
 
 void EditorScene::drawInspector() {
     ImGui::Begin("Inspector");
     // The Inspector's selection reads GOLD — the same tint as the node
     // editor's selected-node border, so graph and inspector visibly
-    // point at the same thing (dev feedback 8.7d).
+    // point at the same thing.
     constexpr ImVec4 kSelGold { 1.0f, 0.69f, 0.20f, 0.45f };
     constexpr ImVec4 kSelGoldHovered { 1.0f, 0.69f, 0.20f, 0.60f };
     constexpr ImVec4 kSelGoldActive { 1.0f, 0.69f, 0.20f, 0.80f };
@@ -557,13 +557,13 @@ void EditorScene::drawInspector() {
     if (selected.isValid()) {
         questGraph->drawInspectorExtras(selected);
         drawPropertyGrid(*session, selected);
-        // 8.7c: the quest<->dialogue articulation made visible — who
+        // The quest<->dialogue articulation made visible — who
         // fires / listens to / starts on this record's event — and the
-        // explicit wiring buttons (dev feedback: creating the link must
-        // not require typing the same name twice).
+        // explicit wiring buttons (creating the link must not require
+        // typing the same name twice).
         drawEventCrossRef(*session, selected, selected);
         drawEventWiring(*session, selected);
-        // 8.9: the shared condition builder — dialogue options and
+        // The shared condition builder — dialogue options and
         // abilities carry ANDed ConditionForm clauses. Selecting a clause
         // keeps the list anchored on its parent (the builder must not
         // vanish under its own selection).
@@ -584,7 +584,7 @@ void EditorScene::drawInspector() {
         if (conditionParent.isValid()) {
             drawConditionList(*session, conditionParent, selected);
         }
-        // 8.7d: the one-gesture link — a dialogue option becomes the
+        // The one-gesture link — a dialogue option becomes the
         // start of a brand-new quest (event generated when missing),
         // and the editor navigates to it.
         if (const auto* selType = session->viewType(selected);
@@ -627,7 +627,7 @@ void EditorScene::drawInspector() {
     ImGui::End();
 }
 
-// Ex-8.2 quest tree (states -> branches -> tasks), now the Inspector's
+// Quest tree (states -> branches -> tasks), the Inspector's
 // hierarchy pane. Same creation flows, same session.
 void EditorScene::drawQuestHierarchy() {
     const auto* questForm =
@@ -766,7 +766,7 @@ void EditorScene::drawQuestHierarchy() {
     }
 }
 
-// Ex-8.3 dialogue tree (parent-linked, alternating NPC lines and Player
+// Dialogue tree (parent-linked, alternating NPC lines and Player
 // choices), now the Inspector's hierarchy pane: inline creation, sibling
 // reorder and per-node conditions.
 void EditorScene::drawDialogueHierarchy() {
@@ -896,8 +896,8 @@ void EditorScene::drawDialogueHierarchy() {
                                   reflect::Value { nodeId });
                 selected = id;
             }
-            // Conditions as selectable leaves under their node (8.9:
-            // the shared summary — the builder in the grid below edits).
+            // Conditions as selectable leaves under their node
+            // (the shared summary — the builder in the grid below edits).
             for (const auto& [condId, cond] : conditions) {
                 if (cond->parent != nodeId) {
                     continue;
@@ -942,11 +942,11 @@ void EditorScene::drawDialogueHierarchy() {
     }
 }
 
-// 8.4 — the schedule timeline: one 24 h strip per ScheduleForm, one lane
+// The schedule timeline: one 24 h strip per ScheduleForm, one lane
 // per ScheduleEntryForm. Bars drag by their edges (0.5 h snap, committed
 // as ONE field edit on release); midnight-wrapping entries render as two
-// segments. The H7 debug eval stays at the top of each strip. Since
-// 8.7b: the Editor-center content of the Schedules category.
+// segments. The debug eval stays at the top of each strip. This is
+// the Editor-center content of the Schedules category.
 void EditorScene::drawSchedulesContent() {
     ImGui::SliderFloat("Hour", &debugHour, 0.0f, 24.0f, "%.1f");
     ImGui::SameLine();
@@ -988,7 +988,7 @@ void EditorScene::drawSchedulesContent() {
                                      ImGuiTreeNodeFlags_DefaultOpen)) {
             continue;
         }
-        // The H7 eval line — resolved base only (a schedule created this
+        // The debug eval line — resolved base only (a schedule created this
         // session previews after the next reload).
         if (const auto intent =
                 gameplay::evaluateSchedule(*db, scheduleId, debugHour)) {
@@ -1160,7 +1160,7 @@ void EditorScene::drawPlugins() {
                            error.c_str());
     }
 
-    // Chantier 4 B7: declared dependencies (Plugin::dependencies guids) —
+    // Declared dependencies (Plugin::dependencies guids) —
     // ok / loads-after / missing, per loaded plugin.
     ImGui::SeparatorText("Dependencies");
     bool anyDependency = false;
@@ -1196,7 +1196,7 @@ void EditorScene::drawPlugins() {
         ImGui::TextDisabled("none declared");
     }
 
-    // 8.5 — the synthesis view (§5.1): each conflicted field shows every
+    // The synthesis view (§5.1): each conflicted field shows every
     // writer's VALUE; picking one and generating emits an ORDINARY plugin
     // loaded last. No new mechanism — one more layer.
     ImGui::SeparatorText("Field conflicts (last writer wins)");

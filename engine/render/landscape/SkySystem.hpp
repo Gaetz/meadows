@@ -14,7 +14,7 @@ namespace render {
 
 class ShaderLibrary;
 
-// Analytic gradient sky + day/night cycle (brick 9). Evaluates the sun and
+// Analytic gradient sky + day/night cycle (docs/3D-RENDERER.md). Evaluates the sun and
 // sky palette from a time of day; the scene pushes the result into
 // FrameUniforms so every shader (terrain lighting now, fog later) reads the
 // SAME sun/sky the dome is painted with. The dome itself is one fullscreen
@@ -57,7 +57,7 @@ public:
     // Draw last in the opaque pass (background pixels only).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup);
 
-    // Weather modifiers layered over the time-of-day palette (brick 24).
+    // Weather modifiers layered over the time-of-day palette.
     // `cloudCoverage` [0,1] grays and dims everything toward overcast gloom;
     // the rest lets a weather state color-grade the moment: `warmth` reddens
     // the low-sun palette (haze makes sunsets burn — Porco Rosso skies),

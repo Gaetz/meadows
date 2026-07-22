@@ -8,7 +8,7 @@
 
 namespace game {
 
-// The dedicated AbilityForm editor (chantier 8.11): what the grid can't
+// The dedicated AbilityForm editor: what the grid can't
 // say — the wiring health (dangling cost/cooldown/effect, a cooldown
 // whose EffectForm grants no tag = no cooldown at all) and "Test
 // activate": a throwaway caster runs the REAL gameplay::tryActivate
@@ -16,7 +16,7 @@ namespace game {
 // shown after. tryActivate resolves guids from the RESOLVED database —
 // session-created effects need an export + reload to test (stated in
 // the panel). Pickers and conditions live in the Inspector (the grid's
-// typed pickers + the 8.9 builder).
+// typed pickers + the condition builder).
 class AbilityPanel {
 public:
     AbilityPanel(data::EditSession& session, const data::FormDatabase& forms)

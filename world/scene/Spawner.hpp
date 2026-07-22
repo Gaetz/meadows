@@ -13,8 +13,8 @@
 // become an ECS entity, keyed on the base form's category. The universal
 // components (Transform, SpriteRender, RefId, InCell) are wired here, applying
 // values **through reflection** where the base type is polymorphic; the
-// per-category hook adds category-specific components (markers now; in Phase 3
-// the actor hook grants an AbilitySystem, etc.).
+// per-category hook adds category-specific components (markers, the
+// actor hook's AbilitySystem, etc.).
 
 namespace world {
 
@@ -22,7 +22,7 @@ struct SpawnContext {
     ecs::World& world;
     const data::FormDatabase& forms;
     const FormCategoryRegistry& categories;
-    // Optional per-reference veto (chantier 5): the pending save layer
+    // Optional per-reference veto: the pending save layer
     // suppresses references it knows are disabled. Consulted by the
     // prefab expansion (derived children bypass the cell loop) — the
     // CellLoader applies it to top-level references itself.

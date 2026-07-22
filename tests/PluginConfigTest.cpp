@@ -119,7 +119,7 @@ TEST_CASE("plugin stack: load order applies, disabled entries skip") {
     }
 
     // Missing file: reported as skipped (an optional layer may list itself
-    // before it exists — chantier 4), never fatal.
+    // before it exists), never fatal.
     {
         data::PluginConfig config = defaults;
         config.entries.push_back({ "missing.toml", true });

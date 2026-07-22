@@ -3,7 +3,7 @@
 #include "common.glsl"
 #include "rc_common.glsl"
 
-// Radiance cascades G5 — MERGE: cascade i absorbs cascade i+1 so that
+// Radiance cascades MERGE: cascade i absorbs cascade i+1 so that
 // after the full chain (top → 0) every texel of cascade 0 holds FULL
 // radiance [0, ∞) for its direction. Per dst texel:
 //   parent probes  = the 4 surrounding probes of cascade i+1 (manual

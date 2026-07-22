@@ -85,7 +85,7 @@ private:
     Vec2 attackDir { 0.0f, -1.0f };      // aim locked at the swing's start
     std::vector<ecs::Entity> hitThisSwing; // enemies already struck this swing
 
-    // H7 proof: the sim emits "Cue.Hit.*" on melee impact; the scene's
+    // Proof: the sim emits "Cue.Hit.*" on melee impact; the scene's
     // handler bursts sparks (fx::ParticleSim), drawn as sprites after the
     // world. Headless would simply have no handler — no coupling.
     gameplay::CueRegistry cues;

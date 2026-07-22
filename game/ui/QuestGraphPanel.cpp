@@ -106,7 +106,7 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
             warnings.push_back("branch '" + branch->editorId +
                                "' has no task (never completes)");
         }
-        // 8.7d lint: a task listening to an event nothing fires never
+        // Lint: a task listening to an event nothing fires never
         // progresses — the quest dead-ends silently in game.
         for (const auto& [taskId, task] : data.tasks) {
             if (task->branch != id || task->event.empty()) {
@@ -234,7 +234,7 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
                     selected == id ? 3.5f : 2.0f);
     }
 
-    // Link labels: the branch's TASK NAMES at the midpoint (8.7d — the
+    // Link labels: the branch's TASK NAMES at the midpoint (the
     // quest reads end to end on the canvas), capped to three lines.
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     for (const auto& [id, branch] : data.branches) {
@@ -354,7 +354,7 @@ void QuestGraphPanel::drawCanvas(const core::Guid& questId) {
         }
         ImGui::EndPopup();
     }
-    // 8.7d: a pin dragged into empty canvas — create the state AND the
+    // A pin dragged into empty canvas — create the state AND the
     // branch in one gesture, oriented by which side was dragged.
     if (ImGui::BeginPopup("qg-newnode")) {
         const bool fromOutput = dragFromOutput;

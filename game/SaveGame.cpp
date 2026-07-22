@@ -12,7 +12,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
-#include "gameplay/inventory/Inventory.hpp" // É8: grave capture gate
+#include "gameplay/inventory/Inventory.hpp" // grave capture gate
 #include "world/scene/Components.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
@@ -105,8 +105,8 @@ std::optional<data::Record> captureReference(ecs::Entity entity,
         }
     }
     // Scale: every entity — the ground snap never touches it, so the diff
-    // is snap-safe, and the materialize path already carried it (a scale
-    // change on an existing reference was silently lost — audit U5-5).
+    // is snap-safe, and the materialize path already carries it (without
+    // this diff, a scale change on an existing reference is silently lost).
     if (entity.has<world::Transform>()) {
         const auto& transform = entity.get<world::Transform>();
         if (transform.scale != reference->scale) {
@@ -136,13 +136,13 @@ void PendingSaveLayer::captureEntity(ecs::Entity entity,
     }
     const core::Guid refGuid = entity.get<world::RefId>().referenceId;
     if (!refGuid.isValid()) {
-        return; // prefab-derived child without identity — B7
+        return; // prefab-derived child without identity
     }
     Entry& entry = entryFor(refGuid);
     entry.referencePatch = captureReference(entity, forms);
     entry.materialized = false;
     entry.actorRecords.clear();
-    // FOLLOWERS É8 (appended clause): an Inventory-only entity — a grave —
+    // An Inventory-only entity — a grave —
     // captures too. captureActor skips every missing component and still
     // emits the SavedStatsForm sentinel + the SavedItemForm rows, so the
     // grave's content survives the flush/re-resolve round trip.
@@ -206,7 +206,7 @@ void PendingSaveLayer::createReference(const core::Guid& referenceId,
                                        const core::Guid& cell,
                                        const Vec3& position,
                                        const Quat& rotation) {
-    // FOLLOWERS É8: the materializeReference idiom without a live entity —
+    // The materializeReference idiom without a live entity —
     // build the full ReferenceForm and diff it into a `creates` record
     // (createRecord drops default-equal fields; a null cell therefore
     // resolves back to the persistent set). Idempotent per guid: a second
@@ -228,7 +228,7 @@ bool PendingSaveLayer::isEnabled(const core::Guid& referenceId) const {
 }
 
 bool PendingSaveLayer::isRehomed(const core::Guid& referenceId) const {
-    // FOLLOWERS É1: read the answer off the captured patch itself — a
+    // Read the answer off the captured patch itself — a
     // `cell` diff means the reference lives somewhere else now (see the
     // header). No parallel state to keep in sync with captureEntity; a
     // later capture that homes it back (dismiss) lifts the veto.
@@ -294,7 +294,7 @@ gameplay::SavedActorRecords PendingSaveLayer::actorState(
         entry.effects.clear();
         entry.items.clear();
         entry.injuries.clear();
-        entry.abilities.clear(); // FOLLOWERS É6
+        entry.abilities.clear();
         bool hasStats = false;
         for (const data::Record& record : entry.actorRecords) {
             if (record.typeId ==
@@ -320,7 +320,7 @@ gameplay::SavedActorRecords PendingSaveLayer::actorState(
                         record));
             } else if (record.typeId ==
                        gameplay::SavedAbilityForm::staticTypeInfo().id) {
-                entry.abilities.push_back( // FOLLOWERS É6
+                entry.abilities.push_back(
                     gameplay::formFromRecord<gameplay::SavedAbilityForm>(
                         record));
             }
@@ -338,7 +338,7 @@ gameplay::SavedActorRecords PendingSaveLayer::actorState(
         for (const auto& injury : entry.injuries) {
             saved.injuries.push_back(&injury);
         }
-        for (const auto& ability : entry.abilities) { // FOLLOWERS É6
+        for (const auto& ability : entry.abilities) {
             saved.abilities.push_back(&ability);
         }
     }
@@ -411,7 +411,7 @@ vector<SaveSlotInfo> listSaveSlots() {
                 slot.time - std::filesystem::file_time_type::clock::now() +
                 std::chrono::system_clock::now());
         const std::time_t t = std::chrono::system_clock::to_time_t(system);
-        // C9.8: platform::localTime — localtime_s is MSVC-only (glibc
+        // platform::localTime — localtime_s is MSVC-only (glibc
         // has localtime_r with reversed arguments).
         const std::tm local = platform::localTime(t);
         char buffer[24];
@@ -424,7 +424,7 @@ vector<SaveSlotInfo> listSaveSlots() {
 
 str serializeSave(const data::Plugin& plugin,
                   const data::FormTypeRegistry& types) {
-    // Pure — this is the seam the async save runs on a worker (C9.7).
+    // Pure — this is the seam the async save runs on a worker.
     return data::writePluginToml(plugin, types);
 }
 
@@ -476,7 +476,7 @@ bool writeSave(const str& slot, const data::Plugin& plugin,
     return true;
 }
 
-// --- SaveFlightGate (C9.7) ------------------------------------------------------------
+// --- SaveFlightGate ---------------------------------------------------------------
 
 bool SaveFlightGate::requestStart(const str& slot) {
     if (inFlight) {
@@ -504,7 +504,7 @@ std::optional<data::Plugin> readSave(const str& slot,
     text << in.rdbuf();
     auto parsed = data::parsePluginToml(text.str(), types, slot);
     if (!parsed) {
-        // U1-03: a corrupt save now says WHY it will not load.
+        // A corrupt save says WHY it will not load.
         LOG_ERROR("save '{}' unreadable: {}", slot, parsed.error());
         return std::nullopt;
     }

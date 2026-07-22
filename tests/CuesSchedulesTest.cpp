@@ -336,8 +336,8 @@ TEST_CASE("grid navigator adapts A* to the nav seam") {
     CHECK_FALSE(blocked.success);
 }
 
-// 8.10 — the ParticleForm -> fx::EmitterParams mapping (the H7 seam
-// filled: engine/fx never sees data::, the runtime maps here).
+// The ParticleForm -> fx::EmitterParams mapping
+// (engine/fx never sees data::, the runtime maps here).
 TEST_CASE("toEmitterParams maps every shared field verbatim") {
     data::ParticleForm form;
     form.burst = 24;
@@ -370,7 +370,7 @@ TEST_CASE("toEmitterParams maps every shared field verbatim") {
 }
 
 TEST_CASE("schedule interruption edges fire exactly once each way") {
-    // E-catalogue leftover (2026-07-13): the pure edge detector behind
+    // The pure edge detector behind
     // combat/dialogue overriding the schedule — Interrupted once on the
     // rising edge, Resumed once on the falling edge, silent otherwise.
     bool interrupted = false;

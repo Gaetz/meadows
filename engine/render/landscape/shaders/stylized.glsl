@@ -8,7 +8,7 @@
 
 // `ndl` is the RAW N·L (not clamped); `classic` is the shader's
 // pre-stylization response (lambert or wrap), used when the toggle is off.
-// TWO shadow steps (dev 2026-07-05): shade 0 -> half-tone 0.6 at the
+// TWO shadow steps: shade 0 -> half-tone 0.6 at the
 // terminator -> full light 1.0 higher up. Three flat plateaus.
 float stylizedDiffuse(float ndl, float classic) {
     float stepped = 0.6 * smoothstep(0.02, 0.09, ndl) +
@@ -17,8 +17,8 @@ float stylizedDiffuse(float ndl, float classic) {
 }
 
 // The article's round(atten): CSM attenuation snaps to shadow / lit, so
-// cast shadows read as flat pools instead of PCF gradients. (Window
-// tightened 0.35-0.65 -> 0.45-0.55, dev 2026-07-11: crisper edges.)
+// cast shadows read as flat pools instead of PCF gradients. (The
+// narrow 0.45-0.55 window keeps the edges crisp.)
 float stylizedShadow(float shadow) {
     return mix(shadow, smoothstep(0.45, 0.55, shadow), uAmbientColor.w);
 }

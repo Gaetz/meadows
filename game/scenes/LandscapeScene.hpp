@@ -16,8 +16,8 @@
 #include "engine/physics/Physics.hpp"
 #include "game/LevelEditor.hpp"
 #include "game/MeshCache.hpp"
-#include "game/InputActions.hpp" // C9.2
-#include "game/Settings.hpp"     // C9.2
+#include "game/InputActions.hpp"
+#include "game/Settings.hpp"
 #include "game/scenes/GameHud.hpp"
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/MapController.hpp"
@@ -74,11 +74,11 @@ class Engine;
 }
 namespace data {
 struct WeaponForm;   // CoreForms — pointers only in this header
-struct MiscItemForm; // (gold, chantier 4 B5)
-class EditSession;   // console (chantier 4 B7)
+struct MiscItemForm; // gold
+class EditSession;   // console
 }
 namespace gameplay {
-struct AbilityForm;  // the shared melee attack (P0 A3) — pointer only
+struct AbilityForm;  // the shared melee attack — pointer only
 }
 namespace script {
 class Vm;
@@ -88,9 +88,10 @@ namespace game {
 
 class ConsolePanel;
 
-// The 3D landscape renderer prototype (custom-renderer path, Phases 11-14).
+// The 3D landscape renderer prototype (the custom-renderer path,
+// docs/3D-RENDERER.md).
 // Owns the frame: records its own render passes instead of the sprite path.
-// Brick 21: bloom (soft-threshold HDR pyramid, additive upsample) and
+// Bloom (soft-threshold HDR pyramid, additive upsample) and
 // screen-space god rays (radial march toward the sun over sky-only
 // radiance), both composed in linear HDR by the tonemap pass.
 class LandscapeScene final : public Scene {
@@ -109,7 +110,7 @@ public:
 
 private:
     // Themed panel sections (drawUi wraps them in collapsing headers; the
-    // terrain/render sections live on the renderer with their state, U4-2c).
+    // terrain/render sections live on the renderer with their state).
     void drawGameplayUi();
     void drawSkyUi();
 
@@ -122,7 +123,7 @@ private:
     data::FormTypeRegistry formTypes;
     LandscapeTuningForm tuning;
 
-    // Weather (brick 24, extracted to WeatherController brick 3b): precreated
+    // Weather (extracted to WeatherController): precreated
     // states from landscape.toml, crossfaded into `atmos` over its duration.
     // The blend writes the same fields the sliders edit, so the panel shows
     // live values and manual tweaking resumes once the transition lands.
@@ -140,9 +141,9 @@ private:
     bool uiSkyOpen { false };
     bool uiRenderOpen { false };
     bool uiTreesOpen { false }; // Tree builder (generation knobs, live)
-    bool uiPerfOpen { false }; // GPU-PERF P0: the budget table [F6]
+    bool uiPerfOpen { false }; // the GPU budget table [F6]
 
-    // U4-2c: the whole custom renderer — shader library, render::* systems,
+    // The whole custom renderer — shader library, render::* systems,
     // GPU handles, frame graph, terrain/render dev panels and their toggle
     // state — lives in LandscapeRenderer. The scene reaches the terrain
     // ground truth via renderer.terrainParams() and hands a RenderView +
@@ -150,20 +151,20 @@ private:
     LandscapeRenderer renderer;
     bool animateTime { false };
     // Atmospheric render state (sky/fog/weather-driven), grouped so the weather
-    // transition can own it (brick 3a). Manual sliders and the crossfade both
+    // transition can own it. Manual sliders and the crossfade both
     // write here; the renderer reads it through the view. stormFront/
     // rainIntensity live here too.
     AtmosphereParams atmos;
     f32 windTime { 0.0f }; // accumulated wind phase (dt x strength)
 
-    // B1 (chantier 1): the real mesh path replacing the H8 hardcoded cube.
+    // The real mesh path.
     // A small ECS world spawned from plugin ReferenceForms; extractMeshes
     // fills the snapshot each frame; the residency caches resolve guids to
     // GPU resources (placeholders while pending — never block, §7).
     data::FormDatabase forms;      // resolved plugin stack (material fields
                                    //   fold into the snapshot at extract)
-    data::TextTable texts;         // U4-11: LocStringForm key -> text index
-    // C9.2: machine preferences + the action layer — loaded from
+    data::TextTable texts;         // LocStringForm key -> text index
+    // Machine preferences + the action layer — loaded from
     // settings.toml at enter, written back by the options screen.
     game::Settings settings;
     game::ActionMap actionMap;
@@ -176,8 +177,8 @@ private:
     flecs::query<const world::Transform, const world::DoorTarget> doorQuery;
     flecs::query<const world::Transform, const world::RefId> interactQuery;
 
-    // Chantier 2 B1: cells stream around the player (synchronous ring —
-    // async + persistence is the « persistance » chantier). References
+    // Cells stream around the player (synchronous ring —
+    // async streaming may come later). References
     // with no cell are persistent (the player), spawned once at enter.
     world::FormCategoryRegistry categories; // must outlive the CellLoader
     world::Spawner spawner;
@@ -186,7 +187,7 @@ private:
     uptr<world::CellStreamer> cellStreamer;
     data::FormHandle overworldHandle {};
 
-    // Chantier 2 B7: worldspace travel through doors. `activeWorldspace`
+    // Worldspace travel through doors. `activeWorldspace`
     // drives the streamer; `interiorMode` reshapes the renderer (no
     // terrain/sky/sun/water — ambient + local lights only).
     data::FormHandle activeWorldspace {};
@@ -205,8 +206,8 @@ private:
     // the player was actively in (updated each frame outside menus).
     SceneMode lastActiveMode { SceneMode::Play };
 
-    // Chantier 2 B3/B4 + B9: level editor + terrain sculpt, extracted to
-    // SceneEditor (audit U4-5). The scene owns the EditSession (levelEditor)
+    // Level editor + terrain sculpt, extracted to
+    // SceneEditor. The scene owns the EditSession (levelEditor)
     // and the systems; SceneEditor owns the editor STATE (selection, palette,
     // gizmo, sculpt tool) and the interaction/UI. Wired each frame through
     // EditorContext (makeEditorContext, which folds in the sculpt sub-contract
@@ -215,8 +216,8 @@ private:
     SceneEditor sceneEditor;
     EditorContext makeEditorContext();
     SculptContext makeSculptContext();
-    // Chantier 3 B1: GENERIC interaction (E) + travel fade + talk toast,
-    // extracted to InteractionController (audit U4-10). performTravel STAYS
+    // GENERIC interaction (E) + travel fade + talk toast,
+    // extracted to InteractionController. performTravel STAYS
     // here (a worldspace swap is streaming/scene territory — cellStreamer,
     // colliders, NPC refresh, player capsule); the controller fires it
     // through the InteractionContext travel callback at the black of the
@@ -225,11 +226,11 @@ private:
     InteractionContext makeInteractionContext();
     void performTravel(const core::Guid& targetReference);
 
-    // Chantier 3 B1: the game clock owns time-of-day (the sky follows)
+    // The game clock owns time-of-day (the sky follows)
     // and feeds real game-time into tickCharacter/schedules.
     gameplay::GameClock gameClock;
 
-    // Chantier 4 B2: the RmlUi game UI. Screens come from UiScreenForm
+    // The RmlUi game UI. Screens come from UiScreenForm
     // records (documents through the plugins' ui/ roots — the SkyUI
     // model); the ScreenStack decides what is visible, a modal screen
     // pauses the sim and owns mouse/keyboard. Dev panels stay ImGui.
@@ -238,7 +239,7 @@ private:
     bool uiCreated { false };
     bool uiModalWasOpen { false };
     bool uiTextInputOn { false };
-    // C9.3: pad-driven UI navigation state — the left-stick repeat
+    // Pad-driven UI navigation state — the left-stick repeat
     // cooldown, and the A/B edges the UI consumed. Those buttons stay
     // "owned by the UI" until physically released, so closing a menu
     // with B cannot tap-dodge, nor activating with A jump (A = Jump,
@@ -247,8 +248,8 @@ private:
     bool uiPadConsumedA { false };
     bool uiPadConsumedB { false };
     vector<str> shownScreens; // documents currently shown (sync state)
-    // onEnter phases (brick U4-3): onEnter() runs these in order. Split for
-    // readability only — behaviour is identical to the former 620-line body.
+    // onEnter phases: onEnter() runs these in order. Split for
+    // readability only.
     void bootstrapData();                             // plugins/save/tuning
     void createRenderResources(rhi::Device& device);  // GPU resources + game UI
     void setupGameplay();                             // physics/nav/stats/quest
@@ -260,7 +261,7 @@ private:
     void syncScreens();
     vector<const ScreenStack::Screen*> screenStackPreloadList() const;
 
-    // Audit U4-9: every push*Model / update*Model (game state -> UiSystem
+    // Every push*Model / update*Model (game state -> UiSystem
     // data models) plus the view-model state (InventoryViews, dialogue
     // options) lives in GameHud, wired per call through makeHudContext().
     // Game ACTIONS stay here (handleUiEvent/handleMenuAction, equip/use/
@@ -268,27 +269,27 @@ private:
     GameHud hud;
     HudContext makeHudContext();
 
-    // Chantier 4 B3/B5/B6: the UI ACTION routing (data-event dispatch,
+    // The UI ACTION routing (data-event dispatch,
     // menu actions, item screens' opening, equip/use/transfer/barter) +
     // its shared state (open container/vendor, barter mults) live in
-    // UiRouter (audit U4-1), wired per dispatch through
+    // UiRouter, wired per dispatch through
     // makeUiRouterContext(). GameHud reads the pricing state through the
     // router's accessors; dialogue OPENING stays here (quest territory).
     UiRouter uiRouter;
     UiRouterContext makeUiRouterContext();
 
-    // C9.4: the options screen (look/volume steppers, bindings table,
+    // The options screen (look/volume steppers, bindings table,
     // press-to-rebind capture). While a capture is armed it owns the
-    // whole input frame — updateGameUi gates Tab/Pause and the C9.3
+    // whole input frame — updateGameUi gates Tab/Pause and the
     // pad->UI routing on optionsController.capturing().
     OptionsController optionsController;
     OptionsContext makeOptionsContext();
-    // C9.6: the in-game map — CPU raster of the exterior worldspace
+    // The in-game map — CPU raster of the exterior worldspace
     // (game/MapRaster) behind the runtime://map texture, player marker +
     // door POIs through the shared mapUv mapping.
     MapController mapController;
     MapContext makeMapContext();
-    // C9.5: the language machinery. loadGatedPluginConfig = plugins.toml
+    // The language machinery. loadGatedPluginConfig = plugins.toml
     // with every text-<code>.toml pack enabled iff <code> ==
     // settings.language; applyLanguage = the options screen's LIVE switch
     // (TextTable rebuild from a temp resolve + relocalize — no resolved
@@ -297,8 +298,8 @@ private:
         const std::filesystem::path& dataDir) const;
     void applyLanguage();
 
-    // Chantier 6 A2 / D2 + chantier 4 B4 — quests, crime and dialogue
-    // extracted behind QuestDirector (audit U4-1): the demo quest state
+    // Quests, crime and dialogue
+    // extracted behind QuestDirector: the demo quest state
     // machine, its mirror (and the crime bounty's) into PLAYER tags so
     // dialogue options gate on them through the condition evaluator, and
     // the dialogue runner. The eventBus stays a SCENE hub (dialogue and
@@ -310,37 +311,37 @@ private:
     gameplay::EventBus eventBus;
     gameplay::EvalContext makeEvalContext() const;
 
-    // Chantier 4 B5: barter data (gold is an ordinary item; the routing
+    // Barter data (gold is an ordinary item; the routing
     // and the vendor multipliers live in UiRouter).
     core::Rng lootRng { 0x4d7a9b30u }; // loadout rolls (§8 seeded)
-    core::Rng combatRng { 0x50A5B10Cu }; // NPC combat rolls — A5 guards (§8)
-    // P0 B1: the frame's actor snapshot grid — rebuilt once per sim tick,
-    // read by the trigger sweep and (B2/B3) perception / combat AI.
+    core::Rng combatRng { 0x50A5B10Cu }; // NPC combat rolls (§8 seeded)
+    // The frame's actor snapshot grid — rebuilt once per sim tick,
+    // read by the trigger sweep and perception / combat AI.
     world::SpatialIndex spatialIndex;
-    // P0 C1: the CPU particle sim (headless engine/fx) — updated with
+    // The CPU particle sim (headless engine/fx) — updated with
     // the sim tick, extracted as POD batches, drawn by the FxRenderer.
     fx::ParticleSim fxSim;
-    // P0 C2: the standard cue handlers (CueForm -> particles/shake) —
+    // The standard cue handlers (CueForm -> particles/shake) —
     // combat emits into fxDirector.cues(), presentation follows.
     FxDirector fxDirector;
-    // P0 C3: the audio seam — the real backend in-game (H6 facade), the
+    // The audio seam — the real backend in-game (null when headless), the
     // resolver maps SoundForms onto it; cue sounds ride the FxDirector.
     audio::AudioSystem audioSystem;
     SoundResolver soundResolver;
-    // P0 A7: arrows in flight (player bow, archer NPCs).
+    // Arrows in flight (player bow, archer NPCs).
     ProjectileDirector projectileDirector;
     const data::MiscItemForm* goldForm { nullptr };
 
-    // Chantier 5 B3: the one post-spawn seam for EVERY actor (player and
+    // The one post-spawn seam for EVERY actor (player and
     // NPC): stat init, then saved state (when this actor was captured —
     // its SavedStatsForm is the sentinel) or the data loadout. Returns
     // true when saved state applied (fresh-game extras skip then).
     bool finalizeActorSpawn(ecs::Entity entity,
                             const core::Guid& actorFormId);
 
-    // Chantier 5 B4/B5 — disk saves + the pending in-memory layer (the
+    // Disk saves + the pending in-memory layer (the
     // memory of unloaded cells: looted crates stay looted without a disk
-    // save). Extracted behind SaveController (audit U4-1): it owns the
+    // save). Extracted behind SaveController: it owns the
     // pending layer (hooked into CellLoader each onEnter via pending()),
     // the queued-reload flags and the capture/flush serialization. The
     // load-APPLICATION half (WorldStateForm → clock/worldspace/camera)
@@ -349,17 +350,17 @@ private:
     SaveContext makeSaveContext();
     std::optional<gameplay::WorldStateForm> loadedWorldState;
 
-    // Chantier 4 B7: dev console in the game scene (F8). The panel / VM /
+    // Dev console in the game scene (F8). The panel / VM /
     // session infrastructure + visibility + god mode live in SceneConsole
-    // (audit U4-1); createConsole registers the WORLD commands (spawn/tp/
+    //; createConsole registers the WORLD commands (spawn/tp/
     // tgm/save/settime) onto its panel — they touch scene internals so they
     // stay here (the event-subscription rationale).
     SceneConsole sceneConsole;
     void createConsole();
 
-    // Chantier 3 B5/B6: melee combat — everything flows through the GAS
+    // Melee combat — everything flows through the GAS
     // damage pipeline (weaponDamageEvent -> applyDamage), like the 2D
-    // CombatArena. P0 A3: swings are MeleeSwing state machines gated by
+    // CombatArena. Swings are MeleeSwing state machines gated by
     // the shared attack ability; damage lands where the blade passes.
     const data::WeaponForm* playerWeapon { nullptr };
     const data::WeaponForm* banditWeapon { nullptr };
@@ -367,9 +368,9 @@ private:
     const gameplay::AbilityForm* dodgeAbility { nullptr };
     const gameplay::EffectForm* swimCostEffect { nullptr }; // D2b
     const gameplay::EffectForm* sneakCostEffect { nullptr }; // sneak
-    const gameplay::EffectForm* bowDrawCostEffect { nullptr }; // A7+
+    const gameplay::EffectForm* bowDrawCostEffect { nullptr }; // drawn-bow drain
 
-    // Chantier 2 B8: the authored-terrain overlay. IMMUTABLE once
+    // The authored-terrain overlay. IMMUTABLE once
     // published; the sculpt tool edits a working copy then publishes a
     // NEW instance. Lifetime is carried by TerrainParams.patches itself
     // (shared_ptr — worker-held copies keep old instances alive, even
@@ -379,11 +380,11 @@ private:
     uptr<MeshCache> meshCache;
     RenderSnapshot snapshot;
 
-    // B6 (chantier 1): Forms-driven skinned NPCs — the sim subsystem
-    // (rig cache, NPC list, build/AI/schedule/combat) lives in NpcDirector
-    // (audit U4-10), behind an NpcContext the scene builds each call. The
+    // Forms-driven skinned NPCs — the sim subsystem
+    // (rig cache, NPC list, build/AI/schedule/combat) lives in NpcDirector,
+    // behind an NpcContext the scene builds each call. The
     // scene keeps cross-cutting reads via npcDirector.npcs() (player
-    // attack/crime, debug UI, editor, console). U4-2b: the DRAW side runs
+    // attack/crime, debug UI, editor, console). The DRAW side runs
     // from snapshot.skinned, inside the renderer.
     NpcDirector npcDirector;
     NpcContext makeNpcContext();
@@ -392,7 +393,7 @@ private:
     void refreshNpcs(rhi::Device& device);
     void updateNpcs(f32 dt);
 
-    // FOLLOWERS É1: recruit/dismiss (the chantier-5 cell->0 persistence
+    // Recruit/dismiss (the cell->0 persistence
     // contract through the pending layer) + the party teleports, behind
     // the usual *Controller pattern; wired per call through
     // makeFollowerContext(). The dialogue events OnRecruitFollower /
@@ -400,20 +401,20 @@ private:
     FollowerController followerController;
     FollowerContext makeFollowerContext();
 
-    // Chantier 3 B2/B3: navigation + furniture (shared with the director via
+    // Navigation + furniture (shared with the director via
     // NpcContext; navigator is also the StreamingController's).
     uptr<world::TerrainNavigator> navigator;
     gameplay::FurnitureOccupancy furnitureOccupancy;
 
-    // B4 (chantier 1): physics — height-field tiles follow the camera (the
-    // player takes over as focus in B5); the debug capsule proves the
+    // Physics — height-field tiles follow the camera (the
+    // player takes over as focus in Play); the debug capsule proves the
     // fall/rest/slope behavior in-scene (drawn as the placeholder box).
     uptr<phys::PhysicsWorld> physics;
     uptr<TerrainCollision> terrainCollision;
-    // Trunks + rocks from the deterministic scatter (dev report 2026-07-07).
+    // Trunks + rocks from the deterministic scatter.
     uptr<VegetationCollision> vegCollision;
     uptr<phys::CharacterBody> debugCapsule;
-    // Chantier 2 B2 (extracted, audit U4-10): the cell-streaming fixups —
+    // (extracted): the cell-streaming fixups —
     // ground snap, static-collider cook, nav obstacles — live in
     // StreamingController behind a StreamingContext the scene builds each
     // frame. NPC (re)building stays here (NpcDirector territory); the scene
@@ -424,15 +425,15 @@ private:
     // Stutter hunt: per-block frame breakdown, logged on spikes > 25 ms.
     core::FrameProbe frameProbe;
 
-    // B5: first-person Play mode (the game IS first-person — acted
-    // decision), extracted to PlayerController (audit U4-1): it owns the
+    // First-person Play mode (the game IS first-person — acted
+    // decision), extracted to PlayerController: it owns the
     // kinematic capsule + movement/attack state, wired per call through
     // makePlayerContext(). MODE transitions stay here (SceneMode plumbing);
     // they and travel/tp drive the body via spawnBody/destroyBody, and the
     // focus/context sites read playerController.body().
     PlayerController playerController;
     PlayerContext makePlayerContext();
-    // FOLLOWERS É11 v1 (tech proof): while mounted the capsule is
+    // Riding v1 (tech proof): while mounted the capsule is
     // destroyed and RideController runs INSTEAD of PlayerController —
     // one if/else at the update call site, PlayerController untouched.
     // Mount/dismount arrive through the interaction closure; travel and
@@ -448,7 +449,7 @@ private:
     void exitPlayMode();
     void restoreMode(SceneMode target); // drive into a mode (Escape → last mode)
 
-    // B5.5: the player is a GAS actor (docs/STATS.md) — spawned from the
+    // The player is a GAS actor (docs/STATS.md) — spawned from the
     // "Player" ActorForm, ticked by tickCharacter; the controller READS
     // the derived movementSpeed/acceleration currents and pays sprint
     // through the SprintCost GameplayEffect (§2.9: never set directly).

@@ -36,14 +36,14 @@ class InteractionController;
 
 // The scene systems the RmlUi view-model pushes read, bundled so the
 // presentation layer (game state -> UiSystem writes) is decoupled from
-// LandscapeScene (audit U4-9). The scene rebuilds it each call from its own
+// LandscapeScene. The scene rebuilds it each call from its own
 // members — references plus a few scalars. Mirrors the other *Context
 // contracts (Editor/Streaming/Npc/Interaction).
 struct HudContext {
     ::ui::UiSystem& ui;
     bool uiCreated;
     data::FormDatabase& forms;
-    const data::TextTable& texts; // C9.5: ui.* strings the C++ side formats
+    const data::TextTable& texts; // Ui.* strings the C++ side formats
     ecs::Entity playerEntity;
     const gameplay::GameClock& gameClock;
     const InteractionController& interaction; // prompt/talk slots
@@ -66,14 +66,14 @@ struct HudContext {
     gameplay::EvalContext evalContext; // scene-built (player tags/bag); by
                                        //   value — pointers, cheap, no dangling
     ScreenStack& screenStack; // pushDialogueModel closes "dialogue" when done
-    // A7+: the bow-draw gauge (0..1 while drawing, < 0 = hidden).
+    // The bow-draw gauge (0..1 while drawing, < 0 = hidden).
     f32 bowCharge;
-    // R7: vitals-bar scale — stat points per 1% of the bar container
+    // Vitals-bar scale — stat points per 1% of the bar container
     // (StatsTuningForm.hudStatPointsScale, filled by the scene).
     f32 hudStatPointsScale;
 };
 
-// The RmlUi presenter extracted from LandscapeScene (audit U4-9): every
+// The RmlUi presenter extracted from LandscapeScene: every
 // push*Model / update*Model that translates game state into UiSystem data
 // models lives here, along with the view-model state it feeds (the two
 // InventoryViews and the dialogue option list). Game ACTIONS stay in the
@@ -112,7 +112,7 @@ public:
 
 private:
     void updateNameplates(const HudContext& ctx);
-    // FOLLOWERS É2: the party frame — one row per active follower, name +
+    // The party frame — one row per active follower, name +
     // health (the nameplate pattern over the same Npc list).
     void updatePartyModel(const HudContext& ctx);
 

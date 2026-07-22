@@ -2,13 +2,13 @@
 
 #include "data/forms/Form.hpp"
 
-// Localization Forms (horizontal pass H1). One record per string; the KEY
+// Localization Forms. One record per string; the KEY
 // is the record's editorId (e.g. "quest.intro.title"). A language pack is
 // an ORDINARY plugin that patches `text` on existing records — the §5
 // layering gives localization for free, and mods can localize themselves
 // by shipping their own LocStringForms.
 //
-// FILLED (audit U4-11 brick 2 + C9.5): TextTable below is the cached
+// TextTable below is the cached
 // index; the authoring pipeline is a CSV (editorId,text) imported by
 // `cooker import-csv <csv> <toml> LocStringForm <pluginGuid>`. English is
 // the BASE (game/data/base/text-en.csv creates every record); a language
@@ -48,7 +48,7 @@ public:
     str format(std::string_view key, const str& arg) const;
 
     // get(key) with successive "{}" slots replaced by `args` left to
-    // right (C9.5). Fewer args than slots leaves the extra "{}" literal
+    // right. Fewer args than slots leaves the extra "{}" literal
     // (visible and greppable, the get() contract); extra args are dropped.
     str format(std::string_view key,
                std::initializer_list<std::string_view> args) const;

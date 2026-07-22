@@ -5,7 +5,7 @@
 #include "data/plugins/Validate.hpp"
 #include "engine/core/Hash.hpp"
 
-// Mod lint (J-catalogue, 2026-07-13): the reusable pass behind
+// Mod lint: the reusable pass behind
 // `cooker validate` — resolver facts (orphans, dependencies, conflicts)
 // plus the reflection sweep for dangling guid references.
 

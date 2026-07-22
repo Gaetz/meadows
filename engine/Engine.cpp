@@ -81,7 +81,7 @@ bool Engine::init(const EngineConfig& engineConfig) {
         return false;
     }
     // One event hook, fanned out: ImGui (dev UI) first, then the event-fed
-    // Input channel (text/wheel/key events for the game UI, chantier 4).
+    // Input channel (text/wheel/key events for the game UI).
     window->setEventHook([this](const void* nativeEvent) {
         ui::ImGuiLayer::processEvent(nativeEvent);
         input.handleEvent(nativeEvent);

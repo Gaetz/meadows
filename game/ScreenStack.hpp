@@ -6,7 +6,7 @@
 
 namespace game {
 
-// The game-screen stack (chantier 4 B1) — PURE logic, headless-testable.
+// The game-screen stack — PURE logic, headless-testable.
 // Screens are defined from UiScreenForm records by the scene (this class
 // stays data-free so meadows-runtime needs no meadows-data dep):
 //  - overlay screens (HUD) are always-on layers under everything;

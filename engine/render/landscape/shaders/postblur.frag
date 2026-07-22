@@ -1,7 +1,7 @@
 #version 460 core
 
-// 3x3 box blur for the jittered half-res post targets (speckle fix,
-// 2026-07-10): the SSAO and contact-shadow passes rotate their kernels
+// 3x3 box blur for the jittered half-res post targets (speckle fix):
+// the SSAO and contact-shadow passes rotate their kernels
 // per pixel (IGN) precisely to turn banding into FILTERABLE noise —
 // this is the filter that was missing. Single channel (R16F targets).
 layout(binding = 0) uniform sampler2D uSource;

@@ -26,22 +26,22 @@ layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec3 albedo = texture(uAlbedo, vUv).rgb * uTint.rgb * vColor;
-    // Brick 31 wetness — KEEP IN SYNC with mesh.frag.
+    // Wetness — KEEP IN SYNC with mesh.frag.
     albedo *= mix(1.0, 0.75,
                   clamp(uStormInfo.y, 0.0, 1.0) *
                       (1.0 - uCascadeSplits.w));
     vec3 n = normalize(vNormal);
     float ndl = dot(n, uSunDirection.xyz);
     float diffuse = stylizedDiffuse(ndl, max(ndl, 0.0));
-    // B5 interior hemispheric ambient — KEEP IN SYNC with mesh.frag.
+    // Interior hemispheric ambient — KEEP IN SYNC with mesh.frag.
     vec3 ambient = uAmbientColor.rgb;
     if (uCascadeSplits.w > 0.5) {
         float up = n.y * 0.5 + 0.5;
         ambient *= mix(vec3(0.50, 0.42, 0.36), vec3(1.35, 1.30, 1.22), up);
     }
-    // 33b/c — KEEP IN SYNC with mesh.frag.
+    // Terrain light factors — KEEP IN SYNC with mesh.frag.
     vec2 tl = terrainLightFactors(vWorldPos);
-    // Chantier RC (G6) — KEEP IN SYNC with mesh.frag.
+    // The GI technique branch — KEEP IN SYNC with mesh.frag.
     vec3 lit = albedo * (giAmbient(vWorldPos, n, ambient * tl.y) +
                          uSunColor.rgb * (diffuse * tl.x) +
                          localLights(vWorldPos, n)) +

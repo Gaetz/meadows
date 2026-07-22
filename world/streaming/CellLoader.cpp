@@ -27,7 +27,7 @@ ecs::Entity CellLoader::loadCell(data::FormHandle cell) {
                       // reference instantiates its PrefabForm (H8)
         }
         if (spawnFilter && !spawnFilter(reference->id)) {
-            continue; // vetoed by the pending save layer (chantier 5)
+            continue; // vetoed by the pending save layer
         }
         spawner.spawn(ctx, *reference, cellEntity);
     }

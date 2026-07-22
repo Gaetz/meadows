@@ -4,7 +4,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/ecs/World.hpp"  // ecs::Entity
-#include "game/InputActions.hpp" // game::ActionMap (C9.2)
+#include "game/InputActions.hpp" // game::ActionMap
 #include "game/Settings.hpp"     // game::Settings (look feel)
 
 namespace platform {
@@ -20,10 +20,10 @@ struct StatsTuningForm;
 
 namespace game {
 
-// FOLLOWERS É11 v1 — the mount tech proof (docs/FOLLOWERS.md §8): mount /
+// The mount tech proof (docs/FOLLOWERS.md §8): mount /
 // dismount + ridden movement + the mount speed stat, NOTHING else (no
-// whistle, stable, combat behaviors or follower mounts — later, as their
-// own chantier). The containment contract: while mounted the player's
+// whistle, stable, combat behaviors or follower mounts — all later).
+// The containment contract: while mounted the player's
 // CharacterBody is DESTROYED (the travel precedent) and the scene calls
 // THIS controller INSTEAD of PlayerController — one if/else at the call
 // site, zero changes inside PlayerController. The ride owns the camera,

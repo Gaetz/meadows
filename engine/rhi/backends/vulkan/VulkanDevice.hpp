@@ -11,9 +11,8 @@ namespace rhi {
 // Vulkan RHI backend (+ MoltenVK on macOS). Built only when MEADOWS_RHI_VULKAN
 // is ON; selected at runtime by the Device::create fallback chain (§2.1).
 //
-// Vulkan is the intended FINAL renderer, so the implementation is being brought
-// up brick by brick (docs/VULKAN.md): V0 = build/scaffolding, V1 = instance +
-// swapchain + clear, V2 = resources, V3 = shaders, ... All Vulkan types stay in
+// Vulkan is the intended FINAL renderer; the bring-up journal and design
+// notes live in docs/VULKAN.md. All Vulkan types stay in
 // the .cpp (pimpl) so this header — and every RHI header — stays free of any
 // <vulkan/*> include (§3.1).
 class VulkanDevice final : public Device {

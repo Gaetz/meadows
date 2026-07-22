@@ -9,7 +9,7 @@
 #include "engine/core/Guid.hpp" // brain-script cache key
 #include "engine/ecs/World.hpp" // ecs::Entity (flecs name confined to meadows-ecs)
 
-// The Lua scripting VM (Phase 4, §2.8). ONE shared, sandboxed Lua state; scripts
+// The Lua scripting VM (§2.8). ONE shared, sandboxed Lua state; scripts
 // are stateless modules; `self` is an entity handle (a proxy over the entity's
 // components). sol2/Lua are confined to Vm.cpp (pimpl) so they never leak into
 // engine headers. Determinism (§8): no os/io/wall-clock; randomness via the
@@ -39,7 +39,7 @@ struct ScriptVars;
 // coroutine scheduler): before each resume the Vm re-resolves the component
 // pointers from it — flecs moves component storage on any archetype change
 // and frees it on death, so pointers captured at start must never be trusted
-// across frames (audit U8-4). A null handle (id 0) means "immediate use":
+// across frames. A null handle (id 0) means "immediate use":
 // the pointers are taken as-is.
 struct ScriptContext {
     gameplay::AttributeSet* attributes { nullptr };
@@ -89,7 +89,7 @@ public:
     // call `wait(t)` to suspend for t game-seconds and `self:applyEffect(guid)`
     // / `self:addTag(...)`. Give the contexts their `entity` handle: on each
     // resume the component pointers are re-resolved from it — a dead `self`
-    // abandons the coroutine, a dead `target` degrades to nil reads (U8-4).
+    // abandons the coroutine, a dead `target` degrades to nil reads.
     void startCoroutine(const std::string& code, ScriptContext self,
                         ScriptContext target);
 

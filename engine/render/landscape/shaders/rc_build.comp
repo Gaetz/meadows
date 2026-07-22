@@ -3,7 +3,7 @@
 #include "common.glsl"
 #include "rc_common.glsl"
 
-// Radiance cascades G4 — BUILD one cascade: every texel raymarches its
+// Radiance cascades BUILD — one cascade: every texel raymarches its
 // radiance interval [start, end) through the voxel clipmap and stores
 // (interval radiance, β transparency). One dispatch per cascade; the
 // per-cascade parameters ride push constants (per-dispatch, Vulkan-safe —
@@ -23,7 +23,7 @@ MEADOWS_PUSH_CONSTANTS(RcCascadeUbo) {
     vec4 uRcCascadeB; // x = interval0 (m), y = march step (m),
                       // z = probe spacing (m), w = dir-major flag (c0)
     vec4 uRcCascadeC; // x = marched FRACTION of the interval (1 = all;
-                      // 0.25 = the G7c extension doubles it twice after)
+                      // 0.25 = the interval extension doubles it twice after)
 };
 
 layout(binding = 0, rgba16f) uniform writeonly image3D uRcDst;
@@ -87,7 +87,7 @@ void main() {
     const float tStart = rcIntervalStart(cascade, interval0);
     const float tEnd =
         tStart + (rcIntervalEnd(cascade, interval0) - tStart) *
-                     max(uRcCascadeC.x, 0.01); // G7c: march a fraction
+                     max(uRcCascadeC.x, 0.01); // interval ext: march a fraction
     const float step = uRcCascadeB.y;
 
     vec3 radiance = vec3(0.0);

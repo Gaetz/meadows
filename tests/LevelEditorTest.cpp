@@ -9,7 +9,7 @@
 #include "world/worldspace/WorldForms.hpp"
 #include "world/worldspace/WorldModel.hpp"
 
-// Chantier 2 B3/B4: the level editor edits RECORDS through an EditSession
+// The level editor edits RECORDS through an EditSession
 // (§5 — the editor is just another plugin author). Headless: move a
 // reference, export, re-resolve, the move persists; group two references
 // into a prefab and check the template/instance structure.
@@ -61,7 +61,7 @@ const core::Guid kRefB =
 const core::Guid kRock =
     *core::Guid::fromString("90000000-0000-4000-8000-000000000001");
 
-// Chantier IMPLICIT-CELLS, brick 2 — a worldspace and ONE authored cell;
+// A worldspace and ONE authored cell;
 // every other square of the grid is implicit.
 constexpr const char* kWorldExt = R"toml(
 [plugin]
@@ -159,7 +159,7 @@ TEST_CASE("editor: create prefab from selection replaces the originals") {
     CHECK(templates == 2);
 }
 
-// --- Chantier IMPLICIT-CELLS, brick 2: the editor places anywhere ---------
+// --- Implicit cells: the editor places anywhere ---------------------------
 
 TEST_CASE("editor: placing in a virgin square ships the implicit cell") {
     const data::FormTypeRegistry types = makeTypes();
@@ -294,7 +294,7 @@ TEST_CASE("edit session: createForm under an imposed guid") {
 }
 
 TEST_CASE("level editor: duplicate clones the reference, offset, one undo") {
-    // Chantier 2 leftover (2026-07-13): duplicateReference = the 8.1
+    // duplicateReference = the
     // duplicateForm clone + a position nudge, ONE undo gesture.
     const data::FormTypeRegistry types = makeTypes();
     const auto plugin = data::parsePluginToml(kBase, types, "base");

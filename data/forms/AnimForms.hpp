@@ -61,7 +61,7 @@ struct AnimStateForm : Form {
     core::Guid parent; // AnimGraphForm
     core::Guid clip;   // AnimClipForm
     f32 speed { 1.0f };
-    // Anti-foot-sliding (in-place decision 2026-07-05): playback rate is
+    // Anti-foot-sliding (in-place animation): playback rate is
     // scaled by (entity speed / referenceSpeed) when > 0.
     f32 referenceSpeed { 0.0f };
 

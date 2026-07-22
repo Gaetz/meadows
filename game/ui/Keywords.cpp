@@ -8,7 +8,7 @@ namespace game {
 
 namespace {
 
-// The keyword tint (dev-decided): keywords read Capitalized and blue.
+// The keyword tint: keywords read Capitalized and blue.
 constexpr ImVec4 kKeywordColor { 0.55f, 0.75f, 1.0f, 1.0f };
 
 struct Vocab {

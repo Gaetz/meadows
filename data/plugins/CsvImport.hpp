@@ -8,7 +8,7 @@
 
 namespace data {
 
-// Generic CSV -> plugin bridge (U4-11 + the mass-import intent): one row =
+// Generic CSV -> plugin bridge: one row =
 // one NEW record of `type`, columns = reflected field names (header row).
 // The output is an ORDINARY plugin (§5): it layers, diffs and patches like
 // any hand-written TOML. First uses: localisation string tables, bulk item
@@ -27,7 +27,7 @@ namespace data {
 // the cell is skipped, the import continues. A malformed header is fatal
 // (the Result carries the reason).
 //
-// PATCH mode (C9.5, language packs): pass `patchTarget` = the plugin guid
+// PATCH mode (language packs): pass `patchTarget` = the plugin guid
 // whose rows this sheet overrides. Rows then derive their identity from
 // (patchTarget, editorId) — the TARGET plugin's csvRowGuid — and become
 // ordinary §5 patch records (new = false) carrying only the value columns

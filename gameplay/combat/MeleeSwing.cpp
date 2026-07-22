@@ -78,7 +78,7 @@ bool registerStrike(MeleeSwing& swing, u64 targetId) {
 namespace {
 
 // The three authored poses of the simulated swing, actor-local
-// [cpp-tuning]. Guard matches the A2 static viewmodel (hand 0.30 right,
+// [cpp-tuning]. Guard matches the static viewmodel (hand 0.30 right,
 // 0.34 below, 0.55 ahead, blade tilted 28 degrees forward).
 struct SocketPose {
     Vec3 position;
@@ -91,9 +91,9 @@ SocketPose guardPose() {
                             Vec3 { 1.0f, 0.0f, 0.0f }) };
 }
 
-// Armed: pulled high right, blade PITCHED FORWARD for the strike (dev
-// feel pass 2026-07-11: ~90 degrees about the actor's left-right axis —
-// local -X pitch, since local -Z is forward) and rolled right.
+// Armed: pulled high right, blade PITCHED FORWARD for the strike
+// (~90 degrees about the actor's left-right axis — local -X pitch,
+// since local -Z is forward) and rolled right.
 SocketPose armedPose() {
     return { Vec3 { 0.45f, -0.18f, -0.50f },
              glm::angleAxis(glm::radians(-80.0f),

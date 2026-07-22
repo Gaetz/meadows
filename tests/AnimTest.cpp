@@ -352,7 +352,7 @@ blendTime = 0.1
 }
 
 TEST_CASE("session-aware AnimBridge previews drafts and created children") {
-    // Chantier 8 anim preview: the EditSession overload must see UNSAVED
+    // Anim preview: the EditSession overload must see UNSAVED
     // work — a draft field edit and session-created state/event records —
     // while the database overload keeps seeing only the resolved base.
     constexpr const char* kToml = R"(
@@ -457,7 +457,7 @@ threshold = 0.5
 }
 
 TEST_CASE("graph transitions honor the condition callback seam") {
-    // Chantier 8 follow-up: a transition carrying a conditionRef fires only
+    // A transition carrying a conditionRef fires only
     // when the runtime callback approves it — and fails CLOSED without a
     // callback, exactly like requiredTag without a tagCheck.
     anim::GraphDesc desc;

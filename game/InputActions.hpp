@@ -7,7 +7,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/platform/Input.hpp"
 
-// Chantier 9 C9.2 — the ACTION layer. Gameplay reads INTENTIONS; the
+// The ACTION layer. Gameplay reads INTENTIONS; the
 // ActionMap owns which physical inputs mean what — one keyboard key,
 // one mouse button AND one pad button per action, remappable, persisted
 // in settings.toml (a machine preference, deliberately NOT a Form).
@@ -27,13 +27,13 @@ enum class InputAction : u8 {
     Inventory,   // I / d-pad up
     Journal,     // J / Back
     WaitMenu,    // T / d-pad down
-    Map,         // M / d-pad left (screen lands with C9.6)
+    Map,         // M / d-pad left
     Pause,       // Escape / Start
-    // FOLLOWERS É7 (appended): the ALTERNATE interaction on the prompted
-    // entity — a follower's gear screen today, the grave's container later
-    // (É8). Bindings are single inputs (one key, one pad button), so the
-    // doc's Shift+E chord becomes F / LB; a chord-modifier extension of
-    // Binding stays possible later without touching callers.
+    // The ALTERNATE interaction on the prompted entity — a follower's
+    // gear screen today, the grave's container later. Bindings are single
+    // inputs (one key, one pad button), so the design's Shift+E chord
+    // becomes F / LB; a chord-modifier extension of Binding stays
+    // possible later without touching callers.
     InteractAlt, // F / LB
     Count
 };
@@ -55,7 +55,7 @@ public:
 
     const Binding& binding(InputAction action) const;
 
-    // THE mutation points (dev rule: one owner per state change): a
+    // THE mutation points (one owner per state change): a
     // rebind STEALS the physical input from whatever action held it —
     // the old owner's slot goes unbound, no silent double-binding.
     void rebindKey(InputAction action, platform::Key key);

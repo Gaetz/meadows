@@ -190,7 +190,7 @@ void SceneEditor::draw(const EditorContext& ctx) {
         } else if (snapEnabled && op == ImGuizmo::ROTATE) {
             snap = rotateSnap;
         }
-        // Not while mouselooking: Alt+LMB now arms the camera (2026-07-22)
+        // Not while mouselooking: Alt+LMB arms the camera
         // and ImGuizmo only ever reacts to LMB, so without this guard a
         // Cmd-drag over the gizmo would turn the view AND drag the object.
         // Short-circuit, so IsUsing() falls to false and the release branch
@@ -246,8 +246,8 @@ void SceneEditor::draw(const EditorContext& ctx) {
         if (placementBase.isValid()) {
             Vec3 ground;
             if (groundUnderMouse(ctx, mouse, ground)) {
-                // The cell under the hit — implicit cells (IMPLICIT-CELLS
-                // brick 2): no more "authored cell or abort". A virgin
+                // The cell under the hit — implicit cells
+                // (docs/IMPLICIT-CELLS.md): no more "authored cell or abort". A virgin
                 // square is materialized live + recorded in the session
                 // (ensureCell), then adopted by the streamer so it is
                 // loaded exactly once. One gesture: Ctrl+Z removes the
@@ -364,7 +364,7 @@ void SceneEditor::draw(const EditorContext& ctx) {
             editSelection = ecs::Entity {};
         }
         ImGui::SameLine();
-        // Duplicate (chantier 2 leftover): record copy through the
+        // Duplicate: record copy through the
         // session (one undo gesture) + a live spawn beside the original.
         if (ImGui::Button("Duplicate") ||
             (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D, false))) {
@@ -427,7 +427,7 @@ void SceneEditor::draw(const EditorContext& ctx) {
         }
     }
     ImGui::Separator();
-    // B9: terrain sculpt (TerrainSculptTool).
+    // Terrain sculpt (TerrainSculptTool).
     sculptTool.drawPanel(ctx.sculpt);
     ImGui::Separator();
     ImGui::TextUnformatted(placementBase.isValid()

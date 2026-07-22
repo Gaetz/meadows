@@ -15,7 +15,7 @@ struct Image {
 };
 
 // Synchronous decode via stb_image (PNG and friends). Returns nullopt with
-// a logged error on failure. Async loading comes with streaming (Phase 8).
+// a logged error on failure. Async loading lives in the streaming path (§7).
 std::optional<Image> loadImageFile(const std::filesystem::path& path);
 
 } // namespace assets

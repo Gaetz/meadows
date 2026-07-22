@@ -1,7 +1,7 @@
 #version 460 core
 #include "common.glsl"
 
-// Brick 32 — placed water surface quad, built in world space on the CPU.
+// Placed water surface quad, built in world space on the CPU.
 
 layout(location = 0) in vec3 aPos;
 

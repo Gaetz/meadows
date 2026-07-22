@@ -27,7 +27,7 @@ enum class DamageType {
 };
 
 // The type's name, matching the enum spelling — tag composition
-// ("Cue.Hit." + name, the C2 cue emission points) and logs.
+// ("Cue.Hit." + name, the cue emission points) and logs.
 const char* damageTypeName(DamageType type);
 
 class DerivedStatRegistry;
@@ -36,14 +36,14 @@ struct StatModifiers;
 struct StatsTuningForm;
 class GameplayTagRegistry;
 
-// P0 D2a — an outright kill through the NORMAL pipeline (kill-z, future
+// An outright kill through the NORMAL pipeline (kill-z, future
 // scripted executions): a damage event no mitigation survives, so death
 // flows exactly like any other (life state, OnDeath, persistence).
 void killOutright(StatBlock& target, const GameplayTagRegistry& tags,
                   const DerivedStatRegistry& derived,
                   const StatsTuningForm& tuning);
 
-// Fall damage (D-catalogue leftover, 2026-07-13): blunt damage for a
+// Fall damage: blunt damage for a
 // landing after `fallHeight` meters. 0 below tuning.fallMinHeight, then
 // linear per meter. At/past tuning.fallLethalHeight the caller uses
 // killOutright instead — no curve survives that. Pure and headless.
@@ -57,7 +57,7 @@ struct DamageChannel {
 struct DamageEvent {
     vector<DamageChannel> channels;
     f32 postureAmount { 0.0f };
-    // Chantier 6 C1: attacker-side offensive stats, carried on the event
+    // Attacker-side offensive stats, carried on the event
     // (plain runtime struct — no ordinal concern). Pens subtract from the
     // target's POSITIVE mitigation only (they reduce protection, they
     // never amplify a vulnerability); `critical` triggers the critical
@@ -78,20 +78,19 @@ struct DamageResult {
 // Combat resource state. `posture` is the poise resource (seeded to
 // maxPosture); `staggerSeconds` counts down a stagger; `restSeconds` is the
 // in-game time since the last hit ("Rest", §5 — the precondition for
-// injury/resonance recovery; a hit resets it). Reflected since chantier 5:
-// the save layer captures it by field name like the other stat components —
-// chantier 6 fields are APPENDED (binary ordinals stable).
+// injury/resonance recovery; a hit resets it). Reflected: the save layer
+// captures it by field name like the other stat components.
 struct CombatState {
     f32 posture { 0.0f };
     f32 staggerSeconds { 0.0f };   // posture break: brief loss of control
     f32 paralysisSeconds { 0.0f }; // glaciation: frozen in place (distinct from stagger)
     f32 restSeconds { 0.0f };
-    // Chantier 6 C2 (docs/STATS.md §4): the critical window opened by a
+    // The critical window (docs/STATS.md §4) opened by a
     // posture break — posture SITS at 0 until it elapses, then refills;
     // `shakenSeconds` is the short accuracy debuff from a heavy posture hit.
     f32 critWindowSeconds { 0.0f };
     f32 shakenSeconds { 0.0f };
-    // FOLLOWERS É3 (APPENDED — ordinals stable): the bleedout window while
+    // The bleedout window while
     // State.Downed (an active follower at 0 HP goes DOWN, not dead — the
     // updateLifeState routing). Counts down in updateDowned; the caller
     // resolves the timeout (recover with an injury / real death roll).
@@ -145,7 +144,7 @@ void updateCritWindow(CombatState& combat, AbilitySystem& system, f32 dt,
 void updateShaken(CombatState& combat, AbilitySystem& system, f32 dt,
                   const GameplayTagRegistry& tags);
 
-// FOLLOWERS É3 — counts down the bleedout window while State.Downed is
+// Counts down the bleedout window while State.Downed is
 // held (the updateStagger timer pattern). Unlike the other timers it does
 // NOT drop the tag itself: it returns true ONCE when the window elapses
 // and the CALLER resolves the outcome (gameplay::resolveBleedout — a

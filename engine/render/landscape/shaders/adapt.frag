@@ -1,7 +1,7 @@
 #version 460 core
 #include "common.glsl"
 
-// Brick 29 (chantier 6 B4): the eye-adaptation micro-pass. Reads the 1x1
+// The eye-adaptation micro-pass. Reads the 1x1
 // log-average luminance mip + the previous exposure (1x1 ping-pong) and
 // writes the new exposure with asymmetric inertia — adapting to darkness
 // (exposure rising) is slower than to a bright scene, like an eye.

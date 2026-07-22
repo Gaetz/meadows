@@ -17,8 +17,8 @@ namespace world {
 namespace {
 
 // The Form->GraphDesc mapping, parameterized over HOW forms are looked up:
-// the resolved-database path (runtime) and the EditSession path (chantier 8
-// anim preview — unsaved drafts included) build through this ONE mapping.
+// the resolved-database path (runtime) and the EditSession path (anim
+// preview — unsaved drafts included) build through this ONE mapping.
 struct GraphForms {
     std::function<const data::AnimGraphForm*(const core::Guid&)> graph;
     std::function<const data::AnimClipForm*(const core::Guid&)> clip;

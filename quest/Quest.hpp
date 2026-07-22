@@ -14,24 +14,23 @@ namespace gameplay {
 class GameplayTagRegistry;
 }
 
-// Quests (Phase 4, brick 4e) — NarrativePro's state machine, decomposed into
+// Quests — NarrativePro's state machine, decomposed into
 // individually-patchable Form records linked by id (States → Branches → Tasks).
 // A branch completes when all its tasks are done → the quest enters the branch's
 // destination state. Success/Failure states finish the quest. Tasks progress on
-// gameplay events (4b). Runtime state lives in `QuestLog` (serialized Phase 8).
+// gameplay events (EventBus). Runtime state lives in `QuestLog`.
 
 namespace quest {
 
 struct QuestForm : data::Form {
     str displayName;
     core::Guid startState;
-    // 8.7c: the event that STARTS this quest (e.g. fired by a dialogue
+    // The event that STARTS this quest (e.g. fired by a dialogue
     // option) — data-driven quest acquisition, no C++ wiring per quest.
-    // "" = started by code/script only. Appended (binary ordinals stable).
+    // "" = started by code/script only.
     str startEvent;
-    // 8.7e: paid to the player ONCE, when the quest first succeeds —
-    // data-driven rewards (the ex-hardcoded EasternMenace +50 gold now
-    // lives here). 0/null = no reward. Appended.
+    // Paid to the player ONCE, when the quest first succeeds —
+    // data-driven rewards. 0/null = no reward.
     core::Guid rewardItem;
     i32 rewardCount { 0 };
 
@@ -98,7 +97,7 @@ struct QuestLog {
 void beginQuest(QuestLog& log, const data::FormDatabase& forms,
                 const core::Guid& questId);
 
-// 8.7c — data-driven quest starts: begins every quest whose `startEvent`
+// Data-driven quest starts: begins every quest whose `startEvent`
 // matches the event and which was never taken (a finished quest never
 // restarts: the log keeps its entry). Returns the quests started this
 // call, for the caller's toasts/tag sync.
@@ -112,7 +111,7 @@ void onQuestEvent(QuestLog& log, const data::FormDatabase& forms,
                   const gameplay::Event& event,
                   const gameplay::GameplayTagRegistry& tags);
 
-// Dev/console jump (the `setstage` command, 2026-07-13): forces the quest
+// Dev/console jump (the `setstage` command): forces the quest
 // onto `stateId` — starts it if it was never taken, clears task progress,
 // and a Success/Failure state kind finishes it exactly like a normal
 // transition. False (no change) when the state is unknown or belongs to
@@ -126,7 +125,7 @@ i32 taskProgress(const QuestLog& log, const core::Guid& questId,
                  const core::Guid& taskId);
 QuestStatus questStatus(const QuestLog& log, const core::Guid& questId);
 
-// --- Save records (chantier 6 A4). The QuestLog persists as ordinary
+// --- Save records. The QuestLog persists as ordinary
 // plugin records (§2.4/§5), like everything else: one SavedQuestForm per
 // entry, one SavedQuestTaskForm per progressed task. Deterministic guids
 // (Guid::combine), so re-saving is idempotent.

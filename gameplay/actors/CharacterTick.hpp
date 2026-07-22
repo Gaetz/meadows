@@ -7,7 +7,7 @@
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 
-// tickCharacter — the single reusable character-update function for Phase 8+.
+// tickCharacter — the single reusable character-update function.
 //
 // All character-state components (CoreAttributes, AttributeSet, AbilitySystem,
 // Resonance, Survival, StatusBuildup, CombatState, Injuries, Afflictions,

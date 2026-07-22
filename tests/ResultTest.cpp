@@ -3,7 +3,7 @@
 #include "data/plugins/PluginLoader.hpp"
 #include "engine/core/Result.hpp"
 
-// core::Result (audit U1-03): the recoverable-error primitive — optional's
+// core::Result: the recoverable-error primitive — optional's
 // read API plus the REASON. Introduced with the §5 plugin loader as its
 // first real call path; these lock both the type and the wiring.
 

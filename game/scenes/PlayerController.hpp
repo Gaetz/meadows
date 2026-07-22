@@ -5,10 +5,10 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/ecs/World.hpp" // ecs::Entity
-#include "game/InputActions.hpp" // game::ActionMap (C9.2)
-#include "game/Settings.hpp"     // game::Settings (C9.2)
+#include "game/InputActions.hpp" // game::ActionMap
+#include "game/Settings.hpp"     // game::Settings
 #include "gameplay/actors/Swimming.hpp" // gameplay::MoveMode (D2b)
-#include "gameplay/combat/PlayerAction.hpp" // gameplay::PlayerAction (R5)
+#include "gameplay/combat/PlayerAction.hpp" // gameplay::PlayerAction
 
 namespace platform {
 class Input;
@@ -43,7 +43,7 @@ class ProjectileDirector;
 
 // The scene systems the first-person player touches, bundled so the whole
 // Play-mode controller (movement / jump / sprint cost / melee + crime) is
-// decoupled from LandscapeScene (audit U4-1). The scene rebuilds it each
+// decoupled from LandscapeScene. The scene rebuilds it each
 // call from its own members — references, a few scalars, one closure.
 // Mirrors the other *Context contracts.
 struct PlayerContext {
@@ -55,10 +55,10 @@ struct PlayerContext {
     const gameplay::GameplayTagRegistry& gameTags;
     const gameplay::DerivedStatRegistry& derivedStats;
     const gameplay::StatsTuningForm& statsTuning;
-    const data::TextTable& texts; // U4-11: player-facing strings by key
+    const data::TextTable& texts; // Player-facing strings by key
     const gameplay::EffectForm* sprintCostEffect; // §2.9: energy only moves here
     const data::WeaponForm* fallbackWeapon;       // pre-equipment default
-    // P0 A3: the melee attack ability (energy cost + cooldown effects, §6)
+    // The melee attack ability (energy cost + cooldown effects, §6)
     // gates every swing; the swing itself is the MeleeSwing component.
     const gameplay::AbilityForm* attackAbility;
     // Dodge (the 2D arena ability in 3D): cost/cooldown/i-frames are its
@@ -70,12 +70,12 @@ struct PlayerContext {
                          //   equipMods site — it also feeds the tick)
     std::function<void()> syncWantedTag; // Crime.Wanted mirror stays with the
                                          //   scene's quest/crime wiring
-    // Chantier P0 C4a: the player has no walk clip — footsteps fire as
+    // The player has no walk clip — footsteps fire as
     // "AnimEvent"/Footstep on the bus every strideLength meters walked.
     gameplay::EventBus* eventBus { nullptr };
-    // P0 C2: feedback cues (hit/block/parry) — the FxDirector's registry.
+    // Feedback cues (hit/block/parry) — the FxDirector's registry.
     gameplay::CueRegistry* cues { nullptr };
-    // P0 D2b: the water surface (if any) over a world position — sea
+    // The water surface (if any) over a world position — sea
     // level + placed WaterVolumes; the scene owns the geometry, the
     // controller only asks (the TriggerSystem callback pattern).
     std::function<std::optional<f32>(const Vec3&)> waterSurfaceAt;
@@ -83,11 +83,11 @@ struct PlayerContext {
     const gameplay::EffectForm* swimCostEffect { nullptr };
     // Sneak: the drain while MOVING sneaked (SneakCost, ~3 energy/s).
     const gameplay::EffectForm* sneakCostEffect { nullptr };
-    // A7: where fired arrows go (a ranged weapon = projectileSpeed > 0).
+    // Where fired arrows go (a ranged weapon = projectileSpeed > 0).
     ProjectileDirector* projectiles { nullptr };
-    // A7+: the drain while the bow is DRAWN (3 energy/s, data).
+    // The drain while the bow is DRAWN (3 energy/s, data).
     const gameplay::EffectForm* bowDrawCostEffect { nullptr };
-    // C9.2: the action layer + machine preferences — the controller reads
+    // The action layer + machine preferences — the controller reads
     // INTENTIONS (attack/block/dodge...), never raw keys; the settings
     // drive look sensitivity / invert / stick feel. Both owned by the
     // scene, always set (null only in never-built test contexts).
@@ -96,12 +96,12 @@ struct PlayerContext {
 };
 
 // The first-person Play-mode controller extracted from LandscapeScene
-// (audit U4-1): owns the kinematic capsule and the movement state
+//: owns the kinematic capsule and the movement state
 // (smoothed velocity, swing weapon, sprint-cost accumulator), runs
 // mouselook / camera-relative movement / jump / sprint cost (through the
-// SprintCost GameplayEffect, §2.9) and the LMB melee swing — P0 A3/A4:
+// SprintCost GameplayEffect, §2.9) and the LMB melee swing —
 // the ability-gated MeleeSwing whose blade must TOUCH (segment vs
-// capsule) — with the D2 crime-witnessing pass. MODE transitions stay in the scene (enter/exit/
+// capsule) — with the crime-witnessing pass. MODE transitions stay in the scene (enter/exit/
 // restoreMode are SceneMode plumbing); they and travel/tp drive the body
 // through spawnBody/destroyBody.
 class PlayerController {
@@ -125,7 +125,7 @@ public:
     // sync. Frozen while the interaction fade runs.
     void update(f32 dt, const PlayerContext& ctx);
 
-    // P0 A3: the weapon the in-flight swing was activated with (null when
+    // The weapon the in-flight swing was activated with (null when
     // Idle) — the scene's viewmodel takes its timings and model from it.
     const data::WeaponForm* swingWeapon() const { return swingWeapon_; }
 
@@ -137,13 +137,13 @@ public:
     // at the price of a slow energy drain while moving.
     bool sneaking() const { return sneaking_; }
 
-    // A7+: the bow draw — 0..1 while LMB is held on a ranged weapon,
+    // The bow draw — 0..1 while LMB is held on a ranged weapon,
     // -1 when not drawing (the HUD gauge and the viewmodel arrow read
     // this).
     f32 bowCharge() const { return bowCharge_; }
 
 private:
-    // R5: what the stance half hands the locomotion half — the frame's
+    // What the stance half hands the locomotion half — the frame's
     // ONE action (gameplay::decidePlayerAction owns every exclusion)
     // plus the facts both halves read.
     struct StanceFrame {
@@ -151,11 +151,11 @@ private:
         bool staggered { false };    // State.Staggered, read once (§4)
         bool rangedWeapon { false }; // equipped weapon fires projectiles
     };
-    // R5: the stance half of the frame — R draw/sheathe (the ONLY
+    // The stance half of the frame — R draw/sheathe (the ONLY
     // weaponDrawn_ writer), Ctrl sneak, the action decision, the guard
     // clock + State.Blocking sync, and the bow-vs-melee input dispatch.
     StanceFrame updateStance(f32 dt, const PlayerContext& ctx);
-    // R5: the locomotion half — mouselook, wish/speeds, the swim
+    // The locomotion half — mouselook, wish/speeds, the swim
     // early-out, dodge tap + burst, jump, strides, drains, and the
     // camera/entity-transform sync tail.
     void updateLocomotion(f32 dt, const PlayerContext& ctx,
@@ -163,7 +163,7 @@ private:
     void tryAttack(const PlayerContext& ctx);
     // The equipped weapon (inventory), or the context fallback.
     const data::WeaponForm* equippedWeapon(const PlayerContext& ctx) const;
-    // A7+: the charged shot — LMB held draws (gauge + drain), release
+    // The charged shot — LMB held draws (gauge + drain), release
     // fires at a force proportional to the draw; exhaustion or a
     // stagger lets go early. `inhibited` = guarding or reeling.
     void updateBowDraw(f32 dt, const PlayerContext& ctx,
@@ -173,11 +173,11 @@ private:
     // True = the frame's movement was consumed (no jump/dodge/sprint).
     bool updateSwimming(f32 dt, const PlayerContext& ctx, f32 jog,
                         f32 accelRate);
-    // A4: advances the MeleeSwing machine and, through the Active window,
+    // Advances the MeleeSwing machine and, through the Active window,
     // sweeps the blade segment against the NPC capsules (one code path
     // with the NPCs: gameplay/combat/MeleeSwing).
     void updateSwing(f32 dt, const PlayerContext& ctx);
-    // The moved B6 hit: weapon damage through resolveMeleeStrike (R1).
+    // The weapon hit: weapon damage through resolveMeleeStrike.
     // Fires once per target per swing.
     void applyHit(const PlayerContext& ctx, Npc& target,
                   const data::WeaponForm& weapon);
@@ -197,7 +197,7 @@ private:
     f32 dodgeTimer { 0.0f };
     Vec3 dodgeDir { 0.0f };
     bool weaponDrawn_ { true }; // R toggles; starts drawn (adventurer)
-    // P0 D2b: swimming (decideMoveMode owns the transitions).
+    // Swimming (decideMoveMode owns the transitions).
     gameplay::MoveMode moveMode_ { gameplay::MoveMode::Ground };
     f32 swimCostAccumulator { 0.0f };
     f32 drownAccumulator { 0.0f };
@@ -209,7 +209,7 @@ private:
     // Sneak toggle (Ctrl) + its moving-only drain accumulator.
     bool sneaking_ { false };
     f32 sneakCostAccumulator { 0.0f };
-    // A7+: the bow draw (charge -1 = idle) + its drain accumulator.
+    // The bow draw (charge -1 = idle) + its drain accumulator.
     f32 bowCharge_ { -1.0f };
     f32 bowDrawAccumulator { 0.0f };
 };

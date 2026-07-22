@@ -31,8 +31,7 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
     // stats below, which read the CURRENT value (so Resonance weakens them).
     //
     // maxHealth carries the DOCUMENTED balance override (STATS.md: derived
-    // value = `override ?? formula`, decided Phase 6, unimplemented until
-    // the archer-flees bug 2026-07-12): an ActorForm authoring a POSITIVE
+    // value = `override ?? formula`): an ActorForm authoring a POSITIVE
     // maxHealth pins the max past the humanoid formula (the Spawner seeds
     // maxHealthOverride); 0 = the attribute formula (the Player: his max
     // progresses with attributes). Resonance's % and other effect
@@ -113,7 +112,7 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
         return t.critSensBase - v.get("constitution") * t.critSensPerConstitution;
     } });
 
-    // Offensive stats (docs/STATS.md §3, chantier 6 C1) — consumed by
+    // Offensive stats (docs/STATS.md §3) — consumed by
     // weaponDamageEvent (attack folded into the strongest physical
     // channel, pens carried on the DamageEvent) and applyDamage (crit).
     registry.add({ attr("attack"), core, [t](const StatView& v) {
@@ -132,7 +131,7 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
                         (v.get("insight") - 5.0f) * t.resistPenPerInsight);
     } });
 
-    // Endurance = the per-type status-buildup threshold (docs/STATS.md §3, N1):
+    // Endurance = the per-type status-buildup threshold (docs/STATS.md §3):
     // dexterity → poison/bleed, alacrity → mental/disease, perception → curse/death.
     const auto endurance = [&](const char* stat, const char* attribute) {
         registry.add({ attr(stat), core, [t, attribute](const StatView& v) {
@@ -162,19 +161,19 @@ void registerCoreDerivedStats(DerivedStatRegistry& registry,
     } });
 
     // Movement speed (docs/STATS.md §3) — minimal, so leg-injury speed maluses
-    // (N2) have a target; full utility/encumbrance is a later pass.
+    // have a target; full utility/encumbrance is a later pass.
     registry.add({ attr("movementSpeed"), core, [](const StatView& v) {
         return 90.0f + v.get("alacrity") + v.get("strength");
     } });
 
     // Acceleration (docs/STATS.md §3) — the movement speed *ramp*: celerity
     // (alacrity) governs how fast you reach movementSpeed. Encumbrance
-    // penalties fold onto both as ×-modifiers (EquipmentStats, C3).
+    // penalties fold onto both as ×-modifiers (EquipmentStats).
     registry.add({ attr("acceleration"), core, [](const StatView& v) {
         return 90.0f + v.get("alacrity") * 2.0f;
     } });
 
-    // Utility stats (docs/STATS.md §3, chantier 6 C3). Both read CURRENT
+    // Utility stats (docs/STATS.md §3). Both read CURRENT
     // values so buffs/injuries move them live (a fortify-carry effect works
     // out of the box).
     registry.add({ attr("maxEncumbrance"), core, [](const StatView& v) {

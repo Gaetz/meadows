@@ -20,7 +20,7 @@ namespace {
 
 constexpr const char* kTreeShader = "tree";
 constexpr const char* kPropCasterShader = "shadow_prop";
-// Realistic-scale trees (dev 2026-07-20): x8 height against the player,
+// Realistic-scale trees: x8 height against the player,
 // so 2x the candidate spacing = 1/4 the density — giant forests, not
 // hedges of them.
 constexpr f32 kTreeSpacing = 8.0f; // meters between scatter candidates
@@ -93,25 +93,23 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                      rng.next()) *
                                         kTreeSpacing;
             const f32 forest = forestMask(params.seed, x, z);
-            // 0.475: half the pre-2026-07-20 acceptance — the second
-            // density halving (after kTreeSpacing 4->8) requested once
-            // the x8 giants stood; done on the acceptance so the grid
-            // keeps its resolution (spacing x sqrt(2) would truncate).
+            // Density halving done on the acceptance rather than the
+            // spacing so the grid keeps its resolution (spacing x
+            // sqrt(2) would truncate).
             if (forest < 0.05f || rng.next() >= forest * 0.475f) {
                 continue;
             }
             const f32 h = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
             const f32 slope = 1.0f - n.y;
-            // Treeline scaled with the terrain amplitudes (x1.5, 2026-07-21).
+            // Treeline scaled with the terrain amplitudes.
             if (h < params.seaLevel + 3.0f || h > 138.0f || slope > 0.22f) {
                 continue;
             }
             // Sink slightly so leaning trunks never float on slopes; the
             // offset follows the scale (their footprint is meters wide).
             place(0, VegetationSystem::kTreeVariants, rng, x, h - 0.9f, z,
-                  4.8f, 8.4f, 880.0f); // -25% on the x8 hedge scale
-                                       // (dev pick 2026-07-21)
+                  4.8f, 8.4f, 880.0f); // hand-tuned scale range
         }
     }
 
@@ -200,7 +198,7 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
 
 void VegetationSystem::createVariantMeshes(rhi::Device& device,
                                            u32 terrainSeed) {
-    // Option B (2026-07-10): ambient grounding is BAKED into the vertex
+    // Ambient grounding is BAKED into the vertex
     // colors — canopy interiors and rock creases darken with zero
     // runtime cost. Content-keyed DISK CACHE (same store as the glTF
     // bakes): these 17 synchronous bakes cost ~a minute in an
@@ -230,7 +228,7 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
             };
             uploadVariantMesh(device, i, baked(tree(2), 0.6f));
             uploadLowDetailMesh(device, i, baked(tree(1), 0.6f));
-            // V8f: bare-icosahedron lobes (~150 tris/tree) for the far
+            // Bare-icosahedron lobes (~150 tris/tree) for the far
             // ring — same seed, same composition, facets invisible there.
             uploadUltraDetailMesh(device, i, baked(tree(0), 0.6f));
         } else if (i < kFirstBush) {
@@ -357,7 +355,7 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
             chunk.counts[v] = static_cast<u32>(built.payload[v].size());
             packed.insert(packed.end(), built.payload[v].begin(),
                           built.payload[v].end());
-            // Chantier RC: the compact CPU copy the GI injection boxes.
+            // The compact CPU copy the GI injection boxes.
             const u8 kind = v < kFirstRock ? 0 : v < kFirstBush ? 1 : 2;
             for (const Instance& instance : built.payload[v]) {
                 chunk.giProps.push_back(
@@ -485,7 +483,7 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     // by the canopy reach and the top by the tallest scaled tree.
     const auto chunkVisible = [&](u64 key, const Chunk& chunk) {
         if (occluded && occluded->contains(key)) {
-            return false; // hidden behind a ridge (brick 26)
+            return false; // hidden behind a ridge (ChunkOcclusion)
         }
         if (!frustum) {
             return true;
@@ -526,7 +524,7 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     if (shadowBindGroup.id != 0) {
         cmd.setBindGroup(2, shadowBindGroup);
     }
-    // Canopy LOD pick, per chunk — THREE levels (V8f): 320-face lobes
+    // Canopy LOD pick, per chunk — THREE levels: 320-face lobes
     // near, 80-face twins mid, 20-face ultra beyond lowDetailRadius (and
     // always in mirrored/downsampled passes). Variants without twins
     // (rocks, bushes, authored overrides) always use their main mesh.
@@ -636,7 +634,7 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
             }
             // Casters use the cheapest twin the cascade tolerates: the
             // 80-face lobe throws the same soft shadow as a 320-face one;
-            // the far cascades (ultraDetail, V8f) drop to the 20-face
+            // the far cascades (ultraDetail) drop to the 20-face
             // level — their texels are meters wide anyway.
             const VariantMesh& mesh = variantMeshes[v];
             const bool ultra = ultraDetail && mesh.ultraIndexCount != 0;

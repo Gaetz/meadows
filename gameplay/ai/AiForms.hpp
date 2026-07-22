@@ -2,7 +2,7 @@
 
 #include "data/forms/Form.hpp"
 
-// AI data Forms (horizontal pass H1) — the Skyrim-NPC layer cake:
+// AI data Forms — the Skyrim-NPC layer cake:
 //   ScheduleForm (WHEN/WHERE/WHAT, per day slice, the daily routine)
 //     -> AiPackageForm (an executable behavior: sleep, work, wander...)
 //        -> movement/furniture/abilities (the verticals execute these)
@@ -10,10 +10,11 @@
 // inserts "goes to the tavern at 19h" into any NPC's day by adding ONE
 // record. Entry conditions reuse ConditionForm (parent = the entry guid).
 //
-// HOW TO FILL (post-7/07): ScheduleSystem (H7 skeleton) picks the active
+// HOW TO FILL: ScheduleSystem picks the active
 // entry; the package vertical executes kind-specific behavior (navmesh
 // travel, furniture use via FurnitureForm, wander radius around
-// `location`). Combat/dialogue interrupt and resume (H7 exposes intent).
+// `location`). Combat/dialogue interrupt and resume (ScheduleSystem
+// exposes the intent).
 
 namespace data {
 class FormTypeRegistry;

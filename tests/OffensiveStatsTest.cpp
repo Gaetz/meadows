@@ -9,7 +9,7 @@
 
 using namespace gameplay;
 
-// Chantier 6 C1: offensive derived stats (attack, criticalDamage,
+// Offensive derived stats (attack, criticalDamage,
 // armor/resist penetration) and their consumption in the damage pipeline.
 
 namespace {

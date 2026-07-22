@@ -8,17 +8,17 @@
 
 #include "engine/core/Defines.hpp"
 
-// The animation seam (horizontal pass H5): a pure, headless runtime over
+// The animation seam (docs/HORIZONTAL-PASS.md): a pure, headless runtime over
 // PLAIN structs — no data:: dependency (rule: engine consumes params, the
 // world/runtime layer maps Forms onto them via world/scene/AnimBridge).
 // Deterministic by construction (same clip + times = same pose), so it
 // doctests without a renderer, like the rest of the sim.
 //
-// Decision 2026-07-05: NO root motion — the character controller owns
+// NO root motion — the character controller owns
 // movement; GraphState::referenceSpeed rescales playback against entity
 // speed to hide foot sliding.
 //
-// HOW TO FILL (post-7/07, "socle 3D gameplay" vertical):
+// Planned extension points:
 //  - GPU skinning: skinMatrices() output -> bone-palette SSBO (the RHI
 //    compute/storage extension already exists), skinned vertex shader;
 //  - layers/masks: add an upper-body mask blend on top of blendPose
@@ -103,7 +103,7 @@ struct GraphTransition {
     str blockedTag;
     f32 blendTime { 0.15f };
     bool waitForEnd { false };
-    // Full condition-evaluator gate (chantier 8 follow-up): an opaque id the
+    // Full condition-evaluator gate: an opaque id the
     // runtime hands back through the condition callback — the graph never
     // sees gameplay types, same seam as tags. "" = ungated (the common
     // case pays no callback). Fails closed when set without a callback.

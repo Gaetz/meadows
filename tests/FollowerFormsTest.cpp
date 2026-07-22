@@ -8,11 +8,11 @@
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/actors/ActorState.hpp"
 #include "gameplay/actors/FollowerForms.hpp"
-#include "gameplay/actors/Followers.hpp" // É9: followerStance round-trip
+#include "gameplay/actors/Followers.hpp" // followerStance round-trip
 #include "gameplay/save/SaveForms.hpp"
 #include "gameplay/save/SaveState.hpp"
 
-// FOLLOWERS É0 (docs/CHANTIER-FOLLOWERS.md): the data socle. Class curves
+// The follower data socle (docs/CHANTIER-FOLLOWERS.md). Class curves
 // resolve into CoreAttributes, perks are ordinary childrenOf records,
 // FollowerState round-trips through the SavedStatsForm name-match bridge,
 // and the minimal `level` attribute rides the overlay.
@@ -154,7 +154,7 @@ TEST_CASE("follower forms: FollowerState round-trips the save bridge") {
     state.followerLastLevelSyncedFrom = 6.0f;
     state.followerLastHomeUpgradeHours = 90.0f;
     state.followerDownedRecoveryHours = 8.0f;
-    gameplay::setFollowerStance(state, gameplay::FollowerStance::Stay); // É9
+    gameplay::setFollowerStance(state, gameplay::FollowerStance::Stay);
 
     gameplay::SavedStatsForm saved;
     gameplay::copyMatchingFields(
@@ -182,14 +182,14 @@ TEST_CASE("follower forms: FollowerState round-trips the save bridge") {
           doctest::Approx(state.followerLastHomeUpgradeHours));
     CHECK(restored.followerDownedRecoveryHours ==
           doctest::Approx(state.followerDownedRecoveryHours));
-    // É9: a « rester » order survives the save (the appended field rides
+    // A « rester » order survives the save (followerStance rides
     // the same name-match bridge).
     CHECK(gameplay::followerStance(restored) ==
           gameplay::FollowerStance::Stay);
 }
 
 TEST_CASE("follower forms: the minimal level attribute rides the overlay") {
-    // AttributeSet.level (appended) is copied into the current-value
+    // AttributeSet.level is copied into the current-value
     // overlay by initializeCurrent like every f32 field — so an
     // `AttributeAtLeast level` condition works with no extra plumbing.
     const gameplay::AttributeSet set;

@@ -3,7 +3,7 @@
 #include <algorithm>
 
 #include "data/forms/FormDatabase.hpp"
-#include "data/forms/FormQuery.hpp" // data::forEach (audit U8-1)
+#include "data/forms/FormQuery.hpp" // data::forEach
 #include "data/forms/FormTypeRegistry.hpp"
 #include "gameplay/condition/Condition.hpp"
 #include "gameplay/event/EventBus.hpp"

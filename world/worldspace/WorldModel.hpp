@@ -23,7 +23,7 @@ public:
     // none exists.
     data::FormHandle cellAt(data::FormHandle worldspace, i32 x, i32 y) const;
 
-    // Implicit cells (chantier IMPLICIT-CELLS, brick 1): materializes the
+    // Implicit cells: materializes the
     // (gx, gy) square of `worldspace`. Idempotent — returns the existing
     // handle when the square already has a CellForm (authored or
     // previously materialized); otherwise creates one LIVE in `forms`

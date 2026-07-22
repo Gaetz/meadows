@@ -8,7 +8,7 @@
 #include "gameplay/ability/GameplayTags.hpp"
 #include "quest/Quest.hpp"
 
-// Chantier 6 A4: the quest log persists as ordinary save records —
+// The quest log persists as ordinary save records —
 // mid-quest progress survives capture -> TOML -> resolve -> apply.
 
 namespace {

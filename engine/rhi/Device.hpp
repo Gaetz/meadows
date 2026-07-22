@@ -34,7 +34,7 @@ public:
     // the flags they need instead of testing GL versions.
     virtual const DeviceCaps& caps() const = 0;
 
-    // Dev-tool escape hatch (chantier 8, anim preview): the backend-native
+    // Dev-tool escape hatch (e.g. anim preview): the backend-native
     // name behind a TextureHandle, so offscreen targets can be handed to the
     // ImGui backend (imgui_impl_opengl3 wants the raw GLuint as ImTextureID).
     // 0 = unknown handle or a backend without a meaningful native id. NOT a
@@ -77,8 +77,8 @@ public:
     virtual PipelineHandle createComputePipeline(
         const ComputePipelineDesc& desc) = 0;
 
-    // Synchronous GPU->CPU readback (Vulkan: staging copy + fence). NOTE
-    // (perf P1): "written last frame" is NOT enough to avoid a pipeline
+    // Synchronous GPU->CPU readback (Vulkan: staging copy + fence). NOTE:
+    // "written last frame" is NOT enough to avoid a pipeline
     // stall — the driver runs 1-2 frames deep. Gate the read behind a
     // fence (below) and keep the previous result while it is pending.
     virtual void readBuffer(BufferHandle handle, void* dst, u64 size,
@@ -92,7 +92,7 @@ public:
     virtual bool fenceReady(FenceHandle handle) = 0;
     virtual void destroyFence(FenceHandle handle) = 0;
 
-    // GPU clock marker (GL timer query / Vulkan timestamp — GPU-PERF P0):
+    // GPU clock marker (GL timer query / Vulkan timestamp):
     // insertTimestamp records the GPU clock when the stream REACHES this
     // point; timestampReady polls WITHOUT blocking and, once available,
     // writes the time (nanoseconds) and releases the handle (single-use,

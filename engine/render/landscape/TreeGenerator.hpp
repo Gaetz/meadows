@@ -10,13 +10,13 @@ namespace render {
 // space. uv.x carries the wind sway weight (0 = rigid, 1 = outer foliage),
 // uv.y the normalized height — tree.vert uses both.
 
-// Tree-builder params (2026-07-20): every artistic knob of each generator
+// Tree-builder params: every artistic knob of each generator
 // is a FLAT engine struct — defaults reproduce the shipped look; the
 // moddable source of truth is the matching *TreeTuningForm (data/), mapped
 // here by the scene (the TerrainParams pattern — engine never sees Forms).
 
-// A tree is ONE opaque mesh (brick 27: full stylized canopy — the BotW
-// look; the leaf-card system lost the fill-rate A/B and was removed).
+// A tree is ONE opaque mesh (full stylized canopy — the BotW look;
+// cutout leaf cards lost the fill-rate A/B, docs/3D-RENDERER.md).
 // Tall trunk column, 3-5 short upward branches near the top, one rounded
 // foliage lobe per branch tip plus a crown. The canopy's normals are
 // SPHERIZED on the mesh: each vertex blends its lobe-center direction with
@@ -49,7 +49,7 @@ struct LobeTreeParams {
 MeshData generateTree(u32 seed, u32 lobeSubdivisions = 2,
                       const LobeTreeParams& params = {});
 
-// EXPERIMENT (feature/space-colonization-trees): alternative tree —
+// The default tree (docs/3D-RENDERER.md brique 27b) —
 // skeleton grown by the Runions et al. 2007 space colonization algorithm
 // (attraction points in a crown envelope, iterative growth, pipe-model
 // radii), foliage as CROSS-PLANE clusters scattered inside an SDF built
@@ -57,7 +57,7 @@ MeshData generateTree(u32 seed, u32 lobeSubdivisions = 2,
 // branch order so deep twigs don't inflate the volume). The card normals
 // are the SDF GRADIENT — the canopy shades as one smooth volume (the
 // Genshin/BotW trick, this time on cards instead of solid lobes).
-// The colonized tree's knobs (defaults = the dev-tuned 2026-07-20 look).
+// The colonized tree's knobs (defaults = the shipped look).
 struct ColonizedTreeParams {
     // Skeleton (Runions 2007).
     f32 segment { 0.28f };        // D — growth step (m)

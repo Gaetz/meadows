@@ -17,7 +17,7 @@
 #include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/stats/Survival.hpp"
 
-// Chantier audit U4-10 follow-up: a killed NPC must stay dead across a cell
+// A killed NPC must stay dead across a cell
 // unload/reload (the open-world state is a §5 patch layer). The scene path is
 // capture-on-unload (captureActor) -> respawn -> finalizeActorSpawn
 // (initializeActorStats resets vitals to full, THEN applySavedState restores

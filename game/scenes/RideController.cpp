@@ -18,7 +18,7 @@ namespace game {
 namespace {
 
 // Saddle geometry over the mount's ground position — matches the
-// makeHorseMesh proportions. [cpp-tuning: dev feel pass — É11 v1 numbers.]
+// makeHorseMesh proportions. [cpp-tuning]
 constexpr f32 kSaddleHeight = 1.3f;   // where the rider sits
 constexpr f32 kRideEyeHeight = 2.2f;  // camera above the mount's feet
 constexpr f32 kCameraBack = 0.5f;     // slight pull-back over the shoulder
@@ -95,7 +95,7 @@ void RideController::update(f32 dt, const RideContext& ctx) {
     }
 
     // Mouselook — duplicated from PlayerController::updateLocomotion (the
-    // C9.2 mouse + right-stick block). Deliberate for the tech proof: the
+    // mouse + right-stick block). Deliberate for the tech proof: the
     // ride REPLACES the player update, and sharing the block would mean
     // touching PlayerController (forbidden here). [cpp-tuning à retoucher
     // avec le dev: fold into one look helper when mounts become real.]

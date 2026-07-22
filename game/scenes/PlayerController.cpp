@@ -14,14 +14,14 @@
 #include "engine/platform/Input.hpp"
 #include "engine/render/FlyCamera.hpp"
 #include "game/scenes/InteractionController.hpp"
-#include "game/scenes/LineOfSight.hpp" // hasLineOfSight (R2)
+#include "game/scenes/LineOfSight.hpp" // hasLineOfSight
 #include "game/scenes/NpcDirector.hpp" // Npc
-#include "game/scenes/ProjectileDirector.hpp" // A7: the bow
+#include "game/scenes/ProjectileDirector.hpp" // the bow
 #include "gameplay/ability/AbilitySystem.hpp"
-#include "gameplay/ability/GameplayAbility.hpp" // tryActivate (P0 A3)
+#include "gameplay/ability/GameplayAbility.hpp" // tryActivate
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/combat/MeleeStrike.hpp"      // the ONE strike resolution
-#include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing (A4)
+#include "gameplay/combat/MeleeSwing.hpp"       // the blade-touch swing
 #include "gameplay/cue/GameplayCues.hpp"        // Cue.Hit/Block/Parry (C2)
 #include "world/ai/Perception.hpp"              // sneak attack: unaware gate
 #include "gameplay/event/EventBus.hpp"
@@ -35,11 +35,11 @@ namespace game {
 
 namespace {
 
-// B5.5: the stat-space -> world mapping and the movement feel now live in
-// StatsTuningForm (audit U4-7, §5 moddable) — docs/STATS.md §3. Default
+// The stat-space -> world mapping and the movement feel now live in
+// StatsTuningForm (§5 moddable) — docs/STATS.md §3. Default
 // sheet (~102): jog ~5.1 m/s, sprint x1.6 ~8.2 m/s, settles in ~0.1 s.
-// (Dev feel pass 2026-07-06: +50% — the unencumbered adventurer is brisk;
-// encumbrance will pull it back down when the P1 utility pass lands.)
+// (The unencumbered adventurer is deliberately brisk; encumbrance
+// will pull it back down when the utility pass lands.)
 
 // Skills-by-use: the player's activations opt into the usage-event channel
 // (OnAbilityUsed -> skill XP + open quest vocabulary).
@@ -67,14 +67,14 @@ void PlayerController::destroyBody() {
     body_.reset();
 }
 
-// P0 A3 (replaces the B6 cone pick): LMB starts an ability-gated
+// LMB starts an ability-gated
 // MeleeSwing — energy cost and cooldown are the AbilityForm's effects
 // (§6), the swing phases are the weapon's data timings, and damage lands
-// in updateSwing only where the VISIBLE blade passes (dev design: the
+// in updateSwing only where the VISIBLE blade passes (the
 // blade must touch).
 const data::WeaponForm* PlayerController::equippedWeapon(
     const PlayerContext& ctx) const {
-    // Chantier 4 B3: the EQUIPPED weapon (the inventory screen swaps it);
+    // The EQUIPPED weapon (the inventory screen swaps it);
     // the context fallback covers a bagless bootstrap.
     const data::WeaponForm* weapon = ctx.fallbackWeapon;
     if (ctx.playerEntity.is_alive() &&
@@ -91,7 +91,7 @@ void PlayerController::tryAttack(const PlayerContext& ctx) {
     if (!ctx.playerEntity.is_alive() || !body_) {
         return;
     }
-    // R5: the first press on a holstered weapon DRAWS instead — that
+    // The first press on a holstered weapon DRAWS instead — that
     // path now lives in updateStance (the one weaponDrawn_ writer); the
     // dispatch never sends a sheathed press here.
     const data::WeaponForm* weapon = equippedWeapon(ctx);
@@ -139,7 +139,7 @@ void PlayerController::updateBowDraw(f32 dt, const PlayerContext& ctx,
             }
         }
         // The force is the DRAW: a tap looses a weak lob, a full draw
-        // flies at the weapon's speed (dev design 2026-07-12).
+        // flies at the weapon's speed.
         const f32 factor =
             glm::mix(tuning.bowMinChargeFactor, 1.0f,
                      glm::clamp(charge, 0.0f, 1.0f));
@@ -213,7 +213,7 @@ void PlayerController::updateBowDraw(f32 dt, const PlayerContext& ctx,
     }
 }
 
-// P0 A4: the swing machine + the blade-touch hit test. The blade segment
+// The swing machine + the blade-touch hit test. The blade segment
 // (grip -> +Y x bladeLength x hitTolerance — the sword mesh grows along
 // +Y) rides the simulated camera socket through the Active sweep and is
 // tested ANALYTICALLY against the NPC capsules: CharacterVirtual bodies
@@ -247,7 +247,7 @@ void PlayerController::updateSwing(f32 dt, const PlayerContext& ctx) {
                                             swingWeapon_->hitTolerance);
         for (auto& npcPtr : ctx.npcs) {
             Npc& npc = *npcPtr;
-            // É3: a DOWNED ally is no target — the blade passes (revive
+            // A DOWNED ally is no target — the blade passes (revive
             // him with [E] instead; aggravation is the bleedout's job).
             if (npc.dead || npc.downed || !npc.entity.is_alive()) {
                 continue;
@@ -266,7 +266,7 @@ void PlayerController::updateSwing(f32 dt, const PlayerContext& ctx) {
     }
 }
 
-// The B6 weapon hit, unchanged in substance: typed damage through the GAS
+// The weapon hit: typed damage through the GAS
 // pipeline (§2.9) + the D2 crime pass — now fired by blade CONTACT. The
 // exchange rules (crit window, guard cone, perfect parry, events, cues)
 // live in ONE place, resolveMeleeStrike, shared with the NPC side.
@@ -336,13 +336,13 @@ void PlayerController::applyHit(const PlayerContext& ctx, Npc& target,
 
 // D2 — crime v1: assaulting a peaceful NPC in front of a witness.
 // Witnesses = the victim (if still alive) or any living NPC within
-// earshot with a clear line to the player (the B5 raycast idiom).
+// earshot with a clear line to the player (the LOS raycast idiom).
 void PlayerController::witnessCrime(const PlayerContext& ctx,
                                     const Npc& target,
                                     const Vec3& playerEye) {
-    const f32 witnessRange = ctx.statsTuning.crimeWitnessRange; // U4-7
+    const f32 witnessRange = ctx.statsTuning.crimeWitnessRange;
     bool witnessed = !target.dead && target.entity.is_alive();
-    // Per-faction crime (2026-07-13): the bounty goes to the WITNESS's
+    // Per-faction crime: the bounty goes to the WITNESS's
     // faction — the victim's if it saw its own assault, else the
     // bystander's. A factionless witness raises the unattributed total
     // (every guard reacts — the pre-migration behavior).
@@ -372,7 +372,7 @@ void PlayerController::witnessCrime(const PlayerContext& ctx,
     if (witnessed && ctx.playerEntity.is_alive()) {
         auto& bounty = ctx.playerEntity.get_mut<gameplay::Bounty>();
         gameplay::addBounty(bounty, witnessFaction,
-                            ctx.statsTuning.crimeBountyAssault); // U4-7
+                            ctx.statsTuning.crimeBountyAssault);
         ctx.syncWantedTag();
         ctx.interaction.say(
             ctx.texts.format(
@@ -383,7 +383,7 @@ void PlayerController::witnessCrime(const PlayerContext& ctx,
     }
 }
 
-// P0 D2b — the swim branch: decideMoveMode owns WHEN (sim-pure,
+// The swim branch: decideMoveMode owns WHEN (sim-pure,
 // doctested), this owns HOW. Full-3D wish toward the look, clamped so
 // the head never breaches the surface from below; the SwimCost effect
 // drains energy on the sprint-cost accumulator pattern (§2.9); an
@@ -399,7 +399,7 @@ bool PlayerController::updateSwimming(f32 dt, const PlayerContext& ctx,
         body_->onGround(), tuning.swimSubmergeDepth,
         tuning.swimWadeOutRatio);
     if (next != moveMode_) {
-        // THE transition (dev rule): the facade follows the mode.
+        // THE transition: the facade follows the mode.
         moveMode_ = next;
         body_->setSwimming(moveMode_ == gameplay::MoveMode::Swim);
         swimCostAccumulator = 0.0f;
@@ -486,7 +486,7 @@ void PlayerController::update(f32 dt, const PlayerContext& ctx) {
     if (!body_ || ctx.interaction.fading()) {
         return; // frozen during door transitions
     }
-    // R5: two halves, same per-frame order as the former god-method —
+    // Two halves, in a fixed per-frame order —
     // stance (toggles, THE action decision, combat input dispatch) then
     // locomotion (look, move, dodge, drains, camera sync).
     const StanceFrame frame = updateStance(dt, ctx);
@@ -497,17 +497,17 @@ PlayerController::StanceFrame
 PlayerController::updateStance(f32 dt, const PlayerContext& ctx) {
     platform::Input& input = ctx.input;
     StanceFrame frame;
-    // P0 A5: RMB held = raised guard — the State.Blocking tag is the §6
+    // RMB held = raised guard — the State.Blocking tag is the §6
     // vocabulary the damage paths read (both camps). Guarding excludes
     // swinging (and vice versa: the guard waits for the swing to land).
-    // R: draw/sheathe (dev design 2026-07-11) — never mid-swing.
+    // R: draw/sheathe — never mid-swing.
     if (ctx.actions->pressed(input, InputAction::DrawSheathe) &&
         (!ctx.playerEntity.is_alive() ||
          ctx.playerEntity.get<gameplay::MeleeSwing>().phase ==
              gameplay::SwingPhase::Idle)) {
         weaponDrawn_ = !weaponDrawn_;
     }
-    // Ctrl: sneak toggle (dev design 2026-07-12) — the body CROUCHES to
+    // Ctrl: sneak toggle — the body CROUCHES to
     // half height (standing back up can be refused by a low ceiling),
     // steps soften, detection halves (State.Sneaking drives it all).
     if (ctx.actions->pressed(input, InputAction::Sneak)) {
@@ -535,7 +535,7 @@ PlayerController::updateStance(f32 dt, const PlayerContext& ctx) {
     }
     const data::WeaponForm* held = equippedWeapon(ctx);
     frame.rangedWeapon = held && held->projectileSpeed > 0.0f;
-    // R5: THE action decision — every exclusion (guard vs swing,
+    // THE action decision — every exclusion (guard vs swing,
     // stagger, bow draw, dodge) lives in gameplay::decidePlayerAction;
     // nothing below re-derives one. A dead player stays Idle (the old
     // `blocking = false` path).
@@ -571,11 +571,11 @@ PlayerController::updateStance(f32 dt, const PlayerContext& ctx) {
         weaponDrawn_ = true;
         drewThisFrame = true;
     }
-    // B6: melee swing on LMB (the mouse is captured in Play — ImGui
+    // Melee swing on LMB (the mouse is captured in Play — ImGui
     // never owns it here). Cadence is the ability's cooldown effect plus
-    // the swing itself: no hardcoded timer (P0 A3).
+    // the swing itself: no hardcoded timer.
     if (frame.rangedWeapon) {
-        // A7+: ranged = the CHARGED shot (hold to draw, release to
+        // Ranged = the CHARGED shot (hold to draw, release to
         // loose); melee inputs stay out of the way. 7b: a bow raises no
         // guard, so only the stagger inhibits/cuts the draw.
         if (!drewThisFrame) {
@@ -602,7 +602,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
     const bool blocking =
         frame.action == gameplay::PlayerAction::Blocking;
     // Look, always captured in Play (no LMB gymnastics in a game).
-    // C9.2: mouse (pixels x base sens x user multiplier) + right stick
+    // Mouse (pixels x base sens x user multiplier) + right stick
     // (rad/s at full deflection x dt); one invert-Y switch covers both.
     render::FlyCamera& flyCamera = ctx.flyCamera;
     const f32 mouseSens =
@@ -627,16 +627,16 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
     const f32 yaw = flyCamera.camera.yaw;
     const Vec3 forward { std::sin(yaw), 0.0f, -std::cos(yaw) };
     const Vec3 right { std::cos(yaw), 0.0f, std::sin(yaw) };
-    const Vec2 axis = platform::moveAxis(input); // U5-8
+    const Vec2 axis = platform::moveAxis(input);
     const Vec3 wish = forward * axis.y + right * axis.x;
     const bool moving = glm::dot(wish, wish) > 0.0f;
 
-    // B5.5: speeds come from the CURRENT derived stats (docs/STATS.md §3
+    // Speeds come from the CURRENT derived stats (docs/STATS.md §3
     // — stat-space ~100 = nominal; injuries/buffs move them live). The
     // controller only READS attributes (§2.9); sprint pays energy through
     // the SprintCost effect below. Fallback keeps the scene alive without
     // a Player actor.
-    const gameplay::StatsTuningForm& tuning = ctx.statsTuning; // U4-7
+    const gameplay::StatsTuningForm& tuning = ctx.statsTuning;
     f32 jog = 100.0f * tuning.movementSpeedScale3D;
     f32 accelRate = 100.0f * tuning.accelerationRate3D;
     f32 energy = 100.0f;
@@ -649,7 +649,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
             tuning.accelerationRate3D;
         energy = gameplay::currentValueOf(sys, gameplay::attr("energy"));
     }
-    // P0 D2b: swimming consumes the whole ground-movement section (no
+    // Swimming consumes the whole ground-movement section (no
     // jump/dodge/sprint/strides in the water); the camera/transform sync
     // at the tail still runs.
     if (updateSwimming(dt, ctx, jog, accelRate)) {
@@ -665,7 +665,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
         }
         return;
     }
-    // Dodge (dev design 2026-07-11, the 2D arena move in 3D): a TAP on
+    // Dodge (the 2D arena move in 3D): a TAP on
     // the sprint key — released within dodgeTapSeconds — bursts in the
     // held move direction, backward when none. Cost, cooldown and the
     // State.Dodging i-frames are the Dodge ability's effects (§6).
@@ -675,7 +675,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
         if (shiftHeldSeconds > 0.0f &&
             shiftHeldSeconds <= tuning.dodgeTapSeconds &&
             dodgeTimer <= 0.0f && ctx.playerEntity.is_alive()) {
-            // R5: the tap is only a REQUEST — the same arbiter that owns
+            // The tap is only a REQUEST — the same arbiter that owns
             // every exclusion (stagger, swing in flight, guard, draw)
             // answers it; no guard is re-checked here. Swing state is
             // re-read: a swing may have STARTED in this frame's stance.
@@ -711,7 +711,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
     }
 
     // C3: overencumbered = no sprint, no jump (STATS.md §3 Utility).
-    // A5: no sprint behind a raised guard either.
+    // No sprint behind a raised guard either.
     const bool sprinting = moving &&
                            ctx.actions->down(input,
                                              InputAction::SprintDodge) &&
@@ -752,7 +752,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
     }
     body_->move(velocity, dt);
 
-    // Fall damage (D-catalogue leftover, 2026-07-13): track the airborne
+    // Fall damage: track the airborne
     // peak, pay on the landing edge. Blunt and unmitigated (the drowning
     // idiom); a lethal height goes through killOutright (the kill-z
     // idiom) so death flows through the normal pipeline.
@@ -788,7 +788,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
     }
     wasGrounded_ = grounded;
 
-    // Chantier P0 C4a: the first-person player has no walk clip, so the
+    // The first-person player has no walk clip, so the
     // footstep AnimEvent is synthesized every strideLength meters of
     // grounded travel (NPCs get theirs from their clips' events).
     if (ctx.eventBus && body_->onGround()) {
@@ -819,7 +819,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
         sprintCostAccumulator = 0.0f;
     }
     // Sneak drain: MOVING sneaked pays (SneakCost, ~3/s, data); holding
-    // still and watching is free (dev design 2026-07-12).
+    // still and watching is free.
     if (sneaking_ && moving && ctx.sneakCostEffect &&
         ctx.playerEntity.is_alive()) {
         gameplay::tickPeriodicEffect(
@@ -831,7 +831,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
         sneakCostAccumulator = 0.0f;
     }
 
-    // Eyes above the feet (eyeHeight, §5 U4-7; a crouch halves it —
+    // Eyes above the feet (eyeHeight, §5-tunable; a crouch halves it —
     // give the sneaker a hair over the capsule's half height); the
     // ENTITY transform tracks the capsule (the sim's view).
     flyCamera.camera.position =
@@ -842,7 +842,7 @@ void PlayerController::updateLocomotion(f32 dt, const PlayerContext& ctx,
     if (ctx.playerEntity.is_alive()) {
         auto& transform = ctx.playerEntity.get_mut<world::Transform>();
         transform.position = body_->position();
-        // A5: the entity FACES where the camera looks (rotation * +Z =
+        // The entity FACES where the camera looks (rotation * +Z =
         // horizontal camera forward, the NPC yaw convention) — the guard
         // cone and any future sim consumer read this, never the camera.
         transform.rotation = glm::angleAxis(glm::pi<f32>() - yaw,

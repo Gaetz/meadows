@@ -86,7 +86,7 @@ bool Window::pumpEvents() {
         switch (event.type) {
         case SDL_EVENT_QUIT:
             return false;
-        // Escape no longer quits (chantier 4): it belongs to the game now
+        // Escape does not quit: it belongs to the game
         // (pause menu / close screen). Quit = window close or in-game menu.
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
             impl->width = event.window.data1;

@@ -13,11 +13,11 @@ struct Equipment;
 
 namespace game {
 
-// The SkyUI-style inventory table logic (chantier 4 B3) — PURE and
+// The SkyUI-style inventory table logic — PURE and
 // headless-testable: category tabs, name search, sortable columns,
 // persistent selection/sort state. The .rml only displays the rows this
 // class produces; the barter and container screens reuse it (one view per
-// panel). Prices are the barter screen's concern (B5) — this view exposes
+// panel). Prices are the barter screen's concern — this view exposes
 // the raw goldValue.
 class InventoryView {
 public:

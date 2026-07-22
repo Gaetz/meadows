@@ -4,7 +4,7 @@
 
 #include <glm/glm.hpp>
 
-#include "data/forms/LocForms.hpp" // TextTable (C9.5)
+#include "data/forms/LocForms.hpp" // TextTable
 #include "engine/audio/Audio.hpp"
 #include "engine/ui/UiSystem.hpp"
 #include "game/ScreenStack.hpp"
@@ -91,7 +91,7 @@ void OptionsController::pushModel(const OptionsContext& ctx) {
         const Binding& b = ctx.actions.binding(action);
         ::ui::UiRow row;
         row.id = actionName(action);
-        // C9.5: the human label is loc data keyed on the STABLE action
+        // The human label is loc data keyed on the STABLE action
         // name (ui.options.action.attack...) — one key per action, no
         // per-language C++.
         row.c0 = ctx.texts.get(str { "ui.options.action." } +
@@ -143,7 +143,7 @@ void OptionsController::handleEvent(const OptionsContext& ctx,
         ctx.settings.invertLookY = !ctx.settings.invertLookY;
         applyAndSave(ctx);
     } else if (event == "toggleLanguage") {
-        // C9.5: flip + persist, then the scene rebuilds the TextTable from
+        // Flip + persist, then the scene rebuilds the TextTable from
         // the re-gated plugin stack and relocalizes every open document —
         // pushModel LAST so this screen's C++-pushed strings follow too.
         ctx.settings.language = nextLanguage(ctx.settings.language);

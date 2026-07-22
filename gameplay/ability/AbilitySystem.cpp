@@ -8,7 +8,7 @@ namespace gameplay {
 void registerGameplayComponents(ecs::World& world) {
     world.registerComponent<AttributeSet>();   // reflected: base values serialize
     world.handle().component<AbilitySystem>(); // runtime-only state
-    world.handle().component<MeleeSwing>();    // runtime-only (P0 A3)
+    world.handle().component<MeleeSwing>();    // runtime-only
 }
 
 std::optional<f32> baseValueOf(const AttributeSet& set, u32 attrId) {

@@ -11,7 +11,7 @@
 
 namespace render {
 
-// The shared terrain chunk grid key (audit U3-4): (cx, cz) packed into a
+// The shared terrain chunk grid key: (cx, cz) packed into a
 // u64, matching HeightPatches::keyOf and the occluders' convention.
 inline constexpr u64 chunkKey(i32 cx, i32 cz) {
     return (static_cast<u64>(static_cast<u32>(cx)) << 32) |
@@ -27,14 +27,14 @@ inline i32 chunkCoordOf(f32 worldCoord, f32 chunkSize) {
     return static_cast<i32>(std::floor(worldCoord / chunkSize));
 }
 
-// The chunk-streaming ring shared by Terrain/Grass/Vegetation (audit U3-1):
+// The chunk-streaming ring shared by Terrain/Grass/Vegetation:
 // a map of chunks keyed on the terrain grid, worker builds coming back
 // through a generation-stamped ConcurrentQueue, budgeted nearest-first
 // requests, and evict-beyond-hysteresis. The systems keep what actually
 // differs — the worker payload, the GPU upload, the want/evict rules —
 // as small lambdas; the ring mechanics live here once.
 //
-// Threading contract (Phase 5): every method runs on the MAIN thread;
+// Threading contract (docs/PHASE-5.md): every method runs on the MAIN thread;
 // only the queue is worker-fed. `Shared` is owned via shared_ptr and
 // captured by every job, so a job that outlives the system still has a
 // valid queue to push into (the TextureCache teardown-safety pattern).

@@ -8,8 +8,8 @@
 namespace game {
 
 // Resolves a model asset GUID to GPU vertex/index buffers — the consumer
-// side of `RenderSnapshot.meshes` (the H8 contract). The async-residency
-// machinery lives in ResidencyCache (audit U5-2); this file keeps only the
+// side of `RenderSnapshot.meshes` (contract: docs/HORIZONTAL-PASS.md).
+// The async-residency machinery lives in ResidencyCache; this file keeps only the
 // mesh specifics: the magenta placeholder box, the glTF decode + grounding,
 // the buffer upload and the retained CPU geometry (collision cooking and
 // editor picking read it). A failed/missing asset keeps the placeholder —
@@ -20,7 +20,7 @@ struct MeshCacheTraits {
         rhi::BufferHandle indices {};
         u32 indexCount { 0 };
     };
-    // CPU-side geometry retained for RESIDENT meshes (chantier 2 B2), plus
+    // CPU-side geometry retained for RESIDENT meshes, plus
     // the local-space bounds.
     struct CpuMesh {
         vector<Vec3> positions;
@@ -76,7 +76,7 @@ public:
         return payload ? payload->cpu.get() : nullptr;
     }
 
-    // Chantier P0 A2: a PROCEDURAL mesh (the sword) under a guid —
+    // A PROCEDURAL mesh (the sword) under a guid —
     // resident immediately, drawable through resolve() like any asset.
     void injectProcedural(const core::Guid& guid, render::MeshData mesh) {
         inject(guid, DecodedData { std::move(mesh) });

@@ -1,17 +1,17 @@
-// Local lights (chantier 2 B5, spots + stylized falloff chantier 6 B1):
+// Local lights:
 // the 16 nearest LightSource placements, filled per frame by the scene
 // (flicker already applied). Point + spot, NO shadows (the key-light
-// shadow is a later brick). The landscape (terrain/grass) stays sun-only
+// shadow is separate, below). The landscape (terrain/grass) stays sun-only
 // by decision — only meshes and characters include this.
 
-// B2b: the ONE shadowed interior key light (matched by position below).
+// The ONE shadowed interior key light (matched by position below).
 layout(binding = 6) uniform sampler2DShadow uKeyShadow;
 
 layout(std140, binding = 5) uniform LightsUbo {
     vec4 uLightCount;                 // x = active lights
     vec4 uLightPositionRadius[16];    // xyz world, w radius (m)
     vec4 uLightColorIntensity[16];    // rgb premultiplied color*intensity
-    // B1 APPEND (the UBO lesson: new members at the END, both sides):
+    // APPEND-only UBO (new members at the END, both sides):
     // xyz = spot direction (normalized), w = cos(half angle); w = -2
     // marks a point light.
     vec4 uLightDirectionAngle[16];
@@ -20,7 +20,7 @@ layout(std140, binding = 5) uniform LightsUbo {
 vec3 localLights(vec3 worldPos, vec3 n) {
     vec3 sum = vec3(0.0);
     int count = int(uLightCount.x + 0.5);
-    // B5 interior pass (uCascadeSplits.w = 1 inside interior cells; the
+    // Interior pass (uCascadeSplits.w = 1 inside interior cells; the
     // exterior look stays byte-identical at 0): pure N·L leaves every
     // surface facing away from a candle pitch flat — dead rooms. Indoors
     // the diffuse wraps (half-Lambert) and each light adds a small
@@ -36,8 +36,8 @@ vec3 localLights(vec3 worldPos, vec3 n) {
         }
         // Falloff (hot-tunable selector): 1 = WINDOWED INVERSE-SQUARE
         // (UE-style — physical concentration near the source, light dies
-        // quickly with distance; dev pick 2026-07-07 after the quintic
-        // "lit too far"), 0 = the B1 stylized quintic ramp.
+        // quickly with distance; picked after the quintic
+        // "lit too far"), 0 = the stylized quintic ramp.
         const int kFalloff = 1;
         float atten;
         if (kFalloff == 1) {
@@ -56,7 +56,7 @@ vec3 localLights(vec3 worldPos, vec3 n) {
             float edge = mix(cosHalf, 1.0, 0.1);
             atten *= smoothstep(cosHalf, edge, cd);
         }
-        // B2b: the key light's shadow map (one per interior) stops this
+        // The key light's shadow map (one per interior) stops this
         // light from bleeding through walls. Matched by position.
         if (uKeyShadowInfo.w > 0.5 &&
             distance(uLightPositionRadius[i].xyz, uKeyShadowInfo.xyz) <

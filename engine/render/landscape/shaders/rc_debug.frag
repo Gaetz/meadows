@@ -1,9 +1,9 @@
 #version 460 core
 #include "common.glsl"
 
-// Radiance cascades G2 debug view — fullscreen raymarch of one clipmap
+// Radiance cascades debug view — fullscreen raymarch of one clipmap
 // volume, alpha-blended over the tonemapped frame (drawn inside the
-// composite pass). This view IS the validation of the injection brick:
+// composite pass). This view IS the validation of the injection pass:
 // terrain surfaces should appear as a lit voxel shell hugging the ground,
 // solid black below, empty air transparent.
 
@@ -15,7 +15,7 @@ layout(std140, binding = 2) uniform RcUbo {
 
 layout(binding = 5) uniform sampler3D uRcClipFine;
 layout(binding = 6) uniform sampler3D uRcClipCoarse;
-layout(binding = 10) uniform sampler3D uRcCascade0; // merged (G5), dir-major
+layout(binding = 10) uniform sampler3D uRcCascade0; // merged (rc_merge), dir-major
 
 // Merged cascade-0 irradiance at a fine-clip point: average of the 8
 // direction slabs (hardware trilinear per slab, z clamped inside it).

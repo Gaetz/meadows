@@ -4,15 +4,15 @@
 
 #include "engine/core/Defines.hpp"
 
-// CPU particle simulation (horizontal pass H7, filled by chantier P0 C1):
+// CPU particle simulation (docs/HORIZONTAL-PASS.md):
 // pure, headless, deterministic per seed — the FX seam's compute half.
 // Rendering is the caller's business: 2D scenes draw each live particle
 // as a sprite (painter order); the 3D landscape draws camera-facing
 // quads (FxRenderer) from the extract's POD copies. EmitterParams
-// mirrors ParticleForm; the runtime layer maps one onto the other (rule
-// n°2: engine never sees data::).
+// mirrors ParticleForm; the runtime layer maps one onto the other (the
+// engine never sees data::).
 //
-// C1 adds: continuous emitters (rate over duration, the streaming
+// Features: continuous emitters (rate over duration, the streaming
 // accumulator pattern), spawn shapes (sphere/cone/box), a global budget
 // (spawns beyond it are DROPPED — FX degrade, never grow the frame),
 // and the per-particle blend flag the renderer batches by. A GPU path

@@ -6,10 +6,10 @@
 #include "engine/core/Hash.hpp"
 #include "engine/render/MeshBuilder.hpp"
 
-// EXPERIMENT (feature/space-colonization-trees) — Runions et al. 2007,
-// "Modeling Trees with a Space Colonization Algorithm" + the cross-plane
-// foliage variant suggested 2026-07-19 (metaball SDF at branch tips,
-// order-weighted radii, card normals from the SDF gradient).
+// Runions et al. 2007, "Modeling Trees with a Space Colonization
+// Algorithm", with SDF-shaded billboard-card foliage (metaball SDF at
+// branch tips, order-weighted radii, card normals from the SDF
+// gradient). Journal: docs/3D-RENDERER.md, brique 27b.
 //
 // Pipeline: crown envelope → attraction points → iterative colonization
 // (each attractor pulls its CLOSEST node; nodes grow segments of length D
@@ -25,7 +25,7 @@ namespace {
 using core::hashU32;
 using core::HashRng;
 
-// Artistic knobs live in ColonizedTreeParams (tree builder 2026-07-20);
+// Artistic knobs live in ColonizedTreeParams;
 // only the truly structural constants stay here.
 constexpr u32 kMaxIterations = 120;
 constexpr f32 kTipRadius = 0.020f;     // r0 at every branch tip (m)
@@ -73,8 +73,8 @@ Vec3 canopySdfGradient(const vector<Metaball>& balls, const Vec3& p,
     return len > 1e-6f ? g / len : Vec3 { 0.0f, 1.0f, 0.0f };
 }
 
-// One BILLBOARD leaf card (dev feedback 2026-07-20: a single card facing
-// the player beats the mechanical 60° cross). The mesh stores a
+// One BILLBOARD leaf card (a single camera-facing card reads better
+// than a mechanical fixed 60° cross). The mesh stores a
 // DEGENERATE quad — four vertices at the cluster center — and encodes
 // the corner in uv: uv.x = -10 + cornerX·halfSize (the -10 bias is the
 // card FLAG, unambiguous against wood/lobe uv in [0,1]), uv.y =
@@ -325,8 +325,7 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
     }
 
     // --- Foliage: billboard leaf cards in the SDF shell -------------------
-    // Dev feedback 2026-07-20 (bis): ONE camera-facing card per clump
-    // (the 60° crosses read mechanical), leaf-clump sized, shell
+    // ONE camera-facing card per clump, leaf-clump sized, in a shell
     // TIGHTENED against the surface — the silhouette is where cards pay,
     // and a sparse interior never shows.
     const u32 baseClusters = detail >= 2 ? 560u : detail == 1 ? 260u : 120u;
@@ -358,11 +357,11 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
         }
 
         const Vec3 normal = canopySdfGradient(balls, position, params.smoothK);
-        // Light-seeking density gradient (dev 2026-07-20, accentué) :
+        // Light-seeking density gradient:
         // the card count is FIXED (the loop draws candidates until
         // clusterCount land — same cost), but acceptance follows the
-        // canopy's outward direction: 3^normal.y = x3 where it faces
-        // up, x1 on the sides, x0.33 underneath. Leaves seek light;
+        // canopy's outward direction: G^normal.y = xG where it faces
+        // up, x1 on the sides, x1/G underneath. Leaves seek light;
         // undersides thin out.
         const f32 gradient = glm::max(params.densityGradient, 1.0f);
         const f32 weight = std::pow(gradient, normal.y); // 1/G .. G

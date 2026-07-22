@@ -1,4 +1,4 @@
-// Shared sky color functions (requires common.glsl). The fog brick tints
+// Shared sky color functions (requires common.glsl). The fog pass tints
 // distant terrain with skyGradient() — the SAME function that paints the
 // dome — so far geometry dissolves into the sky at any time of day.
 

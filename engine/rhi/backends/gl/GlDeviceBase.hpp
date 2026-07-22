@@ -87,12 +87,12 @@ public:
     void readBuffer(BufferHandle handle, void* dst, u64 size,
                     u64 offset) override;
 
-    // Fences (P1): GL sync objects, available since 3.2 — shared.
+    // Fences: GL sync objects, available since 3.2 — shared.
     FenceHandle insertFence() override;
     bool fenceReady(FenceHandle handle) override;
     void destroyFence(FenceHandle handle) override;
 
-    // Timer queries (GPU-PERF P0): GL_TIMESTAMP, since 3.3 — shared.
+    // Timer queries: GL_TIMESTAMP, since 3.3 — shared.
     TimestampHandle insertTimestamp() override;
     bool timestampReady(TimestampHandle handle, u64& nanos) override;
     void destroyTimestamp(TimestampHandle handle) override;
@@ -147,8 +147,8 @@ protected:
         vector<u32>          divisors; // per slot
     };
 
-    // The raster-state half of createPipeline, identical in both backends
-    // (audit U2-03): program + the 8 PipelineDesc fields. The subclasses
+    // The raster-state half of createPipeline, identical in both backends:
+    // program + the 8 PipelineDesc fields. The subclasses
     // add only their VAO flavor (legacy re-pointer vs DSA).
     GlPipeline makePipelineState(const PipelineDesc& desc, u32 program) const;
 
@@ -168,7 +168,7 @@ protected:
         u32 width { 0 };
         u32 height { 0 };
         u32 arrayLayers { 1 };
-        u32 depth { 1 }; // > 1 = GL_TEXTURE_3D (G0): image binds layered
+        u32 depth { 1 }; // > 1 = GL_TEXTURE_3D: image binds layered
         TextureFormat format { TextureFormat::RGBA8 };
     };
     struct GlFramebuffer {
@@ -199,8 +199,8 @@ protected:
     std::unordered_map<u32, BindGroupDesc> bindGroups;
     std::unordered_map<u32, u32>       samplers;   // id -> GL sampler
     std::unordered_map<u32, GlFramebuffer> framebuffers;
-    std::unordered_map<u32, void*>     fences;     // id -> GLsync (P1)
-    std::unordered_map<u32, u32> timerQueries; // id -> GL query (GPU-PERF)
+    std::unordered_map<u32, void*>     fences;     // id -> GLsync
+    std::unordered_map<u32, u32> timerQueries; // id -> GL query
     u32 nextId { 1 };
 };
 

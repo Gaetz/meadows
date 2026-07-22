@@ -23,7 +23,7 @@
 #include "world/scene/Components.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
-// Chantier 5 B2/B3: actor capture -> save plugin -> TOML -> resolve ->
+// Actor capture -> save plugin -> TOML -> resolve ->
 // apply on a fresh actor = the same actor. The headless proof of
 // "a save is an ordinary plugin" (§2.4/§5, contract §6).
 

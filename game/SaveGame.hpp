@@ -8,9 +8,9 @@
 #include "engine/ecs/World.hpp"
 #include "gameplay/save/SaveState.hpp"
 
-// Save-game runtime plumbing (chantier 5) — the world/scene half of the
+// Save-game runtime plumbing — the world/scene half of the
 // save layer: reference diffs, the PENDING in-memory layer (the memory of
-// unloaded cells), and (B5) the save files. The gameplay half (actor
+// unloaded cells), and the save files. The gameplay half (actor
 // state capture/apply) lives in gameplay/save/SaveState. A save stays an
 // ORDINARY plugin (§5).
 
@@ -27,19 +27,19 @@ namespace game {
 // Diffs a spawned reference's live state against its resolved
 // ReferenceForm and returns a field-level PATCH record (or nullopt when
 // nothing changed). Diffed fields:
-//  - `cell` — always (a null target = persistent: the future follower
+//  - `cell` — always (a null target = persistent: the follower
 //    contract; a different cell = re-homing);
 //  - `position`/`rotation` — ACTORS only (their Y is re-derived from the
 //    terrain at build; item/static positions never change at runtime, and
 //    capturing snapped world Y would double the ground offset on reload);
-//  - `scale` — every entity (the ground snap never touches it — audit U5-5).
+//  - `scale` — every entity (the ground snap never touches it).
 std::optional<data::Record> captureReference(ecs::Entity entity,
                                              const data::FormDatabase& forms);
 
 // The pending save layer: the RUNTIME memory of what changed, per
 // reference, captured when a cell unloads (CellLoader::beforeUnload) or
 // immediately (item pickups). Looted crates stay looted when their cell
-// reloads — no disk involved; a disk save (B5) just flushes this plus a
+// reloads — no disk involved; a disk save just flushes this plus a
 // capture of the still-loaded cells into one ordinary plugin.
 class PendingSaveLayer {
 public:
@@ -63,8 +63,9 @@ public:
                           ecs::Entity entity = {});
     bool isEnabled(const core::Guid& referenceId) const;
 
-    // FOLLOWERS É8 — the disableReference materialization GENERALIZED
-    // (§2.11): a RUNTIME-CREATED persistent reference (a follower's grave)
+    // The disableReference materialization GENERALIZED (§2.11,
+    // docs/FOLLOWERS.md): a RUNTIME-CREATED persistent reference (a
+    // follower's grave)
     // becomes a full `creates` ReferenceForm record in this layer. The
     // flush carries it into the disk save like any §5 record; re-resolving
     // on load creates the real reference, and a null `cell` puts it in the
@@ -77,10 +78,10 @@ public:
                          const Vec3& position,
                          const Quat& rotation = { 1.0f, 0.0f, 0.0f, 0.0f });
 
-    // FOLLOWERS É1 — the re-home veto. True when this reference's captured
-    // patch carries a `cell` diff: its live home differs from the resolved
-    // record (recruited follower -> cell 0 / the persistent set, exactly
-    // like the player — the chantier-5 contract). The cell loader only
+    // The re-home veto (docs/FOLLOWERS.md). True when this reference's
+    // captured patch carries a `cell` diff: its live home differs from the
+    // resolved record (recruited follower -> cell 0 / the persistent set,
+    // exactly like the player). The cell loader only
     // ever spawns a reference from its AUTHORED cell, so "the patch moves
     // it elsewhere" means "do not respawn it here": the live entity
     // travels with the player. The scene's spawnFilter ANDs this with
@@ -121,7 +122,7 @@ private:
         vector<gameplay::SavedEffectForm> effects;
         vector<gameplay::SavedItemForm> items;
         vector<gameplay::SavedInjuryForm> injuries;
-        vector<gameplay::SavedAbilityForm> abilities; // FOLLOWERS É6
+        vector<gameplay::SavedAbilityForm> abilities;
         bool materialized { false };
     };
     Entry& entryFor(const core::Guid& referenceId);
@@ -129,7 +130,7 @@ private:
     std::unordered_map<core::Guid, Entry> entries;
 };
 
-// --- Save files (B5). A slot = saves/<name>.toml next to the exe — a
+// --- Save files. A slot = saves/<name>.toml next to the exe — a
 // save file IS a plugin file (writePluginToml/parsePluginToml); the
 // binary cooked path is a future option (the cooker already knows the
 // save form types).
@@ -140,7 +141,7 @@ struct SaveSlotInfo {
     str timestamp; // "YYYY-MM-DD HH:MM" local time, for the list screen
 };
 vector<SaveSlotInfo> listSaveSlots(); // newest first
-// C9.7: the disk write split so the frame never blocks on it.
+// The disk write is split so the frame never blocks on it.
 // serializeSave is PURE (worker-safe: touches only its arguments);
 // writeSaveText does the file IO ATOMICALLY — saves/<slot>.toml.tmp then
 // rename over the final path, so a killed process never leaves a
@@ -152,7 +153,7 @@ bool writeSaveText(const str& slot, const str& text);
 bool writeSave(const str& slot, const data::Plugin& plugin,
                const data::FormTypeRegistry& types);
 
-// C9.7: the single-flight save gate — at most ONE async save in flight.
+// The single-flight save gate — at most ONE async save in flight.
 // A request while busy remembers the LAST slot (F5 spam = last wins, no
 // queue growth); the completion pump relaunches it with a FRESH capture.
 // Pure state machine (main thread only) so it doctests headless.

@@ -2,9 +2,9 @@
 
 #include "engine/core/Defines.hpp"
 
-// Refactor R5 — the player's ACTION arbiter, the sim-pure half: WHICH
-// exclusive action the frame gets. The dev rule holds (the decideMoveMode
-// template): the state is an enum and ONE flat function owns every
+// The player's ACTION arbiter, the sim-pure half: WHICH
+// exclusive action the frame gets. Same pattern as decideMoveMode:
+// the state is an enum and ONE flat function owns every
 // transition/exclusion — guard vs swing, stagger, bow draw, dodge — and
 // the controller only executes (guard clock, viewmodel, burst, effects).
 
@@ -25,11 +25,10 @@ struct PlayerActionInputs {
     bool dodgeRequested { false };// sprint-key tap detected this frame
 };
 
-// THE decision (dev rule: one function owns every transition). Priority:
+// THE decision (one function owns every transition). Priority:
 // a swing in flight outlasts everything; a stagger cuts everything else
 // (the controller releases a cut bow draw); then guard, draw, dodge.
-// Review 7b: a ranged weapon raises NO guard — RMB does nothing with a
-// bow in hand.
+// A ranged weapon raises NO guard — RMB does nothing with a bow in hand.
 PlayerAction decidePlayerAction(const PlayerActionInputs& in);
 
 } // namespace gameplay

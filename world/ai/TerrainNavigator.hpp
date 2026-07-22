@@ -4,9 +4,9 @@
 
 #include "engine/nav/Nav.hpp"
 
-// 3D terrain navigation (chantier 3 B2 — the SANCTIONED fallback of the
+// 3D terrain navigation — the SANCTIONED fallback of the
 // nav seam: Recast/Detour remains the target implementation, this grid
-// A* over the height function unblocks the « vivant » vertical now).
+// A* over the height function unblocks NPC life now.
 //
 // Walkability = slope under a threshold AND no blocking box. Blocking
 // boxes are world-space AABBs the caller feeds from its static colliders

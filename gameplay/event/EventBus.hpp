@@ -8,7 +8,7 @@
 #include "engine/ecs/World.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 
-// The gameplay event bus (Phase 4, brick 4b). A deterministic dispatcher that
+// The gameplay event bus. A deterministic dispatcher that
 // quests, scripts and abilities react to. It is Lua-agnostic — handlers are
 // plain C++ callbacks; `meadows-script` registers Lua-forwarding handlers.
 // Dispatch order = subscription order (§8 determinism).

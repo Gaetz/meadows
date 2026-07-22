@@ -124,7 +124,7 @@ SkySystem::SkyState SkySystem::evaluate(const Weather& weather) const {
         state.sunDiscIntensity *= 1.0f - 0.8f * overcast;
     }
 
-    // Weather grading (brick 24), on top of time-of-day and overcast.
+    // Weather grading, on top of time-of-day and overcast.
     // Warmth first (a color shift only the low sun feels — haze reddens
     // sunsets), then the intensity multipliers, saturation last so gray
     // weathers stay gray whatever warmth asked for.

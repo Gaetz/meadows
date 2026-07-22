@@ -9,7 +9,7 @@
 #include "data/forms/CoreForms.hpp" // data::ActorForm, MiscItemForm
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp" // data::forEach
-#include "data/forms/LocForms.hpp"  // TextTable (C9.5)
+#include "data/forms/LocForms.hpp"  // TextTable
 #include "engine/physics/Physics.hpp"
 #include "engine/render/FlyCamera.hpp"
 #include "engine/ui/UiSystem.hpp"
@@ -18,7 +18,7 @@
 #include "game/scenes/InteractionController.hpp"
 #include "game/scenes/NpcDirector.hpp" // Npc (nameplates)
 #include "gameplay/ability/AbilitySystem.hpp"
-#include "gameplay/actors/ActorState.hpp" // FollowerState (É2 party frame)
+#include "gameplay/actors/ActorState.hpp" // FollowerState (party frame)
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/Damage.hpp" // gameplay::CombatState
 #include "gameplay/stats/EquipmentStats.hpp"
@@ -31,7 +31,7 @@ namespace game {
 
 namespace {
 
-// The NPC's authored displayName (nameplates, the É2 party frame).
+// The NPC's authored displayName (nameplates, the party frame).
 str actorDisplayName(const data::FormDatabase& forms, const Npc& npc) {
     if (npc.entity.has<world::RefId>()) {
         const auto& ref = npc.entity.get<world::RefId>();
@@ -55,7 +55,7 @@ void GameHud::updateHudModel(const HudContext& ctx) {
         ctx.playerEntity.has<gameplay::AttributeSet>()) {
         const auto& sys = ctx.playerEntity.get<gameplay::AbilitySystem>();
         const auto& vitals = ctx.playerEntity.get<gameplay::AttributeSet>();
-        // Dev design 2026-07-12 — each bar tells three truths at once:
+        // Each bar tells three truths at once:
         //   outer width  = the THEORETICAL max (BaseValue; 1000 points =
         //                  the whole half-screen container),
         //   fill         = the current value (background = what's lost),
@@ -70,8 +70,7 @@ void GameHud::updateHudModel(const HudContext& ctx) {
                 return glm::clamp(100.0f * v / rendered, 0.0f, 100.0f);
             };
             // hudStatPointsScale points = 1% of the (half-screen)
-            // container — 5 -> 500 points = full width (dev feel pass
-            // 2026-07-12: bars doubled in length; R7: moddable).
+            // container — e.g. scale 5: 500 points = full width (moddable).
             ctx.ui.setNumber(
                 "hud", prefix + "BarPct",
                 glm::clamp(rendered / ctx.hudStatPointsScale, 2.0f,
@@ -131,7 +130,7 @@ void GameHud::updateHudModel(const HudContext& ctx) {
                          text(vitals.essence, maxEssence));
         ctx.ui.setString("hud", "postureText", text(posture, maxPosture));
     }
-    // A7+: the bow-draw gauge, bottom center while drawing.
+    // The bow-draw gauge, bottom center while drawing.
     ctx.ui.setBool("hud", "chargeVisible", ctx.bowCharge >= 0.0f);
     ctx.ui.setNumber("hud", "chargePct",
                      glm::clamp(ctx.bowCharge, 0.0f, 1.0f) * 100.0f);
@@ -150,12 +149,12 @@ void GameHud::updateHudModel(const HudContext& ctx) {
     ctx.ui.setBool("hud", "talkVisible", talkOn);
     ctx.ui.setString("hud", "talk",
                      talkOn ? ctx.interaction.talkLine() : str {});
-    updateNameplates(ctx);  // B7
-    updatePartyModel(ctx);  // FOLLOWERS É2
+    updateNameplates(ctx);
+    updatePartyModel(ctx);
 }
 
 void GameHud::updatePartyModel(const HudContext& ctx) {
-    // FOLLOWERS É2: one row per ACTIVE follower — displayName + health %
+    // One row per ACTIVE follower — displayName + health %
     // (currentValueOf, the nameplate pattern). Fixed top-left block; the
     // names are data (ActorForm), nothing to localize here.
     vector<::ui::UiRow> rows;
@@ -231,7 +230,7 @@ void GameHud::updateNameplates(const HudContext& ctx) {
                 100.0f)));
             plate.c2 = std::to_string(static_cast<i32>(px - 60.0f));
             plate.c3 = std::to_string(static_cast<i32>(py));
-            // Dev design 2026-07-12: the second small bar — POISE.
+            // The second small bar — POISE.
             f32 posturePct = 100.0f;
             if (npc.entity.has<gameplay::CombatState>()) {
                 const f32 maxPosture = gameplay::currentValueOf(
@@ -298,7 +297,7 @@ void GameHud::pushItemModels(const HudContext& ctx) {
     pushRows(invView, "inventory",
              ctx.barterMode ? ctx.vendorSellMult : 0.0f);
 
-    // C3: weight / max + the encumbrance category. C9.5: every label the
+    // Weight / max + the encumbrance category. Every label the
     // C++ side formats is a LocStringForm key (languages layer, §5); the
     // category label reuses the stable encumbranceLabel() vocabulary.
     char number[32];
@@ -346,7 +345,7 @@ void GameHud::pushItemModels(const HudContext& ctx) {
 
     if (ctx.containerEntity.is_alive() &&
         ctx.containerEntity.has<gameplay::Inventory>()) {
-        // É7: an actor container (a follower's gear, a corpse) shows what
+        // An actor container (a follower's gear, a corpse) shows what
         // he WEARS — same "equipped" flag the player side has.
         lootView.build(ctx.forms,
                        ctx.containerEntity.get<gameplay::Inventory>(),
@@ -369,7 +368,7 @@ void GameHud::pushItemModels(const HudContext& ctx) {
             }
         } else {
             pushRows(lootView, "container", 0.0f);
-            // É7: an ACTOR's panel is titled with his name (a follower's
+            // An ACTOR's panel is titled with his name (a follower's
             // gear, a corpse) — plain containers keep the loot title.
             str title = ctx.texts.get("ui.container.loot");
             if (ctx.containerEntity.has<world::RefId>()) {

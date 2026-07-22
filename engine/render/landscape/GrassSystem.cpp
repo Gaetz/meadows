@@ -31,11 +31,11 @@ f32 patchMask(u32 seed, const GrassScatterTuning& tuning, f32 x, f32 z) {
                            broad * 0.72f + detail * 0.28f);
 }
 
-// hashU32 / HashRng now live in engine/core/Hash.hpp (shared scatter hash family).
+// hashU32 / HashRng live in engine/core/Hash.hpp (shared scatter hash family).
 using core::hashU32;
 using core::HashRng;
 
-// One blade (redo #2, the SimonDev Quick_Grass model): 6 straight
+// One blade (the SimonDev Quick_Grass model): 6 straight
 // segments, sides at ±1 with NO baked taper — grass.vert shapes the
 // 1-t^2 taper and the forward arc per vertex. 13 vertices, 11 triangles;
 // one-sided strip, cull off (the fragment normals are ground-dominated,
@@ -67,9 +67,9 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
     const u32 perSide =
         static_cast<u32>(TerrainSystem::kChunkSize / spacing);
 
-    // CELL-MAJOR scatter (startup-cost fix: the 0.15 m grid made the
-    // per-candidate noise evals saturate every worker for seconds at
-    // boot). The masks vary over METERS, not centimeters — patch,
+    // CELL-MAJOR scatter (per-candidate noise evals on the fine blade
+    // grid would saturate every worker for seconds at boot).
+    // The masks vary over METERS, not centimeters — patch,
     // material and normal are evaluated once per cell, and the terrain
     // height on the cell-corner lattice (bilinear per blade — at or
     // below the render mesh's own sampling error). Bare cells cost two
@@ -92,7 +92,7 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
     result.reserve(perSide * perSide / 4);
     for (u32 cgz = 0; cgz < cells; ++cgz) {
         for (u32 cgx = 0; cgx < cells; ++cgx) {
-            // Near-BINARY presence (7.8quinquies): even moderately inside
+            // Near-BINARY presence: even moderately inside
             // the mask the clump is at FULL density (the solid volume);
             // only the rim thins, fast, so patches keep their silhouette.
             const f32 patch = patchMask(
@@ -167,7 +167,7 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                                     rng.next() * 6.2831853f, // flutter
                                     rng.next(),              // tint jitter
                                     lean },                  // lean amount
-                        .groundNormal = { n, 0.0f }, // 7.8bis: BotW shading
+                        .groundNormal = { n, 0.0f }, // BotW shading
                     });
                 }
             }
@@ -204,7 +204,7 @@ void GrassSystem::create(rhi::Device& device, ShaderLibrary& shaders,
 }
 
 void GrassSystem::destroy(rhi::Device& device) {
-    (void)device; // U3-7: Unique handles free through their device
+    (void)device; // Unique handles free through their device
     streamer.invalidateAll([](Chunk&) {});
     instances = 0;
     pipeline.reset();
@@ -213,7 +213,7 @@ void GrassSystem::destroy(rhi::Device& device) {
 }
 
 void GrassSystem::regenerate(rhi::Device& device) {
-    (void)device; // U3-7: the erases free the instance buffers
+    (void)device; // the erases free the instance buffers
     streamer.invalidateAll([](Chunk&) {});
     instances = 0;
 }
@@ -227,7 +227,7 @@ void GrassSystem::invalidateChunks(rhi::Device& device,
         }
         instances -= it->second.instanceCount;
         // update() re-requests + re-scatters with new heights (the erase
-        // frees the instance buffer, U3-7).
+        // frees the instance buffer).
         streamer.chunks.erase(it);
     }
 }
@@ -236,7 +236,7 @@ void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
                          const Vec3& cameraPos) {
     frameIndices = 0; // the frame's draw() sums into these
     frameBlades = 0;
-    // Budgeted uploads (U3-1: the ring mechanics live in ChunkStreamer;
+    // Budgeted uploads (the ring mechanics live in ChunkStreamer;
     // this lambda is the grass-specific accept + GPU upload).
     streamer.pump(kMaxUploadsPerFrame, 0.0, [&](u64 key, auto& built) {
         const auto it = streamer.chunks.find(key);
@@ -281,7 +281,7 @@ void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
 
     // Evict beyond hysteresis.
     streamer.evictFar(camCx, camCz, kEvictRadius, [&](Chunk& chunk) {
-        // U3-7: the erase frees the instance buffer.
+        // The erase frees the instance buffer.
         if (chunk.resident) {
             instances -= chunk.instanceCount;
         }
@@ -289,7 +289,7 @@ void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
 }
 
 void GrassSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
-    pipeline = { device, device.createPipeline( // U3-7: frees the old one
+    pipeline = { device, device.createPipeline( // frees the old one
         { .shader = shaders.get(kGrassShader),
           .vertexBuffers =
               { { .stride = 2 * sizeof(f32),

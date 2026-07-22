@@ -3,7 +3,7 @@
 #include <functional>
 #include <optional>
 
-#include "engine/core/ConcurrentQueue.hpp" // C9.7: save completions
+#include "engine/core/ConcurrentQueue.hpp" // async save completions
 #include "engine/core/Defines.hpp"
 #include "engine/ecs/World.hpp" // ecs::Entity
 #include "data/forms/Form.hpp"  // data::FormHandle (by value)
@@ -28,14 +28,14 @@ struct QuestLog;
 namespace game {
 
 // The scene state performSave reads, bundled so the disk-save serialization
-// is decoupled from LandscapeScene (audit U4-1). Rebuilt per save (cheap) —
+// is decoupled from LandscapeScene. Rebuilt per save (cheap) —
 // references plus the world snapshot the WorldStateForm records (clock,
 // worldspace, camera, mode, weather) and the two scene actions the save
 // needs as closures (sweeping the live references, the toast).
 struct SaveContext {
     data::FormDatabase& forms;
     const data::FormTypeRegistry& formTypes;
-    const data::TextTable& texts; // C9.5: the save.saved toast
+    const data::TextTable& texts; // The save.saved toast
     const gameplay::GameplayTagRegistry& gameTags;
     const quest::QuestLog& questLog;
     const gameplay::GameClock& gameClock;
@@ -48,13 +48,13 @@ struct SaveContext {
     // persistent player) so performSave can capture each into the layer.
     std::function<void(const std::function<void(ecs::Entity)>&)> forEachLiveRef;
     std::function<void(const str&)> notify; // interaction.say(msg, 3s)
-    // C9.7: where the serialize + file IO run. Null = synchronous on the
+    // Where the serialize + file IO run. Null = synchronous on the
     // calling thread (headless tests, one-shot tools) — same code path,
     // the completion still lands in the pump.
     core::JobSystem* jobs { nullptr };
 };
 
-// The disk-save orchestration extracted from LandscapeScene (audit U4-1):
+// The disk-save orchestration extracted from LandscapeScene:
 // the capture-everything-live + flush-the-pending-layer serialization
 // (performSave), the queued-reload flags (requestLoad / takeReloadRequest),
 // and the load-file resolution the scene re-enters with (beginLoad). It OWNS
@@ -66,7 +66,7 @@ struct SaveContext {
 class SaveController {
 public:
     // Capture everything live + flush the pending layer into one ordinary
-    // plugin (§5) written to saves/<slot>.toml. C9.7: the capture + plugin
+    // plugin (§5) written to saves/<slot>.toml. The capture + plugin
     // build stay ON the frame (sim coherence §8, same order as always);
     // the TOML serialization + file IO run on ctx.jobs — the completion
     // (timing log + toast) lands in pumpCompletions. Single-flight: a
@@ -104,7 +104,7 @@ public:
     PendingSaveLayer& pending() { return pendingSave_; }
 
 private:
-    // C9.7: what the worker reports back through the completion queue.
+    // What the worker reports back through the completion queue.
     struct SaveCompletion {
         str slot;
         bool ok { false };
@@ -122,7 +122,7 @@ private:
 
     PendingSaveLayer pendingSave_;
     sptr<Shared> shared_ { std::make_shared<Shared>() };
-    SaveFlightGate flightGate_;      // C9.7: one save in flight, last wins
+    SaveFlightGate flightGate_;      // One save in flight, last wins
     str pendingLoadSlot_;            // consumed by the next onEnter
     bool reloadRequested_ { false }; // exit+enter at the end of update()
     bool loadedFromSave_ { false };  // this session came from a save file

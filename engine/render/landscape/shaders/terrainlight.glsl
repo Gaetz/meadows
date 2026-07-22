@@ -1,4 +1,4 @@
-// Brick 33b/c — the worker-baked terrain light map (TerrainLightMap):
+// The worker-baked terrain light map (TerrainLightMap):
 // R = long-range sun visibility (mountains casting past the CSM range),
 // G = sky openness (valley floors get less ambient). Texture unit 7,
 // bound by the scene as its own group; uTerrainLightInfo.w = strength

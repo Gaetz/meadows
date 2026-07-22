@@ -4,30 +4,30 @@
 
 #include "data/forms/CoreForms.hpp" // data::ActorForm, ConsumableForm
 #include "data/forms/FormDatabase.hpp"
-#include "data/forms/FormQuery.hpp" // collectChildren (É4 affinity rules)
-#include "data/forms/LocForms.hpp"  // data::TextTable (É3 toasts)
+#include "data/forms/FormQuery.hpp" // collectChildren (affinity rules)
+#include "data/forms/LocForms.hpp"  // data::TextTable (toasts)
 #include "engine/core/Log.hpp"
-#include "engine/ui/UiSystem.hpp" // the recruit-preview model (É4)
-#include "game/ScreenStack.hpp"   // show("recruit") (É4)
+#include "engine/ui/UiSystem.hpp" // the recruit-preview model
+#include "game/ScreenStack.hpp"   // show("recruit")
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
 #include "game/SaveGame.hpp"                        // PendingSaveLayer
 #include "game/scenes/NpcDirector.hpp"              // Npc, NpcDirector
 #include "gameplay/ability/AbilitySystem.hpp"
-#include "gameplay/ability/GameplayEffects.hpp" // applyEffect (É3 revive)
+#include "gameplay/ability/GameplayEffects.hpp" // applyEffect (revive)
 #include "gameplay/actors/ActorState.hpp" // gameplay::FollowerState
 #include "gameplay/actors/FollowerForms.hpp" // FollowerClassForm,
-                                             //   AffinityRuleForm (É4)
-#include "gameplay/actors/Followers.hpp"  // followTuning, adoptOnHit (É2),
-                                          //   resolveBleedout (É3),
-                                          //   affinityDelta (É4)
-#include "gameplay/combat/Combat.hpp"     // updateLifeState (É3 revive)
-#include "gameplay/event/EventBus.hpp"    // gameplay::Event (É2 aggro)
-#include "gameplay/interaction/FurnitureForms.hpp" // the grave form (É8)
-#include "gameplay/inventory/Inventory.hpp" // the player's bag (É3 revive)
-#include "gameplay/stats/CoreAttributes.hpp" // the 9 bases (É5 level-ups)
-#include "gameplay/stats/Damage.hpp"        // CombatState, updateDowned (É3)
-#include "gameplay/stats/GameClock.hpp"     // convalescence stamps (É3)
-#include "gameplay/stats/Injuries.hpp"      // Injuries (É3)
+                                             // AffinityRuleForm
+#include "gameplay/actors/Followers.hpp"  // followTuning, adoptOnHit,
+                                          // resolveBleedout,
+                                          // affinityDelta
+#include "gameplay/combat/Combat.hpp"     // updateLifeState (revive)
+#include "gameplay/event/EventBus.hpp"    // gameplay::Event (aggro)
+#include "gameplay/interaction/FurnitureForms.hpp" // the grave form
+#include "gameplay/inventory/Inventory.hpp" // the player's bag (revive)
+#include "gameplay/stats/CoreAttributes.hpp" // the 9 bases (level-ups)
+#include "gameplay/stats/Damage.hpp"        // CombatState, updateDowned
+#include "gameplay/stats/GameClock.hpp"     // convalescence stamps
+#include "gameplay/stats/Injuries.hpp"      // Injuries
 #include "world/scene/Components.hpp"
 #include "world/streaming/CellLoader.hpp"
 #include "world/worldspace/WorldForms.hpp" // world::ReferenceForm
@@ -37,7 +37,7 @@ namespace game {
 namespace {
 
 // The follower's authored ActorForm, or null when this entity is not an
-// authored follower (followerCategory empty — É0's identity fields).
+// authored follower (followerCategory empty — the identity fields).
 const data::ActorForm* followerActorForm(const FollowerContext& ctx,
                                          ecs::Entity follower) {
     if (!follower.is_alive() || !follower.has<world::RefId>() ||
@@ -68,8 +68,8 @@ str followerDisplayName(const FollowerContext& ctx, ecs::Entity follower) {
     return actor ? actor->displayName : str { "?" };
 }
 
-// É9: the party census — every ACTIVE follower in the world, bucketed by
-// his É0 category (actives always live: they travel with the player).
+// The party census — every ACTIVE follower in the world, bucketed by
+// his category (actives always live: they travel with the player).
 gameplay::PartyCounts countActiveParty(const FollowerContext& ctx) {
     gameplay::PartyCounts counts;
     ctx.world.handle().each(
@@ -85,7 +85,7 @@ gameplay::PartyCounts countActiveParty(const FollowerContext& ctx) {
     return counts;
 }
 
-// É9: comments/banter never fire in sneak (docs/FOLLOWERS.md §6.1) — the
+// Comments/banter never fire in sneak (docs/FOLLOWERS.md §6.1) — the
 // player's State.Sneaking tag is the one signal (PlayerController syncs it).
 bool playerSneaking(const FollowerContext& ctx) {
     if (!ctx.playerEntity.is_alive() ||
@@ -99,7 +99,7 @@ bool playerSneaking(const FollowerContext& ctx) {
 
 } // namespace
 
-// ---- É5: classes, levels, evolution -----------------------------------------
+// ---- Classes, levels, evolution -----------------------------------------
 
 void FollowerController::applyLevelSync(const FollowerContext& ctx,
                                         ecs::Entity follower,
@@ -137,8 +137,8 @@ void FollowerController::applyLevelSync(const FollowerContext& ctx,
             gameplay::applyClassLevelChange(core, *cls, fromLevel,
                                             sync.level);
         }
-        // The doc §3 algorithm, v1 on ATTRIBUTES (skills are their own
-        // chantier): the player's best attribute still above the
+        // The doc §3 algorithm, v1 on ATTRIBUTES (skills come
+        // later): the player's best attribute still above the
         // follower's takes the point.
         if (sync.pointsGained > 0 &&
             ctx.playerEntity.has<gameplay::CoreAttributes>()) {
@@ -158,7 +158,7 @@ void FollowerController::applyLevelSync(const FollowerContext& ctx,
     if (follower.has<gameplay::AttributeSet>()) {
         follower.get_mut<gameplay::AttributeSet>().level = sync.level;
     }
-    // É6: newly reached tiers unlock their class perks (idempotent —
+    // Newly reached tiers unlock their class perks (idempotent —
     // grantAbility dedup + the grantedTag discipline skip what he has).
     if (follower.has<gameplay::AttributeSet>() &&
         follower.has<gameplay::AbilitySystem>()) {
@@ -185,7 +185,7 @@ void FollowerController::recruit(const FollowerContext& ctx,
     if (state.followerActive) {
         return;
     }
-    // É3: a convalescent follower refuses (the dialogue's refusal option
+    // A convalescent follower refuses (the dialogue's refusal option
     // is the UX; this is the belt-and-braces code gate).
     if (gameplay::followerConvalescent(state, ctx.gameClock.gameHours())) {
         LOG_INFO("É3: recruit refused — '{}' is convalescent for {:.1f} h",
@@ -194,7 +194,7 @@ void FollowerController::recruit(const FollowerContext& ctx,
                      ctx.gameClock.gameHours());
         return;
     }
-    // É9: the party caps (docs/FOLLOWERS.md §1 — 5 majors + 6 minors;
+    // The party caps (docs/FOLLOWERS.md §1 — 5 majors + 6 minors;
     // mounts exempt). The census and the gate are the pure doctested
     // layer; the caps are §5 tuning knobs.
     const gameplay::RecruitVerdict verdict = gameplay::canJoinParty(
@@ -213,22 +213,22 @@ void FollowerController::recruit(const FollowerContext& ctx,
         return;
     }
     state.followerActive = true;
-    // É9: a fresh recruit always starts on the default stance (a stayed
+    // A fresh recruit always starts on the default stance (a stayed
     // then dismissed follower must not reload wedged in « rester »).
     gameplay::setFollowerStance(state, gameplay::FollowerStance::Follow);
-    // É3: mirror the protection onto HIS tags right away — 0 HP routes
+    // Mirror the protection onto HIS tags right away — 0 HP routes
     // to Downed from the very first hit (updateDowned re-syncs per frame).
     if (follower.has<gameplay::AbilitySystem>()) {
         gameplay::syncStateTag(follower.get_mut<gameplay::AbilitySystem>(),
                                ctx.gameTags, "Follower.Protected", true);
     }
-    // É5: the re-meet catch-up — half the level gap accrued apart
+    // The re-meet catch-up — half the level gap accrued apart
     // (floored), FULL for a mainCharacter (docs/FOLLOWERS.md §2); no +1
     // points for catch-up levels (those are earned traveling together).
     // Runs BEFORE captureEntity so the pending layer carries the new
     // level and attributes.
     applyLevelSync(ctx, follower, *actor, state, /*active=*/false);
-    // The chantier-5 contract: the live entity joins the persistent set —
+    // The pending-save contract: the live entity joins the persistent set —
     // cell -> 0 like the player. captureEntity diffs the live RefId.cell
     // (now null) against the resolved ReferenceForm and writes the
     // field-level `cell = 0` patch into the pending layer; the disk save
@@ -256,7 +256,7 @@ void FollowerController::dismiss(const FollowerContext& ctx,
         return;
     }
     state.followerActive = false;
-    // É3: off duty = back to the mortal rules (bandit-identical deaths).
+    // Off duty = back to the mortal rules (bandit-identical deaths).
     if (follower.has<gameplay::AbilitySystem>()) {
         gameplay::syncStateTag(follower.get_mut<gameplay::AbilitySystem>(),
                                ctx.gameTags, "Follower.Protected", false);
@@ -282,7 +282,7 @@ void FollowerController::dismiss(const FollowerContext& ctx,
     }
     const data::FormHandle homeHandle =
         homeCell.isValid() ? ctx.forms.handleOf(homeCell) : data::FormHandle {};
-    // The other half of the contract: cell -> home. É1 note: the streamer
+    // The other half of the contract: cell -> home. Note: the streamer
     // spawns from the AUTHORED cell (the world model is built from the
     // resolved records), so a home in a DIFFERENT cell only fully lands
     // after a save/load re-resolve — Aldric's home is his authored cell.
@@ -323,13 +323,13 @@ void FollowerController::repositionActiveFollowers(const FollowerContext& ctx,
         gameplay::followTuning(ctx.statsTuning);
     for (auto& npcPtr : ctx.npcDirector.npcs()) {
         Npc& npc = *npcPtr;
-        // É3: a downed follower stays where he fell — no teleport.
+        // A downed follower stays where he fell — no teleport.
         if (npc.dead || npc.downed || !npc.entity.is_alive() ||
             !npc.entity.has<gameplay::FollowerState>() ||
             !npc.entity.get<gameplay::FollowerState>().followerActive) {
             continue;
         }
-        // É9: « restez ici » means it — a stayed follower holds his spot
+        // « restez ici » means it — a stayed follower holds his spot
         // through the player's travels.
         if (gameplay::followerStance(
                 npc.entity.get<gameplay::FollowerState>()) ==
@@ -408,8 +408,8 @@ void FollowerController::onHitTaken(const FollowerContext& ctx,
                     *tag);
         }
     }
-    // É9: remember the player's CURRENT target (the last hostile he
-    // struck — the same É2 signal rule 4 reads) for the one-shot
+    // Remember the player's CURRENT target (the last hostile he
+    // struck — the same aggro signal rule 4 reads) for the one-shot
     // « attaquez ma cible » adoption at command time.
     if (roles.sourcePlayer && targetNpc && targetNpc->hostile &&
         !targetNpc->dead) {
@@ -417,14 +417,14 @@ void FollowerController::onHitTaken(const FollowerContext& ctx,
     }
     for (auto& npcPtr : ctx.npcDirector.npcs()) {
         Npc& npc = *npcPtr;
-        // É3: the downed adopt nothing — they are out of the fight.
+        // The downed adopt nothing — they are out of the fight.
         if (npc.dead || npc.downed || !npc.entity.is_alive()) {
             continue;
         }
         roles.self = npc.entity.id();
         roles.selfFollower = isActiveFollower(npc);
         roles.selfHostile = npc.hostile;
-        // É9: the « me défendre » stance turns rule 4 (player-initiative
+        // The « me défendre » stance turns rule 4 (player-initiative
         // adoption) off for THIS follower (gameplay::adoptOnHit).
         roles.defendOnly =
             roles.selfFollower &&
@@ -467,18 +467,18 @@ void FollowerController::onDeath(const FollowerContext& ctx,
             npcPtr->combatTarget = ecs::Entity {};
         }
     }
-    // É9: a dead hostile is no longer « ma cible ».
+    // A dead hostile is no longer « ma cible ».
     if (playerTarget_.id() == dead) {
         playerTarget_ = ecs::Entity {};
     }
 }
 
-// ---- É3/É4: the per-frame follower sweep ------------------------------------
+// ---- The per-frame follower sweep ------------------------------------
 
 bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
     bool refreshNeeded = false;
     const auto downedTag = ctx.gameTags.find("State.Downed");
-    // É4: the passive-affinity clock — ONE stamp for the whole sweep (the
+    // The passive-affinity clock — ONE stamp for the whole sweep (the
     // VendorState.lastRestockHours idiom on the shared GameClock). The
     // first frame after enter/reset only stamps.
     const f64 nowHours = ctx.gameClock.gameHours();
@@ -501,13 +501,13 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
         // never carries the tag, so he still just dies (iso-behavior).
         gameplay::syncStateTag(system, ctx.gameTags, "Follower.Protected",
                                state.followerActive);
-        // É4: an ACTIVE, standing follower earns time together (hours +
+        // An ACTIVE, standing follower earns time together (hours +
         // affinity, clamped — gameplay::accrueTimeTogether, doctested).
         if (state.followerActive && !npc.downed) {
             gameplay::accrueTimeTogether(
                 state, deltaHours, ctx.statsTuning.affinityPerHourTogether);
         }
-        // É5: an ACTIVE follower's level tracks the player's 1:1 (the
+        // An ACTIVE follower's level tracks the player's 1:1 (the
         // pure gameplay::syncFollowerLevel), each level gained granting
         // the doc's +1 attribute point. The ActorForm resolve only runs
         // on the rare frame the player's level actually moved.
@@ -521,12 +521,12 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
                                /*active=*/true);
             }
         }
-        // É10: the mercenary contract clock (the VendorState game-hour
-        // idiom on É0's followerContractExpiryHours; the phase decision is
+        // The mercenary contract clock (the VendorState game-hour
+        // idiom on the followerContractExpiryHours; the phase decision is
         // the pure gameplay::contractPhase, doctested). One warning toast
         // inside the last mercenaryWarningHours (the once-flag is runtime
-        // v1 — stated: a reload may re-warn); at expiry the É1/É3 dismiss
-        // walks him home and the stamp clears. V1 scope (stated): this
+        // v1 — a reload may re-warn); at expiry the dismiss
+        // walks him home and the stamp clears. V1 scope: this
         // sweep sees RESIDENT followers only — an ACTIVE mercenary always
         // is (he travels with the player); a contract that lapses while
         // he is despawned resolves on next sight.
@@ -609,7 +609,7 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
         LOG_INFO("É3: {} recovers at 1 HP with a {} wound", npc.editorId,
                  result.aggravated ? "WORSENED" : "fresh");
         if (gameplay::needsConvalescence(injuries)) {
-            // Wounded past the bar: he demands rest — the É1 dismiss
+            // Wounded past the bar: he demands rest — the dismiss
             // walks him home; the game-hour stamp gates re-recruiting.
             const f32 restHours = gameplay::convalescenceHours(injuries);
             state.followerDownedRecoveryHours =
@@ -631,19 +631,19 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
             toast(ctx, ctx.texts->format("follower.revived", name));
         }
     }
-    // É9: the ambient-life tick — inter-follower banter (and its queued
+    // The ambient-life tick — inter-follower banter (and its queued
     // reply line) rides the same per-frame sweep.
     updateBanter(ctx, dt, nowHours);
     syncConvalescentTag(ctx);
     return refreshNeeded;
 }
 
-// ---- É9: group commands, banter, ambient comments ----------------------------
+// ---- Group commands, banter, ambient comments ----------------------------
 
 void FollowerController::partyCommand(const FollowerContext& ctx,
                                       gameplay::FollowerStance stance) {
-    // É9 « attaquez ma cible » : resolve the one-shot adoption target —
-    // the last hostile the player struck (the É2 signal), still standing.
+    // « attaquez ma cible » : resolve the one-shot adoption target —
+    // the last hostile the player struck (the aggro signal), still standing.
     ecs::Entity attackTarget {};
     if (stance == gameplay::FollowerStance::Attack &&
         playerTarget_.is_alive()) {
@@ -679,10 +679,10 @@ void FollowerController::partyCommand(const FollowerContext& ctx,
                    attackTarget.is_alive() && !npc.downed &&
                    npc.entity != attackTarget) {
             // One shot at command time; afterwards the stance behaves as
-            // Follow (the standing É2 aggro table).
+            // Follow (the standing aggro table).
             npc.combatTarget = attackTarget;
         }
-        // The stance travels with the save (the chantier-5 contract —
+        // The stance travels with the save (the pending-save contract —
         // FollowerState rides the SavedStatsForm name-match sweep).
         ctx.pendingSave.captureEntity(npc.entity, ctx.forms, ctx.gameTags);
         ++commanded;
@@ -730,7 +730,7 @@ void FollowerController::onAmbientEvent(const FollowerContext& ctx,
         if (!actor) {
             continue;
         }
-        // His ActorForm's comments (the childrenOf pattern, like the É4
+        // His ActorForm's comments (the childrenOf pattern, like the
         // affinity rules); most actors have none — the early exit keeps
         // the generic-subscription sweep cheap.
         const vector<const gameplay::CommentForm*> comments =
@@ -816,7 +816,7 @@ void FollowerController::updateBanter(const FollowerContext& ctx, f32 dt,
     if (chatters.size() < 2) {
         return; // banter needs company (docs/FOLLOWERS.md §6.2)
     }
-    // The authored bonds (É9 v1: initial values only, no runtime
+    // The authored bonds (v1: initial values only, no runtime
     // mutation — the doc's evolving matrix comes later).
     vector<const gameplay::FollowerBondForm*> bonds;
     data::forEach<gameplay::FollowerBondForm>(
@@ -990,7 +990,7 @@ void FollowerController::syncConvalescentTag(const FollowerContext& ctx) {
     }
 }
 
-// ---- É4: affinity rules + the recruit preview -------------------------------
+// ---- Affinity rules + the recruit preview -------------------------------
 
 void FollowerController::onAffinityEvent(const FollowerContext& ctx,
                                          const gameplay::Event& event,
@@ -1081,7 +1081,7 @@ void FollowerController::openRecruitPreview(const FollowerContext& ctx,
     vital("essenceText", "ui.recruit.essence", "essence", "maxEssence");
 
     // The nine attributes (docs/STATS.md §1), one row each — CURRENT
-    // values on the partner entity, labels from the loc table (C9.5).
+    // values on the partner entity, labels from the loc table.
     static constexpr const char* kAttributes[] = {
         "strength",   "constitution", "grace", "dexterity", "alacrity",
         "perception", "charisma",     "ego",   "insight",
@@ -1099,7 +1099,7 @@ void FollowerController::openRecruitPreview(const FollowerContext& ctx,
     ctx.screenStack->show("recruit");
 }
 
-// ---- É6: the player learns a perk (réciproque) -------------------------------
+// ---- The player learns a perk (réciproque) -------------------------------
 
 void FollowerController::teachPerk(const FollowerContext& ctx,
                                    ecs::Entity follower) {
@@ -1137,7 +1137,7 @@ void FollowerController::teachPerk(const FollowerContext& ctx,
     }
 }
 
-// ---- É7: the forge upgrade of the base kit -----------------------------------
+// ---- The forge upgrade of the base kit -----------------------------------
 
 void FollowerController::forgeUpgrade(const FollowerContext& ctx,
                                       ecs::Entity follower) {
@@ -1205,7 +1205,7 @@ void FollowerController::forgeUpgrade(const FollowerContext& ctx,
     }
 }
 
-// ---- É10: mercenaries ----------------------------------------------------------
+// ---- Mercenaries ----------------------------------------------------------
 
 void FollowerController::hireMercenary(const FollowerContext& ctx,
                                        ecs::Entity follower) {
@@ -1216,7 +1216,7 @@ void FollowerController::hireMercenary(const FollowerContext& ctx,
         !ctx.playerEntity.has<gameplay::AttributeSet>()) {
         return; // not a mercenary (or no live economy): the option is a no-op
     }
-    // The REAL price — the pure É10 formula on the player's level and
+    // The REAL price — the pure formula on the player's level and
     // wealth (the option's HasItem gate in data is only the COARSE
     // base-price floor; this is where the scaling bites).
     const f32 playerLevel =
@@ -1241,8 +1241,8 @@ void FollowerController::hireMercenary(const FollowerContext& ctx,
     const bool renewal =
         follower.get<gameplay::FollowerState>().followerActive;
     if (!renewal) {
-        // The É1 recruit path unchanged (§2.11) — with its OWN gates
-        // (É9 party caps, É3 convalescence) and their toasts. Bounced =
+        // The recruit path unchanged (§2.11) — with its OWN gates
+        // (party caps, convalescence) and their toasts. Bounced =
         // no charge (the payFine-idiom reason the gold moves here).
         recruit(ctx, follower);
         if (!follower.get<gameplay::FollowerState>().followerActive) {
@@ -1277,7 +1277,7 @@ void FollowerController::hireMercenary(const FollowerContext& ctx,
              state.followerContractExpiryHours);
 }
 
-// ---- É8: mort, tombe, enterrement --------------------------------------------
+// ---- Mort, tombe, enterrement --------------------------------------------
 
 namespace {
 
@@ -1398,7 +1398,7 @@ bool FollowerController::buryOnSpot(const FollowerContext& ctx,
 bool FollowerController::buryByContact(const FollowerContext& ctx,
                                        ecs::Entity partner) {
     // The partner's ActorForm identity — buryContact on the DEAD
-    // follower's form points at it (É0 data).
+    // follower's form points at it (data).
     core::Guid partnerForm;
     if (partner.is_alive() && partner.has<world::RefId>()) {
         if (const data::Form* base =

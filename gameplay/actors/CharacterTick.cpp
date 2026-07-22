@@ -17,7 +17,7 @@ namespace gameplay {
 
 namespace {
 
-// R6 (review 7c): publish the Phase-A primary maxima — the derived
+// Publish the Phase-A primary maxima — the derived
 // formulas over BASE attributes plus plain GAS modifiers, BEFORE the
 // resonance/cascade mods scale them — under synthetic overlay ids (the
 // `damage` meta-attribute precedent: an entry without a reflected
@@ -93,7 +93,7 @@ void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
 
     // Buildup consequences (DoT drains, bleed burst, status triggers, lethal
     // zeroing + life-state sync) — the ONE shared implementation with the
-    // time-skip path (audit U6-F2/U6-F7). The return (died) is not consumed
+    // time-skip path. The return (died) is not consumed
     // here: the health regen it would guard is gated by the State.Dead tag
     // this call just synced (tickGameTime's isDead gate).
     applyBuildupResult(args, br, mods);

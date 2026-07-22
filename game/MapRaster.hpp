@@ -3,7 +3,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 
-// Chantier 9 C9.6 — the in-game map raster: a stylized top-down RGBA image
+// The in-game map raster: a stylized top-down RGBA image
 // of an exterior worldspace, generated on the CPU from the SAME pure
 // terrain functions the renderer and collision use (render::terrain::
 // height / materialWeights — deterministic, authored .ter patches

@@ -30,7 +30,7 @@ void main() {
                    cloudShadowFactor(vWorldPos);
     vec3 lit =
         albedo * (uAmbientColor.rgb + uSunColor.rgb * (diffuse * shadow));
-    // Brick 27: stepped rim against the sky — canopies pop off the
+    // Stepped rim against the sky — canopies pop off the
     // background (moved here from the removed leaf-card pass).
     lit += albedo * stylizedRim(n, vWorldPos) * uSunColor.rgb * shadow;
 

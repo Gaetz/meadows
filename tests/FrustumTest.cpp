@@ -71,7 +71,7 @@ TEST_CASE("terrain-chunk-like AABBs cull left and right of the view") {
                                        { -320.0f, 60.0f, 32.0f }));
 }
 
-// --- Depth 0..1 (chantier VULKAN) ---------------------------------------------
+// --- Depth 0..1 (the Vulkan convention) -----------------------------------------
 // GLM_FORCE_DEPTH_ZERO_TO_ONE is global; these tests pin the convention so a
 // build without the define (or a frustum/oblique regression) fails headless —
 // none of this is verifiable by eye on the M1.

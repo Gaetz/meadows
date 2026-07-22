@@ -3,12 +3,13 @@
 #include "data/forms/Form.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 
-// Follower class & perk data (FOLLOWERS É0 — docs/CHANTIER-FOLLOWERS.md).
+// Follower class & perk data (docs/CHANTIER-FOLLOWERS.md).
 // Reuses the existing patterns wholesale: classes are ordinary Forms (§5,
 // moddable/patchable), perks are CHILD records keyed by `parent` (the
 // LoadoutEntryForm / childrenOf convention), and the curves resolve into
-// the existing gameplay::CoreAttributes set — É5 writes them as bases and
-// lets the derived-stat pass (efdf8e7 override ?? formula) do the rest.
+// the existing gameplay::CoreAttributes set — the level-up sync writes
+// them as bases and lets the derived-stat pass (override ?? formula) do
+// the rest.
 
 namespace data {
 class FormTypeRegistry;
@@ -22,7 +23,7 @@ namespace gameplay {
 // defaults (6, insight 0) so an empty class = the standard humanoid.
 struct FollowerClassForm : data::Form {
     str displayName;
-    str combatStyle; // CombatAi vocabulary (É2/É6); "" = default brain
+    str combatStyle; // CombatAi vocabulary; "" = default brain
 
     f32 strengthBase { 6.0f };
     f32 strengthPerLevel { 0.0f };
@@ -71,7 +72,7 @@ struct FollowerClassForm : data::Form {
 // childrenOf pattern). Grants an ability and/or an infinite effect through
 // the existing GAS (§6) — either guid may be null.
 //
-// É6 DATA DISCIPLINE — perk `effect`s MUST carry a grantedTag. The sync
+// DATA DISCIPLINE — perk `effect`s MUST carry a grantedTag. The sync
 // re-runs at spawn, on every level-up and after a load; the EffectForm's
 // own grantedTag is the dedup key ("already on the target -> skip") AND
 // the thing that makes the dedup survive saves for free (SavedEffectForm
@@ -92,7 +93,7 @@ struct ClassPerkForm : data::Form {
     REFLECT_END()
 };
 
-// FOLLOWERS É4 — an affinity reaction: CHILD record of the ActorForm (the
+// An affinity reaction: CHILD record of the ActorForm (the
 // childrenOf pattern, like ClassPerkForm above). When the named bus event
 // fires, an eligible follower whose ActorForm owns matching rules moves
 // its FollowerState.followerAffinity by `delta` (clamped ±100 — §2.9:
@@ -117,7 +118,7 @@ struct AffinityRuleForm : data::Form {
     REFLECT_END()
 };
 
-// FOLLOWERS É6 — a perk the PLAYER can learn from this follower (the
+// A perk the PLAYER can learn from this follower (the
 // réciproque of docs/FOLLOWERS.md §3): CHILD record of the ActorForm
 // (childrenOf, like AffinityRuleForm above). The teaching rides the
 // existing dialogue machinery — a dialogue option gated by ConditionForm
@@ -130,7 +131,7 @@ struct TaughtPerkForm : data::Form {
     str displayName;    // the toast line names the perk
     core::Guid ability; // AbilityForm granted to the player (or null)
     core::Guid effect;  // EffectForm applied to the player (or null;
-                        //   infinite + grantedTag — the É6 discipline)
+                        //   infinite + grantedTag — the discipline above)
 
     REFLECT_BEGIN(TaughtPerkForm, data::Form)
         REFLECT_FIELD(parent)
@@ -140,9 +141,9 @@ struct TaughtPerkForm : data::Form {
     REFLECT_END()
 };
 
-// FOLLOWERS É9 — the follower-to-follower bond: a data-authored INITIAL
+// The follower-to-follower bond: a data-authored INITIAL
 // pair affinity, consumed as a banter gate (BanterForm.minPairAffinity).
-// V1 scope (stated in docs/CHANTIER-FOLLOWERS.md É9): no runtime mutation —
+// V1 scope (docs/CHANTIER-FOLLOWERS.md): no runtime mutation —
 // the doc's evolving matrix comes later; the pure gameplay::pairAffinity
 // resolves the pair symmetrically ({a,b} order-free), absent pair = 0.
 struct FollowerBondForm : data::Form {
@@ -157,7 +158,7 @@ struct FollowerBondForm : data::Form {
     REFLECT_END()
 };
 
-// FOLLOWERS É9 — an inter-follower banter (docs/FOLLOWERS.md §6.2): two
+// An inter-follower banter (docs/FOLLOWERS.md §6.2): two
 // lines, one exchange. TOP-LEVEL record (not a child — the pair spans two
 // actors), filtered at runtime by "both of the pair are active and near".
 // The anti-repeat clock is the ambient-comment one (default 10 game hours,
@@ -183,7 +184,7 @@ struct BanterForm : data::Form {
     REFLECT_END()
 };
 
-// FOLLOWERS É9 — an ambient one-liner (docs/FOLLOWERS.md §6.1): CHILD
+// An ambient one-liner (docs/FOLLOWERS.md §6.1): CHILD
 // record of the ActorForm (the AffinityRuleForm idiom). Fires on a
 // matching bus event (name + optional filterTag descent + minValue floor
 // — OnQuietZone enter is value 1, leave is 0) for an ACTIVE follower,
@@ -223,8 +224,8 @@ struct CommentForm : data::Form {
 void registerFollowerFormTypes(data::FormTypeRegistry& registry);
 
 // Resolves the class curves at `level`: base + perLevel × (level - 1),
-// linear v1 (levels below 1 clamp to 1). Pure — É5 writes the result into
-// the actor's CoreAttributes bases and recomputes.
+// linear v1 (levels below 1 clamp to 1). Pure — the level-up sync writes
+// the result into the actor's CoreAttributes bases and recomputes.
 CoreAttributes classAttributesAt(const FollowerClassForm& cls, f32 level);
 
 } // namespace gameplay

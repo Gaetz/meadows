@@ -8,9 +8,9 @@
 
 #include "data/forms/CoreForms.hpp" // ActorForm, WeaponForm, ArmorForm...
 #include "data/forms/FormDatabase.hpp"
-#include "data/forms/LocForms.hpp" // TextTable (C9.5)
+#include "data/forms/LocForms.hpp" // TextTable
 #include "engine/core/Log.hpp"
-#include "engine/platform/Paths.hpp" // platform::localTime (C9.8)
+#include "engine/platform/Paths.hpp" // platform::localTime
 #include "engine/ui/UiSystem.hpp"
 #include "game/Barter.hpp"
 #include "game/SaveGame.hpp" // listSaveSlots
@@ -20,7 +20,7 @@
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/actors/ActorState.hpp"     // gameplay::VendorState
 #include "gameplay/actors/CharacterForms.hpp" // gameplay::applyLoadout
-#include "gameplay/actors/Followers.hpp"      // canCarry (É7)
+#include "gameplay/actors/Followers.hpp"      // canCarry
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/EquipmentStats.hpp"
 #include "gameplay/stats/GameClock.hpp"
@@ -33,10 +33,10 @@ namespace game {
 
 namespace {
 
-// FOLLOWERS É7: is the open container a LIVING follower actor? His gear
+// Is the open container a LIVING follower actor? His gear
 // obeys the base-kit lock, the carry-weight cap and the auto-equip; a
-// corpse (or a plain chest) keeps the old free-transfer behavior — É8
-// owns graves. Resolution = the É0 identity check (ActorForm.
+// corpse (or a plain chest) keeps the old free-transfer behavior —
+// owns graves. Resolution = the identity check (ActorForm.
 // followerCategory != "", the FollowerController::followerActorForm
 // mirror), aliveness = the State.Dead tag the whole scene reads.
 const data::ActorForm* livingFollower(const UiRouterContext& ctx,
@@ -61,7 +61,7 @@ const data::ActorForm* livingFollower(const UiRouterContext& ctx,
     return actor->followerCategory.empty() ? nullptr : actor;
 }
 
-// An item's display name for the É7 toasts, whatever its form type
+// An item's display name for the toasts, whatever its form type
 // (reflection — the InteractionController prompt-label pattern).
 str itemDisplayName(const UiRouterContext& ctx, const core::Guid& id) {
     const data::FormHandle handle = ctx.forms.handleOf(id);
@@ -87,7 +87,7 @@ void toast(const UiRouterContext& ctx, str line) {
     }
 }
 
-// É7: after items LEFT a follower, his equipment re-aims — a slot whose
+// After items LEFT a follower, his equipment re-aims — a slot whose
 // item is gone empties, then the best remaining piece per slot re-equips
 // (the auto-equip comparison, reused; his unremovable base kit is the
 // usual floor it lands back on).
@@ -117,7 +117,7 @@ void reequipFromInventory(const UiRouterContext& ctx,
 
 } // namespace
 
-// --- Chantier 4 B3: inventory / container --------------------------------------------
+// --- Inventory / container --------------------------------------------
 
 void UiRouter::openInventoryScreen(const UiRouterContext& ctx) {
     containerEntity_ = ecs::Entity {};
@@ -153,7 +153,7 @@ void UiRouter::openBarterScreen(const UiRouterContext& ctx,
     }
     ctx.ui.setBool("inventory", "transferMode", true);
     // The vendor's name for the title + its barter profile (D1).
-    str title = ctx.texts.get("ui.barter.merchant"); // C9.5 fallback
+    str title = ctx.texts.get("ui.barter.merchant"); // loc fallback
     vendorBuyMult_ = ctx.statsTuning.barterBuyMult;
     vendorSellMult_ = ctx.statsTuning.barterSellMult;
     core::Guid vendorFormId;
@@ -183,7 +183,7 @@ void UiRouter::openBarterScreen(const UiRouterContext& ctx,
     // layer carries the clock (a scene map would reset on re-enter = a
     // free-restock exploit).
     const f64 kRestockHours =
-        static_cast<f64>(ctx.statsTuning.vendorRestockHours); // U4-7
+        static_cast<f64>(ctx.statsTuning.vendorRestockHours);
     const f64 nowHours = ctx.gameClock.gameHours();
     if (!containerEntity_.has<gameplay::VendorState>()) {
         containerEntity_.set<gameplay::VendorState>({});
@@ -248,8 +248,8 @@ void UiRouter::transferItem(const UiRouterContext& ctx, const core::Guid& id,
     auto& bag = ctx.playerEntity.get_mut<gameplay::Inventory>();
     auto& source = fromContainer ? loot : bag;
     auto& target = fromContainer ? bag : loot;
-    // FOLLOWERS É7: a LIVING follower's gear has house rules — his
-    // base kit never leaves him, his carry weight (× the É5 age factor)
+    // A LIVING follower's gear has house rules — his
+    // base kit never leaves him, his carry weight (× the age factor)
     // rejects the excess, and a strictly better piece auto-equips.
     const data::ActorForm* follower = livingFollower(ctx, containerEntity_);
     if (follower && fromContainer &&
@@ -424,7 +424,7 @@ void UiRouter::handleUiEvent(const UiRouterContext& ctx, const str& model,
                    ctx.playerEntity.is_alive()) {
             auto& loot = containerEntity_.get_mut<gameplay::Inventory>();
             auto& bag = ctx.playerEntity.get_mut<gameplay::Inventory>();
-            // É7: a LIVING follower keeps his base kit — unremovable
+            // A LIVING follower keeps his base kit — unremovable
             // stacks stay put; everything else moves as before.
             const data::ActorForm* follower =
                 livingFollower(ctx, containerEntity_);
@@ -489,7 +489,7 @@ void UiRouter::handleUiEvent(const UiRouterContext& ctx, const str& model,
     }
 }
 
-// --- Chantier 4 B6: menus --------------------------------------------------------------
+// --- Menus --------------------------------------------------------------
 
 void UiRouter::handleMenuAction(const UiRouterContext& ctx,
                                 const str& action) {
@@ -499,7 +499,7 @@ void UiRouter::handleMenuAction(const UiRouterContext& ctx,
         // Timestamped manual slot; F5 owns "quick".
         char slot[32];
         const std::time_t now = std::time(nullptr);
-        // C9.8: platform::localTime (portable — localtime_s is MSVC-only).
+        // Platform::localTime (portable — localtime_s is MSVC-only).
         const std::tm local = platform::localTime(now);
         std::strftime(slot, sizeof(slot), "save_%Y%m%d_%H%M%S", &local);
         ctx.performSave(slot);
@@ -538,7 +538,7 @@ void UiRouter::handleMenuAction(const UiRouterContext& ctx,
         ctx.updateMenuClockLine();
         ctx.screenStack.show("mainmenu");
     } else if (action == "options") {
-        // C9.4: the scene fills the "options" model (settings + bindings
+        // The scene fills the "options" model (settings + bindings
         // are its state) and shows the screen over the current menu.
         ctx.openOptions();
     } else if (action == "quit") {

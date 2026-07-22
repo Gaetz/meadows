@@ -1,9 +1,9 @@
 #include <doctest/doctest.h>
 
 #include "gameplay/combat/CombatAi.hpp"
-#include "world/ai/Perception.hpp" // alertTo (the B3 call-for-help intel)
+#include "world/ai/Perception.hpp" // alertTo (the call-for-help intel)
 
-// Chantier P0 B3 — the combat move decision (one flat sim-pure function)
+// The combat move decision (one flat sim-pure function)
 // and the call-for-help intel handoff.
 
 using gameplay::chooseCombatMove;

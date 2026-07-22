@@ -7,8 +7,8 @@
 
 namespace assets {
 
-// Disk cache for the per-vertex AO bake (dev ask 2026-07-10: authored
-// kit meshes take SECONDS each to bake — startup was crawling). One
+// Disk cache for the per-vertex AO bake (authored kit meshes take
+// SECONDS each to bake — without the cache, startup crawls). One
 // binary entry per source mesh in a cache directory:
 //   <cacheDir>/<fnv1a64-of-source-path>.ao
 // An entry stores the source path, its mtime+size and the bake
@@ -51,9 +51,9 @@ u32 pruneVertexAoCache(const std::filesystem::path& cacheDir);
 // variants: no source file to fingerprint). The key hashes the vertex
 // POSITIONS, so a new seed or a generator change re-bakes by
 // construction, and identical geometry always hits. Same one-call
-// contract as applyCachedVertexAo. (Debug-build discovery 2026-07-10:
-// the 17 synchronous veg bakes at scene create cost ~a minute
-// unoptimized — this makes it a one-time cost per geometry.)
+// contract as applyCachedVertexAo. (In a debug build the synchronous
+// veg bakes at scene create cost on the order of a minute — this makes
+// it a one-time cost per geometry.)
 void applyContentKeyedVertexAo(render::MeshData& mesh,
                                const std::filesystem::path& cacheDir,
                                f32 strength,

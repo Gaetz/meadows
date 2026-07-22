@@ -141,7 +141,7 @@ TEST_CASE("raycasts hit static geometry and miss empty space") {
     CHECK_FALSE(afterRemove.hit);
 }
 
-// Chantier P0 A1 — the melee/projectile sweep primitive.
+// The melee/projectile sweep primitive.
 TEST_CASE("sphere casts sweep into geometry a ray would miss") {
     phys::PhysicsWorld world;
     const phys::BodyId post =

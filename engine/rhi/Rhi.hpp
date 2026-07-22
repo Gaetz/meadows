@@ -31,8 +31,8 @@ struct ShaderHandle      { u32 id { 0 }; };
 struct PipelineHandle    { u32 id { 0 }; };
 struct BindGroupHandle   { u32 id { 0 }; };
 struct FramebufferHandle { u32 id { 0 }; };
-struct FenceHandle       { u32 id { 0 }; }; // single-use GPU marker (P1)
-struct TimestampHandle   { u32 id { 0 }; }; // single-use GPU clock (GPU-PERF P0)
+struct FenceHandle       { u32 id { 0 }; }; // single-use GPU marker
+struct TimestampHandle   { u32 id { 0 }; }; // single-use GPU clock
 
 // --- Capabilities --------------------------------------------------------------
 
@@ -116,7 +116,7 @@ struct TextureDesc {
     u32 height { 0 };
     u32 arrayLayers { 1 }; // > 1 = texture array (splat layers, CSM cascades)
     // > 1 = 3D VOLUME texture (Vulkan VK_IMAGE_TYPE_3D) — GI voxel clipmap
-    // and radiance cascades (chantier RC, G0). Exclusive with arrayLayers;
+    // and radiance cascades. Exclusive with arrayLayers;
     // GPU-written via storageImage, never uploaded; caps().volumeTextures.
     u32 depth { 1 };
     u32 mipLevels { 1 };   // storage levels; fill base, then generateMipmaps()
@@ -147,15 +147,16 @@ struct SamplerDesc {
     bool mipmapFilter { false }; // trilinear across mips when true
     AddressMode addressU { AddressMode::ClampToEdge };
     AddressMode addressV { AddressMode::ClampToEdge };
-    AddressMode addressW { AddressMode::ClampToEdge }; // 3D volumes (G0)
+    AddressMode addressW { AddressMode::ClampToEdge }; // 3D volumes
     CompareFunc compare { CompareFunc::Never }; // Never = regular sampler
     f32 maxAnisotropy { 1.0f };
 };
 
 // --- Shaders -------------------------------------------------------------------
 
-// Sources are backend-specific for now (GLSL for GL). Offline SPIR-V
-// cross-compilation becomes the path once a second backend exists.
+// ONE GLSL corpus feeds every backend: GL compiles the sources directly;
+// the Vulkan backend compiles the same GLSL to SPIR-V (glslang). The few
+// divergent spellings live in shaders/compat.glsl.
 //
 // uniformBlocks / samplers: explicit binding assignments applied after link via
 // glUniformBlockBinding / glUniform1i. Required on GL 4.1 (no layout(binding=N)

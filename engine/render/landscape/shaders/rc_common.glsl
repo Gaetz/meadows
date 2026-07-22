@@ -1,4 +1,4 @@
-// Radiance cascades shared helpers (G4/G5) — layouts and direction
+// Radiance cascades shared helpers (build/merge) — layouts and direction
 // encoding. Two storage layouts (docs/RADIANCE-CASCADES.md §2.2):
 //  - cascade 0, DIR-MAJOR "slabs": 3D texture res × res × (res·8);
 //    z = dirIndex·res + probeZ — same-direction probes are contiguous,

@@ -1,4 +1,4 @@
-// Chantier RC G6 — the GI apply (requires common.glsl). ONE branch point
+// The GI apply (requires common.glsl). ONE branch point
 // per surface shader: the ambient term becomes giAmbient(pos, n, classic).
 // uGiInfo.x = 0 keeps the CLASSIC path byte-identical (the parallel-
 // technique seam); 1 samples the merged cascade 0 — 8 hardware-trilinear
@@ -29,10 +29,10 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
     float res = uGiInfo.w;
     float spacing = uGiGridInfo.w;
     float span = res * spacing;
-    // Sample ONE probe step off the surface (dev bug 2026-07-11: at the
-    // terrain floor, half the trilinear neighbors are BURIED probes —
-    // black, beta 0 — which crushed the ground's GI toward the dim band
-    // while walls and interiors banded fine). Off-surface, the clean air
+    // Sample ONE probe step off the surface: at the terrain floor, half
+    // the trilinear neighbors are BURIED probes — black, beta 0 — which
+    // would crush the ground's GI toward the dim band while walls and
+    // interiors band fine. Off-surface, the clean air
     // probes carry the full range, and the downward directions see the
     // lit floor: the ground gets its own bounce back.
     vec3 samplePos = worldPos + normal * spacing;
@@ -60,20 +60,13 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
     }
     vec3 irradiance = sum / max(weightSum, 1e-3) * uGiInfo.y;
 
-    // ADAPTIVE stylized ramp (dev design 2026-07-11): posterize the GI in
-    // log-stops anchored on the MEASURED scene range (rc_adapt.comp).
-    // ASYMMETRIC split (dev 2026-07-11b): at night the log-mean sits near
-    // black, so symmetric bands wasted half the pools below it — now the
-    // N-1 bands spread from the MEAN to the MAX (where the light lives,
-    // countering the inverse-square crush), and everything below the
-    // mean gathers into ONE dim band: the RC zone's low ambient floor.
-    // Hue kept; narrow smoothstep = AA (the stylized.glsl language).
-    // FIXED log-step posterization (dev decision 2026-07-11, replacing
-    // the adaptive chain — it measured the AIR, moved with the weather
-    // and fought the multi-bounce): the GI luminance snaps to ABSOLUTE
-    // exposure steps of uGiBandInfo.x stops. Predictable by design —
-    // bands appear wherever the GI varies by one step, day, night and
-    // torch rings alike; hue kept; uGiBandInfo.y = AA width.
+    // FIXED log-step posterization: the GI luminance snaps to ABSOLUTE
+    // exposure steps of uGiBandInfo.x stops. (An adaptive ramp anchored
+    // on the measured scene range was rejected: it measured the AIR,
+    // moved with the weather and fought the multi-bounce.) Predictable
+    // by design — bands appear wherever the GI varies by one step, day,
+    // night and torch rings alike; hue kept; narrow smoothstep = AA
+    // (the stylized.glsl language), uGiBandInfo.y = AA width.
     float lum = dot(irradiance, vec3(0.299, 0.587, 0.114));
     if (uAmbientColor.w > 0.0 && uGiBandInfo.x > 0.01 && lum > 1e-5) {
         float bandStep = uGiBandInfo.x;

@@ -59,7 +59,7 @@ void updateTriggerVolumes(ecs::World& world, const TriggerCallbacks& cb,
             continue; // a handler despawned it earlier this tick
         }
         // Work on COPIES: dispatch below may add/remove components (an
-        // archetype change moves storage — the U8-4 lesson), so no
+        // archetype change moves flecs storage), so no
         // component reference is ever held across a callback.
         const Transform transform = trigger.get<Transform>();
         const TriggerVolume volume = trigger.get<TriggerVolume>();

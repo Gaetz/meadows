@@ -54,7 +54,7 @@ vector<const T*> collectChildren(const FormDatabase& database,
     return children;
 }
 
-// Reverse lookup (the GameDB "used by" tool, chantier 8.1): every form
+// Reverse lookup (the GameDB "used by" tool): every form
 // carrying a Guid field equal to `target` — parents found from a child,
 // wielders found from a weapon... Reflection-driven, so new Form types
 // participate for free. O(forms × fields): tooling only, never per-frame.

@@ -115,7 +115,7 @@ uptr<ImGuiLayer> ImGuiLayer::create(platform::Window& window,
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    // Docking (chantier 8.7b): the DB editor is a dockspace. No
+    // Docking: the DB editor is a dockspace. No
     // multi-viewport — one OS window.
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::StyleColorsDark();

@@ -6,7 +6,7 @@
 #include "data/forms/Form.hpp"
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormTypeRegistry.hpp" // copied into the save worker
-#include "data/forms/LocForms.hpp" // TextTable (C9.5)
+#include "data/forms/LocForms.hpp" // TextTable
 #include "data/plugins/Record.hpp"
 #include "engine/core/Guid.hpp"
 #include "engine/core/Jobs.hpp"
@@ -48,7 +48,7 @@ void SaveController::performSave(const SaveContext& ctx, const str& slot) {
         "5a5e0000-0000-4000-8000-000000000001"); // the one save layer
     plugin.name = "save-" + slot;
     plugin.records = pendingSave_.flush();
-    // Chantier 6 A4: the quest log (scene-level, rebuilt fresh each save
+    // The quest log (scene-level, rebuilt fresh each save
     // like the WorldStateForm — never in the pending layer).
     const auto questRecords = quest::captureQuestLog(ctx.questLog);
     plugin.records.insert(plugin.records.end(), questRecords.begin(),
@@ -71,7 +71,7 @@ void SaveController::performSave(const SaveContext& ctx, const str& slot) {
                    "5a5e0000-0000-4000-8000-0000000000ff")));
     const f64 captureMs = msSince(captureStart);
 
-    // C9.7: the serialization + file IO leave the frame. The worker owns
+    // The serialization + file IO leave the frame. The worker owns
     // an INDEPENDENT plugin (moved — pendingSave_ keeps mutating after
     // this frame; flush() already built a fresh vector) and a COPY of the
     // type registry (pointer maps over static TypeInfos — cheap), and it
@@ -109,7 +109,7 @@ std::optional<str> SaveController::pumpCompletions(
                      done.slot, done.recordCount, done.captureMs,
                      done.serializeMs, done.writeMs);
             if (notify) {
-                notify(texts.format("save.saved", done.slot)); // C9.5
+                notify(texts.format("save.saved", done.slot));
             }
         } // (failure already LOG_ERRORed by writeSaveText, no toast)
         // The gate reopens; a save requested while this one flew is
@@ -125,7 +125,7 @@ void SaveController::requestLoad(
     const str& slot, const data::TextTable& texts,
     const std::function<void(const str&)>& notify) {
     if (!std::filesystem::exists(savePath(slot))) {
-        notify(texts.format("save.missing", slot)); // C9.5
+        notify(texts.format("save.missing", slot));
         return;
     }
     pendingLoadSlot_ = slot;
@@ -142,7 +142,7 @@ bool SaveController::takeReloadRequest() {
 
 std::optional<data::Plugin> SaveController::beginLoad(
     const data::FormTypeRegistry& types) {
-    // Chantier 5 B5: a loading game resolves its save file as the LAST
+    // A loading game resolves its save file as the LAST
     // layer — one more plugin, the §5 invariant in action.
     loadedFromSave_ = false;
     if (pendingLoadSlot_.empty()) {

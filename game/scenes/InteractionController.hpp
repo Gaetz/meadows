@@ -5,7 +5,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 #include "engine/ecs/World.hpp"       // ecs::Entity, flecs::query
-#include "game/InputActions.hpp"      // game::ActionMap (C9.2)
+#include "game/InputActions.hpp"      // game::ActionMap
 #include "world/scene/Components.hpp" // world::Transform, DoorTarget, RefId
 
 namespace platform {
@@ -31,7 +31,7 @@ class PendingSaveLayer;
 
 // The scene systems the generic [E] interaction touches, bundled so the
 // prompt scan, the travel/rest fade machine, and the talk toast are decoupled
-// from LandscapeScene (audit U4-10). The scene rebuilds it each call from its
+// from LandscapeScene. The scene rebuilds it each call from its
 // own members — references, a few scalars, and the actions that stay scene
 // territory as closures (the SculptContext publish pattern). Mirrors
 // EditorContext / StreamingContext / NpcContext.
@@ -43,7 +43,7 @@ struct InteractionContext {
     platform::Input& input;
     gameplay::GameClock& gameClock;
     const gameplay::StatsTuningForm& statsTuning;
-    const data::TextTable& texts; // U4-11: player-facing strings by key
+    const data::TextTable& texts; // Player-facing strings by key
     PendingSaveLayer& pendingSave; // item pickup flushes enabled = false
     phys::PhysicsWorld* physics;   // fade-in floor probe
     phys::CharacterBody* player;   // the aiming eye
@@ -56,23 +56,23 @@ struct InteractionContext {
         openDialogue;
     std::function<void(ecs::Entity container)> openContainer;
     std::function<bool(const str& screen)> tryShowScreen; // workstation UI
-    // FOLLOWERS É3: [E] on a DOWNED ally — the scene routes it to
+    // [E] on a DOWNED ally — the scene routes it to
     // FollowerController::reviveDownedAlly (potion from the player's bag).
     std::function<void(ecs::Entity ally)> reviveAlly;
-    // C9.2: [E]/[X] fires through the action layer, never a raw key.
+    // [E]/[X] fires through the action layer, never a raw key.
     const ActionMap* actions { nullptr };
-    // FOLLOWERS É8 (appended): [E] on a grave = the homage (toast + cue —
+    // [E] on a grave = the homage (toast + cue —
     // scene territory); [F] on a dead FOLLOWER's corpse = bury him here
     // (FollowerController::buryOnSpot behind the closure).
     std::function<void(ecs::Entity grave)> homage;
     std::function<void(ecs::Entity corpse)> buryCorpse;
-    // FOLLOWERS É11 v1 (appended): [E] on a mount (furniture category
+    // v1: [E] on a mount (furniture category
     // "mount", the grave idiom) — the scene destroys the capsule and
     // hands the frame over to RideController.
     std::function<void(ecs::Entity mount)> mountRide;
 };
 
-// Generic interaction extracted from LandscapeScene (audit U4-10): the aim
+// Generic interaction extracted from LandscapeScene: the aim
 // scan + [E] prompt (doors, items, actors, corpses, furniture), the fade
 // state machine that carries travel and rest through black, and the talk
 // toast. performTravel itself STAYS in the scene (a worldspace swap is
@@ -82,7 +82,7 @@ public:
     // Per frame while the sim runs: prompt scan, [E] dispatch, fade advance.
     void update(f32 dt, const InteractionContext& ctx);
 
-    // Menus' "wait N hours": clock + needs decay, NO bed recovery (B6).
+    // Menus' "wait N hours": clock + needs decay, NO bed recovery.
     void wait(f32 hours, const InteractionContext& ctx);
 
     // Arm a travel through the fade (doors do this internally; onEnter's
@@ -109,28 +109,28 @@ public:
     bool fading() const { return fadeDirection != 0; }
 
 private:
-    // Chantier 3 B7-lite: rest/sleep on furniture, at the black of the
-    // fade — the Phase-7 sleep() advances the game clock (the sky follows
+    // Rest/sleep on furniture, at the black of the
+    // fade — gameplay::sleep() advances the game clock (the sky follows
     // on the next frame), decays hunger/thirst over the skipped time,
     // restores the sleep need, and accrues Rest (the injury/resonance
     // recovery precondition). NPC schedules re-evaluate on their next
     // slot check and warp forward.
     void rest(f32 hours, const InteractionContext& ctx);
 
-    // Chantier 3 B1: GENERIC interaction (E) — doors travel, items land
-    // in the inventory, actors talk, furniture rests (B7).
+    // GENERIC interaction (E) — doors travel, items land
+    // in the inventory, actors talk, furniture rests.
     enum class PromptKind : u8 { None, Door, Item, Actor, Corpse,
                                  Furniture,
-                                 DownedAlly, // É3: heal a downed follower
-                                 Grave,      // É8: homage [E] / deposit [F]
-                                 Mount };    // É11: ride it (tech proof)
+                                 DownedAlly, // heal a downed follower
+                                 Grave,      // homage [E] / deposit [F]
+                                 Mount };    // ride it
     ecs::Entity promptEntity {};
     PromptKind promptKind { PromptKind::None };
     str promptLabel_;
     str talkLine_; // placeholder dialogue bubble / toast
     f32 talkTimer { 0.0f };
     core::Guid pendingTravel {};    // armed target marker reference
-    f32 pendingSleepHours { 0.0f }; // armed rest/sleep (B7-lite), at black
+    f32 pendingSleepHours { 0.0f }; // armed rest/sleep, at black
     f32 fadeAlpha_ { 0.0f };        // 0 = clear, 1 = black
     i32 fadeDirection { 0 };        // +1 fading out, -1 fading in
     // Travel fade: extra seconds spent holding at black while the arrival

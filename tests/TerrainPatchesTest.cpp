@@ -8,7 +8,7 @@
 #include "world/terrain/TerrainPatches.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
-// Chantier 2 B8: authored terrain = procedural noise + per-chunk delta
+// Authored terrain = procedural noise + per-chunk delta
 // grids (assets). The overlay rides inside TerrainParams; null or empty =
 // BIT-IDENTICAL to the pure noise (the non-regression contract protecting
 // the whole existing landscape).
@@ -91,12 +91,10 @@ TEST_CASE("the village site level is what village.toml was authored for") {
     // The house modules are placed at ABSOLUTE heights (snapToGround =
     // false): this pins the terrain level under them at seed 1337. If the
     // noise or seed ever changes, this fails BEFORE the village floats.
-    // Values first recorded 2026-07-06, re-recorded 2026-07-21 after the
-    // terrain retune (amplitudes x1.5 THEN wavelengths x1.5 — the longer
-    // wavelengths move the whole relief, so these are sampled, not derived).
-    // The pad level follows the ground it sits on (134.6 -> 109.6 m) and
-    // village.toml's absolute module heights were TRANSLATED by the same
-    // delta (the house geometry does not scale). Re-cooked with:
+    // These values are SAMPLED at the current noise/seed, not derived.
+    // On a terrain retune: re-sample them, and TRANSLATE village.toml's
+    // absolute module heights by the pad-level delta (the house geometry
+    // does not scale). Re-cooked with:
     //   cooker terrain-pad 0 5 45 355 59 369 109.6
     render::TerrainParams params; // demo defaults, seed 1337
     CHECK(render::terrain::height(params, 46.0f, 356.0f) ==

@@ -10,7 +10,7 @@ namespace core {
 
 // A non-blocking mailbox for handing results from worker threads back to a
 // single consumer (the main/frame thread) — the completion-queue primitive of
-// the threading model (CLAUDE.md §9 Phase 5). Many producers push; the
+// the threading model (docs/PHASE-5.md). Many producers push; the
 // consumer drains whatever is present and moves on.
 //
 // It NEVER blocks the consumer — that is the whole point, and what sets it

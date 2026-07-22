@@ -12,14 +12,14 @@
 
 namespace game {
 
-// Terrain collision (chantier 1, B4): keeps Jolt height-field tiles alive
+// Terrain collision: keeps Jolt height-field tiles alive
 // around a focus point (the player), sampled straight from the SAME
 // deterministic terrain function the renderer uses — collision is
 // independent of the render LOD/skirts by construction. Tiles live on
 // their own grid: 64x64 samples at 1 m, i.e. 63 m per tile, edge samples
 // shared with the next tile (seamless).
 //
-// v2 (anti-stutter): the 4096-sample noise pass — 95 % of a tile's cost —
+// Anti-stutter: the 4096-sample noise pass — 95 % of a tile's cost —
 // runs on a WORKER; the main thread only lands the Jolt body (cheap).
 // Requests are heading-biased: the tile you are flying toward is queued
 // one tile early, so it normally lands before you cross. One guarantee

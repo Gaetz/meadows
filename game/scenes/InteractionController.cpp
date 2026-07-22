@@ -12,7 +12,7 @@
 #include "engine/platform/Input.hpp"
 #include "game/SaveGame.hpp" // PendingSaveLayer
 #include "game/scenes/NpcDirector.hpp" // Npc (dead-actor check)
-#include "gameplay/actors/ActorState.hpp" // FollowerState (É7 gear access)
+#include "gameplay/actors/ActorState.hpp" // FollowerState (gear access)
 #include "gameplay/interaction/FurnitureForms.hpp"
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/stats/Damage.hpp" // gameplay::CombatState
@@ -25,9 +25,9 @@ namespace game {
 
 namespace {
 
-// FOLLOWERS É7: the prompted actor's authored follower identity — any
+// The prompted actor's authored follower identity — any
 // actor you COULD recruit exposes his gear ([F]), not just an active
-// party member (followerCategory != "" — the É0 identity check, the
+// party member (followerCategory != "" — the identity check, the
 // FollowerController::followerActorForm resolution mirrored). Null for
 // non-followers and non-actors.
 const data::ActorForm* followerActor(const InteractionContext& ctx,
@@ -46,9 +46,9 @@ const data::ActorForm* followerActor(const InteractionContext& ctx,
     return actor->followerCategory.empty() ? nullptr : actor;
 }
 
-// FOLLOWERS É8/É11: the furniture CATEGORY routes special furniture off
+// The furniture CATEGORY routes special furniture off
 // the rest/sleep path — "grave" (homage on [E], the dead follower's
-// inventory on [F]) and "mount" (É11 v1: ride it).
+// inventory on [F]) and "mount" (v1: ride it).
 bool furnitureCategoryIs(const InteractionContext& ctx,
                          const data::FormHandle& base,
                          std::string_view category) {
@@ -64,7 +64,7 @@ bool furnitureCategoryIs(const InteractionContext& ctx,
 
 } // namespace
 
-// --- B7: doors & worldspace travel ---------------------------------------------------
+// --- Doors & worldspace travel ---------------------------------------------------
 
 void InteractionController::update(f32 dt, const InteractionContext& ctx) {
     promptEntity = ecs::Entity {};
@@ -74,7 +74,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
     }
     if (fadeDirection == 0 && ctx.playMode && ctx.player) {
         // Aim test: nearest interactable within reach, roughly in front
-        // of the eye. One scorer for every kind. U4-7: the base reach and
+        // of the eye. One scorer for every kind. The base reach and
         // the eye height are §5-tunable; the per-kind reach RATIOS stay
         // [cpp-tuning] (they encode relative ergonomics, not feel).
         const f32 reach = ctx.statsTuning.interactionRange;
@@ -110,8 +110,8 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                              reach * (2.4f / 3.0f));
                 } else if (entity.has<world::ActorMarker>() &&
                            entity != ctx.playerEntity) {
-                    // Chantier 4 B3: a dead actor is searched, not talked
-                    // to. É3: a DOWNED one (follower at 0 HP) is healed.
+                    // A dead actor is searched, not talked
+                    // to. A DOWNED one (follower at 0 HP) is healed.
                     bool isDead = false;
                     bool isDowned = false;
                     for (const auto& npc : ctx.npcs) {
@@ -127,7 +127,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                                       : PromptKind::Actor,
                              reach * (2.8f / 3.0f));
                 } else if (entity.has<world::FurnitureMarker>()) {
-                    // É8: a grave prompts homage, É11: a mount prompts
+                    // A grave prompts homage, a mount prompts
                     // the ride — neither ever the rest path.
                     consider(e, transform.position,
                              furnitureCategoryIs(ctx, refId.base, "grave")
@@ -155,7 +155,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                     }
                 }
             }
-            // U4-11: per-kind template ("[E] Prendre {}") + generic-name
+            // Per-kind template ("[E] Prendre {}") + generic-name
             // fallback, both LocStringForm data — languages and mods
             // retune every label without a recompile.
             const auto label = [&](const char* tpl, const char* generic) {
@@ -171,7 +171,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 break;
             case PromptKind::Actor:
                 promptLabel_ = label("prompt.talk", "prompt.talk.name");
-                // É7: a LIVING follower actor also offers his gear on the
+                // A LIVING follower actor also offers his gear on the
                 // alternate action — the hint rides the same label (least
                 // invasive: one suffix key, loc'd like the rest).
                 if (followerActor(ctx, promptEntity)) {
@@ -180,8 +180,8 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 break;
             case PromptKind::Corpse:
                 promptLabel_ = label("prompt.search", "prompt.search.name");
-                // É8: a dead FOLLOWER's corpse offers the burial on the
-                // alternate action (the É7 gear-suffix idiom).
+                // A dead FOLLOWER's corpse offers the burial on the
+                // alternate action (the gear-suffix idiom).
                 if (followerActor(ctx, promptEntity)) {
                     promptLabel_ += ctx.texts.get("prompt.bury");
                 }
@@ -189,14 +189,14 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
             case PromptKind::Furniture:
                 promptLabel_ = label("prompt.use", "prompt.use.name");
                 break;
-            case PromptKind::DownedAlly: // É3: "[E] Soigner {} (potion)"
+            case PromptKind::DownedAlly: // "[E] Soigner {} (potion)"
                 promptLabel_ = label("prompt.heal", "prompt.heal.name");
                 break;
-            case PromptKind::Grave: // É8: "[E] Se recueillir... — [F] Dépôt"
+            case PromptKind::Grave: // "[E] Se recueillir... — [F] Dépôt"
                 promptLabel_ = label("prompt.homage", "prompt.homage.name");
                 promptLabel_ += ctx.texts.get("prompt.grave");
                 break;
-            case PromptKind::Mount: // É11: "[E] Monter {}"
+            case PromptKind::Mount: // "[E] Monter {}"
                 promptLabel_ = label("prompt.mount", "prompt.mount.name");
                 break;
             default:
@@ -214,7 +214,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 break;
             case PromptKind::Item: {
                 // Into the inventory; the entity leaves the world and the
-                // PENDING layer remembers (chantier 5 B4): the reference
+                // PENDING layer remembers: the reference
                 // stays disabled when its cell reloads, and the disk save
                 // flushes enabled = false.
                 const auto& ref = promptEntity.get<world::RefId>();
@@ -237,7 +237,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 break;
             }
             case PromptKind::Actor: {
-                // B4: actors with a DialogueForm talk for real; the rest
+                // Actors with a DialogueForm talk for real; the rest
                 // keep the placeholder line.
                 const auto& ref = promptEntity.get<world::RefId>();
                 const data::Form* base = ctx.forms.get(ref.base);
@@ -248,7 +248,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                         ? static_cast<const data::ActorForm*>(base)
                         : nullptr;
                 if (actor && actor->dialogue.isValid()) {
-                    // The partner becomes the vendor for B5 barter.
+                    // The partner becomes the vendor for barter.
                     ctx.openDialogue(promptEntity, actor->dialogue);
                 } else {
                     say(ctx.texts.get("talk.greeting"), 4.0f);
@@ -258,17 +258,17 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
             case PromptKind::Corpse:
                 ctx.openContainer(promptEntity);
                 break;
-            case PromptKind::DownedAlly: // É3: heal him back up
+            case PromptKind::DownedAlly: // Heal him back up
                 if (ctx.reviveAlly) {
                     ctx.reviveAlly(promptEntity);
                 }
                 break;
-            case PromptKind::Grave: // É8: [E] = the homage, NOT the loot
+            case PromptKind::Grave: // [E] = the homage, NOT the loot
                 if (ctx.homage) {
                     ctx.homage(promptEntity);
                 }
                 break;
-            case PromptKind::Mount: // É11: the scene hands over the frame
+            case PromptKind::Mount: // The scene hands over the frame
                 if (ctx.mountRide) {
                     ctx.mountRide(promptEntity);
                     promptEntity = ecs::Entity {};
@@ -276,13 +276,13 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 }
                 break;
             case PromptKind::Furniture: {
-                // B7-lite: beds sleep 8h, seats rest 1h — both through the
-                // Phase-7 gameplay::sleep() at the black of the fade.
-                // Chantier 4 B6: a WORKSTATION opens its UI screen instead
+                // Beds sleep 8h, seats rest 1h — both through
+                // gameplay::sleep() at the black of the fade.
+                // A WORKSTATION opens its UI screen instead
                 // (FurnitureForm.screen — crafting tables are furniture +
                 // a screen).
-                // (É7's [F] gear access lives after this switch — the
-                // alternate action, same prompt scan.)
+                // (The follower [F] gear access lives after this switch —
+                // the alternate action, same prompt scan.)
                 const auto& ref = promptEntity.get<world::RefId>();
                 f32 hours = 1.0f;
                 str screen;
@@ -307,11 +307,11 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
             }
         }
 
-        // FOLLOWERS É7: [F] on a LIVING follower actor opens his
+        // [F] on a LIVING follower actor opens his
         // gear — THE existing two-panel container screen (transfer +
         // the base-kit/carry guards live in UiRouter). Gated by his
         // opinion: negative affinity = a refusal toast (docs/FOLLOWERS.md
-        // §5 — "avis négatif" = followerAffinity < 0, the É4 scale's
+        // §5 — "avis négatif" = followerAffinity < 0, the scale's
         // neutral point).
         if (promptEntity.is_alive() &&
             ctx.actions->pressed(ctx.input, InputAction::InteractAlt)) {
@@ -329,14 +329,14 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                     }
                 }
             } else if (promptKind == PromptKind::Grave) {
-                // É8: the special interaction = the dead follower's
+                // The special interaction = the dead follower's
                 // inventory — THE two-panel container screen, deposits
                 // (flowers) and retrievals both ways.
                 if (ctx.openContainer) {
                     ctx.openContainer(promptEntity);
                 }
             } else if (promptKind == PromptKind::Corpse) {
-                // É8: « Enterrer ici » — dead FOLLOWERS only (a bandit
+                // « Enterrer ici » — dead FOLLOWERS only (a bandit
                 // stays plain lootable). The closure destructs the
                 // corpse: drop the prompt reference right away.
                 if (ctx.buryCorpse && followerActor(ctx, promptEntity)) {
@@ -347,7 +347,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
             }
         }
     }
-    // Fade state machine: out -> travel at black -> in (U4-7: duration
+    // Fade state machine: out -> travel at black -> in (duration
     // §5-tunable, 0.3 s by default).
     const f32 kFadeSpeed =
         1.0f / glm::max(ctx.statsTuning.travelFadeSeconds, 0.01f);
@@ -368,7 +368,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
         // Hold at black until the world is SOLID under the player: after
         // a travel the arrival cell's meshes may still be decoding and
         // the collider cook is budgeted — fading in before the floor
-        // exists dropped the player through it (dev report 2026-07-07).
+        // exists dropped the player through it.
         // Timeout keeps an authoring hole from freezing the game black.
         if (fadeAlpha_ >= 1.0f && ctx.playMode && ctx.player &&
             ctx.physics) {
@@ -409,7 +409,7 @@ void InteractionController::rest(f32 hours, const InteractionContext& ctx) {
 
 void InteractionController::wait(f32 hours, const InteractionContext& ctx) {
     // Waiting passes game time and decays the needs, but restores nothing
-    // — that's what beds are for (gameplay::sleep, B7-lite chantier 3).
+    // — that's what beds are for (gameplay::sleep).
     const f64 gameDt = static_cast<f64>(hours) * 3600.0;
     ctx.gameClock.gameSeconds += gameDt;
     if (ctx.playerEntity.is_alive()) {

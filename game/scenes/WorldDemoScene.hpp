@@ -55,7 +55,7 @@ protected:
     data::FormTypeRegistry types;
 
     std::optional<data::Plugin> basePlugin;
-    std::optional<data::Plugin> combatPlugin; // shared abilities/fx (P0)
+    std::optional<data::Plugin> combatPlugin; // shared abilities/fx
     std::optional<data::Plugin> modPlugin;
     bool modEnabled { false };
 

@@ -27,7 +27,7 @@ class MeshCache;
 
 // The scene systems the cell-streaming fixups touch, bundled so the streaming
 // bookkeeping (ground snap, static-collider cook, nav obstacles) is decoupled
-// from LandscapeScene (audit U4-10). The scene rebuilds it each frame from its
+// from LandscapeScene. The scene rebuilds it each frame from its
 // own members — cheap: references plus a couple of per-frame scalars. This is
 // the streaming↔scene contract, mirroring EditorContext.
 struct StreamingContext {
@@ -42,7 +42,7 @@ struct StreamingContext {
     bool editorOwnsTransforms;  // Edit mode: skip the ground snap
 };
 
-// Cell-streaming bookkeeping extracted from LandscapeScene (audit U4-10): the
+// Cell-streaming bookkeeping extracted from LandscapeScene: the
 // static-collider set, the negative-verdict cache, and the three fixups that
 // run when the cell ring changes (snap, nav) or every frame (colliders). NPC
 // (re)building stays in the scene (NpcDirector territory) — the scene still

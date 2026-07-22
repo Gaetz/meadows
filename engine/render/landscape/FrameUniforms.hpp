@@ -11,7 +11,9 @@ namespace render {
 // Per-frame constants shared by every landscape shader, uploaded once per
 // frame to UBO binding 0. std140: keep every member vec4/mat4-sized so the
 // C++ layout matches GLSL with no padding surprises. Must match the FrameUbo
-// block in shaders/common.glsl field for field.
+// block in shaders/common.glsl field for field — and new fields are only
+// ever APPENDED at the end of the struct (never inserted), so both sides
+// stay in sync.
 struct FrameUniforms {
     Mat4 viewProj {};
     Mat4 invViewProj {};   // NDC -> world, for fullscreen ray reconstruction
@@ -47,27 +49,27 @@ struct FrameUniforms {
                               // keeps cloud/wave phase continuous when the
                               // weather changes the wind), y = sway strength,
                               // z = water chop multiplier, w unused
-    // Brick 33b/c (APPENDED — the UBO lesson): the terrain light map.
+    // The terrain light map (far terrain shadows + sky aperture).
     Vec4 terrainLightInfo {}; // xy = map center (world XZ), z = 1/span,
                               // w = strength (0 = feature off)
-    // Brick 32 (APPENDED): x = the EFFECTIVE water surface Y above the
+    // Submersion: x = the EFFECTIVE water surface Y above the
     // camera (sea level outdoors, a volume's top when inside one,
     // -1e6 = dry) — the tonemap submersion reads this, not seaLevel.
     Vec4 submersionInfo { -1.0e6f, 0.0f, 0.0f, 0.0f };
-    // B2b (APPENDED): the interior key-light shadow — world -> light clip
+    // The interior key-light shadow — world -> light clip
     // for the ONE castsShadow light nearest the camera.
     Mat4 keyShadowViewProj {};
     Vec4 keyShadowInfo {}; // xyz = that light's position, w = active
-    // Brick 30/31 (APPENDED): x = storm front 0-1 (horizon cumulonimbus),
+    // Weather: x = storm front 0-1 (horizon cumulonimbus),
     // y = rain intensity 0-1 (streaks + wetness).
     Vec4 stormInfo {};
-    // Brick 31 (APPENDED): world -> top-down ortho clip for the rain
+    // World -> top-down ortho clip for the rain
     // occlusion depth (no rain under roofs).
     Mat4 rainOcclusionViewProj {};
-    // 7.8ter (APPENDED): interactive grass bending — xy = the player's
+    // Interactive grass bending — xy = the player's
     // feet XZ, z = feet Y, w = bend radius (0 = off, e.g. Fly mode).
     Vec4 grassBendInfo {};
-    // Grass redo #2 (2026-07-11, APPENDED): the meadow's tuning, live
+    // The meadow's tuning, live
     // from the render panel's "Grass" category (GrassRenderTuning).
     Vec4 grassShapeInfo { 0.95f, 0.045f, 12.5f, 25.0f };
     // x = blade height (m), y = half width (m), z/w = high-detail near/far
@@ -78,13 +80,13 @@ struct FrameUniforms {
     // rgb = blade base albedo, w = distance fade start (m)
     Vec4 grassTipColor { 0.095f, 0.200f, 0.045f, 190.0f };
     // rgb = blade tip albedo, w = distance fade end (m)
-    // Chantier RC G6 (APPENDED): the GiTechnique switch — surface shaders
+    // The GiTechnique switch — surface shaders
     // swap their ambient term for the merged cascade-0 sample (gi.glsl)
     // when x = 1. Zero = Classic, byte-identical exterior.
     Vec4 giInfo {};     // x = technique (0/1), y = intensity,
                         // z = edge fade width (m), w = grid resolution
     Vec4 giGridInfo {}; // xyz = cascade-0 grid origin, w = probe spacing
-    // (APPENDED) The fixed log-step GI ramp: x = stops per band
+    // The fixed log-step GI ramp: x = stops per band
     // (0 = continuous), y = anti-aliasing width across a band edge.
     Vec4 giBandInfo { 0.85f, 0.15f, 0.0f, 0.0f };
 };

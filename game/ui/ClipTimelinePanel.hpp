@@ -4,13 +4,13 @@
 
 namespace game {
 
-// The anim-clip event timeline (chantier 8.8): AnimEventForm children of
+// The anim-clip event timeline: AnimEventForm children of
 // the selected AnimClipForm on a seconds strip — the anim->gameplay
 // bridge (hit frames, footsteps, FX spawns) edited like the schedule
 // timeline: live preview while dragging, ONE field edit on release
 // (0.01 s snap), "+ event" on an empty spot. The clip's real duration
 // lives in the glTF (not the Form): the view length is derived from the
-// events (max time + margin) and adjustable manually. 8.7b contract:
+// events (max time + margin) and adjustable manually. Contract:
 // the shell owns the windows — drawEditor fills the Editor center.
 class ClipTimelinePanel {
 public:

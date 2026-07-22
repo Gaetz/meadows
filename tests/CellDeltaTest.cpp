@@ -15,7 +15,7 @@
 #include "world/worldspace/WorldForms.hpp"
 #include "world/worldspace/WorldModel.hpp"
 
-// Chantier 5 B4: the pending in-memory layer — a looted/battered cell
+// The pending in-memory layer — a looted/battered cell
 // remembers its state across unload/reload, without any disk.
 
 using core::Guid;

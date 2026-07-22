@@ -7,24 +7,24 @@ namespace game {
 struct Npc;
 struct NpcContext;
 
-// R4: the peaceful-life half of the NPC frame, split out of NpcDirector —
+// The peaceful-life half of the NPC frame, split out of NpcDirector —
 // schedule evaluation, package execution (travel / wander / useFurniture /
 // guard...), the furniture claim/seat/effect logic (D1), and the legacy
 // patrol fallback.
 class NpcScheduleController {
 public:
-    // --- Schedule-driven day (B3) --- re-evaluates the schedule, then
+    // --- Schedule-driven day --- re-evaluates the schedule, then
     // executes the active package. `idleDecay` is the director's per-NPC
     // speed-decay rate (wander softens it).
     void update(f32 dt, const NpcContext& ctx, Npc& npc, f32 hourOfDay,
                 f32& idleDecay);
 
-    // --- Legacy patrol fallback (chantier 1 B6) --- when the ActorForm
+    // --- Legacy patrol fallback --- when the ActorForm
     // carries no schedule and the cell has patrol markers.
     void patrol(f32 dt, const NpcContext& ctx, Npc& npc,
                 const vector<Vec3>& patrolPoints);
 
-    // --- The `follow` package (FOLLOWERS É1) --- an ACTIVE follower
+    // --- The `follow` package (docs/FOLLOWERS.md) --- an ACTIVE follower
     // overrides its schedule with this (NpcDirector dispatches it; combat
     // still wins). Reuses the goTo/moveNpcAlongPath idiom driven by the
     // pure decideFollow intent: repath toward the player every

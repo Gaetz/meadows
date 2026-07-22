@@ -11,9 +11,9 @@
 #include "game/scenes/NpcDirector.hpp"    // Npc, NpcContext
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/actors/CharacterForms.hpp" // gameplay::ActorTagForm
-#include "gameplay/actors/FollowerForms.hpp"  // FollowerClassForm (É6 style)
+#include "gameplay/actors/FollowerForms.hpp"  // FollowerClassForm
 #include "gameplay/condition/Condition.hpp"   // transition condition gates
-#include "world/ai/Perception.hpp"      // B2: every built NPC perceives
+#include "world/ai/Perception.hpp"      // every built NPC perceives
 #include "world/scene/AnimBridge.hpp"     // resolveActorVisual, buildAnimGraph
 #include "world/scene/Components.hpp"
 
@@ -43,7 +43,7 @@ const RigData* NpcSpawner::loadRig(const NpcContext& ctx,
 
 void NpcSpawner::destroyNpc(rhi::Device& device, Npc& npc) {
     npc.anim.reset(); // references npc.graph — release first
-    // U4-2b: the per-entity DRAW state (palette SSBO, model UBO, groups)
+    // The per-entity DRAW state (palette SSBO, model UBO, groups)
     // is renderer-owned now, swept there when this id leaves the snapshot.
     device.destroyBuffer(npc.indices);
     device.destroyBuffer(npc.vertices);
@@ -146,12 +146,12 @@ void NpcSpawner::refreshNpcs(
             npc->rig = rig;
             npc->graph = std::move(*graph);
             npc->anim = std::make_unique<anim::GraphInstance>(npc->graph);
-            // Chantier 3 B3/B6: the daily routine + the anim tag gates
+            // The daily routine + the anim tag gates
             // (sitting from furniture use, dead from the GAS life state).
             npc->schedule = actor.schedule;
-            npc->courage = actor.courage; // B3: flees below (1 - courage)
-            npc->age = actor.age; // É5: per-tick age mods (0 = ageless)
-            // É6: the class combat style steers the special-power use
+            npc->courage = actor.courage; // Flees below (1 - courage)
+            npc->age = actor.age; // Per-tick age mods (0 = ageless)
+            // The class combat style steers the special-power use
             // (and the healer's stand-off band) in NpcCombatController.
             if (actor.followerClass.isValid()) {
                 if (const auto* followerClass =
@@ -165,7 +165,7 @@ void NpcSpawner::refreshNpcs(
             // instance shares one compiled decide.
             npc->brainScript = actor.brainScript;
             npc->brainKey = actor.id;
-            // Chantier 6 A1: ActorTagForm children become REAL gameplay tags
+            // ActorTagForm children become REAL gameplay tags
             // on the actor's system (registerTag is idempotent and
             // auto-registers ancestors); the first Faction.* tag is what
             // quests/crime filter deaths by. Mutating the EXISTING
@@ -197,13 +197,13 @@ void NpcSpawner::refreshNpcs(
                     if (tag == "State.Dead") {
                         return raw->dead;
                     }
-                    if (tag == "State.Attacking") { // P0 A3: swing gate
+                    if (tag == "State.Attacking") { // swing gate
                         return raw->attacking;
                     }
                     return false;
                 });
-            // Full condition-evaluator gate on transitions (chantier 8
-            // follow-up): the opaque ref is the transition's guid, its
+            // Full condition-evaluator gate on transitions:
+            // the opaque ref is the transition's guid, its
             // ConditionForm children evaluate against THIS actor. forms and
             // gameTags are scene members outliving every Npc. Lua clauses
             // stay unwired here (fail closed) until a brain-VM need shows.
@@ -227,18 +227,18 @@ void NpcSpawner::refreshNpcs(
                     return gameplay::conditionsPass(conditionForms,
                                                     *conditionId, context);
                 });
-            // Chantier P0 C4a: the sink FINALLY gets a runtime consumer —
+            // The sink FINALLY gets a runtime consumer —
             // events buffer on the Npc (uptr = stable address) and drain
             // onto the EventBus in update(), where the context lives.
             npc->anim->setEventSink(
                 [raw = npc.get()](std::string_view name) {
                     raw->pendingAnimEvents.emplace_back(name);
                 });
-            // A2: the sword hand (UAL rig: "hand_r"); -1 = no weapon shown.
+            // The sword hand (UAL rig: "hand_r"); -1 = no weapon shown.
             npc->handJoint = rig->skeleton.findJoint("hand_r");
             npc->tint = visual->tint;
             // The pose is normally written by update(); a paused sim (boot
-            // = Spectator) extracts BEFORE any update, and the A2 weapon
+            // = Spectator) extracts BEFORE any update, and the weapon
             // attach walks the pose — it must be skeleton-sized from birth.
             anim::bindPose(rig->skeleton, npc->pose);
             npc->palette.assign(rig->skeleton.joints.size(), Mat4 { 1.0f });
@@ -253,12 +253,12 @@ void NpcSpawner::refreshNpcs(
                 skinned->indices.data());
             npc->indexCount = static_cast<u32>(skinned->indices.size());
 
-            // Ground the entity (actors have no MeshRender: the B1 snap
+            // Ground the entity (actors have no MeshRender: the mesh-path snap
             // skipped them).
             transform.position.y = render::terrain::height(
                 ctx.terrainParams, transform.position.x,
                 transform.position.z);
-            // Chantier 5 B3: stats + saved state / loadout run through
+            // Stats + saved state / loadout run through
             // finalizeActorSpawn — deferred below: it adds components, a
             // table move on the locked iteration.
             pendingLoadouts.emplace_back(entity, actor.id);
@@ -270,7 +270,7 @@ void NpcSpawner::refreshNpcs(
             LOG_INFO("B6: NPC '{}' built from Forms", actor.editorId);
         });
     for (auto& [entity, actorId] : pendingLoadouts) {
-        // B2: every built NPC perceives (a reload keeps a saved state
+        // Every built NPC perceives (a reload keeps a saved state
         // through the reflected component; a fresh one is Calm). ADDING
         // the component is a table move — it must run out here with the
         // loadouts, never inside the locked .each above (flecs
@@ -280,7 +280,7 @@ void NpcSpawner::refreshNpcs(
         }
         finalizeActorSpawn(entity, actorId);
     }
-    // Chantier 6 A1: seed the death flag from the (possibly restored) life
+    // Seed the death flag from the (possibly restored) life
     // state, so a corpse reloaded from a save or a cell re-entry never fires a
     // spurious OnDeath edge on its first tick.
     if (const auto deadTag = ctx.gameTags.find("State.Dead")) {
@@ -293,7 +293,7 @@ void NpcSpawner::refreshNpcs(
             }
         }
     }
-    // FOLLOWERS É3: same seeding for the downed mirror — a follower
+    // Same seeding for the downed mirror — a follower
     // reloaded mid-bleedout (applySavedState re-derived State.Downed)
     // must not fire a spurious downed edge that would RESET the saved
     // bleedout clock (CombatState.downedSeconds is captured state).
@@ -307,7 +307,7 @@ void NpcSpawner::refreshNpcs(
             }
         }
     }
-    // R3: refresh the entity->Npc map (this is the only place npcs
+    // Refresh the entity->Npc map (this is the only place npcs
     // changes; the uptr targets keep their addresses).
     npcByEntity.clear();
     for (auto& npcPtr : npcs) {

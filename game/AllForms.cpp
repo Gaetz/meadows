@@ -37,10 +37,10 @@ void registerAllFormTypes(data::FormTypeRegistry& types) {
 
     gameplay::registerFactionFormTypes(types);
     gameplay::registerCharacterFormTypes(types);
-    gameplay::registerFollowerFormTypes(types); // FOLLOWERS É0
+    gameplay::registerFollowerFormTypes(types);
     gameplay::registerAiFormTypes(types);
     gameplay::registerFurnitureFormTypes(types);
-    gameplay::registerSaveFormTypes(types); // chantier 5: save records
+    gameplay::registerSaveFormTypes(types); // save records
     quest::registerQuestFormTypes(types);
     quest::registerDialogueFormTypes(types);
 }

@@ -9,7 +9,7 @@
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 
-// Status buildup (docs/STATS.md §3-§4, N1): poison/bleed/mental/disease/curse/
+// Status buildup (docs/STATS.md §3-§4): poison/bleed/mental/disease/curse/
 // death accumulate from sources toward a per-type **endurance** threshold; when a
 // buildup reaches it, the status triggers — its Status.* tag is granted and the
 // buildup resets. Endurance (a derived stat) is the threshold; status-damage (the

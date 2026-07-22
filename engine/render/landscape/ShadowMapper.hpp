@@ -10,7 +10,7 @@ class Device;
 
 namespace render {
 
-// Cascaded shadow maps for the sun (brick 17): 3 cascades in one Depth32F
+// Cascaded shadow maps for the sun (docs/3D-RENDERER.md): 3 cascades in one Depth32F
 // 2048² texture array, each cascade a depth-only framebuffer over one layer.
 // Cascades are fitted per frame around bounding spheres of camera-frustum
 // slices (sphere fit = stable size under rotation) and snapped to the texel
@@ -27,7 +27,7 @@ public:
         array<f32, kCascadeCount> texelWorld {}; // world size of one texel
     };
 
-    // `resolution` = texels per cascade side (dev sharpness knob — 4096
+    // `resolution` = texels per cascade side (sharpness knob — 4096
     // doubles definition everywhere for ~150 MB more; recreate to change).
     void create(rhi::Device& device,
                 u32 resolution = kDefaultResolution);

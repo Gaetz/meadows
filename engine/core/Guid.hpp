@@ -23,7 +23,7 @@ struct Guid {
     str toString() const;
     static std::optional<Guid> fromString(std::string_view text);
 
-    // Deterministic derived identity (H8): mixes two guids into a third,
+    // Deterministic derived identity: mixes two guids into a third,
     // stable across runs, platforms and load orders. THE prefab contract:
     // child = combine(placedInstanceId, templateChildId), so saves and
     // patches can target one child of one placed prefab forever. Keeps

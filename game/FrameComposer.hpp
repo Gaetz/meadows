@@ -5,10 +5,10 @@
 #include "engine/render/landscape/SkySystem.hpp"
 #include "game/scenes/AtmosphereParams.hpp"
 
-// The per-frame UBO assembly, extracted from LandscapeScene::render() (audit
-// U4-6a). Pure values in, FrameUniforms out — no World, no device — so the
-// ~110-line composition is unit-testable headless and the future
-// LandscapeRenderer (U4-2c) consumes it unchanged. The scene still owns what
+// The per-frame UBO assembly, extracted from LandscapeScene::render().
+// Pure values in, FrameUniforms out — no World, no device — so the
+// ~110-line composition is unit-testable headless and the
+// LandscapeRenderer consumes it unchanged. The scene still owns what
 // is genuinely frame STATE: the shadow-sun hysteresis, cascade fitting, GPU
 // availability checks (they feed `shadowStrength` / `reflectionsActive`), and
 // every updateBuffer.
@@ -67,14 +67,14 @@ struct FrameComposerInputs {
     bool grassBend { false };  // Play mode with a live body
     Vec3 playerFeet { 0.0f };
 
-    // Grass redo #2: the meadow tuning, pre-packed by the renderer from
+    // The meadow grass tuning, pre-packed by the renderer from
     // GrassRenderTuning (see FrameUniforms for the lane meanings).
     Vec4 grassShapeInfo { 0.95f, 0.045f, 12.5f, 25.0f };
     Vec4 grassLodInfo { 10.0f, 70.0f, 0.20f, 1.7f };
     Vec4 grassBaseColor { 0.012f, 0.040f, 0.008f, 140.0f };
     Vec4 grassTipColor { 0.095f, 0.200f, 0.045f, 190.0f };
 
-    // Chantier RC G6: the GI switch, RESOLVED only — the reflection pass
+    // The GI switch, RESOLVED only — the reflection pass
     // (which copies `base`) keeps the Classic ambient, so it never needs
     // the cascade sampler bound. Defaults = Classic (x = 0).
     Vec4 giInfo {};

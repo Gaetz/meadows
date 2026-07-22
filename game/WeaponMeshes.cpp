@@ -94,8 +94,7 @@ render::MeshData makeClubMesh(f32 length) {
     const Vec3 kIron { 0.42f, 0.43f, 0.46f };
 
     render::MeshData mesh;
-    // Wooden shaft: from below the fist up into the head (dev design:
-    // "un manche et un bout plus grand en métal").
+    // Wooden shaft: from below the fist up into the head.
     const f32 headLen = total * 0.32f;
     const f32 shaftTop = total - headLen * 0.6f; // buried in the head
     addBox(mesh, { 0.0f, (shaftTop - 0.14f) * 0.5f, 0.0f },

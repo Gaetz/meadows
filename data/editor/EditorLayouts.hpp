@@ -8,8 +8,8 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 
-// The node-position side-store of the graph editors (chantier 8.6).
-// Decided with the dev (2026-07-09): node x/y layout is TOOL state, never
+// The node-position side-store of the graph editors.
+// Node x/y layout is TOOL state, never
 // Form fields — moving a node must not pollute a mod's diff. This is the
 // one assumed exception to "everything is a plugin": the file (default
 // data/editor-layouts.toml) is never loaded by the game runtime and never

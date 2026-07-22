@@ -7,9 +7,9 @@
 
 namespace game {
 
-// The B5 LOS idiom, NAMED (chantier propreté P0 R2 — it was hand-rolled
-// inline in perception and the crime-witness pass): a world-geometry
-// raycast from `eye` to `target`. Actors live OUTSIDE the Jolt broadphase,
+// The shared line-of-sight check (used by perception and the crime-witness
+// pass): a world-geometry raycast from `eye` to `target`. Actors live
+// OUTSIDE the Jolt broadphase,
 // so only walls/terrain block. `slack` forgives hits within that many
 // meters of the target — railings or props at the target's feet don't
 // blind anyone. [cpp-tuning]

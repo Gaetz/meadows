@@ -27,12 +27,11 @@ class Engine;
 
 namespace game {
 
-// The game-database editor — since 8.7b, ONE dockspace window ("True
+// The game-database editor — ONE dockspace window ("True
 // Adventurer DB", Unity-style): Browser (left: curated categories + item
 // list), Editor (center: the graph canvas / timeline / summary of the
-// selected item), Inspector (right: the item's HIERARCHY on top — the
-// ex-8.2/8.3 trees — and the PropertyGrid of the selected sub-object
-// below). All edits flow through ONE EditSession and export as an
+// selected item), Inspector (right: the item's HIERARCHY on top and
+// the PropertyGrid of the selected sub-object below). All edits flow through ONE EditSession and export as an
 // ordinary plugin (§5) via the File menu — the editor is a plugin
 // author, nothing more. Plugins/Console are dockable windows toggled
 // from the Windows menu.
@@ -44,7 +43,7 @@ public:
     void onEnter() override;
     void update(f32) override {}
     void drawUi() override;
-    // The anim preview (chantier 8 follow-up) records an offscreen pass:
+    // The anim preview records an offscreen pass:
     // the editor owns the frame and clears the backbuffer itself.
     bool ownsFrame() const override { return true; }
     void render(engine::FrameContext& frame) override;
@@ -56,9 +55,9 @@ private:
     void drawBrowser();
     void drawEditor();
     void drawInspector();
-    void drawQuestHierarchy();    // ex-8.2 tree, now the Inspector top
-    void drawDialogueHierarchy(); // ex-8.3 tree, now the Inspector top
-    void drawSchedulesContent();  // 8.4 timeline, now the Editor center
+    void drawQuestHierarchy();    // the Inspector top
+    void drawDialogueHierarchy(); // the Inspector top
+    void drawSchedulesContent();  // the schedule timeline, Editor center
     void drawGenericSummary();    // non-graph types: record + used-by
     void drawPlugins();
     void exportSessionPlugin();
@@ -76,16 +75,16 @@ private:
     uptr<data::EditSession> session;
     uptr<script::Vm> vm;
     uptr<ConsolePanel> console;
-    data::EditorLayouts layouts; // node x/y side-store (8.6, NOT a plugin)
-    uptr<AnimGraphPanel> animGraph;         // 8.6
-    uptr<QuestGraphPanel> questGraph;       // 8.7
-    uptr<DialogueGraphPanel> dialogueGraph; // 8.7
-    uptr<ClipTimelinePanel> clipTimeline;   // 8.8
+    data::EditorLayouts layouts; // node x/y side-store (NOT a plugin)
+    uptr<AnimGraphPanel> animGraph;
+    uptr<QuestGraphPanel> questGraph;
+    uptr<DialogueGraphPanel> dialogueGraph;
+    uptr<ClipTimelinePanel> clipTimeline;
     uptr<AnimPreviewPanel> animPreview;     // offscreen 3D anim preview
     assets::AssetDatabase assetDb;          // guid -> file, per plugin order
-    uptr<FxPanel> fxPanel;                  // 8.10: live particle preview
-    uptr<EffectPanel> effectPanel;          // 8.11: sections + Test apply
-    uptr<AbilityPanel> abilityPanel;        // 8.11: wiring + Test activate
+    uptr<FxPanel> fxPanel;                  // live particle preview
+    uptr<EffectPanel> effectPanel;          // sections + Test apply
+    uptr<AbilityPanel> abilityPanel;        // wiring + Test activate
 
     vector<str> typeNames; // sorted, for the "All types" filter combo
     int typeFilter { 0 };  // 0 = All (within the "All types" category)
@@ -96,10 +95,10 @@ private:
     bool showPlugins { false };
     bool showConsole { false };
     bool showAnimPreview { true };
-    core::Guid schedDragEntry {}; // 8.4: entry whose edge is dragging
+    core::Guid schedDragEntry {}; // schedule entry whose edge is dragging
     int schedDragEdge { 0 };      //      0 = startHour, 1 = endHour
     f32 schedDragHour { 0.0f };   //      live preview value (0.5 h snap)
-    vector<int> synthPicks;       // 8.5: per-conflict pick (-1 = load order)
+    vector<int> synthPicks;       // per-conflict pick (-1 = load order)
     char exportName[128] { "my-edits" };
     str status;
 };

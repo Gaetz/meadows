@@ -9,7 +9,7 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "terrainlight.glsl"
 #include "gi.glsl"
 
-// Grass redo #2 (2026-07-11, dev-validated) — the Quick_Grass lighting
+// The Quick_Grass lighting
 // model on our frame machinery (shadows, clouds, terrain light map,
 // wetness, fog):
 //  - WRAP DIFFUSE (wrap 0.5) — soft carpet lighting.
@@ -32,7 +32,7 @@ layout(location = 0) out vec4 fragColor;
 
 void main() {
     vec3 albedo = vColor;
-    // Brick 31 wetness: rain darkens and cools the meadow (kept).
+    // Wetness: rain darkens and cools the meadow.
     albedo *= mix(vec3(1.0), vec3(0.66, 0.72, 0.72),
                   clamp(uStormInfo.y, 0.0, 1.0));
 
@@ -58,15 +58,15 @@ void main() {
         clamp((dot(viewDir, uSunDirection.xyz) + 0.5) / 1.5, 0.0, 1.0);
     float scatter = backLight * 0.5 * (1.0 - vLodOut);
 
-    // Thin sheen along the blade, strongest at the tips (kept).
+    // Thin sheen along the blade, strongest at the tips.
     vec3 halfDir = normalize(uSunDirection.xyz - viewDir);
     float sheen = pow(max(dot(n, halfDir), 0.0), 32.0) * 0.25 * vT;
 
     float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
                    cloudShadowFactor(vWorldPos);
-    // 33b/c: distant terrain shadow + sky openness (kept).
+    // Distant terrain shadow + sky openness.
     vec2 tl = terrainLightFactors(vWorldPos);
-    // Chantier RC (G6): the ONE technique branch — Classic stays intact.
+    // The ONE GI technique branch (gi.glsl) — Classic stays intact.
     vec3 lit = albedo * ao *
                    (giAmbient(vWorldPos, n, uAmbientColor.rgb * tl.y) +
                     uSunColor.rgb *

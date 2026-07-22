@@ -8,7 +8,7 @@
 #include "game/InventoryView.hpp"
 #include "gameplay/inventory/Inventory.hpp"
 
-// Chantier 4 B3: the SkyUI-style table logic behind the inventory,
+// The SkyUI-style table logic behind the inventory,
 // container and barter screens.
 
 namespace {

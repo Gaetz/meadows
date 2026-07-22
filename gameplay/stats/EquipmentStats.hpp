@@ -31,7 +31,7 @@ void applyEquipmentModifiers(const Equipment& equipment,
 DamageEvent weaponDamageEvent(const data::WeaponForm& weapon,
                               const AbilitySystem& attacker);
 
-// Encumbrance (docs/STATS.md §3 Utility, chantier 6 C3). Categories gate
+// Encumbrance (docs/STATS.md §3 Utility). Categories gate
 // movement: penalties fold through StatModifiers (the §2.9-sanctioned
 // channel), never by writing a stat directly.
 enum class EncumbranceCategory { Light, Medium, Heavy, Overencumbered };
@@ -53,7 +53,7 @@ const char* encumbranceLabel(EncumbranceCategory category);
 // (medium −25%/−44%, heavy −50%/−75%, overencumbered −75%/−75%).
 void encumbranceModifiers(EncumbranceCategory category, StatModifiers& mods);
 
-// ---- FOLLOWERS É7: base-kit lock + the auto-equip comparison ----------------
+// ---- Follower base-kit lock + the auto-equip comparison ---------------------
 
 // The item's `unremovable` flag, whatever its form type (the itemWeight
 // resolution pattern). Unknown guid = false.

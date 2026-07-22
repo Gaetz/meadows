@@ -6,7 +6,7 @@
 
 namespace game {
 
-// The anim-graph editor (chantier 8.6, reshaped by 8.7b into the single
+// The anim-graph editor (part of the single
 // "True Adventurer DB" window): AnimStateForm = node, AnimTransitionForm
 // = link (`from == 0` hangs off the "Any State" pseudo-node, keyed by the
 // graph's own guid). Every edit is an ordinary EditSession op — the
@@ -14,7 +14,7 @@ namespace game {
 // EditorLayouts side-store; graphs without stored positions get the
 // deterministic data::layoutGraph.
 //
-// 8.7b contract (all graph panels): the shell owns the windows — the
+// Contract (all graph panels): the shell owns the windows — the
 // panel draws INTO them. drawCanvas() fills the central Editor window,
 // drawHierarchy() the top of the Inspector, drawInspectorExtras() the
 // type-specific widgets above the PropertyGrid (no-op when the selection
@@ -27,7 +27,7 @@ public:
 
     void drawCanvas(const core::Guid& graph);
     void drawHierarchy(const core::Guid& graph);
-    // (the state's clip picker moved into the PropertyGrid itself — 8.10
+    // (the state's clip picker lives in the PropertyGrid itself —
     // typed-guid pickers, FormPicker::pickerTypeFor)
 
 private:
@@ -41,7 +41,7 @@ private:
     Vec2 pendingPlacePos {};   // ...placed on the NEXT frame (needs ed frame)
     Vec2 contextPos {};        // canvas pos of the background right-click
     core::Guid contextNode;    // node under the node context popup
-    core::Guid dragFrom;          // 8.7d: pin dragged into empty canvas...
+    core::Guid dragFrom;          // pin dragged into empty canvas...
     bool dragFromOutput { false }; // ...proposes a pre-linked new state
     Vec2 dragPos {};
     u32 stateCounter { 0 };    // editorId suffixes for + State / new links

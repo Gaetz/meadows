@@ -1,7 +1,7 @@
 #version 460 core
 #include "common.glsl"
 
-// GPU-skinned mesh (chantier 1, B2): SkinnedVertex layout + the bone
+// GPU-skinned mesh: SkinnedVertex layout + the bone
 // palette as an SSBO (skin matrices = model x inverseBind, uploaded per
 // character per frame). ModelUbo carries the entity's world transform on
 // top — the palette is in model space (anim::skinMatrices).

@@ -11,9 +11,9 @@
 
 namespace world {
 
-// Turns a cell's resolved references into live entities and back. Phase 2:
-// eager (loadAll at startup). The interface is the shape Phase 8's async
-// streaming will implement (load/unload per cell, persistence on unload).
+// Turns a cell's resolved references into live entities and back —
+// synchronously. The interface is the shape a future async
+// streaming would implement (load/unload per cell, persistence on unload).
 //
 // Each loaded cell gets a flecs cell-entity; its references are spawned with an
 // (InCell, cellEntity) relation, so unloadCell is a single delete_with. The
@@ -38,7 +38,7 @@ public:
     // The cell-entity for a loaded cell, or an invalid entity if not loaded.
     ecs::Entity cellEntity(data::FormHandle cell) const;
 
-    // Persistence seams (chantier 5). `beforeUnload` fires at the top of
+    // Persistence seams. `beforeUnload` fires at the top of
     // unloadCell, while the cell's entities are still alive — the save
     // layer captures their deltas there. `spawnFilter` (when set) can veto
     // one reference's spawn by guid — the pending layer suppresses

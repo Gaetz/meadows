@@ -3,7 +3,7 @@
 #include "engine/core/Jobs.hpp"
 #include "engine/render/landscape/ChunkStreamer.hpp"
 
-// The shared chunk-streaming ring (audit U3-1) — extracted from
+// The shared chunk-streaming ring — extracted from
 // Terrain/Grass/Vegetation precisely so its mechanics get locked headless:
 // key packing, nearest-first budgeted requests, hysteresis eviction, and
 // the generation-stamped worker queue (stale results die on arrival).

@@ -6,8 +6,8 @@
 
 #include "engine/core/Defines.hpp"
 
-// Chantier P0 A3/A4 — the melee swing (docs/CHANTIER-P0.md, dev design
-// 2026-07-11): the attack is an arc the VISIBLE blade travels, and damage
+// The melee swing (docs/CHANTIER-P0.md): the attack is an arc the
+// VISIBLE blade travels, and damage
 // lands only when that blade touches the target. One state machine and one
 // hit test shared by the player (camera-driven socket) and the NPCs
 // (Sword_Attack clip drives the hand; the sword rides the hand joint).
@@ -38,7 +38,7 @@ struct MeleeSwing {
     SwingPhase phase { SwingPhase::Idle };
     f32 t { 0.0f };     // seconds into the current phase
     vector<u64> struck; // entities already hit THIS swing (once per swing)
-    // A5+ perfect parry: how long the guard has been up (-1 = down).
+    // Perfect parry: how long the guard has been up (-1 = down).
     // A block landing while this is inside the perfect window parries.
     f32 guardSeconds { -1.0f };
 };
@@ -47,7 +47,7 @@ struct MeleeSwing {
 // `blocking`): counts up while the guard is raised, -1 when down.
 void tickGuard(MeleeSwing& swing, bool blocking, f32 dt);
 
-// THE phase transition (dev rule: enum + flat switches, every change goes
+// THE phase transition (enum + flat switches: every change goes
 // through one function). Resets the phase clock; entering Windup clears
 // the struck set.
 void setSwingPhase(MeleeSwing& swing, SwingPhase phase);
@@ -103,7 +103,7 @@ CapsuleSegment humanoidCapsule(const Vec3& feet, bool crouched = false);
 bool segmentHitsActor(const Vec3& a0, const Vec3& a1, const Vec3& feet,
                       bool crouched = false);
 
-// A5 — directional blocking. If the attacker stands inside the
+// Directional blocking. If the attacker stands inside the
 // defender's front cone (horizontal, blockAngleDegrees full width), the
 // event's damage channels shrink by blockFactor and the blocked amount
 // is rerouted to POSTURE (× blockPostureFactor) — running the guard down
@@ -111,7 +111,7 @@ bool segmentHitsActor(const Vec3& a0, const Vec3& a1, const Vec3& feet,
 // applyDamage on a defender carrying State.Blocking; both camps go
 // through this one helper.
 //
-// PERFECT PARRY (dev design 2026-07-11): a guard raised within
+// PERFECT PARRY: a guard raised within
 // `perfectWindow` seconds of the hit (guardSeconds fresh) catches it
 // CLEAN — every channel zeroed, nothing on the defender's posture — and
 // the caller punishes the ATTACKER's poise (perfectParryPosture through
@@ -135,7 +135,7 @@ BlockResult applyBlock(DamageEvent& event, const Vec3& defenderFacing,
                        f32 defenderEnergy = 1.0e6f,
                        f32 emptyGuardPosture = 0.0f);
 
-// The raised-guard pose for the simulated socket (dev design: the sword
+// The raised-guard pose for the simulated socket (the sword
 // held OBLIQUE across the front — bottom-right toward top-left). The
 // viewmodel shows it whenever State.Blocking is up. [cpp-tuning]
 Mat4 guardSocketLocal();

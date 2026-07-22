@@ -9,8 +9,8 @@ namespace game {
 
 NodeCanvas::NodeCanvas() {
     ed::Config config;
-    // Positions live in the EditorLayouts side-store (chantier 8.6
-    // decision) — ed's own json persistence stays off.
+    // Positions live in the EditorLayouts side-store —
+    // ed's own json persistence stays off.
     config.SettingsFile = nullptr;
     context = ed::CreateEditor(&config);
 }
@@ -109,14 +109,14 @@ void NodeCanvas::navigateToContent() {
 void NodeCanvas::end(Actions& out) {
     // New link: a pin->pin drag. Orient output -> input; the panel's
     // canLink adds graph-specific rules (e.g. nothing INTO "Any State").
-    // NB (this develop commit): EndCreate/EndDelete assert unless their
+    // NB: EndCreate/EndDelete assert unless their
     // Begin returned true — they go INSIDE the if, unlike upstream's
     // blueprint example.
     if (ed::BeginCreate()) {
         ed::PinId a, b;
         ed::PinId fromPin;
         if (ed::QueryNewNode(&fromPin)) {
-            // 8.7d: a pin dragged into empty canvas — the panel opens its
+            // A pin dragged into empty canvas — the panel opens its
             // "what can be created here" menu, pre-linked to the source.
             const auto it = pinOfId.find(static_cast<u64>(fromPin.Get()));
             if (it == pinOfId.end()) {

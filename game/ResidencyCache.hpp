@@ -11,9 +11,9 @@
 
 namespace game {
 
-// The async-residency skeleton shared by TextureCache and MeshCache (audit
-// U5-2 — it was hand-copied between the two, a bug fixed in one was not
-// fixed in the other). Guid -> GPU payload, never blocking (§7):
+// The async-residency skeleton shared by TextureCache and MeshCache
+// (factored so a bug fixed in one cannot miss the other).
+// Guid -> GPU payload, never blocking (§7):
 //   - resolve() returns the payload to draw NOW — the real resource once
 //     resident, a placeholder while a decode is in flight;
 //   - a first sighting kicks a pure-CPU decode on the JobSystem; the worker
@@ -125,7 +125,7 @@ public:
     // to know when the visible set is ready (§7).
     u32 pendingCount() const { return pending; }
 
-    // Chantier P0 A2: registers PROCEDURAL data under a guid — resident
+    // Registers PROCEDURAL data under a guid — resident
     // immediately, no AssetDatabase involved (generated meshes: the
     // sword). Replaces any previous entry for the guid; a stale in-flight
     // decode is dropped on arrival (state left Pending is decremented).

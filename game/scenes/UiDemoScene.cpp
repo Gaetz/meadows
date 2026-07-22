@@ -79,7 +79,7 @@ void UiDemoScene::drawUi() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Play test tone")) {
-        audioSystem.playTestTone(0.3f, 440.0f); // H6: the audible proof
+        audioSystem.playTestTone(0.3f, 440.0f); // the audible proof
     }
     ImGui::End();
 }

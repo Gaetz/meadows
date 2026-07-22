@@ -17,10 +17,10 @@ struct EvalContext;
 class EventBus;
 
 // A minimal GameplayAbility (§6): an activatable action. Faithful to GAS in that
-// **cost and cooldown are themselves GameplayEffects**. Phase 3 keeps it flat
-// and data-only — no AbilityTasks, no latent `wait()`, no Lua (Phase 4). The
+// **cost and cooldown are themselves GameplayEffects**. Kept flat
+// and data-only — no AbilityTasks. The
 // "what it does" is the primary `effect` applied to the target; richer custom
-// logic comes with scripting in Phase 4.
+// logic rides the optional Lua `script`.
 struct AbilityForm : data::Form {
     str requiredTag;       // the caster must have it to activate
     str blockedTag;        // the caster must NOT have it (e.g. Status.Stunned)
@@ -29,7 +29,7 @@ struct AbilityForm : data::Form {
                            // cooldown tag checked on re-activation (optional)
     core::Guid effect;     // primary EffectForm applied to the target (optional)
     str script;            // optional Lua coroutine run on activation (latent
-                           // logic: wait(t), self:applyEffect(...), …) — Phase 4
+                           // logic: wait(t), self:applyEffect(...), …)
 
     // How the cost is gated (see canAfford):
     //   ""            auto — energy costs are "permissive", others "strict".
@@ -39,7 +39,7 @@ struct AbilityForm : data::Form {
     //   "strict"      require the FULL cost (current >= cost). Magic model.
     str costPolicy;
 
-    // Skills-by-use (APPEND, ordinals stable): the SkillForm this ability
+    // Skills-by-use: the SkillForm this ability
     // trains. Each successful activation grants the skill's xpPerUse
     // through the OnAbilityUsed event (gameplay/stats/Skills.hpp).
     core::Guid skill;

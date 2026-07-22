@@ -2,14 +2,14 @@
 
 #include "data/forms/Form.hpp"
 
-// Furniture & workstations (horizontal pass H1) — the SHARED player/NPC
+// Furniture & workstations — the SHARED player/NPC
 // object-interaction system: beds, chairs, forges, alchemy tables. What
 // makes NPC schedules VISIBLE. A furniture piece is a placeable base form
 // (Furniture spawn category); its use points are child records.
 //
-// HOW TO FILL (post-7/07): the Furniture vertical (H7 skeleton has the
-// occupancy API) walks the user to the point, plays `animTag` through the
-// anim graph, applies `effect` (GAS) while used — sleeping IS the Phase-7
+// HOW TO FILL: the Furniture vertical (the occupancy API exists) walks
+// the user to the point, plays `animTag` through the
+// anim graph, applies `effect` (GAS) while used — sleeping IS the
 // rest effect, crafting stations open their UI screen for the player.
 
 namespace data {
@@ -26,7 +26,7 @@ struct FurnitureForm : data::Form {
     core::Guid sprite;       // 2D fallback
     core::Guid effect;       // EffectForm applied while in use (rest...)
     str screen;              // UI screen opened for the player ("" = none)
-    // FOLLOWERS E11 v1 (appended - ordinals stable): the ridden run speed
+    // The ridden run speed
     // in m/s, read only for category "mount" (the tech-proof pony is
     // furniture with a procedural mesh; the REAL mount becomes an
     // ActorForm - followerCategory "mount" - once a horse rig exists).

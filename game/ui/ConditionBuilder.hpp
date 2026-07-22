@@ -4,7 +4,7 @@
 
 namespace game {
 
-// THE shared condition widget (chantier 8.9) — dialogue options and
+// THE shared condition widget — dialogue options and
 // abilities all speak ConditionForm (ANDed clauses hung by `parent`).
 // Lists the parent's clauses as summaries (gameplay::conditionSummary);
 // the selected clause expands into CONTEXTUAL editors — only the fields

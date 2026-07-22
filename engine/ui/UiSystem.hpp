@@ -48,18 +48,18 @@ struct UiModelDesc {
 using UiModelEventHandler = std::function<void(
     const str& model, const str& event, const vector<str>& args)>;
 
-// The game-UI seam (horizontal pass H4): RmlUi behind a narrow facade —
+// The game-UI seam (docs/HORIZONTAL-PASS.md): RmlUi behind a narrow facade —
 // no Rml type crosses this header. Documents (.rml/.rcss) resolve through
 // an ordered list of root directories, LAST ROOT WINS: feed it every
 // plugin's ui/ dir in load order and a mod overrides a screen by shipping
-// the same path (decision 2026-07-05 — the SkyUI model).
+// the same path (the SkyUI model).
 //
 // Rendering goes through rhi:: only (compiled geometry = static
 // vertex/index buffers; scissor + premultiplied alpha were added to the
 // RHI for this). render() records into the CURRENT render pass — call it
 // inside the backbuffer pass, after the world, before ImGui.
 //
-// HOW TO FILL (post-7/07, "interfaces" vertical):
+// Planned extension points:
 //  - screens: UiScreenForm registry -> showScreen(name) (modal stack,
 //    overlay HUD), documents from the plugin roots;
 //  - input: route mouse/keyboard/gamepad from platform::Input into
@@ -81,7 +81,7 @@ public:
     // Fonts must load before the first document (RmlUi requirement).
     bool loadFont(const std::filesystem::path& path);
 
-    // --- Localization (C9.5) --------------------------------------------------
+    // --- Localization ---------------------------------------------------------
     // Documents mark localizable labels with data-loc="key"; on (re)load,
     // each marked element's inner RML is replaced by localizer(key). The
     // authored inner text is the English fallback the localizer overrides
@@ -121,7 +121,7 @@ public:
     // enable Window::setTextInput while it holds).
     bool textFieldFocused() const;
 
-    // --- Gamepad / keyboard focus navigation (C9.3) --------------------------
+    // --- Gamepad / keyboard focus navigation ----------------------------------
     // RmlUi 6.1 moves the focus spatially on arrow keydowns when the
     // focused element carries the `nav`/`nav-*` RCSS properties and the
     // targets are `tab-index: auto`; Enter/Space click the focused
@@ -143,7 +143,7 @@ public:
     // False when nothing navigable holds the focus.
     bool activateFocused();
 
-    // --- Runtime textures (C9.6) ----------------------------------------------
+    // --- Runtime textures -------------------------------------------------------
     // CPU-generated pixels a document shows via <img src="runtime://name">
     // (the in-game map). `rgba` = tightly packed RGBA8, width*height*4
     // bytes, COPIED (call-and-forget). Re-setting the same name releases
@@ -154,7 +154,7 @@ public:
     void setRuntimeTexture(const str& name, const u8* rgba, u32 width,
                            u32 height);
 
-    // --- Data models (B2) ---------------------------------------------------
+    // --- Data models ----------------------------------------------------------
     // Create before the documents that reference them load; set* pushes a
     // value and dirties the binding. All Rml types stay in the .cpp.
     bool createModel(const UiModelDesc& desc);

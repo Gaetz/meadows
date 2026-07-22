@@ -5,7 +5,7 @@
 #include <glm/glm.hpp> // Vec3 by value (Defines only forward-declares glm)
 
 #include "engine/core/Defines.hpp"
-#include "engine/ecs/World.hpp" // ecs::Entity (the É2 combat target)
+#include "engine/ecs/World.hpp" // ecs::Entity (the combat target)
 
 namespace data {
 struct WeaponForm;
@@ -21,8 +21,8 @@ struct Npc;
 struct NpcContext;
 class NpcScheduleController;
 
-// FOLLOWERS É2: the frame's combat TARGET — the player by default (the
-// pre-É2 behavior, byte-for-byte reads), or the adopted entity when
+// The frame's combat TARGET — the player by default (the
+// pre-behavior, byte-for-byte reads), or the adopted entity when
 // Npc.combatTarget is set (a follower defending the player, a hostile
 // fighting a follower back). position == feet today (both camps are
 // terrain-grounded); crouched only ever means the sneaking player.
@@ -34,46 +34,46 @@ struct CombatTarget {
     bool alive { false };
 };
 
-// R4: the in-combat half of the NPC frame, split out of NpcDirector —
+// The in-combat half of the NPC frame, split out of NpcDirector —
 // perception (vision cone + LOS -> aware state, the call-for-help shout),
 // the stagger override, the engagement decision (gameplay/combat/CombatAi
 // or a Lua brain) and its execution, then — once the director evaluated
 // the pose — the swing machine and the blade-touch hit on the target
-// (player or adopted entity — É2).
+// (player or adopted entity — ).
 class NpcCombatController {
 public:
-    // B5→B2: hostile actors perceive the player — vision cone + LOS
+    // Hostile actors perceive the player — vision cone + LOS
     // feed the Perception state machine; Alert hunts, Searching walks
     // to the last known position and gives up on a timeout. D2: a
     // guard turns hostile while the player carries a bounty
     // (tag-based — the relations table stays a later pass).
     // Returns true when combat overrode the schedule this frame.
     // `schedule` stands the NPC up (releaseFurniture, D1); `npcByEntity`
-    // maps callForHelp's SpatialIndex hits back to Npc records (R3).
+    // maps callForHelp's SpatialIndex hits back to Npc records.
     bool update(f32 dt, const NpcContext& ctx, Npc& npc,
                 const data::WeaponForm* npcWeapon, bool playerSneaking,
                 NpcScheduleController& schedule,
                 const std::unordered_map<u64, Npc*>& npcByEntity);
 
-    // P0 A3/A4: the swing machine + the blade-touch hit (the SAME
-    // MeleeSwing code path as the player), plus the A5 guard roll/clock
+    // The swing machine + the blade-touch hit (the SAME
+    // MeleeSwing code path as the player), plus the guard roll/clock
     // and its State.Blocking mirror. Runs for every living NPC, in
     // combat or not, AFTER the director evaluated this frame's pose
-    // (the hit segment follows the hand joint). É2: the defender is the
+    // (the hit segment follows the hand joint). The defender is the
     // combat target — `npcByEntity` resolves an NPC defender's record.
     void updateSwing(f32 dt, const NpcContext& ctx, Npc& npc,
                      const data::WeaponForm* npcWeapon, bool playerSneaking,
                      const std::unordered_map<u64, Npc*>& npcByEntity);
 
 private:
-    // The CombatMove executions — one method per move (R4); the switch
-    // in update() only dispatches. É2: all of them work on the resolved
+    // The CombatMove executions — one method per move; the switch
+    // in update() only dispatches. : all of them work on the resolved
     // CombatTarget's position — player or adopted entity alike.
     void strike(const NpcContext& ctx, Npc& npc, world::Transform& transform,
                 const data::WeaponForm* npcWeapon, bool swinging,
                 bool quiverDry, const Vec3& toTarget,
                 const CombatTarget& target);
-    // A7: an ARCHER looses an arrow (Strike with a ranged weapon).
+    // An ARCHER looses an arrow (Strike with a ranged weapon).
     void fireArrow(const NpcContext& ctx, Npc& npc,
                    world::Transform& transform,
                    const data::WeaponForm& npcWeapon, const Vec3& targetPos);
@@ -87,13 +87,13 @@ private:
                   world::Transform& transform, bool canSee, bool swinging,
                   const Vec3& targetPos, const Vec3& lastKnownPos,
                   world::AwareState aware);
-    // B3: entering Alert shouts — same-faction allies in
+    // Entering Alert shouts — same-faction allies in
     // StatsTuningForm.helpCallRadius get the target position (alertTo).
     void callForHelp(const NpcContext& ctx, const Npc& caller,
                      const Vec3& targetPos,
                      const std::unordered_map<u64, Npc*>& npcByEntity);
 
-    // FOLLOWERS É6: an ACTIVE follower in combat tries his special power
+    // An ACTIVE follower in combat tries his special power
     // (the first granted ability that isn't the shared attack — granted by
     // his class perks). Policy per FollowerClassForm.combatStyle:
     //   "healer"        -> tryActivate the power ON the lowest ally
@@ -105,7 +105,7 @@ private:
     void tryUsePower(f32 dt, const NpcContext& ctx, Npc& npc,
                      const std::unordered_map<u64, Npc*>& npcByEntity);
 
-    // A2: per-strike scratch for anim::modelMatrices (the hit segment).
+    // Per-strike scratch for anim::modelMatrices (the hit segment).
     vector<Mat4> jointScratch;
 };
 

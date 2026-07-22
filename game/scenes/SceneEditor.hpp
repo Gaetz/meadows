@@ -28,7 +28,7 @@ class MeshCache;
 
 // The scene systems the in-world level editor touches, bundled so the editor
 // (pick / place / gizmo / palette / sculpt) is decoupled from LandscapeScene
-// (audit U4-5). The scene rebuilds it each frame from its own members — cheap:
+//. The scene rebuilds it each frame from its own members — cheap:
 // references plus the sculpt sub-contract by value. This is the editor↔scene
 // contract; the target is to let the editor become a stacked SceneStack layer.
 struct EditorContext {
@@ -48,7 +48,7 @@ struct EditorContext {
     SculptContext sculpt;                    // the terrain-sculpt sub-contract
 };
 
-// The in-world level editor, extracted from LandscapeScene (audit U4-5). Owns
+// The in-world level editor, extracted from LandscapeScene. Owns
 // the editor state (selection, armed palette, gizmo op, the terrain sculpt
 // tool); every edit lands in the LevelEditor's EditSession (§5). Interaction
 // and rendering (ImGui/ImGuizmo) live here; the scene owns the systems and
@@ -74,7 +74,7 @@ private:
     core::Guid placementBase {}; // armed palette entry (0 = none)
     i32 gizmoOperation { 0 };    // 0 translate, 1 rotate, 2 scale
     bool gizmoWasUsing { false };
-    // Grid snap (chantier 2 leftover, 2026-07-13): fed to ImGuizmo while
+    // Grid snap: fed to ImGuizmo while
     // manipulating — translate steps snapStep meters, rotate a 15° lattice.
     bool snapEnabled { false };
     f32 snapStep { 1.0f };

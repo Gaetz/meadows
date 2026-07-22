@@ -6,9 +6,8 @@
 // runtimes consume flat param structs; the world/runtime layer maps these
 // Forms onto them (LandscapeTuningForm precedent). All moddable (§5).
 //
-// HOW TO FILL (post-7/07): these types are complete for the first
-// verticals; extend by APPENDING fields only (binary ordinals must stay
-// stable — CoreForms convention).
+// These types are complete for the first verticals; extend them with
+// new fields as needs appear.
 
 namespace data {
 
@@ -41,7 +40,7 @@ struct StaticForm : Form {
     core::Guid material; // MaterialForm
     core::Guid sprite;   // 2D fallback/minimap icon
     bool collides { true };
-    // Chantier 2 (appended — ordinals stable): true = the reference's
+    // true = the reference's
     // authored y is an offset above the terrain (props); false = authored
     // y is ABSOLUTE (building modules on a leveled pad).
     bool snapToGround { true };
@@ -66,8 +65,8 @@ struct LightForm : Form {
     f32 spotAngle { 45.0f }; // degrees, spot only
     f32 flicker { 0.0f };    // 0 = steady; else amplitude of flame flicker
     bool castsShadow { false }; // budget: few key lights per interior
-    // Dust light shaft (renderer brick 34, chantier 7.1 — appended,
-    // ordinals stable): a procedural additive prism along the light's
+    // Dust light shaft (docs/3D-RENDERER.md):
+    // a procedural additive prism along the light's
     // direction (the Skyrim FXShaft model). `sunLinked` re-derives the
     // direction/color from the (quantized) sun every frame — window
     // shafts follow the time of day.
@@ -93,7 +92,7 @@ struct LightForm : Form {
     REFLECT_END()
 };
 
-// A placeable water volume (renderer brick 32, chantier 7.4): the box's
+// A placeable water volume (docs/3D-RENDERER.md): the box's
 // TOP face is the water surface, the box itself is the "in water" test —
 // mountain lakes above sea level, flooded interior rooms. The global sea
 // stays the implicit case (and keeps the planar mirror; volumes render a
@@ -165,8 +164,7 @@ struct CueForm : Form {
     core::Guid sound;     // SoundForm (optional)
     f32 cameraShake { 0.0f };
     bool attachToTarget { false }; // follow the entity vs spawn at position
-    // R7 (appended — ordinals stable): the camera-shake feel, promoted
-    // from FxDirector literals (defaults = the old hardcoded values).
+    // The camera-shake feel, moddable per cue.
     // cameraShake is scaled by magnitude / shakeScale, clamped to
     // [shakeScaleMin, shakeScaleMax]; the impulse wobbles at
     // shakeAmplitude m per strength unit and decays exp(-shakeDecay·t).

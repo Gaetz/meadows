@@ -5,8 +5,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/ecs/World.hpp"
 
-// Chantier P0 B1 — the shared spatial index (the infrastructure promised
-// by the RC-GI chantier, blessed by the dev: created when a gameplay
+// The shared spatial index (infrastructure created when a gameplay
 // consumer bites). A uniform hash grid over the XZ plane (actors live on
 // a heightfield; 4 m cells), rebuilt from the live world each frame and
 // queried by radius or cone. A rebuild SNAPSHOTS entity + position, so

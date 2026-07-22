@@ -21,14 +21,14 @@ enum class FormCategory : u8 {
     Actor,
     Container,
     Door,
-    // Horizontal pass H1 — the 3D-demo categories (§2.7: extending this
+    // The 3D-demo categories (§2.7: extending this
     // enum + registering a spawner is the sanctioned local change).
     Light,     // LightForm placements
     Marker,    // MarkerForm anchors (invisible)
     Trigger,   // TriggerForm volumes
     Furniture, // gameplay::FurnitureForm (registered by gameplay's helper)
-    Prefab,    // PrefabForm groups (expanded by the spawner, H8)
-    Water,     // data::WaterVolumeForm (brick 32, chantier 7.4)
+    Prefab,    // PrefabForm groups (expanded by the spawner)
+    Water,     // data::WaterVolumeForm
 };
 
 // Maps a base form's reflected type id to its category. Explicit (no hidden

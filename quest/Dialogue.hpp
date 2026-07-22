@@ -14,11 +14,11 @@ class EventBus;
 struct EvalContext;
 }
 
-// Dialogue (Phase 4, brick 4f) — NarrativePro's node graph, decomposed into Form
+// Dialogue — NarrativePro's node graph, decomposed into Form
 // records linked by id. A conversation is a tree of NPC-line nodes and Player-
 // response nodes (children carry `parent`). Player options are gated by the
-// shared condition evaluator (4c); entering a node dispatches its optional
-// `event` (4b) so quests/scripts react (e.g. an option that starts a quest).
+// shared condition evaluator; entering a node dispatches its optional
+// `event` (EventBus) so quests/scripts react (e.g. an option that starts a quest).
 // Single-player: no replication/party (dropped from NarrativePro).
 
 namespace quest {
@@ -39,10 +39,10 @@ struct DialogueNodeForm : data::Form {
     str text;
     str event;         // optional event name dispatched when this node is entered
     i32 order { 0 };   // sibling sort order
-    // 8.7e: hand items over when this node fires ("here are the rations")
+    // Hand items over when this node fires ("here are the rations")
     // — removed from the player through the runner's onNodeFired hook.
     // Gate the option with a HasItem condition; the removal itself does
-    // not re-check. Appended (binary ordinals stable).
+    // not re-check.
     core::Guid takeItem;
     i32 takeCount { 1 };
 

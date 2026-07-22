@@ -2,7 +2,7 @@
 
 #include "data/editor/GraphLayout.hpp"
 
-// Chantier 8.6 — the deterministic layered auto-layout behind the graph
+// The deterministic layered auto-layout behind the graph
 // editors. Pure data (guids in, positions out): what the canvas shows for
 // a graph with no stored positions must never depend on hash order.
 
@@ -91,7 +91,7 @@ TEST_CASE("graph layout: orphans land in the final layer") {
     CHECK(result.positions.at(lost).x > result.positions.at(a).x);
 }
 
-// Chantier 8.7 — the re-parent anti-cycle guard of the dialogue graph.
+// The re-parent anti-cycle guard of the dialogue graph.
 TEST_CASE("isAncestorOf walks the parent chain, survives corrupt cycles") {
     const Guid root = guid(1), a = guid(2), b = guid(3), other = guid(4);
     // root <- a <- b (childToParent map).
@@ -114,7 +114,7 @@ TEST_CASE("isAncestorOf walks the parent chain, survives corrupt cycles") {
 }
 
 TEST_CASE("graph layout: the rank-order key drives rows within a layer") {
-    // Dialogue-tree usage (8.7): siblings ordered by `order`, not guid.
+    // Dialogue-tree usage: siblings ordered by `order`, not guid.
     const Guid root = guid(1), a = guid(2), b = guid(3);
     const vector<Guid> nodes { root, a, b };
     const vector<std::pair<Guid, Guid>> edges { { root, a }, { root, b } };

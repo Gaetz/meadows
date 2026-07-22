@@ -9,13 +9,13 @@ void updateLifeState(AbilitySystem& system, const GameplayTagRegistry& registry)
     }
     const bool atZero = currentValueOf(system, attr("health")) <= 0.0f;
     const bool tagged = system.tags.has(*dead);
-    // FOLLOWERS É3 — the routing gate, in THE single life-state write
-    // point: an actor carrying the Follower.Protected mirror (synced from
-    // FollowerState.followerActive — active followers only) goes DOWNED
-    // at 0 HP instead of dead. Real death still happens HERE: the
-    // bleedout resolution lifts the protection and calls back in. With
-    // neither tag registered/held the historical path is byte-identical
-    // (bandits still just die — É3 iso-behavior).
+    // The follower-protection routing gate, in THE single life-state
+    // write point: an actor carrying the Follower.Protected mirror
+    // (synced from FollowerState.followerActive — active followers only)
+    // goes DOWNED at 0 HP instead of dead. Real death still happens HERE:
+    // the bleedout resolution lifts the protection and calls back in.
+    // With neither tag registered/held, 0 HP is a plain death (bandits
+    // still just die).
     const auto downed = registry.find("State.Downed");
     const auto shield = registry.find("Follower.Protected");
     const bool isProtected = shield && system.tags.has(*shield);

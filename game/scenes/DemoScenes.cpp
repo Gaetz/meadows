@@ -219,7 +219,7 @@ void GameplayScene::update(f32 dt) {
     // Player input → velocity.
     const platform::Input& input = engine.getInput();
     const Vec2 axis =
-        platform::moveAxis(input, /*includeArrows=*/true); // U5-8
+        platform::moveAxis(input, /*includeArrows=*/true);
     Vec3 direction { axis.x, axis.y, 0.0f };
     if (direction.x != 0.0f || direction.y != 0.0f) {
         direction = glm::normalize(direction);
@@ -430,7 +430,7 @@ void StatsScene::seedResources() {
 void StatsScene::onEnter() {
     WorldDemoScene::onEnter();
     // The shared character-tick vocabulary (life state, statuses, buildup,
-    // stats runtime tags) — one aggregator for every scene (audit U5-3).
+    // stats runtime tags) — one aggregator for every scene.
     gameplay::registerCharacterRuntimeTags(tags);
     // tuning + derived are initialized by WorldDemoScene::rebuild() (called from
     // WorldDemoScene::onEnter() above) and refreshed on each mod toggle.

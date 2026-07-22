@@ -28,7 +28,7 @@ DamageResult resolveStrikeDamage(StatBlock& defender,
                                 defenderEntity });
         }
     }
-    // P0 C2: the LOOK of the exchange — one cue per outcome, resolved
+    // The LOOK of the exchange — one cue per outcome, resolved
     // through CueForms (data): a block beats a plain hit.
     if (ctx.cues) {
         if (blocked) {
@@ -51,7 +51,7 @@ StrikeOutcome resolveMeleeStrike(StatBlock& attacker, StatBlock& defender,
                                  const StrikeGeometry& geo,
                                  const StrikeContext& ctx) {
     StrikeOutcome out;
-    // Sneak attack (furtivité leftover, 2026-07-13): a State.Sneaking
+    // Sneak attack: a State.Sneaking
     // attacker striking an UNAWARE defender multiplies every channel and
     // the posture hit (sneakAttackMultiplier — §5 moddable). An unaware
     // defender has no guard up in practice, so the block stage below
@@ -66,13 +66,13 @@ StrikeOutcome resolveMeleeStrike(StatBlock& attacker, StatBlock& defender,
             event.postureAmount *= ctx.tuning.sneakAttackMultiplier;
         }
     }
-    // C1: a defender in its critical window eats the critical execution
-    // (both camps — the NPC->player copy had drifted and skipped this).
+    // A defender in its critical window eats the critical execution
+    // (both camps go through this one path).
     if (const auto weakness = ctx.tags.find("State.CriticalWeakness")) {
         event.critical = defender.system.tags.has(*weakness);
         out.critical = event.critical;
     }
-    // A5: a raised guard catches front-cone hits — damage shrinks, the
+    // A raised guard catches front-cone hits — damage shrinks, the
     // blocked amount runs the guard's POSTURE down instead. A guard
     // raised inside the perfect window parries CLEAN and the ATTACKER's
     // poise pays for the read attack.

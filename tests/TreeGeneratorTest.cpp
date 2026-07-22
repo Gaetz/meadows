@@ -40,7 +40,7 @@ TEST_CASE("different seeds generate different trees") {
     CHECK_FALSE(sameMesh(a, b));
 }
 
-TEST_CASE("generated trees are well-formed solid-canopy meshes (brick 27)") {
+TEST_CASE("generated trees are well-formed solid-canopy meshes") {
     for (u32 seed : { 7u, 977u, 123456u }) {
         const MeshData tree = render::generateTree(seed);
         checkWellFormed(tree);

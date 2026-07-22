@@ -8,7 +8,7 @@ namespace render {
 
 // View frustum as six inward-facing planes extracted from a viewProj matrix
 // (Gribb-Hartmann). Pure math, headless-testable — the CPU chunk-culling
-// primitive (brick 25). Works for any projection the matrix encodes; note
+// primitive. Works for any projection the matrix encodes; note
 // that Lengyel's oblique near-plane trick corrupts the FAR plane, so build
 // reflection-pass frusta from the NON-oblique projection (conservative).
 struct Frustum {

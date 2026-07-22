@@ -4,8 +4,8 @@
 
 #include "engine/core/Defines.hpp"
 
-// The audio seam (horizontal pass H6): miniaudio behind a narrow facade —
-// no ma_* type crosses this header. Plain params in (rule n°2: the
+// The audio seam (docs/HORIZONTAL-PASS.md): miniaudio behind a narrow facade —
+// no ma_* type crosses this header. Plain params in (the
 // runtime layer maps SoundForm + a picked SoundVariantForm onto
 // SoundParams; cosmetic random picks may use a free RNG, gameplay-
 // affecting ones go through core::Rng, §8).
@@ -13,14 +13,14 @@
 // Buses are a fixed set (sfx/music/voice/ambient/ui), each a mixer group
 // with its own volume — the options screen binds to setBusVolume.
 //
-// HOW TO FILL (post-7/07, "vivant"/"interfaces" verticals):
+// Planned extension points:
 //  - SoundForm resolver: variants by weight, volume/pitch jitter, asset
 //    path through the plugin VFS -> play();
 //  - ambient beds: crossfade loops per cell/weather/time through
 //    playMusic-style slots on the "ambient" bus;
 //  - 3D: call setListener from the camera each frame; emitters pass
 //    is3d + position (attenuation min/max already plumbed);
-//  - footsteps/cues: GameplayCues (H7) call play() from cue handlers.
+//  - footsteps/cues: GameplayCues call play() from cue handlers.
 
 namespace audio {
 

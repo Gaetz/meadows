@@ -68,7 +68,7 @@ const core::Guid kIronArmor =
     *core::Guid::fromString("a5000000-0000-4000-8000-000000000002");
 
 // [cpp-tuning] Player controller tuning (2D GAS test bench — the DEMO's
-// equivalents live in StatsTuningForm, §5 U4-7; promote these too if this
+// equivalents live in StatsTuningForm, §5; promote these too if this
 // scene ever needs modding). movementSpeed/acceleration are stat-space
 // (docs/STATS.md §3); these map them to world units (units/s and
 // units/s²). Calibrated so the default sheet (~102) walks at ~5 u/s.
@@ -164,7 +164,7 @@ gameplay::StatModifiers CombatArenaScene::equipmentModsFor(ecs::Entity e) const 
 void CombatArenaScene::onEnter() {
     WorldDemoScene::onEnter();
 
-    // H7 proof handler: any hit cue bursts sparks at the impact point.
+    // Proof handler: any hit cue bursts sparks at the impact point.
     // (The real runtime resolves CueForms — CueTable — into particle/
     // sound/shake handlers; one hardwired handler proves the seam.)
     cues.addHandler([this](const gameplay::CueEvent& event) {
@@ -187,7 +187,7 @@ void CombatArenaScene::onEnter() {
     });
 
     // The shared character-tick vocabulary (life state, statuses, buildup,
-    // stats runtime tags) — one aggregator for every scene (audit U5-3).
+    // stats runtime tags) — one aggregator for every scene.
     gameplay::registerCharacterRuntimeTags(tags);
 
     // Dodge ability tags: the i-frame state and the cooldowns (the
@@ -233,7 +233,7 @@ void CombatArenaScene::update(f32 dt) {
     // frame's tickCharacter (which refreshes life state).
     updatePlayer(dt);
     updatePlayerAttack(dt);
-    particles.update(dt); // H7 cue sparks
+    particles.update(dt); // cue sparks
 
     // Advance the shared game clock once, then run the full per-frame tick on
     // every combatant. We deliberately do NOT call WorldDemoScene::update(): its
@@ -276,7 +276,7 @@ void CombatArenaScene::updatePlayer(f32 dt) {
     }
 
     // WASD → normalized walk direction (independent of facing, FPS-style).
-    const Vec2 axis = platform::moveAxis(input); // U5-8
+    const Vec2 axis = platform::moveAxis(input);
     Vec3 walk { axis.x, axis.y, 0.0f };
     const bool moving = (walk.x != 0.0f || walk.y != 0.0f);
     if (moving) {
@@ -435,7 +435,7 @@ void CombatArenaScene::updatePlayerAttack(f32 dt) {
                                     weapon->buildupAmount, system, tags);
         }
         gameplay::updateLifeState(system, tags);
-        // H7: the sim announces the impact as a CUE — presentation-agnostic
+        // The sim announces the impact as a CUE — presentation-agnostic
         // (headless = no handler = no-op). This scene's handler sparks.
         cues.emit({ "Cue.Hit.Slash", targetT.position,
                     currentValueOf(system, gameplay::attr("damage")) });

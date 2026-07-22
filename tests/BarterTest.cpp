@@ -10,7 +10,7 @@
 #include "gameplay/actors/CharacterForms.hpp"
 #include "gameplay/inventory/Inventory.hpp"
 
-// Chantier 4 B5: barter transactions + LoadoutEntryForm rolls.
+// Barter transactions + LoadoutEntryForm rolls.
 
 namespace {
 

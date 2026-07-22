@@ -45,7 +45,7 @@ MeshCacheTraits::decode(const std::filesystem::path& path) {
         // Prop pivot convention: base on the ground, footprint centered
         // (authored scale kept — references carry the instance scale).
         assets::groundMesh(*mesh);
-        // Option B (2026-07-10): ambient grounding baked into the vertex
+        // Ambient grounding baked into the vertex
         // colors — kit recesses and prop creases darken for free. The
         // bake is SECONDS per authored mesh, so it goes through the disk
         // cache (validated by mtime/size + params; raw fractions, so the

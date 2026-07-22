@@ -4,8 +4,8 @@
 
 namespace game {
 
-// Closed keyword vocabularies of reflected string fields (dev feedback on
-// 8.7b: nobody knows "Regular | Success | Failure" by heart — every
+// Closed keyword vocabularies of reflected string fields (nobody knows
+// "Regular | Success | Failure" by heart — every
 // keyword field gets a dropdown). Values are stored CANONICAL (exactly
 // what the runtime parses: "greater", "useFurniture"…) and displayed
 // Capitalized in blue, everywhere in the editor.

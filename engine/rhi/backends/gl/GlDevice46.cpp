@@ -24,8 +24,8 @@ GlDevice46::GlDevice46(uptr<platform::GlContext> context,
               .computeShaders = true,   // glDispatchCompute (GL 4.3+)
               .timerQueries = true,     // GL_TIMESTAMP queries (GL 3.3+)
               .midPassTimestamps = true, // IMR GPU: in-pass queries measure
-              .volumeTextures = true }; // GL_TEXTURE_3D (GI, chantier RC)
-    // Depth 0..1 (chantier VULKAN): GLM_FORCE_DEPTH_ZERO_TO_ONE is global,
+              .volumeTextures = true }; // GL_TEXTURE_3D (GI volumes)
+    // Depth 0..1 (docs/VULKAN.md): GLM_FORCE_DEPTH_ZERO_TO_ONE is global,
     // so projections emit 0..1 clip z; this remaps GL's NDC->window transform
     // to match (GL 4.5+). ONE convention across GL 4.6 and Vulkan — shaders
     // reconstruct depth identically on both, and reverse-Z stays one switch
@@ -113,7 +113,7 @@ TextureHandle GlDevice46::createTexture(const TextureDesc& desc,
     }
 
     const bool isArray = desc.arrayLayers > 1;
-    const bool isVolume = desc.depth > 1; // G0: 3D textures (GI clipmap)
+    const bool isVolume = desc.depth > 1; // 3D textures (GI clipmap)
     if (isVolume && isArray) {
         LOG_ERROR("createTexture: depth and arrayLayers are exclusive");
         return {};
@@ -276,7 +276,7 @@ PipelineHandle GlDevice46::createPipeline(const PipelineDesc& desc) {
         return {};
     }
 
-    GlPipeline pipeline = makePipelineState(desc, shaderIt->second); // U2-03
+    GlPipeline pipeline = makePipelineState(desc, shaderIt->second);
 
     glCreateVertexArrays(1, &pipeline.vao);
     for (u32 slot = 0; slot < desc.vertexBuffers.size(); ++slot) {

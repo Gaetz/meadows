@@ -3,14 +3,14 @@
 #include "engine/core/Defines.hpp"
 #include "engine/reflect/Reflect.hpp"
 
-// Chantier P0 B2 — actor perception: what an NPC knows about its target.
+// Actor perception: what an NPC knows about its target.
 // Vision = distance + view cone + line of sight (the LOS raycast is the
 // CALLER's — same callback pattern as TriggerSystem: world/ never touches
 // game/ physics); hearing = OnNoise events routed by the scene. The state
-// machine follows the dev rule: enum class + flat switches, EVERY
+// machine rule: enum class + flat switches, EVERY
 // transition through setAwareState.
 //
-// Lives in world/ai (not gameplay/ai): the consumers pair it with the B1
+// Lives in world/ai (not gameplay/ai): the consumers pair it with the
 // SpatialIndex and the world Transform — and meadows-world already
 // depends on meadows-gameplay, never the reverse.
 //
@@ -54,7 +54,7 @@ inline AwareState awareState(const Perception& perception) {
     return static_cast<AwareState>(perception.state);
 }
 
-// THE transition function (dev rule) — resets the state clock.
+// THE transition function — resets the state clock.
 void setAwareState(Perception& perception, AwareState state);
 
 // The vision cone half of `canSee` (horizontal facing, 3D distance).

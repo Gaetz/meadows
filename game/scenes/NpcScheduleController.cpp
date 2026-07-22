@@ -3,16 +3,16 @@
 #include <cmath>
 
 #include <glm/glm.hpp>
-#include <glm/gtc/quaternion.hpp> // angleAxis (the É1 face-the-player)
+#include <glm/gtc/quaternion.hpp> // angleAxis (the face-the-player)
 
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/FormQuery.hpp"       // data::childrenOf
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
-#include "game/scenes/FollowerController.hpp" // teleportNear (É1)
+#include "game/scenes/FollowerController.hpp" // teleportNear
 #include "game/scenes/NpcDirector.hpp"    // Npc, NpcContext
 #include "game/scenes/NpcMovement.hpp"    // moveNpcAlongPath/Direct, steerBlocked
 #include "gameplay/ability/AbilitySystem.hpp"
-#include "gameplay/actors/Followers.hpp"  // decideFollow (É1)
+#include "gameplay/actors/Followers.hpp"  // decideFollow
 #include "gameplay/ability/GameplayEffects.hpp" // applyEffect/removeById (D1)
 #include "gameplay/ai/AiForms.hpp"
 #include "gameplay/ai/ScheduleSystem.hpp"
@@ -25,7 +25,7 @@
 
 namespace game {
 
-// Chantier 3 B3: re-evaluate the schedule every 10 game minutes; execute the
+// Re-evaluate the schedule every 10 game minutes; execute the
 // active package (travel / wander / useFurniture / guard...).
 void NpcScheduleController::updateNpcSchedule(const NpcContext& ctx, Npc& npc,
                                               f32 hourOfDay) {
@@ -141,7 +141,7 @@ void NpcScheduleController::update(f32 dt, const NpcContext& ctx, Npc& npc,
         // The grid path often can't END on the furniture (the
         // prop is its own nav obstacle): close the last meters
         // DIRECTLY, collider-guarded — flush against the crate
-        // counts as arrived (dev report 2026-07-12).
+        // counts as arrived.
         bool arrived = pathDone && anchorDist <= 0.9f;
         if (pathDone && !arrived) {
             const Vec3 dir = toAnchor / glm::max(anchorDist, 1e-4f);
@@ -218,7 +218,7 @@ void NpcScheduleController::update(f32 dt, const NpcContext& ctx, Npc& npc,
     }
 }
 
-// FOLLOWERS É1: the follow package. Same building blocks as the schedule
+// The follow package. Same building blocks as the schedule
 // walker above — findPath + moveNpcAlongPath — pointed at the player by
 // the pure decideFollow intent (gameplay/actors/Followers). Feel knobs =
 // StatsTuningForm.follow* (§5).

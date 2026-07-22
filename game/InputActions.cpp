@@ -11,9 +11,8 @@ ActionMap::ActionMap() {
                             PadButton pad) {
         bindings[static_cast<size_t>(action)] = { key, mouse, pad };
     };
-    // The default layout — keyboard side = exactly the pre-C9.2 literals
-    // (behavior identical), pad side = the fixed layout decided in the
-    // chantier-9 plan.
+    // The default layout: one keyboard/mouse input and one pad button
+    // per action.
     set(InputAction::Attack, Key::Count, MouseButton::Left,
         PadButton::RightTrigger);
     set(InputAction::Block, Key::Count, MouseButton::Right,
@@ -33,7 +32,7 @@ ActionMap::ActionMap() {
     set(InputAction::Map, Key::M, MouseButton::Count, PadButton::DPadLeft);
     set(InputAction::Pause, Key::Escape, MouseButton::Count,
         PadButton::Start);
-    // É7: F was free on the keyboard; LB was free on the pad.
+    // F was free on the keyboard; LB was free on the pad.
     set(InputAction::InteractAlt, Key::F, MouseButton::Count,
         PadButton::LeftShoulder);
 }

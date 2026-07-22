@@ -13,7 +13,7 @@
 #include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/stats/Survival.hpp"
 
-// Architecture du passage du temps (docs/STATS.md §3, Phase 8).
+// Architecture du passage du temps (docs/STATS.md §3).
 //
 // Two tick paths co-exist:
 //   - Real-time path (update(), dt):  energy/posture regen, stagger/paralysis,
@@ -66,8 +66,8 @@ void tickGameTime(GameTimeTickArgs& args, f64 gameDt, const StatModifiers& mods)
 // Applies a buildup tick's consequences — DoT drains, bleed burst, status
 // triggers (electrocution stagger+posture, glaciation paralysis) and lethal
 // zeroing — then syncs the life state. ONE implementation shared by the
-// real-time path (tickCharacter) and the time-skip path (advanceGameTime);
-// the two had drifted apart (audit U6-F2/U6-F7). §2.9 execution calc: the
+// real-time path (tickCharacter) and the time-skip path (advanceGameTime)
+// so the two cannot drift apart. §2.9 execution calc: the
 // per-tick amounts are final (resistance acts on buildup accumulation, not
 // the tick), so the drains write BaseValues directly, never re-mitigated
 // through applyDamage. Returns true when the actor is dead (base health 0).

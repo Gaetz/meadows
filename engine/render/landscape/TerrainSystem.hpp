@@ -33,7 +33,7 @@ class ShaderLibrary;
 // terrain is bit-identical because meshing is deterministic. Same
 // worker->queue->pump pattern as game/TextureCache (Phase 5).
 //
-// LOD (brick 8): discrete per-chunk meshes (65²/33²/17²/9² vertices) selected
+// LOD: discrete per-chunk meshes (65²/33²/17²/9² vertices) selected
 // by camera distance. Every mesh carries a SKIRT — its edge ring extruded
 // down — so T-junction cracks between neighboring LODs are covered with zero
 // stitching logic; a chunk at any LOD is self-contained (what the
@@ -96,15 +96,15 @@ public:
     // Records terrain draws into the current render pass. `shadowBindGroup`
     // provides the CSM map + comparison sampler (texture unit 1). When a
     // frustum is given, chunks whose AABB (XZ footprint × meshed [minY,
-    // maxY]) lies outside are skipped (brick 25); `occluded` additionally
-    // drops chunks hidden behind terrain (brick 26, main view only —
+    // maxY]) lies outside are skipped; `occluded` additionally
+    // drops chunks hidden behind terrain (main view only —
     // the set is built for the real camera, not the mirrored one).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle shadowBindGroup,
               const Frustum* frustum = nullptr,
               const std::unordered_set<u64>* occluded = nullptr);
 
-    // Resident chunk AABBs, the GPU occlusion candidate list (brick 26).
+    // Resident chunk AABBs, the GPU occlusion candidate list.
     struct ChunkAabb {
         u64 key { 0 };
         Vec3 lo {};
@@ -141,7 +141,7 @@ public:
     // Depth-only caster pass into one shadow cascade. `casterBindGroup`
     // carries the cascade's light matrix; chunks beyond `maxChunkDistance`
     // (Chebyshev, from the camera chunk) are skipped. `frustum` = the
-    // cascade's ortho volume (V8b): a caster outside it cannot write a
+    // cascade's ortho volume: a caster outside it cannot write a
     // useful texel — without this test every cascade paid the full ring's
     // vertex work (cascade 0 covers ~45 m but drew 576 m of chunks; the
     // CSM cost is vertex-bound, which is why the resolution knob did
@@ -157,7 +157,7 @@ public:
     // Chunks the last culled draw() actually recorded (main pass runs last).
     u32 drawnLastFrame() const { return lastDrawn; }
     // Indices recorded this frame across EVERY pass (casters, reflection,
-    // main) — the CPU-side geometry counter (V8e: mid-pass GPU timestamps
+    // main) — the CPU-side geometry counter (mid-pass GPU timestamps
     // are meaningless on Metal, this is how the vertex load is dissected).
     u32 indicesThisFrame() const { return frameIndices; }
 

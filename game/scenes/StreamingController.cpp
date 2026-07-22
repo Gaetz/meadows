@@ -108,7 +108,7 @@ void StreamingController::updateStaticColliders(const StreamingContext& ctx) {
     }
 }
 
-// Idempotent ground snap (chantier 2 B1): world Y = terrain height at
+// Idempotent ground snap: world Y = terrain height at
 // (x, z) + the reference's AUTHORED y (an offset above ground until the
 // level editor writes real heights). Safe to re-run after every cell
 // change; prefab-derived children (no base record) keep their expanded Y.
@@ -175,7 +175,7 @@ void StreamingController::snapCellEntities(const StreamingContext& ctx) {
         });
 }
 
-// Chantier 3 B2: the navigator's obstacle set = the static colliders'
+// The navigator's obstacle set = the static colliders'
 // world AABBs, inflated by the agent radius. Refreshed on cell changes.
 void StreamingController::refreshNavObstacles(const StreamingContext& ctx) {
     if (!ctx.navigator || !ctx.meshCache) {

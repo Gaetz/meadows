@@ -21,7 +21,7 @@ class Device;
 
 namespace game {
 
-// 3D animation preview for the DB editor (chantier 8, follow-up 2026-07-13):
+// 3D animation preview for the DB editor:
 // the selected AnimClipForm scrubs/plays and the selected AnimGraphForm runs
 // live (params, tag gates, transitions, fired events) on its skinned mesh,
 // rendered offscreen through the RHI and shown via ImGui::Image.

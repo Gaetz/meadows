@@ -8,8 +8,7 @@
 
 namespace game {
 
-// Scattered-prop collision (chantier 6 follow-up, dev report 2026-07-07:
-// no collision on rocks and tree trunks). The scatter is a pure
+// Scattered-prop collision for rocks and tree trunks. The scatter is a pure
 // deterministic function (render::scatterProps), so collision re-runs it
 // on the CPU near the player and drops ONE static box per trunk / rock —
 // no dependency on the render chunks, same TerrainCollision streaming

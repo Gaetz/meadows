@@ -5,7 +5,7 @@
 #include "data/forms/Form.hpp"
 #include "engine/ecs/World.hpp"
 
-// Skills-by-use v1 (acted decision 2026-07-05; F-catalogue "Progression").
+// Skills-by-use v1 (the acted progression model — docs/MEADOWS-PLAN.md).
 // Every successful ability activation dispatches OnAbilityUsed on the
 // EventBus; an ability mapped to a skill (AbilityForm.skill) grants that
 // skill's xpPerUse; crossing an authored threshold applies its EffectForm

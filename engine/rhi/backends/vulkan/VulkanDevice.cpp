@@ -173,8 +173,8 @@ void layoutMasks(VkImageLayout layout, VkAccessFlags& access,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
         break;
     case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-        // READ too: a loadOp LOAD reads the attachment (V8a sync audit —
-        // the load raced the transition when only WRITE was in scope).
+        // READ too: a loadOp LOAD reads the attachment (the load raced
+        // the transition when only WRITE was in scope).
         access = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                  VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
         stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -182,7 +182,7 @@ void layoutMasks(VkImageLayout layout, VkAccessFlags& access,
     case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
         // LATE too: depth writes/stores happen in BOTH fragment-test
         // stages — EARLY alone let the end-of-pass transition race the
-        // store (V8a sync audit, WAW on the CSM depth). READ for LOAD.
+        // store (WAW on the CSM depth). READ for LOAD.
         access = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
                  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
         stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
@@ -262,7 +262,7 @@ struct VulkanTexture {
     vector<VkImageView> mipViews;
 };
 
-// --- Descriptor binding remap (V4) -------------------------------------------
+// --- Descriptor binding remap --------------------------------------------------
 //
 // OpenGL gives UBOs, texture units, SSBOs and image units SEPARATE binding
 // namespaces, and the shader corpus relies on it: `binding = 0` is legitimately
@@ -424,7 +424,7 @@ str remapBindings(const str& source, vector<ShaderResource>& resources) {
                 // image3D` are both legal GLSL): skip them before reading
                 // the type, or a storage image classifies as a uniform
                 // block and its binding collides with the real UBOs
-                // (found the hard way on rc_inject.comp, V7).
+                // (found the hard way on rc_inject.comp).
                 str type = nextWord();
                 for (u32 skip = 0; skip < 4; ++skip) {
                     if (type == "readonly" || type == "writeonly" ||
@@ -575,7 +575,7 @@ class VulkanCommandBuffer;
 
 // --- Device state -------------------------------------------------------------
 
-// Validation message tally, filled by the debug-utils callback (V8a). File-
+// Validation message tally, filled by the debug-utils callback. File-
 // scope type so the C callback can name it (Impl is a private nested type).
 struct ValidationCounters {
     u32 errors { 0 };
@@ -646,8 +646,8 @@ struct VulkanDevice::Impl {
     bool frameActive { false }; // false when acquire failed -> endFrame skips
     u64 frameCounter { 0 };     // absolute, for the deferred-free queue
 
-    // Mini deletion queue (the V4 'vkDeviceWaitIdle in destroy*' debt, paid
-    // where it bit): destroying mid-RECORDING is unsafe even after an idle —
+    // Mini deletion queue ('vkDeviceWaitIdle in destroy*' is not
+    // enough): destroying mid-RECORDING is unsafe even after an idle —
     // the commands referencing the resource are not submitted yet. Parked
     // here and freed once the frame slot cycles (fence-proven done).
     struct PendingTexture {
@@ -829,9 +829,8 @@ struct VulkanDevice::Impl {
 
 namespace {
 
-// Records one frame. V1/V2 implement the render pass and the copy commands;
-// draws, binds and dispatch land with V4/V5, which is why they are still
-// no-ops rather than asserts — callers must not be able to tell whether a
+// Records one frame. Unimplemented commands are no-ops rather than
+// asserts — callers must not be able to tell whether a
 // backend records or executes immediately (CommandBuffer contract).
 class VulkanCommandBuffer final : public CommandBuffer {
 public:
@@ -860,8 +859,8 @@ public:
     // the barrier orders the copy after every read the in-flight frame may
     // still be doing. updateBuffer's in-place memcpy raced that frame — its
     // passes sampled values meant for the NEXT frame (the CSM matrices
-    // flipped mid-frame: flickering dark shadow plates on fast pans,
-    // 2026-07-19). Returns false inside a pass (copies are illegal there)
+    // flipped mid-frame: flickering dark shadow plates on fast
+    // pans). Returns false inside a pass (copies are illegal there)
     // or when nothing is being recorded.
     bool recordHostUpdate(VkBuffer staging, VkBuffer dst, u64 size,
                           u64 dstOffset);
@@ -1910,7 +1909,7 @@ VulkanDevice::~VulkanDevice() {
             }
             vkDestroyImageView(impl->device, tex.view, nullptr);
             if (tex.defaultSampler != VK_NULL_HANDLE) {
-                // The per-texture default sampler (V7) — destroyTexture
+                // The per-texture default sampler — destroyTexture
                 // frees it, but textures alive at shutdown reach here.
                 vkDestroySampler(impl->device, tex.defaultSampler, nullptr);
             }
@@ -1946,7 +1945,7 @@ VulkanDevice::~VulkanDevice() {
                 destroyMessenger(impl->instance, impl->debugMessenger,
                                  nullptr);
             }
-            // The run's verdict in two numbers (the V8a audit workflow).
+            // The run's verdict in two numbers.
             if (impl->validationCounts.errors +
                     impl->validationCounts.warnings >
                 0) {
@@ -2007,8 +2006,8 @@ CommandBuffer& VulkanDevice::beginFrame() {
     // transitionLayout: its UNDEFINED source stage is TOP_OF_PIPE, which does
     // not chain to the acquire-semaphore wait (pWaitDstStageMask =
     // COLOR_ATTACHMENT_OUTPUT at submit) — the layout write then races the
-    // presentation engine's read (V8a: the one hazard class sync validation
-    // found, WRITE_AFTER_READ vs vkAcquireNextImageKHR, 14×/run in vksmoke).
+    // presentation engine's read (WRITE_AFTER_READ vs
+    // vkAcquireNextImageKHR, caught by sync validation).
     // Matching srcStage chains the barrier after the wait.
     {
         VkImageMemoryBarrier barrier {};
@@ -2115,7 +2114,8 @@ void VulkanDevice::endFrame() {
 }
 
 u64 VulkanDevice::nativeTextureId(TextureHandle) const {
-    // V6: hand ImGui a VkDescriptorSet for the offscreen target.
+    // Not implemented: hand ImGui a VkDescriptorSet for the offscreen
+    // target (docs/VULKAN.md).
     return 0;
 }
 
@@ -2185,7 +2185,7 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
         // The in-place memcpy races the frame still in flight
         // (kFramesInFlight > 1): its passes then read values meant for the
         // NEXT frame — the CSM matrices flipped mid-frame and cast
-        // flickering dark plates on fast pans (2026-07-19; GL is immune,
+        // flickering dark plates on fast pans (GL is immune,
         // the driver versions buffer updates). While recording, route the
         // update through a staged copy in the frame's own command buffer.
         // In-place remains for init/tools (nothing consuming yet) and
@@ -2225,10 +2225,10 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
 
     // While a frame is being recorded, the copy goes into the FRAME command
     // buffer (recordHostUpdate) — same mechanism as the dynamic-UBO path.
-    // The V7 async submit (immediateSubmit(wait=false)) carried no ordering
+    // A bare async submit (immediateSubmit(wait=false)) carries no ordering
     // against the frame's own draws: sync validation caught the frame
-    // reading vertex buffers still being written by the transfer (V8a,
-    // READ_AFTER_WRITE, 4×/run in vksmoke). In-frame recording keeps the
+    // reading vertex buffers still being written by the transfer
+    // (READ_AFTER_WRITE). In-frame recording keeps the
     // no-stall property AND the ordering; the staging is parked in the
     // deletion queue. Outside a frame (init, tools) nothing ever waits,
     // so block as before.
@@ -2595,7 +2595,7 @@ void VulkanDevice::destroySampler(SamplerHandle handle) {
     d.samplers.erase(it);
 }
 
-// --- Pipelines / bind groups / queries (V3, V4, V6) ---------------------------
+// --- Pipelines / bind groups / queries -----------------------------------------
 
 // --- Render targets -------------------------------------------------------
 
@@ -3281,8 +3281,8 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     if (validationLayerAvailable()) {
         layers.push_back("VK_LAYER_KHRONOS_validation");
         LOG_DEBUG("Vulkan: validation layer enabled");
-        // V8a: synchronization validation, opt-in PER RUN — missing-barrier
-        // races are silent under standard validation (the V7e lesson: the
+        // Synchronization validation, opt-in PER RUN — missing-barrier
+        // races are silent under standard validation (lesson learned: the
         // dynamic-UBO race rendered wrong for days with a clean layer), and
         // this mode costs several ms per frame, too slow to leave on.
         syncValidation = std::getenv("MEADOWS_VK_SYNC_VALIDATION") != nullptr;
@@ -3603,7 +3603,7 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
 
     d.cmd = std::make_unique<VulkanCommandBuffer>(d);
 
-    // Now that resources (V2), shaders (V3) and pipelines (V4) are real, the
+    // Now that resources, shaders and pipelines are real, the
     // caps go on as a set — renderer systems gate on these to decide whether
     // to run, so advertising one whose path is still a no-op would be worse
     // than reporting false.
@@ -3665,8 +3665,7 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
             { .usage = BufferUsage::Storage, .size = 256 }, nullptr);
     }
 
-    LOG_INFO("Vulkan device ready: {} — {}x{}, {} swapchain images "
-             "(V4: pipelines + draws)",
+    LOG_INFO("Vulkan device ready: {} — {}x{}, {} swapchain images",
              props.deviceName, d.extent.width, d.extent.height,
              static_cast<u32>(d.images.size()));
     return self;

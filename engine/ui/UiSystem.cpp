@@ -17,14 +17,14 @@
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
 
-// RmlUi adapters over the RHI (H4). Design notes for the verticals:
+// RmlUi adapters over the RHI (docs/HORIZONTAL-PASS.md). Design notes:
 //  - Geometry is COMPILED (static VB/IB per handle): RmlUi compiles once
 //    and re-renders many frames — a perfect fit for retained buffers.
 //  - Colors arrive premultiplied; the pipeline blends ONE/1-SRC_ALPHA
 //    (BlendMode::PremultipliedAlpha added to the RHI for this).
 //  - The advanced 6.x features (clip masks, layers, filters) keep their
 //    default no-op implementations for now: box-shadow/filter effects
-//    will render as nothing until that vertical lands.
+//    render as nothing until they are implemented.
 //  - RmlUi's global interfaces mean ONE UiSystem instance per process
 //    (asserted); fine for a game.
 
@@ -40,7 +40,7 @@ struct UiVertex {
 
 constexpr const char* kUiShader = "ui";
 
-// C9.6: sources of the form "runtime://<name>" resolve to CPU pixels
+// Sources of the form "runtime://<name>" resolve to CPU pixels
 // pushed through UiSystem::setRuntimeTexture instead of a file. RmlUi's
 // SystemInterface::JoinPath passes the scheme through untouched (the ':'
 // before the first '/' reads as a Windows drive), so LoadTexture sees the
@@ -86,7 +86,7 @@ public:
     std::unordered_map<uintptr_t, Texture> textures;
     uintptr_t nextHandle { 1 };
 
-    // C9.6: name -> CPU pixels behind runtime:// sources. Kept (not
+    // Name -> CPU pixels behind runtime:// sources. Kept (not
     // consumed) so a released document reloading the texture still finds
     // them.
     struct RuntimePixels {
@@ -197,7 +197,7 @@ public:
 
     Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions,
                                    const Rml::String& source) override {
-        // C9.6: runtime-generated pixels (setRuntimeTexture).
+        // Runtime-generated pixels (setRuntimeTexture).
         if (source.starts_with(kRuntimeTexturePrefix)) {
             const auto it = runtimePixels.find(
                 str { source.substr(kRuntimeTexturePrefix.size()) });
@@ -408,7 +408,7 @@ struct UiSystem::Impl {
     // Documents kept by the path they were shown with (screen stack).
     std::unordered_map<str, Rml::ElementDocument*> documents;
 
-    // C9.5: key -> text, provided by the scene (a lambda over its
+    // Localizer: key -> text, provided by the scene (a lambda over its
     // TextTable — this lib never sees data/). Applied to data-loc
     // elements on document load and on relocalize().
     std::function<str(std::string_view)> localizer;
@@ -501,7 +501,7 @@ bool UiSystem::loadFont(const std::filesystem::path& path) {
 
 namespace {
 
-// C9.5: the data-loc pass. Every element carrying data-loc="key" gets its
+// The data-loc pass. Every element carrying data-loc="key" gets its
 // inner RML replaced by localizer(key) — the authored English text is the
 // fallback the localizer overrides. A localized element is a LEAF (its
 // content was just replaced): no recursion below it. RmlUi silently
@@ -571,7 +571,7 @@ bool UiSystem::showDocument(const str& path) {
         return false;
     }
     if (pimpl->localizer) {
-        localizeTree(document, pimpl->localizer); // C9.5, before first show
+        localizeTree(document, pimpl->localizer); // before first show
     }
     document->Show();
     pimpl->documents.emplace(path, document);
@@ -694,7 +694,7 @@ bool UiSystem::textFieldFocused() const {
     return tag == "input" || tag == "textarea";
 }
 
-// --- Gamepad / keyboard focus navigation (C9.3) -------------------------------
+// --- Gamepad / keyboard focus navigation ---------------------------------------
 
 namespace {
 

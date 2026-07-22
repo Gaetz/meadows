@@ -1,9 +1,8 @@
 #version 460 core
 #include "common.glsl"
 
-// Textured stylized mesh (H8 contract proof): MeshVertex layout + a
-// per-draw ModelUbo. The full mesh path (instancing, residency cache,
-// skinning palettes) is the "socle 3D gameplay" vertical.
+// Textured stylized mesh: MeshVertex layout + a
+// per-draw ModelUbo.
 
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;

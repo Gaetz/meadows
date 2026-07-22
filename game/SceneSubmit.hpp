@@ -1,7 +1,7 @@
 #pragma once
 
 #include "engine/render/SpriteRenderer.hpp" // render::Sprite, rhi::TextureHandle
-#include "engine/render/landscape/FxInstance.hpp" // render::FxInstance (P0 C1)
+#include "engine/render/landscape/FxInstance.hpp" // render::FxInstance
 #include "world/scene/Components.hpp"        // world::Transform, world::SpriteRender
 
 // The render bridge: the single ECS↔rhi seam (§2.6). Keeping it here, above the
@@ -25,8 +25,8 @@ namespace game {
 
 class TextureCache;
 
-// A placed local light, extracted for the renderer (chantier 2 B5).
-// Chantier 6 B1: spots — `direction` is the placement's forward
+// A placed local light, extracted for the renderer.
+// Spots: `direction` is the placement's forward
 // (Transform.rotation × +Z, the scene's yaw convention); spotAngle is the
 // FULL cone angle in degrees, 0 = point light.
 struct SceneLight {
@@ -37,14 +37,14 @@ struct SceneLight {
     f32 flicker { 0.0f };
     Vec3 direction { 0.0f, 0.0f, 1.0f };
     f32 spotAngle { 0.0f };
-    // Brick 34: the scene overrides `direction` (and gates intensity by
+    // The scene overrides `direction` (and gates intensity by
     // sun elevation) for sun-linked lights before filling the UBO.
     bool sunLinked { false };
-    // B2b (U4-2a): interior key-light shadow candidate.
+    // Interior key-light shadow candidate.
     bool castsShadow { false };
 };
 
-// A dust-shaft emitter (brick 34), extracted per frame. `entityId` keys the
+// A dust-shaft emitter, extracted per frame. `entityId` keys the
 // renderer's per-shaft GPU state (mark/sweep against unloaded cells).
 struct ShaftLight {
     u64 entityId { 0 };
@@ -59,7 +59,7 @@ struct ShaftLight {
     f32 dustDensity { 0.6f };
 };
 
-// A placed water volume (brick 32): surface quad + camera submersion test.
+// A placed water volume: surface quad + camera submersion test.
 struct WaterVolumeInstance {
     u64 entityId { 0 };
     Vec3 position { 0.0f };    // volume BASE (top face = base + 2*halfY)
@@ -78,12 +78,13 @@ struct RenderSnapshot {
     // query order within a layer — no depth buffer in the 2D phase).
     vector<render::Sprite> sprites;
 
-    // 3D meshes (H8 contract). Guids, not GPU handles: the 3D frontend
+    // 3D meshes (contract: docs/HORIZONTAL-PASS.md). Guids, not GPU
+    // handles: the 3D frontend
     // owns a mesh/material residency cache (the TextureCache pattern) and
     // resolves them at submit — a pending asset draws a placeholder,
     // never blocks (§7). Transform is fully composed world space.
     // Material FIELDS are resolved at extract (resolveMeshMaterials) so the
-    // draw needs no FormDatabase access (U4-2a); defaults = the no-material
+    // draw needs no FormDatabase access; defaults = the no-material
     // fallback (white albedo, plain tint).
     struct MeshInstance {
         core::Guid model;    // glTF mesh asset
@@ -95,20 +96,20 @@ struct RenderSnapshot {
     };
     vector<MeshInstance> meshes;
 
-    // P0 C1: the frame's live particles, POD copies from fx::ParticleSim
+    // The frame's live particles, POD copies from fx::ParticleSim
     // (the extract pre-sorts the ALPHA batch far-to-near; additive is
     // order-free). The renderer draws only these.
     vector<render::FxInstance> fxAlpha;
     vector<render::FxInstance> fxAdditive;
 
-    // The landscape frame's world-derived render data (U4-2a): render()
+    // The landscape frame's world-derived render data: render()
     // consumes these instead of querying the live World.
     vector<SceneLight> lights;       // the N nearest, for the lights UBO
     vector<SceneLight> shadowLights; // every castsShadow light (key shadow)
     vector<ShaftLight> shafts;
     vector<WaterVolumeInstance> waterVolumes;
 
-    // Skinned NPCs (U4-2b): the pose is COPIED (self-owning packet, no
+    // Skinned NPCs: the pose is COPIED (self-owning packet, no
     // pointer into the director's Npc structs). vertices/indices are
     // resolved GPU handles, the sprite/TextureHandle precedent — the skin
     // geometry is residency state built once per NPC by the director; the
@@ -148,7 +149,7 @@ void extractMeshes(const ecs::World& world, RenderSnapshot& out);
 vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
                                  u32 maxLights);
 
-// The landscape extract (U4-2a), headless like extractMeshes:
+// The landscape extract, headless like extractMeshes:
 // - extractLights fills `lights` (the maxLights nearest, UBO order),
 //   `shadowLights` (every castsShadow light — key-shadow candidates) and
 //   `shafts` in one LightSource pass;

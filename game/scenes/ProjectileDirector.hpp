@@ -36,13 +36,13 @@ struct ProjectileContext {
     bool godMode;
 };
 
-// Chantier P0 A7 — arrows in flight (any shooter: the player's bow, an
+// Arrows in flight (any shooter: the player's bow, an
 // archer NPC, later a trap). Ballistics are sim-pure (gameplay/combat/
 // Projectile); this director owns the COLLISION step each frame:
 //   - the swept segment raycasts the STATIC world — a hit PLANTS the
 //     arrow (the mesh lingers plantedTtl seconds, pickup is P1);
 //   - actors are tested analytically (segment vs capsule — they live
-//     outside the broadphase, the A4 lesson), shooter excluded; a hit
+//     outside the broadphase), shooter excluded; a hit
 //     runs the CAPTURED payload through applyDamage + the usual events
 //     and cues.
 class ProjectileDirector {

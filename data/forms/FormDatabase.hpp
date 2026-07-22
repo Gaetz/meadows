@@ -35,7 +35,7 @@ public:
 
     u32 count() const { return static_cast<u32>(entries.size()); }
 
-    // --- Secondary indexes (J-catalogue P1, decision 2026-07-05: the
+    // --- Secondary indexes (the
     // resolved FormDatabase IS the base — scalability comes from in-memory
     // indexes, not SQL). Both return handles in HANDLE ORDER (= creation
     // order = plugin load order — the forEach/childrenOf contract).

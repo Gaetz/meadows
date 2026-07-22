@@ -19,12 +19,12 @@ void destroyHandle(Device& device, BindGroupHandle handle);
 void destroyHandle(Device& device, FramebufferHandle handle);
 } // namespace detail
 
-// Owning GPU handle (audit U4-4): destroys through its device on scope
+// Owning GPU handle: destroys through its device on scope
 // exit, reset() or re-assignment — the manual destroy mirrors (onExit
 // lists, mark/sweep frees) become impossible to get wrong. Move-only;
 // implicit conversion keeps read sites (`setBindGroup(0, group)`,
 // `updateBuffer(ubo, …)`) untouched. §8 RAII, and the deliberate small
-// step before H-d (Handle<Tag> unification, U2-02).
+// step before a full Handle<Tag> unification.
 //
 // Lifetime note: the wrapper must be reset/destroyed while its Device is
 // alive (same contract as MeshCache/TextureCache dtors) — owners that

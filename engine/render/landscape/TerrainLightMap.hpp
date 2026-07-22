@@ -16,7 +16,7 @@ class Device;
 
 namespace render {
 
-// Brick 33b/c — long-range terrain sun shadows + skylighting, ONE
+// Long-range terrain sun shadows + skylighting, ONE
 // worker-baked map (the cloud-map pattern): a 256² texture over ~1.5 km
 // around the focus, R = sun visibility (the height function marched
 // toward the sun — mountains cast on valleys far beyond the CSM),

@@ -11,7 +11,7 @@ namespace data {
 namespace {
 const core::Guid kLandscapeTuningGuid =
     *core::Guid::fromString("1a4d5c00-0000-4000-8000-000000000001");
-// Tree builder (2026-07-20): one tuning record per procedural tree type.
+// Tree builder: one tuning record per procedural tree type.
 const core::Guid kLobeTreeTuningGuid =
     *core::Guid::fromString("1a4d5c00-0000-4000-8000-0000000000b1");
 const core::Guid kColonizedTreeTuningGuid =

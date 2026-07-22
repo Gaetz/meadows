@@ -9,14 +9,14 @@ namespace world {
 
 void registerCoreCategories(FormCategoryRegistry& registry) {
     registry.set<data::WeaponForm>(FormCategory::Item);
-    registry.set<data::ConsumableForm>(FormCategory::Item); // chantier 3
+    registry.set<data::ConsumableForm>(FormCategory::Item);
     registry.set<data::ActorForm>(FormCategory::Actor);
     registry.set<data::StaticForm>(FormCategory::Static);
     registry.set<data::LightForm>(FormCategory::Light);
-    registry.set<data::WaterVolumeForm>(FormCategory::Water); // brick 32
+    registry.set<data::WaterVolumeForm>(FormCategory::Water);
     registry.set<MarkerForm>(FormCategory::Marker);
     registry.set<TriggerForm>(FormCategory::Trigger);
-    registry.set<DoorForm>(FormCategory::Door); // chantier 2 B7
+    registry.set<DoorForm>(FormCategory::Door);
     registry.set<PrefabForm>(FormCategory::Prefab);
     registry.set<gameplay::FurnitureForm>(FormCategory::Furniture);
 }

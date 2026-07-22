@@ -3,7 +3,7 @@
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "game/VegetationCollision.hpp"
 
-// Chantier 6 follow-up: trunk/rock colliders from the deterministic
+// Trunk/rock colliders from the deterministic
 // scatter. The ring mechanics mirror TerrainCollision (one chunk cooked
 // per update, hysteresis eviction); body counts depend on the seed's
 // forest mask, so the test asserts convergence and determinism, not

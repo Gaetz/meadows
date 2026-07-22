@@ -159,7 +159,7 @@ TEST_CASE("killOutright ends anyone through the normal pipeline (D2a)") {
 }
 
 TEST_CASE("fall damage: free below the floor, linear above, lethal past cap") {
-    // D-catalogue leftover (2026-07-13): pure curve + the full pipeline.
+    // Pure curve + the full pipeline.
     StatsTuningForm tuning; // fallMinHeight 4, perMeter 10, lethal 30
     CHECK(fallDamage(0.0f, tuning) == doctest::Approx(0.0f));
     CHECK(fallDamage(3.9f, tuning) == doctest::Approx(0.0f));

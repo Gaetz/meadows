@@ -1,7 +1,7 @@
 #version 460 core
 #include "common.glsl"
 
-// Brick 34 — dust light shaft (the Skyrim FXShaft model, procedural):
+// Dust light shaft (the Skyrim FXShaft model, procedural):
 // additive translucent blades, no depth write. Axial fade x radial fade
 // x two scrolling noise layers (dust drift along the beam) + a fine
 // thresholded sparkle band (the motes).

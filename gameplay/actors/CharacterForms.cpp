@@ -9,8 +9,8 @@ namespace gameplay {
 
 void registerCharacterFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<AppearanceForm>();
-    registry.registerFormType<ActorTagForm>();     // chantier 3
-    registry.registerFormType<LoadoutEntryForm>(); // chantier 4
+    registry.registerFormType<ActorTagForm>();
+    registry.registerFormType<LoadoutEntryForm>();
 }
 
 void applyLoadout(const data::FormDatabase& forms, const core::Guid& actor,

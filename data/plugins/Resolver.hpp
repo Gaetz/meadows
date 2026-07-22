@@ -6,7 +6,7 @@
 
 namespace data {
 
-// One write in a conflict — 8.5: the value rides along so the synthesis
+// One write in a conflict — the value rides along so the synthesis
 // tool (§5.1) can SHOW what each plugin wanted, not just who wrote.
 struct FieldWrite {
     str plugin;           // writer plugin name
@@ -22,7 +22,7 @@ struct FieldConflict {
     core::Guid formId;
     str typeName;
     str fieldName;
-    u32 typeId { 0 };  // 8.5: what a synthesis patch Record needs
+    u32 typeId { 0 };  // what a synthesis patch Record needs (§5.1)
     u32 fieldId { 0 };
     vector<FieldWrite> writers; // in apply order; the last one won
 };
@@ -33,7 +33,7 @@ struct ResolveReport {
     u32 recordsSkipped { 0 };  // type mismatch, unknown type...
     u32 orphanPatches { 0 };   // patches to a guid no plugin creates
     u32 dependencyViolations { 0 }; // declared dep missing or loaded after
-                                    // its dependent (audit U7-6)
+                                    // its dependent
     vector<FieldConflict> conflicts;
 
     bool hasConflicts() const { return !conflicts.empty(); }

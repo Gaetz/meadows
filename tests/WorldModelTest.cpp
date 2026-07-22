@@ -194,7 +194,7 @@ TEST_CASE("form category: core base forms map to their category") {
         categories.categoryOf(world::CellForm::staticTypeInfo().id).has_value());
 }
 
-// Chantier IMPLICIT-CELLS, brick 1 — exterior cells become an infinite
+// Implicit cells — exterior cells become an infinite
 // implicit grid: deterministic identity + lazy materialization.
 TEST_CASE("cellGuidFor is deterministic and collision-shaped") {
     const Guid a = world::cellGuidFor(kWorldspace, 7, -3);

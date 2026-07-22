@@ -7,10 +7,10 @@
 
 namespace render {
 
-// The MeshVertex vertex-buffer layout, written ONCE (audit U3-5): every
+// The MeshVertex vertex-buffer layout, written ONCE: every
 // lit pipeline streaming MeshVertex (terrain, vegetation, scene meshes)
-// binds the same four attributes. A MeshVertex field change now updates
-// every pipeline instead of five hand-copied descriptor blocks.
+// binds the same four attributes. A MeshVertex field change updates
+// every pipeline instead of hand-copied descriptor blocks.
 inline rhi::VertexBufferLayout meshVertexLayout() {
     return { .stride = sizeof(MeshVertex),
              .attributes = { { .location = 0,

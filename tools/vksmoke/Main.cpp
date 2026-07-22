@@ -1,7 +1,7 @@
-// vksmoke — Vulkan bring-up harness (chantier VULKAN, briques V1-V3).
+// vksmoke — Vulkan bring-up harness (docs/VULKAN.md).
 //
 // Drives the Vulkan backend end to end WITHOUT the Engine loop, which still
-// depends on the GL SpriteRenderer and the GL ImGui layer (ported in V3/V6).
+// depends on the GL SpriteRenderer and the GL ImGui layer.
 //
 //  * V1: clears the backbuffer with an animated color — a window that fades
 //    through the ramp is the visual proof the presentation path works (on
@@ -186,7 +186,7 @@ void testTextures(rhi::Device& device) {
 // Compiles the WHOLE production shader corpus through the real path:
 // ShaderLibrary (include expansion, pairing) -> Device::createShader ->
 // glslang/shaderc -> VkShaderModule. Anything the GL backend can load, the
-// Vulkan backend must load too — that is the V3 contract.
+// Vulkan backend must load too — that is the contract.
 void testShaders(rhi::Device& device) {
     render::ShaderLibrary shaders(device);
     const std::filesystem::path root = shaders.root();
@@ -413,9 +413,9 @@ void main() {
         u32 tries = 0;
         // Results land a frame or two later; drive frames while polling.
         // Regression guard: this flaked ~1 run in 5 until the backend
-        // harvested pending timestamps at slot-recycle time — before that,
-        // polling one frame too late hit the query-pool reset and the value
-        // was gone for good (backend fix in beginFrame, V7).
+        // harvested pending timestamps at slot-recycle time (in
+        // beginFrame) — before that, polling one frame too late hit the
+        // query-pool reset and the value was gone for good.
         while (stamp.id != 0 && !device.timestampReady(stamp, nanos) &&
                tries < 30) {
             auto& idle = device.beginFrame();

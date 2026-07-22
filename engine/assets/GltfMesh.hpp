@@ -9,7 +9,7 @@
 
 namespace assets {
 
-// glTF 2.0 → render::MeshData (brick 23). Static meshes only: every node's
+// glTF 2.0 → render::MeshData. Static meshes only: every node's
 // triangle primitives are flattened into one buffer with world transforms
 // applied, so the result plugs into the landscape instancing path like any
 // generated mesh. Reads POSITION/NORMAL/TEXCOORD_0/COLOR_0; the material's
@@ -36,11 +36,11 @@ void normalizeMesh(render::MeshData& mesh, f32 targetSize);
 // per-instance sizing lives in ReferenceForm.scale.
 void groundMesh(render::MeshData& mesh);
 
-// --- Skeletal data (horizontal pass H5) ----------------------------------------
+// --- Skeletal data --------------------------------------------------------------
 // Skin 0 of the file becomes the skeleton (joints reordered parents-first,
 // the anim runtime's requirement); animations resample into engine clips
-// with tracks indexed by joint. Skinned MESH import (vertex weights) lands
-// with the GPU-skinning vertical.
+// with tracks indexed by joint. Skinned MESH import (vertex weights) is
+// loadGltfSkinnedMesh below.
 
 // Named clip: `name` comes from the glTF animation (may be empty).
 struct GltfClip {
@@ -53,7 +53,7 @@ std::optional<anim::Skeleton> loadGltfSkeleton(
 vector<GltfClip> loadGltfAnimations(const std::filesystem::path& path,
                                     const anim::Skeleton& skeleton);
 
-// Skinned mesh import (chantier 1, B2): the triangle primitives of every
+// Skinned mesh import: the triangle primitives of every
 // node bound to skin 0, vertices left in bind-pose mesh space (a skinned
 // node's transform does not apply — the bone palette places vertices), and
 // JOINTS_0 remapped through the SAME parents-first reorder as

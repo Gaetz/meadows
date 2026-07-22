@@ -10,7 +10,7 @@
 #include "world/scene/KillZ.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
-// P0 D2a, extracted headless (audit R6): the kill-z sweep. An actor whose
+// The kill-z sweep, headless. An actor whose
 // feet are below the worldspace's killZ dies through the NORMAL pipeline
 // (killOutright -> applyDamage -> life state), never a teleport-back.
 

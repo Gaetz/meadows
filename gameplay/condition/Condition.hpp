@@ -22,10 +22,10 @@ namespace gameplay {
 struct ConditionForm : data::Form {
     core::Guid parent;      // the gated node (ability / quest stage / dialogue node)
     str kind { "HasTag" };  // HasTag | AttributeAtLeast | AttributeAtMost | HasItem
-                            //   | Lua | FollowerAffinityAtLeast (É4)
+                            //   | Lua | FollowerAffinityAtLeast
                             //   | FollowerActive | FollowerConvalescent
-                            //   (dev report 2026-07-13: per-PARTNER, not
-                            //   the player's global mirror tags)
+                            //   (per-PARTNER, not the player's global
+                            //   mirror tags)
     str tag;                // HasTag
     str attribute;          // AttributeAtLeast / AttributeAtMost
     f32 value { 0.0f };     // threshold (attributes / affinity) / min count (HasItem)
@@ -45,7 +45,7 @@ struct ConditionForm : data::Form {
     REFLECT_END()
 };
 
-struct FollowerState; // gameplay/actors/ActorState.hpp (É4 partner clause)
+struct FollowerState; // gameplay/actors/ActorState.hpp (partner clause)
 
 // What a condition evaluates against; pointers may be null (a clause needing a
 // missing source fails). The Lua escape is a CALLBACK supplied by the script
@@ -55,13 +55,13 @@ struct EvalContext {
     const Inventory* inventory { nullptr };
     const GameplayTagRegistry* tags { nullptr };
     std::function<bool(std::string_view predicate)> luaPredicate;
-    // FOLLOWERS É4 (appended): the DIALOGUE PARTNER's follower state. The
+    // The DIALOGUE PARTNER's follower state. The
     // context above is the PLAYER's; affinity lives on the follower being
     // talked to, so the scene fills this from the [E]-Talk partner when a
     // dialogue evaluates its options. Null everywhere else (abilities,
     // schedules) — a FollowerAffinityAtLeast clause then fails closed.
     const FollowerState* partnerFollower { nullptr };
-    // Appended (dev report 2026-07-13): the game clock, for clauses with
+    // The game clock, for clauses with
     // time semantics (FollowerConvalescent compares the partner's
     // recovery stamp). Filled by the scene next to partnerFollower.
     f64 gameHours { 0.0 };
@@ -69,7 +69,7 @@ struct EvalContext {
 
 bool evaluateClause(const ConditionForm& clause, const EvalContext& context);
 
-// One-line human reading of a clause (chantier 8.9 — the editor's
+// One-line human reading of a clause (the editor's
 // condition builder and the dialogue hierarchy): "if not tag
 // Faction.Hostile", "if health >= 50"… Pure (no database: the item guid
 // stays a guid; the UI resolves names itself).

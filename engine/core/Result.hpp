@@ -13,8 +13,8 @@ struct Error {
     str message;
 };
 
-// Minimal expected-like result (§8: recoverable errors carry their REASON —
-// audit U1-03; std::expected is C++23, we are C++20). The read API mirrors
+// Minimal expected-like result (§8: recoverable errors carry their REASON;
+// std::expected is C++23, we are C++20). The read API mirrors
 // std::optional (operator bool / has_value / * / -> / value) so call sites
 // migrating from `optional<T>` keep compiling unchanged; `error()` is what
 // optional could never offer: the reason, for the caller to log, display

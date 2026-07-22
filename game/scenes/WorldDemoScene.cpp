@@ -61,13 +61,13 @@ void WorldDemoScene::onEnter() {
     textureCache = std::make_unique<game::TextureCache>(
         engine.getDevice(), assetDb, engine.getJobSystem());
 
-    // U1-03: loadPluginFile returns a core::Result — unwrap into the
+    // loadPluginFile returns a core::Result — unwrap into the
     // optional members (absence stays a legal state for this demo scene).
     if (auto loaded =
             data::loadPluginFile(dataDir / "base" / "base.toml", types)) {
         basePlugin = std::move(*loaded);
     }
-    // P0: the shared combat data (abilities, fx, cues) moved to its own
+    // The shared combat data (abilities, fx, cues) lives in its own
     // plugin — the 3D stack enables it while base.toml stays 2D-only.
     if (auto loaded = data::loadPluginFile(
             dataDir / "base" / "combat.toml", types)) {

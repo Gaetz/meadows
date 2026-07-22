@@ -4,9 +4,9 @@
 
 #include "gameplay/combat/MeleeSwing.hpp"
 #include "gameplay/combat/Projectile.hpp"
-#include "gameplay/stats/Damage.hpp" // DamageEvent (applyBlock, A5)
+#include "gameplay/stats/Damage.hpp" // DamageEvent (applyBlock)
 
-// Chantier P0 A3/A4 — the blade-touch melee swing, sim-pure: the phase
+// The blade-touch melee swing, sim-pure: the phase
 // machine, the anim-event window override, the simulated socket arc, and
 // the analytic segment-vs-capsule hit test.
 

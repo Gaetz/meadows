@@ -2,7 +2,7 @@
 #include "compat.glsl"
 #include "common.glsl"
 
-// Chantier P0 C1 — CPU-simulated particles as camera-facing quads: six
+// CPU-simulated particles as camera-facing quads: six
 // verts per instance from MEADOWS_VERTEX_INDEX (the rain pattern), instance data
 // pulled from the FxInstances SSBO the FxRenderer refills per batch.
 

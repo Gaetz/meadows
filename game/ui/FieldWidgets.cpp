@@ -9,7 +9,7 @@ namespace game {
 namespace {
 
 // One active text edit at a time — the PropertyGrid's deliberate
-// TU-local pattern (audit U5-6 ruling), shared by the structured panels.
+// TU-local pattern, shared by the structured panels.
 struct ActiveEdit {
     core::Guid form;
     u32 field { 0 };

@@ -17,9 +17,9 @@ namespace {
 
 // ImGui has one active item at a time: a single in-progress edit cache is
 // enough. Committing on deactivate keeps ONE undo step per interaction.
-// (Audit U5-6: this TU-local mutable is DELIBERATE — it mirrors ImGui's own
+// (This TU-local mutable is DELIBERATE — it mirrors ImGui's own
 // single-active-item global model, and PropertyGrid is dev tooling, where
-// �8's no-global rule for gameplay determinism does not bite.)
+// §8's no-global rule for gameplay determinism does not bite.)
 struct ActiveEdit {
     core::Guid form;
     u32 field { 0 };
@@ -33,8 +33,8 @@ bool isActive(const core::Guid& form, u32 field) {
 
 } // namespace
 
-// (valueToString / valueFromString moved to engine/reflect/ValueText —
-// U4-11: the CSV importer, the console and this grid share one codec.)
+// (valueToString / valueFromString live in engine/reflect/ValueText —
+// the CSV importer, the console and this grid share one codec.)
 
 bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
     const data::Form* form = session.view(id);
@@ -106,8 +106,8 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
             }
         };
 
-        // One widget per kind; adding a FieldKind without a widget is now a
-        // compile error (was a silently un-editable field). Widgets edit a
+        // One widget per kind; adding a FieldKind without a widget is a
+        // compile error (not a silently un-editable field). Widgets edit a
         // local copy, then commit through the reflected setter (§2.9-clean).
         reflect::visit(current, reflect::overloaded {
             [&](bool b) {
@@ -150,10 +150,10 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
                 }
             },
             [&](const str& s) {
-                // Closed vocabularies get a dropdown (8.7b dev feedback:
-                // keywords are not typed by heart), Capitalized + blue;
+                // Closed vocabularies get a dropdown (keywords are not
+                // typed by heart), Capitalized + blue;
                 // the CANONICAL value is what commits. Event-name fields
-                // (8.7c) get the scanned event vocabulary instead — an
+                // get the scanned event vocabulary instead — an
                 // OPEN list with inline creation.
                 if (const auto* options =
                         keywordsFor(type->name, field.name)) {
@@ -171,8 +171,8 @@ bool drawPropertyGrid(data::EditSession& session, const core::Guid& id) {
                 }
             },
             [&](const core::Guid& g) {
-                // Item guid fields (8.7e) pick from the four item
-                // categories; single-type guid fields (8.10: clip, cue
+                // Item guid fields pick from the four item
+                // categories; single-type guid fields (clip, cue
                 // particles/sound, ability effects, schedule package)
                 // get the typed picker. Raw text stays the fallback.
                 if (isItemField(type->name, field.name)) {

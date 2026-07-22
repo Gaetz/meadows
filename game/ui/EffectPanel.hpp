@@ -7,7 +7,7 @@
 
 namespace game {
 
-// The dedicated EffectForm editor (chantier 8.11): the 17 flat fields
+// The dedicated EffectForm editor: the 17 flat fields
 // organized into the sections that matter (Modifier / Duration / Tags /
 // Expiry / Buildup), each showing ONLY what its kind reads, with the
 // gameplay::effectWarnings lint on top — plus "Test apply": a throwaway

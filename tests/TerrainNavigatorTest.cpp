@@ -2,7 +2,7 @@
 
 #include "world/ai/TerrainNavigator.hpp"
 
-// Chantier 3 B2 (fallback sanctionné du seam nav) : A* 3D lazy sur une
+// Le fallback sanctionné du seam nav : A* 3D lazy sur une
 // fonction de hauteur, pentes et boîtes bloquantes respectées.
 
 TEST_CASE("terrain navigator goes around a blocking box") {

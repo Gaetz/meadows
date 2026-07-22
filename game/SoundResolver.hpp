@@ -15,8 +15,9 @@ class FormDatabase;
 
 namespace game {
 
-// Chantier P0 C3 — the SoundForm resolver, the data half of the H6 audio
-// seam: picks a WEIGHTED child variant (SoundVariantForm — a mod adds
+// The SoundForm resolver, the data half of the audio seam
+// (docs/HORIZONTAL-PASS.md): picks a WEIGHTED child variant
+// (SoundVariantForm — a mod adds
 // one without touching the parent), applies volume/pitch jitter,
 // resolves the asset through the plugin VFS and hands flat SoundParams
 // to the audio facade. Randomness is a seed-hash stream — cosmetic,

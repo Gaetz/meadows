@@ -18,14 +18,14 @@ namespace game {
 
 class SoundResolver;
 
-// Chantier P0 C2 — the standard cue handlers (pattern *Director): THE
+// The standard cue handlers (pattern *Director): THE
 // place where a sim-side `cues.emit("Cue.Hit.Slash", pos, damage)`
 // becomes presentation. The handler resolves the tag through the
 // CueTable (data, hierarchical fallback — mods override the specific)
 // and fires the CueForm's pieces:
-//   particles   -> a ParticleForm burst/emitter on the C1 sim,
+//   particles   -> a ParticleForm burst/emitter on the particle sim,
 //   cameraShake -> a damped impulse on the fly camera,
-//   sound       -> the C3 SoundResolver (weighted variants + jitter).
+//   sound       -> the SoundResolver (weighted variants + jitter).
 // The sim never includes this: headless = zero handlers = zero work.
 class FxDirector {
 public:
@@ -43,7 +43,7 @@ public:
     void update(f32 dt, render::FlyCamera& camera);
 
     // Direct impulse (cue handler uses it; scripts may later). The
-    // amplitude/decay of the LAST impulse drive the wobble (R7: CueForm
+    // amplitude/decay of the LAST impulse drive the wobble (CueForm
     // fields; the defaults are the historic feel).
     void addShake(f32 strength, f32 amplitude = 0.05f, f32 decay = 9.0f) {
         shake = glm::min(shake + strength, 1.5f);
@@ -51,7 +51,7 @@ public:
         shakeDecay = decay;
     }
 
-    // P0 C4b (audit R6, out of LandscapeScene): the footstep material —
+    // The footstep material —
     // the dominant terrain splat weight names the cue suffix
     // (Cue.Footstep.<Mat>). The SCENE keeps the terrain query (it owns
     // the renderer access); this is the pure weights -> name verdict.
@@ -66,8 +66,8 @@ private:
     gameplay::CueTable table;
     f32 shake { 0.0f };      // current amplitude (m), decays per frame
     f32 shakeTime { 0.0f };  // drives the wobble phase
-    f32 shakeAmplitude { 0.05f }; // m per strength unit (last cue's, R7)
-    f32 shakeDecay { 9.0f };      // 1/s exponential decay (last cue's, R7)
+    f32 shakeAmplitude { 0.05f }; // m per strength unit (last cue's)
+    f32 shakeDecay { 9.0f };      // 1/s exponential decay (last cue's)
     Vec3 appliedOffset { 0.0f }; // last frame's camera offset, removed first
     u32 spawnCounter { 0 };  // cosmetic seed stream (never gameplay RNG, §8)
     u32 soundCounter { 0 };  // sound-path stream — advances on EVERY play

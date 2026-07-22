@@ -1,6 +1,6 @@
 #version 460 core
 
-// Chantier 6 B2a: scene meshes cast into the sun cascades. Depth-only
+// Scene meshes cast into the sun cascades. Depth-only
 // mirror of mesh.vert — position through the per-draw model matrix, then
 // the cascade's light matrix. CasterModelUbo rides binding 4 so it never
 // collides with ShadowUbo (binding 1, the caster group contract).

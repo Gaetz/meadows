@@ -19,10 +19,10 @@ namespace render {
 
 class ShaderLibrary;
 
-// Water surface (brick 18): one large quad at sea level following the camera
+// Water surface (docs/3D-RENDERER.md): one large quad at sea level following the camera
 // (snapped to the chunk grid), shaded per pixel — procedural scrolling wave
-// normals, fresnel between a sky reflection (planar reflections replace it
-// in brick 19) and a REFRACTED scene color (sampled from the pre-water scene
+// normals, fresnel between a PLANAR reflection
+// and a REFRACTED scene color (sampled from the pre-water scene
 // snapshot, distorted by the waves, absorbed with depth), plus depth-based
 // shore foam. Renders into the HDR target after the opaque pass, depth-tested
 // against it (terrain above sea level occludes normally).

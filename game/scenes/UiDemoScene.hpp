@@ -11,7 +11,7 @@ class Engine;
 
 namespace game {
 
-// H4 proof scene: an RmlUi document served through the plugin ui/ roots,
+// Proof scene: an RmlUi document served through the plugin ui/ roots,
 // rendered through the RHI on top of a plain clear. Mouse hover works
 // (input routed); full input/data-binding is the "interfaces" vertical.
 class UiDemoScene final : public Scene {
@@ -31,7 +31,7 @@ private:
     uptr<render::ShaderLibrary> shaders;
     // Fully qualified: game::ui (dev panels) shadows the engine's ::ui.
     ::ui::UiSystem uiSystem;
-    audio::AudioSystem audioSystem; // H6 audible proof lives here too
+    audio::AudioSystem audioSystem; // audible proof lives here too
     bool documentShown { false };
     str statusLine;
     u32 lastWidth { 0 };

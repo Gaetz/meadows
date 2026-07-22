@@ -8,7 +8,7 @@ namespace render {
 
 namespace {
 
-// Embedded until the asset system (Phase 1) provides shader files via the VFS.
+// Embedded until the asset system provides shader files via the VFS.
 // Written in GLSL 4.10 (compatible with both GL 4.1 and GL 4.6).
 // Binding points are not declared in GLSL (that requires 4.2+); they are set
 // explicitly via glUniformBlockBinding / glUniform1i after link (see ShaderDesc
@@ -179,7 +179,7 @@ void SpriteRenderer::upload() {
     if (!instances.empty()) {
         // ONE upload for the whole frame; each batch then selects its
         // slice with a vertex-buffer offset in end(). Uploading per batch
-        // (the pre-V6c shape) only worked because GL executes in order —
+        // only works when the GPU executes in order (GL) —
         // on Vulkan every recorded draw would read the LAST batch.
         device.updateBuffer(instanceBuffer, instances.data(),
                             instances.size() * sizeof(Instance));

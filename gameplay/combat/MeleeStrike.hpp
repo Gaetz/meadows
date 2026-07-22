@@ -5,11 +5,9 @@
 #include "gameplay/combat/MeleeSwing.hpp" // BlockResult
 #include "gameplay/stats/Damage.hpp"      // StatBlock, DamageEvent/Result
 
-// Chantier « propreté P0 » R1 — ONE strike resolution for every camp.
-// The player-vs-NPC and NPC-vs-player copies of the block/parry/damage
-// exchange had already drifted (crit-window check, riposte OnStagger,
-// OnHitTaken(0) after a clean parry); this module is now the single owner
-// of the rules, and both controllers (plus the arrow path) delegate.
+// ONE strike resolution for every camp. This module is the single owner
+// of the block/parry/damage exchange rules — both controllers (player and
+// NPC, plus the arrow path) delegate here, so the two camps cannot drift.
 //
 // Sim-pure: EventBus and CueRegistry are gameplay-layer, entities are only
 // carried as event source/target (pass empty handles in headless tests).
@@ -38,7 +36,7 @@ struct StrikeGeometry {
     // < 0 = guard down.
     f32 defenderGuardSeconds { -1.0f };
     Vec3 impact {}; // cue anchor (the defender's chest)
-    // Sneak attack (furtivité, 2026-07-13): the defender never noticed
+    // Sneak attack: the defender never noticed
     // the attacker (world-layer Perception AwareState::Calm — the caller
     // passes the flat bool, the rules never see world types). Combined
     // with a State.Sneaking attacker it multiplies the strike.
@@ -49,7 +47,7 @@ struct StrikeOutcome {
     BlockResult guard {};
     DamageResult damage {};  // landed on the DEFENDER (empty on a parry)
     DamageResult riposte {}; // perfect parry: the ATTACKER's poise hit
-    bool critical { false }; // the crit execution fired (C1 window)
+    bool critical { false }; // the crit execution fired (critical window)
     bool sneakAttack { false }; // the sneak multiplier applied
 };
 

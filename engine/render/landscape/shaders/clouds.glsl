@@ -74,7 +74,7 @@ vec3 applyClouds(vec3 sky, vec3 dir) {
 
     // Two-tone stylized shading, tinted by the day palette: white at noon,
     // rose/orange embers at dusk, faint slabs at night. The CORE darkening
-    // scales with coverage (dev call 2026-07-10): fair-weather cumulus
+    // scales with coverage: fair-weather cumulus
     // keep bright puffy interiors (0.80 of the lit tone); the storm-slab
     // darkness (0.38) only arrives as the sky fills in.
     vec3 lit = (uAmbientColor.rgb * 1.9 + uSunGlowColor.rgb * 0.34) *

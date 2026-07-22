@@ -15,7 +15,7 @@ namespace render {
 class ShaderLibrary;
 
 // Post-process chains that run between the water pass and the tonemap
-// composite (brick 21):
+// composite:
 //  - Bloom: soft-threshold prefilter into a half-res HDR target, box
 //    downsample down a 5-level pyramid, tent-upsample ADDITIVELY back up —
 //    the level-0 result is sampled by the tonemap.
@@ -42,15 +42,15 @@ public:
     // Records the bloom chain, god-ray pass and volumetric shafts. Call
     // after the water pass, before the tonemap. `shadowBindGroup` is the CSM
     // receiver group (the volumetric march taps it per step). Pass a
-    // GpuProbe (+ its device) to time each sub-pass (GPU-PERF P0);
-    // nullptr = no instrumentation. (Screen-space AO removed 2026-07-10:
+    // GpuProbe (+ its device) to time each sub-pass;
+    // nullptr = no instrumentation. (No screen-space AO:
     // grounding = terrain light map + contact shadows + baked vertex AO.)
     void render(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
                 rhi::BindGroupHandle shadowBindGroup,
                 rhi::Device* probeDevice = nullptr,
                 GpuProbe* probe = nullptr);
 
-    // Brick 29 (chantier 6 B4): auto-exposure — log-luminance 64² → mips →
+    // Auto-exposure — log-luminance 64² → mips →
     // 1×1 average, then the adaptation micro-pass (1×1 ping-pong with
     // asymmetric inertia; parameters ride FrameUbo slots — see adapt.frag).
     // Call after render(), before the tonemap. Skipped entirely while the
@@ -58,11 +58,11 @@ public:
     void renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
                             rhi::BindGroupHandle frameBindGroup);
 
-    // Brick 33a — screen-space contact shadows (Bend march over the depth
-    // copy, SSAO pattern). The TOGGLE is the texture: when the scene turns
+    // Screen-space contact shadows (Bend march over the depth
+    // copy). The TOGGLE is the texture: when the scene turns
     // the feature off it calls clearContactShadows (neutral white) instead.
     // `shadowBindGroup` (the CSM receiver) lets the pass combine contact
-    // and sun shadows as a MAX instead of multiplying (dev 2026-07-11).
+    // and sun shadows as a MAX instead of multiplying.
     void renderContactShadows(rhi::CommandBuffer& cmd,
                               rhi::BindGroupHandle frameBindGroup,
                               rhi::BindGroupHandle shadowBindGroup);
@@ -105,7 +105,7 @@ private:
     rhi::UniqueFramebuffer volumetricFb;
     rhi::UniqueBindGroup volumetricGroup;
 
-    // Brick 33a: contact shadows + the 3x3 blur that filters their IGN
+    // Contact shadows + the 3x3 blur that filters their IGN
     // jitter — the tonemap taps the blurred target (contactTexture()).
     rhi::UniqueTexture contactTex;
     rhi::UniqueFramebuffer contactFb;
@@ -114,7 +114,7 @@ private:
     rhi::UniqueFramebuffer contactBlurFb;
     rhi::UniqueBindGroup contactBlurGroup; // samples contactTex
 
-    // Brick 29: auto-exposure targets (window-size independent).
+    // Auto-exposure targets (window-size independent).
     rhi::UniqueTexture luminanceTex;
     rhi::UniqueFramebuffer luminanceFb;
     rhi::UniqueBindGroup luminanceGroup;

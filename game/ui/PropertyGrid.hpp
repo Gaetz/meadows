@@ -15,7 +15,7 @@ namespace game {
 // Returns true when a field was committed this frame.
 bool drawPropertyGrid(data::EditSession& session, const core::Guid& id);
 
-// The Value <-> text codec moved to engine/reflect/ValueText (U4-11: the
+// The Value <-> text codec lives in engine/reflect/ValueText (the
 // CSV importer shares it); these usings keep the console/grid call sites.
 using reflect::valueFromString;
 using reflect::valueToString;

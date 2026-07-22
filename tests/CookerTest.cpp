@@ -145,7 +145,7 @@ TEST_CASE("cooker: uncooking skips unknown type ids gracefully") {
     CHECK(reparsed->records.empty()); // unknown-type record dropped, no crash
 }
 
-// --- Golden on-disk contract (audit U9-2) -------------------------------------------
+// --- Golden on-disk contract ----------------------------------------------------------
 // The Batch-1 static_asserts lock FieldKind / Value / KindOf in lockstep with
 // EACH OTHER; the two cases below freeze their ACTUAL persisted values and the
 // full byte layout of a cooked plugin. If either fails, an on-disk format

@@ -5,7 +5,7 @@
 
 namespace game {
 
-// The FX editor with LIVE preview (chantier 8.10): the selected
+// The FX editor with LIVE preview: the selected
 // ParticleForm drives a fx::ParticleSim member every frame — the same
 // headless sim the game runs, drawn as ImDrawList discs (orthographic
 // X/Y, ground line). Deliberately approximate where the tool doesn't

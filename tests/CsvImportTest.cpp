@@ -5,7 +5,7 @@
 #include "data/plugins/CsvImport.hpp"
 #include "data/plugins/Resolver.hpp"
 
-// The CSV -> plugin bridge (audit U4-11): rows become ordinary §5 records
+// The CSV -> plugin bridge: rows become ordinary §5 records
 // through reflection, with DETERMINISTIC identities — re-importing a sheet
 // must never shift a guid.
 

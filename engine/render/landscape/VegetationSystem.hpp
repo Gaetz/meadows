@@ -24,7 +24,7 @@ namespace render {
 
 class ShaderLibrary;
 
-// Procedural props: trees, rocks and bushes (bricks 15+16). A handful of
+// Procedural props: trees, rocks and bushes. A handful of
 // generated mesh variants are built once; worker threads scatter instances
 // per chunk — trees into FOREST BELTS (low-frequency mask over grassy,
 // gently sloped, mid-altitude ground), rocks sparsely everywhere including
@@ -42,35 +42,30 @@ public:
         kTreeVariants + kRockVariants + kBushVariants;
     static constexpr u32 kFirstRock = kTreeVariants;
     static constexpr u32 kFirstBush = kTreeVariants + kRockVariants;
-    // GPU-PERF P1: runtime knobs (were compile-time — mainVeg measured
-    // 1.8 ms at 14). Live-safe: the ring streamer adapts on its own
+    // Runtime knobs — live-safe: the ring streamer adapts on its own
     // (requestMissing reads the new radius, evictFar drains the excess).
     // NB: the tree FADE tops out at 880 m — radii under ~14 pop at the
     // ring edge instead of fading (a budget-hunting knob, not a look).
-    i32 viewRadius { 12 };        // chunks (dev pick 2026-07-10)
+    i32 viewRadius { 12 };        // chunks
     i32 highDetailRadius { 2 };   // full-detail canopies within (x 64 m)
-                                  // (dev pick 2026-07-20: 2/4 ladder —
-                                  // the old 5/4 left the low band empty)
-    // V8f: third mesh level beyond — bare-icosahedron lobes (20 faces,
-    // generateTree(seed, 0)): ~150 tris/tree vs ~600 on the low twin.
-    // The trees carried 24 of the 30 Mtri/frame (V8e counters, M1) and
-    // the far ring is where the instances are.
+    // Third mesh level beyond lowDetailRadius — bare-icosahedron lobes
+    // (20 faces, generateTree(seed, 0)): ~150 tris/tree vs ~600 on the
+    // low twin. The far ring is where the instances are, so this is
+    // where the triangle budget goes (docs/VULKAN.md, V8f).
     i32 lowDetailRadius { 4 };    // 80-face twins within; ultra beyond
-                                  // (dev pick 2026-07-19, visual check OK)
     // A/B — tree variants regenerate through generateColonizedTree (Runions
-    // skeleton + SDF-normal billboard-card foliage). Flip via
-    // reseedVariantMeshes. DEFAULT since 2026-07-21 (dev pick); the lobe
-    // trees stay one checkbox away in the Vegetation / Tree builder panels.
+    // skeleton + SDF-normal billboard-card foliage; the default). Flip via
+    // reseedVariantMeshes; the lobe trees stay one checkbox away in the
+    // Vegetation / Tree builder panels. docs/3D-RENDERER.md brique 27b.
     bool colonizationTrees { true };
-    // Tree builder (2026-07-20): the generators' knobs, mapped from the
+    // Tree builder: the generators' knobs, mapped from the
     // *TreeTuningForm records by the scene and edited live by the panel
     // (apply through reseedVariantMeshes). Defaults = shipped look.
     LobeTreeParams lobeTreeParams {};
     ColonizedTreeParams colonizedTreeParams {};
     // Chunk-AABB pads for the culling tests (draw/drawDepth): chunk
     // min/maxY track prop BASES, so Y must absorb the tallest scaled
-    // tree (~7.5 m mesh x 11.2 scale) and XZ the widest canopy overhang
-    // (x8 realistic trees, dev 2026-07-20).
+    // tree (~7.5 m mesh x 11.2 scale) and XZ the widest canopy overhang.
     static constexpr f32 kPropPadXz = 26.0f;
     static constexpr f32 kPropPadY = 86.0f;
     static constexpr u32 kMaxUploadsPerFrame = 2;
@@ -103,7 +98,7 @@ public:
         createVariantMeshes(device, meshSeed);
     }
 
-    // Replaces one variant's mesh with an authored one (brick 23: glTF
+    // Replaces one variant's mesh with an authored one (glTF
     // rock). The CPU copy is kept so regenerate() re-uploads it after a
     // seed change. uv.x drives canopy sway in tree.vert — zero the uvs for
     // rigid props. Scatter, instancing and shadow casting are untouched.
@@ -115,12 +110,12 @@ public:
     // Canopy LOD, three mesh levels from the SAME seed (composition and
     // colors match; only lobe tessellation changes): 320-face lobes within
     // `highDetailRadius`, 80-face twins to `lowDetailRadius`, 20-face
-    // ultra beyond (V8f). Reflections force ultra (half-res mirror);
+    // ultra beyond. Reflections force ultra (half-res mirror);
     // shadow casters use low near, ultra for the far cascades.
 
     // `variantLimit` restricts which variants draw (e.g. kTreeVariants for
-    // the reflection pass: trees only). Brick 27: trees are single opaque
-    // meshes — no leaf-card overlay pass anymore. `cameraPos` drives the
+    // the reflection pass: trees only). Trees are single opaque
+    // meshes — no leaf-card overlay pass. `cameraPos` drives the
     // per-chunk LOD pick; `forceLowDetail` = mirrored/downsampled passes
     // (resolves to the ultra level when the variant has one).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
@@ -132,7 +127,7 @@ public:
     // Chunks the last culled draw() recorded (for the debug panel).
     u32 drawnLastFrame() const { return lastDrawn; }
     // CPU-side geometry counters, summed across every pass this frame
-    // (V8e — mid-pass GPU timestamps are meaningless on Metal).
+    // (mid-pass GPU timestamps are meaningless on Metal).
     u32 indicesThisFrame() const { return frameIndices; }
     u32 highDetailInstancesThisFrame() const { return frameHighInstances; }
     u32 lowDetailInstancesThisFrame() const { return frameLowInstances; }
@@ -141,12 +136,12 @@ public:
     // Depth-only caster pass into one shadow cascade (frameBindGroup feeds
     // the sway/fade math, casterBindGroup the cascade's light matrix).
     // Chunks beyond `maxChunkDistance` (Chebyshev) are skipped — cascades
-    // only reach so far. `frustum` = the cascade's ortho volume (V8b):
+    // only reach so far. `frustum` = the cascade's ortho volume:
     // trees outside it cannot shadow anything in the cascade, and the
     // near cascades cover a fraction of the ring (same rationale as
     // TerrainSystem::drawDepth).
     // `ultraDetail` = far cascades: the 20-face level throws the same
-    // soft shadow (V8f) — cascade 0 keeps the 80-face twin (close-ups).
+    // soft shadow — cascade 0 keeps the 80-face twin (close-ups).
     void drawDepth(rhi::CommandBuffer& cmd,
                    rhi::BindGroupHandle frameBindGroup,
                    rhi::BindGroupHandle casterBindGroup, const Vec3& cameraPos,
@@ -163,9 +158,9 @@ public:
     // Worker output: instances bucketed per mesh variant.
     using VariantBuckets = array<vector<Instance>, kVariantCount>;
 
-    // Chantier RC (dev report 2026-07-11: forests bounced no green — the
-    // vegetation never entered the GI volume): a compact CPU copy of each
-    // chunk's props survives the GPU upload so the injection can box them.
+    // GI injection: the vegetation must enter the GI volume (forests
+    // bounce green), so a compact CPU copy of each
+    // chunk's props survives the GPU upload for the injection to box them.
     struct GiProp {
         Vec3 position; // terrain point (prop base)
         f32 scale;     // uniform scale
@@ -186,7 +181,7 @@ private:
         // Prop-base height range, for the frustum AABB.
         f32 minY { 0.0f };
         f32 maxY { 0.0f };
-        vector<GiProp> giProps; // chantier RC: CPU copy for the injection
+        vector<GiProp> giProps; // CPU copy for the GI injection
     };
     struct VariantMesh {
         rhi::UniqueBuffer vertexBuffer;
@@ -196,7 +191,7 @@ private:
         rhi::UniqueBuffer lowVertexBuffer;
         rhi::UniqueBuffer lowIndexBuffer;
         u32 lowIndexCount { 0 };
-        // V8f ultra twin (bare-icosahedron lobes; empty = stop at low).
+        // Ultra twin (bare-icosahedron lobes; empty = stop at low).
         rhi::UniqueBuffer ultraVertexBuffer;
         rhi::UniqueBuffer ultraIndexBuffer;
         u32 ultraIndexCount { 0 };
@@ -213,7 +208,7 @@ private:
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
-    // The shared ring mechanics (audit U3-1) live in ChunkStreamer.
+    // The shared ring mechanics live in ChunkStreamer.
     ChunkStreamer<Chunk, VariantBuckets> streamer;
     u32 meshSeed { 0 }; // last create/regenerate seed (reseedVariantMeshes)
     u32 instances { 0 };

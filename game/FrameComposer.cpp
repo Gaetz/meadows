@@ -31,8 +31,8 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         .viewProj = in.viewProj,
         .invViewProj = glm::inverse(in.viewProj),
         .cameraPos = { in.cameraPosition, 1.0f },
-        // (time.y was the SSAO strength — retired 2026-07-10, the slot
-        // stays neutral: UBO layout is append-only.)
+        // (time.y is a retired slot kept neutral: UBO layout is
+        // append-only.)
         .time = { in.timeSeconds, 0.0f, in.atmos.volumetric,
                   static_cast<f32>(in.debugBuffer) },
         .sunDirection = { in.sky.sunDirection, 0.0f },
@@ -50,7 +50,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         .fogInfo = { in.atmos.fogDensity, in.atmos.fogHeightFalloff,
                      in.atmos.fogLowBoost, in.atmos.fogStart },
         .sunViewProj = in.cascades.viewProj,
-        // .w = interior flag (B5): mesh/skinned/locallights switch to the
+        // .w = interior flag: mesh/skinned/locallights switch to the
         // hemispheric ambient + wrap/bounce indoors; 0 keeps the exterior
         // byte-identical.
         .cascadeSplits = { in.cascades.splitFar[0], in.cascades.splitFar[1],
@@ -74,8 +74,8 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         .waterMapInfo = in.waterMapInfo,
         .windInfo = { in.windTime, in.atmos.windStrength, in.atmos.waveChop,
                       0.0f },
-        // Grass redo #2: in BASE so the planar-reflection pass gets the
-        // same meadow tuning as the main view.
+        // In BASE so the planar-reflection pass gets the same meadow
+        // tuning as the main view.
         .grassShapeInfo = in.grassShapeInfo,
         .grassLodInfo = in.grassLodInfo,
         .grassBaseColor = in.grassBaseColor,
@@ -84,8 +84,8 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
 
     render::FrameUniforms resolved = base;
     if (in.interiorMode) {
-        // B7 interior mode: no sun, no sky glow, dim constant ambient, no
-        // fog, no god rays/volumetric — local lights (B5) carry the room.
+        // Interior mode: no sun, no sky glow, dim constant ambient, no
+        // fog, no god rays/volumetric — local lights carry the room.
         resolved.sunColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         resolved.sunGlowColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         resolved.ambientColor = { in.interiorAmbient, base.ambientColor.w };
@@ -93,33 +93,33 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         resolved.sunScreen = { 0.5f, 0.5f, 0.0f, 0.0f };
         resolved.time.z = 0.0f; // volumetric shafts off
     }
-    // B3 (brick 28): grade parameters on free .w slots — AFTER the
+    // Grade parameters on free .w slots — AFTER the
     // interior override (which zeroes sunGlowColor), so the grade applies
     // in both modes. Neutral values when the A/B toggle is off.
     resolved.sunGlowColor.w = in.grading ? in.gradeVibrance : 0.0f;
     resolved.zenithColor.w = in.grading ? in.gradeSplitTone : 0.0f;
     resolved.horizonColor.w = in.grading ? in.gradeContrast : 1.0f;
-    // Brick 32: the effective water surface above the camera (sea /
+    // The effective water surface above the camera (sea /
     // volume top / dry) — the tonemap submersion input.
     resolved.submersionInfo.x = in.waterSurfaceY;
-    // 33b/c: the terrain light map info (w = strength, 0 until the first
+    // The terrain light map info (w = strength, 0 until the first
     // bake lands or when toggled off / indoors).
     resolved.terrainLightInfo = in.terrainLightInfo;
     resolved.terrainLightInfo.w = in.terrainLightActive ? 1.0f : 0.0f;
-    // Chantier RC G6: the GI switch rides RESOLVED only (base = the
+    // The GI switch rides RESOLVED only (base = the
     // reflection pass stays Classic — no cascade sampler needed there).
     resolved.giInfo = in.giInfo;
     resolved.giGridInfo = in.giGridInfo;
     resolved.giBandInfo = in.giBandInfo;
-    // 7.8ter: the player's feet part the grass (off in Fly).
+    // The player's feet part the grass (off in Fly).
     resolved.grassBendInfo =
         in.grassBend ? Vec4 { in.playerFeet.x, in.playerFeet.z,
                               in.playerFeet.y, 0.85f }
                      : Vec4 { 0.0f };
-    // Brick 30/31: the crossfaded storm front + rain intensity, and the
-    // top-down rain-occlusion matrix (ortho, 40 m around the camera).
-    // (Cumulonimbus removed 2026-07-10 — .x keeps the raw storm front;
-    // rain, wetness and the occlusion matrix all ride .y.)
+    // The crossfaded storm front + rain intensity, and the top-down
+    // rain-occlusion matrix (ortho, 40 m around the camera). .x carries
+    // the raw storm front; rain, wetness and the occlusion matrix all
+    // ride .y.
     resolved.stormInfo.x = in.atmos.stormFront;
     resolved.stormInfo.y = in.interiorMode ? 0.0f : in.atmos.rainIntensity;
     if (resolved.stormInfo.y > 0.003f) {
@@ -130,7 +130,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
             glm::ortho(-40.0f, 40.0f, -40.0f, 40.0f, 0.0f, 140.0f);
         resolved.rainOcclusionViewProj = rainProj * rainView;
     }
-    // B4 (brick 29): auto-exposure parameters on free .w slots (adapt.frag
+    // Auto-exposure parameters on free .w slots (adapt.frag
     // + the tonemap tap flag).
     resolved.sunDirection.w = in.dt;
     resolved.horizonFarColor.w = in.autoExposureMin;

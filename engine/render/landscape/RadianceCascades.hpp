@@ -21,18 +21,18 @@ namespace render {
 
 class ShaderLibrary;
 
-// Which indirect-lighting technique the surface shaders use (chantier RC,
-// docs/RADIANCE-CASCADES.md). Classic = the current flat sky ambient ×
-// terrain light map; RadianceCascades = the GI volume (gi.glsl, G6) with
+// Which indirect-lighting technique the surface shaders use
+// (docs/RADIANCE-CASCADES.md). Classic = the flat sky ambient ×
+// terrain light map; RadianceCascades = the GI volume (gi.glsl) with
 // Classic as its far-field fallback. Runtime-switchable from the render
-// panel — the parallel-technique seam the dev asked for (modding later).
+// panel — a deliberate parallel-technique seam (modding later).
 enum class GiTechnique : u32 {
     Classic,
     RadianceCascades,
 };
 
-// Every cost-affecting parameter lives HERE and in the UI (dev workflow:
-// quality first, HE does the perf descent with these knobs — never
+// Every cost-affecting parameter lives HERE and in the UI (the dev
+// workflow: quality first, then a perf descent with these knobs — never
 // constants). Structural fields recreate the volumes when applied values
 // change (the reflectionScale pattern).
 struct RcTuning {
@@ -42,23 +42,20 @@ struct RcTuning {
     f32 coarseVoxel { 2.0f }; // meters — mid-field (span = res × voxel)
     i32 cascadeCount { 5 };   // levels (clamped so the top keeps ≥2 probes)
     // Live:
-    GiTechnique technique { GiTechnique::Classic }; // apply switch (G6)
-    f32 intensity { 0.7f };   // indirect strength at apply (dev pick
-                              // 2026-07-11, post fixed-step ramp)
+    GiTechnique technique { GiTechnique::Classic }; // apply switch
+    f32 intensity { 0.7f };   // indirect strength at apply
     f32 skyFactor { 0.6f };   // sky ambient folded into injected surfaces
-                              // (dev pick 2026-07-11, post fixed-step
-                              // ramp — bounce 0.5 returns sky too)
+                              // (bounce 0.5 returns sky too)
     f32 interval0 { 1.0f };   // cascade-0 interval length (m); reach =
                               // interval0 × (2^count − 1)
     f32 edgeFade { 8.0f };    // meters of blend back to Classic at the
-                              // grid border (G6)
-    // FIXED log-step stylized ramp (dev decision 2026-07-11, replacing
+                              // grid border
+    // FIXED log-step stylized ramp (replaced
     // the adaptive chain — bands must be PREDICTABLE): the GI luminance
     // snaps to absolute exposure steps, day/night/torch alike.
     f32 bandStops { 0.85f };  // stops per band (bigger = fewer, bolder)
     f32 bandAa { 0.3f };      // anti-aliasing width across a band edge
-                              // (dev pick 2026-07-11)
-    // G7c — interval extension (§2.3.3 du papier): levels whose full
+    // Interval extension (§2.3.3 of the paper): levels whose full
     // march is >= 8 steps raymarch a QUARTER of their interval and
     // double it twice by shift+merge (x4 reach per marched step).
     // STRUCTURAL (recreates the scratch ping-pong textures); an
@@ -117,8 +114,8 @@ public:
     // Call BEFORE composing the frame UBO: decides whether this frame
     // re-injects (updateInterval) and, if so, snaps the clip origins the
     // frame will use — giGridInfo() then matches the volume content the
-    // apply samples (dev bug 2026-07-11: composing with LAST frame's
-    // origin displaced light opposite to the camera motion for a frame).
+    // apply samples (composing with LAST frame's origin displaced light
+    // opposite to the camera motion for a frame).
     void prepare(const Vec3& cameraPos);
 
     // Main thread, once per frame, OUTSIDE any render pass (compute):

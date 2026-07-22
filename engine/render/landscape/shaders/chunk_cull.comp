@@ -1,6 +1,6 @@
 #version 460 core
 
-// GPU occlusion culling (brick 26): one thread per candidate chunk AABB,
+// GPU occlusion culling: one thread per candidate chunk AABB,
 // tested against the Hi-Z max-depth pyramid built from THIS frame's depth
 // and camera (results are consumed next frame — 1 frame of latency, with
 // conservative outs everywhere):

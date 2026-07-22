@@ -12,9 +12,6 @@ namespace quest {
 
 namespace {
 
-// (The per-type visitation is data::forEach — the local clone it duplicated
-// is gone, audit U8-1.)
-
 // Is a branch complete (all its tasks at or past `required`, and it has tasks)?
 bool branchComplete(const data::FormDatabase& forms, const core::Guid& branchId,
                     const QuestProgress& progress) {
@@ -113,7 +110,7 @@ void registerQuestFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<QuestStateForm>();
     registry.registerFormType<QuestBranchForm>();
     registry.registerFormType<QuestTaskForm>();
-    registry.registerFormType<SavedQuestForm>();     // chantier 6 A4
+    registry.registerFormType<SavedQuestForm>();
     registry.registerFormType<SavedQuestTaskForm>();
 }
 

@@ -1,33 +1,33 @@
 #include <doctest/doctest.h>
 
-#include <algorithm> // std::find (É6 granted-abilities round-trip)
+#include <algorithm> // std::find (granted-abilities round-trip)
 
 #include "data/forms/CoreForms.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
-#include "data/plugins/TomlWriter.hpp" // É8: the save round trip
-#include "gameplay/interaction/FurnitureForms.hpp" // É8: the grave form
-#include "gameplay/inventory/Inventory.hpp" // É8: the burial transfer
+#include "data/plugins/TomlWriter.hpp" // the save round trip
+#include "gameplay/interaction/FurnitureForms.hpp" // the grave form
+#include "gameplay/inventory/Inventory.hpp" // the burial transfer
 #include "engine/core/Rng.hpp"
 #include "engine/ecs/World.hpp"
 #include "game/SaveGame.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
-#include "gameplay/ability/GameplayAbility.hpp" // grantAbility, form types (É6)
+#include "gameplay/ability/GameplayAbility.hpp" // grantAbility, form types
 #include "gameplay/actors/ActorState.hpp"
-#include "gameplay/actors/FollowerForms.hpp" // AffinityRuleForm (É4)
+#include "gameplay/actors/FollowerForms.hpp" // AffinityRuleForm
 #include "gameplay/actors/Followers.hpp"
-#include "gameplay/event/EventBus.hpp" // eventKind (É4 rule matching)
-#include "gameplay/combat/Combat.hpp"       // updateLifeState (É3 routing)
-#include "gameplay/condition/Condition.hpp" // the recruit-refusal gate (É3)
+#include "gameplay/event/EventBus.hpp" // eventKind (rule matching)
+#include "gameplay/combat/Combat.hpp"       // updateLifeState (downed routing)
+#include "gameplay/condition/Condition.hpp" // the recruit-refusal gate
 #include "gameplay/save/SaveForms.hpp"
 #include "gameplay/stats/CharacterStats.hpp" // recomputeStats
 #include "gameplay/stats/CoreAttributes.hpp"
-#include "gameplay/stats/Damage.hpp"   // CombatState, updateDowned (É3)
-#include "gameplay/stats/GameTime.hpp" // tickGameTime (the regen gate, É3)
+#include "gameplay/stats/Damage.hpp"   // CombatState, updateDowned
+#include "gameplay/stats/GameTime.hpp" // tickGameTime (the regen gate)
 #include "gameplay/stats/Injuries.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 #include "gameplay/stats/Survival.hpp"
-#include "quest/Dialogue.hpp" // DialogueRunner (É4 refusal picking)
+#include "quest/Dialogue.hpp" // DialogueRunner (refusal picking)
 #include "world/scene/Components.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/streaming/CellLoader.hpp"
@@ -35,9 +35,9 @@
 #include "world/worldspace/WorldForms.hpp"
 #include "world/worldspace/WorldModel.hpp"
 
-// FOLLOWERS É1 (docs/CHANTIER-FOLLOWERS.md): the pure follow decision and
+// The pure follow decision (docs/CHANTIER-FOLLOWERS.md) and
 // the recruit/dismiss persistence contract at the pending-layer level —
-// recruit = ReferenceForm.cell -> 0 as a field-level patch (chantier 5),
+// recruit = ReferenceForm.cell -> 0 as a field-level patch,
 // dismiss = cell -> home; the flush is the disk save's input.
 
 using core::Guid;
@@ -205,7 +205,7 @@ TEST_CASE("followers: recruit/dismiss ride the pending layer's cell patch") {
     loader.beforeUnload = [&](data::FormHandle, ecs::Entity cellEntity) {
         pending.captureCell(world, db, cellEntity, tags);
     };
-    // The scene's É1 filter: disabled OR re-homed references don't respawn.
+    // The scene's spawn filter: disabled OR re-homed references don't respawn.
     loader.spawnFilter = [&](const Guid& referenceId) {
         return pending.isEnabled(referenceId) &&
                !pending.isRehomed(referenceId);
@@ -218,7 +218,7 @@ TEST_CASE("followers: recruit/dismiss ride the pending layer's cell patch") {
     follower.set<gameplay::AbilitySystem>({});
     follower.set<gameplay::FollowerState>({});
 
-    // --- Recruit: the chantier-5 contract, as FollowerController applies
+    // --- Recruit: the pending-layer contract, as FollowerController applies
     // it — active state, live cell -> null, InCell dropped, captured.
     follower.get_mut<gameplay::FollowerState>().followerActive = true;
     follower.get_mut<world::RefId>().cell = data::FormHandle {};
@@ -265,7 +265,7 @@ TEST_CASE("followers: recruit/dismiss ride the pending layer's cell patch") {
     (void)cellEntity;
 }
 
-// --- É2: the aggro table (gameplay::adoptOnHit — pure, headless) ------------
+// --- The aggro table (gameplay::adoptOnHit — pure, headless) ------------
 // Entity ids stand in for the cast: 1 = player, 2/3 = active followers,
 // 10/11 = hostiles, 20 = a villager (no roles).
 
@@ -340,7 +340,7 @@ TEST_CASE("followers É2: hostiles fight followers back") {
     // A follower hits a hostile -> the hostile re-aims at the follower.
     CHECK(adopt(kHostile, kFollower, kHostile) == kFollower);
     // Hit by the PLAYER: keep the default player targeting (no
-    // combatTarget — the exact pre-É2 behavior).
+    // combatTarget adoption).
     CHECK(adopt(kHostile, kPlayer, kHostile) == 0);
     // Another hostile's brawl is not his problem.
     CHECK(adopt(kHostile, kFollower, kHostile2) == 0);
@@ -363,8 +363,8 @@ TEST_CASE("followers É2: death disengages whoever targeted the dead") {
     CHECK_FALSE(gameplay::disengageOnDeath(kHostile, 0)); // no target: no-op
 }
 
-// --- É3: à terre, soin, survie, rotation ------------------------------------
-// The sim rules (docs/CHANTIER-FOLLOWERS.md É3): 0 HP under the
+// --- À terre, soin, survie, rotation ------------------------------------
+// The sim rules (docs/CHANTIER-FOLLOWERS.md): 0 HP under the
 // Follower.Protected mirror routes to State.Downed in updateLifeState (the
 // ONE life-state write point); the CombatState bleedout clock (the stagger
 // timer pattern) resolves through resolveBleedout on the seeded engine RNG.
@@ -374,7 +374,7 @@ namespace {
 using gameplay::attr;
 using gameplay::currentValueOf;
 
-// The TypedDamageTest fixture, plus the É3 vocabulary.
+// The TypedDamageTest fixture, plus the downed/protected vocabulary.
 struct DownFixture {
     gameplay::CoreAttributes core;
     gameplay::AttributeSet vitals;
@@ -576,7 +576,7 @@ TEST_CASE("followers É3: convalescence stamps and the recruit-refusal gate") {
     CHECK(gameplay::followerConvalescent(state, 50.0));
     CHECK_FALSE(gameplay::followerConvalescent(state, 100.0)); // healed up
 
-    // The dialogue gate is the É1 mirror-tag + the Phase-4 evaluator, as-is.
+    // The dialogue gate is the mirror-tag + the condition evaluator, as-is.
     gameplay::GameplayTagRegistry tags;
     const gameplay::GameplayTag tag =
         tags.registerTag("Follower.Convalescent");
@@ -631,7 +631,7 @@ TEST_CASE("followers É3: no health regen while downed") {
     CHECK(f.vitals.health == doctest::Approx(0.0f)); // no silent self-revive
 }
 
-// --- É4: recrutement complet + affinité --------------------------------------
+// --- Recrutement complet + affinité --------------------------------------
 // The new evaluator clause (FollowerAffinityAtLeast — one entry in the OCP
 // dispatch table, reading the DIALOGUE PARTNER half of EvalContext), the
 // AffinityRuleForm matcher (the QuestTaskForm event+filterTag matching) and
@@ -658,7 +658,7 @@ TEST_CASE("followers É4: FollowerAffinityAtLeast reads the dialogue partner") {
     partner.followerAffinity = 0.0f;
     CHECK(gameplay::evaluateClause(clause, context));
 
-    // The one-line editor reading (chantier 8.9 contract).
+    // The one-line editor reading (conditionSummary contract).
     clause.negate = false;
     CHECK(gameplay::conditionSummary(clause) == "if affinity >= 10");
 }
@@ -741,7 +741,7 @@ TEST_CASE("followers É4: passive accrual math and the ±100 clamp") {
 
 namespace {
 
-// The Maela demo (village.toml É4), rebuilt headless: one question, three
+// The Maela demo (village.toml), rebuilt headless: one question, three
 // mutually exclusive gatings — recruit (affinity>=10 AND level>=2),
 // refusal A (NOT affinity>=10), refusal B (affinity>=10 AND NOT level>=2).
 const Guid kMaelaDialogue = *Guid::fromString("6a1dc0de-0000-4000-8000-0000000000e0");
@@ -800,7 +800,7 @@ TEST_CASE("followers É4: the failing condition picks the refusal option") {
     gameplay::EventBus bus;
     gameplay::GameplayTagRegistry tags;
 
-    gameplay::AttributeSet attributes; // level defaults to 1 (the É0 boot)
+    gameplay::AttributeSet attributes; // level defaults to 1
     gameplay::AbilitySystem player;
     gameplay::initializeCurrent(player, attributes);
     gameplay::FollowerState partner;
@@ -836,8 +836,8 @@ TEST_CASE("followers É4: the failing condition picks the refusal option") {
     CHECK(only() == kRefusalA);
 }
 
-// --- É5: classes, niveaux, évolution ------------------------------------------
-// The pure rules (docs/CHANTIER-FOLLOWERS.md É5): the age curve applied as
+// --- Classes, niveaux, évolution ------------------------------------------
+// The pure rules (docs/CHANTIER-FOLLOWERS.md): the age curve applied as
 // per-tick StatModifiers (the equipmentMods fold — §2.9: nothing persisted,
 // no synthetic effects), the player-linked level sync, the +1 attribute
 // point walk, and the curve DELTA on level changes (bonus points survive;
@@ -896,7 +896,7 @@ TEST_CASE("followers É5: age mods shrink CURRENT attributes, never the maxima")
 
 TEST_CASE("followers É5: level sync — tracking, catch-up, first meet, stamps") {
     using gameplay::syncFollowerLevel;
-    // First meeting (lastSyncedFrom 0, the É0 default): stamp only — no
+    // First meeting (lastSyncedFrom 0, the default): stamp only — no
     // retroactive gain from the player's pre-acquaintance levels.
     gameplay::LevelSync s = syncFollowerLevel(1.0f, 0.0f, 4.0f, true, false);
     CHECK(s.level == 1.0f);
@@ -981,7 +981,7 @@ TEST_CASE("followers É5: curves at spawn, DELTA on level-up — bonuses and vit
 
     // Mid-game: wounded, and a bonus point earned earlier.
     f.vitals.health = 12.0f;
-    f.core.strength += 1.0f; // the É5 +1 (now 8)
+    f.core.strength += 1.0f; // the earned +1 bonus point (now 8)
 
     // Level 1 -> 3 applies the curve DELTA — the bonus point SURVIVES
     // (an absolute overwrite would erase it).
@@ -998,13 +998,13 @@ TEST_CASE("followers É5: curves at spawn, DELTA on level-up — bonuses and vit
     CHECK(currentValueOf(f.system, attr("maxHealth")) > maxBefore);
 }
 
-// ---- É6: powers, class perks, taught perks -----------------------------------
+// ---- Powers, class perks, taught perks -----------------------------------
 
 namespace {
 
 Guid guid(const char* text) { return *Guid::fromString(text); }
 
-// A minimal É6 data plugin: a class whose level-1 perk grants an ability
+// A minimal perk data plugin: a class whose level-1 perk grants an ability
 // and whose level-3 perk applies a tagged infinite effect — plus one
 // DISCIPLINE-BREAKING perk effect (no grantedTag) that must be skipped.
 constexpr const char* kPerkPlugin = R"([plugin]
@@ -1181,7 +1181,7 @@ TEST_CASE("followers É6: grantedAbilities round-trip the save layer") {
         auto& system = actorA.get_mut<gameplay::AbilitySystem>();
         gameplay::grantAbility(system, attack);
         gameplay::grantAbility(system, power);
-        gameplay::grantAbility(system, power); // the É6 dedup: no double
+        gameplay::grantAbility(system, power); // the grant dedup: no double
         REQUIRE(system.grantedAbilities.size() == 2);
         gameplay::initializeCurrent(system,
                                     actorA.get<gameplay::AttributeSet>());
@@ -1247,7 +1247,7 @@ TEST_CASE("followers É6: pickPower skips the shared attack ability") {
     CHECK(gameplay::pickPower({ power, attack }, attack) == power);
 }
 
-// ---- É7: follower carry weight ------------------------------------------------
+// ---- Follower carry weight ------------------------------------------------
 
 TEST_CASE("followers É7: carry factor is the É5 physical age multiplier") {
     const gameplay::StatsTuningForm tuning;
@@ -1268,8 +1268,8 @@ TEST_CASE("followers É7: canCarry — the follower refuses the excess item") {
     CHECK_FALSE(gameplay::canCarry(41.0f, 5.0f, 50.0f, 0.9f));
 }
 
-// ---- É8: mort, tombe, enterrement ----------------------------------------------
-// The grave contract at the model level (the É1 precedent — the scene
+// ---- Mort, tombe, enterrement ----------------------------------------------
+// The grave contract at the model level (the recruit precedent — the scene
 // controller resolves entities, the LAYER carries the persistence):
 // createReference generalizes the disableReference materialization into a
 // full `creates` ReferenceForm record; flushed and re-resolved, a null
@@ -1432,7 +1432,7 @@ TEST_CASE("followers É8: a grave's content survives capture -> re-resolve") {
     pending.createReference(graveRef, kGraveBase, Guid {},
                             transform.position);
     // The save-time capture (SaveController captures every live RefId
-    // entity): an Inventory-ONLY entity captures too — the É8 gate.
+    // entity): an Inventory-ONLY entity captures too — the grave gate.
     pending.captureEntity(grave, db, tags);
 
     data::Plugin save;
@@ -1483,10 +1483,10 @@ TEST_CASE("followers É8: transferAllItems empties the corpse into the grave") {
     CHECK(gameplay::itemCount(grave, kFleur) == 3);
 }
 
-// --- É9: multi-followers, commandes, vie ambiante ----------------------------
-// The pure layer (docs/CHANTIER-FOLLOWERS.md É9): party caps by É0
+// --- Multi-followers, commandes, vie ambiante ----------------------------
+// The pure layer (docs/CHANTIER-FOLLOWERS.md): party caps by follower
 // category against the §5 tuning knobs; the stance vocabulary (one
-// decode/encode point); defend = the É2 aggro table minus rule 4; ambient
+// decode/encode point); defend = the aggro table minus rule 4; ambient
 // comments and banter on the 10-game-hour anti-repeat with oneShot and
 // ordered chaining. Anti-repeat clocks are runtime-only v1 (stated).
 
@@ -1544,7 +1544,7 @@ TEST_CASE("followers É9: defend disables the player-initiative adoption") {
     gameplay::AggroRoles roles = rolesFor(kFollower, kPlayer, kHostile);
     roles.defendOnly = true;
     CHECK(gameplay::adoptOnHit(kPlayer, kHostile, roles) == 0);
-    // ...where the default follower follows the initiative (É2 baseline).
+    // ...where the default follower follows the initiative (the baseline).
     CHECK(adopt(kFollower, kPlayer, kHostile) == kHostile);
     // Party defense stays ON for a defender: a hostile strikes the player.
     roles = rolesFor(kFollower, kHostile, kPlayer);
@@ -1664,7 +1664,7 @@ TEST_CASE("followers É9: banter — pair matching, bond gate, anti-repeat") {
     CHECK_FALSE(gameplay::decideBanter(banter, 15.0f, 9999.0, played));
 }
 
-// FOLLOWERS É10 (docs/CHANTIER-FOLLOWERS.md): the mercenary math — the
+// The mercenary math (docs/CHANTIER-FOLLOWERS.md) — the
 // hire price (level and wealth axes, saturation, rounding), the contract
 // phase walk (engaged -> warning -> expired), and the renewal extension
 // (max(now, expiry) + days). All pure, headless (§2.10).
@@ -1704,7 +1704,7 @@ TEST_CASE("followers É10: mercenaryPrice — level axis, wealth axis, rounding"
 }
 
 TEST_CASE("followers É10: contractPhase — the hire -> warning -> expiry walk") {
-    // No stamp = not under contract (the É0 default 0).
+    // No stamp = not under contract (the default 0).
     CHECK(gameplay::contractPhase(50.0, 0.0f, 12.0f) ==
           gameplay::ContractPhase::None);
     CHECK(gameplay::contractPhase(50.0, -1.0f, 12.0f) ==
@@ -1754,7 +1754,7 @@ TEST_CASE("followers É10: extendContract — from max(now, expiry)") {
 }
 
 TEST_CASE("conditions: FollowerActive/Convalescent read the PARTNER, "
-          "never the player's global mirror (dev report 2026-07-13)") {
+          "never the player's global mirror") {
     // The bug: with Aldric recruited, Maela's dialogue showed the
     // dismiss option — HasTag Follower.Active on the PLAYER is global.
     gameplay::ConditionForm active;

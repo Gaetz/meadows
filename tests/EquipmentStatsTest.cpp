@@ -173,7 +173,7 @@ TEST_CASE("equipment: applyEquipmentModifiers resolves slots from the database")
     CHECK(mods.add[attr("armorBlunt")] == doctest::Approx(15.0f));
 }
 
-// ---- FOLLOWERS É7: base-kit lock + the auto-equip comparison ------------------
+// ---- Follower base-kit lock + the auto-equip comparison -----------------------
 
 namespace {
 

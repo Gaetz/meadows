@@ -7,8 +7,8 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 
-// Deterministic layered auto-layout for the node-graph editors (chantier
-// 8.6). PURE data: no ImGui, no forms — nodes are guids, edges are guid
+// Deterministic layered auto-layout for the node-graph editors.
+// PURE data: no ImGui, no forms — nodes are guids, edges are guid
 // pairs, output is a position per node. Used for graphs that have no
 // stored position yet (the editor side-store, EditorLayouts) and for the
 // explicit "Auto-layout" button.
@@ -36,7 +36,7 @@ GraphLayoutResult layoutGraph(
     const std::unordered_map<core::Guid, i32>* rankOrder = nullptr);
 
 // True when `ancestor` appears on `node`'s parent chain (`node` itself
-// counts). The anti-cycle guard of tree re-parenting (8.7: a dialogue
+// counts). The anti-cycle guard of tree re-parenting (a dialogue
 // reply may not become a child of its own descendant) — walk-capped, so
 // an already-corrupt cycle can't hang the editor.
 bool isAncestorOf(

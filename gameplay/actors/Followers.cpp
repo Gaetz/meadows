@@ -5,19 +5,19 @@
 
 #include <glm/glm.hpp>
 
-#include "data/forms/FormDatabase.hpp"       // perk lookups (É6)
-#include "data/forms/FormQuery.hpp"          // childrenOf (É6)
-#include "engine/core/Log.hpp"               // the grantedTag discipline warn (É6)
+#include "data/forms/FormDatabase.hpp"       // perk lookups
+#include "data/forms/FormQuery.hpp"          // childrenOf
+#include "engine/core/Log.hpp"               // the grantedTag discipline warn
 #include "engine/core/Rng.hpp"
-#include "gameplay/ability/DerivedStats.hpp" // StatModifiers, attr (É5)
-#include "gameplay/ability/GameplayAbility.hpp" // grantAbility (É6)
-#include "gameplay/ability/GameplayEffects.hpp" // applyEffect (É6, §2.9)
+#include "gameplay/ability/DerivedStats.hpp" // StatModifiers, attr
+#include "gameplay/ability/GameplayAbility.hpp" // grantAbility
+#include "gameplay/ability/GameplayEffects.hpp" // applyEffect (§2.9)
 #include "gameplay/actors/ActorState.hpp"    // FollowerState
-#include "gameplay/actors/FollowerForms.hpp" // AffinityRuleForm (É4),
-                                             //   classAttributesAt (É5)
-#include "gameplay/event/EventBus.hpp"       // eventKind (É4 rule matching)
+#include "gameplay/actors/FollowerForms.hpp" // AffinityRuleForm,
+                                             //   classAttributesAt
+#include "gameplay/event/EventBus.hpp"       // eventKind (rule matching)
 #include "gameplay/combat/Combat.hpp"        // updateLifeState (the ONE write point)
-#include "gameplay/stats/CoreAttributes.hpp" // the 9 bases (É5 curves)
+#include "gameplay/stats/CoreAttributes.hpp" // the 9 bases (class curves)
 #include "gameplay/stats/Damage.hpp"         // StatBlock, CombatState
 #include "gameplay/stats/Injuries.hpp"       // addInjury, syncInjuryEffects
 #include "gameplay/stats/StatsTuning.hpp"
@@ -53,8 +53,8 @@ FollowIntent decideFollow(const Vec3& followerPos, const Vec3& playerPos,
 
 u64 adoptOnHit(u64 source, u64 target, const AggroRoles& roles) {
     // Hostile retaliation: struck by a follower -> fight THAT follower.
-    // Struck by the player -> no adoption (default player targeting,
-    // exactly the pre-É2 behavior). Never suppressed by FriendlyTrial.
+    // Struck by the player -> no adoption (default player targeting).
+    // Never suppressed by FriendlyTrial.
     if (roles.selfHostile && roles.self == target && roles.sourceFollower &&
         source != roles.self) {
         return source;
@@ -75,7 +75,7 @@ u64 adoptOnHit(u64 source, u64 target, const AggroRoles& roles) {
         (roles.targetPlayer || roles.targetFollower) && source != roles.self) {
         return source;
     }
-    // Follow the player's initiative: he struck a hostile first. É9: the
+    // Follow the player's initiative: he struck a hostile first. The
     // « me défendre » stance turns exactly this rule off — a defender
     // only ever engages attackers of the party (the rules above).
     if (roles.sourcePlayer && roles.targetHostile && target != roles.self &&
@@ -89,7 +89,7 @@ bool disengageOnDeath(u64 dead, u64 combatTarget) {
     return combatTarget != 0 && combatTarget == dead;
 }
 
-// ---- É3: downed, bleedout, aggravation, convalescence ---------------------
+// ---- Downed, bleedout, aggravation, convalescence ---------------------
 
 Aggravation rollAggravation(bool alreadyInjured, core::Rng& rng,
                             const StatsTuningForm& tuning) {
@@ -172,7 +172,7 @@ bool followerConvalescent(const FollowerState& state, f64 nowHours) {
            nowHours < static_cast<f64>(state.followerDownedRecoveryHours);
 }
 
-// ---- É4: affinity ----------------------------------------------------------
+// ---- Affinity ----------------------------------------------------------
 
 f32 addAffinity(FollowerState& state, f32 delta) {
     const f32 before = state.followerAffinity;
@@ -218,7 +218,7 @@ f32 affinityDelta(const vector<const AffinityRuleForm*>& rules,
     return sum;
 }
 
-// ---- É5: classes, levels, evolution -----------------------------------------
+// ---- Classes, levels, evolution -----------------------------------------
 
 namespace {
 
@@ -348,7 +348,7 @@ std::optional<u32> bonusAttribute(const CoreAttributes& player,
     return std::nullopt; // the follower matches him everywhere: no point
 }
 
-// ---- É6: special powers, class perks, taught perks --------------------------
+// ---- Special powers, class perks, taught perks --------------------------
 
 PerkGrant grantPerk(const data::FormDatabase& forms,
                     const core::Guid& ability, const core::Guid& effect,
@@ -370,7 +370,7 @@ PerkGrant grantPerk(const data::FormDatabase& forms,
     }
     if (effect.isValid()) {
         if (const EffectForm* form = forms.find<EffectForm>(effect)) {
-            // The É6 discipline (FollowerForms.hpp): the effect's OWN
+            // The grantedTag discipline (FollowerForms.hpp): the effect's OWN
             // grantedTag is the dedup key — and the save-proof one
             // (SavedEffectForm persists it; restore re-adds the tag).
             std::optional<GameplayTag> tag;
@@ -447,7 +447,7 @@ u64 pickHealTarget(const vector<AllyVitals>& allies, f32 threshold) {
     return best;
 }
 
-// ---- É7: follower carry weight ----------------------------------------------
+// ---- Follower carry weight ----------------------------------------------
 
 f32 followerCarryFactor(f32 age, const StatsTuningForm& tuning) {
     return ageMultipliers(age, tuning).physical;
@@ -461,7 +461,7 @@ bool canCarry(f32 currentWeight, f32 itemWeight, f32 maxEncumbrance,
     return currentWeight + itemWeight <= maxEncumbrance * ageFactor;
 }
 
-// ---- É9: party caps, stances, banter, ambient comments ----------------------
+// ---- Party caps, stances, banter, ambient comments ----------------------
 
 void countPartyMember(PartyCounts& counts, const str& category) {
     if (category == "mount") {
@@ -590,7 +590,7 @@ bool decideBanter(const BanterForm& banter, f32 pairAffinityValue,
     return true;
 }
 
-// ---- É10: mercenaries --------------------------------------------------------
+// ---- Mercenaries --------------------------------------------------------
 
 i32 mercenaryPrice(f32 basePrice, f32 playerLevel, i32 playerGold,
                    const StatsTuningForm& tuning) {

@@ -32,7 +32,7 @@ namespace {
 constexpr const char* kTonemapShader = "tonemap";
 
 // std140 ModelUbo mirror (model + tint + info), shared by the mesh and
-// skinned draws — it was re-declared inline in each function body (U4-12).
+// skinned draws.
 struct ModelUniforms {
     Mat4 model { 1.0f };
     Vec4 tint { 1.0f };
@@ -44,7 +44,7 @@ struct LightsUniforms {
     Vec4 count { 0.0f };
     Vec4 positionRadius[LandscapeRenderer::kMaxLights] {};
     Vec4 colorIntensity[LandscapeRenderer::kMaxLights] {};
-    // B1 APPEND: xyz = spot direction, w = cos(half angle); w = -2 marks
+    // xyz = spot direction, w = cos(half angle); w = -2 marks
     // a point light.
     Vec4 directionAngle[LandscapeRenderer::kMaxLights] {};
 };
@@ -65,19 +65,19 @@ void LandscapeRenderer::applyTuning(
     terrain.params.mountainAmplitude = tuning.mountainAmplitude;
     terrain.params.seaLevel = tuning.seaLevel;
     exposureUi = tuning.exposure;
-    // (tuning.ssaoStrength retired 2026-07-10 — screen-space AO removed.)
-    gradeVibranceUi = tuning.gradeVibrance;   // B3 (toggle stays off)
+    // (tuning.ssaoStrength is unused — screen-space AO removed.)
+    gradeVibranceUi = tuning.gradeVibrance;
     gradeSplitToneUi = tuning.gradeSplitTone;
     gradeContrastUi = tuning.gradeContrast;
-    autoExposureMinUi = tuning.autoExposureMin; // B4 (toggle stays off)
+    autoExposureMinUi = tuning.autoExposureMin;
     autoExposureMaxUi = tuning.autoExposureMax;
-    // GPU-PERF P1: vegetation draw budget (clamped — the streamer ring
+    // Vegetation draw budget (clamped — the streamer ring
     // and the Hi-Z candidate cap size the safe range).
     vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 15);
     vegetation.highDetailRadius =
         glm::clamp(tuning.vegHighDetailRadius, 0, 8);
     vegetation.lowDetailRadius =
-        glm::clamp(tuning.vegLowDetailRadius, 2, 12); // V8f
+        glm::clamp(tuning.vegLowDetailRadius, 2, 12);
 }
 
 void LandscapeRenderer::applyTreeTuning(
@@ -128,11 +128,11 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
                                      .size = sizeof(render::FrameUniforms),
                                      .dynamic = true },
                                    nullptr) };
-    // B5: local lights ride binding 5 of the SAME group — shaders that
+    // Local lights ride binding 5 of the SAME group — shaders that
     // don't declare the block simply ignore it.
     lightsUbo = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform,
-          // B1: + the appended direction/angle array (the UBO lesson:
+          // + the appended direction/angle array (UBO rule:
           // new members go at the END, both CPU and GLSL sides).
           .size = (1 + 3 * kMaxLights) * sizeof(Vec4),
           .dynamic = true },
@@ -144,8 +144,8 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
     shaders = std::make_unique<render::ShaderLibrary>(device);
     terrain.create(device, *shaders, jobs);
     occlusion.create(jobs);
-    terrainLightMap.create(device, jobs); // 33b/c
-    radianceCascades.create(device, *shaders, jobs); // chantier RC
+    terrainLightMap.create(device, jobs);
+    radianceCascades.create(device, *shaders, jobs); // GI (docs/RADIANCE-CASCADES.md)
     grass.create(device, *shaders, jobs);
     vegetation.create(device, *shaders, jobs,
                       terrain.params.seed);
@@ -162,23 +162,23 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
                     { "LightsUbo", 5 } },
                   { { "uAlbedo", 0 } });
     buildMeshPipeline(device);
-    // B2a: the depth-only caster variants (sun cascades).
+    // The depth-only caster variants (sun cascades).
     shaders->load("shadow_mesh",
                   { { "ShadowUbo", 1 }, { "CasterModelUbo", 4 } });
     shaders->load("shadow_skinned",
                   { { "ShadowUbo", 1 }, { "CasterModelUbo", 4 } });
     buildCasterPipelines(device);
-    // Brick 34: dust light shafts.
+    // Dust light shafts.
     shaders->load("lightshaft", { { "FrameUbo", 0 }, { "ShaftUbo", 1 } });
     buildShaftPipeline(device);
-    // Brick 32: placed water surfaces.
+    // Placed water surfaces.
     shaders->load("watervolume",
                   { { "FrameUbo", 0 }, { "WaterVolumeUbo", 1 } });
-    // (Brick 30, cumulonimbus: REMOVED 2026-07-10 — dev call after the
-    // first actual display: cost over look. The cloud MAP keeps the sky
-    // alive; stormFront still drives rain/wetness via stormInfo.y.)
+    // (No volumetric cumulonimbus pass — cost over look. The cloud MAP
+    // keeps the sky alive; stormFront still drives rain/wetness via
+    // stormInfo.y.)
 
-    // Brick 31: rain — procedural streaks (no buffers) + the top-down
+    // Rain — procedural streaks (no buffers) + the top-down
     // occlusion depth so roofs keep the drops out.
     shaders->load("rain", { { "FrameUbo", 0 } },
                   { { "uRainOcclusion", 9 } });
@@ -204,7 +204,7 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
                          .texture = rainOcclusionTex,
                          .sampler = rainSampler } } }) };
 
-    // B2b: the interior key-light shadow target (1024², perspective).
+    // The interior key-light shadow target (1024², perspective).
     keyShadowTex = { device, device.createTexture(
         { .width = 1024,
           .height = 1024,
@@ -234,7 +234,7 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
                   { { "FrameUbo", 0 }, { "ModelUbo", 1 },
                     { "LightsUbo", 5 } },
                   { { "uAlbedo", 0 } });
-    // Brick 23: swap one procedural rock variant for an authored CC0 glTF
+    // Swap one procedural rock variant for an authored CC0 glTF
     // rock (moon_rock_02, Poly Haven). Missing file = procedural fallback.
     if (auto rock = assets::loadGltfMesh(platform::executableDir() / "data" /
                                          "base" / "models" /
@@ -256,7 +256,7 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
     }
     if (device.caps().copyTexture) {
         water.create(device, *shaders, jobs);
-    fx.create(device, *shaders); // P0 C1: the particle pass
+    fx.create(device, *shaders); // the particle pass
         depthSampler = { device, device.createSampler(
             { .minFilter = rhi::FilterMode::Nearest,
               .magFilter = rhi::FilterMode::Nearest }) };
@@ -276,9 +276,9 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
                         { "uBloom", 1 },
                         { "uGodRays", 2 },
                         { "uVolumetric", 3 },
-                        // (binding 4 was uSsao — removed 2026-07-10)
-                        { "uExposure", 5 },   // B4: adaptation tap
-                        { "uContact", 6 } }); // 33a: contact shadows
+                        // (binding 4 intentionally unused)
+                        { "uExposure", 5 },   // adaptation tap
+                        { "uContact", 6 } }); // contact shadows
         rebuildBlitPipeline(device);
     }
     if (device.caps().offscreenTargets && device.caps().hdrFormats &&
@@ -292,44 +292,44 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
 }
 
 void LandscapeRenderer::destroy(rhi::Device& device) {
-    // U4-4: every handle is an rhi::Unique — clearing/resetting frees it
+    // Every handle is an rhi::Unique — clearing/resetting frees it
     // through its device; there is no manual destroy mirror to keep in
-    // sync anymore. Must run while the device is alive (wrapper contract).
-    gpuProbe.shutdown(device); // abandon in-flight timestamps (P0)
+    // sync. Must run while the device is alive (wrapper contract).
+    gpuProbe.shutdown(device); // abandon in-flight timestamps
     destroyOffscreenTarget(device);
     blitPipeline.reset();
     blitSampler.reset();
-    // B1 mesh path: per-entry draw state (the residency caches are
+    // Mesh path: per-entry draw state (the residency caches are
     // scene-owned; their dtors free what they own).
     meshDraws.clear();
     meshPipeline.reset();
-    meshCasterPipeline.reset(); // B2a
+    meshCasterPipeline.reset();
     skinnedCasterPipeline.reset();
-    lightShafts.clear();  // brick 34
+    lightShafts.clear();
     shaftPipeline.reset();
-    waterQuads.clear();   // brick 32
+    waterQuads.clear();
     waterVolumePipeline.reset();
-    rainPipeline.reset();  // brick 31
+    rainPipeline.reset();
     rainReceiverGroup.reset();
     rainCasterGroup.reset();
     rainOcclusionUbo.reset();
     rainOcclusionFb.reset();
     rainSampler.reset();
     rainOcclusionTex.reset();
-    keyShadowReceiverGroup.reset(); // B2b
+    keyShadowReceiverGroup.reset();
     keyShadowCasterGroup.reset();
     keyShadowUbo.reset();
     keyShadowFb.reset();
     keyShadowSampler.reset();
     keyShadowTex.reset();
-    skinnedDraws.clear(); // B6 NPCs (U4-2b)
+    skinnedDraws.clear();
     skinnedPipeline.reset();
     skinnedShaderGeneration = 0;
     meshSampler.reset();
     whiteTexture.reset();
     gpuOcclusion.destroy(device);
-    terrainLightMap.destroy(device); // 33b/c
-    radianceCascades.destroy(device); // chantier RC
+    terrainLightMap.destroy(device);
+    radianceCascades.destroy(device);
     postFx.destroy(device);
     water.destroy(device);
     fx.destroy(device);
@@ -392,9 +392,8 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
               .format = rhi::TextureFormat::Depth32F,
               .usage = rhi::TextureUsage_Sampled },
             nullptr) };
-        // GPU-PERF P3: the reflection resolution is a knob (baseline:
-        // 1.70 ms at half res) — 0.5 = the historical half-res look,
-        // 0.25 = quarter res (blurrier mirror, dev judges).
+        // The reflection resolution is a knob (docs/GPU-PERF.md) —
+        // 0.5 = half res, 0.25 = quarter res (blurrier mirror).
         const u32 reflectionWidth = glm::max(
             static_cast<u32>(static_cast<f32>(width) * reflectionScaleUi),
             1u);
@@ -439,7 +438,7 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
     }
     // Tonemap inputs: scene + bloom + god rays (black 1x1 fallbacks are not
     // needed on the 4.6 path — postFx is always ready when we get here).
-    // B4: one group per adaptation ping-pong side (binding 5).
+    // One group per adaptation ping-pong side (binding 5).
     for (u32 side = 0; side < 2; ++side) {
         blitBindGroups[side] = { device, device.createBindGroup(
             { .entries =
@@ -474,7 +473,7 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
 }
 
 void LandscapeRenderer::destroyOffscreenTarget(rhi::Device& device) {
-    (void)device; // U4-4: the Unique wrappers free through their device
+    (void)device; // the Unique wrappers free through their device
     if (offscreenFb.id() == 0) {
         return;
     }
@@ -494,7 +493,7 @@ void LandscapeRenderer::destroyOffscreenTarget(rhi::Device& device) {
 }
 
 void LandscapeRenderer::rebuildBlitPipeline(rhi::Device& device) {
-    // U4-4: the assignment frees the previous pipeline through the wrapper.
+    // The assignment frees the previous pipeline through the wrapper.
     blitPipeline = { device, device.createPipeline(
                                  { .shader = shaders->get(kTonemapShader) }) };
     blitShaderGeneration = shaders->generation(kTonemapShader);
@@ -518,7 +517,7 @@ void LandscapeRenderer::drawSceneMeshes(engine::FrameContext& frame,
         const RenderSnapshot::MeshInstance& instance = snapshot.meshes[i];
         const MeshCache::Gpu& mesh = view.meshCache->resolve(instance.model);
 
-        // U4-2a: material fields resolved at extract; only the TEXTURE
+        // Material fields resolved at extract; only the TEXTURE
         // residency lookup stays draw-side (it is a GPU cache).
         ModelUniforms uniforms;
         uniforms.model = instance.transform;
@@ -544,7 +543,7 @@ void LandscapeRenderer::drawSceneMeshes(engine::FrameContext& frame,
         frame.device.updateBuffer(draw.ubo, &uniforms, sizeof(uniforms), 0);
         if (draw.group.id() == 0 || draw.boundTexture.id != albedo.id ||
             draw.material != instance.material) {
-            // U4-4: the assignment frees the previous group.
+            // The assignment frees the previous group.
             draw.group = { frame.device, frame.device.createBindGroup(
                 { .entries = { { .binding = 1, .buffer = draw.ubo },
                                { .binding = 0,
@@ -560,7 +559,7 @@ void LandscapeRenderer::drawSceneMeshes(engine::FrameContext& frame,
     }
 }
 
-// --- B5: first-person player -----------------------------------------------------
+// --- First-person player -----------------------------------------------------
 
 void LandscapeRenderer::drawSkinned(engine::FrameContext& frame,
                                     const RenderSnapshot& snapshot) {
@@ -629,7 +628,7 @@ void LandscapeRenderer::drawSkinned(engine::FrameContext& frame,
     // Sweep draws whose NPC was pruned (cell unload / death cleanup).
     for (auto it = skinnedDraws.begin(); it != skinnedDraws.end();) {
         if (!it->seen) {
-            it = skinnedDraws.erase(it); // U4-4: Unique members self-free
+            it = skinnedDraws.erase(it); // Unique members self-free
         } else {
             ++it;
         }
@@ -707,7 +706,7 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
         shaft.seen = false;
     }
     bool any = false;
-    for (const ShaftLight& light : snapshot.shafts) { // U4-2a
+    for (const ShaftLight& light : snapshot.shafts) {
         // Direction: authored (reference rotation x +Z) or the
         // quantized shadow sun (so window shafts follow the day
         // without re-basing every frame).
@@ -823,7 +822,7 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
     // Sweep shafts whose entity unloaded with its cell.
     for (auto it = lightShafts.begin(); it != lightShafts.end();) {
         if (!it->seen) {
-            it = lightShafts.erase(it); // U4-4: Unique members self-free
+            it = lightShafts.erase(it); // Unique members self-free
         } else {
             ++it;
         }
@@ -832,12 +831,12 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
 
 f32 LandscapeRenderer::effectiveWaterSurfaceY(const RenderSnapshot& snapshot,
                                               const RenderView& view) const {
-    // Brick 32: the water surface the CAMERA sits under, if any — sea
+    // The water surface the CAMERA sits under, if any — sea
     // level outdoors, a volume's top when inside one (any worldspace),
     // "dry" otherwise. Feeds the tonemap submersion.
     f32 surface = view.interiorMode ? -1.0e6f : terrain.params.seaLevel;
     const Vec3 eye = view.camera.position;
-    for (const WaterVolumeInstance& volume : snapshot.waterVolumes) { // U4-2a
+    for (const WaterVolumeInstance& volume : snapshot.waterVolumes) {
         const Vec3 d = eye - volume.position;
         if (std::abs(d.x) <= volume.halfExtents.x &&
             std::abs(d.z) <= volume.halfExtents.z && d.y >= 0.0f &&
@@ -871,7 +870,7 @@ void LandscapeRenderer::drawWaterVolumes(engine::FrameContext& frame,
         quad.seen = false;
     }
     bool any = false;
-    for (const WaterVolumeInstance& volume : snapshot.waterVolumes) { // U4-2a
+    for (const WaterVolumeInstance& volume : snapshot.waterVolumes) {
         WaterQuad* slot = nullptr;
         for (WaterQuad& quad : waterQuads) {
             if (quad.entityId == volume.entityId) {
@@ -919,7 +918,7 @@ void LandscapeRenderer::drawWaterVolumes(engine::FrameContext& frame,
     }
     for (auto it = waterQuads.begin(); it != waterQuads.end();) {
         if (!it->seen) {
-            it = waterQuads.erase(it); // U4-4: Unique members self-free
+            it = waterQuads.erase(it); // Unique members self-free
         } else {
             ++it;
         }
@@ -931,7 +930,7 @@ void LandscapeRenderer::buildCasterPipelines(rhi::Device& device) {
     // as the lit pass); depth state mirrors terrain/vegetation casters.
     meshCasterPipeline = { device, device.createPipeline(
         { .shader = shaders->get("shadow_mesh"),
-          .vertexBuffers = { render::meshVertexPositionLayout() }, // U3-5
+          .vertexBuffers = { render::meshVertexPositionLayout() },
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
@@ -1019,7 +1018,7 @@ void LandscapeRenderer::drawCastersInto(engine::FrameContext& frame,
 
     // Skinned NPCs: model UBO + palette are last frame's (drawNpcs updates
     // them after the cascades) — one frame of shadow lag, invisible at
-    // 2048px cascade resolution. U4-2b: draws from the snapshot; a
+    // 2048px cascade resolution. Draws from the snapshot; a
     // first-frame NPC has no draw state yet and simply skips one shadow.
     if (!snapshot.skinned.empty()) {
         frame.cmd.setPipeline(skinnedCasterPipeline);
@@ -1055,7 +1054,7 @@ void LandscapeRenderer::drawCastersInto(engine::FrameContext& frame,
 void LandscapeRenderer::buildMeshPipeline(rhi::Device& device) {
     meshPipeline = { device, device.createPipeline(
         { .shader = shaders->get("mesh"),
-          .vertexBuffers = { render::meshVertexLayout() }, // U3-5
+          .vertexBuffers = { render::meshVertexLayout() },
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Less },
@@ -1066,7 +1065,7 @@ void LandscapeRenderer::buildMeshPipeline(rhi::Device& device) {
 void LandscapeRenderer::render(engine::FrameContext& frame,
                                const RenderSnapshot& snapshot,
                                const RenderView& view) {
-    // GPU-PERF P0: resolve last frames' timestamps (never blocking) and
+    // Resolve last frames' timestamps (never blocking) and
     // open this frame's slot — the scopes below feed the budget table.
     gpuProbe.beginFrame(frame.device);
     shaders->pollHotReload(frame.dt);
@@ -1099,7 +1098,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         grassRescatterRequested = false;
         grass.regenerate(frame.device);
     }
-    // CSM resolution knob (dev ask 2026-07-11): recreate on change; the
+    // CSM resolution knob: recreate on change; the
     // round-robin then re-renders every cascade next frames (the fresh
     // maps start empty — one frame of unshadowed sun at worst).
     if (static_cast<u32>(shadowResolutionUi) != shadows.resolution()) {
@@ -1127,16 +1126,16 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             terrain.update(frame.device, view.camera.position);
         }
         {
-            // P1: probed apart from the chunk streaming — a landing bake
+            // Probed apart from the chunk streaming — a landing bake
             // recreates the 256² map (upload) and must be attributable.
             core::FrameProbe::Scope probe { *view.probe, "lightmap" };
-            // 33b/c: pump/kick the light-map bake (worker; re-bakes on
+            // Pump/kick the light-map bake (worker; re-bakes on
             // the quantized sun step or when the focus strays).
             terrainLightMap.update(frame.device, terrain.params,
                                    view.camera.position,
                                    shadowSunDirection);
         }
-        // Height-horizon occlusion (brick 26): rebuilt on a worker
+        // Height-horizon occlusion: rebuilt on a worker
         // whenever the camera strays; stays valid (conservative) meanwhile.
         {
             core::FrameProbe::Scope probe { *view.probe, "occlusion" };
@@ -1165,7 +1164,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 
     const render::Camera3D& camera = view.camera;
     const Mat4 viewProj = camera.viewProj(frame.aspect);
-    // CPU chunk culling (brick 25): one frustum per rendered viewpoint.
+    // CPU chunk culling: one frustum per rendered viewpoint.
     const render::Frustum viewFrustum = render::Frustum::fromViewProj(viewProj);
     const render::SkySystem::SkyState skyState =
         sky.evaluate({ .cloudCoverage = view.atmos.cloudCoverage,
@@ -1182,7 +1181,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             ? glm::smoothstep(-0.02f, 0.06f, skyState.sunDirection.y) *
                   (1.0f - 0.65f * view.atmos.cloudCoverage)
             : 0.0f;
-    // The cascades use a QUANTIZED sun (dev report: tree shadows tremble).
+    // The cascades use a QUANTIZED sun (otherwise tree shadows tremble).
     // The texel snap absorbs camera translation, but the game clock spins
     // the light a fraction of a degree every frame, re-basing the snap —
     // the edges crawl. Hysteresis instead: shadows sit rock-stable, then
@@ -1195,8 +1194,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         sunStepped = true;
     }
     render::ShadowMapper::Cascades cascades {};
-    // GPU-PERF P5c: which cascades actually re-render this frame. The
-    // baseline showed `shadows` at 5.5 ms — over half of it is the two
+    // Which cascades actually re-render this frame (docs/GPU-PERF.md):
+    // most of the shadow cost is the two
     // far cascades. Round-robin: cascade 0 every frame, cascades 1 and 2
     // on alternate frames, each keeping its PREVIOUS matrix when skipped
     // (the stale depth must be sampled with the matrix it was drawn
@@ -1228,7 +1227,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     }
 
     // Planar reflection is meaningful only from above the surface —
-    // and (P3 auto-skip) only when some water can actually show: a
+    // and (auto-skip) only when some water can actually show: a
     // RESIDENT chunk dipping below sea level inside the frustum. The
     // known miss: sea at the horizon beyond the resident ring (~960 m) —
     // the A/B toggle is there for that exact check.
@@ -1254,12 +1253,12 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         reflectionsUi && reflectionFb.id() != 0 && !view.interiorMode &&
         camera.position.y > terrain.params.seaLevel && waterVisible;
 
-    // Chantier RC: decide this frame's inject + snap the grid origins
+    // GI: decide this frame's inject + snap the grid origins
     // BEFORE the UBO composition so uGiGridInfo matches the volume
     // content the apply will sample (the moving-halo lag fix).
     radianceCascades.prepare(camera.position);
 
-    // The whole UBO composition is pure (audit U4-6a): gather the inputs,
+    // The whole UBO composition is pure: gather the inputs,
     // let the composer build both variants, upload. This side keeps only
     // the GPU-availability gates and the updateBuffer calls.
     const ComposedFrame composed = composeFrameUniforms({
@@ -1311,8 +1310,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                             grass.renderTuning.fadeStart },
         .grassTipColor = { grass.renderTuning.tipColor,
                            grass.renderTuning.fadeEnd },
-        // Chantier RC G6 (+ interiors, dev feedback 2026-07-11):
-        // giInfo() gates on ready() itself.
+        // giInfo() gates on ready() itself (interiors included).
         .giInfo = radianceCascades.giInfo(),
         .giGridInfo = radianceCascades.giGridInfo(),
         .giBandInfo = { radianceCascades.tuning.bandStops,
@@ -1327,11 +1325,11 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     }
     frame.device.updateBuffer(frameUbo, &frameData, sizeof(frameData), 0);
 
-    // B5: the 16 nearest local lights, flicker applied CPU-side (sin +
+    // The 16 nearest local lights, flicker applied CPU-side (sin +
     // per-index phase — cheap and stateless).
     {
         LightsUniforms lights;
-        const vector<SceneLight>& nearest = snapshot.lights; // U4-2a
+        const vector<SceneLight>& nearest = snapshot.lights;
         // G7b — the penumbra experiment: with "lights via RC only", the
         // DIRECT contribution is cut (count 0 -> localLights() adds
         // nothing) and the lights exist purely in the GI volume: their
@@ -1372,7 +1370,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         sky.bakeCloudMap(frame.cmd, frameBindGroup);
     }
 
-    // B2b — the interior key-light shadow: pick the castsShadow light
+    // The interior key-light shadow: pick the castsShadow light
     // nearest the camera, render its perspective depth, and hand the
     // matrix + position to locallights.glsl (matched by position there).
     bool keyShadowActive = false;
@@ -1382,7 +1380,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         Vec3 keyDir { 0.0f, 0.0f, 1.0f };
         f32 keyFov = 100.0f;
         f32 keyRadius = 10.0f;
-        for (const SceneLight& light : snapshot.shadowLights) { // U4-2a
+        for (const SceneLight& light : snapshot.shadowLights) {
             const Vec3 d = light.position - camera.position;
             const f32 distSq = glm::dot(d, d);
             if (distSq < bestDistSq) {
@@ -1423,7 +1421,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     }
     (void)keyShadowActive;
 
-    // Brick 31: the top-down rain occlusion depth (roof cover).
+    // The top-down rain occlusion depth (roof cover).
     if (frameData.stormInfo.y > 0.003f && meshShadowCastersUi) {
         render::GpuProbe::Scope gpu { gpuProbe, frame.device, "rainOcc" };
         frame.cmd.beginRenderPass({ .framebuffer = rainOcclusionFb,
@@ -1440,12 +1438,11 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         render::GpuProbe::Scope gpu { gpuProbe, frame.device, "shadows" };
         for (u32 i = 0; i < render::ShadowMapper::kCascadeCount; ++i) {
             if (!cascadeDue[i]) {
-                continue; // P5c: kept last frame's depth AND matrix
+                continue; // kept last frame's depth AND matrix
             }
-            // V8b: cull casters against THIS cascade's ortho volume — the
+            // Cull casters against THIS cascade's ortho volume — the
             // near cascades cover a fraction of the 9-chunk ring, and the
-            // CSM cost is vertex-bound (M1 measure: shadows 37 ms with
-            // every cascade drawing the full ring).
+            // CSM cost is vertex-bound.
             const render::Frustum cascadeFrustum =
                 render::Frustum::fromViewProj(cascades.viewProj[i]);
             frame.cmd.beginRenderPass(
@@ -1455,12 +1452,12 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             terrain.drawDepth(frame.cmd, shadows.casterBindGroup(i),
                               camera.position, 9, &cascadeFrustum);
             // Same 9-chunk cap: the last cascade ends at 480 m. Far
-            // cascades cast with the 20-face ultra twin (V8f).
+            // cascades cast with the 20-face ultra twin.
             vegetation.drawDepth(frame.cmd, frameBindGroup,
                                  shadows.casterBindGroup(i),
                                  camera.position, 9, &cascadeFrustum,
                                  /*ultraDetail=*/i > 0);
-            // B2a: scene meshes + NPCs join the casters (A/B toggle).
+            // Scene meshes + NPCs join the casters (A/B toggle).
             if (meshShadowCastersUi) {
                 drawShadowCasters(frame, snapshot, view, i);
             }
@@ -1468,12 +1465,12 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
     }
 
-    // Chantier RC (G2/G3): re-inject the GI voxel clipmap — after the CSM
-    // passes (the inject samples fresh shadow maps), outside any render
-    // pass (compute). Interiors too (dev feedback 2026-07-11): no terrain
+    // Re-inject the GI voxel clipmap (docs/RADIANCE-CASCADES.md) — after
+    // the CSM passes (the inject samples fresh shadow maps), outside any
+    // render pass (compute). Interiors too: no terrain
     // there, the kit boxes + local lights carry the room.
     {
-        // G3: props/kits as world AABBs (v1 box occlusion — assumed
+        // Props/kits as world AABBs (v1 box occlusion — assumed
         // stylized), NPCs as capsuloid boxes, the frame's local lights.
         rcBoxes.clear();
         rcLights.clear();
@@ -1525,7 +1522,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                                 { feet + Vec3 { 0.4f, 1.8f, 0.4f }, 0.0f },
                                 { Vec3 { 0.10f }, 0.0f } });
         }
-        // Chantier RC (dev report 2026-07-11): the vegetation joins the
+        // The vegetation joins the GI
         // volume — forests get green bounce and canopy sky occlusion.
         // Trees inject their CANOPY as a semi-transparent green box (the
         // march filters through, soft light under the crowns); rocks and
@@ -1628,7 +1625,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
         if (terrainLightMap.bindGroup().id != 0) {
-            frame.cmd.setBindGroup(4, terrainLightMap.bindGroup()); // 33b/c
+            frame.cmd.setBindGroup(4, terrainLightMap.bindGroup());
         }
         terrain.draw(frame.cmd, reflectionBindGroup,
                      shadows.receiverBindGroup(), &reflectionFrustum);
@@ -1643,8 +1640,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         frame.cmd.endRenderPass();
     }
 
-    // P1: the Hi-Z verdict pickup, probed on its own — this is the former
-    // hidden mainPass stall (sync readback). With the fence gate it now
+    // The Hi-Z verdict pickup, probed on its own — a sync readback here
+    // can stall behind mainPass. With the fence gate it
     // costs ~0 and keeps LAST frame's verdict while the GPU is behind
     // (`gpuOccluded` persists; collectResults replaces it only when a
     // fresh verdict is actually ready).
@@ -1669,13 +1666,13 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
         if (terrainLightMap.bindGroup().id != 0) {
-            frame.cmd.setBindGroup(4, terrainLightMap.bindGroup()); // 33b/c
+            frame.cmd.setBindGroup(4, terrainLightMap.bindGroup());
         }
         if (keyShadowReceiverGroup.id() != 0) {
-            frame.cmd.setBindGroup(5, keyShadowReceiverGroup); // B2b
+            frame.cmd.setBindGroup(5, keyShadowReceiverGroup);
         }
         if (radianceCascades.applyGroup().id != 0) {
-            // Chantier RC G6: the merged cascade 0 for gi.glsl (unit 11).
+            // The merged GI cascade 0 for gi.glsl (unit 11).
             frame.cmd.setBindGroup(6, radianceCascades.applyGroup());
         }
         // Occlusion applies to the main view only: both sets were built for
@@ -1693,7 +1690,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         if (!view.interiorMode) {
             // Sub-probes only where they MEASURE: inside a pass, Metal
             // executes the whole encoder as one tiled unit and mid-pass
-            // timestamps collapse (~0.01 ms) — the V8e cap gates them.
+            // timestamps collapse (~0.01 ms) — the midPassTimestamps cap
+            // gates them.
             // The geometry counters (perf panel) carry the dissection on
             // Vulkan instead.
             render::GpuProbe* subProbe =
@@ -1725,20 +1723,20 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                            &viewFrustum);
             }
         }
-        drawSceneMeshes(frame, snapshot, view); // B1: the RenderSnapshot.meshes consumer
-        drawSkinned(frame, snapshot);        // B6: the Forms-driven skinned NPCs
+        drawSceneMeshes(frame, snapshot, view); // the RenderSnapshot.meshes consumer
+        drawSkinned(frame, snapshot);        // the Forms-driven skinned NPCs
         if (!view.interiorMode) {
             sky.draw(frame.cmd, frameBindGroup); // background only
         }
-        // Brick 32: placed water surfaces (alpha), then brick 34:
+        // Placed water surfaces (alpha), then
         // additive dust shafts — both after every opaque.
         drawWaterVolumes(frame, snapshot);
         drawLightShafts(frame, snapshot, view, skyState.sunColor);
-        // P0 C1: the frame's particles (camera-facing quads; the
+        // The frame's particles (camera-facing quads; the
         // extract sorted the alpha batch, additive is order-free).
         fx.draw(frame, *shaders, frameBindGroup, snapshot.fxAlpha,
                 snapshot.fxAdditive);
-        // Brick 31: rain streaks (procedural, camera cylinder).
+        // Rain streaks (procedural, camera cylinder).
         if (frameData.stormInfo.y > 0.003f) {
             if (shaders->generation("rain") != rainShaderGeneration ||
                 rainPipeline.id() == 0) {
@@ -1771,7 +1769,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         frame.cmd.copyTexture(offscreenColor, sceneColorCopy);
         frame.cmd.copyTexture(offscreenDepth, sceneDepthCopy);
 
-        // GPU Hi-Z occlusion (brick 26): pyramid from this frame's depth
+        // GPU Hi-Z occlusion: pyramid from this frame's depth
         // snapshot + cull dispatch; the verdict is read back NEXT frame.
         if (!view.interiorMode && frame.device.caps().computeShaders) {
             gpuOcclusion.resize(frame.device, frame.width, frame.height);
@@ -1808,7 +1806,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         postFx.render(frame.cmd, frameBindGroup,
                       shadows.receiverBindGroup(), &frame.device,
                       &gpuProbe);
-        // 33a: contact shadows (the texture is the toggle — white = off).
+        // Contact shadows (the texture is the toggle — white = off).
         {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
                                           "contact" };
@@ -1819,7 +1817,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                 postFx.clearContactShadows(frame.cmd);
             }
         }
-        // B4 (brick 29): measure + adapt, before the tonemap taps it.
+        // Auto exposure: measure + adapt, before the tonemap taps it.
         if (autoExposureUi) {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
                                           "autoExpo" };
@@ -1836,12 +1834,12 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                                     .depthLoadOp = rhi::LoadOp::DontCare });
         frame.cmd.setPipeline(blitPipeline);
         frame.cmd.setBindGroup(0, frameBindGroup); // FrameUbo (uPostInfo)
-        // B4: the side the adaptation pass just wrote.
+        // The side the adaptation pass just wrote.
         frame.cmd.setBindGroup(1, blitBindGroups[postFx.exposureSide()]);
         frame.cmd.draw(3);
-        // Chantier RC: debug raymarch of a clip volume over the frame.
+        // GI debug raymarch of a clip volume over the frame.
         radianceCascades.drawDebug(frame.cmd, frameBindGroup);
-        // Chantier 4: the game UI composes over the tonemapped scene,
+        // The game UI composes over the tonemapped scene,
         // under the dev ImGui layer.
         if (view.gameUi) {
             view.gameUi->resize(frame.width, frame.height); // no-op if same
@@ -1859,9 +1857,9 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     }
 }
 
-// The renderer's own dev panels (audit U4-1 leftovers: the tuning state
+// The renderer's own dev panels (the tuning state
 // they bind lives HERE — the scene keeps the section headers/F-keys).
-// GPU-PERF P0 — the budget table: per-pass GPU average/max over the
+// The budget table: per-pass GPU average/max over the
 // rolling window, with the CPU FrameProbe column beside it (names match
 // where both sides instrument the same block). This table IS the
 // baseline the optimization bricks are ordered by (docs/GPU-PERF.md).
@@ -1919,7 +1917,7 @@ void LandscapeRenderer::drawPerfPanel(const core::FrameProbe* cpuProbe) {
         ImGui::TextDisabled("(warming up — first frames resolving)");
     }
 
-    // V8e: CPU-side geometry counters, ALL passes summed (casters,
+    // CPU-side geometry counters, ALL passes summed (casters,
     // reflection, main). This is the mainPass dissection on Vulkan, where
     // mid-pass GPU timestamps cannot measure (Metal runs a pass as one
     // tiled unit) — and the input to the impostor decision.
@@ -2075,14 +2073,14 @@ void LandscapeRenderer::drawTerrainPanel() {
                            60.0f, "%.0f"); // range x1.5 with the amplitudes
     }
     if (ImGui::CollapsingHeader("Vegetation")) {
-        // GPU-PERF P1: the vegetation draw budget, live (baseline:
-        // mainVeg 1.8 ms at 14/4). Shrinking the ring pops at the edge
+        // The vegetation draw budget, live
+        // (docs/GPU-PERF.md). Shrinking the ring pops at the edge
         // (the tree fade tops out at 880 m) — a budget-hunting knob.
         ImGui::SliderInt("Veg view radius (chunks)", &vegetation.viewRadius,
                          4, 15);
         ImGui::SliderInt("Veg high-detail radius",
                          &vegetation.highDetailRadius, 0, 8);
-        // V8f: 80-face twins within; 20-face ultra beyond.
+        // 80-face twins within; 20-face ultra beyond.
         ImGui::SliderInt("Veg low-detail radius",
                          &vegetation.lowDetailRadius, 2, 12);
         // EXPERIMENT (feature/space-colonization-trees): Runions skeleton
@@ -2103,7 +2101,7 @@ void LandscapeRenderer::drawTerrainPanel() {
 }
 
 void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
-    // Grass redo #2 (2026-07-11): every meadow constant, live. The render
+    // Every meadow constant, live. The render
     // half rides the FrameUbo; a scatter knob queues a grass-only
     // re-scatter on release (budgeted — the ring rebuilds over frames).
     if (ImGui::CollapsingHeader("Grass")) {
@@ -2161,8 +2159,8 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
             grassRescatterRequested = true;
         }
     }
-    // Chantier RC: every cost-affecting GI parameter is a live knob (dev
-    // workflow: quality first, HE does the perf descent here, watching
+    // Every cost-affecting GI parameter is a live knob (workflow:
+    // quality first, then the perf descent here, watching
     // the rcInject/rcBuild lines of the F6 table).
     if (ImGui::CollapsingHeader("Global illumination")) {
         render::RcTuning& rc = radianceCascades.tuning;
@@ -2227,8 +2225,8 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::Checkbox("Shadows", &shadowsUi);
         ImGui::SameLine();
         ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);
-        // GPU-PERF P5c A/B: far cascades on alternate frames (baseline had
-        // `shadows` at 5.5 ms) — off = every cascade every frame.
+        // A/B: far cascades on alternate frames —
+        // off = every cascade every frame.
         ImGui::Checkbox("CSM round-robin (far cascades 1/2 rate)",
                         &shadowRoundRobinUi);
         // Sharpness: texels per cascade side (4096 = 2x definition
@@ -2240,19 +2238,19 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
             shadowResolutionUi = shadowRes == 2 ? 4096
                                  : shadowRes == 1 ? 2048 : 1024;
         }
-        // B2a A/B: houses/crates/NPCs casting into the sun cascades.
+        // A/B: houses/crates/NPCs casting into the sun cascades.
         ImGui::Checkbox("Mesh shadow casters", &meshShadowCastersUi);
-        ImGui::Checkbox("Contact shadows", &contactShadowsUi); // brick 33a
+        ImGui::Checkbox("Contact shadows", &contactShadowsUi);
         ImGui::SameLine();
-        ImGui::Checkbox("Terrain light map", &terrainLightUi); // brick 33b/c
-        ImGui::Checkbox("Key light shadow", &keyShadowUi); // B2b (interiors)
+        ImGui::Checkbox("Terrain light map", &terrainLightUi);
+        ImGui::Checkbox("Key light shadow", &keyShadowUi); // interiors
     }
     if (ImGui::CollapsingHeader("Sun FX")) {
         ImGui::SliderFloat("God rays intensity", &atmos.godRayIntensity,
                            0.0f, 2.0f, "%.2f");
         ImGui::SliderFloat("Volumetric shafts", &atmos.volumetric, 0.0f,
                            3.0f, "%.2f");
-        ImGui::Checkbox("Light shafts (dust, brick 34)", &shaftsUi);
+        ImGui::Checkbox("Light shafts (dust)", &shaftsUi);
     }
     if (ImGui::CollapsingHeader("Fog & clouds")) {
         ImGui::SliderFloat("Fog density", &atmos.fogDensity, 0.0f, 0.004f,
@@ -2271,7 +2269,7 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
     }
     if (ImGui::CollapsingHeader("Water")) {
         ImGui::Checkbox("Reflections", &reflectionsUi);
-        // GPU-PERF P3: skip the mirror render when no resident water is in
+        // Skip the mirror render when no resident water is in
         // view (A/B — the horizon-sea edge case), and trade its resolution.
         ImGui::SameLine();
         ImGui::Checkbox("auto-skip", &reflectionAutoSkipUi);
@@ -2281,8 +2279,8 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
     if (ImGui::CollapsingHeader("Post-processing")) {
         ImGui::Checkbox("Filmic tonemap (A/B)", &tonemapUi);
         ImGui::SliderFloat("Exposure", &exposureUi, 0.25f, 3.0f, "%.2f");
-        // B4 A/B (brick 29): eye adaptation; Exposure becomes the bias.
-        ImGui::Checkbox("Auto exposure (brick 29)", &autoExposureUi);
+        // A/B: eye adaptation; Exposure becomes the bias.
+        ImGui::Checkbox("Auto exposure", &autoExposureUi);
         if (autoExposureUi) {
             ImGui::SliderFloat("Auto-expo min", &autoExposureMinUi, 0.1f,
                                1.0f, "%.2f");
@@ -2291,8 +2289,8 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         }
         ImGui::SliderFloat("Bloom intensity", &atmos.bloomIntensity, 0.0f,
                            1.5f, "%.2f");
-        // B3 A/B (brick 28): the analytical grade, off by default.
-        ImGui::Checkbox("Grading (brick 28)", &gradingUi);
+        // A/B: the analytical grade, off by default.
+        ImGui::Checkbox("Grading", &gradingUi);
         if (gradingUi) {
             ImGui::SliderFloat("Vibrance", &gradeVibranceUi, 0.0f, 1.0f,
                                "%.2f");

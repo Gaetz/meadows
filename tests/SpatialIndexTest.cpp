@@ -7,7 +7,7 @@
 #include "world/scene/Components.hpp"
 #include "world/scene/SpatialIndex.hpp"
 
-// Chantier P0 B1 — the shared actor grid: radius queries over a
+// The shared actor grid: radius queries over a
 // per-frame snapshot, cell boundaries included.
 
 namespace {

@@ -16,7 +16,7 @@ namespace core {
 // on the stack only if you JobSystem::wait() on it before leaving scope.
 class JobCounter {
 public:
-    // Lifetime contract enforced (audit U1-06 — it was comment-only):
+    // Lifetime contract, enforced at runtime:
     // destroying a counter while enqueued jobs still reference it IS the
     // dangling-reference UB. Catch it at the source, not as a corrupted
     // atomic later. Non-copyable/movable: workers hold its address.
@@ -41,8 +41,8 @@ private:
 
 // Simple thread pool: one shared queue, mutex + condvar (§10: simplest thing
 // that exercises the concept). Work stealing, priorities, or fibers only when
-// a real workload demands them; the first real client is async asset/cell
-// streaming (Phase 8). The destructor drains queued jobs before joining.
+// a real workload demands them; the main client is async asset/cell
+// streaming. The destructor drains queued jobs before joining.
 class JobSystem {
 public:
     using Job = std::function<void()>;

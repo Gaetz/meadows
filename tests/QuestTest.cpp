@@ -132,7 +132,7 @@ TEST_CASE("startQuestsOn ignores quests without a startEvent") {
     CHECK(log.quests.empty());
 }
 
-// The failure path (dev question 2026-07-10): a branch into a
+// The failure path: a branch into a
 // kind=Failure state — e.g. wired to a "betray the village" dialogue
 // option — fails the quest exactly like Success succeeds it.
 TEST_CASE("a branch into a Failure state fails the quest") {

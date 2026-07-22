@@ -6,7 +6,7 @@
 #include "world/scene/Components.hpp"
 #include "world/streaming/CellStreamer.hpp"
 
-// Chantier 2 B1: distance-driven cell residency — load ring, hysteresis
+// Distance-driven cell residency — load ring, hysteresis
 // eviction, entities spawning/despawning with their cells. Headless.
 
 namespace {
@@ -175,7 +175,7 @@ TEST_CASE("cell streamer: a load budget spreads the ring over calls") {
     CHECK(streamer.loadedCount() == 2);
 }
 
-// Chantier IMPLICIT-CELLS, brick 3: a materialized cell and the streamer.
+// A materialized (implicit) cell and the streamer.
 TEST_CASE("cell streamer: adopted implicit cells are ordinary residents") {
     data::FormTypeRegistry types;
     world::registerWorldFormTypes(types);
@@ -215,7 +215,7 @@ TEST_CASE("cell streamer: adopted implicit cells are ordinary residents") {
     CHECK_FALSE(streamer.update(space, 8.0f, 8.0f));
 
     // A materialized cell NOT adopted streams in like an authored one the
-    // moment the ring reaches it (brick 1: the streamer needs no change).
+    // moment the ring reaches it (the streamer needs no change).
     const data::FormHandle far = model.materializeCell(db, space, 7, 0);
     REQUIRE(far.isValid());
     CHECK_FALSE(loader.cellEntity(far).is_alive());

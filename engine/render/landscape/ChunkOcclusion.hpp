@@ -13,7 +13,8 @@ class JobSystem;
 
 namespace render {
 
-// Height-horizon occlusion culling (brick 26, CPU stage). The frustum can't
+// Height-horizon occlusion culling (the CPU stage; GpuOcclusion is the
+// Hi-Z stage). The frustum can't
 // reject chunks hidden BEHIND a ridge; this can. From the camera position,
 // march a fan of azimuth rays outward over the exact terrain height
 // function, recording the running maximum elevation slope per distance
@@ -34,8 +35,6 @@ public:
     static constexpr f32 kRingStep = 32.0f;    // meters between samples
     static constexpr u32 kRingCount = 30;      // reach: 960 m (view ring)
     static constexpr f32 kPropHeadroom = 86.0f; // tallest scaled tree
-                                                // (x8 realistic trees,
-                                                // dev 2026-07-20)
     static constexpr f32 kRebuildDistance = 8.0f; // camera delta triggering
 
     // Snapshot handed to the worker. `chunkTops` maps chunk key

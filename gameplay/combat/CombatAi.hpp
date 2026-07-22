@@ -5,10 +5,10 @@
 
 #include "engine/core/Defines.hpp"
 
-// Chantier P0 B3 — the melee combat move decision, sim-pure. ONE flat
-// function turns the situation into ONE move (dev rule: real states are
+// The melee combat move decision, sim-pure. ONE flat
+// function turns the situation into ONE move (real states are
 // enums, decided in one place); NpcDirector only EXECUTES the move.
-// Ranges come from the weapon (A6): strike inside attackRange, hold the
+// Ranges come from the weapon: strike inside attackRange, hold the
 // preferred band (reach + 1) by strafing while the attack cools down.
 
 namespace gameplay {
@@ -22,9 +22,9 @@ enum class CombatMove : u8 {
 
 struct CombatSituation {
     f32 distance { 0.0f };       // to the target (m)
-    f32 attackRange { 1.8f };    // A6: weapon reach - margin
-    f32 preferredRange { 3.4f }; // A6: weapon reach + 1 — the strafe band
-    bool canSee { false };       // B2 vision verdict
+    f32 attackRange { 1.8f };    // weapon reach - margin
+    f32 preferredRange { 3.4f }; // weapon reach + 1 — the strafe band
+    bool canSee { false };       // Perception vision verdict
     bool swinging { false };     // a swing in flight roots the actor
     f32 cooldownSeconds { 0.0f }; // attack cooldown remaining
     f32 healthFraction { 1.0f }; // current / max health, 0..1
@@ -39,8 +39,8 @@ CombatMove chooseCombatMove(const CombatSituation& situation);
 std::optional<CombatMove> parseCombatMove(std::string_view name);
 
 // The move's name, parseCombatMove's vocabulary backward — the combat
-// intent log/view ("why is this NPC running?", dev report 2026-07-12:
-// a bow-band strafe reads as a flee without it).
+// intent log/view ("why is this NPC running?" — a bow-band strafe
+// reads as a flee without it).
 const char* combatMoveName(CombatMove move);
 
 } // namespace gameplay

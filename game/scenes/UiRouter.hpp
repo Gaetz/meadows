@@ -32,12 +32,12 @@ class ScreenStack;
 // The scene systems the UI ACTION routing touches, bundled so the
 // data-event dispatch (handleUiEvent), the menu actions, the item screens'
 // opening logic and the inventory/barter gameplay actions are decoupled
-// from LandscapeScene (audit U4-1). The scene rebuilds it per dispatch —
+// from LandscapeScene. The scene rebuilds it per dispatch —
 // references plus the scene actions that stay its territory as closures
 // (saves, mode flips, waiting, the model pushes that need a HudContext).
 struct UiRouterContext {
     data::FormDatabase& forms;
-    const data::TextTable& texts; // C9.5: ui.* fallback strings
+    const data::TextTable& texts; // Ui.* fallback strings
     ::ui::UiSystem& ui;
     ScreenStack& screenStack;
     GameHud& hud; // view-model state (inventory()/loot()/dialogueOptions())
@@ -59,13 +59,13 @@ struct UiRouterContext {
     std::function<void()> enterPlayMode;
     std::function<void()> exitPlayMode;
     std::function<void()> requestQuit;
-    std::function<void()> openOptions; // C9.4: push model + show screen
-    // FOLLOWERS É7 (appended): the HUD toast — the transfer guards talk
+    std::function<void()> openOptions; // Push model + show screen
+    // The HUD toast — the transfer guards talk
     // back (refused base-kit item, overweight follower, auto-equip).
     std::function<void(str line)> say;
 };
 
-// The UI action router extracted from LandscapeScene (audit U4-1): the
+// The UI action router extracted from LandscapeScene: the
 // RmlUi data-event dispatch (the setModelEventHandler callback lands here),
 // the shared menu actions, the inventory/container/barter screen opening
 // (incl. the D1 vendor profile + 24h restock) and the item gameplay actions
@@ -83,7 +83,7 @@ public:
     // Pause / main / wait / workstation menus share one action vocabulary.
     void handleMenuAction(const UiRouterContext& ctx, const str& action);
 
-    // Item screens: player-only, loot, and the B5 barter screen.
+    // Item screens: player-only, loot, and the barter screen.
     void openInventoryScreen(const UiRouterContext& ctx);
     void openContainerScreen(const UiRouterContext& ctx, ecs::Entity container);
     void openBarterScreen(const UiRouterContext& ctx, ecs::Entity vendor);

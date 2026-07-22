@@ -5,7 +5,7 @@
 
 #include "game/MapRaster.hpp"
 
-// C9.6 — the in-game map raster: pure CPU over the pure terrain
+// The in-game map raster: pure CPU over the pure terrain
 // functions, so it doctests headless (the WeaponMeshes precedent:
 // meadows-runtime code with no GL in sight).
 

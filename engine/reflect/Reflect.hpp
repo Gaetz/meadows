@@ -77,7 +77,7 @@ template<> struct KindOf<Vec4> { static constexpr auto value = FieldKind::Vec4; 
 template<> struct KindOf<Quat> { static constexpr auto value = FieldKind::Quat; };
 template<> struct KindOf<core::Guid> { static constexpr auto value = FieldKind::Guid; };
 
-// --- On-disk / patch contract lock (audit U1-01 / U7-3) ---
+// --- On-disk / patch contract lock ---
 // A FieldKind ordinal is persisted as a raw u8 in cooked binaries and saves,
 // and Value's alternative index IS that ordinal (see valueKind above).
 // Reordering the enum, the variant, or these KindOf specializations would

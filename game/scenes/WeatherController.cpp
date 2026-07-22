@@ -10,7 +10,7 @@ namespace {
 // captureCurrentWeather/applyWeather. Two fields are spelled differently on the
 // two structs: cloudShadow<->cloudShadowStrength, volumetric<->volumetric-
 // Intensity. A reflection-driven version (no hand-listed fields) is a later
-// brick (audit U4-8).
+// brick.
 data::WeatherForm capture(const AtmosphereParams& a) {
     data::WeatherForm w;
     w.cloudCoverage = a.cloudCoverage;
@@ -30,8 +30,8 @@ data::WeatherForm capture(const AtmosphereParams& a) {
     w.bloomIntensity = a.bloomIntensity;
     w.windStrength = a.windStrength;
     w.waveChop = a.waveChop;
-    w.stormFront = a.stormFront;     // brick 30
-    w.rainIntensity = a.rainIntensity; // brick 31
+    w.stormFront = a.stormFront;
+    w.rainIntensity = a.rainIntensity;
     return w;
 }
 
@@ -53,8 +53,8 @@ void applyTo(AtmosphereParams& a, const data::WeatherForm& w) {
     a.bloomIntensity = w.bloomIntensity;
     a.windStrength = w.windStrength;
     a.waveChop = w.waveChop;
-    a.stormFront = w.stormFront;       // brick 30
-    a.rainIntensity = w.rainIntensity; // brick 31
+    a.stormFront = w.stormFront;
+    a.rainIntensity = w.rainIntensity;
 }
 
 } // namespace
@@ -102,7 +102,7 @@ void WeatherController::update(AtmosphereParams& atmos, f32 dt) {
     blended.bloomIntensity = lerp(from_.bloomIntensity, to.bloomIntensity);
     blended.windStrength = lerp(from_.windStrength, to.windStrength);
     blended.waveChop = lerp(from_.waveChop, to.waveChop);
-    blended.stormFront = lerp(from_.stormFront, to.stormFront);     // brick 30
+    blended.stormFront = lerp(from_.stormFront, to.stormFront);
     blended.rainIntensity = lerp(from_.rainIntensity, to.rainIntensity); // 31
     applyTo(atmos, blended);
 }

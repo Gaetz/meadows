@@ -4,13 +4,13 @@
 
 #include "engine/core/Defines.hpp"
 
-// The navigation seam (horizontal pass H7) — INTERFACE ONLY by decision:
-// Recast/Detour is a post-7/07 vertical; until then the 2D grid A*
+// The navigation seam (docs/HORIZONTAL-PASS.md) — INTERFACE ONLY by
+// decision: Recast/Detour comes later; until then the 2D grid A*
 // (world/ai/GridNavigator) implements this contract. Consumers (AI
 // packages, schedules' travel, the player's companion someday) depend on
 // nav::Navigator and never on the implementation.
 //
-// HOW TO FILL (post-7/07, "vivant" vertical):
+// Planned extension points:
 //  - RecastNavigator: navmesh baked per cell by the cooker, tiles swapped
 //    on cell load/unload, findPath via Detour; off-mesh links for doors;
 //  - make it async for long paths: same worker/queue pattern as

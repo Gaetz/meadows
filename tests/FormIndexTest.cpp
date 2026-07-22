@@ -6,8 +6,8 @@
 #include "data/plugins/Resolver.hpp"
 #include "engine/core/Hash.hpp"
 
-// Secondary FormDatabase indexes (J-catalogue P1, 2026-07-13): parity with
-// the historical full scans — same forms, same order — and the §5 case
+// Secondary FormDatabase indexes: parity with
+// full scans — same forms, same order — and the §5 case
 // that motivated maintaining them at ADD time: a later plugin re-parents
 // a child record (the resolver materializes all writes before add).
 

@@ -1,14 +1,14 @@
 #version 460 core
 #include "common.glsl"
 
-// (binding 4 was uSsao — screen-space AO removed 2026-07-10; grounding
+// (binding 4 is unused — no screen-space AO; grounding
 // comes from the terrain light map, contact shadows and baked vertex AO.)
 layout(binding = 0) uniform sampler2D uSceneColor;
 layout(binding = 1) uniform sampler2D uBloom;
 layout(binding = 2) uniform sampler2D uGodRays;
 layout(binding = 3) uniform sampler2D uVolumetric;
-layout(binding = 5) uniform sampler2D uExposure; // brick 29: 1x1 adaptation
-layout(binding = 6) uniform sampler2D uContact;  // brick 33a: white = lit
+layout(binding = 5) uniform sampler2D uExposure; // 1x1 adaptation
+layout(binding = 6) uniform sampler2D uContact;  // white = lit
 
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
@@ -35,7 +35,7 @@ void main() {
     }
 
     vec3 hdr = texture(uSceneColor, vUv).rgb;
-    // Brick 33a: screen-space contact shadows — surface darkening before
+    // Screen-space contact shadows — surface darkening before
     // the added airlight below. The texture is the toggle: the scene
     // clears it to white when the feature is off.
     hdr *= texture(uContact, vUv).r;
@@ -56,14 +56,14 @@ void main() {
     hdr += texture(uBloom, vUv).rgb * uPostInfo.w;
     hdr += texture(uGodRays, vUv).rgb * uSunScreen.w;
     hdr *= uPostInfo.y; // exposure (becomes the EV bias when auto is on)
-    // Brick 29 (chantier 6 B4): the adapted exposure, one tap. The scene
+    // The adapted exposure, one tap. The scene
     // flags it on uWindInfo.w so the toggle costs nothing when off.
     if (uWindInfo.w > 0.5) {
         hdr *= texelFetch(uExposure, ivec2(0), 0).r;
     }
     // Submerged camera: the whole frame breathes water — teal absorption
     // that deepens with how far below the surface the camera sits. The
-    // scene sends the EFFECTIVE surface (brick 32): sea level outdoors, a
+    // scene sends the EFFECTIVE surface: sea level outdoors, a
     // water volume's top when the camera is inside one (flooded rooms
     // included), -1e6 = dry (plain interiors — the greenish-interior bug
     // stays fixed by construction).
@@ -74,7 +74,7 @@ void main() {
     // A/B toggle: raw path clips instead of rolling off (same gamma encode,
     // so the comparison isolates the tonemap curve).
     vec3 color = uPostInfo.x > 0.5 ? acesFilm(hdr) : clamp(hdr, 0.0, 1.0);
-    // B5: per-channel ACES skews saturated warm light toward yellow-green
+    // Per-channel ACES skews saturated warm light toward yellow-green
     // as it brightens (R rolls off first, G catches up). INDOORS
     // (uCascadeSplits.w) blend toward a hue-preserving mapping: ACES on
     // the luminance, original color ratio kept. The exterior keeps the
@@ -84,7 +84,7 @@ void main() {
         vec3 hueKept = hdr * (acesFilm(vec3(l)).r / max(l, 1e-4));
         color = mix(color, clamp(hueKept, 0.0, 1.0), 0.55);
     }
-    // Brick 28 (chantier 6 B3): analytical BotW grade between the curve and
+    // Analytical BotW grade between the curve and
     // the gamma encode. Parameters ride free .w slots — uSunGlowColor.w =
     // vibrance, uZenithColor.w = split-tone strength, uHorizonColor.w =
     // contrast; the scene sends neutral (0 / 0 / 1) when the toggle is off.

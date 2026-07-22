@@ -51,7 +51,7 @@ void FxDirector::create(const data::FormDatabase& formsIn,
         if (cue->cameraShake > 0.0f) {
             // Damage-ish magnitudes scale the punch a little (shakeScale
             // damage = authored strength), clamped so a crit doesn't
-            // nauseate. All four knobs are CueForm fields (R7).
+            // nauseate. All four knobs are CueForm fields.
             const f32 scale =
                 event.magnitude > 0.0f
                     ? glm::clamp(event.magnitude /
@@ -91,7 +91,7 @@ void FxDirector::update(f32 dt, render::FlyCamera& camera) {
     shakeTime += dt;
     // Damped wobble: two incommensurate frequencies so it reads as a
     // jolt, not a metronome. [cpp-tuning] (the frequencies; amplitude
-    // and decay come from the triggering CueForm — R7).
+    // and decay come from the triggering CueForm).
     const f32 amplitude = shake * shakeAmplitude;
     appliedOffset = Vec3 { std::sin(shakeTime * 71.0f),
                            std::cos(shakeTime * 47.0f) * 0.6f, 0.0f } *

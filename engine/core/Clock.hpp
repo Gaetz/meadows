@@ -4,7 +4,7 @@
 
 #include "engine/core/Defines.hpp"
 
-// The ONE monotonic engine clock (audit U1-04): every "how long since X"
+// The ONE monotonic engine clock: every "how long since X"
 // measurement derives from here instead of re-deriving std::chrono per site
 // (FrameProbe, Engine dt, TerrainSystem timing, UiSystem). WALL time for
 // instrumentation and UI pacing only — game time goes through

@@ -6,10 +6,10 @@
 #include <glm/glm.hpp> // Vec3 by value (Defines only forward-declares glm)
 
 #include "engine/core/Defines.hpp"
-#include "engine/core/Guid.hpp"              // ability guids (É6 perks)
-#include "gameplay/ability/GameplayTags.hpp" // GameplayTag (É4 rule matching)
+#include "engine/core/Guid.hpp"              // ability guids (perks)
+#include "gameplay/ability/GameplayTags.hpp" // GameplayTag (affinity rules)
 
-// The follow decision (FOLLOWERS É1 — docs/CHANTIER-FOLLOWERS.md). Pure and
+// The follow decision (docs/CHANTIER-FOLLOWERS.md). Pure and
 // headless (§2.10): position in, intent out — the game-side AI package
 // (NpcScheduleController::followPlayer) executes the intent through the
 // existing goTo/moveNpcAlongPath idiom. All feel knobs live in
@@ -19,7 +19,7 @@ namespace core {
 class Rng;
 }
 namespace data {
-class FormDatabase; // perk children lookups (É6)
+class FormDatabase; // perk children lookups
 }
 
 namespace gameplay {
@@ -53,7 +53,7 @@ struct FollowIntent {
 FollowIntent decideFollow(const Vec3& followerPos, const Vec3& playerPos,
                           const FollowTuning& tuning);
 
-// ---- É2: the aggro table --------------------------------------------------
+// ---- The aggro table --------------------------------------------------
 // Pure per-event decision for OnHitTaken{source, target} (§2.11: the bus
 // already carries the signal — resolveMeleeStrike dispatches it; this is
 // only the reaction table). The caller resolves the ROLES (follower =
@@ -61,7 +61,7 @@ FollowIntent decideFollow(const Vec3& followerPos, const Vec3& playerPos,
 // the Combat.FriendlyTrial tag on the PLAYER) and writes the returned
 // entity into Npc.combatTarget. The rules, flat:
 //   - a hostile struck BY A FOLLOWER fights that follower back (struck
-//     by the player it keeps its DEFAULT player targeting — iso É2);
+//     by the player it keeps its DEFAULT player targeting);
 //   - a follower struck by a hostile re-aims at its attacker, even
 //     mid-fight;
 //   - a follower with no live target defends the party: it adopts a
@@ -82,7 +82,7 @@ struct AggroRoles {
     bool targetFollower { false };
     bool targetHostile { false };
     bool friendlyTrial { false };
-    // É9 (appended): the « me défendre » stance — this follower never
+    // The « me défendre » stance — this follower never
     // adopts on the player's INITIATIVE (rule 4 off); being hit, or a
     // hostile striking the party, still engages him. Follow(0) and
     // defend(3) differ in exactly this flag.
@@ -97,7 +97,7 @@ u64 adoptOnHit(u64 source, u64 target, const AggroRoles& roles);
 // (A cleared follower falls back to the follow package next frame.)
 bool disengageOnDeath(u64 dead, u64 combatTarget);
 
-// ---- É3: downed, bleedout, aggravation, convalescence ---------------------
+// ---- Downed, bleedout, aggravation, convalescence ---------------------
 // The rules live HERE (sim, headless, doctested); the game side
 // (FollowerController::updateDowned) only sweeps the live NPCs and calls
 // in. Reused systems (§2.11): the CombatState timer pattern (stagger),
@@ -121,7 +121,7 @@ Aggravation rollAggravation(bool alreadyInjured, core::Rng& rng,
                             const StatsTuningForm& tuning);
 
 // The end of an un-revived bleedout window (updateDowned returned true).
-// V1 rule (stated in docs/FOLLOWERS-TEST É3): roll downedDeathChance for
+// V1 rule (docs/FOLLOWERS-TEST.md): roll downedDeathChance for
 // a REAL death — the protection tag is lifted and updateLifeState (the
 // single write point) grants State.Dead, so the normal OnDeath flow runs.
 // Otherwise he gets back up at 1 HP (a §2.9 execution calculation: the
@@ -152,7 +152,7 @@ f32 convalescenceHours(const Injuries& injuries);
 // Follower.Convalescent tag for the dialogue conditions.
 bool followerConvalescent(const FollowerState& state, f64 nowHours);
 
-// ---- É4: affinity ----------------------------------------------------------
+// ---- Affinity ----------------------------------------------------------
 // Affinity lives on FollowerState (a plain reflected field — §2.9: it is
 // NOT a GAS attribute and never moves through applyEffect). Two data-driven
 // movers, both pure and doctested: passive growth per game-hour spent
@@ -194,10 +194,10 @@ f32 affinityDelta(const vector<const AffinityRuleForm*>& rules,
                   const AffinityEventView& event,
                   const GameplayTagRegistry& tags);
 
-// ---- É5: classes, levels, evolution -----------------------------------------
-// Reused systems (§2.11): the É0 classAttributesAt curves, the equipmentMods
+// ---- Classes, levels, evolution -----------------------------------------
+// Reused systems (§2.11): the classAttributesAt curves, the equipmentMods
 // StatModifiers fold (buildCharacterMods' external-mods channel), the
-// recomputeStats machinery (efdf8e7 override ?? formula), and the seeded
+// recomputeStats machinery (override ?? formula), and the seeded
 // determinism (§8 — nothing here draws randomness). All pure and headless.
 
 struct CoreAttributes;
@@ -272,13 +272,13 @@ LevelSync syncFollowerLevel(f32 followerLevel, f32 lastSyncedFrom,
 std::optional<u32> bonusAttribute(const CoreAttributes& player,
                                     const CoreAttributes& follower);
 
-// ---- É6: special powers, class perks, taught perks --------------------------
+// ---- Special powers, class perks, taught perks --------------------------
 // Reused systems (§2.11): perks and powers ARE the GAS (§6) — AbilityForm
 // granted through grantAbility (the NPC tryActivate precedent) and
 // EffectForm applied through applyEffect (§2.9, nothing else ever moves
-// an attribute); the perk tables are the É0 ClassPerkForm children and
-// the É6 TaughtPerkForm children (childrenOf pattern); persistence is the
-// É6 SavedAbilityForm child records (pattern B, the SavedItemForm mirror)
+// an attribute); the perk tables are the ClassPerkForm children and
+// the TaughtPerkForm children (childrenOf pattern); persistence is the
+// SavedAbilityForm child records (pattern B, the SavedItemForm mirror)
 // plus the effects the save already carried. All pure/headless, doctested.
 
 struct AttributeSet;
@@ -286,7 +286,7 @@ struct AbilitySystem;
 struct ClassPerkForm;
 
 // Grants one perk's payload — ability and/or effect, either may be null.
-//   ability : grantAbility (idempotent — the É6 dedup).
+//   ability : grantAbility (idempotent dedup).
 //   effect  : REQUIRES a grantedTag (the FollowerForms.hpp discipline).
 //             Tag already on the target -> AlreadyKnown (a re-sync or a
 //             reload never stacks the infinite modifier); no grantedTag
@@ -325,10 +325,10 @@ struct AllyVitals {
 };
 u64 pickHealTarget(const vector<AllyVitals>& allies, f32 threshold);
 
-// ---- É7: follower carry weight ----------------------------------------------
+// ---- Follower carry weight ----------------------------------------------
 // docs/FOLLOWERS.md §5: « poids limité par ses caractéristiques et son
-// modificateur d'âge ». Reused systems (§2.11): the É5 age curve (the
-// PHYSICAL multiplier — carrying is a body matter) and the chantier-6
+// modificateur d'âge ». Reused systems (§2.11): the age curve (the
+// PHYSICAL multiplier — carrying is a body matter) and the
 // encumbrance helpers (inventoryWeight / the maxEncumbrance derived stat);
 // this only adds the pure accept/reject decision at the transfer site.
 
@@ -343,9 +343,9 @@ f32 followerCarryFactor(f32 age, const StatsTuningForm& tuning);
 bool canCarry(f32 currentWeight, f32 itemWeight, f32 maxEncumbrance,
               f32 ageFactor);
 
-// ---- É9: party caps, stances, banter, ambient comments ----------------------
-// Reused systems (§2.11): the caps read ActorForm.followerCategory (É0
-// data) against StatsTuningForm knobs (§5); the stance is one more
+// ---- Party caps, stances, banter, ambient comments ----------------------
+// Reused systems (§2.11): the caps read ActorForm.followerCategory
+// (data) against StatsTuningForm knobs (§5); the stance is one more
 // FollowerState field riding the SavedStatsForm name-match sweep; banter
 // and comments are child/top-level data records (the AffinityRuleForm /
 // QuestTaskForm matching) on GameClock hour stamps (the VendorState
@@ -355,7 +355,7 @@ struct FollowerBondForm;
 struct BanterForm;
 struct CommentForm;
 
-// The party census by É0 category. "mount" is EXEMPT from both caps
+// The party census by follower category. "mount" is EXEMPT from both caps
 // (docs/FOLLOWERS.md §8 — it never counts); "minor" fills the minor cap;
 // anything else (the authored "major", or a modded typo) counts as major —
 // the strict bucket, so bad data can never bypass the cap.
@@ -365,7 +365,7 @@ struct PartyCounts {
 };
 void countPartyMember(PartyCounts& counts, const str& category);
 
-// The recruit gate (checked at recruit time, É9): does one more
+// The recruit gate (checked at recruit time): does one more
 // `category` fit under the caps? Caps come in as integers (the f32 tuning
 // knobs truncated by the caller).
 enum class RecruitVerdict : u8 { Ok, MajorsFull, MinorsFull };
@@ -381,7 +381,7 @@ enum class FollowerStance : u8 { Follow = 0, Stay = 1, Attack = 2, Defend = 3 };
 FollowerStance followerStance(const FollowerState& state);
 void setFollowerStance(FollowerState& state, FollowerStance stance);
 
-// É9 anti-repeat clock, one per BanterForm/CommentForm guid in a
+// Anti-repeat clock, one per BanterForm/CommentForm guid in a
 // RUNTIME-ONLY map (v1, stated: resets on load — acceptable; the oneShot
 // flag is not persisted either). Hours are GameClock game-time stamps.
 struct CommentClock {
@@ -420,14 +420,14 @@ bool banterPairMatches(const BanterForm& banter, const core::Guid& x,
 bool decideBanter(const BanterForm& banter, f32 pairAffinityValue,
                   f64 nowHours, const CommentClock& clock);
 
-// ---- É10: mercenaries --------------------------------------------------------
-// Reused systems (§2.11): the É1 recruit/dismiss contract does the joining
+// ---- Mercenaries --------------------------------------------------------
+// Reused systems (§2.11): the recruit/dismiss contract does the joining
 // and the going-home; the gold moves the payFine way (removeItem, handler-
 // side so a refusal stays free); the contract clock is one GameClock
 // game-hour stamp on FollowerState (the VendorState.lastRestockHours
-// idiom, É0's followerContractExpiryHours — reserved since É0, live now);
+// idiom, followerContractExpiryHours);
 // the hire/renew options ride the dialogue-event channel (OnHireMercenary);
-// the toasts ride the C9.5 loc pipeline. This block is the PURE math only,
+// the toasts ride the loc pipeline. This block is the PURE math only,
 // doctested headless (§2.10).
 
 // The hire price, v1 formula (documented — reputation/factions join when

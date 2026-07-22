@@ -20,7 +20,7 @@ namespace game {
 
 class ScreenStack;
 
-// Chantier 9 C9.6 — the in-game map screen (Map action = M / d-pad left):
+// The in-game map screen (Map action = M / d-pad left):
 // a stylized top-down raster of the active EXTERIOR worldspace, generated
 // on the CPU (game/MapRaster) from the same terrain functions the world
 // uses, shown through the runtime:// texture facade, with the player

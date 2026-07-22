@@ -1,4 +1,4 @@
-// The §2.10 LINK-LEVEL lock (audit U9-3). This binary links the ENTIRE sim —
+// The §2.10 LINK-LEVEL lock. This binary links the ENTIRE sim —
 // the data/ecs/gameplay/world/script/narrative archives, whole-archive — and
 // deliberately NOT meadows-render. If any object in those libs references a
 // render/rhi/GL symbol, this target fails to link, which is the proof the

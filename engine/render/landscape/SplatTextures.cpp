@@ -10,7 +10,7 @@ namespace render {
 
 namespace {
 
-// hashU32 now lives in engine/core/Hash.hpp (shared scatter hash family).
+// hashU32 lives in engine/core/Hash.hpp (shared scatter hash family).
 using core::hashU32;
 
 f32 latticeValue(u32 seed, i32 x, i32 y) {

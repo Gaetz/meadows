@@ -19,14 +19,14 @@ namespace render {
 
 class ShaderLibrary;
 
-// Grass tuning (redo #2, dev-validated 2026-07-11), exposed in the render
+// Grass tuning, exposed in the render
 // panel's "Grass" category. The RENDER half is live — uploaded into the
 // FrameUbo every frame (uGrassShapeInfo/uGrassLodInfo/uGrass*Color) and
 // read by GrassSystem::draw()'s density prefix, which MUST stay on the
 // same curve as grass.vert's clip.
 struct GrassRenderTuning {
     f32 bladeHeight { 0.95f };    // meters at scale 1
-    f32 bladeHalfWidth { 0.03f }; // thinned 0.045 -> 0.03 (dev 2026-07-22)
+    f32 bladeHalfWidth { 0.03f }; // hand-tuned
     f32 detailNear { 12.5f };     // full quick-grass shading inside...
     f32 detailFar { 25.0f };      // ...flattened LOD beyond
     f32 thinStart { 10.0f };      // density LOD: thinning begins (m)
@@ -52,7 +52,7 @@ struct GrassScatterTuning {
     f32 materialCutoff { 0.72f };   // min grass splat weight to grow
 };
 
-// Animated grass (brick 14; blade model = redo #2, 2026-07-11 — the
+// Animated grass (blade model = the
 // SimonDev Quick_Grass port, see grass.vert). A chunk ring around the
 // camera scatters grass blades on worker threads — deterministic (seeded
 // hash per chunk), so revisited meadows are identical — and draws each
@@ -102,7 +102,7 @@ public:
 
     u32 instanceTotal() const { return instances; }
     // CPU-side geometry counters for the frame's culled+thinned draw
-    // (V8e — mid-pass GPU timestamps are meaningless on Metal).
+    // (mid-pass GPU timestamps are meaningless on Metal).
     u32 indicesThisFrame() const { return frameIndices; }
     u32 bladesThisFrame() const { return frameBlades; }
 

@@ -11,7 +11,7 @@ struct StatsTuningForm;
 
 namespace world {
 
-// P0 D2a (extracted from LandscapeScene, audit R6): the kill-z floor.
+// The kill-z floor.
 // Sweeps every actor (Transform + AbilitySystem) whose feet are below
 // `killZ` and ends it through the NORMAL pipeline (gameplay::killOutright
 // — life state, OnDeath, persistence), never a teleport-back. Actors

@@ -10,7 +10,7 @@ class FormDatabase;
 
 namespace game {
 
-// Owns the weather crossfade (brick 3b, extracted from LandscapeScene): a set
+// Owns the weather crossfade (extracted from LandscapeScene): a set
 // of precreated WeatherForm states (from landscape.toml) and a smooth
 // transition that writes the interpolated result into the scene's
 // AtmosphereParams over `duration` seconds. The scene keeps the manual sliders

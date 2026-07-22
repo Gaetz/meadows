@@ -7,13 +7,13 @@
 
 namespace render {
 
-// The GPU half of core::FrameProbe (GPU-PERF brick P0): per-pass GPU
+// The GPU half of core::FrameProbe: per-pass GPU
 // milliseconds without ever stalling. Wrap each pass's command
 // RECORDING in a Scope; a GL timestamp records when the GPU REACHES
 // that point of the stream — on a single queue the delta between a
 // scope's two timestamps IS the pass's GPU time.
 //
-// Discipline (the lesson the fences taught, audit P1): results are read
+// Discipline (the lesson the fences taught): results are read
 // FRAMES LATER. A ring of kFramesInFlight slots holds the pending
 // timestamps; beginFrame() polls only the OLDEST slot and resolves it
 // only when every one of its timestamps is available — never blocks.

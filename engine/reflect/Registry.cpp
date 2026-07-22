@@ -11,7 +11,7 @@ void Registry::add(const TypeInfo& info) {
         // A colliding fnv1a(type name) or a double registration silently
         // DROPS the second type: every record of that type would then skip
         // as "unknown". A programming error, not a data error — stop the
-        // debug build here instead of corrupting downstream (audit U1-02).
+        // debug build here instead of corrupting downstream.
         LOG_ERROR("Reflection: type id collision or double registration "
                   "for '{}' vs '{}'",
                   info.name, it->second->name);

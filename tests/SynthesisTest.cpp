@@ -6,7 +6,7 @@
 #include "data/plugins/Resolver.hpp"
 #include "data/plugins/Synthesis.hpp"
 
-// Chantier 8.5 (§5.1) — the synthesis patch is an ORDINARY plugin loaded
+// §5.1 — the synthesis patch is an ORDINARY plugin loaded
 // last. Two mods fight over the same field; the user picks the LOSER's
 // value; the generated plugin re-resolves to that value with zero new
 // mechanism.

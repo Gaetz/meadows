@@ -7,7 +7,7 @@
 #include "world/scene/SpatialIndex.hpp"
 #include "world/scene/TriggerSystem.hpp"
 
-// Chantier « volumes de gameplay » (MEADOWS-PLAN §A, P0): loaded
+// Gameplay volumes: loaded
 // TriggerVolumes vs actor positions — enter/leave events on the bus, Lua
 // script callback on enter, `once` latch persisted on the component.
 // Headless: entities are built by hand (the spawner wiring is covered by
@@ -121,7 +121,7 @@ TEST_CASE("trigger volumes: the box is oriented and scaled by the "
                                         { 4.0f, 1.0f, 1.0f }, "OnZone");
     // NOTE: transform is re-fetched before every write — the first update
     // adds TriggerOccupancy (archetype change) and would dangle a held
-    // reference (the U8-4 lesson, valid in tests too).
+    // reference (flecs storage moves — valid in tests too).
     trigger.get_mut<world::Transform>().rotation = glm::angleAxis(
         glm::radians(90.0f), Vec3 { 0.0f, 1.0f, 0.0f });
     world::updateTriggerVolumes(f.world, f.callbacks);

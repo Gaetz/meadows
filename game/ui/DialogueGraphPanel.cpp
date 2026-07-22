@@ -157,7 +157,7 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
         pendingPlace = {};
     }
 
-    // 8.7d lint precompute: which event names anything reacts to (tasks,
+    // Lint precompute: which event names anything reacts to (tasks,
     // quest startEvents, C++ listeners) — one scan, not one per node.
     std::unordered_set<str> listened;
     session.forEachVisible([&](const core::Guid&, const data::Form& form,
@@ -256,7 +256,7 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
         contextNode = actions.contextNode;
         ImGui::OpenPopup("dgg-node");
     }
-    // 8.7d: dragging from a node's OUTPUT into empty canvas proposes a
+    // Dragging from a node's OUTPUT into empty canvas proposes a
     // new reply there (a tree: input-side drags re-parent, not create).
     if (actions.newNodeRequested && actions.newNodeFromOutput) {
         dragFrom = actions.newNodeFrom;
@@ -304,7 +304,7 @@ void DialogueGraphPanel::drawCanvas(const core::Guid& dialogueId) {
                 static_cast<const quest::DialogueNodeForm*>(
                     session.view(contextNode));
             if (parentNode) {
-                // The 8.3 flow: alternate speakers, next order.
+                // Alternate speakers, next order.
                 i32 nextOrder = 0;
                 for (const auto& [id, node] : data.nodes) {
                     if (node->parent == contextNode) {

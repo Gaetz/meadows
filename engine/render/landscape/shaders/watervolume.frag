@@ -2,7 +2,7 @@
 #include "common.glsl"
 #include "sky.glsl" // applyFog
 
-// Brick 32 — placed water volume surface: a stylized, NON-mirrored sheet
+// Placed water volume surface: a stylized, NON-mirrored sheet
 // (the planar mirror belongs to the global sea alone). Sky-tinted fresnel
 // + two scrolling ripple noise layers; alpha blend over the opaques.
 

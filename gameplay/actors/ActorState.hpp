@@ -4,14 +4,14 @@
 #include "engine/reflect/Reflect.hpp"
 #include "gameplay/ability/GameplayTags.hpp" // FactionBounty.faction
 
-// Small per-actor runtime state components (chantier 6). Reflected so the
+// Small per-actor runtime state components. Reflected so the
 // save layer captures them by field name through the captureActor sweep —
 // NOT scene-level maps (a scene map dies on re-enter while the actor's
 // inventory persists: a free-restock / bounty-amnesty exploit).
 
 namespace gameplay {
 
-// Vendor restock clock (D1): the game-time hour of the last inventory
+// Vendor restock clock: the game-time hour of the last inventory
 // re-roll. The barter screen re-rolls the loadout when more than the
 // restock interval has passed.
 struct VendorState {
@@ -22,12 +22,12 @@ struct VendorState {
     REFLECT_END()
 };
 
-// Crime bounty (D2) — the per-entity faction state CLAUDE.md §6.1
+// Crime bounty — the per-entity faction state CLAUDE.md §6.1
 // sanctions as a thin component. Conditions can't see components, so the
 // scene mirrors bounty > 0 into the Crime.Wanted tag (syncTag pattern).
 //
-// Per-faction (2026-07-13, the F-catalogue "bounty PAR FACTION" leftover):
-// `bounty` stays the TOTAL (the legacy name-matched save field, the HUD
+// Per-faction bounty:
+// `bounty` stays the TOTAL (the name-matched save field, the HUD
 // and the fine gate); `perFaction` slices attribute it to the WITNESS's
 // faction. sum(slices) <= total; any remainder is UNATTRIBUTED (an old
 // save) and counts toward every faction — no amnesty on migration.
@@ -48,7 +48,7 @@ struct Bounty {
 };
 
 // An invalid faction (no witness tag) raises the total only —
-// unattributed, so it angers every guard (the pre-migration behavior).
+// unattributed, so it angers every guard.
 inline void addBounty(Bounty& bounty, GameplayTag faction, f32 amount) {
     bounty.bounty += amount;
     if (!faction.isValid()) {
@@ -105,7 +105,7 @@ inline void clearBountyToward(Bounty& bounty, GameplayTag faction) {
     }
 }
 
-// Follower runtime state (FOLLOWERS É0 — docs/CHANTIER-FOLLOWERS.md).
+// Follower runtime state (docs/CHANTIER-FOLLOWERS.md).
 // Same pattern as VendorState/Bounty above: reflected, present on every
 // actor, captured by the SavedStatsForm name-match sweep. Fields carry the
 // `follower` prefix because SavedStatsForm field names must stay globally
@@ -118,11 +118,11 @@ struct FollowerState {
     f32 followerLevel { 1.0f };
     f32 followerAffinity { 0.0f };
     f32 followerHoursTogether { 0.0f };
-    f32 followerContractExpiryHours { 0.0f };  // 0 = no contract (É10)
+    f32 followerContractExpiryHours { 0.0f };  // 0 = no contract
     f32 followerLastLevelSyncedFrom { 0.0f };  // player level at last sync
     f32 followerLastHomeUpgradeHours { 0.0f };
-    f32 followerDownedRecoveryHours { 0.0f };  // convalescence timer (É3)
-    // FOLLOWERS É9 (APPEND — ordinals stable): the group-command stance.
+    f32 followerDownedRecoveryHours { 0.0f };  // convalescence timer
+    // The group-command stance.
     // f32 like every sibling so the SavedStatsForm name-match sweep carries
     // it unchanged; read/written ONLY through gameplay::followerStance /
     // setFollowerStance (Followers.hpp — enum + one transition point).

@@ -2,7 +2,7 @@
 
 #include "data/editor/EditorLayouts.hpp"
 
-// Chantier 8.6 — the node-position side-store. NOT a plugin (the decided
+// The node-position side-store. NOT a plugin (the decided
 // exception): tool state keyed by guids, byte-stable TOML for clean git
 // diffs, tolerant parsing (a broken layout file must never block the
 // editor — worst case, auto-layout takes over).

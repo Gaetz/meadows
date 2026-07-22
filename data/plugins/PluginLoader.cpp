@@ -111,7 +111,7 @@ std::optional<core::Guid> guidOf(const toml::table& table,
 core::Result<Plugin> parsePluginToml(std::string_view text,
                                      const FormTypeRegistry& types,
                                      std::string_view sourceName) {
-    // U1-03: fatal failures return their REASON (still logged here so the
+    // Fatal failures return their REASON (still logged here so the
     // headless tests keep the context in their output).
     const auto fail = [&](const str& reason) {
         LOG_ERROR("{}: {}", sourceName, reason);

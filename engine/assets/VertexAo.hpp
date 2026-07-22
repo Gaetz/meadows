@@ -5,7 +5,7 @@
 namespace assets {
 
 // Bakes hemispheric SELF-occlusion into MeshVertex.color (multiplied) —
-// the BotW recipe (option B, 2026-07-10): ambient grounding lives in the
+// the BotW recipe: ambient grounding lives in the
 // assets, not in a screen-space pass (the sampled SSAO's speckle and the
 // unsharp-mask's halos both retired from the default look). Static
 // meshes only (a deformed skin would carry a stale bake).

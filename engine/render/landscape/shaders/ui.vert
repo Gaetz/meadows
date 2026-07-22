@@ -2,7 +2,7 @@
 
 #include "compat.glsl"
 
-// RmlUi geometry (H4): pixel-space positions -> NDC, top-left origin.
+// RmlUi geometry: pixel-space positions -> NDC, top-left origin.
 
 layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec4 aColor; // premultiplied

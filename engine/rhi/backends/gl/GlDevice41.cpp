@@ -97,7 +97,7 @@ PipelineHandle GlDevice41::createPipeline(const PipelineDesc& desc) {
         return {};
     }
 
-    GlPipeline pipeline = makePipelineState(desc, shaderIt->second); // U2-03
+    GlPipeline pipeline = makePipelineState(desc, shaderIt->second);
 
     // Generate a bare VAO. Attribute format info is stored for later use in
     // implBindVboSlot, where glVertexAttribPointer bakes buffer + format

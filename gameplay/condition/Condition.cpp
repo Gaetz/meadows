@@ -5,8 +5,8 @@
 #include <unordered_map>
 
 #include "data/forms/FormDatabase.hpp"
-#include "gameplay/actors/ActorState.hpp" // FollowerState (É4 partner clause)
-#include "gameplay/actors/Followers.hpp"  // followerConvalescent (2026-07-13)
+#include "gameplay/actors/ActorState.hpp" // FollowerState (partner clause)
+#include "gameplay/actors/Followers.hpp"  // followerConvalescent
 
 namespace gameplay {
 
@@ -45,7 +45,7 @@ bool luaPredicate(const ConditionForm& clause, const EvalContext& ctx) {
     return ctx.luaPredicate && ctx.luaPredicate(clause.lua);
 }
 
-// FOLLOWERS É4: reads the DIALOGUE PARTNER's affinity (EvalContext.
+// Reads the DIALOGUE PARTNER's affinity (EvalContext.
 // partnerFollower — the player context carries no affinity). Fails closed
 // when no partner (or a non-follower partner) filled the context.
 bool followerAffinityAtLeast(const ConditionForm& clause,
@@ -54,11 +54,11 @@ bool followerAffinityAtLeast(const ConditionForm& clause,
            ctx.partnerFollower->followerAffinity >= clause.value;
 }
 
-// Dev report 2026-07-13: recruit/dismiss options gated on the PLAYER's
-// global Follower.Active mirror flipped for EVERY follower once ONE was
-// recruited (Maela offered « Reste ici » with only Aldric hired). These
-// two read the DIALOGUE PARTNER's own state instead — the mirrors stay
-// for genuinely party-wide gates (the group-command submenu).
+// These two read the DIALOGUE PARTNER's own state, NOT the player's
+// global Follower.Active mirror — that mirror flips once ANY follower is
+// recruited, so gating recruit/dismiss options on it would open them for
+// every follower. The mirrors stay for genuinely party-wide gates (the
+// group-command submenu).
 bool followerActive(const ConditionForm&, const EvalContext& ctx) {
     return ctx.partnerFollower && ctx.partnerFollower->followerActive;
 }
@@ -76,9 +76,9 @@ const std::unordered_map<std::string_view, ClauseFn> kClauseEvaluators {
     { "AttributeAtMost", &attributeAtMost },
     { "HasItem", &hasItem },
     { "Lua", &luaPredicate },
-    { "FollowerAffinityAtLeast", &followerAffinityAtLeast }, // É4
-    { "FollowerActive", &followerActive },                   // 2026-07-13
-    { "FollowerConvalescent", &followerConvalescentClause }, // 2026-07-13
+    { "FollowerAffinityAtLeast", &followerAffinityAtLeast },
+    { "FollowerActive", &followerActive },
+    { "FollowerConvalescent", &followerConvalescentClause },
 };
 
 } // namespace

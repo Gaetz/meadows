@@ -1,10 +1,10 @@
 #version 460 core
 #include "common.glsl"
 
-// Grass redo #2 (2026-07-11, dev-validated) — the SimonDev Quick_Grass
+// The SimonDev Quick_Grass
 // model (github.com/simondevyoutube/Quick_Grass), ported from three.js to
-// our instanced scatter; it REPLACES the 7.8 daniel-ilett ribbons. Every
-// shaping constant now lives in the FrameUbo (uGrassShapeInfo/uGrassLod-
+// our instanced scatter. Every
+// shaping constant lives in the FrameUbo (uGrassShapeInfo/uGrassLod-
 // Info/uGrass*Color), driven live from the render panel's "Grass"
 // category. Per blade:
 //  - SHAPE: 6-segment strip, width tapered 1-t^2 (rounded tip) near,
@@ -26,7 +26,7 @@
 //    must stay identical to GrassSystem::draw()'s prefix cut (both read
 //    the same tuning: uGrassLodInfo here, renderTuning there).
 //  - the distance fade (uGrass*Color.w) matches draw()'s fadeEnd cull.
-//  - uGrassBendInfo player push (7.8ter, validated feel).
+//  - uGrassBendInfo player push.
 
 layout(location = 0) in vec2 aBlade;    // x = side [-1,1], y = t [0,1]
 layout(location = 2) in vec4 aPosScale; // xyz = terrain point, w = height scale
@@ -99,7 +99,7 @@ void main() {
         1.0 - smoothstep(uGrassBaseColor.w, uGrassTipColor.w, dist);
     float height = uGrassShapeInfo.x * aPosScale.w * fade;
 
-    // Player push (7.8ter, kept): compute from the root before shaping.
+    // Player push: compute from the root before shaping.
     float push = 0.0;
     vec2 pushDir = vec2(0.0);
     if (uGrassBendInfo.w > 0.0) {
@@ -115,7 +115,7 @@ void main() {
     }
 
     // Width: rounded taper near (1 - t^2), linear far; per-blade width
-    // jitter; wider blades compensate the far density floor (kept).
+    // jitter; wider blades compensate the far density floor.
     float taper = mix(1.0 - t * t, 1.0 - t, lodOut);
     float halfWidth = uGrassShapeInfo.y * mix(0.7, 1.3, aParams.z) *
                       (1.0 + thin * uGrassLodInfo.w);
@@ -156,7 +156,7 @@ void main() {
     vec3 local = vec3(aBlade.x * halfWidth * taper, t * height, 0.0);
     local = rotX(curve) * local;
     vec3 world = aPosScale.xyz + grassMat * local;
-    world.xz += pushDir * (push * 0.9 * t * height); // player push (kept)
+    world.xz += pushDir * (push * 0.9 * t * height); // player push
 
     // Rounded normals: the curved face normal rotated ±54° around the
     // blade axis, blended across the width in the fragment; both pulled

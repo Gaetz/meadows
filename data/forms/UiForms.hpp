@@ -2,7 +2,7 @@
 
 #include "data/forms/Form.hpp"
 
-// UI data Forms (horizontal pass H1). Decision 2026-07-05: game UI = RmlUi,
+// UI data Forms. Game UI = RmlUi (docs/MEADOWS-PLAN.md),
 // documents (.rml/.rcss) served through the plugins' `ui/` directories with
 // path-level layering (a later plugin overrides a screen wholesale — the
 // SkyUI/Scaleform modding model). This Form is the registry of screens: it

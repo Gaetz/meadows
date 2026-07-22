@@ -13,7 +13,7 @@ namespace game {
 // the cache before re-spawning.
 //
 // The async-residency machinery (worker decode -> queue -> main-thread
-// upload, §7 / §9 Phase 5) lives in ResidencyCache (audit U5-2); this file
+// upload, §7 / §9 Phase 5) lives in ResidencyCache; this file
 // keeps only what is texture-specific: the checker placeholder, the image
 // decode, the upload description and the white fallback on failure.
 struct TextureCacheTraits {

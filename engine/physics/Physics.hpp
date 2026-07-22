@@ -5,16 +5,16 @@
 
 #include "engine/core/Defines.hpp"
 
-// The physics seam (horizontal pass H3): a narrow facade over Jolt. NO
+// The physics seam (docs/HORIZONTAL-PASS.md): a narrow facade over Jolt. NO
 // Jolt type crosses this header (§3.1 pimpl rule) — swapping or upgrading
 // the physics engine stays a .cpp affair. Headless by nature: the physics
 // world belongs to the SIM side and is doctested without any renderer.
 //
-// HOW TO FILL (post-7/07, "socle 3D gameplay" vertical):
+// Planned extension points:
 //  - cook cell collision (static meshes from placed StaticForms) into
 //    addStaticMesh calls at cell load, remove on unload;
 //  - drive the player/NPCs through CharacterBody::move from the intent
-//    system (in-place animation decision: the controller owns motion);
+//    system (in-place animation: the controller owns motion);
 //  - hook trigger volumes (TriggerForm) via sensor bodies + the callback;
 //  - interaction/combat raycasts go through rayCast/shapeCast here, never
 //    straight into Jolt.
@@ -47,7 +47,7 @@ public:
     BodyId addStaticBox(const Vec3& halfExtents, const Vec3& position,
                         const Quat& rotation = { 1.0f, 0.0f, 0.0f, 0.0f });
 
-    // A square terrain tile (chantier 1, B4): sampleCount x sampleCount
+    // A square terrain tile: sampleCount x sampleCount
     // heights, row-major with x fastest and rows along +Z, world corner at
     // `origin`, one sample every `spacing` meters — covers
     // (sampleCount-1) * spacing meters per side. Keep sampleCount a power
@@ -55,7 +55,7 @@ public:
     BodyId addHeightField(const f32* samples, u32 sampleCount,
                           const Vec3& origin, f32 spacing);
 
-    // A static triangle mesh (chantier 2 B2): world geometry from authored
+    // A static triangle mesh: world geometry from authored
     // models (kit modules, rocks). `indices` are triangles (count = 3n);
     // `scale` is baked into the vertices CPU-side (meshes are small).
     // Returns 0 on failure (degenerate/empty mesh).
@@ -71,8 +71,8 @@ public:
     RayHit rayCast(const Vec3& from, const Vec3& direction,
                    f32 maxDistance) const;
 
-    // First hit of a swept SPHERE (chantier P0 A1): the melee arc sweep
-    // (A4 hit windows) and projectile thickness. The sphere of `radius`
+    // First hit of a swept SPHERE: the melee arc sweep
+    // (hit windows) and projectile thickness. The sphere of `radius`
     // travels from `from` along `direction` for `maxDistance`; hit
     // position = contact point on the struck surface.
     RayHit sphereCast(const Vec3& from, const Vec3& direction,
@@ -86,7 +86,7 @@ private:
 };
 
 // A kinematic capsule character (Jolt CharacterVirtual): the controller
-// OWNS motion (no root motion — decision 2026-07-05). Gravity and ground
+// OWNS motion (no root motion). Gravity and ground
 // snapping are handled inside move().
 class CharacterBody {
 public:
@@ -103,7 +103,7 @@ public:
     void move(const Vec3& desiredVelocity, f32 dt);
     void jump(f32 speed);
 
-    // P0 D2b: swim mode — gravity off, vertical control to the caller.
+    // Swim mode — gravity off, vertical control to the caller.
     void setSwimming(bool swimming);
     bool isSwimming() const;
 

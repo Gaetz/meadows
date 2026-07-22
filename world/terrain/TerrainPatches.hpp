@@ -7,7 +7,7 @@
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/terrain/HeightPatches.hpp"
 
-// Authored-terrain plumbing (chantier 2 B8): TerrainPatchForm records +
+// Authored-terrain plumbing: TerrainPatchForm records +
 // `.ter` delta-grid assets -> the engine's immutable render::HeightPatches
 // overlay (which rides inside TerrainParams — every height consumer is
 // patched without a signature change). The sculpt tool edits grids in

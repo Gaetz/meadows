@@ -2,7 +2,7 @@
 
 #include "engine/platform/Input.hpp"
 
-// Chantier 9 C9.1 — the pure half of the gamepad channel: the radial
+// The pure half of the gamepad channel: the radial
 // stick deadzone. The SDL-backed polling is smoke-tested in game; the
 // MATH is what must not drift.
 

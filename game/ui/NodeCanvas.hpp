@@ -15,8 +15,8 @@ struct EditorContext;
 
 namespace game {
 
-// The thin, reusable wrapper over ax::NodeEditor (chantier 8.6) — shared
-// by every graph editor (anim graph now; quests/dialogues in 8.7). It
+// The thin, reusable wrapper over ax::NodeEditor — shared
+// by every graph editor (anim graph, quests, dialogues). It
 // owns what all of them need and nothing more:
 //  - the ed context (one per canvas, internal json persistence DISABLED —
 //    node positions belong to the data::EditorLayouts side-store);
@@ -27,7 +27,7 @@ namespace game {
 //    selection moved, nodes dragged) — the §5 rules (delete only
 //    session-created drafts) stay in the panel via the predicates below.
 // The CONTENT of a node is drawn by each editor between beginNode/endNode
-// — no mega-abstraction; three consumers (8.6-8.7) calibrate this class.
+// — no mega-abstraction; its three consumers calibrate this class.
 class NodeCanvas {
 public:
     NodeCanvas();
@@ -39,7 +39,7 @@ public:
         bool linkCreated { false }; // a pin->pin drag completed...
         core::Guid linkFrom;        // ...from this node's output
         core::Guid linkTo;          // ...to this node's input
-        // A pin->EMPTY-CANVAS drag released (8.7d): the panel proposes
+        // A pin->EMPTY-CANVAS drag released: the panel proposes
         // what can be created there, pre-linked to the source.
         bool newNodeRequested { false };
         core::Guid newNodeFrom;          // the dragged pin's node

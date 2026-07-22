@@ -49,7 +49,7 @@ void main() {
                   total;
 
     albedo *= cascadeDebugTint(vWorldPos);
-    // Brick 31 wetness: rain darkens the ground (global v1 — the roof
+    // Wetness: rain darkens the ground (global for now — the roof
     // keeps the DROPS out via the occlusion map; per-pixel dry patches
     // under cover are a later refinement).
     albedo *= mix(1.0, 0.72, clamp(uStormInfo.y, 0.0, 1.0));
@@ -59,9 +59,9 @@ void main() {
     // drift — hard edges would crawl).
     float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
                    cloudShadowFactor(vWorldPos);
-    // 33b/c: long-range terrain sun shadow (x) + sky openness (y).
+    // Long-range terrain sun shadow (x) + sky openness (y).
     vec2 tl = terrainLightFactors(vWorldPos);
-    // Chantier RC (G6): the ONE technique branch — Classic stays intact.
+    // The ONE GI technique branch (gi.glsl) — Classic stays intact.
     vec3 lit = albedo * (giAmbient(vWorldPos, n, uAmbientColor.rgb * tl.y) +
                          uSunColor.rgb * (diffuse * shadow * tl.x));
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
