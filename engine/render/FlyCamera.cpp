@@ -19,9 +19,23 @@ void FlyCamera::update(platform::Input& input, platform::Window& window,
         // even mid-capture, so panels stay reachable.
         wantCapture = allowCapture;
     } else {
-        const bool held = trigger == LookTrigger::RightButton
-                              ? input.mouseDown(platform::MouseButton::Right)
-                              : input.mouseDown(platform::MouseButton::Left);
+        const bool rmb = input.mouseDown(platform::MouseButton::Right);
+        const bool lmb = input.mouseDown(platform::MouseButton::Left);
+        bool held;
+        switch (trigger) {
+        case LookTrigger::RightButton:
+            held = rmb;
+            break;
+        case LookTrigger::RightOrAltLeft:
+            // `captured ||` is what makes the modifier an ARM, not a hold:
+            // Alt must be down to START, never to CONTINUE.
+            held = rmb ||
+                   (lmb && (captured || input.isDown(platform::Key::Alt)));
+            break;
+        default:
+            held = lmb;
+            break;
+        }
         wantCapture = captured ? held : (held && allowCapture);
     }
     if (wantCapture != captured) {

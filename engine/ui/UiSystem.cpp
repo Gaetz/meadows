@@ -391,6 +391,7 @@ Rml::Input::KeyIdentifier rmlKeyFor(platform::Key key) {
     case Key::Num3: return KI_3;
     case Key::Num4: return KI_4;
     case Key::Num5: return KI_5;
+    case Key::Alt: return KI_LMENU; // Alt/Option — RmlUi's menu modifier
     case Key::Count: break;
     }
     return KI_UNKNOWN;

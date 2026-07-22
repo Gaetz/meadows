@@ -26,7 +26,11 @@ public:
     // capture while that button is held; Always captures continuously (no
     // button), matching Play — but still yields the cursor whenever
     // `allowCapture` is false, so a hold-to-free modifier works.
-    enum class LookTrigger { LeftButton, RightButton, Always };
+    // RightOrAltLeft additionally arms on Alt/Option + LMB: macOS trackpads
+    // have no comfortable right button. The modifier only ARMS the capture —
+    // once looking, the drag continues on LMB alone, so letting go of Alt
+    // mid-turn does not drop the view.
+    enum class LookTrigger { LeftButton, RightButton, RightOrAltLeft, Always };
 
     // `allowCapture` gates STARTING a capture (pass false while a UI layer
     // wants the mouse, e.g. ImGui::GetIO().WantCaptureMouse); an ongoing

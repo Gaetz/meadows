@@ -152,6 +152,7 @@ std::string_view keyName(Key key) {
     case Key::J: return "J";
     case Key::R: return "R";
     case Key::M: return "M";
+    case Key::Alt: return "Alt"; // Option on macOS
     case Key::Count: break;
     }
     return "?";

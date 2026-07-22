@@ -41,6 +41,9 @@ SDL_Scancode scancodeFor(Key key) {
     case Key::J:         return SDL_SCANCODE_J;
     case Key::R:         return SDL_SCANCODE_R;
     case Key::M:         return SDL_SCANCODE_M;
+    // Left twin only: update() ORs the right one in, and the reverse map
+    // below wants a single representative scancode per logical key.
+    case Key::Alt:       return SDL_SCANCODE_LALT;
     case Key::Count:  break;
     }
     return SDL_SCANCODE_UNKNOWN;
@@ -163,6 +166,9 @@ void Input::update() {
         for (size_t i = 0; i < current.size(); ++i) {
             current[i] = state[scancodeFor(static_cast<Key>(i))];
         }
+        // Alt/Option is a modifier: no side preference, either twin counts.
+        current[static_cast<size_t>(Key::Alt)] =
+            state[SDL_SCANCODE_LALT] || state[SDL_SCANCODE_RALT];
     }
     // SDL3: position is filled as floats; the return value is the button bitmask.
     float mx = 0.0f, my = 0.0f;

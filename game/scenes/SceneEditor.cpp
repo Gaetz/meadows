@@ -190,7 +190,13 @@ void SceneEditor::draw(const EditorContext& ctx) {
         } else if (snapEnabled && op == ImGuizmo::ROTATE) {
             snap = rotateSnap;
         }
-        if (ImGuizmo::Manipulate(&view[0][0], &proj[0][0], op,
+        // Not while mouselooking: Alt+LMB now arms the camera (2026-07-22)
+        // and ImGuizmo only ever reacts to LMB, so without this guard a
+        // Cmd-drag over the gizmo would turn the view AND drag the object.
+        // Short-circuit, so IsUsing() falls to false and the release branch
+        // below still commits a stroke that was in flight.
+        if (!ctx.camera.capturing() &&
+            ImGuizmo::Manipulate(&view[0][0], &proj[0][0], op,
                                  ImGuizmo::WORLD, &model[0][0], nullptr,
                                  snap)) {
             // Manual decompose (translation / per-column scale / rotation).
@@ -326,7 +332,7 @@ void SceneEditor::draw(const EditorContext& ctx) {
     ImGui::Begin("Level editor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::TextUnformatted(
         "LMB: pick / place / sculpt | Ctrl+LMB: add to group | 1/2/3: gizmo "
-        "op\nHold RMB: look + WASD: fly | F3: back to Play");
+        "op\nHold RMB (or Alt+LMB): look + WASD: fly | F3: back to Play");
     ImGui::Text("Session: %u dirty record(s)",
                 ctx.levelEditor.editSession().dirtyCount());
     if (ImGui::Button("Undo") && ctx.levelEditor.editSession().canUndo()) {

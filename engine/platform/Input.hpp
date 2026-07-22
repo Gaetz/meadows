@@ -23,6 +23,11 @@ enum class Key : u16 {
     J, // quest journal (chantier 6)
     R, // draw/sheathe the weapon (P0 combat)
     M, // the in-game map (chantier 9)
+    // Option on macOS, Alt elsewhere. Either side reports down (see
+    // Input::update) — it is a modifier, not a handed key. Used by the
+    // editor/spectator camera as the Alt+LMB stand-in for the right
+    // button (macOS trackpads, dev pick 2026-07-22).
+    Alt,
     Count
 };
 
