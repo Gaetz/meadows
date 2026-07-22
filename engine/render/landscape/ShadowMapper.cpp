@@ -7,9 +7,11 @@
 namespace render {
 
 namespace {
-// View-distance boundaries of the cascade slices (meters).
+// View-distance boundaries of the cascade slices (meters). The last slice
+// reaches the ultra tree ring, so distant canopies still ground themselves;
+// it casts with the cheap solid shadow proxies (VegetationSystem).
 constexpr f32 kSplits[ShadowMapper::kCascadeCount + 1] = { 0.5f, 45.0f,
-                                                           160.0f, 480.0f };
+                                                           160.0f, 800.0f };
 // How far behind the slice the light's near plane sits: tall terrain and
 // trees outside the slice still cast into it.
 constexpr f32 kCasterReach = 350.0f;

@@ -41,8 +41,9 @@ struct RcTuning {
     f32 fineVoxel { 0.5f };   // meters — interiors / near detail
     f32 coarseVoxel { 2.0f }; // meters — mid-field (span = res × voxel)
     i32 cascadeCount { 5 };   // levels (clamped so the top keeps ≥2 probes)
-    // Live:
-    GiTechnique technique { GiTechnique::Classic }; // apply switch
+    // Live (RC is the default look; Classic stays one panel click away
+    // and remains the automatic fallback when caps are missing):
+    GiTechnique technique { GiTechnique::RadianceCascades };
     f32 intensity { 0.7f };   // indirect strength at apply
     f32 skyFactor { 0.6f };   // sky ambient folded into injected surfaces
                               // (bounce 0.5 returns sky too)

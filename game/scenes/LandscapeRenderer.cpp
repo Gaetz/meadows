@@ -121,6 +121,11 @@ void LandscapeRenderer::applyTreeTuning(
     c.cardHalfSizeMax = colonized.cardHalfSizeMax;
     c.densityGradient = colonized.densityGradient;
     c.foliageDensity = colonized.foliageDensity;
+    c.leafCount = colonized.leafCount;
+    c.leafSizeMin = colonized.leafSizeMin;
+    c.leafSizeMax = colonized.leafSizeMax;
+    c.leafSolidStart = colonized.leafSolidStart;
+    c.leafSolidEnd = colonized.leafSolidEnd;
 }
 
 void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
@@ -1310,6 +1315,9 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                             grass.renderTuning.fadeStart },
         .grassTipColor = { grass.renderTuning.tipColor,
                            grass.renderTuning.fadeEnd },
+        .leafLodInfo = { vegetation.colonizedTreeParams.leafSolidStart,
+                         vegetation.colonizedTreeParams.leafSolidEnd, 0.0f,
+                         0.0f },
         // giInfo() gates on ready() itself (interiors included).
         .giInfo = radianceCascades.giInfo(),
         .giGridInfo = radianceCascades.giGridInfo(),
@@ -1450,12 +1458,13 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                   .loadOp = rhi::LoadOp::DontCare,
                   .depthLoadOp = rhi::LoadOp::Clear });
             terrain.drawDepth(frame.cmd, shadows.casterBindGroup(i),
-                              camera.position, 9, &cascadeFrustum);
-            // Same 9-chunk cap: the last cascade ends at 480 m. Far
-            // cascades cast with the 20-face ultra twin.
+                              camera.position, 13, &cascadeFrustum);
+            // Same 13-chunk cap: the last cascade ends at 800 m (the
+            // ultra tree ring). Far cascades cast with the solid shadow
+            // proxies (metaball blobs), cascade 0 with the leafy cards.
             vegetation.drawDepth(frame.cmd, frameBindGroup,
                                  shadows.casterBindGroup(i),
-                                 camera.position, 9, &cascadeFrustum,
+                                 camera.position, 13, &cascadeFrustum,
                                  /*ultraDetail=*/i > 0);
             // Scene meshes + NPCs join the casters (A/B toggle).
             if (meshShadowCastersUi) {
@@ -2005,6 +2014,15 @@ void LandscapeRenderer::drawTreeBuilderPanel() {
         knob("Card size max", p.cardHalfSizeMax, 0.01f, 0.35f);
         knob("Density gradient G", p.densityGradient, 1.0f, 6.0f);
         knob("Card density x", p.foliageDensity, 0.25f, 8.0f);
+        ImGui::SeparatorText("Leaf mask (card texture)");
+        knobInt("Leaf count", p.leafCount, 10, 200);
+        knob("Leaf size min", p.leafSizeMin, 0.03f, 0.4f);
+        knob("Leaf size max", p.leafSizeMax, 0.03f, 0.5f);
+        // Live shader window (uLeafLodInfo) — no rebuild, plain sliders.
+        ImGui::SliderFloat("Leaf solid start (mip)",
+                           &p.leafSolidStart, 0.0f, 8.0f);
+        ImGui::SliderFloat("Leaf solid end (mip)",
+                           &p.leafSolidEnd, 0.0f, 8.0f);
     }
 
     // The §5 round trip, v1: paste-ready records for landscape.toml (the
@@ -2035,13 +2053,17 @@ void LandscapeRenderer::drawTreeBuilderPanel() {
                  "crownRadiusMin = {}\ncrownRadiusMax = {}\n"
                  "tipBallRadius = {}\ntipOrderFalloff = {}\nsmoothK = {}\n"
                  "cardHalfSizeMin = {}\ncardHalfSizeMax = {}\n"
-                 "densityGradient = {}\nfoliageDensity = {}",
+                 "densityGradient = {}\nfoliageDensity = {}\n"
+                 "leafCount = {}\nleafSizeMin = {}\nleafSizeMax = {}\n"
+                 "leafSolidStart = {}\nleafSolidEnd = {}",
                  c.segment, c.killDistance, c.attractorCount,
                  c.pipeExponent, c.tropism, c.trunkBaseMin, c.trunkBaseMax,
                  c.crownHeightMin, c.crownHeightMax, c.crownRadiusMin,
                  c.crownRadiusMax, c.tipBallRadius, c.tipOrderFalloff,
                  c.smoothK, c.cardHalfSizeMin, c.cardHalfSizeMax,
-                 c.densityGradient, c.foliageDensity);
+                 c.densityGradient, c.foliageDensity, c.leafCount,
+                 c.leafSizeMin, c.leafSizeMax, c.leafSolidStart,
+                 c.leafSolidEnd);
     }
 
     if (dirty) {
