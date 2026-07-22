@@ -408,6 +408,16 @@ bespoke faction subsystem parallel to tags.
   small explicit `Engine` context passed by reference.
 - Names in **English** (identifiers, comments, log messages), regardless of
   the human's working language.
+- **Comments carry only durable information** (policy 2026-07-22): the
+  architectural why, invariants, contracts, cross-file coupling warnings,
+  and one-line pointers to `docs/*.md`. **Never** put dates, attributions
+  ("dev pick", "retour dev"), old values ("0.045 -> 0.03", "halved"), or
+  plan/journal tags (brick/brique N, chantier X, V8f, "appended") in code
+  comments — that history belongs in the `docs/` journals and in git. A
+  hand-tuned magic number gets at most `// hand-tuned`. Class/function
+  contract docs live in the **header** at the declaration; implementation
+  detail lives at the code site in the `.cpp`; don't duplicate `docs/`
+  content — point to it.
 - Every new Form type / component **registers its reflection** in the same
   file it's declared.
 - Determinism: route all gameplay randomness through the engine RNG (seeded,
