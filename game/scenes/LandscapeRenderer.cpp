@@ -71,6 +71,15 @@ void LandscapeRenderer::applyTuning(
     gradeContrastUi = tuning.gradeContrast;
     autoExposureMinUi = tuning.autoExposureMin;
     autoExposureMaxUi = tuning.autoExposureMax;
+    stylizedDiffuseUi = { tuning.stylizedDiffuseEdge0Start,
+                          tuning.stylizedDiffuseEdge0End,
+                          tuning.stylizedDiffuseEdge1Start,
+                          tuning.stylizedDiffuseEdge1End };
+    stylizedShadowUi = { tuning.stylizedShadowStart,
+                         tuning.stylizedShadowEnd,
+                         tuning.stylizedShadowFloor,
+                         tuning.stylizedHalfTone };
+    shadowResolutionUi = glm::clamp(tuning.shadowResolution, 1024, 4096);
     // Vegetation draw budget (clamped — the streamer ring
     // and the Hi-Z candidate cap size the safe range).
     vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 15);
@@ -126,6 +135,117 @@ void LandscapeRenderer::applyTreeTuning(
     c.leafSizeMax = colonized.leafSizeMax;
     c.leafSolidStart = colonized.leafSolidStart;
     c.leafSolidEnd = colonized.leafSolidEnd;
+}
+
+void LandscapeRenderer::applyRcTuning(const data::RcTuningForm& rc) {
+    render::RcTuning& t = radianceCascades.tuning;
+    t.resolution = rc.resolution;
+    t.fineVoxel = rc.fineVoxel;
+    t.coarseVoxel = rc.coarseVoxel;
+    t.cascadeCount = rc.cascadeCount;
+    t.updateInterval = rc.updateInterval;
+    t.technique = rc.technique == 1 ? render::GiTechnique::RadianceCascades
+                                    : render::GiTechnique::Classic;
+    t.intensity = rc.intensity;
+    t.skyFactor = rc.skyFactor;
+    t.emitterBoost = rc.emitterBoost;
+    t.bounceFeedback = rc.bounceFeedback;
+    t.rcOnlyLights = rc.rcOnlyLights;
+    t.interval0 = rc.interval0;
+    t.edgeFade = rc.edgeFade;
+    t.bandStops = rc.bandStops;
+    t.bandAa = rc.bandAa;
+    t.giFloor = rc.giFloor;
+    t.intervalExtension = rc.intervalExtension;
+}
+
+void LandscapeRenderer::captureTuning(data::LandscapeTuningForm& out) const {
+    out.exposure = exposureUi;
+    out.gradeVibrance = gradeVibranceUi;
+    out.gradeSplitTone = gradeSplitToneUi;
+    out.gradeContrast = gradeContrastUi;
+    out.autoExposureMin = autoExposureMinUi;
+    out.autoExposureMax = autoExposureMaxUi;
+    out.stylizedDiffuseEdge0Start = stylizedDiffuseUi.x;
+    out.stylizedDiffuseEdge0End = stylizedDiffuseUi.y;
+    out.stylizedDiffuseEdge1Start = stylizedDiffuseUi.z;
+    out.stylizedDiffuseEdge1End = stylizedDiffuseUi.w;
+    out.stylizedHalfTone = stylizedShadowUi.w;
+    out.stylizedShadowStart = stylizedShadowUi.x;
+    out.stylizedShadowEnd = stylizedShadowUi.y;
+    out.stylizedShadowFloor = stylizedShadowUi.z;
+    out.shadowResolution = shadowResolutionUi;
+    out.vegViewRadius = vegetation.viewRadius;
+    out.vegHighDetailRadius = vegetation.highDetailRadius;
+    out.vegLowDetailRadius = vegetation.lowDetailRadius;
+}
+
+void LandscapeRenderer::captureRcTuning(data::RcTuningForm& out) const {
+    const render::RcTuning& t = radianceCascades.tuning;
+    out.resolution = t.resolution;
+    out.fineVoxel = t.fineVoxel;
+    out.coarseVoxel = t.coarseVoxel;
+    out.cascadeCount = t.cascadeCount;
+    out.updateInterval = t.updateInterval;
+    out.technique =
+        t.technique == render::GiTechnique::RadianceCascades ? 1 : 0;
+    out.intensity = t.intensity;
+    out.skyFactor = t.skyFactor;
+    out.emitterBoost = t.emitterBoost;
+    out.bounceFeedback = t.bounceFeedback;
+    out.rcOnlyLights = t.rcOnlyLights;
+    out.interval0 = t.interval0;
+    out.edgeFade = t.edgeFade;
+    out.bandStops = t.bandStops;
+    out.bandAa = t.bandAa;
+    out.giFloor = t.giFloor;
+    out.intervalExtension = t.intervalExtension;
+}
+
+void LandscapeRenderer::captureTreeTuning(
+    data::LobeTreeTuningForm& lobes,
+    data::ColonizedTreeTuningForm& colonized) const {
+    const render::LobeTreeParams& l = vegetation.lobeTreeParams;
+    lobes.trunkHeightMin = l.trunkHeightMin;
+    lobes.trunkHeightMax = l.trunkHeightMax;
+    lobes.trunkRadiusMin = l.trunkRadiusMin;
+    lobes.trunkRadiusMax = l.trunkRadiusMax;
+    lobes.trunkTaper = l.trunkTaper;
+    lobes.lean = l.lean;
+    lobes.branchCountMin = l.branchCountMin;
+    lobes.branchCountMax = l.branchCountMax;
+    lobes.branchLengthMin = l.branchLengthMin;
+    lobes.branchLengthMax = l.branchLengthMax;
+    lobes.crownLobeRadiusMin = l.crownLobeRadiusMin;
+    lobes.crownLobeRadiusMax = l.crownLobeRadiusMax;
+    lobes.branchLobeRadiusMin = l.branchLobeRadiusMin;
+    lobes.branchLobeRadiusMax = l.branchLobeRadiusMax;
+    lobes.lobeFlatten = l.lobeFlatten;
+    lobes.normalSpherize = l.normalSpherize;
+    const render::ColonizedTreeParams& c = vegetation.colonizedTreeParams;
+    colonized.segment = c.segment;
+    colonized.killDistance = c.killDistance;
+    colonized.attractorCount = c.attractorCount;
+    colonized.pipeExponent = c.pipeExponent;
+    colonized.tropism = c.tropism;
+    colonized.trunkBaseMin = c.trunkBaseMin;
+    colonized.trunkBaseMax = c.trunkBaseMax;
+    colonized.crownHeightMin = c.crownHeightMin;
+    colonized.crownHeightMax = c.crownHeightMax;
+    colonized.crownRadiusMin = c.crownRadiusMin;
+    colonized.crownRadiusMax = c.crownRadiusMax;
+    colonized.tipBallRadius = c.tipBallRadius;
+    colonized.tipOrderFalloff = c.tipOrderFalloff;
+    colonized.smoothK = c.smoothK;
+    colonized.cardHalfSizeMin = c.cardHalfSizeMin;
+    colonized.cardHalfSizeMax = c.cardHalfSizeMax;
+    colonized.densityGradient = c.densityGradient;
+    colonized.foliageDensity = c.foliageDensity;
+    colonized.leafCount = c.leafCount;
+    colonized.leafSizeMin = c.leafSizeMin;
+    colonized.leafSizeMax = c.leafSizeMax;
+    colonized.leafSolidStart = c.leafSolidStart;
+    colonized.leafSolidEnd = c.leafSolidEnd;
 }
 
 void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
@@ -1318,11 +1438,14 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         .leafLodInfo = { vegetation.colonizedTreeParams.leafSolidStart,
                          vegetation.colonizedTreeParams.leafSolidEnd, 0.0f,
                          0.0f },
+        .stylizedDiffuseInfo = stylizedDiffuseUi,
+        .stylizedShadowInfo = stylizedShadowUi,
         // giInfo() gates on ready() itself (interiors included).
         .giInfo = radianceCascades.giInfo(),
         .giGridInfo = radianceCascades.giGridInfo(),
         .giBandInfo = { radianceCascades.tuning.bandStops,
-                        radianceCascades.tuning.bandAa, 0.0f, 0.0f },
+                        radianceCascades.tuning.bandAa,
+                        radianceCascades.tuning.giFloor, 0.0f },
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;
@@ -1547,9 +1670,14 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                 const Vec3 p = prop.position;
                 switch (prop.kind) {
                 case 0: // tree canopy (leaf-green, filters light)
+                    // PER-VOXEL opacity: realistic-scale canopies span
+                    // tens of voxels, and the march multiplies
+                    // (1 - opacity) per voxel — anything high saturates
+                    // to a pitch-black lid. 0.12 leaves ~20% of the sky
+                    // under a dense crown. hand-tuned.
                     rcBoxes.push_back(
                         { { p + Vec3 { -2.2f * s, 2.2f * s, -2.2f * s },
-                            0.7f },
+                            0.12f },
                           { p + Vec3 { 2.2f * s, 5.8f * s, 2.2f * s },
                             0.0f },
                           { Vec3 { 0.055f, 0.115f, 0.032f }, 0.0f } });
@@ -1970,6 +2098,9 @@ void LandscapeRenderer::drawTreeBuilderPanel() {
     if (ImGui::Button("Regenerate")) {
         dirty = true;
     }
+    if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
+        saveTuningRequested = true;
+    }
 
     if (ImGui::CollapsingHeader("Lobe trees (classic)")) {
         render::LobeTreeParams& p = vegetation.lobeTreeParams;
@@ -2072,6 +2203,9 @@ void LandscapeRenderer::drawTreeBuilderPanel() {
 }
 
 void LandscapeRenderer::drawTerrainPanel() {
+    if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
+        saveTuningRequested = true;
+    }
     // Live stats stay on top, always visible; the knobs group below.
     ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
                 terrain.residentCount(), terrain.drawnLastFrame(),
@@ -2123,6 +2257,9 @@ void LandscapeRenderer::drawTerrainPanel() {
 }
 
 void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
+    if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
+        saveTuningRequested = true;
+    }
     // Every meadow constant, live. The render
     // half rides the FrameUbo; a scatter knob queues a grass-only
     // re-scatter on release (budgeted — the ring rebuilds over frames).
@@ -2222,6 +2359,10 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
                         &rc.rcOnlyLights);
         ImGui::SeparatorText("Apply");
         ImGui::SliderFloat("Intensity", &rc.intensity, 0.0f, 2.0f, "%.2f");
+        // RC's lower bound as a fraction of classic ambient — the
+        // grid-border seam killer (0 = raw RC darkness).
+        ImGui::SliderFloat("Ambient floor (x classic)", &rc.giFloor, 0.0f,
+                           1.0f, "%.2f");
         ImGui::SliderFloat("Edge fade (m)", &rc.edgeFade, 1.0f, 16.0f,
                            "%.0f");
         // Fixed log-step ramp: predictable absolute exposure bands.
@@ -2244,6 +2385,27 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
     }
     if (ImGui::CollapsingHeader("Lighting & shadows")) {
         ImGui::Checkbox("Stylized lighting (BotW A/B)", &stylizedUi);
+        if (stylizedUi && ImGui::TreeNode("Stylized ramp")) {
+            ImGui::TextDisabled("Diffuse: shade -> half-tone -> full light");
+            ImGui::SliderFloat("Terminator start", &stylizedDiffuseUi.x,
+                               -0.2f, 0.5f, "%.3f");
+            ImGui::SliderFloat("Terminator end", &stylizedDiffuseUi.y,
+                               -0.2f, 0.5f, "%.3f");
+            ImGui::SliderFloat("Full-light start", &stylizedDiffuseUi.z,
+                               0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Full-light end", &stylizedDiffuseUi.w,
+                               0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Half-tone level", &stylizedShadowUi.w,
+                               0.0f, 1.0f, "%.2f");
+            ImGui::TextDisabled("Cast shadows (CSM snap)");
+            ImGui::SliderFloat("Snap window start", &stylizedShadowUi.x,
+                               0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Snap window end", &stylizedShadowUi.y,
+                               0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Shadow floor", &stylizedShadowUi.z, 0.0f,
+                               0.8f, "%.2f");
+            ImGui::TreePop();
+        }
         ImGui::Checkbox("Shadows", &shadowsUi);
         ImGui::SameLine();
         ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);

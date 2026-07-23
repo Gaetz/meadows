@@ -16,12 +16,22 @@ const core::Guid kLobeTreeTuningGuid =
     *core::Guid::fromString("1a4d5c00-0000-4000-8000-0000000000b1");
 const core::Guid kColonizedTreeTuningGuid =
     *core::Guid::fromString("1a4d5c00-0000-4000-8000-0000000000b2");
+const core::Guid kRcTuningGuid =
+    *core::Guid::fromString("1a4d5c00-0000-4000-8000-000000000009");
 } // namespace
+
+const core::Guid& landscapeTuningGuid() { return kLandscapeTuningGuid; }
+const core::Guid& lobeTreeTuningGuid() { return kLobeTreeTuningGuid; }
+const core::Guid& colonizedTreeTuningGuid() {
+    return kColonizedTreeTuningGuid;
+}
+const core::Guid& rcTuningGuid() { return kRcTuningGuid; }
 
 void registerLandscapeFormTypes(FormTypeRegistry& registry) {
     registry.registerFormType<LandscapeTuningForm>();
     registry.registerFormType<LobeTreeTuningForm>();
     registry.registerFormType<ColonizedTreeTuningForm>();
+    registry.registerFormType<RcTuningForm>();
     registry.registerFormType<WeatherForm>();
 }
 
@@ -48,6 +58,14 @@ resolveColonizedTreeTuning(const FormDatabase& forms) {
         return *tuning;
     }
     return ColonizedTreeTuningForm {};
+}
+
+RcTuningForm resolveRcTuning(const FormDatabase& forms) {
+    if (const RcTuningForm* tuning =
+            forms.find<RcTuningForm>(kRcTuningGuid)) {
+        return *tuning;
+    }
+    return RcTuningForm {};
 }
 
 vector<WeatherForm> resolveWeatherForms(const FormDatabase& forms) {

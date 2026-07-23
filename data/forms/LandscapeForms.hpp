@@ -65,6 +65,20 @@ struct LandscapeTuningForm : Form {
     // becomes the EV bias on top.
     f32 autoExposureMin { 0.4f };
     f32 autoExposureMax { 2.5f };
+    // Stylized lighting ramp (stylized.glsl; defaults = the shipped
+    // halisavakis cel model). Diffuse: two smoothstep edges (terminator
+    // half-tone, then full light) mixed by halfTone; shadow: the CSM
+    // snap window plus a floor that keeps shadow pools readable.
+    f32 stylizedDiffuseEdge0Start { 0.02f };
+    f32 stylizedDiffuseEdge0End { 0.09f };
+    f32 stylizedDiffuseEdge1Start { 0.32f };
+    f32 stylizedDiffuseEdge1End { 0.40f };
+    f32 stylizedHalfTone { 0.6f };
+    f32 stylizedShadowStart { 0.45f };
+    f32 stylizedShadowEnd { 0.55f };
+    f32 stylizedShadowFloor { 0.0f };
+    // CSM texels per cascade side (1024/2048/4096 — the panel's combo).
+    i32 shadowResolution { 2048 };
     // Vegetation draw budget, moddable + live-tunable (the vegetation
     // pass is a major GPU cost driver). Radii in 64 m chunks.
     i32 vegViewRadius { 12 };       // resident/drawn ring
@@ -101,6 +115,15 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(gradeContrast)
         REFLECT_FIELD(autoExposureMin)
         REFLECT_FIELD(autoExposureMax)
+        REFLECT_FIELD(stylizedDiffuseEdge0Start)
+        REFLECT_FIELD(stylizedDiffuseEdge0End)
+        REFLECT_FIELD(stylizedDiffuseEdge1Start)
+        REFLECT_FIELD(stylizedDiffuseEdge1End)
+        REFLECT_FIELD(stylizedHalfTone)
+        REFLECT_FIELD(stylizedShadowStart)
+        REFLECT_FIELD(stylizedShadowEnd)
+        REFLECT_FIELD(stylizedShadowFloor)
+        REFLECT_FIELD(shadowResolution)
         REFLECT_FIELD(vegViewRadius)
         REFLECT_FIELD(vegHighDetailRadius)
         REFLECT_FIELD(vegLowDetailRadius)
@@ -202,6 +225,50 @@ struct ColonizedTreeTuningForm : Form {
     REFLECT_END()
 };
 
+// Radiance-cascades GI tuning (mirrors render::RcTuning; §5 precedent:
+// StatsTuningForm). One record, canonical guid, resolved by
+// resolveRcTuning(); the scene maps it onto the renderer's live struct.
+// `technique`: 0 = Classic, 1 = RadianceCascades.
+struct RcTuningForm : Form {
+    i32 resolution { 64 };
+    f32 fineVoxel { 0.5f };
+    f32 coarseVoxel { 2.0f };
+    i32 cascadeCount { 5 };
+    i32 updateInterval { 1 };
+    i32 technique { 1 };
+    f32 intensity { 0.7f };
+    f32 skyFactor { 0.6f };
+    f32 emitterBoost { 1.0f };
+    f32 bounceFeedback { 0.5f };
+    bool rcOnlyLights { false };
+    f32 interval0 { 1.0f };
+    f32 edgeFade { 8.0f };
+    f32 bandStops { 0.85f };
+    f32 bandAa { 0.3f };
+    f32 giFloor { 0.7f };
+    bool intervalExtension { false };
+
+    REFLECT_BEGIN(RcTuningForm, Form)
+        REFLECT_FIELD(resolution)
+        REFLECT_FIELD(fineVoxel)
+        REFLECT_FIELD(coarseVoxel)
+        REFLECT_FIELD(cascadeCount)
+        REFLECT_FIELD(updateInterval)
+        REFLECT_FIELD(technique)
+        REFLECT_FIELD(intensity)
+        REFLECT_FIELD(skyFactor)
+        REFLECT_FIELD(emitterBoost)
+        REFLECT_FIELD(bounceFeedback)
+        REFLECT_FIELD(rcOnlyLights)
+        REFLECT_FIELD(interval0)
+        REFLECT_FIELD(edgeFade)
+        REFLECT_FIELD(bandStops)
+        REFLECT_FIELD(bandAa)
+        REFLECT_FIELD(giFloor)
+        REFLECT_FIELD(intervalExtension)
+    REFLECT_END()
+};
+
 // One weather state: a full parameter set the scene
 // crossfades to. Ordinary records — a mod adds a weather type or retunes
 // one in pure TOML (§5).
@@ -272,6 +339,15 @@ LandscapeTuningForm resolveLandscapeTuning(const FormDatabase& forms);
 // defaults when the record is absent (older plugin stacks).
 LobeTreeTuningForm resolveLobeTreeTuning(const FormDatabase& forms);
 ColonizedTreeTuningForm resolveColonizedTreeTuning(const FormDatabase& forms);
+RcTuningForm resolveRcTuning(const FormDatabase& forms);
+
+// Canonical guids of the singleton tuning records — the render panels'
+// "Save" button patches THESE records (into the render-tuning overlay
+// plugin), never a copy.
+const core::Guid& landscapeTuningGuid();
+const core::Guid& lobeTreeTuningGuid();
+const core::Guid& colonizedTreeTuningGuid();
+const core::Guid& rcTuningGuid();
 
 // Every WeatherForm in the database, sorted by sortOrder — feeds the
 // weather dropdown. Empty if the plugin ships none.

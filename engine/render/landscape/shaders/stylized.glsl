@@ -8,19 +8,27 @@
 
 // `ndl` is the RAW N·L (not clamped); `classic` is the shader's
 // pre-stylization response (lambert or wrap), used when the toggle is off.
-// TWO shadow steps: shade 0 -> half-tone 0.6 at the
-// terminator -> full light 1.0 higher up. Three flat plateaus.
+// TWO shadow steps: shade 0 -> half-tone at the terminator -> full light
+// higher up. Three flat plateaus; every edge is a live tuning value
+// (uStylizedDiffuse/uStylizedShadow, render panel + LandscapeTuningForm).
 float stylizedDiffuse(float ndl, float classic) {
-    float stepped = 0.6 * smoothstep(0.02, 0.09, ndl) +
-                    0.4 * smoothstep(0.32, 0.40, ndl);
+    float halfTone = uStylizedShadow.w;
+    float stepped =
+        halfTone * smoothstep(uStylizedDiffuse.x, uStylizedDiffuse.y, ndl) +
+        (1.0 - halfTone) *
+            smoothstep(uStylizedDiffuse.z, uStylizedDiffuse.w, ndl);
     return mix(classic, stepped, uAmbientColor.w);
 }
 
 // The article's round(atten): CSM attenuation snaps to shadow / lit, so
-// cast shadows read as flat pools instead of PCF gradients. (The
-// narrow 0.45-0.55 window keeps the edges crisp.)
+// cast shadows read as flat pools instead of PCF gradients (a narrow
+// window keeps the edges crisp). The floor (z) keeps the pools readable
+// instead of pitch black.
 float stylizedShadow(float shadow) {
-    return mix(shadow, smoothstep(0.45, 0.55, shadow), uAmbientColor.w);
+    float snapped =
+        max(smoothstep(uStylizedShadow.x, uStylizedShadow.y, shadow),
+            uStylizedShadow.z);
+    return mix(shadow, snapped, uAmbientColor.w);
 }
 
 // Fake SSS: pow(dot(view, -light)) — sun punching through thin vegetation

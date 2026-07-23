@@ -27,6 +27,7 @@
 #include <cmath>
 #include <ctime>
 #include <filesystem>
+#include <fstream> // saveRenderTuning writes the overlay plugin
 #include <sstream>
 
 #include <glm/glm.hpp>
@@ -38,6 +39,7 @@
 #include "data/plugins/PluginConfig.hpp"
 #include "data/plugins/PluginLoader.hpp"
 #include "data/plugins/Resolver.hpp"
+#include "data/plugins/TomlWriter.hpp" // saveRenderTuning
 #include "game/AllForms.hpp"
 #include "game/Barter.hpp"
 #include "game/SceneStack.hpp"        // Edit mode pushes overlays (host())
@@ -203,6 +205,7 @@ void LandscapeScene::bootstrapData() {
     // records (§5) — mods retune the species; the Trees panel edits live.
     renderer.applyTreeTuning(data::resolveLobeTreeTuning(forms),
                              data::resolveColonizedTreeTuning(forms));
+    renderer.applyRcTuning(data::resolveRcTuning(forms));
     atmos.fogDensity = tuning.fogDensity;
     atmos.fogHeightFalloff = tuning.fogHeightFalloff;
     atmos.fogLowBoost = tuning.fogLowBoost;
@@ -3015,6 +3018,9 @@ void LandscapeScene::drawUi() {
                 [&] { renderer.drawTreeBuilderPanel(); });
     rightWindow("GPU perf", uiPerfOpen,
                 [&] { renderer.drawPerfPanel(&frameProbe); });
+    if (renderer.consumeSaveTuningRequest()) {
+        saveRenderTuning();
+    }
 
     // Edit mode: the scene switcher — a small vertical strip docked
     // middle-left. Overlays PUSH onto the SceneStack: the world below
@@ -3030,6 +3036,74 @@ void LandscapeScene::drawUi() {
         }
         ImGui::End();
     }
+}
+
+void LandscapeScene::saveRenderTuning() {
+    // Start each record from the RESOLVED form (fields the panels don't
+    // own keep their layered values), overlay the live state, then emit
+    // EVERY reflected field — the overlay is a complete, idempotent
+    // snapshot of the tuning records.
+    data::LandscapeTuningForm tuning = data::resolveLandscapeTuning(forms);
+    renderer.captureTuning(tuning);
+    tuning.fogDensity = atmos.fogDensity;
+    tuning.fogHeightFalloff = atmos.fogHeightFalloff;
+    tuning.fogLowBoost = atmos.fogLowBoost;
+    tuning.fogStart = atmos.fogStart;
+    tuning.fogSunPhase = atmos.fogSunPhase;
+    tuning.cloudCoverage = atmos.cloudCoverage;
+    tuning.cloudShadowStrength = atmos.cloudShadow;
+    tuning.cloudHeight = atmos.cloudHeight;
+    tuning.cloudScale = atmos.cloudScale;
+    tuning.bloomIntensity = atmos.bloomIntensity;
+    tuning.godRayIntensity = atmos.godRayIntensity;
+    tuning.volumetricIntensity = atmos.volumetric;
+    data::RcTuningForm rc = data::resolveRcTuning(forms);
+    renderer.captureRcTuning(rc);
+    data::LobeTreeTuningForm lobes = data::resolveLobeTreeTuning(forms);
+    data::ColonizedTreeTuningForm colonized =
+        data::resolveColonizedTreeTuning(forms);
+    renderer.captureTreeTuning(lobes, colonized);
+
+    data::Plugin plugin;
+    plugin.id =
+        *core::Guid::fromString("aaaaaaaa-0000-4000-8000-0000000000f2");
+    plugin.name = "render-tuning";
+    const auto patchRecord = [&](const core::Guid& guid,
+                                 const data::Form& form,
+                                 const reflect::TypeInfo& type) {
+        data::Record record;
+        record.formId = guid;
+        record.typeId = type.id;
+        record.creates = false;
+        reflect::forEachField(type, [&](const reflect::FieldInfo& field) {
+            if ((field.flags & reflect::Transient) != 0) {
+                return;
+            }
+            record.fields[field.id] = field.get(&form);
+        });
+        plugin.records.push_back(std::move(record));
+    };
+    patchRecord(data::landscapeTuningGuid(), tuning,
+                data::LandscapeTuningForm::staticTypeInfo());
+    patchRecord(data::rcTuningGuid(), rc,
+                data::RcTuningForm::staticTypeInfo());
+    patchRecord(data::lobeTreeTuningGuid(), lobes,
+                data::LobeTreeTuningForm::staticTypeInfo());
+    patchRecord(data::colonizedTreeTuningGuid(), colonized,
+                data::ColonizedTreeTuningForm::staticTypeInfo());
+
+    const auto path = platform::executableDir() / "data" / "mods" /
+                      "render-tuning.toml";
+    std::error_code errc;
+    std::filesystem::create_directories(path.parent_path(), errc);
+    std::ofstream file { path, std::ios::trunc };
+    if (!file) {
+        LOG_ERROR("Save render tuning: cannot write {}", path.string());
+        return;
+    }
+    file << data::writePluginToml(plugin, formTypes);
+    LOG_INFO("Render tuning saved: {} record(s) -> {}",
+             plugin.records.size(), path.string());
 }
 
 void LandscapeScene::drawSkyUi() {

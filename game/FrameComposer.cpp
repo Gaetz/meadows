@@ -85,6 +85,9 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         // BASE too: the fog applies in the reflection as well.
         .fogSunInfo = { in.atmos.fogSunScatter, in.atmos.fogSunPhase, 0.0f,
                         0.0f },
+        // BASE too: the reflection shades with the same ramp.
+        .stylizedDiffuseInfo = in.stylizedDiffuseInfo,
+        .stylizedShadowInfo = in.stylizedShadowInfo,
     };
 
     render::FrameUniforms resolved = base;

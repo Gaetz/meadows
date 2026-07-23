@@ -62,11 +62,51 @@ gradeContrast = 1.06   # pivot 0.5 (1 = neutral)
 autoExposureMin = 0.4  # adapted exposure clamp (bright scenes)
 autoExposureMax = 2.5  # adapted exposure clamp (dark scenes/interiors)
 
+# --- Stylized lighting ramp (stylized.glsl; live in the render panel) -------
+stylizedDiffuseEdge0Start = 0.02  # terminator smoothstep
+stylizedDiffuseEdge0End = 0.09
+stylizedDiffuseEdge1Start = 0.32  # full-light smoothstep
+stylizedDiffuseEdge1End = 0.4
+stylizedHalfTone = 0.6            # mid plateau level
+stylizedShadowStart = 0.45        # CSM snap window
+stylizedShadowEnd = 0.55
+stylizedShadowFloor = 0.0         # raise to keep shadow pools readable
+
+# --- Shadows --------------------------------------------------------------
+shadowResolution = 2048           # CSM texels per cascade (1024/2048/4096)
+
+# Radiance-cascades GI tuning (docs/RADIANCE-CASCADES.md): the render
+# panel's Global illumination section, moddable like everything else.
+# technique: 0 = Classic (ambient x light map), 1 = Radiance cascades.
+[[records]]
+form = "1a4d5c00-0000-4000-8000-000000000009"
+type = "RcTuningForm"
+new = true
+[records.fields]
+editorId = "RcTuning"
+resolution = 64
+fineVoxel = 0.5
+coarseVoxel = 2.0
+cascadeCount = 5
+updateInterval = 1
+technique = 1
+intensity = 0.7
+skyFactor = 0.6
+emitterBoost = 1.0
+bounceFeedback = 0.5
+rcOnlyLights = false
+interval0 = 1.0
+edgeFade = 8.0
+bandStops = 0.85
+bandAa = 0.3
+giFloor = 0.7
+intervalExtension = false
+
 # H8 proof: MaterialForm -> textured stylized mesh (the renderer-gameplay
 # contract). The LandscapeScene draws one cube with this material near the
 # spawn point; patch tint/emissive to see the data drive the pixels.
 [[records]]
-form = "1a4d5c00-0000-4000-8000-0000000000b1"
+form = "1a4d5c00-0000-4000-8000-0000000000c1"
 type = "MaterialForm"
 new = true
 [records.fields]

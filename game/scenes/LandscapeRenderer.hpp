@@ -39,6 +39,7 @@ namespace data {
 struct LandscapeTuningForm;
 struct LobeTreeTuningForm;
 struct ColonizedTreeTuningForm;
+struct RcTuningForm;
 }
 
 namespace game {
@@ -94,6 +95,24 @@ public:
     // pattern) — startup values; the Trees panel edits them live.
     void applyTreeTuning(const data::LobeTreeTuningForm& lobes,
                          const data::ColonizedTreeTuningForm& colonized);
+    // GI tuning record -> the live RcTuning struct (same startup contract).
+    void applyRcTuning(const data::RcTuningForm& rc);
+
+    // The reverse mapping, for the panels' "Save render tuning" button:
+    // fills the tuning records from the CURRENT live values (the scene
+    // overlays its atmosphere-owned fields, then writes the overlay
+    // plugin). Fields the panels don't own keep `out`'s values.
+    void captureTuning(data::LandscapeTuningForm& out) const;
+    void captureRcTuning(data::RcTuningForm& out) const;
+    void captureTreeTuning(data::LobeTreeTuningForm& lobes,
+                           data::ColonizedTreeTuningForm& colonized) const;
+    // True once when a panel's Save button was pressed (the scene owns
+    // the plugin stack and performs the write).
+    bool consumeSaveTuningRequest() {
+        const bool requested = saveTuningRequested;
+        saveTuningRequested = false;
+        return requested;
+    }
 
     // The whole frame: pipeline refresh, ring streaming, cascades,
     // reflection, opaque+sky+effects, copy/Hi-Z/water, post FX, tonemap
@@ -245,6 +264,10 @@ private:
     bool autoExposureUi { true };
     f32 autoExposureMinUi { 0.4f };
     f32 autoExposureMaxUi { 2.5f };
+    // Stylized ramp (stylized.glsl lanes; defaults = shipped cel look).
+    Vec4 stylizedDiffuseUi { 0.02f, 0.09f, 0.32f, 0.40f };
+    Vec4 stylizedShadowUi { 0.45f, 0.55f, 0.0f, 0.6f };
+    bool saveTuningRequested { false }; // panels' Save button -> the scene
     f32 exposureUi { 1.0f };
     i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 volumetric
 

@@ -46,6 +46,12 @@ file = "base/text-fr.toml"
 file = "base/base.toml"
 enabled = false
 
+# Render-tuning overlay: written by the render panels' "Save render
+# tuning" button (patches on the landscape.toml tuning records, §5 — one
+# more layer, never an edit of base). Absent until the first save.
+[[plugins]]
+file = "mods/render-tuning.toml"
+
 # Level-editor output: an ordinary mod layered on top. Absent on a fresh
 # install — silently skipped until the first editor export.
 [[plugins]]

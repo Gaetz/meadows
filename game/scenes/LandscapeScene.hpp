@@ -115,6 +115,11 @@ private:
     // terrain/render sections live on the renderer with their state).
     void drawGameplayUi();
     void drawSkyUi();
+    // The render panels' Save button: current live values -> FULL patch
+    // records on the canonical tuning records, written as the
+    // mods/render-tuning.toml overlay plugin (§5 — one more layer, base
+    // data untouched; full records so a re-save never drops a field).
+    void saveRenderTuning();
 
     engine::Engine* engine { nullptr };
 
