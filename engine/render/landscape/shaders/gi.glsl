@@ -67,6 +67,16 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
     // by design — bands appear wherever the GI varies by one step, day,
     // night and torch rings alike; hue kept; narrow smoothstep = AA
     // (the stylized.glsl language), uGiBandInfo.y = AA width.
+    // The GI floor (uGiBandInfo.z): RC never drops below this fraction of
+    // the CLASSIC ambient — the two illumination models meet seamlessly at
+    // the grid border, and occluded areas (canopies, rooms) stay readable
+    // while classic ambient remains the artistic lever (per weather,
+    // interior, time of day). BEFORE the banding, so the bands quantize
+    // the LIVING range above the floor (floor-after flattened most of the
+    // banded range and played the band knobs dead); re-asserted after,
+    // since a band rounds down by up to one full step.
+    vec3 floorAmbient = classicAmbient * uGiBandInfo.z;
+    irradiance = max(irradiance, floorAmbient);
     float lum = dot(irradiance, vec3(0.299, 0.587, 0.114));
     if (uAmbientColor.w > 0.0 && uGiBandInfo.x > 0.01 && lum > 1e-5) {
         float bandStep = uGiBandInfo.x;
@@ -75,12 +85,7 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
         float tq = floor(t) + smoothstep(0.5 - aa, 0.5 + aa, fract(t));
         float lumQ = exp2(tq * bandStep);
         irradiance *= mix(1.0, lumQ / lum, uAmbientColor.w);
+        irradiance = max(irradiance, floorAmbient);
     }
-    // The GI floor (uGiBandInfo.z): RC never drops below this fraction of
-    // the CLASSIC ambient — the two illumination models meet seamlessly at
-    // the grid border, and occluded areas (canopies, rooms) stay readable
-    // while classic ambient remains the artistic lever (per weather,
-    // interior, time of day). After the banding: a hard lower bound.
-    irradiance = max(irradiance, classicAmbient * uGiBandInfo.z);
     return mix(classicAmbient, irradiance, fade);
 }
