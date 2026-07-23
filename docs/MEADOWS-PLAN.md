@@ -100,6 +100,7 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 | **Transparence triée** | P1 | Alpha blend trié par distance (verre, fantômes, eau intérieure) ; le cutout reste l'exception (leçon fill-rate). |
 | 🔨 **Émissifs & enchantements** | P1 | Champ `emissive` branché (mesh.frag + bloom). Reste : effets de matériau animés (dissolve, glow) pilotés par GameplayCues (voir F). |
 | **Décals** | P1 | Sang, brûlures, impacts — projection simple boîte. |
+| 🔨 **Lighting volumétrique + intérieurs « Helios »** | P1 | **Spec écrite : `docs/VOLUMETRIC.md`** — le fog devient un éclairage (in-scatter solaire × visibilité CSM ; pas de raytracing ; RC comme terme ambient de l'air), briques V1→V4 extérieur puis H1→H4 intérieurs (ambiance horaire+météo, raies héliotropes via `sunLinked`, règle « enterré » `buriedBelowY`). Acquis : `volumetric.frag` (raymarch CSM ½-res), lames `LightForm.shaft/sunLinked`. Briques à planifier au chantier. |
 | 🔨 **LOD/impostors bâtiments & props placés** | P1 | LOD de canopée par chunk FAIT (chantier 1 B7 — le pattern à étendre). Reste : LOD des meshes auteurés, impostors P2. |
 | ✅ **Première personne** | P0 | **Le jeu est à la 1re personne (décision 2026-07-06)** : caméra aux yeux sur capsule cinématique — FAIT (chantier 1). La 3e personne sert aux PNJ ; caméras de dialogue (cadrage) P1 ; vue 3e personne joueur = P2/option. |
 
