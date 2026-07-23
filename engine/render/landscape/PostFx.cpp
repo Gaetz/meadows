@@ -51,7 +51,8 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
                  { { "uSceneColor", 0 }, { "uSceneDepth", 1 } },
                  kFullscreenVert);
     shaders.load(kVolumetricShader, { { "FrameUbo", 0 } },
-                 { { "uSceneDepth", 0 }, { "uShadowMap", 1 } },
+                 { { "uSceneDepth", 0 }, { "uShadowMap", 1 },
+                   { "uGiCascade0", 11 } },
                  kFullscreenVert);
     shaders.load(kContactShader, { { "FrameUbo", 0 } },
                  { { "uSceneDepth", 0 }, { "uShadowMap", 1 } },
@@ -335,6 +336,7 @@ void PostFx::renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
 void PostFx::render(rhi::CommandBuffer& cmd,
                     rhi::BindGroupHandle frameBindGroup,
                     rhi::BindGroupHandle shadowBindGroup,
+                    rhi::BindGroupHandle giApplyGroup,
                     rhi::Device* probeDevice, GpuProbe* probe) {
     if (!ready()) {
         return;
@@ -398,6 +400,11 @@ void PostFx::render(rhi::CommandBuffer& cmd,
         cmd.setBindGroup(1, volumetricGroup);
         if (shadowBindGroup.id != 0) {
             cmd.setBindGroup(2, shadowBindGroup);
+        }
+        if (giApplyGroup.id != 0) {
+            // V3 (docs/VOLUMETRIC.md): the march's haze samples the RC
+            // field inside its volume (giAir).
+            cmd.setBindGroup(3, giApplyGroup);
         }
         cmd.draw(3);
         cmd.endRenderPass();

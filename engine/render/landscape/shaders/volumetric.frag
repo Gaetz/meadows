@@ -14,6 +14,7 @@ layout(binding = 0) uniform sampler2D uSceneDepth;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 
 #include "clouds.glsl"
+#include "gi.glsl"
 
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
@@ -78,7 +79,6 @@ void main() {
     vec3 sunAir = uSunColor.rgb * (phase * uFogSunInfo.x * uTime.z);
 
     const int kSteps = 20;
-    float stepLen = span / float(kSteps);
     // Interleaved Gradient Noise (Jimenez): structured screen-space dither
     // that filters out smoothly — white noise here reads as ink blotches.
     float jitter = fract(52.9829189 * fract(0.06711056 * gl_FragCoord.x +
@@ -87,17 +87,28 @@ void main() {
     float transmit = 1.0;
     vec3 inscatter = vec3(0.0);
     for (int i = 0; i < kSteps; ++i) {
-        float d = start + (float(i) + jitter) * stepLen;
+        // QUADRATIC step distribution: dense near the camera (several
+        // steps inside the ~32 m RC volume — where giAir varies), sparse
+        // in the far haze (smooth anyway). Transmittance stays exact:
+        // each segment uses its own length.
+        float t0 = (float(i) + jitter) / float(kSteps);
+        float t1 = (float(i) + 1.0 + jitter) / float(kSteps);
+        float d = start + span * t0 * t0;
+        float segLen = span * (min(t1 * t1, 1.0) - t0 * t0);
         vec3 p = uCameraPos.xyz + dir * d;
         float lowBoost =
             exp(-max(p.y - uTerrainInfo.x, 0.0) * uFogInfo.y);
         float density = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z);
-        float absorb = exp(-density * stepLen);
+        float absorb = exp(-density * segLen);
         float vis = cloudShadowFactor(p) * shaftShadow(p);
+        // V3: inside the RC volume the haze takes the FIELD's radiance —
+        // green under a canopy clearing, dark in a shaded valley, lamp
+        // glows in night mist; outside, the sky gradient as before.
+        vec3 haze = giAir(p, ambientAir);
         // Shadowed air keeps a floor of haze (the sky still reaches it
         // sideways); the contrast between lit and shadowed air is what
         // draws the shafts and the dark curtains. hand-tuned.
-        vec3 source = ambientAir * mix(0.45, 1.0, vis) + sunAir * vis;
+        vec3 source = haze * mix(0.45, 1.0, vis) + sunAir * vis;
         inscatter += transmit * source * (1.0 - absorb);
         transmit *= absorb;
         if (transmit < 0.003) {

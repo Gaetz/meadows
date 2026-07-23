@@ -1941,7 +1941,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
         postFx.render(frame.cmd, frameBindGroup,
-                      shadows.receiverBindGroup(), &frame.device,
+                      shadows.receiverBindGroup(),
+                      radianceCascades.applyGroup(), &frame.device,
                       &gpuProbe);
         // Contact shadows (the texture is the toggle — white = off).
         {

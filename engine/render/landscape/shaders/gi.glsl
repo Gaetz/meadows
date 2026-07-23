@@ -22,6 +22,35 @@ vec3 giSlabDir(int d) {
     return normalize(v);
 }
 
+// Direction-AVERAGED radiance for AIR (docs/VOLUMETRIC.md V3): the fog's
+// ambient in-scatter inside the RC volume — same grid and border fade as
+// giAmbient, but no normal weighting (air sees every direction), no
+// banding, no floor (air is not a surface). Outside the grid or with RC
+// off: the classic haze the caller passes.
+vec3 giAir(vec3 worldPos, vec3 classicAmbient) {
+    if (uGiInfo.x < 0.5) {
+        return classicAmbient;
+    }
+    float res = uGiInfo.w;
+    float spacing = uGiGridInfo.w;
+    float span = res * spacing;
+    vec3 uvw = (worldPos - uGiGridInfo.xyz) / span;
+    vec3 edge = min(uvw, vec3(1.0) - uvw);
+    float border = min(edge.x, min(edge.y, edge.z));
+    float fade = clamp(border / max(uGiInfo.z / span, 0.001), 0.0, 1.0);
+    if (fade <= 0.0) {
+        return classicAmbient;
+    }
+    float zProbe = clamp(uvw.z * res, 0.5, res - 0.5);
+    vec2 uvXY = clamp(uvw.xy, vec2(0.5 / res), vec2(1.0 - 0.5 / res));
+    vec3 sum = vec3(0.0);
+    for (int d = 0; d < 8; ++d) {
+        float z = (zProbe + float(d) * res) / (res * 8.0);
+        sum += texture(uGiCascade0, vec3(uvXY, z)).rgb;
+    }
+    return mix(classicAmbient, sum * (uGiInfo.y / 8.0), fade);
+}
+
 vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
     if (uGiInfo.x < 0.5) {
         return classicAmbient; // Classic: byte-identical
