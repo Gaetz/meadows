@@ -69,8 +69,13 @@ void main() {
     // the haze term is the fog's physical color, not an effect.
     vec3 ambientAir = skyGradient(dir);
     float mu = dot(dir, uSunDirection.xyz);
+    // Isotropic floor + forward lobe: the lobe carries the sunrise/sunset
+    // glow toward the sun, the floor keeps midday cloud-gap curtains
+    // visible SIDE-ON (mu ~ 0 there — a pure lobe extinguishes them).
+    // hand-tuned floor.
     float lobe = pow(clamp(mu * 0.5 + 0.5, 0.0, 1.0), uFogSunInfo.y);
-    vec3 sunAir = uSunColor.rgb * (lobe * uFogSunInfo.x * uTime.z);
+    float phase = 0.35 + 0.65 * lobe;
+    vec3 sunAir = uSunColor.rgb * (phase * uFogSunInfo.x * uTime.z);
 
     const int kSteps = 20;
     float stepLen = span / float(kSteps);
@@ -92,7 +97,7 @@ void main() {
         // Shadowed air keeps a floor of haze (the sky still reaches it
         // sideways); the contrast between lit and shadowed air is what
         // draws the shafts and the dark curtains. hand-tuned.
-        vec3 source = ambientAir * mix(0.55, 1.0, vis) + sunAir * vis;
+        vec3 source = ambientAir * mix(0.45, 1.0, vis) + sunAir * vis;
         inscatter += transmit * source * (1.0 - absorb);
         transmit *= absorb;
         if (transmit < 0.003) {
