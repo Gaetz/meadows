@@ -56,3 +56,4 @@ smoke-err.log
 
 # Dev-UI layout state (machine-local)
 imgui.ini
+vulkan-pipeline-cache.bin
