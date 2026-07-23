@@ -96,7 +96,20 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         // fog, no god rays/volumetric — local lights carry the room.
         resolved.sunColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         resolved.sunGlowColor = { 0.0f, 0.0f, 0.0f, 0.0f };
-        resolved.ambientColor = { in.interiorAmbient, base.ambientColor.w };
+        // H1 (docs/VOLUMETRIC.md): the room's ambient follows the outside
+        // — daylight from the sun's ELEVATION (same signal as the
+        // sun-linked window shafts) times the weather's own ambient scale
+        // (storms darken, §2.11: WeatherForm.ambientIntensity reused).
+        // The base value stays the artistic floor: at night or with
+        // weight 0, the room keeps (1 - weight) of it.
+        const f32 daylight =
+            glm::smoothstep(-0.08f, 0.25f, in.sky.sunDirection.y);
+        const f32 outside = daylight * in.atmos.ambientIntensity;
+        const f32 couple =
+            glm::clamp(in.interiorDaylightWeight, 0.0f, 1.0f);
+        resolved.ambientColor = { in.interiorAmbient *
+                                      glm::mix(1.0f, outside, couple),
+                                  base.ambientColor.w };
         resolved.fogInfo = { 0.0f, 0.02f, 0.0f, 100000.0f };
         resolved.sunScreen = { 0.5f, 0.5f, 0.0f, 0.0f };
         resolved.time.z = 0.0f; // volumetric shafts off

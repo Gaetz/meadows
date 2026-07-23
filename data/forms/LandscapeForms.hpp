@@ -54,6 +54,9 @@ struct LandscapeTuningForm : Form {
     f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
     // Interior ambient: the interior-mode base light; moddable per §5.
     Vec3 interiorAmbient { 0.16f, 0.15f, 0.14f };
+    // H1 (docs/VOLUMETRIC.md): coupling of the interior ambient to the
+    // outside (sun elevation x weather) — 0 = constant, 1 = full Helios.
+    f32 interiorDaylightWeight { 0.6f };
     // Analytical grading:
     // applied in tonemap between ACES and gamma; the scene's A/B toggle
     // sends neutral values (0 / 0 / 1) when off.
@@ -110,6 +113,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(cloudHeight)
         REFLECT_FIELD(cloudScale)
         REFLECT_FIELD(interiorAmbient)
+        REFLECT_FIELD(interiorDaylightWeight)
         REFLECT_FIELD(gradeVibrance)
         REFLECT_FIELD(gradeSplitTone)
         REFLECT_FIELD(gradeContrast)

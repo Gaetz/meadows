@@ -51,7 +51,8 @@ cloudHeight = 780.0         # cloud layer altitude (m)
 cloudScale = 0.0011         # pattern frequency (1/m)
 
 # --- Interiors (chantier 6 B1) --------------------------------------------
-interiorAmbient = [0.16, 0.15, 0.14]  # constant ambient in interior cells
+interiorAmbient = [0.16, 0.15, 0.14]  # base ambient in interior cells
+interiorDaylightWeight = 0.6          # 0 = constant, 1 = full outside coupling
 
 # --- Grading (renderer brick 28, chantier 6 B3) ----------------------------
 gradeVibrance = 0.3    # weighted saturation boost (0 = off)

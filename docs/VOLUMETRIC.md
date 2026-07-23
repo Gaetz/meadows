@@ -160,15 +160,21 @@ météo est déjà crossfadée), l'horloge/soleil quantisé, `LightForm`
 (`sunLinked` est le germe), le worldspace intérieur. Pas de « système
 météo intérieur » parallèle.
 
-### H1 — L'ambiance horaire
+### H1 — L'ambiance horaire — ✅ FAIT (2026-07-23)
 
-`interiorAmbient` cesse d'être une constante :
-`ambiance = base(pièce) × daylight(heure) × facteurMétéo(atmos)`, où
-`daylight` est la courbe jour/nuit déjà implicite dans le soleil et
-`facteurMétéo` se dérive de l'atmos crossfadée (couverture, orage).
-Données moddables §5 : champs appendus au worldspace intérieur (base,
-poids du couplage) — le choix Form exact se tranche à la brique. L'orage
-assombrit ; les éclairs restent du ressort des lumières (flicker existant).
+`interiorAmbient` n'est plus une constante : dans le composer,
+`ambiance = base × mix(1, daylight × météo, poids)` avec `daylight =
+smoothstep(-0.08, 0.25, élévation du soleil)` (le même signal que les
+raies sunLinked) et `météo = WeatherForm.ambientIntensity` réutilisé
+(§2.11 — l'orage assombrit sans nouveau champ). Le poids
+(`interiorDaylightWeight`, LandscapeTuningForm, défaut 0.6, slider
+« Interior daylight coupling » sous Lighting & shadows, inclus au Save)
+est le knob : 0 = l'ancien constant, 1 = couplage total ; la base reste
+le plancher artistique de nuit. Le choix « champs par worldspace »
+(pièce par pièce) est reporté à H3 avec la règle enterrée — un poids
+global suffit tant qu'il n'y a qu'une maison. Les éclairs restent du
+ressort des lumières (flicker existant). Validation visuelle dev : à
+faire (cycle complet d'heure dans la maison, orage dehors).
 
 ### H2 — Raies héliotropes & lumières de fenêtre
 

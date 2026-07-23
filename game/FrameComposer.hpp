@@ -35,6 +35,10 @@ struct FrameComposerInputs {
     AtmosphereParams atmos {};
     bool interiorMode { false };
     Vec3 interiorAmbient { 0.0f };
+    // H1 (docs/VOLUMETRIC.md): how much the interior ambient follows the
+    // OUTSIDE (sun elevation x the weather's ambientIntensity) — the
+    // Helios model. 0 = the old constant; 1 = fully coupled.
+    f32 interiorDaylightWeight { 0.6f };
 
     // Terrain / tuning scalars.
     f32 seaLevel { 0.0f };

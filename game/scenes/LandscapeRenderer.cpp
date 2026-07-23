@@ -80,6 +80,7 @@ void LandscapeRenderer::applyTuning(
                          tuning.stylizedShadowFloor,
                          tuning.stylizedHalfTone };
     shadowResolutionUi = glm::clamp(tuning.shadowResolution, 1024, 4096);
+    interiorDaylightWeightUi = tuning.interiorDaylightWeight;
     // Vegetation draw budget (clamped — the streamer ring
     // and the Hi-Z candidate cap size the safe range).
     vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 15);
@@ -175,6 +176,7 @@ void LandscapeRenderer::captureTuning(data::LandscapeTuningForm& out) const {
     out.stylizedShadowEnd = stylizedShadowUi.y;
     out.stylizedShadowFloor = stylizedShadowUi.z;
     out.shadowResolution = shadowResolutionUi;
+    out.interiorDaylightWeight = interiorDaylightWeightUi;
     out.vegViewRadius = vegetation.viewRadius;
     out.vegHighDetailRadius = vegetation.highDetailRadius;
     out.vegLowDetailRadius = vegetation.lowDetailRadius;
@@ -1399,6 +1401,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         .atmos = view.atmos,
         .interiorMode = view.interiorMode,
         .interiorAmbient = view.interiorAmbient,
+        .interiorDaylightWeight = interiorDaylightWeightUi,
         .seaLevel = terrain.params.seaLevel,
         .snowLine = view.snowLine,
         .splatUvScale = view.splatUvScale,
@@ -2429,6 +2432,9 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::SameLine();
         ImGui::Checkbox("Terrain light map", &terrainLightUi);
         ImGui::Checkbox("Key light shadow", &keyShadowUi); // interiors
+        // H1: the interior ambient follows the outside (hour + weather).
+        ImGui::SliderFloat("Interior daylight coupling",
+                           &interiorDaylightWeightUi, 0.0f, 1.0f, "%.2f");
     }
     if (ImGui::CollapsingHeader("Sun FX")) {
         ImGui::SliderFloat("God rays intensity", &atmos.godRayIntensity,
