@@ -92,6 +92,9 @@ struct FrameUniforms {
     // Foliage-card leaf cutout -> solid ramp (tree.frag/shadow_prop.frag):
     // xy = mip window start/end of the blend, zw free.
     Vec4 leafLodInfo { 4.0f, 7.0f, 0.0f, 0.0f };
+    // Fog sun single-scatter (docs/VOLUMETRIC.md V1): x = strength
+    // (weather-crossfaded), y = phase exponent, zw free.
+    Vec4 fogSunInfo { 0.5f, 8.0f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -141,7 +144,8 @@ static_assert(offsetof(FrameUniforms, giInfo) == 912);
 static_assert(offsetof(FrameUniforms, giGridInfo) == 928);
 static_assert(offsetof(FrameUniforms, giBandInfo) == 944);
 static_assert(offsetof(FrameUniforms, leafLodInfo) == 960);
-static_assert(sizeof(FrameUniforms) == 976,
+static_assert(offsetof(FrameUniforms, fogSunInfo) == 976);
+static_assert(sizeof(FrameUniforms) == 992,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

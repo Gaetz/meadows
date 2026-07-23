@@ -69,15 +69,23 @@ gratuitement, pénombres comprises.
 
 ## 4. Extérieur — briques V1→V4
 
-### V1 — Le fog qui éclaire (analytique, ~gratuit)
+### V1 — Le fog qui éclaire (analytique, ~gratuit) — ✅ FAIT (2026-07-23)
 
-Ajouter le terme solaire à `applyFog` : la couleur du fog devient
-`skyGradient(viewDir) + sunColor × HG(view·sun, g≈0.6) × k`, où HG est la
-phase Henyey-Greenstein (repliable en `pow(mu*0.5+0.5, n)` stylisé).
-Aucune marche, aucun coût mesurable ; tue le voile gris aux heures basses
-(le fog face au soleil se dore, dos au soleil il bleuit). Knobs `g` et
-`k` sur le `LandscapeTuningForm`/`WeatherForm` (§5) — un temps de brume
-matinale pousse `k`, un temps couvert le coupe.
+Le terme solaire est dans `applyFog` : la couleur du fog est
+`skyGradient(viewDir) + uSunColor × pow(mu·0.5+0.5, uFogSunInfo.y) ×
+uFogSunInfo.x` (phase HG repliée en lobe stylisé). Aucune marche, aucun
+coût mesurable ; le fog face au soleil se dore, dos au soleil il
+refroidit — le voile gris uniforme disparaît.
+
+Câblage livré : `WeatherForm.fogSunScatter` (force, crossfadée par la
+météo — Morning Mist 1.3 … Storm 0.05, `landscape.toml`),
+`LandscapeTuningForm.fogSunPhase` (resserrement du lobe, global),
+`AtmosphereParams` → `FrameComposer` (dans `base` : le reflet fogge
+pareil) → `uFogSunInfo` (vec4 appendu au FrameUbo, règle append-only).
+Sliders live « Fog sun scatter » / « Fog sun phase exp » au panneau
+Fog & clouds. En intérieur, le mode coupe déjà la densité → terme sans
+effet, rien à gater. La nuit, `uSunColor` s'éteint → extinction
+automatique. Validation visuelle dev aux heures critiques : à faire.
 
 ### V2 — Le march devient la source
 

@@ -207,6 +207,7 @@ void LandscapeScene::bootstrapData() {
     atmos.fogHeightFalloff = tuning.fogHeightFalloff;
     atmos.fogLowBoost = tuning.fogLowBoost;
     atmos.fogStart = tuning.fogStart;
+    atmos.fogSunPhase = tuning.fogSunPhase;
     atmos.bloomIntensity = tuning.bloomIntensity;
     atmos.godRayIntensity = tuning.godRayIntensity;
     atmos.volumetric = tuning.volumetricIntensity;

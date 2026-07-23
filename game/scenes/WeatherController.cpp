@@ -21,6 +21,7 @@ data::WeatherForm capture(const AtmosphereParams& a) {
     w.fogHeightFalloff = a.fogHeightFalloff;
     w.fogLowBoost = a.fogLowBoost;
     w.fogStart = a.fogStart;
+    w.fogSunScatter = a.fogSunScatter;
     w.sunIntensity = a.sunIntensity;
     w.ambientIntensity = a.ambientIntensity;
     w.saturation = a.saturation;
@@ -44,6 +45,7 @@ void applyTo(AtmosphereParams& a, const data::WeatherForm& w) {
     a.fogHeightFalloff = w.fogHeightFalloff;
     a.fogLowBoost = w.fogLowBoost;
     a.fogStart = w.fogStart;
+    a.fogSunScatter = w.fogSunScatter;
     a.sunIntensity = w.sunIntensity;
     a.ambientIntensity = w.ambientIntensity;
     a.saturation = w.saturation;
@@ -92,6 +94,7 @@ void WeatherController::update(AtmosphereParams& atmos, f32 dt) {
     blended.fogHeightFalloff = lerp(from_.fogHeightFalloff, to.fogHeightFalloff);
     blended.fogLowBoost = lerp(from_.fogLowBoost, to.fogLowBoost);
     blended.fogStart = lerp(from_.fogStart, to.fogStart);
+    blended.fogSunScatter = lerp(from_.fogSunScatter, to.fogSunScatter);
     blended.sunIntensity = lerp(from_.sunIntensity, to.sunIntensity);
     blended.ambientIntensity = lerp(from_.ambientIntensity, to.ambientIntensity);
     blended.saturation = lerp(from_.saturation, to.saturation);

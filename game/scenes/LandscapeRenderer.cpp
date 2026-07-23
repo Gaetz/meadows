@@ -2284,6 +2284,10 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
                            0.0f, 5.0f, "%.1f");
         ImGui::SliderFloat("Fog start (m)", &atmos.fogStart, 0.0f, 500.0f,
                            "%.0f");
+        ImGui::SliderFloat("Fog sun scatter", &atmos.fogSunScatter, 0.0f,
+                           2.0f, "%.2f");
+        ImGui::SliderFloat("Fog sun phase exp", &atmos.fogSunPhase, 1.0f,
+                           32.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Cloud coverage", &atmos.cloudCoverage, 0.0f,
                            1.0f, "%.2f");
         ImGui::SliderFloat("Cloud shadow strength", &atmos.cloudShadow,

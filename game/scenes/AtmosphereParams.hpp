@@ -20,6 +20,10 @@ struct AtmosphereParams {
     f32 fogHeightFalloff { 0.02f };
     f32 fogLowBoost { 1.6f };
     f32 fogStart { 300.0f };
+    // Fog sun single-scatter (docs/VOLUMETRIC.md V1): strength rides the
+    // weather crossfade; the phase exponent is global tuning.
+    f32 fogSunScatter { 0.5f };
+    f32 fogSunPhase { 8.0f };
     f32 cloudHeight { 520.0f };
     f32 cloudScale { 0.0011f };
     f32 sunIntensity { 1.0f };

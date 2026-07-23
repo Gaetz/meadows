@@ -66,4 +66,6 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uGiBandInfo;
     // Foliage-card leaf cutout -> solid ramp: xy = mip window.
     vec4 uLeafLodInfo;
+    // Fog sun single-scatter: x = strength, y = phase exponent.
+    vec4 uFogSunInfo;
 };

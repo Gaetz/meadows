@@ -33,6 +33,10 @@ struct LandscapeTuningForm : Form {
     f32 fogHeightFalloff { 0.02f };
     f32 fogLowBoost { 1.6f };
     f32 fogStart { 300.0f };
+    // Sun single-scatter phase exponent (docs/VOLUMETRIC.md V1): how
+    // tightly the fog's sun glow hugs the sun direction. Strength is
+    // per-weather (WeatherForm::fogSunScatter).
+    f32 fogSunPhase { 8.0f };
     // Post processing.
     f32 exposure { 1.0f };
     f32 bloomIntensity { 0.35f };
@@ -81,6 +85,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(fogHeightFalloff)
         REFLECT_FIELD(fogLowBoost)
         REFLECT_FIELD(fogStart)
+        REFLECT_FIELD(fogSunPhase)
         REFLECT_FIELD(exposure)
         REFLECT_FIELD(bloomIntensity)
         REFLECT_FIELD(godRayIntensity)
@@ -212,6 +217,9 @@ struct WeatherForm : Form {
     f32 fogHeightFalloff { 0.02f };
     f32 fogLowBoost { 1.6f };
     f32 fogStart { 300.0f };
+    // Sun single-scatter strength in the fog (docs/VOLUMETRIC.md V1):
+    // morning mist pushes it, overcast kills it.
+    f32 fogSunScatter { 0.5f };
     // Light grading (SkySystem::Weather).
     f32 sunIntensity { 1.0f };
     f32 ambientIntensity { 1.0f };
@@ -239,6 +247,7 @@ struct WeatherForm : Form {
         REFLECT_FIELD(fogHeightFalloff)
         REFLECT_FIELD(fogLowBoost)
         REFLECT_FIELD(fogStart)
+        REFLECT_FIELD(fogSunScatter)
         REFLECT_FIELD(sunIntensity)
         REFLECT_FIELD(ambientIntensity)
         REFLECT_FIELD(saturation)

@@ -82,6 +82,9 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         .grassTipColor = in.grassTipColor,
         // BASE too: the reflection pass draws the tree cards.
         .leafLodInfo = in.leafLodInfo,
+        // BASE too: the fog applies in the reflection as well.
+        .fogSunInfo = { in.atmos.fogSunScatter, in.atmos.fogSunPhase, 0.0f,
+                        0.0f },
     };
 
     render::FrameUniforms resolved = base;

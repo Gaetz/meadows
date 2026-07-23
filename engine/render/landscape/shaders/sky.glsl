@@ -52,5 +52,15 @@ vec3 applyFog(vec3 color, vec3 worldPos) {
     // true colors, the haze belongs to the far field.
     float fogDist = max(dist - uFogInfo.w, 0.0);
     float amount = 1.0 - exp(-fogDist * density);
-    return mix(color, skyGradient(viewDir), amount);
+    // Sun single-scatter (docs/VOLUMETRIC.md V1): without it, lit and
+    // shadowed air converge to the same sky color — the grey veil. The
+    // forward lobe warms fog toward the sun and lets it cool away from
+    // it; strength rides the weather, the exponent is global tuning.
+    float mu = dot(viewDir, uSunDirection.xyz);
+    vec3 fogColor = skyGradient(viewDir) +
+                    uSunColor.rgb *
+                        (pow(clamp(mu * 0.5 + 0.5, 0.0, 1.0),
+                             uFogSunInfo.y) *
+                         uFogSunInfo.x);
+    return mix(color, fogColor, amount);
 }
