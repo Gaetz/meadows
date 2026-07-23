@@ -3707,3 +3707,27 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-000000000300"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [60.0, 2.2, 332.0]
+
+# H2 window bounce (docs/VOLUMETRIC.md): an ordinary sun-linked light
+# WITHOUT shaft, by the hall's window side — its color and intensity
+# follow the live sun (hour + weather), it dies at night. The authored
+# color is overridden by the sun; only intensity/radius matter.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000310"
+type = "LightForm"
+new = true
+[records.fields]
+editorId = "WindowBounce"
+color = [1.0, 0.95, 0.85]
+intensity = 2.2
+radius = 7.0
+sunLinked = true
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000311"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000310"
+cell = "4d7a9b30-0000-4000-8000-000000000021"
+position = [3.2, 1.8, 8.0]

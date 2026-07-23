@@ -1475,9 +1475,22 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                 render::GiTechnique::RadianceCascades;
         lights.count.x = rcOnly ? 0.0f
                                 : static_cast<f32>(nearest.size());
+        // H2 (docs/VOLUMETRIC.md): sun-linked sources (window bounce,
+        // the shafts' light pools) take the SUN's live color — hour and
+        // weather included, SkySystem folds sunIntensity/overcast — and
+        // die below the horizon on the same curve as the blades. Their
+        // direction follows the quantized sun.
+        const f32 sunGate =
+            glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
+        const Vec3 sunTint { uniforms.sunColor };
         for (u32 i = 0; i < nearest.size(); ++i) {
             const SceneLight& light = nearest[i];
             f32 intensity = light.intensity;
+            Vec3 color = light.color;
+            if (light.sunLinked) {
+                color = sunTint;
+                intensity *= sunGate;
+            }
             if (light.flicker > 0.0f) {
                 const f32 phase = static_cast<f32>(i) * 1.7f;
                 intensity *=
@@ -1487,10 +1500,11 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                                                  phase * 3.1f));
             }
             lights.positionRadius[i] = { light.position, light.radius };
-            lights.colorIntensity[i] = { light.color * intensity, 0.0f };
+            lights.colorIntensity[i] = { color * intensity, 0.0f };
             const bool spot = light.spotAngle > 0.0f;
             lights.directionAngle[i] = {
-                glm::normalize(light.direction),
+                glm::normalize(light.sunLinked ? -shadowSunDirection
+                                               : light.direction),
                 spot ? std::cos(glm::radians(light.spotAngle * 0.5f))
                      : -2.0f
             };
@@ -1703,9 +1717,18 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             }
         }
         for (const auto& light : snapshot.lights) {
-            rcLights.push_back(
-                { { light.position, light.radius },
-                  { light.color * light.intensity, 0.0f } });
+            // H2: sun-linked emitters carry the live sun into the GI
+            // field too — same color/gate as the direct path above.
+            const f32 sunGate =
+                glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
+            const Vec3 color = light.sunLinked
+                                   ? Vec3 { uniforms.sunColor }
+                                   : light.color;
+            const f32 intensity =
+                light.sunLinked ? light.intensity * sunGate
+                                : light.intensity;
+            rcLights.push_back({ { light.position, light.radius },
+                                 { color * intensity, 0.0f } });
         }
         radianceCascades.update(frame.device, frame.cmd, terrain.params,
                                 camera.position, rcBoxes, rcLights,

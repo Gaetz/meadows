@@ -176,14 +176,23 @@ global suffit tant qu'il n'y a qu'une maison. Les éclairs restent du
 ressort des lumières (flicker existant). Validation visuelle dev : à
 faire (cycle complet d'heure dans la maison, orage dehors).
 
-### H2 — Raies héliotropes & lumières de fenêtre
+### H2 — Raies héliotropes & lumières de fenêtre — ✅ FAIT (2026-07-23)
 
-Généraliser l'acquis `sunLinked` : l'intensité suit `daylight × météo`
-(aujourd'hui : gate d'élévation seul) — une raie de fenêtre s'éteint la
-nuit et pâlit sous les nuages ; couleur déjà héritée du soleil. Les
-« window bounce » d'Helios = des `LightForm` ordinaires `sunLinked` SANS
-`shaft` : sources posées près des fenêtres dont couleur/intensité suivent
-le soleil. Zéro nouveau type — deux champs de comportement au plus.
+Découverte d'inventaire : `sunColor` intégrait DÉJÀ l'heure et la météo
+(`SkySystem` : × `weather.sunIntensity`, × (1 − 0.75 × overcast), gain
+chaud au couchant) — les LAMES l'utilisaient, mais ni le chemin direct
+(LightsUbo) ni les blobs GI. H2 = router ce signal : les sources
+`sunLinked` prennent la couleur VIVANTE du soleil dans les deux chemins,
+avec le gate d'élévation des lames (`smoothstep(0.05, 0.20)`) et la
+direction du soleil quantisé pour les spots. Une raie de fenêtre et sa
+flaque de lumière pâlissent donc sous l'orage et meurent la nuit — et
+leur rebond existe dans le champ GI.
+
+Les « window bounce » sont bien des `LightForm` ordinaires `sunLinked`
+sans `shaft` — zéro nouveau champ ; démonstrateur `WindowBounce` posé
+côté fenêtre du hall (village.toml, la couleur autorée est écrasée par
+le soleil). Validation visuelle dev : cycle d'heure dans le hall
+(raie + flaque + bounce cohérents), orage dehors.
 
 ### H3 — La règle « enterré »
 
