@@ -49,8 +49,11 @@ vec3 applyFog(vec3 color, vec3 worldPos) {
     float lowBoost = exp(-max(midHeight - uTerrainInfo.x, 0.0) * uFogInfo.y);
     float density = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z);
     // Only the distance BEYOND the start counts: everything nearer keeps its
-    // true colors, the haze belongs to the far field.
-    float fogDist = max(dist - uFogInfo.w, 0.0);
+    // true colors, the haze belongs to the far field. When the volumetric
+    // march owns the near fog (uFogSunInfo.z = its reach, composer-set),
+    // the analytic term is only the TAIL beyond it.
+    float fogStart = max(uFogInfo.w, uFogSunInfo.z);
+    float fogDist = max(dist - fogStart, 0.0);
     float amount = 1.0 - exp(-fogDist * density);
     // Sun single-scatter (docs/VOLUMETRIC.md V1): without it, lit and
     // shadowed air converge to the same sky color — the grey veil. The

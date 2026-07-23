@@ -1,10 +1,15 @@
 #version 460 core
 #include "common.glsl"
+#include "sky.glsl"
 
-// Cheap volumetric light shafts (half-res, 14 jittered steps): march the
-// view ray through the air, accumulating sunlight where neither the clouds
-// (analytic shadow) nor the geometry (one CSM tap per step) block it. Denser
-// near the ground — distant valleys catch Ghibli light curtains.
+// The fog INTEGRATOR (docs/VOLUMETRIC.md V2): half-res, jittered march of
+// (inscatter, transmittance) from the fog start to uFogSunInfo.z (the
+// composer-set reach) — the march OWNS the fog on that span, the surface
+// shaders' analytic applyFog only keeps the tail beyond it, and the
+// tonemap composites `scene * a + rgb`. In-scatter per step = the sky
+// haze (the analytic fog color) + the sun beam (V1 phase lobe) times the
+// PER-STEP visibility (CSM + cloud shadows) — lit air glows, shadowed air
+// darkens: fog as lighting instead of a grey veil.
 layout(binding = 0) uniform sampler2D uSceneDepth;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 
@@ -20,7 +25,7 @@ vec3 worldFromDepth(vec2 uv, float depth) {
     return world.xyz / world.w;
 }
 
-// Single hardware-compared CSM tap (no PCF — 14 of these per pixel).
+// Single hardware-compared CSM tap (no PCF — one per step per pixel).
 float shaftShadow(vec3 p) {
     if (uShadowInfo.w <= 0.0) {
         return 1.0;
@@ -41,93 +46,59 @@ float shaftShadow(vec3 p) {
 }
 
 void main() {
-    // Alpha is a MULTIPLIER over the scene (1 = neutral) — see below.
-    if (uTime.z <= 0.0 || uSunDirection.y <= -0.05) {
-        fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    float reach = uFogSunInfo.z;
+    if (uTime.z <= 0.0 || reach <= 0.0 || uSunDirection.y <= -0.05) {
+        fragColor = vec4(0.0, 0.0, 0.0, 1.0); // neutral: analytic fog owns
         return;
     }
     vec3 end = worldFromDepth(vUv, texture(uSceneDepth, vUv).r);
     vec3 ray = end - uCameraPos.xyz;
-    float rayLen = min(length(ray), 1400.0); // march reach (far columns)
+    float rayLen = min(length(ray), reach);
     vec3 dir = ray / max(length(ray), 1e-4);
 
-    // Mild forward phase: shafts glow toward the sun yet stay visible
-    // side-on (that's the whole point).
+    float start = uFogInfo.w; // clear air before the fog start
+    float span = rayLen - start;
+    if (span <= 0.0) {
+        fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
+    // The two in-scatter sources. The sun beam reuses the V1 lobe knobs
+    // (strength per weather, exponent global); uTime.z (the Volumetric
+    // shafts slider) stays the artistic multiplier of the BEAM only —
+    // the haze term is the fog's physical color, not an effect.
+    vec3 ambientAir = skyGradient(dir);
     float mu = dot(dir, uSunDirection.xyz);
-    float phase = 0.4 + 0.6 * pow(mu * 0.5 + 0.5, 3.0);
+    float lobe = pow(clamp(mu * 0.5 + 0.5, 0.0, 1.0), uFogSunInfo.y);
+    vec3 sunAir = uSunColor.rgb * (lobe * uFogSunInfo.x * uTime.z);
 
     const int kSteps = 20;
-    float stepLen = rayLen / float(kSteps);
+    float stepLen = span / float(kSteps);
     // Interleaved Gradient Noise (Jimenez): structured screen-space dither
     // that filters out smoothly — white noise here reads as ink blotches.
     float jitter = fract(52.9829189 * fract(0.06711056 * gl_FragCoord.x +
                                             0.00583715 * gl_FragCoord.y));
 
-    // Two accumulators, two effects:
-    //  - NEAR field (transmittance-weighted): ADDITIVE shafts, the air the
-    //    fog has not eaten yet.
-    //  - FAR field (weighted by where the fog's in-scatter is born,
-    //    density x transmittance): a MULTIPLIER that removes the unshadowed
-    //    in-scatter the fog already added where the marched air turns out
-    //    to be cloud-shadowed. Dark distant curtains carve out the bright
-    //    corridors left untouched -> distant Ghibli shafts by contrast,
-    //    with no double-counted light.
-    float accumLit = 0.0;
-    float accumMax = 0.0;
-    float fogLit = 0.0;
-    float fogMax = 0.0;
-    float opticalDepth = 0.0;
+    float transmit = 1.0;
+    vec3 inscatter = vec3(0.0);
     for (int i = 0; i < kSteps; ++i) {
-        float d = (float(i) + jitter) * stepLen;
+        float d = start + (float(i) + jitter) * stepLen;
         vec3 p = uCameraPos.xyz + dir * d;
-        // The scattering medium thins with altitude: shafts live low.
-        float heightFall = exp(-max(p.y - uTerrainInfo.x, 0.0) * 0.004);
         float lowBoost =
             exp(-max(p.y - uTerrainInfo.x, 0.0) * uFogInfo.y);
-        float fogDensity = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z);
-        float transmit = exp(-max(d - uFogInfo.w, 0.0) * fogDensity);
-        float lit = cloudShadowFactor(p) * shaftShadow(p);
-
-        // Column DETECTION reaches farther than the physical transmittance
-        // (sqrt slows the falloff): safe now that the additive brightness is
-        // fixed/capped — extending the reach can't rebuild the white veil.
-        float weight = heightFall * sqrt(transmit);
-        accumLit += lit * weight;
-        accumMax += weight;
-
-        float fogWeight = fogDensity * transmit;
-        fogLit += lit * fogWeight;
-        fogMax += fogWeight;
-        if (d > uFogInfo.w) {
-            opticalDepth += fogDensity * stepLen;
+        float density = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z);
+        float absorb = exp(-density * stepLen);
+        float vis = cloudShadowFactor(p) * shaftShadow(p);
+        // Shadowed air keeps a floor of haze (the sky still reaches it
+        // sideways); the contrast between lit and shadowed air is what
+        // draws the shafts and the dark curtains. hand-tuned.
+        vec3 source = ambientAir * mix(0.55, 1.0, vis) + sunAir * vis;
+        inscatter += transmit * source * (1.0 - absorb);
+        transmit *= absorb;
+        if (transmit < 0.003) {
+            break; // opaque air: nothing behind can contribute
         }
     }
 
-    // User-requested gate: volumetric shafts belong to genuinely cloudy
-    // skies (ramp in between 30% and 40% coverage).
-    float gate = smoothstep(0.30, 0.40, uCloudInfo.x) * uTime.z;
-
-    // ADDITIVE near shafts: absolute excess above the expected average ray,
-    // remapped through a steep smoothstep for DEFINED column borders, and
-    // with a FIXED capped luminance (decoupled from ray length) — a uniform,
-    // readable addition that never buries what's behind it.
-    float litRatio = accumLit / max(accumMax, 1e-3);
-    float meanLit =
-        clamp(1.0 - uCloudInfo.x * uCloudInfo.w * 0.75, 0.05, 0.98);
-    float excess = max(litRatio - meanLit, 0.0);
-    float column = smoothstep(0.15, 0.40, excess); // tight = crisp borders
-    float reach = min(rayLen / 250.0, 1.0); // very short rays: no full shaft
-    vec3 shaft =
-        uSunGlowColor.rgb * (column * 0.28 * phase * reach * gate);
-
-    // MULTIPLICATIVE far curtains: darken the fog's in-scatter where the
-    // distant air is shadowed, remapped into clean BANDS (the raw ratio
-    // smears like spilled ink), scaled by how much fog covers this pixel.
-    float fogAmount = 1.0 - exp(-opticalDepth);
-    float litRatioFog = fogLit / max(fogMax, 1e-5);
-    float band = smoothstep(0.18, 0.55, 1.0 - litRatioFog);
-    float darken = fogAmount * band * 0.80 * gate;
-    float fogShadowMul = clamp(1.0 - darken, 0.0, 1.0);
-
-    fragColor = vec4(shaft, fogShadowMul);
+    fragColor = vec4(inscatter, transmit);
 }

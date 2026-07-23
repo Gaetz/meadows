@@ -114,6 +114,16 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     // bake lands or when toggled off / indoors).
     resolved.terrainLightInfo = in.terrainLightInfo;
     resolved.terrainLightInfo.w = in.terrainLightActive ? 1.0f : 0.0f;
+    // V2 (docs/VOLUMETRIC.md): when the volumetric march runs, it OWNS
+    // the fog inside its reach — the surfaces' analytic fog starts where
+    // the march ends (uFogSunInfo.z, read by applyFog AND as the march
+    // length). RESOLVED only: the reflection pass has no volumetric
+    // composite and keeps the full analytic fog; night (the march
+    // early-outs below the horizon) and interiors stay analytic too.
+    if (!in.interiorMode && in.atmos.volumetric > 0.003f &&
+        in.sky.sunDirection.y > -0.05f) {
+        resolved.fogSunInfo.z = 1400.0f; // march reach (m)
+    }
     // The GI switch rides RESOLVED only (base = the
     // reflection pass stays Classic — no cascade sampler needed there).
     resolved.giInfo = in.giInfo;

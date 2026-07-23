@@ -87,18 +87,30 @@ Fog & clouds. En intérieur, le mode coupe déjà la densité → terme sans
 effet, rien à gater. La nuit, `uSunColor` s'éteint → extinction
 automatique. Validation visuelle dev aux heures critiques : à faire.
 
-### V2 — Le march devient la source
+### V2 — Le march devient la source — ✅ FAIT (2026-07-23)
 
-Refactor de `volumetric.frag` : au lieu de (shaft additif, multiplicateur
-de rideau), la marche intègre réellement `(inscatter, transmittance)` par
-pixel — `inscatter += T × densité × (sunColor × phase × visibilité +
-ambient) × pas`, `T *= exp(-densité × pas)` — et le composite **remplace**
-`applyFog` sur la portée marchée (1400 m) ; l'analytique V1 ne garde que
-la queue au-delà. Le gate « ciels nuageux » devient un knob artistique.
-Tout l'appareillage existant se réutilise : jitter IGN, tap CSM
-`shaftShadow`, `cloudShadowFactor`, la densité par hauteur (mêmes
-`uFogInfo`). Vérité à protéger : une seule source d'in-scatter — plus de
-double comptage fog analytique + correction.
+`volumetric.frag` réécrit en intégrateur : la marche accumule réellement
+`(inscatter, transmittance)` par pixel — `inscatter += T × source ×
+(1 − e^(−densité·pas))`, `T *= e^(−densité·pas)`, avec `source =
+haze(skyGradient) × mix(0.55, 1, vis) + soleil × lobe V1 × vis` et
+`vis = CSM × ombre de nuages` par pas. Le composite du tonemap
+(`scene × a + rgb`) avait déjà la bonne sémantique — inchangé.
+
+**Une seule source d'in-scatter** : quand le march tourne, le composer
+pose sa portée dans `uFogSunInfo.z` (1400 m, RESOLVED seulement) et
+`applyFog` ne garde que la queue au-delà (`start = max(fogStart,
+reach)`). Le reflet (base), la nuit (early-out sous l'horizon), les
+intérieurs et le knob « Volumetric shafts » à 0 retombent sur
+l'analytique complet. Le gate « ciels nuageux » est supprimé ; le knob
+d'intensité ne multiplie plus que le FAISCEAU solaire (le haze est la
+couleur physique du fog, pas un effet). Jitter IGN, tap CSM et densité
+par hauteur réutilisés tels quels ; early-out à T < 0.003. Validation
+visuelle dev aux heures critiques : à faire.
+
+Reliquat noté (dev, 2026-07-23) : le direct des lampes n'atteint ni
+l'herbe ni la végétation (locallights.glsl est sur mesh/skinned
+seulement — l'herbe et les arbres ne voient les lampes que par la GI) —
+à traiter dans une passe « lighting végétation ».
 
 ### V3 — L'ambient RC dans le march
 
