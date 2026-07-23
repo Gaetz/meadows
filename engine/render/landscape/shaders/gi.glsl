@@ -76,5 +76,11 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
         float lumQ = exp2(tq * bandStep);
         irradiance *= mix(1.0, lumQ / lum, uAmbientColor.w);
     }
+    // The GI floor (uGiBandInfo.z): RC never drops below this fraction of
+    // the CLASSIC ambient — the two illumination models meet seamlessly at
+    // the grid border, and occluded areas (canopies, rooms) stay readable
+    // while classic ambient remains the artistic lever (per weather,
+    // interior, time of day). After the banding: a hard lower bound.
+    irradiance = max(irradiance, classicAmbient * uGiBandInfo.z);
     return mix(classicAmbient, irradiance, fade);
 }

@@ -75,13 +75,16 @@ struct FrameComposerInputs {
     Vec4 grassTipColor { 0.095f, 0.200f, 0.045f, 190.0f };
     // Foliage-card leaf cutout -> solid mip window (Tree builder).
     Vec4 leafLodInfo { 4.0f, 7.0f, 0.0f, 0.0f };
+    // Stylized ramp lanes (see FrameUniforms).
+    Vec4 stylizedDiffuseInfo { 0.02f, 0.09f, 0.32f, 0.40f };
+    Vec4 stylizedShadowInfo { 0.45f, 0.55f, 0.0f, 0.6f };
 
     // The GI switch, RESOLVED only — the reflection pass
     // (which copies `base`) keeps the Classic ambient, so it never needs
     // the cascade sampler bound. Defaults = Classic (x = 0).
     Vec4 giInfo {};
     Vec4 giGridInfo {};
-    Vec4 giBandInfo { 0.85f, 0.15f, 0.0f, 0.0f }; // fixed log-step ramp
+    Vec4 giBandInfo { 0.85f, 0.15f, 0.7f, 0.0f }; // fixed log-step ramp + floor
 };
 
 // The two variants one frame needs. `base` is the raw exterior composition —

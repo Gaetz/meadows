@@ -87,14 +87,21 @@ struct FrameUniforms {
                         // z = edge fade width (m), w = grid resolution
     Vec4 giGridInfo {}; // xyz = cascade-0 grid origin, w = probe spacing
     // The fixed log-step GI ramp: x = stops per band
-    // (0 = continuous), y = anti-aliasing width across a band edge.
-    Vec4 giBandInfo { 0.85f, 0.15f, 0.0f, 0.0f };
+    // (0 = continuous), y = anti-aliasing width across a band edge,
+    // z = GI ambient floor (fraction of classic — grid-border seam killer).
+    Vec4 giBandInfo { 0.85f, 0.15f, 0.7f, 0.0f };
     // Foliage-card leaf cutout -> solid ramp (tree.frag/shadow_prop.frag):
     // xy = mip window start/end of the blend, zw free.
     Vec4 leafLodInfo { 4.0f, 7.0f, 0.0f, 0.0f };
     // Fog sun single-scatter (docs/VOLUMETRIC.md V1): x = strength
     // (weather-crossfaded), y = phase exponent, zw free.
     Vec4 fogSunInfo { 0.5f, 8.0f, 0.0f, 0.0f };
+    // Stylized diffuse ramp (stylized.glsl): xy = terminator smoothstep
+    // edges, zw = full-light smoothstep edges.
+    Vec4 stylizedDiffuseInfo { 0.02f, 0.09f, 0.32f, 0.40f };
+    // Stylized shadow snap: xy = window edges, z = shadow floor,
+    // w = half-tone level of the diffuse ramp.
+    Vec4 stylizedShadowInfo { 0.45f, 0.55f, 0.0f, 0.6f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -145,7 +152,9 @@ static_assert(offsetof(FrameUniforms, giGridInfo) == 928);
 static_assert(offsetof(FrameUniforms, giBandInfo) == 944);
 static_assert(offsetof(FrameUniforms, leafLodInfo) == 960);
 static_assert(offsetof(FrameUniforms, fogSunInfo) == 976);
-static_assert(sizeof(FrameUniforms) == 992,
+static_assert(offsetof(FrameUniforms, stylizedDiffuseInfo) == 992);
+static_assert(offsetof(FrameUniforms, stylizedShadowInfo) == 1008);
+static_assert(sizeof(FrameUniforms) == 1024,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

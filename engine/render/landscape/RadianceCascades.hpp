@@ -56,6 +56,10 @@ struct RcTuning {
     // snaps to absolute exposure steps, day/night/torch alike.
     f32 bandStops { 0.85f };  // stops per band (bigger = fewer, bolder)
     f32 bandAa { 0.3f };      // anti-aliasing width across a band edge
+    // RC never drops below this fraction of the classic ambient: kills
+    // the dark ring at the apply-grid border and keeps occluded areas
+    // readable, while classic ambient stays the artistic base.
+    f32 giFloor { 0.7f };
     // Interval extension (§2.3.3 of the paper): levels whose full
     // march is >= 8 steps raymarch a QUARTER of their interval and
     // double it twice by shift+merge (x4 reach per marched step).
@@ -231,6 +235,19 @@ private:
     Vec3 prevFineOrigin { 0.0f };
     f32 prevFineSpacing { 0.0f };
     bool havePrev { false };
+    // GI health probe (rc_probe.comp): one-shot readback of the merged
+    // cascade 0, logged at boot.
+    rhi::UniquePipeline probePipeline;
+    rhi::UniqueBuffer probeBuffer;
+    rhi::UniqueBindGroup probeGroup;
+    bool probeLogged { false };
+    u32 probeFrame { 0 };
+    // Pipeline value trace (update() logs apply-state flips + knob moves).
+    bool lastLoggedActive { false };
+    f32 lastLoggedIntensity { -1.0f };
+    f32 lastLoggedSkyFactor { -1.0f };
+    f32 lastLoggedFloor { -1.0f };
+    u32 knobLogThrottle { 0 };
 
     // Applied structural knobs (recreate when the tuning diverges).
     i32 appliedResolution { 0 };

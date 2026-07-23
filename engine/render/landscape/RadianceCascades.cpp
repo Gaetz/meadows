@@ -1,5 +1,7 @@
 #include "engine/render/landscape/RadianceCascades.hpp"
 
+#include <cstdlib>
+
 #include <glm/glm.hpp>
 
 #include "engine/core/Jobs.hpp"
@@ -17,6 +19,7 @@ constexpr const char* kBuildShader = "rc_build";
 constexpr const char* kMergeShader = "rc_merge";
 constexpr const char* kExtendShader = "rc_extend";
 constexpr const char* kDebugShader = "rc_debug";
+constexpr const char* kProbeShader = "rc_probe";
 constexpr const char* kFullscreenVert = "fullscreen";
 
 // Flat proxy albedos per terrain material — GI only needs the broad hue
@@ -86,6 +89,8 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
                  { { "uRcClipFine", 5 }, { "uRcClipCoarse", 6 },
                    { "uRcCascade0", 10 } },
                  kFullscreenVert);
+    shaders.loadCompute(kProbeShader, { { "FrameUbo", 0 } },
+                        { { "uGiCascade0", 11 } });
 
     tileSampler = { device, device.createSampler(
         { .minFilter = rhi::FilterMode::Linear,
@@ -158,6 +163,10 @@ void RadianceCascades::refreshPipelines(rhi::Device& device,
             { .shader = shaders.get(kExtendShader),
               .pushConstantSize = sizeof(RcCascadeUniforms) }) };
         extendGeneration = shaders.generation(kExtendShader);
+    }
+    if (probePipeline.id() == 0) {
+        probePipeline = { device, device.createComputePipeline(
+            { shaders.get(kProbeShader) }) };
     }
     if (shaders.generation(kDebugShader) != debugGeneration) {
         debugPipeline = { device, device.createPipeline(
@@ -311,6 +320,19 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
     applyGroup_ = { device, device.createBindGroup(
         { .entries = { { .binding = 11, .texture = levels[0].texture.get(),
                          .sampler = volumeSampler.get() } } }) };
+    // The GI health probe (rc_probe.comp): merged cascade 0 -> readback.
+    if (probeBuffer.get().id == 0) {
+        probeBuffer = { device, device.createBuffer(
+            { .usage = rhi::BufferUsage::Storage,
+              .size = 9 * sizeof(Vec4),
+              .readback = true },
+            nullptr) };
+    }
+    probeGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 11, .texture = levels[0].texture.get(),
+                         .sampler = volumeSampler.get() },
+                       { .binding = 3, .buffer = probeBuffer.get(),
+                         .storage = true } } }) };
 
     appliedResolution = tuning.resolution;
     appliedFineVoxel = tuning.fineVoxel;
@@ -322,10 +344,11 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
 void RadianceCascades::pumpTileBake(rhi::Device& device,
                                     const TerrainParams& params,
                                     const Vec3& cameraPos) {
-    // Upload a finished bake. R16F accepts tightly packed f32 uploads (the
-    // GL converts) — plenty for terrain heights; textures are recreated
-    // with initial pixels (no updateTexture in the RHI), and the bind
-    // group is rebuilt below through the appliedResolution reset.
+    // Upload a finished bake. R16F initial data is packed f32 per texel —
+    // both backends convert (GL via GL_FLOAT upload, Vulkan explicitly);
+    // textures are recreated with initial pixels (no updateTexture in the
+    // RHI), and the bind group is rebuilt below through the
+    // appliedResolution reset.
     BakedTile tile;
     while (baked->tryPop(tile)) {
         if (tile.gen != tileGeneration) {
@@ -452,6 +475,34 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
     if (!jobs || injectPipeline.id() == 0) {
         return;
     }
+    // Pipeline value trace: one line whenever the APPLY state flips or a
+    // live knob moves (throttled) — the ground truth for "does this
+    // slider reach the shader" questions, straight from the values the
+    // frame UBO will carry.
+    {
+        const Vec4 info = giInfo();
+        const bool active = info.x > 0.5f;
+        if (active != lastLoggedActive || ++knobLogThrottle >= 30) {
+            knobLogThrottle = 0;
+            if (active != lastLoggedActive ||
+                tuning.intensity != lastLoggedIntensity ||
+                tuning.skyFactor != lastLoggedSkyFactor ||
+                tuning.giFloor != lastLoggedFloor) {
+                const Vec4 grid = giGridInfo();
+                LOG_INFO("RC apply {}: ready={} levels={} uGiInfo=({:.2f}, "
+                         "{:.2f}, {:.1f}, {:.0f}) grid=({:.1f}, {:.1f}, "
+                         "{:.1f} | {:.2f}) skyFactor={:.2f} floor={:.2f}",
+                         active ? "ACTIVE" : "INACTIVE", ready(),
+                         levels.size(), info.x, info.y, info.z, info.w,
+                         grid.x, grid.y, grid.z, grid.w, tuning.skyFactor,
+                         tuning.giFloor);
+                lastLoggedActive = active;
+                lastLoggedIntensity = tuning.intensity;
+                lastLoggedSkyFactor = tuning.skyFactor;
+                lastLoggedFloor = tuning.giFloor;
+            }
+        }
+    }
     if (bakeTerrain) {
         pumpTileBake(device, params, cameraPos);
     } else if (!tileIsPlaceholder) {
@@ -496,10 +547,25 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
     uniforms.clipInfo[1] = { lastCoarseOrigin, appliedCoarseVoxel };
     uniforms.tileInfo = { tileCenter.x, tileCenter.y, 1.0f / tileSpan,
                           static_cast<f32>(res) };
+    // MEADOWS_GI_PROBE_LIGHT=1: a synthetic magenta emitter at the exact
+    // point rc_probe.comp samples — magenta in the boot "GI probe" line
+    // proves the light-blob path end to end, headless.
+    static const bool kProbeLight =
+        std::getenv("MEADOWS_GI_PROBE_LIGHT") != nullptr;
+    vector<RcLight> patchedLights;
+    const vector<RcLight>* lightsIn = &lights;
+    if (kProbeLight) {
+        patchedLights = lights;
+        const f32 span = static_cast<f32>(res) * appliedFineVoxel;
+        const Vec3 center = lastFineOrigin + Vec3 { span * 0.5f };
+        patchedLights.push_back({ { center, 8.0f },
+                                  { 10.0f, 0.0f, 10.0f, 0.0f } });
+        lightsIn = &patchedLights;
+    }
     const u32 boxCount =
         glm::min(static_cast<u32>(boxes.size()), kMaxBoxes);
     const u32 lightCount =
-        glm::min(static_cast<u32>(lights.size()), kMaxLights);
+        glm::min(static_cast<u32>(lightsIn->size()), kMaxLights);
     uniforms.misc = { static_cast<f32>(tuning.debugView), tuning.skyFactor,
                       static_cast<f32>(boxCount),
                       static_cast<f32>(lightCount) };
@@ -510,8 +576,8 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
                        0.0f, 0.0f };
     uniforms.prevGrid = { prevFineOrigin, prevFineSpacing };
     for (u32 i = 0; i < lightCount; ++i) {
-        uniforms.lightPosRadius[i] = lights[i].positionRadius;
-        uniforms.lightColor[i] = lights[i].color;
+        uniforms.lightPosRadius[i] = (*lightsIn)[i].positionRadius;
+        uniforms.lightColor[i] = (*lightsIn)[i].color;
     }
     device.updateBuffer(rcUbo, &uniforms, sizeof(uniforms), 0);
     if (boxCount > 0) {
@@ -639,6 +705,41 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
     prevFineOrigin = lastFineOrigin;
     prevFineSpacing = appliedFineVoxel;
     havePrev = true;
+
+    // GI health probe: a one-shot sample of the merged cascade 0 at the
+    // volume center, logged at boot — the objective "does the chain
+    // produce radiance" check (all-zero in daylight = build/merge broken).
+    if (!probeLogged && probePipeline.id() != 0 && probeGroup.id() != 0) {
+        ++probeFrame;
+        if (probeFrame == 120) {
+            cmd.setPipeline(probePipeline);
+            cmd.setBindGroup(0, frameBindGroup);
+            cmd.setBindGroup(1, probeGroup);
+            cmd.dispatch(1, 1, 1);
+            cmd.memoryBarrier();
+        } else if (probeFrame == 126) {
+            array<Vec4, 9> slabs {};
+            device.readBuffer(probeBuffer.get(), slabs.data(),
+                              sizeof(slabs));
+            Vec3 avg { 0.0f };
+            f32 alpha = 0.0f;
+            for (u32 i = 0; i < 8; ++i) {
+                avg += Vec3 { slabs[i] };
+                alpha += slabs[i].w;
+            }
+            avg /= 8.0f;
+            alpha /= 8.0f;
+            LOG_INFO("GI probe (merged cascade 0, volume center): "
+                     "avg=({:.4f}, {:.4f}, {:.4f}) beta={:.2f} "
+                     "up=({:.4f}, {:.4f}, {:.4f}) | giAmbient=({:.4f}, "
+                     "{:.4f}, {:.4f}) active={:.0f} (classic sentinel "
+                     "0.123)",
+                     avg.x, avg.y, avg.z, alpha, slabs[1].x, slabs[1].y,
+                     slabs[1].z, slabs[8].x, slabs[8].y, slabs[8].z,
+                     slabs[8].w);
+            probeLogged = true;
+        }
+    }
 }
 
 void RadianceCascades::drawDebug(rhi::CommandBuffer& cmd,

@@ -62,10 +62,15 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uGiInfo;     // x = technique (0 classic / 1 RC), y = intensity,
                       // z = edge fade width (m), w = grid resolution
     vec4 uGiGridInfo; // xyz = cascade-0 grid origin, w = probe spacing
-    // Fixed log-step GI ramp: x = stops per band, y = AA.
+    // Fixed log-step GI ramp: x = stops per band, y = AA,
+    // z = GI ambient floor (fraction of classic).
     vec4 uGiBandInfo;
     // Foliage-card leaf cutout -> solid ramp: xy = mip window.
     vec4 uLeafLodInfo;
     // Fog sun single-scatter: x = strength, y = phase exponent.
     vec4 uFogSunInfo;
+    // Stylized diffuse ramp: xy = terminator edges, zw = full-light edges.
+    vec4 uStylizedDiffuse;
+    // Stylized shadow snap: xy = window, z = floor, w = half-tone level.
+    vec4 uStylizedShadow;
 };

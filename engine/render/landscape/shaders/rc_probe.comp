@@ -1,0 +1,27 @@
+#version 460 core
+#include "common.glsl"
+#include "gi.glsl"
+
+// One-shot GI health probe (RadianceCascades::update): slabs[0..7] = the
+// merged cascade 0 sampled raw at the volume center; slabs[8] = the exact
+// giAmbient() the surface shaders run, at the same point (up normal, a
+// sentinel classic ambient of 0.123 — getting ~0.123 back means the
+// surface path fell through to classic). CPU logs both at boot: the
+// discriminator between "field is fine" and "surface apply is broken".
+layout(local_size_x = 8) in;
+
+layout(std430, binding = 3) buffer ProbeOut { vec4 slabs[9]; };
+
+void main() {
+    uint d = gl_LocalInvocationID.x;
+    // Dir-major slab stack: slab d occupies z in [d/8, (d+1)/8].
+    float z = (0.5 + float(d)) / 8.0;
+    slabs[d] = texture(uGiCascade0, vec3(0.5, 0.5, z));
+    if (d == 0) {
+        float span = uGiInfo.w * uGiGridInfo.w;
+        vec3 center = uGiGridInfo.xyz + vec3(span * 0.5);
+        vec3 ambient =
+            giAmbient(center, vec3(0.0, 1.0, 0.0), vec3(0.123));
+        slabs[8] = vec4(ambient, uGiInfo.x);
+    }
+}
