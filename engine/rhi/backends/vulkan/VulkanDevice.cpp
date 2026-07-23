@@ -8,6 +8,8 @@
 #include <string>
 #include <unordered_map>
 
+#include <glm/gtc/packing.hpp> // f32 -> f16 for R16F initial-data uploads
+
 // Portability-subset structs (MoltenVK feature opt-in) live in vulkan_beta.h.
 #define VK_ENABLE_BETA_EXTENSIONS
 #include <vulkan/vulkan.h>
@@ -925,7 +927,12 @@ private:
                    : VK_FRONT_FACE_COUNTER_CLOCKWISE;
     }
     VulkanPipeline* boundPipeline_ { nullptr };
-    array<BindGroupHandle, 4> boundGroups_ {}; // per RHI slot, for replay
+    // Per RHI slot, for the setPipeline replay. Sized for the highest slot
+    // the renderer uses (main pass: 0 frame, 2 shadow, 3 clouds, 4 terrain
+    // light, 5 key shadow, 6 GI apply) — a slot beyond this array is
+    // silently NEVER replayed, which unbinds its descriptors on every
+    // pipeline change (the invisible-GI bug).
+    array<BindGroupHandle, 8> boundGroups_ {};
     u64 pushedMask_ { 0 }; // bindings pushed since the current pipeline bind
 };
 
@@ -1209,6 +1216,14 @@ void VulkanCommandBuffer::setBindGroup(u32 index, BindGroupHandle group) {
     // switches build/extend/merge pipelines. setPipeline replays these.
     if (index < boundGroups_.size()) {
         boundGroups_[index] = group;
+    } else {
+        // A slot beyond the replay array would bind now and silently
+        // VANISH on the next setPipeline — the failure mode that made the
+        // GI invisible. Scream instead.
+        LOG_ERROR("Vulkan setBindGroup: slot {} exceeds the replay "
+                  "capacity ({}) — its descriptors will drop on the next "
+                  "pipeline change",
+                  index, boundGroups_.size());
     }
     pushGroup(group);
 }
@@ -2392,14 +2407,27 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
 
     // Upload the base mip of every layer (tightly packed, layer-major).
     if (pixels != nullptr) {
-        const u64 size = static_cast<u64>(desc.width) * desc.height *
-                         tex.extent.depth * tex.arrayLayers *
-                         bytesPerTexel(desc.format);
+        const u64 texelCount = static_cast<u64>(desc.width) * desc.height *
+                               tex.extent.depth * tex.arrayLayers;
+        const u64 size = texelCount * bytesPerTexel(desc.format);
         VkBuffer staging = VK_NULL_HANDLE;
         VmaAllocation stagingAlloc = nullptr;
         void* mapped = nullptr;
         if (d.createStaging(size, false, staging, stagingAlloc, &mapped)) {
-            std::memcpy(mapped, pixels, size);
+            if (desc.format == TextureFormat::R16F) {
+                // RHI contract (matches what the GL driver does with
+                // GL_FLOAT uploads): R16F initial data is packed f32 per
+                // texel, converted here. A raw memcpy would reinterpret
+                // f32 halves as f16 — the bug that fed the GI terrain
+                // tile (and the water pool map) garbage heights.
+                const f32* src = static_cast<const f32*>(pixels);
+                u16* dst = static_cast<u16*>(mapped);
+                for (u64 i = 0; i < texelCount; ++i) {
+                    dst[i] = glm::packHalf1x16(src[i]);
+                }
+            } else {
+                std::memcpy(mapped, pixels, size);
+            }
             vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
             d.immediateSubmit([&](VkCommandBuffer cb) {
                 transitionLayout(cb, tex.image, tex.aspect, 0, tex.mipLevels,

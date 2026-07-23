@@ -88,7 +88,8 @@ enum class TextureFormat {
     RGBA8,
     SRGBA8,   // sRGB-decoded on sample (albedo/splat tiles)
     RGBA16F,  // HDR color target
-    R16F,     // single-channel (AO, masks)
+    R16F,     // single-channel (AO, masks). Initial-data contract:
+              // packed f32 per texel; every backend converts on upload.
     R32F,     // full-precision single channel (Hi-Z depth pyramid)
     Depth32F, // depth attachment, sampleable (shadow maps, scene depth)
 };

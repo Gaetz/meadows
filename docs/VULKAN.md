@@ -953,3 +953,38 @@ profil CLion créé le matin même) :
   facultative ; (c) inutile d'attendre de la perf du profil Release côté
   rendu — il servira au CPU (sim, streaming, bakes AO).
 
+
+#### V8h — La GI invisible : deux bugs backend, une méthode (2026-07-23)
+
+La GI Radiance Cascades, validée sur PC/GL le 07-11, n'avait JAMAIS
+fonctionné sur Vulkan/M1 — sans erreur de validation, sans crash, et en
+payant ses millisecondes au F6 chaque frame. Deux bugs distincts, trouvés
+en instrumentant le pipeline par VALEURS (pas à l'œil) :
+
+- **Upload R16F : memcpy brut de f32.** `createTexture` copiait
+  `w×h×bytesPerTexel(R16F=2)` octets depuis des tableaux CPU de f32 — des
+  moitiés de flottants réinterprétées en halfs. GL convertissait via
+  `GL_FLOAT`, Vulkan non. Victimes : la tuile de hauteur du terrain de
+  l'injection GI (terrain voxelisé à des hauteurs poubelle), son
+  placeholder « no terrain », la poolMap de l'eau. Contrat RHI acté
+  (Rhi.hpp) : les données initiales R16F sont du f32 par texel, CHAQUE
+  backend convertit (Vulkan : `glm::packHalf1x16` à l'upload).
+- **Replay des push descriptors : 4 slots.** `boundGroups_` (le tableau
+  qui rejoue les bind groups à chaque `setPipeline`, contrat RHI hérité
+  de GL) était dimensionné à 4 — or la passe principale lie le terrain
+  light map au slot 4, l'ombre de lumière clé au 5 et l'apply GI
+  (binding 11) au 6. Leurs descripteurs étaient poussés une fois puis
+  PERDUS au premier changement de pipeline : la GI était calculée chaque
+  frame et jamais lue par les shaders de surface. Passé à 8 + LOG_ERROR
+  si un slot déborde (la perte silencieuse est le vrai tueur).
+
+**La méthode, à réutiliser** : (1) trace CPU des valeurs composées
+(« RC apply … uGiInfo=… grid=… », log au changement) ; (2) sonde GPU
+`rc_probe.comp` — cascade-0 mergé échantillonné au centre du volume +
+le `giAmbient()` EXACT des shaders de surface exécuté en compute, relus
+par readback et loggés au boot ; (3) émetteur synthétique magenta
+(`MEADOWS_GI_PROBE_LIGHT=1`) au point sondé — visible in-game ET dans la
+sonde. C'est la sonde qui a disculpé chaque étage jusqu'à isoler le
+contexte fragment, donc le replay. Leçon générale : un backend neuf ne
+« marche » pas parce qu'il ne crie pas — chaque consommateur d'une
+ressource doit être PROUVÉ par une valeur lue.
