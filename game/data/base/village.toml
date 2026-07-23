@@ -238,6 +238,7 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [51.0, 109.6, 358.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000031"
@@ -247,6 +248,7 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [53.0, 109.6, 358.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
 
 # South wall: plain + doorway (z = 366).
 [[records]]
@@ -276,7 +278,7 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [50.0, 109.6, 359.0]
-rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000035"
@@ -286,7 +288,7 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-000000000014"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [50.0, 109.6, 361.0]
-rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000036"
@@ -296,7 +298,7 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-000000000014"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [50.0, 109.6, 363.0]
-rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000037"
@@ -306,7 +308,7 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-000000000012"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [50.0, 109.6, 365.0]
-rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
 
 # East side (x = 54).
 [[records]]
@@ -428,7 +430,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000043"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [54.2, 2.2, 366.4]
+position = [54.6, 2.2, 367.6]
 
 # --- Interior fit-out (HouseInterior, room anchor 8 / 0 / 8) -------------------
 # Floor: 2 x 4 tiles.
@@ -3660,3 +3662,48 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-000000000230"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [62.0, 0.0, 377.0]
+
+# GI test light: a strong steady lamp BEHIND the house (north side, the
+# door faces south) — the terrain has no direct local-light path, so the
+# ground under it lights up ONLY through the radiance-cascades apply.
+# Walk around the house at night: ground glow = RC alive, no glow = RC
+# apply broken. Meshes/NPCs light up either way (locallights.glsl).
+# Reference Y is HEIGHT ABOVE TERRAIN (StreamingController snap).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000300"
+type = "LightForm"
+new = true
+[records.fields]
+editorId = "GiTestLamp"
+color = [0.55, 0.75, 1.0]
+intensity = 6.0
+radius = 14.0
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000301"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000300"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [52.0, 2.2, 355.0]
+
+# Two more GI test lamps toward the forest north of the house — the
+# canopy bounce + ground glow only exist through the RC apply.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000302"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000300"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [44.0, 2.2, 344.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000303"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000300"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [60.0, 2.2, 332.0]
