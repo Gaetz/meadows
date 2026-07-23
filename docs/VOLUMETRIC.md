@@ -112,14 +112,24 @@ l'herbe ni la végétation (locallights.glsl est sur mesh/skinned
 seulement — l'herbe et les arbres ne voient les lampes que par la GI) —
 à traiter dans une passe « lighting végétation ».
 
-### V3 — L'ambient RC dans le march
+### V3 — L'ambient RC dans le march — ✅ FAIT (2026-07-23)
 
-Dans l'empreinte du volume RC, le terme ambient de V2 devient le sample
-direction-moyenné de `uGiCascade0` (binding 11 à ajouter à la passe
-volumétrique ; hors volume, retour au `skyGradient`, même fondu de bord
-que `giAmbient`). Effets : fog verdi en clairière sous canopée, fog
-sombre dans une vallée à l'ombre, air éclairé par les lumières RC-only.
-La brique au meilleur ratio effet/effort une fois V2 posée.
+`giAir()` (gi.glsl) : le sample direction-MOYENNÉ de `uGiCascade0` —
+même grille et fondu de bord que `giAmbient`, sans pondération par
+normale (l'air voit toutes les directions), sans bandes ni plancher
+(l'air n'est pas une surface). Le haze du march le prend par pas ;
+hors volume ou RC inactif, retour au `skyGradient`. Le groupe d'apply
+RC est lié à la passe volumétrique (PostFx, slot 3).
+
+Deux découvertes d'implémentation : (a) la fenêtre RC ne fait que
+~32 m (res × fineVoxel) — les pas du march passent en distribution
+QUADRATIQUE (denses près caméra, épars dans le haze lointain,
+transmittance exacte par segment), sinon aucun pas ne tombait dans la
+fenêtre ; (b) l'effet exige du fog PRÈS de la caméra — Morning Mist
+passe à `fogStart = 12` (démonstrateur, à re-régler). Effets : fog
+verdi sous canopée, sombre en vallée ombragée, halos de lampes dans la
+brume nocturne. Coût : invisible au F6 (early-out hors fenêtre).
+Validation visuelle dev : à faire (Morning Mist, nuit près des lampes).
 
 ### V4 — Froxels + reprojection temporelle (sur mesure F6 uniquement)
 
