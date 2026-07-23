@@ -86,10 +86,10 @@ struct FrameUniforms {
     Vec4 giInfo {};     // x = technique (0/1), y = intensity,
                         // z = edge fade width (m), w = grid resolution
     Vec4 giGridInfo {}; // xyz = cascade-0 grid origin, w = probe spacing
-    // The fixed log-step GI ramp: x = stops per band
-    // (0 = continuous), y = anti-aliasing width across a band edge,
+    // The GI ramp: x = band count between floor and classic ambient
+    // (0 = smooth), y = anti-aliasing width across a band edge,
     // z = GI ambient floor (fraction of classic — grid-border seam killer).
-    Vec4 giBandInfo { 0.85f, 0.15f, 0.7f, 0.0f };
+    Vec4 giBandInfo { 0.0f, 0.3f, 0.7f, 0.0f };
     // Foliage-card leaf cutout -> solid ramp (tree.frag/shadow_prop.frag):
     // xy = mip window start/end of the blend, zw free.
     Vec4 leafLodInfo { 4.0f, 7.0f, 0.0f, 0.0f };

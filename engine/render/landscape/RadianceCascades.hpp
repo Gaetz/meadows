@@ -51,10 +51,13 @@ struct RcTuning {
                               // interval0 × (2^count − 1)
     f32 edgeFade { 8.0f };    // meters of blend back to Classic at the
                               // grid border
-    // FIXED log-step stylized ramp (replaced
-    // the adaptive chain — bands must be PREDICTABLE): the GI luminance
-    // snaps to absolute exposure steps, day/night/torch alike.
-    f32 bandStops { 0.85f };  // stops per band (bigger = fewer, bolder)
+    // Flat bands between the GI floor and the classic ambient — anchored
+    // to the ARTISTIC value (weather, interior, hour), never to a
+    // measured scene range (the rejected-adaptive-ramp lesson,
+    // docs/RADIANCE-CASCADES.md). 0 = smooth, the default — the
+    // BotW/Genshin reference keeps ambient un-banded and puts the cel
+    // ramp on the direct term.
+    f32 bandCount { 0.0f };
     f32 bandAa { 0.3f };      // anti-aliasing width across a band edge
     // RC never drops below this fraction of the classic ambient: kills
     // the dark ring at the apply-grid border and keeps occluded areas

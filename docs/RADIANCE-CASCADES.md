@@ -195,3 +195,19 @@ catégorie. Chaque paramètre naît DANS l'UI, jamais en constante.
 - Communauté : GM Shaders « Radiance Cascades » (Xor + Sannikov),
   tmpvar/poc/radiance-cascades, shadertoys fad `mtlBzX` (le canon 2D),
   `lXByRh` (référence du dev), `X3XfRM` (3D).
+
+- **Rampe : retour au NOMBRE DE BANDES, lisse par défaut (2026-07-23,
+  décision dev).** Les paliers absolus d'exposition (« Band size
+  (stops) ») avaient fait disparaître la sémantique « combien de
+  bandes » de la rampe d'origine. Restaurée SANS violer la leçon
+  anti-adaptatif : N bandes plates entre le plancher GI (`giFloor ×
+  classic`) et l'ambiante CLASSIC — l'ancre est la valeur artistique
+  (météo, intérieur, heure), pas une mesure de scène ; le même pas
+  continue au-dessus de classic (les halos de lampes bandent pareil).
+  **Défaut : 0 = lisse** — la référence BotW/Genshin ne posterise pas
+  l'ambient, la rampe cel vit sur le terme direct (stylized.glsl) ;
+  les bandes GI restent une option d'expérimentation. Noté pour plus
+  tard (intuition dev) : une éventuelle rampe UNIFIÉE en fin de shader
+  (direct + GI + lampes sommés, une seule stylisation de magnitude, le
+  snap des bords d'ombre restant à la source) — brique à part si le
+  besoin de cohérence se confirme.

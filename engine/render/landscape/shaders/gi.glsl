@@ -77,14 +77,25 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
     // since a band rounds down by up to one full step.
     vec3 floorAmbient = classicAmbient * uGiBandInfo.z;
     irradiance = max(irradiance, floorAmbient);
+    // Optional posterization, uGiBandInfo.x = BAND COUNT (0 = smooth, the
+    // default — the BotW/Genshin reference keeps ambient smooth and puts
+    // the cel ramp on the direct term). N flat bands between the floor
+    // and the CLASSIC ambient — anchored to the artistic value (weather,
+    // interior, hour), never to a measured scene range (the adaptive-ramp
+    // lesson, docs/RADIANCE-CASCADES.md); the same step continues above
+    // classic so lamp glows band consistently.
+    float bands = uGiBandInfo.x;
     float lum = dot(irradiance, vec3(0.299, 0.587, 0.114));
-    if (uAmbientColor.w > 0.0 && uGiBandInfo.x > 0.01 && lum > 1e-5) {
-        float bandStep = uGiBandInfo.x;
+    if (uAmbientColor.w > 0.0 && bands >= 1.0 && lum > 1e-5) {
+        float classicLum =
+            dot(classicAmbient, vec3(0.299, 0.587, 0.114));
+        float floorLum = classicLum * uGiBandInfo.z;
+        float bandStep = max((classicLum - floorLum) / bands, 1e-4);
         float aa = clamp(uGiBandInfo.y, 0.02, 0.49);
-        float t = log2(lum) / bandStep;
+        float t = (lum - floorLum) / bandStep;
         float tq = floor(t) + smoothstep(0.5 - aa, 0.5 + aa, fract(t));
-        float lumQ = exp2(tq * bandStep);
-        irradiance *= mix(1.0, lumQ / lum, uAmbientColor.w);
+        float lumQ = floorLum + tq * bandStep;
+        irradiance *= mix(1.0, max(lumQ, 0.0) / lum, uAmbientColor.w);
         irradiance = max(irradiance, floorAmbient);
     }
     return mix(classicAmbient, irradiance, fade);

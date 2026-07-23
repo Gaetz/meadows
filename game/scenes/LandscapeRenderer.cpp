@@ -153,7 +153,7 @@ void LandscapeRenderer::applyRcTuning(const data::RcTuningForm& rc) {
     t.rcOnlyLights = rc.rcOnlyLights;
     t.interval0 = rc.interval0;
     t.edgeFade = rc.edgeFade;
-    t.bandStops = rc.bandStops;
+    t.bandCount = rc.bandCount;
     t.bandAa = rc.bandAa;
     t.giFloor = rc.giFloor;
     t.intervalExtension = rc.intervalExtension;
@@ -196,7 +196,7 @@ void LandscapeRenderer::captureRcTuning(data::RcTuningForm& out) const {
     out.rcOnlyLights = t.rcOnlyLights;
     out.interval0 = t.interval0;
     out.edgeFade = t.edgeFade;
-    out.bandStops = t.bandStops;
+    out.bandCount = t.bandCount;
     out.bandAa = t.bandAa;
     out.giFloor = t.giFloor;
     out.intervalExtension = t.intervalExtension;
@@ -1443,7 +1443,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         // giInfo() gates on ready() itself (interiors included).
         .giInfo = radianceCascades.giInfo(),
         .giGridInfo = radianceCascades.giGridInfo(),
-        .giBandInfo = { radianceCascades.tuning.bandStops,
+        .giBandInfo = { radianceCascades.tuning.bandCount,
                         radianceCascades.tuning.bandAa,
                         radianceCascades.tuning.giFloor, 0.0f },
     });
@@ -2366,8 +2366,8 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::SliderFloat("Edge fade (m)", &rc.edgeFade, 1.0f, 16.0f,
                            "%.0f");
         // Fixed log-step ramp: predictable absolute exposure bands.
-        ImGui::SliderFloat("Band size (stops)", &rc.bandStops, 0.0f, 2.0f,
-                           "%.2f");
+        ImGui::SliderFloat("Band count (0 = smooth)", &rc.bandCount,
+                           0.0f, 8.0f, "%.0f");
         ImGui::SliderFloat("Band AA", &rc.bandAa, 0.02f, 0.45f, "%.2f");
         // G7c: x4 reach per marched step on long levels (A/B on rcBuild).
         ImGui::Checkbox("Interval extension (x4 march reach)",

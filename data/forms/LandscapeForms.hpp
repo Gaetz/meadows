@@ -243,7 +243,7 @@ struct RcTuningForm : Form {
     bool rcOnlyLights { false };
     f32 interval0 { 1.0f };
     f32 edgeFade { 8.0f };
-    f32 bandStops { 0.85f };
+    f32 bandCount { 0.0f };
     f32 bandAa { 0.3f };
     f32 giFloor { 0.7f };
     bool intervalExtension { false };
@@ -262,7 +262,7 @@ struct RcTuningForm : Form {
         REFLECT_FIELD(rcOnlyLights)
         REFLECT_FIELD(interval0)
         REFLECT_FIELD(edgeFade)
-        REFLECT_FIELD(bandStops)
+        REFLECT_FIELD(bandCount)
         REFLECT_FIELD(bandAa)
         REFLECT_FIELD(giFloor)
         REFLECT_FIELD(intervalExtension)

@@ -84,7 +84,7 @@ struct FrameComposerInputs {
     // the cascade sampler bound. Defaults = Classic (x = 0).
     Vec4 giInfo {};
     Vec4 giGridInfo {};
-    Vec4 giBandInfo { 0.85f, 0.15f, 0.7f, 0.0f }; // fixed log-step ramp + floor
+    Vec4 giBandInfo { 0.0f, 0.3f, 0.7f, 0.0f }; // band count + AA + floor
 };
 
 // The two variants one frame needs. `base` is the raw exterior composition —
