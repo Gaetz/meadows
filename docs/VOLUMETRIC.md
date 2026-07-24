@@ -155,7 +155,11 @@ reprojette chaque froxel dans le volume de la frame précédente
 (view-proj précédente pour l'uv écran, distance à la caméra précédente
 pour la tranche log) et mélange en EMA (`froxelTemporalBlend`, défaut
 0.1 ≈ 90 % d'historique, convergence ~0.5 s ; slider « Froxel temporal
-blend », champ du tuning §5). L'historique est invalidé sur téléport
+blend », champ du tuning §5). Leçon au passage : le jitter doit être
+BLANC en temps (hash entier de cellule + frame) — un motif spatial fixe
+déphasé par un roulement doré n'est pas une décorrélation, le motif se
+TRANSLATE et l'EMA ne peut que ralentir ses bandes qui marchent, jamais
+les effacer (constat dev). L'historique est invalidé sur téléport
 (> 10 m/frame), changement de portée (intérieur 48 m ↔ extérieur
 800 m) et frame sans froxels — le fallback est l'échantillon courant
 seul, comme avant.

@@ -21,7 +21,7 @@ constexpr const char* kFroxelInjectShader = "froxel_inject";
 struct FroxelTemporalUniforms {
     Mat4 prevViewProj { 1.0f };
     Vec4 prevCamera { 0.0f };   // xyz camera, w reach (>= 2)
-    Vec4 temporalInfo { 1.0f }; // x blend alpha, y jitter roll
+    Vec4 temporalInfo { 1.0f }; // x blend alpha, y frame (hash seed)
 };
 constexpr const char* kFroxelIntegrateShader = "froxel_integrate";
 constexpr const char* kFroxelApplyShader = "froxel_apply";
@@ -482,8 +482,7 @@ void PostFx::render(rhi::Device& device, rhi::CommandBuffer& cmd,
         const FroxelTemporalUniforms temporal {
             froxelPrevViewProj,
             { froxelPrevCamera, glm::max(froxelPrevReach, 2.0f) },
-            { alpha,
-              glm::fract(static_cast<f32>(froxelFrame) * 0.618034f), 0.0f,
+            { alpha, static_cast<f32>(froxelFrame & 0xFFFFu), 0.0f,
               0.0f }
         };
         device.updateBuffer(froxelTemporalUbo, &temporal, sizeof(temporal),
