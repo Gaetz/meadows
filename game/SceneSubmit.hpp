@@ -136,19 +136,27 @@ RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures);
 // calls it directly; extractScene calls it as part of the full extract.
 void extractMeshes(const ecs::World& world, RenderSnapshot& out);
 
-// The `maxLights` LightSource entities nearest to `focus`, nearest first
-// (stable ordering: ties keep query order — deterministic). Headless.
+// Light selection (docs/LIGHTING.md §5 B1). With a `viewProj`, candidates
+// are culled sphere-vs-frustum (a light behind a wall of the frustum still
+// passes while its radius reaches in) and the budget goes to the highest
+// `intensity / (1 + distSq)` scores — a bright far torch IN VIEW beats a
+// dim close one behind the camera. Without it (headless callers), every
+// light is a candidate and the score alone picks. The RETURNED list is
+// always nearest-first (stable, ties keep query order — deterministic):
+// consumers rely on that order (flicker phases are per-index, and the GI
+// takes the first kMaxLights as "the nearest" for its ~32 m window).
 vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
-                                 u32 maxLights);
+                                 u32 maxLights,
+                                 const Mat4* viewProj = nullptr);
 
 // The landscape extract, headless like extractMeshes:
-// - extractLights fills `lights` (the maxLights nearest, UBO order) and
+// - extractLights fills `lights` (collectLights above, UBO order) and
 //   `shadowLights` (every castsShadow light — key-shadow candidates);
 // - extractWaterVolumes fills `waterVolumes`;
 // - resolveMeshMaterials folds each mesh's MaterialForm fields into the
 //   instance (tint/emissive/albedo guid), so the draw needs no Forms.
 void extractLights(const ecs::World& world, const Vec3& focus, u32 maxLights,
-                   RenderSnapshot& out);
+                   RenderSnapshot& out, const Mat4* viewProj = nullptr);
 void extractWaterVolumes(const ecs::World& world, RenderSnapshot& out);
 void resolveMeshMaterials(const data::FormDatabase& forms,
                           RenderSnapshot& out);

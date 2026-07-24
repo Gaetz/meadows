@@ -1045,8 +1045,17 @@ void LandscapeScene::update(f32 dt) {
         snapshot.waterVolumes.clear();
         extractMeshes(world, snapshot);
         resolveMeshMaterials(forms, snapshot);
+        // Frustum-aware selection (docs/LIGHTING.md §5 B1): visible far
+        // torches beat near ones behind the camera.
+        const platform::Window& window = engine->getWindow();
+        const f32 aspect =
+            window.height() > 0 ? static_cast<f32>(window.width()) /
+                                      static_cast<f32>(window.height())
+                                : 16.0f / 9.0f;
+        const Mat4 cameraViewProj = flyCamera.camera.viewProj(aspect);
         extractLights(world, flyCamera.camera.position,
-                      LandscapeRenderer::kMaxLights, snapshot);
+                      LandscapeRenderer::kMaxLights, snapshot,
+                      &cameraViewProj);
         extractWaterVolumes(world, snapshot);
     }
     if (debugCapsule) {

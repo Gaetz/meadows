@@ -10,6 +10,7 @@
 #include "data/forms/FormDatabase.hpp"
 #include "data/forms/VisualForms.hpp"
 #include "engine/ecs/World.hpp"
+#include "engine/render/Frustum.hpp"
 #include "game/TextureCache.hpp"
 
 namespace game {
@@ -80,21 +81,31 @@ void extractMeshes(const ecs::World& world, RenderSnapshot& out) {
 }
 
 vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
-                                 u32 maxLights) {
+                                 u32 maxLights, const Mat4* viewProj) {
     struct Candidate {
         f32 distanceSq;
+        f32 score;
         u32 order; // query order — the stable tiebreak
         SceneLight light;
     };
+    render::Frustum frustum {};
+    if (viewProj) {
+        frustum = render::Frustum::fromViewProj(*viewProj);
+    }
     vector<Candidate> candidates;
     u32 order = 0;
     world.handle()
         .query<const world::Transform, const world::LightSource>()
         .each([&](flecs::entity, const world::Transform& transform,
                   const world::LightSource& source) {
+            if (viewProj && !frustum.intersectsSphere(transform.position,
+                                                      source.radius)) {
+                return;
+            }
             const Vec3 d = transform.position - focus;
+            const f32 distanceSq = glm::dot(d, d);
             candidates.push_back(
-                { glm::dot(d, d), order++,
+                { distanceSq, source.intensity / (1.0f + distanceSq), order++,
                   { transform.position, source.color, source.intensity,
                     source.radius, source.flicker,
                     transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f },
@@ -102,6 +113,16 @@ vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
                     source.castsShadow, source.rcOnly,
                     source.windowHalfWidth, source.windowHalfHeight } });
         });
+    // Two-step: the SCORE picks who makes the budget, the DISTANCE orders
+    // the winners (the contract in the header).
+    if (candidates.size() > maxLights) {
+        std::stable_sort(candidates.begin(), candidates.end(),
+                         [](const Candidate& a, const Candidate& b) {
+                             return a.score != b.score ? a.score > b.score
+                                                       : a.order < b.order;
+                         });
+        candidates.resize(maxLights);
+    }
     std::stable_sort(candidates.begin(), candidates.end(),
                      [](const Candidate& a, const Candidate& b) {
                          return a.distanceSq != b.distanceSq
@@ -109,19 +130,16 @@ vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
                                     : a.order < b.order;
                      });
     vector<SceneLight> lights;
-    lights.reserve(glm::min<size_t>(candidates.size(), maxLights));
+    lights.reserve(candidates.size());
     for (const Candidate& candidate : candidates) {
-        if (lights.size() >= maxLights) {
-            break;
-        }
         lights.push_back(candidate.light);
     }
     return lights;
 }
 
 void extractLights(const ecs::World& world, const Vec3& focus, u32 maxLights,
-                   RenderSnapshot& out) {
-    out.lights = collectLights(world, focus, maxLights);
+                   RenderSnapshot& out, const Mat4* viewProj) {
+    out.lights = collectLights(world, focus, maxLights, viewProj);
     world.handle()
         .query<const world::Transform, const world::LightSource>()
         .each([&](const world::Transform& transform,

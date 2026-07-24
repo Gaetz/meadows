@@ -40,6 +40,17 @@ struct Frustum {
         return frustum;
     }
 
+    // Conservative sphere test (same contract as the AABB test below):
+    // false only when the sphere is fully outside one plane.
+    bool intersectsSphere(const Vec3& center, f32 radius) const {
+        for (const Vec4& plane : planes) {
+            if (glm::dot(Vec3 { plane }, center) + plane.w < -radius) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // Conservative AABB test: rejects only when the box is fully outside
     // one plane (the classic false-positive corner cases keep drawing —
     // harmless for culling).
