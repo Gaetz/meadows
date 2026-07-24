@@ -3731,3 +3731,1496 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-000000000310"
 cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [3.2, 1.8, 8.0]
+
+# ==========================================================================
+# Viking hall (H-series demo building): 8 x 16 m, TWO stories, door on the
+# south face. High windows on BOTH long sides, upper story only, covering
+# the far two thirds (z 356..366) — the entrance third stays blind, so the
+# hall brightens as you walk in (the mead-hall gradient the H1/H2 lighting
+# should sell). Exterior shell + mirrored interior worldspace.
+# Module conventions: walls 2 m wide / 3.12 m tall, identity faces +Z,
+# roof/gables scale x2 (the 4x8 kit roof covers 8x16 exactly).
+# ==========================================================================
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000320"
+type = "WorldspaceForm"
+new = true
+[records.fields]
+editorId = "VikingHallInterior"
+cellSize = 64.0
+interior = true
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000321"
+type = "CellForm"
+new = true
+[records.fields]
+editorId = "VikingHallInteriorCell"
+worldspace = "4d7a9b30-0000-4000-8000-000000000320"
+gridX = 0
+gridY = 0
+interior = true
+
+# Arrival just inside the hall door, facing north into the hall.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000322"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000022"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9.0, 0.0, 18.4]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+# Arrival outside, in front of the hall door, facing south.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000323"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000022"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [27.0, 109.65, 373.6]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000324"
+type = "DoorForm"
+new = true
+[records.fields]
+editorId = "HallDoorExterior"
+displayName = "Hall door"
+model = "4d7a9b30-0000-4000-8000-0000000000a7"
+targetMarker = "4d7a9b30-0000-4000-8000-000000000322"
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000325"
+type = "DoorForm"
+new = true
+[records.fields]
+editorId = "HallDoorInterior"
+displayName = "Door outside"
+model = "4d7a9b30-0000-4000-8000-0000000000a7"
+targetMarker = "4d7a9b30-0000-4000-8000-000000000323"
+
+# Exterior door leaf in the south doorway.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000326"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000324"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [26.45, 109.6, 372.0]
+
+# Interior door leaf, mirrored.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000327"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000325"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [8.45, 0.0, 20.0]
+
+# --- Hall shell: level 1 (y 109.6) --------------------------------------
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000330"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [23, 109.6, 372.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000331"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [25, 109.6, 372.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000332"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [29, 109.6, 372.0]
+
+# South doorway module.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000333"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000013"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [27, 109.6, 372.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000334"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [23, 109.6, 356.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000335"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [25, 109.6, 356.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000336"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [27, 109.6, 356.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000337"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [29, 109.6, 356.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000338"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 109.6, 357]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000339"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 109.6, 359]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000033a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 109.6, 361]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000033b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 109.6, 363]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000033c"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 109.6, 365]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000033d"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 109.6, 367]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000033e"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 109.6, 369]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000033f"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 109.6, 371]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000340"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 109.6, 357]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000341"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 109.6, 359]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000342"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 109.6, 361]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000343"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 109.6, 363]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000344"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 109.6, 365]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000345"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 109.6, 367]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000346"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 109.6, 369]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000347"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 109.6, 371]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+# --- Hall shell: level 2 (y 112.72) — windows on the far two thirds ------
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000348"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [23, 112.72, 372.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000349"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [25, 112.72, 372.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000034a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [27, 112.72, 372.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000034b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [29, 112.72, 372.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000034c"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [23, 112.72, 356.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000034d"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [25, 112.72, 356.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000034e"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [27, 112.72, 356.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000034f"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [29, 112.72, 356.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000350"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 112.72, 357]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000351"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 112.72, 359]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000352"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 112.72, 361]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000353"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 112.72, 363]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000354"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 112.72, 365]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000355"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 112.72, 367]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000356"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 112.72, 369]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000357"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [22, 112.72, 371]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000358"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 112.72, 357]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000359"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 112.72, 359]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000035a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 112.72, 361]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000035b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 112.72, 363]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000035c"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 112.72, 365]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000035d"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 112.72, 367]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000035e"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 112.72, 369]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000035f"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [30, 112.72, 371]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+# --- Roof (x2 scale: the 4x8 kit roof covers 8x16) -----------------------
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000360"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000015"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [26.0, 115.72, 364.0]
+scale = [2.0, 2.0, 2.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000361"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000016"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [26.0, 115.84, 356.0]
+scale = [2.0, 2.0, 2.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000362"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000016"
+cell = "3c6f8e20-0000-4000-8000-000000000005"
+position = [26.0, 115.84, 372.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+scale = [2.0, 2.0, 2.0]
+
+# --- Hall interior: floor (2 m tiles) ------------------------------------
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000363"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 0.0, 5]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000364"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 0.0, 7]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000365"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 0.0, 9]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000366"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 0.0, 11]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000367"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 0.0, 13]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000368"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 0.0, 15]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000369"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 0.0, 17]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000036a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 0.0, 19]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000036b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 0.0, 5]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000036c"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 0.0, 7]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000036d"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 0.0, 9]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000036e"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 0.0, 11]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000036f"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 0.0, 13]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000370"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 0.0, 15]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000371"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 0.0, 17]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000372"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 0.0, 19]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000373"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 0.0, 5]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000374"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 0.0, 7]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000375"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 0.0, 9]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000376"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 0.0, 11]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000377"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 0.0, 13]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000378"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 0.0, 15]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000379"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 0.0, 17]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000037a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 0.0, 19]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000037b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 0.0, 5]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000037c"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 0.0, 7]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000037d"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 0.0, 9]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000037e"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 0.0, 11]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000037f"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 0.0, 13]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000380"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 0.0, 15]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000381"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 0.0, 17]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000382"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000011"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 0.0, 19]
+
+# --- Hall interior: walls level 1 (faces INTO the room) ------------------
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000383"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 0.0, 20.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000384"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 0.0, 20.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000385"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 0.0, 20.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+# Interior doorway module.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000386"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000013"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 0.0, 20.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000387"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 0.0, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000388"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 0.0, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000389"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 0.0, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000038a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 0.0, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000038b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 0.0, 5]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000038c"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 0.0, 7]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000038d"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 0.0, 9]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000038e"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 0.0, 11]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000038f"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 0.0, 13]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000390"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 0.0, 15]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000391"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 0.0, 17]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000392"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 0.0, 19]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000393"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 0.0, 5]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000394"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 0.0, 7]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000395"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 0.0, 9]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000396"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 0.0, 11]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000397"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 0.0, 13]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000398"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 0.0, 15]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-000000000399"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 0.0, 17]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000039a"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 0.0, 19]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+# --- Hall interior: walls level 2, windows mirroring the shell -----------
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000039b"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 3.12, 20.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000039c"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 3.12, 20.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000039d"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 3.12, 20.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000039e"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 3.12, 20.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-00000000039f"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5, 3.12, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003a0"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [7, 3.12, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003a1"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [9, 3.12, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003a2"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11, 3.12, 4.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003a3"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 3.12, 5]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003a4"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 3.12, 7]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003a5"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 3.12, 9]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003a6"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 3.12, 11]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003a7"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 3.12, 13]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003a8"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 3.12, 15]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003a9"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 3.12, 17]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003aa"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4, 3.12, 19]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003ab"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 3.12, 5]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003ac"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 3.12, 7]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003ad"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 3.12, 9]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003ae"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 3.12, 11]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003af"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000014"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 3.12, 13]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003b0"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 3.12, 15]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003b1"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 3.12, 17]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003b2"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000012"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [12, 3.12, 19]
+rotation = [0.0, -0.7071068, 0.0, 0.7071068]
+
+# --- Hall lights: the H1/H2 demo -----------------------------------------
+# Six sun-linked window shafts + six window bounces at the six upper
+# windows (direction/color follow the LIVE sun — hour and weather), two
+# candles in the blind entrance third so the night keeps its anchors.
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003b3"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4.6, 4.6, 5]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003b4"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000310"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5.2, 4.2, 5]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003b5"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4.6, 4.6, 9]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003b6"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000310"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5.2, 4.2, 9]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003b7"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [4.6, 4.6, 13]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003b8"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000310"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [5.2, 4.2, 13]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003b9"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11.4, 4.6, 5]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003ba"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000310"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [10.8, 4.2, 5]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003bb"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11.4, 4.6, 9]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003bc"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000310"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [10.8, 4.2, 9]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003bd"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [11.4, 4.6, 13]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003be"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000310"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [10.8, 4.2, 13]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003bf"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000064"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [6.0, 1.2, 17.5]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003c0"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000064"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [10.0, 1.2, 18.5]
+
