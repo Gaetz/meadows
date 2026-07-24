@@ -31,21 +31,22 @@ les locales SONT l'éclairage — c'est là que nombre et ombres comptent.
 
 ## 2. Le nombre de lumières
 
-**Budget : 24** (2026-07-24, était 16), les N plus proches de la caméra
-(`SceneSubmit`), une liste unique pour trois consommateurs : le direct
-(LightsUbo), les blobs GI (RC), les froxels. Modèle de coût du forward :
-`coût ≈ pixels × slots` — chaque slot se paie sur tout l'écran, même
-vide. 24-32 est la zone de confort ; au-delà, la réponse n'est pas un
-plus grand tableau :
+**Budget : 64** (2026-07-24, chantier §5 — était 24, avant 16), sélection
+**frustum + importance** (`intensity/(1+dist²)`, cull sphère-frustum,
+liste finale ordonnée par distance — `SceneSubmit`), une liste unique
+pour trois consommateurs : le direct (LightsUbo), les blobs GI (RC, les
+24 plus proches — fenêtre ~32 m), les froxels. Modèle de coût du
+forward : `coût ≈ pixels × slots`. Le plein budget n'est consommable que
+par le chemin clustered ; la boucle legacy (et la passe reflet) reste
+clampée à 24.
 
-- **Cible : clustered forward (Forward+)** — un compute assigne les
-  lumières aux cellules d'une grille de frustum, chaque pixel ne boucle
-  que sur sa cellule (2-4 lumières typiques) → des centaines de lumières.
-  Synergie décisive ici : **la grille de froxels du fog (V4) EST une
-  grille de clusters** — le même culling servirait fog et surfaces.
-  À déclencher quand le F6 montre la boucle lumières dans le mainPass ou
-  quand un intérieur dense le réclame (la mention « Clustered P1 » de
-  MEADOWS-PLAN §B pointe désormais ici).
+- ✅ **Clustered forward (Forward+) — FAIT (2026-07-24, §5)** : un
+  compute (`cluster_cull.comp`, `LightClusters`) assigne les lumières
+  aux cellules d'une grille 16×9×64 dont les tranches Z SONT celles des
+  froxels (include partagé `clusters.glsl`) ; surfaces ET
+  `froxel_inject` ne bouclent que sur la liste de leur cellule (SSBO,
+  binding 4 du frame group). A/B : checkbox « Clustered lights »,
+  fallback = la boucle 24 historique (aussi le chemin sans compute).
 - **Deferred : écarté.** Raisons consignées pour ne pas rouvrir sans
   élément nouveau : (1) la stylisation est par TYPE de surface (splat,
   rampes cel, herbe, cutout des cartes) — G-buffer obèse ou shader-IDs,
@@ -90,11 +91,9 @@ un mod (§5) — arbitre le compromis coût/qualité lumière par lumière.
 
 1. ✅ Budget 24 + fenêtres-projecteurs (A) + `shadowMode` (C) —
    2026-07-24.
-2. Atlas de 4 key shadows (B) — tiré dans le chantier CLUSTERED (§5,
-   brique B6) : la nuit aux torches près des murs le réclame.
-3. Clustered forward sur la grille de froxels — **déclenché 2026-07-24**
-   (scène cible : la nuit aux torches proches et lointaines) ; le plan
-   est le §5.
+2. ✅ Atlas de 4 key shadows (B) — chantier CLUSTERED, brique B6.
+3. ✅ Clustered forward sur la grille de froxels — chantier §5,
+   **construit le 2026-07-24** (scène cible : la nuit aux torches).
 4. Deferred — non, voir §2.
 
 ## 5. Chantier CLUSTERED — le plan (2026-07-24)
@@ -123,8 +122,12 @@ Quand le direct touchera toutes les surfaces (B4) : le splat des
 lumières normales est réduit à un rôle de **rebond** (facteur
 albédo-like, knob catégorie GI, défaut ~0.35) ; les lumières `rcOnly`
 gardent le splat plein (leur design) ; re-tuning au banc nuit, RC
-ON/OFF en A/B. La RC garde ses 24 lumières : elle reçoit les 24 plus
-PROCHES (sa fenêtre fine fait ~32 m), pas les 64 du nouveau budget.
+ON/OFF en A/B. **EXTÉRIEUR seulement** (leçon 2026-07-24) : l'intérieur
+ne dessine ni terrain ni herbe ni arbres — le clustered n'y ajoute
+aucun receveur de direct, le facteur n'a rien à compenser et ne faisait
+qu'éteindre la lueur tunée des fenêtres. La RC garde ses 24 lumières :
+elle reçoit les 24 plus PROCHES (sa fenêtre fine fait ~32 m), pas les
+64 du nouveau budget.
 
 ### 5.2 Les ombres face à 64 lumières
 
@@ -141,9 +144,15 @@ follow-up hors chantier.
   XY** : 16×9×64 (~9,2 k clusters), tranches Z IDENTIQUES aux froxels
   (même formule log, factorisée en include partagé) — un froxel
   retrouve son cluster par `xy/8`, même z.
-- **Liste par cluster en SSBO std430** : `uint count + uint idx[15]`
-  (64 o/cluster ≈ 590 Ko). Culling conservateur sphère/cône contre
-  l'AABB view-space du cluster (fenêtre-projecteur traitée en sphère).
+- **Liste par cluster en SSBO std430** : `uint count + uint idx[31]`
+  (128 o/cluster ≈ 1,2 Mo). Culling conservateur en sphère contre
+  l'AABB monde du cluster (spots et fenêtres-projecteurs en sphère).
+  **Leçon capacité (2026-07-24)** : à 16 slots, le hall intérieur
+  (~18 sphères de lumière qui recouvrent les cellules centrales)
+  débordait et éjectait les lumières les plus loin de la caméra — les
+  fenêtres du fond perdaient leur flaque. 32 slots couvrent le pire
+  empilement actuel ; en débordement, les plus proches de la caméra
+  gagnent (l'ordre UBO).
 - **Budget 24 → 64** : les tableaux du LightsUbo redimensionnés en
   lockstep (locallights.glsl, froxel_inject.comp, miroir
   LandscapeRenderer) — changement de layout coordonné, FrameUniforms
@@ -154,30 +163,51 @@ follow-up hors chantier.
 - Flicker CPU inchangé ; le match key-shadow migre du « distance de
   position < 0.05 » vers un index de slot porté par le LightsUbo (B6).
 
-### 5.4 Briques
+### 5.4 Briques — TOUTES CONSTRUITES (2026-07-24)
 
-- **B0** — ce plan dans les docs (+ MEADOWS-PLAN) ; banc nuit-torches :
-  commande console de spawn de N torches (flicker, rayon ~8 m) autour du
-  joueur + heure forcée nuit ; baseline F6 (mainPass, froxels, RC).
-- **B1** — sélection frustum + importance (CPU, indépendant) :
-  `collectLights` cull sphère-frustum + score `intensity/(1+distSq)`,
-  `stable_sort` conservé ; la RC reçoit les 24 plus proches. Hystérésis
-  = knob futur si popping temporel observé, pas construit d'avance.
-- **B2** — `LightClusters.{hpp,cpp}` + `cluster_cull.comp` (modèles
-  GpuOcclusion/chunk_cull) : 1 thread/cluster, boucle 64 slots, écrit
-  count+indices ; budget 24 → 64 dans le même mouvement.
-- **B3** — `locallights.glsl` chemin clustered (cluster depuis
-  `gl_FragCoord` + tranche log, boucle sur la liste) ; toggle panneau
-  render + champ tuning (Save).
-- **B4** — terrain/herbe/arbres incluent locallights.glsl, **gaté au
-  chemin clustered uniquement** (herbe : normale de brin du modèle wrap,
-  pas de bounce intérieur) ; MÊME brique : le facteur rebond du splat RC
-  (§5.1) + passe de réglage dev au banc. Solde le reliquat V2 de
-  VOLUMETRIC.md.
-- **B5** — `froxel_inject` lit la liste du cluster (`xy/8`, même z) —
-  le coût froxel reste plat quand le budget monte.
-- **B6** — atlas de key shadows ×4 (tuiles 1024², les 4 `"key"` les
-  mieux scorées, échantillonnage par index de slot).
+- ✅ **B0** — ce plan dans les docs (+ MEADOWS-PLAN) ; banc
+  nuit-torches : commande console `torchbench <N>` (spirale dorée de
+  torches, terrain +1,6 m, minuit forcé ; `torchbench 0` nettoie).
+  **Baseline F6 : à relever par le dev au banc** (mainPass, froxels,
+  RC, clusterCull) — consigner ici.
+- ✅ **B1** — sélection frustum + importance (`collectLights` : cull
+  sphère-frustum via `render::Frustum` réutilisé + `intersectsSphere`
+  ajouté, score `intensity/(1+distSq)`, liste finale par distance,
+  `stable_sort` déterministe) ; la RC reçoit les 24 plus proches.
+  Hystérésis = knob futur si popping temporel observé.
+- ✅ **B2** — `LightClusters.{hpp,cpp}` + `cluster_cull.comp` : 1
+  thread/cluster, AABB monde de la cellule (4 coins × 2 tranches + le
+  centre de la face lointaine — les tranches sont des coquilles de
+  distance caméra, la face bombe), test sphère conservateur (spots et
+  fenêtres en sphère), SSBO `count + idx[15]` (~590 Ko) ; budget 24→64
+  en lockstep (locallights, froxel_inject, miroir C++).
+- ✅ **B3** — chemin clustered dans `locallights.glsl`
+  (`shadeLocalLight` factorisé ; cellule depuis `gl_FragCoord` +
+  `sliceCoord` distance-caméra) ; checkbox « Clustered lights » +
+  `LandscapeTuningForm.clusteredLights` — **défaut ON (2026-07-24)**.
+  Legacy clampé à 24 — la passe reflet (flag OFF dans son FrameUbo)
+  dégrade aux 24 plus proches.
+- ✅ **B4** — terrain/herbe/arbres incluent locallights.glsl, gaté
+  `uClusterInfo.x` (herbe : normale de brin + root AO, pas de bounce ;
+  arbres : troncs et canopées) ; splat RC des lumières normales ×
+  « Light splat bounce » (0.35, `rcOnly` exempté, appliqué CPU au
+  remplissage des blobs). Solde le reliquat V2 de VOLUMETRIC.md.
+  **Passe de réglage dev au banc : à faire** (RC ON/OFF en A/B).
+- ✅ **B5** — `froxel_inject` lit la liste de sa cellule (xy
+  sous-échantillonné, même z) — coût froxel plat quand le budget monte.
+- ✅ **B6** — atlas de key shadows ×4 (cible 2048² = 2×2 tuiles 1024²,
+  sélection par le même score d'importance, un caster UBO/groupe par
+  tuile, viewport par tuile dans une passe ; slot dans
+  `LightsUbo.windowInfo.z`, bornes resserrées d'un texel pour la PCF).
+  Les champs FrameUbo single-light (`keyShadowViewProj/Info`) sont
+  retirés du chemin, laissés en place (règle append-only).
+
+Validation faite : build propre + 522 tests headless verts ; runs
+Vulkan/MoltenVK clustered OFF et ON (overlay render-tuning temporaire),
+0 erreur de validation. **Reste au dev : le visuel au banc** —
+`torchbench 64` de nuit, A/B clustered, flaques au sol vs blob RC,
+chiffres F6 à consigner ici, et l'orientation des tuiles d'atlas à
+contrôler dans l'intérieur (TableSpot).
 
 ### 5.5 Vérification & hors scope
 
