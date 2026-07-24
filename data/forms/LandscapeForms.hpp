@@ -88,7 +88,7 @@ struct LandscapeTuningForm : Form {
     // V4/H4 froxel fog: the A/B against the 2D march, and the interiors'
     // uniform dust density (window shafts become volumetric in it).
     bool froxelFog { true };
-    f32 interiorDustDensity { 0.06f };
+    f32 interiorDustDensity { 0.025f };
     // Vegetation draw budget, moddable + live-tunable (the vegetation
     // pass is a major GPU cost driver). Radii in 64 m chunks.
     i32 vegViewRadius { 12 };       // resident/drawn ring

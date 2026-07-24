@@ -864,6 +864,9 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
         Vec3 color = light.color * light.intensity;
         if (light.sunLinked) {
             gate = glm::smoothstep(0.05f, 0.20f, -dir.y) *
+                   glm::smoothstep(0.15f, 0.40f,
+                                   glm::dot(dir, glm::normalize(
+                                                     light.direction))) *
                    aboveBuried(light.position.y, view.buriedBelowY);
             color = sunColor * light.intensity;
         }
@@ -906,7 +909,7 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
         if (slot->vertices.id() == 0 ||
             glm::dot(slot->cachedDir, dir) < 0.99995f ||
             glm::dot(slot->cachedSide, side) < 0.9994f) {
-            const f32 pushback = light.sunLinked ? 2.0f : 0.0f;
+            const f32 pushback = light.sunLinked ? 3.5f : 0.0f;
             const f32 length =
                 glm::max(light.shaftLength, 0.5f) + pushback;
             const f32 halfAngle = glm::radians(
@@ -1526,14 +1529,19 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             Vec3 position = light.position;
             if (light.sunLinked) {
                 color = sunTint;
+                // The authored ROTATION is the window's into-room normal:
+                // the beam only lives while the sun sits on the window's
+                // outside (a west window is dark in the morning), which
+                // also keeps the pushed origin from orbiting into the
+                // room. hand-tuned pushback: wide enough to swallow the
+                // frame with the opened cone.
+                const f32 facing = glm::dot(-shadowSunDirection,
+                                            glm::normalize(light.direction));
                 intensity *= sunGate *
+                             glm::smoothstep(0.15f, 0.40f, facing) *
                              aboveBuried(light.position.y,
                                          view.buriedBelowY);
-                // The authored point is the ANCHOR the beam passes
-                // through (the window); the cone STARTS outside, pushed
-                // back along the live beam — it enters the opening
-                // already widened, like the sun would. hand-tuned.
-                position += shadowSunDirection * 2.0f;
+                position += shadowSunDirection * 3.5f;
             }
             if (light.flicker > 0.0f) {
                 const f32 phase = static_cast<f32>(i) * 1.7f;
@@ -1768,11 +1776,15 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             const Vec3 color = light.sunLinked
                                    ? Vec3 { uniforms.sunColor }
                                    : light.color;
-            const f32 intensity =
-                light.sunLinked
-                    ? light.intensity * sunGate *
-                          aboveBuried(light.position.y, view.buriedBelowY)
-                    : light.intensity;
+            f32 intensity = light.intensity;
+            if (light.sunLinked) {
+                intensity *= sunGate *
+                             glm::smoothstep(
+                                 0.15f, 0.40f,
+                                 glm::dot(-shadowSunDirection,
+                                          glm::normalize(light.direction))) *
+                             aboveBuried(light.position.y, view.buriedBelowY);
+            }
             rcLights.push_back({ { light.position, light.radius },
                                  { color * intensity, 0.0f } });
         }

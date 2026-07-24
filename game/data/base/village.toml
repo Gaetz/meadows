@@ -1842,8 +1842,8 @@ editorId = "HallWindowShaft"
 kind = "spot"
 color = [1.0, 0.95, 0.85]
 intensity = 2.0
-radius = 9.0
-spotAngle = 28.0
+radius = 12.0
+spotAngle = 34.0
 shaft = true
 shaftLength = 7.0
 shaftSoftness = 0.5
@@ -5130,6 +5130,7 @@ new = true
 baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
 cell = "4d7a9b30-0000-4000-8000-000000000321"
 position = [4.6, 4.6, 9]
+rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000003b6"
