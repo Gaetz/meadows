@@ -76,8 +76,8 @@ stylizedShadowFloor = 0.0         # raise to keep shadow pools readable
 # --- Shadows --------------------------------------------------------------
 shadowResolution = 2048           # CSM texels per cascade (1024/2048/4096)
 froxelFog = true                  # V4/H4 froxel volume (off = 2D march)
-froxelTemporalBlend = 0.1         # EMA: current fraction/frame (1 = off)
-froxelDustNoise = 0.6             # dust wisps: 0 uniform, 1 sparse sheets
+froxelTemporalBlend = 0.02        # EMA: current fraction/frame (1 = off)
+froxelDustNoise = 0.75            # dust wisps: 0 uniform, 1 sparse sheets
 interiorDustDensity = 0.025       # uniform dust indoors (H4)
 
 # Radiance-cascades GI tuning (docs/RADIANCE-CASCADES.md): the render
