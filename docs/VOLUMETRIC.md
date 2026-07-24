@@ -169,6 +169,15 @@ surtout vide, le grain ne vit que dans les nappes où il se lit comme de
 la texture (`froxelDustNoise`, 0 = uniforme, défaut 0.6 ; slider
 « Dust wisps », champ du tuning §5). Le scintillement de grains
 individuels, lui, relève des particules fx, pas des froxels.
+Troisième complément, le **jitter sélectif** (2026-07-24, scintillement
+EXTÉRIEUR — les rideaux sous nuages) : seuls les signaux à structure
+dure en profondeur (frontières d'ombre CSM, bords de faisceaux/cônes,
+key shadow) s'échantillonnent à la profondeur jitterée — c'est eux que
+le jitter dé-bande. Les signaux analytiques doux (height fog, volutes,
+ombre de nuages, giAir) s'échantillonnent au CENTRE de tranche :
+les jitterer n'était que de la variance sans banding à cacher — au
+loin (tranches de plusieurs mètres) et sous un champ d'ombres de
+nuages MOBILE, l'EMA poursuivait une cible bruitée. Coût : nul.
 L'historique est invalidé sur téléport
 (> 10 m/frame), changement de portée (intérieur 48 m ↔ extérieur
 800 m) et frame sans froxels — le fallback est l'échantillon courant
