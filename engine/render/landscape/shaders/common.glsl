@@ -75,4 +75,7 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uStylizedShadow;
     // Clustered forward: x = active, y = cluster grid far reach (m).
     vec4 uClusterInfo;
+    // Key-shadow atlas: world -> tile clip per slot; a light's slot
+    // rides LightsUbo windowInfo.z (slot+1, 0 = unshadowed).
+    mat4 uKeyShadowAtlas[4];
 };

@@ -25,9 +25,33 @@ layout(std140, binding = 5) uniform LightsUbo {
     // marks a point light, w = -3 a WINDOW projector (xyz = the
     // window's into-room normal — docs/LIGHTING.md).
     vec4 uLightDirectionAngle[64];
-    // Window projector half extents (xy).
+    // Window projector half extents (xy); z = key-shadow atlas slot + 1
+    // (0 = unshadowed — docs/LIGHTING.md §5 B6).
     vec4 uLightWindowInfo[64];
 };
+
+// The light's key-shadow atlas tile (2x2 of the shared target). The
+// bounds stay one texel inside the tile so the PCF taps never cross
+// into a neighbour.
+float keyShadowFactor(int i, vec3 p) {
+    int slot = int(uLightWindowInfo[i].z + 0.5) - 1;
+    if (slot < 0) {
+        return 1.0;
+    }
+    vec4 lc = uKeyShadowAtlas[slot] * vec4(p, 1.0);
+    if (lc.w <= 0.0) {
+        return 1.0;
+    }
+    vec3 proj = lc.xyz / lc.w;
+    proj.xy = proj.xy * 0.5 + 0.5;
+    if (proj.z >= 1.0 || any(lessThan(proj.xy, vec2(0.002))) ||
+        any(greaterThan(proj.xy, vec2(0.998)))) {
+        return 1.0;
+    }
+    vec2 atlasUv =
+        (proj.xy + vec2(slot & 1, slot >> 1)) * 0.5;
+    return texture(uKeyShadow, vec3(atlasUv, proj.z - 0.0022));
+}
 
 // The window-projector clip (docs/LIGHTING.md §3): the beam is the
 // window's rectangle extruded along the live sun. Projects `p` back
@@ -96,23 +120,9 @@ vec3 shadeLocalLight(int i, vec3 worldPos, vec3 n, float interior) {
             float edge = mix(cosHalf, 1.0, 0.1);
             atten *= smoothstep(cosHalf, edge, cd);
         }
-        // The key light's shadow map (one per interior) stops this
-        // light from bleeding through walls. Matched by position.
-        if (uKeyShadowInfo.w > 0.5 &&
-            distance(uLightPositionRadius[i].xyz, uKeyShadowInfo.xyz) <
-                0.05) {
-            vec4 lc = uKeyShadowViewProj * vec4(worldPos, 1.0);
-            if (lc.w > 0.0) {
-                vec3 proj = lc.xyz / lc.w;
-                proj.xy = proj.xy * 0.5 + 0.5; // 0..1: xy only
-                if (proj.z < 1.0 &&
-                    all(greaterThan(proj.xy, vec2(0.0))) &&
-                    all(lessThan(proj.xy, vec2(1.0)))) {
-                    atten *= texture(
-                        uKeyShadow, vec3(proj.xy, proj.z - 0.0022));
-                }
-            }
-        }
+        // The light's key shadow (atlas tile) stops it from bleeding
+        // through walls.
+        atten *= keyShadowFactor(i, worldPos);
         float ndl = dot(n, l);
         float wrapped = clamp((ndl + 0.4) / 1.4, 0.0, 1.0);
         float diff = mix(max(ndl, 0.0), wrapped, interior);

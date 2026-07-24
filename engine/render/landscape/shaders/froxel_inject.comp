@@ -22,7 +22,8 @@ layout(std140, binding = 5) uniform LightsUbo {
     vec4 uLightColorIntensity[64];
     vec4 uLightDirectionAngle[64]; // xyz dir, w cos(half angle);
                                    // -2 = point, -3 = window projector
-    vec4 uLightWindowInfo[64];     // window half extents (xy)
+    vec4 uLightWindowInfo[64];     // window half extents (xy);
+                                   // z = key-shadow slot + 1 (0 = none)
 };
 
 // Window-projector clip for the DUST (docs/LIGHTING.md §3) — same math
@@ -232,21 +233,22 @@ void main() {
             atten *= smoothstep(spot.w, mix(spot.w, 1.0, 0.5),
                                 dot(-normalize(toLight), spot.xyz));
         }
-        // The key light's shadow map clips this light's DUST by real
-        // geometry — the window aperture shapes the beam (matched by
-        // position, the locallights.glsl contract).
-        if (uKeyShadowInfo.w > 0.5 &&
-            distance(uLightPositionRadius[i].xyz, uKeyShadowInfo.xyz) <
-                0.05) {
-            vec4 lc = uKeyShadowViewProj * vec4(pJ, 1.0);
+        // The light's key shadow (atlas tile, slot in windowInfo.z)
+        // clips its DUST by real geometry — the window aperture shapes
+        // the beam (the locallights.glsl contract).
+        int slot = int(uLightWindowInfo[i].z + 0.5) - 1;
+        if (slot >= 0) {
+            vec4 lc = uKeyShadowAtlas[slot] * vec4(pJ, 1.0);
             if (lc.w > 0.0) {
                 vec3 lproj = lc.xyz / lc.w;
                 lproj.xy = lproj.xy * 0.5 + 0.5;
                 if (lproj.z < 1.0 &&
-                    all(greaterThan(lproj.xy, vec2(0.0))) &&
-                    all(lessThan(lproj.xy, vec2(1.0)))) {
+                    all(greaterThan(lproj.xy, vec2(0.002))) &&
+                    all(lessThan(lproj.xy, vec2(0.998)))) {
+                    vec2 atlasUv =
+                        (lproj.xy + vec2(slot & 1, slot >> 1)) * 0.5;
                     atten *= texture(uKeyShadow,
-                                     vec3(lproj.xy, lproj.z - 0.0022));
+                                     vec3(atlasUv, lproj.z - 0.0022));
                 }
             }
         }

@@ -364,10 +364,10 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
                          .texture = rainOcclusionTex,
                          .sampler = rainSampler } } }) };
 
-    // The interior key-light shadow target (1024², perspective).
+    // The key-shadow atlas (2048² = 2x2 perspective tiles, §5 B6).
     keyShadowTex = { device, device.createTexture(
-        { .width = 1024,
-          .height = 1024,
+        { .width = 2048,
+          .height = 2048,
           .format = rhi::TextureFormat::Depth32F,
           .usage = rhi::TextureUsage_Sampled |
                    rhi::TextureUsage_RenderAttachment },
@@ -378,13 +378,16 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
           .compare = rhi::CompareFunc::LessEqual }) };
     keyShadowFb = { device, device.createFramebuffer(
         { .depthAttachment = { .texture = keyShadowTex } }) };
-    keyShadowUbo =
-        { device, device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
-                              .size = sizeof(Mat4),
-                              .dynamic = true },
-                            nullptr) };
-    keyShadowCasterGroup = { device, device.createBindGroup(
-        { .entries = { { .binding = 1, .buffer = keyShadowUbo } } }) };
+    for (u32 slot = 0; slot < kKeyShadowSlots; ++slot) {
+        keyShadowUbos[slot] =
+            { device, device.createBuffer({ .usage = rhi::BufferUsage::Uniform,
+                                  .size = sizeof(Mat4),
+                                  .dynamic = true },
+                                nullptr) };
+        keyShadowCasterGroups[slot] = { device, device.createBindGroup(
+            { .entries = { { .binding = 1,
+                             .buffer = keyShadowUbos[slot] } } }) };
+    }
     keyShadowReceiverGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 6,
                          .texture = keyShadowTex,
@@ -478,8 +481,10 @@ void LandscapeRenderer::destroy(rhi::Device& device) {
     rainSampler.reset();
     rainOcclusionTex.reset();
     keyShadowReceiverGroup.reset();
-    keyShadowCasterGroup.reset();
-    keyShadowUbo.reset();
+    for (u32 slot = 0; slot < kKeyShadowSlots; ++slot) {
+        keyShadowCasterGroups[slot].reset();
+        keyShadowUbos[slot].reset();
+    }
     keyShadowFb.reset();
     keyShadowSampler.reset();
     keyShadowTex.reset();
@@ -1348,6 +1353,76 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                                   &frameData.rainOcclusionViewProj,
                                   sizeof(Mat4), 0);
     }
+
+    // Key-shadow atlas selection (docs/LIGHTING.md §5 B6): the up-to-4
+    // best-scored castsShadow lights get a 1024² tile. Selected HERE so
+    // the tile matrices ride this frame-UBO upload and the per-light
+    // slot lands in the lights UBO below (windowInfo.z). The tiles
+    // themselves render after the cloud bake.
+    struct KeyShadowPick {
+        Vec3 anchor; // the light's original position — the UBO match key
+        Mat4 viewProj;
+    };
+    vector<KeyShadowPick> keyShadowPicks;
+    if (keyShadowUi && meshShadowCastersUi) {
+        struct KeyCandidate {
+            f32 score;
+            Vec3 anchor;
+            Vec3 position;
+            Vec3 direction;
+            f32 fov;
+            f32 radius;
+        };
+        vector<KeyCandidate> keyCandidates;
+        const f32 keySunGate =
+            glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
+        for (const SceneLight& light : snapshot.shadowLights) {
+            Vec3 position = light.position;
+            Vec3 direction = light.direction;
+            if (light.sunLinked) {
+                // Same anchor model as the lights UBO: the shadow camera
+                // sits OUTSIDE, films through the window along the live
+                // beam — the aperture clips the pool for real. A dead
+                // beam (night, sun behind the wall) frees its slot.
+                direction = -shadowSunDirection;
+                const f32 facing = glm::dot(
+                    direction, glm::normalize(light.direction));
+                if (keySunGate * glm::smoothstep(0.15f, 0.40f, facing) <=
+                    0.05f) {
+                    continue;
+                }
+                position += shadowSunDirection * 3.5f;
+            }
+            const Vec3 d = light.position - camera.position;
+            keyCandidates.push_back(
+                { light.intensity / (1.0f + glm::dot(d, d)),
+                  light.position, position, direction,
+                  light.spotAngle > 0.0f
+                      ? glm::min(light.spotAngle * 1.3f, 150.0f)
+                      : 120.0f,
+                  light.radius });
+        }
+        std::stable_sort(keyCandidates.begin(), keyCandidates.end(),
+                         [](const KeyCandidate& a, const KeyCandidate& b) {
+                             return a.score > b.score;
+                         });
+        const size_t slots =
+            glm::min<size_t>(keyCandidates.size(), kKeyShadowSlots);
+        for (size_t slot = 0; slot < slots; ++slot) {
+            const KeyCandidate& pick = keyCandidates[slot];
+            const Vec3 up = std::abs(pick.direction.y) > 0.95f
+                                ? Vec3 { 1.0f, 0.0f, 0.0f }
+                                : Vec3 { 0.0f, 1.0f, 0.0f };
+            const Mat4 lightView =
+                glm::lookAt(pick.position, pick.position + pick.direction,
+                            up);
+            const Mat4 proj = glm::perspective(glm::radians(pick.fov),
+                                               1.0f, 0.05f, pick.radius);
+            frameData.keyShadowAtlasViewProj[slot] = proj * lightView;
+            keyShadowPicks.push_back(
+                { pick.anchor, frameData.keyShadowAtlasViewProj[slot] });
+        }
+    }
     frame.device.updateBuffer(frameUbo, &frameData, sizeof(frameData), 0);
 
     // The selected local lights, flicker applied CPU-side (sin +
@@ -1420,8 +1495,19 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                 : spot ? std::cos(glm::radians(light.spotAngle * 0.5f))
                        : -2.0f
             };
+            // The key-shadow atlas slot (windowInfo.z, 0 = unshadowed):
+            // matched against the pick's anchor — both come from the
+            // same Transform, so the positions are bit-equal.
+            f32 shadowSlot = 0.0f;
+            for (size_t k = 0; k < keyShadowPicks.size(); ++k) {
+                if (glm::distance(keyShadowPicks[k].anchor,
+                                  light.position) < 0.05f) {
+                    shadowSlot = static_cast<f32>(k + 1);
+                    break;
+                }
+            }
             lights.windowInfo[slot] = { light.windowHalfWidth,
-                                        light.windowHalfHeight, 0.0f,
+                                        light.windowHalfHeight, shadowSlot,
                                         0.0f };
             ++slot;
         }
@@ -1444,75 +1530,29 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         sky.bakeCloudMap(frame.cmd, frameBindGroup);
     }
 
-    // The interior key-light shadow: pick the castsShadow light
-    // nearest the camera, render its perspective depth, and hand the
-    // matrix + position to locallights.glsl (matched by position there).
-    bool keyShadowActive = false;
-    if (keyShadowUi && view.interiorMode && meshShadowCastersUi) {
-        f32 bestDistSq = 1e12f;
-        Vec3 keyPos {};
-        Vec3 keyDir { 0.0f, 0.0f, 1.0f };
-        f32 keyFov = 100.0f;
-        f32 keyRadius = 10.0f;
-        const f32 keySunGate =
-            glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
-        for (const SceneLight& light : snapshot.shadowLights) {
-            const Vec3 d = light.position - camera.position;
-            const f32 distSq = glm::dot(d, d);
-            if (distSq >= bestDistSq) {
-                continue;
-            }
-            Vec3 position = light.position;
-            Vec3 direction = light.direction;
-            if (light.sunLinked) {
-                // Same anchor model as the lights UBO: the shadow camera
-                // sits OUTSIDE, films through the window along the live
-                // beam — the aperture clips the pool for real. A dead
-                // beam (night, sun behind the wall) frees the key slot.
-                direction = -shadowSunDirection;
-                const f32 facing = glm::dot(
-                    direction, glm::normalize(light.direction));
-                if (keySunGate * glm::smoothstep(0.15f, 0.40f, facing) <=
-                    0.05f) {
-                    continue;
-                }
-                position += shadowSunDirection * 3.5f;
-            }
-            bestDistSq = distSq;
-            keyPos = position;
-            keyDir = direction;
-            keyFov = light.spotAngle > 0.0f
-                         ? glm::min(light.spotAngle * 1.3f, 150.0f)
-                         : 120.0f;
-            keyRadius = light.radius;
-        }
-        if (bestDistSq < 1e12f) {
-            const Vec3 up = std::abs(keyDir.y) > 0.95f
-                                ? Vec3 { 1.0f, 0.0f, 0.0f }
-                                : Vec3 { 0.0f, 1.0f, 0.0f };
-            const Mat4 lightView = glm::lookAt(keyPos, keyPos + keyDir, up);
-            const Mat4 proj = glm::perspective(
-                glm::radians(keyFov), 1.0f, 0.05f, keyRadius);
-            frameData.keyShadowViewProj = proj * lightView;
-            frameData.keyShadowInfo = { keyPos, 1.0f };
-            frame.device.updateBuffer(frameUbo, &frameData,
-                                      sizeof(frameData), 0);
-            frame.device.updateBuffer(keyShadowUbo,
-                                      &frameData.keyShadowViewProj,
+    // Key-shadow atlas tiles (§5 B6): one clear, one 1024² viewport per
+    // shadowed light, each tile through its own caster UBO/group.
+    if (!keyShadowPicks.empty()) {
+        render::GpuProbe::Scope gpu { gpuProbe, frame.device,
+                                      "keyShadow" };
+        for (size_t slot = 0; slot < keyShadowPicks.size(); ++slot) {
+            frame.device.updateBuffer(keyShadowUbos[slot],
+                                      &keyShadowPicks[slot].viewProj,
                                       sizeof(Mat4), 0);
-            render::GpuProbe::Scope gpu { gpuProbe, frame.device,
-                                          "keyShadow" };
-            frame.cmd.beginRenderPass(
-                { .framebuffer = keyShadowFb,
-                  .loadOp = rhi::LoadOp::DontCare,
-                  .depthLoadOp = rhi::LoadOp::Clear });
-            drawCastersInto(frame, snapshot, view, keyShadowCasterGroup,
-                            /*refreshUbos=*/true);
-            frame.cmd.endRenderPass();
-            keyShadowActive = true;
         }
+        frame.cmd.beginRenderPass({ .framebuffer = keyShadowFb,
+                                    .loadOp = rhi::LoadOp::DontCare,
+                                    .depthLoadOp = rhi::LoadOp::Clear });
+        for (size_t slot = 0; slot < keyShadowPicks.size(); ++slot) {
+            frame.cmd.setViewport(static_cast<u32>(slot & 1) * 1024,
+                                  static_cast<u32>(slot >> 1) * 1024,
+                                  1024, 1024);
+            drawCastersInto(frame, snapshot, view,
+                            keyShadowCasterGroups[slot],
+                            /*refreshUbos=*/slot == 0);
+        }
+        frame.cmd.endRenderPass();
     }
-    (void)keyShadowActive;
 
     // The top-down rain occlusion depth (roof cover).
     if (frameData.stormInfo.y > 0.003f && meshShadowCastersUi) {

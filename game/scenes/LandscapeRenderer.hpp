@@ -349,11 +349,16 @@ private:
     u64 skinnedCasterShaderGeneration { 0 };
     // The interior key-light shadow — ONE perspective
     // depth layer from the castsShadow light nearest the camera.
+    // Key-shadow ATLAS (docs/LIGHTING.md §5 B6): one 2048^2 depth target,
+    // 2x2 tiles of 1024^2 — the up-to-4 best-scored castsShadow lights
+    // render one tile each (one caster UBO/group per tile: the same
+    // buffer updated 4x mid-recording would clobber itself).
+    static constexpr u32 kKeyShadowSlots = 4;
     rhi::UniqueTexture keyShadowTex;
     rhi::UniqueFramebuffer keyShadowFb;
     rhi::UniqueSampler keyShadowSampler;
-    rhi::UniqueBuffer keyShadowUbo;
-    rhi::UniqueBindGroup keyShadowCasterGroup;
+    array<rhi::UniqueBuffer, kKeyShadowSlots> keyShadowUbos;
+    array<rhi::UniqueBindGroup, kKeyShadowSlots> keyShadowCasterGroups;
     rhi::UniqueBindGroup keyShadowReceiverGroup;
 
     rhi::UniqueTexture offscreenColor;

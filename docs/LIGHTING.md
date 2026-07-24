@@ -70,10 +70,12 @@ Trois étages, du plus précis au plus diffus :
    w = −3) ; le gate d'orientation (soleil du bon côté du mur) vit dans
    le shader via ce couple normale/soleil. Limite assumée : le cadre
    découpe, pas le mobilier devant la fenêtre (ça, c'est la key shadow).
-2. **1 key shadow** (1024², perspective) : la lumière `shadowMode =
-   "key"` la plus proche — l'ombre géométrique exacte (mobilier,
-   lustre). Extension possible : un atlas de 4 tuiles (~0.4 ms) quand le
-   contenu réclamera plusieurs ombres nettes — non construit.
+2. **Key shadows en atlas ×4** (2026-07-24, §5 B6 — était 1) : les 4
+   lumières `shadowMode = "key"` les mieux scorées, une tuile 1024²
+   chacune dans un atlas 2048² ; le slot voyage dans
+   `LightsUbo.windowInfo.z` (le match par position est retiré), un
+   caster UBO par tuile. L'ombre géométrique exacte (mobilier, lustre),
+   intérieur comme extérieur — c'est la donnée qui décide.
 3. **La GI** : occlusion ambiante directionnelle à l'échelle voxel ; et
    `shadowMode = "rcOnly"` route une lumière ENTIÈREMENT par le champ —
    pénombres molles gratuites (G7b), parfait pour bougies et ambiances ;

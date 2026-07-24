@@ -106,6 +106,12 @@ struct FrameUniforms {
     // (0 = legacy 24-light loop), y = cluster grid far reach (m) — the
     // froxel slicing's far, so both grids share their z slices; zw free.
     Vec4 clusterInfo { 0.0f, 800.0f, 0.0f, 0.0f };
+    // Key-shadow ATLAS (docs/LIGHTING.md §5 B6): up to 4 shadowed lights,
+    // one 1024^2 tile each in the 2048^2 key-shadow target. A light finds
+    // its tile through LightsUbo windowInfo.z (slot+1, 0 = unshadowed);
+    // keyShadowViewProj/keyShadowInfo above are the retired single-light
+    // fields (append-only: they stay, zeroed).
+    array<Mat4, 4> keyShadowAtlasViewProj {};
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -159,7 +165,8 @@ static_assert(offsetof(FrameUniforms, fogSunInfo) == 976);
 static_assert(offsetof(FrameUniforms, stylizedDiffuseInfo) == 992);
 static_assert(offsetof(FrameUniforms, stylizedShadowInfo) == 1008);
 static_assert(offsetof(FrameUniforms, clusterInfo) == 1024);
-static_assert(sizeof(FrameUniforms) == 1040,
+static_assert(offsetof(FrameUniforms, keyShadowAtlasViewProj) == 1040);
+static_assert(sizeof(FrameUniforms) == 1296,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 
