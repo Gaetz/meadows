@@ -2,6 +2,7 @@
 
 #include "engine/core/Defines.hpp"
 #include "engine/render/GpuProbe.hpp" // optional sub-pass timing (P0)
+#include "engine/render/landscape/FrameUniforms.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 
@@ -49,10 +50,14 @@ public:
     // volumetric march's haze samples the GI field inside its volume.
     // `godRays` false skips that pass entirely (the tonemap multiplies
     // its texture by the zero intensity anyway).
-    void render(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
+    // `frameData` = this frame's RESOLVED uniforms — the froxel temporal
+    // pass reads camera/view-proj/fog reach from it and keeps last
+    // frame's copy for reprojection.
+    void render(rhi::Device& device, rhi::CommandBuffer& cmd,
+                const FrameUniforms& frameData,
+                rhi::BindGroupHandle frameBindGroup,
                 rhi::BindGroupHandle shadowBindGroup,
                 rhi::BindGroupHandle giApplyGroup = {}, bool godRays = true,
-                rhi::Device* probeDevice = nullptr,
                 GpuProbe* probe = nullptr);
 
     // Auto-exposure — log-luminance 64² → mips →
@@ -90,6 +95,9 @@ public:
     // The froxel path A/B (falls back to the 2D march when off or when
     // compute/volume caps are missing).
     bool froxelFog { true };
+    // Temporal accumulation: fraction of the CURRENT sample per frame
+    // (0.1 = ~90% history, converges in ~0.5 s; 1 = accumulation off).
+    f32 froxelTemporalBlend { 0.1f };
     bool froxelReady() const { return froxelInjectPipeline.id() != 0; }
 
 private:
@@ -119,9 +127,19 @@ private:
     // fullscreen fetch — the tonemap composite is untouched. The 2D march
     // stays as the fallback (no compute caps) and the A/B.
     static constexpr u32 kFroxelX = 128, kFroxelY = 72, kFroxelZ = 64;
-    rhi::UniqueTexture froxelScatter;
+    // Scatter is a ping-pong pair: inject writes one side while sampling
+    // the other as last frame's history (temporal accumulation).
+    rhi::UniqueTexture froxelScatter[2];
     rhi::UniqueTexture froxelIntegrated;
-    rhi::UniqueBindGroup froxelInjectGroup;   // images 12 + 13
+    rhi::UniqueBindGroup froxelInjectGroup[2]; // images 12+13, history 7,
+                                               // temporal ubo 9
+    rhi::UniqueBuffer froxelTemporalUbo;
+    u32 froxelSide { 0 };
+    u32 froxelFrame { 0 };
+    bool froxelHistoryValid { false };
+    Mat4 froxelPrevViewProj { 1.0f };
+    Vec3 froxelPrevCamera { 0.0f };
+    f32 froxelPrevReach { 0.0f };
     rhi::UniqueBindGroup froxelApplyGroup;    // integrated sampler at 4
     rhi::UniquePipeline froxelInjectPipeline;
     rhi::UniquePipeline froxelIntegratePipeline;

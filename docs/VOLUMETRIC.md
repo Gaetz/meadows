@@ -141,9 +141,24 @@ soleil × phase × visibilité CSM+nuages + `giAir` + **les 16 lumières
 locales par froxel, cônes de spot compris**), `froxel_integrate.comp`
 (intégration analytique par colonne), `froxel_apply.frag` (un fetch
 trilinéaire au depth du pixel, écrit la MÊME cible que le march 2D — le
-composite tonemap est intouché). Jitter IGN + roulement temporel sur la
-profondeur d'échantillon ; la **reprojection temporelle reste en
-réserve** si le scintillement gêne à l'œil.
+composite tonemap est intouché). Jitter IGN sur la profondeur
+d'échantillon.
+
+**Accumulation temporelle — ✅ FAIT (2026-07-24).** Le roulement continu
+du jitter sans accumulation produisait des grumeaux à l'échelle du
+froxel qui dérivaient lentement — des « bouffées de fumée » (constat
+dev, intérieurs surtout : le jitter déplace l'échantillon dans les
+gradients raides des lampes/faisceaux). Le remède est le modèle
+Frostbite : le volume de scatter devient une paire ping-pong ; l'inject
+décorrèle le jitter par FRAME (roulement doré) et par TRANCHE, puis
+reprojette chaque froxel dans le volume de la frame précédente
+(view-proj précédente pour l'uv écran, distance à la caméra précédente
+pour la tranche log) et mélange en EMA (`froxelTemporalBlend`, défaut
+0.1 ≈ 90 % d'historique, convergence ~0.5 s ; slider « Froxel temporal
+blend », champ du tuning §5). L'historique est invalidé sur téléport
+(> 10 m/frame), changement de portée (intérieur 48 m ↔ extérieur
+800 m) et frame sans froxels — le fallback est l'échantillon courant
+seul, comme avant.
 
 Le march 2D reste le fallback (caps compute absents) et l'A/B :
 checkbox « Froxel fog » (Sun FX), champ `froxelFog` du tuning. Contrat

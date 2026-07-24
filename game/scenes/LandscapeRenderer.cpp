@@ -85,6 +85,7 @@ void LandscapeRenderer::applyTuning(
     shadowResolutionUi = glm::clamp(tuning.shadowResolution, 1024, 4096);
     interiorDaylightWeightUi = tuning.interiorDaylightWeight;
     postFx.froxelFog = tuning.froxelFog;
+    postFx.froxelTemporalBlend = tuning.froxelTemporalBlend;
     interiorDustDensityUi = tuning.interiorDustDensity;
     // Vegetation draw budget (clamped — the streamer ring
     // and the Hi-Z candidate cap size the safe range).
@@ -190,6 +191,7 @@ void LandscapeRenderer::captureTuning(data::LandscapeTuningForm& out) const {
     out.shadowResolution = shadowResolutionUi;
     out.interiorDaylightWeight = interiorDaylightWeightUi;
     out.froxelFog = postFx.froxelFog;
+    out.froxelTemporalBlend = postFx.froxelTemporalBlend;
     out.interiorDustDensity = interiorDustDensityUi;
     out.vegViewRadius = vegetation.viewRadius;
     out.vegHighDetailRadius = vegetation.highDetailRadius;
@@ -1867,11 +1869,10 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         if (sky.cloudMapBindGroup().id != 0) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
-        postFx.render(frame.cmd, frameBindGroup,
+        postFx.render(frame.device, frame.cmd, frameData, frameBindGroup,
                       shadows.receiverBindGroup(),
                       radianceCascades.applyGroup(),
-                      view.atmos.godRayIntensity > 0.003f, &frame.device,
-                      &gpuProbe);
+                      view.atmos.godRayIntensity > 0.003f, &gpuProbe);
         // Contact shadows (the texture is the toggle — white = off).
         {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
@@ -2368,6 +2369,9 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
                            3.0f, "%.2f");
         ImGui::Checkbox("Froxel fog (V4/H4 — off = 2D march)",
                         &postFx.froxelFog);
+        ImGui::SliderFloat("Froxel temporal blend",
+                           &postFx.froxelTemporalBlend, 0.02f, 1.0f,
+                           "%.2f");
         ImGui::SliderFloat("Interior dust", &interiorDustDensityUi, 0.0f,
                            0.12f, "%.3f");
     }

@@ -16,6 +16,13 @@ constexpr const char* kUpShader = "bloom_up";
 constexpr const char* kGodRaysShader = "godrays";
 constexpr const char* kVolumetricShader = "volumetric";
 constexpr const char* kFroxelInjectShader = "froxel_inject";
+
+// std140 mirror of froxel_inject.comp's FroxelTemporalUbo.
+struct FroxelTemporalUniforms {
+    Mat4 prevViewProj { 1.0f };
+    Vec4 prevCamera { 0.0f };   // xyz camera, w reach (>= 2)
+    Vec4 temporalInfo { 1.0f }; // x blend alpha, y jitter roll
+};
 constexpr const char* kFroxelIntegrateShader = "froxel_integrate";
 constexpr const char* kFroxelApplyShader = "froxel_apply";
 // (No screen-space AO — the sampled hemisphere
@@ -61,9 +68,11 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
     if (/* froxels need compute + volume textures */
         device.caps().computeShaders && device.caps().volumeTextures) {
         shaders.loadCompute(kFroxelInjectShader,
-                            { { "FrameUbo", 0 }, { "LightsUbo", 5 } },
+                            { { "FrameUbo", 0 }, { "LightsUbo", 5 },
+                              { "FroxelTemporalUbo", 9 } },
                             { { "uShadowMap", 1 }, { "uCloudMap", 2 },
-                              { "uKeyShadow", 6 }, { "uGiCascade0", 11 } });
+                              { "uKeyShadow", 6 }, { "uFroxelHistory", 7 },
+                              { "uGiCascade0", 11 } });
         shaders.loadCompute(kFroxelIntegrateShader, { { "FrameUbo", 0 } });
         shaders.load(kFroxelApplyShader, { { "FrameUbo", 0 } },
                      { { "uSceneDepth", 0 }, { "uFroxelIntegrated", 4 } },
@@ -79,15 +88,28 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
                   .filter = rhi::FilterMode::Linear },
                 nullptr);
         };
-        froxelScatter = { device, volume() };
+        froxelScatter[0] = { device, volume() };
+        froxelScatter[1] = { device, volume() };
         froxelIntegrated = { device, volume() };
-        froxelInjectGroup = { device, device.createBindGroup(
-            { .entries = { { .binding = 12,
-                             .texture = froxelScatter.get(),
-                             .storageImage = true },
-                           { .binding = 13,
-                             .texture = froxelIntegrated.get(),
-                             .storageImage = true } } }) };
+        froxelTemporalUbo = { device, device.createBuffer(
+            { .usage = rhi::BufferUsage::Uniform,
+              .size = sizeof(FroxelTemporalUniforms),
+              .dynamic = true },
+            nullptr) };
+        for (u32 side = 0; side < 2; ++side) {
+            froxelInjectGroup[side] = { device, device.createBindGroup(
+                { .entries = { { .binding = 12,
+                                 .texture = froxelScatter[side].get(),
+                                 .storageImage = true },
+                               { .binding = 13,
+                                 .texture = froxelIntegrated.get(),
+                                 .storageImage = true },
+                               { .binding = 7,
+                                 .texture = froxelScatter[1 - side].get(),
+                                 .sampler = froxelSampler.get() },
+                               { .binding = 9,
+                                 .buffer = froxelTemporalUbo } } }) };
+        }
         froxelApplyGroup = { device, device.createBindGroup(
             { .entries = { { .binding = 4,
                              .texture = froxelIntegrated.get(),
@@ -123,7 +145,7 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
     rebuild(upPipeline, kUpShader, rhi::BlendMode::Additive);
     rebuild(godRayPipeline, kGodRaysShader, rhi::BlendMode::Opaque);
     rebuild(volumetricPipeline, kVolumetricShader, rhi::BlendMode::Opaque);
-    if (froxelScatter.get().id != 0) {
+    if (froxelScatter[0].get().id != 0) {
         froxelInjectPipeline = { device, device.createComputePipeline(
             { shaders.get(kFroxelInjectShader) }) };
         froxelIntegratePipeline = { device, device.createComputePipeline(
@@ -380,11 +402,13 @@ void PostFx::renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
     cmd.endRenderPass();
 }
 
-void PostFx::render(rhi::CommandBuffer& cmd,
+void PostFx::render(rhi::Device& device, rhi::CommandBuffer& cmd,
+                    const FrameUniforms& frameData,
                     rhi::BindGroupHandle frameBindGroup,
                     rhi::BindGroupHandle shadowBindGroup,
                     rhi::BindGroupHandle giApplyGroup, bool godRays,
-                    rhi::Device* probeDevice, GpuProbe* probe) {
+                    GpuProbe* probe) {
+    rhi::Device* probeDevice = &device;
     if (!ready()) {
         return;
     }
@@ -441,6 +465,30 @@ void PostFx::render(rhi::CommandBuffer& cmd,
         // V4/H4 froxel path: inject + integrate in compute, then a
         // one-fetch resolve into the SAME volumetric target.
         GpuProbe::Scope scope { probe, probeDevice, "volumetric" };
+        // Temporal accumulation: the jitter decorrelates per frame and
+        // the EMA against last frame's reprojected volume averages it
+        // out — without this the froxel-scale noise reads as drifting
+        // smoke puffs. History is invalidated on camera jumps and on
+        // reach changes (interior 48 m <-> exterior 800 m), and expires
+        // whenever the froxel path skips a frame.
+        const Vec3 camera { frameData.cameraPos };
+        const f32 reach = frameData.fogSunInfo.z;
+        f32 alpha = glm::clamp(froxelTemporalBlend, 0.02f, 1.0f);
+        if (!froxelHistoryValid ||
+            std::abs(reach - froxelPrevReach) > 1.0f ||
+            glm::distance(camera, froxelPrevCamera) > 10.0f) {
+            alpha = 1.0f;
+        }
+        const FroxelTemporalUniforms temporal {
+            froxelPrevViewProj,
+            { froxelPrevCamera, glm::max(froxelPrevReach, 2.0f) },
+            { alpha,
+              glm::fract(static_cast<f32>(froxelFrame) * 0.618034f), 0.0f,
+              0.0f }
+        };
+        device.updateBuffer(froxelTemporalUbo, &temporal, sizeof(temporal),
+                            0);
+        ++froxelFrame;
         cmd.setPipeline(froxelInjectPipeline);
         cmd.setBindGroup(0, frameBindGroup);
         if (shadowBindGroup.id != 0) {
@@ -449,14 +497,19 @@ void PostFx::render(rhi::CommandBuffer& cmd,
         if (giApplyGroup.id != 0) {
             cmd.setBindGroup(3, giApplyGroup);
         }
-        cmd.setBindGroup(4, froxelInjectGroup);
+        cmd.setBindGroup(4, froxelInjectGroup[froxelSide]);
         cmd.dispatch((kFroxelX + 7) / 8, (kFroxelY + 7) / 8, kFroxelZ);
         cmd.memoryBarrier();
         cmd.setPipeline(froxelIntegratePipeline);
         cmd.setBindGroup(0, frameBindGroup);
-        cmd.setBindGroup(4, froxelInjectGroup);
+        cmd.setBindGroup(4, froxelInjectGroup[froxelSide]);
         cmd.dispatch((kFroxelX + 7) / 8, (kFroxelY + 7) / 8, 1);
         cmd.memoryBarrier();
+        froxelPrevViewProj = frameData.viewProj;
+        froxelPrevCamera = camera;
+        froxelPrevReach = reach;
+        froxelHistoryValid = frameData.time.z > 0.003f && reach > 0.0f;
+        froxelSide = 1 - froxelSide;
         cmd.beginRenderPass({ .framebuffer = volumetricFb,
                               .loadOp = rhi::LoadOp::DontCare,
                               .depthLoadOp = rhi::LoadOp::DontCare });
@@ -468,6 +521,7 @@ void PostFx::render(rhi::CommandBuffer& cmd,
         cmd.endRenderPass();
     } else {
         GpuProbe::Scope scope { probe, probeDevice, "volumetric" };
+        froxelHistoryValid = false; // stale volumes must not be blended
         // The 2D march fallback: same output semantics, CSM-carved air.
         cmd.beginRenderPass({ .framebuffer = volumetricFb,
                               .loadOp = rhi::LoadOp::DontCare,
