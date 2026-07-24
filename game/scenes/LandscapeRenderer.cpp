@@ -83,6 +83,8 @@ void LandscapeRenderer::applyTuning(
     interiorDaylightWeightUi = tuning.interiorDaylightWeight;
     sunShaftsUi = tuning.windowShafts;
     dustShaftsUi = tuning.dustShafts;
+    postFx.froxelFog = tuning.froxelFog;
+    interiorDustDensityUi = tuning.interiorDustDensity;
     // Vegetation draw budget (clamped — the streamer ring
     // and the Hi-Z candidate cap size the safe range).
     vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 15);
@@ -140,6 +142,13 @@ void LandscapeRenderer::applyTreeTuning(
     c.leafSolidEnd = colonized.leafSolidEnd;
 }
 
+// H3 (docs/VOLUMETRIC.md): 0 below the worldspace's buried threshold,
+// 1 above, 4 m fade band — sun-linked lights and the daylight coupling
+// fade out per POSITION. Threshold -1e9 = the rule is off (always 1).
+static f32 aboveBuried(f32 y, f32 threshold) {
+    return glm::smoothstep(threshold - 2.0f, threshold + 2.0f, y);
+}
+
 void LandscapeRenderer::applyRcTuning(const data::RcTuningForm& rc) {
     render::RcTuning& t = radianceCascades.tuning;
     t.resolution = rc.resolution;
@@ -181,6 +190,8 @@ void LandscapeRenderer::captureTuning(data::LandscapeTuningForm& out) const {
     out.interiorDaylightWeight = interiorDaylightWeightUi;
     out.windowShafts = sunShaftsUi;
     out.dustShafts = dustShaftsUi;
+    out.froxelFog = postFx.froxelFog;
+    out.interiorDustDensity = interiorDustDensityUi;
     out.vegViewRadius = vegetation.viewRadius;
     out.vegHighDetailRadius = vegetation.highDetailRadius;
     out.vegLowDetailRadius = vegetation.lowDetailRadius;
@@ -852,7 +863,8 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
         f32 gate = 1.0f;
         Vec3 color = light.color * light.intensity;
         if (light.sunLinked) {
-            gate = glm::smoothstep(0.05f, 0.20f, -dir.y);
+            gate = glm::smoothstep(0.05f, 0.20f, -dir.y) *
+                   aboveBuried(light.position.y, view.buriedBelowY);
             color = sunColor * light.intensity;
         }
         if (view.interiorMode == false && light.sunLinked) {
@@ -1419,7 +1431,11 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         .atmos = view.atmos,
         .interiorMode = view.interiorMode,
         .interiorAmbient = view.interiorAmbient,
-        .interiorDaylightWeight = interiorDaylightWeightUi,
+        .interiorDaylightWeight =
+            interiorDaylightWeightUi *
+            aboveBuried(view.camera.position.y, view.buriedBelowY),
+        .froxelFog = postFx.froxelFog && postFx.froxelReady(),
+        .interiorDustDensity = interiorDustDensityUi,
         .seaLevel = terrain.params.seaLevel,
         .snowLine = view.snowLine,
         .splatUvScale = view.splatUvScale,
@@ -1507,7 +1523,9 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             Vec3 color = light.color;
             if (light.sunLinked) {
                 color = sunTint;
-                intensity *= sunGate;
+                intensity *= sunGate *
+                             aboveBuried(light.position.y,
+                                         view.buriedBelowY);
             }
             if (light.flicker > 0.0f) {
                 const f32 phase = static_cast<f32>(i) * 1.7f;
@@ -1743,8 +1761,10 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                                    ? Vec3 { uniforms.sunColor }
                                    : light.color;
             const f32 intensity =
-                light.sunLinked ? light.intensity * sunGate
-                                : light.intensity;
+                light.sunLinked
+                    ? light.intensity * sunGate *
+                          aboveBuried(light.position.y, view.buriedBelowY)
+                    : light.intensity;
             rcLights.push_back({ { light.position, light.radius },
                                  { color * intensity, 0.0f } });
         }
@@ -2486,6 +2506,10 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::Checkbox("Window shafts (sun-linked)", &sunShaftsUi);
         ImGui::SameLine();
         ImGui::Checkbox("Dust shafts", &dustShaftsUi);
+        ImGui::Checkbox("Froxel fog (V4/H4 — off = 2D march)",
+                        &postFx.froxelFog);
+        ImGui::SliderFloat("Interior dust", &interiorDustDensityUi, 0.0f,
+                           0.12f, "%.3f");
     }
     if (ImGui::CollapsingHeader("Fog & clouds")) {
         ImGui::SliderFloat("Fog density", &atmos.fogDensity, 0.0f, 0.004f,

@@ -39,6 +39,9 @@ struct FrameComposerInputs {
     // OUTSIDE (sun elevation x the weather's ambientIntensity) — the
     // Helios model. 0 = the old constant; 1 = fully coupled.
     f32 interiorDaylightWeight { 0.6f };
+    // V4/H4: froxel fog active (reach + interior dust routing).
+    bool froxelFog { false };
+    f32 interiorDustDensity { 0.02f };
 
     // Terrain / tuning scalars.
     f32 seaLevel { 0.0f };

@@ -2810,6 +2810,12 @@ StreamingContext LandscapeScene::makeStreamingContext() {
 // snapshot. No render state, no GPU handle, no pass lives here anymore.
 void LandscapeScene::render(engine::FrameContext& frame) {
     const phys::CharacterBody* playerBody = playerController.body();
+    // H3: the active worldspace's buried threshold rides the view.
+    f32 buriedBelowY = -1.0e9f;
+    if (const auto* space = static_cast<const world::WorldspaceForm*>(
+            forms.get(activeWorldspace))) {
+        buriedBelowY = space->buriedBelowY;
+    }
     const RenderView view {
         .camera = flyCamera.camera,
         .atmos = atmos,
@@ -2819,6 +2825,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .snowLine = tuning.snowLine,
         .splatUvScale = tuning.splatUvScale,
         .interiorAmbient = tuning.interiorAmbient,
+        .buriedBelowY = buriedBelowY,
         .grassBend = (mode == SceneMode::Play) && playerBody != nullptr,
         .playerFeet = playerBody ? playerBody->position() : Vec3 { 0.0f },
         .meshCache = meshCache.get(),

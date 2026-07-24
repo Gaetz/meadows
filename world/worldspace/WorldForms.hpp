@@ -21,11 +21,17 @@ struct WorldspaceForm : data::Form {
     bool interior { false };
     // The hard death floor — an actor below it dies outright.
     f32 killZ { -200.0f };
+    // H3 (docs/VOLUMETRIC.md): below this height the space counts as
+    // BURIED — sun-linked lights and the daylight-coupled ambience fade
+    // out per POSITION (a cellar under a windowed house settles itself).
+    // Default: far below everything = the rule is off.
+    f32 buriedBelowY { -1.0e9f };
 
     REFLECT_BEGIN(WorldspaceForm, data::Form)
         REFLECT_FIELD(cellSize)
         REFLECT_FIELD(interior)
         REFLECT_FIELD(killZ)
+        REFLECT_FIELD(buriedBelowY)
     REFLECT_END()
 };
 

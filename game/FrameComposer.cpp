@@ -112,7 +112,12 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
                                   base.ambientColor.w };
         resolved.fogInfo = { 0.0f, 0.02f, 0.0f, 100000.0f };
         resolved.sunScreen = { 0.5f, 0.5f, 0.0f, 0.0f };
-        resolved.time.z = 0.0f; // volumetric shafts off
+        if (!in.froxelFog) {
+            // The 2D march has no business indoors; the froxel volume
+            // DOES (H4 dust — its sun term dies with the zeroed
+            // sunColor, the lamps and the GI carry the air).
+            resolved.time.z = 0.0f;
+        }
     }
     // Grade parameters on free .w slots — AFTER the
     // interior override (which zeroes sunGlowColor), so the grade applies
@@ -133,9 +138,17 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     // length). RESOLVED only: the reflection pass has no volumetric
     // composite and keeps the full analytic fog; night (the march
     // early-outs below the horizon) and interiors stay analytic too.
-    if (!in.interiorMode && in.atmos.volumetric > 0.003f &&
-        in.sky.sunDirection.y > -0.05f) {
-        resolved.fogSunInfo.z = 1400.0f; // march reach (m)
+    if (in.froxelFog && in.atmos.volumetric > 0.003f) {
+        // V4/H4: the froxel volume owns the fog to the CSM range — day,
+        // night and interiors alike (lamps glow in the dust). Interiors
+        // get their uniform dust density through the free lane.
+        resolved.fogSunInfo.z = 800.0f;
+        if (in.interiorMode) {
+            resolved.fogSunInfo.w = in.interiorDustDensity;
+        }
+    } else if (!in.interiorMode && in.atmos.volumetric > 0.003f &&
+               in.sky.sunDirection.y > -0.05f) {
+        resolved.fogSunInfo.z = 1400.0f; // 2D march reach (m)
     }
     // The GI switch rides RESOLVED only (base = the
     // reflection pass stays Classic — no cascade sampler needed there).

@@ -131,18 +131,26 @@ verdi sous canopée, sombre en vallée ombragée, halos de lampes dans la
 brume nocturne. Coût : invisible au F6 (early-out hors fenêtre).
 Validation visuelle dev : à faire (Morning Mist, nuit près des lampes).
 
-### V4 — Froxels + reprojection temporelle (sur mesure F6 uniquement)
+### V4 — Froxels + jitter temporel — ✅ FAIT (2026-07-24, reprojection en réserve)
 
-Le point d'arrivée AAA si le ½-res 2D montre ses limites (bruit, coût des
-pas, lumières locales) : grille 3D (~128×72×64, tranches de profondeur
-exponentielles jusqu'à ~400-500 m), deux passes compute (injection :
-densité × lumières ; puis intégration avant→arrière), apply par pixel =
-un fetch trilinéaire. Jitter + reprojection temporelle pour la stabilité.
-Gains : lumières locales par froxel (les 16 du LightsUbo), densité
-variable par volume (brume de fond de vallée, poussière d'intérieur),
-coût indépendant de la complexité de la scène (~1-2 ms attendues M1).
-Les caps compute/volumes existent (GL 4.6 + Vulkan). À n'engager
-qu'après mesure : le budget vers la vsync 30 fps est étroit.
+Grille frustum 96×54×64 (RGBA16F ×2, ~5 Mo), tranches exponentielles de
+1 à **800 m** (la portée CSM — les rideaux lointains gardent leur
+ombrage par froxel). Trois passes dans PostFx : `froxel_inject.comp`
+(densité = height fog + poussière uniforme `uFogSunInfo.w` ; lumière =
+soleil × phase × visibilité CSM+nuages + `giAir` + **les 16 lumières
+locales par froxel, cônes de spot compris**), `froxel_integrate.comp`
+(intégration analytique par colonne), `froxel_apply.frag` (un fetch
+trilinéaire au depth du pixel, écrit la MÊME cible que le march 2D — le
+composite tonemap est intouché). Jitter IGN + roulement temporel sur la
+profondeur d'échantillon ; la **reprojection temporelle reste en
+réserve** si le scintillement gêne à l'œil.
+
+Le march 2D reste le fallback (caps compute absents) et l'A/B :
+checkbox « Froxel fog » (Sun FX), champ `froxelFog` du tuning. Contrat
+du composer : froxels ON → portée 800 m jour/nuit/intérieurs (les
+lampes brillent dans la brume nocturne — le vœu V3 complété) ;
+l'analytique garde la queue au-delà. **Mesuré : ~0,5 ms au F6 (M1
+Debug), sync validation propre.**
 
 ## 5. Intérieurs — le modèle « Helios », briques H1→H4
 
@@ -194,21 +202,28 @@ côté fenêtre du hall (village.toml, la couleur autorée est écrasée par
 le soleil). Validation visuelle dev : cycle d'heure dans le hall
 (raie + flaque + bounce cohérents), orage dehors.
 
-### H3 — La règle « enterré »
+### H3 — La règle « enterré » — ✅ FAIT (2026-07-24, mécanisme)
 
-Champ `buriedBelowY` sur le worldspace intérieur (défaut : désactivé).
-Au-dessus du seuil : H1/H2 actifs. En dessous : ambiance et lumières
-`sunLinked` reviennent à leurs valeurs statiques (le donjon ignore
-l'heure). Bande de fondu de quelques mètres autour du seuil. Évaluation
-**par position** : chaque lumière/raie selon SON Y, l'ambiance selon le Y
-caméra — un escalier de cave traverse la frontière proprement.
+`WorldspaceForm.buriedBelowY` (défaut −1e9 = règle inactive) : sous ce
+seuil, l'espace est ENTERRÉ. Évaluation par POSITION avec bande de fondu
+de 4 m (`aboveBuried`) : le couplage d'ambiance H1 suit le **Y caméra**,
+chaque lumière `sunLinked` (directe, blob GI, lame) suit **son** Y — un
+escalier de cave traverse la frontière proprement, une cave sous une
+maison à fenêtres se règle toute seule. Non testable avec les bâtiments
+actuels (tous hors-sol) — le premier donjon/sous-sol posera son seuil
+dans son record de worldspace.
 
-### H4 — La poussière volumétrique réelle (= V4 en intérieur)
+### H4 — La poussière volumétrique réelle — ✅ FAIT (2026-07-24)
 
-Quand V4 existe : densité de poussière par volume intérieur, raies de
-fenêtre rendues par les froxels (les lames `lightshaft.frag` deviennent
-un fallback low-spec ou disparaissent), la lumière clé et les locales
-participent à l'air. Ne se planifie qu'après V4.
+= V4 en intérieur : le mode intérieur ne coupe plus le volumétrique
+quand les froxels sont actifs — densité de poussière uniforme
+(`interiorDustDensity`, LandscapeTuningForm, slider « Interior dust »),
+le terme solaire meurt de lui-même (sunColor intérieure nulle), les
+**lampes et les raies de fenêtre sun-linked éclairent la poussière par
+leurs cônes de spot** — les raies deviennent de la vraie lumière
+volumétrique. Les lames `lightshaft.frag` restent en A/B (toggles
+« Window shafts » / « Dust shafts ») : le verdict lames-contre-froxels
+appartient au dev, à juger dans le hall viking au fil d'une journée.
 
 ## 6. Ordre conseillé & mesure
 

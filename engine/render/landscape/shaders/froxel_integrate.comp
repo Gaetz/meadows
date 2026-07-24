@@ -1,0 +1,40 @@
+#version 460 core
+#include "common.glsl"
+
+// Froxel fog, pass 2: one thread per COLUMN — front-to-back analytic
+// integration of the scatter volume. Each slice stores the column's
+// accumulated (inscatter, transmittance) so the apply is one trilinear
+// fetch at the pixel's depth.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 12, rgba16f) uniform readonly image3D uFroxelScatter;
+layout(binding = 13, rgba16f) uniform writeonly image3D uFroxelIntegrated;
+
+float sliceDepth(float s, float slices) {
+    const float kNear = 1.0;
+    float far = max(uFogSunInfo.z, kNear + 1.0);
+    return kNear * pow(far / kNear, s / slices);
+}
+
+void main() {
+    ivec2 column = ivec2(gl_GlobalInvocationID.xy);
+    ivec3 dims = imageSize(uFroxelScatter);
+    if (any(greaterThanEqual(column, dims.xy))) {
+        return;
+    }
+    float transmit = 1.0;
+    vec3 inscatter = vec3(0.0);
+    for (int s = 0; s < dims.z; ++s) {
+        vec4 cell = imageLoad(uFroxelScatter, ivec3(column, s));
+        float segLen = sliceDepth(float(s + 1), float(dims.z)) -
+                       sliceDepth(float(s), float(dims.z));
+        float sigma = cell.a;
+        if (sigma > 1e-6) {
+            float absorb = exp(-sigma * segLen);
+            inscatter += transmit * (cell.rgb / sigma) * (1.0 - absorb);
+            transmit *= absorb;
+        }
+        imageStore(uFroxelIntegrated, ivec3(column, s),
+                   vec4(inscatter, transmit));
+    }
+}

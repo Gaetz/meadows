@@ -15,6 +15,9 @@ constexpr const char* kDownShader = "bloom_down";
 constexpr const char* kUpShader = "bloom_up";
 constexpr const char* kGodRaysShader = "godrays";
 constexpr const char* kVolumetricShader = "volumetric";
+constexpr const char* kFroxelInjectShader = "froxel_inject";
+constexpr const char* kFroxelIntegrateShader = "froxel_integrate";
+constexpr const char* kFroxelApplyShader = "froxel_apply";
 // (No screen-space AO — the sampled hemisphere
 // speckles, the depth mask halos, neither fits the stepped-ramp look.
 // Grounding = terrain light map + contact shadows + baked vertex AO.)
@@ -31,6 +34,7 @@ constexpr const char* kPassShaders[] = {
     kPrefilterShader, kDownShader,     kUpShader,
     kGodRaysShader,   kVolumetricShader, kContactShader,
     kBlurShader,      kLuminanceShader, kAdaptShader,
+    kFroxelApplyShader,
 };
 
 u64 passGenerationSum(ShaderLibrary& shaders) {
@@ -54,6 +58,41 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
                  { { "uSceneDepth", 0 }, { "uShadowMap", 1 },
                    { "uGiCascade0", 11 } },
                  kFullscreenVert);
+    if (/* froxels need compute + volume textures */
+        device.caps().computeShaders && device.caps().volumeTextures) {
+        shaders.loadCompute(kFroxelInjectShader,
+                            { { "FrameUbo", 0 }, { "LightsUbo", 5 } },
+                            { { "uShadowMap", 1 }, { "uCloudMap", 2 },
+                              { "uGiCascade0", 11 } });
+        shaders.loadCompute(kFroxelIntegrateShader, { { "FrameUbo", 0 } });
+        shaders.load(kFroxelApplyShader, { { "FrameUbo", 0 } },
+                     { { "uSceneDepth", 0 }, { "uFroxelIntegrated", 4 } },
+                     kFullscreenVert);
+        froxelSampler = { device, device.createSampler({}) }; // linear clamp
+        const auto volume = [&] {
+            // Storage use is implied for RGBA16F (the RC volume pattern).
+            return device.createTexture(
+                { .width = kFroxelX,
+                  .height = kFroxelY,
+                  .depth = kFroxelZ,
+                  .format = rhi::TextureFormat::RGBA16F,
+                  .filter = rhi::FilterMode::Linear },
+                nullptr);
+        };
+        froxelScatter = { device, volume() };
+        froxelIntegrated = { device, volume() };
+        froxelInjectGroup = { device, device.createBindGroup(
+            { .entries = { { .binding = 12,
+                             .texture = froxelScatter.get(),
+                             .storageImage = true },
+                           { .binding = 13,
+                             .texture = froxelIntegrated.get(),
+                             .storageImage = true } } }) };
+        froxelApplyGroup = { device, device.createBindGroup(
+            { .entries = { { .binding = 4,
+                             .texture = froxelIntegrated.get(),
+                             .sampler = froxelSampler.get() } } }) };
+    }
     shaders.load(kContactShader, { { "FrameUbo", 0 } },
                  { { "uSceneDepth", 0 }, { "uShadowMap", 1 } },
                  kFullscreenVert);
@@ -84,6 +123,14 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
     rebuild(upPipeline, kUpShader, rhi::BlendMode::Additive);
     rebuild(godRayPipeline, kGodRaysShader, rhi::BlendMode::Opaque);
     rebuild(volumetricPipeline, kVolumetricShader, rhi::BlendMode::Opaque);
+    if (froxelScatter.get().id != 0) {
+        froxelInjectPipeline = { device, device.createComputePipeline(
+            { shaders.get(kFroxelInjectShader) }) };
+        froxelIntegratePipeline = { device, device.createComputePipeline(
+            { shaders.get(kFroxelIntegrateShader) }) };
+        rebuild(froxelApplyPipeline, kFroxelApplyShader,
+                rhi::BlendMode::Opaque);
+    }
     rebuild(contactPipeline, kContactShader, rhi::BlendMode::Opaque);
     rebuild(blurPipeline, kBlurShader, rhi::BlendMode::Opaque);
     rebuild(luminancePipeline, kLuminanceShader, rhi::BlendMode::Opaque);
@@ -390,10 +437,38 @@ void PostFx::render(rhi::CommandBuffer& cmd,
         cmd.endRenderPass();
     }
 
-    {
+    if (froxelFog && froxelReady()) {
+        // V4/H4 froxel path: inject + integrate in compute, then a
+        // one-fetch resolve into the SAME volumetric target.
         GpuProbe::Scope scope { probe, probeDevice, "volumetric" };
-        // Volumetric shafts: march the air, carved by clouds and CSM
-        // geometry.
+        cmd.setPipeline(froxelInjectPipeline);
+        cmd.setBindGroup(0, frameBindGroup);
+        if (shadowBindGroup.id != 0) {
+            cmd.setBindGroup(2, shadowBindGroup);
+        }
+        if (giApplyGroup.id != 0) {
+            cmd.setBindGroup(3, giApplyGroup);
+        }
+        cmd.setBindGroup(4, froxelInjectGroup);
+        cmd.dispatch((kFroxelX + 7) / 8, (kFroxelY + 7) / 8, kFroxelZ);
+        cmd.memoryBarrier();
+        cmd.setPipeline(froxelIntegratePipeline);
+        cmd.setBindGroup(0, frameBindGroup);
+        cmd.setBindGroup(4, froxelInjectGroup);
+        cmd.dispatch((kFroxelX + 7) / 8, (kFroxelY + 7) / 8, 1);
+        cmd.memoryBarrier();
+        cmd.beginRenderPass({ .framebuffer = volumetricFb,
+                              .loadOp = rhi::LoadOp::DontCare,
+                              .depthLoadOp = rhi::LoadOp::DontCare });
+        cmd.setPipeline(froxelApplyPipeline);
+        cmd.setBindGroup(0, frameBindGroup);
+        cmd.setBindGroup(1, volumetricGroup);
+        cmd.setBindGroup(4, froxelApplyGroup);
+        cmd.draw(3);
+        cmd.endRenderPass();
+    } else {
+        GpuProbe::Scope scope { probe, probeDevice, "volumetric" };
+        // The 2D march fallback: same output semantics, CSM-carved air.
         cmd.beginRenderPass({ .framebuffer = volumetricFb,
                               .loadOp = rhi::LoadOp::DontCare,
                               .depthLoadOp = rhi::LoadOp::DontCare });

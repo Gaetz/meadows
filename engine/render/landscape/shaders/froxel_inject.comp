@@ -1,0 +1,116 @@
+#version 460 core
+#include "common.glsl"
+#include "sky.glsl"
+
+// Froxel fog, pass 1 (docs/VOLUMETRIC.md V4/H4): one thread per frustum
+// voxel — world position from the camera ray and the exponential slice
+// depth, density from the height fog (+ the uniform interior dust,
+// uFogSunInfo.w), lighting = sun x phase x visibility (CSM + clouds)
+// + the GI field's ambient (giAir) + the 16 LOCAL LIGHTS (spot cones
+// included: window shafts become real volumetric dust indoors). Writes
+// (source x density, density) for the integration pass.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
+#include "clouds.glsl"
+#include "gi.glsl"
+
+layout(std140, binding = 5) uniform LightsUbo {
+    vec4 uLightCount;
+    vec4 uLightPositionRadius[16];
+    vec4 uLightColorIntensity[16];
+    vec4 uLightDirectionAngle[16]; // xyz dir, w cos(half angle); -2 = point
+};
+
+layout(binding = 12, rgba16f) uniform writeonly image3D uFroxelScatter;
+
+// Slice s in [0, depth) -> view distance, exponential (dense near).
+float sliceDepth(float s, float slices) {
+    const float kNear = 1.0;
+    float far = max(uFogSunInfo.z, kNear + 1.0);
+    return kNear * pow(far / kNear, s / slices);
+}
+
+float froxelShadow(vec3 p) {
+    if (uShadowInfo.w <= 0.0) {
+        return 1.0;
+    }
+    float d = distance(p, uCameraPos.xyz);
+    if (d >= uCascadeSplits.z) {
+        return 1.0;
+    }
+    int cascade = d < uCascadeSplits.x ? 0 : d < uCascadeSplits.y ? 1 : 2;
+    vec4 lightClip = uSunViewProj[cascade] * vec4(p, 1.0);
+    vec3 proj = lightClip.xyz / lightClip.w;
+    proj.xy = proj.xy * 0.5 + 0.5;
+    if (proj.z >= 1.0 || any(lessThan(proj.xy, vec2(0.0))) ||
+        any(greaterThan(proj.xy, vec2(1.0)))) {
+        return 1.0;
+    }
+    return texture(uShadowMap, vec4(proj.xy, float(cascade), proj.z));
+}
+
+void main() {
+    ivec3 cell = ivec3(gl_GlobalInvocationID);
+    ivec3 dims = imageSize(uFroxelScatter);
+    if (any(greaterThanEqual(cell, dims))) {
+        return;
+    }
+    // The froxel's camera ray, through the cell center.
+    vec2 uv = (vec2(cell.xy) + 0.5) / vec2(dims.xy);
+    vec4 nearW = uInvViewProj * vec4(uv * 2.0 - 1.0, 0.1, 1.0);
+    vec4 farW = uInvViewProj * vec4(uv * 2.0 - 1.0, 0.9, 1.0);
+    vec3 dir = normalize(farW.xyz / farW.w - nearW.xyz / nearW.w);
+
+    // Depth jitter: IGN over the cell + a temporal roll — the slice
+    // boundaries dissolve instead of banding.
+    float jitter = fract(52.9829189 * fract(0.06711056 * float(cell.x) +
+                                            0.00583715 * float(cell.y)) +
+                         uTime.x * 0.618034);
+    float d = sliceDepth(float(cell.z) + jitter, float(dims.z));
+    vec3 p = uCameraPos.xyz + dir * d;
+
+    // Density: the height fog past its start distance + the uniform dust
+    // (interiors — the composer routes it through uFogSunInfo.w).
+    float lowBoost = exp(-max(p.y - uTerrainInfo.x, 0.0) * uFogInfo.y);
+    float heightFog = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z) *
+                      smoothstep(uFogInfo.w * 0.8, uFogInfo.w, d);
+    float density = heightFog + uFogSunInfo.w;
+    if (density <= 1e-6) {
+        imageStore(uFroxelScatter, cell, vec4(0.0));
+        return;
+    }
+
+    // Sun: phase lobe (V1 knobs, isotropic floor for side-on curtains)
+    // x per-froxel visibility. Ambient: the GI field inside its volume,
+    // the sky gradient beyond, dimmed in shadowed air.
+    float vis = cloudShadowFactor(p) * froxelShadow(p);
+    float mu = dot(dir, uSunDirection.xyz);
+    float lobe = pow(clamp(mu * 0.5 + 0.5, 0.0, 1.0), uFogSunInfo.y);
+    float phase = 0.35 + 0.65 * lobe;
+    vec3 haze = giAir(p, skyGradient(dir));
+    vec3 source = haze * mix(0.45, 1.0, vis) +
+                  uSunColor.rgb * (phase * uFogSunInfo.x * uTime.z * vis);
+
+    // Local lights: windowed quadratic falloff + spot cone. Isotropic
+    // phase — a lamp glows in the dust all around itself.
+    int count = int(uLightCount.x + 0.5);
+    for (int i = 0; i < count; ++i) {
+        vec3 toLight = uLightPositionRadius[i].xyz - p;
+        float dist = length(toLight);
+        float radius = uLightPositionRadius[i].w;
+        if (dist >= radius) {
+            continue;
+        }
+        float t = 1.0 - dist / radius;
+        float atten = t * t / (1.0 + dist * dist * 0.35);
+        vec4 spot = uLightDirectionAngle[i];
+        if (spot.w > -1.5) {
+            atten *= smoothstep(spot.w, spot.w + 0.08,
+                                dot(-normalize(toLight), spot.xyz));
+        }
+        source += uLightColorIntensity[i].rgb * (atten * 0.55);
+    }
+
+    imageStore(uFroxelScatter, cell, vec4(source * density, density));
+}

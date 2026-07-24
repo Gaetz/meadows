@@ -77,6 +77,8 @@ stylizedShadowFloor = 0.0         # raise to keep shadow pools readable
 shadowResolution = 2048           # CSM texels per cascade (1024/2048/4096)
 windowShafts = true               # sun-linked window blades (H4 A/B)
 dustShafts = true                 # artistic dust blades
+froxelFog = true                  # V4/H4 froxel volume (off = 2D march)
+interiorDustDensity = 0.02        # uniform dust indoors (H4)
 
 # Radiance-cascades GI tuning (docs/RADIANCE-CASCADES.md): the render
 # panel's Global illumination section, moddable like everything else.

@@ -87,6 +87,10 @@ public:
     }
 
     bool ready() const { return bloomTex[0].id() != 0; }
+    // The froxel path A/B (falls back to the 2D march when off or when
+    // compute/volume caps are missing).
+    bool froxelFog { true };
+    bool froxelReady() const { return froxelInjectPipeline.id() != 0; }
 
 private:
     void destroyTargets(rhi::Device& device);
@@ -109,6 +113,20 @@ private:
     rhi::UniqueTexture volumetricTex;
     rhi::UniqueFramebuffer volumetricFb;
     rhi::UniqueBindGroup volumetricGroup;
+
+    // Froxel fog (docs/VOLUMETRIC.md V4/H4): fixed-size frustum volumes,
+    // inject + integrate in compute, resolved into volumetricTex by a
+    // fullscreen fetch — the tonemap composite is untouched. The 2D march
+    // stays as the fallback (no compute caps) and the A/B.
+    static constexpr u32 kFroxelX = 96, kFroxelY = 54, kFroxelZ = 64;
+    rhi::UniqueTexture froxelScatter;
+    rhi::UniqueTexture froxelIntegrated;
+    rhi::UniqueBindGroup froxelInjectGroup;   // images 12 + 13
+    rhi::UniqueBindGroup froxelApplyGroup;    // integrated sampler at 4
+    rhi::UniquePipeline froxelInjectPipeline;
+    rhi::UniquePipeline froxelIntegratePipeline;
+    rhi::UniquePipeline froxelApplyPipeline;
+    rhi::UniqueSampler froxelSampler;
 
     // Contact shadows + the 3x3 blur that filters their IGN
     // jitter — the tonemap taps the blurred target (contactTexture()).
