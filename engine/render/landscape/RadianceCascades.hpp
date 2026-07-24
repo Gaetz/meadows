@@ -72,6 +72,12 @@ struct RcTuning {
     f32 emitterBoost { 1.0f };  // radiance of the light-source blobs in
                                 // the field (0 = surfaces-only, the old
                                 // behavior)
+    // The splat's share once the clustered DIRECT path lights every
+    // surface (docs/LIGHTING.md §5.1): a normal light's splat then only
+    // represents its bounce — full splat would light the ground twice.
+    // rcOnly lights are exempt (the field IS their lighting), and the
+    // factor only applies while clustered is on.
+    f32 lightSplatBounce { 0.35f };
     // G7a — multi-bounce: surfaces also receive LAST frame's merged GI
     // (one extra bounce per frame, converges geometrically; adds ~a
     // frame of light latency per bounce). 0 = single bounce.

@@ -260,6 +260,7 @@ struct RcTuningForm : Form {
     f32 intensity { 0.7f };
     f32 skyFactor { 0.6f };
     f32 emitterBoost { 1.0f };
+    f32 lightSplatBounce { 0.35f };
     f32 bounceFeedback { 0.5f };
     bool rcOnlyLights { false };
     f32 interval0 { 1.0f };
@@ -279,6 +280,7 @@ struct RcTuningForm : Form {
         REFLECT_FIELD(intensity)
         REFLECT_FIELD(skyFactor)
         REFLECT_FIELD(emitterBoost)
+        REFLECT_FIELD(lightSplatBounce)
         REFLECT_FIELD(bounceFeedback)
         REFLECT_FIELD(rcOnlyLights)
         REFLECT_FIELD(interval0)

@@ -8,6 +8,7 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
 #include "clouds.glsl"
 #include "stylized.glsl"
+#include "locallights.glsl"
 #include "terrainlight.glsl"
 #include "gi.glsl"
 
@@ -64,5 +65,11 @@ void main() {
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.
     vec3 lit = albedo * (giAmbient(vWorldPos, n, uAmbientColor.rgb * tl.y) +
                          uSunColor.rgb * (diffuse * shadow * tl.x));
+    // Direct local lights, CLUSTERED PATH ONLY (docs/LIGHTING.md §5 B4):
+    // the ground is fullscreen — the per-cluster list is what makes the
+    // cost bearable. Off = the historical sun+GI-only terrain.
+    if (uClusterInfo.x > 0.5) {
+        lit += albedo * localLights(vWorldPos, n);
+    }
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

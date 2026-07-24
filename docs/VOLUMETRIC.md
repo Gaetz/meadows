@@ -109,8 +109,11 @@ visuelle dev aux heures critiques : à faire.
 
 Reliquat noté (dev, 2026-07-23) : le direct des lampes n'atteint ni
 l'herbe ni la végétation (locallights.glsl est sur mesh/skinned
-seulement — l'herbe et les arbres ne voient les lampes que par la GI) —
-à traiter dans une passe « lighting végétation ».
+seulement — l'herbe et les arbres ne voient les lampes que par la GI).
+**SOLDÉ (2026-07-24, chantier CLUSTERED B4 — docs/LIGHTING.md §5)** :
+terrain, herbe et arbres incluent locallights.glsl, gaté au chemin
+clustered ; le splat RC des lumières normales passe en part de rebond
+(« Light splat bounce », rcOnly exempté).
 
 ### V3 — L'ambient RC dans le march — ✅ FAIT (2026-07-23)
 

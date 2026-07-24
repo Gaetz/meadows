@@ -6,6 +6,7 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
 #include "clouds.glsl"
 #include "stylized.glsl"
+#include "locallights.glsl"
 #include "terrainlight.glsl"
 #include "gi.glsl"
 
@@ -72,6 +73,12 @@ void main() {
                     uSunColor.rgb *
                         ((diffuse + scatter) * shadow * tl.x)) +
                uSunColor.rgb * sheen * ao * shadow * tl.x;
+    // Direct local lights on the meadow, CLUSTERED PATH ONLY
+    // (docs/LIGHTING.md §5 B4) — the blade's blended normal feeds the
+    // shared shading; root AO keeps the carpet's depth under torchlight.
+    if (uClusterInfo.x > 0.5) {
+        lit += albedo * ao * localLights(vWorldPos, n);
+    }
 
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

@@ -7,6 +7,7 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "shadow.glsl"
 #include "clouds.glsl"
 #include "stylized.glsl"
+#include "locallights.glsl"
 
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in vec3 vColor;
@@ -53,6 +54,12 @@ void main() {
     // Stepped rim against the sky — canopies pop off the
     // background (moved here from the removed leaf-card pass).
     lit += albedo * stylizedRim(n, vWorldPos) * uSunColor.rgb * shadow;
+    // Direct local lights, CLUSTERED PATH ONLY (docs/LIGHTING.md §5 B4):
+    // trunks and canopies catch the torch below them. The reflection
+    // pass leaves the flag off and skips this for free.
+    if (uClusterInfo.x > 0.5) {
+        lit += albedo * localLights(vWorldPos, n);
+    }
 
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
 }

@@ -165,6 +165,7 @@ void LandscapeRenderer::applyRcTuning(const data::RcTuningForm& rc) {
     t.intensity = rc.intensity;
     t.skyFactor = rc.skyFactor;
     t.emitterBoost = rc.emitterBoost;
+    t.lightSplatBounce = rc.lightSplatBounce;
     t.bounceFeedback = rc.bounceFeedback;
     t.rcOnlyLights = rc.rcOnlyLights;
     t.interval0 = rc.interval0;
@@ -214,6 +215,7 @@ void LandscapeRenderer::captureRcTuning(data::RcTuningForm& out) const {
     out.intensity = t.intensity;
     out.skyFactor = t.skyFactor;
     out.emitterBoost = t.emitterBoost;
+    out.lightSplatBounce = t.lightSplatBounce;
     out.bounceFeedback = t.bounceFeedback;
     out.rcOnlyLights = t.rcOnlyLights;
     out.interval0 = t.interval0;
@@ -1676,6 +1678,16 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                                           glm::normalize(light.direction))) *
                              aboveBuried(light.position.y, view.buriedBelowY);
             }
+            // §5.1 re-contract: clustered direct reaches EVERY surface,
+            // so a normal light's splat drops to its bounce share —
+            // full splat would light the ground twice. rcOnly lights
+            // keep it all (the field is their lighting). EXTERIOR only:
+            // interiors draw no terrain/grass/trees, so clustered adds
+            // no new direct receiver there — the tuned interior look
+            // keeps its full splat.
+            if (clustered && !light.rcOnly && !view.interiorMode) {
+                intensity *= radianceCascades.tuning.lightSplatBounce;
+            }
             rcLights.push_back({ { light.position, light.radius },
                                  { color * intensity, 0.0f } });
         }
@@ -2326,6 +2338,10 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::SliderFloat("Sky factor", &rc.skyFactor, 0.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Light emitter boost", &rc.emitterBoost, 0.0f,
                            4.0f, "%.2f");
+        // §5.1 re-contract: with clustered direct on every surface, a
+        // normal light's splat carries only its BOUNCE share.
+        ImGui::SliderFloat("Light splat bounce (clustered)",
+                           &rc.lightSplatBounce, 0.0f, 1.0f, "%.2f");
         // G7a/G7b.
         ImGui::SliderFloat("Bounce feedback", &rc.bounceFeedback, 0.0f,
                            0.9f, "%.2f");

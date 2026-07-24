@@ -177,6 +177,17 @@ catégorie. Chaque paramètre naît DANS l'UI, jamais en constante.
   kit leakent.
 - **G8** (si mesuré nécessaire) — accélération spatiale : index spatial
   CPU partagé moteur/gameplay et/ou voxels sparse.
+- **Re-contrat du splat (2026-07-24, chantier CLUSTERED —
+  docs/LIGHTING.md §5.1)** : quand le chemin clustered éclaire TOUTES
+  les surfaces en direct (terrain/herbe/arbres compris), le splat d'une
+  lumière normale ne représente plus que son REBOND — facteur « Light
+  splat bounce » (défaut 0.35, knob Injection, champ `RcTuningForm`),
+  appliqué CPU au remplissage des blobs, `rcOnly` exempté et clustered
+  OFF = splat plein (l'ancien comportement). **Extérieur seulement** :
+  l'intérieur ne dessine aucune des surfaces nouvellement branchées —
+  le facteur y éteignait la lueur tunée des fenêtres sans rien
+  compenser (constat dev 2026-07-24). La RC reçoit les 24 plus proches
+  du budget 64 (fenêtre fine ~32 m).
 
 ## 4. Risques assumés
 
