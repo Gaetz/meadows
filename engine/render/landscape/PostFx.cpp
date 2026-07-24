@@ -63,7 +63,7 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
         shaders.loadCompute(kFroxelInjectShader,
                             { { "FrameUbo", 0 }, { "LightsUbo", 5 } },
                             { { "uShadowMap", 1 }, { "uCloudMap", 2 },
-                              { "uGiCascade0", 11 } });
+                              { "uKeyShadow", 6 }, { "uGiCascade0", 11 } });
         shaders.loadCompute(kFroxelIntegrateShader, { { "FrameUbo", 0 } });
         shaders.load(kFroxelApplyShader, { { "FrameUbo", 0 } },
                      { { "uSceneDepth", 0 }, { "uFroxelIntegrated", 4 } },

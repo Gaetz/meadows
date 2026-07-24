@@ -76,7 +76,11 @@ vec3 localLights(vec3 worldPos, vec3 n) {
         float ndl = dot(n, l);
         float wrapped = clamp((ndl + 0.4) / 1.4, 0.0, 1.0);
         float diff = mix(max(ndl, 0.0), wrapped, interior);
-        float bounce = 0.18 * atten * interior;
+        // The normal-free bounce is the OMNI candles' room hue; on a
+        // spot it paints the cone's cross-section on the walls it
+        // crosses (the window-circle artifact). Beams bounce via GI.
+        float bounce = 0.18 * atten * interior *
+                       (cosHalf > -1.5 ? 0.0 : 1.0);
         sum += uLightColorIntensity[i].rgb * (diff * atten + bounce);
     }
     return sum;

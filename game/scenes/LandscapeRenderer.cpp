@@ -1580,18 +1580,37 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         Vec3 keyDir { 0.0f, 0.0f, 1.0f };
         f32 keyFov = 100.0f;
         f32 keyRadius = 10.0f;
+        const f32 keySunGate =
+            glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
         for (const SceneLight& light : snapshot.shadowLights) {
             const Vec3 d = light.position - camera.position;
             const f32 distSq = glm::dot(d, d);
-            if (distSq < bestDistSq) {
-                bestDistSq = distSq;
-                keyPos = light.position;
-                keyDir = light.direction;
-                keyFov = light.spotAngle > 0.0f
-                             ? glm::min(light.spotAngle * 1.3f, 150.0f)
-                             : 120.0f;
-                keyRadius = light.radius;
+            if (distSq >= bestDistSq) {
+                continue;
             }
+            Vec3 position = light.position;
+            Vec3 direction = light.direction;
+            if (light.sunLinked) {
+                // Same anchor model as the lights UBO: the shadow camera
+                // sits OUTSIDE, films through the window along the live
+                // beam — the aperture clips the pool for real. A dead
+                // beam (night, sun behind the wall) frees the key slot.
+                direction = -shadowSunDirection;
+                const f32 facing = glm::dot(
+                    direction, glm::normalize(light.direction));
+                if (keySunGate * glm::smoothstep(0.15f, 0.40f, facing) <=
+                    0.05f) {
+                    continue;
+                }
+                position += shadowSunDirection * 3.5f;
+            }
+            bestDistSq = distSq;
+            keyPos = position;
+            keyDir = direction;
+            keyFov = light.spotAngle > 0.0f
+                         ? glm::min(light.spotAngle * 1.3f, 150.0f)
+                         : 120.0f;
+            keyRadius = light.radius;
         }
         if (bestDistSq < 1e12f) {
             const Vec3 up = std::abs(keyDir.y) > 0.95f

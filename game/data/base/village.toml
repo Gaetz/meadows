@@ -1844,6 +1844,7 @@ color = [1.0, 0.95, 0.85]
 intensity = 2.0
 radius = 12.0
 spotAngle = 34.0
+castsShadow = true
 shaft = true
 shaftLength = 7.0
 shaftSoftness = 0.5
