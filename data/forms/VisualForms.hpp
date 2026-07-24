@@ -75,6 +75,17 @@ struct LightForm : Form {
     f32 shaftSoftness { 0.5f }; // axial fade exponent blend
     f32 dustDensity { 0.6f };   // scrolling dust/motes visibility
     bool sunLinked { false };
+    // Shadow policy per light (docs/LIGHTING.md §3): "" or "none" =
+    // direct, unshadowed (legacy castsShadow=true still means "key");
+    // "key" = key-shadow candidate; "rcOnly" = routed ENTIRELY through
+    // the GI field (soft free penumbras — candles, mood lights).
+    str shadowMode {};
+    // Window projector (docs/LIGHTING.md §3): > 0 turns the light into
+    // the WINDOW's rectangle extruded along the live sun — the frame
+    // clips beam, pool and dust without any shadow map. The reference's
+    // rotation is the window's into-room normal.
+    f32 windowHalfWidth { 0.0f };
+    f32 windowHalfHeight { 0.0f };
 
     REFLECT_BEGIN(LightForm, Form)
         REFLECT_FIELD(kind)
@@ -89,6 +100,9 @@ struct LightForm : Form {
         REFLECT_FIELD(shaftSoftness)
         REFLECT_FIELD(dustDensity)
         REFLECT_FIELD(sunLinked)
+        REFLECT_FIELD(shadowMode)
+        REFLECT_FIELD(windowHalfWidth)
+        REFLECT_FIELD(windowHalfHeight)
     REFLECT_END()
 };
 

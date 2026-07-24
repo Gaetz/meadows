@@ -44,9 +44,12 @@ struct LightsUniforms {
     Vec4 count { 0.0f };
     Vec4 positionRadius[LandscapeRenderer::kMaxLights] {};
     Vec4 colorIntensity[LandscapeRenderer::kMaxLights] {};
-    // xyz = spot direction, w = cos(half angle); w = -2 marks
-    // a point light.
+    // xyz = spot direction, w = cos(half angle); w = -2 marks a point
+    // light, w = -3 a WINDOW projector (xyz = the window's into-room
+    // normal — docs/LIGHTING.md §3).
     Vec4 directionAngle[LandscapeRenderer::kMaxLights] {};
+    // Window projector half extents (xy); zw free. APPEND-only UBO.
+    Vec4 windowInfo[LandscapeRenderer::kMaxLights] {};
 };
 
 } // namespace
@@ -909,7 +912,9 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
         if (slot->vertices.id() == 0 ||
             glm::dot(slot->cachedDir, dir) < 0.99995f ||
             glm::dot(slot->cachedSide, side) < 0.9994f) {
-            const f32 pushback = light.sunLinked ? 3.5f : 0.0f;
+            const bool window = light.windowHalfWidth > 0.0f;
+            const f32 pushback =
+                (light.sunLinked && !window) ? 3.5f : 0.0f;
             const f32 length =
                 glm::max(light.shaftLength, 0.5f) + pushback;
             const f32 halfAngle = glm::radians(
@@ -919,8 +924,11 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
             // Sun-linked window shafts start at the WINDOW's width (the
             // sun is at infinity: a quasi-parallel slab). Artistic dust
             // shafts keep the cone from their point source. hand-tuned.
-            const f32 w0 = light.sunLinked ? 0.9f : 0.08f;
-            const f32 w1 = light.sunLinked
+            const f32 w0 = window             ? light.windowHalfWidth
+                           : light.sunLinked ? 0.9f
+                                             : 0.08f;
+            const f32 w1 = window ? light.windowHalfWidth * 1.05f
+                           : light.sunLinked
                                ? 1.1f
                                : std::tan(halfAngle) * length;
             const Vec3 apex = light.position - dir * pushback;
@@ -1512,36 +1520,38 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             radianceCascades.tuning.rcOnlyLights &&
             radianceCascades.tuning.technique ==
                 render::GiTechnique::RadianceCascades;
-        lights.count.x = rcOnly ? 0.0f
-                                : static_cast<f32>(nearest.size());
-        // H2 (docs/VOLUMETRIC.md): sun-linked sources (window bounce,
-        // the shafts' light pools) take the SUN's live color — hour and
-        // weather included, SkySystem folds sunIntensity/overcast — and
-        // die below the horizon on the same curve as the blades. Their
-        // direction follows the quantized sun.
+        // H2 (docs/VOLUMETRIC.md): sun-linked sources take the SUN's
+        // live color — hour and weather included — and die below the
+        // horizon. WINDOW projectors (docs/LIGHTING.md) keep the anchor
+        // and carry the window's NORMAL + extents; the facing gate
+        // lives in the shader (beam · normal). Plain sun-linked spots
+        // keep the pushed-cone model. rcOnly lights skip the direct
+        // path entirely — their GI blob carries them.
         const f32 sunGate =
             glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
         const Vec3 sunTint { uniforms.sunColor };
-        for (u32 i = 0; i < nearest.size(); ++i) {
+        u32 slot = 0;
+        for (u32 i = 0; i < nearest.size() && !rcOnly; ++i) {
             const SceneLight& light = nearest[i];
+            if (light.rcOnly) {
+                continue;
+            }
+            const bool window = light.windowHalfWidth > 0.0f;
             f32 intensity = light.intensity;
             Vec3 color = light.color;
             Vec3 position = light.position;
             if (light.sunLinked) {
                 color = sunTint;
-                // The authored ROTATION is the window's into-room normal:
-                // the beam only lives while the sun sits on the window's
-                // outside (a west window is dark in the morning), which
-                // also keeps the pushed origin from orbiting into the
-                // room. hand-tuned pushback: wide enough to swallow the
-                // frame with the opened cone.
-                const f32 facing = glm::dot(-shadowSunDirection,
-                                            glm::normalize(light.direction));
-                intensity *= sunGate *
-                             glm::smoothstep(0.15f, 0.40f, facing) *
-                             aboveBuried(light.position.y,
-                                         view.buriedBelowY);
-                position += shadowSunDirection * 3.5f;
+                intensity *= sunGate * aboveBuried(light.position.y,
+                                                   view.buriedBelowY);
+                if (!window) {
+                    const f32 facing =
+                        glm::dot(-shadowSunDirection,
+                                 glm::normalize(light.direction));
+                    intensity *=
+                        glm::smoothstep(0.15f, 0.40f, facing);
+                    position += shadowSunDirection * 3.5f;
+                }
             }
             if (light.flicker > 0.0f) {
                 const f32 phase = static_cast<f32>(i) * 1.7f;
@@ -1551,16 +1561,23 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                                 0.45f * std::sin(view.timeSeconds * 23.0f +
                                                  phase * 3.1f));
             }
-            lights.positionRadius[i] = { position, light.radius };
-            lights.colorIntensity[i] = { color * intensity, 0.0f };
+            lights.positionRadius[slot] = { position, light.radius };
+            lights.colorIntensity[slot] = { color * intensity, 0.0f };
             const bool spot = light.spotAngle > 0.0f;
-            lights.directionAngle[i] = {
-                glm::normalize(light.sunLinked ? -shadowSunDirection
-                                               : light.direction),
-                spot ? std::cos(glm::radians(light.spotAngle * 0.5f))
-                     : -2.0f
+            lights.directionAngle[slot] = {
+                glm::normalize(window ? light.direction
+                               : light.sunLinked ? -shadowSunDirection
+                                                 : light.direction),
+                window ? -3.0f
+                : spot ? std::cos(glm::radians(light.spotAngle * 0.5f))
+                       : -2.0f
             };
+            lights.windowInfo[slot] = { light.windowHalfWidth,
+                                        light.windowHalfHeight, 0.0f,
+                                        0.0f };
+            ++slot;
         }
+        lights.count.x = static_cast<f32>(slot);
         frame.device.updateBuffer(lightsUbo, &lights, sizeof(lights), 0);
     }
 

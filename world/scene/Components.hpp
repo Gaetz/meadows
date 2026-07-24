@@ -118,6 +118,11 @@ struct LightSource {
     bool sunLinked { false };
     // The interior key-light shadow candidate flag.
     bool castsShadow { false };
+    // docs/LIGHTING.md: rcOnly lights leave the direct path entirely.
+    bool rcOnly { false };
+    // Window projector half extents (> 0 = window light).
+    f32 windowHalfWidth { 0.0f };
+    f32 windowHalfHeight { 0.0f };
 
     REFLECT_BEGIN(LightSource, void)
         REFLECT_FIELD(color)
@@ -131,6 +136,9 @@ struct LightSource {
         REFLECT_FIELD(dustDensity)
         REFLECT_FIELD(sunLinked)
         REFLECT_FIELD(castsShadow)
+        REFLECT_FIELD(rcOnly)
+        REFLECT_FIELD(windowHalfWidth)
+        REFLECT_FIELD(windowHalfHeight)
     REFLECT_END()
 };
 

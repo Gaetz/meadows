@@ -9,13 +9,45 @@ layout(binding = 6) uniform sampler2DShadow uKeyShadow;
 
 layout(std140, binding = 5) uniform LightsUbo {
     vec4 uLightCount;                 // x = active lights
-    vec4 uLightPositionRadius[16];    // xyz world, w radius (m)
-    vec4 uLightColorIntensity[16];    // rgb premultiplied color*intensity
+    vec4 uLightPositionRadius[24];    // xyz world, w radius (m)
+    vec4 uLightColorIntensity[24];    // rgb premultiplied color*intensity
     // APPEND-only UBO (new members at the END, both sides):
     // xyz = spot direction (normalized), w = cos(half angle); w = -2
-    // marks a point light.
-    vec4 uLightDirectionAngle[16];
+    // marks a point light, w = -3 a WINDOW projector (xyz = the
+    // window's into-room normal — docs/LIGHTING.md).
+    vec4 uLightDirectionAngle[24];
+    // Window projector half extents (xy).
+    vec4 uLightWindowInfo[24];
 };
+
+// The window-projector clip (docs/LIGHTING.md §3): the beam is the
+// window's rectangle extruded along the live sun. Projects `p` back
+// along the beam onto the window plane; inside the frame = lit, with a
+// soft 6 cm edge. Also carries the facing gate (sun on the window's
+// outside) and kills points BEHIND the window plane.
+float windowBeam(vec3 p, vec3 anchor, vec3 nrm, vec2 halfExtents) {
+    vec3 beam = -uSunDirection.xyz;
+    float denom = dot(beam, nrm);
+    float gate = smoothstep(0.15, 0.40, denom);
+    if (gate <= 0.001) {
+        return 0.0;
+    }
+    float s = dot(p - anchor, nrm) / max(denom, 0.15);
+    if (s < 0.0) {
+        return 0.0; // outside the wall
+    }
+    vec3 local = (p - beam * s) - anchor;
+    vec3 upw = abs(nrm.y) > 0.95 ? vec3(1.0, 0.0, 0.0)
+                                 : vec3(0.0, 1.0, 0.0);
+    vec3 rightw = normalize(cross(upw, nrm));
+    vec3 realUp = cross(nrm, rightw);
+    float u = dot(local, rightw);
+    float v = dot(local, realUp);
+    const float kEdge = 0.06;
+    return gate *
+           smoothstep(0.0, kEdge, halfExtents.x - abs(u)) *
+           smoothstep(0.0, kEdge, halfExtents.y - abs(v));
+}
 
 vec3 localLights(vec3 worldPos, vec3 n) {
     vec3 sum = vec3(0.0);
@@ -50,8 +82,14 @@ vec3 localLights(vec3 worldPos, vec3 n) {
         }
         vec3 l = toLight / max(dist, 1e-3);
         // Spot cone: w = cos(half angle), soft 10%-of-cone edge.
+        // w = -3: window projector — the frame clips instead of a cone.
         float cosHalf = uLightDirectionAngle[i].w;
-        if (cosHalf > -1.5) {
+        if (cosHalf < -2.5) {
+            atten *= windowBeam(worldPos, uLightPositionRadius[i].xyz,
+                                uLightDirectionAngle[i].xyz,
+                                uLightWindowInfo[i].xy);
+            l = -(-uSunDirection.xyz); // light the surface FROM the sun
+        } else if (cosHalf > -1.5) {
             float cd = dot(-l, uLightDirectionAngle[i].xyz);
             float edge = mix(cosHalf, 1.0, 0.1);
             atten *= smoothstep(cosHalf, edge, cd);

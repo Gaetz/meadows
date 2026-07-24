@@ -41,7 +41,11 @@ void spawnLight(SpawnContext&, ecs::Entity entity, const data::Form& base,
     source.shaftSoftness = light.shaftSoftness;
     source.dustDensity = light.dustDensity;
     source.sunLinked = light.sunLinked;
-    source.castsShadow = light.castsShadow;
+    source.castsShadow =
+        light.castsShadow || light.shadowMode == "key";
+    source.rcOnly = light.shadowMode == "rcOnly";
+    source.windowHalfWidth = light.windowHalfWidth;
+    source.windowHalfHeight = light.windowHalfHeight;
     entity.set<LightSource>(source);
 }
 

@@ -99,7 +99,8 @@ vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
                     source.radius, source.flicker,
                     transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f },
                     source.spotAngle, source.sunLinked,
-                    source.castsShadow } });
+                    source.castsShadow, source.rcOnly,
+                    source.windowHalfWidth, source.windowHalfHeight } });
         });
     std::stable_sort(candidates.begin(), candidates.end(),
                      [](const Candidate& a, const Candidate& b) {
@@ -131,7 +132,8 @@ void extractLights(const ecs::World& world, const Vec3& focus, u32 maxLights,
                 out.shadowLights.push_back(
                     { transform.position, source.color, source.intensity,
                       source.radius, source.flicker, forward,
-                      source.spotAngle, source.sunLinked, true });
+                      source.spotAngle, source.sunLinked, true, false,
+                      source.windowHalfWidth, source.windowHalfHeight });
             }
             if (source.shaft) {
                 out.shafts.push_back({ e.id(), transform.position, forward,
@@ -139,7 +141,8 @@ void extractLights(const ecs::World& world, const Vec3& focus, u32 maxLights,
                                        source.intensity, source.spotAngle,
                                        source.shaftLength,
                                        source.shaftSoftness,
-                                       source.dustDensity });
+                                       source.dustDensity,
+                                       source.windowHalfWidth });
             }
         });
 }

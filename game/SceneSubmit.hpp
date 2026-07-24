@@ -44,6 +44,12 @@ struct SceneLight {
     bool sunLinked { false };
     // Interior key-light shadow candidate.
     bool castsShadow { false };
+    // docs/LIGHTING.md: routed through the GI field only (no direct).
+    bool rcOnly { false };
+    // Window projector half extents (> 0 = window light; `direction`
+    // then carries the window's into-room NORMAL, not a beam).
+    f32 windowHalfWidth { 0.0f };
+    f32 windowHalfHeight { 0.0f };
 };
 
 // A dust-shaft emitter, extracted per frame. `entityId` keys the
@@ -59,6 +65,7 @@ struct ShaftLight {
     f32 shaftLength { 5.0f };
     f32 shaftSoftness { 0.5f };
     f32 dustDensity { 0.6f };
+    f32 windowHalfWidth { 0.0f }; // window blades start frame-wide
 };
 
 // A placed water volume: surface quad + camera submersion test.

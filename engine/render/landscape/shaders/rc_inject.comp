@@ -20,8 +20,8 @@ layout(std140, binding = 2) uniform RcUbo {
                          // w = CLIP resolution (voxels per axis)
     vec4 uRcMisc;        // x = debug clip index, y = sky factor,
                          // z = box count, w = light count
-    vec4 uRcLightPosRadius[16]; // local lights (xyz, w = radius)
-    vec4 uRcLightColor[16];     // rgb premultiplied by intensity
+    vec4 uRcLightPosRadius[24]; // local lights (xyz, w = radius)
+    vec4 uRcLightColor[24];     // rgb premultiplied by intensity
     vec4 uRcMisc3; // x = light emitter boost (the blob's radiance scale),
                    // y = bounce feedback (0 = single bounce)
     vec4 uRcPrevGrid; // xyz = LAST inject's fine-grid origin,

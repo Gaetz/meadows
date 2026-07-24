@@ -155,7 +155,7 @@ public:
 
     // The lights-UBO capacity (the extract collects this
     // many nearest LightSource entities into the snapshot).
-    static constexpr u32 kMaxLights = 16;
+    static constexpr u32 kMaxLights = 24;
 
 private:
     // Offscreen color+depth target at window size, recreated on resize.
