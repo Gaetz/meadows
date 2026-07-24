@@ -2578,6 +2578,56 @@ void LandscapeScene::createConsole() {
             dayBase + static_cast<f64>(hour) * 3600.0;
         return "time set";
     });
+    panel.addCommand("torchbench", [this](const str& args) -> str {
+        // The clustered-chantier bench (docs/LIGHTING.md §5 B0): N torch
+        // lights on a golden-angle spiral around the player (uniform
+        // density, near AND far), clock forced to midnight. Transient
+        // entities — re-run replaces the batch, `torchbench 0` clears.
+        for (ecs::Entity& light : benchLights) {
+            if (light.is_alive()) {
+                light.destruct();
+            }
+        }
+        benchLights.clear();
+        int count = 0;
+        std::istringstream in { args };
+        if (!(in >> count) || count < 0 || count > 512) {
+            return "usage: torchbench <0-512>";
+        }
+        if (count == 0) {
+            return "torch bench cleared";
+        }
+        const Vec3 origin =
+            (mode == SceneMode::Play) && playerController.body()
+                ? playerController.body()->position()
+                : flyCamera.camera.position;
+        constexpr f32 kSpacing = 7.0f;      // ring gap (m): N=64 -> ~56 m
+        constexpr f32 kGolden = 2.399963f;  // golden angle (rad)
+        for (int i = 0; i < count; ++i) {
+            const f32 r = kSpacing * std::sqrt(static_cast<f32>(i) + 0.5f);
+            const f32 a = kGolden * static_cast<f32>(i);
+            Vec3 at = origin + Vec3 { r * std::cos(a), 0.0f, r * std::sin(a) };
+            at.y = render::terrain::height(renderer.terrainParams(), at.x,
+                                           at.z) +
+                   1.6f;
+            ecs::Entity entity = world.create();
+            entity.set<world::Transform>({ at });
+            world::LightSource torch;
+            torch.color = { 1.0f, 0.68f, 0.36f };
+            torch.intensity = 2.8f;
+            torch.radius = 8.0f;
+            torch.flicker = 0.3f;
+            entity.set<world::LightSource>(torch);
+            benchLights.push_back(entity);
+        }
+        const f64 dayBase = std::floor(gameClock.gameDays()) * 86400.0;
+        gameClock.gameSeconds = dayBase; // midnight
+        char out[96];
+        std::snprintf(out, sizeof(out),
+                      "%d torches up to %.0f m, midnight set", count,
+                      kSpacing * std::sqrt(static_cast<f32>(count)));
+        return out;
+    });
 }
 
 // --- Dialogue (opening + runner in QuestDirector) ---------------------

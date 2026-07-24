@@ -432,6 +432,10 @@ private:
     // Stutter hunt: per-block frame breakdown, logged on spikes > 25 ms.
     core::FrameProbe frameProbe;
 
+    // The `torchbench` console command's transient light entities
+    // (docs/LIGHTING.md §5 B0) — cleared on re-run and on exit.
+    vector<ecs::Entity> benchLights;
+
     // First-person Play mode (the game IS first-person — acted
     // decision), extracted to PlayerController: it owns the
     // kinematic capsule + movement/attack state, wired per call through
