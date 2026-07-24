@@ -82,6 +82,9 @@ struct LandscapeTuningForm : Form {
     f32 stylizedShadowFloor { 0.0f };
     // CSM texels per cascade side (1024/2048/4096 — the panel's combo).
     i32 shadowResolution { 2048 };
+    // Clustered forward (docs/LIGHTING.md §5): per-cluster light lists
+    // replace the per-pixel 24-light loop and unlock the full budget.
+    bool clusteredLights { true };
     // V4/H4 froxel fog: the A/B against the 2D march, and the interiors'
     // uniform dust density (window projectors carve their slabs in it).
     bool froxelFog { true };
@@ -137,6 +140,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(stylizedShadowEnd)
         REFLECT_FIELD(stylizedShadowFloor)
         REFLECT_FIELD(shadowResolution)
+        REFLECT_FIELD(clusteredLights)
         REFLECT_FIELD(froxelFog)
         REFLECT_FIELD(froxelTemporalBlend)
         REFLECT_FIELD(froxelDustNoise)

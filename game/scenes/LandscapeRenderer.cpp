@@ -84,6 +84,7 @@ void LandscapeRenderer::applyTuning(
                          tuning.stylizedHalfTone };
     shadowResolutionUi = glm::clamp(tuning.shadowResolution, 1024, 4096);
     interiorDaylightWeightUi = tuning.interiorDaylightWeight;
+    clusteredLightsUi = tuning.clusteredLights;
     postFx.froxelFog = tuning.froxelFog;
     postFx.froxelTemporalBlend = tuning.froxelTemporalBlend;
     postFx.froxelDustNoise = tuning.froxelDustNoise;
@@ -191,6 +192,7 @@ void LandscapeRenderer::captureTuning(data::LandscapeTuningForm& out) const {
     out.stylizedShadowFloor = stylizedShadowUi.z;
     out.shadowResolution = shadowResolutionUi;
     out.interiorDaylightWeight = interiorDaylightWeightUi;
+    out.clusteredLights = clusteredLightsUi;
     out.froxelFog = postFx.froxelFog;
     out.froxelTemporalBlend = postFx.froxelTemporalBlend;
     out.froxelDustNoise = postFx.froxelDustNoise;
@@ -2378,6 +2380,11 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
                                0.8f, "%.2f");
             ImGui::TreePop();
         }
+        // A/B: per-cluster light lists vs the legacy 24-light loop
+        // (docs/LIGHTING.md §5). Needs compute; the checkbox is inert
+        // (and the budget stays 24) when the culling pass is absent.
+        ImGui::Checkbox("Clustered lights (64-light budget)",
+                        &clusteredLightsUi);
         ImGui::Checkbox("Shadows", &shadowsUi);
         ImGui::SameLine();
         ImGui::Checkbox("Cascade debug tint", &cascadeDebugUi);

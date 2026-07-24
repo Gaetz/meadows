@@ -228,7 +228,7 @@ private:
     // Clustered-forward light culling (docs/LIGHTING.md §5); the toggle
     // gates both the dispatch and the shaders' clustered path.
     render::LightClusters lightClusters;
-    bool clusteredLightsUi { false };
+    bool clusteredLightsUi { true };
     render::GpuProbe gpuProbe; // per-pass GPU budget (docs/GPU-PERF.md)
     // Worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;

@@ -5,8 +5,16 @@
 // (terrain/grass) stays sun-only until the clustered path gates its
 // cost (docs/LIGHTING.md §5 B4).
 
+#include "clusters.glsl"
+
 // The ONE shadowed interior key light (matched by position below).
 layout(binding = 6) uniform sampler2DShadow uKeyShadow;
+
+// The per-cluster light lists (cluster_cull.comp; docs/LIGHTING.md §5).
+// Unbound while the clustered path is off — never read then.
+layout(std430, binding = 4) readonly buffer ClusterLights {
+    uint uClusterLights[];
+};
 
 layout(std140, binding = 5) uniform LightsUbo {
     vec4 uLightCount;                 // x = active lights
@@ -50,22 +58,15 @@ float windowBeam(vec3 p, vec3 anchor, vec3 nrm, vec2 halfExtents) {
            smoothstep(0.0, kEdge, halfExtents.y - abs(v));
 }
 
-vec3 localLights(vec3 worldPos, vec3 n) {
-    vec3 sum = vec3(0.0);
-    int count = int(uLightCount.x + 0.5);
-    // Interior pass (uCascadeSplits.w = 1 inside interior cells; the
-    // exterior look stays byte-identical at 0): pure N·L leaves every
-    // surface facing away from a candle pitch flat — dead rooms. Indoors
-    // the diffuse wraps (half-Lambert) and each light adds a small
-    // normal-free bounce so the room takes its hue, a cheap stand-in for
-    // the first GI bounce.
-    float interior = clamp(uCascadeSplits.w, 0.0, 1.0);
-    for (int i = 0; i < count; ++i) {
+// One light's full contribution — shared by the legacy loop and the
+// clustered path (identical math, only the iteration set differs).
+vec3 shadeLocalLight(int i, vec3 worldPos, vec3 n, float interior) {
+    {
         vec3 toLight = uLightPositionRadius[i].xyz - worldPos;
         float dist = length(toLight);
         float radius = uLightPositionRadius[i].w;
         if (dist >= radius) {
-            continue;
+            return vec3(0.0);
         }
         // Falloff (hot-tunable selector): 1 = WINDOWED INVERSE-SQUARE
         // (UE-style — physical concentration near the source, light dies
@@ -120,7 +121,44 @@ vec3 localLights(vec3 worldPos, vec3 n) {
         // crosses (the window-circle artifact). Beams bounce via GI.
         float bounce = 0.18 * atten * interior *
                        (cosHalf > -1.5 ? 0.0 : 1.0);
-        sum += uLightColorIntensity[i].rgb * (diff * atten + bounce);
+        return uLightColorIntensity[i].rgb * (diff * atten + bounce);
+    }
+}
+
+vec3 localLights(vec3 worldPos, vec3 n) {
+    vec3 sum = vec3(0.0);
+    // Interior pass (uCascadeSplits.w = 1 inside interior cells; the
+    // exterior look stays byte-identical at 0): pure N·L leaves every
+    // surface facing away from a candle pitch flat — dead rooms. Indoors
+    // the diffuse wraps (half-Lambert) and each light adds a small
+    // normal-free bounce so the room takes its hue, a cheap stand-in for
+    // the first GI bounce.
+    float interior = clamp(uCascadeSplits.w, 0.0, 1.0);
+    if (uClusterInfo.x > 0.5) {
+        // Clustered path (docs/LIGHTING.md §5): only this pixel's cell.
+        // The z slice uses CAMERA DISTANCE — the froxel grid's metric.
+        vec2 uv = gl_FragCoord.xy * uScreenInfo.zw;
+        ivec2 cellXy = clamp(ivec2(uv * vec2(kClusterDims.xy)), ivec2(0),
+                             kClusterDims.xy - 1);
+        float far = max(uClusterInfo.y, kSliceNear + 1.0);
+        float dist = distance(worldPos, uCameraPos.xyz);
+        int cellZ =
+            clamp(int(sliceCoord(dist, float(kClusterDims.z), far)), 0,
+                  kClusterDims.z - 1);
+        int base = clusterIndex(ivec3(cellXy, cellZ)) * kClusterSlots;
+        int listed = int(uClusterLights[base]);
+        for (int s = 0; s < listed; ++s) {
+            sum += shadeLocalLight(int(uClusterLights[base + 1 + s]),
+                                   worldPos, n, interior);
+        }
+    } else {
+        // Legacy loop, capped at the pre-clustered budget: passes whose
+        // frame data leaves the clustered flag off (reflection) degrade
+        // to the 24 NEAREST (the list is distance-ordered).
+        int count = min(int(uLightCount.x + 0.5), 24);
+        for (int i = 0; i < count; ++i) {
+            sum += shadeLocalLight(i, worldPos, n, interior);
+        }
     }
     return sum;
 }
