@@ -277,9 +277,10 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
     // don't declare the block simply ignore it.
     lightsUbo = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform,
-          // + the appended direction/angle array (UBO rule:
-          // new members go at the END, both CPU and GLSL sides).
-          .size = (1 + 3 * kMaxLights) * sizeof(Vec4),
+          // Sized from the STRUCT, not a hand-counted formula — the
+          // formula missed the appended windowInfo array and the update
+          // silently failed (range > size), freezing every light.
+          .size = sizeof(LightsUniforms),
           .dynamic = true },
         nullptr) };
     frameBindGroup = { device, device.createBindGroup(
