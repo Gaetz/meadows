@@ -906,7 +906,9 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
         if (slot->vertices.id() == 0 ||
             glm::dot(slot->cachedDir, dir) < 0.99995f ||
             glm::dot(slot->cachedSide, side) < 0.9994f) {
-            const f32 length = glm::max(light.shaftLength, 0.5f);
+            const f32 pushback = light.sunLinked ? 2.0f : 0.0f;
+            const f32 length =
+                glm::max(light.shaftLength, 0.5f) + pushback;
             const f32 halfAngle = glm::radians(
                 glm::clamp(light.spotAngle > 0.0f ? light.spotAngle : 30.0f,
                            5.0f, 80.0f) *
@@ -918,7 +920,7 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
             const f32 w1 = light.sunLinked
                                ? 1.1f
                                : std::tan(halfAngle) * length;
-            const Vec3 apex = light.position;
+            const Vec3 apex = light.position - dir * pushback;
             const Vec3 end = apex + dir * length;
             f32 verts[6 * 5]; // 1 blade x 2 tris x 3 verts x 5f
             u32 cursor = 0;
@@ -1521,11 +1523,17 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             const SceneLight& light = nearest[i];
             f32 intensity = light.intensity;
             Vec3 color = light.color;
+            Vec3 position = light.position;
             if (light.sunLinked) {
                 color = sunTint;
                 intensity *= sunGate *
                              aboveBuried(light.position.y,
                                          view.buriedBelowY);
+                // The authored point is the ANCHOR the beam passes
+                // through (the window); the cone STARTS outside, pushed
+                // back along the live beam — it enters the opening
+                // already widened, like the sun would. hand-tuned.
+                position += shadowSunDirection * 2.0f;
             }
             if (light.flicker > 0.0f) {
                 const f32 phase = static_cast<f32>(i) * 1.7f;
@@ -1535,7 +1543,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                                 0.45f * std::sin(view.timeSeconds * 23.0f +
                                                  phase * 3.1f));
             }
-            lights.positionRadius[i] = { light.position, light.radius };
+            lights.positionRadius[i] = { position, light.radius };
             lights.colorIntensity[i] = { color * intensity, 0.0f };
             const bool spot = light.spotAngle > 0.0f;
             lights.directionAngle[i] = {
