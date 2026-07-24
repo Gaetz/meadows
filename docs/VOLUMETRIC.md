@@ -34,7 +34,7 @@ BotW) au lieu de l'aplatir. Tout le chantier tient dans cette inversion.
 | Fog analytique | `sky.glsl` (`applyFog`, `skyGradient`) | extinction + ambient ciel ; PAS d'in-scatter solaire |
 | Volumétrique | `landscape/shaders/volumetric.frag` | vrai raymarch : 20 pas ½-res, jitter IGN, 1 tap CSM + ombre de nuages par pas, phase — mais en **couche de correction** (shafts additifs plafonnés + assombrissement multiplicatif des rideaux), gaté aux ciels nuageux (couverture 0.30-0.40) |
 | God rays | `godrays.frag` | radial screen-space, soleil à l'écran seulement |
-| Lames de poussière | `lightshaft.frag` + `LightForm.shaft/sunLinked` (`data/forms/VisualForms.hpp`) | prismes additifs posables ; `sunLinked` suit DÉJÀ le soleil quantisé (direction, couleur, gate d'élévation, rebuild des lames aux pas du soleil — `LandscapeRenderer::drawLightShafts`), actif en mode intérieur |
+| Lames de poussière | ~~`lightshaft.frag` + `LightForm.shaft`~~ — **SUPPRIMÉ** (verdict 2026-07-24, voir H4) | les prismes additifs posables (modèle Skyrim FXShaft) ont servi de banc H2 puis ont perdu l'A/B contre les froxels ; `sunLinked` survit sur `LightForm` (couleur/gate du soleil vivant) |
 | Mode intérieur | `game/FrameComposer.cpp` | soleil/ciel/fog coupés, `interiorAmbient` **constante** (LandscapeTuningForm) ; lumière clé + ombre perspective |
 | GI | `gi.glsl` (`giAmbient`, `uGiCascade0`) | champ de radiance world-space, 8 slabs directionnels, fondu Classic au bord ; lumières RC-only |
 | Météo + horloge | `WeatherForm` (crossfade ~30 s), soleil quantisé `shadowSunDirection` | l'heure et l'atmosphère existent déjà comme données vivantes |
@@ -219,11 +219,19 @@ dans son record de worldspace.
 quand les froxels sont actifs — densité de poussière uniforme
 (`interiorDustDensity`, LandscapeTuningForm, slider « Interior dust »),
 le terme solaire meurt de lui-même (sunColor intérieure nulle), les
-**lampes et les raies de fenêtre sun-linked éclairent la poussière par
-leurs cônes de spot** — les raies deviennent de la vraie lumière
-volumétrique. Les lames `lightshaft.frag` restent en A/B (toggles
-« Window shafts » / « Dust shafts ») : le verdict lames-contre-froxels
-appartient au dev, à juger dans le hall viking au fil d'une journée.
+**lampes et les projecteurs de fenêtre éclairent la poussière** (dalles
+découpées par le cadre, docs/LIGHTING.md §3) — les raies sont devenues
+de la vraie lumière volumétrique.
+
+**Verdict A/B (dev, 2026-07-24) : les froxels gagnent — le système de
+lames est SUPPRIMÉ** (`lightshaft.frag/.vert`, `drawLightShafts`,
+`ShaftLight`, `LightForm.shaft/shaftLength/shaftSoftness/dustDensity`,
+toggles « Window shafts »/« Dust shafts »). Ce qui portait les lames
+survit ailleurs : `sunLinked` (couleur/gate du soleil vivant, H2) et les
+projecteurs de fenêtre (`windowHalfWidth/Height`) portent la forme du
+faisceau ; la poussière est le travail du milieu (froxels), plus d'une
+géométrie posée. Les god rays screen-space restent (feuillages,
+couchants — goût dev).
 
 ## 6. Ordre conseillé & mesure
 

@@ -84,8 +84,6 @@ void LandscapeRenderer::applyTuning(
                          tuning.stylizedHalfTone };
     shadowResolutionUi = glm::clamp(tuning.shadowResolution, 1024, 4096);
     interiorDaylightWeightUi = tuning.interiorDaylightWeight;
-    sunShaftsUi = tuning.windowShafts;
-    dustShaftsUi = tuning.dustShafts;
     postFx.froxelFog = tuning.froxelFog;
     interiorDustDensityUi = tuning.interiorDustDensity;
     // Vegetation draw budget (clamped — the streamer ring
@@ -191,8 +189,6 @@ void LandscapeRenderer::captureTuning(data::LandscapeTuningForm& out) const {
     out.stylizedShadowFloor = stylizedShadowUi.z;
     out.shadowResolution = shadowResolutionUi;
     out.interiorDaylightWeight = interiorDaylightWeightUi;
-    out.windowShafts = sunShaftsUi;
-    out.dustShafts = dustShaftsUi;
     out.froxelFog = postFx.froxelFog;
     out.interiorDustDensity = interiorDustDensityUi;
     out.vegViewRadius = vegetation.viewRadius;
@@ -314,9 +310,6 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
     shaders->load("shadow_skinned",
                   { { "ShadowUbo", 1 }, { "CasterModelUbo", 4 } });
     buildCasterPipelines(device);
-    // Dust light shafts.
-    shaders->load("lightshaft", { { "FrameUbo", 0 }, { "ShaftUbo", 1 } });
-    buildShaftPipeline(device);
     // Placed water surfaces.
     shaders->load("watervolume",
                   { { "FrameUbo", 0 }, { "WaterVolumeUbo", 1 } });
@@ -451,8 +444,6 @@ void LandscapeRenderer::destroy(rhi::Device& device) {
     meshPipeline.reset();
     meshCasterPipeline.reset();
     skinnedCasterPipeline.reset();
-    lightShafts.clear();
-    shaftPipeline.reset();
     waterQuads.clear();
     waterVolumePipeline.reset();
     rainPipeline.reset();
@@ -816,189 +807,6 @@ void LandscapeRenderer::buildSkinnedPipeline(rhi::Device& device) {
 
 // Bundle the streaming fixups' systems for StreamingController this frame —
 // references into the scene plus the focus / fade / mode scalars. Rebuilt each
-
-void LandscapeRenderer::buildShaftPipeline(rhi::Device& device) {
-    // Additive, depth-tested against the opaques but never writing —
-    // the Skyrim FXShaft blend. Both blade faces show (no cull).
-    shaftPipeline = { device, device.createPipeline(
-        { .shader = shaders->get("lightshaft"),
-          .vertexBuffers =
-              { { .stride = 5 * sizeof(f32),
-                  .attributes = { { .location = 0,
-                                    .format = rhi::VertexFormat::F32x3,
-                                    .offset = 0 },
-                                  { .location = 1,
-                                    .format = rhi::VertexFormat::F32x2,
-                                    .offset = 3 * sizeof(f32) } } } },
-          .blend = rhi::BlendMode::Additive,
-          .depth = { .testEnable = true,
-                     .writeEnable = false,
-                     .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::None }) };
-    shaftShaderGeneration = shaders->generation("lightshaft");
-}
-
-void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
-                                        const RenderSnapshot& snapshot,
-                                        const RenderView& view,
-                                        const Vec3& sunColor) {
-    if (!sunShaftsUi && !dustShaftsUi) {
-        return;
-    }
-    if (shaders->generation("lightshaft") != shaftShaderGeneration) {
-        buildShaftPipeline(frame.device);
-    }
-    for (LightShaft& shaft : lightShafts) {
-        shaft.seen = false;
-    }
-    bool any = false;
-    for (const ShaftLight& light : snapshot.shafts) {
-        if (light.sunLinked ? !sunShaftsUi : !dustShaftsUi) {
-            continue; // the A/B toggles (H4 will retire one of them)
-        }
-        // Direction: authored (reference rotation x +Z) or the
-        // quantized shadow sun (so window shafts follow the day
-        // without re-basing every frame).
-        Vec3 dir = light.sunLinked ? -shadowSunDirection : light.direction;
-        if (glm::dot(dir, dir) < 1e-6f) {
-            continue;
-        }
-        dir = glm::normalize(dir);
-        f32 gate = 1.0f;
-        Vec3 color = light.color * light.intensity;
-        if (light.sunLinked) {
-            gate = glm::smoothstep(0.05f, 0.20f, -dir.y) *
-                   glm::smoothstep(0.15f, 0.40f,
-                                   glm::dot(dir, glm::normalize(
-                                                     light.direction))) *
-                   aboveBuried(light.position.y, view.buriedBelowY);
-            color = sunColor * light.intensity;
-        }
-        if (view.interiorMode == false && light.sunLinked) {
-            // Exterior sun shafts belong to the volumetric pass.
-            continue;
-        }
-        if (gate <= 0.001f) {
-            continue;
-        }
-
-        LightShaft* slot = nullptr;
-        for (LightShaft& shaft : lightShafts) {
-            if (shaft.entityId == light.entityId) {
-                slot = &shaft;
-                break;
-            }
-        }
-        if (!slot) {
-            lightShafts.push_back({ light.entityId });
-            slot = &lightShafts.back();
-        }
-        slot->seen = true;
-
-        // ONE camera-facing blade (axial billboard): the width axis is
-        // perpendicular to both the beam and the view, so the plane always
-        // shows the player its face — no crossed planes intersecting.
-        // Rebuilt when the beam turns (sun steps) OR the camera orbits
-        // enough for the billboard to drift (~2°); the buffer is one quad,
-        // the update is nothing.
-        const Vec3 toCamera = view.camera.position - light.position;
-        Vec3 side = glm::cross(dir, toCamera);
-        const f32 sideLen = glm::length(side);
-        side = sideLen > 1e-4f
-                   ? side / sideLen
-                   : glm::normalize(glm::cross(
-                         dir, std::abs(dir.y) > 0.95f
-                                  ? Vec3 { 1.0f, 0.0f, 0.0f }
-                                  : Vec3 { 0.0f, 1.0f, 0.0f }));
-        if (slot->vertices.id() == 0 ||
-            glm::dot(slot->cachedDir, dir) < 0.99995f ||
-            glm::dot(slot->cachedSide, side) < 0.9994f) {
-            const bool window = light.windowHalfWidth > 0.0f;
-            const f32 pushback =
-                (light.sunLinked && !window) ? 3.5f : 0.0f;
-            const f32 length =
-                glm::max(light.shaftLength, 0.5f) + pushback;
-            const f32 halfAngle = glm::radians(
-                glm::clamp(light.spotAngle > 0.0f ? light.spotAngle : 30.0f,
-                           5.0f, 80.0f) *
-                0.5f);
-            // Sun-linked window shafts start at the WINDOW's width (the
-            // sun is at infinity: a quasi-parallel slab). Artistic dust
-            // shafts keep the cone from their point source. hand-tuned.
-            const f32 w0 = window             ? light.windowHalfWidth
-                           : light.sunLinked ? 0.9f
-                                             : 0.08f;
-            const f32 w1 = window ? light.windowHalfWidth * 1.05f
-                           : light.sunLinked
-                               ? 1.1f
-                               : std::tan(halfAngle) * length;
-            const Vec3 apex = light.position - dir * pushback;
-            const Vec3 end = apex + dir * length;
-            f32 verts[6 * 5]; // 1 blade x 2 tris x 3 verts x 5f
-            u32 cursor = 0;
-            const auto push = [&](const Vec3& p, f32 u, f32 v) {
-                verts[cursor++] = p.x;
-                verts[cursor++] = p.y;
-                verts[cursor++] = p.z;
-                verts[cursor++] = u;
-                verts[cursor++] = v;
-            };
-            const Vec3 a0 = apex - side * w0;
-            const Vec3 a1 = apex + side * w0;
-            const Vec3 b0 = end - side * w1;
-            const Vec3 b1 = end + side * w1;
-            push(a0, -1.0f, 0.0f);
-            push(a1, 1.0f, 0.0f);
-            push(b1, 1.0f, 1.0f);
-            push(a0, -1.0f, 0.0f);
-            push(b1, 1.0f, 1.0f);
-            push(b0, -1.0f, 1.0f);
-            if (slot->vertices.id() == 0) {
-                slot->vertices = { frame.device, frame.device.createBuffer(
-                    { .usage = rhi::BufferUsage::Vertex,
-                      .size = sizeof(verts),
-                      .dynamic = true },
-                    verts) };
-            } else {
-                frame.device.updateBuffer(slot->vertices, verts,
-                                          sizeof(verts), 0);
-            }
-            slot->vertexCount = 6;
-            slot->cachedDir = dir;
-            slot->cachedSide = side;
-        }
-        if (slot->ubo.id() == 0) {
-            slot->ubo = { frame.device, frame.device.createBuffer(
-                { .usage = rhi::BufferUsage::Uniform,
-                  .size = 2 * sizeof(Vec4),
-                  .dynamic = true },
-                nullptr) };
-            slot->group = { frame.device, frame.device.createBindGroup(
-                { .entries = { { .binding = 1, .buffer = slot->ubo } } }) };
-        }
-        const Vec4 uniforms[2] = {
-            { color * gate, light.shaftSoftness },
-            { light.dustDensity, light.shaftLength, 0.0f, 0.0f }
-        };
-        frame.device.updateBuffer(slot->ubo, uniforms, sizeof(uniforms), 0);
-        if (!any) {
-            frame.cmd.setPipeline(shaftPipeline);
-            frame.cmd.setBindGroup(0, frameBindGroup);
-            any = true;
-        }
-        frame.cmd.setBindGroup(1, slot->group);
-        frame.cmd.setVertexBuffer(0, slot->vertices);
-        frame.cmd.draw(slot->vertexCount);
-    }
-    // Sweep shafts whose entity unloaded with its cell.
-    for (auto it = lightShafts.begin(); it != lightShafts.end();) {
-        if (!it->seen) {
-            it = lightShafts.erase(it); // Unique members self-free
-        } else {
-            ++it;
-        }
-    }
-}
 
 f32 LandscapeRenderer::effectiveWaterSurfaceY(const RenderSnapshot& snapshot,
                                               const RenderView& view) const {
@@ -1986,10 +1794,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         if (!view.interiorMode) {
             sky.draw(frame.cmd, frameBindGroup); // background only
         }
-        // Placed water surfaces (alpha), then
-        // additive dust shafts — both after every opaque.
+        // Placed water surfaces (alpha) after every opaque.
         drawWaterVolumes(frame, snapshot);
-        drawLightShafts(frame, snapshot, view, skyState.sunColor);
         // The frame's particles (camera-facing quads; the
         // extract sorted the alpha batch, additive is order-free).
         fx.draw(frame, *shaders, frameBindGroup, snapshot.fxAlpha,
@@ -2560,9 +2366,6 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
                            0.0f, 2.0f, "%.2f");
         ImGui::SliderFloat("Volumetric shafts", &atmos.volumetric, 0.0f,
                            3.0f, "%.2f");
-        ImGui::Checkbox("Window shafts (sun-linked)", &sunShaftsUi);
-        ImGui::SameLine();
-        ImGui::Checkbox("Dust shafts", &dustShaftsUi);
         ImGui::Checkbox("Froxel fog (V4/H4 — off = 2D march)",
                         &postFx.froxelFog);
         ImGui::SliderFloat("Interior dust", &interiorDustDensityUi, 0.0f,

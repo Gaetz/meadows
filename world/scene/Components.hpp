@@ -110,11 +110,6 @@ struct LightSource {
     f32 radius { 8.0f };
     f32 spotAngle { 0.0f }; // 0 = point light
     f32 flicker { 0.0f };
-    // Dust shaft prism + sun-linked direction.
-    bool shaft { false };
-    f32 shaftLength { 5.0f };
-    f32 shaftSoftness { 0.5f };
-    f32 dustDensity { 0.6f };
     bool sunLinked { false };
     // The interior key-light shadow candidate flag.
     bool castsShadow { false };
@@ -130,10 +125,6 @@ struct LightSource {
         REFLECT_FIELD(radius)
         REFLECT_FIELD(spotAngle)
         REFLECT_FIELD(flicker)
-        REFLECT_FIELD(shaft)
-        REFLECT_FIELD(shaftLength)
-        REFLECT_FIELD(shaftSoftness)
-        REFLECT_FIELD(dustDensity)
         REFLECT_FIELD(sunLinked)
         REFLECT_FIELD(castsShadow)
         REFLECT_FIELD(rcOnly)

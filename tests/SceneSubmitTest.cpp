@@ -107,14 +107,14 @@ TEST_CASE("scene submit: collectLights returns the nearest lights first") {
 
 // --- The extract extensions ------------------------------------------------------------
 // render() consumes ONLY these packet sections instead of querying the live
-// World: lights UBO, key-shadow candidates, dust shafts, water volumes and
+// World: lights UBO, key-shadow candidates, water volumes and
 // resolved mesh materials.
 
-TEST_CASE("scene submit: extractLights splits UBO / shadow / shaft roles") {
+TEST_CASE("scene submit: extractLights splits UBO / shadow roles") {
     ecs::World world;
     world::registerSceneComponents(world);
 
-    // A plain light, a shadow caster, and a shaft emitter (also sun-linked).
+    // A plain light, a shadow caster, and a sun-linked window light.
     const auto place = [&](f32 x, auto&& configure) {
         ecs::Entity e = world.create();
         world::Transform transform;
@@ -131,10 +131,8 @@ TEST_CASE("scene submit: extractLights splits UBO / shadow / shaft roles") {
         l.radius = 12.0f;
     });
     place(3.0f, [](world::LightSource& l) {
-        l.shaft = true;
         l.sunLinked = true;
-        l.shaftLength = 7.0f;
-        l.dustDensity = 0.9f;
+        l.windowHalfWidth = 0.5f;
     });
 
     game::RenderSnapshot snapshot;
@@ -145,12 +143,8 @@ TEST_CASE("scene submit: extractLights splits UBO / shadow / shaft roles") {
     CHECK(snapshot.shadowLights[0].position.x == doctest::Approx(2.0f));
     CHECK(snapshot.shadowLights[0].spotAngle == doctest::Approx(60.0f));
     CHECK(snapshot.shadowLights[0].castsShadow);
-    REQUIRE(snapshot.shafts.size() == 1);
-    CHECK(snapshot.shafts[0].position.x == doctest::Approx(3.0f));
-    CHECK(snapshot.shafts[0].sunLinked);
-    CHECK(snapshot.shafts[0].shaftLength == doctest::Approx(7.0f));
-    CHECK(snapshot.shafts[0].dustDensity == doctest::Approx(0.9f));
-    CHECK(snapshot.shafts[0].entityId != 0);
+    CHECK(snapshot.lights[2].sunLinked);
+    CHECK(snapshot.lights[2].windowHalfWidth == doctest::Approx(0.5f));
 }
 
 TEST_CASE("scene submit: extractWaterVolumes carries the submersion inputs") {

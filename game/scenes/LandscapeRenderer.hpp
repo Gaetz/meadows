@@ -165,7 +165,6 @@ private:
     void buildMeshPipeline(rhi::Device& device);
     void buildSkinnedPipeline(rhi::Device& device);
     void buildCasterPipelines(rhi::Device& device);
-    void buildShaftPipeline(rhi::Device& device);
     void drawSceneMeshes(engine::FrameContext& frame,
                          const RenderSnapshot& snapshot,
                          const RenderView& view);
@@ -173,9 +172,6 @@ private:
                      const RenderSnapshot& snapshot);
     void drawWaterVolumes(engine::FrameContext& frame,
                           const RenderSnapshot& snapshot);
-    void drawLightShafts(engine::FrameContext& frame,
-                         const RenderSnapshot& snapshot,
-                         const RenderView& view, const Vec3& sunColor);
     void drawShadowCasters(engine::FrameContext& frame,
                            const RenderSnapshot& snapshot,
                            const RenderView& view, u32 cascade);
@@ -247,11 +243,6 @@ private:
     bool shadowsUi { true };
     bool cascadeDebugUi { false };
     bool reflectionsUi { true };
-    // Blade toggles, split for the H4 A/B: the sun-linked window
-    // shafts (the volumetric's interior stand-in) vs the artistic dust
-    // blades. Persisted via LandscapeTuningForm.
-    bool sunShaftsUi { true };
-    bool dustShaftsUi { true };
     bool contactShadowsUi { true };
     bool keyShadowUi { true };      // interiors
     bool meshShadowCastersUi { true };
@@ -305,7 +296,7 @@ private:
     u64 meshShaderGeneration { 0 };
 
     // Per-NPC draw state, keyed by entity id, mark/swept against
-    // snapshot.skinned (the lightShafts pattern).
+    // snapshot.skinned (mark/sweep by entity id).
     struct SkinnedDraw {
         u64 entityId { 0 };
         bool seen { false };
@@ -318,21 +309,6 @@ private:
     rhi::UniquePipeline skinnedPipeline;
     u64 skinnedShaderGeneration { 0 };
 
-    // Dust light shafts — one small additive
-    // blade-prism per shaft light, rebuilt when its direction moves.
-    struct LightShaft {
-        u64 entityId { 0 };
-        bool seen { false }; // mark/sweep against unloaded cells
-        rhi::UniqueBuffer vertices;
-        rhi::UniqueBuffer ubo;
-        rhi::UniqueBindGroup group;
-        Vec3 cachedDir { 0.0f };
-        Vec3 cachedSide { 0.0f }; // camera-facing width axis (billboard)
-        u32 vertexCount { 0 };
-    };
-    vector<LightShaft> lightShafts;
-    rhi::UniquePipeline shaftPipeline;
-    u64 shaftShaderGeneration { 0 };
     // Placed water volumes — one alpha-blended
     // surface quad per volume.
     struct WaterQuad {

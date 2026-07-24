@@ -52,22 +52,6 @@ struct SceneLight {
     f32 windowHalfHeight { 0.0f };
 };
 
-// A dust-shaft emitter, extracted per frame. `entityId` keys the
-// renderer's per-shaft GPU state (mark/sweep against unloaded cells).
-struct ShaftLight {
-    u64 entityId { 0 };
-    Vec3 position { 0.0f };
-    Vec3 direction { 0.0f, 0.0f, 1.0f }; // authored forward (rotation × +Z)
-    bool sunLinked { false };            // follow the quantized shadow sun
-    Vec3 color { 1.0f };
-    f32 intensity { 1.0f };
-    f32 spotAngle { 0.0f };
-    f32 shaftLength { 5.0f };
-    f32 shaftSoftness { 0.5f };
-    f32 dustDensity { 0.6f };
-    f32 windowHalfWidth { 0.0f }; // window blades start frame-wide
-};
-
 // A placed water volume: surface quad + camera submersion test.
 struct WaterVolumeInstance {
     u64 entityId { 0 };
@@ -115,7 +99,6 @@ struct RenderSnapshot {
     // consumes these instead of querying the live World.
     vector<SceneLight> lights;       // the N nearest, for the lights UBO
     vector<SceneLight> shadowLights; // every castsShadow light (key shadow)
-    vector<ShaftLight> shafts;
     vector<WaterVolumeInstance> waterVolumes;
 
     // Skinned NPCs: the pose is COPIED (self-owning packet, no
@@ -159,9 +142,8 @@ vector<SceneLight> collectLights(const ecs::World& world, const Vec3& focus,
                                  u32 maxLights);
 
 // The landscape extract, headless like extractMeshes:
-// - extractLights fills `lights` (the maxLights nearest, UBO order),
-//   `shadowLights` (every castsShadow light — key-shadow candidates) and
-//   `shafts` in one LightSource pass;
+// - extractLights fills `lights` (the maxLights nearest, UBO order) and
+//   `shadowLights` (every castsShadow light — key-shadow candidates);
 // - extractWaterVolumes fills `waterVolumes`;
 // - resolveMeshMaterials folds each mesh's MaterialForm fields into the
 //   instance (tint/emissive/albedo guid), so the draw needs no Forms.

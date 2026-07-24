@@ -124,25 +124,16 @@ void extractLights(const ecs::World& world, const Vec3& focus, u32 maxLights,
     out.lights = collectLights(world, focus, maxLights);
     world.handle()
         .query<const world::Transform, const world::LightSource>()
-        .each([&](flecs::entity e, const world::Transform& transform,
+        .each([&](const world::Transform& transform,
                   const world::LightSource& source) {
-            const Vec3 forward =
-                transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
             if (source.castsShadow) {
+                const Vec3 forward =
+                    transform.rotation * Vec3 { 0.0f, 0.0f, 1.0f };
                 out.shadowLights.push_back(
                     { transform.position, source.color, source.intensity,
                       source.radius, source.flicker, forward,
                       source.spotAngle, source.sunLinked, true, false,
                       source.windowHalfWidth, source.windowHalfHeight });
-            }
-            if (source.shaft) {
-                out.shafts.push_back({ e.id(), transform.position, forward,
-                                       source.sunLinked, source.color,
-                                       source.intensity, source.spotAngle,
-                                       source.shaftLength,
-                                       source.shaftSoftness,
-                                       source.dustDensity,
-                                       source.windowHalfWidth });
             }
         });
 }

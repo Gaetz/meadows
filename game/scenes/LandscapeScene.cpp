@@ -1042,7 +1042,6 @@ void LandscapeScene::update(f32 dt) {
         snapshot.meshes.clear();
         snapshot.lights.clear();
         snapshot.shadowLights.clear();
-        snapshot.shafts.clear();
         snapshot.waterVolumes.clear();
         extractMeshes(world, snapshot);
         resolveMeshMaterials(forms, snapshot);

@@ -1538,7 +1538,7 @@ position = [46.0, 0.0, 368.0]
 # way). Purpose: judge lit/unlit contrast and the falloff curve — dungeon
 # and cinematic ambience prep. Zones, walking in from the room:
 #   1. warm wall pool (left), 2. DARK gap (ambient only), 3. warm wall
-#   pool (right), 4. the cold overhead shaft at the far end + a dying
+#   pool (right), 4. the cold overhead spot at the far end + a dying
 #   brazier in the corner. No ceiling: the void above reads as darkness.
 
 # z=4 closures either side of the new 4 m doorway.
@@ -1801,14 +1801,14 @@ baseForm = "4d7a9b30-0000-4000-8000-000000000064"
 cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [11.3, 1.9, -6.0]
 
-# Zone 4 — the cinematic shaft: a cold, steady spot falling straight down
-# out of the black void onto the far end. Tight cone, hard pool.
+# Zone 4 — a cold, steady spot falling straight down out of the black
+# void onto the far end. Tight cone, hard pool.
 [[records]]
 form = "4d7a9b30-0000-4000-8000-00000000012a"
 type = "LightForm"
 new = true
 [records.fields]
-editorId = "HallShaft"
+editorId = "HallColdSpot"
 kind = "spot"
 color = [0.85, 0.92, 1.0]
 intensity = 5.0
@@ -1825,16 +1825,15 @@ cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [8.0, 5.5, -10.0]
 rotation = [0.7071068, 0.0, 0.0, 0.7071068]
 
-# Brick 34: the window shaft — sun-linked, so its angle and color follow
-# the time of day (morning = low gold, noon = steep white, night = off).
-# Placed high on the east wall of the hall as if a window sat there; the
-# same light also LIGHTS the pool on the floor (kind = spot).
+# The hall window light — a window PROJECTOR (docs/LIGHTING.md §3):
+# sun-linked color/gating, the frame's rectangle (windowHalfWidth/Height)
+# shapes beam, floor pool and froxel dust along the live sun.
 [[records]]
 form = "4d7a9b30-0000-4000-8000-00000000012e"
 type = "LightForm"
 new = true
 [records.fields]
-editorId = "HallWindowShaft"
+editorId = "HallWindowLight"
 kind = "spot"
 color = [1.0, 0.95, 0.85]
 intensity = 2.0
@@ -3707,7 +3706,7 @@ cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [60.0, 2.2, 332.0]
 
 # H2 window bounce (docs/VOLUMETRIC.md): an ordinary sun-linked light
-# WITHOUT shaft, by the hall's window side — its color and intensity
+# by the hall's window side — its color and intensity
 # follow the live sun (hour + weather), it dies at night. The authored
 # color is overridden by the sun; only intensity/radius matter.
 [[records]]
@@ -5093,7 +5092,7 @@ position = [12, 3.12, 19]
 rotation = [0.0, -0.7071068, 0.0, 0.7071068]
 
 # --- Hall lights: the H1/H2 demo -----------------------------------------
-# Six sun-linked window shafts + six window bounces at the six upper
+# Six sun-linked window projectors + six window bounces at the six upper
 # windows (direction/color follow the LIVE sun — hour and weather), two
 # candles in the blind entrance third so the night keeps its anchors.
 [[records]]
@@ -5223,20 +5222,6 @@ baseForm = "4d7a9b30-0000-4000-8000-000000000064"
 cell = "4d7a9b30-0000-4000-8000-000000000321"
 position = [10.0, 1.2, 18.5]
 
-
-# A dust shaft for the viking hall too — falls from the ridge onto the
-# hall's center, the artistic (non sun-linked) blade the Dust shafts
-# toggle demonstrates.
-[[records]]
-form = "4d7a9b30-0000-4000-8000-0000000003c1"
-type = "ReferenceForm"
-new = true
-[records.fields]
-enabled = false
-baseForm = "4d7a9b30-0000-4000-8000-00000000012a"
-cell = "4d7a9b30-0000-4000-8000-000000000321"
-position = [8.0, 6.2, 12.0]
-rotation = [0.7071068, 0.0, 0.0, 0.7071068]
 
 # Hall interior roof + gables: close the volume (an interior worldspace
 # has no sky — without these, windows aside you stare into the void).

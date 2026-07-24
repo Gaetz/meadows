@@ -82,11 +82,8 @@ struct LandscapeTuningForm : Form {
     f32 stylizedShadowFloor { 0.0f };
     // CSM texels per cascade side (1024/2048/4096 — the panel's combo).
     i32 shadowResolution { 2048 };
-    // Blade toggles (H4 A/B): sun-linked window shafts / artistic dust.
-    bool windowShafts { true };
-    bool dustShafts { true };
     // V4/H4 froxel fog: the A/B against the 2D march, and the interiors'
-    // uniform dust density (window shafts become volumetric in it).
+    // uniform dust density (window projectors carve their slabs in it).
     bool froxelFog { true };
     f32 interiorDustDensity { 0.025f };
     // Vegetation draw budget, moddable + live-tunable (the vegetation
@@ -135,8 +132,6 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(stylizedShadowEnd)
         REFLECT_FIELD(stylizedShadowFloor)
         REFLECT_FIELD(shadowResolution)
-        REFLECT_FIELD(windowShafts)
-        REFLECT_FIELD(dustShafts)
         REFLECT_FIELD(froxelFog)
         REFLECT_FIELD(interiorDustDensity)
         REFLECT_FIELD(vegViewRadius)

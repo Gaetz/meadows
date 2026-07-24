@@ -6,8 +6,8 @@
 // voxel — world position from the camera ray and the exponential slice
 // depth, density from the height fog (+ the uniform interior dust,
 // uFogSunInfo.w), lighting = sun x phase x visibility (CSM + clouds)
-// + the GI field's ambient (giAir) + the 16 LOCAL LIGHTS (spot cones
-// included: window shafts become real volumetric dust indoors). Writes
+// + the GI field's ambient (giAir) + the LOCAL LIGHTS (spot cones and
+// window projectors shape the dust indoors). Writes
 // (source x density, density) for the integration pass.
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
