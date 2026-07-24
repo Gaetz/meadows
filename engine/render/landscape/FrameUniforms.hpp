@@ -102,6 +102,10 @@ struct FrameUniforms {
     // Stylized shadow snap: xy = window edges, z = shadow floor,
     // w = half-tone level of the diffuse ramp.
     Vec4 stylizedShadowInfo { 0.45f, 0.55f, 0.0f, 0.6f };
+    // Clustered forward (docs/LIGHTING.md §5): x = clustered path active
+    // (0 = legacy 24-light loop), y = cluster grid far reach (m) — the
+    // froxel slicing's far, so both grids share their z slices; zw free.
+    Vec4 clusterInfo { 0.0f, 800.0f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -154,7 +158,8 @@ static_assert(offsetof(FrameUniforms, leafLodInfo) == 960);
 static_assert(offsetof(FrameUniforms, fogSunInfo) == 976);
 static_assert(offsetof(FrameUniforms, stylizedDiffuseInfo) == 992);
 static_assert(offsetof(FrameUniforms, stylizedShadowInfo) == 1008);
-static_assert(sizeof(FrameUniforms) == 1024,
+static_assert(offsetof(FrameUniforms, clusterInfo) == 1024);
+static_assert(sizeof(FrameUniforms) == 1040,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

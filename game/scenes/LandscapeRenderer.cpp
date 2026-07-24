@@ -283,9 +283,22 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
           .size = sizeof(LightsUniforms),
           .dynamic = true },
         nullptr) };
-    frameBindGroup = { device, device.createBindGroup(
-        { .entries = { { .binding = 0, .buffer = frameUbo },
-                       { .binding = 5, .buffer = lightsUbo } } }) };
+    // The cluster SSBO (docs/LIGHTING.md §5) rides binding 4 of the frame
+    // group so every pass sees the lists — created BEFORE the group.
+    if (device.caps().computeShaders) {
+        lightClusters.createBuffer(device);
+    }
+    rhi::BindGroupDesc frameGroupDesc {
+        .entries = { { .binding = 0, .buffer = frameUbo },
+                     { .binding = 5, .buffer = lightsUbo } }
+    };
+    if (lightClusters.clusterBuffer().id != 0) {
+        frameGroupDesc.entries.push_back(
+            { .binding = 4,
+              .buffer = lightClusters.clusterBuffer(),
+              .storage = true });
+    }
+    frameBindGroup = { device, device.createBindGroup(frameGroupDesc) };
 
     shaders = std::make_unique<render::ShaderLibrary>(device);
     terrain.create(device, *shaders, jobs);
@@ -432,6 +445,9 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
         device.caps().offscreenTargets) {
         gpuOcclusion.create(device, *shaders);
     }
+    if (lightClusters.clusterBuffer().id != 0) {
+        lightClusters.createPipeline(device, *shaders);
+    }
 }
 
 void LandscapeRenderer::destroy(rhi::Device& device) {
@@ -468,6 +484,7 @@ void LandscapeRenderer::destroy(rhi::Device& device) {
     skinnedShaderGeneration = 0;
     meshSampler.reset();
     whiteTexture.reset();
+    lightClusters.destroy(device);
     gpuOcclusion.destroy(device);
     terrainLightMap.destroy(device);
     radianceCascades.destroy(device);
@@ -1062,6 +1079,9 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     postFx.refreshPipelines(frame.device, *shaders);
     gpuOcclusion.refreshPipelines(frame.device, *shaders);
     radianceCascades.refreshPipelines(frame.device, *shaders);
+    if (lightClusters.clusterBuffer().id != 0) {
+        lightClusters.refreshPipeline(frame.device, *shaders);
+    }
     terrain.setWireframe(wireframeUi, frame.device, *shaders);
     if (regenerateRequested) {
         regenerateRequested = false;
@@ -1312,6 +1332,13 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;
+    // Clustered forward (docs/LIGHTING.md §5): the grid's far reach is
+    // the froxel slicing's (interior room scale / exterior CSM reach) so
+    // both grids share their z slices by construction.
+    const bool clustered = clusteredLightsUi && lightClusters.ready();
+    frameData.clusterInfo = { clustered ? 1.0f : 0.0f,
+                              view.interiorMode ? 48.0f : 800.0f, 0.0f,
+                              0.0f };
     if (frameData.stormInfo.y > 0.003f) {
         frame.device.updateBuffer(rainOcclusionUbo,
                                   &frameData.rainOcclusionViewProj,
@@ -1319,9 +1346,12 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     }
     frame.device.updateBuffer(frameUbo, &frameData, sizeof(frameData), 0);
 
-    // The 16 nearest local lights, flicker applied CPU-side (sin +
-    // per-index phase — cheap and stateless).
+    // The selected local lights, flicker applied CPU-side (sin +
+    // per-index phase — cheap and stateless). Only the clustered path
+    // may consume the full budget; the legacy per-pixel loop stays
+    // capped at kFallbackLights (its cost is per-slot x per-pixel).
     {
+        const u32 budget = clustered ? kMaxLights : kFallbackLights;
         LightsUniforms lights;
         const vector<SceneLight>& nearest = snapshot.lights;
         // G7b — the penumbra experiment: with "lights via RC only", the
@@ -1344,7 +1374,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
         const Vec3 sunTint { uniforms.sunColor };
         u32 slot = 0;
-        for (u32 i = 0; i < nearest.size() && !rcOnly; ++i) {
+        for (u32 i = 0; i < nearest.size() && slot < budget && !rcOnly;
+             ++i) {
             const SceneLight& light = nearest[i];
             if (light.rcOnly) {
                 continue;
@@ -1392,6 +1423,15 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
         lights.count.x = static_cast<f32>(slot);
         frame.device.updateBuffer(lightsUbo, &lights, sizeof(lights), 0);
+    }
+
+    // Cluster the UBO's lights for this frame (the frame bind group —
+    // bound by every consumer — carries the list SSBO at binding 4).
+    if (clustered) {
+        render::GpuProbe::Scope gpu { gpuProbe, frame.device,
+                                      "clusterCull" };
+        frame.cmd.setBindGroup(0, frameBindGroup);
+        lightClusters.run(frame.cmd);
     }
 
     // Bake this frame's cloud field before anything lights with it.

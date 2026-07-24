@@ -1,5 +1,6 @@
 #version 460 core
 #include "common.glsl"
+#include "clusters.glsl"
 
 // Froxel fog, pass 2: one thread per COLUMN — front-to-back analytic
 // integration of the scatter volume. Each slice stores the column's
@@ -30,10 +31,9 @@ vec4 blurredCell(ivec3 c, ivec3 dims) {
     return sum * (1.0 / 10.0);
 }
 
+// Shared slice mapping (clusters.glsl), far = the froxel reach.
 float sliceDepth(float s, float slices) {
-    const float kNear = 1.0;
-    float far = max(uFogSunInfo.z, kNear + 1.0);
-    return kNear * pow(far / kNear, s / slices);
+    return sliceDepth(s, slices, max(uFogSunInfo.z, kSliceNear + 1.0));
 }
 
 void main() {

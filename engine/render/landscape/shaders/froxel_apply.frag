@@ -1,5 +1,6 @@
 #version 460 core
 #include "common.glsl"
+#include "clusters.glsl"
 
 // Froxel fog, pass 3: fullscreen resolve into the SAME half-res target
 // the 2D march writes — the tonemap's `scene x a + rgb` composite is
@@ -22,9 +23,7 @@ void main() {
     vec4 world = uInvViewProj * ndc;
     float d = distance(world.xyz / world.w, uCameraPos.xyz);
 
-    const float kNear = 1.0;
-    float far = max(reach, kNear + 1.0);
-    float slice = clamp(log(max(d, kNear) / kNear) / log(far / kNear),
-                        0.0, 1.0);
+    float far = max(reach, kSliceNear + 1.0);
+    float slice = clamp(sliceCoord(d, 1.0, far), 0.0, 1.0);
     fragColor = texture(uFroxelIntegrated, vec3(vUv, slice));
 }

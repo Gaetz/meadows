@@ -112,7 +112,10 @@ class RadianceCascades {
 public:
     static constexpr u32 kTileSize = 256; // height/albedo bake tile (texels)
     static constexpr u32 kMaxBoxes = 256; // per-frame injected AABBs (G3)
-    static constexpr u32 kMaxLights = 24; // matches the scene's lights UBO
+    // The GI takes the 24 NEAREST of the scene's (larger, importance-
+    // selected) light budget — its fine window is ~32 m, distant lights
+    // never reach it (docs/LIGHTING.md §5.1).
+    static constexpr u32 kMaxLights = 24;
 
     void create(rhi::Device& device, ShaderLibrary& shaders,
                 core::JobSystem& jobs);

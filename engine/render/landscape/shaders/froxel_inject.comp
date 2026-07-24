@@ -1,5 +1,6 @@
 #version 460 core
 #include "common.glsl"
+#include "clusters.glsl"
 #include "sky.glsl"
 
 // Froxel fog, pass 1 (docs/VOLUMETRIC.md V4/H4): one thread per frustum
@@ -17,11 +18,11 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 
 layout(std140, binding = 5) uniform LightsUbo {
     vec4 uLightCount;
-    vec4 uLightPositionRadius[24];
-    vec4 uLightColorIntensity[24];
-    vec4 uLightDirectionAngle[24]; // xyz dir, w cos(half angle);
+    vec4 uLightPositionRadius[64];
+    vec4 uLightColorIntensity[64];
+    vec4 uLightDirectionAngle[64]; // xyz dir, w cos(half angle);
                                    // -2 = point, -3 = window projector
-    vec4 uLightWindowInfo[24];     // window half extents (xy)
+    vec4 uLightWindowInfo[64];     // window half extents (xy)
 };
 
 // Window-projector clip for the DUST (docs/LIGHTING.md §3) — same math
@@ -88,11 +89,10 @@ float valueNoise(vec3 q) {
                mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y), f.z);
 }
 
-// Slice s in [0, depth) -> view distance, exponential (dense near).
+// The slice mapping lives in clusters.glsl (shared with the light
+// clusters — identical z slices by construction).
 float sliceDepth(float s, float slices) {
-    const float kNear = 1.0;
-    float far = max(uFogSunInfo.z, kNear + 1.0);
-    return kNear * pow(far / kNear, s / slices);
+    return sliceDepth(s, slices, max(uFogSunInfo.z, kSliceNear + 1.0));
 }
 
 float froxelShadow(vec3 p) {

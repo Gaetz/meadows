@@ -9,6 +9,7 @@
 #include "engine/render/landscape/ChunkOcclusion.hpp"
 #include "engine/render/landscape/GpuOcclusion.hpp"
 #include "engine/render/landscape/GrassSystem.hpp"
+#include "engine/render/landscape/LightClusters.hpp"
 #include "engine/render/landscape/PostFx.hpp"
 #include "engine/render/landscape/RadianceCascades.hpp"
 #include "engine/render/landscape/ShadowMapper.hpp"
@@ -153,9 +154,12 @@ public:
     vector<u64>& sculptRemeshQueue() { return sculptDirtyChunks; }
     vector<u64>& sculptScatterQueue() { return sculptScatterChunks; }
 
-    // The lights-UBO capacity (the extract collects this
-    // many nearest LightSource entities into the snapshot).
-    static constexpr u32 kMaxLights = 24;
+    // The lights-UBO capacity (the extract collects this many selected
+    // LightSource entities into the snapshot). The full budget is only
+    // consumable through the clustered path (docs/LIGHTING.md §5); with
+    // clustered off, the per-pixel loop clamps to kFallbackLights.
+    static constexpr u32 kMaxLights = 64;
+    static constexpr u32 kFallbackLights = 24;
 
 private:
     // Offscreen color+depth target at window size, recreated on resize.
@@ -221,6 +225,10 @@ private:
     render::WaterSystem water;
     render::FxRenderer fx; // the CPU-particle pass
     render::PostFx postFx;
+    // Clustered-forward light culling (docs/LIGHTING.md §5); the toggle
+    // gates both the dispatch and the shaders' clustered path.
+    render::LightClusters lightClusters;
+    bool clusteredLightsUi { false };
     render::GpuProbe gpuProbe; // per-pass GPU budget (docs/GPU-PERF.md)
     // Worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;

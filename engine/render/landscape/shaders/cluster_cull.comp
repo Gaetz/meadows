@@ -1,0 +1,65 @@
+#version 460 core
+#include "common.glsl"
+#include "clusters.glsl"
+
+// Clustered-forward light culling (docs/LIGHTING.md §5): one thread per
+// cluster cell writes the indices of the UBO lights whose sphere touches
+// the cell's world-space bound. Every light is tested as its bounding
+// SPHERE (spots and window projectors included — conservative: the
+// per-pixel cone/frame math still decides the lit set).
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(std140, binding = 5) uniform LightsUbo {
+    vec4 uLightCount;
+    vec4 uLightPositionRadius[64];
+    vec4 uLightColorIntensity[64];
+    vec4 uLightDirectionAngle[64];
+    vec4 uLightWindowInfo[64];
+};
+
+layout(std430, binding = 4) writeonly buffer ClusterLights {
+    uint uClusterLights[];
+};
+
+void main() {
+    ivec3 cell = ivec3(gl_GlobalInvocationID);
+    if (any(greaterThanEqual(cell, kClusterDims))) {
+        return;
+    }
+    float far = max(uClusterInfo.y, kSliceNear + 1.0);
+    float d0 = sliceDepth(float(cell.z), float(kClusterDims.z), far);
+    float d1 = sliceDepth(float(cell.z) + 1.0, float(kClusterDims.z), far);
+
+    // World AABB of the cell from its 4 corner rays at both slice
+    // depths, plus the far FACE CENTER: the slices are camera-distance
+    // shells, so the far face bulges beyond the corner hull — the center
+    // point recovers that (the near face's bulge is inward, harmless).
+    vec3 lo = vec3(1e30);
+    vec3 hi = vec3(-1e30);
+    for (int i = 0; i < 5; ++i) {
+        vec2 uv = i < 4 ? vec2(cell.xy + ivec2(i & 1, i >> 1)) /
+                              vec2(kClusterDims.xy)
+                        : (vec2(cell.xy) + 0.5) / vec2(kClusterDims.xy);
+        vec4 nearW = uInvViewProj * vec4(uv * 2.0 - 1.0, 0.1, 1.0);
+        vec4 farW = uInvViewProj * vec4(uv * 2.0 - 1.0, 0.9, 1.0);
+        vec3 dir = normalize(farW.xyz / farW.w - nearW.xyz / nearW.w);
+        vec3 p0 = uCameraPos.xyz + dir * d0;
+        vec3 p1 = uCameraPos.xyz + dir * d1;
+        lo = min(lo, min(p0, p1));
+        hi = max(hi, max(p0, p1));
+    }
+
+    int base = clusterIndex(cell) * kClusterSlots;
+    int count = 0;
+    int lights = int(uLightCount.x + 0.5);
+    for (int i = 0; i < lights && count < kClusterSlots - 1; ++i) {
+        vec3 p = uLightPositionRadius[i].xyz;
+        float r = uLightPositionRadius[i].w;
+        vec3 d = p - clamp(p, lo, hi);
+        if (dot(d, d) <= r * r) {
+            uClusterLights[base + 1 + count] = uint(i);
+            ++count;
+        }
+    }
+    uClusterLights[base] = uint(count);
+}

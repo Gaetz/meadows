@@ -73,4 +73,6 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uStylizedDiffuse;
     // Stylized shadow snap: xy = window, z = floor, w = half-tone level.
     vec4 uStylizedShadow;
+    // Clustered forward: x = active, y = cluster grid far reach (m).
+    vec4 uClusterInfo;
 };

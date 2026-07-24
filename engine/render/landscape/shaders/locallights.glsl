@@ -1,23 +1,24 @@
 // Local lights:
-// the 16 nearest LightSource placements, filled per frame by the scene
-// (flicker already applied). Point + spot, NO shadows (the key-light
-// shadow is separate, below). The landscape (terrain/grass) stays sun-only
-// by decision — only meshes and characters include this.
+// the scene's selected LightSource placements (frustum + importance,
+// game/SceneSubmit.cpp), flicker already applied. Point + spot, NO
+// shadows (the key-light shadow is separate, below). The landscape
+// (terrain/grass) stays sun-only until the clustered path gates its
+// cost (docs/LIGHTING.md §5 B4).
 
 // The ONE shadowed interior key light (matched by position below).
 layout(binding = 6) uniform sampler2DShadow uKeyShadow;
 
 layout(std140, binding = 5) uniform LightsUbo {
     vec4 uLightCount;                 // x = active lights
-    vec4 uLightPositionRadius[24];    // xyz world, w radius (m)
-    vec4 uLightColorIntensity[24];    // rgb premultiplied color*intensity
+    vec4 uLightPositionRadius[64];    // xyz world, w radius (m)
+    vec4 uLightColorIntensity[64];    // rgb premultiplied color*intensity
     // APPEND-only UBO (new members at the END, both sides):
     // xyz = spot direction (normalized), w = cos(half angle); w = -2
     // marks a point light, w = -3 a WINDOW projector (xyz = the
     // window's into-room normal — docs/LIGHTING.md).
-    vec4 uLightDirectionAngle[24];
+    vec4 uLightDirectionAngle[64];
     // Window projector half extents (xy).
-    vec4 uLightWindowInfo[24];
+    vec4 uLightWindowInfo[64];
 };
 
 // The window-projector clip (docs/LIGHTING.md §3): the beam is the
