@@ -3815,7 +3815,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000324"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
-position = [26.45, 109.6, 372.0]
+position = [27.0, 109.6, 372.0]
 
 # Interior door leaf, mirrored.
 [[records]]
@@ -3825,7 +3825,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-000000000325"
 cell = "4d7a9b30-0000-4000-8000-000000000321"
-position = [8.45, 0.0, 20.0]
+position = [9.0, 0.0, 20.0]
 
 # --- Hall shell: level 1 (y 109.6) --------------------------------------
 [[records]]
@@ -5241,3 +5241,36 @@ baseForm = "4d7a9b30-0000-4000-8000-00000000012a"
 cell = "4d7a9b30-0000-4000-8000-000000000321"
 position = [8.0, 6.2, 12.0]
 rotation = [0.7071068, 0.0, 0.0, 0.7071068]
+
+# Hall interior roof + gables: close the volume (an interior worldspace
+# has no sky — without these, windows aside you stare into the void).
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003c2"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000015"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [8.0, 6.12, 12.0]
+scale = [2.0, 2.0, 2.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003c3"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000016"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [8.0, 6.24, 4.0]
+scale = [2.0, 2.0, 2.0]
+
+[[records]]
+form = "4d7a9b30-0000-4000-8000-0000000003c4"
+type = "ReferenceForm"
+new = true
+[records.fields]
+baseForm = "4d7a9b30-0000-4000-8000-000000000016"
+cell = "4d7a9b30-0000-4000-8000-000000000321"
+position = [8.0, 6.24, 20.0]
+rotation = [0.0, 1.0, 0.0, 0.0]
+scale = [2.0, 2.0, 2.0]

@@ -41,7 +41,7 @@ struct FrameComposerInputs {
     f32 interiorDaylightWeight { 0.6f };
     // V4/H4: froxel fog active (reach + interior dust routing).
     bool froxelFog { false };
-    f32 interiorDustDensity { 0.02f };
+    f32 interiorDustDensity { 0.06f };
 
     // Terrain / tuning scalars.
     f32 seaLevel { 0.0f };

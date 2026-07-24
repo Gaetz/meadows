@@ -274,7 +274,7 @@ private:
     Vec4 stylizedDiffuseUi { 0.02f, 0.09f, 0.32f, 0.40f };
     Vec4 stylizedShadowUi { 0.45f, 0.55f, 0.0f, 0.6f };
     f32 interiorDaylightWeightUi { 0.6f }; // H1: interior<->outside coupling
-    f32 interiorDustDensityUi { 0.02f };   // H4: uniform dust indoors
+    f32 interiorDustDensityUi { 0.06f };   // H4: uniform dust indoors
     bool saveTuningRequested { false }; // panels' Save button -> the scene
     f32 exposureUi { 1.0f };
     i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 volumetric

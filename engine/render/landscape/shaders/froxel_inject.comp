@@ -103,13 +103,13 @@ void main() {
             continue;
         }
         float t = 1.0 - dist / radius;
-        float atten = t * t / (1.0 + dist * dist * 0.35);
+        float atten = t * t / (1.0 + dist * dist * 0.15);
         vec4 spot = uLightDirectionAngle[i];
         if (spot.w > -1.5) {
             atten *= smoothstep(spot.w, spot.w + 0.08,
                                 dot(-normalize(toLight), spot.xyz));
         }
-        source += uLightColorIntensity[i].rgb * (atten * 0.55);
+        source += uLightColorIntensity[i].rgb * (atten * 1.2);
     }
 
     imageStore(uFroxelScatter, cell, vec4(source * density, density));
