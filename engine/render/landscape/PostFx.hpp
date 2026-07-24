@@ -47,9 +47,11 @@ public:
     // grounding = terrain light map + contact shadows + baked vertex AO.)
     // `giApplyGroup` (nullable) = the RC merged-cascade sampler: the
     // volumetric march's haze samples the GI field inside its volume.
+    // `godRays` false skips that pass entirely (the tonemap multiplies
+    // its texture by the zero intensity anyway).
     void render(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
                 rhi::BindGroupHandle shadowBindGroup,
-                rhi::BindGroupHandle giApplyGroup = {},
+                rhi::BindGroupHandle giApplyGroup = {}, bool godRays = true,
                 rhi::Device* probeDevice = nullptr,
                 GpuProbe* probe = nullptr);
 

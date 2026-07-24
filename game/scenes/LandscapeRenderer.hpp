@@ -245,7 +245,11 @@ private:
     bool shadowsUi { true };
     bool cascadeDebugUi { false };
     bool reflectionsUi { true };
-    bool shaftsUi { true };
+    // Blade toggles, split for the H4 A/B: the sun-linked window
+    // shafts (the volumetric's interior stand-in) vs the artistic dust
+    // blades. Persisted via LandscapeTuningForm.
+    bool sunShaftsUi { true };
+    bool dustShaftsUi { true };
     bool contactShadowsUi { true };
     bool keyShadowUi { true };      // interiors
     bool meshShadowCastersUi { true };

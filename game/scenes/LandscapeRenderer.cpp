@@ -81,6 +81,8 @@ void LandscapeRenderer::applyTuning(
                          tuning.stylizedHalfTone };
     shadowResolutionUi = glm::clamp(tuning.shadowResolution, 1024, 4096);
     interiorDaylightWeightUi = tuning.interiorDaylightWeight;
+    sunShaftsUi = tuning.windowShafts;
+    dustShaftsUi = tuning.dustShafts;
     // Vegetation draw budget (clamped — the streamer ring
     // and the Hi-Z candidate cap size the safe range).
     vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 15);
@@ -177,6 +179,8 @@ void LandscapeRenderer::captureTuning(data::LandscapeTuningForm& out) const {
     out.stylizedShadowFloor = stylizedShadowUi.z;
     out.shadowResolution = shadowResolutionUi;
     out.interiorDaylightWeight = interiorDaylightWeightUi;
+    out.windowShafts = sunShaftsUi;
+    out.dustShafts = dustShaftsUi;
     out.vegViewRadius = vegetation.viewRadius;
     out.vegHighDetailRadius = vegetation.highDetailRadius;
     out.vegLowDetailRadius = vegetation.lowDetailRadius;
@@ -823,7 +827,7 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
                                         const RenderSnapshot& snapshot,
                                         const RenderView& view,
                                         const Vec3& sunColor) {
-    if (!shaftsUi) {
+    if (!sunShaftsUi && !dustShaftsUi) {
         return;
     }
     if (shaders->generation("lightshaft") != shaftShaderGeneration) {
@@ -834,6 +838,9 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
     }
     bool any = false;
     for (const ShaftLight& light : snapshot.shafts) {
+        if (light.sunLinked ? !sunShaftsUi : !dustShaftsUi) {
+            continue; // the A/B toggles (H4 will retire one of them)
+        }
         // Direction: authored (reference rotation x +Z) or the
         // quantized shadow sun (so window shafts follow the day
         // without re-basing every frame).
@@ -1968,7 +1975,8 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
         postFx.render(frame.cmd, frameBindGroup,
                       shadows.receiverBindGroup(),
-                      radianceCascades.applyGroup(), &frame.device,
+                      radianceCascades.applyGroup(),
+                      view.atmos.godRayIntensity > 0.003f, &frame.device,
                       &gpuProbe);
         // Contact shadows (the texture is the toggle — white = off).
         {
@@ -2464,7 +2472,9 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
                            0.0f, 2.0f, "%.2f");
         ImGui::SliderFloat("Volumetric shafts", &atmos.volumetric, 0.0f,
                            3.0f, "%.2f");
-        ImGui::Checkbox("Light shafts (dust)", &shaftsUi);
+        ImGui::Checkbox("Window shafts (sun-linked)", &sunShaftsUi);
+        ImGui::SameLine();
+        ImGui::Checkbox("Dust shafts", &dustShaftsUi);
     }
     if (ImGui::CollapsingHeader("Fog & clouds")) {
         ImGui::SliderFloat("Fog density", &atmos.fogDensity, 0.0f, 0.004f,

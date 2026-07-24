@@ -336,7 +336,7 @@ void PostFx::renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
 void PostFx::render(rhi::CommandBuffer& cmd,
                     rhi::BindGroupHandle frameBindGroup,
                     rhi::BindGroupHandle shadowBindGroup,
-                    rhi::BindGroupHandle giApplyGroup,
+                    rhi::BindGroupHandle giApplyGroup, bool godRays,
                     rhi::Device* probeDevice, GpuProbe* probe) {
     if (!ready()) {
         return;
@@ -375,7 +375,9 @@ void PostFx::render(rhi::CommandBuffer& cmd,
         }
     }
 
-    {
+    // Skipped at intensity zero: the tonemap multiplies the (then stale)
+    // texture by uSunScreen.w = 0, so a real off costs nothing.
+    if (godRays) {
         GpuProbe::Scope scope { probe, probeDevice, "godrays" };
         // God rays from the pre-water scene snapshot.
         cmd.beginRenderPass({ .framebuffer = godRayFb,

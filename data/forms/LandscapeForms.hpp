@@ -82,6 +82,9 @@ struct LandscapeTuningForm : Form {
     f32 stylizedShadowFloor { 0.0f };
     // CSM texels per cascade side (1024/2048/4096 — the panel's combo).
     i32 shadowResolution { 2048 };
+    // Blade toggles (H4 A/B): sun-linked window shafts / artistic dust.
+    bool windowShafts { true };
+    bool dustShafts { true };
     // Vegetation draw budget, moddable + live-tunable (the vegetation
     // pass is a major GPU cost driver). Radii in 64 m chunks.
     i32 vegViewRadius { 12 };       // resident/drawn ring
@@ -128,6 +131,8 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(stylizedShadowEnd)
         REFLECT_FIELD(stylizedShadowFloor)
         REFLECT_FIELD(shadowResolution)
+        REFLECT_FIELD(windowShafts)
+        REFLECT_FIELD(dustShafts)
         REFLECT_FIELD(vegViewRadius)
         REFLECT_FIELD(vegHighDetailRadius)
         REFLECT_FIELD(vegLowDetailRadius)
