@@ -230,6 +230,7 @@ private:
     render::LightClusters lightClusters;
     bool clusteredLightsUi { true };
     render::GpuProbe gpuProbe; // per-pass GPU budget (docs/GPU-PERF.md)
+    u64 perfFrames { 0 }; // the one-shot "gpu budget" log's frame count
     // Worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;
     bool terrainLightUi { true };

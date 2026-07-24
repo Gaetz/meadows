@@ -1077,6 +1077,21 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     // Resolve last frames' timestamps (never blocking) and
     // open this frame's slot — the scopes below feed the budget table.
     gpuProbe.beginFrame(frame.device);
+    // One-shot GPU budget line for headless/scripted sessions (the F6
+    // table without eyes on the HUD): logged once past driver warmup,
+    // with the rolling window full.
+    ++perfFrames;
+    if (perfFrames == 2000 && gpuProbe.active()) {
+        str line;
+        char cell[64];
+        for (const render::GpuProbe::PassRow& row : gpuProbe.rows()) {
+            std::snprintf(cell, sizeof(cell), " | %s %.2f/%.2f", row.name,
+                          row.stats.averageMs, row.stats.maxMs);
+            line += cell;
+        }
+        LOG_INFO("gpu budget (avg/max ms, 120f): frame {:.2f}/{:.2f}{}",
+                 gpuProbe.frameAverageMs(), gpuProbe.frameMaxMs(), line);
+    }
     shaders->pollHotReload(frame.dt);
     terrain.refreshPipeline(frame.device, *shaders);
     grass.refreshPipeline(frame.device, *shaders);

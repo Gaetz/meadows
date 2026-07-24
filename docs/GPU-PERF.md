@@ -258,3 +258,111 @@ Aucun chiffre GPU n'existe ; GPU du dev inconnu (la table rend le budget
 explicite) ; coûts réels cumulonimbus/réflexion/herbe mesurés à P0 avant
 toute décision ; fiabilité des timer queries selon driver (si aberrant,
 le HUD le montrera — max >> moy).
+
+---
+
+## Chantier — Parallélisme GPU (2026-07-24)
+
+> Question dev post-CLUSTERED : « que peut-on paralléliser pour le
+> rendering (mainPass peut-être) ? ». Diagnostic : la frame est
+> GPU-bound (sim ≤ 2 ms ; la mesure ci-dessous montre le CPU bloqué en
+> back-pressure) — paralléliser le CPU ne raccourcit rien. Le gisement
+> est le RECOUVREMENT des passes SUR le GPU : la baseline prouve que la
+> frame est aujourd'hui STRICTEMENT SÉRIELLE (somme des passes ≈ total).
+> Le mainPass lui-même n'est pas un problème de parallélisme (le raster
+> est déjà parallèle) : son coût est du volume de travail — les réponses
+> sont les briques P1-P7 ci-dessus (knobs, imposteurs, refonte herbe).
+
+### PG0 — Baseline Release M1 — ✅ MESURÉE (2026-07-24, partielle)
+
+Outil ajouté : une ligne `gpu budget (avg/max ms, 120f)` loggée UNE fois
+à la frame 2000 (warmup passé, fenêtre pleine) — la table F6 sans les
+yeux sur le HUD, pour les sessions scriptées. Conditions : **Release,
+M1/MoltenVK, spot de spawn, caméra par défaut, ~100 s immobile** — le
+protocole 4-spots complet reste au dev.
+
+| Passe | OFF clustered (ms avg/max) | ON clustered (défaut) |
+|---|---|---|
+| **frame totale** | **34,7 / 44,2** | **39,6 / 67,2** |
+| shadows (CSM) | 7,7 / 15,4 | 8,6 / 20,5 |
+| mainPass | 9,3 / 10,7 | 10,3 / 17,0 |
+| rcInject+rcBuild+rcMerge | 9,9 cumulés | 11,6 cumulés |
+| reflection | 4,3 / 11,0 | 5,0 / 12,6 |
+| clusterCull | — | 0,35 / 0,95 |
+| copyHizWater | 1,1 | 1,2 |
+| postfx cumulé (bloom/volum./contact/…) | ~1,7 | ~1,8 |
+
+Lectures honnêtes : (1) **la somme des passes ≈ le total** → zéro
+recouvrement, tout est sériel ; (2) l'écart ON/OFF est UNIFORME, y
+compris sur des passes que le clustered ne touche pas (shadows, RC,
+reflection) → variance thermique M1 entre runs successifs, pas un
+surcoût clustered (son coût propre mesurable = clusterCull 0,35 ms) ;
+(3) les « frame spike CPU postfx 25-35 ms » qui inondent le log sont la
+**back-pressure GPU** (le CPU attend dans l'enregistrement postfx), pas
+un coût CPU réel ; (4) les max de shadows (15-20 ms) sont les pas de
+soleil quantisé qui re-rendent les 3 cascades d'un coup ; (5) à
+~35-40 ms GPU au spot de spawn, le M1 est LOIN de la barre 16,6 ms —
+les briques P1-P7 restent pertinentes en complément du recouvrement.
+
+### Le graphe de dépendances réel (début de frame)
+
+| Passe | Dépend de | Type |
+|---|---|---|
+| clusterCull | LightsUbo seul | compute |
+| cloudBake 512² | rien | raster |
+| key shadows (atlas ×4) | rien | raster |
+| CSM ×3 | rien | raster |
+| RC inject→build→merge | CSM + cloud map | compute (chaîne interne sérielle) |
+| réflexion planaire | CSM + cloud map | raster |
+| mainPass | tout ce qui précède | raster |
+| froxels (dans postfx) | CSM + key shadows + cascade 0 + listes clusters | compute |
+
+clusterCull, cloudBake, key shadows et CSM sont MUTUELLEMENT
+indépendants ; la chaîne RC (~10-12 ms) et la réflexion (~4-5 ms) ne
+dépendent que de CSM+nuages et sont indépendantes ENTRE ELLES. Le
+recouvrement théorique parfait masquerait ~10 ms ; le réaliste
+(compute RC ↔ raster réflexion/début de mainPass) en masque une partie
+— à mesurer, c'est tout l'objet de PG1.
+
+### Le verrou : `memoryBarrier()` global
+
+`VulkanDevice.cpp` (`VulkanCommandBuffer::memoryBarrier`) émet
+`COMPUTE → ALL_COMMANDS` — délibérément large, c'est le contrat RHI
+actuel. Conséquence : chaque frontière INTERNE de la chaîne RC (5
+barrières), des froxels (2) et du clusterCull fence tout le raster qui
+suit. Le GPU n'a jamais la PERMISSION de chevaucher. Sur Apple Silicon
+le chevauchement compute↔raster entre encoders indépendants est
+précisément ce que le matériel fait bien — mais MoltenVK traduit en
+hazard-tracking Metal : le recouvrement effectif n'est pas garanti,
+d'où la règle « mesurer » (le F6 le montre directement : total < somme
+des passes = ça chevauche).
+
+### Briques
+
+- **PG1 — Barrières à portée fine (S/M, look-neutre par construction)** :
+  extension RHI `memoryBarrier(dstStages)` (ou variantes
+  compute→compute / compute→fragment), resserrage des frontières
+  internes RC/froxels/clusterCull. Validation : total GPU < somme des
+  passes au F6 ; **synchronization validation layer PROPRE** (leçon
+  V7e : la validation standard ne voit pas les courses) ; A/B captures.
+- **PG2 — RC pipelinée N−1 (M, toggle A/B)** : le mainPass consomme la
+  cascade 0 de la frame précédente (la RC est déjà temporelle — le
+  bounce feedback relit N−1, convergence ~0,5 s : une frame de latence
+  est invisible). La chaîne RC sort du chemin critique et peut
+  s'enregistrer en fin de frame ; c'est AUSSI le prérequis structurel de
+  l'async compute PC (PG3). Le knob `updateInterval` (cadence 1/2)
+  existe déjà — l'amortissement temporel se teste sans code.
+- **PG3 — Queues dédiées (post-démo, PC)** : le M1 n'a qu'UNE famille de
+  queues — pas d'async compute matériel sur la machine de dev. Sur GPU
+  discret : queue compute (RC+froxels+clusterCull) + queue transfert
+  (uploads). Déjà listé dans VULKAN.md (revue V8+, points 4-5) ; PG2 le
+  rend trivial.
+- **PG4 — Render thread : DIFFÉRÉ explicitement.** Le seam Phase 5
+  (snapshot strict) le garde à ~une brique de distance ; il paie quand
+  la sim CPU grossira (chantier « vivant »), pas à ≤ 2 ms. Idem
+  l'enregistrement parallèle des command buffers (revue V8+ point 5 :
+  prématuré) — à ressortir si `render()` CPU monte au FrameProbe.
+
+Règles du chantier : celles du présent doc (mesurer d'abord,
+look-neutre ou togglé, tout par le RHI, biais prototype) + la
+synchronization validation layer obligatoire sur toute brique barrière.
