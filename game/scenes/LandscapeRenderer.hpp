@@ -324,6 +324,7 @@ private:
         rhi::UniqueBuffer ubo;
         rhi::UniqueBindGroup group;
         Vec3 cachedDir { 0.0f };
+        Vec3 cachedSide { 0.0f }; // camera-facing width axis (billboard)
         u32 vertexCount { 0 };
     };
     vector<LightShaft> lightShafts;

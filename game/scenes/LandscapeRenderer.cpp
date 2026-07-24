@@ -876,23 +876,39 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
         }
         slot->seen = true;
 
-        // Rebuild the blades when the direction moves (sun steps).
+        // ONE camera-facing blade (axial billboard): the width axis is
+        // perpendicular to both the beam and the view, so the plane always
+        // shows the player its face — no crossed planes intersecting.
+        // Rebuilt when the beam turns (sun steps) OR the camera orbits
+        // enough for the billboard to drift (~2°); the buffer is one quad,
+        // the update is nothing.
+        const Vec3 toCamera = view.camera.position - light.position;
+        Vec3 side = glm::cross(dir, toCamera);
+        const f32 sideLen = glm::length(side);
+        side = sideLen > 1e-4f
+                   ? side / sideLen
+                   : glm::normalize(glm::cross(
+                         dir, std::abs(dir.y) > 0.95f
+                                  ? Vec3 { 1.0f, 0.0f, 0.0f }
+                                  : Vec3 { 0.0f, 1.0f, 0.0f }));
         if (slot->vertices.id() == 0 ||
-            glm::dot(slot->cachedDir, dir) < 0.99995f) {
+            glm::dot(slot->cachedDir, dir) < 0.99995f ||
+            glm::dot(slot->cachedSide, side) < 0.9994f) {
             const f32 length = glm::max(light.shaftLength, 0.5f);
             const f32 halfAngle = glm::radians(
                 glm::clamp(light.spotAngle > 0.0f ? light.spotAngle : 30.0f,
                            5.0f, 80.0f) *
                 0.5f);
-            const f32 w0 = 0.08f;
-            const f32 w1 = std::tan(halfAngle) * length;
-            const Vec3 up = std::abs(dir.y) > 0.95f
-                                ? Vec3 { 1.0f, 0.0f, 0.0f }
-                                : Vec3 { 0.0f, 1.0f, 0.0f };
-            const Vec3 s0 = glm::normalize(glm::cross(dir, up));
+            // Sun-linked window shafts start at the WINDOW's width (the
+            // sun is at infinity: a quasi-parallel slab). Artistic dust
+            // shafts keep the cone from their point source. hand-tuned.
+            const f32 w0 = light.sunLinked ? 0.9f : 0.08f;
+            const f32 w1 = light.sunLinked
+                               ? 1.1f
+                               : std::tan(halfAngle) * length;
             const Vec3 apex = light.position;
             const Vec3 end = apex + dir * length;
-            f32 verts[3 * 6 * 5]; // 3 blades x 2 tris x 3 verts x 5f
+            f32 verts[6 * 5]; // 1 blade x 2 tris x 3 verts x 5f
             u32 cursor = 0;
             const auto push = [&](const Vec3& p, f32 u, f32 v) {
                 verts[cursor++] = p.x;
@@ -901,22 +917,16 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
                 verts[cursor++] = u;
                 verts[cursor++] = v;
             };
-            for (u32 blade = 0; blade < 3; ++blade) {
-                const f32 angle =
-                    static_cast<f32>(blade) * glm::radians(60.0f);
-                const Vec3 side =
-                    glm::normalize(glm::angleAxis(angle, dir) * s0);
-                const Vec3 a0 = apex - side * w0;
-                const Vec3 a1 = apex + side * w0;
-                const Vec3 b0 = end - side * w1;
-                const Vec3 b1 = end + side * w1;
-                push(a0, -1.0f, 0.0f);
-                push(a1, 1.0f, 0.0f);
-                push(b1, 1.0f, 1.0f);
-                push(a0, -1.0f, 0.0f);
-                push(b1, 1.0f, 1.0f);
-                push(b0, -1.0f, 1.0f);
-            }
+            const Vec3 a0 = apex - side * w0;
+            const Vec3 a1 = apex + side * w0;
+            const Vec3 b0 = end - side * w1;
+            const Vec3 b1 = end + side * w1;
+            push(a0, -1.0f, 0.0f);
+            push(a1, 1.0f, 0.0f);
+            push(b1, 1.0f, 1.0f);
+            push(a0, -1.0f, 0.0f);
+            push(b1, 1.0f, 1.0f);
+            push(b0, -1.0f, 1.0f);
             if (slot->vertices.id() == 0) {
                 slot->vertices = { frame.device, frame.device.createBuffer(
                     { .usage = rhi::BufferUsage::Vertex,
@@ -927,8 +937,9 @@ void LandscapeRenderer::drawLightShafts(engine::FrameContext& frame,
                 frame.device.updateBuffer(slot->vertices, verts,
                                           sizeof(verts), 0);
             }
-            slot->vertexCount = 18;
+            slot->vertexCount = 6;
             slot->cachedDir = dir;
+            slot->cachedSide = side;
         }
         if (slot->ubo.id() == 0) {
             slot->ubo = { frame.device, frame.device.createBuffer(
