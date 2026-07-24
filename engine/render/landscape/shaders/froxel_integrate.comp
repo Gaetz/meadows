@@ -10,6 +10,26 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(binding = 12, rgba16f) uniform readonly image3D uFroxelScatter;
 layout(binding = 13, rgba16f) uniform writeonly image3D uFroxelIntegrated;
 
+// Cross-blur gather: the temporal EMA leaves fine stationary grain at
+// froxel scale — one spatial tap into the 6 neighbours (display only,
+// the HISTORY stays sharp so blur never compounds across frames).
+vec4 blurredCell(ivec3 c, ivec3 dims) {
+    vec4 sum = imageLoad(uFroxelScatter, c) * 4.0;
+    sum += imageLoad(uFroxelScatter,
+                     ivec3(max(c.x - 1, 0), c.y, c.z));
+    sum += imageLoad(uFroxelScatter,
+                     ivec3(min(c.x + 1, dims.x - 1), c.y, c.z));
+    sum += imageLoad(uFroxelScatter,
+                     ivec3(c.x, max(c.y - 1, 0), c.z));
+    sum += imageLoad(uFroxelScatter,
+                     ivec3(c.x, min(c.y + 1, dims.y - 1), c.z));
+    sum += imageLoad(uFroxelScatter,
+                     ivec3(c.x, c.y, max(c.z - 1, 0)));
+    sum += imageLoad(uFroxelScatter,
+                     ivec3(c.x, c.y, min(c.z + 1, dims.z - 1)));
+    return sum * (1.0 / 10.0);
+}
+
 float sliceDepth(float s, float slices) {
     const float kNear = 1.0;
     float far = max(uFogSunInfo.z, kNear + 1.0);
@@ -25,7 +45,7 @@ void main() {
     float transmit = 1.0;
     vec3 inscatter = vec3(0.0);
     for (int s = 0; s < dims.z; ++s) {
-        vec4 cell = imageLoad(uFroxelScatter, ivec3(column, s));
+        vec4 cell = blurredCell(ivec3(column, s), dims);
         float segLen = sliceDepth(float(s + 1), float(dims.z)) -
                        sliceDepth(float(s), float(dims.z));
         float sigma = cell.a;

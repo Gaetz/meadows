@@ -57,8 +57,36 @@ layout(binding = 7) uniform sampler3D uFroxelHistory;
 layout(std140, binding = 9) uniform FroxelTemporalUbo {
     mat4 uPrevViewProj;
     vec4 uPrevCamera;   // xyz previous camera, w previous reach (>= 2)
-    vec4 uTemporalInfo; // x blend alpha (1 = history invalid), y frame
+    vec4 uTemporalInfo; // x blend alpha (1 = history invalid), y frame,
+                        // z dust wisp amount (0 = uniform dust)
 };
+
+float hashCorner(ivec3 q) {
+    uint h = uint(q.x) * 73856093u ^ uint(q.y) * 19349663u ^
+             uint(q.z) * 83492791u;
+    h = (h ^ (h >> 16)) * 0x45d9f3bu;
+    h = h ^ (h >> 16);
+    return float(h & 0xFFFFFFu) / 16777216.0;
+}
+
+// Trilinear value noise — the dust wisp mask. World-anchored and slowly
+// drifting: SPARSE dust (empty air between floating sheets) instead of
+// a uniform noisy medium.
+float valueNoise(vec3 q) {
+    ivec3 i = ivec3(floor(q));
+    vec3 f = fract(q);
+    f = f * f * (3.0 - 2.0 * f);
+    float n000 = hashCorner(i);
+    float n100 = hashCorner(i + ivec3(1, 0, 0));
+    float n010 = hashCorner(i + ivec3(0, 1, 0));
+    float n110 = hashCorner(i + ivec3(1, 1, 0));
+    float n001 = hashCorner(i + ivec3(0, 0, 1));
+    float n101 = hashCorner(i + ivec3(1, 0, 1));
+    float n011 = hashCorner(i + ivec3(0, 1, 1));
+    float n111 = hashCorner(i + ivec3(1, 1, 1));
+    return mix(mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
+               mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y), f.z);
+}
 
 // Slice s in [0, depth) -> view distance, exponential (dense near).
 float sliceDepth(float s, float slices) {
@@ -118,7 +146,18 @@ void main() {
     float lowBoost = exp(-max(p.y - uTerrainInfo.x, 0.0) * uFogInfo.y);
     float heightFog = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z) *
                       smoothstep(uFogInfo.w * 0.8, uFogInfo.w, d);
-    float density = heightFog + uFogSunInfo.w;
+    float dust = uFogSunInfo.w;
+    if (dust > 0.0 && uTemporalInfo.z > 0.001) {
+        // Two octaves, drifting like slow air currents; the smoothstep
+        // threshold empties most of the volume. x1.8 roughly restores
+        // the mean so the Interior dust slider keeps its meaning.
+        vec3 drift = vec3(uTime.x * 0.16, uTime.x * 0.05, 0.0);
+        float n = valueNoise(p * 0.8 + drift) * 0.65 +
+                  valueNoise(p * 2.7 + drift * 1.7) * 0.35;
+        float wisp = smoothstep(0.38, 0.75, n) * 1.8;
+        dust *= mix(1.0, wisp, uTemporalInfo.z);
+    }
+    float density = heightFog + dust;
     if (density <= 1e-6) {
         imageStore(uFroxelScatter, cell, vec4(0.0));
         return;
@@ -135,7 +174,7 @@ void main() {
     // DUST wants dark air around bright beams: the ambient term applies
     // fully to the outdoor height fog but only faintly to the uniform
     // dust — beams are drawn by CONTRAST. hand-tuned dust factor.
-    float dustFrac = uFogSunInfo.w / density;
+    float dustFrac = dust / density;
     vec3 source = haze * (mix(0.45, 1.0, vis) * mix(1.0, 0.15, dustFrac)) +
                   uSunColor.rgb * (phase * uFogSunInfo.x * uTime.z * vis);
 

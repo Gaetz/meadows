@@ -86,6 +86,7 @@ void LandscapeRenderer::applyTuning(
     interiorDaylightWeightUi = tuning.interiorDaylightWeight;
     postFx.froxelFog = tuning.froxelFog;
     postFx.froxelTemporalBlend = tuning.froxelTemporalBlend;
+    postFx.froxelDustNoise = tuning.froxelDustNoise;
     interiorDustDensityUi = tuning.interiorDustDensity;
     // Vegetation draw budget (clamped — the streamer ring
     // and the Hi-Z candidate cap size the safe range).
@@ -192,6 +193,7 @@ void LandscapeRenderer::captureTuning(data::LandscapeTuningForm& out) const {
     out.interiorDaylightWeight = interiorDaylightWeightUi;
     out.froxelFog = postFx.froxelFog;
     out.froxelTemporalBlend = postFx.froxelTemporalBlend;
+    out.froxelDustNoise = postFx.froxelDustNoise;
     out.interiorDustDensity = interiorDustDensityUi;
     out.vegViewRadius = vegetation.viewRadius;
     out.vegHighDetailRadius = vegetation.highDetailRadius;
@@ -2372,6 +2374,8 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         ImGui::SliderFloat("Froxel temporal blend",
                            &postFx.froxelTemporalBlend, 0.02f, 1.0f,
                            "%.2f");
+        ImGui::SliderFloat("Dust wisps (sparse)", &postFx.froxelDustNoise,
+                           0.0f, 1.0f, "%.2f");
         ImGui::SliderFloat("Interior dust", &interiorDustDensityUi, 0.0f,
                            0.12f, "%.3f");
     }

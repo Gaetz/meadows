@@ -88,6 +88,8 @@ struct LandscapeTuningForm : Form {
     // Temporal accumulation strength: fraction of the current sample per
     // frame (0.1 = ~90% history; 1 = off).
     f32 froxelTemporalBlend { 0.1f };
+    // Dust wisps: 0 = uniform dust, 1 = fully sparse drifting sheets.
+    f32 froxelDustNoise { 0.6f };
     f32 interiorDustDensity { 0.025f };
     // Vegetation draw budget, moddable + live-tunable (the vegetation
     // pass is a major GPU cost driver). Radii in 64 m chunks.
@@ -137,6 +139,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(shadowResolution)
         REFLECT_FIELD(froxelFog)
         REFLECT_FIELD(froxelTemporalBlend)
+        REFLECT_FIELD(froxelDustNoise)
         REFLECT_FIELD(interiorDustDensity)
         REFLECT_FIELD(vegViewRadius)
         REFLECT_FIELD(vegHighDetailRadius)

@@ -159,7 +159,17 @@ blend », champ du tuning §5). Leçon au passage : le jitter doit être
 BLANC en temps (hash entier de cellule + frame) — un motif spatial fixe
 déphasé par un roulement doré n'est pas une décorrélation, le motif se
 TRANSLATE et l'EMA ne peut que ralentir ses bandes qui marchent, jamais
-les effacer (constat dev). L'historique est invalidé sur téléport
+les effacer (constat dev). Contre le grain résiduel stationnaire, deux
+compléments (2026-07-24) : un **flou croix 7-taps** au read de
+l'intégration (affichage seul — l'historique reste net, le flou ne se
+compose jamais d'une frame à l'autre) ; et la **poussière éparse**
+(idée dev) : un bruit de valeur 3D à 2 octaves, ancré monde et dérivant
+lentement, module la densité de poussière en VOLUTES — l'air est
+surtout vide, le grain ne vit que dans les nappes où il se lit comme de
+la texture (`froxelDustNoise`, 0 = uniforme, défaut 0.6 ; slider
+« Dust wisps », champ du tuning §5). Le scintillement de grains
+individuels, lui, relève des particules fx, pas des froxels.
+L'historique est invalidé sur téléport
 (> 10 m/frame), changement de portée (intérieur 48 m ↔ extérieur
 800 m) et frame sans froxels — le fallback est l'échantillon courant
 seul, comme avant.

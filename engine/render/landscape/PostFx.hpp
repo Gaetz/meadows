@@ -98,6 +98,9 @@ public:
     // Temporal accumulation: fraction of the CURRENT sample per frame
     // (0.1 = ~90% history, converges in ~0.5 s; 1 = accumulation off).
     f32 froxelTemporalBlend { 0.1f };
+    // Dust wisp amount: 0 = uniform dust, 1 = fully sparse drifting
+    // sheets (value-noise density mask, interiors' uFogSunInfo.w only).
+    f32 froxelDustNoise { 0.6f };
     bool froxelReady() const { return froxelInjectPipeline.id() != 0; }
 
 private:
