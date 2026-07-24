@@ -51,6 +51,11 @@ float windowBeam(vec3 p, vec3 anchor, vec3 nrm, vec2 halfExtents) {
 }
 
 layout(binding = 6) uniform sampler2DShadow uKeyShadow;
+// The per-cluster light lists (cluster_cull.comp): a froxel finds its
+// cluster by xy downsample, IDENTICAL z slice (docs/LIGHTING.md §5 B5).
+layout(std430, binding = 4) readonly buffer ClusterLights {
+    uint uClusterLights[];
+};
 layout(binding = 12, rgba16f) uniform writeonly image3D uFroxelScatter;
 // Temporal accumulation (docs/VOLUMETRIC.md V4): last frame's scatter
 // volume (the ping-pong twin) + the reprojection constants.
@@ -189,9 +194,21 @@ void main() {
                   uSunColor.rgb * (phase * uFogSunInfo.x * uTime.z * vis);
 
     // Local lights: windowed quadratic falloff + spot cone. Isotropic
-    // phase — a lamp glows in the dust all around itself.
-    int count = int(uLightCount.x + 0.5);
-    for (int i = 0; i < count; ++i) {
+    // phase — a lamp glows in the dust all around itself. Clustered on:
+    // only this froxel's cell list (same z slice, xy downsampled).
+    int lightBase = -1;
+    int lightCount;
+    if (uClusterInfo.x > 0.5) {
+        ivec2 ratio = max(dims.xy / kClusterDims.xy, ivec2(1));
+        ivec3 cc = ivec3(min(cell.xy / ratio, kClusterDims.xy - 1),
+                         min(cell.z, kClusterDims.z - 1));
+        lightBase = clusterIndex(cc) * kClusterSlots;
+        lightCount = int(uClusterLights[lightBase]);
+    } else {
+        lightCount = int(uLightCount.x + 0.5);
+    }
+    for (int s = 0; s < lightCount; ++s) {
+        int i = lightBase >= 0 ? int(uClusterLights[lightBase + 1 + s]) : s;
         vec3 toLight = uLightPositionRadius[i].xyz - pJ;
         float dist = length(toLight);
         float radius = uLightPositionRadius[i].w;
