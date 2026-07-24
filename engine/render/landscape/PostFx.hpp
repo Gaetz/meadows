@@ -118,7 +118,7 @@ private:
     // inject + integrate in compute, resolved into volumetricTex by a
     // fullscreen fetch — the tonemap composite is untouched. The 2D march
     // stays as the fallback (no compute caps) and the A/B.
-    static constexpr u32 kFroxelX = 96, kFroxelY = 54, kFroxelZ = 64;
+    static constexpr u32 kFroxelX = 128, kFroxelY = 72, kFroxelZ = 64;
     rhi::UniqueTexture froxelScatter;
     rhi::UniqueTexture froxelIntegrated;
     rhi::UniqueBindGroup froxelInjectGroup;   // images 12 + 13

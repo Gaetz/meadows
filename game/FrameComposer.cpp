@@ -140,9 +140,10 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     // early-outs below the horizon) and interiors stay analytic too.
     if (in.froxelFog && in.atmos.volumetric > 0.003f) {
         // V4/H4: the froxel volume owns the fog to the CSM range — day,
-        // night and interiors alike (lamps glow in the dust). Interiors
-        // get their uniform dust density through the free lane.
-        resolved.fogSunInfo.z = 800.0f;
+        // night and interiors alike (lamps glow in the dust). INDOORS the
+        // reach shrinks to the room scale: all 64 depth slices concentrate
+        // inside — ~2.5x finer dust where it is actually seen.
+        resolved.fogSunInfo.z = in.interiorMode ? 48.0f : 800.0f;
         if (in.interiorMode) {
             resolved.fogSunInfo.w = in.interiorDustDensity;
         }
