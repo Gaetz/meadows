@@ -376,6 +376,11 @@ le GPU-driven (cull Hi-Z en indirect draws sans readback).
   **synchronization validation layer active (« Current Enables »
   vérifié) et PROPRE (0 SYNC-HAZARD, 30 s)** ; 522 tests verts ; GL
   compile (backend non exécutable sur macOS — à smoker au retour PC).
+  **Confirmation dev en jeu (2026-07-26) : forêt 15-17 → 22 fps**
+  (~60 → ~45 ms — le pire cas végétation profite au même ratio que le
+  spot de spawn). Note de protocole : le spawn regarde un mur — cadrage
+  CONSERVÉ tel quel pour que les lignes « gpu budget » restent
+  comparables entre elles (revert du volte-face, 2026-07-26).
 - **PG2 — RC pipelinée N−1 (M, toggle A/B)** : le mainPass consomme la
   cascade 0 de la frame précédente (la RC est déjà temporelle — le
   bounce feedback relit N−1, convergence ~0,5 s : une frame de latence
