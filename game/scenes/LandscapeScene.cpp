@@ -47,7 +47,6 @@
 #include "game/scenes/RenderTuningIo.hpp"
 #include "game/scenes/TreeCreationScene.hpp"
 #include "game/ui/ConsolePanel.hpp"
-#include "game/ui/OverlayBar.hpp"
 #include "game/ui/RenderTuningPanels.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/Engine.hpp"
@@ -1713,6 +1712,12 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
     uiSystem.createModel({ .name = "menu",
                            .strings = { "clockLine" },
                            .events = { "menuAction" } });
+    // The startup loading shroud (loading.rml) — the gate in drawUi
+    // drives these every frame until the fade closes the screen.
+    uiSystem.createModel({ .name = "loading",
+                           .numbers = { "loadingPct", "loadingAlpha",
+                                        "loadingBarAlpha" },
+                           .strings = { "loadingText" } });
     // The saves-list screen (rows: name + timestamp).
     uiSystem.createModel({ .name = "saves",
                            .bools = { "empty" },
@@ -1798,6 +1803,11 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
     if (screenStack.find("mainmenu")) {
         hud.updateMenuClockLine(makeHudContext());
         screenStack.show("mainmenu");
+    }
+    // The loading shroud rides OVER the menu (show order = z order);
+    // the gate in drawUi feeds it and closes it once faded.
+    if (screenStack.find("loading")) {
+        screenStack.show("loading");
     }
     syncScreens();
 }
@@ -3002,29 +3012,25 @@ void LandscapeScene::drawUi() {
                 glm::max(0.0f, loadingGateAlpha -
                                    ImGui::GetIO().DeltaTime / 0.8f);
         }
-        foreground->AddRectFilled(
-            { 0.0f, 0.0f }, display,
-            ImGui::GetColorU32(
-                ImVec4(0.0f, 0.0f, 0.0f, loadingGateAlpha)));
-        // The game title, same spot as the main menu's #gametitle
-        // (menus.rcss) — the fade hands over to the RmlUi one seamlessly.
-        constexpr f32 kTitleSize = 42.0f;
-        const char* kTitle = "True Adventurer";
-        const ImVec2 titleSize = ImGui::GetFont()->CalcTextSizeA(
-            kTitleSize, FLT_MAX, 0.0f, kTitle);
-        foreground->AddText(
-            ImGui::GetFont(), kTitleSize,
-            { (display.x - titleSize.x) * 0.5f, 64.0f },
-            ImGui::GetColorU32(
-                ImVec4(0.94f, 0.93f, 0.89f, loadingGateAlpha)),
-            kTitle);
-        if (loadingGateAlpha > 0.6f) {
+        // The visuals live in the RmlUi loading screen (loading.rml —
+        // in-game interfaces use the game UI, same font/title as the
+        // main menu beneath); this gate only feeds the model.
+        if (uiCreated && screenStack.find("loading")) {
             char label[32];
             std::snprintf(label, sizeof(label), "%.0f%%",
                           static_cast<f64>(loadingGateProgress) * 100.0);
-            drawOverlayBar(foreground,
-                           { display.x * 0.5f, display.y * 0.62f },
-                           display.x * 0.34f, loadingGateProgress, label);
+            uiSystem.setNumber("loading", "loadingAlpha", loadingGateAlpha);
+            uiSystem.setNumber(
+                "loading", "loadingBarAlpha",
+                glm::clamp((loadingGateAlpha - 0.6f) / 0.4f, 0.0f, 1.0f));
+            uiSystem.setNumber("loading", "loadingPct",
+                               static_cast<f64>(loadingGateProgress) *
+                                   100.0);
+            uiSystem.setString("loading", "loadingText", label);
+            if (loadingGateAlpha <= 0.0f) {
+                screenStack.close("loading");
+                syncScreens();
+            }
         }
     }
 

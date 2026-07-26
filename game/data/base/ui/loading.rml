@@ -1,0 +1,15 @@
+<rml>
+<head>
+	<link type="text/rcss" href="theme.rcss"/>
+	<link type="text/rcss" href="menus.rcss"/>
+</head>
+<body>
+	<div id="shroud" data-model="loading" data-style-opacity="loadingAlpha">
+		<div id="gametitle" data-loc="ui.mainmenu.title">True Adventurer</div>
+		<div id="loadwrap" data-style-opacity="loadingBarAlpha">
+			<div id="loadbar"><div id="loadfill" data-style-width="loadingPct + '%'"/></div>
+			<div id="loadtext">{{ loadingText }}</div>
+		</div>
+	</div>
+</body>
+</rml>

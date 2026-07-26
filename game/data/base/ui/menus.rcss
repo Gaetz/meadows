@@ -34,6 +34,51 @@
 	margin-left: -170dp;
 }
 
+/* The startup loading shroud (loading.rml): fullscreen black over the
+   scene, carrying the SAME #gametitle as the main menu beneath — the
+   fade is a title crossfade. The bar is the shared overlay-bar look
+   (game/ui/OverlayBar.hpp draws the ImGui twin for dev scenes). */
+#shroud {
+	position: absolute;
+	top: 0dp;
+	left: 0dp;
+	width: 100%;
+	height: 100%;
+	background-color: #000000;
+}
+
+#loadwrap {
+	position: absolute;
+	top: 62%;
+	left: 33%;
+	width: 34%;
+}
+
+#loadbar {
+	position: relative;
+	display: block;
+	height: 8dp;
+	background-color: #ffffff1f;
+	border-radius: 4dp;
+}
+
+#loadfill {
+	position: absolute;
+	top: 0dp;
+	left: 0dp;
+	height: 100%;
+	border-radius: 4dp;
+	background-color: #d9e5f2d9;
+}
+
+#loadtext {
+	margin-top: 10dp;
+	width: 100%;
+	text-align: center;
+	font-size: 14dp;
+	color: #f0ede4cc;
+}
+
 .menu-buttons {
 	margin: 10dp 0;
 }

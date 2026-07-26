@@ -85,17 +85,20 @@ body {
 
 /* Explicit heights: the bars' absolute segments don't grow the layout
    (RmlUi), so each .stat block sizes itself. The vitals share the
-   overlay-bar look (game/ui/OverlayBar.hpp — the loading bars): thin
-   rounded track on translucent white, value centered UNDER its bar. */
+   overlay-bar look (the loading bars): thin rounded track on
+   translucent white, the value in a right-aligned column LEFT of its
+   bar, stats separated by clear vertical space. */
 .stat {
-	margin-top: 6dp;
-	height: 24dp; /* the 8dp bar + the value line below */
+	margin-top: 10dp;
+	height: 12dp;
 }
 
 .bar {
 	position: relative;
 	display: block;
 	height: 8dp;
+	margin-left: 64dp; /* the value column on the left */
+	margin-top: 2dp;
 	background-color: #ffffff1f;
 	border-radius: 4dp;
 }
@@ -124,14 +127,13 @@ body {
 .bar.posture .bonus { background-color: #e2cf94; }
 .bar.posture .malus { background-color: #5c502c; }
 
-/* The value line sits UNDER its bar, centered — the overlay-bar label
-   placement. */
+/* The value column, right-aligned against the left edge of its bar. */
 .bar .value {
 	position: absolute;
-	left: 0;
-	top: 10dp;
-	width: 100%;
-	text-align: center;
+	left: -64dp;
+	top: -4dp; /* centers the 11dp text on the 8dp bar */
+	width: 56dp;
+	text-align: right;
 	font-size: 11dp;
 	color: #f0ede4;
 }

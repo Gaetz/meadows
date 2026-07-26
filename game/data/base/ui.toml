@@ -154,3 +154,15 @@ editorId = "ScreenRecruit"
 screen = "recruit"
 document = "recruit.rml"
 modal = true
+
+# The startup loading shroud — shown OVER the main menu at boot, fed and
+# closed by the scene's loading gate (progress + fade).
+[[records]]
+form = "5e8bac40-0000-4000-8000-00000000000f"
+type = "UiScreenForm"
+new = true
+[records.fields]
+editorId = "ScreenLoading"
+screen = "loading"
+document = "loading.rml"
+overlay = true
