@@ -509,12 +509,25 @@ Bricks (each lands alone, LandscapeScene byte-identical at every step):
   `meadows-render` — they need rhi, so NOT the base lib: the §2.10
   simlink proof stays intact, re-verified). `FrameComposer`/
   `AtmosphereParams` follow the orchestrator at R4 as planned.
-- **R3 — RendererConfig (per-subsystem opt-in).** Construction flags:
-  terrain, streaming, water, sky/weather, vegetation, grass, GI,
-  froxels, occlusion, postfx tiers. A tool scene mounts meshes + sky +
-  shadows only — nothing else initialized, allocated or ticked. This is
-  the brick that makes tool scenes real; also the multi-instance pass
-  (shared ShaderLibrary vs per-instance — audit at execution).
+- **R3 — RendererConfig (per-subsystem opt-in). DONE (2026-07-26).**
+  `RendererConfig` construction flags: terrain (ring streaming + terrain
+  light map folded in), water, sky (weather/cloud bake/rain), vegetation,
+  grass, gi, froxels (implies postFx), occlusion (CPU horizon + Hi-Z),
+  postFx. A system left off is never created, allocated or ticked;
+  defaults = everything, so `LandscapeScene::create(device, jobs)` is
+  unchanged and the full-config call sequence is identical by
+  construction. The always-on core: meshes + skinned NPCs + CSM/key
+  shadows + lights + tonemap (the postFx-less blit fallback already
+  existed for caps-poor devices and now serves `postFx=false` too).
+  Structural side-fix: the scene color/depth copies (Hi-Z + postFx
+  inputs) are decoupled from the water bind group — the copy pass gates
+  on `sceneColorCopy`, not `waterSceneBindGroup`; `depthSampler` moved
+  out of the water gate. **Multi-instance audit verdict: per-instance
+  ShaderLibrary** — each renderer owns its programs and hot-reload
+  generations; sharing would couple instance lifetimes for a compile
+  cost the persisted pipeline cache already amortizes. Revisit only if
+  a tool scene's startup measures slow. Proof of the opt-in path = R5's
+  first consumer (this brick is validated full-config-identical only).
 - **R4 — Move.** `git mv` to `engine/render/` (rename candidate:
   `render::WorldRenderer`), CMake into `meadows-render`, include sweep.
 - **R5 — First consumer** (future session): an AnimPreviewScene or the

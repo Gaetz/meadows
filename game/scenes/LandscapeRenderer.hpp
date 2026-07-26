@@ -50,6 +50,25 @@ class TextureCache;
 
 namespace game {
 
+// Per-subsystem opt-in (docs/RENDERING.md §7): a tool scene mounts only
+// what it needs — a system left off is never created, allocated or
+// ticked (its GPU resources don't exist; render() skips its passes).
+// Defaults = the full game renderer, so LandscapeScene passes nothing.
+// The always-on core is meshes + skinned NPCs + CSM/key shadows +
+// lights + tonemap composite. Terrain includes its ring streaming and
+// the terrain light map; sky includes weather (cloud bake, rain/storm).
+struct RendererConfig {
+    bool terrain { true };
+    bool water { true };      // sea plane, planar reflection, volumes
+    bool sky { true };        // dome, cloud bake, rain occlusion/streaks
+    bool vegetation { true };
+    bool grass { true };
+    bool gi { true };         // radiance cascades
+    bool froxels { true };    // froxel fog (needs postFx)
+    bool occlusion { true };  // CPU horizon + GPU Hi-Z
+    bool postFx { true };     // bloom/rays/volumetric/contact/auto-expo
+};
+
 // Per-frame view: everything the SIM side decides, passed by value/pointer —
 // the renderer never reads the scene (the Phase-5 seam's GPU
 // half). Snapshot + view in, frames out.
@@ -90,8 +109,12 @@ class LandscapeRenderer {
 public:
     // GPU resources + systems. Call after terrainParams()/applyTuning are
     // seeded (bootstrap order unchanged from the scene's onEnter).
-    void create(rhi::Device& device, core::JobSystem& jobs);
+    // `config` selects the mounted subsystems (default: everything).
+    void create(rhi::Device& device, core::JobSystem& jobs,
+                const RendererConfig& config = {});
     void destroy(rhi::Device& device);
+
+    const RendererConfig& config() const { return cfg; }
 
     // Startup values for the render knobs the panel adjusts live (§5:
     // the TOML sets where everything starts).
@@ -158,6 +181,8 @@ public:
 private:
     // The dev panels edit the tuning/debug state below in place.
     friend class RenderTuningPanels;
+
+    RendererConfig cfg {};
 
     // Offscreen color+depth target at window size, recreated on resize.
     void ensureOffscreenTarget(rhi::Device& device, u32 width, u32 height);
