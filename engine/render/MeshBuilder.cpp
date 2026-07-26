@@ -43,7 +43,7 @@ void appendTriangle(MeshData& mesh, const Vec3& a, const Vec3& b,
 
 void appendTaperedTube(MeshData& mesh, const Vec3& base, const Vec3& top,
                        f32 radiusBase, f32 radiusTop, u32 sides,
-                       const Vec3& color) {
+                       const Vec3& color, f32 angleJitter, u32 seed) {
     const Vec3 axis = glm::normalize(top - base);
     // Any vector not parallel to the axis seeds the ring basis.
     const Vec3 helper = std::abs(axis.y) < 0.95f ? Vec3 { 0.0f, 1.0f, 0.0f }
@@ -52,10 +52,23 @@ void appendTaperedTube(MeshData& mesh, const Vec3& base, const Vec3& top,
     const Vec3 v = glm::cross(axis, u);
 
     constexpr f32 kTau = 6.2831853f;
+    // Per-vertex angles, shared by both rings. Jitter stays under half a
+    // step so the sequence keeps its order (no folded quads).
+    const auto angleAt = [&](u32 i) {
+        const u32 wrapped = i % sides;
+        f32 offset = 0.0f;
+        if (angleJitter > 0.0f) {
+            offset = (static_cast<f32>(hashU32(seed ^ (wrapped * 747796405u))) *
+                          (1.0f / 4294967295.0f) -
+                      0.5f) *
+                     0.9f * angleJitter;
+        }
+        return kTau * (static_cast<f32>(i) + offset) /
+               static_cast<f32>(sides);
+    };
     for (u32 i = 0; i < sides; ++i) {
-        const f32 a0 = kTau * static_cast<f32>(i) / static_cast<f32>(sides);
-        const f32 a1 =
-            kTau * static_cast<f32>(i + 1) / static_cast<f32>(sides);
+        const f32 a0 = angleAt(i);
+        const f32 a1 = angleAt(i + 1);
         const Vec3 dir0 = u * std::cos(a0) + v * std::sin(a0);
         const Vec3 dir1 = u * std::cos(a1) + v * std::sin(a1);
         const Vec3 b0 = base + dir0 * radiusBase;

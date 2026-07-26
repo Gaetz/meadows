@@ -199,12 +199,18 @@ struct LobeTreeTuningForm : Form {
 
 // Mirrors render::ColonizedTreeParams (the Runions/SDF-card tree).
 struct ColonizedTreeTuningForm : Form {
-    // Wood look: ring vertices at full detail (LODs derive), how much of
+    // Wood look: MAX ring vertices (trunk; LODs derive), how much of
     // the growth trajectory's bends survive decimation (0 = straight
-    // runs), and Catmull-Rom points per segment rounding the elbows.
+    // runs), Catmull-Rom points per segment rounding the elbows, kink
+    // noise on the kept trajectory points, angular irregularity of the
+    // tube faces, and the ring-count taper floor for thin branches
+    // (fraction of tubeSides; 1 = constant count).
     i32 tubeSides { 5 };
     f32 curvePreserve { 0.0f };
     i32 curveSubdiv { 0 };
+    f32 pathJitter { 0.0f };
+    f32 ringIrregularity { 0.0f };
+    f32 sideMinFraction { 1.0f };
     f32 segment { 0.28f };
     f32 killDistance { 0.70f };
     i32 attractorCount { 350 };
@@ -233,6 +239,9 @@ struct ColonizedTreeTuningForm : Form {
         REFLECT_FIELD(tubeSides)
         REFLECT_FIELD(curvePreserve)
         REFLECT_FIELD(curveSubdiv)
+        REFLECT_FIELD(pathJitter)
+        REFLECT_FIELD(ringIrregularity)
+        REFLECT_FIELD(sideMinFraction)
         REFLECT_FIELD(segment)
         REFLECT_FIELD(killDistance)
         REFLECT_FIELD(attractorCount)

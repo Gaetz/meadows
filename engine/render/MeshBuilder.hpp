@@ -11,10 +11,14 @@ namespace render {
 
 // Open tapered tube from `base` to `top` (no caps — tree trunks bury both
 // ends). `color` fills the vertex color channel; uv is left {0,0} for the
-// caller to overwrite (e.g. sway weights).
+// caller to overwrite (e.g. sway weights). `angleJitter` (0..1) makes the
+// ring vertices angularly irregular — faces of very different widths, the
+// hand-cut bark look; both rings share the offsets (no twist), and the
+// order stays monotonic so quads never fold. `seed` keys the jitter.
 void appendTaperedTube(MeshData& mesh, const Vec3& base, const Vec3& top,
                        f32 radiusBase, f32 radiusTop, u32 sides,
-                       const Vec3& color);
+                       const Vec3& color, f32 angleJitter = 0.0f,
+                       u32 seed = 0);
 
 // Faceted blob: an icosphere with deterministic radial jitter — foliage
 // clumps, rocks. `jitter` is the relative radius variation (0 = perfect

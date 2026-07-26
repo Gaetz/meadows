@@ -307,6 +307,34 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
     const f32 runCap = glm::mix(1.1f, 0.3f, preserve);
     const f32 minRadius =
         detail >= 2 ? 0.012f : detail == 1 ? 0.025f : 0.045f;
+    const f32 pathJitter = glm::clamp(params.pathJitter, 0.0f, 1.0f) *
+                           (detail == 0 ? 0.0f : 1.0f);
+    const f32 ringIrregularity =
+        glm::clamp(params.ringIrregularity, 0.0f, 1.0f);
+    const f32 sideMinFraction =
+        glm::clamp(params.sideMinFraction, 0.25f, 1.0f);
+    const f32 rootRadius = glm::max(nodes[0].radius, 1e-4f);
+
+    // Deterministic per-POINT hash (quantized original position, mm):
+    // every LOD keeps a subset of the same nodes, so the kinks agree.
+    const auto positionHash = [](const Vec3& p) {
+        u32 h = 0x9e3779b9u;
+        h = hashU32(h ^ static_cast<u32>(
+                        static_cast<i32>(std::lround(p.x * 1000.0f))));
+        h = hashU32(h ^ static_cast<u32>(
+                        static_cast<i32>(std::lround(p.y * 1000.0f))));
+        h = hashU32(h ^ static_cast<u32>(
+                        static_cast<i32>(std::lround(p.z * 1000.0f))));
+        return h;
+    };
+    // Ring-count taper: thick wood keeps the max, twigs shed vertices
+    // down to the fraction floor (sqrt so mid branches don't collapse).
+    const auto sidesFor = [&](f32 radius) {
+        const f32 fraction = glm::clamp(std::sqrt(radius / rootRadius),
+                                        sideMinFraction, 1.0f);
+        return glm::max(3u, static_cast<u32>(std::lround(
+                                static_cast<f32>(tubeSides) * fraction)));
+    };
 
     struct PathPoint {
         Vec3 position;
@@ -355,6 +383,20 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
             }
         }
 
+        // Trajectory kinks: displace the kept INTERIOR points (chain
+        // ends anchor junctions and the foliage SDF, they never move).
+        // Deterministic per original position, scaled by the growth
+        // step — sharp breaks as-is, waves once subdivision rounds them.
+        if (pathJitter > 0.0f && path.size() > 2) {
+            for (size_t i = 1; i + 1 < path.size(); ++i) {
+                HashRng jitterRng { positionHash(path[i].position) };
+                const Vec3 offset { jitterRng.next() * 2.0f - 1.0f,
+                                    jitterRng.next() * 2.0f - 1.0f,
+                                    jitterRng.next() * 2.0f - 1.0f };
+                path[i].position += offset * (pathJitter * 0.25f * segment);
+            }
+        }
+
         // Catmull-Rom rounding: interior samples per segment bend the
         // elbows; the original points stay put (junctions weld). Radii
         // lerp inside a segment.
@@ -395,13 +437,28 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
         for (size_t i = 0; i + 1 < emitted->size(); ++i) {
             // Twig cull on the tip-side radius — same rule the decimated
             // runs always used.
-            if ((*emitted)[i].radius >= minRadius) {
-                appendTaperedTube(mesh, (*emitted)[i + 1].position,
-                                  (*emitted)[i].position,
-                                  (*emitted)[i + 1].radius,
-                                  (*emitted)[i].radius, tubeSides,
-                                  barkColor);
+            const PathPoint& tipPoint = (*emitted)[i];
+            const PathPoint& basePoint = (*emitted)[i + 1];
+            if (tipPoint.radius < minRadius) {
+                continue;
             }
+            const Vec3 span = tipPoint.position - basePoint.position;
+            const f32 length = glm::length(span);
+            if (length < 1e-5f) {
+                continue;
+            }
+            // Each segment's rings tilt with its OWN axis, so bent
+            // joints opened wedge gaps — overlap both ends into the
+            // neighbours (radius-scaled; buried inside the wood).
+            const Vec3 direction = span / length;
+            const Vec3 basePos =
+                basePoint.position - direction * (basePoint.radius * 0.35f);
+            const Vec3 tipPos =
+                tipPoint.position + direction * (tipPoint.radius * 0.35f);
+            appendTaperedTube(mesh, basePos, tipPos, basePoint.radius,
+                              tipPoint.radius, sidesFor(basePoint.radius),
+                              barkColor, ringIrregularity,
+                              positionHash(basePoint.position));
         }
     }
 }

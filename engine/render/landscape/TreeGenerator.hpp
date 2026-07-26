@@ -79,9 +79,19 @@ struct ColonizedTreeParams {
     // decimated look). `curveSubdiv` inserts Catmull-Rom points per
     // kept segment, rounding the elbows (halved on the low twin, off
     // on ultra). Defaults reproduce the pre-knob output exactly.
-    i32 tubeSides { 5 };          // 3..12
+    i32 tubeSides { 5 };          // MAX ring vertices (trunk), 3..12
     f32 curvePreserve { 0.0f };   // 0..1
     i32 curveSubdiv { 0 };        // 0..3
+    // `pathJitter` kinks the kept trajectory points (deterministic per
+    // node — LODs agree); with subdivision the kinks round into waves,
+    // without it they stay sharp breaks. `ringIrregularity` makes the
+    // tube faces angularly uneven (very different widths at 1).
+    // `sideMinFraction` tapers the ring count with branch radius: the
+    // trunk uses tubeSides, twigs drop toward tubeSides x fraction
+    // (1 = constant count — the pre-knob behavior).
+    f32 pathJitter { 0.0f };      // 0..1
+    f32 ringIrregularity { 0.0f };// 0..1
+    f32 sideMinFraction { 1.0f }; // 0.25..1
     // Foliage SDF (metaballs at branch tips, order-weighted).
     f32 tipBallRadius { 0.95f };  // order-0 metaball radius (m)
     f32 tipOrderFalloff { 0.78f };// radius x falloff^branchOrder

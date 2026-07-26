@@ -78,6 +78,9 @@ void RenderTuningIo::applyTreeTuning(
     c.tubeSides = colonized.tubeSides;
     c.curvePreserve = colonized.curvePreserve;
     c.curveSubdiv = colonized.curveSubdiv;
+    c.pathJitter = colonized.pathJitter;
+    c.ringIrregularity = colonized.ringIrregularity;
+    c.sideMinFraction = colonized.sideMinFraction;
     c.segment = colonized.segment;
     c.killDistance = colonized.killDistance;
     c.attractorCount = colonized.attractorCount;
@@ -208,6 +211,9 @@ void RenderTuningIo::captureTreeTuning(
     colonized.tubeSides = c.tubeSides;
     colonized.curvePreserve = c.curvePreserve;
     colonized.curveSubdiv = c.curveSubdiv;
+    colonized.pathJitter = c.pathJitter;
+    colonized.ringIrregularity = c.ringIrregularity;
+    colonized.sideMinFraction = c.sideMinFraction;
     colonized.segment = c.segment;
     colonized.killDistance = c.killDistance;
     colonized.attractorCount = c.attractorCount;
