@@ -777,9 +777,9 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
         const Vec3 look = glm::normalize(characterSpot +
                                          Vec3 { 0.0f, 0.5f, 0.0f } -
                                          flyCamera.camera.position);
-        // Title backdrop faces AWAY from the character spot:
-        // the vista behind, not the character close-up.
-        flyCamera.camera.yaw = std::atan2(look.x, -look.z) + 3.1415927f;
+        // Face the character spot and the village behind it (the old
+        // away-facing "vista" now stares at a wall).
+        flyCamera.camera.yaw = std::atan2(look.x, -look.z);
         flyCamera.camera.pitch = -std::asin(look.y);
     } else {
         const f32 ground = render::terrain::height(renderer.terrainParams(), 32.0f,
