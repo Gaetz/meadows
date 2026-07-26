@@ -9,6 +9,31 @@
 	text-align: center;
 }
 
+/* The game title on the TITLE SCREEN, centered near the top — the
+   startup loading gate draws the same title at the same spot, so the
+   fade hands over seamlessly. */
+#gametitle {
+	position: absolute;
+	top: 64dp;
+	left: 0;
+	width: 100%;
+	text-align: center;
+	font-size: 42dp;
+	color: #f0ede4;
+	letter-spacing: 4dp;
+}
+
+/* Main-menu variant: the button block centers on the SCREEN (the title
+   lives above it); classic absolute centering — top% resolves against
+   height, the negative margin is half the 340dp width. */
+#menu.main {
+	position: absolute;
+	top: 42%;
+	left: 50%;
+	margin: 0;
+	margin-left: -170dp;
+}
+
 .menu-buttons {
 	margin: 10dp 0;
 }

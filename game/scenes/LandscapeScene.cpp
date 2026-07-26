@@ -47,6 +47,7 @@
 #include "game/scenes/RenderTuningIo.hpp"
 #include "game/scenes/TreeCreationScene.hpp"
 #include "game/ui/ConsolePanel.hpp"
+#include "game/ui/OverlayBar.hpp"
 #include "game/ui/RenderTuningPanels.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/Engine.hpp"
@@ -94,7 +95,16 @@ void LandscapeScene::onEnter() {
     // bootstrapData logs the parse and resolve slices.
     const auto enterStart = std::chrono::steady_clock::now();
     rhi::Device& device = engine->getDevice();
+    if (!bootLoadSlot.empty()) {
+        saveController.queueLoad(bootLoadSlot);
+    }
     bootstrapData();
+    if (!bootLoadSlot.empty()) {
+        // The hidden round-trip save dies once beginLoad consumed it.
+        std::error_code removeErr;
+        std::filesystem::remove(savePath(bootLoadSlot), removeErr);
+        bootLoadSlot.clear();
+    }
     createRenderResources(device);
     setupGameplay();
     setupWorldAndStreaming();
@@ -2982,25 +2992,25 @@ void LandscapeScene::drawUi() {
             { 0.0f, 0.0f }, display,
             ImGui::GetColorU32(
                 ImVec4(0.0f, 0.0f, 0.0f, loadingGateAlpha)));
+        // The game title, same spot as the main menu's #gametitle
+        // (menus.rcss) — the fade hands over to the RmlUi one seamlessly.
+        constexpr f32 kTitleSize = 42.0f;
+        const char* kTitle = "True Adventurer";
+        const ImVec2 titleSize = ImGui::GetFont()->CalcTextSizeA(
+            kTitleSize, FLT_MAX, 0.0f, kTitle);
+        foreground->AddText(
+            ImGui::GetFont(), kTitleSize,
+            { (display.x - titleSize.x) * 0.5f, 64.0f },
+            ImGui::GetColorU32(
+                ImVec4(0.94f, 0.93f, 0.89f, loadingGateAlpha)),
+            kTitle);
         if (loadingGateAlpha > 0.6f) {
-            const f32 barWidth = display.x * 0.34f;
-            const ImVec2 lo { (display.x - barWidth) * 0.5f,
-                              display.y * 0.62f };
-            const ImVec2 hi { lo.x + barWidth, lo.y + 8.0f };
-            foreground->AddRectFilled(
-                lo, hi, ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.12f)),
-                4.0f);
-            foreground->AddRectFilled(
-                lo, { lo.x + barWidth * loadingGateProgress, hi.y },
-                ImGui::GetColorU32(ImVec4(0.85f, 0.9f, 1.0f, 0.85f)),
-                4.0f);
             char label[32];
             std::snprintf(label, sizeof(label), "%.0f%%",
                           static_cast<f64>(loadingGateProgress) * 100.0);
-            const ImVec2 size = ImGui::CalcTextSize(label);
-            foreground->AddText(
-                { (display.x - size.x) * 0.5f, hi.y + 10.0f },
-                ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.8f)), label);
+            drawOverlayBar(foreground,
+                           { display.x * 0.5f, display.y * 0.62f },
+                           display.x * 0.34f, loadingGateProgress, label);
         }
     }
 
@@ -3056,6 +3066,13 @@ void LandscapeScene::drawUi() {
         uiPanelVisible = !uiPanelVisible;
     }
     if (!uiPanelVisible) {
+        return;
+    }
+    // The TITLE SCREEN owns the frame: while the main menu is the top
+    // screen, the dev UI (top bar, panels, scene strip) hides even in
+    // Spectator — only the game title and the menu show.
+    if (const ScreenStack::Screen* topScreen = screenStack.topModal();
+        topScreen != nullptr && topScreen->name == "mainmenu") {
         return;
     }
 
@@ -3177,10 +3194,15 @@ void LandscapeScene::drawUi() {
         if (ImGui::Button("Game DB", ImVec2(110.0f, 0.0f))) {
             host()->push(std::make_unique<EditorScene>(*engine));
         }
-        // REPLACES the world (frees it — returning reloads from scratch):
-        // the tree tool runs light, alone on the stack.
+        // REPLACES the world (frees it): a hidden save captures the
+        // session first, and "Back to game" boots the fresh
+        // LandscapeScene from it (the file dies after that load).
+        // Synchronous save — the file must exist before the switch.
         ImGui::TextDisabled("replace\n(world closes)");
         if (ImGui::Button("Tree creation", ImVec2(110.0f, 0.0f))) {
+            SaveContext saveCtx = makeSaveContext();
+            saveCtx.jobs = nullptr;
+            saveController.performSave(saveCtx, kTreeCreatorSlot);
             host()->replace(std::make_unique<TreeCreationScene>(*engine));
         }
         ImGui::End();

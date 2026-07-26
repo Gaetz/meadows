@@ -88,6 +88,10 @@ public:
     // resolved as the LAST layer. `texts` localizes the missing-slot toast.
     void requestLoad(const str& slot, const data::TextTable& texts,
                      const std::function<void(const str&)>& notify);
+    // Cross-scene boot load (the tree-creator round trip): queue `slot`
+    // for the NEXT beginLoad without the reload machinery — the caller
+    // is constructing the scene that consumes it.
+    void queueLoad(const str& slot) { pendingLoadSlot_ = slot; }
     // update() end: true (once) when a reload is queued — the scene then
     // exits+re-enters.
     bool takeReloadRequest();

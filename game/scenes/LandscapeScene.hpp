@@ -98,8 +98,15 @@ class ConsolePanel;
 // radiance), both composed in linear HDR by the tonemap pass.
 class LandscapeScene final : public Scene {
 public:
-    explicit LandscapeScene(engine::Engine& engineContext)
-        : engine(&engineContext) {}
+    // `bootLoadSlot`: a save slot queued for the FIRST enter (the
+    // tree-creator round trip boots from its hidden save; the file is
+    // deleted once consumed). Empty = ordinary fresh boot.
+    explicit LandscapeScene(engine::Engine& engineContext,
+                            str bootSlot = {})
+        : engine(&engineContext), bootLoadSlot(std::move(bootSlot)) {}
+
+    // The tree-creator round trip's hidden save slot.
+    static constexpr const char* kTreeCreatorSlot = "treecreator";
 
     void onEnter() override;
     void onExit() override;
@@ -431,6 +438,10 @@ private:
 
     // Stutter hunt: per-block frame breakdown, logged on spikes > 25 ms.
     core::FrameProbe frameProbe;
+
+    // Consumed (queued into the SaveController, file deleted) on the
+    // first onEnter — see the constructor.
+    str bootLoadSlot;
 
     // Startup loading gate: black overlay + progress bar until the
     // streamed world is in (terrain ring resident, residency caches

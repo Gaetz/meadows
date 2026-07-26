@@ -1,6 +1,7 @@
 #include "game/scenes/TreeCreationScene.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 
@@ -18,6 +19,7 @@
 #include "game/SceneStack.hpp"
 #include "game/scenes/LandscapeScene.hpp"
 #include "game/scenes/RenderTuningIo.hpp"
+#include "game/ui/OverlayBar.hpp"
 #include "game/ui/RenderTuningPanels.hpp"
 
 namespace game {
@@ -274,16 +276,19 @@ void TreeCreationScene::drawUi() {
     const f32 barBottom = ImGui::GetWindowSize().y;
     ImGui::End();
 
-    ImGui::SetNextWindowPos(ImVec2(0.0f, barBottom),
-                            ImGuiCond_FirstUseEver);
+    // Docked hard left under the top bar — the tool's fixed layout.
+    ImGui::SetNextWindowPos(ImVec2(0.0f, barBottom), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(420.0f, display.y - barBottom),
-                             ImGuiCond_FirstUseEver);
-    ImGui::Begin("Tree creation");
+                             ImGuiCond_Always);
+    ImGui::Begin("Tree creation", nullptr,
+                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoCollapse);
 
-    // Leaving reloads the world from scratch (the strip REPLACED it —
-    // no warm overlay, by design: the tool frees the world's memory).
-    if (ImGui::Button("Back: world (reloads)")) {
-        host()->replace(std::make_unique<LandscapeScene>(*engine));
+    // Boots a fresh world from the hidden save the strip wrote when
+    // entering the tool (the file dies once that load lands).
+    if (ImGui::Button("Back to game")) {
+        host()->replace(std::make_unique<LandscapeScene>(
+            *engine, LandscapeScene::kTreeCreatorSlot));
     }
     ImGui::Separator();
 
@@ -350,20 +355,16 @@ void TreeCreationScene::drawUi() {
 
     ImGui::End();
 
-    // Generation progress: bottom-center overlay while the worker runs —
-    // the scene (and the previous tree) stay live behind it.
+    // Generation progress: the shared overlay bar (same look as the
+    // startup gate), clear of the window bottom — the scene and the
+    // previous tree stay live behind it.
     if (vegetation.reseedPending()) {
-        ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y - 48.0f),
-                                ImGuiCond_Always, ImVec2(0.5f, 0.0f));
-        ImGui::Begin("##treeprogress", nullptr,
-                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
-                         ImGuiWindowFlags_NoResize |
-                         ImGuiWindowFlags_AlwaysAutoResize |
-                         ImGuiWindowFlags_NoFocusOnAppearing);
-        ImGui::TextUnformatted("Generating tree");
-        ImGui::ProgressBar(vegetation.reseedProgress(),
-                           ImVec2(320.0f, 0.0f));
-        ImGui::End();
+        char label[48];
+        std::snprintf(label, sizeof(label), "Generating tree  %.0f%%",
+                      static_cast<f64>(vegetation.reseedProgress()) * 100.0);
+        drawOverlayBar(ImGui::GetForegroundDrawList(),
+                       { display.x * 0.5f, display.y - 110.0f }, 320.0f,
+                       vegetation.reseedProgress(), label);
     }
 }
 
