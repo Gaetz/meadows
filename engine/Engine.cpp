@@ -72,6 +72,8 @@ bool Engine::init(const EngineConfig& engineConfig) {
     if (!device) {
         return false;
     }
+    LOG_INFO("RHI backend: {}",
+             device->backend() == rhi::Backend::Vulkan ? "Vulkan" : "OpenGL");
     spriteRenderer = render::SpriteRenderer::create(*device);
     if (!spriteRenderer) {
         return false;

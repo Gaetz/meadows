@@ -17,7 +17,6 @@ add_library(meadows-runtime STATIC
     TerrainCollision.cpp
     VegetationCollision.cpp
     WeaponMeshes.cpp
-    WorldEditor.cpp
 )
 target_link_libraries(meadows-runtime PUBLIC meadows-render meadows-world
                       meadows-physics meadows-audio
@@ -30,7 +29,6 @@ add_executable(true-adventurer
     main.cpp
     AllForms.cpp
     scenes/WorldDemoScene.cpp
-    scenes/DemoScenes.cpp
     scenes/CombatArenaScene.cpp
     scenes/EditorScene.cpp
     scenes/FollowerController.cpp
@@ -58,11 +56,9 @@ add_executable(true-adventurer
     scenes/TreeCreationScene.cpp
     scenes/UiRouter.cpp
     scenes/WeatherController.cpp
-    scenes/UiDemoScene.cpp
     ui/AbilityPanel.cpp
     ui/AnimGraphPanel.cpp
     ui/AnimPreviewPanel.cpp
-    ui/CharacterStatsPanel.cpp
     ui/ClipTimelinePanel.cpp
     ui/ConditionBuilder.cpp
     ui/ConsolePanel.cpp

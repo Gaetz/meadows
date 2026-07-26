@@ -6,12 +6,11 @@
 #include "engine/Engine.hpp"
 #include "engine/FrameContext.hpp"
 #include "engine/Game.hpp"
+#include "engine/rhi/Device.hpp"
 #include "game/SceneStack.hpp"
 #include "game/scenes/CombatArenaScene.hpp"
-#include "game/scenes/DemoScenes.hpp"
 #include "game/scenes/EditorScene.hpp"
 #include "game/scenes/LandscapeScene.hpp"
-#include "game/scenes/UiDemoScene.hpp"
 
 namespace {
 
@@ -39,26 +38,12 @@ public:
             std::function<std::unique_ptr<game::Scene>()> make;
         };
         const Demo demos[] = {
-            { "Plugins / mods",
-              [&] { return std::make_unique<game::PluginScene>(*engine); } },
-            { "World editor",
-              [&] { return std::make_unique<game::WorldEditScene>(*engine); } },
-            { "Combat",
-              [&] { return std::make_unique<game::CombatScene>(*engine); } },
-            { "Gameplay (WASD)",
-              [&] { return std::make_unique<game::GameplayScene>(*engine); } },
-            { "Narrative",
-              [&] { return std::make_unique<game::NarrativeScene>(*engine); } },
-            { "Stats",
-              [&] { return std::make_unique<game::StatsScene>(*engine); } },
             { "Combat arena",
               [&] { return std::make_unique<game::CombatArenaScene>(*engine); } },
             { "Landscape (3D)",
               [&] { return std::make_unique<game::LandscapeScene>(*engine); } },
             { "Game DB (editor)",
               [&] { return std::make_unique<game::EditorScene>(*engine); } },
-            { "UI (RmlUi)",
-              [&] { return std::make_unique<game::UiDemoScene>(*engine); } },
         };
 
         // Wrap buttons across rows at a fixed budget. A fixed budget (not the
@@ -82,6 +67,13 @@ public:
             }
             rowX += w;
         }
+        // Active RHI backend (§2.1 runtime chain): makes the Vulkan-vs-GL
+        // fallback visible at a glance in every scene.
+        ImGui::TextDisabled("Backend: %s",
+                            engine->getDevice().backend() ==
+                                    rhi::Backend::Vulkan
+                                ? "Vulkan"
+                                : "OpenGL");
         ImGui::End();
 
         stack.drawUi();

@@ -23,9 +23,9 @@ namespace game {
 // Phase 8 — the playable "village + arena" scene (docs/PHASE-8.md).
 //
 // Step 1 (foundation): a player + training dummies, all driven by the full
-// `tickCharacter` pipeline every frame — the move from the ImGui-driven
-// single-actor StatsScene to a live multi-combatant simulation. Player control,
-// attacks, enemy AI, and the rest/merchant NPCs land in the following steps.
+// `tickCharacter` pipeline every frame — a live multi-combatant simulation.
+// Player control, attacks, enemy AI, and the rest/merchant NPCs land in the
+// following steps.
 class CombatArenaScene : public WorldDemoScene {
 public:
     using WorldDemoScene::WorldDemoScene;

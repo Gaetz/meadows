@@ -12,8 +12,7 @@
 // All character-state components (CoreAttributes, AttributeSet, AbilitySystem,
 // Resonance, Survival, StatusBuildup, CombatState, Injuries, Afflictions,
 // ActiveDrugs) live on the flecs entity; this function reads them, runs the
-// full per-frame tick pipeline (matching the former manual loop in StatsScene),
-// and writes results back in-place.
+// full per-frame tick pipeline, and writes results back in-place.
 //
 // The pipeline:
 //   stagger/paralysis decay → buildCharacterMods → recomputeStats →
