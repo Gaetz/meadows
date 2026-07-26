@@ -36,6 +36,7 @@ void RenderTuningIo::applyTuning(
                            tuning.stylizedShadowFloor,
                            tuning.stylizedHalfTone };
     r.shadowResolutionUi = glm::clamp(tuning.shadowResolution, 1024, 4096);
+    r.reflectionScaleUi = glm::clamp(tuning.reflectionScale, 0.25f, 0.5f);
     r.interiorDaylightWeightUi = tuning.interiorDaylightWeight;
     r.clusteredLightsUi = tuning.clusteredLights;
     r.postFx.froxelFog = tuning.froxelFog;
@@ -142,6 +143,7 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
     out.stylizedShadowEnd = r.stylizedShadowUi.y;
     out.stylizedShadowFloor = r.stylizedShadowUi.z;
     out.shadowResolution = r.shadowResolutionUi;
+    out.reflectionScale = r.reflectionScaleUi;
     out.interiorDaylightWeight = r.interiorDaylightWeightUi;
     out.clusteredLights = r.clusteredLightsUi;
     out.froxelFog = r.postFx.froxelFog;

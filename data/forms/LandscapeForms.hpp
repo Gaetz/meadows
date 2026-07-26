@@ -82,6 +82,9 @@ struct LandscapeTuningForm : Form {
     f32 stylizedShadowFloor { 0.0f };
     // CSM texels per cascade side (1024/2048/4096 — the panel's combo).
     i32 shadowResolution { 2048 };
+    // Planar-reflection resolution as a fraction of the window
+    // (0.25..0.5) — mirror sharpness vs fill rate.
+    f32 reflectionScale { 0.5f };
     // Clustered forward (docs/RENDERING.md §5): per-cluster light lists
     // replace the per-pixel 24-light loop and unlock the full budget.
     bool clusteredLights { true };
@@ -140,6 +143,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(stylizedShadowEnd)
         REFLECT_FIELD(stylizedShadowFloor)
         REFLECT_FIELD(shadowResolution)
+        REFLECT_FIELD(reflectionScale)
         REFLECT_FIELD(clusteredLights)
         REFLECT_FIELD(froxelFog)
         REFLECT_FIELD(froxelTemporalBlend)
