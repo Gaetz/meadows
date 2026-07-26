@@ -1430,7 +1430,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         frame.cmd.endRenderPass();
     }
 
-    // The top-down rain occlusion depth (roof cover).
+    // The top-down rain occlusion depth (roof + canopy cover).
     if (cfg.sky && frameData.stormInfo.y > 0.003f && meshShadowCastersUi) {
         render::GpuProbe::Scope gpu { gpuProbe, frame.device, "rainOcc" };
         frame.cmd.beginRenderPass({ .framebuffer = rainOcclusionFb,
@@ -1438,6 +1438,17 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                     .depthLoadOp = rhi::LoadOp::Clear });
         drawCastersInto(frame, snapshot, view, rainCasterGroup,
                         /*refreshUbos=*/true);
+        // Trees shelter too: the vegetation caster path through the
+        // top-down matrix. Billboards orient to THEIR pass's matrix
+        // (shadow_prop.vert reads the bound ShadowUbo), so cards face up
+        // here; solid shadow proxies / ultra lobes keep it cutout-free.
+        // The window is 40 m around the camera — one chunk of reach.
+        if (cfg.vegetation) {
+            vegetation.drawDepth(frame.cmd, frameBindGroup,
+                                 rainCasterGroup, camera.position,
+                                 /*maxChunkDistance=*/1, nullptr,
+                                 /*ultraDetail=*/true);
+        }
         frame.cmd.endRenderPass();
     }
 

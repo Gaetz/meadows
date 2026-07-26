@@ -333,7 +333,8 @@ MoltenVK exposes no RT anyway).
   (cumulonimbus billboard towers on the horizon ring), rain (procedural
   hash-scrolled streaks in a camera cylinder, count × intensity),
   wetness (albedo darkening), rain occlusion (top-down ortho depth —
-  no rain under roofs).
+  no rain under roofs or tree canopies; trees render their solid
+  shadow proxies through the same caster path, one chunk of reach).
 - **Clouds today**: one 512² cloud-map texture baked once per frame
   (every shadow consumer taps a texture, not an FBM);
   `cloudShadowFactor()` (clouds.glsl) consumed by terrain, grass, trees,
@@ -440,12 +441,18 @@ RC tuning pass (3 → 1–2 ms targets via the GI panel knobs).
     RPATH — both bit at first M1 build.
 15. **Shader-compile failure at first load aborts** (only hot-reload
     keeps the old program) — RHI hardening candidate.
-16. **Self-orienting billboards don't flip with the mirror.** A card
-    that re-aims at the mirrored camera keeps its screen winding, so a
-    reflection pass's inverted front face back-face-culls it while
-    static geometry renders fine (leafless reflected trees). Mirror
-    passes must tell billboard shaders to flip their corners
-    (`uLeafLodInfo.z` for the leaf cards).
+16. **Billboards face the viewpoint of the pass drawing them** — never
+    "the camera". The contract as implemented: `tree.vert` expands leaf
+    cards from the bound frame UBO's viewProj rows (main or mirrored
+    view), `shadow_prop.vert` from the bound ShadowUbo's matrix (sun
+    cascades, rain occlusion) — so any new pass (cubemap capture,
+    impostor bake, top-down) gets correct orientation by construction,
+    just by binding its own matrix. One rider: a MIRRORED pass must
+    also tell billboard shaders to flip their corners
+    (`uLeafLodInfo.z`) — a self-orienting quad keeps its screen winding
+    under the mirror, so the pass's inverted front face back-face-culls
+    it while static geometry renders fine (the leafless-reflected-trees
+    bug).
 
 ## 6. Roadmap (consolidated next steps)
 
