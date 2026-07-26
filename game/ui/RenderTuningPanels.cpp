@@ -5,14 +5,14 @@
 
 #include "engine/core/FrameProbe.hpp"
 #include "engine/core/Log.hpp"
-#include "game/scenes/AtmosphereParams.hpp"
-#include "game/scenes/LandscapeRenderer.hpp"
+#include "engine/render/AtmosphereParams.hpp"
+#include "engine/render/WorldRenderer.hpp"
 
 #include <imgui.h>
 
 namespace game {
 
-void RenderTuningPanels::drawPerfPanel(LandscapeRenderer& r,
+void RenderTuningPanels::drawPerfPanel(render::WorldRenderer& r,
                                        const core::FrameProbe* cpuProbe) {
     if (!r.gpuProbe.active()) {
         ImGui::TextDisabled("(no GPU timer queries on this device)");
@@ -88,7 +88,7 @@ void RenderTuningPanels::drawPerfPanel(LandscapeRenderer& r,
     ImGui::Text("total: %.2f Mtri", terrainMTri + vegMTri + grassMTri);
 }
 
-void RenderTuningPanels::drawTreeBuilderPanel(LandscapeRenderer& r) {
+void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
     // Every knob regenerates on RELEASE (reseedVariantMeshes at the
     // render()-top safe point): meshes only — scatter/instances stay.
     // New content re-bakes AO once (content-keyed disk cache).
@@ -217,7 +217,7 @@ void RenderTuningPanels::drawTreeBuilderPanel(LandscapeRenderer& r) {
     }
 }
 
-void RenderTuningPanels::drawTerrainPanel(LandscapeRenderer& r) {
+void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
     if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
         r.saveTuningRequested = true;
     }
@@ -274,8 +274,8 @@ void RenderTuningPanels::drawTerrainPanel(LandscapeRenderer& r) {
     }
 }
 
-void RenderTuningPanels::drawRenderPanel(LandscapeRenderer& r,
-                                         AtmosphereParams& atmos) {
+void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
+                                         render::AtmosphereParams& atmos) {
     if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
         r.saveTuningRequested = true;
     }

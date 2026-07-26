@@ -22,7 +22,7 @@
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 #include "engine/render/SceneView.hpp" // render::RenderSnapshot
-#include "game/scenes/AtmosphereParams.hpp"
+#include "engine/render/AtmosphereParams.hpp"
 
 namespace core {
 class JobSystem;
@@ -36,19 +36,18 @@ class Device;
 namespace ui {
 class UiSystem;
 }
-namespace data {
-struct LandscapeTuningForm;
-struct LobeTreeTuningForm;
-struct ColonizedTreeTuningForm;
-struct RcTuningForm;
+// Game-side friends: the ImGui tuning panels and the Forms<->flat-params
+// tuning seam operate on the renderer's private knobs (names only — the
+// engine includes nothing from game/).
+namespace game {
+class RenderTuningPanels;
+class RenderTuningIo;
 }
 
 namespace render {
+
 class MeshCache;
 class TextureCache;
-}
-
-namespace game {
 
 // Per-subsystem opt-in (docs/RENDERING.md §7): a tool scene mounts only
 // what it needs — a system left off is never created, allocated or
@@ -96,46 +95,28 @@ struct RenderView {
     core::FrameProbe* probe { nullptr };
 };
 
-// The custom 3D landscape renderer, extracted from LandscapeScene:
-// owns the shader library, the render::* systems, every
-// GPU handle and the frame graph (shadow cascades, reflection, main pass,
-// water composite, post FX, tonemap). Consumes ONLY the RenderSnapshot
-// (engine/render/SceneView.hpp) and the RenderView. The sim side reaches
-// the world ground truth through
-// terrainParams() (terrain shape doubles as collision/nav input); the dev
-// tuning/perf panels live in game/ui/RenderTuningPanels (friend — they
-// edit the live knobs below in place).
-class LandscapeRenderer {
+// The engine's world renderer (multi-instance, per-subsystem config —
+// docs/RENDERING.md §7): owns the shader library, the render::* systems,
+// every GPU handle and the frame graph (shadow cascades, reflection, main
+// pass, water composite, post FX, tonemap). Consumes ONLY the
+// RenderSnapshot (SceneView.hpp) and the RenderView. The sim side reaches
+// the world ground truth through terrainParams() (terrain shape doubles
+// as collision/nav input). The dev tuning/perf panels live in
+// game/ui/RenderTuningPanels, and the Forms<->flat-params startup seam in
+// game/scenes/RenderTuningIo — both friends editing the live knobs in
+// place (the engine never sees a Form, CLAUDE.md §4).
+class WorldRenderer {
 public:
-    // GPU resources + systems. Call after terrainParams()/applyTuning are
-    // seeded (bootstrap order unchanged from the scene's onEnter).
-    // `config` selects the mounted subsystems (default: everything).
+    // GPU resources + systems. Call after terrainParams()/the tuning
+    // seam are seeded (bootstrap order unchanged from the scene's
+    // onEnter). `config` selects the mounted subsystems (default:
+    // everything).
     void create(rhi::Device& device, core::JobSystem& jobs,
                 const RendererConfig& config = {});
     void destroy(rhi::Device& device);
 
     const RendererConfig& config() const { return cfg; }
 
-    // Startup values for the render knobs the panel adjusts live (§5:
-    // the TOML sets where everything starts).
-    void applyTuning(const data::LandscapeTuningForm& tuning,
-                     const sptr<const render::HeightPatches>& patches);
-    // Tree builder: the two *TreeTuningForm records mapped
-    // onto the generators' flat engine params (§4 seam, TerrainParams
-    // pattern) — startup values; the Trees panel edits them live.
-    void applyTreeTuning(const data::LobeTreeTuningForm& lobes,
-                         const data::ColonizedTreeTuningForm& colonized);
-    // GI tuning record -> the live RcTuning struct (same startup contract).
-    void applyRcTuning(const data::RcTuningForm& rc);
-
-    // The reverse mapping, for the panels' "Save render tuning" button:
-    // fills the tuning records from the CURRENT live values (the scene
-    // overlays its atmosphere-owned fields, then writes the overlay
-    // plugin). Fields the panels don't own keep `out`'s values.
-    void captureTuning(data::LandscapeTuningForm& out) const;
-    void captureRcTuning(data::RcTuningForm& out) const;
-    void captureTreeTuning(data::LobeTreeTuningForm& lobes,
-                           data::ColonizedTreeTuningForm& colonized) const;
     // True once when a panel's Save button was pressed (the scene owns
     // the plugin stack and performs the write).
     bool consumeSaveTuningRequest() {
@@ -179,8 +160,9 @@ public:
     static constexpr u32 kFallbackLights = 24;
 
 private:
-    // The dev panels edit the tuning/debug state below in place.
-    friend class RenderTuningPanels;
+    // Game-side dev UI and tuning seam edit the state below in place.
+    friend class ::game::RenderTuningPanels;
+    friend class ::game::RenderTuningIo;
 
     RendererConfig cfg {};
 
@@ -416,4 +398,4 @@ private:
     u32 offscreenHeight { 0 };
 };
 
-} // namespace game
+} // namespace render

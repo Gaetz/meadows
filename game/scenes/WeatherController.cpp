@@ -6,12 +6,12 @@ namespace game {
 
 namespace {
 
-// AtmosphereParams <-> WeatherForm field copy, moved verbatim from the scene's
+// AtmosphereParams <-> WeatherForm field copy, moved verbatim from the
 // captureCurrentWeather/applyWeather. Two fields are spelled differently on the
 // two structs: cloudShadow<->cloudShadowStrength, volumetric<->volumetric-
 // Intensity. A reflection-driven version (no hand-listed fields) is a later
 // brick.
-data::WeatherForm capture(const AtmosphereParams& a) {
+data::WeatherForm capture(const render::AtmosphereParams& a) {
     data::WeatherForm w;
     w.cloudCoverage = a.cloudCoverage;
     w.cloudScale = a.cloudScale;
@@ -36,7 +36,7 @@ data::WeatherForm capture(const AtmosphereParams& a) {
     return w;
 }
 
-void applyTo(AtmosphereParams& a, const data::WeatherForm& w) {
+void applyTo(render::AtmosphereParams& a, const data::WeatherForm& w) {
     a.cloudCoverage = w.cloudCoverage;
     a.cloudScale = w.cloudScale;
     a.cloudHeight = w.cloudHeight;
@@ -65,7 +65,8 @@ void WeatherController::init(const data::FormDatabase& forms) {
     weathers_ = data::resolveWeatherForms(forms);
 }
 
-void WeatherController::beginTransition(i32 index, const AtmosphereParams& current) {
+void WeatherController::beginTransition(
+    i32 index, const render::AtmosphereParams& current) {
     selected_ = index;
     if (selected_ >= 0) {
         from_ = capture(current);
@@ -73,7 +74,7 @@ void WeatherController::beginTransition(i32 index, const AtmosphereParams& curre
     }
 }
 
-void WeatherController::update(AtmosphereParams& atmos, f32 dt) {
+void WeatherController::update(render::AtmosphereParams& atmos, f32 dt) {
     // Every parameter slides from the captured start state to the selected
     // weather over `duration_` seconds.
     if (blend_ >= 1.0f || selected_ < 0 ||

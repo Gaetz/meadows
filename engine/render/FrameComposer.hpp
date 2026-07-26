@@ -3,17 +3,17 @@
 #include "engine/render/landscape/FrameUniforms.hpp"
 #include "engine/render/landscape/ShadowMapper.hpp"
 #include "engine/render/landscape/SkySystem.hpp"
-#include "game/scenes/AtmosphereParams.hpp"
+#include "engine/render/AtmosphereParams.hpp"
 
 // The per-frame UBO assembly, extracted from LandscapeScene::render().
 // Pure values in, FrameUniforms out — no World, no device — so the
 // ~110-line composition is unit-testable headless and the
-// LandscapeRenderer consumes it unchanged. The scene still owns what
+// WorldRenderer consumes it unchanged. The scene still owns what
 // is genuinely frame STATE: the shadow-sun hysteresis, cascade fitting, GPU
 // availability checks (they feed `shadowStrength` / `reflectionsActive`), and
 // every updateBuffer.
 
-namespace game {
+namespace render {
 
 // Everything render() feeds into the frame UBO, as plain values.
 struct FrameComposerInputs {
@@ -106,4 +106,4 @@ struct ComposedFrame {
 
 ComposedFrame composeFrameUniforms(const FrameComposerInputs& in);
 
-} // namespace game
+} // namespace render

@@ -8,7 +8,7 @@
 //                  setupGameplay / setupWorldAndStreaming /
 //                  spawnInitialWorld ; onExit
 //   2. Frame       update (input, sim tick, streaming, controllers),
-//                  updateNpcs ; render (delegates to LandscapeRenderer)
+//                  updateNpcs ; render (delegates to render::WorldRenderer)
 //   3. Modes       enterPlayMode / exitPlayMode / restoreMode (the ONE
 //                  mode transition — every mode side effect lives there)
 //   4. Contexts    make*Context() — one adapter per controller: Sculpt,
@@ -44,6 +44,7 @@
 #include "game/Barter.hpp"
 #include "game/SceneStack.hpp"        // Edit mode pushes overlays (host())
 #include "game/scenes/EditorScene.hpp" // the Game DB overlay
+#include "game/scenes/RenderTuningIo.hpp"
 #include "game/ui/ConsolePanel.hpp"
 #include "game/ui/RenderTuningPanels.hpp"
 #include "engine/assets/AssetDatabase.hpp"
@@ -84,7 +85,7 @@
 namespace game {
 
 // (The stat->world movement constants live in PlayerController; the tonemap
-// constant and the oblique-projection helper in LandscapeRenderer.)
+// constant and the oblique-projection helper in render::WorldRenderer.)
 
 void LandscapeScene::onEnter() {
     // The load-side measurement baseline — a load IS a scene
@@ -201,12 +202,12 @@ void LandscapeScene::bootstrapData() {
     // Terrain shape + startup values for every live-adjustable knob: the
     // renderer's half (terrain/exposure/ssao/grade) through applyTuning,
     // the atmosphere half here (the weather crossfade owns `atmos`).
-    renderer.applyTuning(tuning, heightPatches);
+    RenderTuningIo::applyTuning(renderer, tuning, heightPatches);
     // Tree builder: generation knobs ride two ordinary
     // records (§5) — mods retune the species; the Trees panel edits live.
-    renderer.applyTreeTuning(data::resolveLobeTreeTuning(forms),
+    RenderTuningIo::applyTreeTuning(renderer, data::resolveLobeTreeTuning(forms),
                              data::resolveColonizedTreeTuning(forms));
-    renderer.applyRcTuning(data::resolveRcTuning(forms));
+    RenderTuningIo::applyRcTuning(renderer, data::resolveRcTuning(forms));
     atmos.fogDensity = tuning.fogDensity;
     atmos.fogHeightFalloff = tuning.fogHeightFalloff;
     atmos.fogLowBoost = tuning.fogLowBoost;
@@ -768,7 +769,7 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
     streaming.refreshNavObstacles(sctx);
 
     // (Rock override, sky/shadows/water/reflection/blit/postFx/
-    // gpuOcclusion creation: all moved into LandscapeRenderer::create.)
+    // gpuOcclusion creation: all moved into render::WorldRenderer::create.)
 
     // Start beside the NPC (slightly above, looking at it) — never
     // inside the terrain: the spot is grounded on the SAME height function
@@ -1056,7 +1057,7 @@ void LandscapeScene::update(f32 dt) {
                                 : 16.0f / 9.0f;
         const Mat4 cameraViewProj = flyCamera.camera.viewProj(aspect);
         extractLights(world, flyCamera.camera.position,
-                      LandscapeRenderer::kMaxLights, snapshot,
+                      render::WorldRenderer::kMaxLights, snapshot,
                       &cameraViewProj);
         extractWaterVolumes(world, snapshot);
     }
@@ -2876,7 +2877,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
             forms.get(activeWorldspace))) {
         buriedBelowY = space->buriedBelowY;
     }
-    const RenderView view {
+    const render::RenderView view {
         .camera = flyCamera.camera,
         .atmos = atmos,
         .interiorMode = interiorMode,
@@ -3115,7 +3116,7 @@ void LandscapeScene::saveRenderTuning() {
     // EVERY reflected field — the overlay is a complete, idempotent
     // snapshot of the tuning records.
     data::LandscapeTuningForm tuning = data::resolveLandscapeTuning(forms);
-    renderer.captureTuning(tuning);
+    RenderTuningIo::captureTuning(renderer, tuning);
     tuning.fogDensity = atmos.fogDensity;
     tuning.fogHeightFalloff = atmos.fogHeightFalloff;
     tuning.fogLowBoost = atmos.fogLowBoost;
@@ -3129,11 +3130,11 @@ void LandscapeScene::saveRenderTuning() {
     tuning.godRayIntensity = atmos.godRayIntensity;
     tuning.volumetricIntensity = atmos.volumetric;
     data::RcTuningForm rc = data::resolveRcTuning(forms);
-    renderer.captureRcTuning(rc);
+    RenderTuningIo::captureRcTuning(renderer, rc);
     data::LobeTreeTuningForm lobes = data::resolveLobeTreeTuning(forms);
     data::ColonizedTreeTuningForm colonized =
         data::resolveColonizedTreeTuning(forms);
-    renderer.captureTreeTuning(lobes, colonized);
+    RenderTuningIo::captureTreeTuning(renderer, lobes, colonized);
 
     data::Plugin plugin;
     plugin.id =

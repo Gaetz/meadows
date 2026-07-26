@@ -1,11 +1,11 @@
-#include "game/FrameComposer.hpp"
+#include "engine/render/FrameComposer.hpp"
 
 #include <cmath>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-namespace game {
+namespace render {
 
 ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     // Sun position on screen for the god rays; shafts fade as the sun
@@ -185,4 +185,4 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     return { base, resolved };
 }
 
-} // namespace game
+} // namespace render

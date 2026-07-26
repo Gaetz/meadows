@@ -729,7 +729,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
             // (cascade 0) is what the surface shaders, the volumetric and
             // the froxel inject consume — fragment joins the scope there.
             // Pipelined: NO final barrier at all — the consumers live in
-            // the next frame, whose fence (LandscapeRenderer, before the
+            // the next frame, whose fence (WorldRenderer, before the
             // first GI reader) orders and publishes the write; anything
             // recorded in between overlaps the chain.
             if (i > 0) {

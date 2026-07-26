@@ -34,7 +34,7 @@
 #include "game/scenes/RideController.hpp"
 #include "game/scenes/SaveController.hpp"
 #include "game/scenes/SceneConsole.hpp"
-#include "game/scenes/AtmosphereParams.hpp"
+#include "engine/render/AtmosphereParams.hpp"
 #include "game/scenes/WeatherController.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
@@ -66,7 +66,7 @@
 #include "engine/audio/Audio.hpp"
 #include "game/SoundResolver.hpp"
 #include "game/scenes/FxDirector.hpp"
-#include "game/scenes/LandscapeRenderer.hpp"
+#include "engine/render/WorldRenderer.hpp"
 #include "game/scenes/ProjectileDirector.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
@@ -152,16 +152,16 @@ private:
 
     // The whole custom renderer — shader library, render::* systems,
     // GPU handles, frame graph, terrain/render dev panels and their toggle
-    // state — lives in LandscapeRenderer. The scene reaches the terrain
-    // ground truth via renderer.terrainParams() and hands a RenderView +
+    // state — lives in render::WorldRenderer. The scene reaches the terrain
+    // ground truth via renderer.terrainParams() and hands a render::RenderView +
     // the RenderSnapshot to renderer.render() each frame.
-    LandscapeRenderer renderer;
+    render::WorldRenderer renderer;
     bool animateTime { false };
     // Atmospheric render state (sky/fog/weather-driven), grouped so the weather
     // transition can own it. Manual sliders and the crossfade both
     // write here; the renderer reads it through the view. stormFront/
     // rainIntensity live here too.
-    AtmosphereParams atmos;
+    render::AtmosphereParams atmos;
     f32 windTime { 0.0f }; // accumulated wind phase (dt x strength)
 
     // The real mesh path.

@@ -4,8 +4,8 @@
 > former documents (2026-07-26); their full brick-by-brick journals are
 > preserved under `docs/archive/` — this file keeps the *state, the
 > decisions with their why, the durable lessons, and what remains*.
-> Read this before touching `engine/rhi/`, `engine/render/`, or
-> `game/scenes/LandscapeRenderer*` / `LandscapeScene::render`.
+> Read this before touching `engine/rhi/`, `engine/render/` (incl. the
+> `WorldRenderer` orchestrator), or `LandscapeScene::render`.
 
 ## 0. Archive map
 
@@ -132,17 +132,16 @@ horizon) + `GpuOcclusion` (Hi-Z compute cull + fence readback),
 `TerrainLightMap` (worker-baked far sun shadows + sky aperture),
 `FxRenderer` (CPU particles), `ShaderLibrary` (includes, hot-reload).
 
-The **orchestrator does not**: `game/scenes/LandscapeRenderer.{hpp,cpp}`
-(~120 KB) owns pass order, FrameUbo composition, offscreen targets, light
-UBO fill, key-shadow selection, and two game-side types (`FrameComposer`,
-`AtmosphereParams` — they move with it at R4). (Its ImGui tuning panels
-moved to `game/ui/RenderTuningPanels` — R1 of §7, done 2026-07-26; the
-snapshot types and the residency caches are engine-side since R2 —
-`engine/render/SceneView.hpp`, `engine/render/{Mesh,Texture}Cache`.)
-It is owned by LandscapeScene alone;
-`AnimPreviewPanel` had to hand-roll its own RHI offscreen pipeline as a
-result. Fixing this is the **RENDERER-EXTRACT chantier, §7** — the
-current placement is acknowledged technical debt, not a design.
+The **orchestrator**: `engine/render/WorldRenderer.{hpp,cpp}`
+(`render::WorldRenderer`, engine-side since R4 of §7) owns pass order,
+FrameUbo composition (via `render::FrameComposer`), offscreen targets,
+light UBO fill, key-shadow selection, and the per-subsystem
+`RendererConfig` (R3). Game-side remain only its two friends: the ImGui
+tuning panels (`game/ui/RenderTuningPanels`, R1) and the Forms↔flat-params
+tuning seam (`game/scenes/RenderTuningIo` — the engine never sees a Form,
+CLAUDE.md §4). `AnimPreviewPanel` still hand-rolls its own RHI offscreen
+pipeline — replacing it with a configured `WorldRenderer` instance is R5,
+the chantier's proof.
 
 ### 2.2 Pass order (one frame)
 
@@ -528,8 +527,22 @@ Bricks (each lands alone, LandscapeScene byte-identical at every step):
   cost the persisted pipeline cache already amortizes. Revisit only if
   a tool scene's startup measures slow. Proof of the opt-in path = R5's
   first consumer (this brick is validated full-config-identical only).
-- **R4 — Move.** `git mv` to `engine/render/` (rename candidate:
-  `render::WorldRenderer`), CMake into `meadows-render`, include sweep.
+- **R4 — Move. DONE (2026-07-26).** The orchestrator is
+  `engine/render/WorldRenderer.{hpp,cpp}` (`render::WorldRenderer`), in
+  lib `meadows-render`; `FrameComposer` and `AtmosphereParams` moved
+  with it (namespace `render`; the headless FrameComposer test now
+  targets `render::`). One extraction the move forced: the
+  `applyTuning`/`captureTuning` family took `data::*Form` arguments —
+  engine code never sees a Form (CLAUDE.md §4) — so the whole
+  Forms↔flat-params seam became `game/scenes/RenderTuningIo` (static,
+  stateless, friend of the renderer, same bodies verbatim); the scene
+  calls `RenderTuningIo::applyTuning(renderer, …)` where it called
+  `renderer.applyTuning(…)`. The renderer's game-side friends are
+  forward-declared names only (`::game::RenderTuningPanels`,
+  `::game::RenderTuningIo`) — no game include enters the engine.
+  Note: `WorldRenderer.cpp` references `ui::UiSystem` (the in-pass game
+  UI composite); as a static-lib member this resolves when the exe links
+  `meadows-ui` — tools that skip both never pull the object.
 - **R5 — First consumer** (future session): an AnimPreviewScene or the
   tree-builder scene replaces the hand-rolled preview pipeline — the
   proof of the chantier.

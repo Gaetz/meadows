@@ -4,7 +4,6 @@
 # (in-engine or standalone) reuses this without the game executable.
 add_library(meadows-runtime STATIC
     Barter.cpp
-    FrameComposer.cpp
     InputActions.cpp
     InventoryView.cpp
     LevelEditor.cpp
@@ -38,7 +37,6 @@ add_executable(true-adventurer
     scenes/FxDirector.cpp
     scenes/GameHud.cpp
     scenes/InteractionController.cpp
-    scenes/LandscapeRenderer.cpp
     scenes/LandscapeScene.cpp
     scenes/MapController.cpp
     scenes/NpcCombatController.cpp
@@ -50,6 +48,7 @@ add_executable(true-adventurer
     scenes/PlayerController.cpp
     scenes/ProjectileDirector.cpp
     scenes/QuestDirector.cpp
+    scenes/RenderTuningIo.cpp
     scenes/RideController.cpp
     scenes/SaveController.cpp
     scenes/SceneConsole.cpp

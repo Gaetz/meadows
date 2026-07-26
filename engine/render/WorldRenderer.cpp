@@ -1,4 +1,4 @@
-#include "game/scenes/LandscapeRenderer.hpp"
+#include "engine/render/WorldRenderer.hpp"
 
 #include <cmath>
 
@@ -20,10 +20,9 @@
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
 #include "engine/ui/UiSystem.hpp"
-#include "game/FrameComposer.hpp"
-#include "game/scenes/LandscapeTuning.hpp"
+#include "engine/render/FrameComposer.hpp"
 
-namespace game {
+namespace render {
 
 namespace {
 
@@ -40,109 +39,17 @@ struct ModelUniforms {
 // std140 LightsUbo mirror (binding 5 — mirrors locallights.glsl).
 struct LightsUniforms {
     Vec4 count { 0.0f };
-    Vec4 positionRadius[LandscapeRenderer::kMaxLights] {};
-    Vec4 colorIntensity[LandscapeRenderer::kMaxLights] {};
+    Vec4 positionRadius[WorldRenderer::kMaxLights] {};
+    Vec4 colorIntensity[WorldRenderer::kMaxLights] {};
     // xyz = spot direction, w = cos(half angle); w = -2 marks a point
     // light, w = -3 a WINDOW projector (xyz = the window's into-room
     // normal — docs/RENDERING.md §3).
-    Vec4 directionAngle[LandscapeRenderer::kMaxLights] {};
+    Vec4 directionAngle[WorldRenderer::kMaxLights] {};
     // Window projector half extents (xy); zw free. APPEND-only UBO.
-    Vec4 windowInfo[LandscapeRenderer::kMaxLights] {};
+    Vec4 windowInfo[WorldRenderer::kMaxLights] {};
 };
 
 } // namespace
-
-void LandscapeRenderer::applyTuning(
-    const data::LandscapeTuningForm& tuning,
-    const sptr<const render::HeightPatches>& patches) {
-    // Terrain shape + startup values for every live-adjustable knob the
-    // render panel owns (§5: the TOML sets where it all starts; the scene
-    // keeps the atmosphere half in `atmos`).
-    terrain.params.seed = tuning.terrainSeed;
-    terrain.params.patches = patches;
-    terrain.params.hillWavelength = tuning.hillWavelength;
-    terrain.params.hillAmplitude = tuning.hillAmplitude;
-    terrain.params.mountainWavelength = tuning.mountainWavelength;
-    terrain.params.mountainAmplitude = tuning.mountainAmplitude;
-    terrain.params.seaLevel = tuning.seaLevel;
-    exposureUi = tuning.exposure;
-    // (tuning.ssaoStrength is unused — screen-space AO removed.)
-    gradeVibranceUi = tuning.gradeVibrance;
-    gradeSplitToneUi = tuning.gradeSplitTone;
-    gradeContrastUi = tuning.gradeContrast;
-    autoExposureMinUi = tuning.autoExposureMin;
-    autoExposureMaxUi = tuning.autoExposureMax;
-    stylizedDiffuseUi = { tuning.stylizedDiffuseEdge0Start,
-                          tuning.stylizedDiffuseEdge0End,
-                          tuning.stylizedDiffuseEdge1Start,
-                          tuning.stylizedDiffuseEdge1End };
-    stylizedShadowUi = { tuning.stylizedShadowStart,
-                         tuning.stylizedShadowEnd,
-                         tuning.stylizedShadowFloor,
-                         tuning.stylizedHalfTone };
-    shadowResolutionUi = glm::clamp(tuning.shadowResolution, 1024, 4096);
-    interiorDaylightWeightUi = tuning.interiorDaylightWeight;
-    clusteredLightsUi = tuning.clusteredLights;
-    postFx.froxelFog = tuning.froxelFog;
-    postFx.froxelTemporalBlend = tuning.froxelTemporalBlend;
-    postFx.froxelDustNoise = tuning.froxelDustNoise;
-    interiorDustDensityUi = tuning.interiorDustDensity;
-    // Vegetation draw budget (clamped — the streamer ring
-    // and the Hi-Z candidate cap size the safe range).
-    vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 15);
-    vegetation.highDetailRadius =
-        glm::clamp(tuning.vegHighDetailRadius, 0, 8);
-    vegetation.lowDetailRadius =
-        glm::clamp(tuning.vegLowDetailRadius, 2, 12);
-}
-
-void LandscapeRenderer::applyTreeTuning(
-    const data::LobeTreeTuningForm& lobes,
-    const data::ColonizedTreeTuningForm& colonized) {
-    // Field-for-field Form -> flat engine params (§4: engine never sees
-    // data/). The Trees panel then edits the params live.
-    render::LobeTreeParams& l = vegetation.lobeTreeParams;
-    l.trunkHeightMin = lobes.trunkHeightMin;
-    l.trunkHeightMax = lobes.trunkHeightMax;
-    l.trunkRadiusMin = lobes.trunkRadiusMin;
-    l.trunkRadiusMax = lobes.trunkRadiusMax;
-    l.trunkTaper = lobes.trunkTaper;
-    l.lean = lobes.lean;
-    l.branchCountMin = lobes.branchCountMin;
-    l.branchCountMax = lobes.branchCountMax;
-    l.branchLengthMin = lobes.branchLengthMin;
-    l.branchLengthMax = lobes.branchLengthMax;
-    l.crownLobeRadiusMin = lobes.crownLobeRadiusMin;
-    l.crownLobeRadiusMax = lobes.crownLobeRadiusMax;
-    l.branchLobeRadiusMin = lobes.branchLobeRadiusMin;
-    l.branchLobeRadiusMax = lobes.branchLobeRadiusMax;
-    l.lobeFlatten = lobes.lobeFlatten;
-    l.normalSpherize = lobes.normalSpherize;
-    render::ColonizedTreeParams& c = vegetation.colonizedTreeParams;
-    c.segment = colonized.segment;
-    c.killDistance = colonized.killDistance;
-    c.attractorCount = colonized.attractorCount;
-    c.pipeExponent = colonized.pipeExponent;
-    c.tropism = colonized.tropism;
-    c.trunkBaseMin = colonized.trunkBaseMin;
-    c.trunkBaseMax = colonized.trunkBaseMax;
-    c.crownHeightMin = colonized.crownHeightMin;
-    c.crownHeightMax = colonized.crownHeightMax;
-    c.crownRadiusMin = colonized.crownRadiusMin;
-    c.crownRadiusMax = colonized.crownRadiusMax;
-    c.tipBallRadius = colonized.tipBallRadius;
-    c.tipOrderFalloff = colonized.tipOrderFalloff;
-    c.smoothK = colonized.smoothK;
-    c.cardHalfSizeMin = colonized.cardHalfSizeMin;
-    c.cardHalfSizeMax = colonized.cardHalfSizeMax;
-    c.densityGradient = colonized.densityGradient;
-    c.foliageDensity = colonized.foliageDensity;
-    c.leafCount = colonized.leafCount;
-    c.leafSizeMin = colonized.leafSizeMin;
-    c.leafSizeMax = colonized.leafSizeMax;
-    c.leafSolidStart = colonized.leafSolidStart;
-    c.leafSolidEnd = colonized.leafSolidEnd;
-}
 
 // H3 (docs/RENDERING.md): 0 below the worldspace's buried threshold,
 // 1 above, 4 m fade band — sun-linked lights and the daylight coupling
@@ -151,130 +58,7 @@ static f32 aboveBuried(f32 y, f32 threshold) {
     return glm::smoothstep(threshold - 2.0f, threshold + 2.0f, y);
 }
 
-void LandscapeRenderer::applyRcTuning(const data::RcTuningForm& rc) {
-    render::RcTuning& t = radianceCascades.tuning;
-    t.resolution = rc.resolution;
-    t.fineVoxel = rc.fineVoxel;
-    t.coarseVoxel = rc.coarseVoxel;
-    t.cascadeCount = rc.cascadeCount;
-    t.updateInterval = rc.updateInterval;
-    t.technique = rc.technique == 1 ? render::GiTechnique::RadianceCascades
-                                    : render::GiTechnique::Classic;
-    t.intensity = rc.intensity;
-    t.skyFactor = rc.skyFactor;
-    t.emitterBoost = rc.emitterBoost;
-    t.lightSplatBounce = rc.lightSplatBounce;
-    t.pipelined = rc.pipelined;
-    t.asyncCompute = rc.asyncCompute;
-    t.bounceFeedback = rc.bounceFeedback;
-    t.rcOnlyLights = rc.rcOnlyLights;
-    t.interval0 = rc.interval0;
-    t.edgeFade = rc.edgeFade;
-    t.bandCount = rc.bandCount;
-    t.bandAa = rc.bandAa;
-    t.giFloor = rc.giFloor;
-    t.intervalExtension = rc.intervalExtension;
-}
-
-void LandscapeRenderer::captureTuning(data::LandscapeTuningForm& out) const {
-    out.exposure = exposureUi;
-    out.gradeVibrance = gradeVibranceUi;
-    out.gradeSplitTone = gradeSplitToneUi;
-    out.gradeContrast = gradeContrastUi;
-    out.autoExposureMin = autoExposureMinUi;
-    out.autoExposureMax = autoExposureMaxUi;
-    out.stylizedDiffuseEdge0Start = stylizedDiffuseUi.x;
-    out.stylizedDiffuseEdge0End = stylizedDiffuseUi.y;
-    out.stylizedDiffuseEdge1Start = stylizedDiffuseUi.z;
-    out.stylizedDiffuseEdge1End = stylizedDiffuseUi.w;
-    out.stylizedHalfTone = stylizedShadowUi.w;
-    out.stylizedShadowStart = stylizedShadowUi.x;
-    out.stylizedShadowEnd = stylizedShadowUi.y;
-    out.stylizedShadowFloor = stylizedShadowUi.z;
-    out.shadowResolution = shadowResolutionUi;
-    out.interiorDaylightWeight = interiorDaylightWeightUi;
-    out.clusteredLights = clusteredLightsUi;
-    out.froxelFog = postFx.froxelFog;
-    out.froxelTemporalBlend = postFx.froxelTemporalBlend;
-    out.froxelDustNoise = postFx.froxelDustNoise;
-    out.interiorDustDensity = interiorDustDensityUi;
-    out.vegViewRadius = vegetation.viewRadius;
-    out.vegHighDetailRadius = vegetation.highDetailRadius;
-    out.vegLowDetailRadius = vegetation.lowDetailRadius;
-}
-
-void LandscapeRenderer::captureRcTuning(data::RcTuningForm& out) const {
-    const render::RcTuning& t = radianceCascades.tuning;
-    out.resolution = t.resolution;
-    out.fineVoxel = t.fineVoxel;
-    out.coarseVoxel = t.coarseVoxel;
-    out.cascadeCount = t.cascadeCount;
-    out.updateInterval = t.updateInterval;
-    out.technique =
-        t.technique == render::GiTechnique::RadianceCascades ? 1 : 0;
-    out.intensity = t.intensity;
-    out.skyFactor = t.skyFactor;
-    out.emitterBoost = t.emitterBoost;
-    out.lightSplatBounce = t.lightSplatBounce;
-    out.pipelined = t.pipelined;
-    out.asyncCompute = t.asyncCompute;
-    out.bounceFeedback = t.bounceFeedback;
-    out.rcOnlyLights = t.rcOnlyLights;
-    out.interval0 = t.interval0;
-    out.edgeFade = t.edgeFade;
-    out.bandCount = t.bandCount;
-    out.bandAa = t.bandAa;
-    out.giFloor = t.giFloor;
-    out.intervalExtension = t.intervalExtension;
-}
-
-void LandscapeRenderer::captureTreeTuning(
-    data::LobeTreeTuningForm& lobes,
-    data::ColonizedTreeTuningForm& colonized) const {
-    const render::LobeTreeParams& l = vegetation.lobeTreeParams;
-    lobes.trunkHeightMin = l.trunkHeightMin;
-    lobes.trunkHeightMax = l.trunkHeightMax;
-    lobes.trunkRadiusMin = l.trunkRadiusMin;
-    lobes.trunkRadiusMax = l.trunkRadiusMax;
-    lobes.trunkTaper = l.trunkTaper;
-    lobes.lean = l.lean;
-    lobes.branchCountMin = l.branchCountMin;
-    lobes.branchCountMax = l.branchCountMax;
-    lobes.branchLengthMin = l.branchLengthMin;
-    lobes.branchLengthMax = l.branchLengthMax;
-    lobes.crownLobeRadiusMin = l.crownLobeRadiusMin;
-    lobes.crownLobeRadiusMax = l.crownLobeRadiusMax;
-    lobes.branchLobeRadiusMin = l.branchLobeRadiusMin;
-    lobes.branchLobeRadiusMax = l.branchLobeRadiusMax;
-    lobes.lobeFlatten = l.lobeFlatten;
-    lobes.normalSpherize = l.normalSpherize;
-    const render::ColonizedTreeParams& c = vegetation.colonizedTreeParams;
-    colonized.segment = c.segment;
-    colonized.killDistance = c.killDistance;
-    colonized.attractorCount = c.attractorCount;
-    colonized.pipeExponent = c.pipeExponent;
-    colonized.tropism = c.tropism;
-    colonized.trunkBaseMin = c.trunkBaseMin;
-    colonized.trunkBaseMax = c.trunkBaseMax;
-    colonized.crownHeightMin = c.crownHeightMin;
-    colonized.crownHeightMax = c.crownHeightMax;
-    colonized.crownRadiusMin = c.crownRadiusMin;
-    colonized.crownRadiusMax = c.crownRadiusMax;
-    colonized.tipBallRadius = c.tipBallRadius;
-    colonized.tipOrderFalloff = c.tipOrderFalloff;
-    colonized.smoothK = c.smoothK;
-    colonized.cardHalfSizeMin = c.cardHalfSizeMin;
-    colonized.cardHalfSizeMax = c.cardHalfSizeMax;
-    colonized.densityGradient = c.densityGradient;
-    colonized.foliageDensity = c.foliageDensity;
-    colonized.leafCount = c.leafCount;
-    colonized.leafSizeMin = c.leafSizeMin;
-    colonized.leafSizeMax = c.leafSizeMax;
-    colonized.leafSolidStart = c.leafSolidStart;
-    colonized.leafSolidEnd = c.leafSolidEnd;
-}
-
-void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs,
+void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                                const RendererConfig& config) {
     cfg = config;
     if (!cfg.postFx) {
@@ -492,7 +276,7 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs,
     }
 }
 
-void LandscapeRenderer::destroy(rhi::Device& device) {
+void WorldRenderer::destroy(rhi::Device& device) {
     // Every handle is an rhi::Unique — clearing/resetting frees it
     // through its device; there is no manual destroy mirror to keep in
     // sync. Must run while the device is alive (wrapper contract).
@@ -551,7 +335,7 @@ void LandscapeRenderer::destroy(rhi::Device& device) {
     sculptScatterChunks.clear();
 }
 
-void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
+void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                                            u32 height) {
     if (offscreenFb.id() != 0 && offscreenWidth == width &&
         offscreenHeight == height &&
@@ -679,7 +463,7 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
     LOG_INFO("Offscreen scene target: {}x{}", width, height);
 }
 
-void LandscapeRenderer::destroyOffscreenTarget(rhi::Device& device) {
+void WorldRenderer::destroyOffscreenTarget(rhi::Device& device) {
     (void)device; // the Unique wrappers free through their device
     if (offscreenFb.id() == 0) {
         return;
@@ -699,14 +483,14 @@ void LandscapeRenderer::destroyOffscreenTarget(rhi::Device& device) {
     offscreenHeight = 0;
 }
 
-void LandscapeRenderer::rebuildBlitPipeline(rhi::Device& device) {
+void WorldRenderer::rebuildBlitPipeline(rhi::Device& device) {
     // The assignment frees the previous pipeline through the wrapper.
     blitPipeline = { device, device.createPipeline(
                                  { .shader = shaders->get(kTonemapShader) }) };
     blitShaderGeneration = shaders->generation(kTonemapShader);
 }
 
-void LandscapeRenderer::drawSceneMeshes(engine::FrameContext& frame,
+void WorldRenderer::drawSceneMeshes(engine::FrameContext& frame,
                                         const render::RenderSnapshot& snapshot,
                                         const RenderView& view) {
     if (snapshot.meshes.empty()) {
@@ -770,7 +554,7 @@ void LandscapeRenderer::drawSceneMeshes(engine::FrameContext& frame,
 
 // --- First-person player -----------------------------------------------------
 
-void LandscapeRenderer::drawSkinned(engine::FrameContext& frame,
+void WorldRenderer::drawSkinned(engine::FrameContext& frame,
                                     const render::RenderSnapshot& snapshot) {
     if (snapshot.skinned.empty() && skinnedDraws.empty()) {
         return;
@@ -845,7 +629,7 @@ void LandscapeRenderer::drawSkinned(engine::FrameContext& frame,
     }
 }
 
-void LandscapeRenderer::buildSkinnedPipeline(rhi::Device& device) {
+void WorldRenderer::buildSkinnedPipeline(rhi::Device& device) {
     skinnedPipeline = { device, device.createPipeline(
         { .shader = shaders->get("skinned"),
           .vertexBuffers =
@@ -881,7 +665,7 @@ void LandscapeRenderer::buildSkinnedPipeline(rhi::Device& device) {
 // Bundle the streaming fixups' systems for StreamingController this frame —
 // references into the scene plus the focus / fade / mode scalars. Rebuilt each
 
-f32 LandscapeRenderer::effectiveWaterSurfaceY(
+f32 WorldRenderer::effectiveWaterSurfaceY(
     const render::RenderSnapshot& snapshot, const RenderView& view) const {
     // The water surface the CAMERA sits under, if any — sea
     // level outdoors, a volume's top when inside one (any worldspace),
@@ -900,7 +684,7 @@ f32 LandscapeRenderer::effectiveWaterSurfaceY(
     return surface;
 }
 
-void LandscapeRenderer::drawWaterVolumes(
+void WorldRenderer::drawWaterVolumes(
     engine::FrameContext& frame, const render::RenderSnapshot& snapshot) {
     if (shaders->generation("watervolume") != waterVolumeShaderGeneration ||
         waterVolumePipeline.id() == 0) {
@@ -977,7 +761,7 @@ void LandscapeRenderer::drawWaterVolumes(
     }
 }
 
-void LandscapeRenderer::buildCasterPipelines(rhi::Device& device) {
+void WorldRenderer::buildCasterPipelines(rhi::Device& device) {
     // Position-only attributes over the FULL vertex strides (same buffers
     // as the lit pass); depth state mirrors terrain/vegetation casters.
     meshCasterPipeline = { device, device.createPipeline(
@@ -1011,14 +795,14 @@ void LandscapeRenderer::buildCasterPipelines(rhi::Device& device) {
     skinnedCasterShaderGeneration = shaders->generation("shadow_skinned");
 }
 
-void LandscapeRenderer::drawShadowCasters(
+void WorldRenderer::drawShadowCasters(
     engine::FrameContext& frame, const render::RenderSnapshot& snapshot,
     const RenderView& view, u32 cascade) {
     drawCastersInto(frame, snapshot, view, shadows.casterBindGroup(cascade),
                     cascade == 0);
 }
 
-void LandscapeRenderer::drawCastersInto(engine::FrameContext& frame,
+void WorldRenderer::drawCastersInto(engine::FrameContext& frame,
                                         const render::RenderSnapshot& snapshot,
                                         const RenderView& view,
                                         rhi::BindGroupHandle casterGroup,
@@ -1104,7 +888,7 @@ void LandscapeRenderer::drawCastersInto(engine::FrameContext& frame,
     }
 }
 
-void LandscapeRenderer::buildMeshPipeline(rhi::Device& device) {
+void WorldRenderer::buildMeshPipeline(rhi::Device& device) {
     meshPipeline = { device, device.createPipeline(
         { .shader = shaders->get("mesh"),
           .vertexBuffers = { render::meshVertexLayout() },
@@ -1115,7 +899,7 @@ void LandscapeRenderer::buildMeshPipeline(rhi::Device& device) {
     meshShaderGeneration = shaders->generation("mesh");
 }
 
-void LandscapeRenderer::render(engine::FrameContext& frame,
+void WorldRenderer::render(engine::FrameContext& frame,
                                const render::RenderSnapshot& snapshot,
                                const RenderView& view) {
     // Resolve last frames' timestamps (never blocking) and
@@ -2027,7 +1811,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 // records inject/build/extend/merge. Called from render() at its
 // historical post-CSM slot, or at the END of the frame when the GI is
 // pipelined (docs/RENDERING.md PG2).
-void LandscapeRenderer::recordGiUpdate(engine::FrameContext& frame,
+void WorldRenderer::recordGiUpdate(engine::FrameContext& frame,
                                        const render::RenderSnapshot& snapshot,
                                        const RenderView& view,
                                        const render::FrameUniforms& uniforms,
@@ -2169,4 +1953,4 @@ void LandscapeRenderer::recordGiUpdate(engine::FrameContext& frame,
                                 &gpuProbe);
 }
 
-} // namespace game
+} // namespace render

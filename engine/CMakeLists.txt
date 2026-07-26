@@ -60,12 +60,14 @@ meadows_set_warnings(meadows)
 add_library(meadows-render STATIC
     platform/common/GlContext.cpp
     render/FlyCamera.cpp
+    render/FrameComposer.cpp
     render/GpuProbe.cpp
     render/MeshBuilder.cpp
     render/MeshCache.cpp
     render/ShaderLibrary.cpp
-    render/TextureCache.cpp
     render/SpriteRenderer.cpp
+    render/TextureCache.cpp
+    render/WorldRenderer.cpp
     render/landscape/ChunkOcclusion.cpp
     render/landscape/FxRenderer.cpp
     render/landscape/GpuOcclusion.cpp

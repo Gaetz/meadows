@@ -525,8 +525,8 @@ touching the corresponding systems.
 >    architecture RHI/backends (Vulkan = renderer final), lighting/GI/
 >    volumétrique, perf, leçons, roadmap, chantiers RENDERER-EXTRACT et
 >    nuages. Les journaux détaillés d'origine sont dans `docs/archive/`.
->    À lire avant de toucher `engine/rhi/`, `engine/render/` ou
->    `LandscapeScene`/`LandscapeRenderer`.
+>    À lire avant de toucher `engine/rhi/`, `engine/render/` (dont
+>    `render::WorldRenderer`) ou `LandscapeScene`.
 >
 > Doc utilisateur/moddeur : `userdoc/README.md` (hub) — à maintenir à
 > chaque verticale livrée. Entrée du dépôt : `README.md`.

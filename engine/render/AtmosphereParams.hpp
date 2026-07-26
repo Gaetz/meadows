@@ -2,7 +2,7 @@
 
 #include "engine/core/Defines.hpp"
 
-namespace game {
+namespace render {
 
 // The scene's current atmospheric render state: the 19 sky/fog/weather-driven
 // parameters that render() consumes and that BOTH the manual sliders and the
@@ -36,4 +36,4 @@ struct AtmosphereParams {
     f32 rainIntensity { 0.0f };
 };
 
-} // namespace game
+} // namespace render
