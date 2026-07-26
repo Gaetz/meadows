@@ -278,22 +278,54 @@ GrownTree growColonizedTree(u32 seed, const ColonizedTreeParams& params) {
     return { std::move(nodes), std::move(balls), trunkBase, totalHeight };
 }
 
-// Wood: chain-decimated tapered tubes. `detail` picks tube sides and the
-// twig-culling radius floor (past the near level, sub-centimeter wood
-// reads as noise and costs like geometry).
+// Wood: chain-decimated tapered tubes. `detail` picks the twig-culling
+// radius floor (past the near level, sub-centimeter wood reads as noise
+// and costs like geometry) and derives the look knobs: tubeSides applies
+// at full detail (low twin one less, ultra always 3), curvePreserve
+// tightens the decimation so the growth trajectory's bends survive
+// (halved on the low twin, off on ultra), curveSubdiv rounds the elbows
+// with Catmull-Rom points (same LOD ladder).
 void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
-                f32 segment) {
+                const ColonizedTreeParams& params) {
     const Vec3 barkColor { 0.085f, 0.048f, 0.026f }; // generateTree's bark
-    const u32 tubeSides = detail >= 2 ? 5u : detail == 1 ? 4u : 3u;
+    const f32 segment = params.segment;
+    const i32 baseSides = glm::clamp(params.tubeSides, 3, 12);
+    const u32 tubeSides = detail >= 2 ? static_cast<u32>(baseSides)
+                          : detail == 1
+                              ? static_cast<u32>(glm::max(baseSides - 1, 3))
+                              : 3u;
+    const f32 preserve =
+        glm::clamp(params.curvePreserve, 0.0f, 1.0f) *
+        (detail >= 2 ? 1.0f : detail == 1 ? 0.5f : 0.0f);
+    const i32 subdiv = detail >= 2 ? glm::clamp(params.curveSubdiv, 0, 3)
+                       : detail == 1 ? glm::clamp(params.curveSubdiv, 0, 3) / 2
+                                     : 0;
+    // Decimation collapses near-collinear single-child runs; preserve
+    // raises the alignment bar and shortens the run cap, keeping the
+    // real growth wiggle in the polyline.
+    const f32 alignThreshold = glm::mix(0.95f, 0.9995f, preserve);
+    const f32 runCap = glm::mix(1.1f, 0.3f, preserve);
+    const f32 minRadius =
+        detail >= 2 ? 0.012f : detail == 1 ? 0.025f : 0.045f;
+
+    struct PathPoint {
+        Vec3 position;
+        f32 radius;
+    };
+    vector<PathPoint> path;    // one chain, tip -> root order
+    vector<PathPoint> refined; // after Catmull-Rom rounding
+
     // Walk each chain from a branching point (or tip) down to the previous
-    // branching point, emitting a tube per decimated run: consecutive
-    // near-collinear single-child nodes collapse into one segment.
+    // branching point, collecting the decimated polyline, then emit one
+    // tapered tube per (refined) segment.
     for (u32 n = 1; n < nodes.size(); ++n) {
         const bool chainEnd =
             nodes[n].childCount != 1; // tip or branching point
         if (!chainEnd) {
             continue;
         }
+        path.clear();
+        path.push_back({ nodes[n].position, nodes[n].radius });
         // Ascend toward the root until the previous chain end.
         u32 cursor = n;
         while (cursor != 0) {
@@ -305,8 +337,8 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
                 const u32 next = static_cast<u32>(nodes[runTop].parent);
                 if (nodes[next].childCount != 1 ||
                     glm::dot(nodes[runTop].direction,
-                             nodes[next].direction) < 0.95f ||
-                    runLength > 1.1f) {
+                             nodes[next].direction) < alignThreshold ||
+                    runLength > runCap) {
                     break;
                 }
                 runTop = next;
@@ -316,17 +348,59 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
                 nodes[runTop].parent >= 0
                     ? static_cast<u32>(nodes[runTop].parent)
                     : 0u;
-            const f32 minRadius =
-                detail >= 2 ? 0.012f : detail == 1 ? 0.025f : 0.045f;
-            if (nodes[cursor].radius >= minRadius) {
-                appendTaperedTube(mesh, nodes[top].position,
-                                  nodes[cursor].position,
-                                  nodes[top].radius, nodes[cursor].radius,
-                                  tubeSides, barkColor);
-            }
+            path.push_back({ nodes[top].position, nodes[top].radius });
             cursor = top;
             if (nodes[cursor].childCount > 1 || cursor == 0) {
                 break; // the parent chain is someone else's walk
+            }
+        }
+
+        // Catmull-Rom rounding: interior samples per segment bend the
+        // elbows; the original points stay put (junctions weld). Radii
+        // lerp inside a segment.
+        const vector<PathPoint>* emitted = &path;
+        if (subdiv > 0 && path.size() >= 3) {
+            refined.clear();
+            refined.push_back(path[0]);
+            const auto at = [&](i32 i) -> const Vec3& {
+                return path[static_cast<size_t>(glm::clamp(
+                                i, 0, static_cast<i32>(path.size()) - 1))]
+                    .position;
+            };
+            for (i32 j = 0; j + 1 < static_cast<i32>(path.size()); ++j) {
+                const Vec3& p0 = at(j - 1);
+                const Vec3& p1 = at(j);
+                const Vec3& p2 = at(j + 1);
+                const Vec3& p3 = at(j + 2);
+                for (i32 k = 1; k <= subdiv; ++k) {
+                    const f32 t = static_cast<f32>(k) /
+                                  static_cast<f32>(subdiv + 1);
+                    const f32 t2 = t * t;
+                    const f32 t3 = t2 * t;
+                    const Vec3 position =
+                        0.5f * ((2.0f * p1) + (-p0 + p2) * t +
+                                (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) *
+                                    t2 +
+                                (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
+                    const f32 radius =
+                        glm::mix(path[static_cast<size_t>(j)].radius,
+                                 path[static_cast<size_t>(j) + 1].radius,
+                                 t);
+                    refined.push_back({ position, radius });
+                }
+                refined.push_back(path[static_cast<size_t>(j) + 1]);
+            }
+            emitted = &refined;
+        }
+        for (size_t i = 0; i + 1 < emitted->size(); ++i) {
+            // Twig cull on the tip-side radius — same rule the decimated
+            // runs always used.
+            if ((*emitted)[i].radius >= minRadius) {
+                appendTaperedTube(mesh, (*emitted)[i + 1].position,
+                                  (*emitted)[i].position,
+                                  (*emitted)[i + 1].radius,
+                                  (*emitted)[i].radius, tubeSides,
+                                  barkColor);
             }
         }
     }
@@ -345,7 +419,7 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
     const f32 totalHeight = tree.totalHeight;
 
     MeshData mesh;
-    appendWood(mesh, tree.nodes, detail, params.segment);
+    appendWood(mesh, tree.nodes, detail, params);
     const u32 woodVertexCount = static_cast<u32>(mesh.vertices.size());
 
     // --- Foliage: billboard leaf cards in the SDF shell -------------------
@@ -424,7 +498,7 @@ MeshData generateColonizedTreeShadowProxy(u32 seed,
                                           const ColonizedTreeParams& params) {
     const GrownTree tree = growColonizedTree(seed, params);
     MeshData mesh;
-    appendWood(mesh, tree.nodes, 0, params.segment);
+    appendWood(mesh, tree.nodes, 0, params);
     // The canopy metaballs ARE the shadow volume: one 20-face icosahedron
     // per ball (largest first — they define the mass) instead of the card
     // cloud. Opaque, so shadow_prop skips the leaf-mask cutout entirely.

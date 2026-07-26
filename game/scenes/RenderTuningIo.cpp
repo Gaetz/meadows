@@ -75,6 +75,9 @@ void RenderTuningIo::applyTreeTuning(
     l.lobeFlatten = lobes.lobeFlatten;
     l.normalSpherize = lobes.normalSpherize;
     render::ColonizedTreeParams& c = r.vegetation.colonizedTreeParams;
+    c.tubeSides = colonized.tubeSides;
+    c.curvePreserve = colonized.curvePreserve;
+    c.curveSubdiv = colonized.curveSubdiv;
     c.segment = colonized.segment;
     c.killDistance = colonized.killDistance;
     c.attractorCount = colonized.attractorCount;
@@ -202,6 +205,9 @@ void RenderTuningIo::captureTreeTuning(
     lobes.lobeFlatten = l.lobeFlatten;
     lobes.normalSpherize = l.normalSpherize;
     const render::ColonizedTreeParams& c = r.vegetation.colonizedTreeParams;
+    colonized.tubeSides = c.tubeSides;
+    colonized.curvePreserve = c.curvePreserve;
+    colonized.curveSubdiv = c.curveSubdiv;
     colonized.segment = c.segment;
     colonized.killDistance = c.killDistance;
     colonized.attractorCount = c.attractorCount;

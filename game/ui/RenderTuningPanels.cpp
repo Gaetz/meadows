@@ -131,6 +131,10 @@ bool RenderTuningPanels::drawTreeKnobs(render::WorldRenderer& r) {
         knobInt("Attractors", p.attractorCount, 50, 2000);
         knob("Pipe exponent", p.pipeExponent, 2.0f, 3.0f);
         knob("Tropism (up bias)", p.tropism, 0.0f, 0.6f);
+        ImGui::SeparatorText("Wood");
+        knobInt("Tube sides", p.tubeSides, 3, 12);
+        knob("Curve preserve", p.curvePreserve, 0.0f, 1.0f);
+        knobInt("Curve subdivision", p.curveSubdiv, 0, 3);
         ImGui::SeparatorText("Crown envelope");
         knob("Bare trunk min (m)", p.trunkBaseMin, 0.5f, 5.0f);
         knob("Bare trunk max (m)", p.trunkBaseMax, 0.5f, 6.0f);
@@ -198,6 +202,7 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
                  l.branchLobeRadiusMin, l.branchLobeRadiusMax,
                  l.lobeFlatten, l.normalSpherize);
         LOG_INFO("[records.fields]  # ColonizedTreeTuningForm\n"
+                 "tubeSides = {}\ncurvePreserve = {}\ncurveSubdiv = {}\n"
                  "segment = {}\nkillDistance = {}\nattractorCount = {}\n"
                  "pipeExponent = {}\ntropism = {}\n"
                  "trunkBaseMin = {}\ntrunkBaseMax = {}\n"
@@ -208,6 +213,7 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
                  "densityGradient = {}\nfoliageDensity = {}\n"
                  "leafCount = {}\nleafSizeMin = {}\nleafSizeMax = {}\n"
                  "leafSolidStart = {}\nleafSolidEnd = {}",
+                 c.tubeSides, c.curvePreserve, c.curveSubdiv,
                  c.segment, c.killDistance, c.attractorCount,
                  c.pipeExponent, c.tropism, c.trunkBaseMin, c.trunkBaseMax,
                  c.crownHeightMin, c.crownHeightMax, c.crownRadiusMin,
