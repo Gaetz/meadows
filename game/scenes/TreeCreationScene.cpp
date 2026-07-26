@@ -209,7 +209,15 @@ void TreeCreationScene::applySelected() {
     RenderTuningIo::applyTreeTuning(renderer, type.lobes,
                                     type.colonizedParams);
     renderer.vegetationSystem().colonizationTrees = type.colonized;
-    renderer.requestReseedVegetation();
+    regenerateSpecimen();
+}
+
+// Every regen goes async: the worker generates from a param snapshot
+// while the PREVIOUS tree keeps rendering; the progress bar overlay
+// tracks reseedProgress() until the swap lands.
+void TreeCreationScene::regenerateSpecimen() {
+    renderer.vegetationSystem().reseedVariantMeshesAsync(
+        engine->getJobSystem(), renderer.terrainParams().seed);
 }
 
 void TreeCreationScene::captureIntoSelected() {
@@ -328,21 +336,35 @@ void TreeCreationScene::drawUi() {
     if (ImGui::Combo("Algorithm", &algorithm,
                      "Space colonization\0Lobe trees\0")) {
         vegetation.colonizationTrees = algorithm == 0;
-        renderer.requestReseedVegetation();
+        regenerateSpecimen();
     }
-    // Specimen seed: full regenerate (the terrain-panel flow) — the flat
-    // ground is seed-independent, only the tree changes.
     ImGui::InputScalar("Specimen seed", ImGuiDataType_U32,
                        &renderer.terrainParams().seed);
     ImGui::SameLine();
     if (ImGui::Button("Reroll")) {
-        renderer.requestRegenerate();
+        regenerateSpecimen();
     }
     if (RenderTuningPanels::drawTreeKnobs(renderer)) {
-        renderer.requestReseedVegetation();
+        regenerateSpecimen();
     }
 
     ImGui::End();
+
+    // Generation progress: bottom-center overlay while the worker runs —
+    // the scene (and the previous tree) stay live behind it.
+    if (vegetation.reseedPending()) {
+        ImGui::SetNextWindowPos(ImVec2(display.x * 0.5f, display.y - 48.0f),
+                                ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+        ImGui::Begin("##treeprogress", nullptr,
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
+                         ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_AlwaysAutoResize |
+                         ImGuiWindowFlags_NoFocusOnAppearing);
+        ImGui::TextUnformatted("Generating tree");
+        ImGui::ProgressBar(vegetation.reseedProgress(),
+                           ImVec2(320.0f, 0.0f));
+        ImGui::End();
+    }
 }
 
 } // namespace game

@@ -432,6 +432,18 @@ private:
     // Stutter hunt: per-block frame breakdown, logged on spikes > 25 ms.
     core::FrameProbe frameProbe;
 
+    // Startup loading gate: black overlay + progress bar until the
+    // streamed world is in (terrain ring resident, residency caches
+    // drained), then a fade reveals the scene. Targets are high-water
+    // marks — the ring and the caches announce their work progressively,
+    // and the bar must never move backward.
+    f32 loadingGateAlpha { 1.0f };
+    f32 loadingGateProgress { 0.0f };
+    u32 loadingGateFrames { 0 };
+    u32 loadingTerrainTarget { 0 };
+    u32 loadingMeshTarget { 0 };
+    u32 loadingTextureTarget { 0 };
+
     // The `torchbench` console command's transient light entities
     // (docs/RENDERING.md §5 B0) — cleared on re-run and on exit.
     vector<ecs::Entity> benchLights;

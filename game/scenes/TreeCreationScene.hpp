@@ -51,6 +51,7 @@ private:
         data::ColonizedTreeTuningForm colonizedParams;
     };
 
+    void regenerateSpecimen();         // async reseed with current params
     void loadLibrary();                // resolved DB -> `library` (+seed)
     void saveLibrary();                // library -> mods/tree-types.toml
     void applySelected();              // selected params -> generators

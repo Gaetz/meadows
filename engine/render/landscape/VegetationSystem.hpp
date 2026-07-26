@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <atomic>
+#include <filesystem>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -164,6 +166,17 @@ public:
     // the streamed world, it does not overlay it. Empty list = off.
     void setShowcase(rhi::Device& device, const vector<Instance>& list);
     bool showcaseActive() const { return showcaseCount != 0; }
+
+    // Async variant reseed: the tree meshes + AO bake run on a worker
+    // from a parameter SNAPSHOT (the worker never touches `this` —
+    // teardown-safe); the GPU upload lands in update() on the main
+    // thread, and the previous meshes keep drawing until the swap.
+    // `seed` becomes the mesh seed. A request while one is in flight
+    // coalesces into a relaunch with the latest params on landing.
+    // reseedProgress() feeds a loading bar (completed generation steps).
+    void reseedVariantMeshesAsync(core::JobSystem& jobs, u32 seed);
+    bool reseedPending() const { return reseedJob != nullptr; }
+    f32 reseedProgress() const;
     // Worker output: instances bucketed per mesh variant.
     using VariantBuckets = array<vector<Instance>, kVariantCount>;
 
@@ -251,6 +264,26 @@ private:
     // Showcase mode (tool scenes): explicit instances of variant 0.
     rhi::UniqueBuffer showcaseInstances;
     u32 showcaseCount { 0 };
+
+    // Async reseed state (reseedVariantMeshesAsync): inputs snapshotted
+    // by value, outputs filled by the worker, swapped in pumpReseed().
+    struct ReseedJob {
+        u32 seed { 0 };
+        bool colonization { true };
+        LobeTreeParams lobes;
+        ColonizedTreeParams colonized;
+        std::filesystem::path aoCacheDir;
+        array<array<MeshData, 3>, kTreeVariants> lods; // [variant][lod]
+        array<MeshData, kTreeVariants> casters;        // colonization only
+        std::atomic<u32> completed { 0 };
+        u32 total { 1 };
+        std::atomic<bool> done { false };
+    };
+    void pumpReseed(rhi::Device& device); // main thread, from update()
+    sptr<ReseedJob> reseedJob;
+    core::JobSystem* reseedJobs { nullptr };
+    bool reseedQueued { false };
+    u32 reseedQueuedSeed { 0 };
 };
 
 // Pure CPU scatter for one chunk, runs on worker threads. Deterministic.

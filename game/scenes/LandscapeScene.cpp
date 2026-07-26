@@ -673,6 +673,15 @@ void LandscapeScene::setupWorldAndStreaming() {
     levelEditor = std::make_unique<LevelEditor>(forms, formTypes);
     mode = SceneMode::Spectator; // fresh on (re-)enter; Play set later if a save
     sceneEditor.deselect();
+    // The loading gate re-arms on every (re-)enter — travels inside the
+    // scene keep using the interaction fade, this one only covers the
+    // initial stream-in.
+    loadingGateAlpha = 1.0f;
+    loadingGateProgress = 0.0f;
+    loadingGateFrames = 0;
+    loadingTerrainTarget = 0;
+    loadingMeshTarget = 0;
+    loadingTextureTarget = 0;
     createConsole(); // F8 in-game dev console
 }
 
@@ -2932,6 +2941,67 @@ void LandscapeScene::drawUi() {
             { 0.0f, 0.0f }, display,
             ImGui::GetColorU32(
                 ImVec4(0.0f, 0.0f, 0.0f, interaction.fadeAlpha())));
+    }
+
+    // Startup loading gate: black over everything while the world
+    // streams in, then a fade reveals the scene. Progress = the SLOWEST
+    // of the tracked streams (terrain ring, mesh/texture residency),
+    // monotonic so a cache announcing more work never moves the bar
+    // backward.
+    if (loadingGateAlpha > 0.0f) {
+        ++loadingGateFrames;
+        const u32 terrainResident = renderer.terrainSystem().residentCount();
+        loadingTerrainTarget = glm::max(
+            loadingTerrainTarget,
+            terrainResident + renderer.terrainSystem().pendingCount());
+        const u32 meshPending = meshCache ? meshCache->pendingCount() : 0u;
+        const u32 texPending =
+            materialTextures ? materialTextures->pendingCount() : 0u;
+        loadingMeshTarget = glm::max(loadingMeshTarget, meshPending);
+        loadingTextureTarget = glm::max(loadingTextureTarget, texPending);
+        const auto frac = [](u32 done, u32 total) {
+            return total == 0u ? 1.0f
+                               : static_cast<f32>(done) /
+                                     static_cast<f32>(total);
+        };
+        const f32 current = glm::min(
+            frac(terrainResident, loadingTerrainTarget),
+            glm::min(
+                frac(loadingMeshTarget - meshPending, loadingMeshTarget),
+                frac(loadingTextureTarget - texPending,
+                     loadingTextureTarget)));
+        loadingGateProgress = glm::max(loadingGateProgress, current);
+        // Grace frames before trusting "done": the first streaming
+        // updates are still ANNOUNCING work.
+        if (loadingGateFrames > 30 && loadingGateProgress >= 0.999f) {
+            loadingGateAlpha =
+                glm::max(0.0f, loadingGateAlpha -
+                                   ImGui::GetIO().DeltaTime / 0.8f);
+        }
+        foreground->AddRectFilled(
+            { 0.0f, 0.0f }, display,
+            ImGui::GetColorU32(
+                ImVec4(0.0f, 0.0f, 0.0f, loadingGateAlpha)));
+        if (loadingGateAlpha > 0.6f) {
+            const f32 barWidth = display.x * 0.34f;
+            const ImVec2 lo { (display.x - barWidth) * 0.5f,
+                              display.y * 0.62f };
+            const ImVec2 hi { lo.x + barWidth, lo.y + 8.0f };
+            foreground->AddRectFilled(
+                lo, hi, ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.12f)),
+                4.0f);
+            foreground->AddRectFilled(
+                lo, { lo.x + barWidth * loadingGateProgress, hi.y },
+                ImGui::GetColorU32(ImVec4(0.85f, 0.9f, 1.0f, 0.85f)),
+                4.0f);
+            char label[32];
+            std::snprintf(label, sizeof(label), "%.0f%%",
+                          static_cast<f64>(loadingGateProgress) * 100.0);
+            const ImVec2 size = ImGui::CalcTextSize(label);
+            foreground->AddText(
+                { (display.x - size.x) * 0.5f, hi.y + 10.0f },
+                ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.8f)), label);
+        }
     }
 
     // Mode hotkeys. Play is home: F2 toggles Play<->Spectator, F3 toggles

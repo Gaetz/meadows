@@ -358,6 +358,88 @@ void VegetationSystem::destroyVariantMeshes(rhi::Device& device) {
     }
 }
 
+void VegetationSystem::reseedVariantMeshesAsync(core::JobSystem& jobs,
+                                                u32 seed) {
+    reseedJobs = &jobs;
+    if (reseedJob) {
+        // Coalesce: the in-flight job lands first, then relaunches with
+        // the LATEST params (knob storms collapse into two passes).
+        reseedQueued = true;
+        reseedQueuedSeed = seed;
+        return;
+    }
+    meshSeed = seed;
+    auto job = std::make_shared<ReseedJob>();
+    job->seed = seed;
+    job->colonization = colonizationTrees;
+    job->lobes = lobeTreeParams;
+    job->colonized = colonizedTreeParams;
+    job->aoCacheDir =
+        platform::executableDir() / "data" / "cache" / "ao";
+    job->total = kTreeVariants * (job->colonization ? 4u : 3u);
+    reseedJob = job;
+    jobs.enqueue([job] {
+        // Pure CPU (mesh generation + content-keyed AO bake) — the
+        // MeshCache decode-worker pattern; only the sptr is captured.
+        const auto baked = [&](MeshData mesh) {
+            assets::applyContentKeyedVertexAo(mesh, job->aoCacheDir, 0.6f);
+            return mesh;
+        };
+        for (u32 i = 0; i < kTreeVariants; ++i) {
+            const u32 variantSeed = hashU32(job->seed) + i * 977u;
+            for (u32 lod = 0; lod < 3; ++lod) {
+                job->lods[i][lod] = baked(
+                    job->colonization
+                        ? generateColonizedTree(variantSeed, lod,
+                                                job->colonized)
+                        : generateTree(variantSeed, lod, job->lobes));
+                job->completed.fetch_add(1, std::memory_order_release);
+            }
+            if (job->colonization) {
+                job->casters[i] = generateColonizedTreeShadowProxy(
+                    variantSeed, job->colonized);
+                job->completed.fetch_add(1, std::memory_order_release);
+            }
+        }
+        job->done.store(true, std::memory_order_release);
+    });
+}
+
+f32 VegetationSystem::reseedProgress() const {
+    if (!reseedJob) {
+        return 1.0f;
+    }
+    return static_cast<f32>(
+               reseedJob->completed.load(std::memory_order_acquire)) /
+           static_cast<f32>(glm::max(reseedJob->total, 1u));
+}
+
+void VegetationSystem::pumpReseed(rhi::Device& device) {
+    if (!reseedJob || !reseedJob->done.load(std::memory_order_acquire)) {
+        return;
+    }
+    const sptr<ReseedJob> job = std::move(reseedJob);
+    for (u32 i = 0; i < kTreeVariants; ++i) {
+        if (meshOverrides.contains(i)) {
+            continue; // authored meshes keep their single level
+        }
+        variantMeshes[i] = {}; // clears a stale caster on an algo switch
+        uploadVariantMesh(device, i, job->lods[i][2]);
+        uploadLowDetailMesh(device, i, job->lods[i][1]);
+        uploadUltraDetailMesh(device, i, job->lods[i][0]);
+        if (job->colonization) {
+            uploadShadowProxyMesh(device, i, job->casters[i]);
+        }
+    }
+    rebuildLeafMask(device); // its knobs ride the same panel
+    if (reseedQueued) {
+        reseedQueued = false;
+        if (reseedJobs != nullptr) {
+            reseedVariantMeshesAsync(*reseedJobs, reseedQueuedSeed);
+        }
+    }
+}
+
 void VegetationSystem::setShowcase(rhi::Device& device,
                                    const vector<Instance>& list) {
     showcaseInstances.reset();
@@ -376,6 +458,8 @@ void VegetationSystem::destroy(rhi::Device& device) {
     instances = 0;
     showcaseInstances.reset();
     showcaseCount = 0;
+    reseedJob.reset(); // a worker still running keeps its own copy
+    reseedQueued = false;
     pipeline.reset();
     casterPipeline.reset();
     leafMaskGroup.reset();
@@ -415,6 +499,7 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     frameHighInstances = 0;
     frameLowInstances = 0;
     frameUltraInstances = 0;
+    pumpReseed(device); // async reseed landing point (main thread)
     if (showcaseCount != 0) {
         return; // showcase replaces the streamed scatter entirely
     }
