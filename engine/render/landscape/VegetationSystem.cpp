@@ -358,9 +358,24 @@ void VegetationSystem::destroyVariantMeshes(rhi::Device& device) {
     }
 }
 
+void VegetationSystem::setShowcase(rhi::Device& device,
+                                   const vector<Instance>& list) {
+    showcaseInstances.reset();
+    showcaseCount = static_cast<u32>(list.size());
+    if (list.empty()) {
+        return;
+    }
+    showcaseInstances = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Vertex,
+          .size = list.size() * sizeof(Instance) },
+        list.data()) };
+}
+
 void VegetationSystem::destroy(rhi::Device& device) {
     streamer.invalidateAll([](Chunk&) {}); // erases free the buffers
     instances = 0;
+    showcaseInstances.reset();
+    showcaseCount = 0;
     pipeline.reset();
     casterPipeline.reset();
     leafMaskGroup.reset();
@@ -400,6 +415,9 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     frameHighInstances = 0;
     frameLowInstances = 0;
     frameUltraInstances = 0;
+    if (showcaseCount != 0) {
+        return; // showcase replaces the streamed scatter entirely
+    }
     // Budgeted uploads (U3-1: ring mechanics in ChunkStreamer; this lambda
     // is the vegetation-specific accept — variant packing + GPU upload).
     streamer.pump(kMaxUploadsPerFrame, 0.0, [&](u64 key, auto& built) {
@@ -585,6 +603,18 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     if (shadowBindGroup.id != 0) {
         cmd.setBindGroup(2, shadowBindGroup);
     }
+    // Showcase mode: the explicit instances with variant 0's full-detail
+    // mesh, nothing else (tool scenes — the streamer holds no chunks).
+    if (showcaseCount != 0) {
+        const VariantMesh& mesh = variantMeshes[0];
+        cmd.setVertexBuffer(0, mesh.vertexBuffer.get());
+        cmd.setIndexBuffer(mesh.indexBuffer.get(), rhi::IndexFormat::U32);
+        cmd.setVertexBuffer(1, showcaseInstances.get());
+        cmd.drawIndexed(mesh.indexCount, showcaseCount, 0, 0);
+        frameIndices += mesh.indexCount * showcaseCount;
+        frameHighInstances += showcaseCount;
+        return;
+    }
     // Canopy LOD pick, per chunk — THREE levels: 320-face lobes
     // near, 80-face twins mid, 20-face ultra beyond lowDetailRadius (and
     // always in mirrored/downsampled passes). Variants without twins
@@ -666,6 +696,17 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
     cmd.setBindGroup(0, frameBindGroup);
     cmd.setBindGroup(1, casterBindGroup);
     cmd.setBindGroup(2, leafMaskGroup);
+    // Showcase mode: the explicit instances cast with the full-detail
+    // mesh — one tree, no LOD/proxy economics needed.
+    if (showcaseCount != 0) {
+        const VariantMesh& mesh = variantMeshes[0];
+        cmd.setVertexBuffer(0, mesh.vertexBuffer.get());
+        cmd.setIndexBuffer(mesh.indexBuffer.get(), rhi::IndexFormat::U32);
+        cmd.setVertexBuffer(1, showcaseInstances.get());
+        cmd.drawIndexed(mesh.indexCount, showcaseCount, 0, 0);
+        frameIndices += mesh.indexCount * showcaseCount;
+        return;
+    }
     for (u32 v = 0; v < kVariantCount; ++v) {
         bool meshBound = false;
         for (const auto& [key, chunk] : streamer.chunks) {

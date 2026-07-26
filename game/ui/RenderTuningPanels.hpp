@@ -30,6 +30,10 @@ public:
     // (the CLAUDE.md §5 round trip until the editor's EditSession takes
     // over).
     static void drawTreeBuilderPanel(render::WorldRenderer& r);
+    // The generation knobs alone (both tree types' headers) — shared by
+    // drawTreeBuilderPanel and the TreeCreation scene. Returns true on a
+    // knob RELEASE (the regen trigger); the caller owns what regen means.
+    static bool drawTreeKnobs(render::WorldRenderer& r);
     // Per-pass GPU/CPU budget table ("GPU Perf" window).
     // `cpuProbe` = the scene's FrameProbe for the CPU column (nullable).
     static void drawPerfPanel(render::WorldRenderer& r,

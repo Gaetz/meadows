@@ -88,10 +88,10 @@ void RenderTuningPanels::drawPerfPanel(render::WorldRenderer& r,
     ImGui::Text("total: %.2f Mtri", terrainMTri + vegMTri + grassMTri);
 }
 
-void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
-    // Every knob regenerates on RELEASE (reseedVariantMeshes at the
-    // render()-top safe point): meshes only — scatter/instances stay.
-    // New content re-bakes AO once (content-keyed disk cache).
+bool RenderTuningPanels::drawTreeKnobs(render::WorldRenderer& r) {
+    // Every knob reports dirty on RELEASE — regen meshes only,
+    // scatter/instances stay. New content re-bakes AO once
+    // (content-keyed disk cache).
     bool dirty = false;
     const auto knob = [&](const char* label, f32& value, f32 lo, f32 hi) {
         ImGui::SliderFloat(label, &value, lo, hi, "%.3f");
@@ -102,18 +102,6 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
         ImGui::SliderInt(label, &value, lo, hi);
         dirty |= ImGui::IsItemDeactivatedAfterEdit();
     };
-
-    if (ImGui::Checkbox("Space-colonization trees (A/B)",
-                        &r.vegetation.colonizationTrees)) {
-        dirty = true;
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Regenerate")) {
-        dirty = true;
-    }
-    if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
-        r.saveTuningRequested = true;
-    }
 
     if (ImGui::CollapsingHeader("Lobe trees (classic)")) {
         render::LobeTreeParams& p = r.vegetation.lobeTreeParams;
@@ -168,6 +156,24 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
         ImGui::SliderFloat("Leaf solid end (mip)",
                            &p.leafSolidEnd, 0.0f, 8.0f);
     }
+    return dirty;
+}
+
+void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
+    bool dirty = false;
+    if (ImGui::Checkbox("Space-colonization trees (A/B)",
+                        &r.vegetation.colonizationTrees)) {
+        dirty = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Regenerate")) {
+        dirty = true;
+    }
+    if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
+        r.saveTuningRequested = true;
+    }
+
+    dirty |= drawTreeKnobs(r);
 
     // The CLAUDE.md §5 round trip, v1: paste-ready records for
     // landscape.toml (the editor's EditSession can take over later —

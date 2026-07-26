@@ -139,9 +139,10 @@ light UBO fill, key-shadow selection, and the per-subsystem
 `RendererConfig` (R3). Game-side remain only its two friends: the ImGui
 tuning panels (`game/ui/RenderTuningPanels`, R1) and the Forms↔flat-params
 tuning seam (`game/scenes/RenderTuningIo` — the engine never sees a Form,
-CLAUDE.md §4). `AnimPreviewPanel` still hand-rolls its own RHI offscreen
-pipeline — replacing it with a configured `WorldRenderer` instance is R5,
-the chantier's proof.
+CLAUDE.md §4). The chantier's proof runs: `TreeCreationScene` mounts a
+partial config (R5). `AnimPreviewPanel` still hand-rolls its own RHI
+offscreen pipeline — moving it onto a second configured instance is a
+follow-up.
 
 ### 2.2 Pass order (one frame)
 
@@ -490,8 +491,10 @@ surface+submersion first, no foam v1, swimming = gameplay chantier);
 cumulonimbus/rain polish as WeatherForm content; GL 4.1 degraded mode;
 TAA, 3D LUT, caustics, Gerstner water — backlog.
 
-**Chantiers ready to start**: RENDERER-EXTRACT (§7) then the new clouds
-implementation against the §8 contract.
+**Chantiers ready to start**: the new clouds implementation against the
+§8 contract (RENDERER-EXTRACT §7 is complete — follow-ups: tree types →
+forest scatter; AnimPreviewPanel onto a configured WorldRenderer;
+postFx-less blit fallback hardening on Vulkan).
 
 ## 7. Chantier RENDERER-EXTRACT (prepared, not yet executed)
 
@@ -556,9 +559,22 @@ Bricks (each lands alone, LandscapeScene byte-identical at every step):
   Note: `WorldRenderer.cpp` references `ui::UiSystem` (the in-pass game
   UI composite); as a static-lib member this resolves when the exe links
   `meadows-ui` — tools that skip both never pull the object.
-- **R5 — First consumer** (future session): an AnimPreviewScene or the
-  tree-builder scene replaces the hand-rolled preview pipeline — the
-  proof of the chantier.
+- **R5 — First consumer. DONE (2026-07-26).** `TreeCreationScene`
+  (game/scenes/) — the tree-TYPE authoring tool: flat terrain (zero
+  amplitudes — the ground plane is ordinary terrain, so splat/shadows/
+  grass just work), sky, grass, one showcased tree; config
+  `{water,gi,froxels,occlusion}=false` — the first real partial mount.
+  The tree renders through a small VegetationSystem **showcase mode**
+  (explicit instances of variant 0's full-detail mesh replace the
+  streamed scatter; update() skips streaming) — the tree pipeline
+  (cards, leaf mask, sway, casters) reused as-is, no hand-rolled
+  offscreen path. Tree types are ordinary records of the two
+  *TreeTuningForm types (the algorithm IS the record type) in the
+  `mods/tree-types.toml` layer — the forest singletons untouched;
+  wiring types into the forest scatter is a follow-up chantier, as is
+  replacing AnimPreviewPanel's hand-rolled pipeline with a second
+  configured instance. Entered from the Edit-mode scene strip, which
+  REPLACES the world (no warm overlay — the tool runs alone).
 
 **Invariants**: §2.10 headless untouched (renderer stays out of
 sim/tests); FrameUbo append-only; each brick A/B byte-identical on

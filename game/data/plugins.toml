@@ -56,3 +56,10 @@ file = "mods/render-tuning.toml"
 # install — silently skipped until the first editor export.
 [[plugins]]
 file = "mods/level-edits.toml"
+
+# Tree-type library: records CREATED by the Tree creation scene (one
+# LobeTreeTuningForm/ColonizedTreeTuningForm per type — the singleton
+# tuning records above stay the forest's source). Absent until the
+# first save.
+[[plugins]]
+file = "mods/tree-types.toml"

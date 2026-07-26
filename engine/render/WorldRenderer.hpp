@@ -145,6 +145,9 @@ public:
     render::VegetationSystem& vegetationSystem() { return vegetation; }
     render::WaterSystem& waterSystem() { return water; }
     void requestRegenerate() { regenerateRequested = true; }
+    // Variant meshes only (scatter/instances stay) — the tree builder's
+    // regen trigger, applied at render()'s safe point.
+    void requestReseedVegetation() { reseedVegetation = true; }
     void invalidateOcclusion() { occlusion.invalidate(); }
     // Terrain sculpt: chunks awaiting a targeted GPU rebuild at the safe
     // point in render() (remesh live during the stroke; re-scatter on

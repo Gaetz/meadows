@@ -45,6 +45,7 @@
 #include "game/SceneStack.hpp"        // Edit mode pushes overlays (host())
 #include "game/scenes/EditorScene.hpp" // the Game DB overlay
 #include "game/scenes/RenderTuningIo.hpp"
+#include "game/scenes/TreeCreationScene.hpp"
 #include "game/ui/ConsolePanel.hpp"
 #include "game/ui/RenderTuningPanels.hpp"
 #include "engine/assets/AssetDatabase.hpp"
@@ -3105,6 +3106,12 @@ void LandscapeScene::drawUi() {
         ImGui::TextDisabled("overlay\n(world pauses)");
         if (ImGui::Button("Game DB", ImVec2(110.0f, 0.0f))) {
             host()->push(std::make_unique<EditorScene>(*engine));
+        }
+        // REPLACES the world (frees it — returning reloads from scratch):
+        // the tree tool runs light, alone on the stack.
+        ImGui::TextDisabled("replace\n(world closes)");
+        if (ImGui::Button("Tree creation", ImVec2(110.0f, 0.0f))) {
+            host()->replace(std::make_unique<TreeCreationScene>(*engine));
         }
         ImGui::End();
     }

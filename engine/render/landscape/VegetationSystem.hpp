@@ -157,6 +157,13 @@ public:
         Vec4 positionScale; // xyz = terrain point, w = uniform scale
         Vec4 params;        // x = yaw, y = tint jitter, z = sway phase, w free
     };
+
+    // Tool scenes (tree builder): when set, draw()/drawDepth() render
+    // ONLY these explicit instances with variant 0's full-detail mesh,
+    // and update() skips the scatter streaming — the showcase replaces
+    // the streamed world, it does not overlay it. Empty list = off.
+    void setShowcase(rhi::Device& device, const vector<Instance>& list);
+    bool showcaseActive() const { return showcaseCount != 0; }
     // Worker output: instances bucketed per mesh variant.
     using VariantBuckets = array<vector<Instance>, kVariantCount>;
 
@@ -241,6 +248,9 @@ private:
     u64 shaderGeneration { 0 };
     rhi::UniquePipeline casterPipeline;
     u64 casterShaderGeneration { 0 };
+    // Showcase mode (tool scenes): explicit instances of variant 0.
+    rhi::UniqueBuffer showcaseInstances;
+    u32 showcaseCount { 0 };
 };
 
 // Pure CPU scatter for one chunk, runs on worker threads. Deterministic.
