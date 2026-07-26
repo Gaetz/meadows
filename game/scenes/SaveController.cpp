@@ -64,7 +64,9 @@ void SaveController::performSave(const SaveContext& ctx, const str& slot) {
     }
     state.playerYaw = ctx.playerYaw;
     state.playerPitch = ctx.playerPitch;
+    state.cameraPosition = ctx.cameraPosition;
     state.playMode = ctx.playMode;
+    state.editMode = ctx.editMode;
     state.weatherSelected = ctx.weatherSelected;
     plugin.records.push_back(gameplay::createRecord(
         state, *core::Guid::fromString(

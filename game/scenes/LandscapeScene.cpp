@@ -819,25 +819,37 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
     // capsule spawns at the SAVED position directly (the travel pattern —
     // enterPlayMode would re-ground on the terrain, wrong indoors).
     if (saveController.loadedFromSave()) {
+        const bool playMode = !loadedWorldState || loadedWorldState->playMode;
         const Vec3 eye { 0.0f, statsTuning.eyeHeight, 0.0f };
         Vec3 feet = flyCamera.camera.position - eye;
         if (playerEntity.is_alive()) {
             feet = playerEntity.get<world::Transform>().position;
         }
-        flyCamera.camera.position = feet + eye;
+        if (playMode) {
+            flyCamera.camera.position = feet + eye;
+        } else if (loadedWorldState &&
+                   glm::length(loadedWorldState->cameraPosition) > 0.001f) {
+            // Spectator/Edit resume: the saved FLY camera — the player
+            // may be somewhere else entirely ({0,0,0} = legacy save
+            // without the field, keep the start-spot heuristic).
+            flyCamera.camera.position = loadedWorldState->cameraPosition;
+        }
         if (loadedWorldState) {
             flyCamera.camera.yaw = loadedWorldState->playerYaw;
             flyCamera.camera.pitch = loadedWorldState->playerPitch;
         }
         screenStack.close("mainmenu");
         syncScreens();
-        if ((!loadedWorldState || loadedWorldState->playMode) && physics) {
+        if (playMode && physics) {
             playerController.spawnBody(*physics,
                                        feet + Vec3 { 0.0f, 0.25f, 0.0f });
             mode = SceneMode::Play;
             engine->getWindow().setRelativeMouseMode(true);
             screenStack.show("hud");
             syncScreens();
+        } else if (loadedWorldState && loadedWorldState->editMode &&
+                   levelEditor) {
+            mode = SceneMode::Edit; // the tree-creator round trip resumes
         }
     }
 
@@ -2122,7 +2134,9 @@ SaveContext LandscapeScene::makeSaveContext() {
         activeWorldspace,
         flyCamera.camera.yaw,
         flyCamera.camera.pitch,
+        flyCamera.camera.position,
         mode == SceneMode::Play,
+        mode == SceneMode::Edit,
         weather.selected(),
         // Inline capture is safe: captureEntity reads components and writes
         // into the pending layer's own map — it mutates no ECS structure

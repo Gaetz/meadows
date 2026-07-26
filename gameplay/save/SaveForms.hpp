@@ -289,7 +289,13 @@ struct WorldStateForm : data::Form {
     core::Guid activeWorldspace;
     f32 playerYaw { 0.0f };
     f32 playerPitch { 0.0f };
+    // The FLY camera — a Spectator/Edit save resumes where the camera
+    // stood, not at the player ({0,0,0} = legacy save, not applied).
+    Vec3 cameraPosition { 0.0f };
     bool playMode { true };
+    // Play/Edit/Spectator needs the tri-state: playMode wins, then
+    // editMode, else Spectator.
+    bool editMode { false };
     i32 weatherSelected { -1 };
 
     REFLECT_BEGIN(WorldStateForm, data::Form)
@@ -298,7 +304,9 @@ struct WorldStateForm : data::Form {
         REFLECT_FIELD(activeWorldspace)
         REFLECT_FIELD(playerYaw)
         REFLECT_FIELD(playerPitch)
+        REFLECT_FIELD(cameraPosition)
         REFLECT_FIELD(playMode)
+        REFLECT_FIELD(editMode)
         REFLECT_FIELD(weatherSelected)
     REFLECT_END()
 };

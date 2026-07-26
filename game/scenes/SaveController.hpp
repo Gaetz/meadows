@@ -42,7 +42,9 @@ struct SaveContext {
     data::FormHandle activeWorldspace; // resolved to its id in the record
     f32 playerYaw { 0.0f };
     f32 playerPitch { 0.0f };
+    Vec3 cameraPosition { 0.0f }; // fly camera (Spectator/Edit resume)
     bool playMode { true };
+    bool editMode { false };
     i32 weatherSelected { -1 };
     // Sweep every live reference entity (the loaded cells' contents + the
     // persistent player) so performSave can capture each into the layer.
