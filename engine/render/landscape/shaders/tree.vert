@@ -55,6 +55,13 @@ void main() {
         vec3 camUp = normalize(
             vec3(uViewProj[0][1], uViewProj[1][1], uViewProj[2][1]));
         vec2 corner = vec2(aUv.x + 10.0, aUv.y);
+        // Mirror pass: the card re-aims at the mirrored camera, so its
+        // winding does not flip like static geometry's under the pass's
+        // inverted front face — flip the corners to match (the mirrored
+        // mask uv is invisible on a leaf-cluster cutout).
+        if (uLeafLodInfo.z > 0.5) {
+            corner.x = -corner.x;
+        }
         world += (camRight * corner.x + camUp * corner.y) *
                  (aPosScale.w * fade);
         // Corners are exactly +-halfSize: the sign recovers the mask uv.

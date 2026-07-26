@@ -91,7 +91,10 @@ struct FrameUniforms {
     // z = GI ambient floor (fraction of classic — grid-border seam killer).
     Vec4 giBandInfo { 0.0f, 0.3f, 0.7f, 0.0f };
     // Foliage-card leaf cutout -> solid ramp (tree.frag/shadow_prop.frag):
-    // xy = mip window start/end of the blend, zw free.
+    // xy = mip window start/end of the blend. z = mirror-pass flag (the
+    // planar reflection sets 1): billboard cards re-aim at the mirrored
+    // camera, so their winding does NOT flip with the pass's inverted
+    // front face — tree.vert flips the card corners instead. w free.
     Vec4 leafLodInfo { 4.0f, 7.0f, 0.0f, 0.0f };
     // Fog sun single-scatter (docs/RENDERING.md V1): x = strength
     // (weather-crossfaded), y = phase exponent, zw free.

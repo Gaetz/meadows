@@ -1537,6 +1537,12 @@ void WorldRenderer::render(engine::FrameContext& frame,
         reflectionUniforms.cameraPos = { camera.position.x,
                                          2.0f * waterY - camera.position.y,
                                          camera.position.z, 1.0f };
+        // Billboard leaf cards re-aim at the MIRRORED camera in
+        // tree.vert, so unlike static geometry their screen winding does
+        // NOT flip with this pass's clockwise front face — they would be
+        // back-face culled (leafless reflected trees). The flag makes
+        // tree.vert flip the card corners to match.
+        reflectionUniforms.leafLodInfo.z = 1.0f;
         frame.device.updateBuffer(reflectionUbo, &reflectionUniforms,
                                   sizeof(reflectionUniforms), 0);
 

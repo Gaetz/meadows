@@ -440,6 +440,12 @@ RC tuning pass (3 → 1–2 ms targets via the GI panel knobs).
     RPATH — both bit at first M1 build.
 15. **Shader-compile failure at first load aborts** (only hot-reload
     keeps the old program) — RHI hardening candidate.
+16. **Self-orienting billboards don't flip with the mirror.** A card
+    that re-aims at the mirrored camera keeps its screen winding, so a
+    reflection pass's inverted front face back-face-culls it while
+    static geometry renders fine (leafless reflected trees). Mirror
+    passes must tell billboard shaders to flip their corners
+    (`uLeafLodInfo.z` for the leaf cards).
 
 ## 6. Roadmap (consolidated next steps)
 

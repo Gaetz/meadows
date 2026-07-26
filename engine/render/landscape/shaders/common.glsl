@@ -65,7 +65,8 @@ layout(std140, binding = 0) uniform FrameUbo {
     // GI ramp: x = band count floor->classic (0 = smooth), y = AA,
     // z = GI ambient floor (fraction of classic).
     vec4 uGiBandInfo;
-    // Foliage-card leaf cutout -> solid ramp: xy = mip window.
+    // Foliage-card leaf cutout -> solid ramp: xy = mip window;
+    // z = mirror pass (flip the billboard card winding).
     vec4 uLeafLodInfo;
     // Fog sun single-scatter: x = strength, y = phase exponent.
     vec4 uFogSunInfo;
