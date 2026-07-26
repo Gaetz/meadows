@@ -688,7 +688,6 @@ void LandscapeScene::setupWorldAndStreaming() {
     loadingGateAlpha = 1.0f;
     loadingGateProgress = 0.0f;
     loadingGateFrames = 0;
-    loadingGateShowMenu = false;
     loadingTerrainTarget = 0;
     loadingMeshTarget = 0;
     loadingTextureTarget = 0;
@@ -839,7 +838,6 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
             flyCamera.camera.pitch = loadedWorldState->playerPitch;
         }
         screenStack.close("mainmenu");
-        loadingGateShowMenu = false; // a loaded game skips the title menu
         syncScreens();
         if (playMode && physics) {
             playerController.spawnBody(*physics,
@@ -1802,15 +1800,15 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
     screenStack.close("hud");
     // Boot into the main menu — "Enter the world" starts Play;
     // Escape dismisses it for the dev tools (Fly camera, panels).
-    // The loading shroud first, alone — the main menu is a MODAL, drawn
-    // above every overlay, so it must NOT open until the load is done
-    // (the gate shows it when the fade starts). No gate = show it now.
-    if (screenStack.find("loading")) {
-        screenStack.show("loading");
-        loadingGateShowMenu = screenStack.find("mainmenu") != nullptr;
-    } else if (screenStack.find("mainmenu")) {
+    if (screenStack.find("mainmenu")) {
         hud.updateMenuClockLine(makeHudContext());
         screenStack.show("mainmenu");
+    }
+    // The loading shroud LAST: both are modal, so show order stacks it
+    // above the menu — the menu exists from boot but only emerges when
+    // the gate's fade thins the shroud.
+    if (screenStack.find("loading")) {
+        screenStack.show("loading");
     }
     syncScreens();
 }
@@ -3011,13 +3009,6 @@ void LandscapeScene::drawUi() {
         // Grace frames before trusting "done": the first streaming
         // updates are still ANNOUNCING work.
         if (loadingGateFrames > 30 && loadingGateProgress >= 0.999f) {
-            if (loadingGateShowMenu) {
-                // Loaded: the title menu appears as the fade begins.
-                loadingGateShowMenu = false;
-                hud.updateMenuClockLine(makeHudContext());
-                screenStack.show("mainmenu");
-                syncScreens();
-            }
             loadingGateAlpha =
                 glm::max(0.0f, loadingGateAlpha -
                                    ImGui::GetIO().DeltaTime / 0.8f);
@@ -3098,11 +3089,12 @@ void LandscapeScene::drawUi() {
     if (!uiPanelVisible) {
         return;
     }
-    // The TITLE SCREEN owns the frame: while the main menu is the top
-    // screen, the dev UI (top bar, panels, scene strip) hides even in
-    // Spectator — only the game title and the menu show.
+    // The TITLE SCREEN owns the frame: while the main menu or the
+    // loading shroud is the top screen, the dev UI (top bar, panels,
+    // scene strip) hides even in Spectator.
     if (const ScreenStack::Screen* topScreen = screenStack.topModal();
-        topScreen != nullptr && topScreen->name == "mainmenu") {
+        topScreen != nullptr && (topScreen->name == "mainmenu" ||
+                                 topScreen->name == "loading")) {
         return;
     }
 

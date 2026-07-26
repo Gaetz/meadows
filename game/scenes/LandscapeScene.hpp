@@ -451,9 +451,6 @@ private:
     f32 loadingGateAlpha { 1.0f };
     f32 loadingGateProgress { 0.0f };
     u32 loadingGateFrames { 0 };
-    // The main menu (a MODAL — always drawn above the overlay shroud)
-    // waits for the load: the gate shows it when the fade starts.
-    bool loadingGateShowMenu { false };
     u32 loadingTerrainTarget { 0 };
     u32 loadingMeshTarget { 0 };
     u32 loadingTextureTarget { 0 };
