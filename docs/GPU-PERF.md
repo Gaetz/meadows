@@ -432,6 +432,9 @@ le GPU-driven (cull Hi-Z en indirect draws sans readback).
   champ en cours d'écriture (dev only) ; la queue TRANSFERT dédiée
   (uploads streaming) reste un lot PC/post-démo. Validation : sync
   layer active, 0 SYNC-HAZARD, 0 erreur, 522 tests verts.
+  **Confirmation dev en jeu (2026-07-26) : forêt 15-17 fps (pré-
+  chantier) → 27 fps min** — la trajectoire PG1→PG3 complète tient sur
+  le pire cas végétation.
 - **PG4 — Render thread : DIFFÉRÉ explicitement.** Le seam Phase 5
   (snapshot strict) le garde à ~une brique de distance ; il paie quand
   la sim CPU grossira (chantier « vivant »), pas à ≤ 2 ms. Idem
