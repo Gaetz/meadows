@@ -27,6 +27,8 @@ public:
     // --- Frame ---------------------------------------------------------------
     CommandBuffer& beginFrame() override;
     void endFrame() override;
+    CommandBuffer* asyncComputeCmd() override;
+    void endAsyncCompute() override;
 
     Backend backend() const override { return Backend::Vulkan; }
     const DeviceCaps& caps() const override { return caps_; }

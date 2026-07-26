@@ -684,9 +684,13 @@ ce coût au premier lancement. L'en-tête du blob est validé par Vulkan
 3. **Pré-chauffe des variantes** au chargement (compiler les paires
    pipeline×formats connues pendant l'écran de titre) — supprime même le
    coût du premier lancement.
-4. **Queue de transfert dédiée** (la plupart des GPU discrets en ont une ;
-   M1 n'en a qu'une famille) : uploads en vrai parallèle + ownership
-   transfer — à faire quand le PC discret redevient la cible active.
+4. **Queue de transfert dédiée** (la plupart des GPU discrets en ont
+   une) : uploads en vrai parallèle — à faire quand le PC discret
+   redevient la cible active. CORRECTION (2026-07-26, chantier PG3) :
+   « M1 n'en a qu'une famille » était faux — MoltenVK expose plusieurs
+   familles (une MTLCommandQueue chacune, concurrentes sur Apple
+   Silicon) ; l'async COMPUTE est fait et actif sur M1
+   (docs/GPU-PERF.md PG3), la queue transfert reste ce lot-ci.
 5. **Enregistrement parallèle des command buffers** (secondaires ou
    multi-primaires) : prématuré — le grief V8 est le coût MoltenVK par
    frame Debug, pas la saturation d'un thread d'enregistrement.

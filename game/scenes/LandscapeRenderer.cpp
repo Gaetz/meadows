@@ -167,6 +167,7 @@ void LandscapeRenderer::applyRcTuning(const data::RcTuningForm& rc) {
     t.emitterBoost = rc.emitterBoost;
     t.lightSplatBounce = rc.lightSplatBounce;
     t.pipelined = rc.pipelined;
+    t.asyncCompute = rc.asyncCompute;
     t.bounceFeedback = rc.bounceFeedback;
     t.rcOnlyLights = rc.rcOnlyLights;
     t.interval0 = rc.interval0;
@@ -218,6 +219,7 @@ void LandscapeRenderer::captureRcTuning(data::RcTuningForm& out) const {
     out.emitterBoost = t.emitterBoost;
     out.lightSplatBounce = t.lightSplatBounce;
     out.pipelined = t.pipelined;
+    out.asyncCompute = t.asyncCompute;
     out.bounceFeedback = t.bounceFeedback;
     out.rcOnlyLights = t.rcOnlyLights;
     out.interval0 = t.interval0;
@@ -1625,7 +1627,11 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     // no GI and overlaps the still-running chain.
     if (!radianceCascades.tuning.pipelined) {
         recordGiUpdate(frame, snapshot, view, uniforms, clustered);
-    } else if (radianceCascades.applyGroup().id != 0) {
+    } else if (radianceCascades.applyGroup().id != 0 &&
+               !(radianceCascades.tuning.asyncCompute &&
+                 frame.device.caps().asyncCompute)) {
+        // Async (PG3): the cross-queue semaphore already publishes last
+        // frame's chain to this frame's consumers — no fence needed.
         frame.cmd.memoryBarrier(rhi::BarrierStage_Fragment |
                                 rhi::BarrierStage_Compute);
     }
@@ -2433,6 +2439,8 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
                            0.9f, "%.2f");
         // PG2 A/B: chain at end of frame, consumers read frame N-1.
         ImGui::Checkbox("Pipelined GI (frame N-1)", &rc.pipelined);
+        // PG3 A/B: the chain on the second queue (needs pipelined).
+        ImGui::Checkbox("Async compute GI (2nd queue)", &rc.asyncCompute);
         ImGui::Checkbox("Lights via RC only (penumbra experiment)",
                         &rc.rcOnlyLights);
         ImGui::SeparatorText("Apply");

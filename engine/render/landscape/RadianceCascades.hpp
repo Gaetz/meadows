@@ -83,6 +83,9 @@ struct RcTuning {
     // one frame of latency (invisible: the field is already temporal),
     // and the chain overlaps the composite + the next frame's front.
     bool pipelined { true };
+    // Async compute (PG3, needs pipelined + caps().asyncCompute): the
+    // chain runs on the second queue, concurrent with the graphics work.
+    bool asyncCompute { true };
     // G7a — multi-bounce: surfaces also receive LAST frame's merged GI
     // (one extra bounce per frame, converges geometrically; adds ~a
     // frame of light latency per bounce). 0 = single bounce.

@@ -263,6 +263,7 @@ struct RcTuningForm : Form {
     f32 lightSplatBounce { 0.35f };
     f32 bounceFeedback { 0.5f };
     bool pipelined { true };
+    bool asyncCompute { true };
     bool rcOnlyLights { false };
     f32 interval0 { 1.0f };
     f32 edgeFade { 8.0f };
@@ -284,6 +285,7 @@ struct RcTuningForm : Form {
         REFLECT_FIELD(lightSplatBounce)
         REFLECT_FIELD(bounceFeedback)
         REFLECT_FIELD(pipelined)
+        REFLECT_FIELD(asyncCompute)
         REFLECT_FIELD(rcOnlyLights)
         REFLECT_FIELD(interval0)
         REFLECT_FIELD(edgeFade)

@@ -406,11 +406,32 @@ le GPU-driven (cull Hi-Z en indirect draws sans readback).
   legacy (pipelined OFF), la WAR théorique inter-frames (lectures N−1
   vs réécriture N) reste comme avant PG2 — surveillée par la sync
   validation, propre à ce jour.
-- **PG3 — Queues dédiées (post-démo, PC)** : le M1 n'a qu'UNE famille de
-  queues — pas d'async compute matériel sur la machine de dev. Sur GPU
-  discret : queue compute (RC+froxels+clusterCull) + queue transfert
-  (uploads). Déjà listé dans VULKAN.md (revue V8+, points 4-5) ; PG2 le
-  rend trivial.
+- ✅ **PG3 — Async compute GI — FAITE (2026-07-26)**, et la prémisse
+  « le M1 n'a qu'une famille » était FAUSSE : MoltenVK expose plusieurs
+  familles (chacune sa MTLCommandQueue, que l'Apple Silicon ordonnance
+  en concurrence ; `MVK_CONFIG_SPECIALIZED_QUEUE_FAMILIES` marque même
+  des familles compute/transfert dédiées). Livré : sélection d'une
+  famille compute ≠ graphics (caps `asyncCompute`), sémaphore TIMELINE
+  (feature 1.2 activée), soumission croisée — graphics N signale, la
+  chaîne RC (sur la 2ᵉ queue) attend et signale, graphics N+1 attend
+  cette valeur À SES STAGES CONSOMMATEURS seulement (fragment, compute,
+  depth-writes — le vertex et les transferts recouvrent) ; partage
+  CONCURRENT des ressources (simplicité prototype, Metal l'ignore) ;
+  fenêtre de routage explicite des updateBuffer vers le CB compute
+  (asyncComputeCmd/endAsyncCompute — la sync validation a attrapé les
+  vertex UI qui fuyaient dedans, et la libération des stagings sur foi
+  de la seule fence graphics : le wait timeline du slot vit dans
+  beginFrame). Toggle « Async compute GI (2nd queue) »
+  (RcTuningForm.asyncCompute, défaut ON, exige pipelined).
+  **Mesuré (Release M1, spawn, 2 runs) : frame 26,4 → 19,2 ms** — la
+  chaîne RC (~7,5 ms) est ENTIÈREMENT masquée ; les spikes CPU suivent.
+  **Total chantier : 34,7 → 19,2 ms (-45 %).** Limites notées : les
+  scopes GpuProbe rc* sont coupés en async (timestamps de l'autre
+  queue non instrumentés — le coût RC se lit par l'A/B du toggle ;
+  follow-up : timestamps par queue) ; la vue debug RC peut montrer un
+  champ en cours d'écriture (dev only) ; la queue TRANSFERT dédiée
+  (uploads streaming) reste un lot PC/post-démo. Validation : sync
+  layer active, 0 SYNC-HAZARD, 0 erreur, 522 tests verts.
 - **PG4 — Render thread : DIFFÉRÉ explicitement.** Le seam Phase 5
   (snapshot strict) le garde à ~une brique de distance ; il paie quand
   la sim CPU grossira (chantier « vivant »), pas à ≤ 2 ms. Idem

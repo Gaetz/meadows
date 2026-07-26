@@ -28,6 +28,20 @@ public:
     // Submits the recorded work and presents the backbuffer.
     virtual void endFrame() = 0;
 
+    // Async compute (caps().asyncCompute — docs/GPU-PERF.md PG3): a
+    // second command buffer submitted to a dedicated compute queue AFTER
+    // this frame's graphics work (it waits it) and awaited by the NEXT
+    // frame's consumers (fragment/compute stages) — everything in
+    // between runs concurrently. Null when unsupported: record on the
+    // frame command buffer instead. While recording this buffer,
+    // updateBuffer() staging copies are routed INTO it (they execute on
+    // the compute queue, ordered with the work that reads them).
+    virtual CommandBuffer* asyncComputeCmd() { return nullptr; }
+    // Closes the async-recording WINDOW (updateBuffer routing back to the
+    // frame command buffer). Call when the async chain is fully recorded;
+    // submission itself happens in endFrame().
+    virtual void endAsyncCompute() {}
+
     virtual Backend backend() const = 0;
 
     // Per-feature capabilities (§ degraded-mode goal): renderer systems check

@@ -462,7 +462,7 @@ void RadianceCascades::prepare(const Vec3& cameraPos) {
     lastCoarseOrigin = snap(appliedCoarseVoxel);
 }
 
-void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
+void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
                               const TerrainParams& params,
                               const Vec3& cameraPos,
                               const vector<RcBox>& boxes,
@@ -474,6 +474,19 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
                               rhi::Device* probeDevice, GpuProbe* probe) {
     if (!jobs || injectPipeline.id() == 0) {
         return;
+    }
+    // Async compute (docs/GPU-PERF.md PG3, needs the pipelined contract):
+    // the whole chain — its staged uniform copies included, routed by the
+    // backend — records on the second queue and runs concurrently with
+    // the next frame's front. The GPU probes stay off there: their
+    // timestamps belong to the graphics stream.
+    rhi::CommandBuffer* asyncCmd =
+        tuning.pipelined && tuning.asyncCompute ? device.asyncComputeCmd()
+                                                : nullptr;
+    rhi::CommandBuffer& cmd = asyncCmd ? *asyncCmd : frameCmd;
+    if (asyncCmd) {
+        probe = nullptr;
+        probeDevice = nullptr;
     }
     // Pipeline value trace: one line whenever the APPLY state flips or a
     // live knob moves (throttled) — the ground truth for "does this
@@ -520,6 +533,9 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
         recreated = true;
     }
     if (!injectThisFrame) {
+        if (asyncCmd) {
+            device.endAsyncCompute(); // never leave the routing window open
+        }
         return; // budget knob: hold last frame's volumes (prepare() kept
                 // the origins matching their content)
     }
@@ -590,8 +606,10 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
         // Pipelined (docs/GPU-PERF.md PG2): the chain records at the END
         // of the frame and OVERWRITES what the frame just sampled — the
         // WAR fence lets every prior read (surfaces, volumetric, froxels)
-        // finish before the first write.
-        if (tuning.pipelined) {
+        // finish before the first write. Async (PG3): the compute
+        // submission WAITS the whole graphics frame instead (fragment
+        // stages do not exist on the compute queue).
+        if (tuning.pipelined && !asyncCmd) {
             cmd.readBarrier(rhi::BarrierStage_Fragment |
                             rhi::BarrierStage_Compute);
         }
@@ -766,6 +784,10 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
                      slabs[8].w);
             probeLogged = true;
         }
+    }
+
+    if (asyncCmd) {
+        device.endAsyncCompute(); // close the update-routing window
     }
 }
 

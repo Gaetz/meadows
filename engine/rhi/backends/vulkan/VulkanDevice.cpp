@@ -618,6 +618,30 @@ struct VulkanDevice::Impl {
     VkQueue graphicsQueue { VK_NULL_HANDLE };
     VkQueue presentQueue { VK_NULL_HANDLE };
 
+    // Async compute (docs/GPU-PERF.md PG3): a compute-capable family
+    // DISTINCT from graphics (its own hardware queue — on MoltenVK a
+    // separate MTLCommandQueue, which Apple GPUs schedule concurrently).
+    // The chain: graphics N signals the timeline -> compute N waits it,
+    // runs, signals -> graphics N+1 waits that value at its consumer
+    // stages only. CB reuse is guarded CPU-side by waiting the slot's
+    // last signaled value (the graphics fence does not cover compute).
+    bool asyncComputeAvailable { false };
+    u32 computeFamily { 0 };
+    VkQueue computeQueue { VK_NULL_HANDLE };
+    VkCommandPool computePool { VK_NULL_HANDLE };
+    std::array<VkCommandBuffer, kFramesInFlight> computeCbs {};
+    std::array<u64, kFramesInFlight> computeSlotValue {};
+    uptr<VulkanCommandBuffer> computeCmd;
+    bool computeRecording { false };
+    // The staged-update ROUTING window: only between asyncComputeCmd()
+    // and endAsyncCompute() do updateBuffer copies land on the compute
+    // CB — a later UI vertex update must stay on the graphics stream
+    // (sync-validation caught the cross-queue read).
+    bool computeRouting { false };
+    VkSemaphore timeline { VK_NULL_HANDLE };
+    u64 timelineNext { 0 };      // last value handed out
+    u64 computeDoneValue { 0 };  // what the next graphics submit waits
+
     // Swapchain + everything sized by it (recreated together on resize).
     VkSwapchainKHR swapchain { VK_NULL_HANDLE };
     VkFormat colorFormat { VK_FORMAT_UNDEFINED };
@@ -1756,6 +1780,14 @@ bool VulkanDevice::Impl::createStaging(u64 size, bool forRead, VkBuffer& out,
     info.usage = forRead ? VK_BUFFER_USAGE_TRANSFER_DST_BIT
                          : VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    // A staging src may be consumed by a copy routed onto the compute
+    // queue (async recording) — same CONCURRENT policy as resources.
+    const std::array<u32, 2> shareFamilies { graphicsFamily, computeFamily };
+    if (asyncComputeAvailable) {
+        info.sharingMode = VK_SHARING_MODE_CONCURRENT;
+        info.queueFamilyIndexCount = 2;
+        info.pQueueFamilyIndices = shareFamilies.data();
+    }
 
     VmaAllocationCreateInfo alloc {};
     alloc.usage = VMA_MEMORY_USAGE_AUTO;
@@ -1998,6 +2030,13 @@ VulkanDevice::~VulkanDevice() {
         }
         impl->destroySwapchain();
         if (impl->commandPool != VK_NULL_HANDLE) {
+            if (impl->computePool != VK_NULL_HANDLE) {
+                vkDestroyCommandPool(impl->device, impl->computePool,
+                                     nullptr);
+            }
+            if (impl->timeline != VK_NULL_HANDLE) {
+                vkDestroySemaphore(impl->device, impl->timeline, nullptr);
+            }
             vkDestroyCommandPool(impl->device, impl->commandPool, nullptr);
         }
         if (impl->transferPool != VK_NULL_HANDLE) {
@@ -2044,6 +2083,19 @@ CommandBuffer& VulkanDevice::beginFrame() {
     d.frameActive = false;
 
     vkWaitForFences(d.device, 1, &d.inFlight[d.frame], VK_TRUE, UINT64_MAX);
+    // The graphics fence proves nothing about the compute queue: wait
+    // (timeline) for this slot's last compute submission too, BEFORE the
+    // parked frees run — a staging consumed by that chain must not be
+    // destroyed while it still executes (sync-validation caught it).
+    if (d.asyncComputeAvailable && d.computeSlotValue[d.frame] != 0) {
+        VkSemaphoreWaitInfo wait {};
+        wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        wait.semaphoreCount = 1;
+        wait.pSemaphores = &d.timeline;
+        wait.pValues = &d.computeSlotValue[d.frame];
+        vkOk(vkWaitSemaphores(d.device, &wait, UINT64_MAX),
+             "vkWaitSemaphores(compute slot)");
+    }
     d.frameCounter++;
     d.flushPendingFrees(false); // slot fence passed: old parked frees are safe
 
@@ -2131,6 +2183,33 @@ CommandBuffer& VulkanDevice::beginFrame() {
     return *d.cmd;
 }
 
+CommandBuffer* VulkanDevice::asyncComputeCmd() {
+    Impl& d = *impl;
+    if (!d.asyncComputeAvailable || !d.frameActive) {
+        return nullptr;
+    }
+    if (!d.computeRecording) {
+        // Slot reuse is safe: beginFrame already waited this slot's last
+        // compute value on the timeline.
+        VkCommandBufferBeginInfo begin {};
+        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        if (!vkOk(vkBeginCommandBuffer(d.computeCbs[d.frame], &begin),
+                  "vkBeginCommandBuffer(compute)")) {
+            return nullptr;
+        }
+        d.computeCmd->begin(d.computeCbs[d.frame], VK_NULL_HANDLE,
+                            VK_FORMAT_UNDEFINED, {});
+        d.computeRecording = true;
+    }
+    d.computeRouting = true;
+    return d.computeCmd.get();
+}
+
+void VulkanDevice::endAsyncCompute() {
+    impl->computeRouting = false;
+}
+
 void VulkanDevice::endFrame() {
     Impl& d = *impl;
     if (!d.frameActive) {
@@ -2150,22 +2229,90 @@ void VulkanDevice::endFrame() {
         return;
     }
 
-    const VkPipelineStageFlags waitStage =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    // Graphics submit. With async compute in flight (PG3): waits LAST
+    // frame's compute value at the CONSUMER stages only (fragment,
+    // compute dispatches, depth writes — the CSM rewrite is a WAR
+    // against the chain's shadow-map reads); vertex work and transfers
+    // run concurrently with the still-running chain. Signals its own
+    // timeline value so this frame's compute can wait the graphics work
+    // it reads (CSM, staging copies).
+    const bool computePending = d.computeRecording;
+    const u64 gfxDone = ++d.timelineNext;
+    std::array<VkSemaphore, 2> waitSems { d.imageAvailable[d.frame],
+                                          d.timeline };
+    std::array<u64, 2> waitValues { 0, d.computeDoneValue };
+    std::array<VkPipelineStageFlags, 2> waitStages {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+            VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
+    };
+    std::array<VkSemaphore, 2> signalSems { d.renderFinished[d.imageIndex],
+                                            d.timeline };
+    std::array<u64, 2> signalValues { 0, gfxDone };
+    const bool useTimeline =
+        d.asyncComputeAvailable &&
+        (computePending || d.computeDoneValue != 0);
+    VkTimelineSemaphoreSubmitInfo timelineInfo {};
+    timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+    timelineInfo.waitSemaphoreValueCount = 2;
+    timelineInfo.pWaitSemaphoreValues = waitValues.data();
+    timelineInfo.signalSemaphoreValueCount = 2;
+    timelineInfo.pSignalSemaphoreValues = signalValues.data();
     VkSubmitInfo submit {};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit.waitSemaphoreCount = 1;
-    submit.pWaitSemaphores = &d.imageAvailable[d.frame];
-    submit.pWaitDstStageMask = &waitStage;
+    submit.waitSemaphoreCount = useTimeline ? 2 : 1;
+    submit.pWaitSemaphores = waitSems.data();
+    submit.pWaitDstStageMask = waitStages.data();
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &cb;
-    submit.signalSemaphoreCount = 1;
-    submit.pSignalSemaphores = &d.renderFinished[d.imageIndex];
+    submit.signalSemaphoreCount = useTimeline ? 2 : 1;
+    submit.pSignalSemaphores = signalSems.data();
+    if (useTimeline) {
+        submit.pNext = &timelineInfo;
+    }
     if (!vkOk(vkQueueSubmit(d.graphicsQueue, 1, &submit, d.inFlight[d.frame]),
               "vkQueueSubmit")) {
         d.frameActive = false;
         return;
     }
+
+    // Compute submit: waits this frame's graphics (CSM + staging copies
+    // it reads), signals its value for the NEXT graphics submit.
+    if (computePending) {
+        vkOk(vkEndCommandBuffer(d.computeCbs[d.frame]),
+             "vkEndCommandBuffer(compute)");
+        const u64 computeDone = ++d.timelineNext;
+        const VkPipelineStageFlags computeWaitStage =
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+            VK_PIPELINE_STAGE_TRANSFER_BIT;
+        VkTimelineSemaphoreSubmitInfo computeTimeline {};
+        computeTimeline.sType =
+            VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        computeTimeline.waitSemaphoreValueCount = 1;
+        computeTimeline.pWaitSemaphoreValues = &gfxDone;
+        computeTimeline.signalSemaphoreValueCount = 1;
+        computeTimeline.pSignalSemaphoreValues = &computeDone;
+        VkSubmitInfo computeSubmit {};
+        computeSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        computeSubmit.pNext = &computeTimeline;
+        computeSubmit.waitSemaphoreCount = 1;
+        computeSubmit.pWaitSemaphores = &d.timeline;
+        computeSubmit.pWaitDstStageMask = &computeWaitStage;
+        computeSubmit.commandBufferCount = 1;
+        computeSubmit.pCommandBuffers = &d.computeCbs[d.frame];
+        computeSubmit.signalSemaphoreCount = 1;
+        computeSubmit.pSignalSemaphores = &d.timeline;
+        if (vkOk(vkQueueSubmit(d.computeQueue, 1, &computeSubmit,
+                               VK_NULL_HANDLE),
+                 "vkQueueSubmit(compute)")) {
+            d.computeDoneValue = computeDone;
+            d.computeSlotValue[d.frame] = computeDone;
+        }
+        d.computeRecording = false;
+    }
+    d.computeRouting = false;
 
     VkPresentInfoKHR present {};
     present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -2212,6 +2359,16 @@ BufferHandle VulkanDevice::createBuffer(const BufferDesc& desc,
                  VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    // With async compute, any buffer may be read on the second queue —
+    // CONCURRENT skips per-resource ownership transfers (prototype
+    // simplicity over the minor bandwidth cost; Metal ignores it).
+    const std::array<u32, 2> shareFamilies { d.graphicsFamily,
+                                             d.computeFamily };
+    if (d.asyncComputeAvailable) {
+        info.sharingMode = VK_SHARING_MODE_CONCURRENT;
+        info.queueFamilyIndexCount = 2;
+        info.pQueueFamilyIndices = shareFamilies.data();
+    }
 
     VmaAllocationCreateInfo alloc {};
     alloc.usage = VMA_MEMORY_USAGE_AUTO;
@@ -2264,7 +2421,13 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
         // In-place remains for init/tools (nothing consuming yet) and
         // mid-pass updates (copies are illegal inside a pass — ImGui's
         // vertex streams, which tolerate the race).
-        if (d.frameActive && d.cmd && !d.cmd->insidePass()) {
+        // Async recording routes the copy into the COMPUTE command
+        // buffer: it executes on the compute queue, ordered with the
+        // chain that reads it — and never races the next frame's
+        // graphics copies (docs/GPU-PERF.md PG3).
+        VulkanCommandBuffer* rec =
+            d.computeRouting ? d.computeCmd.get() : d.cmd.get();
+        if (d.frameActive && rec && !rec->insidePass()) {
             VkBuffer staging = VK_NULL_HANDLE;
             VmaAllocation stagingAlloc = nullptr;
             void* mapped = nullptr;
@@ -2272,8 +2435,8 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
                                 &mapped)) {
                 std::memcpy(mapped, data, size);
                 vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
-                if (d.cmd->recordHostUpdate(staging, buffer->buffer, size,
-                                            offset)) {
+                if (rec->recordHostUpdate(staging, buffer->buffer, size,
+                                          offset)) {
                     d.pendingBuffers.push_back(
                         { staging, stagingAlloc, d.frameCounter });
                     return;
@@ -2305,8 +2468,10 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
     // no-stall property AND the ordering; the staging is parked in the
     // deletion queue. Outside a frame (init, tools) nothing ever waits,
     // so block as before.
-    if (d.frameActive && d.cmd && !d.cmd->insidePass() &&
-        d.cmd->recordHostUpdate(staging, buffer->buffer, size, offset)) {
+    VulkanCommandBuffer* rec =
+        d.computeRouting ? d.computeCmd.get() : d.cmd.get();
+    if (d.frameActive && rec && !rec->insidePass() &&
+        rec->recordHostUpdate(staging, buffer->buffer, size, offset)) {
         d.pendingBuffers.push_back({ staging, stagingAlloc, d.frameCounter });
         return;
     }
@@ -2438,6 +2603,14 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
     info.usage = usage;
     info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    // Same CONCURRENT policy as buffers (async compute reads/writes).
+    const std::array<u32, 2> shareFamilies { d.graphicsFamily,
+                                             d.computeFamily };
+    if (d.asyncComputeAvailable) {
+        info.sharingMode = VK_SHARING_MODE_CONCURRENT;
+        info.queueFamilyIndexCount = 2;
+        info.pQueueFamilyIndices = shareFamilies.data();
+    }
 
     VmaAllocationCreateInfo alloc {};
     alloc.usage = VMA_MEMORY_USAGE_AUTO;
@@ -3509,6 +3682,50 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     VkPhysicalDeviceFeatures features {};
     vkGetPhysicalDeviceFeatures(d.gpu, &features);
 
+    // Async-compute family (docs/GPU-PERF.md PG3): compute-capable and
+    // DISTINCT from graphics — its own hardware queue. Prefer a
+    // specialized (non-graphics) family; MoltenVK exposes several
+    // (each a separate MTLCommandQueue, which Apple GPUs schedule
+    // concurrently — MVK_CONFIG_SPECIALIZED_QUEUE_FAMILIES marks
+    // dedicated ones).
+    u32 asyncFamily = d.graphicsFamily;
+    {
+        u32 familyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount,
+                                                 nullptr);
+        vector<VkQueueFamilyProperties> families(familyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount,
+                                                 families.data());
+        i32 bestAsync = -1;
+        for (u32 i = 0; i < familyCount; ++i) {
+            if (i == d.graphicsFamily ||
+                (families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) == 0) {
+                continue;
+            }
+            const i32 asyncScore =
+                (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0 ? 2
+                                                                      : 1;
+            if (asyncScore > bestAsync) {
+                bestAsync = asyncScore;
+                asyncFamily = i;
+            }
+        }
+    }
+    // Timeline semaphores (core 1.2, an enable-gated feature) are the
+    // cross-queue sync primitive; without them async compute stays off.
+    VkPhysicalDeviceTimelineSemaphoreFeatures timelineFeature {};
+    timelineFeature.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+    {
+        VkPhysicalDeviceFeatures2 timelineQuery {};
+        timelineQuery.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        timelineQuery.pNext = &timelineFeature;
+        vkGetPhysicalDeviceFeatures2(d.gpu, &timelineQuery);
+    }
+    const bool wantAsyncCompute = asyncFamily != d.graphicsFamily &&
+                                  timelineFeature.timelineSemaphore ==
+                                      VK_TRUE;
+
     // --- Logical device ---
     vector<const char*> deviceExtensions { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
     const vector<VkExtensionProperties> devExt =
@@ -3562,6 +3779,11 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         presentQueueInfo.queueFamilyIndex = d.presentFamily;
         queueInfos.push_back(presentQueueInfo);
     }
+    if (wantAsyncCompute && asyncFamily != d.presentFamily) {
+        VkDeviceQueueCreateInfo computeQueueInfo = graphicsQueueInfo;
+        computeQueueInfo.queueFamilyIndex = asyncFamily;
+        queueInfos.push_back(computeQueueInfo);
+    }
 
     VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamicRendering {};
     dynamicRendering.sType =
@@ -3571,6 +3793,10 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     VkDeviceCreateInfo deviceInfo {};
     deviceInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceInfo.pNext = &dynamicRendering;
+    if (wantAsyncCompute) {
+        timelineFeature.pNext = const_cast<void*>(deviceInfo.pNext);
+        deviceInfo.pNext = &timelineFeature;
+    }
     if (onPortability) {
         portability.pNext = const_cast<void*>(deviceInfo.pNext);
         deviceInfo.pNext = &portability;
@@ -3586,6 +3812,44 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     }
     vkGetDeviceQueue(d.device, d.graphicsFamily, 0, &d.graphicsQueue);
     vkGetDeviceQueue(d.device, d.presentFamily, 0, &d.presentQueue);
+    if (wantAsyncCompute) {
+        d.computeFamily = asyncFamily;
+        vkGetDeviceQueue(d.device, asyncFamily, 0, &d.computeQueue);
+        VkCommandPoolCreateInfo computePoolInfo {};
+        computePoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        computePoolInfo.flags =
+            VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        computePoolInfo.queueFamilyIndex = asyncFamily;
+        VkSemaphoreTypeCreateInfo timelineType {};
+        timelineType.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        timelineType.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        timelineType.initialValue = 0;
+        VkSemaphoreCreateInfo timelineSem {};
+        timelineSem.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        timelineSem.pNext = &timelineType;
+        if (vkOk(vkCreateCommandPool(d.device, &computePoolInfo, nullptr,
+                                     &d.computePool),
+                 "vkCreateCommandPool(compute)") &&
+            vkOk(vkCreateSemaphore(d.device, &timelineSem, nullptr,
+                                   &d.timeline),
+                 "vkCreateSemaphore(timeline)")) {
+            VkCommandBufferAllocateInfo computeAlloc {};
+            computeAlloc.sType =
+                VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            computeAlloc.commandPool = d.computePool;
+            computeAlloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            computeAlloc.commandBufferCount = kFramesInFlight;
+            if (vkOk(vkAllocateCommandBuffers(d.device, &computeAlloc,
+                                              d.computeCbs.data()),
+                     "vkAllocateCommandBuffers(compute)")) {
+                d.computeCmd = std::make_unique<VulkanCommandBuffer>(d);
+                d.asyncComputeAvailable = true;
+                LOG_INFO("Vulkan: async compute on queue family {} "
+                         "(graphics on {})",
+                         asyncFamily, d.graphicsFamily);
+            }
+        }
+    }
 
     // Extension entry points are not exported by the loader's static symbols.
     d.cmdBeginRendering = reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(
@@ -3733,7 +3997,8 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
                     .copyTexture = true,
                     .computeShaders = true,
                     .timerQueries = timestampsUsable,
-                    .volumeTextures = true };
+                    .volumeTextures = true,
+                    .asyncCompute = d.asyncComputeAvailable };
 
     {
         const u32 white[2] = { 0xffffffffu, 0xffffffffu };

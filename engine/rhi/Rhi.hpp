@@ -59,6 +59,10 @@ struct DeviceCaps {
                                      // samples collapse (~0.01 ms deltas)
     bool volumeTextures { false };   // TextureDesc::depth > 1 (3D textures —
                                      // GI voxel clipmap / radiance cascades)
+    // A second, compute-capable queue backed by distinct hardware
+    // scheduling (Vulkan only — docs/GPU-PERF.md PG3): work recorded via
+    // Device::asyncComputeCmd() runs concurrently with the graphics queue.
+    bool asyncCompute { false };
 };
 
 // --- Barriers ------------------------------------------------------------------
