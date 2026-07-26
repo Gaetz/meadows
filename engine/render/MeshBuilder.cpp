@@ -81,6 +81,85 @@ void appendTaperedTube(MeshData& mesh, const Vec3& base, const Vec3& top,
     }
 }
 
+void appendPolylineTube(MeshData& mesh, const vector<TubePoint>& points,
+                        u32 sides, const Vec3& color, f32 angleJitter,
+                        u32 seed) {
+    if (points.size() < 2 || sides < 3) {
+        return;
+    }
+    constexpr f32 kTau = 6.2831853f;
+    // Per-vertex angles, shared by every ring (k == sides wraps onto
+    // vertex 0 a full turn later, closing the ring exactly).
+    const auto angleAt = [&](u32 k) {
+        const u32 wrapped = k % sides;
+        f32 offset = 0.0f;
+        if (angleJitter > 0.0f) {
+            offset =
+                (static_cast<f32>(hashU32(seed ^ (wrapped * 747796405u))) *
+                     (1.0f / 4294967295.0f) -
+                 0.5f) *
+                0.9f * angleJitter;
+        }
+        return kTau * (static_cast<f32>(k) + offset) /
+               static_cast<f32>(sides);
+    };
+    const auto safeNormalize = [](const Vec3& vec, const Vec3& fallback) {
+        const f32 len = glm::length(vec);
+        return len > 1e-6f ? vec / len : fallback;
+    };
+
+    // Ring 0: plane of the first segment, helper-seeded basis (the
+    // appendTaperedTube convention).
+    Vec3 segAxis = safeNormalize(points[1].position - points[0].position,
+                                 Vec3 { 0.0f, 1.0f, 0.0f });
+    const Vec3 helper = std::abs(segAxis.y) < 0.95f
+                            ? Vec3 { 0.0f, 1.0f, 0.0f }
+                            : Vec3 { 1.0f, 0.0f, 0.0f };
+    Vec3 u = glm::normalize(glm::cross(segAxis, helper));
+    Vec3 v = glm::cross(segAxis, u);
+
+    vector<Vec3> prevRing(sides + 1);
+    vector<Vec3> ring(sides + 1);
+    const auto buildRing = [&](vector<Vec3>& out, const TubePoint& point) {
+        for (u32 k = 0; k <= sides; ++k) {
+            const f32 a = angleAt(k);
+            out[k] = point.position +
+                     (u * std::cos(a) + v * std::sin(a)) * point.radius;
+        }
+    };
+    buildRing(prevRing, points[0]);
+
+    for (size_t i = 1; i < points.size(); ++i) {
+        segAxis = safeNormalize(points[i].position - points[i - 1].position,
+                                segAxis);
+        const Vec3 nextAxis =
+            i + 1 < points.size()
+                ? safeNormalize(points[i + 1].position - points[i].position,
+                                segAxis)
+                : segAxis;
+        // Mitered ring plane: halfway between the two segment planes, so
+        // both segments share the ring without a wedge.
+        const Vec3 ringAxis = safeNormalize(segAxis + nextAxis, segAxis);
+        // Parallel transport: project the basis onto the new plane — the
+        // ring never spins around the path.
+        u = safeNormalize(u - ringAxis * glm::dot(u, ringAxis),
+                          glm::normalize(glm::cross(
+                              ringAxis, std::abs(ringAxis.y) < 0.95f
+                                            ? Vec3 { 0.0f, 1.0f, 0.0f }
+                                            : Vec3 { 1.0f, 0.0f, 0.0f })));
+        v = glm::cross(ringAxis, u);
+        buildRing(ring, points[i]);
+        for (u32 k = 0; k < sides; ++k) {
+            // Outward winding (CCW seen from outside) — the tapered-tube
+            // pattern with the rootward ring as the base.
+            appendTriangle(mesh, prevRing[k], prevRing[k + 1], ring[k + 1],
+                           color);
+            appendTriangle(mesh, prevRing[k], ring[k + 1], ring[k], color);
+        }
+        prevRing.swap(ring);
+    }
+}
+
 void appendBlob(MeshData& mesh, u32 seed, const Vec3& center, f32 radius,
                 f32 jitter, const Vec3& color, u32 subdivisions) {
     // Icosahedron.

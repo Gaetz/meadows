@@ -20,6 +20,23 @@ void appendTaperedTube(MeshData& mesh, const Vec3& base, const Vec3& top,
                        const Vec3& color, f32 angleJitter = 0.0f,
                        u32 seed = 0);
 
+// One point of a welded polyline tube.
+struct TubePoint {
+    Vec3 position;
+    f32 radius;
+};
+
+// Welded tube along a polyline (root -> tip order): ONE shared ring per
+// point — the ring plane miters between its two adjacent segments and
+// the basis is parallel-transported along the path (no twist), so bent
+// joints close exactly (no wedge gaps, no overlap hack). Open ends,
+// flat-shaded, same conventions as appendTaperedTube; `angleJitter`
+// applies the SAME angular offsets to every ring (uneven face strips
+// without twisting).
+void appendPolylineTube(MeshData& mesh, const vector<TubePoint>& points,
+                        u32 sides, const Vec3& color,
+                        f32 angleJitter = 0.0f, u32 seed = 0);
+
 // Faceted blob: an icosphere with deterministic radial jitter — foliage
 // clumps, rocks. `jitter` is the relative radius variation (0 = perfect
 // sphere, 0.25 = craggy). `subdivisions`: 1 = 80 faces (craggy rocks),

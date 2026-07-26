@@ -9,6 +9,7 @@
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/WorldRenderer.hpp"
 #include "game/Scene.hpp"
+#include "game/scenes/WeatherController.hpp"
 
 namespace engine {
 class Engine;
@@ -63,6 +64,7 @@ private:
     render::WorldRenderer renderer;
     render::FlyCamera flyCamera;
     render::AtmosphereParams atmos;
+    WeatherController weather; // the top bar's weather selector
     core::FrameProbe frameProbe;
     f32 timeSeconds { 0.0f };
     f32 windTime { 0.0f };

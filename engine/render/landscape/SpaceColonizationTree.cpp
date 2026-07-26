@@ -342,6 +342,7 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
     };
     vector<PathPoint> path;    // one chain, tip -> root order
     vector<PathPoint> refined; // after Catmull-Rom rounding
+    vector<TubePoint> tube;    // root -> tip, welded-ring emission
 
     // Walk each chain from a branching point (or tip) down to the previous
     // branching point, collecting the decimated polyline, then emit one
@@ -434,31 +435,35 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
             }
             emitted = &refined;
         }
-        for (size_t i = 0; i + 1 < emitted->size(); ++i) {
-            // Twig cull on the tip-side radius — same rule the decimated
-            // runs always used.
-            const PathPoint& tipPoint = (*emitted)[i];
-            const PathPoint& basePoint = (*emitted)[i + 1];
-            if (tipPoint.radius < minRadius) {
-                continue;
+        // Twig cull: drop the tip-side points below the radius floor
+        // (radii grow rootward along a chain — pipe model), then emit
+        // the WHOLE chain as one welded tube: shared mitered rings close
+        // every bend exactly. Ring count and angular jitter are
+        // per-chain (welded rings must match vertex for vertex); the
+        // jitter seed is the chain tip — stable across LODs.
+        size_t start = 0;
+        while (start < emitted->size() &&
+               (*emitted)[start].radius < minRadius) {
+            ++start;
+        }
+        if (emitted->size() - start < 2) {
+            continue;
+        }
+        tube.clear();
+        for (size_t i = emitted->size(); i > start; --i) {
+            const PathPoint& point = (*emitted)[i - 1];
+            if (!tube.empty() &&
+                glm::distance(tube.back().position, point.position) <
+                    1e-5f) {
+                continue; // degenerate duplicate (jittered coincidence)
             }
-            const Vec3 span = tipPoint.position - basePoint.position;
-            const f32 length = glm::length(span);
-            if (length < 1e-5f) {
-                continue;
-            }
-            // Each segment's rings tilt with its OWN axis, so bent
-            // joints opened wedge gaps — overlap both ends into the
-            // neighbours (radius-scaled; buried inside the wood).
-            const Vec3 direction = span / length;
-            const Vec3 basePos =
-                basePoint.position - direction * (basePoint.radius * 0.35f);
-            const Vec3 tipPos =
-                tipPoint.position + direction * (tipPoint.radius * 0.35f);
-            appendTaperedTube(mesh, basePos, tipPos, basePoint.radius,
-                              tipPoint.radius, sidesFor(basePoint.radius),
-                              barkColor, ringIrregularity,
-                              positionHash(basePoint.position));
+            tube.push_back({ point.position, point.radius });
+        }
+        if (tube.size() >= 2) {
+            appendPolylineTube(mesh, tube,
+                               sidesFor(tube.front().radius), barkColor,
+                               ringIrregularity,
+                               positionHash(path[0].position));
         }
     }
 }

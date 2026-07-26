@@ -54,6 +54,7 @@ void TreeCreationScene::onEnter() {
     forms = data::FormDatabase {};
     data::resolve(data::pointersOf(pluginStack), formTypes, forms);
     loadLibrary();
+    weather.init(forms);
 
     // Flat ground: zero relief, the sea/sand band pushed far below —
     // the "plane" is ordinary terrain, so splat + shadows just work.
@@ -101,6 +102,7 @@ void TreeCreationScene::update(f32 dt) {
     frameProbe.beginFrame(); // ends in render() — one probe per frame
     timeSeconds += dt;
     windTime += dt * atmos.windStrength;
+    weather.update(atmos, dt); // the active crossfade, if any
     flyCamera.update(engine->getInput(), engine->getWindow(), dt,
                      !ImGui::GetIO().WantCaptureMouse,
                      render::FlyCamera::LookTrigger::RightOrAltLeft);
@@ -219,8 +221,54 @@ void TreeCreationScene::captureIntoSelected() {
 
 void TreeCreationScene::drawUi() {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(420.0f, display.y),
+
+    // The spectator-style TOP BAR: status left of the pipe; hour +
+    // weather selectors where the world's window toggles sit.
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImVec2(display.x, 0.0f));
+    ImGui::Begin("##topbar", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                     ImGuiWindowFlags_NoScrollbar |
+                     ImGuiWindowFlags_NoDocking);
+    ImGui::TextUnformatted("TREE CREATOR");
+    ImGui::SameLine();
+    ImGui::Text("| %.1f FPS", ImGui::GetIO().Framerate);
+    const Vec3 p = flyCamera.camera.position;
+    ImGui::SameLine();
+    ImGui::TextDisabled("| %.0f %.0f %.0f", p.x, p.y, p.z);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(130.0f);
+    ImGui::SliderFloat("##flyspeed", &flyCamera.moveSpeed, 2.0f, 150.0f,
+                       "fly %.0f m/s", ImGuiSliderFlags_Logarithmic);
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(150.0f);
+    ImGui::SliderFloat("##hour", &renderer.skySystem().timeOfDay, 0.0f,
+                       24.0f, "%.1f h");
+    if (!weather.states().empty()) {
+        // "(manual)" + one entry per WeatherForm, '\0'-separated as
+        // ImGui::Combo expects (c_str() supplies the double terminator).
+        str items = "(manual)";
+        items.push_back('\0');
+        for (const data::WeatherForm& w : weather.states()) {
+            items += w.editorId;
+            items.push_back('\0');
+        }
+        int selectedWeather = weather.selected() + 1;
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(170.0f);
+        if (ImGui::Combo("##weather", &selectedWeather, items.c_str())) {
+            weather.beginTransition(selectedWeather - 1, atmos);
+        }
+    }
+    const f32 barBottom = ImGui::GetWindowSize().y;
+    ImGui::End();
+
+    ImGui::SetNextWindowPos(ImVec2(0.0f, barBottom),
+                            ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(420.0f, display.y - barBottom),
                              ImGuiCond_FirstUseEver);
     ImGui::Begin("Tree creation");
 
