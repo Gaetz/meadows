@@ -60,7 +60,7 @@ struct DeviceCaps {
     bool volumeTextures { false };   // TextureDesc::depth > 1 (3D textures —
                                      // GI voxel clipmap / radiance cascades)
     // A second, compute-capable queue backed by distinct hardware
-    // scheduling (Vulkan only — docs/GPU-PERF.md PG3): work recorded via
+    // scheduling (Vulkan only — docs/RENDERING.md PG3): work recorded via
     // Device::asyncComputeCmd() runs concurrently with the graphics queue.
     bool asyncCompute { false };
 };
@@ -71,7 +71,7 @@ struct DeviceCaps {
 // memoryBarrier(dst) (which later work must see the compute writes) and
 // the SOURCE scope of readBarrier(src) (whose reads must finish first).
 // OR-able. Scoping is what gives the GPU permission to overlap
-// independent passes across a barrier (docs/GPU-PERF.md, chantier
+// independent passes across a barrier (docs/RENDERING.md, chantier
 // parallélisme) — an All barrier forbids any overlap.
 enum BarrierStage : u32 {
     BarrierStage_Compute = 1u << 0,  // dispatches

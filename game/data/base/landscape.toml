@@ -35,7 +35,7 @@ fogDensity = 0.0014
 fogHeightFalloff = 0.02     # 1/m — how fast fog thins with altitude
 fogLowBoost = 1.6           # extra density near sea level (misty valleys)
 fogStart = 300.0            # meters of clear air before fog begins
-fogSunPhase = 8.0           # fog sun-scatter lobe tightness (docs/VOLUMETRIC.md)
+fogSunPhase = 8.0           # fog sun-scatter lobe tightness (docs/RENDERING.md)
 
 # --- Post processing -----------------------------------------------------
 exposure = 1.0
@@ -80,7 +80,7 @@ froxelTemporalBlend = 0.02        # EMA: current fraction/frame (1 = off)
 froxelDustNoise = 0.75            # dust wisps: 0 uniform, 1 sparse sheets
 interiorDustDensity = 0.025       # uniform dust indoors (H4)
 
-# Radiance-cascades GI tuning (docs/RADIANCE-CASCADES.md): the render
+# Radiance-cascades GI tuning (docs/RENDERING.md): the render
 # panel's Global illumination section, moddable like everything else.
 # technique: 0 = Classic (ambient x light map), 1 = Radiance cascades.
 [[records]]

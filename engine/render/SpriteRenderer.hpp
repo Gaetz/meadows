@@ -31,7 +31,7 @@ public:
     // Uploads the frame's camera UBO + instance data. Call AFTER the last
     // draw() and BEFORE the render pass opens: buffer updates inside a
     // pass fall back to an in-place write on Vulkan, which races the
-    // frame still in flight (see docs/VULKAN.md).
+    // frame still in flight (see docs/RENDERING.md).
     void upload();
     // Records the draw calls (upload() must have run this frame).
     void end(rhi::CommandBuffer& cmd);

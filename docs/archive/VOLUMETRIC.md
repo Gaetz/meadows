@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-07-26)** — superseded by `docs/RENDERING.md` (state,
+> decisions, lessons, roadmap). Kept as the detailed brick journal.
+
 # VOLUMETRIC — le brouillard comme éclairage, extérieur & intérieurs
 
 > Spec du chantier « lighting volumétrique » : pourquoi le height fog actuel

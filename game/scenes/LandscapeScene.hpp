@@ -91,7 +91,7 @@ namespace game {
 class ConsolePanel;
 
 // The 3D landscape renderer prototype (the custom-renderer path,
-// docs/3D-RENDERER.md).
+// docs/RENDERING.md).
 // Owns the frame: records its own render passes instead of the sprite path.
 // Bloom (soft-threshold HDR pyramid, additive upsample) and
 // screen-space god rays (radial march toward the sun over sky-only
@@ -433,7 +433,7 @@ private:
     core::FrameProbe frameProbe;
 
     // The `torchbench` console command's transient light entities
-    // (docs/LIGHTING.md §5 B0) — cleared on re-run and on exit.
+    // (docs/RENDERING.md §5 B0) — cleared on re-run and on exit.
     vector<ecs::Entity> benchLights;
 
     // First-person Play mode (the game IS first-person — acted

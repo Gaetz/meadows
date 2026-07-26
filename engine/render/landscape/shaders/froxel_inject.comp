@@ -3,7 +3,7 @@
 #include "clusters.glsl"
 #include "sky.glsl"
 
-// Froxel fog, pass 1 (docs/VOLUMETRIC.md V4/H4): one thread per frustum
+// Froxel fog, pass 1 (docs/RENDERING.md V4/H4): one thread per frustum
 // voxel — world position from the camera ray and the exponential slice
 // depth, density from the height fog (+ the uniform interior dust,
 // uFogSunInfo.w), lighting = sun x phase x visibility (CSM + clouds)
@@ -26,7 +26,7 @@ layout(std140, binding = 5) uniform LightsUbo {
                                    // z = key-shadow slot + 1 (0 = none)
 };
 
-// Window-projector clip for the DUST (docs/LIGHTING.md §3) — same math
+// Window-projector clip for the DUST (docs/RENDERING.md §3) — same math
 // as locallights.glsl: the frame's rectangle extruded along the sun.
 float windowBeam(vec3 p, vec3 anchor, vec3 nrm, vec2 halfExtents) {
     vec3 beam = -uSunDirection.xyz;
@@ -53,12 +53,12 @@ float windowBeam(vec3 p, vec3 anchor, vec3 nrm, vec2 halfExtents) {
 
 layout(binding = 6) uniform sampler2DShadow uKeyShadow;
 // The per-cluster light lists (cluster_cull.comp): a froxel finds its
-// cluster by xy downsample, IDENTICAL z slice (docs/LIGHTING.md §5 B5).
+// cluster by xy downsample, IDENTICAL z slice (docs/RENDERING.md §5 B5).
 layout(std430, binding = 4) readonly buffer ClusterLights {
     uint uClusterLights[];
 };
 layout(binding = 12, rgba16f) uniform writeonly image3D uFroxelScatter;
-// Temporal accumulation (docs/VOLUMETRIC.md V4): last frame's scatter
+// Temporal accumulation (docs/RENDERING.md V4): last frame's scatter
 // volume (the ping-pong twin) + the reprojection constants.
 layout(binding = 7) uniform sampler3D uFroxelHistory;
 layout(std140, binding = 9) uniform FroxelTemporalUbo {

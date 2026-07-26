@@ -46,7 +46,7 @@ struct LightsUniforms {
     Vec4 colorIntensity[LandscapeRenderer::kMaxLights] {};
     // xyz = spot direction, w = cos(half angle); w = -2 marks a point
     // light, w = -3 a WINDOW projector (xyz = the window's into-room
-    // normal — docs/LIGHTING.md §3).
+    // normal — docs/RENDERING.md §3).
     Vec4 directionAngle[LandscapeRenderer::kMaxLights] {};
     // Window projector half extents (xy); zw free. APPEND-only UBO.
     Vec4 windowInfo[LandscapeRenderer::kMaxLights] {};
@@ -146,7 +146,7 @@ void LandscapeRenderer::applyTreeTuning(
     c.leafSolidEnd = colonized.leafSolidEnd;
 }
 
-// H3 (docs/VOLUMETRIC.md): 0 below the worldspace's buried threshold,
+// H3 (docs/RENDERING.md): 0 below the worldspace's buried threshold,
 // 1 above, 4 m fade band — sun-linked lights and the daylight coupling
 // fade out per POSITION. Threshold -1e9 = the rule is off (always 1).
 static f32 aboveBuried(f32 y, f32 threshold) {
@@ -291,7 +291,7 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
           .size = sizeof(LightsUniforms),
           .dynamic = true },
         nullptr) };
-    // The cluster SSBO (docs/LIGHTING.md §5) rides binding 4 of the frame
+    // The cluster SSBO (docs/RENDERING.md §5) rides binding 4 of the frame
     // group so every pass sees the lists — created BEFORE the group.
     if (device.caps().computeShaders) {
         lightClusters.createBuffer(device);
@@ -312,7 +312,7 @@ void LandscapeRenderer::create(rhi::Device& device, core::JobSystem& jobs) {
     terrain.create(device, *shaders, jobs);
     occlusion.create(jobs);
     terrainLightMap.create(device, jobs);
-    radianceCascades.create(device, *shaders, jobs); // GI (docs/RADIANCE-CASCADES.md)
+    radianceCascades.create(device, *shaders, jobs); // GI (docs/RENDERING.md)
     grass.create(device, *shaders, jobs);
     vegetation.create(device, *shaders, jobs,
                       terrain.params.seed);
@@ -563,7 +563,7 @@ void LandscapeRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
               .format = rhi::TextureFormat::Depth32F,
               .usage = rhi::TextureUsage_Sampled },
             nullptr) };
-        // The reflection resolution is a knob (docs/GPU-PERF.md) —
+        // The reflection resolution is a knob (docs/RENDERING.md) —
         // 0.5 = half res, 0.25 = quarter res (blurrier mirror).
         const u32 reflectionWidth = glm::max(
             static_cast<u32>(static_cast<f32>(width) * reflectionScaleUi),
@@ -1225,7 +1225,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         sunStepped = true;
     }
     render::ShadowMapper::Cascades cascades {};
-    // Which cascades actually re-render this frame (docs/GPU-PERF.md):
+    // Which cascades actually re-render this frame (docs/RENDERING.md):
     // most of the shadow cost is the two
     // far cascades. Round-robin: cascade 0 every frame, cascades 1 and 2
     // on alternate frames, each keeping its PREVIOUS matrix when skipped
@@ -1360,7 +1360,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;
-    // Clustered forward (docs/LIGHTING.md §5): the grid's far reach is
+    // Clustered forward (docs/RENDERING.md §5): the grid's far reach is
     // the froxel slicing's (interior room scale / exterior CSM reach) so
     // both grids share their z slices by construction.
     const bool clustered = clusteredLightsUi && lightClusters.ready();
@@ -1373,7 +1373,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                                   sizeof(Mat4), 0);
     }
 
-    // Key-shadow atlas selection (docs/LIGHTING.md §5 B6): the up-to-4
+    // Key-shadow atlas selection (docs/RENDERING.md §5 B6): the up-to-4
     // best-scored castsShadow lights get a 1024² tile. Selected HERE so
     // the tile matrices ride this frame-UBO upload and the per-light
     // slot lands in the lights UBO below (windowInfo.z). The tiles
@@ -1461,9 +1461,9 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
             radianceCascades.tuning.rcOnlyLights &&
             radianceCascades.tuning.technique ==
                 render::GiTechnique::RadianceCascades;
-        // H2 (docs/VOLUMETRIC.md): sun-linked sources take the SUN's
+        // H2 (docs/RENDERING.md): sun-linked sources take the SUN's
         // live color — hour and weather included — and die below the
-        // horizon. WINDOW projectors (docs/LIGHTING.md) keep the anchor
+        // horizon. WINDOW projectors (docs/RENDERING.md) keep the anchor
         // and carry the window's NORMAL + extents; the facing gate
         // lives in the shader (beam · normal). Plain sun-linked spots
         // keep the pushed-cone model. rcOnly lights skip the direct
@@ -1618,7 +1618,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
     }
 
-    // GI voxel clipmap re-injection (docs/RADIANCE-CASCADES.md) — its
+    // GI voxel clipmap re-injection (docs/RENDERING.md) — its
     // HISTORICAL slot: after the CSM passes (the inject samples fresh
     // shadow maps), outside any render pass. Pipelined (PG2), the chain
     // records at the END of the frame instead and this slot only fences
@@ -1885,7 +1885,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
     }
 
-    // Pipelined GI (docs/GPU-PERF.md PG2): the chain records HERE, at the
+    // Pipelined GI (docs/RENDERING.md PG2): the chain records HERE, at the
     // end of the frame — this frame consumed LAST frame's cascade 0; the
     // chain overlaps the composite, the present and the next frame's
     // front, up to the consumer fence before the next reflection.
@@ -1929,13 +1929,13 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 // The budget table: per-pass GPU average/max over the
 // rolling window, with the CPU FrameProbe column beside it (names match
 // where both sides instrument the same block). This table IS the
-// baseline the optimization bricks are ordered by (docs/GPU-PERF.md).
+// baseline the optimization bricks are ordered by (docs/RENDERING.md).
 
-// The GI chain's per-frame recording (docs/RADIANCE-CASCADES.md):
+// The GI chain's per-frame recording (docs/RENDERING.md):
 // gathers the injection lists (props, NPCs, vegetation, lights) and
 // records inject/build/extend/merge. Called from render() at its
 // historical post-CSM slot, or at the END of the frame when the GI is
-// pipelined (docs/GPU-PERF.md PG2).
+// pipelined (docs/RENDERING.md PG2).
 void LandscapeRenderer::recordGiUpdate(engine::FrameContext& frame,
                                        const RenderSnapshot& snapshot,
                                        const RenderView& view,
@@ -2308,7 +2308,7 @@ void LandscapeRenderer::drawTerrainPanel() {
     }
     if (ImGui::CollapsingHeader("Vegetation")) {
         // The vegetation draw budget, live
-        // (docs/GPU-PERF.md). Shrinking the ring pops at the edge
+        // (docs/RENDERING.md). Shrinking the ring pops at the edge
         // (the tree fade tops out at 880 m) — a budget-hunting knob.
         ImGui::SliderInt("Veg view radius (chunks)", &vegetation.viewRadius,
                          4, 15);
@@ -2493,7 +2493,7 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
             ImGui::TreePop();
         }
         // A/B: per-cluster light lists vs the legacy 24-light loop
-        // (docs/LIGHTING.md §5). Needs compute; the checkbox is inert
+        // (docs/RENDERING.md §5). Needs compute; the checkbox is inert
         // (and the budget stays 24) when the culling pass is absent.
         ImGui::Checkbox("Clustered lights (64-light budget)",
                         &clusteredLightsUi);

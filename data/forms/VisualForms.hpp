@@ -68,12 +68,12 @@ struct LightForm : Form {
     // `sunLinked` re-derives the direction/color from the (quantized)
     // sun every frame — window lights follow the time of day.
     bool sunLinked { false };
-    // Shadow policy per light (docs/LIGHTING.md §3): "" or "none" =
+    // Shadow policy per light (docs/RENDERING.md §3): "" or "none" =
     // direct, unshadowed (legacy castsShadow=true still means "key");
     // "key" = key-shadow candidate; "rcOnly" = routed ENTIRELY through
     // the GI field (soft free penumbras — candles, mood lights).
     str shadowMode {};
-    // Window projector (docs/LIGHTING.md §3): > 0 turns the light into
+    // Window projector (docs/RENDERING.md §3): > 0 turns the light into
     // the WINDOW's rectangle extruded along the live sun — the frame
     // clips beam, pool and dust without any shadow map. The reference's
     // rotation is the window's into-room normal.
@@ -95,7 +95,7 @@ struct LightForm : Form {
     REFLECT_END()
 };
 
-// A placeable water volume (docs/3D-RENDERER.md): the box's
+// A placeable water volume (docs/RENDERING.md): the box's
 // TOP face is the water surface, the box itself is the "in water" test —
 // mountain lakes above sea level, flooded interior rooms. The global sea
 // stays the implicit case (and keeps the planar mirror; volumes render a

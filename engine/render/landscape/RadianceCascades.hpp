@@ -22,7 +22,7 @@ namespace render {
 class ShaderLibrary;
 
 // Which indirect-lighting technique the surface shaders use
-// (docs/RADIANCE-CASCADES.md). Classic = the flat sky ambient ×
+// (docs/RENDERING.md). Classic = the flat sky ambient ×
 // terrain light map; RadianceCascades = the GI volume (gi.glsl) with
 // Classic as its far-field fallback. Runtime-switchable from the render
 // panel — a deliberate parallel-technique seam (modding later).
@@ -54,7 +54,7 @@ struct RcTuning {
     // Flat bands between the GI floor and the classic ambient — anchored
     // to the ARTISTIC value (weather, interior, hour), never to a
     // measured scene range (the rejected-adaptive-ramp lesson,
-    // docs/RADIANCE-CASCADES.md). 0 = smooth, the default — the
+    // docs/RENDERING.md). 0 = smooth, the default — the
     // BotW/Genshin reference keeps ambient un-banded and puts the cel
     // ramp on the direct term.
     f32 bandCount { 0.0f };
@@ -73,12 +73,12 @@ struct RcTuning {
                                 // the field (0 = surfaces-only, the old
                                 // behavior)
     // The splat's share once the clustered DIRECT path lights every
-    // surface (docs/LIGHTING.md §5.1): a normal light's splat then only
+    // surface (docs/RENDERING.md §5.1): a normal light's splat then only
     // represents its bounce — full splat would light the ground twice.
     // rcOnly lights are exempt (the field IS their lighting), and the
     // factor only applies while clustered is on.
     f32 lightSplatBounce { 0.35f };
-    // Pipelined GI (docs/GPU-PERF.md PG2): the chain records at the END
+    // Pipelined GI (docs/RENDERING.md PG2): the chain records at the END
     // of the frame, the frame consumes LAST frame's merged cascade 0 —
     // one frame of latency (invisible: the field is already temporal),
     // and the chain overlaps the composite + the next frame's front.
@@ -128,7 +128,7 @@ public:
     static constexpr u32 kMaxBoxes = 256; // per-frame injected AABBs (G3)
     // The GI takes the 24 NEAREST of the scene's (larger, importance-
     // selected) light budget — its fine window is ~32 m, distant lights
-    // never reach it (docs/LIGHTING.md §5.1).
+    // never reach it (docs/RENDERING.md §5.1).
     static constexpr u32 kMaxLights = 24;
 
     void create(rhi::Device& device, ShaderLibrary& shaders,
@@ -226,7 +226,7 @@ private:
 
     // G4/G5: one texture + one build group per cascade; merge groups pair
     // level i (image) with level i+1 (sampled src). Level layouts per
-    // docs/RADIANCE-CASCADES.md §2.2 (c0 dir-major, c1+ dir-tiled).
+    // docs/RENDERING.md §2.2 (c0 dir-major, c1+ dir-tiled).
     struct CascadeLevel {
         rhi::UniqueTexture texture;
         rhi::UniqueBindGroup buildGroup;

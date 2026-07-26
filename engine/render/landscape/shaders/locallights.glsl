@@ -3,14 +3,14 @@
 // game/SceneSubmit.cpp), flicker already applied. Point + spot, NO
 // shadows (the key-light shadow is separate, below). The landscape
 // (terrain/grass) stays sun-only until the clustered path gates its
-// cost (docs/LIGHTING.md §5 B4).
+// cost (docs/RENDERING.md §5 B4).
 
 #include "clusters.glsl"
 
 // The ONE shadowed interior key light (matched by position below).
 layout(binding = 6) uniform sampler2DShadow uKeyShadow;
 
-// The per-cluster light lists (cluster_cull.comp; docs/LIGHTING.md §5).
+// The per-cluster light lists (cluster_cull.comp; docs/RENDERING.md §5).
 // Unbound while the clustered path is off — never read then.
 layout(std430, binding = 4) readonly buffer ClusterLights {
     uint uClusterLights[];
@@ -23,10 +23,10 @@ layout(std140, binding = 5) uniform LightsUbo {
     // APPEND-only UBO (new members at the END, both sides):
     // xyz = spot direction (normalized), w = cos(half angle); w = -2
     // marks a point light, w = -3 a WINDOW projector (xyz = the
-    // window's into-room normal — docs/LIGHTING.md).
+    // window's into-room normal — docs/RENDERING.md).
     vec4 uLightDirectionAngle[64];
     // Window projector half extents (xy); z = key-shadow atlas slot + 1
-    // (0 = unshadowed — docs/LIGHTING.md §5 B6).
+    // (0 = unshadowed — docs/RENDERING.md §5 B6).
     vec4 uLightWindowInfo[64];
 };
 
@@ -53,7 +53,7 @@ float keyShadowFactor(int i, vec3 p) {
     return texture(uKeyShadow, vec3(atlasUv, proj.z - 0.0022));
 }
 
-// The window-projector clip (docs/LIGHTING.md §3): the beam is the
+// The window-projector clip (docs/RENDERING.md §3): the beam is the
 // window's rectangle extruded along the live sun. Projects `p` back
 // along the beam onto the window plane; inside the frame = lit, with a
 // soft 6 cm edge. Also carries the facing gate (sun on the window's
@@ -145,7 +145,7 @@ vec3 localLights(vec3 worldPos, vec3 n) {
     // the first GI bounce.
     float interior = clamp(uCascadeSplits.w, 0.0, 1.0);
     if (uClusterInfo.x > 0.5) {
-        // Clustered path (docs/LIGHTING.md §5): only this pixel's cell.
+        // Clustered path (docs/RENDERING.md §5): only this pixel's cell.
         // The z slice uses CAMERA DISTANCE — the froxel grid's metric.
         vec2 uv = gl_FragCoord.xy * uScreenInfo.zw;
         ivec2 cellXy = clamp(ivec2(uv * vec2(kClusterDims.xy)), ivec2(0),

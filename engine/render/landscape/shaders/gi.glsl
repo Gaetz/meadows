@@ -22,7 +22,7 @@ vec3 giSlabDir(int d) {
     return normalize(v);
 }
 
-// Direction-AVERAGED radiance for AIR (docs/VOLUMETRIC.md V3): the fog's
+// Direction-AVERAGED radiance for AIR (docs/RENDERING.md V3): the fog's
 // ambient in-scatter inside the RC volume — same grid and border fade as
 // giAmbient, but no normal weighting (air sees every direction), no
 // banding, no floor (air is not a surface). Outside the grid or with RC
@@ -111,7 +111,7 @@ vec3 giAmbient(vec3 worldPos, vec3 normal, vec3 classicAmbient) {
     // the cel ramp on the direct term). N flat bands between the floor
     // and the CLASSIC ambient — anchored to the artistic value (weather,
     // interior, hour), never to a measured scene range (the adaptive-ramp
-    // lesson, docs/RADIANCE-CASCADES.md); the same step continues above
+    // lesson, docs/RENDERING.md); the same step continues above
     // classic so lamp glows band consistently.
     float bands = uGiBandInfo.x;
     float lum = dot(irradiance, vec3(0.299, 0.587, 0.114));

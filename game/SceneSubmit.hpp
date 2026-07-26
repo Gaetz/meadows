@@ -44,7 +44,7 @@ struct SceneLight {
     bool sunLinked { false };
     // Interior key-light shadow candidate.
     bool castsShadow { false };
-    // docs/LIGHTING.md: routed through the GI field only (no direct).
+    // docs/RENDERING.md: routed through the GI field only (no direct).
     bool rcOnly { false };
     // Window projector half extents (> 0 = window light; `direction`
     // then carries the window's into-room NORMAL, not a beam).
@@ -136,7 +136,7 @@ RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures);
 // calls it directly; extractScene calls it as part of the full extract.
 void extractMeshes(const ecs::World& world, RenderSnapshot& out);
 
-// Light selection (docs/LIGHTING.md §5 B1). With a `viewProj`, candidates
+// Light selection (docs/RENDERING.md §5 B1). With a `viewProj`, candidates
 // are culled sphere-vs-frustum (a light behind a wall of the frustum still
 // passes while its radius reaches in) and the budget goes to the highest
 // `intensity / (1 + distSq)` scores — a bright far torch IN VIEW beats a

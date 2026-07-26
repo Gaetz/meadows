@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-07-26)** — superseded by `docs/RENDERING.md` (state,
+> decisions, lessons, roadmap). Kept as the detailed brick journal.
+
 # Chantier VULKAN — backend Vulkan + MoltenVK (renderer final)
 
 > Journal du chantier. Plan complet approuvé le 2026-07-18. Vulkan est le

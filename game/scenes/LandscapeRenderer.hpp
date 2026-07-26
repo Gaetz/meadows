@@ -156,7 +156,7 @@ public:
 
     // The lights-UBO capacity (the extract collects this many selected
     // LightSource entities into the snapshot). The full budget is only
-    // consumable through the clustered path (docs/LIGHTING.md §5); with
+    // consumable through the clustered path (docs/RENDERING.md §5); with
     // clustered off, the per-pixel loop clamps to kFallbackLights.
     static constexpr u32 kMaxLights = 64;
     static constexpr u32 kFallbackLights = 24;
@@ -173,7 +173,7 @@ private:
                          const RenderSnapshot& snapshot,
                          const RenderView& view);
     // The GI chain's per-frame recording — post-CSM slot, or end of
-    // frame when pipelined (docs/GPU-PERF.md PG2).
+    // frame when pipelined (docs/RENDERING.md PG2).
     void recordGiUpdate(engine::FrameContext& frame,
                         const RenderSnapshot& snapshot,
                         const RenderView& view,
@@ -210,7 +210,7 @@ private:
     vector<render::TerrainSystem::ChunkAabb> occlusionAabbs;
     vector<render::GpuOcclusion::Candidate> occlusionCandidates;
     render::ShadowMapper shadows;
-    // CSM round-robin (docs/GPU-PERF.md): cascade 0 renders every frame, the
+    // CSM round-robin (docs/RENDERING.md): cascade 0 renders every frame, the
     // far cascades alternate. A SKIPPED cascade keeps its previous
     // matrix (receiver and caster UBOs alike) so the stale depth still
     // matches; a sun step re-renders everything that frame.
@@ -232,16 +232,16 @@ private:
     render::WaterSystem water;
     render::FxRenderer fx; // the CPU-particle pass
     render::PostFx postFx;
-    // Clustered-forward light culling (docs/LIGHTING.md §5); the toggle
+    // Clustered-forward light culling (docs/RENDERING.md §5); the toggle
     // gates both the dispatch and the shaders' clustered path.
     render::LightClusters lightClusters;
     bool clusteredLightsUi { true };
-    render::GpuProbe gpuProbe; // per-pass GPU budget (docs/GPU-PERF.md)
+    render::GpuProbe gpuProbe; // per-pass GPU budget (docs/RENDERING.md)
     u64 perfFrames { 0 }; // the one-shot "gpu budget" log's frame count
     // Worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;
     bool terrainLightUi { true };
-    // The GI voxel clipmap (docs/RADIANCE-CASCADES.md) +
+    // The GI voxel clipmap (docs/RENDERING.md) +
     // cascades; its tuning is the render panel's "Global illumination".
     render::RadianceCascades radianceCascades;
     vector<render::RcBox> rcBoxes;     // per-frame injection lists,
@@ -357,7 +357,7 @@ private:
     u64 skinnedCasterShaderGeneration { 0 };
     // The interior key-light shadow — ONE perspective
     // depth layer from the castsShadow light nearest the camera.
-    // Key-shadow ATLAS (docs/LIGHTING.md §5 B6): one 2048^2 depth target,
+    // Key-shadow ATLAS (docs/RENDERING.md §5 B6): one 2048^2 depth target,
     // 2x2 tiles of 1024^2 — the up-to-4 best-scored castsShadow lights
     // render one tile each (one caster UBO/group per tile: the same
     // buffer updated 4x mid-recording would clobber itself).

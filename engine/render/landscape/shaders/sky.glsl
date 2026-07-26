@@ -55,7 +55,7 @@ vec3 applyFog(vec3 color, vec3 worldPos) {
     float fogStart = max(uFogInfo.w, uFogSunInfo.z);
     float fogDist = max(dist - fogStart, 0.0);
     float amount = 1.0 - exp(-fogDist * density);
-    // Sun single-scatter (docs/VOLUMETRIC.md V1): without it, lit and
+    // Sun single-scatter (docs/RENDERING.md V1): without it, lit and
     // shadowed air converge to the same sky color — the grey veil. The
     // forward lobe warms fog toward the sun and lets it cool away from
     // it; strength rides the weather, the exponent is global tuning.

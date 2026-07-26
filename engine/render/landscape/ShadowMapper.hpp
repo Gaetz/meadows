@@ -10,7 +10,7 @@ class Device;
 
 namespace render {
 
-// Cascaded shadow maps for the sun (docs/3D-RENDERER.md): 3 cascades in one Depth32F
+// Cascaded shadow maps for the sun (docs/RENDERING.md): 3 cascades in one Depth32F
 // 2048² texture array, each cascade a depth-only framebuffer over one layer.
 // Cascades are fitted per frame around bounding spheres of camera-frustum
 // slices (sphere fit = stable size under rotation) and snapped to the texel

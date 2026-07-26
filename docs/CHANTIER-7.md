@@ -3,7 +3,7 @@
 > **FAIT (2026-07-07) — briques 7.1-7.8 exécutées d'une traite sur le go
 > du dev.** 276 tests verts, smoke-run par brique, builds Debug +
 > Release. VALIDATION VISUELLE DEV EN ATTENTE sur les 8 briques.
-> Specs détaillées : `docs/3D-RENDERER.md` (briques 30-34). Leçons :
+> Specs détaillées : `docs/archive/3D-RENDERER.md` (briques 30-34). Leçons :
 > FrameUbo n'a PLUS de .w libres — trois APPENDs de fin de struct posés
 > ce chantier (uTerrainLightInfo, uSubmersionInfo, keyShadow*, stormInfo,
 > rainOcclusionViewProj) ; purge *.dir à chaque layout partagé (fait ×5).

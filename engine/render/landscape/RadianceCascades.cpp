@@ -475,7 +475,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
     if (!jobs || injectPipeline.id() == 0) {
         return;
     }
-    // Async compute (docs/GPU-PERF.md PG3, needs the pipelined contract):
+    // Async compute (docs/RENDERING.md PG3, needs the pipelined contract):
     // the whole chain — its staged uniform copies included, routed by the
     // backend — records on the second queue and runs concurrently with
     // the next frame's front. The GPU probes stay off there: their
@@ -603,7 +603,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
 
     {
         GpuProbe::Scope gpu { probe, probeDevice, "rcInject" };
-        // Pipelined (docs/GPU-PERF.md PG2): the chain records at the END
+        // Pipelined (docs/RENDERING.md PG2): the chain records at the END
         // of the frame and OVERWRITES what the frame just sampled — the
         // WAR fence lets every prior read (surfaces, volumetric, froxels)
         // finish before the first write. Async (PG3): the compute

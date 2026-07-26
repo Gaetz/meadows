@@ -113,7 +113,7 @@ struct LightSource {
     bool sunLinked { false };
     // The interior key-light shadow candidate flag.
     bool castsShadow { false };
-    // docs/LIGHTING.md: rcOnly lights leave the direct path entirely.
+    // docs/RENDERING.md: rcOnly lights leave the direct path entirely.
     bool rcOnly { false };
     // Window projector half extents (> 0 = window light).
     f32 windowHalfWidth { 0.0f };

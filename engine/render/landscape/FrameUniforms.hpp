@@ -93,7 +93,7 @@ struct FrameUniforms {
     // Foliage-card leaf cutout -> solid ramp (tree.frag/shadow_prop.frag):
     // xy = mip window start/end of the blend, zw free.
     Vec4 leafLodInfo { 4.0f, 7.0f, 0.0f, 0.0f };
-    // Fog sun single-scatter (docs/VOLUMETRIC.md V1): x = strength
+    // Fog sun single-scatter (docs/RENDERING.md V1): x = strength
     // (weather-crossfaded), y = phase exponent, zw free.
     Vec4 fogSunInfo { 0.5f, 8.0f, 0.0f, 0.0f };
     // Stylized diffuse ramp (stylized.glsl): xy = terminator smoothstep
@@ -102,11 +102,11 @@ struct FrameUniforms {
     // Stylized shadow snap: xy = window edges, z = shadow floor,
     // w = half-tone level of the diffuse ramp.
     Vec4 stylizedShadowInfo { 0.45f, 0.55f, 0.0f, 0.6f };
-    // Clustered forward (docs/LIGHTING.md §5): x = clustered path active
+    // Clustered forward (docs/RENDERING.md §5): x = clustered path active
     // (0 = legacy 24-light loop), y = cluster grid far reach (m) — the
     // froxel slicing's far, so both grids share their z slices; zw free.
     Vec4 clusterInfo { 0.0f, 800.0f, 0.0f, 0.0f };
-    // Key-shadow ATLAS (docs/LIGHTING.md §5 B6): up to 4 shadowed lights,
+    // Key-shadow ATLAS (docs/RENDERING.md §5 B6): up to 4 shadowed lights,
     // one 1024^2 tile each in the 2048^2 key-shadow target. A light finds
     // its tile through LightsUbo windowInfo.z (slot+1, 0 = unshadowed);
     // keyShadowViewProj/keyShadowInfo above are the retired single-light

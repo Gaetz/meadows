@@ -1,4 +1,4 @@
-// Cross-backend spellings (docs/VULKAN.md).
+// Cross-backend spellings (docs/RENDERING.md).
 //
 // One shader corpus feeds both backends: the sources stay GLSL 460 and the
 // GL 4.6 backend compiles them unchanged, while the Vulkan backend compiles

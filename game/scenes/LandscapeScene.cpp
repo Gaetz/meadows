@@ -1045,7 +1045,7 @@ void LandscapeScene::update(f32 dt) {
         snapshot.waterVolumes.clear();
         extractMeshes(world, snapshot);
         resolveMeshMaterials(forms, snapshot);
-        // Frustum-aware selection (docs/LIGHTING.md §5 B1): visible far
+        // Frustum-aware selection (docs/RENDERING.md §5 B1): visible far
         // torches beat near ones behind the camera.
         const platform::Window& window = engine->getWindow();
         const f32 aspect =
@@ -2588,7 +2588,7 @@ void LandscapeScene::createConsole() {
         return "time set";
     });
     panel.addCommand("torchbench", [this](const str& args) -> str {
-        // The clustered-chantier bench (docs/LIGHTING.md §5 B0): N torch
+        // The clustered-chantier bench (docs/RENDERING.md §5 B0): N torch
         // lights on a golden-angle spiral around the player (uniform
         // density, near AND far), clock forced to midnight. Transient
         // entities — re-run replaces the batch, `torchbench 0` clears.

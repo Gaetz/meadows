@@ -19,7 +19,7 @@ namespace render {
 
 class ShaderLibrary;
 
-// Water surface (docs/3D-RENDERER.md): one large quad at sea level following the camera
+// Water surface (docs/RENDERING.md): one large quad at sea level following the camera
 // (snapped to the chunk grid), shaded per pixel — procedural scrolling wave
 // normals, fresnel between a PLANAR reflection
 // and a REFRACTED scene color (sampled from the pre-water scene

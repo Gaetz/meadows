@@ -2,7 +2,7 @@
 #include "common.glsl"
 #include "clusters.glsl"
 
-// Clustered-forward light culling (docs/LIGHTING.md §5): one thread per
+// Clustered-forward light culling (docs/RENDERING.md §5): one thread per
 // cluster cell writes the indices of the UBO lights whose sphere touches
 // the cell's world-space bound. Every light is tested as its bounding
 // SPHERE (spots and window projectors included — conservative: the

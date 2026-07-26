@@ -74,7 +74,7 @@ void main() {
                         ((diffuse + scatter) * shadow * tl.x)) +
                uSunColor.rgb * sheen * ao * shadow * tl.x;
     // Direct local lights on the meadow, CLUSTERED PATH ONLY
-    // (docs/LIGHTING.md §5 B4) — the blade's blended normal feeds the
+    // (docs/RENDERING.md §5 B4) — the blade's blended normal feeds the
     // shared shading; root AO keeps the carpet's depth under torchlight.
     if (uClusterInfo.x > 0.5) {
         lit += albedo * ao * localLights(vWorldPos, n);

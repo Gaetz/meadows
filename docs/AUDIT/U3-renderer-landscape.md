@@ -3,7 +3,7 @@
 Scope: `engine/render/` — 2D sprite renderer + the 14-system `landscape/` subtree
 (terrain, grass, vegetation, water, sky, shadows/CSM, postfx, two occluders,
 splat, tree-gen, mesh-builder, terrain-noise, terrain-lightmap) + 55 GLSL files.
-~6168 lines C++. Reference: `docs/3D-RENDERER.md` (bricks 1-34).
+~6168 lines C++. Reference: `docs/archive/3D-RENDERER.md` (bricks 1-34).
 
 ## Invariant checks (explicit pass/fail)
 

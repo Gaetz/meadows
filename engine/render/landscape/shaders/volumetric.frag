@@ -2,7 +2,7 @@
 #include "common.glsl"
 #include "sky.glsl"
 
-// The fog INTEGRATOR (docs/VOLUMETRIC.md V2): half-res, jittered march of
+// The fog INTEGRATOR (docs/RENDERING.md V2): half-res, jittered march of
 // (inscatter, transmittance) from the fog start to uFogSunInfo.z (the
 // composer-set reach) — the march OWNS the fog on that span, the surface
 // shaders' analytic applyFog only keeps the tail beyond it, and the

@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-07-26)** — superseded by `docs/RENDERING.md` (state,
+> decisions, lessons, roadmap). Kept as the detailed brick journal.
+
 # LIGHTING — architecture des lumières & politique d'ombres
 
 > La réflexion d'architecture (2026-07-24, demandée par le dev après le

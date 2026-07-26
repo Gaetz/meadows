@@ -51,12 +51,12 @@ public:
     // Third mesh level beyond lowDetailRadius — bare-icosahedron lobes
     // (20 faces, generateTree(seed, 0)): ~150 tris/tree vs ~600 on the
     // low twin. The far ring is where the instances are, so this is
-    // where the triangle budget goes (docs/VULKAN.md, V8f).
+    // where the triangle budget goes (docs/RENDERING.md, V8f).
     i32 lowDetailRadius { 4 };    // 80-face twins within; ultra beyond
     // A/B — tree variants regenerate through generateColonizedTree (Runions
     // skeleton + SDF-normal billboard-card foliage; the default). Flip via
     // reseedVariantMeshes; the lobe trees stay one checkbox away in the
-    // Vegetation / Tree builder panels. docs/3D-RENDERER.md brique 27b.
+    // Vegetation / Tree builder panels. docs/RENDERING.md brique 27b.
     bool colonizationTrees { true };
     // Tree builder: the generators' knobs, mapped from the
     // *TreeTuningForm records by the scene and edited live by the panel

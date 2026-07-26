@@ -1825,7 +1825,7 @@ cell = "4d7a9b30-0000-4000-8000-000000000021"
 position = [8.0, 5.5, -10.0]
 rotation = [0.7071068, 0.0, 0.0, 0.7071068]
 
-# The hall window light — a window PROJECTOR (docs/LIGHTING.md §3):
+# The hall window light — a window PROJECTOR (docs/RENDERING.md §3):
 # sun-linked color/gating, the frame's rectangle (windowHalfWidth/Height)
 # shapes beam, floor pool and froxel dust along the live sun.
 [[records]]
@@ -3705,7 +3705,7 @@ baseForm = "4d7a9b30-0000-4000-8000-000000000300"
 cell = "3c6f8e20-0000-4000-8000-000000000005"
 position = [60.0, 2.2, 332.0]
 
-# H2 window bounce (docs/VOLUMETRIC.md): an ordinary sun-linked light
+# H2 window bounce (docs/RENDERING.md): an ordinary sun-linked light
 # by the hall's window side — its color and intensity
 # follow the live sun (hour + weather), it dies at night. The authored
 # color is overridden by the sun; only intensity/radius matter.

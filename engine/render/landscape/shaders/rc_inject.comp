@@ -1,7 +1,7 @@
 #version 460 core
 #include "common.glsl"
 
-// Radiance cascades injection (docs/RADIANCE-CASCADES.md) — voxel clipmap
+// Radiance cascades injection (docs/RENDERING.md) — voxel clipmap
 // injection: one thread per voxel, both clips in one dispatch (z stacks
 // clip 0 then clip 1). Terrain surface comes from the worker-baked
 // height/albedo tile (patch/sculpt-aware — terrain::height ran on the

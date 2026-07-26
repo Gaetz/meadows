@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-07-26)** — superseded by `docs/RENDERING.md` (state,
+> decisions, lessons, roadmap). Kept as the detailed brick journal.
+
 # 3D-RENDERER — Renderer paysage GL 4.6, style Breath of the Wild
 
 > Journal de briques + feuille de route du renderer 3D custom (chemin

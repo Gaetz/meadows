@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-07-26)** — superseded by `docs/RENDERING.md` (state,
+> decisions, lessons, roadmap). Kept as the detailed brick journal.
+
 # Chantier — Optimisation GPU du renderer landscape
 
 > **PLAN (2026-07-10, nuit) — aucune mesure GPU n'existe encore.** Tout

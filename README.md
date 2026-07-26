@@ -25,7 +25,7 @@ are the same thing — ordered layers of plugins.
 | **Players & modders** | [`userdoc/README.md`](userdoc/README.md) — the modding hub (plugins, load order, effects, schedules, UI, tools) |
 | **Where the project is** | [`docs/MEADOWS-PLAN.md`](docs/MEADOWS-PLAN.md) — the demo roadmap & acted decisions |
 | Architecture contract | [`docs/HORIZONTAL-PASS.md`](docs/HORIZONTAL-PASS.md) — every system's seams & how to fill them |
-| 3D renderer | [`docs/3D-RENDERER.md`](docs/3D-RENDERER.md) — the landscape renderer's brick journal |
+| 3D renderer | [`docs/RENDERING.md`](docs/RENDERING.md) — the graphics stack: architecture, lighting/GI, performance, lessons, roadmap (brick journals in docs/archive/) |
 | Engine/agent guidance | [`CLAUDE.md`](CLAUDE.md) — invariants, phase history, per-phase journals in `docs/PHASE-*.md` |
 | Stats design | [`docs/STATS.md`](docs/STATS.md) — the character-stats reference |
 

@@ -65,7 +65,7 @@ void main() {
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.
     vec3 lit = albedo * (giAmbient(vWorldPos, n, uAmbientColor.rgb * tl.y) +
                          uSunColor.rgb * (diffuse * shadow * tl.x));
-    // Direct local lights, CLUSTERED PATH ONLY (docs/LIGHTING.md §5 B4):
+    // Direct local lights, CLUSTERED PATH ONLY (docs/RENDERING.md §5 B4):
     // the ground is fullscreen — the per-cluster list is what makes the
     // cost bearable. Off = the historical sun+GI-only terrain.
     if (uClusterInfo.x > 0.5) {

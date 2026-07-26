@@ -54,7 +54,7 @@ void main() {
     // Stepped rim against the sky — canopies pop off the
     // background (moved here from the removed leaf-card pass).
     lit += albedo * stylizedRim(n, vWorldPos) * uSunColor.rgb * shadow;
-    // Direct local lights, CLUSTERED PATH ONLY (docs/LIGHTING.md §5 B4):
+    // Direct local lights, CLUSTERED PATH ONLY (docs/RENDERING.md §5 B4):
     // trunks and canopies catch the torch below them. The reflection
     // pass leaves the flag off and skips this for free.
     if (uClusterInfo.x > 0.5) {

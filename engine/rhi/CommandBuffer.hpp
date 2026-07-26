@@ -84,7 +84,7 @@ public:
     // Execution-only WAR fence: orders PRIOR reads at the given stages
     // before SUBSEQUENT compute WRITES — what an end-of-frame compute
     // pass needs before overwriting textures the frame just sampled
-    // (docs/GPU-PERF.md PG2). No memory visibility involved (the reads
+    // (docs/RENDERING.md PG2). No memory visibility involved (the reads
     // consumed the old data; nothing to flush).
     virtual void readBarrier(u32 src) = 0;
 };

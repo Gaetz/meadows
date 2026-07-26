@@ -16,7 +16,7 @@ namespace render {
 // here by the scene (the TerrainParams pattern — engine never sees Forms).
 
 // A tree is ONE opaque mesh (full stylized canopy — the BotW look;
-// cutout leaf cards lost the fill-rate A/B, docs/3D-RENDERER.md).
+// cutout leaf cards lost the fill-rate A/B, docs/RENDERING.md).
 // Tall trunk column, 3-5 short upward branches near the top, one rounded
 // foliage lobe per branch tip plus a crown. The canopy's normals are
 // SPHERIZED on the mesh: each vertex blends its lobe-center direction with
@@ -49,7 +49,7 @@ struct LobeTreeParams {
 MeshData generateTree(u32 seed, u32 lobeSubdivisions = 2,
                       const LobeTreeParams& params = {});
 
-// The default tree (docs/3D-RENDERER.md brique 27b) —
+// The default tree (docs/RENDERING.md brique 27b) —
 // skeleton grown by the Runions et al. 2007 space colonization algorithm
 // (attraction points in a crown envelope, iterative growth, pipe-model
 // radii), foliage as CROSS-PLANE clusters scattered inside an SDF built

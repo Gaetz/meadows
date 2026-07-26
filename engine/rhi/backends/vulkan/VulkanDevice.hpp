@@ -12,7 +12,7 @@ namespace rhi {
 // is ON; selected at runtime by the Device::create fallback chain (§2.1).
 //
 // Vulkan is the intended FINAL renderer; the bring-up journal and design
-// notes live in docs/VULKAN.md. All Vulkan types stay in
+// notes live in docs/RENDERING.md. All Vulkan types stay in
 // the .cpp (pimpl) so this header — and every RHI header — stays free of any
 // <vulkan/*> include (§3.1).
 class VulkanDevice final : public Device {

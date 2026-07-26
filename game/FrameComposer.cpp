@@ -96,7 +96,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         // fog, no god rays/volumetric — local lights carry the room.
         resolved.sunColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         resolved.sunGlowColor = { 0.0f, 0.0f, 0.0f, 0.0f };
-        // H1 (docs/VOLUMETRIC.md): the room's ambient follows the outside
+        // H1 (docs/RENDERING.md): the room's ambient follows the outside
         // — daylight from the sun's ELEVATION (same signal as the
         // sun-linked window shafts) times the weather's own ambient scale
         // (storms darken, §2.11: WeatherForm.ambientIntensity reused).
@@ -132,7 +132,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     // bake lands or when toggled off / indoors).
     resolved.terrainLightInfo = in.terrainLightInfo;
     resolved.terrainLightInfo.w = in.terrainLightActive ? 1.0f : 0.0f;
-    // V2 (docs/VOLUMETRIC.md): when the volumetric march runs, it OWNS
+    // V2 (docs/RENDERING.md): when the volumetric march runs, it OWNS
     // the fog inside its reach — the surfaces' analytic fog starts where
     // the march ends (uFogSunInfo.z, read by applyFog AND as the march
     // length). RESOLVED only: the reflection pass has no volumetric

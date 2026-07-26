@@ -14,7 +14,7 @@ namespace render {
 
 class ShaderLibrary;
 
-// Analytic gradient sky + day/night cycle (docs/3D-RENDERER.md). Evaluates the sun and
+// Analytic gradient sky + day/night cycle (docs/RENDERING.md). Evaluates the sun and
 // sky palette from a time of day; the scene pushes the result into
 // FrameUniforms so every shader (terrain lighting now, fog later) reads the
 // SAME sun/sky the dome is painted with. The dome itself is one fullscreen

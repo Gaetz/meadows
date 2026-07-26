@@ -33,7 +33,7 @@ struct LandscapeTuningForm : Form {
     f32 fogHeightFalloff { 0.02f };
     f32 fogLowBoost { 1.6f };
     f32 fogStart { 300.0f };
-    // Sun single-scatter phase exponent (docs/VOLUMETRIC.md V1): how
+    // Sun single-scatter phase exponent (docs/RENDERING.md V1): how
     // tightly the fog's sun glow hugs the sun direction. Strength is
     // per-weather (WeatherForm::fogSunScatter).
     f32 fogSunPhase { 8.0f };
@@ -54,7 +54,7 @@ struct LandscapeTuningForm : Form {
     f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
     // Interior ambient: the interior-mode base light; moddable per §5.
     Vec3 interiorAmbient { 0.16f, 0.15f, 0.14f };
-    // H1 (docs/VOLUMETRIC.md): coupling of the interior ambient to the
+    // H1 (docs/RENDERING.md): coupling of the interior ambient to the
     // outside (sun elevation x weather) — 0 = constant, 1 = full Helios.
     f32 interiorDaylightWeight { 0.6f };
     // Analytical grading:
@@ -82,7 +82,7 @@ struct LandscapeTuningForm : Form {
     f32 stylizedShadowFloor { 0.0f };
     // CSM texels per cascade side (1024/2048/4096 — the panel's combo).
     i32 shadowResolution { 2048 };
-    // Clustered forward (docs/LIGHTING.md §5): per-cluster light lists
+    // Clustered forward (docs/RENDERING.md §5): per-cluster light lists
     // replace the per-pixel 24-light loop and unlock the full budget.
     bool clusteredLights { true };
     // V4/H4 froxel fog: the A/B against the 2D march, and the interiors'
@@ -311,7 +311,7 @@ struct WeatherForm : Form {
     f32 fogHeightFalloff { 0.02f };
     f32 fogLowBoost { 1.6f };
     f32 fogStart { 300.0f };
-    // Sun single-scatter strength in the fog (docs/VOLUMETRIC.md V1):
+    // Sun single-scatter strength in the fog (docs/RENDERING.md V1):
     // morning mist pushes it, overcast kills it.
     f32 fogSunScatter { 0.5f };
     // Light grading (SkySystem::Weather).

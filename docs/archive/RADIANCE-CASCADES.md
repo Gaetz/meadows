@@ -1,3 +1,6 @@
+> **ARCHIVED (2026-07-26)** — superseded by `docs/RENDERING.md` (state,
+> decisions, lessons, roadmap). Kept as the detailed brick journal.
+
 # Radiance Cascades — GI 3D world-space (chantier RC)
 
 > Chantier décidé le 2026-07-11 (dev) : une GI dynamique par **radiance

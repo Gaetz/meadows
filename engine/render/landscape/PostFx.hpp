@@ -125,7 +125,7 @@ private:
     rhi::UniqueFramebuffer volumetricFb;
     rhi::UniqueBindGroup volumetricGroup;
 
-    // Froxel fog (docs/VOLUMETRIC.md V4/H4): fixed-size frustum volumes,
+    // Froxel fog (docs/RENDERING.md V4/H4): fixed-size frustum volumes,
     // inject + integrate in compute, resolved into volumetricTex by a
     // fullscreen fetch — the tonemap composite is untouched. The 2D march
     // stays as the fallback (no compute caps) and the A/B.

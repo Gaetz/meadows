@@ -12,7 +12,7 @@ namespace render {
 
 class ShaderLibrary;
 
-// Clustered-forward light culling (docs/LIGHTING.md §5): one compute pass
+// Clustered-forward light culling (docs/RENDERING.md §5): one compute pass
 // assigns the LightsUbo's lights to the cells of a frustum grid that
 // shares the froxel fog's exponential z slicing (shaders/clusters.glsl —
 // a froxel maps to its cluster by xy downsample, identical z). Surface

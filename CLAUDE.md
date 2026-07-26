@@ -24,7 +24,7 @@ model (flecs ECS, GAS, data-model, modding layer, Lua scripting) must compile
 and run without any renderer — the headless test suite is the proof. The
 graphical frontend is a replaceable shell. **Decision (2026-07-05): the
 gameplay demo is built in Meadows itself** (the custom GL 4.6 3D renderer —
-`docs/3D-RENDERER.md` — proved out); the engine/tool roadmap for that demo
+`docs/RENDERING.md` — proved out); the engine/tool roadmap for that demo
 lives in **`docs/MEADOWS-PLAN.md`**. Godot (via GDExtension) remains a
 **post-demo option**, its validation (Phase 8.5) postponed — which is exactly
 why the sim/presentation seam stays a protected invariant.
@@ -150,7 +150,7 @@ Use these unless there is a concrete reason not to (then ask first).
 | Build              | CMake + CPM.cmake (FetchContent)         | Deps pinned in CMake, fetched at build time, identical on Fedora/Debian/Windows, no per-machine bootstrap. vcpkg (manifest) / Conan also work cross-platform. |
 | Window / input     | SDL3                                     | Gamepad, events, optional audio. |
 | Math               | GLM                                      | Don't reinvent. |
-| GPU                | OpenGL 4.6 (DSA, bindless) behind RHI    | 2D renderer + **custom 3D landscape renderer** (`docs/3D-RENDERER.md`) — the demo ships on it (2026-07-05 pivot). Godot via GDExtension = post-demo option. Vulkan backend not planned for the demo. |
+| GPU                | Vulkan (final renderer) + OpenGL 4.6 fallback, behind RHI | 2D renderer + **custom 3D landscape renderer** (`docs/RENDERING.md`) — the demo ships on it (2026-07-05 pivot). Vulkan/MoltenVK is the shipped backend since 2026-07-19 (macOS is Vulkan-only); GL 4.6 stays the PC fallback. Godot via GDExtension = post-demo option. |
 | Mesh / model       | glTF 2.0 via cgltf                       | Skinning, anims, PBR built in. |
 | Textures           | stb_image + KTX2 (Basis Universal)       | Compressed for runtime. |
 | ECS                | flecs (pinned v4.1.5)                     | Runtime only (lib `meadows-ecs`); data model stays flecs-free. Used directly in systems, not behind a façade. Our reflection — not flecs meta — is the keystone (§2.3). See `docs/PHASE-2.md`. |
@@ -213,7 +213,7 @@ buildable at all times. macOS optional later.
     /backends
       /gl       # OpenGL 4.6 backend (only backend for now)
   /render       # 2D sprite renderer on the RHI
-    /landscape  # the custom 3D renderer (docs/3D-RENDERER.md)
+    /landscape  # the custom 3D renderer (docs/RENDERING.md)
   /assets       # asset DB (GUID), loaders (stb, cgltf), async residency
   /ecs          # flecs wrapper (lib meadows-ecs; flecs confined here)
   /anim         # skeletal anim runtime — headless, flat params (no data/ dep)
@@ -379,7 +379,7 @@ bespoke faction subsystem parallel to tags.
 
 - **The custom renderer path IS taken** (2026-07-05 pivot: demo in Meadows).
   The 3D landscape renderer is built — journal, architecture and remaining
-  brick specs in `docs/3D-RENDERER.md`; their scheduling lives in the
+  brick specs in `docs/RENDERING.md`; their scheduling lives in the
   `docs/MEADOWS-PLAN.md` chantiers. The instanced 2D sprite renderer stays
   for the 2D test scenes. Godot remains a post-demo option
   (`docs/SIMULATION-AND-PRESENTATION.md`).
@@ -521,11 +521,12 @@ touching the corresponding systems.
 >    -audio), cues/schedules/mobilier/particules/nav, prefabs, contrats
 >    renderer + audit de compat. **C'est le contrat d'implémentation des
 >    verticales : suivre les seams, ne pas les redessiner.**
-> 3. **`docs/3D-RENDERER.md`** — le renderer paysage GL 4.6 (briques 1-26
->    faites ; les 27-31 sont planifiées via les chantiers de MEADOWS-PLAN,
->    ce fichier reste leur spec détaillée). À lire avant de toucher
->    `engine/render/landscape/`, les extensions 3D/compute du RHI ou
->    `LandscapeScene`.
+> 3. **`docs/RENDERING.md`** — LE doc du rendu (anglais, 2026-07-26) :
+>    architecture RHI/backends (Vulkan = renderer final), lighting/GI/
+>    volumétrique, perf, leçons, roadmap, chantiers RENDERER-EXTRACT et
+>    nuages. Les journaux détaillés d'origine sont dans `docs/archive/`.
+>    À lire avant de toucher `engine/rhi/`, `engine/render/` ou
+>    `LandscapeScene`/`LandscapeRenderer`.
 >
 > Doc utilisateur/moddeur : `userdoc/README.md` (hub) — à maintenir à
 > chaque verticale livrée. Entrée du dépôt : `README.md`.

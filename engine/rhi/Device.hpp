@@ -28,7 +28,7 @@ public:
     // Submits the recorded work and presents the backbuffer.
     virtual void endFrame() = 0;
 
-    // Async compute (caps().asyncCompute — docs/GPU-PERF.md PG3): a
+    // Async compute (caps().asyncCompute — docs/RENDERING.md PG3): a
     // second command buffer submitted to a dedicated compute queue AFTER
     // this frame's graphics work (it waits it) and awaited by the NEXT
     // frame's consumers (fragment/compute stages) — everything in

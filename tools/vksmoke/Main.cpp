@@ -1,4 +1,4 @@
-// vksmoke — Vulkan bring-up harness (docs/VULKAN.md).
+// vksmoke — Vulkan bring-up harness (docs/RENDERING.md).
 //
 // Drives the Vulkan backend end to end WITHOUT the Engine loop, which still
 // depends on the GL SpriteRenderer and the GL ImGui layer.

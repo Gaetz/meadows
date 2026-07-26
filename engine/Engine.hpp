@@ -33,7 +33,7 @@ struct EngineConfig {
     // reads better too.
     i32 width { 1920 };
     i32 height { 1080 };
-    // Vulkan first (the FINAL renderer — docs/VULKAN.md); Engine::init
+    // Vulkan first (the FINAL renderer — docs/RENDERING.md); Engine::init
     // falls back to GL at runtime if it is unavailable or not compiled in.
     rhi::Backend backend { rhi::Backend::Vulkan };
     rhi::Color clearColor { 0.10f, 0.12f, 0.16f, 1.0f };

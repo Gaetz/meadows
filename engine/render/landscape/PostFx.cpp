@@ -533,7 +533,7 @@ void PostFx::render(rhi::Device& device, rhi::CommandBuffer& cmd,
             cmd.setBindGroup(2, shadowBindGroup);
         }
         if (giApplyGroup.id != 0) {
-            // V3 (docs/VOLUMETRIC.md): the march's haze samples the RC
+            // V3 (docs/RENDERING.md): the march's haze samples the RC
             // field inside its volume (giAir).
             cmd.setBindGroup(3, giApplyGroup);
         }

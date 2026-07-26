@@ -9,7 +9,7 @@
 // Runions et al. 2007, "Modeling Trees with a Space Colonization
 // Algorithm", with SDF-shaded billboard-card foliage (metaball SDF at
 // branch tips, order-weighted radii, card normals from the SDF
-// gradient). Journal: docs/3D-RENDERER.md, brique 27b.
+// gradient). Journal: docs/RENDERING.md, brique 27b.
 //
 // Pipeline: crown envelope → attraction points → iterative colonization
 // (each attractor pulls its CLOSEST node; nodes grow segments of length D

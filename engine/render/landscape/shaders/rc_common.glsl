@@ -1,5 +1,5 @@
 // Radiance cascades shared helpers (build/merge) — layouts and direction
-// encoding. Two storage layouts (docs/RADIANCE-CASCADES.md §2.2):
+// encoding. Two storage layouts (docs/RENDERING.md §2.2):
 //  - cascade 0, DIR-MAJOR "slabs": 3D texture res × res × (res·8);
 //    z = dirIndex·res + probeZ — same-direction probes are contiguous,
 //    so the APPLY (gi.glsl) gets hardware trilinear per direction.

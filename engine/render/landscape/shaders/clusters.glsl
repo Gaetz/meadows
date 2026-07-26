@@ -1,5 +1,5 @@
 // The shared slice math of the froxel-fog grid and the light-cluster grid
-// (docs/LIGHTING.md §5): both slice CAMERA DISTANCE on the same
+// (docs/RENDERING.md §5): both slice CAMERA DISTANCE on the same
 // exponential mapping (kSliceNear -> far), so a froxel finds its cluster
 // by xy downsample with an IDENTICAL z slice. Included by the froxel
 // passes, cluster_cull.comp and locallights.glsl — change the mapping in

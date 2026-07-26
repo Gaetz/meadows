@@ -618,7 +618,7 @@ struct VulkanDevice::Impl {
     VkQueue graphicsQueue { VK_NULL_HANDLE };
     VkQueue presentQueue { VK_NULL_HANDLE };
 
-    // Async compute (docs/GPU-PERF.md PG3): a compute-capable family
+    // Async compute (docs/RENDERING.md PG3): a compute-capable family
     // DISTINCT from graphics (its own hardware queue — on MoltenVK a
     // separate MTLCommandQueue, which Apple GPUs schedule concurrently).
     // The chain: graphics N signals the timeline -> compute N waits it,
@@ -808,7 +808,7 @@ struct VulkanDevice::Impl {
     // Records `record` into a one-shot command buffer and blocks until the GPU
     // is done. Uploads and readbacks are rare and setup-time, so a simple
     // blocking submit is the right trade; the async transfer queue (a reserved
-    // lever, docs/VULKAN.md) can replace it later without touching callers.
+    // lever, docs/RENDERING.md) can replace it later without touching callers.
     template <typename F>
     bool immediateSubmit(F&& record, bool wait = true);
 
@@ -1263,7 +1263,7 @@ void VulkanCommandBuffer::pushGroup(BindGroupHandle group) {
 
     // Push descriptors: the writes go straight out against the bound
     // pipeline's layout, so no VkDescriptorSet is ever allocated and there is
-    // no layout to match against (docs/VULKAN.md, V4 design).
+    // no layout to match against (docs/RENDERING.md, V4 design).
     vector<VkWriteDescriptorSet> writes;
     vector<VkDescriptorBufferInfo> bufferInfos;
     vector<VkDescriptorImageInfo> imageInfos;
@@ -1549,7 +1549,7 @@ void VulkanCommandBuffer::memoryBarrier(u32 dst) {
     if (cb_ == VK_NULL_HANDLE) {
         return;
     }
-    // The destination scope is the whole point (docs/GPU-PERF.md PG1):
+    // The destination scope is the whole point (docs/RENDERING.md PG1):
     // COMPUTE -> ALL_COMMANDS at every internal pass boundary is what kept
     // the frame strictly serial. Scoped destinations leave later,
     // independent stages free to overlap the compute that wrote nothing
@@ -2335,7 +2335,7 @@ void VulkanDevice::endFrame() {
 
 u64 VulkanDevice::nativeTextureId(TextureHandle) const {
     // Not implemented: hand ImGui a VkDescriptorSet for the offscreen
-    // target (docs/VULKAN.md).
+    // target (docs/RENDERING.md).
     return 0;
 }
 
@@ -2424,7 +2424,7 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
         // Async recording routes the copy into the COMPUTE command
         // buffer: it executes on the compute queue, ordered with the
         // chain that reads it — and never races the next frame's
-        // graphics copies (docs/GPU-PERF.md PG3).
+        // graphics copies (docs/RENDERING.md PG3).
         VulkanCommandBuffer* rec =
             d.computeRouting ? d.computeCmd.get() : d.cmd.get();
         if (d.frameActive && rec && !rec->insidePass()) {
@@ -3682,7 +3682,7 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     VkPhysicalDeviceFeatures features {};
     vkGetPhysicalDeviceFeatures(d.gpu, &features);
 
-    // Async-compute family (docs/GPU-PERF.md PG3): compute-capable and
+    // Async-compute family (docs/RENDERING.md PG3): compute-capable and
     // DISTINCT from graphics — its own hardware queue. Prefer a
     // specialized (non-graphics) family; MoltenVK exposes several
     // (each a separate MTLCommandQueue, which Apple GPUs schedule
@@ -3748,7 +3748,7 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         query.pNext = &portability;
         vkGetPhysicalDeviceFeatures2(d.gpu, &query);
     }
-    // Both verified present on MoltenVK/M1 (docs/VULKAN.md). Dynamic rendering
+    // Both verified present on MoltenVK/M1 (docs/RENDERING.md). Dynamic rendering
     // removes VkRenderPass/VkFramebuffer entirely; push descriptors let
     // setBindGroup write through the bound pipeline's layout, which is what
     // makes the RHI's shader-agnostic BindGroupDesc expressible at all.

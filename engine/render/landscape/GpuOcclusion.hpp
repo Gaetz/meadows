@@ -16,7 +16,7 @@ namespace render {
 
 class ShaderLibrary;
 
-// Hi-Z GPU occlusion culling (docs/3D-RENDERER.md — the first compute
+// Hi-Z GPU occlusion culling (docs/RENDERING.md — the first compute
 // user in the engine). Each frame, after the opaque pass snapshots the
 // scene depth:
 //   1. hiz_first/hiz_down build a half-res MAX-depth pyramid in compute

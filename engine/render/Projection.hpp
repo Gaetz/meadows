@@ -7,7 +7,7 @@
 namespace render {
 
 // Lengyel's oblique near plane, 0..1-clip variant (GLM_FORCE_DEPTH_ZERO_TO_ONE
-// is global — depth 0..1, docs/VULKAN.md): bends the projection's near plane
+// is global — depth 0..1, docs/RENDERING.md): bends the projection's near plane
 // onto an arbitrary view-space plane, so a mirrored render (water reflection)
 // clips everything below the surface for free — no user clip distance in the
 // shaders. `clipPlaneView` is the plane in VIEW space (xyz normal, w), with
