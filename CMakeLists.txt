@@ -232,6 +232,12 @@ function(meadows_set_warnings target)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra)
     endif()
+    if(APPLE)
+        # ld64 warns on archives CMake keeps repeated for static-link
+        # ordering; harmless with our static libs — silence it.
+        target_link_options(${target} PRIVATE
+            LINKER:-no_warn_duplicate_libraries)
+    endif()
 endfunction()
 
 # --- RHI backend gating (§2.1) --------------------------------------------

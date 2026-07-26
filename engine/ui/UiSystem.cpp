@@ -370,6 +370,8 @@ Rml::Input::KeyIdentifier rmlKeyFor(platform::Key key) {
     case Key::I: return KI_I;
     case Key::T: return KI_T;
     case Key::J: return KI_J;
+    case Key::R: return KI_R;
+    case Key::M: return KI_M;
     case Key::Up: return KI_UP;
     case Key::Down: return KI_DOWN;
     case Key::Left: return KI_LEFT;

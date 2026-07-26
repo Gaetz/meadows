@@ -27,7 +27,7 @@ struct Event {
     ecs::Entity target {};      // who it happened to (victim, activated)
     GameplayTag tag {};         // optional categorizing tag
     f32 value { 0.0f };         // optional scalar (damage, progress…)
-    str name;                   // optional string arg (e.g. a data-task arg)
+    str name {};                // optional string arg (e.g. a data-task arg)
 };
 
 using EventHandler = std::function<void(const Event&)>;

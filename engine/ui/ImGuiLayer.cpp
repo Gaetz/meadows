@@ -158,9 +158,9 @@ bool ImGuiLayer::createDeviceObjects() {
     ImGui::GetIO().Fonts->SetTexID(static_cast<ImTextureID>(fontTexture.id));
     sampler = device.createSampler({});
 
-    shader = device.createShader({ .vertexSource = kVertexShader,
-                                   .fragmentSource = kFragmentShader,
-                                   .debugName = "imgui" });
+    shader = device.createShader({ .debugName = "imgui",
+                                   .vertexSource = kVertexShader,
+                                   .fragmentSource = kFragmentShader });
     if (shader.id == 0) {
         // Expected on GL 4.1 (macOS): the shader needs GLSL 420+ for its
         // explicit uniform/sampler bindings. Not an error — see create().

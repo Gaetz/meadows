@@ -15,8 +15,7 @@ ConsolePanel& SceneConsole::create(data::FormDatabase& forms,
                                    data::FormTypeRegistry& formTypes) {
     session_ = std::make_unique<data::EditSession>(forms, formTypes);
     vm_ = std::make_unique<script::Vm>();
-    console_ =
-        std::make_unique<ConsolePanel>(*session_, forms, formTypes, *vm_);
+    console_ = std::make_unique<ConsolePanel>(*session_, forms, *vm_);
     return *console_;
 }
 

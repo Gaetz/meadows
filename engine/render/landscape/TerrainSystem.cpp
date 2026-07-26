@@ -321,7 +321,7 @@ void TerrainSystem::enqueueBuild(i32 cx, i32 cz, u8 lod) {
     });
 }
 
-void TerrainSystem::evictFar(rhi::Device& device, const Vec3& cameraPos) {
+void TerrainSystem::evictFar(rhi::Device& /*device*/, const Vec3& cameraPos) {
     streamer.evictFar(camChunk(cameraPos.x), camChunk(cameraPos.z),
                       kEvictRadius, [&](Chunk& chunk) {
                           // U3-7: the erase frees the vertex buffer.

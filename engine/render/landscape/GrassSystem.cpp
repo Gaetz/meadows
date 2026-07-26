@@ -218,7 +218,7 @@ void GrassSystem::regenerate(rhi::Device& device) {
     instances = 0;
 }
 
-void GrassSystem::invalidateChunks(rhi::Device& device,
+void GrassSystem::invalidateChunks(rhi::Device& /*device*/,
                                    const vector<u64>& keys) {
     for (const u64 key : keys) {
         const auto it = streamer.chunks.find(key);

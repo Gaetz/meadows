@@ -1943,7 +1943,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
     if (modal != uiModalWasOpen) {
         // A modal frees the mouse (and pauses the sim, handled in
         // update()); closing it restores the Play capture.
-        if ((mode == SceneMode::Play)) {
+        if (mode == SceneMode::Play) {
             engine->getWindow().setRelativeMouseMode(!modal);
         }
         uiModalWasOpen = modal;
@@ -3363,7 +3363,7 @@ void LandscapeScene::drawGameplayUi() {
         if (ImGui::Checkbox("Play mode — F2 Spectator / F3 Editor", &play)) {
             play ? enterPlayMode() : exitPlayMode();
         }
-        if ((mode == SceneMode::Play)) {
+        if (mode == SceneMode::Play) {
             ImGui::TextUnformatted("WASD: move | Shift: sprint | Space: jump | "
                                    "F2: Spectator | F3: Editor");
         }

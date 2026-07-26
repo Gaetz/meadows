@@ -24,7 +24,7 @@ class LevelEditor {
 public:
     LevelEditor(const data::FormDatabase& forms,
                 const data::FormTypeRegistry& types)
-        : session { forms, types }, forms { forms }, types { types } {}
+        : session { forms, types }, types { types } {}
 
     data::EditSession& editSession() { return session; }
 
@@ -85,7 +85,6 @@ public:
 
 private:
     data::EditSession session;
-    const data::FormDatabase& forms;
     const data::FormTypeRegistry& types;
     core::Guid selectedRef {};
     vector<core::Guid> group;

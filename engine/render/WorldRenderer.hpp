@@ -323,10 +323,10 @@ private:
     struct SkinnedDraw {
         u64 entityId { 0 };
         bool seen { false };
-        rhi::UniqueBuffer paletteSsbo;
-        rhi::UniqueBuffer modelUbo;
-        rhi::UniqueBindGroup group;
-        rhi::UniqueBindGroup casterGroup; // ubo b4 + palette b2
+        rhi::UniqueBuffer paletteSsbo {};
+        rhi::UniqueBuffer modelUbo {};
+        rhi::UniqueBindGroup group {};
+        rhi::UniqueBindGroup casterGroup {}; // ubo b4 + palette b2
     };
     vector<SkinnedDraw> skinnedDraws;
     rhi::UniquePipeline skinnedPipeline;
@@ -337,9 +337,9 @@ private:
     struct WaterQuad {
         u64 entityId { 0 };
         bool seen { false };
-        rhi::UniqueBuffer vertices;
-        rhi::UniqueBuffer ubo;
-        rhi::UniqueBindGroup group;
+        rhi::UniqueBuffer vertices {};
+        rhi::UniqueBuffer ubo {};
+        rhi::UniqueBindGroup group {};
     };
     vector<WaterQuad> waterQuads;
     rhi::UniquePipeline waterVolumePipeline;

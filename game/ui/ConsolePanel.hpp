@@ -17,8 +17,8 @@ namespace game {
 class ConsolePanel {
 public:
     ConsolePanel(data::EditSession& session, const data::FormDatabase& forms,
-                 const data::FormTypeRegistry& types, script::Vm& vm)
-        : session { session }, forms { forms }, types { types }, vm { vm } {}
+                 script::Vm& vm)
+        : session { session }, forms { forms }, vm { vm } {}
 
     using Command = std::function<str(const str& args)>;
     void addCommand(const str& name, Command command) {
@@ -41,7 +41,6 @@ private:
 
     data::EditSession& session;
     const data::FormDatabase& forms;
-    const data::FormTypeRegistry& types;
     script::Vm& vm;
     std::unordered_map<str, Command> commands;
 

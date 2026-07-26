@@ -138,8 +138,8 @@ private:
         reflect::Value after;
         u32 typeId { 0 };        // creation/removal only
         str editorId;            // creation only
-        core::Guid sourceId;     // duplication only: redo re-copies from it
-        sptr<Form> snapshot;     // removal only: undo restores from it
+        core::Guid sourceId {};  // duplication only: redo re-copies from it
+        sptr<Form> snapshot {};  // removal only: undo restores from it
         u32 group { 0 };         // gesture id: undo/redo pop whole groups
     };
 

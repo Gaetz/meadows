@@ -109,7 +109,7 @@ struct GraphTransition {
     // runtime hands back through the condition callback — the graph never
     // sees gameplay types, same seam as tags. "" = ungated (the common
     // case pays no callback). Fails closed when set without a callback.
-    str conditionRef;
+    str conditionRef {};
 };
 
 struct GraphDesc {

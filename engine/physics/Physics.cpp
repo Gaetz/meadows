@@ -41,7 +41,6 @@ namespace {
 
 constexpr JPH::ObjectLayer kLayerStatic = 0;
 constexpr JPH::ObjectLayer kLayerMoving = 1;
-constexpr u32 kLayerCount = 2;
 
 namespace bp {
 constexpr JPH::BroadPhaseLayer kStatic { 0 };

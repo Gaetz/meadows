@@ -10,7 +10,7 @@ struct RcTuningForm;
 }
 namespace render {
 class WorldRenderer;
-class HeightPatches;
+struct HeightPatches;
 }
 
 namespace game {

@@ -26,7 +26,7 @@ struct SpawnContext {
     // suppresses references it knows are disabled. Consulted by the
     // prefab expansion (derived children bypass the cell loop) — the
     // CellLoader applies it to top-level references itself.
-    std::function<bool(const core::Guid& referenceId)> filter;
+    std::function<bool(const core::Guid& referenceId)> filter {};
 };
 
 // Category-specific wiring, called after the universal components are set.

@@ -15,10 +15,10 @@ extern "C" bool meadowsMacosActivate() {
     [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
     // Both spellings: the modern cooperative one and the deprecated
     // ignore-others one — across macOS 13..26 one of the two lands.
-    [[NSRunningApplication currentApplication]
-        activateWithOptions:NSApplicationActivateIgnoringOtherApps];
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    [[NSRunningApplication currentApplication]
+        activateWithOptions:NSApplicationActivateIgnoringOtherApps];
     [NSApp activateIgnoringOtherApps:YES];
 #pragma clang diagnostic pop
     return [NSApp isActive];

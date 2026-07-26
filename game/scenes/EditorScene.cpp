@@ -155,7 +155,7 @@ void EditorScene::reload() {
     db = std::make_unique<data::FormDatabase>();
     report = data::resolve(data::pointersOf(stack), types, *db);
     session = std::make_unique<data::EditSession>(*db, types);
-    console = std::make_unique<ConsolePanel>(*session, *db, types, *vm);
+    console = std::make_unique<ConsolePanel>(*session, *db, *vm);
     layouts.load((pluginDir / "editor-layouts.toml").string());
     animGraph = std::make_unique<AnimGraphPanel>(*session, layouts, selected);
     questGraph =

@@ -51,7 +51,6 @@ TEST_CASE("the swing runs Windup -> Active -> Recovery -> Idle on the "
 }
 
 TEST_CASE("authored anim events override the data windows") {
-    const SwingTiming timing { 10.0f, 10.0f, 0.2f }; // data would never fire
     MeleeSwing swing;
     gameplay::startSwing(swing);
 
