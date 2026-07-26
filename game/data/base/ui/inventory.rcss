@@ -38,7 +38,7 @@
 
 .tab:hover {
 	color: #f0ede4;
-	border-bottom-color: #d9b96c;
+	border-bottom-color: #f0ede4;
 }
 
 #search {
@@ -60,7 +60,7 @@
 }
 
 .tablehead .col:hover {
-	color: #d9b96c;
+	color: #f0ede4;
 }
 
 #items, .itemlist {

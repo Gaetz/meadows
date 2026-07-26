@@ -49,7 +49,7 @@
 
 #loadwrap {
 	position: absolute;
-	top: 62%;
+	top: 50%;
 	left: 33%;
 	width: 34%;
 }

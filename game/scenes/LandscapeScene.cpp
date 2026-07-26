@@ -688,6 +688,7 @@ void LandscapeScene::setupWorldAndStreaming() {
     loadingGateAlpha = 1.0f;
     loadingGateProgress = 0.0f;
     loadingGateFrames = 0;
+    loadingGateShowMenu = false;
     loadingTerrainTarget = 0;
     loadingMeshTarget = 0;
     loadingTextureTarget = 0;
@@ -838,6 +839,7 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
             flyCamera.camera.pitch = loadedWorldState->playerPitch;
         }
         screenStack.close("mainmenu");
+        loadingGateShowMenu = false; // a loaded game skips the title menu
         syncScreens();
         if (playMode && physics) {
             playerController.spawnBody(*physics,
@@ -1800,14 +1802,15 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
     screenStack.close("hud");
     // Boot into the main menu — "Enter the world" starts Play;
     // Escape dismisses it for the dev tools (Fly camera, panels).
-    if (screenStack.find("mainmenu")) {
-        hud.updateMenuClockLine(makeHudContext());
-        screenStack.show("mainmenu");
-    }
-    // The loading shroud rides OVER the menu (show order = z order);
-    // the gate in drawUi feeds it and closes it once faded.
+    // The loading shroud first, alone — the main menu is a MODAL, drawn
+    // above every overlay, so it must NOT open until the load is done
+    // (the gate shows it when the fade starts). No gate = show it now.
     if (screenStack.find("loading")) {
         screenStack.show("loading");
+        loadingGateShowMenu = screenStack.find("mainmenu") != nullptr;
+    } else if (screenStack.find("mainmenu")) {
+        hud.updateMenuClockLine(makeHudContext());
+        screenStack.show("mainmenu");
     }
     syncScreens();
 }
@@ -3008,6 +3011,13 @@ void LandscapeScene::drawUi() {
         // Grace frames before trusting "done": the first streaming
         // updates are still ANNOUNCING work.
         if (loadingGateFrames > 30 && loadingGateProgress >= 0.999f) {
+            if (loadingGateShowMenu) {
+                // Loaded: the title menu appears as the fade begins.
+                loadingGateShowMenu = false;
+                hud.updateMenuClockLine(makeHudContext());
+                screenStack.show("mainmenu");
+                syncScreens();
+            }
             loadingGateAlpha =
                 glm::max(0.0f, loadingGateAlpha -
                                    ImGui::GetIO().DeltaTime / 0.8f);
