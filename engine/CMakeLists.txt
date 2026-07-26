@@ -62,7 +62,9 @@ add_library(meadows-render STATIC
     render/FlyCamera.cpp
     render/GpuProbe.cpp
     render/MeshBuilder.cpp
+    render/MeshCache.cpp
     render/ShaderLibrary.cpp
+    render/TextureCache.cpp
     render/SpriteRenderer.cpp
     render/landscape/ChunkOcclusion.cpp
     render/landscape/FxRenderer.cpp

@@ -5,7 +5,7 @@
 #include "data/forms/FormDatabase.hpp"
 #include "engine/reflect/Reflect.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height, TerrainParams
-#include "game/MeshCache.hpp"
+#include "engine/render/MeshCache.hpp"
 #include "world/ai/TerrainNavigator.hpp"
 #include "world/worldspace/WorldForms.hpp" // world::CellForm, ReferenceForm
 
@@ -51,7 +51,7 @@ void StreamingController::updateStaticColliders(const StreamingContext& ctx) {
     struct CookCandidate {
         f32 distSq;
         u64 id;
-        const MeshCache::CpuMesh* cpu;
+        const render::MeshCache::CpuMesh* cpu;
         Vec3 position;
         Quat rotation;
         Vec3 scale;
@@ -79,7 +79,8 @@ void StreamingController::updateStaticColliders(const StreamingContext& ctx) {
                 nonCollidable.insert(id);
                 return;
             }
-            const MeshCache::CpuMesh* cpu = ctx.meshCache->cpuMesh(mesh.model);
+            const render::MeshCache::CpuMesh* cpu =
+                ctx.meshCache->cpuMesh(mesh.model);
             if (!cpu) {
                 return; // still streaming — retried next frame
             }
@@ -198,7 +199,7 @@ void StreamingController::refreshNavObstacles(const StreamingContext& ctx) {
                 return;
             }
             Vec3 lo { -0.5f }, hi { 0.5f };
-            if (const MeshCache::CpuMesh* cpu =
+            if (const render::MeshCache::CpuMesh* cpu =
                     ctx.meshCache->cpuMesh(mesh.model)) {
                 lo = cpu->boundsMin;
                 hi = cpu->boundsMax;

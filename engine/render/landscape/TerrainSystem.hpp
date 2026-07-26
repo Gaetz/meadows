@@ -33,7 +33,7 @@ class ShaderLibrary;
 // horizon because requests go out center-first). Chunks beyond an eviction
 // radius (hysteresis over the view radius) free their GPU memory; revisited
 // terrain is bit-identical because meshing is deterministic. Same
-// worker->queue->pump pattern as game/TextureCache (Phase 5).
+// worker->queue->pump pattern as engine/render/TextureCache (Phase 5).
 //
 // LOD: discrete per-chunk meshes (65²/33²/17²/9² vertices) selected
 // by camera distance. Every mesh carries a SKIRT — its edge ring extruded

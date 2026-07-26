@@ -11,7 +11,7 @@
 #include "data/forms/VisualForms.hpp"
 #include "engine/ecs/World.hpp"
 #include "engine/render/Frustum.hpp"
-#include "game/TextureCache.hpp"
+#include "engine/render/TextureCache.hpp"
 
 namespace game {
 
@@ -31,7 +31,8 @@ render::Sprite spriteFor(const world::Transform& transform,
     return out;
 }
 
-RenderSnapshot extractScene(const ecs::World& world, TextureCache& textures) {
+RenderSnapshot extractScene(const ecs::World& world,
+                            render::TextureCache& textures) {
     struct Drawable {
         i32 layer;
         render::Sprite sprite;
@@ -186,7 +187,7 @@ void submitSnapshot(const RenderSnapshot& snapshot,
     }
 }
 
-void prewarmTextures(const ecs::World& world, TextureCache& textures) {
+void prewarmTextures(const ecs::World& world, render::TextureCache& textures) {
     world.handle().query<const world::SpriteRender>().each(
         [&](flecs::entity, const world::SpriteRender& sprite) {
             textures.resolve(sprite.sprite); // first sighting kicks the decode

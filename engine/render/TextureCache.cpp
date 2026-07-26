@@ -1,6 +1,6 @@
-#include "game/TextureCache.hpp"
+#include "engine/render/TextureCache.hpp"
 
-namespace game {
+namespace render {
 
 // A distinctive "still loading" marker (magenta/dark checker), so a pending
 // asset reads differently from a missing one (the renderer's white fallback).
@@ -48,4 +48,4 @@ void TextureCacheTraits::destroyPayload(rhi::Device& device,
     }
 }
 
-} // namespace game
+} // namespace render

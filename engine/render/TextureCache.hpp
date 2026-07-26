@@ -3,9 +3,9 @@
 #include <optional>
 
 #include "engine/assets/Image.hpp"
-#include "game/ResidencyCache.hpp"
+#include "engine/render/ResidencyCache.hpp"
 
-namespace game {
+namespace render {
 
 // Resolves a sprite asset GUID to a GPU texture, caching the result and owning
 // the textures it creates (destroyed on clear() and on teardown). After a §5
@@ -55,4 +55,4 @@ public:
                          TextureCacheTraits { .desc = upload }) {}
 };
 
-} // namespace game
+} // namespace render

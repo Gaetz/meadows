@@ -21,9 +21,11 @@ namespace world {
 class TerrainNavigator;
 }
 
-namespace game {
-
+namespace render {
 class MeshCache;
+}
+
+namespace game {
 
 // The scene systems the cell-streaming fixups touch, bundled so the streaming
 // bookkeeping (ground snap, static-collider cook, nav obstacles) is decoupled
@@ -35,7 +37,7 @@ struct StreamingContext {
     data::FormDatabase& forms;                  // base/ref/cell + `collides`
     const render::TerrainParams& terrainParams; // ground snap (height)
     phys::PhysicsWorld* physics;                // static-mesh bodies
-    MeshCache* meshCache;                        // CpuMesh (cook + nav AABB)
+    render::MeshCache* meshCache;               // CpuMesh (cook + nav AABB)
     world::TerrainNavigator* navigator;          // blocking boxes
     Vec3 focus;                 // player/camera position — cook nearest first
     bool fastCook;              // travel fade holds a black screen -> uncap cook

@@ -228,12 +228,13 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
     // the residency caches resolve guids at draw time (§7). The caches are
     // SCENE-owned (editor and streaming share them); everything else GPU
     // belongs to the renderer.
-    materialTextures = std::make_unique<TextureCache>(
+    materialTextures = std::make_unique<render::TextureCache>(
         device, assetDb, engine->getJobSystem(),
-        TextureCache::UploadDesc { .format = rhi::TextureFormat::SRGBA8,
-                                   .filter = rhi::FilterMode::Linear });
-    meshCache =
-        std::make_unique<MeshCache>(device, assetDb, engine->getJobSystem());
+        render::TextureCache::UploadDesc {
+            .format = rhi::TextureFormat::SRGBA8,
+            .filter = rhi::FilterMode::Linear });
+    meshCache = std::make_unique<render::MeshCache>(device, assetDb,
+                                                    engine->getJobSystem());
     // The procedural weapons — the sword is the default
     // (WeaponForms without a `model` fall back to it); the club is what
     // BanditClub's `model` points at in data.

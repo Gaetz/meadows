@@ -15,12 +15,12 @@
 #include "engine/render/Projection.hpp"
 #include "engine/render/landscape/FrameUniforms.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
+#include "engine/render/MeshCache.hpp"
+#include "engine/render/TextureCache.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
 #include "engine/ui/UiSystem.hpp"
 #include "game/FrameComposer.hpp"
-#include "game/MeshCache.hpp"
-#include "game/TextureCache.hpp"
 #include "game/scenes/LandscapeTuning.hpp"
 
 namespace game {
@@ -669,7 +669,7 @@ void LandscapeRenderer::rebuildBlitPipeline(rhi::Device& device) {
 }
 
 void LandscapeRenderer::drawSceneMeshes(engine::FrameContext& frame,
-                                        const RenderSnapshot& snapshot,
+                                        const render::RenderSnapshot& snapshot,
                                         const RenderView& view) {
     if (snapshot.meshes.empty()) {
         return;
@@ -683,8 +683,10 @@ void LandscapeRenderer::drawSceneMeshes(engine::FrameContext& frame,
     frame.cmd.setPipeline(meshPipeline);
     frame.cmd.setBindGroup(0, frameBindGroup);
     for (u32 i = 0; i < snapshot.meshes.size(); ++i) {
-        const RenderSnapshot::MeshInstance& instance = snapshot.meshes[i];
-        const MeshCache::Gpu& mesh = view.meshCache->resolve(instance.model);
+        const render::RenderSnapshot::MeshInstance& instance =
+            snapshot.meshes[i];
+        const render::MeshCache::Gpu& mesh =
+            view.meshCache->resolve(instance.model);
 
         // Material fields resolved at extract; only the TEXTURE
         // residency lookup stays draw-side (it is a GPU cache).
@@ -731,7 +733,7 @@ void LandscapeRenderer::drawSceneMeshes(engine::FrameContext& frame,
 // --- First-person player -----------------------------------------------------
 
 void LandscapeRenderer::drawSkinned(engine::FrameContext& frame,
-                                    const RenderSnapshot& snapshot) {
+                                    const render::RenderSnapshot& snapshot) {
     if (snapshot.skinned.empty() && skinnedDraws.empty()) {
         return;
     }
@@ -742,7 +744,8 @@ void LandscapeRenderer::drawSkinned(engine::FrameContext& frame,
         draw.seen = false;
     }
     bool any = false;
-    for (const RenderSnapshot::SkinnedInstance& instance : snapshot.skinned) {
+    for (const render::RenderSnapshot::SkinnedInstance& instance :
+         snapshot.skinned) {
         SkinnedDraw* slot = nullptr;
         for (SkinnedDraw& draw : skinnedDraws) {
             if (draw.entityId == instance.entityId) {
@@ -840,14 +843,14 @@ void LandscapeRenderer::buildSkinnedPipeline(rhi::Device& device) {
 // Bundle the streaming fixups' systems for StreamingController this frame —
 // references into the scene plus the focus / fade / mode scalars. Rebuilt each
 
-f32 LandscapeRenderer::effectiveWaterSurfaceY(const RenderSnapshot& snapshot,
-                                              const RenderView& view) const {
+f32 LandscapeRenderer::effectiveWaterSurfaceY(
+    const render::RenderSnapshot& snapshot, const RenderView& view) const {
     // The water surface the CAMERA sits under, if any — sea
     // level outdoors, a volume's top when inside one (any worldspace),
     // "dry" otherwise. Feeds the tonemap submersion.
     f32 surface = view.interiorMode ? -1.0e6f : terrain.params.seaLevel;
     const Vec3 eye = view.camera.position;
-    for (const WaterVolumeInstance& volume : snapshot.waterVolumes) {
+    for (const render::WaterVolumeInstance& volume : snapshot.waterVolumes) {
         const Vec3 d = eye - volume.position;
         if (std::abs(d.x) <= volume.halfExtents.x &&
             std::abs(d.z) <= volume.halfExtents.z && d.y >= 0.0f &&
@@ -859,8 +862,8 @@ f32 LandscapeRenderer::effectiveWaterSurfaceY(const RenderSnapshot& snapshot,
     return surface;
 }
 
-void LandscapeRenderer::drawWaterVolumes(engine::FrameContext& frame,
-                                         const RenderSnapshot& snapshot) {
+void LandscapeRenderer::drawWaterVolumes(
+    engine::FrameContext& frame, const render::RenderSnapshot& snapshot) {
     if (shaders->generation("watervolume") != waterVolumeShaderGeneration ||
         waterVolumePipeline.id() == 0) {
         waterVolumePipeline = { frame.device, frame.device.createPipeline(
@@ -881,7 +884,7 @@ void LandscapeRenderer::drawWaterVolumes(engine::FrameContext& frame,
         quad.seen = false;
     }
     bool any = false;
-    for (const WaterVolumeInstance& volume : snapshot.waterVolumes) {
+    for (const render::WaterVolumeInstance& volume : snapshot.waterVolumes) {
         WaterQuad* slot = nullptr;
         for (WaterQuad& quad : waterQuads) {
             if (quad.entityId == volume.entityId) {
@@ -970,16 +973,15 @@ void LandscapeRenderer::buildCasterPipelines(rhi::Device& device) {
     skinnedCasterShaderGeneration = shaders->generation("shadow_skinned");
 }
 
-void LandscapeRenderer::drawShadowCasters(engine::FrameContext& frame,
-                                          const RenderSnapshot& snapshot,
-                                          const RenderView& view,
-                                          u32 cascade) {
+void LandscapeRenderer::drawShadowCasters(
+    engine::FrameContext& frame, const render::RenderSnapshot& snapshot,
+    const RenderView& view, u32 cascade) {
     drawCastersInto(frame, snapshot, view, shadows.casterBindGroup(cascade),
                     cascade == 0);
 }
 
 void LandscapeRenderer::drawCastersInto(engine::FrameContext& frame,
-                                        const RenderSnapshot& snapshot,
+                                        const render::RenderSnapshot& snapshot,
                                         const RenderView& view,
                                         rhi::BindGroupHandle casterGroup,
                                         bool refreshUbos) {
@@ -1000,8 +1002,10 @@ void LandscapeRenderer::drawCastersInto(engine::FrameContext& frame,
         frame.cmd.setPipeline(meshCasterPipeline);
         frame.cmd.setBindGroup(1, casterGroup);
         for (u32 i = 0; i < snapshot.meshes.size(); ++i) {
-            const RenderSnapshot::MeshInstance& instance = snapshot.meshes[i];
-            const MeshCache::Gpu& mesh = view.meshCache->resolve(instance.model);
+            const render::RenderSnapshot::MeshInstance& instance =
+                snapshot.meshes[i];
+            const render::MeshCache::Gpu& mesh =
+                view.meshCache->resolve(instance.model);
             MeshDraw& draw = meshDraws[i];
             if (draw.ubo.id() == 0) {
                 // std140 ModelUbo: mat4 + tint + info (drawSceneMeshes
@@ -1034,7 +1038,7 @@ void LandscapeRenderer::drawCastersInto(engine::FrameContext& frame,
     if (!snapshot.skinned.empty()) {
         frame.cmd.setPipeline(skinnedCasterPipeline);
         frame.cmd.setBindGroup(1, casterGroup);
-        for (const RenderSnapshot::SkinnedInstance& instance :
+        for (const render::RenderSnapshot::SkinnedInstance& instance :
              snapshot.skinned) {
             SkinnedDraw* slot = nullptr;
             for (SkinnedDraw& draw : skinnedDraws) {
@@ -1074,7 +1078,7 @@ void LandscapeRenderer::buildMeshPipeline(rhi::Device& device) {
 }
 
 void LandscapeRenderer::render(engine::FrameContext& frame,
-                               const RenderSnapshot& snapshot,
+                               const render::RenderSnapshot& snapshot,
                                const RenderView& view) {
     // Resolve last frames' timestamps (never blocking) and
     // open this frame's slot — the scopes below feed the budget table.
@@ -1393,7 +1397,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         vector<KeyCandidate> keyCandidates;
         const f32 keySunGate =
             glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
-        for (const SceneLight& light : snapshot.shadowLights) {
+        for (const render::SceneLight& light : snapshot.shadowLights) {
             Vec3 position = light.position;
             Vec3 direction = light.direction;
             if (light.sunLinked) {
@@ -1449,7 +1453,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
     {
         const u32 budget = clustered ? kMaxLights : kFallbackLights;
         LightsUniforms lights;
-        const vector<SceneLight>& nearest = snapshot.lights;
+        const vector<render::SceneLight>& nearest = snapshot.lights;
         // G7b — the penumbra experiment: with "lights via RC only", the
         // DIRECT contribution is cut (count 0 -> localLights() adds
         // nothing) and the lights exist purely in the GI volume: their
@@ -1472,7 +1476,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         u32 slot = 0;
         for (u32 i = 0; i < nearest.size() && slot < budget && !rcOnly;
              ++i) {
-            const SceneLight& light = nearest[i];
+            const render::SceneLight& light = nearest[i];
             if (light.rcOnly) {
                 continue;
             }
@@ -1781,7 +1785,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
                            &viewFrustum);
             }
         }
-        drawSceneMeshes(frame, snapshot, view); // the RenderSnapshot.meshes consumer
+        drawSceneMeshes(frame, snapshot, view); // RenderSnapshot.meshes
         drawSkinned(frame, snapshot);        // the Forms-driven skinned NPCs
         if (!view.interiorMode) {
             sky.draw(frame.cmd, frameBindGroup); // background only
@@ -1935,7 +1939,7 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 // historical post-CSM slot, or at the END of the frame when the GI is
 // pipelined (docs/RENDERING.md PG2).
 void LandscapeRenderer::recordGiUpdate(engine::FrameContext& frame,
-                                       const RenderSnapshot& snapshot,
+                                       const render::RenderSnapshot& snapshot,
                                        const RenderView& view,
                                        const render::FrameUniforms& uniforms,
                                        bool clustered) {
@@ -1953,7 +1957,7 @@ void LandscapeRenderer::recordGiUpdate(engine::FrameContext& frame,
             if (rcBoxes.size() >= render::RadianceCascades::kMaxBoxes) {
                 break;
             }
-            const MeshCache::CpuMesh* cpu =
+            const render::MeshCache::CpuMesh* cpu =
                 view.meshCache ? view.meshCache->cpuMesh(mesh.model)
                                : nullptr;
             if (!cpu) {

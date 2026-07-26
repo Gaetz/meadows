@@ -9,7 +9,6 @@ add_library(meadows-runtime STATIC
     InventoryView.cpp
     LevelEditor.cpp
     MapRaster.cpp
-    MeshCache.cpp
     SaveGame.cpp
     SceneStack.cpp
     SceneSubmit.cpp
@@ -17,7 +16,6 @@ add_library(meadows-runtime STATIC
     Settings.cpp
     SoundResolver.cpp
     TerrainCollision.cpp
-    TextureCache.cpp
     VegetationCollision.cpp
     WeaponMeshes.cpp
     WorldEditor.cpp

@@ -21,10 +21,13 @@ class CellStreamer;
 class FormCategoryRegistry;
 }
 
+namespace render {
+class MeshCache;
+}
+
 namespace game {
 
 class LevelEditor;
-class MeshCache;
 
 // The scene systems the in-world level editor touches, bundled so the editor
 // (pick / place / gizmo / palette / sculpt) is decoupled from LandscapeScene
@@ -34,7 +37,7 @@ class MeshCache;
 struct EditorContext {
     render::FlyCamera& camera;               // ray + gizmo view/proj, capturing()
     ecs::World& world;                       // pick query, live spawn / destruct
-    MeshCache& meshCache;                    // pick AABBs (CpuMesh bounds)
+    render::MeshCache& meshCache;            // pick AABBs (CpuMesh bounds)
     bool interiorMode;                       // ground pick: floor plane vs terrain
     const render::TerrainParams& terrainParams; // ground raymarch (height)
     data::FormDatabase& forms;               // palette, cell + base lookups

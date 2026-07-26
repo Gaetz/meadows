@@ -9,7 +9,7 @@
 #include "engine/core/Log.hpp"
 #include "engine/rhi/Device.hpp"
 
-namespace game {
+namespace render {
 
 // The async-residency skeleton shared by TextureCache and MeshCache
 // (factored so a bug fixed in one cannot miss the other).
@@ -196,4 +196,4 @@ private:
     u32 pending { 0 };
 };
 
-} // namespace game
+} // namespace render

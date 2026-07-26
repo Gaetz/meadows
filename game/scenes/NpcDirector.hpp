@@ -55,9 +55,12 @@ struct AiPackageForm;
 struct AbilityForm;
 } // namespace gameplay
 
+namespace render {
+struct RenderSnapshot; // engine/render/SceneView.hpp — the extract target
+}
+
 namespace game {
 
-struct RenderSnapshot; // game/SceneSubmit.hpp — the extract target
 class ProjectileDirector; // Archer NPCs
 
 // [cpp-tuning] — the sword grip corrections (see the definitions
@@ -264,7 +267,7 @@ public:
     // Fills snapshot.skinned (copied pose + resolved geometry
     // handles) — the renderer draws ONLY from the packet. Called after
     // update() so the extract carries this frame's pose.
-    void extract(RenderSnapshot& out) const;
+    void extract(render::RenderSnapshot& out) const;
 
     // onExit teardown: destroy every NPC's skin geometry and drop the
     // caches, so a re-enter starts clean.

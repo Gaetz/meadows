@@ -17,7 +17,7 @@
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/physics/Physics.hpp"
 #include "game/LevelEditor.hpp"
-#include "game/MeshCache.hpp"
+#include "engine/render/MeshCache.hpp"
 #include "game/InputActions.hpp"
 #include "game/Settings.hpp"
 #include "game/scenes/GameHud.hpp"
@@ -60,7 +60,7 @@
 #include "world/streaming/CellStreamer.hpp"
 #include "game/SceneSubmit.hpp"
 #include "game/TerrainCollision.hpp"
-#include "game/TextureCache.hpp"
+#include "engine/render/TextureCache.hpp"
 #include "game/VegetationCollision.hpp"
 #include "game/scenes/LandscapeTuning.hpp"
 #include "engine/audio/Audio.hpp"
@@ -383,8 +383,8 @@ private:
     // (shared_ptr — worker-held copies keep old instances alive, even
     // across scene teardown).
     sptr<const render::HeightPatches> heightPatches;
-    uptr<TextureCache> materialTextures; // SRGBA8 + Linear (3D albedo)
-    uptr<MeshCache> meshCache;
+    uptr<render::TextureCache> materialTextures; // SRGBA8 + Linear (3D albedo)
+    uptr<render::MeshCache> meshCache;
     RenderSnapshot snapshot;
 
     // Forms-driven skinned NPCs — the sim subsystem

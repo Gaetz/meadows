@@ -16,10 +16,13 @@ class EventBus;
 class CueRegistry;
 }
 
+namespace render {
+struct RenderSnapshot;
+}
+
 namespace game {
 
 struct Npc;
-struct RenderSnapshot;
 
 // What one projectile tick needs — rebuilt per frame by the scene, the
 // *Context idiom.
@@ -54,7 +57,7 @@ public:
     void update(f32 dt, const ProjectileContext& ctx);
 
     // Arrows as ordinary mesh instances, oriented along their flight.
-    void extract(RenderSnapshot& out) const;
+    void extract(render::RenderSnapshot& out) const;
 
     void clear() { projectiles.clear(); }
     u32 count() const { return static_cast<u32>(projectiles.size()); }

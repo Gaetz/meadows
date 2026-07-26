@@ -3,9 +3,9 @@
 #include <optional>
 
 #include "engine/assets/MeshData.hpp"
-#include "game/ResidencyCache.hpp"
+#include "engine/render/ResidencyCache.hpp"
 
-namespace game {
+namespace render {
 
 // Resolves a model asset GUID to GPU vertex/index buffers — the consumer
 // side of `RenderSnapshot.meshes` (contract: docs/HORIZONTAL-PASS.md).
@@ -83,4 +83,4 @@ public:
     }
 };
 
-} // namespace game
+} // namespace render

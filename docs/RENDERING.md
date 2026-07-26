@@ -134,10 +134,12 @@ horizon) + `GpuOcclusion` (Hi-Z compute cull + fence readback),
 
 The **orchestrator does not**: `game/scenes/LandscapeRenderer.{hpp,cpp}`
 (~120 KB) owns pass order, FrameUbo composition, offscreen targets, light
-UBO fill, key-shadow selection, and game-side types (`RenderSnapshot`,
-`MeshCache`/`TextureCache`, `FrameComposer`, `AtmosphereParams`). (Its
-ImGui tuning panels moved to `game/ui/RenderTuningPanels` — R1 of §7,
-done 2026-07-26.) It is owned by LandscapeScene alone;
+UBO fill, key-shadow selection, and two game-side types (`FrameComposer`,
+`AtmosphereParams` — they move with it at R4). (Its ImGui tuning panels
+moved to `game/ui/RenderTuningPanels` — R1 of §7, done 2026-07-26; the
+snapshot types and the residency caches are engine-side since R2 —
+`engine/render/SceneView.hpp`, `engine/render/{Mesh,Texture}Cache`.)
+It is owned by LandscapeScene alone;
 `AnimPreviewPanel` had to hand-roll its own RHI offscreen pipeline as a
 result. Fixing this is the **RENDERER-EXTRACT chantier, §7** — the
 current placement is acknowledged technical debt, not a design.
@@ -497,13 +499,16 @@ Bricks (each lands alone, LandscapeScene byte-identical at every step):
   longer includes ImGui, −518 lines). The live-tuning workflow (panels
   + "Save render tuning" → `consumeSaveTuningRequest` → the scene's
   plugin write) is unchanged.
-- **R2 — Neutralize game/ types.** `RenderSnapshot`/`SceneLight` (and
-  the extract helpers' output types) move to an engine-consumable header
-  (e.g. `engine/render/SceneView.hpp`); `MeshCache`/`TextureCache` go
-  behind small resolve interfaces the renderer receives per frame (or
-  move wholesale if their dependency audit allows — they are already
-  assets+rhi shaped); `FrameComposer`/`AtmosphereParams` follow the
-  orchestrator.
+- **R2 — Neutralize game/ types. DONE (2026-07-26).** The snapshot types
+  (`RenderSnapshot`/`SceneLight`/`WaterVolumeInstance`) live in
+  `engine/render/SceneView.hpp` (namespace `render`); `game/SceneSubmit`
+  keeps the extract functions plus `using` aliases so scene/test callers
+  are untouched. The dependency audit came back clean (engine-only
+  includes), so `ResidencyCache`/`MeshCache`/`TextureCache` moved
+  **wholesale** to `engine/render/` (namespace `render`, lib
+  `meadows-render` — they need rhi, so NOT the base lib: the §2.10
+  simlink proof stays intact, re-verified). `FrameComposer`/
+  `AtmosphereParams` follow the orchestrator at R4 as planned.
 - **R3 — RendererConfig (per-subsystem opt-in).** Construction flags:
   terrain, streaming, water, sky/weather, vegetation, grass, GI,
   froxels, occlusion, postfx tiers. A tool scene mounts meshes + sky +

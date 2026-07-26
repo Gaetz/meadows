@@ -21,7 +21,7 @@
 #include "engine/render/landscape/WaterSystem.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
-#include "game/SceneSubmit.hpp" // RenderSnapshot
+#include "engine/render/SceneView.hpp" // render::RenderSnapshot
 #include "game/scenes/AtmosphereParams.hpp"
 
 namespace core {
@@ -43,10 +43,12 @@ struct ColonizedTreeTuningForm;
 struct RcTuningForm;
 }
 
-namespace game {
-
+namespace render {
 class MeshCache;
 class TextureCache;
+}
+
+namespace game {
 
 // Per-frame view: everything the SIM side decides, passed by value/pointer —
 // the renderer never reads the scene (the Phase-5 seam's GPU
@@ -67,8 +69,8 @@ struct RenderView {
     bool grassBend { false };
     Vec3 playerFeet { 0.0f };
     // Residency caches (scene-owned — the editor and streaming share them).
-    MeshCache* meshCache { nullptr };
-    TextureCache* materialTextures { nullptr };
+    render::MeshCache* meshCache { nullptr };
+    render::TextureCache* materialTextures { nullptr };
     // Game UI, composed inside the backbuffer pass (null = not created).
     ::ui::UiSystem* gameUi { nullptr };
     // Stutter-hunt probe (scene-owned; render blocks report into it).
@@ -78,8 +80,9 @@ struct RenderView {
 // The custom 3D landscape renderer, extracted from LandscapeScene:
 // owns the shader library, the render::* systems, every
 // GPU handle and the frame graph (shadow cascades, reflection, main pass,
-// water composite, post FX, tonemap). Consumes ONLY the RenderSnapshot and
-// the RenderView. The sim side reaches the world ground truth through
+// water composite, post FX, tonemap). Consumes ONLY the RenderSnapshot
+// (engine/render/SceneView.hpp) and the RenderView. The sim side reaches
+// the world ground truth through
 // terrainParams() (terrain shape doubles as collision/nav input); the dev
 // tuning/perf panels live in game/ui/RenderTuningPanels (friend — they
 // edit the live knobs below in place).
@@ -121,7 +124,8 @@ public:
     // The whole frame: pipeline refresh, ring streaming, cascades,
     // reflection, opaque+sky+effects, copy/Hi-Z/water, post FX, tonemap
     // composite (game UI included), all from the packet + the view.
-    void render(engine::FrameContext& frame, const RenderSnapshot& snapshot,
+    void render(engine::FrameContext& frame,
+                const render::RenderSnapshot& snapshot,
                 const RenderView& view);
 
     // --- Sim-side access -------------------------------------------------
@@ -163,28 +167,28 @@ private:
     void buildSkinnedPipeline(rhi::Device& device);
     void buildCasterPipelines(rhi::Device& device);
     void drawSceneMeshes(engine::FrameContext& frame,
-                         const RenderSnapshot& snapshot,
+                         const render::RenderSnapshot& snapshot,
                          const RenderView& view);
     // The GI chain's per-frame recording — post-CSM slot, or end of
     // frame when pipelined (docs/RENDERING.md PG2).
     void recordGiUpdate(engine::FrameContext& frame,
-                        const RenderSnapshot& snapshot,
+                        const render::RenderSnapshot& snapshot,
                         const RenderView& view,
                         const render::FrameUniforms& uniforms,
                         bool clustered);
     void drawSkinned(engine::FrameContext& frame,
-                     const RenderSnapshot& snapshot);
+                     const render::RenderSnapshot& snapshot);
     void drawWaterVolumes(engine::FrameContext& frame,
-                          const RenderSnapshot& snapshot);
+                          const render::RenderSnapshot& snapshot);
     void drawShadowCasters(engine::FrameContext& frame,
-                           const RenderSnapshot& snapshot,
+                           const render::RenderSnapshot& snapshot,
                            const RenderView& view, u32 cascade);
     void drawCastersInto(engine::FrameContext& frame,
-                         const RenderSnapshot& snapshot,
+                         const render::RenderSnapshot& snapshot,
                          const RenderView& view,
                          rhi::BindGroupHandle casterGroup, bool refreshUbos);
     // The water surface the camera sits under (submersion input).
-    f32 effectiveWaterSurfaceY(const RenderSnapshot& snapshot,
+    f32 effectiveWaterSurfaceY(const render::RenderSnapshot& snapshot,
                                const RenderView& view) const;
 
     uptr<render::ShaderLibrary> shaders;

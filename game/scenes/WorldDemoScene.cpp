@@ -58,7 +58,7 @@ void WorldDemoScene::onEnter() {
 
     checker = createCheckerTexture(engine.getDevice());
     engine.getCamera().viewHeight = 12.0f;
-    textureCache = std::make_unique<game::TextureCache>(
+    textureCache = std::make_unique<render::TextureCache>(
         engine.getDevice(), assetDb, engine.getJobSystem());
 
     // loadPluginFile returns a core::Result — unwrap into the

@@ -1,4 +1,4 @@
-#include "game/MeshCache.hpp"
+#include "engine/render/MeshCache.hpp"
 
 #include <mutex>
 
@@ -8,7 +8,7 @@
 #include "engine/platform/Paths.hpp"
 #include "engine/render/MeshBuilder.hpp"
 
-namespace game {
+namespace render {
 
 // The vertex-color magenta box: pending/missing props stay visible.
 MeshCacheTraits::Payload
@@ -100,4 +100,4 @@ void MeshCacheTraits::destroyPayload(rhi::Device& device, Payload& payload) {
     device.destroyBuffer(payload.gpu.indices);
 }
 
-} // namespace game
+} // namespace render

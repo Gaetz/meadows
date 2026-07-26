@@ -14,7 +14,7 @@
 #include "engine/ecs/World.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "game/Scene.hpp"
-#include "game/TextureCache.hpp"
+#include "engine/render/TextureCache.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
 #include "gameplay/stats/GameClock.hpp"
@@ -70,7 +70,7 @@ protected:
     gameplay::GameplayTagRegistry tags;
     std::optional<world::CellLoader> cellLoader;
 
-    uptr<game::TextureCache> textureCache;
+    uptr<render::TextureCache> textureCache;
     rhi::TextureHandle checker {};
 
     // World-level resources shared by all derived scenes (refreshed on rebuild).

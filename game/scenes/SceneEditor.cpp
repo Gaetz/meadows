@@ -14,7 +14,7 @@
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height, TerrainParams
 #include "game/LevelEditor.hpp"
-#include "game/MeshCache.hpp"
+#include "engine/render/MeshCache.hpp"
 #include "world/scene/Components.hpp"        // Transform, MeshRender, RefId
 #include "world/scene/Spawner.hpp"           // Spawner, SpawnContext
 #include "world/streaming/CellLoader.hpp"    // CellLoader
@@ -56,7 +56,7 @@ bool SceneEditor::pickEntity(const EditorContext& ctx, const Vec2& mousePx,
         .each([&](flecs::entity e, const world::Transform& transform,
                   const world::MeshRender& mesh, const world::RefId&) {
             Vec3 lo { -0.5f }, hi { 0.5f };
-            if (const MeshCache::CpuMesh* cpu =
+            if (const render::MeshCache::CpuMesh* cpu =
                     ctx.meshCache.cpuMesh(mesh.model)) {
                 lo = cpu->boundsMin;
                 hi = cpu->boundsMax;
