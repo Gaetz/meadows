@@ -3205,7 +3205,9 @@ void LandscapeScene::drawSkyUi() {
             items.push_back('\0');
         }
         int selected = weather.selected() + 1;
-        if (ImGui::Combo("Weather", &selected, items.c_str())) {
+        // "##preset" keeps the visible label but decollides the ID from
+        // the "Weather" CollapsingHeader above (same window ID stack).
+        if (ImGui::Combo("Weather##preset", &selected, items.c_str())) {
             // Depart from whatever is on screen right now — mid-fade switches
             // stay continuous.
             weather.beginTransition(selected - 1, atmos);
