@@ -883,7 +883,7 @@ public:
     void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex,
                      u32 firstInstance) override;
     void dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) override;
-    void memoryBarrier() override;
+    void memoryBarrier(u32 dst) override;
 
 private:
     // The RHI's viewport origin is bottom-left (the GL convention). Vulkan's
@@ -1520,22 +1520,52 @@ void VulkanCommandBuffer::dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) {
     }
 }
 
-void VulkanCommandBuffer::memoryBarrier() {
+void VulkanCommandBuffer::memoryBarrier(u32 dst) {
     if (cb_ == VK_NULL_HANDLE) {
         return;
     }
-    // Deliberately broad: makes compute writes (SSBOs, storage images) visible
-    // to everything that follows, which is what the RHI contract promises.
+    // The destination scope is the whole point (docs/GPU-PERF.md PG1):
+    // COMPUTE -> ALL_COMMANDS at every internal pass boundary is what kept
+    // the frame strictly serial. Scoped destinations leave later,
+    // independent stages free to overlap the compute that wrote nothing
+    // they read.
+    VkPipelineStageFlags dstStages = 0;
+    VkAccessFlags dstAccess = 0;
+    if (dst == BarrierDst_All) {
+        dstStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        dstAccess = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_UNIFORM_READ_BIT |
+                    VK_ACCESS_INDIRECT_COMMAND_READ_BIT |
+                    VK_ACCESS_TRANSFER_READ_BIT;
+    } else {
+        if (dst & BarrierDst_Compute) {
+            dstStages |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            dstAccess |= VK_ACCESS_SHADER_READ_BIT |
+                         VK_ACCESS_UNIFORM_READ_BIT;
+        }
+        if (dst & BarrierDst_Fragment) {
+            dstStages |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            dstAccess |= VK_ACCESS_SHADER_READ_BIT |
+                         VK_ACCESS_UNIFORM_READ_BIT;
+        }
+        if (dst & BarrierDst_Vertex) {
+            dstStages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+            dstAccess |= VK_ACCESS_SHADER_READ_BIT |
+                         VK_ACCESS_UNIFORM_READ_BIT;
+        }
+        if (dst & BarrierDst_Transfer) {
+            dstStages |= VK_PIPELINE_STAGE_TRANSFER_BIT;
+            dstAccess |= VK_ACCESS_TRANSFER_READ_BIT;
+        }
+        if (dstStages == 0) {
+            return;
+        }
+    }
     VkMemoryBarrier barrier {};
     barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT |
-                            VK_ACCESS_UNIFORM_READ_BIT |
-                            VK_ACCESS_INDIRECT_COMMAND_READ_BIT |
-                            VK_ACCESS_TRANSFER_READ_BIT;
-    vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &barrier, 0,
-                         nullptr, 0, nullptr);
+    barrier.dstAccessMask = dstAccess;
+    vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, dstStages,
+                         0, 1, &barrier, 0, nullptr, 0, nullptr);
 }
 
 void VulkanCommandBuffer::copyBuffer(BufferHandle src, BufferHandle dst,

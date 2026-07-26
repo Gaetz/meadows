@@ -498,12 +498,13 @@ void PostFx::render(rhi::Device& device, rhi::CommandBuffer& cmd,
         }
         cmd.setBindGroup(4, froxelInjectGroup[froxelSide]);
         cmd.dispatch((kFroxelX + 7) / 8, (kFroxelY + 7) / 8, kFroxelZ);
-        cmd.memoryBarrier();
+        cmd.memoryBarrier(rhi::BarrierDst_Compute); // integrate imageLoads
         cmd.setPipeline(froxelIntegratePipeline);
         cmd.setBindGroup(0, frameBindGroup);
         cmd.setBindGroup(4, froxelInjectGroup[froxelSide]);
         cmd.dispatch((kFroxelX + 7) / 8, (kFroxelY + 7) / 8, 1);
-        cmd.memoryBarrier();
+        // The apply pass samples the integrated column in fragment.
+        cmd.memoryBarrier(rhi::BarrierDst_Fragment);
         froxelPrevViewProj = frameData.viewProj;
         froxelPrevCamera = camera;
         froxelPrevReach = reach;

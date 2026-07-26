@@ -73,9 +73,13 @@ public:
     // too (only the program binds — no raster state is touched). Call
     // outside render passes.
     virtual void dispatch(u32 groupsX, u32 groupsY = 1, u32 groupsZ = 1) = 0;
-    // Makes compute writes (SSBOs, sampled textures) visible to subsequent
-    // GPU work and CPU readback (Vulkan vkCmdPipelineBarrier).
-    virtual void memoryBarrier() = 0;
+    // Makes compute writes (SSBOs, storage images) visible to the given
+    // LATER work (Vulkan vkCmdPipelineBarrier, COMPUTE -> dst). Scope the
+    // destination to what actually reads the data: BarrierDst_All also
+    // covers CPU readback but serializes the whole pipeline behind the
+    // barrier.
+    virtual void memoryBarrier(u32 dst) = 0;
+    void memoryBarrier() { memoryBarrier(BarrierDst_All); }
 };
 
 } // namespace rhi

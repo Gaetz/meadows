@@ -337,14 +337,45 @@ hazard-tracking Metal : le recouvrement effectif n'est pas garanti,
 d'où la règle « mesurer » (le F6 le montre directement : total < somme
 des passes = ça chevauche).
 
+### Effectivité sur GPU dédié (question dev, 2026-07-26)
+
+Ces briques ne sont PAS des optimisations « spécifiques M1 » : c'est le
+M1 qui est le cas dégradé (une famille de queues, MoltenVK) du modèle
+que le PC exploitera à plein. PG1 : sur NVIDIA/AMD le matériel exécute
+compute et raster en concurrence sur la même queue — seules les
+barrières larges l'en empêchent ; les barrières fines sont le chemin
+canonique du Vulkan PC (sur le backend GL PC actuel en revanche :
+quasi-neutre, le driver ordonnance lui-même). PG2 : gain absolu plus
+modeste sur GPU rapide, mais prérequis structurel de PG3. PG3 (queues
+compute + transfert dédiées) : levier quasi exclusivement PC — l'async
+compute de la GI/volumétrique et le DMA des uploads (le stall P6) sont
+le pattern standard des moteurs modernes. Réserves : la baseline RTX de
+ce doc (10 ms, 2026-07-10) est antérieure à RC/froxels/clustered et
+mesurée sur GL — re-baseline obligatoire au retour PC ; et sur RTX
+`shadows` dominait (raster↔raster) — là-bas le complément reste P5b et
+le GPU-driven (cull Hi-Z en indirect draws sans readback).
+
 ### Briques
 
-- **PG1 — Barrières à portée fine (S/M, look-neutre par construction)** :
-  extension RHI `memoryBarrier(dstStages)` (ou variantes
-  compute→compute / compute→fragment), resserrage des frontières
-  internes RC/froxels/clusterCull. Validation : total GPU < somme des
-  passes au F6 ; **synchronization validation layer PROPRE** (leçon
-  V7e : la validation standard ne voit pas les courses) ; A/B captures.
+- ✅ **PG1 — Barrières à portée fine — FAITE (2026-07-26)** :
+  `BarrierDst` (Compute/Fragment/Vertex/Transfer/All, OR-ables) dans le
+  RHI, `memoryBarrier(dst)` sur les deux backends (Vulkan : dstStages
+  scopés ; GL : bits de visibilité par mode de lecture, IMAGE_ACCESS
+  ajouté), resserrage des 9 frontières : RC interne → Compute (le merge
+  final → Compute|Fragment), froxels inject→integrate → Compute,
+  integrate→apply → Fragment, clusterCull → Fragment|Compute, Hi-Z →
+  Compute puis Transfer (le verdict ne nourrit que la copie staging).
+  Le probe GI one-shot garde All (readback CPU).
+  **Mesuré (Release M1, spot de spawn, 2 runs dos à dos)** : frame
+  **39,6 → 26,4-26,8 ms** (-33 % vs clustered ON pré-PG1 ; -24 % vs le
+  meilleur run pré-PG1) — RC 11,6→7,2, mainPass 10,3→6,8, shadows
+  8,6→6,2, reflection 5,0→2,8 : les barrières globales drainaient le
+  pipeline à chaque frontière. Nuance de lecture : sous recouvrement,
+  les timestamps par passe deviennent flous (les passes se fondent) —
+  le chiffre de confiance est le TOTAL de frame. Validation :
+  **synchronization validation layer active (« Current Enables »
+  vérifié) et PROPRE (0 SYNC-HAZARD, 30 s)** ; 522 tests verts ; GL
+  compile (backend non exécutable sur macOS — à smoker au retour PC).
 - **PG2 — RC pipelinée N−1 (M, toggle A/B)** : le mainPass consomme la
   cascade 0 de la frame précédente (la RC est déjà temporelle — le
   bounce feedback relit N−1, convergence ~0,5 s : une frame de latence

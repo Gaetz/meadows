@@ -45,7 +45,10 @@ void LightClusters::destroy(rhi::Device& device) {
 void LightClusters::run(rhi::CommandBuffer& cmd) {
     cmd.setPipeline(pipeline);
     cmd.dispatch((kClusterX + 7) / 8, (kClusterY + 7) / 8, kClusterZ);
-    cmd.memoryBarrier(); // list writes visible to the consuming passes
+    // The lists feed the surface shaders (fragment) and the froxel
+    // inject (compute) — the raster passes recorded in between (CSM,
+    // key shadows, cloud bake) read nothing of them and may overlap.
+    cmd.memoryBarrier(rhi::BarrierDst_Fragment | rhi::BarrierDst_Compute);
 }
 
 } // namespace render

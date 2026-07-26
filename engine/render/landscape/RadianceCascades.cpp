@@ -597,7 +597,9 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
         }
         cmd.setBindGroup(1, injectGroup);
         cmd.dispatch((res + 3) / 4, (res + 3) / 4, (res * 2 + 3) / 4);
-        cmd.memoryBarrier(); // clips visible to the cascade builds
+        // Clips visible to the cascade builds — compute only, the raster
+        // recorded after this chain owes it nothing yet.
+        cmd.memoryBarrier(rhi::BarrierDst_Compute);
     }
 
     // Per-level dispatch parameters, carried by push constants. They used to
@@ -646,7 +648,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
             cmd.dispatch((level.width + 3) / 4, (level.height + 3) / 4,
                          (level.depth + 3) / 4);
         }
-        cmd.memoryBarrier();
+        cmd.memoryBarrier(rhi::BarrierDst_Compute); // extend/merge read
     }
 
     // G7c: shift+merge the short fields with themselves, twice (x4 —
@@ -676,7 +678,8 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
                 cmd.dispatch((level.width + 3) / 4,
                              (level.height + 3) / 4,
                              (level.depth + 3) / 4);
-                cmd.memoryBarrier(); // pass 2 / merge reads this write
+                // Pass 2 / merge reads this write.
+                cmd.memoryBarrier(rhi::BarrierDst_Compute);
             }
         }
     }
@@ -696,7 +699,12 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
             cmd.setBindGroup(1, level.mergeGroup);
             cmd.dispatch((level.width + 3) / 4, (level.height + 3) / 4,
                          (level.depth + 3) / 4);
-            cmd.memoryBarrier(); // the level below reads this one
+            // The level below (compute) reads this one; the FINAL merge
+            // (cascade 0) is what the surface shaders, the volumetric and
+            // the froxel inject consume — fragment joins the scope there.
+            cmd.memoryBarrier(i == 0 ? (rhi::BarrierDst_Compute |
+                                        rhi::BarrierDst_Fragment)
+                                     : rhi::BarrierDst_Compute);
         }
     }
 

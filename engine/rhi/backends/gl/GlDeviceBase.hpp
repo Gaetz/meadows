@@ -39,7 +39,7 @@ public:
     void copyBuffer(BufferHandle src, BufferHandle dst, u64 size,
                     u64 srcOffset, u64 dstOffset) override;
     void dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) override;
-    void memoryBarrier() override;
+    void memoryBarrier(u32 dst) override;
 
 private:
     GlDeviceBase& device;

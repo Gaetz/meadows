@@ -336,13 +336,26 @@ void GlCommandBuffer::dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) {
     glDispatchCompute(groupsX, groupsY, groupsZ);
 }
 
-void GlCommandBuffer::memoryBarrier() {
+void GlCommandBuffer::memoryBarrier(u32 dst) {
     if (!device.caps().computeShaders) {
         return;
     }
-    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT |
-                    GL_TEXTURE_FETCH_BARRIER_BIT | GL_UNIFORM_BARRIER_BIT |
-                    GL_BUFFER_UPDATE_BARRIER_BIT);
+    // GL barriers name HOW the data is read next (visibility only — the
+    // driver owns execution ordering), so shader destinations share one
+    // bit set whatever the stage.
+    GLbitfield bits = 0;
+    if (dst & (BarrierDst_Compute | BarrierDst_Fragment |
+               BarrierDst_Vertex)) {
+        bits |= GL_SHADER_STORAGE_BARRIER_BIT |
+                GL_TEXTURE_FETCH_BARRIER_BIT |
+                GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_UNIFORM_BARRIER_BIT;
+    }
+    if (dst & BarrierDst_Transfer) {
+        bits |= GL_BUFFER_UPDATE_BARRIER_BIT | GL_PIXEL_BUFFER_BARRIER_BIT;
+    }
+    if (bits != 0) {
+        glMemoryBarrier(bits);
+    }
 }
 
 void GlCommandBuffer::copyTexture(TextureHandle src, TextureHandle dst) {
