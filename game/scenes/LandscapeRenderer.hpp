@@ -80,8 +80,9 @@ struct RenderView {
 // GPU handle and the frame graph (shadow cascades, reflection, main pass,
 // water composite, post FX, tonemap). Consumes ONLY the RenderSnapshot and
 // the RenderView. The sim side reaches the world ground truth through
-// terrainParams() (terrain shape doubles as collision/nav input) and the
-// panels through drawTerrainPanel()/drawRenderPanel().
+// terrainParams() (terrain shape doubles as collision/nav input); the dev
+// tuning/perf panels live in game/ui/RenderTuningPanels (friend — they
+// edit the live knobs below in place).
 class LandscapeRenderer {
 public:
     // GPU resources + systems. Call after terrainParams()/applyTuning are
@@ -123,17 +124,6 @@ public:
     void render(engine::FrameContext& frame, const RenderSnapshot& snapshot,
                 const RenderView& view);
 
-    // Dev panels (ImGui) — the renderer's own debug/tuning state.
-    void drawTerrainPanel();                       // stats, seed, occlusion
-    void drawRenderPanel(AtmosphereParams& atmos); // toggles + post sliders
-    // Tree builder: every generation knob of both tree types, live —
-    // regen on slider release; "Log TOML" prints paste-ready records
-    // (the §5 round trip until the editor's EditSession takes over).
-    void drawTreeBuilderPanel();
-    // Per-pass GPU/CPU budget table ("GPU Perf" window).
-    // `cpuProbe` = the scene's FrameProbe for the CPU column (nullable).
-    void drawPerfPanel(const core::FrameProbe* cpuProbe);
-
     // --- Sim-side access -------------------------------------------------
     // Terrain shape = the world's ground truth (collision, nav, snaps,
     // spawn grounding all read it; the sculpt tool writes patches).
@@ -162,6 +152,9 @@ public:
     static constexpr u32 kFallbackLights = 24;
 
 private:
+    // The dev panels edit the tuning/debug state below in place.
+    friend class RenderTuningPanels;
+
     // Offscreen color+depth target at window size, recreated on resize.
     void ensureOffscreenTarget(rhi::Device& device, u32 width, u32 height);
     void destroyOffscreenTarget(rhi::Device& device);

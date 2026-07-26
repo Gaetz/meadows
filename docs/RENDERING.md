@@ -134,9 +134,10 @@ horizon) + `GpuOcclusion` (Hi-Z compute cull + fence readback),
 
 The **orchestrator does not**: `game/scenes/LandscapeRenderer.{hpp,cpp}`
 (~120 KB) owns pass order, FrameUbo composition, offscreen targets, light
-UBO fill, key-shadow selection, ~1000 lines of ImGui tuning panels, and
-game-side types (`RenderSnapshot`, `MeshCache`/`TextureCache`,
-`FrameComposer`, `AtmosphereParams`). It is owned by LandscapeScene alone;
+UBO fill, key-shadow selection, and game-side types (`RenderSnapshot`,
+`MeshCache`/`TextureCache`, `FrameComposer`, `AtmosphereParams`). (Its
+ImGui tuning panels moved to `game/ui/RenderTuningPanels` — R1 of §7,
+done 2026-07-26.) It is owned by LandscapeScene alone;
 `AnimPreviewPanel` had to hand-roll its own RHI offscreen pipeline as a
 result. Fixing this is the **RENDERER-EXTRACT chantier, §7** — the
 current placement is acknowledged technical debt, not a design.
@@ -488,10 +489,14 @@ nothing: the coupling to dissolve is orchestrator↔scene.
 
 Bricks (each lands alone, LandscapeScene byte-identical at every step):
 
-- **R1 — UI/renderer split.** Move `drawRenderPanel`/`drawPerfPanel`
-  (+ helpers) out of LandscapeRenderer into `game/ui/RenderTuningPanels`
-  operating on `LandscapeRenderer&`. Pure move. The live-tuning workflow
-  (panels + "Save render tuning") must survive unchanged.
+- **R1 — UI/renderer split. DONE (2026-07-26).** The four panels
+  (render, terrain & streaming, tree builder, GPU perf) moved to
+  `game/ui/RenderTuningPanels` — a stateless static class, friend of
+  `LandscapeRenderer`, editing its live knobs in place. Pure move
+  (labels and behavior byte-identical; `LandscapeRenderer.cpp` no
+  longer includes ImGui, −518 lines). The live-tuning workflow (panels
+  + "Save render tuning" → `consumeSaveTuningRequest` → the scene's
+  plugin write) is unchanged.
 - **R2 — Neutralize game/ types.** `RenderSnapshot`/`SceneLight` (and
   the extract helpers' output types) move to an engine-consumable header
   (e.g. `engine/render/SceneView.hpp`); `MeshCache`/`TextureCache` go

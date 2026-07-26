@@ -1,0 +1,537 @@
+#include "game/ui/RenderTuningPanels.hpp"
+
+#include <cmath>
+#include <cstring>
+
+#include "engine/core/FrameProbe.hpp"
+#include "engine/core/Log.hpp"
+#include "game/scenes/AtmosphereParams.hpp"
+#include "game/scenes/LandscapeRenderer.hpp"
+
+#include <imgui.h>
+
+namespace game {
+
+void RenderTuningPanels::drawPerfPanel(LandscapeRenderer& r,
+                                       const core::FrameProbe* cpuProbe) {
+    if (!r.gpuProbe.active()) {
+        ImGui::TextDisabled("(no GPU timer queries on this device)");
+        return;
+    }
+    ImGui::Text("GPU frame: %.2f ms avg  %.2f ms max",
+                r.gpuProbe.frameAverageMs(), r.gpuProbe.frameMaxMs());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("reset window")) {
+        r.gpuProbe.resetWindow();
+    }
+    if (!ImGui::BeginTable("gpuperf", 4,
+                           ImGuiTableFlags_SizingStretchProp |
+                               ImGuiTableFlags_RowBg)) {
+        return;
+    }
+    ImGui::TableSetupColumn("pass");
+    ImGui::TableSetupColumn("GPU avg (ms)");
+    ImGui::TableSetupColumn("GPU max");
+    ImGui::TableSetupColumn("CPU (ms)");
+    ImGui::TableHeadersRow();
+    for (const render::GpuProbe::PassRow& row : r.gpuProbe.rows()) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(row.name);
+        ImGui::TableNextColumn();
+        ImGui::Text("%.2f", row.stats.averageMs);
+        ImGui::TableNextColumn();
+        ImGui::Text("%.2f", row.stats.maxMs);
+        ImGui::TableNextColumn();
+        // The CPU column: the FrameProbe scope of the SAME name when one
+        // exists (the CPU probes also cover streaming blocks the GPU
+        // never sees — those rows are simply absent here).
+        f64 cpuMs = -1.0;
+        if (cpuProbe) {
+            for (const core::FrameProbe::Entry& entry :
+                 cpuProbe->currentEntries()) {
+                if (std::strcmp(entry.name, row.name) == 0) {
+                    cpuMs = entry.ms;
+                    break;
+                }
+            }
+        }
+        if (cpuMs >= 0.0) {
+            ImGui::Text("%.2f", cpuMs);
+        } else {
+            ImGui::TextDisabled("-");
+        }
+    }
+    ImGui::EndTable();
+    if (r.gpuProbe.rows().empty()) {
+        ImGui::TextDisabled("(warming up — first frames resolving)");
+    }
+
+    // CPU-side geometry counters, ALL passes summed (casters,
+    // reflection, main). This is the mainPass dissection on Vulkan, where
+    // mid-pass GPU timestamps cannot measure (Metal runs a pass as one
+    // tiled unit) — and the input to the impostor decision.
+    ImGui::SeparatorText("Geometry this frame (all passes)");
+    const f32 terrainMTri =
+        static_cast<f32>(r.terrain.indicesThisFrame()) / 3.0e6f;
+    const f32 vegMTri =
+        static_cast<f32>(r.vegetation.indicesThisFrame()) / 3.0e6f;
+    const f32 grassMTri =
+        static_cast<f32>(r.grass.indicesThisFrame()) / 3.0e6f;
+    ImGui::Text("terrain: %.2f Mtri", terrainMTri);
+    ImGui::Text("trees: %.2f Mtri (%u high + %u low + %u ultra instances)",
+                vegMTri, r.vegetation.highDetailInstancesThisFrame(),
+                r.vegetation.lowDetailInstancesThisFrame(),
+                r.vegetation.ultraDetailInstancesThisFrame());
+    ImGui::Text("grass: %.2f Mtri (%u blades)", grassMTri,
+                r.grass.bladesThisFrame());
+    ImGui::Text("total: %.2f Mtri", terrainMTri + vegMTri + grassMTri);
+}
+
+void RenderTuningPanels::drawTreeBuilderPanel(LandscapeRenderer& r) {
+    // Every knob regenerates on RELEASE (reseedVariantMeshes at the
+    // render()-top safe point): meshes only — scatter/instances stay.
+    // New content re-bakes AO once (content-keyed disk cache).
+    bool dirty = false;
+    const auto knob = [&](const char* label, f32& value, f32 lo, f32 hi) {
+        ImGui::SliderFloat(label, &value, lo, hi, "%.3f");
+        dirty |= ImGui::IsItemDeactivatedAfterEdit();
+    };
+    const auto knobInt = [&](const char* label, i32& value, i32 lo,
+                             i32 hi) {
+        ImGui::SliderInt(label, &value, lo, hi);
+        dirty |= ImGui::IsItemDeactivatedAfterEdit();
+    };
+
+    if (ImGui::Checkbox("Space-colonization trees (A/B)",
+                        &r.vegetation.colonizationTrees)) {
+        dirty = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Regenerate")) {
+        dirty = true;
+    }
+    if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
+        r.saveTuningRequested = true;
+    }
+
+    if (ImGui::CollapsingHeader("Lobe trees (classic)")) {
+        render::LobeTreeParams& p = r.vegetation.lobeTreeParams;
+        knob("Trunk height min", p.trunkHeightMin, 1.0f, 12.0f);
+        knob("Trunk height max", p.trunkHeightMax, 1.0f, 14.0f);
+        knob("Trunk radius min", p.trunkRadiusMin, 0.05f, 0.6f);
+        knob("Trunk radius max", p.trunkRadiusMax, 0.05f, 0.8f);
+        knob("Trunk taper", p.trunkTaper, 0.1f, 1.0f);
+        knob("Lean", p.lean, 0.0f, 0.5f);
+        knobInt("Branches min", p.branchCountMin, 1, 6);
+        knobInt("Branches max", p.branchCountMax, 1, 6);
+        knob("Branch length min", p.branchLengthMin, 0.3f, 3.0f);
+        knob("Branch length max", p.branchLengthMax, 0.3f, 4.0f);
+        knob("Crown lobe min", p.crownLobeRadiusMin, 0.3f, 2.5f);
+        knob("Crown lobe max", p.crownLobeRadiusMax, 0.3f, 3.0f);
+        knob("Branch lobe min", p.branchLobeRadiusMin, 0.2f, 2.0f);
+        knob("Branch lobe max", p.branchLobeRadiusMax, 0.2f, 2.5f);
+        knob("Lobe flatten", p.lobeFlatten, 0.5f, 1.0f);
+        knob("Normal spherize", p.normalSpherize, 0.0f, 1.0f);
+    }
+    if (ImGui::CollapsingHeader("Space colonization",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        render::ColonizedTreeParams& p = r.vegetation.colonizedTreeParams;
+        ImGui::SeparatorText("Skeleton (Runions)");
+        knob("Growth step D (m)", p.segment, 0.1f, 0.8f);
+        knob("Kill distance (m)", p.killDistance, 0.2f, 2.0f);
+        knobInt("Attractors", p.attractorCount, 50, 2000);
+        knob("Pipe exponent", p.pipeExponent, 2.0f, 3.0f);
+        knob("Tropism (up bias)", p.tropism, 0.0f, 0.6f);
+        ImGui::SeparatorText("Crown envelope");
+        knob("Bare trunk min (m)", p.trunkBaseMin, 0.5f, 5.0f);
+        knob("Bare trunk max (m)", p.trunkBaseMax, 0.5f, 6.0f);
+        knob("Crown height min", p.crownHeightMin, 1.0f, 7.0f);
+        knob("Crown height max", p.crownHeightMax, 1.0f, 8.0f);
+        knob("Crown radius min", p.crownRadiusMin, 0.8f, 5.0f);
+        knob("Crown radius max", p.crownRadiusMax, 0.8f, 6.0f);
+        ImGui::SeparatorText("Foliage SDF + cards");
+        knob("Tip ball radius", p.tipBallRadius, 0.3f, 2.0f);
+        knob("Tip order falloff", p.tipOrderFalloff, 0.5f, 1.0f);
+        knob("Smooth-min k", p.smoothK, 0.1f, 2.0f);
+        knob("Card size min", p.cardHalfSizeMin, 0.01f, 0.25f);
+        knob("Card size max", p.cardHalfSizeMax, 0.01f, 0.35f);
+        knob("Density gradient G", p.densityGradient, 1.0f, 6.0f);
+        knob("Card density x", p.foliageDensity, 0.25f, 8.0f);
+        ImGui::SeparatorText("Leaf mask (card texture)");
+        knobInt("Leaf count", p.leafCount, 10, 200);
+        knob("Leaf size min", p.leafSizeMin, 0.03f, 0.4f);
+        knob("Leaf size max", p.leafSizeMax, 0.03f, 0.5f);
+        // Live shader window (uLeafLodInfo) — no rebuild, plain sliders.
+        ImGui::SliderFloat("Leaf solid start (mip)",
+                           &p.leafSolidStart, 0.0f, 8.0f);
+        ImGui::SliderFloat("Leaf solid end (mip)",
+                           &p.leafSolidEnd, 0.0f, 8.0f);
+    }
+
+    // The CLAUDE.md §5 round trip, v1: paste-ready records for
+    // landscape.toml (the editor's EditSession can take over later —
+    // same fields, same GUIDs).
+    if (ImGui::Button("Log TOML records")) {
+        const render::LobeTreeParams& l = r.vegetation.lobeTreeParams;
+        const render::ColonizedTreeParams& c =
+            r.vegetation.colonizedTreeParams;
+        LOG_INFO("[records.fields]  # LobeTreeTuningForm\n"
+                 "trunkHeightMin = {}\ntrunkHeightMax = {}\n"
+                 "trunkRadiusMin = {}\ntrunkRadiusMax = {}\n"
+                 "trunkTaper = {}\nlean = {}\n"
+                 "branchCountMin = {}\nbranchCountMax = {}\n"
+                 "branchLengthMin = {}\nbranchLengthMax = {}\n"
+                 "crownLobeRadiusMin = {}\ncrownLobeRadiusMax = {}\n"
+                 "branchLobeRadiusMin = {}\nbranchLobeRadiusMax = {}\n"
+                 "lobeFlatten = {}\nnormalSpherize = {}",
+                 l.trunkHeightMin, l.trunkHeightMax, l.trunkRadiusMin,
+                 l.trunkRadiusMax, l.trunkTaper, l.lean, l.branchCountMin,
+                 l.branchCountMax, l.branchLengthMin, l.branchLengthMax,
+                 l.crownLobeRadiusMin, l.crownLobeRadiusMax,
+                 l.branchLobeRadiusMin, l.branchLobeRadiusMax,
+                 l.lobeFlatten, l.normalSpherize);
+        LOG_INFO("[records.fields]  # ColonizedTreeTuningForm\n"
+                 "segment = {}\nkillDistance = {}\nattractorCount = {}\n"
+                 "pipeExponent = {}\ntropism = {}\n"
+                 "trunkBaseMin = {}\ntrunkBaseMax = {}\n"
+                 "crownHeightMin = {}\ncrownHeightMax = {}\n"
+                 "crownRadiusMin = {}\ncrownRadiusMax = {}\n"
+                 "tipBallRadius = {}\ntipOrderFalloff = {}\nsmoothK = {}\n"
+                 "cardHalfSizeMin = {}\ncardHalfSizeMax = {}\n"
+                 "densityGradient = {}\nfoliageDensity = {}\n"
+                 "leafCount = {}\nleafSizeMin = {}\nleafSizeMax = {}\n"
+                 "leafSolidStart = {}\nleafSolidEnd = {}",
+                 c.segment, c.killDistance, c.attractorCount,
+                 c.pipeExponent, c.tropism, c.trunkBaseMin, c.trunkBaseMax,
+                 c.crownHeightMin, c.crownHeightMax, c.crownRadiusMin,
+                 c.crownRadiusMax, c.tipBallRadius, c.tipOrderFalloff,
+                 c.smoothK, c.cardHalfSizeMin, c.cardHalfSizeMax,
+                 c.densityGradient, c.foliageDensity, c.leafCount,
+                 c.leafSizeMin, c.leafSizeMax, c.leafSolidStart,
+                 c.leafSolidEnd);
+    }
+
+    if (dirty) {
+        r.reseedVegetation = true;
+    }
+}
+
+void RenderTuningPanels::drawTerrainPanel(LandscapeRenderer& r) {
+    if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
+        r.saveTuningRequested = true;
+    }
+    // Live stats stay on top, always visible; the knobs group below.
+    ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
+                r.terrain.residentCount(), r.terrain.drawnLastFrame(),
+                r.terrain.pendingCount(), r.terrain.uploadsLastFrame());
+    ImGui::Text("Prop chunks drawn: %u | occluded CPU: %u | GPU: %u",
+                r.vegetation.drawnLastFrame(), r.occlusion.occludedCount(),
+                r.gpuOcclusion.lastOccludedCount());
+    ImGui::Text("Grass blades: %u | props: %u", r.grass.instanceTotal(),
+                r.vegetation.propTotal());
+    if (ImGui::CollapsingHeader("Terrain",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::InputScalar("Seed", ImGuiDataType_U32,
+                           &r.terrain.params.seed);
+        ImGui::SameLine();
+        if (ImGui::Button("Regenerate")) {
+            r.regenerateRequested = true; // applied at the next render
+        }
+        // Water plane, sand band and material weights follow live; the
+        // scatter (grass/trees/props) is baked per chunk — Regenerate to
+        // re-align it.
+        ImGui::SliderFloat("Sea level (m)", &r.terrain.params.seaLevel,
+                           0.0f, 60.0f,
+                           "%.0f"); // range x1.5 with the amplitudes
+    }
+    if (ImGui::CollapsingHeader("Vegetation")) {
+        // The vegetation draw budget, live
+        // (docs/RENDERING.md). Shrinking the ring pops at the edge
+        // (the tree fade tops out at 880 m) — a budget-hunting knob.
+        ImGui::SliderInt("Veg view radius (chunks)",
+                         &r.vegetation.viewRadius, 4, 15);
+        ImGui::SliderInt("Veg high-detail radius",
+                         &r.vegetation.highDetailRadius, 0, 8);
+        // 80-face twins within; 20-face ultra beyond.
+        ImGui::SliderInt("Veg low-detail radius",
+                         &r.vegetation.lowDetailRadius, 2, 12);
+        // EXPERIMENT (feature/space-colonization-trees): Runions skeleton
+        // + SDF-normal cross-plane foliage vs the solid-lobe trees. The
+        // swap re-bakes AO for the new meshes (disk-cached after once).
+        if (ImGui::Checkbox("Space-colonization trees (A/B)",
+                            &r.vegetation.colonizationTrees)) {
+            // applied at the render()-top safe point
+            r.reseedVegetation = true;
+        }
+        ImGui::TextDisabled("(generation knobs: Trees panel)");
+    }
+    if (ImGui::CollapsingHeader("Culling & debug")) {
+        ImGui::Checkbox("Occlusion culling (A/B)", &r.occlusionUi);
+        ImGui::SameLine();
+        ImGui::Checkbox("GPU Hi-Z", &r.gpuOcclusionUi);
+        ImGui::Checkbox("Wireframe (LOD debug)", &r.wireframeUi);
+    }
+}
+
+void RenderTuningPanels::drawRenderPanel(LandscapeRenderer& r,
+                                         AtmosphereParams& atmos) {
+    if (ImGui::Button("Save render tuning (mods/render-tuning.toml)")) {
+        r.saveTuningRequested = true;
+    }
+    // Every meadow constant, live. The render
+    // half rides the FrameUbo; a scatter knob queues a grass-only
+    // re-scatter on release (budgeted — the ring rebuilds over frames).
+    if (ImGui::CollapsingHeader("Grass")) {
+        render::GrassRenderTuning& gt = r.grass.renderTuning;
+        ImGui::SeparatorText("Blade");
+        ImGui::SliderFloat("Height (m)", &gt.bladeHeight, 0.2f, 2.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Half width (m)", &gt.bladeHalfWidth, 0.01f,
+                           0.12f, "%.3f");
+        ImGui::ColorEdit3("Base color", &gt.baseColor.x,
+                          ImGuiColorEditFlags_Float);
+        ImGui::ColorEdit3("Tip color", &gt.tipColor.x,
+                          ImGuiColorEditFlags_Float);
+        ImGui::SeparatorText("Detail / distance");
+        ImGui::SliderFloat("Detail near (m)", &gt.detailNear, 2.0f, 60.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Detail far (m)", &gt.detailFar, 5.0f, 120.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Thin start (m)", &gt.thinStart, 2.0f, 100.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Thin end (m)", &gt.thinEnd, 20.0f, 200.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Far density", &gt.farDensity, 0.05f, 1.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Far width comp", &gt.widthCompensation, 0.0f,
+                           3.0f, "%.1f");
+        ImGui::SliderFloat("Fade start (m)", &gt.fadeStart, 40.0f, 300.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Fade end (m)", &gt.fadeEnd, 60.0f, 350.0f,
+                           "%.0f");
+        ImGui::SeparatorText("Scatter (re-bakes on release)");
+        render::GrassScatterTuning& st = r.grass.scatterTuning;
+        bool scatterEdited = false;
+        ImGui::SliderFloat("Blade spacing (m)", &st.spacing, 0.08f, 0.5f,
+                           "%.2f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Patch scale (m)", &st.patchBroadScale, 4.0f,
+                           60.0f, "%.0f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Clump detail (m)", &st.patchDetailScale, 1.0f,
+                           20.0f, "%.0f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::DragFloatRange2("Patch threshold", &st.patchThresholdLo,
+                               &st.patchThresholdHi, 0.005f, 0.0f, 1.0f,
+                               "lo %.2f", "hi %.2f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::DragFloatRange2("Presence window", &st.presenceLo,
+                               &st.presenceHi, 0.005f, 0.0f, 1.0f,
+                               "rim %.2f", "solid %.2f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        ImGui::SliderFloat("Material cutoff", &st.materialCutoff, 0.0f,
+                           1.0f, "%.2f");
+        scatterEdited |= ImGui::IsItemDeactivatedAfterEdit();
+        if (scatterEdited || ImGui::Button("Rescatter now")) {
+            r.grassRescatterRequested = true;
+        }
+    }
+    // Every cost-affecting GI parameter is a live knob (workflow:
+    // quality first, then the perf descent here, watching
+    // the rcInject/rcBuild lines of the F6 table).
+    if (ImGui::CollapsingHeader("Global illumination")) {
+        render::RcTuning& rc = r.radianceCascades.tuning;
+        int technique = rc.technique == render::GiTechnique::RadianceCascades
+                            ? 1 : 0;
+        if (ImGui::Combo("Technique", &technique,
+                         "Classic (ambient x light map)\0"
+                         "Radiance cascades (WIP)\0")) {
+            rc.technique = technique == 1
+                               ? render::GiTechnique::RadianceCascades
+                               : render::GiTechnique::Classic;
+        }
+        ImGui::SeparatorText("Voxel clipmap");
+        ImGui::SliderInt("Resolution (voxels)", &rc.resolution, 32, 96);
+        ImGui::SliderFloat("Fine voxel (m)", &rc.fineVoxel, 0.25f, 1.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Coarse voxel (m)", &rc.coarseVoxel, 1.0f, 4.0f,
+                           "%.1f");
+        ImGui::SliderInt("Update every N frames", &rc.updateInterval, 1, 4);
+        ImGui::SeparatorText("Cascades");
+        ImGui::SliderInt("Cascade count", &rc.cascadeCount, 2, 6);
+        ImGui::SliderFloat("Interval 0 (m)", &rc.interval0, 0.25f, 4.0f,
+                           "%.2f");
+        ImGui::TextDisabled("reach: %.0f m",
+                            rc.interval0 *
+                                (std::pow(2.0f, static_cast<f32>(
+                                                    rc.cascadeCount)) -
+                                 1.0f));
+        ImGui::SeparatorText("Injection");
+        ImGui::SliderFloat("Sky factor", &rc.skyFactor, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Light emitter boost", &rc.emitterBoost, 0.0f,
+                           4.0f, "%.2f");
+        // Splat re-contract: with clustered direct on every surface, a
+        // normal light's splat carries only its BOUNCE share.
+        ImGui::SliderFloat("Light splat bounce (clustered)",
+                           &rc.lightSplatBounce, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Bounce feedback", &rc.bounceFeedback, 0.0f,
+                           0.9f, "%.2f");
+        // A/B: chain at end of frame, consumers read frame N-1.
+        ImGui::Checkbox("Pipelined GI (frame N-1)", &rc.pipelined);
+        // A/B: the chain on the second queue (needs pipelined).
+        ImGui::Checkbox("Async compute GI (2nd queue)", &rc.asyncCompute);
+        ImGui::Checkbox("Lights via RC only (penumbra experiment)",
+                        &rc.rcOnlyLights);
+        ImGui::SeparatorText("Apply");
+        ImGui::SliderFloat("Intensity", &rc.intensity, 0.0f, 2.0f, "%.2f");
+        // RC's lower bound as a fraction of classic ambient — the
+        // grid-border seam killer (0 = raw RC darkness).
+        ImGui::SliderFloat("Ambient floor (x classic)", &rc.giFloor, 0.0f,
+                           1.0f, "%.2f");
+        ImGui::SliderFloat("Edge fade (m)", &rc.edgeFade, 1.0f, 16.0f,
+                           "%.0f");
+        // Fixed log-step ramp: predictable absolute exposure bands.
+        ImGui::SliderFloat("Band count (0 = smooth)", &rc.bandCount,
+                           0.0f, 8.0f, "%.0f");
+        ImGui::SliderFloat("Band AA", &rc.bandAa, 0.02f, 0.45f, "%.2f");
+        // x4 reach per marched step on long levels (A/B on rcBuild).
+        ImGui::Checkbox("Interval extension (x4 march reach)",
+                        &rc.intervalExtension);
+        ImGui::Combo("Debug view", &rc.debugView,
+                     "Off\0Fine clip (raymarch)\0Coarse clip (raymarch)\0"
+                     "Cascade 0 irradiance\0");
+        // The GPU cost lines, in place (the full table stays on F6).
+        for (const auto& row : r.gpuProbe.rows()) {
+            if (row.name && str(row.name).rfind("rc", 0) == 0) {
+                ImGui::TextDisabled("%s: %.2f ms (max %.2f)", row.name,
+                                    row.stats.averageMs, row.stats.maxMs);
+            }
+        }
+    }
+    if (ImGui::CollapsingHeader("Lighting & shadows")) {
+        ImGui::Checkbox("Stylized lighting (BotW A/B)", &r.stylizedUi);
+        if (r.stylizedUi && ImGui::TreeNode("Stylized ramp")) {
+            ImGui::TextDisabled("Diffuse: shade -> half-tone -> full light");
+            ImGui::SliderFloat("Terminator start", &r.stylizedDiffuseUi.x,
+                               -0.2f, 0.5f, "%.3f");
+            ImGui::SliderFloat("Terminator end", &r.stylizedDiffuseUi.y,
+                               -0.2f, 0.5f, "%.3f");
+            ImGui::SliderFloat("Full-light start", &r.stylizedDiffuseUi.z,
+                               0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Full-light end", &r.stylizedDiffuseUi.w,
+                               0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Half-tone level", &r.stylizedShadowUi.w,
+                               0.0f, 1.0f, "%.2f");
+            ImGui::TextDisabled("Cast shadows (CSM snap)");
+            ImGui::SliderFloat("Snap window start", &r.stylizedShadowUi.x,
+                               0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Snap window end", &r.stylizedShadowUi.y,
+                               0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Shadow floor", &r.stylizedShadowUi.z, 0.0f,
+                               0.8f, "%.2f");
+            ImGui::TreePop();
+        }
+        // A/B: per-cluster light lists vs the legacy 24-light loop
+        // (docs/RENDERING.md §5). Needs compute; the checkbox is inert
+        // (and the budget stays 24) when the culling pass is absent.
+        ImGui::Checkbox("Clustered lights (64-light budget)",
+                        &r.clusteredLightsUi);
+        ImGui::Checkbox("Shadows", &r.shadowsUi);
+        ImGui::SameLine();
+        ImGui::Checkbox("Cascade debug tint", &r.cascadeDebugUi);
+        // A/B: far cascades on alternate frames —
+        // off = every cascade every frame.
+        ImGui::Checkbox("CSM round-robin (far cascades 1/2 rate)",
+                        &r.shadowRoundRobinUi);
+        // Sharpness: texels per cascade side (4096 = 2x definition
+        // everywhere, ~150 MB more; the far cascade profits most).
+        int shadowRes = r.shadowResolutionUi >= 4096 ? 2
+                        : r.shadowResolutionUi >= 2048 ? 1 : 0;
+        if (ImGui::Combo("Shadow map resolution", &shadowRes,
+                         "1024\0002048\0004096\000")) {
+            r.shadowResolutionUi = shadowRes == 2 ? 4096
+                                   : shadowRes == 1 ? 2048 : 1024;
+        }
+        // A/B: houses/crates/NPCs casting into the sun cascades.
+        ImGui::Checkbox("Mesh shadow casters", &r.meshShadowCastersUi);
+        ImGui::Checkbox("Contact shadows", &r.contactShadowsUi);
+        ImGui::SameLine();
+        ImGui::Checkbox("Terrain light map", &r.terrainLightUi);
+        ImGui::Checkbox("Key light shadow", &r.keyShadowUi); // interiors
+        // The interior ambient follows the outside (hour + weather).
+        ImGui::SliderFloat("Interior daylight coupling",
+                           &r.interiorDaylightWeightUi, 0.0f, 1.0f, "%.2f");
+    }
+    if (ImGui::CollapsingHeader("Sun FX")) {
+        ImGui::SliderFloat("God rays intensity", &atmos.godRayIntensity,
+                           0.0f, 2.0f, "%.2f");
+        ImGui::SliderFloat("Volumetric shafts", &atmos.volumetric, 0.0f,
+                           3.0f, "%.2f");
+        ImGui::Checkbox("Froxel fog (V4/H4 — off = 2D march)",
+                        &r.postFx.froxelFog);
+        ImGui::SliderFloat("Froxel temporal blend",
+                           &r.postFx.froxelTemporalBlend, 0.02f, 1.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Dust wisps (sparse)", &r.postFx.froxelDustNoise,
+                           0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Interior dust", &r.interiorDustDensityUi, 0.0f,
+                           0.12f, "%.3f");
+    }
+    if (ImGui::CollapsingHeader("Fog & clouds")) {
+        ImGui::SliderFloat("Fog density", &atmos.fogDensity, 0.0f, 0.004f,
+                           "%.4f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Fog height falloff", &atmos.fogHeightFalloff,
+                           0.001f, 0.08f, "%.3f",
+                           ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Fog low-altitude boost", &atmos.fogLowBoost,
+                           0.0f, 5.0f, "%.1f");
+        ImGui::SliderFloat("Fog start (m)", &atmos.fogStart, 0.0f, 500.0f,
+                           "%.0f");
+        ImGui::SliderFloat("Fog sun scatter", &atmos.fogSunScatter, 0.0f,
+                           2.0f, "%.2f");
+        ImGui::SliderFloat("Fog sun phase exp", &atmos.fogSunPhase, 1.0f,
+                           32.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Cloud coverage", &atmos.cloudCoverage, 0.0f,
+                           1.0f, "%.2f");
+        ImGui::SliderFloat("Cloud shadow strength", &atmos.cloudShadow,
+                           0.0f, 1.0f, "%.2f");
+    }
+    if (ImGui::CollapsingHeader("Water")) {
+        ImGui::Checkbox("Reflections", &r.reflectionsUi);
+        // Skip the mirror render when no resident water is in
+        // view (A/B — the horizon-sea edge case), and trade its resolution.
+        ImGui::SameLine();
+        ImGui::Checkbox("auto-skip", &r.reflectionAutoSkipUi);
+        ImGui::SliderFloat("Reflection scale", &r.reflectionScaleUi, 0.25f,
+                           0.5f, "%.2f");
+    }
+    if (ImGui::CollapsingHeader("Post-processing")) {
+        ImGui::Checkbox("Filmic tonemap (A/B)", &r.tonemapUi);
+        ImGui::SliderFloat("Exposure", &r.exposureUi, 0.25f, 3.0f, "%.2f");
+        // A/B: eye adaptation; Exposure becomes the bias.
+        ImGui::Checkbox("Auto exposure", &r.autoExposureUi);
+        if (r.autoExposureUi) {
+            ImGui::SliderFloat("Auto-expo min", &r.autoExposureMinUi, 0.1f,
+                               1.0f, "%.2f");
+            ImGui::SliderFloat("Auto-expo max", &r.autoExposureMaxUi, 1.0f,
+                               6.0f, "%.2f");
+        }
+        ImGui::SliderFloat("Bloom intensity", &atmos.bloomIntensity, 0.0f,
+                           1.5f, "%.2f");
+        // A/B: the analytical grade, off by default.
+        ImGui::Checkbox("Grading", &r.gradingUi);
+        if (r.gradingUi) {
+            ImGui::SliderFloat("Vibrance", &r.gradeVibranceUi, 0.0f, 1.0f,
+                               "%.2f");
+            ImGui::SliderFloat("Split tone", &r.gradeSplitToneUi, 0.0f,
+                               1.0f, "%.2f");
+            ImGui::SliderFloat("Contrast", &r.gradeContrastUi, 0.8f, 1.4f,
+                               "%.2f");
+        }
+        ImGui::Combo("Debug buffer", &r.debugBufferUi,
+                     "Off\0Bloom\0God rays\0Volumetric\0");
+    }
+}
+
+} // namespace game

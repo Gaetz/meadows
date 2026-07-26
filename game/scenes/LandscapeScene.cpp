@@ -45,6 +45,7 @@
 #include "game/SceneStack.hpp"        // Edit mode pushes overlays (host())
 #include "game/scenes/EditorScene.hpp" // the Game DB overlay
 #include "game/ui/ConsolePanel.hpp"
+#include "game/ui/RenderTuningPanels.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/Engine.hpp"
 #include "engine/FrameContext.hpp"
@@ -3074,15 +3075,19 @@ void LandscapeScene::drawUi() {
     };
     rightWindow("Gameplay — player, NPC, physics", uiGameplayOpen,
                 [&] { drawGameplayUi(); });
-    rightWindow("Terrain & streaming", uiTerrainOpen,
-                [&] { renderer.drawTerrainPanel(); });
+    rightWindow("Terrain & streaming", uiTerrainOpen, [&] {
+        RenderTuningPanels::drawTerrainPanel(renderer);
+    });
     rightWindow("Sky, weather & time", uiSkyOpen, [&] { drawSkyUi(); });
-    rightWindow("Rendering & post-FX", uiRenderOpen,
-                [&] { renderer.drawRenderPanel(atmos); });
-    rightWindow("Tree builder", uiTreesOpen,
-                [&] { renderer.drawTreeBuilderPanel(); });
-    rightWindow("GPU perf", uiPerfOpen,
-                [&] { renderer.drawPerfPanel(&frameProbe); });
+    rightWindow("Rendering & post-FX", uiRenderOpen, [&] {
+        RenderTuningPanels::drawRenderPanel(renderer, atmos);
+    });
+    rightWindow("Tree builder", uiTreesOpen, [&] {
+        RenderTuningPanels::drawTreeBuilderPanel(renderer);
+    });
+    rightWindow("GPU perf", uiPerfOpen, [&] {
+        RenderTuningPanels::drawPerfPanel(renderer, &frameProbe);
+    });
     if (renderer.consumeSaveTuningRequest()) {
         saveRenderTuning();
     }
