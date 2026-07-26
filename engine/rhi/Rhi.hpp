@@ -63,17 +63,18 @@ struct DeviceCaps {
 
 // --- Barriers ------------------------------------------------------------------
 
-// Destination scope of CommandBuffer::memoryBarrier(dst): which LATER
-// work must see the compute writes. OR-able. Scoping the destination is
-// what gives the GPU permission to overlap independent passes across the
-// barrier (docs/GPU-PERF.md, chantier parallélisme) — an All barrier
-// forbids any overlap.
-enum BarrierDst : u32 {
-    BarrierDst_Compute = 1u << 0,  // later dispatches
-    BarrierDst_Fragment = 1u << 1, // later fragment-stage reads
-    BarrierDst_Vertex = 1u << 2,   // later vertex-stage reads
-    BarrierDst_Transfer = 1u << 3, // later copyBuffer/copyTexture
-    BarrierDst_All = 0xFFFFFFFFu,  // everything, CPU readback included
+// Pipeline stages for the barrier calls: the DESTINATION scope of
+// memoryBarrier(dst) (which later work must see the compute writes) and
+// the SOURCE scope of readBarrier(src) (whose reads must finish first).
+// OR-able. Scoping is what gives the GPU permission to overlap
+// independent passes across a barrier (docs/GPU-PERF.md, chantier
+// parallélisme) — an All barrier forbids any overlap.
+enum BarrierStage : u32 {
+    BarrierStage_Compute = 1u << 0,  // dispatches
+    BarrierStage_Fragment = 1u << 1, // fragment-stage reads
+    BarrierStage_Vertex = 1u << 2,   // vertex-stage reads
+    BarrierStage_Transfer = 1u << 3, // copyBuffer/copyTexture
+    BarrierStage_All = 0xFFFFFFFFu,  // everything, CPU readback included
 };
 
 // --- Buffers -------------------------------------------------------------------

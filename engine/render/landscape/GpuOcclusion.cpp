@@ -261,19 +261,19 @@ void GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
         mipW = glm::max(mipW / 2, 1u);
         mipH = glm::max(mipH / 2, 1u);
         // Level N-1 writes visible to level N reads.
-        cmd.memoryBarrier(rhi::BarrierDst_Compute);
+        cmd.memoryBarrier(rhi::BarrierStage_Compute);
         cmd.setBindGroup(0, downGroups[mip]);
         cmd.dispatch((mipW + 7) / 8, (mipH + 7) / 8);
     }
 
     // Cull: one thread per candidate, then stage the verdict for the CPU.
-    cmd.memoryBarrier(rhi::BarrierDst_Compute); // pyramid -> cull reads
+    cmd.memoryBarrier(rhi::BarrierStage_Compute); // pyramid -> cull reads
     cmd.setPipeline(cullPipeline);
     cmd.setBindGroup(0, cullGroup);
     cmd.dispatch((count + 63) / 64);
     // SSBO writes visible to the staging copy only — nothing else in the
     // frame reads the verdict (the CPU does, behind the fence).
-    cmd.memoryBarrier(rhi::BarrierDst_Transfer);
+    cmd.memoryBarrier(rhi::BarrierStage_Transfer);
     cmd.copyBuffer(visibilityBuffer, stagingBuffer, count * sizeof(u32));
     // Marker after the copy — collectResults reads only once this
     // signals (never blocks the frame on the GPU catching up).

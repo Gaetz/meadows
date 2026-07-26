@@ -344,18 +344,25 @@ void GlCommandBuffer::memoryBarrier(u32 dst) {
     // driver owns execution ordering), so shader destinations share one
     // bit set whatever the stage.
     GLbitfield bits = 0;
-    if (dst & (BarrierDst_Compute | BarrierDst_Fragment |
-               BarrierDst_Vertex)) {
+    if (dst & (BarrierStage_Compute | BarrierStage_Fragment |
+               BarrierStage_Vertex)) {
         bits |= GL_SHADER_STORAGE_BARRIER_BIT |
                 GL_TEXTURE_FETCH_BARRIER_BIT |
                 GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_UNIFORM_BARRIER_BIT;
     }
-    if (dst & BarrierDst_Transfer) {
+    if (dst & BarrierStage_Transfer) {
         bits |= GL_BUFFER_UPDATE_BARRIER_BIT | GL_PIXEL_BUFFER_BARRIER_BIT;
     }
     if (bits != 0) {
         glMemoryBarrier(bits);
     }
+}
+
+void GlCommandBuffer::readBarrier(u32 src) {
+    // GL's as-if-in-order execution model already serializes prior reads
+    // before later writes (glMemoryBarrier only concerns the VISIBILITY
+    // of incoherent writes, a RAW problem) — nothing to emit.
+    (void)src;
 }
 
 void GlCommandBuffer::copyTexture(TextureHandle src, TextureHandle dst) {

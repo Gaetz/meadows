@@ -172,6 +172,13 @@ private:
     void drawSceneMeshes(engine::FrameContext& frame,
                          const RenderSnapshot& snapshot,
                          const RenderView& view);
+    // The GI chain's per-frame recording — post-CSM slot, or end of
+    // frame when pipelined (docs/GPU-PERF.md PG2).
+    void recordGiUpdate(engine::FrameContext& frame,
+                        const RenderSnapshot& snapshot,
+                        const RenderView& view,
+                        const render::FrameUniforms& uniforms,
+                        bool clustered);
     void drawSkinned(engine::FrameContext& frame,
                      const RenderSnapshot& snapshot);
     void drawWaterVolumes(engine::FrameContext& frame,

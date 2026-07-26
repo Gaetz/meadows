@@ -48,7 +48,7 @@ void LightClusters::run(rhi::CommandBuffer& cmd) {
     // The lists feed the surface shaders (fragment) and the froxel
     // inject (compute) — the raster passes recorded in between (CSM,
     // key shadows, cloud bake) read nothing of them and may overlap.
-    cmd.memoryBarrier(rhi::BarrierDst_Fragment | rhi::BarrierDst_Compute);
+    cmd.memoryBarrier(rhi::BarrierStage_Fragment | rhi::BarrierStage_Compute);
 }
 
 } // namespace render

@@ -40,6 +40,7 @@ public:
                     u64 srcOffset, u64 dstOffset) override;
     void dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) override;
     void memoryBarrier(u32 dst) override;
+    void readBarrier(u32 src) override;
 
 private:
     GlDeviceBase& device;

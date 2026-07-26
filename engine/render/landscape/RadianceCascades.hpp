@@ -78,6 +78,11 @@ struct RcTuning {
     // rcOnly lights are exempt (the field IS their lighting), and the
     // factor only applies while clustered is on.
     f32 lightSplatBounce { 0.35f };
+    // Pipelined GI (docs/GPU-PERF.md PG2): the chain records at the END
+    // of the frame, the frame consumes LAST frame's merged cascade 0 —
+    // one frame of latency (invisible: the field is already temporal),
+    // and the chain overlaps the composite + the next frame's front.
+    bool pipelined { true };
     // G7a — multi-bounce: surfaces also receive LAST frame's merged GI
     // (one extra bounce per frame, converges geometrically; adds ~a
     // frame of light latency per bounce). 0 = single bounce.

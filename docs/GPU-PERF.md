@@ -381,13 +381,31 @@ le GPU-driven (cull Hi-Z en indirect draws sans readback).
   spot de spawn). Note de protocole : le spawn regarde un mur — cadrage
   CONSERVÉ tel quel pour que les lignes « gpu budget » restent
   comparables entre elles (revert du volte-face, 2026-07-26).
-- **PG2 — RC pipelinée N−1 (M, toggle A/B)** : le mainPass consomme la
-  cascade 0 de la frame précédente (la RC est déjà temporelle — le
-  bounce feedback relit N−1, convergence ~0,5 s : une frame de latence
-  est invisible). La chaîne RC sort du chemin critique et peut
-  s'enregistrer en fin de frame ; c'est AUSSI le prérequis structurel de
-  l'async compute PC (PG3). Le knob `updateInterval` (cadence 1/2)
-  existe déjà — l'amortissement temporel se teste sans code.
+- ✅ **PG2 — RC pipelinée N−1 — FAITE (2026-07-26)** : la chaîne RC
+  s'enregistre en FIN de frame (`recordGiUpdate`, extrait de render()) ;
+  la frame consomme la cascade 0 de la frame précédente (la RC est déjà
+  temporelle — latence d'une frame invisible). Mécanique de barrières :
+  `readBarrier(src)` ajouté au RHI (fence WAR d'exécution pure — les
+  lectures de l'ancienne cascade finissent avant la réécriture ; no-op
+  GL, l'ordre y est implicite) ; la chaîne se termine SANS clôture ; la
+  frame suivante pose la **clôture consommateurs**
+  (`memoryBarrier(Fragment|Compute)`) à l'ancien slot post-CSM, avant le
+  premier lecteur GI — tout ce qui est entre les deux (composite,
+  present, clusterCull, cloudBake, CSM, key shadows N+1) a la
+  permission de recouvrir la chaîne. Garde-fous : probe GI et debug
+  view posent leur propre barrière quand pipeliné. Toggle « Pipelined
+  GI (frame N-1) » (RcTuningForm.pipelined, défaut ON, Save).
+  **Mesuré (Release M1, spawn, 2 runs)** : total **26,4 ms — NEUTRE**
+  vs PG1 (le composite recouvre bien : 0,33 → 0,02 ms, mais MoltenVK ne
+  laisse pas le recouvrement traverser la frontière de soumission —
+  la chaîne en fin de frame N ne chevauche pas le front de N+1).
+  Résultat assumé : le gain de PG2 est STRUCTUREL — c'est le prérequis
+  de PG3 (async compute PC), et tout driver qui recouvre à travers les
+  submits (NVIDIA/AMD) l'encaissera. Validation : sync validation layer
+  active et propre (0 SYNC-HAZARD), 522 tests verts. Nota : en mode
+  legacy (pipelined OFF), la WAR théorique inter-frames (lectures N−1
+  vs réécriture N) reste comme avant PG2 — surveillée par la sync
+  validation, propre à ce jour.
 - **PG3 — Queues dédiées (post-démo, PC)** : le M1 n'a qu'UNE famille de
   queues — pas d'async compute matériel sur la machine de dev. Sur GPU
   discret : queue compute (RC+froxels+clusterCull) + queue transfert

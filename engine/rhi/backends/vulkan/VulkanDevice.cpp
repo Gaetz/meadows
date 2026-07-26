@@ -884,6 +884,7 @@ public:
                      u32 firstInstance) override;
     void dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) override;
     void memoryBarrier(u32 dst) override;
+    void readBarrier(u32 src) override;
 
 private:
     // The RHI's viewport origin is bottom-left (the GL convention). Vulkan's
@@ -1531,28 +1532,28 @@ void VulkanCommandBuffer::memoryBarrier(u32 dst) {
     // they read.
     VkPipelineStageFlags dstStages = 0;
     VkAccessFlags dstAccess = 0;
-    if (dst == BarrierDst_All) {
+    if (dst == BarrierStage_All) {
         dstStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
         dstAccess = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_UNIFORM_READ_BIT |
                     VK_ACCESS_INDIRECT_COMMAND_READ_BIT |
                     VK_ACCESS_TRANSFER_READ_BIT;
     } else {
-        if (dst & BarrierDst_Compute) {
+        if (dst & BarrierStage_Compute) {
             dstStages |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
             dstAccess |= VK_ACCESS_SHADER_READ_BIT |
                          VK_ACCESS_UNIFORM_READ_BIT;
         }
-        if (dst & BarrierDst_Fragment) {
+        if (dst & BarrierStage_Fragment) {
             dstStages |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
             dstAccess |= VK_ACCESS_SHADER_READ_BIT |
                          VK_ACCESS_UNIFORM_READ_BIT;
         }
-        if (dst & BarrierDst_Vertex) {
+        if (dst & BarrierStage_Vertex) {
             dstStages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
             dstAccess |= VK_ACCESS_SHADER_READ_BIT |
                          VK_ACCESS_UNIFORM_READ_BIT;
         }
-        if (dst & BarrierDst_Transfer) {
+        if (dst & BarrierStage_Transfer) {
             dstStages |= VK_PIPELINE_STAGE_TRANSFER_BIT;
             dstAccess |= VK_ACCESS_TRANSFER_READ_BIT;
         }
@@ -1566,6 +1567,33 @@ void VulkanCommandBuffer::memoryBarrier(u32 dst) {
     barrier.dstAccessMask = dstAccess;
     vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, dstStages,
                          0, 1, &barrier, 0, nullptr, 0, nullptr);
+}
+
+void VulkanCommandBuffer::readBarrier(u32 src) {
+    if (cb_ == VK_NULL_HANDLE) {
+        return;
+    }
+    // Execution-only WAR fence: prior reads at `src` finish before later
+    // compute writes begin. No memory barrier — the reads consumed the
+    // old data, there is nothing to make visible.
+    VkPipelineStageFlags srcStages = 0;
+    if (src & BarrierStage_Compute) {
+        srcStages |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    }
+    if (src & BarrierStage_Fragment) {
+        srcStages |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
+    if (src & BarrierStage_Vertex) {
+        srcStages |= VK_PIPELINE_STAGE_VERTEX_SHADER_BIT;
+    }
+    if (src & BarrierStage_Transfer) {
+        srcStages |= VK_PIPELINE_STAGE_TRANSFER_BIT;
+    }
+    if (srcStages == 0) {
+        return;
+    }
+    vkCmdPipelineBarrier(cb_, srcStages, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0, 0, nullptr, 0, nullptr, 0, nullptr);
 }
 
 void VulkanCommandBuffer::copyBuffer(BufferHandle src, BufferHandle dst,

@@ -587,6 +587,14 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
 
     {
         GpuProbe::Scope gpu { probe, probeDevice, "rcInject" };
+        // Pipelined (docs/GPU-PERF.md PG2): the chain records at the END
+        // of the frame and OVERWRITES what the frame just sampled — the
+        // WAR fence lets every prior read (surfaces, volumetric, froxels)
+        // finish before the first write.
+        if (tuning.pipelined) {
+            cmd.readBarrier(rhi::BarrierStage_Fragment |
+                            rhi::BarrierStage_Compute);
+        }
         cmd.setPipeline(injectPipeline);
         cmd.setBindGroup(0, frameBindGroup);
         if (shadowBindGroup.id != 0) {
@@ -599,7 +607,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
         cmd.dispatch((res + 3) / 4, (res + 3) / 4, (res * 2 + 3) / 4);
         // Clips visible to the cascade builds — compute only, the raster
         // recorded after this chain owes it nothing yet.
-        cmd.memoryBarrier(rhi::BarrierDst_Compute);
+        cmd.memoryBarrier(rhi::BarrierStage_Compute);
     }
 
     // Per-level dispatch parameters, carried by push constants. They used to
@@ -648,7 +656,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
             cmd.dispatch((level.width + 3) / 4, (level.height + 3) / 4,
                          (level.depth + 3) / 4);
         }
-        cmd.memoryBarrier(rhi::BarrierDst_Compute); // extend/merge read
+        cmd.memoryBarrier(rhi::BarrierStage_Compute); // extend/merge read
     }
 
     // G7c: shift+merge the short fields with themselves, twice (x4 —
@@ -679,7 +687,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
                              (level.height + 3) / 4,
                              (level.depth + 3) / 4);
                 // Pass 2 / merge reads this write.
-                cmd.memoryBarrier(rhi::BarrierDst_Compute);
+                cmd.memoryBarrier(rhi::BarrierStage_Compute);
             }
         }
     }
@@ -702,9 +710,16 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
             // The level below (compute) reads this one; the FINAL merge
             // (cascade 0) is what the surface shaders, the volumetric and
             // the froxel inject consume — fragment joins the scope there.
-            cmd.memoryBarrier(i == 0 ? (rhi::BarrierDst_Compute |
-                                        rhi::BarrierDst_Fragment)
-                                     : rhi::BarrierDst_Compute);
+            // Pipelined: NO final barrier at all — the consumers live in
+            // the next frame, whose fence (LandscapeRenderer, before the
+            // first GI reader) orders and publishes the write; anything
+            // recorded in between overlaps the chain.
+            if (i > 0) {
+                cmd.memoryBarrier(rhi::BarrierStage_Compute);
+            } else if (!tuning.pipelined) {
+                cmd.memoryBarrier(rhi::BarrierStage_Compute |
+                                  rhi::BarrierStage_Fragment);
+            }
         }
     }
 
@@ -720,6 +735,10 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& cmd,
     if (!probeLogged && probePipeline.id() != 0 && probeGroup.id() != 0) {
         ++probeFrame;
         if (probeFrame == 120) {
+            if (tuning.pipelined) {
+                // The chain just ended unfenced — order the probe's read.
+                cmd.memoryBarrier(rhi::BarrierStage_Compute);
+            }
             cmd.setPipeline(probePipeline);
             cmd.setBindGroup(0, frameBindGroup);
             cmd.setBindGroup(1, probeGroup);
@@ -755,6 +774,11 @@ void RadianceCascades::drawDebug(rhi::CommandBuffer& cmd,
     if (tuning.debugView == 0 || debugPipeline.id() == 0 ||
         debugGroup.id() == 0 || !tileUploaded) {
         return;
+    }
+    if (tuning.pipelined) {
+        // The debug view samples volumes the (unfenced) end-of-frame
+        // chain may still be writing — publish them first. Debug only.
+        cmd.memoryBarrier(rhi::BarrierStage_Fragment);
     }
     cmd.setPipeline(debugPipeline);
     cmd.setBindGroup(0, frameBindGroup);

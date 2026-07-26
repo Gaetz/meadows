@@ -166,6 +166,7 @@ void LandscapeRenderer::applyRcTuning(const data::RcTuningForm& rc) {
     t.skyFactor = rc.skyFactor;
     t.emitterBoost = rc.emitterBoost;
     t.lightSplatBounce = rc.lightSplatBounce;
+    t.pipelined = rc.pipelined;
     t.bounceFeedback = rc.bounceFeedback;
     t.rcOnlyLights = rc.rcOnlyLights;
     t.interval0 = rc.interval0;
@@ -216,6 +217,7 @@ void LandscapeRenderer::captureRcTuning(data::RcTuningForm& out) const {
     out.skyFactor = t.skyFactor;
     out.emitterBoost = t.emitterBoost;
     out.lightSplatBounce = t.lightSplatBounce;
+    out.pipelined = t.pipelined;
     out.bounceFeedback = t.bounceFeedback;
     out.rcOnlyLights = t.rcOnlyLights;
     out.interval0 = t.interval0;
@@ -1614,145 +1616,18 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
     }
 
-    // Re-inject the GI voxel clipmap (docs/RADIANCE-CASCADES.md) — after
-    // the CSM passes (the inject samples fresh shadow maps), outside any
-    // render pass (compute). Interiors too: no terrain
-    // there, the kit boxes + local lights carry the room.
-    {
-        // Props/kits as world AABBs (v1 box occlusion — assumed
-        // stylized), NPCs as capsuloid boxes, the frame's local lights.
-        rcBoxes.clear();
-        rcLights.clear();
-        const f32 clipHalf = static_cast<f32>(radianceCascades.tuning
-                                                  .resolution) *
-                             radianceCascades.tuning.coarseVoxel * 0.5f;
-        const Vec3 clipMin = camera.position - Vec3 { clipHalf };
-        const Vec3 clipMax = camera.position + Vec3 { clipHalf };
-        for (const auto& mesh : snapshot.meshes) {
-            if (rcBoxes.size() >= render::RadianceCascades::kMaxBoxes) {
-                break;
-            }
-            const MeshCache::CpuMesh* cpu =
-                view.meshCache ? view.meshCache->cpuMesh(mesh.model)
-                               : nullptr;
-            if (!cpu) {
-                continue; // not resident yet — next inject picks it up
-            }
-            Vec3 lo { 1e9f };
-            Vec3 hi { -1e9f };
-            for (u32 corner = 0; corner < 8; ++corner) {
-                const Vec3 local {
-                    (corner & 1) ? cpu->boundsMax.x : cpu->boundsMin.x,
-                    (corner & 2) ? cpu->boundsMax.y : cpu->boundsMin.y,
-                    (corner & 4) ? cpu->boundsMax.z : cpu->boundsMin.z
-                };
-                const Vec3 world =
-                    Vec3(mesh.transform * Vec4 { local, 1.0f });
-                lo = glm::min(lo, world);
-                hi = glm::max(hi, world);
-            }
-            if (glm::any(glm::lessThan(hi, clipMin)) ||
-                glm::any(glm::greaterThan(lo, clipMax))) {
-                continue; // outside the coarse clip
-            }
-            // Albedo proxy: the material tint over a mid gray (real splat
-            // colors never leave the mesh shader); emissive feeds the GI.
-            rcBoxes.push_back(
-                { { lo, 1.0f },
-                  { hi, 0.0f },
-                  { Vec3 { mesh.tint } * 0.35f, mesh.emissive } });
-        }
-        for (const auto& npc : snapshot.skinned) {
-            if (rcBoxes.size() >= render::RadianceCascades::kMaxBoxes) {
-                break;
-            }
-            const Vec3 feet { npc.transform[3] };
-            rcBoxes.push_back({ { feet - Vec3 { 0.4f, 0.0f, 0.4f }, 1.0f },
-                                { feet + Vec3 { 0.4f, 1.8f, 0.4f }, 0.0f },
-                                { Vec3 { 0.10f }, 0.0f } });
-        }
-        // The vegetation joins the GI
-        // volume — forests get green bounce and canopy sky occlusion.
-        // Trees inject their CANOPY as a semi-transparent green box (the
-        // march filters through, soft light under the crowns); rocks and
-        // bushes as small solid/soft boxes. Nearest chunks first, capped
-        // by the shared box budget.
-        if (!view.interiorMode) {
-            vegGiProps.clear();
-            vegetation.collectGiProps(
-                camera.position, clipHalf, vegGiProps,
-                render::RadianceCascades::kMaxBoxes - rcBoxes.size());
-            for (const auto& prop : vegGiProps) {
-                const f32 s = prop.scale;
-                const Vec3 p = prop.position;
-                switch (prop.kind) {
-                case 0: // tree canopy (leaf-green, filters light)
-                    // PER-VOXEL opacity: realistic-scale canopies span
-                    // tens of voxels, and the march multiplies
-                    // (1 - opacity) per voxel — anything high saturates
-                    // to a pitch-black lid. 0.12 leaves ~20% of the sky
-                    // under a dense crown. hand-tuned.
-                    rcBoxes.push_back(
-                        { { p + Vec3 { -2.2f * s, 2.2f * s, -2.2f * s },
-                            0.12f },
-                          { p + Vec3 { 2.2f * s, 5.8f * s, 2.2f * s },
-                            0.0f },
-                          { Vec3 { 0.055f, 0.115f, 0.032f }, 0.0f } });
-                    break;
-                case 1: // rock
-                    rcBoxes.push_back(
-                        { { p + Vec3 { -1.1f * s, 0.0f, -1.1f * s }, 1.0f },
-                          { p + Vec3 { 1.1f * s, 1.6f * s, 1.1f * s },
-                            0.0f },
-                          { Vec3 { 0.17f, 0.16f, 0.15f }, 0.0f } });
-                    break;
-                default: // bush
-                    rcBoxes.push_back(
-                        { { p + Vec3 { -0.9f * s, 0.0f, -0.9f * s }, 0.8f },
-                          { p + Vec3 { 0.9f * s, 1.2f * s, 0.9f * s },
-                            0.0f },
-                          { Vec3 { 0.050f, 0.105f, 0.030f }, 0.0f } });
-                    break;
-                }
-            }
-        }
-        for (const auto& light : snapshot.lights) {
-            // H2: sun-linked emitters carry the live sun into the GI
-            // field too — same color/gate as the direct path above.
-            const f32 sunGate =
-                glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
-            const Vec3 color = light.sunLinked
-                                   ? Vec3 { uniforms.sunColor }
-                                   : light.color;
-            f32 intensity = light.intensity;
-            if (light.sunLinked) {
-                intensity *= sunGate *
-                             glm::smoothstep(
-                                 0.15f, 0.40f,
-                                 glm::dot(-shadowSunDirection,
-                                          glm::normalize(light.direction))) *
-                             aboveBuried(light.position.y, view.buriedBelowY);
-            }
-            // §5.1 re-contract: clustered direct reaches EVERY surface,
-            // so a normal light's splat drops to its bounce share —
-            // full splat would light the ground twice. rcOnly lights
-            // keep it all (the field is their lighting). EXTERIOR only:
-            // interiors draw no terrain/grass/trees, so clustered adds
-            // no new direct receiver there — the tuned interior look
-            // keeps its full splat.
-            if (clustered && !light.rcOnly && !view.interiorMode) {
-                intensity *= radianceCascades.tuning.lightSplatBounce;
-            }
-            rcLights.push_back({ { light.position, light.radius },
-                                 { color * intensity, 0.0f } });
-        }
-        radianceCascades.update(frame.device, frame.cmd, terrain.params,
-                                camera.position, rcBoxes, rcLights,
-                                /*bakeTerrain=*/!view.interiorMode,
-                                frameBindGroup,
-                                shadows.receiverBindGroup(),
-                                terrainLightMap.bindGroup(), &frame.device,
-                                &gpuProbe);
+    // GI voxel clipmap re-injection (docs/RADIANCE-CASCADES.md) — its
+    // HISTORICAL slot: after the CSM passes (the inject samples fresh
+    // shadow maps), outside any render pass. Pipelined (PG2), the chain
+    // records at the END of the frame instead and this slot only fences
+    // LAST frame's cascade 0 for this frame's consumers — everything
+    // recorded above (cluster cull, cloud bake, CSM, key shadows) reads
+    // no GI and overlaps the still-running chain.
+    if (!radianceCascades.tuning.pipelined) {
+        recordGiUpdate(frame, snapshot, view, uniforms, clustered);
+    } else if (radianceCascades.applyGroup().id != 0) {
+        frame.cmd.memoryBarrier(rhi::BarrierStage_Fragment |
+                                rhi::BarrierStage_Compute);
     }
 
     const bool useOffscreen = frame.device.caps().offscreenTargets;
@@ -2004,6 +1879,14 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
         }
     }
 
+    // Pipelined GI (docs/GPU-PERF.md PG2): the chain records HERE, at the
+    // end of the frame — this frame consumed LAST frame's cascade 0; the
+    // chain overlaps the composite, the present and the next frame's
+    // front, up to the consumer fence before the next reflection.
+    if (radianceCascades.tuning.pipelined) {
+        recordGiUpdate(frame, snapshot, view, uniforms, clustered);
+    }
+
     if (useOffscreen) {
         core::FrameProbe::Scope probe { *view.probe, "composite" };
         render::GpuProbe::Scope gpu { gpuProbe, frame.device, "composite" };
@@ -2041,6 +1924,154 @@ void LandscapeRenderer::render(engine::FrameContext& frame,
 // rolling window, with the CPU FrameProbe column beside it (names match
 // where both sides instrument the same block). This table IS the
 // baseline the optimization bricks are ordered by (docs/GPU-PERF.md).
+
+// The GI chain's per-frame recording (docs/RADIANCE-CASCADES.md):
+// gathers the injection lists (props, NPCs, vegetation, lights) and
+// records inject/build/extend/merge. Called from render() at its
+// historical post-CSM slot, or at the END of the frame when the GI is
+// pipelined (docs/GPU-PERF.md PG2).
+void LandscapeRenderer::recordGiUpdate(engine::FrameContext& frame,
+                                       const RenderSnapshot& snapshot,
+                                       const RenderView& view,
+                                       const render::FrameUniforms& uniforms,
+                                       bool clustered) {
+    const render::Camera3D& camera = view.camera;
+        // Props/kits as world AABBs (v1 box occlusion — assumed
+        // stylized), NPCs as capsuloid boxes, the frame's local lights.
+        rcBoxes.clear();
+        rcLights.clear();
+        const f32 clipHalf = static_cast<f32>(radianceCascades.tuning
+                                                  .resolution) *
+                             radianceCascades.tuning.coarseVoxel * 0.5f;
+        const Vec3 clipMin = camera.position - Vec3 { clipHalf };
+        const Vec3 clipMax = camera.position + Vec3 { clipHalf };
+        for (const auto& mesh : snapshot.meshes) {
+            if (rcBoxes.size() >= render::RadianceCascades::kMaxBoxes) {
+                break;
+            }
+            const MeshCache::CpuMesh* cpu =
+                view.meshCache ? view.meshCache->cpuMesh(mesh.model)
+                               : nullptr;
+            if (!cpu) {
+                continue; // not resident yet — next inject picks it up
+            }
+            Vec3 lo { 1e9f };
+            Vec3 hi { -1e9f };
+            for (u32 corner = 0; corner < 8; ++corner) {
+                const Vec3 local {
+                    (corner & 1) ? cpu->boundsMax.x : cpu->boundsMin.x,
+                    (corner & 2) ? cpu->boundsMax.y : cpu->boundsMin.y,
+                    (corner & 4) ? cpu->boundsMax.z : cpu->boundsMin.z
+                };
+                const Vec3 world =
+                    Vec3(mesh.transform * Vec4 { local, 1.0f });
+                lo = glm::min(lo, world);
+                hi = glm::max(hi, world);
+            }
+            if (glm::any(glm::lessThan(hi, clipMin)) ||
+                glm::any(glm::greaterThan(lo, clipMax))) {
+                continue; // outside the coarse clip
+            }
+            // Albedo proxy: the material tint over a mid gray (real splat
+            // colors never leave the mesh shader); emissive feeds the GI.
+            rcBoxes.push_back(
+                { { lo, 1.0f },
+                  { hi, 0.0f },
+                  { Vec3 { mesh.tint } * 0.35f, mesh.emissive } });
+        }
+        for (const auto& npc : snapshot.skinned) {
+            if (rcBoxes.size() >= render::RadianceCascades::kMaxBoxes) {
+                break;
+            }
+            const Vec3 feet { npc.transform[3] };
+            rcBoxes.push_back({ { feet - Vec3 { 0.4f, 0.0f, 0.4f }, 1.0f },
+                                { feet + Vec3 { 0.4f, 1.8f, 0.4f }, 0.0f },
+                                { Vec3 { 0.10f }, 0.0f } });
+        }
+        // The vegetation joins the GI
+        // volume — forests get green bounce and canopy sky occlusion.
+        // Trees inject their CANOPY as a semi-transparent green box (the
+        // march filters through, soft light under the crowns); rocks and
+        // bushes as small solid/soft boxes. Nearest chunks first, capped
+        // by the shared box budget.
+        if (!view.interiorMode) {
+            vegGiProps.clear();
+            vegetation.collectGiProps(
+                camera.position, clipHalf, vegGiProps,
+                render::RadianceCascades::kMaxBoxes - rcBoxes.size());
+            for (const auto& prop : vegGiProps) {
+                const f32 s = prop.scale;
+                const Vec3 p = prop.position;
+                switch (prop.kind) {
+                case 0: // tree canopy (leaf-green, filters light)
+                    // PER-VOXEL opacity: realistic-scale canopies span
+                    // tens of voxels, and the march multiplies
+                    // (1 - opacity) per voxel — anything high saturates
+                    // to a pitch-black lid. 0.12 leaves ~20% of the sky
+                    // under a dense crown. hand-tuned.
+                    rcBoxes.push_back(
+                        { { p + Vec3 { -2.2f * s, 2.2f * s, -2.2f * s },
+                            0.12f },
+                          { p + Vec3 { 2.2f * s, 5.8f * s, 2.2f * s },
+                            0.0f },
+                          { Vec3 { 0.055f, 0.115f, 0.032f }, 0.0f } });
+                    break;
+                case 1: // rock
+                    rcBoxes.push_back(
+                        { { p + Vec3 { -1.1f * s, 0.0f, -1.1f * s }, 1.0f },
+                          { p + Vec3 { 1.1f * s, 1.6f * s, 1.1f * s },
+                            0.0f },
+                          { Vec3 { 0.17f, 0.16f, 0.15f }, 0.0f } });
+                    break;
+                default: // bush
+                    rcBoxes.push_back(
+                        { { p + Vec3 { -0.9f * s, 0.0f, -0.9f * s }, 0.8f },
+                          { p + Vec3 { 0.9f * s, 1.2f * s, 0.9f * s },
+                            0.0f },
+                          { Vec3 { 0.050f, 0.105f, 0.030f }, 0.0f } });
+                    break;
+                }
+            }
+        }
+        for (const auto& light : snapshot.lights) {
+            // H2: sun-linked emitters carry the live sun into the GI
+            // field too — same color/gate as the direct path above.
+            const f32 sunGate =
+                glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
+            const Vec3 color = light.sunLinked
+                                   ? Vec3 { uniforms.sunColor }
+                                   : light.color;
+            f32 intensity = light.intensity;
+            if (light.sunLinked) {
+                intensity *= sunGate *
+                             glm::smoothstep(
+                                 0.15f, 0.40f,
+                                 glm::dot(-shadowSunDirection,
+                                          glm::normalize(light.direction))) *
+                             aboveBuried(light.position.y, view.buriedBelowY);
+            }
+            // §5.1 re-contract: clustered direct reaches EVERY surface,
+            // so a normal light's splat drops to its bounce share —
+            // full splat would light the ground twice. rcOnly lights
+            // keep it all (the field is their lighting). EXTERIOR only:
+            // interiors draw no terrain/grass/trees, so clustered adds
+            // no new direct receiver there — the tuned interior look
+            // keeps its full splat.
+            if (clustered && !light.rcOnly && !view.interiorMode) {
+                intensity *= radianceCascades.tuning.lightSplatBounce;
+            }
+            rcLights.push_back({ { light.position, light.radius },
+                                 { color * intensity, 0.0f } });
+        }
+        radianceCascades.update(frame.device, frame.cmd, terrain.params,
+                                camera.position, rcBoxes, rcLights,
+                                /*bakeTerrain=*/!view.interiorMode,
+                                frameBindGroup,
+                                shadows.receiverBindGroup(),
+                                terrainLightMap.bindGroup(), &frame.device,
+                                &gpuProbe);
+}
+
 void LandscapeRenderer::drawPerfPanel(const core::FrameProbe* cpuProbe) {
     if (!gpuProbe.active()) {
         ImGui::TextDisabled("(no GPU timer queries on this device)");
@@ -2400,6 +2431,8 @@ void LandscapeRenderer::drawRenderPanel(AtmosphereParams& atmos) {
         // G7a/G7b.
         ImGui::SliderFloat("Bounce feedback", &rc.bounceFeedback, 0.0f,
                            0.9f, "%.2f");
+        // PG2 A/B: chain at end of frame, consumers read frame N-1.
+        ImGui::Checkbox("Pipelined GI (frame N-1)", &rc.pipelined);
         ImGui::Checkbox("Lights via RC only (penumbra experiment)",
                         &rc.rcOnlyLights);
         ImGui::SeparatorText("Apply");
