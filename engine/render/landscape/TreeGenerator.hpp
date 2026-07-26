@@ -86,9 +86,11 @@ struct ColonizedTreeParams {
     // node — LODs agree); with subdivision the kinks round into waves,
     // without it they stay sharp breaks. `ringIrregularity` makes the
     // tube faces angularly uneven (very different widths at 1).
-    // `sideMinFraction` tapers the ring count with branch radius: the
-    // trunk uses tubeSides, twigs drop toward tubeSides x fraction
-    // (1 = constant count — the pre-knob behavior).
+    // `sideMinFraction` tapers the ring count by HALVING: the trunk
+    // uses tubeSides and thinner chains halve their count each time
+    // their radius halves, down to tubeSides x fraction (floor 3;
+    // 1 = constant count — the pre-knob behavior). Pick an EVEN
+    // tubeSides for clean halvings (12 -> 6 -> 3, 8 -> 4).
     f32 pathJitter { 0.0f };      // 0..1
     f32 ringIrregularity { 0.0f };// 0..1
     f32 sideMinFraction { 1.0f }; // 0.25..1

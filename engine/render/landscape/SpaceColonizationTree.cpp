@@ -327,13 +327,22 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
                         static_cast<i32>(std::lround(p.z * 1000.0f))));
         return h;
     };
-    // Ring-count taper: thick wood keeps the max, twigs shed vertices
-    // down to the fraction floor (sqrt so mid branches don't collapse).
+    // Ring-count taper by HALVING: each time a chain's base radius drops
+    // below half the previous threshold, the ring count halves (an even
+    // tubeSides halves cleanly: 12 -> 6 -> 3, 8 -> 4) — face width stays
+    // roughly constant since the perimeter halves too. The fraction knob
+    // is the floor; at 1 the loop never runs (constant count).
     const auto sidesFor = [&](f32 radius) {
-        const f32 fraction = glm::clamp(std::sqrt(radius / rootRadius),
-                                        sideMinFraction, 1.0f);
-        return glm::max(3u, static_cast<u32>(std::lround(
-                                static_cast<f32>(tubeSides) * fraction)));
+        const i32 floorSides = glm::max(
+            3, static_cast<i32>(std::lround(static_cast<f32>(tubeSides) *
+                                            sideMinFraction)));
+        i32 sides = static_cast<i32>(tubeSides);
+        f32 threshold = rootRadius * 0.5f;
+        while (sides / 2 >= floorSides && radius < threshold) {
+            sides /= 2;
+            threshold *= 0.5f;
+        }
+        return static_cast<u32>(glm::max(sides, 3));
     };
 
     struct PathPoint {
@@ -464,6 +473,21 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
                                sidesFor(tube.front().radius), barkColor,
                                ringIrregularity,
                                positionHash(path[0].position));
+        }
+    }
+
+    // Fork knuckles: sibling chains meet a branching node with rings in
+    // different planes (and possibly different counts after halving) —
+    // a small faceted knot at the node's radius fills the lens-shaped
+    // openings and reads as the natural fork bulge. Skipped on the
+    // ultra twin (3-sided distant wood, sub-texel at its range).
+    if (detail >= 1) {
+        for (u32 n = 1; n < nodes.size(); ++n) {
+            if (nodes[n].childCount >= 2 && nodes[n].radius >= minRadius) {
+                appendBlob(mesh, positionHash(nodes[n].position),
+                           nodes[n].position, nodes[n].radius * 1.05f,
+                           0.04f, barkColor, 0);
+            }
         }
     }
 }

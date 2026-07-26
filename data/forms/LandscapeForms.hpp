@@ -203,8 +203,9 @@ struct ColonizedTreeTuningForm : Form {
     // the growth trajectory's bends survive decimation (0 = straight
     // runs), Catmull-Rom points per segment rounding the elbows, kink
     // noise on the kept trajectory points, angular irregularity of the
-    // tube faces, and the ring-count taper floor for thin branches
-    // (fraction of tubeSides; 1 = constant count).
+    // tube faces, and the ring-count HALVING floor for thin branches
+    // (fraction of tubeSides; 1 = constant count; pick an even
+    // tubeSides for clean halvings).
     i32 tubeSides { 5 };
     f32 curvePreserve { 0.0f };
     i32 curveSubdiv { 0 };
