@@ -98,9 +98,10 @@ MeshData generateTree(u32 seed, u32 lobeSubdivisions,
     canopyCenter /= static_cast<f32>(lobeCount);
     for (u32 i = 0; i < lobeCount; ++i) {
         const f32 hue = rng.next();
-        // Linear greens, one hue roll per lobe so the canopy isn't flat.
-        const Vec3 leafColor = glm::mix(Vec3 { 0.030f, 0.095f, 0.018f },
-                                        Vec3 { 0.075f, 0.130f, 0.020f }, hue);
+        // Linear greens centered on the meadow color (#6FA160 —
+        // grassAlbedo), one hue roll per lobe so the canopy isn't flat.
+        const Vec3 leafColor = glm::mix(Vec3 { 0.135f, 0.340f, 0.115f },
+                                        Vec3 { 0.180f, 0.375f, 0.117f }, hue);
         const f32 jitter = 0.10f + rng.next() * 0.04f; // soft, not craggy
         lobes[i].firstVertex = static_cast<u32>(mesh.vertices.size());
         appendBlob(mesh, hashU32(seed ^ (0x51bd1e95u + i)), lobes[i].center,

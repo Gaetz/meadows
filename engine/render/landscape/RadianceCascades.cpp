@@ -27,7 +27,7 @@ constexpr const char* kFullscreenVert = "fullscreen";
 // terrain shader). Rough matches of the splat family averages.
 // (Grass slightly brighter than the raw splat average — otherwise the
 // visible green bounce is too subtle.)
-constexpr Vec3 kGrassAlbedo { 0.264f, 0.604f, 0.214f }; // #8CCC80 linear
+constexpr Vec3 kGrassAlbedo { 0.158f, 0.358f, 0.116f }; // #6FA160 linear
 constexpr Vec3 kRockAlbedo { 0.180f, 0.165f, 0.150f };
 constexpr Vec3 kSandAlbedo { 0.420f, 0.360f, 0.250f };
 constexpr Vec3 kSnowAlbedo { 0.620f, 0.660f, 0.720f };

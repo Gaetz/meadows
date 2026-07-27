@@ -86,4 +86,7 @@ layout(std140, binding = 0) uniform FrameUbo {
     // x/y = whole-blade brightness hash range, z = middle darkening,
     // w = backscatter strength.
     vec4 uGrassBladeInfo;
+    // Stylized specular band on characters/props (mesh/skinned.frag):
+    // x = strength, y = band threshold, z = Blinn-Phong exponent.
+    vec4 uStylizedSpec;
 };

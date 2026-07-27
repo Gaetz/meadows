@@ -32,9 +32,9 @@ void main() {
     // low-frequency sample of the splat tiles so the sand and snow lines
     // wander organically instead of tracing a level contour.
     // Centering must stay in LOCKSTEP with TerrainNoise.cpp's CPU
-    // mirror: tile mean green (0.60 linear) plus the -0.31 bias the
+    // mirror: tile mean green (0.36 linear) plus the -0.31 bias the
     // snow/sand lines are tuned against.
-    float wander = texture(uSplat, vec3(uv * 0.06, 0.0)).g - 0.91;
+    float wander = texture(uSplat, vec3(uv * 0.06, 0.0)).g - 0.67;
 
     float rockW = smoothstep(0.18, 0.35, slope);
     float snowH = h + wander * 26.0;

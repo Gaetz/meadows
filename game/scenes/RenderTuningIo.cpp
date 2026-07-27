@@ -35,6 +35,9 @@ void RenderTuningIo::applyTuning(
                            tuning.stylizedShadowEnd,
                            tuning.stylizedShadowFloor,
                            tuning.stylizedHalfTone };
+    r.stylizedSpecUi = { tuning.stylizedSpecStrength,
+                         tuning.stylizedSpecThreshold,
+                         tuning.stylizedSpecExponent, 0.0f };
     r.shadowResolutionUi = glm::clamp(tuning.shadowResolution, 1024, 4096);
     r.reflectionScaleUi = glm::clamp(tuning.reflectionScale, 0.25f, 0.5f);
     r.interiorDaylightWeightUi = tuning.interiorDaylightWeight;
@@ -179,6 +182,9 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
     out.stylizedShadowStart = r.stylizedShadowUi.x;
     out.stylizedShadowEnd = r.stylizedShadowUi.y;
     out.stylizedShadowFloor = r.stylizedShadowUi.z;
+    out.stylizedSpecStrength = r.stylizedSpecUi.x;
+    out.stylizedSpecThreshold = r.stylizedSpecUi.y;
+    out.stylizedSpecExponent = r.stylizedSpecUi.z;
     out.shadowResolution = r.shadowResolutionUi;
     out.reflectionScale = r.reflectionScaleUi;
     out.interiorDaylightWeight = r.interiorDaylightWeightUi;

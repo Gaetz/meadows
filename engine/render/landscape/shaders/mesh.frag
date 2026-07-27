@@ -43,11 +43,22 @@ void main() {
         float up = n.y * 0.5 + 0.5;
         ambient *= mix(vec3(0.50, 0.42, 0.36), vec3(1.35, 1.30, 1.22), up);
     }
+    // Stylized specular band (uStylizedSpec: x = strength,
+    // y = threshold, z = exponent) — the BotW cel highlight; the
+    // stepped diffuse gates it to the lit side, uAmbientColor.w keeps
+    // Classic byte-identical (the stylizedRim pattern). KEEP IN SYNC
+    // with skinned.frag.
+    vec3 viewDir = normalize(uCameraPos.xyz - vWorldPos);
+    vec3 halfDir = normalize(uSunDirection.xyz + viewDir);
+    float spec = stylizedSpec(pow(max(dot(n, halfDir), 0.0),
+                                  uStylizedSpec.z),
+                              uStylizedSpec.y) *
+                 uStylizedSpec.x * diffuse * uAmbientColor.w;
     // Long-range terrain sun shadow (x) + sky openness (y).
     vec2 tl = terrainLightFactors(vWorldPos);
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.
     vec3 lit = albedo * (giAmbient(vWorldPos, n, ambient * tl.y) +
-                         uSunColor.rgb * (diffuse * tl.x) +
+                         uSunColor.rgb * ((diffuse + spec) * tl.x) +
                          localLights(vWorldPos, n)) +
                albedo * uMeshInfo.x;
     fragColor = vec4(applyFog(lit, vWorldPos), 1.0);

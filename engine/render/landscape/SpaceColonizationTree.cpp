@@ -554,9 +554,12 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
         }
 
         const f32 hue = scatterRng.next();
+        // Palette centered on the MEADOW color (#6FA160 linear —
+        // grassAlbedo/kGrassAlbedo): canopy and grass read as one
+        // family; the small hue roll keeps the crown alive.
         Vec3 leafColor =
-            glm::mix(Vec3 { 0.030f, 0.095f, 0.018f },
-                     Vec3 { 0.075f, 0.130f, 0.020f }, hue); // tree palette
+            glm::mix(Vec3 { 0.135f, 0.340f, 0.115f },
+                     Vec3 { 0.180f, 0.375f, 0.117f }, hue);
         // Sunlit-crown gradient, baked here (the uv loop below is
         // wood-only now — card uv carries the billboard corner).
         leafColor *= 1.0f + 0.25f * glm::clamp(position.y / totalHeight,
@@ -588,7 +591,7 @@ MeshData generateColonizedTreeShadowProxy(u32 seed,
     // The canopy metaballs ARE the shadow volume: one 20-face icosahedron
     // per ball (largest first — they define the mass) instead of the card
     // cloud. Opaque, so shadow_prop skips the leaf-mask cutout entirely.
-    const Vec3 leafColor { 0.045f, 0.105f, 0.019f };
+    const Vec3 leafColor { 0.158f, 0.358f, 0.116f }; // meadow family
     const size_t ballCount = std::min<size_t>(tree.balls.size(), 16);
     for (size_t i = 0; i < ballCount; ++i) {
         appendBlob(mesh,

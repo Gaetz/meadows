@@ -62,7 +62,9 @@ void main() {
         clamp((dot(viewDir, uSunDirection.xyz) + 0.5) / 1.5, 0.0, 1.0);
     float scatter = backLight * uGrassBladeInfo.w * (1.0 - vLodOut);
 
-    // Thin sheen along the blade, strongest at the tips.
+    // Thin sheen along the blade, strongest at the tips — kept SMOOTH
+    // on purpose (the stepped stylizedSpec band lives on characters and
+    // props, mesh/skinned.frag; quantized blade sheen read worse).
     vec3 halfDir = normalize(uSunDirection.xyz - viewDir);
     float sheen = pow(max(dot(n, halfDir), 0.0), 32.0) *
                   uGrassShadeInfo.y * vT;

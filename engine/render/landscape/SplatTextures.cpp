@@ -134,11 +134,13 @@ vector<u8> buildSplatTilePixels() {
 
 
 Vec3 grassAlbedo(f32 /*u*/, f32 /*v*/) {
-    // FULLY UNIFORM soft green (#8CCC80) — the meadow is one flat
-    // color by design (blades read through silhouettes, not texture).
-    // The GREEN channel feeds the border wander — changing it moves
-    // the -0.91 centering in terrain.frag / TerrainNoise.cpp.
-    return Vec3 { 0.55f, 0.80f, 0.50f };
+    // FULLY UNIFORM forest green (#6FA160 — the midpoint between the
+    // old meadow green and the tree-foliage palette, so meadow and
+    // canopies read as one family) — the meadow is one flat color by
+    // design (blades read through silhouettes, not texture). The GREEN
+    // channel feeds the border wander — changing it moves the -0.67
+    // centering in terrain.frag / TerrainNoise.cpp.
+    return Vec3 { 0.434f, 0.633f, 0.375f };
 }
 
 f32 splatWander(f32 u, f32 v) {

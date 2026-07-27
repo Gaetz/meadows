@@ -287,6 +287,8 @@ private:
     // Stylized ramp (stylized.glsl lanes; defaults = shipped cel look).
     Vec4 stylizedDiffuseUi { 0.02f, 0.09f, 0.32f, 0.40f };
     Vec4 stylizedShadowUi { 0.45f, 0.55f, 0.0f, 0.6f };
+    // Character/prop cel specular: strength, threshold, exponent.
+    Vec4 stylizedSpecUi { 0.35f, 0.35f, 24.0f, 0.0f };
     f32 interiorDaylightWeightUi { 0.6f }; // H1: interior<->outside coupling
     f32 interiorDustDensityUi { 0.025f };   // H4: uniform dust indoors
     bool saveTuningRequested { false }; // panels' Save button -> the scene

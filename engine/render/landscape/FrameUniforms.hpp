@@ -122,6 +122,10 @@ struct FrameUniforms {
     // x/y = whole-blade brightness hash range (min/max),
     // z = blade middle darkening, w = backscatter strength.
     Vec4 grassBladeInfo { 1.0f, 1.0f, 0.0f, 0.0f };
+    // Stylized specular band on characters/props (mesh/skinned.frag):
+    // x = strength, y = band threshold (lower = wider highlight),
+    // z = Blinn-Phong exponent, w free.
+    Vec4 stylizedSpecInfo { 0.35f, 0.35f, 24.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -178,7 +182,8 @@ static_assert(offsetof(FrameUniforms, clusterInfo) == 1024);
 static_assert(offsetof(FrameUniforms, keyShadowAtlasViewProj) == 1040);
 static_assert(offsetof(FrameUniforms, grassShadeInfo) == 1296);
 static_assert(offsetof(FrameUniforms, grassBladeInfo) == 1312);
-static_assert(sizeof(FrameUniforms) == 1328,
+static_assert(offsetof(FrameUniforms, stylizedSpecInfo) == 1328);
+static_assert(sizeof(FrameUniforms) == 1344,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

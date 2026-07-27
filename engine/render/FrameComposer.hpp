@@ -87,6 +87,7 @@ struct FrameComposerInputs {
     // Stylized ramp lanes (see FrameUniforms).
     Vec4 stylizedDiffuseInfo { 0.02f, 0.09f, 0.32f, 0.40f };
     Vec4 stylizedShadowInfo { 0.45f, 0.55f, 0.0f, 0.6f };
+    Vec4 stylizedSpecInfo { 0.35f, 0.35f, 24.0f, 0.0f };
 
     // The GI switch, RESOLVED only — the reflection pass
     // (which copies `base`) keeps the Classic ambient, so it never needs

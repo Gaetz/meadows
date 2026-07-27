@@ -80,6 +80,10 @@ struct LandscapeTuningForm : Form {
     f32 stylizedShadowStart { 0.45f };
     f32 stylizedShadowEnd { 0.55f };
     f32 stylizedShadowFloor { 0.0f };
+    // Cel specular band on characters/props (mesh/skinned.frag).
+    f32 stylizedSpecStrength { 0.35f };
+    f32 stylizedSpecThreshold { 0.35f };
+    f32 stylizedSpecExponent { 24.0f };
     // CSM texels per cascade side (1024/2048/4096 — the panel's combo).
     i32 shadowResolution { 2048 };
     // Planar-reflection resolution as a fraction of the window
@@ -173,6 +177,9 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(stylizedShadowStart)
         REFLECT_FIELD(stylizedShadowEnd)
         REFLECT_FIELD(stylizedShadowFloor)
+        REFLECT_FIELD(stylizedSpecStrength)
+        REFLECT_FIELD(stylizedSpecThreshold)
+        REFLECT_FIELD(stylizedSpecExponent)
         REFLECT_FIELD(shadowResolution)
         REFLECT_FIELD(reflectionScale)
         REFLECT_FIELD(clusteredLights)

@@ -1220,6 +1220,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
                          0.0f },
         .stylizedDiffuseInfo = stylizedDiffuseUi,
         .stylizedShadowInfo = stylizedShadowUi,
+        .stylizedSpecInfo = stylizedSpecUi,
         // giInfo() gates on ready() itself (interiors included).
         .giInfo = radianceCascades.giInfo(),
         .giGridInfo = radianceCascades.giGridInfo(),

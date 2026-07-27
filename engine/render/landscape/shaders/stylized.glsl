@@ -39,6 +39,15 @@ float stylizedSss(vec3 worldPos) {
     return pow(max(dot(viewDir, uSunDirection.xyz), 0.0), 3.0);
 }
 
+// Stepped specular band (the BotW highlight ramp): quantizes a smooth
+// specular response into ONE flat plateau with a crisp, narrowly-AA'd
+// edge. `threshold` picks the band's extent (lower = wider highlight);
+// classic (toggle off) keeps the smooth response.
+float stylizedSpec(float spec, float threshold) {
+    float band = smoothstep(threshold - 0.05, threshold + 0.05, spec);
+    return mix(spec, band, uAmbientColor.w);
+}
+
 // Stepped rim on the silhouettes (1 - N·V) — pays off on spherized
 // normals: a crisp bright fringe where the canopy meets the sky.
 float stylizedRim(vec3 n, vec3 worldPos) {

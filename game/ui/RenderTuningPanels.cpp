@@ -460,6 +460,13 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                                0.0f, 1.0f, "%.2f");
             ImGui::SliderFloat("Shadow floor", &r.stylizedShadowUi.z, 0.0f,
                                0.8f, "%.2f");
+            ImGui::TextDisabled("Specular band (characters/props)");
+            ImGui::SliderFloat("Spec strength", &r.stylizedSpecUi.x, 0.0f,
+                               1.0f, "%.2f");
+            ImGui::SliderFloat("Spec threshold", &r.stylizedSpecUi.y,
+                               0.05f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Spec exponent", &r.stylizedSpecUi.z, 4.0f,
+                               64.0f, "%.0f");
             ImGui::TreePop();
         }
         // A/B: per-cluster light lists vs the legacy 24-light loop

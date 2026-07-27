@@ -91,6 +91,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         // BASE: the reflection pass shades the meadow identically.
         .grassShadeInfo = in.grassShadeInfo,
         .grassBladeInfo = in.grassBladeInfo,
+        .stylizedSpecInfo = in.stylizedSpecInfo,
     };
 
     render::FrameUniforms resolved = base;
