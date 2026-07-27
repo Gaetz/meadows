@@ -50,6 +50,37 @@ void RenderTuningIo::applyTuning(
         glm::clamp(tuning.vegHighDetailRadius, 0, 8);
     r.vegetation.lowDetailRadius =
         glm::clamp(tuning.vegLowDetailRadius, 2, 12);
+    render::GrassRenderTuning& gr = r.grass.renderTuning;
+    gr.bladeHeight = tuning.grassBladeHeight;
+    gr.bladeHalfWidth = tuning.grassBladeHalfWidth;
+    gr.detailNear = tuning.grassDetailNear;
+    gr.detailFar = tuning.grassDetailFar;
+    gr.thinStart = tuning.grassThinStart;
+    gr.thinEnd = tuning.grassThinEnd;
+    gr.farDensity = tuning.grassFarDensity;
+    gr.widthCompensation = tuning.grassWidthCompensation;
+    gr.fadeStart = tuning.grassFadeStart;
+    gr.fadeEnd = tuning.grassFadeEnd;
+    gr.baseTint = tuning.grassBaseTint;
+    gr.tipTint = tuning.grassTipTint;
+    gr.rootAo = tuning.grassRootAo;
+    gr.sheen = tuning.grassSheen;
+    gr.bladeNormals = tuning.grassBladeNormals;
+    gr.brightMin = tuning.grassBrightMin;
+    gr.brightMax = tuning.grassBrightMax;
+    gr.middleDarken = tuning.grassMiddleDarken;
+    gr.backscatter = tuning.grassBackscatter;
+    // Startup-only mapping: the scatter bake reads these on first
+    // request, no regenerate needed (nothing is resident yet).
+    render::GrassScatterTuning& gs = r.grass.scatterTuning;
+    gs.spacing = tuning.grassSpacing;
+    gs.patchBroadScale = tuning.grassPatchBroadScale;
+    gs.patchDetailScale = tuning.grassPatchDetailScale;
+    gs.patchThresholdLo = tuning.grassPatchThresholdLo;
+    gs.patchThresholdHi = tuning.grassPatchThresholdHi;
+    gs.presenceLo = tuning.grassPresenceLo;
+    gs.presenceHi = tuning.grassPresenceHi;
+    gs.materialCutoff = tuning.grassMaterialCutoff;
 }
 
 void RenderTuningIo::applyTreeTuning(
@@ -159,6 +190,35 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
     out.vegViewRadius = r.vegetation.viewRadius;
     out.vegHighDetailRadius = r.vegetation.highDetailRadius;
     out.vegLowDetailRadius = r.vegetation.lowDetailRadius;
+    const render::GrassRenderTuning& gr = r.grass.renderTuning;
+    out.grassBladeHeight = gr.bladeHeight;
+    out.grassBladeHalfWidth = gr.bladeHalfWidth;
+    out.grassDetailNear = gr.detailNear;
+    out.grassDetailFar = gr.detailFar;
+    out.grassThinStart = gr.thinStart;
+    out.grassThinEnd = gr.thinEnd;
+    out.grassFarDensity = gr.farDensity;
+    out.grassWidthCompensation = gr.widthCompensation;
+    out.grassFadeStart = gr.fadeStart;
+    out.grassFadeEnd = gr.fadeEnd;
+    out.grassBaseTint = gr.baseTint;
+    out.grassTipTint = gr.tipTint;
+    out.grassRootAo = gr.rootAo;
+    out.grassSheen = gr.sheen;
+    out.grassBladeNormals = gr.bladeNormals;
+    out.grassBrightMin = gr.brightMin;
+    out.grassBrightMax = gr.brightMax;
+    out.grassMiddleDarken = gr.middleDarken;
+    out.grassBackscatter = gr.backscatter;
+    const render::GrassScatterTuning& gs = r.grass.scatterTuning;
+    out.grassSpacing = gs.spacing;
+    out.grassPatchBroadScale = gs.patchBroadScale;
+    out.grassPatchDetailScale = gs.patchDetailScale;
+    out.grassPatchThresholdLo = gs.patchThresholdLo;
+    out.grassPatchThresholdHi = gs.patchThresholdHi;
+    out.grassPresenceLo = gs.presenceLo;
+    out.grassPresenceHi = gs.presenceHi;
+    out.grassMaterialCutoff = gs.materialCutoff;
 }
 
 void RenderTuningIo::captureRcTuning(const render::WorldRenderer& r,

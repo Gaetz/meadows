@@ -307,10 +307,22 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                            "%.2f");
         ImGui::SliderFloat("Half width (m)", &gt.bladeHalfWidth, 0.01f,
                            0.12f, "%.3f");
-        ImGui::ColorEdit3("Base color", &gt.baseColor.x,
+        ImGui::ColorEdit3("Base tint (x ground)", &gt.baseTint.x,
                           ImGuiColorEditFlags_Float);
-        ImGui::ColorEdit3("Tip color", &gt.tipColor.x,
+        ImGui::ColorEdit3("Tip tint (x ground)", &gt.tipTint.x,
                           ImGuiColorEditFlags_Float);
+        ImGui::SeparatorText("Shading");
+        ImGui::SliderFloat("Root AO", &gt.rootAo, 0.0f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Blade normals", &gt.bladeNormals, 0.0f, 1.0f,
+                           "%.2f");
+        ImGui::DragFloatRange2("Blade brightness", &gt.brightMin,
+                               &gt.brightMax, 0.01f, 0.5f, 2.0f,
+                               "min %.2f", "max %.2f");
+        ImGui::SliderFloat("Middle darken", &gt.middleDarken, 0.0f, 0.5f,
+                           "%.2f");
+        ImGui::SliderFloat("Backscatter", &gt.backscatter, 0.0f, 1.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Tip sheen", &gt.sheen, 0.0f, 1.0f, "%.2f");
         ImGui::SeparatorText("Detail / distance");
         ImGui::SliderFloat("Detail near (m)", &gt.detailNear, 2.0f, 60.0f,
                            "%.0f");

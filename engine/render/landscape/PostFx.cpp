@@ -116,7 +116,9 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
                              .sampler = froxelSampler.get() } } }) };
     }
     shaders.load(kContactShader, { { "FrameUbo", 0 } },
-                 { { "uSceneDepth", 0 }, { "uShadowMap", 1 } },
+                 { { "uSceneDepth", 0 },
+                   { "uShadowMap", 1 },
+                   { "uSceneColor", 2 } },
                  kFullscreenVert);
     shaders.load(kBlurShader, {}, { { "uSource", 0 } }, kFullscreenVert);
     shaders.load(kLuminanceShader, {}, { { "uSceneColor", 0 } },
@@ -277,7 +279,16 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
     // then the 3x3 blur (its IGN jitter needs the filter); the tonemap
     // taps the BLURRED target.
     makeHalfResTarget(contactTex, contactFb, rhi::TextureFormat::R16F);
-    makeDepthGroup(contactGroup);
+    // Depth + scene color: the march reads the color ALPHA to exempt
+    // grass from contact shadows on both sides (receiver early-out,
+    // occluder rejection) — see contactshadow.frag.
+    contactGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = sceneDepthCopy,
+                         .sampler = linearSampler },
+                       { .binding = 2,
+                         .texture = sceneColorCopy,
+                         .sampler = linearSampler } } }) };
     makeHalfResTarget(contactBlurTex, contactBlurFb,
                       rhi::TextureFormat::R16F);
     contactBlurGroup = { device, device.createBindGroup(

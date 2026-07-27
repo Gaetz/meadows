@@ -78,8 +78,10 @@ struct FrameComposerInputs {
     // GrassRenderTuning (see FrameUniforms for the lane meanings).
     Vec4 grassShapeInfo { 0.95f, 0.045f, 12.5f, 25.0f };
     Vec4 grassLodInfo { 10.0f, 70.0f, 0.20f, 1.7f };
-    Vec4 grassBaseColor { 0.012f, 0.040f, 0.008f, 140.0f };
-    Vec4 grassTipColor { 0.095f, 0.200f, 0.045f, 190.0f };
+    Vec4 grassBaseTint { 1.0f, 1.0f, 1.0f, 140.0f };
+    Vec4 grassTipTint { 1.0f, 1.0f, 1.0f, 190.0f };
+    Vec4 grassShadeInfo { 1.0f, 0.5f, 0.0f, 0.0f };
+    Vec4 grassBladeInfo { 1.0f, 1.0f, 0.0f, 0.0f };
     // Foliage-card leaf cutout -> solid mip window (Tree builder).
     Vec4 leafLodInfo { 4.0f, 7.0f, 0.0f, 0.0f };
     // Stylized ramp lanes (see FrameUniforms).

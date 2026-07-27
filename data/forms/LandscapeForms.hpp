@@ -103,6 +103,37 @@ struct LandscapeTuningForm : Form {
     i32 vegHighDetailRadius { 2 };  // full-detail canopies inside (~128 m)
     // 80-face twins inside; 20-face ultra lobes beyond.
     i32 vegLowDetailRadius { 4 };
+    // Grass meadow — mirrors render::GrassRenderTuning field for field
+    // (defaults MUST match; splatUvScale above feeds the scatter bake).
+    // Tints multiply the ground albedo inherited at each blade's root.
+    f32 grassBladeHeight { 0.95f };
+    f32 grassBladeHalfWidth { 0.03f };
+    f32 grassDetailNear { 12.5f };
+    f32 grassDetailFar { 25.0f };
+    f32 grassThinStart { 10.0f };
+    f32 grassThinEnd { 70.0f };
+    f32 grassFarDensity { 0.20f };
+    f32 grassWidthCompensation { 1.7f };
+    f32 grassFadeStart { 140.0f };
+    f32 grassFadeEnd { 190.0f };
+    Vec3 grassBaseTint { 1.0f, 1.0f, 1.0f };
+    Vec3 grassTipTint { 1.0f, 1.0f, 1.0f };
+    f32 grassRootAo { 1.0f };
+    f32 grassSheen { 0.5f };
+    f32 grassBladeNormals { 0.0f };
+    f32 grassBrightMin { 1.0f };
+    f32 grassBrightMax { 1.0f };
+    f32 grassMiddleDarken { 0.0f };
+    f32 grassBackscatter { 0.0f };
+    // Scatter half (render::GrassScatterTuning — re-bakes on change).
+    f32 grassSpacing { 0.15f };
+    f32 grassPatchBroadScale { 21.0f };
+    f32 grassPatchDetailScale { 6.0f };
+    f32 grassPatchThresholdLo { 0.47f };
+    f32 grassPatchThresholdHi { 0.60f };
+    f32 grassPresenceLo { 0.08f };
+    f32 grassPresenceHi { 0.40f };
+    f32 grassMaterialCutoff { 0.72f };
 
     REFLECT_BEGIN(LandscapeTuningForm, Form)
         REFLECT_FIELD(terrainSeed)
@@ -152,6 +183,33 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(vegViewRadius)
         REFLECT_FIELD(vegHighDetailRadius)
         REFLECT_FIELD(vegLowDetailRadius)
+        REFLECT_FIELD(grassBladeHeight)
+        REFLECT_FIELD(grassBladeHalfWidth)
+        REFLECT_FIELD(grassDetailNear)
+        REFLECT_FIELD(grassDetailFar)
+        REFLECT_FIELD(grassThinStart)
+        REFLECT_FIELD(grassThinEnd)
+        REFLECT_FIELD(grassFarDensity)
+        REFLECT_FIELD(grassWidthCompensation)
+        REFLECT_FIELD(grassFadeStart)
+        REFLECT_FIELD(grassFadeEnd)
+        REFLECT_FIELD(grassBaseTint)
+        REFLECT_FIELD(grassTipTint)
+        REFLECT_FIELD(grassRootAo)
+        REFLECT_FIELD(grassSheen)
+        REFLECT_FIELD(grassBladeNormals)
+        REFLECT_FIELD(grassBrightMin)
+        REFLECT_FIELD(grassBrightMax)
+        REFLECT_FIELD(grassMiddleDarken)
+        REFLECT_FIELD(grassBackscatter)
+        REFLECT_FIELD(grassSpacing)
+        REFLECT_FIELD(grassPatchBroadScale)
+        REFLECT_FIELD(grassPatchDetailScale)
+        REFLECT_FIELD(grassPatchThresholdLo)
+        REFLECT_FIELD(grassPatchThresholdHi)
+        REFLECT_FIELD(grassPresenceLo)
+        REFLECT_FIELD(grassPresenceHi)
+        REFLECT_FIELD(grassMaterialCutoff)
     REFLECT_END()
 };
 

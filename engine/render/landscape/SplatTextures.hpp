@@ -28,4 +28,10 @@ vector<u8> buildSplatTilePixels();
 // VISIBLE snow/sand borders instead of tracing the raw altitude contour.
 f32 splatWander(f32 u, f32 v);
 
+// The grass ground color at tiled uv in [0,1), in DISPLAY space —
+// currently fully uniform. Grass blades inherit it at their root so
+// the carpet and the ground share ONE color source (grass.vert
+// decodes to linear like the terrain's sRGB sampler).
+Vec3 grassAlbedo(f32 u, f32 v);
+
 } // namespace render

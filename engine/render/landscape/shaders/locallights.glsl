@@ -125,7 +125,12 @@ vec3 shadeLocalLight(int i, vec3 worldPos, vec3 n, float interior) {
         atten *= keyShadowFactor(i, worldPos);
         float ndl = dot(n, l);
         float wrapped = clamp((ndl + 0.4) / 1.4, 0.0, 1.0);
-        float diff = mix(max(ndl, 0.0), wrapped, interior);
+        // Exterior local lights follow the SAME stylized cel ramp (and
+        // A/B blend) as the sun — night characters under torchlight
+        // step instead of grading through smooth Lambert. Interiors
+        // keep the wrapped half-Lambert + bounce (the dead-room fix).
+        float diff = mix(stylizedDiffuse(ndl, max(ndl, 0.0)), wrapped,
+                         interior);
         // The normal-free bounce is the OMNI candles' room hue; on a
         // spot it paints the cone's cross-section on the walls it
         // crosses (the window-circle artifact). Beams bounce via GI.

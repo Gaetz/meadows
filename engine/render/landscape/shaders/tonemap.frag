@@ -34,11 +34,14 @@ void main() {
         return;
     }
 
-    vec3 hdr = texture(uSceneColor, vUv).rgb;
+    vec4 scene = texture(uSceneColor, vUv);
+    vec3 hdr = scene.rgb;
     // Screen-space contact shadows — surface darkening before
     // the added airlight below. The texture is the toggle: the scene
-    // clears it to white when the feature is off.
-    hdr *= texture(uContact, vUv).r;
+    // clears it to white when the feature is off. The scene ALPHA is a
+    // receive flag (1 = receive, 0 = exempt — grass opts out so the
+    // meadow stays one flat mass; it still casts into the march).
+    hdr *= mix(1.0, texture(uContact, vUv).r, scene.a);
     // Volumetric: alpha REMOVES the fog in-scatter where distant air is
     // cloud-shadowed (dark far curtains), rgb ADDS the near shafts. Then
     // bloom (uPostInfo.w) and god rays (uSunScreen.w), all in linear HDR

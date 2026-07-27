@@ -16,8 +16,8 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 //  - WRAP DIFFUSE (wrap 0.5) — soft carpet lighting.
 //  - BACKSCATTER — light bleeding THROUGH blades when looking toward the
 //    sun (the reference's "backscatter fakery"), high-detail range only.
-//  - ROOT AO — a deep occlusion ramp (easeIn^2) rising along the blade;
-//    this is what makes the reference's meadow read dense.
+//  - ROOT AO — a gentle occlusion ramp (easeIn^2) rising along the
+//    blade; depth without breaking the blades' uniform ground color.
 //  - BLADE MIDDLE SHADING — the width-center darkens slightly, selling
 //    the rounded cross-section together with the two blended normals.
 
@@ -32,18 +32,21 @@ layout(location = 6) in vec3 vWorldPos;
 layout(location = 0) out vec4 fragColor;
 
 void main() {
-    vec3 albedo = vColor;
     // Wetness: rain darkens and cools the meadow.
-    albedo *= mix(vec3(1.0), vec3(0.66, 0.72, 0.72),
-                  clamp(uStormInfo.y, 0.0, 1.0));
+    vec3 albedo = vColor * mix(vec3(1.0), vec3(0.66, 0.72, 0.72),
+                               clamp(uStormInfo.y, 0.0, 1.0));
 
     // Blade middle darkening (near only — flattens out with the LOD).
     float acrossEdge = abs(vXSide * 2.0 - 1.0); // 0 center, 1 edges
-    float middle = 1.0 - 0.15 * (1.0 - acrossEdge) * (1.0 - acrossEdge);
+    float middle = 1.0 - uGrassBladeInfo.z * (1.0 - acrossEdge) *
+                             (1.0 - acrossEdge);
     albedo *= mix(middle, 1.0, vLodOut);
 
-    // Deep root occlusion (the reference's density AO, easeIn^2 up).
-    float ao = mix(0.30, 1.0, vT * vT);
+    // Root occlusion (density AO, easeIn^2 up) — kept GENTLE so near
+    // blades hold the ground's color down to the carpet. Eases out with
+    // the LOD: the terrain has no such AO, so the far carpet must light
+    // like the bare ground it dissolves into.
+    float ao = mix(mix(uGrassShadeInfo.x, 1.0, vT * vT), 1.0, vLodOut);
 
     // The two rounded normals blend across the width.
     vec3 n = normalize(mix(vNormal1, vNormal2, vXSide));
@@ -57,28 +60,34 @@ void main() {
     vec3 viewDir = normalize(vWorldPos - uCameraPos.xyz);
     float backLight =
         clamp((dot(viewDir, uSunDirection.xyz) + 0.5) / 1.5, 0.0, 1.0);
-    float scatter = backLight * 0.5 * (1.0 - vLodOut);
+    float scatter = backLight * uGrassBladeInfo.w * (1.0 - vLodOut);
 
     // Thin sheen along the blade, strongest at the tips.
     vec3 halfDir = normalize(uSunDirection.xyz - viewDir);
-    float sheen = pow(max(dot(n, halfDir), 0.0), 32.0) * 0.25 * vT;
+    float sheen = pow(max(dot(n, halfDir), 0.0), 32.0) *
+                  uGrassShadeInfo.y * vT;
 
     float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
                    cloudShadowFactor(vWorldPos);
     // Distant terrain shadow + sky openness.
     vec2 tl = terrainLightFactors(vWorldPos);
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.
-    vec3 lit = albedo * ao *
-                   (giAmbient(vWorldPos, n, uAmbientColor.rgb * tl.y) +
-                    uSunColor.rgb *
-                        ((diffuse + scatter) * shadow * tl.x)) +
-               uSunColor.rgb * sheen * ao * shadow * tl.x;
+    vec3 ambient = giAmbient(vWorldPos, n, uAmbientColor.rgb * tl.y);
     // Direct local lights on the meadow, CLUSTERED PATH ONLY
     // (docs/RENDERING.md §5 B4) — the blade's blended normal feeds the
     // shared shading; root AO keeps the carpet's depth under torchlight.
-    if (uClusterInfo.x > 0.5) {
-        lit += albedo * ao * localLights(vWorldPos, n);
-    }
+    vec3 local = uClusterInfo.x > 0.5 ? localLights(vWorldPos, n)
+                                      : vec3(0.0);
+    vec3 lit = albedo * ao *
+                   (ambient + local +
+                    uSunColor.rgb *
+                        ((diffuse + scatter) * shadow * tl.x)) +
+               uSunColor.rgb * sheen * ao * shadow * tl.x;
 
-    fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
+    // Scene-alpha contract (tonemap.frag): 0 = this pixel does NOT
+    // receive screen-space contact shadows. Blade-on-blade contact
+    // noise would break the meadow's flat-mass read; the blades still
+    // CAST into the march, so the block keeps darkening the ground
+    // beside it.
+    fragColor = vec4(applyFog(lit, vWorldPos), 0.0);
 }

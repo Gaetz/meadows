@@ -119,7 +119,13 @@ re-validate GL 4.6 parity**.
 The reusable **systems** live in `engine/render/landscape/`:
 `TerrainSystem` (64 m streamed chunks, 4 LODs + skirts, deterministic
 world-space noise, sRGB splat array), `GrassSystem` (Quick_Grass blades,
-metric density prefix), `VegetationSystem` (12 variants, deterministic
+metric density prefix; blades **inherit the terrain albedo at their
+root** — the scatter bakes the splat blotch color per instance
+(packed in `groundNormal.w`) and the panel colors are tints ×ground,
+so meadow and terrain share ONE color source: dry blotches tint the
+blades above them, and the distance fade dissolves into the ground —
+the BotW raccord, completing the ground-normal shading; root AO eases
+out with the LOD for the same reason), `VegetationSystem` (12 variants, deterministic
 forest-belt scatter, canopy LOD + low twins, space-colonization trees by
 default with lobe trees as A/B), `TreeGenerator` /
 `SpaceColonizationTree`, `SkySystem` (analytic day/night palette, weather

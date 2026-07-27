@@ -35,8 +35,25 @@ struct GrassRenderTuning {
     f32 widthCompensation { 1.7f }; // far blades widen (same visual mass)
     f32 fadeStart { 140.0f };     // blades start sinking (m)
     f32 fadeEnd { 190.0f };       // gone — must match draw()'s cull (m)
-    Vec3 baseColor { 0.012f, 0.040f, 0.008f };
-    Vec3 tipColor { 0.095f, 0.200f, 0.045f };
+    // Tints MULTIPLY the ground albedo baked at each blade's root
+    // (one color source with the terrain splat — the BotW raccord);
+    // (1,1,1) = the blade takes exactly the ground color. The defaults
+    // are the FLAT-MASS look: the meadow is one solid ground-colored
+    // block, blades read only through silhouettes, wind and the tip
+    // sheen.
+    Vec3 baseTint { 1.0f, 1.0f, 1.0f };
+    Vec3 tipTint { 1.0f, 1.0f, 1.0f };
+    // Shading knobs (uGrassShadeInfo/uGrassBladeInfo lanes).
+    f32 rootAo { 1.0f };        // root-AO floor (1 = no root occlusion)
+    f32 sheen { 0.5f };         // tip sheen strength (sun-facing spec)
+    f32 bladeNormals { 0.0f };  // near blade-normal share (0 = blades
+                                //   light exactly like the ground —
+                                //   the flat-mass interior; 0.35 = the
+                                //   historical rounded-blade shading)
+    f32 brightMin { 1.0f };     // whole-blade brightness hash range
+    f32 brightMax { 1.0f };
+    f32 middleDarken { 0.0f };  // blade width-center darkening
+    f32 backscatter { 0.0f };   // sun bleeding through the blade
 };
 
 // The SCATTER half is baked per chunk on the workers — the panel triggers
@@ -50,6 +67,10 @@ struct GrassScatterTuning {
     f32 presenceLo { 0.08f };       // patch -> presence window (rim...)
     f32 presenceHi { 0.40f };       // ...to solid-volume interior
     f32 materialCutoff { 0.72f };   // min grass splat weight to grow
+    // Splat tiling (tiles/meter) for the root-albedo bake — NOT a panel
+    // knob: WorldRenderer syncs it from the view every frame (a change
+    // regenerates, same policy as the other scatter knobs).
+    f32 splatUvScale { 0.25f };
 };
 
 // Animated grass (blade model = the
@@ -117,10 +138,12 @@ public:
         Vec4 positionScale; // xyz = terrain point, w = height scale
         Vec4 params;        // x = yaw, y = flutter phase, z = tint jitter,
                             // w = lean amount
-        // 7.8bis — THE BotW look mechanism: blades shade with the GROUND
-        // normal (the meadow lights as one continuous surface; blade
-        // geometry only shows in silhouettes and wind).
-        Vec4 groundNormal;  // xyz = terrain normal at the root, w unused
+        // THE BotW look mechanism: blades shade with the GROUND normal
+        // (the meadow lights as one continuous surface; blade geometry
+        // only shows in silhouettes and wind) and inherit the GROUND
+        // albedo at their root (one color source with the terrain splat).
+        Vec4 groundNormal;  // xyz = terrain normal at the root,
+                            // w = root ground albedo (packed sRGB bytes)
     };
 
 private:

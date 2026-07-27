@@ -1,11 +1,13 @@
 #include "engine/render/landscape/GrassSystem.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 
 #include "engine/core/Hash.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/landscape/SplatTextures.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
@@ -34,6 +36,18 @@ f32 patchMask(u32 seed, const GrassScatterTuning& tuning, f32 x, f32 z) {
 // hashU32 / HashRng live in engine/core/Hash.hpp (shared scatter hash family).
 using core::hashU32;
 using core::HashRng;
+
+// The root albedo rides the instance's spare lane (groundNormal.w) as
+// packed display-space bytes; grass.vert unpacks with
+// unpackUnorm4x8(floatBitsToUint(...)) and sRGB-decodes like the
+// terrain's sampler. Alpha byte stays 0 — the bit pattern can never be
+// a NaN/Inf, so the f32 attribute fetch is lossless.
+f32 packAlbedo(const Vec3& color) {
+    const u32 r = static_cast<u32>(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f);
+    const u32 g = static_cast<u32>(glm::clamp(color.g, 0.0f, 1.0f) * 255.0f);
+    const u32 b = static_cast<u32>(glm::clamp(color.b, 0.0f, 1.0f) * 255.0f);
+    return std::bit_cast<f32>(r | (g << 8) | (b << 16));
+}
 
 // One blade (the SimonDev Quick_Grass model): 6 straight
 // segments, sides at ±1 with NO baked taper — grass.vert shapes the
@@ -80,11 +94,22 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
     const f32 cellSize = spacing * static_cast<f32>(kCell);
 
     vector<f32> cornerH((cells + 1) * (cells + 1));
+    // Ground albedo on the same corner lattice (bilinear per blade): the
+    // blotch field varies over meters, and per-candidate FBM evals are
+    // exactly what the cell-major layout exists to avoid. Each corner
+    // wraps its own uv — the tile is seamless, so interpolating the
+    // COLORS across a tile boundary stays continuous.
+    vector<Vec3> cornerAlbedo((cells + 1) * (cells + 1));
     for (u32 gz = 0; gz <= cells; ++gz) {
         for (u32 gx = 0; gx <= cells; ++gx) {
-            cornerH[gz * (cells + 1) + gx] = terrain::height(
-                params, originX + static_cast<f32>(gx) * cellSize,
-                originZ + static_cast<f32>(gz) * cellSize);
+            const f32 wx = originX + static_cast<f32>(gx) * cellSize;
+            const f32 wz = originZ + static_cast<f32>(gz) * cellSize;
+            cornerH[gz * (cells + 1) + gx] =
+                terrain::height(params, wx, wz);
+            const f32 su = wx * tuning.splatUvScale;
+            const f32 sv = wz * tuning.splatUvScale;
+            cornerAlbedo[gz * (cells + 1) + gx] = grassAlbedo(
+                su - std::floor(su), sv - std::floor(sv));
         }
     }
 
@@ -108,6 +133,11 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             const f32 h10 = cornerH[cgz * (cells + 1) + cgx + 1];
             const f32 h01 = cornerH[(cgz + 1) * (cells + 1) + cgx];
             const f32 h11 = cornerH[(cgz + 1) * (cells + 1) + cgx + 1];
+            const Vec3& a00 = cornerAlbedo[cgz * (cells + 1) + cgx];
+            const Vec3& a10 = cornerAlbedo[cgz * (cells + 1) + cgx + 1];
+            const Vec3& a01 = cornerAlbedo[(cgz + 1) * (cells + 1) + cgx];
+            const Vec3& a11 =
+                cornerAlbedo[(cgz + 1) * (cells + 1) + cgx + 1];
             // Cell normal from its corners — grass shading barely
             // perturbs it, lattice precision is plenty.
             const Vec3 n = glm::normalize(
@@ -148,6 +178,9 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                         cellSize;
                     const f32 h = glm::mix(glm::mix(h00, h10, fx),
                                            glm::mix(h01, h11, fx), fz);
+                    const Vec3 rootAlbedo =
+                        glm::mix(glm::mix(a00, a10, fx),
+                                 glm::mix(a01, a11, fx), fz);
                     // Height: near-uniform inside the volume so the top
                     // reads as one surface; the rim droops shorter, and
                     // ~12% of blades overshoot — the tips poking above
@@ -167,7 +200,8 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                                     rng.next() * 6.2831853f, // flutter
                                     rng.next(),              // tint jitter
                                     lean },                  // lean amount
-                        .groundNormal = { n, 0.0f }, // BotW shading
+                        // BotW shading + the root's ground color.
+                        .groundNormal = { n, packAlbedo(rootAlbedo) },
                     });
                 }
             }

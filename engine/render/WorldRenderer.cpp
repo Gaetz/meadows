@@ -1032,6 +1032,11 @@ void WorldRenderer::render(engine::FrameContext& frame,
         }
         if (cfg.grass) {
             core::FrameProbe::Scope probe { *view.probe, "grass" };
+            // Root-albedo bake tiling follows the terrain's splat scale.
+            if (grass.scatterTuning.splatUvScale != view.splatUvScale) {
+                grass.scatterTuning.splatUvScale = view.splatUvScale;
+                grass.regenerate(frame.device);
+            }
             grass.update(frame.device, terrain.params,
                          view.camera.position);
         }
@@ -1199,10 +1204,17 @@ void WorldRenderer::render(engine::FrameContext& frame,
                           grass.renderTuning.thinEnd,
                           grass.renderTuning.farDensity,
                           grass.renderTuning.widthCompensation },
-        .grassBaseColor = { grass.renderTuning.baseColor,
-                            grass.renderTuning.fadeStart },
-        .grassTipColor = { grass.renderTuning.tipColor,
-                           grass.renderTuning.fadeEnd },
+        .grassBaseTint = { grass.renderTuning.baseTint,
+                           grass.renderTuning.fadeStart },
+        .grassTipTint = { grass.renderTuning.tipTint,
+                          grass.renderTuning.fadeEnd },
+        .grassShadeInfo = { grass.renderTuning.rootAo,
+                            grass.renderTuning.sheen,
+                            grass.renderTuning.bladeNormals, 0.0f },
+        .grassBladeInfo = { grass.renderTuning.brightMin,
+                            grass.renderTuning.brightMax,
+                            grass.renderTuning.middleDarken,
+                            grass.renderTuning.backscatter },
         .leafLodInfo = { vegetation.colonizedTreeParams.leafSolidStart,
                          vegetation.colonizedTreeParams.leafSolidEnd, 0.0f,
                          0.0f },

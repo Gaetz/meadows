@@ -16,10 +16,13 @@
 //    meadow never dissolves into hairlines.
 //  - NORMALS: two per blade, the curve normal rotated ±54° around the
 //    blade axis, blended across the width in the fragment; both pulled
-//    toward the GROUND normal (dominant far, 35% blade near) — keeps the
-//    validated BotW "meadow lights as one surface" grounding.
-//  - COLOR: dark rooted base to bright tip, easeIn^4 ramp; per-blade tint
-//    and shade hashes; far LOD flattens to a cheap linear ramp.
+//    toward the GROUND normal (fully far; the near blade share is the
+//    uGrassShadeInfo.z knob, 0 = blades light exactly like the ground)
+//    — the BotW "meadow lights as one surface" grounding.
+//  - COLOR: the ground albedo baked at the root (one color source with
+//    the terrain splat), gentle base -> tip ramp (easeIn^4), whole-blade
+//    brightness hash (some blades simply lighter — the BotW read); far
+//    LOD flattens to a cheap linear ramp.
 //
 // KEPT CONTRACTS (do not break):
 //  - density-LOD clip: instances are SORTED by aParams.y; the curve here
@@ -72,6 +75,13 @@ mat3 rotX(float angle) {
     float s = sin(angle), c = cos(angle);
     return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c);
 }
+// Exact sRGB decode — the root albedo is packed as display-space bytes
+// (GrassSystem's bake) and must land in linear exactly like the terrain's
+// sRGB-sampled splat, or the raccord breaks.
+vec3 srgbToLinear(vec3 c) {
+    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)),
+               step(0.04045, c));
+}
 
 void main() {
     // Density-LOD clip — SAME curve as GrassSystem::draw()'s prefix cut.
@@ -89,14 +99,15 @@ void main() {
     float lodOut = smoothstep(uGrassShapeInfo.z, uGrassShapeInfo.w, dist);
     vLodOut = lodOut;
 
-    // Extra per-blade hashes (stable: seeded by the root position).
-    float hashColor1 = hash21(aPosScale.xz * 3.17);
-    float hashColor2 = hash21(aPosScale.xz * 7.91);
-    float shade = mix(0.65, 1.0, hash21(aPosScale.xz * 5.53));
+    // ONE per-blade brightness (stable: seeded by the root position) —
+    // whole blades read lighter or darker, never a vertical jitter
+    // (the BotW meadow: uniform blades, some simply brighter).
+    float bladeBright = mix(uGrassBladeInfo.x, uGrassBladeInfo.y,
+                            hash21(aPosScale.xz * 3.17));
 
     // Distance fade: blades sink into the ground (matches draw()'s cull).
     float fade =
-        1.0 - smoothstep(uGrassBaseColor.w, uGrassTipColor.w, dist);
+        1.0 - smoothstep(uGrassBaseTint.w, uGrassTipTint.w, dist);
     float height = uGrassShapeInfo.x * aPosScale.w * fade;
 
     // Player push: compute from the root before shaping.
@@ -164,18 +175,24 @@ void main() {
     vec3 nLocal = rotX(curve) * vec3(0.0, 0.0, 1.0);
     vec3 n1 = grassMat * (rotAxis(vec3(0.0, 1.0, 0.0), 0.94) * nLocal);
     vec3 n2 = grassMat * (rotAxis(vec3(0.0, 1.0, 0.0), -0.94) * nLocal);
-    float bladeRatio = (1.0 - lodOut) * 0.35;
+    float bladeRatio = (1.0 - lodOut) * uGrassShadeInfo.z;
     vNormal1 = normalize(mix(aGroundNormal.xyz, n1, bladeRatio));
     vNormal2 = normalize(mix(aGroundNormal.xyz, n2, bladeRatio));
 
-    // COLOR — steep dark-base -> bright-tip ramp (easeIn^4: the base stays
-    // dark deep up the blade, the last quarter ignites). The panel colors
-    // are the LOW end; per-blade hashes push up to ~1.3x brighter.
-    vec3 base = uGrassBaseColor.rgb * mix(1.0, 1.3, hashColor1);
-    vec3 tip = uGrassTipColor.rgb * mix(1.0, 1.3, hashColor2);
+    // COLOR — the blade INHERITS the ground albedo baked at its root
+    // (aGroundNormal.w: packed sRGB bytes, one color source with the
+    // terrain splat — ground blotches tint the blades above them, and
+    // the distance fade dissolves into the terrain seamlessly). The
+    // panel tints multiply it in a GENTLE base->tip ramp (easeIn^4);
+    // the blade stays near-uniform — variation is PER BLADE
+    // (bladeBright), never along the height.
+    vec3 ground =
+        srgbToLinear(unpackUnorm4x8(floatBitsToUint(aGroundNormal.w)).rgb);
+    vec3 base = ground * uGrassBaseTint.rgb;
+    vec3 tip = ground * uGrassTipTint.rgb;
     float ramp = t * t * t * t;
-    vec3 highColor = mix(base, tip, ramp) * shade;
-    vec3 lowColor = mix(uGrassBaseColor.rgb, uGrassTipColor.rgb, t);
+    vec3 highColor = mix(base, tip, ramp) * bladeBright;
+    vec3 lowColor = mix(base, tip, t);
     vColor = mix(highColor, lowColor, lodOut);
 
     vWorldPos = world;

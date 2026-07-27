@@ -110,15 +110,17 @@ MaterialWeights materialWeights(const TerrainParams& params, f32 height,
 MaterialWeights materialWeightsShaded(const TerrainParams& params, f32 x,
                                       f32 z, f32 splatUvScale) {
     // Keep in LOCKSTEP with terrain.frag: uv = xz * scale; wander =
-    // splat green at uv * 0.06 - 0.5; the snow/sand altitudes shift by
-    // wander * 26 / * 5 before the same smoothsteps.
+    // splat green at uv * 0.06 - 0.91 (tile mean green 0.60 linear plus
+    // the -0.31 bias the snow/sand lines are tuned against); the
+    // snow/sand altitudes shift by wander * 26 / * 5 before the same
+    // smoothsteps.
     const f32 h = height(params, x, z);
     const Vec3 n = normal(params, x, z);
     const f32 slope = 1.0f - n.y;
     const f32 u = x * splatUvScale * 0.06f;
     const f32 v = z * splatUvScale * 0.06f;
     const f32 wander =
-        splatWander(u - std::floor(u), v - std::floor(v)) - 0.5f;
+        splatWander(u - std::floor(u), v - std::floor(v)) - 0.91f;
     MaterialWeights weights;
     weights.rock = glm::smoothstep(0.18f, 0.35f, slope);
     weights.snow = glm::smoothstep(kSnowLine - 12.0f, kSnowLine + 42.0f,

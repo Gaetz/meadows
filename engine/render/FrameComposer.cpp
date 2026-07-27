@@ -78,8 +78,8 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         // tuning as the main view.
         .grassShapeInfo = in.grassShapeInfo,
         .grassLodInfo = in.grassLodInfo,
-        .grassBaseColor = in.grassBaseColor,
-        .grassTipColor = in.grassTipColor,
+        .grassBaseTint = in.grassBaseTint,
+        .grassTipTint = in.grassTipTint,
         // BASE too: the reflection pass draws the tree cards.
         .leafLodInfo = in.leafLodInfo,
         // BASE too: the fog applies in the reflection as well.
@@ -88,6 +88,9 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         // BASE too: the reflection shades with the same ramp.
         .stylizedDiffuseInfo = in.stylizedDiffuseInfo,
         .stylizedShadowInfo = in.stylizedShadowInfo,
+        // BASE: the reflection pass shades the meadow identically.
+        .grassShadeInfo = in.grassShadeInfo,
+        .grassBladeInfo = in.grassBladeInfo,
     };
 
     render::FrameUniforms resolved = base;

@@ -12,6 +12,9 @@
 // FrameUbo slot for a flag).
 layout(binding = 0) uniform sampler2D uSceneDepth;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
+// Scene color for its ALPHA flag (0 = grass): grass neither receives
+// nor casts contact shadows — the meadow reads as one flat mass.
+layout(binding = 2) uniform sampler2D uSceneColor;
 #include "shadow.glsl"
 
 layout(location = 0) in vec2 vUv;
@@ -34,6 +37,10 @@ void main() {
     float depth = texture(uSceneDepth, vUv).r;
     if (depth >= 0.99995) {
         fragColor = vec4(1.0); // sky
+        return;
+    }
+    if (texture(uSceneColor, vUv).a < 0.5) {
+        fragColor = vec4(1.0); // grass receiver: exempt, skip the march
         return;
     }
     vec3 position = worldFromDepth(vUv, depth);
@@ -71,7 +78,8 @@ void main() {
         // surfaces self-shadowed into black dots — worst at altitude
         // where everything is far.
         float minAhead = 0.02 + dist * 0.0025;
-        if (ahead > minAhead && ahead < thickness) {
+        if (ahead > minAhead && ahead < thickness &&
+            texture(uSceneColor, uv).a > 0.5) { // grass never casts
             shadow = 1.0;
             break;
         }

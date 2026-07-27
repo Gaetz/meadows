@@ -69,13 +69,7 @@ void writeTexel(vector<u8>& pixels, size_t index, const Vec3& color) {
 }
 
 Vec3 grassTexel(f32 u, f32 v) {
-    // Soft mottled green with drier yellowish patches.
-    const f32 blotch = tileFbm(101, u, v, 6, 4);
-    const f32 grain = tileFbm(102, u, v, 32, 2);
-    Vec3 color = glm::mix(Vec3 { 0.30f, 0.47f, 0.19f },
-                          Vec3 { 0.42f, 0.48f, 0.20f },
-                          glm::smoothstep(0.45f, 0.70f, blotch));
-    return color * (0.92f + 0.16f * grain);
+    return grassAlbedo(u, v);
 }
 
 Vec3 rockTexel(f32 u, f32 v) {
@@ -138,6 +132,14 @@ vector<u8> buildSplatTilePixels() {
     return pixels;
 }
 
+
+Vec3 grassAlbedo(f32 /*u*/, f32 /*v*/) {
+    // FULLY UNIFORM soft green (#8CCC80) — the meadow is one flat
+    // color by design (blades read through silhouettes, not texture).
+    // The GREEN channel feeds the border wander — changing it moves
+    // the -0.91 centering in terrain.frag / TerrainNoise.cpp.
+    return Vec3 { 0.55f, 0.80f, 0.50f };
+}
 
 f32 splatWander(f32 u, f32 v) {
     // The texture stores DISPLAY-space bytes in an SRGBA8 view; the

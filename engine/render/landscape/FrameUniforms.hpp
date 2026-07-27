@@ -76,10 +76,10 @@ struct FrameUniforms {
     Vec4 grassLodInfo { 10.0f, 70.0f, 0.20f, 1.7f };
     // x/y = density thinning start/end (m), z = far density floor,
     // w = width compensation at far density (wider blades, same mass)
-    Vec4 grassBaseColor { 0.012f, 0.040f, 0.008f, 140.0f };
-    // rgb = blade base albedo, w = distance fade start (m)
-    Vec4 grassTipColor { 0.095f, 0.200f, 0.045f, 190.0f };
-    // rgb = blade tip albedo, w = distance fade end (m)
+    Vec4 grassBaseTint { 1.0f, 1.0f, 1.0f, 140.0f };
+    // rgb = base tint × root ground albedo, w = distance fade start (m)
+    Vec4 grassTipTint { 1.0f, 1.0f, 1.0f, 190.0f };
+    // rgb = tip tint × root ground albedo, w = distance fade end (m)
     // The GiTechnique switch — surface shaders
     // swap their ambient term for the merged cascade-0 sample (gi.glsl)
     // when x = 1. Zero = Classic, byte-identical exterior.
@@ -115,6 +115,13 @@ struct FrameUniforms {
     // keyShadowViewProj/keyShadowInfo above are the retired single-light
     // fields (append-only: they stay, zeroed).
     array<Mat4, 4> keyShadowAtlasViewProj {};
+    // Grass shading knobs (render panel "Grass", grass.vert/.frag):
+    // x = root-AO floor (1 = none), y = tip sheen strength, z = near
+    // blade-normal share (0 = blades light like the ground), w free.
+    Vec4 grassShadeInfo { 1.0f, 0.5f, 0.0f, 0.0f };
+    // x/y = whole-blade brightness hash range (min/max),
+    // z = blade middle darkening, w = backscatter strength.
+    Vec4 grassBladeInfo { 1.0f, 1.0f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -158,8 +165,8 @@ static_assert(offsetof(FrameUniforms, rainOcclusionViewProj) == 768);
 static_assert(offsetof(FrameUniforms, grassBendInfo) == 832);
 static_assert(offsetof(FrameUniforms, grassShapeInfo) == 848);
 static_assert(offsetof(FrameUniforms, grassLodInfo) == 864);
-static_assert(offsetof(FrameUniforms, grassBaseColor) == 880);
-static_assert(offsetof(FrameUniforms, grassTipColor) == 896);
+static_assert(offsetof(FrameUniforms, grassBaseTint) == 880);
+static_assert(offsetof(FrameUniforms, grassTipTint) == 896);
 static_assert(offsetof(FrameUniforms, giInfo) == 912);
 static_assert(offsetof(FrameUniforms, giGridInfo) == 928);
 static_assert(offsetof(FrameUniforms, giBandInfo) == 944);
@@ -169,7 +176,9 @@ static_assert(offsetof(FrameUniforms, stylizedDiffuseInfo) == 992);
 static_assert(offsetof(FrameUniforms, stylizedShadowInfo) == 1008);
 static_assert(offsetof(FrameUniforms, clusterInfo) == 1024);
 static_assert(offsetof(FrameUniforms, keyShadowAtlasViewProj) == 1040);
-static_assert(sizeof(FrameUniforms) == 1296,
+static_assert(offsetof(FrameUniforms, grassShadeInfo) == 1296);
+static_assert(offsetof(FrameUniforms, grassBladeInfo) == 1312);
+static_assert(sizeof(FrameUniforms) == 1328,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

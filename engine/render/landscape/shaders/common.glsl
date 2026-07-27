@@ -56,8 +56,8 @@ layout(std140, binding = 0) uniform FrameUbo {
                           // zw = high-detail near/far (m)
     vec4 uGrassLodInfo;   // xy = density thinning start/end (m),
                           // z = far density floor, w = width compensation
-    vec4 uGrassBaseColor; // rgb = base albedo, w = fade start (m)
-    vec4 uGrassTipColor;  // rgb = tip albedo, w = fade end (m)
+    vec4 uGrassBaseTint; // rgb = base tint × ground albedo, w = fade start (m)
+    vec4 uGrassTipTint;  // rgb = tip tint × ground albedo, w = fade end (m)
     // The GI technique switch (gi.glsl).
     vec4 uGiInfo;     // x = technique (0 classic / 1 RC), y = intensity,
                       // z = edge fade width (m), w = grid resolution
@@ -79,4 +79,11 @@ layout(std140, binding = 0) uniform FrameUbo {
     // Key-shadow atlas: world -> tile clip per slot; a light's slot
     // rides LightsUbo windowInfo.z (slot+1, 0 = unshadowed).
     mat4 uKeyShadowAtlas[4];
+    // Grass shading knobs (grass.vert/.frag): x = root-AO floor
+    // (1 = none), y = tip sheen strength, z = near blade-normal share
+    // (0 = blades light like the ground), w free.
+    vec4 uGrassShadeInfo;
+    // x/y = whole-blade brightness hash range, z = middle darkening,
+    // w = backscatter strength.
+    vec4 uGrassBladeInfo;
 };
