@@ -30,6 +30,8 @@ MEADOWS_PUSH_CONSTANTS(RcCascadeUbo) {
                       // z = dst dir grid W, w = dst dir grid H
     vec4 uRcCascadeB; // x = interval0, y = sky merge flag (top level),
                       // z = dst probe spacing, w = dst dir-major flag
+    vec4 uRcCascadeC; // yzw = dst->src lattice offset in parent-probe
+                      // units (per-cascade origins)
 };
 
 layout(binding = 0, rgba16f) uniform image3D uRcDst; // read_write
@@ -81,17 +83,18 @@ void main() {
         farRadiance = rcSkyRadiance(rcOctDecode(vec2(dir), vec2(dirGrid)));
     } else {
         // Parent probes: cascade i+1 has HALF the probes per axis over
-        // the same extent — dst probe p sits at parent-space coordinate
-        // (p - 0.5) / 2; bilinear over the 3D 2x2x2... the paper uses the
-        // 4 (2D) / 8 (3D) surrounding parents — trilinear here.
+        // the same span — dst probe p sits at parent-space coordinate
+        // (p + 0.5)/2 - 0.5 PLUS the dst->src lattice offset (the two
+        // cascades carry their own world-snapped origins); trilinear
+        // over the 2x2x2 surrounding parents (the paper's property).
         const int srcProbes = max(probes / 2, 1);
-        vec3 parentCoord = (vec3(probe) + 0.5) * 0.5 - 0.5;
+        vec3 parentCoord =
+            (vec3(probe) + 0.5) * 0.5 - 0.5 + uRcCascadeC.yzw;
         ivec3 base = ivec3(floor(parentCoord));
         vec3 f = parentCoord - vec3(base);
 
         // Parent directions: the 2×2 children of `dir` in the doubled
         // octahedral grid, averaged (pre-filtering the angular domain).
-        farRadiance = vec3(0.0);
         vec4 sum = vec4(0.0);
         for (int oz = 0; oz < 2; ++oz)
         for (int oy = 0; oy < 2; ++oy)
@@ -108,7 +111,19 @@ void main() {
             }
             sum += w * (dirSum * 0.25);
         }
-        farRadiance = sum.rgb;
+        // COVERAGE fade (per-cascade origins): the parent lattice can
+        // fall short of the dst lattice by up to half its spacing —
+        // outside it the gather above freezes at the border texel, a
+        // C1 break that read as ground BANDS at sunset. Fade toward the
+        // far-field SKY (the top level's own fallback) across the last
+        // parent probe instead.
+        vec3 inside = min(parentCoord,
+                          vec3(float(srcProbes) - 1.0) - parentCoord);
+        float cov = clamp(min(inside.x, min(inside.y, inside.z)) + 1.0,
+                          0.0, 1.0);
+        farRadiance =
+            mix(rcSkyRadiance(rcOctDecode(vec2(dir), vec2(dirGrid))),
+                sum.rgb, cov);
     }
 
     imageStore(uRcDst, texel,

@@ -17,7 +17,7 @@ class Device;
 namespace render {
 
 // Long-range terrain sun shadows + skylighting, ONE
-// worker-baked map (the cloud-map pattern): a 256² texture over ~1.5 km
+// worker-baked map (the cloud-map pattern): a 512² texture over ~1.5 km
 // around the focus, R = sun visibility (the height function marched
 // toward the sun — mountains cast on valleys far beyond the CSM),
 // G = sky openness (8 azimuth horizons — valley floors get less sky
@@ -26,7 +26,10 @@ namespace render {
 // terrain/mesh/skinned at texture unit 7 via uTerrainLightInfo.
 class TerrainLightMap {
 public:
-    static constexpr u32 kSize = 256;
+    // 512 -> ~3 m texels: at grazing sun the long-shadow fronts in R
+    // band at texel scale (they ride into the GI through the inject and
+    // the direct term alike) — 256 (~6 m) showed on sunset slopes.
+    static constexpr u32 kSize = 512;
     static constexpr f32 kSpan = 1536.0f; // meters covered
 
     void create(rhi::Device& device, core::JobSystem& jobs);

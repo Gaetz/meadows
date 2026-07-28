@@ -9,6 +9,8 @@
 // per-cascade parameters ride push constants (per-dispatch, Vulkan-safe —
 // the GL backend executes immediately).
 
+layout(binding = 8) uniform sampler2D uRcHeight; // buried-probe relocation
+
 layout(std140, binding = 2) uniform RcUbo {
     vec4 uRcClipInfo[2]; // xyz = min-corner origin, w = voxel size
     vec4 uRcTileInfo;    // w = clip resolution
@@ -75,11 +77,26 @@ void main() {
         dir = ivec2(texel.x / probes, texel.y / probes);
     }
 
-    // Probe world position: cascades share the FINE clip's extent.
+    // Probe world position: same span as the fine clip, but each
+    // cascade carries its OWN lattice origin (uRcCascadeC.yzw), snapped
+    // to its own spacing — world-fixed probes across window recenters.
     const float spacing = uRcCascadeB.z;
-    const vec3 gridOrigin = uRcClipInfo[0].xyz;
-    const vec3 origin = gridOrigin + (vec3(probe) + 0.5) * spacing;
+    const vec3 gridOrigin = uRcCascadeC.yzw;
+    vec3 origin = gridOrigin + (vec3(probe) + 0.5) * spacing;
     const vec3 rayDir = rcOctDecode(vec2(dir), vec2(dirGrid));
+
+    // BURIED-PROBE RELOCATION (the DDGI cure, terrain-flavored): a
+    // probe below the surface would march from inside solid ground —
+    // black — and the apply's trilinear against those black layers
+    // oscillates along slopes (a probe-spacing-period sinusoid band
+    // following the contours). Start its rays just above the surface
+    // instead: the tile height is continuous, so relocated content
+    // follows the slope smoothly. Interiors no-op (placeholder tile
+    // height is -1e4).
+    const vec2 huv =
+        (origin.xz - uRcTileInfo.xy) * uRcTileInfo.z + 0.5;
+    const float ground = texture(uRcHeight, huv).r;
+    origin.y = max(origin.y, ground + uRcClipInfo[0].w);
 
     // March the interval front-to-back through the clipmap.
     const int cascade = int(uRcCascade.x);

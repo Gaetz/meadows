@@ -176,8 +176,18 @@ public:
         return { active ? 1.0f : 0.0f, tuning.intensity, tuning.edgeFade,
                  static_cast<f32>(appliedResolution) };
     }
-    // uGiGridInfo — the cascade-0 grid this frame (origin snaps in update).
-    Vec4 giGridInfo() const { return { lastFineOrigin, appliedFineVoxel }; }
+    // uGiGridInfo — the origin of the cascade CONTENT this frame reads.
+    // The chain records at frame END (pipelined N−1): a frame always
+    // samples the PREVIOUS inject, so the UBO must carry that inject's
+    // origin. Publishing this frame's snap (lastFineOrigin) shifted the
+    // whole sampled field by one voxel for one frame on every camera
+    // step — the "GI blinks while walking" bug. Before the first inject
+    // (fresh volumes) fall back to the snap; giInfo()'s ready gate makes
+    // that window a boot-only glitch.
+    Vec4 giGridInfo() const {
+        return havePrev ? Vec4 { prevFineOrigin, prevFineSpacing }
+                        : Vec4 { lastFineOrigin, appliedFineVoxel };
+    }
 
     RcTuning tuning;
 
@@ -189,6 +199,10 @@ private:
 
     struct BakedTile {
         vector<f32> height; // kTileSize², meters
+        vector<u8> normal;  // kTileSize², RGBA8, rg = analytic (nx, nz)
+                            //   in [-1,1]->[0,1] — smooth; deriving
+                            //   from the bilinear height FACETS per
+                            //   texel (sunset bands along slopes)
         vector<u8> albedo;  // kTileSize², RGBA8 (a unused)
         Vec2 center {};
         u64 gen { 0 };
@@ -197,6 +211,7 @@ private:
     core::JobSystem* jobs { nullptr };
     std::shared_ptr<core::ConcurrentQueue<BakedTile>> baked;
     rhi::UniqueTexture heightTex;  // R32F — GPU-side terrain height
+    rhi::UniqueTexture normalTex;  // RGBA8 — analytic surface normal xz
     rhi::UniqueTexture albedoTex;  // RGBA8 — material proxy colors
     rhi::UniqueSampler tileSampler;
     rhi::UniqueSampler volumeSampler;
@@ -249,6 +264,14 @@ private:
     rhi::UniqueBindGroup applyGroup_; // G6: cascade 0 at binding 11
     Vec3 lastFineOrigin { 0.0f };     // this frame's grid origin (prepare)
     Vec3 lastCoarseOrigin { 0.0f };
+    // Per-cascade probe-lattice origins, EACH snapped to its own
+    // spacing (fineVoxel·2^i) so recenters land every level's probes
+    // back on a world-fixed lattice: a shared fine-granular origin
+    // translated the upper cascades by fractions of their spacing —
+    // the "GI ripple while moving" artifact. [0] == lastFineOrigin
+    // (the fine window keeps its smooth 0.5 m creep, so the apply's
+    // border fade stays progressive).
+    array<Vec3, 8> cascadeOrigins {};
     bool injectThisFrame { true };    // prepare()'s updateInterval verdict
     // G7a: where LAST inject's merged cascade 0 lives (bounce feedback);
     // false until one full inject+merge exists (fresh textures = garbage).

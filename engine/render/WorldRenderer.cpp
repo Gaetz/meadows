@@ -1860,6 +1860,9 @@ void WorldRenderer::recordGiUpdate(engine::FrameContext& frame,
             if (rcBoxes.size() >= render::RadianceCascades::kMaxBoxes) {
                 break;
             }
+            if (!mesh.giOccluder) {
+                continue; // viewmodel: no self-shadowing GI box
+            }
             const render::MeshCache::CpuMesh* cpu =
                 view.meshCache ? view.meshCache->cpuMesh(mesh.model)
                                : nullptr;

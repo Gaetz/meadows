@@ -72,11 +72,14 @@ void RadianceCascades::create(rhi::Device& device, ShaderLibrary& shaders,
                           { "uTerrainLight", 7 },
                           { "uRcHeight", 8 },
                           { "uRcAlbedo", 9 },
-                          { "uRcPrev", 10 } });
+                          { "uRcPrev", 10 },
+                          { "uRcNormal", 12 } });
     shaders.loadCompute(kBuildShader,
                         { { "FrameUbo", 0 }, { "RcUbo", 2 },
                           { "RcCascadeUbo", 4 } },
-                        { { "uRcClipFineS", 5 }, { "uRcClipCoarseS", 6 } });
+                        { { "uRcClipFineS", 5 },
+                          { "uRcClipCoarseS", 6 },
+                          { "uRcHeight", 8 } });
     shaders.loadCompute(kMergeShader,
                         { { "FrameUbo", 0 }, { "RcUbo", 2 },
                           { "RcCascadeUbo", 4 } },
@@ -126,6 +129,7 @@ void RadianceCascades::destroy(rhi::Device& device) {
     clipCoarse.reset();
     clipFine.reset();
     albedoTex.reset();
+    normalTex.reset();
     heightTex.reset();
     volumeSampler.reset();
     tileSampler.reset();
@@ -190,6 +194,10 @@ void RadianceCascades::makePlaceholderTile(rhi::Device& device) {
     albedoTex = { device, device.createTexture(
         { .width = 1, .height = 1, .format = rhi::TextureFormat::RGBA8 },
         &kGray) };
+    const u32 kFlatUp = 0x00008080; // rg = 0.5 -> (nx, nz) = (0, 0)
+    normalTex = { device, device.createTexture(
+        { .width = 1, .height = 1, .format = rhi::TextureFormat::RGBA8 },
+        &kFlatUp) };
     tileSpan = 1.0f;
     tileCenter = Vec2 { 0.0f };
     tileUploaded = true;
@@ -243,7 +251,10 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
                            { .binding = 5, .texture = clipFine.get(),
                              .sampler = volumeSampler.get() },
                            { .binding = 6, .texture = clipCoarse.get(),
-                             .sampler = volumeSampler.get() } } }) };
+                             .sampler = volumeSampler.get() },
+                           // Buried-probe relocation reads the surface.
+                           { .binding = 8, .texture = heightTex.get(),
+                             .sampler = tileSampler.get() } } }) };
     }
     for (i32 i = 0; i < count; ++i) {
         CascadeLevel& level = levels[static_cast<size_t>(i)];
@@ -305,7 +316,9 @@ void RadianceCascades::createVolumes(rhi::Device& device) {
                        { .binding = 9, .texture = albedoTex.get(),
                          .sampler = tileSampler.get() },
                        { .binding = 10, .texture = levels[0].texture.get(),
-                         .sampler = volumeSampler.get() } } }) };
+                         .sampler = volumeSampler.get() },
+                       { .binding = 12, .texture = normalTex.get(),
+                         .sampler = tileSampler.get() } } }) };
     havePrev = false; // fresh cascade textures hold garbage until merged
 
     debugGroup = { device, device.createBindGroup(
@@ -358,6 +371,10 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
             { .width = kTileSize, .height = kTileSize,
               .format = rhi::TextureFormat::R16F },
             tile.height.data()) };
+        normalTex = { device, device.createTexture(
+            { .width = kTileSize, .height = kTileSize,
+              .format = rhi::TextureFormat::RGBA8 },
+            tile.normal.data()) };
         albedoTex = { device, device.createTexture(
             { .width = kTileSize, .height = kTileSize,
               .format = rhi::TextureFormat::RGBA8 },
@@ -388,6 +405,7 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
             out.center = focus;
             out.gen = gen;
             out.height.resize(kTileSize * kTileSize);
+            out.normal.resize(kTileSize * kTileSize * 4);
             out.albedo.resize(kTileSize * kTileSize * 4);
             const f32 texel = span / static_cast<f32>(kTileSize);
             for (u32 ty = 0; ty < kTileSize; ++ty) {
@@ -406,16 +424,24 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
                 for (u32 tx = 0; tx < kTileSize; ++tx) {
                     const u32 i = ty * kTileSize + tx;
                     const f32 h = out.height[i];
-                    const u32 xn = tx > 0 ? i - 1 : i;
-                    const u32 xp = tx < kTileSize - 1 ? i + 1 : i;
-                    const u32 zn = ty > 0 ? i - kTileSize : i;
-                    const u32 zp = ty < kTileSize - 1 ? i + kTileSize : i;
-                    const Vec3 n = glm::normalize(
-                        Vec3 { -(out.height[xp] - out.height[xn]) /
-                                   (2.0f * texel),
-                               1.0f,
-                               -(out.height[zp] - out.height[zn]) /
-                                   (2.0f * texel) });
+                    const f32 wx = focus.x +
+                                   (static_cast<f32>(tx) + 0.5f -
+                                    kTileSize * 0.5f) * texel;
+                    const f32 wz = focus.y +
+                                   (static_cast<f32>(ty) + 0.5f -
+                                    kTileSize * 0.5f) * texel;
+                    // ANALYTIC normal (smooth) — texel differences of
+                    // the baked height facet per texel, which banded
+                    // the grazing-sun bounce along slopes.
+                    const Vec3 n = terrain::normal(paramsCopy, wx, wz);
+                    out.normal[i * 4 + 0] = static_cast<u8>(
+                        glm::clamp(n.x * 0.5f + 0.5f, 0.0f, 1.0f) *
+                        255.0f);
+                    out.normal[i * 4 + 1] = static_cast<u8>(
+                        glm::clamp(n.z * 0.5f + 0.5f, 0.0f, 1.0f) *
+                        255.0f);
+                    out.normal[i * 4 + 2] = 0;
+                    out.normal[i * 4 + 3] = 255;
                     const terrain::MaterialWeights w =
                         terrain::materialWeights(paramsCopy, h, n);
                     Vec3 albedo = kGrassAlbedo * w.grass +
@@ -452,14 +478,35 @@ void RadianceCascades::prepare(const Vec3& cameraPos) {
         return; // origins keep matching the volumes' last inject
     }
     const u32 res = static_cast<u32>(appliedResolution);
-    const auto snap = [&](f32 voxel) {
-        const f32 half = static_cast<f32>(res) * voxel * 0.5f;
-        return Vec3 { std::floor((cameraPos.x - half) / voxel) * voxel,
-                      std::floor((cameraPos.y - half) / voxel) * voxel,
-                      std::floor((cameraPos.z - half) / voxel) * voxel };
+    // CENTERED snap (round, not floor): the lattice sits within
+    // anchor/2 of the camera-centered span on BOTH sides. With floor,
+    // a coarse lattice could trail the fine volume by up to its full
+    // spacing — fine-edge probes then clamp their parent lookups
+    // (rc_merge) and the miscovered ring showed as sunset bands.
+    const auto snap = [&](f32 half, f32 anchor) {
+        return Vec3 { std::round((cameraPos.x - half) / anchor) * anchor,
+                      std::round((cameraPos.y - half) / anchor) * anchor,
+                      std::round((cameraPos.z - half) / anchor) * anchor };
     };
-    lastFineOrigin = snap(appliedFineVoxel);
-    lastCoarseOrigin = snap(appliedCoarseVoxel);
+    // Every cascade's probe lattice gets its OWN origin, snapped to its
+    // own spacing (see cascadeOrigins in the header): world-fixed
+    // probes at every level (no ripple), while the fine window — scene
+    // clip, apply border, feedback — keeps its smooth 0.5 m creep (the
+    // GI border fades in progressively instead of popping).
+    const f32 fineHalf =
+        static_cast<f32>(res) * appliedFineVoxel * 0.5f;
+    lastFineOrigin = snap(fineHalf, appliedFineVoxel);
+    for (i32 i = 0; i < appliedCascadeCount &&
+                    i < static_cast<i32>(cascadeOrigins.size());
+         ++i) {
+        cascadeOrigins[static_cast<size_t>(i)] =
+            i == 0 ? lastFineOrigin
+                   : snap(fineHalf,
+                          appliedFineVoxel * static_cast<f32>(1 << i));
+    }
+    lastCoarseOrigin =
+        snap(static_cast<f32>(res) * appliedCoarseVoxel * 0.5f,
+             appliedCoarseVoxel);
 }
 
 void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
@@ -544,21 +591,36 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
         // change): re-snap. The frame UBO is one frame stale here — a
         // single-frame glitch on the knob-change frame, accepted.
         const u32 r = static_cast<u32>(appliedResolution);
-        const auto snap = [&](f32 voxel) {
-            const f32 half = static_cast<f32>(r) * voxel * 0.5f;
-            return Vec3 { std::floor((cameraPos.x - half) / voxel) * voxel,
-                          std::floor((cameraPos.y - half) / voxel) * voxel,
-                          std::floor((cameraPos.z - half) / voxel) *
-                              voxel };
+        const auto snap = [&](f32 half, f32 anchor) {
+            return Vec3 {
+                std::round((cameraPos.x - half) / anchor) * anchor,
+                std::round((cameraPos.y - half) / anchor) * anchor,
+                std::round((cameraPos.z - half) / anchor) * anchor
+            };
         };
-        lastFineOrigin = snap(appliedFineVoxel);
-        lastCoarseOrigin = snap(appliedCoarseVoxel);
+        // Same per-cascade CENTERED snap as prepare() — see there.
+        const f32 fineHalf =
+            static_cast<f32>(r) * appliedFineVoxel * 0.5f;
+        lastFineOrigin = snap(fineHalf, appliedFineVoxel);
+        for (i32 i = 0; i < appliedCascadeCount &&
+                        i < static_cast<i32>(cascadeOrigins.size());
+             ++i) {
+            cascadeOrigins[static_cast<size_t>(i)] =
+                i == 0
+                    ? lastFineOrigin
+                    : snap(fineHalf,
+                           appliedFineVoxel * static_cast<f32>(1 << i));
+        }
+        lastCoarseOrigin =
+            snap(static_cast<f32>(r) * appliedCoarseVoxel * 0.5f,
+                 appliedCoarseVoxel);
     }
 
     const u32 res = static_cast<u32>(appliedResolution);
     RcUniforms uniforms;
-    // The origins prepare() snapped BEFORE the frame UBO was composed —
-    // uGiGridInfo and the volume content stay in lockstep.
+    // The CHAIN builds at this frame's snapped origins; the frame UBO
+    // (giGridInfo) deliberately carries the PREVIOUS inject's origin —
+    // readers always sample last frame's content (pipelined N−1).
     uniforms.clipInfo[0] = { lastFineOrigin, appliedFineVoxel };
     uniforms.clipInfo[1] = { lastCoarseOrigin, appliedCoarseVoxel };
     uniforms.tileInfo = { tileCenter.x, tileCenter.y, 1.0f / tileSpan,
@@ -642,7 +704,11 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
         cu.b = { tuning.interval0, flagB,
                  appliedFineVoxel * static_cast<f32>(1 << i),
                  i == 0 ? 1.0f : 0.0f };
-        cu.c = Vec4 { 1.0f, 0.0f, 0.0f, 0.0f };
+        // c.yzw defaults to this cascade's lattice origin (rc_build);
+        // the merge loop overwrites it with the dst->src lattice offset.
+        const Vec3& origin =
+            cascadeOrigins[glm::min(i, cascadeOrigins.size() - 1)];
+        cu.c = Vec4 { 1.0f, origin.x, origin.y, origin.z };
         return cu;
     };
     // G7c eligibility, per frame (interval0 is a live knob): extend the
@@ -719,8 +785,20 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
         for (i32 i = static_cast<i32>(levels.size()) - 1; i >= 0; --i) {
             const CascadeLevel& level = levels[static_cast<size_t>(i)];
             const bool top = i == static_cast<i32>(levels.size()) - 1;
-            const RcCascadeUniforms cu =
+            RcCascadeUniforms cu =
                 levelUniforms(static_cast<size_t>(i), top ? 1.0f : 0.0f);
+            if (!top) {
+                // c.yzw = dst->src lattice offset in PARENT-probe units
+                // (per-cascade origins): the parent lookup adds it to
+                // the index-space coordinate.
+                const f32 srcSpacing =
+                    appliedFineVoxel * static_cast<f32>(2 << i);
+                const Vec3 off =
+                    (cascadeOrigins[static_cast<size_t>(i)] -
+                     cascadeOrigins[static_cast<size_t>(i) + 1]) /
+                    srcSpacing;
+                cu.c = { 0.0f, off.x, off.y, off.z };
+            }
             cmd.setPushConstants(&cu, sizeof(cu));
             cmd.setBindGroup(1, level.mergeGroup);
             cmd.dispatch((level.width + 3) / 4, (level.height + 3) / 4,

@@ -38,6 +38,9 @@ layout(binding = 1, rgba16f) uniform writeonly image3D uClipCoarse;
 layout(binding = 8) uniform sampler2D uRcHeight;
 layout(binding = 9) uniform sampler2D uRcAlbedo;
 layout(binding = 10) uniform sampler3D uRcPrev; // LAST merged cascade 0
+// Analytic surface normal xz (baked): smooth along slopes — deriving it
+// from the bilinear height FACETED per texel and banded the bounce.
+layout(binding = 12) uniform sampler2D uRcNormal;
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
@@ -96,20 +99,23 @@ void main() {
     vec3 normal = vec3(0.0, 1.0, 0.0);
     vec3 emissive = vec3(0.0);
 
+    // Terrain voxels evaluate their LIGHTING at the true surface point
+    // (litPos, y = exact tile height), not the voxel center: along a
+    // slope the surface voxels form a 0.5 m staircase, and at grazing
+    // sun the CSM / light-map terms flip per step — terraced bounce
+    // bands following the slope contours. Occlusion stays voxelized.
+    vec3 litPos = world;
     if (world.y < h - halfVoxel) {
         occupancy = 1.0; // solid underground: pure occluder (albedo 0)
     } else if (abs(world.y - h) <= halfVoxel + voxelSize * 0.25) {
-        // Terrain surface: albedo + normal from the baked tile.
+        // Terrain surface: albedo + ANALYTIC normal from the baked tile.
         occupancy = 1.0;
-        const float texel = 1.0 / uRcTileInfo.z / 256.0; // span / kTileSize
-        const float hx = tileHeight(world.xz + vec2(texel, 0.0)) -
-                         tileHeight(world.xz - vec2(texel, 0.0));
-        const float hz = tileHeight(world.xz + vec2(0.0, texel)) -
-                         tileHeight(world.xz - vec2(0.0, texel));
-        normal =
-            normalize(vec3(-hx / (2.0 * texel), 1.0, -hz / (2.0 * texel)));
         vec2 uv = (world.xz - uRcTileInfo.xy) * uRcTileInfo.z + 0.5;
+        vec2 nxz = texture(uRcNormal, uv).rg * 2.0 - 1.0;
+        normal = normalize(
+            vec3(nxz.x, sqrt(max(1.0 - dot(nxz, nxz), 0.04)), nxz.y));
         albedo = texture(uRcAlbedo, uv).rgb;
+        litPos = vec3(world.x, h, world.z);
     }
 
     // Boxes override/add (props, kits, NPCs, canopies — coarse AABB
@@ -158,14 +164,14 @@ void main() {
             // light map's long-range shadow; sky: ambient x openness.
             // (Cloud shadows skipped — too soft to matter in indirect.)
             const float ndl = max(dot(normal, uSunDirection.xyz), 0.0);
-            const float sun = shadowFactor(world + normal * voxelSize,
+            const float sun = shadowFactor(litPos + normal * voxelSize,
                                            normal);
-            const vec2 tl = terrainLightFactors(world);
+            const vec2 tl = terrainLightFactors(litPos);
             radiance += albedo * (uSunColor.rgb * (ndl * sun * tl.x) +
                                   uAmbientColor.rgb * (uRcMisc.y * tl.y));
             // Last frame's GI bounces once more off this surface.
             if (uRcMisc3.y > 0.0) {
-                radiance += albedo * prevBounce(world, normal) *
+                radiance += albedo * prevBounce(litPos, normal) *
                             uRcMisc3.y;
             }
             // Local lights (torches, spells) — SAME windowed inverse-
@@ -173,7 +179,7 @@ void main() {
             // the bounce read too strong against the direct light).
             const int lightCount = int(uRcMisc.w);
             for (int l = 0; l < lightCount; ++l) {
-                const vec3 toLight = uRcLightPosRadius[l].xyz - world;
+                const vec3 toLight = uRcLightPosRadius[l].xyz - litPos;
                 const float dist = length(toLight);
                 const float radius = uRcLightPosRadius[l].w;
                 if (dist < radius) {

@@ -291,7 +291,60 @@ World-space radiance cascades (Sannikov), rebuilt every frame
   frame posts the consumer fence before its first GI reader; with
   `caps().asyncCompute` the whole chain (its staged uniform copies
   included) runs on the second queue. RC keeps its own 24-light cap
-  (nearest of the 64 budget).
+  (nearest of the 64 budget). **N−1 origin contract** (fix 2026-07-27):
+  `uGiGridInfo` carries the PREVIOUS inject's origin — the one matching
+  the content readers actually sample. Publishing the current frame's
+  snap shifted the whole GI field by one voxel for one frame on every
+  0.5 m camera step ("GI blinks while walking"; `updateInterval` could
+  not hide it — every inject frame mismatched). Touches the RC apply
+  (`giAmbient`/`giAir`, froxels included) only; froxel injection,
+  shadows and the chain's own build origins are unchanged.
+  **Per-cascade lattice origins** (fix 2026-07-28): the probe lattices
+  used to hang off the shared FINE origin (rc_build: origin +
+  k·spacing·2^i); a fine-granular origin translated the upper cascades
+  by FRACTIONS of their own spacing on every 0.5 m camera step — a
+  low-frequency color ripple sweeping surfaces while moving (worst on
+  dark uniform walls: cliffs). First cure (coarsest-spacing anchor,
+  8 m) killed the ripple but made the fine window — and the apply's
+  border fade — JUMP 8 m per recenter (GI popping in on the ground).
+  Final design: each cascade snaps its own origin to its own spacing
+  (the CSM texel-snap lesson per level; DDGI scrolling volumes /
+  clipmap toroidal levels are the same cure) — world-fixed probes at
+  every level AND the fine window back to its smooth 0.5 m creep, so
+  the border fade appears progressively again. Plumbing: rc_build takes
+  the lattice origin from push constants (c.yzw); rc_merge adds the
+  dst→src lattice offset (parent-probe units) to its index-space parent
+  lookup; scene clips, apply, feedback and health probe stay on the
+  fine origin — froxels/shadows untouched. KNOWN residual: on a
+  perfectly uniform albedo, a probe-period dark speckle (child/parent
+  PARITY — every other fine probe inherits an exact parent, the rest an
+  interpolated average; near the ground the parent variance makes the
+  difference visible). Any albedo variation masks it (a ±1% ground
+  drift suffices); real cures if a flat-color look ever needs one: the
+  RC community's bilinear-fix (child rays reprojected per parent, ~4×
+  build cost) or a probe-space smoothing pass on merged cascade 0.
+  Two follow-ups the first cut
+  needed: CENTERED origin snap (round — floor let a parent lattice
+  trail the fine window by its full spacing), and a COVERAGE fade in
+  the merge — where the parent lattice falls short (≤ spacing/2), the
+  gather used to freeze at the border texel (a C1 break reading as
+  ground bands at sunset); it now fades to the far-field sky, the top
+  level's own fallback. Separately, the inject lights terrain voxels at
+  the TRUE surface point (litPos, exact tile height) instead of the
+  voxel center: the 0.5 m surface-voxel staircase along a slope
+  quantized the grazing-sun CSM/light-map terms — terraced bounce bands
+  following the slope contours (occlusion stays voxelized). The tile
+  also bakes the ANALYTIC terrain normal (RGBA8 rg, [-1,1] remap):
+  deriving the normal from the bilinear height in the inject faceted it
+  per 0.625 m tile texel — residual grazing-sun ndl bands along slopes.
+  **Buried-probe relocation** (the actual cure for the ~1 m sinusoid
+  bands following slopes): probes below the terrain surface marched
+  from inside solid ground — black — and the apply's trilinear against
+  those black layers oscillated along the slope with a probe-spacing
+  period. rc_build now starts such probes' rays one fine voxel above
+  the tile surface (continuous height → the relocated content follows
+  the slope smoothly); the DDGI probe-relocation idea, terrain-flavored.
+  Interiors no-op (placeholder tile).
 - RC replaces the INDIRECT term only — sun/CSM/direct never route
   through it. What RC "shadows" is directional occlusion of the ambient
   (the AO reading) plus occluded light bounce.

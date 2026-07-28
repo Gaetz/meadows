@@ -133,14 +133,18 @@ vector<u8> buildSplatTilePixels() {
 }
 
 
-Vec3 grassAlbedo(f32 /*u*/, f32 /*v*/) {
-    // FULLY UNIFORM forest green (#6FA160 — the midpoint between the
-    // old meadow green and the tree-foliage palette, so meadow and
-    // canopies read as one family) — the meadow is one flat color by
-    // design (blades read through silhouettes, not texture). The GREEN
-    // channel feeds the border wander — changing it moves the -0.67
-    // centering in terrain.frag / TerrainNoise.cpp.
-    return Vec3 { 0.434f, 0.633f, 0.375f };
+Vec3 grassAlbedo(f32 u, f32 v) {
+    // Near-uniform forest green (#6FA160 — the midpoint between the old
+    // meadow green and the tree-foliage palette, so meadow and canopies
+    // read as one family): one hue, a WHISPER of blotch luminance drift
+    // (~±1%, mean 1) — just enough to break the perfectly flat albedo
+    // that exposed the RC probe-parity speckle, invisible as texture.
+    // The GREEN channel feeds the border wander — its MEAN is unchanged
+    // by the symmetric drift, so the -0.67 centering in terrain.frag /
+    // TerrainNoise.cpp stays valid.
+    const f32 blotch = tileFbm(101, u, v, 6, 4);
+    return Vec3 { 0.434f, 0.633f, 0.375f } *
+           (0.99f + 0.02f * glm::smoothstep(0.30f, 0.70f, blotch));
 }
 
 f32 splatWander(f32 u, f32 v) {

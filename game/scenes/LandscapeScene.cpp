@@ -1218,6 +1218,7 @@ void LandscapeScene::update(f32 dt) {
         const core::Guid model =
             weapon.model.isValid() ? weapon.model : swordMeshGuid();
         snapshot.meshes.push_back({ model, core::Guid {}, pose });
+        snapshot.meshes.back().giOccluder = false; // viewmodel (see seam)
         // While the bow is drawn, a nocked arrow rides the viewmodel
         // and slides BACK with the charge ("la flèche recule") — Rx(-90°)
         // turns the +Y shaft toward -Z (the aim direction).
@@ -1231,6 +1232,7 @@ void LandscapeScene::update(f32 dt) {
                             Vec3 { 1.0f, 0.0f, 0.0f });
             snapshot.meshes.push_back(
                 { arrowMeshGuid(), core::Guid {}, basis * arrowLocal });
+            snapshot.meshes.back().giOccluder = false; // viewmodel
         }
     }
     // Wind phase integrates the CURRENT strength: speed changes bend the

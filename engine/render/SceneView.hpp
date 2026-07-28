@@ -73,6 +73,11 @@ struct RenderSnapshot {
         Vec4 tint { 1.0f };
         f32 emissive { 0.0f };
         core::Guid albedoTexture {}; // asset guid; 0 = white
+        // False = skip GI box injection. The first-person viewmodel
+        // rides the camera: its own moving voxelized occluder sat right
+        // at its GI sampling point and made the weapon's color flicker
+        // while walking.
+        bool giOccluder { true };
     };
     vector<MeshInstance> meshes;
 
