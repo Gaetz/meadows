@@ -422,6 +422,9 @@ color = [1.0, 0.72, 0.42]
 intensity = 2.8
 radius = 9.0
 flicker = 0.12
+# Key-shadow light: props/NPCs by the door cast at night (the exterior
+# key-shadow showcase — the atlas has no interior gate, pure data).
+castsShadow = true
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000044"
@@ -3675,6 +3678,8 @@ editorId = "GiTestLamp"
 color = [0.55, 0.75, 1.0]
 intensity = 6.0
 radius = 14.0
+# Key-shadow light (the second exterior showcase; 4 atlas slots total).
+castsShadow = true
 
 [[records]]
 form = "4d7a9b30-0000-4000-8000-000000000301"

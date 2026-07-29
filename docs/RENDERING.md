@@ -410,11 +410,30 @@ MoltenVK exposes no RT anyway).
   mechanisms for one thing).
 - **Stylized pass** (`stylized.glsl`): 2-step BotW ramp, snapped CSM
   pools, gated SSS, stepped rim, all behind `uAmbientColor.w` A/B.
+  The cel ramp lives on the SUN only — local-light diffuse stays smooth
+  by design ("stylized shadows, soft lighting": routing torch pools
+  through a hard step cut them with a brutal edge). Key-light shadows
+  de-detach via a receiver NORMAL offset + tiny z-bias (a constant
+  z-bias in a perspective shadow map is meters of world detachment).
   **Grading**: analytic vibrance/split-tone/contrast in tonemap (LUT 3D
   someday). **Auto-exposure**: log-luminance 64² → mip 1×1 → asymmetric
   adaptation ping-pong; slider is the EV bias. **Contact shadows**
   (Bend-style, ½-res, 12 steps toward the sun; toggle = white-cleared
-  texture). **Terrain light map** (worker-baked 256², ~1.5 km): R = far
+  texture; NEAREST depth/color taps — linear taps at thin silhouettes
+  blended near/far into phantom hits around grass-blade tips; fades out
+  below ~0.3 sun elevation — the grazing march read the terrain as its
+  own occluder, a half-res darkening film that SPARED the strip behind
+  raised occluders: inverted bright "shadows" behind rocks at sunset;
+  GATED to sunlit pixels via the STYLIZED CSM factor AND the stylized
+  DIFFUSE ramp (receiver normal from depth derivatives) — the tonemap's
+  fullscreen multiply otherwise darkened the ambient inside CSM shadow
+  and below the terminator (down-sun slopes at grazing sun: unoccluded,
+  so the CSM gate alone stayed open), a second darker shadow where
+  receiver holes read as anti-shadows. The composition contract: the
+  direct term = sun x stylizedDiffuse x stylizedShadow — contact must
+  be neutral wherever ANY factor is already zero; it is sunlit-area
+  detail, never a shadow of its own).
+  **Terrain light map** (worker-baked 512², ~1.5 km): R = far
   sun visibility beyond CSM reach, G = sky aperture multiplying ambient
   (valley grounding). **Vertex AO** baked at mesh decode (disk cache).
 
