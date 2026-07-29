@@ -55,6 +55,9 @@ u64 passGenerationSum(ShaderLibrary& shaders) {
 
 void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
     linearSampler = { device, device.createSampler({}) };
+    nearestSampler = { device, device.createSampler(
+        { .minFilter = rhi::FilterMode::Nearest,
+          .magFilter = rhi::FilterMode::Nearest }) };
     shaders.load(kPrefilterShader, {}, { { "uSource", 0 } }, kFullscreenVert);
     shaders.load(kDownShader, {}, { { "uSource", 0 } }, kFullscreenVert);
     shaders.load(kUpShader, {}, { { "uSource", 0 } }, kFullscreenVert);
@@ -281,14 +284,15 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
     makeHalfResTarget(contactTex, contactFb, rhi::TextureFormat::R16F);
     // Depth + scene color: the march reads the color ALPHA to exempt
     // grass from contact shadows on both sides (receiver early-out,
-    // occluder rejection) — see contactshadow.frag.
+    // occluder rejection) — see contactshadow.frag. NEAREST sampling
+    // on both (see nearestSampler in the header).
     contactGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = sceneDepthCopy,
-                         .sampler = linearSampler },
+                         .sampler = nearestSampler.get() },
                        { .binding = 2,
                          .texture = sceneColorCopy,
-                         .sampler = linearSampler } } }) };
+                         .sampler = nearestSampler.get() } } }) };
     makeHalfResTarget(contactBlurTex, contactBlurFb,
                       rhi::TextureFormat::R16F);
     contactBlurGroup = { device, device.createBindGroup(

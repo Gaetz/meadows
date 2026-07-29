@@ -16,6 +16,7 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 // nor casts contact shadows — the meadow reads as one flat mass.
 layout(binding = 2) uniform sampler2D uSceneColor;
 #include "shadow.glsl"
+#include "stylized.glsl"
 
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
@@ -34,6 +35,18 @@ void main() {
         fragColor = vec4(1.0);
         return;
     }
+    // GRAZING-SUN fade: near the horizon the march runs almost parallel
+    // to the ground — depth-reconstruction error reads the terrain as
+    // its own occluder (a half-res darkening film over everything)
+    // while the thickness window EXEMPTS the strip behind raised
+    // occluders (inverted bright "shadows" behind rocks). The CSM owns
+    // grazing light; contact detail only means something with the sun
+    // reasonably up.
+    float elevation = smoothstep(0.08, 0.30, uSunDirection.y);
+    if (elevation <= 0.001) {
+        fragColor = vec4(1.0);
+        return;
+    }
     float depth = texture(uSceneDepth, vUv).r;
     if (depth >= 0.99995) {
         fragColor = vec4(1.0); // sky
@@ -45,6 +58,23 @@ void main() {
     }
     vec3 position = worldFromDepth(vUv, depth);
     float dist = distance(position, uCameraPos.xyz);
+
+    // Receiver normal from depth derivatives (half-res, faceted — a
+    // GATE, not shading). The direct term contact darkens also carries
+    // the stylized DIFFUSE ramp: slopes facing away from a grazing sun
+    // sit below the terminator (ndl ~ 0, zero direct) yet pass the CSM
+    // gate (nothing occludes them) — un-gated, the march's skimming
+    // false hits filmed those ambient-only slopes with a second,
+    // darker shadow (and every receiver hole read bright inside it).
+    vec3 nrm = normalize(cross(dFdx(position), dFdy(position)));
+    nrm *= sign(dot(nrm, uCameraPos.xyz - position));
+    float ndl = dot(nrm, uSunDirection.xyz);
+    float diffuseGate =
+        smoothstep(0.02, 0.15, stylizedDiffuse(ndl, max(ndl, 0.0)));
+    if (diffuseGate <= 0.001) {
+        fragColor = vec4(1.0);
+        return;
+    }
 
     // Reach grows a little with distance so the effect keeps a similar
     // on-screen footprint; thickness bounds what counts as an occluder.
@@ -84,17 +114,25 @@ void main() {
             break;
         }
     }
-    // Soft floor: contact shadows darken, never black out (the CSM and
-    // ambient own the real shadow terms).
-    float lit = 1.0 - shadow * 0.45;
-
-    // Contact and CSM combine as a MAX, not a
-    // product — the tonemap multiplies our output over a color that
-    // already carries the sun shadow, so we emit the RATIO
-    // min(1, contact/sun): full CSM shadow -> 1 (contact adds nothing),
-    // full sun -> the raw contact term. Offset toward the sun replaces
+    // COMPOSITION CONTRACT: every legitimate shadow (CSM, terrain light
+    // map, clouds) cuts only the DIRECT sun term; the tonemap applies
+    // contact as a fullscreen multiply that would darken the AMBIENT
+    // too — a second, darker shadow inside shadows, where every
+    // receiver hole (exempt grass, thickness-rejected strips behind
+    // rocks) then read as bright anti-shadows. So contact is gated to
+    // SUNLIT pixels — it is contact DETAIL the CSM cannot resolve, not
+    // a shadow of its own. The reference uses the same STYLIZED shadow
+    // mapping the surfaces multiply by (the raw factor compared apples
+    // to oranges under a snapped ramp). Offset toward the sun replaces
     // the normal bias (we have no normals here).
-    float sun = shadowFactor(position + uSunDirection.xyz * 0.3,
-                             uSunDirection.xyz);
-    fragColor = vec4(vec3(sun < 0.05 ? 1.0 : min(1.0, lit / sun)), 1.0);
+    float sun = stylizedShadow(shadowFactor(
+        position + uSunDirection.xyz * 0.3, uSunDirection.xyz));
+    float gate = smoothstep(0.25, 0.75, sun);
+    // Soft floor: contact darkens, never blacks out (the CSM and
+    // ambient own the real shadow terms); eased out toward the horizon
+    // (grazing fade), inside CSM/terrain shadow (gate) and below the
+    // stylized terminator (diffuseGate) — neutral wherever the DIRECT
+    // term it belongs to is already zero.
+    fragColor = vec4(
+        vec3(1.0 - shadow * 0.45 * elevation * gate * diffuseGate), 1.0);
 }

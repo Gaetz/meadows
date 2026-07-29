@@ -108,6 +108,11 @@ private:
     void buildPipelines(rhi::Device& device, ShaderLibrary& shaders);
 
     rhi::UniqueSampler linearSampler;
+    // Contact-shadow march inputs: depth/alpha must NOT be filtered —
+    // linear taps at thin silhouettes (grass blade tips) blend near and
+    // far into phantom positions and half-exempt alpha, spraying false
+    // contact shadow around the tips.
+    rhi::UniqueSampler nearestSampler;
 
     array<rhi::UniqueTexture, kBloomLevels> bloomTex;
     array<rhi::UniqueFramebuffer, kBloomLevels> bloomFb;
