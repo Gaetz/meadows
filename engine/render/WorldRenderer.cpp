@@ -1281,6 +1281,14 @@ void WorldRenderer::render(engine::FrameContext& frame,
                     continue;
                 }
                 position += shadowSunDirection * 3.5f;
+            } else if (light.spotAngle <= 0.0f) {
+                // POINT lights film straight DOWN: one cone cannot
+                // cover the sphere, and the ground disc under the lamp
+                // is where cast shadows read (an unrotated light's
+                // default +Z cone missed everything beside it — "the
+                // meshes by the door cast nothing"). Wall shadows above
+                // the lamp's own height are the accepted loss.
+                direction = Vec3 { 0.0f, -1.0f, 0.0f };
             }
             const Vec3 d = light.position - camera.position;
             keyCandidates.push_back(
@@ -1288,7 +1296,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
                   light.position, position, direction,
                   light.spotAngle > 0.0f
                       ? glm::min(light.spotAngle * 1.3f, 150.0f)
-                      : 120.0f,
+                      : 150.0f,
                   light.radius });
         }
         std::stable_sort(keyCandidates.begin(), keyCandidates.end(),

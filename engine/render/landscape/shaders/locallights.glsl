@@ -50,7 +50,9 @@ float keyShadowFactor(int i, vec3 p) {
     }
     vec2 atlasUv =
         (proj.xy + vec2(slot & 1, slot >> 1)) * 0.5;
-    return texture(uKeyShadow, vec3(atlasUv, proj.z - 0.0022));
+    // Tiny z-bias only (acne guard): the caller's normal offset does
+    // the real de-detaching work in world space.
+    return texture(uKeyShadow, vec3(atlasUv, proj.z - 0.0004));
 }
 
 // The window-projector clip (docs/RENDERING.md §3): the beam is the
@@ -121,16 +123,18 @@ vec3 shadeLocalLight(int i, vec3 worldPos, vec3 n, float interior) {
             atten *= smoothstep(cosHalf, edge, cd);
         }
         // The light's key shadow (atlas tile) stops it from bleeding
-        // through walls.
-        atten *= keyShadowFactor(i, worldPos);
+        // through walls. Receiver offset along the NORMAL replaces most
+        // of the depth bias: a constant z-bias in a perspective shadow
+        // map is meters of world detachment at range (shadows started
+        // past the feet).
+        atten *= keyShadowFactor(i, worldPos + n * 0.04);
         float ndl = dot(n, l);
         float wrapped = clamp((ndl + 0.4) / 1.4, 0.0, 1.0);
-        // Exterior local lights follow the SAME stylized cel ramp (and
-        // A/B blend) as the sun — night characters under torchlight
-        // step instead of grading through smooth Lambert. Interiors
-        // keep the wrapped half-Lambert + bounce (the dead-room fix).
-        float diff = mix(stylizedDiffuse(ndl, max(ndl, 0.0)), wrapped,
-                         interior);
+        // Local-light diffuse stays SMOOTH by design ("stylized
+        // shadows, soft lighting"): routing it through the cel ramp
+        // cut torch pools with a hard edge. The sun keeps the ramp;
+        // interiors keep the wrapped half-Lambert + bounce.
+        float diff = mix(max(ndl, 0.0), wrapped, interior);
         // The normal-free bounce is the OMNI candles' room hue; on a
         // spot it paints the cone's cross-section on the walls it
         // crosses (the window-circle artifact). Beams bounce via GI.
