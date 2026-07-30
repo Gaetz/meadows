@@ -46,8 +46,10 @@ public:
     static constexpr f32 kChunkSize = 64.0f;  // meters
     static constexpr u32 kChunkQuads = 64;    // LOD0: 65x65 vertices
     static constexpr u32 kLodCount = 4;       // 64/32/16/8 quads per side
-    static constexpr i32 kViewRadius = 15;    // chunks (Chebyshev), ~960 m
-    static constexpr i32 kEvictRadius = 17;   // > view radius: hysteresis
+    // Streaming ring radius in chunks (Chebyshev) — the draw distance,
+    // live-tunable (LandscapeTuningForm::terrainViewRadius; applyFog's
+    // horizon closure tracks it). Evict = +2 chunks of hysteresis.
+    i32 viewRadius { 15 };
     static constexpr u32 kMaxUploadsPerFrame = 8;
     // Time cap on top of the count cap (LOD0 uploads dwarf LOD3 ones).
     static constexpr f64 kUploadMsBudget = 2.0;
@@ -230,5 +232,9 @@ private:
 vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
                                       i32 cz, u32 lod);
 vector<u32> buildChunkIndices(u32 lod);
+
+// The shared vertex-tint palette (sand/grass/rock/snow) — FarTerrain
+// paints with it too, so the streaming-ring hand-off matches.
+Vec3 terrainColor(f32 height, const Vec3& normal, f32 seaLevel);
 
 } // namespace render

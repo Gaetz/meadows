@@ -29,16 +29,6 @@ constexpr f32 kTreeSpacing = 8.0f; // meters between scatter candidates
 using core::hashU32;
 using core::HashRng;
 
-// Forest belts: broad noise thresholded, so woods come as forests and
-// clearings — not confetti.
-f32 forestMask(u32 seed, f32 x, f32 z) {
-    const f32 broad =
-        terrain::noise01(seed ^ 0x3c6ef372u, x / 105.0f, z / 105.0f);
-    const f32 detail =
-        terrain::noise01(seed ^ 0xa54ff53au, x / 28.0f, z / 28.0f);
-    return glm::smoothstep(0.46f, 0.58f, broad * 0.78f + detail * 0.22f);
-}
-
 // Bush clumps: medium-frequency blobs so shrubs come in family groups —
 // and, crossed with the forest-edge factor, break its isoline into clusters
 // instead of tracing it as a string.
@@ -49,6 +39,18 @@ f32 bushClumpMask(u32 seed, f32 x, f32 z) {
 }
 
 } // namespace
+
+// Forest belts: broad noise thresholded, so woods come as forests and
+// clearings — not confetti. Public: FarTerrain raises and darkens its
+// coarse mesh with the SAME mask so the distant forest fringe continues
+// the real scatter past the vegetation ring.
+f32 forestMask(u32 seed, f32 x, f32 z) {
+    const f32 broad =
+        terrain::noise01(seed ^ 0x3c6ef372u, x / 105.0f, z / 105.0f);
+    const f32 detail =
+        terrain::noise01(seed ^ 0xa54ff53au, x / 28.0f, z / 28.0f);
+    return glm::smoothstep(0.46f, 0.58f, broad * 0.78f + detail * 0.22f);
+}
 
 VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                               i32 cx, i32 cz) {
@@ -109,7 +111,8 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             // Sink slightly so leaning trunks never float on slopes; the
             // offset follows the scale (their footprint is meters wide).
             place(0, VegetationSystem::kTreeVariants, rng, x, h - 0.9f, z,
-                  4.8f, 8.4f, 880.0f); // hand-tuned scale range
+                  VegetationSystem::kTreeScaleMin,
+                  VegetationSystem::kTreeScaleMax, 880.0f);
         }
     }
 
@@ -281,8 +284,48 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
     }
 }
 
+VegetationSystem::TreeSilhouette VegetationSystem::treeSilhouette() const {
+    Vec3 sum { 0.0f };
+    u32 count = 0;
+    for (const Vec3& bounds : treeBounds) {
+        if (bounds.x > 0.1f) {
+            sum += bounds;
+            ++count;
+        }
+    }
+    if (count == 0) {
+        return {}; // defaults until the first variant lands
+    }
+    const Vec3 mean = sum / static_cast<f32>(count);
+    const f32 scale = (kTreeScaleMin + kTreeScaleMax) * 0.5f;
+    return { mean.x * scale,
+             glm::clamp(2.0f * mean.y / glm::max(mean.x, 0.1f), 0.4f,
+                        1.4f),
+             glm::clamp(mean.z / glm::max(mean.x, 0.1f), 0.05f, 0.7f) };
+}
+
 void VegetationSystem::uploadVariantMesh(rhi::Device& device, u32 variant,
                                          const MeshData& mesh) {
+    if (variant < kTreeVariants && !mesh.vertices.empty()) {
+        // Silhouette measurement (see TreeSilhouette): height, widest
+        // radial extent, and where the crown starts (first height with
+        // real width — everything below is bare trunk).
+        f32 maxY = 0.0f;
+        f32 maxR = 0.0f;
+        for (const MeshVertex& v : mesh.vertices) {
+            maxY = glm::max(maxY, v.position.y);
+            maxR = glm::max(maxR, glm::length(Vec2 { v.position.x,
+                                                     v.position.z }));
+        }
+        f32 crownStart = maxY;
+        for (const MeshVertex& v : mesh.vertices) {
+            if (glm::length(Vec2 { v.position.x, v.position.z }) >
+                maxR * 0.35f) {
+                crownStart = glm::min(crownStart, v.position.y);
+            }
+        }
+        treeBounds[variant] = { maxY, maxR, crownStart };
+    }
     variantMeshes[variant].indexCount =
         static_cast<u32>(mesh.indices.size());
     variantMeshes[variant].vertexBuffer = { device, device.createBuffer(

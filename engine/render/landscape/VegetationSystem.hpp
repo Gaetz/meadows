@@ -38,6 +38,20 @@ class ShaderLibrary;
 class VegetationSystem {
 public:
     static constexpr u32 kTreeVariants = 5;
+    // The forest scatter's uniform-scale range (hand-tuned).
+    static constexpr f32 kTreeScaleMin = 4.8f;
+    static constexpr f32 kTreeScaleMax = 8.4f;
+
+    // Measured from the GENERATED tree variant meshes at the mean
+    // scatter scale — the far-tree impostors size and shape themselves
+    // from it, so retuned trees (and, later, per-type forests) reshape
+    // their own distant silhouettes automatically.
+    struct TreeSilhouette {
+        f32 height { 14.0f };       // mean world height (m)
+        f32 widthRatio { 0.9f };    // crown width / height
+        f32 trunkFraction { 0.4f }; // bare-trunk share of the height
+    };
+    TreeSilhouette treeSilhouette() const;
     static constexpr u32 kRockVariants = 4;
     static constexpr u32 kBushVariants = 3;
     static constexpr u32 kVariantCount =
@@ -252,6 +266,9 @@ private:
     u32 frameUltraInstances { 0 }; // ultra-twin instances drawn this frame
 
     array<VariantMesh, kVariantCount> variantMeshes {};
+    // Per tree variant, mesh units: x = height, y = max radial extent,
+    // z = crown start height. Zero until the variant lands.
+    array<Vec3, kTreeVariants> treeBounds {};
     std::unordered_map<u32, MeshData> meshOverrides;
     // Shared leaf-cluster cutout mask (all tree variants; cards only).
     rhi::UniqueTexture leafMask;
@@ -287,6 +304,11 @@ private:
 };
 
 // Pure CPU scatter for one chunk, runs on worker threads. Deterministic.
+// The forest-belt mask (broad noise thresholded) — FarTerrain raises and
+// darkens its coarse mesh with the SAME mask, so the distant forest
+// fringe continues the real scatter past the vegetation ring.
+f32 forestMask(u32 seed, f32 x, f32 z);
+
 VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                               i32 cx, i32 cz);
 

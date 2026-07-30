@@ -19,9 +19,16 @@ namespace {
 constexpr const char* kTerrainShader = "terrain";
 constexpr const char* kTerrainCasterShader = "shadow_terrain";
 
+i32 camChunk(f32 worldCoord) {
+    return chunkCoordOf(worldCoord, TerrainSystem::kChunkSize);
+}
+
+} // namespace
+
 // Per-vertex material color — the base tint the splat tiles blend over:
 // sand at the shoreline, grass on plains, rock on
-// slopes, snow on high flats.
+// slopes, snow on high flats. Public: FarTerrain paints its coarse far
+// mesh with the SAME palette so the streaming-ring hand-off matches.
 Vec3 terrainColor(f32 height, const Vec3& normal, f32 seaLevel) {
     constexpr Vec3 kSand { 0.76f, 0.70f, 0.50f };
     constexpr Vec3 kGrass { 0.33f, 0.51f, 0.21f };
@@ -37,12 +44,6 @@ Vec3 terrainColor(f32 height, const Vec3& normal, f32 seaLevel) {
                           (1.0f - glm::smoothstep(0.25f, 0.45f, slope));
     return glm::mix(color, kSnow, snowiness);
 }
-
-i32 camChunk(f32 worldCoord) {
-    return chunkCoordOf(worldCoord, TerrainSystem::kChunkSize);
-}
-
-} // namespace
 
 vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
                                       i32 cz, u32 lod) {
@@ -279,7 +280,7 @@ void TerrainSystem::requestMissing(const Vec3& cameraPos) {
             lodForDistance(std::max(std::abs(dx), std::abs(dz))));
     };
     streamer.requestMissing(
-        camCx, camCz, kViewRadius, kMaxRequestsPerFrame,
+        camCx, camCz, viewRadius, kMaxRequestsPerFrame,
         [&](i32 cx, i32 cz, i32 dx, i32 dz) {
             const auto it = streamer.chunks.find(chunkKey(cx, cz));
             if (it == streamer.chunks.end()) {
@@ -323,7 +324,7 @@ void TerrainSystem::enqueueBuild(i32 cx, i32 cz, u8 lod) {
 
 void TerrainSystem::evictFar(rhi::Device& /*device*/, const Vec3& cameraPos) {
     streamer.evictFar(camChunk(cameraPos.x), camChunk(cameraPos.z),
-                      kEvictRadius, [&](Chunk& chunk) {
+                      viewRadius + 2, [&](Chunk& chunk) {
                           // U3-7: the erase frees the vertex buffer.
                           if (chunk.residentLod != kNoLod) {
                               --resident;
