@@ -131,8 +131,10 @@ default with lobe trees as A/B), `TreeGenerator` /
 `SpaceColonizationTree`, `SkySystem` (analytic day/night palette, weather
 grading, 512² cloud-map bake, cumulonimbus billboards), `ShadowMapper`
 (CSM), `WaterSystem` (sea plane, planar reflection, pool-depth bake),
-`PostFx` (bloom, god rays, 2D volumetric march, froxel fog, contact
-shadows, auto-exposure, SSAO-slot), `RadianceCascades` (GI),
+`PostFx` (bloom, god rays, 2D volumetric march, froxel fog, ground
+mist, contact shadows, auto-exposure, SSAO-slot), `MistMap` /
+`NoiseVolume` (valley bake + shared Perlin-Worley volume — §3.5
+"Ground mist"), `RadianceCascades` (GI),
 `LightClusters` (clustered-forward culling), `ChunkOcclusion` (CPU
 horizon) + `GpuOcclusion` (Hi-Z compute cull + fence readback),
 `TerrainLightMap` (worker-baked far sun shadows + sky aperture),
@@ -160,7 +162,8 @@ only, non-oblique culling frustum) → opaque HDR pass (terrain, props,
 grass, meshes, skinned NPCs, sky, water volumes; frustum + CPU∪GPU
 occlusion) → color+depth copies → Hi-Z build + cull (fence readback) →
 water composite → PostFx (bloom/god rays/froxel or march
-volumetric/contact/auto-expo) → **GI chain recording (pipelined)** →
+volumetric/contact/ground mist/auto-expo) → **GI chain recording
+(pipelined)** →
 tonemap composite (+ RmlUi in-pass, ImGui after) →
 **async compute submit** (GI chain on the second queue, overlapping
 present and the next frame's front).
@@ -364,10 +367,27 @@ MoltenVK exposes no RT anyway).
 - **V1 analytic**: `applyFog` gains the sun lobe
   (`skyGradient + sunColor × phase^k × strength`), weather-crossfaded
   (`WeatherForm.fogSunScatter`). Night: dies with sunColor.
+- **Ceiling envelope** (all three density sites — froxel inject, 2D
+  march, `applyFog`): density × `exp(-(y − seaLevel) × fogCeiling)`
+  (`WeatherForm.fogCeiling`, crossfaded; panel "Fog ceiling falloff").
+  The fog is a GROUND layer: upward rays exit it so the sky stays
+  readable instead of greying under the in-scatter of the whole reach,
+  while horizontal rays keep the full fog band and its cloud-shadow ray
+  curtains. The old behavior = 0.
 - **Froxel fog (V4/H4)**: 128×72×64 grid (RGBA16F ×2 ping-pong,
-  ~5 MB), exponential camera-distance slices 1→800 m exterior / 48 m
-  interior (the composer sets the reach; the analytic fog keeps the tail
-  beyond). Inject computes density (height fog + interior dust with
+  ~5 MB), exponential camera-distance slices, 48 m interior; exterior
+  far = `clamp(fogStart × 3, 800, 2400)` (`volumetricReach`,
+  FrameComposer.hpp — the ONE formula, shared with the light-cluster
+  grid far since both grids share z slices §5 B5): a far-fog weather
+  (high start) pushes the froxel band and its cloud-shadow ray curtains
+  into the distance instead of spending ~90% of the slices on clear air
+  (with start 450 and the old fixed 800 far, the visible band held ~6 of
+  64 slices). The analytic fog keeps the tail beyond, and CARRIES the
+  cloud pattern there: terrain/grass/tree pass `cloudShadowFactor` into
+  the `applyFog(color, pos, cloudVis)` overload (sun lobe × cloudVis,
+  gradient dimmed a touch) so the curtains continue to the horizon —
+  water/mesh/skinned keep the neutral overload (no cloud map bound in
+  those passes; revisit if the seam shows on the distant sea). Inject computes density (height fog + interior dust with
   drifting value-noise "wisps") and light (sun × phase × CSM+cloud
   visibility + `giAir` + the cell's cluster-listed local lights, window
   projectors carving dust slabs, key-shadow atlas clipping beams);
@@ -382,7 +402,158 @@ MoltenVK exposes no RT anyway).
   (history stays sharp). History invalidated on teleport/reach
   change/frames without froxels. Fallback + A/B: the 20-step ½-res 2D
   march (also the no-compute path). Measured ~0.5 ms (M1 Debug).
-- Screen-space god rays remain (foliage, sunsets — taste call).
+- Screen-space god rays remain (foliage, sunsets — taste call),
+  deliberately CLOUD-BLIND (a cloud coupling was tried 2026-07-30 and
+  reverted: it overpowered and drowned the tree/ground occluders). The
+  shaft fade now survives the sun sitting a full screen off-edge
+  (side-lit shafts; the radial march converges fine off-screen).
+- **The cloud-ray-curtain chain** (ONE mechanism, the same knobs —
+  fogDensity/fogCeiling, fogSunScatter/fogSunPhase × the volumetric
+  slider, cloudShadowFactor for the pattern): the froxels own
+  [fogStart, volumetricReach] — ground-to-cloud shafts and shadow
+  curtains, any time of day; the surfaces' analytic `applyFog` tail
+  (with its one cloud tap) owns beyond. The SUN term rides a 3x SOFTER
+  altitude envelope than the extinction (fogCeiling × 0.35 — the sky
+  stays readable while the curtains keep their medium) and FADES toward
+  the cloud base (0.45→0.9 of cloudHeight — kilometres of near-base air
+  otherwise pile into a glowing cushion under the deck). A separate
+  far-sky "tail" march was tried in the sky-cloud pass (2026-07-30) and
+  REMOVED after two containments: all it could still light was the air
+  BETWEEN the clouds — negative visual value (the tuning-form field
+  `skyCloudRays` stays, unused, so records keep resolving).
+- **Horizon closure** (`fogLayerInfo.y` = the terrain streaming edge,
+  composer-set from the ring radius): `applyFog` guarantees geometry is
+  FULLY dissolved into the sky gradient over the last quarter of the
+  streaming ring, whatever the weather's fog — chunks are born inside
+  the veil instead of popping and trees stop sprouting from bare
+  ground. 0 disables (tool scenes without terrain). The ring radius is
+  LIVE-TUNABLE (`TerrainSystem::viewRadius`, panel "View radius",
+  `LandscapeTuningForm::terrainViewRadius`, 8-30 chunks = 512-1920 m;
+  chunk count grows (2r+1)² — watch F6).
+- **Far terrain** (`FarTerrain`, 2026-07-30 — the "see the landscape"
+  chantier): ONE coarse worker-baked grid (193², ~12 km span, 62 m
+  cells, ~220k tris) of the same height function, drawn under the near
+  terrain in the main pass — ridgeline silhouettes to ~5 km, painted
+  with the SHARED `terrainColor` palette and raised+darkened by the
+  SHARED `forestMask` (both made public for it), so the distant forest
+  fringe continues the real scatter past the vegetation ring. The mesh
+  sinks 12 m inside the streaming ring (vertex bias, `fogLayerInfo.z` =
+  ring) so its coarse sampling never pokes through the exact chunks;
+  the horizon closure moves out to `FarTerrain::reach()` (~5 km) when
+  it stands in. Flat shading (color × (ambient + sun·N·L × cloud
+  shadow)) + `applyFog` — the veil does the silhouette work. Rebake on
+  1 km stray; toggle "Far terrain" (persisted `farTerrain`).
+  **Tree impostors** ride the same bake: cylindrical billboards
+  scattered with the REAL forestMask + tree gates at 3.5x the real
+  spacing (700 m → 5.2 km, IGN-dither dissolve at both ends, so they
+  take over exactly where the true trees fade ~880 m). The silhouette
+  is ANALYTIC in the fragment (hash-jittered crown discs + trunk — the
+  lobe-tree read at distance, no texture bake), instanced in one draw
+  (the vegetation Instance layout, corners from the vertex index), lit
+  flat (ambient + sun × cloud shadow) and dissolved by `applyFog`.
+  **Impostor size/shape is MEASURED, not authored**:
+  `VegetationSystem::treeSilhouette()` averages the AABB of the
+  generated tree variants (height, crown-width ratio, bare-trunk
+  fraction, captured in `uploadVariantMesh`) × the scatter scale range
+  — instance height, billboard width (`aParams.z`), trunk/crown split
+  (`aParams.w`) and the far-mesh canopy raise (~60 % of tree height)
+  all derive from it, so a future tree-type change reshapes the far
+  woods automatically (the bake keys on the silhouette height and
+  re-runs when the async variant meshes land). A pre-rendered impostor
+  atlas from the real tree pipeline remains the upgrade path if the
+  analytic read ever falls short.
+- **Bilateral composite** (the ground-mist brique 8, done): the
+  tonemap's ½-res volumetric taps (mist + sky clouds) are
+  depth-weighted (full-res depth at binding 8) — silhouette edges stop
+  bleeding 1-px halos across ridges and cloud/mountain boundaries.
+- **Mist puffiness** (`mistPuffInfo.x`, panel + persisted): the cloud
+  floret pass ported to the mist's patch borders (3.7x fine tap, edge
+  band only, dropout + segment-LOD gated).
+
+#### Ground mist — the erasing mist (2026-07-29)
+
+A SEPARATE raymarched medium (`mist.frag`, PostFx pass, tonemap
+binding 4) for the world-eating valley mist — not fog tuning: authored
+density with crisp fronts, which the froxel grid is too coarse to hold.
+Schneider/Frostbite family: envelope × noise erosion, Beer-Lambert +
+powder + dual-lobe HG, IGN-jittered ½-res march (16 steps default,
+live knob) + temporal EMA.
+
+- **Density** = valley envelope × coverage gate × vertical profile ×
+  3D erosion. The envelope is CPU-baked (`MistMap`, 256²/2048 m RGBA8,
+  worker; R = box-blurred terrain height = the "water table" the mist
+  pools under, G = valleyness `(smoothed − h)/16 m` — ordinary vales
+  read as misty, not only gorges; underwater floors are gated out with
+  a ±2/+3 m shore fade, or the sea/lakes would read as perfect valleys
+  and blanket the water). Bake is
+  sun-independent and center-snapped to the texel grid ⇒ overlap texels
+  of consecutive bakes are bit-identical ⇒ **no rebake crossfade needed
+  by construction**. Coverage = wind-drifted `cloudFbm` threshold
+  (which valleys hold mist — sparse so the player keeps landmarks);
+  erosion = shared `NoiseVolume` Perlin-Worley 128³ (analytic `fbm3`
+  fallback + A/B), mean-preserving distance dropout.
+- **Lighting contract**: mist RECEIVES `cloudShadowFactor` + one CSM tap
+  per step; ambient = `giAir` with a shadow floor; sun transmittance is
+  ANALYTIC (Beer over the slab-exit path toward the sun + one ceiling
+  refinement tap — no light march). The powder term is DIRECTIONAL
+  (blended out toward the sun, the Schneider/repo formula) — applied
+  flat it kills the silver lining at the thin lit rim; the sun beam
+  carries a gain knob (`mistSunBoost`, the normalized HG phase alone is
+  too dim against the full-sky ambient). The light-shaping kit lives in
+  `mistLightInfo` (panel "Mist lighting", persisted): forward HG lobe g
+  (rim tightness), backscatter weight, ambient gain (the silver-lining
+  contrast is ambient-vs-sun) and shadow floor. Mist does NOT cast shadows, is NOT
+  injected into RC or the froxels (v1), does not appear in the
+  reflection pass or interiors. The `volumetric shafts` slider does not
+  drive it — density/coverage are per-weather (`WeatherForm.mistDensity/
+  mistCoverage`, ~30 s crossfade), structure knobs are
+  `LandscapeTuningForm.mist*` (Save render tuning persists them).
+- **Composite order**: contact → **mist** → froxel/2D fog → bloom → god
+  rays — the air fog veils distant mist, never the reverse (both media
+  overlap in the same meters; independent transmittances multiply ≈
+  combined Beer; only additive glow can stack — tune misty weathers'
+  `fogLowBoost` down). Debug buffer 4 isolates the target.
+- **Temporal**: world-space reprojection of the pixel's depth point
+  (`temporal_resolve.glsl`, reusable), EMA 0.15 with a soft clamp toward
+  the current sample, history = `postcopy` blit of the target (no
+  ping-pong — the tonemap blit group stays static), golden-ratio-rolled
+  IGN. Invalidated on camera jump >10 m / resize / mist-off frames.
+  NEAR geometry (< ~25 m ray length) takes little to no history: its
+  reprojection error is the largest and moving foreground objects
+  (carried weapon, swaying grass tips) would drag mist ghosts — that
+  plus the clamp tolerance is the anti-trail contract.
+- **Slab clip**: the ray is clipped to
+  `[seaLevel−64, maxBakedTop+lift]` before marching — sky and peak
+  pixels exit before the loop; `NoiseVolume` bakes on frame 1 (one-shot
+  ~50 ms during scene load, never mid-play).
+- **Measured (M1 Air Release, worst case: camera INSIDE dense mist,
+  density 0.12, full screen): 1.6/1.9 ms avg/max**; typical distant-
+  valley mist is far cheaper (slab clip + coverage early-outs), mist-off
+  is a ½-res clear. In dense mist the transmittance early-out ends the
+  march at the same optical depth regardless of the step knob — the
+  per-step cost is not the lever there. History via `postcopy` blit, NOT
+  `copyTexture` (that cost ~1.0 ms of MoltenVK layout transitions).
+  Escalation levers, in order: steps 16→12, ¼-res + temporal (HZD
+  pattern — the temporal brick makes the switch trivial), MistMap 128²,
+  erosion dropout closer.
+- **Shared with the future volumetric sky clouds** (§8 contract):
+  `volumetric_media.glsl` (HG/dual-lobe/powder/Schneider-remap/
+  multi-octave scattering/integration), `NoiseVolume` (R channel + B/A
+  reserved for the sky), `temporal_resolve.glsl`, and the ½-res+temporal
+  pattern proven here. A volumetric sky would bake its vertical
+  transmittance into the existing 512² map behind `cloudShadowFactor` —
+  the GLSL seam does not move.
+- **Vulkan note**: post passes must bind their extra maps at their OWN
+  slots (`renderMist`: cloud map @5, mist map @6) — `PostFx::render`
+  overwrites slot 3 with the GI group, and an overwritten Vulkan slot
+  loses its bindings where GL's texture units stay sticky. The
+  pre-existing case was CONFIRMED AND FIXED (2026-07-30): the cloud-map
+  group bound at slot 3 before `postFx.render` was clobbered by the GI
+  group, so the froxel inject and the 2D march sampled a DUMMY for
+  `uCloudMap` on Vulkan — the fog's cloud-shadow ray curtains were dead
+  on macOS the whole time (GL sticky units masked it). `PostFx::render`
+  now takes the cloud-map group and binds it at slot 5 for both fog
+  paths.
 
 ### 3.6 Sky, weather, clouds, water, post
 
@@ -400,6 +571,56 @@ MoltenVK exposes no RT anyway).
   `cloudShadowFactor()` (clouds.glsl) consumed by terrain, grass, trees,
   froxels, RC inject, volumetric march; `cloudInfo`/`cloudMapInfo`
   FrameUbo fields. See §8 for the extensibility contract.
+- **Volumetric sky clouds** (2026-07-29, the §8 swap, on the ground-mist
+  socle): `skyclouds.frag`, a ½-res+temporal PostFx pass (the exact mist
+  family: history blit, EMA, golden-rolled IGN) marching the altitude
+  slab `[cloudInfo.y, +cloudVolInfo.y]`. Density = the SAME analytic
+  coverage field as the dome and the shadow bake
+  (`cloudDensityAnalytic` — ground shadows match the volumetric clouds
+  by construction, the `cloudShadowFactor` seam untouched) × a rounded
+  vertical profile (cores tower with coverage) × Perlin-Worley erosion
+  (`NoiseVolume` R channel — the lane reserved for the sky). Lighting =
+  3-tap sun march feeding `mediaMultiOctaveScattering` + directional
+  powder + height-graded sky ambient; knobs in `cloudVolInfo`/
+  `cloudVolLightInfo` (panel "Sky clouds", persisted in
+  LandscapeTuningForm). Tonemap binding 7, composited FIRST (farthest
+  medium — mist and fog veil it); scene depth occludes (mountains mask
+  clouds behind them); debug buffer 5. When active it gates the 2D dome
+  layer — RESOLVED only, so the planar REFLECTION pass draws the 2D
+  layer (same coverage field, so the patterns agree). **Clouds in the
+  water** come from screen-space reprojection, not the mirror: the
+  water shader (uSkyClouds, binding 4) follows the reflected ray from
+  the main camera — clouds sit at quasi-infinity, so direction alone
+  reprojects them into last frame's cloud display buffer — and
+  composites `refl × a + rgb` where it lands on-screen, fading to the
+  mirrored 2D dome near the screen edges. Occlusion is inherited: a
+  ridge the main view sees leaves the buffer neutral there. Gated on
+  the NoiseVolume caps: without compute+3D textures the 2D dome IS the
+  fallback. **Far clouds** (the classical
+  flattening): sky pixels bypass the depth clamp (the far-plane
+  reconstruction sits closer than a slanted slab entry — without this,
+  clouds exist only overhead), the volumetric fades out over elevation
+  0.10→0.04 and the 2D dome fades IN complementarily (`domeShare` in
+  `applyClouds`) — a grazing slab is one 2D sample, and the dome is
+  that sample on the same coverage field. Cost control: step count
+  scales with the traversed span (8 overhead → 24 grazing), the sun
+  march drops to 1 tap beyond 3 km, span capped at 15 km. The sun
+  lighting is TWO terms — multi-octave body + direct-transmission
+  lining `exp(−τ)·HG(g≈0.9)` (the silver lining; per-tap light-march
+  coverage so edges measure thin) — and the slab thickness scales with
+  the weather's coverage (`cloudVolShapeInfo.x`, up to ×5: full skies
+  tower). **Shape (the Nubis 2015/2017 subset)**: per-column top
+  variation (a fixed-z volume tap), height-mixed erosion (wispy
+  Perlin-Worley bases → round Worley billows at the tops), a fractal
+  floret pass on the low-density edge band (`skyCloudPuffiness`), and a
+  curl-style domain warp (slow vertical advection — boiling edges;
+  amplitude rides puffiness). **Anti-flicker contract**: steps target a
+  fixed ~40 m segment (max 40) and EVERY noise octave — warp included —
+  fades toward its mean once a segment exceeds half its wavelength (the
+  mist LOD lesson; light-march taps too, so the lighting stays stable
+  on tall slabs); plus a display-only 3×3 blur on the composite tap
+  (the froxel lesson — the EMA history stays sharp). Measured (M1
+  Release, coverage 0.3): ~0.3-2.3 ms depending on sky content.
 - **Water**: global sea plane (planar mirror + oblique clip; culling
   frustum from the NON-oblique projection — Lengyel's trick corrupts the
   far plane), pool-depth bake killing foam on small ponds, submersion
@@ -569,10 +790,26 @@ surface+submersion first, no foam v1, swimming = gameplay chantier);
 cumulonimbus/rain polish as WeatherForm content; GL 4.1 degraded mode;
 TAA, 3D LUT, caustics, Gerstner water — backlog.
 
+**Ground-mist deferred (reviewed 2026-07-29, end of chantier)**: the
+optimization bricks (NoiseVolume, temporal EMA, coverage-lerp) were
+built INTO the chantier, not deferred. Still open: (1) bilateral ½-res
+upsample — conditional on the dev SEEING silhouette halos in the tuning
+session (recipe: depth-weighted 4-tap in tonemap.frag + a ½-res depth
+fetch); (2) gameplay coupling of the mist (region signal for the sim —
+danger/visibility/progression) = a sim chantier, Forms + References,
+headless (§2.10); (3) volumetric sky clouds on the shared socle (§8
+contract — see "Chantiers ready to start"); (4) TerrainLightMap.R as
+far sun visibility in the mist march if lit far mist in mountain shadow
+reads wrong; (5) GL 4.6 runtime parity smoke on PC (macOS runs GL 4.1
+only — compile-verified here, runtime check rides the PC return
+bundle).
+
 **Chantiers ready to start**: the new clouds implementation against the
 §8 contract (RENDERER-EXTRACT §7 is complete — follow-ups: tree types →
 forest scatter; AnimPreviewPanel onto a configured WorldRenderer;
-postFx-less blit fallback hardening on Vulkan).
+postFx-less blit fallback hardening on Vulkan). The ground-mist chantier
+(§3.5, 2026-07-29) pre-built the sky-clouds socle: `volumetric_media.glsl`,
+`NoiseVolume`, `temporal_resolve.glsl` and the ½-res+temporal pattern.
 
 ## 7. Chantier RENDERER-EXTRACT (prepared, not yet executed)
 
