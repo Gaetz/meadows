@@ -57,13 +57,32 @@ float cloudDensityAt(vec2 planePos) {
 // Blends the cloud layer over the sky color for an upward view ray.
 // Analytic density: horizon rays reach tens of km, far past the baked field.
 vec3 applyClouds(vec3 sky, vec3 dir) {
-    float horizonFade = smoothstep(0.03, 0.14, dir.y);
+    // With the volumetric clouds (skyclouds.frag) active the dome keeps
+    // only the HORIZON band the raymarch hands off — the classical
+    // far-cloud flattening, and both read the same coverage field so
+    // the patterns agree across the seam. (The reflection pass has
+    // cloudVolInfo.x = 0 and keeps the full 2D layer.)
+    float domeShare = 1.0;
+    if (uCloudVolInfo.x > 0.5) {
+        domeShare = 1.0 - smoothstep(0.04, 0.10, dir.y);
+        if (domeShare <= 0.0) {
+            return sky;
+        }
+    }
+    float horizonFade = smoothstep(0.006, 0.04, dir.y);
     if (horizonFade <= 0.0 || uCameraPos.y >= uCloudInfo.y) {
         return sky;
     }
     float t = (uCloudInfo.y - uCameraPos.y) / dir.y;
     vec2 planePos = uCameraPos.xz + dir.xz * t;
     float density = cloudDensityAnalytic(planePos);
+    // Horizon LOD: at grazing angles the drifting pattern compresses
+    // below pixel size (shimmer) while real cloud banks visually MERGE
+    // through perspective — so the pattern's contrast fades toward its
+    // coverage mean: a soft, stable distant cloud bank instead of the
+    // old hard fade-to-empty.
+    float bank = smoothstep(0.06, 0.015, dir.y);
+    density = mix(density, clamp(uCloudInfo.x, 0.0, 1.0), bank * 0.85);
     if (density <= 0.0) {
         return sky;
     }
@@ -101,7 +120,7 @@ vec3 applyClouds(vec3 sky, vec3 dir) {
     vec3 liningColor = uSunColor.rgb * 0.30 + uSunGlowColor.rgb * 0.30;
     cloudColor += liningColor * (edge * pow(sunAlign, 4.0) * sparse);
 
-    return mix(sky, cloudColor, density * horizonFade * 0.92);
+    return mix(sky, cloudColor, density * horizonFade * domeShare * 0.92);
 }
 
 // Sun attenuation from cloud cover, for terrain/vegetation lighting. The
