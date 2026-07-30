@@ -13,6 +13,9 @@ layout(binding = 2) uniform sampler2D uReflection;
 // CPU-baked pool depth around the camera (pre-dilated neighborhood max) —
 // view-independent, unlike screen-space probing.
 layout(binding = 3) uniform sampler2D uPoolDepth;
+// Main-view volumetric sky clouds (rgb + transmittance a, last frame's
+// display buffer) — reprojected into the mirror, see below.
+layout(binding = 4) uniform sampler2D uSkyClouds;
 
 layout(location = 0) in vec3 vWorldPos;
 layout(location = 0) out vec4 fragColor;
@@ -90,6 +93,30 @@ void main() {
         vec3 reflectDir = reflect(viewDir, n);
         reflectDir.y = abs(reflectDir.y); // never reflect below the horizon
         reflected = skyWithSun(reflectDir);
+    }
+    // Volumetric sky clouds live in a main-view screen buffer
+    // (composited by the tonemap), so the mirrored scene never contains
+    // them. Clouds sit at quasi-infinity, so DIRECTION alone reprojects
+    // them: follow the reflected ray from the main camera and composite
+    // the cloud buffer where it lands on-screen. Off-screen (or with
+    // the volumetric pass off) the 2D dome layer the reflection pass
+    // drew remains — same coverage field, so the patterns agree.
+    if (uCloudVolInfo.x > 0.5) {
+        vec3 reflectDir = reflect(viewDir, n);
+        reflectDir.y = abs(reflectDir.y);
+        vec4 clip =
+            uViewProj * vec4(uCameraPos.xyz + reflectDir * 40000.0, 1.0);
+        if (clip.w > 0.0) {
+            vec2 uv = clip.xy / clip.w * 0.5 + 0.5;
+            vec2 edge = min(uv, 1.0 - uv);
+            float onScreen = smoothstep(0.0, 0.06, min(edge.x, edge.y));
+            if (onScreen > 0.0) {
+                vec4 cloud = texture(uSkyClouds, uv);
+                reflected = mix(reflected,
+                                reflected * cloud.a + cloud.rgb,
+                                onScreen);
+            }
+        }
     }
     float fresnel =
         0.02 + 0.98 * pow(1.0 - max(dot(-viewDir, n), 0.0), 5.0);

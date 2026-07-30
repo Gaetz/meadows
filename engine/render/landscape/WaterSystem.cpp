@@ -106,7 +106,8 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     shaders.load(kWaterShader, { { "FrameUbo", 0 } },
                  { { "uSceneColor", 0 },
                    { "uSceneDepth", 1 },
-                   { "uPoolDepth", 3 } });
+                   { "uPoolDepth", 3 },
+                   { "uSkyClouds", 4 } });
     buildPipeline(device, shaders);
 }
 
