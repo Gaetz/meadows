@@ -126,6 +126,57 @@ struct FrameUniforms {
     // x = strength, y = band threshold (lower = wider highlight),
     // z = Blinn-Phong exponent, w free.
     Vec4 stylizedSpecInfo { 0.35f, 0.35f, 24.0f, 0.0f };
+    // Ground mist (mist.frag, docs/RENDERING.md §3.5): x = extinction
+    // sigma (1/m, weather-crossfaded; 0 = feature off — THE shader gate),
+    // y = reach (m), z = coverage threshold, w = coverage softness.
+    Vec4 mistInfo { 0.0f, 1200.0f, 0.5f, 0.6f };
+    // x = coverage pattern scale (1/m), y = erosion noise scale (1/m),
+    // z = erosion strength, w = lift (m, raises the baked mist top).
+    Vec4 mistShapeInfo { 0.0035f, 0.02f, 0.2f, 49.0f };
+    // Mist valley map (MistMap): xy = bake center (world XZ),
+    // z = 1/span, w = max mist-top Y (bounds the raymarch's slab clip).
+    Vec4 mistMapInfo {};
+    // x = erode with the baked NoiseVolume (0 = analytic fbm3 — the A/B
+    // and the no-caps fallback), y = march steps, z = erosion detail
+    // dropout distance (m; beyond it the march skips the noise taps),
+    // w = sun-beam gain (the normalized phase alone is too dim against
+    // the full-sky ambient).
+    Vec4 mistDetailInfo { 0.0f, 16.0f, 400.0f, 10.0f };
+    // Mist light shaping (the silver-lining kit): x = forward HG lobe g
+    // (higher = tighter, brighter rim toward the sun), y = backscatter
+    // lobe weight, z = ambient gain (lower darkens the mist body so the
+    // sun beam pops), w = ambient floor in shadow.
+    Vec4 mistLightInfo { 0.95f, 0.8f, 1.25f, 0.6f };
+    // Fog altitude envelope: x = ceiling falloff (1/m above sea level,
+    // weather-crossfaded) — the fog is a GROUND layer, so upward rays
+    // exit it and the sky stays readable while the horizon keeps its
+    // fog and ray curtains. y = horizon-closure distance (m, 0 = off),
+    // z = the streaming ring (m — the far mesh's sink bias). w free.
+    Vec4 fogLayerInfo { 0.0035f, 0.0f, 0.0f, 0.0f };
+    // Volumetric sky clouds (skyclouds.frag, §8 contract): x = active
+    // (also gates the 2D dome layer off), y = slab thickness (m),
+    // z = extinction sigma (1/m), w = erosion strength. The slab BASE is
+    // the weather's cloud height (cloudInfo.y); coverage/scale stay the
+    // shared cloudInfo lanes so the baked ground shadows match.
+    Vec4 cloudVolInfo { 0.0f, 440.0f, 0.065f, 0.31f };
+    // x = body sun gain (multi-octave scattering — the soft luminous
+    // core), y = body HG lobe g, z = ambient gain, w = LINING gain (the
+    // direct-transmission term exp(-tau)·HG — the silver lining).
+    Vec4 cloudVolLightInfo { 19.9f, 0.3f, 0.9f, 30.2f };
+    // x = thickness<->coverage spread (at 4 a full sky is 5x thick),
+    // y = lining HG lobe g (tighter = the halo hugs the sun), z = powder
+    // strength (dark-edge term away from the sun), w = puffiness (the
+    // fractal edge-erosion pass — cauliflower florets).
+    Vec4 cloudVolShapeInfo { 3.4f, 0.8f, 1.0f, 0.5f };
+    // x = rim gain (silhouette glow where the cloud is thin along the
+    // VIEW ray — the sun-path lining cannot produce it), y = rim HG
+    // lobe g, z = storm darkening 0..10, EXPONENTIAL (exp(-storm×cov):
+    // ambient fully, sun body at 85%, bases fastest; lining and rim
+    // keep their fire), w free (the sky-ray tail lived here, removed).
+    Vec4 cloudVolRimInfo { 25.0f, 0.75f, 7.4f, 0.0f };
+    // Ground-mist extras: x = puffiness (fractal edge florets on the
+    // patch borders — the cloud recipe ported), yzw free.
+    Vec4 mistPuffInfo { 0.5f, 0.0f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -183,7 +234,18 @@ static_assert(offsetof(FrameUniforms, keyShadowAtlasViewProj) == 1040);
 static_assert(offsetof(FrameUniforms, grassShadeInfo) == 1296);
 static_assert(offsetof(FrameUniforms, grassBladeInfo) == 1312);
 static_assert(offsetof(FrameUniforms, stylizedSpecInfo) == 1328);
-static_assert(sizeof(FrameUniforms) == 1344,
+static_assert(offsetof(FrameUniforms, mistInfo) == 1344);
+static_assert(offsetof(FrameUniforms, mistShapeInfo) == 1360);
+static_assert(offsetof(FrameUniforms, mistMapInfo) == 1376);
+static_assert(offsetof(FrameUniforms, mistDetailInfo) == 1392);
+static_assert(offsetof(FrameUniforms, mistLightInfo) == 1408);
+static_assert(offsetof(FrameUniforms, fogLayerInfo) == 1424);
+static_assert(offsetof(FrameUniforms, cloudVolInfo) == 1440);
+static_assert(offsetof(FrameUniforms, cloudVolLightInfo) == 1456);
+static_assert(offsetof(FrameUniforms, cloudVolShapeInfo) == 1472);
+static_assert(offsetof(FrameUniforms, cloudVolRimInfo) == 1488);
+static_assert(offsetof(FrameUniforms, mistPuffInfo) == 1504);
+static_assert(sizeof(FrameUniforms) == 1520,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

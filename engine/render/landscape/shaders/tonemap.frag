@@ -1,17 +1,40 @@
 #version 460 core
 #include "common.glsl"
 
-// (binding 4 is unused — no screen-space AO; grounding
-// comes from the terrain light map, contact shadows and baked vertex AO.)
 layout(binding = 0) uniform sampler2D uSceneColor;
 layout(binding = 1) uniform sampler2D uBloom;
 layout(binding = 2) uniform sampler2D uGodRays;
 layout(binding = 3) uniform sampler2D uVolumetric;
+layout(binding = 4) uniform sampler2D uMist;     // ground mist (§3.5)
 layout(binding = 5) uniform sampler2D uExposure; // 1x1 adaptation
 layout(binding = 6) uniform sampler2D uContact;  // white = lit
+layout(binding = 7) uniform sampler2D uSkyClouds; // volumetric clouds
+layout(binding = 8) uniform sampler2D uSceneDepth; // bilateral weights
 
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
+
+// Depth-weighted 4-tap (joint bilateral): the ½-res volumetric targets
+// are fetched with the rotated-grid offsets, but each tap is weighted by
+// how close its FULL-RES depth sits to the center pixel's — silhouette
+// edges (a crisp ridge in front of a bright mist bank / a mountain
+// against the clouds) stop bleeding 1-px halos across. hand-tuned
+// raw-z tolerance.
+vec4 bilateral4(sampler2D tex, vec2 uv, vec2 texel, float centerDepth) {
+    const vec2 kOffsets[4] =
+        vec2[4](vec2(0.6, 0.2), vec2(-0.2, 0.6), vec2(-0.6, -0.2),
+                vec2(0.2, -0.6));
+    vec4 sum = vec4(0.0);
+    float weightSum = 0.0;
+    for (int i = 0; i < 4; ++i) {
+        vec2 u = uv + texel * kOffsets[i];
+        float d = texture(uSceneDepth, u).r;
+        float w = 1.0 / (0.05 + abs(d - centerDepth) * 400.0);
+        sum += texture(tex, u) * w;
+        weightSum += w;
+    }
+    return sum / weightSum;
+}
 
 // ACES-fitted filmic curve (Krzysztof Narkowicz).
 vec3 acesFilm(vec3 x) {
@@ -25,11 +48,13 @@ vec3 acesFilm(vec3 x) {
 
 void main() {
     // Debug buffer viewer (uTime.w): 1 = bloom, 2 = god rays,
-    // 3 = volumetric.
+    // 3 = volumetric, 4 = mist, 5 = sky clouds.
     if (uTime.w > 0.5) {
         vec3 debugColor = uTime.w < 1.5   ? texture(uBloom, vUv).rgb * 2.0
                           : uTime.w < 2.5 ? texture(uGodRays, vUv).rgb * 2.0
-                                          : texture(uVolumetric, vUv).rgb * 2.0;
+                          : uTime.w < 3.5 ? texture(uVolumetric, vUv).rgb * 2.0
+                          : uTime.w < 4.5 ? texture(uMist, vUv).rgb * 2.0
+                                          : texture(uSkyClouds, vUv).rgb * 2.0;
         fragColor = vec4(pow(debugColor, vec3(1.0 / 2.2)), 1.0);
         return;
     }
@@ -49,6 +74,15 @@ void main() {
     // Rotated-grid 4-tap fetch (16 effective bilinear samples) smooths the
     // marching dither out of both the shafts and the dark curtains.
     vec2 volTexel = 1.0 / vec2(textureSize(uVolumetric, 0));
+    float centerDepth = texture(uSceneDepth, vUv).r;
+    // Sky clouds FIRST — the farthest medium; mist and fog veil them.
+    vec4 clouds = bilateral4(uSkyClouds, vUv, volTexel, centerDepth);
+    hdr = hdr * clouds.a + clouds.rgb;
+    // Ground mist BEFORE the fog term: the mist hugs the terrain at the
+    // far end of the ray, the fog fills the air in front of it — fog
+    // veils distant mist, never the reverse.
+    vec4 mist = bilateral4(uMist, vUv, volTexel, centerDepth);
+    hdr = hdr * mist.a + mist.rgb;
     vec4 volumetric =
         (texture(uVolumetric, vUv + volTexel * vec2(0.6, 0.2)) +
          texture(uVolumetric, vUv + volTexel * vec2(-0.2, 0.6)) +

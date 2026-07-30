@@ -89,4 +89,42 @@ layout(std140, binding = 0) uniform FrameUbo {
     // Stylized specular band on characters/props (mesh/skinned.frag):
     // x = strength, y = band threshold, z = Blinn-Phong exponent.
     vec4 uStylizedSpec;
+    // Ground mist (mist.frag): x = extinction sigma (1/m, 0 = off),
+    // y = reach (m), z = coverage threshold, w = coverage softness.
+    vec4 uMistInfo;
+    // x = coverage pattern scale (1/m), y = erosion noise scale (1/m),
+    // z = erosion strength, w = lift (m, raises the baked mist top).
+    vec4 uMistShapeInfo;
+    // Mist valley map: xy = bake center (world XZ), z = 1/span,
+    // w = max mist-top Y (bounds the raymarch's slab clip).
+    vec4 uMistMapInfo;
+    // x = erode with the baked NoiseVolume (0 = analytic fbm3),
+    // y = march steps, z = erosion detail dropout distance (m),
+    // w = sun-beam gain.
+    vec4 uMistDetailInfo;
+    // x = forward HG lobe g, y = backscatter weight, z = ambient gain,
+    // w = ambient floor in shadow (the silver-lining kit).
+    vec4 uMistLightInfo;
+    // x = fog ceiling falloff (1/m above sea level) — the fog is a
+    // ground layer; upward rays exit it and the sky stays readable.
+    // y = horizon-closure distance (m; the far-terrain reach or the
+    // streaming ring, 0 = off), z = the streaming ring itself (m) —
+    // the far mesh's sink bias.
+    vec4 uFogLayerInfo;
+    // Volumetric sky clouds: x = active (gates the 2D dome layer off),
+    // y = slab thickness (m), z = extinction sigma (1/m), w = erosion
+    // strength. Slab base = uCloudInfo.y; coverage = uCloudInfo.x.
+    vec4 uCloudVolInfo;
+    // x = body sun gain, y = body HG lobe g, z = ambient gain,
+    // w = lining gain (direct transmission — the silver lining).
+    vec4 uCloudVolLightInfo;
+    // x = thickness<->coverage spread, y = lining HG lobe g,
+    // z = powder strength, w = puffiness (fractal edge erosion).
+    vec4 uCloudVolShapeInfo;
+    // x = rim gain (view-thin silhouette glow), y = rim HG lobe g,
+    // z = storm darkening 0..10, exponential (coverage-scaled; ambient
+    // + 85% of the sun body; lining/rim untouched), w free.
+    vec4 uCloudVolRimInfo;
+    // x = mist puffiness (fractal edge florets), yzw free.
+    vec4 uMistPuffInfo;
 };

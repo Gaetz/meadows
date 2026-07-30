@@ -20,6 +20,8 @@ void RenderTuningIo::applyTuning(
     r.terrain.params.mountainWavelength = tuning.mountainWavelength;
     r.terrain.params.mountainAmplitude = tuning.mountainAmplitude;
     r.terrain.params.seaLevel = tuning.seaLevel;
+    r.terrain.viewRadius = glm::clamp(tuning.terrainViewRadius, 8, 30);
+    r.farTerrainUi = tuning.farTerrain;
     r.exposureUi = tuning.exposure;
     // (tuning.ssaoStrength is unused — screen-space AO removed.)
     r.gradeVibranceUi = tuning.gradeVibrance;
@@ -46,6 +48,32 @@ void RenderTuningIo::applyTuning(
     r.postFx.froxelTemporalBlend = tuning.froxelTemporalBlend;
     r.postFx.froxelDustNoise = tuning.froxelDustNoise;
     r.interiorDustDensityUi = tuning.interiorDustDensity;
+    r.mistUi = tuning.mistEnabled;
+    r.mistReachUi = tuning.mistReach;
+    r.mistCoverageSoftnessUi = tuning.mistCoverageSoftness;
+    r.mistShapeUi = { tuning.mistCoverageScale, tuning.mistErosionScale,
+                      tuning.mistErosionStrength, tuning.mistLift };
+    r.mistSunBoostUi = tuning.mistSunBoost;
+    r.mistLightUi = { tuning.mistSunLobe, tuning.mistBackscatter,
+                      tuning.mistAmbientGain, tuning.mistShadowFloor };
+    r.mistNoiseTexUi = tuning.mistNoiseTexture;
+    r.mistDetailDropoutUi = tuning.mistDetailDropout;
+    r.mistStepsUi = glm::clamp(tuning.mistSteps, 4, 64);
+    r.postFx.mistTemporalBlend = tuning.mistTemporalBlend;
+    r.mistPuffinessUi = tuning.mistPuffiness;
+    r.skyCloudsUi = tuning.skyCloudsVolumetric;
+    r.skyCloudShapeUi = { tuning.skyCloudThickness, tuning.skyCloudDensity,
+                          tuning.skyCloudErosion,
+                          tuning.skyCloudThicknessSpread };
+    r.skyCloudLightUi = { tuning.skyCloudSunGain, tuning.skyCloudSunLobe,
+                          tuning.skyCloudAmbientGain,
+                          tuning.skyCloudLiningGain };
+    r.skyCloudLiningLobeUi = tuning.skyCloudLiningLobe;
+    r.skyCloudPowderUi = tuning.skyCloudPowder;
+    r.skyCloudPuffinessUi = tuning.skyCloudPuffiness;
+    r.skyCloudRimGainUi = tuning.skyCloudRimGain;
+    r.skyCloudRimLobeUi = tuning.skyCloudRimLobe;
+    r.skyCloudBaseDarkUi = tuning.skyCloudBaseDark;
     // Vegetation draw budget (clamped — the streamer ring
     // and the Hi-Z candidate cap size the safe range).
     r.vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 15);
@@ -193,6 +221,40 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
     out.froxelTemporalBlend = r.postFx.froxelTemporalBlend;
     out.froxelDustNoise = r.postFx.froxelDustNoise;
     out.interiorDustDensity = r.interiorDustDensityUi;
+    out.mistEnabled = r.mistUi;
+    out.mistReach = r.mistReachUi;
+    out.mistCoverageSoftness = r.mistCoverageSoftnessUi;
+    out.mistCoverageScale = r.mistShapeUi.x;
+    out.mistErosionScale = r.mistShapeUi.y;
+    out.mistErosionStrength = r.mistShapeUi.z;
+    out.mistLift = r.mistShapeUi.w;
+    out.mistSunBoost = r.mistSunBoostUi;
+    out.mistSunLobe = r.mistLightUi.x;
+    out.mistBackscatter = r.mistLightUi.y;
+    out.mistAmbientGain = r.mistLightUi.z;
+    out.mistShadowFloor = r.mistLightUi.w;
+    out.mistNoiseTexture = r.mistNoiseTexUi;
+    out.mistDetailDropout = r.mistDetailDropoutUi;
+    out.mistSteps = r.mistStepsUi;
+    out.mistTemporalBlend = r.postFx.mistTemporalBlend;
+    out.mistPuffiness = r.mistPuffinessUi;
+    out.skyCloudsVolumetric = r.skyCloudsUi;
+    out.skyCloudThickness = r.skyCloudShapeUi.x;
+    out.skyCloudDensity = r.skyCloudShapeUi.y;
+    out.skyCloudErosion = r.skyCloudShapeUi.z;
+    out.skyCloudSunGain = r.skyCloudLightUi.x;
+    out.skyCloudSunLobe = r.skyCloudLightUi.y;
+    out.skyCloudAmbientGain = r.skyCloudLightUi.z;
+    out.skyCloudLiningGain = r.skyCloudLightUi.w;
+    out.skyCloudLiningLobe = r.skyCloudLiningLobeUi;
+    out.skyCloudPowder = r.skyCloudPowderUi;
+    out.skyCloudThicknessSpread = r.skyCloudShapeUi.w;
+    out.skyCloudPuffiness = r.skyCloudPuffinessUi;
+    out.skyCloudRimGain = r.skyCloudRimGainUi;
+    out.skyCloudRimLobe = r.skyCloudRimLobeUi;
+    out.skyCloudBaseDark = r.skyCloudBaseDarkUi;
+    out.terrainViewRadius = r.terrain.viewRadius;
+    out.farTerrain = r.farTerrainUi;
     out.vegViewRadius = r.vegetation.viewRadius;
     out.vegHighDetailRadius = r.vegetation.highDetailRadius;
     out.vegLowDetailRadius = r.vegetation.lowDetailRadius;

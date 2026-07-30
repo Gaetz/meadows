@@ -262,6 +262,13 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
         ImGui::SliderFloat("Sea level (m)", &r.terrain.params.seaLevel,
                            0.0f, 60.0f,
                            "%.0f"); // range x1.5 with the amplitudes
+        // Streaming ring = the draw distance (64 m chunks; the horizon
+        // closure tracks it). Chunk count grows as (2r+1)^2 — watch F6.
+        ImGui::SliderInt("View radius (chunks)", &r.terrain.viewRadius, 8,
+                         30);
+        // Coarse 12 km silhouette mesh past the ring (terrain + forest
+        // fringe dissolving into the sky).
+        ImGui::Checkbox("Far terrain (silhouettes)", &r.farTerrainUi);
     }
     if (ImGui::CollapsingHeader("Vegetation")) {
         // The vegetation draw budget, live
@@ -529,10 +536,101 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                            2.0f, "%.2f");
         ImGui::SliderFloat("Fog sun phase exp", &atmos.fogSunPhase, 1.0f,
                            32.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+        // How fast the fog layer thins with altitude: high = clear sky
+        // above the fog band, low = grey dome.
+        ImGui::SliderFloat("Fog ceiling falloff", &atmos.fogCeiling,
+                           0.0005f, 0.03f, "%.4f",
+                           ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("Cloud coverage", &atmos.cloudCoverage, 0.0f,
                            1.0f, "%.2f");
         ImGui::SliderFloat("Cloud shadow strength", &atmos.cloudShadow,
                            0.0f, 1.0f, "%.2f");
+        ImGui::SeparatorText("Sky clouds (volumetric)");
+        // A/B vs the 2D dome layer; coverage/height/scale above drive
+        // BOTH implementations (and the ground shadows).
+        ImGui::Checkbox("Volumetric clouds (A/B)", &r.skyCloudsUi);
+        ImGui::SliderFloat("Cloud thickness (m)", &r.skyCloudShapeUi.x,
+                           80.0f, 800.0f, "%.0f");
+        ImGui::SliderFloat("Cloud density", &r.skyCloudShapeUi.y, 0.002f,
+                           0.12f, "%.3f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Cloud erosion", &r.skyCloudShapeUi.z, 0.0f,
+                           0.95f, "%.2f");
+        // Thickness follows the weather's coverage: full skies tower
+        // (at 4, a full sky multiplies the thickness by 5).
+        ImGui::SliderFloat("Cloud thickness<->coverage",
+                           &r.skyCloudShapeUi.w, 0.0f, 4.0f, "%.2f");
+        // Body = multi-octave scattering (luminous cores); lining = the
+        // direct transmission exp(-tau)*HG — the silver lining. The
+        // drama lives in lining gain + lining lobe + a LOW ambient.
+        ImGui::SliderFloat("Cloud body gain", &r.skyCloudLightUi.x, 0.0f,
+                           40.0f, "%.1f");
+        ImGui::SliderFloat("Cloud body lobe g", &r.skyCloudLightUi.y, 0.0f,
+                           0.95f, "%.2f");
+        ImGui::SliderFloat("Cloud lining gain", &r.skyCloudLightUi.w, 0.0f,
+                           60.0f, "%.1f");
+        ImGui::SliderFloat("Cloud lining lobe g", &r.skyCloudLiningLobeUi,
+                           0.5f, 0.97f, "%.2f");
+        ImGui::SliderFloat("Cloud powder", &r.skyCloudPowderUi, 0.0f, 1.5f,
+                           "%.2f");
+        // Fractal edge erosion — the cauliflower florets.
+        ImGui::SliderFloat("Cloud puffiness", &r.skyCloudPuffinessUi, 0.0f,
+                           1.0f, "%.2f");
+        // Silhouette glow where the cloud is thin along the VIEW ray.
+        ImGui::SliderFloat("Cloud rim gain", &r.skyCloudRimGainUi, 0.0f,
+                           30.0f, "%.1f");
+        ImGui::SliderFloat("Cloud rim lobe g", &r.skyCloudRimLobeUi, 0.5f,
+                           0.97f, "%.2f");
+        // Storm dimming: the whole cloud's ambient falls with coverage
+        // (like the ground's), bases hardest. Sun terms stay — dark
+        // slabs rimmed with fire.
+        ImGui::SliderFloat("Cloud storm darkening", &r.skyCloudBaseDarkUi,
+                           0.0f, 10.0f, "%.2f");
+        ImGui::SliderFloat("Cloud ambient gain", &r.skyCloudLightUi.z,
+                           0.0f, 2.0f, "%.2f");
+        ImGui::SeparatorText("Ground mist");
+        ImGui::Checkbox("Mist (A/B)", &r.mistUi);
+        ImGui::SliderFloat("Mist density", &atmos.mistDensity, 0.0f, 2.0f,
+                           "%.3f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Mist coverage", &atmos.mistCoverage, 0.0f, 1.0f,
+                           "%.2f");
+        ImGui::SliderFloat("Mist cover softness", &r.mistCoverageSoftnessUi,
+                           0.02f, 1.0f, "%.2f");
+        ImGui::SliderFloat("Mist reach (m)", &r.mistReachUi, 200.0f,
+                           4000.0f, "%.0f");
+        ImGui::SliderFloat("Mist lift (m)", &r.mistShapeUi.w, 0.0f, 60.0f,
+                           "%.1f");
+        ImGui::SliderFloat("Mist cover scale", &r.mistShapeUi.x, 0.0005f,
+                           0.04f, "%.4f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Mist erosion scale", &r.mistShapeUi.y, 0.01f,
+                           1.6f, "%.3f", ImGuiSliderFlags_Logarithmic);
+        ImGui::SliderFloat("Mist erosion strength", &r.mistShapeUi.z, 0.0f,
+                           0.95f, "%.2f");
+        ImGui::SeparatorText("Mist lighting");
+        ImGui::SliderFloat("Mist sun boost", &r.mistSunBoostUi, 0.0f, 16.0f,
+                           "%.1f");
+        // Higher g = tighter, brighter halo hugging the sun direction.
+        ImGui::SliderFloat("Mist sun lobe g", &r.mistLightUi.x, 0.0f,
+                           0.95f, "%.2f");
+        ImGui::SliderFloat("Mist backscatter", &r.mistLightUi.y, 0.0f,
+                           1.0f, "%.2f");
+        // Lower ambient makes the sun beam pop (the silver-lining
+        // contrast is ambient-vs-sun, not sun alone).
+        ImGui::SliderFloat("Mist ambient gain", &r.mistLightUi.z, 0.0f,
+                           2.0f, "%.2f");
+        ImGui::SliderFloat("Mist shadow floor", &r.mistLightUi.w, 0.0f,
+                           1.0f, "%.2f");
+        // A/B: baked Perlin-Worley volume vs analytic in-shader fbm3.
+        ImGui::Checkbox("Mist noise texture (A/B)", &r.mistNoiseTexUi);
+        ImGui::SliderFloat("Mist detail dropout (m)",
+                           &r.mistDetailDropoutUi, 100.0f, 1200.0f, "%.0f");
+        // Fractal edge florets on the patch borders (cloud recipe).
+        ImGui::SliderFloat("Mist puffiness", &r.mistPuffinessUi, 0.0f,
+                           1.0f, "%.2f");
+        ImGui::SliderInt("Mist steps", &r.mistStepsUi, 8, 32);
+        // 1 = accumulation off (A/B); lower = more history.
+        ImGui::SliderFloat("Mist temporal blend",
+                           &r.postFx.mistTemporalBlend, 0.05f, 1.0f,
+                           "%.2f");
     }
     if (ImGui::CollapsingHeader("Water")) {
         ImGui::Checkbox("Reflections", &r.reflectionsUi);
@@ -567,7 +665,7 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
                                "%.2f");
         }
         ImGui::Combo("Debug buffer", &r.debugBufferUi,
-                     "Off\0Bloom\0God rays\0Volumetric\0");
+                     "Off\0Bloom\0God rays\0Volumetric\0Mist\0");
     }
 }
 

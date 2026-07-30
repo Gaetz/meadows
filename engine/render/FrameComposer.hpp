@@ -48,6 +48,11 @@ struct FrameComposerInputs {
     f32 snowLine { 0.0f };
     f32 splatUvScale { 0.0f };
     bool reflectionsActive { false };
+    // Horizon-closure distance (m) for applyFog — the far-terrain
+    // reach when it stands in, else the streaming ring (0 = off).
+    f32 drawDistance { 0.0f };
+    // The streaming ring itself (m) — the far mesh's sink bias.
+    f32 nearRingDistance { 0.0f };
 
     // Dev toggles (the render panel's A/B state).
     i32 debugBuffer { 0 };
@@ -95,7 +100,41 @@ struct FrameComposerInputs {
     Vec4 giInfo {};
     Vec4 giGridInfo {};
     Vec4 giBandInfo { 0.0f, 0.3f, 0.7f, 0.0f }; // band count + AA + floor
+
+    // Ground mist (mist.frag), RESOLVED only — no mist in the reflection
+    // pass or indoors. Density/coverage ride `atmos` (weather-crossfaded);
+    // these are the renderer-tuning knobs. atmos.mistDensity == 0 keeps
+    // the pass off and its target neutral.
+    bool mistActive { false };
+    f32 mistCoverageSoftness { 0.6f };
+    f32 mistReach { 1200.0f };
+    Vec4 mistShapeInfo { 0.0035f, 0.02f, 0.2f, 49.0f };
+    Vec4 mistMapInfo {};    // from MistMap::info()
+    // x = NoiseVolume active, y = steps, z = dropout (m), w = sun gain.
+    Vec4 mistDetailInfo { 0.0f, 16.0f, 400.0f, 10.0f };
+    // x = forward HG lobe g, y = backscatter weight, z = ambient gain,
+    // w = ambient floor in shadow.
+    Vec4 mistLightInfo { 0.95f, 0.8f, 1.25f, 0.6f };
+    // Volumetric sky clouds (RESOLVED only — the reflection pass keeps
+    // the 2D dome layer): x = active, y = thickness, z = sigma,
+    // w = erosion strength; light = gain/g/ambient.
+    Vec4 cloudVolInfo { 0.0f, 440.0f, 0.065f, 0.31f };
+    Vec4 cloudVolLightInfo { 19.9f, 0.3f, 0.9f, 30.2f };
+    Vec4 cloudVolShapeInfo { 3.4f, 0.8f, 1.0f, 0.5f };
+    Vec4 cloudVolRimInfo { 25.0f, 0.75f, 7.4f, 0.0f };
+    Vec4 mistPuffInfo { 0.5f, 0.0f, 0.0f, 0.0f };
 };
+
+// The volumetric fog's reach (froxel far AND cluster grid far — the two
+// grids share their z slices by construction, docs/RENDERING.md §5 B5, so
+// this is the ONE place the formula lives). Exterior: scales with the
+// weather's fog start so a far-fog look (high start) pushes the froxel
+// band — and its cloud-shadow ray curtains — into the distance instead of
+// spending ~90% of the slices on clear air.
+inline f32 volumetricReach(bool interiorMode, f32 fogStart) {
+    return interiorMode ? 48.0f
+                        : glm::clamp(fogStart * 3.0f, 800.0f, 2400.0f);
+}
 
 // The two variants one frame needs. `base` is the raw exterior composition —
 // the planar-reflection pass copies it (with its own view matrices) WITHOUT

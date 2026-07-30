@@ -14,6 +14,9 @@
 #include "engine/render/landscape/RadianceCascades.hpp"
 #include "engine/render/landscape/ShadowMapper.hpp"
 #include "engine/render/landscape/SkySystem.hpp"
+#include "engine/render/landscape/FarTerrain.hpp"
+#include "engine/render/landscape/MistMap.hpp"
+#include "engine/render/landscape/NoiseVolume.hpp"
 #include "engine/render/landscape/TerrainLightMap.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
@@ -248,6 +251,41 @@ private:
     // Worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;
     bool terrainLightUi { true };
+    // Distant landscape silhouettes beyond the streaming ring (§3.6).
+    render::FarTerrain farTerrain;
+    bool farTerrainUi { true };
+    // Worker-baked valley data for the ground-mist raymarch (§3.5).
+    render::MistMap mistMap;
+    bool mistUi { true };
+    // Live mist tuning (panel "Ground mist"); density/coverage are
+    // weather-owned and ride AtmosphereParams instead.
+    f32 mistCoverageSoftnessUi { 0.6f };
+    f32 mistReachUi { 1200.0f };
+    Vec4 mistShapeUi { 0.0035f, 0.02f, 0.2f, 49.0f };
+    // Shared tileable Perlin-Worley volume (mist + sky-cloud erosion).
+    render::NoiseVolume noiseVolume;
+    // Volumetric sky clouds (§8): A/B vs the 2D dome layer + the shape
+    // and light knobs (panel "Sky clouds"; thickness/sigma/erosion —
+    // coverage/height/scale stay the shared weather cloudInfo lanes).
+    bool skyCloudsUi { true };
+    // x thickness (m), y sigma (1/m), z erosion, w thickness<->coverage.
+    Vec4 skyCloudShapeUi { 440.0f, 0.065f, 0.31f, 3.4f };
+    // x body gain, y body g, z ambient gain, w lining gain.
+    Vec4 skyCloudLightUi { 19.9f, 0.3f, 0.9f, 30.2f };
+    f32 skyCloudLiningLobeUi { 0.8f }; // lining HG g (halo tightness)
+    f32 skyCloudPowderUi { 1.0f };      // dark-edge strength
+    f32 skyCloudPuffinessUi { 0.5f };   // fractal edge erosion
+    f32 skyCloudRimGainUi { 25.0f };     // view-thin silhouette glow
+    f32 skyCloudRimLobeUi { 0.75f };
+    f32 skyCloudBaseDarkUi { 7.4f };    // storm-base ambient occlusion
+    bool mistNoiseTexUi { true }; // A/B: baked volume vs analytic fbm3
+    f32 mistDetailDropoutUi { 400.0f };
+    i32 mistStepsUi { 16 }; // per-pixel march steps (EMA covers the rest)
+    f32 mistPuffinessUi { 0.5f }; // fractal edge florets
+    f32 mistSunBoostUi { 10.0f }; // sun-beam gain (silver lining strength)
+    // Light shaping: x = forward HG lobe g, y = backscatter weight,
+    // z = ambient gain, w = ambient floor in shadow.
+    Vec4 mistLightUi { 0.95f, 0.8f, 1.25f, 0.6f };
     // The GI voxel clipmap (docs/RENDERING.md) +
     // cascades; its tuning is the render panel's "Global illumination".
     render::RadianceCascades radianceCascades;

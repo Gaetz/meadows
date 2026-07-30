@@ -22,6 +22,7 @@ data::WeatherForm capture(const render::AtmosphereParams& a) {
     w.fogLowBoost = a.fogLowBoost;
     w.fogStart = a.fogStart;
     w.fogSunScatter = a.fogSunScatter;
+    w.fogCeiling = a.fogCeiling;
     w.sunIntensity = a.sunIntensity;
     w.ambientIntensity = a.ambientIntensity;
     w.saturation = a.saturation;
@@ -33,6 +34,8 @@ data::WeatherForm capture(const render::AtmosphereParams& a) {
     w.waveChop = a.waveChop;
     w.stormFront = a.stormFront;
     w.rainIntensity = a.rainIntensity;
+    w.mistDensity = a.mistDensity;
+    w.mistCoverage = a.mistCoverage;
     return w;
 }
 
@@ -46,6 +49,7 @@ void applyTo(render::AtmosphereParams& a, const data::WeatherForm& w) {
     a.fogLowBoost = w.fogLowBoost;
     a.fogStart = w.fogStart;
     a.fogSunScatter = w.fogSunScatter;
+    a.fogCeiling = w.fogCeiling;
     a.sunIntensity = w.sunIntensity;
     a.ambientIntensity = w.ambientIntensity;
     a.saturation = w.saturation;
@@ -57,6 +61,8 @@ void applyTo(render::AtmosphereParams& a, const data::WeatherForm& w) {
     a.waveChop = w.waveChop;
     a.stormFront = w.stormFront;
     a.rainIntensity = w.rainIntensity;
+    a.mistDensity = w.mistDensity;
+    a.mistCoverage = w.mistCoverage;
 }
 
 } // namespace
@@ -96,6 +102,7 @@ void WeatherController::update(render::AtmosphereParams& atmos, f32 dt) {
     blended.fogLowBoost = lerp(from_.fogLowBoost, to.fogLowBoost);
     blended.fogStart = lerp(from_.fogStart, to.fogStart);
     blended.fogSunScatter = lerp(from_.fogSunScatter, to.fogSunScatter);
+    blended.fogCeiling = lerp(from_.fogCeiling, to.fogCeiling);
     blended.sunIntensity = lerp(from_.sunIntensity, to.sunIntensity);
     blended.ambientIntensity = lerp(from_.ambientIntensity, to.ambientIntensity);
     blended.saturation = lerp(from_.saturation, to.saturation);
@@ -107,7 +114,9 @@ void WeatherController::update(render::AtmosphereParams& atmos, f32 dt) {
     blended.windStrength = lerp(from_.windStrength, to.windStrength);
     blended.waveChop = lerp(from_.waveChop, to.waveChop);
     blended.stormFront = lerp(from_.stormFront, to.stormFront);
-    blended.rainIntensity = lerp(from_.rainIntensity, to.rainIntensity); // 31
+    blended.rainIntensity = lerp(from_.rainIntensity, to.rainIntensity);
+    blended.mistDensity = lerp(from_.mistDensity, to.mistDensity);
+    blended.mistCoverage = lerp(from_.mistCoverage, to.mistCoverage);
     applyTo(atmos, blended);
 }
 

@@ -20,7 +20,10 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
             const Vec2 ndc { clip.x / clip.w, clip.y / clip.w };
             sunUv = ndc * 0.5f + Vec2 { 0.5f };
             const f32 edge = glm::max(std::abs(ndc.x), std::abs(ndc.y));
-            shaftFade = (1.0f - glm::smoothstep(0.85f, 1.35f, edge)) *
+            // The radial march converges fine toward an OFF-SCREEN sun:
+            // keep the shafts alive until the sun sits a full screen
+            // beyond the edge (side-lit rays), fading gently after.
+            shaftFade = (1.0f - glm::smoothstep(1.0f, 2.2f, edge)) *
                         glm::smoothstep(-0.02f, 0.05f, in.sky.sunDirection.y);
         }
     }
@@ -92,6 +95,10 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         .grassShadeInfo = in.grassShadeInfo,
         .grassBladeInfo = in.grassBladeInfo,
         .stylizedSpecInfo = in.stylizedSpecInfo,
+        // BASE too: the fog's altitude envelope applies in the
+        // reflection as well (applyFog reads it).
+        .fogLayerInfo = { in.atmos.fogCeiling, in.drawDistance,
+                          in.nearRingDistance, 0.0f },
     };
 
     render::FrameUniforms resolved = base;
@@ -147,13 +154,38 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         // night and interiors alike (lamps glow in the dust). INDOORS the
         // reach shrinks to the room scale: all 64 depth slices concentrate
         // inside — ~2.5x finer dust where it is actually seen.
-        resolved.fogSunInfo.z = in.interiorMode ? 48.0f : 800.0f;
+        resolved.fogSunInfo.z =
+            volumetricReach(in.interiorMode, in.atmos.fogStart);
         if (in.interiorMode) {
             resolved.fogSunInfo.w = in.interiorDustDensity;
         }
     } else if (!in.interiorMode && in.atmos.volumetric > 0.003f &&
                in.sky.sunDirection.y > -0.05f) {
         resolved.fogSunInfo.z = 1400.0f; // 2D march reach (m)
+    }
+    // Ground mist rides RESOLVED only (no mist composite in the
+    // reflection pass) and dies indoors. mistInfo.x == 0 is the one gate
+    // every consumer checks.
+    if (in.mistActive && !in.interiorMode && in.atmos.mistDensity > 1e-5f) {
+        resolved.mistInfo = { in.atmos.mistDensity, in.mistReach,
+                              1.0f - in.atmos.mistCoverage,
+                              in.mistCoverageSoftness };
+        resolved.mistShapeInfo = in.mistShapeInfo;
+        resolved.mistMapInfo = in.mistMapInfo;
+        resolved.mistDetailInfo = in.mistDetailInfo;
+        resolved.mistLightInfo = in.mistLightInfo;
+        resolved.mistPuffInfo = in.mistPuffInfo;
+    } else {
+        resolved.mistInfo = Vec4 { 0.0f };
+    }
+    // Volumetric sky clouds ride RESOLVED only: the reflection pass has
+    // no clouds composite, so it keeps the 2D dome layer (cloudVolInfo.x
+    // stays 0 in base and applyClouds draws there).
+    if (!in.interiorMode) {
+        resolved.cloudVolInfo = in.cloudVolInfo;
+        resolved.cloudVolLightInfo = in.cloudVolLightInfo;
+        resolved.cloudVolShapeInfo = in.cloudVolShapeInfo;
+        resolved.cloudVolRimInfo = in.cloudVolRimInfo;
     }
     // The GI switch rides RESOLVED only (base = the
     // reflection pass stays Classic — no cascade sampler needed there).

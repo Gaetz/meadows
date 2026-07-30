@@ -29,6 +29,9 @@ constexpr const char* kFroxelApplyShader = "froxel_apply";
 // speckles, the depth mask halos, neither fits the stepped-ramp look.
 // Grounding = terrain light map + contact shadows + baked vertex AO.)
 constexpr const char* kContactShader = "contactshadow";
+constexpr const char* kMistShader = "mist"; // ground mist raymarch
+constexpr const char* kSkyCloudsShader = "skyclouds"; // volumetric clouds
+constexpr const char* kCopyShader = "postcopy"; // 1:1 history blit
 constexpr const char* kBlurShader = "postblur"; // contact jitter filter
 constexpr const char* kLuminanceShader = "luminance"; // auto-exposure
 constexpr const char* kAdaptShader = "adapt";
@@ -40,6 +43,7 @@ constexpr u32 kLuminanceSize = 64; // 7 mips -> the 1x1 log-average
 constexpr const char* kPassShaders[] = {
     kPrefilterShader, kDownShader,     kUpShader,
     kGodRaysShader,   kVolumetricShader, kContactShader,
+    kMistShader,      kSkyCloudsShader, kCopyShader,
     kBlurShader,      kLuminanceShader, kAdaptShader,
     kFroxelApplyShader,
 };
@@ -123,6 +127,34 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
                    { "uShadowMap", 1 },
                    { "uSceneColor", 2 } },
                  kFullscreenVert);
+    mistTemporalUbo = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Uniform,
+          .size = sizeof(FroxelTemporalUniforms),
+          .dynamic = true },
+        nullptr) };
+    shaders.load(kMistShader,
+                 { { "FrameUbo", 0 }, { "MistTemporalUbo", 3 } },
+                 { { "uSceneDepth", 0 },
+                   { "uShadowMap", 1 },
+                   { "uCloudMap", 2 },
+                   { "uMistMap", 8 },
+                   { "uNoiseVolume", 9 },
+                   { "uMistHistory", 10 },
+                   { "uGiCascade0", 11 } },
+                 kFullscreenVert);
+    skyCloudTemporalUbo = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Uniform,
+          .size = sizeof(FroxelTemporalUniforms),
+          .dynamic = true },
+        nullptr) };
+    shaders.load(kSkyCloudsShader,
+                 { { "FrameUbo", 0 }, { "CloudTemporalUbo", 3 } },
+                 { { "uSceneDepth", 0 },
+                   { "uCloudMap", 2 },
+                   { "uNoiseVolume", 9 },
+                   { "uCloudsHistory", 10 } },
+                 kFullscreenVert);
+    shaders.load(kCopyShader, {}, { { "uSource", 0 } }, kFullscreenVert);
     shaders.load(kBlurShader, {}, { { "uSource", 0 } }, kFullscreenVert);
     shaders.load(kLuminanceShader, {}, { { "uSceneColor", 0 } },
                  kFullscreenVert);
@@ -159,6 +191,9 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
                 rhi::BlendMode::Opaque);
     }
     rebuild(contactPipeline, kContactShader, rhi::BlendMode::Opaque);
+    rebuild(mistPipeline, kMistShader, rhi::BlendMode::Opaque);
+    rebuild(skyCloudPipeline, kSkyCloudsShader, rhi::BlendMode::Opaque);
+    rebuild(copyPipeline, kCopyShader, rhi::BlendMode::Opaque);
     rebuild(blurPipeline, kBlurShader, rhi::BlendMode::Opaque);
     rebuild(luminancePipeline, kLuminanceShader, rhi::BlendMode::Opaque);
     rebuild(adaptPipeline, kAdaptShader, rhi::BlendMode::Opaque);
@@ -187,6 +222,21 @@ void PostFx::destroyTargets(rhi::Device& device) {
     contactGroup = {};
     contactFb = {};
     contactTex = {};
+    mistGroup = {};
+    mistFb = {};
+    mistTex = {};
+    mistHistoryGroup = {};
+    mistHistoryFb = {};
+    mistHistoryTex = {};
+    skyCloudGroup = {};
+    skyCloudFb = {};
+    skyCloudTex = {};
+    skyCloudHistoryGroup = {};
+    skyCloudHistoryFb = {};
+    skyCloudHistoryTex = {};
+    skyCloudBlurGroup = {};
+    skyCloudBlurFb = {};
+    skyCloudBlurTex = {};
     volumetricGroup = {};
     volumetricFb = {};
     volumetricTex = {};
@@ -266,6 +316,59 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
     };
 
     makeHalfResTarget(godRayTex, godRayFb, rhi::TextureFormat::RGBA16F);
+    // (godRayGroup is created below, after the sky-cloud targets exist —
+    // the march composites the volumetric clouds itself.)
+
+    makeHalfResTarget(volumetricTex, volumetricFb,
+                      rhi::TextureFormat::RGBA16F);
+    makeDepthGroup(volumetricGroup);
+
+    // Ground mist — same target family as the volumetric march; its own
+    // texture so the tonemap composites mist and fog in the right order
+    // and the A/B toggle stays independent. History = last frame's target
+    // (copied after the pass); fresh targets invalidate it.
+    makeHalfResTarget(mistTex, mistFb, rhi::TextureFormat::RGBA16F);
+    makeHalfResTarget(mistHistoryTex, mistHistoryFb,
+                      rhi::TextureFormat::RGBA16F);
+    mistHistoryGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = mistTex,
+                         .sampler = linearSampler } } }) };
+    mistGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = sceneDepthCopy,
+                         .sampler = linearSampler },
+                       { .binding = 10,
+                         .texture = mistHistoryTex.get(),
+                         .sampler = linearSampler },
+                       { .binding = 3,
+                         .buffer = mistTemporalUbo } } }) };
+    mistHistoryValid = false;
+
+    // Volumetric sky clouds — the same target/history/temporal family.
+    makeHalfResTarget(skyCloudTex, skyCloudFb, rhi::TextureFormat::RGBA16F);
+    makeHalfResTarget(skyCloudHistoryTex, skyCloudHistoryFb,
+                      rhi::TextureFormat::RGBA16F);
+    skyCloudHistoryGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = skyCloudTex,
+                         .sampler = linearSampler } } }) };
+    skyCloudGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = sceneDepthCopy,
+                         .sampler = linearSampler },
+                       { .binding = 10,
+                         .texture = skyCloudHistoryTex.get(),
+                         .sampler = linearSampler },
+                       { .binding = 3,
+                         .buffer = skyCloudTemporalUbo } } }) };
+    makeHalfResTarget(skyCloudBlurTex, skyCloudBlurFb,
+                      rhi::TextureFormat::RGBA16F);
+    skyCloudBlurGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = skyCloudTex,
+                         .sampler = linearSampler } } }) };
+    skyCloudHistoryValid = false;
     godRayGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = sceneColorCopy,
@@ -273,10 +376,6 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
                        { .binding = 1,
                          .texture = sceneDepthCopy,
                          .sampler = linearSampler } } }) };
-
-    makeHalfResTarget(volumetricTex, volumetricFb,
-                      rhi::TextureFormat::RGBA16F);
-    makeDepthGroup(volumetricGroup);
 
     // Contact shadows — half-res march over the depth copy,
     // then the 3x3 blur (its IGN jitter needs the filter); the tonemap
@@ -388,6 +487,162 @@ void PostFx::clearContactShadows(rhi::CommandBuffer& cmd) {
     cmd.endRenderPass();
 }
 
+void PostFx::renderMist(rhi::Device& device, rhi::CommandBuffer& cmd,
+                        const FrameUniforms& frameData,
+                        rhi::BindGroupHandle frameBindGroup,
+                        rhi::BindGroupHandle shadowBindGroup,
+                        rhi::BindGroupHandle giApplyGroup,
+                        rhi::BindGroupHandle cloudMapGroup,
+                        rhi::BindGroupHandle mistMapGroup,
+                        rhi::BindGroupHandle noiseVolumeGroup) {
+    if (mistTex.id() == 0 || mistMapGroup.id == 0) {
+        return;
+    }
+    // Temporal state (the froxel invalidation rules): full-weight sample
+    // on the first frame, after a camera jump, or with accumulation off.
+    const Vec3 camera { frameData.cameraPos };
+    f32 alpha = glm::clamp(mistTemporalBlend, 0.02f, 1.0f);
+    if (!mistHistoryValid ||
+        glm::distance(camera, mistPrevCamera) > 10.0f) {
+        alpha = 1.0f;
+    }
+    const FroxelTemporalUniforms temporal {
+        mistPrevViewProj,
+        { mistPrevCamera, 0.0f },
+        { alpha, static_cast<f32>(mistFrame & 0xFFFFu), 0.0f, 0.0f }
+    };
+    device.updateBuffer(mistTemporalUbo, &temporal, sizeof(temporal), 0);
+    ++mistFrame;
+    cmd.beginRenderPass({ .framebuffer = mistFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(mistPipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    cmd.setBindGroup(1, mistGroup);
+    if (shadowBindGroup.id != 0) {
+        cmd.setBindGroup(2, shadowBindGroup);
+    }
+    if (giApplyGroup.id != 0) {
+        cmd.setBindGroup(3, giApplyGroup);
+    }
+    if (noiseVolumeGroup.id != 0) {
+        cmd.setBindGroup(4, noiseVolumeGroup);
+    }
+    // Own slots for the cloud/mist maps: PostFx overwrites slot 3 with
+    // the GI group, and on Vulkan an overwritten slot loses its bindings
+    // (unlike GL's sticky texture units) — never rely on a group bound
+    // by an earlier pass.
+    if (cloudMapGroup.id != 0) {
+        cmd.setBindGroup(5, cloudMapGroup);
+    }
+    cmd.setBindGroup(6, mistMapGroup);
+    cmd.draw(3);
+    cmd.endRenderPass();
+    // Next frame's history = this frame's resolved target. A draw, not
+    // copyTexture: vkCmdCopyImage costs ~1 ms in MoltenVK layout
+    // transitions where this blit is ~0.1 ms.
+    cmd.beginRenderPass({ .framebuffer = mistHistoryFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(copyPipeline);
+    cmd.setBindGroup(0, mistHistoryGroup);
+    cmd.draw(3);
+    cmd.endRenderPass();
+    mistPrevViewProj = frameData.viewProj;
+    mistPrevCamera = camera;
+    mistHistoryValid = true;
+}
+
+void PostFx::clearMist(rhi::CommandBuffer& cmd) {
+    if (mistTex.id() == 0) {
+        return;
+    }
+    // Toggle-off path: neutral (no inscatter, full transmittance) — the
+    // texture itself is the switch, like the contact shadows.
+    cmd.beginRenderPass({ .framebuffer = mistFb,
+                          .loadOp = rhi::LoadOp::Clear,
+                          .clearColor = { 0.0f, 0.0f, 0.0f, 1.0f },
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.endRenderPass();
+    mistHistoryValid = false; // stale mist must not bleed back in
+}
+
+void PostFx::renderSkyClouds(rhi::Device& device, rhi::CommandBuffer& cmd,
+                             const FrameUniforms& frameData,
+                             rhi::BindGroupHandle frameBindGroup,
+                             rhi::BindGroupHandle noiseVolumeGroup,
+                             rhi::BindGroupHandle cloudMapGroup) {
+    if (skyCloudTex.id() == 0 || noiseVolumeGroup.id == 0) {
+        return;
+    }
+    const Vec3 camera { frameData.cameraPos };
+    f32 alpha = glm::clamp(cloudTemporalBlend, 0.02f, 1.0f);
+    if (!skyCloudHistoryValid ||
+        glm::distance(camera, skyCloudPrevCamera) > 10.0f) {
+        alpha = 1.0f;
+    }
+    const FroxelTemporalUniforms temporal {
+        skyCloudPrevViewProj,
+        { skyCloudPrevCamera, 0.0f },
+        { alpha, static_cast<f32>(skyCloudFrame & 0xFFFFu), 0.0f, 0.0f }
+    };
+    device.updateBuffer(skyCloudTemporalUbo, &temporal, sizeof(temporal),
+                        0);
+    ++skyCloudFrame;
+    cmd.beginRenderPass({ .framebuffer = skyCloudFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(skyCloudPipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    cmd.setBindGroup(1, skyCloudGroup);
+    cmd.setBindGroup(4, noiseVolumeGroup);
+    if (cloudMapGroup.id != 0) {
+        cmd.setBindGroup(5, cloudMapGroup); // own slot (Vulkan rule)
+    }
+    cmd.draw(3);
+    cmd.endRenderPass();
+    // History = this frame's resolved target (postcopy blit, see mist).
+    cmd.beginRenderPass({ .framebuffer = skyCloudHistoryFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(copyPipeline);
+    cmd.setBindGroup(0, skyCloudHistoryGroup);
+    cmd.draw(3);
+    cmd.endRenderPass();
+    // Display-only 3x3 blur (the froxel lesson: the tonemap taps the
+    // blurred target, the EMA history above stays sharp) — soaks up the
+    // residual marching variance the LOD can't.
+    cmd.beginRenderPass({ .framebuffer = skyCloudBlurFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(blurPipeline);
+    cmd.setBindGroup(0, skyCloudBlurGroup);
+    cmd.draw(3);
+    cmd.endRenderPass();
+    skyCloudPrevViewProj = frameData.viewProj;
+    skyCloudPrevCamera = camera;
+    skyCloudHistoryValid = true;
+}
+
+void PostFx::clearSkyClouds(rhi::CommandBuffer& cmd) {
+    if (skyCloudTex.id() == 0) {
+        return;
+    }
+    // The tonemap taps the BLURRED target — that is the one to
+    // neutralize (the sharp one too, for the next history).
+    cmd.beginRenderPass({ .framebuffer = skyCloudFb,
+                          .loadOp = rhi::LoadOp::Clear,
+                          .clearColor = { 0.0f, 0.0f, 0.0f, 1.0f },
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.endRenderPass();
+    cmd.beginRenderPass({ .framebuffer = skyCloudBlurFb,
+                          .loadOp = rhi::LoadOp::Clear,
+                          .clearColor = { 0.0f, 0.0f, 0.0f, 1.0f },
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.endRenderPass();
+    skyCloudHistoryValid = false;
+}
+
 void PostFx::renderAutoExposure(rhi::Device& device, rhi::CommandBuffer& cmd,
                                 rhi::BindGroupHandle frameBindGroup) {
     if (luminanceTex.id() == 0) {
@@ -422,7 +677,7 @@ void PostFx::render(rhi::Device& device, rhi::CommandBuffer& cmd,
                     rhi::BindGroupHandle frameBindGroup,
                     rhi::BindGroupHandle shadowBindGroup,
                     rhi::BindGroupHandle giApplyGroup, bool godRays,
-                    GpuProbe* probe) {
+                    GpuProbe* probe, rhi::BindGroupHandle cloudMapGroup) {
     rhi::Device* probeDevice = &device;
     if (!ready()) {
         return;
@@ -489,8 +744,12 @@ void PostFx::render(rhi::Device& device, rhi::CommandBuffer& cmd,
         const Vec3 camera { frameData.cameraPos };
         const f32 reach = frameData.fogSunInfo.z;
         f32 alpha = glm::clamp(froxelTemporalBlend, 0.02f, 1.0f);
+        // Reach threshold at 5 m: the reprojection is reach-aware (the
+        // history slice uses prevCamera.w), so the reach drifting with a
+        // weather crossfade (fogStart-driven) must NOT invalidate every
+        // frame — only the interior<->exterior jump should.
         if (!froxelHistoryValid ||
-            std::abs(reach - froxelPrevReach) > 1.0f ||
+            std::abs(reach - froxelPrevReach) > 5.0f ||
             glm::distance(camera, froxelPrevCamera) > 10.0f) {
             alpha = 1.0f;
         }
@@ -510,6 +769,9 @@ void PostFx::render(rhi::Device& device, rhi::CommandBuffer& cmd,
         }
         if (giApplyGroup.id != 0) {
             cmd.setBindGroup(3, giApplyGroup);
+        }
+        if (cloudMapGroup.id != 0) {
+            cmd.setBindGroup(5, cloudMapGroup); // own slot (Vulkan rule)
         }
         cmd.setBindGroup(4, froxelInjectGroup[froxelSide]);
         cmd.dispatch((kFroxelX + 7) / 8, (kFroxelY + 7) / 8, kFroxelZ);
@@ -551,6 +813,9 @@ void PostFx::render(rhi::Device& device, rhi::CommandBuffer& cmd,
             // V3 (docs/RENDERING.md): the march's haze samples the RC
             // field inside its volume (giAir).
             cmd.setBindGroup(3, giApplyGroup);
+        }
+        if (cloudMapGroup.id != 0) {
+            cmd.setBindGroup(5, cloudMapGroup); // own slot (Vulkan rule)
         }
         cmd.draw(3);
         cmd.endRenderPass();

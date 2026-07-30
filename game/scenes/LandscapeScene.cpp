@@ -223,6 +223,7 @@ void LandscapeScene::bootstrapData() {
     atmos.fogLowBoost = tuning.fogLowBoost;
     atmos.fogStart = tuning.fogStart;
     atmos.fogSunPhase = tuning.fogSunPhase;
+    atmos.fogCeiling = tuning.fogCeiling;
     atmos.bloomIntensity = tuning.bloomIntensity;
     atmos.godRayIntensity = tuning.godRayIntensity;
     atmos.volumetric = tuning.volumetricIntensity;
@@ -3245,6 +3246,7 @@ void LandscapeScene::saveRenderTuning() {
     tuning.fogLowBoost = atmos.fogLowBoost;
     tuning.fogStart = atmos.fogStart;
     tuning.fogSunPhase = atmos.fogSunPhase;
+    tuning.fogCeiling = atmos.fogCeiling;
     tuning.cloudCoverage = atmos.cloudCoverage;
     tuning.cloudShadowStrength = atmos.cloudShadow;
     tuning.cloudHeight = atmos.cloudHeight;

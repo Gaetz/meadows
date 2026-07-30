@@ -69,10 +69,13 @@ add_library(meadows-render STATIC
     render/TextureCache.cpp
     render/WorldRenderer.cpp
     render/landscape/ChunkOcclusion.cpp
+    render/landscape/FarTerrain.cpp
     render/landscape/FxRenderer.cpp
     render/landscape/GpuOcclusion.cpp
     render/landscape/GrassSystem.cpp
     render/landscape/LightClusters.cpp
+    render/landscape/MistMap.cpp
+    render/landscape/NoiseVolume.cpp
     render/landscape/PostFx.cpp
     render/landscape/RadianceCascades.cpp
     render/landscape/ShadowMapper.cpp

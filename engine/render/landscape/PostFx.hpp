@@ -53,12 +53,17 @@ public:
     // `frameData` = this frame's RESOLVED uniforms — the froxel temporal
     // pass reads camera/view-proj/fog reach from it and keeps last
     // frame's copy for reprojection.
+    // `cloudMapGroup` = the baked cloud field, bound at its OWN slot for
+    // the fog passes' cloudShadowFactor — relying on a group an earlier
+    // pass bound at slot 3 loses it on Vulkan (an overwritten slot drops
+    // its bindings; GL's sticky texture units masked this).
     void render(rhi::Device& device, rhi::CommandBuffer& cmd,
                 const FrameUniforms& frameData,
                 rhi::BindGroupHandle frameBindGroup,
                 rhi::BindGroupHandle shadowBindGroup,
                 rhi::BindGroupHandle giApplyGroup = {}, bool godRays = true,
-                GpuProbe* probe = nullptr);
+                GpuProbe* probe = nullptr,
+                rhi::BindGroupHandle cloudMapGroup = {});
 
     // Auto-exposure — log-luminance 64² → mips →
     // 1×1 average, then the adaptation micro-pass (1×1 ping-pong with
@@ -78,11 +83,45 @@ public:
                               rhi::BindGroupHandle shadowBindGroup);
     void clearContactShadows(rhi::CommandBuffer& cmd);
 
+    // Ground mist raymarch (mist.frag, docs/RENDERING.md §3.5) into its
+    // own half-res target; the tonemap composites it BEFORE the fog term.
+    // The toggle is the texture (clearMist = neutral), like the contact
+    // shadows. `cloudMapGroup`/`mistMapGroup` are bound at their own
+    // slots — the pass must not rely on groups earlier passes bound.
+    void renderMist(rhi::Device& device, rhi::CommandBuffer& cmd,
+                    const FrameUniforms& frameData,
+                    rhi::BindGroupHandle frameBindGroup,
+                    rhi::BindGroupHandle shadowBindGroup,
+                    rhi::BindGroupHandle giApplyGroup,
+                    rhi::BindGroupHandle cloudMapGroup,
+                    rhi::BindGroupHandle mistMapGroup,
+                    rhi::BindGroupHandle noiseVolumeGroup = {});
+    void clearMist(rhi::CommandBuffer& cmd);
+    // Temporal accumulation on the mist target: fraction of the CURRENT
+    // sample per frame (0.15 = ~85% history; 1 = accumulation off).
+    f32 mistTemporalBlend { 0.15f };
+
+    // Volumetric sky clouds (skyclouds.frag, §8) — same family as the
+    // mist: ½-res target + history blit + temporal EMA; the tonemap
+    // composites it FIRST (binding 7, farthest medium). The toggle is
+    // the texture (clearSkyClouds = neutral).
+    void renderSkyClouds(rhi::Device& device, rhi::CommandBuffer& cmd,
+                         const FrameUniforms& frameData,
+                         rhi::BindGroupHandle frameBindGroup,
+                         rhi::BindGroupHandle noiseVolumeGroup,
+                         rhi::BindGroupHandle cloudMapGroup = {});
+    void clearSkyClouds(rhi::CommandBuffer& cmd);
+    f32 cloudTemporalBlend { 0.12f };
+
     // For the tonemap bind group. Contact hands out its BLURRED target
     // (its IGN jitter needs the filter).
     rhi::TextureHandle bloomTexture() const { return bloomTex[0]; }
     rhi::TextureHandle godRayTexture() const { return godRayTex; }
     rhi::TextureHandle volumetricTexture() const { return volumetricTex; }
+    rhi::TextureHandle mistTexture() const { return mistTex; }
+    // The tonemap taps the display-BLURRED target; the temporal history
+    // stays sharp (the froxel display-blur lesson).
+    rhi::TextureHandle skyCloudsTexture() const { return skyCloudBlurTex; }
     rhi::TextureHandle contactTexture() const { return contactBlurTex; }
     // The ping-pong side renderAutoExposure wrote LAST (the tonemap reads
     // it); the scene keeps one blit group per side.
@@ -129,6 +168,37 @@ private:
     rhi::UniqueTexture volumetricTex;
     rhi::UniqueFramebuffer volumetricFb;
     rhi::UniqueBindGroup volumetricGroup;
+
+    rhi::UniqueTexture mistTex;
+    rhi::UniqueFramebuffer mistFb;
+    // Scene depth (0) + history (10) + temporal ubo (3). History is a
+    // plain copy of last frame's target (copyTexture after the pass) —
+    // no ping-pong, so the tonemap blit group stays static.
+    rhi::UniqueBindGroup mistGroup;
+    rhi::UniqueTexture mistHistoryTex;
+    rhi::UniqueFramebuffer mistHistoryFb;
+    rhi::UniqueBindGroup mistHistoryGroup; // samples mistTex
+    rhi::UniqueBuffer mistTemporalUbo;
+    Mat4 mistPrevViewProj { 1.0f };
+    Vec3 mistPrevCamera { 0.0f };
+    u32 mistFrame { 0 };
+    bool mistHistoryValid { false };
+
+    // Volumetric sky clouds — the mist target/history/temporal family.
+    rhi::UniqueTexture skyCloudTex;
+    rhi::UniqueFramebuffer skyCloudFb;
+    rhi::UniqueBindGroup skyCloudGroup; // depth 0 + history 10 + ubo 3
+    rhi::UniqueTexture skyCloudHistoryTex;
+    rhi::UniqueFramebuffer skyCloudHistoryFb;
+    rhi::UniqueBindGroup skyCloudHistoryGroup; // samples skyCloudTex
+    rhi::UniqueTexture skyCloudBlurTex; // display-only 3x3 (postblur)
+    rhi::UniqueFramebuffer skyCloudBlurFb;
+    rhi::UniqueBindGroup skyCloudBlurGroup; // samples skyCloudTex
+    rhi::UniqueBuffer skyCloudTemporalUbo;
+    Mat4 skyCloudPrevViewProj { 1.0f };
+    Vec3 skyCloudPrevCamera { 0.0f };
+    u32 skyCloudFrame { 0 };
+    bool skyCloudHistoryValid { false };
 
     // Froxel fog (docs/RENDERING.md V4/H4): fixed-size frustum volumes,
     // inject + integrate in compute, resolved into volumetricTex by a
@@ -178,6 +248,9 @@ private:
     rhi::UniquePipeline godRayPipeline;
     rhi::UniquePipeline volumetricPipeline;
     rhi::UniquePipeline contactPipeline;
+    rhi::UniquePipeline mistPipeline;
+    rhi::UniquePipeline skyCloudPipeline;
+    rhi::UniquePipeline copyPipeline; // history blit (postcopy)
     rhi::UniquePipeline blurPipeline; // contact jitter filter (postblur)
     rhi::UniquePipeline luminancePipeline;
     rhi::UniquePipeline adaptPipeline;

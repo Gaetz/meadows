@@ -25,18 +25,26 @@ struct LandscapeTuningForm : Form {
     f32 mountainWavelength { 2000.0f };
     f32 mountainAmplitude { 270.0f };
     f32 seaLevel { 21.0f };
+    // Streaming ring radius in 64 m chunks — the draw distance
+    // ("voir des paysages"); applyFog's horizon closure tracks it.
+    // Perf-sensitive: chunks grow as (2r+1)^2.
+    i32 terrainViewRadius { 15 };
+    // Distant silhouettes past the ring (FarTerrain, ~12 km coarse mesh).
+    bool farTerrain { true };
     // Terrain materials.
     f32 snowLine { 165.0f };     // meters
     f32 splatUvScale { 0.25f };  // tiles per meter
     // Fog / atmosphere.
-    f32 fogDensity { 0.0014f };
+    f32 fogDensity { 0.0012f };
     f32 fogHeightFalloff { 0.02f };
     f32 fogLowBoost { 1.6f };
-    f32 fogStart { 300.0f };
+    f32 fogStart { 450.0f };
     // Sun single-scatter phase exponent (docs/RENDERING.md V1): how
     // tightly the fog's sun glow hugs the sun direction. Strength is
     // per-weather (WeatherForm::fogSunScatter).
-    f32 fogSunPhase { 8.0f };
+    f32 fogSunPhase { 4.1f };
+    // Fog ceiling falloff baseline (1/m; per-weather override exists).
+    f32 fogCeiling { 0.0035f };
     // Post processing.
     f32 exposure { 1.0f };
     f32 bloomIntensity { 0.35f };
@@ -48,8 +56,8 @@ struct LandscapeTuningForm : Form {
     // resolving; it is simply never read.
     f32 ssaoStrength { 0.0f };
     // Clouds.
-    f32 cloudCoverage { 0.38f };
-    f32 cloudShadowStrength { 0.7f };
+    f32 cloudCoverage { 0.3f };
+    f32 cloudShadowStrength { 0.95f };
     f32 cloudHeight { 780.0f };   // meters
     f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
     // Interior ambient: the interior-mode base light; moddable per §5.
@@ -138,6 +146,47 @@ struct LandscapeTuningForm : Form {
     f32 grassPresenceLo { 0.08f };
     f32 grassPresenceHi { 0.40f };
     f32 grassMaterialCutoff { 0.72f };
+    // Ground mist structure (mist.frag; density/coverage are per-weather
+    // — WeatherForm). Scales in 1/m, lift/reach in meters.
+    bool mistEnabled { true };
+    f32 mistReach { 1200.0f };
+    f32 mistLift { 49.0f };
+    f32 mistCoverageSoftness { 0.6f };
+    f32 mistCoverageScale { 0.0035f };
+    f32 mistErosionScale { 0.02f };
+    f32 mistErosionStrength { 0.2f };
+    f32 mistSunBoost { 10.0f };
+    f32 mistSunLobe { 0.95f };     // forward HG g (silver-lining tightness)
+    f32 mistBackscatter { 0.8f };  // back-lobe weight
+    f32 mistAmbientGain { 1.25f }; // mist body brightness vs the sun beam
+    f32 mistShadowFloor { 0.6f };  // ambient kept in CSM/cloud shadow
+    bool mistNoiseTexture { true }; // baked volume vs analytic fbm3
+    f32 mistDetailDropout { 400.0f };
+    i32 mistSteps { 16 };
+    f32 mistTemporalBlend { 0.15f };
+    f32 mistPuffiness { 0.5f }; // fractal edge florets
+    // Volumetric sky clouds (§8): shape + light; coverage/height/scale
+    // stay the per-weather cloud fields above.
+    bool skyCloudsVolumetric { true };
+    f32 skyCloudThickness { 440.0f };
+    f32 skyCloudDensity { 0.065f };
+    f32 skyCloudErosion { 0.31f };
+    f32 skyCloudSunGain { 19.9f };  // body (multi-octave) gain
+    f32 skyCloudSunLobe { 0.3f };   // body HG g
+    f32 skyCloudAmbientGain { 0.9f };
+    f32 skyCloudLiningGain { 30.2f }; // direct-transmission silver lining
+    f32 skyCloudLiningLobe { 0.8f };
+    f32 skyCloudPowder { 1.0f };
+    f32 skyCloudThicknessSpread { 3.4f }; // thickness <-> coverage
+    f32 skyCloudPuffiness { 0.5f };       // fractal edge erosion
+    f32 skyCloudRimGain { 25.0f };  // view-thin silhouette glow
+    f32 skyCloudRimLobe { 0.75f };
+    f32 skyCloudBaseDark { 7.4f }; // storm-base ambient occlusion
+    // Unused (the under-cloud sky-ray tail was tried 2026-07-30 and
+    // removed: after its containments it only lit the air BETWEEN the
+    // clouds — the ground-to-cloud shafts are the froxels' job). The
+    // field stays so records that set it keep resolving.
+    f32 skyCloudRays { 0.0f };
 
     REFLECT_BEGIN(LandscapeTuningForm, Form)
         REFLECT_FIELD(terrainSeed)
@@ -146,6 +195,8 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(mountainWavelength)
         REFLECT_FIELD(mountainAmplitude)
         REFLECT_FIELD(seaLevel)
+        REFLECT_FIELD(terrainViewRadius)
+        REFLECT_FIELD(farTerrain)
         REFLECT_FIELD(snowLine)
         REFLECT_FIELD(splatUvScale)
         REFLECT_FIELD(fogDensity)
@@ -153,6 +204,7 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(fogLowBoost)
         REFLECT_FIELD(fogStart)
         REFLECT_FIELD(fogSunPhase)
+        REFLECT_FIELD(fogCeiling)
         REFLECT_FIELD(exposure)
         REFLECT_FIELD(bloomIntensity)
         REFLECT_FIELD(godRayIntensity)
@@ -217,6 +269,39 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(grassPresenceLo)
         REFLECT_FIELD(grassPresenceHi)
         REFLECT_FIELD(grassMaterialCutoff)
+        REFLECT_FIELD(mistEnabled)
+        REFLECT_FIELD(mistReach)
+        REFLECT_FIELD(mistLift)
+        REFLECT_FIELD(mistCoverageSoftness)
+        REFLECT_FIELD(mistCoverageScale)
+        REFLECT_FIELD(mistErosionScale)
+        REFLECT_FIELD(mistErosionStrength)
+        REFLECT_FIELD(mistSunBoost)
+        REFLECT_FIELD(mistSunLobe)
+        REFLECT_FIELD(mistBackscatter)
+        REFLECT_FIELD(mistAmbientGain)
+        REFLECT_FIELD(mistShadowFloor)
+        REFLECT_FIELD(mistNoiseTexture)
+        REFLECT_FIELD(mistDetailDropout)
+        REFLECT_FIELD(mistSteps)
+        REFLECT_FIELD(mistTemporalBlend)
+        REFLECT_FIELD(mistPuffiness)
+        REFLECT_FIELD(skyCloudsVolumetric)
+        REFLECT_FIELD(skyCloudThickness)
+        REFLECT_FIELD(skyCloudDensity)
+        REFLECT_FIELD(skyCloudErosion)
+        REFLECT_FIELD(skyCloudSunGain)
+        REFLECT_FIELD(skyCloudSunLobe)
+        REFLECT_FIELD(skyCloudAmbientGain)
+        REFLECT_FIELD(skyCloudLiningGain)
+        REFLECT_FIELD(skyCloudLiningLobe)
+        REFLECT_FIELD(skyCloudPowder)
+        REFLECT_FIELD(skyCloudThicknessSpread)
+        REFLECT_FIELD(skyCloudPuffiness)
+        REFLECT_FIELD(skyCloudRimGain)
+        REFLECT_FIELD(skyCloudRimLobe)
+        REFLECT_FIELD(skyCloudBaseDark)
+        REFLECT_FIELD(skyCloudRays)
     REFLECT_END()
 };
 
@@ -390,10 +475,10 @@ struct RcTuningForm : Form {
 struct WeatherForm : Form {
     i32 sortOrder { 0 };  // dropdown position
     // Clouds.
-    f32 cloudCoverage { 0.38f };
+    f32 cloudCoverage { 0.3f };
     f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
     f32 cloudHeight { 780.0f };   // meters
-    f32 cloudShadowStrength { 0.7f };
+    f32 cloudShadowStrength { 0.95f };
     // Fog / atmosphere.
     f32 fogDensity { 0.0014f };
     f32 fogHeightFalloff { 0.02f };
@@ -402,6 +487,9 @@ struct WeatherForm : Form {
     // Sun single-scatter strength in the fog (docs/RENDERING.md V1):
     // morning mist pushes it, overcast kills it.
     f32 fogSunScatter { 0.5f };
+    // Fog ceiling falloff (1/m): how fast the fog layer thins with
+    // altitude — clear weathers free the sky, overcast keeps a dome.
+    f32 fogCeiling { 0.0035f };
     // Light grading (SkySystem::Weather).
     f32 sunIntensity { 1.0f };
     f32 ambientIntensity { 1.0f };
@@ -418,6 +506,12 @@ struct WeatherForm : Form {
     f32 stormFront { 0.0f };
     // Rain streaks + wetness, 0-1.
     f32 rainIntensity { 0.0f };
+    // Ground mist (mist.frag): extinction (1/m, 0 = none) and how much
+    // of the valley network holds mist (0-1). Non-zero defaults: the
+    // erasing mist is the world's baseline — a record only sets these
+    // to DEVIATE from it.
+    f32 mistDensity { 0.6f };
+    f32 mistCoverage { 0.4f };
 
     REFLECT_BEGIN(WeatherForm, Form)
         REFLECT_FIELD(sortOrder)
@@ -430,6 +524,7 @@ struct WeatherForm : Form {
         REFLECT_FIELD(fogLowBoost)
         REFLECT_FIELD(fogStart)
         REFLECT_FIELD(fogSunScatter)
+        REFLECT_FIELD(fogCeiling)
         REFLECT_FIELD(sunIntensity)
         REFLECT_FIELD(ambientIntensity)
         REFLECT_FIELD(saturation)
@@ -441,6 +536,8 @@ struct WeatherForm : Form {
         REFLECT_FIELD(waveChop)
         REFLECT_FIELD(stormFront)
         REFLECT_FIELD(rainIntensity)
+        REFLECT_FIELD(mistDensity)
+        REFLECT_FIELD(mistCoverage)
     REFLECT_END()
 };
 

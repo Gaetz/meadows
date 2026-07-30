@@ -106,6 +106,11 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
     if (cfg.terrain) {
         terrain.create(device, *shaders, jobs);
         terrainLightMap.create(device, jobs);
+        farTerrain.create(device, *shaders, jobs);
+        if (cfg.postFx) {
+            mistMap.create(device, jobs);
+            noiseVolume.create(device, *shaders); // no-op without caps
+        }
     }
     if (cfg.occlusion) {
         occlusion.create(jobs);
@@ -258,9 +263,11 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                         { "uBloom", 1 },
                         { "uGodRays", 2 },
                         { "uVolumetric", 3 },
-                        // (binding 4 intentionally unused)
+                        { "uMist", 4 },       // ground mist
                         { "uExposure", 5 },   // adaptation tap
-                        { "uContact", 6 } }); // contact shadows
+                        { "uContact", 6 },    // contact shadows
+                        { "uSkyClouds", 7 },  // volumetric clouds
+                        { "uSceneDepth", 8 } }); // bilateral weights
         rebuildBlitPipeline(device);
     }
     if (cfg.postFx && device.caps().offscreenTargets &&
@@ -315,6 +322,9 @@ void WorldRenderer::destroy(rhi::Device& device) {
     lightClusters.destroy(device);
     gpuOcclusion.destroy(device);
     terrainLightMap.destroy(device);
+    farTerrain.destroy(device);
+    mistMap.destroy(device);
+    noiseVolume.destroy(device);
     radianceCascades.destroy(device);
     postFx.destroy(device);
     water.destroy(device);
@@ -409,16 +419,6 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
             reflectionFb = { device, device.createFramebuffer(
                 { .colorAttachments = { { .texture = reflectionColor } },
                   .depthAttachment = { .texture = reflectionDepth } }) };
-            waterSceneBindGroup = { device, device.createBindGroup(
-                { .entries = { { .binding = 0,
-                                 .texture = sceneColorCopy,
-                                 .sampler = blitSampler },
-                               { .binding = 1,
-                                 .texture = sceneDepthCopy,
-                                 .sampler = depthSampler },
-                               { .binding = 2,
-                                 .texture = reflectionColor,
-                                 .sampler = blitSampler } } }) };
         }
     }
 
@@ -426,6 +426,28 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
         device.caps().hdrFormats && device.caps().copyTexture) {
         postFx.resize(device, width, height, offscreenColor, sceneColorCopy,
                       sceneDepthCopy);
+    }
+
+    // After postFx.resize: the water shader reprojects the sky-cloud
+    // display buffer into the mirror, so the group must reference the
+    // freshly (re)created texture.
+    if (cfg.water && reflectionColor.id() != 0) {
+        rhi::BindGroupDesc desc { .entries = {
+            { .binding = 0,
+              .texture = sceneColorCopy,
+              .sampler = blitSampler },
+            { .binding = 1,
+              .texture = sceneDepthCopy,
+              .sampler = depthSampler },
+            { .binding = 2,
+              .texture = reflectionColor,
+              .sampler = blitSampler } } };
+        if (postFx.skyCloudsTexture().id != 0) {
+            desc.entries.push_back({ .binding = 4,
+                                     .texture = postFx.skyCloudsTexture(),
+                                     .sampler = blitSampler });
+        }
+        waterSceneBindGroup = { device, device.createBindGroup(desc) };
     }
     // Tonemap inputs: scene + bloom + god rays (black 1x1 fallbacks are not
     // needed on the 4.6 path — postFx is always ready when we get here).
@@ -447,11 +469,20 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                             { .binding = 3,
                               .texture = postFx.volumetricTexture(),
                               .sampler = blitSampler },
+                            { .binding = 4,
+                              .texture = postFx.mistTexture(),
+                              .sampler = blitSampler },
                             { .binding = 5,
                               .texture = postFx.exposureTexture(side),
                               .sampler = blitSampler },
                             { .binding = 6,
                               .texture = postFx.contactTexture(),
+                              .sampler = blitSampler },
+                            { .binding = 7,
+                              .texture = postFx.skyCloudsTexture(),
+                              .sampler = blitSampler },
+                            { .binding = 8,
+                              .texture = sceneDepthCopy,
                               .sampler = blitSampler } }
                       : vector<rhi::BindGroupEntry> {
                             { .binding = 0,
@@ -923,6 +954,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
     shaders->pollHotReload(frame.dt);
     if (cfg.terrain) {
         terrain.refreshPipeline(frame.device, *shaders);
+        farTerrain.refreshPipeline(frame.device, *shaders);
     }
     if (cfg.grass) {
         grass.refreshPipeline(frame.device, *shaders);
@@ -1019,6 +1051,23 @@ void WorldRenderer::render(engine::FrameContext& frame,
             terrainLightMap.update(frame.device, terrain.params,
                                    view.camera.position,
                                    shadowSunDirection);
+        }
+        if (cfg.terrain && cfg.postFx) {
+            // Valley data for the ground mist (sun-independent; re-bakes
+            // only when the camera strays half a kilometer).
+            core::FrameProbe::Scope probe { *view.probe, "mistmap" };
+            mistMap.update(frame.device, terrain.params,
+                           view.camera.position);
+        }
+        if (cfg.terrain && farTerrainUi) {
+            // Distant silhouettes: coarse 12 km mesh, worker-baked.
+            core::FrameProbe::Scope probe { *view.probe, "farterrain" };
+            farTerrain.update(frame.device, terrain.params,
+                              view.camera.position,
+                              cfg.vegetation
+                                  ? vegetation.treeSilhouette()
+                                  : render::VegetationSystem::
+                                        TreeSilhouette {});
         }
         // Height-horizon occlusion: rebuilt on a worker
         // whenever the camera strays; stays valid (conservative) meanwhile.
@@ -1176,6 +1225,20 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .snowLine = view.snowLine,
         .splatUvScale = view.splatUvScale,
         .reflectionsActive = reflectionsActive,
+        // Horizon closure: at the far mesh's reach when it stands in,
+        // else at the streaming ring. z of the same uniform carries the
+        // ring for the far mesh's sink bias.
+        .drawDistance =
+            cfg.terrain
+                ? (farTerrainUi && farTerrain.ready()
+                       ? farTerrain.reach()
+                       : static_cast<f32>(terrain.viewRadius) *
+                             render::TerrainSystem::kChunkSize)
+                : 0.0f,
+        .nearRingDistance = cfg.terrain
+                                ? static_cast<f32>(terrain.viewRadius) *
+                                      render::TerrainSystem::kChunkSize
+                                : 0.0f,
         .debugBuffer = debugBufferUi,
         .stylized = stylizedUi,
         .tonemap = tonemapUi,
@@ -1227,6 +1290,25 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .giBandInfo = { radianceCascades.tuning.bandCount,
                         radianceCascades.tuning.bandAa,
                         radianceCascades.tuning.giFloor, 0.0f },
+        .mistActive = mistUi && mistMap.ready(),
+        .mistCoverageSoftness = mistCoverageSoftnessUi,
+        .mistReach = mistReachUi,
+        .mistShapeInfo = mistShapeUi,
+        .mistMapInfo = mistMap.info(),
+        .mistDetailInfo = { noiseVolume.ready() && mistNoiseTexUi ? 1.0f
+                                                                  : 0.0f,
+                            static_cast<f32>(mistStepsUi),
+                            mistDetailDropoutUi, mistSunBoostUi },
+        .mistLightInfo = mistLightUi,
+        .mistPuffInfo = { mistPuffinessUi, 0.0f, 0.0f, 0.0f },
+        .cloudVolInfo = { skyCloudsUi && noiseVolume.ready() ? 1.0f : 0.0f,
+                          skyCloudShapeUi.x, skyCloudShapeUi.y,
+                          skyCloudShapeUi.z },
+        .cloudVolLightInfo = skyCloudLightUi,
+        .cloudVolShapeInfo = { skyCloudShapeUi.w, skyCloudLiningLobeUi,
+                               skyCloudPowderUi, skyCloudPuffinessUi },
+        .cloudVolRimInfo = { skyCloudRimGainUi, skyCloudRimLobeUi,
+                             skyCloudBaseDarkUi, 0.0f },
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;
@@ -1235,8 +1317,9 @@ void WorldRenderer::render(engine::FrameContext& frame,
     // both grids share their z slices by construction.
     const bool clustered = clusteredLightsUi && lightClusters.ready();
     frameData.clusterInfo = { clustered ? 1.0f : 0.0f,
-                              view.interiorMode ? 48.0f : 800.0f, 0.0f,
-                              0.0f };
+                              render::volumetricReach(view.interiorMode,
+                                                      view.atmos.fogStart),
+                              0.0f, 0.0f };
     if (cfg.sky && frameData.stormInfo.y > 0.003f) {
         frame.device.updateBuffer(rainOcclusionUbo,
                                   &frameData.rainOcclusionViewProj,
@@ -1665,6 +1748,12 @@ void WorldRenderer::render(engine::FrameContext& frame,
                 frame.device.caps().midPassTimestamps ? &gpuProbe : nullptr;
             rhi::Device* subDevice =
                 subProbe != nullptr ? &frame.device : nullptr;
+            if (cfg.terrain && farTerrainUi) {
+                // Far silhouettes FIRST: everything nearer overdraws
+                // them by depth; they extend the world past the ring.
+                farTerrain.draw(frame.cmd, frameBindGroup,
+                                sky.cloudMapBindGroup());
+            }
             if (cfg.terrain) {
                 render::GpuProbe::Scope sub { subProbe, subDevice,
                                               "mainTerrain" };
@@ -1766,16 +1855,30 @@ void WorldRenderer::render(engine::FrameContext& frame,
     }
 
     // Bloom pyramid + god rays + volumetric shafts, composed by the tonemap.
-    // Unit 2 (cloud map) persists across the post passes for the march.
     if (cfg.postFx && useOffscreen) {
         core::FrameProbe::Scope probe { *view.probe, "postfx" };
-        if (sky.cloudMapBindGroup().id != 0) {
-            frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
+        // Volumetric sky clouds FIRST: the god-ray march inside
+        // postFx.render composites them (transmittance carves the rays).
+        {
+            render::GpuProbe::Scope gpu { gpuProbe, frame.device,
+                                          "skyclouds" };
+            // One-shot noise bake on the FIRST frame (not the first
+            // cloudy one): a weather change must never pay it mid-play.
+            noiseVolume.bakeIfNeeded(frame.cmd);
+            if (frameData.cloudVolInfo.x > 0.5f) {
+                postFx.renderSkyClouds(frame.device, frame.cmd, frameData,
+                                       frameBindGroup,
+                                       noiseVolume.bindGroup(),
+                                       sky.cloudMapBindGroup());
+            } else {
+                postFx.clearSkyClouds(frame.cmd);
+            }
         }
         postFx.render(frame.device, frame.cmd, frameData, frameBindGroup,
                       shadows.receiverBindGroup(),
                       radianceCascades.applyGroup(),
-                      view.atmos.godRayIntensity > 0.003f, &gpuProbe);
+                      view.atmos.godRayIntensity > 0.003f, &gpuProbe,
+                      sky.cloudMapBindGroup());
         // Contact shadows (the texture is the toggle — white = off).
         {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
@@ -1785,6 +1888,22 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                             shadows.receiverBindGroup());
             } else {
                 postFx.clearContactShadows(frame.cmd);
+            }
+        }
+        // Ground mist (the texture is the toggle — neutral = off;
+        // frameData.mistInfo.x already folds the composer's gates).
+        {
+            render::GpuProbe::Scope gpu { gpuProbe, frame.device, "mist" };
+            if (frameData.mistInfo.x > 0.0f && mistMap.ready()) {
+                postFx.renderMist(frame.device, frame.cmd, frameData,
+                                  frameBindGroup,
+                                  shadows.receiverBindGroup(),
+                                  radianceCascades.applyGroup(),
+                                  sky.cloudMapBindGroup(),
+                                  mistMap.bindGroup(),
+                                  noiseVolume.bindGroup());
+            } else {
+                postFx.clearMist(frame.cmd);
             }
         }
         // Auto exposure: measure + adapt, before the tonemap taps it.
