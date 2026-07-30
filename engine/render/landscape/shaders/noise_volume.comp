@@ -1,0 +1,93 @@
+#version 460 core
+
+// One-shot bake of the shared tileable Perlin-Worley volume (NoiseVolume,
+// the Hillaire TileableVolumeNoise channels): R = Perlin-Worley base shape
+// (reserved for the volumetric sky clouds), G = mid Worley FBM (ground-mist
+// erosion), B = high Worley FBM (near detail). Every channel tiles over
+// [0,1]³ — sample with a repeat sampler.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+layout(binding = 12, rgba8) uniform writeonly image3D uNoiseOut;
+
+vec3 hash33(vec3 p) {
+    p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+             dot(p, vec3(269.5, 183.3, 246.1)),
+             dot(p, vec3(113.5, 271.9, 124.6)));
+    return fract(sin(p) * 43758.5453123);
+}
+
+// Inverted Worley (cellular) noise, tiling over `cells` per axis.
+float tileableWorley(vec3 uvw, float cells) {
+    vec3 p = uvw * cells;
+    vec3 id = floor(p);
+    vec3 f = fract(p);
+    float dmin = 1e9;
+    for (int z = -1; z <= 1; ++z) {
+        for (int y = -1; y <= 1; ++y) {
+            for (int x = -1; x <= 1; ++x) {
+                vec3 offset = vec3(x, y, z);
+                vec3 cell = mod(id + offset, cells);
+                vec3 point = hash33(cell);
+                vec3 diff = offset + point - f;
+                dmin = min(dmin, dot(diff, diff));
+            }
+        }
+    }
+    return 1.0 - clamp(sqrt(dmin), 0.0, 1.0);
+}
+
+float worleyFbm(vec3 uvw, float freq) {
+    return tileableWorley(uvw, freq) * 0.625 +
+           tileableWorley(uvw, freq * 2.0) * 0.25 +
+           tileableWorley(uvw, freq * 4.0) * 0.125;
+}
+
+// Tileable gradient (Perlin) noise: gradients hashed on the wrapped lattice.
+float tileableGradientNoise(vec3 p, float tile) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0); // quintic
+    float result = 0.0;
+    #define GRAD(ox, oy, oz, wx, wy, wz)                                     \
+        dot(hash33(mod(i + vec3(ox, oy, oz), tile)) * 2.0 - 1.0,             \
+            f - vec3(ox, oy, oz))
+    float n000 = GRAD(0, 0, 0, 0, 0, 0);
+    float n100 = GRAD(1, 0, 0, 0, 0, 0);
+    float n010 = GRAD(0, 1, 0, 0, 0, 0);
+    float n110 = GRAD(1, 1, 0, 0, 0, 0);
+    float n001 = GRAD(0, 0, 1, 0, 0, 0);
+    float n101 = GRAD(1, 0, 1, 0, 0, 0);
+    float n011 = GRAD(0, 1, 1, 0, 0, 0);
+    float n111 = GRAD(1, 1, 1, 0, 0, 0);
+    #undef GRAD
+    result = mix(mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+                 mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y), u.z);
+    return result * 0.5 + 0.5;
+}
+
+float perlinFbm(vec3 uvw, float freq, int octaves) {
+    float amplitude = 0.5;
+    float total = 0.0;
+    float normalization = 0.0;
+    for (int i = 0; i < octaves; ++i) {
+        total += tileableGradientNoise(uvw * freq, freq) * amplitude;
+        normalization += amplitude;
+        amplitude *= 0.5;
+        freq *= 2.0;
+    }
+    return total / normalization;
+}
+
+void main() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID);
+    vec3 uvw = (vec3(coord) + 0.5) / vec3(imageSize(uNoiseOut));
+
+    // Hillaire Perlin-Worley: perlin remapped so Worley billows floor it.
+    float perlin = perlinFbm(uvw, 4.0, 7);
+    float worleyBase = worleyFbm(uvw, 4.0);
+    float perlinWorley = worleyBase + perlin * (1.0 - worleyBase);
+
+    float g = worleyFbm(uvw, 8.0);
+    float b = worleyFbm(uvw, 16.0);
+    imageStore(uNoiseOut, coord, vec4(perlinWorley, g, b, 1.0));
+}
