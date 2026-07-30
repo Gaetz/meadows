@@ -98,7 +98,9 @@ void main() {
         vec3 p = uCameraPos.xyz + dir * d;
         float lowBoost =
             exp(-max(p.y - uTerrainInfo.x, 0.0) * uFogInfo.y);
-        float density = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z);
+        float density = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z) *
+                        exp(-max(p.y - uTerrainInfo.x, 0.0) *
+                            uFogLayerInfo.x);
         float absorb = exp(-density * segLen);
         float vis = cloudShadowFactor(p) * shaftShadow(p);
         // V3: inside the RC volume the haze takes the FIELD's radiance —
@@ -107,8 +109,15 @@ void main() {
         vec3 haze = giAir(p, ambientAir);
         // Shadowed air keeps a floor of haze (the sky still reaches it
         // sideways); the contrast between lit and shadowed air is what
-        // draws the shafts and the dark curtains. hand-tuned.
-        vec3 source = haze * mix(0.45, 1.0, vis) + sunAir * vis;
+        // draws the shafts and the dark curtains. hand-tuned. The sun
+        // term rides a 3x softer altitude envelope than the extinction
+        // (the froxel_inject contract): curtains keep their medium.
+        float sunLift =
+            exp(max(p.y - uTerrainInfo.x, 0.0) *
+                (uFogLayerInfo.x * 0.65)) *
+            (1.0 -
+             smoothstep(uCloudInfo.y * 0.45, uCloudInfo.y * 1.0, p.y));
+        vec3 source = haze * mix(0.45, 1.0, vis) + sunAir * (vis * sunLift);
         inscatter += transmit * source * (1.0 - absorb);
         transmit *= absorb;
         if (transmit < 0.003) {

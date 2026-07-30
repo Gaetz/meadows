@@ -69,8 +69,8 @@ void main() {
     float sheen = pow(max(dot(n, halfDir), 0.0), 32.0) *
                   uGrassShadeInfo.y * vT;
 
-    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
-                   cloudShadowFactor(vWorldPos);
+    float cloudVis = cloudShadowFactor(vWorldPos);
+    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) * cloudVis;
     // Distant terrain shadow + sky openness.
     vec2 tl = terrainLightFactors(vWorldPos);
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.
@@ -91,5 +91,5 @@ void main() {
     // noise would break the meadow's flat-mass read; the blades still
     // CAST into the march, so the block keeps darkening the ground
     // beside it.
-    fragColor = vec4(applyFog(lit, vWorldPos), 0.0);
+    fragColor = vec4(applyFog(lit, vWorldPos, cloudVis), 0.0);
 }

@@ -3,7 +3,10 @@
 
 // Screen-space light shafts (GPU Gems 3 style): march from each pixel toward
 // the sun's screen position, accumulating sky/sun radiance visible between
-// occluders — trees and ridgelines carve the rays.
+// occluders — trees and ridgelines carve the rays. Deliberately CLOUD-BLIND:
+// coupling the volumetric clouds in overpowered the shafts and drowned the
+// tree/ground occluders; the cloud ray curtains belong to the volumetric
+// fog chain (froxels + the sky-cloud pass's far tail).
 layout(binding = 0) uniform sampler2D uSceneColor;
 layout(binding = 1) uniform sampler2D uSceneDepth;
 

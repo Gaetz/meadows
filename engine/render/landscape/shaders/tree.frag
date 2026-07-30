@@ -47,8 +47,8 @@ void main() {
     float ndl = dot(n, uSunDirection.xyz);
     float wrap = clamp((ndl + 0.4) / 1.4, 0.0, 1.0);
     float diffuse = stylizedDiffuse(ndl, wrap);
-    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
-                   cloudShadowFactor(vWorldPos);
+    float cloudVis = cloudShadowFactor(vWorldPos);
+    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) * cloudVis;
     vec3 lit =
         albedo * (uAmbientColor.rgb + uSunColor.rgb * (diffuse * shadow));
     // Stepped rim against the sky — canopies pop off the
@@ -61,5 +61,5 @@ void main() {
         lit += albedo * localLights(vWorldPos, n);
     }
 
-    fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
+    fragColor = vec4(applyFog(lit, vWorldPos, cloudVis), 1.0);
 }

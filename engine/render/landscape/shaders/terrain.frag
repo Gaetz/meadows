@@ -61,8 +61,8 @@ void main() {
     float diffuse = stylizedDiffuse(ndl, max(ndl, 0.0));
     // Cast shadows quantize to flat pools; cloud shadows stay soft (they
     // drift — hard edges would crawl).
-    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) *
-                   cloudShadowFactor(vWorldPos);
+    float cloudVis = cloudShadowFactor(vWorldPos);
+    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) * cloudVis;
     // Long-range terrain sun shadow (x) + sky openness (y).
     vec2 tl = terrainLightFactors(vWorldPos);
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.
@@ -74,5 +74,5 @@ void main() {
     if (uClusterInfo.x > 0.5) {
         lit += albedo * localLights(vWorldPos, n);
     }
-    fragColor = vec4(applyFog(lit, vWorldPos), 1.0);
+    fragColor = vec4(applyFog(lit, vWorldPos, cloudVis), 1.0);
 }

@@ -39,7 +39,13 @@ vec3 skyWithSun(vec3 dir) {
 // Distance + height fog, tinted by skyGradient along the view ray: distant
 // geometry dissolves into EXACTLY the sky behind it, at any time of day (the
 // BotW haze). Denser near sea level so valleys and shores go misty first.
-vec3 applyFog(vec3 color, vec3 worldPos) {
+// `cloudVis` = the cloud sun-visibility at the surface point
+// (cloudShadowFactor, passed by callers that have the cloud map bound —
+// sky.glsl is included before clouds.glsl so it cannot tap it here). It
+// carries the cloud-shadow pattern into the analytic tail: distant fog
+// dims under clouds and the froxel band's ray curtains continue to the
+// horizon instead of stopping at the volumetric reach.
+vec3 applyFog(vec3 color, vec3 worldPos, float cloudVis) {
     vec3 toPoint = worldPos - uCameraPos.xyz;
     float dist = length(toPoint);
     vec3 viewDir = toPoint / max(dist, 1e-4);
@@ -47,7 +53,9 @@ vec3 applyFog(vec3 color, vec3 worldPos) {
     // (and valleys seen from a peak) both fog sensibly.
     float midHeight = 0.5 * (worldPos.y + uCameraPos.y);
     float lowBoost = exp(-max(midHeight - uTerrainInfo.x, 0.0) * uFogInfo.y);
-    float density = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z);
+    float density = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z) *
+                    exp(-max(midHeight - uTerrainInfo.x, 0.0) *
+                        uFogLayerInfo.x);
     // Only the distance BEYOND the start counts: everything nearer keeps its
     // true colors, the haze belongs to the far field. When the volumetric
     // march owns the near fog (uFogSunInfo.z = its reach, composer-set),
@@ -55,15 +63,29 @@ vec3 applyFog(vec3 color, vec3 worldPos) {
     float fogStart = max(uFogInfo.w, uFogSunInfo.z);
     float fogDist = max(dist - fogStart, 0.0);
     float amount = 1.0 - exp(-fogDist * density);
+    // HORIZON CLOSURE (uFogLayerInfo.y = the terrain streaming edge, m):
+    // whatever the weather's fog, geometry is FULLY dissolved into the
+    // sky by the edge of the ring — new chunks are born inside the veil
+    // instead of popping, and trees stop sprouting from bare ground.
+    if (uFogLayerInfo.y > 0.0) {
+        amount = max(amount, smoothstep(uFogLayerInfo.y * 0.72,
+                                        uFogLayerInfo.y * 0.97, dist));
+    }
     // Sun single-scatter (docs/RENDERING.md V1): without it, lit and
     // shadowed air converge to the same sky color — the grey veil. The
     // forward lobe warms fog toward the sun and lets it cool away from
     // it; strength rides the weather, the exponent is global tuning.
     float mu = dot(viewDir, uSunDirection.xyz);
-    vec3 fogColor = skyGradient(viewDir) +
+    // The sun lobe carries the full cloud pattern; the gradient only a
+    // touch (shadowed distant air still sees most of the sky sideways).
+    vec3 fogColor = skyGradient(viewDir) * mix(0.9, 1.0, cloudVis) +
                     uSunColor.rgb *
                         (pow(clamp(mu * 0.5 + 0.5, 0.0, 1.0),
                              uFogSunInfo.y) *
-                         uFogSunInfo.x);
+                         uFogSunInfo.x * cloudVis);
     return mix(color, fogColor, amount);
+}
+
+vec3 applyFog(vec3 color, vec3 worldPos) {
+    return applyFog(color, worldPos, 1.0);
 }

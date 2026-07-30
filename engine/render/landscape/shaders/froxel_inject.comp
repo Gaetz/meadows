@@ -160,7 +160,10 @@ void main() {
     // Density: the height fog past its start distance + the uniform dust
     // (interiors — the composer routes it through uFogSunInfo.w).
     float lowBoost = exp(-max(pC.y - uTerrainInfo.x, 0.0) * uFogInfo.y);
-    float heightFog = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z) *
+    // Ceiling envelope: the fog is a GROUND layer — upward rays exit it
+    // (readable sky) while the horizon keeps its fog and ray curtains.
+    float ceiling = exp(-max(pC.y - uTerrainInfo.x, 0.0) * uFogLayerInfo.x);
+    float heightFog = uFogInfo.x * (1.0 + lowBoost * uFogInfo.z) * ceiling *
                       smoothstep(uFogInfo.w * 0.8, uFogInfo.w, dC);
     float dust = uFogSunInfo.w;
     if (dust > 0.0 && uTemporalInfo.z > 0.001) {
@@ -191,8 +194,17 @@ void main() {
     // fully to the outdoor height fog but only faintly to the uniform
     // dust — beams are drawn by CONTRAST. hand-tuned dust factor.
     float dustFrac = dust / density;
-    vec3 source = haze * (mix(0.45, 1.0, vis) * mix(1.0, 0.15, dustFrac)) +
-                  uSunColor.rgb * (phase * uFogSunInfo.x * uTime.z * vis);
+    // The SUN term rides a 3x softer altitude envelope than the
+    // extinction/ambient (density carries the full fogCeiling): the sky
+    // stays readable, but the cloud-shadow ray curtains keep their
+    // medium at curtain altitudes. density*sunLift = base*ceiling^0.35,
+    // bounded by construction.
+    float sunLift =
+        exp(max(pC.y - uTerrainInfo.x, 0.0) * (uFogLayerInfo.x * 0.65)) *
+        (1.0 - smoothstep(uCloudInfo.y * 0.45, uCloudInfo.y * 1.0, pC.y));
+    vec3 source =
+        haze * (mix(0.45, 1.0, vis) * mix(1.0, 0.15, dustFrac)) +
+        uSunColor.rgb * (phase * uFogSunInfo.x * uTime.z * vis * sunLift);
 
     // Local lights: windowed quadratic falloff + spot cone. Isotropic
     // phase — a lamp glows in the dust all around itself. Clustered on:
