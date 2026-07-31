@@ -37,8 +37,9 @@ Vec3 SceneEditor::mouseRayDirection(const EditorContext& ctx,
     const Vec2 ndc { 2.0f * mousePx.x / display.x - 1.0f,
                      1.0f - 2.0f * mousePx.y / display.y };
     const Mat4 inv = glm::inverse(ctx.camera.camera.viewProj(aspect));
-    Vec4 nearPoint = inv * Vec4 { ndc.x, ndc.y, -1.0f, 1.0f };
-    Vec4 farPoint = inv * Vec4 { ndc.x, ndc.y, 1.0f, 1.0f };
+    // Reversed-Z, 0..1 clip: near sits at ndc z = 1, far at 0.
+    Vec4 nearPoint = inv * Vec4 { ndc.x, ndc.y, 1.0f, 1.0f };
+    Vec4 farPoint = inv * Vec4 { ndc.x, ndc.y, 0.0f, 1.0f };
     nearPoint /= nearPoint.w;
     farPoint /= farPoint.w;
     return glm::normalize(Vec3 { farPoint } - Vec3 { nearPoint });

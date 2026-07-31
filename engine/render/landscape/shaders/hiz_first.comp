@@ -1,10 +1,11 @@
 #version 460 core
 
-// Hi-Z pyramid, level 0: half-res MAX-depth reduction of the
-// scene depth snapshot. Max (not min) because the cull asks "is the chunk's
-// nearest point farther than EVERYTHING drawn over its footprint?" — only a
-// conservative max keeps false culls impossible. The 3x3 clamped fetch
-// over-covers on odd source sizes: a larger max only means less culling.
+// Hi-Z pyramid, level 0: half-res FARTHEST-depth reduction of the
+// scene depth snapshot — under reversed-Z farthest = MIN. The cull asks
+// "is the chunk's nearest point farther than EVERYTHING drawn over its
+// footprint?" — only the conservative farthest keeps false culls
+// impossible. The 3x3 clamped fetch over-covers on odd source sizes: a
+// farther bound only means less culling.
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
@@ -19,10 +20,10 @@ void main() {
     }
     ivec2 src = dst * 2;
     ivec2 srcMax = textureSize(uSceneDepth, 0) - 1;
-    float d = 0.0;
+    float d = 1.0;
     for (int y = 0; y < 3; ++y) {
         for (int x = 0; x < 3; ++x) {
-            d = max(d, texelFetch(uSceneDepth,
+            d = min(d, texelFetch(uSceneDepth,
                                   min(src + ivec2(x, y), srcMax), 0).r);
         }
     }

@@ -87,6 +87,18 @@ TEST_CASE("depth 0..1: glm projects near to 0, far to 1") {
     CHECK(farClip.z / farClip.w == doctest::Approx(1.0f).epsilon(1e-4));
 }
 
+TEST_CASE("reversed-Z: swapped near/far args project near to 1, far to 0") {
+    // The Camera3D::proj idiom (docs/RENDERING.md §6.0a) — pinned here so
+    // a glm behavior change or an accidental un-swap fails headless.
+    const Mat4 proj =
+        glm::perspective(glm::radians(60.0f), 16.0f / 9.0f, 100.0f, 0.1f);
+    const Vec4 nearClip = proj * Vec4 { 0.0f, 0.0f, -0.1f, 1.0f };
+    CHECK(nearClip.z / nearClip.w == doctest::Approx(1.0f).epsilon(1e-4));
+    const Vec4 farClip = proj * Vec4 { 0.0f, 0.0f, -100.0f, 1.0f };
+    CHECK(farClip.z / farClip.w ==
+          doctest::Approx(0.0f).epsilon(1e-4));
+}
+
 TEST_CASE("depth 0..1: frustum near plane culls behind the eye") {
     const Frustum frustum = makeFrustum();
     // In front of the near plane: inside. Behind the eye: outside — under
@@ -99,9 +111,11 @@ TEST_CASE("depth 0..1: frustum near plane culls behind the eye") {
                                        { 1.0f, 1.0f, 0.05f }));
 }
 
-TEST_CASE("depth 0..1: oblique near plane (water reflection)") {
+TEST_CASE("reversed-Z oblique near plane (water reflection)") {
+    // The camera path is reversed, so obliqueProjection only ever
+    // receives reversed projections (near ndc 1, far ndc 0).
     const Mat4 proj =
-        glm::perspective(glm::radians(60.0f), 16.0f / 9.0f, 0.1f, 100.0f);
+        glm::perspective(glm::radians(60.0f), 16.0f / 9.0f, 100.0f, 0.1f);
     // View-space plane y = -2, keeping everything above (y + 2 >= 0) — the
     // shape of the water plane seen from the mirrored camera.
     const Vec4 plane { 0.0f, 1.0f, 0.0f, 2.0f };
@@ -111,14 +125,16 @@ TEST_CASE("depth 0..1: oblique near plane (water reflection)") {
         const Vec4 clip = oblique * Vec4 { p, 1.0f };
         return clip.z / clip.w;
     };
-    // Exactly on the plane -> the new near (z_ndc = 0), wherever along it.
-    CHECK(ndcZ({ 0.0f, -2.0f, -10.0f }) == doctest::Approx(0.0f).epsilon(1e-4));
-    CHECK(ndcZ({ 3.0f, -2.0f, -40.0f }) == doctest::Approx(0.0f).epsilon(1e-4));
-    // Above the plane: kept (0 < z <= ~1); below: clipped (z < 0).
+    // Exactly on the plane -> the new near (reversed: z_ndc = 1),
+    // wherever along it.
+    CHECK(ndcZ({ 0.0f, -2.0f, -10.0f }) == doctest::Approx(1.0f).epsilon(1e-4));
+    CHECK(ndcZ({ 3.0f, -2.0f, -40.0f }) == doctest::Approx(1.0f).epsilon(1e-4));
+    // Above the plane: kept (~0 <= z < 1); below: clipped (z > 1 = past
+    // the reversed near boundary).
     const f32 above = ndcZ({ 0.0f, 0.0f, -10.0f });
-    CHECK(above > 0.0f);
-    CHECK(above <= 1.0f + 1e-3f);
-    CHECK(ndcZ({ 0.0f, -3.0f, -10.0f }) < 0.0f);
+    CHECK(above < 1.0f);
+    CHECK(above >= -1e-3f);
+    CHECK(ndcZ({ 0.0f, -3.0f, -10.0f }) > 1.0f);
     // xy are untouched: only the z row changed.
     const Vec4 a = proj * Vec4 { 1.0f, 2.0f, -10.0f, 1.0f };
     const Vec4 b = oblique * Vec4 { 1.0f, 2.0f, -10.0f, 1.0f };

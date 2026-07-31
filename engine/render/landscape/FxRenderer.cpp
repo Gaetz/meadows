@@ -38,7 +38,7 @@ void FxRenderer::ensurePipelines(rhi::Device& device,
               // Transparents: tested against the opaques, never writing.
               .depth = { .testEnable = true,
                          .writeEnable = false,
-                         .compare = rhi::CompareFunc::Less },
+                         .compare = rhi::CompareFunc::Greater }, // reversed-Z
               .cull = rhi::CullMode::None,
               // ivec4 uFxBase: this batch's first particle in the shared SSBO.
               .pushConstantSize = 16 }) };

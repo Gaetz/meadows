@@ -347,7 +347,7 @@ void GrassSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
           // terrain and each other; visible from both sides.
           .depth = { .testEnable = true,
                      .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
+                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
           .cull = rhi::CullMode::None }) };
     shaderGeneration = shaders.generation(kGrassShader);
 }

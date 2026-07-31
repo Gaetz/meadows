@@ -29,8 +29,12 @@ struct Frustum {
         frustum.planes[1] = r3 - r0; // right
         frustum.planes[2] = r3 + r1; // bottom
         frustum.planes[3] = r3 - r1; // top
-        frustum.planes[4] = r2;      // near (0..1 clip: 0 <= z)
-        frustum.planes[5] = r3 - r2; // far
+        // 0..1 clip bounds: z >= 0 and z <= w. Which is near and which is
+        // far depends on the matrix (the camera path is REVERSED-Z, so
+        // r2 is its far plane) — irrelevant here: every test iterates
+        // all six, the volume is what matters.
+        frustum.planes[4] = r2;
+        frustum.planes[5] = r3 - r2;
         for (Vec4& plane : frustum.planes) {
             const f32 length = glm::length(Vec3 { plane });
             if (length > 1e-8f) {

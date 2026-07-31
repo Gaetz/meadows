@@ -17,16 +17,10 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 layout(binding = 2) uniform sampler2D uSceneColor;
 #include "shadow.glsl"
 #include "stylized.glsl"
+#include "view_util.glsl"
 
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
-
-vec3 worldFromDepth(vec2 uv, float depth) {
-    // 0..1 clip: the stored depth IS ndc z (no *2-1 remap).
-    vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    vec4 world = uInvViewProj * ndc;
-    return world.xyz / world.w;
-}
 
 void main() {
     // No sun (interiors, night): neutral.
@@ -48,8 +42,8 @@ void main() {
         return;
     }
     float depth = texture(uSceneDepth, vUv).r;
-    if (depth >= 0.99995) {
-        fragColor = vec4(1.0); // sky
+    if (depth < 1e-8) {
+        fragColor = vec4(1.0); // sky = the exact reversed far clear
         return;
     }
     if (texture(uSceneColor, vUv).a < 0.5) {
@@ -83,8 +77,7 @@ void main() {
 
     const int kSteps = 12;
     // IGN jitter breaks the marching bands into filterable noise.
-    float jitter = fract(52.9829189 * fract(0.06711056 * gl_FragCoord.x +
-                                            0.00583715 * gl_FragCoord.y));
+    float jitter = ignJitter(gl_FragCoord.xy);
     float stepLen = reach / float(kSteps);
     float shadow = 0.0;
     for (int i = 1; i <= kSteps; ++i) {

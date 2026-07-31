@@ -26,8 +26,11 @@ void main() {
     for (int i = 0; i < kTaps; ++i) {
         uv += delta;
         vec2 clamped = clamp(uv, vec2(0.0), vec2(1.0));
-        // Only unoccluded sky feeds the shafts (depth at the far plane).
-        float sky = step(0.99995, texture(uSceneDepth, clamped).r);
+        // Only unoccluded sky feeds the shafts. Reversed-Z: sky is
+        // EXACTLY the far clear (0.0); any epsilon that looks symmetric
+        // to the old 0.99995 actually swallows kilometre-distant terrain
+        // (the reversed hyperbola flattens toward 0).
+        float sky = 1.0 - step(1e-8, texture(uSceneDepth, clamped).r);
         sum += texture(uSceneColor, clamped).rgb * (sky * illumination);
         illumination *= 0.955;
     }

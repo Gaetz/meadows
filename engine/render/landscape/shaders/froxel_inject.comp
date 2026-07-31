@@ -15,6 +15,7 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "clouds.glsl"
 #include "gi.glsl"
+#include "fog_march.glsl"
 
 layout(std140, binding = 5) uniform LightsUbo {
     vec4 uLightCount;
@@ -101,25 +102,6 @@ float sliceDepth(float s, float slices) {
     return sliceDepth(s, slices, max(uFogSunInfo.z, kSliceNear + 1.0));
 }
 
-float froxelShadow(vec3 p) {
-    if (uShadowInfo.w <= 0.0) {
-        return 1.0;
-    }
-    float d = distance(p, uCameraPos.xyz);
-    if (d >= uCascadeSplits.z) {
-        return 1.0;
-    }
-    int cascade = d < uCascadeSplits.x ? 0 : d < uCascadeSplits.y ? 1 : 2;
-    vec4 lightClip = uSunViewProj[cascade] * vec4(p, 1.0);
-    vec3 proj = lightClip.xyz / lightClip.w;
-    proj.xy = proj.xy * 0.5 + 0.5;
-    if (proj.z >= 1.0 || any(lessThan(proj.xy, vec2(0.0))) ||
-        any(greaterThan(proj.xy, vec2(1.0)))) {
-        return 1.0;
-    }
-    return texture(uShadowMap, vec4(proj.xy, float(cascade), proj.z));
-}
-
 void main() {
     ivec3 cell = ivec3(gl_GlobalInvocationID);
     ivec3 dims = imageSize(uFroxelScatter);
@@ -128,8 +110,12 @@ void main() {
     }
     // The froxel's camera ray, through the cell center.
     vec2 uv = (vec2(cell.xy) + 0.5) / vec2(dims.xy);
-    vec4 nearW = uInvViewProj * vec4(uv * 2.0 - 1.0, 0.1, 1.0);
-    vec4 farW = uInvViewProj * vec4(uv * 2.0 - 1.0, 0.9, 1.0);
+    // Reversed-Z: near sits at ndc z ~1, far at ~0 — with the old
+    // 0.1/0.9 order the ray pointed BACKWARD and the whole volume
+    // injected for the opposite hemisphere (fog shimmering in the sky:
+    // the ceiling tested altitudes behind the camera).
+    vec4 nearW = uInvViewProj * vec4(uv * 2.0 - 1.0, 0.9, 1.0);
+    vec4 farW = uInvViewProj * vec4(uv * 2.0 - 1.0, 0.1, 1.0);
     vec3 dir = normalize(farW.xyz / farW.w - nearW.xyz / nearW.w);
 
     // Depth jitter: an integer hash of (cell, frame) — WHITE in time and
@@ -185,26 +171,19 @@ void main() {
     // Sun: phase lobe (V1 knobs, isotropic floor for side-on curtains)
     // x per-froxel visibility. Ambient: the GI field inside its volume,
     // the sky gradient beyond, dimmed in shadowed air.
-    float vis = cloudShadowFactor(pC) * froxelShadow(pJ);
+    float vis = cloudShadowFactor(pC) * shaftShadow(pJ);
     float mu = dot(dir, uSunDirection.xyz);
-    float lobe = pow(clamp(mu * 0.5 + 0.5, 0.0, 1.0), uFogSunInfo.y);
-    float phase = 0.35 + 0.65 * lobe;
+    float phase = fogSunPhase(mu);
     vec3 haze = giAir(pC, skyGradient(dir));
     // DUST wants dark air around bright beams: the ambient term applies
     // fully to the outdoor height fog but only faintly to the uniform
     // dust — beams are drawn by CONTRAST. hand-tuned dust factor.
     float dustFrac = dust / density;
-    // The SUN term rides a 3x softer altitude envelope than the
-    // extinction/ambient (density carries the full fogCeiling): the sky
-    // stays readable, but the cloud-shadow ray curtains keep their
-    // medium at curtain altitudes. density*sunLift = base*ceiling^0.35,
-    // bounded by construction.
-    float sunLift =
-        exp(max(pC.y - uTerrainInfo.x, 0.0) * (uFogLayerInfo.x * 0.65)) *
-        (1.0 - smoothstep(uCloudInfo.y * 0.45, uCloudInfo.y * 1.0, pC.y));
+    // density*fogSunLift = base*ceiling^0.35, bounded by construction.
     vec3 source =
         haze * (mix(0.45, 1.0, vis) * mix(1.0, 0.15, dustFrac)) +
-        uSunColor.rgb * (phase * uFogSunInfo.x * uTime.z * vis * sunLift);
+        uSunColor.rgb *
+            (phase * uFogSunInfo.x * uTime.z * vis * fogSunLift(pC.y));
 
     // Local lights: windowed quadratic falloff + spot cone. Isotropic
     // phase — a lamp glows in the dust all around itself. Clustered on:

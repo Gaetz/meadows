@@ -187,10 +187,19 @@ void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
           // snapshot); depth-tested against the opaque pass, and written so
           // fog-of-depth effects later stay consistent. Two-sided: the
           // shader renders a distinct underside when seen from below.
+          // Toward-camera bias (positive under reversed-Z + Greater):
+          // where the sheet lies centimetres over the ground (shallow
+          // shelves, flooded meadow dips) the two planes can sit inside
+          // the depth-quantization noise and the surface flickered pixel
+          // by pixel — contour-line moiré fringes. The bias rides the
+          // depth format's local precision, so it stays microscopic
+          // everywhere reversed-Z keeps precision healthy.
           .depth = { .testEnable = true,
                      .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
-          .cull = rhi::CullMode::None });
+                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
+          .cull = rhi::CullMode::None,
+          .depthBias = 4.0f,
+          .depthBiasSlope = 2.5f });
     shaderGeneration = shaders.generation(kWaterShader);
 }
 

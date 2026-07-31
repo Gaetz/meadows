@@ -688,7 +688,7 @@ void WorldRenderer::buildSkinnedPipeline(rhi::Device& device) {
                               offsetof(render::SkinnedVertex, weights) } } } },
           .depth = { .testEnable = true,
                      .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
+                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
           .cull = rhi::CullMode::Back }) };
     skinnedShaderGeneration = shaders->generation("skinned");
 }
@@ -729,7 +729,7 @@ void WorldRenderer::drawWaterVolumes(
               .blend = rhi::BlendMode::Alpha,
               .depth = { .testEnable = true,
                          .writeEnable = false,
-                         .compare = rhi::CompareFunc::Less },
+                         .compare = rhi::CompareFunc::Greater }, // reversed-Z
               .cull = rhi::CullMode::None }) };
         waterVolumeShaderGeneration = shaders->generation("watervolume");
     }
@@ -925,7 +925,7 @@ void WorldRenderer::buildMeshPipeline(rhi::Device& device) {
           .vertexBuffers = { render::meshVertexLayout() },
           .depth = { .testEnable = true,
                      .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
+                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
           .cull = rhi::CullMode::Back }) };
     meshShaderGeneration = shaders->generation("mesh");
 }
@@ -1300,7 +1300,6 @@ void WorldRenderer::render(engine::FrameContext& frame,
                             static_cast<f32>(mistStepsUi),
                             mistDetailDropoutUi, mistSunBoostUi },
         .mistLightInfo = mistLightUi,
-        .mistPuffInfo = { mistPuffinessUi, 0.0f, 0.0f, 0.0f },
         .cloudVolInfo = { skyCloudsUi && noiseVolume.ready() ? 1.0f : 0.0f,
                           skyCloudShapeUi.x, skyCloudShapeUi.y,
                           skyCloudShapeUi.z },
@@ -1309,6 +1308,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                skyCloudPowderUi, skyCloudPuffinessUi },
         .cloudVolRimInfo = { skyCloudRimGainUi, skyCloudRimLobeUi,
                              skyCloudBaseDarkUi, 0.0f },
+        .mistPuffInfo = { mistPuffinessUi, 0.0f, 0.0f, 0.0f },
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;
@@ -1661,9 +1661,14 @@ void WorldRenderer::render(engine::FrameContext& frame,
         frame.device.updateBuffer(reflectionUbo, &reflectionUniforms,
                                   sizeof(reflectionUniforms), 0);
 
-        frame.cmd.beginRenderPass({ .framebuffer = reflectionFb,
-                                    .loadOp = rhi::LoadOp::DontCare,
-                                    .depthLoadOp = rhi::LoadOp::Clear });
+        // The mirror's depth is pure scaffolding for this pass's own depth
+        // test — nothing ever samples it, so it never leaves the tile.
+        frame.cmd.beginRenderPass(
+            { .framebuffer = reflectionFb,
+              .loadOp = rhi::LoadOp::DontCare,
+              .depthLoadOp = rhi::LoadOp::Clear,
+              .clearDepth = 0.0f, // reversed-Z far
+              .depthStoreOp = rhi::StoreOp::DontCare });
         frame.cmd.setFrontFace(rhi::FrontFace::Clockwise);
         if (sky.cloudMapBindGroup().id != 0) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
@@ -1690,15 +1695,10 @@ void WorldRenderer::render(engine::FrameContext& frame,
         frame.cmd.endRenderPass();
     }
 
-    // The Hi-Z verdict pickup, probed on its own — a sync readback here
-    // can stall behind mainPass. With the fence gate it
-    // costs ~0 and keeps LAST frame's verdict while the GPU is behind
-    // (`gpuOccluded` persists; collectResults replaces it only when a
-    // fresh verdict is actually ready).
-    if (cfg.occlusion) {
-        core::FrameProbe::Scope probe { *view.probe, "hiz" };
-        gpuOcclusion.collectResults(frame.device, gpuOccluded);
-    }
+    // (The Hi-Z verdict readback is gone — docs/RENDERING.md §6.0 I6:
+    // the cull's verdict lives in the indirect commands and never
+    // crosses the CPU. The legacy draw path keeps the CPU horizon
+    // occlusion only.)
 
     // Exterior: the sky covers every background pixel — no color clear.
     // Interior: clear to a near-black room tone instead.
@@ -1711,7 +1711,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
               .loadOp =
                   view.interiorMode ? rhi::LoadOp::Clear : rhi::LoadOp::DontCare,
               .clearColor = { 0.015f, 0.014f, 0.013f, 1.0f },
-              .depthLoadOp = rhi::LoadOp::Clear });
+              .depthLoadOp = rhi::LoadOp::Clear,
+              .clearDepth = 0.0f }); // reversed-Z far
         if (sky.cloudMapBindGroup().id != 0) {
             frame.cmd.setBindGroup(3, sky.cloudMapBindGroup());
         }
@@ -1725,15 +1726,13 @@ void WorldRenderer::render(engine::FrameContext& frame,
             // The merged GI cascade 0 for gi.glsl (unit 11).
             frame.cmd.setBindGroup(6, radianceCascades.applyGroup());
         }
-        // Occlusion applies to the main view only: both sets were built for
+        // Occlusion applies to the main view only: the set is built for
         // the real camera, not the mirrored one (the grass ring is too
-        // close to ever be ridge-occluded — frustum only). CPU ∪ GPU Hi-Z.
+        // close to ever be ridge-occluded — frustum only). CPU horizon
+        // only — the GPU verdict drives the indirect commands directly.
         combinedOccluded.clear();
         if (occlusionUi && occlusion.occludedSet()) {
             combinedOccluded = *occlusion.occludedSet();
-        }
-        if (gpuOcclusionUi) {
-            combinedOccluded.insert(gpuOccluded.begin(), gpuOccluded.end());
         }
         const std::unordered_set<u64>* occludedSet =
             combinedOccluded.empty() ? nullptr : &combinedOccluded;
@@ -1754,22 +1753,48 @@ void WorldRenderer::render(engine::FrameContext& frame,
                 farTerrain.draw(frame.cmd, frameBindGroup,
                                 sky.cloudMapBindGroup());
             }
+            // GPU-driven path (docs/RENDERING.md §6.0): consume the
+            // indirect commands the cull dispatch wrote LAST frame — the
+            // verdict never crossed the CPU. Falls back to the per-chunk
+            // loops whenever the commands aren't fresh (interiors, first
+            // frames, toggle off, candidate overflow).
+            const bool indirectDraw =
+                gpuIndirectUi && gpuOcclusionUi &&
+                frame.device.caps().multiDrawIndirect &&
+                occlusionCommandsFresh && gpuOcclusion.commandsValid();
             if (cfg.terrain) {
                 render::GpuProbe::Scope sub { subProbe, subDevice,
                                               "mainTerrain" };
-                terrain.draw(frame.cmd, frameBindGroup,
-                             shadows.receiverBindGroup(), &viewFrustum,
-                             occludedSet);
+                if (indirectDraw) {
+                    terrain.drawIndirect(frame.cmd, frameBindGroup,
+                                         shadows.receiverBindGroup(),
+                                         gpuOcclusion.commandBuffer(),
+                                         gpuOcclusion.groupFirst().data(),
+                                         gpuOcclusion.groupCount().data());
+                } else {
+                    terrain.draw(frame.cmd, frameBindGroup,
+                                 shadows.receiverBindGroup(), &viewFrustum,
+                                 occludedSet);
+                }
             }
             if (cfg.vegetation) {
                 render::GpuProbe::Scope sub { subProbe, subDevice,
                                               "mainVeg" };
-                vegetation.draw(frame.cmd, frameBindGroup,
-                                shadows.receiverBindGroup(),
-                                render::VegetationSystem::kVariantCount,
-                                camera.position,
-                                /*forceLowDetail=*/false, &viewFrustum,
-                                occludedSet);
+                if (indirectDraw && !vegetation.showcaseActive()) {
+                    vegetation.drawIndirect(
+                        frame.cmd, frameBindGroup,
+                        shadows.receiverBindGroup(),
+                        gpuOcclusion.commandBuffer(),
+                        gpuOcclusion.groupFirst().data(),
+                        gpuOcclusion.groupCount().data());
+                } else {
+                    vegetation.draw(frame.cmd, frameBindGroup,
+                                    shadows.receiverBindGroup(),
+                                    render::VegetationSystem::kVariantCount,
+                                    camera.position,
+                                    /*forceLowDetail=*/false, &viewFrustum,
+                                    occludedSet);
+                }
             }
             if (cfg.grass) {
                 render::GpuProbe::Scope sub { subProbe, subDevice,
@@ -1801,7 +1826,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
                       .blend = rhi::BlendMode::Alpha,
                       .depth = { .testEnable = true,
                                  .writeEnable = false,
-                                 .compare = rhi::CompareFunc::Less },
+                                 .compare = rhi::CompareFunc::Greater }, // reversed-Z
                       .cull = rhi::CullMode::None }) };
                 rainShaderGeneration = shaders->generation("rain");
             }
@@ -1826,7 +1851,9 @@ void WorldRenderer::render(engine::FrameContext& frame,
         frame.cmd.copyTexture(offscreenDepth, sceneDepthCopy);
 
         // GPU Hi-Z occlusion: pyramid from this frame's depth
-        // snapshot + cull dispatch; the verdict is read back NEXT frame.
+        // snapshot + cull dispatch; the verdict is read back NEXT frame
+        // (CPU path) or consumed as indirect commands (GPU-driven path).
+        occlusionCommandsFresh = false;
         if (cfg.occlusion && !view.interiorMode &&
             frame.device.caps().computeShaders) {
             gpuOcclusion.resize(frame.device, frame.width, frame.height);
@@ -1835,13 +1862,23 @@ void WorldRenderer::render(engine::FrameContext& frame,
             occlusionCandidates.reserve(occlusionAabbs.size());
             for (const auto& aabb : occlusionAabbs) {
                 occlusionCandidates.push_back(
-                    { aabb.key, aabb.lo,
+                    { aabb.lo,
                       { aabb.hi.x,
                         aabb.hi.y + render::ChunkOcclusion::kPropHeadroom,
-                        aabb.hi.z } });
+                        aabb.hi.z },
+                      aabb.group, aabb.indexCount, aabb.vertexOffset });
             }
-            gpuOcclusion.run(frame.cmd, frame.device, sceneDepthCopy,
-                             viewProj, occlusionCandidates);
+            // Vegetation entries (groups 4+): one per chunk×variant, with
+            // the level picked now and consumed next frame (I5). Their
+            // bigger padded AABBs only ever ADD readback-verdict keys the
+            // terrain entries already imply.
+            if (cfg.vegetation) {
+                vegetation.collectDrawCandidates(occlusionCandidates,
+                                                 camera.position);
+            }
+            occlusionCommandsFresh =
+                gpuOcclusion.run(frame.cmd, frame.device, sceneDepthCopy,
+                                 viewProj, occlusionCandidates);
         }
 
         if (cfg.water && !view.interiorMode &&

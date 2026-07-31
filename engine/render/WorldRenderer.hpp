@@ -213,12 +213,16 @@ private:
     bool occlusionUi { true }; // height-horizon occlusion culling (A/B)
     render::GpuOcclusion gpuOcclusion;
     bool gpuOcclusionUi { true }; // Hi-Z compute culling (A/B)
-    std::unordered_set<u64> gpuOccluded;      // latest CONSUMED GPU verdict
-                                              // (persists while the readback fence
-                                              // is pending — no stall)
-    std::unordered_set<u64> combinedOccluded; // CPU horizon ∪ GPU Hi-Z
+    // GPU-driven terrain path (docs/RENDERING.md §6.0): the cull's
+    // commands drive drawIndexedIndirect — no CPU verdict on this path.
+    bool gpuIndirectUi { true };
+    std::unordered_set<u64> combinedOccluded; // CPU horizon (legacy path)
     vector<render::TerrainSystem::ChunkAabb> occlusionAabbs;
     vector<render::GpuOcclusion::Candidate> occlusionCandidates;
+    // Set by the cull's run() each frame, consumed by the NEXT frame's
+    // main pass: the indirect commands are at most one frame stale
+    // (returning from an interior invalidates them).
+    bool occlusionCommandsFresh { false };
     render::ShadowMapper shadows;
     // CSM round-robin (docs/RENDERING.md): cascade 0 renders every frame, the
     // far cascades alternate. A SKIPPED cascade keeps its previous

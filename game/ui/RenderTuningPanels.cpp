@@ -243,9 +243,10 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
     ImGui::Text("Resident: %u | drawn: %u | pending: %u | uploads: %u",
                 r.terrain.residentCount(), r.terrain.drawnLastFrame(),
                 r.terrain.pendingCount(), r.terrain.uploadsLastFrame());
-    ImGui::Text("Prop chunks drawn: %u | occluded CPU: %u | GPU: %u",
-                r.vegetation.drawnLastFrame(), r.occlusion.occludedCount(),
-                r.gpuOcclusion.lastOccludedCount());
+    // (The GPU Hi-Z verdict never crosses the CPU anymore — its culling
+    // shows up in `drawn` when the indirect path is on.)
+    ImGui::Text("Prop chunks drawn: %u | occluded CPU: %u",
+                r.vegetation.drawnLastFrame(), r.occlusion.occludedCount());
     ImGui::Text("Grass blades: %u | props: %u", r.grass.instanceTotal(),
                 r.vegetation.propTotal());
     if (ImGui::CollapsingHeader("Terrain",
@@ -295,6 +296,8 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
         ImGui::Checkbox("Occlusion culling (A/B)", &r.occlusionUi);
         ImGui::SameLine();
         ImGui::Checkbox("GPU Hi-Z", &r.gpuOcclusionUi);
+        ImGui::SameLine();
+        ImGui::Checkbox("Indirect draw", &r.gpuIndirectUi);
         ImGui::Checkbox("Wireframe (LOD debug)", &r.wireframeUi);
     }
 }

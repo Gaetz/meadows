@@ -196,13 +196,13 @@ void SkySystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
         device.destroyPipeline(pipeline);
     }
     // Fullscreen triangle from gl_VertexID: no vertex buffers at all. Depth
-    // LessEqual against the far-plane clear (1.0), no write: sky pixels are
-    // exactly those the opaque pass left untouched.
+    // GreaterEqual against the reversed far-plane clear (0.0), no write:
+    // sky pixels are exactly those the opaque pass left untouched.
     pipeline = device.createPipeline(
         { .shader = shaders.get(kSkyShader),
           .depth = { .testEnable = true,
                      .writeEnable = false,
-                     .compare = rhi::CompareFunc::LessEqual } });
+                     .compare = rhi::CompareFunc::GreaterEqual } });
     shaderGeneration = shaders.generation(kSkyShader);
 }
 

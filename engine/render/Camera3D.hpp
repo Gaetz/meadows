@@ -34,7 +34,13 @@ struct Camera3D {
     }
 
     Mat4 proj(f32 aspect) const {
-        return glm::perspective(fovY, aspect, nearPlane, farPlane);
+        // REVERSED-Z (docs/RENDERING.md §6.0a): swapping near/far in the
+        // 0..1-clip perspective maps near→1, far→0 — float density near
+        // zero then gives the FAR field the precision, uniform to the
+        // horizon (non-reversed lost ~d²·1.2e-6 m and needed per-case
+        // workarounds). Camera path only; shadow/light projections stay
+        // non-reversed (ortho depth is linear).
+        return glm::perspective(fovY, aspect, farPlane, nearPlane);
     }
 
     Mat4 viewProj(f32 aspect) const { return proj(aspect) * view(); }

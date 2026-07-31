@@ -18,6 +18,7 @@
                        // cloudShadowFactor (the baked 512² map)
 #include "volumetric_media.glsl"
 #include "temporal_resolve.glsl"
+#include "view_util.glsl"
 
 layout(binding = 0) uniform sampler2D uSceneDepth;
 layout(binding = 9) uniform sampler3D uNoiseVolume;
@@ -43,12 +44,6 @@ const float kBillowHalfWave = 100.0;
 const float kFloretHalfWave = 27.0;
 const int kStepsMax = 40;
 const int kLightSteps = 3;
-
-vec3 worldFromDepth(vec2 uv, float depth) {
-    vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    vec4 world = uInvViewProj * ndc;
-    return world.xyz / world.w;
-}
 
 // Local extinction. `cover` = the shared 2D coverage field at p.xz;
 // `thick` = the frame's effective slab thickness (coverage-scaled);
@@ -133,7 +128,10 @@ void main() {
     // SKY pixels: the depth reconstruction lands on the far plane, which
     // sits closer than the slanted slab entry — without this, clouds
     // exist only overhead (t0 small) and vanish toward the horizon.
-    if (depthS >= 0.9999) {
+    // Reversed-Z: sky is EXACTLY the far clear (0.0) — a symmetric
+    // epsilon is a trap, the reversed hyperbola puts kilometre-distant
+    // TERRAIN under 1e-4 and the clouds marched over the far hills.
+    if (depthS < 1e-8) {
         rayLen = 1.0e8;
     }
 
@@ -161,20 +159,12 @@ void main() {
     float span = min(min(t1, rayLen) - t0, 15000.0);
     bool marchSlab = rayLen >= t0 && span > 0.0;
 
-    // Golden-ratio-rolled IGN (the mist pattern) for the temporal EMA.
-    float jitter = fract(52.9829189 * fract(0.06711056 * gl_FragCoord.x +
-                                            0.00583715 * gl_FragCoord.y) +
-                         uTemporalInfo.y * 0.61803398875);
+    float jitter = ignJitterRolled(gl_FragCoord.xy, uTemporalInfo.y);
 
     float mu = dot(dir, uSunDirection.xyz);
     float sunUp = max(uSunDirection.y, 0.25);
     float transmit = 1.0;
     vec3 inscatter = vec3(0.0);
-
-    // (A far "sky fog tail" march lived here 2026-07-30 and was REMOVED:
-    // after its containments it only lit the air BETWEEN the clouds —
-    // negative visual value. The ground-to-cloud ray curtains are the
-    // froxels' job; beyond their reach the horizon belongs to applyFog.)
 
     // Step count targets a fixed ~40 m segment (bounded, so tall storm
     // slabs keep resolving their 200 m billows instead of jittering
