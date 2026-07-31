@@ -64,7 +64,7 @@ void FarTerrain::refreshPipeline(rhi::Device& device,
           .vertexBuffers = { meshVertexLayout() },
           .depth = { .testEnable = true,
                      .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
+                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
           .cull = rhi::CullMode::Back }) };
     // Impostor quads: corners from the vertex index, one instance
     // stream (the vegetation Instance layout) — no cull, a cylindrical
@@ -83,7 +83,7 @@ void FarTerrain::refreshPipeline(rhi::Device& device,
                           .offset = offsetof(TreeInstance, params) } } } },
           .depth = { .testEnable = true,
                      .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
+                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
           .cull = rhi::CullMode::None }) };
     shaderGeneration = shaders.generation(kFarTerrainShader) +
                        shaders.generation(kFarTreeShader);
@@ -142,16 +142,45 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
         baked.seed = params.seed;
         baked.seaLevel = params.seaLevel;
         baked.gen = gen;
-        // Heights first: the grid's own differences give the smoothed
-        // far-scale normals (the 0.5 m central difference of the near
-        // terrain is noise at 62 m cells).
+        // Heights on a HALF-CELL grid: the vertex takes the MIN over its
+        // quad support so the 62 m linear interpolation can never rise
+        // above the fine terrain (a fixed sink cannot — on a slope the
+        // interpolation overshoot exceeds any constant, and the forest
+        // canopy raise ate most of it: the poke-through triangles). The
+        // vertex ALSO remembers what it gave up (true-height delta +
+        // canopy raise) in uv.x; the shader restores it beyond the
+        // streaming ring, where the far mesh is the only geometry and
+        // the crests must keep their true silhouettes.
+        constexpr u32 kHalfN = kGridN * 2 + 1;
+        vector<f32> halfHeights(static_cast<size_t>(kHalfN) * kHalfN);
+        for (u32 row = 0; row < kHalfN; ++row) {
+            for (u32 col = 0; col < kHalfN; ++col) {
+                halfHeights[static_cast<size_t>(row) * kHalfN + col] =
+                    terrain::height(
+                        params,
+                        originX + static_cast<f32>(col) * cell * 0.5f,
+                        originZ + static_cast<f32>(row) * cell * 0.5f);
+            }
+        }
+        const auto halfAt = [&](i32 row, i32 col) {
+            row = glm::clamp(row, 0, static_cast<i32>(kHalfN) - 1);
+            col = glm::clamp(col, 0, static_cast<i32>(kHalfN) - 1);
+            return halfHeights[static_cast<size_t>(row) * kHalfN + col];
+        };
+        const auto minAt = [&](i32 row, i32 col) {
+            f32 h = 1e9f;
+            for (i32 dr = -2; dr <= 2; ++dr) {
+                for (i32 dc = -2; dc <= 2; ++dc) {
+                    h = glm::min(h, halfAt(row * 2 + dr, col * 2 + dc));
+                }
+            }
+            return h;
+        };
         vector<f32> heights(static_cast<size_t>(kVertsN) * kVertsN);
         for (u32 row = 0; row < kVertsN; ++row) {
             for (u32 col = 0; col < kVertsN; ++col) {
                 heights[static_cast<size_t>(row) * kVertsN + col] =
-                    terrain::height(params,
-                                    originX + static_cast<f32>(col) * cell,
-                                    originZ + static_cast<f32>(row) * cell);
+                    minAt(static_cast<i32>(row), static_cast<i32>(col));
             }
         }
         const auto heightAt = [&](i32 row, i32 col) {
@@ -165,6 +194,8 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 const f32 x = originX + static_cast<f32>(col) * cell;
                 const f32 z = originZ + static_cast<f32>(row) * cell;
                 const f32 h = heightAt(row, col);
+                const f32 trueH = halfAt(static_cast<i32>(row) * 2,
+                                         static_cast<i32>(col) * 2);
                 const Vec3 n = glm::normalize(Vec3 {
                     heightAt(row, col - 1) - heightAt(row, col + 1),
                     2.0f * cell,
@@ -174,20 +205,21 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 // trees grow, continuing them past the vegetation ring.
                 f32 forest = forestMask(params.seed, x, z);
                 const f32 slope = 1.0f - n.y;
-                if (h < params.seaLevel + 3.0f || h > 138.0f ||
+                if (trueH < params.seaLevel + 3.0f || trueH > 138.0f ||
                     slope > 0.22f) {
                     forest = 0.0f;
                 }
-                Vec3 color = terrainColor(h, n, params.seaLevel);
+                Vec3 color = terrainColor(trueH, n, params.seaLevel);
                 color = glm::mix(color, kForestTint, forest * 0.85f);
                 // Canopy mass = ~60% of the measured tree height (the
-                // impostor crowns emerge above it).
+                // impostor crowns emerge above it) — applied by the
+                // shader beyond the ring, with the true-height delta.
                 baked.vertices[static_cast<size_t>(row) * kVertsN + col] =
-                    MeshVertex { { x,
-                                   h + forest * (trees.height * 0.6f),
-                                   z },
+                    MeshVertex { { x, h, z },
                                  n,
-                                 { 0.0f, 0.0f },
+                                 { (trueH - h) +
+                                       forest * (trees.height * 0.6f),
+                                   0.0f },
                                  color };
             }
         }
