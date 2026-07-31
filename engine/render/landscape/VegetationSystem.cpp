@@ -187,10 +187,57 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
     return buckets;
 }
 
+u32 VegetationSystem::InstancePool::alloc(u32 size) {
+    for (size_t i = 0; i < freeBlocks.size(); ++i) {
+        if (freeBlocks[i].size < size) {
+            continue; // first fit
+        }
+        const u32 offset = freeBlocks[i].offset;
+        if (freeBlocks[i].size == size) {
+            freeBlocks.erase(freeBlocks.begin() +
+                             static_cast<std::ptrdiff_t>(i));
+        } else {
+            freeBlocks[i].offset += size;
+            freeBlocks[i].size -= size;
+        }
+        return offset;
+    }
+    return kNoOffset;
+}
+
+void VegetationSystem::InstancePool::tick() {
+    for (const Block& cooled : cooling[1]) {
+        // Sorted insert + coalesce with both neighbors.
+        auto it = std::lower_bound(
+            freeBlocks.begin(), freeBlocks.end(), cooled,
+            [](const Block& a, const Block& b) {
+                return a.offset < b.offset;
+            });
+        it = freeBlocks.insert(it, cooled);
+        if (it + 1 != freeBlocks.end() &&
+            it->offset + it->size == (it + 1)->offset) {
+            it->size += (it + 1)->size;
+            it = freeBlocks.erase(it + 1) - 1;
+        }
+        if (it != freeBlocks.begin() &&
+            (it - 1)->offset + (it - 1)->size == it->offset) {
+            (it - 1)->size += it->size;
+            freeBlocks.erase(it);
+        }
+    }
+    cooling[1] = std::move(cooling[0]);
+    cooling[0].clear();
+}
+
 void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                               core::JobSystem& jobSystem, u32 terrainSeed) {
     streamer.create(jobSystem);
     meshSeed = terrainSeed;
+    instancePool.buffer = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Vertex,
+          .size = u64(InstancePool::kCapacity) * sizeof(Instance) },
+        nullptr) };
+    instancePool.freeBlocks = { { 0, InstancePool::kCapacity } };
     createVariantMeshes(device, terrainSeed);
     rebuildLeafMask(device);
     shaders.load(kTreeShader, { { "FrameUbo", 0 } },
@@ -497,7 +544,8 @@ void VegetationSystem::setShowcase(rhi::Device& device,
 }
 
 void VegetationSystem::destroy(rhi::Device& device) {
-    streamer.invalidateAll([](Chunk&) {}); // erases free the buffers
+    streamer.invalidateAll([](Chunk&) {});
+    instancePool = {};
     instances = 0;
     showcaseInstances.reset();
     showcaseCount = 0;
@@ -512,7 +560,12 @@ void VegetationSystem::destroy(rhi::Device& device) {
 }
 
 void VegetationSystem::regenerate(rhi::Device& device, u32 terrainSeed) {
-    streamer.invalidateAll([](Chunk&) {});
+    streamer.invalidateAll([&](Chunk& chunk) {
+        if (chunk.resident && chunk.total > 0 &&
+            chunk.poolOffset != kNoOffset) {
+            instancePool.free(chunk.poolOffset, chunk.total);
+        }
+    });
     instances = 0;
     meshSeed = terrainSeed;
     destroyVariantMeshes(device);
@@ -529,9 +582,11 @@ void VegetationSystem::invalidateChunks(rhi::Device& device,
         if (it == streamer.chunks.end() || !it->second.resident) {
             continue; // missing, or still streaming in (no stale swap)
         }
+        if (it->second.total > 0 && it->second.poolOffset != kNoOffset) {
+            instancePool.free(it->second.poolOffset, it->second.total);
+        }
         instances -= it->second.total;
-        // update() re-requests + re-scatters with new heights (the erase
-        // frees the instance buffer, U3-7).
+        // update() re-requests + re-scatters with new heights.
         streamer.chunks.erase(it);
     }
 }
@@ -546,8 +601,10 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     if (showcaseCount != 0) {
         return; // showcase replaces the streamed scatter entirely
     }
+    instancePool.tick(); // two-frame-cooled blocks become reusable
     // Budgeted uploads (U3-1: ring mechanics in ChunkStreamer; this lambda
-    // is the vegetation-specific accept — variant packing + GPU upload).
+    // is the vegetation-specific accept — variant packing + GPU upload
+    // into the pooled instance buffer).
     streamer.pump(kMaxUploadsPerFrame, 0.0, [&](u64 key, auto& built) {
         const auto it = streamer.chunks.find(key);
         if (it == streamer.chunks.end() || it->second.resident) {
@@ -571,10 +628,17 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
         }
         chunk.total = static_cast<u32>(packed.size());
         if (chunk.total > 0) {
-            chunk.instanceBuffer = { device, device.createBuffer(
-                { .usage = rhi::BufferUsage::Vertex,
-                  .size = packed.size() * sizeof(Instance) },
-                packed.data()) };
+            const u32 offset = instancePool.alloc(chunk.total);
+            if (offset == kNoOffset) {
+                LOG_WARN("VegetationSystem: instance pool full — chunk "
+                         "scatter dropped");
+                streamer.chunks.erase(it); // re-detected and re-requested
+                return false;
+            }
+            device.updateBuffer(instancePool.buffer.get(), packed.data(),
+                                packed.size() * sizeof(Instance),
+                                u64(offset) * sizeof(Instance));
+            chunk.poolOffset = offset;
             chunk.minY = packed[0].positionScale.y;
             chunk.maxY = chunk.minY;
             for (const Instance& instance : packed) {
@@ -608,8 +672,10 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
 
     // Evict beyond hysteresis.
     streamer.evictFar(camCx, camCz, viewRadius + 1, [&](Chunk& chunk) {
-        // U3-7: the erase frees the instance buffer.
         if (chunk.resident) {
+            if (chunk.total > 0 && chunk.poolOffset != kNoOffset) {
+                instancePool.free(chunk.poolOffset, chunk.total);
+            }
             instances -= chunk.total;
         }
     });
@@ -633,7 +699,7 @@ void VegetationSystem::buildPipeline(rhi::Device& device,
                                     .offset = offsetof(Instance, params) } } } },
           .depth = { .testEnable = true,
                      .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
+                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
           .cull = rhi::CullMode::Back }) };
     shaderGeneration = shaders.generation(kTreeShader);
 }
@@ -800,7 +866,9 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                     cmd.setIndexBuffer(ib, rhi::IndexFormat::U32);
                     meshBound = true;
                 }
-                cmd.setVertexBuffer(1, chunk.instanceBuffer);
+                cmd.setVertexBuffer(1, instancePool.buffer.get(),
+                                    u64(chunk.poolOffset) *
+                                        sizeof(Instance));
                 cmd.drawIndexed(indexCount, chunk.counts[v], 0,
                                 chunk.firstInstance[v]);
                 frameIndices += indexCount * chunk.counts[v];
@@ -810,6 +878,95 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
             }
         }
     }
+}
+
+void VegetationSystem::collectDrawCandidates(
+    vector<GpuOcclusion::Candidate>& out, const Vec3& cameraPos) const {
+    if (showcaseCount != 0) {
+        return; // showcase renders through the legacy path only
+    }
+    const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
+    const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
+    for (const auto& [key, chunk] : streamer.chunks) {
+        if (!chunk.resident || chunk.total == 0 ||
+            chunk.poolOffset == kNoOffset) {
+            continue;
+        }
+        const i32 cx = chunkKeyCx(key);
+        const i32 cz = chunkKeyCz(key);
+        const i32 cheb =
+            std::max(std::abs(cx - camCx), std::abs(cz - camCz));
+        // Same padded AABB as draw()'s chunkVisible.
+        const f32 x0 = static_cast<f32>(cx) * TerrainSystem::kChunkSize;
+        const f32 z0 = static_cast<f32>(cz) * TerrainSystem::kChunkSize;
+        const Vec3 lo { x0 - kPropPadXz, chunk.minY - 1.0f,
+                        z0 - kPropPadXz };
+        const Vec3 hi { x0 + TerrainSystem::kChunkSize + kPropPadXz,
+                        chunk.maxY + kPropPadY,
+                        z0 + TerrainSystem::kChunkSize + kPropPadXz };
+        for (u32 v = 0; v < kVariantCount; ++v) {
+            if (chunk.counts[v] == 0) {
+                continue;
+            }
+            // Same level pick as draw()'s detailLevel lambda.
+            const VariantMesh& mesh = variantMeshes[v];
+            u32 level = 0;
+            if (mesh.lowIndexCount != 0 && cheb > highDetailRadius) {
+                level = mesh.ultraIndexCount == 0 || cheb <= lowDetailRadius
+                            ? 1u
+                            : 2u;
+            }
+            const u32 indexCount = level == 0   ? mesh.indexCount
+                                   : level == 1 ? mesh.lowIndexCount
+                                                : mesh.ultraIndexCount;
+            out.push_back({ lo, hi, kGroupBase + v * 3 + level, indexCount,
+                            0, chunk.counts[v],
+                            chunk.poolOffset + chunk.firstInstance[v] });
+        }
+    }
+}
+
+void VegetationSystem::drawIndirect(rhi::CommandBuffer& cmd,
+                                    rhi::BindGroupHandle frameBindGroup,
+                                    rhi::BindGroupHandle shadowBindGroup,
+                                    rhi::BufferHandle commands,
+                                    const u32* groupFirst,
+                                    const u32* groupCount) {
+    cmd.setPipeline(pipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    cmd.setBindGroup(1, leafMaskGroup);
+    if (shadowBindGroup.id != 0) {
+        cmd.setBindGroup(2, shadowBindGroup);
+    }
+    // One pooled instance buffer for every batch; each command's
+    // firstInstance addresses its chunk slice.
+    cmd.setVertexBuffer(1, instancePool.buffer.get());
+    constexpr u32 kStride = sizeof(rhi::DrawIndexedIndirectCommand);
+    for (u32 v = 0; v < kVariantCount; ++v) {
+        const VariantMesh& mesh = variantMeshes[v];
+        const u32 levels = mesh.lowIndexCount == 0
+                               ? 1u
+                               : (mesh.ultraIndexCount == 0 ? 2u : 3u);
+        for (u32 level = 0; level < levels; ++level) {
+            const u32 group = kGroupBase + v * 3 + level;
+            if (groupCount[group] == 0) {
+                continue;
+            }
+            cmd.setVertexBuffer(0, level == 0 ? mesh.vertexBuffer.get()
+                                   : level == 1
+                                       ? mesh.lowVertexBuffer.get()
+                                       : mesh.ultraVertexBuffer.get());
+            cmd.setIndexBuffer(level == 0   ? mesh.indexBuffer.get()
+                               : level == 1 ? mesh.lowIndexBuffer.get()
+                                            : mesh.ultraIndexBuffer.get(),
+                               rhi::IndexFormat::U32);
+            cmd.drawIndexedIndirect(commands,
+                                    u64(groupFirst[group]) * kStride,
+                                    groupCount[group], kStride);
+        }
+    }
+    // (The per-level instance counters can't be known CPU-side on this
+    // path — the panel's dissection belongs to the legacy A/B.)
 }
 
 void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
@@ -890,7 +1047,8 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
                                    : ultra ? mesh.ultraIndexCount
                                    : low   ? mesh.lowIndexCount
                                            : mesh.indexCount;
-            cmd.setVertexBuffer(1, chunk.instanceBuffer);
+            cmd.setVertexBuffer(1, instancePool.buffer.get(),
+                                u64(chunk.poolOffset) * sizeof(Instance));
             cmd.drawIndexed(indexCount, chunk.counts[v], 0,
                             chunk.firstInstance[v]);
             frameIndices += indexCount * chunk.counts[v];

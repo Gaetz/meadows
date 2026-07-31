@@ -147,6 +147,38 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                                 indices.data()) };
     }
 
+    // Vertex pools. Slot size = the LOD's deterministic vertex count
+    // (grid + skirt). Capacity: LOD 0-2 rings are view-radius-independent
+    // (lodForDistance bands), LOD3 fills the rest of the ring up to the
+    // tuning slider's max radius (30, +2 eviction hysteresis); ×1.5-ish
+    // headroom absorbs the LOD-swap transients (old slot lives until the
+    // new mesh lands).
+    constexpr u32 kMaxRadius = 32; // slider max 30 + eviction hysteresis
+    constexpr u32 kLod3Ring =
+        (2 * kMaxRadius + 1) * (2 * kMaxRadius + 1) - 13 * 13;
+    // LOD 0-2 hold several times their steady ring: fast flight leaves a
+    // trail of chunks awaiting their LOD swap, each holding its old
+    // slot. stealFurthestSlot() covers what the headroom cannot
+    // (teleports). ~46 MB total.
+    constexpr array<u32, kLodCount> kPoolCapacity { 64, 128, 384,
+                                                    kLod3Ring + 64 };
+    for (u32 lod = 0; lod < kLodCount; ++lod) {
+        const u32 side = lodQuads(lod) + 1;
+        VertexPool& pool = pools[lod];
+        pool.slotVerts = side * side + 4 * side;
+        pool.capacity = kPoolCapacity[lod];
+        pool.buffer = { device, device.createBuffer(
+            { .usage = rhi::BufferUsage::Vertex,
+              .size = u64(pool.capacity) * pool.slotVerts *
+                      sizeof(MeshVertex) },
+            nullptr) };
+        pool.freeSlots.clear();
+        pool.freeSlots.reserve(pool.capacity);
+        for (u32 s = pool.capacity; s > 0; --s) {
+            pool.freeSlots.push_back(s - 1); // LIFO: slot 0 first
+        }
+    }
+
     if (device.caps().textureArrays) {
         const vector<u8> splatPixels = buildSplatTilePixels();
         splatTexture = { device, device.createTexture(
@@ -195,6 +227,7 @@ void TerrainSystem::destroy(rhi::Device& device) {
     casterPipeline.reset();
     for (u32 lod = 0; lod < kLodCount; ++lod) {
         indexBuffers[lod].reset();
+        pools[lod] = {};
     }
     splatBindGroup.reset();
     splatSampler.reset();
@@ -202,8 +235,12 @@ void TerrainSystem::destroy(rhi::Device& device) {
 }
 
 void TerrainSystem::regenerate(rhi::Device& device) {
-    (void)device; // Unique buffers free through their device
-    streamer.invalidateAll([](Chunk&) {});
+    (void)device;
+    streamer.invalidateAll([&](Chunk& chunk) {
+        if (chunk.residentLod != kNoLod) {
+            freeSlot(chunk.residentLod, chunk.poolSlot);
+        }
+    });
     resident = 0;
     pending = 0;
     // update() re-requests the ring with the new params next frame.
@@ -229,12 +266,20 @@ void TerrainSystem::remeshChunks(const vector<u64>& keys) {
 
 void TerrainSystem::update(rhi::Device& device, const Vec3& cameraPos) {
     frameIndices = 0; // the frame's draw*() calls sum into it
-    pumpUploads(device);
+    for (VertexPool& pool : pools) {
+        // Slots freed two frames ago finished cooling (their referencing
+        // commands were consumed) — reusable from this frame on.
+        pool.freeSlots.insert(pool.freeSlots.end(), pool.cooling[1].begin(),
+                              pool.cooling[1].end());
+        pool.cooling[1] = std::move(pool.cooling[0]);
+        pool.cooling[0].clear();
+    }
+    pumpUploads(device, cameraPos);
     requestMissing(cameraPos);
     evictFar(device, cameraPos);
 }
 
-void TerrainSystem::pumpUploads(rhi::Device& device) {
+void TerrainSystem::pumpUploads(rhi::Device& device, const Vec3& cameraPos) {
     // Time-budgeted on top of the count cap: 8 LOD0 uploads cost far more
     // than 8 LOD3 ones (the frame probe showed the count cap alone
     // spiking past 30 ms in Debug). At least one upload always lands, so
@@ -249,17 +294,38 @@ void TerrainSystem::pumpUploads(rhi::Device& device) {
                 return false;
             }
             Chunk& chunk = it->second;
+            const u8 lod = built.payload.lod;
+            const u32 slot = allocSlot(lod);
+            if (slot == kNoSlot) {
+                // Pool full: fast flight outran the LOD-swap pipeline and
+                // stale far chunks hold the slots. Free the furthest
+                // one's (it re-streams later at its true LOD; the far
+                // mesh covers it) and drop THIS upload — its re-request
+                // succeeds once the stolen slot leaves cooling.
+                if (!stealFurthestSlot(lod, cameraPos)) {
+                    LOG_WARN("TerrainSystem: LOD {} vertex pool full — "
+                             "upload dropped",
+                             lod);
+                }
+                chunk.queuedLod = kNoLod;
+                --pending;
+                return false;
+            }
             if (chunk.residentLod == kNoLod) {
                 ++resident;
+            } else {
+                // LOD swap: the old mesh drew until this very frame — its
+                // slot frees only now, so there is no hole.
+                freeSlot(chunk.residentLod, chunk.poolSlot);
             }
-            // LOD swap: the old mesh drew until this very frame — no hole
-            // (the assignment frees it through the Unique wrapper).
-            chunk.vertexBuffer = { device, device.createBuffer(
-                { .usage = rhi::BufferUsage::Vertex,
-                  .size = built.payload.vertices.size() *
-                          sizeof(MeshVertex) },
-                built.payload.vertices.data()) };
-            chunk.residentLod = built.payload.lod;
+            device.updateBuffer(pools[lod].buffer,
+                                built.payload.vertices.data(),
+                                built.payload.vertices.size() *
+                                    sizeof(MeshVertex),
+                                u64(slot) * pools[lod].slotVerts *
+                                    sizeof(MeshVertex));
+            chunk.poolSlot = slot;
+            chunk.residentLod = lod;
             chunk.queuedLod = kNoLod;
             chunk.minY = built.payload.minY;
             chunk.maxY = built.payload.maxY;
@@ -325,8 +391,8 @@ void TerrainSystem::enqueueBuild(i32 cx, i32 cz, u8 lod) {
 void TerrainSystem::evictFar(rhi::Device& /*device*/, const Vec3& cameraPos) {
     streamer.evictFar(camChunk(cameraPos.x), camChunk(cameraPos.z),
                       viewRadius + 2, [&](Chunk& chunk) {
-                          // U3-7: the erase frees the vertex buffer.
                           if (chunk.residentLod != kNoLod) {
+                              freeSlot(chunk.residentLod, chunk.poolSlot);
                               --resident;
                           }
                           if (chunk.queuedLod != kNoLod) {
@@ -336,6 +402,49 @@ void TerrainSystem::evictFar(rhi::Device& /*device*/, const Vec3& cameraPos) {
                       });
 }
 
+bool TerrainSystem::stealFurthestSlot(u32 lod, const Vec3& cameraPos) {
+    const i32 camCx = camChunk(cameraPos.x);
+    const i32 camCz = camChunk(cameraPos.z);
+    Chunk* victim = nullptr;
+    i32 victimCheb = -1;
+    for (auto& [key, chunk] : streamer.chunks) {
+        if (chunk.residentLod != lod) {
+            continue;
+        }
+        const i32 cheb =
+            std::max(std::abs(chunkKeyCx(key) - camCx),
+                     std::abs(chunkKeyCz(key) - camCz));
+        if (cheb > victimCheb) {
+            victimCheb = cheb;
+            victim = &chunk;
+        }
+    }
+    if (victim == nullptr) {
+        return false;
+    }
+    freeSlot(lod, victim->poolSlot);
+    victim->poolSlot = kNoSlot;
+    victim->residentLod = kNoLod; // stops drawing; re-streams at true LOD
+    --resident;
+    return true;
+}
+
+u32 TerrainSystem::allocSlot(u32 lod) {
+    VertexPool& pool = pools[lod];
+    if (pool.freeSlots.empty()) {
+        return kNoSlot;
+    }
+    const u32 slot = pool.freeSlots.back();
+    pool.freeSlots.pop_back();
+    return slot;
+}
+
+void TerrainSystem::freeSlot(u32 lod, u32 slot) {
+    if (slot != kNoSlot && lod < kLodCount) {
+        pools[lod].cooling[0].push_back(slot);
+    }
+}
+
 void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
     // U3-7: the assignment frees the previous pipeline.
     pipeline = { device, device.createPipeline(
@@ -343,7 +452,7 @@ void TerrainSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
           .vertexBuffers = { meshVertexLayout() }, // U3-5
           .depth = { .testEnable = true,
                      .writeEnable = true,
-                     .compare = rhi::CompareFunc::Less },
+                     .compare = rhi::CompareFunc::Greater }, // reversed-Z
           .cull = rhi::CullMode::Back,
           .wireframe = wireframe }) };
     shaderGeneration = shaders.generation(kTerrainShader);
@@ -421,7 +530,9 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
                 cmd.setIndexBuffer(indexBuffers[lod], rhi::IndexFormat::U32);
                 indexBufferBound = true;
             }
-            cmd.setVertexBuffer(0, chunk.vertexBuffer);
+            cmd.setVertexBuffer(0, pools[lod].buffer,
+                                u64(chunk.poolSlot) * pools[lod].slotVerts *
+                                    sizeof(MeshVertex));
             cmd.drawIndexed(indexCounts[lod]);
             frameIndices += indexCounts[lod];
             ++drawn;
@@ -430,6 +541,35 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
     if (frustum) {
         lastDrawn = drawn;
     }
+}
+
+void TerrainSystem::drawIndirect(rhi::CommandBuffer& cmd,
+                                 rhi::BindGroupHandle frameBindGroup,
+                                 rhi::BindGroupHandle shadowBindGroup,
+                                 rhi::BufferHandle commands,
+                                 const u32* lodFirst, const u32* lodCount) {
+    cmd.setPipeline(pipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    if (splatBindGroup.id() != 0) {
+        cmd.setBindGroup(1, splatBindGroup);
+    }
+    if (shadowBindGroup.id != 0) {
+        cmd.setBindGroup(2, shadowBindGroup);
+    }
+    constexpr u32 kStride = sizeof(rhi::DrawIndexedIndirectCommand);
+    for (u32 lod = 0; lod < kLodCount; ++lod) {
+        if (lodCount[lod] == 0) {
+            continue;
+        }
+        cmd.setIndexBuffer(indexBuffers[lod], rhi::IndexFormat::U32);
+        cmd.setVertexBuffer(0, pools[lod].buffer);
+        cmd.drawIndexedIndirect(commands, u64(lodFirst[lod]) * kStride,
+                                lodCount[lod], kStride);
+        // Upper bound (culled commands cost nothing on the GPU but the
+        // counter cannot know) — the panel reads it as "candidates".
+        frameIndices += indexCounts[lod] * lodCount[lod];
+    }
+    lastDrawn = lodCount[0] + lodCount[1] + lodCount[2] + lodCount[3];
 }
 
 // Skirts are excluded here (gridIndexCounts): seen from the sun they are
@@ -467,7 +607,9 @@ void TerrainSystem::drawDepth(rhi::CommandBuffer& cmd,
                 cmd.setIndexBuffer(indexBuffers[lod], rhi::IndexFormat::U32);
                 indexBufferBound = true;
             }
-            cmd.setVertexBuffer(0, chunk.vertexBuffer);
+            cmd.setVertexBuffer(0, pools[lod].buffer,
+                                u64(chunk.poolSlot) * pools[lod].slotVerts *
+                                    sizeof(MeshVertex));
             cmd.drawIndexed(gridIndexCounts[lod]);
             frameIndices += gridIndexCounts[lod];
         }

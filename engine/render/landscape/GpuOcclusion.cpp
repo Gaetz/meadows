@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Log.hpp"
+#include "engine/render/Frustum.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
@@ -20,13 +21,22 @@ constexpr const char* kCullShader = "chunk_cull";
 // std140 mirror of chunk_cull.comp's CullUbo.
 struct CullUniforms {
     Mat4 viewProj {};
-    Vec4 info {}; // x = count, y = mips, zw = Hi-Z base size
+    Vec4 info {};  // x = count, y = mips, zw = Hi-Z base size
+    Vec4 info2 {}; // x = write commands, y = NDC guard-band scale,
+                   // z = plane margin (m) for near-straddling boxes
+    array<Vec4, 6> planes {}; // the frustum, for boxes the NDC test
+                              // cannot judge (near-plane straddlers)
 };
 
 // std430 mirror of the candidate SSBO entry.
 struct GpuAabb {
     Vec4 lo {};
     Vec4 hi {};
+    // x = indexCount, y = vertexOffset (i32 bit-cast), z = group,
+    // w = instanceCount when visible.
+    glm::uvec4 draw {};
+    // x = firstInstance.
+    glm::uvec4 draw2 {};
 };
 
 u32 mipCountFor(u32 width, u32 height) {
@@ -65,18 +75,16 @@ void GpuOcclusion::create(rhi::Device& device, ShaderLibrary& shaders) {
           .size = kMaxCandidates * sizeof(GpuAabb),
           .dynamic = true },
         nullptr);
-    visibilityBuffer = device.createBuffer(
-        { .usage = rhi::BufferUsage::Storage,
-          .size = kMaxCandidates * sizeof(u32) },
-        nullptr);
-    // Staging pattern: the SSBO stays device-local; a GPU-side copy lands
-    // in this host-visible buffer, which is what the CPU reads (no per-
-    // frame VRAM<->RAM migration of the working buffer).
-    stagingBuffer = device.createBuffer(
-        { .usage = rhi::BufferUsage::Storage,
-          .size = kMaxCandidates * sizeof(u32),
-          .readback = true },
-        nullptr);
+    // GPU-driven: the cull writes one indirect command per candidate.
+    // Ping-pong so the write never races the frame still consuming the
+    // other side (draws run before the dispatch each frame).
+    for (rhi::BufferHandle& buf : commandBufs) {
+        buf = device.createBuffer(
+            { .usage = rhi::BufferUsage::Indirect,
+              .size = kMaxCandidates *
+                      sizeof(rhi::DrawIndexedIndirectCommand) },
+            nullptr);
+    }
 }
 
 void GpuOcclusion::destroyPyramid(rhi::Device& device) {
@@ -86,19 +94,21 @@ void GpuOcclusion::destroyPyramid(rhi::Device& device) {
         device.destroyBindGroup(group);
     }
     downGroups.clear();
-    device.destroyBindGroup(cullGroup);
-    cullGroup = {};
+    for (rhi::BindGroupHandle& group : cullGroups) {
+        device.destroyBindGroup(group);
+        group = {};
+    }
     device.destroyTexture(hizTexture);
     hizTexture = {};
     boundDepth = {};
+    commandsReady = false; // stale binding layout
 }
 
 void GpuOcclusion::destroy(rhi::Device& device) {
-    device.destroyFence(fence); // abandon an in-flight verdict
-    fence = {};
     destroyPyramid(device);
-    device.destroyBuffer(stagingBuffer);
-    device.destroyBuffer(visibilityBuffer);
+    for (rhi::BufferHandle& buf : commandBufs) {
+        device.destroyBuffer(buf);
+    }
     device.destroyBuffer(candidateBuffer);
     device.destroyBuffer(cullUbo);
     device.destroySampler(hizSampler);
@@ -157,64 +167,28 @@ void GpuOcclusion::resize(rhi::Device& device, u32 width, u32 height) {
                              .storageImage = true,
                              .imageMip = mip + 1 } } }));
     }
-    cullGroup = device.createBindGroup(
-        { .entries = { { .binding = 0, .buffer = cullUbo },
-                       { .binding = 1,
-                         .buffer = candidateBuffer,
-                         .storage = true },
-                       { .binding = 2,
-                         .buffer = visibilityBuffer,
-                         .storage = true },
-                       { .binding = 3,
-                         .texture = hizTexture,
-                         .sampler = hizSampler } } });
+    for (u32 side = 0; side < 2; ++side) {
+        cullGroups[side] = device.createBindGroup(
+            { .entries = { { .binding = 0, .buffer = cullUbo },
+                           { .binding = 1,
+                             .buffer = candidateBuffer,
+                             .storage = true },
+                           { .binding = 3,
+                             .texture = hizTexture,
+                             .sampler = hizSampler },
+                           { .binding = 4,
+                             .buffer = commandBufs[side],
+                             .storage = true } } });
+    }
     // firstGroup depends on the depth snapshot texture: (re)built in run().
-    pendingKeys.clear(); // stale visibility layout after a resize
 }
 
-void GpuOcclusion::collectResults(rhi::Device& device,
-                                  std::unordered_set<u64>& occluded) {
-    if (pendingKeys.empty()) {
-        occluded.clear();
-        lastOccluded = 0;
-        return;
-    }
-    // The verdict buffer is read ONLY once its fence signals —
-    // glGetBufferSubData on a still-in-flight buffer stalls the CPU until
-    // the GPU catches up (~25 ms mainPass spikes). While pending, the
-    // caller keeps the PREVIOUS verdict (occluded left untouched): the
-    // occlusion set is already temporal, one extra frame is invisible.
-    if (!device.fenceReady(fence)) {
-        return;
-    }
-    fence = {};
-    vector<u32> visibility(pendingKeys.size());
-    device.readBuffer(stagingBuffer, visibility.data(),
-                      visibility.size() * sizeof(u32), 0);
-    occluded.clear();
-    u32 count = 0;
-    for (size_t i = 0; i < pendingKeys.size(); ++i) {
-        if (visibility[i] == 0) {
-            occluded.insert(pendingKeys[i]);
-            ++count;
-        }
-    }
-    lastOccluded = count;
-    pendingKeys.clear();
-}
-
-void GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
+bool GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
                        rhi::TextureHandle sceneDepth, const Mat4& viewProj,
                        const vector<Candidate>& candidates) {
     if (!ready() || hizFirstPipeline.id == 0 || hizDownPipeline.id == 0 ||
         candidates.empty()) {
-        return;
-    }
-    if (fence.id != 0) {
-        // Back-pressure: the previous verdict has not been consumed yet
-        // (its fence is still pending) — re-dispatching would overwrite the
-        // staging buffer mid-read window. Skip; the ring re-runs next frame.
-        return;
+        return false;
     }
     if (boundDepth.id != sceneDepth.id) {
         // The depth snapshot texture changed (first run / window resize):
@@ -231,15 +205,38 @@ void GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
         boundDepth = sceneDepth;
     }
 
-    // Upload this frame's candidates.
+    // Upload this frame's candidates, GROUP-SORTED so the indirect
+    // commands land in contiguous per-group ranges (one
+    // drawIndexedIndirect per group).
     const u32 count = static_cast<u32>(
         glm::min<size_t>(candidates.size(), kMaxCandidates));
-    vector<GpuAabb> aabbs(count);
-    pendingKeys.resize(count);
+    // A clipped list would mean chunks with NO command at all — silently
+    // missing geometry. Dispatch what fits but report the commands unfit
+    // (the consumers fall back to their CPU loops for the frame).
+    const bool clipped = candidates.size() > kMaxCandidates;
+    const u32 writeSide = 1 - readSide;
+    array<u32, kMaxGroups>& firsts = groupFirsts[writeSide];
+    array<u32, kMaxGroups>& counts = groupCounts[writeSide];
+    counts.fill(0);
     for (u32 i = 0; i < count; ++i) {
-        aabbs[i].lo = { candidates[i].lo, 0.0f };
-        aabbs[i].hi = { candidates[i].hi, 0.0f };
-        pendingKeys[i] = candidates[i].key;
+        counts[glm::min(candidates[i].group, kMaxGroups - 1)]++;
+    }
+    u32 running = 0;
+    for (u32 g = 0; g < kMaxGroups; ++g) {
+        firsts[g] = running;
+        running += counts[g];
+    }
+    array<u32, kMaxGroups> cursor = firsts;
+    vector<GpuAabb> aabbs(count);
+    for (u32 i = 0; i < count; ++i) {
+        const Candidate& c = candidates[i];
+        const u32 slot = cursor[glm::min(c.group, kMaxGroups - 1)]++;
+        aabbs[slot].lo = { c.lo, 0.0f };
+        aabbs[slot].hi = { c.hi, 0.0f };
+        aabbs[slot].draw = { c.indexCount,
+                             static_cast<u32>(c.vertexOffset), c.group,
+                             c.instanceCount };
+        aabbs[slot].draw2 = { c.firstInstance, 0u, 0u, 0u };
     }
     device.updateBuffer(candidateBuffer, aabbs.data(),
                         count * sizeof(GpuAabb), 0);
@@ -247,6 +244,12 @@ void GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
         .viewProj = viewProj,
         .info = { static_cast<f32>(count), static_cast<f32>(mipCount),
                   static_cast<f32>(hizWidth), static_cast<f32>(hizHeight) },
+        // NDC guard band 1.15 (proportional — covers the one-frame-stale
+        // rotation at any distance) + a 16 m world margin for the plane
+        // test that judges near-plane straddlers (they are close, so a
+        // frame of motion is small in meters).
+        .info2 = { 1.0f, 1.15f, 16.0f, 0.0f },
+        .planes = Frustum::fromViewProj(viewProj).planes,
     };
     device.updateBuffer(cullUbo, &uniforms, sizeof(uniforms), 0);
 
@@ -266,18 +269,16 @@ void GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
         cmd.dispatch((mipW + 7) / 8, (mipH + 7) / 8);
     }
 
-    // Cull: one thread per candidate, then stage the verdict for the CPU.
+    // Cull: one thread per candidate, writing the commands.
     cmd.memoryBarrier(rhi::BarrierStage_Compute); // pyramid -> cull reads
     cmd.setPipeline(cullPipeline);
-    cmd.setBindGroup(0, cullGroup);
+    cmd.setBindGroup(0, cullGroups[writeSide]);
     cmd.dispatch((count + 63) / 64);
-    // SSBO writes visible to the staging copy only — nothing else in the
-    // frame reads the verdict (the CPU does, behind the fence).
-    cmd.memoryBarrier(rhi::BarrierStage_Transfer);
-    cmd.copyBuffer(visibilityBuffer, stagingBuffer, count * sizeof(u32));
-    // Marker after the copy — collectResults reads only once this
-    // signals (never blocks the frame on the GPU catching up).
-    fence = device.insertFence();
+    // Command writes visible to the NEXT frame's indirect argument reads.
+    cmd.memoryBarrier(rhi::BarrierStage_Indirect);
+    readSide = writeSide; // consumed by the NEXT frame's draw
+    commandsReady = !clipped;
+    return !clipped;
 }
 
 } // namespace render

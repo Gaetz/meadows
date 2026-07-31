@@ -9,6 +9,7 @@
 #include "engine/render/Frustum.hpp"
 #include "engine/assets/MeshData.hpp"
 #include "engine/render/landscape/ChunkStreamer.hpp"
+#include "engine/render/landscape/GpuOcclusion.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/render/landscape/TreeGenerator.hpp" // *TreeParams (builder)
 #include "engine/rhi/Rhi.hpp"
@@ -142,6 +143,21 @@ public:
               bool forceLowDetail = false, const Frustum* frustum = nullptr,
               const std::unordered_set<u64>* occluded = nullptr);
 
+    // GPU-driven main-pass path (docs/RENDERING.md §6.0, brick I5).
+    // Candidate groups: kGroupBase + variant*3 + level — the LOD level is
+    // picked HERE (CPU, candidate time) exactly as draw() picks it, and
+    // consumed one frame later like everything else on this path.
+    static constexpr u32 kGroupBase = 4; // groups 0-3 belong to the terrain
+    void collectDrawCandidates(vector<GpuOcclusion::Candidate>& out,
+                               const Vec3& cameraPos) const;
+    // One drawIndexedIndirect per non-empty (variant, level) batch over
+    // the command ranges the cull wrote last frame.
+    void drawIndirect(rhi::CommandBuffer& cmd,
+                      rhi::BindGroupHandle frameBindGroup,
+                      rhi::BindGroupHandle shadowBindGroup,
+                      rhi::BufferHandle commands, const u32* groupFirst,
+                      const u32* groupCount);
+
     // Chunks the last culled draw() recorded (for the debug panel).
     u32 drawnLastFrame() const { return lastDrawn; }
     // CPU-side geometry counters, summed across every pass this frame
@@ -208,9 +224,14 @@ public:
                         vector<GiProp>& out, size_t maxProps) const;
 
 private:
+    static constexpr u32 kNoOffset = 0xffffffffu;
+
     struct Chunk {
         bool resident { false };
-        rhi::UniqueBuffer instanceBuffer;
+        // Slice of the pooled instance buffer (in instances): the
+        // chunk's variant-sorted block starts here — firstInstance[v] is
+        // relative to it, the indirect command adds the two.
+        u32 poolOffset { kNoOffset };
         array<u32, kVariantCount> counts {};
         array<u32, kVariantCount> firstInstance {};
         u32 total { 0 };
@@ -218,6 +239,23 @@ private:
         f32 minY { 0.0f };
         f32 maxY { 0.0f };
         vector<GiProp> giProps; // CPU copy for the GI injection
+    };
+
+    // One pooled instance buffer for every chunk (variable-size blocks —
+    // first-fit free list with coalescing; freed blocks cool two frames
+    // like the terrain pool's slots, for the same stale-command reason).
+    struct InstancePool {
+        static constexpr u32 kCapacity = 384 * 1024; // instances (~12 MB)
+        rhi::UniqueBuffer buffer;
+        struct Block {
+            u32 offset { 0 };
+            u32 size { 0 };
+        };
+        vector<Block> freeBlocks; // sorted by offset, coalesced
+        array<vector<Block>, 2> cooling;
+        u32 alloc(u32 size);
+        void free(u32 offset, u32 size) { cooling[0].push_back({ offset, size }); }
+        void tick(); // cooling drain + sorted insert + coalesce
     };
     struct VariantMesh {
         rhi::UniqueBuffer vertexBuffer;
@@ -257,6 +295,7 @@ private:
 
     // The shared ring mechanics live in ChunkStreamer.
     ChunkStreamer<Chunk, VariantBuckets> streamer;
+    InstancePool instancePool;
     u32 meshSeed { 0 }; // last create/regenerate seed (reseedVariantMeshes)
     u32 instances { 0 };
     u32 lastDrawn { 0 };

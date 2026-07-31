@@ -108,11 +108,25 @@ public:
               const Frustum* frustum = nullptr,
               const std::unordered_set<u64>* occluded = nullptr);
 
-    // Resident chunk AABBs, the GPU occlusion candidate list.
+    // GPU-driven main-pass path (docs/RENDERING.md §6.0): per LOD, ONE
+    // drawIndexedIndirect over the command range the chunk_cull dispatch
+    // wrote LAST frame (culled chunks carry instanceCount 0). The caller
+    // checked commandsValid() on the provider.
+    void drawIndirect(rhi::CommandBuffer& cmd,
+                      rhi::BindGroupHandle frameBindGroup,
+                      rhi::BindGroupHandle shadowBindGroup,
+                      rhi::BufferHandle commands, const u32* lodFirst,
+                      const u32* lodCount); // kLodCount entries each
+
+    // Resident chunk AABBs, the GPU occlusion candidate list — carries the
+    // indirect-draw parameters (group = lod, pool slot as vertexOffset).
     struct ChunkAabb {
         u64 key { 0 };
         Vec3 lo {};
         Vec3 hi {};
+        u32 group { 0 };       // lod — indirect commands batch per group
+        u32 indexCount { 0 };
+        i32 vertexOffset { 0 };
     };
     void collectChunkAabbs(vector<ChunkAabb>& out) const {
         out.clear();
@@ -123,9 +137,13 @@ public:
             }
             const f32 x0 = static_cast<f32>(chunkKeyCx(key)) * kChunkSize;
             const f32 z0 = static_cast<f32>(chunkKeyCz(key)) * kChunkSize;
-            out.push_back({ key, { x0, chunk.minY, z0 },
-                            { x0 + kChunkSize, chunk.maxY,
-                              z0 + kChunkSize } });
+            const u32 lod = chunk.residentLod;
+            out.push_back({ key,
+                            { x0, chunk.minY, z0 },
+                            { x0 + kChunkSize, chunk.maxY, z0 + kChunkSize },
+                            lod, indexCounts[lod],
+                            static_cast<i32>(chunk.poolSlot *
+                                             pools[lod].slotVerts) });
         }
     }
 
@@ -169,6 +187,7 @@ public:
 
 private:
     static constexpr u8 kNoLod = 0xff;
+    static constexpr u32 kNoSlot = 0xffffffffu;
 
     struct Chunk {
         // Drawn mesh; kNoLod until the first upload lands.
@@ -176,10 +195,33 @@ private:
         // LOD requested from a worker; kNoLod when nothing is in flight
         // (guards to one in-flight job per chunk).
         u8 queuedLod { kNoLod };
-        rhi::UniqueBuffer vertexBuffer;
+        // Fixed-size slot in the resident LOD's vertex pool. The slot
+        // index doubles as the indirect draw's vertexOffset
+        // (slot × slotVerts) — the reason chunks share pooled storage.
+        u32 poolSlot { kNoSlot };
         // Meshed height range (skirts included), for the frustum AABB.
         f32 minY { 0.0f };
         f32 maxY { 0.0f };
+    };
+
+    // One pooled vertex buffer per LOD: every chunk of that LOD is a
+    // fixed-size slot (vertex counts are deterministic per LOD). Sized
+    // for the tuning slider's MAX view radius — no growth path needed
+    // (~30 MB total; a full-slot pool drops the upload with a warning
+    // and the chunk re-streams next frame).
+    struct VertexPool {
+        rhi::UniqueBuffer buffer;
+        u32 slotVerts { 0 };
+        u32 capacity { 0 };
+        vector<u32> freeSlots; // LIFO
+        // Freed slots cool for TWO frames before reuse: an indirect
+        // command still referencing the old vertexOffset can be consumed
+        // one frame late (ping-pong) plus one more under cull
+        // back-pressure — reusing the slot inside that window could draw
+        // another chunk's mesh there. (Overwrite-in-place of a LIVE slot
+        // is safe by construction: the upload queue waits last frame's
+        // graphics before any copy.)
+        array<vector<u32>, 2> cooling;
     };
     // A worker's finished mesh (the streamer stamps cx/cz/generation).
     struct BuiltMesh {
@@ -189,16 +231,27 @@ private:
         f32 maxY { 0.0f };
     };
 
-    void pumpUploads(rhi::Device& device);
     void requestMissing(const Vec3& cameraPos);
     void enqueueBuild(i32 cx, i32 cz, u8 lod);
     void evictFar(rhi::Device& device, const Vec3& cameraPos);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
+    void pumpUploads(rhi::Device& device, const Vec3& cameraPos);
+    u32 allocSlot(u32 lod);
+    void freeSlot(u32 lod, u32 slot);
+    // Pool-full relief: free the slot of the FURTHEST chunk resident at
+    // this LOD (it is overdue for a LOD swap anyway). Without it, fast
+    // flight livelocks: stale far chunks hold every near-LOD slot while
+    // the center-out request budget is consumed by the near ring's
+    // doomed re-requests — the swaps that would free the slots are never
+    // even asked for.
+    bool stealFurthestSlot(u32 lod, const Vec3& cameraPos);
+
     // The shared ring mechanics (audit U3-1): map + generation-stamped
     // queue + budgeted request/evict live in ChunkStreamer.
     ChunkStreamer<Chunk, BuiltMesh> streamer;
+    array<VertexPool, kLodCount> pools;
     u32 resident { 0 };
     u32 pending { 0 };
     u32 lastUploads { 0 };

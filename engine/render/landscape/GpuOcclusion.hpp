@@ -1,6 +1,5 @@
 #pragma once
 
-#include <unordered_set>
 
 #include <glm/glm.hpp>
 
@@ -16,25 +15,43 @@ namespace render {
 
 class ShaderLibrary;
 
-// Hi-Z GPU occlusion culling (docs/RENDERING.md — the first compute
-// user in the engine). Each frame, after the opaque pass snapshots the
+// Hi-Z GPU occlusion culling (docs/RENDERING.md §6.0 — GPU-driven since
+// I6, no CPU readback). Each frame, after the opaque pass snapshots the
 // scene depth:
-//   1. hiz_first/hiz_down build a half-res MAX-depth pyramid in compute
-//      (image load/store — no sampler feedback),
-//   2. chunk_cull tests every candidate chunk AABB against it and writes a
-//      visibility word per candidate into an SSBO,
-//   3. NEXT frame, the scene reads the SSBO back (the GPU finished long
-//      ago — negligible stall) and drops the occluded chunks.
-// One frame of latency, conservative everywhere: new candidates default
-// visible, near-plane or screen-border footprints are never culled.
+//   1. hiz_first/hiz_down build a half-res farthest-depth pyramid in
+//      compute (reversed-Z: farthest = min; image load/store — no
+//      sampler feedback),
+//   2. chunk_cull tests every candidate AABB against it and writes one
+//      DrawIndexedIndirectCommand per candidate (culled =
+//      instanceCount 0) into a ping-pong command buffer,
+//   3. NEXT frame, the consumers drawIndexedIndirect the per-group
+//      ranges — the verdict never crosses the CPU.
+// One frame of latency, conservative everywhere: near-plane straddlers
+// use the frustum-plane test, screen-border footprints stay visible.
 class GpuOcclusion {
 public:
-    static constexpr u32 kMaxCandidates = 4096;
+    // Terrain (max radius) + vegetation chunk×variant entries both fit
+    // with room; run() returns false (consumers fall back to their CPU
+    // path) if the list ever clips.
+    static constexpr u32 kMaxCandidates = 8192;
+    // Draw batches: terrain LODs 0-3, vegetation (variant, level) pairs
+    // above (4 + variant*3 + level).
+    static constexpr u32 kMaxGroups = 40;
 
     struct Candidate {
-        u64 key { 0 };
         Vec3 lo {};
         Vec3 hi {};
+        // Indirect-draw parameters (docs/RENDERING.md §6.0): the cull
+        // writes one DrawIndexedIndirectCommand per candidate, batched by
+        // `group` for the consumer's per-group drawIndexedIndirect.
+        // Terrain: instanceCount 1, vertexOffset = pool slot. Vegetation:
+        // vertexOffset 0, firstInstance/instanceCount = the chunk's slice
+        // of the pooled instance buffer.
+        u32 group { 0 };
+        u32 indexCount { 0 };
+        i32 vertexOffset { 0 };
+        u32 instanceCount { 1 };
+        u32 firstInstance { 0 };
     };
 
     // Requires caps: computeShaders + copyTexture (scene depth snapshot).
@@ -46,18 +63,29 @@ public:
     // offscreen target's size; cheap no-op when unchanged).
     void resize(rhi::Device& device, u32 width, u32 height);
 
-    // Reads back LAST frame's verdict into `occluded`. Call before run().
-    void collectResults(rhi::Device& device,
-                        std::unordered_set<u64>& occluded);
-
     // Records pyramid build + cull dispatch for this frame. `sceneDepth` is
     // the post-opaque depth snapshot; call outside any render pass.
-    void run(rhi::CommandBuffer& cmd, rhi::Device& device,
+    // Returns true when the indirect commands will be at most one frame
+    // stale next frame — the gate for consuming them (false = the
+    // candidate list clipped kMaxCandidates or the cull could not run).
+    bool run(rhi::CommandBuffer& cmd, rhi::Device& device,
              rhi::TextureHandle sceneDepth, const Mat4& viewProj,
              const vector<Candidate>& candidates);
 
     bool ready() const { return cullPipeline.id != 0 && hizTexture.id != 0; }
-    u32 lastOccludedCount() const { return lastOccluded; }
+
+    // GPU-driven consumption (no readback): the command buffer side the
+    // last dispatch wrote, and its per-group ranges. Commands are consumed
+    // the FRAME AFTER they were written (the draw runs before run()), so
+    // the ping-pong keeps the read side stable while the write side fills.
+    bool commandsValid() const { return commandsReady; }
+    rhi::BufferHandle commandBuffer() const { return commandBufs[readSide]; }
+    const array<u32, kMaxGroups>& groupFirst() const {
+        return groupFirsts[readSide];
+    }
+    const array<u32, kMaxGroups>& groupCount() const {
+        return groupCounts[readSide];
+    }
 
 private:
     void destroyPyramid(rhi::Device& device);
@@ -74,24 +102,23 @@ private:
     rhi::SamplerHandle depthSampler {}; // nearest, for the first reduction
     rhi::BindGroupHandle firstGroup {};
     vector<rhi::BindGroupHandle> downGroups; // [i]: mip i -> mip i+1
-    rhi::BindGroupHandle cullGroup {};
+    array<rhi::BindGroupHandle, 2> cullGroups {}; // one per command side
     rhi::TextureHandle boundDepth {}; // firstGroup references this snapshot
 
     rhi::BufferHandle cullUbo {};
     rhi::BufferHandle candidateBuffer {};
-    rhi::BufferHandle visibilityBuffer {}; // GPU-only (stays in VRAM)
-    rhi::BufferHandle stagingBuffer {};    // host-visible readback copy
+    // Ping-pong indirect command buffers: run() writes 1-readSide, the
+    // NEXT frame's draw consumes it as the new readSide.
+    array<rhi::BufferHandle, 2> commandBufs {};
+    array<array<u32, kMaxGroups>, 2> groupFirsts {};
+    array<array<u32, kMaxGroups>, 2> groupCounts {};
+    u32 readSide { 0 };
+    bool commandsReady { false };
 
     u32 hizWidth { 0 };
     u32 hizHeight { 0 };
     u32 mipCount { 0 };
 
-    // Candidates submitted last run, matched to the readback order.
-    vector<u64> pendingKeys;
-    u32 lastOccluded { 0 };
-    // Signals when the staging copy landed; collectResults reads only
-    // then (no CPU stall), run() skips while it is pending (back-pressure).
-    rhi::FenceHandle fence {};
 };
 
 } // namespace render

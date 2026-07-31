@@ -1,29 +1,50 @@
 #version 460 core
 
 // GPU occlusion culling: one thread per candidate chunk AABB,
-// tested against the Hi-Z max-depth pyramid built from THIS frame's depth
-// and camera (results are consumed next frame — 1 frame of latency, with
-// conservative outs everywhere):
+// tested against the Hi-Z farthest-depth pyramid built from THIS frame's
+// depth and camera (reversed-Z: farthest = min; results are consumed
+// next frame — 1 frame of latency, with conservative outs everywhere):
 //   - any corner behind the near plane        -> visible
 //   - footprint touching the screen border    -> visible (a rotation may
 //     reveal it next frame; the frustum pass owns the edges)
-//   - nearest chunk depth <= Hi-Z max + eps   -> visible
+//   - nearest chunk depth >= Hi-Z far - eps   -> visible
 // The sampler is NEAREST_MIPMAP_NEAREST: depth values must never blend.
 
 layout(local_size_x = 64) in;
 
 layout(std140, binding = 0) uniform CullUbo {
     mat4 uCullViewProj;
-    vec4 uCullInfo; // x = candidate count, y = mip count,
-                    // zw = Hi-Z base size (texels)
+    vec4 uCullInfo;  // x = candidate count, y = mip count,
+                     // zw = Hi-Z base size (texels)
+    vec4 uCullInfo2; // x = write indirect commands,
+                     // y = NDC guard-band scale,
+                     // z = plane margin (m, near-straddling boxes)
+    vec4 uCullPlanes[6]; // frustum planes (xyz normal, w offset)
 };
 
 struct Aabb {
     vec4 lo; // xyz used
     vec4 hi;
+    // x = indexCount, y = vertexOffset (int bits), z = group,
+    // w = instanceCount when visible.
+    uvec4 draw;
+    // x = firstInstance (vegetation: slice of the pooled instances).
+    uvec4 draw2;
 };
 layout(std430, binding = 1) readonly buffer Candidates { Aabb uAabbs[]; };
-layout(std430, binding = 2) writeonly buffer Visibility { uint uVisible[]; };
+
+// One indirect command per candidate, same index as the candidate
+// (candidates arrive group-sorted — the consumer draws per-group
+// ranges). Culled = instanceCount 0. Layout = VkDrawIndexedIndirectCommand
+// = GL DrawElementsIndirectCommand.
+struct DrawCmd {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+layout(std430, binding = 4) writeonly buffer Commands { DrawCmd uCommands[]; };
 
 layout(binding = 3) uniform sampler2D uHiZ;
 
@@ -37,7 +58,7 @@ void main() {
 
     vec2 ndcMin = vec2(1e9);
     vec2 ndcMax = vec2(-1e9);
-    float nearestDepth = 1e9;
+    float nearestDepth = -1e9;
     bool nearPlane = false;
     for (int c = 0; c < 8; ++c) {
         vec3 p = vec3((c & 1) != 0 ? hi.x : lo.x,
@@ -51,7 +72,8 @@ void main() {
         vec3 ndc = clip.xyz / clip.w;
         ndcMin = min(ndcMin, ndc.xy);
         ndcMax = max(ndcMax, ndc.xy);
-        nearestDepth = min(nearestDepth, ndc.z); // 0..1: ndc z IS depth
+        // Reversed-Z: nearest = LARGEST depth value.
+        nearestDepth = max(nearestDepth, ndc.z);
     }
 
     uint visible = 1u;
@@ -65,14 +87,46 @@ void main() {
         vec2 sizePx = (uvMax - uvMin) * uCullInfo.zw;
         float lod = clamp(ceil(log2(max(max(sizePx.x, sizePx.y), 1.0))),
                           0.0, uCullInfo.y - 1.0);
+        // Reversed-Z: the pyramid holds the FARTHEST (smallest) depth.
         float farDepth =
-            max(max(textureLod(uHiZ, uvMin, lod).r,
+            min(min(textureLod(uHiZ, uvMin, lod).r,
                     textureLod(uHiZ, vec2(uvMax.x, uvMin.y), lod).r),
-                max(textureLod(uHiZ, vec2(uvMin.x, uvMax.y), lod).r,
+                min(textureLod(uHiZ, vec2(uvMin.x, uvMax.y), lod).r,
                     textureLod(uHiZ, uvMax, lod).r));
-        if (nearestDepth > farDepth + 1e-4) {
+        if (nearestDepth < farDepth - 1e-4) {
             visible = 0u;
         }
     }
-    uVisible[i] = visible;
+    // The command adds the frustum test the CPU loop used to do —
+    // consumed next frame with a one-frame-stale camera, so each
+    // branch carries its own slack. Boxes the projection can judge
+    // (!nearPlane) use the PROPORTIONAL NDC guard band (a frame of
+    // rotation moves distant chunks far in meters but little on
+    // screen). Near-plane STRADDLERS — where the projection is
+    // meaningless — use the frustum PLANES with a world margin
+    // (they are close: a frame of motion is small in meters).
+    // Without either cut the whole ring drew and mainPass doubled.
+    bool keep = visible != 0u;
+    if (keep) {
+        if (nearPlane) {
+            for (int pl = 0; pl < 6; ++pl) {
+                vec3 n = uCullPlanes[pl].xyz;
+                vec3 farCorner = vec3(n.x >= 0.0 ? hi.x : lo.x,
+                                      n.y >= 0.0 ? hi.y : lo.y,
+                                      n.z >= 0.0 ? hi.z : lo.z);
+                if (dot(n, farCorner) + uCullPlanes[pl].w <
+                    -uCullInfo2.z) {
+                    keep = false;
+                    break;
+                }
+            }
+        } else {
+            float guard = uCullInfo2.y;
+            keep = !(ndcMax.x < -guard || ndcMin.x > guard ||
+                     ndcMax.y < -guard || ndcMin.y > guard ||
+                     nearestDepth < 0.0); // reversed-Z: beyond far
+        }
+    }
+    uCommands[i] = DrawCmd(uAabbs[i].draw.x, keep ? uAabbs[i].draw.w : 0u,
+                           0u, int(uAabbs[i].draw.y), uAabbs[i].draw2.x);
 }
