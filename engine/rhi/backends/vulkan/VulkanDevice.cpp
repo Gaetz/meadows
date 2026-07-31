@@ -73,7 +73,8 @@ vector<VkExtensionProperties> deviceExtensionProperties(VkPhysicalDevice gpu) {
     return props;
 }
 
-bool validationLayerAvailable() {
+// Referenced only when validation is compiled in — release builds skip it.
+[[maybe_unused]] bool validationLayerAvailable() {
     u32 count = 0;
     vkEnumerateInstanceLayerProperties(&count, nullptr);
     vector<VkLayerProperties> layers(count);
@@ -148,6 +149,10 @@ VkBufferUsageFlags toVkBufferUsage(BufferUsage usage) {
     case BufferUsage::Index:   return VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     case BufferUsage::Uniform: return VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
     case BufferUsage::Storage: return VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    case BufferUsage::Indirect:
+        // SSBO-writable by design: the cull dispatch fills the commands.
+        return VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     }
     return VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 }
@@ -233,6 +238,9 @@ struct VulkanBuffer {
     VkBuffer buffer { VK_NULL_HANDLE };
     VmaAllocation allocation { nullptr };
     u64 size { 0 };
+    // Scopes the in-frame update barriers (recordHostUpdate) to the
+    // stages that can actually read this buffer.
+    BufferUsage usage { BufferUsage::Vertex };
     // Persistently mapped when the buffer lives in host-visible memory
     // (BufferDesc::dynamic or ::readback); nullptr means device-local, which
     // is written/read through a staging copy instead.
@@ -690,6 +698,52 @@ struct VulkanDevice::Impl {
     vector<PendingTexture> pendingTextures;
     vector<PendingBuffer> pendingBuffers;
 
+    // Persistent-mapped staging ring, one per frame slot: in-frame buffer
+    // updates carve linear slices out of it instead of paying a VMA
+    // allocation (and a deletion-queue entry) per update. The slot's reset
+    // in beginFrame happens-after its fence + compute-timeline wait, so
+    // the GPU is provably done reading it. Growth parks the old buffer in
+    // the deletion queue — copies already recorded keep referencing it.
+    struct StagingRing {
+        VkBuffer buffer { VK_NULL_HANDLE };
+        VmaAllocation allocation { nullptr };
+        u8* mapped { nullptr };
+        u64 capacity { 0 };
+        u64 head { 0 };
+    };
+    std::array<StagingRing, kFramesInFlight> stagingRings {};
+    bool ringAlloc(u64 size, VkBuffer& outBuffer, u64& outOffset,
+                   void** outMapped);
+
+    // Dedicated upload (transfer) queue: in-frame DEVICE-LOCAL buffer
+    // uploads record into a per-slot transfer command buffer, submitted at
+    // endFrame BEFORE the graphics submit. On PC the transfer-only family
+    // is a real DMA engine; on MoltenVK it is a third generic queue (the
+    // sync topology is identical, so M1 validates the PC path).
+    // Ordering: the upload submit WAITS last frame's graphics value (WAR —
+    // the previous frame may still read the buffer being rewritten) and
+    // signals its OWN timeline (uploadTimeline: one signaler, values stay
+    // monotonic — interleaving a third queue on the shared timeline could
+    // signal out of order, which the spec forbids); the graphics submit
+    // waits that value at the stages that read uploaded data. The compute
+    // chain does NOT wait it: the rc chain reads no streamed buffer (extend
+    // the wait if that ever changes).
+    u32 transferFamily { 0 };
+    VkQueue transferQueue { VK_NULL_HANDLE };
+    VkCommandPool uploadPool { VK_NULL_HANDLE };
+    std::array<VkCommandBuffer, kFramesInFlight> uploadCbs {};
+    VkSemaphore uploadTimeline { VK_NULL_HANDLE };
+    bool uploadQueueAvailable { false };
+    bool uploadRecording { false };
+    u64 uploadNext { 0 };
+    u64 uploadDoneValue { 0 };
+    std::array<u64, kFramesInFlight> uploadSlotValue {};
+    u64 gfxDoneValue { 0 }; // last graphics timeline value (upload WAR wait)
+    bool recordUpload(VkBuffer dst, const void* data, u64 size,
+                      u64 dstOffset);
+
+    bool multiDrawIndirect { false }; // device feature, mirrored in caps
+
     void flushPendingFrees(bool force) {
         const auto done = [&](u64 parked) {
             return force || frameCounter >= parked + kFramesInFlight;
@@ -763,10 +817,19 @@ struct VulkanDevice::Impl {
     // Bumped when a region is reset, so a handle from an older generation is
     // recognised as stale instead of reading someone else's result.
     std::array<u32, kFramesInFlight> regionGeneration {};
+    // Second pool for the ASYNC COMPUTE queue: a timestamp inserted while
+    // computeRouting is on must land in the COMPUTE command buffer — in the
+    // graphics stream it would bracket nothing (the rc* blindness). Its
+    // per-slot regions are reset at the top of the compute cb (same-queue
+    // ordering; a cross-queue reset would race the writes).
+    VkQueryPool computeQueryPool { VK_NULL_HANDLE };
+    u32 computeTimestampCursor { 0 };
+    std::array<u32, kFramesInFlight> computeRegionGeneration {};
     struct PendingTimestamp {
         u32 query { 0 };
         u32 frameSlot { 0 };
         u32 generation { 0 };
+        bool onComputePool { false };
         // Harvested at slot-recycle time (see beginFrame): once the region
         // resets, the pool result is gone, but the fence wait that precedes
         // the reset proves the GPU finished — so the value is read into here
@@ -888,8 +951,10 @@ public:
     // flipped mid-frame: flickering dark shadow plates on fast
     // pans). Returns false inside a pass (copies are illegal there)
     // or when nothing is being recorded.
-    bool recordHostUpdate(VkBuffer staging, VkBuffer dst, u64 size,
-                          u64 dstOffset);
+    bool recordHostUpdate(VkBuffer staging, u64 srcOffset, VkBuffer dst,
+                          u64 size, u64 dstOffset,
+                          VkPipelineStageFlags readStages,
+                          VkAccessFlags readAccess);
     bool insidePass() const { return inPass_; }
 
     void setViewport(u32 x, u32 y, u32 width, u32 height) override;
@@ -906,6 +971,8 @@ public:
     void draw(u32 vertexCount, u32 instanceCount, u32 firstVertex) override;
     void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex,
                      u32 firstInstance) override;
+    void drawIndexedIndirect(BufferHandle args, u64 offset, u32 drawCount,
+                             u32 stride) override;
     void dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) override;
     void memoryBarrier(u32 dst) override;
     void readBarrier(u32 src) override;
@@ -959,6 +1026,14 @@ private:
     // pipeline change (the invisible-GI bug).
     array<BindGroupHandle, 8> boundGroups_ {};
     u64 pushedMask_ { 0 }; // bindings pushed since the current pipeline bind
+    // Scratch for pushGroup/bindMissingDummies — both run on the per-draw
+    // hot path, so the capacity is kept across calls instead of paying a
+    // heap allocation per push. The info vectors are RESERVED to the entry
+    // count before filling; .back() pointers stored in the writes rely on
+    // no reallocation happening mid-fill.
+    vector<VkWriteDescriptorSet> scratchWrites_;
+    vector<VkDescriptorBufferInfo> scratchBufferInfos_;
+    vector<VkDescriptorImageInfo> scratchImageInfos_;
 };
 
 VkAttachmentLoadOp toVkLoadOp(LoadOp op) {
@@ -968,6 +1043,11 @@ VkAttachmentLoadOp toVkLoadOp(LoadOp op) {
     case LoadOp::DontCare: return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     }
     return VK_ATTACHMENT_LOAD_OP_CLEAR;
+}
+
+VkAttachmentStoreOp toVkStoreOp(StoreOp op) {
+    return op == StoreOp::DontCare ? VK_ATTACHMENT_STORE_OP_DONT_CARE
+                                   : VK_ATTACHMENT_STORE_OP_STORE;
 }
 
 void VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
@@ -1017,7 +1097,7 @@ void VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
             color.imageView = target_->colorViews[i];
             color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             color.loadOp = toVkLoadOp(desc.loadOp);
-            color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            color.storeOp = toVkStoreOp(desc.storeOp);
             color.clearValue = clearColor;
             colorAttachments.push_back(color);
         }
@@ -1036,7 +1116,7 @@ void VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
             depthAttachment.imageLayout =
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
             depthAttachment.loadOp = toVkLoadOp(desc.depthLoadOp);
-            depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            depthAttachment.storeOp = toVkStoreOp(desc.depthStoreOp);
             depthAttachment.clearValue.depthStencil = { desc.clearDepth, 0 };
             hasDepth = true;
         }
@@ -1264,9 +1344,12 @@ void VulkanCommandBuffer::pushGroup(BindGroupHandle group) {
     // Push descriptors: the writes go straight out against the bound
     // pipeline's layout, so no VkDescriptorSet is ever allocated and there is
     // no layout to match against (docs/RENDERING.md, V4 design).
-    vector<VkWriteDescriptorSet> writes;
-    vector<VkDescriptorBufferInfo> bufferInfos;
-    vector<VkDescriptorImageInfo> imageInfos;
+    vector<VkWriteDescriptorSet>& writes = scratchWrites_;
+    vector<VkDescriptorBufferInfo>& bufferInfos = scratchBufferInfos_;
+    vector<VkDescriptorImageInfo>& imageInfos = scratchImageInfos_;
+    writes.clear();
+    bufferInfos.clear();
+    imageInfos.clear();
     writes.reserve(entries.size());
     bufferInfos.reserve(entries.size());
     imageInfos.reserve(entries.size());
@@ -1430,10 +1513,13 @@ void VulkanCommandBuffer::bindMissingDummies() {
     if (missing == 0) {
         return;
     }
-    vector<VkWriteDescriptorSet> writes;
-    vector<VkDescriptorBufferInfo> bufferInfos;
-    vector<VkDescriptorImageInfo> imageInfos;
+    vector<VkWriteDescriptorSet>& writes = scratchWrites_;
+    vector<VkDescriptorBufferInfo>& bufferInfos = scratchBufferInfos_;
+    vector<VkDescriptorImageInfo>& imageInfos = scratchImageInfos_;
     const size_t count = boundPipeline_->resources.size();
+    writes.clear();
+    bufferInfos.clear();
+    imageInfos.clear();
     writes.reserve(count);
     bufferInfos.reserve(count);
     imageInfos.reserve(count);
@@ -1538,6 +1624,26 @@ void VulkanCommandBuffer::drawIndexed(u32 indexCount, u32 instanceCount,
     }
 }
 
+void VulkanCommandBuffer::drawIndexedIndirect(BufferHandle args, u64 offset,
+                                              u32 drawCount, u32 stride) {
+    VulkanBuffer* buffer = d_->findBuffer(args);
+    if (cb_ == VK_NULL_HANDLE || buffer == nullptr || drawCount == 0) {
+        return;
+    }
+    bindMissingDummies();
+    if (d_->multiDrawIndirect || drawCount == 1) {
+        vkCmdDrawIndexedIndirect(cb_, buffer->buffer, offset, drawCount,
+                                 stride);
+        return;
+    }
+    // Feature absent: the per-draw loop is still GPU-driven (no readback),
+    // just more submission records.
+    for (u32 i = 0; i < drawCount; ++i) {
+        vkCmdDrawIndexedIndirect(cb_, buffer->buffer,
+                                 offset + u64(i) * stride, 1, stride);
+    }
+}
+
 void VulkanCommandBuffer::dispatch(u32 groupsX, u32 groupsY, u32 groupsZ) {
     if (cb_ != VK_NULL_HANDLE) {
         bindMissingDummies();
@@ -1580,6 +1686,10 @@ void VulkanCommandBuffer::memoryBarrier(u32 dst) {
         if (dst & BarrierStage_Transfer) {
             dstStages |= VK_PIPELINE_STAGE_TRANSFER_BIT;
             dstAccess |= VK_ACCESS_TRANSFER_READ_BIT;
+        }
+        if (dst & BarrierStage_Indirect) {
+            dstStages |= VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+            dstAccess |= VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
         }
         if (dstStages == 0) {
             return;
@@ -1634,17 +1744,18 @@ void VulkanCommandBuffer::copyBuffer(BufferHandle src, BufferHandle dst,
     vkCmdCopyBuffer(cb_, s->buffer, t->buffer, 1, &region);
 }
 
-bool VulkanCommandBuffer::recordHostUpdate(VkBuffer staging, VkBuffer dst,
-                                           u64 size, u64 dstOffset) {
+bool VulkanCommandBuffer::recordHostUpdate(VkBuffer staging, u64 srcOffset,
+                                           VkBuffer dst, u64 size,
+                                           u64 dstOffset,
+                                           VkPipelineStageFlags readStages,
+                                           VkAccessFlags readAccess) {
     if (cb_ == VK_NULL_HANDLE || inPass_) {
         return false;
     }
-    const VkPipelineStageFlags readStages =
-        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
-        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
-        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    // readStages/readAccess are scoped to the buffer's declared usage
+    // (bufferReadScope): the barrier only orders against the stages that
+    // can actually read this buffer, leaving the rest of the frame free
+    // to overlap the copy.
 
     // A pipeline barrier's execution dependency covers every command
     // submitted earlier on the queue — i.e. the previous frame's reads of
@@ -1662,15 +1773,13 @@ bool VulkanCommandBuffer::recordHostUpdate(VkBuffer staging, VkBuffer dst,
                          nullptr, 1, &barrier, 0, nullptr);
 
     VkBufferCopy region {};
+    region.srcOffset = srcOffset;
     region.dstOffset = dstOffset;
     region.size = size;
     vkCmdCopyBuffer(cb_, staging, dst, 1, &region);
 
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask =
-        VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT |
-        VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT |
-        VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    barrier.dstAccessMask = readAccess;
     vkCmdPipelineBarrier(cb_, VK_PIPELINE_STAGE_TRANSFER_BIT, readStages, 0, 0,
                          nullptr, 1, &barrier, 0, nullptr);
     return true;
@@ -1781,11 +1890,13 @@ bool VulkanDevice::Impl::createStaging(u64 size, bool forRead, VkBuffer& out,
                          : VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     // A staging src may be consumed by a copy routed onto the compute
-    // queue (async recording) — same CONCURRENT policy as resources.
-    const std::array<u32, 2> shareFamilies { graphicsFamily, computeFamily };
+    // queue (async recording) or the upload queue — same CONCURRENT
+    // policy as resources.
+    const std::array<u32, 3> shareFamilies { graphicsFamily, computeFamily,
+                                             transferFamily };
     if (asyncComputeAvailable) {
         info.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        info.queueFamilyIndexCount = 2;
+        info.queueFamilyIndexCount = uploadQueueAvailable ? 3 : 2;
         info.pQueueFamilyIndices = shareFamilies.data();
     }
 
@@ -1803,6 +1914,84 @@ bool VulkanDevice::Impl::createStaging(u64 size, bool forRead, VkBuffer& out,
         return false;
     }
     *outMapped = allocInfo.pMappedData;
+    return true;
+}
+
+bool VulkanDevice::Impl::ringAlloc(u64 size, VkBuffer& outBuffer,
+                                   u64& outOffset, void** outMapped) {
+    StagingRing& ring = stagingRings[frame];
+    // 256-byte slices: comfortably above every alignment the copy or the
+    // flush could want, and cache-line friendly.
+    u64 offset = (ring.head + 255) & ~u64(255);
+    if (ring.buffer == VK_NULL_HANDLE || offset + size > ring.capacity) {
+        if (ring.buffer != VK_NULL_HANDLE) {
+            pendingBuffers.push_back(
+                { ring.buffer, ring.allocation, frameCounter });
+        }
+        u64 capacity = std::max<u64>(ring.capacity * 2, u64(1) << 20);
+        while (capacity < size) {
+            capacity *= 2;
+        }
+        ring = {};
+        void* mapped = nullptr;
+        if (!createStaging(capacity, false, ring.buffer, ring.allocation,
+                           &mapped)) {
+            ring = {};
+            return false;
+        }
+        ring.mapped = static_cast<u8*>(mapped);
+        ring.capacity = capacity;
+        offset = 0;
+    }
+    outBuffer = ring.buffer;
+    outOffset = offset;
+    *outMapped = ring.mapped + offset;
+    ring.head = offset + size;
+    return true;
+}
+
+bool VulkanDevice::Impl::recordUpload(VkBuffer dst, const void* data,
+                                      u64 size, u64 dstOffset) {
+    if (!uploadRecording) {
+        // Slot reuse is safe: beginFrame waited this slot's last upload
+        // value on uploadTimeline.
+        VkCommandBufferBeginInfo begin {};
+        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        if (!vkOk(vkBeginCommandBuffer(uploadCbs[frame], &begin),
+                  "vkBeginCommandBuffer(upload)")) {
+            return false;
+        }
+        uploadRecording = true;
+    }
+    VkBuffer staging = VK_NULL_HANDLE;
+    u64 srcOffset = 0;
+    void* mapped = nullptr;
+    if (!ringAlloc(size, staging, srcOffset, &mapped)) {
+        return false;
+    }
+    std::memcpy(mapped, data, size);
+    vmaFlushAllocation(allocator, stagingRings[frame].allocation, srcOffset,
+                       size);
+    // WAW within the frame's own upload stream (two updates of the same
+    // range); cross-frame WAR and reader visibility ride the semaphores.
+    VkBufferMemoryBarrier barrier {};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = dst;
+    barrier.offset = dstOffset;
+    barrier.size = size;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(uploadCbs[frame], VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1,
+                         &barrier, 0, nullptr);
+    VkBufferCopy region {};
+    region.srcOffset = srcOffset;
+    region.dstOffset = dstOffset;
+    region.size = size;
+    vkCmdCopyBuffer(uploadCbs[frame], staging, dst, 1, &region);
     return true;
 }
 
@@ -1961,6 +2150,9 @@ VulkanDevice::~VulkanDevice() {
         if (impl->queryPool != VK_NULL_HANDLE) {
             vkDestroyQueryPool(impl->device, impl->queryPool, nullptr);
         }
+        if (impl->computeQueryPool != VK_NULL_HANDLE) {
+            vkDestroyQueryPool(impl->device, impl->computeQueryPool, nullptr);
+        }
         for (auto& [id, pipeline] : impl->pipelines) {
             for (auto& [key, variant] : pipeline.variants) {
                 vkDestroyPipeline(impl->device, variant, nullptr);
@@ -2023,6 +2215,12 @@ VulkanDevice::~VulkanDevice() {
         for (auto& [id, buf] : impl->buffers) {
             vmaDestroyBuffer(impl->allocator, buf.buffer, buf.allocation);
         }
+        for (auto& ring : impl->stagingRings) {
+            if (ring.buffer != VK_NULL_HANDLE) {
+                vmaDestroyBuffer(impl->allocator, ring.buffer,
+                                 ring.allocation);
+            }
+        }
 
         for (u32 i = 0; i < kFramesInFlight; ++i) {
             vkDestroySemaphore(impl->device, impl->imageAvailable[i], nullptr);
@@ -2034,8 +2232,15 @@ VulkanDevice::~VulkanDevice() {
                 vkDestroyCommandPool(impl->device, impl->computePool,
                                      nullptr);
             }
+            if (impl->uploadPool != VK_NULL_HANDLE) {
+                vkDestroyCommandPool(impl->device, impl->uploadPool, nullptr);
+            }
             if (impl->timeline != VK_NULL_HANDLE) {
                 vkDestroySemaphore(impl->device, impl->timeline, nullptr);
+            }
+            if (impl->uploadTimeline != VK_NULL_HANDLE) {
+                vkDestroySemaphore(impl->device, impl->uploadTimeline,
+                                   nullptr);
             }
             vkDestroyCommandPool(impl->device, impl->commandPool, nullptr);
         }
@@ -2096,8 +2301,20 @@ CommandBuffer& VulkanDevice::beginFrame() {
         vkOk(vkWaitSemaphores(d.device, &wait, UINT64_MAX),
              "vkWaitSemaphores(compute slot)");
     }
+    // Same proof for the upload queue: the slot's staging-ring slices and
+    // parked frees must outlive its last transfer submission.
+    if (d.uploadQueueAvailable && d.uploadSlotValue[d.frame] != 0) {
+        VkSemaphoreWaitInfo wait {};
+        wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+        wait.semaphoreCount = 1;
+        wait.pSemaphores = &d.uploadTimeline;
+        wait.pValues = &d.uploadSlotValue[d.frame];
+        vkOk(vkWaitSemaphores(d.device, &wait, UINT64_MAX),
+             "vkWaitSemaphores(upload slot)");
+    }
     d.frameCounter++;
     d.flushPendingFrees(false); // slot fence passed: old parked frees are safe
+    d.stagingRings[d.frame].head = 0; // same proof covers the slot's ring
 
     VkResult acquired =
         vkAcquireNextImageKHR(d.device, d.swapchain, UINT64_MAX,
@@ -2159,12 +2376,21 @@ CommandBuffer& VulkanDevice::beginFrame() {
     // vksmoke flake: a caller polling one frame too late lost the value).
     if (d.queryPool != VK_NULL_HANDLE) {
         for (auto& [id, pending] : d.timestamps) {
-            if (pending.cached || pending.frameSlot != d.frame ||
-                pending.generation != d.regionGeneration[d.frame]) {
+            if (pending.cached || pending.frameSlot != d.frame) {
                 continue;
             }
+            // Both pools harvest here: the fence wait covers the graphics
+            // stream, the timeline wait above covers the compute stream.
+            const u32 liveGeneration =
+                pending.onComputePool ? d.computeRegionGeneration[d.frame]
+                                      : d.regionGeneration[d.frame];
+            if (pending.generation != liveGeneration) {
+                continue;
+            }
+            const VkQueryPool pool =
+                pending.onComputePool ? d.computeQueryPool : d.queryPool;
             u64 ticks = 0;
-            if (vkGetQueryPoolResults(d.device, d.queryPool, pending.query, 1,
+            if (vkGetQueryPoolResults(d.device, pool, pending.query, 1,
                                       sizeof(ticks), &ticks, sizeof(ticks),
                                       VK_QUERY_RESULT_64_BIT) == VK_SUCCESS) {
                 pending.cachedTicks = ticks;
@@ -2175,6 +2401,8 @@ CommandBuffer& VulkanDevice::beginFrame() {
                             d.frame * kTimestampsPerFrame, kTimestampsPerFrame);
         ++d.regionGeneration[d.frame];
         d.timestampCursor = 0;
+        // The compute region resets at the top of the compute cb
+        // (asyncComputeCmd) — same-queue ordering with its writes.
     }
 
     d.cmd->begin(d.commandBuffers[d.frame], d.imageViews[d.imageIndex],
@@ -2201,6 +2429,16 @@ CommandBuffer* VulkanDevice::asyncComputeCmd() {
         d.computeCmd->begin(d.computeCbs[d.frame], VK_NULL_HANDLE,
                             VK_FORMAT_UNDEFINED, {});
         d.computeRecording = true;
+        if (d.computeQueryPool != VK_NULL_HANDLE) {
+            // Recycle this slot's compute-timestamp region. Safe NOW: the
+            // beginFrame timeline wait proved the slot's last compute
+            // submission retired (and harvested its still-pending results).
+            vkCmdResetQueryPool(d.computeCbs[d.frame], d.computeQueryPool,
+                                d.frame * kTimestampsPerFrame,
+                                kTimestampsPerFrame);
+            ++d.computeRegionGeneration[d.frame];
+            d.computeTimestampCursor = 0;
+        }
     }
     d.computeRouting = true;
     return d.computeCmd.get();
@@ -2229,24 +2467,68 @@ void VulkanDevice::endFrame() {
         return;
     }
 
+    const bool computePending = d.computeRecording;
+
+    // Upload submit FIRST: the graphics submit below waits its value, so
+    // every pass of this frame reads the uploaded data. WAR: waits last
+    // frame's graphics value at TRANSFER (the previous frame may still be
+    // reading a buffer being rewritten). Own timeline: see Impl notes.
+    if (d.uploadRecording) {
+        vkOk(vkEndCommandBuffer(d.uploadCbs[d.frame]),
+             "vkEndCommandBuffer(upload)");
+        const u64 uploadDone = ++d.uploadNext;
+        const VkPipelineStageFlags uploadWaitStage =
+            VK_PIPELINE_STAGE_TRANSFER_BIT;
+        VkTimelineSemaphoreSubmitInfo uploadTimelineInfo {};
+        uploadTimelineInfo.sType =
+            VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        uploadTimelineInfo.waitSemaphoreValueCount =
+            d.gfxDoneValue != 0 ? 1 : 0;
+        uploadTimelineInfo.pWaitSemaphoreValues = &d.gfxDoneValue;
+        uploadTimelineInfo.signalSemaphoreValueCount = 1;
+        uploadTimelineInfo.pSignalSemaphoreValues = &uploadDone;
+        VkSubmitInfo uploadSubmit {};
+        uploadSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        uploadSubmit.pNext = &uploadTimelineInfo;
+        uploadSubmit.waitSemaphoreCount = d.gfxDoneValue != 0 ? 1 : 0;
+        uploadSubmit.pWaitSemaphores = &d.timeline;
+        uploadSubmit.pWaitDstStageMask = &uploadWaitStage;
+        uploadSubmit.commandBufferCount = 1;
+        uploadSubmit.pCommandBuffers = &d.uploadCbs[d.frame];
+        uploadSubmit.signalSemaphoreCount = 1;
+        uploadSubmit.pSignalSemaphores = &d.uploadTimeline;
+        if (vkOk(vkQueueSubmit(d.transferQueue, 1, &uploadSubmit,
+                               VK_NULL_HANDLE),
+                 "vkQueueSubmit(upload)")) {
+            d.uploadDoneValue = uploadDone;
+            d.uploadSlotValue[d.frame] = uploadDone;
+        }
+        d.uploadRecording = false;
+    }
+
     // Graphics submit. With async compute in flight (PG3): waits LAST
     // frame's compute value at the CONSUMER stages only (fragment,
     // compute dispatches, depth writes — the CSM rewrite is a WAR
     // against the chain's shadow-map reads); vertex work and transfers
     // run concurrently with the still-running chain. Signals its own
     // timeline value so this frame's compute can wait the graphics work
-    // it reads (CSM, staging copies).
-    const bool computePending = d.computeRecording;
+    // it reads (CSM, staging copies). With uploads pending, a third wait
+    // (uploadTimeline) covers every stage that reads uploaded buffers.
     const u64 gfxDone = ++d.timelineNext;
-    std::array<VkSemaphore, 2> waitSems { d.imageAvailable[d.frame],
-                                          d.timeline };
-    std::array<u64, 2> waitValues { 0, d.computeDoneValue };
-    std::array<VkPipelineStageFlags, 2> waitStages {
+    std::array<VkSemaphore, 3> waitSems { d.imageAvailable[d.frame],
+                                          d.timeline, d.uploadTimeline };
+    std::array<u64, 3> waitValues { 0, d.computeDoneValue,
+                                    d.uploadDoneValue };
+    std::array<VkPipelineStageFlags, 3> waitStages {
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
             VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT
+            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
     };
     std::array<VkSemaphore, 2> signalSems { d.renderFinished[d.imageIndex],
                                             d.timeline };
@@ -2254,22 +2536,27 @@ void VulkanDevice::endFrame() {
     const bool useTimeline =
         d.asyncComputeAvailable &&
         (computePending || d.computeDoneValue != 0);
+    // A wait on value 0 is trivially satisfied, so the 3-entry form is
+    // safe even before the first compute submission.
+    const bool waitUpload =
+        d.uploadQueueAvailable && d.uploadDoneValue != 0;
+    const u32 waitCount = waitUpload ? 3 : (useTimeline ? 2 : 1);
     VkTimelineSemaphoreSubmitInfo timelineInfo {};
     timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
-    timelineInfo.waitSemaphoreValueCount = 2;
+    timelineInfo.waitSemaphoreValueCount = waitCount;
     timelineInfo.pWaitSemaphoreValues = waitValues.data();
     timelineInfo.signalSemaphoreValueCount = 2;
     timelineInfo.pSignalSemaphoreValues = signalValues.data();
     VkSubmitInfo submit {};
     submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit.waitSemaphoreCount = useTimeline ? 2 : 1;
+    submit.waitSemaphoreCount = waitCount;
     submit.pWaitSemaphores = waitSems.data();
     submit.pWaitDstStageMask = waitStages.data();
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &cb;
-    submit.signalSemaphoreCount = useTimeline ? 2 : 1;
+    submit.signalSemaphoreCount = useTimeline || waitUpload ? 2 : 1;
     submit.pSignalSemaphores = signalSems.data();
-    if (useTimeline) {
+    if (useTimeline || waitUpload) {
         submit.pNext = &timelineInfo;
     }
     if (!vkOk(vkQueueSubmit(d.graphicsQueue, 1, &submit, d.inFlight[d.frame]),
@@ -2277,6 +2564,7 @@ void VulkanDevice::endFrame() {
         d.frameActive = false;
         return;
     }
+    d.gfxDoneValue = gfxDone;
 
     // Compute submit: waits this frame's graphics (CSM + staging copies
     // it reads), signals its value for the NEXT graphics submit.
@@ -2341,6 +2629,40 @@ u64 VulkanDevice::nativeTextureId(TextureHandle) const {
 
 // --- Buffers -------------------------------------------------------------------
 
+// The stages/accesses that can READ a buffer of this declared usage — the
+// scope of recordHostUpdate's two barriers.
+void bufferReadScope(BufferUsage usage, VkPipelineStageFlags& stages,
+                     VkAccessFlags& access) {
+    switch (usage) {
+    case BufferUsage::Indirect:
+        stages = VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT |
+                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        access = VK_ACCESS_INDIRECT_COMMAND_READ_BIT |
+                 VK_ACCESS_SHADER_READ_BIT;
+        return;
+    case BufferUsage::Vertex:
+        stages = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+        access = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+        return;
+    case BufferUsage::Index:
+        stages = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+        access = VK_ACCESS_INDEX_READ_BIT;
+        return;
+    case BufferUsage::Uniform:
+        stages = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        access = VK_ACCESS_UNIFORM_READ_BIT;
+        return;
+    case BufferUsage::Storage:
+        stages = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        access = VK_ACCESS_SHADER_READ_BIT;
+        return;
+    }
+}
+
 BufferHandle VulkanDevice::createBuffer(const BufferDesc& desc,
                                         const void* initialData) {
     Impl& d = *impl;
@@ -2359,14 +2681,16 @@ BufferHandle VulkanDevice::createBuffer(const BufferDesc& desc,
                  VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    // With async compute, any buffer may be read on the second queue —
-    // CONCURRENT skips per-resource ownership transfers (prototype
-    // simplicity over the minor bandwidth cost; Metal ignores it).
-    const std::array<u32, 2> shareFamilies { d.graphicsFamily,
-                                             d.computeFamily };
+    // With async compute, any buffer may be read on the second queue (and
+    // written from the upload queue) — CONCURRENT skips per-resource
+    // ownership transfers (prototype simplicity over the minor bandwidth
+    // cost; Metal ignores it).
+    const std::array<u32, 3> shareFamilies { d.graphicsFamily,
+                                             d.computeFamily,
+                                             d.transferFamily };
     if (d.asyncComputeAvailable) {
         info.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        info.queueFamilyIndexCount = 2;
+        info.queueFamilyIndexCount = d.uploadQueueAvailable ? 3 : 2;
         info.pQueueFamilyIndices = shareFamilies.data();
     }
 
@@ -2382,6 +2706,7 @@ BufferHandle VulkanDevice::createBuffer(const BufferDesc& desc,
 
     VulkanBuffer buffer {};
     buffer.size = desc.size;
+    buffer.usage = desc.usage;
     VmaAllocationInfo allocInfo {};
     if (!vkOk(vmaCreateBuffer(d.allocator, &info, &alloc, &buffer.buffer,
                               &buffer.allocation, &allocInfo),
@@ -2428,20 +2753,22 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
         VulkanCommandBuffer* rec =
             d.computeRouting ? d.computeCmd.get() : d.cmd.get();
         if (d.frameActive && rec && !rec->insidePass()) {
+            VkPipelineStageFlags readStages = 0;
+            VkAccessFlags readAccess = 0;
+            bufferReadScope(buffer->usage, readStages, readAccess);
             VkBuffer staging = VK_NULL_HANDLE;
-            VmaAllocation stagingAlloc = nullptr;
+            u64 srcOffset = 0;
             void* mapped = nullptr;
-            if (d.createStaging(size, false, staging, stagingAlloc,
-                                &mapped)) {
+            if (d.ringAlloc(size, staging, srcOffset, &mapped)) {
                 std::memcpy(mapped, data, size);
-                vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
-                if (rec->recordHostUpdate(staging, buffer->buffer, size,
-                                          offset)) {
-                    d.pendingBuffers.push_back(
-                        { staging, stagingAlloc, d.frameCounter });
-                    return;
+                vmaFlushAllocation(d.allocator,
+                                   d.stagingRings[d.frame].allocation,
+                                   srcOffset, size);
+                if (rec->recordHostUpdate(staging, srcOffset, buffer->buffer,
+                                          size, offset, readStages,
+                                          readAccess)) {
+                    return; // ring slice — reclaimed when the slot cycles
                 }
-                vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
             }
         }
         std::memcpy(static_cast<u8*>(buffer->mapped) + offset, data, size);
@@ -2449,7 +2776,43 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
         return;
     }
 
-    // Device-local: stage then copy on the GPU.
+    // Device-local: stage then copy on the GPU. With the upload queue on,
+    // the copy records into the frame's TRANSFER command buffer — off the
+    // graphics stream entirely; the endFrame submit chain orders it before
+    // every reader (contract: the whole frame sees the NEW data). Inside a
+    // compute-routing window the update belongs to the compute chain's own
+    // stream and stays there.
+    if (d.uploadQueueAvailable && d.frameActive && !d.computeRouting &&
+        d.recordUpload(buffer->buffer, data, size, offset)) {
+        return;
+    }
+    // Fallback: the FRAME command buffer (recordHostUpdate) from a ring
+    // slice — same mechanism as the dynamic-UBO path. A bare async submit
+    // (immediateSubmit(wait=false)) carries no ordering against the
+    // frame's own draws: sync validation caught the frame reading vertex
+    // buffers still being written by the transfer (READ_AFTER_WRITE).
+    VulkanCommandBuffer* rec =
+        d.computeRouting ? d.computeCmd.get() : d.cmd.get();
+    if (d.frameActive && rec && !rec->insidePass()) {
+        VkPipelineStageFlags readStages = 0;
+        VkAccessFlags readAccess = 0;
+        bufferReadScope(buffer->usage, readStages, readAccess);
+        VkBuffer staging = VK_NULL_HANDLE;
+        u64 srcOffset = 0;
+        void* mapped = nullptr;
+        if (d.ringAlloc(size, staging, srcOffset, &mapped)) {
+            std::memcpy(mapped, data, size);
+            vmaFlushAllocation(d.allocator,
+                               d.stagingRings[d.frame].allocation, srcOffset,
+                               size);
+            if (rec->recordHostUpdate(staging, srcOffset, buffer->buffer,
+                                      size, offset, readStages, readAccess)) {
+                return;
+            }
+        }
+    }
+    // Outside a frame (init, tools): nothing ever waits, block as before
+    // with a dedicated staging.
     VkBuffer staging = VK_NULL_HANDLE;
     VmaAllocation stagingAlloc = nullptr;
     void* mapped = nullptr;
@@ -2458,23 +2821,6 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
     }
     std::memcpy(mapped, data, size);
     vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
-
-    // While a frame is being recorded, the copy goes into the FRAME command
-    // buffer (recordHostUpdate) — same mechanism as the dynamic-UBO path.
-    // A bare async submit (immediateSubmit(wait=false)) carries no ordering
-    // against the frame's own draws: sync validation caught the frame
-    // reading vertex buffers still being written by the transfer
-    // (READ_AFTER_WRITE). In-frame recording keeps the
-    // no-stall property AND the ordering; the staging is parked in the
-    // deletion queue. Outside a frame (init, tools) nothing ever waits,
-    // so block as before.
-    VulkanCommandBuffer* rec =
-        d.computeRouting ? d.computeCmd.get() : d.cmd.get();
-    if (d.frameActive && rec && !rec->insidePass() &&
-        rec->recordHostUpdate(staging, buffer->buffer, size, offset)) {
-        d.pendingBuffers.push_back({ staging, stagingAlloc, d.frameCounter });
-        return;
-    }
     d.immediateSubmit(
         [&](VkCommandBuffer cb) {
             VkBufferCopy region {};
@@ -3446,19 +3792,29 @@ TimestampHandle VulkanDevice::insertTimestamp() {
     if (d.queryPool == VK_NULL_HANDLE || !d.frameActive) {
         return {}; // only meaningful while a frame is recording
     }
-    if (d.timestampCursor >= kTimestampsPerFrame) {
+    // Route to the stream actually being recorded: a scope taken while
+    // computeRouting is on brackets compute-queue work.
+    const bool onCompute = d.computeRouting && d.computeRecording &&
+                           d.computeQueryPool != VK_NULL_HANDLE;
+    u32& cursor = onCompute ? d.computeTimestampCursor : d.timestampCursor;
+    if (cursor >= kTimestampsPerFrame) {
         LOG_WARN("Vulkan: more than {} timestamps in one frame — dropping",
                  kTimestampsPerFrame);
         return {};
     }
-    const u32 query = d.frame * kTimestampsPerFrame + d.timestampCursor++;
+    const u32 query = d.frame * kTimestampsPerFrame + cursor++;
     // BOTTOM_OF_PIPE: the clock is taken when the stream REACHES this point.
-    vkCmdWriteTimestamp(d.commandBuffers[d.frame],
-                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, d.queryPool,
-                        query);
+    vkCmdWriteTimestamp(onCompute ? d.computeCbs[d.frame]
+                                  : d.commandBuffers[d.frame],
+                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                        onCompute ? d.computeQueryPool : d.queryPool, query);
     const u32 id = d.nextId++;
-    d.timestamps.emplace(id, Impl::PendingTimestamp {
-                                 query, d.frame, d.regionGeneration[d.frame] });
+    d.timestamps.emplace(
+        id, Impl::PendingTimestamp { query, d.frame,
+                                     onCompute
+                                         ? d.computeRegionGeneration[d.frame]
+                                         : d.regionGeneration[d.frame],
+                                     onCompute });
     return { id };
 }
 
@@ -3477,14 +3833,18 @@ bool VulkanDevice::timestampReady(TimestampHandle handle, u64& nanos) {
     }
     // Its region has been recycled since: the result is gone for good, so
     // release the handle rather than reporting another frame's number.
-    if (pending.generation != d.regionGeneration[pending.frameSlot]) {
+    const u32 liveGeneration =
+        pending.onComputePool ? d.computeRegionGeneration[pending.frameSlot]
+                              : d.regionGeneration[pending.frameSlot];
+    if (pending.generation != liveGeneration) {
         d.timestamps.erase(it);
         return false;
     }
     u64 ticks = 0;
     const VkResult result = vkGetQueryPoolResults(
-        d.device, d.queryPool, pending.query, 1, sizeof(ticks), &ticks,
-        sizeof(ticks), VK_QUERY_RESULT_64_BIT);
+        d.device, pending.onComputePool ? d.computeQueryPool : d.queryPool,
+        pending.query, 1, sizeof(ticks), &ticks, sizeof(ticks),
+        VK_QUERY_RESULT_64_BIT);
     if (result != VK_SUCCESS) {
         return false; // VK_NOT_READY — poll again next frame, never block
     }
@@ -3711,6 +4071,38 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
             }
         }
     }
+    // Upload (transfer) family: transfer-capable and distinct from both
+    // graphics and compute. Prefer a TRANSFER-ONLY family (a real DMA
+    // engine on PC); MoltenVK exposes generic families — a third queue
+    // there keeps the sync topology identical for PC validation.
+    u32 uploadFamily = d.graphicsFamily;
+    {
+        u32 familyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount,
+                                                 nullptr);
+        vector<VkQueueFamilyProperties> families(familyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(d.gpu, &familyCount,
+                                                 families.data());
+        i32 bestUpload = -1;
+        for (u32 i = 0; i < familyCount; ++i) {
+            const VkQueueFlags flags = families[i].queueFlags;
+            if (i == d.graphicsFamily || i == asyncFamily ||
+                (flags & (VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT |
+                          VK_QUEUE_COMPUTE_BIT)) == 0) {
+                continue; // graphics/compute imply transfer capability
+            }
+            const i32 uploadScore =
+                (flags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) == 0
+                    ? 3
+                : (flags & VK_QUEUE_GRAPHICS_BIT) == 0 ? 2
+                                                       : 1;
+            if (uploadScore > bestUpload) {
+                bestUpload = uploadScore;
+                uploadFamily = i;
+            }
+        }
+    }
+
     // Timeline semaphores (core 1.2, an enable-gated feature) are the
     // cross-queue sync primitive; without them async compute stays off.
     VkPhysicalDeviceTimelineSemaphoreFeatures timelineFeature {};
@@ -3761,10 +4153,13 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
     deviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
 
-    // Only anisotropy is requested, and only if the GPU has it — samplers fall
-    // back to isotropic filtering otherwise.
+    // Only anisotropy and multi-draw-indirect are requested, and only if the
+    // GPU has them — samplers fall back to isotropic filtering; indirect
+    // draws fall back to a per-draw loop.
     VkPhysicalDeviceFeatures enabled {};
     enabled.samplerAnisotropy = features.samplerAnisotropy;
+    enabled.multiDrawIndirect = features.multiDrawIndirect;
+    d.multiDrawIndirect = features.multiDrawIndirect == VK_TRUE;
 
     const f32 priority = 1.0f;
     vector<VkDeviceQueueCreateInfo> queueInfos;
@@ -3783,6 +4178,16 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
         VkDeviceQueueCreateInfo computeQueueInfo = graphicsQueueInfo;
         computeQueueInfo.queueFamilyIndex = asyncFamily;
         queueInfos.push_back(computeQueueInfo);
+    }
+    // Gated on the same timeline feature as async compute — the upload
+    // chain is pure timeline sync.
+    const bool wantUploadQueue =
+        wantAsyncCompute && uploadFamily != d.graphicsFamily &&
+        uploadFamily != asyncFamily;
+    if (wantUploadQueue && uploadFamily != d.presentFamily) {
+        VkDeviceQueueCreateInfo uploadQueueInfo = graphicsQueueInfo;
+        uploadQueueInfo.queueFamilyIndex = uploadFamily;
+        queueInfos.push_back(uploadQueueInfo);
     }
 
     VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamicRendering {};
@@ -3847,6 +4252,43 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
                 LOG_INFO("Vulkan: async compute on queue family {} "
                          "(graphics on {})",
                          asyncFamily, d.graphicsFamily);
+            }
+        }
+    }
+    if (wantUploadQueue && d.asyncComputeAvailable) {
+        d.transferFamily = uploadFamily;
+        vkGetDeviceQueue(d.device, uploadFamily, 0, &d.transferQueue);
+        VkCommandPoolCreateInfo uploadPoolInfo {};
+        uploadPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        uploadPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        uploadPoolInfo.queueFamilyIndex = uploadFamily;
+        VkSemaphoreTypeCreateInfo uploadTimelineType {};
+        uploadTimelineType.sType =
+            VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        uploadTimelineType.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        uploadTimelineType.initialValue = 0;
+        VkSemaphoreCreateInfo uploadTimelineSem {};
+        uploadTimelineSem.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        uploadTimelineSem.pNext = &uploadTimelineType;
+        if (vkOk(vkCreateCommandPool(d.device, &uploadPoolInfo, nullptr,
+                                     &d.uploadPool),
+                 "vkCreateCommandPool(upload)") &&
+            vkOk(vkCreateSemaphore(d.device, &uploadTimelineSem, nullptr,
+                                   &d.uploadTimeline),
+                 "vkCreateSemaphore(uploadTimeline)")) {
+            VkCommandBufferAllocateInfo uploadAlloc {};
+            uploadAlloc.sType =
+                VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            uploadAlloc.commandPool = d.uploadPool;
+            uploadAlloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            uploadAlloc.commandBufferCount = kFramesInFlight;
+            if (vkOk(vkAllocateCommandBuffers(d.device, &uploadAlloc,
+                                              d.uploadCbs.data()),
+                     "vkAllocateCommandBuffers(upload)")) {
+                d.uploadQueueAvailable = true;
+                LOG_INFO("Vulkan: upload queue on family {} (compute on {}, "
+                         "graphics on {})",
+                         uploadFamily, asyncFamily, d.graphicsFamily);
             }
         }
     }
@@ -3947,6 +4389,15 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
                   "vkCreateQueryPool")) {
             return nullptr;
         }
+        // Per-queue timestamps: the async compute stream gets its own pool
+        // (scopes recorded there measured nothing on the graphics pool).
+        if (d.asyncComputeAvailable &&
+            d.computeFamily < familyCount &&
+            families[d.computeFamily].timestampValidBits > 0) {
+            vkOk(vkCreateQueryPool(d.device, &queryInfo, nullptr,
+                                   &d.computeQueryPool),
+                 "vkCreateQueryPool(compute)");
+        }
     } else {
         LOG_WARN("Vulkan: GPU timestamps unavailable on this queue");
     }
@@ -3998,7 +4449,8 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
                     .computeShaders = true,
                     .timerQueries = timestampsUsable,
                     .volumeTextures = true,
-                    .asyncCompute = d.asyncComputeAvailable };
+                    .asyncCompute = d.asyncComputeAvailable,
+                    .multiDrawIndirect = d.multiDrawIndirect };
 
     {
         const u32 white[2] = { 0xffffffffu, 0xffffffffu };

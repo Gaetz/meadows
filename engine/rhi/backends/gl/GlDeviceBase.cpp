@@ -104,6 +104,23 @@ void GlCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, device.window.width(), device.window.height());
     }
+    // StoreOp::DontCare -> glInvalidateFramebuffer at endRenderPass (GL
+    // 4.3+; the 4.1 backend silently keeps Store — a correct, slower
+    // fallback). Only offscreen targets: the default framebuffer uses
+    // different attachment enums and is never transient here.
+    invalidateCount = 0;
+    if (desc.framebuffer.id != 0) {
+        const auto& fb = device.framebuffers.at(desc.framebuffer.id);
+        if (desc.storeOp == StoreOp::DontCare) {
+            for (u32 i = 0; i < fb.colorCount && invalidateCount < 8; ++i) {
+                invalidateAttachments[invalidateCount++] =
+                    GL_COLOR_ATTACHMENT0 + i;
+            }
+        }
+        if (desc.depthStoreOp == StoreOp::DontCare && fb.hasDepth) {
+            invalidateAttachments[invalidateCount++] = GL_DEPTH_ATTACHMENT;
+        }
+    }
     GLbitfield clearMask = 0;
     if (desc.loadOp == LoadOp::Clear) {
         const Color& c = desc.clearColor;
@@ -125,6 +142,13 @@ void GlCommandBuffer::beginRenderPass(const RenderPassDesc& desc) {
 }
 
 void GlCommandBuffer::endRenderPass() {
+    if (invalidateCount > 0 && glInvalidateFramebuffer != nullptr) {
+        static_assert(sizeof(GLenum) == sizeof(u32));
+        glInvalidateFramebuffer(
+            GL_FRAMEBUFFER, static_cast<GLsizei>(invalidateCount),
+            reinterpret_cast<const GLenum*>(invalidateAttachments));
+        invalidateCount = 0;
+    }
     // Defensive: whatever pass just ran, ImGui and the next pass start from
     // the backbuffer.
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -313,6 +337,23 @@ void GlCommandBuffer::drawIndexed(u32 indexCount, u32 instanceCount,
     }
 }
 
+void GlCommandBuffer::drawIndexedIndirect(BufferHandle args, u64 offset,
+                                          u32 drawCount, u32 stride) {
+    // GL 4.3+ (the 4.6 backend); the 4.1 path reports
+    // caps.multiDrawIndirect = false and callers keep their CPU culling.
+    auto it = device.buffers.find(args.id);
+    if (glMultiDrawElementsIndirect == nullptr || it == device.buffers.end() ||
+        drawCount == 0 || currentPipelineId == 0) {
+        return;
+    }
+    const auto& p = device.pipelines.at(currentPipelineId);
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, it->second);
+    glMultiDrawElementsIndirect(p.glTopology, glIndexType,
+                                reinterpret_cast<const void*>(offset),
+                                static_cast<GLsizei>(drawCount),
+                                static_cast<GLsizei>(stride));
+}
+
 void GlCommandBuffer::copyBuffer(BufferHandle src, BufferHandle dst, u64 size,
                                  u64 srcOffset, u64 dstOffset) {
     // Bind-style copy: valid on every GL level, and the dedicated COPY
@@ -352,6 +393,9 @@ void GlCommandBuffer::memoryBarrier(u32 dst) {
     }
     if (dst & BarrierStage_Transfer) {
         bits |= GL_BUFFER_UPDATE_BARRIER_BIT | GL_PIXEL_BUFFER_BARRIER_BIT;
+    }
+    if (dst & BarrierStage_Indirect) {
+        bits |= GL_COMMAND_BARRIER_BIT;
     }
     if (bits != 0) {
         glMemoryBarrier(bits);

@@ -24,7 +24,9 @@ GlDevice46::GlDevice46(uptr<platform::GlContext> context,
               .computeShaders = true,   // glDispatchCompute (GL 4.3+)
               .timerQueries = true,     // GL_TIMESTAMP queries (GL 3.3+)
               .midPassTimestamps = true, // IMR GPU: in-pass queries measure
-              .volumeTextures = true }; // GL_TEXTURE_3D (GI volumes)
+              .volumeTextures = true,   // GL_TEXTURE_3D (GI volumes)
+              .multiDrawIndirect = true }; // glMultiDrawElementsIndirect
+                                           // (GL 4.3+)
     // Depth 0..1 (docs/RENDERING.md): GLM_FORCE_DEPTH_ZERO_TO_ONE is global,
     // so projections emit 0..1 clip z; this remaps GL's NDC->window transform
     // to match (GL 4.5+). ONE convention across GL 4.6 and Vulkan — shaders
@@ -262,8 +264,12 @@ FramebufferHandle GlDevice46::createFramebuffer(const FramebufferDesc& desc) {
 
     const u32 id = nextId++;
     framebuffers.emplace(
-        id, GlFramebuffer { .name = framebuffer, .width = width,
-                            .height = height });
+        id, GlFramebuffer {
+                .name = framebuffer,
+                .width = width,
+                .height = height,
+                .colorCount = static_cast<u32>(desc.colorAttachments.size()),
+                .hasDepth = desc.depthAttachment.texture.id != 0 });
     return { id };
 }
 

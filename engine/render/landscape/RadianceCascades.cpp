@@ -525,16 +525,13 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
     // Async compute (docs/RENDERING.md PG3, needs the pipelined contract):
     // the whole chain — its staged uniform copies included, routed by the
     // backend — records on the second queue and runs concurrently with
-    // the next frame's front. The GPU probes stay off there: their
-    // timestamps belong to the graphics stream.
+    // the next frame's front. The GPU probes stay ON: the backend routes
+    // timestamps to the compute queue's own query pool while the routing
+    // window is open, so the rc* scopes measure the async stream itself.
     rhi::CommandBuffer* asyncCmd =
         tuning.pipelined && tuning.asyncCompute ? device.asyncComputeCmd()
                                                 : nullptr;
     rhi::CommandBuffer& cmd = asyncCmd ? *asyncCmd : frameCmd;
-    if (asyncCmd) {
-        probe = nullptr;
-        probeDevice = nullptr;
-    }
     // Pipeline value trace: one line whenever the APPLY state flips or a
     // live knob moves (throttled) — the ground truth for "does this
     // slider reach the shader" questions, straight from the values the

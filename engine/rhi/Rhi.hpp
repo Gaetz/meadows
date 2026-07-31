@@ -63,6 +63,10 @@ struct DeviceCaps {
     // scheduling (Vulkan only — docs/RENDERING.md PG3): work recorded via
     // Device::asyncComputeCmd() runs concurrently with the graphics queue.
     bool asyncCompute { false };
+    // drawIndexedIndirect with drawCount > 1 in one call (GPU-driven
+    // culling). Backends without it still accept the call (per-draw
+    // loop / no-op on the 4.1 path) — check the flag to pick the path.
+    bool multiDrawIndirect { false };
 };
 
 // --- Barriers ------------------------------------------------------------------
@@ -78,6 +82,7 @@ enum BarrierStage : u32 {
     BarrierStage_Fragment = 1u << 1, // fragment-stage reads
     BarrierStage_Vertex = 1u << 2,   // vertex-stage reads
     BarrierStage_Transfer = 1u << 3, // copyBuffer/copyTexture
+    BarrierStage_Indirect = 1u << 4, // drawIndexedIndirect argument reads
     BarrierStage_All = 0xFFFFFFFFu,  // everything, CPU readback included
 };
 
@@ -87,7 +92,20 @@ enum class BufferUsage {
     Vertex,
     Index,
     Uniform,
-    Storage, // SSBO: read/written by compute shaders (caps.computeShaders)
+    Storage,  // SSBO: read/written by compute shaders (caps.computeShaders)
+    Indirect, // drawIndexedIndirect arguments — ALSO SSBO-writable, so a
+              // cull dispatch fills the commands the draw consumes
+};
+
+// drawIndexedIndirect argument layout — identical on Vulkan
+// (VkDrawIndexedIndirectCommand) and GL (DrawElementsIndirectCommand),
+// so compute shaders write this struct directly.
+struct DrawIndexedIndirectCommand {
+    u32 indexCount { 0 };
+    u32 instanceCount { 0 }; // 0 = culled: the draw costs nothing
+    u32 firstIndex { 0 };
+    i32 vertexOffset { 0 };  // slot offset into a pooled vertex buffer
+    u32 firstInstance { 0 };
 };
 
 struct BufferDesc {
@@ -359,6 +377,17 @@ enum class LoadOp {
     DontCare,
 };
 
+// DontCare = the attachment's contents are dead after the pass: nothing
+// samples them before they are next cleared/overwritten. On tiled GPUs
+// (Apple/mobile) this skips the tile flush to memory; on desktop it lets
+// the driver drop the write-back and keep render-target compression.
+// CONTRACT: a DontCare attachment must not be sampled until rewritten —
+// the backend may leave garbage in it.
+enum class StoreOp {
+    Store,
+    DontCare,
+};
+
 // framebuffer 0 targets the swapchain backbuffer (existing callers
 // unchanged). beginRenderPass binds the target and sets the viewport to its
 // full size. Depth defaults clear to the far plane, which is a no-op for
@@ -369,6 +398,8 @@ struct RenderPassDesc {
     Color clearColor {};
     LoadOp depthLoadOp { LoadOp::Clear };
     f32 clearDepth { 1.0f };
+    StoreOp storeOp { StoreOp::Store };      // every color attachment
+    StoreOp depthStoreOp { StoreOp::Store };
 };
 
 } // namespace rhi

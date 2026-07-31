@@ -33,6 +33,8 @@ public:
     void draw(u32 vertexCount, u32 instanceCount, u32 firstVertex) override;
     void drawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex,
                      u32 firstInstance) override;
+    void drawIndexedIndirect(BufferHandle args, u64 offset, u32 drawCount,
+                             u32 stride) override;
 
     void copyTexture(TextureHandle src, TextureHandle dst) override;
 
@@ -47,6 +49,10 @@ private:
     u32 currentPipelineId { 0 };
     u32 indexByteSize { 4 };
     u32 glIndexType { 0 };
+    // StoreOp::DontCare attachments of the CURRENT pass, invalidated by
+    // endRenderPass while the framebuffer is still bound (GL enums).
+    u32 invalidateAttachments[9] {};
+    u32 invalidateCount { 0 };
 };
 
 // Shared base for the GL backends. Owns all resource maps and provides the
@@ -176,6 +182,8 @@ protected:
         u32 name { 0 };
         u32 width { 0 };  // attachment size at its selected mip:
         u32 height { 0 }; // beginRenderPass sets the viewport from these
+        u32 colorCount { 0 };   // for StoreOp::DontCare invalidation
+        bool hasDepth { false };
     };
 
     uptr<platform::GlContext> context;

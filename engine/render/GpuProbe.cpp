@@ -58,6 +58,16 @@ void GpuProbe::resolveOldest(rhi::Device& device) {
     if (!slot.open) {
         return;
     }
+    // Cross-queue safety: a slot can hold timestamps from BOTH the graphics
+    // and the async-compute stream (the rc* scopes). The last-sample gate
+    // below only proves the GRAPHICS stream retired — that frame's compute
+    // submission starts after the graphics submit and can still be in
+    // flight, and a not-ready compute sample would read as garbage. Two
+    // device frames later the backend's beginFrame has provably waited both
+    // (slot fence + compute timeline), so hold resolution until then.
+    if (frameIndex < slot.frameIndex + 2) {
+        return;
+    }
     // All-or-nothing: GL returns results in submission order, so if the
     // LAST timestamp is ready the whole slot is — but poll each anyway
     // (drivers may differ) without consuming until all are available...

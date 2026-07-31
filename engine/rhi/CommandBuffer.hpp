@@ -56,6 +56,15 @@ public:
     virtual void drawIndexed(u32 indexCount, u32 instanceCount = 1,
                              u32 firstIndex = 0, u32 firstInstance = 0) = 0;
 
+    // drawCount indexed draws whose arguments (DrawIndexedIndirectCommand,
+    // `stride` bytes apart starting at `offset`) live in a
+    // BufferUsage::Indirect buffer — typically written by a cull dispatch
+    // (culled entries carry instanceCount 0, so drawCount stays CPU-known
+    // and no count-buffer feature is needed). One call when
+    // caps().multiDrawIndirect; otherwise the backend loops per draw.
+    virtual void drawIndexedIndirect(BufferHandle args, u64 offset,
+                                     u32 drawCount, u32 stride) = 0;
+
     // Copies the full base level of `src` into `dst` (same size and format;
     // Vulkan vkCmdCopyImage). Call OUTSIDE a render pass — the intended use
     // is snapshotting scene color/depth between passes so a later pass can
