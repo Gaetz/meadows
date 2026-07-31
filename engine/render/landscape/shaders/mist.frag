@@ -17,6 +17,8 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 #include "gi.glsl"
 #include "volumetric_media.glsl"
 #include "temporal_resolve.glsl"
+#include "view_util.glsl"
+#include "fog_march.glsl"
 
 layout(binding = 8) uniform sampler2D uMistMap;
 layout(binding = 9) uniform sampler3D uNoiseVolume; // tileable Perlin-Worley
@@ -35,33 +37,6 @@ layout(location = 0) out vec4 fragColor;
 // Must match MistMap::kTopOffset / kTopRange / kValleyDepth quantization.
 const float kTopOffset = -64.0;
 const float kTopRange = 512.0;
-
-vec3 worldFromDepth(vec2 uv, float depth) {
-    // 0..1 clip: the stored depth IS ndc z (no *2-1 remap).
-    vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    vec4 world = uInvViewProj * ndc;
-    return world.xyz / world.w;
-}
-
-// Single hardware-compared CSM tap (no PCF — one per step per pixel).
-float shaftShadow(vec3 p) {
-    if (uShadowInfo.w <= 0.0) {
-        return 1.0;
-    }
-    float d = distance(p, uCameraPos.xyz);
-    if (d >= uCascadeSplits.z) {
-        return 1.0;
-    }
-    int cascade = d < uCascadeSplits.x ? 0 : d < uCascadeSplits.y ? 1 : 2;
-    vec4 lightClip = uSunViewProj[cascade] * vec4(p, 1.0);
-    vec3 proj = lightClip.xyz / lightClip.w;
-    proj.xy = proj.xy * 0.5 + 0.5; // 0..1 clip: only xy needs NDC->UV
-    if (proj.z >= 1.0 || any(lessThan(proj.xy, vec2(0.0))) ||
-        any(greaterThan(proj.xy, vec2(1.0)))) {
-        return 1.0;
-    }
-    return texture(uShadowMap, vec4(proj.xy, float(cascade), proj.z));
-}
 
 // The mist ceiling at this column (baked smoothed terrain + live lift).
 float mistTopAt(vec2 xz) {
@@ -194,11 +169,7 @@ void main() {
         return;
     }
 
-    // Interleaved Gradient Noise (Jimenez), the volumetric.frag dither —
-    // golden-ratio-rolled per frame so the EMA integrates it over time.
-    float jitter = fract(52.9829189 * fract(0.06711056 * gl_FragCoord.x +
-                                            0.00583715 * gl_FragCoord.y) +
-                         uTemporalInfo.y * 0.61803398875);
+    float jitter = ignJitterRolled(gl_FragCoord.xy, uTemporalInfo.y);
 
     vec3 ambientAir = skyGradient(dir);
     float mu = dot(dir, uSunDirection.xyz);

@@ -15,36 +15,11 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 
 #include "clouds.glsl"
 #include "gi.glsl"
+#include "view_util.glsl"
+#include "fog_march.glsl"
 
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
-
-vec3 worldFromDepth(vec2 uv, float depth) {
-    // 0..1 clip: the stored depth IS ndc z (no *2-1 remap).
-    vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    vec4 world = uInvViewProj * ndc;
-    return world.xyz / world.w;
-}
-
-// Single hardware-compared CSM tap (no PCF — one per step per pixel).
-float shaftShadow(vec3 p) {
-    if (uShadowInfo.w <= 0.0) {
-        return 1.0;
-    }
-    float d = distance(p, uCameraPos.xyz);
-    if (d >= uCascadeSplits.z) {
-        return 1.0;
-    }
-    int cascade = d < uCascadeSplits.x ? 0 : d < uCascadeSplits.y ? 1 : 2;
-    vec4 lightClip = uSunViewProj[cascade] * vec4(p, 1.0);
-    vec3 proj = lightClip.xyz / lightClip.w;
-    proj.xy = proj.xy * 0.5 + 0.5; // 0..1 clip: only xy needs NDC->UV
-    if (proj.z >= 1.0 || any(lessThan(proj.xy, vec2(0.0))) ||
-        any(greaterThan(proj.xy, vec2(1.0)))) {
-        return 1.0;
-    }
-    return texture(uShadowMap, vec4(proj.xy, float(cascade), proj.z));
-}
 
 void main() {
     float reach = uFogSunInfo.z;
@@ -70,22 +45,14 @@ void main() {
     // the haze term is the fog's physical color, not an effect.
     vec3 ambientAir = skyGradient(dir);
     float mu = dot(dir, uSunDirection.xyz);
-    // Isotropic floor + forward lobe: the lobe carries the sunrise/sunset
-    // glow toward the sun, the floor keeps midday cloud-gap curtains
-    // visible SIDE-ON (mu ~ 0 there — a pure lobe extinguishes them).
-    // hand-tuned floor.
-    float lobe = pow(clamp(mu * 0.5 + 0.5, 0.0, 1.0), uFogSunInfo.y);
-    float phase = 0.35 + 0.65 * lobe;
-    vec3 sunAir = uSunColor.rgb * (phase * uFogSunInfo.x * uTime.z);
+    vec3 sunAir = uSunColor.rgb * (fogSunPhase(mu) * uFogSunInfo.x * uTime.z);
 
     const int kSteps = 20;
-    // Interleaved Gradient Noise (Jimenez): structured screen-space dither
-    // that filters out smoothly — white noise here reads as ink blotches.
-    float jitter = fract(52.9829189 * fract(0.06711056 * gl_FragCoord.x +
-                                            0.00583715 * gl_FragCoord.y));
+    float jitter = ignJitter(gl_FragCoord.xy);
 
     float transmit = 1.0;
     vec3 inscatter = vec3(0.0);
+    vec3 haze = vec3(0.0);
     for (int i = 0; i < kSteps; ++i) {
         // QUADRATIC step distribution: dense near the camera (several
         // steps inside the ~32 m RC volume — where giAir varies), sparse
@@ -106,18 +73,18 @@ void main() {
         // V3: inside the RC volume the haze takes the FIELD's radiance —
         // green under a canopy clearing, dark in a shaded valley, lamp
         // glows in night mist; outside, the sky gradient as before.
-        vec3 haze = giAir(p, ambientAir);
+        // Sampled once per step PAIR and held: giAir's 8 slab fetches are
+        // the step's dominant cost, and the field is trilinear over
+        // metre-scale probes — a one-step hold stays under its own
+        // filtering radius.
+        if ((i & 1) == 0) {
+            haze = giAir(p, ambientAir);
+        }
         // Shadowed air keeps a floor of haze (the sky still reaches it
         // sideways); the contrast between lit and shadowed air is what
-        // draws the shafts and the dark curtains. hand-tuned. The sun
-        // term rides a 3x softer altitude envelope than the extinction
-        // (the froxel_inject contract): curtains keep their medium.
-        float sunLift =
-            exp(max(p.y - uTerrainInfo.x, 0.0) *
-                (uFogLayerInfo.x * 0.65)) *
-            (1.0 -
-             smoothstep(uCloudInfo.y * 0.45, uCloudInfo.y * 1.0, p.y));
-        vec3 source = haze * mix(0.45, 1.0, vis) + sunAir * (vis * sunLift);
+        // draws the shafts and the dark curtains. hand-tuned.
+        vec3 source =
+            haze * mix(0.45, 1.0, vis) + sunAir * (vis * fogSunLift(p.y));
         inscatter += transmit * source * (1.0 - absorb);
         transmit *= absorb;
         if (transmit < 0.003) {

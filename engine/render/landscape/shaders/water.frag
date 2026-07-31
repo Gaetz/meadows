@@ -17,15 +17,10 @@ layout(binding = 3) uniform sampler2D uPoolDepth;
 // display buffer) — reprojected into the mirror, see below.
 layout(binding = 4) uniform sampler2D uSkyClouds;
 
+#include "view_util.glsl"
+
 layout(location = 0) in vec3 vWorldPos;
 layout(location = 0) out vec4 fragColor;
-
-vec3 worldFromDepth(vec2 uv, float depth) {
-    // 0..1 clip: the stored depth IS ndc z (no *2-1 remap).
-    vec4 ndc = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    vec4 world = uInvViewProj * ndc;
-    return world.xyz / world.w;
-}
 
 // Scrolling multi-octave wave normal, analytic derivatives (no texture).
 vec3 waveNormal(vec2 p, float t) {

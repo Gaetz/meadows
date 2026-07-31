@@ -2,6 +2,7 @@
 #include "common.glsl"
 #include "sky.glsl"
 #include "clouds.glsl"
+#include "view_util.glsl"
 
 // Far-tree impostor silhouette: an ANALYTIC stylized tree in the quad —
 // a few hash-jittered crown discs over a thin trunk (the lobe-tree
@@ -20,8 +21,7 @@ float hash1(float n) {
 
 void main() {
     // Dither dissolve for the distance fades (IGN — keeps depth writes).
-    float ign = fract(52.9829189 * fract(0.06711056 * gl_FragCoord.x +
-                                         0.00583715 * gl_FragCoord.y));
+    float ign = ignJitter(gl_FragCoord.xy);
     if (vFade <= ign) {
         discard;
     }

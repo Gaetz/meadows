@@ -19,21 +19,27 @@ layout(location = 0) out vec4 fragColor;
 // how close its FULL-RES depth sits to the center pixel's — silhouette
 // edges (a crisp ridge in front of a bright mist bank / a mountain
 // against the clouds) stop bleeding 1-px halos across. hand-tuned
-// raw-z tolerance.
-vec4 bilateral4(sampler2D tex, vec2 uv, vec2 texel, float centerDepth) {
-    const vec2 kOffsets[4] =
-        vec2[4](vec2(0.6, 0.2), vec2(-0.2, 0.6), vec2(-0.6, -0.2),
-                vec2(0.2, -0.6));
-    vec4 sum = vec4(0.0);
-    float weightSum = 0.0;
+// raw-z tolerance. Weights are computed once (bilateralWeights) and
+// shared by every ½-res target fetched at the same offsets.
+const vec2 kBilateralOffsets[4] =
+    vec2[4](vec2(0.6, 0.2), vec2(-0.2, 0.6), vec2(-0.6, -0.2),
+            vec2(0.2, -0.6));
+
+vec4 bilateralWeights(vec2 uv, vec2 texel, float centerDepth) {
+    vec4 w;
     for (int i = 0; i < 4; ++i) {
-        vec2 u = uv + texel * kOffsets[i];
-        float d = texture(uSceneDepth, u).r;
-        float w = 1.0 / (0.05 + abs(d - centerDepth) * 400.0);
-        sum += texture(tex, u) * w;
-        weightSum += w;
+        float d = texture(uSceneDepth, uv + texel * kBilateralOffsets[i]).r;
+        w[i] = 1.0 / (0.05 + abs(d - centerDepth) * 400.0);
     }
-    return sum / weightSum;
+    return w;
+}
+
+vec4 bilateral4(sampler2D tex, vec2 uv, vec2 texel, vec4 w) {
+    vec4 sum = vec4(0.0);
+    for (int i = 0; i < 4; ++i) {
+        sum += texture(tex, uv + texel * kBilateralOffsets[i]) * w[i];
+    }
+    return sum / (w.x + w.y + w.z + w.w);
 }
 
 // ACES-fitted filmic curve (Krzysztof Narkowicz).
@@ -75,13 +81,14 @@ void main() {
     // marching dither out of both the shafts and the dark curtains.
     vec2 volTexel = 1.0 / vec2(textureSize(uVolumetric, 0));
     float centerDepth = texture(uSceneDepth, vUv).r;
+    vec4 w = bilateralWeights(vUv, volTexel, centerDepth);
     // Sky clouds FIRST — the farthest medium; mist and fog veil them.
-    vec4 clouds = bilateral4(uSkyClouds, vUv, volTexel, centerDepth);
+    vec4 clouds = bilateral4(uSkyClouds, vUv, volTexel, w);
     hdr = hdr * clouds.a + clouds.rgb;
     // Ground mist BEFORE the fog term: the mist hugs the terrain at the
     // far end of the ray, the fog fills the air in front of it — fog
     // veils distant mist, never the reverse.
-    vec4 mist = bilateral4(uMist, vUv, volTexel, centerDepth);
+    vec4 mist = bilateral4(uMist, vUv, volTexel, w);
     hdr = hdr * mist.a + mist.rgb;
     vec4 volumetric =
         (texture(uVolumetric, vUv + volTexel * vec2(0.6, 0.2)) +
