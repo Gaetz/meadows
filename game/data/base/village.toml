@@ -5107,7 +5107,10 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
 cell = "4d7a9b30-0000-4000-8000-000000000321"
-position = [4.6, 4.6, 5]
+# Anchor ON the window plane: the windowBeam prism starts at the anchor
+# (s < 0 clips behind it) — the old 0.6 m interior setback made every
+# beam and wall pool depart from inside the room.
+position = [4.2, 4.6, 5]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000003b4"
@@ -5125,7 +5128,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
 cell = "4d7a9b30-0000-4000-8000-000000000321"
-position = [4.6, 4.6, 9]
+position = [4.2, 4.6, 9]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 
 [[records]]
@@ -5144,7 +5147,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
 cell = "4d7a9b30-0000-4000-8000-000000000321"
-position = [4.6, 4.6, 13]
+position = [4.2, 4.6, 13]
 rotation = [0.0, 0.7071068, 0.0, 0.7071068]
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000003b8"
@@ -5162,7 +5165,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
 cell = "4d7a9b30-0000-4000-8000-000000000321"
-position = [11.4, 4.6, 5]
+position = [11.8, 4.6, 5]
 rotation = [0.0, -0.7071068, 0.0, 0.7071068]
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000003ba"
@@ -5180,7 +5183,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
 cell = "4d7a9b30-0000-4000-8000-000000000321"
-position = [11.4, 4.6, 9]
+position = [11.8, 4.6, 9]
 rotation = [0.0, -0.7071068, 0.0, 0.7071068]
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000003bc"
@@ -5198,7 +5201,7 @@ new = true
 [records.fields]
 baseForm = "4d7a9b30-0000-4000-8000-00000000012e"
 cell = "4d7a9b30-0000-4000-8000-000000000321"
-position = [11.4, 4.6, 13]
+position = [11.8, 4.6, 13]
 rotation = [0.0, -0.7071068, 0.0, 0.7071068]
 [[records]]
 form = "4d7a9b30-0000-4000-8000-0000000003be"
