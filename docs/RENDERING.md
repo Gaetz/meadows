@@ -90,7 +90,37 @@ ownership transfers post-demo if a PC re-baseline justifies it).
   frame's command buffer*, barriered both ways — in-place writes raced the
   in-flight frame (CSM matrices flipped mid-frame → flickering shadow
   plates). In-place remains only for init/tools and inside-pass updates
-  (ImGui vertex streams).
+  (ImGui vertex streams). The two barriers are **scoped to the buffer's
+  declared usage** (`bufferReadScope`: vertex → VERTEX_INPUT, uniform →
+  the shader stages, …), not a fixed all-read mask — the PG1 principle
+  applied to uploads. The staging is a slice of a **persistent-mapped
+  staging ring** (one per frame slot, reset fence-proven in beginFrame,
+  growth parks the old buffer in the deletion queue): the former P6
+  lever — no more per-update `vmaCreateBuffer` + deletion-queue entry.
+- **`StoreOp` on render passes**: `RenderPassDesc.storeOp/depthStoreOp`
+  (default Store) map to `STORE_OP_DONT_CARE` for transient attachments —
+  on a tiled GPU (M1) a DontCare attachment never leaves the tile. First
+  user: the reflection pass's depth (mirror-only scaffolding). GL 4.3+
+  maps it to `glInvalidateFramebuffer`; GL 4.1 silently keeps Store.
+- **Per-queue GPU timestamps**: a second query pool serves the async
+  compute stream (reset at the top of the compute cb — same-queue
+  ordering with its writes; harvest rides the slot's timeline wait). The
+  rc* scopes are measurable in async mode — first reading on M1:
+  inject 3.0 / build 2.5 / merge 3.3 ms, ~8.9 ms of async chain that was
+  invisible. `GpuProbe` holds a slot's resolution two device frames so a
+  mixed graphics+compute slot never reads an in-flight compute query.
+- **Upload (transfer) queue**: in-frame DEVICE-LOCAL buffer uploads
+  record into a per-slot transfer cb, submitted at endFrame before the
+  graphics submit. Sync: its OWN timeline (a third queue interleaving on
+  the shared one could signal out of order — forbidden); waits last
+  frame's graphics value (WAR), graphics waits its value at the
+  reader stages; buffers are CONCURRENT across the three families. On PC
+  the transfer-only family is a real DMA engine; MoltenVK gives a third
+  generic queue (family 2) — same topology, so M1 sync-validates the PC
+  path. The compute chain does NOT wait uploads (the rc chain reads no
+  streamed buffer — extend the wait if that changes). Dynamic-UBO
+  updates stay on the frame cb (they need in-stream ordering);
+  compute-window updates stay on the compute cb.
 - **Persisted VkPipelineCache** (`vulkan-pipeline-cache.bin`) — Metal
   shader compilation happens on first launch only; the title screen warms
   the main-path variants.
@@ -136,7 +166,7 @@ mist, contact shadows, auto-exposure, SSAO-slot), `MistMap` /
 `NoiseVolume` (valley bake + shared Perlin-Worley volume — §3.5
 "Ground mist"), `RadianceCascades` (GI),
 `LightClusters` (clustered-forward culling), `ChunkOcclusion` (CPU
-horizon) + `GpuOcclusion` (Hi-Z compute cull + fence readback),
+horizon) + `GpuOcclusion` (Hi-Z compute cull -> indirect commands, no readback),
 `TerrainLightMap` (worker-baked far sun shadows + sky aperture),
 `FxRenderer` (CPU particles), `ShaderLibrary` (includes, hot-reload).
 
@@ -160,7 +190,7 @@ Graphics queue: streaming/occlusion pumps → cluster-light culling
 consumer fence (pipelined GI) → planar reflection (half-res, sea visible
 only, non-oblique culling frustum) → opaque HDR pass (terrain, props,
 grass, meshes, skinned NPCs, sky, water volumes; frustum + CPU∪GPU
-occlusion) → color+depth copies → Hi-Z build + cull (fence readback) →
+occlusion) → color+depth copies → Hi-Z build + cull (writes next frame's indirect commands) →
 water composite → PostFx (bloom/god rays/froxel or march
 volumetric/contact/ground mist/auto-expo) → **GI chain recording
 (pipelined)** →
@@ -401,7 +431,10 @@ MoltenVK exposes no RT anyway).
   analytic terms sample slice centers); display-only 7-tap cross blur
   (history stays sharp). History invalidated on teleport/reach
   change/frames without froxels. Fallback + A/B: the 20-step ½-res 2D
-  march (also the no-compute path). Measured ~0.5 ms (M1 Debug).
+  march (also the no-compute path); its `giAir` is sampled once per step
+  PAIR and held — the 8 slab fetches were the step's dominant cost and
+  the field is trilinear over metre-scale probes, so a one-step hold
+  stays under its own filtering radius. Measured ~0.5 ms (M1 Debug).
 - Screen-space god rays remain (foliage, sunsets — taste call),
   deliberately CLOUD-BLIND (a cloud coupling was tried 2026-07-30 and
   reverted: it overpowered and drowned the tree/ground occluders). The
@@ -436,10 +469,18 @@ MoltenVK exposes no RT anyway).
   terrain in the main pass — ridgeline silhouettes to ~5 km, painted
   with the SHARED `terrainColor` palette and raised+darkened by the
   SHARED `forestMask` (both made public for it), so the distant forest
-  fringe continues the real scatter past the vegetation ring. The mesh
-  sinks 12 m inside the streaming ring (vertex bias, `fogLayerInfo.z` =
-  ring) so its coarse sampling never pokes through the exact chunks;
-  the horizon closure moves out to `FarTerrain::reach()` (~5 km) when
+  fringe continues the real scatter past the vegetation ring.
+  **In-ring containment is MIN-SAMPLING, not a sink** (fix 2026-07-31:
+  the original fixed 12 m sink could not absorb a 62 m cell's
+  interpolation overshoot on slopes, and the baked canopy raise ate
+  most of it — big triangles rose through the fine terrain). The bake
+  takes each vertex as the MIN of the true height over its quad
+  support (half-cell grid) so a coarse triangle can never rise above
+  the true surface; the residual 12 m in-ring sink only covers
+  sub-half-cell relief, and what the min gave up (true-height delta +
+  canopy raise) rides uv.x, restored by the vertex shader beyond the
+  streaming ring where the crests must keep their real silhouettes.
+  The horizon closure moves out to `FarTerrain::reach()` (~5 km) when
   it stands in. Flat shading (color × (ambient + sun·N·L × cloud
   shadow)) + `applyFog` — the veil does the silhouette work. Rebake on
   1 km stray; toggle "Far terrain" (persisted `farTerrain`).
@@ -624,7 +665,13 @@ live knob) + temporal EMA.
 - **Water**: global sea plane (planar mirror + oblique clip; culling
   frustum from the NON-oblique projection — Lengyel's trick corrupts the
   far plane), pool-depth bake killing foam on small ponds, submersion
-  tint via effective-surface uniform. **Placed water volumes**
+  tint via effective-surface uniform. The pipeline carries a NEGATIVE
+  depth bias (-4/-2.5): where the sheet lies centimetres over the
+  ground (shallow shelves, flooded meadow dips) the two planes sit
+  inside the far-field 0..1-depth quantization noise and the surface
+  flickered per pixel — contour-line moiré fringes; the bias rides the
+  format's local precision so near geometry is untouched (retire with
+  reversed-Z, roadmap). **Placed water volumes**
   (`WaterVolumeForm`, spec decided): box volumes whose top face is the
   surface, per-volume tint/chop, sea keeps the mirror, volumes get a
   "deaf" sky-fresnel surface; per-cell water heights rejected (two
@@ -698,11 +745,15 @@ live knob) + temporal EMA.
 ### 4.3 Remaining levers (see roadmap)
 
 CSM static/dynamic split cache (P5b) — only if `shadows` still dominates
-after round-robin+cull; upload stall re-measure (P6, byte budget or
-persistent-mapped staging ring); grass = knobs + measurement only until
-its visual redo; vegetation imposters (deferred decision); per-queue GPU
-timestamps (rc* scopes are blind in async mode); transfer queue (PC);
-RC tuning pass (3 → 1–2 ms targets via the GI panel knobs).
+after round-robin+cull; upload stall re-measure (P6 — the
+persistent-mapped staging ring IS built, §1.2; what remains is
+re-measuring the terrain streamer and a byte budget if it still bites);
+grass = knobs + measurement only until its visual redo; vegetation
+imposters (deferred decision); per-queue GPU timestamps and the
+transfer queue are BUILT (§1.2) — first rc* reading on M1: inject 3.0 +
+build 2.5 + merge 3.3 ≈ 8.9 ms of async chain, which promotes the RC
+tuning pass (targets 1–2 ms via the GI panel knobs) to the biggest
+single lever on the table.
 
 ## 5. Durable lessons (cross-chantier)
 
@@ -756,6 +807,147 @@ RC tuning pass (3 → 1–2 ms targets via the GI panel knobs).
 
 ## 6. Roadmap (consolidated next steps)
 
+### 6.0a Chantier REVERSED-Z (in progress)
+
+Uniform depth precision to the horizon (0..1 non-reversed loses
+~d²·1.2e-6 m; two workarounds already shipped — FarTerrain's
+distance-growing sink, the water pipeline's negative bias). Scope: the
+CAMERA-PERSPECTIVE path only. The whole shadow path (CSM ortho, rainOcc
+ortho, keyShadow perspective-light, caster pipelines `Less`, PCF
+samplers `LessEqual`, positive caster biases) and the 2D sprite path
+stay non-reversed — ortho depth is linear, there is nothing to fix, and
+the light-space conventions are self-consistent.
+
+- **R1 — matrices/pipelines/clears**: `Camera3D::proj` swaps
+  near/far in `glm::perspective` (the ZO idiom); the 12 camera
+  pipelines flip `Less→Greater` (sky `LessEqual→GreaterEqual`); main +
+  reflection passes clear depth to 0; water bias signs flip to
+  positive; `SceneEditor::mouseRayDirection` swaps its near/far ndc z;
+  `Frustum` near/far labels updated (volume unchanged — plane
+  extraction is label-agnostic).
+- **R2 — oblique clip rederived**: the mirror plane becomes the NEAR
+  boundary (ndc z = 1, clip z = w); the preserved corner q sits at ndc
+  z = 0. rowZ' = rowW − C/dot(C,q) with q = inv(P)·(±1, ±1, 0, 1).
+- **R3 — Hi-Z & shader constants**: hiz_first/hiz_down max→min
+  (farthest = smallest now), chunk_cull nearest=max / compare and
+  guard flips, sky.vert far-pin 1→0, sky-detect epsilons in
+  godrays/contactshadow/skyclouds.
+  **Lesson — ray constructions hide depth constants.** Three shaders
+  built per-pixel ray DIRECTIONS from two unprojected ndc depths
+  (froxel_inject/cluster_cull at 0.1/0.9, rc_debug at 0/1) — not
+  comparisons, so the audit grep missed them. Reversed, `far − near`
+  pointed BACKWARD: the froxel fog injected for the opposite
+  hemisphere (its sky ceiling tested altitudes behind the camera — fog
+  shimmering in the sky) and the light clusters binned the wrong
+  cells. Near is ndc z ≈ 1 now; the constants swap.
+  **Lesson — sky epsilons do NOT mirror.** `depth >= 0.99995` flipped
+  to `<= 0.00005` classified all terrain beyond ~900 m as sky (the
+  reversed hyperbola flattens toward 0 far faster than the old one
+  flattened toward 1): the sky clouds and god rays marched over the
+  far hills and the epsilon frontier shimmered per pixel. Sky is
+  EXACTLY the far clear (0.0, the dome writes no depth) — the correct
+  reversed test is `depth < 1e-8`, effectively "the untouched clear".
+- **R4 — validation**: sync validation 0 hazards; budget line
+  unchanged; the readback occlusion verdict is the ORACLE for the
+  flipped Hi-Z (same occluded ballpark, panel counter) — one reason I6
+  runs after this chantier; dev visual pass, then optionally soften
+  the two precision workarounds to confirm the root cause is gone
+  (they stay: harmless and they cover the GL fallback if it ever runs
+  non-reversed).
+
+### 6.0 Chantier GPU-DRIVEN INDIRECT (in progress)
+
+Replace the Hi-Z cull's CPU fence readback with GPU-written indirect
+draws — the cull's verdict never leaves the GPU. Motive: PC scales with
+scene density through submission cost; the readback machinery
+(fence/staging/pendingKeys + per-chunk CPU loops) is the part that
+doesn't. Same one-frame verdict latency as today (pyramid from frame N
+depth, commands consumed frame N+1).
+
+- **I1 — RHI bricks (DONE)**: `BufferUsage::Indirect` (SSBO-writable +
+  indirect-readable, its own `bufferReadScope`),
+  `CommandBuffer::drawIndexedIndirect(buffer, offset, drawCount,
+  stride)` + `rhi::DrawIndexedIndirectCommand` (identical Vulkan/GL
+  layout), `DeviceCaps::multiDrawIndirect`, `BarrierStage_Indirect`.
+  GL46 = `glMultiDrawElementsIndirect`; GL41 caps off (CPU path
+  remains, degraded-mode contract).
+- **I2 — terrain vertex pool (DONE)**: per-chunk vertex buffers became
+  fixed slots in one pooled buffer per LOD (slot index × slotVerts IS
+  the `vertexOffset`; 4485/1221/357/117 verts per slot). Sized for the
+  slider's max radius (~30 MB total, no growth path; a full pool drops
+  the upload with a warning and the chunk re-streams). Uploads ride
+  the upload queue — whose last-frame-graphics WAR wait is what makes
+  overwriting a live slot legal. Freed slots COOL FOR TWO FRAMES
+  before reuse (a stale command may still reference them: one frame of
+  ping-pong + one of cull back-pressure).
+  **Lesson — pool-full must STEAL, never just drop.** V1 dropped the
+  upload and re-requested: in fast flight the trail of chunks awaiting
+  their LOD swap holds every near-LOD slot, and the CENTER-OUT request
+  budget (8/frame) is then entirely consumed by the near ring's doomed
+  re-requests — the far swaps that would free the slots are never even
+  asked for. A LIVELOCK: the terrain under the camera stops streaming
+  for good. Fix: `stealFurthestSlot` frees the furthest resident chunk
+  of that LOD (overdue for its swap anyway; the far mesh covers it) so
+  the retry converges once cooling passes, plus LOD 0-2 headroom of
+  several rings (64/128/384 slots, ~46 MB total).
+- **I3 — chunk_cull writes commands (DONE)**: candidates carry
+  group(=lod)/indexCount/vertexOffset, arrive counting-sorted by group;
+  the dispatch writes one command per candidate (culled =
+  `instanceCount 0` — no drawIndirectCount dependency), into a
+  PING-PONG pair (the frame consuming side N-1 never races the write).
+  The command adds a frustum test with a 1.15 guard band (commands are
+  consumed with a one-frame-stale camera); the CPU-readback verdict
+  stays pure occlusion (its consumer applies a fresh frustum).
+- **I4 — terrain indirect draw (DONE)**: per LOD one
+  `drawIndexedIndirect(drawCount = lodCandidates)`; the cull's barrier
+  covers Transfer | Indirect. "Indirect draw" checkbox next to the
+  Hi-Z one (A/B); falls back to the per-chunk loop whenever the
+  commands aren't fresh (interiors, back-pressure > 1 frame, GL 4.1).
+  Sync validation: 0 hazards, 75 s. **Pending dev visual A/B** (valley
+  floor + fast rotation + LOD-swap watch: a wrong-mesh flash would
+  mean the slot cooling window is too short).
+- **I5 — vegetation indirect (DONE)**: per-chunk instance buffers pool
+  into ONE buffer (variable-size blocks, first-fit + coalescing,
+  two-frame cooling like the terrain slots; ~12 MB, overflow drops the
+  chunk's scatter with a warning and it re-streams). Candidates: one
+  per chunk×variant, group = 4 + variant*3 + level — the LOD level is
+  picked at candidate time exactly like draw() picks it, consumed one
+  frame later. The command carries
+  `instanceCount = counts[v]` and `firstInstance = poolOffset +
+  firstInstance[v]` (the cull entry grew a second uvec4;
+  kMaxCandidates 8192, kMaxGroups 40 — a clipped candidate list makes
+  run() report the commands unfit and the frame falls back to the CPU
+  loops, since a missing command would be silently missing geometry).
+  The vegetation readback keys only ever ADD verdict entries the
+  terrain AABBs already imply (bigger boxes). Showcase mode and the
+  reflection/shadow passes stay on the legacy path. Sync validation:
+  0 hazards, 75 s. **Pending dev visual A/B** (forest belts at every
+  LOD ring boundary + chunk streaming while flying).
+  **Lesson — the command frustum needs TWO tests.** V1 kept the Hi-Z
+  verdict's "near-plane corner → visible" conservatism: the whole back
+  half of the ring drew (the vegetation pads make every nearby box
+  near-plane-adjacent) and mainPass DOUBLED (6.6 → 13.7 ms on M1).
+  Boxes the projection can judge use the proportional NDC guard band
+  (1.15 — covers a frame of rotation at any distance); near-plane
+  straddlers use the frustum PLANES with a 16 m world margin (they are
+  close, a frame of motion is small in meters). mainPass 13.7 → 8.0;
+  the remaining ~+1 ms vs the CPU loop is the guard band's overdraw —
+  the GPU-driven trade (M1 pays a little vertex work, the PC sheds its
+  per-chunk submission cost), tunable via the guard scale if it bites.
+- **I6 — readback retirement (DONE)**: stagingBuffer/fence/pendingKeys/
+  collectResults and the chunk_cull visibility SSBO are gone — the
+  cull's verdict lives ONLY in the indirect commands and never crosses
+  the CPU. The legacy draw paths (interiors, GL 4.1, candidate
+  overflow) keep `ChunkOcclusion` (CPU horizon) + fresh frustum; the
+  panel's "occluded GPU" counter went with the readback (the culling
+  now shows in `drawn` when the indirect path is on). The chantier is
+  COMPLETE: the Hi-Z pipeline is pyramid → cull → commands, one
+  dispatch, zero round-trips.
+
+Out of scope (deliberate): shadow/rain/reflection passes keep their
+Chebyshev/frustum CPU culling (they never consulted the occlusion
+verdict); grass and FarTerrain are outside the verdict entirely.
+
 **Pending dev validations** (features live, eyes needed): Hi-Z occlusion
 visual check (valley floor + fast rotation, A/B checkboxes); volumetric
 at critical hours (dawn/noon/dusk/night/storm, Morning Mist fogStart
@@ -777,13 +969,19 @@ triangles if kit-box leaks show.
 **Volumetric**: froxel reprojection reserve (kept in design, unused);
 particles for individual dust motes (fx, not froxels).
 
-**Perf**: P5b CSM static/dynamic split (only if shadows still dominate);
-P6 terrain upload stall (re-measure, then byte budget or persistent
-staging ring); P7 grass knobs+measure (structural work waits for the
-visual redo); vegetation imposters (decision deferred — the V8e geometry
-counters are the input); per-queue timestamps; PC return bundle:
-re-baseline, transfer queue, GL 4.6 parity smoke, sync validation on the
-PC driver, CONCURRENT→EXCLUSIVE sharing refinement.
+**Perf**: RC tuning pass (~8.9 ms of measured async chain → 1–2 ms
+targets — the biggest lever since the per-queue timestamps landed);
+reversed-Z (glClipControl already 0..1 by design, "one switch away"):
+the distance z-fight class — FarTerrain vs sea/flats needed a
+distance-growing sink (far_terrain.vert) that reversed-Z would retire,
+along with every other far-field depth-precision workaround;
+P5b CSM static/dynamic split (only if shadows still dominate);
+P6 terrain upload stall (staging ring + upload queue built — re-measure,
+byte budget if it still bites); P7 grass knobs+measure (structural work
+waits for the visual redo); vegetation imposters (decision deferred —
+the V8e geometry counters are the input); PC return bundle:
+re-baseline, GL 4.6 parity smoke, sync validation on the PC driver,
+CONCURRENT→EXCLUSIVE sharing refinement.
 
 **Features**: placed water volumes (brique-32 spec in archive:
 surface+submersion first, no foam v1, swimming = gameplay chantier);
