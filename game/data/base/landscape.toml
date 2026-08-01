@@ -22,13 +22,66 @@ editorId = "LandscapeTuning"
 terrainSeed = 1337
 hillWavelength = 500.0      # meters per base noise octave
 hillAmplitude = 75.0        # rolling-hill height range (+/- m)
+terrainOctaves = 5
+terrainLacunarity = 2.0
+terrainGain = 0.5
 mountainWavelength = 2000.0
 mountainAmplitude = 270.0
+mountainMaskLow = 0.45      # mask noise below this -> plains
+mountainMaskHigh = 0.75     # above this -> full mountains
 seaLevel = 21.0             # meters
+sandboxTerrain = true       # boot world: sandbox (the menu's Story button switches back)
 
 # --- Terrain materials ---------------------------------------------------
-snowLine = 165.0            # snow above this altitude (m)
+snowLine = 165.0            # story-world snow altitude (m)
+sandboxSnowLine = 950.0     # sandbox snow altitude — only peaks above the clouds stay white
 splatUvScale = 0.25         # ground texture tiles per meter
+
+# --- Biomes (palette contract with the sandbox generator:
+#     0 temperate/neutral, 1 arid, 2 alpine, 3 tundra) -------------------
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b1"
+type = "BiomeForm"
+new = true
+[records.fields]
+editorId = "BiomeArid"
+displayName = "Arid"
+paletteIndex = 1
+editorColor = [0.85, 0.72, 0.4]
+sandiness = 0.7
+grassPresence = 0.25
+snowLineOffset = 400.0
+temperature = 0.6
+wetness = 0.1
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b2"
+type = "BiomeForm"
+new = true
+[records.fields]
+editorId = "BiomeAlpine"
+displayName = "Alpine"
+paletteIndex = 2
+editorColor = [0.55, 0.55, 0.6]
+rockiness = 0.6
+grassPresence = 0.6
+snowLineOffset = -300.0
+temperature = -0.4
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b3"
+type = "BiomeForm"
+new = true
+[records.fields]
+editorId = "BiomeTundra"
+displayName = "Tundra"
+paletteIndex = 3
+editorColor = [0.75, 0.8, 0.85]
+rockiness = 0.3
+grassPresence = 0.4
+snowLineOffset = -650.0
+temperature = -0.8
+wetness = 0.4
 
 # --- Fog / atmosphere ----------------------------------------------------
 fogDensity = 0.0014
