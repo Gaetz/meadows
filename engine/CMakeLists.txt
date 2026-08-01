@@ -17,11 +17,19 @@ add_library(meadows STATIC
     assets/StbImpl.cpp
     assets/VertexAo.cpp
     assets/VertexAoCache.cpp
+    core/Bezier.cpp
     core/Guid.cpp
     core/Jobs.cpp
     core/Log.cpp
     reflect/Registry.cpp
     reflect/ValueText.cpp
+    terrain/WaterBodies.cpp
+    terrain/generation/Finalize.cpp
+    terrain/generation/FluvialErosion.cpp
+    terrain/generation/Hydrology.cpp
+    terrain/generation/TerrainGen.cpp
+    terrain/generation/ThermalErosion.cpp
+    terrain/generation/TileBake.cpp
     platform/common/Input.cpp
     platform/common/Paths.cpp
     platform/common/Window.cpp

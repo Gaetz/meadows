@@ -145,9 +145,14 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                        -(h01 - h00 + h11 - h10) / (2.0f * cellSize) });
             const f32 hMid = 0.25f * (h00 + h10 + h01 + h11);
             // HARD material cutoff: grass only on solidly grassy ground —
-            // never on the sand/snow/rock transition fringes.
-            if (terrain::materialWeights(params, hMid, n).grass <
-                tuning.materialCutoff) {
+            // never on the sand/snow/rock transition fringes. Biome-aware
+            // (neutral biome = the exact legacy rule).
+            if (terrain::materialWeightsAt(
+                    params,
+                    originX + (static_cast<f32>(cgx) + 0.5f) * cellSize,
+                    originZ + (static_cast<f32>(cgz) + 0.5f) * cellSize,
+                    hMid, n)
+                    .grass < tuning.materialCutoff) {
                 continue;
             }
             for (u32 sz = 0; sz < kCell; ++sz) {

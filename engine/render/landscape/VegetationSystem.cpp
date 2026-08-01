@@ -135,7 +135,8 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             if (h < params.seaLevel + 0.5f || slope > 0.55f) {
                 continue; // not underwater, not on cliff faces
             }
-            const auto weights = terrain::materialWeights(params, h, n);
+            const auto weights =
+                terrain::materialWeightsAt(params, x, z, h, n);
             // Boulders belong to rocky and alpine ground first, meadows get
             // the occasional loner.
             const f32 chance =
@@ -164,7 +165,8 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                         kBushSpacing;
             const f32 h = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
-            if (terrain::materialWeights(params, h, n).grass < 0.65f) {
+            if (terrain::materialWeightsAt(params, x, z, h, n).grass <
+                0.65f) {
                 continue;
             }
             // Clumps gate everything (bushes come in family groups); the

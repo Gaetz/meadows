@@ -77,6 +77,7 @@ private:
         vector<TreeInstance> trees;
         u32 seed { 0 };
         f32 seaLevel { 0.0f };
+        u64 contentStamp { 0 };
         u64 gen { 0 };
     };
 
@@ -92,6 +93,7 @@ private:
     u32 treeCount { 0 };
     Vec2 center {};
     u32 bakedSeed { 0 };
+    u64 bakedContentStamp { 0 };
     f32 bakedTreeHeight { 0.0f };
     f32 bakedSeaLevel { 0.0f };
     bool inFlight { false };

@@ -3,7 +3,9 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"
+#include "engine/terrain/BiomeMap.hpp"      // render::BiomeParams / BiomeSet
 #include "engine/terrain/HeightPatches.hpp" // render::HeightPatch / HeightPatches
+#include "engine/terrain/TerrainBase.hpp"   // render::TerrainRegion / TerrainBase
 
 namespace render {
 
@@ -34,6 +36,32 @@ struct TerrainParams {
     // consumer (workers included) is patched without a signature change.
     sptr<const HeightPatches> patches;
 
+    // Baked base regions (generated terrain): inside a region the height is
+    // bicubic(grid) + detail noise instead of the procedural noise below.
+    // Overlapping regions (sandbox tiles share their margin ring) blend by
+    // edge weight; where total coverage fades out, the procedural fallback
+    // blends back in. Same shared-ownership and
+    // publish-new-immutable-instance contract as `patches`; null = pure
+    // procedural, bit-identical. Sculpt deltas apply on top in every case
+    // (layers never flatten).
+    sptr<const TerrainBase> base;
+
+    // Sandbox world identity (engine/terrain/SandboxTerrain.hpp). When
+    // set, the fallback outside baked regions is the analytic S1 macro
+    // instead of the legacy demo noise — far silhouettes then agree with
+    // the tiles the streamer bakes. Null = legacy noise (bit-identical).
+    sptr<const struct SandboxTerrain> sandbox;
+
+    // Biome table (+ optional painted index map). Null or id 0 = the
+    // neutral biome: every rule below behaves exactly as without biomes.
+    sptr<const BiomeSet> biomes;
+
+    // Bumped whenever the terrain CONTENT changes without the seed
+    // moving (tile publishes, mode switches): consumers with their own
+    // baked caches (FarTerrain, pool map) compare it to invalidate.
+    // Never read by height() — purely a staleness signal.
+    u64 contentStamp { 0 };
+
     // Rolling hills: FBM value noise.
     f32 hillWavelength { 500.0f }; // meters per base octave
     f32 hillAmplitude { 75.0f };
@@ -49,6 +77,10 @@ struct TerrainParams {
     f32 mountainMaskHigh { 0.75f }; // above this -> full mountains
 
     f32 seaLevel { 21.0f };
+    // Snow altitude for the CPU material rules — MUST match the tuning
+    // value the shader gets (uTerrainInfo.y), or footsteps/scatter and
+    // pixels disagree about what is snow.
+    f32 snowLine { 165.0f };
 };
 
 namespace terrain {
@@ -63,9 +95,25 @@ f32 height(const TerrainParams& params, f32 x, f32 z);
 // never mesh-derived) so normals are seamless across chunk borders and LODs.
 Vec3 normal(const TerrainParams& params, f32 x, f32 z, f32 step = 0.5f);
 
+// Height for a MESH vertex sampled `spacing` meters apart: identical to
+// height() at fine spacing; at coarse LODs, vertices over a baked river
+// channel (flow mask) take the MIN over their support — carved beds stay
+// open at distance instead of being bridged shut by the decimation
+// (which drowned the water surface under the coarse triangles).
+f32 meshHeight(const TerrainParams& params, f32 x, f32 z, f32 spacing);
+
 // Raw smooth value noise in [0,1] — the building block, exposed for scatter
 // masks (grass patches, forest belts) so they share the terrain's hash.
 f32 noise01(u32 seed, f32 x, f32 z);
+
+// Samples the PROCEDURAL base (no baked regions, no sculpt deltas) into an
+// absolute-height region grid. Debug/bootstrap path for the baked-base
+// layer: the result, installed as `params.base`, reproduces the procedural
+// terrain within bicubic-resample tolerance. detailAmplitude is left at 0
+// because the procedural base already contains its own high frequencies.
+TerrainRegion bakeProceduralRegion(const TerrainParams& params, f32 originX,
+                                   f32 originZ, f32 sizeMeters,
+                                   f32 texelSize);
 
 // CPU mirror of terrain.frag's splat weights (minus the texture-driven
 // border wander): ONE definition of "what grows where" shared by every
@@ -76,9 +124,22 @@ struct MaterialWeights {
     f32 snow { 0.0f };
     f32 sand { 0.0f };
 };
-constexpr f32 kSnowLine = 165.0f; // meters; matches uTerrainInfo.y
+constexpr f32 kSnowLine = 165.0f; // default of TerrainParams::snowLine
 MaterialWeights materialWeights(const TerrainParams& params, f32 height,
                                 const Vec3& normal);
+
+// The biome over a point: the baked region's biome mask when covered,
+// else the painted index map, else neutral. Also the CLIMATE seam —
+// gameplay reads temperature/wetness from the returned params through a
+// scene-provided callback (HeightFn pattern, §2.10).
+const BiomeParams& biomeAt(const TerrainParams& params, f32 x, f32 z);
+
+// Position-aware weights: materialWeights with the biome's character
+// applied (snow line shift, rockiness, sand band, grass presence, baked
+// beach mask). With no biome data this returns exactly materialWeights —
+// existing scatter masks stay unmoved.
+MaterialWeights materialWeightsAt(const TerrainParams& params, f32 x,
+                                  f32 z, f32 height, const Vec3& normal);
 
 // The weights as the SHADER shows them: the raw
 // altitude borders perturbed by the splat wander term (terrain.frag) so

@@ -111,6 +111,7 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                                                    done.trees.data()) }
                          : rhi::UniqueBuffer {};
         bakedSeed = done.seed;
+        bakedContentStamp = done.contentStamp;
         bakedSeaLevel = done.seaLevel;
         inFlight = false;
         uploaded = true;
@@ -123,6 +124,7 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                        glm::distance(camXz, center) > kSpan * 0.08f ||
                        bakedSeed != params.seed ||
                        bakedSeaLevel != params.seaLevel ||
+                       bakedContentStamp != params.contentStamp ||
                        std::abs(bakedTreeHeight - trees.height) > 0.5f;
     if (!stale) {
         return;
@@ -141,6 +143,7 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
         Baked baked;
         baked.seed = params.seed;
         baked.seaLevel = params.seaLevel;
+        baked.contentStamp = params.contentStamp;
         baked.gen = gen;
         // Heights on a HALF-CELL grid: the vertex takes the MIN over its
         // quad support so the 62 m linear interpolation can never rise

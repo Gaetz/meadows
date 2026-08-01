@@ -62,7 +62,7 @@ vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
         for (u32 gx = 0; gx < vertsPerSide; ++gx) {
             const f32 x = originX + static_cast<f32>(gx) * step;
             const f32 z = originZ + static_cast<f32>(gz) * step;
-            const f32 y = terrain::height(params, x, z);
+            const f32 y = terrain::meshHeight(params, x, z, step);
             const Vec3 n = terrain::normal(params, x, z);
             vertices.push_back({
                 .position = { x, y, z },
