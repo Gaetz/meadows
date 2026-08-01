@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/terrain/TerrainBase.hpp" // render::kDefaultSeaLevel
 
 // Terrain generation pipeline — stage S1 (macro synthesis). Headless
 // (lib meadows): the bake runs on JobSystem workers or in doctests, never
@@ -30,6 +31,9 @@ struct ControlSample {
     f32 uplift { 0.0f }; // [0,1] tectonic uplift strength (stage S2 input)
     bool sea { false };  // this point is open water by decree
     u8 biome { 0 };
+    // Relief-regime extras (defaults keep painted/test sources legacy):
+    f32 plateau { 0.0f };    // extra base altitude (old eroded massifs)
+    f32 hillRelief { 0.0f }; // ridged hill-chain relief amplitude (m)
 };
 
 class ControlSource {
@@ -44,20 +48,32 @@ public:
 struct ProceduralControlParams {
     u32 seed { 1337 };
     // Horizontal rhythm: full vertical scale (peaks above the clouds)
-    // packed into hikeable distances — a valley-to-summit walk, not a
-    // day trip.
-    f32 continentWavelength { 10000.0f };
+    // packed into GAME distances — the next distinct landscape must sit
+    // readable on the horizon (~1.5-2.5 km away), never a day trip. The
+    // landscape fields alternate every ~3-5 km; the continent keeps a
+    // longer wave so landmasses stay continental, not an archipelago.
+    f32 continentWavelength { 5000.0f };
     f32 seaThreshold { 0.42f }; // continentalness below -> open sea
     f32 tierSpread { 0.30f };   // continentalness span of the tier ramp
     f32 maxTier { 3.0f };
-    f32 upliftWavelength { 6500.0f };
+    f32 upliftWavelength { 2600.0f };
     f32 upliftMaskLow { 0.5f };
     f32 upliftMaskHigh { 0.8f };
-    f32 warpWavelength { 4000.0f }; // continent-shape domain warp
-    f32 warpStrength { 1100.0f };
+    f32 warpWavelength { 2000.0f }; // continent-shape domain warp
+    f32 warpStrength { 550.0f };    // scaled with the continent wave
     // Climate fields deciding the biome id (must match the BiomeForm
     // palette shipped in data: 0 temperate, 1 arid, 2 alpine, 3 tundra).
-    f32 climateWavelength { 7000.0f };
+    f32 climateWavelength { 2800.0f };
+    // Relief regimes: a slow field sorts the land into three characters
+    // — HILL-CHAIN country (low, rolling ridged hills, no uplift), OLD
+    // MASSIFS (an elevated plateau wearing hills, uplift nearly off —
+    // the Massif Central look), and YOUNG RANGES (the plain uplift
+    // path). Erosion then treats each accordingly.
+    f32 regimeWavelength { 7000.0f };
+    f32 hillChainWavelength { 1100.0f }; // ridged hills' own rhythm
+    f32 hillChainAmplitude { 55.0f };    // m of hill relief in chains
+    f32 oldMassifHeight { 210.0f };      // m of plateau under old hills
+    f32 oldMassifHillAmplitude { 70.0f };
 };
 
 class ProceduralControls final : public ControlSource {
@@ -94,7 +110,7 @@ struct MacroParams {
         { 270.0f, 18.0f, 700.0f, 0.8f },  // mesa plateau
         { 520.0f, 140.0f, 1100.0f, 0.0f }, // high ranges
     };
-    f32 seaLevel { 21.0f };
+    f32 seaLevel { kDefaultSeaLevel };
     f32 seaFloor { -30.0f };   // deep-water altitude (absolute meters)
     f32 shallowDepth { 6.0f }; // below seaLevel over the first shelf band
     f32 shelfWidth { 90.0f };  // meters of shallow shelf past the shore
@@ -109,6 +125,17 @@ struct MacroParams {
     f32 terraceEdge { 0.16f };     // fraction of a step kept as soft slope
     f32 warpWavelength { 700.0f }; // relief domain warp
     f32 warpStrength { 140.0f };
+    // Elevation recurve: monotone remap of the LAND height above sea
+    // level, applied before the coast profile — and before erosion, so
+    // S2 re-equilibrates the remapped altitude budget instead of
+    // stretching slopes. The three values are the curve outputs at
+    // normalized inputs 1/4, 1/2, 3/4 over [0, recurveSpan] meters;
+    // 0.25/0.5/0.75 = identity (bit-exact fast path). Push the mid down
+    // for flat plains with steep steps, up for domed hills.
+    f32 recurveLow { 0.25f };
+    f32 recurveMid { 0.5f };
+    f32 recurveHigh { 0.75f };
+    f32 recurveSpan { 700.0f };
 };
 
 struct MacroResult {
@@ -119,12 +146,19 @@ struct MacroResult {
     vector<u8> biome;
 };
 
+// The MacroParams elevation recurve applied to one land height (meters):
+// monotone PCHIP through (0,0), (1/4, low), (1/2, mid), (3/4, high),
+// (1,1) over [seaLevel, seaLevel + recurveSpan]; identity outside that
+// band and at the default control points.
+f32 recurveLand(const MacroParams& params, f32 h);
+
 // S1: control fields -> macro elevation. Tier-blended base + domain-warped
-// relief + soft terracing + coast shelf (beach ramp or cliff rim from the
-// tier). Deterministic for (controls, spec, params, seed).
+// relief + soft terracing + regime extras (plateau, ridged hill chains
+// at `hillChainWavelength`; 0 disables them) + coast shelf (beach ramp
+// or cliff rim from the tier). Deterministic for its full input set.
 MacroResult synthesizeMacro(const ControlSource& controls,
                             const GridSpec& spec, const MacroParams& params,
-                            u32 seed);
+                            u32 seed, f32 hillChainWavelength = 0.0f);
 
 // Pointwise approximation of the S1 surface (shore falloff derived from
 // continentalness instead of the grid distance field): far silhouettes

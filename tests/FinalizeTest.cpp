@@ -56,6 +56,7 @@ TEST_CASE("upsample matches the macro at coincident texels, deterministic") {
     const auto hydro = extractHydrology(coarse(), h, hp);
     FinalizeParams params;
     params.reliefAmplitude = 0.0f; // isolate the resample
+    params.fine.iterations = 0;
     const auto fine = finalizeTerrain(coarse(), h, macro, hydro, coarse(), params, 5);
     CHECK(fine.fineSpec.n == (kN - 1) * 4 + 1);
     CHECK(fine.fineSpec.texelSize == doctest::Approx(2.0f));
@@ -79,7 +80,8 @@ TEST_CASE("the river carves a bed below its water surface") {
     const HydrologyParams hp;
     const auto hydro = extractHydrology(coarse(), h, hp);
     REQUIRE(!hydro.rivers.empty());
-    const FinalizeParams params;
+    FinalizeParams params;
+    params.fine.iterations = 0; // isolate the carve
     const auto fine = finalizeTerrain(coarse(), h, macro, hydro, coarse(), params, 5);
 
     const River* main = &hydro.rivers[0];
@@ -117,7 +119,8 @@ TEST_CASE("masks: flow marks the channel, wetness hugs it, detail dies "
     const auto macro = fakeMacro(h);
     const HydrologyParams hp;
     const auto hydro = extractHydrology(coarse(), h, hp);
-    const FinalizeParams params;
+    FinalizeParams params;
+    params.fine.iterations = 0; // isolate the masks
     const auto fine = finalizeTerrain(coarse(), h, macro, hydro, coarse(), params, 5);
 
     // The valley-axis outlet cell gathered the whole map: flow high.
@@ -132,6 +135,49 @@ TEST_CASE("masks: flow marks the channel, wetness hugs it, detail dies "
     const u8 maxBeach =
         *std::max_element(fine.beach.begin(), fine.beach.end());
     CHECK(maxBeach == 0);
+}
+
+TEST_CASE("rockExposure marks steep bare faces; strata knob is opt-in") {
+    // West flat plain, east 45-degree wall.
+    vector<f32> h(coarse().cells());
+    for (u32 row = 0; row < kN; ++row) {
+        for (u32 col = 0; col < kN; ++col) {
+            h[at(col, row)] =
+                col < 24 ? 40.0f
+                         : 40.0f + static_cast<f32>(col - 24) * kTexel;
+        }
+    }
+    const auto macro = fakeMacro(h);
+    const HydrologyParams hp;
+    const auto hydro = extractHydrology(coarse(), h, hp);
+    FinalizeParams params;
+    params.fine.iterations = 0;
+    vector<f32> deposit(coarse().cells(), 0.0f);
+    for (u32 row = 40; row < 50; ++row) {
+        for (u32 col = 30; col < 50; ++col) {
+            deposit[at(col, row)] = 2.0f; // a scree apron on the wall
+        }
+    }
+    const auto fine = finalizeTerrain(coarse(), h, macro, hydro,
+                                      coarse(), params, 5, nullptr,
+                                      &deposit);
+    REQUIRE(fine.rockExposure.size() == coarse().cells());
+    CHECK(fine.rockExposure[at(40, 10)] > 100); // steep bare wall
+    CHECK(fine.rockExposure[at(10, 10)] == 0);  // flat plain
+    CHECK(fine.rockExposure[at(40, 45)] < 40);  // scree stays covered
+
+    // Geometric strata: default off leaves heights alone; enabled, it
+    // displaces the wall but never the plain.
+    FinalizeParams strata = params;
+    strata.strataAmplitude = 1.0f;
+    const auto bent = finalizeTerrain(coarse(), h, macro, hydro,
+                                      coarse(), strata, 5, nullptr,
+                                      &deposit);
+    const auto fineAt = [&](const FinalizeResult& r, u32 col, u32 row) {
+        return r.height[static_cast<size_t>(row) * r.fineSpec.n + col];
+    };
+    CHECK(fineAt(bent, 10 * 4, 10 * 4) == fineAt(fine, 10 * 4, 10 * 4));
+    CHECK(bent.height != fine.height);
 }
 
 TEST_CASE("beach mask rings the shore of a half-sea macro") {
@@ -151,9 +197,58 @@ TEST_CASE("beach mask rings the shore of a half-sea macro") {
     }
     const HydrologyParams hp;
     const auto hydro = extractHydrology(coarse(), h, hp);
-    const FinalizeParams params;
+    FinalizeParams params;
+    params.fine.iterations = 0; // isolate the beach mask
     const auto fine = finalizeTerrain(coarse(), h, macro, hydro, coarse(), params, 5);
     // On the waterline: full beach. Far inland: none.
     CHECK(fine.beach[at(kN / 3 + 1, 10)] > 200);
     CHECK(fine.beach[at(kN - 3, 10)] == 0);
+}
+
+TEST_CASE("lake beds: masked lakes get a shore-profiled basin") {
+    // A closed bowl in the plain: the flood makes a masked lake there.
+    auto h = valleyHeights();
+    for (u32 row = 20; row < 45; ++row) {
+        for (u32 col = 15; col < 45; ++col) {
+            h[at(col, row)] = 38.0f; // shallow closed pan, spill ~ rim
+        }
+    }
+    const auto macro = fakeMacro(h);
+    const HydrologyParams hp;
+    const auto hydro = extractHydrology(coarse(), h, hp);
+    const Lake* lake = nullptr;
+    for (const Lake& candidate : hydro.lakes) {
+        if (!candidate.dug && !candidate.mask.empty()) {
+            lake = &candidate;
+            break;
+        }
+    }
+    REQUIRE(lake != nullptr);
+
+    FinalizeParams params;
+    params.fine.iterations = 0;
+    const auto fine = finalizeTerrain(coarse(), h, macro, hydro,
+                                      coarse(), params, 5);
+    // Mid-lake: the bed sits well under the surface now.
+    const f32 cx = (lake->minX + lake->maxX) * 0.5f;
+    const f32 cz = (lake->minZ + lake->maxZ) * 0.5f;
+    const u32 col = static_cast<u32>(
+        std::lround((cx - fine.fineSpec.originX) /
+                    fine.fineSpec.texelSize));
+    const u32 row = static_cast<u32>(
+        std::lround((cz - fine.fineSpec.originZ) /
+                    fine.fineSpec.texelSize));
+    const f32 bed =
+        fine.height[static_cast<size_t>(row) * fine.fineSpec.n + col];
+    CHECK(bed < lake->level - 2.0f);
+    CHECK(bed >= lake->level - params.lakeDepthMax - 0.5f);
+
+    // Disabled coefficient: untouched (the carve is opt-out).
+    FinalizeParams flat = params;
+    flat.lakeDepthCoef = 0.0f;
+    const auto plain = finalizeTerrain(coarse(), h, macro, hydro,
+                                       coarse(), flat, 5);
+    const f32 plainBed =
+        plain.height[static_cast<size_t>(row) * fine.fineSpec.n + col];
+    CHECK(plainBed > bed);
 }

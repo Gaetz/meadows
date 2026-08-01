@@ -27,7 +27,7 @@ struct FluvialParams {
     f32 upliftRate { 8.0f };
     // Base level: nodes at/below the sea (and the grid rim) are fixed —
     // erosion carves toward them and never below.
-    f32 seaLevel { 21.0f };
+    f32 seaLevel { kDefaultSeaLevel };
     // Epsilon slope used by the depression routing so flats drain.
     f32 minSlope { 1.0e-4f };
     // The flood + receiver routing (the expensive O(n log n) part) is
@@ -35,6 +35,21 @@ struct FluvialParams {
     // step, reusing the drainage tree in between is visually free and
     // ~3x faster end to end.
     i32 routingInterval { 4 };
+    // Sediment transport: eroded material rides the flow and DEPOSITS
+    // where the carrying capacity Qc = sedimentCapacity * A^m * S * dt
+    // (m³/iteration) drops below the incoming flux — flat valley floors,
+    // alluvial fans, and lake-entry deltas instead of pure V-carves.
+    // Steep slopes have huge capacity, so peaks and dendrites are
+    // untouched. 0 = transport-unlimited (pure detachment, the previous
+    // behavior, bit-exact).
+    f32 sedimentCapacity { 1.2f };
+    f32 depositMax { 0.35f };   // m deposited per cell per iteration cap
+    f32 depositSlack { 0.05f }; // m above the routed surface allowed
+    // In FLOODED cells deeper than this, deposits stop that far under
+    // the water surface: deltas still build at lake entries (shallow
+    // cells keep the old ceiling), but sediment can no longer pave a
+    // whole basin up to its surface — lakes keep a real floor.
+    f32 lakeKeepDepth { 2.0f };
 };
 
 struct FluvialResult {
@@ -42,17 +57,22 @@ struct FluvialResult {
     // Final drainage area per texel (m²) on the depression-routed
     // surface — stage S4 extracts rivers from it for free.
     vector<f32> area;
+    // Cumulative sediment deposited per texel (m) — alluvium/scree mask
+    // material for the finalize masks. Empty when sedimentCapacity is 0.
+    vector<f32> deposit;
 };
 
 // `height`/`uplift` are spec-sized grids (S1 output). `keep`, if given,
 // re-blends each texel toward its INPUT height by [0,1] — how mesa tiers
-// survive full stream-power dissection (plateauKeep). `erodibility`, if
-// given, scales k per texel (biome character: hard rock vs sediment).
+// survive full stream-power dissection (plateauKeep). `erodibility` and
+// `capacityScale`, if given, scale k and the sediment capacity per texel
+// (biome character: hard rock vs sediment, cohesive vs loose cover).
 FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
                            const vector<f32>& uplift,
                            const FluvialParams& params,
                            const vector<f32>* keep = nullptr,
-                           const vector<f32>* erodibility = nullptr);
+                           const vector<f32>* erodibility = nullptr,
+                           const vector<f32>* capacityScale = nullptr);
 
 // Priority-flood depression fill (Barnes et al. 2014, epsilon variant):
 // returns the water-routing surface >= height where every node drains to

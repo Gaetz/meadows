@@ -21,6 +21,12 @@
 
 namespace render {
 
+// The single default sea level (meters). Every pipeline-stage param
+// struct and TerrainParams defaults to it; TileBake re-propagates the
+// authoritative MacroParams::seaLevel into each stage at bake time, so
+// a per-struct override never silently drifts.
+constexpr f32 kDefaultSeaLevel = 21.0f;
+
 struct TerrainRegion {
     f32 originX { 0.0f }; // world meters, min corner of the covered rect
     f32 originZ { 0.0f };
@@ -42,6 +48,10 @@ struct TerrainRegion {
     vector<u8> wetness;
     vector<u8> beach;
     vector<u8> biome; // biome palette index, nearest-sampled
+    // Bare-rock exposure on steep eroded faces (strata-banded, scree
+    // subtracted) — drives the cliff material. May be empty (older or
+    // debug bakes): sample with a 0 fallback.
+    vector<u8> rockExposure;
 
     // Runtime detail-noise character inside this region (from
     // TerrainRegionForm). Zero amplitude = the grid is exact (debug bakes

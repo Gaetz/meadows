@@ -45,6 +45,50 @@ TEST_CASE("macro synthesis is deterministic") {
     CHECK(a.height != c.height); // the seed matters
 }
 
+TEST_CASE("recurve: identity by default, monotone and coast-fixed set") {
+    const MacroParams p;
+    // Default control points: bit-exact identity everywhere.
+    CHECK(recurveLand(p, 250.0f) == 250.0f);
+    CHECK(recurveLand(p, p.seaLevel - 5.0f) == p.seaLevel - 5.0f);
+
+    MacroParams curved = p;
+    curved.recurveMid = 0.32f; // flatter plains, steeper rises
+    // Sea, shoreline and above-span land untouched.
+    CHECK(recurveLand(curved, p.seaLevel) == p.seaLevel);
+    CHECK(recurveLand(curved, p.seaLevel - 10.0f) == p.seaLevel - 10.0f);
+    const f32 top = p.seaLevel + curved.recurveSpan + 5.0f;
+    CHECK(recurveLand(curved, top) == top);
+    // Monotone over the whole band.
+    f32 previous = recurveLand(curved, p.seaLevel);
+    for (f32 h = p.seaLevel + 1.0f;
+         h <= p.seaLevel + curved.recurveSpan; h += 2.0f) {
+        const f32 r = recurveLand(curved, h);
+        CHECK(r >= previous);
+        previous = r;
+    }
+    // Mid pulled down: mid-band land sits lower than before.
+    CHECK(recurveLand(curved, p.seaLevel + 350.0f) <
+          p.seaLevel + 350.0f);
+
+    // The synthesized grid follows: land texels move, sea texels don't.
+    FixedControls controls;
+    controls.tier = 1.5f;
+    controls.halfSea = true;
+    const MacroResult flat = synthesizeMacro(controls, spec1km(), p, 7);
+    const MacroResult bent =
+        synthesizeMacro(controls, spec1km(), curved, 7);
+    u32 landMoved = 0;
+    u32 seaMoved = 0;
+    for (size_t i = 0; i < flat.height.size(); ++i) {
+        if (flat.height[i] == bent.height[i]) {
+            continue;
+        }
+        (flat.seaDist[i] > 0.0f ? landMoved : seaMoved) += 1;
+    }
+    CHECK(landMoved > 0);
+    CHECK(seaMoved == 0);
+}
+
 TEST_CASE("a tier floor holds its altitude within its relief amplitude") {
     FixedControls controls;
     controls.tier = 1.0f; // hills
@@ -170,4 +214,41 @@ TEST_CASE("the analytic macro matches the tier floors away from shore") {
         }
     }
     CHECK(maxSeen > params.seaLevel); // some land exists
+}
+
+TEST_CASE("relief regimes: hill chains, old massifs and young ranges "
+          "all exist") {
+    ProceduralControlParams params;
+    params.seed = 1337;
+    const ProceduralControls controls { params };
+    u32 hillChains = 0;
+    u32 oldMassifs = 0;
+    u32 youngRanges = 0;
+    // Scan a wide area at coarse steps: the three regimes must all
+    // occur on land — the variety contract.
+    for (f32 z = -20000.0f; z <= 20000.0f; z += 400.0f) {
+        for (f32 x = -20000.0f; x <= 20000.0f; x += 400.0f) {
+            const ControlSample s = controls.at(x, z);
+            if (s.sea) {
+                continue;
+            }
+            if (s.plateau > 100.0f) {
+                ++oldMassifs;
+            } else if (s.hillRelief > 20.0f && s.uplift < 0.1f) {
+                ++hillChains;
+            }
+            if (s.uplift > 0.5f) {
+                ++youngRanges;
+            }
+        }
+    }
+    CHECK(hillChains > 50);
+    CHECK(oldMassifs > 50);
+    CHECK(youngRanges > 50);
+
+    // Regime extras default to zero for painted/test sources: the
+    // legacy macro path is untouched.
+    const ControlSample plain;
+    CHECK(plain.plateau == 0.0f);
+    CHECK(plain.hillRelief == 0.0f);
 }

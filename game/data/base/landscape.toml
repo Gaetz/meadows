@@ -31,6 +31,12 @@ mountainMaskLow = 0.45      # mask noise below this -> plains
 mountainMaskHigh = 0.75     # above this -> full mountains
 seaLevel = 21.0             # meters
 sandboxTerrain = true       # boot world: sandbox (the menu's Story button switches back)
+# Sandbox elevation recurve — outputs of the altitude curve at inputs
+# 1/4, 1/2, 3/4 (0.25/0.5/0.75 = identity). Lower mid = flatter plains
+# with sharper rises. Clear terrain-cache/<seed> after changing.
+terrainRecurveLow = 0.25
+terrainRecurveMid = 0.5
+terrainRecurveHigh = 0.75
 
 # --- Terrain materials ---------------------------------------------------
 snowLine = 165.0            # story-world snow altitude (m)

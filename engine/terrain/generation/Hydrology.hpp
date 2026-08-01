@@ -3,12 +3,15 @@
 #include "engine/core/Defines.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
-// Stage S4 — hydrology extraction. Nothing is simulated here: lakes and
-// rivers are READ OFF the eroded surface (the Far Cry 5 freshwater model).
-// Lakes = depressions the priority flood had to fill, their level being
-// the spill elevation; rivers = cells whose drainage area crosses a
-// threshold, traced downstream into polylines. Altitude lakes with their
-// own level therefore fall out for free.
+// Stage S4 — hydrology extraction + conditioning. Lakes and rivers are
+// READ OFF the eroded surface (the Far Cry 5 freshwater model): lakes =
+// depressions the priority flood had to fill, their level being the
+// spill elevation (altitude lakes with their own level fall out for
+// free); rivers = cells whose drainage area crosses a threshold, traced
+// downstream. The raw courses are then conditioned for presentation:
+// proximity merges, relaxation + spline smoothing, width character, and
+// small dug ponds over confluences/hairpins — the two spots ribbon
+// geometry handles badly.
 
 namespace render::terraingen {
 
@@ -46,7 +49,7 @@ struct River {
 };
 
 struct HydrologyParams {
-    f32 seaLevel { 21.0f };
+    f32 seaLevel { kDefaultSeaLevel };
     f32 minSlope { 1.0e-4f };
     // A depression counts as a lake once it is deep and wide enough —
     // below that it is just a puddle the carve pass flattens away.
@@ -63,8 +66,7 @@ struct HydrologyParams {
     // Ponds smooth over the two spots ribbon geometry handles badly:
     // confluences (overlapping ribbons at slightly different levels) and
     // hairpin turns (the strip folds over itself). A small dug basin
-    // with a flat surface absorbs both.
-    f32 pondDepth { 1.6f };
+    // with a flat surface absorbs both (dig depth: see FinalizeParams).
     f32 hairpinTurn { 1.9f }; // radians of turn within the window
 };
 

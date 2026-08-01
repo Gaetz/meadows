@@ -137,20 +137,32 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
                            const vector<f32>& uplift,
                            const FluvialParams& params,
                            const vector<f32>* keep,
-                           const vector<f32>* erodibility) {
+                           const vector<f32>* erodibility,
+                           const vector<f32>* capacityScale) {
     const size_t cells = spec.cells();
+    const f32 cellArea = spec.texelSize * spec.texelSize;
     FluvialResult out;
     out.height = height;
 
+    const bool transport = params.sedimentCapacity > 0.0f;
+    vector<f32> eroded;   // m removed this iteration (sediment source)
+    vector<f32> sediment; // m³ of flux arriving per cell this iteration
+    if (transport) {
+        out.deposit.assign(cells, 0.0f);
+        eroded.resize(cells);
+        sediment.resize(cells);
+    }
+
     FlowRouting flow;
+    vector<f32> routed;
     const i32 interval = glm::max(params.routingInterval, 1);
     for (i32 iter = 0; iter < params.iterations; ++iter) {
         if (iter % interval == 0) {
             // Depression-routed surface: every node can reach base
             // level. Reused for `interval` iterations (see the param).
-            const vector<f32> filled = priorityFloodFill(
-                spec, out.height, params.seaLevel, params.minSlope);
-            flow = routeFlow(spec, filled, out.height, params.seaLevel);
+            routed = priorityFloodFill(spec, out.height, params.seaLevel,
+                                       params.minSlope);
+            flow = routeFlow(spec, routed, out.height, params.seaLevel);
         }
         // Implicit update, ascending: the receiver's NEW height is
         // already known when its donors solve — one O(n) pass down the
@@ -159,6 +171,9 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
             const u32 i = flow.order[k];
             const u32 r = flow.receiver[i];
             if (r == i) {
+                if (transport) {
+                    eroded[i] = 0.0f;
+                }
                 continue; // base level: fixed
             }
             const f32 ks = erodibility ? (*erodibility)[i] : 1.0f;
@@ -167,7 +182,53 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
                           flow.recvDist[i];
             const f32 raised =
                 out.height[i] + params.dt * params.upliftRate * uplift[i];
-            out.height[i] = (raised + f * out.height[r]) / (1.0f + f);
+            const f32 solved = (raised + f * out.height[r]) / (1.0f + f);
+            if (transport) {
+                eroded[i] = glm::max(raised - solved, 0.0f);
+            }
+            out.height[i] = solved;
+        }
+        // Sediment sweep, descending (donors before receivers, fixed
+        // order — deterministic): flux rides the drainage tree and
+        // deposits wherever it exceeds the carrying capacity. Depositing
+        // never raises a cell above the routed surface (+slack), so the
+        // routing stays drained and lake floors cap below their spill.
+        if (transport) {
+            std::fill(sediment.begin(), sediment.end(), 0.0f);
+            for (size_t k = cells; k-- > 0;) {
+                const u32 i = flow.order[k];
+                const u32 r = flow.receiver[i];
+                f32 flux = sediment[i] + eroded[i] * cellArea;
+                if (r == i) {
+                    continue; // base level: flux exits (sea/rim)
+                }
+                const f32 slope =
+                    (routed[i] - routed[r]) / flow.recvDist[i];
+                const f32 cs = capacityScale ? (*capacityScale)[i] : 1.0f;
+                const f32 capacity =
+                    params.sedimentCapacity * cs *
+                    std::pow(flow.area[i], params.areaExponent) * slope *
+                    params.dt;
+                const f32 excess = flux - capacity;
+                if (excess > 0.0f) {
+                    // Flooded-aware ceiling: deep lake cells keep
+                    // lakeKeepDepth of water under the routed surface.
+                    const f32 waterDepth = routed[i] - out.height[i];
+                    const f32 ceiling =
+                        waterDepth > params.lakeKeepDepth
+                            ? routed[i] - params.lakeKeepDepth
+                            : routed[i] + params.depositSlack;
+                    const f32 room =
+                        glm::max(ceiling - out.height[i], 0.0f);
+                    const f32 d = glm::min(
+                        glm::min(excess / cellArea, params.depositMax),
+                        room);
+                    out.height[i] += d;
+                    out.deposit[i] += d;
+                    flux -= d * cellArea;
+                }
+                sediment[r] += flux;
+            }
         }
         out.area = flow.area;
     }

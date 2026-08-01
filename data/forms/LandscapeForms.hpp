@@ -24,7 +24,8 @@ struct LandscapeTuningForm : Form {
     f32 hillAmplitude { 75.0f };
     f32 mountainWavelength { 2000.0f };
     f32 mountainAmplitude { 270.0f };
-    f32 seaLevel { 21.0f };
+    f32 seaLevel { 21.0f }; // keep equal to render::kDefaultSeaLevel
+                            // (engine/terrain/TerrainBase.hpp)
     // Streaming ring radius in 64 m chunks — the draw distance
     // ("voir des paysages"); applyFog's horizon closure tracks it.
     // Perf-sensitive: chunks grow as (2r+1)^2.
@@ -203,6 +204,13 @@ struct LandscapeTuningForm : Form {
     // Snow altitude of the sandbox world (its peaks top ~1600 m; the
     // story world keeps `snowLine` above).
     f32 sandboxSnowLine { 950.0f };
+    // Sandbox elevation recurve (MacroParams::recurve*): curve outputs
+    // at normalized inputs 1/4, 1/2, 3/4 — 0.25/0.5/0.75 = identity.
+    // NOTE: baked tiles cache by seed only; clear terrain-cache/<seed>
+    // after changing these (same rule as seaLevel).
+    f32 terrainRecurveLow { 0.25f };
+    f32 terrainRecurveMid { 0.5f };
+    f32 terrainRecurveHigh { 0.75f };
 
     REFLECT_BEGIN(LandscapeTuningForm, Form)
         REFLECT_FIELD(terrainSeed)
@@ -325,6 +333,9 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(mountainMaskHigh)
         REFLECT_FIELD(sandboxTerrain)
         REFLECT_FIELD(sandboxSnowLine)
+        REFLECT_FIELD(terrainRecurveLow)
+        REFLECT_FIELD(terrainRecurveMid)
+        REFLECT_FIELD(terrainRecurveHigh)
     REFLECT_END()
 };
 

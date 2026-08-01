@@ -21,6 +21,8 @@ constexpr u32 kSaltMoisture = 0x6d015745u;
 constexpr u32 kSaltRelief = 0xe5f6a7b8u;
 constexpr u32 kSaltReliefWarpX = 0xc3d4e5f6u;
 constexpr u32 kSaltReliefWarpZ = 0xd9eafb0cu;
+constexpr u32 kSaltRegime = 0x4b1d5eedu;
+constexpr u32 kSaltHillChain = 0x91c0ffeeu;
 
 struct TierBlend {
     f32 altitude;
@@ -47,8 +49,11 @@ TierBlend blendTiers(const MacroParams& p, f32 tier) {
 }
 
 // Land surface before the coast profile: tier floor + warped relief +
-// soft strata quantization.
-f32 landHeight(const MacroParams& p, u32 seed, f32 tier, f32 x, f32 z) {
+// soft strata quantization, plus the regime extras — the old-massif
+// plateau and the ridged hill-chain relief (0/0 = legacy).
+f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
+               f32 hillChainWavelength, f32 x, f32 z) {
+    const f32 tier = s.tier;
     const TierBlend t = blendTiers(p, tier);
     const f32 wx =
         x + (noise::fbm(seed ^ kSaltReliefWarpX, x, z,
@@ -68,7 +73,15 @@ f32 landHeight(const MacroParams& p, u32 seed, f32 tier, f32 x, f32 z) {
                             2.0f -
                         1.0f) *
                        t.reliefAmplitude;
-    f32 h = t.altitude + relief;
+    f32 h = t.altitude + relief + s.plateau;
+    if (s.hillRelief > 0.0f && hillChainWavelength > 1.0f) {
+        // Ridged chains: elongated crests, the erosion pass rounds
+        // them into rolling hill country.
+        h += noise::ridgedFbm(seed ^ kSaltHillChain, wx, wz,
+                              1.0f / hillChainWavelength, 3, 2.0f,
+                              0.5f) *
+             s.hillRelief;
+    }
     if (t.terrace > 0.0f && p.terraceStep > 0.0f) {
         // Soft quantization: flat strata with a short warped slope at
         // each step edge — mesas, not ziggurats (the relief warp above
@@ -162,6 +175,45 @@ vector<f32> signedSeaDistance(const GridSpec& spec,
 
 } // namespace
 
+f32 recurveLand(const MacroParams& p, f32 h) {
+    if (p.recurveLow == 0.25f && p.recurveMid == 0.5f &&
+        p.recurveHigh == 0.75f) {
+        return h; // identity: bit-exact
+    }
+    const f32 span = glm::max(p.recurveSpan, 1.0f);
+    const f32 t = (h - p.seaLevel) / span;
+    if (t <= 0.0f || t >= 1.0f) {
+        return h; // sea/shoreline and above-span land untouched
+    }
+    // Clamp the control points into a strictly increasing sequence so
+    // the curve stays monotone whatever the data says.
+    const f32 lo = glm::clamp(p.recurveLow, 0.02f, 0.96f);
+    const f32 mid = glm::clamp(p.recurveMid, lo + 0.01f, 0.97f);
+    const f32 hi = glm::clamp(p.recurveHigh, mid + 0.01f, 0.98f);
+    const f32 y[5] = { 0.0f, lo, mid, hi, 1.0f };
+    // Monotone PCHIP (Fritsch-Carlson): harmonic-mean interior slopes on
+    // uniform knots at 0, 1/4, 1/2, 3/4, 1.
+    f32 d[4];
+    for (i32 k = 0; k < 4; ++k) {
+        d[k] = (y[k + 1] - y[k]) * 4.0f;
+    }
+    f32 m[5];
+    m[0] = d[0];
+    m[4] = d[3];
+    for (i32 k = 1; k < 4; ++k) {
+        m[k] = 2.0f / (1.0f / d[k - 1] + 1.0f / d[k]);
+    }
+    const i32 seg = glm::min(static_cast<i32>(t * 4.0f), 3);
+    const f32 s = t * 4.0f - static_cast<f32>(seg);
+    const f32 s2 = s * s;
+    const f32 s3 = s2 * s;
+    const f32 out = (2.0f * s3 - 3.0f * s2 + 1.0f) * y[seg] +
+                    (s3 - 2.0f * s2 + s) * 0.25f * m[seg] +
+                    (-2.0f * s3 + 3.0f * s2) * y[seg + 1] +
+                    (s3 - s2) * 0.25f * m[seg + 1];
+    return p.seaLevel + out * span;
+}
+
 f32 ProceduralControls::continentalness(f32 x, f32 z) const {
     const f32 wx =
         x + (noise::fbm(p.seed ^ kSaltContinentWarpX, x, z,
@@ -193,6 +245,34 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
         noise::ridgedFbm(p.seed ^ kSaltUplift, x, z,
                          1.0f / p.upliftWavelength, 3, 2.0f, 0.5f));
     sample.uplift = mask * noise::smoothstep01(0.0f, 1.2f, sample.tier);
+    // Relief regime: a slow field sorts the land into hill-chain
+    // country / old massifs / young ranges. Inland-gated so coasts keep
+    // their shore profile whatever the regime says.
+    const f32 regime = noise::fbm(p.seed ^ kSaltRegime, x, z,
+                                  1.0f / p.regimeWavelength, 3, 2.0f,
+                                  0.5f);
+    const f32 hills = 1.0f - noise::smoothstep01(0.32f, 0.45f, regime);
+    const f32 old = noise::smoothstep01(0.55f, 0.68f, regime);
+    const f32 inland = noise::smoothstep01(0.15f, 0.6f, sample.tier);
+    // Hill country stays LOW (no ranges) and rolls; old massifs stand
+    // on a plateau wearing hills, their uplift nearly off — erosion
+    // rounds what little rises. Young ranges keep the plain path.
+    sample.uplift *= (1.0f - hills) * (1.0f - 0.85f * old);
+    sample.tier = glm::mix(sample.tier,
+                           glm::min(sample.tier, 1.1f), hills);
+    sample.tier =
+        glm::mix(sample.tier, glm::min(sample.tier, 1.4f), old);
+    sample.plateau = old * inland * p.oldMassifHeight;
+    sample.hillRelief =
+        inland * (hills * p.hillChainAmplitude +
+                  old * p.oldMassifHillAmplitude);
+    // A gentle uplift FLOOR keeps regime hills alive through S2: the
+    // range mask fires nowhere near them, so without this the ridged
+    // S1 hills erode to a featureless plain in a hundred iterations —
+    // an old massif must stay hilly, only rounded.
+    sample.uplift = glm::max(
+        sample.uplift,
+        inland * glm::max(old * 0.12f, hills * 0.07f));
     // Climate -> biome id (palette contract in ProceduralControlParams):
     // cold beats arid beats alpine; temperate is the default.
     const f32 temperature =
@@ -213,19 +293,19 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
 
 MacroResult synthesizeMacro(const ControlSource& controls,
                             const GridSpec& spec, const MacroParams& params,
-                            u32 seed) {
+                            u32 seed, f32 hillChainWavelength) {
     MacroResult out;
     out.spec = spec;
     out.height.resize(spec.cells());
     out.uplift.resize(spec.cells());
     out.biome.resize(spec.cells());
-    vector<f32> tier(spec.cells());
+    vector<ControlSample> samples(spec.cells());
     vector<u8> seaMask(spec.cells());
     for (u32 row = 0; row < spec.n; ++row) {
         for (u32 col = 0; col < spec.n; ++col) {
             const size_t i = static_cast<size_t>(row) * spec.n + col;
             const ControlSample s = controls.at(spec.x(col), spec.z(row));
-            tier[i] = s.tier;
+            samples[i] = s;
             seaMask[i] = s.sea ? 1 : 0;
             out.uplift[i] = s.sea ? 0.0f : s.uplift;
             out.biome[i] = s.biome;
@@ -235,10 +315,13 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     for (u32 row = 0; row < spec.n; ++row) {
         for (u32 col = 0; col < spec.n; ++col) {
             const size_t i = static_cast<size_t>(row) * spec.n + col;
-            const f32 land = landHeight(params, seed, tier[i], spec.x(col),
-                                        spec.z(row));
-            out.height[i] =
-                coastProfile(params, land, tier[i], out.seaDist[i]);
+            const f32 land = recurveLand(
+                params,
+                landHeight(params, seed, samples[i],
+                           hillChainWavelength, spec.x(col),
+                           spec.z(row)));
+            out.height[i] = coastProfile(params, land, samples[i].tier,
+                                         out.seaDist[i]);
         }
     }
     return out;
@@ -247,8 +330,9 @@ MacroResult synthesizeMacro(const ControlSource& controls,
 f32 macroHeightAnalytic(const ProceduralControls& controls,
                         const MacroParams& params, f32 x, f32 z) {
     const ControlSample s = controls.at(x, z);
-    const f32 land = landHeight(params, controls.params().seed, s.tier, x,
-                                z);
+    const f32 land = recurveLand(
+        params, landHeight(params, controls.params().seed, s,
+                           controls.params().hillChainWavelength, x, z));
     // Shore distance approximated from continentalness: the ramp of the
     // tier mapping doubles as a distance proxy (good enough for
     // silhouettes and boundary conditions).

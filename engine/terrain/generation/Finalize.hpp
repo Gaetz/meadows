@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/terrain/generation/FineErosion.hpp"
 #include "engine/terrain/generation/Hydrology.hpp"
 #include "engine/terrain/generation/TerrainGen.hpp"
 
@@ -20,7 +21,7 @@ struct FinalizeParams {
     f32 riverDepthMin { 0.6f };
     f32 riverDepthMax { 4.0f };
     f32 bankShoulder { 1.4f }; // extra halfWidths of bank blend
-    f32 seaLevel { 21.0f };
+    f32 seaLevel { kDefaultSeaLevel };
     // Derived masks.
     f32 beachBand { 90.0f };     // meters of shore flagged as beach
     f32 wetnessReach { 48.0f };  // meters of damp ground around water
@@ -29,6 +30,31 @@ struct FinalizeParams {
     // macro texels; the runtime detail noise adds the last octaves.
     f32 reliefAmplitude { 1.1f };
     f32 reliefWavelength { 42.0f };
+    // Fine window: the sub-rect of the coarse grid that is upsampled and
+    // refined (world meters, clamped to the coarse rect). Zero span =
+    // the whole grid (tests, tools). The bake restricts it to
+    // tile + margin + fine-erosion halo — upsampling the full apron was
+    // wasted work that pays for the fine-erosion pass.
+    f32 fineMinX { 0.0f };
+    f32 fineMinZ { 0.0f };
+    f32 fineSpan { 0.0f };
+    // Fine-scale erosion between the macro texels (FineErosion.hpp);
+    // iterations = 0 disables the pass AND its micro-thermal follower,
+    // restoring the plain bicubic upsample.
+    FineErosionParams fine;
+    // Lake-bed profile: natural (masked) lakes get a basin carved under
+    // their surface — depth grows with the distance to the shore, so
+    // banks stay wadeable and the middle is divable. Carve-only (never
+    // raises ground); 0 coefficient disables.
+    f32 lakeDepthCoef { 0.10f }; // m of depth per m from the shore
+    f32 lakeDepthMax { 12.0f };
+    // Geological strata. The rockExposure MASK always carries the
+    // banding (material-side, zero geometric risk). strataAmplitude
+    // additionally displaces the fine grid on very steep faces —
+    // shipped OFF: it can beat against the S1 terracing, enable only
+    // after a visual review.
+    f32 strataAmplitude { 0.0f }; // meters of ledge displacement
+    f32 strataPeriod { 14.0f };   // meters of altitude per band
 };
 
 struct FinalizeResult {
@@ -39,18 +65,24 @@ struct FinalizeResult {
     vector<u8> wetness;
     vector<u8> beach;
     vector<u8> detailAmp;
+    vector<u8> rockExposure;
 };
 
 // `macro` provides seaDist/biome (S1), `eroded` the S2+S3 heights on the
 // `coarse` grid. `hydro` lives on ITS OWN grid `hydroSpec` — since the
 // two-stage bake, the hydrology is extracted from the COMPOSED
 // neighbourhood window, not from this tile's provisional terrain; grid
-// accesses sample it by world coordinates.
+// accesses sample it by world coordinates. `fineScale`, if given, is a
+// coarse-grid per-texel multiplier on the fine-erosion k (biome
+// character); `deposit` the coarse sediment field (fluvial + thermal) —
+// scree stays soil-covered in the rockExposure mask.
 FinalizeResult finalizeTerrain(const GridSpec& coarse,
                                const vector<f32>& eroded,
                                const MacroResult& macro,
                                const HydrologyResult& hydro,
                                const GridSpec& hydroSpec,
-                               const FinalizeParams& params, u32 seed);
+                               const FinalizeParams& params, u32 seed,
+                               const vector<f32>* fineScale = nullptr,
+                               const vector<f32>* deposit = nullptr);
 
 } // namespace render::terraingen

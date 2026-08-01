@@ -5,6 +5,8 @@
 
 #include <glm/glm.hpp>
 
+#include "engine/core/Assert.hpp"
+
 namespace render::terraingen {
 
 namespace {
@@ -49,6 +51,62 @@ f32 bilinearAt(const GridSpec& spec, const vector<f32>& grid, f32 wx,
 
 } // namespace
 
+BiomeCharacter biomeCharacter(const GridSpec& spec,
+                              const vector<u8>& biome,
+                              const vector<BiomeErosion>& table) {
+    BiomeCharacter out;
+    if (table.empty() || biome.size() != spec.cells()) {
+        return out;
+    }
+    const BiomeErosion neutral;
+    const auto entry = [&](u8 id) -> const BiomeErosion& {
+        return id < table.size() ? table[id] : neutral;
+    };
+    const size_t cells = spec.cells();
+    vector<f32> rawErod(cells);
+    vector<f32> rawTalus(cells);
+    vector<f32> rawCapacity(cells);
+    vector<f32> rawFine(cells);
+    for (size_t i = 0; i < cells; ++i) {
+        const BiomeErosion& e = entry(biome[i]);
+        rawErod[i] = e.erodibility;
+        rawTalus[i] = e.talusScale;
+        rawCapacity[i] = e.capacityScale;
+        rawFine[i] = e.fineScale;
+    }
+    // 3x3 box blur, fixed row-major order (deterministic): the ids are
+    // nearest-sampled, the blur keeps erosion from stepping at borders.
+    const i32 n = static_cast<i32>(spec.n);
+    const auto blur = [&](const vector<f32>& src) {
+        vector<f32> dst(cells);
+        for (i32 z = 0; z < n; ++z) {
+            for (i32 x = 0; x < n; ++x) {
+                f32 sum = 0.0f;
+                i32 count = 0;
+                for (i32 dz = -1; dz <= 1; ++dz) {
+                    for (i32 dx = -1; dx <= 1; ++dx) {
+                        const i32 cx = x + dx;
+                        const i32 cz = z + dz;
+                        if (cx < 0 || cx >= n || cz < 0 || cz >= n) {
+                            continue;
+                        }
+                        sum += src[static_cast<size_t>(cz) * n + cx];
+                        ++count;
+                    }
+                }
+                dst[static_cast<size_t>(z) * n + x] =
+                    sum / static_cast<f32>(count);
+            }
+        }
+        return dst;
+    };
+    out.erodibility = blur(rawErod);
+    out.talusScale = blur(rawTalus);
+    out.capacityScale = blur(rawCapacity);
+    out.fineScale = blur(rawFine);
+    return out;
+}
+
 TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
     TileStage1 out;
     out.sim = simSpecFor(params, tx, tz);
@@ -57,19 +115,35 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
     controlParams.seed = params.worldSeed;
     const ProceduralControls controls { controlParams };
 
-    const MacroResult macro = synthesizeMacro(controls, out.sim,
-                                              params.macro,
-                                              params.worldSeed);
+    const MacroResult macro =
+        synthesizeMacro(controls, out.sim, params.macro,
+                        params.worldSeed,
+                        controlParams.hillChainWavelength);
+    const BiomeCharacter character =
+        biomeCharacter(out.sim, macro.biome, params.biomeErosion);
+
     FluvialParams fluvial = params.fluvial;
     fluvial.seaLevel = params.macro.seaLevel;
-    const FluvialResult eroded =
-        erodeFluvial(out.sim, macro.height, macro.uplift, fluvial);
+    const FluvialResult eroded = erodeFluvial(
+        out.sim, macro.height, macro.uplift, fluvial, nullptr,
+        character.erodibility.empty() ? nullptr : &character.erodibility,
+        character.capacityScale.empty() ? nullptr
+                                        : &character.capacityScale);
 
     ThermalParams thermal = params.thermal;
     thermal.seaLevel = params.macro.seaLevel;
-    ThermalResult relaxed = erodeThermal(out.sim, eroded.height, thermal);
+    ThermalResult relaxed = erodeThermal(
+        out.sim, eroded.height, thermal,
+        character.talusScale.empty() ? nullptr : &character.talusScale);
 
     out.eroded = std::move(relaxed.height);
+    // One sediment field: thermal scree + fluvial alluvium.
+    out.deposit = std::move(relaxed.deposit);
+    if (!eroded.deposit.empty()) {
+        for (size_t i = 0; i < out.deposit.size(); ++i) {
+            out.deposit[i] += eroded.deposit[i];
+        }
+    }
     out.seaDist = std::move(macro.seaDist);
     out.biome = std::move(macro.biome);
     return out;
@@ -83,6 +157,11 @@ TileBakeResult bakeTileStage2(
     const TileStage1* center = stage1At(tx, tz);
     // The center stage-1 is the contract; without it there is nothing
     // to finalize.
+    ENGINE_ASSERT_MSG(center != nullptr,
+                      "bakeTileStage2: center stage-1 is mandatory");
+    if (!center) {
+        return {};
+    }
     const TileStage1& self = *center;
     const GridSpec& sim = self.sim;
 
@@ -161,20 +240,32 @@ TileBakeResult bakeTileStage2(
     macroFields.spec = sim;
     macroFields.seaDist = self.seaDist;
     macroFields.biome = self.biome;
+    // Biome character for the fine pass (cheap rebuild; stage 1 keeps
+    // its own for the coarse erosion).
+    const BiomeCharacter character =
+        biomeCharacter(sim, self.biome, params.biomeErosion);
+    const f32 keepMinX = tileMinX - params.overlapMargin;
+    const f32 keepMinZ = tileMinZ - params.overlapMargin;
+    const f32 keepSpan = params.tileSize + 2.0f * params.overlapMargin;
+
     FinalizeParams finalize = params.finalize;
     finalize.seaLevel = params.macro.seaLevel;
     finalize.upsampleFactor = glm::max(finalize.upsampleFactor, 1u);
-    const FinalizeResult fine =
-        finalizeTerrain(sim, self.eroded, macroFields, hydro, window,
-                        finalize, params.worldSeed);
+    // Fine window = kept rect + fine-erosion halo; the rest of the
+    // apron only ever existed at coarse resolution and never shipped.
+    finalize.fineMinX = keepMinX - kFineErosionHalo;
+    finalize.fineMinZ = keepMinZ - kFineErosionHalo;
+    finalize.fineSpan = keepSpan + 2.0f * kFineErosionHalo;
+    const FinalizeResult fine = finalizeTerrain(
+        sim, self.eroded, macroFields, hydro, window, finalize,
+        params.worldSeed,
+        character.fineScale.empty() ? nullptr : &character.fineScale,
+        self.deposit.empty() ? nullptr : &self.deposit);
 
     // Crop to tile + overlap margin. The margin ring is shared with the
     // neighbour bakes; height() blends the overlap by edge weight.
     TileBakeResult out;
     TerrainRegion& region = out.region;
-    const f32 keepMinX = tileMinX - params.overlapMargin;
-    const f32 keepMinZ = tileMinZ - params.overlapMargin;
-    const f32 keepSpan = params.tileSize + 2.0f * params.overlapMargin;
     region.originX = keepMinX;
     region.originZ = keepMinZ;
     region.texelSize = fine.fineSpec.texelSize;
@@ -217,11 +308,12 @@ TileBakeResult bakeTileStage2(
     crop(fine.beach, region.beach);
     crop(fine.detailAmp, region.detailAmp);
     crop(self.biome, region.biome);
+    crop(fine.rockExposure, region.rockExposure);
     // Fine-scale runtime detail on top of the 2 m grid; the baked
     // detailAmp channel gates it off near water and beaches.
-    region.detailAmplitude = 0.35f;
-    region.detailWavelength = 5.0f;
-    region.detailOctaves = 2;
+    region.detailAmplitude = kRegionDetailAmplitude;
+    region.detailWavelength = kRegionDetailWavelength;
+    region.detailOctaves = kRegionDetailOctaves;
 
     // Water ownership: lakes belong to the tile holding their bbox
     // center; river polylines are CLIPPED to this tile's kept rect (each

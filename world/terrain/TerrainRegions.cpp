@@ -11,7 +11,7 @@ namespace world {
 
 namespace {
 
-constexpr char kMagic[4] = { 'T', 'R', 'G', '1' };
+constexpr char kMagic[4] = { 'T', 'R', 'G', '2' };
 constexpr u32 kMaxSamples = 8192;
 
 bool validGrid(const render::TerrainRegion& region) {
@@ -36,7 +36,8 @@ bool validGrid(const render::TerrainRegion& region) {
            region.maskWidth <= kMaxSamples &&
            region.maskHeight <= kMaxSamples && maskOk(region.detailAmp) &&
            maskOk(region.flow) && maskOk(region.wetness) &&
-           maskOk(region.beach) && maskOk(region.biome);
+           maskOk(region.beach) && maskOk(region.biome) &&
+           (region.rockExposure.empty() || maskOk(region.rockExposure));
 }
 
 } // namespace
@@ -76,6 +77,15 @@ bool writeTrgFile(const std::filesystem::path& path,
     writeChannel(region.wetness);
     writeChannel(region.beach);
     writeChannel(region.biome);
+    if (region.rockExposure.empty() && region.maskWidth > 0) {
+        // The channel is optional in memory but fixed in the format.
+        const vector<u8> zeros(static_cast<size_t>(region.maskWidth) *
+                                   region.maskHeight,
+                               0);
+        writeChannel(zeros);
+    } else {
+        writeChannel(region.rockExposure);
+    }
     return static_cast<bool>(file);
 }
 
@@ -134,6 +144,7 @@ std::optional<render::TerrainRegion> readTrgFile(
         readChannel(region.wetness);
         readChannel(region.beach);
         readChannel(region.biome);
+        readChannel(region.rockExposure);
         if (!file) {
             LOG_ERROR("readTrgFile: truncated masks: {}", path.string());
             return std::nullopt;

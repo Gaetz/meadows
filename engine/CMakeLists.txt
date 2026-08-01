@@ -23,8 +23,12 @@ add_library(meadows STATIC
     core/Log.cpp
     reflect/Registry.cpp
     reflect/ValueText.cpp
+    terrain/RiverGeometry.cpp
     terrain/WaterBodies.cpp
+    terrain/WaterInfoMap.cpp
+    terrain/generation/Authoring.cpp
     terrain/generation/Finalize.cpp
+    terrain/generation/FineErosion.cpp
     terrain/generation/FluvialErosion.cpp
     terrain/generation/Hydrology.cpp
     terrain/generation/TerrainGen.cpp

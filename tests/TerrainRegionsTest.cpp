@@ -146,6 +146,7 @@ TEST_CASE(".trg round-trip preserves the region and its masks") {
     region.wetness.assign(maskCells, 20);
     region.beach.assign(maskCells, 30);
     region.biome.assign(maskCells, 4);
+    region.rockExposure.assign(maskCells, 40);
 
     REQUIRE(world::writeTrgFile(file, region));
     const auto back = world::readTrgFile(file);
@@ -159,6 +160,7 @@ TEST_CASE(".trg round-trip preserves the region and its masks") {
     CHECK(back->maskWidth == 33);
     CHECK(back->detailAmp == region.detailAmp);
     CHECK(back->biome == region.biome);
+    CHECK(back->rockExposure == region.rockExposure);
 
     // Maskless round-trip.
     const auto bare = dir / "bare.trg";

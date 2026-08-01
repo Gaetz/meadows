@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Defines.hpp"
+#include "engine/terrain/TerrainBase.hpp" // render::kDefaultSeaLevel
 
 // Local water bodies: the sea plus altitude lakes (flat surfaces at their
 // own level) and rivers (polyline ribbons with a monotone-downhill
@@ -14,6 +15,24 @@
 // (world/terrain/WaterBodiesBuilder) and from sandbox tile bakes.
 
 namespace render {
+
+// A water shading preset (WaterMaterialForm's flecs/Forms-free mirror):
+// index 0 is ALWAYS default water — the default-constructed values are
+// the hardcoded shader constants, bit-identical. Gameplay may read
+// viscosity/temperature-ish traits from here later (mud slows swims).
+struct WaterMaterialParams {
+    Vec3 tint { 0.10f, 0.30f, 0.34f };
+    f32 tintStrength { 0.0f };
+    Vec3 deepColor { 0.008f, 0.045f, 0.055f };
+    Vec3 absorption { 0.42f, 0.16f, 0.12f };
+    Vec3 foamColor { 0.75f, 0.82f, 0.85f };
+    f32 foamGain { 1.0f };
+    Vec3 emissiveColor { 0.0f, 0.0f, 0.0f };
+    f32 emissiveStrength { 0.0f };
+    f32 flowSpeedScale { 1.0f };
+    f32 viscosity { 0.0f };
+    f32 waveScale { 1.0f };
+};
 
 struct LakeSurface {
     f32 level { 0.0f }; // water surface, meters
@@ -25,6 +44,7 @@ struct LakeSurface {
     f32 maxZ { 0.0f };
     Vec3 tint { 0.10f, 0.30f, 0.34f };
     f32 chop { 0.5f };
+    u32 materialIndex { 0 }; // into WaterBodies::materials (0 = water)
     // Bbox-local basin mask (1 = water). Empty = the whole bbox counts
     // (hand-authored rectangular ponds); generated lakes always carry it
     // — a bbox rectangle at lake level floats over anything lower inside
@@ -65,6 +85,7 @@ struct RiverSurface {
     vector<RiverNode> nodes; // downstream order
     Vec3 tint { 0.10f, 0.30f, 0.34f };
     f32 flowSpeed { 1.0f };
+    u32 materialIndex { 0 }; // into WaterBodies::materials (0 = water)
     // Bounds incl. widths (kept for the point queries).
     f32 minX { 0.0f };
     f32 minZ { 0.0f };
@@ -73,9 +94,12 @@ struct RiverSurface {
 };
 
 struct WaterBodies {
-    f32 seaLevel { 21.0f };
+    f32 seaLevel { kDefaultSeaLevel };
     vector<LakeSurface> lakes;
     vector<RiverSurface> rivers;
+    // Shading presets; empty behaves as { default water }. Body
+    // materialIndex values point in here (clamped by consumers).
+    vector<WaterMaterialParams> materials;
 };
 
 namespace terrain {
@@ -87,6 +111,23 @@ namespace terrain {
 // = dry. The swim controller feeds the player position as probeY.
 std::optional<f32> waterSurfaceAt(const WaterBodies& bodies, f32 x, f32 z,
                                   f32 probeY);
+
+// One river's contribution to the current at (x, z): flow in m/s (XZ),
+// a bank-distance weight in [0,1] (0 at the bank, 1 mid-channel) and
+// the local surface level. weight == 0 = the point is off this river.
+// SHARED KERNEL: waterFlowAt and the water-info raster both build on
+// it, so the felt current and the rendered current can never drift.
+struct RiverFlowSample {
+    Vec2 flow { 0.0f, 0.0f };
+    f32 weight { 0.0f };
+    f32 surface { 0.0f };
+};
+RiverFlowSample riverFlowSample(const RiverSurface& river, f32 x, f32 z);
+
+// XZ current at a point (m/s): overlapping rivers blend by bank
+// distance; lakes and the sea are still (zero). Zero when dry. Same
+// plausibility gating as waterSurfaceAt.
+Vec2 waterFlowAt(const WaterBodies& bodies, f32 x, f32 z, f32 probeY);
 
 // Vertical water column over terrain at height terrainY (0 = dry) — the
 // pool-depth/foam bake and wading effects.

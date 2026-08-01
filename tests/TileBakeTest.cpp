@@ -7,8 +7,9 @@
 #include "engine/terrain/SandboxTerrain.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
 
-// Sandbox super-tiles: deterministic bakes, and adjacent tiles that blend
-// smoothly through their shared margin ring inside height().
+// Sandbox tiles: deterministic bakes, the stage-1/stage-2 seam, and
+// adjacent tiles that blend smoothly through their shared margin ring
+// inside height().
 
 using namespace render::terraingen;
 
@@ -79,6 +80,113 @@ TEST_CASE("adjacent tiles blend smoothly across their shared border") {
         // of the test world is rolling coast/plain).
         CHECK(maxStep < 6.0f);
     }
+
+    // The shared overlap band itself: both bakes carry heights there
+    // (different aprons, fine erosion included) — their disagreement
+    // must stay well inside what the edge blend swallows.
+    f32 maxDiverge = 0.0f;
+    for (f32 z = 32.0f; z < params.tileSize; z += 24.0f) {
+        for (f32 x = border - params.overlapMargin + 2.0f;
+             x < border + params.overlapMargin - 2.0f; x += 8.0f) {
+            const f32 ha = render::terrain::baseHeight(a.region, x, z);
+            const f32 hb = render::terrain::baseHeight(b.region, x, z);
+            maxDiverge = std::max(maxDiverge, std::abs(ha - hb));
+        }
+    }
+    CHECK(maxDiverge < 2.5f);
+}
+
+TEST_CASE("biome erosion character: neutral is identity, borders blur") {
+    const TileBakeParams params = testParams();
+
+    // Empty table and an explicit all-neutral table are bit-identical:
+    // multiplying k/talus by 1.0 changes nothing.
+    TileBakeParams neutral = params;
+    neutral.biomeErosion.clear();
+    TileBakeParams unit = params;
+    unit.biomeErosion.assign(4, BiomeErosion {});
+    const TileStage1 a = bakeTileStage1(neutral, 0, 0);
+    const TileStage1 b = bakeTileStage1(unit, 0, 0);
+    CHECK(a.eroded == b.eroded);
+
+    // A hard biome border blurs: adjacent-texel erodibility steps stay
+    // well below the raw temperate->arid contrast (0.9 -> 1.3).
+    const GridSpec small { 0.0f, 0.0f, 8.0f, 17 };
+    vector<u8> biome(small.cells(), 0);
+    for (u32 row = 0; row < small.n; ++row) {
+        for (u32 col = 8; col < small.n; ++col) {
+            biome[static_cast<size_t>(row) * small.n + col] = 1;
+        }
+    }
+    const BiomeCharacter grids =
+        biomeCharacter(small, biome, params.biomeErosion);
+    REQUIRE(grids.erodibility.size() == small.cells());
+    f32 maxStep = 0.0f;
+    for (u32 row = 0; row < small.n; ++row) {
+        for (u32 col = 1; col < small.n; ++col) {
+            const size_t i = static_cast<size_t>(row) * small.n + col;
+            maxStep = std::max(maxStep,
+                               std::abs(grids.erodibility[i] -
+                                        grids.erodibility[i - 1]));
+        }
+    }
+    CHECK(maxStep > 0.0f);
+    CHECK(maxStep < 0.2f);
+
+    // Away from the border the grids carry the table values (temperate
+    // 0.9 west, arid 1.3 east — the default palette contract).
+    const size_t west = static_cast<size_t>(8) * small.n + 2;
+    const size_t east = static_cast<size_t>(8) * small.n + 14;
+    CHECK(grids.erodibility[west] == doctest::Approx(0.9f));
+    CHECK(grids.erodibility[east] == doctest::Approx(1.3f));
+    CHECK(grids.talusScale[west] == doctest::Approx(1.0f));
+    CHECK(grids.capacityScale[east] == doctest::Approx(0.7f));
+}
+
+TEST_CASE("stage seam: stage-1 is deterministic, stage-2 composes it") {
+    const TileBakeParams params = testParams();
+    const TileStage1 s1a = bakeTileStage1(params, 1, 1);
+    const TileStage1 s1b = bakeTileStage1(params, 1, 1);
+    CHECK(s1a.eroded == s1b.eroded); // bit-exact (disk cache contract)
+    CHECK(s1a.seaDist == s1b.seaDist);
+    CHECK(s1a.biome == s1b.biome);
+
+    // Center-only stage-2 (every neighbour missing): the contract says
+    // the window falls back to the center's sim — valid output, and
+    // deterministic.
+    const auto centerOnly = [&](i32 qx, i32 qz) -> const TileStage1* {
+        return (qx == 1 && qz == 1) ? &s1a : nullptr;
+    };
+    const TileBakeResult lone = bakeTileStage2(params, 1, 1, centerOnly);
+    CHECK(lone.region.width > 2);
+    CHECK(lone.region.heights.size() ==
+          static_cast<size_t>(lone.region.width) * lone.region.height);
+    CHECK(lone.region.originX ==
+          doctest::Approx(params.tileSize - params.overlapMargin));
+    const TileBakeResult lone2 = bakeTileStage2(params, 1, 1, centerOnly);
+    CHECK(lone.region.heights == lone2.region.heights);
+
+    // Full neighbourhood: same call the streamer makes. The kept center
+    // heights come from the center stage-1 either way, so the terrain
+    // matches the center-only bake away from the water bands.
+    TileStage1 grid[3][3];
+    for (i32 dz = -1; dz <= 1; ++dz) {
+        for (i32 dx = -1; dx <= 1; ++dx) {
+            grid[dz + 1][dx + 1] =
+                bakeTileStage1(params, 1 + dx, 1 + dz);
+        }
+    }
+    const TileBakeResult full = bakeTileStage2(
+        params, 1, 1, [&](i32 qx, i32 qz) -> const TileStage1* {
+            const i32 dx = qx - 1;
+            const i32 dz = qz - 1;
+            if (dx < -1 || dx > 1 || dz < -1 || dz > 1) {
+                return nullptr;
+            }
+            return &grid[dz + 1][dx + 1];
+        });
+    CHECK(full.region.width == lone.region.width);
+    CHECK(full.region.originX == doctest::Approx(lone.region.originX));
 }
 
 // Hidden benchmark: full production-size tile (4 km, 1 km apron, 100

@@ -19,7 +19,7 @@ struct ThermalParams {
     f32 talusTan { 0.65f };
     // Cells at/below the sea never erode (base level) but can receive
     // slide material — cliffs shed scree into the water.
-    f32 seaLevel { 21.0f };
+    f32 seaLevel { kDefaultSeaLevel };
 };
 
 struct ThermalResult {

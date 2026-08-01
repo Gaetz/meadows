@@ -39,6 +39,7 @@
     FormsTest.cpp
     FormIndexTest.cpp
     FinalizeTest.cpp
+    FineErosionTest.cpp
     FluvialErosionTest.cpp
     FrameComposerTest.cpp
     FrustumTest.cpp
@@ -58,6 +59,11 @@
     InventoryViewTest.cpp
     JobsTest.cpp
     KillZTest.cpp
+    FloatersTest.cpp
+    RiverGeometryTest.cpp
+    WaterInfoMapTest.cpp
+    AuthoringTest.cpp
+    SpawnDiagnosticTest.cpp
     LevelEditorTest.cpp
     LocTextTest.cpp
     MapRasterTest.cpp

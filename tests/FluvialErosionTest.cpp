@@ -126,6 +126,52 @@ TEST_CASE("uplift bump erodes into a drained dendritic range") {
     CHECK(deepPits < spec().cells() / 50);
 }
 
+TEST_CASE("routeFlow: receivers descend, order ascends, area accumulates") {
+    // Plane tilted toward +z: interior flow runs straight down columns.
+    vector<f32> h(spec().cells());
+    for (u32 row = 0; row < kN; ++row) {
+        for (u32 col = 0; col < kN; ++col) {
+            h[static_cast<size_t>(row) * kN + col] =
+                100.0f - static_cast<f32>(row) * 0.5f;
+        }
+    }
+    const auto filled = priorityFloodFill(spec(), h, 0.0f, 1.0e-4f);
+    const FlowRouting routing = routeFlow(spec(), filled, h, 0.0f);
+
+    // Base-level cells receive themselves; everything else routes to a
+    // strictly lower cell of the routed surface.
+    u32 baseCells = 0;
+    u32 badReceivers = 0;
+    for (u32 i = 0; i < spec().cells(); ++i) {
+        if (routing.receiver[i] == i) {
+            ++baseCells;
+            continue;
+        }
+        if (filled[routing.receiver[i]] >= filled[i]) {
+            ++badReceivers;
+        }
+    }
+    CHECK(badReceivers == 0);
+    CHECK(baseCells >= 4 * kN - 4); // at least the rim
+
+    // Process order sorts the routed surface ascending.
+    u32 orderViolations = 0;
+    for (size_t k = 1; k < routing.order.size(); ++k) {
+        if (filled[routing.order[k]] < filled[routing.order[k - 1]]) {
+            ++orderViolations;
+        }
+    }
+    CHECK(orderViolations == 0);
+
+    // A near-outlet interior cell gathered its whole upstream column.
+    const f32 cellArea = kTexel * kTexel;
+    const size_t nearOutlet =
+        static_cast<size_t>(kN - 2) * kN + kN / 2;
+    CHECK(routing.area[nearOutlet] ==
+          doctest::Approx(static_cast<f32>(kN - 2) * cellArea)
+              .epsilon(0.01));
+}
+
 TEST_CASE("plateauKeep re-blends mesas out of the dissection") {
     FluvialParams params;
     params.iterations = 40;
@@ -147,6 +193,97 @@ TEST_CASE("plateauKeep re-blends mesas out of the dissection") {
               .epsilon(0.05));
 }
 
+TEST_CASE("sediment transport: flats fill and flatten, peaks stand, "
+          "drainage survives") {
+    FluvialParams off;
+    off.iterations = 60;
+    off.sedimentCapacity = 0.0f;
+    FluvialParams on = off;
+    on.sedimentCapacity = 1.2f;
+    const auto h = flatHeights();
+    const auto uplift = gaussianUplift();
+
+    const FluvialResult dry = erodeFluvial(spec(), h, uplift, off);
+    CHECK(dry.deposit.empty()); // 0 = transport-unlimited legacy path
+
+    const FluvialResult wet = erodeFluvial(spec(), h, uplift, on);
+    const FluvialResult wet2 = erodeFluvial(spec(), h, uplift, on);
+    CHECK(wet.height == wet2.height); // deterministic, bit-exact
+    REQUIRE(wet.deposit.size() == spec().cells());
+
+    // Sediment actually lands.
+    f32 total = 0.0f;
+    for (const f32 d : wet.deposit) {
+        total += d;
+    }
+    CHECK(total > 1.0f);
+
+    // Peaks are transport-immune: steep slopes carry everything away.
+    const auto peakOf = [](const vector<f32>& grid) {
+        f32 peak = 0.0f;
+        for (const f32 v : grid) {
+            peak = std::max(peak, v);
+        }
+        return peak;
+    };
+    CHECK(std::abs(peakOf(wet.height) - peakOf(dry.height)) < 2.0f);
+
+    // Where sediment landed, the floor is FLATTER than the dry carve.
+    const auto meanSlopeOver = [&](const vector<f32>& grid) {
+        f64 sum = 0.0;
+        u32 count = 0;
+        for (u32 row = 1; row + 1 < kN; ++row) {
+            for (u32 col = 1; col + 1 < kN; ++col) {
+                const size_t i = static_cast<size_t>(row) * kN + col;
+                if (wet.deposit[i] < 0.2f) {
+                    continue;
+                }
+                const f32 gx = (grid[i + 1] - grid[i - 1]) /
+                               (2.0f * kTexel);
+                const f32 gz = (grid[i + kN] - grid[i - kN]) /
+                               (2.0f * kTexel);
+                sum += std::sqrt(static_cast<f64>(gx * gx + gz * gz));
+                ++count;
+            }
+        }
+        return count ? sum / count : 0.0;
+    };
+    CHECK(meanSlopeOver(wet.height) < meanSlopeOver(dry.height));
+
+    // Deposition never breaks the drained invariant: pits stay rare and
+    // shallow (the routed-surface clamp at work).
+    const auto filled = priorityFloodFill(spec(), wet.height, on.seaLevel,
+                                          on.minSlope);
+    u32 deepPits = 0;
+    for (size_t i = 0; i < filled.size(); ++i) {
+        if (filled[i] - wet.height[i] > 0.5f) {
+            ++deepPits;
+        }
+    }
+    CHECK(deepPits < spec().cells() / 50);
+}
+
+TEST_CASE("erodibility scales the incision") {
+    FluvialParams params;
+    params.iterations = 40;
+    const auto h = flatHeights();
+    const auto uplift = gaussianUplift();
+    const FluvialResult base = erodeFluvial(spec(), h, uplift, params);
+    const vector<f32> soft(spec().cells(), 1.5f);
+    const FluvialResult eroded =
+        erodeFluvial(spec(), h, uplift, params, nullptr, &soft);
+    const auto peakOf = [](const vector<f32>& grid) {
+        f32 peak = 0.0f;
+        for (const f32 v : grid) {
+            peak = std::max(peak, v);
+        }
+        return peak;
+    };
+    // Softer rock (k x1.5) cannot hold the same range against the same
+    // uplift: the equilibrium peak sits lower.
+    CHECK(peakOf(eroded.height) < peakOf(base.height) - 1.0f);
+}
+
 TEST_CASE("sea nodes are base level: never uplifted, never carved below") {
     FluvialParams params;
     params.iterations = 30;
@@ -164,4 +301,39 @@ TEST_CASE("sea nodes are base level: never uplifted, never carved below") {
             CHECK(r.height[static_cast<size_t>(row) * kN + col] == 10.0f);
         }
     }
+}
+
+TEST_CASE("sediment keeps a floor under deep flooded cells") {
+    // Deep closed bowl fed by the eroding bump: sediment pours in but
+    // may never pave the basin up to its water surface.
+    FluvialParams params;
+    params.iterations = 80;
+    auto h = flatHeights();
+    for (u32 row = 8; row < 24; ++row) {
+        for (u32 col = 8; col < 24; ++col) {
+            h[static_cast<size_t>(row) * kN + col] =
+                20.0f; // 20 m-deep pan near the bump
+        }
+    }
+    const auto uplift = gaussianUplift();
+    const FluvialResult r = erodeFluvial(spec(), h, uplift, params);
+    const auto filled = priorityFloodFill(spec(), r.height,
+                                          params.seaLevel,
+                                          params.minSlope);
+    u32 violations = 0;
+    for (u32 row = 9; row < 23; ++row) {
+        for (u32 col = 9; col < 23; ++col) {
+            const size_t i = static_cast<size_t>(row) * kN + col;
+            if (r.deposit.empty() || r.deposit[i] <= 0.0f) {
+                continue;
+            }
+            const f32 depth = filled[i] - r.height[i];
+            // Cells the sediment touched and that stay flooded keep
+            // (about) the guaranteed floor.
+            if (depth > 0.5f && depth < params.lakeKeepDepth - 0.5f) {
+                ++violations;
+            }
+        }
+    }
+    CHECK(violations == 0);
 }
