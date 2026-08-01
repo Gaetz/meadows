@@ -1,0 +1,261 @@
+#include "engine/terrain/generation/TerrainGen.hpp"
+
+#include <cmath>
+
+#include <glm/glm.hpp>
+
+#include "engine/terrain/Noise.hpp"
+
+namespace render::terraingen {
+
+namespace {
+
+// Seed salts: one per independent noise field, so a control tweak never
+// re-rolls an unrelated field.
+constexpr u32 kSaltContinent = 0x5ea5c0a5u;
+constexpr u32 kSaltContinentWarpX = 0xa1b2c3d4u;
+constexpr u32 kSaltContinentWarpZ = 0xb7c8d9eau;
+constexpr u32 kSaltUplift = 0x0f1e2d3cu;
+constexpr u32 kSaltTemperature = 0x7ea7be57u;
+constexpr u32 kSaltMoisture = 0x6d015745u;
+constexpr u32 kSaltRelief = 0xe5f6a7b8u;
+constexpr u32 kSaltReliefWarpX = 0xc3d4e5f6u;
+constexpr u32 kSaltReliefWarpZ = 0xd9eafb0cu;
+
+struct TierBlend {
+    f32 altitude;
+    f32 reliefAmplitude;
+    f32 reliefWavelength;
+    f32 terrace;
+};
+
+TierBlend blendTiers(const MacroParams& p, f32 tier) {
+    const f32 last = static_cast<f32>(p.tiers.size() - 1);
+    const f32 ti = glm::clamp(tier, 0.0f, last);
+    const size_t i0 = static_cast<size_t>(ti);
+    const size_t i1 = glm::min(i0 + 1, p.tiers.size() - 1);
+    const f32 t = ti - static_cast<f32>(i0);
+    // Smoothstep the blend so tier floors read as floors with a shoulder
+    // between them, not one long ramp.
+    const f32 tt = t * t * (3.0f - 2.0f * t);
+    const TierLevel& a = p.tiers[i0];
+    const TierLevel& b = p.tiers[i1];
+    return { glm::mix(a.altitude, b.altitude, tt),
+             glm::mix(a.reliefAmplitude, b.reliefAmplitude, tt),
+             glm::mix(a.reliefWavelength, b.reliefWavelength, tt),
+             glm::mix(a.terrace, b.terrace, tt) };
+}
+
+// Land surface before the coast profile: tier floor + warped relief +
+// soft strata quantization.
+f32 landHeight(const MacroParams& p, u32 seed, f32 tier, f32 x, f32 z) {
+    const TierBlend t = blendTiers(p, tier);
+    const f32 wx =
+        x + (noise::fbm(seed ^ kSaltReliefWarpX, x, z,
+                        1.0f / p.warpWavelength, 2, 2.0f, 0.5f) *
+                 2.0f -
+             1.0f) *
+                p.warpStrength;
+    const f32 wz =
+        z + (noise::fbm(seed ^ kSaltReliefWarpZ, x, z,
+                        1.0f / p.warpWavelength, 2, 2.0f, 0.5f) *
+                 2.0f -
+             1.0f) *
+                p.warpStrength;
+    const f32 relief = (noise::fbm(seed ^ kSaltRelief, wx, wz,
+                                   1.0f / t.reliefWavelength, 4, 2.0f,
+                                   0.5f) *
+                            2.0f -
+                        1.0f) *
+                       t.reliefAmplitude;
+    f32 h = t.altitude + relief;
+    if (t.terrace > 0.0f && p.terraceStep > 0.0f) {
+        // Soft quantization: flat strata with a short warped slope at
+        // each step edge — mesas, not ziggurats (the relief warp above
+        // already bends the contour lines).
+        const f32 cell = std::floor(h / p.terraceStep);
+        const f32 frac = h / p.terraceStep - cell;
+        const f32 edge = glm::clamp(p.terraceEdge, 0.01f, 0.49f);
+        const f32 soft =
+            noise::smoothstep01(0.5f - edge, 0.5f + edge, frac);
+        const f32 q = (cell + soft) * p.terraceStep;
+        h = glm::mix(h, q, t.terrace);
+    }
+    return h;
+}
+
+// Coast profile from the signed shore distance (+ on land, meters).
+// Continuous at d == 0 (both sides meet at shoreHeight above sea level);
+// high tiers skip the beach ramp and keep their altitude to the rim.
+f32 coastProfile(const MacroParams& p, f32 land, f32 tier, f32 d) {
+    const f32 waterline = p.seaLevel + p.shoreHeight;
+    if (d <= 0.0f) {
+        const f32 shallow =
+            glm::mix(waterline, p.seaLevel - p.shallowDepth,
+                     noise::smoothstep01(0.0f, p.shelfWidth, -d));
+        return glm::mix(shallow, p.seaFloor,
+                        noise::smoothstep01(p.shelfWidth, p.seaFalloff,
+                                            -d));
+    }
+    const f32 cliff =
+        noise::smoothstep01(p.cliffTierStart, p.cliffTierEnd, tier);
+    const f32 ramp =
+        glm::mix(waterline, land,
+                 noise::smoothstep01(0.0f, p.shoreWidth, d));
+    return glm::mix(ramp, land, cliff);
+}
+
+// Two-pass 3x3 chamfer distance transform of the sea mask, signed in
+// meters: + on land (distance to sea), - at sea (distance to land).
+vector<f32> signedSeaDistance(const GridSpec& spec,
+                              const vector<u8>& seaMask) {
+    const i32 n = static_cast<i32>(spec.n);
+    constexpr f32 kFar = 1.0e30f;
+    constexpr f32 kOrtho = 1.0f;
+    constexpr f32 kDiag = 1.41421356f;
+    vector<f32> toSea(spec.cells(), kFar);
+    vector<f32> toLand(spec.cells(), kFar);
+    const auto idx = [n](i32 cx, i32 cz) {
+        return static_cast<size_t>(cz) * static_cast<size_t>(n) + cx;
+    };
+    for (i32 cz = 0; cz < n; ++cz) {
+        for (i32 cx = 0; cx < n; ++cx) {
+            (seaMask[idx(cx, cz)] ? toSea : toLand)[idx(cx, cz)] = 0.0f;
+        }
+    }
+    const auto relax = [&](vector<f32>& d, i32 cx, i32 cz, i32 ox, i32 oz,
+                           f32 w) {
+        const i32 px = cx + ox;
+        const i32 pz = cz + oz;
+        if (px < 0 || pz < 0 || px >= n || pz >= n) {
+            return;
+        }
+        d[idx(cx, cz)] =
+            glm::min(d[idx(cx, cz)], d[idx(px, pz)] + w);
+    };
+    const auto sweep = [&](vector<f32>& d) {
+        for (i32 cz = 0; cz < n; ++cz) {
+            for (i32 cx = 0; cx < n; ++cx) {
+                relax(d, cx, cz, -1, 0, kOrtho);
+                relax(d, cx, cz, 0, -1, kOrtho);
+                relax(d, cx, cz, -1, -1, kDiag);
+                relax(d, cx, cz, 1, -1, kDiag);
+            }
+        }
+        for (i32 cz = n - 1; cz >= 0; --cz) {
+            for (i32 cx = n - 1; cx >= 0; --cx) {
+                relax(d, cx, cz, 1, 0, kOrtho);
+                relax(d, cx, cz, 0, 1, kOrtho);
+                relax(d, cx, cz, 1, 1, kDiag);
+                relax(d, cx, cz, -1, 1, kDiag);
+            }
+        }
+    };
+    sweep(toSea);
+    sweep(toLand);
+    vector<f32> out(spec.cells());
+    for (size_t i = 0; i < out.size(); ++i) {
+        out[i] = (seaMask[i] ? -toLand[i] : toSea[i]) * spec.texelSize;
+    }
+    return out;
+}
+
+} // namespace
+
+f32 ProceduralControls::continentalness(f32 x, f32 z) const {
+    const f32 wx =
+        x + (noise::fbm(p.seed ^ kSaltContinentWarpX, x, z,
+                        1.0f / p.warpWavelength, 2, 2.0f, 0.5f) *
+                 2.0f -
+             1.0f) *
+                p.warpStrength;
+    const f32 wz =
+        z + (noise::fbm(p.seed ^ kSaltContinentWarpZ, x, z,
+                        1.0f / p.warpWavelength, 2, 2.0f, 0.5f) *
+                 2.0f -
+             1.0f) *
+                p.warpStrength;
+    return noise::fbm(p.seed ^ kSaltContinent, wx, wz,
+                      1.0f / p.continentWavelength, 4, 2.0f, 0.5f);
+}
+
+ControlSample ProceduralControls::at(f32 x, f32 z) const {
+    const f32 c = continentalness(x, z);
+    ControlSample sample;
+    sample.sea = c < p.seaThreshold;
+    sample.tier = glm::clamp((c - p.seaThreshold) / p.tierSpread, 0.0f,
+                             1.0f) *
+                  p.maxTier;
+    // Ranges rise where the ridged mask fires, and prefer high ground —
+    // uplift feeds stage S2 (stream-power erosion), it is not height.
+    const f32 mask = noise::smoothstep01(
+        p.upliftMaskLow, p.upliftMaskHigh,
+        noise::ridgedFbm(p.seed ^ kSaltUplift, x, z,
+                         1.0f / p.upliftWavelength, 3, 2.0f, 0.5f));
+    sample.uplift = mask * noise::smoothstep01(0.0f, 1.2f, sample.tier);
+    // Climate -> biome id (palette contract in ProceduralControlParams):
+    // cold beats arid beats alpine; temperate is the default.
+    const f32 temperature =
+        noise::fbm(p.seed ^ kSaltTemperature, x, z,
+                   1.0f / p.climateWavelength, 3, 2.0f, 0.5f);
+    const f32 moisture =
+        noise::fbm(p.seed ^ kSaltMoisture, x, z,
+                   1.0f / p.climateWavelength, 3, 2.0f, 0.5f);
+    if (temperature < 0.34f) {
+        sample.biome = 3; // tundra
+    } else if (moisture < 0.38f && temperature > 0.58f) {
+        sample.biome = 1; // arid
+    } else if (sample.tier > 2.1f) {
+        sample.biome = 2; // alpine
+    }
+    return sample;
+}
+
+MacroResult synthesizeMacro(const ControlSource& controls,
+                            const GridSpec& spec, const MacroParams& params,
+                            u32 seed) {
+    MacroResult out;
+    out.spec = spec;
+    out.height.resize(spec.cells());
+    out.uplift.resize(spec.cells());
+    out.biome.resize(spec.cells());
+    vector<f32> tier(spec.cells());
+    vector<u8> seaMask(spec.cells());
+    for (u32 row = 0; row < spec.n; ++row) {
+        for (u32 col = 0; col < spec.n; ++col) {
+            const size_t i = static_cast<size_t>(row) * spec.n + col;
+            const ControlSample s = controls.at(spec.x(col), spec.z(row));
+            tier[i] = s.tier;
+            seaMask[i] = s.sea ? 1 : 0;
+            out.uplift[i] = s.sea ? 0.0f : s.uplift;
+            out.biome[i] = s.biome;
+        }
+    }
+    out.seaDist = signedSeaDistance(spec, seaMask);
+    for (u32 row = 0; row < spec.n; ++row) {
+        for (u32 col = 0; col < spec.n; ++col) {
+            const size_t i = static_cast<size_t>(row) * spec.n + col;
+            const f32 land = landHeight(params, seed, tier[i], spec.x(col),
+                                        spec.z(row));
+            out.height[i] =
+                coastProfile(params, land, tier[i], out.seaDist[i]);
+        }
+    }
+    return out;
+}
+
+f32 macroHeightAnalytic(const ProceduralControls& controls,
+                        const MacroParams& params, f32 x, f32 z) {
+    const ControlSample s = controls.at(x, z);
+    const f32 land = landHeight(params, controls.params().seed, s.tier, x,
+                                z);
+    // Shore distance approximated from continentalness: the ramp of the
+    // tier mapping doubles as a distance proxy (good enough for
+    // silhouettes and boundary conditions).
+    const f32 c = controls.continentalness(x, z);
+    const f32 d = (c - controls.params().seaThreshold) *
+                  controls.params().continentWavelength * 0.35f;
+    return coastProfile(params, land, s.tier, d);
+}
+
+} // namespace render::terraingen
