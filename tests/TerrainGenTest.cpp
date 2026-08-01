@@ -1,0 +1,173 @@
+#include <doctest/doctest.h>
+
+#include "engine/terrain/generation/TerrainGen.hpp"
+
+// Stage S1 (macro synthesis): elevation tiers, terracing, coast profile.
+// Everything here must be deterministic — the sandbox bakes tiles from
+// these functions and caches the bytes.
+
+using namespace render::terraingen;
+
+namespace {
+
+// Test control source: constant fields, sea on the x < 0 half-plane when
+// `halfSea` is set.
+struct FixedControls final : ControlSource {
+    f32 tier { 0.0f };
+    f32 uplift { 0.0f };
+    bool halfSea { false };
+
+    ControlSample at(f32 x, f32) const override {
+        ControlSample s;
+        s.tier = tier;
+        s.uplift = uplift;
+        s.sea = halfSea && x < 0.0f;
+        return s;
+    }
+};
+
+GridSpec spec1km(f32 originX = -512.0f, f32 originZ = -512.0f) {
+    return GridSpec { originX, originZ, 8.0f, 129 };
+}
+
+} // namespace
+
+TEST_CASE("macro synthesis is deterministic") {
+    FixedControls controls;
+    controls.tier = 1.0f;
+    const MacroParams params;
+    const MacroResult a = synthesizeMacro(controls, spec1km(), params, 7);
+    const MacroResult b = synthesizeMacro(controls, spec1km(), params, 7);
+    CHECK(a.height == b.height); // bit-exact
+    CHECK(a.seaDist == b.seaDist);
+
+    const MacroResult c = synthesizeMacro(controls, spec1km(), params, 8);
+    CHECK(a.height != c.height); // the seed matters
+}
+
+TEST_CASE("a tier floor holds its altitude within its relief amplitude") {
+    FixedControls controls;
+    controls.tier = 1.0f; // hills
+    const MacroParams params;
+    const TierLevel& hills = params.tiers[1];
+    const MacroResult r = synthesizeMacro(controls, spec1km(), params, 7);
+    for (const f32 h : r.height) {
+        CHECK(h > hills.altitude - hills.reliefAmplitude - 1.0f);
+        CHECK(h < hills.altitude + hills.reliefAmplitude + 1.0f);
+    }
+}
+
+TEST_CASE("full terracing with flat relief snaps to strata multiples") {
+    FixedControls controls;
+    controls.tier = 2.0f; // mesa tier
+    MacroParams params;
+    params.tiers[2].reliefAmplitude = 0.0f;
+    params.tiers[2].terrace = 1.0f;
+    const MacroResult r = synthesizeMacro(controls, spec1km(), params, 7);
+    // Constant input -> one stratum, exactly on a terraceStep multiple.
+    const f32 h = r.height[0];
+    const f32 strata = h / params.terraceStep;
+    CHECK(std::abs(strata - std::round(strata)) < 1e-3f);
+    for (const f32 v : r.height) {
+        CHECK(v == doctest::Approx(h));
+    }
+}
+
+TEST_CASE("beach coasts ramp to the waterline, cliff coasts hold the rim") {
+    MacroParams params;
+    const GridSpec spec = spec1km();
+
+    FixedControls beach;
+    beach.tier = 0.0f;
+    beach.halfSea = true;
+    const MacroResult rb = synthesizeMacro(beach, spec, params, 7);
+    const auto at = [&](const MacroResult& r, f32 x, f32 z) {
+        const u32 col = static_cast<u32>((x - spec.originX) / spec.texelSize);
+        const u32 row = static_cast<u32>((z - spec.originZ) / spec.texelSize);
+        return r.height[static_cast<size_t>(row) * spec.n + col];
+    };
+    // Deep water is deep, the far shore side reaches land height, and the
+    // waterline sits at shoreHeight above sea level.
+    CHECK(at(rb, -496.0f, 0.0f) < params.seaLevel - 4.0f);
+    CHECK(at(rb, 8.0f, 0.0f) ==
+          doctest::Approx(params.seaLevel + params.shoreHeight)
+              .epsilon(0.15));
+    CHECK(at(rb, 496.0f, 0.0f) > params.seaLevel + 0.5f);
+
+    FixedControls cliff;
+    cliff.tier = 3.0f; // above cliffTierEnd: no beach ramp
+    cliff.halfSea = true;
+    const MacroResult rc = synthesizeMacro(cliff, spec, params, 7);
+    // Just inside the rim the land keeps its highland altitude: a sea
+    // cliff, tens of meters above the water at the very shore. Offshore
+    // the shelf profile is already below sea level (the first meters stay
+    // near the waterline by continuity).
+    CHECK(at(rc, 8.0f, 0.0f) > params.seaLevel + 60.0f);
+    CHECK(at(rc, -48.0f, 0.0f) < params.seaLevel);
+}
+
+TEST_CASE("uplift is zero at sea and bounded on land") {
+    ProceduralControlParams pc;
+    pc.seed = 99;
+    const ProceduralControls controls { pc };
+    const GridSpec spec { -8192.0f, -8192.0f, 64.0f, 257 };
+    const MacroParams params;
+    const MacroResult r = synthesizeMacro(controls, spec, params, pc.seed);
+    f32 maxUplift = 0.0f;
+    for (size_t i = 0; i < r.uplift.size(); ++i) {
+        CHECK(r.uplift[i] >= 0.0f);
+        CHECK(r.uplift[i] <= 1.0f);
+        if (r.seaDist[i] < 0.0f) {
+            CHECK(r.uplift[i] == 0.0f);
+        }
+        maxUplift = std::max(maxUplift, r.uplift[i]);
+    }
+    // Somewhere in 16x16 km a range wants to rise.
+    CHECK(maxUplift > 0.2f);
+}
+
+TEST_CASE("procedural controls carve both sea and high ground") {
+    ProceduralControlParams pc;
+    pc.seed = 4242;
+    const ProceduralControls controls { pc };
+    u32 seaCount = 0;
+    u32 highCount = 0;
+    for (i32 gz = -16; gz <= 16; ++gz) {
+        for (i32 gx = -16; gx <= 16; ++gx) {
+            const ControlSample s = controls.at(
+                static_cast<f32>(gx) * 800.0f,
+                static_cast<f32>(gz) * 800.0f);
+            if (s.sea) {
+                ++seaCount;
+            }
+            if (s.tier > 2.0f) {
+                ++highCount;
+            }
+        }
+    }
+    CHECK(seaCount > 0);
+    CHECK(highCount > 0);
+}
+
+TEST_CASE("the analytic macro matches the tier floors away from shore") {
+    ProceduralControlParams pc;
+    pc.seed = 31;
+    const ProceduralControls controls { pc };
+    const MacroParams params;
+    // Deterministic and bounded by the highest tier + its relief.
+    f32 maxSeen = -1000.0f;
+    for (i32 gz = -12; gz <= 12; ++gz) {
+        for (i32 gx = -12; gx <= 12; ++gx) {
+            const f32 x = static_cast<f32>(gx) * 700.0f;
+            const f32 z = static_cast<f32>(gz) * 700.0f;
+            const f32 a = macroHeightAnalytic(controls, params, x, z);
+            const f32 b = macroHeightAnalytic(controls, params, x, z);
+            CHECK(a == b);
+            CHECK(a >= params.seaFloor - 1.0f);
+            CHECK(a <= params.tiers.back().altitude +
+                           params.tiers.back().reliefAmplitude + 1.0f);
+            maxSeen = std::max(maxSeen, a);
+        }
+    }
+    CHECK(maxSeen > params.seaLevel); // some land exists
+}

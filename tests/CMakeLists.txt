@@ -8,6 +8,8 @@
     AssetsTest.cpp
     BarterTest.cpp
     BrainScriptTest.cpp
+    BezierTest.cpp
+    BiomeMapTest.cpp
     CellDeltaTest.cpp
     CellLoaderTest.cpp
     CellStreamerTest.cpp
@@ -36,6 +38,8 @@
     FollowersTest.cpp
     FormsTest.cpp
     FormIndexTest.cpp
+    FinalizeTest.cpp
+    FluvialErosionTest.cpp
     FrameComposerTest.cpp
     FrustumTest.cpp
     GameClockTest.cpp
@@ -46,6 +50,7 @@
     GraphLayoutTest.cpp
     GuidTest.cpp
     HorizontalFormsTest.cpp
+    HydrologyTest.cpp
     InjuriesTest.cpp
     InputActionsTest.cpp
     InputTest.cpp
@@ -95,8 +100,12 @@
     ValidateTest.cpp
     TerrainCollisionTest.cpp
     TerrainNavigatorTest.cpp
+    TerrainGenTest.cpp
     TerrainNoiseTest.cpp
     TerrainPatchesTest.cpp
+    TerrainRegionsTest.cpp
+    TileBakeTest.cpp
+    WaterBodiesTest.cpp
     TreeGeneratorTest.cpp
     TriggerSystemTest.cpp
     TypedDamageTest.cpp
