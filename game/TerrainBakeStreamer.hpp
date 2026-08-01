@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <filesystem>
 #include <functional>
@@ -14,10 +15,13 @@
 
 namespace game {
 
-// Sandbox terrain streamer: bakes 4 km super-tiles around the
-// focus on workers (full S1..S6 pipeline, seconds per tile), caches the
-// bytes on disk keyed (worldSeed, tile, pipeline version) and hands
-// finished regions to the scene for publication into TerrainParams.base.
+// Sandbox terrain streamer: bakes 4 km tiles around the focus on
+// workers, through the two-stage TileBake pipeline — stage 1 (terrain
+// only, per tile) is disk-cached and deduplicated across workers via
+// Stage1Registry; stage 2 derives the water from the composed 3x3
+// neighbourhood and finalizes the center tile. Finished tiles are
+// cached on disk keyed (worldSeed, tile, pipeline version) and handed
+// to the scene for publication into TerrainParams.base.
 // Same mailbox pattern as TerrainCollision: workers push, the frame
 // thread drains — the ECS world and the GPU never leave the main thread.
 class TerrainBakeStreamer {
@@ -44,6 +48,25 @@ public:
     u32 publishedCount() const {
         return static_cast<u32>(published.size());
     }
+    // Tiles requested but not yet handed to publish() — the loading
+    // gate holds on this (a first-boot stage-1 bake takes seconds).
+    u32 pendingCount() const {
+        return static_cast<u32>(pending.size());
+    }
+    // Unique stage-1 bakes completed (computed or cache-read) since
+    // startup — the loading gate's FINE progress signal: a tile hides
+    // up to nine of these, each seconds long on a cold cache.
+    u32 stage1Count() const;
+
+    // Ring completeness around `focus`: how many tiles the prefetch
+    // square needs there vs how many are published. The warmup state
+    // machine (boot, travel, the spectator catch-up bar) reads this —
+    // ONE source for "is this place generated".
+    struct RingStatus {
+        u32 needed { 0 };
+        u32 published { 0 };
+    };
+    RingStatus ringStatus(const Vec3& focus) const;
     f32 tileSize() const { return params.tileSize; }
     // The scene evicted this tile's region: re-request it on return.
     void forgetTile(i32 tx, i32 tz) { published.erase(keyOf(tx, tz)); }
@@ -59,6 +82,7 @@ private:
     std::filesystem::path cacheDir;
     core::JobSystem* jobs { nullptr };
     f32 prefetchReach { 1408.0f }; // beyond the view ring, before FarTerrain
+    Vec3 lastFocus { 0.0f };       // for the heading-biased request order
     // Workers push, the frame thread drains; shared_ptr so in-flight
     // bakes outlive a teardown harmlessly (TerrainCollision postmortem).
     std::shared_ptr<core::ConcurrentQueue<PublishedTile>> built;
@@ -78,6 +102,7 @@ public:
                            sptr<const render::terraingen::TileStage1>>
             done;
         std::unordered_set<u64> inflight;
+        std::atomic<u32> completed { 0 }; // monotone, for progress UIs
     };
 
 private:

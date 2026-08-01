@@ -1,7 +1,10 @@
 #include "game/TerrainBakeStreamer.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
+
+#include <glm/glm.hpp>
 
 #include "engine/core/Log.hpp"
 #include "world/terrain/TerrainRegions.hpp"
@@ -113,9 +116,9 @@ bool readWaterFile(const std::filesystem::path& path, vector<Lake>& lakes,
 }
 
 // Stage-1 cache: the per-tile eroded coarse terrain the stage-2 water
-// pass composes across neighbourhoods. "TS1\1": spec + eroded + seaDist
-// + biome.
-constexpr char kStage1Magic[4] = { 'T', 'S', '1', '1' };
+// pass composes across neighbourhoods. "TS12": spec + eroded + deposit
+// + seaDist + biome.
+constexpr char kStage1Magic[4] = { 'T', 'S', '1', '2' };
 
 bool writeStage1File(const std::filesystem::path& path,
                      const render::terraingen::TileStage1& s1) {
@@ -133,6 +136,9 @@ bool writeStage1File(const std::filesystem::path& path,
     write(s1.sim.n);
     file.write(reinterpret_cast<const char*>(s1.eroded.data()),
                static_cast<std::streamsize>(s1.eroded.size() *
+                                            sizeof(f32)));
+    file.write(reinterpret_cast<const char*>(s1.deposit.data()),
+               static_cast<std::streamsize>(s1.deposit.size() *
                                             sizeof(f32)));
     file.write(reinterpret_cast<const char*>(s1.seaDist.data()),
                static_cast<std::streamsize>(s1.seaDist.size() *
@@ -164,9 +170,12 @@ std::optional<render::terraingen::TileStage1> readStage1File(
     }
     const size_t cells = s1.sim.cells();
     s1.eroded.resize(cells);
+    s1.deposit.resize(cells);
     s1.seaDist.resize(cells);
     s1.biome.resize(cells);
     file.read(reinterpret_cast<char*>(s1.eroded.data()),
+              static_cast<std::streamsize>(cells * sizeof(f32)));
+    file.read(reinterpret_cast<char*>(s1.deposit.data()),
               static_cast<std::streamsize>(cells * sizeof(f32)));
     file.read(reinterpret_cast<char*>(s1.seaDist.data()),
               static_cast<std::streamsize>(cells * sizeof(f32)));
@@ -184,13 +193,15 @@ render::terraingen::TileStage1 ensureStage1(
     const render::terraingen::TileBakeParams& params, i32 tx, i32 tz) {
     const std::string stem =
         "s1_" + std::to_string(tx) + "_" + std::to_string(tz) + "_v" +
-        std::to_string(render::terraingen::kTileBakeVersion) + ".bin";
+        std::to_string(render::terraingen::kStage1Version) + ".bin";
     const auto path = cacheDir / stem;
     std::error_code probe;
     if (std::filesystem::exists(path, probe)) {
         if (auto cached = readStage1File(path)) {
             return std::move(*cached);
         }
+        LOG_WARN("Terrain cache: rejected {} (corrupt), rebaking",
+                 path.string());
     }
     render::terraingen::TileStage1 s1 =
         render::terraingen::bakeTileStage1(params, tx, tz);
@@ -224,6 +235,7 @@ sptr<const render::terraingen::TileStage1> acquireStage1(
     }
     auto s1 = std::make_shared<render::terraingen::TileStage1>(
         ensureStage1(cacheDir, params, tx, tz));
+    registry.completed.fetch_add(1, std::memory_order_relaxed);
     {
         std::lock_guard lock { registry.mutex };
         // Bounded residency: the disk cache makes eviction cheap.
@@ -254,6 +266,10 @@ TerrainBakeStreamer::TerrainBakeStreamer(
     }
 }
 
+u32 TerrainBakeStreamer::stage1Count() const {
+    return stage1s->completed.load(std::memory_order_relaxed);
+}
+
 void TerrainBakeStreamer::request(i32 tx, i32 tz) {
     pending.insert(keyOf(tx, tz));
     const auto work = [params = params, cacheDir = cacheDir, tx, tz,
@@ -270,16 +286,32 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
         // Probe existence first: a cache miss is the normal first-visit
         // path, not a read error worth logging.
         std::error_code probe;
-        auto cached = std::filesystem::exists(trgPath, probe)
-                          ? world::readTrgFile(trgPath)
-                          : std::nullopt;
+        const bool trgExists = std::filesystem::exists(trgPath, probe);
+        auto cached =
+            trgExists ? world::readTrgFile(trgPath) : std::nullopt;
+        if (trgExists && !cached) {
+            LOG_WARN("Terrain cache: rejected {} (corrupt), rebaking",
+                     trgPath.string());
+        }
         if (cached &&
-            readWaterFile(waterPath, tile.lakes, tile.rivers)) {
+            !readWaterFile(waterPath, tile.lakes, tile.rivers)) {
+            LOG_WARN("Terrain cache: rejected {} (water sidecar), "
+                     "rebaking",
+                     waterPath.string());
+            cached.reset();
+            tile.lakes.clear();
+            tile.rivers.clear();
+        }
+        if (cached) {
             tile.region = std::move(*cached);
-            // Detail knobs are not in the asset: re-stamp the bake's.
-            tile.region.detailAmplitude = 0.35f;
-            tile.region.detailWavelength = 5.0f;
-            tile.region.detailOctaves = 2;
+            // Detail knobs are not in the asset: re-stamp the bake's
+            // (kRegionDetail* — the single definition in TileBake.hpp).
+            tile.region.detailAmplitude =
+                render::terraingen::kRegionDetailAmplitude;
+            tile.region.detailWavelength =
+                render::terraingen::kRegionDetailWavelength;
+            tile.region.detailOctaves =
+                render::terraingen::kRegionDetailOctaves;
         } else {
             // Two-stage bake: gather (dedup'd across workers) the 3x3
             // stage-1 terrains, then derive the water from their
@@ -323,10 +355,8 @@ void TerrainBakeStreamer::request(i32 tx, i32 tz) {
     }
 }
 
-void TerrainBakeStreamer::update(
-    const Vec3& focus,
-    const std::function<void(PublishedTile&&)>& publish) {
-    // Desired set: every tile whose rect intersects the prefetch square.
+TerrainBakeStreamer::RingStatus TerrainBakeStreamer::ringStatus(
+    const Vec3& focus) const {
     const f32 t = params.tileSize;
     const i32 tx0 =
         static_cast<i32>(std::floor((focus.x - prefetchReach) / t));
@@ -336,13 +366,70 @@ void TerrainBakeStreamer::update(
         static_cast<i32>(std::floor((focus.z - prefetchReach) / t));
     const i32 tz1 =
         static_cast<i32>(std::floor((focus.z + prefetchReach) / t));
+    RingStatus status;
+    for (i32 tz = tz0; tz <= tz1; ++tz) {
+        for (i32 tx = tx0; tx <= tx1; ++tx) {
+            ++status.needed;
+            if (published.count(keyOf(tx, tz))) {
+                ++status.published;
+            }
+        }
+    }
+    return status;
+}
+
+void TerrainBakeStreamer::update(
+    const Vec3& focus,
+    const std::function<void(PublishedTile&&)>& publish) {
+    // Desired set: every tile whose rect intersects the prefetch
+    // square, requested HEADING-FIRST — the bake wavefront leads the
+    // movement instead of filling the square in scan order.
+    const f32 t = params.tileSize;
+    const i32 tx0 =
+        static_cast<i32>(std::floor((focus.x - prefetchReach) / t));
+    const i32 tx1 =
+        static_cast<i32>(std::floor((focus.x + prefetchReach) / t));
+    const i32 tz0 =
+        static_cast<i32>(std::floor((focus.z - prefetchReach) / t));
+    const i32 tz1 =
+        static_cast<i32>(std::floor((focus.z + prefetchReach) / t));
+    Vec2 heading { 0.0f, 0.0f };
+    {
+        const Vec2 moved { focus.x - lastFocus.x, focus.z - lastFocus.z };
+        const f32 len = glm::length(moved);
+        if (len > 0.5f) {
+            heading = moved / len;
+        }
+        lastFocus = focus;
+    }
+    struct Want {
+        f32 score;
+        i32 tx;
+        i32 tz;
+    };
+    vector<Want> wanted;
     for (i32 tz = tz0; tz <= tz1; ++tz) {
         for (i32 tx = tx0; tx <= tx1; ++tx) {
             const u64 key = keyOf(tx, tz);
-            if (!published.count(key) && !pending.count(key)) {
-                request(tx, tz);
+            if (published.count(key) || pending.count(key)) {
+                continue;
             }
+            const Vec2 delta {
+                (static_cast<f32>(tx) + 0.5f) * t - focus.x,
+                (static_cast<f32>(tz) + 0.5f) * t - focus.z
+            };
+            const f32 dist = glm::length(delta);
+            const f32 ahead =
+                dist > 1.0f ? glm::dot(delta / dist, heading) : 0.0f;
+            wanted.push_back({ dist * (1.1f - 0.4f * ahead), tx, tz });
         }
+    }
+    std::sort(wanted.begin(), wanted.end(),
+              [](const Want& a, const Want& b) {
+                  return a.score < b.score;
+              });
+    for (const Want& want : wanted) {
+        request(want.tx, want.tz);
     }
     // Drain the mailbox on the frame thread.
     PublishedTile tile;

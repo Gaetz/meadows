@@ -405,7 +405,7 @@ private:
     // Snow altitude of the ACTIVE mode (story: tuning.snowLine, sandbox:
     // tuning.sandboxSnowLine) — feeds both params.snowLine (CPU rules)
     // and the render view (shader), so they stay in lockstep.
-    f32 activeSnowLine { 165.0f };
+    f32 activeSnowLine { render::kSnowLine };
     vector<render::terraingen::Lake> sandboxLakes;
     vector<render::terraingen::River> sandboxRivers;
     // Local water bodies (sea + lakes + rivers): Forms + sandbox bakes,
@@ -456,10 +456,13 @@ private:
     // interleaves refreshNpcs between snap and nav to preserve order.
     StreamingController streaming;
     StreamingContext makeStreamingContext();
-    // Sandbox: lands a finished super-tile — publishes a new TerrainBase,
-    // remeshes covered chunks in view, rebuilds collision, snaps cells.
-    void publishBakedTile(TerrainBakeStreamer::PublishedTile&& tile,
-                          const Vec3& focus);
+    // Sandbox: lands the frame's finished tiles as ONE transaction —
+    // a single TerrainBase publish, one water rebuild, one collision
+    // rebuild and one queue pass however many tiles arrived (N per-tile
+    // publishes multiplied every cost during warmups).
+    void publishBakedTiles(
+        vector<TerrainBakeStreamer::PublishedTile>&& tiles,
+        const Vec3& focus);
     // Rebuilds waterBodies from Forms + sandbox results and hands it to
     // the swim queries and the WaterSystem.
     void publishWaterBodies();
@@ -486,17 +489,37 @@ private:
     // first onEnter — see the constructor.
     str bootLoadSlot;
 
-    // Startup loading gate: black overlay + progress bar until the
-    // streamed world is in (terrain ring resident, residency caches
-    // drained), then a fade reveals the scene. Targets are high-water
-    // marks — the ring and the caches announce their work progressively,
-    // and the bar must never move backward.
-    f32 loadingGateAlpha { 1.0f };
-    f32 loadingGateProgress { 0.0f };
-    u32 loadingGateFrames { 0 };
-    u32 loadingTerrainTarget { 0 };
-    u32 loadingMeshTarget { 0 };
-    u32 loadingTextureTarget { 0 };
+    // World warmup — the ONE state machine behind every loading veil
+    // (boot, sandbox entry, travel, the spectator catch-up). Phases run
+    // strictly in order so consumers never race the generation:
+    //   BakeRing    bake/publish every tile of the ring at `target`
+    //   PlaceSpawn  validate/relocate the spawn ONCE, on the FINAL
+    //               baked+water world (sandbox boot only)
+    //   BuildScene  let meshes/scatter/caches converge on that world
+    //   Reveal      fade the veil
+    // Soft mode (spectator catch-up) shows a light veil instead of the
+    // black shroud and cancels itself if the camera speeds off.
+    enum class WarmupPhase : u8 {
+        Idle,
+        BakeRing,
+        PlaceSpawn,
+        BuildScene,
+        Reveal,
+    };
+    void armWarmup(const Vec3& target, bool placeSpawn, bool soft);
+    void updateWarmup();          // per frame, drives phase + veil
+    void finalizeSandboxSpawn();  // the single-shot spawn validation
+    WarmupPhase warmupPhase { WarmupPhase::Idle };
+    bool pendingPlayEntry { false }; // "Play" clicked mid-warmup
+    Vec3 warmupTarget { 0.0f };
+    bool warmupPlaceSpawn { false };
+    bool warmupSoft { false };
+    u32 warmupFrames { 0 };
+    u32 warmupPeakPending { 0 };  // BuildScene high-water mark
+    f32 warmupProgress { 0.0f };  // monotone within one warmup
+    f32 loadingGateAlpha { 0.0f };
+    f32 loadingGateShown { 0.0f }; // eased display value (bar/label)
+    Vec3 warmupLastCamPos { 0.0f }; // spectator speed estimate
 
     // The `torchbench` console command's transient light entities
     // (docs/RENDERING.md §5 B0) — cleared on re-run and on exit.

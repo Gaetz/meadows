@@ -78,6 +78,7 @@
 #include "game/WeaponMeshes.hpp" // the procedural sword
 #include "script/Vm.hpp"
 #include "world/scene/AnimBridge.hpp"
+#include "world/scene/Floaters.hpp"
 #include "world/scene/KillZ.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/scene/TriggerSystem.hpp"
@@ -701,15 +702,12 @@ void LandscapeScene::setupWorldAndStreaming() {
     levelEditor = std::make_unique<LevelEditor>(forms, formTypes);
     mode = SceneMode::Spectator; // fresh on (re-)enter; Play set later if a save
     sceneEditor.deselect();
-    // The loading gate re-arms on every (re-)enter — travels inside the
-    // scene keep using the interaction fade, this one only covers the
-    // initial stream-in.
-    loadingGateAlpha = 1.0f;
-    loadingGateProgress = 0.0f;
-    loadingGateFrames = 0;
-    loadingTerrainTarget = 0;
-    loadingMeshTarget = 0;
-    loadingTextureTarget = 0;
+    // The warmup re-arms on every (re-)enter — UNLESS the sandbox boot
+    // above already armed it with the probed spawn: re-arming here
+    // would clobber the PlaceSpawn step and skip the spawn validation.
+    if (warmupPhase == WarmupPhase::Idle) {
+        armWarmup(flyCamera.camera.position, false, false);
+    }
     createConsole(); // F8 in-game dev console
 }
 
@@ -978,10 +976,16 @@ void LandscapeScene::update(f32 dt) {
             (mode == SceneMode::Play) && playerController.body()
                 ? playerController.body()->position()
                 : flyCamera.camera.position;
+        // Drain the WHOLE mailbox, publish once: N tiles used to mean N
+        // water rebuilds, N collision rebuilds and N queue passes.
+        vector<TerrainBakeStreamer::PublishedTile> batch;
         bakeStreamer->update(
-            focus, [this, &focus](TerrainBakeStreamer::PublishedTile&& tile) {
-                publishBakedTile(std::move(tile), focus);
+            focus, [&batch](TerrainBakeStreamer::PublishedTile&& tile) {
+                batch.push_back(std::move(tile));
             });
+        if (!batch.empty()) {
+            publishBakedTiles(std::move(batch), focus);
+        }
     }
     // Stream cells around the focus; on any ring change,
     // re-run the post-spawn fixups (idempotent snap + NPC refresh).
@@ -1159,6 +1163,21 @@ void LandscapeScene::update(f32 dt) {
         world::enforceKillZ(world, killZ, gameTags, derivedStats,
                             statsTuning,
                             sweepPlayer ? ecs::Entity {} : playerEntity);
+        // Floating props ride the same water the swimmer feels
+        // (world/scene/Floaters — kinematic v1).
+        if (!interiorMode && waterBodies) {
+            world::updateFloaters(
+                world, dt, timeSeconds,
+                [this](const Vec3& at) {
+                    return render::terrain::waterSurfaceAt(
+                        *waterBodies, at.x, at.z, at.y);
+                },
+                [this](const Vec3& at) {
+                    return render::terrain::waterFlowAt(*waterBodies,
+                                                        at.x, at.z,
+                                                        at.y);
+                });
+        }
     }
     // Shake decay + the transient camera offset (removed first
     // each frame, so paused sims and fly cameras never accumulate it).
@@ -1321,6 +1340,15 @@ void LandscapeScene::enterPlayMode() {
     if (!physics) {
         return;
     }
+    // Sandbox: the spawn is not FINAL until the warmup validated it on
+    // the baked world — dropping the capsule now would land it on the
+    // analytic guess (possibly at the bottom of a lake the bake creates
+    // there). The machine enters play the moment the spawn is placed.
+    if (sandboxActive && (warmupPhase == WarmupPhase::BakeRing ||
+                          warmupPhase == WarmupPhase::PlaceSpawn)) {
+        pendingPlayEntry = true;
+        return;
+    }
     // Spawn the capsule under the camera, feet grounded on the height
     // function (+0.5 m so a slope never pins the spawn into the field).
     Vec3 feet = flyCamera.camera.position;
@@ -1452,6 +1480,9 @@ void LandscapeScene::setSandboxMode(bool enable) {
         auto sandbox = std::make_shared<render::SandboxTerrain>();
         sandbox->controls.seed = tuning.terrainSeed;
         sandbox->macro.seaLevel = tuning.seaLevel;
+        sandbox->macro.recurveLow = tuning.terrainRecurveLow;
+        sandbox->macro.recurveMid = tuning.terrainRecurveMid;
+        sandbox->macro.recurveHigh = tuning.terrainRecurveHigh;
         params.sandbox = sandbox;
         activeSnowLine = tuning.sandboxSnowLine;
         render::terraingen::TileBakeParams bakeParams;
@@ -1490,6 +1521,9 @@ void LandscapeScene::setSandboxMode(bool enable) {
         }
         sandboxSpawn = start;
         sandboxSpawnValid = true;
+        // The warmup machine bakes the ring at the probed spawn, then
+        // validates it ONCE on the final baked+water world.
+        armWarmup(sandboxSpawn, true, false);
     } else {
         sandboxSpawnValid = false;
         params.sandbox = nullptr;
@@ -1614,16 +1648,19 @@ void LandscapeScene::publishWaterBodies() {
     }
     waterBodies = next;
     renderer.waterSystem().setBodies(waterBodies);
+    // The scatter rules read the same set (underLocalWater): no trees
+    // or grass under altitude lakes/rivers. Same immutable-publish
+    // contract as base/patches.
+    renderer.terrainParams().water = waterBodies;
     if (!next->lakes.empty() || !next->rivers.empty()) {
         LOG_INFO("Water: {} lake(s), {} river(s)", next->lakes.size(),
                  next->rivers.size());
     }
 }
 
-void LandscapeScene::publishBakedTile(
-    TerrainBakeStreamer::PublishedTile&& tile, const Vec3& focus) {
-    const size_t lakeCount = tile.lakes.size();
-    const size_t riverCount = tile.rivers.size();
+void LandscapeScene::publishBakedTiles(
+    vector<TerrainBakeStreamer::PublishedTile>&& tiles,
+    const Vec3& focus) {
     auto next = std::make_shared<render::TerrainBase>();
     if (terrainBase) {
         next->regions = terrainBase->regions;
@@ -1646,40 +1683,74 @@ void LandscapeScene::publishBakedTile(
             }
             return out;
         });
+        // The water follows the regions out: the flat lake/river
+        // arrays used to grow forever, and every swim query and
+        // reconcile scanned them all.
+        std::erase_if(sandboxLakes,
+                      [&](const render::terraingen::Lake& lake) {
+                          const f32 cx = (lake.minX + lake.maxX) * 0.5f;
+                          const f32 cz = (lake.minZ + lake.maxZ) * 0.5f;
+                          return std::abs(cx - focus.x) > evict ||
+                                 std::abs(cz - focus.z) > evict;
+                      });
+        std::erase_if(
+            sandboxRivers, [&](const render::terraingen::River& river) {
+                if (river.points.empty()) {
+                    return true;
+                }
+                f32 minX = 1.0e30f, maxX = -1.0e30f;
+                f32 minZ = 1.0e30f, maxZ = -1.0e30f;
+                for (const render::terraingen::RiverPoint& pt :
+                     river.points) {
+                    minX = glm::min(minX, pt.x);
+                    maxX = glm::max(maxX, pt.x);
+                    minZ = glm::min(minZ, pt.z);
+                    maxZ = glm::max(maxZ, pt.z);
+                }
+                return std::abs((minX + maxX) * 0.5f - focus.x) >
+                           evict ||
+                       std::abs((minZ + maxZ) * 0.5f - focus.z) > evict;
+            });
     }
-    const render::TerrainRegion& region =
+    const size_t firstNew = next->regions.size();
+    for (TerrainBakeStreamer::PublishedTile& tile : tiles) {
         next->regions.emplace_back(std::move(tile.region));
+        sandboxLakes.insert(sandboxLakes.end(), tile.lakes.begin(),
+                            tile.lakes.end());
+        sandboxRivers.insert(sandboxRivers.end(),
+                             std::make_move_iterator(tile.rivers.begin()),
+                             std::make_move_iterator(tile.rivers.end()));
+    }
     terrainBase = next;
     renderer.terrainParams().base = next;
     ++renderer.terrainParams().contentStamp; // FarTerrain/pool-map rebake
-    sandboxLakes.insert(sandboxLakes.end(), tile.lakes.begin(),
-                        tile.lakes.end());
-    sandboxRivers.insert(sandboxRivers.end(),
-                         std::make_move_iterator(tile.rivers.begin()),
-                         std::make_move_iterator(tile.rivers.end()));
-    // Remesh AND re-scatter the resident chunks the region covers within
-    // the view ring (the deferred queues skip chunks that are not
-    // resident). Both queues, like the sculpt commit: grass/vegetation
-    // baked before the tile landed sit on the OLD heights — without the
-    // scatter pass they float over the new ground.
+    // Remesh AND re-scatter the resident chunks the new regions cover
+    // within the view ring (the deferred queues skip chunks that are
+    // not resident). Both queues, like the sculpt commit:
+    // grass/vegetation baked before the tile landed sit on the OLD
+    // heights — without the scatter pass they float over the new ground.
     const f32 reach =
         static_cast<f32>(tuning.terrainViewRadius + 1) * 64.0f;
-    const f32 minX = glm::max(region.originX, focus.x - reach);
-    const f32 maxX =
-        glm::min(region.originX + region.spanX(), focus.x + reach);
-    const f32 minZ = glm::max(region.originZ, focus.z - reach);
-    const f32 maxZ =
-        glm::min(region.originZ + region.spanZ(), focus.z + reach);
-    for (i32 cz = static_cast<i32>(std::floor(minZ / 64.0f));
-         cz <= static_cast<i32>(std::floor(maxZ / 64.0f)) && minZ <= maxZ;
-         ++cz) {
-        for (i32 cx = static_cast<i32>(std::floor(minX / 64.0f));
-             cx <= static_cast<i32>(std::floor(maxX / 64.0f)) &&
-             minX <= maxX;
-             ++cx) {
-            const u64 key = render::HeightPatches::keyOf(cx, cz);
-            renderer.sculptRemeshQueue().push_back(key);
-            renderer.sculptScatterQueue().push_back(key);
+    for (size_t r = firstNew; r < next->regions.size(); ++r) {
+        const render::TerrainRegion& region = next->regions[r];
+        const f32 minX = glm::max(region.originX, focus.x - reach);
+        const f32 maxX =
+            glm::min(region.originX + region.spanX(), focus.x + reach);
+        const f32 minZ = glm::max(region.originZ, focus.z - reach);
+        const f32 maxZ =
+            glm::min(region.originZ + region.spanZ(), focus.z + reach);
+        for (i32 cz = static_cast<i32>(std::floor(minZ / 64.0f));
+             cz <= static_cast<i32>(std::floor(maxZ / 64.0f)) &&
+             minZ <= maxZ;
+             ++cz) {
+            for (i32 cx = static_cast<i32>(std::floor(minX / 64.0f));
+                 cx <= static_cast<i32>(std::floor(maxX / 64.0f)) &&
+                 minX <= maxX;
+                 ++cx) {
+                const u64 key = render::HeightPatches::keyOf(cx, cz);
+                renderer.sculptRemeshQueue().push_back(key);
+                renderer.sculptScatterQueue().push_back(key);
+            }
         }
     }
     renderer.invalidateOcclusion();
@@ -1690,14 +1761,250 @@ void LandscapeScene::publishBakedTile(
             *physics, renderer.terrainParams());
     }
     streaming.snapCellEntities(makeStreamingContext());
-    // The new region re-blends the overlap bands: re-validate every
-    // stored water body it touches against the LIVE terrain, then
-    // republish.
-    reconcileWaterWithTerrain(region);
+    // The new regions re-blend the overlap bands: re-validate every
+    // stored water body they touch against the LIVE terrain, then
+    // republish once.
+    for (size_t r = firstNew; r < next->regions.size(); ++r) {
+        reconcileWaterWithTerrain(next->regions[r]);
+    }
     publishWaterBodies();
-    LOG_INFO("Sandbox terrain: tile ({}, {}) published ({} lakes, {} "
-             "rivers)",
-             tile.tx, tile.tz, lakeCount, riverCount);
+    LOG_INFO("Sandbox terrain: {} tile(s) published ({} lakes, {} "
+             "rivers resident)",
+             tiles.size(), sandboxLakes.size(), sandboxRivers.size());
+}
+
+// The single-shot spawn validation — the warmup machine calls this ONCE,
+// after the whole spawn ring (terrain AND water) is published: no more
+// per-publish re-checks, no ordering races with neighbour-owned lakes.
+void LandscapeScene::finalizeSandboxSpawn() {
+    if (!sandboxActive || !sandboxSpawnValid) {
+        return;
+    }
+    const render::TerrainParams& params = renderer.terrainParams();
+    const auto wetAt = [&](f32 x, f32 z, f32& outH) {
+        outH = render::terrain::height(params, x, z);
+        if (!terrainBase || !terrainBase->regionAt(x, z)) {
+            return true; // unbaked ground is not a trustworthy spot
+        }
+        if (outH < params.seaLevel + 2.0f) {
+            return true;
+        }
+        return waterBodies &&
+               render::terrain::waterSurfaceAt(*waterBodies, x, z,
+                                               outH + 1.0f)
+                   .has_value();
+    };
+    f32 ground = 0.0f;
+    if (wetAt(sandboxSpawn.x, sandboxSpawn.z, ground)) {
+        // Reach past the largest flood basins (they span kilometers in
+        // the compressed world) — a failed search keeps the old spot
+        // and logs, never silently.
+        bool relocated = false;
+        for (f32 radius = 60.0f; radius <= 6000.0f && !relocated;
+             radius += 60.0f) {
+            for (u32 k = 0; k < 12 && !relocated; ++k) {
+                const f32 angle =
+                    static_cast<f32>(k) * (6.2831853f / 12.0f);
+                const f32 x = sandboxSpawn.x + std::cos(angle) * radius;
+                const f32 z = sandboxSpawn.z + std::sin(angle) * radius;
+                if (!wetAt(x, z, ground)) {
+                    sandboxSpawn = { x, ground, z };
+                    relocated = true;
+                }
+            }
+        }
+        if (relocated) {
+            LOG_INFO("Sandbox spawn was wet on the baked terrain: "
+                     "moved to ({:.0f}, {:.0f})",
+                     sandboxSpawn.x, sandboxSpawn.z);
+        } else {
+            LOG_WARN("Sandbox spawn: no dry baked ground within 6 km — "
+                     "keeping the probed spot");
+        }
+    } else {
+        // Dry — re-seat on the exact baked ground level (the analytic
+        // probe guessed it).
+        sandboxSpawn.y = ground;
+    }
+    placeStartCamera();
+}
+
+void LandscapeScene::armWarmup(const Vec3& target, bool placeSpawn,
+                               bool soft) {
+    warmupPhase = WarmupPhase::BakeRing;
+    warmupTarget = target;
+    warmupPlaceSpawn = placeSpawn;
+    warmupSoft = soft;
+    warmupFrames = 0;
+    warmupPeakPending = 0;
+    warmupProgress = 0.0f;
+    loadingGateShown = 0.0f;
+    if (uiCreated && screenStack.find("loading")) {
+        screenStack.show("loading");
+    }
+}
+
+void LandscapeScene::updateWarmup() {
+    const f32 dt = glm::max(ImGui::GetIO().DeltaTime, 1.0e-4f);
+    // Spectator catch-up: flying faster than the bake wavefront leaves
+    // analytic macro around; when the camera STOPS over an incomplete
+    // ring, a light veil shows the ring completing.
+    const Vec3 camPos = flyCamera.camera.position;
+    const f32 camSpeed = glm::length(camPos - warmupLastCamPos) / dt;
+    warmupLastCamPos = camPos;
+    if (warmupPhase == WarmupPhase::Idle) {
+        const bool menuOpen = uiCreated && screenStack.modalOpen();
+        if (bakeStreamer && mode == SceneMode::Spectator && !menuOpen &&
+            camSpeed < 6.0f) {
+            const auto ring = bakeStreamer->ringStatus(camPos);
+            if (ring.published < ring.needed) {
+                armWarmup(camPos, false, true);
+            }
+        }
+        if (warmupPhase == WarmupPhase::Idle) {
+            return;
+        }
+    }
+    ++warmupFrames;
+    // A soft veil cancels itself when the camera speeds off again.
+    if (warmupSoft && warmupPhase != WarmupPhase::Reveal &&
+        camSpeed > 20.0f) {
+        warmupPhase = WarmupPhase::Reveal;
+    }
+
+    f32 progress = warmupProgress;
+    switch (warmupPhase) {
+    case WarmupPhase::BakeRing: {
+        // Weight 0.7 of the bar. Progress counts in stage-1 units (a
+        // tile hides up to nine bakes, seconds each on a cold cache) so
+        // the bar moves with every completed bake.
+        bool complete = true;
+        f32 ringFrac = 1.0f;
+        if (bakeStreamer) {
+            const auto ring = bakeStreamer->ringStatus(warmupTarget);
+            complete = ring.published >= ring.needed;
+            if (!complete) {
+                const u32 remaining = ring.needed - ring.published;
+                const i32 partial = glm::clamp(
+                    static_cast<i32>(bakeStreamer->stage1Count()) -
+                        static_cast<i32>(ring.published * 9u),
+                    0, static_cast<i32>(remaining * 9u));
+                ringFrac = glm::min(
+                    static_cast<f32>(ring.published * 11u +
+                                     static_cast<u32>(partial)) /
+                        static_cast<f32>(ring.needed * 11u),
+                    0.97f);
+            }
+        }
+        progress = ringFrac * 0.7f;
+        if (complete) {
+            warmupPhase = WarmupPhase::PlaceSpawn;
+        }
+        break;
+    }
+    case WarmupPhase::PlaceSpawn: {
+        if (warmupPlaceSpawn) {
+            finalizeSandboxSpawn();
+            warmupPlaceSpawn = false;
+            warmupTarget = sandboxSpawn;
+            // The relocation may have crossed toward lesser-baked
+            // ground: bake THAT ring before building the scene.
+            if (bakeStreamer) {
+                const auto ring = bakeStreamer->ringStatus(warmupTarget);
+                if (ring.published < ring.needed) {
+                    warmupPhase = WarmupPhase::BakeRing;
+                    break;
+                }
+            }
+        }
+        warmupPeakPending = 0;
+        warmupPhase = WarmupPhase::BuildScene;
+        // A deferred "Play" click (main menu) fires now — the spawn is
+        // final; the veil still covers the scene convergence. Dropped
+        // if the player re-opened a menu meanwhile.
+        if (pendingPlayEntry) {
+            pendingPlayEntry = false;
+            if (!(uiCreated && screenStack.modalOpen())) {
+                enterPlayMode();
+            }
+        }
+        break;
+    }
+    case WarmupPhase::BuildScene: {
+        // Weight 0.3: meshes/scatter/caches converge on the FINAL
+        // world — nothing left to invalidate afterwards.
+        const u32 pending =
+            renderer.terrainSystem().pendingCount() +
+            (meshCache ? meshCache->pendingCount() : 0u) +
+            (materialTextures ? materialTextures->pendingCount() : 0u) +
+            static_cast<u32>(renderer.sculptRemeshQueue().size() +
+                             renderer.sculptScatterQueue().size());
+        warmupPeakPending = glm::max(warmupPeakPending, pending);
+        const f32 buildFrac =
+            warmupPeakPending == 0u
+                ? 1.0f
+                : 1.0f - static_cast<f32>(pending) /
+                             static_cast<f32>(warmupPeakPending);
+        progress = 0.7f + 0.3f * buildFrac;
+        // Grace: the first frames are still announcing work.
+        if (warmupFrames > 30 && pending == 0) {
+            progress = 1.0f;
+            warmupPhase = WarmupPhase::Reveal;
+        }
+        break;
+    }
+    case WarmupPhase::Reveal:
+    case WarmupPhase::Idle:
+        progress = 1.0f;
+        break;
+    }
+    // Failsafe: nothing (missing asset, dead worker) may lock the
+    // player out — after two minutes the veil opens on what is there.
+    if (warmupFrames > 7200) {
+        warmupPhase = WarmupPhase::Reveal;
+        progress = 1.0f;
+    }
+    warmupProgress = glm::max(warmupProgress, progress);
+    // The DISPLAYED bar chases the truth at a capped rate: discrete
+    // completions become a glide, and it never overtakes reality.
+    loadingGateShown =
+        glm::min(warmupProgress, loadingGateShown + dt * 0.35f);
+
+    // Veil: black shroud for full warmups, a light one for the
+    // spectator catch-up. The bar visually finishes before the fade.
+    if (warmupPhase == WarmupPhase::Reveal) {
+        if (loadingGateShown >= 0.999f || warmupSoft) {
+            loadingGateAlpha =
+                glm::max(0.0f, loadingGateAlpha - dt / 0.8f);
+            if (loadingGateAlpha <= 0.0f) {
+                warmupPhase = WarmupPhase::Idle;
+            }
+        }
+    } else {
+        loadingGateAlpha =
+            glm::min(warmupSoft ? 0.55f : 1.0f,
+                     loadingGateAlpha + dt * 3.0f);
+    }
+    // Feed the RmlUi loading screen (loading.rml).
+    if (uiCreated && screenStack.find("loading")) {
+        char label[32];
+        std::snprintf(label, sizeof(label), "%.0f%%",
+                      static_cast<f64>(loadingGateShown) * 100.0);
+        uiSystem.setNumber("loading", "loadingAlpha", loadingGateAlpha);
+        uiSystem.setNumber(
+            "loading", "loadingBarAlpha",
+            glm::clamp((loadingGateAlpha - (warmupSoft ? 0.1f : 0.6f)) /
+                           0.4f,
+                       0.0f, 1.0f));
+        uiSystem.setNumber("loading", "loadingPct",
+                           static_cast<f64>(loadingGateShown) * 100.0);
+        uiSystem.setString("loading", "loadingText", label);
+        if (warmupPhase == WarmupPhase::Idle &&
+            loadingGateAlpha <= 0.0f) {
+            screenStack.close("loading");
+            syncScreens();
+        }
+    }
 }
 
 SculptContext LandscapeScene::makeSculptContext() {
@@ -1757,8 +2064,10 @@ EditorContext LandscapeScene::makeEditorContext() {
                 tile.rivers = std::move(baked.rivers);
                 tile.tx = tx;
                 tile.tz = tz;
-                publishBakedTile(std::move(tile),
-                                 flyCamera.camera.position);
+                vector<TerrainBakeStreamer::PublishedTile> batch;
+                batch.push_back(std::move(tile));
+                publishBakedTiles(std::move(batch),
+                                  flyCamera.camera.position);
             },
         },
     };
@@ -3134,6 +3443,15 @@ PlayerContext LandscapeScene::makePlayerContext() {
         bowDrawCostEffect,   // The drawn-bow drain
         &actionMap, // Intentions, not raw keys
         &settings,  // Look feel (sens/invert/stick)
+        // The river current for the swim drift (still indoors / without
+        // bodies) — same headless WaterBodies the surface query reads.
+        [this](const Vec3& at) -> Vec2 {
+            if (interiorMode || !waterBodies) {
+                return Vec2 { 0.0f };
+            }
+            return render::terrain::waterFlowAt(*waterBodies, at.x, at.z,
+                                                at.y);
+        },
     };
 }
 
@@ -3316,62 +3634,9 @@ void LandscapeScene::drawUi() {
                 ImVec4(0.0f, 0.0f, 0.0f, interaction.fadeAlpha())));
     }
 
-    // Startup loading gate: black over everything while the world
-    // streams in, then a fade reveals the scene. Progress = the SLOWEST
-    // of the tracked streams (terrain ring, mesh/texture residency),
-    // monotonic so a cache announcing more work never moves the bar
-    // backward.
-    if (loadingGateAlpha > 0.0f) {
-        ++loadingGateFrames;
-        const u32 terrainResident = renderer.terrainSystem().residentCount();
-        loadingTerrainTarget = glm::max(
-            loadingTerrainTarget,
-            terrainResident + renderer.terrainSystem().pendingCount());
-        const u32 meshPending = meshCache ? meshCache->pendingCount() : 0u;
-        const u32 texPending =
-            materialTextures ? materialTextures->pendingCount() : 0u;
-        loadingMeshTarget = glm::max(loadingMeshTarget, meshPending);
-        loadingTextureTarget = glm::max(loadingTextureTarget, texPending);
-        const auto frac = [](u32 done, u32 total) {
-            return total == 0u ? 1.0f
-                               : static_cast<f32>(done) /
-                                     static_cast<f32>(total);
-        };
-        const f32 current = glm::min(
-            frac(terrainResident, loadingTerrainTarget),
-            glm::min(
-                frac(loadingMeshTarget - meshPending, loadingMeshTarget),
-                frac(loadingTextureTarget - texPending,
-                     loadingTextureTarget)));
-        loadingGateProgress = glm::max(loadingGateProgress, current);
-        // Grace frames before trusting "done": the first streaming
-        // updates are still ANNOUNCING work.
-        if (loadingGateFrames > 30 && loadingGateProgress >= 0.999f) {
-            loadingGateAlpha =
-                glm::max(0.0f, loadingGateAlpha -
-                                   ImGui::GetIO().DeltaTime / 0.8f);
-        }
-        // The visuals live in the RmlUi loading screen (loading.rml —
-        // in-game interfaces use the game UI, same font/title as the
-        // main menu beneath); this gate only feeds the model.
-        if (uiCreated && screenStack.find("loading")) {
-            char label[32];
-            std::snprintf(label, sizeof(label), "%.0f%%",
-                          static_cast<f64>(loadingGateProgress) * 100.0);
-            uiSystem.setNumber("loading", "loadingAlpha", loadingGateAlpha);
-            uiSystem.setNumber(
-                "loading", "loadingBarAlpha",
-                glm::clamp((loadingGateAlpha - 0.6f) / 0.4f, 0.0f, 1.0f));
-            uiSystem.setNumber("loading", "loadingPct",
-                               static_cast<f64>(loadingGateProgress) *
-                                   100.0);
-            uiSystem.setString("loading", "loadingText", label);
-            if (loadingGateAlpha <= 0.0f) {
-                screenStack.close("loading");
-                syncScreens();
-            }
-        }
-    }
+    // The world-warmup machine (boot / sandbox entry / spectator
+    // catch-up) — phases replace the old four-stream min math.
+    updateWarmup();
 
     // Mode hotkeys. Play is home: F2 toggles Play<->Spectator, F3 toggles
     // Play<->Edit, and from any OTHER mode the key REPLACES it with its
