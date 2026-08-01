@@ -141,10 +141,9 @@ continuité inter-tuiles, fallback, benchmark), `WaterBodiesTest`
 
 Adoptés : flow mapping 2 phases, écume de berge en UV de ruban, profil de
 vitesse latéral, edge fade, LOD des ondulations, dissolution de fin de
-cours. **Approuvés dev, à faire post-commit** : (1) `waterFlowAt(x,z)` +
-dérive/flottabilité des objets (l'extension gameplay de WaterBodies),
-(2) mode debug eau (visualiser torrent/UV/flux), (3) preset lave/boue du
-shader local, (6) subdivision adaptative des rubans par courbure.
+cours. Les quatre features approuvées — (1) `waterFlowAt` + dérive,
+(2) mode debug eau, (3) preset lave/boue, (6) subdivision adaptative —
+sont LIVRÉES par le chantier v2 (voir en bas de ce document).
 **Différés** : gradient de couleur near/far à courbes d'easing (teintes
 moddables), snapping des points de rivière au terrain dans l'éditeur, et
 leur exclusivité — la flowmap bakée avec obstacles (dilate + pression +
@@ -207,3 +206,140 @@ rasterisée) — notre chaîne jonction/fusion/étangs reste la référence.
 - Blocage du spawn initial sandbox jusqu'à la première tuile (v1 : le
   joueur peut voir la macro non érodée quelques secondes au premier
   lancement).
+
+---
+
+# Chantier v2 — cohérence, érosion avancée, eau unifiée (2026-08-01)
+
+Plan approuvé le 2026-08-01 (recherches Hesiod/HighMap, SimpleHydrology,
+SimpleErosion, TerraForge3D + intégration de la leçon Unreal). Quatorze
+briques livrées le jour même, 589 tests verts, benchmark 9-stage-1 inline
+50,7 s → 70,6 s (+39 %, plafond accepté 2×) — le chemin réel (streamer,
+stage-1 amorti par cache/dedup) reste de l'ordre de quelques secondes par
+tuile. `kTileBakeVersion` 12 → 16, `kStage1Version` séparée (14).
+
+## Recherches (verdicts)
+
+- **Hesiod / HighMap** (GPL — idées seulement, zéro code) : le gisement.
+  Adoptés : érosion fine multi-échelle post-upsample, dépôt sédimentaire à
+  capacité, stylisation strates/rock-exposure, primitives d'authoring
+  (ridgelines/stamp/alter_elevation), recurve d'élévation. Leur
+  `depression_filling_priority_flood`/coast valident nos S4/S1 ; leur
+  stream erosion est plus simple que notre fastscape implicite.
+- **SimpleHydrology (nickmcd)** : le couplage débit→capacité (la carte de
+  discharge module l'érosion) et l'érodibilité par biome (cohésion
+  végétale) sont repris ; son flood de mares (retiré par l'auteur) et le
+  méandrement émergent ne le sont pas (notre priority-flood et nos splines
+  couvrent mieux à notre échelle).
+- **SimpleErosion** : rien au-delà de ce que Hesiod industrialise.
+- **TerraForge3D** : outillage desktop (nœuds, OpenCL, baker) — rien à
+  emprunter.
+- **Décision GPU** : la génération reste CPU (déterminisme bit-exact entre
+  machines = contrat du sandbox ; génération headless doctestée ; les
+  workers ne touchent pas au GPU — invariant Phase 5). Les nouvelles
+  passes sont volontairement en gathers/Jacobi à support borné — la forme
+  portable en compute. Déclencheurs de réouverture : bake > ~10 s/tuile ou
+  preview interactif du TerrainGenTool.
+
+## Briques livrées
+
+- **B0 cohérence** : constantes uniques (`kDefaultSeaLevel`, `kSnowLine`,
+  `kRegionDetail*`), `pondDepth` mort supprimé, garde null du stage-1
+  centre, `kStage1Version` découplée, LOG des caches corrompus rejetés,
+  en-têtes réalignés sur le bake deux étages, doctests couture
+  stage-1/stage-2 + `routeFlow`.
+- **B1 érodibilité par biome** : table `BiomeErosion` (palette 0..3),
+  grids blurrés 3×3 branchés sur les hooks (déjà présents) d'`erodeFluvial`
+  /`erodeThermal` ; `capacityScale`/`fineScale` alimentent B2/B4.
+- **B2 dépôt sédimentaire** : balayage descendant à capacité
+  (`Qc = kc·A^m·S·dt`) dans la boucle fastscape — fonds de vallées plats,
+  cônes, deltas plafonnés sous le déversoir ; `kc = 0` = chemin legacy
+  bit-exact ; cumul exporté (`deposit`, sidecar TS12) pour les masques.
+- **B3 recurve** : PCHIP monotone 3 points au-dessus de la mer, fin de S1
+  avant coastProfile + `macroHeightAnalytic` (l'érosion ré-équilibre le
+  remap) ; `terrainRecurve*` dans LandscapeTuningForm/landscape.toml
+  (défauts = identité bit-exacte ; vider terrain-cache après changement).
+- **B4 érosion fine** : `FineErosion` — carve stream-power LOCAL à 4 m
+  (receivers steepest-descent sans flood, accumulation à portée bornée
+  96 m, capacité couplée au discharge du composite partagé, protection
+  lits/lacs/plages, budget 3,5 m) + micro-thermique 2 m ; fenêtre fine de
+  Finalize restreinte à keep+halo 192 m (rembourse l'essentiel du coût) ;
+  masques detailAmp/wetness modulés par l'incision ; doctest de LOCALITÉ
+  bit-exacte + divergence de bande < 2,5 m entre voisins.
+- **B5 rockExposure + strates** : canal u8 `rockExposure` (pente ×
+  anti-éboulis × bandes stratifiées warpées) dans TerrainRegion/TRG2 ;
+  knob géométrique `strataAmplitude` livré à 0 (risque de battement avec
+  le terracing S1 — activation après revue visuelle).
+- **B6 matériau falaise** : `SplatLayer_Cliff` procédural (strates FBM),
+  `cliffW = smoothstep(pente raide) × rockExposure` (transporté par
+  vColor.r — mort sinon sur le terrain proche), banding d'altitude
+  in-shader, miroir CPU lockstep (`MaterialWeights.cliff`), footsteps
+  falaise = Rock. Pas de `cliffiness` par biome (le shader n'a pas l'id ;
+  différé — le caractère biome passe déjà par l'érosion).
+- **B7 debug eau** : combo panel > Water (Flow/Torrent/UV ruban/Info:
+  surface/profondeur/flux) via `uWaterDebugInfo`.
+- **B8 waterFlowAt + dérive** : requête headless (kernel `riverFlowSample`
+  partagé, profil latéral miroir du shader, recouvrements pondérés par la
+  berge), dérive de nage via PlayerContext (`swimDriftFactor` 0.8, §2.9
+  intact — la cible de vitesse est poussée, pas l'attribut), composant
+  `Floater` cinématique (props collés surface + courant, bob déterministe
+  par id d'entité — v1 sans dynamique Jolt, décision dev).
+- **B9 subdivision adaptative** : `RiverGeometry::subdivideRiverNodes`
+  (Catmull-Rom par borne d'angle 0,14 rad, minStep 2 m) + clamp de
+  demi-largeur par rayon de courbure (l'apex d'un lacet ne se replie
+  plus) ; consommée par le ruban ET le raster info (même courbe).
+- **B10 water-info texture (la leçon Unreal, complète)** : bake CPU worker
+  `WaterInfoMap` 1024² / 1536 m (surface R32F absolue — le f16 relatif ne
+  tient pas un lac à 700 m ; profondeur+flux RGBA16F), raster PAR CORPS
+  (O(aire mouillée), height() sur texels mouillés seulement), jonctions
+  résolues PAR TEXEL par le kernel partagé ; côté shader le flux composité
+  remplace le flux du ruban quand |surface_texture − y| < 0,35 m → deux
+  rubans croisés rendent identique ; flag de validité (contenu changé →
+  fallback vertex data, jamais de fausses jonctions) ; suivi caméra 384 m,
+  mêmes stamps que la pool map. `waterFlowAt` CPU reste analytique — une
+  seule vérité, la texture est un cache de rendu dérivé.
+- **B11 matériaux d'eau** : `WaterMaterialForm` (§5, moddable TOML —
+  teinte+force, deep, absorption, écume+gain, émissif, flowSpeedScale,
+  viscosité, waveScale) référencé par GUID depuis WaterBodyForm/RiverForm ;
+  résolution en table compacte headless (slot 0 = eau par défaut, valeurs
+  = les constantes shader, bit-identique) ; layout vertex local 10 floats
+  + `WaterMaterialsUbo` (16 slots) ; la lave = émissif + viscosité + écume
+  incandescente, en pur TOML.
+- **B12 authoring** : `Authoring.{hpp,cpp}` headless — `stampKernel`
+  (Add relatif / Max-union absolu / Blend plateau), `stampRidge` (crête
+  Bézier max-composée, ne creuse jamais), `baseElevationAt` (anchors),
+  `alterElevation` (nivelle le centre, PRÉSERVE le relief — la primitive
+  site-de-village). Aucun branchement pipeline en v1 : l'intégration
+  (`AuthoredControls` en S1 avant S2) appartient au chantier TerrainGenTool.
+
+## Modding (nouveau depuis v2)
+
+- `WaterMaterialForm` : preset d'eau complet en TOML, référencé par
+  `material = "<guid>"` sur un lac ou une rivière (null = eau normale).
+- `terrainRecurveLow/Mid/High` (landscape.toml) : la courbe d'altitude du
+  sandbox. `BiomeErosion` reste C++ (TileBakeParams) — promotion en Form
+  si le besoin modding se présente.
+
+## Différés (revue de clôture v2, 2026-08-01)
+
+Reconduits : peinture des cartes de contrôle (Scénario), ré-ancrage des
+deltas sculpt, climat→survie, vegetationSet, splat biome-tinté,
+continuité hydrologique inter-tuiles VRAIE (la water-info texture v2 est
+le socle recommandé), transitions de worldspace, port compute (voir
+décision GPU), plaque d'eau bbox / éviction sandboxLakes / spawn initial
+(vus au banc v1). Nouveaux :
+- **Strates géométriques** : knob livré à 0, activation après revue
+  visuelle (battement possible avec le terracing S1).
+- **Érosion droplets** : REJETÉE (pas différée) — l'interaction
+  séquentielle qui fait sa qualité casse le bit-exact inter-tuiles.
+- **Intégration pipeline d'Authoring** (`AuthoredControls`/S1) → chantier
+  TerrainGenTool ; signatures posées.
+- **Flottabilité dynamique** (corps Jolt + poussée d'Archimède) — le
+  `Floater` cinématique v1 la remplace en attendant ; extension de la
+  façade meadows-physics à décider.
+- **`cliffiness` par biome** (le shader n'a pas l'id biome — passerait
+  par le masque rockExposure au bake).
+- **Assombrissement humide du terrain** près de l'eau (tap terrain.frag
+  sur la water-info texture) — non fait, coupé du périmètre v2.
+- **Matériau d'eau côté gameplay** (viscosité → vitesse de nage, dégâts
+  lave) — la donnée est déjà headless (`WaterBodies::materials`).
