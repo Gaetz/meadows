@@ -2,6 +2,8 @@
 
 #include <optional>
 
+#include <glm/glm.hpp>
+
 #include "engine/core/Defines.hpp"
 
 // Swimming, the sim-pure half: WHEN a body swims.
@@ -24,5 +26,12 @@ enum class MoveMode : u8 { Ground, Swim };
 MoveMode decideMoveMode(MoveMode current, std::optional<f32> surfaceY,
                         f32 feetY, f32 headHeight, bool onGround,
                         f32 submergeDepth = 0.3f, f32 wadeOutRatio = 0.65f);
+
+// Water current drift: the flow pushes the swim TARGET velocity (the
+// exponential accel and the surface clamp still govern the motion),
+// scaled by the tuning factor. Pure — the sim half of the drift.
+inline Vec3 applyDrift(const Vec3& target, const Vec2& flow, f32 factor) {
+    return target + Vec3 { flow.x, 0.0f, flow.y } * factor;
+}
 
 } // namespace gameplay

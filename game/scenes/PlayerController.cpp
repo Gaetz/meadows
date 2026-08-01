@@ -435,6 +435,13 @@ bool PlayerController::updateSwimming(f32 dt, const PlayerContext& ctx,
         // No strength left: the water wins (STATS.md survival loop).
         target.y = glm::min(target.y, 0.0f) - tuning.swimExhaustedSink;
     }
+    // The current pushes the target; accel and the surface clamp below
+    // still govern (an exhausted swimmer drifts downstream — intended).
+    if (ctx.waterFlowAt) {
+        target = gameplay::applyDrift(target,
+                                      ctx.waterFlowAt(body_->position()),
+                                      tuning.swimDriftFactor);
+    }
     // Surface clamp: swimming never breaches — decideMoveMode handles
     // the actual exit (shallows, or the head clearing the surface).
     if (surface &&

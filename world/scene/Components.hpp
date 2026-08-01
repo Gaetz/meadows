@@ -197,6 +197,22 @@ struct FurnitureRef {
 // Zero-size ECS marker tags stamped by the per-category spawner, so systems can
 // query "all actors", "all items"... These are runtime ECS markers (flecs
 // tags), NOT GameplayTags (§6, which are reflected moddable data).
+// Kinematic floating prop: the entity rides the local water surface and
+// drifts with the current (world/scene/Floaters.hpp ticks it). v1 is
+// deliberately NOT dynamic physics — real buoyancy through the Jolt
+// facade is a named deferred.
+struct Floater {
+    f32 driftFactor { 1.0f }; // fraction of the current applied
+    f32 draft { 0.12f };      // meters the body sits below the surface
+    f32 bobAmplitude { 0.05f };
+
+    REFLECT_BEGIN(Floater, void)
+        REFLECT_FIELD(driftFactor)
+        REFLECT_FIELD(draft)
+        REFLECT_FIELD(bobAmplitude)
+    REFLECT_END()
+};
+
 struct StaticMarker {};
 struct ItemMarker {};
 struct ActorMarker {};

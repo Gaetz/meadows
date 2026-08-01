@@ -93,6 +93,9 @@ struct PlayerContext {
     // scene, always set (null only in never-built test contexts).
     const ActionMap* actions { nullptr };
     const Settings* settings { nullptr };
+    // XZ current at a spot (rivers push, lakes/sea are still) — the
+    // swim drift. Absent = no current (interiors, tests).
+    std::function<Vec2(const Vec3&)> waterFlowAt;
 };
 
 // The first-person Play-mode controller extracted from LandscapeScene

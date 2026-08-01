@@ -15,6 +15,7 @@ void registerSceneComponents(ecs::World& world) {
     world.registerComponent<MeshRender>();
     world.registerComponent<LightSource>();
     world.registerComponent<TriggerVolume>();
+    world.registerComponent<Floater>();
     world.registerComponent<MarkerKind>();
     world.registerComponent<FurnitureRef>();
     world.registerComponent<DoorTarget>();

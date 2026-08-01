@@ -127,6 +127,8 @@ struct StatsTuningForm : data::Form {
     // Swimming — speed vs jog, and the drowning tick once energy is gone
     // (the SwimCost effect drains it, data).
     f32 swimSpeedFactor { 0.7f };
+    // How much of the river current pushes a swimmer (0 = none).
+    f32 swimDriftFactor { 0.8f };
     f32 drownDamagePerSecond { 8.0f };
     // Sneak (docs/STATS.md §4): detection ranges (sight AND hearing)
     // scale by this while State.Sneaking — the sneak SKILL will drive it
@@ -338,6 +340,7 @@ struct StatsTuningForm : data::Form {
         REFLECT_FIELD(fallDamagePerMeter)
         REFLECT_FIELD(fallLethalHeight)
         REFLECT_FIELD(sneakAttackMultiplier)
+        REFLECT_FIELD(swimDriftFactor)
     REFLECT_END()
 };
 
