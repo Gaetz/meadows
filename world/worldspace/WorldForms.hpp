@@ -197,6 +197,40 @@ struct TerrainRegionForm : data::Form {
     REFLECT_END()
 };
 
+// A water shading preset (lava, mud, enchanted pools...): referenced by
+// GUID from WaterBodyForm/RiverForm records; a null reference = default
+// water, and the default-constructed values ARE the current hardcoded
+// water look (bit-identical). Pure data, moddable (§5).
+struct WaterMaterialForm : data::Form {
+    str displayName;
+    Vec3 tint { 0.10f, 0.30f, 0.34f }; // shallow-water tint...
+    f32 tintStrength { 0.0f };         // ...mixed in by this much
+    Vec3 deepColor { 0.008f, 0.045f, 0.055f };
+    Vec3 absorption { 0.42f, 0.16f, 0.12f }; // per channel, 1/m
+    Vec3 foamColor { 0.75f, 0.82f, 0.85f };
+    f32 foamGain { 1.0f };
+    Vec3 emissiveColor { 0.0f, 0.0f, 0.0f }; // lava glow
+    f32 emissiveStrength { 0.0f };
+    f32 flowSpeedScale { 1.0f }; // advection multiplier
+    f32 viscosity { 0.0f };      // 0 water .. 1 syrup (slows the flow)
+    f32 waveScale { 1.0f };      // ripple frequency multiplier
+
+    REFLECT_BEGIN(WaterMaterialForm, data::Form)
+        REFLECT_FIELD(displayName)
+        REFLECT_FIELD(tint)
+        REFLECT_FIELD(tintStrength)
+        REFLECT_FIELD(deepColor)
+        REFLECT_FIELD(absorption)
+        REFLECT_FIELD(foamColor)
+        REFLECT_FIELD(foamGain)
+        REFLECT_FIELD(emissiveColor)
+        REFLECT_FIELD(emissiveStrength)
+        REFLECT_FIELD(flowSpeedScale)
+        REFLECT_FIELD(viscosity)
+        REFLECT_FIELD(waveScale)
+    REFLECT_END()
+};
+
 // An altitude lake: a flat water surface at its own level, clipped by the
 // terrain basin (the sea-shoreline mechanism). The generator emits these
 // as ordinary records; a modder raises a lake in pure TOML (§5).
@@ -209,6 +243,7 @@ struct WaterBodyForm : data::Form {
     f32 maxZ { 0.0f };
     Vec3 tint { 0.10f, 0.30f, 0.34f };
     f32 chop { 0.5f };
+    core::Guid material; // WaterMaterialForm; null = default water
 
     REFLECT_BEGIN(WaterBodyForm, data::Form)
         REFLECT_FIELD(displayName)
@@ -219,6 +254,7 @@ struct WaterBodyForm : data::Form {
         REFLECT_FIELD(maxZ)
         REFLECT_FIELD(tint)
         REFLECT_FIELD(chop)
+        REFLECT_FIELD(material)
     REFLECT_END()
 };
 
@@ -228,11 +264,13 @@ struct RiverForm : data::Form {
     str displayName;
     Vec3 tint { 0.10f, 0.30f, 0.34f };
     f32 flowSpeed { 1.0f };
+    core::Guid material; // WaterMaterialForm; null = default water
 
     REFLECT_BEGIN(RiverForm, data::Form)
         REFLECT_FIELD(displayName)
         REFLECT_FIELD(tint)
         REFLECT_FIELD(flowSpeed)
+        REFLECT_FIELD(material)
     REFLECT_END()
 };
 

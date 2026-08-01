@@ -166,3 +166,127 @@ halfWidth = 2.0
     CHECK(waterSurfaceAt(*bodies, 50.0f, 70.0f, 141.0f) ==
           doctest::Approx(142.5f));
 }
+
+TEST_CASE("waterFlowAt: downstream, faster mid-channel, still elsewhere") {
+    const WaterBodies bodies = testBodies();
+    // The test river runs +z (500,0) -> (500,100), speed default 1.0.
+    const Vec2 mid =
+        render::terrain::waterFlowAt(bodies, 500.0f, 50.0f, 75.0f);
+    CHECK(mid.y > 0.8f); // downstream +z, near full speed mid-channel
+    CHECK(std::abs(mid.x) < 1.0e-4f);
+    const Vec2 bank =
+        render::terrain::waterFlowAt(bodies, 504.5f, 50.0f, 75.0f);
+    CHECK(bank.y > 0.0f);
+    CHECK(bank.y < mid.y); // the banks drag
+
+    // Dry land, a still lake, and a probe far above: all zero.
+    const Vec2 zero { 0.0f, 0.0f };
+    CHECK(render::terrain::waterFlowAt(bodies, 0.0f, 0.0f, 10.0f) ==
+          zero);
+    CHECK(render::terrain::waterFlowAt(bodies, 200.0f, 50.0f, 130.0f) ==
+          zero);
+    CHECK(render::terrain::waterFlowAt(bodies, 500.0f, 50.0f, 500.0f) ==
+          zero);
+}
+
+TEST_CASE("waterFlowAt blends overlapping rivers continuously") {
+    WaterBodies bodies;
+    bodies.seaLevel = 0.0f;
+    RiverSurface east; // flows +x
+    east.nodes = { { 0.0f, 0.0f, 10.0f, 5.0f },
+                   { 100.0f, 0.0f, 9.0f, 5.0f } };
+    east.minX = -5.0f;
+    east.maxX = 105.0f;
+    east.minZ = -5.0f;
+    east.maxZ = 5.0f;
+    east.flowSpeed = 2.0f;
+    RiverSurface north = east; // same footprint, flows +z
+    north.nodes = { { 50.0f, -5.0f, 10.0f, 5.0f },
+                    { 50.0f, 5.0f, 9.5f, 5.0f } };
+    north.minZ = -10.0f;
+    north.maxZ = 10.0f;
+    bodies.rivers.push_back(east);
+    bodies.rivers.push_back(north);
+
+    // On the junction both contribute: the blend carries both
+    // directions instead of snapping to one ribbon.
+    const Vec2 blended =
+        render::terrain::waterFlowAt(bodies, 50.0f, 0.0f, 10.0f);
+    CHECK(blended.x > 0.3f);
+    CHECK(blended.y > 0.3f);
+}
+
+TEST_CASE("WaterMaterialForm presets resolve to stable indices") {
+    data::FormTypeRegistry types;
+    world::registerWorldFormTypes(types);
+    const auto plugin = data::parsePluginToml(R"toml(
+[plugin]
+id = "88888888-8888-4888-8888-8888888888bb"
+name = "lava"
+
+[[records]]
+form = "80000000-0000-4000-8000-000000000031"
+type = "WaterMaterialForm"
+new = true
+[records.fields]
+displayName = "lava"
+emissiveColor = [1.0, 0.35, 0.05]
+emissiveStrength = 3.0
+viscosity = 0.8
+flowSpeedScale = 0.3
+
+[[records]]
+form = "80000000-0000-4000-8000-000000000032"
+type = "WaterBodyForm"
+new = true
+[records.fields]
+displayName = "lava pool"
+surfaceLevel = 50.0
+minX = 0.0
+minZ = 0.0
+maxX = 40.0
+maxZ = 40.0
+material = "80000000-0000-4000-8000-000000000031"
+
+[[records]]
+form = "80000000-0000-4000-8000-000000000033"
+type = "WaterBodyForm"
+new = true
+[records.fields]
+displayName = "plain pond"
+surfaceLevel = 30.0
+minX = 100.0
+minZ = 0.0
+maxX = 140.0
+maxZ = 40.0
+
+[[records]]
+form = "80000000-0000-4000-8000-000000000034"
+type = "WaterBodyForm"
+new = true
+[records.fields]
+displayName = "dangling"
+surfaceLevel = 20.0
+minX = 200.0
+minZ = 0.0
+maxX = 240.0
+maxZ = 40.0
+material = "80000000-0000-4000-8000-0000000000ff"
+)toml",
+                                              types, "lava");
+    REQUIRE(plugin.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*plugin }, types, db);
+
+    const auto bodies = world::buildWaterBodies(db, 21.0f);
+    // Slot 0 = default water; the lava preset landed after it.
+    REQUIRE(bodies->materials.size() == 2);
+    CHECK(bodies->materials[0].emissiveStrength == 0.0f);
+    CHECK(bodies->materials[1].emissiveStrength ==
+          doctest::Approx(3.0f));
+    CHECK(bodies->materials[1].viscosity == doctest::Approx(0.8f));
+    REQUIRE(bodies->lakes.size() == 3);
+    CHECK(bodies->lakes[0].materialIndex == 1); // lava pool
+    CHECK(bodies->lakes[1].materialIndex == 0); // plain pond
+    CHECK(bodies->lakes[2].materialIndex == 0); // dangling -> default
+}
