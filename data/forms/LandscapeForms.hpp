@@ -188,6 +188,22 @@ struct LandscapeTuningForm : Form {
     // field stays so records that set it keep resolving.
     f32 skyCloudRays { 0.0f };
 
+    // Terrain shape, continued (appended — reflection lists only grow).
+    // Defaults MUST match render::TerrainParams.
+    i32 terrainOctaves { 5 };
+    f32 terrainLacunarity { 2.0f };
+    f32 terrainGain { 0.5f };
+    f32 mountainMaskLow { 0.45f };
+    f32 mountainMaskHigh { 0.75f };
+    // Sandbox mode: infinite generated terrain — super-tiles baked and
+    // cached around the player (seed = terrainSeed), analytic macro as
+    // the far fallback. The MAIN MENU drives this at runtime (story /
+    // sandbox); true here forces sandbox from data (headless/mods).
+    bool sandboxTerrain { false };
+    // Snow altitude of the sandbox world (its peaks top ~1600 m; the
+    // story world keeps `snowLine` above).
+    f32 sandboxSnowLine { 950.0f };
+
     REFLECT_BEGIN(LandscapeTuningForm, Form)
         REFLECT_FIELD(terrainSeed)
         REFLECT_FIELD(hillWavelength)
@@ -302,6 +318,13 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(skyCloudRimLobe)
         REFLECT_FIELD(skyCloudBaseDark)
         REFLECT_FIELD(skyCloudRays)
+        REFLECT_FIELD(terrainOctaves)
+        REFLECT_FIELD(terrainLacunarity)
+        REFLECT_FIELD(terrainGain)
+        REFLECT_FIELD(mountainMaskLow)
+        REFLECT_FIELD(mountainMaskHigh)
+        REFLECT_FIELD(sandboxTerrain)
+        REFLECT_FIELD(sandboxSnowLine)
     REFLECT_END()
 };
 

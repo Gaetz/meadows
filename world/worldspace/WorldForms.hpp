@@ -175,6 +175,139 @@ struct TerrainPatchForm : data::Form {
     REFLECT_END()
 };
 
+// A baked terrain REGION: an absolute height grid (.trg asset) replacing
+// the procedural base inside its rectangle — the generated-terrain layer
+// under the sculpt deltas above. Geometry (origin/size/texel) lives in the
+// asset header (one source of truth, like TER1's sample count); the Form
+// is identity + the runtime detail-noise character, so a mod can retune
+// detail per field or replace the whole grid by asset guid (§5 VFS).
+struct TerrainRegionForm : data::Form {
+    str displayName;
+    core::Guid asset;               // .trg region file
+    f32 detailAmplitude { 0.0f };   // meters of runtime detail noise
+    f32 detailWavelength { 60.0f }; // meters
+    i32 detailOctaves { 3 };
+
+    REFLECT_BEGIN(TerrainRegionForm, data::Form)
+        REFLECT_FIELD(displayName)
+        REFLECT_FIELD(asset)
+        REFLECT_FIELD(detailAmplitude)
+        REFLECT_FIELD(detailWavelength)
+        REFLECT_FIELD(detailOctaves)
+    REFLECT_END()
+};
+
+// An altitude lake: a flat water surface at its own level, clipped by the
+// terrain basin (the sea-shoreline mechanism). The generator emits these
+// as ordinary records; a modder raises a lake in pure TOML (§5).
+struct WaterBodyForm : data::Form {
+    str displayName;
+    f32 surfaceLevel { 30.0f };
+    f32 minX { 0.0f };
+    f32 minZ { 0.0f };
+    f32 maxX { 0.0f };
+    f32 maxZ { 0.0f };
+    Vec3 tint { 0.10f, 0.30f, 0.34f };
+    f32 chop { 0.5f };
+
+    REFLECT_BEGIN(WaterBodyForm, data::Form)
+        REFLECT_FIELD(displayName)
+        REFLECT_FIELD(surfaceLevel)
+        REFLECT_FIELD(minX)
+        REFLECT_FIELD(minZ)
+        REFLECT_FIELD(maxX)
+        REFLECT_FIELD(maxZ)
+        REFLECT_FIELD(tint)
+        REFLECT_FIELD(chop)
+    REFLECT_END()
+};
+
+// A river: identity + shading; its course is RiverPointForm child records
+// (the §C.1 child-record convention — reflection stays flat).
+struct RiverForm : data::Form {
+    str displayName;
+    Vec3 tint { 0.10f, 0.30f, 0.34f };
+    f32 flowSpeed { 1.0f };
+
+    REFLECT_BEGIN(RiverForm, data::Form)
+        REFLECT_FIELD(displayName)
+        REFLECT_FIELD(tint)
+        REFLECT_FIELD(flowSpeed)
+    REFLECT_END()
+};
+
+// One node of a river course, downstream order by `index`; position.y =
+// water surface (monotone downhill — the generator's contract).
+struct RiverPointForm : data::Form {
+    core::Guid parent; // RiverForm
+    i32 index { 0 };
+    Vec3 position { 0.0f };
+    f32 halfWidth { 2.0f };
+
+    REFLECT_BEGIN(RiverPointForm, data::Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(index)
+        REFLECT_FIELD(position)
+        REFLECT_FIELD(halfWidth)
+    REFLECT_END()
+};
+
+// One biome: the u8 id painted/derived over the terrain resolves to this
+// record's character (render::BiomeParams mirror) — terrain materials,
+// scatter presence, climate, and later gameplay tags.
+struct BiomeForm : data::Form {
+    str displayName;
+    i32 paletteIndex { 0 };  // the u8 id; 0 = neutral
+    Vec3 editorColor { 0.5f }; // painting-UI swatch
+    f32 snowLineOffset { 0.0f };
+    f32 rockiness { 0.0f };
+    f32 sandiness { 0.0f };
+    f32 grassPresence { 1.0f };
+    f32 detailAmplitudeScale { 1.0f };
+    f32 temperature { 0.0f };
+    f32 wetness { 0.0f };
+    i32 vegetationSet { 0 };
+    str gameplayTag; // e.g. "Biome.Tundra" (GAS tags, later)
+
+    REFLECT_BEGIN(BiomeForm, data::Form)
+        REFLECT_FIELD(displayName)
+        REFLECT_FIELD(paletteIndex)
+        REFLECT_FIELD(editorColor)
+        REFLECT_FIELD(snowLineOffset)
+        REFLECT_FIELD(rockiness)
+        REFLECT_FIELD(sandiness)
+        REFLECT_FIELD(grassPresence)
+        REFLECT_FIELD(detailAmplitudeScale)
+        REFLECT_FIELD(temperature)
+        REFLECT_FIELD(wetness)
+        REFLECT_FIELD(vegetationSet)
+        REFLECT_FIELD(gameplayTag)
+    REFLECT_END()
+};
+
+// Per-biome vegetation entry, child of BiomeForm (§C.1).
+struct BiomeVegetationForm : data::Form {
+    core::Guid parent; // BiomeForm
+    core::Guid species;
+    f32 density { 1.0f };
+
+    REFLECT_BEGIN(BiomeVegetationForm, data::Form)
+        REFLECT_FIELD(parent)
+        REFLECT_FIELD(species)
+        REFLECT_FIELD(density)
+    REFLECT_END()
+};
+
+// The painted biome index map (scenario mode; sandbox tiles derive their
+// ids from the seed instead). Asset: "TBM1" u8 grid.
+struct BiomeMapForm : data::Form {
+    core::Guid asset;
+
+    REFLECT_BEGIN(BiomeMapForm, data::Form)
+        REFLECT_FIELD(asset)
+    REFLECT_END()
+};
+
 // Registers the world form types; call once at startup, like
 // data::registerCoreFormTypes, before loading plugins that place references.
 void registerWorldFormTypes(data::FormTypeRegistry& registry);

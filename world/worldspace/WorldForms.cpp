@@ -13,6 +13,13 @@ void registerWorldFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<TriggerForm>();
     registry.registerFormType<DoorForm>();
     registry.registerFormType<TerrainPatchForm>();
+    registry.registerFormType<TerrainRegionForm>();
+    registry.registerFormType<WaterBodyForm>();
+    registry.registerFormType<RiverForm>();
+    registry.registerFormType<RiverPointForm>();
+    registry.registerFormType<BiomeForm>();
+    registry.registerFormType<BiomeVegetationForm>();
+    registry.registerFormType<BiomeMapForm>();
 }
 
 core::Guid cellGuidFor(const core::Guid& worldspace, i32 gx, i32 gy) {
