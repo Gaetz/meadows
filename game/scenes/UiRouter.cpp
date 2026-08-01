@@ -530,6 +530,16 @@ void UiRouter::handleMenuAction(const UiRouterContext& ctx,
         if (!ctx.playMode) {
             ctx.enterPlayMode();
         }
+    } else if (action == "play-story" || action == "play-sandbox") {
+        // Main-menu mode pick: flip the world BEFORE the capsule spawns
+        // (sandbox also moves the start point to generated land).
+        if (ctx.setSandboxMode) {
+            ctx.setSandboxMode(action == "play-sandbox");
+        }
+        ctx.screenStack.closeAll();
+        if (!ctx.playMode) {
+            ctx.enterPlayMode();
+        }
     } else if (action == "mainmenu") {
         if (ctx.playMode) {
             ctx.exitPlayMode();

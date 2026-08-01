@@ -58,6 +58,10 @@ struct UiRouterContext {
     std::function<void(f32 hours)> wait; // interaction.wait + clock line
     std::function<void()> enterPlayMode;
     std::function<void()> exitPlayMode;
+    // Main-menu game mode: story (the authored world) or sandbox (the
+    // infinite generated one). Applied BEFORE enterPlayMode. Sits
+    // between exitPlayMode and requestQuit in the initializer.
+    std::function<void(bool sandbox)> setSandboxMode;
     std::function<void()> requestQuit;
     std::function<void()> openOptions; // Push model + show screen
     // The HUD toast — the transfer guards talk

@@ -60,7 +60,8 @@ ui.journal.empty,Aucune quete pour l'instant.
 ui.journal.close,Fermer
 ui.menu.day,Jour {} — {}
 ui.mainmenu.title,True Adventurer
-ui.mainmenu.play,Entrer dans le monde
+ui.mainmenu.story,Mode histoire
+ui.mainmenu.sandbox,Mode sandbox
 ui.mainmenu.load,Charger une partie
 ui.mainmenu.options,Options
 ui.mainmenu.quit,Quitter

@@ -1,1208 +1,1560 @@
 [plugin]
-dependencies = [ '18a05b5b-eda3-4267-bbac-318a1d3989e7' ]
 id = 'b754251d-39a5-40b3-9c1e-39d15a8125e8'
 name = 'text-fr.csv'
 
 [[records]]
-form = 'b7f7ff74-a0d8-48c7-9092-f397e14f1807'
+form = 'e2b8bbde-f9ab-4bc1-b75b-72dddefd5628'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'crime.observed'
     text = "Crime observe ! Prime : {} pieces d'or."
 
 [[records]]
-form = '3ca3a486-823f-46a6-9db2-0cdb6b7a05a5'
+form = '049cd55b-42c4-46af-baee-d7639db0fd46'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'crime.finePaid'
     text = 'Amende payee. Restez dans le droit chemin.'
 
 [[records]]
-form = '44e5d313-9bff-4c5f-87b1-524fc3fe00dc'
+form = 'c6bd8986-02d1-4e32-8061-298470e56b7a'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'talk.greeting'
     text = 'Belle journee, voyageur.'
 
 [[records]]
-form = '3aa8b439-9d8a-4021-8428-2a6ead87521b'
+form = '6ce0e2fe-ddc4-431f-974f-cde3e53053b9'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'rest.sleep'
     text = 'Vous dormez profondement (8 h).'
 
 [[records]]
-form = 'ecf231be-04b0-4d39-bdbc-9bb54fcd0970'
+form = 'a88ef179-18f9-4c03-95c9-c5611d8822ae'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'rest.nap'
     text = 'Vous vous reposez un moment (1 h).'
 
 [[records]]
-form = '9c7277cc-d1bc-42e7-b9cb-40a6c7886f6a'
+form = 'ae29826d-8a59-46a8-a82c-f473f8546540'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.door'
     text = '[E] {}'
 
 [[records]]
-form = '33f0e30b-afe0-44c2-86c1-aac3d9d4f361'
+form = '6c7e90db-a5f9-40c6-a66f-560c74d1ab85'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.door.name'
     text = 'Utiliser la porte'
 
 [[records]]
-form = 'dbf408a1-7ddc-45e4-8018-57250671691f'
+form = '785d9402-d33e-440f-872c-6e7c0e409935'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.take'
     text = '[E] Prendre {}'
 
 [[records]]
-form = '9f5aa03e-9c80-41ff-a0f5-11d358e4941b'
+form = 'fd46cf31-699d-4523-909b-ede66ffaa717'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.take.name'
     text = "l'objet"
 
 [[records]]
-form = '9cdb75c6-68ee-4186-8be9-c0e5d7f065d2'
+form = '51aae17f-a76d-4096-89f1-cacc00ae7ce7'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.talk'
     text = '[E] Parler a {}'
 
 [[records]]
-form = 'ca5c11cd-621c-4b6e-9669-12466c170131'
+form = '0e5c768f-0eae-430a-9143-ac4f446edfa1'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.talk.name'
     text = 'ce personnage'
 
 [[records]]
-form = '08e4d121-069d-4c8c-a41b-5eda79cadd16'
+form = '9c2a384b-717b-47f2-919e-9eba170109c9'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.search'
     text = '[E] Fouiller {}'
 
 [[records]]
-form = 'fdafca67-84f8-4d13-82ad-2048c245ba90'
+form = 'bde17a22-dcab-4df2-87ac-441d18dfae0b'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.search.name'
     text = 'le corps'
 
 [[records]]
-form = '5e475dda-545f-437a-a336-0a8e64215524'
+form = 'd080df3d-44e8-4e59-8572-e385930ae3c1'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.use'
     text = '[E] Utiliser {}'
 
 [[records]]
-form = 'b2fc09b0-4233-4a20-8243-a2f088ae9de7'
+form = '2fd9dfcf-35e9-45a4-89b4-d4387b070ad6'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.use.name'
     text = 'ceci'
 
 [[records]]
-form = 'bbf0ea66-599a-4513-be46-4b62676d9cad'
+form = 'b4b44005-c639-49b9-8430-0a5405549d80'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'quest.new'
     text = 'Nouvelle quete : {} (journal : J).'
 
 [[records]]
-form = '232ab0ab-e354-4c79-973a-44b9d80c4199'
+form = 'f43a39dc-b4e8-4373-8a58-476ac48b2025'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'quest.done'
     text = 'Quete accomplie : {}{}.'
 
 [[records]]
-form = '5dc02119-e6ce-409a-acd4-5bb03dcd35ae'
+form = '1f003640-f5cc-418c-b298-74838c3a4e03'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'quest.reward'
     text = ' (+{} {})'
 
 [[records]]
-form = 'e190a135-ba56-4d32-bcc6-791c1acacdf1'
+form = 'b2427453-0c5e-4284-854b-6b102127a8e8'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'quest.failed'
     text = 'Quete echouee : {}.'
 
 [[records]]
-form = 'c5e255bc-57f5-4080-a4de-b0c2fa68ffc5'
+form = '7204a556-8025-4780-8ed2-ccef1da8a3a8'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'quest.journalUpdated'
     text = 'Journal mis a jour (J).'
 
 [[records]]
-form = 'e3f21afd-0b77-4d5c-a220-a610ef9aa341'
+form = 'e6ac1ea8-91d2-4b97-a63a-7ba372fdfee2'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'save.saved'
     text = 'Partie sauvegardee ({}).'
 
 [[records]]
-form = 'd4f237d0-1cd6-407f-bf65-94ddb2667971'
+form = 'ffa8375c-e831-4bb2-9a3d-f3ed0dd0f7aa'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'save.missing'
     text = "Aucune sauvegarde '{}'."
 
 [[records]]
-form = 'ce568a3a-99b9-48d3-bed5-6af088037bad'
+form = 'ac944b48-3963-4b9b-91e6-238a5a1da609'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.hud.carriedWeight'
     text = 'Charge portee  {} / {}  ({})'
 
 [[records]]
-form = '560cbf95-e308-45ef-b029-d3a5fd339b81'
+form = '404f79a8-5860-4251-a5dc-545726435cac'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.hud.encumbrance.light'
     text = 'legere'
 
 [[records]]
-form = '0bd2a0f1-afa4-4557-9ea4-c5b26a63e5e3'
+form = 'ec926a9e-edd4-4283-864c-3708eeaced1a'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.hud.encumbrance.medium'
     text = 'moyenne'
 
 [[records]]
-form = '14ca59a2-206c-4c00-b118-9ba94a4a094d'
+form = 'f0f7bd1c-75f9-43e8-a7d6-5dd6b0cc75b5'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.hud.encumbrance.heavy'
     text = 'lourde'
 
 [[records]]
-form = 'aa47ac62-1c86-4f22-9f11-0d6b08a5f810'
+form = 'e0a6c3e1-2469-4a94-9e55-e00ee06e50a7'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.hud.encumbrance.overencumbered'
     text = 'surcharge'
 
 [[records]]
-form = 'c82d442b-d13c-4b39-8da9-4d215a424521'
+form = '600fbe5b-5f29-4df9-a4aa-8a26df3630fe'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.cols.name'
     text = 'Nom'
 
 [[records]]
-form = '657611a4-77fb-47ee-b654-b408512a1195'
+form = '62d047e0-5b3e-4796-b653-bdeb7fbc07dd'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.cols.weight'
     text = 'Poids'
 
 [[records]]
-form = 'd7fdebf5-ddbc-48c9-ba75-164fb52d6daf'
+form = 'bc14dcef-b07b-4757-8ed2-7e4e208dfd34'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.cols.value'
     text = 'Valeur'
 
 [[records]]
-form = '0ef2834f-f3c8-4d94-a430-9780fd9c454a'
+form = 'e842c1a5-f6ee-4127-8c71-84639c12e0a7'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.cols.power'
     text = 'Puissance'
 
 [[records]]
-form = 'bd4a913a-b562-48f2-9b99-f6c2e2fa5af6'
+form = '6ea0e677-5fcf-42bd-8d61-3ed40d019679'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.cols.price'
     text = 'Prix'
 
 [[records]]
-form = '307f492d-3299-4065-ad45-38ae9b8be350'
+form = '70f23ff6-6680-4f7d-ae48-6ac019f7f5cd'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.common.you'
     text = 'Vous'
 
 [[records]]
-form = 'bb11c007-fb1c-4474-8cb3-d62e6478e42a'
+form = 'abf6afff-0b9d-4ec8-8f00-2c8cf3d61122'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.title'
     text = 'Inventaire'
 
 [[records]]
-form = 'de5f7cbe-6877-4f30-a0fb-bba40228400f'
+form = '6c83d5d1-a35e-4832-99c6-47cd52dcbf03'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.tab.all'
     text = 'Tout'
 
 [[records]]
-form = 'bb7b0786-1e5e-4b2e-91d2-9bf3983196db'
+form = '83258b7a-c443-49f2-b768-8193492515dd'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.tab.weapons'
     text = 'Armes'
 
 [[records]]
-form = 'dc2688fe-4078-415d-a092-3b6789821e3a'
+form = 'd73b4005-b2e7-46ad-a96a-338e4dd79e85'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.tab.armor'
     text = 'Armures'
 
 [[records]]
-form = '85685ca7-9edc-49e6-aa94-6c7145afa841'
+form = '9fdd13c2-ad40-485c-8102-91cdccdd5ef3'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.tab.consumables'
     text = 'Consommables'
 
 [[records]]
-form = '126e045a-f323-4781-b753-cc8779914d91'
+form = 'ce945fd6-1bf1-463b-b49d-5ee0e9e6296e'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.tab.misc'
     text = 'Divers'
 
 [[records]]
-form = '2768f87c-3eb5-4387-952f-66cdc859c29d'
+form = '402b45ee-219a-4fc2-a7d0-3acb98f7781f'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.use'
     text = 'Utiliser'
 
 [[records]]
-form = '772f0eb6-28b4-4557-8f8d-4e21924c41c0'
+form = '1b201c9a-da71-414f-998d-a591f84d1f69'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.close'
     text = '[I] fermer'
 
 [[records]]
-form = '8f42a13b-46cb-4aa7-a2b2-f133dc2232e6'
+form = '9979a57e-7bfd-4293-b3c4-abae2d69b410'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.detail'
     text = 'Poids {}   Valeur {}{}'
 
 [[records]]
-form = 'd3f1ba5c-8e71-4c0c-b84b-8a45e2448c8a'
+form = '2d892d36-df85-45d5-96cd-56f75ab0fe54'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.detailPower'
     text = '   Puissance {}'
 
 [[records]]
-form = '61e50f2d-7e8e-430f-9108-74890f0db9a4'
+form = 'dae7a510-f8b2-4e44-8c16-dc0dde67f32f'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.equip'
     text = 'Equiper'
 
 [[records]]
-form = 'f804030e-b0fa-4377-8dc3-d90658826ffa'
+form = '843543f9-b484-429e-b556-ed0447a4074f'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.inventory.unequip'
     text = 'Retirer'
 
 [[records]]
-form = 'acef4db0-0031-4c31-98e6-c85b55e3ef2c'
+form = '9c499ef2-18d5-4099-b2a1-965d7dc48704'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.barter.merchant'
     text = 'Marchand'
 
 [[records]]
-form = '20a50474-c828-4442-bfa6-7fa51890bd0f'
+form = '009968d2-6693-444f-8b4f-9817d02fd872'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.barter.vendorGold'
     text = 'Or du marchand'
 
 [[records]]
-form = 'b7e5840a-2e52-40b9-b985-0f58812df15f'
+form = 'd8a1fdf9-912a-4493-96ee-e274f5407c39'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.barter.yourGold'
     text = 'Votre or'
 
 [[records]]
-form = 'db1dbc78-6d5b-4432-ae8d-d35d9419016d'
+form = 'f4cba85f-1e24-48cf-b1f0-a0ca9a8e63dd'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.barter.buyHint'
     text = "Cliquez un objet pour l'acheter."
 
 [[records]]
-form = '581cf0bb-604e-4fd4-bb9a-742252d9a962'
+form = '016f4519-eb9b-4b41-bcce-af63ef8d3189'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.barter.sellHint'
     text = 'Cliquez un objet pour le vendre.'
 
 [[records]]
-form = '1c7dc13e-b2b6-4673-9660-4d583965ba72'
+form = '7de58dbd-9645-4794-a66c-e420a6570ece'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.container.loot'
     text = 'Butin'
 
 [[records]]
-form = '7f50ccda-97d0-41ea-96d9-80c735f0f770'
+form = '52833a9d-6b4f-48c9-96d2-cdf34b9988d4'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.container.takeAll'
     text = 'Tout prendre'
 
 [[records]]
-form = 'd0534558-93d5-45c9-bd0e-592adc9dd6d2'
+form = '1f33f2d1-d86f-403d-859c-188a0662be22'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.container.moveHint'
     text = 'cliquez un objet pour le deplacer'
 
 [[records]]
-form = '283457b3-3895-46ca-9f35-f9845462b225'
+form = 'b66a1c55-8a44-4839-8bde-bba9b72527d8'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.dialogue.leave'
     text = '(Partir)'
 
 [[records]]
-form = 'c9752b6c-ba95-48e6-a49d-29c49c0072ea'
+form = '263bba30-13e8-471b-907d-8f8e43aefe0d'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.journal.title'
     text = 'Journal'
 
 [[records]]
-form = 'b25fb4db-28dc-4421-a8e1-cd95b9ac32d0'
+form = '089ecf9b-3ed2-4ca5-acba-3a2bea2bb4ce'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.journal.done'
     text = 'Accomplie'
 
 [[records]]
-form = 'c78fcf02-fca4-4050-95e6-c4cddf4cc67e'
+form = 'fb54c294-3dcf-48ca-aa41-569208f34864'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.journal.failed'
     text = 'Echouee'
 
 [[records]]
-form = '59e4479c-e974-4b1f-99bd-c23623f30280'
+form = '35d61336-2b42-4264-b08e-b9637eed94ad'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.journal.empty'
     text = "Aucune quete pour l'instant."
 
 [[records]]
-form = '032bd31f-09c8-4087-b062-a481debac3e8'
+form = 'fc7baf9b-2b85-49b8-bd7d-cda24c2918a5'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.journal.close'
     text = 'Fermer'
 
 [[records]]
-form = '1ec731a3-7eaf-4454-88de-d08fd12893c4'
+form = '5623a292-eb23-46f1-813d-de2641a2e374'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.menu.day'
     text = 'Jour {} — {}'
 
 [[records]]
-form = 'c56a8eb5-96cc-4c90-8723-0f40a4c5d931'
+form = '6758c88b-4b3b-4d27-ba4b-c385fb3a6203'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.mainmenu.title'
     text = 'True Adventurer'
 
 [[records]]
-form = '05e881e0-c380-46b1-bce9-c6fdcd685d8e'
+form = '1e7bb9be-9ac7-4eb3-92c2-776e47b4bb3e'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
-    text = 'Entrer dans le monde'
+    editorId = 'ui.mainmenu.story'
+    text = 'Mode histoire'
 
 [[records]]
-form = '8e8ab006-fbb8-48fb-8782-d48c45e485d2'
+form = '0882830d-d8b9-4c4c-aecb-a01c04d741e8'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.mainmenu.sandbox'
+    text = 'Mode sandbox'
+
+[[records]]
+form = 'a49182f5-1313-4ec2-8a76-873f6816b1d4'
+new = true
+type = 'LocStringForm'
+
+    [records.fields]
+    editorId = 'ui.mainmenu.load'
     text = 'Charger une partie'
 
 [[records]]
-form = 'bdefe70d-7357-4156-9b3a-848e58b52f7d'
+form = 'bba553b4-0f1c-420e-807e-909bc74a00a3'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.mainmenu.options'
     text = 'Options'
 
 [[records]]
-form = '4f5be7d5-8c1f-4154-92fa-4ee8a220a4f0'
+form = '815b53e3-2f40-4505-a5d5-b82649bb1cbf'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.mainmenu.quit'
     text = 'Quitter'
 
 [[records]]
-form = 'fea4e647-2f5e-4c04-8503-a38b5fa69b9f'
+form = 'f4428aea-f963-4cff-afd8-40c9078cb7fe'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.mainmenu.hint'
     text = 'F5 sauvegarde rapide, F9 chargement rapide.'
 
 [[records]]
-form = '77238f9d-c260-4256-8818-b28669266f16'
+form = 'e5e17f38-64e8-4014-9f68-f08d7899bf39'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.pause.title'
     text = 'Pause'
 
 [[records]]
-form = '1607655d-2f43-4fa4-85dd-512f4ed0675b'
+form = '668a1882-fed4-4e67-991d-9705d4253253'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.pause.resume'
     text = 'Reprendre'
 
 [[records]]
-form = '915bd53a-3014-4e08-adae-cec97b8aa8c7'
+form = 'd0d937a7-4700-4e31-9af7-cd78c530c4fa'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.pause.save'
     text = 'Sauvegarder'
 
 [[records]]
-form = '60fe6029-9fb2-492c-9bfb-686baa5c33a8'
+form = '2d007c2d-3773-40d3-b703-86ef72885236'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.pause.load'
     text = 'Charger une partie'
 
 [[records]]
-form = 'b47cd919-0b38-4ce0-aa9e-4eced99c32ef'
+form = '2a40ad2e-82c7-4e26-a823-04216f0502f0'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.pause.options'
     text = 'Options'
 
 [[records]]
-form = '9a871e7d-0abf-4981-b6c2-2665acbc3c09'
+form = 'd6902abc-56f2-4ff6-81ca-099a6814e99e'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.pause.mainmenu'
     text = 'Menu principal'
 
 [[records]]
-form = '3597c585-79a1-452f-9873-a260ce306dd8'
+form = '47c15ab4-f246-4e4d-9e1f-b5a119586127'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.pause.quit'
     text = 'Quitter'
 
 [[records]]
-form = '4b768c0e-f56a-4093-a6e7-9c98362bc8eb'
+form = 'efaaba08-a79f-43de-ba2a-607ff3b06ccc'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.wait.title'
     text = 'Attendre'
 
 [[records]]
-form = '7a486909-7242-476a-86bd-fece4afb5e17'
+form = '8ff7e9c4-3f7e-4228-a044-5c0a5a5ae99c'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.wait.wait1'
     text = 'Attendre 1 heure'
 
 [[records]]
-form = '2765de88-fcc4-4231-b792-ee67eea175a5'
+form = '8b424c20-5b69-455d-8076-948428cb155f'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.wait.wait4'
     text = 'Attendre 4 heures'
 
 [[records]]
-form = '25db601f-b1c9-4037-8bf0-a2f472430e19'
+form = 'db18a202-1595-4fbb-b1d8-5651d4c7cd21'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.wait.wait8'
     text = 'Attendre 8 heures'
 
 [[records]]
-form = '65ca360f-5d31-494c-b7e9-2d3569d81505'
+form = '94be2625-b435-4562-a623-4c249791bace'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.wait.cancel'
     text = 'Annuler'
 
 [[records]]
-form = 'fe38c219-0e07-43d7-a599-c9d77d0c29bc'
+form = '28425e2c-085e-4006-b337-854f0f9d1172'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.wait.hint'
     text = "attendre fait passer le temps sans la recuperation d'un lit."
 
 [[records]]
-form = 'a002d28e-7a54-4e32-9e0c-6996e0d46274'
+form = 'e982278b-1735-4ec4-820f-8445bcd11975'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.workshop.title'
     text = 'Etabli'
 
 [[records]]
-form = '40047c04-76ee-4388-b2e3-3186db4e3bd7'
+form = '3010e9a6-55fe-4b76-ba7f-2451108ad1ea'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.workshop.blurb'
     text = "Les outils sont prets. L'artisanat arrive dans une verticale ulterieure — cet ecran prouve le crochet FurnitureForm.screen (un poste de travail ouvre son interface)."
 
 [[records]]
-form = '374713b2-d0a2-49f5-8172-6356819f5db3'
+form = 'e4ba6ac3-7885-4d17-a248-c565da46b703'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.workshop.leave'
     text = "S'eloigner"
 
 [[records]]
-form = '9f293f49-b4e4-4ba3-8591-f490e8fe34ed'
+form = '6770a92e-2994-4924-b42a-42caea6e2db8'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.saves.title'
     text = 'Charger une partie'
 
 [[records]]
-form = '8d6c6d4a-4b1a-4e43-80d9-d0424202394a'
+form = '8cc70628-b74f-40bd-9aca-d9948322031b'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.saves.empty'
     text = 'Aucune sauvegarde — F5 sauvegarde rapide.'
 
 [[records]]
-form = 'e8dfad88-70cb-40fc-a910-71a60f954250'
+form = '4068ac87-2079-4571-8cc5-caa71e2ff0b6'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.saves.back'
     text = 'Retour'
 
 [[records]]
-form = '44ec0fcd-7000-4bba-b358-565c02950133'
+form = '80483db2-e190-4a71-aa13-58d6af2f3891'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.title'
     text = 'Options'
 
 [[records]]
-form = 'f8185e2e-cd3e-426c-8aa0-ee7786410579'
+form = 'fe20656d-4c1c-4ac9-8521-519b1478b195'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.look'
     text = 'Visee'
 
 [[records]]
-form = '373cfc66-6d30-494c-9174-5053e3dc508b'
+form = 'd0fcb12d-71eb-436e-a8b0-254c4cd133fd'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.mouseSens'
     text = 'Sensibilite souris'
 
 [[records]]
-form = '9844f3cc-99bb-4284-b35d-cd72a980c32f'
+form = 'd8628222-7ab7-4117-9921-b25cbb17d7b5'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.stickSens'
     text = 'Sensibilite stick'
 
 [[records]]
-form = '6f7b462a-bc28-45c3-984e-8957e1951962'
+form = 'd4fa425c-a59d-4c4d-9fc2-1f906752a570'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.deadzone'
     text = 'Zone morte du stick'
 
 [[records]]
-form = '0a38e22f-c887-4964-bec8-2d34d389a9b7'
+form = '9de76f59-5092-4e09-9ca7-116f9abb2179'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.invert'
     text = "Inverser l'axe Y"
 
 [[records]]
-form = '559500d9-5d78-465c-8f02-3a28a47a1d5a'
+form = 'e1eb6fe2-c226-4f59-9e8d-b79a5a33a2b6'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.audio'
     text = 'Audio'
 
 [[records]]
-form = '5b77c950-ea4f-49d5-ab41-a9a020fbf4cc'
+form = '9f8f5104-b8c0-40f2-9e6b-36ca40701a89'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.volume'
     text = 'Volume general'
 
 [[records]]
-form = 'c408d611-150e-4fee-88ee-593c737aadd0'
+form = '776f481f-a8b9-4664-be80-691e67935ade'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.general'
     text = 'General'
 
 [[records]]
-form = '280218e7-ea62-47b6-823b-98ce5f5f8341'
+form = '7412f890-41c3-4981-a157-dea6050bcbc7'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.language'
     text = 'Langue'
 
 [[records]]
-form = 'bfc10b0d-cb63-4456-8881-8d8b0157ba2a'
+form = 'c9ef800b-62aa-4811-b3cc-ac6f71da2271'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.bindings'
     text = 'Commandes'
 
 [[records]]
-form = '58e250c8-5fbd-48d0-9d83-1ea5363386af'
+form = 'd76be985-d5ba-4143-93dd-e85963ec26a7'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.captureBanner'
     text = 'Appuyez sur une touche ou un bouton... (Echap annule)'
 
 [[records]]
-form = 'f91cca16-3e8d-45f2-8dc5-ca3ee5c2cf77'
+form = '995069f4-9342-4705-bfff-060f652a61ff'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.rebindHint'
     text = 'Cliquez une action pour la reassigner.'
 
 [[records]]
-form = '8d96de85-2cbc-4113-bc31-8248a84ceac1'
+form = '3af974e2-2abf-41da-9a30-f8bf43247e21'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.back'
     text = 'Retour'
 
 [[records]]
-form = '2d9935e0-8d45-48cc-a193-a5d55ba3cba7'
+form = '22822c1d-9560-4258-9d24-402a2494b25c'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.on'
     text = 'Oui'
 
 [[records]]
-form = '43f7b52b-8edc-4ba3-8109-d0a294ef83ca'
+form = 'cbebcabc-abf3-474d-8407-cd78d5d57f28'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.off'
     text = 'Non'
 
 [[records]]
-form = 'f7b50088-1aa6-47b4-9a73-7363018ec3b1'
+form = '000a7227-a258-4e9b-b5d2-82b710df17a0'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.attack'
     text = 'Attaquer'
 
 [[records]]
-form = 'e5bed400-066c-46e7-9180-d7533991f262'
+form = '08725a53-fd68-4c76-b102-3dc584744d6a'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.block'
     text = 'Parer'
 
 [[records]]
-form = '93d0aa66-7378-4bb5-888d-dc9d80f85da9'
+form = '6aacecf6-dfbe-4d4b-8f2f-0ce9a8c3d6bf'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.drawSheathe'
     text = 'Degainer / rengainer'
 
 [[records]]
-form = '1cb0c8a9-547f-4a43-91fb-c49521a64ae4'
+form = '5ce5c796-135a-4599-9222-6163d74b33ad'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.sneak'
     text = 'Furtivite'
 
 [[records]]
-form = '492dde79-8500-4008-8da0-25b3f996648f'
+form = '41b6c74f-aa51-4bf8-a31c-0ad9a4d23e06'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.sprintDodge'
     text = 'Sprint / esquive'
 
 [[records]]
-form = 'c0ac8b41-8150-46a3-95ba-e5605e35322e'
+form = '8666c39e-22f7-4499-9d02-4a96a0f61cc9'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.jump'
     text = 'Sauter'
 
 [[records]]
-form = '55826221-1efc-46ca-b7e0-eb9c116e307e'
+form = '4225862c-7b1e-4c84-8c62-5b0515731133'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.interact'
     text = 'Interagir'
 
 [[records]]
-form = 'c82dcd31-2bc0-4d9e-b342-78852d93f44d'
+form = '51702d37-4123-4ffb-84c4-3af8889bb41e'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.inventory'
     text = 'Inventaire'
 
 [[records]]
-form = 'fec2c519-9349-4ff1-8871-02d3d1da32c9'
+form = '514a0e64-7ce5-48b6-b63c-389b184331b7'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.journal'
     text = 'Journal'
 
 [[records]]
-form = '40b2cf55-9fea-474f-8397-b9b75d361a20'
+form = '492ea6df-6122-4bc5-b74f-1debbae49966'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.wait'
     text = 'Attendre'
 
 [[records]]
-form = '856cdbc7-3323-442c-a947-02d611340a72'
+form = '3d1c3d94-e6cf-42a2-9e5d-39e29bae3b7b'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.map'
     text = 'Carte'
 
 [[records]]
-form = '2af7da78-c0c0-4961-9ad8-96f963dc51db'
+form = 'e6fc4101-473f-4425-bc4a-8eccaa08e586'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.options.action.pause'
     text = 'Pause'
 
 [[records]]
-form = 'c9b59743-6a95-42a8-bc8b-292302abadd3'
+form = 'ec706b10-e18b-4ea4-98b0-b2c14b237255'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.map.title'
     text = 'Carte'
 
 [[records]]
-form = 'a672ceab-aadc-46e6-9cb7-cd830863009a'
+form = 'f1e5be3a-318a-4f94-9741-731479bb296d'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.map.close'
     text = 'Fermer'
 
 [[records]]
-form = '9089d580-afc8-4a5a-88f2-68a280c6976a'
+form = 'b4e85efb-39dd-4d18-903d-107db57bf3f0'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.map.interior'
     text = "Vous êtes à l'intérieur — la carte montre le monde du dehors."
 
 [[records]]
-form = '3d027de9-c5f3-41ac-b5e8-1093ea815f60'
+form = 'fa53034a-8a44-4859-a3f0-2563133a3db5'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.heal'
     text = '[E] Soigner {} (potion)'
 
 [[records]]
-form = '3f29d4fb-348f-4b77-b263-0b9d3f038d59'
+form = '22e3ca29-dded-4b12-9f31-ecbd63946d43'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.heal.name'
     text = 'votre allié'
 
 [[records]]
-form = '11a1b688-8cb6-4546-9791-84da6daf3bfd'
+form = '4b8befe7-d483-42a4-bd5f-7e909f779005'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.noPotion'
     text = "Vous n'avez aucun objet de soin."
 
 [[records]]
-form = 'b925076c-0b5a-40f9-97a7-1b4719b07fb2'
+form = '67c7880d-f6d7-4cb5-a403-870e6bd61143'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.revived'
     text = '{} se relève.'
 
 [[records]]
-form = 'ab6d43cd-02f5-4ce9-9b0b-0c5b9953ba01'
+form = '57158311-a099-420f-b985-c80ff76b6cbd'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.died'
     text = '{} a succombé à ses blessures.'
 
 [[records]]
-form = '1e927989-f3c6-47f1-9e30-2e8177dbd5cc'
+form = '8a4e4536-3261-4355-8472-05436678eb46'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.convalescence'
     text = '{} rentre se soigner ({} h).'
 
 [[records]]
-form = 'edc6cce2-cf95-4e05-ab93-212196630e0b'
+form = '4a2c96f1-3ac6-41cd-be5e-18b362356fdf'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.status'
     text = '{} : santé {}%, {} blessure(s), repos {} h'
 
 [[records]]
-form = 'b0105d5a-abc0-4889-b22d-ec69413b6c18'
+form = '5c75fcae-af4e-4881-853a-b1f23aaa2b22'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.perkLearned'
     text = 'Vous apprenez : {}.'
 
 [[records]]
-form = '40d3cf18-13f6-4a02-9f64-f07e44158edf'
+form = '2999ea3d-3846-4543-a770-e38463e99294'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.perkNone'
     text = "{} n'a plus rien à vous apprendre."
 
 [[records]]
-form = '836d02b7-daea-44af-b96b-37d3d223474e'
+form = '2600f460-97b0-4f08-a03f-376af5e4abcc'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.recruit.title'
     text = 'Aptitudes'
 
 [[records]]
-form = 'a3681fc1-d1cf-43da-bdd3-4d05e831197e'
+form = '20d46f69-5a11-457e-8ac7-418eb55e0b56'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.recruit.class'
     text = 'Classe : {}'
 
 [[records]]
-form = '3905d63c-dc39-4734-b227-edb17607d9b3'
+form = '14e4dcb6-484b-4808-890b-8c27011993ae'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.recruit.level'
     text = 'Niveau {}'
 
 [[records]]
-form = '87557403-28d7-4e51-a9c5-f0dbbb0be760'
+form = '6fca3768-3436-4146-b949-6bca4bc50e1c'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.recruit.affinity'
     text = 'Affinité {}'
 
 [[records]]
-form = '3703e630-5f9e-4ff7-83e4-a6ea7d453f9f'
+form = 'fb4e3232-7420-4190-9a53-f6864fd83167'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.recruit.health'
     text = 'Santé {} / {}'
 
 [[records]]
-form = 'd64ac915-e86b-4a1d-b089-494d45044a08'
+form = 'c407a9fb-1521-4b4d-81b6-96dc35509ea6'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.recruit.energy'
     text = 'Énergie {} / {}'
 
 [[records]]
-form = '53330e76-2aaa-4322-b627-8df61e256046'
+form = '7e5e5ab6-da73-448f-a653-82e1ae534c34'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.recruit.essence'
     text = 'Essence {} / {}'
 
 [[records]]
-form = '9095ab2a-ece8-4fa0-a99c-2ed4b8f87f3c'
+form = '0ad6dac7-9c1f-41e8-a960-c2cc444d54b4'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.recruit.close'
     text = 'Fermer'
 
 [[records]]
-form = '390f7ed6-c0a9-4e4a-824d-72618567e71e'
+form = '580adecd-2ff8-43c5-beaf-db569a17eacf'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.attr.strength'
     text = 'Force'
 
 [[records]]
-form = 'acad8d43-db11-4857-b569-43307e4a88e0'
+form = '38556fed-3de3-4893-8be4-c2664a781cda'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.attr.constitution'
     text = 'Constitution'
 
 [[records]]
-form = '4679d7ef-1d12-4e13-b53c-f93f6615425a'
+form = '8bf41a23-e6f1-469c-8139-dbe4bd01c3a1'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.attr.grace'
     text = 'Grâce'
 
 [[records]]
-form = '42a8e9c4-a8ea-4b4a-b6ce-35fe30bdb1ec'
+form = '6bf53c46-155d-4209-aeae-4c6d85932179'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.attr.dexterity'
     text = 'Dextérité'
 
 [[records]]
-form = '9102f665-8574-4de0-b1e2-9d3a93876be7'
+form = '7a4a5a09-28e6-4c5f-a057-409c57c8765e'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.attr.alacrity'
     text = 'Alacrité'
 
 [[records]]
-form = 'aa7ff66a-0916-4e4f-83ac-b671b2b461c6'
+form = '5a18e2ba-973f-4877-a344-fbf5568ce580'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.attr.perception'
     text = 'Perception'
 
 [[records]]
-form = '3aa7a775-835c-40c0-8fbb-f801eee64777'
+form = '23b498a8-f22e-4e18-adb7-b76f453471f6'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.attr.charisma'
     text = 'Charisme'
 
 [[records]]
-form = '9ccdbd05-9a40-4716-82b8-700f229d07dc'
+form = '80738619-b22a-4255-ae10-0fca9b5c1dba'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.attr.ego'
     text = 'Ego'
 
 [[records]]
-form = 'b710152e-17ce-4de4-9bfb-c84071fc4eda'
+form = '22bc9aa3-b928-4945-81b7-5435f52858d6'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'ui.attr.insight'
     text = 'Clairvoyance'
 
 [[records]]
-form = '6bde42a7-128e-41c3-804b-a1e1425b1ad2'
+form = '786182ef-2a26-40d3-91cf-95407a37bde1'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.gear'
     text = ' — [F] Équipement'
 
 [[records]]
-form = '0b485d7e-08ab-4ff4-9c07-96853925890b'
+form = 'd470a8d6-bf4d-4966-bd63-1a05adf6e310'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.gearRefused'
     text = '{} refuse que vous touchiez à son équipement.'
 
 [[records]]
-form = '45beb013-e4aa-4f01-a5ff-5471601105af'
+form = '09e7aab6-0de0-4f5f-b856-99836108a990'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.gearTooHeavy'
     text = '{} ne peut pas porter davantage.'
 
 [[records]]
-form = 'ccebf75e-379f-47f4-8832-60cb41bfd777'
+form = '99f1ae70-998d-40b3-b67d-47b236a28d61'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.unremovable'
     text = "C'est l'équipement de base de {} — il le garde."
 
 [[records]]
-form = '56d0310b-5c51-41b0-a1d1-68b21dffa65d'
+form = '067a5d02-1435-4b4d-af41-d484f9b4ada9'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.autoEquip'
     text = "{} s'équipe : {}"
 
 [[records]]
-form = '5f3c0b4a-32c0-4302-8078-ba0178e742d1'
+form = 'dcde87ab-194a-4939-b6c1-99120d2e6162'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.forgeUpgraded'
     text = "L'équipement de {} a été amélioré à la forge."
 
 [[records]]
-form = '1314350f-6b03-499e-bfc4-d0139bfa03e8'
+form = '5b68937d-82ea-4103-a94f-55926d04b236'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.forgeNothing'
     text = "{} n'a rien à améliorer."
 
 [[records]]
-form = '6ca92648-c122-4b71-9139-9fa4b8bec011'
+form = '49c2a41d-ef27-4fee-b6f9-c737a60b860d'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.homage'
     text = '[E] Se recueillir sur {}'
 
 [[records]]
-form = 'f92bccfb-4a2a-427d-8e13-e5e26f4cd65d'
+form = '9c9d4ef6-da08-413f-ad39-002538ce946c'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.homage.name'
     text = 'la tombe'
 
 [[records]]
-form = '8dd8f136-25a1-4789-9a85-926e4dbcb3d4'
+form = 'd112318b-ca0e-4cf8-aa4b-c3b8d17a0167'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.grave'
     text = ' — [F] Dépôt'
 
 [[records]]
-form = '277e6655-031b-4ad7-a623-b85fd7ebae01'
+form = 'b8b37f49-5605-44d5-a9f8-5af65a4b20f7'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.bury'
     text = ' — [F] Enterrer'
 
 [[records]]
-form = 'e6b1fcd6-10fd-4ded-80f4-f67874f0fc61'
+form = '889dbf95-8cb7-43cb-a9eb-a0c524f0a686'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.homage'
     text = 'Vous vous recueillez sur la tombe de {}.'
 
 [[records]]
-form = '3a891957-64d5-45cd-b5d5-0423b417464f'
+form = '365dfc2d-c9b2-4618-b392-9eb1c002e59f'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.homage.unknown'
     text = 'Vous vous recueillez un instant.'
 
 [[records]]
-form = '06875cad-0a7b-4b58-8388-cd8884eee22f'
+form = '8c89a1ab-ca43-4e08-9c7f-c03f629d1891'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.buried'
     text = '{} repose ici désormais.'
 
 [[records]]
-form = '81ef8d8e-d482-49aa-bb42-ab7bb2be4eb3'
+form = 'cd17c492-398f-44fd-9d8f-4826c0ab262f'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.buryNone'
     text = 'Personne à enterrer.'
 
 [[records]]
-form = '29860086-0f7f-48b2-99d1-9f31f1eeea44'
+form = 'a3596b9f-bf28-483f-a26c-d7a63bb3785f'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.partyFull'
     text = 'Votre groupe est au complet — {} ne peut pas vous suivre.'
 
 [[records]]
-form = 'cb20bb8b-396d-4f95-93cb-ddb2472dc170'
+form = '1e47b113-6229-4b2c-b78e-070e5f92f34a'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.says'
     text = '{} : {}'
 
 [[records]]
-form = 'ecde6e5a-a222-4bf3-a273-e567e99504e4'
+form = '915092c5-b5f4-45ff-87e1-591ec24fa3d9'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.partyFollow'
     text = 'Le groupe vous suit.'
 
 [[records]]
-form = 'f3498322-aff1-4d8e-8192-24bc96c1bb4a'
+form = 'a700dd80-85be-40ac-be54-109f2f0035f1'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.partyStay'
     text = 'Le groupe reste sur place.'
 
 [[records]]
-form = 'a6a4fecb-af1a-462c-a00a-d7f0c87fa4d9'
+form = '323f0ccb-9bec-4bcb-a457-38cbd955893a'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.partyAttack'
     text = 'Le groupe attaque votre cible.'
 
 [[records]]
-form = '9deba0ec-3a49-4307-9828-b54b0653d66b'
+form = '3ef072eb-1bb7-4a63-b3c9-33c9fa135849'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.partyNoTarget'
     text = 'Le groupe cherche votre cible, sans la trouver.'
 
 [[records]]
-form = '20db03cb-32e8-4bd9-aedf-8fce19f98a9d'
+form = 'b8d48aa8-f210-4d11-aa88-fc9dc225cb21'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.partyDefend'
     text = 'Le groupe se tient prêt à vous défendre.'
 
 [[records]]
-form = 'fc01a8f0-9b80-470d-9bcd-7dd99ae3dde7'
+form = '89c33c49-7191-45ba-b3ad-c83336791cc5'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.contractShort'
     text = "{} demande {} pièces d'or pour la route — il vous en manque."
 
 [[records]]
-form = '601c49bd-b8ba-4e1f-a80e-96b0bad7c32b'
+form = 'd343213d-d076-4f8a-b1af-479544175125'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.contractHired'
     text = "{} entre à votre service : {} jours pour {} pièces d'or."
 
 [[records]]
-form = '42602d4b-0e0b-44a8-9fe9-65b168e6daa2'
+form = '1a4a71cf-9548-4dda-906b-9b0a1d8e30e9'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.contractRenewed'
     text = "Contrat prolongé : {} reste {} jours de plus pour {} pièces d'or."
 
 [[records]]
-form = '002d3b3c-6502-4a6f-8df6-684b1419a3df'
+form = '87ab488e-b084-40d9-ab16-87479986664d'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.contractWarning'
     text = "Le contrat de {} s'achève dans {} h."
 
 [[records]]
-form = 'daed3e59-1398-4b83-8c8a-7cc21857e3d7'
+form = 'a6d456f0-de93-41d1-b82c-a5b4467b9610'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'follower.contractOver'
     text = 'Le contrat de {} est terminé — il rentre chez lui.'
 
 [[records]]
-form = '23ef7b8d-b9fa-4f82-aec1-d6513568a2eb'
+form = '9d338826-a166-4fa0-b24b-9483997191af'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.mount'
     text = '[E] Monter {}'
 
 [[records]]
-form = '7cc85652-98ae-4a0c-a8d1-85d0b14927df'
+form = '052c825f-6170-421e-85b4-543c1f7c9e57'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'prompt.mount.name'
     text = 'la monture'
 
 [[records]]
-form = 'fd386eac-2e1e-4b9c-b71e-6d51183b608e'
+form = 'daee2ed7-e7fd-4a8c-8f65-c00d9f751381'
+new = true
 type = 'LocStringForm'
 
     [records.fields]
+    editorId = 'mount.hint'
     text = 'Appuyez encore sur E pour descendre.'
