@@ -6,6 +6,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
+#include "engine/terrain/WaterBodies.hpp"
 
 namespace core {
 class JobSystem;
@@ -46,6 +47,11 @@ public:
     void update(rhi::Device& device, const TerrainParams& params,
                 const Vec3& cameraPos);
 
+    // Local water bodies (altitude lakes + river ribbons): the scene
+    // publishes an immutable set; geometry rebuilds and the pool map
+    // rebakes (foam then works on lakes/rivers too). Null = sea only.
+    void setBodies(sptr<const WaterBodies> next);
+
     // For FrameUniforms::waterMapInfo (xy = map center, z = 1/span).
     Vec4 poolMapInfo() const {
         return { mapCenter.x, mapCenter.y, 1.0f / kPoolMapSpan, 0.0f };
@@ -63,6 +69,7 @@ private:
         u64 generation { 0 };
         u32 seed { 0 };
         f32 seaLevel { 0.0f };
+        u64 bodiesStamp { 0 };
         vector<f32> texels;
     };
     struct Shared {
@@ -70,6 +77,7 @@ private:
     };
 
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
+    void rebuildLocalGeometry(rhi::Device& device);
 
     sptr<Shared> shared;
     core::JobSystem* jobs { nullptr };
@@ -86,6 +94,17 @@ private:
     rhi::TextureHandle poolMap {};
     rhi::SamplerHandle poolMapSampler {};
     rhi::BindGroupHandle poolMapGroup {};
+
+    // Local surfaces (lakes/rivers): world-space triangles, own pipeline
+    // (waterlocal.vert), shared water shading.
+    sptr<const WaterBodies> bodies;
+    u64 bodiesStamp { 0 };
+    u64 bakedBodiesStamp { ~0ull };
+    bool bodiesDirty { false };
+    rhi::BufferHandle localVertexBuffer {};
+    rhi::BufferHandle localIndexBuffer {};
+    rhi::PipelineHandle localPipeline {};
+    u32 localIndexCount { 0 };
 };
 
 } // namespace render
