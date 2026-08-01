@@ -17,6 +17,7 @@
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/physics/Physics.hpp"
 #include "game/LevelEditor.hpp"
+#include "game/TerrainBakeStreamer.hpp"
 #include "engine/render/MeshCache.hpp"
 #include "game/InputActions.hpp"
 #include "game/Settings.hpp"
@@ -390,6 +391,26 @@ private:
     // (shared_ptr — worker-held copies keep old instances alive, even
     // across scene teardown).
     sptr<const render::HeightPatches> heightPatches;
+    // The baked-base layer under it (generated terrain regions), same
+    // immutable-publish contract.
+    sptr<const render::TerrainBase> terrainBase;
+    // Sandbox mode: the tile streamer and the water bodies its bakes
+    // emitted (rendered/queried by the water systems).
+    uptr<TerrainBakeStreamer> bakeStreamer;
+    bool sandboxActive { false };
+    // The probed sandbox start (stable per seed): survives the story
+    // camera-init that runs later in load().
+    Vec3 sandboxSpawn { 0.0f };
+    bool sandboxSpawnValid { false };
+    // Snow altitude of the ACTIVE mode (story: tuning.snowLine, sandbox:
+    // tuning.sandboxSnowLine) — feeds both params.snowLine (CPU rules)
+    // and the render view (shader), so they stay in lockstep.
+    f32 activeSnowLine { 165.0f };
+    vector<render::terraingen::Lake> sandboxLakes;
+    vector<render::terraingen::River> sandboxRivers;
+    // Local water bodies (sea + lakes + rivers): Forms + sandbox bakes,
+    // immutable-publish; swim queries and WaterSystem share it.
+    sptr<const render::WaterBodies> waterBodies;
     uptr<render::TextureCache> materialTextures; // SRGBA8 + Linear (3D albedo)
     uptr<render::MeshCache> meshCache;
     RenderSnapshot snapshot;
@@ -435,6 +456,28 @@ private:
     // interleaves refreshNpcs between snap and nav to preserve order.
     StreamingController streaming;
     StreamingContext makeStreamingContext();
+    // Sandbox: lands a finished super-tile — publishes a new TerrainBase,
+    // remeshes covered chunks in view, rebuilds collision, snaps cells.
+    void publishBakedTile(TerrainBakeStreamer::PublishedTile&& tile,
+                          const Vec3& focus);
+    // Rebuilds waterBodies from Forms + sandbox results and hands it to
+    // the swim queries and the WaterSystem.
+    void publishWaterBodies();
+    // Cross-tile water reconciliation: the bake validated each body
+    // against ITS OWN tile's terrain, but the DISPLAYED ground in
+    // overlap bands is the blend of neighbours — re-validate the stored
+    // bodies touching `region` against the live height() so nothing
+    // floats over blended terrain. Runs on every tile publish
+    // (cumulative: later neighbours re-blend the band and re-trigger).
+    void reconcileWaterWithTerrain(const render::TerrainRegion& region);
+    // Main-menu game mode: story (authored world, legacy terrain) or
+    // sandbox (infinite generated world + streamer). Idempotent; sandbox
+    // also moves the fly camera to a pleasant generated start so the
+    // play capsule spawns there.
+    void setSandboxMode(bool enable);
+    // Boot/mode-switch camera: sandbox -> the probed start, story -> the
+    // NPC-side viewpoint.
+    void placeStartCamera();
 
     // Stutter hunt: per-block frame breakdown, logged on spikes > 25 ms.
     core::FrameProbe frameProbe;

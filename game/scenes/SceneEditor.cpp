@@ -430,6 +430,8 @@ void SceneEditor::draw(const EditorContext& ctx) {
     ImGui::Separator();
     // Terrain sculpt (TerrainSculptTool).
     sculptTool.drawPanel(ctx.sculpt);
+    // Terrain generation (TerrainGenTool).
+    genTool.drawPanel(ctx.gen);
     ImGui::Separator();
     ImGui::TextUnformatted(placementBase.isValid()
                                ? "Placing: click the ground (Esc: cancel)"

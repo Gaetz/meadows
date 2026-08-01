@@ -4,6 +4,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"             // core::Guid
 #include "engine/ecs/World.hpp"             // ecs::Entity, ecs::World
+#include "game/scenes/TerrainGenTool.hpp"    // TerrainGenTool + GenContext
 #include "game/scenes/TerrainSculptTool.hpp" // TerrainSculptTool + SculptContext
 
 namespace render {
@@ -49,6 +50,7 @@ struct EditorContext {
     world::CellStreamer& streamer;           // adopt() — implicit-cell load
     world::Spawner& spawner;                 // live spawn of placed drafts
     SculptContext sculpt;                    // the terrain-sculpt sub-contract
+    GenContext gen;                          // the terrain-generation sub-contract
 };
 
 // The in-world level editor, extracted from LandscapeScene. Owns
@@ -82,6 +84,7 @@ private:
     bool snapEnabled { false };
     f32 snapStep { 1.0f };
     TerrainSculptTool sculptTool;
+    TerrainGenTool genTool;
 };
 
 } // namespace game

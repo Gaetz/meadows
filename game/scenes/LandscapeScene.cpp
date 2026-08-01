@@ -81,7 +81,12 @@
 #include "world/scene/KillZ.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/scene/TriggerSystem.hpp"
+#include "engine/platform/Paths.hpp"
+#include "engine/terrain/SandboxTerrain.hpp"
+#include "world/terrain/BiomeMapBuilder.hpp"
 #include "world/terrain/TerrainPatches.hpp"
+#include "world/terrain/TerrainRegions.hpp"
+#include "world/terrain/WaterBodiesBuilder.hpp"
 
 namespace game {
 
@@ -208,11 +213,24 @@ void LandscapeScene::bootstrapData() {
         LOG_INFO("B8: {} authored terrain patch(es)",
                  heightPatches->chunks.size());
     }
+    terrainBase = world::buildTerrainBase(forms, assetDb);
+    if (!terrainBase->regions.empty()) {
+        LOG_INFO("Terrain: {} baked region(s)", terrainBase->regions.size());
+    }
+    publishWaterBodies();
+    renderer.terrainParams().biomes = world::buildBiomeSet(forms, assetDb);
+    activeSnowLine = tuning.snowLine;
+    if (tuning.sandboxTerrain) {
+        // Data-forced sandbox (headless/mod override); the normal entry
+        // is the main menu's mode pick.
+        setSandboxMode(true);
+    }
 
     // Terrain shape + startup values for every live-adjustable knob: the
     // renderer's half (terrain/exposure/ssao/grade) through applyTuning,
     // the atmosphere half here (the weather crossfade owns `atmos`).
-    RenderTuningIo::applyTuning(renderer, tuning, heightPatches);
+    RenderTuningIo::applyTuning(renderer, tuning, heightPatches,
+                                terrainBase);
     // Tree builder: generation knobs ride two ordinary
     // records (§5) — mods retune the species; the Trees panel edits live.
     RenderTuningIo::applyTreeTuning(renderer, data::resolveLobeTreeTuning(forms),
@@ -791,26 +809,7 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
     // (Rock override, sky/shadows/water/reflection/blit/postFx/
     // gpuOcclusion creation: all moved into render::WorldRenderer::create.)
 
-    // Start beside the NPC (slightly above, looking at it) — never
-    // inside the terrain: the spot is grounded on the SAME height function
-    // the mesh uses. Fallback: safely above the demo area.
-    if (!npcDirector.npcs().empty()) {
-        const Vec3 characterSpot = npcDirector.characterSpot();
-        flyCamera.camera.position = characterSpot + Vec3 { 2.5f, 2.0f, 7.0f };
-        const Vec3 look = glm::normalize(characterSpot +
-                                         Vec3 { 0.0f, 0.5f, 0.0f } -
-                                         flyCamera.camera.position);
-        // Title backdrop faces AWAY from the character spot:
-        // the vista behind, not the character close-up.
-        flyCamera.camera.yaw = std::atan2(look.x, -look.z) + 3.1415927f;
-        flyCamera.camera.pitch = -std::asin(look.y);
-    } else {
-        const f32 ground = render::terrain::height(renderer.terrainParams(), 32.0f,
-                                                   400.0f);
-        flyCamera.camera.position = { 32.0f, ground + 30.0f, 400.0f };
-        flyCamera.camera.pitch = -0.30f;
-        flyCamera.camera.yaw = 3.1415927f; // opposite of the old default
-    }
+    placeStartCamera();
     // Cover the full streamed ring (~14 chunks = ~900 m) plus headroom.
     flyCamera.camera.farPlane = 1600.0f;
 
@@ -967,6 +966,22 @@ void LandscapeScene::update(f32 dt) {
         if (debugCapsule) {
             debugCapsule->move({ 0.0f, 0.0f, 0.0f }, dt);
         }
+    }
+    // Sandbox terrain: converge/bake super-tiles around the focus and
+    // land finished ones (workers bake, this thread publishes). NOT
+    // gated on uiPaused: the title menu's backdrop is the live scene,
+    // and prewarming the tiles there means the world (and its
+    // collision) is ready the moment the player enters.
+    if (bakeStreamer && !interiorMode) {
+        core::FrameProbe::Scope probe { frameProbe, "terrainbake" };
+        const Vec3 focus =
+            (mode == SceneMode::Play) && playerController.body()
+                ? playerController.body()->position()
+                : flyCamera.camera.position;
+        bakeStreamer->update(
+            focus, [this, &focus](TerrainBakeStreamer::PublishedTile&& tile) {
+                publishBakedTile(std::move(tile), focus);
+            });
     }
     // Stream cells around the focus; on any ring change,
     // re-run the post-spawn fixups (idempotent snap + NPC refresh).
@@ -1390,6 +1405,301 @@ void LandscapeScene::restoreMode(SceneMode target) {
 // current overlay, plus the publish side effects the tool can't own — swap the
 // immutable overlay in, rebuild terrain/scatter/collision, invalidate occlusion
 // and re-snap cell entities. Rebuilt each frame (cheap: refs + one closure).
+void LandscapeScene::placeStartCamera() {
+    // Sandbox: the probed generated start (a stable spot per seed — the
+    // player expects to come back to the SAME place across sessions).
+    if (sandboxActive && sandboxSpawnValid) {
+        flyCamera.camera.position =
+            sandboxSpawn +
+            Vec3 { 0.0f, statsTuning.eyeHeight + 1.0f, 0.0f };
+        flyCamera.camera.pitch = -0.12f;
+        flyCamera.camera.yaw = 3.1415927f;
+        return;
+    }
+    // Story: start beside the NPC (slightly above, looking at it) — never
+    // inside the terrain: the spot is grounded on the SAME height function
+    // the mesh uses. Fallback: safely above the demo area.
+    if (!npcDirector.npcs().empty()) {
+        const Vec3 characterSpot = npcDirector.characterSpot();
+        flyCamera.camera.position = characterSpot + Vec3 { 2.5f, 2.0f, 7.0f };
+        const Vec3 look = glm::normalize(characterSpot +
+                                         Vec3 { 0.0f, 0.5f, 0.0f } -
+                                         flyCamera.camera.position);
+        // Title backdrop faces AWAY from the character spot:
+        // the vista behind, not the character close-up.
+        flyCamera.camera.yaw = std::atan2(look.x, -look.z) + 3.1415927f;
+        flyCamera.camera.pitch = -std::asin(look.y);
+    } else {
+        const f32 ground = render::terrain::height(renderer.terrainParams(), 32.0f,
+                                                   400.0f);
+        flyCamera.camera.position = { 32.0f, ground + 30.0f, 400.0f };
+        flyCamera.camera.pitch = -0.30f;
+        flyCamera.camera.yaw = 3.1415927f; // opposite of the old default
+    }
+}
+
+void LandscapeScene::setSandboxMode(bool enable) {
+    if (enable == sandboxActive) {
+        return;
+    }
+    sandboxActive = enable;
+    render::TerrainParams& params = renderer.terrainParams();
+    if (enable) {
+        // Sandbox world: infinite generated terrain. The analytic macro
+        // becomes the fallback (far silhouettes agree with future
+        // tiles); the streamer bakes/caches super-tiles around the
+        // player and publishes them through publishBakedTile.
+        auto sandbox = std::make_shared<render::SandboxTerrain>();
+        sandbox->controls.seed = tuning.terrainSeed;
+        sandbox->macro.seaLevel = tuning.seaLevel;
+        params.sandbox = sandbox;
+        activeSnowLine = tuning.sandboxSnowLine;
+        render::terraingen::TileBakeParams bakeParams;
+        bakeParams.worldSeed = tuning.terrainSeed;
+        bakeParams.controls = sandbox->controls;
+        bakeParams.macro = sandbox->macro;
+        bakeStreamer = std::make_unique<TerrainBakeStreamer>(
+            bakeParams,
+            platform::executableDir() / "terrain-cache" /
+                std::to_string(tuning.terrainSeed),
+            &engine->getJobSystem());
+        LOG_INFO("Sandbox terrain: seed {}, {} m tiles",
+                 tuning.terrainSeed, bakeParams.tileSize);
+        // A pleasant start: probe the analytic macro for low, gentle
+        // land away from the authored demo content near the origin. The
+        // play capsule spawns under the fly camera (enterPlayMode).
+        const render::terraingen::ProceduralControls controls {
+            sandbox->controls
+        };
+        Vec3 start { 2600.0f, 0.0f, 0.0f };
+        bool found = false;
+        for (f32 radius = 2600.0f; radius <= 24000.0f && !found;
+             radius += 700.0f) {
+            for (u32 step = 0; step < 16 && !found; ++step) {
+                const f32 angle = radius * 0.0137f +
+                                  static_cast<f32>(step) * 0.3927f;
+                const f32 x = std::cos(angle) * radius;
+                const f32 z = std::sin(angle) * radius;
+                const f32 h = render::terraingen::macroHeightAnalytic(
+                    controls, sandbox->macro, x, z);
+                if (h > tuning.seaLevel + 8.0f && h < 95.0f) {
+                    start = { x, h, z };
+                    found = true;
+                }
+            }
+        }
+        sandboxSpawn = start;
+        sandboxSpawnValid = true;
+    } else {
+        sandboxSpawnValid = false;
+        params.sandbox = nullptr;
+        activeSnowLine = tuning.snowLine;
+        bakeStreamer.reset();
+        sandboxLakes.clear();
+        sandboxRivers.clear();
+        // Back to the authored layers only.
+        terrainBase = world::buildTerrainBase(forms, assetDb);
+        params.base = terrainBase;
+        publishWaterBodies();
+    }
+    params.snowLine = activeSnowLine;
+    ++params.contentStamp; // FarTerrain/pool-map rebake
+    placeStartCamera();
+    renderer.requestRegenerate();
+    renderer.invalidateOcclusion();
+    if (physics && terrainCollision) {
+        terrainCollision = std::make_unique<TerrainCollision>(
+            *physics, params, &engine->getJobSystem());
+        vegCollision =
+            std::make_unique<VegetationCollision>(*physics, params);
+    }
+    streaming.snapCellEntities(makeStreamingContext());
+}
+
+void LandscapeScene::reconcileWaterWithTerrain(
+    const render::TerrainRegion& region) {
+    const render::TerrainParams& tp = renderer.terrainParams();
+    const f32 minX = region.originX;
+    const f32 maxX = region.originX + region.spanX();
+    const f32 minZ = region.originZ;
+    const f32 maxZ = region.originZ + region.spanZ();
+    const auto intersects = [&](f32 bMinX, f32 bMinZ, f32 bMaxX,
+                                f32 bMaxZ) {
+        return bMaxX >= minX && bMinX <= maxX && bMaxZ >= minZ &&
+               bMinZ <= maxZ;
+    };
+    for (render::terraingen::Lake& lake : sandboxLakes) {
+        if (lake.mask.empty() ||
+            !intersects(lake.minX, lake.minZ, lake.maxX, lake.maxZ)) {
+            continue;
+        }
+        u32 kept = 0;
+        for (u32 row = 0; row < lake.maskHeight; ++row) {
+            for (u32 col = 0; col < lake.maskWidth; ++col) {
+                u8& cell = lake.mask[static_cast<size_t>(row) *
+                                         lake.maskWidth +
+                                     col];
+                if (!cell) {
+                    continue;
+                }
+                const f32 wx =
+                    lake.minX + static_cast<f32>(col) * lake.maskTexel;
+                const f32 wz =
+                    lake.minZ + static_cast<f32>(row) * lake.maskTexel;
+                if (render::terrain::height(tp, wx, wz) >
+                    lake.level - 0.15f) {
+                    cell = 0; // not submerged by the REAL ground
+                    continue;
+                }
+                ++kept;
+            }
+        }
+        lake.cells = kept;
+    }
+    std::erase_if(sandboxLakes,
+                  [](const render::terraingen::Lake& lake) {
+                      return !lake.mask.empty() && lake.cells < 6;
+                  });
+    for (render::terraingen::River& river : sandboxRivers) {
+        f32 level = 1.0e30f;
+        for (render::terraingen::RiverPoint& pt : river.points) {
+            if (pt.x >= minX && pt.x <= maxX && pt.z >= minZ &&
+                pt.z <= maxZ) {
+                pt.surface =
+                    glm::min(pt.surface,
+                             render::terrain::height(tp, pt.x, pt.z) +
+                                 4.0f);
+            }
+            level = glm::min(level, pt.surface);
+            pt.surface = level;
+        }
+    }
+}
+
+void LandscapeScene::publishWaterBodies() {
+    auto next = std::make_shared<render::WaterBodies>(
+        *world::buildWaterBodies(forms, tuning.seaLevel));
+    for (const render::terraingen::Lake& lake : sandboxLakes) {
+        render::LakeSurface surface;
+        surface.level = lake.level;
+        surface.minX = lake.minX;
+        surface.minZ = lake.minZ;
+        surface.maxX = lake.maxX;
+        surface.maxZ = lake.maxZ;
+        surface.maskWidth = lake.maskWidth;
+        surface.maskHeight = lake.maskHeight;
+        surface.maskTexel = lake.maskTexel;
+        surface.mask = lake.mask;
+        next->lakes.push_back(std::move(surface));
+    }
+    for (const render::terraingen::River& river : sandboxRivers) {
+        render::RiverSurface surface;
+        surface.minX = surface.minZ = 1.0e30f;
+        surface.maxX = surface.maxZ = -1.0e30f;
+        for (const render::terraingen::RiverPoint& pt : river.points) {
+            render::RiverNode node;
+            node.x = pt.x;
+            node.z = pt.z;
+            node.surface = pt.surface;
+            node.halfWidth = pt.halfWidth;
+            surface.nodes.push_back(node);
+            surface.minX = glm::min(surface.minX, pt.x - pt.halfWidth);
+            surface.maxX = glm::max(surface.maxX, pt.x + pt.halfWidth);
+            surface.minZ = glm::min(surface.minZ, pt.z - pt.halfWidth);
+            surface.maxZ = glm::max(surface.maxZ, pt.z + pt.halfWidth);
+        }
+        if (surface.nodes.size() >= 2) {
+            next->rivers.push_back(std::move(surface));
+        }
+    }
+    waterBodies = next;
+    renderer.waterSystem().setBodies(waterBodies);
+    if (!next->lakes.empty() || !next->rivers.empty()) {
+        LOG_INFO("Water: {} lake(s), {} river(s)", next->lakes.size(),
+                 next->rivers.size());
+    }
+}
+
+void LandscapeScene::publishBakedTile(
+    TerrainBakeStreamer::PublishedTile&& tile, const Vec3& focus) {
+    const size_t lakeCount = tile.lakes.size();
+    const size_t riverCount = tile.rivers.size();
+    auto next = std::make_shared<render::TerrainBase>();
+    if (terrainBase) {
+        next->regions = terrainBase->regions;
+    }
+    // Bounded residency (sandbox streaming only): drop far-behind tiles;
+    // the streamer re-requests them on the way back. Editor previews
+    // (no streamer) keep every published region.
+    if (bakeStreamer) {
+        const f32 tileSize = bakeStreamer->tileSize();
+        const f32 evict = tileSize * 2.5f;
+        std::erase_if(next->regions, [&](const render::TerrainRegion& r) {
+            const f32 cx = r.originX + r.spanX() * 0.5f;
+            const f32 cz = r.originZ + r.spanZ() * 0.5f;
+            const bool out = std::abs(cx - focus.x) > evict ||
+                             std::abs(cz - focus.z) > evict;
+            if (out) {
+                bakeStreamer->forgetTile(
+                    static_cast<i32>(std::floor(cx / tileSize)),
+                    static_cast<i32>(std::floor(cz / tileSize)));
+            }
+            return out;
+        });
+    }
+    const render::TerrainRegion& region =
+        next->regions.emplace_back(std::move(tile.region));
+    terrainBase = next;
+    renderer.terrainParams().base = next;
+    ++renderer.terrainParams().contentStamp; // FarTerrain/pool-map rebake
+    sandboxLakes.insert(sandboxLakes.end(), tile.lakes.begin(),
+                        tile.lakes.end());
+    sandboxRivers.insert(sandboxRivers.end(),
+                         std::make_move_iterator(tile.rivers.begin()),
+                         std::make_move_iterator(tile.rivers.end()));
+    // Remesh AND re-scatter the resident chunks the region covers within
+    // the view ring (the deferred queues skip chunks that are not
+    // resident). Both queues, like the sculpt commit: grass/vegetation
+    // baked before the tile landed sit on the OLD heights — without the
+    // scatter pass they float over the new ground.
+    const f32 reach =
+        static_cast<f32>(tuning.terrainViewRadius + 1) * 64.0f;
+    const f32 minX = glm::max(region.originX, focus.x - reach);
+    const f32 maxX =
+        glm::min(region.originX + region.spanX(), focus.x + reach);
+    const f32 minZ = glm::max(region.originZ, focus.z - reach);
+    const f32 maxZ =
+        glm::min(region.originZ + region.spanZ(), focus.z + reach);
+    for (i32 cz = static_cast<i32>(std::floor(minZ / 64.0f));
+         cz <= static_cast<i32>(std::floor(maxZ / 64.0f)) && minZ <= maxZ;
+         ++cz) {
+        for (i32 cx = static_cast<i32>(std::floor(minX / 64.0f));
+             cx <= static_cast<i32>(std::floor(maxX / 64.0f)) &&
+             minX <= maxX;
+             ++cx) {
+            const u64 key = render::HeightPatches::keyOf(cx, cz);
+            renderer.sculptRemeshQueue().push_back(key);
+            renderer.sculptScatterQueue().push_back(key);
+        }
+    }
+    renderer.invalidateOcclusion();
+    if (physics && terrainCollision) {
+        terrainCollision = std::make_unique<TerrainCollision>(
+            *physics, renderer.terrainParams(), &engine->getJobSystem());
+        vegCollision = std::make_unique<VegetationCollision>(
+            *physics, renderer.terrainParams());
+    }
+    streaming.snapCellEntities(makeStreamingContext());
+    // The new region re-blends the overlap bands: re-validate every
+    // stored water body it touches against the LIVE terrain, then
+    // republish.
+    reconcileWaterWithTerrain(region);
+    publishWaterBodies();
+    LOG_INFO("Sandbox terrain: tile ({}, {}) published ({} lakes, {} "
+             "rivers)",
+             tile.tx, tile.tz, lakeCount, riverCount);
+}
+
 SculptContext LandscapeScene::makeSculptContext() {
     return SculptContext {
         renderer.terrainParams(),
@@ -1433,6 +1743,24 @@ EditorContext LandscapeScene::makeEditorContext() {
         renderer.terrainParams(),  forms,           *levelEditor,    activeWorldspace,
         worldModel,      categories,      *cellLoader,     *cellStreamer,
         spawner,         makeSculptContext(),
+        GenContext {
+            forms,
+            *levelEditor,
+            &engine->getJobSystem(),
+            tuning.terrainSeed,
+            flyCamera.camera.position,
+            [this](render::terraingen::TileBakeResult&& baked, i32 tx,
+                   i32 tz) {
+                TerrainBakeStreamer::PublishedTile tile;
+                tile.region = std::move(baked.region);
+                tile.lakes = std::move(baked.lakes);
+                tile.rivers = std::move(baked.rivers);
+                tile.tx = tx;
+                tile.tz = tz;
+                publishBakedTile(std::move(tile),
+                                 flyCamera.camera.position);
+            },
+        },
     };
 }
 
@@ -2368,6 +2696,7 @@ UiRouterContext LandscapeScene::makeUiRouterContext() {
             }
         },
         [this] { restoreMode(SceneMode::Spectator); },
+        [this](bool sandbox) { setSandboxMode(sandbox); },
         [this] { engine->requestQuit(); },
         // MenuAction("options") — fresh values, then the screen.
         [this] { optionsController.open(makeOptionsContext()); },
@@ -2769,14 +3098,20 @@ PlayerContext LandscapeScene::makePlayerContext() {
         [this] { questDirector.syncWantedTag(makeQuestContext()); },
         &eventBus, // C4a: synthesized player footsteps
         &fxDirector.cues(), // C2: hit/block/parry feedback
-        // D2b: the water surface over a spot — sea level + the placed
-        // volumes (the extract's snapshot copies, fresh this frame).
+        // D2b: the water surface over a spot — sea + lakes + rivers
+        // (WaterBodies) + the placed volumes (the extract's snapshot
+        // copies, fresh this frame).
         [this](const Vec3& at) -> std::optional<f32> {
             std::optional<f32> best;
             if (!interiorMode) {
-                const f32 sea = renderer.terrainParams().seaLevel;
-                if (at.y < sea + 2.0f) {
-                    best = sea;
+                if (waterBodies) {
+                    best = render::terrain::waterSurfaceAt(
+                        *waterBodies, at.x, at.z, at.y);
+                } else {
+                    const f32 sea = renderer.terrainParams().seaLevel;
+                    if (at.y < sea + 2.0f) {
+                        best = sea;
+                    }
                 }
             }
             for (const auto& volume : snapshot.waterVolumes) {
@@ -2931,7 +3266,7 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .interiorMode = interiorMode,
         .timeSeconds = timeSeconds,
         .windTime = windTime,
-        .snowLine = tuning.snowLine,
+        .snowLine = activeSnowLine,
         .splatUvScale = tuning.splatUvScale,
         .interiorAmbient = tuning.interiorAmbient,
         .buriedBelowY = buriedBelowY,

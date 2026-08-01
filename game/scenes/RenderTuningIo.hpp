@@ -11,6 +11,7 @@ struct RcTuningForm;
 namespace render {
 class WorldRenderer;
 struct HeightPatches;
+struct TerrainBase;
 }
 
 namespace game {
@@ -27,7 +28,8 @@ class RenderTuningIo {
 public:
     static void applyTuning(render::WorldRenderer& r,
                             const data::LandscapeTuningForm& tuning,
-                            const sptr<const render::HeightPatches>& patches);
+                            const sptr<const render::HeightPatches>& patches,
+                            const sptr<const render::TerrainBase>& base = {});
     // Tree builder: the two *TreeTuningForm records mapped onto the
     // generators' flat engine params (the TerrainParams pattern) —
     // startup values; the Trees panel edits them live.

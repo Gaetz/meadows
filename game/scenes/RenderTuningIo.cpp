@@ -9,17 +9,25 @@ namespace game {
 
 void RenderTuningIo::applyTuning(
     render::WorldRenderer& r, const data::LandscapeTuningForm& tuning,
-    const sptr<const render::HeightPatches>& patches) {
+    const sptr<const render::HeightPatches>& patches,
+    const sptr<const render::TerrainBase>& base) {
     // Terrain shape + startup values for every live-adjustable knob the
     // render panel owns (§5: the TOML sets where it all starts; the scene
     // keeps the atmosphere half in `atmos`).
     r.terrain.params.seed = tuning.terrainSeed;
     r.terrain.params.patches = patches;
+    r.terrain.params.base = base;
     r.terrain.params.hillWavelength = tuning.hillWavelength;
     r.terrain.params.hillAmplitude = tuning.hillAmplitude;
+    r.terrain.params.octaves = tuning.terrainOctaves;
+    r.terrain.params.lacunarity = tuning.terrainLacunarity;
+    r.terrain.params.gain = tuning.terrainGain;
     r.terrain.params.mountainWavelength = tuning.mountainWavelength;
     r.terrain.params.mountainAmplitude = tuning.mountainAmplitude;
+    r.terrain.params.mountainMaskLow = tuning.mountainMaskLow;
+    r.terrain.params.mountainMaskHigh = tuning.mountainMaskHigh;
     r.terrain.params.seaLevel = tuning.seaLevel;
+    r.terrain.params.snowLine = tuning.snowLine;
     r.terrain.viewRadius = glm::clamp(tuning.terrainViewRadius, 8, 30);
     r.farTerrainUi = tuning.farTerrain;
     r.exposureUi = tuning.exposure;
