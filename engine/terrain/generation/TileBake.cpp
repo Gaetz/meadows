@@ -119,8 +119,25 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
         synthesizeMacro(controls, out.sim, params.macro,
                         params.worldSeed,
                         controlParams.hillChainWavelength);
-    const BiomeCharacter character =
+    BiomeCharacter character =
         biomeCharacter(out.sim, macro.biome, params.biomeErosion);
+    // Passability corridors soften the erosion locally: softer rock
+    // (higher k -> LOWER equilibrium slopes: the physics of a mountain
+    // pass) and smoother scree. Heights are never touched directly.
+    if (!macro.gentle.empty()) {
+        if (character.erodibility.empty()) {
+            const size_t cells = out.sim.cells();
+            character.erodibility.assign(cells, 1.0f);
+            character.talusScale.assign(cells, 1.0f);
+            character.capacityScale.assign(cells, 1.0f);
+            character.fineScale.assign(cells, 1.0f);
+        }
+        for (size_t i = 0; i < macro.gentle.size(); ++i) {
+            const f32 g = macro.gentle[i];
+            character.erodibility[i] *= 1.0f + 1.6f * g;
+            character.talusScale[i] *= 1.0f - 0.25f * g;
+        }
+    }
 
     FluvialParams fluvial = params.fluvial;
     fluvial.seaLevel = params.macro.seaLevel;
@@ -146,6 +163,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
     }
     out.seaDist = std::move(macro.seaDist);
     out.biome = std::move(macro.biome);
+    out.gentle = std::move(macro.gentle);
     return out;
 }
 
@@ -241,9 +259,18 @@ TileBakeResult bakeTileStage2(
     macroFields.seaDist = self.seaDist;
     macroFields.biome = self.biome;
     // Biome character for the fine pass (cheap rebuild; stage 1 keeps
-    // its own for the coarse erosion).
-    const BiomeCharacter character =
+    // its own for the coarse erosion). Passability corridors damp the
+    // fine ravines too — a pass stays walkable at every scale.
+    BiomeCharacter character =
         biomeCharacter(sim, self.biome, params.biomeErosion);
+    if (!self.gentle.empty()) {
+        if (character.fineScale.empty()) {
+            character.fineScale.assign(sim.cells(), 1.0f);
+        }
+        for (size_t i = 0; i < self.gentle.size(); ++i) {
+            character.fineScale[i] *= 1.0f - 0.8f * self.gentle[i];
+        }
+    }
     const f32 keepMinX = tileMinX - params.overlapMargin;
     const f32 keepMinZ = tileMinZ - params.overlapMargin;
     const f32 keepSpan = params.tileSize + 2.0f * params.overlapMargin;

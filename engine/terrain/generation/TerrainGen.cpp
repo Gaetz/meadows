@@ -23,6 +23,8 @@ constexpr u32 kSaltReliefWarpX = 0xc3d4e5f6u;
 constexpr u32 kSaltReliefWarpZ = 0xd9eafb0cu;
 constexpr u32 kSaltRegime = 0x4b1d5eedu;
 constexpr u32 kSaltHillChain = 0x91c0ffeeu;
+constexpr u32 kSaltSwell = 0x5e110000u;
+constexpr u32 kSaltGentle = 0x6e97e155u;
 
 struct TierBlend {
     f32 altitude;
@@ -273,6 +275,21 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
     sample.uplift = glm::max(
         sample.uplift,
         inland * glm::max(old * 0.12f, hills * 0.07f));
+    // The LONG swell: whole landscapes ride a very slow positive lift —
+    // ranges on it reach true high-mountain altitudes, hill country on
+    // it reads as highland plateau. Positive-only (it raises, never
+    // digs) and inland-gated so coasts keep their profile.
+    const f32 swell = noise::smoothstep01(
+        0.45f, 0.85f,
+        noise::fbm(p.seed ^ kSaltSwell, x, z, 1.0f / p.swellWavelength,
+                   3, 2.0f, 0.5f));
+    sample.plateau += swell * inland * p.swellHeight;
+    // Passability corridors: erosion softeners, never height. Banded so
+    // roughly a quarter of the land is a gentle passage.
+    sample.gentle = noise::smoothstep01(
+        0.55f, 0.7f,
+        noise::fbm(p.seed ^ kSaltGentle, x, z,
+                   1.0f / p.gentleWavelength, 3, 2.0f, 0.5f));
     // Climate -> biome id (palette contract in ProceduralControlParams):
     // cold beats arid beats alpine; temperate is the default.
     const f32 temperature =
@@ -299,6 +316,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     out.height.resize(spec.cells());
     out.uplift.resize(spec.cells());
     out.biome.resize(spec.cells());
+    out.gentle.resize(spec.cells());
     vector<ControlSample> samples(spec.cells());
     vector<u8> seaMask(spec.cells());
     for (u32 row = 0; row < spec.n; ++row) {
@@ -309,6 +327,7 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             seaMask[i] = s.sea ? 1 : 0;
             out.uplift[i] = s.sea ? 0.0f : s.uplift;
             out.biome[i] = s.biome;
+            out.gentle[i] = s.gentle;
         }
     }
     out.seaDist = signedSeaDistance(spec, seaMask);

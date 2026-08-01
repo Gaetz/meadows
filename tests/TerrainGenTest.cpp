@@ -208,8 +208,12 @@ TEST_CASE("the analytic macro matches the tier floors away from shore") {
             const f32 b = macroHeightAnalytic(controls, params, x, z);
             CHECK(a == b);
             CHECK(a >= params.seaFloor - 1.0f);
+            // Ceiling: top tier + relief + every regime extra that can
+            // stack (long swell, massif plateau, chain hills).
             CHECK(a <= params.tiers.back().altitude +
-                           params.tiers.back().reliefAmplitude + 1.0f);
+                           params.tiers.back().reliefAmplitude +
+                           pc.swellHeight + pc.oldMassifHeight +
+                           pc.oldMassifHillAmplitude + 1.0f);
             maxSeen = std::max(maxSeen, a);
         }
     }
@@ -245,6 +249,26 @@ TEST_CASE("relief regimes: hill chains, old massifs and young ranges "
     CHECK(hillChains > 50);
     CHECK(oldMassifs > 50);
     CHECK(youngRanges > 50);
+
+    // The long swell and the passability corridors both exist on land.
+    u32 swelled = 0;
+    u32 gentle = 0;
+    for (f32 z = -20000.0f; z <= 20000.0f; z += 400.0f) {
+        for (f32 x = -20000.0f; x <= 20000.0f; x += 400.0f) {
+            const ControlSample s = controls.at(x, z);
+            if (s.sea) {
+                continue;
+            }
+            if (s.plateau > 220.0f) {
+                ++swelled; // above what the massif regime alone gives
+            }
+            if (s.gentle > 0.5f) {
+                ++gentle;
+            }
+        }
+    }
+    CHECK(swelled > 50);
+    CHECK(gentle > 200);
 
     // Regime extras default to zero for painted/test sources: the
     // legacy macro path is untouched.

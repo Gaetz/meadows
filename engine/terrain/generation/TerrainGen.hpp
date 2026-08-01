@@ -32,8 +32,12 @@ struct ControlSample {
     bool sea { false };  // this point is open water by decree
     u8 biome { 0 };
     // Relief-regime extras (defaults keep painted/test sources legacy):
-    f32 plateau { 0.0f };    // extra base altitude (old eroded massifs)
+    f32 plateau { 0.0f };    // extra base altitude (old massifs + swell)
     f32 hillRelief { 0.0f }; // ridged hill-chain relief amplitude (m)
+    // Passability corridors [0,1]: 1 = soften the erosion here (soft
+    // rock -> gentle equilibrium slopes, no fine ravines) — mountain
+    // passes and walkable gaps between hills, drama kept elsewhere.
+    f32 gentle { 0.0f };
 };
 
 class ControlSource {
@@ -70,10 +74,19 @@ struct ProceduralControlParams {
     // the Massif Central look), and YOUNG RANGES (the plain uplift
     // path). Erosion then treats each accordingly.
     f32 regimeWavelength { 7000.0f };
-    f32 hillChainWavelength { 1100.0f }; // ridged hills' own rhythm
+    f32 hillChainWavelength { 2000.0f }; // ridged hills' own rhythm
     f32 hillChainAmplitude { 55.0f };    // m of hill relief in chains
     f32 oldMassifHeight { 210.0f };      // m of plateau under old hills
     f32 oldMassifHillAmplitude { 70.0f };
+    // The LONG swell: a very-slow positive lift of whole landscapes —
+    // ranges riding it become truly high peaks, hill country on it
+    // becomes highland plateaus. Inland-gated like the massif plateau.
+    f32 swellWavelength { 18000.0f };
+    f32 swellHeight { 280.0f };
+    // Passability corridors: a mid-frequency band field that locally
+    // SOFTENS erosion (never the heights) — cols through ranges,
+    // gentle passages between hills. ~quarter of the land.
+    f32 gentleWavelength { 2200.0f };
 };
 
 class ProceduralControls final : public ControlSource {
@@ -106,7 +119,7 @@ struct TierLevel {
 struct MacroParams {
     vector<TierLevel> tiers {
         { 40.0f, 18.0f, 420.0f, 0.0f },   // coastal plains
-        { 110.0f, 55.0f, 650.0f, 0.0f },  // hills
+        { 110.0f, 55.0f, 850.0f, 0.0f },  // hills (long rolling waves)
         { 270.0f, 18.0f, 700.0f, 0.8f },  // mesa plateau
         { 520.0f, 140.0f, 1100.0f, 0.0f }, // high ranges
     };
@@ -144,6 +157,7 @@ struct MacroResult {
     vector<f32> uplift;  // [0,1] per texel, stage S2 input
     vector<f32> seaDist; // signed meters to the sea mask (+ on land)
     vector<u8> biome;
+    vector<f32> gentle;  // [0,1] passability corridors (erosion softener)
 };
 
 // The MacroParams elevation recurve applied to one land height (meters):
