@@ -15,6 +15,28 @@ layout(binding = 3) uniform sampler2D uPoolDepth;
 // Main-view volumetric sky clouds (rgb + transmittance a, last frame's
 // display buffer) — reprojected into the mirror, see below.
 layout(binding = 4) uniform sampler2D uSkyClouds;
+// Camera-local water-info map (WaterInfoMap, CPU-baked): A = surface Y
+// (-1e6 dry), B = depth / flow XZ / spare. Junctions and ribbon
+// overlaps resolve per PIXEL against this — the Unreal Water model.
+layout(binding = 5) uniform sampler2D uWaterInfoA;
+layout(binding = 6) uniform sampler2D uWaterInfoB;
+
+#ifdef WATER_LOCAL
+// Water material presets (WaterSystem::rebuildMaterials — std140
+// lockstep): slot 0 = default water, whose values ARE the constants the
+// sea path uses below.
+struct WaterMaterial {
+    vec4 tintStrength;      // rgb tint, w mix strength
+    vec4 deepEmissive;      // rgb deep color, w emissive strength
+    vec4 absorptionFlow;    // rgb absorption, w flow-speed scale
+    vec4 foamWave;          // rgb foam color, w wave scale
+    vec4 emissiveViscosity; // rgb emissive color, w viscosity
+    vec4 extras;            // x foam gain
+};
+layout(std140, binding = 1) uniform WaterMaterialsUbo {
+    WaterMaterial uWaterMaterials[16];
+};
+#endif
 
 #include "view_util.glsl"
 
@@ -24,6 +46,7 @@ layout(location = 0) in vec3 vWorldPos;
 // character the shading below specializes on.
 layout(location = 1) in vec2 vFlow; // direction * speed; (0,0) = lake
 layout(location = 2) in vec4 vInfo; // halfWidth (0 = lake), lateral, arc, endDist
+layout(location = 3) flat in float vMaterial; // preset slot
 #endif
 layout(location = 0) out vec4 fragColor;
 
@@ -48,8 +71,32 @@ void main() {
     // Rivers: the wave field is ADVECTED downstream (current, not wind)
     // and its ripples shrink with the channel — a 4 m creek carries
     // wavelets, not ocean swell. Lakes keep the still-water field.
-    float flowSpeed = length(vFlow);
+    // Where the water-info map is valid and agrees this fragment IS the
+    // local surface, its composited flow replaces the per-ribbon flow:
+    // two crossing ribbons then shade identically and their overlap
+    // becomes invisible.
+    vec2 flowVec = vFlow;
+    vec2 infoUv =
+        (vWorldPos.xz - uWaterInfoMapInfo.xy) * uWaterInfoMapInfo.z + 0.5;
+    bool infoValid = uWaterInfoMapInfo.w > 0.5 &&
+                     all(greaterThan(infoUv, vec2(0.002))) &&
+                     all(lessThan(infoUv, vec2(0.998)));
+    if (infoValid) {
+        float infoSurface = texture(uWaterInfoA, infoUv).r;
+        if (abs(infoSurface - vWorldPos.y) < 0.35) {
+            vec2 infoFlow = texture(uWaterInfoB, infoUv).yz;
+            if (dot(infoFlow, infoFlow) > 1.0e-6) {
+                flowVec = infoFlow;
+            }
+        }
+    }
+    float flowSpeed = length(flowVec);
     float riverness = step(0.001, vInfo.x);
+    WaterMaterial mtl = uWaterMaterials[int(vMaterial + 0.5)];
+    vec3 mDeep = mtl.deepEmissive.rgb;
+    vec3 mAbsorption = mtl.absorptionFlow.rgb;
+    vec3 mFoam = mtl.foamWave.rgb;
+    float mFoamGain = mtl.extras.x;
     // Torrent factor: how fast the surface plunges (screen derivatives)
     // — 0 on calm reaches, 1 on waterfall-grade drops. Drives the
     // mountain-stream look: faster advection, choppier finer ripples,
@@ -62,7 +109,7 @@ void main() {
     float rippleScale =
         mix(1.0, mix(2.8, 1.2, smoothstep(2.0, 18.0, vInfo.x)),
             riverness) *
-        (1.0 + 0.7 * torrent);
+        (1.0 + 0.7 * torrent) * mtl.foamWave.w;
     // TWO-PHASE flow mapping (the Waterways/Valve trick): straight
     // advection stretches the field forever; sampling it at two phases
     // half a cycle apart and blending on a triangle wave resets the
@@ -73,11 +120,13 @@ void main() {
         // steepness, SLOWER near the banks (drag) — the mid-channel
         // visibly outruns the edges.
         float lateralProfile = 0.55 + 0.45 * (1.0 - vInfo.y * vInfo.y);
-        float speed = (1.6 + 2.6 * torrent) * lateralProfile;
+        float speed = (1.6 + 2.6 * torrent) * lateralProfile *
+                      mtl.absorptionFlow.w *
+                      (1.0 - 0.6 * mtl.emissiveViscosity.w);
         float cycle = 3.0; // seconds per phase reset
         float phase = fract(uTime.x / cycle);
-        vec2 advA = vFlow * speed * phase * cycle;
-        vec2 advB = vFlow * speed * (fract(phase + 0.5) - 0.5) * cycle;
+        vec2 advA = flowVec * speed * phase * cycle;
+        vec2 advB = flowVec * speed * (fract(phase + 0.5) - 0.5) * cycle;
         vec3 nA = waveNormal((vWorldPos.xz - advA) * rippleScale,
                              t * (1.0 + torrent));
         vec3 nB = waveNormal((vWorldPos.xz - advB) * rippleScale + 37.0,
@@ -101,6 +150,11 @@ void main() {
     if (uCameraPos.y < vWorldPos.y - 0.02) {
 #else
     vec3 n = waveNormal(vWorldPos.xz, t);
+    // Sea path: the default-water constants (slot 0 of the presets).
+    vec3 mDeep = vec3(0.008, 0.045, 0.055);
+    vec3 mAbsorption = vec3(0.42, 0.16, 0.12);
+    vec3 mFoam = vec3(0.75, 0.82, 0.85);
+    float mFoamGain = 1.0;
 
     // Underside: the camera is below the surface, looking up through it.
     if (uCameraPos.y < uTerrainInfo.x) {
@@ -133,13 +187,15 @@ void main() {
     vec2 refractionUv =
         screenUv + n.xz * (0.018 * clamp(thickness * 0.5, 0.0, 1.0));
     vec3 refracted = texture(uSceneColor, refractionUv).rgb;
-    vec3 absorption = exp(-thickness * vec3(0.42, 0.16, 0.12));
-    vec3 transmitted =
-        mix(vec3(0.008, 0.045, 0.055), refracted, absorption);
+    vec3 absorption = exp(-thickness * mAbsorption);
+    vec3 transmitted = mix(mDeep, refracted, absorption);
 #ifdef WATER_LOCAL
     // Aerated torrent water is milky, not glassy.
     transmitted = mix(transmitted, vec3(0.52, 0.66, 0.70),
                       torrent * 0.55);
+    // Preset tint (mud, enchanted pools) — strength 0 on plain water.
+    transmitted =
+        mix(transmitted, mtl.tintStrength.rgb, mtl.tintStrength.w);
 #endif
 
     // Reflection: the mirrored scene (terrain, trees, sky + sun glints all
@@ -225,7 +281,7 @@ void main() {
     foam *= mix(poolGate, 1.0, riverness);
     // Whitewater rides the torrent factor, STREAKED along the current
     // (aerated lanes, not a flat white sheet).
-    vec2 flowDirN = flowSpeed > 1e-3 ? vFlow / flowSpeed : vec2(1.0, 0.0);
+    vec2 flowDirN = flowSpeed > 1e-3 ? flowVec / flowSpeed : vec2(1.0, 0.0);
     vec2 flowPerp = vec2(-flowDirN.y, flowDirN.x);
     float streak =
         0.55 + 0.45 * sin(dot(vWorldPos.xz, flowPerp) * 2.4 +
@@ -254,7 +310,7 @@ void main() {
     foam *= poolGate;
 #endif
 
-    color = mix(color, vec3(0.75, 0.82, 0.85), clamp(foam, 0.0, 1.0));
+    color = mix(color, mFoam, clamp(foam * mFoamGain, 0.0, 1.0));
 
 #ifdef WATER_LOCAL
     // Edge fade (Waterways' ALPHA feather, opaque-pipeline version):
@@ -265,6 +321,59 @@ void main() {
                     mix(1.0, smoothstep(0.0, 1.5, vInfo.w /
                                                       max(vInfo.x, 0.5)),
                         riverness));
+    // Preset emissive (lava): glows through the fog like any emitter.
+    color += mtl.emissiveViscosity.rgb * mtl.deepEmissive.w;
+
+    // Debug views (render panel > Water > Debug view). Modes 4-6 show
+    // the water-info texture channels once that map is bound.
+    int waterDebug = int(uWaterDebugInfo.x + 0.5);
+    if (waterDebug != 0) {
+        vec3 dbg = vec3(0.05);
+        if (waterDebug == 1) {
+            // Flow: hue by direction, brightness by speed, stripes
+            // marching downstream — a still lake reads flat blue.
+            vec2 dir = flowSpeed > 1e-3 ? flowVec / flowSpeed : vec2(0.0);
+            float stripe =
+                0.5 + 0.5 * sin(dot(vWorldPos.xz, dir) * 3.0 -
+                                uTime.x * 4.0 * max(flowSpeed, 0.2));
+            float energy = clamp(flowSpeed / 3.0, 0.0, 1.0);
+            dbg = mix(vec3(0.05, 0.10, 0.45),
+                      vec3(0.5 + 0.5 * dir.x, 0.5 + 0.5 * dir.y, 0.2) *
+                          mix(0.4, 1.0, stripe),
+                      max(energy, riverness * 0.25));
+        } else if (waterDebug == 2) {
+            dbg = mix(vec3(0.0, 0.15, 0.5), vec3(1.0, 0.1, 0.0),
+                      torrent);
+        } else if (waterDebug == 3) {
+            // Ribbon UV: lateral as green (banks dark), arc as a
+            // checker, lakes flat gray.
+            float checker = step(0.5, fract(vInfo.z * 0.125));
+            dbg = mix(vec3(0.3),
+                      vec3(checker, 1.0 - abs(vInfo.y), 1.0 - checker),
+                      riverness);
+        } else if (waterDebug >= 4) {
+            if (!infoValid) {
+                dbg = vec3(0.4, 0.0, 0.4); // magenta: no valid map here
+            } else if (waterDebug == 4) {
+                float s = texture(uWaterInfoA, infoUv).r;
+                dbg = s <= -1.0e5
+                          ? vec3(0.08, 0.0, 0.12) // dry texel
+                          : vec3(fract(s * 0.05), 0.6, 0.25);
+            } else if (waterDebug == 5) {
+                dbg = mix(vec3(0.02, 0.05, 0.2), vec3(0.2, 0.9, 1.0),
+                          clamp(texture(uWaterInfoB, infoUv).x / 8.0,
+                                0.0, 1.0));
+            } else {
+                vec2 f = texture(uWaterInfoB, infoUv).yz;
+                float mag = length(f);
+                vec2 dir = mag > 1e-4 ? f / mag : vec2(0.0);
+                dbg = vec3(0.5 + 0.5 * dir, 0.15) *
+                      clamp(mag * 0.5 + 0.15, 0.0, 1.0);
+            }
+        }
+        fragColor = vec4(dbg, 1.0);
+        return;
+    }
 #endif
 
     fragColor = vec4(applyFog(color, vWorldPos), 1.0);

@@ -177,6 +177,11 @@ struct FrameUniforms {
     // Ground-mist extras: x = puffiness (fractal edge florets on the
     // patch borders — the cloud recipe ported), yzw free.
     Vec4 mistPuffInfo { 0.5f, 0.0f, 0.0f, 0.0f };
+    // x = water debug view mode (0 off; see RenderTuningPanels' Water
+    // combo), yzw free.
+    Vec4 waterDebugInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Water-info map (WaterSystem): xy = center, z = 1/span, w = valid.
+    Vec4 waterInfoMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -245,7 +250,9 @@ static_assert(offsetof(FrameUniforms, cloudVolLightInfo) == 1456);
 static_assert(offsetof(FrameUniforms, cloudVolShapeInfo) == 1472);
 static_assert(offsetof(FrameUniforms, cloudVolRimInfo) == 1488);
 static_assert(offsetof(FrameUniforms, mistPuffInfo) == 1504);
-static_assert(sizeof(FrameUniforms) == 1520,
+static_assert(offsetof(FrameUniforms, waterDebugInfo) == 1520);
+static_assert(offsetof(FrameUniforms, waterInfoMapInfo) == 1536);
+static_assert(sizeof(FrameUniforms) == 1552,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

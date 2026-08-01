@@ -12,11 +12,15 @@ namespace game {
 
 const char* FxDirector::footstepMaterial(
     const render::terrain::MaterialWeights& weights) {
-    // 4-way max over the splat weights: the step sounds like what the
-    // ground LOOKS covered with (grass wins ties, the dominant ground).
+    // Max over the splat weights: the step sounds like what the ground
+    // LOOKS covered with (grass wins ties, the dominant ground). Bare
+    // cliff sounds like rock.
     const char* material = "Grass";
     f32 best = weights.grass;
-    if (weights.rock > best) { best = weights.rock; material = "Rock"; }
+    if (weights.rock + weights.cliff > best) {
+        best = weights.rock + weights.cliff;
+        material = "Rock";
+    }
     if (weights.snow > best) { best = weights.snow; material = "Snow"; }
     if (weights.sand > best) { best = weights.sand; material = "Sand"; }
     return material;

@@ -208,8 +208,8 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 // trees grow, continuing them past the vegetation ring.
                 f32 forest = forestMask(params.seed, x, z);
                 const f32 slope = 1.0f - n.y;
-                if (trueH < params.seaLevel + 3.0f || trueH > 138.0f ||
-                    slope > 0.22f) {
+                if (trueH < params.seaLevel + 3.0f ||
+                    trueH > terrain::treeLine(params) || slope > 0.22f) {
                     forest = 0.0f;
                 }
                 Vec3 color = terrainColor(trueH, n, params.seaLevel);
@@ -250,7 +250,8 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 }
                 const f32 h = terrain::height(params, x, z);
                 const Vec3 n = terrain::normal(params, x, z);
-                if (h < params.seaLevel + 3.0f || h > 138.0f ||
+                if (h < params.seaLevel + 3.0f ||
+                    h > terrain::treeLine(params) ||
                     (1.0f - n.y) > 0.22f) {
                     continue;
                 }

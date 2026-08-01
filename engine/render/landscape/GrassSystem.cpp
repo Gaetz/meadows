@@ -147,12 +147,14 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             // HARD material cutoff: grass only on solidly grassy ground —
             // never on the sand/snow/rock transition fringes. Biome-aware
             // (neutral biome = the exact legacy rule).
-            if (terrain::materialWeightsAt(
-                    params,
-                    originX + (static_cast<f32>(cgx) + 0.5f) * cellSize,
-                    originZ + (static_cast<f32>(cgz) + 0.5f) * cellSize,
-                    hMid, n)
-                    .grass < tuning.materialCutoff) {
+            const f32 cellX =
+                originX + (static_cast<f32>(cgx) + 0.5f) * cellSize;
+            const f32 cellZ =
+                originZ + (static_cast<f32>(cgz) + 0.5f) * cellSize;
+            if (terrain::materialWeightsAt(params, cellX, cellZ, hMid, n)
+                        .grass < tuning.materialCutoff ||
+                terrain::underLocalWater(params, cellX, cellZ, hMid,
+                                         0.1f)) {
                 continue;
             }
             for (u32 sz = 0; sz < kCell; ++sz) {
@@ -261,8 +263,14 @@ void GrassSystem::invalidateChunks(rhi::Device& /*device*/,
                                    const vector<u64>& keys) {
     for (const u64 key : keys) {
         const auto it = streamer.chunks.find(key);
-        if (it == streamer.chunks.end() || !it->second.resident) {
-            continue; // missing, or still streaming in (no stale swap)
+        if (it == streamer.chunks.end()) {
+            continue;
+        }
+        if (!it->second.resident) {
+            // Build in flight against the OLD terrain: the pump drops
+            // the landing payload and the ring re-requests.
+            it->second.stale = true;
+            continue;
         }
         instances -= it->second.instanceCount;
         // update() re-requests + re-scatters with new heights (the erase
@@ -280,6 +288,12 @@ void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
     streamer.pump(kMaxUploadsPerFrame, 0.0, [&](u64 key, auto& built) {
         const auto it = streamer.chunks.find(key);
         if (it == streamer.chunks.end() || it->second.resident) {
+            return false;
+        }
+        if (it->second.stale) {
+            // Scattered against terrain/water that changed mid-flight:
+            // drop the payload, the ring re-requests with fresh params.
+            streamer.chunks.erase(it);
             return false;
         }
         Chunk& chunk = it->second;

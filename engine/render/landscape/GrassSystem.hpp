@@ -149,6 +149,9 @@ public:
 private:
     struct Chunk {
         bool resident { false };
+        // Invalidated mid-flight (tile published): discard on landing
+        // and re-request — same contract as VegetationSystem::Chunk.
+        bool stale { false };
         rhi::UniqueBuffer instanceBuffer;
         u32 instanceCount { 0 };
         // Blade-root height range, for the frustum AABB.

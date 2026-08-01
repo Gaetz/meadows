@@ -703,6 +703,17 @@ f32 WorldRenderer::effectiveWaterSurfaceY(
     // "dry" otherwise. Feeds the tonemap submersion.
     f32 surface = view.interiorMode ? -1.0e6f : terrain.params.seaLevel;
     const Vec3 eye = view.camera.position;
+    // Local lakes/rivers count too: without this, diving under an
+    // altitude lake showed no submersion tint at all.
+    if (!view.interiorMode) {
+        if (const render::WaterBodies* bodies = water.currentBodies()) {
+            const auto local = render::terrain::waterSurfaceAt(
+                *bodies, eye.x, eye.z, eye.y);
+            if (local) {
+                surface = glm::max(surface, *local);
+            }
+        }
+    }
     for (const render::WaterVolumeInstance& volume : snapshot.waterVolumes) {
         const Vec3 d = eye - volume.position;
         if (std::abs(d.x) <= volume.halfExtents.x &&
@@ -1252,6 +1263,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .autoExposureMin = autoExposureMinUi,
         .autoExposureMax = autoExposureMaxUi,
         .waterMapInfo = water.poolMapInfo(),
+        .waterInfoMapInfo = water.infoMapInfo(),
         .terrainLightInfo = terrainLightMap.info(),
         .terrainLightActive =
             terrainLightUi && !view.interiorMode && terrainLightMap.ready(),
@@ -1309,6 +1321,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .cloudVolRimInfo = { skyCloudRimGainUi, skyCloudRimLobeUi,
                              skyCloudBaseDarkUi, 0.0f },
         .mistPuffInfo = { mistPuffinessUi, 0.0f, 0.0f, 0.0f },
+        .waterDebugInfo = { static_cast<f32>(waterDebugUi), 0.0f, 0.0f,
+                            0.0f },
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;

@@ -104,8 +104,11 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const f32 h = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
             const f32 slope = 1.0f - n.y;
-            // Treeline scaled with the terrain amplitudes.
-            if (h < params.seaLevel + 3.0f || h > 138.0f || slope > 0.22f) {
+            // Treeline scaled with the snow line; lakes and rivers
+            // exclude trees like the sea does.
+            if (h < params.seaLevel + 3.0f ||
+                h > terrain::treeLine(params) || slope > 0.22f ||
+                terrain::underLocalWater(params, x, z, h, 1.0f)) {
                 continue;
             }
             // Sink slightly so leaning trunks never float on slopes; the
@@ -166,7 +169,8 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const f32 h = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
             if (terrain::materialWeightsAt(params, x, z, h, n).grass <
-                0.65f) {
+                    0.65f ||
+                terrain::underLocalWater(params, x, z, h, 0.3f)) {
                 continue;
             }
             // Clumps gate everything (bushes come in family groups); the
@@ -581,8 +585,14 @@ void VegetationSystem::invalidateChunks(rhi::Device& device,
     // is dropped so props re-seat on the new terrain.
     for (const u64 key : keys) {
         const auto it = streamer.chunks.find(key);
-        if (it == streamer.chunks.end() || !it->second.resident) {
-            continue; // missing, or still streaming in (no stale swap)
+        if (it == streamer.chunks.end()) {
+            continue;
+        }
+        if (!it->second.resident) {
+            // Build in flight against the OLD terrain: mark it — the
+            // pump discards the landing payload and re-requests.
+            it->second.stale = true;
+            continue;
         }
         if (it->second.total > 0 && it->second.poolOffset != kNoOffset) {
             instancePool.free(it->second.poolOffset, it->second.total);
@@ -610,6 +620,12 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     streamer.pump(kMaxUploadsPerFrame, 0.0, [&](u64 key, auto& built) {
         const auto it = streamer.chunks.find(key);
         if (it == streamer.chunks.end() || it->second.resident) {
+            return false;
+        }
+        if (it->second.stale) {
+            // Scattered against terrain/water that changed mid-flight:
+            // drop the payload, the ring re-requests with fresh params.
+            streamer.chunks.erase(it);
             return false;
         }
         Chunk& chunk = it->second;

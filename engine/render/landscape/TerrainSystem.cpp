@@ -69,7 +69,12 @@ vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
                 .normal = n,
                 .uv = { x / TerrainSystem::kChunkSize,
                         z / TerrainSystem::kChunkSize },
-                .color = terrainColor(y, n, params.seaLevel),
+                // terrain.frag ignores a tint here (albedo comes from
+                // the splats); .r carries the baked rock-exposure mask
+                // instead — the cliff-material weight. FarTerrain keeps
+                // the terrainColor palette for its own far mesh.
+                .color = { terrain::rockExposureAt(params, x, z), 0.0f,
+                           0.0f },
             });
         }
     }

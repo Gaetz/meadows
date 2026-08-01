@@ -81,7 +81,7 @@ struct RenderView {
     f32 timeSeconds { 0.0f };
     f32 windTime { 0.0f };
     // Moddable tuning scalars the scene owns (LandscapeTuningForm):
-    f32 snowLine { 110.0f };
+    f32 snowLine { render::kSnowLine };
     f32 splatUvScale { 0.25f };
     Vec3 interiorAmbient { 0.16f, 0.15f, 0.14f };
     // H3: the active worldspace's buried threshold (-1e9 = rule off).
@@ -336,6 +336,9 @@ private:
     bool saveTuningRequested { false }; // panels' Save button -> the scene
     f32 exposureUi { 1.0f };
     i32 debugBufferUi { 0 }; // 0 off, 1 bloom, 2 god rays, 3 volumetric
+    // Water debug view (panel > Water): 0 off, 1 flow, 2 torrent,
+    // 3 river UV, 4-6 water-info texture channels.
+    i32 waterDebugUi { 0 };
 
     rhi::UniqueBuffer frameUbo;
     rhi::UniqueBindGroup frameBindGroup;

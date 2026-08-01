@@ -97,6 +97,20 @@ Vec3 snowTexel(f32 u, f32 v) {
     return color;
 }
 
+Vec3 cliffTexel(f32 u, f32 v) {
+    // Stratified cliff stone: pronounced horizontal banding + vertical
+    // fracture streaks — paler and warmer than the scree rock so bare
+    // faces read as geology, not just steeper rock.
+    const f32 bands = tileFbm(501, u * 0.5f, v * 3.5f, 8, 4);
+    const f32 ledge = 1.0f - std::abs(2.0f * bands - 1.0f);
+    const f32 fracture = tileFbm(502, u * 3.0f, v * 0.8f, 12, 3);
+    Vec3 color = Vec3 { 0.55f, 0.50f, 0.44f } * (0.78f + 0.28f * ledge);
+    if (fracture < 0.28f) {
+        color *= 0.70f + 0.30f * (fracture / 0.28f);
+    }
+    return color;
+}
+
 Vec3 sandTexel(f32 u, f32 v) {
     // Warm beige, fine grain, gentle wind-ripple banding.
     const f32 grain = tileFbm(401, u, v, 48, 2);
@@ -127,6 +141,8 @@ vector<u8> buildSplatTilePixels() {
                        snowTexel(u, v));
             writeTexel(pixels, SplatLayer_Sand * layerBytes + texel,
                        sandTexel(u, v));
+            writeTexel(pixels, SplatLayer_Cliff * layerBytes + texel,
+                       cliffTexel(u, v));
         }
     }
     return pixels;

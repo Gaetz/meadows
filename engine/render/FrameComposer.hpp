@@ -123,6 +123,10 @@ struct FrameComposerInputs {
     Vec4 cloudVolShapeInfo { 3.4f, 0.8f, 1.0f, 0.5f };
     Vec4 cloudVolRimInfo { 25.0f, 0.75f, 7.4f, 0.0f };
     Vec4 mistPuffInfo { 0.5f, 0.0f, 0.0f, 0.0f };
+    // x = water debug view mode (0 off).
+    Vec4 waterDebugInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Water-info map: xy = center, z = 1/span, w = valid.
+    Vec4 waterInfoMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
 // The volumetric fog's reach (froxel far AND cluster grid far — the two

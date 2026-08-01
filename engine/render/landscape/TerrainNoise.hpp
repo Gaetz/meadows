@@ -6,6 +6,7 @@
 #include "engine/terrain/BiomeMap.hpp"      // render::BiomeParams / BiomeSet
 #include "engine/terrain/HeightPatches.hpp" // render::HeightPatch / HeightPatches
 #include "engine/terrain/TerrainBase.hpp"   // render::TerrainRegion / TerrainBase
+#include "engine/terrain/WaterBodies.hpp"   // render::WaterBodies
 
 namespace render {
 
@@ -18,6 +19,11 @@ namespace render {
 // HeightPatch / HeightPatches live in engine/terrain/HeightPatches.hpp
 // (a headless home) so the world layer can build them without depending on
 // engine/render/. They still ride inside TerrainParams below.
+
+// Default snow altitude (meters) — shared by TerrainParams::snowLine and
+// every CPU consumer that needs a pre-tuning value. The live value comes
+// from tuning and MUST reach shader and CPU rules in lockstep.
+constexpr f32 kSnowLine = 165.0f;
 
 // Terrain generation parameters. One plain struct on purpose: when landscape
 // population becomes moddable it converts into a reflected Form patched
@@ -56,6 +62,12 @@ struct TerrainParams {
     // neutral biome: every rule below behaves exactly as without biomes.
     sptr<const BiomeSet> biomes;
 
+    // Local water (lakes/rivers) for the SCATTER exclusion rules: trees
+    // and grass must not grow under an altitude lake the sea-level rule
+    // cannot see. Same shared-immutable contract as the layers above;
+    // null = sea-only rules (bit-identical legacy).
+    sptr<const WaterBodies> water;
+
     // Bumped whenever the terrain CONTENT changes without the seed
     // moving (tile publishes, mode switches): consumers with their own
     // baked caches (FarTerrain, pool map) compare it to invalidate.
@@ -76,11 +88,11 @@ struct TerrainParams {
     f32 mountainMaskLow { 0.45f };  // mask noise below this -> plains
     f32 mountainMaskHigh { 0.75f }; // above this -> full mountains
 
-    f32 seaLevel { 21.0f };
+    f32 seaLevel { kDefaultSeaLevel };
     // Snow altitude for the CPU material rules — MUST match the tuning
     // value the shader gets (uTerrainInfo.y), or footsteps/scatter and
     // pixels disagree about what is snow.
-    f32 snowLine { 165.0f };
+    f32 snowLine { kSnowLine };
 };
 
 namespace terrain {
@@ -123,8 +135,29 @@ struct MaterialWeights {
     f32 rock { 0.0f };
     f32 snow { 0.0f };
     f32 sand { 0.0f };
+    // Bare stratified cliff on the steepest exposed faces — driven by
+    // the baked rockExposure mask, so it only appears on baked regions.
+    f32 cliff { 0.0f };
 };
-constexpr f32 kSnowLine = 165.0f; // default of TerrainParams::snowLine
+
+// The baked rock-exposure mask over (x, z) in [0, 1]; 0 without a baked
+// region (legacy/story terrain shows no cliff material).
+f32 rockExposureAt(const TerrainParams& params, f32 x, f32 z);
+
+// Upper tree limit (meters), scaled with the active snow line so
+// forests climb sandbox mountains: story 165 -> ~135 (the historical
+// treeline), sandbox 950 -> ~780. Shared by the near scatter and the
+// FarTerrain fringe so the two can never disagree.
+inline f32 treeLine(const TerrainParams& params) {
+    return params.snowLine * 0.82f; // hand-tuned
+}
+
+// True where LOCAL water (params.water: lakes, rivers) covers ground at
+// height `h`; `margin` meters above the waterline still count as wet
+// (shore band for scatter). Always false with no water set — the sea
+// stays each rule's own seaLevel check.
+bool underLocalWater(const TerrainParams& params, f32 x, f32 z, f32 h,
+                     f32 margin);
 MaterialWeights materialWeights(const TerrainParams& params, f32 height,
                                 const Vec3& normal);
 

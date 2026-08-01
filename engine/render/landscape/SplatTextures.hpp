@@ -10,7 +10,8 @@ enum SplatLayer : u32 {
     SplatLayer_Rock = 1,
     SplatLayer_Snow = 2,
     SplatLayer_Sand = 3,
-    SplatLayer_Count = 4,
+    SplatLayer_Cliff = 4,
+    SplatLayer_Count = 5,
 };
 
 constexpr u32 kSplatTileSize = 256; // texels per side, per layer

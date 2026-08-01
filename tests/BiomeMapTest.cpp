@@ -26,8 +26,50 @@ TEST_CASE("neutral biome weights equal the legacy weights") {
             CHECK(biome.snow == legacy.snow);
             CHECK(biome.sand == legacy.sand);
             CHECK(biome.grass == legacy.grass);
+            CHECK(biome.cliff == 0.0f); // no baked exposure -> no cliff
         }
     }
+}
+
+TEST_CASE("the rockExposure mask drives the cliff weight") {
+    render::TerrainParams params;
+    auto base = std::make_shared<render::TerrainBase>();
+    render::TerrainRegion region;
+    region.originX = 0.0f;
+    region.originZ = 0.0f;
+    region.texelSize = 8.0f;
+    region.edgeBlend = 0.0f;
+    region.width = 17;
+    region.height = 17;
+    region.heights.assign(17 * 17, 50.0f);
+    region.maskWidth = 17;
+    region.maskHeight = 17;
+    const size_t maskCells = 17 * 17;
+    region.detailAmp.assign(maskCells, 255);
+    region.flow.assign(maskCells, 0);
+    region.wetness.assign(maskCells, 0);
+    region.beach.assign(maskCells, 0);
+    region.biome.assign(maskCells, 0);
+    region.rockExposure.assign(maskCells, 255); // fully exposed
+    base->regions.push_back(region);
+    params.base = base;
+
+    const Vec3 steep = glm::normalize(Vec3 { 1.0f, 0.55f, 0.0f });
+    const auto exposed = render::terrain::materialWeightsAt(
+        params, 64.0f, 64.0f, 50.0f, steep);
+    CHECK(render::terrain::rockExposureAt(params, 64.0f, 64.0f) ==
+          doctest::Approx(1.0f));
+    CHECK(exposed.cliff > 0.5f);
+    // Cliff eats into rock, and the total still normalizes.
+    const auto legacy = render::terrain::materialWeights(params, 50.0f,
+                                                         steep);
+    CHECK(exposed.rock < legacy.rock);
+    CHECK(exposed.grass + exposed.rock + exposed.snow + exposed.sand +
+              exposed.cliff <=
+          1.0f + 1.0e-4f);
+    // Outside the region: no exposure, no cliff.
+    CHECK(render::terrain::rockExposureAt(params, 500.0f, 500.0f) ==
+          0.0f);
 }
 
 TEST_CASE("BiomeForm records build the table; the painted map resolves") {

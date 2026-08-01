@@ -5,6 +5,8 @@
 
 #include "engine/core/Jobs.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/terrain/RiverGeometry.hpp"
+#include "engine/terrain/WaterInfoMap.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
 
@@ -104,21 +106,38 @@ void WaterSystem::create(rhi::Device& device, ShaderLibrary& shaders,
                                      .format = rhi::TextureFormat::R16F,
                                      .usage = rhi::TextureUsage_Sampled },
                                    &kDeep);
-    poolMapGroup = device.createBindGroup(
-        { .entries = { { .binding = 3,
-                         .texture = poolMap,
-                         .sampler = poolMapSampler } } });
+    // Water-info placeholders: dry everywhere, zero flow — the validity
+    // flag keeps the shader off them until a real bake lands anyway.
+    const f32 kDry = terrain::kWaterInfoDry;
+    infoMapA = device.createTexture({ .width = 1,
+                                      .height = 1,
+                                      .format = rhi::TextureFormat::R32F,
+                                      .usage = rhi::TextureUsage_Sampled },
+                                    &kDry);
+    const f32 kZeros[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    infoMapB =
+        device.createTexture({ .width = 1,
+                               .height = 1,
+                               .format = rhi::TextureFormat::RGBA16F,
+                               .usage = rhi::TextureUsage_Sampled },
+                             kZeros);
+    rebuildMaterials(device); // also builds the map bind group
 
     shaders.load(kWaterShader, { { "FrameUbo", 0 } },
                  { { "uSceneColor", 0 },
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
-                   { "uSkyClouds", 4 } });
-    shaders.load(kWaterLocalShader, { { "FrameUbo", 0 } },
+                   { "uSkyClouds", 4 },
+                   { "uWaterInfoA", 5 },
+                   { "uWaterInfoB", 6 } });
+    shaders.load(kWaterLocalShader,
+                 { { "FrameUbo", 0 }, { "WaterMaterialsUbo", 1 } },
                  { { "uSceneColor", 0 },
                    { "uSceneDepth", 1 },
                    { "uPoolDepth", 3 },
-                   { "uSkyClouds", 4 } });
+                   { "uSkyClouds", 4 },
+                   { "uWaterInfoA", 5 },
+                   { "uWaterInfoB", 6 } });
     buildPipeline(device, shaders);
 }
 
@@ -126,6 +145,16 @@ void WaterSystem::destroy(rhi::Device& device) {
     ++generation; // in-flight bakes die on arrival (shared queue outlives us)
     device.destroyBindGroup(poolMapGroup);
     device.destroyTexture(poolMap);
+    device.destroyTexture(infoMapA);
+    device.destroyTexture(infoMapB);
+    device.destroyBuffer(materialsUbo);
+    materialsUbo = {};
+    infoMapA = {};
+    infoMapB = {};
+    infoValid = false;
+    infoBakeInFlight = false;
+    infoCenter = { 1.0e9f, 1.0e9f };
+    infoBodiesStamp = ~0ull;
     device.destroySampler(poolMapSampler);
     device.destroyPipeline(pipeline);
     device.destroyBuffer(indexBuffer);
@@ -164,12 +193,12 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
     // arcLength, endDist} (4) — the RIVER UV SPACE the shared shading
     // uses for flow mapping, bank foam and the end-of-course dissolve
     // (the ribbon fades out INTO the pond/river it merges with).
-    constexpr u32 kFloatsPerVertex = 9;
+    constexpr u32 kFloatsPerVertex = 10;
     vector<f32> verts;
     vector<u32> indices;
     const auto vertex = [&](f32 x, f32 y, f32 z, f32 flowX, f32 flowZ,
                             f32 halfWidth, f32 lateral, f32 arc,
-                            f32 endDist) {
+                            f32 endDist, f32 material) {
         verts.push_back(x);
         verts.push_back(y);
         verts.push_back(z);
@@ -179,20 +208,26 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
         verts.push_back(lateral);
         verts.push_back(arc);
         verts.push_back(endDist);
+        verts.push_back(material);
         return static_cast<u32>(verts.size() / kFloatsPerVertex - 1);
     };
-    const auto quad = [&](f32 x0, f32 z0, f32 x1, f32 z1, f32 level) {
-        const u32 v0 =
-            vertex(x0, level, z0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0e6f);
-        const u32 v1 =
-            vertex(x1, level, z0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0e6f);
-        const u32 v2 =
-            vertex(x1, level, z1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0e6f);
-        const u32 v3 =
-            vertex(x0, level, z1, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0e6f);
+    const auto quad = [&](f32 x0, f32 z0, f32 x1, f32 z1, f32 level,
+                          f32 material) {
+        const u32 v0 = vertex(x0, level, z0, 0.0f, 0.0f, 0.0f, 0.0f,
+                              0.0f, 1.0e6f, material);
+        const u32 v1 = vertex(x1, level, z0, 0.0f, 0.0f, 0.0f, 0.0f,
+                              0.0f, 1.0e6f, material);
+        const u32 v2 = vertex(x1, level, z1, 0.0f, 0.0f, 0.0f, 0.0f,
+                              0.0f, 1.0e6f, material);
+        const u32 v3 = vertex(x0, level, z1, 0.0f, 0.0f, 0.0f, 0.0f,
+                              0.0f, 1.0e6f, material);
         for (const u32 i : { v0, v2, v1, v0, v3, v2 }) {
             indices.push_back(i);
         }
+    };
+    const auto materialOf = [&](u32 index) {
+        return static_cast<f32>(
+            glm::min(index, kMaxWaterMaterials - 1));
     };
     for (const LakeSurface& lake : bodies->lakes) {
         // The surface follows the basin mask (row runs of water cells,
@@ -202,7 +237,8 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
         if (lake.mask.empty() || lake.maskWidth == 0) {
             constexpr f32 kMargin = 6.0f;
             quad(lake.minX - kMargin, lake.minZ - kMargin,
-                 lake.maxX + kMargin, lake.maxZ + kMargin, lake.level);
+                 lake.maxX + kMargin, lake.maxZ + kMargin, lake.level,
+                 materialOf(lake.materialIndex));
             continue;
         }
         const f32 grow = lake.maskTexel * 0.75f;
@@ -229,30 +265,34 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
                      z0,
                      lake.minX + static_cast<f32>(end) * lake.maskTexel +
                          lake.maskTexel + grow,
-                     z1, lake.level);
+                     z1, lake.level, materialOf(lake.materialIndex));
                 col = end + 1;
             }
         }
     }
     for (const RiverSurface& river : bodies->rivers) {
         // Ribbon strip along the polyline at the water surface, slightly
-        // wider than the carved bed so banks clip it.
+        // wider than the carved bed so banks clip it. Tight bends are
+        // subdivided by curvature (RiverGeometry) — the water-info
+        // raster samples the same conditioned curve.
+        const vector<RiverNode> nodes =
+            terrain::subdivideRiverNodes(river.nodes);
         u32 prevL = 0;
         u32 prevR = 0;
         f32 totalArc = 0.0f;
-        for (size_t i = 1; i < river.nodes.size(); ++i) {
-            totalArc += std::hypot(river.nodes[i].x - river.nodes[i - 1].x,
-                                   river.nodes[i].z - river.nodes[i - 1].z);
+        for (size_t i = 1; i < nodes.size(); ++i) {
+            totalArc += std::hypot(nodes[i].x - nodes[i - 1].x,
+                                   nodes[i].z - nodes[i - 1].z);
         }
         f32 arc = 0.0f;
-        for (size_t i = 0; i < river.nodes.size(); ++i) {
-            const RiverNode& node = river.nodes[i];
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            const RiverNode& node = nodes[i];
             const RiverNode& ahead =
-                river.nodes[glm::min(i + 1, river.nodes.size() - 1)];
-            const RiverNode& behind = river.nodes[i > 0 ? i - 1 : 0];
+                nodes[glm::min(i + 1, nodes.size() - 1)];
+            const RiverNode& behind = nodes[i > 0 ? i - 1 : 0];
             if (i > 0) {
-                arc += std::hypot(node.x - river.nodes[i - 1].x,
-                                  node.z - river.nodes[i - 1].z);
+                arc += std::hypot(node.x - nodes[i - 1].x,
+                                  node.z - nodes[i - 1].z);
             }
             f32 dx = ahead.x - behind.x;
             f32 dz = ahead.z - behind.z;
@@ -270,11 +310,13 @@ void WaterSystem::rebuildLocalGeometry(rhi::Device& device) {
             const u32 left =
                 vertex(node.x - dz * half, node.surface,
                        node.z + dx * half, flowX, flowZ, node.halfWidth,
-                       -1.0f, arc, totalArc - arc);
+                       -1.0f, arc, totalArc - arc,
+                       materialOf(river.materialIndex));
             const u32 right =
                 vertex(node.x + dz * half, node.surface,
                        node.z - dx * half, flowX, flowZ, node.halfWidth,
-                       1.0f, arc, totalArc - arc);
+                       1.0f, arc, totalArc - arc,
+                       materialOf(river.materialIndex));
             if (i > 0) {
                 for (const u32 v : { prevL, prevR, left, prevR, right,
                                      left }) {
@@ -305,7 +347,6 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
         if (baked.generation != generation) {
             continue;
         }
-        device.destroyBindGroup(poolMapGroup);
         device.destroyTexture(poolMap);
         poolMap = device.createTexture(
             { .width = kPoolMapSize,
@@ -314,19 +355,45 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
               .filter = rhi::FilterMode::Linear,
               .usage = rhi::TextureUsage_Sampled },
             baked.texels.data());
-        poolMapGroup = device.createBindGroup(
-            { .entries = { { .binding = 3,
-                             .texture = poolMap,
-                             .sampler = poolMapSampler } } });
+        rebuildMapGroup(device);
         mapCenter = baked.center;
         bakedSeed = baked.seed;
         bakedSeaLevel = baked.seaLevel;
         bakedBodiesStamp = baked.bodiesStamp;
         bakeInFlight = false;
     }
+    BakedInfo info;
+    while (shared->bakedInfo.tryPop(info)) {
+        if (info.generation != generation) {
+            continue;
+        }
+        device.destroyTexture(infoMapA);
+        device.destroyTexture(infoMapB);
+        infoMapA = device.createTexture(
+            { .width = kInfoMapSize,
+              .height = kInfoMapSize,
+              .format = rhi::TextureFormat::R32F,
+              .filter = rhi::FilterMode::Linear,
+              .usage = rhi::TextureUsage_Sampled },
+            info.surface.data());
+        infoMapB = device.createTexture(
+            { .width = kInfoMapSize,
+              .height = kInfoMapSize,
+              .format = rhi::TextureFormat::RGBA16F,
+              .filter = rhi::FilterMode::Linear,
+              .usage = rhi::TextureUsage_Sampled },
+            info.extras.data());
+        rebuildMapGroup(device);
+        infoCenter = info.center;
+        infoSeed = info.seed;
+        infoBodiesStamp = info.bodiesStamp;
+        infoValid = true;
+        infoBakeInFlight = false;
+    }
 
     if (bodiesDirty) {
         rebuildLocalGeometry(device);
+        rebuildMaterials(device);
         bodiesDirty = false;
     }
 
@@ -349,6 +416,93 @@ void WaterSystem::update(rhi::Device& device, const TerrainParams& params,
                                                   center) });
         });
     }
+
+    // Water-info map: same predicate shape, its own (tighter) follow
+    // distance. On a CONTENT change the old texture must not resolve
+    // junctions against dead bodies — drop the validity flag until the
+    // fresh bake lands (the shader then uses pure vertex data, i.e.
+    // exactly the pre-info rendering).
+    const u64 wantedStamp = bodiesStamp + params.contentStamp;
+    const bool infoStale =
+        glm::distance(camXz, infoCenter) > kInfoRebakeDistance ||
+        infoSeed != params.seed || infoBodiesStamp != wantedStamp;
+    if (infoBodiesStamp != wantedStamp) {
+        infoValid = false;
+    }
+    if (infoStale && !infoBakeInFlight) {
+        infoBakeInFlight = true;
+        jobs->enqueue([sharedRef = shared, params, camXz,
+                       gen = generation, bodiesRef = bodies,
+                       stamp = wantedStamp] {
+            BakedInfo out;
+            out.generation = gen;
+            out.seed = params.seed;
+            out.bodiesStamp = stamp;
+            const WaterBodies empty;
+            terrain::WaterInfoMap map = terrain::bakeWaterInfo(
+                bodiesRef ? *bodiesRef : empty, camXz, kInfoMapSpan,
+                kInfoMapSize, [&params](f32 x, f32 z) {
+                    return terrain::height(params, x, z);
+                });
+            out.center = map.center;
+            out.surface = std::move(map.surface);
+            out.extras.resize(map.depth.size() * 4);
+            for (size_t i = 0; i < map.depth.size(); ++i) {
+                out.extras[i * 4 + 0] = map.depth[i];
+                out.extras[i * 4 + 1] = map.flow[i].x;
+                out.extras[i * 4 + 2] = map.flow[i].y;
+                out.extras[i * 4 + 3] = 0.0f;
+            }
+            sharedRef->bakedInfo.push(std::move(out));
+        });
+    }
+}
+
+void WaterSystem::rebuildMapGroup(rhi::Device& device) {
+    device.destroyBindGroup(poolMapGroup);
+    poolMapGroup = device.createBindGroup(
+        { .entries = { { .binding = 1, .buffer = materialsUbo },
+                       { .binding = 3,
+                         .texture = poolMap,
+                         .sampler = poolMapSampler },
+                       { .binding = 5,
+                         .texture = infoMapA,
+                         .sampler = poolMapSampler },
+                       { .binding = 6,
+                         .texture = infoMapB,
+                         .sampler = poolMapSampler } } });
+}
+
+void WaterSystem::rebuildMaterials(rhi::Device& device) {
+    // std140 mirror of water_surface.glsl's WaterMaterial (5 vec4 + 1).
+    struct GpuWaterMaterial {
+        Vec4 tintStrength;
+        Vec4 deepEmissive;
+        Vec4 absorptionFlow;
+        Vec4 foamWave;
+        Vec4 emissiveViscosity;
+        Vec4 extras;
+    };
+    vector<GpuWaterMaterial> table(kMaxWaterMaterials);
+    const WaterMaterialParams kDefault;
+    for (u32 i = 0; i < kMaxWaterMaterials; ++i) {
+        const WaterMaterialParams& m =
+            (bodies && i < bodies->materials.size())
+                ? bodies->materials[i]
+                : kDefault;
+        table[i] = { Vec4 { m.tint, m.tintStrength },
+                     Vec4 { m.deepColor, m.emissiveStrength },
+                     Vec4 { m.absorption, m.flowSpeedScale },
+                     Vec4 { m.foamColor, m.waveScale },
+                     Vec4 { m.emissiveColor, m.viscosity },
+                     Vec4 { m.foamGain, 0.0f, 0.0f, 0.0f } };
+    }
+    device.destroyBuffer(materialsUbo);
+    materialsUbo = device.createBuffer(
+        { .usage = rhi::BufferUsage::Uniform,
+          .size = table.size() * sizeof(GpuWaterMaterial) },
+        table.data());
+    rebuildMapGroup(device);
 }
 
 void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
@@ -386,7 +540,7 @@ void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
     localPipeline = device.createPipeline(
         { .shader = shaders.get(kWaterLocalShader),
           .vertexBuffers =
-              { { .stride = 9 * sizeof(f32),
+              { { .stride = 10 * sizeof(f32),
                   .attributes = { { .location = 0,
                                     .format = rhi::VertexFormat::F32x3,
                                     .offset = 0 },
@@ -395,7 +549,10 @@ void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
                                     .offset = 3 * sizeof(f32) },
                                   { .location = 2,
                                     .format = rhi::VertexFormat::F32x4,
-                                    .offset = 5 * sizeof(f32) } } } },
+                                    .offset = 5 * sizeof(f32) },
+                                  { .location = 3,
+                                    .format = rhi::VertexFormat::F32x1,
+                                    .offset = 9 * sizeof(f32) } } } },
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Greater },

@@ -127,4 +127,8 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uCloudVolRimInfo;
     // x = mist puffiness (fractal edge florets), yzw free.
     vec4 uMistPuffInfo;
+    // x = water debug view mode (0 off), yzw free.
+    vec4 uWaterDebugInfo;
+    // Water-info map: xy = center (world XZ), z = 1/span, w = valid.
+    vec4 uWaterInfoMapInfo;
 };

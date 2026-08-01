@@ -65,3 +65,29 @@ TEST_CASE("terrain height stays within configured amplitude bounds") {
         }
     }
 }
+
+TEST_CASE("underLocalWater: lakes exclude scatter, dry land does not") {
+    render::TerrainParams params;
+    CHECK(!render::terrain::underLocalWater(params, 0.0f, 0.0f, 50.0f,
+                                            1.0f)); // no water set
+    auto water = std::make_shared<render::WaterBodies>();
+    water->seaLevel = 21.0f;
+    render::LakeSurface lake;
+    lake.level = 130.0f;
+    lake.minX = 0.0f;
+    lake.maxX = 100.0f;
+    lake.minZ = 0.0f;
+    lake.maxZ = 100.0f;
+    water->lakes.push_back(lake);
+    params.water = water;
+    // Ground under the lake level: wet; the shore margin counts too.
+    CHECK(render::terrain::underLocalWater(params, 50.0f, 50.0f, 125.0f,
+                                           1.0f));
+    CHECK(render::terrain::underLocalWater(params, 50.0f, 50.0f, 130.5f,
+                                           1.0f));
+    // Above the margin, or outside the lake: dry.
+    CHECK(!render::terrain::underLocalWater(params, 50.0f, 50.0f, 131.5f,
+                                            1.0f));
+    CHECK(!render::terrain::underLocalWater(params, 500.0f, 500.0f,
+                                            125.0f, 1.0f));
+}

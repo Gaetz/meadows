@@ -81,8 +81,25 @@ f32 noise01(u32 seed, f32 x, f32 z) {
     return valueNoise(seed, x, z);
 }
 
+bool underLocalWater(const TerrainParams& params, f32 x, f32 z, f32 h,
+                     f32 margin) {
+    return params.water &&
+           waterDepthAt(*params.water, x, z, h - margin) > 0.0f;
+}
+
+f32 rockExposureAt(const TerrainParams& params, f32 x, f32 z) {
+    const TerrainRegion* region =
+        params.base ? params.base->regionAt(x, z) : nullptr;
+    if (!region || region->rockExposure.empty()) {
+        return 0.0f;
+    }
+    return maskSample(*region, region->rockExposure, x, z, 0.0f);
+}
+
 MaterialWeights materialWeights(const TerrainParams& params, f32 height,
                                 const Vec3& normal) {
+    // No (x, z) here, so no exposure mask: cliff stays 0 and the
+    // steepest faces read as rock — fine for the GI/minimap consumers.
     const f32 slope = 1.0f - normal.y;
     MaterialWeights weights;
     weights.rock = glm::smoothstep(0.18f, 0.35f, slope);
@@ -136,8 +153,11 @@ MaterialWeights materialWeightsAt(const TerrainParams& params, f32 x,
     const f32 rockShift = 0.1f * biome.rockiness;
     const f32 snowLine = params.snowLine + biome.snowLineOffset;
     MaterialWeights weights;
+    weights.cliff = glm::smoothstep(0.30f, 0.55f, slope) *
+                    rockExposureAt(params, x, z);
     weights.rock =
-        glm::smoothstep(0.18f - rockShift, 0.35f - rockShift, slope);
+        glm::smoothstep(0.18f - rockShift, 0.35f - rockShift, slope) *
+        (1.0f - weights.cliff);
     weights.snow = glm::smoothstep(snowLine - 12.0f, snowLine + 42.0f,
                                    height) *
                    (1.0f - glm::smoothstep(0.25f, 0.45f, slope));
@@ -146,7 +166,7 @@ MaterialWeights materialWeightsAt(const TerrainParams& params, f32 x,
                     params.seaLevel + 1.0f + 6.0f * biome.sandiness,
                     params.seaLevel + 8.0f + 24.0f * biome.sandiness,
                     height)) *
-        (1.0f - weights.rock);
+        (1.0f - weights.rock - weights.cliff);
     // The baked beach mask forces sand where the coast pass decided so,
     // whatever the altitude rules say.
     const TerrainRegion* region =
@@ -154,11 +174,13 @@ MaterialWeights materialWeightsAt(const TerrainParams& params, f32 x,
     if (region) {
         const f32 beach =
             maskSample(*region, region->beach, x, z, 0.0f);
-        weights.sand =
-            glm::max(weights.sand, beach * (1.0f - weights.rock));
+        weights.sand = glm::max(
+            weights.sand,
+            beach * (1.0f - weights.rock - weights.cliff));
     }
     weights.grass =
-        glm::max(1.0f - weights.rock - weights.snow - weights.sand,
+        glm::max(1.0f - weights.rock - weights.snow - weights.sand -
+                     weights.cliff,
                  0.0f) *
         biome.grassPresence;
     return weights;
@@ -179,7 +201,10 @@ MaterialWeights materialWeightsShaded(const TerrainParams& params, f32 x,
     const f32 wander =
         splatWander(u - std::floor(u), v - std::floor(v)) - 0.67f;
     MaterialWeights weights;
-    weights.rock = glm::smoothstep(0.18f, 0.35f, slope);
+    weights.cliff = glm::smoothstep(0.30f, 0.55f, slope) *
+                    rockExposureAt(params, x, z);
+    weights.rock =
+        glm::smoothstep(0.18f, 0.35f, slope) * (1.0f - weights.cliff);
     weights.snow = glm::smoothstep(params.snowLine - 12.0f,
                                    params.snowLine + 42.0f,
                                    h + wander * 26.0f) *
@@ -188,9 +213,10 @@ MaterialWeights materialWeightsShaded(const TerrainParams& params, f32 x,
         (1.0f - glm::smoothstep(params.seaLevel + 1.0f,
                                 params.seaLevel + 8.0f,
                                 h + wander * 5.0f)) *
-        (1.0f - weights.rock);
-    weights.grass = glm::max(
-        1.0f - weights.rock - weights.snow - weights.sand, 0.0f);
+        (1.0f - weights.rock - weights.cliff);
+    weights.grass = glm::max(1.0f - weights.rock - weights.snow -
+                                 weights.sand - weights.cliff,
+                             0.0f);
     return weights;
 }
 

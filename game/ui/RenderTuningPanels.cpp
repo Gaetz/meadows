@@ -643,6 +643,9 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         ImGui::Checkbox("auto-skip", &r.reflectionAutoSkipUi);
         ImGui::SliderFloat("Reflection scale", &r.reflectionScaleUi, 0.25f,
                            0.5f, "%.2f");
+        ImGui::Combo("Debug view", &r.waterDebugUi,
+                     "Off\0Flow\0Torrent\0River UV\0Info: surface\0"
+                     "Info: depth\0Info: flow\0");
     }
     if (ImGui::CollapsingHeader("Post-processing")) {
         ImGui::Checkbox("Filmic tonemap (A/B)", &r.tonemapUi);

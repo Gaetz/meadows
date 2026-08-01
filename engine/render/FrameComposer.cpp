@@ -178,6 +178,8 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     } else {
         resolved.mistInfo = Vec4 { 0.0f };
     }
+    resolved.waterDebugInfo = in.waterDebugInfo;
+    resolved.waterInfoMapInfo = in.waterInfoMapInfo;
     // Volumetric sky clouds ride RESOLVED only: the reflection pass has
     // no clouds composite, so it keeps the 2D dome layer (cloudVolInfo.x
     // stays 0 in base and applyClouds draws there).

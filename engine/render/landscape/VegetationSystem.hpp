@@ -228,6 +228,12 @@ private:
 
     struct Chunk {
         bool resident { false };
+        // Invalidated while its build was still IN FLIGHT (a tile
+        // published new terrain/water meanwhile): the landing payload
+        // is stale — discard it and let the ring re-request with fresh
+        // params instead of publishing trees on ground that no longer
+        // exists (or under a lake that now does).
+        bool stale { false };
         // Slice of the pooled instance buffer (in instances): the
         // chunk's variant-sorted block starts here — firstInstance[v] is
         // relative to it, the indirect command adds the two.
