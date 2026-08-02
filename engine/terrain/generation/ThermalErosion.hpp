@@ -31,4 +31,23 @@ ThermalResult erodeThermal(const GridSpec& spec, const vector<f32>& height,
                            const ThermalParams& params,
                            const vector<f32>* talusScale = nullptr);
 
+// Crest rounding: peaks and aretes (cells standing ABOVE their
+// neighbourhood mean) relax toward that mean; concave ground — valleys,
+// carved beds — is never touched. Material is NOT conserved (shaved
+// crests vanish): a stylization pass, not physics.
+struct RidgeRoundParams {
+    f32 radius { 64.0f };   // meters of neighbourhood-mean support
+    f32 strength { 0.6f };  // fraction of the prominence shaved at full weight
+    // Prominence band: weight ramps over [0.5, 1.5] x threshold, so
+    // gentle convexity (hill tops, terrace rims) passes untouched.
+    f32 threshold { 4.0f }; // meters
+    f32 seaLevel { kDefaultSeaLevel };
+};
+
+// `weight`, if given, scales the effect per cell — the caller gates the
+// rounding to where the orogeny built knife edges (uplift).
+vector<f32> roundRidges(const GridSpec& spec, const vector<f32>& height,
+                        const RidgeRoundParams& params,
+                        const vector<f32>* weight = nullptr);
+
 } // namespace render::terraingen

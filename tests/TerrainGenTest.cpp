@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <cmath>
+
 #include "engine/terrain/generation/TerrainGen.hpp"
 
 // Stage S1 (macro synthesis): elevation tiers, terracing, coast profile.
@@ -15,12 +17,14 @@ namespace {
 struct FixedControls final : ControlSource {
     f32 tier { 0.0f };
     f32 uplift { 0.0f };
+    f32 hardness { 0.5f };
     bool halfSea { false };
 
     ControlSample at(f32 x, f32) const override {
         ControlSample s;
         s.tier = tier;
         s.uplift = uplift;
+        s.hardness = hardness;
         s.sea = halfSea && x < 0.0f;
         return s;
     }
@@ -179,8 +183,8 @@ TEST_CASE("procedural controls carve both sea and high ground") {
     for (i32 gz = -16; gz <= 16; ++gz) {
         for (i32 gx = -16; gx <= 16; ++gx) {
             const ControlSample s = controls.at(
-                static_cast<f32>(gx) * 800.0f,
-                static_cast<f32>(gz) * 800.0f);
+                static_cast<f32>(gx) * 4000.0f,
+                static_cast<f32>(gz) * 4000.0f);
             if (s.sea) {
                 ++seaCount;
             }
@@ -229,9 +233,10 @@ TEST_CASE("relief regimes: hill chains, old massifs and young ranges "
     u32 oldMassifs = 0;
     u32 youngRanges = 0;
     // Scan a wide area at coarse steps: the three regimes must all
-    // occur on land — the variety contract.
-    for (f32 z = -20000.0f; z <= 20000.0f; z += 400.0f) {
-        for (f32 x = -20000.0f; x <= 20000.0f; x += 400.0f) {
+    // occur on land — the variety contract. Sized against the longest
+    // control wave (the swell) so every regime gets several periods.
+    for (f32 z = -100000.0f; z <= 100000.0f; z += 2000.0f) {
+        for (f32 x = -100000.0f; x <= 100000.0f; x += 2000.0f) {
             const ControlSample s = controls.at(x, z);
             if (s.sea) {
                 continue;
@@ -253,8 +258,8 @@ TEST_CASE("relief regimes: hill chains, old massifs and young ranges "
     // The long swell and the passability corridors both exist on land.
     u32 swelled = 0;
     u32 gentle = 0;
-    for (f32 z = -20000.0f; z <= 20000.0f; z += 400.0f) {
-        for (f32 x = -20000.0f; x <= 20000.0f; x += 400.0f) {
+    for (f32 z = -100000.0f; z <= 100000.0f; z += 2000.0f) {
+        for (f32 x = -100000.0f; x <= 100000.0f; x += 2000.0f) {
             const ControlSample s = controls.at(x, z);
             if (s.sea) {
                 continue;
@@ -275,4 +280,37 @@ TEST_CASE("relief regimes: hill chains, old massifs and young ranges "
     const ControlSample plain;
     CHECK(plain.plateau == 0.0f);
     CHECK(plain.hillRelief == 0.0f);
+}
+
+TEST_CASE("hard-rock coasts cliff into the sea, soft coasts beach") {
+    FixedControls controls;
+    controls.tier = 0.4f; // low country: the tier band alone never cliffs
+    controls.halfSea = true;
+    const MacroParams params;
+
+    controls.hardness = 0.9f;
+    const MacroResult hard =
+        synthesizeMacro(controls, spec1km(), params, 11);
+    controls.hardness = 0.1f;
+    const MacroResult soft =
+        synthesizeMacro(controls, spec1km(), params, 11);
+
+    const auto at = [&](const MacroResult& r, f32 x, f32 z) {
+        const u32 col = static_cast<u32>(
+            std::lround((x - r.spec.originX) / r.spec.texelSize));
+        const u32 row = static_cast<u32>(
+            std::lround((z - r.spec.originZ) / r.spec.texelSize));
+        return r.height[static_cast<size_t>(row) * r.spec.n + col];
+    };
+    // Just inland of the waterline: the hard coast keeps its altitude
+    // to the rim, the soft coast is still on the beach ramp.
+    CHECK(at(hard, 80.0f, 0.0f) > at(soft, 80.0f, 0.0f) + 3.0f);
+    // Just offshore: the hard coast plunges deeper, sooner.
+    CHECK(at(hard, -240.0f, 0.0f) < at(soft, -240.0f, 0.0f) - 3.0f);
+    // Neutral hardness (the painted/test default) is the legacy coast.
+    controls.hardness = 0.5f;
+    const MacroResult neutral =
+        synthesizeMacro(controls, spec1km(), params, 11);
+    CHECK(at(neutral, 80.0f, 0.0f) ==
+          doctest::Approx(at(soft, 80.0f, 0.0f)));
 }

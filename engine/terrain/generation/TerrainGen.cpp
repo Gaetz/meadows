@@ -25,6 +25,7 @@ constexpr u32 kSaltRegime = 0x4b1d5eedu;
 constexpr u32 kSaltHillChain = 0x91c0ffeeu;
 constexpr u32 kSaltSwell = 0x5e110000u;
 constexpr u32 kSaltGentle = 0x6e97e155u;
+constexpr u32 kSaltHardness = 0x11780c1cu;
 
 struct TierBlend {
     f32 altitude;
@@ -101,19 +102,27 @@ f32 landHeight(const MacroParams& p, u32 seed, const ControlSample& s,
 
 // Coast profile from the signed shore distance (+ on land, meters).
 // Continuous at d == 0 (both sides meet at shoreHeight above sea level);
-// high tiers skip the beach ramp and keep their altitude to the rim.
-f32 coastProfile(const MacroParams& p, f32 land, f32 tier, f32 d) {
+// high tiers AND hard-rock coasts skip the beach ramp and keep their
+// altitude to the rim (calanques / chalk cliffs), with a narrower shelf
+// and a steeper underwater plunge.
+f32 coastProfile(const MacroParams& p, f32 land, f32 tier, f32 d,
+                 f32 hardness) {
     const f32 waterline = p.seaLevel + p.shoreHeight;
+    const f32 cliff =
+        glm::max(noise::smoothstep01(p.cliffTierStart, p.cliffTierEnd,
+                                     tier),
+                 noise::smoothstep01(0.62f, 0.8f, hardness));
     if (d <= 0.0f) {
+        const f32 shelf = glm::mix(p.shelfWidth, p.shelfWidth * 0.35f,
+                                   cliff);
+        const f32 falloff =
+            glm::mix(p.seaFalloff, p.seaFalloff * 0.4f, cliff);
         const f32 shallow =
             glm::mix(waterline, p.seaLevel - p.shallowDepth,
-                     noise::smoothstep01(0.0f, p.shelfWidth, -d));
+                     noise::smoothstep01(0.0f, shelf, -d));
         return glm::mix(shallow, p.seaFloor,
-                        noise::smoothstep01(p.shelfWidth, p.seaFalloff,
-                                            -d));
+                        noise::smoothstep01(shelf, falloff, -d));
     }
-    const f32 cliff =
-        noise::smoothstep01(p.cliffTierStart, p.cliffTierEnd, tier);
     const f32 ramp =
         glm::mix(waterline, land,
                  noise::smoothstep01(0.0f, p.shoreWidth, d));
@@ -253,7 +262,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
     const f32 regime = noise::fbm(p.seed ^ kSaltRegime, x, z,
                                   1.0f / p.regimeWavelength, 3, 2.0f,
                                   0.5f);
-    const f32 hills = 1.0f - noise::smoothstep01(0.32f, 0.45f, regime);
+    const f32 hills = 1.0f - noise::smoothstep01(0.22f, 0.33f, regime);
     const f32 old = noise::smoothstep01(0.55f, 0.68f, regime);
     const f32 inland = noise::smoothstep01(0.15f, 0.6f, sample.tier);
     // Hill country stays LOW (no ranges) and rolls; old massifs stand
@@ -274,7 +283,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
     // an old massif must stay hilly, only rounded.
     sample.uplift = glm::max(
         sample.uplift,
-        inland * glm::max(old * 0.12f, hills * 0.09f));
+        inland * glm::max(old * 0.04f, hills * 0.03f));
     // The LONG swell: whole landscapes ride a very slow positive lift —
     // ranges on it reach true high-mountain altitudes, hill country on
     // it reads as highland plateau. Positive-only (it raises, never
@@ -285,11 +294,21 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
                    3, 2.0f, 0.5f));
     sample.plateau += swell * inland * p.swellHeight;
     // Passability corridors: erosion softeners, never height. Banded so
-    // roughly a quarter of the land is a gentle passage.
+    // roughly a quarter of the land is a gentle passage — except in the
+    // ranges, where the band widens with the uplift the walker must
+    // cross: drama stays, but always with a way through.
+    const f32 rangeNeed =
+        noise::smoothstep01(0.2f, 0.8f, sample.uplift);
     sample.gentle = noise::smoothstep01(
-        0.55f, 0.7f,
+        0.55f - 0.18f * rangeNeed, 0.7f - 0.18f * rangeNeed,
         noise::fbm(p.seed ^ kSaltGentle, x, z,
                    1.0f / p.gentleWavelength, 3, 2.0f, 0.5f));
+    // Lithology: a slow hardness field — hard pockets keep sharp
+    // relief and cliff coasts, soft pockets roll. Plain fbm: the mean
+    // sits at neutral, the tails are the drama.
+    sample.hardness =
+        noise::fbm(p.seed ^ kSaltHardness, x, z,
+                   1.0f / p.hardnessWavelength, 3, 2.0f, 0.5f);
     // Climate -> biome id (palette contract in ProceduralControlParams):
     // cold beats arid beats alpine; temperate is the default.
     const f32 temperature =
@@ -317,6 +336,9 @@ MacroResult synthesizeMacro(const ControlSource& controls,
     out.uplift.resize(spec.cells());
     out.biome.resize(spec.cells());
     out.gentle.resize(spec.cells());
+    out.plateau.resize(spec.cells());
+    out.hillRelief.resize(spec.cells());
+    out.hardness.resize(spec.cells());
     vector<ControlSample> samples(spec.cells());
     vector<u8> seaMask(spec.cells());
     for (u32 row = 0; row < spec.n; ++row) {
@@ -328,6 +350,9 @@ MacroResult synthesizeMacro(const ControlSource& controls,
             out.uplift[i] = s.sea ? 0.0f : s.uplift;
             out.biome[i] = s.biome;
             out.gentle[i] = s.gentle;
+            out.plateau[i] = s.sea ? 0.0f : s.plateau;
+            out.hillRelief[i] = s.sea ? 0.0f : s.hillRelief;
+            out.hardness[i] = s.hardness;
         }
     }
     out.seaDist = signedSeaDistance(spec, seaMask);
@@ -339,8 +364,9 @@ MacroResult synthesizeMacro(const ControlSource& controls,
                 landHeight(params, seed, samples[i],
                            hillChainWavelength, spec.x(col),
                            spec.z(row)));
-            out.height[i] = coastProfile(params, land, samples[i].tier,
-                                         out.seaDist[i]);
+            out.height[i] =
+                coastProfile(params, land, samples[i].tier,
+                             out.seaDist[i], samples[i].hardness);
         }
     }
     return out;
@@ -358,7 +384,23 @@ f32 macroHeightAnalytic(const ProceduralControls& controls,
     const f32 c = controls.continentalness(x, z);
     const f32 d = (c - controls.params().seaThreshold) *
                   controls.params().continentWavelength * 0.35f;
-    return coastProfile(params, land, s.tier, d);
+    const f32 h = coastProfile(params, land, s.tier, d, s.hardness);
+    // Erosion-aware silhouette: the fastscape carves the macro back
+    // toward base level, sparing what the plateau keep protects. Far
+    // meshes and the out-of-region fallback sample THIS surface, so a
+    // distant summit must sit near its future baked height, not at the
+    // pre-erosion macro's promise (which runs up to ~350 m proud).
+    // Piecewise-linear fit of the baked-vs-analytic calibration
+    // (tests: 'erosion calibration'): heights are kept up to a keep-
+    // dependent threshold, then compressed to the measured tail slope.
+    const f32 keep =
+        glm::min(kPlateauKeepMax, s.plateau * kPlateauKeepCoef);
+    const f32 threshold = 80.0f + 1100.0f * keep;
+    const f32 rel = h - params.seaLevel;
+    if (rel <= threshold) {
+        return h;
+    }
+    return params.seaLevel + threshold + 0.25f * (rel - threshold);
 }
 
 } // namespace render::terraingen

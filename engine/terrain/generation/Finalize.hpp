@@ -14,7 +14,7 @@
 namespace render::terraingen {
 
 struct FinalizeParams {
-    u32 upsampleFactor { 4 }; // 8 m macro -> 2 m runtime texels
+    u32 upsampleFactor { 8 }; // 16 m macro -> 2 m runtime texels
     // River cross-section: depth from local width, parabolic bed, then a
     // bank shoulder blending back into the terrain.
     f32 riverDepthCoef { 0.18f }; // depth = coef * (2 * halfWidth)

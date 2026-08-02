@@ -27,7 +27,7 @@ struct AtmosphereParams {
     // Fog ceiling falloff (1/m above sea level): how fast the fog layer
     // thins with altitude — high = clear sky, low = grey dome.
     f32 fogCeiling { 0.0035f };
-    f32 cloudHeight { 520.0f };
+    f32 cloudHeight { 950.0f };
     f32 cloudScale { 0.0011f };
     f32 sunIntensity { 1.0f };
     f32 ambientIntensity { 1.0f };

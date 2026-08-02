@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 
 #include "engine/terrain/SandboxTerrain.hpp"
@@ -298,5 +299,292 @@ TEST_CASE("regime diagnostic" * doctest::skip()) {
     };
     report("OLD MASSIF", massifs);
     report("HILL CHAIN", chains);
+    CHECK(true);
+}
+
+// What does the tallest terrain actually measure? Scans the analytic
+// surface + uplift for the strongest summit candidate, bakes that tile,
+// and reports the true (post-erosion, post-rounding) peak.
+//   meadows-tests '-tc=height diagnostic' -ns
+TEST_CASE("height diagnostic" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const ProceduralControls controls { controlParams };
+
+    struct Candidate {
+        f32 x, z, score, base;
+    };
+    vector<Candidate> candidates;
+    for (f32 z = -30000.0f; z <= 30000.0f; z += 250.0f) {
+        for (f32 x = -30000.0f; x <= 30000.0f; x += 250.0f) {
+            const ControlSample s = controls.at(x, z);
+            if (s.sea) {
+                continue;
+            }
+            const f32 h =
+                macroHeightAnalytic(controls, params.macro, x, z);
+            // The orogeny adds on top of the base where uplift fires.
+            candidates.push_back({ x, z, h + s.uplift * 600.0f, h });
+        }
+    }
+    std::sort(candidates.begin(), candidates.end(),
+              [](const Candidate& a, const Candidate& b) {
+                  return a.score > b.score;
+              });
+    u32 baked = 0;
+    vector<Candidate> kept;
+    for (const Candidate& c : candidates) {
+        bool near = false;
+        for (const Candidate& other : kept) {
+            if (std::hypot(c.x - other.x, c.z - other.z) < 6000.0f) {
+                near = true;
+                break;
+            }
+        }
+        if (near) {
+            continue;
+        }
+        kept.push_back(c);
+        const i32 tx =
+            static_cast<i32>(std::floor(c.x / params.tileSize));
+        const i32 tz =
+            static_cast<i32>(std::floor(c.z / params.tileSize));
+        const TileBakeResult result = bakeTile(params, tx, tz);
+        f32 peak = -1.0e9f;
+        size_t peakIdx = 0;
+        for (size_t i = 0; i < result.region.heights.size(); ++i) {
+            if (result.region.heights[i] > peak) {
+                peak = result.region.heights[i];
+                peakIdx = i;
+            }
+        }
+        const u32 w = result.region.width;
+        const f32 px =
+            result.region.originX +
+            static_cast<f32>(peakIdx % w) * result.region.texelSize;
+        const f32 pz =
+            result.region.originZ +
+            static_cast<f32>(peakIdx / w) * result.region.texelSize;
+        MESSAGE("candidate (", c.x, ", ", c.z, ") base=", c.base,
+                " uplift-score=", c.score, " -> tile (", tx, ", ", tz,
+                "): baked peak ", peak, " m at (", px, ", ", pz, ")");
+        if (++baked >= 3) {
+            break;
+        }
+    }
+    CHECK(true);
+}
+
+// Land-type budget: how the land (sea excluded) splits into plains /
+// hills+plateaus / mountains, sampled from the control fields.
+//   meadows-tests '-tc=proportion diagnostic' -ns
+TEST_CASE("proportion diagnostic" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const ProceduralControls controls { controlParams };
+
+    u64 sea = 0, plains = 0, hills = 0, mountains = 0;
+    for (f32 z = -60000.0f; z <= 60000.0f; z += 200.0f) {
+        for (f32 x = -60000.0f; x <= 60000.0f; x += 200.0f) {
+            const ControlSample s = controls.at(x, z);
+            if (s.sea) {
+                ++sea;
+            } else if (s.uplift > 0.35f) {
+                ++mountains;
+            } else if (s.hillRelief > 25.0f || s.plateau > 80.0f) {
+                ++hills;
+            } else {
+                ++plains;
+            }
+        }
+    }
+    const f64 land = static_cast<f64>(plains + hills + mountains);
+    MESSAGE("sea ", 100.0 * sea / (land + sea), "% of world; of land: ",
+            "plains ", 100.0 * plains / land, "%, hills+plateaus ",
+            100.0 * hills / land, "%, mountains ",
+            100.0 * mountains / land, "%");
+    CHECK(true);
+}
+
+// Coastline census: how much of the shore runs in cliff mode, how high
+// the rims stand, and where the best existing sea-cliffs are.
+//   meadows-tests '-tc=coast diagnostic' -ns
+TEST_CASE("coast diagnostic" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const ProceduralControls controls { controlParams };
+    const f32 sea = params.macro.seaLevel;
+
+    struct Spot {
+        f32 x, z, rim, cliff;
+    };
+    vector<Spot> shore;
+    const f32 step = 200.0f;
+    for (f32 z = -60000.0f; z <= 60000.0f; z += step) {
+        for (f32 x = -60000.0f; x <= 60000.0f; x += step) {
+            const ControlSample s = controls.at(x, z);
+            if (s.sea) {
+                continue;
+            }
+            const bool coastal = controls.at(x - step, z).sea ||
+                                 controls.at(x + step, z).sea ||
+                                 controls.at(x, z - step).sea ||
+                                 controls.at(x, z + step).sea;
+            if (!coastal) {
+                continue;
+            }
+            // The coastProfile cliff blend, replicated.
+            const f32 cliff = glm::max(
+                glm::smoothstep(params.macro.cliffTierStart,
+                                params.macro.cliffTierEnd, s.tier),
+                glm::smoothstep(0.62f, 0.8f, s.hardness));
+            // Rim height: the land just inland of the ramp band.
+            const f32 rim =
+                macroHeightAnalytic(controls, params.macro, x, z) - sea;
+            shore.push_back({ x, z, rim, cliff });
+        }
+    }
+    u32 cliffy = 0, tall = 0;
+    for (const Spot& s : shore) {
+        if (s.cliff > 0.5f) {
+            ++cliffy;
+            if (s.rim > 40.0f) {
+                ++tall;
+            }
+        }
+    }
+    MESSAGE("shore samples: ", shore.size(), "; cliff-mode ",
+            100.0 * cliffy / shore.size(), "%, of which rim>40m ",
+            cliffy ? 100.0 * tall / cliffy : 0.0, "%");
+    std::sort(shore.begin(), shore.end(),
+              [](const Spot& a, const Spot& b) {
+                  return a.rim * a.cliff > b.rim * b.cliff;
+              });
+    u32 shown = 0;
+    vector<Spot> kept;
+    for (const Spot& s : shore) {
+        bool near = false;
+        for (const Spot& other : kept) {
+            if (std::hypot(s.x - other.x, s.z - other.z) < 5000.0f) {
+                near = true;
+                break;
+            }
+        }
+        if (near || s.cliff < 0.5f) {
+            continue;
+        }
+        kept.push_back(s);
+        MESSAGE("cliff coast at (", s.x, ", ", s.z, "): rim ", s.rim,
+                " m, cliff ", s.cliff);
+        if (++shown >= 5) {
+            break;
+        }
+    }
+    // Bake the top spot's tile and walk a transect through it: does
+    // the rim survive the real erosion?
+    if (!kept.empty()) {
+        const Spot& top = kept.front();
+        const i32 tx =
+            static_cast<i32>(std::floor(top.x / params.tileSize));
+        const i32 tz =
+            static_cast<i32>(std::floor(top.z / params.tileSize));
+        const TileBakeResult baked = bakeTile(params, tx, tz);
+        const auto h = [&](f32 x, f32 z) {
+            const auto& r = baked.region;
+            const i32 col = static_cast<i32>(
+                std::lround((x - r.originX) / r.texelSize));
+            const i32 row = static_cast<i32>(
+                std::lround((z - r.originZ) / r.texelSize));
+            if (col < 0 || row < 0 || col >= static_cast<i32>(r.width) ||
+                row >= static_cast<i32>(r.height)) {
+                return -9999.0f;
+            }
+            return r.heights[static_cast<size_t>(row) * r.width + col];
+        };
+        // Seaward direction: the neighbour that was sea in the scan.
+        f32 dx = 0.0f, dz = 0.0f;
+        if (controls.at(top.x - step, top.z).sea) {
+            dx = -1.0f;
+        } else if (controls.at(top.x + step, top.z).sea) {
+            dx = 1.0f;
+        } else if (controls.at(top.x, top.z - step).sea) {
+            dz = -1.0f;
+        } else {
+            dz = 1.0f;
+        }
+        for (f32 d = -600.0f; d <= 600.0f; d += 150.0f) {
+            MESSAGE("  transect ", d, " m seaward: baked h = ",
+                    h(top.x + dx * d, top.z + dz * d));
+        }
+    }
+    CHECK(true);
+}
+
+// Calibration data for the erosion-aware analytic (far silhouettes):
+// bakes a mountain tile and a lowland tile, then buckets baked-minus-
+// analytic by analytic height-above-sea, with the mean keep fraction.
+//   meadows-tests '-tc=erosion calibration' -ns
+TEST_CASE("erosion calibration" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    ProceduralControlParams controlParams = params.controls;
+    controlParams.seed = params.worldSeed;
+    const ProceduralControls controls { controlParams };
+    const f32 sea = params.macro.seaLevel;
+
+    const auto sampleTile = [&](i32 tx, i32 tz) {
+        const TileBakeResult r = bakeTile(params, tx, tz);
+        struct Bucket {
+            f64 delta { 0.0 };
+            f64 keep { 0.0 };
+            u32 count { 0 };
+        };
+        constexpr u32 kBuckets = 12;
+        constexpr f32 kBand = 100.0f;
+        array<Bucket, kBuckets> buckets {};
+        const u32 w = r.region.width;
+        for (u32 row = 0; row < r.region.height; row += 8) {
+            for (u32 col = 0; col < w; col += 8) {
+                const f32 x = r.region.originX +
+                              static_cast<f32>(col) * r.region.texelSize;
+                const f32 z = r.region.originZ +
+                              static_cast<f32>(row) * r.region.texelSize;
+                const f32 ha =
+                    macroHeightAnalytic(controls, params.macro, x, z);
+                if (ha <= sea) {
+                    continue;
+                }
+                const u32 b = glm::min(
+                    kBuckets - 1,
+                    static_cast<u32>((ha - sea) / kBand));
+                const f32 hb =
+                    r.region.heights[static_cast<size_t>(row) * w + col];
+                const ControlSample s = controls.at(x, z);
+                buckets[b].delta += hb - ha;
+                buckets[b].keep +=
+                    glm::min(0.5f, s.plateau * 0.0008f);
+                ++buckets[b].count;
+            }
+        }
+        MESSAGE("tile (", tx, ", ", tz, "):");
+        for (u32 b = 0; b < kBuckets; ++b) {
+            if (buckets[b].count < 8) {
+                continue;
+            }
+            MESSAGE("  h-sea [", b * 100, ",", (b + 1) * 100,
+                    "): mean delta ",
+                    buckets[b].delta / buckets[b].count, " keep ",
+                    buckets[b].keep / buckets[b].count, " (n=",
+                    buckets[b].count, ")");
+        }
+    };
+    sampleTile(-6, 5); // the tallest measured massif
+    sampleTile(-1, 0); // the spawn lowlands
     CHECK(true);
 }

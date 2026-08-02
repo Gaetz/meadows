@@ -137,12 +137,55 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
             character.erodibility[i] *= 1.0f + 1.6f * g;
             character.talusScale[i] *= 1.0f - 0.25f * g;
         }
+        // Ranges shed steeper: a lower angle of repose where the uplift
+        // is strong relaxes aretes into walkable scree shoulders. And
+        // TRUE plains are soft sediment: doubled erodibility halves
+        // their valley slopes — but only where no orogeny runs, no hill
+        // chain rolls and no massif plateau stands. Foothills and hill
+        // country keep hard rock: fastscape base-level lowering
+        // propagates upstream, so a soft ring around a massif pulls its
+        // summits down over the iterations.
+        for (size_t i = 0; i < macro.uplift.size(); ++i) {
+            const f32 u = glm::smoothstep(0.15f, 0.5f, macro.uplift[i]);
+            character.talusScale[i] *= 1.0f - 0.3f * u;
+            const f32 plain =
+                (1.0f - glm::smoothstep(0.03f, 0.15f, macro.uplift[i])) *
+                (1.0f -
+                 glm::smoothstep(30.0f, 90.0f, macro.hillRelief[i])) *
+                (1.0f -
+                 glm::smoothstep(60.0f, 180.0f, macro.plateau[i]));
+            character.erodibility[i] *= 1.0f + plain;
+            // Lithology: hard pockets erode slow and hold steeper
+            // scree, soft pockets roll — neutralized where a corridor
+            // runs (a pass is a promise) and clamped so the stacked
+            // factors (biome, plains, gentle) never run away.
+            if (!macro.hardness.empty()) {
+                const f32 hard = glm::mix(macro.hardness[i], 0.5f,
+                                          macro.gentle[i]);
+                character.erodibility[i] *=
+                    glm::mix(1.6f, 0.55f, hard);
+                character.talusScale[i] *= glm::mix(0.9f, 1.25f, hard);
+            }
+            character.erodibility[i] =
+                glm::clamp(character.erodibility[i], 0.4f, 3.0f);
+            character.talusScale[i] =
+                glm::clamp(character.talusScale[i], 0.5f, 1.6f);
+        }
     }
 
     FluvialParams fluvial = params.fluvial;
     fluvial.seaLevel = params.macro.seaLevel;
+    // Base lifts (swell, old-massif plateau) partially survive the
+    // stream power: without this keep, the fastscape carves highlands
+    // back toward sea base level and summits lose most of the lift.
+    vector<f32> keep(macro.plateau.size());
+    for (size_t i = 0; i < macro.plateau.size(); ++i) {
+        keep[i] =
+            glm::min(kPlateauKeepMax, macro.plateau[i] * kPlateauKeepCoef);
+    }
     const FluvialResult eroded = erodeFluvial(
-        out.sim, macro.height, macro.uplift, fluvial, nullptr,
+        out.sim, macro.height, macro.uplift, fluvial,
+        keep.empty() ? nullptr : &keep,
         character.erodibility.empty() ? nullptr : &character.erodibility,
         character.capacityScale.empty() ? nullptr
                                         : &character.capacityScale);
@@ -154,6 +197,19 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
         character.talusScale.empty() ? nullptr : &character.talusScale);
 
     out.eroded = std::move(relaxed.height);
+    // Round the knife edges the orogeny built. Uplift-gated: hill tops
+    // and mesa rims keep their edge, peaks and aretes lose theirs.
+    {
+        RidgeRoundParams rounding = params.rounding;
+        rounding.seaLevel = params.macro.seaLevel;
+        vector<f32> crestWeight(macro.uplift.size());
+        for (size_t i = 0; i < macro.uplift.size(); ++i) {
+            crestWeight[i] =
+                glm::smoothstep(0.15f, 0.5f, macro.uplift[i]);
+        }
+        out.eroded =
+            roundRidges(out.sim, out.eroded, rounding, &crestWeight);
+    }
     // One sediment field: thermal scree + fluvial alluvium.
     out.deposit = std::move(relaxed.deposit);
     if (!eroded.deposit.empty()) {
@@ -164,6 +220,7 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
     out.seaDist = std::move(macro.seaDist);
     out.biome = std::move(macro.biome);
     out.gentle = std::move(macro.gentle);
+    out.uplift = std::move(macro.uplift);
     return out;
 }
 
@@ -421,6 +478,19 @@ TileBakeResult bakeTileStage2(
         }
         for (size_t i = 0; i < self.gentle.size(); ++i) {
             character.fineScale[i] *= 1.0f - 0.8f * self.gentle[i];
+        }
+    }
+    // Lowland soil creep: the sharp fine gullies belong to orogeny
+    // country (and arid badlands via the biome table) — grassland
+    // plains and hills keep only half the carve.
+    if (!self.uplift.empty()) {
+        if (character.fineScale.empty()) {
+            character.fineScale.assign(sim.cells(), 1.0f);
+        }
+        for (size_t i = 0; i < self.uplift.size(); ++i) {
+            const f32 low =
+                1.0f - glm::smoothstep(0.05f, 0.4f, self.uplift[i]);
+            character.fineScale[i] *= 1.0f - 0.5f * low;
         }
     }
     const f32 keepMinX = tileMinX - params.overlapMargin;

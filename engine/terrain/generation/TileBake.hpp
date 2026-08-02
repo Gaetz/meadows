@@ -50,7 +50,12 @@ struct TileBakeParams {
     // sides carve (almost) the same valleys.
     f32 apron { 1536.0f };
     f32 overlapMargin { 64.0f };  // kept ring shared with neighbours
-    f32 macroTexel { 8.0f };
+    // Erosion/hydrology grid resolution. This is the FREQUENCY of the
+    // fastscape dissection: ridge-valley spacing scales with it (the
+    // finalize chain re-details at 4 m / 2 m either way), so it is the
+    // knob that spreads the same relief over fewer, broader ups and
+    // downs.
+    f32 macroTexel { 16.0f };
     // Stage-2 hydrology window: tile + this margin, sampled from the
     // composed neighbourhood terrain.
     f32 waterMargin { 1024.0f };
@@ -58,6 +63,7 @@ struct TileBakeParams {
     MacroParams macro;
     FluvialParams fluvial;
     ThermalParams thermal;
+    RidgeRoundParams rounding; // crest relaxation, uplift-gated
     HydrologyParams hydrology;
     FinalizeParams finalize;
     // Indexed by biome palette id; empty = neutral everywhere. Ids past
@@ -75,6 +81,7 @@ struct TileBakeParams {
 struct TileStage1 {
     GridSpec sim;
     vector<f32> eroded;  // S3 output
+    vector<f32> uplift;  // [0,1] orogeny field (fine-erosion lowland damp)
     vector<f32> deposit; // fluvial + thermal sediment (m) — mask material
     vector<f32> seaDist; // macro coast field (beach mask)
     vector<u8> biome;    // macro biome ids
@@ -121,8 +128,8 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //   kTileBakeVersion — bump when ANY published output changes (stage-2
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
-constexpr u32 kStage1Version = 20;
-constexpr u32 kTileBakeVersion = 23;
+constexpr u32 kStage1Version = 30;
+constexpr u32 kTileBakeVersion = 33;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

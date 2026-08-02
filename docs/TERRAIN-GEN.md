@@ -343,3 +343,13 @@ décision GPU), plaque d'eau bbox / éviction sandboxLakes / spawn initial
   sur la water-info texture) — non fait, coupé du périmètre v2.
 - **Matériau d'eau côté gameplay** (viscosité → vitesse de nage, dégâts
   lave) — la donnée est déjà headless (`WaterBodies::materials`).
+- **Meshes de falaise sur pentes raides** (constat 2026-08-02, muraille
+  côtière de (-58800,-21200)) : un heightfield ne fait pas de vraie
+  paroi — pas de surplomb, thermique ~40-45° max, 2 m/texel. Les vraies
+  falaises (côtes dures, gorges, cirques) demandent des meshes de rocher
+  plaqués là où pente + rockExposure sont forts — le modèle Skyrim/BotW.
+  Mécanisme : une règle de scatter par chunk (extension du système
+  herbe/végétation existant), pas un nouveau système.
+- **Vallées glaciaires / vrais fjords** (auges creusées sous le niveau
+  de mer puis noyées) — hors scope lithologie ; à réfléchir si le besoin
+  bite après les côtes dures.

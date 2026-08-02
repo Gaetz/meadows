@@ -60,6 +60,47 @@ TEST_CASE("thermal erosion relaxes a spike to the talus angle, mass kept") {
           0.0f);
 }
 
+TEST_CASE("ridge rounding shaves peaks, spares flanks and valleys") {
+    const u32 c = kN / 2;
+    const auto dist = [&](u32 col, u32 row) {
+        const f32 dx = (static_cast<f32>(col) - static_cast<f32>(c)) * kTexel;
+        const f32 dz = (static_cast<f32>(row) - static_cast<f32>(c)) * kTexel;
+        return std::sqrt(dx * dx + dz * dz);
+    };
+    // A sharp cone: apex at 100 m, planar flanks.
+    vector<f32> cone(spec().cells());
+    for (u32 row = 0; row < kN; ++row) {
+        for (u32 col = 0; col < kN; ++col) {
+            cone[at(col, row)] = 100.0f - 0.3f * dist(col, row);
+        }
+    }
+    const RidgeRoundParams params;
+    const auto rounded = roundRidges(spec(), cone, params);
+
+    // Deterministic; the apex lost meters, a mid-flank point (whose
+    // convexity sits under the prominence band) kept its height.
+    CHECK(rounded == roundRidges(spec(), cone, params));
+    CHECK(cone[at(c, c)] - rounded[at(c, c)] > 5.0f);
+    CHECK(std::abs(cone[at(c + 20, c)] - rounded[at(c + 20, c)]) < 0.5f);
+
+    // An inverted cone (a valley) is concave: its floor never moves.
+    vector<f32> valley(spec().cells());
+    for (u32 row = 0; row < kN; ++row) {
+        for (u32 col = 0; col < kN; ++col) {
+            valley[at(col, row)] = 30.0f + 0.3f * dist(col, row);
+        }
+    }
+    const auto vRounded = roundRidges(spec(), valley, params);
+    CHECK(vRounded[at(c, c)] == valley[at(c, c)]);
+
+    // Off switch and zero weight are both bit-exact.
+    RidgeRoundParams off = params;
+    off.strength = 0.0f;
+    CHECK(roundRidges(spec(), cone, off) == cone);
+    const vector<f32> zeros(spec().cells(), 0.0f);
+    CHECK(roundRidges(spec(), cone, params, &zeros) == cone);
+}
+
 TEST_CASE("a crater above sea level becomes an altitude lake at its spill") {
     // Ring mountain: rim at 90 m, bowl floor at 50 m, one 70 m breach in
     // the rim — the spill. Plain at 40 m.

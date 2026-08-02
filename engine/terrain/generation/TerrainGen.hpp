@@ -38,6 +38,10 @@ struct ControlSample {
     // rock -> gentle equilibrium slopes, no fine ravines) — mountain
     // passes and walkable gaps between hills, drama kept elsewhere.
     f32 gentle { 0.0f };
+    // Lithology [0,1]: rock hardness. Hard rock erodes slow, holds
+    // steeper scree, and cliffs into the sea (calanques); soft rock
+    // rolls gentle and beaches. 0.5 = neutral (painted/test default).
+    f32 hardness { 0.5f };
 };
 
 class ControlSource {
@@ -51,42 +55,58 @@ public:
 // functions of (seed, x, z) — infinite and deterministic.
 struct ProceduralControlParams {
     u32 seed { 1337 };
-    // Horizontal rhythm: full vertical scale (peaks above the clouds)
-    // packed into GAME distances — the next distinct landscape must sit
-    // readable on the horizon (~1.5-2.5 km away), never a day trip. The
-    // landscape fields alternate every ~3-5 km; the continent keeps a
-    // longer wave so landmasses stay continental, not an archipelago.
-    f32 continentWavelength { 5000.0f };
+    // Horizontal rhythm, two families with OPPOSITE scales:
+    //   LANDFORM CARRIERS (continent, uplift, hill chains, swell, tier
+    //   relief) run LONG — same heights spread over wide distances, so
+    //   slopes stay gentle and landscapes breathe;
+    //   TYPE SELECTORS (regime, climate) run SHORT — a walk of a few
+    //   hundred meters changes the landscape/biome character. Variety
+    //   comes from the selectors switching character over slow
+    //   carriers, not from the carriers themselves oscillating fast.
+    //   (gentle sits apart: passage width is a gameplay constant.)
+    // The continent wave is the walking rhythm of the world: it paces
+    // the tier ramp (plains -> hills -> high country) and the coasts,
+    // and its high-tier patches are what let the uplift ranges fire —
+    // shrinking it makes full-size massifs RARER without touching their
+    // size. Below ~4000 the landmasses crumble into an archipelago.
+    f32 continentWavelength { 4000.0f };
     f32 seaThreshold { 0.42f }; // continentalness below -> open sea
-    f32 tierSpread { 0.30f };   // continentalness span of the tier ramp
+    f32 tierSpread { 0.22f };   // continentalness span of the tier ramp
     f32 maxTier { 3.0f };
-    f32 upliftWavelength { 2600.0f };
-    f32 upliftMaskLow { 0.5f };
-    f32 upliftMaskHigh { 0.8f };
-    f32 warpWavelength { 2000.0f }; // continent-shape domain warp
-    f32 warpStrength { 550.0f };    // scaled with the continent wave
+    f32 upliftWavelength { 6500.0f };
+    f32 upliftMaskLow { 0.38f };
+    f32 upliftMaskHigh { 0.68f };
+    f32 warpWavelength { 1600.0f }; // continent-shape domain warp
+    f32 warpStrength { 440.0f };    // scaled with the continent wave
     // Climate fields deciding the biome id (must match the BiomeForm
     // palette shipped in data: 0 temperate, 1 arid, 2 alpine, 3 tundra).
-    f32 climateWavelength { 2800.0f };
-    // Relief regimes: a slow field sorts the land into three characters
-    // — HILL-CHAIN country (low, rolling ridged hills, no uplift), OLD
-    // MASSIFS (an elevated plateau wearing hills, uplift nearly off —
-    // the Massif Central look), and YOUNG RANGES (the plain uplift
-    // path). Erosion then treats each accordingly.
-    f32 regimeWavelength { 7000.0f };
-    f32 hillChainWavelength { 3200.0f }; // ridged hills' own rhythm
-    f32 hillChainAmplitude { 130.0f };   // m of hill relief in chains
-    f32 oldMassifHeight { 210.0f };      // m of plateau under old hills
+    f32 climateWavelength { 350.0f };
+    // Relief regimes: a type-selector field sorts the land into three
+    // characters — HILL-CHAIN country (low, rolling ridged hills, no
+    // uplift), OLD MASSIFS (an elevated plateau wearing hills, uplift
+    // nearly off — the Massif Central look), and YOUNG RANGES (the
+    // plain uplift path). Erosion then treats each accordingly.
+    f32 regimeWavelength { 875.0f };
+    f32 hillChainWavelength { 6000.0f }; // ridged hills' own rhythm
+    f32 hillChainAmplitude { 130.0f };    // m of hill relief in chains
+    f32 oldMassifHeight { 210.0f };       // m of plateau under old hills
     f32 oldMassifHillAmplitude { 150.0f };
     // The LONG swell: a very-slow positive lift of whole landscapes —
     // ranges riding it become truly high peaks, hill country on it
     // becomes highland plateaus. Inland-gated like the massif plateau.
-    f32 swellWavelength { 18000.0f };
-    f32 swellHeight { 280.0f };
+    f32 swellWavelength { 22500.0f };
+    // Sized so summits riding the full swell reach ~1200 m — above the
+    // cloud layer (800-1000 m) and the snow line, without steepening
+    // anything: a base lift carries the peaks, slopes stay local.
+    f32 swellHeight { 750.0f };
     // Passability corridors: a mid-frequency band field that locally
     // SOFTENS erosion (never the heights) — cols through ranges,
     // gentle passages between hills. ~quarter of the land.
-    f32 gentleWavelength { 2200.0f };
+    f32 gentleWavelength { 1375.0f };
+    // Lithology: "countries" of rock character between the regime and
+    // the carriers — hard pockets keep sharp relief and sea cliffs,
+    // soft pockets roll, with no per-case exceptions.
+    f32 hardnessWavelength { 4000.0f };
 };
 
 class ProceduralControls final : public ControlSource {
@@ -112,16 +132,16 @@ struct TierLevel {
     f32 terrace { 0.0f }; // 0..1 strata quantization strength (mesas)
 };
 
-// Real-mountain scale: the highest tier + its relief + the fastscape
-// orogeny (upliftRate x iterations, minus erosion) put ridge lines at
-// ~1300-1700 m — above the cloud layer (600-840 m); the valleys the
-// stream power carves into that stay walkable.
+// Real-mountain scale: the highest tier + its relief + the long swell +
+// the fastscape orogeny (upliftRate x iterations, minus erosion) put the
+// tallest summits at ~1200 m — above the cloud layer (800-1000 m); the
+// valleys the stream power carves into that stay walkable.
 struct MacroParams {
     vector<TierLevel> tiers {
-        { 40.0f, 18.0f, 420.0f, 0.0f },   // coastal plains
-        { 110.0f, 90.0f, 1300.0f, 0.0f }, // hills (long rolling waves)
-        { 270.0f, 18.0f, 700.0f, 0.8f },  // mesa plateau
-        { 520.0f, 140.0f, 1100.0f, 0.0f }, // high ranges
+        { 40.0f, 18.0f, 2100.0f, 0.0f },   // coastal plains
+        { 110.0f, 90.0f, 6500.0f, 0.0f },  // hills (long rolling waves)
+        { 270.0f, 18.0f, 3500.0f, 0.8f },  // mesa plateau
+        { 520.0f, 140.0f, 5500.0f, 0.0f }, // high ranges
     };
     f32 seaLevel { kDefaultSeaLevel };
     f32 seaFloor { -30.0f };   // deep-water altitude (absolute meters)
@@ -136,8 +156,8 @@ struct MacroParams {
     f32 cliffTierEnd { 2.4f };
     f32 terraceStep { 40.0f };     // meters between mesa strata
     f32 terraceEdge { 0.16f };     // fraction of a step kept as soft slope
-    f32 warpWavelength { 700.0f }; // relief domain warp
-    f32 warpStrength { 140.0f };
+    f32 warpWavelength { 3500.0f }; // relief domain warp
+    f32 warpStrength { 700.0f };
     // Elevation recurve: monotone remap of the LAND height above sea
     // level, applied before the coast profile — and before erosion, so
     // S2 re-equilibrates the remapped altitude budget instead of
@@ -158,7 +178,23 @@ struct MacroResult {
     vector<f32> seaDist; // signed meters to the sea mask (+ on land)
     vector<u8> biome;
     vector<f32> gentle;  // [0,1] passability corridors (erosion softener)
+    // Regime + swell base lift (m): what the erosion `keep` protects so
+    // swelled highlands and old-massif plateaus survive the stream power
+    // instead of being carved back toward sea base level.
+    vector<f32> plateau;
+    // Ridged hill-chain relief amplitude (m): gates the soft-lowland
+    // erodibility OFF in hill country so hills keep their equilibrium
+    // relief while true plains erode gentle.
+    vector<f32> hillRelief;
+    // Lithology [0,1] (ControlSample::hardness): erosion character.
+    vector<f32> hardness;
 };
+
+// Erosion keep from the base lift (TileBake stage 1 and the analytic
+// silhouette must agree): fraction of the input height the fluvial pass
+// re-blends back, so swelled highlands survive the stream power.
+constexpr f32 kPlateauKeepCoef = 0.0008f; // per meter of base lift
+constexpr f32 kPlateauKeepMax = 0.5f;
 
 // The MacroParams elevation recurve applied to one land height (meters):
 // monotone PCHIP through (0,0), (1/4, low), (1/2, mid), (3/4, high),

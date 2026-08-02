@@ -55,6 +55,7 @@ TEST_CASE("upsample matches the macro at coincident texels, deterministic") {
     const HydrologyParams hp;
     const auto hydro = extractHydrology(coarse(), h, hp);
     FinalizeParams params;
+    params.upsampleFactor = 4; // pinned: the checks below assume x4
     params.reliefAmplitude = 0.0f; // isolate the resample
     params.fine.iterations = 0;
     const auto fine = finalizeTerrain(coarse(), h, macro, hydro, coarse(), params, 5);
