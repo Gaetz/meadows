@@ -82,4 +82,13 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                                  const vector<f32>& height,
                                  const HydrologyParams& params);
 
+// Lakes only: connected flooded components of `height` under its
+// priority-flood surface `filled`. The canonical-basin path re-floods a
+// WIDER window with this — no river tracing to pay. `lakeDepthOut`, if
+// given, receives the per-cell flood depth grid.
+vector<Lake> extractLakes(const GridSpec& spec, const vector<f32>& height,
+                          const vector<f32>& filled,
+                          const HydrologyParams& params,
+                          vector<f32>* lakeDepthOut = nullptr);
+
 } // namespace render::terraingen

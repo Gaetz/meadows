@@ -122,7 +122,13 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
 constexpr u32 kStage1Version = 20;
-constexpr u32 kTileBakeVersion = 22;
+constexpr u32 kTileBakeVersion = 23;
+
+// Wider flood window for CANONICAL BASIN resolution: a lake touching
+// the hydrology-window rim is re-flooded on tile +/- this margin so its
+// true spill level and full mask replace the truncated view. Must stay
+// within the 3x3 stage-1 coverage (< tileSize).
+constexpr f32 kBasinResolveMargin = 3072.0f;
 
 // Extra fine-window ring past the kept rect: the fine-erosion pass has
 // bounded support (reach + receiver drift + thermal), and this halo

@@ -1761,6 +1761,89 @@ void LandscapeScene::publishBakedTiles(
             *physics, renderer.terrainParams());
     }
     streaming.snapCellEntities(makeStreamingContext());
+    // Cross-tile duplicate suppression (the belt over the canonical
+    // basin resolution): two materially overlapping lake masks are two
+    // views of ONE basin — keep the LOWER surface, which never leaves
+    // a floating sheet the other cannot explain.
+    if (!tiles.empty() && sandboxLakes.size() > 1) {
+        const auto lakeCoversPoint = [](const render::terraingen::Lake& lake,
+                                        f32 x, f32 z) {
+            if (x < lake.minX || x > lake.maxX || z < lake.minZ ||
+                z > lake.maxZ || lake.mask.empty()) {
+                return false;
+            }
+            const u32 mx = static_cast<u32>(glm::clamp(
+                (x - lake.minX) / lake.maskTexel + 0.5f, 0.0f,
+                static_cast<f32>(lake.maskWidth - 1)));
+            const u32 mz = static_cast<u32>(glm::clamp(
+                (z - lake.minZ) / lake.maskTexel + 0.5f, 0.0f,
+                static_cast<f32>(lake.maskHeight - 1)));
+            return lake.mask[static_cast<size_t>(mz) * lake.maskWidth +
+                             mx] != 0;
+        };
+        vector<u8> drop(sandboxLakes.size(), 0);
+        for (size_t a = 0; a < sandboxLakes.size(); ++a) {
+            if (drop[a]) {
+                continue;
+            }
+            for (size_t b = a + 1; b < sandboxLakes.size(); ++b) {
+                if (drop[b]) {
+                    continue;
+                }
+                const auto& la = sandboxLakes[a];
+                const auto& lb = sandboxLakes[b];
+                if (la.minX > lb.maxX || lb.minX > la.maxX ||
+                    la.minZ > lb.maxZ || lb.minZ > la.maxZ ||
+                    la.mask.empty() || lb.mask.empty()) {
+                    continue;
+                }
+                // Sample the smaller mask against the bigger one.
+                const bool aSmall = la.cells <= lb.cells;
+                const auto& small = aSmall ? la : lb;
+                const auto& big = aSmall ? lb : la;
+                u32 sampled = 0;
+                u32 shared = 0;
+                for (u32 mz = 0; mz < small.maskHeight; mz += 3) {
+                    for (u32 mx = 0; mx < small.maskWidth; mx += 3) {
+                        if (!small.mask[static_cast<size_t>(mz) *
+                                            small.maskWidth +
+                                        mx]) {
+                            continue;
+                        }
+                        ++sampled;
+                        const f32 x = small.minX +
+                                      static_cast<f32>(mx) *
+                                          small.maskTexel;
+                        const f32 z = small.minZ +
+                                      static_cast<f32>(mz) *
+                                          small.maskTexel;
+                        if (lakeCoversPoint(big, x, z)) {
+                            ++shared;
+                        }
+                    }
+                }
+                if (sampled == 0 ||
+                    static_cast<f32>(shared) <
+                        0.3f * static_cast<f32>(sampled)) {
+                    continue;
+                }
+                // Same basin twice: the higher sheet goes.
+                drop[la.level > lb.level ? a : b] = 1;
+            }
+        }
+        u32 dropped = 0;
+        for (size_t l = sandboxLakes.size(); l-- > 0;) {
+            if (drop[l]) {
+                sandboxLakes.erase(
+                    sandboxLakes.begin() + static_cast<ptrdiff_t>(l));
+                ++dropped;
+            }
+        }
+        if (dropped > 0) {
+            LOG_INFO("Water: dropped {} duplicate lake sheet(s)",
+                     dropped);
+        }
+    }
     // The new regions re-blend the overlap bands: re-validate every
     // stored water body they touch against the LIVE terrain, then
     // republish once.

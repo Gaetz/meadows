@@ -238,3 +238,67 @@ TEST_CASE("the sandbox fallback agrees with tiles at their rim") {
         CHECK(maxStep < 8.0f);
     }
 }
+
+TEST_CASE("border basins publish once: no stacked duplicate sheets") {
+    const TileBakeParams params = testParams();
+    // Two adjacent tiles: any basin spanning their border used to be
+    // published by both (truncated differently, different spill
+    // levels). With the canonical resolution, overlapping masks from
+    // the two bakes must not happen.
+    const TileBakeResult a = bakeTile(params, 0, 0);
+    const TileBakeResult b = bakeTile(params, 1, 0);
+
+    const auto covers = [](const Lake& lake, f32 x, f32 z) {
+        if (x < lake.minX || x > lake.maxX || z < lake.minZ ||
+            z > lake.maxZ || lake.mask.empty()) {
+            return false;
+        }
+        const u32 mx = static_cast<u32>(glm::clamp(
+            (x - lake.minX) / lake.maskTexel + 0.5f, 0.0f,
+            static_cast<f32>(lake.maskWidth - 1)));
+        const u32 mz = static_cast<u32>(glm::clamp(
+            (z - lake.minZ) / lake.maskTexel + 0.5f, 0.0f,
+            static_cast<f32>(lake.maskHeight - 1)));
+        return lake.mask[static_cast<size_t>(mz) * lake.maskWidth + mx] !=
+               0;
+    };
+    u32 duplicates = 0;
+    for (const Lake& la : a.lakes) {
+        for (const Lake& lb : b.lakes) {
+            if (la.minX > lb.maxX || lb.minX > la.maxX ||
+                la.minZ > lb.maxZ || lb.minZ > la.maxZ ||
+                la.mask.empty() || lb.mask.empty()) {
+                continue;
+            }
+            const Lake& small = la.cells <= lb.cells ? la : lb;
+            const Lake& big = la.cells <= lb.cells ? lb : la;
+            u32 sampled = 0;
+            u32 shared = 0;
+            for (u32 mz = 0; mz < small.maskHeight; mz += 2) {
+                for (u32 mx = 0; mx < small.maskWidth; mx += 2) {
+                    if (!small.mask[static_cast<size_t>(mz) *
+                                        small.maskWidth +
+                                    mx]) {
+                        continue;
+                    }
+                    ++sampled;
+                    const f32 x =
+                        small.minX +
+                        static_cast<f32>(mx) * small.maskTexel;
+                    const f32 z =
+                        small.minZ +
+                        static_cast<f32>(mz) * small.maskTexel;
+                    if (covers(big, x, z)) {
+                        ++shared;
+                    }
+                }
+            }
+            if (sampled > 0 &&
+                static_cast<f32>(shared) >
+                    0.3f * static_cast<f32>(sampled)) {
+                ++duplicates;
+            }
+        }
+    }
+    CHECK(duplicates == 0);
+}

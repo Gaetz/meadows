@@ -238,39 +238,34 @@ void mergeByProximity(vector<River>& rivers, f32 reachFactor,
 
 } // namespace
 
-HydrologyResult extractHydrology(const GridSpec& spec,
-                                 const vector<f32>& height,
-                                 const HydrologyParams& params) {
+vector<Lake> extractLakes(const GridSpec& spec, const vector<f32>& height,
+                          const vector<f32>& filled,
+                          const HydrologyParams& params,
+                          vector<f32>* lakeDepthOut) {
     const size_t cells = spec.cells();
-    HydrologyResult out;
-    out.filled = priorityFloodFill(spec, height, params.seaLevel,
-                                   params.minSlope);
-    const FlowRouting flow =
-        routeFlow(spec, out.filled, height, params.seaLevel);
-    out.area = flow.area;
-
     // Lakes: connected components of filled-above-ground, flood-fill
     // labelled. The component's lowest routing height is the spill level
     // (the epsilon ramp only rises from there).
-    out.lakeDepth.assign(cells, 0.0f);
+    vector<f32> lakeDepth(cells, 0.0f);
     for (size_t i = 0; i < cells; ++i) {
-        const f32 depth = out.filled[i] - height[i];
+        const f32 depth = filled[i] - height[i];
         if (depth > params.minLakeDepth && height[i] > params.seaLevel) {
-            out.lakeDepth[i] = depth;
+            lakeDepth[i] = depth;
         }
     }
+    vector<Lake> lakes;
     vector<u32> label(cells, 0);
     const i32 n = static_cast<i32>(spec.n);
     u32 nextLabel = 0;
     vector<u32> stack;
     vector<u32> component;
     for (size_t seed = 0; seed < cells; ++seed) {
-        if (out.lakeDepth[seed] <= 0.0f || label[seed] != 0) {
+        if (lakeDepth[seed] <= 0.0f || label[seed] != 0) {
             continue;
         }
         ++nextLabel;
         Lake lake;
-        lake.level = out.filled[seed];
+        lake.level = filled[seed];
         lake.minX = lake.maxX = spec.x(static_cast<u32>(seed % spec.n));
         lake.minZ = lake.maxZ = spec.z(static_cast<u32>(seed / spec.n));
         stack.assign(1, static_cast<u32>(seed));
@@ -285,7 +280,7 @@ HydrologyResult extractHydrology(const GridSpec& spec,
             const i32 cz = static_cast<i32>(i / spec.n);
             const f32 wx = spec.x(static_cast<u32>(cx));
             const f32 wz = spec.z(static_cast<u32>(cz));
-            lake.level = glm::min(lake.level, out.filled[i]);
+            lake.level = glm::min(lake.level, filled[i]);
             lake.minX = glm::min(lake.minX, wx);
             lake.maxX = glm::max(lake.maxX, wx);
             lake.minZ = glm::min(lake.minZ, wz);
@@ -299,7 +294,7 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                     }
                     const size_t p = static_cast<size_t>(pz) * spec.n +
                                      static_cast<size_t>(px);
-                    if (out.lakeDepth[p] > 0.0f && label[p] == 0) {
+                    if (lakeDepth[p] > 0.0f && label[p] == 0) {
                         label[p] = nextLabel;
                         stack.push_back(static_cast<u32>(p));
                     }
@@ -330,9 +325,28 @@ HydrologyResult extractHydrology(const GridSpec& spec,
                 lake.mask[static_cast<size_t>(mz) * lake.maskWidth + mx] =
                     1;
             }
-            out.lakes.push_back(std::move(lake));
+            lakes.push_back(std::move(lake));
         }
     }
+    if (lakeDepthOut) {
+        *lakeDepthOut = std::move(lakeDepth);
+    }
+    return lakes;
+}
+
+HydrologyResult extractHydrology(const GridSpec& spec,
+                                 const vector<f32>& height,
+                                 const HydrologyParams& params) {
+    const size_t cells = spec.cells();
+    HydrologyResult out;
+    out.filled = priorityFloodFill(spec, height, params.seaLevel,
+                                   params.minSlope);
+    const FlowRouting flow =
+        routeFlow(spec, out.filled, height, params.seaLevel);
+    out.area = flow.area;
+    out.lakes =
+        extractLakes(spec, height, out.filled, params, &out.lakeDepth);
+    const i32 n = static_cast<i32>(spec.n);
 
     // Rivers: channel cells (area over threshold, on land, not lake),
     // traced downstream from channel heads. A trace ends at the sea, at a

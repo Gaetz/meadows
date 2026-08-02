@@ -183,18 +183,6 @@ TileBakeResult bakeTileStage2(
     const TileStage1& self = *center;
     const GridSpec& sim = self.sim;
 
-    // --- COMPOSED hydrology window: tile + waterMargin, blended from
-    // the 3x3 stage-1 sims with the SAME weights the runtime uses for
-    // the published regions (tile+overlapMargin rects, edgeBlend =
-    // 2*overlapMargin). Both neighbours of a border compose the same
-    // surface here — their water agrees by construction.
-    GridSpec window;
-    window.texelSize = params.macroTexel;
-    window.originX = tileMinX - params.waterMargin;
-    window.originZ = tileMinZ - params.waterMargin;
-    window.n = texels(params.tileSize + 2.0f * params.waterMargin,
-                      params.macroTexel) +
-               1;
     const TileStage1* neighbours[3][3];
     for (i32 dz = -1; dz <= 1; ++dz) {
         for (i32 dx = -1; dx <= 1; ++dx) {
@@ -203,55 +191,219 @@ TileBakeResult bakeTileStage2(
     }
     const f32 rectMargin = params.overlapMargin;
     const f32 blend = 2.0f * params.overlapMargin;
-    vector<f32> composite(window.cells());
-    for (u32 row = 0; row < window.n; ++row) {
-        for (u32 col = 0; col < window.n; ++col) {
-            const f32 wx = window.x(col);
-            const f32 wz = window.z(row);
-            f32 wSum = 0.0f;
-            f32 hSum = 0.0f;
-            for (i32 dz = -1; dz <= 1; ++dz) {
-                for (i32 dx = -1; dx <= 1; ++dx) {
-                    const TileStage1* s1 = neighbours[dz + 1][dx + 1];
-                    if (!s1) {
-                        continue;
+    // Composite builder: blend the 3x3 stage-1 sims with the SAME
+    // weights the runtime uses for the published regions
+    // (tile+overlapMargin rects, edgeBlend = 2*overlapMargin). Both
+    // neighbours of a border compose the same surface — their water
+    // agrees by construction. Reused by the hydrology window AND the
+    // wider canonical-basin flood below.
+    const auto composeWindow = [&](const GridSpec& win) {
+        vector<f32> grid(win.cells());
+        for (u32 row = 0; row < win.n; ++row) {
+            for (u32 col = 0; col < win.n; ++col) {
+                const f32 wx = win.x(col);
+                const f32 wz = win.z(row);
+                f32 wSum = 0.0f;
+                f32 hSum = 0.0f;
+                for (i32 dz = -1; dz <= 1; ++dz) {
+                    for (i32 dx = -1; dx <= 1; ++dx) {
+                        const TileStage1* s1 = neighbours[dz + 1][dx + 1];
+                        if (!s1) {
+                            continue;
+                        }
+                        const f32 rMinX =
+                            static_cast<f32>(tx + dx) * params.tileSize -
+                            rectMargin;
+                        const f32 rMinZ =
+                            static_cast<f32>(tz + dz) * params.tileSize -
+                            rectMargin;
+                        const f32 rMaxX = rMinX + params.tileSize +
+                                          2.0f * rectMargin;
+                        const f32 rMaxZ = rMinZ + params.tileSize +
+                                          2.0f * rectMargin;
+                        if (wx < rMinX || wx > rMaxX || wz < rMinZ ||
+                            wz > rMaxZ) {
+                            continue;
+                        }
+                        const f32 d = glm::min(
+                            glm::min(wx - rMinX, rMaxX - wx),
+                            glm::min(wz - rMinZ, rMaxZ - wz));
+                        const f32 t = glm::clamp(d / blend, 0.0f, 1.0f);
+                        const f32 w = t * t * (3.0f - 2.0f * t);
+                        if (w <= 0.0f) {
+                            continue;
+                        }
+                        hSum +=
+                            w * bilinearAt(s1->sim, s1->eroded, wx, wz);
+                        wSum += w;
                     }
-                    const f32 rMinX =
-                        static_cast<f32>(tx + dx) * params.tileSize -
-                        rectMargin;
-                    const f32 rMinZ =
-                        static_cast<f32>(tz + dz) * params.tileSize -
-                        rectMargin;
-                    const f32 rMaxX = rMinX + params.tileSize +
-                                      2.0f * rectMargin;
-                    const f32 rMaxZ = rMinZ + params.tileSize +
-                                      2.0f * rectMargin;
-                    if (wx < rMinX || wx > rMaxX || wz < rMinZ ||
-                        wz > rMaxZ) {
-                        continue;
-                    }
-                    const f32 d = glm::min(
-                        glm::min(wx - rMinX, rMaxX - wx),
-                        glm::min(wz - rMinZ, rMaxZ - wz));
-                    const f32 t = glm::clamp(d / blend, 0.0f, 1.0f);
-                    const f32 w = t * t * (3.0f - 2.0f * t);
-                    if (w <= 0.0f) {
-                        continue;
-                    }
-                    hSum += w * bilinearAt(s1->sim, s1->eroded, wx, wz);
-                    wSum += w;
                 }
+                grid[static_cast<size_t>(row) * win.n + col] =
+                    wSum > 0.0f ? hSum / wSum
+                                : bilinearAt(sim, self.eroded, wx, wz);
             }
-            composite[static_cast<size_t>(row) * window.n + col] =
-                wSum > 0.0f ? hSum / wSum
-                            : bilinearAt(sim, self.eroded, wx, wz);
         }
-    }
+        return grid;
+    };
+    // Hydrology window: tile + waterMargin.
+    GridSpec window;
+    window.texelSize = params.macroTexel;
+    window.originX = tileMinX - params.waterMargin;
+    window.originZ = tileMinZ - params.waterMargin;
+    window.n = texels(params.tileSize + 2.0f * params.waterMargin,
+                      params.macroTexel) +
+               1;
+    const vector<f32> composite = composeWindow(window);
 
     HydrologyParams hydrology = params.hydrology;
     hydrology.seaLevel = params.macro.seaLevel;
-    const HydrologyResult hydro =
-        extractHydrology(window, composite, hydrology);
+    HydrologyResult hydro = extractHydrology(window, composite, hydrology);
+
+    // --- Canonical basin resolution. A lake whose mask touches the
+    // window rim is a TRUNCATED view of a larger basin: its spill level
+    // is a window artifact, and the two neighbours would each publish
+    // their own version at different levels (the stacked-sheets bug).
+    // Re-flood those basins on a WIDER composite and adopt the wide
+    // result; ownership moves from the bbox center to the basin's
+    // DEEPEST cell — deterministic and identical on both sides as long
+    // as the basin fits the wide window (beyond that, the publish-side
+    // overlap suppression is the safety net).
+    vector<u8> preOwned; // parallel to hydro.lakes once resolution ran
+    {
+        const f32 windowMaxX =
+            window.originX +
+            static_cast<f32>(window.n - 1) * window.texelSize;
+        const f32 windowMaxZ =
+            window.originZ +
+            static_cast<f32>(window.n - 1) * window.texelSize;
+        const auto touchesRim = [&](const Lake& lake) {
+            const f32 t = window.texelSize * 1.5f;
+            return lake.minX <= window.originX + t ||
+                   lake.minZ <= window.originZ + t ||
+                   lake.maxX >= windowMaxX - t ||
+                   lake.maxZ >= windowMaxZ - t;
+        };
+        bool anyOpen = false;
+        for (const Lake& lake : hydro.lakes) {
+            anyOpen = anyOpen || touchesRim(lake);
+        }
+        if (anyOpen) {
+            GridSpec wide;
+            wide.texelSize = params.macroTexel;
+            wide.originX = tileMinX - kBasinResolveMargin;
+            wide.originZ = tileMinZ - kBasinResolveMargin;
+            wide.n = texels(params.tileSize + 2.0f * kBasinResolveMargin,
+                            params.macroTexel) +
+                     1;
+            const vector<f32> wideComposite = composeWindow(wide);
+            const vector<f32> wideFilled =
+                priorityFloodFill(wide, wideComposite, hydrology.seaLevel,
+                                  hydrology.minSlope);
+            const vector<Lake> wideLakes = extractLakes(
+                wide, wideComposite, wideFilled, hydrology);
+            // Deepest mask cell of a lake on its grid (row-major
+            // tie-break: deterministic).
+            const auto deepestOf = [](const GridSpec& spec,
+                                      const vector<f32>& ground,
+                                      const Lake& lake) {
+                Vec2 best { lake.minX, lake.minZ };
+                f32 lowest = 1.0e30f;
+                for (u32 mz = 0; mz < lake.maskHeight; ++mz) {
+                    for (u32 mx = 0; mx < lake.maskWidth; ++mx) {
+                        if (!lake.mask[static_cast<size_t>(mz) *
+                                           lake.maskWidth +
+                                       mx]) {
+                            continue;
+                        }
+                        const f32 wx = lake.minX +
+                                       static_cast<f32>(mx) *
+                                           lake.maskTexel;
+                        const f32 wz = lake.minZ +
+                                       static_cast<f32>(mz) *
+                                           lake.maskTexel;
+                        const i32 col = static_cast<i32>(std::lround(
+                            (wx - spec.originX) / spec.texelSize));
+                        const i32 row = static_cast<i32>(std::lround(
+                            (wz - spec.originZ) / spec.texelSize));
+                        if (col < 0 || row < 0 ||
+                            col >= static_cast<i32>(spec.n) ||
+                            row >= static_cast<i32>(spec.n)) {
+                            continue;
+                        }
+                        const f32 h =
+                            ground[static_cast<size_t>(row) * spec.n +
+                                   col];
+                        if (h < lowest) {
+                            lowest = h;
+                            best = { wx, wz };
+                        }
+                    }
+                }
+                return best;
+            };
+            const auto lakeCovers = [](const Lake& lake, f32 x, f32 z) {
+                if (x < lake.minX || x > lake.maxX || z < lake.minZ ||
+                    z > lake.maxZ || lake.mask.empty()) {
+                    return false;
+                }
+                const u32 mx = static_cast<u32>(glm::clamp(
+                    (x - lake.minX) / lake.maskTexel + 0.5f, 0.0f,
+                    static_cast<f32>(lake.maskWidth - 1)));
+                const u32 mz = static_cast<u32>(glm::clamp(
+                    (z - lake.minZ) / lake.maskTexel + 0.5f, 0.0f,
+                    static_cast<f32>(lake.maskHeight - 1)));
+                return lake.mask[static_cast<size_t>(mz) *
+                                     lake.maskWidth +
+                                 mx] != 0;
+            };
+            const f32 tileEndX = tileMinX + params.tileSize;
+            const f32 tileEndZ = tileMinZ + params.tileSize;
+            vector<Lake> resolved;
+            vector<u8> owned;
+            vector<Vec2> anchors;
+            for (size_t l = 0; l < hydro.lakes.size(); ++l) {
+                Lake& lake = hydro.lakes[l];
+                if (!touchesRim(lake)) {
+                    resolved.push_back(std::move(lake));
+                    owned.push_back(0);
+                    continue;
+                }
+                const Vec2 probe = deepestOf(window, composite, lake);
+                const Lake* wideLake = nullptr;
+                for (const Lake& candidate : wideLakes) {
+                    if (lakeCovers(candidate, probe.x, probe.y)) {
+                        wideLake = &candidate;
+                        break;
+                    }
+                }
+                if (!wideLake) {
+                    continue; // too shallow once widened: gone
+                }
+                const Vec2 anchor =
+                    deepestOf(wide, wideComposite, *wideLake);
+                if (anchor.x < tileMinX || anchor.x >= tileEndX ||
+                    anchor.y < tileMinZ || anchor.y >= tileEndZ) {
+                    continue; // the anchor tile publishes it
+                }
+                bool duplicate = false;
+                for (const Vec2& seen : anchors) {
+                    if (std::abs(seen.x - anchor.x) < 1.0f &&
+                        std::abs(seen.y - anchor.y) < 1.0f) {
+                        duplicate = true;
+                        break;
+                    }
+                }
+                if (duplicate) {
+                    continue; // one basin touching the rim twice
+                }
+                anchors.push_back(anchor);
+                resolved.push_back(*wideLake);
+                owned.push_back(1);
+            }
+            hydro.lakes = std::move(resolved);
+            preOwned = std::move(owned);
+        }
+    }
 
     // --- Finalize the CENTER tile against the composed hydrology.
     MacroResult macroFields;
@@ -348,12 +500,17 @@ TileBakeResult bakeTileStage2(
     // its own terrain — from the SAME composite, so they line up).
     const f32 tileMaxX = tileMinX + params.tileSize;
     const f32 tileMaxZ = tileMinZ + params.tileSize;
-    for (const Lake& lake : hydro.lakes) {
-        const f32 cx = (lake.minX + lake.maxX) * 0.5f;
-        const f32 cz = (lake.minZ + lake.maxZ) * 0.5f;
-        if (cx < tileMinX || cx >= tileMaxX || cz < tileMinZ ||
-            cz >= tileMaxZ) {
-            continue;
+    for (size_t l = 0; l < hydro.lakes.size(); ++l) {
+        const Lake& lake = hydro.lakes[l];
+        // Canonically-resolved basins already passed the deepest-cell
+        // ownership rule; only window-contained lakes use the center.
+        if (l >= preOwned.size() || !preOwned[l]) {
+            const f32 cx = (lake.minX + lake.maxX) * 0.5f;
+            const f32 cz = (lake.minZ + lake.maxZ) * 0.5f;
+            if (cx < tileMinX || cx >= tileMaxX || cz < tileMinZ ||
+                cz >= tileMaxZ) {
+                continue;
+            }
         }
         out.lakes.push_back(lake);
     }
