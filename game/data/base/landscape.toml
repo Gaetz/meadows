@@ -40,7 +40,7 @@ terrainRecurveHigh = 0.75
 
 # --- Terrain materials ---------------------------------------------------
 snowLine = 165.0            # story-world snow altitude (m)
-sandboxSnowLine = 950.0     # sandbox snow altitude — only peaks above the clouds stay white
+sandboxSnowLine = 1100.0    # sandbox snow altitude — the tree line follows at ~0.82x
 splatUvScale = 0.25         # ground texture tiles per meter
 
 # --- Biomes (palette contract with the sandbox generator:

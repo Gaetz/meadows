@@ -74,10 +74,10 @@ struct ProceduralControlParams {
     // the Massif Central look), and YOUNG RANGES (the plain uplift
     // path). Erosion then treats each accordingly.
     f32 regimeWavelength { 7000.0f };
-    f32 hillChainWavelength { 2000.0f }; // ridged hills' own rhythm
-    f32 hillChainAmplitude { 55.0f };    // m of hill relief in chains
+    f32 hillChainWavelength { 3200.0f }; // ridged hills' own rhythm
+    f32 hillChainAmplitude { 130.0f };   // m of hill relief in chains
     f32 oldMassifHeight { 210.0f };      // m of plateau under old hills
-    f32 oldMassifHillAmplitude { 70.0f };
+    f32 oldMassifHillAmplitude { 150.0f };
     // The LONG swell: a very-slow positive lift of whole landscapes —
     // ranges riding it become truly high peaks, hill country on it
     // becomes highland plateaus. Inland-gated like the massif plateau.
@@ -119,7 +119,7 @@ struct TierLevel {
 struct MacroParams {
     vector<TierLevel> tiers {
         { 40.0f, 18.0f, 420.0f, 0.0f },   // coastal plains
-        { 110.0f, 55.0f, 850.0f, 0.0f },  // hills (long rolling waves)
+        { 110.0f, 90.0f, 1300.0f, 0.0f }, // hills (long rolling waves)
         { 270.0f, 18.0f, 700.0f, 0.8f },  // mesa plateau
         { 520.0f, 140.0f, 1100.0f, 0.0f }, // high ranges
     };

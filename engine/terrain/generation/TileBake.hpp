@@ -121,8 +121,8 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //   kTileBakeVersion — bump when ANY published output changes (stage-2
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
-constexpr u32 kStage1Version = 19;
-constexpr u32 kTileBakeVersion = 21;
+constexpr u32 kStage1Version = 20;
+constexpr u32 kTileBakeVersion = 22;
 
 // Extra fine-window ring past the kept rect: the fine-erosion pass has
 // bounded support (reach + receiver drift + thermal), and this halo

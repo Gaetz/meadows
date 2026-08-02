@@ -274,7 +274,7 @@ ControlSample ProceduralControls::at(f32 x, f32 z) const {
     // an old massif must stay hilly, only rounded.
     sample.uplift = glm::max(
         sample.uplift,
-        inland * glm::max(old * 0.12f, hills * 0.07f));
+        inland * glm::max(old * 0.12f, hills * 0.09f));
     // The LONG swell: whole landscapes ride a very slow positive lift —
     // ranges on it reach true high-mountain altitudes, hill country on
     // it reads as highland plateau. Positive-only (it raises, never
