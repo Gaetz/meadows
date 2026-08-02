@@ -131,4 +131,9 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uWaterDebugInfo;
     // Water-info map: xy = center (world XZ), z = 1/span, w = valid.
     vec4 uWaterInfoMapInfo;
+    // Seasons: x = autumn blend 0..1, y = leaf fall 0..1, zw free.
+    vec4 uSeasonInfo;
+    // Per leaf-mask atlas slot: rgb = autumn tint, a = seasonality
+    // (0 = evergreen — conifers keep needles and color).
+    vec4 uLeafSeason[8];
 };

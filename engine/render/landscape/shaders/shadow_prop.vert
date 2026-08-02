@@ -24,6 +24,7 @@ void main() {
     // Billboard leaf card (see tree.vert): expand toward the LIGHT here —
     // every leaf faces the sun, the canopy casts at full density.
     bool leafCard = aUv.x < -5.0;
+    float slot = leafCard ? floor((-aUv.x - 5.0) / 20.0) : 0.0;
     float sway = leafCard ? 0.85 : aUv.x;
 
     float dist = distance(aPosScale.xyz, uCameraPos.xyz);
@@ -36,17 +37,29 @@ void main() {
                 (gust * 0.07 * uWindInfo.y * sway * aPosScale.w * fade);
 
     vCardUv = vec2(-1.0);
+    // Same leaf-fall rule as tree.vert: bare crowns cast bare shadows.
+    bool dropped = false;
     if (leafCard) {
+        float fall = uSeasonInfo.y * uLeafSeason[int(slot)].a;
+        if (fall > 0.0) {
+            float h = fract(sin(dot(aPosScale.xyz + aPos,
+                                    vec3(12.9898, 78.233, 45.164))) *
+                            43758.5453);
+            dropped = h < fall;
+        }
+    }
+    if (leafCard && !dropped) {
         vec3 lightRight = normalize(vec3(uLightViewProj[0][0],
                                          uLightViewProj[1][0],
                                          uLightViewProj[2][0]));
         vec3 lightUp = normalize(vec3(uLightViewProj[0][1],
                                       uLightViewProj[1][1],
                                       uLightViewProj[2][1]));
-        vec2 corner = vec2(aUv.x + 10.0, aUv.y);
+        vec2 corner = vec2(aUv.x + 10.0 + slot * 20.0, aUv.y);
         world += (lightRight * corner.x + lightUp * corner.y) *
                  (aPosScale.w * fade);
-        vCardUv = sign(corner) * 0.5 + 0.5; // corners are +-halfSize
+        vec2 uv01 = sign(corner) * 0.5 + 0.5; // corners are +-halfSize
+        vCardUv = vec2((uv01.x + slot) / 8.0, uv01.y);
     }
 
     gl_Position = uLightViewProj * vec4(world, 1.0);

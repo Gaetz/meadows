@@ -30,13 +30,15 @@ class ShaderLibrary;
 // use the frustum-plane test, screen-border footprints stay visible.
 class GpuOcclusion {
 public:
-    // Terrain (max radius) + vegetation chunk×variant entries both fit
-    // with room; run() returns false (consumers fall back to their CPU
-    // path) if the list ever clips.
-    static constexpr u32 kMaxCandidates = 8192;
-    // Draw batches: terrain LODs 0-3, vegetation (variant, level) pairs
-    // above (4 + variant*3 + level).
-    static constexpr u32 kMaxGroups = 40;
+    // Terrain (max radius 45 -> up to ~9k resident chunks) + vegetation
+    // chunk×variant entries (veg radius 24 -> up to ~31k). A candidate
+    // without a command never draws, so clipping is NOT a degradation
+    // mode — run() returns false and the CPU path draws everything.
+    // Sized so that never happens: ~5 MB of GPU buffers.
+    static constexpr u32 kMaxCandidates = 49152;
+    // Draw batches: terrain LODs 0-4, vegetation (variant, level) pairs
+    // above (kGroupBase + variant*3 + level).
+    static constexpr u32 kMaxGroups = 44;
 
     struct Candidate {
         Vec3 lo {};

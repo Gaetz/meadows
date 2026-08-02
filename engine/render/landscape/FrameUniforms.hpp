@@ -182,6 +182,11 @@ struct FrameUniforms {
     Vec4 waterDebugInfo { 0.0f, 0.0f, 0.0f, 0.0f };
     // Water-info map (WaterSystem): xy = center, z = 1/span, w = valid.
     Vec4 waterInfoMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Seasons: x = autumn blend 0..1, y = leaf fall 0..1, zw free.
+    // Applied per leaf-mask atlas slot through leafSeason below.
+    Vec4 seasonInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Per atlas slot: rgb = autumn tint, a = seasonality (0 = evergreen).
+    Vec4 leafSeason[8] {};
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -252,7 +257,9 @@ static_assert(offsetof(FrameUniforms, cloudVolRimInfo) == 1488);
 static_assert(offsetof(FrameUniforms, mistPuffInfo) == 1504);
 static_assert(offsetof(FrameUniforms, waterDebugInfo) == 1520);
 static_assert(offsetof(FrameUniforms, waterInfoMapInfo) == 1536);
-static_assert(sizeof(FrameUniforms) == 1552,
+static_assert(offsetof(FrameUniforms, seasonInfo) == 1552);
+static_assert(offsetof(FrameUniforms, leafSeason) == 1568);
+static_assert(sizeof(FrameUniforms) == 1696,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

@@ -116,3 +116,92 @@ TEST_CASE("different seeds generate different colonized trees") {
     CHECK(!sameMesh(render::generateColonizedTree(3u),
                     render::generateColonizedTree(4u)));
 }
+
+TEST_CASE("leaf-mask shapes are deterministic and distinct; cards carry "
+          "their atlas slot") {
+    render::ColonizedTreeParams params;
+    vector<vector<u8>> masks;
+    for (i32 shape = 0; shape <= 4; ++shape) {
+        masks.push_back(
+            render::generateLeafMaskPixels(64, 7, params, shape));
+        CHECK(masks.back() ==
+              render::generateLeafMaskPixels(64, 7, params, shape));
+    }
+    for (size_t a = 0; a < masks.size(); ++a) {
+        for (size_t b = a + 1; b < masks.size(); ++b) {
+            CHECK(masks[a] != masks[b]);
+        }
+    }
+    // The card's uv bias encodes the atlas slot: -10 - 20*slot.
+    render::ColonizedTreeParams styled;
+    styled.leafStyle = 1;
+    f32 minU = 0.0f;
+    for (const render::MeshVertex& v :
+         render::generateColonizedTree(3u, 2, styled).vertices) {
+        minU = glm::min(minU, v.uv.x);
+    }
+    CHECK(minU < -25.0f); // slot-1 cards present
+    minU = 0.0f;
+    for (const render::MeshVertex& v :
+         render::generateColonizedTree(3u).vertices) {
+        minU = glm::min(minU, v.uv.x);
+    }
+    CHECK(minU < -5.0f);   // slot-0 cards present...
+    CHECK(minU > -25.0f);  // ...and none flagged past slot 0
+}
+
+TEST_CASE("conifer habit: neutral knobs are bit-exact, cone narrows up") {
+    // All four conifer knobs at 0 must not consume a single random draw:
+    // the broadleaf output is bit-identical to the pre-knob generator.
+    render::ColonizedTreeParams neutral;
+    neutral.crownTaper = 0.0f;
+    neutral.leaderBias = 0.0f;
+    neutral.lateralFlatten = 0.0f;
+    neutral.sprayFoliage = 0.0f;
+    CHECK(sameMesh(render::generateColonizedTree(977u),
+                   render::generateColonizedTree(977u, 2, neutral)));
+
+    render::ColonizedTreeParams conifer;
+    conifer.crownTaper = 0.85f;
+    conifer.leaderBias = 0.35f;
+    conifer.lateralFlatten = 0.7f;
+    conifer.sprayFoliage = 0.9f;
+    conifer.trunkBaseMin = 0.8f;
+    conifer.trunkBaseMax = 1.4f;
+    conifer.crownHeightMin = 5.0f;
+    conifer.crownHeightMax = 7.0f;
+    // Wide base for a discriminant measure: the apex keeps a floor
+    // width (kill distance + growth overshoot + card shell) whatever
+    // the taper, so the cone reads in the base-vs-top ratio.
+    conifer.crownRadiusMin = 2.2f;
+    conifer.crownRadiusMax = 2.6f;
+    for (u32 seed : { 3u, 977u }) {
+        const MeshData tree =
+            render::generateColonizedTree(seed, 2, conifer);
+        checkWellFormed(tree);
+        CHECK(sameMesh(tree,
+                       render::generateColonizedTree(seed, 2, conifer)));
+        // Conical silhouette: the crown's top third is materially
+        // narrower than its bottom third (radial extent of the canopy
+        // vertices — green channel dominant).
+        f32 top = 0.0f, bottom = 0.0f, maxY = 0.0f;
+        for (const render::MeshVertex& v : tree.vertices) {
+            maxY = glm::max(maxY, v.position.y);
+        }
+        for (const render::MeshVertex& v : tree.vertices) {
+            if (v.color.g <= v.color.r) {
+                continue;
+            }
+            const f32 radial = glm::length(
+                Vec2 { v.position.x, v.position.z });
+            if (v.position.y > 0.85f * maxY) {
+                top = glm::max(top, radial);
+            } else if (v.position.y > 0.3f * maxY &&
+                       v.position.y < 0.5f * maxY) {
+                bottom = glm::max(bottom, radial);
+            }
+        }
+        CHECK(bottom > 0.0f);
+        CHECK(top < bottom * 0.75f);
+    }
+}

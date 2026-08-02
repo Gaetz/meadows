@@ -30,7 +30,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
 
     constexpr f32 kCloudCell =
         render::SkySystem::kCloudMapSpan / render::SkySystem::kCloudMapSize;
-    const render::FrameUniforms base {
+    render::FrameUniforms base {
         .viewProj = in.viewProj,
         .invViewProj = glm::inverse(in.viewProj),
         .cameraPos = { in.cameraPosition, 1.0f },
@@ -98,8 +98,16 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         // BASE too: the fog's altitude envelope applies in the
         // reflection as well (applyFog reads it).
         .fogLayerInfo = { in.atmos.fogCeiling, in.drawDistance,
-                          in.nearRingDistance, 0.0f },
+                          in.nearRingDistance, in.treeFadeEnd },
     };
+
+    // Post-init (a C array cannot take a designated initializer from
+    // array<>): season lanes are BASE — the reflection pass must show
+    // the same autumn/bare canopies as the main view.
+    base.seasonInfo = { in.seasonAutumn, in.seasonLeafFall, 0.0f, 0.0f };
+    for (u32 i = 0; i < 8; ++i) {
+        base.leafSeason[i] = in.leafSeason[i];
+    }
 
     render::FrameUniforms resolved = base;
     if (in.interiorMode) {

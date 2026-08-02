@@ -33,16 +33,28 @@ void main() {
     float crownMid = trunkFrac + (1.0 - trunkFrac) * 0.55;
     float crownHalf = (1.0 - trunkFrac) * 0.55;
     float inside = 0.0;
-    for (int i = 0; i < 4; ++i) {
-        float fi = float(i);
-        vec2 center =
-            vec2((hash1(s + fi * 7.31) - 0.5) * 0.42,
-                 crownMid + (hash1(s + fi * 3.77) - 0.5) * crownHalf);
-        float radius =
-            (0.26 + hash1(s + fi * 11.9) * 0.16) * (1.0 - trunkFrac) / 0.6;
-        vec2 q = vUv - center;
-        q.y *= 1.1; // slightly flattened lobes
-        inside = max(inside, step(length(q), radius));
+    if (vParams.z < 0.0) {
+        // CONIFER (negative width flag): a ragged cone from a low crown
+        // base to the apex — the whorl shelves read as edge steps.
+        float base = trunkFrac * 0.55;
+        float t = clamp((vUv.y - base) / max(1.0 - base, 1e-3), 0.0, 1.0);
+        float edge = 0.46 * (1.0 - t) *
+                     (0.78 + 0.22 * hash1(s + floor(t * 6.0)));
+        inside = step(abs(vUv.x), edge) * step(vUv.y, 1.0) *
+                 step(base, vUv.y);
+    } else {
+        for (int i = 0; i < 4; ++i) {
+            float fi = float(i);
+            vec2 center =
+                vec2((hash1(s + fi * 7.31) - 0.5) * 0.42,
+                     crownMid + (hash1(s + fi * 3.77) - 0.5) * crownHalf);
+            float radius =
+                (0.26 + hash1(s + fi * 11.9) * 0.16) * (1.0 - trunkFrac) /
+                0.6;
+            vec2 q = vUv - center;
+            q.y *= 1.1; // slightly flattened lobes
+            inside = max(inside, step(length(q), radius));
+        }
     }
     float trunk = step(abs(vUv.x), 0.03) *
                   step(vUv.y, trunkFrac + 0.08);

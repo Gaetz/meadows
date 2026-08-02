@@ -26,13 +26,15 @@ void main() {
     float d = length(toCam.xz);
     vec3 right = normalize(vec3(toCam.z, 0.0, -toCam.x));
     // Width comes from the measured crown ratio of the real trees.
-    vec3 p = ground + right * (c.x * h * aParams.z) +
+    vec3 p = ground + right * (c.x * h * abs(aParams.z)) +
              vec3(0.0, c.y * h, 0.0);
     vWorldPos = p;
     vUv = c;
     vParams = aParams;
-    // In past the real-tree fade (~880 m), out into the fog veil.
-    vFade = smoothstep(700.0, 900.0, d) *
+    // In past the real-tree fade (uFogLayerInfo.w tracks the vegetation
+    // ring), out into the fog veil.
+    float fadeEnd = max(uFogLayerInfo.w, 100.0);
+    vFade = smoothstep(fadeEnd * 0.8, fadeEnd + 20.0, d) *
             (1.0 - smoothstep(4200.0, 5200.0, d));
     gl_Position = uViewProj * vec4(p, 1.0);
 }

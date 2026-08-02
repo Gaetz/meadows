@@ -31,6 +31,8 @@ void main() {
     // CAMERA here; its lighting normal stays the SDF gradient (rotated
     // with the instance like everything else).
     bool leafCard = aUv.x < -5.0;
+    // Atlas slot from the flag bias (-10 - 20*slot, slots 0..7).
+    float slot = leafCard ? floor((-aUv.x - 5.0) / 20.0) : 0.0;
     float sway = leafCard ? 0.85 : aUv.x;
 
     // Distance fade, per category (aParams.w): trees carry to the fog line,
@@ -47,14 +49,28 @@ void main() {
                 (gust * 0.07 * uWindInfo.y * sway * aPosScale.w * fade);
 
     vCardUv = vec2(-1.0);
+    // Winter leaf fall: a per-card hash against (global fall x the
+    // slot's seasonality) collapses the quad — deciduous crowns thin to
+    // bare branches, evergreens (seasonality 0) keep every needle. The
+    // shadow caster runs the SAME rule (shadow_prop.vert).
+    bool dropped = false;
     if (leafCard) {
+        float fall = uSeasonInfo.y * uLeafSeason[int(slot)].a;
+        if (fall > 0.0) {
+            float h = fract(sin(dot(aPosScale.xyz + aPos,
+                                    vec3(12.9898, 78.233, 45.164))) *
+                            43758.5453);
+            dropped = h < fall;
+        }
+    }
+    if (leafCard && !dropped) {
         // Screen-aligned expansion: viewProj rows 0/1 are the camera
         // right/up directions (projection only scales them).
         vec3 camRight = normalize(
             vec3(uViewProj[0][0], uViewProj[1][0], uViewProj[2][0]));
         vec3 camUp = normalize(
             vec3(uViewProj[0][1], uViewProj[1][1], uViewProj[2][1]));
-        vec2 corner = vec2(aUv.x + 10.0, aUv.y);
+        vec2 corner = vec2(aUv.x + 10.0 + slot * 20.0, aUv.y);
         // Mirror pass: the card re-aims at the mirrored camera, so its
         // winding does not flip like static geometry's under the pass's
         // inverted front face — flip the corners to match (the mirrored
@@ -64,8 +80,10 @@ void main() {
         }
         world += (camRight * corner.x + camUp * corner.y) *
                  (aPosScale.w * fade);
-        // Corners are exactly +-halfSize: the sign recovers the mask uv.
-        vCardUv = sign(corner) * 0.5 + 0.5;
+        // Corners are exactly +-halfSize: the sign recovers the mask
+        // uv; u lands in the card's atlas slot.
+        vec2 uv01 = sign(corner) * 0.5 + 0.5;
+        vCardUv = vec2((uv01.x + slot) / 8.0, uv01.y);
     }
 
     vNormal = normal;

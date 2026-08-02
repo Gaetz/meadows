@@ -72,6 +72,33 @@ struct ColonizedTreeParams {
     f32 crownHeightMax { 3.8f };
     f32 crownRadiusMin { 1.9f };
     f32 crownRadiusMax { 3.0f };
+    // --- Conifer habit (defaults neutral = the broadleaf look, and
+    // bit-exact: at 0 none of these consumes a random draw). ---
+    // Crown radius profile: 0 = the ellipsoid, 1 = a cone — full radius
+    // at the crown base shrinking to the apex (spruce/fir silhouette).
+    f32 crownTaper { 0.0f };
+    // Fraction of attractors packed in a thin axial column: an apical
+    // LEADER the trunk climbs straight through (monopodial habit).
+    f32 leaderBias { 0.0f };
+    // Presses side growth toward the horizontal with a slight droop —
+    // the whorled shelves of a spruce. 0 = free growth.
+    f32 lateralFlatten { 0.0f };
+    // Foliage cards ride the OUTER BRANCHES (sprays) instead of the SDF
+    // shell; the shading normal stays the canopy gradient either way.
+    // Blend 0..1 = share of cards that spray.
+    f32 sprayFoliage { 0.0f };
+    // Leaf-mask ATLAS slot this species' cards sample (0..7; the slot's
+    // raster is generated from THIS species' leaf params + shape).
+    i32 leafStyle { 0 };
+    // Raster shape of the claimed slot: 0 pointed ellipse, 1 needles,
+    // 2 rounded, 3 lobed (maple-ish), 4 serrated.
+    i32 leafShape { 0 };
+    // Seasons (runtime, no mesh rebuild): the shader mixes the card
+    // color toward autumnTint by (global season x seasonality), and
+    // drops cards by (global leaf-fall x seasonality) — conifers set
+    // seasonality 0 and stay green through winter.
+    Vec3 autumnTint { 0.62f, 0.30f, 0.08f };
+    f32 seasonality { 1.0f };
     // Wood look. `tubeSides` = ring vertices at full detail (LODs
     // derive: low twin = sides-1, ultra = 3). `curvePreserve` relaxes
     // the chain decimation so the growth trajectory's real bends
@@ -97,6 +124,9 @@ struct ColonizedTreeParams {
     // Foliage SDF (metaballs at branch tips, order-weighted).
     f32 tipBallRadius { 0.95f };  // order-0 metaball radius (m)
     f32 tipOrderFalloff { 0.78f };// radius x falloff^branchOrder
+    // Metaball radius floor. The 0.30 default is the shipped tree look;
+    // BUSH species drop it (~0.06) so a knee-high canopy stays tight.
+    f32 tipBallMin { 0.30f };
     f32 smoothK { 0.7f };         // metaball smooth-min width (m)
     // Billboard cards.
     f32 cardHalfSizeMin { 0.084f };
@@ -131,14 +161,16 @@ MeshData generateColonizedTreeShadowProxy(u32 seed,
                                           const ColonizedTreeParams& params
                                           = {});
 
-// The leaf-cluster cutout mask every foliage card samples (ONE texture,
-// shared — card color stays per-clump vertex color). RGBA8, size x size:
-// r = per-leaf brightness (remapped in tree.frag), a = coverage. Pointed
-// ellipse leaves at random rotation/size/shade, scattered radially so none
-// crosses the card edge (the rectangle silhouette must not survive).
-// Deterministic per (seed, params).
+// The leaf-cluster cutout mask every foliage card samples (an ATLAS —
+// left half broadleaf, right half needles; the card's flag bias picks
+// the slot). RGBA8, one size x size tile: r = per-leaf brightness
+// (remapped in tree.frag), a = coverage. Leaves at random rotation/
+// size/shade, scattered radially so none crosses the card edge; `shape`
+// picks the leaf outline (see ColonizedTreeParams::leafShape).
+// Deterministic per (seed, params, shape).
 vector<u8> generateLeafMaskPixels(u32 size, u32 seed,
-                                  const ColonizedTreeParams& params = {});
+                                  const ColonizedTreeParams& params = {},
+                                  i32 shape = 0);
 
 // Squashed craggy boulder, meant to be sunk slightly into the ground.
 MeshData generateRock(u32 seed);

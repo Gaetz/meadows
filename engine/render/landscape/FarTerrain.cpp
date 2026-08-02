@@ -264,11 +264,19 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 // Sized from the MEASURED real trees: the mesh
                 // carries ~60% of that height as canopy mass, so the
                 // billboards (85-115% of a real tree) emerge from it.
+                // Species bands mirror the near scatter: conifer belt
+                // up to the line, mixed below — a NEGATIVE width ratio
+                // flags the conical silhouette to far_tree.frag.
+                const f32 h01 = h / line;
+                const bool conifer =
+                    h01 >= 0.7f || (h01 >= 0.45f && rng.next() < 0.4f);
+                const f32 width = conifer ? -trees.widthRatio * 0.55f
+                                          : trees.widthRatio;
                 baked.trees.push_back(
                     { { x, h - 0.5f, z,
                         trees.height * (0.85f + rng.next() * 0.3f) },
-                      { rng.next() * 64.0f, rng.next(),
-                        trees.widthRatio, trees.trunkFraction } });
+                      { rng.next() * 64.0f, rng.next(), width,
+                        trees.trunkFraction } });
             }
         }
         queue->push(std::move(baked));

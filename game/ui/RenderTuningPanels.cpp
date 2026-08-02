@@ -126,8 +126,8 @@ bool RenderTuningPanels::drawTreeKnobs(render::WorldRenderer& r) {
                                 ImGuiTreeNodeFlags_DefaultOpen)) {
         render::ColonizedTreeParams& p = r.vegetation.colonizedTreeParams;
         ImGui::SeparatorText("Skeleton (Runions)");
-        knob("Growth step D (m)", p.segment, 0.1f, 0.8f);
-        knob("Kill distance (m)", p.killDistance, 0.2f, 2.0f);
+        knob("Growth step D (m)", p.segment, 0.04f, 0.8f);
+        knob("Kill distance (m)", p.killDistance, 0.08f, 2.0f);
         knobInt("Attractors", p.attractorCount, 50, 2000);
         knob("Pipe exponent", p.pipeExponent, 2.0f, 3.0f);
         knob("Tropism (up bias)", p.tropism, 0.0f, 0.6f);
@@ -145,8 +145,22 @@ bool RenderTuningPanels::drawTreeKnobs(render::WorldRenderer& r) {
         knob("Crown height max", p.crownHeightMax, 1.0f, 8.0f);
         knob("Crown radius min", p.crownRadiusMin, 0.8f, 5.0f);
         knob("Crown radius max", p.crownRadiusMax, 0.8f, 6.0f);
+        ImGui::SeparatorText("Conifer habit");
+        knob("Crown taper (cone)", p.crownTaper, 0.0f, 1.0f);
+        knob("Leader bias", p.leaderBias, 0.0f, 0.8f);
+        knob("Lateral flatten", p.lateralFlatten, 0.0f, 1.0f);
+        knob("Spray foliage", p.sprayFoliage, 0.0f, 1.0f);
+        ImGui::SeparatorText("Leaf style (atlas slot + season)");
+        knobInt("Atlas slot", p.leafStyle, 0, 7);
+        const char* kShapes =
+            "Pointed ellipse\0Needles\0Rounded\0Lobed\0Serrated\0";
+        dirty |= ImGui::Combo("Leaf shape", &p.leafShape, kShapes);
+        dirty |= ImGui::ColorEdit3("Autumn tint", &p.autumnTint.x,
+                                   ImGuiColorEditFlags_Float);
+        knob("Seasonality", p.seasonality, 0.0f, 1.0f);
         ImGui::SeparatorText("Foliage SDF + cards");
-        knob("Tip ball radius", p.tipBallRadius, 0.3f, 2.0f);
+        knob("Tip ball radius", p.tipBallRadius, 0.05f, 2.0f);
+        knob("Tip ball floor", p.tipBallMin, 0.03f, 0.5f);
         knob("Tip order falloff", p.tipOrderFalloff, 0.5f, 1.0f);
         knob("Smooth-min k", p.smoothK, 0.1f, 2.0f);
         knob("Card size min", p.cardHalfSizeMin, 0.01f, 0.25f);
@@ -213,7 +227,12 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
                  "trunkBaseMin = {}\ntrunkBaseMax = {}\n"
                  "crownHeightMin = {}\ncrownHeightMax = {}\n"
                  "crownRadiusMin = {}\ncrownRadiusMax = {}\n"
-                 "tipBallRadius = {}\ntipOrderFalloff = {}\nsmoothK = {}\n"
+                 "crownTaper = {}\nleaderBias = {}\n"
+                 "lateralFlatten = {}\nsprayFoliage = {}\n"
+                 "tipBallRadius = {}\ntipOrderFalloff = {}\n"
+                 "tipBallMin = {}\nleafStyle = {}\nleafShape = {}\n"
+                 "autumnTint = [{}, {}, {}]\nseasonality = {}\n"
+                 "smoothK = {}\n"
                  "cardHalfSizeMin = {}\ncardHalfSizeMax = {}\n"
                  "densityGradient = {}\nfoliageDensity = {}\n"
                  "leafCount = {}\nleafSizeMin = {}\nleafSizeMax = {}\n"
@@ -223,8 +242,11 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
                  c.segment, c.killDistance, c.attractorCount,
                  c.pipeExponent, c.tropism, c.trunkBaseMin, c.trunkBaseMax,
                  c.crownHeightMin, c.crownHeightMax, c.crownRadiusMin,
-                 c.crownRadiusMax, c.tipBallRadius, c.tipOrderFalloff,
-                 c.smoothK, c.cardHalfSizeMin, c.cardHalfSizeMax,
+                 c.crownRadiusMax, c.crownTaper, c.leaderBias,
+                 c.lateralFlatten, c.sprayFoliage,
+                 c.tipBallRadius, c.tipOrderFalloff, c.tipBallMin,
+                 c.leafStyle, c.leafShape, c.autumnTint.x, c.autumnTint.y,
+                 c.autumnTint.z, c.seasonality, c.smoothK, c.cardHalfSizeMin, c.cardHalfSizeMax,
                  c.densityGradient, c.foliageDensity, c.leafCount,
                  c.leafSizeMin, c.leafSizeMax, c.leafSolidStart,
                  c.leafSolidEnd);
@@ -266,12 +288,16 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
         // Streaming ring = the draw distance (64 m chunks; the horizon
         // closure tracks it). Chunk count grows as (2r+1)^2 — watch F6.
         ImGui::SliderInt("View radius (chunks)", &r.terrain.viewRadius, 8,
-                         30);
+                         render::TerrainSystem::kMaxViewRadius);
         // Coarse 12 km silhouette mesh past the ring (terrain + forest
         // fringe dissolving into the sky).
         ImGui::Checkbox("Far terrain (silhouettes)", &r.farTerrainUi);
     }
     if (ImGui::CollapsingHeader("Vegetation")) {
+        ImGui::SliderFloat("Season: autumn", &r.seasonAutumnUi, 0.0f,
+                           1.0f, "%.2f");
+        ImGui::SliderFloat("Season: leaf fall", &r.seasonLeafFallUi,
+                           0.0f, 1.0f, "%.2f");
         // The vegetation draw budget, live
         // (docs/RENDERING.md). Shrinking the ring pops at the edge
         // (the tree fade tops out at 880 m) — a budget-hunting knob.

@@ -28,7 +28,12 @@ void RenderTuningIo::applyTuning(
     r.terrain.params.mountainMaskHigh = tuning.mountainMaskHigh;
     r.terrain.params.seaLevel = tuning.seaLevel;
     r.terrain.params.snowLine = activeSnowLine;
-    r.terrain.viewRadius = glm::clamp(tuning.terrainViewRadius, 8, 30);
+    r.terrain.params.treeLineFactor = tuning.treeLineFactor;
+    r.seasonAutumnUi = tuning.seasonAutumn;
+    r.seasonLeafFallUi = tuning.seasonLeafFall;
+    r.terrain.viewRadius =
+        glm::clamp(tuning.terrainViewRadius, 8,
+                   render::TerrainSystem::kMaxViewRadius);
     r.farTerrainUi = tuning.farTerrain;
     r.exposureUi = tuning.exposure;
     // (tuning.ssaoStrength is unused — screen-space AO removed.)
@@ -84,7 +89,7 @@ void RenderTuningIo::applyTuning(
     r.skyCloudBaseDarkUi = tuning.skyCloudBaseDark;
     // Vegetation draw budget (clamped — the streamer ring
     // and the Hi-Z candidate cap size the safe range).
-    r.vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 15);
+    r.vegetation.viewRadius = glm::clamp(tuning.vegViewRadius, 4, 24);
     r.vegetation.highDetailRadius =
         glm::clamp(tuning.vegHighDetailRadius, 0, 8);
     r.vegetation.lowDetailRadius =
@@ -173,8 +178,17 @@ render::ColonizedTreeParams RenderTuningIo::toColonizedParams(
     c.crownHeightMax = colonized.crownHeightMax;
     c.crownRadiusMin = colonized.crownRadiusMin;
     c.crownRadiusMax = colonized.crownRadiusMax;
+    c.crownTaper = colonized.crownTaper;
+    c.leaderBias = colonized.leaderBias;
+    c.lateralFlatten = colonized.lateralFlatten;
+    c.sprayFoliage = colonized.sprayFoliage;
     c.tipBallRadius = colonized.tipBallRadius;
     c.tipOrderFalloff = colonized.tipOrderFalloff;
+    c.tipBallMin = colonized.tipBallMin;
+    c.leafStyle = colonized.leafStyle;
+    c.leafShape = colonized.leafShape;
+    c.autumnTint = colonized.autumnTint;
+    c.seasonality = colonized.seasonality;
     c.smoothK = colonized.smoothK;
     c.cardHalfSizeMin = colonized.cardHalfSizeMin;
     c.cardHalfSizeMax = colonized.cardHalfSizeMax;
@@ -274,6 +288,8 @@ void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
     out.skyCloudRimLobe = r.skyCloudRimLobeUi;
     out.skyCloudBaseDark = r.skyCloudBaseDarkUi;
     out.terrainViewRadius = r.terrain.viewRadius;
+    out.seasonAutumn = r.seasonAutumnUi;
+    out.seasonLeafFall = r.seasonLeafFallUi;
     out.farTerrain = r.farTerrainUi;
     out.vegViewRadius = r.vegetation.viewRadius;
     out.vegHighDetailRadius = r.vegetation.highDetailRadius;

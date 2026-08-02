@@ -481,6 +481,9 @@ private:
     // Boot/mode-switch camera: sandbox -> the probed start, story -> the
     // NPC-side viewpoint.
     void placeStartCamera();
+    // farPlane follows the live terrain view radius (slider up to 45
+    // chunks = 2880 m; the old fixed 1600 clipped everything past it).
+    void updateCameraFarPlane();
 
     // Stutter hunt: per-block frame breakdown, logged on spikes > 25 ms.
     core::FrameProbe frameProbe;

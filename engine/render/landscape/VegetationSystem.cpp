@@ -53,7 +53,8 @@ f32 forestMask(u32 seed, f32 x, f32 z) {
 }
 
 VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
-                                              i32 cx, i32 cz) {
+                                              i32 cx, i32 cz,
+                                              f32 treeFadeEnd) {
     const f32 originX = static_cast<f32>(cx) * TerrainSystem::kChunkSize;
     const f32 originZ = static_cast<f32>(cz) * TerrainSystem::kChunkSize;
     VegetationSystem::VariantBuckets buckets;
@@ -104,24 +105,43 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const f32 h = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
             const f32 slope = 1.0f - n.y;
-            // Treeline scaled with the snow line — a FADE, not a cut:
-            // forests thin and stunt over the last band below the line,
-            // the way a real treeline dissolves. Lakes and rivers
-            // exclude trees like the sea does.
-            const f32 treeLine = terrain::treeLine(params);
-            const f32 lineFade =
-                1.0f - glm::smoothstep(0.82f * treeLine, treeLine, h);
-            if (h < params.seaLevel + 3.0f || lineFade <= 0.001f ||
-                rng.next() >= lineFade || slope > 0.3f ||
+            if (h < params.seaLevel + 3.0f || slope > 0.3f ||
                 terrain::underLocalWater(params, x, z, h, 1.0f)) {
                 continue;
+            }
+            // ALTITUDE BANDS, fractions of the tree line: broadleaf
+            // country low, a mixed belt, conifers up to the line (the
+            // forest thins and stunts over its last stretch — a real
+            // treeline dissolves), then a krummholz band of bushes just
+            // past it. Grass and rock own everything above.
+            const f32 h01 = h / terrain::treeLine(params);
+            if (h01 >= 1.0f) {
+                if (h01 < 1.15f && rng.next() < 0.35f) {
+                    place(VegetationSystem::kFirstBush,
+                          VegetationSystem::kBushVariants, rng, x,
+                          h - 0.05f, z, 0.8f, 1.5f, 660.0f);
+                }
+                continue;
+            }
+            const f32 lineFade = 1.0f - glm::smoothstep(0.82f, 1.0f, h01);
+            if (rng.next() >= lineFade) {
+                continue;
+            }
+            u32 first = 0;
+            u32 count = VegetationSystem::kBroadleafVariants;
+            if (h01 >= 0.7f) { // conifer belt
+                first = VegetationSystem::kBroadleafVariants;
+                count = VegetationSystem::kTreeVariants -
+                        VegetationSystem::kBroadleafVariants;
+            } else if (h01 >= 0.45f) { // mixed belt
+                count = VegetationSystem::kTreeVariants;
             }
             // Sink slightly so leaning trunks never float on slopes; the
             // offset follows the scale (their footprint is meters wide).
             const f32 stunt = 0.55f + 0.45f * lineFade;
-            place(0, VegetationSystem::kTreeVariants, rng, x, h - 0.9f, z,
+            place(first, count, rng, x, h - 0.9f, z,
                   VegetationSystem::kTreeScaleMin * stunt,
-                  VegetationSystem::kTreeScaleMax * stunt, 880.0f);
+                  VegetationSystem::kTreeScaleMax * stunt, treeFadeEnd);
         }
     }
 
@@ -174,8 +194,10 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                                         kBushSpacing;
             const f32 h = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
+            // 0.5 keeps bushes alive in the alpine biome
+            // (grassPresence 0.6); arid scrub stays excluded.
             if (terrain::materialWeightsAt(params, x, z, h, n).grass <
-                    0.65f ||
+                    0.5f ||
                 terrain::underLocalWater(params, x, z, h, 0.3f)) {
                 continue;
             }
@@ -269,10 +291,51 @@ void VegetationSystem::rebuildLeafMask(rhi::Device& device) {
     const u32 mipLevels =
         mips ? 1 + static_cast<u32>(std::log2(static_cast<f32>(kMaskSize)))
              : 1;
-    const vector<u8> pixels =
-        generateLeafMaskPixels(kMaskSize, meshSeed, colonizedTreeParams);
+    // ATLAS, kLeafStyleCount tiles in a row: each SPECIES claims the
+    // slot `leafStyle` and rasters it from its own leaf params + shape;
+    // the card's flag bias picks the tile in tree.vert /
+    // shadow_prop.vert. Slot 0 defaults to the live global params;
+    // unclaimed slots copy slot 0 (a mis-set style never shows holes).
+    // The per-slot SEASON table (autumn tint + seasonality) rides the
+    // same claim pass — the shaders read it from the frame UBO.
+    array<std::optional<ColonizedTreeParams>, kLeafStyleCount> claims {};
+    claims[0] = colonizedTreeParams;
+    const auto claim = [&](const TreeSpecies& species) {
+        if (!species.colonized) {
+            return;
+        }
+        const u32 slot = static_cast<u32>(
+            glm::clamp(species.params.leafStyle, 0, kLeafStyleCount - 1));
+        claims[slot] = species.params;
+    };
+    for (u32 i = 0; i < kTreeVariants; ++i) {
+        if (treeSpecies[i]) {
+            claim(*treeSpecies[i]);
+        }
+    }
+    if (bushSpecies) {
+        claim(*bushSpecies);
+    }
+    vector<u8> pixels(static_cast<size_t>(kMaskSize) * kMaskSize *
+                      kLeafStyleCount * 4);
+    const u32 atlasWidth = kMaskSize * kLeafStyleCount;
+    for (u32 slot = 0; slot < static_cast<u32>(kLeafStyleCount); ++slot) {
+        const ColonizedTreeParams& p =
+            claims[slot] ? *claims[slot] : *claims[0];
+        leafSeasonTable[slot] = { p.autumnTint.x, p.autumnTint.y,
+                                  p.autumnTint.z, p.seasonality };
+        const vector<u8> tile = generateLeafMaskPixels(
+            kMaskSize, meshSeed, p, claims[slot] ? p.leafShape : 0);
+        for (u32 row = 0; row < kMaskSize; ++row) {
+            std::memcpy(&pixels[(static_cast<size_t>(row) * atlasWidth +
+                                 slot * kMaskSize) *
+                                4],
+                        &tile[static_cast<size_t>(row) * kMaskSize * 4],
+                        static_cast<size_t>(kMaskSize) * 4);
+        }
+    }
     leafMask = { device, device.createTexture(
-        { .width = kMaskSize,
+        { .width = atlasWidth,
           .height = kMaskSize,
           .mipLevels = mipLevels,
           .format = rhi::TextureFormat::RGBA8,
@@ -337,7 +400,23 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
         } else if (i < kFirstBush) {
             uploadVariantMesh(device, i, baked(generateRock(seed), 0.5f));
         } else {
-            uploadVariantMesh(device, i, baked(generateBush(seed), 0.55f));
+            if (bushSpecies) {
+                // A knee-high colonized canopy: real branches + card
+                // foliage, three LODs like the trees.
+                const auto bush = [&](u32 lod) {
+                    return bushSpecies->colonized
+                               ? generateColonizedTree(
+                                     seed, lod, bushSpecies->params)
+                               : generateTree(seed, lod,
+                                              bushSpecies->lobes);
+                };
+                uploadVariantMesh(device, i, baked(bush(2), 0.55f));
+                uploadLowDetailMesh(device, i, baked(bush(1), 0.55f));
+                uploadUltraDetailMesh(device, i, baked(bush(0), 0.55f));
+            } else {
+                uploadVariantMesh(device, i,
+                                  baked(generateBush(seed), 0.55f));
+            }
         }
     }
 }
@@ -698,8 +777,9 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
         },
         [&](i32 cx, i32 cz, i32, i32) {
             streamer.chunks.emplace(chunkKey(cx, cz), Chunk {});
-            streamer.enqueueBuild(cx, cz, [params, cx, cz] {
-                return scatterProps(params, cx, cz);
+            const f32 fade = treeFadeEnd();
+            streamer.enqueueBuild(cx, cz, [params, cx, cz, fade] {
+                return scatterProps(params, cx, cz, fade);
             });
         });
 

@@ -211,6 +211,10 @@ private:
     render::SkySystem sky;
     render::ChunkOcclusion occlusion;
     bool occlusionUi { true }; // height-horizon occlusion culling (A/B)
+    // Seasons (until a season system drives them): autumn color blend
+    // and deciduous leaf fall, per-slot weighting from the species.
+    f32 seasonAutumnUi { 0.0f };
+    f32 seasonLeafFallUi { 0.0f };
     render::GpuOcclusion gpuOcclusion;
     bool gpuOcclusionUi { true }; // Hi-Z compute culling (A/B)
     // GPU-driven terrain path (docs/RENDERING.md §6.0): the cull's

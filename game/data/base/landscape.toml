@@ -41,56 +41,13 @@ terrainRecurveHigh = 0.75
 # --- Terrain materials ---------------------------------------------------
 snowLine = 165.0            # story-world snow altitude (m)
 sandboxSnowLine = 1100.0    # sandbox snow altitude — the tree line follows at ~0.82x
+coniferTreeType = "conifer" # species of the high tree slots (3-4)
+bushTreeType = "bush"       # colonized bush species (legacy blobs if empty)
+treeLineFactor = 0.82       # tree line = snow line x this
 splatUvScale = 0.25         # ground texture tiles per meter
 
-# --- Biomes (palette contract with the sandbox generator:
-#     0 temperate/neutral, 1 arid, 2 alpine, 3 tundra) -------------------
-[[records]]
-form = "1a4d5c00-0000-4000-8000-0000000000b1"
-type = "BiomeForm"
-new = true
-[records.fields]
-editorId = "BiomeArid"
-displayName = "Arid"
-paletteIndex = 1
-editorColor = [0.85, 0.72, 0.4]
-sandiness = 0.7
-grassPresence = 0.25
-snowLineOffset = 400.0
-temperature = 0.6
-wetness = 0.1
-
-[[records]]
-form = "1a4d5c00-0000-4000-8000-0000000000b2"
-type = "BiomeForm"
-new = true
-[records.fields]
-editorId = "BiomeAlpine"
-displayName = "Alpine"
-paletteIndex = 2
-editorColor = [0.55, 0.55, 0.6]
-rockiness = 0.6
-grassPresence = 0.6
-snowLineOffset = -300.0
-temperature = -0.4
-
-[[records]]
-form = "1a4d5c00-0000-4000-8000-0000000000b3"
-type = "BiomeForm"
-new = true
-[records.fields]
-editorId = "BiomeTundra"
-displayName = "Tundra"
-paletteIndex = 3
-editorColor = [0.75, 0.8, 0.85]
-rockiness = 0.3
-grassPresence = 0.4
-snowLineOffset = -650.0
-temperature = -0.8
-wetness = 0.4
-
 # --- Fog / atmosphere ----------------------------------------------------
-fogDensity = 0.0014
+fogDensity = 0.0010          # thinner: the 2-3 km ring must be visible
 fogHeightFalloff = 0.02     # 1/m — how fast fog thins with altitude
 fogLowBoost = 1.6           # extra density near sea level (misty valleys)
 fogStart = 300.0            # meters of clear air before fog begins
@@ -138,6 +95,53 @@ froxelFog = true                  # V4/H4 froxel volume (off = 2D march)
 froxelTemporalBlend = 0.02        # EMA: current fraction/frame (1 = off)
 froxelDustNoise = 0.75            # dust wisps: 0 uniform, 1 sparse sheets
 interiorDustDensity = 0.025       # uniform dust indoors (H4)
+
+# --- Biomes (palette contract with the sandbox generator:
+#     0 temperate/neutral, 1 arid, 2 alpine, 3 tundra) -------------------
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b1"
+type = "BiomeForm"
+new = true
+[records.fields]
+editorId = "BiomeArid"
+displayName = "Arid"
+paletteIndex = 1
+editorColor = [0.85, 0.72, 0.4]
+sandiness = 0.7
+grassPresence = 0.25
+snowLineOffset = 400.0
+temperature = 0.6
+wetness = 0.1
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b2"
+type = "BiomeForm"
+new = true
+[records.fields]
+editorId = "BiomeAlpine"
+displayName = "Alpine"
+paletteIndex = 2
+editorColor = [0.55, 0.55, 0.6]
+rockiness = 0.6
+grassPresence = 0.6
+snowLineOffset = -300.0
+temperature = -0.4
+
+[[records]]
+form = "1a4d5c00-0000-4000-8000-0000000000b3"
+type = "BiomeForm"
+new = true
+[records.fields]
+editorId = "BiomeTundra"
+displayName = "Tundra"
+paletteIndex = 3
+editorColor = [0.75, 0.8, 0.85]
+rockiness = 0.3
+grassPresence = 0.4
+snowLineOffset = -650.0
+temperature = -0.8
+wetness = 0.4
+
 
 # Radiance-cascades GI tuning (docs/RENDERING.md): the render
 # panel's Global illumination section, moddable like everything else.
@@ -379,7 +383,7 @@ rainIntensity = 0.75
 # panel edits these live; a mod patches any field below (last writer wins).
 
 [[records]]
-form = "1a4d5c00-0000-4000-8000-0000000000b1"
+form = "7cdab9a1-6af4-4c89-a161-bc45c3ae8ea3"
 type = "LobeTreeTuningForm"
 new = true
 [records.fields]
@@ -402,7 +406,83 @@ lobeFlatten = 0.85
 normalSpherize = 0.4
 
 [[records]]
-form = "1a4d5c00-0000-4000-8000-0000000000b2"
+form = "b1c8f5be-4a5d-4d2f-9e63-7c11d2a90842"
+type = "ColonizedTreeTuningForm"
+new = true
+[records.fields]
+editorId = "bush"             # knee-high colonized canopy (bush slots)
+leafStyle = 2
+leafShape = 2                 # rounded
+seasonality = 0.7
+autumnTint = [0.5, 0.32, 0.1]
+segment = 0.07
+killDistance = 0.16
+attractorCount = 220
+pipeExponent = 2.6
+tropism = 0.1
+trunkBaseMin = 0.05
+trunkBaseMax = 0.15
+crownHeightMin = 0.55
+crownHeightMax = 0.8
+crownRadiusMin = 0.5
+crownRadiusMax = 0.75
+tipBallRadius = 0.2
+tipBallMin = 0.06
+tipOrderFalloff = 0.85
+smoothK = 0.25
+cardHalfSizeMin = 0.05
+cardHalfSizeMax = 0.09
+densityGradient = 2.0
+foliageDensity = 1.2
+leafCount = 70
+leafSizeMin = 0.1
+leafSizeMax = 0.2
+leafSolidStart = 4.0
+leafSolidEnd = 7.0
+tubeSides = 4
+sideMinFraction = 0.75
+
+[[records]]
+form = "35df9e3e-001a-4356-8c7c-f21f12757b4a"
+type = "ColonizedTreeTuningForm"
+new = true
+[records.fields]
+editorId = "conifer"          # spruce/fir habit — the high tree slots
+segment = 0.26
+killDistance = 0.55
+attractorCount = 500
+pipeExponent = 2.6
+tropism = 0.05
+trunkBaseMin = 0.8
+trunkBaseMax = 1.4
+crownHeightMin = 5.0
+crownHeightMax = 7.0
+crownRadiusMin = 1.3
+crownRadiusMax = 1.8
+crownTaper = 0.85
+leaderBias = 0.35
+lateralFlatten = 0.7
+sprayFoliage = 0.9
+tipBallRadius = 0.5
+tipOrderFalloff = 0.85
+leafStyle = 1
+leafShape = 1                 # needles
+seasonality = 0.0             # evergreen: no autumn, no leaf fall
+smoothK = 0.5
+cardHalfSizeMin = 0.07
+cardHalfSizeMax = 0.12
+densityGradient = 2.0
+foliageDensity = 3.0
+leafCount = 110
+leafSizeMin = 0.12
+leafSizeMax = 0.28
+leafSolidStart = 4.0
+leafSolidEnd = 7.0
+tubeSides = 5
+sideMinFraction = 0.5
+
+[[records]]
+form = "a344e05d-c66b-4c93-81dd-b535a0072dd0"
 type = "ColonizedTreeTuningForm"
 new = true
 [records.fields]

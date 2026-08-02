@@ -353,3 +353,8 @@ décision GPU), plaque d'eau bbox / éviction sandboxLakes / spawn initial
 - **Vallées glaciaires / vrais fjords** (auges creusées sous le niveau
   de mer puis noyées) — hors scope lithologie ; à réfléchir si le besoin
   bite après les côtes dures.
+- **BUG nuages : la couche s'éteint quand la caméra passe au-dessus**
+  (signalé 2026-08-02, côté rendu — ciel/nuages, pas génération).
+  Devenu facile à déclencher : les sommets (1000-1300 m) percent la
+  couche (800-1000 m). À corriger dans le chantier ciel : le dôme/bake
+  nuages doit rester rendu vu de dessus.

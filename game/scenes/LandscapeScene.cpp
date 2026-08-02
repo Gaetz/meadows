@@ -273,6 +273,20 @@ void LandscapeScene::bootstrapData() {
         wireSpecies(tuning.broadleafTreeType, 0, Veg::kBroadleafVariants);
         wireSpecies(tuning.coniferTreeType, Veg::kBroadleafVariants,
                     Veg::kTreeVariants - Veg::kBroadleafVariants);
+        if (!tuning.bushTreeType.empty()) {
+            if (const auto* record =
+                    data::findByEditorId<data::ColonizedTreeTuningForm>(
+                        forms, tuning.bushTreeType)) {
+                renderer.vegetationSystem().bushSpecies =
+                    render::VegetationSystem::TreeSpecies {
+                        true, {},
+                        RenderTuningIo::toColonizedParams(*record)
+                    };
+            } else {
+                LOG_WARN("Bush type '{}' not found: legacy blob bushes",
+                         tuning.bushTreeType);
+            }
+        }
     }
     RenderTuningIo::applyRcTuning(renderer, data::resolveRcTuning(forms));
     atmos.fogDensity = tuning.fogDensity;
@@ -846,8 +860,10 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
     // gpuOcclusion creation: all moved into render::WorldRenderer::create.)
 
     placeStartCamera();
-    // Cover the full streamed ring (~14 chunks = ~900 m) plus headroom.
-    flyCamera.camera.farPlane = 1600.0f;
+    // Cover the streamed ring plus headroom — derived from the live
+    // view radius (updateCameraFarPlane keeps it in step with the
+    // tuning slider; reversed-Z keeps the depth precision).
+    updateCameraFarPlane();
 
     // A loaded game resumes where it stood — camera on the
     // player, saved look angles, straight into Play (no boot menu). The
@@ -950,9 +966,18 @@ void LandscapeScene::onExit() {
 }
 
 
+void LandscapeScene::updateCameraFarPlane() {
+    flyCamera.camera.farPlane =
+        glm::max(1600.0f, static_cast<f32>(
+                              renderer.terrainSystem().viewRadius) *
+                                  render::TerrainSystem::kChunkSize *
+                                  1.3f);
+}
+
 void LandscapeScene::update(f32 dt) {
     frameProbe.beginFrame(); // ends in render() — one probe per frame
     timeSeconds += dt;
+    updateCameraFarPlane(); // tracks the live view-radius slider
     // B1 mesh path: pump async residency (worker decodes -> main-thread
     // uploads, §7), then extract this frame's snapshot from the world.
     {

@@ -93,6 +93,8 @@ struct TerrainParams {
     // value the shader gets (uTerrainInfo.y), or footsteps/scatter and
     // pixels disagree about what is snow.
     f32 snowLine { kSnowLine };
+    // Tree line as a fraction of the snow line (scatter + far fringe).
+    f32 treeLineFactor { 0.82f };
 };
 
 namespace terrain {
@@ -149,7 +151,7 @@ f32 rockExposureAt(const TerrainParams& params, f32 x, f32 z);
 // treeline), sandbox 950 -> ~780. Shared by the near scatter and the
 // FarTerrain fringe so the two can never disagree.
 inline f32 treeLine(const TerrainParams& params) {
-    return params.snowLine * 0.82f; // hand-tuned
+    return params.snowLine * params.treeLineFactor;
 }
 
 // True where LOCAL water (params.water: lakes, rivers) covers ground at

@@ -82,15 +82,22 @@ Vec3 canopySdfGradient(const vector<Metaball>& balls, const Vec3& p,
 // (shadow_prop.vert toward the light), and the LIGHTING normal stays the
 // SDF gradient — the whole point of the technique.
 constexpr f32 kCardFlagBias = -10.0f;
+// The atlas SLOT rides the bias in -20 steps (-10, -30, -50, ... for
+// slots 0..7): tree.vert / shadow_prop.vert decode the slot and route
+// the card to its tile of the leaf-mask atlas.
+constexpr f32 kCardSlotStep = -20.0f;
 
 void appendBillboardCard(MeshData& mesh, const Vec3& center, f32 halfSize,
-                         const Vec3& normal, const Vec3& color) {
+                         const Vec3& normal, const Vec3& color,
+                         i32 slot = 0) {
+    const f32 bias =
+        kCardFlagBias + kCardSlotStep * static_cast<f32>(glm::clamp(slot, 0, 7));
     const u32 base = static_cast<u32>(mesh.vertices.size());
     for (const Vec2 corner : { Vec2 { -1.0f, -1.0f }, Vec2 { 1.0f, -1.0f },
                                Vec2 { 1.0f, 1.0f }, Vec2 { -1.0f, 1.0f } }) {
         mesh.vertices.push_back(
             { center, normal,
-              { kCardFlagBias + corner.x * halfSize,
+              { bias + corner.x * halfSize,
                 corner.y * halfSize },
               color });
     }
@@ -134,12 +141,35 @@ GrownTree growColonizedTree(u32 seed, const ColonizedTreeParams& params) {
     vector<Vec3> attractors;
     attractors.reserve(attractorCount);
     while (attractors.size() < attractorCount) {
+        if (params.leaderBias > 0.0f &&
+            shapeRng.next() < params.leaderBias) {
+            // Apical leader: a thin axial column through the whole
+            // crown — the trunk climbs straight through it.
+            const f32 y01 = shapeRng.next();
+            attractors.push_back(
+                { crownCenter.x +
+                      (shapeRng.next() - 0.5f) * 0.1f * crownRadius,
+                  trunkBase + y01 * (crownHeight + 0.4f),
+                  crownCenter.z +
+                      (shapeRng.next() - 0.5f) * 0.1f * crownRadius });
+            continue;
+        }
         // Rejection-sample the ellipsoid (deterministic sequence).
         const Vec3 unit { shapeRng.next() * 2.0f - 1.0f,
                           shapeRng.next() * 2.0f - 1.0f,
                           shapeRng.next() * 2.0f - 1.0f };
         if (glm::dot(unit, unit) > 1.0f) {
             continue;
+        }
+        if (params.crownTaper > 0.0f) {
+            // Cone profile: the allowed radius shrinks toward the apex.
+            const f32 y01 = unit.y * 0.5f + 0.5f;
+            const f32 allowed =
+                glm::mix(1.0f, 1.0f - y01,
+                         glm::clamp(params.crownTaper, 0.0f, 1.0f));
+            if (unit.x * unit.x + unit.z * unit.z > allowed * allowed) {
+                continue;
+            }
         }
         attractors.push_back(crownCenter +
                              Vec3 { unit.x * crownRadius,
@@ -186,8 +216,23 @@ GrownTree growColonizedTree(u32 seed, const ColonizedTreeParams& params) {
             if (pullLen < 1e-4f) {
                 continue; // opposing attractors cancel out (paper §2)
             }
-            const Vec3 direction =
+            Vec3 direction =
                 glm::normalize(pullSum[n] / pullLen + tropism);
+            if (params.lateralFlatten > 0.0f) {
+                // Whorl shelves: growth already heading sideways is
+                // pressed toward the horizontal with a slight droop;
+                // near-vertical growth (the leader) stays free.
+                const f32 sideways = glm::clamp(
+                    (1.0f - glm::abs(direction.y)) * 2.0f - 0.6f, 0.0f,
+                    1.0f);
+                const f32 press = glm::clamp(params.lateralFlatten, 0.0f,
+                                             1.0f) *
+                                  sideways;
+                if (press > 0.0f) {
+                    direction.y = glm::mix(direction.y, -0.08f, press);
+                    direction = glm::normalize(direction);
+                }
+            }
             const Vec3 position =
                 nodes[n].position + direction * params.segment;
             // Degenerate-growth guard: don't stack a node onto a sibling.
@@ -260,7 +305,8 @@ GrownTree growColonizedTree(u32 seed, const ColonizedTreeParams& params) {
             params.tipBallRadius *
                 std::pow(params.tipOrderFalloff,
                          static_cast<f32>(node.order)),
-            0.30f, glm::max(params.tipBallRadius, 0.35f));
+            params.tipBallMin,
+            glm::max(params.tipBallRadius, params.tipBallMin + 0.05f));
         balls.push_back({ node.position, radius });
     }
     if (balls.empty()) { // degenerate seed: keep the result valid
@@ -517,26 +563,58 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
         static_cast<u32>(static_cast<f32>(baseClusters) *
                          glm::clamp(params.foliageDensity, 0.1f, 8.0f)),
         1u, 4000u);
+    // Spray candidates (conifer habit): the outer lateral branches —
+    // cards ride them instead of the SDF shell. Built only when the
+    // knob is on so the neutral scatter stream stays bit-exact.
+    vector<u32> sprayNodes;
+    if (params.sprayFoliage > 0.0f) {
+        for (u32 n = 1; n < tree.nodes.size(); ++n) {
+            if (tree.nodes[n].order >= 1 &&
+                tree.nodes[n].position.y > tree.trunkBase * 0.8f) {
+                sprayNodes.push_back(n);
+            }
+        }
+    }
     u32 emitted = 0;
     for (u32 c = 0; c < clusterCount * 6u && emitted < clusterCount; ++c) {
         // The scatter stream runs the SAME sequence at every detail level
         // (clusterCount only truncates it): LODs agree on where the
         // canopy mass sits.
-        const Metaball& ball =
-            balls[static_cast<u32>(scatterRng.next() *
-                                   static_cast<f32>(balls.size())) %
-                  balls.size()];
-        Vec3 position = ball.center;
-        for (u32 attempt = 0; attempt < 24; ++attempt) {
-            const Vec3 candidate =
-                ball.center + Vec3 { (scatterRng.next() * 2.0f - 1.0f),
-                                     (scatterRng.next() * 2.0f - 1.0f),
-                                     (scatterRng.next() * 2.0f - 1.0f) } *
-                                  (ball.radius * 1.10f);
-            const f32 d = canopySdf(balls, candidate, params.smoothK);
-            if (d > -0.30f && d < -0.02f) {
-                position = candidate;
-                break;
+        Vec3 position;
+        if (!sprayNodes.empty() &&
+            scatterRng.next() <
+                glm::clamp(params.sprayFoliage, 0.0f, 1.0f)) {
+            // A card somewhere along an outer branch, slightly loose.
+            const u32 pick = static_cast<u32>(
+                                 scatterRng.next() *
+                                 static_cast<f32>(sprayNodes.size())) %
+                             static_cast<u32>(sprayNodes.size());
+            const Node& node = tree.nodes[sprayNodes[pick]];
+            const Node& parent =
+                tree.nodes[static_cast<u32>(node.parent)];
+            const f32 t = scatterRng.next();
+            position = glm::mix(parent.position, node.position, t) +
+                       Vec3 { scatterRng.spread(), scatterRng.spread(),
+                              scatterRng.spread() } *
+                           0.10f;
+        } else {
+            const Metaball& ball =
+                balls[static_cast<u32>(scatterRng.next() *
+                                       static_cast<f32>(balls.size())) %
+                      balls.size()];
+            position = ball.center;
+            for (u32 attempt = 0; attempt < 24; ++attempt) {
+                const Vec3 candidate =
+                    ball.center +
+                    Vec3 { (scatterRng.next() * 2.0f - 1.0f),
+                           (scatterRng.next() * 2.0f - 1.0f),
+                           (scatterRng.next() * 2.0f - 1.0f) } *
+                        (ball.radius * 1.10f);
+                const f32 d = canopySdf(balls, candidate, params.smoothK);
+                if (d > -0.30f && d < -0.02f) {
+                    position = candidate;
+                    break;
+                }
             }
         }
 
@@ -568,7 +646,8 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
             params.cardHalfSizeMin +
             scatterRng.next() *
                 (params.cardHalfSizeMax - params.cardHalfSizeMin);
-        appendBillboardCard(mesh, position, halfSize, normal, leafColor);
+        appendBillboardCard(mesh, position, halfSize, normal, leafColor,
+                            params.leafStyle);
         ++emitted;
     }
 
@@ -603,7 +682,8 @@ MeshData generateColonizedTreeShadowProxy(u32 seed,
 }
 
 vector<u8> generateLeafMaskPixels(u32 size, u32 seed,
-                                  const ColonizedTreeParams& params) {
+                                  const ColonizedTreeParams& params,
+                                  i32 shape) {
     // r = brightness (0 = x0.7, 255 = x1.3 in tree.frag), g/b unused,
     // a = coverage. Painter's order: a later leaf overwrites the shade
     // where it covers more than what's already there.
@@ -615,7 +695,9 @@ vector<u8> generateLeafMaskPixels(u32 size, u32 seed,
         const f32 length =
             params.leafSizeMin +
             rng.next() * (params.leafSizeMax - params.leafSizeMin);
-        const f32 width = length * (0.34f + rng.next() * 0.14f);
+        // Shape family: outline width ratio + edge profile (below).
+        const f32 width =
+            length * (shape == 1 ? 0.07f : 0.34f + rng.next() * 0.14f);
         // Radial placement, denser toward the center, capped so the whole
         // leaf stays inside the card (no straight clip at the border).
         const f32 maxRadius = std::max(0.0f, 0.5f - length * 0.55f);
@@ -648,11 +730,24 @@ vector<u8> generateLeafMaskPixels(u32 size, u32 seed,
                 if (lx < 0.0f || lx > length) {
                     continue;
                 }
-                // Pointed at both ends: half-width follows sin^0.75.
+                // Outline profile along the axis, per shape family.
                 const f32 t = lx / length;
-                const f32 halfWidth =
-                    width * 0.5f *
-                    std::pow(std::sin(t * 3.1415927f), 0.75f);
+                const f32 arc = std::sin(t * 3.1415927f);
+                f32 profile = std::pow(arc, 0.75f); // pointed ellipse
+                if (shape == 2) {
+                    profile = std::pow(arc, 0.35f); // rounded, blunt
+                } else if (shape == 3) {
+                    // Lobed (maple-ish): three bulges along the axis.
+                    profile = std::pow(arc, 0.6f) *
+                              (0.62f + 0.38f * std::abs(std::sin(
+                                                    t * 9.42478f)));
+                } else if (shape == 4) {
+                    // Serrated: fine teeth riding the pointed outline.
+                    profile = std::pow(arc, 0.75f) *
+                              (0.82f + 0.18f * std::abs(std::sin(
+                                                    t * 31.4159f)));
+                }
+                const f32 halfWidth = width * 0.5f * profile;
                 // AA over one texel around the edge.
                 const f32 coverage = glm::clamp(
                     (halfWidth - std::abs(ly)) * fsize + 0.5f, 0.0f, 1.0f);

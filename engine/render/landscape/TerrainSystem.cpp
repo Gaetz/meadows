@@ -153,20 +153,23 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     }
 
     // Vertex pools. Slot size = the LOD's deterministic vertex count
-    // (grid + skirt). Capacity: LOD 0-2 rings are view-radius-independent
-    // (lodForDistance bands), LOD3 fills the rest of the ring up to the
-    // tuning slider's max radius (30, +2 eviction hysteresis); ×1.5-ish
-    // headroom absorbs the LOD-swap transients (old slot lives until the
-    // new mesh lands).
-    constexpr u32 kMaxRadius = 32; // slider max 30 + eviction hysteresis
+    // (grid + skirt). Capacity: LOD 0-3 rings are view-radius-independent
+    // (lodForDistance bands), LOD4 fills the rest of the ring up to
+    // kMaxViewRadius (+2 eviction hysteresis); the +64 headroom absorbs
+    // LOD-swap transients (old slot lives until the new mesh lands).
+    constexpr u32 kMaxRadius = static_cast<u32>(kMaxViewRadius) + 2;
     constexpr u32 kLod3Ring =
-        (2 * kMaxRadius + 1) * (2 * kMaxRadius + 1) - 13 * 13;
+        kLod4CoreSide * kLod4CoreSide - kLod3CoreSide * kLod3CoreSide;
+    constexpr u32 kLod4Ring =
+        (2 * kMaxRadius + 1) * (2 * kMaxRadius + 1) -
+        kLod4CoreSide * kLod4CoreSide;
     // LOD 0-2 hold several times their steady ring: fast flight leaves a
     // trail of chunks awaiting their LOD swap, each holding its old
     // slot. stealFurthestSlot() covers what the headroom cannot
-    // (teleports). ~46 MB total.
-    constexpr array<u32, kLodCount> kPoolCapacity { 64, 128, 384,
-                                                    kLod3Ring + 64 };
+    // (teleports). ~45 MB total at kMaxViewRadius 45.
+    constexpr array<u32, kLodCount> kPoolCapacity {
+        64, 128, 384, kLod3Ring + 64, kLod4Ring + 64
+    };
     for (u32 lod = 0; lod < kLodCount; ++lod) {
         const u32 side = lodQuads(lod) + 1;
         VertexPool& pool = pools[lod];
@@ -351,7 +354,11 @@ void TerrainSystem::requestMissing(const Vec3& cameraPos) {
             lodForDistance(std::max(std::abs(dx), std::abs(dz))));
     };
     streamer.requestMissing(
-        camCx, camCz, viewRadius, kMaxRequestsPerFrame,
+        camCx, camCz, viewRadius,
+        // Bigger rings fill faster (cold start / teleport at radius 45
+        // is ~8k chunks); the workers absorb it, the frame thread only
+        // pays the enqueue.
+        viewRadius > 24 ? kMaxRequestsPerFrame * 2 : kMaxRequestsPerFrame,
         [&](i32 cx, i32 cz, i32 dx, i32 dz) {
             const auto it = streamer.chunks.find(chunkKey(cx, cz));
             if (it == streamer.chunks.end()) {

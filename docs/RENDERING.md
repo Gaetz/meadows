@@ -755,6 +755,38 @@ build 2.5 + merge 3.3 ≈ 8.9 ms of async chain, which promotes the RC
 tuning pass (targets 1–2 ms via the GI panel knobs) to the biggest
 single lever on the table.
 
+### 4.4 View distance at scale (chantier 2026-08-02)
+
+The terrain ring is live-tunable **8–45 chunks (512–2880 m), default
+30**. Everything that pinned the old 960 m ring now derives from the
+radius — the checklist, for the next time a cap hides somewhere:
+
+- **Camera far plane** follows the ring (`updateCameraFarPlane`,
+  ≥ ring × 1.3; the fixed 1600 clipped everything past it).
+- **Terrain LOD4** (4 quads/side) beyond 12 chunks; `lodForDistance`
+  bands and the pool cores (`kLod3CoreSide`/`kLod4CoreSide`) are the
+  same truth, `kMaxViewRadius` is THE single slider/pool/clamp cap.
+  Pools ≈ 45 MB at radius 45 (LOD4 slots are 2.6× cheaper than LOD3).
+- **ChunkOcclusion** rings/rays follow the ring (`configure`): reach =
+  the full ring, fan doubles past 1 km so a ray still subtends < 1
+  chunk. Horizon table cost grows with both.
+- **GpuOcclusion** `kMaxCandidates` 49152: a candidate without an
+  indirect command NEVER draws, so the list must never truncate —
+  a clip logs loudly and falls back to the full CPU path.
+- **Vegetation**: ring 4–24 chunks; the per-instance tree fade
+  (`treeFadeEnd`, baked at scatter) and the far-impostor fade-in
+  (`uFogLayerInfo.w`) track it together; instance pool sized for the
+  max ring (~40 MB).
+- **TerrainLightMap** span 3072 m (1024² keeps ~3 m texels).
+- Request budget doubles past radius 24 (cold-start fill).
+- Does NOT scale: grass (192 m by design), shadow cascades (800 m),
+  FarTerrain (12 km, already past any ring), fog closure (reads the
+  ring from the UBO).
+
+M1 Air protocol at radius 30 and 45: F6 four-spot numbers + GPU memory
+(pools + instance pool + Hi-Z buffers ≈ +75 MB vs the r15 build), and
+the `GpuOcclusion … clip` warning must never appear.
+
 ## 5. Durable lessons (cross-chantier)
 
 1. **Measure first.** Remedies without measurements are hypotheses —

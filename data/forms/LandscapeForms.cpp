@@ -13,9 +13,9 @@ const core::Guid kLandscapeTuningGuid =
     *core::Guid::fromString("1a4d5c00-0000-4000-8000-000000000001");
 // Tree builder: one tuning record per procedural tree type.
 const core::Guid kLobeTreeTuningGuid =
-    *core::Guid::fromString("1a4d5c00-0000-4000-8000-0000000000b1");
+    *core::Guid::fromString("7cdab9a1-6af4-4c89-a161-bc45c3ae8ea3");
 const core::Guid kColonizedTreeTuningGuid =
-    *core::Guid::fromString("1a4d5c00-0000-4000-8000-0000000000b2");
+    *core::Guid::fromString("a344e05d-c66b-4c93-81dd-b535a0072dd0");
 const core::Guid kRcTuningGuid =
     *core::Guid::fromString("1a4d5c00-0000-4000-8000-000000000009");
 } // namespace

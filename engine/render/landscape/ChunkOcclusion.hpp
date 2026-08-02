@@ -33,9 +33,14 @@ class ChunkOcclusion {
 public:
     static constexpr u32 kRayCount = 180;      // 2° azimuth fan
     static constexpr f32 kRingStep = 32.0f;    // meters between samples
-    static constexpr u32 kRingCount = 30;      // reach: 960 m (view ring)
+    static constexpr u32 kRingCount = 30;      // default reach: 960 m
     static constexpr f32 kPropHeadroom = 86.0f; // tallest scaled tree
     static constexpr f32 kRebuildDistance = 8.0f; // camera delta triggering
+
+    // The reach and fan density follow the LIVE view radius (configure):
+    // rings cover the whole ring, and past ~1 km the 2° fan doubles so a
+    // ray still spans less than a chunk at the far edge.
+    void configure(f32 reachMeters);
 
     // Snapshot handed to the worker. `chunkTops` maps chunk key
     // ((u32)cx << 32 | (u32)cz) to the chunk's meshed maxY.
@@ -44,6 +49,8 @@ public:
         Vec3 cameraPos {};
         std::unordered_map<u64, f32> chunkTops;
         u64 generation { 0 };
+        u32 rings { kRingCount };
+        u32 rays { kRayCount };
     };
     struct Result {
         u64 generation { 0 };
@@ -81,6 +88,8 @@ private:
     u64 generation { 0 };
     bool inFlight { false };
     Vec3 lastRebuildPos { 1e9f, 1e9f, 1e9f };
+    u32 rings { kRingCount };
+    u32 rays { kRayCount };
 };
 
 // The pure rebuild — exposed for the headless doctest.

@@ -53,6 +53,15 @@ struct FrameComposerInputs {
     f32 drawDistance { 0.0f };
     // The streaming ring itself (m) — the far mesh's sink bias.
     f32 nearRingDistance { 0.0f };
+    // Real-tree fade-out distance — the far impostors fade IN against
+    // it (uFogLayerInfo.w) so the handoff tracks the vegetation ring.
+    f32 treeFadeEnd { 880.0f };
+    // Seasons: autumn tint blend and leaf fall (0..1 each), applied per
+    // leaf-mask atlas slot through `leafSeason` (rgb tint, a =
+    // seasonality — VegetationSystem::leafSeason()).
+    f32 seasonAutumn { 0.0f };
+    f32 seasonLeafFall { 0.0f };
+    array<Vec4, 8> leafSeason {};
 
     // Dev toggles (the render panel's A/B state).
     i32 debugBuffer { 0 };

@@ -26,6 +26,7 @@ void main() {
     // far = the full stylized canopy mass (per-leaf shade off — noise at
     // that size). Mip-driven, so tree scale is accounted for free.
     float leafShade = 1.0;
+    vec3 baseColor = vColor;
     if (vCardUv.x >= 0.0) {
         vec2 mask = texture(uLeafMask, vCardUv).ra;
         float lod = textureQueryLod(uLeafMask, vCardUv).x;
@@ -34,10 +35,14 @@ void main() {
             discard;
         }
         leafShade = mix(mix(0.7, 1.3, mask.x), 1.0, solid);
+        // Season: mix toward the slot's autumn tint, weighted by its
+        // seasonality — evergreens stay green.
+        vec4 season = uLeafSeason[int(floor(vCardUv.x * 8.0))];
+        baseColor = mix(vColor, season.rgb, uSeasonInfo.x * season.a);
     }
 
     // Per-instance hue roll: some trees lean yellow-green, some deep green.
-    vec3 albedo = leafShade * vColor *
+    vec3 albedo = leafShade * baseColor *
                   mix(vec3(0.85, 1.0, 0.75), vec3(1.1, 1.0, 1.15), vTint);
 
     albedo *= cascadeDebugTint(vWorldPos);

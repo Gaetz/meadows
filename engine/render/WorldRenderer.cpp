@@ -1085,6 +1085,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
         if (cfg.occlusion) {
             core::FrameProbe::Scope probe { *view.probe, "occlusion" };
             occlusion.pump();
+            occlusion.configure(static_cast<f32>(terrain.viewRadius) *
+                                render::TerrainSystem::kChunkSize);
             if (occlusion.wantsRebuild(view.camera.position)) {
                 occlusion.rebuild(terrain.params, view.camera.position,
                                   terrain.chunkTops());
@@ -1250,6 +1252,10 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                 ? static_cast<f32>(terrain.viewRadius) *
                                       render::TerrainSystem::kChunkSize
                                 : 0.0f,
+        .treeFadeEnd = vegetation.treeFadeEnd(),
+        .seasonAutumn = seasonAutumnUi,
+        .seasonLeafFall = seasonLeafFallUi,
+        .leafSeason = vegetation.leafSeason(),
         .debugBuffer = debugBufferUi,
         .stylized = stylizedUi,
         .tonemap = tonemapUi,
@@ -1889,6 +1895,17 @@ void WorldRenderer::render(engine::FrameContext& frame,
             if (cfg.vegetation) {
                 vegetation.collectDrawCandidates(occlusionCandidates,
                                                  camera.position);
+            }
+            // A candidate without an indirect command never draws, so
+            // the list must NEVER be truncated (horizon holes) — the cap
+            // is sized for the worst case and a clip falls back to the
+            // full CPU path (everything draws, just uncull-ed). Loudly:
+            // this is a sizing bug, not a mode.
+            if (occlusionCandidates.size() > GpuOcclusion::kMaxCandidates) {
+                LOG_WARN("GpuOcclusion: {} candidates clip the {} cap — "
+                         "CPU fallback this frame",
+                         occlusionCandidates.size(),
+                         GpuOcclusion::kMaxCandidates);
             }
             occlusionCommandsFresh =
                 gpuOcclusion.run(frame.cmd, frame.device, sceneDepthCopy,

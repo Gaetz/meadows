@@ -22,11 +22,11 @@ ChunkOcclusion::Result computeOcclusion(const ChunkOcclusion::Input& input) {
     const Vec3 cam = input.cameraPos;
 
     // Horizon table: running max slope per (azimuth ray, distance ring),
-    // from exact terrain heights along each ray.
-    constexpr u32 kRays = ChunkOcclusion::kRayCount;
-    constexpr u32 kRings = ChunkOcclusion::kRingCount;
+    // from exact terrain heights along each ray. Sizes ride the input —
+    // they follow the live view radius (ChunkOcclusion::configure).
+    const u32 kRays = glm::max(input.rays, 1u);
+    const u32 kRings = glm::max(input.rings, 1u);
     constexpr f32 kStep = ChunkOcclusion::kRingStep;
-    static_assert(kRays > 0 && kRings > 0);
     vector<f32> horizon(static_cast<size_t>(kRays) * kRings);
     for (u32 ray = 0; ray < kRays; ++ray) {
         const f32 azimuth = (static_cast<f32>(ray) + 0.5f) *
@@ -118,6 +118,17 @@ ChunkOcclusion::Result computeOcclusion(const ChunkOcclusion::Input& input) {
     return result;
 }
 
+void ChunkOcclusion::configure(f32 reachMeters) {
+    const u32 wanted = glm::clamp(
+        static_cast<u32>(reachMeters / kRingStep), kRingCount, 128u);
+    const u32 wantedRays = reachMeters > 1000.0f ? kRayCount * 2 : kRayCount;
+    if (wanted != rings || wantedRays != rays) {
+        rings = wanted;
+        rays = wantedRays;
+        invalidate(); // the horizon table changed shape: rebuild fresh
+    }
+}
+
 void ChunkOcclusion::create(core::JobSystem& jobSystem) {
     jobs = &jobSystem;
     shared = std::make_shared<Shared>();
@@ -144,7 +155,8 @@ void ChunkOcclusion::rebuild(const TerrainParams& params,
                              std::unordered_map<u64, f32> chunkTops) {
     inFlight = true;
     lastRebuildPos = cameraPos;
-    Input input { params, cameraPos, std::move(chunkTops), generation };
+    Input input { params,     cameraPos, std::move(chunkTops),
+                  generation, rings,     rays };
     jobs->enqueue([sharedRef = shared, in = std::move(input)] {
         sharedRef->results.push(computeOcclusion(in));
     });

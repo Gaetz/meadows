@@ -45,11 +45,14 @@ class TerrainSystem {
 public:
     static constexpr f32 kChunkSize = 64.0f;  // meters
     static constexpr u32 kChunkQuads = 64;    // LOD0: 65x65 vertices
-    static constexpr u32 kLodCount = 4;       // 64/32/16/8 quads per side
+    static constexpr u32 kLodCount = 5;       // 64/32/16/8/4 quads per side
     // Streaming ring radius in chunks (Chebyshev) — the draw distance,
     // live-tunable (LandscapeTuningForm::terrainViewRadius; applyFog's
     // horizon closure tracks it). Evict = +2 chunks of hysteresis.
-    i32 viewRadius { 15 };
+    // kMaxViewRadius is THE single cap: the tuning slider, the load
+    // clamp and the vertex pools all derive from it.
+    static constexpr i32 kMaxViewRadius = 45; // 2880 m
+    i32 viewRadius { 30 };
     static constexpr u32 kMaxUploadsPerFrame = 8;
     // Time cap on top of the count cap (LOD0 uploads dwarf LOD3 ones).
     static constexpr f64 kUploadMsBudget = 2.0;
@@ -61,13 +64,20 @@ public:
     static constexpr u32 kMaxRequestsPerFrame = 8;
 
     static constexpr u32 lodQuads(u32 lod) { return kChunkQuads >> lod; }
-    // Ring distances: LOD0 under the camera, then 1/3/6 chunk rings.
+    // Ring distances: LOD0 under the camera, then 1/3/6/12 chunk rings.
+    // The pool sizing (kLodCoreSide below) mirrors these bands — change
+    // them together.
     static constexpr u32 lodForDistance(i32 chebyshev) {
         if (chebyshev <= 1) { return 0; }
         if (chebyshev <= 3) { return 1; }
         if (chebyshev <= 6) { return 2; }
-        return 3;
+        if (chebyshev <= 12) { return 3; }
+        return 4;
     }
+    // Side of the square core covered by LODs finer than `lod` — the
+    // ring a LOD actually fills is (2r+1)^2 minus this core squared.
+    static constexpr u32 kLod3CoreSide = 13; // 2*6+1  (LOD 0-2 core)
+    static constexpr u32 kLod4CoreSide = 25; // 2*12+1 (LOD 0-3 core)
 
     void create(rhi::Device& device, ShaderLibrary& shaders,
                 core::JobSystem& jobSystem);

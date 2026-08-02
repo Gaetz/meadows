@@ -26,11 +26,12 @@ namespace render {
 // terrain/mesh/skinned at texture unit 7 via uTerrainLightInfo.
 class TerrainLightMap {
 public:
-    // 512 -> ~3 m texels: at grazing sun the long-shadow fronts in R
+    // 1024 -> ~3 m texels: at grazing sun the long-shadow fronts in R
     // band at texel scale (they ride into the GI through the inject and
-    // the direct term alike) — 256 (~6 m) showed on sunset slopes.
-    static constexpr u32 kSize = 512;
-    static constexpr f32 kSpan = 1536.0f; // meters covered
+    // the direct term alike) — ~6 m texels showed on sunset slopes. The
+    // span must cover the max terrain ring (45 chunks = 2880 m).
+    static constexpr u32 kSize = 1024;
+    static constexpr f32 kSpan = 3072.0f; // meters covered
 
     void create(rhi::Device& device, core::JobSystem& jobs);
     void destroy(rhi::Device& device);

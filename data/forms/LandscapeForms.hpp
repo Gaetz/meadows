@@ -29,7 +29,7 @@ struct LandscapeTuningForm : Form {
     // Streaming ring radius in 64 m chunks — the draw distance
     // ("voir des paysages"); applyFog's horizon closure tracks it.
     // Perf-sensitive: chunks grow as (2r+1)^2.
-    i32 terrainViewRadius { 15 };
+    i32 terrainViewRadius { 30 };
     // Distant silhouettes past the ring (FarTerrain, ~12 km coarse mesh).
     bool farTerrain { true };
     // Terrain materials.
@@ -211,6 +211,15 @@ struct LandscapeTuningForm : Form {
     // *TreeTuningForm records.
     str broadleafTreeType {};
     str coniferTreeType {};
+    str bushTreeType {};
+    // The tree line as a fraction of the snow line (scatter + far
+    // fringe); real treelines sit well under the permanent snow.
+    f32 treeLineFactor { 0.82f };
+    // Seasons (until a season system drives them live): autumn color
+    // blend and deciduous leaf fall, 0..1 — species weight them by
+    // their own `seasonality`.
+    f32 seasonAutumn { 0.0f };
+    f32 seasonLeafFall { 0.0f };
     // Sandbox elevation recurve (MacroParams::recurve*): curve outputs
     // at normalized inputs 1/4, 1/2, 3/4 — 0.25/0.5/0.75 = identity.
     // NOTE: baked tiles cache by seed only; clear terrain-cache/<seed>
@@ -342,6 +351,10 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(sandboxSnowLine)
         REFLECT_FIELD(broadleafTreeType)
         REFLECT_FIELD(coniferTreeType)
+        REFLECT_FIELD(bushTreeType)
+        REFLECT_FIELD(treeLineFactor)
+        REFLECT_FIELD(seasonAutumn)
+        REFLECT_FIELD(seasonLeafFall)
         REFLECT_FIELD(terrainRecurveLow)
         REFLECT_FIELD(terrainRecurveMid)
         REFLECT_FIELD(terrainRecurveHigh)
@@ -416,8 +429,20 @@ struct ColonizedTreeTuningForm : Form {
     f32 crownHeightMax { 3.8f };
     f32 crownRadiusMin { 1.9f };
     f32 crownRadiusMax { 3.0f };
+    // Conifer habit (0 = broadleaf): cone profile, apical leader,
+    // whorled shelves, branch-riding foliage sprays.
+    f32 crownTaper { 0.0f };
+    f32 leaderBias { 0.0f };
+    f32 lateralFlatten { 0.0f };
+    f32 sprayFoliage { 0.0f };
     f32 tipBallRadius { 0.95f };
     f32 tipOrderFalloff { 0.78f };
+    f32 tipBallMin { 0.30f };
+    i32 leafStyle { 0 };   // leaf-mask atlas slot (0..7)
+    i32 leafShape { 0 };   // 0 ellipse, 1 needles, 2 rounded, 3 lobed,
+                           // 4 serrated
+    Vec3 autumnTint { 0.62f, 0.30f, 0.08f };
+    f32 seasonality { 1.0f }; // 0 = evergreen (no autumn, no leaf fall)
     f32 smoothK { 0.7f };
     f32 cardHalfSizeMin { 0.084f };
     f32 cardHalfSizeMax { 0.144f };
@@ -447,8 +472,17 @@ struct ColonizedTreeTuningForm : Form {
         REFLECT_FIELD(crownHeightMax)
         REFLECT_FIELD(crownRadiusMin)
         REFLECT_FIELD(crownRadiusMax)
+        REFLECT_FIELD(crownTaper)
+        REFLECT_FIELD(leaderBias)
+        REFLECT_FIELD(lateralFlatten)
+        REFLECT_FIELD(sprayFoliage)
         REFLECT_FIELD(tipBallRadius)
         REFLECT_FIELD(tipOrderFalloff)
+        REFLECT_FIELD(tipBallMin)
+        REFLECT_FIELD(leafStyle)
+        REFLECT_FIELD(leafShape)
+        REFLECT_FIELD(autumnTint)
+        REFLECT_FIELD(seasonality)
         REFLECT_FIELD(smoothK)
         REFLECT_FIELD(cardHalfSizeMin)
         REFLECT_FIELD(cardHalfSizeMax)

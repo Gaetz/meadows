@@ -65,6 +65,13 @@ public:
     // NB: the tree FADE tops out at 880 m — radii under ~14 pop at the
     // ring edge instead of fading (a budget-hunting knob, not a look).
     i32 viewRadius { 12 };        // chunks
+    // The trees' per-instance fade-out follows the resident ring (baked
+    // into instances at scatter time; the far impostors fade IN against
+    // the same value through the frame UBO). 64 = the terrain chunk.
+    f32 treeFadeEnd() const {
+        return glm::max(880.0f,
+                        static_cast<f32>(viewRadius) * 64.0f - 16.0f);
+    }
     i32 highDetailRadius { 2 };   // full-detail canopies within (x 64 m)
     // Third mesh level beyond lowDetailRadius — bare-icosahedron lobes
     // (20 faces, generateTree(seed, 0)): ~150 tris/tree vs ~600 on the
@@ -93,7 +100,18 @@ public:
         ColonizedTreeParams params {};
     };
     static constexpr u32 kBroadleafVariants = 3;
+    // Leaf-mask atlas slots (ColonizedTreeParams::leafStyle range).
+    static constexpr i32 kLeafStyleCount = 8;
     array<std::optional<TreeSpecies>, kTreeVariants> treeSpecies {};
+    // Per-slot season data (rgb = autumn tint, a = seasonality), filled
+    // by rebuildLeafMask from the claiming species — the frame UBO
+    // ships it to tree.vert/frag.
+    const array<Vec4, kLeafStyleCount>& leafSeason() const {
+        return leafSeasonTable;
+    }
+    // Bush species (slots kFirstBush..): a small colonized canopy; unset
+    // = the legacy blob generator. One species, three seeds.
+    std::optional<TreeSpecies> bushSpecies {};
     // Chunk-AABB pads for the culling tests (draw/drawDepth): chunk
     // min/maxY track prop BASES, so Y must absorb the tallest scaled
     // tree (~7.5 m mesh x 11.2 scale) and XZ the widest canopy overhang.
@@ -161,7 +179,7 @@ public:
     // Candidate groups: kGroupBase + variant*3 + level — the LOD level is
     // picked HERE (CPU, candidate time) exactly as draw() picks it, and
     // consumed one frame later like everything else on this path.
-    static constexpr u32 kGroupBase = 4; // groups 0-3 belong to the terrain
+    static constexpr u32 kGroupBase = 5; // groups 0-4 belong to the terrain
     void collectDrawCandidates(vector<GpuOcclusion::Candidate>& out,
                                const Vec3& cameraPos) const;
     // One drawIndexedIndirect per non-empty (variant, level) batch over
@@ -265,7 +283,9 @@ private:
     // first-fit free list with coalescing; freed blocks cool two frames
     // like the terrain pool's slots, for the same stale-command reason).
     struct InstancePool {
-        static constexpr u32 kCapacity = 384 * 1024; // instances (~12 MB)
+        // Sized for the max vegetation ring (24 chunks): ~2600
+        // resident chunks x ~500 instances. 32 B each.
+        static constexpr u32 kCapacity = 1280 * 1024; // instances (~40 MB)
         rhi::UniqueBuffer buffer;
         struct Block {
             u32 offset { 0 };
@@ -332,6 +352,7 @@ private:
     array<Vec3, kTreeVariants> treeBounds {};
     std::unordered_map<u32, MeshData> meshOverrides;
     // Shared leaf-cluster cutout mask (all tree variants; cards only).
+    array<Vec4, kLeafStyleCount> leafSeasonTable {};
     rhi::UniqueTexture leafMask;
     rhi::UniqueSampler leafMaskSampler;
     rhi::UniqueBindGroup leafMaskGroup;
@@ -369,6 +390,7 @@ private:
 f32 forestMask(u32 seed, f32 x, f32 z);
 
 VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
-                                              i32 cx, i32 cz);
+                                              i32 cx, i32 cz,
+                                              f32 treeFadeEnd = 880.0f);
 
 } // namespace render
