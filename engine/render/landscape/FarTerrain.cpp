@@ -208,8 +208,12 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 // trees grow, continuing them past the vegetation ring.
                 f32 forest = forestMask(params.seed, x, z);
                 const f32 slope = 1.0f - n.y;
-                if (trueH < params.seaLevel + 3.0f ||
-                    trueH > terrain::treeLine(params) || slope > 0.22f) {
+                const f32 line = terrain::treeLine(params);
+                // Same fade as the real scatter: the fringe thins out
+                // over the last band below the treeline.
+                forest *=
+                    1.0f - glm::smoothstep(0.82f * line, line, trueH);
+                if (trueH < params.seaLevel + 3.0f || slope > 0.3f) {
                     forest = 0.0f;
                 }
                 Vec3 color = terrainColor(trueH, n, params.seaLevel);
@@ -250,9 +254,11 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 }
                 const f32 h = terrain::height(params, x, z);
                 const Vec3 n = terrain::normal(params, x, z);
+                const f32 line = terrain::treeLine(params);
+                const f32 lineFade =
+                    1.0f - glm::smoothstep(0.82f * line, line, h);
                 if (h < params.seaLevel + 3.0f ||
-                    h > terrain::treeLine(params) ||
-                    (1.0f - n.y) > 0.22f) {
+                    rng.next() >= lineFade || (1.0f - n.y) > 0.3f) {
                     continue;
                 }
                 // Sized from the MEASURED real trees: the mesh

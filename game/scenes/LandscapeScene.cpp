@@ -231,11 +231,49 @@ void LandscapeScene::bootstrapData() {
     // renderer's half (terrain/exposure/ssao/grade) through applyTuning,
     // the atmosphere half here (the weather crossfade owns `atmos`).
     RenderTuningIo::applyTuning(renderer, tuning, heightPatches,
-                                terrainBase);
+                                terrainBase, activeSnowLine);
     // Tree builder: generation knobs ride two ordinary
     // records (§5) — mods retune the species; the Trees panel edits live.
     RenderTuningIo::applyTreeTuning(renderer, data::resolveLobeTreeTuning(forms),
                              data::resolveColonizedTreeTuning(forms));
+    // Species per slot: named tree-type records (the TreeCreationScene
+    // library, §5-layered) assigned to the variant partition — broadleaf
+    // low slots, conifer high slots; the altitude bands pick among them.
+    // Empty name = the slot follows the live default params above.
+    {
+        const auto wireSpecies = [&](const str& name, u32 first,
+                                     u32 count) {
+            if (name.empty()) {
+                return;
+            }
+            render::VegetationSystem::TreeSpecies species;
+            if (const auto* colonized =
+                    data::findByEditorId<data::ColonizedTreeTuningForm>(
+                        forms, name)) {
+                species.colonized = true;
+                species.params =
+                    RenderTuningIo::toColonizedParams(*colonized);
+            } else if (const auto* lobes =
+                           data::findByEditorId<data::LobeTreeTuningForm>(
+                               forms, name)) {
+                species.colonized = false;
+                species.lobes = RenderTuningIo::toLobeParams(*lobes);
+            } else {
+                LOG_WARN("Tree type '{}' not found: slots {}..{} keep "
+                         "the default species",
+                         name, first, first + count - 1);
+                return;
+            }
+            for (u32 i = 0; i < count; ++i) {
+                renderer.vegetationSystem().treeSpecies[first + i] =
+                    species;
+            }
+        };
+        using Veg = render::VegetationSystem;
+        wireSpecies(tuning.broadleafTreeType, 0, Veg::kBroadleafVariants);
+        wireSpecies(tuning.coniferTreeType, Veg::kBroadleafVariants,
+                    Veg::kTreeVariants - Veg::kBroadleafVariants);
+    }
     RenderTuningIo::applyRcTuning(renderer, data::resolveRcTuning(forms));
     atmos.fogDensity = tuning.fogDensity;
     atmos.fogHeightFalloff = tuning.fogHeightFalloff;
@@ -3204,8 +3242,17 @@ void LandscapeScene::createConsole() {
     panel.addCommand("tp", [this](const str& args) -> str {
         std::istringstream in { args };
         f32 x = 0.0f, z = 0.0f;
-        if (!(in >> x >> z)) {
-            return "usage: tp <x> <z>";
+        str word;
+        if (std::istringstream { args } >> word; word == "start") {
+            // Back to the session's start point (the validated sandbox
+            // spawn — stable per seed).
+            if (!sandboxActive || !sandboxSpawnValid) {
+                return "no start point in this mode";
+            }
+            x = sandboxSpawn.x;
+            z = sandboxSpawn.z;
+        } else if (!(in >> x >> z)) {
+            return "usage: tp <x> <z> | tp start";
         }
         const f32 y = render::terrain::height(renderer.terrainParams(), x, z) + 0.5f;
         if ((mode == SceneMode::Play) && playerController.body()) {

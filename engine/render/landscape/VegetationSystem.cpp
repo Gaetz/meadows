@@ -104,18 +104,24 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             const f32 h = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
             const f32 slope = 1.0f - n.y;
-            // Treeline scaled with the snow line; lakes and rivers
+            // Treeline scaled with the snow line — a FADE, not a cut:
+            // forests thin and stunt over the last band below the line,
+            // the way a real treeline dissolves. Lakes and rivers
             // exclude trees like the sea does.
-            if (h < params.seaLevel + 3.0f ||
-                h > terrain::treeLine(params) || slope > 0.22f ||
+            const f32 treeLine = terrain::treeLine(params);
+            const f32 lineFade =
+                1.0f - glm::smoothstep(0.82f * treeLine, treeLine, h);
+            if (h < params.seaLevel + 3.0f || lineFade <= 0.001f ||
+                rng.next() >= lineFade || slope > 0.3f ||
                 terrain::underLocalWater(params, x, z, h, 1.0f)) {
                 continue;
             }
             // Sink slightly so leaning trunks never float on slopes; the
             // offset follows the scale (their footprint is meters wide).
+            const f32 stunt = 0.55f + 0.45f * lineFade;
             place(0, VegetationSystem::kTreeVariants, rng, x, h - 0.9f, z,
-                  VegetationSystem::kTreeScaleMin,
-                  VegetationSystem::kTreeScaleMax, 880.0f);
+                  VegetationSystem::kTreeScaleMin * stunt,
+                  VegetationSystem::kTreeScaleMax * stunt, 880.0f);
         }
     }
 
@@ -308,26 +314,25 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
         }
         const u32 seed = hashU32(terrainSeed) + i * 977u;
         if (i < kFirstRock) {
-            // EXPERIMENT A/B (feature/space-colonization-trees): the
-            // Runions/SDF-card generator swaps in for all three levels.
+            const TreeSpecies species = speciesFor(i);
             const auto tree = [&](u32 lod) {
-                return colonizationTrees
+                return species.colonized
                            ? generateColonizedTree(seed, lod,
-                                                   colonizedTreeParams)
-                           : generateTree(seed, lod, lobeTreeParams);
+                                                   species.params)
+                           : generateTree(seed, lod, species.lobes);
             };
             uploadVariantMesh(device, i, baked(tree(2), 0.6f));
             uploadLowDetailMesh(device, i, baked(tree(1), 0.6f));
             // Bare-icosahedron lobes (~150 tris/tree) for the far
             // ring — same seed, same composition, facets invisible there.
             uploadUltraDetailMesh(device, i, baked(tree(0), 0.6f));
-            if (colonizationTrees) {
+            if (species.colonized) {
                 // Far-cascade caster: solid metaball blobs, no AO bake
                 // (depth-only) — see generateColonizedTreeShadowProxy.
                 uploadShadowProxyMesh(
                     device, i,
                     generateColonizedTreeShadowProxy(seed,
-                                                     colonizedTreeParams));
+                                                     species.params));
             }
         } else if (i < kFirstBush) {
             uploadVariantMesh(device, i, baked(generateRock(seed), 0.5f));
@@ -454,6 +459,14 @@ void VegetationSystem::destroyVariantMeshes(rhi::Device& device) {
     }
 }
 
+VegetationSystem::TreeSpecies VegetationSystem::speciesFor(
+    u32 slot) const {
+    if (slot < kTreeVariants && treeSpecies[slot]) {
+        return *treeSpecies[slot];
+    }
+    return { colonizationTrees, lobeTreeParams, colonizedTreeParams };
+}
+
 void VegetationSystem::reseedVariantMeshesAsync(core::JobSystem& jobs,
                                                 u32 seed) {
     reseedJobs = &jobs;
@@ -467,12 +480,13 @@ void VegetationSystem::reseedVariantMeshesAsync(core::JobSystem& jobs,
     meshSeed = seed;
     auto job = std::make_shared<ReseedJob>();
     job->seed = seed;
-    job->colonization = colonizationTrees;
-    job->lobes = lobeTreeParams;
-    job->colonized = colonizedTreeParams;
+    job->total = 0;
+    for (u32 i = 0; i < kTreeVariants; ++i) {
+        job->species[i] = speciesFor(i);
+        job->total += job->species[i].colonized ? 4u : 3u;
+    }
     job->aoCacheDir =
         platform::executableDir() / "data" / "cache" / "ao";
-    job->total = kTreeVariants * (job->colonization ? 4u : 3u);
     reseedJob = job;
     jobs.enqueue([job] {
         // Pure CPU (mesh generation + content-keyed AO bake) — the
@@ -482,18 +496,19 @@ void VegetationSystem::reseedVariantMeshesAsync(core::JobSystem& jobs,
             return mesh;
         };
         for (u32 i = 0; i < kTreeVariants; ++i) {
+            const TreeSpecies& species = job->species[i];
             const u32 variantSeed = hashU32(job->seed) + i * 977u;
             for (u32 lod = 0; lod < 3; ++lod) {
                 job->lods[i][lod] = baked(
-                    job->colonization
+                    species.colonized
                         ? generateColonizedTree(variantSeed, lod,
-                                                job->colonized)
-                        : generateTree(variantSeed, lod, job->lobes));
+                                                species.params)
+                        : generateTree(variantSeed, lod, species.lobes));
                 job->completed.fetch_add(1, std::memory_order_release);
             }
-            if (job->colonization) {
+            if (species.colonized) {
                 job->casters[i] = generateColonizedTreeShadowProxy(
-                    variantSeed, job->colonized);
+                    variantSeed, species.params);
                 job->completed.fetch_add(1, std::memory_order_release);
             }
         }
@@ -523,7 +538,7 @@ void VegetationSystem::pumpReseed(rhi::Device& device) {
         uploadVariantMesh(device, i, job->lods[i][2]);
         uploadLowDetailMesh(device, i, job->lods[i][1]);
         uploadUltraDetailMesh(device, i, job->lods[i][0]);
-        if (job->colonization) {
+        if (job->species[i].colonized) {
             uploadShadowProxyMesh(device, i, job->casters[i]);
         }
     }

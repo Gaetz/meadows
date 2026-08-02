@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -80,6 +81,19 @@ public:
     // (apply through reseedVariantMeshes). Defaults = shipped look.
     LobeTreeParams lobeTreeParams {};
     ColonizedTreeParams colonizedTreeParams {};
+    // Per-slot tree SPECIES: generator pick + params, wired by the
+    // scene from named tree-type records. A slot without an override
+    // follows the live panel-edited params above (the shipped default —
+    // and the Trees panel keeps its A/B). Slot partition contract:
+    // 0..kBroadleafVariants-1 = broadleaf, the rest = conifer; the
+    // altitude bands pick among them.
+    struct TreeSpecies {
+        bool colonized { true };
+        LobeTreeParams lobes {};
+        ColonizedTreeParams params {};
+    };
+    static constexpr u32 kBroadleafVariants = 3;
+    array<std::optional<TreeSpecies>, kTreeVariants> treeSpecies {};
     // Chunk-AABB pads for the culling tests (draw/drawDepth): chunk
     // min/maxY track prop BASES, so Y must absorb the tallest scaled
     // tree (~7.5 m mesh x 11.2 scale) and XZ the widest canopy overhang.
@@ -298,6 +312,8 @@ private:
     // (Re)generates the shared leaf-cluster cutout mask the foliage cards
     // sample (generateLeafMaskPixels) and its bind group.
     void rebuildLeafMask(rhi::Device& device);
+    // The slot's species: its override, else the live global params.
+    TreeSpecies speciesFor(u32 slot) const;
 
     // The shared ring mechanics live in ChunkStreamer.
     ChunkStreamer<Chunk, VariantBuckets> streamer;
@@ -331,9 +347,7 @@ private:
     // by value, outputs filled by the worker, swapped in pumpReseed().
     struct ReseedJob {
         u32 seed { 0 };
-        bool colonization { true };
-        LobeTreeParams lobes;
-        ColonizedTreeParams colonized;
+        array<TreeSpecies, kTreeVariants> species {}; // resolved per slot
         std::filesystem::path aoCacheDir;
         array<array<MeshData, 3>, kTreeVariants> lods; // [variant][lod]
         array<MeshData, kTreeVariants> casters;        // colonization only

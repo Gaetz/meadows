@@ -10,7 +10,7 @@ namespace game {
 void RenderTuningIo::applyTuning(
     render::WorldRenderer& r, const data::LandscapeTuningForm& tuning,
     const sptr<const render::HeightPatches>& patches,
-    const sptr<const render::TerrainBase>& base) {
+    const sptr<const render::TerrainBase>& base, f32 activeSnowLine) {
     // Terrain shape + startup values for every live-adjustable knob the
     // render panel owns (§5: the TOML sets where it all starts; the scene
     // keeps the atmosphere half in `atmos`).
@@ -27,7 +27,7 @@ void RenderTuningIo::applyTuning(
     r.terrain.params.mountainMaskLow = tuning.mountainMaskLow;
     r.terrain.params.mountainMaskHigh = tuning.mountainMaskHigh;
     r.terrain.params.seaLevel = tuning.seaLevel;
-    r.terrain.params.snowLine = tuning.snowLine;
+    r.terrain.params.snowLine = activeSnowLine;
     r.terrain.viewRadius = glm::clamp(tuning.terrainViewRadius, 8, 30);
     r.farTerrainUi = tuning.farTerrain;
     r.exposureUi = tuning.exposure;
@@ -125,9 +125,15 @@ void RenderTuningIo::applyTuning(
 void RenderTuningIo::applyTreeTuning(
     render::WorldRenderer& r, const data::LobeTreeTuningForm& lobes,
     const data::ColonizedTreeTuningForm& colonized) {
+    r.vegetation.lobeTreeParams = toLobeParams(lobes);
+    r.vegetation.colonizedTreeParams = toColonizedParams(colonized);
+}
+
+render::LobeTreeParams RenderTuningIo::toLobeParams(
+    const data::LobeTreeTuningForm& lobes) {
     // Field-for-field Form -> flat engine params (§4: engine never sees
     // data/). The Trees panel then edits the params live.
-    render::LobeTreeParams& l = r.vegetation.lobeTreeParams;
+    render::LobeTreeParams l;
     l.trunkHeightMin = lobes.trunkHeightMin;
     l.trunkHeightMax = lobes.trunkHeightMax;
     l.trunkRadiusMin = lobes.trunkRadiusMin;
@@ -144,7 +150,12 @@ void RenderTuningIo::applyTreeTuning(
     l.branchLobeRadiusMax = lobes.branchLobeRadiusMax;
     l.lobeFlatten = lobes.lobeFlatten;
     l.normalSpherize = lobes.normalSpherize;
-    render::ColonizedTreeParams& c = r.vegetation.colonizedTreeParams;
+    return l;
+}
+
+render::ColonizedTreeParams RenderTuningIo::toColonizedParams(
+    const data::ColonizedTreeTuningForm& colonized) {
+    render::ColonizedTreeParams c;
     c.tubeSides = colonized.tubeSides;
     c.curvePreserve = colonized.curvePreserve;
     c.curveSubdiv = colonized.curveSubdiv;
@@ -174,6 +185,7 @@ void RenderTuningIo::applyTreeTuning(
     c.leafSizeMax = colonized.leafSizeMax;
     c.leafSolidStart = colonized.leafSolidStart;
     c.leafSolidEnd = colonized.leafSolidEnd;
+    return c;
 }
 
 void RenderTuningIo::applyRcTuning(render::WorldRenderer& r,

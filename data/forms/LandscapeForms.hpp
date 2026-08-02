@@ -59,7 +59,7 @@ struct LandscapeTuningForm : Form {
     // Clouds.
     f32 cloudCoverage { 0.3f };
     f32 cloudShadowStrength { 0.95f };
-    f32 cloudHeight { 780.0f };   // meters
+    f32 cloudHeight { 950.0f };   // meters
     f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
     // Interior ambient: the interior-mode base light; moddable per §5.
     Vec3 interiorAmbient { 0.16f, 0.15f, 0.14f };
@@ -204,6 +204,13 @@ struct LandscapeTuningForm : Form {
     // Snow altitude of the sandbox world (its peaks top ~1600 m; the
     // story world keeps `snowLine` above).
     f32 sandboxSnowLine { 950.0f };
+    // Named tree-type records (editorId in the TreeCreationScene
+    // library) assigned to the scatter's variant-slot partition:
+    // broadleaf = the low slots, conifer = the high ones (the altitude
+    // bands pick among them). Empty = every slot follows the default
+    // *TreeTuningForm records.
+    str broadleafTreeType {};
+    str coniferTreeType {};
     // Sandbox elevation recurve (MacroParams::recurve*): curve outputs
     // at normalized inputs 1/4, 1/2, 3/4 — 0.25/0.5/0.75 = identity.
     // NOTE: baked tiles cache by seed only; clear terrain-cache/<seed>
@@ -333,6 +340,8 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(mountainMaskHigh)
         REFLECT_FIELD(sandboxTerrain)
         REFLECT_FIELD(sandboxSnowLine)
+        REFLECT_FIELD(broadleafTreeType)
+        REFLECT_FIELD(coniferTreeType)
         REFLECT_FIELD(terrainRecurveLow)
         REFLECT_FIELD(terrainRecurveMid)
         REFLECT_FIELD(terrainRecurveHigh)
@@ -511,7 +520,7 @@ struct WeatherForm : Form {
     // Clouds.
     f32 cloudCoverage { 0.3f };
     f32 cloudScale { 0.0011f };   // pattern frequency (1/m)
-    f32 cloudHeight { 780.0f };   // meters
+    f32 cloudHeight { 950.0f };   // meters
     f32 cloudShadowStrength { 0.95f };
     // Fog / atmosphere.
     f32 fogDensity { 0.0014f };

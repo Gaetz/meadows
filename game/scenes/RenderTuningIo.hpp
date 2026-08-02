@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/core/Defines.hpp"
+#include "engine/render/landscape/TreeGenerator.hpp" // by-value params
 
 namespace data {
 struct LandscapeTuningForm;
@@ -26,16 +27,27 @@ namespace game {
 // Stateless, friend of the renderer — the seam edits its knobs in place.
 class RenderTuningIo {
 public:
+    // `activeSnowLine` is the MODE-resolved value (story snowLine or
+    // sandboxSnowLine) — the scene owns that decision; passing the raw
+    // form value here silently re-lowers the CPU tree line in sandbox
+    // while the shader snow stays high.
     static void applyTuning(render::WorldRenderer& r,
                             const data::LandscapeTuningForm& tuning,
                             const sptr<const render::HeightPatches>& patches,
-                            const sptr<const render::TerrainBase>& base = {});
+                            const sptr<const render::TerrainBase>& base,
+                            f32 activeSnowLine);
     // Tree builder: the two *TreeTuningForm records mapped onto the
     // generators' flat engine params (the TerrainParams pattern) —
     // startup values; the Trees panel edits them live.
     static void applyTreeTuning(render::WorldRenderer& r,
                                 const data::LobeTreeTuningForm& lobes,
                                 const data::ColonizedTreeTuningForm& colonized);
+    // The same field-for-field mappings as pure functions — the species
+    // wiring (named tree-type records -> variant slots) reuses them.
+    static render::LobeTreeParams toLobeParams(
+        const data::LobeTreeTuningForm& lobes);
+    static render::ColonizedTreeParams toColonizedParams(
+        const data::ColonizedTreeTuningForm& colonized);
     // GI tuning record -> the live RcTuning struct (same contract).
     static void applyRcTuning(render::WorldRenderer& r,
                               const data::RcTuningForm& rc);
