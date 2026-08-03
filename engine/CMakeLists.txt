@@ -11,6 +11,7 @@ add_library(meadows STATIC
     Game.cpp
     anim/Anim.cpp
     assets/AssetDatabase.cpp
+    assets/CookedTexture.cpp
     fx/Particles.cpp
     assets/GltfMesh.cpp
     assets/Image.cpp
@@ -94,6 +95,7 @@ add_library(meadows-render STATIC
     render/landscape/SkySystem.cpp
     render/landscape/SplatTextures.cpp
     render/landscape/TerrainLightMap.cpp
+    render/landscape/TerrainShadeMap.cpp
     render/landscape/TerrainNoise.cpp
     render/landscape/TerrainSystem.cpp
     render/landscape/TreeGenerator.cpp

@@ -136,4 +136,10 @@ layout(std140, binding = 0) uniform FrameUbo {
     // Per leaf-mask atlas slot: rgb = autumn tint, a = seasonality
     // (0 = evergreen — conifers keep needles and color).
     vec4 uLeafSeason[8];
+    // x = height-blend band depth (0 = plain weighted blend), yzw
+    // reserved (detail fade / POM knobs).
+    vec4 uSplatDetailInfo;
+    // Region shading maps (TerrainShadeMap): xy = center, z = 1/span,
+    // w = valid.
+    vec4 uTerrainShadeMapInfo;
 };

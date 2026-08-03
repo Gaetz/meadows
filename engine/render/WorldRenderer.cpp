@@ -104,8 +104,13 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
     // persisted pipeline cache already amortizes the compile cost.
     shaders = std::make_unique<render::ShaderLibrary>(device);
     if (cfg.terrain) {
-        terrain.create(device, *shaders, jobs);
+        terrain.create(device, *shaders, jobs,
+                       { .albedo = cfg.terrainAlbedoPath,
+                         .normal = cfg.terrainNormalPath,
+                         .orm = cfg.terrainOrmPath,
+                         .height = cfg.terrainHeightPath });
         terrainLightMap.create(device, jobs);
+        terrainShadeMap.create(device, jobs);
         farTerrain.create(device, *shaders, jobs);
         if (cfg.postFx) {
             mistMap.create(device, jobs);
@@ -322,6 +327,7 @@ void WorldRenderer::destroy(rhi::Device& device) {
     lightClusters.destroy(device);
     gpuOcclusion.destroy(device);
     terrainLightMap.destroy(device);
+    terrainShadeMap.destroy(device);
     farTerrain.destroy(device);
     mistMap.destroy(device);
     noiseVolume.destroy(device);
@@ -1062,6 +1068,11 @@ void WorldRenderer::render(engine::FrameContext& frame,
             terrainLightMap.update(frame.device, terrain.params,
                                    view.camera.position,
                                    shadowSunDirection);
+            // Region shading maps (biome/wetness fields for the splat
+            // rules; sun-independent, re-bakes on stray or terrain
+            // republish).
+            terrainShadeMap.update(frame.device, terrain.params,
+                                   view.camera.position);
         }
         if (cfg.terrain && cfg.postFx) {
             // Valley data for the ground mist (sun-independent; re-bakes
@@ -1092,11 +1103,19 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                   terrain.chunkTops());
             }
         }
+        if (cfg.gi) {
+            // The GI's albedo tile bounces the same tinted ground.
+            radianceCascades.terrainTintStrength = view.terrainTintStrength;
+        }
         if (cfg.grass) {
             core::FrameProbe::Scope probe { *view.probe, "grass" };
-            // Root-albedo bake tiling follows the terrain's splat scale.
-            if (grass.scatterTuning.splatUvScale != view.splatUvScale) {
+            // Root-albedo bake follows the terrain's splat scale and
+            // macro-tint strength (one ground-color source).
+            if (grass.scatterTuning.splatUvScale != view.splatUvScale ||
+                grass.scatterTuning.tintStrength !=
+                    view.terrainTintStrength) {
                 grass.scatterTuning.splatUvScale = view.splatUvScale;
+                grass.scatterTuning.tintStrength = view.terrainTintStrength;
                 grass.regenerate(frame.device);
             }
             grass.update(frame.device, terrain.params,
@@ -1237,6 +1256,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .seaLevel = terrain.params.seaLevel,
         .snowLine = view.snowLine,
         .splatUvScale = view.splatUvScale,
+        .splatBlendDepth = view.splatBlendDepth,
+        .terrainTintStrength = view.terrainTintStrength,
         .reflectionsActive = reflectionsActive,
         // Horizon closure: at the far mesh's reach when it stands in,
         // else at the streaming ring. z of the same uniform carries the
@@ -1270,6 +1291,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .autoExposureMax = autoExposureMaxUi,
         .waterMapInfo = water.poolMapInfo(),
         .waterInfoMapInfo = water.infoMapInfo(),
+        .terrainShadeMapInfo = terrainShadeMap.info(),
         .terrainLightInfo = terrainLightMap.info(),
         .terrainLightActive =
             terrainLightUi && !view.interiorMode && terrainLightMap.ready(),
@@ -1696,6 +1718,9 @@ void WorldRenderer::render(engine::FrameContext& frame,
         if (terrainLightMap.bindGroup().id != 0) {
             frame.cmd.setBindGroup(4, terrainLightMap.bindGroup());
         }
+        if (terrainShadeMap.bindGroup().id != 0) {
+            frame.cmd.setBindGroup(7, terrainShadeMap.bindGroup());
+        }
         if (cfg.terrain) {
             terrain.draw(frame.cmd, reflectionBindGroup,
                          shadows.receiverBindGroup(), &reflectionFrustum);
@@ -1745,6 +1770,9 @@ void WorldRenderer::render(engine::FrameContext& frame,
         if (radianceCascades.applyGroup().id != 0) {
             // The merged GI cascade 0 for gi.glsl (unit 11).
             frame.cmd.setBindGroup(6, radianceCascades.applyGroup());
+        }
+        if (terrainShadeMap.bindGroup().id != 0) {
+            frame.cmd.setBindGroup(7, terrainShadeMap.bindGroup());
         }
         // Occlusion applies to the main view only: the set is built for
         // the real camera, not the mirrored one (the grass ring is too

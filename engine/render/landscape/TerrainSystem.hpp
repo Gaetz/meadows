@@ -79,8 +79,24 @@ public:
     static constexpr u32 kLod3CoreSide = 13; // 2*6+1  (LOD 0-2 core)
     static constexpr u32 kLod4CoreSide = 25; // 2*12+1 (LOD 0-3 core)
 
+    // Cooked material array files (.mtex — engine/assets/CookedTexture),
+    // resolved by the scene from the plugin VFS. Any empty path (or a
+    // backend without caps.textureCompressionBC, or a load failure) keeps
+    // the procedural splat tiles.
+    struct CookedSplatPaths {
+        str albedo;
+        str normal;
+        str orm;
+        str height;
+        bool complete() const {
+            return !albedo.empty() && !normal.empty() && !orm.empty() &&
+                   !height.empty();
+        }
+    };
+
     void create(rhi::Device& device, ShaderLibrary& shaders,
-                core::JobSystem& jobSystem);
+                core::JobSystem& jobSystem,
+                const CookedSplatPaths& cooked = {});
     void destroy(rhi::Device& device);
 
     // Streaming pump — main thread, once per frame, top of render: drains
@@ -282,10 +298,18 @@ private:
     u64 casterShaderGeneration { 0 };
 
     // Splat material array (grass/rock/snow/sand tiles) + anisotropic
-    // repeat sampler, bound as bind group 1 by draw().
+    // repeat sampler, bound as bind group 1 by draw(). splatTexture is
+    // either the procedural tiles or the cooked albedo array.
     rhi::UniqueTexture splatTexture;
     rhi::UniqueSampler splatSampler;
     rhi::UniqueBindGroup splatBindGroup;
+    // The cooked companion arrays (BC5 normal / BC7 ORM / R16 height),
+    // resident alongside the albedo; bound by the height-blending /
+    // detail-shading bricks as they land.
+    rhi::UniqueTexture materialNormal;
+    rhi::UniqueTexture materialOrm;
+    rhi::UniqueTexture materialHeight;
+    bool cookedMaterials { false };
 };
 
 // Pure CPU chunk meshing, runs on worker threads. Vertices sample

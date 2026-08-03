@@ -45,6 +45,11 @@ GLenum toGlInternalFormat(TextureFormat format) {
     case TextureFormat::R16F:     return GL_R16F;
     case TextureFormat::R32F:     return GL_R32F;
     case TextureFormat::Depth32F: return GL_DEPTH_COMPONENT32F;
+    // Cooked formats are rejected by createTexture (Vulkan-only).
+    case TextureFormat::BC7_SRGB:
+    case TextureFormat::BC7_UNORM:
+    case TextureFormat::BC5_UNORM:
+    case TextureFormat::R16_UNORM: break;
     }
     return GL_RGBA8;
 }
@@ -108,6 +113,15 @@ void GlDevice46::updateBuffer(BufferHandle handle, const void* data, u64 size,
 
 TextureHandle GlDevice46::createTexture(const TextureDesc& desc,
                                         const void* pixels) {
+    // Cooked BC/R16_UNORM textures and offline mip chains are Vulkan-only
+    // (caps.textureCompressionBC stays false here); consumers must have
+    // checked the flag and kept their procedural fallback.
+    if (isBlockCompressed(desc.format) ||
+        desc.format == TextureFormat::R16_UNORM || desc.pixelsIncludeMips) {
+        LOG_ERROR("createTexture: cooked texture formats/mip chains are not "
+                  "implemented on the GL backend");
+        return {};
+    }
     if (pixels && !acceptsPixelUpload(desc.format)) {
         LOG_ERROR("createTexture: initial pixels only supported for "
                   "RGBA8/SRGBA8 (render-target formats are created empty)");

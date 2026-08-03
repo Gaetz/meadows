@@ -8,8 +8,14 @@ name = "true-adventurer-landscape"
 
 # H8 proof asset: the demo cube's albedo (reuses a base texture file under
 # its own asset guid — assets layer per guid like fields, §5).
+# The terrain_*.mtex arrays are the cooked splat material library
+# (tools/cooker cook-terrain-materials; docs/AUDIT/TERRAIN-TEXTURING.md).
 [assets]
 "1a4d5c00-0000-4000-8000-0000000000a1" = "textures/iron_sword.png"
+"18021676-1e56-4758-8859-3dbef5b6ec8c" = "textures/terrain/terrain_albedo.mtex"
+"ed8af881-93d9-4c9f-964c-24714ff4473e" = "textures/terrain/terrain_normal.mtex"
+"a2d5eb11-1a53-441c-b04c-591fdadf59f2" = "textures/terrain/terrain_orm.mtex"
+"ee6aae6c-1520-4941-8e8c-29cca4857a97" = "textures/terrain/terrain_height.mtex"
 
 [[records]]
 form = "1a4d5c00-0000-4000-8000-000000000001"
@@ -45,6 +51,13 @@ coniferTreeType = "conifer" # species of the high tree slots (3-4)
 bushTreeType = "bush"       # colonized bush species (legacy blobs if empty)
 treeLineFactor = 0.82       # tree line = snow line x this
 splatUvScale = 0.25         # ground texture tiles per meter
+splatBlendDepth = 0.15      # height-blend band between layers (0 = plain blend)
+terrainTintStrength = 0.3   # macro tint strength (0 = off, keep <= ~0.4)
+# Cooked splat material arrays (Vulkan-only; empty/missing = procedural tiles).
+terrainAlbedoArray = "18021676-1e56-4758-8859-3dbef5b6ec8c"
+terrainNormalArray = "ed8af881-93d9-4c9f-964c-24714ff4473e"
+terrainOrmArray = "a2d5eb11-1a53-441c-b04c-591fdadf59f2"
+terrainHeightArray = "ee6aae6c-1520-4941-8e8c-29cca4857a97"
 
 # --- Fog / atmosphere ----------------------------------------------------
 fogDensity = 0.0010          # thinner: the 2-3 km ring must be visible

@@ -187,6 +187,13 @@ struct FrameUniforms {
     Vec4 seasonInfo { 0.0f, 0.0f, 0.0f, 0.0f };
     // Per atlas slot: rgb = autumn tint, a = seasonality (0 = evergreen).
     Vec4 leafSeason[8] {};
+    // Splat material detail (docs/TERRAIN-TEXTURING.md): x = height-blend
+    // band depth (0 = plain weighted blend), yzw reserved for the detail
+    // fade / POM knobs of the later bricks.
+    Vec4 splatDetailInfo { 0.15f, 0.0f, 0.0f, 0.0f };
+    // Region shading maps (TerrainShadeMap): xy = center, z = 1/span,
+    // w = valid.
+    Vec4 terrainShadeMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -259,7 +266,9 @@ static_assert(offsetof(FrameUniforms, waterDebugInfo) == 1520);
 static_assert(offsetof(FrameUniforms, waterInfoMapInfo) == 1536);
 static_assert(offsetof(FrameUniforms, seasonInfo) == 1552);
 static_assert(offsetof(FrameUniforms, leafSeason) == 1568);
-static_assert(sizeof(FrameUniforms) == 1696,
+static_assert(offsetof(FrameUniforms, splatDetailInfo) == 1696);
+static_assert(offsetof(FrameUniforms, terrainShadeMapInfo) == 1712);
+static_assert(sizeof(FrameUniforms) == 1728,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

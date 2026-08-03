@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "engine/assets/CookedTexture.hpp"
 #include "engine/core/Clock.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
@@ -137,7 +138,8 @@ vector<u32> buildChunkIndices(u32 lod) {
 }
 
 void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
-                           core::JobSystem& jobSystem) {
+                           core::JobSystem& jobSystem,
+                           const CookedSplatPaths& cooked) {
     streamer.create(jobSystem);
 
     for (u32 lod = 0; lod < kLodCount; ++lod) {
@@ -188,20 +190,86 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     }
 
     if (device.caps().textureArrays) {
-        const vector<u8> splatPixels = buildSplatTilePixels();
-        splatTexture = { device, device.createTexture(
-            { .width = kSplatTileSize,
-              .height = kSplatTileSize,
-              .arrayLayers = SplatLayer_Count,
-              .mipLevels = 9, // full chain for a 256 tile
-              // sRGB: tiles are authored in display space, decoded to linear
-              // on sample — the HDR pipeline lights in linear.
-              .format = rhi::TextureFormat::SRGBA8,
-              .filter = rhi::FilterMode::Linear,
-              .wrap = rhi::AddressMode::Repeat,
-              .usage = rhi::TextureUsage_Sampled },
-            splatPixels.data()) };
-        device.generateMipmaps(splatTexture);
+        // Cooked material arrays first (Vulkan-only); the procedural tiles
+        // are the fallback whenever anything is missing or fails.
+        cookedMaterials = false;
+        if (cooked.complete() && device.caps().textureCompressionBC) {
+            const auto loadArray =
+                [&](const str& path,
+                    rhi::TextureFormat expected) -> rhi::TextureHandle {
+                auto tex = assets::loadCookedTexture(path);
+                if (!tex || tex->format != expected ||
+                    tex->arrayLayers != SplatLayer_Count) {
+                    if (tex) {
+                        LOG_WARN("TerrainSystem: '{}' has {} layers "
+                                 "(splat needs {}) or wrong format — "
+                                 "procedural fallback",
+                                 path, tex->arrayLayers,
+                                 static_cast<u32>(SplatLayer_Count));
+                    }
+                    return {};
+                }
+                return device.createTexture(tex->desc(),
+                                            tex->payload.data());
+            };
+            const rhi::TextureHandle albedo =
+                loadArray(cooked.albedo, rhi::TextureFormat::BC7_SRGB);
+            const rhi::TextureHandle normal =
+                loadArray(cooked.normal, rhi::TextureFormat::BC5_UNORM);
+            const rhi::TextureHandle orm =
+                loadArray(cooked.orm, rhi::TextureFormat::BC7_UNORM);
+            const rhi::TextureHandle height =
+                loadArray(cooked.height, rhi::TextureFormat::R16_UNORM);
+            if (albedo.id != 0 && normal.id != 0 && orm.id != 0 &&
+                height.id != 0) {
+                splatTexture = { device, albedo };
+                materialNormal = { device, normal };
+                materialOrm = { device, orm };
+                materialHeight = { device, height };
+                cookedMaterials = true;
+                LOG_INFO("TerrainSystem: cooked material arrays loaded "
+                         "({} layers, BC7/BC5/R16)",
+                         static_cast<u32>(SplatLayer_Count));
+            } else {
+                // Free any array that did land before falling back.
+                for (const rhi::TextureHandle h :
+                     { albedo, normal, orm, height }) {
+                    if (h.id != 0) {
+                        device.destroyTexture(h);
+                    }
+                }
+            }
+        }
+        if (!cookedMaterials) {
+            const vector<u8> splatPixels = buildSplatTilePixels();
+            splatTexture = { device, device.createTexture(
+                { .width = kSplatTileSize,
+                  .height = kSplatTileSize,
+                  .arrayLayers = SplatLayer_Count,
+                  .mipLevels = 9, // full chain for a 256 tile
+                  // sRGB: tiles are authored in display space, decoded to
+                  // linear on sample — the HDR pipeline lights in linear.
+                  .format = rhi::TextureFormat::SRGBA8,
+                  .filter = rhi::FilterMode::Linear,
+                  .wrap = rhi::AddressMode::Repeat,
+                  .usage = rhi::TextureUsage_Sampled },
+                splatPixels.data()) };
+            device.generateMipmaps(splatTexture);
+            // Procedural displacement heights for the layer blend, so the
+            // height-blend path works identically on both material sets.
+            const vector<f32> heightPixels = buildSplatHeightPixels();
+            materialHeight = { device, device.createTexture(
+                { .width = kSplatTileSize,
+                  .height = kSplatTileSize,
+                  .arrayLayers = SplatLayer_Count,
+                  .mipLevels = 9,
+                  .format = rhi::TextureFormat::R16F,
+                  .filter = rhi::FilterMode::Linear,
+                  .wrap = rhi::AddressMode::Repeat,
+                  .usage = rhi::TextureUsage_Sampled },
+                heightPixels.data()) };
+            device.generateMipmaps(materialHeight);
+        }
         splatSampler = { device, device.createSampler(
             { .mipmapFilter = true,
               .addressU = rhi::AddressMode::Repeat,
@@ -210,6 +278,9 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
         splatBindGroup = { device, device.createBindGroup(
             { .entries = { { .binding = 0,
                              .texture = splatTexture,
+                             .sampler = splatSampler },
+                           { .binding = 3,
+                             .texture = materialHeight,
                              .sampler = splatSampler } } }) };
     } else {
         LOG_WARN("TerrainSystem: no texture arrays on this backend — "
@@ -217,7 +288,11 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     }
 
     shaders.load(kTerrainShader, { { "FrameUbo", 0 } },
-                 { { "uSplat", 0 }, { "uShadowMap", 1 } });
+                 { { "uSplat", 0 },
+                   { "uShadowMap", 1 },
+                   { "uSplatHeight", 3 },
+                   { "uTerrainShade0", 4 },
+                   { "uTerrainShade1", 5 } });
     buildPipeline(device, shaders);
     shaders.load(kTerrainCasterShader, { { "ShadowUbo", 1 } });
     buildCasterPipeline(device, shaders);
@@ -240,6 +315,10 @@ void TerrainSystem::destroy(rhi::Device& device) {
     splatBindGroup.reset();
     splatSampler.reset();
     splatTexture.reset();
+    materialNormal.reset();
+    materialOrm.reset();
+    materialHeight.reset();
+    cookedMaterials = false;
 }
 
 void TerrainSystem::regenerate(rhi::Device& device) {

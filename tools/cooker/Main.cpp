@@ -22,6 +22,7 @@
 #include <fstream>
 #include <string_view>
 
+#include "TextureCook.hpp"
 #include "data/plugins/BinaryFormat.hpp"
 #include "data/plugins/CsvImport.hpp"
 #include "data/plugins/PluginLoader.hpp"
@@ -50,6 +51,10 @@ int usage() {
         "     mod lint: resolve the plugins in argument order and report\n"
         "     orphan patches, dependency violations, dangling guid refs\n"
         "     and field conflicts (informational). Exit 1 on errors\n"
+        "  cooker cook-terrain-materials <manifest.toml> <outDir>\n"
+        "     PNG material maps -> the four terrain .mtex arrays\n"
+        "     (albedo BC7, normal BC5, ORM BC7, height R16), 512^2,\n"
+        "     offline mips. Source paths are manifest-relative\n"
         "  cooker import-csv <in.csv> <out.toml> <FormType> [pluginGuid]\n"
         "                    [--patch <targetPluginGuid>]\n"
         "     header row = reflected field names; row identity = the\n"
@@ -358,6 +363,9 @@ int main(int argc, char** argv) {
     }
     if (command == "terrain-pad" && argc == 10) {
         return terrainPad(argv);
+    }
+    if (command == "cook-terrain-materials" && argc == 4) {
+        return cooker::cookTerrainMaterials(argv[2], argv[3]);
     }
     return usage();
 }

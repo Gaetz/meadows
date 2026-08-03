@@ -327,7 +327,25 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
     meshCache->injectProcedural(arrowMeshGuid(), makeArrowMesh(0.6f));
     // The pony — the « Poney » FurnitureForm's `model` points here.
     meshCache->injectProcedural(horseMeshGuid(), makeHorseMesh(1.2f));
-    renderer.create(device, engine->getJobSystem());
+    // Cooked terrain material arrays: resolve the tuning form's asset guids
+    // to file paths here (the renderer never sees a Form nor the VFS).
+    render::RendererConfig config;
+    {
+        const data::LandscapeTuningForm tuning =
+            data::resolveLandscapeTuning(forms);
+        const auto pathOf = [&](const core::Guid& id) -> str {
+            if (!id.isValid()) {
+                return {};
+            }
+            const auto path = assetDb.resolve(id);
+            return path ? path->string() : str {};
+        };
+        config.terrainAlbedoPath = pathOf(tuning.terrainAlbedoArray);
+        config.terrainNormalPath = pathOf(tuning.terrainNormalArray);
+        config.terrainOrmPath = pathOf(tuning.terrainOrmArray);
+        config.terrainHeightPath = pathOf(tuning.terrainHeightArray);
+    }
+    renderer.create(device, engine->getJobSystem(), config);
 
     // The RmlUi game UI (screens from UiScreenForm records,
     // documents through the plugins' ui/ roots).
@@ -3741,6 +3759,8 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .windTime = windTime,
         .snowLine = activeSnowLine,
         .splatUvScale = tuning.splatUvScale,
+        .splatBlendDepth = tuning.splatBlendDepth,
+        .terrainTintStrength = tuning.terrainTintStrength,
         .interiorAmbient = tuning.interiorAmbient,
         .buriedBelowY = buriedBelowY,
         .grassBend = (mode == SceneMode::Play) && playerBody != nullptr,

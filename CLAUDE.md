@@ -152,7 +152,7 @@ Use these unless there is a concrete reason not to (then ask first).
 | Math               | GLM                                      | Don't reinvent. |
 | GPU                | Vulkan (final renderer) + OpenGL 4.6 fallback, behind RHI | 2D renderer + **custom 3D landscape renderer** (`docs/RENDERING.md`) — the demo ships on it (2026-07-05 pivot). Vulkan/MoltenVK is the shipped backend since 2026-07-19 (macOS is Vulkan-only); GL 4.6 stays the PC fallback. Godot via GDExtension = post-demo option. |
 | Mesh / model       | glTF 2.0 via cgltf                       | Skinning, anims, PBR built in. |
-| Textures           | stb_image + KTX2 (Basis Universal)       | Compressed for runtime. |
+| Textures           | stb_image + cooked `.mtex` (BC7/BC5/R16, offline mips) | `tools/cooker cook-terrain-materials`; loader `engine/assets/CookedTexture`. KTX2/Basis = future option if interop is ever needed. |
 | ECS                | flecs (pinned v4.1.5)                     | Runtime only (lib `meadows-ecs`); data model stays flecs-free. Used directly in systems, not behind a façade. Our reflection — not flecs meta — is the keystone (§2.3). See `docs/PHASE-2.md`. |
 | Physics            | Jolt (pinned v5.2.0)                     | Integrated (lib `meadows-physics`, pimpl facade — no Jolt type in any header). 2D scenes keep the simple custom collision. |
 | Navmesh (3D)       | Recast / Detour                          | Not integrated yet; `engine/nav/` interface exists with a grid-A* stub behind it. |

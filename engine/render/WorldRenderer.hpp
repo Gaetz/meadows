@@ -18,6 +18,7 @@
 #include "engine/render/landscape/MistMap.hpp"
 #include "engine/render/landscape/NoiseVolume.hpp"
 #include "engine/render/landscape/TerrainLightMap.hpp"
+#include "engine/render/landscape/TerrainShadeMap.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
 #include "engine/render/landscape/FxRenderer.hpp"
@@ -69,6 +70,13 @@ struct RendererConfig {
     bool froxels { true };    // froxel fog (needs postFx)
     bool occlusion { true };  // CPU horizon + GPU Hi-Z
     bool postFx { true };     // bloom/rays/volumetric/contact/auto-expo
+    // Cooked terrain material arrays (.mtex file paths, resolved by the
+    // scene from the plugin VFS — the renderer never sees a Form). Empty =
+    // procedural splat tiles; ignored without caps.textureCompressionBC.
+    str terrainAlbedoPath;
+    str terrainNormalPath;
+    str terrainOrmPath;
+    str terrainHeightPath;
 };
 
 // Per-frame view: everything the SIM side decides, passed by value/pointer —
@@ -83,6 +91,8 @@ struct RenderView {
     // Moddable tuning scalars the scene owns (LandscapeTuningForm):
     f32 snowLine { render::kSnowLine };
     f32 splatUvScale { 0.25f };
+    f32 splatBlendDepth { 0.15f }; // height-blend band (0 = plain blend)
+    f32 terrainTintStrength { 0.3f }; // macro tint (0 = off, <= ~0.4)
     Vec3 interiorAmbient { 0.16f, 0.15f, 0.14f };
     // H3: the active worldspace's buried threshold (-1e9 = rule off).
     f32 buriedBelowY { -1.0e9f };
@@ -258,6 +268,7 @@ private:
     u64 perfFrames { 0 }; // the one-shot "gpu budget" log's frame count
     // Worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;
+    render::TerrainShadeMap terrainShadeMap;
     bool terrainLightUi { true };
     // Distant landscape silhouettes beyond the streaming ring (§3.6).
     render::FarTerrain farTerrain;

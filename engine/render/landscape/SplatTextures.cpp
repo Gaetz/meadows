@@ -121,7 +121,76 @@ Vec3 sandTexel(f32 u, f32 v) {
     return color * (0.96f + 0.06f * ripple);
 }
 
+// Per-layer displacement, correlated with the albedo functions above by
+// reusing their noise seeds — the blend then reveals the SAME structures
+// the color shows (ridges poke through, cracks recede).
+f32 grassHeight(f32 u, f32 v) {
+    const f32 blotch = tileFbm(101, u, v, 6, 4);
+    const f32 clump = tileFbm(103, u, v, 24, 3);
+    return 0.35f + 0.30f * blotch + 0.20f * clump;
+}
+
+f32 rockHeight(f32 u, f32 v) {
+    const f32 strata = tileFbm(201, u, v * 2.5f, 8, 4);
+    const f32 ridge = 1.0f - std::abs(2.0f * strata - 1.0f);
+    const f32 crack = tileFbm(202, u, v, 16, 3);
+    f32 h = 0.30f + 0.55f * ridge;
+    if (crack < 0.32f) {
+        h -= 0.25f * (1.0f - crack / 0.32f);
+    }
+    return h;
+}
+
+f32 snowHeight(f32 u, f32 v) {
+    const f32 drift = tileFbm(301, u, v, 5, 3);
+    return 0.55f + 0.30f * drift; // snow sits high: it covers
+}
+
+f32 sandHeight(f32 u, f32 v) {
+    const f32 grain = tileFbm(401, u, v, 48, 2);
+    const f32 wobble = tileFbm(402, u, v, 4, 2);
+    const f32 ripple =
+        0.5f + 0.5f * std::sin((v + wobble * 0.35f) * 12.0f * 6.2831853f);
+    return 0.25f + 0.18f * ripple + 0.07f * grain;
+}
+
+f32 cliffHeight(f32 u, f32 v) {
+    const f32 bands = tileFbm(501, u * 0.5f, v * 3.5f, 8, 4);
+    const f32 ledge = 1.0f - std::abs(2.0f * bands - 1.0f);
+    const f32 fracture = tileFbm(502, u * 3.0f, v * 0.8f, 12, 3);
+    f32 h = 0.35f + 0.50f * ledge;
+    if (fracture < 0.28f) {
+        h -= 0.22f * (1.0f - fracture / 0.28f);
+    }
+    return h;
+}
+
 } // namespace
+
+vector<f32> buildSplatHeightPixels() {
+    constexpr u32 kSize = kSplatTileSize;
+    vector<f32> pixels(static_cast<size_t>(kSize) * kSize *
+                       SplatLayer_Count);
+    const size_t layerTexels = static_cast<size_t>(kSize) * kSize;
+    for (u32 y = 0; y < kSize; ++y) {
+        for (u32 x = 0; x < kSize; ++x) {
+            const f32 u = static_cast<f32>(x) / kSize;
+            const f32 v = static_cast<f32>(y) / kSize;
+            const size_t texel = static_cast<size_t>(y) * kSize + x;
+            pixels[SplatLayer_Grass * layerTexels + texel] =
+                glm::clamp(grassHeight(u, v), 0.0f, 1.0f);
+            pixels[SplatLayer_Rock * layerTexels + texel] =
+                glm::clamp(rockHeight(u, v), 0.0f, 1.0f);
+            pixels[SplatLayer_Snow * layerTexels + texel] =
+                glm::clamp(snowHeight(u, v), 0.0f, 1.0f);
+            pixels[SplatLayer_Sand * layerTexels + texel] =
+                glm::clamp(sandHeight(u, v), 0.0f, 1.0f);
+            pixels[SplatLayer_Cliff * layerTexels + texel] =
+                glm::clamp(cliffHeight(u, v), 0.0f, 1.0f);
+        }
+    }
+    return pixels;
+}
 
 vector<u8> buildSplatTilePixels() {
     constexpr u32 kSize = kSplatTileSize;
@@ -155,21 +224,9 @@ Vec3 grassAlbedo(f32 u, f32 v) {
     // read as one family): one hue, a WHISPER of blotch luminance drift
     // (~±1%, mean 1) — just enough to break the perfectly flat albedo
     // that exposed the RC probe-parity speckle, invisible as texture.
-    // The GREEN channel feeds the border wander — its MEAN is unchanged
-    // by the symmetric drift, so the -0.67 centering in terrain.frag /
-    // TerrainNoise.cpp stays valid.
     const f32 blotch = tileFbm(101, u, v, 6, 4);
     return Vec3 { 0.434f, 0.633f, 0.375f } *
            (0.99f + 0.02f * glm::smoothstep(0.30f, 0.70f, blotch));
-}
-
-f32 splatWander(f32 u, f32 v) {
-    // The texture stores DISPLAY-space bytes in an SRGBA8 view; the
-    // shader's sampler hands back linear — decode the same way.
-    const f32 display = glm::clamp(grassTexel(u, v).y, 0.0f, 1.0f);
-    return display <= 0.04045f
-               ? display / 12.92f
-               : std::pow((display + 0.055f) / 1.055f, 2.4f);
 }
 
 } // namespace render

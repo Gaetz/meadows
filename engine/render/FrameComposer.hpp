@@ -47,6 +47,8 @@ struct FrameComposerInputs {
     f32 seaLevel { 0.0f };
     f32 snowLine { 0.0f };
     f32 splatUvScale { 0.0f };
+    f32 splatBlendDepth { 0.15f }; // height-blend band (0 = plain blend)
+    f32 terrainTintStrength { 0.3f }; // macro tint (0 = off)
     bool reflectionsActive { false };
     // Horizon-closure distance (m) for applyFog — the far-terrain
     // reach when it stands in, else the streaming ring (0 = off).
@@ -136,6 +138,8 @@ struct FrameComposerInputs {
     Vec4 waterDebugInfo { 0.0f, 0.0f, 0.0f, 0.0f };
     // Water-info map: xy = center, z = 1/span, w = valid.
     Vec4 waterInfoMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Region shading maps (TerrainShadeMap::info()).
+    Vec4 terrainShadeMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
 // The volumetric fog's reach (froxel far AND cluster grid far — the two

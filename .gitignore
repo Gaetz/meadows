@@ -57,3 +57,7 @@ smoke-err.log
 # Dev-UI layout state (machine-local)
 imgui.ini
 vulkan-pipeline-cache.bin
+
+# Texture source maps (CC0 downloads, 1K-8K) — only the cooked .mtex under
+# game/data/ ship; see game/data/base/terrain/materials.toml
+assets-src/

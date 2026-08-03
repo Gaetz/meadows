@@ -108,8 +108,15 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                 terrain::height(params, wx, wz);
             const f32 su = wx * tuning.splatUvScale;
             const f32 sv = wz * tuning.splatUvScale;
-            cornerAlbedo[gz * (cells + 1) + gx] = grassAlbedo(
-                su - std::floor(su), sv - std::floor(sv));
+            // Macro tint applies to the root color exactly as the terrain
+            // shader applies it to the ground (same regionShadingAt, same
+            // strength lerp) — meadow and terrain keep ONE color source.
+            const Vec3 tint =
+                glm::mix(Vec3 { 1.0f },
+                         terrain::regionShadingAt(params, wx, wz).tint,
+                         tuning.tintStrength);
+            cornerAlbedo[gz * (cells + 1) + gx] =
+                grassAlbedo(su - std::floor(su), sv - std::floor(sv)) * tint;
         }
     }
 

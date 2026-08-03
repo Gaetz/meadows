@@ -108,6 +108,8 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     for (u32 i = 0; i < 8; ++i) {
         base.leafSeason[i] = in.leafSeason[i];
     }
+    base.splatDetailInfo = { in.splatBlendDepth, in.terrainTintStrength,
+                             0.0f, 0.0f };
 
     render::FrameUniforms resolved = base;
     if (in.interiorMode) {
@@ -188,6 +190,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     }
     resolved.waterDebugInfo = in.waterDebugInfo;
     resolved.waterInfoMapInfo = in.waterInfoMapInfo;
+    resolved.terrainShadeMapInfo = in.terrainShadeMapInfo;
     // Volumetric sky clouds ride RESOLVED only: the reflection pass has
     // no clouds composite, so it keeps the 2D dome layer (cloudVolInfo.x
     // stays 0 in base and applyClouds draws there).

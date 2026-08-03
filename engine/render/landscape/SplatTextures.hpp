@@ -23,11 +23,11 @@ constexpr u32 kSplatTileSize = 256; // texels per side, per layer
 // Authored in display space, stored as SRGBA8 (linear on sample).
 vector<u8> buildSplatTilePixels();
 
-// The grass tile's GREEN channel as the SHADER samples it (SRGB-decoded
-// to linear), at tiled uv in [0,1) — the CPU mirror of terrain.frag's
-// `wander` term, so sim consumers (footstep material) agree with the
-// VISIBLE snow/sand borders instead of tracing the raw altitude contour.
-f32 splatWander(f32 u, f32 v);
+// Per-layer displacement heights in [0,1] for the height-based layer blend
+// (terrain_blend.glsl), correlated with each tile's albedo structure (same
+// noise seeds). f32 per texel, layer-major — the R16F initial-data shape.
+// The cooked .mtex height array replaces this when resident.
+vector<f32> buildSplatHeightPixels();
 
 // The grass ground color at tiled uv in [0,1), in DISPLAY space —
 // near-uniform (±1% luminance drift). Grass blades inherit it at their

@@ -394,13 +394,16 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
     const bool spanChanged = glm::abs(span - tileSpan) > 0.01f;
     if (!tileInFlight &&
         (spanChanged ||
+         glm::abs(terrainTintStrength - bakedTintStrength) > 0.001f ||
          glm::distance(focus, tileCenter) > span * 0.10f)) {
         tileSpan = span;
         tileInFlight = true;
+        bakedTintStrength = terrainTintStrength;
         const u64 gen = ++tileGeneration;
         auto queue = baked;
         const TerrainParams paramsCopy = params;
-        jobs->enqueue([queue, paramsCopy, focus, span, gen] {
+        jobs->enqueue([queue, paramsCopy, focus, span, gen,
+                       tintStrength = terrainTintStrength] {
             BakedTile out;
             out.center = focus;
             out.gen = gen;
@@ -451,6 +454,12 @@ void RadianceCascades::pumpTileBake(rhi::Device& device,
                     const f32 sum =
                         glm::max(w.grass + w.rock + w.sand + w.snow, 1e-3f);
                     albedo /= sum;
+                    // The same macro tint the terrain shader applies: the
+                    // bounce carries the tinted ground color.
+                    albedo *= glm::mix(
+                        Vec3 { 1.0f },
+                        terrain::regionShadingAt(paramsCopy, wx, wz).tint,
+                        tintStrength);
                     out.albedo[i * 4 + 0] = static_cast<u8>(
                         glm::clamp(albedo.x, 0.0f, 1.0f) * 255.0f);
                     out.albedo[i * 4 + 1] = static_cast<u8>(

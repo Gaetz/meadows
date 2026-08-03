@@ -71,6 +71,10 @@ struct GrassScatterTuning {
     // knob: WorldRenderer syncs it from the view every frame (a change
     // regenerates, same policy as the other scatter knobs).
     f32 splatUvScale { 0.25f };
+    // Macro-tint strength for the same bake (the ONE ground-color source
+    // contract: blades inherit the tinted ground). Synced like
+    // splatUvScale; a change regenerates.
+    f32 tintStrength { 0.3f };
 };
 
 // Animated grass (blade model = the

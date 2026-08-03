@@ -6,12 +6,22 @@
 // (SplatTextures.hpp).
 layout(binding = 0) uniform sampler2DArray uSplat;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
+// Per-layer displacement heights (cooked R16 or procedural R16F).
+// Binding 2 belongs to uCloudMap (clouds.glsl); 3 is the first free
+// sampler slot in this shader's include closure.
+layout(binding = 3) uniform sampler2DArray uSplatHeight;
+// Region shading maps (TerrainShadeMap.hpp — encoding contract there):
+// T0 = tint.rgb + wetness, T1 = rockiness / snow offset / sandiness / beach.
+layout(binding = 4) uniform sampler2D uTerrainShade0;
+layout(binding = 5) uniform sampler2D uTerrainShade1;
 #include "shadow.glsl"
 #include "clouds.glsl"
 #include "stylized.glsl"
 #include "locallights.glsl"
 #include "terrainlight.glsl"
 #include "gi.glsl"
+#include "terrain_weights.glsl"
+#include "terrain_blend.glsl"
 
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in vec3 vColor;
@@ -27,42 +37,82 @@ void main() {
     float seaLevel = uTerrainInfo.x;
     float snowLine = uTerrainInfo.y;
 
-    // Per-pixel material weights: rock claims slopes, snow the high flats,
-    // sand the shoreline band, grass everything else. Smoothsteps give the
-    // soft blended transitions; altitude borders are perturbed by a
-    // low-frequency sample of the splat tiles so the sand and snow lines
-    // wander organically instead of tracing a level contour.
-    // Centering must stay in LOCKSTEP with TerrainNoise.cpp's CPU
-    // mirror: tile mean green (0.36 linear) plus the -0.31 bias the
-    // snow/sand lines are tuned against.
-    float wander = texture(uSplat, vec3(uv * 0.06, 0.0)).g - 0.67;
+    // Rock claims slopes, snow the high flats, sand the shoreline band,
+    // grass everything else (terrain_weights.glsl — the one weight rule).
+    // Altitude borders are perturbed by borderWander (analytic noise,
+    // material-set independent) so the sand and snow lines wander
+    // organically instead of tracing a level contour.
+    float wander = borderWander(uv * 0.06);
+
+    // Region shading taps (biome rules resolved to continuous fields at
+    // bake — the CPU mirror is terrain::regionShadingAt). Outside the
+    // map's span the inputs fall back to neutral: the historical rules.
+    vec2 suv = (vWorldPos.xz - uTerrainShadeMapInfo.xy) *
+                   uTerrainShadeMapInfo.z +
+               0.5;
+    bool shadeValid = uTerrainShadeMapInfo.w > 0.5 &&
+                      all(greaterThan(suv, vec2(0.0))) &&
+                      all(lessThan(suv, vec2(1.0)));
+    vec4 shade1 = shadeValid ? texture(uTerrainShade1, suv)
+                             : vec4(0.0, 128.0 / 255.0, 0.0, 0.0);
+    float rockShift = 0.1 * shade1.r;
+    float snowOffset = (shade1.g * 255.0 - 128.0) * 8.0;
+    vec3 tint = shadeValid ? texture(uTerrainShade0, suv).rgb : vec3(1.0);
 
     // vColor.r carries the baked rock-exposure mask (TerrainSystem
     // vertex build) — bare cliff faces claim the steepest slopes.
-    // Weight math mirrors TerrainNoise.cpp materialWeightsShaded.
-    float cliffW = smoothstep(0.30, 0.55, slope) * vColor.r;
-    float rockW = smoothstep(0.18, 0.35, slope) * (1.0 - cliffW);
-    float snowH = h + wander * 26.0;
-    float snowW = smoothstep(snowLine - 12.0, snowLine + 42.0, snowH) *
-                  (1.0 - smoothstep(0.25, 0.45, slope));
-    float sandH = h + wander * 5.0;
-    float sandW = (1.0 - smoothstep(seaLevel + 1.0, seaLevel + 8.0, sandH)) *
-                  (1.0 - rockW - cliffW);
-    float grassW = max(1.0 - rockW - snowW - sandW - cliffW, 0.0);
-    float total = grassW + rockW + snowW + sandW + cliffW;
+    TerrainWeights w =
+        terrainWeights(h, slope, wander, vColor.r, seaLevel,
+                       snowLine + snowOffset, rockShift, shade1.b,
+                       shade1.a);
+    float ws[kSplatLayers];
+    ws[0] = w.grass;
+    ws[1] = w.rock;
+    ws[2] = w.snow;
+    ws[3] = w.sand;
+    ws[4] = w.cliff;
+
+    // Height-blend the rule weights: only layers the rule already admits
+    // fetch their displacement (2-3 typical), the winner's micro-relief
+    // claims the transition band.
+    float depth = uSplatDetailInfo.x;
+    float hs[kSplatLayers];
+    for (int i = 0; i < kSplatLayers; ++i) {
+        hs[i] = ws[i] > kSplatWeightEps
+                    ? texture(uSplatHeight, vec3(uv, float(i))).r
+                    : 0.0;
+    }
+    float b[kSplatLayers];
+    float total;
+    if (depth > 0.0) {
+        total = blendHeights(hs, ws, depth, b);
+    } else {
+        for (int i = 0; i < kSplatLayers; ++i) {
+            b[i] = ws[i];
+        }
+        total = max(ws[0] + ws[1] + ws[2] + ws[3] + ws[4], 1.0e-5);
+    }
 
     // Altitude-locked strata ledges on the cliff layer (the texture's
     // own banding runs in uv space; this one follows the geology).
     float band = fract((h + wander * 8.0) / 14.0);
     float ledge = smoothstep(0.0, 0.45, band) * (1.0 - smoothstep(0.7, 0.95, band));
-    vec3 cliffAlbedo = texture(uSplat, vec3(uv, 4.0)).rgb * (0.84 + 0.24 * ledge);
 
-    vec3 albedo = (texture(uSplat, vec3(uv, 0.0)).rgb * grassW +
-                   texture(uSplat, vec3(uv, 1.0)).rgb * rockW +
-                   texture(uSplat, vec3(uv, 2.0)).rgb * snowW +
-                   texture(uSplat, vec3(uv, 3.0)).rgb * sandW +
-                   cliffAlbedo * cliffW) /
-                  total;
+    vec3 albedo = vec3(0.0);
+    for (int i = 0; i < kSplatLayers; ++i) {
+        if (b[i] <= 0.0) {
+            continue;
+        }
+        vec3 layer = texture(uSplat, vec3(uv, float(i))).rgb;
+        if (i == 4) {
+            layer *= 0.84 + 0.24 * ledge;
+        }
+        albedo += layer * b[i];
+    }
+    albedo /= total;
+    // Macro tint, attenuated by the strength knob (uSplatDetailInfo.y —
+    // above ~0.4 the tint crushes the materials' own variation).
+    albedo *= mix(vec3(1.0), tint, uSplatDetailInfo.y);
 
     albedo *= cascadeDebugTint(vWorldPos);
     // Wetness: rain darkens the ground (global for now — the roof

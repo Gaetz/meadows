@@ -1,0 +1,50 @@
+# Terrain splat material library — cook manifest.
+#
+#   cooker cook-terrain-materials game/data/base/terrain/materials.toml \
+#          game/data/base/textures/terrain
+#
+# Material order IS the splat layer order (render::SplatLayer):
+# grass / rock / snow / sand / cliff. Sources are CC0 from ambientCG
+# (1K PNG, NormalGL = OpenGL +Y — no flip), living outside the repo in
+# assets-src/ (gitignored); only the cooked .mtex arrays ship.
+# Layout/format contract: docs/AUDIT/TERRAIN-TEXTURING.md §3-4.
+
+[[material]]
+name = "grass"                  # SplatLayer_Grass
+albedo = "../../../../assets-src/terrain/Grass001/Grass001_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Grass001/Grass001_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Grass001/Grass001_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Grass001/Grass001_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Grass001/Grass001_1K-PNG_Displacement.png"
+
+[[material]]
+name = "rock"                   # SplatLayer_Rock
+albedo = "../../../../assets-src/terrain/Rock058/Rock058_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Rock058/Rock058_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Rock058/Rock058_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Rock058/Rock058_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Rock058/Rock058_1K-PNG_Displacement.png"
+
+[[material]]
+name = "snow"                   # SplatLayer_Snow
+albedo = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_Displacement.png"
+
+[[material]]
+name = "sand"                   # SplatLayer_Sand
+albedo = "../../../../assets-src/terrain/Ground054/Ground054_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Ground054/Ground054_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Ground054/Ground054_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Ground054/Ground054_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Ground054/Ground054_1K-PNG_Displacement.png"
+
+[[material]]
+name = "cliff"                  # SplatLayer_Cliff
+albedo = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_Displacement.png"

@@ -18,6 +18,7 @@
     CollisionTest.cpp
     CombatAiTest.cpp
     CombatTest.cpp
+    CookedTextureTest.cpp
     ConcurrentQueueTest.cpp
     ConditionTest.cpp
     CookerTest.cpp

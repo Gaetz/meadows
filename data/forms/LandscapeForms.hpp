@@ -35,6 +35,19 @@ struct LandscapeTuningForm : Form {
     // Terrain materials.
     f32 snowLine { 165.0f };     // meters
     f32 splatUvScale { 0.25f };  // tiles per meter
+    // Height-blend band depth between splat layers (0 = plain weighted
+    // blend; ~0.1-0.2 = crisp material interfaces). docs/TERRAIN-TEXTURING.md.
+    f32 splatBlendDepth { 0.15f };
+    // Macro-tint strength (0 = off; above ~0.4 the tint crushes the
+    // materials' own variation — brief guardrail).
+    f32 terrainTintStrength { 0.3f };
+    // Cooked terrain material arrays (.mtex asset guids, one per map —
+    // docs/AUDIT/TERRAIN-TEXTURING.md §4). 0 = procedural splat tiles.
+    // Vulkan-only path (caps.textureCompressionBC).
+    core::Guid terrainAlbedoArray;
+    core::Guid terrainNormalArray;
+    core::Guid terrainOrmArray;
+    core::Guid terrainHeightArray;
     // Fog / atmosphere.
     f32 fogDensity { 0.0012f };
     f32 fogHeightFalloff { 0.02f };
@@ -239,6 +252,12 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(farTerrain)
         REFLECT_FIELD(snowLine)
         REFLECT_FIELD(splatUvScale)
+        REFLECT_FIELD(splatBlendDepth)
+        REFLECT_FIELD(terrainTintStrength)
+        REFLECT_FIELD(terrainAlbedoArray)
+        REFLECT_FIELD(terrainNormalArray)
+        REFLECT_FIELD(terrainOrmArray)
+        REFLECT_FIELD(terrainHeightArray)
         REFLECT_FIELD(fogDensity)
         REFLECT_FIELD(fogHeightFalloff)
         REFLECT_FIELD(fogLowBoost)
