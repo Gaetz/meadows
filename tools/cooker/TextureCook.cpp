@@ -50,6 +50,10 @@ struct MaterialSources {
     fs::path metallic;
     fs::path height;
     bool flipNormalY { false };
+    // Normalize this material's mean albedo to the FIRST material's mean
+    // (per channel): ground variants stay in one color family — their
+    // variation lives in content and relief, not in color patches.
+    bool harmonize { false };
 };
 
 std::optional<Rgba> loadRgba(const fs::path& path) {
@@ -224,6 +228,7 @@ std::optional<vector<MaterialSources>> parseManifest(const fs::path& path) {
         mat.metallic = source("metallic");
         mat.height = source("height");
         mat.flipNormalY = (*table)["flip_normal_y"].value_or(false);
+        mat.harmonize = (*table)["harmonize"].value_or(false);
         if (mat.name.empty() || mat.albedo.empty()) {
             LOG_ERROR("cook-terrain-materials: every [[material]] needs "
                       "'name' and 'albedo'");
@@ -292,6 +297,9 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
     bc7enc_compress_block_params_init_linear_weights(&linearParams); // ORM
 
     const u32 layers = static_cast<u32>(materials->size());
+    // Per-layer average albedo (display bytes) — CPU consumers can't
+    // decode the BC payload (blade root albedo, docs/GRASS-REDO.md).
+    vector<u32> albedoAverages(layers, 0xff808080u);
     // [mip][layer] payload slices, assembled mip-major at the end (the
     // CookedTexture/createTexture layout contract).
     vector<vector<vector<u8>>> albedoMips(kMips, vector<vector<u8>>(layers));
@@ -307,11 +315,54 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
         if (!albedo) {
             return 1;
         }
+        Rgba albedoBase = resizeRgba(*albedo, kSize, true);
+        {
+            f64 mean[3] = { 0, 0, 0 };
+            for (size_t i = 0; i < albedoBase.pixels.size(); i += 4) {
+                mean[0] += albedoBase.pixels[i];
+                mean[1] += albedoBase.pixels[i + 1];
+                mean[2] += albedoBase.pixels[i + 2];
+            }
+            const f64 count = albedoBase.pixels.size() / 4.0;
+            for (f64& m : mean) {
+                m /= count;
+            }
+            static f64 mean0[3] = { 128, 128, 128 };
+            if (layer == 0) {
+                mean0[0] = mean[0];
+                mean0[1] = mean[1];
+                mean0[2] = mean[2];
+            } else if (mat.harmonize) {
+                const f64 scale[3] = { mean0[0] / std::max(mean[0], 1.0),
+                                       mean0[1] / std::max(mean[1], 1.0),
+                                       mean0[2] / std::max(mean[2], 1.0) };
+                for (size_t i = 0; i < albedoBase.pixels.size(); i += 4) {
+                    for (u32 c = 0; c < 3; ++c) {
+                        albedoBase.pixels[i + c] = static_cast<u8>(
+                            std::clamp(albedoBase.pixels[i + c] * scale[c],
+                                       0.0, 255.0));
+                    }
+                }
+            }
+        }
         const auto albedoChain =
-            mipChain(resizeRgba(*albedo, kSize, true),
-                     [](const Rgba& base, u32 size) {
-                         return resizeRgba(base, size, true);
-                     });
+            mipChain(albedoBase, [](const Rgba& base, u32 size) {
+                return resizeRgba(base, size, true);
+            });
+        {
+            u64 sums[3] = { 0, 0, 0 };
+            const vector<u8>& px = albedoChain[0].pixels;
+            for (size_t i = 0; i < px.size(); i += 4) {
+                sums[0] += px[i];
+                sums[1] += px[i + 1];
+                sums[2] += px[i + 2];
+            }
+            const u64 count = px.size() / 4;
+            albedoAverages[layer] =
+                static_cast<u32>(sums[0] / count) |
+                (static_cast<u32>(sums[1] / count) << 8) |
+                (static_cast<u32>(sums[2] / count) << 16) | 0xff000000u;
+        }
 
         Rgba normalBase = neutralRgba(128, 128, 255, 255);
         if (!mat.normal.empty()) {
@@ -367,12 +418,16 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
 
     const auto assemble = [&](const vector<vector<vector<u8>>>& mips,
                               rhi::TextureFormat format,
-                              const char* filename) -> bool {
+                              const char* filename,
+                              const vector<u32>* averages = nullptr) -> bool {
         assets::CookedTexture tex { .width = kSize,
                                     .height = kSize,
                                     .arrayLayers = layers,
                                     .mipLevels = kMips,
                                     .format = format };
+        if (averages != nullptr) {
+            tex.layerAverages = *averages;
+        }
         for (u32 m = 0; m < kMips; ++m) {
             for (u32 layer = 0; layer < layers; ++layer) {
                 const vector<u8>& slice = mips[m][layer];
@@ -390,7 +445,7 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
     };
 
     if (!assemble(albedoMips, rhi::TextureFormat::BC7_SRGB,
-                  "terrain_albedo.mtex") ||
+                  "terrain_albedo.mtex", &albedoAverages) ||
         !assemble(normalMips, rhi::TextureFormat::BC5_UNORM,
                   "terrain_normal.mtex") ||
         !assemble(ormMips, rhi::TextureFormat::BC7_UNORM,

@@ -185,6 +185,16 @@ CPMAddPackage(
 add_library(stb INTERFACE)
 target_include_directories(stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
+# meshoptimizer — mesh decimation for scanned-prop imports (the scans are
+# 40-100k tris; clutter budgets are hundreds). Linked to the base lib only.
+CPMAddPackage(
+    NAME meshoptimizer
+    GITHUB_REPOSITORY zeux/meshoptimizer
+    GIT_TAG v0.25
+    OPTIONS "MESHOPT_BUILD_DEMO OFF" "MESHOPT_BUILD_GLTFPACK OFF"
+            "MESHOPT_BUILD_SHARED_LIBS OFF"
+)
+
 # bc7enc_rdo — BC7/BC5 encoders for the offline texture cooker only (the
 # runtime never links it). No tags: pinned by commit. Only the two encoder
 # TUs are built; the RDO post-process and its LZ deps stay out.

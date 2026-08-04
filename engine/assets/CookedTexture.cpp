@@ -10,7 +10,7 @@ namespace assets {
 namespace {
 
 constexpr u32 kMagic = 0x5845544Du; // 'MTEX' little-endian
-constexpr u32 kVersion = 1;
+constexpr u32 kVersion = 2; // v2: per-layer average colors after the header
 
 // Stable on-disk codes: never renumber, only append. Decoupled from the
 // rhi::TextureFormat enum so reordering it cannot corrupt cooked files.
@@ -80,6 +80,10 @@ std::optional<CookedTexture> loadCookedTexture(
                         .arrayLayers = header.arrayLayers,
                         .mipLevels = header.mipLevels,
                         .format = *format };
+    tex.layerAverages.resize(header.arrayLayers, 0xff808080u);
+    file.read(reinterpret_cast<char*>(tex.layerAverages.data()),
+              static_cast<std::streamsize>(header.arrayLayers *
+                                           sizeof(u32)));
     const u64 expected = rhi::textureDataBytes(tex.desc());
     tex.payload.resize(expected);
     file.read(reinterpret_cast<char*>(tex.payload.data()),
@@ -119,6 +123,10 @@ bool saveCookedTexture(const std::filesystem::path& path,
                           .arrayLayers = texture.arrayLayers,
                           .mipLevels = texture.mipLevels };
     file.write(reinterpret_cast<const char*>(&header), sizeof(header));
+    vector<u32> averages = texture.layerAverages;
+    averages.resize(texture.arrayLayers, 0xff808080u);
+    file.write(reinterpret_cast<const char*>(averages.data()),
+               static_cast<std::streamsize>(averages.size() * sizeof(u32)));
     file.write(reinterpret_cast<const char*>(texture.payload.data()),
                static_cast<std::streamsize>(texture.payload.size()));
     return static_cast<bool>(file);

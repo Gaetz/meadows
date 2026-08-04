@@ -19,6 +19,13 @@ namespace assets {
 std::optional<render::MeshData> loadGltfMesh(
     const std::filesystem::path& path);
 
+// One MeshData per mesh-carrying node (world transforms applied) —
+// library files that lay several variations out in a row (Poly Haven
+// plant lineups) load as separate parts; the caller picks one and
+// grounds it. Empty on parse/load failure.
+vector<render::MeshData> loadGltfMeshParts(
+    const std::filesystem::path& path);
+
 // Same, from an in-memory .glb/.gltf blob (embedded buffers only — no
 // external .bin fetches). Powers the headless doctest.
 std::optional<render::MeshData> loadGltfMeshFromMemory(const void* bytes,

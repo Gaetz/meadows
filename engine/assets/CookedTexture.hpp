@@ -20,6 +20,10 @@ struct CookedTexture {
     u32 arrayLayers { 1 };
     u32 mipLevels { 1 };
     rhi::TextureFormat format { rhi::TextureFormat::RGBA8 };
+    // Per-layer average color (display-space RGBA8, one u32 per layer),
+    // computed by the cooker from the uncompressed base — CPU consumers
+    // (blade root albedo) cannot decode the BC payload to get it.
+    vector<u32> layerAverages; // arrayLayers entries
     vector<u8> payload; // textureDataBytes(desc()) bytes
 
     // The matching creation descriptor (sampled, trilinear-ready). Wrap

@@ -15,6 +15,7 @@ add_library(meadows STATIC
     fx/Particles.cpp
     assets/GltfMesh.cpp
     assets/Image.cpp
+    assets/MeshSimplify.cpp
     assets/StbImpl.cpp
     assets/VertexAo.cpp
     assets/VertexAoCache.cpp
@@ -54,7 +55,7 @@ target_include_directories(meadows PUBLIC ${PROJECT_SOURCE_DIR})
 # glad moved to meadows-render with the GL backend (audit U9-3).
 target_link_libraries(meadows
     PUBLIC spdlog::spdlog glm::glm imgui
-    PRIVATE SDL3::SDL3 stb cgltf
+    PRIVATE SDL3::SDL3 stb cgltf meshoptimizer
 )
 
 # Compile LOG_TRACE/LOG_DEBUG out of release builds.
