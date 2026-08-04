@@ -93,6 +93,11 @@ struct RenderView {
     f32 splatUvScale { 0.25f };
     f32 splatBlendDepth { 0.15f }; // height-blend band (0 = plain blend)
     f32 terrainTintStrength { 0.3f }; // macro tint (0 = off, <= ~0.4)
+    f32 splatDetailFade { 24.0f }; // detail-normal fade end (m, 0 = off)
+    f32 pomDistance { 12.0f }; // parallax occlusion reach (m, 0 = off)
+    f32 splatVariety { 0.5f }; // anti-repetition second tap (0 = off)
+    f32 pomShadowStrength { 0.6f }; // POM self-shadow (0 = off)
+    f32 pomDepth { 0.03f }; // parallax relief depth (uv units)
     Vec3 interiorAmbient { 0.16f, 0.15f, 0.14f };
     // H3: the active worldspace's buried threshold (-1e9 = rule off).
     f32 buriedBelowY { -1.0e9f };
@@ -149,6 +154,26 @@ public:
     // Terrain shape = the world's ground truth (collision, nav, snaps,
     // spawn grounding all read it; the sculpt tool writes patches).
     render::TerrainParams& terrainParams() { return terrain.params; }
+
+    // Scanned-prop overrides (scene wiring, docs/GRASS-REDO.md): replaces
+    // one vegetation variant's mesh after create() — the scene resolves
+    // the glTF through the VFS, decimates and normalizes it first.
+    void overrideVegetationMesh(rhi::Device& device, u32 variant,
+                                render::MeshData mesh,
+                                render::MeshData low = {},
+                                render::MeshData ultra = {}) {
+        vegetation.overrideVariantMesh(device, variant, std::move(mesh),
+                                       std::move(low), std::move(ultra));
+    }
+    void overrideVegetationAlbedo(rhi::Device& device, u32 variant,
+                                  u32 width, u32 height, vector<u8> rgba,
+                                  u32 normalWidth = 0,
+                                  u32 normalHeight = 0,
+                                  vector<u8> normalRgba = {}) {
+        vegetation.setVariantAlbedo(device, variant, width, height,
+                                    std::move(rgba), normalWidth,
+                                    normalHeight, std::move(normalRgba));
+    }
     const render::TerrainParams& terrainParams() const {
         return terrain.params;
     }
@@ -167,6 +192,13 @@ public:
     // commit only — re-seeding every preview frame would flicker).
     vector<u64>& sculptRemeshQueue() { return sculptDirtyChunks; }
     vector<u64>& sculptScatterQueue() { return sculptScatterChunks; }
+    // Scene-driven streaming gates (sandbox boot): `hold` parks the
+    // terrain/grass/vegetation rings while the base regions are not
+    // published yet (meshing against the empty base would all be redone
+    // on publish); `boost` widens the anti-stutter streaming budgets
+    // while an opaque loading veil hides the frame.
+    void setStreamingHold(bool hold) { streamingHold = hold; }
+    void setStreamingBoost(bool boost) { streamingBoost = boost; }
 
     // The lights-UBO capacity (the extract collects this many selected
     // LightSource entities into the snapshot). The full budget is only
@@ -270,6 +302,9 @@ private:
     render::TerrainLightMap terrainLightMap;
     render::TerrainShadeMap terrainShadeMap;
     bool terrainLightUi { true };
+    // Terrain material-set A/B (panel): cooked .mtex library vs the
+    // procedural tiles; synced onto TerrainSystem each frame.
+    bool terrainCookedUi { true };
     // Distant landscape silhouettes beyond the streaming ring (§3.6).
     render::FarTerrain farTerrain;
     bool farTerrainUi { true };
@@ -319,7 +354,10 @@ private:
     bool grassRescatterRequested { false };
     bool wireframeUi { false };
     bool tonemapUi { true };
-    bool stylizedUi { true }; // BotW step lighting vs classic wrap (A/B)
+    // BotW step lighting vs classic wrap (A/B). Off: the realistic
+    // terrain-texturing look owns this branch; the panel checkbox
+    // brings the cel ramp back.
+    bool stylizedUi { false };
     bool shadowsUi { true };
     bool cascadeDebugUi { false };
     bool reflectionsUi { true };
@@ -363,6 +401,9 @@ private:
     // Chunks a sculpt changed, awaiting the safe-point rebuild in render().
     vector<u64> sculptDirtyChunks;
     vector<u64> sculptScatterChunks;
+    // Scene-driven streaming gates — see setStreamingHold/Boost.
+    bool streamingHold { false };
+    bool streamingBoost { false };
 
     rhi::UniqueTexture whiteTexture; // albedoTexture = 0 -> plain tint
     rhi::UniqueSampler meshSampler;

@@ -7,6 +7,7 @@
 #include "engine/terrain/WaterBodies.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
+#include "engine/render/landscape/VegetationSystem.hpp"
 
 // Hidden diagnostic (run explicitly): reconstructs the seed-1337 sandbox
 // spawn exactly like setSandboxMode does, bakes its tile, and reports
@@ -586,5 +587,100 @@ TEST_CASE("erosion calibration" * doctest::skip()) {
     };
     sampleTile(-6, 5); // the tallest measured massif
     sampleTile(-1, 0); // the spawn lowlands
+    CHECK(true);
+}
+
+// Where do the scanned forest-floor debris land around the spawn? Lists
+// the fallen trunks (kFirstDebris+1) nearest to the game's spawn so a
+// dev can walk to one and validate the scan pipeline in place.
+//   meadows-tests '-tc=spawn debris*' -ns
+TEST_CASE("spawn debris diagnostic" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    // The current probe spawn (run "spawn diagnostic" if this drifts;
+    // the game's mist-map log confirms it: center ~(2032, 1608)).
+    const f32 px = 2038.28f;
+    const f32 pz = 1614.13f;
+
+    const TileBakeResult b = bakeTile(params, 0, 0);
+    render::TerrainParams tp;
+    auto base = std::make_shared<render::TerrainBase>();
+    base->regions.push_back(b.region);
+    tp.base = base;
+    auto sandbox = std::make_shared<render::SandboxTerrain>();
+    sandbox->controls = params.controls;
+    sandbox->controls.seed = params.worldSeed;
+    sandbox->macro = params.macro;
+    tp.sandbox = sandbox;
+
+    struct Hit {
+        f32 x, y, z, scale, dist;
+        bool trunk;
+    };
+    vector<Hit> hits;
+    u32 denseForestChunks = 0; // >= 25 trees: forest-interior ground
+    f32 nearestDense = 1.0e9f;
+    const i32 ccx = static_cast<i32>(std::floor(px / 64.0f));
+    const i32 ccz = static_cast<i32>(std::floor(pz / 64.0f));
+    constexpr i32 kScanRadius = 14; // ~900 m
+    for (i32 cz = ccz - kScanRadius; cz <= ccz + kScanRadius; ++cz) {
+        for (i32 cx = ccx - kScanRadius; cx <= ccx + kScanRadius; ++cx) {
+            const auto buckets = render::scatterProps(tp, cx, cz);
+            u32 trees = 0;
+            for (u32 v = 0; v < render::VegetationSystem::kTreeVariants;
+                 ++v) {
+                trees += static_cast<u32>(buckets[v].size());
+            }
+            if (trees >= 25) {
+                ++denseForestChunks;
+                const f32 dcx =
+                    (static_cast<f32>(cx) + 0.5f) * 64.0f - px;
+                const f32 dcz =
+                    (static_cast<f32>(cz) + 0.5f) * 64.0f - pz;
+                nearestDense =
+                    glm::min(nearestDense, std::hypot(dcx, dcz));
+            }
+            for (u32 v = render::VegetationSystem::kFirstDebris;
+                 v < render::VegetationSystem::kVariantCount; ++v) {
+                for (const auto& prop : buckets[v]) {
+                    const f32 dx = prop.positionScale.x - px;
+                    const f32 dz = prop.positionScale.z - pz;
+                    hits.push_back(
+                        { prop.positionScale.x, prop.positionScale.y,
+                          prop.positionScale.z, prop.positionScale.w,
+                          std::hypot(dx, dz),
+                          v == render::VegetationSystem::kFirstDebris +
+                                   1 });
+                }
+            }
+        }
+    }
+    std::sort(hits.begin(), hits.end(),
+              [](const Hit& l, const Hit& r) { return l.dist < r.dist; });
+    MESSAGE("debris within ", kScanRadius * 64, " m of spawn (", px, ", ",
+            pz, "): ", hits.size());
+    u32 trunks = 0;
+    for (const Hit& hit : hits) {
+        if (!hit.trunk) {
+            continue;
+        }
+        ++trunks;
+        if (trunks <= 8) {
+            MESSAGE("fallen trunk at (", hit.x, ", ", hit.z,
+                    ")  h=", hit.y, "  scale=", hit.scale, "  dist=",
+                    hit.dist, " m");
+        }
+    }
+    u32 stumps = 0;
+    for (const Hit& hit : hits) {
+        if (hit.trunk || ++stumps > 4) {
+            continue;
+        }
+        MESSAGE("stump at (", hit.x, ", ", hit.z, ")  dist=", hit.dist,
+                " m");
+    }
+    MESSAGE("total: ", trunks, " trunk(s), ", hits.size() - trunks,
+            " stump(s); dense-forest chunks: ", denseForestChunks,
+            " (nearest ", nearestDense, " m)");
     CHECK(true);
 }

@@ -49,6 +49,9 @@
 #include "game/ui/ConsolePanel.hpp"
 #include "game/ui/RenderTuningPanels.hpp"
 #include "engine/assets/AssetDatabase.hpp"
+#include "engine/assets/GltfMesh.hpp"
+#include "engine/assets/Image.hpp"
+#include "engine/assets/MeshSimplify.hpp"
 #include "engine/Engine.hpp"
 #include "engine/FrameContext.hpp"
 #include "engine/core/Log.hpp"
@@ -346,6 +349,230 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
         config.terrainHeightPath = pathOf(tuning.terrainHeightArray);
     }
     renderer.create(device, engine->getJobSystem(), config);
+    // Scanned-prop overrides (docs/GRASS-REDO.md palier 1): CC0 scans
+    // replace the generated rock variants and fill the forest-debris
+    // slots. Decimated to clutter budgets (the sources are 40-100k tris)
+    // and footprint-normalized; the glTF loader bakes their textures'
+    // average color into vertex colors (the untextured prop pipeline).
+    {
+        struct ScanOverride {
+            const char* guid;
+            u32 variant;
+            u32 targetTris;
+            f32 size; // largest extent after normalization (m)
+        };
+        const ScanOverride kScans[] = {
+            { "4f018fc5-80ee-4601-a74d-d1bff315ee76",
+              render::VegetationSystem::kFirstRock + 0, 700, 1.1f },
+            { "65de4305-9eda-48ba-a87c-57aff4606164",
+              render::VegetationSystem::kFirstRock + 1, 900, 1.3f },
+            { "8777c167-0930-4bbc-8820-a35b49229beb",
+              render::VegetationSystem::kFirstRock + 2, 900, 1.5f },
+            { "e6ed977e-44d4-48d6-ae11-97fd1024b363",
+              render::VegetationSystem::kFirstRock + 3, 900, 1.2f },
+            { "179b7c4b-708b-4ce0-ba8b-2d9fad6d9e1b",
+              render::VegetationSystem::kFirstDebris + 0, 900, 0.9f },
+            { "52f8af61-88f5-4c3d-accf-aca86850f787",
+              render::VegetationSystem::kFirstDebris + 1, 1200, 2.2f },
+        };
+        for (const ScanOverride& scan : kScans) {
+            const auto guid = core::Guid::fromString(scan.guid);
+            const auto path = guid ? assetDb.resolve(*guid) : std::nullopt;
+            if (!path) {
+                continue;
+            }
+            auto mesh = assets::loadGltfMesh(*path);
+            if (!mesh) {
+                continue;
+            }
+            assets::simplifyMesh(*mesh, scan.targetTris);
+            assets::normalizeMeshFootprint(*mesh, scan.size);
+            // Textured rigid props: the scatter flags their instances
+            // (negative fade + negative sway phase), so the uv keeps its
+            // REAL photogrammetry texture coordinates and the diffuse
+            // binds below. White base — the texture carries the color,
+            // the AO bake darkens creases on top.
+            for (render::MeshVertex& v : mesh->vertices) {
+                v.color = { 1.0f, 1.0f, 1.0f };
+            }
+            // Decimated twins: far draws and shadow casters use these —
+            // without them a 700+ tri scan casts full-detail into every
+            // cascade (pebbles share the rock slots by the hundreds).
+            render::MeshData low = *mesh;
+            assets::simplifyMesh(low, 150);
+            render::MeshData ultra = *mesh;
+            assets::simplifyMesh(ultra, 40);
+            renderer.overrideVegetationMesh(device, scan.variant,
+                                            std::move(*mesh),
+                                            std::move(low),
+                                            std::move(ultra));
+            const auto texPath = path->parent_path() / "textures" /
+                                 (path->stem().string() + "_diff_1k.jpg");
+            const auto norPath =
+                path->parent_path() / "textures" /
+                (path->stem().string() + "_nor_gl_1k.jpg");
+            if (auto image = assets::loadImageFile(texPath)) {
+                auto normal = assets::loadImageFile(norPath);
+                renderer.overrideVegetationAlbedo(
+                    device, scan.variant, image->width, image->height,
+                    std::move(image->pixels),
+                    normal ? normal->width : 0u,
+                    normal ? normal->height : 0u,
+                    normal ? std::move(normal->pixels) : vector<u8> {});
+            }
+        }
+    }
+
+    // Textured plant accents (docs/GRASS-REDO.md palier 2). Unlike the
+    // scans, the uv stays REAL texture coordinates (the negative fade
+    // lane tells the shaders); the diffuse PNG (alpha = cutout where the
+    // asset has one) binds per variant.
+    {
+        struct PlantOverride {
+            const char* guid;
+            u32 variant;
+            u32 targetTris;
+            bool doubleSided; // duplicate flipped faces (leaf sheets)
+            // Readability exaggeration over the AUTHORED real-world size
+            // (the Skyrim understory convention, ~1.5-2x): a true 0.43 m
+            // fern drowns under the blade meadow.
+            f32 scaleMul;
+        };
+        const PlantOverride kPlants[] = {
+            { "a28b58a1-e436-4f9a-8fc2-b248c0c228ad",
+              render::VegetationSystem::kFirstPlant + 0, 2500, true,
+              1.3f }, // tall grass clump (0.34 m authored)
+            { "85b644a7-f52e-4e33-a856-e72463c403fa",
+              render::VegetationSystem::kFirstPlant + 1, 2400, true,
+              3.5f }, // fern (0.43 m authored -> ~1.5 m, full detail)
+            { "0e611ef4-69d1-40b5-b7c8-6b7884027caa",
+              render::VegetationSystem::kFirstPlant + 2, 2500, true,
+              1.5f }, // dandelion (0.17 m authored)
+            { "292b350b-99e7-482b-b9f6-0e993a69dc91",
+              render::VegetationSystem::kFirstPlant + 3, 2500, true,
+              1.8f }, // ground shrub (0.22 m authored)
+        };
+        for (const PlantOverride& plant : kPlants) {
+            const auto guid = core::Guid::fromString(plant.guid);
+            const auto path = guid ? assetDb.resolve(*guid) : std::nullopt;
+            if (!path) {
+                continue;
+            }
+            // These library files lay several plant variations out in a
+            // ROW (5+ m wide) — flattening then normalizing the whole
+            // lineup shrank each plant to centimeters. Load per node,
+            // keep the most detailed plant, and PRESERVE its authored
+            // real-world size (groundMesh centers without rescaling).
+            auto parts = assets::loadGltfMeshParts(*path);
+            if (parts.empty()) {
+                continue;
+            }
+            size_t best = 0;
+            for (size_t p = 1; p < parts.size(); ++p) {
+                if (parts[p].indices.size() >
+                    parts[best].indices.size()) {
+                    best = p;
+                }
+            }
+            auto mesh =
+                std::make_optional(std::move(parts[best]));
+            assets::simplifyMesh(*mesh, plant.targetTris);
+            assets::groundMesh(*mesh);
+            for (render::MeshVertex& v : mesh->vertices) {
+                v.position *= plant.scaleMul;
+            }
+            // The loader baked the material color into the vertices —
+            // the texture carries it here. White base; the AO bake at
+            // regenerate darkens creases on top.
+            for (render::MeshVertex& v : mesh->vertices) {
+                v.color = { 1.0f, 1.0f, 1.0f };
+            }
+            // Leaf sheets are single-sided geometry under a
+            // back-face-culling pipeline: append the flipped faces
+            // (reversed winding, negated normals). Applied per LOD level
+            // AFTER its decimation (doubling first would feed meshopt
+            // coincident duplicate surfaces).
+            const auto doubleSide = [](render::MeshData& m) {
+                const u32 baseVerts =
+                    static_cast<u32>(m.vertices.size());
+                const size_t baseIndices = m.indices.size();
+                m.vertices.reserve(baseVerts * 2);
+                for (u32 v = 0; v < baseVerts; ++v) {
+                    render::MeshVertex flipped = m.vertices[v];
+                    flipped.normal = -flipped.normal;
+                    m.vertices.push_back(flipped);
+                }
+                m.indices.reserve(baseIndices * 2);
+                for (size_t i = 0; i < baseIndices; i += 3) {
+                    m.indices.push_back(baseVerts + m.indices[i + 2]);
+                    m.indices.push_back(baseVerts + m.indices[i + 1]);
+                    m.indices.push_back(baseVerts + m.indices[i]);
+                }
+            };
+            // Twins from the single-sided base: low/ultra feed the
+            // distance levels (heroes draw full detail in the camera
+            // chunk only), the ~200-tri clone feeds the MASS tier slot.
+            render::MeshData low = *mesh;
+            assets::simplifyMesh(low, 600);
+            render::MeshData ultra = *mesh;
+            assets::simplifyMesh(ultra, 150);
+            render::MeshData mass = *mesh;
+            assets::simplifyMesh(mass, 220);
+            if (plant.doubleSided) {
+                doubleSide(*mesh);
+                doubleSide(low);
+                doubleSide(ultra);
+                doubleSide(mass);
+            }
+            const u32 massVariant =
+                render::VegetationSystem::kFirstMass +
+                (plant.variant - render::VegetationSystem::kFirstPlant);
+            renderer.overrideVegetationMesh(device, plant.variant,
+                                            std::move(*mesh),
+                                            std::move(low),
+                                            std::move(ultra));
+            renderer.overrideVegetationMesh(device, massVariant,
+                                            std::move(mass));
+            // Diffuse PNG + normal map next to the gltf — bound to the
+            // hero AND its mass clone. Poly Haven ships the CUTOUT alpha
+            // as a SEPARATE map (the diffuse png may be plain RGB —
+            // fern/shrub cards rendered as opaque sheets without it):
+            // merge it into the diffuse alpha channel at load.
+            const auto texPath = path->parent_path() / "textures" /
+                                 (path->stem().string() + "_diff_1k.png");
+            const auto norPath =
+                path->parent_path() / "textures" /
+                (path->stem().string() + "_nor_gl_1k.jpg");
+            const auto alphaPath =
+                path->parent_path() / "textures" /
+                (path->stem().string() + "_alpha_1k.png");
+            if (auto image = assets::loadImageFile(texPath)) {
+                if (const auto alpha = assets::loadImageFile(alphaPath);
+                    alpha && alpha->width == image->width &&
+                    alpha->height == image->height) {
+                    const size_t pixels =
+                        static_cast<size_t>(image->width) *
+                        image->height;
+                    for (size_t p = 0; p < pixels; ++p) {
+                        image->pixels[p * 4 + 3] =
+                            alpha->pixels[p * 4 + 0];
+                    }
+                }
+                auto normal = assets::loadImageFile(norPath);
+                const u32 nw = normal ? normal->width : 0u;
+                const u32 nh = normal ? normal->height : 0u;
+                renderer.overrideVegetationAlbedo(
+                    device, massVariant, image->width, image->height,
+                    image->pixels, nw, nh,
+                    normal ? normal->pixels : vector<u8> {});
+                renderer.overrideVegetationAlbedo(
+                    device, plant.variant, image->width, image->height,
+                    std::move(image->pixels), nw, nh,
+                    normal ? std::move(normal->pixels)
+                           : vector<u8> {});
+            }
+        }
+    }
 
     // The RmlUi game UI (screens from UiScreenForm records,
     // documents through the plugins' ui/ roots).
@@ -1577,6 +1804,11 @@ void LandscapeScene::setSandboxMode(bool enable) {
             &engine->getJobSystem());
         LOG_INFO("Sandbox terrain: seed {}, {} m tiles",
                  tuning.terrainSeed, bakeParams.tileSize);
+        // Park the terrain/grass/vegetation rings until the first tile
+        // publishes: chunks meshed against the empty base are ALL remeshed
+        // on publish — double work that competed with the bakes for
+        // workers and stretched the loading gate.
+        renderer.setStreamingHold(true);
         // A pleasant start: probe the analytic macro for low, gentle
         // land away from the authored demo content near the origin. The
         // play capsule spawns under the fly camera (enterPlayMode).
@@ -1610,6 +1842,7 @@ void LandscapeScene::setSandboxMode(bool enable) {
         params.sandbox = nullptr;
         activeSnowLine = tuning.snowLine;
         bakeStreamer.reset();
+        renderer.setStreamingHold(false);
         sandboxLakes.clear();
         sandboxRivers.clear();
         // Back to the authored layers only.
@@ -1805,6 +2038,7 @@ void LandscapeScene::publishBakedTiles(
     terrainBase = next;
     renderer.terrainParams().base = next;
     ++renderer.terrainParams().contentStamp; // FarTerrain/pool-map rebake
+    renderer.setStreamingHold(false); // base regions exist: rings may stream
     // Remesh AND re-scatter the resident chunks the new regions cover
     // within the view ring (the deferred queues skip chunks that are
     // not resident). Both queues, like the sculpt commit:
@@ -2026,6 +2260,7 @@ void LandscapeScene::updateWarmup() {
             }
         }
         if (warmupPhase == WarmupPhase::Idle) {
+            renderer.setStreamingBoost(false);
             return;
         }
     }
@@ -2129,6 +2364,12 @@ void LandscapeScene::updateWarmup() {
         progress = 1.0f;
     }
     warmupProgress = glm::max(warmupProgress, progress);
+    // Behind the opaque boot veil, stream flat-out: the anti-stutter
+    // budgets protect a frame nobody sees. The soft (spectator) veil
+    // keeps them — the scene stays visible there.
+    renderer.setStreamingBoost(!warmupSoft &&
+                               warmupPhase != WarmupPhase::Reveal &&
+                               warmupPhase != WarmupPhase::Idle);
     // The DISPLAYED bar chases the truth at a capped rate: discrete
     // completions become a glide, and it never overtakes reality.
     loadingGateShown =
@@ -3761,6 +4002,11 @@ void LandscapeScene::render(engine::FrameContext& frame) {
         .splatUvScale = tuning.splatUvScale,
         .splatBlendDepth = tuning.splatBlendDepth,
         .terrainTintStrength = tuning.terrainTintStrength,
+        .splatDetailFade = tuning.splatDetailFade,
+        .pomDistance = tuning.pomDistance,
+        .splatVariety = tuning.splatVariety,
+        .pomShadowStrength = tuning.pomShadowStrength,
+        .pomDepth = tuning.pomDepth,
         .interiorAmbient = tuning.interiorAmbient,
         .buriedBelowY = buriedBelowY,
         .grassBend = (mode == SceneMode::Play) && playerBody != nullptr,
@@ -3967,6 +4213,26 @@ void LandscapeScene::drawUi() {
                 [&] { drawGameplayUi(); });
     rightWindow("Terrain & streaming", uiTerrainOpen, [&] {
         RenderTuningPanels::drawTerrainPanel(renderer);
+        // Terrain material knobs (docs/TERRAIN-TEXTURING.md) live on the
+        // scene's tuning form and flow into the view every frame — live.
+        // Tint changes regenerate grass and re-bake the GI tile on their
+        // own sync hooks.
+        if (ImGui::CollapsingHeader("Terrain materials")) {
+            ImGui::SliderFloat("Height-blend depth (0 = plain)",
+                               &tuning.splatBlendDepth, 0.0f, 0.5f);
+            ImGui::SliderFloat("Macro tint strength",
+                               &tuning.terrainTintStrength, 0.0f, 0.6f);
+            ImGui::SliderFloat("Detail normal fade (m)",
+                               &tuning.splatDetailFade, 0.0f, 64.0f);
+            ImGui::SliderFloat("POM reach (m, 0 = off)",
+                               &tuning.pomDistance, 0.0f, 32.0f);
+            ImGui::SliderFloat("Variety (anti-repeat)",
+                               &tuning.splatVariety, 0.0f, 1.0f);
+            ImGui::SliderFloat("POM self-shadow",
+                               &tuning.pomShadowStrength, 0.0f, 1.0f);
+            ImGui::SliderFloat("POM relief depth",
+                               &tuning.pomDepth, 0.0f, 0.12f);
+        }
     });
     rightWindow("Sky, weather & time", uiSkyOpen, [&] { drawSkyUi(); });
     rightWindow("Rendering & post-FX", uiRenderOpen, [&] {
@@ -4016,6 +4282,15 @@ void LandscapeScene::saveRenderTuning() {
     // snapshot of the tuning records.
     data::LandscapeTuningForm tuning = data::resolveLandscapeTuning(forms);
     RenderTuningIo::captureTuning(renderer, tuning);
+    // Terrain material knobs live on the scene's tuning member (the
+    // "Terrain materials" panel sliders) — carry them into the overlay.
+    tuning.splatBlendDepth = this->tuning.splatBlendDepth;
+    tuning.terrainTintStrength = this->tuning.terrainTintStrength;
+    tuning.splatDetailFade = this->tuning.splatDetailFade;
+    tuning.pomDistance = this->tuning.pomDistance;
+    tuning.splatVariety = this->tuning.splatVariety;
+    tuning.pomShadowStrength = this->tuning.pomShadowStrength;
+    tuning.pomDepth = this->tuning.pomDepth;
     tuning.fogDensity = atmos.fogDensity;
     tuning.fogHeightFalloff = atmos.fogHeightFalloff;
     tuning.fogLowBoost = atmos.fogLowBoost;

@@ -1057,7 +1057,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
     if (!view.interiorMode) { // interiors: no terrain/scatter/water to stream
         if (cfg.terrain) {
             core::FrameProbe::Scope probe { *view.probe, "terrain" };
-            terrain.update(frame.device, view.camera.position);
+            terrain.update(frame.device, view.camera.position,
+                           streamingHold, streamingBoost);
         }
         if (cfg.terrain) {
             // Probed apart from the chunk streaming — a landing bake
@@ -1073,6 +1074,9 @@ void WorldRenderer::render(engine::FrameContext& frame,
             // republish).
             terrainShadeMap.update(frame.device, terrain.params,
                                    view.camera.position);
+            // Material-set A/B toggle (panel) — rebuilds the splat
+            // arrays in place when it flips.
+            terrain.setMaterialSet(frame.device, terrainCookedUi);
         }
         if (cfg.terrain && cfg.postFx) {
             // Valley data for the ground mist (sun-independent; re-bakes
@@ -1109,22 +1113,33 @@ void WorldRenderer::render(engine::FrameContext& frame,
         }
         if (cfg.grass) {
             core::FrameProbe::Scope probe { *view.probe, "grass" };
-            // Root-albedo bake follows the terrain's splat scale and
-            // macro-tint strength (one ground-color source).
+            // Root-albedo bake follows the terrain's splat scale,
+            // macro-tint strength and the ACTIVE material set's variant
+            // means (one ground-color source, cooked A/B included).
+            bool rootChanged = false;
+            for (u32 v = 0; v < 4; ++v) {
+                if (grass.scatterTuning.rootAlbedoBase[v] !=
+                    terrain.grassAlbedoBase(v)) {
+                    grass.scatterTuning.rootAlbedoBase[v] =
+                        terrain.grassAlbedoBase(v);
+                    rootChanged = true;
+                }
+            }
             if (grass.scatterTuning.splatUvScale != view.splatUvScale ||
                 grass.scatterTuning.tintStrength !=
-                    view.terrainTintStrength) {
+                    view.terrainTintStrength ||
+                rootChanged) {
                 grass.scatterTuning.splatUvScale = view.splatUvScale;
                 grass.scatterTuning.tintStrength = view.terrainTintStrength;
                 grass.regenerate(frame.device);
             }
             grass.update(frame.device, terrain.params,
-                         view.camera.position);
+                         view.camera.position, streamingHold);
         }
         if (cfg.vegetation) {
             core::FrameProbe::Scope probe { *view.probe, "veg" };
             vegetation.update(frame.device, terrain.params,
-                              view.camera.position);
+                              view.camera.position, streamingHold);
         }
         if (cfg.water && frame.device.caps().copyTexture) {
             core::FrameProbe::Scope probe { *view.probe, "water" };
@@ -1258,6 +1273,11 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .splatUvScale = view.splatUvScale,
         .splatBlendDepth = view.splatBlendDepth,
         .terrainTintStrength = view.terrainTintStrength,
+        .splatDetailFade = view.splatDetailFade,
+        .pomDistance = view.pomDistance,
+        .splatVariety = view.splatVariety,
+        .pomShadowStrength = view.pomShadowStrength,
+        .pomDepth = view.pomDepth,
         .reflectionsActive = reflectionsActive,
         // Horizon closure: at the far mesh's reach when it stands in,
         // else at the streaming ring. z of the same uniform carries the
