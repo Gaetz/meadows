@@ -331,6 +331,28 @@ opaques. Les `_alpha_1k.png` sont téléchargées pour les 4 plantes et
 fusionnées dans le canal alpha de la diffuse AU CHARGEMENT (scène,
 garde sur les dimensions).
 
+## Hex-tiling (option B — retour dev : les frontières Voronoï se voyaient)
+
+Le zonage Voronoï discret est REMPLACÉ par du hex-tiling stochastique
+(Heitz-Neyret 2018 / Mikkelsen 2022), commité séparément pour retour
+arrière facile :
+- `terrain_zones.glsl` : treillis triangulaire (cellule 3 m), chaque
+  sommet tire sa VARIANTE (hash & 3) et un OFFSET UV aléatoire ; poids
+  barycentriques affûtés (exposant 6) → le blend se confine à des
+  coutures fines organiques — plus aucune frontière discrète n'existe.
+- `terrain.frag` : hauteurs/albédo/normales herbe = mélange des 3 taps ;
+  le POM marche sur le tap dominant (offset porté par pomUv, soustrait
+  pour les autres couches) ; au-delà de ~45-75 m les poids s'effondrent
+  sur le tap dominant → retour à 1 fetch (le coût 3× reste près caméra).
+  L'anti-répétition bi-fréquence est retirée de la couche herbe (les
+  offsets du treillis la subsument) et conservée pour les autres.
+- Miroir CPU `grassZoneAt` : même treillis/hash/affûtage, sommet
+  dominant → les biais espèces/cailloux/plantes suivent toujours le sol.
+- L'ancien coloriage 2×2 disparaît (les variantes sont tirées au hash —
+  deux sommets voisins peuvent partager une variante, sans conséquence :
+  la garantie « jamais adjacentes » servait les CELLULES, le treillis
+  n'a plus de cellules).
+
 ## À valider par le dev
 
 Prairie (mélange d'espèces + clumps + zones qui changent la texture ET la

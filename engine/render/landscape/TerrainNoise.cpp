@@ -129,21 +129,6 @@ f32 borderWander(f32 px, f32 py) {
 
 // terrain_zones.glsl mirror — see GrassZone in the header.
 constexpr f32 kGrassZoneSize = 3.0f;
-constexpr f32 kGrassZoneBorder = 0.8f;
-
-Vec2 grassZoneSite(i32 gx, i32 gz) {
-    const u32 h = core::hashU32(static_cast<u32>(gx) * 0x9e3779b9u ^
-                                static_cast<u32>(gz) * 0x85ebca6bu ^
-                                0x5bd1e995u);
-    const f32 jx = static_cast<f32>(h & 0xffffu) * (1.0f / 65535.0f);
-    const f32 jz = static_cast<f32>(h >> 16) * (1.0f / 65535.0f);
-    return { (static_cast<f32>(gx) + 0.2f + 0.6f * jx) * kGrassZoneSize,
-             (static_cast<f32>(gz) + 0.2f + 0.6f * jz) * kGrassZoneSize };
-}
-
-constexpr u32 grassZoneVariantOf(i32 gx, i32 gz) {
-    return static_cast<u32>((gx & 1) + 2 * (gz & 1));
-}
 
 // THE weight rule, in one place — shaders/terrain_weights.glsl mirrors it
 // bit-for-bit and every CPU consumer (GI/minimap, scatter, footsteps) goes
@@ -234,39 +219,67 @@ const BiomeParams& biomeAt(const TerrainParams& params, f32 x, f32 z) {
 }
 
 GrassZone grassZoneAt(f32 x, f32 z) {
-    const i32 bx = static_cast<i32>(std::floor(x / kGrassZoneSize));
-    const i32 bz = static_cast<i32>(std::floor(z / kGrassZoneSize));
-    f32 d1 = 1e9f;
-    f32 d2 = 1e9f;
-    i32 c1x = bx;
-    i32 c1z = bz;
-    i32 c2x = bx;
-    i32 c2z = bz;
-    for (i32 dz = -1; dz <= 1; ++dz) {
-        for (i32 dx = -1; dx <= 1; ++dx) {
-            const Vec2 site = grassZoneSite(bx + dx, bz + dz);
-            const f32 d = (site.x - x) * (site.x - x) +
-                          (site.y - z) * (site.y - z);
-            if (d < d1) {
-                d2 = d1;
-                c2x = c1x;
-                c2z = c1z;
-                d1 = d;
-                c1x = bx + dx;
-                c1z = bz + dz;
-            } else if (d < d2) {
-                d2 = d;
-                c2x = bx + dx;
-                c2z = bz + dz;
-            }
-        }
+    // Hex-tiling mirror (terrain_zones.glsl hexGrass): the dominant
+    // triangle-lattice vertex — same skew, same hash, same sharpening —
+    // so species/clutter biases follow what the ground shows.
+    const f32 qx = x / kGrassZoneSize;
+    const f32 qy = z / kGrassZoneSize;
+    const f32 sx = qx - qy * 0.57735027f;
+    const f32 sy = qy * 1.15470054f;
+    const i32 baseX = static_cast<i32>(std::floor(sx));
+    const i32 baseY = static_cast<i32>(std::floor(sy));
+    const f32 fx = sx - static_cast<f32>(baseX);
+    const f32 fy = sy - static_cast<f32>(baseY);
+    i32 vx[3];
+    i32 vy[3];
+    f32 w[3];
+    if (fx + fy < 1.0f) {
+        vx[0] = baseX;
+        vy[0] = baseY;
+        vx[1] = baseX + 1;
+        vy[1] = baseY;
+        vx[2] = baseX;
+        vy[2] = baseY + 1;
+        w[0] = 1.0f - fx - fy;
+        w[1] = fx;
+        w[2] = fy;
+    } else {
+        vx[0] = baseX + 1;
+        vy[0] = baseY + 1;
+        vx[1] = baseX;
+        vy[1] = baseY + 1;
+        vx[2] = baseX + 1;
+        vy[2] = baseY;
+        w[0] = fx + fy - 1.0f;
+        w[1] = 1.0f - fx;
+        w[2] = 1.0f - fy;
     }
+    f32 sum = 0.0f;
+    for (f32& wi : w) {
+        wi = std::pow(wi, 6.0f); // kHexSharpness
+        sum += wi;
+    }
+    u32 dom = 0;
+    u32 second = 1;
+    if (w[1] > w[dom]) {
+        dom = 1;
+        second = 0;
+    }
+    if (w[2] > w[dom]) {
+        second = dom;
+        dom = 2;
+    } else if (w[2] > w[second]) {
+        second = 2;
+    }
+    const auto variantOf = [](i32 ix, i32 iy) {
+        return core::hashU32(static_cast<u32>(ix) * 0x9e3779b9u ^
+                             static_cast<u32>(iy) * 0x85ebca6bu) &
+               3u;
+    };
     GrassZone zone;
-    zone.variantA = grassZoneVariantOf(c1x, c1z);
-    zone.variantB = grassZoneVariantOf(c2x, c2z);
-    const f32 edge = 0.5f * (std::sqrt(d2) - std::sqrt(d1));
-    zone.blendA =
-        glm::clamp(0.5f + 0.5f * edge / kGrassZoneBorder, 0.5f, 1.0f);
+    zone.variantA = variantOf(vx[dom], vy[dom]);
+    zone.variantB = variantOf(vx[second], vy[second]);
+    zone.blendA = sum > 0.0f ? w[dom] / sum : 1.0f;
     return zone;
 }
 

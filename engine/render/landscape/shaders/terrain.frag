@@ -76,16 +76,39 @@ void main() {
     ws[3] = w.sand;
     ws[4] = w.cliff;
 
-    // Grass ground variant (terrain_zones.glsl): the semantic grass layer
-    // fetches one of 4 zoned textures; inside a zone-border band the two
-    // nearest variants height-blend, so the zone frontier itself has
-    // micro-relief. Weights/POM/species all key off the same zoning.
-    int zoneA;
-    int zoneB;
-    float zoneBlend;
-    grassZone(vWorldPos.xz, zoneA, zoneB, zoneBlend);
-    float grassLayerA = zoneA == 0 ? 0.0 : float(4 + zoneA);
-    float grassLayerB = zoneB == 0 ? 0.0 : float(4 + zoneB);
+    // Hex-tiling (terrain_zones.glsl): the grass layer is a 3-tap blend
+    // over a triangle lattice — variant AND uv offset per vertex, so
+    // neither zone borders nor tile repetition exist. Far away the
+    // weights collapse to the dominant tap (1 fetch again).
+    ivec2 hexV0;
+    ivec2 hexV1;
+    ivec2 hexV2;
+    vec3 hexW;
+    hexGrass(vWorldPos.xz, hexV0, hexV1, hexV2, hexW);
+    float hexLayer[3];
+    vec2 hexOff[3];
+    {
+        int hv0 = hexVariantOf(hexV0);
+        int hv1 = hexVariantOf(hexV1);
+        int hv2 = hexVariantOf(hexV2);
+        hexLayer[0] = hv0 == 0 ? 0.0 : float(4 + hv0);
+        hexLayer[1] = hv1 == 0 ? 0.0 : float(4 + hv1);
+        hexLayer[2] = hv2 == 0 ? 0.0 : float(4 + hv2);
+        hexOff[0] = hexOffsetOf(hexV0);
+        hexOff[1] = hexOffsetOf(hexV1);
+        hexOff[2] = hexOffsetOf(hexV2);
+    }
+    float camDistHex = distance(vWorldPos, uCameraPos.xyz);
+    float hexFar = smoothstep(45.0, 75.0, camDistHex);
+    // Collapse toward the dominant tap with distance (mip-blurred far
+    // texels don't need the 3-way blend).
+    int hexDom = hexW.y > hexW.x ? (hexW.z > hexW.y ? 2 : 1)
+                                 : (hexW.z > hexW.x ? 2 : 0);
+    vec3 hexOneHot = vec3(hexDom == 0 ? 1.0 : 0.0,
+                          hexDom == 1 ? 1.0 : 0.0,
+                          hexDom == 2 ? 1.0 : 0.0);
+    hexW = mix(hexW, hexOneHot, hexFar);
+    float grassLayerA = hexLayer[hexDom]; // legacy name: dominant tap
 
     // Height-blend the rule weights: only layers the rule already admits
     // fetch their displacement (2-3 typical), the winner's micro-relief
@@ -98,12 +121,15 @@ void main() {
             continue;
         }
         if (i == 0) {
-            float hA = texture(uSplatHeight, vec3(uv, grassLayerA)).r;
-            hs[0] = zoneBlend >= 1.0
-                        ? hA
-                        : mix(texture(uSplatHeight,
-                                      vec3(uv, grassLayerB)).r,
-                              hA, zoneBlend);
+            hs[0] = 0.0;
+            for (int t = 0; t < 3; ++t) {
+                if (hexW[t] > 0.003) {
+                    hs[0] += hexW[t] *
+                             texture(uSplatHeight,
+                                     vec3(uv + hexOff[t],
+                                          hexLayer[t])).r;
+                }
+            }
         } else {
             hs[i] = texture(uSplatHeight, vec3(uv, float(i))).r;
         }
@@ -145,9 +171,12 @@ void main() {
     // are computed BEFORE the march and textureGrad used inside: implicit
     // derivatives are undefined in the non-uniform loop (mip bands +
     // shimmer at triangle edges otherwise).
-    // The dominant layer's FETCH index follows the grass zone variant.
+    // The dominant layer's FETCH index follows the dominant hex tap —
+    // its uv offset rides the whole POM march (subtracted back for the
+    // other layers below).
     float dominantLayer = dominant == 0 ? grassLayerA : float(dominant);
-    vec2 pomUv = uv;
+    vec2 pomShift = dominant == 0 ? hexOff[hexDom] : vec2(0.0);
+    vec2 pomUv = uv + pomShift;
     float pomSelfShadow = 1.0;
     float pomReach = uSplatDetailInfo.w;
     if (pomReach > 0.0 && camDist < pomReach && dominantB > 0.3 * total) {
@@ -213,29 +242,42 @@ void main() {
         if (b[i] <= 0.0) {
             continue;
         }
-        // The grass layer fetches its ZONE variant (blending the two
-        // nearest variants inside a border band); other layers fetch
-        // themselves.
+        // The grass layer is the 3-tap hex blend (variant + offset per
+        // lattice vertex); other layers fetch themselves at the
+        // unshifted uv.
+        vec2 baseUv = pomUv - pomShift;
         float fetchLayer = i == 0 ? grassLayerA : float(i);
-        vec3 layer = texture(uSplat, vec3(pomUv, fetchLayer)).rgb;
-        vec2 layerN =
-            texture(uSplatNormal, vec3(pomUv, fetchLayer)).rg * 2.0 - 1.0;
-        if (i == 0 && zoneBlend < 1.0) {
-            vec3 layerB = texture(uSplat, vec3(pomUv, grassLayerB)).rgb;
-            vec2 layerBN = texture(uSplatNormal,
-                                   vec3(pomUv, grassLayerB)).rg * 2.0 - 1.0;
-            layer = mix(layerB, layer, zoneBlend);
-            layerN = mix(layerBN, layerN, zoneBlend);
+        vec3 layer;
+        vec2 layerN;
+        if (i == 0) {
+            layer = vec3(0.0);
+            layerN = vec2(0.0);
+            for (int t = 0; t < 3; ++t) {
+                if (hexW[t] > 0.003) {
+                    vec2 tapUv = baseUv + hexOff[t];
+                    layer += hexW[t] *
+                             texture(uSplat, vec3(tapUv,
+                                                  hexLayer[t])).rgb;
+                    layerN += hexW[t] *
+                              (texture(uSplatNormal,
+                                       vec3(tapUv, hexLayer[t])).rg *
+                                   2.0 -
+                               1.0);
+                }
+            }
+        } else {
+            layer = texture(uSplat, vec3(baseUv, fetchLayer)).rgb;
+            layerN = texture(uSplatNormal,
+                             vec3(baseUv, fetchLayer)).rg * 2.0 - 1.0;
         }
         // Anti-repetition (brief phase 5, cheap variant): a second tap at
         // a NON-HARMONIC frequency (0.37x, per-layer phase) drifts the
         // tile's luminance — two incommensurate periods never realign, so
-        // the 4 m grid dissolves. The luminance RATIO keeps hue and
-        // high-frequency detail; histogram preservation is imperfect by
-        // design (hex-tiling is the 3-tap upgrade if this shows).
-        if (uSplatVarietyInfo.x > 0.0) {
+        // the 4 m grid dissolves. Grass skips it: the hex offsets above
+        // already de-tile that layer.
+        if (uSplatVarietyInfo.x > 0.0 && i != 0) {
             vec3 c2 = texture(uSplat,
-                              vec3(pomUv * 0.37 +
+                              vec3(baseUv * 0.37 +
                                        vec2(0.17, 0.29) * float(i),
                                    fetchLayer)).rgb;
             float l1 = dot(layer, vec3(0.299, 0.587, 0.114));
