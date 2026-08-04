@@ -202,6 +202,19 @@ struct RegionShading {
 };
 RegionShading regionShadingAt(const TerrainParams& params, f32 x, f32 z);
 
+// Grass-family ground variant zoning — the CPU mirror of
+// terrain_zones.glsl (same hash, lattice, jitter, coloring): jittered-grid
+// Voronoi cells whose 2x2 base coloring guarantees two orthogonal
+// neighbors never share a variant. Seed-independent world pattern (like
+// borderWander). Consumers: the shader's grass fetches, the blade species
+// scores and the clutter rules — ground and growth tell the same story.
+struct GrassZone {
+    u32 variantA { 0 };
+    u32 variantB { 0 };
+    f32 blendA { 1.0f }; // 1 = pure A; < 1 inside the border band only
+};
+GrassZone grassZoneAt(f32 x, f32 z);
+
 // The weights as the SHADER shows them: the raw
 // altitude borders perturbed by the splat wander term (terrain.frag) so
 // a footstep on VISIBLE snow sounds like snow, not like the contour

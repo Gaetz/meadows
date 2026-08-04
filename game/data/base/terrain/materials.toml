@@ -48,3 +48,36 @@ normal = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_NormalGL.png"
 ao = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_AmbientOcclusion.png"
 roughness = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_Roughness.png"
 height = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_Displacement.png"
+
+# Grass-family ground variants (terrain_zones.glsl zoning — order matters:
+# array layers 5/6/7 = variants 1/2/3; variant 0 is the grass layer above).
+# SAME color family by design: `harmonize = true` normalizes each variant's
+# mean albedo to the grass layer's at cook — the variation lives in the
+# CONTENT and RELIEF (POM), never in color patches.
+
+[[material]]
+name = "grass-path"             # variant 1: gazon use + sol (feuilles reservees aux sous-bois)
+albedo = "../../../../assets-src/terrain/grass_path_2/grass_path_2_Color.png"
+normal = "../../../../assets-src/terrain/grass_path_2/grass_path_2_NormalGL.png"
+ao = "../../../../assets-src/terrain/grass_path_2/grass_path_2_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/grass_path_2/grass_path_2_Roughness.png"
+height = "../../../../assets-src/terrain/grass_path_2/grass_path_2_Displacement.png"
+harmonize = true
+
+[[material]]
+name = "grass-stones"           # variant 2: gazon + pierres
+albedo = "../../../../assets-src/terrain/aerial_grass_rock/aerial_grass_rock_Color.png"
+normal = "../../../../assets-src/terrain/aerial_grass_rock/aerial_grass_rock_NormalGL.png"
+ao = "../../../../assets-src/terrain/aerial_grass_rock/aerial_grass_rock_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/aerial_grass_rock/aerial_grass_rock_Roughness.png"
+height = "../../../../assets-src/terrain/aerial_grass_rock/aerial_grass_rock_Displacement.png"
+harmonize = true
+
+[[material]]
+name = "grass-dirt"             # variant 3: gazon + terre
+albedo = "../../../../assets-src/terrain/sparse_grass/sparse_grass_Color.png"
+normal = "../../../../assets-src/terrain/sparse_grass/sparse_grass_NormalGL.png"
+ao = "../../../../assets-src/terrain/sparse_grass/sparse_grass_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/sparse_grass/sparse_grass_Roughness.png"
+height = "../../../../assets-src/terrain/sparse_grass/sparse_grass_Displacement.png"
+harmonize = true

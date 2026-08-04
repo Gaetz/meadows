@@ -5,6 +5,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "engine/render/landscape/GrassSpecies.hpp"
+
 namespace render {
 
 ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
@@ -109,7 +111,22 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
         base.leafSeason[i] = in.leafSeason[i];
     }
     base.splatDetailInfo = { in.splatBlendDepth, in.terrainTintStrength,
-                             0.0f, 0.0f };
+                             in.splatDetailFade, in.pomDistance };
+    base.splatVarietyInfo = { in.splatVariety, in.pomShadowStrength,
+                              in.pomDepth,
+                              0.0f };
+    for (u32 i = 0; i < render::kGrassSpeciesCount; ++i) {
+        base.grassSpeciesShape[i] = { kGrassSpeciesShape[i][0],
+                                      kGrassSpeciesShape[i][1],
+                                      kGrassSpeciesShape[i][2],
+                                      kGrassSpeciesShape[i][3] };
+        base.grassSpeciesBase[i] = { kGrassSpeciesBase[i][0],
+                                     kGrassSpeciesBase[i][1],
+                                     kGrassSpeciesBase[i][2], 0.0f };
+        base.grassSpeciesTip[i] = { kGrassSpeciesTip[i][0],
+                                    kGrassSpeciesTip[i][1],
+                                    kGrassSpeciesTip[i][2], 0.0f };
+    }
 
     render::FrameUniforms resolved = base;
     if (in.interiorMode) {

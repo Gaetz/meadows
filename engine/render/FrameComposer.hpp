@@ -49,6 +49,11 @@ struct FrameComposerInputs {
     f32 splatUvScale { 0.0f };
     f32 splatBlendDepth { 0.15f }; // height-blend band (0 = plain blend)
     f32 terrainTintStrength { 0.3f }; // macro tint (0 = off)
+    f32 splatDetailFade { 24.0f }; // detail-normal fade end (m)
+    f32 pomDistance { 12.0f }; // parallax occlusion reach (m, 0 = off)
+    f32 splatVariety { 0.5f }; // anti-repetition second tap (0 = off)
+    f32 pomShadowStrength { 0.6f }; // POM self-shadow (0 = off)
+    f32 pomDepth { 0.03f }; // parallax relief depth (uv units)
     bool reflectionsActive { false };
     // Horizon-closure distance (m) for applyFog — the far-terrain
     // reach when it stands in, else the streaming ring (0 = off).
@@ -67,7 +72,7 @@ struct FrameComposerInputs {
 
     // Dev toggles (the render panel's A/B state).
     i32 debugBuffer { 0 };
-    bool stylized { true };
+    bool stylized { false };
     bool tonemap { true };
     f32 exposure { 1.0f };
     bool cascadeDebug { false };

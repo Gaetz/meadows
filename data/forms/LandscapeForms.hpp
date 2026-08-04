@@ -41,6 +41,22 @@ struct LandscapeTuningForm : Form {
     // Macro-tint strength (0 = off; above ~0.4 the tint crushes the
     // materials' own variation — brief guardrail).
     f32 terrainTintStrength { 0.3f };
+    // Near-field detail-normal fade end (meters; 0 = detail off). An
+    // unfaded detail normal aliases in the background.
+    f32 splatDetailFade { 24.0f };
+    // Parallax occlusion mapping reach (meters; 0 = off). Dominant layer
+    // only, faded out over the last stretch — THE close-range depth cue
+    // of the texturing brief; also its perf hot spot, hence the knob.
+    f32 pomDistance { 12.0f };
+    // Anti-repetition variety strength (0 = off): a second albedo tap at
+    // a non-harmonic frequency (0.37x) modulates each layer, so the 4 m
+    // tile grid never repeats exactly. One extra fetch per visible layer.
+    f32 splatVariety { 0.5f };
+    // POM self-shadow strength (0 = off): sun-side occlusion taps darken
+    // the crevices inside the POM reach.
+    f32 pomShadowStrength { 0.6f };
+    // Parallax relief depth (uv units): how far the POM march displaces.
+    f32 pomDepth { 0.03f };
     // Cooked terrain material arrays (.mtex asset guids, one per map —
     // docs/AUDIT/TERRAIN-TEXTURING.md §4). 0 = procedural splat tiles.
     // Vulkan-only path (caps.textureCompressionBC).
@@ -99,6 +115,8 @@ struct LandscapeTuningForm : Form {
     f32 stylizedDiffuseEdge1Start { 0.32f };
     f32 stylizedDiffuseEdge1End { 0.40f };
     f32 stylizedHalfTone { 0.6f };
+    // CSM snap window: the BotW flat-pool look. Inert while the panel's
+    // stylized A/B is off (the branch default — WorldRenderer::stylizedUi).
     f32 stylizedShadowStart { 0.45f };
     f32 stylizedShadowEnd { 0.55f };
     f32 stylizedShadowFloor { 0.0f };
@@ -254,6 +272,11 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(splatUvScale)
         REFLECT_FIELD(splatBlendDepth)
         REFLECT_FIELD(terrainTintStrength)
+        REFLECT_FIELD(splatDetailFade)
+        REFLECT_FIELD(pomDistance)
+        REFLECT_FIELD(splatVariety)
+        REFLECT_FIELD(pomShadowStrength)
+        REFLECT_FIELD(pomDepth)
         REFLECT_FIELD(terrainAlbedoArray)
         REFLECT_FIELD(terrainNormalArray)
         REFLECT_FIELD(terrainOrmArray)

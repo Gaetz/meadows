@@ -99,20 +99,43 @@ public:
                 const CookedSplatPaths& cooked = {});
     void destroy(rhi::Device& device);
 
+    // Material-set A/B (render panel): cooked .mtex library vs procedural
+    // tiles. Switching rebuilds the splat arrays + bind group in place
+    // (full recreation, ~10 MB one-shot — the TerrainLightMap
+    // destroy-recreate precedent makes this frame-safe).
+    bool cookedAvailable() const { return cookedPossible; }
+    bool usingCooked() const { return cookedMaterials; }
+    void setMaterialSet(rhi::Device& device, bool useCooked);
+
+    // Mean root albedo of a grass-family ground variant (display-space):
+    // cooked = the .mtex per-layer averages, procedural = means of the
+    // generated tiles. The blade scatter inherits it, so meadow and
+    // ground share ONE color source on BOTH material sets.
+    Vec3 grassAlbedoBase(u32 variant) const {
+        return grassBases[glm::min(variant, 3u)];
+    }
+
     // Streaming pump — main thread, once per frame, top of render: drains
     // finished meshes (budgeted uploads), requests missing chunks around the
-    // camera, evicts far ones.
-    void update(rhi::Device& device, const Vec3& cameraPos);
+    // camera, evicts far ones. `holdRequests` keeps the ring from streaming
+    // (sandbox boot: the base regions are not published yet — meshing
+    // against the empty base would all be redone). `boost` widens the
+    // anti-stutter budgets while a loading veil hides the frame.
+    void update(rhi::Device& device, const Vec3& cameraPos,
+                bool holdRequests = false, bool boost = false);
 
     // Drops every chunk and re-streams with current params (seed changed).
     // In-flight worker results are invalidated by generation.
     void regenerate(rhi::Device& device);
 
     // Re-mesh only these chunks (cx,cz keys) in place — the terrain-sculpt
-    // path. Each keeps drawing its current mesh until the rebuilt one (with the
-    // new params) is resident, then swaps (no hole). Non-resident or
-    // already-building chunks are skipped; they pick up the new params when
-    // they next stream. Keys use keyOf() — the shared terrain chunk grid.
+    // and region-publish path. Each keeps drawing its current mesh until the
+    // rebuilt one (with the new params) is resident, then swaps (no hole).
+    // Never-built chunks are skipped (their next stream captures the new
+    // params); chunks with a build in flight are marked and re-enqueued when
+    // that stale mesh lands — otherwise it would stick until an LOD change
+    // (the grass/vegetation `stale` contract, terrain flavor). Keys use
+    // keyOf() — the shared terrain chunk grid.
     void remeshChunks(const vector<u64>& keys);
 
     // Rebuilds the pipeline when the terrain shader hot-reloaded.
@@ -228,6 +251,9 @@ private:
         // Meshed height range (skirts included), for the frustum AABB.
         f32 minY { 0.0f };
         f32 maxY { 0.0f };
+        // remeshChunks hit this chunk while a build (captured OLD params)
+        // was in flight: when that mesh lands, rebuild with today's params.
+        bool remeshOnLand { false };
     };
 
     // One pooled vertex buffer per LOD: every chunk of that LOD is a
@@ -257,13 +283,17 @@ private:
         f32 maxY { 0.0f };
     };
 
-    void requestMissing(const Vec3& cameraPos);
+    // (Re)creates the splat material arrays + bind group from the
+    // requested set; falls back to procedural when the cooked load fails.
+    void buildMaterialArrays(rhi::Device& device, bool useCooked);
+
+    void requestMissing(const Vec3& cameraPos, bool boost);
     void enqueueBuild(i32 cx, i32 cz, u8 lod);
     void evictFar(rhi::Device& device, const Vec3& cameraPos);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
-    void pumpUploads(rhi::Device& device, const Vec3& cameraPos);
+    void pumpUploads(rhi::Device& device, const Vec3& cameraPos, bool boost);
     u32 allocSlot(u32 lod);
     void freeSlot(u32 lod, u32 slot);
     // Pool-full relief: free the slot of the FURTHEST chunk resident at
@@ -310,6 +340,14 @@ private:
     rhi::UniqueTexture materialOrm;
     rhi::UniqueTexture materialHeight;
     bool cookedMaterials { false };
+    bool cookedPossible { false };
+    CookedSplatPaths cookedPaths;
+    // Display-space means per grass variant (grassAlbedoBase above);
+    // filled by buildMaterialArrays for the active set.
+    array<Vec3, 4> grassBases { Vec3 { 0.434f, 0.633f, 0.375f },
+                                Vec3 { 0.62f, 0.55f, 0.32f },
+                                Vec3 { 0.42f, 0.29f, 0.15f },
+                                Vec3 { 0.43f, 0.36f, 0.27f } };
 };
 
 // Pure CPU chunk meshing, runs on worker threads. Vertices sample

@@ -194,6 +194,17 @@ struct FrameUniforms {
     // Region shading maps (TerrainShadeMap): xy = center, z = 1/span,
     // w = valid.
     Vec4 terrainShadeMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Splat anti-repetition + POM: x = bi-frequency variety strength
+    // (0 = off — the second, non-harmonic tap that keeps the 4 m tile
+    // grid from ever repeating exactly), y = POM self-shadow strength,
+    // z = POM relief depth (uv units), w reserved.
+    Vec4 splatVarietyInfo { 0.5f, 0.0f, 0.03f, 0.0f };
+    // Grass species table (GrassSpecies.hpp is the source; FrameComposer
+    // copies it) — grass.vert indexes by the instance's species lane.
+    // Shape: x height (scatter-side), y width, z lean, w tip profile.
+    Vec4 grassSpeciesShape[6] {};
+    Vec4 grassSpeciesBase[6] {}; // rgb tint x ground albedo, w free
+    Vec4 grassSpeciesTip[6] {};  // rgb tint, w free
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -268,7 +279,11 @@ static_assert(offsetof(FrameUniforms, seasonInfo) == 1552);
 static_assert(offsetof(FrameUniforms, leafSeason) == 1568);
 static_assert(offsetof(FrameUniforms, splatDetailInfo) == 1696);
 static_assert(offsetof(FrameUniforms, terrainShadeMapInfo) == 1712);
-static_assert(sizeof(FrameUniforms) == 1728,
+static_assert(offsetof(FrameUniforms, splatVarietyInfo) == 1728);
+static_assert(offsetof(FrameUniforms, grassSpeciesShape) == 1744);
+static_assert(offsetof(FrameUniforms, grassSpeciesBase) == 1840);
+static_assert(offsetof(FrameUniforms, grassSpeciesTip) == 1936);
+static_assert(sizeof(FrameUniforms) == 2032,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

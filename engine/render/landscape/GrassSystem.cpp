@@ -3,11 +3,14 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <unordered_map>
 
 #include "engine/core/Hash.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/render/ShaderLibrary.hpp"
+#include "engine/render/landscape/GrassSpecies.hpp"
 #include "engine/render/landscape/SplatTextures.hpp"
+#include "engine/render/landscape/VegetationSystem.hpp" // forestMask
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
 #include "engine/rhi/Device.hpp"
@@ -111,14 +114,147 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
             // Macro tint applies to the root color exactly as the terrain
             // shader applies it to the ground (same regionShadingAt, same
             // strength lerp) — meadow and terrain keep ONE color source.
+            // The base color is the ACTIVE set's mean for the corner's
+            // ground variant (grass zones), so the raccord holds on the
+            // cooked set and across zone borders alike.
             const Vec3 tint =
                 glm::mix(Vec3 { 1.0f },
                          terrain::regionShadingAt(params, wx, wz).tint,
                          tuning.tintStrength);
+            const Vec3 base =
+                tuning.rootAlbedoBase[terrain::grassZoneAt(wx, wz)
+                                          .variantA];
             cornerAlbedo[gz * (cells + 1) + gx] =
-                grassAlbedo(su - std::floor(su), sv - std::floor(sv)) * tint;
+                base *
+                grassBlotch(su - std::floor(su), sv - std::floor(sv)) *
+                tint;
         }
     }
+
+    // Species per Voronoi clump (jittered grid, ~2.4 m): neighboring
+    // blades share species/shade and fan away from their clump center —
+    // patches read as vegetation, not per-blade noise (the GoT model,
+    // docs/GRASS-REDO.md). Sites are resolved per blade (nearest of the
+    // 3x3 neighbor sites — pure arithmetic) and their pick is cached per
+    // chunk build; per-species low-frequency noises make one species win
+    // over several clumps at a time.
+    constexpr f32 kClumpSize = 2.4f;
+    struct ClumpInfo {
+        u8 species { 0 };
+        f32 shade { 1.0f };
+        Vec2 center {};
+    };
+    std::unordered_map<u64, ClumpInfo> clumps;
+    const auto clumpSite = [&](i32 gx, i32 gz) {
+        const u32 h = hashU32(params.seed ^ 0x51c7a3b9u ^
+                              hashU32(static_cast<u32>(gx) * 0x9e3779b9u ^
+                                      static_cast<u32>(gz) * 0x85ebca6bu));
+        const f32 jx = static_cast<f32>(h & 0xffffu) * (1.0f / 65535.0f);
+        const f32 jz = static_cast<f32>(h >> 16) * (1.0f / 65535.0f);
+        return Vec2 { (static_cast<f32>(gx) + 0.15f + 0.7f * jx) *
+                          kClumpSize,
+                      (static_cast<f32>(gz) + 0.15f + 0.7f * jz) *
+                          kClumpSize };
+    };
+    const auto clumpAt = [&](f32 x, f32 z,
+                             const terrain::RegionFields& fields,
+                             f32 presence) -> const ClumpInfo& {
+        const i32 bx = static_cast<i32>(std::floor(x / kClumpSize));
+        const i32 bz = static_cast<i32>(std::floor(z / kClumpSize));
+        i32 bestX = bx;
+        i32 bestZ = bz;
+        Vec2 bestSite {};
+        f32 bestD = 1e9f;
+        for (i32 dz = -1; dz <= 1; ++dz) {
+            for (i32 dx = -1; dx <= 1; ++dx) {
+                const Vec2 site = clumpSite(bx + dx, bz + dz);
+                const f32 d = (site.x - x) * (site.x - x) +
+                              (site.y - z) * (site.y - z);
+                if (d < bestD) {
+                    bestD = d;
+                    bestX = bx + dx;
+                    bestZ = bz + dz;
+                    bestSite = site;
+                }
+            }
+        }
+        const u64 key =
+            (static_cast<u64>(static_cast<u32>(bestX)) << 32) |
+            static_cast<u32>(bestZ);
+        const auto it = clumps.find(key);
+        if (it != clumps.end()) {
+            return it->second;
+        }
+        // Species scores at the winning site. Aridity mirrors the macro
+        // tint's climate read (temperature/biomeWetness), so dry straw
+        // grows where the ground reads parched.
+        const f32 inv = 1.0f / 9.0f; // ~9 m species patches
+        const f32 dryBias =
+            glm::clamp(0.5f + 0.35f * fields.temperature -
+                           0.4f * fields.biomeWetness,
+                       0.0f, 1.0f);
+        const f32 n0 = terrain::noise01(params.seed ^ 0x0a17u,
+                                        bestSite.x * inv, bestSite.y * inv);
+        const f32 n1 = terrain::noise01(params.seed ^ 0x1b28u,
+                                        bestSite.x * inv, bestSite.y * inv);
+        const f32 n2 = terrain::noise01(params.seed ^ 0x2c39u,
+                                        bestSite.x * inv, bestSite.y * inv);
+        const f32 n3 = terrain::noise01(params.seed ^ 0x3d4au,
+                                        bestSite.x * inv, bestSite.y * inv);
+        const f32 n4 = terrain::noise01(params.seed ^ 0x4e5bu,
+                                        bestSite.x * inv, bestSite.y * inv);
+        // Moss claims the shaded wet forest floor (P4 micro tier): the
+        // wetter and deeper in the woods, the more clumps flip to it —
+        // exactly where blade grass thins out.
+        const f32 wetBias =
+            glm::clamp(0.5f - 0.35f * fields.temperature +
+                           0.5f * fields.biomeWetness,
+                       0.0f, 1.0f);
+        const f32 forest = forestMask(params.seed, bestSite.x, bestSite.y);
+        f32 scores[kGrassSpeciesCount] = {
+            0.25f + 0.9f * n0,
+            (0.25f + 0.95f * dryBias) * n1,
+            0.6f * n2 * (0.4f + 0.6f * presence),
+            (n3 > 0.78f ? 0.85f : 0.04f) * (1.0f - 0.6f * dryBias),
+            (0.10f + 1.30f * wetBias * forest) * (0.4f + 0.6f * n4),
+            0.0f, // lichen grows through the rock-crevice path only
+        };
+        // Ground-variant bias (terrain_zones — v1 worn path, v2 stones,
+        // v3 dirt): what the ground texture shows and what grows on it
+        // agree — wear and stones thin the meadow, dirt turns strawy.
+        switch (terrain::grassZoneAt(bestSite.x, bestSite.y).variantA) {
+        case 1:
+            scores[GrassSpecies_Meadow] *= 0.6f;
+            scores[GrassSpecies_Oat] *= 0.8f;
+            scores[GrassSpecies_Flower] *= 0.7f;
+            scores[GrassSpecies_Moss] *= 1.5f; // worn ground: moss plates
+            break;
+        case 2:
+            scores[GrassSpecies_Meadow] *= 0.75f;
+            scores[GrassSpecies_Dry] *= 1.3f;
+            break;
+        case 3:
+            scores[GrassSpecies_Dry] *= 1.5f;
+            scores[GrassSpecies_Meadow] *= 0.55f;
+            scores[GrassSpecies_Moss] *= 1.4f;
+            break;
+        default:
+            scores[GrassSpecies_Meadow] *= 1.25f;
+            break;
+        }
+        ClumpInfo info;
+        for (u32 s = 1; s < kGrassSpeciesCount; ++s) {
+            if (scores[s] > scores[info.species]) {
+                info.species = static_cast<u8>(s);
+            }
+        }
+        info.shade = 0.86f + 0.28f * static_cast<f32>(hashU32(
+                                         static_cast<u32>(key) ^
+                                         static_cast<u32>(key >> 32))) *
+                                         (1.0f / 4294967295.0f);
+        info.center = bestSite;
+        return clumps.emplace(key, info).first->second;
+    };
 
     vector<GrassSystem::Instance> result;
     result.reserve(perSide * perSide / 4);
@@ -151,19 +287,45 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                 Vec3 { -(h10 - h00 + h11 - h01) / (2.0f * cellSize), 1.0f,
                        -(h01 - h00 + h11 - h10) / (2.0f * cellSize) });
             const f32 hMid = 0.25f * (h00 + h10 + h01 + h11);
-            // HARD material cutoff: grass only on solidly grassy ground —
-            // never on the sand/snow/rock transition fringes. Biome-aware
-            // (neutral biome = the exact legacy rule).
+            // Density RAMP instead of the historical boolean cutoff: the
+            // splat's grass/rock blend zone is ALSO the blade rarefaction
+            // zone (docs/GRASS-REDO.md — AAA transitions are never
+            // binary). materialCutoff keeps its meaning as the
+            // full-density threshold; blades thin AND shrink below it.
+            // Where the ramp dies on solid rock, sparse dwarf DRY tufts
+            // grow in the crevices instead (the cross-scatter pattern).
             const f32 cellX =
                 originX + (static_cast<f32>(cgx) + 0.5f) * cellSize;
             const f32 cellZ =
                 originZ + (static_cast<f32>(cgz) + 0.5f) * cellSize;
-            if (terrain::materialWeightsAt(params, cellX, cellZ, hMid, n)
-                        .grass < tuning.materialCutoff ||
-                terrain::underLocalWater(params, cellX, cellZ, hMid,
+            const terrain::MaterialWeights cellWeights =
+                terrain::materialWeightsAt(params, cellX, cellZ, hMid, n);
+            if (terrain::underLocalWater(params, cellX, cellZ, hMid,
                                          0.1f)) {
                 continue;
             }
+            const f32 matRamp =
+                glm::smoothstep(tuning.materialCutoff - 0.37f,
+                                tuning.materialCutoff, cellWeights.grass);
+            f32 acceptP = presence * matRamp;
+            f32 dwarf = 0.55f + 0.45f * matRamp;
+            bool crevice = false;
+            if (matRamp < 0.02f) {
+                const f32 rocky = cellWeights.rock + cellWeights.cliff;
+                if (rocky < 0.45f) {
+                    continue;
+                }
+                crevice = true;
+                acceptP = 0.05f * rocky;
+                dwarf = 0.45f;
+            }
+            if (acceptP < 0.01f) {
+                continue;
+            }
+            // Climate fields for the species scores (varies over ~16 m —
+            // one eval per cell is plenty).
+            const terrain::RegionFields cellFields =
+                terrain::regionFieldsAt(params, cellX, cellZ);
             for (u32 sz = 0; sz < kCell; ++sz) {
                 for (u32 sx = 0; sx < kCell; ++sx) {
                     const u32 gx = cgx * kCell + sx;
@@ -181,7 +343,7 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                     const f32 z = originZ +
                                   (static_cast<f32>(gz) + rng.next()) *
                                       spacing;
-                    if (rng.next() >= presence) {
+                    if (rng.next() >= acceptP) {
                         continue;
                     }
                     const f32 fx =
@@ -195,12 +357,25 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                     const Vec3 rootAlbedo =
                         glm::mix(glm::mix(a00, a10, fx),
                                  glm::mix(a01, a11, fx), fz);
+                    const ClumpInfo& clump =
+                        clumpAt(x, z, cellFields, presence);
+                    // Crevice growth on rock: dry tufts and lichen
+                    // plates share the cracks (P4).
+                    const u32 species =
+                        crevice ? (rng.next() < 0.45f
+                                       ? GrassSpecies_Lichen
+                                       : GrassSpecies_Dry)
+                                : clump.species;
                     // Height: near-uniform inside the volume so the top
                     // reads as one surface; the rim droops shorter, and
                     // ~12% of blades overshoot — the tips poking above
-                    // the mass (the BotW tell).
+                    // the mass (the BotW tell). Species height applies
+                    // here (the shader table's x lane is scatter-side);
+                    // `dwarf` shrinks the grass/rock fringe blades so the
+                    // texture blend zone and the blade shrink coincide.
                     f32 scale = (0.70f + rng.next() * 0.30f) *
-                                (0.55f + 0.45f * presence);
+                                (0.55f + 0.45f * presence) * dwarf *
+                                kGrassSpeciesShape[species][0];
                     if (rng.next() < 0.12f) {
                         scale *= 1.35f;
                     }
@@ -208,14 +383,22 @@ vector<GrassSystem::Instance> scatterGrass(const TerrainParams& params,
                     // over its sides instead of ending in a wall.
                     const f32 lean = glm::min(
                         1.0f, rng.next() + (1.0f - presence) * 0.6f);
+                    // Blades fan AWAY from their clump center (GoT):
+                    // the yaw mixes outward with jitter — a clump reads
+                    // as one tuft, not parallel needles.
+                    const f32 yaw =
+                        std::atan2(x - clump.center.x, z - clump.center.y) +
+                        (rng.next() - 0.5f) * 2.6f;
                     result.push_back({
                         .positionScale = { x, h, z, scale },
-                        .params = { rng.next() * 6.2831853f, // yaw
+                        .params = { yaw,
                                     rng.next() * 6.2831853f, // flutter
                                     rng.next(),              // tint jitter
                                     lean },                  // lean amount
                         // BotW shading + the root's ground color.
                         .groundNormal = { n, packAlbedo(rootAlbedo) },
+                        .species = { static_cast<f32>(species),
+                                     clump.shade, 0.0f, 0.0f },
                     });
                 }
             }
@@ -287,7 +470,7 @@ void GrassSystem::invalidateChunks(rhi::Device& /*device*/,
 }
 
 void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
-                         const Vec3& cameraPos) {
+                         const Vec3& cameraPos, bool holdRequests) {
     frameIndices = 0; // the frame's draw() sums into these
     frameBlades = 0;
     // Budgeted uploads (the ring mechanics live in ChunkStreamer;
@@ -326,18 +509,20 @@ void GrassSystem::update(rhi::Device& device, const TerrainParams& params,
     // (the rest is re-detected next frame; the state IS the queue).
     const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
     const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
-    streamer.requestMissing(
-        camCx, camCz, kViewRadius, kMaxRequestsPerFrame,
-        [&](i32 cx, i32 cz, i32, i32) {
-            return !streamer.chunks.contains(chunkKey(cx, cz));
-        },
-        [&](i32 cx, i32 cz, i32, i32) {
-            streamer.chunks.emplace(chunkKey(cx, cz), Chunk {});
-            streamer.enqueueBuild(cx, cz,
-                                  [params, tuning = scatterTuning, cx, cz] {
-                return scatterGrass(params, tuning, cx, cz);
+    if (!holdRequests) {
+        streamer.requestMissing(
+            camCx, camCz, kViewRadius, kMaxRequestsPerFrame,
+            [&](i32 cx, i32 cz, i32, i32) {
+                return !streamer.chunks.contains(chunkKey(cx, cz));
+            },
+            [&](i32 cx, i32 cz, i32, i32) {
+                streamer.chunks.emplace(chunkKey(cx, cz), Chunk {});
+                streamer.enqueueBuild(
+                    cx, cz, [params, tuning = scatterTuning, cx, cz] {
+                        return scatterGrass(params, tuning, cx, cz);
+                    });
             });
-        });
+    }
 
     // Evict beyond hysteresis.
     streamer.evictFar(camCx, camCz, kEvictRadius, [&](Chunk& chunk) {
@@ -368,7 +553,11 @@ void GrassSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
                                   { .location = 4,
                                     .format = rhi::VertexFormat::F32x4,
                                     .offset = offsetof(
-                                        Instance, groundNormal) } } } },
+                                        Instance, groundNormal) },
+                                  { .location = 1,
+                                    .format = rhi::VertexFormat::F32x4,
+                                    .offset = offsetof(Instance,
+                                                       species) } } } },
           // Pure geometry, opaque: depth-write on so blades sort against the
           // terrain and each other; visible from both sides.
           .depth = { .testEnable = true,

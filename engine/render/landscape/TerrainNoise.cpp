@@ -127,6 +127,24 @@ f32 borderWander(f32 px, f32 py) {
     return -0.31f + (n - 0.5f) * 0.2f;
 }
 
+// terrain_zones.glsl mirror — see GrassZone in the header.
+constexpr f32 kGrassZoneSize = 3.0f;
+constexpr f32 kGrassZoneBorder = 0.8f;
+
+Vec2 grassZoneSite(i32 gx, i32 gz) {
+    const u32 h = core::hashU32(static_cast<u32>(gx) * 0x9e3779b9u ^
+                                static_cast<u32>(gz) * 0x85ebca6bu ^
+                                0x5bd1e995u);
+    const f32 jx = static_cast<f32>(h & 0xffffu) * (1.0f / 65535.0f);
+    const f32 jz = static_cast<f32>(h >> 16) * (1.0f / 65535.0f);
+    return { (static_cast<f32>(gx) + 0.2f + 0.6f * jx) * kGrassZoneSize,
+             (static_cast<f32>(gz) + 0.2f + 0.6f * jz) * kGrassZoneSize };
+}
+
+constexpr u32 grassZoneVariantOf(i32 gx, i32 gz) {
+    return static_cast<u32>((gx & 1) + 2 * (gz & 1));
+}
+
 // THE weight rule, in one place — shaders/terrain_weights.glsl mirrors it
 // bit-for-bit and every CPU consumer (GI/minimap, scatter, footsteps) goes
 // through it. Neutral inputs reproduce the shader exactly; the biome-aware
@@ -213,6 +231,43 @@ const BiomeParams& biomeAt(const TerrainParams& params, f32 x, f32 z) {
     const size_t clamped =
         glm::min<size_t>(index, params.biomes->table.size() - 1);
     return params.biomes->table[clamped];
+}
+
+GrassZone grassZoneAt(f32 x, f32 z) {
+    const i32 bx = static_cast<i32>(std::floor(x / kGrassZoneSize));
+    const i32 bz = static_cast<i32>(std::floor(z / kGrassZoneSize));
+    f32 d1 = 1e9f;
+    f32 d2 = 1e9f;
+    i32 c1x = bx;
+    i32 c1z = bz;
+    i32 c2x = bx;
+    i32 c2z = bz;
+    for (i32 dz = -1; dz <= 1; ++dz) {
+        for (i32 dx = -1; dx <= 1; ++dx) {
+            const Vec2 site = grassZoneSite(bx + dx, bz + dz);
+            const f32 d = (site.x - x) * (site.x - x) +
+                          (site.y - z) * (site.y - z);
+            if (d < d1) {
+                d2 = d1;
+                c2x = c1x;
+                c2z = c1z;
+                d1 = d;
+                c1x = bx + dx;
+                c1z = bz + dz;
+            } else if (d < d2) {
+                d2 = d;
+                c2x = bx + dx;
+                c2z = bz + dz;
+            }
+        }
+    }
+    GrassZone zone;
+    zone.variantA = grassZoneVariantOf(c1x, c1z);
+    zone.variantB = grassZoneVariantOf(c2x, c2z);
+    const f32 edge = 0.5f * (std::sqrt(d2) - std::sqrt(d1));
+    zone.blendA =
+        glm::clamp(0.5f + 0.5f * edge / kGrassZoneBorder, 0.5f, 1.0f);
+    return zone;
 }
 
 RegionFields regionFieldsAt(const TerrainParams& params, f32 x, f32 z) {

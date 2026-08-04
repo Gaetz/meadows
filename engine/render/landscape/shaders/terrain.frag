@@ -14,6 +14,9 @@ layout(binding = 3) uniform sampler2DArray uSplatHeight;
 // T0 = tint.rgb + wetness, T1 = rockiness / snow offset / sandiness / beach.
 layout(binding = 4) uniform sampler2D uTerrainShade0;
 layout(binding = 5) uniform sampler2D uTerrainShade1;
+// Per-layer tangent normals: rg = xy*0.5+0.5, z reconstructed (BC5 cooked
+// or RGBA8 procedural — one decode path).
+layout(binding = 8) uniform sampler2DArray uSplatNormal;
 #include "shadow.glsl"
 #include "clouds.glsl"
 #include "stylized.glsl"
@@ -22,6 +25,7 @@ layout(binding = 5) uniform sampler2D uTerrainShade1;
 #include "gi.glsl"
 #include "terrain_weights.glsl"
 #include "terrain_blend.glsl"
+#include "terrain_zones.glsl"
 
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in vec3 vColor;
@@ -72,15 +76,37 @@ void main() {
     ws[3] = w.sand;
     ws[4] = w.cliff;
 
+    // Grass ground variant (terrain_zones.glsl): the semantic grass layer
+    // fetches one of 4 zoned textures; inside a zone-border band the two
+    // nearest variants height-blend, so the zone frontier itself has
+    // micro-relief. Weights/POM/species all key off the same zoning.
+    int zoneA;
+    int zoneB;
+    float zoneBlend;
+    grassZone(vWorldPos.xz, zoneA, zoneB, zoneBlend);
+    float grassLayerA = zoneA == 0 ? 0.0 : float(4 + zoneA);
+    float grassLayerB = zoneB == 0 ? 0.0 : float(4 + zoneB);
+
     // Height-blend the rule weights: only layers the rule already admits
     // fetch their displacement (2-3 typical), the winner's micro-relief
     // claims the transition band.
     float depth = uSplatDetailInfo.x;
     float hs[kSplatLayers];
     for (int i = 0; i < kSplatLayers; ++i) {
-        hs[i] = ws[i] > kSplatWeightEps
-                    ? texture(uSplatHeight, vec3(uv, float(i))).r
-                    : 0.0;
+        if (ws[i] <= kSplatWeightEps) {
+            hs[i] = 0.0;
+            continue;
+        }
+        if (i == 0) {
+            float hA = texture(uSplatHeight, vec3(uv, grassLayerA)).r;
+            hs[0] = zoneBlend >= 1.0
+                        ? hA
+                        : mix(texture(uSplatHeight,
+                                      vec3(uv, grassLayerB)).r,
+                              hA, zoneBlend);
+        } else {
+            hs[i] = texture(uSplatHeight, vec3(uv, float(i))).r;
+        }
     }
     float b[kSplatLayers];
     float total;
@@ -98,18 +124,149 @@ void main() {
     float band = fract((h + wander * 8.0) / 14.0);
     float ledge = smoothstep(0.0, 0.45, band) * (1.0 - smoothstep(0.7, 0.95, band));
 
+    int dominant = 0;
+    float dominantB = 0.0;
+    for (int i = 0; i < kSplatLayers; ++i) {
+        if (b[i] > dominantB) {
+            dominantB = b[i];
+            dominant = i;
+        }
+    }
+
+    // Tangent basis of the planar world mapping (u = +X, v = +Z): no
+    // vertex tangents needed. B = cross(T, n) keeps +v => +Z (normal maps
+    // are OpenGL +Y — a flipped-looking relief means the SOURCE map is DX).
+    vec3 T = normalize(vec3(1.0, 0.0, 0.0) - n * n.x);
+    vec3 B = cross(T, n);
+    float camDist = distance(vWorldPos, uCameraPos.xyz);
+
+    // Parallax occlusion on the DOMINANT layer (uSplatDetailInfo.w =
+    // reach in meters, 0 = off), faded over its last stretch. Derivatives
+    // are computed BEFORE the march and textureGrad used inside: implicit
+    // derivatives are undefined in the non-uniform loop (mip bands +
+    // shimmer at triangle edges otherwise).
+    // The dominant layer's FETCH index follows the grass zone variant.
+    float dominantLayer = dominant == 0 ? grassLayerA : float(dominant);
+    vec2 pomUv = uv;
+    float pomSelfShadow = 1.0;
+    float pomReach = uSplatDetailInfo.w;
+    if (pomReach > 0.0 && camDist < pomReach && dominantB > 0.3 * total) {
+        vec2 dx = dFdx(uv);
+        vec2 dy = dFdy(uv);
+        vec3 view = normalize(uCameraPos.xyz - vWorldPos);
+        vec3 viewT = vec3(dot(view, T), dot(view, B), dot(view, n));
+        float scale = uSplatVarietyInfo.z * // relief depth (panel knob)
+                      (1.0 - smoothstep(pomReach * 0.6, pomReach, camDist));
+        const int kPomSteps = 12;
+        vec2 duv = viewT.xy / max(viewT.z, 0.25) * (scale / kPomSteps);
+        float stepDepth = 1.0 / kPomSteps;
+        float depthCur = 0.0;
+        float hPrev = 0.0;
+        float hHere =
+            1.0 - textureGrad(uSplatHeight, vec3(pomUv, dominantLayer),
+                              dx, dy).r;
+        for (int s = 0; s < kPomSteps && depthCur < hHere; ++s) {
+            pomUv -= duv;
+            depthCur += stepDepth;
+            hPrev = hHere;
+            hHere = 1.0 -
+                    textureGrad(uSplatHeight, vec3(pomUv, dominantLayer),
+                                dx, dy).r;
+        }
+        // One linear refine between the last two samples.
+        float after = hHere - depthCur;
+        float before = hPrev - (depthCur - stepDepth);
+        float t = clamp(before / max(before - after, 1e-4), 0.0, 1.0);
+        pomUv += duv * (1.0 - t);
+
+        // Cheap self-shadowing: two occlusion taps toward the sun in
+        // tangent space — crevices darken against the light, doubling
+        // the perceived depth for a fraction of the march cost.
+        // Strength = uSplatVarietyInfo.y (0 = off).
+        if (uSplatVarietyInfo.y > 0.0) {
+            vec3 sunT = vec3(dot(uSunDirection.xyz, T),
+                             dot(uSunDirection.xyz, B),
+                             dot(uSunDirection.xyz, n));
+            if (sunT.z > 0.1) {
+                float hSurf =
+                    textureGrad(uSplatHeight, vec3(pomUv, dominantLayer),
+                                dx, dy).r;
+                vec2 sdir = sunT.xy / sunT.z * scale;
+                float occl = 0.0;
+                for (int s = 1; s <= 2; ++s) {
+                    float f = float(s) / 3.0;
+                    float hTap = textureGrad(
+                        uSplatHeight,
+                        vec3(pomUv + sdir * f, dominantLayer), dx, dy).r;
+                    occl += clamp((hTap - (hSurf + f * 0.75)) * 2.0, 0.0,
+                                  0.35);
+                }
+                pomSelfShadow =
+                    1.0 - occl * uSplatVarietyInfo.y;
+            }
+        }
+    }
+
     vec3 albedo = vec3(0.0);
+    vec2 nxy = vec2(0.0);
     for (int i = 0; i < kSplatLayers; ++i) {
         if (b[i] <= 0.0) {
             continue;
         }
-        vec3 layer = texture(uSplat, vec3(uv, float(i))).rgb;
+        // The grass layer fetches its ZONE variant (blending the two
+        // nearest variants inside a border band); other layers fetch
+        // themselves.
+        float fetchLayer = i == 0 ? grassLayerA : float(i);
+        vec3 layer = texture(uSplat, vec3(pomUv, fetchLayer)).rgb;
+        vec2 layerN =
+            texture(uSplatNormal, vec3(pomUv, fetchLayer)).rg * 2.0 - 1.0;
+        if (i == 0 && zoneBlend < 1.0) {
+            vec3 layerB = texture(uSplat, vec3(pomUv, grassLayerB)).rgb;
+            vec2 layerBN = texture(uSplatNormal,
+                                   vec3(pomUv, grassLayerB)).rg * 2.0 - 1.0;
+            layer = mix(layerB, layer, zoneBlend);
+            layerN = mix(layerBN, layerN, zoneBlend);
+        }
+        // Anti-repetition (brief phase 5, cheap variant): a second tap at
+        // a NON-HARMONIC frequency (0.37x, per-layer phase) drifts the
+        // tile's luminance — two incommensurate periods never realign, so
+        // the 4 m grid dissolves. The luminance RATIO keeps hue and
+        // high-frequency detail; histogram preservation is imperfect by
+        // design (hex-tiling is the 3-tap upgrade if this shows).
+        if (uSplatVarietyInfo.x > 0.0) {
+            vec3 c2 = texture(uSplat,
+                              vec3(pomUv * 0.37 +
+                                       vec2(0.17, 0.29) * float(i),
+                                   fetchLayer)).rgb;
+            float l1 = dot(layer, vec3(0.299, 0.587, 0.114));
+            float l2 = dot(c2, vec3(0.299, 0.587, 0.114));
+            float f = clamp(l2 / max(l1, 1e-3), 0.5, 1.8);
+            layer *= mix(1.0, f, uSplatVarietyInfo.x * 0.6);
+        }
         if (i == 4) {
             layer *= 0.84 + 0.24 * ledge;
         }
         albedo += layer * b[i];
+        nxy += layerN * b[i];
     }
     albedo /= total;
+    nxy /= total;
+
+    // Near-field detail: the dominant layer's normal re-sampled at a
+    // NON-HARMONIC frequency (the regular grid of one frequency alone
+    // never disappears), faded out by uSplatDetailInfo.z meters — an
+    // unfaded detail normal aliases in the background.
+    float detailFade = 1.0 - smoothstep(uSplatDetailInfo.z * 0.5,
+                                        uSplatDetailInfo.z, camDist);
+    if (detailFade > 0.0) {
+        vec2 dxy = texture(uSplatNormal,
+                           vec3(pomUv * 7.3, dominantLayer)).rg * 2.0 -
+                   1.0;
+        nxy += dxy * (0.5 * detailFade); // whiteout-style xy add
+    }
+
+    vec3 tsn = vec3(nxy, sqrt(max(1.0 - dot(nxy, nxy), 0.0)));
+    vec3 shadedN = normalize(T * tsn.x + B * tsn.y + n * tsn.z);
     // Macro tint, attenuated by the strength knob (uSplatDetailInfo.y —
     // above ~0.4 the tint crushes the materials' own variation).
     albedo *= mix(vec3(1.0), tint, uSplatDetailInfo.y);
@@ -119,12 +276,17 @@ void main() {
     // keeps the DROPS out via the occlusion map; per-pixel dry patches
     // under cover are a later refinement).
     albedo *= mix(1.0, 0.72, clamp(uStormInfo.y, 0.0, 1.0));
-    float ndl = dot(n, uSunDirection.xyz);
+    // The mapped normal drives the DIRECT terms only (sun diffuse, local
+    // lights); shadow bias and GI keep the analytic normal — the RC
+    // inject baked it, and the stylized shadow pools must not crawl with
+    // texel-scale relief.
+    float ndl = dot(shadedN, uSunDirection.xyz);
     float diffuse = stylizedDiffuse(ndl, max(ndl, 0.0));
     // Cast shadows quantize to flat pools; cloud shadows stay soft (they
     // drift — hard edges would crawl).
     float cloudVis = cloudShadowFactor(vWorldPos);
-    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) * cloudVis;
+    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) * cloudVis *
+                   pomSelfShadow;
     // Long-range terrain sun shadow (x) + sky openness (y).
     vec2 tl = terrainLightFactors(vWorldPos);
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.
@@ -134,7 +296,7 @@ void main() {
     // the ground is fullscreen — the per-cluster list is what makes the
     // cost bearable. Off = the historical sun+GI-only terrain.
     if (uClusterInfo.x > 0.5) {
-        lit += albedo * localLights(vWorldPos, n);
+        lit += albedo * localLights(vWorldPos, shadedN);
     }
     fragColor = vec4(applyFog(lit, vWorldPos, cloudVis), 1.0);
 }

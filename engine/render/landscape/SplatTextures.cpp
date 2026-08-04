@@ -121,6 +121,61 @@ Vec3 sandTexel(f32 u, f32 v) {
     return color * (0.96f + 0.06f * ripple);
 }
 
+f32 grassHeight(f32 u, f32 v); // defined below (variants reuse it)
+
+// Grass-family variant tiles (zoned by terrain_zones.glsl): the SAME
+// green family — variation lives in CONTENT and RELIEF, never in color
+// patches (dev directive). v1 = worn grass showing soil streaks (leaves
+// are reserved for a future undergrowth set), v2 = grass with surfacing
+// stones, v3 = grass thinning into dirt.
+Vec3 wornGrassTexel(f32 u, f32 v) {
+    const f32 wear = tileFbm(701, u * 0.7f, v * 1.6f, 12, 3);
+    const f32 wornMask = glm::smoothstep(0.52f, 0.70f, wear);
+    const f32 grain = tileFbm(703, u, v, 48, 2);
+    const Vec3 soil = Vec3 { 0.45f, 0.38f, 0.26f } *
+                      (0.92f + 0.14f * grain);
+    return glm::mix(grassAlbedo(u, v), soil, wornMask * 0.7f);
+}
+
+Vec3 stonyGrassTexel(f32 u, f32 v) {
+    const f32 stones = tileFbm(901, u, v, 20, 3);
+    const f32 stoneMask = glm::smoothstep(0.60f, 0.74f, stones);
+    const f32 grain = tileFbm(902, u, v, 48, 2);
+    const Vec3 stone =
+        Vec3 { 0.52f, 0.50f, 0.47f } * (0.9f + 0.2f * grain);
+    return glm::mix(grassAlbedo(u, v), stone, stoneMask * 0.85f);
+}
+
+Vec3 dirtGrassTexel(f32 u, f32 v) {
+    // Grass thinning into bare earth patches.
+    const f32 patches = tileFbm(801, u, v, 10, 3);
+    const f32 grain = tileFbm(802, u, v, 48, 2);
+    const Vec3 dirt = Vec3 { 0.42f, 0.34f, 0.24f } *
+                      (0.92f + 0.14f * grain);
+    return glm::mix(grassAlbedo(u, v), dirt,
+                    glm::smoothstep(0.45f, 0.7f, patches) * 0.7f);
+}
+
+f32 wornGrassHeight(f32 u, f32 v) {
+    const f32 wear = tileFbm(701, u * 0.7f, v * 1.6f, 12, 3);
+    // Worn streaks sit LOWER than the grass around them.
+    return glm::mix(grassHeight(u, v), 0.22f,
+                    glm::smoothstep(0.52f, 0.70f, wear) * 0.7f);
+}
+
+f32 stonyGrassHeight(f32 u, f32 v) {
+    const f32 stones = tileFbm(901, u, v, 20, 3);
+    return grassHeight(u, v) * 0.6f +
+           0.45f * glm::smoothstep(0.60f, 0.74f, stones);
+}
+
+f32 dirtGrassHeight(f32 u, f32 v) {
+    const f32 patches = tileFbm(801, u, v, 10, 3);
+    const f32 grain = tileFbm(802, u, v, 48, 2);
+    return glm::mix(grassHeight(u, v) * 0.8f, 0.25f + 0.08f * grain,
+                    glm::smoothstep(0.45f, 0.7f, patches) * 0.7f);
+}
+
 // Per-layer displacement, correlated with the albedo functions above by
 // reusing their noise seeds — the blend then reveals the SAME structures
 // the color shows (ridges poke through, cracks recede).
@@ -170,7 +225,7 @@ f32 cliffHeight(f32 u, f32 v) {
 vector<f32> buildSplatHeightPixels() {
     constexpr u32 kSize = kSplatTileSize;
     vector<f32> pixels(static_cast<size_t>(kSize) * kSize *
-                       SplatLayer_Count);
+                       kSplatArrayLayers);
     const size_t layerTexels = static_cast<size_t>(kSize) * kSize;
     for (u32 y = 0; y < kSize; ++y) {
         for (u32 x = 0; x < kSize; ++x) {
@@ -187,6 +242,56 @@ vector<f32> buildSplatHeightPixels() {
                 glm::clamp(sandHeight(u, v), 0.0f, 1.0f);
             pixels[SplatLayer_Cliff * layerTexels + texel] =
                 glm::clamp(cliffHeight(u, v), 0.0f, 1.0f);
+            pixels[grassVariantLayer(1) * layerTexels + texel] =
+                glm::clamp(wornGrassHeight(u, v), 0.0f, 1.0f);
+            pixels[grassVariantLayer(2) * layerTexels + texel] =
+                glm::clamp(stonyGrassHeight(u, v), 0.0f, 1.0f);
+            pixels[grassVariantLayer(3) * layerTexels + texel] =
+                glm::clamp(dirtGrassHeight(u, v), 0.0f, 1.0f);
+        }
+    }
+    return pixels;
+}
+
+vector<u8> buildSplatNormalPixels() {
+    constexpr u32 kSize = kSplatTileSize;
+    // Height-to-slope gain: the [0,1] heights read as decimeter-scale
+    // relief on a 4 m tile.
+    constexpr f32 kStrength = 2.0f; // hand-tuned
+    constexpr f32 kStep = 1.0f / kSize;
+    vector<u8> pixels(static_cast<size_t>(kSize) * kSize * 4 *
+                      kSplatArrayLayers);
+    const size_t layerBytes = static_cast<size_t>(kSize) * kSize * 4;
+    const auto wrap = [](f32 t) { return t - std::floor(t); };
+    using HeightFn = f32 (*)(f32, f32);
+    constexpr array<HeightFn, kSplatArrayLayers> kHeightFn {
+        grassHeight,      rockHeight,        snowHeight,
+        sandHeight,       cliffHeight,       wornGrassHeight,
+        stonyGrassHeight, dirtGrassHeight
+    };
+    for (u32 layer = 0; layer < kSplatArrayLayers; ++layer) {
+        const HeightFn fn = kHeightFn[layer];
+        for (u32 y = 0; y < kSize; ++y) {
+            for (u32 x = 0; x < kSize; ++x) {
+                const f32 u = static_cast<f32>(x) / kSize;
+                const f32 v = static_cast<f32>(y) / kSize;
+                const f32 dx = (fn(wrap(u + kStep), v) -
+                                fn(wrap(u - kStep + 1.0f), v)) *
+                               kStrength;
+                const f32 dy = (fn(u, wrap(v + kStep)) -
+                                fn(u, wrap(v - kStep + 1.0f))) *
+                               kStrength;
+                const Vec3 n =
+                    glm::normalize(Vec3 { -dx, -dy, 2.0f * kStep * 32.0f });
+                const size_t at = layer * layerBytes +
+                                  (static_cast<size_t>(y) * kSize + x) * 4;
+                pixels[at + 0] = static_cast<u8>(
+                    glm::clamp(n.x * 0.5f + 0.5f, 0.0f, 1.0f) * 255.0f);
+                pixels[at + 1] = static_cast<u8>(
+                    glm::clamp(n.y * 0.5f + 0.5f, 0.0f, 1.0f) * 255.0f);
+                pixels[at + 2] = 255; // z reconstructed in-shader
+                pixels[at + 3] = 255;
+            }
         }
     }
     return pixels;
@@ -195,7 +300,7 @@ vector<f32> buildSplatHeightPixels() {
 vector<u8> buildSplatTilePixels() {
     constexpr u32 kSize = kSplatTileSize;
     vector<u8> pixels(static_cast<size_t>(kSize) * kSize * 4 *
-                      SplatLayer_Count);
+                      kSplatArrayLayers);
     const size_t layerBytes = static_cast<size_t>(kSize) * kSize * 4;
     for (u32 y = 0; y < kSize; ++y) {
         for (u32 x = 0; x < kSize; ++x) {
@@ -212,6 +317,12 @@ vector<u8> buildSplatTilePixels() {
                        sandTexel(u, v));
             writeTexel(pixels, SplatLayer_Cliff * layerBytes + texel,
                        cliffTexel(u, v));
+            writeTexel(pixels, grassVariantLayer(1) * layerBytes + texel,
+                       wornGrassTexel(u, v));
+            writeTexel(pixels, grassVariantLayer(2) * layerBytes + texel,
+                       stonyGrassTexel(u, v));
+            writeTexel(pixels, grassVariantLayer(3) * layerBytes + texel,
+                       dirtGrassTexel(u, v));
         }
     }
     return pixels;
@@ -224,9 +335,12 @@ Vec3 grassAlbedo(f32 u, f32 v) {
     // read as one family): one hue, a WHISPER of blotch luminance drift
     // (~±1%, mean 1) — just enough to break the perfectly flat albedo
     // that exposed the RC probe-parity speckle, invisible as texture.
+    return Vec3 { 0.434f, 0.633f, 0.375f } * grassBlotch(u, v);
+}
+
+f32 grassBlotch(f32 u, f32 v) {
     const f32 blotch = tileFbm(101, u, v, 6, 4);
-    return Vec3 { 0.434f, 0.633f, 0.375f } *
-           (0.99f + 0.02f * glm::smoothstep(0.30f, 0.70f, blotch));
+    return 0.99f + 0.02f * glm::smoothstep(0.30f, 0.70f, blotch);
 }
 
 } // namespace render
