@@ -71,6 +71,25 @@ Phase-5, le frame thread publie) → cache disque
 Publication : nouveau `TerrainBase` immutable + remesh des chunks couverts
 dans le ring + rebuild collision/veg + snap des cells + eau republiée.
 Éviction au-delà de ~2,5 tuiles (le streamer re-demande au retour).
+
+**Boot & invalidation (fixes 2026-08-04)** :
+- *Trou au spawn corrigé* : un chunk terrain dont le build était en vol au
+  moment d'une publication capturait les ANCIENS params — son mesh périmé
+  atterrissait et restait affiché jusqu'à un changement de LOD (d'où le
+  « je m'éloigne et je reviens et le sol apparaît »). `remeshChunks` marque
+  maintenant ces chunks (`remeshOnLand`) et le pump ré-enqueue à
+  l'atterrissage — le pendant terrain du flag `stale` de l'herbe/végétation.
+- *Gate de chargement 70→100 % raccourci* : (1) **hold** — les rings
+  terrain/herbe/végétation ne streament plus tant que la première tuile
+  n'est pas publiée (tout mesh bâti sur la base vide était re-meshé à la
+  publication : double travail qui volait les workers des bakes) ;
+  (2) **boost** — derrière le voile opaque du boot, les budgets
+  anti-stutter s'ouvrent (requêtes ×16, uploads ×8 / 12 ms) : ils
+  protégeaient une frame que personne ne voit. `WorldRenderer::
+  setStreamingHold/Boost`, pilotés par la scène (publication / machine
+  warmup). Le voile léger du spectateur garde les budgets normaux.
+  NB : le 0→70 % (bakes de tuiles) était déjà couvert par le cache disque
+  ci-dessus — un cache des meshes de chunks serait lourd et sans objet.
 Activation : `sandboxTerrain = true` dans `landscape.toml` (seed =
 `terrainSeed`) — off par défaut, le monde démo est intact.
 

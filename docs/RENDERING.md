@@ -148,7 +148,13 @@ re-validate GL 4.6 parity**.
 
 The reusable **systems** live in `engine/render/landscape/`:
 `TerrainSystem` (64 m streamed chunks, 4 LODs + skirts, deterministic
-world-space noise, sRGB splat array), `GrassSystem` (Quick_Grass blades,
+world-space noise; the material layer — cooked BC7/BC5/R16 `.mtex` splat
+arrays with an A/B against the procedural tiles, height-based layer
+blending, per-layer normal mapping over the planar-UV tangent basis,
+POM on the dominant layer, bi-frequency anti-repetition, and the
+`TerrainShadeMap` region bands feeding biome rules + macro tint — is the
+TERRAIN-TEXTURING chantier, journal + knobs: `docs/TERRAIN-TEXTURING.md`),
+`GrassSystem` (Quick_Grass blades,
 metric density prefix; blades **inherit the terrain albedo at their
 root** — the scatter bakes the splat blotch color per instance
 (packed in `groundNormal.w`) and the panel colors are tints ×ground,

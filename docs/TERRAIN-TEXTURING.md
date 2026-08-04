@@ -149,12 +149,50 @@
   plus récent que les `.mtex`, le cook relance avant `game-data`. Absent
   (clone frais) : les `.mtex` commités servent tels quels.
 
-À VENIR : B5 prototype comparatif (toggle A/B panel : reconstruire les
-arrays procéduraux enrichis vs cooked à chaud) → B6 detail normal
-(TBN analytique des UV planaires) → B7 POM (garde-fous M1 :
-uSplatDetailInfo.zw réservés) → B8 stochastique (option). Détail : brief
-§5. À re-valider par le dev : transition neige/herbe (le fix wander devrait
-la réparer) et temps de chargement.
+- **B5 prototype comparatif (FAIT 2026-08-03)** : toggle A/B live dans le
+  panel Terrain (« Cooked materials (A/B vs procedural) ») —
+  `TerrainSystem::setMaterialSet` reconstruit les arrays + bind group en
+  place (`buildMaterialArrays` extrait de create ; précédent frame-safe :
+  le destroy-recreate du TerrainLightMap). `WorldRenderer::terrainCookedUi`
+  synchronisé chaque frame. Le jugement de DA (procédural vs CC0, height
+  blending actif) appartient au dev. Les normales Sobel procédurales
+  (l'« enrichi ») arrivent avec B6, où les normales sont consommées.
+
+- **B6 normal mapping + détail (FAIT 2026-08-03)** : les normales par
+  couche sont consommées — array `uSplatNormal` (binding 8) : BC5 cooké OU
+  RGBA8 procédural (`buildSplatNormalPixels`, différences centrales des
+  MÊMES fonctions de height → le relief colle au blending), une seule
+  convention de décode (rg → z reconstruit). TBN analytique des UV
+  planaires monde (T=+X, B=cross(T,n)=+Z, convention OpenGL +Y — un relief
+  inversé signale une source DX). Détail proche : la normale de la couche
+  dominante rééchantillonnée à fréquence non harmonique (×7.3), fondue par
+  `splatDetailFade` (24 m). La normale mappée n'alimente QUE les termes
+  directs (diffus soleil, lumières locales) ; ombres et GI gardent la
+  normale analytique (verdict). Roughness : réservée (pas de spéculaire
+  terrain — v2 : sheen wetness/neige).
+- **B7 POM (FAIT 2026-08-03)** : parallax occlusion sur la couche
+  dominante seule (poids > 0.3), 12 steps + raffinement linéaire,
+  `dFdx/dFdy` AVANT la boucle et `textureGrad` dedans (piège du brief),
+  portée `pomDistance` (12 m, 0 = off) avec fondu d'échelle sur le dernier
+  tiers, profondeur 0.03 uv hand-tuned. Perf M1 : à mesurer au frame probe
+  par le dev (le knob est le garde-fou).
+
+- **B8 anti-répétition (FAIT 2026-08-03)** : variante bi-fréquence du
+  brief — second tap albedo à 0.37× (non harmonique, phase par couche) ;
+  le RATIO de luminance module la tuile (teinte et détail HF préservés,
+  histogramme imparfait par design). Knob `splatVariety` (0.5, 0 = off).
+  Upgrade si la revue visuelle l'exige : hex-tiling Mikkelsen (3 taps,
+  histogramme préservé — `textureGrad` obligatoire sur les UV décalés).
+
+**Toutes les phases du brief sont livrées.** Sliders live : fenêtre
+« Terrain & streaming » → « Terrain materials » (blend depth, tint,
+detail fade, POM reach, variety) + la case « Cooked materials (A/B) » ;
+« Save render tuning » les persiste. À valider par le dev : verdict A/B
+procédural vs CC0, transition neige/herbe, temps de chargement, coût GPU
+POM/variety (F6). Différés du chantier : hex-tiling, sheen roughness
+(wetness/neige), tessellation (extension RHI), berges sableuses des lacs,
+publication TRG de `hardness` (teinte lithologique), tap live water-info,
+retouche stylisée des sources CC0 selon le verdict de DA.
 
 Note DA transitoire : depuis le chantier A, l'albedo terrain par défaut est
 la bibliothèque CC0 cookée (landscape.toml pointe les .mtex) — le raccord
