@@ -370,6 +370,14 @@ Textures Poly Haven CC0 (`textures/bark/`) : `jolcham_oak_bark_01`
   par slot d'arbre — défaut chêne sur les feuillus (0-2), épicéa sur
   les conifères (3-4) ; rebuild des groupes au point sûr
   (`barkGroupsDirty`). Sampler REPEAT dédié (le triplanaire tuile).
+- **v2 — le relief dans le matériau (retour dev : tronc low-poly, relief
+  par le matériau)** : normal-height packée par écorce (nor_gl RGB +
+  displacement en alpha, fusion au chargement) au binding 8 ;
+  `tree.frag` : parallax bump-offset le long de la vue (le yaw
+  d'instance est packé dans le flag — vObjPos.w = 1+yaw — pour passer
+  monde↔objet) puis normal mapping triplanaire (frames par plan,
+  whiteout, re-rotation monde). 6 taps/pixel d'écorce ; amplitudes :
+  kBarkDepth 0.045 uv, kBarkTile 1.2/m.
 
 ## À valider par le dev
 

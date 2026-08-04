@@ -8,8 +8,10 @@ layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 layout(binding = 3) uniform sampler2D uPropNormal;
 // Per-tree-slot bark (oak/spruce — the tree builder's pick), sampled
 // triplanarly on flagged wood. uSplatVarietyInfo.w gates it (0 until
-// the scene loaded the textures).
+// the scene loaded the textures). uBarkNrm packs nor_gl in RGB and the
+// displacement in A — the LOW-POLY trunk carries its relief here.
 layout(binding = 7) uniform sampler2D uBark;
+layout(binding = 8) uniform sampler2D uBarkNrm;
 // Region shading T0 (macro tint) — the ground-anchor blend below.
 layout(binding = 4) uniform sampler2D uTerrainShade0;
 #include "shadow.glsl"
@@ -81,16 +83,53 @@ void main() {
 
     // Bark on flagged wood (procedural trunks/branches): triplanar over
     // the object-space position — no mesh uvs, no seams on bent
-    // branches. The vertex color keeps carrying AO + the vertical
-    // gradient; the multiplier recovers the texture's own brightness.
+    // branches. The RELIEF lives in the material (low-poly trunk):
+    // parallax bump-offset shifts the taps along the view, the packed
+    // normal map perturbs the shading normal (whiteout blend), and the
+    // vertex color keeps carrying AO + the vertical gradient.
     if (vObjPos.w > 0.5 && uSplatVarietyInfo.w > 0.5) {
-        vec3 an = abs(normalize(vObjNormal)) + 1.0e-5;
+        float yaw = vObjPos.w - 1.0;
+        float yc = cos(yaw);
+        float ys = sin(yaw);
+        vec3 onrm = normalize(vObjNormal);
+        vec3 an = abs(onrm) + 1.0e-5;
         vec3 bw = an / (an.x + an.y + an.z);
-        const float kBarkTile = 1.2; // tiles per meter
-        vec3 bark = texture(uBark, vObjPos.zy * kBarkTile).rgb * bw.x +
-                    texture(uBark, vObjPos.xz * kBarkTile).rgb * bw.y +
-                    texture(uBark, vObjPos.xy * kBarkTile).rgb * bw.z;
+        const float kBarkTile = 1.2;  // tiles per meter
+        const float kBarkDepth = 0.045; // parallax amplitude (uv units)
+        vec2 uvx = vObjPos.zy * kBarkTile;
+        vec2 uvy = vObjPos.xz * kBarkTile;
+        vec2 uvz = vObjPos.xy * kBarkTile;
+        // View in OBJECT space (inverse of the vertex yaw rotation).
+        vec3 vw = normalize(uCameraPos.xyz - vWorldPos);
+        vec3 vo = vec3(vw.x * yc + vw.z * ys, vw.y,
+                       -vw.x * ys + vw.z * yc);
+        // Normal-height taps (unshifted): the height drives the offset,
+        // the normals perturb through per-plane axis frames.
+        vec4 nhx = texture(uBarkNrm, uvx);
+        vec4 nhy = texture(uBarkNrm, uvy);
+        vec4 nhz = texture(uBarkNrm, uvz);
+        float height =
+            nhx.a * bw.x + nhy.a * bw.y + nhz.a * bw.z;
+        float sink = (height - 0.5) * kBarkDepth;
+        uvx += vec2(vo.z, vo.y) / max(abs(vo.x), 0.35) * sink;
+        uvy += vec2(vo.x, vo.z) / max(abs(vo.y), 0.35) * sink;
+        uvz += vec2(vo.x, vo.y) / max(abs(vo.z), 0.35) * sink;
+        vec3 bark = texture(uBark, uvx).rgb * bw.x +
+                    texture(uBark, uvy).rgb * bw.y +
+                    texture(uBark, uvz).rgb * bw.z;
         baseColor = bark * min(vColor * 2.6, vec3(1.4));
+        // Triplanar normal blend (axis frames per plane), rotated back
+        // to world by the instance yaw.
+        vec3 tnx = nhx.xyz * 2.0 - 1.0;
+        vec3 tny = nhy.xyz * 2.0 - 1.0;
+        vec3 tnz = nhz.xyz * 2.0 - 1.0;
+        vec3 nObj = normalize(
+            vec3(tnx.z * sign(onrm.x), tnx.y, tnx.x) * bw.x +
+            vec3(tny.x, tny.z * sign(onrm.y), tny.y) * bw.y +
+            vec3(tnz.x, tnz.y, tnz.z * sign(onrm.z)) * bw.z +
+            onrm * 1.5);
+        shadeN = normalize(vec3(nObj.x * yc - nObj.z * ys, nObj.y,
+                                nObj.x * ys + nObj.z * yc));
     }
 
     // Per-instance hue roll: some trees lean yellow-green, some deep green.

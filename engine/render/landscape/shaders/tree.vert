@@ -118,8 +118,11 @@ void main() {
     }
 
     vPropUv = texturedProp ? aUv : vec2(-10.0);
+    // w packs flag + yaw (0 = no bark; 1 + yaw otherwise) — the frag
+    // needs the instance yaw to move between world and object space for
+    // the triplanar normal/parallax.
     bool bark = !leafCard && !texturedProp && aUv.y < -0.5;
-    vObjPos = vec4(aPos * aPosScale.w, bark ? 1.0 : 0.0);
+    vObjPos = vec4(aPos * aPosScale.w, bark ? 1.0 + yaw : 0.0);
     vObjNormal = aNormal;
     vNormal = normal;
     vColor = aColor;

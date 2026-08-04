@@ -194,9 +194,17 @@ public:
     // slot's bark TRIPLANARLY — no mesh uvs needed. Two textures (0 =
     // oak/broadleaf default, 1 = spruce/conifer default); the tree
     // builder picks per slot via variantBark + barkGroupsDirty.
-    void setBarkTextures(rhi::Device& device, u32 oakW, u32 oakH,
-                         vector<u8> oakRgba, u32 pineW, u32 pineH,
-                         vector<u8> pineRgba);
+    struct BarkImage {
+        u32 width { 0 };
+        u32 height { 0 };
+        vector<u8> rgba;
+    };
+    // Albedo + packed normal-height (RGB = nor_gl, A = displacement) per
+    // bark: the LOW-POLY trunk carries its relief in the material —
+    // triplanar normal mapping + parallax offset in tree.frag.
+    void setBarkTextures(rhi::Device& device, BarkImage oakAlbedo,
+                         BarkImage oakNrmHeight, BarkImage pineAlbedo,
+                         BarkImage pineNrmHeight);
     bool barkLoaded() const { return barkTextures[0].get().id != 0; }
     array<u8, kTreeVariants> variantBark { { 0, 0, 0, 1, 1 } };
     bool barkGroupsDirty { false }; // panel edits; applied in update()
@@ -424,15 +432,12 @@ private:
     rhi::TextureHandle flatNormalHandle(rhi::Device& device);
     // Tree bark: textures + CPU copies (regenerate re-uploads), a WRAP
     // sampler (triplanar tiles past [0,1]), per-tree-slot bind groups
-    // (leaf atlas @0 + flat normal @3 + bark @7 — the shared pipeline
-    // layout).
-    struct BarkImage {
-        u32 width { 0 };
-        u32 height { 0 };
-        vector<u8> rgba;
-    };
+    // (leaf atlas @0 + flat normal @3 + bark albedo @7 + bark
+    // normal-height @8 — the shared pipeline layout).
     array<BarkImage, 2> barkImages;
+    array<BarkImage, 2> barkNrmImages;
     array<rhi::UniqueTexture, 2> barkTextures;
+    array<rhi::UniqueTexture, 2> barkNrmTextures;
     rhi::UniqueSampler barkSampler;
     void rebuildTreeBarkGroups(rhi::Device& device);
     // Shared leaf-cluster cutout mask (all tree variants; cards only).

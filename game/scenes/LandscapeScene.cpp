@@ -586,15 +586,50 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
             oakGuid ? assetDb.resolve(*oakGuid) : std::nullopt;
         const auto pinePath =
             pineGuid ? assetDb.resolve(*pineGuid) : std::nullopt;
-        auto oak = oakPath ? assets::loadImageFile(*oakPath)
-                           : std::nullopt;
-        auto pine = pinePath ? assets::loadImageFile(*pinePath)
-                             : std::nullopt;
-        if (oak && pine) {
-            renderer.setVegetationBark(
-                device, oak->width, oak->height,
-                std::move(oak->pixels), pine->width, pine->height,
-                std::move(pine->pixels));
+        // Per bark: albedo + a PACKED normal-height image (nor_gl RGB,
+        // displacement in alpha — sibling files of the diffuse).
+        const auto loadBark =
+            [](const std::filesystem::path& diffPath,
+               render::VegetationSystem::BarkImage& albedo,
+               render::VegetationSystem::BarkImage& nrmHeight) {
+                auto diff = assets::loadImageFile(diffPath);
+                if (!diff) {
+                    return false;
+                }
+                str name = diffPath.filename().string();
+                const auto sub = [&](const char* tag) {
+                    str s = name;
+                    s.replace(s.find("_diff_"), 6, tag);
+                    return diffPath.parent_path() / s;
+                };
+                auto nor = assets::loadImageFile(sub("_nor_gl_"));
+                if (nor) {
+                    if (const auto disp =
+                            assets::loadImageFile(sub("_disp_"));
+                        disp && disp->width == nor->width &&
+                        disp->height == nor->height) {
+                        const size_t pixels =
+                            static_cast<size_t>(nor->width) *
+                            nor->height;
+                        for (size_t p = 0; p < pixels; ++p) {
+                            nor->pixels[p * 4 + 3] =
+                                disp->pixels[p * 4 + 0];
+                        }
+                    }
+                    nrmHeight = { nor->width, nor->height,
+                                  std::move(nor->pixels) };
+                }
+                albedo = { diff->width, diff->height,
+                           std::move(diff->pixels) };
+                return true;
+            };
+        render::VegetationSystem::BarkImage oakA, oakN, pineA, pineN;
+        if (oakPath && pinePath && loadBark(*oakPath, oakA, oakN) &&
+            loadBark(*pinePath, pineA, pineN)) {
+            renderer.setVegetationBark(device, std::move(oakA),
+                                       std::move(oakN),
+                                       std::move(pineA),
+                                       std::move(pineN));
         }
     }
 
