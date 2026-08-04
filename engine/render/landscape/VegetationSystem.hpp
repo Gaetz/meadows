@@ -56,10 +56,27 @@ public:
     TreeSilhouette treeSilhouette() const;
     static constexpr u32 kRockVariants = 4;
     static constexpr u32 kBushVariants = 3;
-    static constexpr u32 kVariantCount =
-        kTreeVariants + kRockVariants + kBushVariants;
+    // Forest-floor debris (stumps, fallen trunks — scanned-prop
+    // overrides, docs/GRASS-REDO.md): rigid like rocks, scattered on the
+    // forest floor only.
+    static constexpr u32 kDebrisVariants = 2;
+    // Photoreal plant accents over the blade meadow (docs/GRASS-REDO.md
+    // palier 2): textured (per-variant albedo bind group, alpha cutout),
+    // no shadow casting, no collision, no GI — fill-rate stays owned by
+    // the opaque world. Slot order: tall grass, fern, dandelion, shrub.
+    static constexpr u32 kPlantVariants = 4;
+    // Mass tier under the hero plants (docs/GRASS-REDO.md): the SAME
+    // four species as cheap clones (~200 tris) at high density and short
+    // reach — the carpet the heroes sit on. Same habitat + colony noise.
+    static constexpr u32 kMassVariants = 4;
+    static constexpr u32 kVariantCount = kTreeVariants + kRockVariants +
+                                         kBushVariants + kDebrisVariants +
+                                         kPlantVariants + kMassVariants;
     static constexpr u32 kFirstRock = kTreeVariants;
     static constexpr u32 kFirstBush = kTreeVariants + kRockVariants;
+    static constexpr u32 kFirstDebris = kFirstBush + kBushVariants;
+    static constexpr u32 kFirstPlant = kFirstDebris + kDebrisVariants;
+    static constexpr u32 kFirstMass = kFirstPlant + kPlantVariants;
     // Runtime knobs — live-safe: the ring streamer adapts on its own
     // (requestMissing reads the new radius, evictFar drains the excess).
     // NB: the tree FADE tops out at 880 m — radii under ~14 pop at the
@@ -127,8 +144,10 @@ public:
     void destroy(rhi::Device& device);
 
     // Streaming pump — main thread, once per frame (top of render).
+    // `holdRequests`: keep the ring from scattering (sandbox boot, before
+    // the base regions are published — see TerrainSystem::update).
     void update(rhi::Device& device, const TerrainParams& params,
-                const Vec3& cameraPos);
+                const Vec3& cameraPos, bool holdRequests = false);
 
     // Drops every chunk (terrain seed changed). Variant meshes are reseeded
     // on the next update.
@@ -150,11 +169,25 @@ public:
     }
 
     // Replaces one variant's mesh with an authored one (glTF
-    // rock). The CPU copy is kept so regenerate() re-uploads it after a
-    // seed change. uv.x drives canopy sway in tree.vert — zero the uvs for
-    // rigid props. Scatter, instancing and shadow casting are untouched.
+    // rock/scan). The CPU copies are kept so regenerate() re-uploads them
+    // after a seed change. uv.x drives canopy sway in tree.vert — zero the
+    // uvs for rigid props. Optional decimated twins feed the far draws and
+    // the shadow casters (empty = every path uses the main mesh — a 700+
+    // tri scan then casts full-detail into every cascade). Scatter and
+    // instancing are untouched.
     void overrideVariantMesh(rhi::Device& device, u32 variant,
-                             MeshData mesh);
+                             MeshData mesh, MeshData low = {},
+                             MeshData ultra = {});
+
+    // Per-variant albedo texture (sRGB, RGBA8): the variant draws
+    // textured — its mesh uv is REAL texture coordinates, flagged to the
+    // shaders by a NEGATIVE instance fade lane (scatter emits it for the
+    // plant slots). Alpha < 0.5 discards (cutout). Call AFTER
+    // overrideVariantMesh (which resets the variant's GPU state).
+    void setVariantAlbedo(rhi::Device& device, u32 variant, u32 width,
+                          u32 height, vector<u8> rgba,
+                          u32 normalWidth = 0, u32 normalHeight = 0,
+                          vector<u8> normalRgba = {});
 
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
@@ -301,6 +334,11 @@ private:
         rhi::UniqueBuffer vertexBuffer;
         rhi::UniqueBuffer indexBuffer;
         u32 indexCount { 0 };
+        // Textured plants: per-variant albedo (+ normal map, binding 3),
+        // bound as group 1 in place of the leaf-mask atlas.
+        rhi::UniqueTexture albedo;
+        rhi::UniqueTexture normalMap;
+        rhi::UniqueBindGroup albedoGroup;
         // Low-detail twin (tree variants only; empty = use the main mesh).
         rhi::UniqueBuffer lowVertexBuffer;
         rhi::UniqueBuffer lowIndexBuffer;
@@ -350,7 +388,28 @@ private:
     // Per tree variant, mesh units: x = height, y = max radial extent,
     // z = crown start height. Zero until the variant lands.
     array<Vec3, kTreeVariants> treeBounds {};
-    std::unordered_map<u32, MeshData> meshOverrides;
+    struct OverrideMesh {
+        MeshData high;
+        MeshData low;   // empty = far draws/casters use `high`
+        MeshData ultra; // empty = stop at `low`
+    };
+    std::unordered_map<u32, OverrideMesh> meshOverrides;
+    // Per-variant albedo + optional normal map (textured props): CPU
+    // copies kept so createVariantMeshes re-uploads after a regenerate.
+    struct AlbedoOverride {
+        u32 width { 0 };
+        u32 height { 0 };
+        vector<u8> rgba;
+        u32 normalWidth { 0 };
+        u32 normalHeight { 0 };
+        vector<u8> normalRgba; // empty = flat fallback (1x1 up)
+    };
+    std::unordered_map<u32, AlbedoOverride> albedoOverrides;
+    void uploadVariantAlbedo(rhi::Device& device, u32 variant);
+    // 1x1 (128,128,255) bound at the normal slot when a variant has no
+    // map (and in the leaf-mask group — cards don't normal-map).
+    rhi::UniqueTexture flatNormal;
+    rhi::TextureHandle flatNormalHandle(rhi::Device& device);
     // Shared leaf-cluster cutout mask (all tree variants; cards only).
     array<Vec4, kLeafStyleCount> leafSeasonTable {};
     rhi::UniqueTexture leafMask;

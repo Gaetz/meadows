@@ -25,10 +25,20 @@ void main() {
     // every leaf faces the sun, the canopy casts at full density.
     bool leafCard = aUv.x < -5.0;
     float slot = leafCard ? floor((-aUv.x - 5.0) / 20.0) : 0.0;
-    float sway = leafCard ? 0.85 : aUv.x;
+    // Textured props (aParams.w < 0): uv is texture coords, not a sway
+    // weight — every textured CASTER is rigid (plants never cast).
+    float sway = aParams.w < 0.0 ? 0.0 : (leafCard ? 0.85 : aUv.x);
 
     float dist = distance(aPosScale.xyz, uCameraPos.xyz);
-    float fade = 1.0 - smoothstep(aParams.w * 0.86, aParams.w, dist);
+    // |w|: a negative lane flags textured plants (they never reach this
+    // caster — drawDepth skips them — but the mirror keeps the contract).
+    float fadeEnd = abs(aParams.w);
+    float fade = 1.0 - smoothstep(fadeEnd * 0.86, fadeEnd, dist);
+    // Pebble-scale clutter (shares the rock variants) casts no shadow:
+    // collapse it here — its shadow is invisible but its 700+ tri scan
+    // mesh is not free across the cascades. Same threshold as the
+    // collision skip (VegetationCollision).
+    fade *= step(0.35, aPosScale.w);
     vec3 world = aPosScale.xyz + local * (aPosScale.w * fade);
 
     float gust = sin(uWindInfo.x * 1.1 + aParams.z +

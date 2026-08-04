@@ -37,8 +37,11 @@ public:
     // Sized so that never happens: ~5 MB of GPU buffers.
     static constexpr u32 kMaxCandidates = 49152;
     // Draw batches: terrain LODs 0-4, vegetation (variant, level) pairs
-    // above (kGroupBase + variant*3 + level).
-    static constexpr u32 kMaxGroups = 44;
+    // above (kGroupBase + variant*3 + level). Must cover kGroupBase +
+    // kVariantCount*3 — enforced by a static_assert at the vegetation
+    // candidate emitter (an out-of-range group used to alias another
+    // variant's batch: the whole prop blinked with the command ping-pong).
+    static constexpr u32 kMaxGroups = 80;
 
     struct Candidate {
         Vec3 lo {};
