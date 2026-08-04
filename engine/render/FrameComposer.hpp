@@ -54,6 +54,7 @@ struct FrameComposerInputs {
     f32 splatVariety { 0.5f }; // anti-repetition second tap (0 = off)
     f32 pomShadowStrength { 0.6f }; // POM self-shadow (0 = off)
     f32 pomDepth { 0.03f }; // parallax relief depth (uv units)
+    bool barkEnabled { false }; // tree bark textures resident
     bool reflectionsActive { false };
     // Horizon-closure distance (m) for applyFog — the far-terrain
     // reach when it stands in, else the streaming ring (0 = off).

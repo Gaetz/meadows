@@ -657,7 +657,9 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
         MeshVertex& vertex = mesh.vertices[i];
         const f32 height01 =
             glm::clamp(vertex.position.y / totalHeight, 0.0f, 1.0f);
-        vertex.uv = { height01 * 0.30f, height01 };
+        // uv.y < -0.5 flags BARK (triplanar in tree.frag); nothing else
+        // reads the lane for non-card wood.
+        vertex.uv = { height01 * 0.30f, -1.0f };
     }
     return mesh;
 }

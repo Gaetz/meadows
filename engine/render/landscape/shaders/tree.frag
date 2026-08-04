@@ -6,6 +6,10 @@ layout(binding = 0) uniform sampler2D uLeafMask;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
 // Textured-prop normal map (flat 1x1 for untextured variants).
 layout(binding = 3) uniform sampler2D uPropNormal;
+// Per-tree-slot bark (oak/spruce — the tree builder's pick), sampled
+// triplanarly on flagged wood. uSplatVarietyInfo.w gates it (0 until
+// the scene loaded the textures).
+layout(binding = 7) uniform sampler2D uBark;
 // Region shading T0 (macro tint) — the ground-anchor blend below.
 layout(binding = 4) uniform sampler2D uTerrainShade0;
 #include "shadow.glsl"
@@ -20,6 +24,8 @@ layout(location = 3) in float vTint;
 layout(location = 4) in vec2 vCardUv;
 layout(location = 5) in vec2 vPropUv;
 layout(location = 6) in float vGroundDelta;
+layout(location = 7) in vec4 vObjPos;
+layout(location = 8) in vec3 vObjNormal;
 
 layout(location = 0) out vec4 fragColor;
 
@@ -71,6 +77,20 @@ void main() {
         float invmax =
             inversesqrt(max(dot(T, T), dot(B, B)) + 1.0e-10);
         shadeN = normalize(mat3(T * invmax, B * invmax, shadeN) * nTex);
+    }
+
+    // Bark on flagged wood (procedural trunks/branches): triplanar over
+    // the object-space position — no mesh uvs, no seams on bent
+    // branches. The vertex color keeps carrying AO + the vertical
+    // gradient; the multiplier recovers the texture's own brightness.
+    if (vObjPos.w > 0.5 && uSplatVarietyInfo.w > 0.5) {
+        vec3 an = abs(normalize(vObjNormal)) + 1.0e-5;
+        vec3 bw = an / (an.x + an.y + an.z);
+        const float kBarkTile = 1.2; // tiles per meter
+        vec3 bark = texture(uBark, vObjPos.zy * kBarkTile).rgb * bw.x +
+                    texture(uBark, vObjPos.xz * kBarkTile).rgb * bw.y +
+                    texture(uBark, vObjPos.xy * kBarkTile).rgb * bw.z;
+        baseColor = bark * min(vColor * 2.6, vec3(1.4));
     }
 
     // Per-instance hue roll: some trees lean yellow-green, some deep green.

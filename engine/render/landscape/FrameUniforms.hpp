@@ -197,7 +197,8 @@ struct FrameUniforms {
     // Splat anti-repetition + POM: x = bi-frequency variety strength
     // (0 = off — the second, non-harmonic tap that keeps the 4 m tile
     // grid from ever repeating exactly), y = POM self-shadow strength,
-    // z = POM relief depth (uv units), w reserved.
+    // z = POM relief depth (uv units), w = tree bark textures resident
+    // (tree.frag gate).
     Vec4 splatVarietyInfo { 0.5f, 0.0f, 0.03f, 0.0f };
     // Grass species table (GrassSpecies.hpp is the source; FrameComposer
     // copies it) — grass.vert indexes by the instance's species lane.

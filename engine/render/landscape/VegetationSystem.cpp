@@ -651,10 +651,16 @@ void VegetationSystem::rebuildLeafMask(rhi::Device& device) {
                          .texture = leafMask.get(),
                          .sampler = leafMaskSampler.get() },
                        // Same layout as the textured-prop groups: a flat
-                       // normal fills the map slot (cards don't use it).
+                       // normal fills the map slot (cards don't use it),
+                       // and the bark slot (inert without the flag).
                        { .binding = 3,
                          .texture = flatNormalHandle(device),
+                         .sampler = leafMaskSampler.get() },
+                       { .binding = 7,
+                         .texture = flatNormalHandle(device),
                          .sampler = leafMaskSampler.get() } } }) };
+    // Tree bark groups reference the leaf mask just recreated.
+    rebuildTreeBarkGroups(device);
 }
 
 void VegetationSystem::createVariantMeshes(rhi::Device& device,
@@ -737,6 +743,7 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
         (void)albedo;
         uploadVariantAlbedo(device, variant);
     }
+    rebuildTreeBarkGroups(device);
 }
 
 VegetationSystem::TreeSilhouette VegetationSystem::treeSilhouette() const {
@@ -887,6 +894,65 @@ rhi::TextureHandle VegetationSystem::flatNormalHandle(rhi::Device& device) {
     return flatNormal.get();
 }
 
+void VegetationSystem::setBarkTextures(rhi::Device& device, u32 oakW,
+                                       u32 oakH, vector<u8> oakRgba,
+                                       u32 pineW, u32 pineH,
+                                       vector<u8> pineRgba) {
+    barkImages[0] = { oakW, oakH, std::move(oakRgba) };
+    barkImages[1] = { pineW, pineH, std::move(pineRgba) };
+    const bool mips = device.caps().mipmapGeneration;
+    for (u32 b = 0; b < 2; ++b) {
+        const BarkImage& src = barkImages[b];
+        if (src.rgba.size() <
+            static_cast<size_t>(src.width) * src.height * 4) {
+            continue;
+        }
+        const u32 mipLevels =
+            mips ? 1 + static_cast<u32>(std::log2(static_cast<f32>(
+                       glm::max(src.width, src.height))))
+                 : 1;
+        barkTextures[b] = { device, device.createTexture(
+            { .width = src.width,
+              .height = src.height,
+              .mipLevels = mipLevels,
+              .format = rhi::TextureFormat::SRGBA8,
+              .filter = rhi::FilterMode::Linear },
+            src.rgba.data()) };
+        if (mips) {
+            device.generateMipmaps(barkTextures[b].get());
+        }
+    }
+    if (barkSampler.get().id == 0) {
+        barkSampler = { device, device.createSampler(
+            { .mipmapFilter = mips,
+              .addressU = rhi::AddressMode::Repeat,
+              .addressV = rhi::AddressMode::Repeat }) };
+    }
+    rebuildTreeBarkGroups(device);
+}
+
+void VegetationSystem::rebuildTreeBarkGroups(rhi::Device& device) {
+    if (!barkLoaded() || leafMask.get().id == 0) {
+        return;
+    }
+    for (u32 i = 0; i < kTreeVariants; ++i) {
+        const u32 pick = glm::min<u32>(variantBark[i], 1u);
+        const rhi::TextureHandle bark =
+            barkTextures[pick].get().id != 0 ? barkTextures[pick].get()
+                                             : barkTextures[0].get();
+        variantMeshes[i].albedoGroup = { device, device.createBindGroup(
+            { .entries = { { .binding = 0,
+                             .texture = leafMask.get(),
+                             .sampler = leafMaskSampler.get() },
+                           { .binding = 3,
+                             .texture = flatNormalHandle(device),
+                             .sampler = leafMaskSampler.get() },
+                           { .binding = 7,
+                             .texture = bark,
+                             .sampler = barkSampler.get() } } }) };
+    }
+}
+
 void VegetationSystem::uploadVariantAlbedo(rhi::Device& device,
                                            u32 variant) {
     const auto it = albedoOverrides.find(variant);
@@ -934,13 +1000,17 @@ void VegetationSystem::uploadVariantAlbedo(rhi::Device& device,
         normalTex = mesh.normalMap.get();
     }
     // Same layout as leafMaskGroup — the tree pipeline binds either
-    // interchangeably as group 1.
+    // interchangeably as group 1 (binding 7 = the bark slot, dummy here:
+    // textured props never raise the bark flag).
     mesh.albedoGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = mesh.albedo.get(),
                          .sampler = leafMaskSampler.get() },
                        { .binding = 3,
                          .texture = normalTex,
+                         .sampler = leafMaskSampler.get() },
+                       { .binding = 7,
+                         .texture = mesh.albedo.get(),
                          .sampler = leafMaskSampler.get() } } }) };
 }
 
@@ -1117,6 +1187,10 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     frameLowInstances = 0;
     frameUltraInstances = 0;
     pumpReseed(device); // async reseed landing point (main thread)
+    if (barkGroupsDirty) {
+        barkGroupsDirty = false;
+        rebuildTreeBarkGroups(device);
+    }
     if (showcaseCount != 0) {
         return; // showcase replaces the streamed scatter entirely
     }

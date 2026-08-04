@@ -28,6 +28,8 @@ name = "true-adventurer-landscape"
 "85b644a7-f52e-4e33-a856-e72463c403fa" = "models/plants/fern_02/fern_02.gltf"
 "0e611ef4-69d1-40b5-b7c8-6b7884027caa" = "models/plants/dandelion_01/dandelion_01.gltf"
 "292b350b-99e7-482b-b9f6-0e993a69dc91" = "models/plants/shrub_04/shrub_04.gltf"
+"52035a3f-8246-419a-aa69-a686b0c2e834" = "textures/bark/jolcham_oak_bark_01_diff_1k.jpg"
+"8244825d-a9a7-4a30-a8e7-996670193884" = "textures/bark/pine_bark_diff_1k.jpg"
 
 [[records]]
 form = "1a4d5c00-0000-4000-8000-000000000001"

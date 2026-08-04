@@ -194,6 +194,25 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
         r.saveTuningRequested = true;
     }
 
+    // Bark pick per tree slot (oak / spruce) — group rebuild lands at
+    // the next update() safe point.
+    if (r.vegetation.barkLoaded() && ImGui::TreeNode("Bark")) {
+        static const char* kBarkNames[] = { "Oak", "Spruce" };
+        static const char* kSlotNames[] = {
+            "Slot 0 (broadleaf)", "Slot 1 (broadleaf)",
+            "Slot 2 (broadleaf)", "Slot 3 (conifer)", "Slot 4 (conifer)",
+        };
+        for (u32 i = 0; i < render::VegetationSystem::kTreeVariants;
+             ++i) {
+            int pick = r.vegetation.variantBark[i];
+            if (ImGui::Combo(kSlotNames[i], &pick, kBarkNames, 2)) {
+                r.vegetation.variantBark[i] = static_cast<u8>(pick);
+                r.vegetation.barkGroupsDirty = true;
+            }
+        }
+        ImGui::TreePop();
+    }
+
     dirty |= drawTreeKnobs(r);
 
     // The CLAUDE.md §5 round trip, v1: paste-ready records for

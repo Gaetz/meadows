@@ -353,6 +353,24 @@ arrière facile :
   la garantie « jamais adjacentes » servait les CELLULES, le treillis
   n'a plus de cellules).
 
+## Écorce des arbres (demande dev, 2026-08-04)
+
+Textures Poly Haven CC0 (`textures/bark/`) : `jolcham_oak_bark_01`
+(chêne) + `pine_bark` (résineux ~épicéa) :
+- Flag « bois » dans les générateurs : uv.y = −1 sur les tubes (la lane
+  n'était lue nulle part pour le bois — contrat du test TreeGenerator
+  mis à jour). Cards/lobes/buissons inchangés.
+- `tree.frag` : échantillonnage **triplanaire** en espace objet (aucune
+  UV de mesh requise, pas de couture sur les branches courbes), modulé
+  par la couleur vertex (l'AO bake et le gradient vertical survivent).
+  Gaté par `uSplatVarietyInfo.w` (0 tant que la scène n'a pas chargé).
+- Binding 7 du groupe 1 (layout partagé : leaf atlas @0, normal @3,
+  bark @7 — dummies sur les groupes plantes/scans et leafMaskGroup).
+- **Choix par slot dans le tree builder** : combos « Bark » (Oak/Spruce)
+  par slot d'arbre — défaut chêne sur les feuillus (0-2), épicéa sur
+  les conifères (3-4) ; rebuild des groupes au point sûr
+  (`barkGroupsDirty`). Sampler REPEAT dédié (le triplanaire tuile).
+
 ## À valider par le dev
 
 Prairie (mélange d'espèces + clumps + zones qui changent la texture ET la

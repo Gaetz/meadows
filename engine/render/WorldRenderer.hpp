@@ -165,6 +165,13 @@ public:
         vegetation.overrideVariantMesh(device, variant, std::move(mesh),
                                        std::move(low), std::move(ultra));
     }
+    void setVegetationBark(rhi::Device& device, u32 oakW, u32 oakH,
+                           vector<u8> oakRgba, u32 pineW, u32 pineH,
+                           vector<u8> pineRgba) {
+        vegetation.setBarkTextures(device, oakW, oakH,
+                                   std::move(oakRgba), pineW, pineH,
+                                   std::move(pineRgba));
+    }
     void overrideVegetationAlbedo(rhi::Device& device, u32 variant,
                                   u32 width, u32 height, vector<u8> rgba,
                                   u32 normalWidth = 0,

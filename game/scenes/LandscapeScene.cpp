@@ -574,6 +574,30 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
         }
     }
 
+    // Tree bark (oak for the broadleaf slots, spruce for the conifers —
+    // the tree builder's Bark combos re-pick per slot). Wood vertices
+    // are flagged by the generators; tree.frag samples triplanarly.
+    {
+        const auto oakGuid = core::Guid::fromString(
+            "52035a3f-8246-419a-aa69-a686b0c2e834");
+        const auto pineGuid = core::Guid::fromString(
+            "8244825d-a9a7-4a30-a8e7-996670193884");
+        const auto oakPath =
+            oakGuid ? assetDb.resolve(*oakGuid) : std::nullopt;
+        const auto pinePath =
+            pineGuid ? assetDb.resolve(*pineGuid) : std::nullopt;
+        auto oak = oakPath ? assets::loadImageFile(*oakPath)
+                           : std::nullopt;
+        auto pine = pinePath ? assets::loadImageFile(*pinePath)
+                             : std::nullopt;
+        if (oak && pine) {
+            renderer.setVegetationBark(
+                device, oak->width, oak->height,
+                std::move(oak->pixels), pine->width, pine->height,
+                std::move(pine->pixels));
+        }
+    }
+
     // The RmlUi game UI (screens from UiScreenForm records,
     // documents through the plugins' ui/ roots).
     createGameUi(device);

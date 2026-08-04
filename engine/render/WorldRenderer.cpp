@@ -1278,6 +1278,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .splatVariety = view.splatVariety,
         .pomShadowStrength = view.pomShadowStrength,
         .pomDepth = view.pomDepth,
+        .barkEnabled = vegetation.barkLoaded(),
         .reflectionsActive = reflectionsActive,
         // Horizon closure: at the far mesh's reach when it stands in,
         // else at the streaming ring. z of the same uniform carries the

@@ -90,15 +90,16 @@ TEST_CASE("colonized trees are well-formed at every detail level") {
                     // Billboard leaf card: uv encodes corner x halfSize
                     // around the -10 flag bias (see appendBillboardCard).
                     // The encoding stays unambiguous against wood uv
-                    // ([0,1]) for any halfSize below 1.
+                    // (x in [0,1], y = -1) for any halfSize below 1.
                     ++cardVertices;
                     CHECK(std::abs(vertex.uv.x + 10.0f) < 1.0f);
                     CHECK(std::abs(vertex.uv.y) < 1.0f);
                 } else {
                     CHECK(vertex.uv.x >= 0.0f);
                     CHECK(vertex.uv.x <= 1.0f);
-                    CHECK(vertex.uv.y >= 0.0f);
-                    CHECK(vertex.uv.y <= 1.0f);
+                    // Wood carries the BARK flag (uv.y < -0.5 —
+                    // tree.frag samples the slot's bark triplanarly).
+                    CHECK(vertex.uv.y == doctest::Approx(-1.0f));
                 }
             }
             CHECK(cardVertices > 0);

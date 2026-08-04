@@ -189,6 +189,18 @@ public:
                           u32 normalWidth = 0, u32 normalHeight = 0,
                           vector<u8> normalRgba = {});
 
+    // Bark textures for the procedural trees (docs/GRASS-REDO.md): wood
+    // vertices carry a flag (uv.y < -0.5) and tree.frag samples the
+    // slot's bark TRIPLANARLY — no mesh uvs needed. Two textures (0 =
+    // oak/broadleaf default, 1 = spruce/conifer default); the tree
+    // builder picks per slot via variantBark + barkGroupsDirty.
+    void setBarkTextures(rhi::Device& device, u32 oakW, u32 oakH,
+                         vector<u8> oakRgba, u32 pineW, u32 pineH,
+                         vector<u8> pineRgba);
+    bool barkLoaded() const { return barkTextures[0].get().id != 0; }
+    array<u8, kTreeVariants> variantBark { { 0, 0, 0, 1, 1 } };
+    bool barkGroupsDirty { false }; // panel edits; applied in update()
+
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
     // Canopy LOD, three mesh levels from the SAME seed (composition and
@@ -410,6 +422,19 @@ private:
     // map (and in the leaf-mask group — cards don't normal-map).
     rhi::UniqueTexture flatNormal;
     rhi::TextureHandle flatNormalHandle(rhi::Device& device);
+    // Tree bark: textures + CPU copies (regenerate re-uploads), a WRAP
+    // sampler (triplanar tiles past [0,1]), per-tree-slot bind groups
+    // (leaf atlas @0 + flat normal @3 + bark @7 — the shared pipeline
+    // layout).
+    struct BarkImage {
+        u32 width { 0 };
+        u32 height { 0 };
+        vector<u8> rgba;
+    };
+    array<BarkImage, 2> barkImages;
+    array<rhi::UniqueTexture, 2> barkTextures;
+    rhi::UniqueSampler barkSampler;
+    void rebuildTreeBarkGroups(rhi::Device& device);
     // Shared leaf-cluster cutout mask (all tree variants; cards only).
     array<Vec4, kLeafStyleCount> leafSeasonTable {};
     rhi::UniqueTexture leafMask;

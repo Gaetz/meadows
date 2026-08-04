@@ -18,6 +18,11 @@ layout(location = 4) out vec2 vCardUv;
 // Textured-prop uv (plants: aParams.w < 0 flags the variant, its mesh uv
 // is real texture coordinates); x < -5 = untextured.
 layout(location = 5) out vec2 vPropUv;
+// Bark (procedural trees): xyz = object-space position x scale (the
+// triplanar domain — yaw-stable per instance), w = wood flag
+// (uv.y < -0.5 on non-card, non-textured vertices).
+layout(location = 7) out vec4 vObjPos;
+layout(location = 8) out vec3 vObjNormal;
 // Height above the instance base — the ground-anchor blend (tree.frag).
 layout(location = 6) out float vGroundDelta;
 
@@ -113,6 +118,9 @@ void main() {
     }
 
     vPropUv = texturedProp ? aUv : vec2(-10.0);
+    bool bark = !leafCard && !texturedProp && aUv.y < -0.5;
+    vObjPos = vec4(aPos * aPosScale.w, bark ? 1.0 : 0.0);
+    vObjNormal = aNormal;
     vNormal = normal;
     vColor = aColor;
     vTint = aParams.y;
