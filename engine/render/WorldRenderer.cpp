@@ -274,8 +274,22 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                         { "uSkyClouds", 7 },  // volumetric clouds
                         { "uSceneDepth", 8 },   // bilateral weights
                         { "uSsao", 9 } });
-        shaders->load("ssdm", { { "FrameUbo", 0 } },
+        shaders->load("ssdm_flow", { { "FrameUbo", 0 } },
                       { { "uSceneColor", 0 }, { "uSceneDepth", 1 } },
+                      "fullscreen");
+        shaders->load("ssdm_bounds0", { { "FrameUbo", 0 } },
+                      { { "uFlow", 0 } }, "fullscreen");
+        shaders->load("ssdm_bounds_down", { { "FrameUbo", 0 } },
+                      { { "uPrev", 0 } }, "fullscreen");
+        shaders->load("ssdm_resolve", { { "FrameUbo", 0 } },
+                      { { "uSceneColor", 0 },
+                        { "uSceneDepth", 1 },
+                        { "uFlow", 2 },
+                        { "uBounds0", 3 },
+                        { "uBounds1", 4 },
+                        { "uBounds2", 5 },
+                        { "uBounds3", 6 },
+                        { "uBounds4", 7 } },
                       "fullscreen");
         rebuildBlitPipeline(device);
     }
@@ -459,17 +473,83 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
         }
         waterSceneBindGroup = { device, device.createBindGroup(desc) };
     }
-    ssdmBindGroup = { device, device.createBindGroup(
+    // SSDM chain targets: full-res flow + the halving bounds pyramid.
+    ssdmFlowTex = { device, device.createTexture(
+        { .width = width,
+          .height = height,
+          .format = rhi::TextureFormat::RGBA16F,
+          .filter = rhi::FilterMode::Nearest,
+          .usage = rhi::TextureUsage_Sampled |
+                   rhi::TextureUsage_RenderAttachment },
+        nullptr) };
+    ssdmFlowFb = { device, device.createFramebuffer(
+        { .colorAttachments = { { .texture = ssdmFlowTex.get() } } }) };
+    ssdmFlowGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = sceneColorCopy,
                          .sampler = blitSampler },
                        { .binding = 1,
                          .texture = sceneDepthCopy,
                          .sampler = blitSampler } } }) };
-    if (ssdmPipeline.get().id == 0 && shaders) {
-        ssdmPipeline = { device, device.createPipeline(
-                                     { .shader = shaders->get("ssdm"),
-                                       .blend = rhi::BlendMode::Opaque }) };
+    u32 levelW = width;
+    u32 levelH = height;
+    for (u32 i = 0; i < kSsdmLevels; ++i) {
+        ssdmBoundsTex[i] = { device, device.createTexture(
+            { .width = levelW,
+              .height = levelH,
+              .format = rhi::TextureFormat::RGBA16F,
+              .filter = rhi::FilterMode::Nearest,
+              .usage = rhi::TextureUsage_Sampled |
+                       rhi::TextureUsage_RenderAttachment },
+            nullptr) };
+        ssdmBoundsFb[i] = { device, device.createFramebuffer(
+            { .colorAttachments = { { .texture =
+                                          ssdmBoundsTex[i].get() } } }) };
+        ssdmBoundsGroup[i] = { device, device.createBindGroup(
+            { .entries = { { .binding = 0,
+                             .texture = i == 0 ? ssdmFlowTex.get()
+                                               : ssdmBoundsTex[i - 1]
+                                                     .get(),
+                             .sampler = blitSampler } } }) };
+        levelW = std::max(levelW / 2, 1u);
+        levelH = std::max(levelH / 2, 1u);
+    }
+    ssdmResolveGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = sceneColorCopy,
+                         .sampler = blitSampler },
+                       { .binding = 1,
+                         .texture = sceneDepthCopy,
+                         .sampler = blitSampler },
+                       { .binding = 2,
+                         .texture = ssdmFlowTex.get(),
+                         .sampler = blitSampler },
+                       { .binding = 3,
+                         .texture = ssdmBoundsTex[0].get(),
+                         .sampler = blitSampler },
+                       { .binding = 4,
+                         .texture = ssdmBoundsTex[1].get(),
+                         .sampler = blitSampler },
+                       { .binding = 5,
+                         .texture = ssdmBoundsTex[2].get(),
+                         .sampler = blitSampler },
+                       { .binding = 6,
+                         .texture = ssdmBoundsTex[3].get(),
+                         .sampler = blitSampler },
+                       { .binding = 7,
+                         .texture = ssdmBoundsTex[4].get(),
+                         .sampler = blitSampler } } }) };
+    if (shaders) {
+        const auto pipe = [&](rhi::UniquePipeline& p, const char* name) {
+            p = { device,
+                  device.createPipeline(
+                      { .shader = shaders->get(name),
+                        .blend = rhi::BlendMode::Opaque }) };
+        };
+        pipe(ssdmFlowPipeline, "ssdm_flow");
+        pipe(ssdmBounds0Pipeline, "ssdm_bounds0");
+        pipe(ssdmDownPipeline, "ssdm_bounds_down");
+        pipe(ssdmResolvePipeline, "ssdm_resolve");
     }
     // Tonemap inputs: scene + bloom + god rays (black 1x1 fallbacks are not
     // needed on the 4.6 path — postFx is always ready when we get here).
@@ -2018,20 +2098,44 @@ void WorldRenderer::render(engine::FrameContext& frame,
                       radianceCascades.applyGroup(),
                       view.atmos.godRayIntensity > 0.003f, &gpuProbe,
                       sky.cloudMapBindGroup());
-        // SSDM prototype (ssdm.frag): warp the opaque+water image by the
-        // alpha-packed relief before the screen passes — a fresh color
-        // copy first (the pre-water one was consumed by the composite).
+        // SSDM scatter (ssdm_*.frag, Lobel 2008): fresh color copy (the
+        // pre-water one was consumed), then flow -> bounds quadtree ->
+        // nearest-wins resolve back into the offscreen target. Crests
+        // extrude over their neighbors (sky included); holes fall back
+        // to the gather (pits keep digging).
         if (ssdmUi && useOffscreen && frame.device.caps().copyTexture &&
-            ssdmPipeline.get().id != 0 && sceneColorCopy.id() != 0) {
+            ssdmResolvePipeline.get().id != 0 &&
+            sceneColorCopy.id() != 0) {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
                                           "ssdm" };
             frame.cmd.copyTexture(offscreenColor, sceneColorCopy);
+            const auto fullscreen = [&](rhi::FramebufferHandle fb,
+                                        rhi::PipelineHandle pipeline,
+                                        rhi::BindGroupHandle group) {
+                frame.cmd.beginRenderPass(
+                    { .framebuffer = fb,
+                      .loadOp = rhi::LoadOp::DontCare,
+                      .depthLoadOp = rhi::LoadOp::DontCare });
+                frame.cmd.setPipeline(pipeline);
+                frame.cmd.setBindGroup(0, frameBindGroup);
+                frame.cmd.setBindGroup(1, group);
+                frame.cmd.draw(3);
+                frame.cmd.endRenderPass();
+            };
+            fullscreen(ssdmFlowFb.get(), ssdmFlowPipeline.get(),
+                       ssdmFlowGroup.get());
+            fullscreen(ssdmBoundsFb[0].get(), ssdmBounds0Pipeline.get(),
+                       ssdmBoundsGroup[0].get());
+            for (u32 i = 1; i < kSsdmLevels; ++i) {
+                fullscreen(ssdmBoundsFb[i].get(), ssdmDownPipeline.get(),
+                           ssdmBoundsGroup[i].get());
+            }
             frame.cmd.beginRenderPass({ .framebuffer = offscreenFb,
                                         .loadOp = rhi::LoadOp::Load,
                                         .depthLoadOp = rhi::LoadOp::Load });
-            frame.cmd.setPipeline(ssdmPipeline);
+            frame.cmd.setPipeline(ssdmResolvePipeline);
             frame.cmd.setBindGroup(0, frameBindGroup);
-            frame.cmd.setBindGroup(1, ssdmBindGroup);
+            frame.cmd.setBindGroup(1, ssdmResolveGroup);
             frame.cmd.draw(3);
             frame.cmd.endRenderPass();
         }

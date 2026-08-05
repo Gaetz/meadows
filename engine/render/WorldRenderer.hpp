@@ -505,10 +505,21 @@ private:
     rhi::UniqueTexture sceneColorCopy;
     rhi::UniqueTexture sceneDepthCopy;
     rhi::UniqueBindGroup waterSceneBindGroup;
-    // SSDM warp (ssdm.frag): samples the fresh color+depth copies,
-    // writes the warped image back into the offscreen target.
-    rhi::UniquePipeline ssdmPipeline;
-    rhi::UniqueBindGroup ssdmBindGroup;
+    // SSDM scatter chain (ssdm_*.frag — Lobel 2008): flow (per-pixel
+    // displacement + displaced depth) -> bounds quadtree (5 levels) ->
+    // resolve (nearest-wins, gather fallback) into the offscreen target.
+    static constexpr u32 kSsdmLevels = 5;
+    rhi::UniquePipeline ssdmFlowPipeline;
+    rhi::UniquePipeline ssdmBounds0Pipeline;
+    rhi::UniquePipeline ssdmDownPipeline;
+    rhi::UniquePipeline ssdmResolvePipeline;
+    rhi::UniqueTexture ssdmFlowTex;
+    rhi::UniqueFramebuffer ssdmFlowFb;
+    rhi::UniqueBindGroup ssdmFlowGroup;
+    array<rhi::UniqueTexture, kSsdmLevels> ssdmBoundsTex;
+    array<rhi::UniqueFramebuffer, kSsdmLevels> ssdmBoundsFb;
+    array<rhi::UniqueBindGroup, kSsdmLevels> ssdmBoundsGroup;
+    rhi::UniqueBindGroup ssdmResolveGroup;
     // Half-res mirrored scene for the water's planar reflection.
     rhi::UniqueTexture reflectionColor;
     rhi::UniqueTexture reflectionDepth;

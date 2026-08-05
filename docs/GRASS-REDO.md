@@ -419,6 +419,20 @@ toggle **OFF par défaut** (« SSDM (prototype) » + amplitude au panel) :
   passes écran lisent la copie non warpée — écart ≤ 10 px à l'échelle
   du relief).
 
+**v2 — scatter pyramidal** (retour dev : le gather « creuse » sans
+étendre — l'asymétrie structurelle) : la méthode complète de Lobel.
+Chaîne `ssdm_flow` (delta px + profondeur déplacée par pixel, math
+partagée `ssdm_common.glsl`) → `ssdm_bounds0` + 4 downsamples (bboxes
+min/max des positions déplacées, textures séparées par niveau — le
+pattern bloom) → `ssdm_resolve` : descente de quadtree (seed = tuiles
+16 px joignables, pile bornée 64/160 itérations), candidat le plus
+PROCHE gagne (reversed-Z déplacé) — les crêtes extrudent et OCCLUENT,
+ciel compris ; les pixels orphelins (creux désoccludés) retombent sur
+le gather v1 inline — les deux sens du relief coexistent. Troncs
+passés à 12 côtés (tubeSides data) au préalable : le scatter ébrèche un
+profil déjà rond. Critères posés : ≤ ~2,5 ms (scope F6 `ssdm`),
+scintillement sans TAA = critère d'abandon.
+
 ## À valider par le dev
 
 Prairie (mélange d'espèces + clumps + zones qui changent la texture ET la
