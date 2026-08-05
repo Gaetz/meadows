@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "engine/core/Hash.hpp"
+#include "engine/core/Log.hpp"
 #include "engine/render/MeshVertexLayout.hpp"
 #include "engine/render/ShaderLibrary.hpp"
 #include "engine/rhi/CommandBuffer.hpp"
@@ -313,15 +314,32 @@ void CliffSystem::buildMeshes(rhi::Device& device,
                 }
             }
             const u32 stride = rows + 1;
+            // The chain's travel direction along the foot line is
+            // ARBITRARY (nearest-neighbour walk) — probe one mid-band
+            // quad against the outward dir and pick the winding that
+            // faces OUT, or back-face culling hides the whole wall.
+            bool flip = false;
+            {
+                const size_t midC = columns.size() / 2;
+                const u32 a = firstVertex +
+                              static_cast<u32>(midC) * stride + rows / 2;
+                const Vec3 face = glm::cross(
+                    vertices[a + stride].position - vertices[a].position,
+                    vertices[a + 1].position - vertices[a].position);
+                const Vec2 dir = columns[midC].dir;
+                flip = face.x * dir.x + face.z * dir.y < 0.0f;
+            }
             for (u32 c = 0; c + 1 < columns.size(); ++c) {
                 for (u32 r = 0; r < rows; ++r) {
                     const u32 a = firstVertex + c * stride + r;
                     const u32 b = a + stride;
-                    // Outward-facing winding for back-face culling
-                    // (dir = out; columns advance along the band,
-                    // rows go up).
-                    indices.insert(indices.end(),
-                                   { a, b, a + 1, a + 1, b, b + 1 });
+                    if (flip) {
+                        indices.insert(indices.end(),
+                                       { a, a + 1, b, b, a + 1, b + 1 });
+                    } else {
+                        indices.insert(indices.end(),
+                                       { a, b, a + 1, a + 1, b, b + 1 });
+                    }
                 }
             }
             // Accumulated smooth normals over the band's vertex range.
@@ -362,6 +380,10 @@ void CliffSystem::buildMeshes(rhi::Device& device,
               .size = indices.size() * sizeof(u32) },
             indices.data()) };
         meshes.push_back(std::move(mesh));
+    }
+    if (walls > 0) {
+        LOG_INFO("CliffSystem: {} wall(s) over {} region(s)", walls,
+                 meshes.size());
     }
 }
 
