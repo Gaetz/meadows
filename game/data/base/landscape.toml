@@ -471,7 +471,7 @@ leafSizeMin = 0.1
 leafSizeMax = 0.2
 leafSolidStart = 4.0
 leafSolidEnd = 7.0
-tubeSides = 4
+tubeSides = 12
 sideMinFraction = 0.75
 
 [[records]]
@@ -510,7 +510,7 @@ leafSizeMin = 0.12
 leafSizeMax = 0.28
 leafSolidStart = 4.0
 leafSolidEnd = 7.0
-tubeSides = 5
+tubeSides = 12
 sideMinFraction = 0.5
 
 [[records]]

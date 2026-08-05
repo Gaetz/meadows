@@ -611,9 +611,26 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
                         const size_t pixels =
                             static_cast<size_t>(nor->width) *
                             nor->height;
+                        // Min-max stretch: some disp maps (the oak) sit
+                        // in a soft mid band — normalized, both the
+                        // bark parallax and the SSDM warp bite.
+                        u8 lo = 255;
+                        u8 hi = 0;
                         for (size_t p = 0; p < pixels; ++p) {
-                            nor->pixels[p * 4 + 3] =
-                                disp->pixels[p * 4 + 0];
+                            const u8 v = disp->pixels[p * 4 + 0];
+                            lo = std::min(lo, v);
+                            hi = std::max(hi, v);
+                        }
+                        const f32 scale =
+                            hi > lo ? 255.0f / static_cast<f32>(hi - lo)
+                                    : 1.0f;
+                        for (size_t p = 0; p < pixels; ++p) {
+                            nor->pixels[p * 4 + 3] = static_cast<u8>(
+                                glm::clamp(static_cast<f32>(
+                                               disp->pixels[p * 4 + 0] -
+                                               lo) *
+                                               scale,
+                                           0.0f, 255.0f));
                         }
                     }
                     nrmHeight = { nor->width, nor->height,
