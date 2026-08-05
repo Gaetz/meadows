@@ -111,7 +111,7 @@ void main() {
         vec3 onrm = normalize(vObjNormal);
         vec3 an = abs(onrm) + 1.0e-5;
         vec3 bw = an / (an.x + an.y + an.z);
-        const float kBarkTile = 1.2;  // tiles per meter
+        const float kBarkTile = 0.6;  // tiles per meter (hand-tuned)
         const float kBarkDepth = 0.045; // parallax amplitude (uv units)
         vec2 uvx = vObjPos.zy * kBarkTile;
         vec2 uvy = vObjPos.xz * kBarkTile;

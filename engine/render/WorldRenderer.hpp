@@ -377,9 +377,10 @@ private:
     bool ssaoUi { true };
     f32 ssaoStrengthUi { 0.85f };
     f32 ssaoRadiusUi { 0.7f };
-    // SSDM prototype (ssdm.frag — Lobel 2008): screen-space image warp
-    // by the alpha-packed relief. OFF by default while it proves out.
-    bool ssdmUi { false };
+    // SSDM (ssdm_*.frag — Lobel 2008): screen-space scatter of the
+    // alpha-packed relief. Default ON since the dev validated the
+    // scatter (2026-08-05).
+    bool ssdmUi { true };
     f32 ssdmAmpUi { 0.12f }; // world amplitude (m)
     bool keyShadowUi { true };      // interiors
     bool meshShadowCastersUi { true };
