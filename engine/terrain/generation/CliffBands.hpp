@@ -15,7 +15,7 @@ namespace render::terraingen {
 
 struct CliffBandParams {
     f32 detectStride { 8.0f }; // meters between detection samples
-    f32 slopeGrad { 1.12f };   // |grad h| threshold at the stride (~48°)
+    f32 slopeGrad { 0.70f };   // |grad h| threshold at the stride (~35°)
     u32 minCells { 10 };       // component area gate (stride^2 cells)
     f32 minHeight { 8.0f };    // min crest-foot drop for a KEPT band
     // Profile remap strength (0 = geometry untouched). The remap is

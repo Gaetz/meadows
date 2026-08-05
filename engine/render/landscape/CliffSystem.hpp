@@ -31,6 +31,14 @@ struct CliffBlock {
     f32 depth { 9.0f };
     f32 yaw { 0.0f };
     f32 lean { 0.1f }; // radians, top tips INTO the hill
+    // De-cubing warp, CONTINUOUS over the local box so the face sheets
+    // stay welded at the edges: the top shrinks (taper), the whole
+    // block shears sideways/backward (skew), and a small roll tips it
+    // off the vertical — no two blocks read as the same brick.
+    f32 taper { 0.15f };
+    f32 skewX { 0.0f };
+    f32 skewZ { 0.0f };
+    f32 roll { 0.0f };
     u32 seed { 0 };
 };
 
@@ -50,9 +58,10 @@ vector<CliffBlock> planCliffBlocks(const TerrainParams& params,
 class CliffSystem {
 public:
     static constexpr f32 kMaxWallHeight = 200.0f;
-    // Bands farther than this draw their plain-box twin (the near
-    // displacement is sub-texel there anyway).
-    static constexpr f32 kNearRange = 650.0f;
+    // Bands farther than this draw their plain-box twin. Tight: at the
+    // 35° coverage a mountain region carries ~900 bands and the
+    // subdivided near mesh is the frame budget (10 FPS seen at 650 m).
+    static constexpr f32 kNearRange = 260.0f;
 
     void create(rhi::Device& device, ShaderLibrary& shaders);
     void destroy(rhi::Device& device);

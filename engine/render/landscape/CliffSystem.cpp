@@ -61,6 +61,16 @@ void appendFace(MeshData& mesh, const CliffBlock& block,
             const f32 fv = static_cast<f32>(v) / static_cast<f32>(cellsV);
             Vec3 local = originL + axisU * (fu * lenU) +
                          axisV * (fv * lenV);
+            // De-cubing warp (continuous over the box: sheets stay
+            // welded): top shrinks, the block shears, faces lose the
+            // brick read.
+            {
+                const f32 y01 =
+                    glm::clamp(local.y / block.height, 0.0f, 1.0f);
+                const f32 shrink = 1.0f - block.taper * y01;
+                local.x = local.x * shrink + block.skewX * local.y;
+                local.z = local.z * shrink + block.skewZ * local.y;
+            }
             f32 disp = 0.0f;
             f32 cavity = 0.6f;
             if (dispAmp > 0.0f) {
@@ -90,7 +100,7 @@ void appendFace(MeshData& mesh, const CliffBlock& block,
             vertex.position =
                 block.base + rot * (local + outward * disp);
             const f32 tone =
-                toneMul * glm::mix(0.78f, 1.05f,
+                toneMul * glm::mix(0.76f, 0.92f,
                                    glm::clamp(cavity, 0.0f, 1.0f));
             vertex.color = { tone, tone * 0.99f, tone * 0.965f };
             vertex.uv = { 0.0f, 0.0f };
@@ -142,7 +152,8 @@ void appendFace(MeshData& mesh, const CliffBlock& block,
 void appendBlock(MeshData& mesh, const CliffBlock& block, u32 detail) {
     const glm::quat rot =
         glm::angleAxis(block.yaw, Vec3 { 0.0f, 1.0f, 0.0f }) *
-        glm::angleAxis(-block.lean, Vec3 { 1.0f, 0.0f, 0.0f });
+        glm::angleAxis(-block.lean, Vec3 { 1.0f, 0.0f, 0.0f }) *
+        glm::angleAxis(block.roll, Vec3 { 0.0f, 0.0f, 1.0f });
     const f32 hw = block.width * 0.5f;
     const f32 h = block.height;
     const f32 d = block.depth;
@@ -152,28 +163,28 @@ void appendBlock(MeshData& mesh, const CliffBlock& block, u32 detail) {
     const auto cells = [&](f32 len) {
         return detail == 0
                    ? 1u
-                   : glm::clamp(static_cast<u32>(len / 5.0f), 2u, 5u);
+                   : glm::clamp(static_cast<u32>(len / 6.0f), 2u, 4u);
     };
     // Front (+z), from (-hw, 0, 0): axisU = +x, axisV = +y, out = +z.
     appendFace(mesh, block, rot, { -hw, 0.0f, 0.0f },
                { 1.0f, 0.0f, 0.0f }, block.width, { 0.0f, 1.0f, 0.0f },
                h, { 0.0f, 0.0f, 1.0f }, cells(block.width), cells(h),
-               amp, 6.5f, 1.0f);
+               amp, 6.5f, 0.96f);
     // Right side (+x): cross(-z, +y) = +x.
     appendFace(mesh, block, rot, { hw, 0.0f, 0.0f },
                { 0.0f, 0.0f, -1.0f }, d, { 0.0f, 1.0f, 0.0f }, h,
                { 1.0f, 0.0f, 0.0f }, cells(d), cells(h), amp * 0.7f,
-               6.5f, 0.96f);
+               6.5f, 0.94f);
     // Left side (-x): cross(+z, +y) = -x.
     appendFace(mesh, block, rot, { -hw, 0.0f, -d },
                { 0.0f, 0.0f, 1.0f }, d, { 0.0f, 1.0f, 0.0f }, h,
                { -1.0f, 0.0f, 0.0f }, cells(d), cells(h), amp * 0.7f,
-               6.5f, 0.96f);
+               6.5f, 0.94f);
     // Ledge top (+y): cross(+z, +x) = +y.
     appendFace(mesh, block, rot, { -hw, h, -d }, { 0.0f, 0.0f, 1.0f },
                d, { 1.0f, 0.0f, 0.0f }, block.width,
                { 0.0f, 1.0f, 0.0f }, cells(d), cells(block.width),
-               amp * 0.5f, 6.5f, 1.08f);
+               amp * 0.5f, 6.5f, 1.0f);
 }
 
 } // namespace
@@ -233,7 +244,7 @@ vector<CliffBlock> planCliffBlocks(const TerrainParams& params,
             // terrain at its station and rises past the next one — the
             // stepped crag profile.
             const u32 terraces = glm::clamp(
-                static_cast<u32>(wallH / 20.0f), 1u, 4u);
+                static_cast<u32>(wallH / 22.0f), 1u, 3u);
             const f32 terraceH = wallH / static_cast<f32>(terraces);
             for (u32 terrace = 0; terrace < terraces; ++terrace) {
                 const f32 tf = static_cast<f32>(terrace) /
@@ -248,8 +259,12 @@ vector<CliffBlock> planCliffBlocks(const TerrainParams& params,
                     30.0f);
                 block.depth =
                     7.0f + block.height * 0.35f + rng.next() * 3.0f;
-                block.yaw = yaw + (rng.next() - 0.5f) * 0.16f;
-                block.lean = 0.06f + rng.next() * 0.10f;
+                block.yaw = yaw + (rng.next() - 0.5f) * 0.3f;
+                block.lean = 0.05f + rng.next() * 0.12f;
+                block.taper = 0.08f + rng.next() * 0.22f;
+                block.skewX = (rng.next() - 0.5f) * 0.24f;
+                block.skewZ = (rng.next() - 0.5f) * 0.12f;
+                block.roll = (rng.next() - 0.5f) * 0.10f;
                 block.seed = hashU32(regionSeed ^
                                      static_cast<u32>(blocks.size() *
                                                       2654435761u));
