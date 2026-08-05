@@ -62,6 +62,16 @@ condition aux limites implicite.
 fluviales, sortie 2 m = 2113²) ≈ **4,4 s** — benchmark caché
 `meadows-tests -tc="*bake benchmark*" -ns`. Région résidente ≈ 18 Mo.
 
+**Calibration de la dissection (2026-08-05, retour dev « tout est ramené
+bas ») : `fluvial.iterations` 100 → 60** (v34). Mesures sur le massif
+−6,5 (diagnostic caché `erosion strength`) : à 100 it. l'érosion prenait
+27 % de l'altitude moyenne (médiane −30 %) sans toucher les sommets
+(max −6 %) — dissection pure, plus de hauts plateaux praticables. À 60 :
+médiane +160 m, p40 +190 m, les fonds de vallées restent creusés (p10
+quasi inchangé), versants toujours ravinés. La relaxation de crêtes
+(`rounding`) mesurée innocente. Hydrologie re-validée : 43 lacs / 50
+rivières sur la tuile spawn (49/54 avant), spawn au sec.
+
 ### Sandbox — streaming (`game/TerrainBakeStreamer`)
 
 Ring de prefetch autour du joueur (~1,4 km) → bake sur workers (mailbox

@@ -684,3 +684,62 @@ TEST_CASE("spawn debris diagnostic" * doctest::skip()) {
             " (nearest ", nearestDense, " m)");
     CHECK(true);
 }
+
+// How much relief does each erosion stage take? Bakes the tallest
+// massif tile with stages toggled off and reports the height stats —
+// the answer to "does erosion flatten everything".
+//   meadows-tests '-tc=erosion strength*' -ns
+TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
+    const auto stats = [](const char* label, TileBakeParams params) {
+        const TileBakeResult r = bakeTile(params, -6, 5);
+        vector<f32> above;
+        const f32 sea = params.macro.seaLevel;
+        f32 maxH = 0.0f;
+        for (u32 row = 0; row < r.region.height; row += 4) {
+            for (u32 col = 0; col < r.region.width; col += 4) {
+                const f32 h =
+                    r.region.heights[static_cast<size_t>(row) *
+                                         r.region.width +
+                                     col];
+                maxH = glm::max(maxH, h);
+                if (h > sea) {
+                    above.push_back(h - sea);
+                }
+            }
+        }
+        std::sort(above.begin(), above.end());
+        const auto pct = [&](f32 p) {
+            return above.empty()
+                       ? 0.0f
+                       : above[static_cast<size_t>(
+                             p * static_cast<f32>(above.size() - 1))];
+        };
+        f64 mean = 0.0;
+        for (const f32 h : above) {
+            mean += h;
+        }
+        mean /= glm::max<size_t>(above.size(), 1);
+        MESSAGE(label, ": max=", maxH, " mean-above-sea=", mean);
+        MESSAGE("  p10=", pct(0.10f), " p25=", pct(0.25f),
+                " p40=", pct(0.40f), " p50=", pct(0.50f),
+                " p60=", pct(0.60f), " p75=", pct(0.75f),
+                " p90=", pct(0.90f), " p95=", pct(0.95f),
+                " p99=", pct(0.99f));
+    };
+    TileBakeParams base;
+    base.worldSeed = 1337;
+    stats("default            ", base);
+    TileBakeParams noRound = base;
+    noRound.rounding.strength = 0.0f;
+    stats("rounding OFF       ", noRound);
+    TileBakeParams noErosion = noRound;
+    noErosion.fluvial.iterations = 0;
+    noErosion.thermal.iterations = 0;
+    stats("erosion+rounding OFF", noErosion);
+    for (const i32 iterations : { 80, 60, 40 }) {
+        TileBakeParams softer = base;
+        softer.fluvial.iterations = iterations;
+        stats("fluvial reduced     ", softer);
+    }
+    CHECK(true);
+}
