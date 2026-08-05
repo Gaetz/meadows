@@ -16,39 +16,60 @@ namespace render {
 
 class ShaderLibrary;
 
-// Continuous cliff-wall ribbons (docs/CLIFFS.md étage 2): one draped
-// mesh per baked cliff band (TerrainRegion::cliffBands), GLUED to the
-// sharpened heightfield — rows sample the real terrain along each
-// node's fall line and push outward by a strata/noise relief, so the
-// wall reads as ONE rock face instead of scattered slabs. Material =
-// the terrain splat cliff layer, triplanar (cliff.frag), sharing the
-// terrain pass's bind groups — the wall and the ground around it can
-// never diverge in texture. Meshes rebuild when the terrain base
-// republishes; each band keeps its own AABB for frustum culling.
+// One planned rock BLOCK (docs/CLIFFS.md étage 2, blocks rework —
+// retour dev 2026-08-06): a deformed parallelepiped INSERTED into the
+// mountainside so its faces BECOME the cliff surface — the Dziura
+// "blocking → detailed stone" made automatic. Near-vertical fronts
+// (small backward lean), flat-ish ledge tops, stacked in terraces up
+// tall faces — real stepped verticality instead of a skin draped on
+// the diagonal slope. Local frame: x along the band, y up, z outward;
+// world = base + R_y(yaw) * R_x(-lean) * local.
+struct CliffBlock {
+    Vec3 base;      // front-bottom-center, world
+    f32 width { 12.0f };
+    f32 height { 12.0f };
+    f32 depth { 9.0f };
+    f32 yaw { 0.0f };
+    f32 lean { 0.1f }; // radians, top tips INTO the hill
+    u32 seed { 0 };
+};
+
+// Deterministic per (params, band, regionSeed): the region mesh build
+// AND the collision ring derive the SAME blocks from the baked band
+// polylines.
+u32 cliffRegionSeed(const TerrainRegion& region);
+vector<CliffBlock> planCliffBlocks(const TerrainParams& params,
+                                   const CliffBand& band, u32 regionSeed);
+
+// Renders the planned blocks: one merged mesh pair per region (near =
+// displaced strata faces, far = plain boxes), per-band ranges with
+// AABBs for frustum + distance pick. Material = the terrain splat
+// cliff layer, triplanar (cliff.frag), sharing the terrain pass's bind
+// groups — block faces and the steep ground around them can never
+// diverge in texture. Rebuilds when the terrain base republishes.
 class CliffSystem {
 public:
-    // Visible wall cap — generous: a cap CUT mid-face prints a razor
-    // straight artificial edge across the mountainside (seen in the
-    // first build at 60 m); real faces must be covered to their crest.
     static constexpr f32 kMaxWallHeight = 200.0f;
+    // Bands farther than this draw their plain-box twin (the near
+    // displacement is sub-texel there anyway).
+    static constexpr f32 kNearRange = 650.0f;
 
     void create(rhi::Device& device, ShaderLibrary& shaders);
     void destroy(rhi::Device& device);
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
     // Rebuilds the region meshes when params.base changed (publish).
-    // Cheap when nothing moved; the build is main-thread (a few tens of
-    // thousands of vertices per tile at most).
     void update(rhi::Device& device, const TerrainParams& params);
 
     // Main opaque pass, right after the terrain (same groups: 0 frame,
     // 1 splat, 2 shadow receivers).
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle splatBindGroup,
-              rhi::BindGroupHandle shadowBindGroup,
+              rhi::BindGroupHandle shadowBindGroup, const Vec3& cameraPos,
               const Frustum* frustum = nullptr);
 
-    // Depth-only caster pass (terrain caster shader — plain mesh).
+    // Depth-only caster pass (terrain caster shader; the far twin —
+    // block shadows do not need the displacement detail).
     void drawDepth(rhi::CommandBuffer& cmd,
                    rhi::BindGroupHandle casterBindGroup,
                    const Frustum* frustum = nullptr);
@@ -59,14 +80,18 @@ public:
 
 private:
     struct BandRange {
-        u32 firstIndex { 0 };
+        u32 firstIndex { 0 };  // near mesh
         u32 indexCount { 0 };
+        u32 farFirstIndex { 0 };
+        u32 farIndexCount { 0 };
         Vec3 lo {};
         Vec3 hi {};
     };
     struct RegionMesh {
         rhi::UniqueBuffer vertexBuffer;
         rhi::UniqueBuffer indexBuffer;
+        rhi::UniqueBuffer farVertexBuffer;
+        rhi::UniqueBuffer farIndexBuffer;
         vector<BandRange> ranges;
     };
 

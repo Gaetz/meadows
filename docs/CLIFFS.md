@@ -156,8 +156,44 @@ scatter interroge les **polylignes réelles** de la région (< 20 m d'un
 nœud = face au ruban) — une face raide sans bande retombe TOUJOURS sur
 les dalles (spawn : 77 dalles + 21 héros).
 
+### Rework « blocs » (2026-08-06) — retour dev sur le drapé
+
+« Ce qui fonctionnait chez Dziura c'est des blocs de LD transformés en
+blocs de pierre ; là on suit des pentes diagonales inintéressantes. »
+Le ruban drapé est REMPLACÉ par des **blocs insérés** — le blocking de
+Dziura rendu automatique :
+
+- **`planCliffBlocks`** (CliffSystem.hpp, fonction pure partagée) :
+  le long de chaque polyligne de pied, stations tous les ~0.9×largeur,
+  et par station des **terrasses** qui montent la ligne de pente
+  (hauteur de face / 20, max 4) — chaque terrasse un parallélépipède
+  16-28 m de large, 8-30 m de haut, assis sur le terrain réel de son
+  étage, enfoncé de 1.5 m, face avant saillante d'1 m, faces quasi
+  verticales (lean 0.06-0.16 rad vers la colline), yaw le long de la
+  bande + jitter. Le profil en marches avec replats — de la VRAIE
+  verticalité, plus une peau sur la diagonale.
+- **Mailleur à arêtes dures** : chaque face du bloc est sa propre nappe
+  (front + 2 côtés + dessus ; dos et dessous enterrés), déplacée par
+  strates/bruit avec un bord fixe (l'arête du bloc reste nette — la
+  lecture « pierre taillée »), normales lissées par nappe. LOD :
+  jumeau boîte nue au-delà de 650 m (kNearRange) et pour les casters.
+- **cliff.frag** : la modulation macro passe en LUMINANCE seule (le mix
+  couleur direct dérivait les blocs lointains vers le beige).
+- **Collision** : `CliffCollision` (game/), ring 3×3, une box statique
+  orientée par bloc via le MÊME plan déterministe — les replats sont
+  praticables. S'invalide seule au republish (pointeur de base).
+- Aucune donnée rebakée : les bandes v37 restent la source ; le plan
+  des blocs est runtime.
+
 ## Différés
 
+- **Instanciation des blocs** (l'optimisation) : ~1500 blocs/tuile en
+  mesh fusionné ≈ 8 Mo/région ; des variantes de bloc unitaire
+  instanciées (pattern veg) diviseraient la mémoire par ~50.
+- Teinte des faces plein soleil vs versant en lumière rasante — à
+  arbitrer en jeu (éclairage, pas texture, depuis le fix luminance).
+- Seuil de bande 48° (`slopeGrad` 1.12) : le knob si des versants
+  raides restent sans blocs.
 - **Étage 2b — surplombs** : le ruban est collé (drapé sur le
   heightfield raidi) ; autoriser le débordement (vraie verticalité,
   encorbellements) = amplitude de relief signée + carve du heightfield

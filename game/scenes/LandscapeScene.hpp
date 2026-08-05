@@ -62,6 +62,7 @@
 #include "game/SceneSubmit.hpp"
 #include "game/TerrainCollision.hpp"
 #include "engine/render/TextureCache.hpp"
+#include "game/CliffCollision.hpp"
 #include "game/VegetationCollision.hpp"
 #include "game/scenes/LandscapeTuning.hpp"
 #include "engine/audio/Audio.hpp"
@@ -448,6 +449,7 @@ private:
     uptr<TerrainCollision> terrainCollision;
     // Trunks + rocks from the deterministic scatter.
     uptr<VegetationCollision> vegCollision;
+    uptr<CliffCollision> cliffCollision;
     uptr<phys::CharacterBody> debugCapsule;
     // (extracted): the cell-streaming fixups —
     // ground snap, static-collider cook, nav obstacles — live in

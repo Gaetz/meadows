@@ -1963,11 +1963,13 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                  shadows.receiverBindGroup(), &viewFrustum,
                                  occludedSet);
                 }
-                // Cliff ribbons: right after the ground, same groups —
-                // the wall continues the terrain's cliff material.
+                // Cliff blocks: right after the ground, same groups —
+                // the block faces continue the terrain's cliff
+                // material.
                 cliffs.draw(frame.cmd, frameBindGroup,
                             terrain.splatGroup(),
-                            shadows.receiverBindGroup(), &viewFrustum);
+                            shadows.receiverBindGroup(),
+                            camera.position, &viewFrustum);
             }
             if (cfg.vegetation) {
                 render::GpuProbe::Scope sub { subProbe, subDevice,

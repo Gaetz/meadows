@@ -716,6 +716,10 @@ void LandscapeScene::setupGameplay() {
         *physics, renderer.terrainParams(), &engine->getJobSystem());
     vegCollision =
         std::make_unique<VegetationCollision>(*physics, renderer.terrainParams());
+    // Cliff blocks: self-invalidating on terrain republish (holds the
+    // renderer's live params pointer), so one construction site.
+    cliffCollision = std::make_unique<CliffCollision>(
+        *physics, &renderer.terrainParams());
 
     // Navigation over the SAME height function as
     // everything else (patches included — the pointer rides in params).
@@ -1335,6 +1339,7 @@ void LandscapeScene::onExit() {
     debugCapsule.reset();
     streaming.reset(physics.get());
     vegCollision.reset();
+    cliffCollision.reset();
     terrainCollision.reset();
     physics.reset();
 }
@@ -1397,6 +1402,9 @@ void LandscapeScene::update(f32 dt) {
                     : flyCamera.camera.position;
             terrainCollision->update(focus);
             vegCollision->update(focus); // trunks + rocks
+            if (cliffCollision) {
+                cliffCollision->update(focus); // standable block ledges
+            }
         }
         if (debugCapsule) {
             debugCapsule->move({ 0.0f, 0.0f, 0.0f }, dt);

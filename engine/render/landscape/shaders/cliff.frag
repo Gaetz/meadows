@@ -56,7 +56,15 @@ void main() {
         texture(uSplat, vec3(uvx * 0.09, kCliffLayer)).rgb * bw.x +
         texture(uSplat, vec3(uvy * 0.09, kCliffLayer)).rgb * bw.y +
         texture(uSplat, vec3(uvz * 0.09, kCliffLayer)).rgb * bw.z;
-    albedo = mix(albedo, albedoMacro, macroW);
+    // LUMINANCE-only macro modulation: a direct color mix drifted the
+    // far blocks beige while the steep ground stayed gray — the macro
+    // octave carries the large-scale pattern, the near octave keeps
+    // the hue.
+    float lumNear = dot(albedo, vec3(0.299, 0.587, 0.114));
+    float lumMacro = dot(albedoMacro, vec3(0.299, 0.587, 0.114));
+    albedo *= mix(1.0,
+                  clamp(lumMacro / max(lumNear, 1.0e-3), 0.55, 1.7),
+                  macroW);
     float height =
         texture(uSplatHeight, vec3(uvx, kCliffLayer)).r * bw.x +
         texture(uSplatHeight, vec3(uvy, kCliffLayer)).r * bw.y +

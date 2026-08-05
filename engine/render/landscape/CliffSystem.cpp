@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include <glm/gtc/quaternion.hpp>
+
 #include "engine/core/Hash.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/render/MeshVertexLayout.hpp"
@@ -17,26 +19,14 @@ namespace {
 constexpr const char* kCliffShader = "cliff";
 constexpr const char* kCasterShader = "shadow_terrain";
 
-// Ribbon resolution: column spacing along the band, target row step up
-// the face. The relief detail lives in the material (triplanar +
-// normal + SSDM) — this grid only carries the strata silhouette.
-constexpr f32 kColumnStep = 4.0f;
-constexpr f32 kRowStep = 2.5f;
-constexpr u32 kMaxRows = 44; // tall faces stretch the row step instead
-// Outward relief range (meters, along the node's horizontal dir). The
-// floor keeps the drape proud of the heightfield (no z-fight); rows at
-// the seams bury instead.
-constexpr f32 kReliefFloor = 0.15f;
-constexpr f32 kReliefAmp = 1.35f;
-constexpr f32 kStrataPeriod = 7.0f; // meters of altitude per ledge
-
 using core::hashU32;
+using core::HashRng;
 
 f32 hash01(u32 v) {
     return static_cast<f32>(hashU32(v) & 0xffffu) / 65535.0f;
 }
 
-// Cheap value noise for the relief (worker-free build, deterministic).
+// Cheap value noise for the face displacement (deterministic).
 f32 noise2(u32 seed, f32 u, f32 v) {
     const auto lattice = [&](i32 iu, i32 iv) {
         return hash01(seed ^ (static_cast<u32>(iu) * 668265263u) ^
@@ -54,16 +44,228 @@ f32 noise2(u32 seed, f32 u, f32 v) {
     return glm::mix(a, b, tv);
 }
 
-struct Column {
-    Vec2 foot;    // xz
-    Vec2 head;    // xz
-    f32 footH;
-    f32 headH;
-    Vec2 dir;     // horizontal outward (downhill)
-    f32 arc;      // along-band arclength (relief continuity)
-};
+// One displaced face sheet of a block: a grid over (axisU, axisV),
+// displaced along `outward`, its OWN vertices (hard edges between the
+// box faces — the "cut stone" read), smooth normals inside the sheet.
+// Winding: (u, v) grid emitted so the front side faces `outward`.
+void appendFace(MeshData& mesh, const CliffBlock& block,
+                const glm::quat& rot, const Vec3& originL,
+                const Vec3& axisU, f32 lenU, const Vec3& axisV,
+                f32 lenV, const Vec3& outward, u32 cellsU, u32 cellsV,
+                f32 dispAmp, f32 strataPeriod, f32 toneMul) {
+    const u32 firstVertex = static_cast<u32>(mesh.vertices.size());
+    const u32 vertsU = cellsU + 1;
+    for (u32 v = 0; v <= cellsV; ++v) {
+        for (u32 u = 0; u <= cellsU; ++u) {
+            const f32 fu = static_cast<f32>(u) / static_cast<f32>(cellsU);
+            const f32 fv = static_cast<f32>(v) / static_cast<f32>(cellsV);
+            Vec3 local = originL + axisU * (fu * lenU) +
+                         axisV * (fv * lenV);
+            f32 disp = 0.0f;
+            f32 cavity = 0.6f;
+            if (dispAmp > 0.0f) {
+                // Strata terraces banded on the LOCAL height + broad
+                // noise; the face rim stays put so the box edges keep
+                // their crisp line.
+                const f32 band =
+                    std::floor((local.y + block.base.y) / strataPeriod);
+                const f32 ledge =
+                    (hash01(block.seed ^
+                            static_cast<u32>(
+                                static_cast<i32>(band) * 7919)) -
+                     0.5f);
+                const f32 broad =
+                    noise2(block.seed, local.x * 0.16f + local.z * 0.11f,
+                           local.y * 0.2f) -
+                    0.5f;
+                const f32 rim =
+                    glm::min(glm::min(fu, 1.0f - fu),
+                             glm::min(fv, 1.0f - fv));
+                const f32 rimFade = glm::smoothstep(0.0f, 0.18f, rim);
+                cavity = 0.5f + broad + ledge * 0.6f;
+                disp = dispAmp * rimFade *
+                       glm::clamp(cavity, 0.0f, 1.0f);
+            }
+            MeshVertex vertex;
+            vertex.position =
+                block.base + rot * (local + outward * disp);
+            const f32 tone =
+                toneMul * glm::mix(0.78f, 1.05f,
+                                   glm::clamp(cavity, 0.0f, 1.0f));
+            vertex.color = { tone, tone * 0.99f, tone * 0.965f };
+            vertex.uv = { 0.0f, 0.0f };
+            vertex.normal = Vec3 { 0.0f };
+            mesh.vertices.push_back(vertex);
+        }
+    }
+    for (u32 v = 0; v < cellsV; ++v) {
+        for (u32 u = 0; u < cellsU; ++u) {
+            const u32 a = firstVertex + v * vertsU + u;
+            const u32 b = a + 1;
+            const u32 c = a + vertsU;
+            const u32 d = c + 1;
+            // cross(axisU, axisV) == outward by the callers' choice of
+            // axes, so (a, b, c) fronts outward.
+            mesh.indices.insert(mesh.indices.end(),
+                                { a, b, c, b, d, c });
+        }
+    }
+    // Smooth normals inside the sheet only (hard box edges).
+    for (size_t i = static_cast<size_t>(firstVertex);
+         i < mesh.vertices.size(); ++i) {
+        mesh.vertices[i].normal = Vec3 { 0.0f };
+    }
+    const size_t firstIndex =
+        mesh.indices.size() -
+        static_cast<size_t>(cellsU) * cellsV * 6;
+    for (size_t i = firstIndex; i + 2 < mesh.indices.size(); i += 3) {
+        MeshVertex& a = mesh.vertices[mesh.indices[i]];
+        MeshVertex& b = mesh.vertices[mesh.indices[i + 1]];
+        MeshVertex& c = mesh.vertices[mesh.indices[i + 2]];
+        const Vec3 face = glm::cross(b.position - a.position,
+                                     c.position - a.position);
+        a.normal += face;
+        b.normal += face;
+        c.normal += face;
+    }
+    for (size_t i = static_cast<size_t>(firstVertex);
+         i < mesh.vertices.size(); ++i) {
+        const f32 len = glm::length(mesh.vertices[i].normal);
+        mesh.vertices[i].normal =
+            len > 1.0e-6f ? mesh.vertices[i].normal / len
+                          : rot * outward;
+    }
+}
+
+// The whole block: front + two sides + ledge top (back and bottom are
+// buried). detail 1 = displaced strata faces; 0 = plain quads.
+void appendBlock(MeshData& mesh, const CliffBlock& block, u32 detail) {
+    const glm::quat rot =
+        glm::angleAxis(block.yaw, Vec3 { 0.0f, 1.0f, 0.0f }) *
+        glm::angleAxis(-block.lean, Vec3 { 1.0f, 0.0f, 0.0f });
+    const f32 hw = block.width * 0.5f;
+    const f32 h = block.height;
+    const f32 d = block.depth;
+    const f32 amp = detail == 0 ? 0.0f
+                                : glm::clamp(0.5f + block.width * 0.03f,
+                                             0.6f, 1.6f);
+    const auto cells = [&](f32 len) {
+        return detail == 0
+                   ? 1u
+                   : glm::clamp(static_cast<u32>(len / 5.0f), 2u, 5u);
+    };
+    // Front (+z), from (-hw, 0, 0): axisU = +x, axisV = +y, out = +z.
+    appendFace(mesh, block, rot, { -hw, 0.0f, 0.0f },
+               { 1.0f, 0.0f, 0.0f }, block.width, { 0.0f, 1.0f, 0.0f },
+               h, { 0.0f, 0.0f, 1.0f }, cells(block.width), cells(h),
+               amp, 6.5f, 1.0f);
+    // Right side (+x): cross(-z, +y) = +x.
+    appendFace(mesh, block, rot, { hw, 0.0f, 0.0f },
+               { 0.0f, 0.0f, -1.0f }, d, { 0.0f, 1.0f, 0.0f }, h,
+               { 1.0f, 0.0f, 0.0f }, cells(d), cells(h), amp * 0.7f,
+               6.5f, 0.96f);
+    // Left side (-x): cross(+z, +y) = -x.
+    appendFace(mesh, block, rot, { -hw, 0.0f, -d },
+               { 0.0f, 0.0f, 1.0f }, d, { 0.0f, 1.0f, 0.0f }, h,
+               { -1.0f, 0.0f, 0.0f }, cells(d), cells(h), amp * 0.7f,
+               6.5f, 0.96f);
+    // Ledge top (+y): cross(+z, +x) = +y.
+    appendFace(mesh, block, rot, { -hw, h, -d }, { 0.0f, 0.0f, 1.0f },
+               d, { 1.0f, 0.0f, 0.0f }, block.width,
+               { 0.0f, 1.0f, 0.0f }, cells(d), cells(block.width),
+               amp * 0.5f, 6.5f, 1.08f);
+}
 
 } // namespace
+
+u32 cliffRegionSeed(const TerrainRegion& region) {
+    return hashU32(
+        static_cast<u32>(static_cast<i32>(region.originX * 0.01f)) ^
+        (static_cast<u32>(static_cast<i32>(region.originZ * 0.01f))
+         << 16));
+}
+
+vector<CliffBlock> planCliffBlocks(const TerrainParams& params,
+                                   const CliffBand& band,
+                                   u32 regionSeed) {
+    vector<CliffBlock> blocks;
+    if (band.nodes.size() < 2) {
+        return blocks;
+    }
+    // Stations along the foot polyline, one block RUN per station;
+    // spacing slightly under the block width so neighbours interlock.
+    f32 arc = 0.0f;
+    f32 nextStation = 0.0f;
+    for (size_t i = 0; i + 1 < band.nodes.size(); ++i) {
+        const CliffNode& a = band.nodes[i];
+        const CliffNode& b = band.nodes[i + 1];
+        const f32 segLen =
+            std::hypot(b.x - a.x, b.z - a.z);
+        if (segLen < 1.0e-3f) {
+            continue;
+        }
+        while (nextStation <= arc + segLen) {
+            const f32 t = (nextStation - arc) / segLen;
+            const f32 footX = glm::mix(a.x, b.x, t);
+            const f32 footZ = glm::mix(a.z, b.z, t);
+            const f32 footH = glm::mix(a.footH, b.footH, t);
+            const f32 headX = glm::mix(a.headX, b.headX, t);
+            const f32 headZ = glm::mix(a.headZ, b.headZ, t);
+            const f32 headH = glm::mix(a.headH, b.headH, t);
+            HashRng rng { hashU32(
+                regionSeed ^
+                static_cast<u32>(static_cast<i32>(footX * 7.31f)) ^
+                (static_cast<u32>(static_cast<i32>(footZ * 5.17f))
+                 << 12)) };
+            const f32 wallH = glm::min(
+                headH - footH, CliffSystem::kMaxWallHeight);
+            // Face outward along the band's local dir; the block yaw
+            // points its +z that way.
+            const f32 dirX = glm::mix(a.dirX, b.dirX, t);
+            const f32 dirZ = glm::mix(a.dirZ, b.dirZ, t);
+            const f32 dirLen =
+                glm::max(std::hypot(dirX, dirZ), 1.0e-4f);
+            // R_y(yaw) maps +z to (sin yaw, 0, cos yaw) (glm quat).
+            const f32 yaw =
+                std::atan2(dirX / dirLen, dirZ / dirLen);
+            const f32 width = 16.0f + rng.next() * 12.0f;
+            // Terraces up the fall line: each block seats on the REAL
+            // terrain at its station and rises past the next one — the
+            // stepped crag profile.
+            const u32 terraces = glm::clamp(
+                static_cast<u32>(wallH / 20.0f), 1u, 4u);
+            const f32 terraceH = wallH / static_cast<f32>(terraces);
+            for (u32 terrace = 0; terrace < terraces; ++terrace) {
+                const f32 tf = static_cast<f32>(terrace) /
+                               static_cast<f32>(terraces);
+                const f32 sx = glm::mix(footX, headX, tf);
+                const f32 sz = glm::mix(footZ, headZ, tf);
+                const f32 ground = terrain::height(params, sx, sz);
+                CliffBlock block;
+                block.width = width * (0.9f + rng.next() * 0.25f);
+                block.height = glm::clamp(
+                    terraceH * (1.15f + rng.next() * 0.35f), 8.0f,
+                    30.0f);
+                block.depth =
+                    7.0f + block.height * 0.35f + rng.next() * 3.0f;
+                block.yaw = yaw + (rng.next() - 0.5f) * 0.16f;
+                block.lean = 0.06f + rng.next() * 0.10f;
+                block.seed = hashU32(regionSeed ^
+                                     static_cast<u32>(blocks.size() *
+                                                      2654435761u));
+                // Seat sunk below its terrace ground, front face proud
+                // of the slope by ~1 m.
+                block.base = { sx + dirX / dirLen * 1.0f,
+                               ground - 1.5f,
+                               sz + dirZ / dirLen * 1.0f };
+                blocks.push_back(block);
+            }
+            nextStation += width * 0.9f;
+        }
+        arc += segLen;
+    }
+    return blocks;
+}
 
 void CliffSystem::create(rhi::Device& device, ShaderLibrary& shaders) {
     // Same closure as the terrain shader (shared vertex stage + splat
@@ -151,239 +353,57 @@ void CliffSystem::buildMeshes(rhi::Device& device,
         if (region.cliffBands.empty()) {
             continue;
         }
-        vector<MeshVertex> vertices;
-        vector<u32> indices;
+        const u32 regionSeed = cliffRegionSeed(region);
+        MeshData nearMesh;
+        MeshData farMesh;
         RegionMesh mesh;
-        const u32 regionSeed =
-            hashU32(static_cast<u32>(
-                        static_cast<i32>(region.originX * 0.01f)) ^
-                    (static_cast<u32>(static_cast<i32>(
-                         region.originZ * 0.01f))
-                     << 16));
         for (const CliffBand& band : region.cliffBands) {
-            if (band.nodes.size() < 2) {
+            const vector<CliffBlock> blocks =
+                planCliffBlocks(params, band, regionSeed);
+            if (blocks.empty()) {
                 continue;
             }
-            // --- Smoothed, subdivided columns -----------------------------
-            // Node dirs averaged with their neighbours (a jagged foot
-            // walk must not twist the wall), segments split to the
-            // column step, arclength carried for relief continuity.
-            vector<Column> columns;
-            f32 arc = 0.0f;
-            const auto nodeDir = [&](size_t i) {
-                Vec2 dir { band.nodes[i].dirX, band.nodes[i].dirZ };
-                if (i > 0) {
-                    dir += Vec2 { band.nodes[i - 1].dirX,
-                                  band.nodes[i - 1].dirZ };
-                }
-                if (i + 1 < band.nodes.size()) {
-                    dir += Vec2 { band.nodes[i + 1].dirX,
-                                  band.nodes[i + 1].dirZ };
-                }
-                const f32 len = glm::length(dir);
-                return len > 1.0e-4f ? dir / len : Vec2 { 0.0f, 1.0f };
-            };
-            const auto columnOf = [&](size_t i) {
-                const CliffNode& node = band.nodes[i];
-                return Column { { node.x, node.z },
-                                { node.headX, node.headZ },
-                                node.footH,
-                                node.headH,
-                                nodeDir(i),
-                                0.0f };
-            };
-            for (size_t i = 0; i + 1 < band.nodes.size(); ++i) {
-                const Column a = columnOf(i);
-                const Column b = columnOf(i + 1);
-                const f32 segLen = glm::distance(
-                    Vec2 { band.nodes[i].x, band.nodes[i].z },
-                    Vec2 { band.nodes[i + 1].x, band.nodes[i + 1].z });
-                const u32 divisions = glm::max(
-                    1u, static_cast<u32>(segLen / kColumnStep));
-                for (u32 d = 0; d < divisions; ++d) {
-                    const f32 t = static_cast<f32>(d) /
-                                  static_cast<f32>(divisions);
-                    Column column;
-                    column.foot = glm::mix(a.foot, b.foot, t);
-                    column.head = glm::mix(a.head, b.head, t);
-                    column.footH = glm::mix(a.footH, b.footH, t);
-                    column.headH = glm::mix(a.headH, b.headH, t);
-                    const Vec2 dir = glm::mix(a.dir, b.dir, t);
-                    const f32 len = glm::length(dir);
-                    column.dir =
-                        len > 1.0e-4f ? dir / len : Vec2 { 0.0f, 1.0f };
-                    column.arc = arc + segLen * t;
-                    columns.push_back(column);
-                }
-                arc += segLen;
-            }
-            columns.push_back(columnOf(band.nodes.size() - 1));
-            columns.back().arc = arc;
-            if (columns.size() < 2) {
-                continue;
-            }
-
-            // --- Row grid --------------------------------------------------
-            f32 maxDrop = 0.0f;
-            for (const Column& column : columns) {
-                maxDrop = glm::max(maxDrop, column.headH - column.footH);
-            }
-            const f32 cover = glm::min(maxDrop, kMaxWallHeight);
-            const u32 rows = glm::clamp(
-                static_cast<u32>(cover / kRowStep), 3u, kMaxRows);
-            const u32 firstVertex = static_cast<u32>(vertices.size());
-            const u32 firstIndex = static_cast<u32>(indices.size());
+            BandRange range;
+            range.firstIndex = static_cast<u32>(nearMesh.indices.size());
+            range.farFirstIndex = static_cast<u32>(farMesh.indices.size());
             Vec3 lo { 1.0e9f };
             Vec3 hi { -1.0e9f };
-            for (size_t c = 0; c < columns.size(); ++c) {
-                const Column& column = columns[c];
-                const f32 drop =
-                    glm::min(column.headH - column.footH,
-                             kMaxWallHeight);
-                const bool endCap = c == 0 || c + 1 == columns.size();
-                for (u32 r = 0; r <= rows; ++r) {
-                    const f32 t = static_cast<f32>(r) /
-                                  static_cast<f32>(rows);
-                    // Drape point: the fall line between foot and the
-                    // capped head, glued to the REAL terrain height.
-                    const f32 reach =
-                        drop / glm::max(column.headH - column.footH,
-                                        1.0e-3f);
-                    const Vec2 xz = glm::mix(
-                        column.foot, column.head, t * reach);
-                    const f32 ground =
-                        terrain::height(params, xz.x, xz.y);
-                    // Relief: strata ledges (altitude-banded, jittered
-                    // along the band) + broad noise, always proud of
-                    // the ground; seam rows bury instead.
-                    const f32 bandY =
-                        std::floor(ground / kStrataPeriod +
-                                   0.35f * noise2(regionSeed ^ 0x11u,
-                                                  column.arc * 0.06f,
-                                                  0.0f));
-                    const f32 ledge =
-                        (hash01(regionSeed ^
-                                static_cast<u32>(
-                                    static_cast<i32>(bandY) * 7919)) -
-                         0.5f) *
-                        0.9f;
-                    const f32 broad =
-                        (noise2(regionSeed ^ 0x2fu, column.arc * 0.11f,
-                                ground * 0.14f) -
-                         0.5f) *
-                        2.0f;
-                    // Bigger faces carry bigger relief — 1.5 m of bumps
-                    // on a 150 m wall is invisible from across the
-                    // valley.
-                    const f32 reliefScale =
-                        1.0f + glm::min(drop, 120.0f) * 0.02f;
-                    f32 relief = kReliefFloor +
-                                 kReliefAmp * reliefScale *
-                                     glm::clamp(0.55f + 0.5f * broad +
-                                                    ledge,
-                                                0.0f, 1.0f);
-                    MeshVertex vertex;
-                    vertex.position = { xz.x + column.dir.x * relief,
-                                        ground,
-                                        xz.y + column.dir.y * relief };
-                    // Seams: bottom row buries under the talus, top row
-                    // tucks into the crest, end columns into the hill.
-                    if (r == 0) {
-                        vertex.position.y -= 1.0f;
-                    } else if (r == rows) {
-                        vertex.position -=
-                            Vec3 { column.dir.x, 0.0f, column.dir.y } *
-                            (relief + 0.8f);
-                        vertex.position.y -= 0.6f;
-                    }
-                    if (endCap && r > 0 && r < rows) {
-                        vertex.position -=
-                            Vec3 { column.dir.x, 0.0f, column.dir.y } *
-                            (relief + 0.6f);
-                    }
-                    // Vertex mask: recesses darken, plus a broad
-                    // per-strata tone roll (cliff.frag multiplies).
-                    const f32 cavity = glm::clamp(
-                        0.78f + 0.30f * (relief - 0.7f), 0.55f, 1.1f);
-                    const f32 tone =
-                        0.92f +
-                        0.14f *
-                            hash01(regionSeed ^
-                                   static_cast<u32>(
-                                       static_cast<i32>(bandY) * 271));
-                    vertex.color = Vec3 { cavity * tone };
-                    vertex.uv = { 0.0f, 0.0f };
-                    lo = glm::min(lo, vertex.position);
-                    hi = glm::max(hi, vertex.position);
-                    vertices.push_back(vertex);
-                }
+            for (const CliffBlock& block : blocks) {
+                appendBlock(nearMesh, block, 1);
+                appendBlock(farMesh, block, 0);
+                const f32 reach = block.width + block.depth +
+                                  block.height;
+                lo = glm::min(lo, block.base - Vec3 { reach });
+                hi = glm::max(hi, block.base + Vec3 { reach });
             }
-            const u32 stride = rows + 1;
-            // The chain's travel direction along the foot line is
-            // ARBITRARY (nearest-neighbour walk) — probe one mid-band
-            // quad against the outward dir and pick the winding that
-            // faces OUT, or back-face culling hides the whole wall.
-            bool flip = false;
-            {
-                const size_t midC = columns.size() / 2;
-                const u32 a = firstVertex +
-                              static_cast<u32>(midC) * stride + rows / 2;
-                const Vec3 face = glm::cross(
-                    vertices[a + stride].position - vertices[a].position,
-                    vertices[a + 1].position - vertices[a].position);
-                const Vec2 dir = columns[midC].dir;
-                flip = face.x * dir.x + face.z * dir.y < 0.0f;
-            }
-            for (u32 c = 0; c + 1 < columns.size(); ++c) {
-                for (u32 r = 0; r < rows; ++r) {
-                    const u32 a = firstVertex + c * stride + r;
-                    const u32 b = a + stride;
-                    if (flip) {
-                        indices.insert(indices.end(),
-                                       { a, a + 1, b, b, a + 1, b + 1 });
-                    } else {
-                        indices.insert(indices.end(),
-                                       { a, b, a + 1, a + 1, b, b + 1 });
-                    }
-                }
-            }
-            // Accumulated smooth normals over the band's vertex range.
-            for (size_t v = firstVertex; v < vertices.size(); ++v) {
-                vertices[v].normal = Vec3 { 0.0f };
-            }
-            for (size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
-                MeshVertex& a = vertices[indices[i]];
-                MeshVertex& b = vertices[indices[i + 1]];
-                MeshVertex& c = vertices[indices[i + 2]];
-                const Vec3 face = glm::cross(b.position - a.position,
-                                             c.position - a.position);
-                a.normal += face;
-                b.normal += face;
-                c.normal += face;
-            }
-            for (size_t v = firstVertex; v < vertices.size(); ++v) {
-                const f32 len = glm::length(vertices[v].normal);
-                vertices[v].normal = len > 1.0e-6f
-                                         ? vertices[v].normal / len
-                                         : Vec3 { 0.0f, 1.0f, 0.0f };
-            }
-            mesh.ranges.push_back(
-                { firstIndex,
-                  static_cast<u32>(indices.size()) - firstIndex,
-                  lo - Vec3 { 1.0f }, hi + Vec3 { 1.0f } });
+            range.indexCount =
+                static_cast<u32>(nearMesh.indices.size()) - range.firstIndex;
+            range.farIndexCount = static_cast<u32>(farMesh.indices.size()) -
+                                  range.farFirstIndex;
+            range.lo = lo;
+            range.hi = hi;
+            mesh.ranges.push_back(range);
             ++walls;
         }
-        if (vertices.empty() || indices.empty()) {
+        if (nearMesh.vertices.empty()) {
             continue;
         }
         mesh.vertexBuffer = { device, device.createBuffer(
             { .usage = rhi::BufferUsage::Vertex,
-              .size = vertices.size() * sizeof(MeshVertex) },
-            vertices.data()) };
+              .size = nearMesh.vertices.size() * sizeof(MeshVertex) },
+            nearMesh.vertices.data()) };
         mesh.indexBuffer = { device, device.createBuffer(
             { .usage = rhi::BufferUsage::Index,
-              .size = indices.size() * sizeof(u32) },
-            indices.data()) };
+              .size = nearMesh.indices.size() * sizeof(u32) },
+            nearMesh.indices.data()) };
+        mesh.farVertexBuffer = { device, device.createBuffer(
+            { .usage = rhi::BufferUsage::Vertex,
+              .size = farMesh.vertices.size() * sizeof(MeshVertex) },
+            farMesh.vertices.data()) };
+        mesh.farIndexBuffer = { device, device.createBuffer(
+            { .usage = rhi::BufferUsage::Index,
+              .size = farMesh.indices.size() * sizeof(u32) },
+            farMesh.indices.data()) };
         meshes.push_back(std::move(mesh));
     }
     if (walls > 0) {
@@ -396,7 +416,7 @@ void CliffSystem::draw(rhi::CommandBuffer& cmd,
                        rhi::BindGroupHandle frameBindGroup,
                        rhi::BindGroupHandle splatBindGroup,
                        rhi::BindGroupHandle shadowBindGroup,
-                       const Frustum* frustum) {
+                       const Vec3& cameraPos, const Frustum* frustum) {
     if (meshes.empty() || pipeline.get().id == 0) {
         return;
     }
@@ -409,20 +429,40 @@ void CliffSystem::draw(rhi::CommandBuffer& cmd,
         cmd.setBindGroup(2, shadowBindGroup);
     }
     for (const RegionMesh& mesh : meshes) {
-        bool bound = false;
-        for (const BandRange& range : mesh.ranges) {
-            if (frustum != nullptr &&
-                !frustum->intersectsAabb(range.lo, range.hi)) {
-                continue;
+        // Near and far ranges batch per buffer bind.
+        for (u32 pass = 0; pass < 2; ++pass) {
+            bool bound = false;
+            for (const BandRange& range : mesh.ranges) {
+                if (frustum != nullptr &&
+                    !frustum->intersectsAabb(range.lo, range.hi)) {
+                    continue;
+                }
+                const Vec3 center = (range.lo + range.hi) * 0.5f;
+                const bool nearBand =
+                    glm::max(glm::abs(center.x - cameraPos.x),
+                             glm::abs(center.z - cameraPos.z)) <
+                    kNearRange;
+                if (nearBand != (pass == 0)) {
+                    continue;
+                }
+                if (!bound) {
+                    cmd.setVertexBuffer(
+                        0, pass == 0 ? mesh.vertexBuffer.get()
+                                     : mesh.farVertexBuffer.get());
+                    cmd.setIndexBuffer(
+                        pass == 0 ? mesh.indexBuffer.get()
+                                  : mesh.farIndexBuffer.get(),
+                        rhi::IndexFormat::U32);
+                    bound = true;
+                }
+                cmd.drawIndexed(pass == 0 ? range.indexCount
+                                          : range.farIndexCount,
+                                1,
+                                pass == 0 ? range.firstIndex
+                                          : range.farFirstIndex);
+                frameIndices += pass == 0 ? range.indexCount
+                                          : range.farIndexCount;
             }
-            if (!bound) {
-                cmd.setVertexBuffer(0, mesh.vertexBuffer.get());
-                cmd.setIndexBuffer(mesh.indexBuffer.get(),
-                                   rhi::IndexFormat::U32);
-                bound = true;
-            }
-            cmd.drawIndexed(range.indexCount, 1, range.firstIndex);
-            frameIndices += range.indexCount;
         }
     }
 }
@@ -443,13 +483,14 @@ void CliffSystem::drawDepth(rhi::CommandBuffer& cmd,
                 continue;
             }
             if (!bound) {
-                cmd.setVertexBuffer(0, mesh.vertexBuffer.get());
-                cmd.setIndexBuffer(mesh.indexBuffer.get(),
+                cmd.setVertexBuffer(0, mesh.farVertexBuffer.get());
+                cmd.setIndexBuffer(mesh.farIndexBuffer.get(),
                                    rhi::IndexFormat::U32);
                 bound = true;
             }
-            cmd.drawIndexed(range.indexCount, 1, range.firstIndex);
-            frameIndices += range.indexCount;
+            cmd.drawIndexed(range.farIndexCount, 1,
+                            range.farFirstIndex);
+            frameIndices += range.farIndexCount;
         }
     }
 }
