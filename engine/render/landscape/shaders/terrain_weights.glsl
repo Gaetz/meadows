@@ -48,6 +48,18 @@ float borderWander(vec2 p) {
     return -0.31 + (n - 0.5) * 0.2;
 }
 
+// Scree apron (talus): the slope band just BELOW the rock threshold —
+// eroded material gathers at rock feet. Peaks where bedrock is exposed;
+// the wander keeps the band organic. Consumed twice: the weight rule
+// grows a SAND apron there (which then blends to grass or water through
+// the ordinary falloffs), and terrain.frag biases the sand family's hex
+// pick toward the dedicated scree layer (16).
+float screeFactor(float slope, float rockExposure, float wander) {
+    float band = smoothstep(0.07, 0.14, slope + wander * 0.03) *
+                 (1.0 - smoothstep(0.16, 0.26, slope));
+    return band * (0.35 + 0.65 * rockExposure);
+}
+
 // snowLine arrives with the biome offset already applied. rockShift =
 // 0.1 * rockiness; beach forces sand whatever the altitude rules say.
 // grassPresence is deliberately absent: the albedo blend renormalizes,
@@ -68,6 +80,10 @@ TerrainWeights terrainWeights(float h, float slope, float wander,
                                h + wander * 5.0)) *
              (1.0 - w.rock - w.cliff);
     w.sand = max(w.sand, beach * (1.0 - w.rock - w.cliff));
+    // Talus: the rock-foot band turns sandy (snow still buries it up
+    // high) — grass stays the remainder, so scree->grass fades free.
+    w.sand = max(w.sand, screeFactor(slope, rockExposure, wander) *
+                             max(1.0 - w.rock - w.cliff - w.snow, 0.0));
     w.grass = max(1.0 - w.rock - w.snow - w.sand - w.cliff, 0.0);
     return w;
 }

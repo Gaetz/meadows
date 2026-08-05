@@ -97,7 +97,11 @@ void main() {
                           hexDom == 1 ? 1.0 : 0.0,
                           hexDom == 2 ? 1.0 : 0.0);
     hexW = mix(hexW, hexOneHot, hexFar);
-    float grassLayerA = hexFamilyLayer(0, hexV[hexDom]);
+    // Scree bias for the sand family's pick (terrain_weights.glsl
+    // screeFactor — the same band that grew the sand apron).
+    float screeMix =
+        clamp(screeFactor(slope, vColor.r, wander) * 1.6, 0.0, 1.0);
+    float grassLayerA = hexFamilyLayer(0, hexV[hexDom], 0.0);
 
     // Height-blend the rule weights: only layers the rule already admits
     // fetch their displacement (2-3 typical), the winner's micro-relief
@@ -116,8 +120,10 @@ void main() {
                     hs[i] += hexW[t] *
                              texture(uSplatHeight,
                                      vec3(uv + hexOff[t],
-                                          hexFamilyLayer(i,
-                                                         hexV[t]))).r;
+                                          hexFamilyLayer(
+                                              i, hexV[t],
+                                              i == 3 ? screeMix
+                                                     : 0.0))).r;
                 }
             }
         } else {
@@ -164,9 +170,11 @@ void main() {
     // The dominant layer's FETCH index follows the dominant hex tap —
     // its uv offset rides the whole POM march (subtracted back for the
     // other layers below). Every hex family (0-3) qualifies.
-    float dominantLayer = dominant <= 3
-                              ? hexFamilyLayer(dominant, hexV[hexDom])
-                              : float(dominant);
+    float dominantLayer =
+        dominant <= 3
+            ? hexFamilyLayer(dominant, hexV[hexDom],
+                             dominant == 3 ? screeMix : 0.0)
+            : float(dominant);
     vec2 pomShift = dominant <= 3 ? hexOff[hexDom] : vec2(0.0);
     vec2 pomUv = uv + pomShift;
     float pomSelfShadow = 1.0;
@@ -246,7 +254,8 @@ void main() {
             for (int t = 0; t < 3; ++t) {
                 if (hexW[t] > 0.003) {
                     vec2 tapUv = baseUv + hexOff[t];
-                    float lyr = hexFamilyLayer(i, hexV[t]);
+                    float lyr = hexFamilyLayer(
+                        i, hexV[t], i == 3 ? screeMix : 0.0);
                     layer += hexW[t] *
                              texture(uSplat, vec3(tapUv, lyr)).rgb;
                     layerN += hexW[t] *

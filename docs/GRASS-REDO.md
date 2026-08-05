@@ -455,6 +455,25 @@ La recette hex des variantes d'herbe étendue aux autres familles
   dé-tuilent quand même) — la vraie variété de contenu vit dans le set
   cooké. Pas de miroir CPU pour ces familles (aucun couplage scatter).
 
+## Éboulis au pied des roches (demande dev, 2026-08-05)
+
+Le « sédiment » au pied des parois affichait de l'HERBE : les poids
+sont pilotés pente/altitude et l'herbe est la couche par défaut — quand
+la pente s'adoucit sous le seuil rocheux, le fondu allait direct
+roche→herbe. V1 livrée (la V2 = canal de déposition baké par l'érosion
+des tuiles, différée) :
+- **`screeFactor`** (terrain_weights.glsl + miroir CPU, édités en
+  lockstep) : bande de pente 0.07-0.16 sous le seuil rocheux ×
+  exposition du socle, wander organique. La règle donne un tablier de
+  SABLE là — le fondu sable→herbe et sable→eau vient gratuitement des
+  falloffs existants.
+- **Couche `scree` dédiée (16, rocks_ground_06 — SANS harmonize, la
+  pierraille garde son gris)** : le tirage hex du sable bascule vers
+  elle sous le biais (`hexFamilyLayer` 3-args, seuil par sommet du
+  treillis) — le tablier lit comme de l'éboulis, sa frange se mélange
+  aux sables ordinaires, et POM/SSDM suivent (le héros du relief : les
+  cailloux de rocks_ground_06 ont une vraie height map).
+
 ## À valider par le dev
 
 Prairie (mélange d'espèces + clumps + zones qui changent la texture ET la

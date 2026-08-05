@@ -266,6 +266,7 @@ vector<f32> buildSplatHeightPixels() {
                 pixels[sandVariantLayer(variant) * layerTexels + texel] =
                     sandH;
             }
+            pixels[kScreeLayer * layerTexels + texel] = rockH;
         }
     }
     return pixels;
@@ -288,7 +289,7 @@ vector<u8> buildSplatNormalPixels() {
         stonyGrassHeight, dirtGrassHeight, rockHeight,
         rockHeight,       rockHeight,      snowHeight,
         snowHeight,       sandHeight,      sandHeight,
-        sandHeight
+        sandHeight,       rockHeight
     };
     for (u32 layer = 0; layer < kSplatArrayLayers; ++layer) {
         const HeightFn fn = kHeightFn[layer];
@@ -359,6 +360,8 @@ vector<u8> buildSplatTilePixels() {
                            sandVariantLayer(variant) * layerBytes + texel,
                            sandTexel(u, v));
             }
+            writeTexel(pixels, kScreeLayer * layerBytes + texel,
+                       rockTexel(u, v));
         }
     }
     return pixels;

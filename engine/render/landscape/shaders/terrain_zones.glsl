@@ -59,7 +59,11 @@ int hexVariantOf(ivec2 v) {
 // (2/11/12), sand 4-way (3/13/14/15); cliff stays single (strata
 // modulation instead). Distinct salts per family so the patchworks
 // never correlate.
-float hexFamilyLayer(int family, ivec2 v) {
+// `screeBias` (sand family only): the rock-foot talus flips the pick to
+// the dedicated scree layer (16) with rising probability — its fringe
+// hex-blends with the ordinary sand variants, and the weight rule's
+// falloff carries it into grass or water.
+float hexFamilyLayer(int family, ivec2 v, float screeBias) {
     if (family == 0) {
         int g = hexVariantOf(v);
         return g == 0 ? 0.0 : float(4 + g);
@@ -76,6 +80,9 @@ float hexFamilyLayer(int family, ivec2 v) {
     if (family == 2) {
         int g = int(h % 3u);
         return g == 0 ? 2.0 : float(10 + g); // 11..12
+    }
+    if (float((h >> 8) & 255u) * (1.0 / 255.0) < screeBias) {
+        return 16.0; // scree
     }
     int g = int(h & 3u);
     return g == 0 ? 3.0 : float(12 + g); // 13..15

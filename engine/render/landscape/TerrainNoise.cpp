@@ -150,6 +150,14 @@ struct WeightRuleInputs {
     f32 grassPresence { 1.0f };
 };
 
+// terrain_weights.glsl screeFactor, mirrored bit-for-bit.
+f32 screeFactor(f32 slope, f32 rockExposure, f32 wander) {
+    const f32 band =
+        glm::smoothstep(0.07f, 0.14f, slope + wander * 0.03f) *
+        (1.0f - glm::smoothstep(0.16f, 0.26f, slope));
+    return band * (0.35f + 0.65f * rockExposure);
+}
+
 MaterialWeights materialWeightsCore(const WeightRuleInputs& in) {
     MaterialWeights weights;
     weights.cliff =
@@ -168,6 +176,11 @@ MaterialWeights materialWeightsCore(const WeightRuleInputs& in) {
         (1.0f - weights.rock - weights.cliff);
     weights.sand = glm::max(weights.sand,
                             in.beach * (1.0f - weights.rock - weights.cliff));
+    weights.sand = glm::max(
+        weights.sand,
+        screeFactor(in.slope, in.rockExposure, in.wander) *
+            glm::max(1.0f - weights.rock - weights.cliff - weights.snow,
+                     0.0f));
     weights.grass = glm::max(1.0f - weights.rock - weights.snow -
                                  weights.sand - weights.cliff,
                              0.0f) *

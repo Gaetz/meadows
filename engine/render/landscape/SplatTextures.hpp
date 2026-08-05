@@ -29,7 +29,12 @@ constexpr u32 kGrassVariantCount = 4;
 constexpr u32 kRockVariantCount = 4;
 constexpr u32 kSnowVariantCount = 3;
 constexpr u32 kSandVariantCount = 4;
-constexpr u32 kSplatArrayLayers = 16;
+// Scree (talus at rock feet — terrain_weights.glsl screeFactor): a
+// dedicated sand-family layer the hex pick flips to under the scree
+// bias, so it blends with sand at its fringe and with grass through
+// the ordinary weight falloff.
+constexpr u32 kScreeLayer = 16;
+constexpr u32 kSplatArrayLayers = 17;
 constexpr u32 grassVariantLayer(u32 variant) {
     return variant == 0 ? SplatLayer_Grass : SplatLayer_Count + variant - 1;
 }

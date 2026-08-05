@@ -166,3 +166,11 @@ height = "../../../../assets-src/terrain/sandy_gravel/sandy_gravel_Displacement.
 harmonize = true
 harmonizeWith = 3
 
+[[material]]
+name = "scree"                  # layer 16 — talus at rock feet (no
+                                # harmonize: rock debris keeps its gray)
+albedo = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_Color.png"
+normal = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_NormalGL.png"
+ao = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_Roughness.png"
+height = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_Displacement.png"
