@@ -435,11 +435,15 @@ scintillement sans TAA = critère d'abandon.
 
 ## Variantes roche/sable/neige (demande dev, 2026-08-05)
 
-La recette hex des variantes d'herbe étendue aux autres familles :
-- **Arrays 8 → 11 couches** : rock_06 (8), snow_02 (9), sand_01 (10) —
-  Poly Haven CC0 dans assets-src/, mix 2-way avec leur base par famille
-  (le cliff garde ses strates). `hexFamilyLayer` (terrain_zones.glsl) :
-  sels distincts par famille, les patchworks ne se corrèlent jamais.
+La recette hex des variantes d'herbe étendue aux autres familles
+(élargie le même jour : 2 variantes insuffisantes) :
+- **Arrays 8 → 16 couches** : rock 4-way (rock_06/rock_05/rock_face,
+  couches 8-10), snow 3-way (snow_02/snow_03, 11-12), sand 4-way
+  (sand_01/sand_02/sandy_gravel, 13-15) — Poly Haven CC0 dans
+  assets-src/, tables `*VariantLayer` dans SplatTextures.hpp (le cliff
+  garde ses strates). `hexFamilyLayer` (terrain_zones.glsl) : sels
+  distincts par famille, les patchworks ne se corrèlent jamais ; le
+  hash HERBE est inchangé (le miroir CPU du scatter en dépend).
 - **Cook `harmonizeWith`** : l'ancrage chromatique vise désormais la
   base de SA famille (rock→1, snow→2, sand→3) — table des moyennes par
   couche dans le cooker (l'ancien harmonize ne visait que le gazon).

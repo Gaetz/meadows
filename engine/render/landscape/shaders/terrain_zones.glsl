@@ -53,21 +53,32 @@ int hexVariantOf(ivec2 v) {
                uint(v.y) * 0x85ebca6bu) & 3u);
 }
 
-// Per-FAMILY variant layer at a lattice vertex: grass is the 4-way pick
-// above (layers 0/5/6/7); rock/snow/sand are 2-way mixes with their
-// extra layer (8/9/10 — SplatTextures familyVariantLayer); cliff stays
-// single. Distinct salts per family so the patchworks never correlate.
+// Per-FAMILY variant layer at a lattice vertex (SplatTextures.hpp is
+// the layer table): grass 4-way (0/5/6/7 — its own hash, the CPU
+// scatter mirror depends on it), rock 4-way (1/8/9/10), snow 3-way
+// (2/11/12), sand 4-way (3/13/14/15); cliff stays single (strata
+// modulation instead). Distinct salts per family so the patchworks
+// never correlate.
 float hexFamilyLayer(int family, ivec2 v) {
     if (family == 0) {
         int g = hexVariantOf(v);
         return g == 0 ? 0.0 : float(4 + g);
     }
     if (family >= 4) {
-        return float(family); // cliff: strata modulation instead
+        return float(family);
     }
     uint h = zoneHash(uint(v.x) * (0x68e31da4u + uint(family) * 977u) ^
                       uint(v.y) * (0xb5297a4du + uint(family) * 331u));
-    return (h & 1u) == 0u ? float(family) : float(7 + family);
+    if (family == 1) {
+        int g = int(h & 3u);
+        return g == 0 ? 1.0 : float(7 + g); // 8..10
+    }
+    if (family == 2) {
+        int g = int(h % 3u);
+        return g == 0 ? 2.0 : float(10 + g); // 11..12
+    }
+    int g = int(h & 3u);
+    return g == 0 ? 3.0 : float(12 + g); // 13..15
 }
 
 vec2 hexOffsetOf(ivec2 v) {

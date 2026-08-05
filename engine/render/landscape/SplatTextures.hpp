@@ -22,18 +22,26 @@ constexpr u32 kSplatTileSize = 256; // texels per side, per layer
 // layers after the semantic five. The semantic weights never change —
 // variants only redirect the grass FETCH.
 constexpr u32 kGrassVariantCount = 4;
-// Rock/snow/sand each carry ONE extra variant (2-way hex mix with their
-// base): layers 8/9/10 — terrain_zones.glsl hexFamilyLayer mirrors this
-// table. Cliff keeps its single strata-modulated layer.
-constexpr u32 kFamilyVariantLayers = 3;
-constexpr u32 kSplatArrayLayers = SplatLayer_Count +
-                                  (kGrassVariantCount - 1) +
-                                  kFamilyVariantLayers; // 11
+// Family variants (hex-tiling per family — terrain_zones.glsl
+// hexFamilyLayer mirrors this table): rock 4-way (base + 8/9/10),
+// snow 3-way (base + 11/12), sand 4-way (base + 13/14/15). Cliff keeps
+// its single strata-modulated layer.
+constexpr u32 kRockVariantCount = 4;
+constexpr u32 kSnowVariantCount = 3;
+constexpr u32 kSandVariantCount = 4;
+constexpr u32 kSplatArrayLayers = 16;
 constexpr u32 grassVariantLayer(u32 variant) {
     return variant == 0 ? SplatLayer_Grass : SplatLayer_Count + variant - 1;
 }
-// rock -> 8, snow -> 9, sand -> 10.
-constexpr u32 familyVariantLayer(u32 family) { return 7 + family; }
+constexpr u32 rockVariantLayer(u32 variant) {
+    return variant == 0 ? SplatLayer_Rock : 7 + variant;
+}
+constexpr u32 snowVariantLayer(u32 variant) {
+    return variant == 0 ? SplatLayer_Snow : 10 + variant;
+}
+constexpr u32 sandVariantLayer(u32 variant) {
+    return variant == 0 ? SplatLayer_Sand : 12 + variant;
+}
 
 // Deterministic, seamlessly tileable RGBA8 pixels for all layers,
 // contiguous (layer-major) — the exact shape Device::createTexture expects

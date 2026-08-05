@@ -251,12 +251,21 @@ vector<f32> buildSplatHeightPixels() {
             // Rock/snow/sand family variants: the procedural set reuses
             // the base tiles (the hex uv offsets still de-tile them);
             // real content variety lives in the cooked library.
-            pixels[familyVariantLayer(1) * layerTexels + texel] =
-                glm::clamp(rockHeight(u, v), 0.0f, 1.0f);
-            pixels[familyVariantLayer(2) * layerTexels + texel] =
-                glm::clamp(snowHeight(u, v), 0.0f, 1.0f);
-            pixels[familyVariantLayer(3) * layerTexels + texel] =
-                glm::clamp(sandHeight(u, v), 0.0f, 1.0f);
+            const f32 rockH = glm::clamp(rockHeight(u, v), 0.0f, 1.0f);
+            const f32 snowH = glm::clamp(snowHeight(u, v), 0.0f, 1.0f);
+            const f32 sandH = glm::clamp(sandHeight(u, v), 0.0f, 1.0f);
+            for (u32 variant = 1; variant < kRockVariantCount; ++variant) {
+                pixels[rockVariantLayer(variant) * layerTexels + texel] =
+                    rockH;
+            }
+            for (u32 variant = 1; variant < kSnowVariantCount; ++variant) {
+                pixels[snowVariantLayer(variant) * layerTexels + texel] =
+                    snowH;
+            }
+            for (u32 variant = 1; variant < kSandVariantCount; ++variant) {
+                pixels[sandVariantLayer(variant) * layerTexels + texel] =
+                    sandH;
+            }
         }
     }
     return pixels;
@@ -277,7 +286,9 @@ vector<u8> buildSplatNormalPixels() {
         grassHeight,      rockHeight,      snowHeight,
         sandHeight,       cliffHeight,     wornGrassHeight,
         stonyGrassHeight, dirtGrassHeight, rockHeight,
-        snowHeight,       sandHeight
+        rockHeight,       rockHeight,      snowHeight,
+        snowHeight,       sandHeight,      sandHeight,
+        sandHeight
     };
     for (u32 layer = 0; layer < kSplatArrayLayers; ++layer) {
         const HeightFn fn = kHeightFn[layer];
@@ -333,12 +344,21 @@ vector<u8> buildSplatTilePixels() {
                        stonyGrassTexel(u, v));
             writeTexel(pixels, grassVariantLayer(3) * layerBytes + texel,
                        dirtGrassTexel(u, v));
-            writeTexel(pixels, familyVariantLayer(1) * layerBytes + texel,
-                       rockTexel(u, v));
-            writeTexel(pixels, familyVariantLayer(2) * layerBytes + texel,
-                       snowTexel(u, v));
-            writeTexel(pixels, familyVariantLayer(3) * layerBytes + texel,
-                       sandTexel(u, v));
+            for (u32 variant = 1; variant < kRockVariantCount; ++variant) {
+                writeTexel(pixels,
+                           rockVariantLayer(variant) * layerBytes + texel,
+                           rockTexel(u, v));
+            }
+            for (u32 variant = 1; variant < kSnowVariantCount; ++variant) {
+                writeTexel(pixels,
+                           snowVariantLayer(variant) * layerBytes + texel,
+                           snowTexel(u, v));
+            }
+            for (u32 variant = 1; variant < kSandVariantCount; ++variant) {
+                writeTexel(pixels,
+                           sandVariantLayer(variant) * layerBytes + texel,
+                           sandTexel(u, v));
+            }
         }
     }
     return pixels;

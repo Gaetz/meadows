@@ -82,12 +82,12 @@ roughness = "../../../../assets-src/terrain/sparse_grass/sparse_grass_Roughness.
 height = "../../../../assets-src/terrain/sparse_grass/sparse_grass_Displacement.png"
 harmonize = true
 
-# Rock/snow/sand family variants (hex-tiling per family, layers 8/9/10):
-# 2-way mixes with their base layer. `harmonizeWith` anchors each
-# variant's mean albedo to ITS family base (not the grass layer).
+# Rock/snow/sand family variants (hex-tiling per family — ORDER IS THE
+# LAYER ORDER: rock 8-10, snow 11-12, sand 13-15). `harmonizeWith`
+# anchors each variant's mean albedo to ITS family base.
 
 [[material]]
-name = "rock-var"               # rock variant (layer 8, mixes with 1)
+name = "rock-var1"               # layer 8
 albedo = "../../../../assets-src/terrain/rock_06/rock_06_Color.png"
 normal = "../../../../assets-src/terrain/rock_06/rock_06_NormalGL.png"
 ao = "../../../../assets-src/terrain/rock_06/rock_06_AmbientOcclusion.png"
@@ -97,7 +97,27 @@ harmonize = true
 harmonizeWith = 1
 
 [[material]]
-name = "snow-var"               # snow variant (layer 9, mixes with 2)
+name = "rock-var2"               # layer 9
+albedo = "../../../../assets-src/terrain/rock_05/rock_05_Color.png"
+normal = "../../../../assets-src/terrain/rock_05/rock_05_NormalGL.png"
+ao = "../../../../assets-src/terrain/rock_05/rock_05_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/rock_05/rock_05_Roughness.png"
+height = "../../../../assets-src/terrain/rock_05/rock_05_Displacement.png"
+harmonize = true
+harmonizeWith = 1
+
+[[material]]
+name = "rock-var3"               # layer 10
+albedo = "../../../../assets-src/terrain/rock_face/rock_face_Color.png"
+normal = "../../../../assets-src/terrain/rock_face/rock_face_NormalGL.png"
+ao = "../../../../assets-src/terrain/rock_face/rock_face_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/rock_face/rock_face_Roughness.png"
+height = "../../../../assets-src/terrain/rock_face/rock_face_Displacement.png"
+harmonize = true
+harmonizeWith = 1
+
+[[material]]
+name = "snow-var1"               # layer 11
 albedo = "../../../../assets-src/terrain/snow_02/snow_02_Color.png"
 normal = "../../../../assets-src/terrain/snow_02/snow_02_NormalGL.png"
 ao = "../../../../assets-src/terrain/snow_02/snow_02_AmbientOcclusion.png"
@@ -107,7 +127,17 @@ harmonize = true
 harmonizeWith = 2
 
 [[material]]
-name = "sand-var"               # sand variant (layer 10, mixes with 3)
+name = "snow-var2"               # layer 12
+albedo = "../../../../assets-src/terrain/snow_03/snow_03_Color.png"
+normal = "../../../../assets-src/terrain/snow_03/snow_03_NormalGL.png"
+ao = "../../../../assets-src/terrain/snow_03/snow_03_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/snow_03/snow_03_Roughness.png"
+height = "../../../../assets-src/terrain/snow_03/snow_03_Displacement.png"
+harmonize = true
+harmonizeWith = 2
+
+[[material]]
+name = "sand-var1"               # layer 13
 albedo = "../../../../assets-src/terrain/sand_01/sand_01_Color.png"
 normal = "../../../../assets-src/terrain/sand_01/sand_01_NormalGL.png"
 ao = "../../../../assets-src/terrain/sand_01/sand_01_AmbientOcclusion.png"
@@ -115,3 +145,24 @@ roughness = "../../../../assets-src/terrain/sand_01/sand_01_Roughness.png"
 height = "../../../../assets-src/terrain/sand_01/sand_01_Displacement.png"
 harmonize = true
 harmonizeWith = 3
+
+[[material]]
+name = "sand-var2"               # layer 14
+albedo = "../../../../assets-src/terrain/sand_02/sand_02_Color.png"
+normal = "../../../../assets-src/terrain/sand_02/sand_02_NormalGL.png"
+ao = "../../../../assets-src/terrain/sand_02/sand_02_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/sand_02/sand_02_Roughness.png"
+height = "../../../../assets-src/terrain/sand_02/sand_02_Displacement.png"
+harmonize = true
+harmonizeWith = 3
+
+[[material]]
+name = "sand-var3"               # layer 15
+albedo = "../../../../assets-src/terrain/sandy_gravel/sandy_gravel_Color.png"
+normal = "../../../../assets-src/terrain/sandy_gravel/sandy_gravel_NormalGL.png"
+ao = "../../../../assets-src/terrain/sandy_gravel/sandy_gravel_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/sandy_gravel/sandy_gravel_Roughness.png"
+height = "../../../../assets-src/terrain/sandy_gravel/sandy_gravel_Displacement.png"
+harmonize = true
+harmonizeWith = 3
+
