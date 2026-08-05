@@ -248,6 +248,15 @@ vector<f32> buildSplatHeightPixels() {
                 glm::clamp(stonyGrassHeight(u, v), 0.0f, 1.0f);
             pixels[grassVariantLayer(3) * layerTexels + texel] =
                 glm::clamp(dirtGrassHeight(u, v), 0.0f, 1.0f);
+            // Rock/snow/sand family variants: the procedural set reuses
+            // the base tiles (the hex uv offsets still de-tile them);
+            // real content variety lives in the cooked library.
+            pixels[familyVariantLayer(1) * layerTexels + texel] =
+                glm::clamp(rockHeight(u, v), 0.0f, 1.0f);
+            pixels[familyVariantLayer(2) * layerTexels + texel] =
+                glm::clamp(snowHeight(u, v), 0.0f, 1.0f);
+            pixels[familyVariantLayer(3) * layerTexels + texel] =
+                glm::clamp(sandHeight(u, v), 0.0f, 1.0f);
         }
     }
     return pixels;
@@ -265,9 +274,10 @@ vector<u8> buildSplatNormalPixels() {
     const auto wrap = [](f32 t) { return t - std::floor(t); };
     using HeightFn = f32 (*)(f32, f32);
     constexpr array<HeightFn, kSplatArrayLayers> kHeightFn {
-        grassHeight,      rockHeight,        snowHeight,
-        sandHeight,       cliffHeight,       wornGrassHeight,
-        stonyGrassHeight, dirtGrassHeight
+        grassHeight,      rockHeight,      snowHeight,
+        sandHeight,       cliffHeight,     wornGrassHeight,
+        stonyGrassHeight, dirtGrassHeight, rockHeight,
+        snowHeight,       sandHeight
     };
     for (u32 layer = 0; layer < kSplatArrayLayers; ++layer) {
         const HeightFn fn = kHeightFn[layer];
@@ -323,6 +333,12 @@ vector<u8> buildSplatTilePixels() {
                        stonyGrassTexel(u, v));
             writeTexel(pixels, grassVariantLayer(3) * layerBytes + texel,
                        dirtGrassTexel(u, v));
+            writeTexel(pixels, familyVariantLayer(1) * layerBytes + texel,
+                       rockTexel(u, v));
+            writeTexel(pixels, familyVariantLayer(2) * layerBytes + texel,
+                       snowTexel(u, v));
+            writeTexel(pixels, familyVariantLayer(3) * layerBytes + texel,
+                       sandTexel(u, v));
         }
     }
     return pixels;

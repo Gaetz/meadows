@@ -80,24 +80,13 @@ void main() {
     // over a triangle lattice — variant AND uv offset per vertex, so
     // neither zone borders nor tile repetition exist. Far away the
     // weights collapse to the dominant tap (1 fetch again).
-    ivec2 hexV0;
-    ivec2 hexV1;
-    ivec2 hexV2;
+    ivec2 hexV[3];
     vec3 hexW;
-    hexGrass(vWorldPos.xz, hexV0, hexV1, hexV2, hexW);
-    float hexLayer[3];
+    hexGrass(vWorldPos.xz, hexV[0], hexV[1], hexV[2], hexW);
     vec2 hexOff[3];
-    {
-        int hv0 = hexVariantOf(hexV0);
-        int hv1 = hexVariantOf(hexV1);
-        int hv2 = hexVariantOf(hexV2);
-        hexLayer[0] = hv0 == 0 ? 0.0 : float(4 + hv0);
-        hexLayer[1] = hv1 == 0 ? 0.0 : float(4 + hv1);
-        hexLayer[2] = hv2 == 0 ? 0.0 : float(4 + hv2);
-        hexOff[0] = hexOffsetOf(hexV0);
-        hexOff[1] = hexOffsetOf(hexV1);
-        hexOff[2] = hexOffsetOf(hexV2);
-    }
+    hexOff[0] = hexOffsetOf(hexV[0]);
+    hexOff[1] = hexOffsetOf(hexV[1]);
+    hexOff[2] = hexOffsetOf(hexV[2]);
     float camDistHex = distance(vWorldPos, uCameraPos.xyz);
     float hexFar = smoothstep(45.0, 75.0, camDistHex);
     // Collapse toward the dominant tap with distance (mip-blurred far
@@ -108,7 +97,7 @@ void main() {
                           hexDom == 1 ? 1.0 : 0.0,
                           hexDom == 2 ? 1.0 : 0.0);
     hexW = mix(hexW, hexOneHot, hexFar);
-    float grassLayerA = hexLayer[hexDom]; // legacy name: dominant tap
+    float grassLayerA = hexFamilyLayer(0, hexV[hexDom]);
 
     // Height-blend the rule weights: only layers the rule already admits
     // fetch their displacement (2-3 typical), the winner's micro-relief
@@ -120,14 +109,15 @@ void main() {
             hs[i] = 0.0;
             continue;
         }
-        if (i == 0) {
-            hs[0] = 0.0;
+        if (i <= 3) { // grass/rock/snow/sand: the per-family hex mix
+            hs[i] = 0.0;
             for (int t = 0; t < 3; ++t) {
                 if (hexW[t] > 0.003) {
-                    hs[0] += hexW[t] *
+                    hs[i] += hexW[t] *
                              texture(uSplatHeight,
                                      vec3(uv + hexOff[t],
-                                          hexLayer[t])).r;
+                                          hexFamilyLayer(i,
+                                                         hexV[t]))).r;
                 }
             }
         } else {
@@ -173,9 +163,11 @@ void main() {
     // shimmer at triangle edges otherwise).
     // The dominant layer's FETCH index follows the dominant hex tap —
     // its uv offset rides the whole POM march (subtracted back for the
-    // other layers below).
-    float dominantLayer = dominant == 0 ? grassLayerA : float(dominant);
-    vec2 pomShift = dominant == 0 ? hexOff[hexDom] : vec2(0.0);
+    // other layers below). Every hex family (0-3) qualifies.
+    float dominantLayer = dominant <= 3
+                              ? hexFamilyLayer(dominant, hexV[hexDom])
+                              : float(dominant);
+    vec2 pomShift = dominant <= 3 ? hexOff[hexDom] : vec2(0.0);
     vec2 pomUv = uv + pomShift;
     float pomSelfShadow = 1.0;
     float pomReach = uSplatDetailInfo.w;
@@ -242,26 +234,24 @@ void main() {
         if (b[i] <= 0.0) {
             continue;
         }
-        // The grass layer is the 3-tap hex blend (variant + offset per
-        // lattice vertex); other layers fetch themselves at the
-        // unshifted uv.
+        // Families 0-3 are 3-tap hex blends (variant + offset per
+        // lattice vertex); the cliff fetches itself at the unshifted uv.
         vec2 baseUv = pomUv - pomShift;
         float fetchLayer = i == 0 ? grassLayerA : float(i);
         vec3 layer;
         vec2 layerN;
-        if (i == 0) {
+        if (i <= 3) {
             layer = vec3(0.0);
             layerN = vec2(0.0);
             for (int t = 0; t < 3; ++t) {
                 if (hexW[t] > 0.003) {
                     vec2 tapUv = baseUv + hexOff[t];
+                    float lyr = hexFamilyLayer(i, hexV[t]);
                     layer += hexW[t] *
-                             texture(uSplat, vec3(tapUv,
-                                                  hexLayer[t])).rgb;
+                             texture(uSplat, vec3(tapUv, lyr)).rgb;
                     layerN += hexW[t] *
                               (texture(uSplatNormal,
-                                       vec3(tapUv, hexLayer[t])).rg *
-                                   2.0 -
+                                       vec3(tapUv, lyr)).rg * 2.0 -
                                1.0);
                 }
             }
@@ -273,9 +263,9 @@ void main() {
         // Anti-repetition (brief phase 5, cheap variant): a second tap at
         // a NON-HARMONIC frequency (0.37x, per-layer phase) drifts the
         // tile's luminance — two incommensurate periods never realign, so
-        // the 4 m grid dissolves. Grass skips it: the hex offsets above
-        // already de-tile that layer.
-        if (uSplatVarietyInfo.x > 0.0 && i != 0) {
+        // the 4 m grid dissolves. The hex families skip it: their uv
+        // offsets already de-tile; only the cliff still needs it.
+        if (uSplatVarietyInfo.x > 0.0 && i > 3) {
             vec3 c2 = texture(uSplat,
                               vec3(baseUv * 0.37 +
                                        vec2(0.17, 0.29) * float(i),

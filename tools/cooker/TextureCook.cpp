@@ -50,10 +50,12 @@ struct MaterialSources {
     fs::path metallic;
     fs::path height;
     bool flipNormalY { false };
-    // Normalize this material's mean albedo to the FIRST material's mean
-    // (per channel): ground variants stay in one color family — their
+    // Normalize this material's mean albedo to another layer's mean
+    // (per channel): family variants stay in one color family — their
     // variation lives in content and relief, not in color patches.
+    // `harmonizeWith` picks the anchor layer (0 = grass by default).
     bool harmonize { false };
+    i64 harmonizeWith { 0 };
 };
 
 std::optional<Rgba> loadRgba(const fs::path& path) {
@@ -229,6 +231,8 @@ std::optional<vector<MaterialSources>> parseManifest(const fs::path& path) {
         mat.height = source("height");
         mat.flipNormalY = (*table)["flip_normal_y"].value_or(false);
         mat.harmonize = (*table)["harmonize"].value_or(false);
+        mat.harmonizeWith =
+            (*table)["harmonizeWith"].value_or<i64>(0);
         if (mat.name.empty() || mat.albedo.empty()) {
             LOG_ERROR("cook-terrain-materials: every [[material]] needs "
                       "'name' and 'albedo'");
@@ -327,15 +331,21 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
             for (f64& m : mean) {
                 m /= count;
             }
-            static f64 mean0[3] = { 128, 128, 128 };
+            // Anchor means, per layer already cooked this run
+            // (harmonizeWith indexes into them).
+            static vector<array<f64, 3>> layerMeans;
             if (layer == 0) {
-                mean0[0] = mean[0];
-                mean0[1] = mean[1];
-                mean0[2] = mean[2];
-            } else if (mat.harmonize) {
-                const f64 scale[3] = { mean0[0] / std::max(mean[0], 1.0),
-                                       mean0[1] / std::max(mean[1], 1.0),
-                                       mean0[2] / std::max(mean[2], 1.0) };
+                layerMeans.clear();
+            }
+            if (mat.harmonize &&
+                mat.harmonizeWith >= 0 &&
+                static_cast<size_t>(mat.harmonizeWith) <
+                    layerMeans.size()) {
+                const array<f64, 3>& anchor =
+                    layerMeans[static_cast<size_t>(mat.harmonizeWith)];
+                const f64 scale[3] = { anchor[0] / std::max(mean[0], 1.0),
+                                       anchor[1] / std::max(mean[1], 1.0),
+                                       anchor[2] / std::max(mean[2], 1.0) };
                 for (size_t i = 0; i < albedoBase.pixels.size(); i += 4) {
                     for (u32 c = 0; c < 3; ++c) {
                         albedoBase.pixels[i + c] = static_cast<u8>(
@@ -344,6 +354,9 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
                     }
                 }
             }
+            // Every layer's (pre-harmonize) mean joins the anchor table
+            // in order — later variants index it by harmonizeWith.
+            layerMeans.push_back({ mean[0], mean[1], mean[2] });
         }
         const auto albedoChain =
             mipChain(albedoBase, [](const Rgba& base, u32 size) {

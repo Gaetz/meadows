@@ -433,6 +433,24 @@ passés à 12 côtés (tubeSides data) au préalable : le scatter ébrèche un
 profil déjà rond. Critères posés : ≤ ~2,5 ms (scope F6 `ssdm`),
 scintillement sans TAA = critère d'abandon.
 
+## Variantes roche/sable/neige (demande dev, 2026-08-05)
+
+La recette hex des variantes d'herbe étendue aux autres familles :
+- **Arrays 8 → 11 couches** : rock_06 (8), snow_02 (9), sand_01 (10) —
+  Poly Haven CC0 dans assets-src/, mix 2-way avec leur base par famille
+  (le cliff garde ses strates). `hexFamilyLayer` (terrain_zones.glsl) :
+  sels distincts par famille, les patchworks ne se corrèlent jamais.
+- **Cook `harmonizeWith`** : l'ancrage chromatique vise désormais la
+  base de SA famille (rock→1, snow→2, sand→3) — table des moyennes par
+  couche dans le cooker (l'ancien harmonize ne visait que le gazon).
+- terrain.frag : le fetch hex 3-taps (hauteurs + albédo/normales +
+  POM dominant) couvre les familles 0-3 ; la bi-fréquence
+  anti-répétition ne reste que sur le cliff. Effondrement 1 tap au
+  loin inchangé.
+- Procédural : couches 8-10 = copies des bases (les offsets hex
+  dé-tuilent quand même) — la vraie variété de contenu vit dans le set
+  cooké. Pas de miroir CPU pour ces familles (aucun couplage scatter).
+
 ## À valider par le dev
 
 Prairie (mélange d'espèces + clumps + zones qui changent la texture ET la

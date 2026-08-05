@@ -81,3 +81,37 @@ ao = "../../../../assets-src/terrain/sparse_grass/sparse_grass_AmbientOcclusion.
 roughness = "../../../../assets-src/terrain/sparse_grass/sparse_grass_Roughness.png"
 height = "../../../../assets-src/terrain/sparse_grass/sparse_grass_Displacement.png"
 harmonize = true
+
+# Rock/snow/sand family variants (hex-tiling per family, layers 8/9/10):
+# 2-way mixes with their base layer. `harmonizeWith` anchors each
+# variant's mean albedo to ITS family base (not the grass layer).
+
+[[material]]
+name = "rock-var"               # rock variant (layer 8, mixes with 1)
+albedo = "../../../../assets-src/terrain/rock_06/rock_06_Color.png"
+normal = "../../../../assets-src/terrain/rock_06/rock_06_NormalGL.png"
+ao = "../../../../assets-src/terrain/rock_06/rock_06_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/rock_06/rock_06_Roughness.png"
+height = "../../../../assets-src/terrain/rock_06/rock_06_Displacement.png"
+harmonize = true
+harmonizeWith = 1
+
+[[material]]
+name = "snow-var"               # snow variant (layer 9, mixes with 2)
+albedo = "../../../../assets-src/terrain/snow_02/snow_02_Color.png"
+normal = "../../../../assets-src/terrain/snow_02/snow_02_NormalGL.png"
+ao = "../../../../assets-src/terrain/snow_02/snow_02_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/snow_02/snow_02_Roughness.png"
+height = "../../../../assets-src/terrain/snow_02/snow_02_Displacement.png"
+harmonize = true
+harmonizeWith = 2
+
+[[material]]
+name = "sand-var"               # sand variant (layer 10, mixes with 3)
+albedo = "../../../../assets-src/terrain/sand_01/sand_01_Color.png"
+normal = "../../../../assets-src/terrain/sand_01/sand_01_NormalGL.png"
+ao = "../../../../assets-src/terrain/sand_01/sand_01_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/sand_01/sand_01_Roughness.png"
+height = "../../../../assets-src/terrain/sand_01/sand_01_Displacement.png"
+harmonize = true
+harmonizeWith = 3
