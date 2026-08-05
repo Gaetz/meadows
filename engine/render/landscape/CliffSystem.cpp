@@ -22,7 +22,7 @@ constexpr const char* kCasterShader = "shadow_terrain";
 // normal + SSDM) — this grid only carries the strata silhouette.
 constexpr f32 kColumnStep = 4.0f;
 constexpr f32 kRowStep = 2.5f;
-constexpr u32 kMaxRows = 24;
+constexpr u32 kMaxRows = 44; // tall faces stretch the row step instead
 // Outward relief range (meters, along the node's horizontal dir). The
 // floor keeps the drape proud of the heightfield (no z-fight); rows at
 // the seams bury instead.
@@ -272,8 +272,13 @@ void CliffSystem::buildMeshes(rhi::Device& device,
                                 ground * 0.14f) -
                          0.5f) *
                         2.0f;
+                    // Bigger faces carry bigger relief — 1.5 m of bumps
+                    // on a 150 m wall is invisible from across the
+                    // valley.
+                    const f32 reliefScale =
+                        1.0f + glm::min(drop, 120.0f) * 0.02f;
                     f32 relief = kReliefFloor +
-                                 kReliefAmp *
+                                 kReliefAmp * reliefScale *
                                      glm::clamp(0.55f + 0.5f * broad +
                                                     ledge,
                                                 0.0f, 1.0f);

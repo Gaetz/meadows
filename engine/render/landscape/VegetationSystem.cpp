@@ -599,12 +599,39 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             // Downhill azimuth; tree.vert maps local +Z to
             // (-sin yaw, 0, cos yaw).
             const f32 yaw = std::atan2(-dxN, dzN);
-            // Faces >= 9 m belong to the baked cliff RIBBONS (étage 2,
-            // CliffBands minHeight) — the slabs would z-fight them.
-            // There the scatter only drops sparse hero scans at the
-            // foot (talus accents); slabs keep the 4-9 m outcrops the
-            // band detection leaves bare.
-            const bool ribbonFace = wallHeight >= 9.0f;
+            // Faces owned by a BAKED cliff ribbon (étage 2) get no
+            // slabs — they would z-fight the wall; the scatter only
+            // drops sparse hero scans at its foot. The test is against
+            // the REAL band polylines, not a height threshold: a steep
+            // face the band detection did not keep (below its slope
+            // gate, wetness-gated, too small) falls back to slabs —
+            // never "neither" (the dev's « rien de spécial » hole).
+            bool ribbonFace = false;
+            if (params.base) {
+                if (const TerrainRegion* region =
+                        params.base->regionAt(x, z)) {
+                    for (const CliffBand& band : region->cliffBands) {
+                        for (const CliffNode& node : band.nodes) {
+                            const f32 ndx = node.x - x;
+                            const f32 ndz = node.z - z;
+                            // Own the foot AND the face above it: the
+                            // candidate may sit mid-face, its FOOT is
+                            // what the band traces.
+                            const f32 fdx = node.x - footX;
+                            const f32 fdz = node.z - footZ;
+                            if (ndx * ndx + ndz * ndz < 20.0f * 20.0f ||
+                                fdx * fdx + fdz * fdz <
+                                    20.0f * 20.0f) {
+                                ribbonFace = true;
+                                break;
+                            }
+                        }
+                        if (ribbonFace) {
+                            break;
+                        }
+                    }
+                }
+            }
             if (ribbonFace && rng.next() >= 0.10f) {
                 continue;
             }

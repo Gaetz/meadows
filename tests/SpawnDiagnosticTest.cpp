@@ -799,6 +799,31 @@ TEST_CASE("spawn cliff bands diagnostic" * doctest::skip()) {
                 " m, nearest (", sums[i].x, ", ", sums[i].z, ") at ",
                 sums[i].dist, " m");
     }
+    // Full nodes of the LONGEST band (the wall a dev/screenshot run can
+    // stand in front of): foot, crest, outward dir.
+    const render::CliffBand* longest = nullptr;
+    f32 bestLen = 0.0f;
+    for (const auto& band : b.region.cliffBands) {
+        f32 len = 0.0f;
+        for (size_t i = 1; i < band.nodes.size(); ++i) {
+            len += std::hypot(band.nodes[i].x - band.nodes[i - 1].x,
+                              band.nodes[i].z - band.nodes[i - 1].z);
+        }
+        if (len > bestLen) {
+            bestLen = len;
+            longest = &band;
+        }
+    }
+    if (longest != nullptr) {
+        MESSAGE("longest band (", bestLen, " m):");
+        for (size_t i = 0; i < longest->nodes.size(); i += 4) {
+            const auto& node = longest->nodes[i];
+            MESSAGE("  node (", node.x, ", ", node.z, ") footH=",
+                    node.footH, " headH=", node.headH, " head=(",
+                    node.headX, ", ", node.headZ, ") dir=(", node.dirX,
+                    ", ", node.dirZ, ")");
+        }
+    }
     CHECK(true);
 }
 

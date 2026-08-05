@@ -125,6 +125,37 @@ falaise. L'étage 2 corrige les trois :
   les héros deviennent des accents de pied rares (10 % des graines).
   Spawn : 177 → 10 pièces instanciées.
 
+### Débogage visuel (2026-08-06) — leçons
+
+Le « je ne vois rien de spécial » du dev a été résolu par itération de
+CAPTURES D'ÉCRAN pilotées : hooks dev `MEADOWS_AUTOPLAY` (saute le menu
+en Play à la fin du warmup) et `MEADOWS_SPAWN="x z yawDeg"` (téléporte
+le spawn) — lancement + screencapture scriptés, ~60 s par itération.
+Trois causes réelles corrigées :
+
+1. **Winding arbitraire** : le chaînage plus-proche-voisin de la
+   polyligne rend le sens de parcours quelconque → la moitié des murs
+   étaient back-face culled. Un quad médian est sondé contre la
+   direction sortante, le winding de la bande suit (convention moteur
+   vérifiée sur les indices du terrain : front = côté du cross dans
+   l'ordre des indices).
+2. **Plafond 60 m** : sur une face de 145 m, le ruban s'arrêtait en
+   pleine pente avec un bord haut rectiligne artificiel. Plafond 200 m
+   (44 rangées max, le pas s'étire).
+3. **Fréquence de texture unique** : le tiling du sol proche mippe en
+   aplat à 300 m. Bi-fréquence dans cliff.frag (octave macro 0.09×,
+   fondu par distance, normales incluses) + relief géométrique
+   proportionnel à la taille de la face.
+
+Et LE trou systémique : le scatter cédait les faces ≥ 9 m aux rubans
+par SEUIL alors que la détection de bandes (51°, gate wetness,
+minCells) n'avait pas retenu certaines de ces faces → ni dalles ni
+ruban. Corrigé des deux côtés : la détection descend à ~48°
+(`slopeGrad` 1.12, v37, 129 → 262 bandes sur la tuile spawn) et le
+scatter interroge les **polylignes réelles** de la région (< 20 m d'un
+nœud = face au ruban) — une face raide sans bande retombe TOUJOURS sur
+les dalles (spawn : 77 dalles + 21 héros).
+
 ## Différés
 
 - **Étage 2b — surplombs** : le ruban est collé (drapé sur le

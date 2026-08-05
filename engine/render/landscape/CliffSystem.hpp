@@ -27,9 +27,10 @@ class ShaderLibrary;
 // republishes; each band keeps its own AABB for frustum culling.
 class CliffSystem {
 public:
-    // Visible wall cap: taller faces keep their upper ground bare (the
-    // sharpened heightfield still carries the silhouette).
-    static constexpr f32 kMaxWallHeight = 60.0f;
+    // Visible wall cap — generous: a cap CUT mid-face prints a razor
+    // straight artificial edge across the mountainside (seen in the
+    // first build at 60 m); real faces must be covered to their crest.
+    static constexpr f32 kMaxWallHeight = 200.0f;
 
     void create(rhi::Device& device, ShaderLibrary& shaders);
     void destroy(rhi::Device& device);

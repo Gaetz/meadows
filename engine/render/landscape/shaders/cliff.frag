@@ -43,9 +43,20 @@ void main() {
     vec2 uvy = vWorldPos.xz * tile;
     vec2 uvz = vWorldPos.xy * tile;
 
+    // BI-FREQUENCY: the near tile alone mips to a flat slab across a
+    // valley (a 150 m wall at 300 m is one texel of the near
+    // frequency). A macro octave at 0.09x carries the rock read to the
+    // horizon; the near octave takes over as you approach.
+    float camDist = distance(vWorldPos, uCameraPos.xyz);
+    float macroW = clamp(camDist / 90.0, 0.25, 0.75);
     vec3 albedo = texture(uSplat, vec3(uvx, kCliffLayer)).rgb * bw.x +
                   texture(uSplat, vec3(uvy, kCliffLayer)).rgb * bw.y +
                   texture(uSplat, vec3(uvz, kCliffLayer)).rgb * bw.z;
+    vec3 albedoMacro =
+        texture(uSplat, vec3(uvx * 0.09, kCliffLayer)).rgb * bw.x +
+        texture(uSplat, vec3(uvy * 0.09, kCliffLayer)).rgb * bw.y +
+        texture(uSplat, vec3(uvz * 0.09, kCliffLayer)).rgb * bw.z;
+    albedo = mix(albedo, albedoMacro, macroW);
     float height =
         texture(uSplatHeight, vec3(uvx, kCliffLayer)).r * bw.x +
         texture(uSplatHeight, vec3(uvy, kCliffLayer)).r * bw.y +
@@ -64,9 +75,20 @@ void main() {
 
     // Per-plane tangent normals, whiteout-blended into the mesh normal
     // (axis frames per projection — the bark-path construction).
-    vec2 nx = texture(uSplatNormal, vec3(uvx, kCliffLayer)).rg * 2.0 - 1.0;
-    vec2 ny = texture(uSplatNormal, vec3(uvy, kCliffLayer)).rg * 2.0 - 1.0;
-    vec2 nz = texture(uSplatNormal, vec3(uvz, kCliffLayer)).rg * 2.0 - 1.0;
+    // Normal detail rides the MACRO octave too — the near normals mip
+    // away with their albedo, the macro ones keep the far face craggy.
+    vec2 nx = mix(texture(uSplatNormal, vec3(uvx, kCliffLayer)).rg,
+                  texture(uSplatNormal, vec3(uvx * 0.09,
+                                             kCliffLayer)).rg,
+                  macroW) * 2.0 - 1.0;
+    vec2 ny = mix(texture(uSplatNormal, vec3(uvy, kCliffLayer)).rg,
+                  texture(uSplatNormal, vec3(uvy * 0.09,
+                                             kCliffLayer)).rg,
+                  macroW) * 2.0 - 1.0;
+    vec2 nz = mix(texture(uSplatNormal, vec3(uvz, kCliffLayer)).rg,
+                  texture(uSplatNormal, vec3(uvz * 0.09,
+                                             kCliffLayer)).rg,
+                  macroW) * 2.0 - 1.0;
     vec3 shadedN = normalize(
         vec3(0.0, nx.y, nx.x) * (bw.x * sign(n.x)) +
         vec3(ny.x, 0.0, ny.y) * (bw.y * sign(n.y)) +

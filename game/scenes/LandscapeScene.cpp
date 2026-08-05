@@ -1789,6 +1789,20 @@ void LandscapeScene::enterPlayMode() {
     // Spawn the capsule under the camera, feet grounded on the height
     // function (+0.5 m so a slope never pins the spawn into the field).
     Vec3 feet = flyCamera.camera.position;
+    // Dev hook (with MEADOWS_AUTOPLAY): "x z [yawDeg]" overrides the
+    // spawn — screenshot smokes aimed at a specific world spot.
+    if (const char* devSpawn = std::getenv("MEADOWS_SPAWN")) {
+        f32 sx = 0.0f;
+        f32 sz = 0.0f;
+        f32 yawDeg = 0.0f;
+        if (std::sscanf(devSpawn, "%f %f %f", &sx, &sz, &yawDeg) >= 2) {
+            feet.x = sx;
+            feet.z = sz;
+            flyCamera.camera.position = feet;
+            flyCamera.camera.yaw = glm::radians(yawDeg);
+            flyCamera.camera.pitch = 0.0f;
+        }
+    }
     feet.y = render::terrain::height(renderer.terrainParams(), feet.x, feet.z) + 0.5f;
     playerController.spawnBody(*physics, feet);
     mode = SceneMode::Play;
@@ -2512,6 +2526,14 @@ void LandscapeScene::updateWarmup() {
                 glm::max(0.0f, loadingGateAlpha - dt / 0.8f);
             if (loadingGateAlpha <= 0.0f) {
                 warmupPhase = WarmupPhase::Idle;
+                // Dev hook: MEADOWS_AUTOPLAY skips the main menu into
+                // Play once the world is warm (headless-driven smokes
+                // and screenshots — no synthetic input available).
+                if (mode != SceneMode::Play &&
+                    std::getenv("MEADOWS_AUTOPLAY") != nullptr) {
+                    screenStack.closeAll();
+                    enterPlayMode();
+                }
             }
         }
     } else {
