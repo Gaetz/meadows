@@ -377,6 +377,10 @@ private:
     bool ssaoUi { true };
     f32 ssaoStrengthUi { 0.85f };
     f32 ssaoRadiusUi { 0.7f };
+    // SSDM prototype (ssdm.frag — Lobel 2008): screen-space image warp
+    // by the alpha-packed relief. OFF by default while it proves out.
+    bool ssdmUi { false };
+    f32 ssdmAmpUi { 0.12f }; // world amplitude (m)
     bool keyShadowUi { true };      // interiors
     bool meshShadowCastersUi { true };
     // The hysteresis-quantized sun the shadow cascades follow (a
@@ -501,6 +505,10 @@ private:
     rhi::UniqueTexture sceneColorCopy;
     rhi::UniqueTexture sceneDepthCopy;
     rhi::UniqueBindGroup waterSceneBindGroup;
+    // SSDM warp (ssdm.frag): samples the fresh color+depth copies,
+    // writes the warped image back into the offscreen target.
+    rhi::UniquePipeline ssdmPipeline;
+    rhi::UniqueBindGroup ssdmBindGroup;
     // Half-res mirrored scene for the water's planar reflection.
     rhi::UniqueTexture reflectionColor;
     rhi::UniqueTexture reflectionDepth;

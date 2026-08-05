@@ -559,6 +559,11 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
             ImGui::SliderFloat("SSAO radius (m)", &r.ssaoRadiusUi, 0.2f,
                                2.0f);
         }
+        ImGui::Checkbox("SSDM (prototype)", &r.ssdmUi);
+        if (r.ssdmUi) {
+            ImGui::SliderFloat("SSDM amplitude (m)", &r.ssdmAmpUi,
+                               0.02f, 0.30f);
+        }
         ImGui::SameLine();
         ImGui::Checkbox("Terrain light map", &r.terrainLightUi);
         ImGui::Checkbox("Key light shadow", &r.keyShadowUi); // interiors

@@ -86,6 +86,9 @@ void main() {
         shadeN = normalize(mat3(T * invmax, B * invmax, shadeN) * nTex);
     }
 
+    // SSDM relief packed in alpha (0.5 = flat; bark writes its real
+    // height below). Cards/props stay flat in v1.
+    float reliefA = 0.5;
     // Bark on flagged wood (procedural trunks/branches): triplanar over
     // the object-space position — no mesh uvs, no seams on bent
     // branches. The RELIEF lives in the material (low-poly trunk):
@@ -135,6 +138,7 @@ void main() {
             onrm * 1.5);
         shadeN = normalize(vec3(nObj.x * yc - nObj.z * ys, nObj.y,
                                 nObj.x * ys + nObj.z * yc));
+        reliefA = 0.5 + clamp(height, 0.0, 1.0) * 0.49;
     }
 
     // Per-instance hue roll: some trees lean yellow-green, some deep green.
@@ -179,5 +183,5 @@ void main() {
         lit += albedo * localLights(vWorldPos, n);
     }
 
-    fragColor = vec4(applyFog(lit, vWorldPos, cloudVis), 1.0);
+    fragColor = vec4(applyFog(lit, vWorldPos, cloudVis), reliefA);
 }

@@ -340,5 +340,12 @@ void main() {
     if (uClusterInfo.x > 0.5) {
         lit += albedo * localLights(vWorldPos, shadedN);
     }
-    fragColor = vec4(applyFog(lit, vWorldPos, cloudVis), 1.0);
+    // Alpha packs the blended relief height for the SSDM warp
+    // (0.5 flat .. ~0.99 crest; the 0.5 floor keeps the grass-exempt
+    // flag semantics of every screen pass).
+    float relief = (b[0] * hs[0] + b[1] * hs[1] + b[2] * hs[2] +
+                    b[3] * hs[3] + b[4] * hs[4]) /
+                   total;
+    fragColor = vec4(applyFog(lit, vWorldPos, cloudVis),
+                     0.5 + clamp(relief, 0.0, 1.0) * 0.49);
 }

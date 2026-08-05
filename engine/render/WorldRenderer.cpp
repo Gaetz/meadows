@@ -274,6 +274,9 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                         { "uSkyClouds", 7 },  // volumetric clouds
                         { "uSceneDepth", 8 },   // bilateral weights
                         { "uSsao", 9 } });
+        shaders->load("ssdm", { { "FrameUbo", 0 } },
+                      { { "uSceneColor", 0 }, { "uSceneDepth", 1 } },
+                      "fullscreen");
         rebuildBlitPipeline(device);
     }
     if (cfg.postFx && device.caps().offscreenTargets &&
@@ -455,6 +458,18 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                                      .sampler = blitSampler });
         }
         waterSceneBindGroup = { device, device.createBindGroup(desc) };
+    }
+    ssdmBindGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = sceneColorCopy,
+                         .sampler = blitSampler },
+                       { .binding = 1,
+                         .texture = sceneDepthCopy,
+                         .sampler = blitSampler } } }) };
+    if (ssdmPipeline.get().id == 0 && shaders) {
+        ssdmPipeline = { device, device.createPipeline(
+                                     { .shader = shaders->get("ssdm"),
+                                       .blend = rhi::BlendMode::Opaque }) };
     }
     // Tonemap inputs: scene + bloom + god rays (black 1x1 fallbacks are not
     // needed on the 4.6 path — postFx is always ready when we get here).
@@ -1285,6 +1300,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .barkEnabled = vegetation.barkLoaded(),
         .ssaoStrength = ssaoStrengthUi,
         .ssaoRadius = ssaoRadiusUi,
+        .ssdmAmplitude = ssdmUi ? ssdmAmpUi : 0.0f,
         .reflectionsActive = reflectionsActive,
         // Horizon closure: at the far mesh's reach when it stands in,
         // else at the streaming ring. z of the same uniform carries the
@@ -2002,6 +2018,23 @@ void WorldRenderer::render(engine::FrameContext& frame,
                       radianceCascades.applyGroup(),
                       view.atmos.godRayIntensity > 0.003f, &gpuProbe,
                       sky.cloudMapBindGroup());
+        // SSDM prototype (ssdm.frag): warp the opaque+water image by the
+        // alpha-packed relief before the screen passes — a fresh color
+        // copy first (the pre-water one was consumed by the composite).
+        if (ssdmUi && useOffscreen && frame.device.caps().copyTexture &&
+            ssdmPipeline.get().id != 0 && sceneColorCopy.id() != 0) {
+            render::GpuProbe::Scope gpu { gpuProbe, frame.device,
+                                          "ssdm" };
+            frame.cmd.copyTexture(offscreenColor, sceneColorCopy);
+            frame.cmd.beginRenderPass({ .framebuffer = offscreenFb,
+                                        .loadOp = rhi::LoadOp::Load,
+                                        .depthLoadOp = rhi::LoadOp::Load });
+            frame.cmd.setPipeline(ssdmPipeline);
+            frame.cmd.setBindGroup(0, frameBindGroup);
+            frame.cmd.setBindGroup(1, ssdmBindGroup);
+            frame.cmd.draw(3);
+            frame.cmd.endRenderPass();
+        }
         // Contact shadows (the texture is the toggle — white = off).
         {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,

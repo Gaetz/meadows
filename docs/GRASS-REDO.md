@@ -398,6 +398,27 @@ poche). Livré ici le 1 :
   comptage avec le GI, tourne aussi en intérieur (indépendant du
   soleil, contrairement au contact).
 
+## SSDM prototype (plan « relief de côté » 2/2 — 2026-08-05)
+
+La brique Crimson Desert (Lobel 2008), variante GATHER derrière un
+toggle **OFF par défaut** (« SSDM (prototype) » + amplitude au panel) :
+- Les matériaux packent leur relief dans l'ALPHA de la scène :
+  0.5 = plat .. ~0.99 = crête ; < 0.5 reste le flag herbe, ≥ 0.995 =
+  shaders non participants (meshes/eau inchangés). Terrain = hauteur
+  splat blendée ; écorce = sa hauteur triplanaire. Les seuils existants
+  (contact/SSAO/skyclouds) restent binaires (step 0.5 au tonemap).
+- `ssdm.frag` : warp plein-res de l'image (copie couleur fraîche
+  post-eau → offscreen) par itération de point fixe (4), déplacement le
+  long de la normale écran reconstruite, borné à 10 px. Lane
+  `uSsaoInfo.z` = amplitude monde (0.12 m défaut).
+- Limites v1 documentées dans le shader : les bords contre le CIEL ne
+  s'extrudent pas (un gather n'a pas de graine sur les pixels vides —
+  le scatter pyramidal du papier est l'étape suivante si le rendu
+  convainc) ; étirements aux falaises de profondeur (la famille
+  d'artefacts que CD assume) ; la profondeur n'est PAS déplacée (les
+  passes écran lisent la copie non warpée — écart ≤ 10 px à l'échelle
+  du relief).
+
 ## À valider par le dev
 
 Prairie (mélange d'espèces + clumps + zones qui changent la texture ET la
