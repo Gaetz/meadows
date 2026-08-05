@@ -31,11 +31,20 @@ pied par teinte sol, détail porté par le matériau. Deux étages décidés :
   - **slots 2-3 = héros scannés** (Poly Haven CC0 1k : `rock_face_01`,
     `namaqualand_cliff_01`) par le chemin d'override scans existant —
     textured-rigid comme les rochers, yaw seul, enfoncés plus profond.
-- **Scatter** : bloc dédié (salt neuf, APPEND — le contrat d'ordre des
-  tirages des autres catégories est intact), espacement 11 m,
-  acceptation = smoothstep(pente 0.30-0.55) × smoothstep(cliff+rock/2
-  0.25-0.6), échelle dalles 3.5-8.5 / héros 2-4.5, portée = le fade des
-  arbres (silhouettes structurelles jusqu'au bord du ring).
+- **Scatter — la face est MESURÉE, jamais supposée** (retour dev
+  2026-08-05 « un pauvre rocher alors que la falaise est bien plus
+  grande ») : depuis chaque candidat raide, marche de la ligne de pente
+  (pas de 3 m tant que la pente tient) → PIED et CRÊTE du mur ; la
+  dalle est dimensionnée sur la chute mesurée (échelle 3-15, dalle
+  jusqu'à ~33×22 m — sous le pad d'AABB des chunks) et des **rangées
+  s'empilent** (max 3, chevauchement 18 %, jitter latéral anti
+  z-fight) quand la face dépasse la plus grande dalle. Dédoublonnage :
+  seuls les candidats du tiers bas du mur sèment (les candidats hauts
+  de la même ligne de pente sortent). Héros = accents (28 % des
+  graines), eux aussi dimensionnés par la mesure (0.30 × hauteur,
+  clamp 1.8-6). Bloc à salt neuf, APPEND — le contrat d'ordre des
+  tirages des autres catégories est intact. Portée = le fade des
+  arbres. Mesure spawn : 177 pièces < 900 m, échelles 3 → 15.
 - **Pitch par instance (dalles)** : le lane sway-phase, libre sur les
   props rigides non texturés, porte `-(1 + pitch)` ; tree.vert applique
   R_x(−pitch) AVANT le yaw (la dalle s'adosse au versant — pitch =

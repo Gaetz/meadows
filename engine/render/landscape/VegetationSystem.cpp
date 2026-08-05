@@ -514,14 +514,25 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
         }
     }
 
-    // --- Cliff faces: wall slabs where the cliff weight saturates ------------
-    // (docs/CLIFFS.md étage 1.) Slots 0-1 = procedural slabs plastered
-    // against the slope: yaw faces downhill, the free sway-phase lane
-    // carries a PITCH as -(1 + pitch) (tree.vert leans the slab back to
-    // the hillside). Slots 2-3 = hero scans, textured-rigid like the
-    // boulders (yaw only, sunk deeper — chunky pieces, not slabs).
+    // --- Cliff faces: wall slabs sized to the MEASURED face ------------------
+    // (docs/CLIFFS.md étage 1.) The face is measured, never assumed:
+    // from each steep candidate the scatter walks the fall line to the
+    // wall's FOOT and HEAD (3 m steps while the ground stays steep),
+    // sizes the slab to the measured drop, and STACKS rows when the
+    // face is taller than the largest slab. Only near-foot candidates
+    // seed walls — upper-face candidates on the same fall line bail, so
+    // one wall gets one row set instead of a duplicate per candidate.
+    // Slots 0-1 = procedural slabs (yaw faces downhill, the free
+    // sway-phase lane carries a PITCH as -(1 + pitch) — the plaster
+    // lean); slots 2-3 = hero scans, textured-rigid (yaw only), sized
+    // by the same measurement.
     {
         constexpr f32 kCliffSpacing = 11.0f;
+        // generateCliffFace spans y in [-0.15, 1.45]: visible height
+        // above the seat is ~1.45 x scale.
+        constexpr f32 kSlabLocalH = 1.45f;
+        constexpr f32 kSlabScaleMax = 15.0f; // 33 m wide — under the
+                                             // chunk AABB pad (26 m half)
         const u32 perSide =
             static_cast<u32>(TerrainSystem::kChunkSize / kCliffSpacing);
         for (u32 i = 0; i < perSide * perSide; ++i) {
@@ -542,46 +553,104 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                 terrain::materialWeightsAt(params, x, z, h, n);
             const f32 rockFace = weights.cliff + 0.5f * weights.rock;
             const f32 accept =
-                0.75f * glm::smoothstep(0.30f, 0.55f, slope) *
-                glm::smoothstep(0.25f, 0.6f, rockFace);
+                0.9f * glm::smoothstep(0.30f, 0.50f, slope) *
+                glm::smoothstep(0.22f, 0.55f, rockFace);
             if (rng.next() >= accept) {
                 continue;
             }
-            const u32 variant =
-                VegetationSystem::kFirstCliff +
-                glm::min(static_cast<u32>(
-                             rng.next() *
-                             static_cast<f32>(
-                                 VegetationSystem::kCliffVariants)),
-                         VegetationSystem::kCliffVariants - 1);
-            const f32 tint = rng.next();
-            // Downhill azimuth from the terrain normal; tree.vert maps
-            // local +Z to (-sin yaw, 0, cos yaw).
-            const f32 yaw = std::atan2(-n.x, n.z);
-            const bool hero = variant >= VegetationSystem::kFirstCliff + 2;
-            if (hero) {
-                const f32 scale = 2.0f + rng.next() * 2.5f;
+            // Fall-line walk. The horizontal downhill direction is the
+            // normal's xz component; its magnitude is sin(slope angle).
+            const f32 sinA =
+                glm::max(std::hypot(n.x, n.z), 1.0e-4f);
+            const f32 dxN = n.x / sinA;
+            const f32 dzN = n.z / sinA;
+            f32 footX = x;
+            f32 footZ = z;
+            f32 footH = h;
+            for (u32 step = 1; step <= 12; ++step) {
+                const f32 sx = x + dxN * 3.0f * static_cast<f32>(step);
+                const f32 sz = z + dzN * 3.0f * static_cast<f32>(step);
+                const Vec3 sn = terrain::normal(params, sx, sz);
+                if (1.0f - sn.y < 0.26f) {
+                    break; // the wall met its talus
+                }
+                footX = sx;
+                footZ = sz;
+                footH = terrain::height(params, sx, sz);
+            }
+            f32 headH = h;
+            for (u32 step = 1; step <= 12; ++step) {
+                const f32 sx = x - dxN * 3.0f * static_cast<f32>(step);
+                const f32 sz = z - dzN * 3.0f * static_cast<f32>(step);
+                const Vec3 sn = terrain::normal(params, sx, sz);
+                if (1.0f - sn.y < 0.26f) {
+                    break; // crest
+                }
+                headH = terrain::height(params, sx, sz);
+            }
+            const f32 wallHeight = headH - footH;
+            if (wallHeight < 4.0f) {
+                continue; // outcrop scale — the boulders' job
+            }
+            // Seed from the foot band only (the fall-line dedup).
+            if (h - footH > 0.35f * wallHeight) {
+                continue;
+            }
+            // Downhill azimuth; tree.vert maps local +Z to
+            // (-sin yaw, 0, cos yaw).
+            const f32 yaw = std::atan2(-dxN, dzN);
+            if (rng.next() < 0.28f) {
+                // Hero scan: one chunky accent sized to the face.
+                const u32 variant = VegetationSystem::kFirstCliff + 2 +
+                                    (rng.next() < 0.5f ? 0u : 1u);
+                const f32 scale =
+                    glm::clamp(wallHeight * 0.30f, 1.8f, 6.0f);
                 buckets[variant].push_back({
-                    .positionScale = { x, h - 0.35f * scale, z, scale },
-                    .params = { yaw + (rng.next() - 0.5f) * 0.6f, tint,
+                    .positionScale = { footX, footH - 0.30f * scale,
+                                       footZ, scale },
+                    .params = { yaw + (rng.next() - 0.5f) * 0.6f,
+                                rng.next(),
                                 // Textured rigid; the tree fade — walls
                                 // are silhouettes to the ring edge.
                                 -1.0f, -treeFadeEnd },
                 });
                 continue;
             }
-            // Slab: lean back toward the hillside — a fraction of the
-            // slope angle keeps the face steeper than the ground (a
+            // Slab rows: lean back toward the hillside — a fraction of
+            // the slope angle keeps the face steeper than the ground (a
             // cliff, not a ramp).
             const f32 pitch =
                 glm::clamp(std::acos(glm::clamp(n.y, -1.0f, 1.0f)) *
                                0.55f,
                            0.0f, 0.85f);
-            const f32 scale = 3.5f + rng.next() * 5.0f;
-            buckets[variant].push_back({
-                .positionScale = { x, h - 0.10f * scale, z, scale },
-                .params = { yaw, tint, -(1.0f + pitch), treeFadeEnd },
-            });
+            f32 covered = 0.0f;
+            for (u32 row = 0; row < 3 && covered < wallHeight; ++row) {
+                const f32 remaining = wallHeight - covered;
+                const f32 scale = glm::clamp(
+                    (remaining + 1.5f) / kSlabLocalH, 3.0f,
+                    kSlabScaleMax);
+                const u32 variant = VegetationSystem::kFirstCliff +
+                                    (rng.next() < 0.5f ? 0u : 1u);
+                // Lateral jitter: stacked and adjacent slabs never sit
+                // coplanar (two near-foot candidates on one fall line
+                // would z-fight otherwise).
+                const f32 jx = (rng.next() - 0.5f) * 3.0f;
+                const f32 jz = (rng.next() - 0.5f) * 3.0f;
+                // Climb the fall line to this row's seat: gaining
+                // `covered` meters on the slope takes covered x
+                // cos/sin of horizontal run.
+                const f32 run = covered * n.y / sinA;
+                buckets[variant].push_back({
+                    .positionScale = { footX - dxN * run + jx,
+                                       footH + covered - 0.12f * scale,
+                                       footZ - dzN * run + jz, scale },
+                    .params = { yaw + (rng.next() - 0.5f) * 0.12f,
+                                rng.next(), -(1.0f + pitch),
+                                treeFadeEnd },
+                });
+                // Rows overlap ~18% so the stack reads as one face.
+                covered += kSlabLocalH * scale * 0.82f;
+            }
         }
     }
     return buckets;
