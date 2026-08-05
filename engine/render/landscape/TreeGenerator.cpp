@@ -167,6 +167,134 @@ MeshData generateRock(u32 seed) {
     return mesh;
 }
 
+MeshData generateCliffFace(u32 seed, u32 detail) {
+    HashRng rng { hashU32(seed ^ 0x1c69b3f7u) };
+    MeshData mesh;
+
+    // A low-poly wall slab, face toward +Z: front grid displaced by
+    // layered value noise with horizontal STRATA terraces (the sedimentary
+    // ledge read), boundary ring tucked back toward -Z so every edge
+    // buries into the hillside. The RELIEF detail lives in the material
+    // (triplanar rock, tree.frag's bark path) — this mesh only carries
+    // the silhouette, like the low-poly trunks.
+    const u32 nx = detail >= 2 ? 18u : detail == 1 ? 10u : 5u;
+    const u32 ny = detail >= 2 ? 12u : detail == 1 ? 7u : 4u;
+    const f32 halfW = 1.1f;
+    const f32 yMin = -0.15f; // sinks below the placement point
+    const f32 yMax = 1.45f;
+
+    // Per-seed character rolls (shared across LODs of the same seed:
+    // every rng draw below happens regardless of `detail`).
+    const f32 strataBands = 3.0f + rng.next() * 2.5f;
+    const f32 strataAmp = 0.06f + rng.next() * 0.07f;
+    const f32 bulge = 0.16f + rng.next() * 0.14f;
+    const f32 grayRoll = rng.next();
+    const u32 noiseSeed = hashU32(seed ^ 0x5b7c99a1u);
+
+    const auto noise2 = [&](f32 u, f32 v, u32 salt) {
+        // Bilinear value noise over the integer lattice (worker-safe,
+        // deterministic — the same family as terrain::noise01 without
+        // pulling terrain headers into the mesh builders).
+        const auto lattice = [&](i32 ix, i32 iy) {
+            return static_cast<f32>(
+                       hashU32(noiseSeed ^ salt ^
+                               (static_cast<u32>(ix) * 668265263u) ^
+                               (static_cast<u32>(iy) * 2246822519u)) &
+                       0xffffu) /
+                   65535.0f;
+        };
+        const f32 fx = std::floor(u);
+        const f32 fy = std::floor(v);
+        const i32 ix = static_cast<i32>(fx);
+        const i32 iy = static_cast<i32>(fy);
+        const f32 tx = u - fx;
+        const f32 ty = v - fy;
+        const f32 a = glm::mix(lattice(ix, iy), lattice(ix + 1, iy), tx);
+        const f32 b =
+            glm::mix(lattice(ix, iy + 1), lattice(ix + 1, iy + 1), tx);
+        return glm::mix(a, b, ty);
+    };
+
+    const auto displaced = [&](f32 x01, f32 y01) {
+        const f32 x = -halfW + x01 * 2.0f * halfW;
+        // Strata: the terrace offset is constant within a band and
+        // jumps at band edges — quantized ledges, jittered per band.
+        const f32 band = std::floor(y01 * strataBands);
+        const f32 terrace =
+            (noise2(x * 0.9f + 7.3f, band * 3.7f, 0x9e3779b9u) - 0.5f) *
+            2.0f * strataAmp;
+        const f32 broad =
+            (noise2(x01 * 2.2f, y01 * 1.6f, 0x85ebca6bu) - 0.5f) * bulge;
+        const f32 fine =
+            (noise2(x01 * 5.5f, y01 * 4.5f, 0xc2b2ae35u) - 0.5f) * 0.07f;
+        // Belly curve: mid-height leans out, base and crest recede —
+        // the classic undercut-free cliff profile.
+        const f32 belly = std::sin(y01 * 3.14159f) * 0.10f;
+        return broad + fine + terrace + belly;
+    };
+
+    for (u32 iy = 0; iy <= ny; ++iy) {
+        for (u32 ix = 0; ix <= nx; ++ix) {
+            const f32 x01 = static_cast<f32>(ix) / static_cast<f32>(nx);
+            const f32 y01 = static_cast<f32>(iy) / static_cast<f32>(ny);
+            MeshVertex vertex;
+            const f32 d = displaced(x01, y01);
+            vertex.position = { -halfW + x01 * 2.0f * halfW,
+                                yMin + y01 * (yMax - yMin), d };
+            // Boundary ring tucks back into the hill (side/top edges);
+            // the bottom edge keeps its face — it buries by placement.
+            const bool rim = ix == 0 || ix == nx || iy == ny;
+            if (rim) {
+                vertex.position.z = -0.5f;
+            }
+            // Vertex mask: recesses darken (cavity from the displacement
+            // itself), the base darkens toward the ground line. Neutral
+            // gray ~0.37 cancels through the bark modulation
+            // (bark * min(c * 2.6, 1.4)); the AO bake adds crease
+            // shadows on top at upload.
+            const f32 cavity =
+                glm::clamp(0.5f + (d - bulge * 0.15f) * 2.2f, 0.0f, 1.0f);
+            const f32 baseDarken =
+                glm::mix(0.78f, 1.0f, glm::smoothstep(0.0f, 0.35f, y01));
+            const f32 gray =
+                glm::mix(0.30f, 0.40f, grayRoll) *
+                glm::mix(0.72f, 1.05f, cavity) * baseDarken;
+            vertex.color = { gray, gray * 0.985f, gray * 0.955f };
+            vertex.uv = { 0.0f, -1.0f }; // rigid + bark flag (triplanar)
+            mesh.vertices.push_back(vertex);
+        }
+    }
+    for (u32 iy = 0; iy < ny; ++iy) {
+        for (u32 ix = 0; ix < nx; ++ix) {
+            const u32 a = iy * (nx + 1) + ix;
+            const u32 b = a + 1;
+            const u32 c = a + (nx + 1);
+            const u32 d = c + 1;
+            mesh.indices.insert(mesh.indices.end(), { a, c, b, b, c, d });
+        }
+    }
+    // Smooth accumulated normals (shared grid vertices — the flat pass
+    // would leave last-triangle-wins seams); the triplanar normal map
+    // carries the fine relief on top.
+    for (MeshVertex& vertex : mesh.vertices) {
+        vertex.normal = Vec3 { 0.0f };
+    }
+    for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+        MeshVertex& a = mesh.vertices[mesh.indices[i]];
+        MeshVertex& b = mesh.vertices[mesh.indices[i + 1]];
+        MeshVertex& c = mesh.vertices[mesh.indices[i + 2]];
+        const Vec3 face =
+            glm::cross(b.position - a.position, c.position - a.position);
+        a.normal += face;
+        b.normal += face;
+        c.normal += face;
+    }
+    for (MeshVertex& vertex : mesh.vertices) {
+        vertex.normal = glm::normalize(vertex.normal);
+    }
+    return mesh;
+}
+
 MeshData generateBush(u32 seed) {
     HashRng rng { hashU32(seed ^ 0xbf58476du) };
     MeshData mesh;

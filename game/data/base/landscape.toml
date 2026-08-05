@@ -30,6 +30,10 @@ name = "true-adventurer-landscape"
 "292b350b-99e7-482b-b9f6-0e993a69dc91" = "models/plants/shrub_04/shrub_04.gltf"
 "52035a3f-8246-419a-aa69-a686b0c2e834" = "textures/bark/jolcham_oak_bark_01_diff_1k.jpg"
 "8244825d-a9a7-4a30-a8e7-996670193884" = "textures/bark/pine_bark_diff_1k.jpg"
+# Cliff faces (docs/CLIFFS.md étage 1): hero scans + the slab material.
+"3a7a2bab-5609-4ee9-9d89-81091a81fd22" = "models/scans/rock_face_01/rock_face_01.gltf"
+"c99db8ac-99f6-460d-95d2-56e41cd309f4" = "models/scans/namaqualand_cliff_01/namaqualand_cliff_01.gltf"
+"68eb85ba-3f49-4685-8c7f-01b1883d443b" = "textures/bark/rock_face_diff_1k.jpg"
 
 [[records]]
 form = "1a4d5c00-0000-4000-8000-000000000001"

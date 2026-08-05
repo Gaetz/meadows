@@ -22,7 +22,9 @@ layout(location = 5) out vec2 vPropUv;
 // triplanar domain — yaw-stable per instance), w = wood flag
 // (uv.y < -0.5 on non-card, non-textured vertices).
 layout(location = 7) out vec4 vObjPos;
-layout(location = 8) out vec3 vObjNormal;
+// xyz = object-space normal, w = instance pitch (cliff slabs — the
+// frag rotates the triplanar normal through R_x(-pitch) then the yaw).
+layout(location = 8) out vec4 vObjNormal;
 // Height above the instance base — the ground-anchor blend (tree.frag).
 layout(location = 6) out float vGroundDelta;
 
@@ -30,10 +32,29 @@ void main() {
     float yaw = aParams.x;
     float c = cos(yaw);
     float s = sin(yaw);
-    vec3 local = vec3(aPos.x * c - aPos.z * s, aPos.y,
-                      aPos.x * s + aPos.z * c);
-    vec3 normal = vec3(aNormal.x * c - aNormal.z * s, aNormal.y,
-                       aNormal.x * s + aNormal.z * c);
+    // Cliff slabs (rigid untextured props): the free sway-phase lane
+    // carries a slope pitch as -(1 + pitch) — the slab leans back INTO
+    // the hillside (R_x(-pitch), applied before the yaw). Textured
+    // props keep their negative lane as the rigid flag (magnitude
+    // unused there).
+    bool texturedProp = aParams.w < 0.0;
+    float pitch = (!texturedProp && aParams.z < -0.5)
+                      ? (-aParams.z - 1.0)
+                      : 0.0;
+    vec3 posL = aPos;
+    vec3 nrmL = aNormal;
+    if (pitch > 0.0) {
+        float cp = cos(pitch);
+        float sp = sin(pitch);
+        posL = vec3(posL.x, posL.y * cp + posL.z * sp,
+                    -posL.y * sp + posL.z * cp);
+        nrmL = vec3(nrmL.x, nrmL.y * cp + nrmL.z * sp,
+                    -nrmL.y * sp + nrmL.z * cp);
+    }
+    vec3 local = vec3(posL.x * c - posL.z * s, posL.y,
+                      posL.x * s + posL.z * c);
+    vec3 normal = vec3(nrmL.x * c - nrmL.z * s, nrmL.y,
+                       nrmL.x * s + nrmL.z * c);
 
     // Billboard leaf card (space-colonization trees): the mesh stores a
     // DEGENERATE quad at the clump center; uv.x < -5 flags it and carries
@@ -47,7 +68,6 @@ void main() {
     // the sway weight comes from the local height instead — base
     // planted, tips ride the gust. A negative sway-phase lane on top
     // marks it RIGID (rocks, stumps: photogrammetry never waves).
-    bool texturedProp = aParams.w < 0.0;
     float sway = texturedProp
                      ? (aParams.z < 0.0 ? 0.0
                                         : clamp(aPos.y * 1.2, 0.0, 0.8))
@@ -123,7 +143,7 @@ void main() {
     // the triplanar normal/parallax.
     bool bark = !leafCard && !texturedProp && aUv.y < -0.5;
     vObjPos = vec4(aPos * aPosScale.w, bark ? 1.0 + yaw : 0.0);
-    vObjNormal = aNormal;
+    vObjNormal = vec4(aNormal, pitch);
     vNormal = normal;
     vColor = aColor;
     vTint = aParams.y;

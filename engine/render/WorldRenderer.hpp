@@ -175,6 +175,12 @@ public:
                                    std::move(pineAlbedo),
                                    std::move(pineNrm));
     }
+    void setVegetationCliffBark(rhi::Device& device,
+                                render::VegetationSystem::BarkImage albedo,
+                                render::VegetationSystem::BarkImage nrm) {
+        vegetation.setCliffBark(device, std::move(albedo),
+                                std::move(nrm));
+    }
     void overrideVegetationAlbedo(rhi::Device& device, u32 variant,
                                   u32 width, u32 height, vector<u8> rgba,
                                   u32 normalWidth = 0,

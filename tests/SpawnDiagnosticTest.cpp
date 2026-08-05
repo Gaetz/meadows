@@ -685,6 +685,75 @@ TEST_CASE("spawn debris diagnostic" * doctest::skip()) {
     CHECK(true);
 }
 
+// Where do the cliff faces land around the spawn (docs/CLIFFS.md étage
+// 1)? Counts slabs/heroes and lists the nearest walls so a dev can walk
+// to one and validate plaster pitch, material and collision in place.
+//   meadows-tests '-tc=spawn cliff*' -ns
+TEST_CASE("spawn cliff diagnostic" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    const f32 px = 2038.28f;
+    const f32 pz = 1614.13f;
+
+    const TileBakeResult b = bakeTile(params, 0, 0);
+    render::TerrainParams tp;
+    auto base = std::make_shared<render::TerrainBase>();
+    base->regions.push_back(b.region);
+    tp.base = base;
+    auto sandbox = std::make_shared<render::SandboxTerrain>();
+    sandbox->controls = params.controls;
+    sandbox->controls.seed = params.worldSeed;
+    sandbox->macro = params.macro;
+    tp.sandbox = sandbox;
+
+    struct Hit {
+        f32 x, y, z, scale, pitch, dist;
+        bool slab;
+    };
+    vector<Hit> hits;
+    const i32 ccx = static_cast<i32>(std::floor(px / 64.0f));
+    const i32 ccz = static_cast<i32>(std::floor(pz / 64.0f));
+    constexpr i32 kScanRadius = 14; // ~900 m
+    for (i32 cz = ccz - kScanRadius; cz <= ccz + kScanRadius; ++cz) {
+        for (i32 cx = ccx - kScanRadius; cx <= ccx + kScanRadius; ++cx) {
+            const auto buckets = render::scatterProps(tp, cx, cz);
+            for (u32 v = render::VegetationSystem::kFirstCliff;
+                 v < render::VegetationSystem::kVariantCount; ++v) {
+                for (const auto& prop : buckets[v]) {
+                    const bool slab = prop.params.w > 0.0f &&
+                                      prop.params.z < -0.5f;
+                    const f32 dx = prop.positionScale.x - px;
+                    const f32 dz = prop.positionScale.z - pz;
+                    hits.push_back(
+                        { prop.positionScale.x, prop.positionScale.y,
+                          prop.positionScale.z, prop.positionScale.w,
+                          slab ? -prop.params.z - 1.0f : 0.0f,
+                          std::hypot(dx, dz), slab });
+                }
+            }
+        }
+    }
+    std::sort(hits.begin(), hits.end(),
+              [](const Hit& l, const Hit& r) { return l.dist < r.dist; });
+    u32 slabs = 0;
+    for (const Hit& hit : hits) {
+        slabs += hit.slab ? 1u : 0u;
+    }
+    MESSAGE("cliff pieces within ", kScanRadius * 64, " m of spawn (", px,
+            ", ", pz, "): ", hits.size(), " — ", slabs, " slab(s), ",
+            hits.size() - slabs, " hero(es)");
+    u32 listed = 0;
+    for (const Hit& hit : hits) {
+        if (++listed > 8) {
+            break;
+        }
+        MESSAGE((hit.slab ? "slab" : "hero"), " at (", hit.x, ", ",
+                hit.z, ")  h=", hit.y, "  scale=", hit.scale,
+                "  pitch=", hit.pitch, "  dist=", hit.dist, " m");
+    }
+    CHECK(true);
+}
+
 // How much relief does each erosion stage take? Bakes the tallest
 // massif tile with stages toggled off and reports the height stats —
 // the answer to "does erosion flatten everything".

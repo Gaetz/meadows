@@ -32,7 +32,8 @@ layout(location = 4) in vec2 vCardUv;
 layout(location = 5) in vec2 vPropUv;
 layout(location = 6) in float vGroundDelta;
 layout(location = 7) in vec4 vObjPos;
-layout(location = 8) in vec3 vObjNormal;
+// xyz = object-space normal, w = instance pitch (cliff slabs).
+layout(location = 8) in vec4 vObjNormal;
 
 layout(location = 0) out vec4 fragColor;
 
@@ -108,7 +109,14 @@ void main() {
         float yaw = vObjPos.w - 1.0;
         float yc = cos(yaw);
         float ys = sin(yaw);
-        vec3 onrm = normalize(vObjNormal);
+        // Cliff-slab pitch: the instance rotation is R_y(yaw) o
+        // R_x(-pitch) — the object-space view and the outgoing normal
+        // must ride the same chain (trees: pitch 0, all this folds
+        // away).
+        float pitch = vObjNormal.w;
+        float pc = cos(pitch);
+        float ps = sin(pitch);
+        vec3 onrm = normalize(vObjNormal.xyz);
         vec3 an = abs(onrm) + 1.0e-5;
         vec3 bw = an / (an.x + an.y + an.z);
         const float kBarkTile = 0.6;  // tiles per meter (hand-tuned)
@@ -116,10 +124,12 @@ void main() {
         vec2 uvx = vObjPos.zy * kBarkTile;
         vec2 uvy = vObjPos.xz * kBarkTile;
         vec2 uvz = vObjPos.xy * kBarkTile;
-        // View in OBJECT space (inverse of the vertex yaw rotation).
+        // View in OBJECT space (inverse of the vertex rotation:
+        // R_x(+pitch) after the yaw inverse).
         vec3 vw = normalize(uCameraPos.xyz - vWorldPos);
         vec3 vo = vec3(vw.x * yc + vw.z * ys, vw.y,
                        -vw.x * ys + vw.z * yc);
+        vo = vec3(vo.x, vo.y * pc - vo.z * ps, vo.y * ps + vo.z * pc);
         // Normal-height taps (unshifted): the height drives the offset,
         // the normals perturb through per-plane axis frames.
         vec4 nhx = texture(uBarkNrm, uvx);
@@ -145,6 +155,8 @@ void main() {
             vec3(tny.x, tny.z * sign(onrm.y), tny.y) * bw.y +
             vec3(tnz.x, tnz.y, tnz.z * sign(onrm.z)) * bw.z +
             onrm * 1.5);
+        nObj = vec3(nObj.x, nObj.y * pc + nObj.z * ps,
+                    -nObj.y * ps + nObj.z * pc);
         shadeN = normalize(vec3(nObj.x * yc - nObj.z * ys, nObj.y,
                                 nObj.x * ys + nObj.z * yc));
         reliefA = 0.5 + clamp(height, 0.0, 1.0) * 0.49;

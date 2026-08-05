@@ -18,8 +18,21 @@ void main() {
     float yaw = aParams.x;
     float c = cos(yaw);
     float s = sin(yaw);
-    vec3 local = vec3(aPos.x * c - aPos.z * s, aPos.y,
-                      aPos.x * s + aPos.z * c);
+    // Cliff-slab pitch (tree.vert's contract: rigid untextured props
+    // pack it as -(1 + pitch) in the sway-phase lane) — the caster must
+    // lean identically or the wall shadows itself wrong.
+    float pitch = (aParams.w > 0.0 && aParams.z < -0.5)
+                      ? (-aParams.z - 1.0)
+                      : 0.0;
+    vec3 posL = aPos;
+    if (pitch > 0.0) {
+        float cp = cos(pitch);
+        float sp = sin(pitch);
+        posL = vec3(posL.x, posL.y * cp + posL.z * sp,
+                    -posL.y * sp + posL.z * cp);
+    }
+    vec3 local = vec3(posL.x * c - posL.z * s, posL.y,
+                      posL.x * s + posL.z * c);
 
     // Billboard leaf card (see tree.vert): expand toward the LIGHT here —
     // every leaf faces the sun, the canopy casts at full density.

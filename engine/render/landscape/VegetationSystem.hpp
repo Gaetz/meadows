@@ -69,14 +69,24 @@ public:
     // four species as cheap clones (~200 tris) at high density and short
     // reach — the carpet the heroes sit on. Same habitat + colony noise.
     static constexpr u32 kMassVariants = 4;
+    // Cliff faces (docs/CLIFFS.md étage 1): wall slabs plastered on
+    // steep ground where the cliff weight saturates. Slots 0-1 =
+    // procedural slabs (generateCliffFace, per-instance pitch, the
+    // triplanar rock material through the bark path); slots 2-3 = hero
+    // scans (textured-rigid like the boulders, yaw only). Long reach,
+    // real shadow casters — they are structural silhouettes, not
+    // clutter.
+    static constexpr u32 kCliffVariants = 4;
     static constexpr u32 kVariantCount = kTreeVariants + kRockVariants +
                                          kBushVariants + kDebrisVariants +
-                                         kPlantVariants + kMassVariants;
+                                         kPlantVariants + kMassVariants +
+                                         kCliffVariants;
     static constexpr u32 kFirstRock = kTreeVariants;
     static constexpr u32 kFirstBush = kTreeVariants + kRockVariants;
     static constexpr u32 kFirstDebris = kFirstBush + kBushVariants;
     static constexpr u32 kFirstPlant = kFirstDebris + kDebrisVariants;
     static constexpr u32 kFirstMass = kFirstPlant + kPlantVariants;
+    static constexpr u32 kFirstCliff = kFirstMass + kMassVariants;
     // Runtime knobs — live-safe: the ring streamer adapts on its own
     // (requestMissing reads the new radius, evictFar drains the excess).
     // NB: the tree FADE tops out at 880 m — radii under ~14 pop at the
@@ -205,6 +215,10 @@ public:
     void setBarkTextures(rhi::Device& device, BarkImage oakAlbedo,
                          BarkImage oakNrmHeight, BarkImage pineAlbedo,
                          BarkImage pineNrmHeight);
+    // Cliff-face material (bark slot 2): the procedural cliff slots
+    // sample it through the same triplanar bark path as the trunks.
+    void setCliffBark(rhi::Device& device, BarkImage albedo,
+                      BarkImage nrmHeight);
     bool barkLoaded() const { return barkTextures[0].get().id != 0; }
     array<u8, kTreeVariants> variantBark { { 0, 0, 0, 1, 1 } };
     bool barkGroupsDirty { false }; // panel edits; applied in update()
@@ -434,11 +448,12 @@ private:
     // sampler (triplanar tiles past [0,1]), per-tree-slot bind groups
     // (leaf atlas @0 + flat normal @3 + bark albedo @7 + bark
     // normal-height @8 — the shared pipeline layout).
-    array<BarkImage, 2> barkImages;
-    array<BarkImage, 2> barkNrmImages;
-    array<rhi::UniqueTexture, 2> barkTextures;
-    array<rhi::UniqueTexture, 2> barkNrmTextures;
+    array<BarkImage, 3> barkImages;    // 0 oak, 1 spruce, 2 cliff rock
+    array<BarkImage, 3> barkNrmImages;
+    array<rhi::UniqueTexture, 3> barkTextures;
+    array<rhi::UniqueTexture, 3> barkNrmTextures;
     rhi::UniqueSampler barkSampler;
+    void uploadBark(rhi::Device& device, u32 index);
     void rebuildTreeBarkGroups(rhi::Device& device);
     // Shared leaf-cluster cutout mask (all tree variants; cards only).
     array<Vec4, kLeafStyleCount> leafSeasonTable {};

@@ -175,6 +175,16 @@ vector<u8> generateLeafMaskPixels(u32 size, u32 seed,
 // Squashed craggy boulder, meant to be sunk slightly into the ground.
 MeshData generateRock(u32 seed);
 
+// Low-poly cliff-face slab (docs/CLIFFS.md étage 1): a displaced wall
+// grid with strata terraces, face toward +Z, edges tucked back so they
+// bury into the hillside. Local size ~2.2 x 1.6 m — the scatter scales
+// it to wall size and plasters it against steep ground (per-instance
+// pitch). Wood-flagged (uv.y = -1): tree.frag's triplanar bark path
+// carries the material (the cliff slots bind the rock texture).
+// `detail`: 2 = hero grid, 1 = low twin, 0 = ultra. Same seed keeps the
+// same silhouette across LODs.
+MeshData generateCliffFace(u32 seed, u32 detail = 2);
+
 // One or two low foliage blobs hugging the ground.
 MeshData generateBush(u32 seed);
 

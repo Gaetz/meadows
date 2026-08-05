@@ -513,6 +513,77 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                   0.7f, 1.3f, 660.0f); // small silhouettes: rock reach
         }
     }
+
+    // --- Cliff faces: wall slabs where the cliff weight saturates ------------
+    // (docs/CLIFFS.md étage 1.) Slots 0-1 = procedural slabs plastered
+    // against the slope: yaw faces downhill, the free sway-phase lane
+    // carries a PITCH as -(1 + pitch) (tree.vert leans the slab back to
+    // the hillside). Slots 2-3 = hero scans, textured-rigid like the
+    // boulders (yaw only, sunk deeper — chunky pieces, not slabs).
+    {
+        constexpr f32 kCliffSpacing = 11.0f;
+        const u32 perSide =
+            static_cast<u32>(TerrainSystem::kChunkSize / kCliffSpacing);
+        for (u32 i = 0; i < perSide * perSide; ++i) {
+            HashRng rng = candidateRng(0x6d2b79f5u, i);
+            const f32 x = originX + (static_cast<f32>(i % perSide) +
+                                     rng.next()) *
+                                        kCliffSpacing;
+            const f32 z = originZ + (static_cast<f32>(i / perSide) +
+                                     rng.next()) *
+                                        kCliffSpacing;
+            const f32 h = terrain::height(params, x, z);
+            const Vec3 n = terrain::normal(params, x, z);
+            const f32 slope = 1.0f - n.y;
+            if (h < params.seaLevel + 0.5f || slope < 0.30f) {
+                continue; // walls belong to steep ground only
+            }
+            const auto weights =
+                terrain::materialWeightsAt(params, x, z, h, n);
+            const f32 rockFace = weights.cliff + 0.5f * weights.rock;
+            const f32 accept =
+                0.75f * glm::smoothstep(0.30f, 0.55f, slope) *
+                glm::smoothstep(0.25f, 0.6f, rockFace);
+            if (rng.next() >= accept) {
+                continue;
+            }
+            const u32 variant =
+                VegetationSystem::kFirstCliff +
+                glm::min(static_cast<u32>(
+                             rng.next() *
+                             static_cast<f32>(
+                                 VegetationSystem::kCliffVariants)),
+                         VegetationSystem::kCliffVariants - 1);
+            const f32 tint = rng.next();
+            // Downhill azimuth from the terrain normal; tree.vert maps
+            // local +Z to (-sin yaw, 0, cos yaw).
+            const f32 yaw = std::atan2(-n.x, n.z);
+            const bool hero = variant >= VegetationSystem::kFirstCliff + 2;
+            if (hero) {
+                const f32 scale = 2.0f + rng.next() * 2.5f;
+                buckets[variant].push_back({
+                    .positionScale = { x, h - 0.35f * scale, z, scale },
+                    .params = { yaw + (rng.next() - 0.5f) * 0.6f, tint,
+                                // Textured rigid; the tree fade — walls
+                                // are silhouettes to the ring edge.
+                                -1.0f, -treeFadeEnd },
+                });
+                continue;
+            }
+            // Slab: lean back toward the hillside — a fraction of the
+            // slope angle keeps the face steeper than the ground (a
+            // cliff, not a ramp).
+            const f32 pitch =
+                glm::clamp(std::acos(glm::clamp(n.y, -1.0f, 1.0f)) *
+                               0.55f,
+                           0.0f, 0.85f);
+            const f32 scale = 3.5f + rng.next() * 5.0f;
+            buckets[variant].push_back({
+                .positionScale = { x, h - 0.10f * scale, z, scale },
+                .params = { yaw, tint, -(1.0f + pitch), treeFadeEnd },
+            });
+        }
+    }
     return buckets;
 }
 
@@ -719,6 +790,14 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
                     generateColonizedTreeShadowProxy(seed,
                                                      species.params));
             }
+        } else if (i >= kFirstCliff) {
+            // Cliff slabs with LOD twins (the hero slots 2-3 keep the
+            // slab as placeholder until the scene's scans land).
+            uploadVariantMesh(device, i,
+                              baked(generateCliffFace(seed, 2), 0.5f));
+            uploadLowDetailMesh(device, i,
+                                baked(generateCliffFace(seed, 1), 0.5f));
+            uploadUltraDetailMesh(device, i, generateCliffFace(seed, 0));
         } else if (i < kFirstBush || i >= kFirstDebris) {
             // Rocks — and the debris slots' PLACEHOLDER until the scene's
             // scanned-prop overrides land (meshOverrides above wins).
@@ -909,6 +988,20 @@ void VegetationSystem::setBarkTextures(rhi::Device& device,
     barkImages[1] = std::move(pineAlbedo);
     barkNrmImages[0] = std::move(oakNrmHeight);
     barkNrmImages[1] = std::move(pineNrmHeight);
+    uploadBark(device, 0);
+    uploadBark(device, 1);
+    rebuildTreeBarkGroups(device);
+}
+
+void VegetationSystem::setCliffBark(rhi::Device& device, BarkImage albedo,
+                                    BarkImage nrmHeight) {
+    barkImages[2] = std::move(albedo);
+    barkNrmImages[2] = std::move(nrmHeight);
+    uploadBark(device, 2);
+    rebuildTreeBarkGroups(device);
+}
+
+void VegetationSystem::uploadBark(rhi::Device& device, u32 index) {
     const bool mips = device.caps().mipmapGeneration;
     const auto upload = [&](const BarkImage& src, bool srgb,
                             rhi::UniqueTexture& out) {
@@ -932,25 +1025,21 @@ void VegetationSystem::setBarkTextures(rhi::Device& device,
             device.generateMipmaps(out.get());
         }
     };
-    for (u32 b = 0; b < 2; ++b) {
-        upload(barkImages[b], true, barkTextures[b]);
-        upload(barkNrmImages[b], false, barkNrmTextures[b]);
-    }
+    upload(barkImages[index], true, barkTextures[index]);
+    upload(barkNrmImages[index], false, barkNrmTextures[index]);
     if (barkSampler.get().id == 0) {
         barkSampler = { device, device.createSampler(
             { .mipmapFilter = mips,
               .addressU = rhi::AddressMode::Repeat,
               .addressV = rhi::AddressMode::Repeat }) };
     }
-    rebuildTreeBarkGroups(device);
 }
 
 void VegetationSystem::rebuildTreeBarkGroups(rhi::Device& device) {
     if (!barkLoaded() || leafMask.get().id == 0) {
         return;
     }
-    for (u32 i = 0; i < kTreeVariants; ++i) {
-        const u32 pick = glm::min<u32>(variantBark[i], 1u);
+    const auto barkGroup = [&](u32 variant, u32 pick) {
         const rhi::TextureHandle bark =
             barkTextures[pick].get().id != 0 ? barkTextures[pick].get()
                                              : barkTextures[0].get();
@@ -958,7 +1047,8 @@ void VegetationSystem::rebuildTreeBarkGroups(rhi::Device& device) {
             barkNrmTextures[pick].get().id != 0
                 ? barkNrmTextures[pick].get()
                 : flatNormalHandle(device);
-        variantMeshes[i].albedoGroup = { device, device.createBindGroup(
+        variantMeshes[variant].albedoGroup = { device,
+                                               device.createBindGroup(
             { .entries = { { .binding = 0,
                              .texture = leafMask.get(),
                              .sampler = leafMaskSampler.get() },
@@ -971,6 +1061,18 @@ void VegetationSystem::rebuildTreeBarkGroups(rhi::Device& device) {
                            { .binding = 14,
                              .texture = nrm,
                              .sampler = barkSampler.get() } } }) };
+    };
+    for (u32 i = 0; i < kTreeVariants; ++i) {
+        barkGroup(i, glm::min<u32>(variantBark[i], 1u));
+    }
+    // Cliff slots: the rock material on the same triplanar path. Hero
+    // slots that carry a scanned albedo keep their textured group
+    // (uploadVariantAlbedo owns it).
+    for (u32 i = kFirstCliff; i < kVariantCount; ++i) {
+        if (albedoOverrides.contains(i)) {
+            continue;
+        }
+        barkGroup(i, barkTextures[2].get().id != 0 ? 2u : 0u);
     }
 }
 
@@ -1242,7 +1344,11 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
             packed.insert(packed.end(), built.payload[v].begin(),
                           built.payload[v].end());
             if (v >= kFirstPlant) {
-                continue; // plants: no GI injection boxes (small cutouts)
+                continue; // plants: no GI injection boxes (small
+                          // cutouts); cliffs skipped too for now — the
+                          // GiProp kinds box tree/rock/bush shapes, a
+                          // 15 m wall needs its own (docs/CLIFFS.md
+                          // différés)
             }
             // The compact CPU copy the GI injection boxes.
             const u8 kind = v < kFirstRock                          ? 0
@@ -1461,7 +1567,8 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         // Plants fade at ~60 m: the tree radii (2/4 chunks) would keep
         // them full-detail everywhere they are visible. Hero mesh in the
         // camera chunk ring only; twins carry the rest.
-        const i32 highRadius = v >= kFirstPlant ? 0 : highDetailRadius;
+        const i32 highRadius =
+            v >= kFirstPlant && v < kFirstCliff ? 0 : highDetailRadius;
         if (cheb <= highRadius) {
             return 0u;
         }
@@ -1565,7 +1672,8 @@ void VegetationSystem::collectDrawCandidates(
             // hero mesh in the camera chunk ring only).
             const VariantMesh& mesh = variantMeshes[v];
             const i32 highRadius =
-                v >= kFirstPlant ? 0 : highDetailRadius;
+                v >= kFirstPlant && v < kFirstCliff ? 0
+                                                    : highDetailRadius;
             u32 level = 0;
             if (mesh.lowIndexCount != 0 && cheb > highRadius) {
                 level = mesh.ultraIndexCount == 0 || cheb <= lowDetailRadius
@@ -1657,9 +1765,11 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
         return;
     }
     for (u32 v = 0; v < kVariantCount; ++v) {
-        if (v >= kFirstPlant) {
+        if (v >= kFirstPlant && v < kFirstCliff) {
             continue; // plants cast no shadows (cutout accents — GoT
-                      // model; their fill-rate stays out of the cascades)
+                      // model; their fill-rate stays out of the
+                      // cascades); cliffs DO cast — structural
+                      // silhouettes
         }
         bool meshBound = false;
         for (const auto& [key, chunk] : streamer.chunks) {

@@ -31,6 +31,14 @@ constexpr f32 kRockHalfY = 0.6f;
 constexpr f32 kStumpHalfXZ = 0.35f;
 constexpr f32 kStumpHalfY = 0.45f;
 constexpr Vec3 kLogHalf { 1.1f, 0.3f, 0.3f };
+// Cliff slabs (generateCliffFace local bounds: x +-1.1, y -0.15..1.45,
+// z -0.5..~0.45) — one oriented box per wall, rotated by the instance
+// yaw AND pitch (the plaster lean). Hero scans (~4.2 m footprint) get a
+// squarish yaw-only box like the boulders.
+constexpr Vec3 kCliffHalf { 1.1f, 0.8f, 0.45f };
+constexpr f32 kCliffCenterY = 0.65f;
+constexpr f32 kCliffHeroHalfXZ = 1.4f;
+constexpr f32 kCliffHeroHalfY = 1.1f;
 
 } // namespace
 
@@ -100,6 +108,35 @@ void VegetationCollision::cookChunk(i32 cx, i32 cz) {
             const phys::BodyId body = physics.addStaticBox(
                 half, base + Vec3 { 0.0f, half.y, 0.0f },
                 glm::angleAxis(-prop.params.x, Vec3 { 0.0f, 1.0f, 0.0f }));
+            if (body != 0) {
+                out.push_back(body);
+                ++bodies;
+            }
+        }
+    }
+    // Cliff faces: slabs carry the tree.vert pitch in the sway-phase
+    // lane (-(1 + pitch), untextured rigid contract) — the body leans
+    // with the visual: R_y(-yaw) o R_x(-pitch), matching the shader's
+    // rotation chain. Hero scans are textured rigid (yaw only).
+    for (u32 v = render::VegetationSystem::kFirstCliff;
+         v < render::VegetationSystem::kVariantCount; ++v) {
+        for (const auto& prop : buckets[v]) {
+            const f32 s = prop.positionScale.w;
+            const Vec3 base { prop.positionScale.x, prop.positionScale.y,
+                              prop.positionScale.z };
+            const bool slab =
+                prop.params.w > 0.0f && prop.params.z < -0.5f;
+            if (!slab) {
+                add(prop, kCliffHeroHalfXZ, kCliffHeroHalfY);
+                continue;
+            }
+            const f32 pitch = -prop.params.z - 1.0f;
+            const glm::quat rot =
+                glm::angleAxis(-prop.params.x, Vec3 { 0.0f, 1.0f, 0.0f }) *
+                glm::angleAxis(-pitch, Vec3 { 1.0f, 0.0f, 0.0f });
+            const phys::BodyId body = physics.addStaticBox(
+                kCliffHalf * s,
+                base + rot * Vec3 { 0.0f, kCliffCenterY * s, 0.0f }, rot);
             if (body != 0) {
                 out.push_back(body);
                 ++bodies;

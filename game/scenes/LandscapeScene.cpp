@@ -374,6 +374,12 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
               render::VegetationSystem::kFirstDebris + 0, 900, 0.9f },
             { "52f8af61-88f5-4c3d-accf-aca86850f787",
               render::VegetationSystem::kFirstDebris + 1, 1200, 2.2f },
+            // Cliff hero pieces (docs/CLIFFS.md étage 1): chunky scanned
+            // faces on the hero slots — the procedural slabs keep 0-1.
+            { "3a7a2bab-5609-4ee9-9d89-81091a81fd22",
+              render::VegetationSystem::kFirstCliff + 2, 1600, 4.2f },
+            { "c99db8ac-99f6-460d-95d2-56e41cd309f4",
+              render::VegetationSystem::kFirstCliff + 3, 1600, 4.5f },
         };
         for (const ScanOverride& scan : kScans) {
             const auto guid = core::Guid::fromString(scan.guid);
@@ -683,6 +689,17 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
                                        std::move(oakN),
                                        std::move(pineA),
                                        std::move(pineN));
+        }
+        // Cliff-face material (docs/CLIFFS.md): the procedural slab
+        // slots sample this through the same triplanar bark path.
+        const auto cliffGuid = core::Guid::fromString(
+            "68eb85ba-3f49-4685-8c7f-01b1883d443b");
+        const auto cliffPath =
+            cliffGuid ? assetDb.resolve(*cliffGuid) : std::nullopt;
+        render::VegetationSystem::BarkImage cliffA, cliffN;
+        if (cliffPath && loadBark(*cliffPath, cliffA, cliffN)) {
+            renderer.setVegetationCliffBark(device, std::move(cliffA),
+                                            std::move(cliffN));
         }
     }
 
