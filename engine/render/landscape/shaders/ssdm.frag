@@ -33,14 +33,23 @@ vec2 dispAt(vec2 uv, vec2 texel) {
     float h = (a - 0.5) * 2.0 - 0.5; // -0.5 pit .. +0.5 crest
     vec3 w = worldFromDepth(uv, d);
     // Neighbor-difference normal (derivatives are unusable inside the
-    // iterated gather).
-    vec3 wx = worldFromDepth(uv + vec2(texel.x, 0.0),
-                             texture(uSceneDepth,
-                                     uv + vec2(texel.x, 0.0)).r);
-    vec3 wy = worldFromDepth(uv + vec2(0.0, texel.y),
-                             texture(uSceneDepth,
-                                     uv + vec2(0.0, texel.y)).r);
-    vec3 n = cross(wx - w, wy - w);
+    // iterated gather). ONE-SIDED per axis, toward the neighbor closest
+    // in depth: a two-sided difference crosses the silhouette on thin
+    // props (trunks) and the normal blows up right where the warp
+    // should shine — the grazing edge.
+    float dxp = texture(uSceneDepth, uv + vec2(texel.x, 0.0)).r;
+    float dxm = texture(uSceneDepth, uv - vec2(texel.x, 0.0)).r;
+    float dyp = texture(uSceneDepth, uv + vec2(0.0, texel.y)).r;
+    float dym = texture(uSceneDepth, uv - vec2(0.0, texel.y)).r;
+    vec3 dwx =
+        abs(dxp - d) <= abs(dxm - d)
+            ? worldFromDepth(uv + vec2(texel.x, 0.0), dxp) - w
+            : w - worldFromDepth(uv - vec2(texel.x, 0.0), dxm);
+    vec3 dwy =
+        abs(dyp - d) <= abs(dym - d)
+            ? worldFromDepth(uv + vec2(0.0, texel.y), dyp) - w
+            : w - worldFromDepth(uv - vec2(0.0, texel.y), dym);
+    vec3 n = cross(dwx, dwy);
     float len = length(n);
     if (len < 1e-12) {
         return vec2(0.0);
