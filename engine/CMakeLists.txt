@@ -28,7 +28,9 @@ add_library(meadows STATIC
     terrain/RiverGeometry.cpp
     terrain/WaterBodies.cpp
     terrain/WaterInfoMap.cpp
+    render/landscape/CliffSystem.cpp
     terrain/generation/Authoring.cpp
+    terrain/generation/CliffBands.cpp
     terrain/generation/Finalize.cpp
     terrain/generation/FineErosion.cpp
     terrain/generation/FluvialErosion.cpp

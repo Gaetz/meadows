@@ -340,6 +340,12 @@ private:
     // either the procedural tiles or the cooked albedo array.
     rhi::UniqueTexture splatTexture;
     rhi::UniqueSampler splatSampler;
+public:
+    // The splat-array group (albedo/height/normal at bindings 0/3/8) —
+    // shared with the cliff ribbons (CliffSystem draws with it).
+    rhi::BindGroupHandle splatGroup() const { return splatBindGroup; }
+
+private:
     rhi::UniqueBindGroup splatBindGroup;
     // The cooked companion arrays (BC5 normal / BC7 ORM / R16 height),
     // resident alongside the albedo; bound by the height-blending /

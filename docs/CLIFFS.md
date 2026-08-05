@@ -77,11 +77,71 @@ rampe), matériau (relief triplanaire, strates, POM/SSDM), héros scannés,
 ombres portées, collision (glisser contre une paroi), F6 (budget veg),
 raccord éboulis/sable au pied.
 
+## Étage 2 — livré (2026-08-05), variante « collée »
+
+Verdict dev sur l'étage 1 : « très très loin du résultat » — le
+patchwork de dalles ne fera jamais une surface continue, le scatter n'a
+qu'une vue locale, et le heightfield seul n'a pas le profil d'une
+falaise. L'étage 2 corrige les trois :
+
+- **D1 — bandes + raidissement au bake** (`CliffBands.{hpp,cpp}`,
+  headless, appelé par TileBake après finalize) : masque raide à 8 m
+  (‖∇h‖ > 1.25 ≈ 51°, gaté loin de l'eau par wetness), composantes
+  connexes ≥ 10 cellules, puis **raidissement du profil en place** —
+  remap logistique t^k/(t^k+(1−t)^k) entre pied et crête locaux (sondes
+  de ligne de pente), delta lissé à 8 m ré-appliqué en bilinéaire sur la
+  grille 2 m : mi-face plus verticale, pied/crête adoucis (le profil
+  falaise-sur-talus qu'une érosion lisse ne produit pas). Fenêtres
+  voisines : marches locales (≤ 40 m) contre marge partagée ≥ 64 m →
+  les deux bakes raidissent la bande commune quasi à l'identique, le
+  blend de bord absorbe le reste. **Polylignes de PIED** extraites
+  (cellule de pied = voisin 4-connexe plus bas et non-raide,
+  amincissement spatial, chaînage plus proche voisin), nœuds =
+  pied + crête + direction sortante, clipées au rect de la tuile
+  propriétaire (jamais deux rubans sur la bande de recouvrement).
+  `TerrainRegion::cliffBands`, format .trg TRG3, `kTileBakeVersion` 36.
+  Mesure tuile spawn : 129 bandes, jusqu'à 39 nœuds / 405 m linéaires,
+  chutes 130-180 m.
+- **D2 — rubans continus** (`CliffSystem.{hpp,cpp}` + `cliff.frag`) :
+  par bande, colonnes tous les 4 m le long de la polyligne (directions
+  lissées entre nœuds), rangées drapées **collées au terrain raidi**
+  (échantillonnage `terrain::height` le long de la ligne de pente
+  pied→crête, plafond visible 60 m) + relief sortant strates/bruit
+  0.15-1.5 m (toujours saillant — pas de z-fight), coutures enterrées
+  (rangée basse sous le talus, crête repliée dans la colline, colonnes
+  d'extrémité rentrées). Masque vertex (cavité + ton par strate).
+  Matériau : **la couche cliff du splat array en triplanaire**
+  (cliff.frag, vertex stage partagé terrain.vert, mêmes bind groups que
+  le pass terrain — le mur et le sol ne peuvent pas diverger), même
+  chaîne d'éclairage que terrain.frag (stylized/nuages/ombre longue/GI/
+  locales/fog) + alpha relief SSDM. Casters d'ombres via le shader
+  caster du terrain, AABB par bande pour le frustum. Rebuild au
+  republish de la base (main thread, ~10k sommets par tuile).
+- **D3 — collision & recadrage** : la collision suit le **heightfield
+  raidi** gratuitement (TerrainCollision échantillonne terrain::height) ;
+  le relief du ruban (≤ 1.5 m saillant) reste visuel. L'étage 1 est
+  recadré : les faces ≥ 9 m appartiennent aux rubans (les dalles n'y
+  spawnent plus — z-fight), les dalles gardent les affleurements 4-9 m,
+  les héros deviennent des accents de pied rares (10 % des graines).
+  Spawn : 177 → 10 pièces instanciées.
+
 ## Différés
 
-- **Étage 2** : détection de bandes au bake + ruban extrudé à surplombs
-  (go/no-go dev après l'étage 1) ; carve du heightfield sous surplomb ;
-  brush Scénario (étage 3).
+- **Étage 2b — surplombs** : le ruban est collé (drapé sur le
+  heightfield raidi) ; autoriser le débordement (vraie verticalité,
+  encorbellements) = amplitude de relief signée + carve du heightfield
+  sous surplomb + collision mesh Jolt dédiée. Brush Scénario (étage 3)
+  réutilise le même builder sur des formes authored.
+- Rubans absents du pass réflexion (les montagnes s'y reflètent via le
+  terrain seul) et de FarTerrain (la silhouette raidie du heightfield
+  porte au loin).
+- Relief du ruban ≤ 1.5 m saillant sans collision propre (le joueur
+  glisse sur le heightfield en dessous) — mesh Jolt grossier si ça se
+  sent en jeu.
+- Composantes raides < 10 cellules mais ≥ 9 m : ni ruban ni dalles
+  (rare — élargir la passe dalles si des trous se voient).
+- Hex-tiling / variantes rock de la couche cliff dans cliff.frag (v1 :
+  couche 4 seule + drift de luminance anti-répétition).
 - GI des parois (GiProp kind dédié, boîte murale).
 - Imposteurs de parois au-delà du ring veg (FarTerrain porte la
   silhouette de pente en attendant).

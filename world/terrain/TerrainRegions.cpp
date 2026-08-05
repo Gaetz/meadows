@@ -11,7 +11,7 @@ namespace world {
 
 namespace {
 
-constexpr char kMagic[4] = { 'T', 'R', 'G', '2' };
+constexpr char kMagic[4] = { 'T', 'R', 'G', '3' };
 constexpr u32 kMaxSamples = 8192;
 
 bool validGrid(const render::TerrainRegion& region) {
@@ -86,6 +86,14 @@ bool writeTrgFile(const std::filesystem::path& path,
     } else {
         writeChannel(region.rockExposure);
     }
+    // Cliff-band foot polylines (TRG3, docs/CLIFFS.md étage 2).
+    write(static_cast<u32>(region.cliffBands.size()));
+    for (const render::CliffBand& band : region.cliffBands) {
+        write(static_cast<u32>(band.nodes.size()));
+        file.write(reinterpret_cast<const char*>(band.nodes.data()),
+                   static_cast<std::streamsize>(
+                       band.nodes.size() * sizeof(render::CliffNode)));
+    }
     return static_cast<bool>(file);
 }
 
@@ -149,6 +157,30 @@ std::optional<render::TerrainRegion> readTrgFile(
             LOG_ERROR("readTrgFile: truncated masks: {}", path.string());
             return std::nullopt;
         }
+    }
+    u32 bandCount = 0;
+    read(bandCount);
+    if (!file || bandCount > 100000) {
+        LOG_ERROR("readTrgFile: bad cliff bands: {}", path.string());
+        return std::nullopt;
+    }
+    region.cliffBands.resize(bandCount);
+    for (render::CliffBand& band : region.cliffBands) {
+        u32 nodeCount = 0;
+        read(nodeCount);
+        if (!file || nodeCount > 1000000) {
+            LOG_ERROR("readTrgFile: bad cliff nodes: {}", path.string());
+            return std::nullopt;
+        }
+        band.nodes.resize(nodeCount);
+        file.read(reinterpret_cast<char*>(band.nodes.data()),
+                  static_cast<std::streamsize>(
+                      nodeCount * sizeof(render::CliffNode)));
+    }
+    if (!file) {
+        LOG_ERROR("readTrgFile: truncated cliff bands: {}",
+                  path.string());
+        return std::nullopt;
     }
     return region;
 }

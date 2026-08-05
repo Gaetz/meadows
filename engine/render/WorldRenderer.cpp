@@ -112,6 +112,8 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
         terrainLightMap.create(device, jobs);
         terrainShadeMap.create(device, jobs);
         farTerrain.create(device, *shaders, jobs);
+        cliffs.create(device, *shaders); // after terrain: shares its
+                                         // caster shader entry
         if (cfg.postFx) {
             mistMap.create(device, jobs);
             noiseVolume.create(device, *shaders); // no-op without caps
@@ -347,6 +349,7 @@ void WorldRenderer::destroy(rhi::Device& device) {
     terrainLightMap.destroy(device);
     terrainShadeMap.destroy(device);
     farTerrain.destroy(device);
+    cliffs.destroy(device);
     mistMap.destroy(device);
     noiseVolume.destroy(device);
     radianceCascades.destroy(device);
@@ -1071,6 +1074,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
     if (cfg.terrain) {
         terrain.refreshPipeline(frame.device, *shaders);
         farTerrain.refreshPipeline(frame.device, *shaders);
+        cliffs.refreshPipeline(frame.device, *shaders);
     }
     if (cfg.grass) {
         grass.refreshPipeline(frame.device, *shaders);
@@ -1198,6 +1202,10 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                 terrain.layerAlbedoBase(2),
                                 terrain.layerAlbedoBase(3),
                                 terrain.layerAlbedoBase(4) });
+        }
+        if (cfg.terrain) {
+            // Cliff ribbons: rebuilt when the terrain base republishes.
+            cliffs.update(frame.device, terrain.params);
         }
         // Height-horizon occlusion: rebuilt on a worker
         // whenever the camera strays; stays valid (conservative) meanwhile.
@@ -1746,6 +1754,9 @@ void WorldRenderer::render(engine::FrameContext& frame,
             if (cfg.terrain) {
                 terrain.drawDepth(frame.cmd, shadows.casterBindGroup(i),
                                   camera.position, 13, &cascadeFrustum);
+                // Cliff ribbons cast with the terrain's caster shader.
+                cliffs.drawDepth(frame.cmd, shadows.casterBindGroup(i),
+                                 &cascadeFrustum);
             }
             // Same 13-chunk cap: the last cascade ends at 800 m (the
             // ultra tree ring). Far cascades cast with the solid shadow
@@ -1952,6 +1963,11 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                  shadows.receiverBindGroup(), &viewFrustum,
                                  occludedSet);
                 }
+                // Cliff ribbons: right after the ground, same groups —
+                // the wall continues the terrain's cliff material.
+                cliffs.draw(frame.cmd, frameBindGroup,
+                            terrain.splatGroup(),
+                            shadows.receiverBindGroup(), &viewFrustum);
             }
             if (cfg.vegetation) {
                 render::GpuProbe::Scope sub { subProbe, subDevice,

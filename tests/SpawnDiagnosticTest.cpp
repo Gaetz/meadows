@@ -754,6 +754,54 @@ TEST_CASE("spawn cliff diagnostic" * doctest::skip()) {
     CHECK(true);
 }
 
+// What cliff bands does the bake detect (docs/CLIFFS.md étage 2)?
+// Bakes the spawn tile and lists the extracted foot polylines — length,
+// height range, nearest node to the spawn.
+//   meadows-tests '-tc=spawn cliff bands*' -ns
+TEST_CASE("spawn cliff bands diagnostic" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    const f32 px = 2038.28f;
+    const f32 pz = 1614.13f;
+    const TileBakeResult b = bakeTile(params, 0, 0);
+    MESSAGE("bands on tile (0,0): ", b.region.cliffBands.size());
+    struct Summary {
+        f32 length, maxDrop, dist;
+        size_t nodes;
+        f32 x, z;
+    };
+    vector<Summary> sums;
+    for (const auto& band : b.region.cliffBands) {
+        Summary s { 0.0f, 0.0f, 1.0e9f, band.nodes.size(), 0.0f, 0.0f };
+        for (size_t i = 0; i < band.nodes.size(); ++i) {
+            const auto& node = band.nodes[i];
+            if (i > 0) {
+                s.length += std::hypot(node.x - band.nodes[i - 1].x,
+                                       node.z - band.nodes[i - 1].z);
+            }
+            s.maxDrop = glm::max(s.maxDrop, node.headH - node.footH);
+            const f32 d = std::hypot(node.x - px, node.z - pz);
+            if (d < s.dist) {
+                s.dist = d;
+                s.x = node.x;
+                s.z = node.z;
+            }
+        }
+        sums.push_back(s);
+    }
+    std::sort(sums.begin(), sums.end(),
+              [](const Summary& l, const Summary& r) {
+                  return l.dist < r.dist;
+              });
+    for (size_t i = 0; i < sums.size() && i < 10; ++i) {
+        MESSAGE("band: ", sums[i].nodes, " nodes, length ",
+                sums[i].length, " m, max drop ", sums[i].maxDrop,
+                " m, nearest (", sums[i].x, ", ", sums[i].z, ") at ",
+                sums[i].dist, " m");
+    }
+    CHECK(true);
+}
+
 // How much relief does each erosion stage take? Bakes the tallest
 // massif tile with stages toggled off and reports the height stats —
 // the answer to "does erosion flatten everything".

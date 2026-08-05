@@ -599,7 +599,16 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             // Downhill azimuth; tree.vert maps local +Z to
             // (-sin yaw, 0, cos yaw).
             const f32 yaw = std::atan2(-dxN, dzN);
-            if (rng.next() < 0.28f) {
+            // Faces >= 9 m belong to the baked cliff RIBBONS (étage 2,
+            // CliffBands minHeight) — the slabs would z-fight them.
+            // There the scatter only drops sparse hero scans at the
+            // foot (talus accents); slabs keep the 4-9 m outcrops the
+            // band detection leaves bare.
+            const bool ribbonFace = wallHeight >= 9.0f;
+            if (ribbonFace && rng.next() >= 0.10f) {
+                continue;
+            }
+            if (ribbonFace || rng.next() < 0.28f) {
                 // Hero scan: one chunky accent sized to the face.
                 const u32 variant = VegetationSystem::kFirstCliff + 2 +
                                     (rng.next() < 0.5f ? 0u : 1u);

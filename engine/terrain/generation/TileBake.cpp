@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "engine/core/Assert.hpp"
+#include "engine/terrain/generation/CliffBands.hpp"
 
 namespace render::terraingen {
 
@@ -505,15 +506,24 @@ TileBakeResult bakeTileStage2(
     finalize.fineMinX = keepMinX - kFineErosionHalo;
     finalize.fineMinZ = keepMinZ - kFineErosionHalo;
     finalize.fineSpan = keepSpan + 2.0f * kFineErosionHalo;
-    const FinalizeResult fine = finalizeTerrain(
+    FinalizeResult fine = finalizeTerrain(
         sim, self.eroded, macroFields, hydro, window, finalize,
         params.worldSeed,
         character.fineScale.empty() ? nullptr : &character.fineScale,
         self.deposit.empty() ? nullptr : &self.deposit);
 
+    // Cliff bands (docs/CLIFFS.md étage 2): sharpen the wall profiles
+    // on the fine grid IN PLACE and extract the foot polylines the
+    // runtime ribbons extrude from. Local walks (≤ ~40 m) against a
+    // ≥ 64 m shared margin: neighbour bakes sharpen their shared band
+    // near-identically, the edge blend absorbs the rest.
+    TileBakeResult out;
+    out.region.cliffBands = extractCliffBands(
+        fine.fineSpec, fine.height, sim, fine.wetness, CliffBandParams {},
+        tileMinX, tileMinZ, params.tileSize);
+
     // Crop to tile + overlap margin. The margin ring is shared with the
     // neighbour bakes; height() blends the overlap by edge weight.
-    TileBakeResult out;
     TerrainRegion& region = out.region;
     region.originX = keepMinX;
     region.originZ = keepMinZ;

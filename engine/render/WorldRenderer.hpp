@@ -14,6 +14,7 @@
 #include "engine/render/landscape/RadianceCascades.hpp"
 #include "engine/render/landscape/ShadowMapper.hpp"
 #include "engine/render/landscape/SkySystem.hpp"
+#include "engine/render/landscape/CliffSystem.hpp"
 #include "engine/render/landscape/FarTerrain.hpp"
 #include "engine/render/landscape/MistMap.hpp"
 #include "engine/render/landscape/NoiseVolume.hpp"
@@ -324,6 +325,7 @@ private:
     // Distant landscape silhouettes beyond the streaming ring (§3.6).
     render::FarTerrain farTerrain;
     bool farTerrainUi { true };
+    render::CliffSystem cliffs;
     // Worker-baked valley data for the ground-mist raymarch (§3.5).
     render::MistMap mistMap;
     bool mistUi { true };

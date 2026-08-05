@@ -27,6 +27,25 @@ namespace render {
 // a per-struct override never silently drifts.
 constexpr f32 kDefaultSeaLevel = 21.0f;
 
+// One node of a cliff-band FOOT polyline (docs/CLIFFS.md étage 2):
+// where a baked wall meets its talus. dir = horizontal outward
+// (downhill) unit direction; headH = crest height up the fall line.
+// The runtime cliff ribbons extrude from these.
+struct CliffNode {
+    f32 x { 0.0f };     // foot position
+    f32 z { 0.0f };
+    f32 footH { 0.0f };
+    f32 headX { 0.0f }; // crest position up the fall line
+    f32 headZ { 0.0f };
+    f32 headH { 0.0f };
+    f32 dirX { 0.0f };  // horizontal outward (downhill) unit dir
+    f32 dirZ { 1.0f };
+};
+
+struct CliffBand {
+    vector<CliffNode> nodes; // ordered along the contour
+};
+
 struct TerrainRegion {
     f32 originX { 0.0f }; // world meters, min corner of the covered rect
     f32 originZ { 0.0f };
@@ -52,6 +71,10 @@ struct TerrainRegion {
     // subtracted) — drives the cliff material. May be empty (older or
     // debug bakes): sample with a 0 fallback.
     vector<u8> rockExposure;
+
+    // Cliff-band foot polylines (docs/CLIFFS.md étage 2), clipped to
+    // the owning tile rect. Empty on older bakes.
+    vector<CliffBand> cliffBands;
 
     // Runtime detail-noise character inside this region (from
     // TerrainRegionForm). Zero amplitude = the grid is exact (debug bakes
