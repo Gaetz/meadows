@@ -379,6 +379,25 @@ Textures Poly Haven CC0 (`textures/bark/`) : `jolcham_oak_bark_01`
   whiteout, re-rotation monde). 6 taps/pixel d'écorce ; amplitudes :
   kBarkDepth 0.045 uv, kBarkTile 1.2/m.
 
+## SSAO (plan « relief de côté » 1/2 — 2026-08-05)
+
+Recherche SSDM consignée : Crimson Desert utilise du Screen Space
+Displacement Mapping (Lobel 2008) — pixels déplacés en espace écran, la
+silhouette gonfle vraiment. Plan acté avec le dev : **1) SSAO d'abord,
+3) SSDM ensuite** (le displacement géométrique near-field reste en
+poche). Livré ici le 1 :
+- `ssao.frag` : Alchemy 8 taps spirale + jitter IGN, normales par
+  dérivées, demi-résolution sur la copie de profondeur, fade 80-140 m,
+  ciel neutre — le frère jumeau du pass contact shadows (même patron :
+  cible → blur partagé → multiplié au tonemap, toggle = clear blanc,
+  brins d'herbe exempts par le flag alpha).
+- Lanes `uSsaoInfo` (FrameUbo append, 2032→2048) : force 0.85, rayon
+  0.7 m — sliders au panel « Rendering & post-FX » + checkbox.
+- Contrat lighting consigné dans RENDERING.md : rayon court seulement
+  (les fissures que les sondes RC ne résolvent pas), pas de double
+  comptage avec le GI, tourne aussi en intérieur (indépendant du
+  soleil, contrairement au contact).
+
 ## À valider par le dev
 
 Prairie (mélange d'espèces + clumps + zones qui changent la texture ET la

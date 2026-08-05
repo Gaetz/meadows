@@ -272,7 +272,8 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                         { "uExposure", 5 },   // adaptation tap
                         { "uContact", 6 },    // contact shadows
                         { "uSkyClouds", 7 },  // volumetric clouds
-                        { "uSceneDepth", 8 } }); // bilateral weights
+                        { "uSceneDepth", 8 },   // bilateral weights
+                        { "uSsao", 9 } });
         rebuildBlitPipeline(device);
     }
     if (cfg.postFx && device.caps().offscreenTargets &&
@@ -489,6 +490,9 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                               .sampler = blitSampler },
                             { .binding = 8,
                               .texture = sceneDepthCopy,
+                              .sampler = blitSampler },
+                            { .binding = 9,
+                              .texture = postFx.ssaoTexture(),
                               .sampler = blitSampler } }
                       : vector<rhi::BindGroupEntry> {
                             { .binding = 0,
@@ -1279,6 +1283,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .pomShadowStrength = view.pomShadowStrength,
         .pomDepth = view.pomDepth,
         .barkEnabled = vegetation.barkLoaded(),
+        .ssaoStrength = ssaoStrengthUi,
+        .ssaoRadius = ssaoRadiusUi,
         .reflectionsActive = reflectionsActive,
         // Horizon closure: at the far mesh's reach when it stands in,
         // else at the streaming ring. z of the same uniform carries the
@@ -2005,6 +2011,17 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                             shadows.receiverBindGroup());
             } else {
                 postFx.clearContactShadows(frame.cmd);
+            }
+        }
+        // SSAO (same texture-is-the-toggle contract; sun-independent,
+        // so interiors keep it).
+        {
+            render::GpuProbe::Scope gpu { gpuProbe, frame.device,
+                                          "ssao" };
+            if (ssaoUi) {
+                postFx.renderSsao(frame.cmd, frameBindGroup);
+            } else {
+                postFx.clearSsao(frame.cmd);
             }
         }
         // Ground mist (the texture is the toggle — neutral = off;

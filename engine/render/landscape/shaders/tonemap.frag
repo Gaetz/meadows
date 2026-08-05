@@ -10,6 +10,7 @@ layout(binding = 5) uniform sampler2D uExposure; // 1x1 adaptation
 layout(binding = 6) uniform sampler2D uContact;  // white = lit
 layout(binding = 7) uniform sampler2D uSkyClouds; // volumetric clouds
 layout(binding = 8) uniform sampler2D uSceneDepth; // bilateral weights
+layout(binding = 9) uniform sampler2D uSsao;     // white = open
 
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
@@ -67,6 +68,11 @@ void main() {
 
     vec4 scene = texture(uSceneColor, vUv);
     vec3 hdr = scene.rgb;
+    // SSAO — contact-scale crevice darkening (ssao.frag documents the
+    // contract: short radius, distance-faded, the RC GI owns macro
+    // occlusion). Grass blades stay exempt via the alpha flag, like the
+    // contact pass — the meadow reads as one mass.
+    hdr *= mix(1.0, texture(uSsao, vUv).r, scene.a);
     // Screen-space contact shadows — surface darkening before
     // the added airlight below. The texture is the toggle: the scene
     // clears it to white when the feature is off. The scene ALPHA is a

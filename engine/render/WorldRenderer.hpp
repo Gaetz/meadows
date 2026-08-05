@@ -372,6 +372,11 @@ private:
     bool cascadeDebugUi { false };
     bool reflectionsUi { true };
     bool contactShadowsUi { true };
+    // Half-res SSAO (ssao.frag): contact-scale crevice darkening — the
+    // realistic-branch companion of the material relief.
+    bool ssaoUi { true };
+    f32 ssaoStrengthUi { 0.85f };
+    f32 ssaoRadiusUi { 0.7f };
     bool keyShadowUi { true };      // interiors
     bool meshShadowCastersUi { true };
     // The hysteresis-quantized sun the shadow cascades follow (a

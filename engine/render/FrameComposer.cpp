@@ -115,6 +115,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     base.splatVarietyInfo = { in.splatVariety, in.pomShadowStrength,
                               in.pomDepth,
                               in.barkEnabled ? 1.0f : 0.0f };
+    base.ssaoInfo = { in.ssaoStrength, in.ssaoRadius, 0.0f, 0.0f };
     for (u32 i = 0; i < render::kGrassSpeciesCount; ++i) {
         base.grassSpeciesShape[i] = { kGrassSpeciesShape[i][0],
                                       kGrassSpeciesShape[i][1],

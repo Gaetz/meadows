@@ -552,6 +552,13 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         // A/B: houses/crates/NPCs casting into the sun cascades.
         ImGui::Checkbox("Mesh shadow casters", &r.meshShadowCastersUi);
         ImGui::Checkbox("Contact shadows", &r.contactShadowsUi);
+        ImGui::Checkbox("SSAO", &r.ssaoUi);
+        if (r.ssaoUi) {
+            ImGui::SliderFloat("SSAO strength", &r.ssaoStrengthUi, 0.0f,
+                               2.0f);
+            ImGui::SliderFloat("SSAO radius (m)", &r.ssaoRadiusUi, 0.2f,
+                               2.0f);
+        }
         ImGui::SameLine();
         ImGui::Checkbox("Terrain light map", &r.terrainLightUi);
         ImGui::Checkbox("Key light shadow", &r.keyShadowUi); // interiors

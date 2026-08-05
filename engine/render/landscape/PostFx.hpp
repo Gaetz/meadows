@@ -123,6 +123,12 @@ public:
     // stays sharp (the froxel display-blur lesson).
     rhi::TextureHandle skyCloudsTexture() const { return skyCloudBlurTex; }
     rhi::TextureHandle contactTexture() const { return contactBlurTex; }
+    // Half-res SSAO (ssao.frag — the contact pattern's sibling): the
+    // tonemap taps the BLURRED target; clearSsao() = toggle off.
+    void renderSsao(rhi::CommandBuffer& cmd,
+                    rhi::BindGroupHandle frameBindGroup);
+    void clearSsao(rhi::CommandBuffer& cmd);
+    rhi::TextureHandle ssaoTexture() const { return ssaoBlurTex; }
     // The ping-pong side renderAutoExposure wrote LAST (the tonemap reads
     // it); the scene keeps one blit group per side.
     u32 exposureSide() const { return adaptSide; }
@@ -231,6 +237,13 @@ private:
     rhi::UniqueBindGroup contactGroup;
     rhi::UniqueTexture contactBlurTex;
     rhi::UniqueFramebuffer contactBlurFb;
+    rhi::UniqueTexture ssaoTex;
+    rhi::UniqueFramebuffer ssaoFb;
+    rhi::UniqueBindGroup ssaoGroup;
+    rhi::UniqueTexture ssaoBlurTex;
+    rhi::UniqueFramebuffer ssaoBlurFb;
+    rhi::UniqueBindGroup ssaoBlurGroup;
+    rhi::UniquePipeline ssaoPipeline;
     rhi::UniqueBindGroup contactBlurGroup; // samples contactTex
 
     // Auto-exposure targets (window-size independent).

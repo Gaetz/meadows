@@ -150,4 +150,5 @@ layout(std140, binding = 0) uniform FrameUbo {
     vec4 uGrassSpeciesShape[6];
     vec4 uGrassSpeciesBase[6];
     vec4 uGrassSpeciesTip[6];
+    vec4 uSsaoInfo;
 };

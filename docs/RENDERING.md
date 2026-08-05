@@ -168,7 +168,13 @@ default with lobe trees as A/B), `TreeGenerator` /
 grading, 512² cloud-map bake, cumulonimbus billboards), `ShadowMapper`
 (CSM), `WaterSystem` (sea plane, planar reflection, pool-depth bake),
 `PostFx` (bloom, god rays, 2D volumetric march, froxel fog, ground
-mist, contact shadows, auto-exposure, SSAO-slot), `MistMap` /
+mist, contact shadows, auto-exposure, SSAO — half-res Alchemy taps over
+the depth snapshot, tonemap multiplier like contact. LIGHTING CONTRACT:
+short radius only (~0.7 m, `uSsaoInfo`) — contact-scale crevices the RC
+GI probes cannot resolve; distance-faded by 140 m (far occlusion belongs
+to RC + mist); sky neutral; grass blades exempt via the scene alpha
+flag; sun-independent so interiors keep it. CSM/froxels untouched — the
+pass reads only the depth copy), `MistMap` /
 `NoiseVolume` (valley bake + shared Perlin-Worley volume — §3.5
 "Ground mist"), `RadianceCascades` (GI),
 `LightClusters` (clustered-forward culling), `ChunkOcclusion` (CPU
