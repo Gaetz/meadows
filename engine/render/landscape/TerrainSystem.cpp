@@ -26,26 +26,6 @@ i32 camChunk(f32 worldCoord) {
 
 } // namespace
 
-// Per-vertex material color — the base tint the splat tiles blend over:
-// sand at the shoreline, grass on plains, rock on
-// slopes, snow on high flats. Public: FarTerrain paints its coarse far
-// mesh with the SAME palette so the streaming-ring hand-off matches.
-Vec3 terrainColor(f32 height, const Vec3& normal, f32 seaLevel) {
-    constexpr Vec3 kSand { 0.76f, 0.70f, 0.50f };
-    constexpr Vec3 kGrass { 0.33f, 0.51f, 0.21f };
-    constexpr Vec3 kRock { 0.46f, 0.44f, 0.42f };
-    constexpr Vec3 kSnow { 0.93f, 0.95f, 0.97f };
-
-    const f32 slope = 1.0f - normal.y;
-    Vec3 color = glm::mix(
-        kSand, kGrass,
-        glm::smoothstep(seaLevel + 1.0f, seaLevel + 4.0f, height));
-    color = glm::mix(color, kRock, glm::smoothstep(0.18f, 0.35f, slope));
-    const f32 snowiness = glm::smoothstep(110.0f, 140.0f, height) *
-                          (1.0f - glm::smoothstep(0.25f, 0.45f, slope));
-    return glm::mix(color, kSnow, snowiness);
-}
-
 vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
                                       i32 cz, u32 lod) {
     const u32 quads = TerrainSystem::lodQuads(lod);
@@ -72,8 +52,7 @@ vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
                         z / TerrainSystem::kChunkSize },
                 // terrain.frag ignores a tint here (albedo comes from
                 // the splats); .r carries the baked rock-exposure mask
-                // instead — the cliff-material weight. FarTerrain keeps
-                // the terrainColor palette for its own far mesh.
+                // instead — the cliff-material weight.
                 .color = { terrain::rockExposureAt(params, x, z), 0.0f,
                            0.0f },
             });
@@ -253,14 +232,21 @@ void TerrainSystem::buildMaterialArrays(rhi::Device& device, bool useCooked) {
                                               tex->payload.data());
                 // The per-layer averages feed the blade root albedo
                 // (grassAlbedoBase) — the CPU cannot decode BC7.
-                for (u32 v = 0; v < kGrassVariantCount; ++v) {
-                    const u32 packed =
-                        tex->layerAverages[grassVariantLayer(v)];
-                    grassBases[v] = Vec3 {
+                const auto unpack = [](u32 packed) {
+                    return Vec3 {
                         static_cast<f32>(packed & 0xffu) / 255.0f,
                         static_cast<f32>((packed >> 8) & 0xffu) / 255.0f,
                         static_cast<f32>((packed >> 16) & 0xffu) / 255.0f
                     };
+                };
+                for (u32 v = 0; v < kGrassVariantCount; ++v) {
+                    grassBases[v] = unpack(
+                        tex->layerAverages[grassVariantLayer(v)]);
+                }
+                // Semantic means: the far-mesh paint (layerAlbedoBase).
+                for (u32 layer = 0; layer < SplatLayer_Count; ++layer) {
+                    layerBases[layer] =
+                        unpack(tex->layerAverages[layer]);
                 }
             }
         }
@@ -295,8 +281,8 @@ void TerrainSystem::buildMaterialArrays(rhi::Device& device, bool useCooked) {
         // Means of the generated grass-family tiles → blade root albedo.
         const size_t layerBytes =
             static_cast<size_t>(kSplatTileSize) * kSplatTileSize * 4;
-        for (u32 v = 0; v < kGrassVariantCount; ++v) {
-            const size_t at = grassVariantLayer(v) * layerBytes;
+        const auto tileMean = [&](u32 layer) {
+            const size_t at = layer * layerBytes;
             u64 sums[3] = { 0, 0, 0 };
             for (size_t i = 0; i < layerBytes; i += 4) {
                 sums[0] += splatPixels[at + i];
@@ -304,8 +290,13 @@ void TerrainSystem::buildMaterialArrays(rhi::Device& device, bool useCooked) {
                 sums[2] += splatPixels[at + i + 2];
             }
             const f32 inv = 1.0f / (255.0f * (layerBytes / 4));
-            grassBases[v] = Vec3 { sums[0] * inv, sums[1] * inv,
-                                   sums[2] * inv };
+            return Vec3 { sums[0] * inv, sums[1] * inv, sums[2] * inv };
+        };
+        for (u32 v = 0; v < kGrassVariantCount; ++v) {
+            grassBases[v] = tileMean(grassVariantLayer(v));
+        }
+        for (u32 layer = 0; layer < SplatLayer_Count; ++layer) {
+            layerBases[layer] = tileMean(layer);
         }
         splatTexture = { device, device.createTexture(
             { .width = kSplatTileSize,

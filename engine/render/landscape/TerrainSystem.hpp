@@ -9,6 +9,7 @@
 #include "engine/render/Frustum.hpp"
 #include "engine/assets/MeshData.hpp"
 #include "engine/render/landscape/ChunkStreamer.hpp"
+#include "engine/render/landscape/SplatTextures.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
@@ -113,6 +114,13 @@ public:
     // ground share ONE color source on BOTH material sets.
     Vec3 grassAlbedoBase(u32 variant) const {
         return grassBases[glm::min(variant, 3u)];
+    }
+    // Mean albedo of a SEMANTIC layer (display-space) — cooked: the
+    // .mtex per-layer averages; procedural: means of the generated
+    // tiles. FarTerrain paints its coarse vertices with these through
+    // the real weight rule, so the horizon matches the ground.
+    Vec3 layerAlbedoBase(u32 layer) const {
+        return layerBases[glm::min<u32>(layer, SplatLayer_Count - 1)];
     }
 
     // Streaming pump — main thread, once per frame, top of render: drains
@@ -348,6 +356,13 @@ private:
                                 Vec3 { 0.62f, 0.55f, 0.32f },
                                 Vec3 { 0.42f, 0.29f, 0.15f },
                                 Vec3 { 0.43f, 0.36f, 0.27f } };
+    // Semantic layer means (layerAlbedoBase above) — the far-mesh
+    // paint; defaults echo the old hand palette until the arrays load.
+    array<Vec3, SplatLayer_Count> layerBases {
+        Vec3 { 0.33f, 0.51f, 0.21f }, Vec3 { 0.46f, 0.44f, 0.42f },
+        Vec3 { 0.93f, 0.95f, 0.97f }, Vec3 { 0.76f, 0.70f, 0.50f },
+        Vec3 { 0.40f, 0.38f, 0.36f }
+    };
 };
 
 // Pure CPU chunk meshing, runs on worker threads. Vertices sample
@@ -359,7 +374,5 @@ vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
 vector<u32> buildChunkIndices(u32 lod);
 
 // The shared vertex-tint palette (sand/grass/rock/snow) — FarTerrain
-// paints with it too, so the streaming-ring hand-off matches.
-Vec3 terrainColor(f32 height, const Vec3& normal, f32 seaLevel);
 
 } // namespace render

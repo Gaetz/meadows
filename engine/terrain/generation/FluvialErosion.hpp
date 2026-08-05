@@ -14,10 +14,11 @@ namespace render::terraingen {
 
 struct FluvialParams {
     // Dissection budget: 100 carved so deep the massifs lost ~27% of
-    // their mean elevation (median -30%) and reads as "everything sits
-    // low"; 60 keeps the ravined flanks while giving back walkable high
-    // ground (measured table: tests 'erosion strength diagnostic').
-    i32 iterations { 60 };
+    // their mean elevation (median -30%) and read as "everything sits
+    // low"; 80 is the dev-picked balance — deep valley systems kept,
+    // some walkable high ground back (measured table: tests 'erosion
+    // strength diagnostic', journal docs/TERRAIN-GEN.md).
+    i32 iterations { 80 };
     f32 dt { 1.0f };
     // Stream-power erodibility: dh/dt = -k * A^m * slope, with A in m².
     // Sets the equilibrium slope S = upliftRate / (k * A^m): at A = 1e4 m²

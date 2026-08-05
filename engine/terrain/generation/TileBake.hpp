@@ -129,7 +129,7 @@ TileBakeResult bakeTile(const TileBakeParams& params, i32 tx, i32 tz);
 //     included; a stage-1 bump implies bumping this one too).
 // Miss either and stale caches keep the old landscape.
 constexpr u32 kStage1Version = 30;
-constexpr u32 kTileBakeVersion = 34;
+constexpr u32 kTileBakeVersion = 35;
 
 // Wider flood window for CANONICAL BASIN resolution: a lake touching
 // the hydrology-window rim is re-flooded on tile +/- this margin so its

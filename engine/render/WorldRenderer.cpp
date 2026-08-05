@@ -1192,7 +1192,12 @@ void WorldRenderer::render(engine::FrameContext& frame,
                               cfg.vegetation
                                   ? vegetation.treeSilhouette()
                                   : render::VegetationSystem::
-                                        TreeSilhouette {});
+                                        TreeSilhouette {},
+                              { terrain.layerAlbedoBase(0),
+                                terrain.layerAlbedoBase(1),
+                                terrain.layerAlbedoBase(2),
+                                terrain.layerAlbedoBase(3),
+                                terrain.layerAlbedoBase(4) });
         }
         // Height-horizon occlusion: rebuilt on a worker
         // whenever the camera strays; stays valid (conservative) meanwhile.

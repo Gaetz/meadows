@@ -474,6 +474,20 @@ des tuiles, différée) :
   aux sables ordinaires, et POM/SSDM suivent (le héros du relief : les
   cailloux de rocks_ground_06 ont une vraie height map).
 
+**FarTerrain accordé au sol (2026-08-05, retour dev « les paysages
+distants doivent avoir la vertex color du sol, et plus loin ») :** la
+palette hardcodée du lointain (`terrainColor`, un dégradé altitude/pente
+qui ne connaissait ni les splats ni la règle des poids) est SUPPRIMÉE.
+Les sommets du mesh distant passent par la VRAIE règle
+(`materialWeightsAt`, miroir CPU du shader) pondérant les **albédos
+moyens des 5 couches sémantiques** — `TerrainSystem::layerAlbedoBase`,
+rempli depuis les `layerAverages` du `.mtex` cooké (ou la moyenne des
+tuiles procédurales en A/B) : l'horizon change de couleur avec le set de
+textures actif, et les tabliers de sable/neige/roche du proche se
+prolongent au loin. Portée étendue 12 → 18 km (grille 192→256, cellules
+~70 m inchangées) — `reach()` pousse la fermeture d'horizon du fog
+d'autant.
+
 ## À valider par le dev
 
 Prairie (mélange d'espèces + clumps + zones qui changent la texture ET la
