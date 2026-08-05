@@ -411,8 +411,44 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
             const auto norPath =
                 path->parent_path() / "textures" /
                 (path->stem().string() + "_nor_gl_1k.jpg");
+            const auto dispPath =
+                path->parent_path() / "textures" /
+                (path->stem().string() + "_disp_1k.jpg");
             if (auto image = assets::loadImageFile(texPath)) {
                 auto normal = assets::loadImageFile(norPath);
+                // Displacement into the normal's alpha (min-max
+                // normalized) — the SSDM relief of the prop; scans
+                // without a disp map keep alpha 255 (the shader's
+                // "no height" guard).
+                if (normal && std::filesystem::exists(dispPath)) {
+                    if (const auto disp =
+                            assets::loadImageFile(dispPath);
+                        disp && disp->width == normal->width &&
+                        disp->height == normal->height) {
+                        const size_t pixels =
+                            static_cast<size_t>(normal->width) *
+                            normal->height;
+                        u8 lo = 255;
+                        u8 hi = 0;
+                        for (size_t p = 0; p < pixels; ++p) {
+                            const u8 v = disp->pixels[p * 4 + 0];
+                            lo = std::min(lo, v);
+                            hi = std::max(hi, v);
+                        }
+                        const f32 scale =
+                            hi > lo ? 255.0f /
+                                          static_cast<f32>(hi - lo)
+                                    : 1.0f;
+                        for (size_t p = 0; p < pixels; ++p) {
+                            normal->pixels[p * 4 + 3] =
+                                static_cast<u8>(glm::clamp(
+                                    static_cast<f32>(
+                                        disp->pixels[p * 4 + 0] - lo) *
+                                        scale,
+                                    0.0f, 254.0f));
+                        }
+                    }
+                }
                 renderer.overrideVegetationAlbedo(
                     device, scan.variant, image->width, image->height,
                     std::move(image->pixels),

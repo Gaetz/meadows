@@ -60,6 +60,12 @@ void main() {
         baseColor = mix(vColor, season.rgb, uSeasonInfo.x * season.a);
     }
 
+    // SSDM relief packed in alpha. NEUTRAL is 0.745 — the decode
+    // centers at mid height ((a-0.5)*2 - 0.5): packing "flat" at 0.5
+    // decoded as a FULL PIT and every neutral prop dug itself in by
+    // amp/2 (the "ça rentre" bug). Bark and disp-mapped props write
+    // their real height.
+    float reliefA = 0.745;
     // Textured prop (docs/GRASS-REDO.md palier 2): group 1 holds the
     // variant's albedo instead of the leaf atlas; alpha cutout at 0.5
     // (opaque scans never discard — their alpha is solid 1). The normal
@@ -72,7 +78,13 @@ void main() {
             discard;
         }
         baseColor = texel.rgb * vColor;
-        vec3 nTex = texture(uPropNormal, vPropUv).xyz * 2.0 - 1.0;
+        vec4 texN = texture(uPropNormal, vPropUv);
+        // Scanned props with a merged displacement carry their SSDM
+        // height in the normal's alpha (255 = none — the guard).
+        if (texN.a < 0.995) {
+            reliefA = 0.5 + texN.a * 0.49;
+        }
+        vec3 nTex = texN.xyz * 2.0 - 1.0;
         vec3 dp1 = dFdx(vWorldPos);
         vec3 dp2 = dFdy(vWorldPos);
         vec2 duv1 = dFdx(vPropUv);
@@ -86,9 +98,6 @@ void main() {
         shadeN = normalize(mat3(T * invmax, B * invmax, shadeN) * nTex);
     }
 
-    // SSDM relief packed in alpha (0.5 = flat; bark writes its real
-    // height below). Cards/props stay flat in v1.
-    float reliefA = 0.5;
     // Bark on flagged wood (procedural trunks/branches): triplanar over
     // the object-space position — no mesh uvs, no seams on bent
     // branches. The RELIEF lives in the material (low-poly trunk):
