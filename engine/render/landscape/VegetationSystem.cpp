@@ -572,10 +572,10 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     shaders.load(kTreeShader, { { "FrameUbo", 0 } },
                  { { "uLeafMask", 0 },
                    { "uShadowMap", 1 },
-                   { "uPropNormal", 3 },
+                   { "uPropNormal", 12 },
                    { "uTerrainShade0", 4 },
-                   { "uBark", 7 },
-                   { "uBarkNrm", 8 } });
+                   { "uBark", 13 },
+                   { "uBarkNrm", 14 } });
     buildPipeline(device, shaders);
     shaders.load(kPropCasterShader, { { "FrameUbo", 0 }, { "ShadowUbo", 1 } },
                  { { "uLeafMask", 0 } });
@@ -656,13 +656,13 @@ void VegetationSystem::rebuildLeafMask(rhi::Device& device) {
                        // Same layout as the textured-prop groups: a flat
                        // normal fills the map slot (cards don't use it),
                        // and the bark slot (inert without the flag).
-                       { .binding = 3,
+                       { .binding = 12,
                          .texture = flatNormalHandle(device),
                          .sampler = leafMaskSampler.get() },
-                       { .binding = 7,
+                       { .binding = 13,
                          .texture = flatNormalHandle(device),
                          .sampler = leafMaskSampler.get() },
-                       { .binding = 8,
+                       { .binding = 14,
                          .texture = flatNormalHandle(device),
                          .sampler = leafMaskSampler.get() } } }) };
     // Tree bark groups reference the leaf mask just recreated.
@@ -962,13 +962,13 @@ void VegetationSystem::rebuildTreeBarkGroups(rhi::Device& device) {
             { .entries = { { .binding = 0,
                              .texture = leafMask.get(),
                              .sampler = leafMaskSampler.get() },
-                           { .binding = 3,
+                           { .binding = 12,
                              .texture = flatNormalHandle(device),
                              .sampler = leafMaskSampler.get() },
-                           { .binding = 7,
+                           { .binding = 13,
                              .texture = bark,
                              .sampler = barkSampler.get() },
-                           { .binding = 8,
+                           { .binding = 14,
                              .texture = nrm,
                              .sampler = barkSampler.get() } } }) };
     }
@@ -1027,13 +1027,13 @@ void VegetationSystem::uploadVariantAlbedo(rhi::Device& device,
         { .entries = { { .binding = 0,
                          .texture = mesh.albedo.get(),
                          .sampler = leafMaskSampler.get() },
-                       { .binding = 3,
+                       { .binding = 12,
                          .texture = normalTex,
                          .sampler = leafMaskSampler.get() },
-                       { .binding = 7,
+                       { .binding = 13,
                          .texture = mesh.albedo.get(),
                          .sampler = leafMaskSampler.get() },
-                       { .binding = 8,
+                       { .binding = 14,
                          .texture = normalTex,
                          .sampler = leafMaskSampler.get() } } }) };
 }

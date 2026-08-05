@@ -4,14 +4,19 @@
 
 layout(binding = 0) uniform sampler2D uLeafMask;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
-// Textured-prop normal map (flat 1x1 for untextured variants).
-layout(binding = 3) uniform sampler2D uPropNormal;
+// Vegetation-only samplers live on slots 12-14: the main pass keeps
+// PASS-LEVEL groups resident (2 = cloud map, 4/5 = shade maps, 6 = key
+// shadow, 7 = terrain light map, 11 = GI) — a veg group on those slots
+// either reads them as its own texture (bark showed the light map's
+// sky-aperture whites, re-baked with the sun: the "clouds on trunks")
+// or stomps them for every later draw in the pass.
+layout(binding = 12) uniform sampler2D uPropNormal;
 // Per-tree-slot bark (oak/spruce — the tree builder's pick), sampled
 // triplanarly on flagged wood. uSplatVarietyInfo.w gates it (0 until
 // the scene loaded the textures). uBarkNrm packs nor_gl in RGB and the
 // displacement in A — the LOW-POLY trunk carries its relief here.
-layout(binding = 7) uniform sampler2D uBark;
-layout(binding = 8) uniform sampler2D uBarkNrm;
+layout(binding = 13) uniform sampler2D uBark;
+layout(binding = 14) uniform sampler2D uBarkNrm;
 // Region shading T0 (macro tint) — the ground-anchor blend below.
 layout(binding = 4) uniform sampler2D uTerrainShade0;
 #include "shadow.glsl"
