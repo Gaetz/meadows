@@ -17,6 +17,7 @@ add_library(meadows-runtime STATIC
     TerrainBakeStreamer.cpp
     TerrainCollision.cpp
     scenes/TerrainGenTool.cpp
+    RendererAssets.cpp
     VegetationCollision.cpp
     WeaponMeshes.cpp
 )

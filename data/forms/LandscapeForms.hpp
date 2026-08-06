@@ -454,12 +454,12 @@ struct ColonizedTreeTuningForm : Form {
     // tube faces, and the ring-count HALVING floor for thin branches
     // (fraction of tubeSides; 1 = constant count; pick an even
     // tubeSides for clean halvings).
-    i32 tubeSides { 5 };
+    i32 tubeSides { 12 };
     f32 curvePreserve { 0.0f };
     i32 curveSubdiv { 0 };
     f32 pathJitter { 0.0f };
     f32 ringIrregularity { 0.0f };
-    f32 sideMinFraction { 1.0f };
+    f32 sideMinFraction { 0.5f };
     f32 segment { 0.28f };
     f32 killDistance { 0.70f };
     i32 attractorCount { 350 };
