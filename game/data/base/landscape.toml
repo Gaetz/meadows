@@ -542,3 +542,8 @@ leafSizeMin = 0.1
 leafSizeMax = 0.25
 leafSolidStart = 4.0
 leafSolidEnd = 7.0
+# Low-poly trunk like the conifer record: 12-sided ring at full detail
+# (halving on thinner chains), the bark relief lives in the material —
+# same triplanar tiling, so oak and spruce bark share proportions.
+tubeSides = 12
+sideMinFraction = 0.5
