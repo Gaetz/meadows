@@ -233,6 +233,7 @@ loader glTF statique (cgltf), TomlWriter, RNG seedé, VFS d'assets par GUID
 | ✅ **Doc utilisateur/moddeur `userdoc/`** | P0 (à maintenir) | FAITE 2026-07-05 : hub + pages thématiques liées. **Chaque vertical livré met à jour sa page** (chantier 1 → world-and-levels : props 3D + personnages). |
 | ✅ **Index secondaires FormDatabase** | P1 | **FAITS (session 2026-07-13)** — décision 2026-07-05 tenue : PAS de SQL, la FormDatabase résolue EST la base. Index par typeId (toute la chaîne isA bucketée au add) et par `parent` réfléchi, ordre des handles préservé ; `forEach`/`childrenOf` basculés dessus, API inchangée (AnimBridge/quêtes/schedules en profitent gratuitement). Le resolver matérialise les patchs AVANT le add → le parent indexé est final (reparentage §5 couvert, testé). |
 | **Crash handling** | P2 | Minidumps + log de la pile de plugins active. |
+| **Sauvegardes de records ÉPARS** | P1 | Les sauvegardes outillées (render-tuning, tree-types) capturent les records EN ENTIER : tout champ ajouté plus tard reste figé à sa valeur du moment de la capture (piège vécu 2026-08-06 : le tuning sauvé re-forçait `tubeSides = 5` par-dessus la base, §5 dernier-écrivain). Fix : n'écrire que les champs qui DIFFÈRENT de la valeur résolue sans cette couche (diff par réflexion — le TomlWriter et la réflexion savent déjà tout faire). |
 
 ## K. Sauvegarde & streaming (ex-Phase 10) — ✅ FAIT (chantier 5, 2026-07-06)
 

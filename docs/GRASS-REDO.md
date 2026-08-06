@@ -504,3 +504,30 @@ decals splinés (chemins), hex-tiling, virtual texturing, `vegetationSet`
 par biome, promotion des espèces en Form, collision fine des gros
 cailloux (seuil 0.35 actuel), alignement pente des props couchés (pitch
 par instance — extension du format d'instance veg).
+
+## Audit perf GPU (2026-08-06, M1 Air, Retina 2880×1800, forêt dense au spawn)
+
+Mesuré au one-shot `gpu budget` (frame 2000, moyenne 120 f), config
+par défaut de la branche (retour dev : 24 fps avant le chantier, ~11
+après) :
+
+| Poste | avg ms | part | A/B mesuré |
+|---|---|---|---|
+| **frame** | **106.9** | 100 % | 90.0 sans SSDM/SSAO |
+| mainPass | 57.5 | 54 % | identique dans les deux configs |
+| shadows (CSM) | 18.0 | 17 % | |
+| **ssdm** | **17.0** | 16 % | = tout le delta ON/OFF |
+| GI (rcInject+Build+Merge) | 10.9 | 10 % | |
+| reflection (planaire) | 7.2 | 7 % | |
+| ssao | 0.09 | ~0 | **gratuit** (half-res) |
+| divers (bloom/volumetric/mist/composite…) | ~5 | 5 % | |
+
+Lecture : la crainte « textures 512/1024 qui tilent = cher » est
+infondée — la bande passante texture n'est pas le poste. Les coûts sont
+(1) le **travail fragment du main pass** (hex 3 taps × familles ×
+albédo+normale, POM + self-shadow, variety, et le fill/discard de la
+végétation texturée plants+mass+cards sur TBDR), (2) le **SSDM plein
+écran Retina** (chaîne flow + pyramide + resolve DFS), (3) les ombres,
+(4) la GI, (5) le miroir planaire. Pistes priorisées : voir la table de
+la session (résolution interne, collapse hex plus tôt, SSDM half-res ou
+off par défaut, jumeau ultra pour les pebbles, cadence GI/cascades).
