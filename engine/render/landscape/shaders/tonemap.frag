@@ -15,6 +15,35 @@ layout(binding = 9) uniform sampler2D uSsao;     // white = open
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
 
+// CAS (contrast-adaptive sharpening, AMD) on the scene sample — active
+// when the internal render scale sits under 1 (uSeasonInfo.z carries
+// the strength): the bilinear upscale to the native backbuffer reads
+// soft without it. HDR is folded through x/(1+x) so bright peaks never
+// ring, and the alpha (relief/SSAO flag) passes through untouched.
+vec3 casFold(vec3 x) { return x / (1.0 + x); }
+vec3 casUnfold(vec3 x) { return x / max(1.0 - x, 1.0e-3); }
+vec4 sceneSample(vec2 uv) {
+    vec4 center = texture(uSceneColor, uv);
+    float strength = uSeasonInfo.z;
+    if (strength <= 0.001) {
+        return center;
+    }
+    vec2 texel = 1.0 / vec2(textureSize(uSceneColor, 0));
+    vec3 e = casFold(center.rgb);
+    vec3 n = casFold(texture(uSceneColor, uv + vec2(0.0, -texel.y)).rgb);
+    vec3 s = casFold(texture(uSceneColor, uv + vec2(0.0, texel.y)).rgb);
+    vec3 w = casFold(texture(uSceneColor, uv + vec2(-texel.x, 0.0)).rgb);
+    vec3 r = casFold(texture(uSceneColor, uv + vec2(texel.x, 0.0)).rgb);
+    vec3 mn = min(e, min(min(n, s), min(w, r)));
+    vec3 mx = max(e, max(max(n, s), max(w, r)));
+    vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, vec3(1.0e-4)),
+                          0.0, 1.0));
+    vec3 wgt = amp * mix(-0.125, -0.2, strength);
+    vec3 sharp = (e + (n + s + w + r) * wgt) /
+                 max(1.0 + 4.0 * wgt, vec3(1.0e-3));
+    return vec4(casUnfold(clamp(sharp, 0.0, 0.999)), center.a);
+}
+
 // Depth-weighted 4-tap (joint bilateral): the ½-res volumetric targets
 // are fetched with the rotated-grid offsets, but each tap is weighted by
 // how close its FULL-RES depth sits to the center pixel's — silhouette
@@ -66,7 +95,7 @@ void main() {
         return;
     }
 
-    vec4 scene = texture(uSceneColor, vUv);
+    vec4 scene = sceneSample(vUv);
     vec3 hdr = scene.rgb;
     // SSAO — contact-scale crevice darkening (ssao.frag documents the
     // contract: short radius, distance-faded, the RC GI owns macro

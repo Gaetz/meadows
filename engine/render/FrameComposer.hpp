@@ -72,6 +72,9 @@ struct FrameComposerInputs {
     // leaf-mask atlas slot through `leafSeason` (rgb tint, a =
     // seasonality — VegetationSystem::leafSeason()).
     f32 seasonAutumn { 0.0f };
+    // CAS sharpening strength at the tonemap (0 = off) — derived from
+    // the internal render scale so sub-native upscales stay crisp.
+    f32 casSharpenStrength { 0.0f };
     f32 seasonLeafFall { 0.0f };
     array<Vec4, 8> leafSeason {};
 

@@ -1453,6 +1453,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                 : 0.0f,
         .treeFadeEnd = vegetation.treeFadeEnd(),
         .seasonAutumn = seasonAutumnUi,
+        .casSharpenStrength =
+            glm::clamp((1.0f - renderScaleUi) * 2.2f, 0.0f, 1.0f),
         .seasonLeafFall = seasonLeafFallUi,
         .leafSeason = vegetation.leafSeason(),
         .debugBuffer = debugBufferUi,
