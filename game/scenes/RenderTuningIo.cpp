@@ -35,6 +35,7 @@ void RenderTuningIo::applyTuning(
         glm::clamp(tuning.terrainViewRadius, 8,
                    render::TerrainSystem::kMaxViewRadius);
     r.farTerrainUi = tuning.farTerrain;
+    r.renderScaleUi = glm::clamp(tuning.renderScale, 0.5f, 1.0f);
     r.exposureUi = tuning.exposure;
     // (tuning.ssaoStrength is unused — screen-space AO removed.)
     r.gradeVibranceUi = tuning.gradeVibrance;
@@ -230,6 +231,7 @@ void RenderTuningIo::applyRcTuning(render::WorldRenderer& r,
 
 void RenderTuningIo::captureTuning(const render::WorldRenderer& r,
                                    data::LandscapeTuningForm& out) {
+    out.renderScale = r.renderScaleUi;
     out.exposure = r.exposureUi;
     out.gradeVibrance = r.gradeVibranceUi;
     out.gradeSplitTone = r.gradeSplitToneUi;

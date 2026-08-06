@@ -57,7 +57,8 @@ struct FrameComposerInputs {
     bool barkEnabled { false }; // tree bark textures resident
     f32 ssaoStrength { 0.85f }; // ssao.frag lanes
     f32 ssaoRadius { 0.7f };    // world radius (m)
-    f32 ssdmAmplitude { 0.0f }; // ssdm.frag warp amplitude (m, 0 = off)
+    f32 ssdmAmplitude { 0.0f };    // ssdm warp amplitude (m, 0 = off)
+    f32 shadowFarUvScale { 1.0f }; // far-cascade viewport scale (shadow.glsl)
     bool reflectionsActive { false };
     // Horizon-closure distance (m) for applyFog — the far-terrain
     // reach when it stands in, else the streaming ring (0 = off).

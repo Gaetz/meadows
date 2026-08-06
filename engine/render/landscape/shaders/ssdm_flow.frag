@@ -14,9 +14,11 @@ layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
 
 void main() {
-    vec2 resolution = vec2(textureSize(uSceneDepth, 0));
-    vec2 texel = 1.0 / resolution;
+    // Gradients tap the FULL-res depth; the delta ships in UV units so
+    // the chain works unchanged at any resolution (the half-res mode) —
+    // consumers convert with their own textureSize(uFlow).
+    vec2 texel = 1.0 / vec2(textureSize(uSceneDepth, 0));
     float dispDepth;
     vec2 delta = ssdmDelta(vUv, texel, dispDepth);
-    fragColor = vec4(delta * resolution, dispDepth, 0.0);
+    fragColor = vec4(delta, dispDepth, 0.0);
 }

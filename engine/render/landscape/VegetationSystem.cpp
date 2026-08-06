@@ -228,10 +228,10 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             if (rng.next() >= chance) {
                 continue;
             }
-            place(VegetationSystem::kFirstRock,
-                  VegetationSystem::kRockVariants, rng, x, h - 0.02f, z,
-                  0.06f, 0.25f, 90.0f, // near-field clutter reach
-                  true);               // photogrammetry albedo, rigid
+            place(VegetationSystem::kFirstPebble,
+                  VegetationSystem::kPebbleVariants, rng, x, h - 0.02f,
+                  z, 0.06f, 0.25f, 90.0f, // near-field clutter reach
+                  true);                  // decimated scan, rigid
         }
     }
 

@@ -45,6 +45,15 @@ void hexGrass(vec2 p, out ivec2 v0, out ivec2 v1, out ivec2 v2,
         w = vec3(f.x + f.y - 1.0, 1.0 - f.x, 1.0 - f.y);
     }
     w = pow(w, vec3(kHexSharpness));
+    // 2-tap variant (perf audit 2026-08-06): the smallest barycentric
+    // weight is dropped and the pair renormalized — one fewer array
+    // fetch per family, the pow-sharpened seams intact. The CPU mirror
+    // (grassZoneAt) only reads the DOMINANT vertex: unaffected.
+    float wMin = min(w.x, min(w.y, w.z));
+    vec3 keep = step(wMin * 1.0001 + 1.0e-8, w);
+    if (keep.x + keep.y + keep.z >= 1.5) {
+        w *= keep; // ties keep all three (degenerate centers)
+    }
     w /= (w.x + w.y + w.z);
 }
 

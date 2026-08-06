@@ -522,6 +522,18 @@ après) :
 | ssao | 0.09 | ~0 | **gratuit** (half-res) |
 | divers (bloom/volumetric/mist/composite…) | ~5 | 5 % | |
 
+**Passe d'optimisation (même session, mesurée au même spot)** — frame
+**106.9 → 78.4 ms** (−27 %) avec : SSDM en **half-res** par défaut
+(chaîne + resolve à l'échelle ½ + upsample bord-conscient — 17.0 →
+2.4 ms ; 3 modes au panel Off/Half/Full), **échelle de rendu interne
+0.8** (knob `renderScale`, UI native), hex-tiling **2 taps** + collapse
+25-40 m, pebbles sur leurs **slots ~60 tris** (fini les scans héros
+centimétriques), réflexion gatée « mer lisible < 600 m », et ombres :
+**portée ×2** (splits 90/320/1600) payée par les cascades lointaines en
+**viewport ¼** (1024 effectif dans l'array 2048, uv scale côté
+récepteur) — shadows 18.0 → 11.7 ms. Reste dominant : mainPass 51.6 ms,
+largement vertex/overdraw végétation (prochain levier).
+
 Lecture : la crainte « textures 512/1024 qui tilent = cher » est
 infondée — la bande passante texture n'est pas le poste. Les coûts sont
 (1) le **travail fragment du main pass** (hex 3 taps × familles ×

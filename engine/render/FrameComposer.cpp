@@ -115,8 +115,10 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     base.splatVarietyInfo = { in.splatVariety, in.pomShadowStrength,
                               in.pomDepth,
                               in.barkEnabled ? 1.0f : 0.0f };
+    // .w = the far-cascade viewport scale (shadow.glsl samples the
+    // lower-left quarter of far layers — ShadowMapper contract).
     base.ssaoInfo = { in.ssaoStrength, in.ssaoRadius, in.ssdmAmplitude,
-                      0.0f };
+                      in.shadowFarUvScale };
     for (u32 i = 0; i < render::kGrassSpeciesCount; ++i) {
         base.grassSpeciesShape[i] = { kGrassSpeciesShape[i][0],
                                       kGrassSpeciesShape[i][1],

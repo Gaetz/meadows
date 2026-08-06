@@ -281,6 +281,19 @@ void WorldRenderer::create(rhi::Device& device, core::JobSystem& jobs,
                       { { "uFlow", 0 } }, "fullscreen");
         shaders->load("ssdm_bounds_down", { { "FrameUbo", 0 } },
                       { { "uPrev", 0 } }, "fullscreen");
+        shaders->load("ssdm_resolve_half", { { "FrameUbo", 0 } },
+                      { { "uSceneColor", 0 },
+                        { "uSceneDepth", 1 },
+                        { "uFlow", 2 },
+                        { "uBounds0", 3 },
+                        { "uBounds1", 4 },
+                        { "uBounds2", 5 },
+                        { "uBounds3", 6 },
+                        { "uBounds4", 7 } },
+                      "fullscreen");
+        shaders->load("ssdm_upsample", { { "FrameUbo", 0 } },
+                      { { "uHalf", 0 }, { "uSceneColor", 1 } },
+                      "fullscreen");
         shaders->load("ssdm_resolve", { { "FrameUbo", 0 } },
                       { { "uSceneColor", 0 },
                         { "uSceneDepth", 1 },
@@ -373,9 +386,11 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                                            u32 height) {
     if (offscreenFb.id() != 0 && offscreenWidth == width &&
         offscreenHeight == height &&
-        appliedReflectionScale == reflectionScaleUi) {
+        appliedReflectionScale == reflectionScaleUi &&
+        appliedSsdmMode == ssdmModeUi) {
         return;
     }
+    appliedSsdmMode = ssdmModeUi;
     destroyOffscreenTarget(device);
     // HDR scene target: the sky/sun palette is linear HDR (sun > 1); the
     // tonemap pass compresses to display range.
@@ -473,10 +488,18 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
         }
         waterSceneBindGroup = { device, device.createBindGroup(desc) };
     }
-    // SSDM chain targets: full-res flow + the halving bounds pyramid.
+    // SSDM chain targets: flow + the halving bounds pyramid, at the
+    // mode's resolution (full / half of the scene target / a token 4x4
+    // when off — the memory is not free at Retina sizes).
+    const u32 chainW = ssdmModeUi == 2   ? width
+                       : ssdmModeUi == 1 ? glm::max(width / 2, 8u)
+                                         : 4u;
+    const u32 chainH = ssdmModeUi == 2   ? height
+                       : ssdmModeUi == 1 ? glm::max(height / 2, 8u)
+                                         : 4u;
     ssdmFlowTex = { device, device.createTexture(
-        { .width = width,
-          .height = height,
+        { .width = chainW,
+          .height = chainH,
           .format = rhi::TextureFormat::RGBA16F,
           .filter = rhi::FilterMode::Nearest,
           .usage = rhi::TextureUsage_Sampled |
@@ -491,8 +514,8 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                        { .binding = 1,
                          .texture = sceneDepthCopy,
                          .sampler = blitSampler } } }) };
-    u32 levelW = width;
-    u32 levelH = height;
+    u32 levelW = chainW;
+    u32 levelH = chainH;
     for (u32 i = 0; i < kSsdmLevels; ++i) {
         ssdmBoundsTex[i] = { device, device.createTexture(
             { .width = levelW,
@@ -539,6 +562,23 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
                        { .binding = 7,
                          .texture = ssdmBoundsTex[4].get(),
                          .sampler = blitSampler } } }) };
+    ssdmHalfTex = { device, device.createTexture(
+        { .width = chainW,
+          .height = chainH,
+          .format = rhi::TextureFormat::RGBA16F,
+          .filter = rhi::FilterMode::Linear,
+          .usage = rhi::TextureUsage_Sampled |
+                   rhi::TextureUsage_RenderAttachment },
+        nullptr) };
+    ssdmHalfFb = { device, device.createFramebuffer(
+        { .colorAttachments = { { .texture = ssdmHalfTex.get() } } }) };
+    ssdmUpsampleGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = ssdmHalfTex.get(),
+                         .sampler = blitSampler },
+                       { .binding = 1,
+                         .texture = sceneColorCopy,
+                         .sampler = blitSampler } } }) };
     if (shaders) {
         const auto pipe = [&](rhi::UniquePipeline& p, const char* name) {
             p = { device,
@@ -550,6 +590,8 @@ void WorldRenderer::ensureOffscreenTarget(rhi::Device& device, u32 width,
         pipe(ssdmBounds0Pipeline, "ssdm_bounds0");
         pipe(ssdmDownPipeline, "ssdm_bounds_down");
         pipe(ssdmResolvePipeline, "ssdm_resolve");
+        pipe(ssdmResolveHalfPipeline, "ssdm_resolve_half");
+        pipe(ssdmUpsamplePipeline, "ssdm_upsample");
     }
     // Tonemap inputs: scene + bloom + god rays (black 1x1 fallbacks are not
     // needed on the 4.6 path — postFx is always ready when we get here).
@@ -1328,6 +1370,16 @@ void WorldRenderer::render(engine::FrameContext& frame,
             if (aabb.lo.y >= sea) {
                 continue; // fully above the water table
             }
+            // Beyond ~600 m the mirror sits deep in the fog (fogStart
+            // 450): not worth a full scene re-render (perf audit
+            // 2026-08-06 — 7 ms while no readable water was in sight).
+            const Vec2 toChunk {
+                (aabb.lo.x + aabb.hi.x) * 0.5f - camera.position.x,
+                (aabb.lo.z + aabb.hi.z) * 0.5f - camera.position.z
+            };
+            if (glm::dot(toChunk, toChunk) > 600.0f * 600.0f) {
+                continue;
+            }
             // Test the chunk's water RECTANGLE (the sea plane spans it).
             if (viewFrustum.intersectsAabb(
                     { aabb.lo.x, sea - 1.0f, aabb.lo.z },
@@ -1354,8 +1406,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
     const ComposedFrame composed = composeFrameUniforms({
         .viewProj = viewProj,
         .cameraPosition = camera.position,
-        .width = frame.width,
-        .height = frame.height,
+        .width = offscreenWidth != 0 ? offscreenWidth : frame.width,
+        .height = offscreenHeight != 0 ? offscreenHeight : frame.height,
         .dt = frame.dt,
         .timeSeconds = view.timeSeconds,
         .sky = skyState,
@@ -1382,7 +1434,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .barkEnabled = vegetation.barkLoaded(),
         .ssaoStrength = ssaoStrengthUi,
         .ssaoRadius = ssaoRadiusUi,
-        .ssdmAmplitude = ssdmUi ? ssdmAmpUi : 0.0f,
+        .ssdmAmplitude = ssdmModeUi != 0 ? ssdmAmpUi : 0.0f,
+        .shadowFarUvScale = render::ShadowMapper::kFarCascadeScale,
         .reflectionsActive = reflectionsActive,
         // Horizon closure: at the far mesh's reach when it stands in,
         // else at the streaming ring. z of the same uniform carries the
@@ -1740,9 +1793,18 @@ void WorldRenderer::render(engine::FrameContext& frame,
                 { .framebuffer = shadows.framebuffer(i),
                   .loadOp = rhi::LoadOp::DontCare,
                   .depthLoadOp = rhi::LoadOp::Clear });
+            // Far cascades render into a quarter viewport (the 1024
+            // that pays for the doubled reach); the last one also
+            // extends its caster ring to its 1600 m split.
+            const u32 effRes = shadows.effectiveResolution(i);
+            frame.cmd.setViewport(0, 0, effRes, effRes);
+            frame.cmd.setScissor(0, 0, effRes, effRes);
+            const i32 casterChunks =
+                i + 1 == render::ShadowMapper::kCascadeCount ? 26 : 13;
             if (cfg.terrain) {
                 terrain.drawDepth(frame.cmd, shadows.casterBindGroup(i),
-                                  camera.position, 13, &cascadeFrustum);
+                                  camera.position, casterChunks,
+                                  &cascadeFrustum);
             }
             // Same 13-chunk cap: the last cascade ends at 800 m (the
             // ultra tree ring). Far cascades cast with the solid shadow
@@ -1750,7 +1812,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
             if (cfg.vegetation) {
                 vegetation.drawDepth(frame.cmd, frameBindGroup,
                                      shadows.casterBindGroup(i),
-                                     camera.position, 13, &cascadeFrustum,
+                                     camera.position, casterChunks,
+                                     &cascadeFrustum,
                                      /*ultraDetail=*/i > 0);
             }
             // Scene meshes + NPCs join the casters (A/B toggle).
@@ -1783,7 +1846,17 @@ void WorldRenderer::render(engine::FrameContext& frame,
 
     const bool useOffscreen = frame.device.caps().offscreenTargets;
     if (useOffscreen) {
-        ensureOffscreenTarget(frame.device, frame.width, frame.height);
+        // Internal 3D resolution (renderScaleUi): the scene renders into
+        // a scaled offscreen target; the tonemap composite upscales to
+        // the native backbuffer where the UI stays crisp.
+        const u32 sceneW = glm::max(
+            8u, static_cast<u32>(std::lround(static_cast<f64>(frame.width) *
+                                             renderScaleUi)));
+        const u32 sceneH = glm::max(
+            8u,
+            static_cast<u32>(std::lround(static_cast<f64>(frame.height) *
+                                         renderScaleUi)));
+        ensureOffscreenTarget(frame.device, sceneW, sceneH);
         if (shaders->generation(kTonemapShader) != blitShaderGeneration) {
             rebuildBlitPipeline(frame.device);
         }
@@ -2105,7 +2178,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
         // nearest-wins resolve back into the offscreen target. Crests
         // extrude over their neighbors (sky included); holes fall back
         // to the gather (pits keep digging).
-        if (ssdmUi && useOffscreen && frame.device.caps().copyTexture &&
+        if (ssdmModeUi != 0 && useOffscreen &&
+            frame.device.caps().copyTexture &&
             ssdmResolvePipeline.get().id != 0 &&
             sceneColorCopy.id() != 0) {
             render::GpuProbe::Scope gpu { gpuProbe, frame.device,
@@ -2132,14 +2206,39 @@ void WorldRenderer::render(engine::FrameContext& frame,
                 fullscreen(ssdmBoundsFb[i].get(), ssdmDownPipeline.get(),
                            ssdmBoundsGroup[i].get());
             }
-            frame.cmd.beginRenderPass({ .framebuffer = offscreenFb,
-                                        .loadOp = rhi::LoadOp::Load,
-                                        .depthLoadOp = rhi::LoadOp::Load });
-            frame.cmd.setPipeline(ssdmResolvePipeline);
-            frame.cmd.setBindGroup(0, frameBindGroup);
-            frame.cmd.setBindGroup(1, ssdmResolveGroup);
-            frame.cmd.draw(3);
-            frame.cmd.endRenderPass();
+            if (ssdmModeUi == 1 && ssdmHalfFb.id() != 0) {
+                // Half mode: resolve at chain res into the intermediate
+                // (alpha = "this pixel moved"), then the edge-aware
+                // upsample rewrites ONLY those pixels at full res.
+                frame.cmd.beginRenderPass(
+                    { .framebuffer = ssdmHalfFb.get(),
+                      .loadOp = rhi::LoadOp::DontCare,
+                      .depthLoadOp = rhi::LoadOp::DontCare });
+                frame.cmd.setPipeline(ssdmResolveHalfPipeline);
+                frame.cmd.setBindGroup(0, frameBindGroup);
+                frame.cmd.setBindGroup(1, ssdmResolveGroup);
+                frame.cmd.draw(3);
+                frame.cmd.endRenderPass();
+                frame.cmd.beginRenderPass(
+                    { .framebuffer = offscreenFb,
+                      .loadOp = rhi::LoadOp::Load,
+                      .depthLoadOp = rhi::LoadOp::Load });
+                frame.cmd.setPipeline(ssdmUpsamplePipeline);
+                frame.cmd.setBindGroup(0, frameBindGroup);
+                frame.cmd.setBindGroup(1, ssdmUpsampleGroup.get());
+                frame.cmd.draw(3);
+                frame.cmd.endRenderPass();
+            } else {
+                frame.cmd.beginRenderPass(
+                    { .framebuffer = offscreenFb,
+                      .loadOp = rhi::LoadOp::Load,
+                      .depthLoadOp = rhi::LoadOp::Load });
+                frame.cmd.setPipeline(ssdmResolvePipeline);
+                frame.cmd.setBindGroup(0, frameBindGroup);
+                frame.cmd.setBindGroup(1, ssdmResolveGroup);
+                frame.cmd.draw(3);
+                frame.cmd.endRenderPass();
+            }
         }
         // Contact shadows (the texture is the toggle — white = off).
         {

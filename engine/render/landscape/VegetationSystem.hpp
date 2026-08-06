@@ -69,14 +69,20 @@ public:
     // four species as cheap clones (~200 tris) at high density and short
     // reach — the carpet the heroes sit on. Same habitat + colony noise.
     static constexpr u32 kMassVariants = 4;
-    static constexpr u32 kVariantCount = kTreeVariants + kRockVariants +
-                                         kBushVariants + kDebrisVariants +
-                                         kPlantVariants + kMassVariants;
+    // Pebble clutter: the SAME rock scans, but the slots carry only the
+    // ~40-tri decimation as their MAIN mesh — LOD is per chunk, so
+    // centimeter clutter in the camera chunk used to draw the 700-tri
+    // hero scans by the hundreds (perf audit 2026-08-06).
+    static constexpr u32 kPebbleVariants = 4;
+    static constexpr u32 kVariantCount =
+        kTreeVariants + kRockVariants + kBushVariants + kDebrisVariants +
+        kPlantVariants + kMassVariants + kPebbleVariants;
     static constexpr u32 kFirstRock = kTreeVariants;
     static constexpr u32 kFirstBush = kTreeVariants + kRockVariants;
     static constexpr u32 kFirstDebris = kFirstBush + kBushVariants;
     static constexpr u32 kFirstPlant = kFirstDebris + kDebrisVariants;
     static constexpr u32 kFirstMass = kFirstPlant + kPlantVariants;
+    static constexpr u32 kFirstPebble = kFirstMass + kMassVariants;
     // Runtime knobs — live-safe: the ring streamer adapts on its own
     // (requestMissing reads the new radius, evictFar drains the excess).
     // NB: the tree FADE tops out at 880 m — radii under ~14 pop at the

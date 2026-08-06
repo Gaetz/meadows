@@ -362,6 +362,17 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
               render::VegetationSystem::kFirstDebris + 0, 900, 0.9f },
             { "52f8af61-88f5-4c3d-accf-aca86850f787",
               render::VegetationSystem::kFirstDebris + 1, 1200, 2.2f },
+            // Pebble slots: the SAME scans decimated to ~60 tris as
+            // their MAIN mesh — centimeter clutter never draws a hero
+            // scan again (perf audit 2026-08-06).
+            { "4f018fc5-80ee-4601-a74d-d1bff315ee76",
+              render::VegetationSystem::kFirstPebble + 0, 60, 1.1f },
+            { "65de4305-9eda-48ba-a87c-57aff4606164",
+              render::VegetationSystem::kFirstPebble + 1, 60, 1.3f },
+            { "8777c167-0930-4bbc-8820-a35b49229beb",
+              render::VegetationSystem::kFirstPebble + 2, 60, 1.5f },
+            { "e6ed977e-44d4-48d6-ae11-97fd1024b363",
+              render::VegetationSystem::kFirstPebble + 3, 60, 1.2f },
         };
         for (const ScanOverride& scan : kScans) {
             const auto guid = core::Guid::fromString(scan.guid);

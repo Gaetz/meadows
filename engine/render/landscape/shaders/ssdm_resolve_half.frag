@@ -1,8 +1,8 @@
 #version 460 core
 #include "common.glsl"
 
-// Full-res SSDM resolve (see ssdm_resolve_body.glsl): rewrites the
-// offscreen target in place.
+// Half-res SSDM resolve (see ssdm_resolve_body.glsl): writes the
+// chain-res intermediate, alpha = "this pixel moved" for the upsample.
 layout(binding = 0) uniform sampler2D uSceneColor;
 layout(binding = 1) uniform sampler2D uSceneDepth;
 layout(binding = 2) uniform sampler2D uFlow;
@@ -17,4 +17,5 @@ layout(binding = 7) uniform sampler2D uBounds4;
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
 
+#define SSDM_HALF
 #include "ssdm_resolve_body.glsl"

@@ -88,7 +88,7 @@ void main() {
     hexOff[1] = hexOffsetOf(hexV[1]);
     hexOff[2] = hexOffsetOf(hexV[2]);
     float camDistHex = distance(vWorldPos, uCameraPos.xyz);
-    float hexFar = smoothstep(45.0, 75.0, camDistHex);
+    float hexFar = smoothstep(25.0, 40.0, camDistHex);
     // Collapse toward the dominant tap with distance (mip-blurred far
     // texels don't need the 3-way blend).
     int hexDom = hexW.y > hexW.x ? (hexW.z > hexW.y ? 2 : 1)

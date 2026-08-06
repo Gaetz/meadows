@@ -41,7 +41,7 @@ public:
     // kVariantCount*3 — enforced by a static_assert at the vegetation
     // candidate emitter (an out-of-range group used to alias another
     // variant's batch: the whole prop blinked with the command ping-pong).
-    static constexpr u32 kMaxGroups = 80;
+    static constexpr u32 kMaxGroups = 96;
 
     struct Candidate {
         Vec3 lo {};

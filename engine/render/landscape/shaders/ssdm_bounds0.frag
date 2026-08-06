@@ -13,6 +13,7 @@ layout(location = 0) out vec4 fragColor;
 void main() {
     ivec2 p = ivec2(gl_FragCoord.xy);
     vec4 flow = texelFetch(uFlow, p, 0);
-    vec2 u = vec2(p) + 0.5 + flow.rg;
-    fragColor = vec4(u - 0.8, u + 0.8); // min.xy, max.xy (pixels)
+    // flow.rg is in UV units (resolution-agnostic chain).
+    vec2 u = vec2(p) + 0.5 + flow.rg * vec2(textureSize(uFlow, 0));
+    fragColor = vec4(u - 0.8, u + 0.8); // min.xy, max.xy (chain pixels)
 }

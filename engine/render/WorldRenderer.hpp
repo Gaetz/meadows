@@ -374,12 +374,18 @@ private:
     // Half-res SSAO (ssao.frag): contact-scale crevice darkening — the
     // realistic-branch companion of the material relief.
     bool ssaoUi { true };
+    // Internal 3D resolution scale (UI stays native): quadratic lever
+    // on every fill-bound pass — near-invisible on a Retina panel.
+    f32 renderScaleUi { 0.8f };
     f32 ssaoStrengthUi { 0.85f };
     f32 ssaoRadiusUi { 0.7f };
     // SSDM (ssdm_*.frag — Lobel 2008): screen-space scatter of the
     // alpha-packed relief. Default ON since the dev validated the
     // scatter (2026-08-05).
-    bool ssdmUi { true };
+    // SSDM mode: 0 = off, 1 = half-res chain + edge-aware upsample
+    // (the default — the full-res resolve alone cost 17 ms on M1,
+    // perf audit 2026-08-06), 2 = full res (the A/B reference).
+    i32 ssdmModeUi { 1 };
     f32 ssdmAmpUi { 0.12f }; // world amplitude (m)
     bool keyShadowUi { true };      // interiors
     bool meshShadowCastersUi { true };
@@ -520,6 +526,15 @@ private:
     array<rhi::UniqueFramebuffer, kSsdmLevels> ssdmBoundsFb;
     array<rhi::UniqueBindGroup, kSsdmLevels> ssdmBoundsGroup;
     rhi::UniqueBindGroup ssdmResolveGroup;
+    // Half mode (ssdmModeUi == 1): the resolve lands in this chain-res
+    // intermediate (alpha = moved flag), then the upsample rewrites the
+    // touched full-res pixels only.
+    rhi::UniquePipeline ssdmResolveHalfPipeline;
+    rhi::UniquePipeline ssdmUpsamplePipeline;
+    rhi::UniqueTexture ssdmHalfTex;
+    rhi::UniqueFramebuffer ssdmHalfFb;
+    rhi::UniqueBindGroup ssdmUpsampleGroup;
+    i32 appliedSsdmMode { -1 };
     // Half-res mirrored scene for the water's planar reflection.
     rhi::UniqueTexture reflectionColor;
     rhi::UniqueTexture reflectionDepth;
