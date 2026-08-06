@@ -76,8 +76,9 @@ struct LandscapeTuningForm : Form {
     // Fog ceiling falloff baseline (1/m; per-weather override exists).
     f32 fogCeiling { 0.0035f };
     // Post processing.
-    // Internal 3D resolution scale (UI native) — the M1 fill-rate knob.
-    f32 renderScale { 0.8f };
+    // Internal 3D resolution scale (UI native) — the M1 fill-rate
+    // knob. 1 = native (the bilinear upscale reads soft below 1).
+    f32 renderScale { 1.0f };
     f32 exposure { 1.0f };
     f32 bloomIntensity { 0.35f };
     f32 godRayIntensity { 0.6f };
