@@ -1432,6 +1432,12 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     // mesh, nothing else (tool scenes — the streamer holds no chunks).
     if (showcaseCount != 0) {
         const VariantMesh& mesh = variantMeshes[0];
+        // The slot's bark group, like the streamed path — without it
+        // the builder's specimen showed flat-normal trunks while the
+        // forest showed bark.
+        if (mesh.albedoGroup.get().id != 0) {
+            cmd.setBindGroup(1, mesh.albedoGroup.get());
+        }
         cmd.setVertexBuffer(0, mesh.vertexBuffer.get());
         cmd.setIndexBuffer(mesh.indexBuffer.get(), rhi::IndexFormat::U32);
         cmd.setVertexBuffer(1, showcaseInstances.get());
