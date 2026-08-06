@@ -1406,8 +1406,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
     const ComposedFrame composed = composeFrameUniforms({
         .viewProj = viewProj,
         .cameraPosition = camera.position,
-        .width = offscreenWidth != 0 ? offscreenWidth : frame.width,
-        .height = offscreenHeight != 0 ? offscreenHeight : frame.height,
+        .width = frame.width,
+        .height = frame.height,
         .dt = frame.dt,
         .timeSeconds = view.timeSeconds,
         .sky = skyState,
@@ -1453,8 +1453,6 @@ void WorldRenderer::render(engine::FrameContext& frame,
                                 : 0.0f,
         .treeFadeEnd = vegetation.treeFadeEnd(),
         .seasonAutumn = seasonAutumnUi,
-        .casSharpenStrength =
-            glm::clamp((1.0f - renderScaleUi) * 2.2f, 0.0f, 1.0f),
         .seasonLeafFall = seasonLeafFallUi,
         .leafSeason = vegetation.leafSeason(),
         .debugBuffer = debugBufferUi,
@@ -1848,17 +1846,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
 
     const bool useOffscreen = frame.device.caps().offscreenTargets;
     if (useOffscreen) {
-        // Internal 3D resolution (renderScaleUi): the scene renders into
-        // a scaled offscreen target; the tonemap composite upscales to
-        // the native backbuffer where the UI stays crisp.
-        const u32 sceneW = glm::max(
-            8u, static_cast<u32>(std::lround(static_cast<f64>(frame.width) *
-                                             renderScaleUi)));
-        const u32 sceneH = glm::max(
-            8u,
-            static_cast<u32>(std::lround(static_cast<f64>(frame.height) *
-                                         renderScaleUi)));
-        ensureOffscreenTarget(frame.device, sceneW, sceneH);
+        ensureOffscreenTarget(frame.device, frame.width, frame.height);
         if (shaders->generation(kTonemapShader) != blitShaderGeneration) {
             rebuildBlitPipeline(frame.device);
         }

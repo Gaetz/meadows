@@ -374,11 +374,6 @@ private:
     // Half-res SSAO (ssao.frag): contact-scale crevice darkening — the
     // realistic-branch companion of the material relief.
     bool ssaoUi { true };
-    // Internal 3D resolution scale (UI stays native): quadratic
-    // fill-rate lever, OFF by default — the plain bilinear upscale
-    // reads soft (dev verdict 2026-08-06); a sharpening upsample would
-    // be the prerequisite to ship it under 1.
-    f32 renderScaleUi { 1.0f };
     f32 ssaoStrengthUi { 0.85f };
     f32 ssaoRadiusUi { 0.7f };
     // SSDM (ssdm_*.frag — Lobel 2008): screen-space scatter of the

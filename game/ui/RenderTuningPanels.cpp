@@ -561,10 +561,7 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
             ImGui::SliderFloat("SSDM amplitude (m)", &r.ssdmAmpUi,
                                0.02f, 0.30f);
         }
-        // Internal 3D resolution; the UI stays native. Quadratic
-        // fill-rate lever (perf audit 2026-08-06).
-        ImGui::SliderFloat("Render scale", &r.renderScaleUi, 0.5f, 1.0f,
-                           "%.2f");
+
         ImGui::SameLine();
         ImGui::Checkbox("Terrain light map", &r.terrainLightUi);
         ImGui::Checkbox("Key light shadow", &r.keyShadowUi); // interiors

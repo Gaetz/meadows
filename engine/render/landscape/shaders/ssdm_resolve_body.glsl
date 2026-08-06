@@ -79,7 +79,13 @@ void main() {
         vec2 srcUv = (vec2(bestLeaf) + 0.5) / fRes;
         vec4 color = texture(uSceneColor, srcUv);
 #ifdef SSDM_HALF
-        fragColor = vec4(color.rgb, 1.0); // moved: the upsample keeps it
+        // Mark moved ONLY on a significant displacement: sub-pixel
+        // relief landed on itself, and rewriting it dragged the whole
+        // ground down to chain resolution (the "tout flou" verdict).
+        vec4 leafFlow = texelFetch(uFlow, bestLeaf, 0);
+        float moved =
+            length(leafFlow.rg * fRes) > 0.6 ? 1.0 : 0.0;
+        fragColor = vec4(color.rgb, moved);
 #else
         fragColor = color;
 #endif
@@ -94,7 +100,7 @@ void main() {
         q = vUv - ssdmDelta(q, sceneTexel, unusedDepth);
     }
 #ifdef SSDM_HALF
-    float moved = length((q - vUv) * fRes) > 0.35 ? 1.0 : 0.0;
+    float moved = length((q - vUv) * fRes) > 0.6 ? 1.0 : 0.0;
     fragColor = vec4(texture(uSceneColor, q).rgb, moved);
 #else
     fragColor = texture(uSceneColor, q);
