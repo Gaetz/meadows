@@ -1173,9 +1173,6 @@ void WorldRenderer::render(engine::FrameContext& frame,
             // republish).
             terrainShadeMap.update(frame.device, terrain.params,
                                    view.camera.position);
-            // Material-set A/B toggle (panel) — rebuilds the splat
-            // arrays in place when it flips.
-            terrain.setMaterialSet(frame.device, terrainCookedUi);
         }
         if (cfg.terrain && cfg.postFx) {
             // Valley data for the ground mist (sun-independent; re-bakes

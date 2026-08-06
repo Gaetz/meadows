@@ -277,68 +277,79 @@ void TerrainSystem::buildMaterialArrays(rhi::Device& device, bool useCooked) {
         }
     }
     if (!cookedMaterials) {
-        const vector<u8> splatPixels = buildSplatTilePixels();
-        // Means of the generated grass-family tiles → blade root albedo.
-        const size_t layerBytes =
-            static_cast<size_t>(kSplatTileSize) * kSplatTileSize * 4;
-        const auto tileMean = [&](u32 layer) {
-            const size_t at = layer * layerBytes;
-            u64 sums[3] = { 0, 0, 0 };
-            for (size_t i = 0; i < layerBytes; i += 4) {
-                sums[0] += splatPixels[at + i];
-                sums[1] += splatPixels[at + i + 1];
-                sums[2] += splatPixels[at + i + 2];
+        // The procedural tile synthesis is gone (dev decision
+        // 2026-08-06): the cooked .mtex library is THE material set.
+        // Flat per-layer placeholders keep the game bootable when it is
+        // absent; grassBases/layerBases keep their header defaults.
+        LOG_WARN("TerrainSystem: cooked splat arrays missing — flat "
+                 "placeholder materials");
+        constexpr u32 kSize = 4;
+        constexpr size_t kLayerBytes =
+            static_cast<size_t>(kSize) * kSize * 4;
+        const auto familyColor = [&](u32 layer) -> Vec3 {
+            if (layer < SplatLayer_Count) {
+                return layerBases[layer];
             }
-            const f32 inv = 1.0f / (255.0f * (layerBytes / 4));
-            return Vec3 { sums[0] * inv, sums[1] * inv, sums[2] * inv };
+            if (layer < 8) {
+                return layerBases[SplatLayer_Grass];
+            }
+            if (layer < 11) {
+                return layerBases[SplatLayer_Rock];
+            }
+            if (layer < 13) {
+                return layerBases[SplatLayer_Snow];
+            }
+            return layerBases[SplatLayer_Sand];
         };
-        for (u32 v = 0; v < kGrassVariantCount; ++v) {
-            grassBases[v] = tileMean(grassVariantLayer(v));
-        }
-        for (u32 layer = 0; layer < SplatLayer_Count; ++layer) {
-            layerBases[layer] = tileMean(layer);
+        vector<u8> albedoPixels(kLayerBytes * kSplatArrayLayers);
+        vector<u8> normalPixels(kLayerBytes * kSplatArrayLayers);
+        vector<f32> heightPixels(static_cast<size_t>(kSize) * kSize *
+                                     kSplatArrayLayers,
+                                 0.5f);
+        for (u32 layer = 0; layer < kSplatArrayLayers; ++layer) {
+            const Vec3 color = familyColor(layer);
+            for (size_t at = layer * kLayerBytes;
+                 at < (layer + 1) * kLayerBytes; at += 4) {
+                albedoPixels[at + 0] = static_cast<u8>(
+                    glm::clamp(color.r, 0.0f, 1.0f) * 255.0f);
+                albedoPixels[at + 1] = static_cast<u8>(
+                    glm::clamp(color.g, 0.0f, 1.0f) * 255.0f);
+                albedoPixels[at + 2] = static_cast<u8>(
+                    glm::clamp(color.b, 0.0f, 1.0f) * 255.0f);
+                albedoPixels[at + 3] = 255;
+                normalPixels[at + 0] = 128;
+                normalPixels[at + 1] = 128;
+                normalPixels[at + 2] = 255;
+                normalPixels[at + 3] = 255;
+            }
         }
         splatTexture = { device, device.createTexture(
-            { .width = kSplatTileSize,
-              .height = kSplatTileSize,
+            { .width = kSize,
+              .height = kSize,
               .arrayLayers = kSplatArrayLayers,
-              .mipLevels = 9, // full chain for a 256 tile
-              // sRGB: tiles are authored in display space, decoded to
-              // linear on sample — the HDR pipeline lights in linear.
               .format = rhi::TextureFormat::SRGBA8,
               .filter = rhi::FilterMode::Linear,
               .wrap = rhi::AddressMode::Repeat,
               .usage = rhi::TextureUsage_Sampled },
-            splatPixels.data()) };
-        device.generateMipmaps(splatTexture);
-        // Procedural displacement heights for the layer blend, so the
-        // height-blend path works identically on both material sets.
-        const vector<f32> heightPixels = buildSplatHeightPixels();
+            albedoPixels.data()) };
         materialHeight = { device, device.createTexture(
-            { .width = kSplatTileSize,
-              .height = kSplatTileSize,
+            { .width = kSize,
+              .height = kSize,
               .arrayLayers = kSplatArrayLayers,
-              .mipLevels = 9,
               .format = rhi::TextureFormat::R16F,
               .filter = rhi::FilterMode::Linear,
               .wrap = rhi::AddressMode::Repeat,
               .usage = rhi::TextureUsage_Sampled },
             heightPixels.data()) };
-        device.generateMipmaps(materialHeight);
-        // Procedural per-layer normals (Sobel of the same heights), so
-        // the normal-mapping path compares fairly against the cooked BC5.
-        const vector<u8> normalPixels = buildSplatNormalPixels();
         materialNormal = { device, device.createTexture(
-            { .width = kSplatTileSize,
-              .height = kSplatTileSize,
+            { .width = kSize,
+              .height = kSize,
               .arrayLayers = kSplatArrayLayers,
-              .mipLevels = 9,
               .format = rhi::TextureFormat::RGBA8,
               .filter = rhi::FilterMode::Linear,
               .wrap = rhi::AddressMode::Repeat,
               .usage = rhi::TextureUsage_Sampled },
             normalPixels.data()) };
-        device.generateMipmaps(materialNormal);
     }
     splatBindGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
@@ -350,13 +361,6 @@ void TerrainSystem::buildMaterialArrays(rhi::Device& device, bool useCooked) {
                        { .binding = 8,
                          .texture = materialNormal,
                          .sampler = splatSampler } } }) };
-}
-
-void TerrainSystem::setMaterialSet(rhi::Device& device, bool useCooked) {
-    if (splatSampler.id() == 0 || usingCooked() == (useCooked && cookedPossible)) {
-        return;
-    }
-    buildMaterialArrays(device, useCooked);
 }
 
 void TerrainSystem::destroy(rhi::Device& device) {

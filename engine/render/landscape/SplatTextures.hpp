@@ -48,26 +48,7 @@ constexpr u32 sandVariantLayer(u32 variant) {
     return variant == 0 ? SplatLayer_Sand : 12 + variant;
 }
 
-// Deterministic, seamlessly tileable RGBA8 pixels for all layers,
-// contiguous (layer-major) — the exact shape Device::createTexture expects
-// for an array texture. Procedural (periodic value noise): stylized flat-ish
-// albedo, low contrast, in the BotW spirit; swappable for CC0 tiles later.
-// Authored in display space, stored as SRGBA8 (linear on sample).
-vector<u8> buildSplatTilePixels();
-
-// Per-layer displacement heights in [0,1] for the height-based layer blend
-// (terrain_blend.glsl), correlated with each tile's albedo structure (same
-// noise seeds). f32 per texel, layer-major — the R16F initial-data shape.
-// The cooked .mtex height array replaces this when resident.
-vector<f32> buildSplatHeightPixels();
-
-// Per-layer tangent-space normals derived from the SAME height functions
-// (central differences, wrapped): rg = xy * 0.5 + 0.5, z reconstructed
-// in-shader — the BC5 convention the cooked arrays use, so terrain.frag
-// has ONE decode path. RGBA8 layer-major.
-vector<u8> buildSplatNormalPixels();
-
-// The grass tile's ±1% luminance drift alone (mean 1) — the blade root
+// The grass's ±1% luminance drift alone (mean 1) — the blade root
 // bake multiplies it over the ACTIVE material set's per-variant mean
 // color (TerrainSystem::grassAlbedoBase), so the meadow keeps its life on
 // the cooked set too.

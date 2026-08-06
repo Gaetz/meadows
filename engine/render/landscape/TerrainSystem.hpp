@@ -100,17 +100,9 @@ public:
                 const CookedSplatPaths& cooked = {});
     void destroy(rhi::Device& device);
 
-    // Material-set A/B (render panel): cooked .mtex library vs procedural
-    // tiles. Switching rebuilds the splat arrays + bind group in place
-    // (full recreation, ~10 MB one-shot — the TerrainLightMap
-    // destroy-recreate precedent makes this frame-safe).
-    bool cookedAvailable() const { return cookedPossible; }
-    bool usingCooked() const { return cookedMaterials; }
-    void setMaterialSet(rhi::Device& device, bool useCooked);
-
     // Mean root albedo of a grass-family ground variant (display-space):
-    // cooked = the .mtex per-layer averages, procedural = means of the
-    // generated tiles. The blade scatter inherits it, so meadow and
+    // the .mtex per-layer averages (header defaults when the cooked
+    // library is absent). The blade scatter inherits it, so meadow and
     // ground share ONE color source on BOTH material sets.
     Vec3 grassAlbedoBase(u32 variant) const {
         return grassBases[glm::min(variant, 3u)];

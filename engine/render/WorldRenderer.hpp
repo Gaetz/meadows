@@ -314,7 +314,6 @@ private:
     bool terrainLightUi { true };
     // Terrain material-set A/B (panel): cooked .mtex library vs the
     // procedural tiles; synced onto TerrainSystem each frame.
-    bool terrainCookedUi { true };
     // Distant landscape silhouettes beyond the streaming ring (§3.6).
     render::FarTerrain farTerrain;
     bool farTerrainUi { true };

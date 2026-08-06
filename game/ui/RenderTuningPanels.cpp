@@ -311,10 +311,6 @@ void RenderTuningPanels::drawTerrainPanel(render::WorldRenderer& r) {
         // Coarse 12 km silhouette mesh past the ring (terrain + forest
         // fringe dissolving into the sky).
         ImGui::Checkbox("Far terrain (silhouettes)", &r.farTerrainUi);
-        if (r.terrain.cookedAvailable()) {
-            ImGui::Checkbox("Cooked materials (A/B vs procedural)",
-                            &r.terrainCookedUi);
-        }
     }
     if (ImGui::CollapsingHeader("Vegetation")) {
         ImGui::SliderFloat("Season: autumn", &r.seasonAutumnUi, 0.0f,
