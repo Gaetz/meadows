@@ -101,6 +101,9 @@ public:
     // low twin. The far ring is where the instances are, so this is
     // where the triangle budget goes (docs/RENDERING.md, V8f).
     i32 lowDetailRadius { 4 };    // 80-face twins within; ultra beyond
+    // Hero-near reach: world XZ distance from the camera to the chunk
+    // square below which tree draws use the near twin.
+    static constexpr f32 kNearDetailDistance = 35.0f;
     // A/B — tree variants regenerate through generateColonizedTree (Runions
     // skeleton + SDF-normal billboard-card foliage; the default). Flip via
     // reseedVariantMeshes; the lobe trees stay one checkbox away in the
@@ -377,6 +380,12 @@ private:
         rhi::UniqueBuffer ultraVertexBuffer;
         rhi::UniqueBuffer ultraIndexBuffer;
         u32 ultraIndexCount { 0 };
+        // Hero-near twin (colonized tree variants only; empty = stop at
+        // hero): double ring sides + one more curve subdivision, drawn
+        // within kNearDetailDistance of the camera.
+        rhi::UniqueBuffer nearVertexBuffer;
+        rhi::UniqueBuffer nearIndexBuffer;
+        u32 nearIndexCount { 0 };
         // Shadow proxy for the far cascades (colonized trees: solid
         // metaball blobs instead of the card cloud — see
         // generateColonizedTreeShadowProxy). Empty = cast with the LODs.
@@ -393,6 +402,8 @@ private:
                              const MeshData& mesh);
     void uploadUltraDetailMesh(rhi::Device& device, u32 variant,
                                const MeshData& mesh);
+    void uploadNearDetailMesh(rhi::Device& device, u32 variant,
+                              const MeshData& mesh);
     void uploadShadowProxyMesh(rhi::Device& device, u32 variant,
                                const MeshData& mesh);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
@@ -473,7 +484,8 @@ private:
         u32 seed { 0 };
         array<TreeSpecies, kTreeVariants> species {}; // resolved per slot
         std::filesystem::path aoCacheDir;
-        array<array<MeshData, 3>, kTreeVariants> lods; // [variant][lod]
+        // [variant][lod] — 3 = the hero-near twin (colonized only).
+        array<array<MeshData, 4>, kTreeVariants> lods;
         array<MeshData, kTreeVariants> casters;        // colonization only
         std::atomic<u32> completed { 0 };
         u32 total { 1 };

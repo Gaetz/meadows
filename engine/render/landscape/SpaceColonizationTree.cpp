@@ -336,16 +336,22 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
     const Vec3 barkColor { 0.085f, 0.048f, 0.026f }; // generateTree's bark
     const f32 segment = params.segment;
     const i32 baseSides = glm::clamp(params.tubeSides, 3, 12);
-    const u32 tubeSides = detail >= 2 ? static_cast<u32>(baseSides)
-                          : detail == 1
-                              ? static_cast<u32>(glm::max(baseSides - 1, 3))
-                              : 3u;
+    // detail 3 = the hero-near twin (camera chunk only): DOUBLE ring
+    // sides + one more curve subdivision — build-time tessellation
+    // (MoltenVK has no usable hardware tessellation).
+    const u32 tubeSides =
+        detail >= 3 ? static_cast<u32>(glm::min(baseSides * 2, 24))
+        : detail == 2 ? static_cast<u32>(baseSides)
+        : detail == 1 ? static_cast<u32>(glm::max(baseSides - 1, 3))
+                      : 3u;
     const f32 preserve =
         glm::clamp(params.curvePreserve, 0.0f, 1.0f) *
         (detail >= 2 ? 1.0f : detail == 1 ? 0.5f : 0.0f);
-    const i32 subdiv = detail >= 2 ? glm::clamp(params.curveSubdiv, 0, 3)
-                       : detail == 1 ? glm::clamp(params.curveSubdiv, 0, 3) / 2
-                                     : 0;
+    const i32 subdiv =
+        detail >= 3   ? glm::clamp(params.curveSubdiv, 0, 3) + 1
+        : detail == 2 ? glm::clamp(params.curveSubdiv, 0, 3)
+        : detail == 1 ? glm::clamp(params.curveSubdiv, 0, 3) / 2
+                      : 0;
     // Decimation collapses near-collinear single-child runs; preserve
     // raises the alignment bar and shortens the run cap, keeping the
     // real growth wiggle in the polyline.
