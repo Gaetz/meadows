@@ -24,6 +24,56 @@ layout(binding = 4) uniform sampler2D uTerrainShade0;
 #include "stylized.glsl"
 #include "locallights.glsl"
 
+// Hex-tiling for the bark planes (Heitz-Neyret, the terrain_zones
+// pattern): a triangle lattice assigns each vertex a random uv offset;
+// the two dominant barycentric weights (pow-sharpened, smallest vertex
+// dropped) blend the taps. Repeats stop aligning along the trunk while
+// each patch keeps whole features (the knots stay knots).
+const float kBarkHexCell = 0.85; // lattice scale (uv units, ~1 repeat)
+
+vec2 hexBarkOffset(ivec2 v) {
+    uint h = uint(v.x) * 0x9e3779b9u ^ uint(v.y) * 0x85ebca6bu;
+    h *= 0x27d4eb2du;
+    h ^= h >> 15u;
+    return vec2(float(h & 0xffffu), float((h >> 16u) & 0xffffu)) /
+           65536.0;
+}
+
+void hexBark(vec2 uv, out vec2 offA, out vec2 offB, out vec2 w) {
+    vec2 q = uv / kBarkHexCell;
+    vec2 s = vec2(q.x - q.y * 0.57735027, q.y * 1.15470054);
+    ivec2 base = ivec2(floor(s));
+    vec2 f = s - vec2(base);
+    ivec2 v0, v1, v2;
+    vec3 b;
+    if (f.x + f.y < 1.0) {
+        v0 = base;
+        v1 = base + ivec2(1, 0);
+        v2 = base + ivec2(0, 1);
+        b = vec3(1.0 - f.x - f.y, f.x, f.y);
+    } else {
+        v0 = base + ivec2(1, 1);
+        v1 = base + ivec2(0, 1);
+        v2 = base + ivec2(1, 0);
+        b = vec3(f.x + f.y - 1.0, 1.0 - f.x, 1.0 - f.y);
+    }
+    b = pow(b, vec3(6.0));
+    if (b.x <= b.y && b.x <= b.z) {
+        w = vec2(b.y, b.z);
+        offA = hexBarkOffset(v1);
+        offB = hexBarkOffset(v2);
+    } else if (b.y <= b.z) {
+        w = vec2(b.x, b.z);
+        offA = hexBarkOffset(v0);
+        offB = hexBarkOffset(v2);
+    } else {
+        w = vec2(b.x, b.y);
+        offA = hexBarkOffset(v0);
+        offB = hexBarkOffset(v1);
+    }
+    w /= (w.x + w.y);
+}
+
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in vec3 vColor;
 layout(location = 2) in vec3 vWorldPos;
@@ -123,20 +173,41 @@ void main() {
         vec3 vw = normalize(uCameraPos.xyz - vWorldPos);
         vec3 vo = vec3(vw.x * yc + vw.z * ys, vw.y,
                        -vw.x * ys + vw.z * yc);
+        // Hex lattice per plane, from the UNSHIFTED uv (the parallax
+        // below never crawls the seams); explicit gradients of the base
+        // uv keep the mips honest across the per-hex offset jumps. The
+        // blended height stays a continuous field, so the SSDM relief
+        // sees no seam.
+        vec2 xoA, xoB, xw;
+        vec2 yoA, yoB, yw;
+        vec2 zoA, zoB, zw;
+        hexBark(uvx, xoA, xoB, xw);
+        hexBark(uvy, yoA, yoB, yw);
+        hexBark(uvz, zoA, zoB, zw);
+        vec2 gxx = dFdx(uvx), gxy = dFdy(uvx);
+        vec2 gyx = dFdx(uvy), gyy = dFdy(uvy);
+        vec2 gzx = dFdx(uvz), gzy = dFdy(uvz);
         // Normal-height taps (unshifted): the height drives the offset,
         // the normals perturb through per-plane axis frames.
-        vec4 nhx = texture(uBarkNrm, uvx);
-        vec4 nhy = texture(uBarkNrm, uvy);
-        vec4 nhz = texture(uBarkNrm, uvz);
+        vec4 nhx = textureGrad(uBarkNrm, uvx + xoA, gxx, gxy) * xw.x +
+                   textureGrad(uBarkNrm, uvx + xoB, gxx, gxy) * xw.y;
+        vec4 nhy = textureGrad(uBarkNrm, uvy + yoA, gyx, gyy) * yw.x +
+                   textureGrad(uBarkNrm, uvy + yoB, gyx, gyy) * yw.y;
+        vec4 nhz = textureGrad(uBarkNrm, uvz + zoA, gzx, gzy) * zw.x +
+                   textureGrad(uBarkNrm, uvz + zoB, gzx, gzy) * zw.y;
         float height =
             nhx.a * bw.x + nhy.a * bw.y + nhz.a * bw.z;
         float sink = (height - 0.5) * kBarkDepth;
         uvx += vec2(vo.z, vo.y) / max(abs(vo.x), 0.35) * sink;
         uvy += vec2(vo.x, vo.z) / max(abs(vo.y), 0.35) * sink;
         uvz += vec2(vo.x, vo.y) / max(abs(vo.z), 0.35) * sink;
-        vec3 bark = texture(uBark, uvx).rgb * bw.x +
-                    texture(uBark, uvy).rgb * bw.y +
-                    texture(uBark, uvz).rgb * bw.z;
+        vec3 bark =
+            (textureGrad(uBark, uvx + xoA, gxx, gxy).rgb * xw.x +
+             textureGrad(uBark, uvx + xoB, gxx, gxy).rgb * xw.y) * bw.x +
+            (textureGrad(uBark, uvy + yoA, gyx, gyy).rgb * yw.x +
+             textureGrad(uBark, uvy + yoB, gyx, gyy).rgb * yw.y) * bw.y +
+            (textureGrad(uBark, uvz + zoA, gzx, gzy).rgb * zw.x +
+             textureGrad(uBark, uvz + zoB, gzx, gzy).rgb * zw.y) * bw.z;
         // LUMINANCE-only vertex modulation: the baked AO and vertical
         // gradient survive, but the texture keeps its OWN hue — the
         // generators' dark-brown wood color was re-tinting every bark
