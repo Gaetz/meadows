@@ -99,6 +99,25 @@ void main() {
     for (int i = 0; i < 3; ++i) {
         q = vUv - ssdmDelta(q, sceneTexel, unusedDepth);
     }
+    // Silhouette guard: a gathered source from ACROSS a depth edge
+    // would duplicate the foreground rim onto the background (the
+    // "image doublée derrière la frontière" seen up close on trunks) —
+    // keep the original pixel instead of digging.
+    {
+        float dHere = texture(uSceneDepth, vUv).r;
+        float dSrc = texture(uSceneDepth, q).r;
+        vec3 wHere = worldFromDepth(vUv, max(dHere, 1.0e-8));
+        vec3 wSrc = worldFromDepth(q, max(dSrc, 1.0e-8));
+        float viewDist = distance(wHere, uCameraPos.xyz);
+        if (distance(wHere, wSrc) > 0.4 + viewDist * 0.02) {
+#ifdef SSDM_HALF
+            fragColor = vec4(texture(uSceneColor, vUv).rgb, 0.0);
+#else
+            fragColor = texture(uSceneColor, vUv);
+#endif
+            return;
+        }
+    }
 #ifdef SSDM_HALF
     float moved = length((q - vUv) * fRes) > 0.6 ? 1.0 : 0.0;
     fragColor = vec4(texture(uSceneColor, q).rgb, moved);
