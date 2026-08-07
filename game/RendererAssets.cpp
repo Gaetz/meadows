@@ -9,6 +9,40 @@
 
 namespace game {
 
+void packDispIntoNormalAlpha(assets::Image& normal,
+                             const assets::Image& disp) {
+    if (disp.width != normal.width || disp.height != normal.height) {
+        return;
+    }
+    const size_t pixels =
+        static_cast<size_t>(normal.width) * normal.height;
+    u8 lo = 255;
+    u8 hi = 0;
+    u64 sum = 0;
+    for (size_t p = 0; p < pixels; ++p) {
+        const u8 v = disp.pixels[p * 4 + 0];
+        lo = std::min(lo, v);
+        hi = std::max(hi, v);
+        sum += v;
+    }
+    if (hi <= lo) {
+        return; // flat map: keep the "no height" alpha
+    }
+    const f32 span = static_cast<f32>(hi - lo);
+    const f32 mean01 =
+        (static_cast<f32>(sum) / static_cast<f32>(pixels) - lo) / span;
+    // Largest symmetric gain that keeps [0,1] around the 0.5 center.
+    const f32 gain = 0.5f / glm::max(mean01, 1.0f - mean01);
+    for (size_t p = 0; p < pixels; ++p) {
+        const f32 v01 =
+            (static_cast<f32>(disp.pixels[p * 4 + 0]) - lo) / span;
+        // 253 max: the shader treats a >= 0.995 (253.7/255) as "no
+        // disp map" — 254 would drop the tallest crests into the guard.
+        normal.pixels[p * 4 + 3] = static_cast<u8>(glm::clamp(
+            (0.5f + (v01 - mean01) * gain) * 255.0f, 0.0f, 253.0f));
+    }
+}
+
 assets::AssetDatabase buildAssetDatabase(const data::PluginStack& stack) {
     assets::AssetDatabase assetDb;
     for (const data::Plugin& plugin : stack.plugins) {
@@ -64,29 +98,8 @@ void loadTreeBark(rhi::Device& device, render::WorldRenderer& renderer,
         };
         auto nor = assets::loadImageFile(sub("_nor_gl_"));
         if (nor) {
-            if (const auto disp = assets::loadImageFile(sub("_disp_"));
-                disp && disp->width == nor->width &&
-                disp->height == nor->height) {
-                const size_t pixels =
-                    static_cast<size_t>(nor->width) * nor->height;
-                // Min-max stretch: some disp maps (the oak) sit in a
-                // soft mid band — normalized, both the bark parallax
-                // and the SSDM warp bite.
-                u8 lo = 255;
-                u8 hi = 0;
-                for (size_t p = 0; p < pixels; ++p) {
-                    const u8 v = disp->pixels[p * 4 + 0];
-                    lo = std::min(lo, v);
-                    hi = std::max(hi, v);
-                }
-                const f32 scale =
-                    hi > lo ? 255.0f / static_cast<f32>(hi - lo) : 1.0f;
-                for (size_t p = 0; p < pixels; ++p) {
-                    nor->pixels[p * 4 + 3] = static_cast<u8>(glm::clamp(
-                        static_cast<f32>(disp->pixels[p * 4 + 0] - lo) *
-                            scale,
-                        0.0f, 255.0f));
-                }
+            if (const auto disp = assets::loadImageFile(sub("_disp_"))) {
+                packDispIntoNormalAlpha(*nor, *disp);
             }
             nrmHeight = { nor->width, nor->height,
                           std::move(nor->pixels) };

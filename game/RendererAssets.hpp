@@ -8,6 +8,10 @@ namespace data {
 struct PluginStack;
 }
 
+namespace assets {
+struct Image;
+}
+
 namespace game {
 
 // Shared data→renderer resource wiring (the §4 seam: the renderer never
@@ -27,10 +31,18 @@ void applyCookedTerrainPaths(render::RendererConfig& config,
                              const data::FormDatabase& forms,
                              const assets::AssetDatabase& assetDb);
 
+// Packs a displacement map into the normal image's alpha, MEAN-
+// CENTERED: source disp maps carry arbitrary bias (bark_brown_02 means
+// 0.26 where jolcham sat at 0.51) and the relief encode assumes the
+// surface level is 0.5 — without centering, a biased map displaces the
+// whole surface uniformly (the "texture zooms" symptom) instead of
+// popping crests and digging pits. No-op on dimension mismatch.
+void packDispIntoNormalAlpha(assets::Image& normal,
+                             const assets::Image& disp);
+
 // Loads the tree bark texture sets (oak + spruce, albedo + packed
-// normal-height with the displacement min-max-normalized into the
-// alpha) and hands them to the vegetation system. Call AFTER
-// renderer.create().
+// mean-centered normal-height alpha) and hands them to the vegetation
+// system. Call AFTER renderer.create().
 void loadTreeBark(rhi::Device& device, render::WorldRenderer& renderer,
                   const assets::AssetDatabase& assetDb);
 
