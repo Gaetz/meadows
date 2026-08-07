@@ -91,7 +91,8 @@ void FarTerrain::refreshPipeline(rhi::Device& device,
 
 void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                         const Vec3& focus,
-                        const VegetationSystem::TreeSilhouette& trees) {
+                        const VegetationSystem::TreeSilhouette& trees,
+                        const array<Vec3, 5>& layerAlbedos) {
     Baked done;
     while (built->tryPop(done)) {
         if (done.gen != generation) {
@@ -134,7 +135,7 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
     center = want; // draw follows the request; the bake lands async
     bakedTreeHeight = trees.height;
     inFlight = true;
-    jobs->enqueue([queue = built, params, want, trees,
+    jobs->enqueue([queue = built, params, want, trees, layerAlbedos,
                    gen = generation] {
         constexpr u32 kVertsN = kGridN + 1;
         constexpr f32 cell = kSpan / static_cast<f32>(kGridN);
@@ -216,7 +217,21 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                 if (trueH < params.seaLevel + 3.0f || slope > 0.3f) {
                     forest = 0.0f;
                 }
-                Vec3 color = terrainColor(trueH, n, params.seaLevel);
+                // The REAL weight rule paints the far vertex with the
+                // splat layers' mean albedos — biome snow line, scree
+                // aprons and beach rules included: the horizon is the
+                // same world as the streamed ground.
+                const terrain::MaterialWeights mw =
+                    terrain::materialWeightsAt(params, x, z, trueH, n);
+                const f32 total = glm::max(mw.grass + mw.rock + mw.snow +
+                                               mw.sand + mw.cliff,
+                                           1.0e-4f);
+                Vec3 color = (layerAlbedos[0] * mw.grass +
+                              layerAlbedos[1] * mw.rock +
+                              layerAlbedos[2] * mw.snow +
+                              layerAlbedos[3] * mw.sand +
+                              layerAlbedos[4] * mw.cliff) /
+                             total;
                 color = glm::mix(color, kForestTint, forest * 0.85f);
                 // Canopy mass = ~60% of the measured tree height (the
                 // impostor crowns emerge above it) — applied by the

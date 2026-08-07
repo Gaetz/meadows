@@ -17,6 +17,7 @@ add_library(meadows-runtime STATIC
     TerrainBakeStreamer.cpp
     TerrainCollision.cpp
     scenes/TerrainGenTool.cpp
+    RendererAssets.cpp
     VegetationCollision.cpp
     WeaponMeshes.cpp
 )
@@ -86,6 +87,38 @@ meadows_set_warnings(true-adventurer)
 # build (a POST_BUILD only fired when the exe relinked: a data-only edit
 # left the build dir stale — the 2026-07-12 lesson). `_if_different`
 # (CMake 3.26) only rewrites what changed.
+# Terrain material auto-cook: when the CC0 source maps are present
+# (assets-src/ is gitignored — absent on a fresh clone, where the
+# committed .mtex simply ship as-is), re-run the cooker whenever the
+# manifest or any source PNG is newer than the cooked arrays. Runs
+# BEFORE game-data so the fresh .mtex are what gets copied.
+set(TERRAIN_MATERIALS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/data/base/textures/terrain)
+set(TERRAIN_MATERIALS_MANIFEST
+    ${CMAKE_CURRENT_SOURCE_DIR}/data/base/terrain/materials.toml)
+if(EXISTS ${PROJECT_SOURCE_DIR}/assets-src/terrain)
+    file(GLOB_RECURSE TERRAIN_MATERIAL_SOURCES
+         ${PROJECT_SOURCE_DIR}/assets-src/terrain/*.png)
+    add_custom_command(
+        OUTPUT ${TERRAIN_MATERIALS_DIR}/terrain_albedo.mtex
+               ${TERRAIN_MATERIALS_DIR}/terrain_normal.mtex
+               ${TERRAIN_MATERIALS_DIR}/terrain_orm.mtex
+               ${TERRAIN_MATERIALS_DIR}/terrain_height.mtex
+        COMMAND $<TARGET_FILE:cooker> cook-terrain-materials
+                ${TERRAIN_MATERIALS_MANIFEST} ${TERRAIN_MATERIALS_DIR}
+        DEPENDS cooker ${TERRAIN_MATERIALS_MANIFEST}
+                ${TERRAIN_MATERIAL_SOURCES}
+        COMMENT "Cooking terrain material arrays (.mtex)"
+        VERBATIM
+    )
+    add_custom_target(terrain-materials
+        DEPENDS ${TERRAIN_MATERIALS_DIR}/terrain_albedo.mtex
+                ${TERRAIN_MATERIALS_DIR}/terrain_normal.mtex
+                ${TERRAIN_MATERIALS_DIR}/terrain_orm.mtex
+                ${TERRAIN_MATERIALS_DIR}/terrain_height.mtex)
+else()
+    add_custom_target(terrain-materials)
+endif()
+
 add_custom_target(game-data
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
             ${CMAKE_CURRENT_SOURCE_DIR}/data
@@ -96,4 +129,5 @@ add_custom_target(game-data
     COMMENT "Syncing game data + shaders"
     VERBATIM
 )
+add_dependencies(game-data terrain-materials)
 add_dependencies(true-adventurer game-data)

@@ -9,6 +9,7 @@
 #include "engine/render/Frustum.hpp"
 #include "engine/assets/MeshData.hpp"
 #include "engine/render/landscape/ChunkStreamer.hpp"
+#include "engine/render/landscape/SplatTextures.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
@@ -79,24 +80,62 @@ public:
     static constexpr u32 kLod3CoreSide = 13; // 2*6+1  (LOD 0-2 core)
     static constexpr u32 kLod4CoreSide = 25; // 2*12+1 (LOD 0-3 core)
 
+    // Cooked material array files (.mtex — engine/assets/CookedTexture),
+    // resolved by the scene from the plugin VFS. Any empty path (or a
+    // backend without caps.textureCompressionBC, or a load failure) keeps
+    // the procedural splat tiles.
+    struct CookedSplatPaths {
+        str albedo;
+        str normal;
+        str orm;
+        str height;
+        bool complete() const {
+            return !albedo.empty() && !normal.empty() && !orm.empty() &&
+                   !height.empty();
+        }
+    };
+
     void create(rhi::Device& device, ShaderLibrary& shaders,
-                core::JobSystem& jobSystem);
+                core::JobSystem& jobSystem,
+                const CookedSplatPaths& cooked = {});
     void destroy(rhi::Device& device);
+
+    // Mean root albedo of a grass-family ground variant (display-space):
+    // the .mtex per-layer averages (header defaults when the cooked
+    // library is absent). The blade scatter inherits it, so meadow and
+    // ground share ONE color source on BOTH material sets.
+    Vec3 grassAlbedoBase(u32 variant) const {
+        return grassBases[glm::min(variant, 3u)];
+    }
+    // Mean albedo of a SEMANTIC layer (display-space) — cooked: the
+    // .mtex per-layer averages; procedural: means of the generated
+    // tiles. FarTerrain paints its coarse vertices with these through
+    // the real weight rule, so the horizon matches the ground.
+    Vec3 layerAlbedoBase(u32 layer) const {
+        return layerBases[glm::min<u32>(layer, SplatLayer_Count - 1)];
+    }
 
     // Streaming pump — main thread, once per frame, top of render: drains
     // finished meshes (budgeted uploads), requests missing chunks around the
-    // camera, evicts far ones.
-    void update(rhi::Device& device, const Vec3& cameraPos);
+    // camera, evicts far ones. `holdRequests` keeps the ring from streaming
+    // (sandbox boot: the base regions are not published yet — meshing
+    // against the empty base would all be redone). `boost` widens the
+    // anti-stutter budgets while a loading veil hides the frame.
+    void update(rhi::Device& device, const Vec3& cameraPos,
+                bool holdRequests = false, bool boost = false);
 
     // Drops every chunk and re-streams with current params (seed changed).
     // In-flight worker results are invalidated by generation.
     void regenerate(rhi::Device& device);
 
     // Re-mesh only these chunks (cx,cz keys) in place — the terrain-sculpt
-    // path. Each keeps drawing its current mesh until the rebuilt one (with the
-    // new params) is resident, then swaps (no hole). Non-resident or
-    // already-building chunks are skipped; they pick up the new params when
-    // they next stream. Keys use keyOf() — the shared terrain chunk grid.
+    // and region-publish path. Each keeps drawing its current mesh until the
+    // rebuilt one (with the new params) is resident, then swaps (no hole).
+    // Never-built chunks are skipped (their next stream captures the new
+    // params); chunks with a build in flight are marked and re-enqueued when
+    // that stale mesh lands — otherwise it would stick until an LOD change
+    // (the grass/vegetation `stale` contract, terrain flavor). Keys use
+    // keyOf() — the shared terrain chunk grid.
     void remeshChunks(const vector<u64>& keys);
 
     // Rebuilds the pipeline when the terrain shader hot-reloaded.
@@ -212,6 +251,9 @@ private:
         // Meshed height range (skirts included), for the frustum AABB.
         f32 minY { 0.0f };
         f32 maxY { 0.0f };
+        // remeshChunks hit this chunk while a build (captured OLD params)
+        // was in flight: when that mesh lands, rebuild with today's params.
+        bool remeshOnLand { false };
     };
 
     // One pooled vertex buffer per LOD: every chunk of that LOD is a
@@ -241,13 +283,17 @@ private:
         f32 maxY { 0.0f };
     };
 
-    void requestMissing(const Vec3& cameraPos);
+    // (Re)creates the splat material arrays + bind group from the
+    // requested set; falls back to procedural when the cooked load fails.
+    void buildMaterialArrays(rhi::Device& device, bool useCooked);
+
+    void requestMissing(const Vec3& cameraPos, bool boost);
     void enqueueBuild(i32 cx, i32 cz, u8 lod);
     void evictFar(rhi::Device& device, const Vec3& cameraPos);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
     void buildCasterPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
-    void pumpUploads(rhi::Device& device, const Vec3& cameraPos);
+    void pumpUploads(rhi::Device& device, const Vec3& cameraPos, bool boost);
     u32 allocSlot(u32 lod);
     void freeSlot(u32 lod, u32 slot);
     // Pool-full relief: free the slot of the FURTHEST chunk resident at
@@ -282,10 +328,33 @@ private:
     u64 casterShaderGeneration { 0 };
 
     // Splat material array (grass/rock/snow/sand tiles) + anisotropic
-    // repeat sampler, bound as bind group 1 by draw().
+    // repeat sampler, bound as bind group 1 by draw(). splatTexture is
+    // either the procedural tiles or the cooked albedo array.
     rhi::UniqueTexture splatTexture;
     rhi::UniqueSampler splatSampler;
     rhi::UniqueBindGroup splatBindGroup;
+    // The cooked companion arrays (BC5 normal / BC7 ORM / R16 height),
+    // resident alongside the albedo; bound by the height-blending /
+    // detail-shading bricks as they land.
+    rhi::UniqueTexture materialNormal;
+    rhi::UniqueTexture materialOrm;
+    rhi::UniqueTexture materialHeight;
+    bool cookedMaterials { false };
+    bool cookedPossible { false };
+    CookedSplatPaths cookedPaths;
+    // Display-space means per grass variant (grassAlbedoBase above);
+    // filled by buildMaterialArrays for the active set.
+    array<Vec3, 4> grassBases { Vec3 { 0.434f, 0.633f, 0.375f },
+                                Vec3 { 0.62f, 0.55f, 0.32f },
+                                Vec3 { 0.42f, 0.29f, 0.15f },
+                                Vec3 { 0.43f, 0.36f, 0.27f } };
+    // Semantic layer means (layerAlbedoBase above) — the far-mesh
+    // paint; defaults echo the old hand palette until the arrays load.
+    array<Vec3, SplatLayer_Count> layerBases {
+        Vec3 { 0.33f, 0.51f, 0.21f }, Vec3 { 0.46f, 0.44f, 0.42f },
+        Vec3 { 0.93f, 0.95f, 0.97f }, Vec3 { 0.76f, 0.70f, 0.50f },
+        Vec3 { 0.40f, 0.38f, 0.36f }
+    };
 };
 
 // Pure CPU chunk meshing, runs on worker threads. Vertices sample
@@ -297,7 +366,5 @@ vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
 vector<u32> buildChunkIndices(u32 lod);
 
 // The shared vertex-tint palette (sand/grass/rock/snow) — FarTerrain
-// paints with it too, so the streaming-ring hand-off matches.
-Vec3 terrainColor(f32 height, const Vec3& normal, f32 seaLevel);
 
 } // namespace render

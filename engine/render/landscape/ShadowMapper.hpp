@@ -20,6 +20,19 @@ class ShadowMapper {
 public:
     static constexpr u32 kCascadeCount = 3;
     static constexpr u32 kDefaultResolution = 2048;
+    // Far cascades render into the LOWER-LEFT quarter of their 2048
+    // layer (viewport 1024) — half the caster fill for slices whose
+    // texels are meters wide anyway; the receiver scales its uv by the
+    // same factor (shadow.glsl, fed through ssaoInfo.w). This is what
+    // pays for the doubled cascade reach (perf audit 2026-08-06).
+    static constexpr f32 kFarCascadeScale = 0.5f;
+    static constexpr f32 cascadeViewportScale(u32 i) {
+        return i == 0 ? 1.0f : kFarCascadeScale;
+    }
+    u32 effectiveResolution(u32 i) const {
+        return static_cast<u32>(static_cast<f32>(resolution_) *
+                                cascadeViewportScale(i));
+    }
 
     struct Cascades {
         array<Mat4, kCascadeCount> viewProj {};

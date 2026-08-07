@@ -131,6 +131,10 @@ public:
     // never reach it (docs/RENDERING.md §5.1).
     static constexpr u32 kMaxLights = 24;
 
+    // Macro-tint strength of the terrain look, synced from the view by
+    // WorldRenderer: the baked albedo tile must bounce the tinted ground.
+    f32 terrainTintStrength { 0.3f };
+
     void create(rhi::Device& device, ShaderLibrary& shaders,
                 core::JobSystem& jobs);
     void destroy(rhi::Device& device);
@@ -217,6 +221,10 @@ private:
     rhi::UniqueSampler volumeSampler;
     Vec2 tileCenter {};
     f32 tileSpan { 0.0f };
+    // Macro-tint strength of the LAST baked tile — the GI must bounce the
+    // tinted ground (an ocher canyon bounces ocher). WorldRenderer syncs
+    // the live value below; a change re-bakes the tile.
+    f32 bakedTintStrength { -1.0f };
     bool tileInFlight { false };
     bool tileUploaded { false };
     bool tileIsPlaceholder { true }; // "no terrain" tile (interiors/boot)

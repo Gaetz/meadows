@@ -5,6 +5,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "engine/render/landscape/GrassSpecies.hpp"
+
 namespace render {
 
 ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
@@ -108,6 +110,27 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     for (u32 i = 0; i < 8; ++i) {
         base.leafSeason[i] = in.leafSeason[i];
     }
+    base.splatDetailInfo = { in.splatBlendDepth, in.terrainTintStrength,
+                             in.splatDetailFade, in.pomDistance };
+    base.splatVarietyInfo = { in.splatVariety, in.pomShadowStrength,
+                              in.pomDepth,
+                              in.barkEnabled ? 1.0f : 0.0f };
+    // .w = the far-cascade viewport scale (shadow.glsl samples the
+    // lower-left quarter of far layers — ShadowMapper contract).
+    base.ssaoInfo = { in.ssaoStrength, in.ssaoRadius, in.ssdmAmplitude,
+                      in.shadowFarUvScale };
+    for (u32 i = 0; i < render::kGrassSpeciesCount; ++i) {
+        base.grassSpeciesShape[i] = { kGrassSpeciesShape[i][0],
+                                      kGrassSpeciesShape[i][1],
+                                      kGrassSpeciesShape[i][2],
+                                      kGrassSpeciesShape[i][3] };
+        base.grassSpeciesBase[i] = { kGrassSpeciesBase[i][0],
+                                     kGrassSpeciesBase[i][1],
+                                     kGrassSpeciesBase[i][2], 0.0f };
+        base.grassSpeciesTip[i] = { kGrassSpeciesTip[i][0],
+                                    kGrassSpeciesTip[i][1],
+                                    kGrassSpeciesTip[i][2], 0.0f };
+    }
 
     render::FrameUniforms resolved = base;
     if (in.interiorMode) {
@@ -188,6 +211,7 @@ ComposedFrame composeFrameUniforms(const FrameComposerInputs& in) {
     }
     resolved.waterDebugInfo = in.waterDebugInfo;
     resolved.waterInfoMapInfo = in.waterInfoMapInfo;
+    resolved.terrainShadeMapInfo = in.terrainShadeMapInfo;
     // Volumetric sky clouds ride RESOLVED only: the reflection pass has
     // no clouds composite, so it keeps the 2D dome layer (cloudVolInfo.x
     // stays 0 in base and applyClouds draws there).

@@ -10,8 +10,8 @@ namespace {
 // View-distance boundaries of the cascade slices (meters). The last slice
 // reaches the ultra tree ring, so distant canopies still ground themselves;
 // it casts with the cheap solid shadow proxies (VegetationSystem).
-constexpr f32 kSplits[ShadowMapper::kCascadeCount + 1] = { 0.5f, 45.0f,
-                                                           160.0f, 800.0f };
+constexpr f32 kSplits[ShadowMapper::kCascadeCount + 1] = { 0.5f, 90.0f,
+                                                           320.0f, 1600.0f };
 // How far behind the slice the light's near plane sits: tall terrain and
 // trees outside the slice still cast into it.
 constexpr f32 kCasterReach = 350.0f;
@@ -109,19 +109,19 @@ ShadowMapper::computeCascades(const Camera3D& camera, f32 aspect,
 
         // Texel snap: shift the projection so world origin lands on a texel
         // boundary — shadows stay rock solid while the camera translates.
+        const f32 effRes =
+            static_cast<f32>(resolution_) * cascadeViewportScale(i);
         Mat4 viewProj = proj * view;
-        const Vec4 origin =
-            viewProj * Vec4 { 0.0f, 0.0f, 0.0f, 1.0f } *
-            (static_cast<f32>(resolution_) * 0.5f);
+        const Vec4 origin = viewProj * Vec4 { 0.0f, 0.0f, 0.0f, 1.0f } *
+                            (effRes * 0.5f);
         const Vec2 rounded { std::round(origin.x), std::round(origin.y) };
-        const Vec2 offset = (rounded - Vec2 { origin.x, origin.y }) *
-                            (2.0f / static_cast<f32>(resolution_));
+        const Vec2 offset =
+            (rounded - Vec2 { origin.x, origin.y }) * (2.0f / effRes);
         proj[3][0] += offset.x;
         proj[3][1] += offset.y;
 
         result.viewProj[i] = proj * view;
-        result.texelWorld[i] =
-            (2.0f * radius) / static_cast<f32>(resolution_);
+        result.texelWorld[i] = (2.0f * radius) / effRes;
     }
     return result;
 }

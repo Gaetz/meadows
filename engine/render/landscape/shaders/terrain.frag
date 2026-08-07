@@ -6,12 +6,26 @@
 // (SplatTextures.hpp).
 layout(binding = 0) uniform sampler2DArray uSplat;
 layout(binding = 1) uniform sampler2DArrayShadow uShadowMap;
+// Per-layer displacement heights (cooked R16 or procedural R16F).
+// Binding 2 belongs to uCloudMap (clouds.glsl); 3 is the first free
+// sampler slot in this shader's include closure.
+layout(binding = 3) uniform sampler2DArray uSplatHeight;
+// Region shading maps (TerrainShadeMap.hpp — encoding contract there):
+// T0 = tint.rgb + wetness, T1 = rockiness / snow offset / sandiness / beach.
+layout(binding = 4) uniform sampler2D uTerrainShade0;
+layout(binding = 5) uniform sampler2D uTerrainShade1;
+// Per-layer tangent normals: rg = xy*0.5+0.5, z reconstructed (BC5 cooked
+// or RGBA8 procedural — one decode path).
+layout(binding = 8) uniform sampler2DArray uSplatNormal;
 #include "shadow.glsl"
 #include "clouds.glsl"
 #include "stylized.glsl"
 #include "locallights.glsl"
 #include "terrainlight.glsl"
 #include "gi.glsl"
+#include "terrain_weights.glsl"
+#include "terrain_blend.glsl"
+#include "terrain_zones.glsl"
 
 layout(location = 0) in vec3 vNormal;
 layout(location = 1) in vec3 vColor;
@@ -27,54 +41,293 @@ void main() {
     float seaLevel = uTerrainInfo.x;
     float snowLine = uTerrainInfo.y;
 
-    // Per-pixel material weights: rock claims slopes, snow the high flats,
-    // sand the shoreline band, grass everything else. Smoothsteps give the
-    // soft blended transitions; altitude borders are perturbed by a
-    // low-frequency sample of the splat tiles so the sand and snow lines
-    // wander organically instead of tracing a level contour.
-    // Centering must stay in LOCKSTEP with TerrainNoise.cpp's CPU
-    // mirror: tile mean green (0.36 linear) plus the -0.31 bias the
-    // snow/sand lines are tuned against.
-    float wander = texture(uSplat, vec3(uv * 0.06, 0.0)).g - 0.67;
+    // Rock claims slopes, snow the high flats, sand the shoreline band,
+    // grass everything else (terrain_weights.glsl — the one weight rule).
+    // Altitude borders are perturbed by borderWander (analytic noise,
+    // material-set independent) so the sand and snow lines wander
+    // organically instead of tracing a level contour.
+    float wander = borderWander(uv * 0.06);
+
+    // Region shading taps (biome rules resolved to continuous fields at
+    // bake — the CPU mirror is terrain::regionShadingAt). Outside the
+    // map's span the inputs fall back to neutral: the historical rules.
+    vec2 suv = (vWorldPos.xz - uTerrainShadeMapInfo.xy) *
+                   uTerrainShadeMapInfo.z +
+               0.5;
+    bool shadeValid = uTerrainShadeMapInfo.w > 0.5 &&
+                      all(greaterThan(suv, vec2(0.0))) &&
+                      all(lessThan(suv, vec2(1.0)));
+    vec4 shade1 = shadeValid ? texture(uTerrainShade1, suv)
+                             : vec4(0.0, 128.0 / 255.0, 0.0, 0.0);
+    float rockShift = 0.1 * shade1.r;
+    float snowOffset = (shade1.g * 255.0 - 128.0) * 8.0;
+    vec3 tint = shadeValid ? texture(uTerrainShade0, suv).rgb : vec3(1.0);
 
     // vColor.r carries the baked rock-exposure mask (TerrainSystem
     // vertex build) — bare cliff faces claim the steepest slopes.
-    // Weight math mirrors TerrainNoise.cpp materialWeightsShaded.
-    float cliffW = smoothstep(0.30, 0.55, slope) * vColor.r;
-    float rockW = smoothstep(0.18, 0.35, slope) * (1.0 - cliffW);
-    float snowH = h + wander * 26.0;
-    float snowW = smoothstep(snowLine - 12.0, snowLine + 42.0, snowH) *
-                  (1.0 - smoothstep(0.25, 0.45, slope));
-    float sandH = h + wander * 5.0;
-    float sandW = (1.0 - smoothstep(seaLevel + 1.0, seaLevel + 8.0, sandH)) *
-                  (1.0 - rockW - cliffW);
-    float grassW = max(1.0 - rockW - snowW - sandW - cliffW, 0.0);
-    float total = grassW + rockW + snowW + sandW + cliffW;
+    TerrainWeights w =
+        terrainWeights(h, slope, wander, vColor.r, seaLevel,
+                       snowLine + snowOffset, rockShift, shade1.b,
+                       shade1.a);
+    float ws[kSplatLayers];
+    ws[0] = w.grass;
+    ws[1] = w.rock;
+    ws[2] = w.snow;
+    ws[3] = w.sand;
+    ws[4] = w.cliff;
+
+    // Hex-tiling (terrain_zones.glsl): the grass layer is a 3-tap blend
+    // over a triangle lattice — variant AND uv offset per vertex, so
+    // neither zone borders nor tile repetition exist. Far away the
+    // weights collapse to the dominant tap (1 fetch again).
+    ivec2 hexV[3];
+    vec3 hexW;
+    hexGrass(vWorldPos.xz, hexV[0], hexV[1], hexV[2], hexW);
+    vec2 hexOff[3];
+    hexOff[0] = hexOffsetOf(hexV[0]);
+    hexOff[1] = hexOffsetOf(hexV[1]);
+    hexOff[2] = hexOffsetOf(hexV[2]);
+    float camDistHex = distance(vWorldPos, uCameraPos.xyz);
+    float hexFar = smoothstep(25.0, 40.0, camDistHex);
+    // Collapse toward the dominant tap with distance (mip-blurred far
+    // texels don't need the 3-way blend).
+    int hexDom = hexW.y > hexW.x ? (hexW.z > hexW.y ? 2 : 1)
+                                 : (hexW.z > hexW.x ? 2 : 0);
+    vec3 hexOneHot = vec3(hexDom == 0 ? 1.0 : 0.0,
+                          hexDom == 1 ? 1.0 : 0.0,
+                          hexDom == 2 ? 1.0 : 0.0);
+    hexW = mix(hexW, hexOneHot, hexFar);
+    // Scree bias for the sand family's pick (terrain_weights.glsl
+    // screeFactor — the same band that grew the sand apron).
+    float screeMix =
+        clamp(screeFactor(slope, vColor.r, wander) * 1.6, 0.0, 1.0);
+    float grassLayerA = hexFamilyLayer(0, hexV[hexDom], 0.0);
+
+    // Height-blend the rule weights: only layers the rule already admits
+    // fetch their displacement (2-3 typical), the winner's micro-relief
+    // claims the transition band.
+    float depth = uSplatDetailInfo.x;
+    float hs[kSplatLayers];
+    for (int i = 0; i < kSplatLayers; ++i) {
+        if (ws[i] <= kSplatWeightEps) {
+            hs[i] = 0.0;
+            continue;
+        }
+        if (i <= 3) { // grass/rock/snow/sand: the per-family hex mix
+            hs[i] = 0.0;
+            for (int t = 0; t < 3; ++t) {
+                if (hexW[t] > 0.003) {
+                    hs[i] += hexW[t] *
+                             texture(uSplatHeight,
+                                     vec3(uv + hexOff[t],
+                                          hexFamilyLayer(
+                                              i, hexV[t],
+                                              i == 3 ? screeMix
+                                                     : 0.0))).r;
+                }
+            }
+        } else {
+            hs[i] = texture(uSplatHeight, vec3(uv, float(i))).r;
+        }
+    }
+    float b[kSplatLayers];
+    float total;
+    if (depth > 0.0) {
+        total = blendHeights(hs, ws, depth, b);
+    } else {
+        for (int i = 0; i < kSplatLayers; ++i) {
+            b[i] = ws[i];
+        }
+        total = max(ws[0] + ws[1] + ws[2] + ws[3] + ws[4], 1.0e-5);
+    }
 
     // Altitude-locked strata ledges on the cliff layer (the texture's
     // own banding runs in uv space; this one follows the geology).
     float band = fract((h + wander * 8.0) / 14.0);
     float ledge = smoothstep(0.0, 0.45, band) * (1.0 - smoothstep(0.7, 0.95, band));
-    vec3 cliffAlbedo = texture(uSplat, vec3(uv, 4.0)).rgb * (0.84 + 0.24 * ledge);
 
-    vec3 albedo = (texture(uSplat, vec3(uv, 0.0)).rgb * grassW +
-                   texture(uSplat, vec3(uv, 1.0)).rgb * rockW +
-                   texture(uSplat, vec3(uv, 2.0)).rgb * snowW +
-                   texture(uSplat, vec3(uv, 3.0)).rgb * sandW +
-                   cliffAlbedo * cliffW) /
-                  total;
+    int dominant = 0;
+    float dominantB = 0.0;
+    for (int i = 0; i < kSplatLayers; ++i) {
+        if (b[i] > dominantB) {
+            dominantB = b[i];
+            dominant = i;
+        }
+    }
+
+    // Tangent basis of the planar world mapping (u = +X, v = +Z): no
+    // vertex tangents needed. B = cross(T, n) keeps +v => +Z (normal maps
+    // are OpenGL +Y — a flipped-looking relief means the SOURCE map is DX).
+    vec3 T = normalize(vec3(1.0, 0.0, 0.0) - n * n.x);
+    vec3 B = cross(T, n);
+    float camDist = distance(vWorldPos, uCameraPos.xyz);
+
+    // Parallax occlusion on the DOMINANT layer (uSplatDetailInfo.w =
+    // reach in meters, 0 = off), faded over its last stretch. Derivatives
+    // are computed BEFORE the march and textureGrad used inside: implicit
+    // derivatives are undefined in the non-uniform loop (mip bands +
+    // shimmer at triangle edges otherwise).
+    // The dominant layer's FETCH index follows the dominant hex tap —
+    // its uv offset rides the whole POM march (subtracted back for the
+    // other layers below). Every hex family (0-3) qualifies.
+    float dominantLayer =
+        dominant <= 3
+            ? hexFamilyLayer(dominant, hexV[hexDom],
+                             dominant == 3 ? screeMix : 0.0)
+            : float(dominant);
+    vec2 pomShift = dominant <= 3 ? hexOff[hexDom] : vec2(0.0);
+    vec2 pomUv = uv + pomShift;
+    float pomSelfShadow = 1.0;
+    float pomReach = uSplatDetailInfo.w;
+    if (pomReach > 0.0 && camDist < pomReach && dominantB > 0.3 * total) {
+        vec2 dx = dFdx(uv);
+        vec2 dy = dFdy(uv);
+        vec3 view = normalize(uCameraPos.xyz - vWorldPos);
+        vec3 viewT = vec3(dot(view, T), dot(view, B), dot(view, n));
+        float scale = uSplatVarietyInfo.z * // relief depth (panel knob)
+                      (1.0 - smoothstep(pomReach * 0.6, pomReach, camDist));
+        const int kPomSteps = 12;
+        vec2 duv = viewT.xy / max(viewT.z, 0.25) * (scale / kPomSteps);
+        float stepDepth = 1.0 / kPomSteps;
+        float depthCur = 0.0;
+        float hPrev = 0.0;
+        float hHere =
+            1.0 - textureGrad(uSplatHeight, vec3(pomUv, dominantLayer),
+                              dx, dy).r;
+        for (int s = 0; s < kPomSteps && depthCur < hHere; ++s) {
+            pomUv -= duv;
+            depthCur += stepDepth;
+            hPrev = hHere;
+            hHere = 1.0 -
+                    textureGrad(uSplatHeight, vec3(pomUv, dominantLayer),
+                                dx, dy).r;
+        }
+        // One linear refine between the last two samples.
+        float after = hHere - depthCur;
+        float before = hPrev - (depthCur - stepDepth);
+        float t = clamp(before / max(before - after, 1e-4), 0.0, 1.0);
+        pomUv += duv * (1.0 - t);
+
+        // Cheap self-shadowing: two occlusion taps toward the sun in
+        // tangent space — crevices darken against the light, doubling
+        // the perceived depth for a fraction of the march cost.
+        // Strength = uSplatVarietyInfo.y (0 = off).
+        if (uSplatVarietyInfo.y > 0.0) {
+            vec3 sunT = vec3(dot(uSunDirection.xyz, T),
+                             dot(uSunDirection.xyz, B),
+                             dot(uSunDirection.xyz, n));
+            if (sunT.z > 0.1) {
+                float hSurf =
+                    textureGrad(uSplatHeight, vec3(pomUv, dominantLayer),
+                                dx, dy).r;
+                vec2 sdir = sunT.xy / sunT.z * scale;
+                float occl = 0.0;
+                for (int s = 1; s <= 2; ++s) {
+                    float f = float(s) / 3.0;
+                    float hTap = textureGrad(
+                        uSplatHeight,
+                        vec3(pomUv + sdir * f, dominantLayer), dx, dy).r;
+                    occl += clamp((hTap - (hSurf + f * 0.75)) * 2.0, 0.0,
+                                  0.35);
+                }
+                pomSelfShadow =
+                    1.0 - occl * uSplatVarietyInfo.y;
+            }
+        }
+    }
+
+    vec3 albedo = vec3(0.0);
+    vec2 nxy = vec2(0.0);
+    for (int i = 0; i < kSplatLayers; ++i) {
+        if (b[i] <= 0.0) {
+            continue;
+        }
+        // Families 0-3 are 3-tap hex blends (variant + offset per
+        // lattice vertex); the cliff fetches itself at the unshifted uv.
+        vec2 baseUv = pomUv - pomShift;
+        float fetchLayer = i == 0 ? grassLayerA : float(i);
+        vec3 layer;
+        vec2 layerN;
+        if (i <= 3) {
+            layer = vec3(0.0);
+            layerN = vec2(0.0);
+            for (int t = 0; t < 3; ++t) {
+                if (hexW[t] > 0.003) {
+                    vec2 tapUv = baseUv + hexOff[t];
+                    float lyr = hexFamilyLayer(
+                        i, hexV[t], i == 3 ? screeMix : 0.0);
+                    layer += hexW[t] *
+                             texture(uSplat, vec3(tapUv, lyr)).rgb;
+                    layerN += hexW[t] *
+                              (texture(uSplatNormal,
+                                       vec3(tapUv, lyr)).rg * 2.0 -
+                               1.0);
+                }
+            }
+        } else {
+            layer = texture(uSplat, vec3(baseUv, fetchLayer)).rgb;
+            layerN = texture(uSplatNormal,
+                             vec3(baseUv, fetchLayer)).rg * 2.0 - 1.0;
+        }
+        // Anti-repetition (brief phase 5, cheap variant): a second tap at
+        // a NON-HARMONIC frequency (0.37x, per-layer phase) drifts the
+        // tile's luminance — two incommensurate periods never realign, so
+        // the 4 m grid dissolves. The hex families skip it: their uv
+        // offsets already de-tile; only the cliff still needs it.
+        if (uSplatVarietyInfo.x > 0.0 && i > 3) {
+            vec3 c2 = texture(uSplat,
+                              vec3(baseUv * 0.37 +
+                                       vec2(0.17, 0.29) * float(i),
+                                   fetchLayer)).rgb;
+            float l1 = dot(layer, vec3(0.299, 0.587, 0.114));
+            float l2 = dot(c2, vec3(0.299, 0.587, 0.114));
+            float f = clamp(l2 / max(l1, 1e-3), 0.5, 1.8);
+            layer *= mix(1.0, f, uSplatVarietyInfo.x * 0.6);
+        }
+        if (i == 4) {
+            layer *= 0.84 + 0.24 * ledge;
+        }
+        albedo += layer * b[i];
+        nxy += layerN * b[i];
+    }
+    albedo /= total;
+    nxy /= total;
+
+    // Near-field detail: the dominant layer's normal re-sampled at a
+    // NON-HARMONIC frequency (the regular grid of one frequency alone
+    // never disappears), faded out by uSplatDetailInfo.z meters — an
+    // unfaded detail normal aliases in the background.
+    float detailFade = 1.0 - smoothstep(uSplatDetailInfo.z * 0.5,
+                                        uSplatDetailInfo.z, camDist);
+    if (detailFade > 0.0) {
+        vec2 dxy = texture(uSplatNormal,
+                           vec3(pomUv * 7.3, dominantLayer)).rg * 2.0 -
+                   1.0;
+        nxy += dxy * (0.5 * detailFade); // whiteout-style xy add
+    }
+
+    vec3 tsn = vec3(nxy, sqrt(max(1.0 - dot(nxy, nxy), 0.0)));
+    vec3 shadedN = normalize(T * tsn.x + B * tsn.y + n * tsn.z);
+    // Macro tint, attenuated by the strength knob (uSplatDetailInfo.y —
+    // above ~0.4 the tint crushes the materials' own variation).
+    albedo *= mix(vec3(1.0), tint, uSplatDetailInfo.y);
 
     albedo *= cascadeDebugTint(vWorldPos);
     // Wetness: rain darkens the ground (global for now — the roof
     // keeps the DROPS out via the occlusion map; per-pixel dry patches
     // under cover are a later refinement).
     albedo *= mix(1.0, 0.72, clamp(uStormInfo.y, 0.0, 1.0));
-    float ndl = dot(n, uSunDirection.xyz);
+    // The mapped normal drives the DIRECT terms only (sun diffuse, local
+    // lights); shadow bias and GI keep the analytic normal — the RC
+    // inject baked it, and the stylized shadow pools must not crawl with
+    // texel-scale relief.
+    float ndl = dot(shadedN, uSunDirection.xyz);
     float diffuse = stylizedDiffuse(ndl, max(ndl, 0.0));
     // Cast shadows quantize to flat pools; cloud shadows stay soft (they
     // drift — hard edges would crawl).
     float cloudVis = cloudShadowFactor(vWorldPos);
-    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) * cloudVis;
+    float shadow = stylizedShadow(shadowFactor(vWorldPos, n)) * cloudVis *
+                   pomSelfShadow;
     // Long-range terrain sun shadow (x) + sky openness (y).
     vec2 tl = terrainLightFactors(vWorldPos);
     // The ONE GI technique branch (gi.glsl) — Classic stays intact.
@@ -84,7 +337,14 @@ void main() {
     // the ground is fullscreen — the per-cluster list is what makes the
     // cost bearable. Off = the historical sun+GI-only terrain.
     if (uClusterInfo.x > 0.5) {
-        lit += albedo * localLights(vWorldPos, n);
+        lit += albedo * localLights(vWorldPos, shadedN);
     }
-    fragColor = vec4(applyFog(lit, vWorldPos, cloudVis), 1.0);
+    // Alpha packs the blended relief height for the SSDM warp
+    // (0.5 flat .. ~0.99 crest; the 0.5 floor keeps the grass-exempt
+    // flag semantics of every screen pass).
+    float relief = (b[0] * hs[0] + b[1] * hs[1] + b[2] * hs[2] +
+                    b[3] * hs[3] + b[4] * hs[4]) /
+                   total;
+    fragColor = vec4(applyFog(lit, vWorldPos, cloudVis),
+                     0.5 + clamp(relief, 0.0, 1.0) * 0.49);
 }

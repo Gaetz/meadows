@@ -22,6 +22,7 @@
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 0
 #include <vk_mem_alloc.h>
 
+#include "engine/core/Assert.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/VulkanSurface.hpp"
 #include "engine/platform/Window.hpp"
@@ -91,12 +92,16 @@ vector<VkExtensionProperties> deviceExtensionProperties(VkPhysicalDevice gpu) {
 
 VkFormat toVkFormat(TextureFormat format) {
     switch (format) {
-    case TextureFormat::RGBA8:    return VK_FORMAT_R8G8B8A8_UNORM;
-    case TextureFormat::SRGBA8:   return VK_FORMAT_R8G8B8A8_SRGB;
-    case TextureFormat::RGBA16F:  return VK_FORMAT_R16G16B16A16_SFLOAT;
-    case TextureFormat::R16F:     return VK_FORMAT_R16_SFLOAT;
-    case TextureFormat::R32F:     return VK_FORMAT_R32_SFLOAT;
-    case TextureFormat::Depth32F: return VK_FORMAT_D32_SFLOAT;
+    case TextureFormat::RGBA8:     return VK_FORMAT_R8G8B8A8_UNORM;
+    case TextureFormat::SRGBA8:    return VK_FORMAT_R8G8B8A8_SRGB;
+    case TextureFormat::RGBA16F:   return VK_FORMAT_R16G16B16A16_SFLOAT;
+    case TextureFormat::R16F:      return VK_FORMAT_R16_SFLOAT;
+    case TextureFormat::R32F:      return VK_FORMAT_R32_SFLOAT;
+    case TextureFormat::Depth32F:  return VK_FORMAT_D32_SFLOAT;
+    case TextureFormat::BC7_SRGB:  return VK_FORMAT_BC7_SRGB_BLOCK;
+    case TextureFormat::BC7_UNORM: return VK_FORMAT_BC7_UNORM_BLOCK;
+    case TextureFormat::BC5_UNORM: return VK_FORMAT_BC5_UNORM_BLOCK;
+    case TextureFormat::R16_UNORM: return VK_FORMAT_R16_UNORM;
     }
     return VK_FORMAT_R8G8B8A8_UNORM;
 }
@@ -105,17 +110,21 @@ bool isDepthFormat(TextureFormat format) {
     return format == TextureFormat::Depth32F;
 }
 
-// Bytes per texel, for staging uploads. Only the formats that accept initial
-// pixels (RGBA8/SRGBA8) are ever uploaded, but the others are sized here too
-// so readbacks/copies can reason about them.
+// Bytes per texel, for staging uploads and readbacks. Block-compressed
+// formats are never sized per texel — their uploads go through
+// rhi::mipLevelBytes on the pixelsIncludeMips path.
 u32 bytesPerTexel(TextureFormat format) {
     switch (format) {
     case TextureFormat::RGBA8:
-    case TextureFormat::SRGBA8:   return 4;
-    case TextureFormat::RGBA16F:  return 8;
-    case TextureFormat::R16F:     return 2;
+    case TextureFormat::SRGBA8:    return 4;
+    case TextureFormat::RGBA16F:   return 8;
+    case TextureFormat::R16F:      return 2;
     case TextureFormat::R32F:
-    case TextureFormat::Depth32F: return 4;
+    case TextureFormat::Depth32F:  return 4;
+    case TextureFormat::R16_UNORM: return 2;
+    case TextureFormat::BC7_SRGB:
+    case TextureFormat::BC7_UNORM:
+    case TextureFormat::BC5_UNORM: return 0; // block formats: mipLevelBytes
     }
     return 4;
 }
@@ -256,6 +265,9 @@ struct VulkanTexture {
     u32 mipLevels { 1 };
     u32 arrayLayers { 1 };
     VkImageAspectFlags aspect { VK_IMAGE_ASPECT_COLOR_BIT };
+    // Created with pixelsIncludeMips: the offline chain is authoritative,
+    // generateMipmaps refuses to overwrite it.
+    bool offlineMips { false };
     // Tracked so transitions know where they are coming from. One layout for
     // the whole image: this backend never leaves mips in mixed layouts outside
     // of generateMipmaps, which restores a uniform one before returning.
@@ -743,6 +755,7 @@ struct VulkanDevice::Impl {
                       u64 dstOffset);
 
     bool multiDrawIndirect { false }; // device feature, mirrored in caps
+    bool textureCompressionBC { false }; // device feature, mirrored in caps
 
     void flushPendingFrees(bool force) {
         const auto done = [&](u64 parked) {
@@ -2907,6 +2920,25 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
         LOG_ERROR("Vulkan createTexture: depth and arrayLayers are exclusive");
         return {};
     }
+    if (isBlockCompressed(desc.format)) {
+        if (!d.textureCompressionBC) {
+            LOG_ERROR("Vulkan createTexture: BC format without "
+                      "textureCompressionBC device feature");
+            return {};
+        }
+        if (!desc.pixelsIncludeMips || pixels == nullptr) {
+            LOG_ERROR("Vulkan createTexture: BC formats require initial "
+                      "pixels with the full mip chain (pixelsIncludeMips)");
+            return {};
+        }
+    }
+    if (desc.pixelsIncludeMips &&
+        (pixels == nullptr || desc.format == TextureFormat::R16F)) {
+        // R16F keeps its f32-to-half conversion contract, which the raw
+        // mip-chain memcpy below cannot honor.
+        LOG_ERROR("Vulkan createTexture: invalid pixelsIncludeMips request");
+        return {};
+    }
 
     const bool volume = desc.depth > 1;
     VulkanTexture tex {};
@@ -2931,9 +2963,9 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
     }
     // STORAGE wherever the format allows it (GL parity: compute writes 2D
     // targets too — Hi-Z mips, snow mask, cloud bake — not just volumes).
-    // SRGB and depth formats do not support storage use.
+    // SRGB, depth and block-compressed formats do not support storage use.
     if (desc.format != TextureFormat::SRGBA8 &&
-        !isDepthFormat(desc.format)) {
+        !isDepthFormat(desc.format) && !isBlockCompressed(desc.format)) {
         usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     }
 
@@ -2982,8 +3014,61 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
         return {};
     }
 
+    // Upload the full offline mip chain (mip-major, layers contiguous per
+    // mip — see TextureDesc::pixelsIncludeMips): one staging buffer, one
+    // copy region per mip covering every layer.
+    if (pixels != nullptr && desc.pixelsIncludeMips) {
+        const u64 size = textureDataBytes(desc);
+        VkBuffer staging = VK_NULL_HANDLE;
+        VmaAllocation stagingAlloc = nullptr;
+        void* mapped = nullptr;
+        if (d.createStaging(size, false, staging, stagingAlloc, &mapped)) {
+            std::memcpy(mapped, pixels, size);
+            vmaFlushAllocation(d.allocator, stagingAlloc, 0, size);
+
+            vector<VkBufferImageCopy> regions;
+            regions.reserve(tex.mipLevels);
+            u64 offset = 0;
+            u32 w = desc.width;
+            u32 h = desc.height;
+            for (u32 mip = 0; mip < tex.mipLevels; ++mip) {
+                // bufferOffset must be a multiple of the texel block size
+                // (and 4); holds by construction for BC (16-byte blocks)
+                // and R16_UNORM (power-of-two mip areas).
+                ENGINE_ASSERT(offset % std::max<u64>(
+                                  4, formatBlockBytes(desc.format)) == 0);
+                VkBufferImageCopy region {};
+                region.bufferOffset = offset;
+                region.imageSubresource.aspectMask = tex.aspect;
+                region.imageSubresource.mipLevel = mip;
+                region.imageSubresource.baseArrayLayer = 0;
+                region.imageSubresource.layerCount = tex.arrayLayers;
+                region.imageExtent = { w, h, 1 };
+                regions.push_back(region);
+                offset += mipLevelBytes(desc.format, w, h) * tex.arrayLayers;
+                w = w > 1 ? w / 2 : 1;
+                h = h > 1 ? h / 2 : 1;
+            }
+            d.immediateSubmit([&](VkCommandBuffer cb) {
+                transitionLayout(cb, tex.image, tex.aspect, 0, tex.mipLevels,
+                                 tex.arrayLayers, VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                vkCmdCopyBufferToImage(cb, staging, tex.image,
+                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                       static_cast<u32>(regions.size()),
+                                       regions.data());
+                transitionLayout(cb, tex.image, tex.aspect, 0, tex.mipLevels,
+                                 tex.arrayLayers,
+                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            });
+            vmaDestroyBuffer(d.allocator, staging, stagingAlloc);
+            tex.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            tex.offlineMips = true;
+        }
+    }
     // Upload the base mip of every layer (tightly packed, layer-major).
-    if (pixels != nullptr) {
+    else if (pixels != nullptr) {
         const u64 texelCount = static_cast<u64>(desc.width) * desc.height *
                                tex.extent.depth * tex.arrayLayers;
         const u64 size = texelCount * bytesPerTexel(desc.format);
@@ -3094,6 +3179,11 @@ void VulkanDevice::generateMipmaps(TextureHandle handle) {
     Impl& d = *impl;
     VulkanTexture* tex = d.findTexture(handle);
     if (!tex || tex->mipLevels <= 1) {
+        return;
+    }
+    if (tex->offlineMips) {
+        LOG_ERROR("Vulkan generateMipmaps: texture carries an offline mip "
+                  "chain (pixelsIncludeMips) — refusing to overwrite it");
         return;
     }
     // Blitting requires the format to support linear filtering.
@@ -4153,13 +4243,17 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
     deviceExtensions.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
     deviceExtensions.push_back(VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
 
-    // Only anisotropy and multi-draw-indirect are requested, and only if the
-    // GPU has them — samplers fall back to isotropic filtering; indirect
-    // draws fall back to a per-draw loop.
+    // Only anisotropy, multi-draw-indirect and BC compression are requested,
+    // and only if the GPU has them — samplers fall back to isotropic
+    // filtering; indirect draws fall back to a per-draw loop; without BC the
+    // cooked-texture consumers keep their procedural fallback
+    // (caps.textureCompressionBC).
     VkPhysicalDeviceFeatures enabled {};
     enabled.samplerAnisotropy = features.samplerAnisotropy;
     enabled.multiDrawIndirect = features.multiDrawIndirect;
+    enabled.textureCompressionBC = features.textureCompressionBC;
     d.multiDrawIndirect = features.multiDrawIndirect == VK_TRUE;
+    d.textureCompressionBC = features.textureCompressionBC == VK_TRUE;
 
     const f32 priority = 1.0f;
     vector<VkDeviceQueueCreateInfo> queueInfos;
@@ -4450,7 +4544,8 @@ uptr<VulkanDevice> VulkanDevice::create(platform::Window& window) {
                     .timerQueries = timestampsUsable,
                     .volumeTextures = true,
                     .asyncCompute = d.asyncComputeAvailable,
-                    .multiDrawIndirect = d.multiDrawIndirect };
+                    .multiDrawIndirect = d.multiDrawIndirect,
+                    .textureCompressionBC = d.textureCompressionBC };
 
     {
         const u32 white[2] = { 0xffffffffu, 0xffffffffu };

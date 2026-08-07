@@ -25,15 +25,16 @@ class ShaderLibrary;
 // Distant landscape silhouettes (docs/RENDERING.md §3.6): ONE coarse
 // worker-baked grid over ~12 km around the camera, drawn UNDER the
 // streamed near terrain — the same height function sampled at ~62 m
-// cells, painted with the shared terrainColor palette, and raised +
+// cells, painted through the REAL weight rule with the splat layers'
+// mean albedos (the horizon matches the ground), and raised +
 // darkened by the shared forestMask so a canopy fringe silhouettes the
 // far ridges. The mesh sinks a few meters inside the streaming ring
 // (vertex shader) so its coarse sampling never pokes through the exact
 // near chunks; applyFog's horizon closure moves out to reach().
 class FarTerrain {
 public:
-    static constexpr u32 kGridN = 192;     // cells per side
-    static constexpr f32 kSpan = 12000.0f; // meters covered
+    static constexpr u32 kGridN = 256;     // cells per side
+    static constexpr f32 kSpan = 18000.0f; // meters covered (~70 m cells)
     // Tree impostors: cylindrical-billboard silhouettes scattered by the
     // SAME forestMask/gates as the real trees, fading in where those end
     // (~880 m) and out into the veil.
@@ -52,9 +53,14 @@ public:
     // an eighth of the span or the terrain inputs change.
     // `trees` = the measured real-tree silhouette (VegetationSystem)
     // — impostor size/shape and the canopy raise derive from it.
+    // `layerAlbedos` = the semantic layer means
+    // (TerrainSystem::layerAlbedoBase) — the far vertices are painted
+    // through the REAL weight rule with them, so the horizon matches
+    // the streamed ground materials.
     void update(rhi::Device& device, const TerrainParams& params,
                 const Vec3& focus,
-                const VegetationSystem::TreeSilhouette& trees);
+                const VegetationSystem::TreeSilhouette& trees,
+                const array<Vec3, 5>& layerAlbedos);
 
     // Draw in the main opaque pass, BEFORE the near terrain (depth does
     // the layering). `cloudMapGroup` at its own slot (the Vulkan rule).

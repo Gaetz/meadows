@@ -148,7 +148,13 @@ re-validate GL 4.6 parity**.
 
 The reusable **systems** live in `engine/render/landscape/`:
 `TerrainSystem` (64 m streamed chunks, 4 LODs + skirts, deterministic
-world-space noise, sRGB splat array), `GrassSystem` (Quick_Grass blades,
+world-space noise; the material layer — cooked BC7/BC5/R16 `.mtex` splat
+arrays with an A/B against the procedural tiles, height-based layer
+blending, per-layer normal mapping over the planar-UV tangent basis,
+POM on the dominant layer, bi-frequency anti-repetition, and the
+`TerrainShadeMap` region bands feeding biome rules + macro tint — is the
+TERRAIN-TEXTURING chantier, journal + knobs: `docs/TERRAIN-TEXTURING.md`),
+`GrassSystem` (Quick_Grass blades,
 metric density prefix; blades **inherit the terrain albedo at their
 root** — the scatter bakes the splat blotch color per instance
 (packed in `groundNormal.w`) and the panel colors are tints ×ground,
@@ -162,7 +168,13 @@ default with lobe trees as A/B), `TreeGenerator` /
 grading, 512² cloud-map bake, cumulonimbus billboards), `ShadowMapper`
 (CSM), `WaterSystem` (sea plane, planar reflection, pool-depth bake),
 `PostFx` (bloom, god rays, 2D volumetric march, froxel fog, ground
-mist, contact shadows, auto-exposure, SSAO-slot), `MistMap` /
+mist, contact shadows, auto-exposure, SSAO — half-res Alchemy taps over
+the depth snapshot, tonemap multiplier like contact. LIGHTING CONTRACT:
+short radius only (~0.7 m, `uSsaoInfo`) — contact-scale crevices the RC
+GI probes cannot resolve; distance-faded by 140 m (far occlusion belongs
+to RC + mist); sky neutral; grass blades exempt via the scene alpha
+flag; sun-independent so interiors keep it. CSM/froxels untouched — the
+pass reads only the depth copy), `MistMap` /
 `NoiseVolume` (valley bake + shared Perlin-Worley volume — §3.5
 "Ground mist"), `RadianceCascades` (GI),
 `LightClusters` (clustered-forward culling), `ChunkOcclusion` (CPU

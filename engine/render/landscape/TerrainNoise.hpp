@@ -176,12 +176,56 @@ const BiomeParams& biomeAt(const TerrainParams& params, f32 x, f32 z);
 MaterialWeights materialWeightsAt(const TerrainParams& params, f32 x,
                                   f32 z, f32 height, const Vec3& normal);
 
+// One sample of the low-frequency region fields — biome attributes
+// resolved to CONTINUOUS values (ids never blend; resolving
+// id -> attributes here is what makes the shade map's bilinear filtering
+// legitimate) plus the baked wetness/beach masks. This is the CHEAP part,
+// on the scatter/footstep hot path.
+struct RegionFields {
+    f32 wetness { 0.0f };
+    f32 rockiness { 0.0f };
+    f32 snowLineOffset { 0.0f }; // meters
+    f32 sandiness { 0.0f };
+    f32 beach { 0.0f };
+    f32 grassPresence { 1.0f }; // scatter-only (not a shader input)
+    f32 temperature { 0.0f };   // climate (tint composition)
+    f32 biomeWetness { 0.0f };  // biome character (≠ baked water mask)
+};
+RegionFields regionFieldsAt(const TerrainParams& params, f32 x, f32 z);
+
+// Fields + the composed macro tint (fbm — DELIBERATELY not on the weight
+// mirrors' hot path). THE single source for the TerrainShadeMap bake, the
+// grass root-albedo corners and the GI albedo tile.
+struct RegionShading {
+    RegionFields fields;
+    Vec3 tint { 1.0f };
+};
+RegionShading regionShadingAt(const TerrainParams& params, f32 x, f32 z);
+
+// Grass-family ground variant zoning — the CPU mirror of
+// terrain_zones.glsl (same hash, lattice, jitter, coloring): jittered-grid
+// Voronoi cells whose 2x2 base coloring guarantees two orthogonal
+// neighbors never share a variant. Seed-independent world pattern (like
+// borderWander). Consumers: the shader's grass fetches, the blade species
+// scores and the clutter rules — ground and growth tell the same story.
+struct GrassZone {
+    u32 variantA { 0 };
+    u32 variantB { 0 };
+    f32 blendA { 1.0f }; // 1 = pure A; < 1 inside the border band only
+};
+GrassZone grassZoneAt(f32 x, f32 z);
+
 // The weights as the SHADER shows them: the raw
 // altitude borders perturbed by the splat wander term (terrain.frag) so
 // a footstep on VISIBLE snow sounds like snow, not like the contour
 // line. `splatUvScale` = uTerrainInfo.z (tiles/meter, the render knob).
 // Scatter rules keep using materialWeights above (their masks predate
 // the wander and reseeding them would move every bush).
+// Deliberately does NOT follow the shader's height-based layer blend
+// (terrain_blend.glsl): that redistribution is decimeter-scale inside the
+// transition bands — the audio verdict there is perceptually ambiguous
+// and mirroring it would mean sampling the displacement tiles CPU-side
+// for no audible gain. The dominant layer outside the bands is unchanged.
 MaterialWeights materialWeightsShaded(const TerrainParams& params, f32 x,
                                       f32 z, f32 splatUvScale);
 

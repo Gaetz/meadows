@@ -36,6 +36,8 @@ layout(location = 2) in vec4 aPosScale; // xyz = terrain point, w = height scale
 layout(location = 3) in vec4 aParams;   // x = yaw, y = keep key (sorted),
                                         // z = tint jitter, w = lean
 layout(location = 4) in vec4 aGroundNormal; // xyz = terrain normal at root
+// x = species index (uGrassSpecies* tables), y = clump shade, zw free.
+layout(location = 1) in vec4 aSpecies;
 
 layout(location = 0) out vec3 vColor;
 layout(location = 1) out float vT;
@@ -99,15 +101,27 @@ void main() {
     float lodOut = smoothstep(uGrassShapeInfo.z, uGrassShapeInfo.w, dist);
     vLodOut = lodOut;
 
+    // Species (per clump, GrassSpecies.hpp): shape scales + tints from
+    // the FrameUbo tables. Height was applied at scatter (table x lane).
+    int species = clamp(int(aSpecies.x + 0.5), 0, 3);
+    vec4 spShape = uGrassSpeciesShape[species];
+
     // ONE per-blade brightness (stable: seeded by the root position) —
     // whole blades read lighter or darker, never a vertical jitter
-    // (the BotW meadow: uniform blades, some simply brighter).
+    // (the BotW meadow: uniform blades, some simply brighter). The clump
+    // shade multiplies on top: whole tufts read lighter or darker.
     float bladeBright = mix(uGrassBladeInfo.x, uGrassBladeInfo.y,
-                            hash21(aPosScale.xz * 3.17));
+                            hash21(aPosScale.xz * 3.17)) *
+                        aSpecies.y;
 
-    // Distance fade: blades sink into the ground (matches draw()'s cull).
-    float fade =
-        1.0 - smoothstep(uGrassBaseTint.w, uGrassTipTint.w, dist);
+    // Distance fade: blades sink into the ground (matches draw()'s cull),
+    // STAGGERED per blade by its uniform keep key — the ring edge
+    // dissolves stochastically instead of moving as one wall. Every blade
+    // is fully sunk by uGrassTipTint.w, so draw()'s cull still matches.
+    float fadeKey = fract(aParams.y * 0.15915494);
+    float fadeSpan = uGrassTipTint.w - uGrassBaseTint.w;
+    float fadeStart = uGrassBaseTint.w + fadeKey * 0.7 * fadeSpan;
+    float fade = 1.0 - smoothstep(fadeStart, uGrassTipTint.w, dist);
     float height = uGrassShapeInfo.x * aPosScale.w * fade;
 
     // Player push: compute from the root before shaping.
@@ -125,10 +139,13 @@ void main() {
         }
     }
 
-    // Width: rounded taper near (1 - t^2), linear far; per-blade width
-    // jitter; wider blades compensate the far density floor.
-    float taper = mix(1.0 - t * t, 1.0 - t, lodOut);
-    float halfWidth = uGrassShapeInfo.y * mix(0.7, 1.3, aParams.z) *
+    // Width: near taper blends rounded (1 - t^2) vs pointed (1 - t) by
+    // the species profile; linear far. Per-blade width jitter; wider
+    // blades compensate the far density floor.
+    float nearTaper = mix(1.0 - t, 1.0 - t * t, spShape.w);
+    float taper = mix(nearTaper, 1.0 - t, lodOut);
+    float halfWidth = uGrassShapeInfo.y * spShape.y *
+                      mix(0.7, 1.3, aParams.z) *
                       (1.0 + thin * uGrassLodInfo.w);
 
     // WIND — the reference's two-noise model on our shared wind clock.
@@ -143,7 +160,7 @@ void main() {
     float leanAnim =
         (vnoise(vec2(uWindInfo.x * 0.35) + aPosScale.xz * 137.423) * 2.0 -
          1.0) * 0.1;
-    float lean = mix(0.15, 0.45, aParams.w) + leanAnim;
+    float lean = mix(0.15, 0.45, aParams.w) * spShape.z + leanAnim;
 
     // Blade frame: local x = width, y = up, faces +Z before yaw.
     mat3 grassMat = rotAxis(windAxis, -windLean) *
@@ -188,8 +205,8 @@ void main() {
     // (bladeBright), never along the height.
     vec3 ground =
         srgbToLinear(unpackUnorm4x8(floatBitsToUint(aGroundNormal.w)).rgb);
-    vec3 base = ground * uGrassBaseTint.rgb;
-    vec3 tip = ground * uGrassTipTint.rgb;
+    vec3 base = ground * uGrassBaseTint.rgb * uGrassSpeciesBase[species].rgb;
+    vec3 tip = ground * uGrassTipTint.rgb * uGrassSpeciesTip[species].rgb;
     float ramp = t * t * t * t;
     vec3 highColor = mix(base, tip, ramp) * bladeBright;
     vec3 lowColor = mix(base, tip, t);

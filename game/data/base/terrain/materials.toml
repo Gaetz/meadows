@@ -1,0 +1,176 @@
+# Terrain splat material library — cook manifest.
+#
+#   cooker cook-terrain-materials game/data/base/terrain/materials.toml \
+#          game/data/base/textures/terrain
+#
+# Material order IS the splat layer order (render::SplatLayer):
+# grass / rock / snow / sand / cliff. Sources are CC0 from ambientCG
+# (1K PNG, NormalGL = OpenGL +Y — no flip), living outside the repo in
+# assets-src/ (gitignored); only the cooked .mtex arrays ship.
+# Layout/format contract: docs/AUDIT/TERRAIN-TEXTURING.md §3-4.
+
+[[material]]
+name = "grass"                  # SplatLayer_Grass
+albedo = "../../../../assets-src/terrain/Grass001/Grass001_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Grass001/Grass001_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Grass001/Grass001_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Grass001/Grass001_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Grass001/Grass001_1K-PNG_Displacement.png"
+
+[[material]]
+name = "rock"                   # SplatLayer_Rock
+albedo = "../../../../assets-src/terrain/Rock058/Rock058_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Rock058/Rock058_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Rock058/Rock058_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Rock058/Rock058_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Rock058/Rock058_1K-PNG_Displacement.png"
+
+[[material]]
+name = "snow"                   # SplatLayer_Snow
+albedo = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Snow010A/Snow010A_1K-PNG_Displacement.png"
+
+[[material]]
+name = "sand"                   # SplatLayer_Sand
+albedo = "../../../../assets-src/terrain/Ground054/Ground054_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Ground054/Ground054_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Ground054/Ground054_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Ground054/Ground054_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Ground054/Ground054_1K-PNG_Displacement.png"
+
+[[material]]
+name = "cliff"                  # SplatLayer_Cliff
+albedo = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_Color.png"
+normal = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_NormalGL.png"
+ao = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_Roughness.png"
+height = "../../../../assets-src/terrain/Rock051/Rock051_1K-PNG_Displacement.png"
+
+# Grass-family ground variants (terrain_zones.glsl zoning — order matters:
+# array layers 5/6/7 = variants 1/2/3; variant 0 is the grass layer above).
+# SAME color family by design: `harmonize = true` normalizes each variant's
+# mean albedo to the grass layer's at cook — the variation lives in the
+# CONTENT and RELIEF (POM), never in color patches.
+
+[[material]]
+name = "grass-path"             # variant 1: gazon use + sol (feuilles reservees aux sous-bois)
+albedo = "../../../../assets-src/terrain/grass_path_2/grass_path_2_Color.png"
+normal = "../../../../assets-src/terrain/grass_path_2/grass_path_2_NormalGL.png"
+ao = "../../../../assets-src/terrain/grass_path_2/grass_path_2_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/grass_path_2/grass_path_2_Roughness.png"
+height = "../../../../assets-src/terrain/grass_path_2/grass_path_2_Displacement.png"
+harmonize = true
+
+[[material]]
+name = "grass-stones"           # variant 2: gazon + pierres
+albedo = "../../../../assets-src/terrain/aerial_grass_rock/aerial_grass_rock_Color.png"
+normal = "../../../../assets-src/terrain/aerial_grass_rock/aerial_grass_rock_NormalGL.png"
+ao = "../../../../assets-src/terrain/aerial_grass_rock/aerial_grass_rock_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/aerial_grass_rock/aerial_grass_rock_Roughness.png"
+height = "../../../../assets-src/terrain/aerial_grass_rock/aerial_grass_rock_Displacement.png"
+harmonize = true
+
+[[material]]
+name = "grass-dirt"             # variant 3: gazon + terre
+albedo = "../../../../assets-src/terrain/sparse_grass/sparse_grass_Color.png"
+normal = "../../../../assets-src/terrain/sparse_grass/sparse_grass_NormalGL.png"
+ao = "../../../../assets-src/terrain/sparse_grass/sparse_grass_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/sparse_grass/sparse_grass_Roughness.png"
+height = "../../../../assets-src/terrain/sparse_grass/sparse_grass_Displacement.png"
+harmonize = true
+
+# Rock/snow/sand family variants (hex-tiling per family — ORDER IS THE
+# LAYER ORDER: rock 8-10, snow 11-12, sand 13-15). `harmonizeWith`
+# anchors each variant's mean albedo to ITS family base.
+
+[[material]]
+name = "rock-var1"               # layer 8
+albedo = "../../../../assets-src/terrain/rock_06/rock_06_Color.png"
+normal = "../../../../assets-src/terrain/rock_06/rock_06_NormalGL.png"
+ao = "../../../../assets-src/terrain/rock_06/rock_06_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/rock_06/rock_06_Roughness.png"
+height = "../../../../assets-src/terrain/rock_06/rock_06_Displacement.png"
+harmonize = true
+harmonizeWith = 1
+
+[[material]]
+name = "rock-var2"               # layer 9
+albedo = "../../../../assets-src/terrain/rock_05/rock_05_Color.png"
+normal = "../../../../assets-src/terrain/rock_05/rock_05_NormalGL.png"
+ao = "../../../../assets-src/terrain/rock_05/rock_05_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/rock_05/rock_05_Roughness.png"
+height = "../../../../assets-src/terrain/rock_05/rock_05_Displacement.png"
+harmonize = true
+harmonizeWith = 1
+
+[[material]]
+name = "rock-var3"               # layer 10
+albedo = "../../../../assets-src/terrain/rock_face/rock_face_Color.png"
+normal = "../../../../assets-src/terrain/rock_face/rock_face_NormalGL.png"
+ao = "../../../../assets-src/terrain/rock_face/rock_face_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/rock_face/rock_face_Roughness.png"
+height = "../../../../assets-src/terrain/rock_face/rock_face_Displacement.png"
+harmonize = true
+harmonizeWith = 1
+
+[[material]]
+name = "snow-var1"               # layer 11
+albedo = "../../../../assets-src/terrain/snow_02/snow_02_Color.png"
+normal = "../../../../assets-src/terrain/snow_02/snow_02_NormalGL.png"
+ao = "../../../../assets-src/terrain/snow_02/snow_02_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/snow_02/snow_02_Roughness.png"
+height = "../../../../assets-src/terrain/snow_02/snow_02_Displacement.png"
+harmonize = true
+harmonizeWith = 2
+
+[[material]]
+name = "snow-var2"               # layer 12
+albedo = "../../../../assets-src/terrain/snow_03/snow_03_Color.png"
+normal = "../../../../assets-src/terrain/snow_03/snow_03_NormalGL.png"
+ao = "../../../../assets-src/terrain/snow_03/snow_03_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/snow_03/snow_03_Roughness.png"
+height = "../../../../assets-src/terrain/snow_03/snow_03_Displacement.png"
+harmonize = true
+harmonizeWith = 2
+
+[[material]]
+name = "sand-var1"               # layer 13
+albedo = "../../../../assets-src/terrain/sand_01/sand_01_Color.png"
+normal = "../../../../assets-src/terrain/sand_01/sand_01_NormalGL.png"
+ao = "../../../../assets-src/terrain/sand_01/sand_01_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/sand_01/sand_01_Roughness.png"
+height = "../../../../assets-src/terrain/sand_01/sand_01_Displacement.png"
+harmonize = true
+harmonizeWith = 3
+
+[[material]]
+name = "sand-var2"               # layer 14
+albedo = "../../../../assets-src/terrain/sand_02/sand_02_Color.png"
+normal = "../../../../assets-src/terrain/sand_02/sand_02_NormalGL.png"
+ao = "../../../../assets-src/terrain/sand_02/sand_02_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/sand_02/sand_02_Roughness.png"
+height = "../../../../assets-src/terrain/sand_02/sand_02_Displacement.png"
+harmonize = true
+harmonizeWith = 3
+
+[[material]]
+name = "sand-var3"               # layer 15
+albedo = "../../../../assets-src/terrain/sandy_gravel/sandy_gravel_Color.png"
+normal = "../../../../assets-src/terrain/sandy_gravel/sandy_gravel_NormalGL.png"
+ao = "../../../../assets-src/terrain/sandy_gravel/sandy_gravel_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/sandy_gravel/sandy_gravel_Roughness.png"
+height = "../../../../assets-src/terrain/sandy_gravel/sandy_gravel_Displacement.png"
+harmonize = true
+harmonizeWith = 3
+
+[[material]]
+name = "scree"                  # layer 16 — talus at rock feet (no
+                                # harmonize: rock debris keeps its gray)
+albedo = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_Color.png"
+normal = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_NormalGL.png"
+ao = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_AmbientOcclusion.png"
+roughness = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_Roughness.png"
+height = "../../../../assets-src/terrain/rocks_ground_06/rocks_ground_06_Displacement.png"

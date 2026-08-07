@@ -138,6 +138,18 @@ bool RenderTuningPanels::drawTreeKnobs(render::WorldRenderer& r) {
         knobInt("Curve subdivision", p.curveSubdiv, 0, 3);
         knob("Path noise (kinks)", p.pathJitter, 0.0f, 1.0f);
         knob("Ring irregularity", p.ringIrregularity, 0.0f, 1.0f);
+        knob("Root flare amount", p.flareAmount, 0.0f, 2.0f);
+        knob("Root flare height (m)", p.flareHeight, 0.2f, 4.0f);
+        knobInt("Root flare lobes", p.flareLobes, 1, 8);
+        ImGui::SeparatorText("Bark material (live, no rebuild)");
+        ImGui::SliderFloat("Bark tile (tiles/m)", &p.barkTileScale,
+                           0.05f, 1.0f);
+        ImGui::SliderFloat("Hex cell (uv units)", &p.barkHexCell, 0.2f,
+                           3.0f);
+        ImGui::SliderFloat("Hex seam sharpness", &p.barkHexSharpness,
+                           1.0f, 12.0f);
+        ImGui::ColorEdit3("Bark tint", &p.barkTint.x,
+                          ImGuiColorEditFlags_Float);
         ImGui::SeparatorText("Crown envelope");
         knob("Bare trunk min (m)", p.trunkBaseMin, 0.5f, 5.0f);
         knob("Bare trunk max (m)", p.trunkBaseMax, 0.5f, 6.0f);
@@ -194,6 +206,25 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
         r.saveTuningRequested = true;
     }
 
+    // Bark pick per tree slot (oak / spruce) — group rebuild lands at
+    // the next update() safe point.
+    if (r.vegetation.barkLoaded() && ImGui::TreeNode("Bark")) {
+        static const char* kBarkNames[] = { "Oak", "Spruce" };
+        static const char* kSlotNames[] = {
+            "Slot 0 (broadleaf)", "Slot 1 (broadleaf)",
+            "Slot 2 (broadleaf)", "Slot 3 (conifer)", "Slot 4 (conifer)",
+        };
+        for (u32 i = 0; i < render::VegetationSystem::kTreeVariants;
+             ++i) {
+            int pick = r.vegetation.variantBark[i];
+            if (ImGui::Combo(kSlotNames[i], &pick, kBarkNames, 2)) {
+                r.vegetation.variantBark[i] = static_cast<u8>(pick);
+                r.vegetation.barkGroupsDirty = true;
+            }
+        }
+        ImGui::TreePop();
+    }
+
     dirty |= drawTreeKnobs(r);
 
     // The CLAUDE.md §5 round trip, v1: paste-ready records for
@@ -220,6 +251,7 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
                  l.lobeFlatten, l.normalSpherize);
         LOG_INFO("[records.fields]  # ColonizedTreeTuningForm\n"
                  "tubeSides = {}\ncurvePreserve = {}\ncurveSubdiv = {}\n"
+                 "flareAmount = {}\nflareHeight = {}\nflareLobes = {}\n"
                  "pathJitter = {}\nringIrregularity = {}\n"
                  "sideMinFraction = {}\n"
                  "segment = {}\nkillDistance = {}\nattractorCount = {}\n"
@@ -236,8 +268,11 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
                  "cardHalfSizeMin = {}\ncardHalfSizeMax = {}\n"
                  "densityGradient = {}\nfoliageDensity = {}\n"
                  "leafCount = {}\nleafSizeMin = {}\nleafSizeMax = {}\n"
-                 "leafSolidStart = {}\nleafSolidEnd = {}",
+                 "leafSolidStart = {}\nleafSolidEnd = {}\n"
+                 "barkTileScale = {}\nbarkHexCell = {}\n"
+                 "barkHexSharpness = {}\nbarkTint = [{}, {}, {}]",
                  c.tubeSides, c.curvePreserve, c.curveSubdiv,
+                 c.flareAmount, c.flareHeight, c.flareLobes,
                  c.pathJitter, c.ringIrregularity, c.sideMinFraction,
                  c.segment, c.killDistance, c.attractorCount,
                  c.pipeExponent, c.tropism, c.trunkBaseMin, c.trunkBaseMax,
@@ -249,7 +284,9 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
                  c.autumnTint.z, c.seasonality, c.smoothK, c.cardHalfSizeMin, c.cardHalfSizeMax,
                  c.densityGradient, c.foliageDensity, c.leafCount,
                  c.leafSizeMin, c.leafSizeMax, c.leafSolidStart,
-                 c.leafSolidEnd);
+                 c.leafSolidEnd, c.barkTileScale, c.barkHexCell,
+                 c.barkHexSharpness, c.barkTint.x, c.barkTint.y,
+                 c.barkTint.z);
     }
 
     if (dirty) {
@@ -529,6 +566,20 @@ void RenderTuningPanels::drawRenderPanel(render::WorldRenderer& r,
         // A/B: houses/crates/NPCs casting into the sun cascades.
         ImGui::Checkbox("Mesh shadow casters", &r.meshShadowCastersUi);
         ImGui::Checkbox("Contact shadows", &r.contactShadowsUi);
+        ImGui::Checkbox("SSAO", &r.ssaoUi);
+        if (r.ssaoUi) {
+            ImGui::SliderFloat("SSAO strength", &r.ssaoStrengthUi, 0.0f,
+                               2.0f);
+            ImGui::SliderFloat("SSAO radius (m)", &r.ssaoRadiusUi, 0.2f,
+                               2.0f);
+        }
+        const char* ssdmModes[] = { "Off", "Half res", "Full res" };
+        ImGui::Combo("SSDM", &r.ssdmModeUi, ssdmModes, 3);
+        if (r.ssdmModeUi != 0) {
+            ImGui::SliderFloat("SSDM amplitude (m)", &r.ssdmAmpUi,
+                               0.02f, 0.30f);
+        }
+
         ImGui::SameLine();
         ImGui::Checkbox("Terrain light map", &r.terrainLightUi);
         ImGui::Checkbox("Key light shadow", &r.keyShadowUi); // interiors

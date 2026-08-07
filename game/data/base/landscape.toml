@@ -8,8 +8,28 @@ name = "true-adventurer-landscape"
 
 # H8 proof asset: the demo cube's albedo (reuses a base texture file under
 # its own asset guid — assets layer per guid like fields, §5).
+# The terrain_*.mtex arrays are the cooked splat material library
+# (tools/cooker cook-terrain-materials; docs/AUDIT/TERRAIN-TEXTURING.md).
 [assets]
 "1a4d5c00-0000-4000-8000-0000000000a1" = "textures/iron_sword.png"
+"18021676-1e56-4758-8859-3dbef5b6ec8c" = "textures/terrain/terrain_albedo.mtex"
+"ed8af881-93d9-4c9f-964c-24714ff4473e" = "textures/terrain/terrain_normal.mtex"
+"a2d5eb11-1a53-441c-b04c-591fdadf59f2" = "textures/terrain/terrain_orm.mtex"
+"ee6aae6c-1520-4941-8e8c-29cca4857a97" = "textures/terrain/terrain_height.mtex"
+# Scanned props (Poly Haven CC0, docs/GRASS-REDO.md palier 1): override the
+# vegetation rock/debris variants; decimated + normalized at load.
+"4f018fc5-80ee-4601-a74d-d1bff315ee76" = "models/scans/stone_01/stone_01.gltf"
+"65de4305-9eda-48ba-a87c-57aff4606164" = "models/scans/rock_moss_set_01/rock_moss_set_01.gltf"
+"179b7c4b-708b-4ce0-ba8b-2d9fad6d9e1b" = "models/scans/tree_stump_01/tree_stump_01.gltf"
+"52f8af61-88f5-4c3d-accf-aca86850f787" = "models/scans/dead_tree_trunk/dead_tree_trunk.gltf"
+"8777c167-0930-4bbc-8820-a35b49229beb" = "models/scans/rock_boulder_dry/rock_boulder_dry.gltf"
+"e6ed977e-44d4-48d6-ae11-97fd1024b363" = "models/scans/boulder_01/boulder_01.gltf"
+"a28b58a1-e436-4f9a-8fc2-b248c0c228ad" = "models/plants/grass_medium_01/grass_medium_01.gltf"
+"85b644a7-f52e-4e33-a856-e72463c403fa" = "models/plants/fern_02/fern_02.gltf"
+"0e611ef4-69d1-40b5-b7c8-6b7884027caa" = "models/plants/dandelion_01/dandelion_01.gltf"
+"292b350b-99e7-482b-b9f6-0e993a69dc91" = "models/plants/shrub_04/shrub_04.gltf"
+"52035a3f-8246-419a-aa69-a686b0c2e834" = "textures/bark/bark_brown_02_diff_1k.jpg"
+"8244825d-a9a7-4a30-a8e7-996670193884" = "textures/bark/pine_bark_diff_1k.jpg"
 
 [[records]]
 form = "1a4d5c00-0000-4000-8000-000000000001"
@@ -45,6 +65,18 @@ coniferTreeType = "conifer" # species of the high tree slots (3-4)
 bushTreeType = "bush"       # colonized bush species (legacy blobs if empty)
 treeLineFactor = 0.82       # tree line = snow line x this
 splatUvScale = 0.25         # ground texture tiles per meter
+splatBlendDepth = 0.15      # height-blend band between layers (0 = plain blend)
+terrainTintStrength = 0.3   # macro tint strength (0 = off, keep <= ~0.4)
+splatDetailFade = 24.0      # near-field detail-normal fade end (m, 0 = off)
+pomDistance = 12.0          # parallax occlusion reach (m, 0 = off)
+splatVariety = 0.5          # anti-repetition second tap strength (0 = off)
+pomShadowStrength = 0.6     # POM self-shadow (crevices darken sun-side)
+pomDepth = 0.03             # parallax relief depth (uv units)
+# Cooked splat material arrays (Vulkan-only; empty/missing = procedural tiles).
+terrainAlbedoArray = "18021676-1e56-4758-8859-3dbef5b6ec8c"
+terrainNormalArray = "ed8af881-93d9-4c9f-964c-24714ff4473e"
+terrainOrmArray = "a2d5eb11-1a53-441c-b04c-591fdadf59f2"
+terrainHeightArray = "ee6aae6c-1520-4941-8e8c-29cca4857a97"
 
 # --- Fog / atmosphere ----------------------------------------------------
 fogDensity = 0.0010          # thinner: the 2-3 km ring must be visible
@@ -85,8 +117,8 @@ stylizedDiffuseEdge0End = 0.09
 stylizedDiffuseEdge1Start = 0.32  # full-light smoothstep
 stylizedDiffuseEdge1End = 0.4
 stylizedHalfTone = 0.6            # mid plateau level
-stylizedShadowStart = 0.45        # CSM snap window
-stylizedShadowEnd = 0.55
+stylizedShadowStart = 0.45        # CSM snap window (BotW flat pools) —
+stylizedShadowEnd = 0.55          # inert while stylized A/B is off (default)
 stylizedShadowFloor = 0.0         # raise to keep shadow pools readable
 
 # --- Shadows --------------------------------------------------------------
@@ -439,7 +471,9 @@ leafSizeMin = 0.1
 leafSizeMax = 0.2
 leafSolidStart = 4.0
 leafSolidEnd = 7.0
-tubeSides = 4
+# Knee-high bush: 6-sided twigs are plenty (12 was the tree treatment
+# applied too broadly — dev feedback 2026-08-06).
+tubeSides = 6
 sideMinFraction = 0.75
 
 [[records]]
@@ -478,7 +512,7 @@ leafSizeMin = 0.12
 leafSizeMax = 0.28
 leafSolidStart = 4.0
 leafSolidEnd = 7.0
-tubeSides = 5
+tubeSides = 12
 sideMinFraction = 0.5
 
 [[records]]
@@ -510,3 +544,8 @@ leafSizeMin = 0.1
 leafSizeMax = 0.25
 leafSolidStart = 4.0
 leafSolidEnd = 7.0
+# Low-poly trunk like the conifer record: 12-sided ring at full detail
+# (halving on thinner chains), the bark relief lives in the material —
+# same triplanar tiling, so oak and spruce bark share proportions.
+tubeSides = 12
+sideMinFraction = 0.5

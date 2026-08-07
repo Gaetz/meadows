@@ -67,6 +67,10 @@ struct DeviceCaps {
     // culling). Backends without it still accept the call (per-draw
     // loop / no-op on the 4.1 path) — check the flag to pick the path.
     bool multiDrawIndirect { false };
+    // BC5/BC7 (+ cooked R16_UNORM) creation and sampling with offline mip
+    // chains (TextureDesc::pixelsIncludeMips). Vulkan-only: GL backends
+    // leave it false and consumers keep their procedural fallback.
+    bool textureCompressionBC { false };
 };
 
 // --- Barriers ------------------------------------------------------------------
@@ -130,7 +134,48 @@ enum class TextureFormat {
               // packed f32 per texel; every backend converts on upload.
     R32F,     // full-precision single channel (Hi-Z depth pyramid)
     Depth32F, // depth attachment, sampleable (shadow maps, scene depth)
+    // Block-compressed sampled formats (caps.textureCompressionBC), cooked
+    // offline by tools/cooker with their full mip chain: initial pixels are
+    // mandatory and must include every mip (TextureDesc::pixelsIncludeMips) —
+    // generateMipmaps cannot blit BC images.
+    BC7_SRGB,  // albedo (sRGB-decoded on sample)
+    BC7_UNORM, // linear color-like data (ORM)
+    BC5_UNORM, // two-channel tangent normals; reconstruct Z in shader
+    R16_UNORM, // 16-bit normalized single channel (terrain material heights —
+               // height blending bands with only 8 bits). Initial-data
+               // contract: raw u16 per texel, UNLIKE R16F's f32-to-half.
 };
+
+// Bytes of one 4x4 block for compressed formats, of one texel otherwise.
+// With mipLevelBytes/textureDataBytes below, the single authority for
+// upload-size arithmetic shared by backends, loaders, the cooker and tests.
+constexpr u32 formatBlockBytes(TextureFormat f) {
+    switch (f) {
+    case TextureFormat::RGBA8:
+    case TextureFormat::SRGBA8:    return 4;
+    case TextureFormat::RGBA16F:   return 8;
+    case TextureFormat::R16F:      return 4; // f32 initial data (converted)
+    case TextureFormat::R32F:      return 4;
+    case TextureFormat::Depth32F:  return 4;
+    case TextureFormat::BC7_SRGB:
+    case TextureFormat::BC7_UNORM:
+    case TextureFormat::BC5_UNORM: return 16;
+    case TextureFormat::R16_UNORM: return 2;
+    }
+    return 0;
+}
+
+constexpr bool isBlockCompressed(TextureFormat f) {
+    return f == TextureFormat::BC7_SRGB || f == TextureFormat::BC7_UNORM
+        || f == TextureFormat::BC5_UNORM;
+}
+
+// Byte size of one layer of one mip level, block-aligned (4x4) for BC.
+constexpr u64 mipLevelBytes(TextureFormat f, u32 width, u32 height) {
+    if (isBlockCompressed(f))
+        return u64((width + 3) / 4) * ((height + 3) / 4) * formatBlockBytes(f);
+    return u64(width) * height * formatBlockBytes(f);
+}
 
 enum class FilterMode {
     Nearest,
@@ -150,8 +195,11 @@ enum TextureUsage : u32 {
 };
 
 // `pixels` at creation covers the base mip of every layer, tightly packed
-// and contiguous (width*height*bpp*arrayLayers). Only RGBA8/SRGBA8 accept
-// initial pixels; render-target formats are created empty.
+// and contiguous (width*height*bpp*arrayLayers) — or, with pixelsIncludeMips,
+// the full offline-generated mip chain (see textureDataBytes for the exact
+// size). Uploadable formats: RGBA8/SRGBA8/R16F, plus the cooked
+// BC*/R16_UNORM formats (mip chain mandatory); render-target formats are
+// created empty.
 struct TextureDesc {
     u32 width { 0 };
     u32 height { 0 };
@@ -161,11 +209,33 @@ struct TextureDesc {
     // GPU-written via storageImage, never uploaded; caps().volumeTextures.
     u32 depth { 1 };
     u32 mipLevels { 1 };   // storage levels; fill base, then generateMipmaps()
+    // Initial pixels carry the full mip chain, mip-major with layers
+    // contiguous inside each mip: mip0[layer0..N-1], mip1[layer0..N-1], ...
+    // Required for block-compressed formats; generateMipmaps() is invalid
+    // on a texture created this way (the chain is authoritative).
+    bool pixelsIncludeMips { false };
     TextureFormat format { TextureFormat::RGBA8 };
     FilterMode filter { FilterMode::Nearest };
     AddressMode wrap { AddressMode::ClampToEdge };
     u32 usage { TextureUsage_Sampled };
 };
+
+// Total byte size of the initial `pixels` createTexture expects for `desc`:
+// base mip of every layer, or the whole mip-major chain when
+// pixelsIncludeMips is set. Backends validate uploads against this; the
+// cooker writes payloads with exactly this layout.
+constexpr u64 textureDataBytes(const TextureDesc& desc) {
+    const u32 mips = desc.pixelsIncludeMips ? desc.mipLevels : 1;
+    u64 total = 0;
+    u32 w = desc.width;
+    u32 h = desc.height;
+    for (u32 m = 0; m < mips; ++m) {
+        total += mipLevelBytes(desc.format, w, h) * desc.arrayLayers * desc.depth;
+        w = w > 1 ? w / 2 : 1;
+        h = h > 1 ? h / 2 : 1;
+    }
+    return total;
+}
 
 // --- Samplers --------------------------------------------------------------------
 

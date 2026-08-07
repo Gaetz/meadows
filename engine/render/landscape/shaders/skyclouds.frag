@@ -158,6 +158,15 @@ void main() {
     float t1 = (top - uCameraPos.y) / dir.y;
     float span = min(min(t1, rayLen) - t0, 15000.0);
     bool marchSlab = rayLen >= t0 && span > 0.0;
+    if (!marchSlab) {
+        // Geometry IN FRONT of the slab: neutral, and NO temporal
+        // resolve — the anchor sits at the slab entry BEHIND the
+        // surface, so resolving here blends the previous sky's cloud
+        // history onto freshly disoccluded trunks/props (white smears
+        // that fade with the EMA on every camera turn).
+        fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
 
     float jitter = ignJitterRolled(gl_FragCoord.xy, uTemporalInfo.y);
 

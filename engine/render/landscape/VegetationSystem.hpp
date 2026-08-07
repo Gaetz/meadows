@@ -56,10 +56,33 @@ public:
     TreeSilhouette treeSilhouette() const;
     static constexpr u32 kRockVariants = 4;
     static constexpr u32 kBushVariants = 3;
+    // Forest-floor debris (stumps, fallen trunks — scanned-prop
+    // overrides, docs/GRASS-REDO.md): rigid like rocks, scattered on the
+    // forest floor only.
+    static constexpr u32 kDebrisVariants = 2;
+    // Photoreal plant accents over the blade meadow (docs/GRASS-REDO.md
+    // palier 2): textured (per-variant albedo bind group, alpha cutout),
+    // no shadow casting, no collision, no GI — fill-rate stays owned by
+    // the opaque world. Slot order: tall grass, fern, dandelion, shrub.
+    static constexpr u32 kPlantVariants = 4;
+    // Mass tier under the hero plants (docs/GRASS-REDO.md): the SAME
+    // four species as cheap clones (~200 tris) at high density and short
+    // reach — the carpet the heroes sit on. Same habitat + colony noise.
+    static constexpr u32 kMassVariants = 4;
+    // Pebble clutter: the SAME rock scans, but the slots carry only the
+    // ~40-tri decimation as their MAIN mesh — LOD is per chunk, so
+    // centimeter clutter in the camera chunk used to draw the 700-tri
+    // hero scans by the hundreds (perf audit 2026-08-06).
+    static constexpr u32 kPebbleVariants = 4;
     static constexpr u32 kVariantCount =
-        kTreeVariants + kRockVariants + kBushVariants;
+        kTreeVariants + kRockVariants + kBushVariants + kDebrisVariants +
+        kPlantVariants + kMassVariants + kPebbleVariants;
     static constexpr u32 kFirstRock = kTreeVariants;
     static constexpr u32 kFirstBush = kTreeVariants + kRockVariants;
+    static constexpr u32 kFirstDebris = kFirstBush + kBushVariants;
+    static constexpr u32 kFirstPlant = kFirstDebris + kDebrisVariants;
+    static constexpr u32 kFirstMass = kFirstPlant + kPlantVariants;
+    static constexpr u32 kFirstPebble = kFirstMass + kMassVariants;
     // Runtime knobs — live-safe: the ring streamer adapts on its own
     // (requestMissing reads the new radius, evictFar drains the excess).
     // NB: the tree FADE tops out at 880 m — radii under ~14 pop at the
@@ -78,6 +101,9 @@ public:
     // low twin. The far ring is where the instances are, so this is
     // where the triangle budget goes (docs/RENDERING.md, V8f).
     i32 lowDetailRadius { 4 };    // 80-face twins within; ultra beyond
+    // Hero-near reach: world XZ distance from the camera to the chunk
+    // square below which tree draws use the near twin.
+    static constexpr f32 kNearDetailDistance = 25.0f;
     // A/B — tree variants regenerate through generateColonizedTree (Runions
     // skeleton + SDF-normal billboard-card foliage; the default). Flip via
     // reseedVariantMeshes; the lobe trees stay one checkbox away in the
@@ -103,6 +129,10 @@ public:
     // Leaf-mask atlas slots (ColonizedTreeParams::leafStyle range).
     static constexpr i32 kLeafStyleCount = 8;
     array<std::optional<TreeSpecies>, kTreeVariants> treeSpecies {};
+    // The params whose bark material a variant draw pushes: tree slots
+    // -> their wired species, bushes -> the bush species, everything
+    // else (and unwired slots) -> the live default params.
+    const ColonizedTreeParams& barkParamsFor(u32 variant) const;
     // Per-slot season data (rgb = autumn tint, a = seasonality), filled
     // by rebuildLeafMask from the claiming species — the frame UBO
     // ships it to tree.vert/frag.
@@ -127,8 +157,10 @@ public:
     void destroy(rhi::Device& device);
 
     // Streaming pump — main thread, once per frame (top of render).
+    // `holdRequests`: keep the ring from scattering (sandbox boot, before
+    // the base regions are published — see TerrainSystem::update).
     void update(rhi::Device& device, const TerrainParams& params,
-                const Vec3& cameraPos);
+                const Vec3& cameraPos, bool holdRequests = false);
 
     // Drops every chunk (terrain seed changed). Variant meshes are reseeded
     // on the next update.
@@ -150,11 +182,45 @@ public:
     }
 
     // Replaces one variant's mesh with an authored one (glTF
-    // rock). The CPU copy is kept so regenerate() re-uploads it after a
-    // seed change. uv.x drives canopy sway in tree.vert — zero the uvs for
-    // rigid props. Scatter, instancing and shadow casting are untouched.
+    // rock/scan). The CPU copies are kept so regenerate() re-uploads them
+    // after a seed change. uv.x drives canopy sway in tree.vert — zero the
+    // uvs for rigid props. Optional decimated twins feed the far draws and
+    // the shadow casters (empty = every path uses the main mesh — a 700+
+    // tri scan then casts full-detail into every cascade). Scatter and
+    // instancing are untouched.
     void overrideVariantMesh(rhi::Device& device, u32 variant,
-                             MeshData mesh);
+                             MeshData mesh, MeshData low = {},
+                             MeshData ultra = {});
+
+    // Per-variant albedo texture (sRGB, RGBA8): the variant draws
+    // textured — its mesh uv is REAL texture coordinates, flagged to the
+    // shaders by a NEGATIVE instance fade lane (scatter emits it for the
+    // plant slots). Alpha < 0.5 discards (cutout). Call AFTER
+    // overrideVariantMesh (which resets the variant's GPU state).
+    void setVariantAlbedo(rhi::Device& device, u32 variant, u32 width,
+                          u32 height, vector<u8> rgba,
+                          u32 normalWidth = 0, u32 normalHeight = 0,
+                          vector<u8> normalRgba = {});
+
+    // Bark textures for the procedural trees (docs/GRASS-REDO.md): wood
+    // vertices carry a flag (uv.y < -0.5) and tree.frag samples the
+    // slot's bark TRIPLANARLY — no mesh uvs needed. Two textures (0 =
+    // oak/broadleaf default, 1 = spruce/conifer default); the tree
+    // builder picks per slot via variantBark + barkGroupsDirty.
+    struct BarkImage {
+        u32 width { 0 };
+        u32 height { 0 };
+        vector<u8> rgba;
+    };
+    // Albedo + packed normal-height (RGB = nor_gl, A = displacement) per
+    // bark: the LOW-POLY trunk carries its relief in the material —
+    // triplanar normal mapping + parallax offset in tree.frag.
+    void setBarkTextures(rhi::Device& device, BarkImage oakAlbedo,
+                         BarkImage oakNrmHeight, BarkImage pineAlbedo,
+                         BarkImage pineNrmHeight);
+    bool barkLoaded() const { return barkTextures[0].get().id != 0; }
+    array<u8, kTreeVariants> variantBark { { 0, 0, 0, 1, 1 } };
+    bool barkGroupsDirty { false }; // panel edits; applied in update()
 
     void refreshPipeline(rhi::Device& device, ShaderLibrary& shaders);
 
@@ -301,6 +367,11 @@ private:
         rhi::UniqueBuffer vertexBuffer;
         rhi::UniqueBuffer indexBuffer;
         u32 indexCount { 0 };
+        // Textured plants: per-variant albedo (+ normal map, binding 3),
+        // bound as group 1 in place of the leaf-mask atlas.
+        rhi::UniqueTexture albedo;
+        rhi::UniqueTexture normalMap;
+        rhi::UniqueBindGroup albedoGroup;
         // Low-detail twin (tree variants only; empty = use the main mesh).
         rhi::UniqueBuffer lowVertexBuffer;
         rhi::UniqueBuffer lowIndexBuffer;
@@ -309,6 +380,12 @@ private:
         rhi::UniqueBuffer ultraVertexBuffer;
         rhi::UniqueBuffer ultraIndexBuffer;
         u32 ultraIndexCount { 0 };
+        // Hero-near twin (colonized tree variants only; empty = stop at
+        // hero): double ring sides + one more curve subdivision, drawn
+        // within kNearDetailDistance of the camera.
+        rhi::UniqueBuffer nearVertexBuffer;
+        rhi::UniqueBuffer nearIndexBuffer;
+        u32 nearIndexCount { 0 };
         // Shadow proxy for the far cascades (colonized trees: solid
         // metaball blobs instead of the card cloud — see
         // generateColonizedTreeShadowProxy). Empty = cast with the LODs.
@@ -325,6 +402,8 @@ private:
                              const MeshData& mesh);
     void uploadUltraDetailMesh(rhi::Device& device, u32 variant,
                                const MeshData& mesh);
+    void uploadNearDetailMesh(rhi::Device& device, u32 variant,
+                              const MeshData& mesh);
     void uploadShadowProxyMesh(rhi::Device& device, u32 variant,
                                const MeshData& mesh);
     void buildPipeline(rhi::Device& device, ShaderLibrary& shaders);
@@ -350,7 +429,42 @@ private:
     // Per tree variant, mesh units: x = height, y = max radial extent,
     // z = crown start height. Zero until the variant lands.
     array<Vec3, kTreeVariants> treeBounds {};
-    std::unordered_map<u32, MeshData> meshOverrides;
+    struct OverrideMesh {
+        MeshData high;
+        MeshData low;   // empty = far draws/casters use `high`
+        MeshData ultra; // empty = stop at `low`
+    };
+    std::unordered_map<u32, OverrideMesh> meshOverrides;
+    // Per-variant albedo + optional normal map (textured props): CPU
+    // copies kept so createVariantMeshes re-uploads after a regenerate.
+    struct AlbedoOverride {
+        u32 width { 0 };
+        u32 height { 0 };
+        vector<u8> rgba;
+        u32 normalWidth { 0 };
+        u32 normalHeight { 0 };
+        vector<u8> normalRgba; // empty = flat fallback (1x1 up)
+    };
+    std::unordered_map<u32, AlbedoOverride> albedoOverrides;
+    void uploadVariantAlbedo(rhi::Device& device, u32 variant);
+    // 1x1 (128,128,255) bound at the normal slot when a variant has no
+    // map (and in the leaf-mask group — cards don't normal-map).
+    rhi::UniqueTexture flatNormal;
+    rhi::TextureHandle flatNormalHandle(rhi::Device& device);
+    // Tree bark: textures + CPU copies (regenerate re-uploads), a WRAP
+    // sampler (triplanar tiles past [0,1]), per-tree-slot bind groups
+    // (leaf atlas @0 + flat normal @3 + bark albedo @7 + bark
+    // normal-height @8 — the shared pipeline layout).
+    array<BarkImage, 2> barkImages;
+    array<BarkImage, 2> barkNrmImages;
+    array<rhi::UniqueTexture, 2> barkTextures;
+    array<rhi::UniqueTexture, 2> barkNrmTextures;
+    rhi::UniqueSampler barkSampler;
+    // Textured props sample with REPEAT: scan uvs can exceed [0,1]
+    // (rock_boulder_dry reaches u = 2.25) — the atlas' clamp sampler
+    // smeared the last texel column into stripes across one face.
+    rhi::UniqueSampler propAlbedoSampler;
+    void rebuildTreeBarkGroups(rhi::Device& device);
     // Shared leaf-cluster cutout mask (all tree variants; cards only).
     array<Vec4, kLeafStyleCount> leafSeasonTable {};
     rhi::UniqueTexture leafMask;
@@ -370,7 +484,8 @@ private:
         u32 seed { 0 };
         array<TreeSpecies, kTreeVariants> species {}; // resolved per slot
         std::filesystem::path aoCacheDir;
-        array<array<MeshData, 3>, kTreeVariants> lods; // [variant][lod]
+        // [variant][lod] — 3 = the hero-near twin (colonized only).
+        array<array<MeshData, 4>, kTreeVariants> lods;
         array<MeshData, kTreeVariants> casters;        // colonization only
         std::atomic<u32> completed { 0 };
         u32 total { 1 };

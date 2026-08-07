@@ -1,8 +1,8 @@
 #include "engine/render/landscape/TerrainNoise.hpp"
 
-#include "engine/render/landscape/SplatTextures.hpp" // splatWander
-
 #include <cmath>
+
+#include "engine/core/Hash.hpp"
 
 #include "engine/terrain/Noise.hpp"
 #include "engine/terrain/SandboxTerrain.hpp"
@@ -96,23 +96,108 @@ f32 rockExposureAt(const TerrainParams& params, f32 x, f32 z) {
     return maskSample(*region, region->rockExposure, x, z, 0.0f);
 }
 
+namespace {
+
+// The snow/sand border wander — the CPU mirror of terrain_weights.glsl's
+// borderWander (same murmur finalizer, same lattice, same -0.31 bias).
+// Material-set independent by design: the old grass-albedo green tap
+// broke the calibration when cooked photo tiles replaced the procedural
+// ones.
+f32 wanderLattice(i32 x, i32 y) {
+    const u32 h = core::hashU32(static_cast<u32>(x) * 0x9e3779b9u ^
+                                static_cast<u32>(y) * 0x85ebca6bu);
+    return static_cast<f32>(h) * (1.0f / 4294967295.0f);
+}
+
+f32 borderWander(f32 px, f32 py) {
+    const f32 fx = std::floor(px);
+    const f32 fy = std::floor(py);
+    const f32 tx = px - fx;
+    const f32 ty = py - fy;
+    const f32 ux = tx * tx * (3.0f - 2.0f * tx);
+    const f32 uy = ty * ty * (3.0f - 2.0f * ty);
+    const i32 x0 = static_cast<i32>(fx);
+    const i32 y0 = static_cast<i32>(fy);
+    const f32 v00 = wanderLattice(x0, y0);
+    const f32 v10 = wanderLattice(x0 + 1, y0);
+    const f32 v01 = wanderLattice(x0, y0 + 1);
+    const f32 v11 = wanderLattice(x0 + 1, y0 + 1);
+    const f32 n = glm::mix(glm::mix(v00, v10, ux), glm::mix(v01, v11, ux),
+                           uy);
+    return -0.31f + (n - 0.5f) * 0.2f;
+}
+
+// terrain_zones.glsl mirror — see GrassZone in the header.
+constexpr f32 kGrassZoneSize = 3.0f;
+
+// THE weight rule, in one place — shaders/terrain_weights.glsl mirrors it
+// bit-for-bit and every CPU consumer (GI/minimap, scatter, footsteps) goes
+// through it. Neutral inputs reproduce the shader exactly; the biome-aware
+// caller feeds rockShift/snowLineOffset (via snowLine)/sandiness/beach/
+// grassPresence. The hybrid-C seam: region shading extends these INPUTS
+// and a future painted override composes on the RESULT — neither rewrites
+// the rule.
+struct WeightRuleInputs {
+    f32 slope { 0.0f };
+    f32 height { 0.0f };
+    f32 wander { 0.0f };       // shader-visible altitude perturbation
+    f32 rockExposure { 0.0f };
+    f32 snowLine { 0.0f };     // biome offset already applied by the caller
+    f32 seaLevel { 0.0f };
+    f32 rockShift { 0.0f };    // 0.1 * biome.rockiness
+    f32 sandiness { 0.0f };
+    f32 beach { 0.0f };        // baked coast mask forces sand
+    f32 grassPresence { 1.0f };
+};
+
+// terrain_weights.glsl screeFactor, mirrored bit-for-bit.
+f32 screeFactor(f32 slope, f32 rockExposure, f32 wander) {
+    const f32 band =
+        glm::smoothstep(0.07f, 0.14f, slope + wander * 0.03f) *
+        (1.0f - glm::smoothstep(0.16f, 0.26f, slope));
+    return band * (0.35f + 0.65f * rockExposure);
+}
+
+MaterialWeights materialWeightsCore(const WeightRuleInputs& in) {
+    MaterialWeights weights;
+    weights.cliff =
+        glm::smoothstep(0.30f, 0.55f, in.slope) * in.rockExposure;
+    weights.rock =
+        glm::smoothstep(0.18f - in.rockShift, 0.35f - in.rockShift,
+                        in.slope) *
+        (1.0f - weights.cliff);
+    weights.snow = glm::smoothstep(in.snowLine - 12.0f, in.snowLine + 42.0f,
+                                   in.height + in.wander * 26.0f) *
+                   (1.0f - glm::smoothstep(0.25f, 0.45f, in.slope));
+    weights.sand =
+        (1.0f - glm::smoothstep(in.seaLevel + 1.0f + 6.0f * in.sandiness,
+                                in.seaLevel + 8.0f + 24.0f * in.sandiness,
+                                in.height + in.wander * 5.0f)) *
+        (1.0f - weights.rock - weights.cliff);
+    weights.sand = glm::max(weights.sand,
+                            in.beach * (1.0f - weights.rock - weights.cliff));
+    weights.sand = glm::max(
+        weights.sand,
+        screeFactor(in.slope, in.rockExposure, in.wander) *
+            glm::max(1.0f - weights.rock - weights.cliff - weights.snow,
+                     0.0f));
+    weights.grass = glm::max(1.0f - weights.rock - weights.snow -
+                                 weights.sand - weights.cliff,
+                             0.0f) *
+                    in.grassPresence;
+    return weights;
+}
+
+} // namespace
+
 MaterialWeights materialWeights(const TerrainParams& params, f32 height,
                                 const Vec3& normal) {
     // No (x, z) here, so no exposure mask: cliff stays 0 and the
     // steepest faces read as rock — fine for the GI/minimap consumers.
-    const f32 slope = 1.0f - normal.y;
-    MaterialWeights weights;
-    weights.rock = glm::smoothstep(0.18f, 0.35f, slope);
-    weights.snow = glm::smoothstep(params.snowLine - 12.0f,
-                                   params.snowLine + 42.0f,
-                                   height) *
-                   (1.0f - glm::smoothstep(0.25f, 0.45f, slope));
-    weights.sand = (1.0f - glm::smoothstep(params.seaLevel + 1.0f,
-                                           params.seaLevel + 8.0f, height)) *
-                   (1.0f - weights.rock);
-    weights.grass = glm::max(
-        1.0f - weights.rock - weights.snow - weights.sand, 0.0f);
-    return weights;
+    return materialWeightsCore({ .slope = 1.0f - normal.y,
+                                 .height = height,
+                                 .snowLine = params.snowLine,
+                                 .seaLevel = params.seaLevel });
 }
 
 const BiomeParams& biomeAt(const TerrainParams& params, f32 x, f32 z) {
@@ -146,44 +231,134 @@ const BiomeParams& biomeAt(const TerrainParams& params, f32 x, f32 z) {
     return params.biomes->table[clamped];
 }
 
-MaterialWeights materialWeightsAt(const TerrainParams& params, f32 x,
-                                  f32 z, f32 height, const Vec3& normal) {
+GrassZone grassZoneAt(f32 x, f32 z) {
+    // Hex-tiling mirror (terrain_zones.glsl hexGrass): the dominant
+    // triangle-lattice vertex — same skew, same hash, same sharpening —
+    // so species/clutter biases follow what the ground shows.
+    const f32 qx = x / kGrassZoneSize;
+    const f32 qy = z / kGrassZoneSize;
+    const f32 sx = qx - qy * 0.57735027f;
+    const f32 sy = qy * 1.15470054f;
+    const i32 baseX = static_cast<i32>(std::floor(sx));
+    const i32 baseY = static_cast<i32>(std::floor(sy));
+    const f32 fx = sx - static_cast<f32>(baseX);
+    const f32 fy = sy - static_cast<f32>(baseY);
+    i32 vx[3];
+    i32 vy[3];
+    f32 w[3];
+    if (fx + fy < 1.0f) {
+        vx[0] = baseX;
+        vy[0] = baseY;
+        vx[1] = baseX + 1;
+        vy[1] = baseY;
+        vx[2] = baseX;
+        vy[2] = baseY + 1;
+        w[0] = 1.0f - fx - fy;
+        w[1] = fx;
+        w[2] = fy;
+    } else {
+        vx[0] = baseX + 1;
+        vy[0] = baseY + 1;
+        vx[1] = baseX;
+        vy[1] = baseY + 1;
+        vx[2] = baseX + 1;
+        vy[2] = baseY;
+        w[0] = fx + fy - 1.0f;
+        w[1] = 1.0f - fx;
+        w[2] = 1.0f - fy;
+    }
+    f32 sum = 0.0f;
+    for (f32& wi : w) {
+        wi = std::pow(wi, 6.0f); // kHexSharpness
+        sum += wi;
+    }
+    u32 dom = 0;
+    u32 second = 1;
+    if (w[1] > w[dom]) {
+        dom = 1;
+        second = 0;
+    }
+    if (w[2] > w[dom]) {
+        second = dom;
+        dom = 2;
+    } else if (w[2] > w[second]) {
+        second = 2;
+    }
+    const auto variantOf = [](i32 ix, i32 iy) {
+        return core::hashU32(static_cast<u32>(ix) * 0x9e3779b9u ^
+                             static_cast<u32>(iy) * 0x85ebca6bu) &
+               3u;
+    };
+    GrassZone zone;
+    zone.variantA = variantOf(vx[dom], vy[dom]);
+    zone.variantB = variantOf(vx[second], vy[second]);
+    zone.blendA = sum > 0.0f ? w[dom] / sum : 1.0f;
+    return zone;
+}
+
+RegionFields regionFieldsAt(const TerrainParams& params, f32 x, f32 z) {
     const BiomeParams& biome = biomeAt(params, x, z);
-    const f32 slope = 1.0f - normal.y;
-    const f32 rockShift = 0.1f * biome.rockiness;
-    const f32 snowLine = params.snowLine + biome.snowLineOffset;
-    MaterialWeights weights;
-    weights.cliff = glm::smoothstep(0.30f, 0.55f, slope) *
-                    rockExposureAt(params, x, z);
-    weights.rock =
-        glm::smoothstep(0.18f - rockShift, 0.35f - rockShift, slope) *
-        (1.0f - weights.cliff);
-    weights.snow = glm::smoothstep(snowLine - 12.0f, snowLine + 42.0f,
-                                   height) *
-                   (1.0f - glm::smoothstep(0.25f, 0.45f, slope));
-    weights.sand =
-        (1.0f - glm::smoothstep(
-                    params.seaLevel + 1.0f + 6.0f * biome.sandiness,
-                    params.seaLevel + 8.0f + 24.0f * biome.sandiness,
-                    height)) *
-        (1.0f - weights.rock - weights.cliff);
-    // The baked beach mask forces sand where the coast pass decided so,
-    // whatever the altitude rules say.
     const TerrainRegion* region =
         params.base ? params.base->regionAt(x, z) : nullptr;
+    RegionFields fields;
+    fields.rockiness = biome.rockiness;
+    fields.snowLineOffset = biome.snowLineOffset;
+    fields.sandiness = biome.sandiness;
+    fields.grassPresence = biome.grassPresence;
+    fields.temperature = biome.temperature;
+    fields.biomeWetness = biome.wetness;
     if (region) {
-        const f32 beach =
-            maskSample(*region, region->beach, x, z, 0.0f);
-        weights.sand = glm::max(
-            weights.sand,
-            beach * (1.0f - weights.rock - weights.cliff));
+        fields.wetness = maskSample(*region, region->wetness, x, z, 0.0f);
+        // The baked beach mask forces sand where the coast pass decided
+        // so, whatever the altitude rules say.
+        fields.beach = maskSample(*region, region->beach, x, z, 0.0f);
     }
-    weights.grass =
-        glm::max(1.0f - weights.rock - weights.snow - weights.sand -
-                     weights.cliff,
-                 0.0f) *
-        biome.grassPresence;
-    return weights;
+    return fields;
+}
+
+RegionShading regionShadingAt(const TerrainParams& params, f32 x, f32 z) {
+    RegionShading shading;
+    shading.fields = regionFieldsAt(params, x, z);
+    // Macro tint: biome climate resolved to a color multiplier, modulated
+    // by a ~700 m aridity drift so plains breathe between lush and parched
+    // instead of tracing biome borders — the repetition killer of the
+    // texturing brief (low-frequency COLOR variation). Ground and grass
+    // and GI all consume this one tint; the strength knob lives shader-
+    // side (uSplatDetailInfo.y), the map stores the full-strength color.
+    // The fbm is why this stays OFF the scatter/footstep hot path
+    // (regionFieldsAt) — bakes and sparse corner lattices only.
+    const f32 drift = fbm(params.seed ^ 0x7e4a1c3du, x, z, 1.0f / 700.0f,
+                          3, 2.0f, 0.5f);
+    const f32 aridity = glm::clamp(0.5f + 0.35f * shading.fields.temperature +
+                                       (drift - 0.5f) * 0.8f -
+                                       0.4f * shading.fields.biomeWetness,
+                                   0.0f, 1.0f);
+    const Vec3 lush { 0.92f, 1.02f, 0.94f };
+    const Vec3 parched { 1.08f, 1.00f, 0.82f };
+    Vec3 tint = glm::mix(lush, parched, aridity);
+    // Cold climates pale toward blue-gray; moisture (river/lake bands)
+    // darkens the ground — the "wet earth" cue near water.
+    tint = glm::mix(tint, Vec3 { 0.96f, 0.99f, 1.05f },
+                    glm::clamp(-shading.fields.temperature, 0.0f, 1.0f) *
+                        0.5f);
+    tint *= 1.0f - 0.18f * shading.fields.wetness;
+    shading.tint = tint;
+    return shading;
+}
+
+MaterialWeights materialWeightsAt(const TerrainParams& params, f32 x,
+                                  f32 z, f32 height, const Vec3& normal) {
+    const RegionFields fields = regionFieldsAt(params, x, z);
+    return materialWeightsCore(
+        { .slope = 1.0f - normal.y,
+          .height = height,
+          .rockExposure = rockExposureAt(params, x, z),
+          .snowLine = params.snowLine + fields.snowLineOffset,
+          .seaLevel = params.seaLevel,
+          .rockShift = 0.1f * fields.rockiness,
+          .sandiness = fields.sandiness,
+          .beach = fields.beach,
+          .grassPresence = fields.grassPresence });
 }
 
 MaterialWeights materialWeightsShaded(const TerrainParams& params, f32 x,
@@ -195,29 +370,22 @@ MaterialWeights materialWeightsShaded(const TerrainParams& params, f32 x,
     // smoothsteps.
     const f32 h = height(params, x, z);
     const Vec3 n = normal(params, x, z);
-    const f32 slope = 1.0f - n.y;
-    const f32 u = x * splatUvScale * 0.06f;
-    const f32 v = z * splatUvScale * 0.06f;
-    const f32 wander =
-        splatWander(u - std::floor(u), v - std::floor(v)) - 0.67f;
-    MaterialWeights weights;
-    weights.cliff = glm::smoothstep(0.30f, 0.55f, slope) *
-                    rockExposureAt(params, x, z);
-    weights.rock =
-        glm::smoothstep(0.18f, 0.35f, slope) * (1.0f - weights.cliff);
-    weights.snow = glm::smoothstep(params.snowLine - 12.0f,
-                                   params.snowLine + 42.0f,
-                                   h + wander * 26.0f) *
-                   (1.0f - glm::smoothstep(0.25f, 0.45f, slope));
-    weights.sand =
-        (1.0f - glm::smoothstep(params.seaLevel + 1.0f,
-                                params.seaLevel + 8.0f,
-                                h + wander * 5.0f)) *
-        (1.0f - weights.rock - weights.cliff);
-    weights.grass = glm::max(1.0f - weights.rock - weights.snow -
-                                 weights.sand - weights.cliff,
-                             0.0f);
-    return weights;
+    const f32 wander = borderWander(x * splatUvScale * 0.06f,
+                                    z * splatUvScale * 0.06f);
+    // Region fields (biome rules, beach) mirror the shader's shade-map
+    // taps: the step keeps sounding like the ground LOOKS. grassPresence
+    // stays scatter-only (the shader renormalizes it away).
+    const RegionFields fields = regionFieldsAt(params, x, z);
+    return materialWeightsCore(
+        { .slope = 1.0f - n.y,
+          .height = h,
+          .wander = wander,
+          .rockExposure = rockExposureAt(params, x, z),
+          .snowLine = params.snowLine + fields.snowLineOffset,
+          .seaLevel = params.seaLevel,
+          .rockShift = 0.1f * fields.rockiness,
+          .sandiness = fields.sandiness,
+          .beach = fields.beach });
 }
 
 // Bilinear sample of the authored delta grid covering (x, z); 0 where no

@@ -25,6 +25,12 @@ constexpr f32 kTrunkHalfXZ = 0.28f;
 constexpr f32 kTrunkHalfY = 2.5f;
 constexpr f32 kRockHalfXZ = 0.75f;
 constexpr f32 kRockHalfY = 0.6f;
+// Debris scans (the LandscapeScene mesh overrides): a squat stump and a
+// fallen trunk lying along local X — the trunk needs a yaw-oriented
+// elongated box or the player walks through its ends.
+constexpr f32 kStumpHalfXZ = 0.35f;
+constexpr f32 kStumpHalfY = 0.45f;
+constexpr Vec3 kLogHalf { 1.1f, 0.3f, 0.3f };
 
 } // namespace
 
@@ -67,10 +73,41 @@ void VegetationCollision::cookChunk(i32 cx, i32 cz) {
     for (u32 v = render::VegetationSystem::kFirstRock;
          v < render::VegetationSystem::kFirstBush; ++v) {
         for (const auto& prop : buckets[v]) {
+            // Pebble-scale clutter shares the boulder variants but never
+            // collides (centimeter debris — thousands per ring; bodies
+            // for them are pure waste and blow the destroy path).
+            if (prop.positionScale.w < 0.35f) {
+                continue;
+            }
             add(prop, kRockHalfXZ, kRockHalfY);
         }
     }
-    // Bushes (kFirstBush..) are deliberately walk-through.
+    // Forest-floor debris: variant-fitted boxes. The fallen trunk
+    // rotates with the instance yaw — tree.vert applies R_y(-yaw)
+    // (x*c - z*s / x*s + z*c), the body must match or the box lies
+    // across the visual.
+    for (u32 v = render::VegetationSystem::kFirstDebris;
+         v < render::VegetationSystem::kFirstPlant; ++v) {
+        const bool log = v == render::VegetationSystem::kFirstDebris + 1;
+        for (const auto& prop : buckets[v]) {
+            const f32 s = prop.positionScale.w;
+            const Vec3 base { prop.positionScale.x, prop.positionScale.y,
+                              prop.positionScale.z };
+            const Vec3 half =
+                log ? kLogHalf * s
+                    : Vec3 { kStumpHalfXZ * s, kStumpHalfY * s,
+                             kStumpHalfXZ * s };
+            const phys::BodyId body = physics.addStaticBox(
+                half, base + Vec3 { 0.0f, half.y, 0.0f },
+                glm::angleAxis(-prop.params.x, Vec3 { 0.0f, 1.0f, 0.0f }));
+            if (body != 0) {
+                out.push_back(body);
+                ++bodies;
+            }
+        }
+    }
+    // Bushes (kFirstBush..kFirstDebris) and plants (kFirstPlant..) are
+    // deliberately walk-through.
 }
 
 void VegetationCollision::update(const Vec3& focus) {

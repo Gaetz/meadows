@@ -185,6 +185,31 @@ CPMAddPackage(
 add_library(stb INTERFACE)
 target_include_directories(stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
 
+# meshoptimizer — mesh decimation for scanned-prop imports (the scans are
+# 40-100k tris; clutter budgets are hundreds). Linked to the base lib only.
+CPMAddPackage(
+    NAME meshoptimizer
+    GITHUB_REPOSITORY zeux/meshoptimizer
+    GIT_TAG v0.25
+    OPTIONS "MESHOPT_BUILD_DEMO OFF" "MESHOPT_BUILD_GLTFPACK OFF"
+            "MESHOPT_BUILD_SHARED_LIBS OFF"
+)
+
+# bc7enc_rdo — BC7/BC5 encoders for the offline texture cooker only (the
+# runtime never links it). No tags: pinned by commit. Only the two encoder
+# TUs are built; the RDO post-process and its LZ deps stay out.
+CPMAddPackage(
+    NAME bc7enc_rdo
+    GITHUB_REPOSITORY richgel999/bc7enc_rdo
+    GIT_TAG b9438627eef73a1157e84201b6fa6eb2ffd6d9f0
+    DOWNLOAD_ONLY TRUE
+)
+add_library(bc7enc STATIC
+    ${bc7enc_rdo_SOURCE_DIR}/bc7enc.cpp
+    ${bc7enc_rdo_SOURCE_DIR}/rgbcx.cpp
+)
+target_include_directories(bc7enc SYSTEM PUBLIC ${bc7enc_rdo_SOURCE_DIR})
+
 # Dear ImGui ships no CMakeLists; build it as a small static lib with the
 # SDL3 + OpenGL3 backends (the GL3 backend embeds its own function loader).
 CPMAddPackage(

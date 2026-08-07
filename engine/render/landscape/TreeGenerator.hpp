@@ -106,7 +106,16 @@ struct ColonizedTreeParams {
     // decimated look). `curveSubdiv` inserts Catmull-Rom points per
     // kept segment, rounding the elbows (halved on the low twin, off
     // on ultra). Defaults reproduce the pre-knob output exactly.
-    i32 tubeSides { 5 };          // MAX ring vertices (trunk), 3..12
+    // Root flare: near the ground the trunk widens into buttress
+    // lobes (radial multiplier on the root chain's rings — angular
+    // noise x height falloff, phases rolled from the tree seed).
+    // `flareAmount` = extra radius at ground as a multiple of the
+    // trunk radius (0 = off), `flareHeight` = meters it decays over,
+    // `flareLobes` = angular bump count.
+    f32 flareAmount { 0.6f };
+    f32 flareHeight { 1.2f };
+    i32 flareLobes { 4 };
+    i32 tubeSides { 12 };         // MAX ring vertices (trunk), 3..12
     f32 curvePreserve { 0.0f };   // 0..1
     i32 curveSubdiv { 0 };        // 0..3
     // `pathJitter` kinks the kept trajectory points (deterministic per
@@ -120,7 +129,7 @@ struct ColonizedTreeParams {
     // tubeSides for clean halvings (12 -> 6 -> 3, 8 -> 4).
     f32 pathJitter { 0.0f };      // 0..1
     f32 ringIrregularity { 0.0f };// 0..1
-    f32 sideMinFraction { 1.0f }; // 0.25..1
+    f32 sideMinFraction { 0.5f }; // 0.25..1
     // Foliage SDF (metaballs at branch tips, order-weighted).
     f32 tipBallRadius { 0.95f };  // order-0 metaball radius (m)
     f32 tipOrderFalloff { 0.78f };// radius x falloff^branchOrder
@@ -143,6 +152,14 @@ struct ColonizedTreeParams {
     // canopy mass). Rendered live via uLeafLodInfo, not baked.
     f32 leafSolidStart { 4.0f };
     f32 leafSolidEnd { 7.0f };
+    // Bark material (draw-time — pushed per variant draw, no mesh
+    // rebuild): triplanar tile density, hex-tiling lattice cell + seam
+    // sharpness, and a tint multiplier over the bark texture
+    // (1,1,1 = the texture's own hue).
+    f32 barkTileScale { 0.3f };    // tiles per meter
+    f32 barkHexCell { 0.85f };     // hex lattice cell (uv units)
+    f32 barkHexSharpness { 6.0f }; // barycentric exponent
+    Vec3 barkTint { 1.0f, 1.0f, 1.0f };
 };
 
 // `detail` mirrors the LOD contract: 2 near, 1 mid, 0 far (tube sides

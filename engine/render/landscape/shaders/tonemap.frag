@@ -10,6 +10,7 @@ layout(binding = 5) uniform sampler2D uExposure; // 1x1 adaptation
 layout(binding = 6) uniform sampler2D uContact;  // white = lit
 layout(binding = 7) uniform sampler2D uSkyClouds; // volumetric clouds
 layout(binding = 8) uniform sampler2D uSceneDepth; // bilateral weights
+layout(binding = 9) uniform sampler2D uSsao;     // white = open
 
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 fragColor;
@@ -67,12 +68,19 @@ void main() {
 
     vec4 scene = texture(uSceneColor, vUv);
     vec3 hdr = scene.rgb;
+    // SSAO — contact-scale crevice darkening (ssao.frag documents the
+    // contract: short radius, distance-faded, the RC GI owns macro
+    // occlusion). Grass blades stay exempt via the alpha flag, like the
+    // contact pass — the meadow reads as one mass.
+    // step(): the alpha now PACKS the SSDM relief height above the 0.5
+    // grass-flag threshold — the exempt/receive decision is binary.
+    hdr *= mix(1.0, texture(uSsao, vUv).r, step(0.5, scene.a));
     // Screen-space contact shadows — surface darkening before
     // the added airlight below. The texture is the toggle: the scene
     // clears it to white when the feature is off. The scene ALPHA is a
     // receive flag (1 = receive, 0 = exempt — grass opts out so the
     // meadow stays one flat mass; it still casts into the march).
-    hdr *= mix(1.0, texture(uContact, vUv).r, scene.a);
+    hdr *= mix(1.0, texture(uContact, vUv).r, step(0.5, scene.a));
     // Volumetric: alpha REMOVES the fog in-scatter where distant air is
     // cloud-shadowed (dark far curtains), rgb ADDS the near shafts. Then
     // bloom (uPostInfo.w) and god rays (uSunScreen.w), all in linear HDR

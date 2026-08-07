@@ -6,6 +6,12 @@
 
 #include "engine/core/Hash.hpp"
 
+// The procedural splat tile synthesis is GONE (dev decision 2026-08-06):
+// the cooked .mtex library is the one material set — TerrainSystem falls
+// back to flat placeholder arrays when it is absent. Only the grass root
+// color source survives here: the blades bake it at scatter, on the
+// cooked set too.
+
 namespace render {
 
 namespace {
@@ -61,93 +67,7 @@ f32 tileFbm(u32 seed, f32 u, f32 v, i32 basePeriod, i32 octaves) {
     return sum / total;
 }
 
-void writeTexel(vector<u8>& pixels, size_t index, const Vec3& color) {
-    pixels[index + 0] = static_cast<u8>(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f);
-    pixels[index + 1] = static_cast<u8>(glm::clamp(color.g, 0.0f, 1.0f) * 255.0f);
-    pixels[index + 2] = static_cast<u8>(glm::clamp(color.b, 0.0f, 1.0f) * 255.0f);
-    pixels[index + 3] = 255;
-}
-
-Vec3 grassTexel(f32 u, f32 v) {
-    return grassAlbedo(u, v);
-}
-
-Vec3 rockTexel(f32 u, f32 v) {
-    // Gray base, ridged strata, darker crack lines.
-    const f32 strata = tileFbm(201, u, v * 2.5f, 8, 4);
-    const f32 ridge = 1.0f - std::abs(2.0f * strata - 1.0f);
-    const f32 crack = tileFbm(202, u, v, 16, 3);
-    Vec3 color = Vec3 { 0.46f, 0.44f, 0.42f } * (0.82f + 0.30f * ridge);
-    if (crack < 0.32f) {
-        color *= 0.72f + 0.28f * (crack / 0.32f);
-    }
-    return color;
-}
-
-Vec3 snowTexel(f32 u, f32 v) {
-    // Near-white with the faintest blue undulation and sparse sparkle.
-    const f32 drift = tileFbm(301, u, v, 5, 3);
-    const f32 sparkle = latticeValue(302, static_cast<i32>(u * 256.0f),
-                                     static_cast<i32>(v * 256.0f));
-    Vec3 color = glm::mix(Vec3 { 0.88f, 0.91f, 0.96f },
-                          Vec3 { 0.96f, 0.97f, 1.00f }, drift);
-    if (sparkle > 0.993f) {
-        color = Vec3 { 1.0f, 1.0f, 1.0f };
-    }
-    return color;
-}
-
-Vec3 cliffTexel(f32 u, f32 v) {
-    // Stratified cliff stone: pronounced horizontal banding + vertical
-    // fracture streaks — paler and warmer than the scree rock so bare
-    // faces read as geology, not just steeper rock.
-    const f32 bands = tileFbm(501, u * 0.5f, v * 3.5f, 8, 4);
-    const f32 ledge = 1.0f - std::abs(2.0f * bands - 1.0f);
-    const f32 fracture = tileFbm(502, u * 3.0f, v * 0.8f, 12, 3);
-    Vec3 color = Vec3 { 0.55f, 0.50f, 0.44f } * (0.78f + 0.28f * ledge);
-    if (fracture < 0.28f) {
-        color *= 0.70f + 0.30f * (fracture / 0.28f);
-    }
-    return color;
-}
-
-Vec3 sandTexel(f32 u, f32 v) {
-    // Warm beige, fine grain, gentle wind-ripple banding.
-    const f32 grain = tileFbm(401, u, v, 48, 2);
-    const f32 wobble = tileFbm(402, u, v, 4, 2);
-    const f32 ripple =
-        0.5f + 0.5f * std::sin((v + wobble * 0.35f) * 12.0f * 6.2831853f);
-    Vec3 color = Vec3 { 0.78f, 0.70f, 0.52f } * (0.94f + 0.10f * grain);
-    return color * (0.96f + 0.06f * ripple);
-}
-
 } // namespace
-
-vector<u8> buildSplatTilePixels() {
-    constexpr u32 kSize = kSplatTileSize;
-    vector<u8> pixels(static_cast<size_t>(kSize) * kSize * 4 *
-                      SplatLayer_Count);
-    const size_t layerBytes = static_cast<size_t>(kSize) * kSize * 4;
-    for (u32 y = 0; y < kSize; ++y) {
-        for (u32 x = 0; x < kSize; ++x) {
-            const f32 u = static_cast<f32>(x) / kSize;
-            const f32 v = static_cast<f32>(y) / kSize;
-            const size_t texel = (static_cast<size_t>(y) * kSize + x) * 4;
-            writeTexel(pixels, SplatLayer_Grass * layerBytes + texel,
-                       grassTexel(u, v));
-            writeTexel(pixels, SplatLayer_Rock * layerBytes + texel,
-                       rockTexel(u, v));
-            writeTexel(pixels, SplatLayer_Snow * layerBytes + texel,
-                       snowTexel(u, v));
-            writeTexel(pixels, SplatLayer_Sand * layerBytes + texel,
-                       sandTexel(u, v));
-            writeTexel(pixels, SplatLayer_Cliff * layerBytes + texel,
-                       cliffTexel(u, v));
-        }
-    }
-    return pixels;
-}
-
 
 Vec3 grassAlbedo(f32 u, f32 v) {
     // Near-uniform forest green (#6FA160 — the midpoint between the old
@@ -155,21 +75,12 @@ Vec3 grassAlbedo(f32 u, f32 v) {
     // read as one family): one hue, a WHISPER of blotch luminance drift
     // (~±1%, mean 1) — just enough to break the perfectly flat albedo
     // that exposed the RC probe-parity speckle, invisible as texture.
-    // The GREEN channel feeds the border wander — its MEAN is unchanged
-    // by the symmetric drift, so the -0.67 centering in terrain.frag /
-    // TerrainNoise.cpp stays valid.
-    const f32 blotch = tileFbm(101, u, v, 6, 4);
-    return Vec3 { 0.434f, 0.633f, 0.375f } *
-           (0.99f + 0.02f * glm::smoothstep(0.30f, 0.70f, blotch));
+    return Vec3 { 0.434f, 0.633f, 0.375f } * grassBlotch(u, v);
 }
 
-f32 splatWander(f32 u, f32 v) {
-    // The texture stores DISPLAY-space bytes in an SRGBA8 view; the
-    // shader's sampler hands back linear — decode the same way.
-    const f32 display = glm::clamp(grassTexel(u, v).y, 0.0f, 1.0f);
-    return display <= 0.04045f
-               ? display / 12.92f
-               : std::pow((display + 0.055f) / 1.055f, 2.4f);
+f32 grassBlotch(f32 u, f32 v) {
+    const f32 blotch = tileFbm(101, u, v, 6, 4);
+    return 0.99f + 0.02f * glm::smoothstep(0.30f, 0.70f, blotch);
 }
 
 } // namespace render

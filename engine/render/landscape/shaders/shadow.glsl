@@ -35,12 +35,19 @@ float shadowFactor(vec3 worldPos, vec3 normal) {
     vec4 lightClip = uSunViewProj[cascade] * vec4(offsetPos, 1.0);
     vec3 proj = lightClip.xyz / lightClip.w;
     proj.xy = proj.xy * 0.5 + 0.5; // 0..1 clip: only xy needs NDC->UV
-    if (proj.z >= 1.0) {
+    if (proj.z >= 1.0 || any(lessThan(proj.xy, vec2(0.0))) ||
+        any(greaterThan(proj.xy, vec2(1.0)))) {
         return 1.0;
     }
+    // Far cascades render into the lower-left QUARTER of their layer
+    // (ShadowMapper::kFarCascadeScale, fed through uSsaoInfo.w): the
+    // receiver samples the same corner. The margin clamp keeps the
+    // hardware-compare bilinear out of the unused area.
+    float texel = 1.0 / 2048.0;
+    float uvScale = cascade == 0 ? 1.0 : uSsaoInfo.w;
+    proj.xy = min(proj.xy * uvScale, vec2(uvScale - texel));
 
     // 3x3 PCF over the hardware-compared fetches (each is already 2x2).
-    float texel = 1.0 / 2048.0;
     float sum = 0.0;
     for (int dy = -1; dy <= 1; ++dy) {
         for (int dx = -1; dx <= 1; ++dx) {

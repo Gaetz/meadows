@@ -35,6 +35,35 @@ struct LandscapeTuningForm : Form {
     // Terrain materials.
     f32 snowLine { 165.0f };     // meters
     f32 splatUvScale { 0.25f };  // tiles per meter
+    // Height-blend band depth between splat layers (0 = plain weighted
+    // blend; ~0.1-0.2 = crisp material interfaces). docs/TERRAIN-TEXTURING.md.
+    f32 splatBlendDepth { 0.15f };
+    // Macro-tint strength (0 = off; above ~0.4 the tint crushes the
+    // materials' own variation — brief guardrail).
+    f32 terrainTintStrength { 0.3f };
+    // Near-field detail-normal fade end (meters; 0 = detail off). An
+    // unfaded detail normal aliases in the background.
+    f32 splatDetailFade { 24.0f };
+    // Parallax occlusion mapping reach (meters; 0 = off). Dominant layer
+    // only, faded out over the last stretch — THE close-range depth cue
+    // of the texturing brief; also its perf hot spot, hence the knob.
+    f32 pomDistance { 12.0f };
+    // Anti-repetition variety strength (0 = off): a second albedo tap at
+    // a non-harmonic frequency (0.37x) modulates each layer, so the 4 m
+    // tile grid never repeats exactly. One extra fetch per visible layer.
+    f32 splatVariety { 0.5f };
+    // POM self-shadow strength (0 = off): sun-side occlusion taps darken
+    // the crevices inside the POM reach.
+    f32 pomShadowStrength { 0.6f };
+    // Parallax relief depth (uv units): how far the POM march displaces.
+    f32 pomDepth { 0.03f };
+    // Cooked terrain material arrays (.mtex asset guids, one per map —
+    // docs/AUDIT/TERRAIN-TEXTURING.md §4). 0 = procedural splat tiles.
+    // Vulkan-only path (caps.textureCompressionBC).
+    core::Guid terrainAlbedoArray;
+    core::Guid terrainNormalArray;
+    core::Guid terrainOrmArray;
+    core::Guid terrainHeightArray;
     // Fog / atmosphere.
     f32 fogDensity { 0.0012f };
     f32 fogHeightFalloff { 0.02f };
@@ -86,6 +115,8 @@ struct LandscapeTuningForm : Form {
     f32 stylizedDiffuseEdge1Start { 0.32f };
     f32 stylizedDiffuseEdge1End { 0.40f };
     f32 stylizedHalfTone { 0.6f };
+    // CSM snap window: the BotW flat-pool look. Inert while the panel's
+    // stylized A/B is off (the branch default — WorldRenderer::stylizedUi).
     f32 stylizedShadowStart { 0.45f };
     f32 stylizedShadowEnd { 0.55f };
     f32 stylizedShadowFloor { 0.0f };
@@ -239,6 +270,17 @@ struct LandscapeTuningForm : Form {
         REFLECT_FIELD(farTerrain)
         REFLECT_FIELD(snowLine)
         REFLECT_FIELD(splatUvScale)
+        REFLECT_FIELD(splatBlendDepth)
+        REFLECT_FIELD(terrainTintStrength)
+        REFLECT_FIELD(splatDetailFade)
+        REFLECT_FIELD(pomDistance)
+        REFLECT_FIELD(splatVariety)
+        REFLECT_FIELD(pomShadowStrength)
+        REFLECT_FIELD(pomDepth)
+        REFLECT_FIELD(terrainAlbedoArray)
+        REFLECT_FIELD(terrainNormalArray)
+        REFLECT_FIELD(terrainOrmArray)
+        REFLECT_FIELD(terrainHeightArray)
         REFLECT_FIELD(fogDensity)
         REFLECT_FIELD(fogHeightFalloff)
         REFLECT_FIELD(fogLowBoost)
@@ -412,12 +454,17 @@ struct ColonizedTreeTuningForm : Form {
     // tube faces, and the ring-count HALVING floor for thin branches
     // (fraction of tubeSides; 1 = constant count; pick an even
     // tubeSides for clean halvings).
-    i32 tubeSides { 5 };
+    i32 tubeSides { 12 };
     f32 curvePreserve { 0.0f };
+    // Root flare (buttress base): ground widening amount (x trunk
+    // radius), decay height (m), angular lobe count.
+    f32 flareAmount { 0.6f };
+    f32 flareHeight { 1.2f };
+    i32 flareLobes { 4 };
     i32 curveSubdiv { 0 };
     f32 pathJitter { 0.0f };
     f32 ringIrregularity { 0.0f };
-    f32 sideMinFraction { 1.0f };
+    f32 sideMinFraction { 0.5f };
     f32 segment { 0.28f };
     f32 killDistance { 0.70f };
     i32 attractorCount { 350 };
@@ -453,10 +500,20 @@ struct ColonizedTreeTuningForm : Form {
     f32 leafSizeMax { 0.25f };
     f32 leafSolidStart { 4.0f };
     f32 leafSolidEnd { 7.0f };
+    // Bark material (draw-time — no mesh rebuild): triplanar tile
+    // density, hex-tiling lattice cell + seam sharpness, and a tint
+    // multiplier over the bark texture (1,1,1 = the texture's own hue).
+    f32 barkTileScale { 0.3f };
+    f32 barkHexCell { 0.85f };
+    f32 barkHexSharpness { 6.0f };
+    Vec3 barkTint { 1.0f, 1.0f, 1.0f };
 
     REFLECT_BEGIN(ColonizedTreeTuningForm, Form)
         REFLECT_FIELD(tubeSides)
         REFLECT_FIELD(curvePreserve)
+        REFLECT_FIELD(flareAmount)
+        REFLECT_FIELD(flareHeight)
+        REFLECT_FIELD(flareLobes)
         REFLECT_FIELD(curveSubdiv)
         REFLECT_FIELD(pathJitter)
         REFLECT_FIELD(ringIrregularity)
@@ -493,6 +550,10 @@ struct ColonizedTreeTuningForm : Form {
         REFLECT_FIELD(leafSizeMax)
         REFLECT_FIELD(leafSolidStart)
         REFLECT_FIELD(leafSolidEnd)
+        REFLECT_FIELD(barkTileScale)
+        REFLECT_FIELD(barkHexCell)
+        REFLECT_FIELD(barkHexSharpness)
+        REFLECT_FIELD(barkTint)
     REFLECT_END()
 };
 

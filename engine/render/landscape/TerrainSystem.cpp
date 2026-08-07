@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "engine/assets/CookedTexture.hpp"
 #include "engine/core/Clock.hpp"
 #include "engine/core/Jobs.hpp"
 #include "engine/core/Log.hpp"
@@ -24,26 +25,6 @@ i32 camChunk(f32 worldCoord) {
 }
 
 } // namespace
-
-// Per-vertex material color — the base tint the splat tiles blend over:
-// sand at the shoreline, grass on plains, rock on
-// slopes, snow on high flats. Public: FarTerrain paints its coarse far
-// mesh with the SAME palette so the streaming-ring hand-off matches.
-Vec3 terrainColor(f32 height, const Vec3& normal, f32 seaLevel) {
-    constexpr Vec3 kSand { 0.76f, 0.70f, 0.50f };
-    constexpr Vec3 kGrass { 0.33f, 0.51f, 0.21f };
-    constexpr Vec3 kRock { 0.46f, 0.44f, 0.42f };
-    constexpr Vec3 kSnow { 0.93f, 0.95f, 0.97f };
-
-    const f32 slope = 1.0f - normal.y;
-    Vec3 color = glm::mix(
-        kSand, kGrass,
-        glm::smoothstep(seaLevel + 1.0f, seaLevel + 4.0f, height));
-    color = glm::mix(color, kRock, glm::smoothstep(0.18f, 0.35f, slope));
-    const f32 snowiness = glm::smoothstep(110.0f, 140.0f, height) *
-                          (1.0f - glm::smoothstep(0.25f, 0.45f, slope));
-    return glm::mix(color, kSnow, snowiness);
-}
 
 vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
                                       i32 cz, u32 lod) {
@@ -71,8 +52,7 @@ vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
                         z / TerrainSystem::kChunkSize },
                 // terrain.frag ignores a tint here (albedo comes from
                 // the splats); .r carries the baked rock-exposure mask
-                // instead — the cliff-material weight. FarTerrain keeps
-                // the terrainColor palette for its own far mesh.
+                // instead — the cliff-material weight.
                 .color = { terrain::rockExposureAt(params, x, z), 0.0f,
                            0.0f },
             });
@@ -137,7 +117,8 @@ vector<u32> buildChunkIndices(u32 lod) {
 }
 
 void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
-                           core::JobSystem& jobSystem) {
+                           core::JobSystem& jobSystem,
+                           const CookedSplatPaths& cooked) {
     streamer.create(jobSystem);
 
     for (u32 lod = 0; lod < kLodCount; ++lod) {
@@ -188,39 +169,198 @@ void TerrainSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     }
 
     if (device.caps().textureArrays) {
-        const vector<u8> splatPixels = buildSplatTilePixels();
-        splatTexture = { device, device.createTexture(
-            { .width = kSplatTileSize,
-              .height = kSplatTileSize,
-              .arrayLayers = SplatLayer_Count,
-              .mipLevels = 9, // full chain for a 256 tile
-              // sRGB: tiles are authored in display space, decoded to linear
-              // on sample — the HDR pipeline lights in linear.
-              .format = rhi::TextureFormat::SRGBA8,
-              .filter = rhi::FilterMode::Linear,
-              .wrap = rhi::AddressMode::Repeat,
-              .usage = rhi::TextureUsage_Sampled },
-            splatPixels.data()) };
-        device.generateMipmaps(splatTexture);
+        cookedPaths = cooked;
+        cookedPossible =
+            cooked.complete() && device.caps().textureCompressionBC;
         splatSampler = { device, device.createSampler(
             { .mipmapFilter = true,
               .addressU = rhi::AddressMode::Repeat,
               .addressV = rhi::AddressMode::Repeat,
               .maxAnisotropy = 8.0f }) };
-        splatBindGroup = { device, device.createBindGroup(
-            { .entries = { { .binding = 0,
-                             .texture = splatTexture,
-                             .sampler = splatSampler } } }) };
+        buildMaterialArrays(device, cookedPossible);
     } else {
         LOG_WARN("TerrainSystem: no texture arrays on this backend — "
                  "terrain splatting disabled");
     }
 
     shaders.load(kTerrainShader, { { "FrameUbo", 0 } },
-                 { { "uSplat", 0 }, { "uShadowMap", 1 } });
+                 { { "uSplat", 0 },
+                   { "uShadowMap", 1 },
+                   { "uSplatHeight", 3 },
+                   { "uTerrainShade0", 4 },
+                   { "uTerrainShade1", 5 },
+                   { "uSplatNormal", 8 } });
     buildPipeline(device, shaders);
     shaders.load(kTerrainCasterShader, { { "ShadowUbo", 1 } });
     buildCasterPipeline(device, shaders);
+}
+
+void TerrainSystem::buildMaterialArrays(rhi::Device& device, bool useCooked) {
+    splatBindGroup.reset();
+    splatTexture.reset();
+    materialNormal.reset();
+    materialOrm.reset();
+    materialHeight.reset();
+
+    // Cooked material arrays (Vulkan-only); the procedural tiles are the
+    // fallback whenever anything is missing or fails.
+    cookedMaterials = false;
+    if (useCooked && cookedPossible) {
+        const auto loadArray =
+            [&](const str& path,
+                rhi::TextureFormat expected) -> rhi::TextureHandle {
+            auto tex = assets::loadCookedTexture(path);
+            if (!tex || tex->format != expected ||
+                tex->arrayLayers != kSplatArrayLayers) {
+                if (tex) {
+                    LOG_WARN("TerrainSystem: '{}' has {} layers "
+                             "(splat needs {}) or wrong format — "
+                             "procedural fallback",
+                             path, tex->arrayLayers,
+                             static_cast<u32>(kSplatArrayLayers));
+                }
+                return {};
+            }
+            return device.createTexture(tex->desc(), tex->payload.data());
+        };
+        rhi::TextureHandle albedo {};
+        {
+            auto tex = assets::loadCookedTexture(cookedPaths.albedo);
+            if (tex && tex->format == rhi::TextureFormat::BC7_SRGB &&
+                tex->arrayLayers == kSplatArrayLayers) {
+                albedo = device.createTexture(tex->desc(),
+                                              tex->payload.data());
+                // The per-layer averages feed the blade root albedo
+                // (grassAlbedoBase) — the CPU cannot decode BC7.
+                const auto unpack = [](u32 packed) {
+                    return Vec3 {
+                        static_cast<f32>(packed & 0xffu) / 255.0f,
+                        static_cast<f32>((packed >> 8) & 0xffu) / 255.0f,
+                        static_cast<f32>((packed >> 16) & 0xffu) / 255.0f
+                    };
+                };
+                for (u32 v = 0; v < kGrassVariantCount; ++v) {
+                    grassBases[v] = unpack(
+                        tex->layerAverages[grassVariantLayer(v)]);
+                }
+                // Semantic means: the far-mesh paint (layerAlbedoBase).
+                for (u32 layer = 0; layer < SplatLayer_Count; ++layer) {
+                    layerBases[layer] =
+                        unpack(tex->layerAverages[layer]);
+                }
+            }
+        }
+        const rhi::TextureHandle normal =
+            loadArray(cookedPaths.normal, rhi::TextureFormat::BC5_UNORM);
+        const rhi::TextureHandle orm =
+            loadArray(cookedPaths.orm, rhi::TextureFormat::BC7_UNORM);
+        const rhi::TextureHandle height =
+            loadArray(cookedPaths.height, rhi::TextureFormat::R16_UNORM);
+        if (albedo.id != 0 && normal.id != 0 && orm.id != 0 &&
+            height.id != 0) {
+            splatTexture = { device, albedo };
+            materialNormal = { device, normal };
+            materialOrm = { device, orm };
+            materialHeight = { device, height };
+            cookedMaterials = true;
+            LOG_INFO("TerrainSystem: cooked material arrays loaded "
+                     "({} layers, BC7/BC5/R16)",
+                     static_cast<u32>(kSplatArrayLayers));
+        } else {
+            // Free any array that did land before falling back.
+            for (const rhi::TextureHandle h :
+                 { albedo, normal, orm, height }) {
+                if (h.id != 0) {
+                    device.destroyTexture(h);
+                }
+            }
+        }
+    }
+    if (!cookedMaterials) {
+        // The procedural tile synthesis is gone (dev decision
+        // 2026-08-06): the cooked .mtex library is THE material set.
+        // Flat per-layer placeholders keep the game bootable when it is
+        // absent; grassBases/layerBases keep their header defaults.
+        LOG_WARN("TerrainSystem: cooked splat arrays missing — flat "
+                 "placeholder materials");
+        constexpr u32 kSize = 4;
+        constexpr size_t kLayerBytes =
+            static_cast<size_t>(kSize) * kSize * 4;
+        const auto familyColor = [&](u32 layer) -> Vec3 {
+            if (layer < SplatLayer_Count) {
+                return layerBases[layer];
+            }
+            if (layer < 8) {
+                return layerBases[SplatLayer_Grass];
+            }
+            if (layer < 11) {
+                return layerBases[SplatLayer_Rock];
+            }
+            if (layer < 13) {
+                return layerBases[SplatLayer_Snow];
+            }
+            return layerBases[SplatLayer_Sand];
+        };
+        vector<u8> albedoPixels(kLayerBytes * kSplatArrayLayers);
+        vector<u8> normalPixels(kLayerBytes * kSplatArrayLayers);
+        vector<f32> heightPixels(static_cast<size_t>(kSize) * kSize *
+                                     kSplatArrayLayers,
+                                 0.5f);
+        for (u32 layer = 0; layer < kSplatArrayLayers; ++layer) {
+            const Vec3 color = familyColor(layer);
+            for (size_t at = layer * kLayerBytes;
+                 at < (layer + 1) * kLayerBytes; at += 4) {
+                albedoPixels[at + 0] = static_cast<u8>(
+                    glm::clamp(color.r, 0.0f, 1.0f) * 255.0f);
+                albedoPixels[at + 1] = static_cast<u8>(
+                    glm::clamp(color.g, 0.0f, 1.0f) * 255.0f);
+                albedoPixels[at + 2] = static_cast<u8>(
+                    glm::clamp(color.b, 0.0f, 1.0f) * 255.0f);
+                albedoPixels[at + 3] = 255;
+                normalPixels[at + 0] = 128;
+                normalPixels[at + 1] = 128;
+                normalPixels[at + 2] = 255;
+                normalPixels[at + 3] = 255;
+            }
+        }
+        splatTexture = { device, device.createTexture(
+            { .width = kSize,
+              .height = kSize,
+              .arrayLayers = kSplatArrayLayers,
+              .format = rhi::TextureFormat::SRGBA8,
+              .filter = rhi::FilterMode::Linear,
+              .wrap = rhi::AddressMode::Repeat,
+              .usage = rhi::TextureUsage_Sampled },
+            albedoPixels.data()) };
+        materialHeight = { device, device.createTexture(
+            { .width = kSize,
+              .height = kSize,
+              .arrayLayers = kSplatArrayLayers,
+              .format = rhi::TextureFormat::R16F,
+              .filter = rhi::FilterMode::Linear,
+              .wrap = rhi::AddressMode::Repeat,
+              .usage = rhi::TextureUsage_Sampled },
+            heightPixels.data()) };
+        materialNormal = { device, device.createTexture(
+            { .width = kSize,
+              .height = kSize,
+              .arrayLayers = kSplatArrayLayers,
+              .format = rhi::TextureFormat::RGBA8,
+              .filter = rhi::FilterMode::Linear,
+              .wrap = rhi::AddressMode::Repeat,
+              .usage = rhi::TextureUsage_Sampled },
+            normalPixels.data()) };
+    }
+    splatBindGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = splatTexture,
+                         .sampler = splatSampler },
+                       { .binding = 3,
+                         .texture = materialHeight,
+                         .sampler = splatSampler },
+                       { .binding = 8,
+                         .texture = materialNormal,
+                         .sampler = splatSampler } } }) };
 }
 
 void TerrainSystem::destroy(rhi::Device& device) {
@@ -240,6 +380,10 @@ void TerrainSystem::destroy(rhi::Device& device) {
     splatBindGroup.reset();
     splatSampler.reset();
     splatTexture.reset();
+    materialNormal.reset();
+    materialOrm.reset();
+    materialHeight.reset();
+    cookedMaterials = false;
 }
 
 void TerrainSystem::regenerate(rhi::Device& device) {
@@ -257,10 +401,18 @@ void TerrainSystem::regenerate(rhi::Device& device) {
 void TerrainSystem::remeshChunks(const vector<u64>& keys) {
     for (const u64 key : keys) {
         const auto it = streamer.chunks.find(key);
-        if (it == streamer.chunks.end() ||
-            it->second.residentLod == kNoLod ||
-            it->second.queuedLod != kNoLod) {
-            continue; // not drawn yet, or a build is already in flight
+        if (it == streamer.chunks.end()) {
+            continue;
+        }
+        if (it->second.queuedLod != kNoLod) {
+            // A build captured the OLD params before this invalidation:
+            // its mesh would land stale and stick until an LOD change.
+            // Mark it — pumpUploads re-enqueues on landing.
+            it->second.remeshOnLand = true;
+            continue;
+        }
+        if (it->second.residentLod == kNoLod) {
+            continue; // never built: its next stream captures the new params
         }
         // Rebuild at the current LOD; enqueueBuild captures today's params
         // (the new patches). The old mesh keeps drawing until pumpUploads
@@ -272,7 +424,8 @@ void TerrainSystem::remeshChunks(const vector<u64>& keys) {
     }
 }
 
-void TerrainSystem::update(rhi::Device& device, const Vec3& cameraPos) {
+void TerrainSystem::update(rhi::Device& device, const Vec3& cameraPos,
+                           bool holdRequests, bool boost) {
     frameIndices = 0; // the frame's draw*() calls sum into it
     for (VertexPool& pool : pools) {
         // Slots freed two frames ago finished cooling (their referencing
@@ -282,19 +435,26 @@ void TerrainSystem::update(rhi::Device& device, const Vec3& cameraPos) {
         pool.cooling[1] = std::move(pool.cooling[0]);
         pool.cooling[0].clear();
     }
-    pumpUploads(device, cameraPos);
-    requestMissing(cameraPos);
+    pumpUploads(device, cameraPos, boost);
+    if (!holdRequests) {
+        requestMissing(cameraPos, boost);
+    }
     evictFar(device, cameraPos);
 }
 
-void TerrainSystem::pumpUploads(rhi::Device& device, const Vec3& cameraPos) {
+void TerrainSystem::pumpUploads(rhi::Device& device, const Vec3& cameraPos,
+                                bool boost) {
     // Time-budgeted on top of the count cap: 8 LOD0 uploads cost far more
     // than 8 LOD3 ones (the frame probe showed the count cap alone
     // spiking past 30 ms in Debug). At least one upload always lands, so
     // progress is guaranteed. (Budget loop in ChunkStreamer; this
     // lambda is the terrain-specific accept — the LOD-swap upload.)
+    // Boosted while a loading veil hides the frame: stutter is invisible
+    // there and the gate holds on `pending` draining.
     lastUploads = streamer.pump(
-        kMaxUploadsPerFrame, kUploadMsBudget, [&](u64 key, auto& built) {
+        boost ? kMaxUploadsPerFrame * 8 : kMaxUploadsPerFrame,
+        boost ? kUploadMsBudget * 6.0 : kUploadMsBudget,
+        [&](u64 key, auto& built) {
             const auto it = streamer.chunks.find(key);
             if (it == streamer.chunks.end() ||
                 it->second.queuedLod != built.payload.lod) {
@@ -316,6 +476,7 @@ void TerrainSystem::pumpUploads(rhi::Device& device, const Vec3& cameraPos) {
                              lod);
                 }
                 chunk.queuedLod = kNoLod;
+                chunk.remeshOnLand = false; // the re-request is fresh anyway
                 --pending;
                 return false;
             }
@@ -338,11 +499,20 @@ void TerrainSystem::pumpUploads(rhi::Device& device, const Vec3& cameraPos) {
             chunk.minY = built.payload.minY;
             chunk.maxY = built.payload.maxY;
             --pending;
+            if (chunk.remeshOnLand) {
+                // This mesh was built against pre-invalidation params
+                // (remeshChunks caught it in flight): it draws now — no
+                // hole — while a rebuild with today's params is queued.
+                chunk.remeshOnLand = false;
+                chunk.queuedLod = lod;
+                ++pending;
+                enqueueBuild(chunkKeyCx(key), chunkKeyCz(key), lod);
+            }
             return true;
         });
 }
 
-void TerrainSystem::requestMissing(const Vec3& cameraPos) {
+void TerrainSystem::requestMissing(const Vec3& cameraPos, bool boost) {
     const i32 camCx = camChunk(cameraPos.x);
     const i32 camCz = camChunk(cameraPos.z);
     // Center-out: the terrain under the camera arrives first, holes stay at
@@ -357,8 +527,11 @@ void TerrainSystem::requestMissing(const Vec3& cameraPos) {
         camCx, camCz, viewRadius,
         // Bigger rings fill faster (cold start / teleport at radius 45
         // is ~8k chunks); the workers absorb it, the frame thread only
-        // pays the enqueue.
-        viewRadius > 24 ? kMaxRequestsPerFrame * 2 : kMaxRequestsPerFrame,
+        // pays the enqueue. Behind a loading veil the burst-flattening
+        // cap serves nothing — open it wide so the gate drains fast.
+        boost ? kMaxRequestsPerFrame * 16
+              : (viewRadius > 24 ? kMaxRequestsPerFrame * 2
+                                 : kMaxRequestsPerFrame),
         [&](i32 cx, i32 cz, i32 dx, i32 dz) {
             const auto it = streamer.chunks.find(chunkKey(cx, cz));
             if (it == streamer.chunks.end()) {

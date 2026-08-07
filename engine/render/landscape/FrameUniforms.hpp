@@ -187,6 +187,27 @@ struct FrameUniforms {
     Vec4 seasonInfo { 0.0f, 0.0f, 0.0f, 0.0f };
     // Per atlas slot: rgb = autumn tint, a = seasonality (0 = evergreen).
     Vec4 leafSeason[8] {};
+    // Splat material detail (docs/TERRAIN-TEXTURING.md): x = height-blend
+    // band depth (0 = plain weighted blend), yzw reserved for the detail
+    // fade / POM knobs of the later bricks.
+    Vec4 splatDetailInfo { 0.15f, 0.0f, 0.0f, 0.0f };
+    // Region shading maps (TerrainShadeMap): xy = center, z = 1/span,
+    // w = valid.
+    Vec4 terrainShadeMapInfo { 0.0f, 0.0f, 0.0f, 0.0f };
+    // Splat anti-repetition + POM: x = bi-frequency variety strength
+    // (0 = off — the second, non-harmonic tap that keeps the 4 m tile
+    // grid from ever repeating exactly), y = POM self-shadow strength,
+    // z = POM relief depth (uv units), w = tree bark textures resident
+    // (tree.frag gate).
+    Vec4 splatVarietyInfo { 0.5f, 0.0f, 0.03f, 0.0f };
+    // Grass species table (GrassSpecies.hpp is the source; FrameComposer
+    // copies it) — grass.vert indexes by the instance's species lane.
+    // Shape: x height (scatter-side), y width, z lean, w tip profile.
+    Vec4 grassSpeciesShape[6] {};
+    Vec4 grassSpeciesBase[6] {}; // rgb tint x ground albedo, w free
+    Vec4 grassSpeciesTip[6] {};  // rgb tint, w free
+    // SSAO (ssao.frag): x = strength, y = world radius (m), zw reserved.
+    Vec4 ssaoInfo { 0.85f, 0.7f, 0.0f, 0.0f };
 };
 
 // --- std140 layout lock (audit U3-3) -------------------------------------------------
@@ -259,7 +280,14 @@ static_assert(offsetof(FrameUniforms, waterDebugInfo) == 1520);
 static_assert(offsetof(FrameUniforms, waterInfoMapInfo) == 1536);
 static_assert(offsetof(FrameUniforms, seasonInfo) == 1552);
 static_assert(offsetof(FrameUniforms, leafSeason) == 1568);
-static_assert(sizeof(FrameUniforms) == 1696,
+static_assert(offsetof(FrameUniforms, splatDetailInfo) == 1696);
+static_assert(offsetof(FrameUniforms, terrainShadeMapInfo) == 1712);
+static_assert(offsetof(FrameUniforms, splatVarietyInfo) == 1728);
+static_assert(offsetof(FrameUniforms, grassSpeciesShape) == 1744);
+static_assert(offsetof(FrameUniforms, grassSpeciesBase) == 1840);
+static_assert(offsetof(FrameUniforms, grassSpeciesTip) == 1936);
+static_assert(offsetof(FrameUniforms, ssaoInfo) == 2032);
+static_assert(sizeof(FrameUniforms) == 2048,
               "FrameUniforms grew: append-only, update common.glsl in "
               "lockstep, then bump this");
 

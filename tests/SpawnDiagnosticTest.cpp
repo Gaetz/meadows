@@ -7,6 +7,7 @@
 #include "engine/terrain/WaterBodies.hpp"
 #include "engine/terrain/generation/TileBake.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
+#include "engine/render/landscape/VegetationSystem.hpp"
 
 // Hidden diagnostic (run explicitly): reconstructs the seed-1337 sandbox
 // spawn exactly like setSandboxMode does, bakes its tile, and reports
@@ -586,5 +587,225 @@ TEST_CASE("erosion calibration" * doctest::skip()) {
     };
     sampleTile(-6, 5); // the tallest measured massif
     sampleTile(-1, 0); // the spawn lowlands
+    CHECK(true);
+}
+
+// Where do the scanned forest-floor debris land around the spawn? Lists
+// the fallen trunks (kFirstDebris+1) nearest to the game's spawn so a
+// dev can walk to one and validate the scan pipeline in place.
+//   meadows-tests '-tc=spawn debris*' -ns
+TEST_CASE("spawn debris diagnostic" * doctest::skip()) {
+    TileBakeParams params;
+    params.worldSeed = 1337;
+    // The current probe spawn (run "spawn diagnostic" if this drifts;
+    // the game's mist-map log confirms it: center ~(2032, 1608)).
+    const f32 px = 2038.28f;
+    const f32 pz = 1614.13f;
+
+    const TileBakeResult b = bakeTile(params, 0, 0);
+    render::TerrainParams tp;
+    auto base = std::make_shared<render::TerrainBase>();
+    base->regions.push_back(b.region);
+    tp.base = base;
+    auto sandbox = std::make_shared<render::SandboxTerrain>();
+    sandbox->controls = params.controls;
+    sandbox->controls.seed = params.worldSeed;
+    sandbox->macro = params.macro;
+    tp.sandbox = sandbox;
+
+    struct Hit {
+        f32 x, y, z, scale, dist;
+        bool trunk;
+    };
+    vector<Hit> hits;
+    u32 denseForestChunks = 0; // >= 25 trees: forest-interior ground
+    f32 nearestDense = 1.0e9f;
+    const i32 ccx = static_cast<i32>(std::floor(px / 64.0f));
+    const i32 ccz = static_cast<i32>(std::floor(pz / 64.0f));
+    constexpr i32 kScanRadius = 14; // ~900 m
+    for (i32 cz = ccz - kScanRadius; cz <= ccz + kScanRadius; ++cz) {
+        for (i32 cx = ccx - kScanRadius; cx <= ccx + kScanRadius; ++cx) {
+            const auto buckets = render::scatterProps(tp, cx, cz);
+            u32 trees = 0;
+            for (u32 v = 0; v < render::VegetationSystem::kTreeVariants;
+                 ++v) {
+                trees += static_cast<u32>(buckets[v].size());
+            }
+            if (trees >= 25) {
+                ++denseForestChunks;
+                const f32 dcx =
+                    (static_cast<f32>(cx) + 0.5f) * 64.0f - px;
+                const f32 dcz =
+                    (static_cast<f32>(cz) + 0.5f) * 64.0f - pz;
+                nearestDense =
+                    glm::min(nearestDense, std::hypot(dcx, dcz));
+            }
+            for (u32 v = render::VegetationSystem::kFirstDebris;
+                 v < render::VegetationSystem::kVariantCount; ++v) {
+                for (const auto& prop : buckets[v]) {
+                    const f32 dx = prop.positionScale.x - px;
+                    const f32 dz = prop.positionScale.z - pz;
+                    hits.push_back(
+                        { prop.positionScale.x, prop.positionScale.y,
+                          prop.positionScale.z, prop.positionScale.w,
+                          std::hypot(dx, dz),
+                          v == render::VegetationSystem::kFirstDebris +
+                                   1 });
+                }
+            }
+        }
+    }
+    std::sort(hits.begin(), hits.end(),
+              [](const Hit& l, const Hit& r) { return l.dist < r.dist; });
+    MESSAGE("debris within ", kScanRadius * 64, " m of spawn (", px, ", ",
+            pz, "): ", hits.size());
+    u32 trunks = 0;
+    for (const Hit& hit : hits) {
+        if (!hit.trunk) {
+            continue;
+        }
+        ++trunks;
+        if (trunks <= 8) {
+            MESSAGE("fallen trunk at (", hit.x, ", ", hit.z,
+                    ")  h=", hit.y, "  scale=", hit.scale, "  dist=",
+                    hit.dist, " m");
+        }
+    }
+    u32 stumps = 0;
+    for (const Hit& hit : hits) {
+        if (hit.trunk || ++stumps > 4) {
+            continue;
+        }
+        MESSAGE("stump at (", hit.x, ", ", hit.z, ")  dist=", hit.dist,
+                " m");
+    }
+    MESSAGE("total: ", trunks, " trunk(s), ", hits.size() - trunks,
+            " stump(s); dense-forest chunks: ", denseForestChunks,
+            " (nearest ", nearestDense, " m)");
+    CHECK(true);
+}
+
+// How much relief does each erosion stage take? Bakes the tallest
+// massif tile with stages toggled off and reports the height stats —
+// the answer to "does erosion flatten everything".
+//   meadows-tests '-tc=erosion strength*' -ns
+TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
+    const auto stats = [](const char* label, TileBakeParams params) {
+        const TileBakeResult r = bakeTile(params, -6, 5);
+        vector<f32> above;
+        const f32 sea = params.macro.seaLevel;
+        f32 maxH = 0.0f;
+        for (u32 row = 0; row < r.region.height; row += 4) {
+            for (u32 col = 0; col < r.region.width; col += 4) {
+                const f32 h =
+                    r.region.heights[static_cast<size_t>(row) *
+                                         r.region.width +
+                                     col];
+                maxH = glm::max(maxH, h);
+                if (h > sea) {
+                    above.push_back(h - sea);
+                }
+            }
+        }
+        std::sort(above.begin(), above.end());
+        const auto pct = [&](f32 p) {
+            return above.empty()
+                       ? 0.0f
+                       : above[static_cast<size_t>(
+                             p * static_cast<f32>(above.size() - 1))];
+        };
+        f64 mean = 0.0;
+        for (const f32 h : above) {
+            mean += h;
+        }
+        mean /= glm::max<size_t>(above.size(), 1);
+        MESSAGE(label, ": max=", maxH, " mean-above-sea=", mean);
+        MESSAGE("  p10=", pct(0.10f), " p25=", pct(0.25f),
+                " p40=", pct(0.40f), " p50=", pct(0.50f),
+                " p60=", pct(0.60f), " p75=", pct(0.75f),
+                " p90=", pct(0.90f), " p95=", pct(0.95f),
+                " p99=", pct(0.99f));
+    };
+    TileBakeParams base;
+    base.worldSeed = 1337;
+    stats("default            ", base);
+    TileBakeParams noRound = base;
+    noRound.rounding.strength = 0.0f;
+    stats("rounding OFF       ", noRound);
+    TileBakeParams noErosion = noRound;
+    noErosion.fluvial.iterations = 0;
+    noErosion.thermal.iterations = 0;
+    stats("erosion+rounding OFF", noErosion);
+    for (const i32 iterations : { 80, 60, 40 }) {
+        TileBakeParams softer = base;
+        softer.fluvial.iterations = iterations;
+        stats("fluvial reduced     ", softer);
+    }
+    CHECK(true);
+}
+
+// UV health of the scanned rocks (docs/GRASS-REDO.md props): per model,
+// the per-triangle texel-stretch distribution (world area vs uv area)
+// BEFORE and AFTER decimation — the striped-face hunt ("la texture
+// n'en fait pas le tour" on the pale boulder).
+//   meadows-tests '-tc=rock uv diagnostic' -ns
+#include "engine/assets/GltfMesh.hpp"
+#include "engine/assets/MeshSimplify.hpp"
+TEST_CASE("rock uv diagnostic" * doctest::skip()) {
+    const char* kRocks[] = {
+        "game/data/base/models/scans/stone_01/stone_01.gltf",
+        "game/data/base/models/scans/rock_moss_set_01/rock_moss_set_01.gltf",
+        "game/data/base/models/scans/rock_boulder_dry/rock_boulder_dry.gltf",
+        "game/data/base/models/scans/boulder_01/boulder_01.gltf",
+    };
+    const auto stats = [](const render::MeshData& mesh, const char* tag) {
+        u32 degenerate = 0;
+        u32 stretched = 0;
+        u32 tris = 0;
+        f32 uvMinX = 1.0e9f, uvMaxX = -1.0e9f;
+        f32 uvMinY = 1.0e9f, uvMaxY = -1.0e9f;
+        for (const render::MeshVertex& v : mesh.vertices) {
+            uvMinX = glm::min(uvMinX, v.uv.x);
+            uvMaxX = glm::max(uvMaxX, v.uv.x);
+            uvMinY = glm::min(uvMinY, v.uv.y);
+            uvMaxY = glm::max(uvMaxY, v.uv.y);
+        }
+        for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+            const auto& a = mesh.vertices[mesh.indices[i]];
+            const auto& b = mesh.vertices[mesh.indices[i + 1]];
+            const auto& c = mesh.vertices[mesh.indices[i + 2]];
+            const f32 wArea = 0.5f * glm::length(glm::cross(
+                b.position - a.position, c.position - a.position));
+            const Vec2 e1 = b.uv - a.uv;
+            const Vec2 e2 = c.uv - a.uv;
+            const f32 uvArea =
+                0.5f * std::abs(e1.x * e2.y - e1.y * e2.x);
+            if (wArea < 1.0e-8f) {
+                continue;
+            }
+            ++tris;
+            const f32 texelDensity = uvArea / wArea;
+            if (texelDensity < 1.0e-5f) {
+                ++degenerate; // stretched to streaks
+            } else if (texelDensity < 1.0e-3f) {
+                ++stretched;
+            }
+        }
+        MESSAGE("  ", tag, ": ", tris, " tris, uv x[", uvMinX, ",",
+                uvMaxX, "] y[", uvMinY, ",", uvMaxY, "], degenerate ",
+                degenerate, ", stretched ", stretched);
+    };
+    for (const char* path : kRocks) {
+        auto mesh = assets::loadGltfMesh(path);
+        if (!mesh) {
+            MESSAGE(path, ": LOAD FAILED");
+            continue;
+        }
+        MESSAGE(path, ":");
+        stats(*mesh, "source");
+        render::MeshData simplified = *mesh;
+        assets::simplifyMesh(simplified, 700);
+        stats(simplified, "decimated 700");
+    }
     CHECK(true);
 }

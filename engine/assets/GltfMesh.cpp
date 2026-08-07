@@ -220,6 +220,46 @@ std::optional<render::MeshData> loadGltfMesh(
     return buildMesh(*data, pathStr, &baseDir);
 }
 
+vector<render::MeshData> loadGltfMeshParts(
+    const std::filesystem::path& path) {
+    const str pathStr = path.string();
+    cgltf_options options {};
+    cgltf_data* raw = nullptr;
+    cgltf_result result = cgltf_parse_file(&options, pathStr.c_str(), &raw);
+    if (result != cgltf_result_success) {
+        LOG_ERROR("glTF parse failed '{}' (cgltf error {})", pathStr,
+                  static_cast<int>(result));
+        return {};
+    }
+    std::unique_ptr<cgltf_data, GltfDeleter> data { raw };
+    result = cgltf_load_buffers(&options, data.get(), pathStr.c_str());
+    if (result != cgltf_result_success) {
+        LOG_ERROR("glTF buffer load failed '{}' (cgltf error {})", pathStr,
+                  static_cast<int>(result));
+        return {};
+    }
+    const std::filesystem::path baseDir = path.parent_path();
+    vector<render::MeshData> parts;
+    TextureAverages textureAverages;
+    for (cgltf_size n = 0; n < data->nodes_count; ++n) {
+        const cgltf_node& node = data->nodes[n];
+        if (!node.mesh) {
+            continue;
+        }
+        Mat4 world { 1.0f };
+        cgltf_node_transform_world(&node, glm::value_ptr(world));
+        render::MeshData part;
+        for (cgltf_size p = 0; p < node.mesh->primitives_count; ++p) {
+            appendPrimitive(part, node.mesh->primitives[p], world, baseDir,
+                            &textureAverages);
+        }
+        if (!part.vertices.empty() && !part.indices.empty()) {
+            parts.push_back(std::move(part));
+        }
+    }
+    return parts;
+}
+
 std::optional<render::MeshData> loadGltfMeshFromMemory(const void* bytes,
                                                        u64 byteCount) {
     cgltf_options options {};

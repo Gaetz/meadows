@@ -136,4 +136,19 @@ layout(std140, binding = 0) uniform FrameUbo {
     // Per leaf-mask atlas slot: rgb = autumn tint, a = seasonality
     // (0 = evergreen — conifers keep needles and color).
     vec4 uLeafSeason[8];
+    // x = height-blend band depth (0 = plain weighted blend), yzw
+    // reserved (detail fade / POM knobs).
+    vec4 uSplatDetailInfo;
+    // Region shading maps (TerrainShadeMap): xy = center, z = 1/span,
+    // w = valid.
+    vec4 uTerrainShadeMapInfo;
+    // x = bi-frequency variety strength (0 = off), yzw reserved.
+    vec4 uSplatVarietyInfo;
+    // Grass species table (GrassSpecies.hpp): shape = {height (unused in
+    // shader — applied at scatter), width, lean, tip profile}; base/tip
+    // tints multiply the inherited ground albedo.
+    vec4 uGrassSpeciesShape[6];
+    vec4 uGrassSpeciesBase[6];
+    vec4 uGrassSpeciesTip[6];
+    vec4 uSsaoInfo;
 };

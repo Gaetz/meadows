@@ -62,6 +62,18 @@ condition aux limites implicite.
 fluviales, sortie 2 m = 2113²) ≈ **4,4 s** — benchmark caché
 `meadows-tests -tc="*bake benchmark*" -ns`. Région résidente ≈ 18 Mo.
 
+**Calibration de la dissection (2026-08-05, retour dev « tout est ramené
+bas ») : `fluvial.iterations` 100 → 80** (v35 — d'abord 60, remonté à 80
+au choix du dev après essai en jeu). Mesures sur le massif
+−6,5 (diagnostic caché `erosion strength`) : à 100 it. l'érosion prenait
+27 % de l'altitude moyenne (médiane −30 %) sans toucher les sommets
+(max −6 %) — dissection pure, plus de hauts plateaux praticables. À 60 :
+médiane +160 m, p40 +190 m, les fonds de vallées restent creusés (p10
+quasi inchangé), versants toujours ravinés. La relaxation de crêtes
+(`rounding`) mesurée innocente. À 80 (choix final) : dissection
+intermédiaire. Hydrologie re-validée : 38 lacs / 54 rivières sur la
+tuile spawn (49/54 à 100 it.), spawn au sec.
+
 ### Sandbox — streaming (`game/TerrainBakeStreamer`)
 
 Ring de prefetch autour du joueur (~1,4 km) → bake sur workers (mailbox
@@ -71,6 +83,25 @@ Phase-5, le frame thread publie) → cache disque
 Publication : nouveau `TerrainBase` immutable + remesh des chunks couverts
 dans le ring + rebuild collision/veg + snap des cells + eau republiée.
 Éviction au-delà de ~2,5 tuiles (le streamer re-demande au retour).
+
+**Boot & invalidation (fixes 2026-08-04)** :
+- *Trou au spawn corrigé* : un chunk terrain dont le build était en vol au
+  moment d'une publication capturait les ANCIENS params — son mesh périmé
+  atterrissait et restait affiché jusqu'à un changement de LOD (d'où le
+  « je m'éloigne et je reviens et le sol apparaît »). `remeshChunks` marque
+  maintenant ces chunks (`remeshOnLand`) et le pump ré-enqueue à
+  l'atterrissage — le pendant terrain du flag `stale` de l'herbe/végétation.
+- *Gate de chargement 70→100 % raccourci* : (1) **hold** — les rings
+  terrain/herbe/végétation ne streament plus tant que la première tuile
+  n'est pas publiée (tout mesh bâti sur la base vide était re-meshé à la
+  publication : double travail qui volait les workers des bakes) ;
+  (2) **boost** — derrière le voile opaque du boot, les budgets
+  anti-stutter s'ouvrent (requêtes ×16, uploads ×8 / 12 ms) : ils
+  protégeaient une frame que personne ne voit. `WorldRenderer::
+  setStreamingHold/Boost`, pilotés par la scène (publication / machine
+  warmup). Le voile léger du spectateur garde les budgets normaux.
+  NB : le 0→70 % (bakes de tuiles) était déjà couvert par le cache disque
+  ci-dessus — un cache des meshes de chunks serait lourd et sans objet.
 Activation : `sandboxTerrain = true` dans `landscape.toml` (seed =
 `terrainSeed`) — off par défaut, le monde démo est intact.
 

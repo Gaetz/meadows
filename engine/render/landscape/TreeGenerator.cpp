@@ -136,7 +136,8 @@ MeshData generateTree(u32 seed, u32 lobeSubdivisions,
         const bool isTrunk = i < trunkVertexCount;
         const f32 sway = isTrunk ? height01 * 0.25f
                                  : 0.5f + height01 * 0.5f;
-        vertex.uv = { sway, height01 };
+        // Trunk uv.y < -0.5 = bark flag (triplanar in tree.frag).
+        vertex.uv = { sway, isTrunk ? -1.0f : height01 };
         if (!isTrunk) {
             vertex.color *= 1.0f + 0.25f * height01;
         }

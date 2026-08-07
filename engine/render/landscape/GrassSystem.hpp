@@ -71,6 +71,17 @@ struct GrassScatterTuning {
     // knob: WorldRenderer syncs it from the view every frame (a change
     // regenerates, same policy as the other scatter knobs).
     f32 splatUvScale { 0.25f };
+    // Macro-tint strength for the same bake (the ONE ground-color source
+    // contract: blades inherit the tinted ground). Synced like
+    // splatUvScale; a change regenerates.
+    f32 tintStrength { 0.3f };
+    // Per-variant mean root albedo of the ACTIVE material set (synced
+    // from TerrainSystem::grassAlbedoBase — flips with the cooked A/B
+    // and regenerates). Display space.
+    array<Vec3, 4> rootAlbedoBase { Vec3 { 0.434f, 0.633f, 0.375f },
+                                    Vec3 { 0.62f, 0.55f, 0.32f },
+                                    Vec3 { 0.42f, 0.29f, 0.15f },
+                                    Vec3 { 0.43f, 0.36f, 0.27f } };
 };
 
 // Animated grass (blade model = the
@@ -97,8 +108,10 @@ public:
     void destroy(rhi::Device& device);
 
     // Streaming pump — main thread, once per frame (top of render).
+    // `holdRequests`: keep the ring from scattering (sandbox boot, before
+    // the base regions are published — see TerrainSystem::update).
     void update(rhi::Device& device, const TerrainParams& params,
-                const Vec3& cameraPos);
+                const Vec3& cameraPos, bool holdRequests = false);
 
     // Drops every chunk (terrain seed changed).
     void regenerate(rhi::Device& device);
@@ -144,6 +157,10 @@ public:
         // albedo at their root (one color source with the terrain splat).
         Vec4 groundNormal;  // xyz = terrain normal at the root,
                             // w = root ground albedo (packed sRGB bytes)
+        // Species pick + clump attributes (GrassSpecies.hpp; the clump is
+        // a jittered-grid Voronoi site shared by neighboring blades).
+        Vec4 species;       // x = species index, y = clump shade,
+                            // zw = free
     };
 
 private:

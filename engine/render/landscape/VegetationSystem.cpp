@@ -16,6 +16,16 @@
 
 namespace render {
 
+// Per-variant bark material push (tree.frag BarkPush): the species'
+// draw-time knobs — tint + tile density, hex lattice cell + sharpness.
+namespace {
+struct BarkPush {
+    Vec4 tintTile; // rgb = tint, w = tiles per meter
+    Vec4 hex;      // x = lattice cell (uv), y = seam sharpness
+};
+} // namespace
+
+
 namespace {
 
 constexpr const char* kTreeShader = "tree";
@@ -59,21 +69,29 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
     const f32 originZ = static_cast<f32>(cz) * TerrainSystem::kChunkSize;
     VegetationSystem::VariantBuckets buckets;
 
+    // `texturedRigid`: photogrammetry props with a bound albedo — the
+    // NEGATIVE fade lane flags "uv = texture coords" to tree.vert, the
+    // negative sway-phase lane on top says "never waves" (rocks, stumps).
     const auto place = [&](u32 firstVariant, u32 variantCount, HashRng& rng,
                            f32 x, f32 y, f32 z, f32 scaleMin, f32 scaleMax,
-                           f32 fadeEnd) {
+                           f32 fadeEnd, bool texturedRigid = false) {
+        // Draw order is a CONTRACT: variant, scale, yaw, tint, phase —
+        // reordering reseeds every prop in the world.
         const u32 variant =
             firstVariant +
             glm::min(static_cast<u32>(rng.next() *
                                       static_cast<f32>(variantCount)),
                      variantCount - 1);
+        const f32 scale = scaleMin + rng.next() * (scaleMax - scaleMin);
+        const f32 yaw = rng.next() * 6.2831853f;
+        const f32 tint = rng.next();
+        const f32 phase = rng.next() * 6.2831853f;
         buckets[variant].push_back({
-            .positionScale = { x, y, z,
-                               scaleMin + rng.next() * (scaleMax - scaleMin) },
-            .params = { rng.next() * 6.2831853f, // yaw
-                        rng.next(),              // tint jitter
-                        rng.next() * 6.2831853f, // sway phase
-                        fadeEnd },               // per-category view distance
+            .positionScale = { x, y, z, scale },
+            .params = { yaw,
+                        tint, // tint jitter / thin key
+                        texturedRigid ? -(phase + 1.0f) : phase,
+                        texturedRigid ? -fadeEnd : fadeEnd },
         });
     };
     const auto candidateRng = [&](u32 salt, u32 index) {
@@ -175,7 +193,294 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             }
             place(VegetationSystem::kFirstRock,
                   VegetationSystem::kRockVariants, rng, x, h - 0.10f, z,
-                  0.5f, 2.0f, 660.0f); // 25% shorter reach than trees
+                  0.5f, 2.0f, 660.0f, // 25% shorter reach than trees
+                  true);              // photogrammetry albedo, rigid
+        }
+    }
+
+    // --- Pebbles: the ground-clutter read (docs/GRASS-REDO.md) ---------------
+    // The SAME boulder meshes at centimeter scale (§2.11 reuse — no new
+    // variants, no new mesh): dense along the grass/rock blend band
+    // (cross-scatter — stones spill into the fringe grass), sparse
+    // elsewhere on rocky or bare-dirt ground. Short reach: they are a
+    // near-field read.
+    {
+        constexpr f32 kPebbleSpacing = 1.8f;
+        const u32 perSide =
+            static_cast<u32>(TerrainSystem::kChunkSize / kPebbleSpacing);
+        for (u32 i = 0; i < perSide * perSide; ++i) {
+            HashRng rng = candidateRng(0x3e5a91c7u, i);
+            const f32 x = originX + (static_cast<f32>(i % perSide) +
+                                     rng.next()) *
+                                        kPebbleSpacing;
+            const f32 z = originZ + (static_cast<f32>(i / perSide) +
+                                     rng.next()) *
+                                        kPebbleSpacing;
+            const f32 h = terrain::height(params, x, z);
+            const Vec3 n = terrain::normal(params, x, z);
+            const f32 slope = 1.0f - n.y;
+            if (h < params.seaLevel + 0.5f || slope > 0.6f ||
+                terrain::underLocalWater(params, x, z, h, 0.05f)) {
+                continue;
+            }
+            const auto weights =
+                terrain::materialWeightsAt(params, x, z, h, n);
+            // The blend band peaks at 50/50 grass/rock; the stony (2)
+            // and bare-dirt (3) ground variants carry extra loners. Pure
+            // meadow keeps only a thin floor — the plants own the grassy
+            // read, pebbles own the transition.
+            const f32 band = 4.0f * weights.grass * weights.rock;
+            f32 chance = 0.02f + 0.45f * band + 0.10f * weights.rock;
+            const u32 zone = terrain::grassZoneAt(x, z).variantA;
+            if (zone == 2 || zone == 3) {
+                chance *= 1.6f;
+            }
+            if (rng.next() >= chance) {
+                continue;
+            }
+            place(VegetationSystem::kFirstPebble,
+                  VegetationSystem::kPebbleVariants, rng, x, h - 0.02f,
+                  z, 0.06f, 0.25f, 90.0f, // near-field clutter reach
+                  true);                  // decimated scan, rigid
+        }
+    }
+
+    // --- Forest-floor debris: stumps and fallen trunks -----------------------
+    {
+        constexpr f32 kDebrisSpacing = 14.0f;
+        const u32 perSide =
+            static_cast<u32>(TerrainSystem::kChunkSize / kDebrisSpacing);
+        for (u32 i = 0; i < perSide * perSide; ++i) {
+            HashRng rng = candidateRng(0x7a3f19e5u, i);
+            const f32 x = originX + (static_cast<f32>(i % perSide) +
+                                     rng.next()) *
+                                        kDebrisSpacing;
+            const f32 z = originZ + (static_cast<f32>(i / perSide) +
+                                     rng.next()) *
+                                        kDebrisSpacing;
+            // Forest interior only — debris is what a forest floor
+            // leaves behind.
+            const f32 forest = forestMask(params.seed, x, z);
+            if (forest < 0.55f || rng.next() >= 0.16f * forest) {
+                continue;
+            }
+            const f32 h = terrain::height(params, x, z);
+            const Vec3 n = terrain::normal(params, x, z);
+            if (h < params.seaLevel + 3.0f || (1.0f - n.y) > 0.35f ||
+                h >= terrain::treeLine(params) ||
+                terrain::underLocalWater(params, x, z, h, 0.5f)) {
+                continue;
+            }
+            // Not through place(): the fallen trunk needs its yaw and
+            // footprint BEFORE acceptance (tree clearance, ground probes).
+            const u32 variant =
+                VegetationSystem::kFirstDebris +
+                glm::min(static_cast<u32>(
+                             rng.next() *
+                             static_cast<f32>(
+                                 VegetationSystem::kDebrisVariants)),
+                         VegetationSystem::kDebrisVariants - 1);
+            const f32 scale = 1.2f + rng.next() * (2.6f - 1.2f);
+            const f32 yaw = rng.next() * 6.2831853f;
+            const bool log =
+                variant == VegetationSystem::kFirstDebris + 1;
+            // tree.vert maps local X to (cos yaw, 0, sin yaw).
+            const f32 halfLen = log ? 1.1f * scale : 0.0f;
+            const f32 dx = std::cos(yaw) * halfLen;
+            const f32 dz = std::sin(yaw) * halfLen;
+            // Trees landed first (blocks above): reject debris lying
+            // into a standing trunk — bark-on-bark interpenetration
+            // z-fights. Segment-to-base distance in XZ; same-chunk
+            // trees only (a neighbour's tree can still graze a log
+            // near the border — rare, accepted).
+            bool blocked = false;
+            for (u32 tv = 0;
+                 tv < VegetationSystem::kTreeVariants && !blocked;
+                 ++tv) {
+                for (const VegetationSystem::Instance& tree :
+                     buckets[tv]) {
+                    const f32 tx = tree.positionScale.x - x;
+                    const f32 tz = tree.positionScale.z - z;
+                    const f32 along = halfLen > 0.0f
+                        ? glm::clamp(tx * (dx / halfLen) +
+                                         tz * (dz / halfLen),
+                                     -halfLen, halfLen)
+                        : 0.0f;
+                    const f32 ox = tx - (halfLen > 0.0f
+                                             ? along * (dx / halfLen)
+                                             : 0.0f);
+                    const f32 oz = tz - (halfLen > 0.0f
+                                             ? along * (dz / halfLen)
+                                             : 0.0f);
+                    // Bark radius grows with the tree scale (the
+                    // collision box uses 0.28 x scale) + log girth.
+                    const f32 r = 0.7f + 0.3f * tree.positionScale.w;
+                    if (ox * ox + oz * oz < r * r) {
+                        blocked = true;
+                        break;
+                    }
+                }
+            }
+            if (blocked) {
+                continue;
+            }
+            f32 y = h - 0.06f;
+            if (log) {
+                // Props carry yaw only (no slope alignment) — probe the
+                // ground along the axis, reject ground a straight log
+                // cannot lie on, seat on the CREST (a half-buried log
+                // leaves a grazing surface that z-fights the terrain).
+                const f32 hA = terrain::height(params, x + dx, z + dz);
+                const f32 hB = terrain::height(params, x - dx, z - dz);
+                const f32 hi = glm::max(h, glm::max(hA, hB));
+                const f32 lo = glm::min(h, glm::min(hA, hB));
+                if (hi - lo > 0.30f * scale) {
+                    continue;
+                }
+                y = hi - 0.05f * scale;
+            }
+            buckets[variant].push_back({
+                .positionScale = { x, y, z, scale },
+                .params = { yaw, rng.next(),
+                            -(rng.next() * 6.2831853f + 1.0f),
+                            -300.0f }, // textured rigid (scanned debris)
+            });
+        }
+    }
+
+    // --- Plants: photoreal accents over the blade meadow ---------------------
+    // (docs/GRASS-REDO.md palier 2.) Textured cutout scans, picked by
+    // HABITAT: fern inside forests, shrub on their edges, dandelion in
+    // open meadow, tall grass anywhere grassy. The NEGATIVE fade lane
+    // flags "textured" to tree.vert/frag (uv = texture coords, height
+    // sway); reach stays short — they are a near-field read like the
+    // pebbles.
+    {
+        // Density leans on the shader's distance ramp (thin key): the
+        // near field is dense, the far field a deterministic subset.
+        constexpr f32 kPlantSpacing = 3.0f;
+        constexpr f32 kPlantFade = 60.0f;
+        const u32 perSide =
+            static_cast<u32>(TerrainSystem::kChunkSize / kPlantSpacing);
+        for (u32 i = 0; i < perSide * perSide; ++i) {
+            HashRng rng = candidateRng(0x5c17ba31u, i);
+            const f32 x = originX + (static_cast<f32>(i % perSide) +
+                                     rng.next()) *
+                                        kPlantSpacing;
+            const f32 z = originZ + (static_cast<f32>(i / perSide) +
+                                     rng.next()) *
+                                        kPlantSpacing;
+            const f32 h = terrain::height(params, x, z);
+            const Vec3 n = terrain::normal(params, x, z);
+            if (h < params.seaLevel + 0.5f || (1.0f - n.y) > 0.4f ||
+                h >= terrain::treeLine(params) ||
+                terrain::underLocalWater(params, x, z, h, 0.1f)) {
+                continue;
+            }
+            if (terrain::materialWeightsAt(params, x, z, h, n).grass <
+                0.55f) {
+                continue;
+            }
+            const f32 forest = forestMask(params.seed, x, z);
+            // Habitat pick; each keeps its own acceptance so densities
+            // tune independently.
+            u32 species = 0; // tall grass
+            f32 accept = 0.18f;
+            if (forest > 0.4f) {
+                species = 1; // fern
+                accept = 0.32f;
+            } else if (forest > 0.15f) {
+                species = 3; // shrub
+                accept = 0.14f;
+            } else if (rng.next() < 0.35f) {
+                species = 2; // dandelion
+                accept = 0.20f;
+            }
+            // COLONY noise (~12 m, per species): nature grows in
+            // patches — dense hearts, empty clearings. The mass tier
+            // below shares the same field, so carpets and heroes agree.
+            const f32 colony = glm::smoothstep(
+                0.45f, 0.75f,
+                terrain::noise01(params.seed ^ (0xa11c03du + species),
+                                 x * 0.08f, z * 0.08f));
+            accept *= 2.0f * colony;
+            // Worn/dirt ground variants carry fewer plants.
+            const u32 zone = terrain::grassZoneAt(x, z).variantA;
+            if (zone == 1 || zone == 3) {
+                accept *= 0.5f;
+            }
+            if (rng.next() >= accept) {
+                continue;
+            }
+            buckets[VegetationSystem::kFirstPlant + species].push_back({
+                .positionScale = { x, h - 0.03f, z,
+                                   0.9f + rng.next() * 0.6f },
+                .params = { rng.next() * 6.2831853f, rng.next(),
+                            rng.next() * 6.2831853f,
+                            -kPlantFade }, // negative = textured cutout
+            });
+        }
+    }
+
+    // --- Mass tier: the carpet under the hero plants -------------------------
+    // Cheap clones (~200 tris) of the same species, high density, short
+    // reach, SAME colony field — the continuous understory read; the
+    // heroes above become focal points sitting on it.
+    {
+        constexpr f32 kMassSpacing = 2.0f;
+        constexpr f32 kMassFade = 35.0f;
+        const u32 perSide =
+            static_cast<u32>(TerrainSystem::kChunkSize / kMassSpacing);
+        for (u32 i = 0; i < perSide * perSide; ++i) {
+            HashRng rng = candidateRng(0x9dd23b71u, i);
+            const f32 x = originX + (static_cast<f32>(i % perSide) +
+                                     rng.next()) *
+                                        kMassSpacing;
+            const f32 z = originZ + (static_cast<f32>(i / perSide) +
+                                     rng.next()) *
+                                        kMassSpacing;
+            const f32 h = terrain::height(params, x, z);
+            const Vec3 n = terrain::normal(params, x, z);
+            if (h < params.seaLevel + 0.5f || (1.0f - n.y) > 0.4f ||
+                h >= terrain::treeLine(params) ||
+                terrain::underLocalWater(params, x, z, h, 0.1f)) {
+                continue;
+            }
+            if (terrain::materialWeightsAt(params, x, z, h, n).grass <
+                0.55f) {
+                continue;
+            }
+            const f32 forest = forestMask(params.seed, x, z);
+            u32 species = 0;
+            f32 accept = 0.35f;
+            if (forest > 0.4f) {
+                species = 1; // fern carpet
+                accept = 0.55f;
+            } else if (forest > 0.15f) {
+                species = 3;
+                accept = 0.25f;
+            } else if (rng.next() < 0.35f) {
+                species = 2;
+                accept = 0.35f;
+            }
+            const f32 colony = glm::smoothstep(
+                0.45f, 0.75f,
+                terrain::noise01(params.seed ^ (0xa11c03du + species),
+                                 x * 0.08f, z * 0.08f));
+            accept *= 2.0f * colony;
+            const u32 zone = terrain::grassZoneAt(x, z).variantA;
+            if (zone == 1 || zone == 3) {
+                accept *= 0.5f;
+            }
+            if (rng.next() >= accept) {
+                continue;
+            }
+            buckets[VegetationSystem::kFirstMass + species].push_back({
+                .positionScale = { x, h - 0.03f, z,
+                                   0.7f + rng.next() * 0.6f },
+                .params = { rng.next() * 6.2831853f, rng.next(),
+                            rng.next() * 6.2831853f, -kMassFade },
+            });
         }
     }
 
@@ -275,7 +580,12 @@ void VegetationSystem::create(rhi::Device& device, ShaderLibrary& shaders,
     createVariantMeshes(device, terrainSeed);
     rebuildLeafMask(device);
     shaders.load(kTreeShader, { { "FrameUbo", 0 } },
-                 { { "uLeafMask", 0 }, { "uShadowMap", 1 } });
+                 { { "uLeafMask", 0 },
+                   { "uShadowMap", 1 },
+                   { "uPropNormal", 12 },
+                   { "uTerrainShade0", 4 },
+                   { "uBark", 13 },
+                   { "uBarkNrm", 14 } });
     buildPipeline(device, shaders);
     shaders.load(kPropCasterShader, { { "FrameUbo", 0 }, { "ShadowUbo", 1 } },
                  { { "uLeafMask", 0 } });
@@ -352,7 +662,21 @@ void VegetationSystem::rebuildLeafMask(rhi::Device& device) {
     leafMaskGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = leafMask.get(),
+                         .sampler = leafMaskSampler.get() },
+                       // Same layout as the textured-prop groups: a flat
+                       // normal fills the map slot (cards don't use it),
+                       // and the bark slot (inert without the flag).
+                       { .binding = 12,
+                         .texture = flatNormalHandle(device),
+                         .sampler = leafMaskSampler.get() },
+                       { .binding = 13,
+                         .texture = flatNormalHandle(device),
+                         .sampler = leafMaskSampler.get() },
+                       { .binding = 14,
+                         .texture = flatNormalHandle(device),
                          .sampler = leafMaskSampler.get() } } }) };
+    // Tree bark groups reference the leaf mask just recreated.
+    rebuildTreeBarkGroups(device);
 }
 
 void VegetationSystem::createVariantMeshes(rhi::Device& device,
@@ -372,7 +696,15 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
     for (u32 i = 0; i < kVariantCount; ++i) {
         if (const auto it = meshOverrides.find(i);
             it != meshOverrides.end()) {
-            uploadVariantMesh(device, i, baked(it->second, 0.55f));
+            uploadVariantMesh(device, i, baked(it->second.high, 0.55f));
+            if (!it->second.low.vertices.empty()) {
+                uploadLowDetailMesh(device, i,
+                                    baked(it->second.low, 0.55f));
+            }
+            if (!it->second.ultra.vertices.empty()) {
+                uploadUltraDetailMesh(device, i,
+                                      baked(it->second.ultra, 0.55f));
+            }
             continue;
         }
         const u32 seed = hashU32(terrainSeed) + i * 977u;
@@ -390,6 +722,8 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
             // ring — same seed, same composition, facets invisible there.
             uploadUltraDetailMesh(device, i, baked(tree(0), 0.6f));
             if (species.colonized) {
+                // Hero-near twin: 24-sided wood for the camera chunk.
+                uploadNearDetailMesh(device, i, baked(tree(3), 0.6f));
                 // Far-cascade caster: solid metaball blobs, no AO bake
                 // (depth-only) — see generateColonizedTreeShadowProxy.
                 uploadShadowProxyMesh(
@@ -397,7 +731,9 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
                     generateColonizedTreeShadowProxy(seed,
                                                      species.params));
             }
-        } else if (i < kFirstBush) {
+        } else if (i < kFirstBush || i >= kFirstDebris) {
+            // Rocks — and the debris slots' PLACEHOLDER until the scene's
+            // scanned-prop overrides land (meshOverrides above wins).
             uploadVariantMesh(device, i, baked(generateRock(seed), 0.5f));
         } else {
             if (bushSpecies) {
@@ -419,6 +755,13 @@ void VegetationSystem::createVariantMeshes(rhi::Device& device,
             }
         }
     }
+    // Textured plants: the reset above dropped their albedo bind groups
+    // with the meshes — re-create them from the kept CPU copies.
+    for (const auto& [variant, albedo] : albedoOverrides) {
+        (void)albedo;
+        uploadVariantAlbedo(device, variant);
+    }
+    rebuildTreeBarkGroups(device);
 }
 
 VegetationSystem::TreeSilhouette VegetationSystem::treeSilhouette() const {
@@ -503,6 +846,21 @@ void VegetationSystem::uploadUltraDetailMesh(rhi::Device& device, u32 variant,
         mesh.indices.data()) };
 }
 
+void VegetationSystem::uploadNearDetailMesh(rhi::Device& device,
+                                            u32 variant,
+                                            const MeshData& mesh) {
+    variantMeshes[variant].nearIndexCount =
+        static_cast<u32>(mesh.indices.size());
+    variantMeshes[variant].nearVertexBuffer = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Vertex,
+          .size = mesh.vertices.size() * sizeof(MeshVertex) },
+        mesh.vertices.data()) };
+    variantMeshes[variant].nearIndexBuffer = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Index,
+          .size = mesh.indices.size() * sizeof(u32) },
+        mesh.indices.data()) };
+}
+
 void VegetationSystem::uploadShadowProxyMesh(rhi::Device& device,
                                              u32 variant,
                                              const MeshData& mesh) {
@@ -519,16 +877,199 @@ void VegetationSystem::uploadShadowProxyMesh(rhi::Device& device,
 }
 
 void VegetationSystem::overrideVariantMesh(rhi::Device& device, u32 variant,
-                                           MeshData mesh) {
+                                           MeshData mesh, MeshData low,
+                                           MeshData ultra) {
     if (variant >= kVariantCount || mesh.vertices.empty() ||
         mesh.indices.empty()) {
         return;
     }
-    // U3-7: the reset frees both detail levels through their wrappers
-    // (authored meshes come as ONE detail level — low twin stays empty).
+    // U3-7: the reset frees every detail level through its wrappers.
     variantMeshes[variant] = {};
     uploadVariantMesh(device, variant, mesh);
-    meshOverrides[variant] = std::move(mesh);
+    if (!low.vertices.empty() && !low.indices.empty()) {
+        uploadLowDetailMesh(device, variant, low);
+    }
+    if (!ultra.vertices.empty() && !ultra.indices.empty()) {
+        uploadUltraDetailMesh(device, variant, ultra);
+    }
+    meshOverrides[variant] = { std::move(mesh), std::move(low),
+                               std::move(ultra) };
+}
+
+void VegetationSystem::setVariantAlbedo(rhi::Device& device, u32 variant,
+                                        u32 width, u32 height,
+                                        vector<u8> rgba, u32 normalWidth,
+                                        u32 normalHeight,
+                                        vector<u8> normalRgba) {
+    if (variant >= kVariantCount || rgba.size() <
+                                        static_cast<size_t>(width) *
+                                            height * 4) {
+        return;
+    }
+    if (normalRgba.size() <
+        static_cast<size_t>(normalWidth) * normalHeight * 4) {
+        normalWidth = 0;
+        normalHeight = 0;
+        normalRgba.clear();
+    }
+    albedoOverrides[variant] = { width,        height,
+                                 std::move(rgba), normalWidth,
+                                 normalHeight, std::move(normalRgba) };
+    uploadVariantAlbedo(device, variant);
+}
+
+rhi::TextureHandle VegetationSystem::flatNormalHandle(rhi::Device& device) {
+    if (flatNormal.get().id == 0) {
+        const u8 up[4] = { 128, 128, 255, 255 };
+        flatNormal = { device, device.createTexture(
+                                   { .width = 1, .height = 1 }, up) };
+    }
+    return flatNormal.get();
+}
+
+void VegetationSystem::setBarkTextures(rhi::Device& device,
+                                       BarkImage oakAlbedo,
+                                       BarkImage oakNrmHeight,
+                                       BarkImage pineAlbedo,
+                                       BarkImage pineNrmHeight) {
+    barkImages[0] = std::move(oakAlbedo);
+    barkImages[1] = std::move(pineAlbedo);
+    barkNrmImages[0] = std::move(oakNrmHeight);
+    barkNrmImages[1] = std::move(pineNrmHeight);
+    const bool mips = device.caps().mipmapGeneration;
+    const auto upload = [&](const BarkImage& src, bool srgb,
+                            rhi::UniqueTexture& out) {
+        if (src.rgba.size() <
+            static_cast<size_t>(src.width) * src.height * 4) {
+            return;
+        }
+        const u32 mipLevels =
+            mips ? 1 + static_cast<u32>(std::log2(static_cast<f32>(
+                       glm::max(src.width, src.height))))
+                 : 1;
+        out = { device, device.createTexture(
+            { .width = src.width,
+              .height = src.height,
+              .mipLevels = mipLevels,
+              .format = srgb ? rhi::TextureFormat::SRGBA8
+                             : rhi::TextureFormat::RGBA8,
+              .filter = rhi::FilterMode::Linear },
+            src.rgba.data()) };
+        if (mips) {
+            device.generateMipmaps(out.get());
+        }
+    };
+    for (u32 b = 0; b < 2; ++b) {
+        upload(barkImages[b], true, barkTextures[b]);
+        upload(barkNrmImages[b], false, barkNrmTextures[b]);
+    }
+    if (barkSampler.get().id == 0) {
+        barkSampler = { device, device.createSampler(
+            { .mipmapFilter = mips,
+              .addressU = rhi::AddressMode::Repeat,
+              .addressV = rhi::AddressMode::Repeat }) };
+    }
+    rebuildTreeBarkGroups(device);
+}
+
+void VegetationSystem::rebuildTreeBarkGroups(rhi::Device& device) {
+    if (!barkLoaded() || leafMask.get().id == 0) {
+        return;
+    }
+    for (u32 i = 0; i < kTreeVariants; ++i) {
+        const u32 pick = glm::min<u32>(variantBark[i], 1u);
+        const rhi::TextureHandle bark =
+            barkTextures[pick].get().id != 0 ? barkTextures[pick].get()
+                                             : barkTextures[0].get();
+        const rhi::TextureHandle nrm =
+            barkNrmTextures[pick].get().id != 0
+                ? barkNrmTextures[pick].get()
+                : flatNormalHandle(device);
+        variantMeshes[i].albedoGroup = { device, device.createBindGroup(
+            { .entries = { { .binding = 0,
+                             .texture = leafMask.get(),
+                             .sampler = leafMaskSampler.get() },
+                           { .binding = 12,
+                             .texture = flatNormalHandle(device),
+                             .sampler = leafMaskSampler.get() },
+                           { .binding = 13,
+                             .texture = bark,
+                             .sampler = barkSampler.get() },
+                           { .binding = 14,
+                             .texture = nrm,
+                             .sampler = barkSampler.get() } } }) };
+    }
+}
+
+void VegetationSystem::uploadVariantAlbedo(rhi::Device& device,
+                                           u32 variant) {
+    const auto it = albedoOverrides.find(variant);
+    if (it == albedoOverrides.end()) {
+        return;
+    }
+    const AlbedoOverride& src = it->second;
+    VariantMesh& mesh = variantMeshes[variant];
+    const bool mips = device.caps().mipmapGeneration;
+    const u32 mipLevels =
+        mips ? 1 + static_cast<u32>(std::log2(static_cast<f32>(
+                   glm::max(src.width, src.height))))
+             : 1;
+    mesh.albedo = { device, device.createTexture(
+        { .width = src.width,
+          .height = src.height,
+          .mipLevels = mipLevels,
+          .format = rhi::TextureFormat::SRGBA8,
+          .filter = rhi::FilterMode::Linear },
+        src.rgba.data()) };
+    if (mips) {
+        device.generateMipmaps(mesh.albedo.get());
+    }
+    if (leafMaskSampler.get().id == 0) {
+        leafMaskSampler = { device, device.createSampler(
+                                        { .mipmapFilter = mips }) };
+    }
+    // Normal map (linear RGBA8, GL +Y) or the shared flat fallback.
+    rhi::TextureHandle normalTex = flatNormalHandle(device);
+    if (!src.normalRgba.empty()) {
+        const u32 nMips =
+            mips ? 1 + static_cast<u32>(std::log2(static_cast<f32>(
+                       glm::max(src.normalWidth, src.normalHeight))))
+                 : 1;
+        mesh.normalMap = { device, device.createTexture(
+            { .width = src.normalWidth,
+              .height = src.normalHeight,
+              .mipLevels = nMips,
+              .format = rhi::TextureFormat::RGBA8,
+              .filter = rhi::FilterMode::Linear },
+            src.normalRgba.data()) };
+        if (mips) {
+            device.generateMipmaps(mesh.normalMap.get());
+        }
+        normalTex = mesh.normalMap.get();
+    }
+    if (propAlbedoSampler.get().id == 0) {
+        propAlbedoSampler = { device, device.createSampler(
+            { .mipmapFilter = mips,
+              .addressU = rhi::AddressMode::Repeat,
+              .addressV = rhi::AddressMode::Repeat }) };
+    }
+    // Same layout as leafMaskGroup — the tree pipeline binds either
+    // interchangeably as group 1 (binding 7 = the bark slot, dummy here:
+    // textured props never raise the bark flag). REPEAT sampler: scan
+    // uvs may exceed [0,1].
+    mesh.albedoGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = mesh.albedo.get(),
+                         .sampler = propAlbedoSampler.get() },
+                       { .binding = 12,
+                         .texture = normalTex,
+                         .sampler = propAlbedoSampler.get() },
+                       { .binding = 13,
+                         .texture = mesh.albedo.get(),
+                         .sampler = propAlbedoSampler.get() },
+                       { .binding = 14,
+                         .texture = normalTex,
+                         .sampler = propAlbedoSampler.get() } } }) };
 }
 
 void VegetationSystem::destroyVariantMeshes(rhi::Device& device) {
@@ -562,7 +1103,7 @@ void VegetationSystem::reseedVariantMeshesAsync(core::JobSystem& jobs,
     job->total = 0;
     for (u32 i = 0; i < kTreeVariants; ++i) {
         job->species[i] = speciesFor(i);
-        job->total += job->species[i].colonized ? 4u : 3u;
+        job->total += job->species[i].colonized ? 5u : 3u;
     }
     job->aoCacheDir =
         platform::executableDir() / "data" / "cache" / "ao";
@@ -577,7 +1118,8 @@ void VegetationSystem::reseedVariantMeshesAsync(core::JobSystem& jobs,
         for (u32 i = 0; i < kTreeVariants; ++i) {
             const TreeSpecies& species = job->species[i];
             const u32 variantSeed = hashU32(job->seed) + i * 977u;
-            for (u32 lod = 0; lod < 3; ++lod) {
+            const u32 lodCount = species.colonized ? 4u : 3u;
+            for (u32 lod = 0; lod < lodCount; ++lod) {
                 job->lods[i][lod] = baked(
                     species.colonized
                         ? generateColonizedTree(variantSeed, lod,
@@ -618,6 +1160,7 @@ void VegetationSystem::pumpReseed(rhi::Device& device) {
         uploadLowDetailMesh(device, i, job->lods[i][1]);
         uploadUltraDetailMesh(device, i, job->lods[i][0]);
         if (job->species[i].colonized) {
+            uploadNearDetailMesh(device, i, job->lods[i][3]);
             uploadShadowProxyMesh(device, i, job->casters[i]);
         }
     }
@@ -698,12 +1241,16 @@ void VegetationSystem::invalidateChunks(rhi::Device& device,
 }
 
 void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
-                              const Vec3& cameraPos) {
+                              const Vec3& cameraPos, bool holdRequests) {
     frameIndices = 0; // the frame's draw*() calls sum into these
     frameHighInstances = 0;
     frameLowInstances = 0;
     frameUltraInstances = 0;
     pumpReseed(device); // async reseed landing point (main thread)
+    if (barkGroupsDirty) {
+        barkGroupsDirty = false;
+        rebuildTreeBarkGroups(device);
+    }
     if (showcaseCount != 0) {
         return; // showcase replaces the streamed scatter entirely
     }
@@ -730,8 +1277,13 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
             chunk.counts[v] = static_cast<u32>(built.payload[v].size());
             packed.insert(packed.end(), built.payload[v].begin(),
                           built.payload[v].end());
+            if (v >= kFirstPlant) {
+                continue; // plants: no GI injection boxes (small cutouts)
+            }
             // The compact CPU copy the GI injection boxes.
-            const u8 kind = v < kFirstRock ? 0 : v < kFirstBush ? 1 : 2;
+            const u8 kind = v < kFirstRock                          ? 0
+                            : (v < kFirstBush || v >= kFirstDebris) ? 1
+                                                                    : 2;
             for (const Instance& instance : built.payload[v]) {
                 chunk.giProps.push_back(
                     { Vec3 { instance.positionScale },
@@ -770,18 +1322,20 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     // the unbudgeted ring edge was part of the fast-travel stutter.
     const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
     const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
-    streamer.requestMissing(
-        camCx, camCz, viewRadius, kMaxRequestsPerFrame,
-        [&](i32 cx, i32 cz, i32, i32) {
-            return !streamer.chunks.contains(chunkKey(cx, cz));
-        },
-        [&](i32 cx, i32 cz, i32, i32) {
-            streamer.chunks.emplace(chunkKey(cx, cz), Chunk {});
-            const f32 fade = treeFadeEnd();
-            streamer.enqueueBuild(cx, cz, [params, cx, cz, fade] {
-                return scatterProps(params, cx, cz, fade);
+    if (!holdRequests) {
+        streamer.requestMissing(
+            camCx, camCz, viewRadius, kMaxRequestsPerFrame,
+            [&](i32 cx, i32 cz, i32, i32) {
+                return !streamer.chunks.contains(chunkKey(cx, cz));
+            },
+            [&](i32 cx, i32 cz, i32, i32) {
+                streamer.chunks.emplace(chunkKey(cx, cz), Chunk {});
+                const f32 fade = treeFadeEnd();
+                streamer.enqueueBuild(cx, cz, [params, cx, cz, fade] {
+                    return scatterProps(params, cx, cz, fade);
+                });
             });
-        });
+    }
 
     // Evict beyond hysteresis.
     streamer.evictFar(camCx, camCz, viewRadius + 1, [&](Chunk& chunk) {
@@ -794,10 +1348,23 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     });
 }
 
+const ColonizedTreeParams&
+VegetationSystem::barkParamsFor(u32 variant) const {
+    if (variant < kTreeVariants && treeSpecies[variant]) {
+        return treeSpecies[variant]->params;
+    }
+    if (variant >= kFirstBush && variant < kFirstBush + kBushVariants &&
+        bushSpecies) {
+        return bushSpecies->params;
+    }
+    return colonizedTreeParams;
+}
+
 void VegetationSystem::buildPipeline(rhi::Device& device,
                                      ShaderLibrary& shaders) {
     pipeline = { device, device.createPipeline( // U3-7: frees the old one
         { .shader = shaders.get(kTreeShader),
+          .pushConstantSize = sizeof(BarkPush),
           .vertexBuffers =
               { meshVertexLayout(), // U3-5 (the caster keeps its own
                                     // position+uv layout — sway weights)
@@ -857,6 +1424,21 @@ void VegetationSystem::refreshPipeline(rhi::Device& device,
     }
 }
 
+// True when the camera stands within kNearDetailDistance of the
+// chunk's XZ square — the hero-near upgrade zone. Shared by draw() and
+// collectDrawCandidates so both paths pick identically.
+static bool chunkNear(i32 cx, i32 cz, const Vec3& cameraPos) {
+    const f32 size = TerrainSystem::kChunkSize;
+    const f32 x0 = static_cast<f32>(cx) * size;
+    const f32 z0 = static_cast<f32>(cz) * size;
+    const f32 dx = glm::max(
+        glm::max(x0 - cameraPos.x, cameraPos.x - (x0 + size)), 0.0f);
+    const f32 dz = glm::max(
+        glm::max(z0 - cameraPos.z, cameraPos.z - (z0 + size)), 0.0f);
+    return dx * dx + dz * dz < VegetationSystem::kNearDetailDistance *
+                                   VegetationSystem::kNearDetailDistance;
+}
+
 void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                             rhi::BindGroupHandle frameBindGroup,
                             rhi::BindGroupHandle shadowBindGroup,
@@ -914,11 +1496,29 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     // mesh, nothing else (tool scenes — the streamer holds no chunks).
     if (showcaseCount != 0) {
         const VariantMesh& mesh = variantMeshes[0];
-        cmd.setVertexBuffer(0, mesh.vertexBuffer.get());
-        cmd.setIndexBuffer(mesh.indexBuffer.get(), rhi::IndexFormat::U32);
+        // The slot's bark group, like the streamed path — without it
+        // the builder's specimen showed flat-normal trunks while the
+        // forest showed bark.
+        if (mesh.albedoGroup.get().id != 0) {
+            cmd.setBindGroup(1, mesh.albedoGroup.get());
+        }
+        const BarkPush push { Vec4(colonizedTreeParams.barkTint,
+                                   colonizedTreeParams.barkTileScale),
+                              Vec4(colonizedTreeParams.barkHexCell,
+                                   colonizedTreeParams.barkHexSharpness,
+                                   0.0f, 0.0f) };
+        cmd.setPushConstants(&push, sizeof(push));
+        // The specimen IS the close-up case: near twin when built.
+        const bool near = mesh.nearIndexCount != 0;
+        cmd.setVertexBuffer(0, near ? mesh.nearVertexBuffer.get()
+                                    : mesh.vertexBuffer.get());
+        cmd.setIndexBuffer(near ? mesh.nearIndexBuffer.get()
+                                : mesh.indexBuffer.get(),
+                           rhi::IndexFormat::U32);
         cmd.setVertexBuffer(1, showcaseInstances.get());
-        cmd.drawIndexed(mesh.indexCount, showcaseCount, 0, 0);
-        frameIndices += mesh.indexCount * showcaseCount;
+        const u32 count = near ? mesh.nearIndexCount : mesh.indexCount;
+        cmd.drawIndexed(count, showcaseCount, 0, 0);
+        frameIndices += count * showcaseCount;
         frameHighInstances += showcaseCount;
         return;
     }
@@ -928,7 +1528,8 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     // (rocks, bushes, authored overrides) always use their main mesh.
     const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
     const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
-    const auto detailLevel = [&](u64 key, const VariantMesh& mesh) -> u32 {
+    const auto detailLevel = [&](u64 key, u32 v,
+                                 const VariantMesh& mesh) -> u32 {
         if (mesh.lowIndexCount == 0) {
             return 0u;
         }
@@ -939,7 +1540,17 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         const i32 cz = chunkKeyCz(key);
         const i32 cheb =
             std::max(std::abs(cx - camCx), std::abs(cz - camCz));
-        if (cheb <= highDetailRadius) {
+        // Hero-near twin: exact world distance to the chunk square, so
+        // a tree just across a chunk border still upgrades.
+        if (mesh.nearIndexCount != 0 && cheb <= 1 &&
+            chunkNear(cx, cz, cameraPos)) {
+            return 3u;
+        }
+        // Plants fade at ~60 m: the tree radii (2/4 chunks) would keep
+        // them full-detail everywhere they are visible. Hero mesh in the
+        // camera chunk ring only; twins carry the rest.
+        const i32 highRadius = v >= kFirstPlant ? 0 : highDetailRadius;
+        if (cheb <= highRadius) {
             return 0u;
         }
         if (mesh.ultraIndexCount == 0 || cheb <= lowDetailRadius) {
@@ -951,27 +1562,47 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     // instanced draw per chunk holding that variant (firstInstance =
     // offset into the chunk's variant-sorted buffer; needs baseInstance,
     // present on 4.6).
+    bool albedoBound = false;
     for (u32 v = 0; v < variantLimit; ++v) {
         const VariantMesh& mesh = variantMeshes[v];
+        const ColonizedTreeParams& bp = barkParamsFor(v);
+        const BarkPush push { Vec4(bp.barkTint, bp.barkTileScale),
+                              Vec4(bp.barkHexCell, bp.barkHexSharpness,
+                                   0.0f, 0.0f) };
+        cmd.setPushConstants(&push, sizeof(push));
+        // Textured plants swap group 1 for the variant's albedo (same
+        // layout as the leaf-mask atlas); restore the atlas after.
+        if (mesh.albedoGroup.get().id != 0) {
+            cmd.setBindGroup(1, mesh.albedoGroup.get());
+            albedoBound = true;
+        } else if (albedoBound) {
+            cmd.setBindGroup(1, leafMaskGroup);
+            albedoBound = false;
+        }
         const u32 levels = mesh.lowIndexCount == 0
                                ? 1u
-                               : (mesh.ultraIndexCount == 0 ? 2u : 3u);
+                               : mesh.ultraIndexCount == 0 ? 2u
+                               : mesh.nearIndexCount == 0  ? 3u
+                                                           : 4u;
         for (u32 level = 0; level < levels; ++level) {
             const rhi::BufferHandle vb =
-                level == 0 ? mesh.vertexBuffer.get()
+                level == 3   ? mesh.nearVertexBuffer.get()
+                : level == 0 ? mesh.vertexBuffer.get()
                 : level == 1 ? mesh.lowVertexBuffer.get()
                              : mesh.ultraVertexBuffer.get();
             const rhi::BufferHandle ib =
-                level == 0 ? mesh.indexBuffer.get()
+                level == 3   ? mesh.nearIndexBuffer.get()
+                : level == 0 ? mesh.indexBuffer.get()
                 : level == 1 ? mesh.lowIndexBuffer.get()
                              : mesh.ultraIndexBuffer.get();
-            const u32 indexCount = level == 0 ? mesh.indexCount
+            const u32 indexCount = level == 3   ? mesh.nearIndexCount
+                                   : level == 0 ? mesh.indexCount
                                    : level == 1 ? mesh.lowIndexCount
                                                 : mesh.ultraIndexCount;
             bool meshBound = false;
             for (const auto& [key, chunk] : streamer.chunks) {
                 if (!chunk.resident || chunk.counts[v] == 0 ||
-                    culled(key) || detailLevel(key, mesh) != level) {
+                    culled(key) || detailLevel(key, v, mesh) != level) {
                     continue;
                 }
                 if (!meshBound) {
@@ -985,13 +1616,22 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                 cmd.drawIndexed(indexCount, chunk.counts[v], 0,
                                 chunk.firstInstance[v]);
                 frameIndices += indexCount * chunk.counts[v];
-                (level == 0   ? frameHighInstances
-                 : level == 1 ? frameLowInstances
-                              : frameUltraInstances) += chunk.counts[v];
+                (level == 0 || level == 3 ? frameHighInstances
+                 : level == 1             ? frameLowInstances
+                                          : frameUltraInstances) +=
+                    chunk.counts[v];
             }
         }
     }
 }
+
+// Every (variant, level) batch must have its own group slot — an
+// out-of-range group aliases another variant's command range and the
+// prop blinks with the ping-pong (the kFirstDebris+1 postmortem).
+static_assert(VegetationSystem::kGroupBase +
+                  VegetationSystem::kVariantCount * 3 +
+                  VegetationSystem::kTreeVariants <=
+              GpuOcclusion::kMaxGroups);
 
 void VegetationSystem::collectDrawCandidates(
     vector<GpuOcclusion::Candidate>& out, const Vec3& cameraPos) const {
@@ -1021,18 +1661,30 @@ void VegetationSystem::collectDrawCandidates(
             if (chunk.counts[v] == 0) {
                 continue;
             }
-            // Same level pick as draw()'s detailLevel lambda.
+            // Same level pick as draw()'s detailLevel lambda (plants:
+            // hero mesh in the camera chunk ring only; 3 = the
+            // hero-near twin, group slot appended past the 3-level
+            // block so the existing indexing never moves).
             const VariantMesh& mesh = variantMeshes[v];
+            const i32 highRadius =
+                v >= kFirstPlant ? 0 : highDetailRadius;
             u32 level = 0;
-            if (mesh.lowIndexCount != 0 && cheb > highDetailRadius) {
+            if (mesh.nearIndexCount != 0 && cheb <= 1 &&
+                chunkNear(cx, cz, cameraPos)) {
+                level = 3;
+            } else if (mesh.lowIndexCount != 0 && cheb > highRadius) {
                 level = mesh.ultraIndexCount == 0 || cheb <= lowDetailRadius
                             ? 1u
                             : 2u;
             }
-            const u32 indexCount = level == 0   ? mesh.indexCount
+            const u32 indexCount = level == 3   ? mesh.nearIndexCount
+                                   : level == 0 ? mesh.indexCount
                                    : level == 1 ? mesh.lowIndexCount
                                                 : mesh.ultraIndexCount;
-            out.push_back({ lo, hi, kGroupBase + v * 3 + level, indexCount,
+            const u32 group =
+                level == 3 ? kGroupBase + kVariantCount * 3 + v
+                           : kGroupBase + v * 3 + level;
+            out.push_back({ lo, hi, group, indexCount,
                             0, chunk.counts[v],
                             chunk.poolOffset + chunk.firstInstance[v] });
         }
@@ -1055,21 +1707,40 @@ void VegetationSystem::drawIndirect(rhi::CommandBuffer& cmd,
     // firstInstance addresses its chunk slice.
     cmd.setVertexBuffer(1, instancePool.buffer.get());
     constexpr u32 kStride = sizeof(rhi::DrawIndexedIndirectCommand);
+    bool albedoBound = false;
     for (u32 v = 0; v < kVariantCount; ++v) {
         const VariantMesh& mesh = variantMeshes[v];
+        const ColonizedTreeParams& bp = barkParamsFor(v);
+        const BarkPush push { Vec4(bp.barkTint, bp.barkTileScale),
+                              Vec4(bp.barkHexCell, bp.barkHexSharpness,
+                                   0.0f, 0.0f) };
+        cmd.setPushConstants(&push, sizeof(push));
+        if (mesh.albedoGroup.get().id != 0) {
+            cmd.setBindGroup(1, mesh.albedoGroup.get());
+            albedoBound = true;
+        } else if (albedoBound) {
+            cmd.setBindGroup(1, leafMaskGroup);
+            albedoBound = false;
+        }
         const u32 levels = mesh.lowIndexCount == 0
                                ? 1u
-                               : (mesh.ultraIndexCount == 0 ? 2u : 3u);
+                               : mesh.ultraIndexCount == 0 ? 2u
+                               : mesh.nearIndexCount == 0  ? 3u
+                                                           : 4u;
         for (u32 level = 0; level < levels; ++level) {
-            const u32 group = kGroupBase + v * 3 + level;
+            const u32 group = level == 3
+                                  ? kGroupBase + kVariantCount * 3 + v
+                                  : kGroupBase + v * 3 + level;
             if (groupCount[group] == 0) {
                 continue;
             }
-            cmd.setVertexBuffer(0, level == 0 ? mesh.vertexBuffer.get()
+            cmd.setVertexBuffer(0, level == 3 ? mesh.nearVertexBuffer.get()
+                                   : level == 0 ? mesh.vertexBuffer.get()
                                    : level == 1
                                        ? mesh.lowVertexBuffer.get()
                                        : mesh.ultraVertexBuffer.get());
-            cmd.setIndexBuffer(level == 0   ? mesh.indexBuffer.get()
+            cmd.setIndexBuffer(level == 3   ? mesh.nearIndexBuffer.get()
+                               : level == 0 ? mesh.indexBuffer.get()
                                : level == 1 ? mesh.lowIndexBuffer.get()
                                             : mesh.ultraIndexBuffer.get(),
                                rhi::IndexFormat::U32);
@@ -1106,6 +1777,10 @@ void VegetationSystem::drawDepth(rhi::CommandBuffer& cmd,
         return;
     }
     for (u32 v = 0; v < kVariantCount; ++v) {
+        if (v >= kFirstPlant) {
+            continue; // plants cast no shadows (cutout accents — GoT
+                      // model; their fill-rate stays out of the cascades)
+        }
         bool meshBound = false;
         for (const auto& [key, chunk] : streamer.chunks) {
             if (!chunk.resident || chunk.counts[v] == 0) {

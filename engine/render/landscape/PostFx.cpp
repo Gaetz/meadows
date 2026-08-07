@@ -29,6 +29,7 @@ constexpr const char* kFroxelApplyShader = "froxel_apply";
 // speckles, the depth mask halos, neither fits the stepped-ramp look.
 // Grounding = terrain light map + contact shadows + baked vertex AO.)
 constexpr const char* kContactShader = "contactshadow";
+constexpr const char* kSsaoShader = "ssao";
 constexpr const char* kMistShader = "mist"; // ground mist raymarch
 constexpr const char* kSkyCloudsShader = "skyclouds"; // volumetric clouds
 constexpr const char* kCopyShader = "postcopy"; // 1:1 history blit
@@ -127,6 +128,8 @@ void PostFx::create(rhi::Device& device, ShaderLibrary& shaders) {
                    { "uShadowMap", 1 },
                    { "uSceneColor", 2 } },
                  kFullscreenVert);
+    shaders.load(kSsaoShader, { { "FrameUbo", 0 } },
+                 { { "uSceneDepth", 0 } }, kFullscreenVert);
     mistTemporalUbo = { device, device.createBuffer(
         { .usage = rhi::BufferUsage::Uniform,
           .size = sizeof(FroxelTemporalUniforms),
@@ -191,6 +194,7 @@ void PostFx::buildPipelines(rhi::Device& device, ShaderLibrary& shaders) {
                 rhi::BlendMode::Opaque);
     }
     rebuild(contactPipeline, kContactShader, rhi::BlendMode::Opaque);
+    rebuild(ssaoPipeline, kSsaoShader, rhi::BlendMode::Opaque);
     rebuild(mistPipeline, kMistShader, rhi::BlendMode::Opaque);
     rebuild(skyCloudPipeline, kSkyCloudsShader, rhi::BlendMode::Opaque);
     rebuild(copyPipeline, kCopyShader, rhi::BlendMode::Opaque);
@@ -222,6 +226,12 @@ void PostFx::destroyTargets(rhi::Device& device) {
     contactGroup = {};
     contactFb = {};
     contactTex = {};
+    ssaoBlurGroup = {};
+    ssaoBlurFb = {};
+    ssaoBlurTex = {};
+    ssaoGroup = {};
+    ssaoFb = {};
+    ssaoTex = {};
     mistGroup = {};
     mistFb = {};
     mistTex = {};
@@ -399,6 +409,20 @@ void PostFx::resize(rhi::Device& device, u32 width, u32 height,
                          .texture = contactTex,
                          .sampler = linearSampler } } }) };
 
+    // SSAO — the contact pattern's sibling: half-res Alchemy taps over
+    // the depth copy, then the shared 3x3 blur (IGN jitter filter); the
+    // tonemap taps the BLURRED target.
+    makeHalfResTarget(ssaoTex, ssaoFb, rhi::TextureFormat::R16F);
+    ssaoGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = sceneDepthCopy,
+                         .sampler = nearestSampler.get() } } }) };
+    makeHalfResTarget(ssaoBlurTex, ssaoBlurFb, rhi::TextureFormat::R16F);
+    ssaoBlurGroup = { device, device.createBindGroup(
+        { .entries = { { .binding = 0,
+                         .texture = ssaoTex,
+                         .sampler = linearSampler } } }) };
+
     // Auto-exposure — fixed 64² log-luminance pyramid + the two
     // 1×1 adaptation targets (ping-pong; adapt.frag snaps when the prev
     // side reads 0, so fresh targets need no seeding).
@@ -470,6 +494,40 @@ void PostFx::renderContactShadows(rhi::CommandBuffer& cmd,
     cmd.setPipeline(blurPipeline);
     cmd.setBindGroup(0, contactBlurGroup);
     cmd.draw(3);
+    cmd.endRenderPass();
+}
+
+void PostFx::renderSsao(rhi::CommandBuffer& cmd,
+                        rhi::BindGroupHandle frameBindGroup) {
+    if (ssaoTex.id() == 0) {
+        return;
+    }
+    cmd.beginRenderPass({ .framebuffer = ssaoFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(ssaoPipeline);
+    cmd.setBindGroup(0, frameBindGroup);
+    cmd.setBindGroup(1, ssaoGroup);
+    cmd.draw(3);
+    cmd.endRenderPass();
+
+    cmd.beginRenderPass({ .framebuffer = ssaoBlurFb,
+                          .loadOp = rhi::LoadOp::DontCare,
+                          .depthLoadOp = rhi::LoadOp::DontCare });
+    cmd.setPipeline(blurPipeline);
+    cmd.setBindGroup(0, ssaoBlurGroup);
+    cmd.draw(3);
+    cmd.endRenderPass();
+}
+
+void PostFx::clearSsao(rhi::CommandBuffer& cmd) {
+    if (ssaoBlurTex.id() == 0) {
+        return;
+    }
+    cmd.beginRenderPass({ .framebuffer = ssaoBlurFb,
+                          .loadOp = rhi::LoadOp::Clear,
+                          .clearColor = { 1.0f, 1.0f, 1.0f, 1.0f },
+                          .depthLoadOp = rhi::LoadOp::DontCare });
     cmd.endRenderPass();
 }
 

@@ -9,6 +9,7 @@
 
 #include "data/forms/FormQuery.hpp"
 #include "data/plugins/Resolver.hpp"
+#include "game/RendererAssets.hpp"
 #include "data/plugins/TomlWriter.hpp"
 #include "engine/Engine.hpp"
 #include "engine/FrameContext.hpp"
@@ -70,16 +71,23 @@ void TreeCreationScene::onEnter() {
     // postFx stays ON — the postFx-less blit fallback is unproven on
     // Vulkan (unbound tonemap samplers); hardening it is a follow-up.
     rhi::Device& device = engine->getDevice();
-    renderer.create(device, engine->getJobSystem(),
-                    render::RendererConfig { .terrain = true,
-                                             .water = false,
-                                             .sky = true,
-                                             .vegetation = true,
-                                             .grass = true,
-                                             .gi = false,
-                                             .froxels = false,
-                                             .occlusion = false,
-                                             .postFx = true });
+    render::RendererConfig rendererConfig { .terrain = true,
+                                            .water = false,
+                                            .sky = true,
+                                            .vegetation = true,
+                                            .grass = true,
+                                            .gi = false,
+                                            .froxels = false,
+                                            .occlusion = false,
+                                            .postFx = true };
+    // Same data→renderer wiring as the main scene (RendererAssets):
+    // cooked splat arrays for the ground, bark sets for the trunks —
+    // the builder must show the tree the FOREST will show.
+    const assets::AssetDatabase assetDb =
+        game::buildAssetDatabase(pluginStack);
+    game::applyCookedTerrainPaths(rendererConfig, forms, assetDb);
+    renderer.create(device, engine->getJobSystem(), rendererConfig);
+    game::loadTreeBark(device, renderer, assetDb);
 
     // The showcased specimen: variant 0 at the origin, no distance fade.
     const f32 ground = render::terrain::height(params, 0.0f, 0.0f);

@@ -18,6 +18,7 @@
 #include "engine/render/landscape/MistMap.hpp"
 #include "engine/render/landscape/NoiseVolume.hpp"
 #include "engine/render/landscape/TerrainLightMap.hpp"
+#include "engine/render/landscape/TerrainShadeMap.hpp"
 #include "engine/render/landscape/TerrainSystem.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
 #include "engine/render/landscape/FxRenderer.hpp"
@@ -69,6 +70,13 @@ struct RendererConfig {
     bool froxels { true };    // froxel fog (needs postFx)
     bool occlusion { true };  // CPU horizon + GPU Hi-Z
     bool postFx { true };     // bloom/rays/volumetric/contact/auto-expo
+    // Cooked terrain material arrays (.mtex file paths, resolved by the
+    // scene from the plugin VFS — the renderer never sees a Form). Empty =
+    // procedural splat tiles; ignored without caps.textureCompressionBC.
+    str terrainAlbedoPath;
+    str terrainNormalPath;
+    str terrainOrmPath;
+    str terrainHeightPath;
 };
 
 // Per-frame view: everything the SIM side decides, passed by value/pointer —
@@ -83,6 +91,13 @@ struct RenderView {
     // Moddable tuning scalars the scene owns (LandscapeTuningForm):
     f32 snowLine { render::kSnowLine };
     f32 splatUvScale { 0.25f };
+    f32 splatBlendDepth { 0.15f }; // height-blend band (0 = plain blend)
+    f32 terrainTintStrength { 0.3f }; // macro tint (0 = off, <= ~0.4)
+    f32 splatDetailFade { 24.0f }; // detail-normal fade end (m, 0 = off)
+    f32 pomDistance { 12.0f }; // parallax occlusion reach (m, 0 = off)
+    f32 splatVariety { 0.5f }; // anti-repetition second tap (0 = off)
+    f32 pomShadowStrength { 0.6f }; // POM self-shadow (0 = off)
+    f32 pomDepth { 0.03f }; // parallax relief depth (uv units)
     Vec3 interiorAmbient { 0.16f, 0.15f, 0.14f };
     // H3: the active worldspace's buried threshold (-1e9 = rule off).
     f32 buriedBelowY { -1.0e9f };
@@ -139,6 +154,36 @@ public:
     // Terrain shape = the world's ground truth (collision, nav, snaps,
     // spawn grounding all read it; the sculpt tool writes patches).
     render::TerrainParams& terrainParams() { return terrain.params; }
+
+    // Scanned-prop overrides (scene wiring, docs/GRASS-REDO.md): replaces
+    // one vegetation variant's mesh after create() — the scene resolves
+    // the glTF through the VFS, decimates and normalizes it first.
+    void overrideVegetationMesh(rhi::Device& device, u32 variant,
+                                render::MeshData mesh,
+                                render::MeshData low = {},
+                                render::MeshData ultra = {}) {
+        vegetation.overrideVariantMesh(device, variant, std::move(mesh),
+                                       std::move(low), std::move(ultra));
+    }
+    void setVegetationBark(rhi::Device& device,
+                           render::VegetationSystem::BarkImage oakAlbedo,
+                           render::VegetationSystem::BarkImage oakNrm,
+                           render::VegetationSystem::BarkImage pineAlbedo,
+                           render::VegetationSystem::BarkImage pineNrm) {
+        vegetation.setBarkTextures(device, std::move(oakAlbedo),
+                                   std::move(oakNrm),
+                                   std::move(pineAlbedo),
+                                   std::move(pineNrm));
+    }
+    void overrideVegetationAlbedo(rhi::Device& device, u32 variant,
+                                  u32 width, u32 height, vector<u8> rgba,
+                                  u32 normalWidth = 0,
+                                  u32 normalHeight = 0,
+                                  vector<u8> normalRgba = {}) {
+        vegetation.setVariantAlbedo(device, variant, width, height,
+                                    std::move(rgba), normalWidth,
+                                    normalHeight, std::move(normalRgba));
+    }
     const render::TerrainParams& terrainParams() const {
         return terrain.params;
     }
@@ -157,6 +202,13 @@ public:
     // commit only — re-seeding every preview frame would flicker).
     vector<u64>& sculptRemeshQueue() { return sculptDirtyChunks; }
     vector<u64>& sculptScatterQueue() { return sculptScatterChunks; }
+    // Scene-driven streaming gates (sandbox boot): `hold` parks the
+    // terrain/grass/vegetation rings while the base regions are not
+    // published yet (meshing against the empty base would all be redone
+    // on publish); `boost` widens the anti-stutter streaming budgets
+    // while an opaque loading veil hides the frame.
+    void setStreamingHold(bool hold) { streamingHold = hold; }
+    void setStreamingBoost(bool boost) { streamingBoost = boost; }
 
     // The lights-UBO capacity (the extract collects this many selected
     // LightSource entities into the snapshot). The full budget is only
@@ -258,7 +310,10 @@ private:
     u64 perfFrames { 0 }; // the one-shot "gpu budget" log's frame count
     // Worker-baked terrain sun-shadow + sky-openness map.
     render::TerrainLightMap terrainLightMap;
+    render::TerrainShadeMap terrainShadeMap;
     bool terrainLightUi { true };
+    // Terrain material-set A/B (panel): cooked .mtex library vs the
+    // procedural tiles; synced onto TerrainSystem each frame.
     // Distant landscape silhouettes beyond the streaming ring (§3.6).
     render::FarTerrain farTerrain;
     bool farTerrainUi { true };
@@ -308,11 +363,27 @@ private:
     bool grassRescatterRequested { false };
     bool wireframeUi { false };
     bool tonemapUi { true };
-    bool stylizedUi { true }; // BotW step lighting vs classic wrap (A/B)
+    // BotW step lighting vs classic wrap (A/B). Off: the realistic
+    // terrain-texturing look owns this branch; the panel checkbox
+    // brings the cel ramp back.
+    bool stylizedUi { false };
     bool shadowsUi { true };
     bool cascadeDebugUi { false };
     bool reflectionsUi { true };
     bool contactShadowsUi { true };
+    // Half-res SSAO (ssao.frag): contact-scale crevice darkening — the
+    // realistic-branch companion of the material relief.
+    bool ssaoUi { true };
+    f32 ssaoStrengthUi { 0.85f };
+    f32 ssaoRadiusUi { 0.7f };
+    // SSDM (ssdm_*.frag — Lobel 2008): screen-space scatter of the
+    // alpha-packed relief. Default ON since the dev validated the
+    // scatter (2026-08-05).
+    // SSDM mode: 0 = off, 1 = half-res chain + edge-aware upsample
+    // (~2.4 ms), 2 = full res (~17 ms on M1 — the dev prefers its
+    // crispness, default since 2026-08-07).
+    i32 ssdmModeUi { 2 };
+    f32 ssdmAmpUi { 0.12f }; // world amplitude (m)
     bool keyShadowUi { true };      // interiors
     bool meshShadowCastersUi { true };
     // The hysteresis-quantized sun the shadow cascades follow (a
@@ -352,6 +423,9 @@ private:
     // Chunks a sculpt changed, awaiting the safe-point rebuild in render().
     vector<u64> sculptDirtyChunks;
     vector<u64> sculptScatterChunks;
+    // Scene-driven streaming gates — see setStreamingHold/Boost.
+    bool streamingHold { false };
+    bool streamingBoost { false };
 
     rhi::UniqueTexture whiteTexture; // albedoTexture = 0 -> plain tint
     rhi::UniqueSampler meshSampler;
@@ -434,6 +508,30 @@ private:
     rhi::UniqueTexture sceneColorCopy;
     rhi::UniqueTexture sceneDepthCopy;
     rhi::UniqueBindGroup waterSceneBindGroup;
+    // SSDM scatter chain (ssdm_*.frag — Lobel 2008): flow (per-pixel
+    // displacement + displaced depth) -> bounds quadtree (5 levels) ->
+    // resolve (nearest-wins, gather fallback) into the offscreen target.
+    static constexpr u32 kSsdmLevels = 5;
+    rhi::UniquePipeline ssdmFlowPipeline;
+    rhi::UniquePipeline ssdmBounds0Pipeline;
+    rhi::UniquePipeline ssdmDownPipeline;
+    rhi::UniquePipeline ssdmResolvePipeline;
+    rhi::UniqueTexture ssdmFlowTex;
+    rhi::UniqueFramebuffer ssdmFlowFb;
+    rhi::UniqueBindGroup ssdmFlowGroup;
+    array<rhi::UniqueTexture, kSsdmLevels> ssdmBoundsTex;
+    array<rhi::UniqueFramebuffer, kSsdmLevels> ssdmBoundsFb;
+    array<rhi::UniqueBindGroup, kSsdmLevels> ssdmBoundsGroup;
+    rhi::UniqueBindGroup ssdmResolveGroup;
+    // Half mode (ssdmModeUi == 1): the resolve lands in this chain-res
+    // intermediate (alpha = moved flag), then the upsample rewrites the
+    // touched full-res pixels only.
+    rhi::UniquePipeline ssdmResolveHalfPipeline;
+    rhi::UniquePipeline ssdmUpsamplePipeline;
+    rhi::UniqueTexture ssdmHalfTex;
+    rhi::UniqueFramebuffer ssdmHalfFb;
+    rhi::UniqueBindGroup ssdmUpsampleGroup;
+    i32 appliedSsdmMode { -1 };
     // Half-res mirrored scene for the water's planar reflection.
     rhi::UniqueTexture reflectionColor;
     rhi::UniqueTexture reflectionDepth;
