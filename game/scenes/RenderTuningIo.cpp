@@ -199,6 +199,10 @@ render::ColonizedTreeParams RenderTuningIo::toColonizedParams(
     c.leafSizeMax = colonized.leafSizeMax;
     c.leafSolidStart = colonized.leafSolidStart;
     c.leafSolidEnd = colonized.leafSolidEnd;
+    c.barkTileScale = colonized.barkTileScale;
+    c.barkHexCell = colonized.barkHexCell;
+    c.barkHexSharpness = colonized.barkHexSharpness;
+    c.barkTint = colonized.barkTint;
     return c;
 }
 
@@ -401,6 +405,10 @@ void RenderTuningIo::captureTreeTuning(
     colonized.leafSizeMax = c.leafSizeMax;
     colonized.leafSolidStart = c.leafSolidStart;
     colonized.leafSolidEnd = c.leafSolidEnd;
+    colonized.barkTileScale = c.barkTileScale;
+    colonized.barkHexCell = c.barkHexCell;
+    colonized.barkHexSharpness = c.barkHexSharpness;
+    colonized.barkTint = c.barkTint;
 }
 
 } // namespace game

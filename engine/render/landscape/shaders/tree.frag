@@ -1,4 +1,5 @@
 #version 460 core
+#include "compat.glsl"
 #include "common.glsl"
 #include "sky.glsl"
 
@@ -24,12 +25,18 @@ layout(binding = 4) uniform sampler2D uTerrainShade0;
 #include "stylized.glsl"
 #include "locallights.glsl"
 
+// Per-species bark material, pushed per variant draw (the TreeCreator
+// "Bark material" knobs — ColonizedTreeParams::bark*).
+MEADOWS_PUSH_CONSTANTS(BarkPush) {
+    vec4 uBarkTintTile; // rgb = tint multiplier, w = tiles per meter
+    vec4 uBarkHex;      // x = lattice cell (uv), y = seam sharpness
+};
+
 // Hex-tiling for the bark planes (Heitz-Neyret, the terrain_zones
 // pattern): a triangle lattice assigns each vertex a random uv offset;
 // the two dominant barycentric weights (pow-sharpened, smallest vertex
 // dropped) blend the taps. Repeats stop aligning along the trunk while
 // each patch keeps whole features (the knots stay knots).
-const float kBarkHexCell = 0.85; // lattice scale (uv units, ~1 repeat)
 
 vec2 hexBarkOffset(ivec2 v) {
     uint h = uint(v.x) * 0x9e3779b9u ^ uint(v.y) * 0x85ebca6bu;
@@ -40,7 +47,7 @@ vec2 hexBarkOffset(ivec2 v) {
 }
 
 void hexBark(vec2 uv, out vec2 offA, out vec2 offB, out vec2 w) {
-    vec2 q = uv / kBarkHexCell;
+    vec2 q = uv / max(uBarkHex.x, 0.05);
     vec2 s = vec2(q.x - q.y * 0.57735027, q.y * 1.15470054);
     ivec2 base = ivec2(floor(s));
     vec2 f = s - vec2(base);
@@ -57,7 +64,7 @@ void hexBark(vec2 uv, out vec2 offA, out vec2 offB, out vec2 w) {
         v2 = base + ivec2(1, 0);
         b = vec3(f.x + f.y - 1.0, 1.0 - f.x, 1.0 - f.y);
     }
-    b = pow(b, vec3(6.0));
+    b = pow(b, vec3(uBarkHex.y));
     if (b.x <= b.y && b.x <= b.z) {
         w = vec2(b.y, b.z);
         offA = hexBarkOffset(v1);
@@ -161,14 +168,13 @@ void main() {
         vec3 onrm = normalize(vObjNormal);
         vec3 an = abs(onrm) + 1.0e-5;
         vec3 bw = an / (an.x + an.y + an.z);
-        // Coarser than the first pass (0.6): at fine tilings the
-        // displacement mips to mid-gray and the SSDM warp flattens —
-        // the boulder-scale features are what read (retour dev).
-        const float kBarkTile = 0.3; // tiles per meter (hand-tuned)
+        // Too-fine tilings mip the displacement to mid-gray and the
+        // SSDM warp flattens — boulder-scale features are what read.
+        float barkTile = uBarkTintTile.w; // tiles per meter
         const float kBarkDepth = 0.045; // parallax amplitude (uv units)
-        vec2 uvx = vObjPos.zy * kBarkTile;
-        vec2 uvy = vObjPos.xz * kBarkTile;
-        vec2 uvz = vObjPos.xy * kBarkTile;
+        vec2 uvx = vObjPos.zy * barkTile;
+        vec2 uvy = vObjPos.xz * barkTile;
+        vec2 uvz = vObjPos.xy * barkTile;
         // View in OBJECT space (inverse of the vertex yaw rotation).
         vec3 vw = normalize(uCameraPos.xyz - vWorldPos);
         vec3 vo = vec3(vw.x * yc + vw.z * ys, vw.y,
@@ -213,7 +219,8 @@ void main() {
         // generators' dark-brown wood color was re-tinting every bark
         // set (retour dev: « pas la même couleur que sur le site »).
         float vLuma = dot(vColor, vec3(0.299, 0.587, 0.114));
-        baseColor = bark * min(vLuma * 2.6, 1.4);
+        baseColor =
+            bark * uBarkTintTile.rgb * min(vLuma * 2.6, 1.4);
         // Triplanar normal blend (axis frames per plane), rotated back
         // to world by the instance yaw.
         vec3 tnx = nhx.xyz * 2.0 - 1.0;

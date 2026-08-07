@@ -16,6 +16,16 @@
 
 namespace render {
 
+// Per-variant bark material push (tree.frag BarkPush): the species'
+// draw-time knobs — tint + tile density, hex lattice cell + sharpness.
+namespace {
+struct BarkPush {
+    Vec4 tintTile; // rgb = tint, w = tiles per meter
+    Vec4 hex;      // x = lattice cell (uv), y = seam sharpness
+};
+} // namespace
+
+
 namespace {
 
 constexpr const char* kTreeShader = "tree";
@@ -1319,10 +1329,23 @@ void VegetationSystem::update(rhi::Device& device, const TerrainParams& params,
     });
 }
 
+const ColonizedTreeParams&
+VegetationSystem::barkParamsFor(u32 variant) const {
+    if (variant < kTreeVariants && treeSpecies[variant]) {
+        return treeSpecies[variant]->params;
+    }
+    if (variant >= kFirstBush && variant < kFirstBush + kBushVariants &&
+        bushSpecies) {
+        return bushSpecies->params;
+    }
+    return colonizedTreeParams;
+}
+
 void VegetationSystem::buildPipeline(rhi::Device& device,
                                      ShaderLibrary& shaders) {
     pipeline = { device, device.createPipeline( // U3-7: frees the old one
         { .shader = shaders.get(kTreeShader),
+          .pushConstantSize = sizeof(BarkPush),
           .vertexBuffers =
               { meshVertexLayout(), // U3-5 (the caster keeps its own
                                     // position+uv layout — sway weights)
@@ -1445,6 +1468,12 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         if (mesh.albedoGroup.get().id != 0) {
             cmd.setBindGroup(1, mesh.albedoGroup.get());
         }
+        const BarkPush push { Vec4(colonizedTreeParams.barkTint,
+                                   colonizedTreeParams.barkTileScale),
+                              Vec4(colonizedTreeParams.barkHexCell,
+                                   colonizedTreeParams.barkHexSharpness,
+                                   0.0f, 0.0f) };
+        cmd.setPushConstants(&push, sizeof(push));
         cmd.setVertexBuffer(0, mesh.vertexBuffer.get());
         cmd.setIndexBuffer(mesh.indexBuffer.get(), rhi::IndexFormat::U32);
         cmd.setVertexBuffer(1, showcaseInstances.get());
@@ -1490,6 +1519,11 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
     bool albedoBound = false;
     for (u32 v = 0; v < variantLimit; ++v) {
         const VariantMesh& mesh = variantMeshes[v];
+        const ColonizedTreeParams& bp = barkParamsFor(v);
+        const BarkPush push { Vec4(bp.barkTint, bp.barkTileScale),
+                              Vec4(bp.barkHexCell, bp.barkHexSharpness,
+                                   0.0f, 0.0f) };
+        cmd.setPushConstants(&push, sizeof(push));
         // Textured plants swap group 1 for the variant's albedo (same
         // layout as the leaf-mask atlas); restore the atlas after.
         if (mesh.albedoGroup.get().id != 0) {
@@ -1614,6 +1648,11 @@ void VegetationSystem::drawIndirect(rhi::CommandBuffer& cmd,
     bool albedoBound = false;
     for (u32 v = 0; v < kVariantCount; ++v) {
         const VariantMesh& mesh = variantMeshes[v];
+        const ColonizedTreeParams& bp = barkParamsFor(v);
+        const BarkPush push { Vec4(bp.barkTint, bp.barkTileScale),
+                              Vec4(bp.barkHexCell, bp.barkHexSharpness,
+                                   0.0f, 0.0f) };
+        cmd.setPushConstants(&push, sizeof(push));
         if (mesh.albedoGroup.get().id != 0) {
             cmd.setBindGroup(1, mesh.albedoGroup.get());
             albedoBound = true;

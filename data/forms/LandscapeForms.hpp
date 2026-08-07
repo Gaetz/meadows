@@ -495,6 +495,13 @@ struct ColonizedTreeTuningForm : Form {
     f32 leafSizeMax { 0.25f };
     f32 leafSolidStart { 4.0f };
     f32 leafSolidEnd { 7.0f };
+    // Bark material (draw-time — no mesh rebuild): triplanar tile
+    // density, hex-tiling lattice cell + seam sharpness, and a tint
+    // multiplier over the bark texture (1,1,1 = the texture's own hue).
+    f32 barkTileScale { 0.3f };
+    f32 barkHexCell { 0.85f };
+    f32 barkHexSharpness { 6.0f };
+    Vec3 barkTint { 1.0f, 1.0f, 1.0f };
 
     REFLECT_BEGIN(ColonizedTreeTuningForm, Form)
         REFLECT_FIELD(tubeSides)
@@ -535,6 +542,10 @@ struct ColonizedTreeTuningForm : Form {
         REFLECT_FIELD(leafSizeMax)
         REFLECT_FIELD(leafSolidStart)
         REFLECT_FIELD(leafSolidEnd)
+        REFLECT_FIELD(barkTileScale)
+        REFLECT_FIELD(barkHexCell)
+        REFLECT_FIELD(barkHexSharpness)
+        REFLECT_FIELD(barkTint)
     REFLECT_END()
 };
 

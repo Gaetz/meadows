@@ -143,6 +143,14 @@ struct ColonizedTreeParams {
     // canopy mass). Rendered live via uLeafLodInfo, not baked.
     f32 leafSolidStart { 4.0f };
     f32 leafSolidEnd { 7.0f };
+    // Bark material (draw-time — pushed per variant draw, no mesh
+    // rebuild): triplanar tile density, hex-tiling lattice cell + seam
+    // sharpness, and a tint multiplier over the bark texture
+    // (1,1,1 = the texture's own hue).
+    f32 barkTileScale { 0.3f };    // tiles per meter
+    f32 barkHexCell { 0.85f };     // hex lattice cell (uv units)
+    f32 barkHexSharpness { 6.0f }; // barycentric exponent
+    Vec3 barkTint { 1.0f, 1.0f, 1.0f };
 };
 
 // `detail` mirrors the LOD contract: 2 near, 1 mid, 0 far (tube sides

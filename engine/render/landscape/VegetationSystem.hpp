@@ -126,6 +126,10 @@ public:
     // Leaf-mask atlas slots (ColonizedTreeParams::leafStyle range).
     static constexpr i32 kLeafStyleCount = 8;
     array<std::optional<TreeSpecies>, kTreeVariants> treeSpecies {};
+    // The params whose bark material a variant draw pushes: tree slots
+    // -> their wired species, bushes -> the bush species, everything
+    // else (and unwired slots) -> the live default params.
+    const ColonizedTreeParams& barkParamsFor(u32 variant) const;
     // Per-slot season data (rgb = autumn tint, a = seasonality), filled
     // by rebuildLeafMask from the claiming species — the frame UBO
     // ships it to tree.vert/frag.

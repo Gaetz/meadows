@@ -138,6 +138,15 @@ bool RenderTuningPanels::drawTreeKnobs(render::WorldRenderer& r) {
         knobInt("Curve subdivision", p.curveSubdiv, 0, 3);
         knob("Path noise (kinks)", p.pathJitter, 0.0f, 1.0f);
         knob("Ring irregularity", p.ringIrregularity, 0.0f, 1.0f);
+        ImGui::SeparatorText("Bark material (live, no rebuild)");
+        ImGui::SliderFloat("Bark tile (tiles/m)", &p.barkTileScale,
+                           0.05f, 1.0f);
+        ImGui::SliderFloat("Hex cell (uv units)", &p.barkHexCell, 0.2f,
+                           3.0f);
+        ImGui::SliderFloat("Hex seam sharpness", &p.barkHexSharpness,
+                           1.0f, 12.0f);
+        ImGui::ColorEdit3("Bark tint", &p.barkTint.x,
+                          ImGuiColorEditFlags_Float);
         ImGui::SeparatorText("Crown envelope");
         knob("Bare trunk min (m)", p.trunkBaseMin, 0.5f, 5.0f);
         knob("Bare trunk max (m)", p.trunkBaseMax, 0.5f, 6.0f);
@@ -255,7 +264,9 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
                  "cardHalfSizeMin = {}\ncardHalfSizeMax = {}\n"
                  "densityGradient = {}\nfoliageDensity = {}\n"
                  "leafCount = {}\nleafSizeMin = {}\nleafSizeMax = {}\n"
-                 "leafSolidStart = {}\nleafSolidEnd = {}",
+                 "leafSolidStart = {}\nleafSolidEnd = {}\n"
+                 "barkTileScale = {}\nbarkHexCell = {}\n"
+                 "barkHexSharpness = {}\nbarkTint = [{}, {}, {}]",
                  c.tubeSides, c.curvePreserve, c.curveSubdiv,
                  c.pathJitter, c.ringIrregularity, c.sideMinFraction,
                  c.segment, c.killDistance, c.attractorCount,
@@ -268,7 +279,9 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
                  c.autumnTint.z, c.seasonality, c.smoothK, c.cardHalfSizeMin, c.cardHalfSizeMax,
                  c.densityGradient, c.foliageDensity, c.leafCount,
                  c.leafSizeMin, c.leafSizeMax, c.leafSolidStart,
-                 c.leafSolidEnd);
+                 c.leafSolidEnd, c.barkTileScale, c.barkHexCell,
+                 c.barkHexSharpness, c.barkTint.x, c.barkTint.y,
+                 c.barkTint.z);
     }
 
     if (dirty) {
