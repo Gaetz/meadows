@@ -7,14 +7,23 @@
 
 const float kSsdmMaxPx = 10.0;
 
-vec2 ssdmDelta(vec2 uv, vec2 texel, out float dispDepth) {
+// `hMin`/`hMax` clamp the decoded relief before displacing: the flow
+// (scatter) uses the full range, the resolve's gather fallback digs
+// PITS ONLY (hMax 0) — un-clamped, every coverage hole between
+// extruded crests warped inward and high amplitudes read as "the
+// texture sinks INTO the trunk" (retour dev).
+vec2 ssdmDeltaClamped(vec2 uv, vec2 texel, float hMin, float hMax,
+                      out float dispDepth) {
     float d = texture(uSceneDepth, uv).r;
     dispDepth = d;
     float a = texture(uSceneColor, uv).a;
     if (a < 0.5 || a >= 0.995 || d < 1e-8) {
         return vec2(0.0); // grass flag / neutral material / sky
     }
-    float h = (a - 0.5) * 2.0 - 0.5; // -0.5 pit .. +0.5 crest
+    float h = clamp((a - 0.5) * 2.0 - 0.5, hMin, hMax);
+    if (h == 0.0) {
+        return vec2(0.0);
+    }
     vec3 w = worldFromDepth(uv, d);
     // One-sided neighbor differences toward the depth-closest side —
     // a two-sided difference crosses the silhouette on thin props and
@@ -45,4 +54,8 @@ vec2 ssdmDelta(vec2 uv, vec2 texel, out float dispDepth) {
     dispDepth = clip.z / clip.w;
     vec2 lim = texel * kSsdmMaxPx;
     return clamp(clip.xy / clip.w * 0.5 + 0.5 - uv, -lim, lim);
+}
+
+vec2 ssdmDelta(vec2 uv, vec2 texel, out float dispDepth) {
+    return ssdmDeltaClamped(uv, texel, -0.5, 0.5, dispDepth);
 }

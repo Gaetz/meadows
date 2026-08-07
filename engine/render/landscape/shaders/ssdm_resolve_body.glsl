@@ -97,7 +97,9 @@ void main() {
     vec2 q = vUv;
     float unusedDepth;
     for (int i = 0; i < 3; ++i) {
-        q = vUv - ssdmDelta(q, sceneTexel, unusedDepth);
+        // Pits only: holes inside crest coverage keep their pixel.
+        q = vUv - ssdmDeltaClamped(q, sceneTexel, -0.5, 0.0,
+                                   unusedDepth);
     }
     // Silhouette guard: a gathered source from ACROSS a depth edge
     // would duplicate the foreground rim onto the background (the
