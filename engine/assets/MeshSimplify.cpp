@@ -19,12 +19,27 @@ void simplifyMesh(render::MeshData& mesh, u32 targetTriangles) {
 
     vector<u32> simplified(indexCount);
     f32 error = 0.0f;
-    size_t count = meshopt_simplify(
+    // UV-aware collapse: the position-only path merged vertices across
+    // the scans' UV-atlas seams — one side of a boulder ended with
+    // stretched, striped texels ("la texture n'en fait pas le tour").
+    // The uv attribute weight keeps island boundaries intact.
+    const f32* uvs = &mesh.vertices[0].uv.x;
+    const f32 kUvWeight[2] = { 1.0f, 1.0f };
+    size_t count = meshopt_simplifyWithAttributes(
         simplified.data(), mesh.indices.data(), indexCount, positions,
-        mesh.vertices.size(), stride, targetIndices, 0.05f, 0, &error);
+        mesh.vertices.size(), stride, uvs, stride, kUvWeight, 2, nullptr,
+        targetIndices, 0.05f, 0, &error);
+    if (count > targetIndices * 3 / 2) {
+        // Give the error budget room before surrendering topology.
+        count = meshopt_simplifyWithAttributes(
+            simplified.data(), mesh.indices.data(), indexCount,
+            positions, mesh.vertices.size(), stride, uvs, stride,
+            kUvWeight, 2, nullptr, targetIndices, 0.3f, 0, &error);
+    }
     if (count > targetIndices * 3 / 2) {
         // Topology resisted (scans are full of tiny disconnected shells):
-        // the sloppy simplifier ignores topology and always converges.
+        // the sloppy simplifier ignores topology and always converges —
+        // last resort only, it is what caused the seam smearing.
         count = meshopt_simplifySloppy(simplified.data(),
                                        mesh.indices.data(), indexCount,
                                        positions, mesh.vertices.size(),
