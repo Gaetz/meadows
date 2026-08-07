@@ -138,6 +138,9 @@ bool RenderTuningPanels::drawTreeKnobs(render::WorldRenderer& r) {
         knobInt("Curve subdivision", p.curveSubdiv, 0, 3);
         knob("Path noise (kinks)", p.pathJitter, 0.0f, 1.0f);
         knob("Ring irregularity", p.ringIrregularity, 0.0f, 1.0f);
+        knob("Root flare amount", p.flareAmount, 0.0f, 2.0f);
+        knob("Root flare height (m)", p.flareHeight, 0.2f, 4.0f);
+        knobInt("Root flare lobes", p.flareLobes, 1, 8);
         ImGui::SeparatorText("Bark material (live, no rebuild)");
         ImGui::SliderFloat("Bark tile (tiles/m)", &p.barkTileScale,
                            0.05f, 1.0f);
@@ -248,6 +251,7 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
                  l.lobeFlatten, l.normalSpherize);
         LOG_INFO("[records.fields]  # ColonizedTreeTuningForm\n"
                  "tubeSides = {}\ncurvePreserve = {}\ncurveSubdiv = {}\n"
+                 "flareAmount = {}\nflareHeight = {}\nflareLobes = {}\n"
                  "pathJitter = {}\nringIrregularity = {}\n"
                  "sideMinFraction = {}\n"
                  "segment = {}\nkillDistance = {}\nattractorCount = {}\n"
@@ -268,6 +272,7 @@ void RenderTuningPanels::drawTreeBuilderPanel(render::WorldRenderer& r) {
                  "barkTileScale = {}\nbarkHexCell = {}\n"
                  "barkHexSharpness = {}\nbarkTint = [{}, {}, {}]",
                  c.tubeSides, c.curvePreserve, c.curveSubdiv,
+                 c.flareAmount, c.flareHeight, c.flareLobes,
                  c.pathJitter, c.ringIrregularity, c.sideMinFraction,
                  c.segment, c.killDistance, c.attractorCount,
                  c.pipeExponent, c.tropism, c.trunkBaseMin, c.trunkBaseMax,

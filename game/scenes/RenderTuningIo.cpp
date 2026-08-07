@@ -162,6 +162,9 @@ render::ColonizedTreeParams RenderTuningIo::toColonizedParams(
     const data::ColonizedTreeTuningForm& colonized) {
     render::ColonizedTreeParams c;
     c.tubeSides = colonized.tubeSides;
+    c.flareAmount = colonized.flareAmount;
+    c.flareHeight = colonized.flareHeight;
+    c.flareLobes = colonized.flareLobes;
     c.curvePreserve = colonized.curvePreserve;
     c.curveSubdiv = colonized.curveSubdiv;
     c.pathJitter = colonized.pathJitter;
@@ -377,6 +380,9 @@ void RenderTuningIo::captureTreeTuning(
     lobes.normalSpherize = l.normalSpherize;
     const render::ColonizedTreeParams& c = r.vegetation.colonizedTreeParams;
     colonized.tubeSides = c.tubeSides;
+    colonized.flareAmount = c.flareAmount;
+    colonized.flareHeight = c.flareHeight;
+    colonized.flareLobes = c.flareLobes;
     colonized.curvePreserve = c.curvePreserve;
     colonized.curveSubdiv = c.curveSubdiv;
     colonized.pathJitter = c.pathJitter;

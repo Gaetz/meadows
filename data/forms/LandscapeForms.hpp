@@ -456,6 +456,11 @@ struct ColonizedTreeTuningForm : Form {
     // tubeSides for clean halvings).
     i32 tubeSides { 12 };
     f32 curvePreserve { 0.0f };
+    // Root flare (buttress base): ground widening amount (x trunk
+    // radius), decay height (m), angular lobe count.
+    f32 flareAmount { 0.6f };
+    f32 flareHeight { 1.2f };
+    i32 flareLobes { 4 };
     i32 curveSubdiv { 0 };
     f32 pathJitter { 0.0f };
     f32 ringIrregularity { 0.0f };
@@ -506,6 +511,9 @@ struct ColonizedTreeTuningForm : Form {
     REFLECT_BEGIN(ColonizedTreeTuningForm, Form)
         REFLECT_FIELD(tubeSides)
         REFLECT_FIELD(curvePreserve)
+        REFLECT_FIELD(flareAmount)
+        REFLECT_FIELD(flareHeight)
+        REFLECT_FIELD(flareLobes)
         REFLECT_FIELD(curveSubdiv)
         REFLECT_FIELD(pathJitter)
         REFLECT_FIELD(ringIrregularity)

@@ -106,6 +106,15 @@ struct ColonizedTreeParams {
     // decimated look). `curveSubdiv` inserts Catmull-Rom points per
     // kept segment, rounding the elbows (halved on the low twin, off
     // on ultra). Defaults reproduce the pre-knob output exactly.
+    // Root flare: near the ground the trunk widens into buttress
+    // lobes (radial multiplier on the root chain's rings — angular
+    // noise x height falloff, phases rolled from the tree seed).
+    // `flareAmount` = extra radius at ground as a multiple of the
+    // trunk radius (0 = off), `flareHeight` = meters it decays over,
+    // `flareLobes` = angular bump count.
+    f32 flareAmount { 0.6f };
+    f32 flareHeight { 1.2f };
+    i32 flareLobes { 4 };
     i32 tubeSides { 12 };         // MAX ring vertices (trunk), 3..12
     f32 curvePreserve { 0.0f };   // 0..1
     i32 curveSubdiv { 0 };        // 0..3

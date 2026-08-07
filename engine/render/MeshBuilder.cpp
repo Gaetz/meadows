@@ -83,7 +83,7 @@ void appendTaperedTube(MeshData& mesh, const Vec3& base, const Vec3& top,
 
 void appendPolylineTube(MeshData& mesh, const vector<TubePoint>& points,
                         u32 sides, const Vec3& color, f32 angleJitter,
-                        u32 seed) {
+                        u32 seed, const TubeRadialFn& radial) {
     if (points.size() < 2 || sides < 3) {
         return;
     }
@@ -123,8 +123,10 @@ void appendPolylineTube(MeshData& mesh, const vector<TubePoint>& points,
     const auto buildRing = [&](vector<Vec3>& out, const TubePoint& point) {
         for (u32 k = 0; k <= sides; ++k) {
             const f32 a = angleAt(k);
-            out[k] = point.position +
-                     (u * std::cos(a) + v * std::sin(a)) * point.radius;
+            const Vec3 dir = u * std::cos(a) + v * std::sin(a);
+            const f32 r = radial ? point.radius * radial(point.position, dir)
+                                 : point.radius;
+            out[k] = point.position + dir * r;
         }
     };
     buildRing(prevRing, points[0]);

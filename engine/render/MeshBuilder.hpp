@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "engine/core/Defines.hpp"
 #include "engine/assets/MeshData.hpp"
 
@@ -26,6 +28,13 @@ struct TubePoint {
     f32 radius;
 };
 
+// Optional per-vertex radius multiplier for appendPolylineTube:
+// (ring center, unit radial direction) -> multiplier. The no-twist
+// parallel transport keeps the radial direction world-stable along the
+// path, so an angular profile (root flare lobes) stays vertically
+// continuous.
+using TubeRadialFn = std::function<f32(const Vec3&, const Vec3&)>;
+
 // Welded tube along a polyline (root -> tip order): ONE shared ring per
 // point — the ring plane miters between its two adjacent segments and
 // the basis is parallel-transported along the path (no twist), so bent
@@ -35,7 +44,8 @@ struct TubePoint {
 // without twisting).
 void appendPolylineTube(MeshData& mesh, const vector<TubePoint>& points,
                         u32 sides, const Vec3& color,
-                        f32 angleJitter = 0.0f, u32 seed = 0);
+                        f32 angleJitter = 0.0f, u32 seed = 0,
+                        const TubeRadialFn& radial = {});
 
 // Faceted blob: an icosphere with deterministic radial jitter — foliage
 // clumps, rocks. `jitter` is the relative radius variation (0 = perfect

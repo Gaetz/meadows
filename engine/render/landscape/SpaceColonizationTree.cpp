@@ -332,7 +332,7 @@ GrownTree growColonizedTree(u32 seed, const ColonizedTreeParams& params) {
 // (halved on the low twin, off on ultra), curveSubdiv rounds the elbows
 // with Catmull-Rom points (same LOD ladder).
 void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
-                const ColonizedTreeParams& params) {
+                const ColonizedTreeParams& params, u32 seed) {
     const Vec3 barkColor { 0.085f, 0.048f, 0.026f }; // generateTree's bark
     const f32 segment = params.segment;
     const i32 baseSides = glm::clamp(params.tubeSides, 3, 12);
@@ -391,6 +391,34 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
         return static_cast<u32>(glm::max(sides, 3));
     };
 
+    // Root flare (the SpeedTree "flares" idea): near the ground the
+    // trunk widens into buttress lobes — a radial multiplier on the
+    // ROOT chain's ring vertices, angular harmonics x squared height
+    // falloff. Phases roll from the TREE seed, and the tube basis is
+    // parallel-transported (no twist), so the lobes stay vertically
+    // continuous and every LOD agrees.
+    const f32 flareAmount = glm::clamp(params.flareAmount, 0.0f, 3.0f);
+    const f32 flareHeight = glm::max(params.flareHeight, 0.01f);
+    const f32 flareLobes =
+        static_cast<f32>(glm::clamp(params.flareLobes, 1, 8));
+    HashRng flareRng { hashU32(seed ^ 0xf1a2e001u) };
+    const f32 flarePhase1 = flareRng.next() * 6.2831853f;
+    const f32 flarePhase2 = flareRng.next() * 6.2831853f;
+    const f32 flareBaseY = nodes[0].position.y;
+    const auto flareMult = [&](const Vec3& center, const Vec3& dir) {
+        const f32 h =
+            glm::clamp((center.y - flareBaseY) / flareHeight, 0.0f, 1.0f);
+        if (h >= 1.0f) {
+            return 1.0f;
+        }
+        const f32 decay = (1.0f - h) * (1.0f - h);
+        const f32 theta = std::atan2(dir.z, dir.x);
+        const f32 profile =
+            0.5f + 0.35f * std::sin(flareLobes * theta + flarePhase1) +
+            0.15f * std::sin(flareLobes * 2.0f * theta + flarePhase2);
+        return 1.0f + flareAmount * decay * profile;
+    };
+
     struct PathPoint {
         Vec3 position;
         f32 radius;
@@ -398,6 +426,7 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
     vector<PathPoint> path;    // one chain, tip -> root order
     vector<PathPoint> refined; // after Catmull-Rom rounding
     vector<TubePoint> tube;    // root -> tip, welded-ring emission
+    vector<TubePoint> dense;   // flare ring densification scratch
 
     // Walk each chain from a branching point (or tip) down to the previous
     // branching point, collecting the decimated polyline, then emit one
@@ -438,6 +467,7 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
                 break; // the parent chain is someone else's walk
             }
         }
+        const bool flaredChain = cursor == 0 && flareAmount > 0.0f;
 
         // Trajectory kinks: displace the kept INTERIOR points (chain
         // ends anchor junctions and the foliage SDF, they never move).
@@ -515,10 +545,39 @@ void appendWood(MeshData& mesh, const vector<Node>& nodes, u32 detail,
             tube.push_back({ point.position, point.radius });
         }
         if (tube.size() >= 2) {
-            appendPolylineTube(mesh, tube,
+            // Decimation collapses the straight base into meter-long
+            // runs — too coarse for the flare's height profile. Insert
+            // lerped rings (~0.25 m spacing) below flareHeight; the
+            // insertion is a pure function of positions, so LODs agree
+            // (skipped on the 3-sided ultra twin, sub-texel there).
+            if (flaredChain && detail >= 1) {
+                dense.clear();
+                for (size_t i = 0; i + 1 < tube.size(); ++i) {
+                    const TubePoint& a = tube[i];
+                    const TubePoint& b = tube[i + 1];
+                    dense.push_back(a);
+                    if (a.position.y - flareBaseY < flareHeight) {
+                        const i32 cuts = static_cast<i32>(
+                            glm::distance(a.position, b.position) / 0.25f);
+                        for (i32 c = 1; c <= cuts; ++c) {
+                            const f32 t = static_cast<f32>(c) /
+                                          static_cast<f32>(cuts + 1);
+                            dense.push_back(
+                                { glm::mix(a.position, b.position, t),
+                                  glm::mix(a.radius, b.radius, t) });
+                        }
+                    }
+                }
+                dense.push_back(tube.back());
+            }
+            const vector<TubePoint>& emitTube =
+                flaredChain && detail >= 1 ? dense : tube;
+            appendPolylineTube(mesh, emitTube,
                                sidesFor(tube.front().radius), barkColor,
                                ringIrregularity,
-                               positionHash(path[0].position));
+                               positionHash(path[0].position),
+                               flaredChain ? TubeRadialFn(flareMult)
+                                           : TubeRadialFn {});
         }
     }
 
@@ -551,7 +610,7 @@ MeshData generateColonizedTree(u32 seed, u32 detail,
     const f32 totalHeight = tree.totalHeight;
 
     MeshData mesh;
-    appendWood(mesh, tree.nodes, detail, params);
+    appendWood(mesh, tree.nodes, detail, params, seed);
     const u32 woodVertexCount = static_cast<u32>(mesh.vertices.size());
 
     // --- Foliage: billboard leaf cards in the SDF shell -------------------
@@ -668,7 +727,7 @@ MeshData generateColonizedTreeShadowProxy(u32 seed,
                                           const ColonizedTreeParams& params) {
     const GrownTree tree = growColonizedTree(seed, params);
     MeshData mesh;
-    appendWood(mesh, tree.nodes, 0, params);
+    appendWood(mesh, tree.nodes, 0, params, seed);
     // The canopy metaballs ARE the shadow volume: one 20-face icosahedron
     // per ball (largest first — they define the mass) instead of the card
     // cloud. Opaque, so shadow_prop skips the leaf-mask cutout entirely.
