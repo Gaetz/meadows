@@ -445,6 +445,10 @@ private:
     array<rhi::UniqueTexture, 2> barkTextures;
     array<rhi::UniqueTexture, 2> barkNrmTextures;
     rhi::UniqueSampler barkSampler;
+    // Textured props sample with REPEAT: scan uvs can exceed [0,1]
+    // (rock_boulder_dry reaches u = 2.25) — the atlas' clamp sampler
+    // smeared the last texel column into stripes across one face.
+    rhi::UniqueSampler propAlbedoSampler;
     void rebuildTreeBarkGroups(rhi::Device& device);
     // Shared leaf-cluster cutout mask (all tree variants; cards only).
     array<Vec4, kLeafStyleCount> leafSeasonTable {};

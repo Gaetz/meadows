@@ -1020,22 +1020,29 @@ void VegetationSystem::uploadVariantAlbedo(rhi::Device& device,
         }
         normalTex = mesh.normalMap.get();
     }
+    if (propAlbedoSampler.get().id == 0) {
+        propAlbedoSampler = { device, device.createSampler(
+            { .mipmapFilter = mips,
+              .addressU = rhi::AddressMode::Repeat,
+              .addressV = rhi::AddressMode::Repeat }) };
+    }
     // Same layout as leafMaskGroup — the tree pipeline binds either
     // interchangeably as group 1 (binding 7 = the bark slot, dummy here:
-    // textured props never raise the bark flag).
+    // textured props never raise the bark flag). REPEAT sampler: scan
+    // uvs may exceed [0,1].
     mesh.albedoGroup = { device, device.createBindGroup(
         { .entries = { { .binding = 0,
                          .texture = mesh.albedo.get(),
-                         .sampler = leafMaskSampler.get() },
+                         .sampler = propAlbedoSampler.get() },
                        { .binding = 12,
                          .texture = normalTex,
-                         .sampler = leafMaskSampler.get() },
+                         .sampler = propAlbedoSampler.get() },
                        { .binding = 13,
                          .texture = mesh.albedo.get(),
-                         .sampler = leafMaskSampler.get() },
+                         .sampler = propAlbedoSampler.get() },
                        { .binding = 14,
                          .texture = normalTex,
-                         .sampler = leafMaskSampler.get() } } }) };
+                         .sampler = propAlbedoSampler.get() } } }) };
 }
 
 void VegetationSystem::destroyVariantMeshes(rhi::Device& device) {

@@ -743,3 +743,69 @@ TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
     }
     CHECK(true);
 }
+
+// UV health of the scanned rocks (docs/GRASS-REDO.md props): per model,
+// the per-triangle texel-stretch distribution (world area vs uv area)
+// BEFORE and AFTER decimation — the striped-face hunt ("la texture
+// n'en fait pas le tour" on the pale boulder).
+//   meadows-tests '-tc=rock uv diagnostic' -ns
+#include "engine/assets/GltfMesh.hpp"
+#include "engine/assets/MeshSimplify.hpp"
+TEST_CASE("rock uv diagnostic" * doctest::skip()) {
+    const char* kRocks[] = {
+        "game/data/base/models/scans/stone_01/stone_01.gltf",
+        "game/data/base/models/scans/rock_moss_set_01/rock_moss_set_01.gltf",
+        "game/data/base/models/scans/rock_boulder_dry/rock_boulder_dry.gltf",
+        "game/data/base/models/scans/boulder_01/boulder_01.gltf",
+    };
+    const auto stats = [](const render::MeshData& mesh, const char* tag) {
+        u32 degenerate = 0;
+        u32 stretched = 0;
+        u32 tris = 0;
+        f32 uvMinX = 1.0e9f, uvMaxX = -1.0e9f;
+        f32 uvMinY = 1.0e9f, uvMaxY = -1.0e9f;
+        for (const render::MeshVertex& v : mesh.vertices) {
+            uvMinX = glm::min(uvMinX, v.uv.x);
+            uvMaxX = glm::max(uvMaxX, v.uv.x);
+            uvMinY = glm::min(uvMinY, v.uv.y);
+            uvMaxY = glm::max(uvMaxY, v.uv.y);
+        }
+        for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+            const auto& a = mesh.vertices[mesh.indices[i]];
+            const auto& b = mesh.vertices[mesh.indices[i + 1]];
+            const auto& c = mesh.vertices[mesh.indices[i + 2]];
+            const f32 wArea = 0.5f * glm::length(glm::cross(
+                b.position - a.position, c.position - a.position));
+            const Vec2 e1 = b.uv - a.uv;
+            const Vec2 e2 = c.uv - a.uv;
+            const f32 uvArea =
+                0.5f * std::abs(e1.x * e2.y - e1.y * e2.x);
+            if (wArea < 1.0e-8f) {
+                continue;
+            }
+            ++tris;
+            const f32 texelDensity = uvArea / wArea;
+            if (texelDensity < 1.0e-5f) {
+                ++degenerate; // stretched to streaks
+            } else if (texelDensity < 1.0e-3f) {
+                ++stretched;
+            }
+        }
+        MESSAGE("  ", tag, ": ", tris, " tris, uv x[", uvMinX, ",",
+                uvMaxX, "] y[", uvMinY, ",", uvMaxY, "], degenerate ",
+                degenerate, ", stretched ", stretched);
+    };
+    for (const char* path : kRocks) {
+        auto mesh = assets::loadGltfMesh(path);
+        if (!mesh) {
+            MESSAGE(path, ": LOAD FAILED");
+            continue;
+        }
+        MESSAGE(path, ":");
+        stats(*mesh, "source");
+        render::MeshData simplified = *mesh;
+        assets::simplifyMesh(simplified, 700);
+        stats(simplified, "decimated 700");
+    }
+    CHECK(true);
+}
