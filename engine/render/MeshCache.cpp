@@ -2,6 +2,7 @@
 
 #include <mutex>
 
+#include "engine/assets/CookedMesh.hpp"
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/assets/VertexAoCache.hpp"
 #include "engine/core/Log.hpp"
@@ -40,6 +41,12 @@ void MeshCacheTraits::destroyPlaceholder(rhi::Device& device,
 // WORKER thread: pure file IO + parse — no GPU, no cache state.
 MeshCacheTraits::DecodedData
 MeshCacheTraits::decode(const std::filesystem::path& path) {
+    if (path.extension() == ".cmesh") {
+        // Baked chunks (dungeon caverns) load as authored: no grounding —
+        // they are cell-aligned — and no disk AO, theirs is already in the
+        // vertex colors.
+        return assets::loadCookedMesh(path);
+    }
     auto mesh = assets::loadGltfMesh(path);
     if (mesh) {
         // Prop pivot convention: base on the ground, footprint centered

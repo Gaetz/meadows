@@ -102,6 +102,28 @@ data::FormHandle WorldModel::materializeCell(data::FormDatabase& forms,
     return handle;
 }
 
+void WorldModel::indexReference(const data::FormDatabase& forms,
+                                data::FormHandle reference) {
+    const data::Form* form = forms.get(reference);
+    const reflect::TypeInfo* type = forms.typeOf(reference);
+    if (!form || !type ||
+        !type->isA(ReferenceForm::staticTypeInfo().id)) {
+        return;
+    }
+    const auto* ref = static_cast<const ReferenceForm*>(form);
+    const data::FormHandle cell = forms.handleOf(ref->cell);
+    if (!cell.isValid()) {
+        return;
+    }
+    vector<data::FormHandle>& list = referencesByCell[cell.value];
+    for (const data::FormHandle existing : list) {
+        if (existing.value == reference.value) {
+            return;
+        }
+    }
+    list.push_back(reference);
+}
+
 const vector<data::FormHandle>& WorldModel::referencesIn(
     data::FormHandle cell) const {
     static const vector<data::FormHandle> kEmpty;

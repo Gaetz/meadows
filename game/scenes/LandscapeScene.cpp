@@ -50,6 +50,7 @@
 #include "game/ui/ConsolePanel.hpp"
 #include "game/ui/RenderTuningPanels.hpp"
 #include "engine/assets/AssetDatabase.hpp"
+#include "engine/dungeon/DungeonBake.hpp"
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/assets/Image.hpp"
 #include "engine/assets/MeshSimplify.hpp"
@@ -2492,6 +2493,34 @@ EditorContext LandscapeScene::makeEditorContext() {
                                   flyCamera.camera.position);
             },
         },
+        makeDungeonGenContext(),
+    };
+}
+
+DungeonGenContext LandscapeScene::makeDungeonGenContext() {
+    // Dress the generated doors with whatever door leaf the data already
+    // ships (first DoorForm with a model): no asset guid hardcoded here,
+    // and a data-less session degrades to the placeholder box.
+    core::Guid doorModel {};
+    core::Guid doorMaterial {};
+    data::forEach<world::DoorForm>(forms, [&](const world::DoorForm& door) {
+        if (!doorModel.isValid() && door.model.isValid()) {
+            doorModel = door.model;
+            doorMaterial = door.material;
+        }
+    });
+    return DungeonGenContext {
+        forms,
+        *levelEditor,
+        worldModel,
+        assetDb,
+        activeWorldspace,
+        &engine->getJobSystem(),
+        tuning.terrainSeed,
+        flyCamera.camera.position,
+        glm::degrees(-flyCamera.camera.yaw),
+        doorModel,
+        doorMaterial,
     };
 }
 
@@ -2640,6 +2669,27 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     cellStreamer->unloadAll();
     activeWorldspace = space;
     interiorMode = cellForm->interior;
+    // Interior navigation: NPCs cannot follow the terrain height under a
+    // dungeon — swap in the baked multi-level grid when the destination
+    // worldspace has one (NavGridForm -> .nvg asset -> InteriorNavigator).
+    interiorNavigator.reset();
+    if (interiorMode) {
+        data::forEach<world::NavGridForm>(
+            forms, [&](const world::NavGridForm& navForm) {
+                if (interiorNavigator ||
+                    navForm.worldspace != cellForm->worldspace) {
+                    return;
+                }
+                if (const auto path = assetDb.resolve(navForm.asset)) {
+                    if (auto grid = dungeon::readNvgFile(
+                            *path, dungeon::kDungeonBakeVersion)) {
+                        interiorNavigator =
+                            std::make_unique<world::InteriorNavigator>(
+                                std::move(*grid));
+                    }
+                }
+            });
+    }
     cellStreamer->update(activeWorldspace, marker->position.x,
                          marker->position.z);
     const StreamingContext sctx = makeStreamingContext();
@@ -3904,7 +3954,9 @@ NpcContext LandscapeScene::makeNpcContext() {
         eventBus,
         gameClock,
         furnitureOccupancy,
-        navigator.get(),
+        interiorMode && interiorNavigator
+            ? static_cast<nav::Navigator*>(interiorNavigator.get())
+            : navigator.get(),
         physics.get(),
         playerEntity,
         playerController.body(),

@@ -21,6 +21,7 @@ void registerWorldFormTypes(data::FormTypeRegistry& registry) {
     registry.registerFormType<BiomeForm>();
     registry.registerFormType<BiomeVegetationForm>();
     registry.registerFormType<BiomeMapForm>();
+    registry.registerFormType<NavGridForm>();
 }
 
 core::Guid cellGuidFor(const core::Guid& worldspace, i32 gx, i32 gy) {

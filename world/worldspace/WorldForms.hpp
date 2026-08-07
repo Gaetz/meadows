@@ -346,6 +346,20 @@ struct BiomeMapForm : data::Form {
     REFLECT_END()
 };
 
+// The baked walkable grid of an interior worldspace (dungeon pipeline D5,
+// docs/DUNGEON-GEN.md): identity + the `.nvg` ASSET (grids never live in
+// Forms — reflection stays flat, the TerrainRegionForm convention). The
+// scene builds a world::InteriorNavigator from it on interior travel.
+struct NavGridForm : data::Form {
+    core::Guid worldspace;
+    core::Guid asset; // .nvg file
+
+    REFLECT_BEGIN(NavGridForm, data::Form)
+        REFLECT_FIELD(worldspace)
+        REFLECT_FIELD(asset)
+    REFLECT_END()
+};
+
 // Registers the world form types; call once at startup, like
 // data::registerCoreFormTypes, before loading plugins that place references.
 void registerWorldFormTypes(data::FormTypeRegistry& registry);

@@ -10,6 +10,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 #include "engine/ecs/World.hpp"          // ecs::Entity, ecs::World
+#include "engine/nav/Nav.hpp"            // nav::Navigator
 #include "engine/rhi/Rhi.hpp"            // rhi::*Handle
 #include "game/scenes/NpcCombatController.hpp" // the in-combat half
 #include "game/scenes/NpcScheduleController.hpp" // the peaceful-life half
@@ -208,7 +209,7 @@ struct NpcContext {
     gameplay::EventBus& eventBus;
     gameplay::GameClock& gameClock;
     gameplay::FurnitureOccupancy& furnitureOccupancy;
-    world::TerrainNavigator* navigator;
+    nav::Navigator* navigator; // terrain outdoors, interior grid in dungeons
     phys::PhysicsWorld* physics;
     ecs::Entity playerEntity;
     phys::CharacterBody* player;

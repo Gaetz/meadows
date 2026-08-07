@@ -11,6 +11,7 @@ add_library(meadows STATIC
     Game.cpp
     anim/Anim.cpp
     assets/AssetDatabase.cpp
+    assets/CookedMesh.cpp
     assets/CookedTexture.cpp
     fx/Particles.cpp
     assets/GltfMesh.cpp
@@ -23,6 +24,12 @@ add_library(meadows STATIC
     core/Guid.cpp
     core/Jobs.cpp
     core/Log.cpp
+    dungeon/DensityField.cpp
+    dungeon/DungeonBake.cpp
+    dungeon/MeshExtract.cpp
+    dungeon/MissionGraph.cpp
+    dungeon/NavGrid.cpp
+    dungeon/SpaceGraph.cpp
     reflect/Registry.cpp
     reflect/ValueText.cpp
     terrain/RiverGeometry.cpp

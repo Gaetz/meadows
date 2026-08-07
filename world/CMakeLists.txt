@@ -6,6 +6,7 @@ add_library(meadows-world STATIC
     worldspace/WorldForms.cpp
     worldspace/FormCategory.cpp
     worldspace/WorldModel.cpp
+    dungeon/DungeonRecords.cpp
     scene/AnimBridge.cpp
     scene/Components.cpp
     scene/Spawner.cpp
@@ -19,6 +20,7 @@ add_library(meadows-world STATIC
     ai/Perception.cpp
     ai/AiController.cpp
     ai/GridNavigator.cpp
+    ai/InteriorNavigator.cpp
     ai/TerrainNavigator.cpp
     streaming/CellLoader.cpp
     streaming/CellStreamer.cpp
