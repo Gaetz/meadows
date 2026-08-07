@@ -137,7 +137,12 @@ void main() {
         vec3 bark = texture(uBark, uvx).rgb * bw.x +
                     texture(uBark, uvy).rgb * bw.y +
                     texture(uBark, uvz).rgb * bw.z;
-        baseColor = bark * min(vColor * 2.6, vec3(1.4));
+        // LUMINANCE-only vertex modulation: the baked AO and vertical
+        // gradient survive, but the texture keeps its OWN hue — the
+        // generators' dark-brown wood color was re-tinting every bark
+        // set (retour dev: « pas la même couleur que sur le site »).
+        float vLuma = dot(vColor, vec3(0.299, 0.587, 0.114));
+        baseColor = bark * min(vLuma * 2.6, 1.4);
         // Triplanar normal blend (axis frames per plane), rotated back
         // to world by the instance yaw.
         vec3 tnx = nhx.xyz * 2.0 - 1.0;
@@ -153,9 +158,13 @@ void main() {
         reliefA = 0.5 + clamp(height, 0.0, 1.0) * 0.49;
     }
 
-    // Per-instance hue roll: some trees lean yellow-green, some deep green.
-    vec3 albedo = leafShade * baseColor *
-                  mix(vec3(0.85, 1.0, 0.75), vec3(1.1, 1.0, 1.15), vTint);
+    // Per-instance hue roll: some trees lean yellow-green, some deep
+    // green. FOLIAGE only — on wood it shifted the bark texture's hue.
+    vec3 hueRoll = vObjPos.w > 0.5
+                       ? vec3(1.0)
+                       : mix(vec3(0.85, 1.0, 0.75),
+                             vec3(1.1, 1.0, 1.15), vTint);
+    vec3 albedo = leafShade * baseColor * hueRoll;
 
     // Ground anchor (the Battlefront contract, docs/GRASS-REDO.md): the
     // base 0..0.4 m of every prop fades toward the terrain's macro tint —
