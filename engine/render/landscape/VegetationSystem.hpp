@@ -103,7 +103,7 @@ public:
     i32 lowDetailRadius { 4 };    // 80-face twins within; ultra beyond
     // Hero-near reach: world XZ distance from the camera to the chunk
     // square below which tree draws use the near twin.
-    static constexpr f32 kNearDetailDistance = 35.0f;
+    static constexpr f32 kNearDetailDistance = 25.0f;
     // A/B — tree variants regenerate through generateColonizedTree (Runions
     // skeleton + SDF-normal billboard-card foliage; the default). Flip via
     // reseedVariantMeshes; the lobe trees stay one checkbox away in the
