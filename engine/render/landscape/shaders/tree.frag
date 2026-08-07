@@ -114,7 +114,7 @@ void main() {
         // Coarser than the first pass (0.6): at fine tilings the
         // displacement mips to mid-gray and the SSDM warp flattens —
         // the boulder-scale features are what read (retour dev).
-        const float kBarkTile = 0.1; // tiles per meter (hand-tuned)
+        const float kBarkTile = 0.3; // tiles per meter (hand-tuned)
         const float kBarkDepth = 0.045; // parallax amplitude (uv units)
         vec2 uvx = vObjPos.zy * kBarkTile;
         vec2 uvy = vObjPos.xz * kBarkTile;

@@ -380,9 +380,9 @@ private:
     // alpha-packed relief. Default ON since the dev validated the
     // scatter (2026-08-05).
     // SSDM mode: 0 = off, 1 = half-res chain + edge-aware upsample
-    // (the default — the full-res resolve alone cost 17 ms on M1,
-    // perf audit 2026-08-06), 2 = full res (the A/B reference).
-    i32 ssdmModeUi { 1 };
+    // (~2.4 ms), 2 = full res (~17 ms on M1 — the dev prefers its
+    // crispness, default since 2026-08-07).
+    i32 ssdmModeUi { 2 };
     f32 ssdmAmpUi { 0.12f }; // world amplitude (m)
     bool keyShadowUi { true };      // interiors
     bool meshShadowCastersUi { true };
