@@ -1364,7 +1364,6 @@ void VegetationSystem::buildPipeline(rhi::Device& device,
                                      ShaderLibrary& shaders) {
     pipeline = { device, device.createPipeline( // U3-7: frees the old one
         { .shader = shaders.get(kTreeShader),
-          .pushConstantSize = sizeof(BarkPush),
           .vertexBuffers =
               { meshVertexLayout(), // U3-5 (the caster keeps its own
                                     // position+uv layout — sway weights)
@@ -1380,7 +1379,8 @@ void VegetationSystem::buildPipeline(rhi::Device& device,
           .depth = { .testEnable = true,
                      .writeEnable = true,
                      .compare = rhi::CompareFunc::Greater }, // reversed-Z
-          .cull = rhi::CullMode::Back }) };
+          .cull = rhi::CullMode::Back,
+          .pushConstantSize = sizeof(BarkPush) }) };
     shaderGeneration = shaders.generation(kTreeShader);
 }
 

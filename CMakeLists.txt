@@ -253,7 +253,8 @@ target_link_libraries(imguizmo PUBLIC imgui)
 
 function(meadows_set_warnings target)
     if(MSVC)
-        target_compile_options(${target} PRIVATE /W4)
+        # /bigobj: big scene/tool TUs exceed the default COFF section limit.
+        target_compile_options(${target} PRIVATE /W4 /bigobj)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra)
     endif()
