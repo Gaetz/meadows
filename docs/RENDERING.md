@@ -696,7 +696,7 @@ live knob) + temporal EMA.
   de-detach via a receiver NORMAL offset + tiny z-bias (a constant
   z-bias in a perspective shadow map is meters of world detachment).
   **Grading**: analytic vibrance/split-tone/contrast in tonemap (LUT 3D
-  someday). **Auto-exposure**: log-luminance 64² → mip 1×1 → asymmetric
+  someday — deferred spec in §6.1). **Auto-exposure**: log-luminance 64² → mip 1×1 → asymmetric
   adaptation ping-pong; slider is the EV bias. **Contact shadows**
   (Bend-style, ½-res, 12 steps toward the sun; toggle = white-cleared
   texture; NEAREST depth/color taps — linear taps at thin silhouettes
@@ -1052,6 +1052,31 @@ forest scatter; AnimPreviewPanel onto a configured WorldRenderer;
 postFx-less blit fallback hardening on Vulkan). The ground-mist chantier
 (§3.5, 2026-07-29) pre-built the sky-clouds socle: `volumetric_media.glsl`,
 `NoiseVolume`, `temporal_resolve.glsl` and the ½-res+temporal pattern.
+
+### 6.1 Post & grading — deferred ideas (survey of SH2 "New Dawn", 2026-08-12)
+
+Reviewed a state-of-the-art Skyrim ENB stack; most of it is cinematic
+garnish or already covered (SSAO, bloom, volumetrics, GI). Three ideas
+retained as cheap, high-leverage deferrals — all tonemap-pass-local,
+none blocks anything:
+
+1. **3D LUT grading, blended per state** — upgrades the "(LUT 3D
+   someday)" note in §3.6: one tetrahedral-interpolated LUT fetch in
+   the tonemap replaces/augments the analytic vibrance/split-tone. The
+   leverage is making LUTs DATA (§5): a base LUT plus per-weather /
+   day-night / interior variants layered like any Form, blended by
+   states the frame already knows (`interiorMode`, quantized sun
+   elevation, `buriedBelowY`, `WeatherForm`). First candidate if the
+   terrain-texturing DA verdict calls for a global color-coherence
+   tool.
+2. **Blue-noise dither before quantization** — a gaussian-distributed
+   blue-noise nudge in the tonemap output. Trivial, and our stylized
+   flat-albedo gradients (sky domes, fog banks) are the worst case for
+   8-bit banding.
+3. **Log-space grading hygiene** — when the tonemapper is next
+   touched: run grain/grading math in log space before the output
+   curve (stabler highlight compression, better-behaved artistic
+   controls, LUTs included).
 
 ## 7. Chantier RENDERER-EXTRACT (prepared, not yet executed)
 
