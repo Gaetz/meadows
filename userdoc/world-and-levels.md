@@ -159,7 +159,7 @@ Terrain height = the procedural base + **authored delta grids**, one per
 64 m chunk, stored as `.ter` assets referenced by `TerrainPatchForm`
 records — so terrain edits are moddable like everything else (override
 the asset by guid, or patch the record). Sculpt in the in-game level
-editor (F6 → Sculpt terrain), or generate a leveled pad offline with
+editor (F3 → Sculpt terrain), or generate a leveled pad offline with
 `cooker terrain-pad`. Building modules use `snapToGround = false` in
 their `StaticForm` (absolute heights on a leveled pad); loose props keep
 the default (their `y` is an offset above the ground).
