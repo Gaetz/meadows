@@ -42,8 +42,8 @@ enum class CyclePattern : u8 {
 };
 
 struct MissionNode {
-    NodeKind kind { NodeKind::Room };
     u32 lockId { 0 }; // Key nodes: the lock this opens (0 = none)
+    NodeKind kind { NodeKind::Room };
     u8 depth { 0 };   // cycle nesting depth (0 = main cycle)
     CyclePattern pattern { CyclePattern::TwoAlternativePaths }; // creator
 };

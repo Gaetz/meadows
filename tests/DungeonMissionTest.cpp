@@ -103,9 +103,9 @@ TEST_CASE("dungeon mission: sub-cycles graft rewards onto rooms") {
 
 TEST_CASE("dungeon mission: solvability rejects a keyless lock") {
     MissionGraph g;
-    g.nodes.push_back({ NodeKind::Entrance, 0, 0,
+    g.nodes.push_back({ 0, NodeKind::Entrance, 0,
                         CyclePattern::TwoAlternativePaths });
-    g.nodes.push_back({ NodeKind::Goal, 0, 0,
+    g.nodes.push_back({ 0, NodeKind::Goal, 0,
                         CyclePattern::TwoAlternativePaths });
     g.entrance = 0;
     g.goal = 1;
@@ -113,7 +113,7 @@ TEST_CASE("dungeon mission: solvability rejects a keyless lock") {
     CHECK_FALSE(isSolvable(g));
 
     // Adding the key (reachable before the lock) repairs it.
-    g.nodes.push_back({ NodeKind::Key, 1, 0,
+    g.nodes.push_back({ 1, NodeKind::Key, 0,
                         CyclePattern::TwoAlternativePaths });
     g.edges.push_back({ 0, 2, EdgeKind::Passage, false, 0 });
     CHECK(isSolvable(g));
@@ -121,9 +121,9 @@ TEST_CASE("dungeon mission: solvability rejects a keyless lock") {
 
 TEST_CASE("dungeon mission: solvability rejects a one-way trap with no exit") {
     MissionGraph g;
-    g.nodes.push_back({ NodeKind::Entrance, 0, 0,
+    g.nodes.push_back({ 0, NodeKind::Entrance, 0,
                         CyclePattern::BlockedRetreat });
-    g.nodes.push_back({ NodeKind::Goal, 0, 0, CyclePattern::BlockedRetreat });
+    g.nodes.push_back({ 0, NodeKind::Goal, 0, CyclePattern::BlockedRetreat });
     g.entrance = 0;
     g.goal = 1;
     g.edges.push_back({ 0, 1, EdgeKind::Passage, true, 0 }); // drop, no return

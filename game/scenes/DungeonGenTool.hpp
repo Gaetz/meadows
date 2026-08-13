@@ -29,8 +29,6 @@ struct DungeonGenContext {
     u32 defaultSeed { 1337 };
     Vec3 cameraPos {};
     f32 cameraYawDeg { 0.0f };
-    core::Guid doorModel {};    // door leaf dressing (null = placeholder)
-    core::Guid doorMaterial {};
 };
 
 class DungeonGenTool {

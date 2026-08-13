@@ -18,7 +18,7 @@ constexpr i32 kCorridorExclusive = -3;
 
 struct Grid {
     i32 sx { 0 }, sz { 0 }, sf { 0 };
-    vector<i32> cells; // kFree, kCorridor, or room index
+    vector<i32> cells; // kFree, kCorridor*, or room index
 
     void init(const SpaceParams& p) {
         sx = p.gridX;
@@ -82,7 +82,8 @@ bool findFreeSlot(const Grid& grid, const GridPos& anchor, i32 wantFloor,
 // neighbor order.
 bool routeCorridor(Grid& grid, i32 roomA, i32 roomB, bool allowDrop,
                    bool shareable, vector<GridPos>& outPath) {
-    vector<i32> prev(grid.cells.size(), -4); // -4 unvisited, else flat index
+    constexpr i32 kUnvisited = -1;
+    vector<i32> prev(grid.cells.size(), kUnvisited); // else parent flat index
     vector<GridPos> queue;
     const auto index = [&grid](const GridPos& g) {
         return (g.floor * grid.sz + g.z) * grid.sx + g.x;
@@ -98,40 +99,35 @@ bool routeCorridor(Grid& grid, i32 roomA, i32 roomB, bool allowDrop,
             }
         }
     }
+    // Steps as {dx, dz, dfloor}, floor indices growing DOWNWARD: four flat
+    // moves, eight ramps (XZ + one floor either way), one pure drop.
+    static constexpr i32 kSteps[][3] = {
+        { 1, 0, 0 },  { -1, 0, 0 },  { 0, 1, 0 },   { 0, -1, 0 },
+        { 1, 0, 1 },  { -1, 0, 1 },  { 0, 1, 1 },   { 0, -1, 1 },
+        { 1, 0, -1 }, { -1, 0, -1 }, { 0, 1, -1 },  { 0, -1, -1 },
+        { 0, 0, 1 }, // pure drop, gated below
+    };
+    const auto traversable = [&](const GridPos& g) {
+        if (!grid.inside(g)) {
+            return false;
+        }
+        const i32 occupant = grid.at(g);
+        return occupant == kFree || occupant == roomA || occupant == roomB ||
+               (shareable && occupant == kCorridorShared);
+    };
     GridPos found { -1, -1, -1 };
     for (size_t head = 0; head < queue.size() && found.x < 0; ++head) {
         const GridPos cur = queue[head];
-        const i32 steps[][3] = {
-            { 1, 0, 0 },  { -1, 0, 0 }, { 0, 1, 0 },   { 0, -1, 0 },
-            { 1, 0, -1 }, { -1, 0, -1 }, { 0, 1, -1 }, { 0, -1, -1 },
-            { 1, 0, 1 },  { -1, 0, 1 },  { 0, 1, 1 },  { 0, -1, 1 },
-            { 0, 0, -1 }, // pure drop, gated below
-        };
-        const auto traversable = [&](const GridPos& g) {
-            if (!grid.inside(g)) {
-                return false;
-            }
-            const i32 occupant = grid.at(g);
-            return occupant == kFree || occupant == roomA ||
-                   occupant == roomB ||
-                   (shareable && occupant == kCorridorShared);
-        };
-        for (const auto& s : steps) {
+        for (const auto& s : kSteps) {
             const bool drop = s[0] == 0 && s[1] == 0;
             if (drop && !allowDrop) {
                 continue;
             }
             const GridPos next { cur.x + s[0], cur.z + s[1],
-                                 cur.floor - s[2] };
+                                 cur.floor + s[2] };
             if (!grid.inside(next) ||
-                prev[static_cast<size_t>(index(next))] != -4) {
-                continue;
-            }
-            const i32 occupant = grid.at(next);
-            const bool passable =
-                occupant == kFree || occupant == roomB ||
-                (shareable && occupant == kCorridorShared);
-            if (!passable) {
+                prev[static_cast<size_t>(index(next))] != kUnvisited ||
+                !traversable(next)) {
                 continue;
             }
             // A ramp hop carves diagonally through the vertical prism of
@@ -146,7 +142,7 @@ bool routeCorridor(Grid& grid, i32 roomA, i32 roomB, bool allowDrop,
                 }
             }
             prev[static_cast<size_t>(index(next))] = index(cur);
-            if (occupant == roomB) {
+            if (grid.at(next) == roomB) {
                 found = next;
                 break;
             }

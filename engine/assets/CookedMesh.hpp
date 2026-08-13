@@ -15,12 +15,13 @@
 // File: magic "CMSH", u32 formatVersion, u32 contentVersion (the producer's
 // bake version, e.g. kDungeonBakeVersion — the loader refuses a mismatch so
 // stale assets fail loudly instead of rendering garbage), u32 vertexCount,
-// u32 indexCount, Vec3 boundsMin, Vec3 boundsMax, then the interleaved
-// MeshVertex array and the u32 index array. Little-endian.
+// u32 indexCount, then the interleaved MeshVertex array and the u32 index
+// array. Little-endian. No bounds in the header: every consumer derives
+// them from the vertices anyway.
 
 namespace assets {
 
-constexpr u32 kCookedMeshFormatVersion = 1;
+constexpr u32 kCookedMeshFormatVersion = 2;
 
 bool saveCookedMesh(const std::filesystem::path& path,
                     const render::MeshData& mesh, u32 contentVersion);

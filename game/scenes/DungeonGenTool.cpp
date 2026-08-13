@@ -6,6 +6,7 @@
 
 #include <imgui.h>
 
+#include "data/forms/FormQuery.hpp"
 #include "engine/assets/CookedMesh.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
@@ -158,13 +159,25 @@ void DungeonGenTool::accept(const DungeonGenContext& ctx) {
     anchor.doorPos = ctx.cameraPos;
     anchor.yawDeg = ctx.cameraYawDeg;
 
+    // Dress the doors with whatever door leaf the data already ships
+    // (first DoorForm with a model): no asset guid hardcoded, and a
+    // data-less session degrades to the placeholder box.
+    core::Guid doorModel;
+    core::Guid doorMaterial;
+    data::forEach<world::DoorForm>(ctx.forms, [&](const world::DoorForm& d) {
+        if (!doorModel.isValid() && d.model.isValid()) {
+            doorModel = d.model;
+            doorMaterial = d.material;
+        }
+    });
+
     char dungeonName[64];
     std::snprintf(dungeonName, sizeof(dungeonName), "Mine_%u", seed);
     const world::DungeonStageResult staged = world::stageDungeonRecords(
         ctx.levelEditor.editSession(), ctx.forms, ctx.worldModel, *result,
         dungeonId, dungeonName,
         [&](i32 cx, i32 cz) { return cellMeshAssetGuid(dungeonId, cx, cz); },
-        navAsset, { anchor }, ctx.doorModel, ctx.doorMaterial);
+        navAsset, { anchor }, doorModel, doorMaterial);
     LOG_INFO("Dungeon gen: '{}' staged ({} cells, {} torches) — door at "
              "({:.1f}, {:.1f}, {:.1f}); Export writes the mod",
              dungeonName, staged.cellCount, staged.torchCount,

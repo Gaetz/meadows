@@ -90,7 +90,9 @@ f32 DensityField::sample(const Vec3& p) const {
         raw = glm::min(raw, sdCapsule(p, pipe.a, pipe.b, pipe.radius));
     }
     if (raw > params.noiseAmplitude + 1.0f) {
-        return raw; // deep rock: skip the noise, keep far sampling cheap
+        // Deep rock: skip the noise pass. Sound because raw (no floor cuts)
+        // is a lower bound of the final value.
+        return raw;
     }
     const f32 n = (render::noise::fbm3(params.seed,
                                        p * (1.0f / params.noiseWavelength),
@@ -113,14 +115,6 @@ f32 DensityField::sample(const Vec3& p) const {
         d = glm::min(d, glm::max(carve, floorAt - p.y));
     }
     return d;
-}
-
-Vec3 DensityField::gradient(const Vec3& p) const {
-    const f32 e = 0.25f;
-    const f32 dx = sample({ p.x + e, p.y, p.z }) - sample({ p.x - e, p.y, p.z });
-    const f32 dy = sample({ p.x, p.y + e, p.z }) - sample({ p.x, p.y - e, p.z });
-    const f32 dz = sample({ p.x, p.y, p.z + e }) - sample({ p.x, p.y, p.z - e });
-    return { dx, dy, dz };
 }
 
 } // namespace dungeon

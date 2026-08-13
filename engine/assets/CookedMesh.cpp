@@ -26,12 +26,6 @@ bool saveCookedMesh(const std::filesystem::path& path,
         LOG_ERROR("saveCookedMesh: cannot open {}", path.string());
         return false;
     }
-    Vec3 boundsMin = mesh.vertices[0].position;
-    Vec3 boundsMax = boundsMin;
-    for (const render::MeshVertex& v : mesh.vertices) {
-        boundsMin = glm::min(boundsMin, v.position);
-        boundsMax = glm::max(boundsMax, v.position);
-    }
     const auto write = [&](const auto& value) {
         file.write(reinterpret_cast<const char*>(&value), sizeof(value));
     };
@@ -40,8 +34,6 @@ bool saveCookedMesh(const std::filesystem::path& path,
     write(contentVersion);
     write(static_cast<u32>(mesh.vertices.size()));
     write(static_cast<u32>(mesh.indices.size()));
-    write(boundsMin);
-    write(boundsMax);
     file.write(reinterpret_cast<const char*>(mesh.vertices.data()),
                static_cast<std::streamsize>(mesh.vertices.size() *
                                             sizeof(render::MeshVertex)));
@@ -65,8 +57,6 @@ std::optional<render::MeshData> loadCookedMeshImpl(
     u32 contentVersion = 0;
     u32 vertexCount = 0;
     u32 indexCount = 0;
-    Vec3 boundsMin {};
-    Vec3 boundsMax {};
     const auto read = [&](auto& value) {
         file.read(reinterpret_cast<char*>(&value), sizeof(value));
     };
@@ -75,8 +65,6 @@ std::optional<render::MeshData> loadCookedMeshImpl(
     read(contentVersion);
     read(vertexCount);
     read(indexCount);
-    read(boundsMin);
-    read(boundsMax);
     if (!file || std::memcmp(magic, kMagic, 4) != 0 ||
         formatVersion != kCookedMeshFormatVersion) {
         LOG_ERROR("loadCookedMesh: not a CMSH v{} file: {}",

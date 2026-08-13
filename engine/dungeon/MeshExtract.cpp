@@ -7,19 +7,8 @@ namespace dungeon {
 
 namespace {
 
-struct CellKey {
-    i64 packed;
-    bool operator==(const CellKey&) const = default;
-};
-
-struct CellKeyHash {
-    size_t operator()(const CellKey& k) const {
-        return std::hash<i64>()(k.packed);
-    }
-};
-
+// 21 bits per axis, biased: plenty for world-sized lattices.
 i64 pack(i32 x, i32 y, i32 z) {
-    // 21 bits per axis, biased: plenty for world-sized lattices.
     const i64 bias = 1 << 20;
     return ((static_cast<i64>(x) + bias) << 42) |
            ((static_cast<i64>(y) + bias) << 21) |
@@ -69,9 +58,9 @@ render::MeshData extractChunkMesh(const DensityFn& density,
     // One vertex per cell with a sign change: centroid of the zero crossings
     // of its 12 edges. Keyed by GLOBAL cell coordinates so both sides of a
     // chunk seam derive the exact same position.
-    std::unordered_map<CellKey, u32, CellKeyHash> cellVertex;
+    std::unordered_map<i64, u32> cellVertex;
     const auto vertexOf = [&](i32 cx, i32 cy, i32 cz) -> i64 {
-        const CellKey key { pack(cx, cy, cz) };
+        const i64 key = pack(cx, cy, cz);
         const auto it = cellVertex.find(key);
         if (it != cellVertex.end()) {
             return it->second;

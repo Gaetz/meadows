@@ -30,10 +30,6 @@ public:
     // Signed density in meters (SDF-like): < 0 is air, > 0 is rock.
     f32 sample(const Vec3& p) const;
 
-    // Central-difference gradient; points from air into rock, so mesh
-    // normals are -gradient normalized.
-    Vec3 gradient(const Vec3& p) const;
-
     // Carved volume bounds (noise margin included) — the chunking domain.
     const Vec3& boundsMin() const { return minBounds; }
     const Vec3& boundsMax() const { return maxBounds; }

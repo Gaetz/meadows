@@ -2498,17 +2498,6 @@ EditorContext LandscapeScene::makeEditorContext() {
 }
 
 DungeonGenContext LandscapeScene::makeDungeonGenContext() {
-    // Dress the generated doors with whatever door leaf the data already
-    // ships (first DoorForm with a model): no asset guid hardcoded here,
-    // and a data-less session degrades to the placeholder box.
-    core::Guid doorModel {};
-    core::Guid doorMaterial {};
-    data::forEach<world::DoorForm>(forms, [&](const world::DoorForm& door) {
-        if (!doorModel.isValid() && door.model.isValid()) {
-            doorModel = door.model;
-            doorMaterial = door.material;
-        }
-    });
     return DungeonGenContext {
         forms,
         *levelEditor,
@@ -2519,8 +2508,6 @@ DungeonGenContext LandscapeScene::makeDungeonGenContext() {
         tuning.terrainSeed,
         flyCamera.camera.position,
         glm::degrees(-flyCamera.camera.yaw),
-        doorModel,
-        doorMaterial,
     };
 }
 

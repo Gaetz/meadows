@@ -76,17 +76,16 @@ TEST_CASE("dungeon density: sampling is pure and deterministic") {
     CHECK(differs);
 }
 
-TEST_CASE("dungeon density: gradient points from air into rock") {
+TEST_CASE("dungeon density: density rises from air into rock") {
     const SpaceGraph space = makeSpace(4);
     const DensityField field(space, DensityParams { 4 });
     // March upward from just above a room floor (the floor plane itself is
-    // the d = 0 isosurface): past the ceiling the density rises, so the
-    // vertical gradient component is positive there.
+    // the d = 0 isosurface): past the ceiling the density keeps rising.
     const Vec3 c = roomCenter(space, space.entrance) + Vec3 { 0, 1, 0 };
     Vec3 p = c;
     while (field.sample(p) < 0.0f && p.y < c.y + 30.0f) {
         p.y += 0.5f;
     }
-    const Vec3 g = field.gradient(p);
-    CHECK(g.y > 0.0f);
+    CHECK(field.sample({ p.x, p.y + 0.25f, p.z }) >
+          field.sample({ p.x, p.y - 0.25f, p.z }));
 }

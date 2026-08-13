@@ -80,6 +80,7 @@ nav::PathResult InteriorNavigator::findPath(const nav::PathQuery& query) const {
 
     vector<f32> gScore(grid.levels.size(), 1e30f);
     vector<u32> cameFrom(grid.levels.size(), ~0u);
+    vector<bool> closed(grid.levels.size(), false);
     std::priority_queue<OpenNode, vector<OpenNode>, std::greater<OpenNode>>
         open;
     gScore[startLevel] = 0.0f;
@@ -94,9 +95,10 @@ nav::PathResult InteriorNavigator::findPath(const nav::PathQuery& query) const {
             found = true;
             break;
         }
-        if (node.fScore > gScore[node.level] + heuristic(node.level) + 0.01f) {
-            continue; // stale queue entry
+        if (closed[node.level]) {
+            continue; // stale queue entry (a better g was expanded already)
         }
+        closed[node.level] = true;
         ++expansions;
 
         i32 ix = 0;

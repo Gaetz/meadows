@@ -10,7 +10,7 @@ namespace {
 
 u32 addNode(MissionGraph& g, NodeKind kind, u8 depth, CyclePattern pattern,
             u32 lockId = 0) {
-    g.nodes.push_back({ kind, lockId, depth, pattern });
+    g.nodes.push_back({ lockId, kind, depth, pattern });
     return static_cast<u32>(g.nodes.size() - 1);
 }
 
@@ -21,20 +21,17 @@ void addEdge(MissionGraph& g, u32 a, u32 b, EdgeKind kind = EdgeKind::Passage,
 
 // A chain of filler rooms from -> r1 -> ... -> rn -> to. Every edge carries
 // `kind`; `oneWayFirst` puts a one-way on the FIRST hop (the collapse of
-// BlockedRetreat happens right behind the player). Returns the room ids.
-vector<u32> addArc(MissionGraph& g, u32 from, u32 to, i32 rooms, u8 depth,
-                   CyclePattern pattern, EdgeKind kind = EdgeKind::Passage,
-                   bool oneWayFirst = false) {
-    vector<u32> chain;
+// BlockedRetreat happens right behind the player).
+void addArc(MissionGraph& g, u32 from, u32 to, i32 rooms, u8 depth,
+            CyclePattern pattern, EdgeKind kind = EdgeKind::Passage,
+            bool oneWayFirst = false) {
     u32 prev = from;
     for (i32 i = 0; i < rooms; ++i) {
         const u32 room = addNode(g, NodeKind::Room, depth, pattern);
         addEdge(g, prev, room, kind, oneWayFirst && i == 0);
-        chain.push_back(room);
         prev = room;
     }
     addEdge(g, prev, to, kind, oneWayFirst && rooms == 0);
-    return chain;
 }
 
 struct BuildContext {
