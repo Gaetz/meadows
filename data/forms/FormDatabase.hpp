@@ -22,6 +22,13 @@ public:
     FormHandle handleOf(const core::Guid& id) const;
     const reflect::TypeInfo* typeOf(FormHandle handle) const;
 
+    // TOOL-ONLY in-place mutation (the hatch the index comment below
+    // anticipates): generators re-Accepting over records a plugin already
+    // shipped update the live copy so the running session matches. Gameplay
+    // never calls this (§2.2). Callers touching an indexed field (`parent`,
+    // a reference's cell) own the re-index.
+    Form* getMutable(FormHandle handle);
+
     // Typed lookup; nullptr if absent or not a T (checked via isA).
     template<typename T>
     const T* find(const core::Guid& id) const {

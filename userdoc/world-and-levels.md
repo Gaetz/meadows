@@ -159,7 +159,7 @@ Terrain height = the procedural base + **authored delta grids**, one per
 64 m chunk, stored as `.ter` assets referenced by `TerrainPatchForm`
 records — so terrain edits are moddable like everything else (override
 the asset by guid, or patch the record). Sculpt in the in-game level
-editor (F6 → Sculpt terrain), or generate a leveled pad offline with
+editor (F3 → Sculpt terrain), or generate a leveled pad offline with
 `cooker terrain-pad`. Building modules use `snapToGround = false` in
 their `StaticForm` (absolute heights on a leveled pad); loose props keep
 the default (their `y` is an offset above the ground).
@@ -169,5 +169,19 @@ the default (their `y` is an offset above the ground).
 The game world is authored by hand. Procedural tools exist to *assist*
 authoring (terrain starting points, scatter brushes, dungeon-base
 generators) — their output is always ordinary records you can edit.
+
+## Generated dungeons (mines)
+
+The editor's **Dungeon generation** panel bakes a mine from a seed:
+a cyclic layout (two ways around, locks and keys, hidden shortcuts)
+carved as organic cavern meshes across several floors — ramps, shafts
+and tall rooms included. **Accept** places the entrance door where the
+camera stands (in the overworld or inside another interior) and stages
+everything as ordinary records: an interior worldspace, its cells, one
+cavern mesh per cell (`.cmesh` asset), torches, doors, arrival markers
+and a walkable-grid asset (`.nvg`) NPCs use to navigate the floors.
+Re-generating with the same seed patches the same records — your manual
+retouches (props, lights, extra rooms placed with the level editor)
+layer on top and survive. **Export** ships the dungeon as a normal mod.
 
 Related: [The data model](data-model.md) · [In-game tools](tools.md)

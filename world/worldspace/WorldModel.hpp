@@ -38,6 +38,18 @@ public:
                                      data::FormHandle worldspace, i32 gx,
                                      i32 gy);
 
+    // Live-created references (dungeon staging, sibling of materializeCell):
+    // adds the reference to its cell's list so the loader/streamer see it
+    // this session. Idempotent; no-op if the form is not a ReferenceForm or
+    // its cell is unknown.
+    void indexReference(const data::FormDatabase& forms,
+                        data::FormHandle reference);
+
+    // The other half of a live reference UPDATE (re-Accept over shipped
+    // records): drop the reference from the cell list it was indexed
+    // under before re-indexing it under its new cell.
+    void unindexReference(data::FormHandle cell, data::FormHandle reference);
+
     // References placed in a cell, in deterministic (handle) order. Includes
     // disabled references (ReferenceForm.enabled == false): filtering is the
     // loader's call. Empty list for an unknown or childless cell.

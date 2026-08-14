@@ -135,6 +135,12 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                              : furnitureCategoryIs(ctx, refId.base,
                                                    "mount")
                                  ? PromptKind::Mount
+                             : furnitureCategoryIs(ctx, refId.base,
+                                                   "container")
+                                 ? PromptKind::Container
+                             : furnitureCategoryIs(ctx, refId.base,
+                                                   "lever")
+                                 ? PromptKind::Lever
                                  : PromptKind::Furniture,
                              reach * (2.4f / 3.0f));
                 }
@@ -198,6 +204,12 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                 break;
             case PromptKind::Mount: // "[E] Monter {}"
                 promptLabel_ = label("prompt.mount", "prompt.mount.name");
+                break;
+            case PromptKind::Container: // "[E] Fouiller {}"
+                promptLabel_ = label("prompt.search", "prompt.search.name");
+                break;
+            case PromptKind::Lever: // "[E] Utiliser {}"
+                promptLabel_ = label("prompt.use", "prompt.use.name");
                 break;
             default:
                 break;
@@ -273,6 +285,16 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                     ctx.mountRide(promptEntity);
                     promptEntity = ecs::Entity {};
                     promptKind = PromptKind::None;
+                }
+                break;
+            case PromptKind::Container:
+                if (ctx.openChest) {
+                    ctx.openChest(promptEntity);
+                }
+                break;
+            case PromptKind::Lever:
+                if (ctx.pullLever) {
+                    ctx.pullLever(promptEntity);
                 }
                 break;
             case PromptKind::Furniture: {

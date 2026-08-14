@@ -2,6 +2,13 @@
 
 #include "engine/core/Defines.hpp"
 
+namespace render {
+struct TerrainParams;
+}
+namespace phys {
+class PhysicsWorld;
+}
+
 namespace game {
 
 struct Npc;
@@ -10,6 +17,18 @@ struct NpcContext;
 // Locomotion helpers shared by combat (strafe / flee / approach) and
 // the schedule walker (travel) — they read only ctx and npc, so they live
 // as free functions outside any controller.
+
+// Grounds a position after a horizontal step: terrain height outdoors, a
+// downward probe of the collision mesh in an interior (the terrain field
+// would teleport the actor out of the dungeon — terrain::height must stay
+// behind interiorMode, docs/DUNGEON-GEN.md). Returns false when the
+// interior probe finds no floor underfoot — a ledge over a tall room's
+// air; the movers treat that as a wall and refuse the step (a kinematic
+// NPC neither falls nor walks on air). groundAt is the raw form for
+// callers without an NpcContext (FollowerController::teleportNear).
+bool groundAt(const render::TerrainParams& terrain, bool interiorMode,
+              phys::PhysicsWorld* physics, Vec3& position);
+bool groundNpc(const NpcContext& ctx, Vec3& position);
 
 // Walks npc.path from npc.pathIndex; returns true when the path is done.
 bool moveNpcAlongPath(const NpcContext& ctx, Npc& npc, f32 dt,

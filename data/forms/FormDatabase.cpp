@@ -70,6 +70,13 @@ const Form* FormDatabase::get(FormHandle handle) const {
     return entries[handle.value - 1].form.get();
 }
 
+Form* FormDatabase::getMutable(FormHandle handle) {
+    if (!handle.isValid() || handle.value > entries.size()) {
+        return nullptr;
+    }
+    return entries[handle.value - 1].form.get();
+}
+
 FormHandle FormDatabase::handleOf(const core::Guid& id) const {
     const auto it = indexByGuid.find(id);
     return it != indexByGuid.end() ? FormHandle { it->second + 1 }

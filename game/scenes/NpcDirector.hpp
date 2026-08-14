@@ -10,6 +10,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 #include "engine/ecs/World.hpp"          // ecs::Entity, ecs::World
+#include "engine/nav/Nav.hpp"            // nav::Navigator
 #include "engine/rhi/Rhi.hpp"            // rhi::*Handle
 #include "game/scenes/NpcCombatController.hpp" // the in-combat half
 #include "game/scenes/NpcScheduleController.hpp" // the peaceful-life half
@@ -121,6 +122,9 @@ struct Npc {
     bool hostile { false }; // ActorTagForm child "Faction.Bandits"
     bool guard { false };   // D2: "Faction.VillageGuard" — hostile while Wanted
     bool dead { false };    // mirrors the GAS State.Dead tag
+    // A fleeing fighter reached the interior's exit: the scene sweep
+    // despawns him and may respawn him outside (LandscapeScene).
+    bool escapedInterior { false };
     // Mirrors State.Downed (an active follower at 0 HP —
     // kneeling, out of the fight, revivable). Same idiom as `dead` above:
     // the director mirrors the tag each frame, everything game-side (the
@@ -208,7 +212,7 @@ struct NpcContext {
     gameplay::EventBus& eventBus;
     gameplay::GameClock& gameClock;
     gameplay::FurnitureOccupancy& furnitureOccupancy;
-    world::TerrainNavigator* navigator;
+    nav::Navigator* navigator; // terrain outdoors, interior grid in dungeons
     phys::PhysicsWorld* physics;
     ecs::Entity playerEntity;
     phys::CharacterBody* player;
@@ -237,6 +241,13 @@ struct NpcContext {
     // QuestDirector partner alone is never cleared on close). Invalid =
     // no dialogue open.
     ecs::Entity dialoguePartner {};
+    // Interior worldspace: authored y is ABSOLUTE — the spawner must NOT
+    // ground actors/markers on the (overworld) terrain height.
+    bool interiorMode { false };
+    // The interior's arrival point (the travel marker): where a broken
+    // fighter runs — fleeing INTO a dead-end cavern reads wrong, fleeing
+    // for the way out reads like a story. Meaningful only in interiorMode.
+    Vec3 interiorExit { 0.0f };
 };
 
 // The whole Forms-driven NPC subsystem, extracted from LandscapeScene:

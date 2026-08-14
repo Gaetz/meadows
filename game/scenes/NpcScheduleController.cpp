@@ -90,8 +90,10 @@ void NpcScheduleController::update(f32 dt, const NpcContext& ctx, Npc& npc,
                       npc.activeLocation)
                 : nullptr) {
         anchor = locationRef->position;
-        anchor.y = render::terrain::height(ctx.terrainParams, anchor.x,
-                                           anchor.z);
+        if (!ctx.interiorMode) { // interior: authored y is absolute
+            anchor.y = render::terrain::height(ctx.terrainParams, anchor.x,
+                                               anchor.z);
+        }
     }
     const auto goTo = [&](const Vec3& target) {
         if (npc.pathIndex < npc.path.size() ||
@@ -241,7 +243,8 @@ void NpcScheduleController::followPlayer(f32 dt, const NpcContext& ctx,
     if (intent.teleport) {
         // Lost him (a door, a sprint across the ridge): pop in next to
         // the player — the same routine travel arrivals use.
-        FollowerController::teleportNear(playerPos, ctx.terrainParams, npc);
+        FollowerController::teleportNear(playerPos, ctx.terrainParams,
+                                         ctx.interiorMode, ctx.physics, npc);
         return;
     }
     if (intent.move) {

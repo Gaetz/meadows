@@ -1,0 +1,148 @@
+# True Adventurer — the mine kit (dungeon-gen, docs/DUNGEON-GEN.md).
+# Base forms the dungeon generator instantiates for its gameplay anchors
+# (resolved by editorId in DungeonGenTool::accept): the barrier a Locked
+# corridor closes with, the lever that opens it, the prize chest, the ore
+# item of Reward rooms, the trapped-miner flavor NPC. Enemies reuse the
+# village Bandit. Ordinary records — retune or reskin them like any mod.
+
+[plugin]
+id = "9d0c4a50-0000-4000-8000-000000000001"
+name = "mine-kit"
+
+[assets]
+"9d0c4a50-0000-4000-8000-0000000000a1" = "models/kit/MedievalVillageMegaKit/glTF/Prop_MetalFence_Simple.gltf"
+"9d0c4a50-0000-4000-8000-0000000000a2" = "models/kit/MedievalVillageMegaKit/glTF/Prop_Support.gltf"
+
+# --- The lock: barrier + lever ------------------------------------------------
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-000000000010"
+type = "StaticForm"
+new = true
+[records.fields]
+editorId = "MineBarrier"
+displayName = "Grille de mine"
+model = "9d0c4a50-0000-4000-8000-0000000000a1"
+collides = true
+snapToGround = false
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-000000000011"
+type = "FurnitureForm"
+new = true
+[records.fields]
+editorId = "MineLever"
+displayName = "Levier"
+category = "lever"
+model = "9d0c4a50-0000-4000-8000-0000000000a2"
+
+# --- The prize: chest + loadout ----------------------------------------------
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-000000000012"
+type = "FurnitureForm"
+new = true
+[records.fields]
+editorId = "MineChest"
+displayName = "Coffre du contremaitre"
+category = "container"
+model = "4d7a9b30-0000-4000-8000-0000000000a8"    # village crate
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-000000000013"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "9d0c4a50-0000-4000-8000-000000000012"
+item = "5e8bac40-0000-4000-8000-000000000010"     # GoldCoin
+count = 25
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-000000000014"
+type = "LoadoutEntryForm"
+new = true
+[records.fields]
+parent = "9d0c4a50-0000-4000-8000-000000000012"
+item = "4d7a9b30-0000-4000-8000-000000000070"     # TravelRations
+count = 2
+
+# --- Reward rooms: the ore item ----------------------------------------------
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-000000000015"
+type = "MiscItemForm"
+new = true
+[records.fields]
+editorId = "OreChunk"
+displayName = "Minerai de fer"
+weight = 2.0
+goldValue = 8
+model = "2b5e7d10-0000-4000-8000-0000000000c1"    # rock_cc0
+
+# --- The trapped miner (flavor NPC) ------------------------------------------
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-000000000016"
+type = "ActorForm"
+new = true
+[records.fields]
+editorId = "MineHermit"
+displayName = "Vieux mineur"
+maxHealth = 30.0
+appearance = "2b5e7d10-0000-4000-8000-0000000000b0"
+animGraph = "2b5e7d10-0000-4000-8000-0000000000f0"
+dialogue = "9d0c4a50-0000-4000-8000-000000000017"
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-000000000017"
+type = "DialogueForm"
+new = true
+[records.fields]
+editorId = "MineHermitChat"
+displayName = "Vieux mineur"
+rootNode = "9d0c4a50-0000-4000-8000-000000000018"
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-000000000018"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+speaker = "Vieux mineur"
+text = "Vous entendez ? La montagne grince. Je creuse ici depuis quarante ans, et elle grince de plus en plus fort."
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-000000000019"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "9d0c4a50-0000-4000-8000-000000000018"
+speaker = "Player"
+text = "Que faites-vous encore ici ?"
+order = 1
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-00000000001a"
+type = "DialogueNodeForm"
+new = true
+[records.fields]
+parent = "9d0c4a50-0000-4000-8000-000000000019"
+speaker = "Vieux mineur"
+text = "Le filon, voyageur. Le grand filon. Il est la, quelque part derriere la grille — mais la grille, c'est le levier qui la commande, et le levier n'est jamais du bon cote."
+
+# --- Player-facing strings ----------------------------------------------------
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-00000000001b"
+type = "LocStringForm"
+new = true
+[records.fields]
+editorId = "mine.lever.pulled"
+text = "Somewhere in the mine, a gate grinds open."
+
+[[records]]
+form = "9d0c4a50-0000-4000-8000-00000000001c"
+type = "LocStringForm"
+new = true
+[records.fields]
+editorId = "mine.lever.stuck"
+text = "The lever turns freely. Nothing happens."

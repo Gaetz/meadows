@@ -1468,8 +1468,6 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .autoExposureMin = autoExposureMinUi,
         .autoExposureMax = autoExposureMaxUi,
         .waterMapInfo = water.poolMapInfo(),
-        .waterInfoMapInfo = water.infoMapInfo(),
-        .terrainShadeMapInfo = terrainShadeMap.info(),
         .terrainLightInfo = terrainLightMap.info(),
         .terrainLightActive =
             terrainLightUi && !view.interiorMode && terrainLightMap.ready(),
@@ -1529,6 +1527,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
         .mistPuffInfo = { mistPuffinessUi, 0.0f, 0.0f, 0.0f },
         .waterDebugInfo = { static_cast<f32>(waterDebugUi), 0.0f, 0.0f,
                             0.0f },
+        .waterInfoMapInfo = water.infoMapInfo(),
+        .terrainShadeMapInfo = terrainShadeMap.info(),
     });
     const render::FrameUniforms& uniforms = composed.base;
     render::FrameUniforms frameData = composed.resolved;

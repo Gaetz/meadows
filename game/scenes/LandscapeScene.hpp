@@ -56,6 +56,7 @@
 #include "game/InventoryView.hpp"
 #include "game/SaveGame.hpp"
 #include "game/ScreenStack.hpp"
+#include "world/ai/InteriorNavigator.hpp"
 #include "world/ai/TerrainNavigator.hpp"
 #include "world/scene/SpatialIndex.hpp"
 #include "world/streaming/CellStreamer.hpp"
@@ -207,6 +208,19 @@ private:
     // terrain/sky/sun/water — ambient + local lights only).
     data::FormHandle activeWorldspace {};
     bool interiorMode { false };
+    // Last travel's arrival marker: in an interior this is the way OUT —
+    // where broken fighters flee (NpcContext.interiorExit).
+    Vec3 interiorArrival { 0.0f };
+    // Fighters who fled through the interior's exit: despawned inside
+    // (their reference disabled through the pending layer), respawned
+    // outside the door if the player follows within 20 s — any longer
+    // and they made a clean getaway.
+    struct InteriorEscape {
+        core::Guid baseForm;
+        f32 at;     // timeSeconds stamp
+        f32 health; // base health at the door — his wounds follow him out
+    };
+    vector<InteriorEscape> interiorEscapes;
 
     // In-game interaction mode. Play = first-person capsule; Spectator = free
     // fly camera that pauses the sim (the base for a future photo mode); Edit =
@@ -231,6 +245,7 @@ private:
     SceneEditor sceneEditor;
     EditorContext makeEditorContext();
     SculptContext makeSculptContext();
+    DungeonGenContext makeDungeonGenContext();
     // GENERIC interaction (E) + travel fade + talk toast,
     // extracted to InteractionController. performTravel STAYS
     // here (a worldspace swap is streaming/scene territory — cellStreamer,
@@ -439,6 +454,9 @@ private:
     // Navigation + furniture (shared with the director via
     // NpcContext; navigator is also the StreamingController's).
     uptr<world::TerrainNavigator> navigator;
+    // Multi-level grid for the CURRENT interior worldspace (dungeons);
+    // rebuilt on travel from its NavGridForm, null outdoors.
+    uptr<world::InteriorNavigator> interiorNavigator;
     gameplay::FurnitureOccupancy furnitureOccupancy;
 
     // Physics — height-field tiles follow the camera (the

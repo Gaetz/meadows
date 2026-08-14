@@ -18,6 +18,7 @@
     CollisionTest.cpp
     CombatAiTest.cpp
     CombatTest.cpp
+    CookedMeshTest.cpp
     CookedTextureTest.cpp
     ConcurrentQueueTest.cpp
     ConditionTest.cpp
@@ -28,6 +29,13 @@
     DerivedStatsTest.cpp
     DialogueTest.cpp
     DrugsTest.cpp
+    DungeonBakeTest.cpp
+    DungeonDensityTest.cpp
+    DungeonMeshTest.cpp
+    DungeonMissionTest.cpp
+    DungeonNavTest.cpp
+    DungeonRecordsTest.cpp
+    DungeonSpaceTest.cpp
     EcsTest.cpp
     EditorLayoutsTest.cpp
     EditSessionTest.cpp
