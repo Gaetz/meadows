@@ -483,7 +483,7 @@ Outil            game/scenes/DungeonGenTool    panel : bake (worker) → Accept 
   `combatTarget` — sa santé étant sous le seuil de courage, le
   contrôleur de combat reprend la fuite dès le premier tick (aucun état
   « fuite » à transporter : la règle courage/santé le re-dérive).
-- 🔨 Brique 11 — validation IN-GAME (le dev) : ouvrir l'éditeur dans la
+- ✅ Brique 11 — validation IN-GAME (le dev) : ouvrir l'éditeur dans la
   LandscapeScene, panel « Dungeon generation » → Bake mine → Accept
   (porte posée à la caméra) → entrer par la porte : collision (fastCook
   sous fade), torches (froxels), parcours, PNJ éventuel (nav intérieure),
@@ -491,18 +491,55 @@ Outil            game/scenes/DungeonGenTool    panel : bake (worker) → Accept 
   chunk concave (fallback = flag par form), perf du cook Jolt (M1 Air),
   budget lumières si torches trop denses.
 
-## 7. Tiroirs ultérieurs (conçus pour s'emboîter)
+## 7. Revue des différés — CLÔTURE DU CHANTIER (2026-08-14)
 
-- Les 7 autres cycle patterns (même API de fonction pattern).
-- Thème/biome en Form moddable (`DungeonThemeForm` : matériaux, pools de
-  props/spawns, paramètres de creusage) — mine/antre/temple = données.
-- Second backend géométrie : assemblage de modules/prefabs à connecteurs
-  derrière le MÊME SpaceGraph (temples, parties bâties).
-- Populate gameplay, suite : triggers d'éboulement (BlockedRetreat joué),
-  filons récoltables par outil (mining), clés-objets en plus des leviers,
-  un `DungeonThemeForm` regroupant kit + tuning par type de donjon.
-- Orchestration runtime Sandbox (rupture décision 6 à faire valider).
-- Lacs souterrains (l'eau est coupée en interiorMode), portals
-  d'occlusion (le donjon dense sera le premier client), Recast réel,
-  décimation border-locked des chunks, triplanaire roche, minerai
-  émissif.
+Chantier **CLOS** : v1 des mines jouable, validée par les sessions du dev
+(mission→espace→caverne→nav→records, objectifs, sortie de service,
+ennemis/patrouilles, fuite et fugitifs), mergée dans `develop`
+(`07f976d`). Chaque différé accumulé est arbitré ci-dessous : promu,
+maintenu avec déclencheur nommé, ou absorbé. Rien d'abandonné — tous les
+seams tiennent.
+
+**PROMUS (les deux prochains tiroirs, actés avec le dev) :**
+- **`DungeonThemeForm` + variante antre** : thème moddable (§5) —
+  matériaux, pools de props/spawns (bandits variés/nommés, l'ennui des
+  clones), tuning de creusage par type. Mine/antre/temple = données.
+- **Intégration quêtes/économie** : le donjon comme cible de quête
+  (le condition evaluator et les alias existent), minerai récoltable
+  par outil (mining) et vendable — absorbe le « filons par outil » du
+  populate.
+
+**MAINTENUS, déclencheur nommé (on n'ouvre pas sans lui) :**
+- *Les 7 autres cycle patterns* — premier donjon dont l'intention de
+  gameplay n'est pas couverte par les 5 (l'API pattern est générale).
+- *Second backend géométrie (modules/prefabs à connecteurs)* — premier
+  donjon BÂTI (temple, ruine) où la caverne organique détonne ; même
+  SpaceGraph derrière.
+- *Éboulement joué (BlockedRetreat)* — besoin d'un one-way MIS EN SCÈNE
+  (trigger + fx + son) plutôt que géométrique.
+- *Clés-objets en plus des leviers* — premier donjon à clé d'inventaire
+  (le vocabulaire lock/key du mission graph est déjà prêt).
+- *Orchestration runtime Sandbox* — le mode Sandbox lui-même ; rupture
+  de la décision 6 à faire valider explicitement ce jour-là.
+- *Lacs/rivières souterrains* — rouvrir l'eau en interiorMode (chantier
+  rendu) ; premier donjon aquatique.
+- *Portals d'occlusion* — perf M1 Air MESURÉE en donjon dense (aucune
+  plainte sur les mines actuelles ; on ne pré-optimise pas).
+- *Recast/Detour réel* — besoin dépassant la grille + rayon d'agent :
+  obstacles dynamiques nombreux, agents de tailles variées, chemins
+  lissés. La NavGrid couvre la v1 et reste le format d'échange.
+- *Décimation border-locked des chunks* — budget tris dépassé mesuré.
+- *Triplanaire roche, minerai émissif* — passe de direction artistique
+  des intérieurs (avec le texturé stylisé).
+- *Fugitifs : effets actifs non transportés* (poison en cours, posture,
+  buildup — seule la santé suit) — premier cas de jeu visible.
+- *Re-path par rampe d'un poursuivant bloqué au bord d'un balcon* —
+  observation en jeu (jamais rapporté à ce jour).
+- *Entrée depuis un intérieur existant* (la liste d'ancrages le permet,
+  jamais exercé) — première cave-sous-maison authorée.
+
+**LIMITES DOCUMENTÉES (assumées, pas des tiroirs) :**
+- Balayage des restes levier/barrière borné aux lockIds < 64 (générés
+  en interne, toujours petits).
+- Les fugitifs re-spawnent en références transient (disparaissent au
+  voyage suivant) — voulu : une rencontre, pas un état du monde.
