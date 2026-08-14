@@ -17,10 +17,15 @@ namespace dungeon {
 
 struct DensityParams {
     u32 seed { 1337 };
-    f32 tunnelRadius { 2.4f };
-    f32 roomHeight { 5.0f };      // vertical diameter of a one-floor room
+    f32 tunnelRadius { 2.2f };
+    f32 roomHeight { 7.5f };      // vertical diameter of a one-floor room
     f32 noiseAmplitude { 0.9f };  // meters of wall wobble
     f32 noiseWavelength { 7.0f }; // meters per noise cell
+    // Lateral midpoint offset per corridor hop (the tree-branch wobble):
+    // straight lattice tunnels read man-made, a bent midpoint reads dug.
+    // Keep under the tunnel radius so the nominal centerline (torches,
+    // tests) stays inside the air.
+    f32 corridorWobble { 2.0f };
 };
 
 class DensityField {
@@ -53,6 +58,12 @@ private:
         f32 radius { 0.0f };
         f32 floorA { 0.0f };
         f32 floorB { 0.0f };
+        // Ramps also cut all OTHER air below their floor across their XZ
+        // strip: a neighbouring flat pipe's end cap otherwise burrows a flat
+        // pocket under the rising floor, ending in a knee-high rock step at
+        // every ramp bottom. Ramp cells are exclusively claimed (SpaceGraph),
+        // so nothing legitimate lives under that strip.
+        bool cutsBelow { false };
     };
 
     vector<Ball> balls;

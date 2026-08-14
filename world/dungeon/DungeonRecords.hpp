@@ -26,6 +26,22 @@ struct DungeonAnchor {
     f32 yawDeg { 0.0f };
 };
 
+// The mine kit: base forms the gameplay anchors are instantiated from
+// (mine-kit.toml, resolved by editorId at Accept). A null guid skips that
+// family — the dungeon stays walkable without the kit, just bare.
+struct DungeonKit {
+    core::Guid barrier; // StaticForm, across Locked corridors
+    core::Guid lever;   // FurnitureForm category "lever"
+    core::Guid chest;   // FurnitureForm category "container" (+ loadout)
+    core::Guid oreItem; // MiscItemForm, spawns as a pickable item
+    core::Guid enemy;   // ActorForm (hostile through its faction tag)
+    core::Guid npc;     // ActorForm flavor character
+};
+
+// The barrier a lever opens, derived from the lever's REFERENCE guid — the
+// scene inverts the pairing at pull time with zero stored state.
+core::Guid barrierForLever(const core::Guid& leverReference);
+
 struct DungeonStageResult {
     core::Guid worldspace;
     core::Guid navGridRecord;
@@ -44,6 +60,7 @@ DungeonStageResult stageDungeonRecords(
     const str& dungeonName,
     const std::function<core::Guid(i32 cx, i32 cz)>& cellMeshAsset,
     const core::Guid& navAsset, const vector<DungeonAnchor>& anchors,
-    const core::Guid& doorModel = {}, const core::Guid& doorMaterial = {});
+    const DungeonKit& kit = {}, const core::Guid& doorModel = {},
+    const core::Guid& doorMaterial = {});
 
 } // namespace world

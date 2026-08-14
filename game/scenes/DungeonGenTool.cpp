@@ -6,8 +6,11 @@
 
 #include <imgui.h>
 
+#include "data/forms/CoreForms.hpp"
 #include "data/forms/FormQuery.hpp"
+#include "data/forms/VisualForms.hpp"
 #include "engine/assets/CookedMesh.hpp"
+#include "gameplay/interaction/FurnitureForms.hpp"
 #include "engine/core/Log.hpp"
 #include "engine/platform/Paths.hpp"
 #include "world/dungeon/DungeonRecords.hpp"
@@ -59,8 +62,9 @@ void DungeonGenTool::drawPanel(const DungeonGenContext& ctx) {
         seed = static_cast<u32>(seedInt);
     }
     ImGui::SliderInt("Floors", &floors, 1, 4);
-    ImGui::SliderInt("Grid", &gridXZ, 4, 9);
-    ImGui::SliderInt("Side cycles", &subCycles, 0, 4);
+    ImGui::SliderInt("Grid (size)", &gridXZ, 6, 12);
+    ImGui::SliderInt("Arc rooms (length)", &arcRooms, 1, 4);
+    ImGui::SliderInt("Side cycles (complexity)", &subCycles, 0, 4);
     if (baking) {
         ImGui::TextDisabled("Baking (D1..D6 on a worker)...");
     } else if (ImGui::Button("Bake mine")) {
@@ -69,6 +73,7 @@ void DungeonGenTool::drawPanel(const DungeonGenContext& ctx) {
         dungeon::DungeonParams params;
         params.seed = seed;
         params.mission.subCycles = subCycles;
+        params.mission.arcRoomsMax = arcRooms;
         params.space.floors = floors;
         params.space.gridX = gridXZ;
         params.space.gridZ = gridXZ;
@@ -115,6 +120,16 @@ void DungeonGenTool::accept(const DungeonGenContext& ctx) {
         return;
     }
     const core::Guid dungeonId = dungeonGuidFor(seed);
+    // Records for this dungeon already RESOLVED (a mod exported by an
+    // earlier session): staging updates them in place, so this session
+    // plays THIS bake — but the mod on disk still carries the old one.
+    if (ctx.forms.find(dungeonId) && !acceptedSeeds.contains(seed)) {
+        LOG_WARN("Dungeon gen: seed {} was exported by a previous session — "
+                 "its records are updated live to this bake. Export again "
+                 "or the next session reloads the old version.",
+                 seed);
+    }
+    acceptedSeeds.insert(seed);
 
     // Assets on disk, registered LIVE (travel this session) and for export.
     char dirName[64];
@@ -171,13 +186,38 @@ void DungeonGenTool::accept(const DungeonGenContext& ctx) {
         }
     });
 
+    // The mine kit (mine-kit.toml), resolved by editorId: gameplay anchors
+    // become real records. Any missing form just skips its family.
+    world::DungeonKit kit;
+    const auto guidOf = [](const auto* form) {
+        return form ? form->id : core::Guid {};
+    };
+    kit.barrier = guidOf(
+        data::findByEditorId<data::StaticForm>(ctx.forms, "MineBarrier"));
+    kit.lever = guidOf(data::findByEditorId<gameplay::FurnitureForm>(
+        ctx.forms, "MineLever"));
+    kit.chest = guidOf(data::findByEditorId<gameplay::FurnitureForm>(
+        ctx.forms, "MineChest"));
+    kit.oreItem = guidOf(
+        data::findByEditorId<data::MiscItemForm>(ctx.forms, "OreChunk"));
+    kit.enemy = guidOf(
+        data::findByEditorId<data::ActorForm>(ctx.forms, "Bandit"));
+    kit.npc = guidOf(
+        data::findByEditorId<data::ActorForm>(ctx.forms, "MineHermit"));
+    if (!kit.barrier.isValid() || !kit.lever.isValid() ||
+        !kit.chest.isValid()) {
+        LOG_WARN("Dungeon gen: mine-kit forms missing (is mine-kit.toml in "
+                 "the plugin stack of this session?) — the affected "
+                 "families will not be staged");
+    }
+
     char dungeonName[64];
     std::snprintf(dungeonName, sizeof(dungeonName), "Mine_%u", seed);
     const world::DungeonStageResult staged = world::stageDungeonRecords(
         ctx.levelEditor.editSession(), ctx.forms, ctx.worldModel, *result,
         dungeonId, dungeonName,
         [&](i32 cx, i32 cz) { return cellMeshAssetGuid(dungeonId, cx, cz); },
-        navAsset, { anchor }, doorModel, doorMaterial);
+        navAsset, { anchor }, kit, doorModel, doorMaterial);
     LOG_INFO("Dungeon gen: '{}' staged ({} cells, {} torches) — door at "
              "({:.1f}, {:.1f}, {:.1f}); Export writes the mod",
              dungeonName, staged.cellCount, staged.torchCount,

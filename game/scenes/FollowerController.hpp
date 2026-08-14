@@ -24,6 +24,9 @@ struct GameClock;
 class GameplayTagRegistry;
 struct StatsTuningForm;
 }
+namespace phys {
+class PhysicsWorld;
+}
 namespace render {
 struct TerrainParams;
 }
@@ -51,6 +54,10 @@ struct FollowerContext {
     gameplay::GameplayTagRegistry& gameTags;
     const gameplay::StatsTuningForm& statsTuning;
     const render::TerrainParams& terrainParams;
+    // Interior grounding for the teleports (the terrain::height
+    // interiorMode family): the collision mesh replaces the height field.
+    bool interiorMode { false };
+    phys::PhysicsWorld* physics { nullptr };
     world::CellLoader* cellLoader;   // resident check for the dismiss home
     PendingSaveLayer& pendingSave;   // the pending-save persistence contract
     ecs::Entity playerEntity;
@@ -118,11 +125,17 @@ public:
     // A dead entity is nobody's target: clear every matching
     // combatTarget — followers fall back to the follow package.
     void onDeath(const FollowerContext& ctx, const gameplay::Event& event);
+    // The same purge for a DESPAWN (a fugitive through the mine door):
+    // every held handle to the entity must drop before its destruct.
+    void disengage(const FollowerContext& ctx, u64 gone);
 
     // The one teleport routine (travel arrivals AND the follow package's
-    // too-far case): grounded next to `anchor`, path cleared.
+    // too-far case): grounded next to `anchor` (groundAt — collision probe
+    // in interiors), path cleared.
     static void teleportNear(const Vec3& anchor,
-                             const render::TerrainParams& terrain, Npc& npc);
+                             const render::TerrainParams& terrain,
+                             bool interiorMode, phys::PhysicsWorld* physics,
+                             Npc& npc);
 
     // ---- The per-frame follower sweep -------------------------------
     // Per frame (after the director's update). Mirrors Follower.Protected onto

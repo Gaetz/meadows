@@ -38,6 +38,17 @@ struct NavGrid {
     u32 columnOf(f32 x, f32 z) const; // ~0u when outside the grid
     // Levels of a column as [begin, end) indices into `levels`.
     void columnLevels(u32 column, u32& begin, u32& end) const;
+
+    // Standing air around foot height y in column (ix, iz): some floor at
+    // most a step below with headroom above. The building block of the
+    // agent-radius story below.
+    bool airAt(i32 ix, i32 iz, f32 y) const;
+    // The column is walkable but a neighbouring column is rock at this
+    // height — the cell hugs a wall. The grid stays permissive (narrow
+    // tunnels must remain traversable), so wall adjacency is a PENALTY
+    // for the pathfinder and a veto for actor SPAWN anchors, never an
+    // erosion of the grid itself.
+    bool wallAdjacent(i32 ix, i32 iz, f32 y) const;
 };
 
 // Scans every column of [min, max] bottom-up for solid->air crossings with

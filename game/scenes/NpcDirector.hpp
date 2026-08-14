@@ -122,6 +122,9 @@ struct Npc {
     bool hostile { false }; // ActorTagForm child "Faction.Bandits"
     bool guard { false };   // D2: "Faction.VillageGuard" — hostile while Wanted
     bool dead { false };    // mirrors the GAS State.Dead tag
+    // A fleeing fighter reached the interior's exit: the scene sweep
+    // despawns him and may respawn him outside (LandscapeScene).
+    bool escapedInterior { false };
     // Mirrors State.Downed (an active follower at 0 HP —
     // kneeling, out of the fight, revivable). Same idiom as `dead` above:
     // the director mirrors the tag each frame, everything game-side (the
@@ -238,6 +241,13 @@ struct NpcContext {
     // QuestDirector partner alone is never cleared on close). Invalid =
     // no dialogue open.
     ecs::Entity dialoguePartner {};
+    // Interior worldspace: authored y is ABSOLUTE — the spawner must NOT
+    // ground actors/markers on the (overworld) terrain height.
+    bool interiorMode { false };
+    // The interior's arrival point (the travel marker): where a broken
+    // fighter runs — fleeing INTO a dead-end cavern reads wrong, fleeing
+    // for the way out reads like a story. Meaningful only in interiorMode.
+    Vec3 interiorExit { 0.0f };
 };
 
 // The whole Forms-driven NPC subsystem, extracted from LandscapeScene:

@@ -119,6 +119,30 @@ TEST_CASE("dungeon mission: solvability rejects a keyless lock") {
     CHECK(isSolvable(g));
 }
 
+TEST_CASE("dungeon mission: solvability rejects a strandable pocket") {
+    // entrance -> (drop) -> pocket, whose only other exit is locked by a
+    // key sitting OUTSIDE the pocket: reachable, completable from the
+    // entrance's point of view — yet a player who takes the drop early is
+    // stuck. The per-node no-stranding check must refuse it.
+    MissionGraph g;
+    g.nodes.push_back({ 0, NodeKind::Entrance, 0,
+                        CyclePattern::BlockedRetreat });
+    g.nodes.push_back({ 0, NodeKind::Goal, 0, CyclePattern::BlockedRetreat });
+    g.nodes.push_back({ 0, NodeKind::Room, 0, CyclePattern::BlockedRetreat });
+    g.nodes.push_back({ 1, NodeKind::Key, 0, CyclePattern::BlockedRetreat });
+    g.entrance = 0;
+    g.goal = 1;
+    g.edges.push_back({ 0, 2, EdgeKind::Passage, true, 0 });  // drop in
+    g.edges.push_back({ 2, 1, EdgeKind::Locked, false, 1 });  // locked out
+    g.edges.push_back({ 0, 3, EdgeKind::Passage, false, 0 }); // key outside
+    g.edges.push_back({ 1, 0, EdgeKind::Passage, false, 0 }); // goal loop
+    CHECK_FALSE(isSolvable(g));
+
+    // Moving the key INTO the pocket repairs it.
+    g.edges[2] = { 2, 3, EdgeKind::Passage, false, 0 };
+    CHECK(isSolvable(g));
+}
+
 TEST_CASE("dungeon mission: solvability rejects a one-way trap with no exit") {
     MissionGraph g;
     g.nodes.push_back({ 0, NodeKind::Entrance, 0,
@@ -132,6 +156,41 @@ TEST_CASE("dungeon mission: solvability rejects a one-way trap with no exit") {
     // A return arc restores the cycle promise.
     g.edges.push_back({ 1, 0, EdgeKind::Passage, true, 0 });
     CHECK(isSolvable(g));
+}
+
+TEST_CASE("dungeon mission: the service exit loops the goal back to the entrance") {
+    MissionParams p;
+    p.seed = 9;
+    p.patterns = { CyclePattern::TwoAlternativePaths }; // no other locks
+    const MissionGraph g = buildMissionGraph(p);
+    bool found = false;
+    for (const MissionEdge& e : g.edges) {
+        if (e.kind != EdgeKind::Locked ||
+            (e.a != g.entrance && e.b != g.entrance)) {
+            continue;
+        }
+        const u32 keyNode = e.a == g.entrance ? e.b : e.a;
+        CHECK(g.nodes[keyNode].kind == NodeKind::Key);
+        CHECK(g.nodes[keyNode].lockId == e.lockId);
+        for (const MissionEdge& hop : g.edges) {
+            if (hop.kind == EdgeKind::Passage &&
+                ((hop.a == g.goal && hop.b == keyNode) ||
+                 (hop.b == g.goal && hop.a == keyNode))) {
+                found = true; // the lever room hangs off the goal
+            }
+        }
+    }
+    CHECK(found);
+    CHECK(isSolvable(g));
+
+    p.serviceExit = false;
+    const MissionGraph without = buildMissionGraph(p);
+    for (const MissionEdge& e : without.edges) {
+        const bool exitLock = e.kind == EdgeKind::Locked &&
+                              (e.a == without.entrance ||
+                               e.b == without.entrance);
+        CHECK_FALSE(exitLock);
+    }
 }
 
 TEST_CASE("dungeon mission: dot dump names entrance and goal") {

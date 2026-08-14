@@ -2,7 +2,9 @@
 
 #include "engine/core/Rng.hpp"
 
+#include <set>
 #include <string>
+#include <utility>
 
 namespace dungeon {
 
@@ -46,12 +48,16 @@ i32 arcRooms(BuildContext& ctx, const MissionParams& p) {
 // Builds one cycle of `pattern` between two EXISTING nodes. Every pattern
 // keeps the cycle promise: two arcs, `from` and `goal` on both, so the player
 // can always come back — which is what isSolvable()'s exit check verifies.
+// Arc lengths come straight from the params: travel distance is already
+// guaranteed by the far-goal anchoring, so topology stays as simple as the
+// dial asks (playtest: padded arcs read as complexity, not as length).
 void buildCycle(MissionGraph& g, BuildContext& ctx, const MissionParams& p,
                 u32 from, u32 goal, CyclePattern pattern, u8 depth) {
+    const i32 shortArc = p.arcRoomsMin;
     switch (pattern) {
     case CyclePattern::TwoAlternativePaths: {
         // Short arc vs long arc, both plain: the minimal player choice.
-        addArc(g, from, goal, p.arcRoomsMin, depth, pattern);
+        addArc(g, from, goal, shortArc, depth, pattern);
         addArc(g, from, goal, arcRooms(ctx, p), depth, pattern);
         break;
     }
@@ -61,7 +67,7 @@ void buildCycle(MissionGraph& g, BuildContext& ctx, const MissionParams& p,
         // (see the lock early, open it right after finding the key).
         const u32 lockId = ++ctx.nextLockId;
         const u32 lockRoom = addNode(g, NodeKind::Room, depth, pattern);
-        addArc(g, from, lockRoom, p.arcRoomsMin, depth, pattern);
+        addArc(g, from, lockRoom, shortArc, depth, pattern);
         addEdge(g, lockRoom, goal, EdgeKind::Locked, false, lockId);
         const u32 key = addNode(g, NodeKind::Key, depth, pattern, lockId);
         addArc(g, from, key, arcRooms(ctx, p), depth, pattern);
@@ -77,7 +83,7 @@ void buildCycle(MissionGraph& g, BuildContext& ctx, const MissionParams& p,
     }
     case CyclePattern::DangerousRoute: {
         // Short but hazardous vs long but safe: risk/time trade-off.
-        addArc(g, from, goal, p.arcRoomsMin, depth, pattern,
+        addArc(g, from, goal, shortArc, depth, pattern,
                EdgeKind::Dangerous);
         addArc(g, from, goal, arcRooms(ctx, p) + 1, depth, pattern);
         break;
@@ -125,11 +131,19 @@ MissionGraph buildMissionGraph(const MissionParams& params) {
 
     // Graft sub-cycles onto Room nodes: the room becomes the local entrance
     // of a nested cycle whose local goal is a Reward (an ore vein, a stash).
+    // Hosts are capped at degree 2: a grafted cycle adds two arcs, and the
+    // 4-neighbour corridor channels of the space grid cannot serve a room
+    // of degree > 4 at ANY grid size (embedding would never converge).
     for (i32 i = 0; i < params.subCycles; ++i) {
+        vector<u32> degree(g.nodes.size(), 0);
+        for (const MissionEdge& e : g.edges) {
+            ++degree[e.a];
+            ++degree[e.b];
+        }
         vector<u32> candidates;
         for (u32 n = 0; n < g.nodes.size(); ++n) {
             if (g.nodes[n].kind == NodeKind::Room &&
-                g.nodes[n].depth < params.maxDepth) {
+                g.nodes[n].depth < params.maxDepth && degree[n] <= 2) {
                 candidates.push_back(n);
             }
         }
@@ -140,8 +154,26 @@ MissionGraph buildMissionGraph(const MissionParams& params) {
             ctx.rng.range(0, static_cast<i32>(candidates.size()) - 1))];
         const u8 depth = static_cast<u8>(g.nodes[host].depth + 1);
         const CyclePattern pattern = drawPattern(ctx, params);
+        // Lollipop graft: one connecting corridor to a NEW hub, the cycle
+        // hangs off the hub. The host gains a single exit (degree <= 3),
+        // the hub peaks at 3 — junctions read "this corridor leads
+        // somewhere", never as four-way crossroads (Unexplored's
+        // coherence note, echoed by the playtest).
+        const u32 hub = addNode(g, NodeKind::Room, depth, pattern);
+        addEdge(g, host, hub);
         const u32 reward = addNode(g, NodeKind::Reward, depth, pattern);
-        buildCycle(g, ctx, params, host, reward, pattern, depth);
+        buildCycle(g, ctx, params, hub, reward, pattern, depth);
+    }
+
+    // The service exit: goal -> key room -> locked corridor -> entrance.
+    // The lever (Key) is only reachable through the goal, so the shortcut
+    // opens from behind; the barrier shows from the entrance side.
+    if (params.serviceExit) {
+        const u32 lockId = ++ctx.nextLockId;
+        const u32 exitKey = addNode(g, NodeKind::Key, 0,
+                                    CyclePattern::SimpleLockKey, lockId);
+        addEdge(g, g.goal, exitKey);
+        addEdge(g, exitKey, g.entrance, EdgeKind::Locked, false, lockId);
     }
     return g;
 }
@@ -150,60 +182,93 @@ bool isSolvable(const MissionGraph& g) {
     if (g.nodes.empty()) {
         return false;
     }
+    // Keys as a bitmask (lock ids are sequential and few).
     u32 maxLock = 0;
     for (const MissionEdge& e : g.edges) {
         maxLock = e.lockId > maxLock ? e.lockId : maxLock;
     }
-    for (const MissionNode& n : g.nodes) {
-        maxLock = n.lockId > maxLock ? n.lockId : maxLock;
+    if (maxLock >= 63) {
+        return false; // beyond any sane dungeon; refuse loudly
     }
-    const size_t keyCount = static_cast<size_t>(maxLock) + 1;
+    const auto keyBit = [&g](u32 node) -> u64 {
+        return g.nodes[node].kind == NodeKind::Key
+                   ? 1ull << g.nodes[node].lockId
+                   : 0ull;
+    };
 
-    const auto reach = [&g, keyCount](u32 start, const vector<bool>* fixedKeys,
-                                      vector<bool>& keysOut) {
+    // Reachable set from (start, keys), collecting keys en route.
+    const auto explore = [&g, &keyBit](u32 start, u64 startKeys) {
         vector<bool> in(g.nodes.size(), false);
-        keysOut.assign(keyCount, false);
+        u64 keys = startKeys | keyBit(start);
         in[start] = true;
-        // Fixpoint: each pass may unlock edges via newly collected keys.
         bool grew = true;
         while (grew) {
             grew = false;
-            for (u32 n = 0; n < g.nodes.size(); ++n) {
-                if (in[n] && g.nodes[n].kind == NodeKind::Key) {
-                    keysOut[g.nodes[n].lockId] = true;
-                }
-            }
-            const vector<bool>& keys = fixedKeys ? *fixedKeys : keysOut;
             for (const MissionEdge& e : g.edges) {
-                const bool open = e.kind != EdgeKind::Locked || keys[e.lockId];
-                if (!open) {
+                if (e.kind == EdgeKind::Locked &&
+                    (keys & (1ull << e.lockId)) == 0) {
                     continue;
                 }
-                if (in[e.a] && !in[e.b]) {
-                    in[e.b] = true;
-                    grew = true;
+                const auto visit = [&](u32 n) {
+                    if (!in[n]) {
+                        in[n] = true;
+                        keys |= keyBit(n);
+                        grew = true;
+                    }
+                };
+                if (in[e.a]) {
+                    visit(e.b);
                 }
-                if (!e.oneWay && in[e.b] && !in[e.a]) {
-                    in[e.a] = true;
-                    grew = true;
+                if (!e.oneWay && in[e.b]) {
+                    visit(e.a);
                 }
             }
         }
         return in;
     };
 
-    vector<bool> keys;
-    const vector<bool> fromEntrance = reach(g.entrance, nullptr, keys);
+    // Everything must be reachable from the entrance.
+    const vector<bool> fromEntrance = explore(g.entrance, 0);
     for (u32 n = 0; n < g.nodes.size(); ++n) {
         if (!fromEntrance[n]) {
             return false;
         }
     }
-    // Exit check: with everything collected, the goal must lead back to the
-    // entrance (one-way edges could otherwise strand the player).
-    vector<bool> ignored;
-    const vector<bool> fromGoal = reach(g.goal, &keys, ignored);
-    return fromGoal[g.entrance];
+
+    // No-stranding over PLAY STATES (node, keys held): a player behind a
+    // lock necessarily holds its key, and a player dropped by a one-way
+    // may hold nothing — both must always have a way back to the
+    // entrance. Key sets grow monotonically, so the state space is tiny.
+    std::set<std::pair<u32, u64>> seen;
+    vector<std::pair<u32, u64>> queue;
+    const auto push = [&](u32 node, u64 keys) {
+        keys |= keyBit(node);
+        if (seen.insert({ node, keys }).second) {
+            queue.push_back({ node, keys });
+        }
+    };
+    push(g.entrance, 0);
+    for (size_t head = 0; head < queue.size(); ++head) {
+        const auto [node, keys] = queue[head];
+        for (const MissionEdge& e : g.edges) {
+            if (e.kind == EdgeKind::Locked &&
+                (keys & (1ull << e.lockId)) == 0) {
+                continue;
+            }
+            if (e.a == node) {
+                push(e.b, keys);
+            }
+            if (e.b == node && !e.oneWay) {
+                push(e.a, keys);
+            }
+        }
+    }
+    for (const auto& [node, keys] : seen) {
+        if (!explore(node, keys)[g.entrance]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 str toDot(const MissionGraph& g) {

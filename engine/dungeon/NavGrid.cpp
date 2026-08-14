@@ -1,5 +1,6 @@
 #include "engine/dungeon/NavGrid.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -30,6 +31,35 @@ void NavGrid::columnLevels(u32 column, u32& begin, u32& end) const {
     end = firstLevel[column + 1];
 }
 
+bool NavGrid::airAt(i32 ix, i32 iz, f32 y) const {
+    if (ix < 0 || iz < 0 || ix >= static_cast<i32>(width) ||
+        iz >= static_cast<i32>(depth)) {
+        return false;
+    }
+    u32 begin = 0;
+    u32 end = 0;
+    columnLevels(static_cast<u32>(iz) * width + static_cast<u32>(ix), begin,
+                 end);
+    for (u32 l = begin; l < end; ++l) {
+        if (levels[l].floorY <= y + 0.6f &&
+            levels[l].floorY + levels[l].clearance >= y + 1.5f) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool NavGrid::wallAdjacent(i32 ix, i32 iz, f32 y) const {
+    for (i32 dz = -1; dz <= 1; ++dz) {
+        for (i32 dx = -1; dx <= 1; ++dx) {
+            if ((dx != 0 || dz != 0) && !airAt(ix + dx, iz + dz, y)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 NavGrid bakeNavGrid(const DensityFn& density, const Vec3& min, const Vec3& max,
                     f32 cellSize, f32 minClearance) {
     NavGrid grid;
@@ -42,6 +72,12 @@ NavGrid bakeNavGrid(const DensityFn& density, const Vec3& min, const Vec3& max,
     grid.firstLevel.push_back(0);
 
     const f32 step = 0.25f;
+    // Sphere-traced column march: the density lower-bounds the distance to
+    // the nearest surface (minus the wall noise, hence the 1 m margin), so
+    // deep rock and tall air both leap in one step; only the last meter
+    // around each surface walks at `step`. Same crossings, ~10x fewer
+    // samples than a fixed march.
+    const f32 leapMargin = 1.0f;
     for (u32 iz = 0; iz < grid.depth; ++iz) {
         for (u32 ix = 0; ix < grid.width; ++ix) {
             const f32 x = min.x + (static_cast<f32>(ix) + 0.5f) * cellSize;
@@ -50,6 +86,11 @@ NavGrid bakeNavGrid(const DensityFn& density, const Vec3& min, const Vec3& max,
             f32 y = min.y;
             while (y <= max.y) {
                 const f32 here = density({ x, y, z });
+                if (std::abs(here) > leapMargin + step) {
+                    below = here;
+                    y += std::abs(here) - leapMargin;
+                    continue;
+                }
                 if (below >= 0.0f && here < 0.0f) {
                     // Solid -> air going up: a floor. Refine the crossing,
                     // then measure headroom to the next ceiling.
@@ -61,9 +102,11 @@ NavGrid bakeNavGrid(const DensityFn& density, const Vec3& min, const Vec3& max,
                     }
                     const f32 floorY = 0.5f * (lo + hi);
                     f32 ceiling = floorY;
+                    f32 probe;
                     while (ceiling <= max.y &&
-                           density({ x, ceiling + step, z }) < 0.0f) {
-                        ceiling += step;
+                           (probe = density({ x, ceiling + step, z })) <
+                               0.0f) {
+                        ceiling += std::max(step, -probe - leapMargin);
                     }
                     const f32 clearance = ceiling - floorY;
                     if (clearance >= minClearance) {

@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <optional>
+#include <unordered_set>
 
 #include "data/forms/FormDatabase.hpp"
 #include "engine/assets/AssetDatabase.hpp"
@@ -41,13 +42,17 @@ private:
     u32 seed { 0 };
     bool seedInit { false };
     i32 floors { 2 };
-    i32 gridXZ { 6 };
+    i32 gridXZ { 8 };
     i32 subCycles { 1 };
+    i32 arcRooms { 2 };
     bool baking { false };
     sptr<core::ConcurrentQueue<dungeon::DungeonBakeResult>> done {
         std::make_shared<core::ConcurrentQueue<dungeon::DungeonBakeResult>>()
     };
     std::optional<dungeon::DungeonBakeResult> result;
+    // Seeds accepted THIS session: re-Accepting one is coherent; accepting
+    // over a mod from an EARLIER session is not (see the warning).
+    std::unordered_set<u32> acceptedSeeds;
 };
 
 } // namespace game

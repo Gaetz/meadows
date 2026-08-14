@@ -75,7 +75,11 @@ struct MissionParams {
     i32 subCycles { 1 }; // sub-cycles grafted onto Room nodes
     i32 maxDepth { 1 };  // nesting depth allowed for those grafts
     i32 arcRoomsMin { 1 };
-    i32 arcRoomsMax { 3 };
+    i32 arcRoomsMax { 2 };
+    // The service exit (the Skyrim boss-room shortcut): a short corridor
+    // from the goal back to the entrance, closed by a lock whose key sits
+    // on the GOAL side — visible on the way in, one pull on the way out.
+    bool serviceExit { true };
 };
 
 // Deterministic for (params): same seed -> same graph, bit for bit.

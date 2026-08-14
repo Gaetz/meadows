@@ -29,9 +29,14 @@ struct DungeonParams {
     DensityParams density;
     f32 cellSize { 64.0f };  // must match the interior WorldspaceForm
     f32 voxelSize { 0.8f };
-    f32 torchSpacing { 10.0f };
+    f32 torchSpacing { 13.0f };
     f32 navCellSize { 0.5f };
     f32 navMinClearance { 1.8f };
+    // Population density (deterministic per seed): plain rooms roll an
+    // enemy and possibly a bonus ore vein; dead-end rooms ALWAYS hold a
+    // vein (the mine's lodes — what dead ends are for).
+    f64 enemyChancePerRoom { 0.45 };
+    f64 bonusVeinChancePerRoom { 0.25 };
     // No per-chunk decimation: assets::simplifyMesh does not lock borders,
     // so it would crack the chunk seams. If profiling demands it, the named
     // extension is border-locked simplification (meshopt_SimplifyLockBorder).
@@ -55,6 +60,24 @@ struct DungeonBakeResult {
         Vec3 wallNormal; // out of the wall, toward the air
     };
     vector<Torch> torches;
+
+    // Gameplay anchors, derived from the mission semantics (floors are flat
+    // planes, so y is exact). lockId pairs a barrier with its lever.
+    // width widens the prop across the tunnel: a barrier on a corridor
+    // TURN spans the junction's diagonal, wider than a straight tube.
+    struct Anchor {
+        Vec3 position;
+        f32 yawDeg { 0.0f };
+        u32 lockId { 0 };
+        f32 width { 1.0f };
+    };
+    vector<Anchor> barriers;    // across each Locked corridor (lockId set)
+    vector<Anchor> levers;      // in the matching Key room (lockId set)
+    vector<Anchor> chests;      // the Goal prize
+    vector<Anchor> oreVeins;    // Reward rooms (sub-cycle goals)
+    vector<Anchor> enemySpawns; // along Dangerous arcs + one Goal guardian
+    vector<Anchor> npcSpawns;   // flavor NPC, near the first ore vein
+    vector<Anchor> patrolPoints; // plain-room floors: NPC wander anchors
 
     Vec3 entrancePos { 0.0f }; // floor point of the entrance room
     Vec3 entranceDir { -1.0f, 0.0f, 0.0f }; // toward the outside door

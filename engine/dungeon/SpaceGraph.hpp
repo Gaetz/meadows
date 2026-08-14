@@ -49,15 +49,22 @@ struct SpaceEdge {
 
 struct SpaceParams {
     u32 seed { 1337 };
-    i32 gridX { 6 };
-    i32 gridZ { 6 };
+    // Rooms live on the interior even sub-lattice: usable slots per floor
+    // are ((grid - 4) / 2 + 1)^2 — a 6-grid holds ONE, an 8-grid four.
+    i32 gridX { 8 };
+    i32 gridZ { 8 };
     i32 floors { 2 };
-    f32 cellSpacing { 18.0f };  // meters between slot centers, XZ
-    f32 floorSpacing { 12.0f }; // meters between floors (floor i at -i * this)
-    f32 roomRadiusMin { 4.0f };
-    f32 roomRadiusMax { 7.0f };
+    f32 cellSpacing { 14.0f };  // meters between slot centers, XZ
+    f32 floorSpacing { 11.0f }; // meters between floors (floor i at -i * this)
+    f32 roomRadiusMin { 6.0f };
+    f32 roomRadiusMax { 9.0f };
     f64 tallRoomChance { 0.25 }; // chance a room spans one extra floor
-    i32 attempts { 48 };         // embedding retries before giving up
+    // Smooth per-slot height offset within a floor (a natural mine is
+    // never level): rooms tilt gently against their neighbours and the
+    // corridors joining them turn into soft slopes. Keep well under the
+    // nav budget left by the ramps.
+    f32 slotHeightJitter { 1.5f };
+    i32 attempts { 96 };         // embedding retries before giving up
 };
 
 struct SpaceGraph {

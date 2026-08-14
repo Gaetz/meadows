@@ -45,6 +45,11 @@ public:
     void indexReference(const data::FormDatabase& forms,
                         data::FormHandle reference);
 
+    // The other half of a live reference UPDATE (re-Accept over shipped
+    // records): drop the reference from the cell list it was indexed
+    // under before re-indexing it under its new cell.
+    void unindexReference(data::FormHandle cell, data::FormHandle reference);
+
     // References placed in a cell, in deterministic (handle) order. Includes
     // disabled references (ReferenceForm.enabled == false): filtering is the
     // loader's call. Empty list for an unknown or childless cell.

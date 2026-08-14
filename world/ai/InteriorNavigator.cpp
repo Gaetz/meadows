@@ -124,7 +124,17 @@ nav::PathResult InteriorNavigator::findPath(const nav::PathQuery& query) const {
                 if (delta > maxStep) {
                     continue;
                 }
-                const f32 cost = grid.cellSize + delta;
+                // Wall-hugging surcharge (the agent-radius story): the
+                // grid stays permissive so narrow tunnels remain
+                // traversable, but where the tube is wide the path pulls
+                // to the centerline and the follower's capsule clears the
+                // rock. Costs only grow, so the euclidean heuristic stays
+                // admissible.
+                const f32 wallCost =
+                    grid.wallAdjacent(nx, nz, grid.levels[next].floorY)
+                        ? grid.cellSize * 2.0f
+                        : 0.0f;
+                const f32 cost = grid.cellSize + delta + wallCost;
                 if (gScore[node.level] + cost < gScore[next]) {
                     gScore[next] = gScore[node.level] + cost;
                     cameFrom[next] = node.level;

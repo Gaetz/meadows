@@ -51,6 +51,8 @@
 #include "game/ui/RenderTuningPanels.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/dungeon/DungeonBake.hpp"
+#include "world/ai/Perception.hpp" // fugitive re-aggro on exit
+#include "world/dungeon/DungeonRecords.hpp"
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/assets/Image.hpp"
 #include "engine/assets/MeshSimplify.hpp"
@@ -2270,8 +2272,11 @@ void LandscapeScene::updateWarmup() {
     warmupLastCamPos = camPos;
     if (warmupPhase == WarmupPhase::Idle) {
         const bool menuOpen = uiCreated && screenStack.modalOpen();
-        if (bakeStreamer && mode == SceneMode::Spectator && !menuOpen &&
-            camSpeed < 6.0f) {
+        // No terrain exists in interiors: the camera sits in the interior
+        // frame, so the ring probe would ask for overworld tiles around a
+        // meaningless position and the veil would never complete.
+        if (bakeStreamer && mode == SceneMode::Spectator && !interiorMode &&
+            !menuOpen && camSpeed < 6.0f) {
             const auto ring = bakeStreamer->ringStatus(camPos);
             if (ring.published < ring.needed) {
                 armWarmup(camPos, false, true);
@@ -2606,6 +2611,50 @@ InteractionContext LandscapeScene::makeInteractionContext() {
             rideController.mount(mount, speed);
             interaction.say(texts.get("mount.hint"), 4.0f);
         },
+        // [E] on a container furniture (mine chest): roll the form's
+        // loadout into the Inventory once (seeded lootRng, §8), then the
+        // normal transfer screen. The pending layer already persists
+        // Inventory-only entities, so a looted chest stays looted.
+        [this](ecs::Entity chest) {
+            if (!chest.has<gameplay::Inventory>()) {
+                chest.set<gameplay::Inventory>({});
+                if (chest.has<world::RefId>()) {
+                    if (const data::Form* base =
+                            forms.get(chest.get<world::RefId>().base)) {
+                        gameplay::applyLoadout(
+                            forms, base->id,
+                            chest.get_mut<gameplay::Inventory>(), lootRng);
+                    }
+                }
+            }
+            uiRouter.openContainerScreen(makeUiRouterContext(), chest);
+        },
+        // [E] on a lever — open the paired barrier: its reference guid
+        // derives from the lever's (world::barrierForLever), the entity
+        // goes down now and the pending layer keeps it down (§2.4). Its
+        // static collider falls out on the next collider pass.
+        [this](ecs::Entity lever) {
+            if (!lever.is_alive() || !lever.has<world::RefId>()) {
+                return;
+            }
+            const core::Guid barrierRef = world::barrierForLever(
+                lever.get<world::RefId>().referenceId);
+            ecs::Entity barrier {};
+            interactQuery.each([&](flecs::entity e, const world::Transform&,
+                                   const world::RefId& ref) {
+                if (ref.referenceId == barrierRef) {
+                    barrier = e;
+                }
+            });
+            if (barrier.is_alive()) {
+                saveController.pending().disableReference(barrierRef, forms,
+                                                          barrier);
+                barrier.destruct();
+                interaction.say(texts.get("mine.lever.pulled"), 4.0f);
+            } else {
+                interaction.say(texts.get("mine.lever.stuck"), 3.0f);
+            }
+        },
     };
 }
 
@@ -2656,6 +2705,12 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     cellStreamer->unloadAll();
     activeWorldspace = space;
     interiorMode = cellForm->interior;
+    interiorArrival = marker->position;
+    // A terrain warmup caught mid-travel would wait forever on tiles the
+    // interior frame can never publish — let the veil fade out instead.
+    if (interiorMode && warmupPhase != WarmupPhase::Idle) {
+        warmupPhase = WarmupPhase::Reveal;
+    }
     // Interior navigation: NPCs cannot follow the terrain height under a
     // dungeon — swap in the baked multi-level grid when the destination
     // worldspace has one (NavGridForm -> .nvg asset -> InteriorNavigator).
@@ -2681,7 +2736,72 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
                          marker->position.z);
     const StreamingContext sctx = makeStreamingContext();
     streaming.snapCellEntities(sctx);
+    // Fugitives from the interior wait outside the door — but only if
+    // the player follows within 20 s; any longer, clean getaway. The
+    // spawn is transient (no cell): it despawns with the next travel.
+    vector<std::pair<ecs::Entity, f32>> fugitiveWounds;
+    if (!interiorMode) {
+        for (const InteriorEscape& escape : interiorEscapes) {
+            if (timeSeconds - escape.at > 20.0f) {
+                continue;
+            }
+            const size_t i = fugitiveWounds.size();
+            const Vec3 forward =
+                marker->rotation * Vec3 { 0.0f, 0.0f, 1.0f };
+            const Vec3 side =
+                glm::cross(forward, Vec3 { 0.0f, 1.0f, 0.0f });
+            Vec3 at = marker->position +
+                      forward * (14.0f + 4.0f * static_cast<f32>(i)) +
+                      side * (i % 2 == 0 ? 3.0f : -3.0f);
+            at.y = render::terrain::height(renderer.terrainParams(), at.x,
+                                           at.z);
+            world::ReferenceForm runtime;
+            runtime.id = core::Guid::generate();
+            runtime.editorId = "mine_fugitive";
+            runtime.baseForm = escape.baseForm;
+            runtime.position = at;
+            world::SpawnContext spawnCtx { world, forms, categories };
+            fugitiveWounds.emplace_back(
+                spawner.spawn(spawnCtx, runtime, ecs::Entity {}),
+                escape.health);
+        }
+        if (!fugitiveWounds.empty()) {
+            LOG_INFO("Mine escape: {} fugitive(s) outside the door",
+                     fugitiveWounds.size());
+        }
+        interiorEscapes.clear();
+    }
     refreshNpcs(engine->getDevice());
+    // The wounds follow AFTER refreshNpcs: finalizeActorSpawn refills a
+    // fresh actor's vitals — re-seed the health base captured at the door
+    // over it (the Spawner's own seeding idiom: persistence writes base
+    // values, never gameplay-side mutation, §2.9).
+    for (const auto& [fugitive, health] : fugitiveWounds) {
+        if (!fugitive.is_alive()) {
+            continue;
+        }
+        if (health > 0.0f && fugitive.has<gameplay::AttributeSet>()) {
+            auto& attributes = fugitive.get_mut<gameplay::AttributeSet>();
+            gameplay::setBaseValue(attributes, gameplay::attr("health"),
+                                   health);
+            gameplay::initializeCurrent(
+                fugitive.get_mut<gameplay::AbilitySystem>(), attributes);
+        }
+        // No amnesia: he came THROUGH that door running from you. Alert
+        // perception pinned on it + the player as combat target; with his
+        // health under the courage threshold, the combat controller
+        // resumes the flight on its first tick.
+        if (fugitive.has<world::Perception>()) {
+            auto& perception = fugitive.get_mut<world::Perception>();
+            world::setAwareState(perception, world::AwareState::Alert);
+            perception.lastKnownPos = marker->position;
+        }
+        for (auto& npcPtr : npcDirector.npcs()) {
+            if (npcPtr->entity == fugitive) {
+                npcPtr->combatTarget = playerEntity;
+            }
+        }
+    }
     streaming.updateStaticColliders(sctx);
     streaming.refreshNavObstacles(sctx);
 
@@ -3964,6 +4084,8 @@ NpcContext LandscapeScene::makeNpcContext() {
                 questDirector.dialogueRunner()->active()
             ? questDirector.dialoguePartner()
             : ecs::Entity {},
+        interiorMode,
+        interiorArrival,
     };
 }
 
@@ -3990,6 +4112,8 @@ FollowerContext LandscapeScene::makeFollowerContext() {
         gameTags,
         statsTuning,
         renderer.terrainParams(),
+        interiorMode,
+        physics.get(),
         cellLoader.get(),
         saveController.pending(),
         playerEntity,
@@ -4016,6 +4140,38 @@ FollowerContext LandscapeScene::makeFollowerContext() {
 
 void LandscapeScene::updateNpcs(f32 dt) {
     npcDirector.update(dt, makeNpcContext());
+    // Escape sweep: a fleeing fighter who reached the interior's exit is
+    // through the door — disable his reference (pending layer: he stays
+    // gone on re-entry and through saves) and remember him for the
+    // outside respawn (performTravel). Destruct protocol: every held
+    // handle drops first (disengage — the onDeath purge) and the Npc
+    // entry leaves the list, so nothing this frame touches the corpse.
+    auto& npcs = npcDirector.npcs();
+    for (size_t i = 0; i < npcs.size();) {
+        Npc& npc = *npcs[i];
+        if (!npc.escapedInterior || !npc.entity.is_alive()) {
+            ++i;
+            continue;
+        }
+        const auto& ref = npc.entity.get<world::RefId>();
+        if (const data::Form* base = forms.get(ref.base)) {
+            f32 health = 0.0f;
+            if (npc.entity.has<gameplay::AttributeSet>()) {
+                health = gameplay::baseValueOf(
+                             npc.entity.get<gameplay::AttributeSet>(),
+                             gameplay::attr("health"))
+                             .value_or(0.0f);
+            }
+            interiorEscapes.push_back({ base->id, timeSeconds, health });
+        }
+        saveController.pending().disableReference(ref.referenceId, forms,
+                                                  npc.entity);
+        LOG_INFO("Mine escape: {} fled through the exit", npc.editorId);
+        const ecs::Entity gone = npc.entity;
+        followerController.disengage(makeFollowerContext(), gone.id());
+        npcs.erase(npcs.begin() + static_cast<std::ptrdiff_t>(i));
+        gone.destruct();
+    }
 }
 // Bundle the streaming fixups' systems for StreamingController this frame —
 // references into the scene plus the focus / fade / mode scalars. Rebuilt each

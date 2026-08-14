@@ -34,6 +34,13 @@ constexpr u64 kDoorInBase = 0x4200;  // outside -> dungeon
 constexpr u64 kDoorOutBase = 0x4300; // dungeon -> outside
 constexpr u64 kDoorInRefBase = 0x4400;
 constexpr u64 kDoorOutRefBase = 0x4500;
+constexpr u64 kLeverRefBase = 0x5000; // + lockId (unique per dungeon)
+constexpr u64 kChestRefBase = 0x5100;
+constexpr u64 kVeinRefBase = 0x5200;
+constexpr u64 kEnemyRefBase = 0x5300;
+constexpr u64 kNpcRefBase = 0x5400;
+constexpr u64 kPatrolMarker = 0x06;    // the shared "patrol" MarkerForm
+constexpr u64 kPatrolRefBase = 0x5500; // NPC wander anchors, per room
 
 // Records are staged twice on purpose: LIVE in the resolved database (so
 // this session can stream and travel into the dungeon right away — the
@@ -46,10 +53,35 @@ struct Stager {
 
     template <typename T>
     void live(const T& form) {
-        if (!forms.handleOf(form.id).isValid()) {
-            const data::FormHandle handle =
+        const data::FormHandle handle = forms.handleOf(form.id);
+        if (!handle.isValid()) {
+            const data::FormHandle added =
                 forms.add(std::make_unique<T>(form), T::staticTypeInfo());
             if constexpr (std::is_same_v<T, ReferenceForm>) {
+                model.indexReference(forms, added);
+            }
+            return;
+        }
+        // The record was shipped by a plugin (a previous session's export):
+        // update the live copy in place so the running session plays the
+        // new bake — the session drafts only reach the world via Export.
+        // The generator owns every field of its records; hand retouches
+        // belong in additions or a later plugin layer (docs/DUNGEON-GEN.md).
+        data::Form* target = forms.getMutable(handle);
+        if (!target) {
+            return;
+        }
+        core::Guid previousCell;
+        if constexpr (std::is_same_v<T, ReferenceForm>) {
+            previousCell = static_cast<ReferenceForm*>(target)->cell;
+        }
+        reflect::forEachField(T::staticTypeInfo(),
+                              [&](const reflect::FieldInfo& field) {
+                                  field.set(target, field.get(&form));
+                              });
+        if constexpr (std::is_same_v<T, ReferenceForm>) {
+            if (previousCell != form.cell) {
+                model.unindexReference(forms.handleOf(previousCell), handle);
                 model.indexReference(forms, handle);
             }
         }
@@ -82,6 +114,7 @@ struct Stager {
         set(type, ref.id, "cell", ref.cell);
         set(type, ref.id, "position", ref.position);
         set(type, ref.id, "rotation", ref.rotation);
+        set(type, ref.id, "scale", ref.scale);
     }
 };
 
@@ -91,13 +124,19 @@ Quat yawRotation(f32 yawDeg) {
 
 } // namespace
 
+core::Guid barrierForLever(const core::Guid& leverReference) {
+    return core::Guid::combine(leverReference,
+                               core::Guid { 1, 0x6261727269657231ull });
+}
+
 DungeonStageResult stageDungeonRecords(
     data::EditSession& session, data::FormDatabase& forms, WorldModel& model,
     const dungeon::DungeonBakeResult& bake, const core::Guid& dungeonId,
     const str& dungeonName,
     const std::function<core::Guid(i32 cx, i32 cz)>& cellMeshAsset,
     const core::Guid& navAsset, const vector<DungeonAnchor>& anchors,
-    const core::Guid& doorModel, const core::Guid& doorMaterial) {
+    const DungeonKit& kit, const core::Guid& doorModel,
+    const core::Guid& doorMaterial) {
     DungeonStageResult result;
     if (bake.empty()) {
         return result;
@@ -192,7 +231,7 @@ DungeonStageResult stageDungeonRecords(
     torch.id = derived(dungeonId, kTorchLight);
     torch.editorId = dungeonName + "_torch";
     torch.color = { 1.0f, 0.62f, 0.32f };
-    torch.intensity = 6.0f;
+    torch.intensity = 2.9f;
     torch.radius = 11.0f;
     torch.flicker = 0.5f;
     torch.castsShadow = false;
@@ -332,10 +371,155 @@ DungeonStageResult stageDungeonRecords(
         stage.stageReference(doorOutRef, doorOutRef.editorId);
     }
 
-    LOG_INFO("Dungeon '{}': staged {} cells, {} torches, {} anchors "
-             "(live + session)",
+    // Gameplay anchors from the mission semantics (bake.populateAnchors),
+    // instantiated from the mine kit. Each family is one loop shaped like
+    // the torches'; a null kit guid skips its family.
+    const auto stageAnchored =
+        [&](const dungeon::DungeonBakeResult::Anchor& anchor,
+            const core::Guid& refGuid, const core::Guid& baseForm,
+            const char* tag, size_t i, const Vec3& scale) {
+            const i32 cx =
+                static_cast<i32>(std::floor(anchor.position.x / cell));
+            const i32 cz =
+                static_cast<i32>(std::floor(anchor.position.z / cell));
+            ReferenceForm ref;
+            ref.id = refGuid;
+            std::snprintf(editorId, sizeof(editorId), "%s_%s_%zu",
+                          dungeonName.c_str(), tag, i);
+            ref.editorId = editorId;
+            ref.baseForm = baseForm;
+            ref.cell = stageCell(cx, cz);
+            ref.position = anchor.position;
+            ref.rotation = yawRotation(anchor.yawDeg);
+            ref.scale = scale;
+            stage.stageReference(ref, ref.editorId);
+        };
+    const Vec3 unit { 1.0f };
+    if (kit.lever.isValid() && kit.barrier.isValid()) {
+        // The lever's guid is keyed on the lockId; its barrier derives
+        // from the lever reference (barrierForLever — the scene inverts
+        // the pairing at pull time).
+        for (size_t i = 0; i < bake.levers.size(); ++i) {
+            const auto& lever = bake.levers[i];
+            const core::Guid leverRef =
+                derived(dungeonId, kLeverRefBase + lever.lockId);
+            stageAnchored(lever, leverRef, kit.lever, "lever", i, unit);
+            for (const auto& barrier : bake.barriers) {
+                if (barrier.lockId == lever.lockId) {
+                    // Stretched across the ~5 m tunnel (wider on a turn,
+                    // bake.width); hand-retouchable like any reference.
+                    stageAnchored(barrier, barrierForLever(leverRef),
+                                  kit.barrier, "barrier", i,
+                                  { 3.0f * barrier.width, 2.5f, 1.0f });
+                }
+            }
+        }
+    }
+    if (kit.chest.isValid()) {
+        for (size_t i = 0; i < bake.chests.size(); ++i) {
+            stageAnchored(bake.chests[i],
+                          derived(dungeonId, kChestRefBase + i), kit.chest,
+                          "chest", i, unit);
+        }
+    }
+    if (kit.oreItem.isValid()) {
+        for (size_t i = 0; i < bake.oreVeins.size(); ++i) {
+            stageAnchored(bake.oreVeins[i],
+                          derived(dungeonId, kVeinRefBase + i), kit.oreItem,
+                          "vein", i, unit);
+        }
+    }
+    if (kit.enemy.isValid()) {
+        for (size_t i = 0; i < bake.enemySpawns.size(); ++i) {
+            stageAnchored(bake.enemySpawns[i],
+                          derived(dungeonId, kEnemyRefBase + i), kit.enemy,
+                          "enemy", i, unit);
+        }
+    }
+    if (kit.npc.isValid()) {
+        for (size_t i = 0; i < bake.npcSpawns.size(); ++i) {
+            stageAnchored(bake.npcSpawns[i],
+                          derived(dungeonId, kNpcRefBase + i), kit.npc,
+                          "npc", i, unit);
+        }
+    }
+    // Patrol anchors: without loaded "patrol" markers the NPCs never
+    // wander — frozen bandits neither look around nor spot the player.
+    if (kit.enemy.isValid() && !bake.patrolPoints.empty()) {
+        MarkerForm patrol;
+        patrol.id = derived(dungeonId, kPatrolMarker);
+        patrol.editorId = dungeonName + "_patrol";
+        patrol.kind = "patrol";
+        const reflect::TypeInfo& markerType = MarkerForm::staticTypeInfo();
+        stage.ensure(markerType, patrol.id, patrol.editorId);
+        stage.live(patrol);
+        stage.set(markerType, patrol.id, "kind", patrol.kind);
+        for (size_t i = 0; i < bake.patrolPoints.size(); ++i) {
+            stageAnchored(bake.patrolPoints[i],
+                          derived(dungeonId, kPatrolRefBase + i), patrol.id,
+                          "patrol", i, unit);
+        }
+    }
+
+    // A re-Accept can shrink a family (fewer enemies, fewer cells): the
+    // shipped records past the new count would linger with their OLD
+    // layout's positions. Disable them, live + session, scanning each
+    // contiguous guid family past its new end.
+    u32 leftovers = 0;
+    const reflect::TypeInfo& refType = ReferenceForm::staticTypeInfo();
+    const auto disable = [&](const core::Guid& guid) {
+        const data::FormHandle handle = forms.handleOf(guid);
+        if (!handle.isValid() ||
+            !forms.typeOf(handle)->isA(refType.id)) {
+            return false;
+        }
+        auto* ref = static_cast<ReferenceForm*>(forms.getMutable(handle));
+        if (ref->enabled) {
+            ref->enabled = false;
+            stage.set(refType, guid, "enabled", false);
+            ++leftovers;
+        }
+        return true;
+    };
+    const auto disablePast = [&](u64 base, size_t from) {
+        for (size_t i = from; disable(derived(dungeonId, base + i)); ++i) {
+        }
+    };
+    disablePast(kCellRefBase, bake.cellMeshes.size());
+    disablePast(kTorchRefBase, bake.torches.size());
+    disablePast(kChestRefBase, bake.chests.size());
+    disablePast(kVeinRefBase, bake.oreVeins.size());
+    disablePast(kEnemyRefBase, bake.enemySpawns.size());
+    disablePast(kNpcRefBase, bake.npcSpawns.size());
+    disablePast(kPatrolRefBase, bake.patrolPoints.size());
+    disablePast(kInMarkerBase, anchors.size());
+    disablePast(kOutMarkerBase, anchors.size());
+    disablePast(kDoorInRefBase, anchors.size());
+    disablePast(kDoorOutRefBase, anchors.size());
+    // Levers are keyed by lockId, not by index: sweep a bounded id range
+    // and disable any lever (and its derived barrier) no current lock owns.
+    for (u64 id = 0; id < 64; ++id) {
+        bool owned = false;
+        for (const auto& lever : bake.levers) {
+            owned = owned || lever.lockId == id;
+        }
+        if (owned) {
+            continue;
+        }
+        const core::Guid leverRef = derived(dungeonId, kLeverRefBase + id);
+        if (disable(leverRef)) {
+            disable(barrierForLever(leverRef));
+        }
+    }
+
+    LOG_INFO("Dungeon '{}': staged {} cells, {} torches, {} anchors, "
+             "{} locks, {} enemies, {} veins, {} patrols "
+             "({} leftovers disabled, live + session)",
              dungeonName, result.cellCount, result.torchCount,
-             anchors.size());
+             anchors.size(), bake.levers.size(),
+             kit.enemy.isValid() ? bake.enemySpawns.size() : 0,
+             kit.oreItem.isValid() ? bake.oreVeins.size() : 0,
+             kit.enemy.isValid() ? bake.patrolPoints.size() : 0, leftovers);
     return result;
 }
 

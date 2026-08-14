@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <cmath>
+
 #include "engine/dungeon/SpaceGraph.hpp"
 
 using namespace dungeon;
@@ -86,12 +88,27 @@ TEST_CASE("dungeon space: corridors only descend vertically on one-way edges") {
     }
 }
 
-TEST_CASE("dungeon space: entrance sits on the grid border, floor 0") {
+TEST_CASE("dungeon space: the goal anchors far from the entrance and deep") {
+    for (u32 seed = 1; seed <= 30; ++seed) {
+        const MissionGraph mission = buildMissionGraph(missionParams(seed));
+        const SpaceGraph g = buildSpaceGraph(mission, spaceParams(seed));
+        CAPTURE(seed);
+        REQUIRE_FALSE(g.rooms.empty());
+        const SpaceRoom& entrance = g.rooms[g.entrance];
+        const SpaceRoom& goal = g.rooms[g.goal];
+        // Far: at least half the (possibly grown) grid away in x.
+        CHECK(goal.pos.x - entrance.pos.x >= g.params.gridX / 2 - 3);
+        // Deep: the bottom half of the floors.
+        CHECK(goal.pos.floor >= g.params.floors / 2);
+    }
+}
+
+TEST_CASE("dungeon space: entrance sits near the grid edge, floor 0") {
     const MissionGraph mission = buildMissionGraph(missionParams(21));
     const SpaceGraph g = buildSpaceGraph(mission, spaceParams(21));
     REQUIRE_FALSE(g.rooms.empty());
     const SpaceRoom& entrance = g.rooms[g.entrance];
-    CHECK(entrance.pos.x == 0);
+    CHECK(entrance.pos.x == 2);
     CHECK(entrance.pos.floor == 0);
 }
 
@@ -99,8 +116,10 @@ TEST_CASE("dungeon space: world positions stack floors downward in Y") {
     SpaceParams p = spaceParams(1);
     const Vec3 top = slotCenter(p, { 2, 3, 0 });
     const Vec3 below = slotCenter(p, { 2, 3, 1 });
-    CHECK(top.y == 0.0f);
-    CHECK(below.y == -p.floorSpacing);
+    // The per-slot height jitter is shared by every floor of a column, so
+    // the floor spacing stays exact and the jitter stays bounded.
+    CHECK(std::abs(top.y) <= p.slotHeightJitter);
+    CHECK(below.y - top.y == -p.floorSpacing);
     CHECK(top.x == below.x);
     CHECK(top.z == below.z);
 }
@@ -110,7 +129,8 @@ TEST_CASE("dungeon space: an impossible fit returns an empty graph, no crash") {
     SpaceParams p = spaceParams(5);
     p.gridX = 2;
     p.gridZ = 1;
-    p.floors = 1; // fewer slots than mission nodes
+    p.floors = 1;  // fewer slots than mission nodes
+    p.attempts = 4; // below the growth threshold: the grid stays tiny
     const SpaceGraph g = buildSpaceGraph(mission, p);
     CHECK(g.rooms.empty());
 }

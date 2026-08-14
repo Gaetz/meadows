@@ -124,6 +124,17 @@ void WorldModel::indexReference(const data::FormDatabase& forms,
     list.push_back(reference);
 }
 
+void WorldModel::unindexReference(data::FormHandle cell,
+                                  data::FormHandle reference) {
+    const auto it = referencesByCell.find(cell.value);
+    if (it == referencesByCell.end()) {
+        return;
+    }
+    std::erase_if(it->second, [&](data::FormHandle h) {
+        return h.value == reference.value;
+    });
+}
+
 const vector<data::FormHandle>& WorldModel::referencesIn(
     data::FormHandle cell) const {
     static const vector<data::FormHandle> kEmpty;

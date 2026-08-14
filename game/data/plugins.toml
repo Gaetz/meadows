@@ -18,6 +18,11 @@ file = "base/combat.toml"
 [[plugins]]
 file = "base/village.toml"
 
+# Dungeon-gen mine kit (docs/DUNGEON-GEN.md): the base forms generated
+# mines instantiate (barrier/lever/chest/ore/NPC).
+[[plugins]]
+file = "base/mine-kit.toml"
+
 [[plugins]]
 file = "base/ui.toml"
 

@@ -46,7 +46,7 @@ TEST_CASE("dungeon density: corridor waypoints are carved through") {
     for (const SpaceEdge& e : space.edges) {
         for (const GridPos& g : e.path) {
             const Vec3 p = slotCenter(space.params, g) +
-                           Vec3 { 0.0f, dp.tunnelRadius * 0.85f, 0.0f };
+                           Vec3 { 0.0f, dp.tunnelRadius * 0.45f, 0.0f };
             CAPTURE(g.x);
             CAPTURE(g.z);
             CAPTURE(g.floor);
@@ -67,10 +67,12 @@ TEST_CASE("dungeon density: sampling is pure and deterministic") {
     other.seed = 8;
     const DensityField c(space, other);
     // Same geometry, different seed: the noise (thus the surface) moves.
+    // Probe at mid-height across the room span: floor planes are seedless
+    // by design, walls and ceilings carry the noise.
     bool differs = false;
     for (i32 i = 0; i < 20 && !differs; ++i) {
         const Vec3 p = roomCenter(space, space.entrance) +
-                       Vec3 { static_cast<f32>(i) * 0.37f, 1.0f, 0.53f };
+                       Vec3 { static_cast<f32>(i) * 0.9f, 2.5f, 0.53f };
         differs = a.sample(p) != c.sample(p);
     }
     CHECK(differs);

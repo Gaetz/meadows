@@ -11,7 +11,8 @@
 #include "game/ScreenStack.hpp"   // show("recruit")
 #include "engine/render/landscape/TerrainNoise.hpp" // terrain::height
 #include "game/SaveGame.hpp"                        // PendingSaveLayer
-#include "game/scenes/NpcDirector.hpp"              // Npc, NpcDirector
+#include "game/scenes/NpcDirector.hpp"
+#include "game/scenes/NpcMovement.hpp" // groundAt
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/GameplayEffects.hpp" // applyEffect (revive)
 #include "gameplay/actors/ActorState.hpp" // gameplay::FollowerState
@@ -339,7 +340,8 @@ void FollowerController::repositionActiveFollowers(const FollowerContext& ctx,
         Vec3 to = anchor - npc.entity.get<world::Transform>().position;
         to.y = 0.0f;
         if (glm::length(to) > tuning.teleportRadius) {
-            teleportNear(anchor, ctx.terrainParams, npc);
+            teleportNear(anchor, ctx.terrainParams, ctx.interiorMode,
+                         ctx.physics, npc);
         }
     }
 }
@@ -458,17 +460,20 @@ void FollowerController::onHitTaken(const FollowerContext& ctx,
 
 void FollowerController::onDeath(const FollowerContext& ctx,
                                  const gameplay::Event& event) {
-    const u64 dead = event.target.id();
-    if (dead == 0) {
+    disengage(ctx, event.target.id());
+}
+
+void FollowerController::disengage(const FollowerContext& ctx, u64 gone) {
+    if (gone == 0) {
         return;
     }
     for (auto& npcPtr : ctx.npcDirector.npcs()) {
-        if (gameplay::disengageOnDeath(dead, npcPtr->combatTarget.id())) {
+        if (gameplay::disengageOnDeath(gone, npcPtr->combatTarget.id())) {
             npcPtr->combatTarget = ecs::Entity {};
         }
     }
-    // A dead hostile is no longer « ma cible ».
-    if (playerTarget_.id() == dead) {
+    // A dead (or departed) hostile is no longer « ma cible ».
+    if (playerTarget_.id() == gone) {
         playerTarget_ = ecs::Entity {};
     }
 }
@@ -1438,12 +1443,15 @@ bool FollowerController::buryByContact(const FollowerContext& ctx,
 
 void FollowerController::teleportNear(const Vec3& anchor,
                                       const render::TerrainParams& terrain,
+                                      bool interiorMode,
+                                      phys::PhysicsWorld* physics,
                                       Npc& npc) {
     auto& transform = npc.entity.get_mut<world::Transform>();
     // A fixed side-step off the anchor (feel pass later), grounded the way
-    // every NPC build is (NpcSpawner's terrain::height snap).
+    // every NPC step is (groundAt — collision probe in interiors).
     Vec3 spot = anchor + Vec3 { 1.6f, 0.0f, -1.6f };
-    spot.y = render::terrain::height(terrain, spot.x, spot.z);
+    spot.y = anchor.y;
+    groundAt(terrain, interiorMode, physics, spot);
     transform.position = spot;
     npc.path.clear();
     npc.pathIndex = 0;

@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <cmath>
+
 #include "engine/dungeon/DungeonBake.hpp"
 
 using namespace dungeon;
@@ -12,7 +14,7 @@ DungeonParams mineParams(u32 seed) {
     p.space.gridX = 6;
     p.space.gridZ = 6;
     p.space.floors = 2;
-    p.voxelSize = 1.2f; // coarse: keeps the test fast, the contract identical
+    p.voxelSize = 1.8f; // coarse: keeps the test fast, the contract identical
     return p;
 }
 
@@ -79,14 +81,38 @@ TEST_CASE("dungeon bake: same seed replays bit for bit (§8)") {
           c.cellMeshes.size() * c.torches.size());
 }
 
-TEST_CASE("dungeon bake: the entrance sits in the entrance room, floor 0") {
+TEST_CASE("dungeon bake: lock-and-key missions anchor paired barriers and levers") {
+    DungeonParams p = mineParams(5);
+    p.mission.patterns = { CyclePattern::SimpleLockKey };
+    const DungeonBakeResult r = bakeDungeon(p);
+    REQUIRE_FALSE(r.empty());
+
+    REQUIRE_FALSE(r.barriers.empty());
+    REQUIRE(r.levers.size() == r.barriers.size());
+    for (const auto& barrier : r.barriers) {
+        CHECK(barrier.lockId != 0);
+        bool paired = false;
+        for (const auto& lever : r.levers) {
+            paired = paired || lever.lockId == barrier.lockId;
+        }
+        CHECK(paired);
+    }
+    REQUIRE(r.chests.size() == 1);
+    const Vec3 goalFloor = roomCenter(r.space, r.space.goal);
+    CHECK(glm::length(r.chests[0].position - goalFloor) < 0.01f);
+    CHECK_FALSE(r.enemySpawns.empty()); // at least the goal guardian
+}
+
+TEST_CASE("dungeon bake: the exit door hugs the entrance room's outer wall") {
     const DungeonBakeResult r = bakeDungeon(mineParams(3));
     REQUIRE_FALSE(r.empty());
     const SpaceRoom& entrance = r.space.rooms[r.space.entrance];
     CHECK(entrance.pos.floor == 0);
     const Vec3 c = slotCenter(r.space.params, entrance.pos);
-    CHECK(glm::length(glm::vec2(r.entrancePos.x - c.x, r.entrancePos.z - c.z)) <
-          1.0f);
+    // Against the border-side wall, inside the carved radius.
+    CHECK(r.entrancePos.x < c.x - entrance.radius * 0.5f);
+    CHECK(r.entrancePos.x > c.x - entrance.radius);
+    CHECK(std::abs(r.entrancePos.z - c.z) < 0.01f);
     CHECK(r.entrancePos.y < 1.0f);
     CHECK(r.entrancePos.y > -1.0f);
 }

@@ -1,6 +1,7 @@
 #include "engine/dungeon/SpaceGraph.hpp"
 
 #include "engine/core/Rng.hpp"
+#include "engine/terrain/Noise.hpp"
 
 #include <algorithm>
 #include <string>
@@ -38,19 +39,24 @@ struct Grid {
     }
 };
 
-// Rooms live on the even (x, z) sub-lattice; odd rows/columns stay free as
-// corridor channels. Without this, rooms pack contiguously around their
-// parent and corridor routing (free cells only) starves.
-bool roomSlot(const GridPos& g) {
-    return g.x % 2 == 0 && g.z % 2 == 0;
+// Rooms live on the even (x, z) sub-lattice — odd rows/columns stay free as
+// corridor channels — and NEVER on the outermost ring: a border room only
+// has 2-3 of the 4 channels a room's degree may need (the corner rooms were
+// the unroutable seeds). Capacity lost to the margin comes back through the
+// grid growth in buildSpaceGraph.
+bool roomSlot(const Grid& grid, const GridPos& g) {
+    return g.x % 2 == 0 && g.z % 2 == 0 && g.x >= 2 && g.z >= 2 &&
+           g.x <= grid.sx - 3 && g.z <= grid.sz - 3;
 }
 
-// Deterministic expanding search: nearest free room slot to `anchor`,
-// preferring `wantFloor`, scanning rings in a fixed order so the same seed
-// replays.
+// Deterministic expanding search: nearest free room slot to `anchor` from
+// `minRing` outward, preferring `wantFloor`, scanning rings in a fixed
+// order so the same seed replays. Later embedding attempts raise minRing:
+// packed clusters starve corridor channels (ramp prisms included), and a
+// bigger grid alone never loosens a nearest-slot cluster.
 bool findFreeSlot(const Grid& grid, const GridPos& anchor, i32 wantFloor,
-                  GridPos& out) {
-    for (i32 ring = 1; ring < grid.sx + grid.sz; ++ring) {
+                  i32 minRing, GridPos& out) {
+    for (i32 ring = minRing; ring < grid.sx + grid.sz; ++ring) {
         for (i32 df = 0; df < grid.sf; ++df) {
             // 0, -1, +1, -2, +2... around the wanted floor.
             const i32 floor =
@@ -64,7 +70,8 @@ bool findFreeSlot(const Grid& grid, const GridPos& anchor, i32 wantFloor,
                         continue;
                     }
                     const GridPos g { anchor.x + dx, anchor.z + dz, floor };
-                    if (grid.inside(g) && roomSlot(g) && grid.at(g) == kFree) {
+                    if (grid.inside(g) && roomSlot(grid, g) &&
+                        grid.at(g) == kFree) {
                         out = g;
                         return true;
                     }
@@ -115,6 +122,17 @@ bool routeCorridor(Grid& grid, i32 roomA, i32 roomB, bool allowDrop,
         return occupant == kFree || occupant == roomA || occupant == roomB ||
                (shareable && occupant == kCorridorShared);
     };
+    // Floor-changing hops never share: their tube crosses the vertical
+    // prism of both columns mid-air, so any other corridor through those
+    // cells ends up pierced from above (a ramp mouth in its ceiling — an
+    // unclimbable hole instead of a junction).
+    const auto traversableStrict = [&](const GridPos& g) {
+        if (!grid.inside(g)) {
+            return false;
+        }
+        const i32 occupant = grid.at(g);
+        return occupant == kFree || occupant == roomA || occupant == roomB;
+    };
     GridPos found { -1, -1, -1 };
     for (size_t head = 0; head < queue.size() && found.x < 0; ++head) {
         const GridPos cur = queue[head];
@@ -127,17 +145,24 @@ bool routeCorridor(Grid& grid, i32 roomA, i32 roomB, bool allowDrop,
                                  cur.floor + s[2] };
             if (!grid.inside(next) ||
                 prev[static_cast<size_t>(index(next))] != kUnvisited ||
-                !traversable(next)) {
+                !(s[2] != 0 ? traversableStrict(next)
+                            : traversable(next))) {
                 continue;
             }
-            // A ramp hop carves diagonally through the vertical prism of
-            // both columns; the whole prism must be claimable, or a later
-            // flat corridor through it would end up as a balcony over the
-            // ramp's chute (a nav cliff).
             if (s[2] != 0 && !drop) {
+                // Ramps run between CHANNEL cells only: a big room's air
+                // envelope swallows the end of a ramp landing on its slot
+                // (the last stretch hovers over the room floor — an
+                // unclimbable drop). Rooms are always entered flat, at
+                // their own floor level. Vertical drops may still pierce
+                // rooms: falling in is the one-way point.
+                if (grid.at(cur) >= 0 || grid.at(next) >= 0) {
+                    continue;
+                }
                 const GridPos prismA { cur.x, cur.z, next.floor };
                 const GridPos prismB { next.x, next.z, cur.floor };
-                if (!traversable(prismA) || !traversable(prismB)) {
+                if (!traversableStrict(prismA) ||
+                    !traversableStrict(prismB)) {
                     continue;
                 }
             }
@@ -165,22 +190,53 @@ bool routeCorridor(Grid& grid, i32 roomA, i32 roomB, bool allowDrop,
                 p / (grid.sx * grid.sz) };
     }
     std::reverse(path.begin(), path.end());
-    const auto claim = [&](const GridPos& g) {
-        if (grid.at(g) == kFree) {
-            grid.at(g) = shareable ? kCorridorShared : kCorridorExclusive;
-        }
-    };
-    for (const GridPos& g : path) {
-        claim(g);
-    }
-    // Ramp hops claim their whole vertical prism (see the neighbor check).
+    // Self-crossing check on the FINAL path only (checking during the
+    // search would sterilize it): no cell of this path may sit in the
+    // vertical prism of one of its own ramp hops — the ramp would pierce
+    // its own corridor's ceiling and turn the edge one-way in game (the
+    // seed-1336 playtest trap). Rejecting sends the attempt to retry.
     for (size_t i = 1; i < path.size(); ++i) {
         const GridPos& a = path[i - 1];
         const GridPos& b = path[i];
-        if (a.floor != b.floor && (a.x != b.x || a.z != b.z)) {
-            claim({ a.x, a.z, b.floor });
-            claim({ b.x, b.z, a.floor });
+        if (a.floor == b.floor || (a.x == b.x && a.z == b.z)) {
+            continue;
         }
+        const GridPos prisms[] = { { a.x, a.z, b.floor },
+                                   { b.x, b.z, a.floor } };
+        for (const GridPos& prism : prisms) {
+            for (const GridPos& g : path) {
+                if (g == prism) {
+                    return false;
+                }
+            }
+        }
+    }
+    const auto claim = [&](const GridPos& g, bool exclusive) {
+        i32& cell = grid.at(g);
+        if (cell == kFree ||
+            (exclusive && cell == kCorridorShared)) {
+            cell = exclusive || !shareable ? kCorridorExclusive
+                                           : kCorridorShared;
+        }
+    };
+    // Floor-changing hops first: their pair AND vertical prism go exclusive
+    // even on a shareable edge (see traversableStrict). Flat cells then take
+    // the edge's own class.
+    for (size_t i = 1; i < path.size(); ++i) {
+        const GridPos& a = path[i - 1];
+        const GridPos& b = path[i];
+        if (a.floor == b.floor) {
+            continue;
+        }
+        claim(a, true);
+        claim(b, true);
+        if (a.x != b.x || a.z != b.z) {
+            claim({ a.x, a.z, b.floor }, true);
+            claim({ b.x, b.z, a.floor }, true);
+        }
+    }
+    for (const GridPos& g : path) {
+        claim(g, false);
     }
     outPath = std::move(path);
     return true;
@@ -224,10 +280,27 @@ bool tryEmbed(const MissionGraph& mission, const SpaceParams& params,
     for (const u32 node : order) {
         GridPos slot;
         if (node == mission.entrance) {
-            // The entrance hugs the grid border on floor 0: that is where the
-            // outside door will connect.
-            slot = { 0, (params.gridZ / 2) & ~1, 0 };
+            // Floor 0, one slot in from the border: a border room only has
+            // three corridor channels, one short of the entrance's degree
+            // (two cycle arcs + the service exit). The outside door is a
+            // marker teleport, so nothing needs the grid edge itself.
+            slot = { 2, (params.gridZ / 2) & ~1, 0 };
             if (grid.at(slot) != kFree) {
+                return false;
+            }
+            // The border-side channel stays corridor-free: the exit door
+            // to the overworld stands against that wall.
+            grid.at({ slot.x - 1, slot.z, 0 }) = kCorridorExclusive;
+        } else if (node == mission.goal) {
+            // The goal anchors the FAR corner on the DEEPEST floor before
+            // anything else clusters (the Unexplored order: pin start and
+            // goal, then stretch the loop between them) — a mine digs
+            // down toward its prize, and "the goal one corridor from the
+            // door" was the first playtest complaint.
+            const GridPos far { (params.gridX - 3) & ~1,
+                                (params.gridZ / 2) & ~1,
+                                params.floors - 1 };
+            if (!findFreeSlot(grid, far, far.floor, 0, slot)) {
                 return false;
             }
         } else {
@@ -238,7 +311,9 @@ bool tryEmbed(const MissionGraph& mission, const SpaceParams& params,
                 wantFloor += rng.chance(0.7) ? 1 : -1; // bias downward: mines dig
                 wantFloor = std::clamp(wantFloor, 0, params.floors - 1);
             }
-            if (!findFreeSlot(grid, near.pos, wantFloor, slot)) {
+            const i32 spread = std::min(3, static_cast<i32>(attempt) / 8);
+            const i32 minRing = 1 + rng.range(0, spread);
+            if (!findFreeSlot(grid, near.pos, wantFloor, minRing, slot)) {
                 return false;
             }
         }
@@ -309,8 +384,16 @@ SpaceGraph buildSpaceGraph(const MissionGraph& mission,
 }
 
 Vec3 slotCenter(const SpaceParams& params, const GridPos& pos) {
+    // Low-frequency value noise: neighbouring slots stay correlated, so
+    // the offsets read as gentle terrain, not as steps.
+    const f32 jitter =
+        params.slotHeightJitter *
+        (2.0f * render::noise::value(params.seed,
+                                     static_cast<f32>(pos.x) * 0.37f,
+                                     static_cast<f32>(pos.z) * 0.37f) -
+         1.0f);
     return { (static_cast<f32>(pos.x) + 0.5f) * params.cellSpacing,
-             -static_cast<f32>(pos.floor) * params.floorSpacing,
+             -static_cast<f32>(pos.floor) * params.floorSpacing + jitter,
              (static_cast<f32>(pos.z) + 0.5f) * params.cellSpacing };
 }
 

@@ -73,9 +73,11 @@ void NpcSpawner::refreshNpcs(
         .each([&](flecs::entity, world::Transform& transform,
                   const world::MarkerKind& marker) {
             if (marker.kind == "patrol") {
-                transform.position.y = render::terrain::height(
-                    ctx.terrainParams, transform.position.x,
-                    transform.position.z);
+                if (!ctx.interiorMode) {
+                    transform.position.y = render::terrain::height(
+                        ctx.terrainParams, transform.position.x,
+                        transform.position.z);
+                }
                 patrolPoints.push_back(transform.position);
             }
         });
@@ -253,11 +255,15 @@ void NpcSpawner::refreshNpcs(
                 skinned->indices.data());
             npc->indexCount = static_cast<u32>(skinned->indices.size());
 
-            // Ground the entity (actors have no MeshRender: the mesh-path snap
-            // skipped them).
-            transform.position.y = render::terrain::height(
-                ctx.terrainParams, transform.position.x,
-                transform.position.z);
+            // Ground the entity (actors have no MeshRender: the mesh-path
+            // snap skipped them). Interiors keep the authored ABSOLUTE y —
+            // the overworld terrain height would teleport the actor out of
+            // the dungeon.
+            if (!ctx.interiorMode) {
+                transform.position.y = render::terrain::height(
+                    ctx.terrainParams, transform.position.x,
+                    transform.position.z);
+            }
             // Stats + saved state / loadout run through
             // finalizeActorSpawn — deferred below: it adds components, a
             // table move on the locked iteration.

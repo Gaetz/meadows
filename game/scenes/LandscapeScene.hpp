@@ -208,6 +208,19 @@ private:
     // terrain/sky/sun/water — ambient + local lights only).
     data::FormHandle activeWorldspace {};
     bool interiorMode { false };
+    // Last travel's arrival marker: in an interior this is the way OUT —
+    // where broken fighters flee (NpcContext.interiorExit).
+    Vec3 interiorArrival { 0.0f };
+    // Fighters who fled through the interior's exit: despawned inside
+    // (their reference disabled through the pending layer), respawned
+    // outside the door if the player follows within 20 s — any longer
+    // and they made a clean getaway.
+    struct InteriorEscape {
+        core::Guid baseForm;
+        f32 at;     // timeSeconds stamp
+        f32 health; // base health at the door — his wounds follow him out
+    };
+    vector<InteriorEscape> interiorEscapes;
 
     // In-game interaction mode. Play = first-person capsule; Spectator = free
     // fly camera that pauses the sim (the base for a future photo mode); Edit =

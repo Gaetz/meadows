@@ -1,7 +1,10 @@
 #include "engine/dungeon/DungeonBake.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <utility>
 
+#include "engine/core/Rng.hpp"
 #include "engine/dungeon/MeshExtract.hpp"
 #include "engine/terrain/Noise.hpp"
 
@@ -57,6 +60,346 @@ void bakeVertexColors(render::MeshData& mesh, const DensityField& field,
     }
 }
 
+// Walkability as a GENERATION INVARIANT: flood the baked nav grid and
+// verify (a) every room center is reachable from the entrance, falls
+// allowed (a drop is a legal one-way forward), and (b) the entrance is
+// re-reachable CLIMB-ONLY from the goal and from every lever — the two
+// geometric stranding families the playtests kept finding one seed at a
+// time. A failing embedding is re-rolled before the expensive mesh bake.
+bool navValidates(const SpaceGraph& space, const NavGrid& grid,
+                  const Vec3& entrancePos,
+                  const vector<DungeonBakeResult::Anchor>& levers) {
+    if (grid.empty()) {
+        return false;
+    }
+    const f32 maxStep = 0.5f; // slightly under the navigator's own budget
+    const auto snap = [&](const Vec3& p) -> i64 {
+        const u32 column = grid.columnOf(p.x, p.z);
+        if (column == ~0u) {
+            return -1;
+        }
+        u32 begin = 0;
+        u32 end = 0;
+        grid.columnLevels(column, begin, end);
+        i64 best = -1;
+        f32 bestDelta = 2.5f;
+        for (u32 l = begin; l < end; ++l) {
+            const f32 delta = std::abs(grid.levels[l].floorY - p.y);
+            if (delta < bestDelta) {
+                bestDelta = delta;
+                best = l;
+            }
+        }
+        return best;
+    };
+    const auto flood = [&](i64 start, bool allowFalls) {
+        vector<bool> in(grid.levels.size(), false);
+        vector<u32> queue;
+        if (start < 0) {
+            return in;
+        }
+        in[static_cast<size_t>(start)] = true;
+        queue.push_back(static_cast<u32>(start));
+        for (size_t head = 0; head < queue.size(); ++head) {
+            const u32 level = queue[head];
+            // Column coordinates by CSR search.
+            u32 column = 0;
+            {
+                u32 lo = 0;
+                u32 hi = grid.width * grid.depth;
+                while (lo + 1 < hi) {
+                    const u32 mid = (lo + hi) / 2;
+                    (grid.firstLevel[mid] <= level ? lo : hi) = mid;
+                }
+                column = lo;
+            }
+            const i32 ix = static_cast<i32>(column % grid.width);
+            const i32 iz = static_cast<i32>(column / grid.width);
+            const f32 y = grid.levels[level].floorY;
+            const auto visit = [&](u32 l) {
+                if (!in[l]) {
+                    in[l] = true;
+                    queue.push_back(l);
+                }
+            };
+            if (allowFalls) {
+                u32 begin = 0;
+                u32 end = 0;
+                grid.columnLevels(column, begin, end);
+                for (u32 l = begin; l < end; ++l) {
+                    if (grid.levels[l].floorY < y - maxStep) {
+                        visit(l);
+                    }
+                }
+            }
+            const i32 steps[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 },
+                                      { 0, -1 } };
+            for (const auto& s : steps) {
+                const i32 nx = ix + s[0];
+                const i32 nz = iz + s[1];
+                if (nx < 0 || nz < 0 || nx >= static_cast<i32>(grid.width) ||
+                    nz >= static_cast<i32>(grid.depth)) {
+                    continue;
+                }
+                u32 begin = 0;
+                u32 end = 0;
+                grid.columnLevels(static_cast<u32>(nz) * grid.width +
+                                      static_cast<u32>(nx),
+                                  begin, end);
+                for (u32 l = begin; l < end; ++l) {
+                    if (std::abs(grid.levels[l].floorY - y) <= maxStep) {
+                        visit(l);
+                    }
+                }
+            }
+        }
+        return in;
+    };
+
+    const i64 entranceLevel = snap(entrancePos);
+    if (entranceLevel < 0) {
+        return false;
+    }
+    const vector<bool> forward = flood(entranceLevel, true);
+    for (u32 r = 0; r < space.rooms.size(); ++r) {
+        const i64 level =
+            snap(slotCenter(space.params, space.rooms[r].pos) +
+                 Vec3 { 0.0f, 0.3f, 0.0f });
+        if (level < 0 || !forward[static_cast<size_t>(level)]) {
+            return false;
+        }
+    }
+    const auto climbsHome = [&](const Vec3& from) {
+        const i64 level = snap(from + Vec3 { 0.0f, 0.3f, 0.0f });
+        return level >= 0 &&
+               flood(level, false)[static_cast<size_t>(entranceLevel)];
+    };
+    if (!climbsHome(slotCenter(space.params,
+                               space.rooms[space.goal].pos))) {
+        return false;
+    }
+    for (const auto& lever : levers) {
+        if (!climbsHome(lever.position)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The mission semantics made concrete (docs/DUNGEON-GEN.md, populate):
+// a barrier across each Locked corridor with its lever in the matching Key
+// room, the prize chest at the Goal, ore veins in Reward rooms, enemies on
+// Dangerous arcs plus a Goal guardian, one flavor NPC. Floors are flat
+// planes at the slot height, so anchors sit at y = floor exactly.
+void populateAnchors(DungeonBakeResult& result, const DungeonParams& params,
+                     core::Rng& rng) {
+    const SpaceGraph& space = result.space;
+    const auto roomFloor = [&](const SpaceRoom& room) {
+        return slotCenter(space.params, room.pos);
+    };
+    const auto yawBetween = [](const Vec3& from, const Vec3& to) {
+        return glm::degrees(std::atan2(to.x - from.x, to.z - from.z));
+    };
+    // An anchor must stand where the nav grid baked a floor: corridor
+    // wobble and wall noise erode the nominal floor discs, and a prop
+    // placed outside them is buried in rock. Y stays the analytic floor
+    // plane (exact); the grid is the validity oracle. Actors additionally
+    // demand a wall-CLEAR column (the agent-radius story, NavGrid): a
+    // walkable cell 10 cm from the rock stands a spawned capsule half
+    // inside the wall.
+    const auto walkable = [&](const Vec3& p) {
+        const u32 column = result.navGrid.columnOf(p.x, p.z);
+        if (column == ~0u) {
+            return false;
+        }
+        u32 begin = 0;
+        u32 end = 0;
+        result.navGrid.columnLevels(column, begin, end);
+        for (u32 l = begin; l < end; ++l) {
+            if (std::abs(result.navGrid.levels[l].floorY - p.y) <= 0.6f) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto standable = [&](const Vec3& p) {
+        if (!walkable(p)) {
+            return false;
+        }
+        const u32 column = result.navGrid.columnOf(p.x, p.z);
+        const i32 ix = static_cast<i32>(column % result.navGrid.width);
+        const i32 iz = static_cast<i32>(column / result.navGrid.width);
+        return !result.navGrid.wallAdjacent(ix, iz, p.y);
+    };
+
+    // The service exit's lever overrides its Key room: it stands IN the
+    // corridor right behind the grille (the Dark Souls shortcut — pull,
+    // and you are already at the gate).
+    vector<std::pair<u32, Vec3>> leverOverrides;
+    for (const SpaceEdge& edge : space.edges) {
+        if (edge.kind == EdgeKind::Locked && edge.path.size() >= 3) {
+            // The barrier stands on a corridor CELL center: cell centers
+            // are pipe junctions the wobble never displaces, so the gate
+            // is always inside the carved tube. Prefer a cell with flat
+            // hops on both sides (a gate at a ramp mouth gapes over the
+            // slope) — nearest the ENTRANCE mouth when the lock touches
+            // the entrance (the service exit: the grille shows from the
+            // entrance room), nearest the middle otherwise.
+            const bool serviceExit =
+                edge.a == space.entrance || edge.b == space.entrance;
+            const size_t last = edge.path.size() - 2;
+            const size_t target =
+                !serviceExit               ? edge.path.size() / 2
+                : edge.a == space.entrance ? 1
+                                           : last;
+            const auto straightAt = [&](size_t i) {
+                return edge.path[i].x - edge.path[i - 1].x ==
+                           edge.path[i + 1].x - edge.path[i].x &&
+                       edge.path[i].z - edge.path[i - 1].z ==
+                           edge.path[i + 1].z - edge.path[i].z;
+            };
+            // Nearest flat cell to the target, straight cells beating
+            // turns (a gate on a turn must span the junction's diagonal).
+            // The service exit keeps distance first — its grille must stay
+            // at the entrance mouth; the widened prop covers a diagonal.
+            size_t best = target;
+            size_t bestDistance = edge.path.size();
+            bool bestStraight = false;
+            for (size_t i = 1; i <= last; ++i) {
+                if (edge.path[i - 1].floor != edge.path[i].floor ||
+                    edge.path[i].floor != edge.path[i + 1].floor) {
+                    continue;
+                }
+                const size_t distance =
+                    i > target ? i - target : target - i;
+                const bool straight = straightAt(i);
+                const bool better =
+                    serviceExit
+                        ? std::pair { distance, !straight } <
+                              std::pair { bestDistance, !bestStraight }
+                        : std::pair { !straight, distance } <
+                              std::pair { !bestStraight, bestDistance };
+                if (better) {
+                    bestDistance = distance;
+                    bestStraight = straight;
+                    best = i;
+                }
+            }
+            const Vec3 at = slotCenter(space.params, edge.path[best]);
+            result.barriers.push_back(
+                { at,
+                  yawBetween(slotCenter(space.params, edge.path[best - 1]),
+                             slotCenter(space.params, edge.path[best + 1])),
+                  edge.lockId, bestStraight ? 1.0f : 1.6f });
+            if (serviceExit) {
+                // The corridor cell on the NON-entrance side of the grille.
+                const size_t leverIdx =
+                    edge.a == space.entrance
+                        ? std::min(best + 1, last)
+                        : (best > 1 ? best - 1 : best);
+                leverOverrides.push_back(
+                    { edge.lockId,
+                      slotCenter(space.params, edge.path[leverIdx]) });
+            }
+        }
+        if (edge.kind == EdgeKind::Dangerous) {
+            // Nearest walkable cell center to the corridor's middle.
+            const size_t mid = edge.path.size() / 2;
+            for (size_t off = 0; off < edge.path.size(); ++off) {
+                const size_t i = off % 2 == 0 ? mid + off / 2
+                                              : mid - (off + 1) / 2;
+                if (i >= edge.path.size()) {
+                    continue;
+                }
+                const Vec3 spot = slotCenter(space.params, edge.path[i]);
+                if (standable(spot)) {
+                    result.enemySpawns.push_back({ spot, 0.0f, 0 });
+                    break;
+                }
+            }
+        }
+    }
+
+    // Room degree (space edges touching it): degree-1 rooms are the
+    // dead ends the mine dug FOR something.
+    vector<u32> degree(space.rooms.size(), 0);
+    for (const SpaceEdge& edge : space.edges) {
+        ++degree[edge.a];
+        ++degree[edge.b];
+    }
+
+    const MissionGraph& mission = result.mission;
+    for (u32 r = 0; r < space.rooms.size(); ++r) {
+        const SpaceRoom& room = space.rooms[r];
+        const MissionNode& node = mission.nodes[room.missionNode];
+        const Vec3 floor = roomFloor(room);
+        // A deterministic scatter offset keeps room props off the exact
+        // center (where the player walks in looking); redrawn until the
+        // spot passes `fits` — walkable for props (a vein may hug the
+        // wall), wall-clear for actors — the validated room center as the
+        // fallback.
+        const auto scatter = [&](const auto& fits) {
+            for (int attempt = 0; attempt < 8; ++attempt) {
+                const Vec3 p =
+                    floor +
+                    Vec3 { static_cast<f32>(rng.unit() - 0.5) * room.radius,
+                           0.0f,
+                           static_cast<f32>(rng.unit() - 0.5) * room.radius };
+                if (fits(p)) {
+                    return p;
+                }
+            }
+            return floor;
+        };
+        if (node.kind == NodeKind::Key) {
+            Vec3 leverPos = floor;
+            for (const auto& [lockId, pos] : leverOverrides) {
+                if (lockId == node.lockId) {
+                    leverPos = pos;
+                }
+            }
+            result.levers.push_back({ leverPos, 0.0f, node.lockId });
+            continue;
+        }
+        if (node.kind == NodeKind::Reward) {
+            result.oreVeins.push_back({ scatter(walkable), 0.0f, 0 });
+            continue;
+        }
+        if (node.kind != NodeKind::Room) {
+            continue;
+        }
+        result.patrolPoints.push_back({ floor, 0.0f, 0 });
+        if (degree[r] <= 1) {
+            result.oreVeins.push_back({ scatter(walkable), 0.0f, 0 });
+        } else if (rng.chance(params.bonusVeinChancePerRoom)) {
+            result.oreVeins.push_back({ scatter(walkable), 0.0f, 0 });
+        }
+        if (rng.chance(params.enemyChancePerRoom)) {
+            result.enemySpawns.push_back(
+                { scatter(standable),
+                  static_cast<f32>(rng.range(0, 359)), 0 });
+        }
+    }
+
+    const Vec3 goalFloor =
+        roomFloor(space.rooms[space.goal]);
+    const Vec3 entranceFloor = roomFloor(space.rooms[space.entrance]);
+    result.chests.push_back(
+        { goalFloor, yawBetween(goalFloor, entranceFloor), 0 });
+    // The guardian stands a step in front of the prize, facing the way in.
+    const Vec3 guardPost = goalFloor + Vec3 { 2.0f, 0.0f, 2.0f };
+    result.enemySpawns.push_back({ standable(guardPost) ? guardPost
+                                                        : goalFloor,
+                                   yawBetween(goalFloor, entranceFloor),
+                                   0 });
+    if (!result.oreVeins.empty()) {
+        const Vec3& vein = result.oreVeins.front().position;
+        const Vec3 beside = vein + Vec3 { 1.5f, 0.0f, -1.5f };
+        result.npcSpawns.push_back(
+            { standable(beside) ? beside : vein, 0.0f, 0 });
+    }
+}
+
 } // namespace
 
 DungeonBakeResult bakeDungeon(const DungeonParams& params) {
@@ -66,15 +409,55 @@ DungeonBakeResult bakeDungeon(const DungeonParams& params) {
     // with the same params replays the exact dungeon.
     MissionParams mission = params.mission;
     mission.seed = params.seed;
-    SpaceParams space = params.space;
-    space.seed = params.seed ^ 0x51A9E37Bu;
     DensityParams density = params.density;
     density.seed = params.seed ^ 0xD4C3B2A1u;
 
     result.mission = buildMissionGraph(mission);
-    result.space = buildSpaceGraph(result.mission, space);
-    if (result.space.rooms.empty()) {
-        return result; // could not embed: caller retunes params
+
+    // Nav-validated embedding: carve + nav-bake + anchors are cheap next
+    // to the mesh pass, so an embedding whose walkable grid violates the
+    // invariant is simply re-rolled with a new space seed (deterministic
+    // schedule). Most seeds pass on the first roll.
+    bool navOk = false;
+    for (u32 navAttempt = 0; navAttempt < 16 && !navOk; ++navAttempt) {
+        SpaceParams space = params.space;
+        space.seed =
+            (params.seed ^ 0x51A9E37Bu) + navAttempt * 0x9E3779B9u;
+        result.space = buildSpaceGraph(result.mission, space);
+        if (result.space.rooms.empty()) {
+            continue;
+        }
+        const DensityField field(result.space, density);
+        result.boundsMin = field.boundsMin();
+        result.boundsMax = field.boundsMax();
+        result.navGrid = bakeNavGrid(
+            [&field](const Vec3& p) { return field.sample(p); },
+            field.boundsMin(), field.boundsMax(), params.navCellSize,
+            params.navMinClearance);
+
+        const SpaceRoom& entranceRoom =
+            result.space.rooms[result.space.entrance];
+        result.entranceDir = { -1.0f, 0.0f, 0.0f };
+        result.entrancePos =
+            slotCenter(result.space.params, entranceRoom.pos) +
+            result.entranceDir * (entranceRoom.radius - 1.2f) +
+            Vec3 { 0.0f, 0.3f, 0.0f };
+
+        result.barriers.clear();
+        result.levers.clear();
+        result.chests.clear();
+        result.oreVeins.clear();
+        result.enemySpawns.clear();
+        result.npcSpawns.clear();
+        result.patrolPoints.clear();
+        core::Rng populateRng(params.seed ^ 0xE11E31E5u);
+        populateAnchors(result, params, populateRng);
+
+        navOk = navValidates(result.space, result.navGrid,
+                             result.entrancePos, result.levers);
+    }
+    if (!navOk) {
+        return DungeonBakeResult {}; // caller retunes params
     }
 
     const DensityField field(result.space, density);
@@ -116,12 +499,7 @@ DungeonBakeResult bakeDungeon(const DungeonParams& params) {
         }
     }
 
-    result.boundsMin = field.boundsMin();
-    result.boundsMax = field.boundsMax();
     result.cellSize = params.cellSize;
-    result.navGrid =
-        bakeNavGrid(densityFn, field.boundsMin(), field.boundsMax(),
-                    params.navCellSize, params.navMinClearance);
 
     // Torch anchors along visible corridors: march the centerline, drop an
     // anchor on alternating walls every torchSpacing meters. Hidden passages
@@ -153,7 +531,12 @@ DungeonBakeResult bakeDungeon(const DungeonParams& params) {
                     glm::cross(dir, Vec3 { 0.0f, 1.0f, 0.0f }));
                 const Vec3 wallDir = (torchIndex++ % 2 == 0) ? side : -side;
                 // Probe from torch height out to the wall, then back off.
+                // A wobbled tube can leave the nominal centerline in rock:
+                // skip that spot rather than bury a torch.
                 Vec3 probe = point + Vec3 { 0.0f, 1.8f, 0.0f };
+                if (field.sample(probe) >= 0.0f) {
+                    continue;
+                }
                 f32 out = 0.0f;
                 while (field.sample(probe + wallDir * out) < 0.0f &&
                        out < 8.0f) {
@@ -169,10 +552,6 @@ DungeonBakeResult bakeDungeon(const DungeonParams& params) {
         }
     }
 
-    const SpaceRoom& entrance = result.space.rooms[result.space.entrance];
-    result.entrancePos = slotCenter(result.space.params, entrance.pos) +
-                         Vec3 { 0.0f, 0.3f, 0.0f };
-    result.entranceDir = { -1.0f, 0.0f, 0.0f }; // the entrance hugs x = 0
     return result;
 }
 

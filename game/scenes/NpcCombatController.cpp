@@ -573,6 +573,13 @@ void NpcCombatController::flee(f32 dt, const NpcContext& ctx, Npc& npc,
             ? -toTarget / targetDistance
             : Vec3 { std::sin(npc.yaw), 0.0f,
                      std::cos(npc.yaw) };
+    // Made it to the door: he is through — the scene sweep despawns him
+    // and decides whether he lingers outside (LandscapeScene).
+    if (ctx.interiorMode &&
+        glm::length(ctx.interiorExit - transform.position) < 3.0f) {
+        npc.escapedInterior = true;
+        return;
+    }
     // A broken fighter RUNS: cancel the
     // NPC walk factor so he flees at full jog speed —
     // solidly inside the run anim's threshold.
@@ -582,8 +589,19 @@ void NpcCombatController::flee(f32 dt, const NpcContext& ctx, Npc& npc,
     if (npc.pathIndex >= npc.path.size() ||
         npc.repathTimer <= 0.0f) {
         Vec3 spot = transform.position + away * 12.0f;
-        spot.y = render::terrain::height(ctx.terrainParams,
-                                         spot.x, spot.z);
+        if (!ctx.interiorMode) {
+            spot.y = render::terrain::height(ctx.terrainParams,
+                                             spot.x, spot.z);
+        } else {
+            // Interior: run for the way OUT, unless the exit lies through
+            // the attacker (then plain away-flee) or he is already there.
+            const Vec3 toExit = ctx.interiorExit - transform.position;
+            const f32 exitDistance = glm::length(toExit);
+            if (exitDistance > 6.0f &&
+                glm::dot(toExit / exitDistance, away) > -0.2f) {
+                spot = ctx.interiorExit;
+            }
+        }
         const nav::PathResult found =
             ctx.navigator->findPath(
                 { transform.position, spot, 2.0f });

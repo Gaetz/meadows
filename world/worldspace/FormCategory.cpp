@@ -10,6 +10,8 @@ namespace world {
 void registerCoreCategories(FormCategoryRegistry& registry) {
     registry.set<data::WeaponForm>(FormCategory::Item);
     registry.set<data::ConsumableForm>(FormCategory::Item);
+    registry.set<data::MiscItemForm>(FormCategory::Item);
+    registry.set<data::ArmorForm>(FormCategory::Item);
     registry.set<data::ActorForm>(FormCategory::Actor);
     registry.set<data::StaticForm>(FormCategory::Static);
     registry.set<data::LightForm>(FormCategory::Light);

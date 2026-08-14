@@ -70,6 +70,12 @@ struct InteractionContext {
     // "mount", the grave idiom) — the scene destroys the capsule and
     // hands the frame over to RideController.
     std::function<void(ecs::Entity mount)> mountRide;
+    // [E] on a container furniture (mine chest): the scene lazily rolls
+    // the form's loadout into the Inventory, then opens the transfer UI.
+    std::function<void(ecs::Entity chest)> openChest;
+    // [E] on a lever (dungeon locks): the scene opens the paired barrier
+    // (world::barrierForLever inverts lever reference -> barrier).
+    std::function<void(ecs::Entity lever)> pullLever;
 };
 
 // Generic interaction extracted from LandscapeScene: the aim
@@ -123,7 +129,9 @@ private:
                                  Furniture,
                                  DownedAlly, // heal a downed follower
                                  Grave,      // homage [E] / deposit [F]
-                                 Mount };    // ride it
+                                 Mount,      // ride it
+                                 Container,  // loot it (mine chest)
+                                 Lever };    // pull it (dungeon locks)
     ecs::Entity promptEntity {};
     PromptKind promptKind { PromptKind::None };
     str promptLabel_;
