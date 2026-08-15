@@ -34,6 +34,7 @@ add_executable(true-adventurer
     AllForms.cpp
     scenes/WorldDemoScene.cpp
     scenes/CombatArenaScene.cpp
+    scenes/StatsScene.cpp
     scenes/EditorScene.cpp
     scenes/FollowerController.cpp
     scenes/FxDirector.cpp
@@ -61,6 +62,8 @@ add_executable(true-adventurer
     scenes/UiRouter.cpp
     scenes/WeatherController.cpp
     ui/AbilityPanel.cpp
+    ui/TestActor.cpp
+    ui/CharacterStatsPanel.cpp
     ui/AnimGraphPanel.cpp
     ui/AnimPreviewPanel.cpp
     ui/ClipTimelinePanel.cpp
@@ -71,6 +74,7 @@ add_executable(true-adventurer
     ui/EventPicker.cpp
     ui/FieldWidgets.cpp
     ui/FormPicker.cpp
+    ui/GraphPanelCommon.cpp
     ui/FxPanel.cpp
     ui/Keywords.cpp
     ui/NodeCanvas.cpp

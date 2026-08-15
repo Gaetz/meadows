@@ -11,6 +11,7 @@
 #include "game/scenes/CombatArenaScene.hpp"
 #include "game/scenes/EditorScene.hpp"
 #include "game/scenes/LandscapeScene.hpp"
+#include "game/scenes/StatsScene.hpp"
 
 namespace {
 
@@ -40,6 +41,8 @@ public:
         const Demo demos[] = {
             { "Combat arena",
               [&] { return std::make_unique<game::CombatArenaScene>(*engine); } },
+            { "Stats",
+              [&] { return std::make_unique<game::StatsScene>(*engine); } },
             { "Landscape (3D)",
               [&] { return std::make_unique<game::LandscapeScene>(*engine); } },
             { "Game DB (editor)",

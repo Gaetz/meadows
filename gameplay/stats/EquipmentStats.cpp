@@ -1,5 +1,7 @@
 #include "gameplay/stats/EquipmentStats.hpp"
 
+#include "gameplay/stats/StatusBuildup.hpp"
+
 #include "data/forms/FormDatabase.hpp"
 
 namespace gameplay {
@@ -58,6 +60,12 @@ DamageEvent weaponDamageEvent(const data::WeaponForm& weapon,
     add(DamageType::Fire, weapon.fireAttack);
     add(DamageType::Lightning, weapon.lightningAttack);
     event.postureAmount = weapon.postureDamage * scale;
+    if (!weapon.buildupType.empty() && weapon.buildupAmount > 0.0f) {
+        event.buildupType = weapon.buildupType;
+        event.buildupAmount = scaledStatusDamage(
+            weapon.buildupAmount,
+            currentValueOf(attacker, attr(weapon.scalingAttribute)));
+    }
 
     // The attacker's flat `attack` folds into the
     // strongest PHYSICAL channel (a weapon's physical type is exclusive

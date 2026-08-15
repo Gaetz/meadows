@@ -8,10 +8,12 @@
 namespace gameplay {
 
 void addResonanceDecayToResonance(const ResonanceDecays& decays, Resonance& res) {
+    const u32 kOnyx = attr("onyx"), kAmber = attr("amber"),
+              kGarnet = attr("garnet");
     for (const ResonanceDecay& d : decays.list) {
-        if (d.attrId == attr("onyx"))        res.onyx   += d.remaining;
-        else if (d.attrId == attr("amber"))  res.amber  += d.remaining;
-        else if (d.attrId == attr("garnet")) res.garnet += d.remaining;
+        if (d.attrId == kOnyx)        res.onyx   += d.remaining;
+        else if (d.attrId == kAmber)  res.amber  += d.remaining;
+        else if (d.attrId == kGarnet) res.garnet += d.remaining;
     }
 }
 

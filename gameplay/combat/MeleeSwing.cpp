@@ -129,7 +129,7 @@ f32 smooth(f32 t) {
 Mat4 swingSocketLocal(const MeleeSwing& swing, const SwingTiming& timing) {
     switch (swing.phase) {
     case SwingPhase::Idle:
-        return compose(guardPose(), guardPose(), 0.0f);
+        return compose(guardPose(), guardPose(), 0.0f); // = guard pose
     case SwingPhase::Windup: {
         const f32 t = timing.windup > 0.0f ? swing.t / timing.windup : 1.0f;
         return compose(guardPose(), armedPose(), smooth(t));

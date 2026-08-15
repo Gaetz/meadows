@@ -5,6 +5,7 @@
 #include "engine/core/Defines.hpp"
 #include "gameplay/ability/DerivedStats.hpp"
 #include "gameplay/ability/GameplayTags.hpp"
+#include "gameplay/stats/GameTime.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 
 // tickCharacter — the single reusable character-update function.
@@ -45,5 +46,26 @@ void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
 void initializeActorStats(ecs::Entity entity,
                           const CharacterTickContext& ctx,
                           const StatModifiers& equipmentMods = {});
+
+// Assembles the game-time bundle from the entity's components — the same
+// set tickCharacter binds; for callers driving the game-time systems
+// outside the per-frame tick (sleep, dev time-skips).
+GameTimeTickArgs gameTimeArgsFor(ecs::Entity entity,
+                                 const CharacterTickContext& ctx);
+
+// Waiting, for one actor entity: gameplay::waitGameTime over its
+// components — time passes fully (drug expiry, afflictions, regen,
+// injury recovery), only the sleep need is not restored.
+GameTimeResult waitCharacter(ecs::Entity entity, GameClock& clock,
+                             f32 hours, const CharacterTickContext& ctx,
+                             const StatModifiers& equipmentMods = {});
+
+// Sleeping in a bed, for one actor entity: gameplay::sleepGameTime over
+// its components — clock jump, the night credited as rest, survival
+// decay / regen / drug expiry / injury recovery over the slept window,
+// sleep need restored last. The scene passes the resolved equipment mods.
+GameTimeResult sleepCharacter(ecs::Entity entity, GameClock& clock,
+                              f32 hours, const CharacterTickContext& ctx,
+                              const StatModifiers& equipmentMods = {});
 
 } // namespace gameplay

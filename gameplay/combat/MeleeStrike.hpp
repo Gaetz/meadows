@@ -12,6 +12,10 @@
 // Sim-pure: EventBus and CueRegistry are gameplay-layer, entities are only
 // carried as event source/target (pass empty handles in headless tests).
 
+namespace core {
+class Rng;
+}
+
 namespace gameplay {
 
 class EventBus;
@@ -25,6 +29,10 @@ struct StrikeContext {
     const StatsTuningForm& tuning;
     EventBus* bus { nullptr };
     CueRegistry* cues { nullptr };
+    // Injury rolls on landed physical hits (docs/STATS.md §5), through
+    // the seeded engine RNG (§8). Null = no rolls (headless tests keep
+    // their deterministic damage numbers, benches opt out).
+    core::Rng* rng { nullptr };
 };
 
 // The per-strike geometry the guard cone and the cues need.

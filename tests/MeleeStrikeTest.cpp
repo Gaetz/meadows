@@ -8,6 +8,9 @@
 #include "gameplay/stats/CharacterStats.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Damage.hpp"
+#include "engine/core/Rng.hpp"
+#include "gameplay/stats/Injuries.hpp"
+#include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/stats/StatsTuning.hpp"
 
 // The ONE strike resolution shared by the
@@ -289,4 +292,58 @@ TEST_CASE("strike: sneak attack multiplies only when sneaking AND unaware") {
                              d.ctx());
     CHECK(out.sneakAttack);
     CHECK(out.damage.healthDamage == doctest::Approx(261.0f));
+}
+
+TEST_CASE("strike: landed physical hits roll injuries — resonance-gated, "
+          "only when an RNG is wired") {
+    Duel d;
+    ecs::World world;
+    ecs::Entity defenderEntity = world.create();
+    defenderEntity.set<Injuries>({});
+    core::Rng rng { 42 };
+    StrikeContext ctx = d.ctx();
+    ctx.rng = &rng;
+
+    DamageEvent huge;
+    huge.channels = { { DamageType::Slash, 10000.0f } };
+
+    // Non-negative onyx: immune, however hard the hit lands.
+    StatBlock block1 = d.defender.block();
+    resolveStrikeDamage(block1, {}, defenderEntity, huge, Vec3 {}, ctx);
+    CHECK(defenderEntity.get<Injuries>().list.empty());
+
+    // Deep negative onyx + a full-bar hit: chance >= 1, deterministic.
+    d.setup(d.defender);
+    d.defender.vitals.health =
+        currentValueOf(d.defender.system, attr("maxHealth"));
+    d.defender.system.current[attr("onyx")] = -100.0f;
+    StatBlock block2 = d.defender.block();
+    resolveStrikeDamage(block2, {}, defenderEntity, huge, Vec3 {}, ctx);
+    REQUIRE(defenderEntity.get<Injuries>().list.size() == 1);
+    CHECK(defenderEntity.get<Injuries>().list[0].type == InjuryType::Cut);
+
+    // No RNG wired (tests/bench default): no roll, numbers untouched.
+    StrikeContext noRng = d.ctx();
+    d.setup(d.defender);
+    d.defender.system.current[attr("onyx")] = -100.0f;
+    StatBlock block3 = d.defender.block();
+    resolveStrikeDamage(block3, {}, defenderEntity, huge, Vec3 {}, noRng);
+    CHECK(defenderEntity.get<Injuries>().list.size() == 1); // unchanged
+}
+
+TEST_CASE("strike: the weapon's status buildup lands with the hit") {
+    Duel d;
+    ecs::World world;
+    ecs::Entity defenderEntity = world.create();
+    defenderEntity.set<StatusBuildup>({});
+
+    DamageEvent venomous;
+    venomous.channels = { { DamageType::Slash, 60.0f } };
+    venomous.buildupType = "poison";
+    venomous.buildupAmount = 40.0f;
+    StatBlock block = d.defender.block();
+    resolveStrikeDamage(block, {}, defenderEntity, venomous, Vec3 {},
+                        d.ctx());
+    CHECK(defenderEntity.get<StatusBuildup>().poison ==
+          doctest::Approx(40.0f));
 }

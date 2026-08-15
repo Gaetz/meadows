@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <iterator>
 
 namespace gameplay {
 
@@ -26,6 +27,8 @@ constexpr TypeRow kRows[] = {
     { &StatusBuildup::electrocution, "enduranceElectrocution", "Status.Electrocuted"  }, // 8
 };
 constexpr int kTypeCount = static_cast<int>(std::size(kRows));
+static_assert(std::size(kRows) == static_cast<size_t>(StatusType::kCount),
+              "kRows must mirror StatusType, in enum order");
 } // namespace
 
 void addBuildup(StatusBuildup& buildup, StatusType type, f32 points) {
@@ -62,6 +65,8 @@ BuildupTickResult tickBuildup(StatusBuildup& buildup, AbilitySystem& system,
             value = std::max(0.0f, value - decayPerSec * dt);
 
             // Ongoing status effects (applied while buildup is non-zero).
+            // Glaciation has no direct damage: its regen penalty flows
+            // through buildupStatusModifiers → StatModifiers.
             if (value > 0.0f) {
                 const StatusType type = static_cast<StatusType>(i);
                 if (type == StatusType::Poison) {
@@ -71,8 +76,6 @@ BuildupTickResult tickBuildup(StatusBuildup& buildup, AbilitySystem& system,
                     const f32 maxH = currentValueOf(system, attr("maxHealth"));
                     const f32 vit = std::min(currentValueOf(system, attr("vitality")) / 100.0f, 1.0f);
                     result.ignitionHealthDamage += maxH * tuning.ignitionDamagePercent * (1.0f - vit) * dt;
-                } else if (type == StatusType::Glaciation) {
-                    // regen penalty handled via buildupStatusModifiers → StatModifiers
                 } else if (type == StatusType::Electrocution) {
                     const f32 maxE = currentValueOf(system, attr("maxEssence"));
                     const f32 vit = std::min(currentValueOf(system, attr("vitality")) / 100.0f, 1.0f);

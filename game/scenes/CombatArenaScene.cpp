@@ -180,8 +180,8 @@ void CombatArenaScene::onEnter() {
         sparks.colorStart = { 1.0f, 0.9f, 0.35f, 1.0f };
         sparks.colorEnd = { 1.0f, 0.25f, 0.05f, 0.0f };
         // Cosmetic seed: position hash + running count (free RNG, §8).
-        const u32 seed = static_cast<u32>(event.position.x * 73.0f) ^
-                         (static_cast<u32>(event.position.y * 179.0f) << 8) ^
+        const u32 seed = static_cast<u32>(static_cast<i32>(event.position.x * 73.0f)) ^
+                         (static_cast<u32>(static_cast<i32>(event.position.y * 179.0f)) << 8) ^
                          particles.count();
         particles.spawn(sparks, event.position, seed);
     });

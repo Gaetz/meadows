@@ -13,7 +13,7 @@
 #include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/stats/Survival.hpp"
 
-// Architecture du passage du temps (docs/STATS.md §3).
+// Time-flow architecture (docs/STATS.md §3).
 //
 // Two tick paths co-exist:
 //   - Real-time path (update(), dt):  energy/posture regen, stagger/paralysis,
@@ -77,5 +77,24 @@ bool applyBuildupResult(GameTimeTickArgs& args, const BuildupTickResult& result,
 // Simulates `gameDt` game-seconds for a time-skip (Advance / Sleep buttons).
 GameTimeResult advanceGameTime(GameTimeTickArgs& args, f64 gameDt, f32 timescale,
                                const StatModifiers& equipmentMods = {});
+
+struct GameClock;
+
+// Waiting (campfire, "wait N hours"): advances the clock, credits the
+// window as rest, and simulates it through the time-skip path — drugs
+// expire, afflictions progress, regen and injury recovery run. The sleep
+// NEED keeps decaying: restoring it is what beds are for.
+GameTimeResult waitGameTime(GameClock& clock, GameTimeTickArgs& args,
+                            f32 hours, const StatModifiers& equipmentMods = {});
+
+// Sleeping in a bed: advances the clock, credits the whole night as rest
+// BEFORE the skip (a night without hits IS rest — the injury-recovery
+// gate must see it even right after a fight), simulates the slept window
+// through the time-skip path above (survival decay, health/essence regen,
+// drug expiry, injury recovery), then restores the sleep need — full at
+// `comfortableSleepHours`, else +`sleepPerHour` per hour. Returns died:
+// a DoT can kill in bed.
+GameTimeResult sleepGameTime(GameClock& clock, GameTimeTickArgs& args,
+                             f32 hours, const StatModifiers& equipmentMods = {});
 
 } // namespace gameplay

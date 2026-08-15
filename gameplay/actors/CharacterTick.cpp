@@ -1,9 +1,10 @@
 #include "gameplay/actors/CharacterTick.hpp"
 
+#include "gameplay/stats/CharacterStats.hpp"
+
 #include "gameplay/ability/AbilitySystem.hpp"
 #include "gameplay/ability/Attributes.hpp"
 #include "gameplay/combat/Combat.hpp"
-#include "gameplay/stats/Afflictions.hpp"
 #include "gameplay/stats/CoreAttributes.hpp"
 #include "gameplay/stats/Damage.hpp"
 #include "gameplay/stats/GameTime.hpp"
@@ -134,6 +135,36 @@ void tickCharacter(ecs::Entity entity, f32 dt, f64 gameDt,
 
     // Game-time: health/essence regen, survival decay, drug expiry, injury recovery.
     tickGameTime(args, gameDt, mods);
+}
+
+GameTimeTickArgs gameTimeArgsFor(ecs::Entity entity,
+                                 const CharacterTickContext& ctx) {
+    return { entity.get_mut<CoreAttributes>(),
+             entity.get_mut<AttributeSet>(),
+             entity.get_mut<AbilitySystem>(),
+             entity.get_mut<CombatState>(),
+             entity.get_mut<StatusBuildup>(),
+             entity.get_mut<Survival>(),
+             entity.get_mut<Injuries>(),
+             entity.get_mut<Resonance>(),
+             entity.get_mut<ResonanceDecays>(),
+             ctx.derived,
+             ctx.tags,
+             ctx.tuning };
+}
+
+GameTimeResult waitCharacter(ecs::Entity entity, GameClock& clock,
+                             f32 hours, const CharacterTickContext& ctx,
+                             const StatModifiers& equipmentMods) {
+    GameTimeTickArgs args = gameTimeArgsFor(entity, ctx);
+    return waitGameTime(clock, args, hours, equipmentMods);
+}
+
+GameTimeResult sleepCharacter(ecs::Entity entity, GameClock& clock,
+                              f32 hours, const CharacterTickContext& ctx,
+                              const StatModifiers& equipmentMods) {
+    GameTimeTickArgs args = gameTimeArgsFor(entity, ctx);
+    return sleepGameTime(clock, args, hours, equipmentMods);
 }
 
 void initializeActorStats(ecs::Entity entity,

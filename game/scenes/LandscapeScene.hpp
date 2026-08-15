@@ -254,6 +254,14 @@ private:
     // fade. Wired each call through makeInteractionContext().
     InteractionController interaction;
     InteractionContext makeInteractionContext();
+    // Equipment + encumbrance modifiers for the player's character tick
+    // (also refreshes playerCarriedWeight/playerEncumbrance for the HUD).
+    gameplay::StatModifiers playerEquipMods();
+    // Sleep in a bed / wait at a campfire: the gameplay time-skips over
+    // the player (the InteractionContext applySleep/applyWait closures).
+    void applySleep(f32 hours);
+    void applyWait(f32 hours);
+    bool statsPanelOpen { false }; // F7: player character-stats inspector
     void performTravel(const core::Guid& targetReference);
 
     // The game clock owns time-of-day (the sky follows)
@@ -528,7 +536,7 @@ private:
         Reveal,
     };
     void armWarmup(const Vec3& target, bool placeSpawn, bool soft);
-    void updateWarmup();          // per frame, drives phase + veil
+    void updateWarmup(f32 dt);    // end of update(): phase machine + veil state
     void finalizeSandboxSpawn();  // the single-shot spawn validation
     WarmupPhase warmupPhase { WarmupPhase::Idle };
     bool pendingPlayEntry { false }; // "Play" clicked mid-warmup
@@ -561,7 +569,7 @@ private:
     // mode exits force a dismount first.
     RideController rideController;
     RideContext makeRideContext();
-    // C3: refreshed each frame at the equipMods site; gates jump/sprint
+    // Refreshed each frame at the equipMods site; gates jump/sprint
     // (through the context) and feeds the equip modifiers.
     gameplay::EncumbranceCategory playerEncumbrance {
         gameplay::EncumbranceCategory::Light };

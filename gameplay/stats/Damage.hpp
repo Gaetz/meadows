@@ -15,8 +15,6 @@
 
 namespace gameplay {
 
-class DerivedStatRegistry;
-
 // Physical (slash/pierce/blunt) + elemental. The nine elements map to the three
 // essence attributes (docs/STATS.md §3): charisma → fire/sonic/holy,
 // ego → cold/chemical/dark, insight → lightning/psychic/ether.
@@ -30,11 +28,7 @@ enum class DamageType {
 // ("Cue.Hit." + name, the cue emission points) and logs.
 const char* damageTypeName(DamageType type);
 
-class DerivedStatRegistry;
 struct StatBlock;
-struct StatModifiers;
-struct StatsTuningForm;
-class GameplayTagRegistry;
 
 // An outright kill through the NORMAL pipeline (kill-z, future
 // scripted executions): a damage event no mitigation survives, so death
@@ -67,6 +61,12 @@ struct DamageEvent {
     f32 resistPenetration { 0.0f };
     bool critical { false };
     f32 criticalMultiplier { 1.5f };
+    // Weapon status buildup carried to the impact (WeaponForm.buildup*,
+    // scaled per docs/STATS.md §3 by the weapon's scaling attribute).
+    // Applied by the strike tail through tryAddBuildup — gated by the
+    // defender's endurance there. Empty = none.
+    str buildupType;
+    f32 buildupAmount { 0.0f };
 };
 
 struct DamageResult {

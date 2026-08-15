@@ -5,6 +5,14 @@
 > `gameplay/stats/`.** This is the *design* (what the stats are); the
 > implementation journal lives in `docs/PHASE-6.md` / `PHASE-7.md`.
 >
+> **Implementation status: `docs/AUDIT/STATS-CONFORMANCE.md`** — the
+> rule-by-rule conformance audit. Its two lists are the live TODO:
+> "Décisions design à trancher" (19 items — death/unconsciousness loop,
+> attribute progression through skills, per-actor authored attributes,
+> energy-regen base…) and "le DOC est en retard sur le code" (survival
+> constants, acceleration formula… to be folded back into THIS file).
+> Update both when a rule lands or a value is (re)tuned.
+>
 > **Scope tags:** `[6]` = vertical-slice core (built first, tested in 2D).
 > `[7]` = full system (bolts onto the 6 machinery, still 2D). Everything is
 > validated in 2D before streaming (Phase 8) and 3D (Phase 9).

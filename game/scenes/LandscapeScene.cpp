@@ -25,7 +25,6 @@
 #include <algorithm>
 #include <chrono> // Save/load timing baselines
 #include <cmath>
-#include <ctime>
 #include <filesystem>
 #include <fstream> // saveRenderTuning writes the overlay plugin
 #include <sstream>
@@ -48,6 +47,7 @@
 #include "game/scenes/RenderTuningIo.hpp"
 #include "game/scenes/TreeCreationScene.hpp"
 #include "game/ui/ConsolePanel.hpp"
+#include "game/ui/CharacterStatsPanel.hpp"
 #include "game/ui/RenderTuningPanels.hpp"
 #include "engine/assets/AssetDatabase.hpp"
 #include "engine/dungeon/DungeonBake.hpp"
@@ -89,7 +89,6 @@
 #include "world/scene/KillZ.hpp"
 #include "world/scene/Spawner.hpp"
 #include "world/scene/TriggerSystem.hpp"
-#include "engine/platform/Paths.hpp"
 #include "engine/terrain/SandboxTerrain.hpp"
 #include "world/terrain/BiomeMapBuilder.hpp"
 #include "world/terrain/TerrainPatches.hpp"
@@ -218,7 +217,7 @@ void LandscapeScene::bootstrapData() {
     // once. Retire the previous overlay instead of freeing it (workers).
     heightPatches = world::buildHeightPatches(forms, assetDb);
     if (!heightPatches->chunks.empty()) {
-        LOG_INFO("B8: {} authored terrain patch(es)",
+        LOG_INFO("{} authored terrain patch(es)",
                  heightPatches->chunks.size());
     }
     terrainBase = world::buildTerrainBase(forms, assetDb);
@@ -332,7 +331,7 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
     meshCache->injectProcedural(clubMeshGuid(), makeClubMesh(0.8f));
     meshCache->injectProcedural(bowMeshGuid(), makeBowMesh(1.3f));   // A7
     meshCache->injectProcedural(arrowMeshGuid(), makeArrowMesh(0.6f));
-    // The pony — the « Poney » FurnitureForm's `model` points here.
+    // The pony — the "Poney" FurnitureForm's `model` points here.
     meshCache->injectProcedural(horseMeshGuid(), makeHorseMesh(1.2f));
     // Cooked terrain material arrays: resolve the tuning form's asset guids
     // to file paths here (the renderer never sees a Form nor the VFS —
@@ -388,7 +387,7 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
                 continue;
             }
             assets::simplifyMesh(*mesh, scan.targetTris);
-            assets::normalizeMeshFootprint(*mesh, scan.size);
+            assets::normalizeMesh(*mesh, scan.size);
             // Textured rigid props: the scatter flags their instances
             // (negative fade + negative sway phase), so the uv keeps its
             // REAL photogrammetry texture coordinates and the diffuse
@@ -600,8 +599,8 @@ void LandscapeScene::createRenderResources(rhi::Device& device) {
 }
 
 void LandscapeScene::setupGameplay() {
-    // The sim-side physics world + terrain collision (tiles follow the
-    // camera for now; the player becomes the focus in B5).
+    // The sim-side physics world + terrain collision (tiles follow
+    // the streaming focus).
     physics = std::make_unique<phys::PhysicsWorld>();
     terrainCollision = std::make_unique<TerrainCollision>(
         *physics, renderer.terrainParams(), &engine->getJobSystem());
@@ -617,7 +616,7 @@ void LandscapeScene::setupGameplay() {
     furnitureOccupancy = gameplay::FurnitureOccupancy {};
 
     // The character-stats runtime shared by every actor in the scene
-    // (the player first; the NPC joins in B6) — same setup as CombatArena.
+    // — same setup as CombatArena.
     statsTuning = gameplay::resolveStatsTuning(forms);
     derivedStats = gameplay::DerivedStatRegistry {};
     gameplay::registerCoreDerivedStats(derivedStats, statsTuning);
@@ -679,7 +678,7 @@ void LandscapeScene::setupGameplay() {
     applyMasterVolume(audioSystem, settings.masterVolume);
     soundResolver.create(forms, assetDb, &audioSystem);
     // Cue handlers over the resolved CueForms — combat feedback
-    // (hit sparks, parry shake, C3 sounds) is data from here on.
+    // (hit sparks, parry shake, sounds) is data from here on.
     fxDirector.create(forms, fxSim, &soundResolver);
     // The currency + the barter trigger (a dialogue node
     // fires "OpenBarter" — the vendor is whoever we're talking to).
@@ -753,7 +752,7 @@ void LandscapeScene::setupGameplay() {
                                makeFollowerContext(),
                                questDirector.dialoguePartner());
                        });
-    // « Parle-moi de tes aptitudes » — the recruit-preview
+    // "Tell me about your skills" — the recruit-preview
     // screen on the same dialogue-event channel (partner = whoever [E]
     // Talk opened).
     eventBus.subscribe(gameplay::eventKind("OnFollowerPreview"),
@@ -762,7 +761,7 @@ void LandscapeScene::setupGameplay() {
                                makeFollowerContext(),
                                questDirector.dialoguePartner());
                        });
-    // « Apprends-moi quelque chose » — the same
+    // "Teach me something" — the same
     // dialogue-event channel; the partner's TaughtPerkForm children name
     // what he can teach, the option's ConditionForm children (affinity +
     // Zone.Calme) gate WHEN.
@@ -802,7 +801,7 @@ void LandscapeScene::setupGameplay() {
                     gameTags, "Zone.Forge", event.value > 0.5f);
             }
         });
-    // « Améliorons ton équipement à la forge » — the same
+    // The follower forge upgrade — the same
     // dialogue-event channel; the handler swaps the partner's base kit
     // for its upgradesTo tier and charges the gold (payFine idiom).
     eventBus.subscribe(gameplay::eventKind("OnForgeUpgrade"),
@@ -811,7 +810,7 @@ void LandscapeScene::setupGameplay() {
                                makeFollowerContext(),
                                questDirector.dialoguePartner());
                        });
-    // « Engage-moi » / « Prolonger le contrat » — the same
+    // Hire / extend-contract — the same
     // dialogue-event channel. The option's HasItem gate in data is the
     // COARSE base price; the handler computes the REAL scaled price
     // (level + wealth), refuses-with-price when short, charges the
@@ -822,7 +821,7 @@ void LandscapeScene::setupGameplay() {
                                makeFollowerContext(),
                                questDirector.dialoguePartner());
                        });
-    // « ... peux-tu t'occuper de lui ? » — the same
+    // The burial request — the same
     // dialogue-event channel. The partner is the bury CONTACT ('s
     // ActorForm.buryContact on the dead follower); the handler finds the
     // corpse, raises the grave at the authored buryMarker and removes the
@@ -852,7 +851,7 @@ void LandscapeScene::setupGameplay() {
         followerController.onAmbientEvent(makeFollowerContext(), event);
     });
     // Group commands — the same dialogue-event channel as
-    // recruit/dismiss (« Consignes de groupe... » submenu options in each
+    // recruit/dismiss (the group-orders submenu options in each
     // follower's dialogue; the doc's RADIAL menu stays the deferred
     // TODO). One stance write point for every active follower.
     eventBus.subscribe(gameplay::eventKind("OnPartyFollow"),
@@ -908,7 +907,7 @@ void LandscapeScene::setupGameplay() {
                 // The SHADED weights (wander included): the step sounds
                 // like the ground LOOKS, not like the altitude contour.
                 // The scene queries the terrain (it owns the renderer);
-                // the weights -> name verdict lives on FxDirector (R6).
+                // the weights -> name verdict lives on FxDirector.
                 const auto weights =
                     render::terrain::materialWeightsShaded(
                         renderer.terrainParams(), at.x, at.z,
@@ -925,7 +924,7 @@ void LandscapeScene::setupGameplay() {
                 step.pitchScale = statsTuning.sneakPitchFactor;
             }
             fxDirector.cues().emit(step);
-            // Only the PLAYER'S steps are heard (B2 sneaking hook):
+            // Only the PLAYER'S steps are heard (the sneaking hook):
             // villagers must not investigate each other's strolls.
             if (event.source == playerEntity) {
                 npcDirector.onNoise(
@@ -1094,10 +1093,10 @@ void LandscapeScene::spawnInitialWorld(rhi::Device& device) {
         questDirector.syncQuestTags(makeQuestContext());
         questDirector.syncWantedTag(makeQuestContext());
     } else {
-        LOG_WARN("B5.5: no Player actor spawned — controller falls back to "
+        LOG_WARN("no Player actor spawned — controller falls back to "
                  "fixed speeds");
     }
-    LOG_INFO("B1 (ch.2): {} persistent reference(s); cells stream around "
+    LOG_INFO("{} persistent reference(s); cells stream around "
              "the player",
              persistent);
 
@@ -1220,7 +1219,7 @@ void LandscapeScene::onExit() {
     cellStreamer.reset();
     cellLoader.reset();
     overworldHandle = data::FormHandle {};
-    // B4/B5 physics: bodies -> tiles -> world (each references the previous).
+    // Physics: bodies -> tiles -> world (each references the previous).
     mode = SceneMode::Spectator;
     playerController.destroyBody();
     debugCapsule.reset();
@@ -1243,7 +1242,7 @@ void LandscapeScene::update(f32 dt) {
     frameProbe.beginFrame(); // ends in render() — one probe per frame
     timeSeconds += dt;
     updateCameraFarPlane(); // tracks the live view-radius slider
-    // B1 mesh path: pump async residency (worker decodes -> main-thread
+    // Mesh path: pump async residency (worker decodes -> main-thread
     // uploads, §7), then extract this frame's snapshot from the world.
     {
         core::FrameProbe::Scope probe { frameProbe, "assets" };
@@ -1358,27 +1357,8 @@ void LandscapeScene::update(f32 dt) {
             const gameplay::CharacterTickContext tickCtx { derivedStats,
                                                            gameTags,
                                                            statsTuning };
-            // Equipped gear folds into the derived stats.
-            gameplay::StatModifiers equipMods;
-            if (playerEntity.has<gameplay::Equipment>()) {
-                gameplay::applyEquipmentModifiers(
-                    playerEntity.get<gameplay::Equipment>(), forms,
-                    equipMods);
-            }
-            // C3: encumbrance penalties fold into the same channel. The
-            // max reads last frame's current (one frame of lag is fine).
-            if (playerEntity.has<gameplay::Inventory>()) {
-                playerCarriedWeight = gameplay::inventoryWeight(
-                    forms, playerEntity.get<gameplay::Inventory>());
-                const f32 maxEncumbrance = gameplay::currentValueOf(
-                    playerEntity.get<gameplay::AbilitySystem>(),
-                    gameplay::attr("maxEncumbrance"));
-                playerEncumbrance = gameplay::encumbranceCategory(
-                    playerCarriedWeight, maxEncumbrance);
-                gameplay::encumbranceModifiers(playerEncumbrance, equipMods);
-            }
             gameplay::tickCharacter(playerEntity, dt, gameDt, tickCtx,
-                                    equipMods);
+                                    playerEquipMods());
         }
         // Gameplay volumes: loaded TriggerVolumes vs
         // actor positions — enter/leave fire the volume's event on the
@@ -1387,7 +1367,7 @@ void LandscapeScene::update(f32 dt) {
         // move in updateNpcs, later) — one frame of latency is fine.
         {
             // ONE actor snapshot per frame — the trigger sweep
-            // and the faction shout (callForHelp, R3) query it. Hearing
+            // and the faction shout (callForHelp) query it. Hearing
             // stays a per-perceiver sweep (its radius is per-NPC).
             spatialIndex.rebuild(world);
             world::TriggerCallbacks triggerCb;
@@ -1466,6 +1446,7 @@ void LandscapeScene::update(f32 dt) {
                                     playerEntity, playerController.body(),
                                     gameTags, derivedStats, statsTuning,
                                     eventBus, &fxDirector.cues(),
+                                    &combatRng,
                                     sceneConsole.godMode() });
         // The particle sim advances with the world (paused sim =
         // frozen sparks, like everything else).
@@ -1583,7 +1564,7 @@ void LandscapeScene::update(f32 dt) {
         snapshot.meshes.push_back({ model, core::Guid {}, pose });
         snapshot.meshes.back().giOccluder = false; // viewmodel (see seam)
         // While the bow is drawn, a nocked arrow rides the viewmodel
-        // and slides BACK with the charge ("la flèche recule") — Rx(-90°)
+        // and slides BACK with the charge — Rx(-90°)
         // turns the +Y shaft toward -Z (the aim direction).
         const f32 charge = playerController.bowCharge();
         if (charge >= 0.0f) {
@@ -1654,6 +1635,13 @@ void LandscapeScene::update(f32 dt) {
     if (!(uiCreated && screenStack.modalOpen())) {
         lastActiveMode = mode;
     }
+
+    // The world-warmup machine (boot / sandbox entry / spectator
+    // catch-up): pure state — the veil itself is the RmlUi "loading"
+    // document this feeds. Runs on the SIM dt, paused or not (the boot
+    // completes behind the main menu), after the camera moved (the
+    // spectator catch-up reads this frame's speed).
+    updateWarmup(dt);
 
     // A requested load re-enters the scene with the save
     // resolved as the last layer. End of update: nothing touches the
@@ -2262,8 +2250,8 @@ void LandscapeScene::armWarmup(const Vec3& target, bool placeSpawn,
     }
 }
 
-void LandscapeScene::updateWarmup() {
-    const f32 dt = glm::max(ImGui::GetIO().DeltaTime, 1.0e-4f);
+void LandscapeScene::updateWarmup(f32 rawDt) {
+    const f32 dt = glm::max(rawDt, 1.0e-4f);
     // Spectator catch-up: flying faster than the bake wavefront leaves
     // analytic macro around; when the camera STOPS over an incomplete
     // ring, a light veil shows the ring completing.
@@ -2541,7 +2529,7 @@ InteractionContext LandscapeScene::makeInteractionContext() {
         mode == SceneMode::Play,
         [this](const core::Guid& target) { performTravel(target); },
         [this](ecs::Entity partner, const core::Guid& dialogue) {
-            questDirector.setDialoguePartner(partner); // the vendor for B5
+            questDirector.setDialoguePartner(partner); // the barter vendor
             questDirector.openDialogue(makeQuestContext(), dialogue);
         },
         [this](ecs::Entity container) {
@@ -2655,7 +2643,55 @@ InteractionContext LandscapeScene::makeInteractionContext() {
                 interaction.say(texts.get("mine.lever.stuck"), 3.0f);
             }
         },
+        [this](f32 hours) { applySleep(hours); },
+        [this](f32 hours) { applyWait(hours); },
     };
+}
+
+gameplay::StatModifiers LandscapeScene::playerEquipMods() {
+    // Equipped gear folds into the derived stats.
+    gameplay::StatModifiers equipMods;
+    if (playerEntity.has<gameplay::Equipment>()) {
+        gameplay::applyEquipmentModifiers(
+            playerEntity.get<gameplay::Equipment>(), forms, equipMods);
+    }
+    // Encumbrance penalties fold into the same channel. The
+    // max reads last frame's current (one frame of lag is fine).
+    if (playerEntity.has<gameplay::Inventory>()) {
+        playerCarriedWeight = gameplay::inventoryWeight(
+            forms, playerEntity.get<gameplay::Inventory>());
+        const f32 maxEncumbrance = gameplay::currentValueOf(
+            playerEntity.get<gameplay::AbilitySystem>(),
+            gameplay::attr("maxEncumbrance"));
+        playerEncumbrance = gameplay::encumbranceCategory(
+            playerCarriedWeight, maxEncumbrance);
+        gameplay::encumbranceModifiers(playerEncumbrance, equipMods);
+    }
+    return equipMods;
+}
+
+void LandscapeScene::applySleep(f32 hours) {
+    if (!playerEntity.is_alive()) {
+        return;
+    }
+    // Stats stay transversal: the scene only names the player and its
+    // equipment mods; the whole sleep (clock, rest, recovery, needs)
+    // lives in gameplay. A DoT can kill in bed — the death flow picks
+    // the tag up next frame.
+    const gameplay::CharacterTickContext tickCtx { derivedStats, gameTags,
+                                                   statsTuning };
+    gameplay::sleepCharacter(playerEntity, gameClock, hours, tickCtx,
+                             playerEquipMods());
+}
+
+void LandscapeScene::applyWait(f32 hours) {
+    if (!playerEntity.is_alive()) {
+        return;
+    }
+    const gameplay::CharacterTickContext tickCtx { derivedStats, gameTags,
+                                                   statsTuning };
+    gameplay::waitCharacter(playerEntity, gameClock, hours, tickCtx,
+                            playerEquipMods());
 }
 
 // Bundle what the ride touches — camera/input/tuning
@@ -2687,13 +2723,13 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     }
     const auto* marker = forms.find<world::ReferenceForm>(targetReference);
     if (!marker) {
-        LOG_WARN("B7: travel target {} not found",
+        LOG_WARN("travel target {} not found",
                  targetReference.toString());
         return;
     }
     const auto* cellForm = forms.find<world::CellForm>(marker->cell);
     if (!cellForm) {
-        LOG_WARN("B7: travel target {} has no cell",
+        LOG_WARN("travel target {} has no cell",
                  targetReference.toString());
         return;
     }
@@ -2829,7 +2865,7 @@ void LandscapeScene::performTravel(const core::Guid& targetReference) {
     // beyond the teleport radius pops in next to the arrival marker.
     followerController.repositionActiveFollowers(makeFollowerContext(),
                                                  marker->position);
-    LOG_INFO("B7: traveled to {} ({}), interior = {}",
+    LOG_INFO("traveled to {} ({}), interior = {}",
              cellForm->editorId,
              marker->position.x, interiorMode);
 }
@@ -2879,7 +2915,7 @@ void LandscapeScene::createGameUi(rhi::Device& device) {
     }
 
     // Data models BEFORE the documents that reference them (Rml freezes
-    // bindings at creation). One "hud" model for B2; screens add theirs.
+    // bindings at creation). One shared "hud" model; screens add theirs.
     uiSystem.createModel(
         { .name = "hud",
           // Vitals bars: per stat, the OUTER bar
@@ -3110,7 +3146,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
             screenStack.show("pause");
         }
     }
-    // I: toggle the inventory (B3) — not while typing in a text field.
+    // I: toggle the inventory — not while typing in a text field.
     // Keyboard-only while a modal is open (pad binding = d-pad up,
     // which is navigation there).
     if (!imguiOwnsKeys && !uiSystem.textFieldFocused() &&
@@ -3124,7 +3160,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
             uiRouter.openInventoryScreen(makeUiRouterContext());
         }
     }
-    // T: the wait menu (B6) — Play only, nothing else open.
+    // T: the wait menu — Play only, nothing else open.
     if (!imguiOwnsKeys && !uiSystem.textFieldFocused() && (mode == SceneMode::Play) &&
         actionMap.pressed(input, InputAction::WaitMenu) &&
         !screenStack.modalOpen()) {
@@ -3253,7 +3289,7 @@ void LandscapeScene::updateGameUi(f32 dt) {
         uiTextInputOn = wantText;
     }
     // Two-way search box: Rml writes into the bound slot, we mirror it
-    // into the view when it changes (B3). Only the item screens carry it.
+    // into the view when it changes. Only the item screens carry it.
     if (modal) {
         const ScreenStack::Screen* top = screenStack.topModal();
         if (top && (top->name == "inventory" || top->name == "container" ||
@@ -3318,7 +3354,7 @@ HudContext LandscapeScene::makeHudContext() {
         makeEvalContext(),
         screenStack,
         playerController.bowCharge(), // The draw gauge
-        statsTuning.hudStatPointsScale, // R7: vitals-bar scale
+        statsTuning.hudStatPointsScale, // vitals-bar scale
     };
 }
 
@@ -3496,7 +3532,7 @@ bool LandscapeScene::finalizeActorSpawn(ecs::Entity entity,
             entity.get_mut<gameplay::AttributeSet>(),
             entity.get_mut<gameplay::AbilitySystem>(), gameTags);
         if (granted > 0) {
-            LOG_INFO("É6: '{}' granted {} class perk(s) at spawn",
+            LOG_INFO("'{}' granted {} class perk(s) at spawn",
                      actor->editorId, granted);
         }
     };
@@ -3736,8 +3772,9 @@ void LandscapeScene::createConsole() {
                                        at.z) +
                0.2f;
         // Cosmetic seed from the spot (§8: never the gameplay RNG).
-        const u32 seed = static_cast<u32>(at.x * 73.0f) ^
-                         (static_cast<u32>(at.z * 179.0f) << 8) ^
+        const u32 seed = static_cast<u32>(static_cast<i32>(at.x * 73.0f)) ^
+                         (static_cast<u32>(static_cast<i32>(at.z * 179.0f))
+                          << 8) ^
                          fxSim.count();
         fxSim.spawn(gameplay::toEmitterParams(*form), at, seed);
         return "fx '" + args + "' spawned (" +
@@ -3993,8 +4030,9 @@ PlayerContext LandscapeScene::makePlayerContext() {
         interaction,
         playerEncumbrance == gameplay::EncumbranceCategory::Overencumbered,
         [this] { questDirector.syncWantedTag(makeQuestContext()); },
-        &eventBus, // C4a: synthesized player footsteps
-        &fxDirector.cues(), // C2: hit/block/parry feedback
+        &eventBus, // synthesized player footsteps
+        &fxDirector.cues(), // hit/block/parry feedback
+        combatRng, // injury rolls on landed hits (§8)
         // D2b: the water surface over a spot — sea + lakes + rivers
         // (WaterBodies) + the placed volumes (the extract's snapshot
         // copies, fresh this frame).
@@ -4072,11 +4110,11 @@ NpcContext LandscapeScene::makeNpcContext() {
         attackAbility,
         combatRng,
         sceneConsole.vm(), // brain scripts (docs/BOSS-SCRIPTING.md)
-        &fxDirector.cues(), // C2: hit/block/parry/death feedback
+        &fxDirector.cues(), // hit/block/parry/death feedback
         &projectileDirector, // Archer NPCs
         sceneConsole.godMode(),
         timeSeconds,
-        &spatialIndex, // R3: radius queries (faction shout) share it
+        &spatialIndex, // radius queries (faction shout) share it
         // Schedule interruption: the partner counts only WHILE the
         // dialogue is open (the runner's active flag — the stored partner
         // alone survives the close, deliberately, for barter).
@@ -4198,7 +4236,7 @@ StreamingContext LandscapeScene::makeStreamingContext() {
 // snapshot. No render state, no GPU handle, no pass lives here anymore.
 void LandscapeScene::render(engine::FrameContext& frame) {
     const phys::CharacterBody* playerBody = playerController.body();
-    // H3: the active worldspace's buried threshold rides the view.
+    // The active worldspace's buried threshold rides the view.
     f32 buriedBelowY = -1.0e9f;
     if (const auto* space = static_cast<const world::WorldspaceForm*>(
             forms.get(activeWorldspace))) {
@@ -4232,7 +4270,6 @@ void LandscapeScene::render(engine::FrameContext& frame) {
     // Stutter hunt: one WARN line with the block breakdown on any frame
     // > 25 ms. If `probed` sits far below the total, the spike lives
     // outside the instrumented blocks (present/driver/OS).
-    frameProbe.endFrame();
 }
 
 void LandscapeScene::drawUi() {
@@ -4267,10 +4304,6 @@ void LandscapeScene::drawUi() {
                 ImVec4(0.0f, 0.0f, 0.0f, interaction.fadeAlpha())));
     }
 
-    // The world-warmup machine (boot / sandbox entry / spectator
-    // catch-up) — phases replace the old four-stream min math.
-    updateWarmup();
-
     // Mode hotkeys. Play is home: F2 toggles Play<->Spectator, F3 toggles
     // Play<->Edit, and from any OTHER mode the key REPLACES it with its
     // own. All side effects live in restoreMode —
@@ -4289,6 +4322,20 @@ void LandscapeScene::drawUi() {
     }
     if (mode == SceneMode::Edit && levelEditor) {
         sceneEditor.draw(makeEditorContext());
+    }
+
+    // F7: the character-stats inspector on the PLAYER (docs/STATS.md) —
+    // the transversal panel the stats bench (StatsScene) also hosts;
+    // read-only sections plus component-level actions (no sample gear).
+    if (ImGui::IsKeyPressed(ImGuiKey_F7, false)) {
+        statsPanelOpen = !statsPanelOpen;
+    }
+    if (statsPanelOpen && playerEntity.is_alive()) {
+        const gameplay::CharacterTickContext statsCtx { derivedStats,
+                                                        gameTags,
+                                                        statsTuning };
+        game::ui::drawCharacterStatsPanel(playerEntity, statsCtx, gameClock,
+                                          playerEquipMods());
     }
 
     // Quicksave / quickload.

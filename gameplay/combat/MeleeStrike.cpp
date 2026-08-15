@@ -1,9 +1,58 @@
 #include "gameplay/combat/MeleeStrike.hpp"
 
+#include "engine/core/Rng.hpp"
 #include "gameplay/cue/GameplayCues.hpp"
 #include "gameplay/event/EventBus.hpp"
+#include "gameplay/stats/Injuries.hpp"
+#include "gameplay/stats/StatusBuildup.hpp"
 
 namespace gameplay {
+
+namespace {
+
+// A landed physical hit can inflict an injury (docs/STATS.md §5): the
+// dominant physical channel picks the type — blunt bruises, or fractures
+// past half the health bar in one hit; edges cut. Body part fixed at
+// Torso until the per-part source tables land ([7+]). Resonance gates
+// the roll inside rollInjury (immune at non-negative onyx).
+void maybeRollInjury(StatBlock& defender, ecs::Entity defenderEntity,
+                     const DamageEvent& event, const DamageResult& result,
+                     const StrikeContext& ctx) {
+    if (ctx.rng == nullptr || result.healthDamage <= 0.0f ||
+        !defenderEntity.is_alive() || !defenderEntity.has<Injuries>()) {
+        return;
+    }
+    f32 edged = 0.0f;
+    f32 blunt = 0.0f;
+    for (const DamageChannel& channel : event.channels) {
+        if (channel.type == DamageType::Slash ||
+            channel.type == DamageType::Pierce) {
+            edged += channel.amount;
+        } else if (channel.type == DamageType::Blunt) {
+            blunt += channel.amount;
+        }
+    }
+    if (edged <= 0.0f && blunt <= 0.0f) {
+        return; // pure elemental hits burn resonance, not flesh
+    }
+    const f32 maxHealth = currentValueOf(defender.system, attr("maxHealth"));
+    const f32 fraction =
+        maxHealth > 0.0f ? result.healthDamage / maxHealth : 0.0f;
+    const InjuryType type =
+        blunt > edged
+            ? (fraction > 0.5f ? InjuryType::Fracture : InjuryType::Bruise)
+            : InjuryType::Cut;
+    auto& injuries = defenderEntity.get_mut<Injuries>();
+    if (rollInjury(injuries, type, BodyPart::Torso,
+                   injuryBaseChance(type, fraction),
+                   currentValueOf(defender.system, attr("onyx")),
+                   *ctx.rng)) {
+        syncInjuryEffects(injuries, defender.system, defender.vitals,
+                          ctx.tags);
+    }
+}
+
+} // namespace
 
 DamageResult resolveStrikeDamage(StatBlock& defender,
                                  ecs::Entity attackerEntity,
@@ -14,6 +63,17 @@ DamageResult resolveStrikeDamage(StatBlock& defender,
     const DamageResult result = applyDamage(defender, event, ctx.tags,
                                             ctx.derived, nullptr,
                                             ctx.tuning);
+    maybeRollInjury(defender, defenderEntity, event, result, ctx);
+    // Weapon status buildup (poison/bleed/ignition…) on hits that got
+    // through — a fully negated block leaves no residue. Gated by the
+    // defender's endurance inside tryAddBuildup (armor raises it).
+    if (!event.buildupType.empty() && event.buildupAmount > 0.0f &&
+        result.healthDamage > 0.0f && defenderEntity.is_alive() &&
+        defenderEntity.has<StatusBuildup>()) {
+        tryAddBuildup(defenderEntity.get_mut<StatusBuildup>(),
+                      parseStatusType(event.buildupType),
+                      event.buildupAmount, defender.system, ctx.tags);
+    }
     // Combat lifecycle events (BOSS-SCRIPTING §1) — quests, cues and
     // brains listen on the bus.
     if (ctx.bus) {

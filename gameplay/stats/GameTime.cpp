@@ -4,6 +4,7 @@
 
 #include "gameplay/ability/GameplayEffects.hpp" // tickGameTimeEffects
 #include "gameplay/combat/Combat.hpp"            // updateLifeState
+#include "gameplay/stats/GameClock.hpp"
 #include "gameplay/stats/Rest.hpp"               // accrueRest
 #include "gameplay/stats/ResonanceDecays.hpp"    // tickResonanceDecays
 
@@ -156,12 +157,15 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
     // Tick game-time GAS effects (drug duration, afflictions, injuries with durationHours).
     tickGameTimeEffects(a.vitals, a.system, gameDt, a.tags);
 
-    // Resonance decay (game-time, in hours).
-    tickResonanceDecays(a.resoDecays, static_cast<f32>(gameDt / 3600.0));
+    const f32 gameHours = static_cast<f32>(gameDt / 3600.0);
 
-    // Injury recovery (game-time, in hours); re-sync GAS effects.
-    const f32 restHours = static_cast<f32>(gameDt / 3600.0);
-    recoverInjuries(a.injuries, restHours);
+    // Resonance decay (game-time, in hours).
+    tickResonanceDecays(a.resoDecays, gameHours);
+
+    // Injury recovery: only over REST — game time without taking a hit
+    // (docs/STATS.md §5). A fresh hit zeroes restSeconds and pauses healing.
+    recoverInjuries(a.injuries,
+                    a.combat.restSeconds > 0.0f ? gameHours : 0.0f);
     syncInjuryEffects(a.injuries, a.system, a.vitals, a.tags);
 
     // Accumulate rest time.
@@ -172,6 +176,31 @@ void tickGameTime(GameTimeTickArgs& a, f64 gameDt, const StatModifiers& mods) {
     // derived currents — but only a full recompute refreshes
     // them against the new modifier set).
     recomputeStats(a.core, a.vitals, a.resonance, a.system, a.derived, &mods);
+}
+
+GameTimeResult waitGameTime(GameClock& clock, GameTimeTickArgs& a, f32 hours,
+                            const StatModifiers& equipmentMods) {
+    const f64 gameDt = static_cast<f64>(hours) * 3600.0;
+    clock.gameSeconds += gameDt;
+    // The window is rest by definition — nothing hits a waiting actor;
+    // credited BEFORE the skip so injury recovery sees it.
+    accrueRest(a.combat, gameDt);
+    return advanceGameTime(a, gameDt, clock.timescale, equipmentMods);
+}
+
+GameTimeResult sleepGameTime(GameClock& clock, GameTimeTickArgs& a, f32 hours,
+                             const StatModifiers& equipmentMods) {
+    const f32 sleepBefore = a.survival.sleep;
+    const GameTimeResult result =
+        waitGameTime(clock, a, hours, equipmentMods);
+    // Restores the need the skip's survival decay just drained. AFTER the
+    // skip, or an 8h night would wake below full.
+    a.survival.sleep =
+        hours >= a.tuning.comfortableSleepHours
+            ? 100.0f
+            : std::min(100.0f,
+                       sleepBefore + a.tuning.sleepPerHour * hours);
+    return result;
 }
 
 GameTimeResult advanceGameTime(GameTimeTickArgs& a, f64 gameDt, f32 timescale,

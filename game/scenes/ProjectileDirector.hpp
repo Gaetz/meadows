@@ -20,6 +20,10 @@ namespace render {
 struct RenderSnapshot;
 }
 
+namespace core {
+class Rng;
+}
+
 namespace game {
 
 struct Npc;
@@ -36,6 +40,8 @@ struct ProjectileContext {
     const gameplay::StatsTuningForm& statsTuning;
     gameplay::EventBus& eventBus;
     gameplay::CueRegistry* cues;
+    // Injury rolls on landed hits (§8 seeded); null in tests.
+    core::Rng* combatRng { nullptr };
     bool godMode;
 };
 

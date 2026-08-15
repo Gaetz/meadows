@@ -38,7 +38,7 @@ void strike(const ProjectileContext& ctx, ecs::Entity target,
     };
     const gameplay::StrikeContext strikeCtx {
         ctx.gameTags, ctx.derivedStats, ctx.statsTuning, &ctx.eventBus,
-        ctx.cues
+        ctx.cues, ctx.combatRng
     };
     // Resolve the shooter back to a LIVE entity so the OnHitTaken
     // this dispatches carries a real source — the follower aggro table
@@ -81,7 +81,7 @@ void strike(const ProjectileContext& ctx, ecs::Entity target,
     }
     const gameplay::DamageResult result = gameplay::resolveStrikeDamage(
         defender, shooter, target, payload, at, strikeCtx);
-    LOG_INFO("A7: arrow hits for {:.0f}", result.healthDamage);
+    LOG_INFO("arrow hits for {:.0f}", result.healthDamage);
 }
 
 } // namespace
@@ -102,7 +102,7 @@ void ProjectileDirector::update(f32 dt, const ProjectileContext& ctx) {
                         ctx.playerEntity.get_mut<gameplay::Inventory>(),
                         arrow.ammoItem, 1);
                     arrow.plantedTtl = 0.0f; // picked: gone this frame
-                    LOG_INFO("A7: arrow recovered");
+                    LOG_INFO("arrow recovered");
                 }
             }
             continue;

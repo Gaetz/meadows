@@ -17,6 +17,7 @@
 #include "game/ScreenStack.hpp"
 #include "game/scenes/GameHud.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/stats/StatusBuildup.hpp"
 #include "gameplay/ability/GameplayEffects.hpp"
 #include "gameplay/actors/ActorState.hpp"     // gameplay::VendorState
 #include "gameplay/actors/CharacterForms.hpp" // gameplay::applyLoadout
@@ -223,6 +224,11 @@ void UiRouter::barterTrade(const UiRouterContext& ctx, const core::Guid& item,
     if (!row) {
         return;
     }
+    if (!ctx.playerEntity.has<gameplay::Inventory>() ||
+        !containerEntity_.has<gameplay::Inventory>()) {
+        LOG_WARN("barter: a side has no Inventory — setup bug, trade skipped");
+        return;
+    }
     auto& bag = ctx.playerEntity.get_mut<gameplay::Inventory>();
     auto& stock = containerEntity_.get_mut<gameplay::Inventory>();
     if (playerBuys) {
@@ -357,10 +363,16 @@ void UiRouter::useConsumable(const UiRouterContext& ctx,
     if (consumable->effect.isValid()) {
         if (const auto* effect =
                 ctx.forms.find<gameplay::EffectForm>(consumable->effect)) {
+            // WITH the buildup pointer: an effect carrying buildupType
+            // (antidote, poison vial) routes through tryAddBuildup —
+            // without it applyEffect no-ops that whole family.
             gameplay::applyEffect(
                 ctx.playerEntity.get_mut<gameplay::AttributeSet>(),
                 ctx.playerEntity.get_mut<gameplay::AbilitySystem>(), *effect,
-                ctx.gameTags);
+                ctx.gameTags,
+                ctx.playerEntity.has<gameplay::StatusBuildup>()
+                    ? &ctx.playerEntity.get_mut<gameplay::StatusBuildup>()
+                    : nullptr);
         }
     }
     LOG_INFO("Used: {}", consumable->editorId);
