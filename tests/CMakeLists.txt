@@ -125,6 +125,7 @@
     TriggerSystemTest.cpp
     TypedDamageTest.cpp
     VegetationCollisionTest.cpp
+    VegetationScatterTest.cpp
     VertexAoTest.cpp
     WeaponMeshesTest.cpp
     WorldModelTest.cpp

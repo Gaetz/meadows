@@ -71,8 +71,8 @@ public:
     static constexpr u32 kMassVariants = 4;
     // Pebble clutter: the SAME rock scans, but the slots carry only the
     // ~40-tri decimation as their MAIN mesh — LOD is per chunk, so
-    // centimeter clutter in the camera chunk used to draw the 700-tri
-    // hero scans by the hundreds (perf audit 2026-08-06).
+    // centimeter clutter in the camera chunk would otherwise draw the
+    // 700-tri hero scans by the hundreds.
     static constexpr u32 kPebbleVariants = 4;
     static constexpr u32 kVariantCount =
         kTreeVariants + kRockVariants + kBushVariants + kDebrisVariants +
@@ -394,6 +394,20 @@ private:
         u32 casterIndexCount { 0 };
     };
 
+    // The canonical canopy LOD pick — ONE rule for the CPU draw() and
+    // the GPU-driven collectDrawCandidates, so the two paths cannot
+    // drift: 0 = hero, 1 = low twin, 2 = ultra, 3 = hero-near
+    // (`nearChunk` already folds the cheb<=1 + world-distance test).
+    u32 canopyLevel(const VariantMesh& mesh, u32 variant, i32 cheb,
+                    bool nearChunk, bool forceLowDetail) const;
+    // The (vertex buffer, index buffer, index count) of one canopy level.
+    struct LevelMesh {
+        rhi::BufferHandle vertices {};
+        rhi::BufferHandle indices {};
+        u32 indexCount { 0 };
+    };
+    static LevelMesh levelMesh(const VariantMesh& mesh, u32 level);
+
     void createVariantMeshes(rhi::Device& device, u32 terrainSeed);
     void destroyVariantMeshes(rhi::Device& device);
     void uploadVariantMesh(rhi::Device& device, u32 variant,
@@ -420,6 +434,15 @@ private:
     u32 meshSeed { 0 }; // last create/regenerate seed (reseedVariantMeshes)
     u32 instances { 0 };
     u32 lastDrawn { 0 };
+    // draw()'s per-frame chunk collection (visibility verdict + LOD
+    // inputs), reused so the (variant × level) loops walk a compact
+    // vector instead of re-traversing the chunk map ~100× per frame.
+    struct DrawChunkRef {
+        const Chunk* chunk { nullptr };
+        i32 cheb { 0 };
+        bool nearChunk { false };
+    };
+    vector<DrawChunkRef> drawScratch;
     u32 frameIndices { 0 };       // reset in update(), summed by draw*()
     u32 frameHighInstances { 0 };  // 320-face canopies drawn this frame
     u32 frameLowInstances { 0 };   // low-twin instances drawn this frame

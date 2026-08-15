@@ -1,15 +1,10 @@
 #pragma once
 
-#include <memory>
-
-#include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
+#include "engine/render/landscape/BakeMailbox.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/rhi/Rhi.hpp"
 
-namespace core {
-class JobSystem;
-}
 namespace rhi {
 class Device;
 }
@@ -42,10 +37,11 @@ public:
 
     // {centerX, centerZ, 1/span, valid}.
     Vec4 info() const {
-        return { center.x, center.y, 1.0f / kSpan, uploaded ? 1.0f : 0.0f };
+        return { center.x, center.y, 1.0f / kSpan,
+                 mailbox.ready() ? 1.0f : 0.0f };
     }
     rhi::BindGroupHandle bindGroup() const { return group; }
-    bool ready() const { return uploaded; }
+    bool ready() const { return mailbox.ready(); }
 
 private:
     struct Baked {
@@ -56,17 +52,13 @@ private:
         u64 gen { 0 };
     };
 
-    core::JobSystem* jobs { nullptr };
-    std::shared_ptr<core::ConcurrentQueue<Baked>> built;
+    BakeMailbox<Baked> mailbox;
     rhi::TextureHandle texture0 {};
     rhi::TextureHandle texture1 {};
     rhi::SamplerHandle sampler {};
     rhi::BindGroupHandle group {};
     Vec2 center {};
     u64 bakedStamp { 0 };
-    bool inFlight { false };
-    bool uploaded { false };
-    u64 generation { 0 };
 };
 
 } // namespace render

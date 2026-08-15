@@ -1,18 +1,13 @@
 #pragma once
 
-#include <memory>
-
-#include "engine/core/ConcurrentQueue.hpp"
 #include "engine/core/Defines.hpp"
 #include "engine/assets/MeshData.hpp"
+#include "engine/render/landscape/BakeMailbox.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "engine/render/landscape/VegetationSystem.hpp"
 #include "engine/rhi/Rhi.hpp"
 #include "engine/rhi/UniqueHandle.hpp"
 
-namespace core {
-class JobSystem;
-}
 namespace rhi {
 class CommandBuffer;
 class Device;
@@ -67,7 +62,7 @@ public:
     void draw(rhi::CommandBuffer& cmd, rhi::BindGroupHandle frameBindGroup,
               rhi::BindGroupHandle cloudMapGroup);
 
-    bool ready() const { return uploaded; }
+    bool ready() const { return mailbox.ready(); }
     // The horizon-closure distance this mesh supports (conservative:
     // half-span minus the rebake stray).
     f32 reach() const { return kSpan * 0.42f; }
@@ -87,8 +82,7 @@ private:
         u64 gen { 0 };
     };
 
-    core::JobSystem* jobs { nullptr };
-    std::shared_ptr<core::ConcurrentQueue<Baked>> built;
+    BakeMailbox<Baked> mailbox;
     rhi::UniqueBuffer vertexBuffer;
     rhi::UniqueBuffer indexBuffer;
     rhi::UniqueBuffer treeBuffer;
@@ -102,9 +96,6 @@ private:
     u64 bakedContentStamp { 0 };
     f32 bakedTreeHeight { 0.0f };
     f32 bakedSeaLevel { 0.0f };
-    bool inFlight { false };
-    bool uploaded { false };
-    u64 generation { 0 };
 };
 
 } // namespace render

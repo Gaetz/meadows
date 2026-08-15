@@ -63,8 +63,7 @@ void bakeTexel(const TerrainParams& params, f32 x, f32 z, const Vec3& sun,
 } // namespace
 
 void TerrainLightMap::create(rhi::Device& device, core::JobSystem& jobSystem) {
-    jobs = &jobSystem;
-    built = std::make_shared<core::ConcurrentQueue<Baked>>();
+    mailbox.create(jobSystem);
     sampler = device.createSampler({});
     // The texture is (re)created per landed bake — the RHI has no
     // texture update, and a rebuild every ~8 s costs nothing.
@@ -72,26 +71,20 @@ void TerrainLightMap::create(rhi::Device& device, core::JobSystem& jobSystem) {
 }
 
 void TerrainLightMap::destroy(rhi::Device& device) {
-    ++generation; // orphan in-flight bakes
+    mailbox.reset(); // orphan in-flight bakes
     device.destroyBindGroup(group);
     device.destroySampler(sampler);
     device.destroyTexture(texture);
     group = {};
     sampler = {};
     texture = {};
-    inFlight = false;
-    uploaded = false;
 }
 
 void TerrainLightMap::update(rhi::Device& device, const TerrainParams& params,
                              const Vec3& focus, const Vec3& sunDirection) {
     // 1. Land a finished bake (fresh texture + group — no RHI texture
     // update; a rebuild every sun step is negligible).
-    Baked done;
-    while (built->tryPop(done)) {
-        if (done.gen != generation) {
-            continue;
-        }
+    mailbox.drain([&](Baked& done) {
         if (texture.id != 0) {
             device.destroyBindGroup(group);
             device.destroyTexture(texture);
@@ -109,10 +102,8 @@ void TerrainLightMap::update(rhi::Device& device, const TerrainParams& params,
                              .sampler = sampler } } });
         center = done.center;
         bakedSun = done.sun;
-        inFlight = false;
-        uploaded = true;
-    }
-    if (inFlight) {
+    });
+    if (mailbox.busy()) {
         return;
     }
 
@@ -121,17 +112,13 @@ void TerrainLightMap::update(rhi::Device& device, const TerrainParams& params,
     const Vec2 want { focus.x, focus.z };
     const bool sunMoved = glm::dot(bakedSun, sunDirection) < 0.99995f;
     const bool strayed =
-        !uploaded || glm::distance(want, center) > kSpan * 0.25f;
+        !mailbox.ready() || glm::distance(want, center) > kSpan * 0.25f;
     if (!sunMoved && !strayed) {
         return;
     }
-    inFlight = true;
-    jobs->enqueue([queue = built, params, want, sun = sunDirection,
-                   gen = generation] {
-        Baked baked;
+    mailbox.kick([params, want, sun = sunDirection](Baked& baked) {
         baked.center = want;
         baked.sun = sun;
-        baked.gen = gen;
         baked.pixels.resize(static_cast<size_t>(kSize) * kSize * 4, 255);
         const f32 texel = kSpan / static_cast<f32>(kSize);
         const f32 originX = want.x - kSpan * 0.5f;
@@ -149,7 +136,6 @@ void TerrainLightMap::update(rhi::Device& device, const TerrainParams& params,
                 px[3] = 255;
             }
         }
-        queue->push(std::move(baked));
     });
 }
 

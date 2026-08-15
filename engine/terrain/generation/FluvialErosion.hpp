@@ -13,11 +13,8 @@
 namespace render::terraingen {
 
 struct FluvialParams {
-    // Dissection budget: 100 carved so deep the massifs lost ~27% of
-    // their mean elevation (median -30%) and read as "everything sits
-    // low"; 80 is the dev-picked balance — deep valley systems kept,
-    // some walkable high ground back (measured table: tests 'erosion
-    // strength diagnostic', journal docs/TERRAIN-GEN.md).
+    // Dissection budget: deep valley systems kept, some walkable high
+    // ground preserved. Hand-tuned — see docs/TERRAIN-GEN.md.
     i32 iterations { 80 };
     f32 dt { 1.0f };
     // Stream-power erodibility: dh/dt = -k * A^m * slope, with A in m².
@@ -45,8 +42,7 @@ struct FluvialParams {
     // (m³/iteration) drops below the incoming flux — flat valley floors,
     // alluvial fans, and lake-entry deltas instead of pure V-carves.
     // Steep slopes have huge capacity, so peaks and dendrites are
-    // untouched. 0 = transport-unlimited (pure detachment, the previous
-    // behavior, bit-exact).
+    // untouched. 0 = transport-unlimited (pure detachment).
     f32 sedimentCapacity { 1.2f };
     f32 depositMax { 0.35f };   // m deposited per cell per iteration cap
     f32 depositSlack { 0.05f }; // m above the routed surface allowed

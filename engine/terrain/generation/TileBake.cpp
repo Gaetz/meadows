@@ -1,4 +1,5 @@
 #include "engine/terrain/generation/TileBake.hpp"
+#include "engine/terrain/generation/GridOps.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -28,25 +29,6 @@ GridSpec simSpecFor(const TileBakeParams& params, i32 tx, i32 tz) {
                    params.macroTexel) +
             1;
     return sim;
-}
-
-f32 bilinearAt(const GridSpec& spec, const vector<f32>& grid, f32 wx,
-               f32 wz) {
-    const f32 u = glm::clamp((wx - spec.originX) / spec.texelSize, 0.0f,
-                             static_cast<f32>(spec.n - 1));
-    const f32 v = glm::clamp((wz - spec.originZ) / spec.texelSize, 0.0f,
-                             static_cast<f32>(spec.n - 1));
-    const u32 u0 = glm::min(static_cast<u32>(u), spec.n - 2);
-    const u32 v0 = glm::min(static_cast<u32>(v), spec.n - 2);
-    const f32 tu = u - static_cast<f32>(u0);
-    const f32 tv = v - static_cast<f32>(v0);
-    const auto at = [&](u32 cx, u32 cz) {
-        return grid[static_cast<size_t>(cz) * spec.n + cx];
-    };
-    const f32 a = at(u0, v0) + (at(u0 + 1, v0) - at(u0, v0)) * tu;
-    const f32 b =
-        at(u0, v0 + 1) + (at(u0 + 1, v0 + 1) - at(u0, v0 + 1)) * tu;
-    return a + (b - a) * tv;
 }
 
 } // namespace
@@ -124,14 +106,16 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
     // Passability corridors soften the erosion locally: softer rock
     // (higher k -> LOWER equilibrium slopes: the physics of a mountain
     // pass) and smoother scree. Heights are never touched directly.
-    if (!macro.gentle.empty()) {
-        if (character.erodibility.empty()) {
-            const size_t cells = out.sim.cells();
-            character.erodibility.assign(cells, 1.0f);
-            character.talusScale.assign(cells, 1.0f);
-            character.capacityScale.assign(cells, 1.0f);
-            character.fineScale.assign(cells, 1.0f);
-        }
+    // The uplift/plains/lithology character below applies with or without
+    // corridors; only the corridor softening itself is gated on `gentle`.
+    if (character.erodibility.empty()) {
+        const size_t cells = out.sim.cells();
+        character.erodibility.assign(cells, 1.0f);
+        character.talusScale.assign(cells, 1.0f);
+        character.capacityScale.assign(cells, 1.0f);
+        character.fineScale.assign(cells, 1.0f);
+    }
+    {
         for (size_t i = 0; i < macro.gentle.size(); ++i) {
             const f32 g = macro.gentle[i];
             character.erodibility[i] *= 1.0f + 1.6f * g;
@@ -160,8 +144,10 @@ TileStage1 bakeTileStage1(const TileBakeParams& params, i32 tx, i32 tz) {
             // runs (a pass is a promise) and clamped so the stacked
             // factors (biome, plains, gentle) never run away.
             if (!macro.hardness.empty()) {
-                const f32 hard = glm::mix(macro.hardness[i], 0.5f,
-                                          macro.gentle[i]);
+                const f32 gentleHere =
+                    i < macro.gentle.size() ? macro.gentle[i] : 0.0f;
+                const f32 hard =
+                    glm::mix(macro.hardness[i], 0.5f, gentleHere);
                 character.erodibility[i] *=
                     glm::mix(1.6f, 0.55f, hard);
                 character.talusScale[i] *= glm::mix(0.9f, 1.25f, hard);
@@ -291,13 +277,13 @@ TileBakeResult bakeTileStage2(
                             continue;
                         }
                         hSum +=
-                            w * bilinearAt(s1->sim, s1->eroded, wx, wz);
+                            w * bilinearWorld(s1->sim, s1->eroded, wx, wz);
                         wSum += w;
                     }
                 }
                 grid[static_cast<size_t>(row) * win.n + col] =
                     wSum > 0.0f ? hSum / wSum
-                                : bilinearAt(sim, self.eroded, wx, wz);
+                                : bilinearWorld(sim, self.eroded, wx, wz);
             }
         }
         return grid;

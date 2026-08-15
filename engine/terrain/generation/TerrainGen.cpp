@@ -1,4 +1,5 @@
 #include "engine/terrain/generation/TerrainGen.hpp"
+#include "engine/terrain/generation/GridOps.hpp"
 
 #include <cmath>
 
@@ -135,8 +136,6 @@ vector<f32> signedSeaDistance(const GridSpec& spec,
                               const vector<u8>& seaMask) {
     const i32 n = static_cast<i32>(spec.n);
     constexpr f32 kFar = 1.0e30f;
-    constexpr f32 kOrtho = 1.0f;
-    constexpr f32 kDiag = 1.41421356f;
     vector<f32> toSea(spec.cells(), kFar);
     vector<f32> toLand(spec.cells(), kFar);
     const auto idx = [n](i32 cx, i32 cz) {
@@ -147,36 +146,8 @@ vector<f32> signedSeaDistance(const GridSpec& spec,
             (seaMask[idx(cx, cz)] ? toSea : toLand)[idx(cx, cz)] = 0.0f;
         }
     }
-    const auto relax = [&](vector<f32>& d, i32 cx, i32 cz, i32 ox, i32 oz,
-                           f32 w) {
-        const i32 px = cx + ox;
-        const i32 pz = cz + oz;
-        if (px < 0 || pz < 0 || px >= n || pz >= n) {
-            return;
-        }
-        d[idx(cx, cz)] =
-            glm::min(d[idx(cx, cz)], d[idx(px, pz)] + w);
-    };
-    const auto sweep = [&](vector<f32>& d) {
-        for (i32 cz = 0; cz < n; ++cz) {
-            for (i32 cx = 0; cx < n; ++cx) {
-                relax(d, cx, cz, -1, 0, kOrtho);
-                relax(d, cx, cz, 0, -1, kOrtho);
-                relax(d, cx, cz, -1, -1, kDiag);
-                relax(d, cx, cz, 1, -1, kDiag);
-            }
-        }
-        for (i32 cz = n - 1; cz >= 0; --cz) {
-            for (i32 cx = n - 1; cx >= 0; --cx) {
-                relax(d, cx, cz, 1, 0, kOrtho);
-                relax(d, cx, cz, 0, 1, kOrtho);
-                relax(d, cx, cz, 1, 1, kDiag);
-                relax(d, cx, cz, -1, 1, kDiag);
-            }
-        }
-    };
-    sweep(toSea);
-    sweep(toLand);
+    chamferSweep(toSea, n, n);
+    chamferSweep(toLand, n, n);
     vector<f32> out(spec.cells());
     for (size_t i = 0; i < out.size(); ++i) {
         out[i] = (seaMask[i] ? -toLand[i] : toSea[i]) * spec.texelSize;

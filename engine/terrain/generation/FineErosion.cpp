@@ -1,5 +1,7 @@
 #include "engine/terrain/generation/FineErosion.hpp"
+#include "engine/terrain/generation/GridOps.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include <glm/glm.hpp>
@@ -7,19 +9,6 @@
 namespace render::terraingen {
 
 namespace {
-
-struct Neighbour {
-    i32 dx;
-    i32 dz;
-    f32 dist; // texel units
-};
-
-constexpr Neighbour kNeighbours[8] = {
-    { -1, 0, 1.0f },         { 1, 0, 1.0f },
-    { 0, -1, 1.0f },         { 0, 1, 1.0f },
-    { -1, -1, 1.41421356f }, { 1, -1, 1.41421356f },
-    { -1, 1, 1.41421356f },  { 1, 1, 1.41421356f },
-};
 
 } // namespace
 
@@ -57,7 +46,7 @@ FineErosionResult amplifyFine(const GridSpec& spec,
                     receiver[i] = static_cast<u32>(i);
                     recvDist[i] = spec.texelSize;
                     f32 best = 0.0f;
-                    for (const Neighbour& nb : kNeighbours) {
+                    for (const Neighbour& nb : kNeighbours8) {
                         const i32 px = cx + nb.dx;
                         const i32 pz = cz + nb.dz;
                         if (px < 0 || pz < 0 || px >= n || pz >= n) {

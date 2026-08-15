@@ -1,4 +1,5 @@
 #include "engine/terrain/generation/FluvialErosion.hpp"
+#include "engine/terrain/generation/GridOps.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -9,19 +10,6 @@
 namespace render::terraingen {
 
 namespace {
-
-struct Neighbour {
-    i32 dx;
-    i32 dz;
-    f32 dist; // texel units, scaled by texelSize at use
-};
-
-constexpr Neighbour kNeighbours[8] = {
-    { -1, 0, 1.0f },          { 1, 0, 1.0f },
-    { 0, -1, 1.0f },          { 0, 1, 1.0f },
-    { -1, -1, 1.41421356f },  { 1, -1, 1.41421356f },
-    { -1, 1, 1.41421356f },   { 1, 1, 1.41421356f },
-};
 
 bool isBaseLevel(const GridSpec& spec, const vector<f32>& height, u32 col,
                  u32 row, f32 seaLevel) {
@@ -57,7 +45,7 @@ vector<f32> priorityFloodFill(const GridSpec& spec,
         open.pop();
         const i32 cx = static_cast<i32>(iu % spec.n);
         const i32 cz = static_cast<i32>(iu / spec.n);
-        for (const Neighbour& nb : kNeighbours) {
+        for (const Neighbour& nb : kNeighbours8) {
             const i32 px = cx + nb.dx;
             const i32 pz = cz + nb.dz;
             if (px < 0 || pz < 0 || px >= n || pz >= n) {
@@ -97,7 +85,7 @@ FlowRouting routeFlow(const GridSpec& spec, const vector<f32>& routed,
                 continue;
             }
             f32 best = 0.0f;
-            for (const Neighbour& nb : kNeighbours) {
+            for (const Neighbour& nb : kNeighbours8) {
                 const i32 px = cx + nb.dx;
                 const i32 pz = cz + nb.dz;
                 if (px < 0 || pz < 0 || px >= n || pz >= n) {
@@ -230,8 +218,8 @@ FluvialResult erodeFluvial(const GridSpec& spec, const vector<f32>& height,
                 sediment[r] += flux;
             }
         }
-        out.area = flow.area;
     }
+    out.area = std::move(flow.area);
 
     if (keep) {
         for (size_t i = 0; i < cells; ++i) {

@@ -8,15 +8,14 @@
 namespace render {
 
 void TerrainShadeMap::create(rhi::Device& device, core::JobSystem& jobSystem) {
-    jobs = &jobSystem;
-    built = std::make_shared<core::ConcurrentQueue<Baked>>();
+    mailbox.create(jobSystem);
     sampler = device.createSampler({});
     // Textures are (re)created per landed bake (no RHI texture update).
     (void)device;
 }
 
 void TerrainShadeMap::destroy(rhi::Device& device) {
-    ++generation; // orphan in-flight bakes
+    mailbox.reset(); // orphan in-flight bakes
     device.destroyBindGroup(group);
     device.destroySampler(sampler);
     device.destroyTexture(texture0);
@@ -25,17 +24,11 @@ void TerrainShadeMap::destroy(rhi::Device& device) {
     sampler = {};
     texture0 = {};
     texture1 = {};
-    inFlight = false;
-    uploaded = false;
 }
 
 void TerrainShadeMap::update(rhi::Device& device, const TerrainParams& params,
                              const Vec3& focus) {
-    Baked done;
-    while (built->tryPop(done)) {
-        if (done.gen != generation) {
-            continue;
-        }
+    mailbox.drain([&](Baked& done) {
         if (texture0.id != 0) {
             device.destroyBindGroup(group);
             device.destroyTexture(texture0);
@@ -57,26 +50,22 @@ void TerrainShadeMap::update(rhi::Device& device, const TerrainParams& params,
                              .sampler = sampler } } });
         center = done.center;
         bakedStamp = done.stamp;
-        inFlight = false;
-        uploaded = true;
-    }
-    if (inFlight) {
+    });
+    if (mailbox.busy()) {
         return;
     }
 
     const Vec2 want { focus.x, focus.z };
-    const bool strayed =
-        !uploaded || glm::distance(want, center) > kSpan * 0.25f;
-    const bool contentChanged = uploaded && bakedStamp != params.contentStamp;
+    const bool strayed = !mailbox.ready() ||
+                         glm::distance(want, center) > kSpan * 0.25f;
+    const bool contentChanged =
+        mailbox.ready() && bakedStamp != params.contentStamp;
     if (!strayed && !contentChanged) {
         return;
     }
-    inFlight = true;
-    jobs->enqueue([queue = built, params, want, gen = generation] {
-        Baked baked;
+    mailbox.kick([params, want](Baked& baked) {
         baked.center = want;
         baked.stamp = params.contentStamp;
-        baked.gen = gen;
         baked.t0.resize(static_cast<size_t>(kSize) * kSize * 4);
         baked.t1.resize(static_cast<size_t>(kSize) * kSize * 4);
         const f32 texel = kSpan / static_cast<f32>(kSize);
@@ -110,7 +99,6 @@ void TerrainShadeMap::update(rhi::Device& device, const TerrainParams& params,
                 baked.t1[at + 3] = toByte(shading.fields.beach);
             }
         }
-        queue->push(std::move(baked));
     });
 }
 

@@ -46,8 +46,7 @@ void boxBlurAxis(const vector<f32>& src, vector<f32>& dst, u32 size,
 } // namespace
 
 void MistMap::create(rhi::Device& device, core::JobSystem& jobSystem) {
-    jobs = &jobSystem;
-    built = std::make_shared<core::ConcurrentQueue<Baked>>();
+    mailbox.create(jobSystem);
     sampler = device.createSampler({});
     // The texture is (re)created per landed bake — the RHI has no texture
     // update, and a rebuild every ~500 m of travel costs nothing.
@@ -55,25 +54,19 @@ void MistMap::create(rhi::Device& device, core::JobSystem& jobSystem) {
 }
 
 void MistMap::destroy(rhi::Device& device) {
-    ++generation; // orphan in-flight bakes
+    mailbox.reset(); // orphan in-flight bakes
     device.destroyBindGroup(group);
     device.destroySampler(sampler);
     device.destroyTexture(texture);
     group = {};
     sampler = {};
     texture = {};
-    inFlight = false;
-    uploaded = false;
 }
 
 void MistMap::update(rhi::Device& device, const TerrainParams& params,
                      const Vec3& focus) {
     // 1. Land a finished bake (fresh texture + group).
-    Baked done;
-    while (built->tryPop(done)) {
-        if (done.gen != generation) {
-            continue;
-        }
+    mailbox.drain([&](Baked& done) {
         if (texture.id != 0) {
             device.destroyBindGroup(group);
             device.destroyTexture(texture);
@@ -93,19 +86,17 @@ void MistMap::update(rhi::Device& device, const TerrainParams& params,
         maxTop = done.maxTop;
         bakedSeed = done.seed;
         bakedSeaLevel = done.seaLevel;
-        inFlight = false;
-        uploaded = true;
         LOG_INFO("mist map baked: center ({:.0f}, {:.0f}), max top {:.1f} m",
                  center.x, center.y, maxTop);
-    }
-    if (inFlight) {
+    });
+    if (mailbox.busy()) {
         return;
     }
 
     // 2. Kick a re-bake when the camera leaves the inner quarter of the
     // map or the terrain inputs change (the WaterSystem staleness keys).
     const Vec2 camXz { focus.x, focus.z };
-    const bool stale = !uploaded ||
+    const bool stale = !mailbox.ready() ||
                        glm::distance(camXz, center) > kSpan * 0.25f ||
                        bakedSeed != params.seed ||
                        bakedSeaLevel != params.seaLevel;
@@ -117,13 +108,10 @@ void MistMap::update(rhi::Device& device, const TerrainParams& params,
     // the swap never pops (the no-crossfade invariant — see header).
     constexpr f32 kTexel = kSpan / static_cast<f32>(kSize);
     const Vec2 want = glm::floor(camXz / kTexel) * kTexel;
-    inFlight = true;
-    jobs->enqueue([queue = built, params, want, gen = generation] {
-        Baked baked;
+    mailbox.kick([params, want](Baked& baked) {
         baked.center = want;
         baked.seed = params.seed;
         baked.seaLevel = params.seaLevel;
-        baked.gen = gen;
         baked.pixels.resize(static_cast<size_t>(kSize) * kSize * 4, 255);
 
         constexpr f32 texel = kSpan / static_cast<f32>(kSize);
@@ -168,7 +156,6 @@ void MistMap::update(rhi::Device& device, const TerrainParams& params,
             px[3] = 255;
         }
         baked.maxTop = maxTop;
-        queue->push(std::move(baked));
     });
 }
 

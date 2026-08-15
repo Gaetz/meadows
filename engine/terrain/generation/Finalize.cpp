@@ -1,4 +1,5 @@
 #include "engine/terrain/generation/Finalize.hpp"
+#include "engine/terrain/generation/GridOps.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -25,13 +26,7 @@ f32 strataBand01(f32 h, f32 warp, f32 period) {
            (1.0f - noise::smoothstep01(0.7f, 0.95f, frac));
 }
 
-f32 catmullRom(f32 p0, f32 p1, f32 p2, f32 p3, f32 t) {
-    return p1 +
-           0.5f * t *
-               (p2 - p0 +
-                t * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3 +
-                     t * (3.0f * (p1 - p2) + p3 - p0)));
-}
+using terrain::catmullRom;
 
 // Bicubic sample of a coarse grid at fractional texel coords, clamped.
 f32 sampleGrid(const GridSpec& spec, const vector<f32>& grid, f32 u,
@@ -57,23 +52,6 @@ f32 sampleGrid(const GridSpec& spec, const vector<f32>& grid, f32 u,
     return catmullRom(rows[0], rows[1], rows[2], rows[3], tv);
 }
 
-f32 bilinearGrid(const GridSpec& spec, const vector<f32>& grid, f32 u,
-                 f32 v) {
-    const f32 cu = glm::clamp(u, 0.0f, static_cast<f32>(spec.n - 1));
-    const f32 cv = glm::clamp(v, 0.0f, static_cast<f32>(spec.n - 1));
-    const u32 u0 = glm::min(static_cast<u32>(cu), spec.n - 2);
-    const u32 v0 = glm::min(static_cast<u32>(cv), spec.n - 2);
-    const f32 tu = cu - static_cast<f32>(u0);
-    const f32 tv = cv - static_cast<f32>(v0);
-    const auto at = [&](u32 cx, u32 cz) {
-        return grid[static_cast<size_t>(cz) * spec.n + cx];
-    };
-    const f32 a = at(u0, v0) + (at(u0 + 1, v0) - at(u0, v0)) * tu;
-    const f32 b =
-        at(u0, v0 + 1) + (at(u0 + 1, v0 + 1) - at(u0, v0 + 1)) * tu;
-    return a + (b - a) * tv;
-}
-
 // Chamfer distance (meters) to the nearest set cell of `mask`.
 vector<f32> distanceToMask(const GridSpec& spec, const vector<u8>& mask) {
     const i32 n = static_cast<i32>(spec.n);
@@ -84,33 +62,7 @@ vector<f32> distanceToMask(const GridSpec& spec, const vector<u8>& mask) {
             d[i] = 0.0f;
         }
     }
-    const auto idx = [n](i32 cx, i32 cz) {
-        return static_cast<size_t>(cz) * static_cast<size_t>(n) + cx;
-    };
-    const auto relax = [&](i32 cx, i32 cz, i32 ox, i32 oz, f32 w) {
-        const i32 px = cx + ox;
-        const i32 pz = cz + oz;
-        if (px < 0 || pz < 0 || px >= n || pz >= n) {
-            return;
-        }
-        d[idx(cx, cz)] = glm::min(d[idx(cx, cz)], d[idx(px, pz)] + w);
-    };
-    for (i32 cz = 0; cz < n; ++cz) {
-        for (i32 cx = 0; cx < n; ++cx) {
-            relax(cx, cz, -1, 0, 1.0f);
-            relax(cx, cz, 0, -1, 1.0f);
-            relax(cx, cz, -1, -1, 1.41421356f);
-            relax(cx, cz, 1, -1, 1.41421356f);
-        }
-    }
-    for (i32 cz = n - 1; cz >= 0; --cz) {
-        for (i32 cx = n - 1; cx >= 0; --cx) {
-            relax(cx, cz, 1, 0, 1.0f);
-            relax(cx, cz, 0, 1, 1.0f);
-            relax(cx, cz, 1, 1, 1.41421356f);
-            relax(cx, cz, -1, 1, 1.41421356f);
-        }
-    }
+    chamferSweep(d, n, n);
     for (f32& v : d) {
         v = v >= kFar ? kFar : v * spec.texelSize;
     }
@@ -135,25 +87,7 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
     // World-coordinate sampler into the hydrology window grids.
     const auto hydroAt = [&](const vector<f32>& grid, f32 wx,
                              f32 wz) -> f32 {
-        const f32 u = glm::clamp((wx - hydroSpec.originX) /
-                                     hydroSpec.texelSize,
-                                 0.0f,
-                                 static_cast<f32>(hydroSpec.n - 1));
-        const f32 v = glm::clamp((wz - hydroSpec.originZ) /
-                                     hydroSpec.texelSize,
-                                 0.0f,
-                                 static_cast<f32>(hydroSpec.n - 1));
-        const u32 u0 = glm::min(static_cast<u32>(u), hydroSpec.n - 2);
-        const u32 v0 = glm::min(static_cast<u32>(v), hydroSpec.n - 2);
-        const f32 tu = u - static_cast<f32>(u0);
-        const f32 tv = v - static_cast<f32>(v0);
-        const auto at = [&](u32 cx, u32 cz) {
-            return grid[static_cast<size_t>(cz) * hydroSpec.n + cx];
-        };
-        const f32 a = at(u0, v0) + (at(u0 + 1, v0) - at(u0, v0)) * tu;
-        const f32 b = at(u0, v0 + 1) +
-                      (at(u0 + 1, v0 + 1) - at(u0, v0 + 1)) * tu;
-        return a + (b - a) * tv;
+        return bilinearWorld(hydroSpec, grid, wx, wz);
     };
     FinalizeResult out;
     const u32 f = glm::max(params.upsampleFactor, 1u);
@@ -520,33 +454,7 @@ FinalizeResult finalizeTerrain(const GridSpec& coarse,
                     }
                 }
             }
-            const auto relax = [&](i32 col, i32 row, i32 ox, i32 oz,
-                                   f32 w) {
-                const i32 px = col + ox;
-                const i32 pz = row + oz;
-                if (px < 0 || pz < 0 || px >= mw || pz >= mh) {
-                    return;
-                }
-                f32& cell = shore[static_cast<size_t>(row) * mw + col];
-                cell = glm::min(
-                    cell, shore[static_cast<size_t>(pz) * mw + px] + w);
-            };
-            for (i32 row = 0; row < mh; ++row) {
-                for (i32 col = 0; col < mw; ++col) {
-                    relax(col, row, -1, 0, 1.0f);
-                    relax(col, row, 0, -1, 1.0f);
-                    relax(col, row, -1, -1, 1.41421356f);
-                    relax(col, row, 1, -1, 1.41421356f);
-                }
-            }
-            for (i32 row = mh - 1; row >= 0; --row) {
-                for (i32 col = mw - 1; col >= 0; --col) {
-                    relax(col, row, 1, 0, 1.0f);
-                    relax(col, row, 0, 1, 1.0f);
-                    relax(col, row, 1, 1, 1.41421356f);
-                    relax(col, row, -1, 1, 1.41421356f);
-                }
-            }
+            chamferSweep(shore, mw, mh);
             // Carve the fine texels covered by wet mask cells.
             const i32 c0 = static_cast<i32>(
                 std::floor((lake.minX - out.fineSpec.originX) /

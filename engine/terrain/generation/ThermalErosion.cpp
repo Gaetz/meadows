@@ -1,5 +1,7 @@
 #include "engine/terrain/generation/ThermalErosion.hpp"
+#include "engine/terrain/generation/GridOps.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include <glm/glm.hpp>
@@ -7,19 +9,6 @@
 namespace render::terraingen {
 
 namespace {
-
-struct Neighbour {
-    i32 dx;
-    i32 dz;
-    f32 dist;
-};
-
-constexpr Neighbour kNeighbours[8] = {
-    { -1, 0, 1.0f },          { 1, 0, 1.0f },
-    { 0, -1, 1.0f },          { 0, 1, 1.0f },
-    { -1, -1, 1.41421356f },  { 1, -1, 1.41421356f },
-    { -1, 1, 1.41421356f },   { 1, 1, 1.41421356f },
-};
 
 } // namespace
 
@@ -44,7 +33,7 @@ ThermalResult erodeThermal(const GridSpec& spec, const vector<f32>& height,
                 size_t low = i;
                 f32 lowH = h[i];
                 f32 lowDist = spec.texelSize;
-                for (const Neighbour& nb : kNeighbours) {
+                for (const Neighbour& nb : kNeighbours8) {
                     const i32 px = cx + nb.dx;
                     const i32 pz = cz + nb.dz;
                     if (px < 0 || pz < 0 || px >= n || pz >= n) {

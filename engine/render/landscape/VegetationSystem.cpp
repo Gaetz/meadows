@@ -348,28 +348,46 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
         }
     }
 
-    // --- Plants: photoreal accents over the blade meadow ---------------------
-    // (docs/GRASS-REDO.md palier 2.) Textured cutout scans, picked by
+    // --- Plants + mass tier: the photoreal understory ------------------------
+    // (docs/GRASS-REDO.md palier 2.) Textured cutout scans picked by
     // HABITAT: fern inside forests, shrub on their edges, dandelion in
     // open meadow, tall grass anywhere grassy. The NEGATIVE fade lane
     // flags "textured" to tree.vert/frag (uv = texture coords, height
-    // sway); reach stays short — they are a near-field read like the
-    // pebbles.
-    {
-        // Density leans on the shader's distance ramp (thin key): the
-        // near field is dense, the far field a deterministic subset.
-        constexpr f32 kPlantSpacing = 3.0f;
-        constexpr f32 kPlantFade = 60.0f;
+    // sway); reach stays short — a near-field read like the pebbles.
+    // Two passes over the SAME habitat/colony/zone rules: the hero
+    // plants (sparse, focal), then the mass tier — cheap clones (~200
+    // tris) at high density and shorter reach, the carpet the heroes sit
+    // on. Same colony field, so carpets and heroes agree. Per-candidate
+    // draw order is the RNG contract (VegetationScatterTest).
+    struct PlantTier {
+        u32 salt;
+        f32 spacing;
+        f32 fade;
+        u32 firstVariant;
+        f32 scaleMin;
+        // Acceptance by species slot (tall grass, fern, dandelion,
+        // shrub) — each density tunes independently.
+        f32 accept[4];
+    };
+    // Hero density leans on the shader's distance ramp (thin key): the
+    // near field is dense, the far field a deterministic subset.
+    constexpr PlantTier kPlantTiers[] = {
+        { 0x5c17ba31u, 3.0f, 60.0f, VegetationSystem::kFirstPlant, 0.9f,
+          { 0.18f, 0.32f, 0.20f, 0.14f } },
+        { 0x9dd23b71u, 2.0f, 35.0f, VegetationSystem::kFirstMass, 0.7f,
+          { 0.35f, 0.55f, 0.35f, 0.25f } },
+    };
+    for (const PlantTier& tier : kPlantTiers) {
         const u32 perSide =
-            static_cast<u32>(TerrainSystem::kChunkSize / kPlantSpacing);
+            static_cast<u32>(TerrainSystem::kChunkSize / tier.spacing);
         for (u32 i = 0; i < perSide * perSide; ++i) {
-            HashRng rng = candidateRng(0x5c17ba31u, i);
+            HashRng rng = candidateRng(tier.salt, i);
             const f32 x = originX + (static_cast<f32>(i % perSide) +
                                      rng.next()) *
-                                        kPlantSpacing;
+                                        tier.spacing;
             const f32 z = originZ + (static_cast<f32>(i / perSide) +
                                      rng.next()) *
-                                        kPlantSpacing;
+                                        tier.spacing;
             const f32 h = terrain::height(params, x, z);
             const Vec3 n = terrain::normal(params, x, z);
             if (h < params.seaLevel + 0.5f || (1.0f - n.y) > 0.4f ||
@@ -382,23 +400,18 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
                 continue;
             }
             const f32 forest = forestMask(params.seed, x, z);
-            // Habitat pick; each keeps its own acceptance so densities
-            // tune independently.
+            // Habitat pick.
             u32 species = 0; // tall grass
-            f32 accept = 0.18f;
             if (forest > 0.4f) {
                 species = 1; // fern
-                accept = 0.32f;
             } else if (forest > 0.15f) {
                 species = 3; // shrub
-                accept = 0.14f;
             } else if (rng.next() < 0.35f) {
                 species = 2; // dandelion
-                accept = 0.20f;
             }
+            f32 accept = tier.accept[species];
             // COLONY noise (~12 m, per species): nature grows in
-            // patches — dense hearts, empty clearings. The mass tier
-            // below shares the same field, so carpets and heroes agree.
+            // patches — dense hearts, empty clearings.
             const f32 colony = glm::smoothstep(
                 0.45f, 0.75f,
                 terrain::noise01(params.seed ^ (0xa11c03du + species),
@@ -412,74 +425,12 @@ VegetationSystem::VariantBuckets scatterProps(const TerrainParams& params,
             if (rng.next() >= accept) {
                 continue;
             }
-            buckets[VegetationSystem::kFirstPlant + species].push_back({
+            buckets[tier.firstVariant + species].push_back({
                 .positionScale = { x, h - 0.03f, z,
-                                   0.9f + rng.next() * 0.6f },
+                                   tier.scaleMin + rng.next() * 0.6f },
                 .params = { rng.next() * 6.2831853f, rng.next(),
                             rng.next() * 6.2831853f,
-                            -kPlantFade }, // negative = textured cutout
-            });
-        }
-    }
-
-    // --- Mass tier: the carpet under the hero plants -------------------------
-    // Cheap clones (~200 tris) of the same species, high density, short
-    // reach, SAME colony field — the continuous understory read; the
-    // heroes above become focal points sitting on it.
-    {
-        constexpr f32 kMassSpacing = 2.0f;
-        constexpr f32 kMassFade = 35.0f;
-        const u32 perSide =
-            static_cast<u32>(TerrainSystem::kChunkSize / kMassSpacing);
-        for (u32 i = 0; i < perSide * perSide; ++i) {
-            HashRng rng = candidateRng(0x9dd23b71u, i);
-            const f32 x = originX + (static_cast<f32>(i % perSide) +
-                                     rng.next()) *
-                                        kMassSpacing;
-            const f32 z = originZ + (static_cast<f32>(i / perSide) +
-                                     rng.next()) *
-                                        kMassSpacing;
-            const f32 h = terrain::height(params, x, z);
-            const Vec3 n = terrain::normal(params, x, z);
-            if (h < params.seaLevel + 0.5f || (1.0f - n.y) > 0.4f ||
-                h >= terrain::treeLine(params) ||
-                terrain::underLocalWater(params, x, z, h, 0.1f)) {
-                continue;
-            }
-            if (terrain::materialWeightsAt(params, x, z, h, n).grass <
-                0.55f) {
-                continue;
-            }
-            const f32 forest = forestMask(params.seed, x, z);
-            u32 species = 0;
-            f32 accept = 0.35f;
-            if (forest > 0.4f) {
-                species = 1; // fern carpet
-                accept = 0.55f;
-            } else if (forest > 0.15f) {
-                species = 3;
-                accept = 0.25f;
-            } else if (rng.next() < 0.35f) {
-                species = 2;
-                accept = 0.35f;
-            }
-            const f32 colony = glm::smoothstep(
-                0.45f, 0.75f,
-                terrain::noise01(params.seed ^ (0xa11c03du + species),
-                                 x * 0.08f, z * 0.08f));
-            accept *= 2.0f * colony;
-            const u32 zone = terrain::grassZoneAt(x, z).variantA;
-            if (zone == 1 || zone == 3) {
-                accept *= 0.5f;
-            }
-            if (rng.next() >= accept) {
-                continue;
-            }
-            buckets[VegetationSystem::kFirstMass + species].push_back({
-                .positionScale = { x, h - 0.03f, z,
-                                   0.7f + rng.next() * 0.6f },
-                .params = { rng.next() * 6.2831853f, rng.next(),
-                            rng.next() * 6.2831853f, -kMassFade },
+                            -tier.fade }, // negative = textured cutout
             });
         }
     }
@@ -784,6 +735,26 @@ VegetationSystem::TreeSilhouette VegetationSystem::treeSilhouette() const {
              glm::clamp(mean.z / glm::max(mean.x, 0.1f), 0.05f, 0.7f) };
 }
 
+namespace {
+
+// One GPU mesh level = (vertex buffer, index buffer, count) — the five
+// upload entry points differ only in WHICH VariantMesh triple they fill.
+void uploadMeshBuffers(rhi::Device& device, const MeshData& mesh,
+                       rhi::UniqueBuffer& vertexBuffer,
+                       rhi::UniqueBuffer& indexBuffer, u32& indexCount) {
+    indexCount = static_cast<u32>(mesh.indices.size());
+    vertexBuffer = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Vertex,
+          .size = mesh.vertices.size() * sizeof(MeshVertex) },
+        mesh.vertices.data()) };
+    indexBuffer = { device, device.createBuffer(
+        { .usage = rhi::BufferUsage::Index,
+          .size = mesh.indices.size() * sizeof(u32) },
+        mesh.indices.data()) };
+}
+
+} // namespace
+
 void VegetationSystem::uploadVariantMesh(rhi::Device& device, u32 variant,
                                          const MeshData& mesh) {
     if (variant < kTreeVariants && !mesh.vertices.empty()) {
@@ -806,74 +777,43 @@ void VegetationSystem::uploadVariantMesh(rhi::Device& device, u32 variant,
         }
         treeBounds[variant] = { maxY, maxR, crownStart };
     }
-    variantMeshes[variant].indexCount =
-        static_cast<u32>(mesh.indices.size());
-    variantMeshes[variant].vertexBuffer = { device, device.createBuffer(
-        { .usage = rhi::BufferUsage::Vertex,
-          .size = mesh.vertices.size() * sizeof(MeshVertex) },
-        mesh.vertices.data()) };
-    variantMeshes[variant].indexBuffer = { device, device.createBuffer(
-        { .usage = rhi::BufferUsage::Index,
-          .size = mesh.indices.size() * sizeof(u32) },
-        mesh.indices.data()) };
+    uploadMeshBuffers(device, mesh, variantMeshes[variant].vertexBuffer,
+                      variantMeshes[variant].indexBuffer,
+                      variantMeshes[variant].indexCount);
 }
 
 void VegetationSystem::uploadLowDetailMesh(rhi::Device& device, u32 variant,
                                            const MeshData& mesh) {
-    variantMeshes[variant].lowIndexCount =
-        static_cast<u32>(mesh.indices.size());
-    variantMeshes[variant].lowVertexBuffer = { device, device.createBuffer(
-        { .usage = rhi::BufferUsage::Vertex,
-          .size = mesh.vertices.size() * sizeof(MeshVertex) },
-        mesh.vertices.data()) };
-    variantMeshes[variant].lowIndexBuffer = { device, device.createBuffer(
-        { .usage = rhi::BufferUsage::Index,
-          .size = mesh.indices.size() * sizeof(u32) },
-        mesh.indices.data()) };
+    uploadMeshBuffers(device, mesh,
+                      variantMeshes[variant].lowVertexBuffer,
+                      variantMeshes[variant].lowIndexBuffer,
+                      variantMeshes[variant].lowIndexCount);
 }
 
 void VegetationSystem::uploadUltraDetailMesh(rhi::Device& device, u32 variant,
                                              const MeshData& mesh) {
-    variantMeshes[variant].ultraIndexCount =
-        static_cast<u32>(mesh.indices.size());
-    variantMeshes[variant].ultraVertexBuffer = { device, device.createBuffer(
-        { .usage = rhi::BufferUsage::Vertex,
-          .size = mesh.vertices.size() * sizeof(MeshVertex) },
-        mesh.vertices.data()) };
-    variantMeshes[variant].ultraIndexBuffer = { device, device.createBuffer(
-        { .usage = rhi::BufferUsage::Index,
-          .size = mesh.indices.size() * sizeof(u32) },
-        mesh.indices.data()) };
+    uploadMeshBuffers(device, mesh,
+                      variantMeshes[variant].ultraVertexBuffer,
+                      variantMeshes[variant].ultraIndexBuffer,
+                      variantMeshes[variant].ultraIndexCount);
 }
 
 void VegetationSystem::uploadNearDetailMesh(rhi::Device& device,
                                             u32 variant,
                                             const MeshData& mesh) {
-    variantMeshes[variant].nearIndexCount =
-        static_cast<u32>(mesh.indices.size());
-    variantMeshes[variant].nearVertexBuffer = { device, device.createBuffer(
-        { .usage = rhi::BufferUsage::Vertex,
-          .size = mesh.vertices.size() * sizeof(MeshVertex) },
-        mesh.vertices.data()) };
-    variantMeshes[variant].nearIndexBuffer = { device, device.createBuffer(
-        { .usage = rhi::BufferUsage::Index,
-          .size = mesh.indices.size() * sizeof(u32) },
-        mesh.indices.data()) };
+    uploadMeshBuffers(device, mesh,
+                      variantMeshes[variant].nearVertexBuffer,
+                      variantMeshes[variant].nearIndexBuffer,
+                      variantMeshes[variant].nearIndexCount);
 }
 
 void VegetationSystem::uploadShadowProxyMesh(rhi::Device& device,
                                              u32 variant,
                                              const MeshData& mesh) {
-    variantMeshes[variant].casterIndexCount =
-        static_cast<u32>(mesh.indices.size());
-    variantMeshes[variant].casterVertexBuffer = { device, device.createBuffer(
-        { .usage = rhi::BufferUsage::Vertex,
-          .size = mesh.vertices.size() * sizeof(MeshVertex) },
-        mesh.vertices.data()) };
-    variantMeshes[variant].casterIndexBuffer = { device, device.createBuffer(
-        { .usage = rhi::BufferUsage::Index,
-          .size = mesh.indices.size() * sizeof(u32) },
-        mesh.indices.data()) };
+    uploadMeshBuffers(device, mesh,
+                      variantMeshes[variant].casterVertexBuffer,
+                      variantMeshes[variant].casterIndexBuffer,
+                      variantMeshes[variant].casterIndexCount);
 }
 
 void VegetationSystem::overrideVariantMesh(rhi::Device& device, u32 variant,
@@ -1439,6 +1379,51 @@ static bool chunkNear(i32 cx, i32 cz, const Vec3& cameraPos) {
                                    VegetationSystem::kNearDetailDistance;
 }
 
+u32 VegetationSystem::canopyLevel(const VariantMesh& mesh, u32 variant,
+                                  i32 cheb, bool nearChunk,
+                                  bool forceLowDetail) const {
+    if (mesh.lowIndexCount == 0) {
+        return 0u; // rocks, bushes, authored overrides: main mesh only
+    }
+    if (forceLowDetail) {
+        return mesh.ultraIndexCount != 0 ? 2u : 1u;
+    }
+    // Hero-near twin: exact world distance to the chunk square, so a
+    // tree just across a chunk border still upgrades.
+    if (mesh.nearIndexCount != 0 && nearChunk) {
+        return 3u;
+    }
+    // Plants fade at ~60 m: the tree radii (2/4 chunks) would keep them
+    // full-detail everywhere they are visible. Hero mesh in the camera
+    // chunk ring only; twins carry the rest.
+    const i32 highRadius = variant >= kFirstPlant ? 0 : highDetailRadius;
+    if (cheb <= highRadius) {
+        return 0u;
+    }
+    if (mesh.ultraIndexCount == 0 || cheb <= lowDetailRadius) {
+        return 1u;
+    }
+    return 2u;
+}
+
+VegetationSystem::LevelMesh
+VegetationSystem::levelMesh(const VariantMesh& mesh, u32 level) {
+    switch (level) {
+    case 3:
+        return { mesh.nearVertexBuffer.get(), mesh.nearIndexBuffer.get(),
+                 mesh.nearIndexCount };
+    case 1:
+        return { mesh.lowVertexBuffer.get(), mesh.lowIndexBuffer.get(),
+                 mesh.lowIndexCount };
+    case 2:
+        return { mesh.ultraVertexBuffer.get(), mesh.ultraIndexBuffer.get(),
+                 mesh.ultraIndexCount };
+    default:
+        return { mesh.vertexBuffer.get(), mesh.indexBuffer.get(),
+                 mesh.indexCount };
+    }
+}
+
 void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                             rhi::BindGroupHandle frameBindGroup,
                             rhi::BindGroupHandle shadowBindGroup,
@@ -1466,25 +1451,29 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
               z0 + TerrainSystem::kChunkSize + kPropPadXz });
     };
     const bool culling = frustum != nullptr || occluded != nullptr;
-    std::unordered_map<u64, bool> visible;
-    if (culling) {
-        visible.reserve(streamer.chunks.size());
-        u32 drawnChunks = 0;
-        for (const auto& [key, chunk] : streamer.chunks) {
-            const bool v = chunk.resident && chunk.total > 0 &&
-                           chunkVisible(key, chunk);
-            visible.emplace(key, v);
-            drawnChunks += v ? 1u : 0u;
+    // ONE pass over the chunk map: visibility verdict + the LOD inputs
+    // (cheb, hero-near) cached per chunk — the (variant × level) loops
+    // below then walk this compact vector instead of re-traversing the
+    // map per pair. Chunk pointers stay stable (nothing mutates the map
+    // during draw).
+    const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
+    const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
+    drawScratch.clear();
+    for (const auto& [key, chunk] : streamer.chunks) {
+        if (!chunk.resident || chunk.total == 0 ||
+            (culling && !chunkVisible(key, chunk))) {
+            continue;
         }
-        lastDrawn = drawnChunks;
+        const i32 cx = chunkKeyCx(key);
+        const i32 cz = chunkKeyCz(key);
+        const i32 cheb =
+            std::max(std::abs(cx - camCx), std::abs(cz - camCz));
+        drawScratch.push_back(
+            { &chunk, cheb, cheb <= 1 && chunkNear(cx, cz, cameraPos) });
     }
-    const auto culled = [&](u64 key) {
-        if (!culling) {
-            return false;
-        }
-        const auto it = visible.find(key);
-        return it == visible.end() || !it->second;
-    };
+    if (culling) {
+        lastDrawn = static_cast<u32>(drawScratch.size());
+    }
 
     cmd.setPipeline(pipeline);
     cmd.setBindGroup(0, frameBindGroup);
@@ -1522,43 +1511,10 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
         frameHighInstances += showcaseCount;
         return;
     }
-    // Canopy LOD pick, per chunk — THREE levels: 320-face lobes
-    // near, 80-face twins mid, 20-face ultra beyond lowDetailRadius (and
-    // always in mirrored/downsampled passes). Variants without twins
-    // (rocks, bushes, authored overrides) always use their main mesh.
-    const i32 camCx = chunkCoordOf(cameraPos.x, TerrainSystem::kChunkSize);
-    const i32 camCz = chunkCoordOf(cameraPos.z, TerrainSystem::kChunkSize);
-    const auto detailLevel = [&](u64 key, u32 v,
-                                 const VariantMesh& mesh) -> u32 {
-        if (mesh.lowIndexCount == 0) {
-            return 0u;
-        }
-        if (forceLowDetail) {
-            return mesh.ultraIndexCount != 0 ? 2u : 1u;
-        }
-        const i32 cx = chunkKeyCx(key);
-        const i32 cz = chunkKeyCz(key);
-        const i32 cheb =
-            std::max(std::abs(cx - camCx), std::abs(cz - camCz));
-        // Hero-near twin: exact world distance to the chunk square, so
-        // a tree just across a chunk border still upgrades.
-        if (mesh.nearIndexCount != 0 && cheb <= 1 &&
-            chunkNear(cx, cz, cameraPos)) {
-            return 3u;
-        }
-        // Plants fade at ~60 m: the tree radii (2/4 chunks) would keep
-        // them full-detail everywhere they are visible. Hero mesh in the
-        // camera chunk ring only; twins carry the rest.
-        const i32 highRadius = v >= kFirstPlant ? 0 : highDetailRadius;
-        if (cheb <= highRadius) {
-            return 0u;
-        }
-        if (mesh.ultraIndexCount == 0 || cheb <= lowDetailRadius) {
-            return 1u;
-        }
-        return 2u;
-    };
-    // Variant-major, split by LOD: bind each mesh level once, then one
+    // Variant-major, split by LOD (canopyLevel — THREE levels: 320-face
+    // lobes near, 80-face twins mid, 20-face ultra beyond
+    // lowDetailRadius, and always in mirrored/downsampled passes; 3 =
+    // the hero-near twin): bind each mesh level once, then one
     // instanced draw per chunk holding that variant (firstInstance =
     // offset into the chunk's variant-sorted buffer; needs baseInstance,
     // present on 4.6).
@@ -1585,37 +1541,26 @@ void VegetationSystem::draw(rhi::CommandBuffer& cmd,
                                : mesh.nearIndexCount == 0  ? 3u
                                                            : 4u;
         for (u32 level = 0; level < levels; ++level) {
-            const rhi::BufferHandle vb =
-                level == 3   ? mesh.nearVertexBuffer.get()
-                : level == 0 ? mesh.vertexBuffer.get()
-                : level == 1 ? mesh.lowVertexBuffer.get()
-                             : mesh.ultraVertexBuffer.get();
-            const rhi::BufferHandle ib =
-                level == 3   ? mesh.nearIndexBuffer.get()
-                : level == 0 ? mesh.indexBuffer.get()
-                : level == 1 ? mesh.lowIndexBuffer.get()
-                             : mesh.ultraIndexBuffer.get();
-            const u32 indexCount = level == 3   ? mesh.nearIndexCount
-                                   : level == 0 ? mesh.indexCount
-                                   : level == 1 ? mesh.lowIndexCount
-                                                : mesh.ultraIndexCount;
+            const LevelMesh lod = levelMesh(mesh, level);
             bool meshBound = false;
-            for (const auto& [key, chunk] : streamer.chunks) {
-                if (!chunk.resident || chunk.counts[v] == 0 ||
-                    culled(key) || detailLevel(key, v, mesh) != level) {
+            for (const DrawChunkRef& ref : drawScratch) {
+                const Chunk& chunk = *ref.chunk;
+                if (chunk.counts[v] == 0 ||
+                    canopyLevel(mesh, v, ref.cheb, ref.nearChunk,
+                                forceLowDetail) != level) {
                     continue;
                 }
                 if (!meshBound) {
-                    cmd.setVertexBuffer(0, vb);
-                    cmd.setIndexBuffer(ib, rhi::IndexFormat::U32);
+                    cmd.setVertexBuffer(0, lod.vertices);
+                    cmd.setIndexBuffer(lod.indices, rhi::IndexFormat::U32);
                     meshBound = true;
                 }
                 cmd.setVertexBuffer(1, instancePool.buffer.get(),
                                     u64(chunk.poolOffset) *
                                         sizeof(Instance));
-                cmd.drawIndexed(indexCount, chunk.counts[v], 0,
+                cmd.drawIndexed(lod.indexCount, chunk.counts[v], 0,
                                 chunk.firstInstance[v]);
-                frameIndices += indexCount * chunk.counts[v];
+                frameIndices += lod.indexCount * chunk.counts[v];
                 (level == 0 || level == 3 ? frameHighInstances
                  : level == 1             ? frameLowInstances
                                           : frameUltraInstances) +=
@@ -1661,30 +1606,19 @@ void VegetationSystem::collectDrawCandidates(
             if (chunk.counts[v] == 0) {
                 continue;
             }
-            // Same level pick as draw()'s detailLevel lambda (plants:
-            // hero mesh in the camera chunk ring only; 3 = the
+            // THE level pick (canopyLevel) — shared with draw() so the
+            // GPU-driven and CPU verdicts cannot drift; 3 = the
             // hero-near twin, group slot appended past the 3-level
-            // block so the existing indexing never moves).
+            // block so the existing indexing never moves.
             const VariantMesh& mesh = variantMeshes[v];
-            const i32 highRadius =
-                v >= kFirstPlant ? 0 : highDetailRadius;
-            u32 level = 0;
-            if (mesh.nearIndexCount != 0 && cheb <= 1 &&
-                chunkNear(cx, cz, cameraPos)) {
-                level = 3;
-            } else if (mesh.lowIndexCount != 0 && cheb > highRadius) {
-                level = mesh.ultraIndexCount == 0 || cheb <= lowDetailRadius
-                            ? 1u
-                            : 2u;
-            }
-            const u32 indexCount = level == 3   ? mesh.nearIndexCount
-                                   : level == 0 ? mesh.indexCount
-                                   : level == 1 ? mesh.lowIndexCount
-                                                : mesh.ultraIndexCount;
+            const u32 level = canopyLevel(
+                mesh, v, cheb,
+                cheb <= 1 && chunkNear(cx, cz, cameraPos),
+                /*forceLowDetail=*/false);
             const u32 group =
                 level == 3 ? kGroupBase + kVariantCount * 3 + v
                            : kGroupBase + v * 3 + level;
-            out.push_back({ lo, hi, group, indexCount,
+            out.push_back({ lo, hi, group, levelMesh(mesh, level).indexCount,
                             0, chunk.counts[v],
                             chunk.poolOffset + chunk.firstInstance[v] });
         }
@@ -1734,16 +1668,9 @@ void VegetationSystem::drawIndirect(rhi::CommandBuffer& cmd,
             if (groupCount[group] == 0) {
                 continue;
             }
-            cmd.setVertexBuffer(0, level == 3 ? mesh.nearVertexBuffer.get()
-                                   : level == 0 ? mesh.vertexBuffer.get()
-                                   : level == 1
-                                       ? mesh.lowVertexBuffer.get()
-                                       : mesh.ultraVertexBuffer.get());
-            cmd.setIndexBuffer(level == 3   ? mesh.nearIndexBuffer.get()
-                               : level == 0 ? mesh.indexBuffer.get()
-                               : level == 1 ? mesh.lowIndexBuffer.get()
-                                            : mesh.ultraIndexBuffer.get(),
-                               rhi::IndexFormat::U32);
+            const LevelMesh lod = levelMesh(mesh, level);
+            cmd.setVertexBuffer(0, lod.vertices);
+            cmd.setIndexBuffer(lod.indices, rhi::IndexFormat::U32);
             cmd.drawIndexedIndirect(commands,
                                     u64(groupFirst[group]) * kStride,
                                     groupCount[group], kStride);

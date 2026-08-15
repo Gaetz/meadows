@@ -19,8 +19,7 @@ constexpr Vec3 kForestTint { 0.14f, 0.23f, 0.11f };
 
 void FarTerrain::create(rhi::Device& device, ShaderLibrary& shaders,
                         core::JobSystem& jobSystem) {
-    jobs = &jobSystem;
-    built = std::make_shared<core::ConcurrentQueue<Baked>>();
+    mailbox.create(jobSystem);
     shaders.load(kFarTerrainShader, { { "FrameUbo", 0 } },
                  { { "uCloudMap", 2 } });
     shaders.load(kFarTreeShader, { { "FrameUbo", 0 } },
@@ -47,8 +46,12 @@ void FarTerrain::create(rhi::Device& device, ShaderLibrary& shaders,
 
 void FarTerrain::destroy(rhi::Device& device) {
     (void)device;
-    ++generation; // orphan in-flight bakes
+    // Orphan in-flight bakes: the mailbox generation must keep moving
+    // ACROSS the reset (a fresh mailbox would restart it at zero).
+    BakeMailbox<Baked> saved = std::move(mailbox);
+    saved.reset();
     *this = FarTerrain {};
+    mailbox = std::move(saved);
 }
 
 void FarTerrain::refreshPipeline(rhi::Device& device,
@@ -93,11 +96,7 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                         const Vec3& focus,
                         const VegetationSystem::TreeSilhouette& trees,
                         const array<Vec3, 5>& layerAlbedos) {
-    Baked done;
-    while (built->tryPop(done)) {
-        if (done.gen != generation) {
-            continue;
-        }
+    mailbox.drain([&](Baked& done) {
         vertexBuffer = { device, device.createBuffer(
             { .usage = rhi::BufferUsage::Vertex,
               .size = done.vertices.size() * sizeof(MeshVertex) },
@@ -114,14 +113,12 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
         bakedSeed = done.seed;
         bakedContentStamp = done.contentStamp;
         bakedSeaLevel = done.seaLevel;
-        inFlight = false;
-        uploaded = true;
-    }
-    if (inFlight) {
+    });
+    if (mailbox.busy()) {
         return;
     }
     const Vec2 camXz { focus.x, focus.z };
-    const bool stale = !uploaded ||
+    const bool stale = !mailbox.ready() ||
                        glm::distance(camXz, center) > kSpan * 0.08f ||
                        bakedSeed != params.seed ||
                        bakedSeaLevel != params.seaLevel ||
@@ -134,18 +131,14 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
     const Vec2 want = glm::floor(camXz / kCell) * kCell;
     center = want; // draw follows the request; the bake lands async
     bakedTreeHeight = trees.height;
-    inFlight = true;
-    jobs->enqueue([queue = built, params, want, trees, layerAlbedos,
-                   gen = generation] {
+    mailbox.kick([params, want, trees, layerAlbedos](Baked& baked) {
         constexpr u32 kVertsN = kGridN + 1;
         constexpr f32 cell = kSpan / static_cast<f32>(kGridN);
         const f32 originX = want.x - kSpan * 0.5f;
         const f32 originZ = want.y - kSpan * 0.5f;
-        Baked baked;
         baked.seed = params.seed;
         baked.seaLevel = params.seaLevel;
         baked.contentStamp = params.contentStamp;
-        baked.gen = gen;
         // Heights on a HALF-CELL grid: the vertex takes the MIN over its
         // quad support so the 62 m linear interpolation can never rise
         // above the fine terrain (a fixed sink cannot — on a slope the
@@ -294,14 +287,13 @@ void FarTerrain::update(rhi::Device& device, const TerrainParams& params,
                         trees.trunkFraction } });
             }
         }
-        queue->push(std::move(baked));
     });
 }
 
 void FarTerrain::draw(rhi::CommandBuffer& cmd,
                       rhi::BindGroupHandle frameBindGroup,
                       rhi::BindGroupHandle cloudMapGroup) {
-    if (!uploaded || pipeline.id() == 0) {
+    if (!mailbox.ready() || pipeline.id() == 0) {
         return;
     }
     cmd.setPipeline(pipeline);
