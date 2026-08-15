@@ -277,8 +277,8 @@ void TerrainSystem::buildMaterialArrays(rhi::Device& device, bool useCooked) {
         }
     }
     if (!cookedMaterials) {
-        // The procedural tile synthesis is gone (dev decision
-        // 2026-08-06): the cooked .mtex library is THE material set.
+        // The cooked .mtex library is THE material set (no procedural
+        // tile synthesis).
         // Flat per-layer placeholders keep the game bootable when it is
         // absent; grassBases/layerBases keep their header defaults.
         LOG_WARN("TerrainSystem: cooked splat arrays missing — flat "
@@ -689,38 +689,44 @@ void TerrainSystem::draw(rhi::CommandBuffer& cmd,
     if (shadowBindGroup.id != 0) {
         cmd.setBindGroup(2, shadowBindGroup);
     }
+    // ONE pass over the chunk map (cull + bucket by LOD), then the
+    // per-LOD submission binds the shared index buffer once per level —
+    // the map is large (~(2r+1)² chunks) and this runs per pass
+    // (main, reflection, cascades).
     u32 drawn = 0;
-    // Grouped by LOD so the shared index buffer binds once per level.
-    for (u32 lod = 0; lod < kLodCount; ++lod) {
-        bool indexBufferBound = false;
-        for (const auto& [key, chunk] : streamer.chunks) {
-            if (chunk.residentLod != lod) {
+    for (auto& bucket : lodScratch) {
+        bucket.clear();
+    }
+    for (const auto& [key, chunk] : streamer.chunks) {
+        if (chunk.residentLod == kNoLod) {
+            continue;
+        }
+        if (occluded && occluded->contains(key)) {
+            continue; // hidden behind a ridge (GpuOcclusion)
+        }
+        if (frustum) {
+            const f32 x0 = static_cast<f32>(chunkKeyCx(key)) * kChunkSize;
+            const f32 z0 = static_cast<f32>(chunkKeyCz(key)) * kChunkSize;
+            if (!frustum->intersectsAabb(
+                    { x0, chunk.minY, z0 },
+                    { x0 + kChunkSize, chunk.maxY, z0 + kChunkSize })) {
                 continue;
             }
-            if (occluded && occluded->contains(key)) {
-                continue; // hidden behind a ridge (GpuOcclusion)
-            }
-            if (frustum) {
-                const f32 x0 =
-                    static_cast<f32>(chunkKeyCx(key)) * kChunkSize;
-                const f32 z0 =
-                    static_cast<f32>(chunkKeyCz(key)) * kChunkSize;
-                if (!frustum->intersectsAabb(
-                        { x0, chunk.minY, z0 },
-                        { x0 + kChunkSize, chunk.maxY, z0 + kChunkSize })) {
-                    continue;
-                }
-            }
-            if (!indexBufferBound) {
-                cmd.setIndexBuffer(indexBuffers[lod], rhi::IndexFormat::U32);
-                indexBufferBound = true;
-            }
+        }
+        lodScratch[chunk.residentLod].push_back(&chunk);
+        ++drawn;
+    }
+    for (u32 lod = 0; lod < kLodCount; ++lod) {
+        if (lodScratch[lod].empty()) {
+            continue;
+        }
+        cmd.setIndexBuffer(indexBuffers[lod], rhi::IndexFormat::U32);
+        for (const Chunk* chunk : lodScratch[lod]) {
             cmd.setVertexBuffer(0, pools[lod].buffer,
-                                u64(chunk.poolSlot) * pools[lod].slotVerts *
+                                u64(chunk->poolSlot) * pools[lod].slotVerts *
                                     sizeof(MeshVertex));
             cmd.drawIndexed(indexCounts[lod]);
             frameIndices += indexCounts[lod];
-            ++drawn;
         }
     }
     if (frustum) {
@@ -767,33 +773,39 @@ void TerrainSystem::drawDepth(rhi::CommandBuffer& cmd,
     const i32 camCz = camChunk(cameraPos.z);
     cmd.setPipeline(casterPipeline);
     cmd.setBindGroup(0, casterBindGroup);
+    // Same one-pass bucketing as draw(), per cascade call.
+    for (auto& bucket : lodScratch) {
+        bucket.clear();
+    }
+    for (const auto& [key, chunk] : streamer.chunks) {
+        if (chunk.residentLod == kNoLod) {
+            continue;
+        }
+        const i32 cx = chunkKeyCx(key);
+        const i32 cz = chunkKeyCz(key);
+        if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
+            maxChunkDistance) {
+            continue; // beyond the last cascade
+        }
+        if (frustum != nullptr) {
+            const f32 x0 = static_cast<f32>(cx) * kChunkSize;
+            const f32 z0 = static_cast<f32>(cz) * kChunkSize;
+            if (!frustum->intersectsAabb(
+                    { x0, chunk.minY, z0 },
+                    { x0 + kChunkSize, chunk.maxY, z0 + kChunkSize })) {
+                continue; // outside this cascade's ortho volume
+            }
+        }
+        lodScratch[chunk.residentLod].push_back(&chunk);
+    }
     for (u32 lod = 0; lod < kLodCount; ++lod) {
-        bool indexBufferBound = false;
-        for (const auto& [key, chunk] : streamer.chunks) {
-            if (chunk.residentLod != lod) {
-                continue;
-            }
-            const i32 cx = chunkKeyCx(key);
-            const i32 cz = chunkKeyCz(key);
-            if (std::max(std::abs(cx - camCx), std::abs(cz - camCz)) >
-                maxChunkDistance) {
-                continue; // beyond the last cascade
-            }
-            if (frustum != nullptr) {
-                const f32 x0 = static_cast<f32>(cx) * kChunkSize;
-                const f32 z0 = static_cast<f32>(cz) * kChunkSize;
-                if (!frustum->intersectsAabb(
-                        { x0, chunk.minY, z0 },
-                        { x0 + kChunkSize, chunk.maxY, z0 + kChunkSize })) {
-                    continue; // outside this cascade's ortho volume
-                }
-            }
-            if (!indexBufferBound) {
-                cmd.setIndexBuffer(indexBuffers[lod], rhi::IndexFormat::U32);
-                indexBufferBound = true;
-            }
+        if (lodScratch[lod].empty()) {
+            continue;
+        }
+        cmd.setIndexBuffer(indexBuffers[lod], rhi::IndexFormat::U32);
+        for (const Chunk* chunk : lodScratch[lod]) {
             cmd.setVertexBuffer(0, pools[lod].buffer,
-                                u64(chunk.poolSlot) * pools[lod].slotVerts *
+                                u64(chunk->poolSlot) * pools[lod].slotVerts *
                                     sizeof(MeshVertex));
             cmd.drawIndexed(gridIndexCounts[lod]);
             frameIndices += gridIndexCounts[lod];

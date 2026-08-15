@@ -28,17 +28,6 @@ struct CullUniforms {
                               // cannot judge (near-plane straddlers)
 };
 
-// std430 mirror of the candidate SSBO entry.
-struct GpuAabb {
-    Vec4 lo {};
-    Vec4 hi {};
-    // x = indexCount, y = vertexOffset (i32 bit-cast), z = group,
-    // w = instanceCount when visible.
-    glm::uvec4 draw {};
-    // x = firstInstance.
-    glm::uvec4 draw2 {};
-};
-
 u32 mipCountFor(u32 width, u32 height) {
     u32 mips = 1;
     u32 size = glm::max(width, height);
@@ -227,7 +216,11 @@ bool GpuOcclusion::run(rhi::CommandBuffer& cmd, rhi::Device& device,
         running += counts[g];
     }
     array<u32, kMaxGroups> cursor = firsts;
-    vector<GpuAabb> aabbs(count);
+    // Reused scratch: every slot below is written exactly once (the
+    // cursor partition covers [0, count)), so no per-frame allocation
+    // nor clear is needed — this can reach ~4 MB at full candidate load.
+    aabbScratch.resize(count);
+    vector<GpuAabb>& aabbs = aabbScratch;
     for (u32 i = 0; i < count; ++i) {
         const Candidate& c = candidates[i];
         const u32 slot = cursor[glm::min(c.group, kMaxGroups - 1)]++;

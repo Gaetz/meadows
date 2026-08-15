@@ -312,6 +312,9 @@ private:
     u32 pending { 0 };
     u32 lastUploads { 0 };
     u32 lastDrawn { 0 };
+    // draw()/drawDepth() per-call chunk buckets by LOD, reused so each
+    // pass walks the chunk map once instead of kLodCount times.
+    array<vector<const Chunk*>, kLodCount> lodScratch;
     u32 frameIndices { 0 }; // reset in update(), summed by draw*()
     bool wireframe { false };
 
@@ -364,7 +367,5 @@ private:
 vector<MeshVertex> buildChunkVertices(const TerrainParams& params, i32 cx,
                                       i32 cz, u32 lod);
 vector<u32> buildChunkIndices(u32 lod);
-
-// The shared vertex-tint palette (sand/grass/rock/snow) — FarTerrain
 
 } // namespace render

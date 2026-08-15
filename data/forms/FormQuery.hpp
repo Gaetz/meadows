@@ -2,9 +2,9 @@
 
 #include "data/forms/FormDatabase.hpp"
 
-// Typed iteration helpers over a resolved FormDatabase (horizontal pass H1).
-// They generalize the manual handle-scan pattern (resolveWeatherForms) and
-// are the query side of the CHILD-RECORD convention:
+// Typed iteration helpers over a resolved FormDatabase. They generalize
+// the manual handle-scan pattern (resolveWeatherForms) and are the query
+// side of the CHILD-RECORD convention:
 //
 //   Reflection is flat (no containers), so any variable-cardinality data is
 //   expressed as CHILD Forms carrying a `core::Guid parent` field pointing
@@ -19,8 +19,8 @@
 namespace data {
 
 // Calls `fn(const T&)` for every form of type T (or derived). Backed by
-// the database's type index (J-catalogue P1) — same handle order as the
-// historical full scan, without touching the other N-1 types.
+// the database's type index — same handle order as a full scan, without
+// touching the other N-1 types.
 template<typename T, typename Fn>
 void forEach(const FormDatabase& database, Fn&& fn) {
     for (const FormHandle handle :

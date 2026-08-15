@@ -1,5 +1,7 @@
 #include "gameplay/condition/Condition.hpp"
 
+#include "data/forms/FormQuery.hpp"
+
 #include <cstdio>
 #include <string_view>
 #include <unordered_map>
@@ -93,23 +95,17 @@ bool evaluateClause(const ConditionForm& clause, const EvalContext& context) {
 
 bool conditionsPass(const data::FormDatabase& forms, const core::Guid& node,
                     const EvalContext& context) {
-    const u32 typeId = ConditionForm::staticTypeInfo().id;
-    for (u32 value = 1; value <= forms.count(); ++value) {
-        const data::FormHandle handle { value };
-        const reflect::TypeInfo* type = forms.typeOf(handle);
-        const data::Form* form = forms.get(handle);
-        if (!type || !form || !type->isA(typeId)) {
-            continue;
-        }
-        const auto* clause = static_cast<const ConditionForm*>(form);
-        if (clause->parent != node) {
-            continue;
-        }
-        if (!evaluateClause(*clause, context)) {
-            return false;
-        }
-    }
-    return true;
+    // One parent-index bucket walk (data::childrenOf), not a full-database
+    // scan: this runs per ability activation, per scheduled NPC and per
+    // dialogue option.
+    bool pass = true;
+    data::childrenOf<ConditionForm>(
+        forms, node, [&](const ConditionForm& clause) {
+            if (pass && !evaluateClause(clause, context)) {
+                pass = false;
+            }
+        });
+    return pass;
 }
 
 str conditionSummary(const ConditionForm& clause) {

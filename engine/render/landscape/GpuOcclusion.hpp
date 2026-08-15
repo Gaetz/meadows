@@ -93,6 +93,17 @@ public:
     }
 
 private:
+    // std430 mirror of the candidate SSBO entry.
+    struct GpuAabb {
+        Vec4 lo {};
+        Vec4 hi {};
+        // x = indexCount, y = vertexOffset (i32 bit-cast), z = group,
+        // w = instanceCount when visible.
+        glm::uvec4 draw {};
+        // x = firstInstance.
+        glm::uvec4 draw2 {};
+    };
+
     void destroyPyramid(rhi::Device& device);
 
     rhi::PipelineHandle hizFirstPipeline {};
@@ -123,6 +134,7 @@ private:
     u32 hizWidth { 0 };
     u32 hizHeight { 0 };
     u32 mipCount { 0 };
+    vector<GpuAabb> aabbScratch; // run() upload staging, reused per frame
 
 };
 

@@ -21,16 +21,26 @@ void EventBus::unsubscribe(SubscriptionId id) {
 }
 
 void EventBus::dispatch(const Event& event) const {
-    // Snapshot the matching handlers so a handler may (un)subscribe re-entrantly
-    // without invalidating this dispatch.
-    vector<EventHandler> toCall;
+    // Snapshot the matching subscription IDS — not the handlers: copying
+    // a std::function per handler per event allocates on the hot path
+    // (OnHitTaken, footsteps...). Re-entrancy stays safe: a handler
+    // subscribing during this dispatch is not seen (its id is not in the
+    // snapshot), and one UNSUBSCRIBED during it is skipped (its id no
+    // longer resolves).
+    vector<SubscriptionId> toCall;
+    toCall.reserve(subs.size());
     for (const Sub& sub : subs) {
         if (sub.kind == event.kind || sub.kind == 0) { // 0 = subscribeAll
-            toCall.push_back(sub.handler);
+            toCall.push_back(sub.id);
         }
     }
-    for (const EventHandler& handler : toCall) {
-        handler(event);
+    for (const SubscriptionId id : toCall) {
+        const auto it = std::find_if(
+            subs.begin(), subs.end(),
+            [id](const Sub& sub) { return sub.id == id; });
+        if (it != subs.end()) {
+            it->handler(event);
+        }
     }
 }
 
