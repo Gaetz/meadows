@@ -6,7 +6,7 @@
 #include "data/forms/FormDatabase.hpp"
 #include "engine/anim/Anim.hpp"
 
-// Forms -> anim runtime mapping (horizontal pass H5). The engine's anim
+// Forms -> anim runtime mapping. The engine's anim
 // module consumes plain structs (rule n°2 of the pass: engine never sees
 // data::); THIS is where AnimGraphForm + its child states/transitions and
 // AnimClipForm + events become an anim::GraphDesc.
@@ -15,7 +15,7 @@
 // side — it owns the asset database and caching). The bridge itself is
 // pure and headless-testable with a fake resolver.
 //
-// HOW TO FILL (post-7/07): cache GraphDescs by graph guid (they are
+// HOW TO FILL: cache GraphDescs by graph guid (they are
 // immutable per resolve); one GraphInstance per animated entity, stored
 // in a runtime component; entity speed and tags flow in per frame.
 

@@ -623,7 +623,7 @@ void RadianceCascades::update(rhi::Device& device, rhi::CommandBuffer& frameCmd,
     }
 
     const u32 res = static_cast<u32>(appliedResolution);
-    RcUniforms uniforms;
+    RcUniforms uniforms {};
     // The CHAIN builds at this frame's snapped origins; the frame UBO
     // (giGridInfo) deliberately carries the PREVIOUS inject's origin —
     // readers always sample last frame's content (pipelined N−1).

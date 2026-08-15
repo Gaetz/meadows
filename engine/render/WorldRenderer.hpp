@@ -312,8 +312,6 @@ private:
     render::TerrainLightMap terrainLightMap;
     render::TerrainShadeMap terrainShadeMap;
     bool terrainLightUi { true };
-    // Terrain material-set A/B (panel): cooked .mtex library vs the
-    // procedural tiles; synced onto TerrainSystem each frame.
     // Distant landscape silhouettes beyond the streaming ring (§3.6).
     render::FarTerrain farTerrain;
     bool farTerrainUi { true };
@@ -356,8 +354,8 @@ private:
     vector<render::RcLight> rcLights;  // reused to avoid re-allocations
     vector<render::VegetationSystem::GiProp> vegGiProps; // forests -> GI
     bool regenerateRequested { false };
-    // EXPERIMENT (feature/space-colonization-trees): A/B checkbox flips
-    // this; render() swaps the variant meshes at its safe point.
+    // A/B checkbox flips this; render() swaps the variant meshes at its
+    // safe point (mesh-only — instance buffers and scatter stay resident).
     bool reseedVegetation { false };
     // Grass panel: a scatter knob moved — grass-only re-scatter next frame.
     bool grassRescatterRequested { false };
@@ -377,11 +375,9 @@ private:
     f32 ssaoStrengthUi { 0.85f };
     f32 ssaoRadiusUi { 0.7f };
     // SSDM (ssdm_*.frag — Lobel 2008): screen-space scatter of the
-    // alpha-packed relief. Default ON since the dev validated the
-    // scatter (2026-08-05).
-    // SSDM mode: 0 = off, 1 = half-res chain + edge-aware upsample
-    // (~2.4 ms), 2 = full res (~17 ms on M1 — the dev prefers its
-    // crispness, default since 2026-08-07).
+    // alpha-packed relief.
+    // Mode: 0 = off, 1 = half-res chain + edge-aware upsample (~2.4 ms),
+    // 2 = full res (~17 ms on M1, kept for its crispness).
     i32 ssdmModeUi { 2 };
     f32 ssdmAmpUi { 0.12f }; // world amplitude (m)
     bool keyShadowUi { true };      // interiors

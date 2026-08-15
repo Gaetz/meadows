@@ -408,9 +408,13 @@ DungeonStageResult stageDungeonRecords(
                 if (barrier.lockId == lever.lockId) {
                     // Stretched across the ~5 m tunnel (wider on a turn,
                     // bake.width); hand-retouchable like any reference.
+                    // ONE barrier per lock: barrierForLever(leverRef) is
+                    // the whole identity — a second match would silently
+                    // overwrite the first and leave its tunnel open.
                     stageAnchored(barrier, barrierForLever(leverRef),
                                   kit.barrier, "barrier", i,
                                   { 3.0f * barrier.width, 2.5f, 1.0f });
+                    break;
                 }
             }
         }

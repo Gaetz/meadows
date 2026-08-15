@@ -11,7 +11,7 @@ const float kSsdmMaxPx = 10.0;
 // (scatter) uses the full range, the resolve's gather fallback digs
 // PITS ONLY (hMax 0) — un-clamped, every coverage hole between
 // extruded crests warped inward and high amplitudes read as "the
-// texture sinks INTO the trunk" (retour dev).
+// texture sinks INTO the trunk".
 vec2 ssdmDeltaClamped(vec2 uv, vec2 texel, float hMin, float hMax,
                       out float dispDepth) {
     float d = texture(uSceneDepth, uv).r;

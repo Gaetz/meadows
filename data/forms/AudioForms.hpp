@@ -2,7 +2,7 @@
 
 #include "data/forms/Form.hpp"
 
-// Audio data Forms (horizontal pass H1). The audio runtime (engine/audio,
+// Audio data Forms. The audio runtime (engine/audio,
 // miniaudio) consumes flat SoundParams; the runtime layer maps these Forms.
 // Random variation picks use the seeded engine RNG only when the outcome
 // affects gameplay — cosmetic picks may use a free RNG (§8).

@@ -6,11 +6,11 @@
 #include "engine/core/Defines.hpp"
 #include "engine/core/Guid.hpp"
 
-// Furniture occupancy (horizontal pass H7): who is using which use point
+// Furniture occupancy: who is using which use point
 // of which placed furniture. Shared player/NPC by design — a user is an
 // opaque u64 (entity id). Pure bookkeeping, headless, doctested.
 //
-// HOW TO FILL (post-7/07, "vivant" vertical): the furniture-use flow is
+// HOW TO FILL: the furniture-use flow is
 //   claim -> walk to the point (nav) -> play enter anim (animTag gate)
 //   -> apply FurnitureForm.effect (GAS) while seated -> release on exit;
 // NPCs queue when full (the AI package retries or wanders nearby);

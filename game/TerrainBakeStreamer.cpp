@@ -1,6 +1,7 @@
 #include "game/TerrainBakeStreamer.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <cmath>
 #include <fstream>
 

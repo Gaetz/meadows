@@ -298,13 +298,15 @@ bool applyEffect(AttributeSet& set, AbilitySystem& system,
     if (!effect.attribute2.empty()) {
         ActiveEffect active2;
         active2.attribute = attr(effect.attribute2);
-        active2.op = parseOp(effect.op); // inherit op from primary
+        active2.op = op; // inherit op from primary
         active2.magnitude = effect.magnitude2;
         active2.infinite = active.infinite;
         active2.remaining = remainingSeconds;
         active2.period = 0.0f;
         active2.gameTime = isGameTime;
-        active2.effectId = system.nextEffectId++;
+        // SAME id as the primary line: removeEffectById must take both
+        // lines out, or the attribute2 malus would linger forever.
+        active2.effectId = effectId;
         active2.grantedTag = active.grantedTag; // same tag for grouped removal
         if (active.grantedTag.isValid()) {
             system.tags.add(active.grantedTag, registry); // extra ref-count

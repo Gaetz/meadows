@@ -172,6 +172,16 @@ void WaterSystem::destroy(rhi::Device& device) {
     localIndexBuffer = {};
     localVertexBuffer = {};
     localIndexCount = 0;
+    // Freshness state, so a destroy()+create() cycle re-bakes instead of
+    // trusting a pool map that no longer exists.
+    bakeInFlight = false;
+    mapCenter = { 1e9f, 1e9f };
+    bakedSeed = 0;
+    bakedSeaLevel = -1e9f;
+    bakedBodiesStamp = ~0ull;
+    bodies.reset();
+    bodiesStamp = 0;
+    bodiesDirty = false;
 }
 
 void WaterSystem::setBodies(sptr<const WaterBodies> next) {
@@ -559,12 +569,17 @@ void WaterSystem::buildPipeline(rhi::Device& device, ShaderLibrary& shaders) {
           .cull = rhi::CullMode::None,
           .depthBias = 4.0f,
           .depthBiasSlope = 2.5f });
-    shaderGeneration = shaders.generation(kWaterShader);
+    // Sum of both shaders' generations: a reload of either rebuilds both
+    // pipelines (buildPipeline creates the local-volume one too).
+    shaderGeneration = shaders.generation(kWaterShader) +
+                       shaders.generation(kWaterLocalShader);
 }
 
 void WaterSystem::refreshPipeline(rhi::Device& device,
                                   ShaderLibrary& shaders) {
-    if (shaders.generation(kWaterShader) != shaderGeneration) {
+    if (shaders.generation(kWaterShader) +
+            shaders.generation(kWaterLocalShader) !=
+        shaderGeneration) {
         buildPipeline(device, shaders);
     }
 }

@@ -6,7 +6,7 @@
 
 #include "engine/core/Hash.hpp"
 
-// The procedural splat tile synthesis is GONE (dev decision 2026-08-06):
+// No procedural splat tile synthesis here:
 // the cooked .mtex library is the one material set — TerrainSystem falls
 // back to flat placeholder arrays when it is absent. Only the grass root
 // color source survives here: the blades bake it at scatter, on the
@@ -70,9 +70,8 @@ f32 tileFbm(u32 seed, f32 u, f32 v, i32 basePeriod, i32 octaves) {
 } // namespace
 
 Vec3 grassAlbedo(f32 u, f32 v) {
-    // Near-uniform forest green (#6FA160 — the midpoint between the old
-    // meadow green and the tree-foliage palette, so meadow and canopies
-    // read as one family): one hue, a WHISPER of blotch luminance drift
+    // Near-uniform forest green (#6FA160, close to the tree-foliage
+    // palette so meadow and canopies read as one family): one hue, a WHISPER of blotch luminance drift
     // (~±1%, mean 1) — just enough to break the perfectly flat albedo
     // that exposed the RC probe-parity speckle, invisible as texture.
     return Vec3 { 0.434f, 0.633f, 0.375f } * grassBlotch(u, v);

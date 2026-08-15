@@ -111,7 +111,7 @@ std::optional<render::TerrainRegion> readTrgFile(
     if (!file || std::memcmp(magic, kMagic, 4) != 0 || region.width < 2 ||
         region.height < 2 || region.width > kMaxSamples ||
         region.height > kMaxSamples || region.texelSize <= 0.0f) {
-        LOG_ERROR("readTrgFile: not a TRG1 region: {}", path.string());
+        LOG_ERROR("readTrgFile: not a TRG2 region: {}", path.string());
         return std::nullopt;
     }
     region.heights.resize(static_cast<size_t>(region.width) *

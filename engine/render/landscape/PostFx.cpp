@@ -25,9 +25,6 @@ struct FroxelTemporalUniforms {
 };
 constexpr const char* kFroxelIntegrateShader = "froxel_integrate";
 constexpr const char* kFroxelApplyShader = "froxel_apply";
-// (No screen-space AO — the sampled hemisphere
-// speckles, the depth mask halos, neither fits the stepped-ramp look.
-// Grounding = terrain light map + contact shadows + baked vertex AO.)
 constexpr const char* kContactShader = "contactshadow";
 constexpr const char* kSsaoShader = "ssao";
 constexpr const char* kMistShader = "mist"; // ground mist raymarch
@@ -46,7 +43,8 @@ constexpr const char* kPassShaders[] = {
     kGodRaysShader,   kVolumetricShader, kContactShader,
     kMistShader,      kSkyCloudsShader, kCopyShader,
     kBlurShader,      kLuminanceShader, kAdaptShader,
-    kFroxelApplyShader,
+    kFroxelApplyShader, kSsaoShader,
+    kFroxelInjectShader, kFroxelIntegrateShader,
 };
 
 u64 passGenerationSum(ShaderLibrary& shaders) {
@@ -878,8 +876,6 @@ void PostFx::render(rhi::Device& device, rhi::CommandBuffer& cmd,
         cmd.draw(3);
         cmd.endRenderPass();
     }
-
-    // (No screen-space AO — the tonemap does not tap an AO texture.)
 }
 
 } // namespace render

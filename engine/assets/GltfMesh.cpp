@@ -192,57 +192,77 @@ std::optional<render::MeshData> buildMesh(const cgltf_data& data,
     return mesh;
 }
 
-struct GltfDeleter {
-    void operator()(cgltf_data* data) const { cgltf_free(data); }
+// RAII cgltf document + the parse/load-buffers boilerplate shared by every
+// entry point. File loads resolve external buffers next to the file;
+// in-memory loads only resolve GLB bin chunks and data: URIs.
+struct ParsedGltf {
+    cgltf_data* data { nullptr };
+    ~ParsedGltf() {
+        if (data) {
+            cgltf_free(data);
+        }
+    }
 };
+
+bool parseWithBuffers(const std::filesystem::path& path, ParsedGltf& out) {
+    const str pathStr = path.string();
+    cgltf_options options {};
+    cgltf_result result = cgltf_parse_file(&options, pathStr.c_str(), &out.data);
+    if (result != cgltf_result_success) {
+        LOG_ERROR("glTF parse failed '{}' (cgltf error {})", pathStr,
+                  static_cast<int>(result));
+        return false;
+    }
+    result = cgltf_load_buffers(&options, out.data, pathStr.c_str());
+    if (result != cgltf_result_success) {
+        LOG_ERROR("glTF buffer load failed '{}' (cgltf error {})", pathStr,
+                  static_cast<int>(result));
+        return false;
+    }
+    return true;
+}
+
+bool parseFromMemory(const void* bytes, u64 byteCount, ParsedGltf& out) {
+    cgltf_options options {};
+    cgltf_result result = cgltf_parse(&options, bytes, byteCount, &out.data);
+    if (result != cgltf_result_success) {
+        LOG_ERROR("glTF parse failed (in-memory, cgltf error {})",
+                  static_cast<int>(result));
+        return false;
+    }
+    result = cgltf_load_buffers(&options, out.data, nullptr);
+    if (result != cgltf_result_success) {
+        LOG_ERROR("glTF buffer load failed (in-memory, cgltf error {})",
+                  static_cast<int>(result));
+        return false;
+    }
+    return true;
+}
 
 } // namespace
 
 std::optional<render::MeshData> loadGltfMesh(
     const std::filesystem::path& path) {
-    const str pathStr = path.string();
-    cgltf_options options {};
-    cgltf_data* raw = nullptr;
-    cgltf_result result = cgltf_parse_file(&options, pathStr.c_str(), &raw);
-    if (result != cgltf_result_success) {
-        LOG_ERROR("glTF parse failed '{}' (cgltf error {})", pathStr,
-                  static_cast<int>(result));
-        return std::nullopt;
-    }
-    std::unique_ptr<cgltf_data, GltfDeleter> data { raw };
-    result = cgltf_load_buffers(&options, data.get(), pathStr.c_str());
-    if (result != cgltf_result_success) {
-        LOG_ERROR("glTF buffer load failed '{}' (cgltf error {})", pathStr,
-                  static_cast<int>(result));
+    ParsedGltf gltf;
+    if (!parseWithBuffers(path, gltf)) {
         return std::nullopt;
     }
     const std::filesystem::path baseDir = path.parent_path();
-    return buildMesh(*data, pathStr, &baseDir);
+    return buildMesh(*gltf.data, path.string(), &baseDir);
 }
 
 vector<render::MeshData> loadGltfMeshParts(
     const std::filesystem::path& path) {
-    const str pathStr = path.string();
-    cgltf_options options {};
-    cgltf_data* raw = nullptr;
-    cgltf_result result = cgltf_parse_file(&options, pathStr.c_str(), &raw);
-    if (result != cgltf_result_success) {
-        LOG_ERROR("glTF parse failed '{}' (cgltf error {})", pathStr,
-                  static_cast<int>(result));
+    ParsedGltf gltf;
+    if (!parseWithBuffers(path, gltf)) {
         return {};
     }
-    std::unique_ptr<cgltf_data, GltfDeleter> data { raw };
-    result = cgltf_load_buffers(&options, data.get(), pathStr.c_str());
-    if (result != cgltf_result_success) {
-        LOG_ERROR("glTF buffer load failed '{}' (cgltf error {})", pathStr,
-                  static_cast<int>(result));
-        return {};
-    }
+    const cgltf_data& data = *gltf.data;
     const std::filesystem::path baseDir = path.parent_path();
     vector<render::MeshData> parts;
     TextureAverages textureAverages;
-    for (cgltf_size n = 0; n < data->nodes_count; ++n) {
-        const cgltf_node& node = data->nodes[n];
+    for (cgltf_size n = 0; n < data.nodes_count; ++n) {
+        const cgltf_node& node = data.nodes[n];
         if (!node.mesh) {
             continue;
         }
@@ -262,53 +282,16 @@ vector<render::MeshData> loadGltfMeshParts(
 
 std::optional<render::MeshData> loadGltfMeshFromMemory(const void* bytes,
                                                        u64 byteCount) {
-    cgltf_options options {};
-    cgltf_data* raw = nullptr;
-    cgltf_result result = cgltf_parse(&options, bytes, byteCount, &raw);
-    if (result != cgltf_result_success) {
-        LOG_ERROR("glTF parse failed (in-memory, cgltf error {})",
-                  static_cast<int>(result));
+    ParsedGltf gltf;
+    if (!parseFromMemory(bytes, byteCount, gltf)) {
         return std::nullopt;
     }
-    std::unique_ptr<cgltf_data, GltfDeleter> data { raw };
-    // nullptr base path: only GLB bin chunks and data: URIs can resolve.
-    result = cgltf_load_buffers(&options, data.get(), nullptr);
-    if (result != cgltf_result_success) {
-        LOG_ERROR("glTF buffer load failed (in-memory, cgltf error {})",
-                  static_cast<int>(result));
-        return std::nullopt;
-    }
-    return buildMesh(*data, "<memory>", nullptr);
+    return buildMesh(*gltf.data, "<memory>", nullptr);
 }
 
 // --- Skeletal data ----------------------------------------------------------------
 
 namespace {
-
-struct ParsedGltf {
-    cgltf_data* data { nullptr };
-    ~ParsedGltf() {
-        if (data) {
-            cgltf_free(data);
-        }
-    }
-};
-
-bool parseWithBuffers(const std::filesystem::path& path, ParsedGltf& out) {
-    const str pathStr = path.string();
-    cgltf_options options {};
-    if (cgltf_parse_file(&options, pathStr.c_str(), &out.data) !=
-        cgltf_result_success) {
-        LOG_ERROR("glTF parse failed '{}'", pathStr);
-        return false;
-    }
-    if (cgltf_load_buffers(&options, out.data, pathStr.c_str()) !=
-        cgltf_result_success) {
-        LOG_ERROR("glTF buffer load failed '{}'", pathStr);
-        return false;
-    }
-    return true;
-}
 
 // Skin joints in glTF come in arbitrary order; the anim runtime wants
 // parents before children. Returns old-index -> new-index.
@@ -578,20 +561,11 @@ std::optional<render::SkinnedMeshData> loadGltfSkinnedMesh(
 
 std::optional<render::SkinnedMeshData> loadGltfSkinnedMeshFromMemory(
     const void* bytes, u64 byteCount) {
-    cgltf_options options {};
-    cgltf_data* raw = nullptr;
-    if (cgltf_parse(&options, bytes, byteCount, &raw) !=
-        cgltf_result_success) {
-        LOG_ERROR("glTF parse failed (in-memory, skinned)");
+    ParsedGltf gltf;
+    if (!parseFromMemory(bytes, byteCount, gltf)) {
         return std::nullopt;
     }
-    std::unique_ptr<cgltf_data, GltfDeleter> data { raw };
-    if (cgltf_load_buffers(&options, data.get(), nullptr) !=
-        cgltf_result_success) {
-        LOG_ERROR("glTF buffer load failed (in-memory, skinned)");
-        return std::nullopt;
-    }
-    return buildSkinnedMesh(*data, "<memory>");
+    return buildSkinnedMesh(*gltf.data, "<memory>");
 }
 
 void normalizeMesh(render::MeshData& mesh, f32 targetSize) {

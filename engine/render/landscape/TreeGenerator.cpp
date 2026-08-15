@@ -89,8 +89,8 @@ MeshData generateTree(u32 seed, u32 lobeSubdivisions,
                                0 };
     }
 
-    // The lobes ARE the canopy now: rounder spheres (subdiv 2 = 320 faces)
-    // with soft jitter, full greens (no more x0.55 interior darkening).
+    // The lobes ARE the canopy: rounder spheres (subdiv 2 = 320 faces)
+    // with soft jitter, full greens (no interior darkening).
     Vec3 canopyCenter { 0.0f };
     for (u32 i = 0; i < lobeCount; ++i) {
         canopyCenter += lobes[i].center;

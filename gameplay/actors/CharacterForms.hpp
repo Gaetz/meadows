@@ -2,14 +2,14 @@
 
 #include "data/forms/Form.hpp"
 
-// Character visual data (horizontal pass H1). The modular-appearance model:
+// Character visual data. The modular-appearance model:
 // a character = one skeleton + interchangeable skinned meshes per FIXED
 // slot (flat fields — the slot set is a C++ decision, richness is which
 // meshes fill them, §2.7). Equipping armor swaps the matching slot's mesh
-// (EquipmentVisuals vertical, post-7/07); AppearanceForm holds the
+// (EquipmentVisuals, later); AppearanceForm holds the
 // UNDRESSED defaults + tints.
 //
-// HOW TO FILL (post-7/07): EquipmentVisuals = ArmorForm gains slot mesh
+// HOW TO FILL: EquipmentVisuals = ArmorForm gains slot mesh
 // guids (append) + a system that recomputes the visible mesh per slot from
 // (appearance, equipped items); tints multiply the material.
 

@@ -85,6 +85,12 @@ std::optional<CookedTexture> loadCookedTexture(
               static_cast<std::streamsize>(header.arrayLayers *
                                            sizeof(u32)));
     const u64 expected = rhi::textureDataBytes(tex.desc());
+    constexpr u64 kMaxPayloadBytes = 1ull << 30; // sanity bound, not a design limit
+    if (expected == 0 || expected > kMaxPayloadBytes) {
+        LOG_ERROR("CookedTexture: '{}' has an implausible payload size ({})",
+                  path.string(), expected);
+        return std::nullopt;
+    }
     tex.payload.resize(expected);
     file.read(reinterpret_cast<char*>(tex.payload.data()),
               static_cast<std::streamsize>(expected));

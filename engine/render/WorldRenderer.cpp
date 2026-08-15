@@ -2,9 +2,11 @@
 
 #include <cmath>
 
+#include <algorithm>
+#include <cstdio>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/quaternion.hpp>
 
 #include "engine/FrameContext.hpp"
 #include "engine/assets/GltfMesh.hpp"
@@ -767,7 +769,7 @@ void WorldRenderer::drawSkinned(engine::FrameContext& frame,
             slot->modelUbo = { frame.device, frame.device.createBuffer(
                 { .usage = rhi::BufferUsage::Uniform,
                   // std140 ModelUbo: mat4 model + vec4 tint + vec4 info.
-                  .size = sizeof(Mat4) + 2 * sizeof(Vec4),
+                  .size = sizeof(ModelUniforms),
                   .dynamic = true },
                 nullptr) };
             slot->group = { frame.device, frame.device.createBindGroup(
@@ -839,9 +841,6 @@ void WorldRenderer::buildSkinnedPipeline(rhi::Device& device) {
           .cull = rhi::CullMode::Back }) };
     skinnedShaderGeneration = shaders->generation("skinned");
 }
-
-// Bundle the streaming fixups' systems for StreamingController this frame —
-// references into the scene plus the focus / fade / mode scalars. Rebuilt each
 
 f32 WorldRenderer::effectiveWaterSurfaceY(
     const render::RenderSnapshot& snapshot, const RenderView& view) const {
@@ -1023,7 +1022,7 @@ void WorldRenderer::drawCastersInto(engine::FrameContext& frame,
                 // owns the tail; only the matrix matters here).
                 draw.ubo = { frame.device, frame.device.createBuffer(
                     { .usage = rhi::BufferUsage::Uniform,
-                      .size = sizeof(Mat4) + 2 * sizeof(Vec4),
+                      .size = sizeof(ModelUniforms),
                       .dynamic = true },
                     nullptr) };
             }
@@ -1154,8 +1153,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
         }
         occlusion.invalidate();
     }
-    // EXPERIMENT A/B (feature/space-colonization-trees): mesh-only swap at
-    // the safe point — instance buffers and scatter stay resident.
+    // A/B mesh-only swap at the safe point — instance buffers and
+    // scatter stay resident.
     if (reseedVegetation) {
         reseedVegetation = false;
         if (cfg.vegetation) {
@@ -1371,8 +1370,8 @@ void WorldRenderer::render(engine::FrameContext& frame,
                 continue; // fully above the water table
             }
             // Beyond ~600 m the mirror sits deep in the fog (fogStart
-            // 450): not worth a full scene re-render (perf audit
-            // 2026-08-06 — 7 ms while no readable water was in sight).
+            // 450): not worth a full scene re-render (~7 ms measured
+            // while no readable water was in sight).
             const Vec2 toChunk {
                 (aabb.lo.x + aabb.hi.x) * 0.5f - camera.position.x,
                 (aabb.lo.z + aabb.hi.z) * 0.5f - camera.position.z
@@ -1633,7 +1632,7 @@ void WorldRenderer::render(engine::FrameContext& frame,
         const u32 budget = clustered ? kMaxLights : kFallbackLights;
         LightsUniforms lights;
         const vector<render::SceneLight>& nearest = snapshot.lights;
-        // G7b — the penumbra experiment: with "lights via RC only", the
+        // With "lights via RC only", the
         // DIRECT contribution is cut (count 0 -> localLights() adds
         // nothing) and the lights exist purely in the GI volume: their
         // occlusion and penumbras come from the cascades, at voxel
@@ -2318,13 +2317,6 @@ void WorldRenderer::render(engine::FrameContext& frame,
     }
 }
 
-// The renderer's own dev panels (the tuning state
-// they bind lives HERE — the scene keeps the section headers/F-keys).
-// The budget table: per-pass GPU average/max over the
-// rolling window, with the CPU FrameProbe column beside it (names match
-// where both sides instrument the same block). This table IS the
-// baseline the optimization bricks are ordered by (docs/RENDERING.md).
-
 // The GI chain's per-frame recording (docs/RENDERING.md):
 // gathers the injection lists (props, NPCs, vegetation, lights) and
 // records inject/build/extend/merge. Called from render() at its
@@ -2436,11 +2428,11 @@ void WorldRenderer::recordGiUpdate(engine::FrameContext& frame,
                 }
             }
         }
+        // Sun-linked emitters carry the live sun into the GI field too —
+        // same color/gate as the direct path above.
+        const f32 sunGate =
+            glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
         for (const auto& light : snapshot.lights) {
-            // H2: sun-linked emitters carry the live sun into the GI
-            // field too — same color/gate as the direct path above.
-            const f32 sunGate =
-                glm::smoothstep(0.05f, 0.20f, shadowSunDirection.y);
             const Vec3 color = light.sunLinked
                                    ? Vec3 { uniforms.sunColor }
                                    : light.color;

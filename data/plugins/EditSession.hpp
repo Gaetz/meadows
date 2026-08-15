@@ -6,20 +6,19 @@
 #include "data/forms/FormTypeRegistry.hpp"
 #include "data/plugins/Record.hpp"
 
-// The editor-writes-plugins loop (horizontal pass H2). An EditSession is a
-// mutable overlay above a RESOLVED FormDatabase: tools edit drafts, never
-// the resolved forms (§2.2 stays intact — the runtime keeps reading the
-// database). Exporting diffs the drafts against the base and emits an
-// ORDINARY plugin (§5): the editor is just another plugin author. Changes
-// apply on the next resolve (relaunch/reload); live re-resolve is a
-// vertical (post-7/07).
+// The editor-writes-plugins loop. An EditSession is a mutable overlay
+// above a RESOLVED FormDatabase: tools edit drafts, never the resolved
+// forms (§2.2 stays intact — the runtime keeps reading the database).
+// Exporting diffs the drafts against the base and emits an ORDINARY
+// plugin (§5): the editor is just another plugin author. Changes apply on
+// the next resolve (relaunch/reload); live re-resolve is a future step.
 //
 // Undo/redo: every field edit stores its before/after Value; undo replays
 // the inverse. Creations undo by dropping the draft.
 //
-// HOW TO FILL (post-7/07): reference/level editing goes through the SAME
-// session (ReferenceForm drafts: move = setField position); "create prefab
-// from selection" = createForm(PrefabForm) + setField(prefab) on copies.
+// Reference/level editing goes through the SAME session (ReferenceForm
+// drafts: move = setField position); "create prefab from selection" =
+// createForm(PrefabForm) + setField(prefab) on copies.
 
 namespace data {
 

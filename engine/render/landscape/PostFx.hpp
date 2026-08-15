@@ -44,8 +44,7 @@ public:
     // after the water pass, before the tonemap. `shadowBindGroup` is the CSM
     // receiver group (the volumetric march taps it per step). Pass a
     // GpuProbe (+ its device) to time each sub-pass;
-    // nullptr = no instrumentation. (No screen-space AO:
-    // grounding = terrain light map + contact shadows + baked vertex AO.)
+    // nullptr = no instrumentation.
     // `giApplyGroup` (nullable) = the RC merged-cascade sampler: the
     // volumetric march's haze samples the GI field inside its volume.
     // `godRays` false skips that pass entirely (the tonemap multiplies

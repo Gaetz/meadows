@@ -2,14 +2,14 @@
 
 #include "data/forms/Form.hpp"
 
-// Animation data Forms (horizontal pass H1). The anim RUNTIME lives in
+// Animation data Forms. The anim RUNTIME lives in
 // engine/anim (flat structs, no data:: dependency); world/scene/AnimBridge
 // maps these Forms onto it. Variable-cardinality data (events, states,
 // transitions) follows the CHILD-RECORD convention: children carry
 // `parent` and are queried via data::childrenOf (FormQuery.hpp) — a mod
 // adds an anim event or a graph state by adding one record.
 //
-// HOW TO FILL (post-7/07): the graph model is deliberately minimal
+// HOW TO FILL: the graph model is deliberately minimal
 // (float params + tag gates). Add layers/masks fields by APPENDING.
 
 namespace data {

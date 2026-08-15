@@ -30,7 +30,7 @@ const data::CueForm* CueTable::find(std::string_view tag) const {
 
 fx::EmitterParams toEmitterParams(const data::ParticleForm& form) {
     fx::EmitterParams params;
-    // C1: the full authoring surface maps now — shape, continuous rate,
+    // The full authoring surface maps — shape, continuous rate,
     // duration and the blend batch key (texture stays a render concern).
     params.shape = form.shape == "sphere" ? fx::EmitterShape::Sphere
                    : form.shape == "cone" ? fx::EmitterShape::Cone

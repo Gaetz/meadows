@@ -91,9 +91,13 @@ void loadTreeBark(rhi::Device& device, render::WorldRenderer& renderer,
             return false;
         }
         str name = diffPath.filename().string();
-        const auto sub = [&](const char* tag) {
+        const auto sub = [&](const char* tag) -> std::filesystem::path {
+            const size_t at = name.find("_diff_");
+            if (at == str::npos) {
+                return {}; // modded filename without the tag: albedo only
+            }
             str s = name;
-            s.replace(s.find("_diff_"), 6, tag);
+            s.replace(at, sizeof("_diff_") - 1, tag);
             return diffPath.parent_path() / s;
         };
         auto nor = assets::loadImageFile(sub("_nor_gl_"));

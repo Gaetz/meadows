@@ -356,6 +356,7 @@ void populateAnchors(DungeonBakeResult& result, const DungeonParams& params,
             for (const auto& [lockId, pos] : leverOverrides) {
                 if (lockId == node.lockId) {
                     leverPos = pos;
+                    break; // lock ids are unique
                 }
             }
             result.levers.push_back({ leverPos, 0.0f, node.lockId });

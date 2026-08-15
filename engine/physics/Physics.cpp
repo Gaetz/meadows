@@ -278,7 +278,7 @@ struct CharacterBody::Impl {
     PhysicsWorld& world;
     JPH::Ref<JPH::CharacterVirtual> character;
     f32 verticalVelocity { 0.0f };
-    bool swimming { false }; // P0 D2b: gravity off, full-3D velocity
+    bool swimming { false }; // gravity off, full-3D velocity
     bool crouched { false }; // sneak: the half-height capsule is active
     JPH::RefConst<JPH::Shape> standingShape;
     JPH::RefConst<JPH::Shape> crouchedShape;
@@ -320,7 +320,7 @@ CharacterBody::~CharacterBody() = default;
 void CharacterBody::move(const Vec3& desiredVelocity, f32 dt) {
     auto& impl = *pimpl;
     if (impl.swimming) {
-        // P0 D2b: the water carries the body — no gravity, the caller's
+        // The water carries the body — no gravity, the caller's
         // 3D velocity is the whole story (buoyancy and surface clamping
         // are its job). Collisions still resolve (banks, the bottom).
         impl.verticalVelocity = desiredVelocity.y;

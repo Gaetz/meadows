@@ -297,23 +297,23 @@ bool tryEmbed(const MissionGraph& mission, const SpaceParams& params,
             // goal, then stretch the loop between them) — a mine digs
             // down toward its prize, and "the goal one corridor from the
             // door" was the first playtest complaint.
-            const GridPos far { (params.gridX - 3) & ~1,
-                                (params.gridZ / 2) & ~1,
-                                params.floors - 1 };
-            if (!findFreeSlot(grid, far, far.floor, 0, slot)) {
+            const GridPos farCorner { (params.gridX - 3) & ~1,
+                                      (params.gridZ / 2) & ~1,
+                                      params.floors - 1 };
+            if (!findFreeSlot(grid, farCorner, farCorner.floor, 0, slot)) {
                 return false;
             }
         } else {
-            const SpaceRoom& near =
+            const SpaceRoom& parentRoom =
                 out.rooms[static_cast<size_t>(roomOf[parent[node]])];
-            i32 wantFloor = near.pos.floor;
+            i32 wantFloor = parentRoom.pos.floor;
             if (params.floors > 1 && rng.chance(0.35)) {
                 wantFloor += rng.chance(0.7) ? 1 : -1; // bias downward: mines dig
                 wantFloor = std::clamp(wantFloor, 0, params.floors - 1);
             }
             const i32 spread = std::min(3, static_cast<i32>(attempt) / 8);
             const i32 minRing = 1 + rng.range(0, spread);
-            if (!findFreeSlot(grid, near.pos, wantFloor, minRing, slot)) {
+            if (!findFreeSlot(grid, parentRoom.pos, wantFloor, minRing, slot)) {
                 return false;
             }
         }

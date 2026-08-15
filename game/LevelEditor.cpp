@@ -63,8 +63,6 @@ core::Guid LevelEditor::duplicateReference(const core::Guid& reference,
     if (!source) {
         return {};
     }
-    // Copy BEFORE duplicating: the new draft may rehash the session's
-    // draft map and dangle the source view.
     const Vec3 position = source->position + offset;
     const str editorId =
         (source->editorId.empty() ? str { "placed" } : source->editorId) +

@@ -71,7 +71,7 @@ str EditorLayouts::writeToml() const {
     root.insert("graphs", std::move(graphsTable));
 
     std::ostringstream out;
-    out << "# Node positions of the graph editors (chantier 8.6).\n"
+    out << "# Node positions of the graph editors.\n"
            "# TOOL state only: never loaded by the game, not a plugin.\n\n";
     out << root << "\n";
     return out.str();

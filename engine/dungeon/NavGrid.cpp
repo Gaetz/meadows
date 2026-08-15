@@ -13,6 +13,9 @@ namespace {
 
 constexpr char kMagic[4] = { 'N', 'V', 'G', '1' };
 constexpr u32 kMaxDim = 16u * 1024u;
+// Walkable levels stack per column; far more than any real mine needs —
+// a sanity bound for the reader, not a design limit.
+constexpr u64 kMaxLevelsPerColumn = 64;
 
 } // namespace
 
@@ -190,6 +193,14 @@ std::optional<NavGrid> readNvgFile(const std::filesystem::path& path,
     if (grid.width == 0 || grid.depth == 0 || grid.width > kMaxDim ||
         grid.depth > kMaxDim || grid.cellSize <= 0.0f) {
         LOG_ERROR("readNvgFile: bad dimensions in {}", path.string());
+        return std::nullopt;
+    }
+    // Bound levelCount before the resize: a corrupt header must fail as
+    // nullopt, not as a multi-GB allocation.
+    if (levelCount > static_cast<u64>(grid.width) * grid.depth *
+                         kMaxLevelsPerColumn) {
+        LOG_ERROR("readNvgFile: implausible level count in {}",
+                  path.string());
         return std::nullopt;
     }
     grid.firstLevel.resize(static_cast<size_t>(grid.width) * grid.depth + 1);

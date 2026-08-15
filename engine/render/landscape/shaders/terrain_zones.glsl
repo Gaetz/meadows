@@ -45,7 +45,7 @@ void hexGrass(vec2 p, out ivec2 v0, out ivec2 v1, out ivec2 v2,
         w = vec3(f.x + f.y - 1.0, 1.0 - f.x, 1.0 - f.y);
     }
     w = pow(w, vec3(kHexSharpness));
-    // 2-tap variant (perf audit 2026-08-06): the smallest barycentric
+    // 2-tap variant: the smallest barycentric
     // weight is dropped and the pair renormalized — one fewer array
     // fetch per family, the pow-sharpened seams intact. The CPU mirror
     // (grassZoneAt) only reads the DOMINANT vertex: unaffected.

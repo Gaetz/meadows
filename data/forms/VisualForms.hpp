@@ -2,7 +2,7 @@
 
 #include "data/forms/Form.hpp"
 
-// Visual/presentation Forms (horizontal pass H1). Pure data — the engine
+// Visual/presentation Forms. Pure data — the engine
 // runtimes consume flat param structs; the world/runtime layer maps these
 // Forms onto them (LandscapeTuningForm precedent). All moddable (§5).
 //

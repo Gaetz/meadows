@@ -87,7 +87,7 @@ struct RefId {
     REFLECT_END()
 };
 
-// --- 3D-demo components (horizontal pass H8) -----------------------------------
+// --- 3D-demo components -----------------------------------
 
 // A 3D visual: mesh + material by asset/form guid — HANDLE-STYLE, never
 // pixels or vertices (§7 asset-residency rule). The render bridge

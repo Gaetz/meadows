@@ -5,8 +5,7 @@
 
 #include "data/plugins/PluginLoader.hpp"
 
-// Plugin load-order configuration (horizontal pass H1) — the "internal
-// plugin configuration" the demo wants: which plugin files load, in which
+// Plugin load-order configuration: which plugin files load, in which
 // order, enabled or not. The game AND the editor/plugin-manager UI go
 // through this; the manager rewrites the file when the user reorders.
 //
@@ -17,10 +16,10 @@
 //   [[plugins]]
 //   file = "landscape.toml"
 //
-// HOW TO FILL (post-7/07): the PluginsPanel (H2) edits a PluginConfig in
-// memory, calls writePluginConfigToml to persist, and the game re-resolves
-// on next launch. Dependency checking (Plugin::dependencies guids) belongs
-// in the panel: warn when a dependency is missing/disabled/after.
+// The PluginsPanel edits a PluginConfig in memory, calls
+// writePluginConfigToml to persist, and the game re-resolves on next
+// launch. Dependency checking (Plugin::dependencies guids) belongs in the
+// panel: warn when a dependency is missing/disabled/after.
 
 namespace data {
 

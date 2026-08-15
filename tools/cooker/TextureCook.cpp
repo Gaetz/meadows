@@ -311,6 +311,12 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
     vector<vector<vector<u8>>> ormMips(kMips, vector<vector<u8>>(layers));
     vector<vector<vector<u8>>> heightMips(kMips, vector<vector<u8>>(layers));
 
+    // Anchor means, per layer already cooked this run
+
+    // (harmonizeWith indexes into them).
+
+    vector<array<f64, 3>> layerMeans;
+
     for (u32 layer = 0; layer < layers; ++layer) {
         const MaterialSources& mat = (*materials)[layer];
         LOG_INFO("cook-terrain-materials: [{}] {}", layer, mat.name);
@@ -330,12 +336,6 @@ int cookTerrainMaterials(const char* manifestPath, const char* outDir) {
             const f64 count = albedoBase.pixels.size() / 4.0;
             for (f64& m : mean) {
                 m /= count;
-            }
-            // Anchor means, per layer already cooked this run
-            // (harmonizeWith indexes into them).
-            static vector<array<f64, 3>> layerMeans;
-            if (layer == 0) {
-                layerMeans.clear();
             }
             if (mat.harmonize &&
                 mat.harmonizeWith >= 0 &&

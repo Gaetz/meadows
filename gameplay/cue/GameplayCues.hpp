@@ -10,7 +10,7 @@
 #include "engine/core/Defines.hpp"
 #include "engine/fx/Particles.hpp"
 
-// GameplayCues (horizontal pass H7) — THE sim/presentation bridge for
+// GameplayCues — THE sim/presentation bridge for
 // feedback. The SIM emits cues by tag name at world positions; it neither
 // knows nor cares whether anything listens (headless = zero handlers =
 // zero work, the §2.10 invariant holds by construction). The RUNTIME
@@ -25,7 +25,7 @@
 // A mod ships a spell's LOOK as one CueForm — no C++ (the decided cue
 // contract, MEADOWS-PLAN §F).
 //
-// HOW TO FILL (post-7/07, "vivant" vertical): standard handler set in the
+// HOW TO FILL: standard handler set in the
 // runtime (particles via fx::ParticleSim, sound via audio::AudioSystem,
 // camera shake), emission points in combat (hits, blocks, deaths),
 // effects (applyEffect gains an optional CueRegistry* for status cues),

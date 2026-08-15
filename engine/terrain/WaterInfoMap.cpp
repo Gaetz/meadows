@@ -58,12 +58,21 @@ WaterInfoMap bakeWaterInfo(const WaterBodies& bodies, Vec2 center,
     // ONE river a texel keeps its nearest-lateral segment (the
     // riverFlowSample rule); ACROSS rivers contributions blend by bank
     // weight — the per-pixel junction resolution.
-    vector<f32> sumWeight(cells, 0.0f);
-    vector<Vec2> sumFlow(cells, Vec2 { 0.0f, 0.0f });
-    vector<f32> bestLat(cells, 2.0f);
-    vector<Vec2> riverFlow(cells);
-    vector<f32> riverLevel(cells);
+    // Allocated only when rivers exist (sea + lakes alone skip ~5 full-map
+    // arrays); empty vectors mean "no river claimed anything" below.
+    vector<f32> sumWeight;
+    vector<Vec2> sumFlow;
+    vector<f32> bestLat;
+    vector<Vec2> riverFlow;
+    vector<f32> riverLevel;
     vector<u32> touched;
+    if (!bodies.rivers.empty()) {
+        sumWeight.assign(cells, 0.0f);
+        sumFlow.assign(cells, Vec2 { 0.0f, 0.0f });
+        bestLat.assign(cells, 2.0f);
+        riverFlow.resize(cells);
+        riverLevel.resize(cells);
+    }
     for (const RiverSurface& river : bodies.rivers) {
         touched.clear();
         const vector<RiverNode> nodes =
@@ -141,7 +150,7 @@ WaterInfoMap bakeWaterInfo(const WaterBodies& bodies, Vec2 center,
         const i32 row = static_cast<i32>(i / size);
         map.depth[i] = glm::max(
             map.surface[i] - height(worldX(col), worldZ(row)), 0.0f);
-        if (sumWeight[i] > 0.0f) {
+        if (!sumWeight.empty() && sumWeight[i] > 0.0f) {
             map.flow[i] = sumFlow[i] / sumWeight[i];
         }
     }

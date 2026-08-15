@@ -208,7 +208,8 @@ const BiomeParams& biomeAt(const TerrainParams& params, f32 x, f32 z) {
     u8 index = 0;
     const TerrainRegion* region =
         params.base ? params.base->regionAt(x, z) : nullptr;
-    if (region && !region->biome.empty() && region->maskWidth >= 2) {
+    if (region && !region->biome.empty() && region->maskWidth >= 2 &&
+        region->maskHeight >= 2) {
         // Nearest texel of the region's biome channel (ids don't blend).
         const f32 texel =
             region->spanX() / static_cast<f32>(region->maskWidth - 1);

@@ -347,7 +347,6 @@ gameplay::SavedActorRecords PendingSaveLayer::actorState(
 
 vector<data::Record> PendingSaveLayer::flush() const {
     // Deterministic order (§8): by reference guid, patches first.
-    vector<const Entry*> ordered;
     vector<core::Guid> keys;
     keys.reserve(entries.size());
     for (const auto& [key, entry] : entries) {

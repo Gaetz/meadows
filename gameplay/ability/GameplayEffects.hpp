@@ -102,9 +102,10 @@ void tickPeriodicEffect(f32& accumulator, f32 dt, f32 period,
                         const EffectForm& effect,
                         const GameplayTagRegistry& registry);
 
-// Toggles the shared "State.Exhausted" gate on `system` from current energy,
-// with hysteresis: added when energy reaches 0, removed once energy recovers
-// above `recoverFraction` of maxEnergy. Energy-costed abilities (dodge, attack,
+// Toggles the shared "State.Exhausted" gate on `system` from BASE energy
+// (debuffs shift the current, not the exhaustion floor), with hysteresis:
+// added when energy reaches 0, removed once energy recovers above
+// `recoverFraction` of current maxEnergy. Energy-costed abilities (dodge, attack,
 // sprint) carry blockedTag="State.Exhausted", so tryActivate rejects them while
 // it is set. No-op if the tag is not registered. Called once per character tick.
 void updateExhaustion(const AttributeSet& set, AbilitySystem& system,

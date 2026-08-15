@@ -24,7 +24,7 @@ public:
     // layer (viewport 1024) — half the caster fill for slices whose
     // texels are meters wide anyway; the receiver scales its uv by the
     // same factor (shadow.glsl, fed through ssaoInfo.w). This is what
-    // pays for the doubled cascade reach (perf audit 2026-08-06).
+    // pays for the doubled cascade reach.
     static constexpr f32 kFarCascadeScale = 0.5f;
     static constexpr f32 cascadeViewportScale(u32 i) {
         return i == 0 ? 1.0f : kFarCascadeScale;

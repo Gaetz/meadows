@@ -113,7 +113,7 @@ void main() {
         leafShade = mix(mix(0.7, 1.3, mask.x), 1.0, solid);
         // Season: mix toward the slot's autumn tint, weighted by its
         // seasonality — evergreens stay green.
-        vec4 season = uLeafSeason[int(floor(vCardUv.x * 8.0))];
+        vec4 season = uLeafSeason[int(clamp(floor(vCardUv.x * 8.0), 0.0, 7.0))];
         baseColor = mix(vColor, season.rgb, uSeasonInfo.x * season.a);
     }
 
@@ -216,8 +216,8 @@ void main() {
              textureGrad(uBark, uvz + zoB, gzx, gzy).rgb * zw.y) * bw.z;
         // LUMINANCE-only vertex modulation: the baked AO and vertical
         // gradient survive, but the texture keeps its OWN hue — the
-        // generators' dark-brown wood color was re-tinting every bark
-        // set (retour dev: « pas la même couleur que sur le site »).
+        // generators' dark-brown wood color must not re-tint the bark
+        // texture sets.
         float vLuma = dot(vColor, vec3(0.299, 0.587, 0.114));
         baseColor =
             bark * uBarkTintTile.rgb * min(vLuma * 2.6, 1.4);

@@ -15,9 +15,8 @@ class ShaderLibrary;
 
 // Tileable 3D Perlin-Worley noise (the Hillaire TileableVolumeNoise
 // channels), baked ONCE in compute at first frame and shared by every
-// raymarched medium: ground-mist erosion today, volumetric sky clouds
-// tomorrow (docs/RENDERING.md §8). R = Perlin-Worley base shape (reserved
-// for the sky), G = mid-frequency Worley FBM (the mist erosion), B =
+// raymarched medium: ground-mist erosion and the volumetric sky clouds
+// (docs/RENDERING.md §8). R = Perlin-Worley base shape (the sky), G = mid-frequency Worley FBM (the mist erosion), B =
 // high-frequency Worley FBM (near detail), A unused. Gated on
 // compute + volume caps; without them consumers keep their analytic
 // fallback (volumetric_media.glsl fbm3).

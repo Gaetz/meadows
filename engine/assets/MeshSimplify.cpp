@@ -2,8 +2,6 @@
 
 #include <meshoptimizer.h>
 
-#include <glm/glm.hpp>
-
 #include "engine/core/Log.hpp"
 
 namespace assets {
@@ -57,27 +55,6 @@ void simplifyMesh(render::MeshData& mesh, u32 targetTriangles) {
     mesh.indices = std::move(simplified);
     LOG_INFO("simplifyMesh: {} tris -> {} ({} verts)", indexCount / 3,
              count / 3, unique);
-}
-
-void normalizeMeshFootprint(render::MeshData& mesh, f32 size) {
-    if (mesh.vertices.empty()) {
-        return;
-    }
-    Vec3 lo = mesh.vertices[0].position;
-    Vec3 hi = lo;
-    for (const render::MeshVertex& v : mesh.vertices) {
-        lo = glm::min(lo, v.position);
-        hi = glm::max(hi, v.position);
-    }
-    const Vec3 extent = hi - lo;
-    const f32 largest =
-        glm::max(extent.x, glm::max(extent.y, extent.z));
-    const f32 scale = largest > 1e-4f ? size / largest : 1.0f;
-    const Vec3 center { (lo.x + hi.x) * 0.5f, lo.y,
-                        (lo.z + hi.z) * 0.5f };
-    for (render::MeshVertex& v : mesh.vertices) {
-        v.position = (v.position - center) * scale;
-    }
 }
 
 } // namespace assets

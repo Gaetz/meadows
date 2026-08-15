@@ -169,6 +169,9 @@ namespace {
 str ensureNodeEvent(data::EditSession& session, const core::Guid& nodeId) {
     const auto* node = static_cast<const quest::DialogueNodeForm*>(
         session.view(nodeId));
+    if (!node) {
+        return {}; // stale guid (node deleted since the list was built)
+    }
     if (!node->event.empty()) {
         return node->event;
     }

@@ -1020,9 +1020,8 @@ private:
     // GL-meaning winding -> Vulkan winding for the CURRENT target. Offscreen
     // renders through a positive viewport (Vulkan Y-down = one mirror vs GL
     // clip space) so the winding inverts; the swapchain's negative-height
-    // viewport cancels that mirror and keeps the GL winding as-is. The old
-    // code inverted unconditionally — wrong on the swapchain, invisible only
-    // because those passes cull nothing.
+    // viewport cancels that mirror and keeps the GL winding as-is —
+    // inverting unconditionally would be wrong on the swapchain.
     VkFrontFace effectiveFrontFace() const {
         if (target_ == nullptr) {
             return frontFace_;
@@ -1356,7 +1355,7 @@ void VulkanCommandBuffer::pushGroup(BindGroupHandle group) {
 
     // Push descriptors: the writes go straight out against the bound
     // pipeline's layout, so no VkDescriptorSet is ever allocated and there is
-    // no layout to match against (docs/RENDERING.md, V4 design).
+    // no layout to match against (docs/RENDERING.md, push descriptors).
     vector<VkWriteDescriptorSet>& writes = scratchWrites_;
     vector<VkDescriptorBufferInfo>& bufferInfos = scratchBufferInfos_;
     vector<VkDescriptorImageInfo>& imageInfos = scratchImageInfos_;
@@ -1863,9 +1862,8 @@ bool VulkanDevice::Impl::immediateSubmit(F&& record, bool wait) {
     if (!wait) {
         // Async path (buffer uploads): submission ORDER on the single queue
         // already guarantees this copy executes before any later frame's
-        // submit, so nothing needs to block — the per-upload fence wait was
-        // costing ~1-3 ms on MoltenVK and starved the terrain streamer's
-        // 2 ms budget down to one chunk per frame. The cb (and the caller's
+        // submit, so nothing needs to block (a per-upload fence wait here
+        // would stall the streaming budget). The cb (and the caller's
         // staging, parked in pendingBuffers) is freed once the frame slot
         // cycles, which happens-after the copy by the same ordering.
         const bool ok = vkOk(vkQueueSubmit(graphicsQueue, 1, &submit,
@@ -2240,21 +2238,19 @@ VulkanDevice::~VulkanDevice() {
             vkDestroyFence(impl->device, impl->inFlight[i], nullptr);
         }
         impl->destroySwapchain();
+        if (impl->computePool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(impl->device, impl->computePool, nullptr);
+        }
+        if (impl->uploadPool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(impl->device, impl->uploadPool, nullptr);
+        }
+        if (impl->timeline != VK_NULL_HANDLE) {
+            vkDestroySemaphore(impl->device, impl->timeline, nullptr);
+        }
+        if (impl->uploadTimeline != VK_NULL_HANDLE) {
+            vkDestroySemaphore(impl->device, impl->uploadTimeline, nullptr);
+        }
         if (impl->commandPool != VK_NULL_HANDLE) {
-            if (impl->computePool != VK_NULL_HANDLE) {
-                vkDestroyCommandPool(impl->device, impl->computePool,
-                                     nullptr);
-            }
-            if (impl->uploadPool != VK_NULL_HANDLE) {
-                vkDestroyCommandPool(impl->device, impl->uploadPool, nullptr);
-            }
-            if (impl->timeline != VK_NULL_HANDLE) {
-                vkDestroySemaphore(impl->device, impl->timeline, nullptr);
-            }
-            if (impl->uploadTimeline != VK_NULL_HANDLE) {
-                vkDestroySemaphore(impl->device, impl->uploadTimeline,
-                                   nullptr);
-            }
             vkDestroyCommandPool(impl->device, impl->commandPool, nullptr);
         }
         if (impl->transferPool != VK_NULL_HANDLE) {
@@ -2546,11 +2542,12 @@ void VulkanDevice::endFrame() {
     std::array<VkSemaphore, 2> signalSems { d.renderFinished[d.imageIndex],
                                             d.timeline };
     std::array<u64, 2> signalValues { 0, gfxDone };
-    const bool useTimeline =
-        d.asyncComputeAvailable &&
-        (computePending || d.computeDoneValue != 0);
+    // Signal the timeline on EVERY graphics submit once it exists:
+    // gfxDoneValue is handed to the upload queue as a wait value, so a
+    // submit that skipped the signal would deadlock the first upload.
     // A wait on value 0 is trivially satisfied, so the 3-entry form is
     // safe even before the first compute submission.
+    const bool useTimeline = d.asyncComputeAvailable;
     const bool waitUpload =
         d.uploadQueueAvailable && d.uploadDoneValue != 0;
     const u32 waitCount = waitUpload ? 3 : (useTimeline ? 2 : 1);
@@ -2676,6 +2673,33 @@ void bufferReadScope(BufferUsage usage, VkPipelineStageFlags& stages,
     }
 }
 
+// Stages `data` through the frame's staging ring and records the copy into
+// the currently recording command buffer (the compute chain during a
+// routing window, else the frame's). False when nothing is recording, a
+// pass is open, or the ring is full — the caller falls back.
+bool stageIntoFrameCb(VulkanDevice::Impl& d, VulkanBuffer& buffer,
+                      const void* data, u64 size, u64 offset) {
+    VulkanCommandBuffer* rec =
+        d.computeRouting ? d.computeCmd.get() : d.cmd.get();
+    if (!d.frameActive || rec == nullptr || rec->insidePass()) {
+        return false;
+    }
+    VkPipelineStageFlags readStages = 0;
+    VkAccessFlags readAccess = 0;
+    bufferReadScope(buffer.usage, readStages, readAccess);
+    VkBuffer staging = VK_NULL_HANDLE;
+    u64 srcOffset = 0;
+    void* mapped = nullptr;
+    if (!d.ringAlloc(size, staging, srcOffset, &mapped)) {
+        return false;
+    }
+    std::memcpy(mapped, data, size);
+    vmaFlushAllocation(d.allocator, d.stagingRings[d.frame].allocation,
+                       srcOffset, size);
+    return rec->recordHostUpdate(staging, srcOffset, buffer.buffer, size,
+                                 offset, readStages, readAccess);
+}
+
 BufferHandle VulkanDevice::createBuffer(const BufferDesc& desc,
                                         const void* initialData) {
     Impl& d = *impl;
@@ -2763,26 +2787,8 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
         // buffer: it executes on the compute queue, ordered with the
         // chain that reads it — and never races the next frame's
         // graphics copies (docs/RENDERING.md PG3).
-        VulkanCommandBuffer* rec =
-            d.computeRouting ? d.computeCmd.get() : d.cmd.get();
-        if (d.frameActive && rec && !rec->insidePass()) {
-            VkPipelineStageFlags readStages = 0;
-            VkAccessFlags readAccess = 0;
-            bufferReadScope(buffer->usage, readStages, readAccess);
-            VkBuffer staging = VK_NULL_HANDLE;
-            u64 srcOffset = 0;
-            void* mapped = nullptr;
-            if (d.ringAlloc(size, staging, srcOffset, &mapped)) {
-                std::memcpy(mapped, data, size);
-                vmaFlushAllocation(d.allocator,
-                                   d.stagingRings[d.frame].allocation,
-                                   srcOffset, size);
-                if (rec->recordHostUpdate(staging, srcOffset, buffer->buffer,
-                                          size, offset, readStages,
-                                          readAccess)) {
-                    return; // ring slice — reclaimed when the slot cycles
-                }
-            }
+        if (stageIntoFrameCb(d, *buffer, data, size, offset)) {
+            return; // ring slice — reclaimed when the slot cycles
         }
         std::memcpy(static_cast<u8*>(buffer->mapped) + offset, data, size);
         vmaFlushAllocation(d.allocator, buffer->allocation, offset, size);
@@ -2804,25 +2810,8 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
     // (immediateSubmit(wait=false)) carries no ordering against the
     // frame's own draws: sync validation caught the frame reading vertex
     // buffers still being written by the transfer (READ_AFTER_WRITE).
-    VulkanCommandBuffer* rec =
-        d.computeRouting ? d.computeCmd.get() : d.cmd.get();
-    if (d.frameActive && rec && !rec->insidePass()) {
-        VkPipelineStageFlags readStages = 0;
-        VkAccessFlags readAccess = 0;
-        bufferReadScope(buffer->usage, readStages, readAccess);
-        VkBuffer staging = VK_NULL_HANDLE;
-        u64 srcOffset = 0;
-        void* mapped = nullptr;
-        if (d.ringAlloc(size, staging, srcOffset, &mapped)) {
-            std::memcpy(mapped, data, size);
-            vmaFlushAllocation(d.allocator,
-                               d.stagingRings[d.frame].allocation, srcOffset,
-                               size);
-            if (rec->recordHostUpdate(staging, srcOffset, buffer->buffer,
-                                      size, offset, readStages, readAccess)) {
-                return;
-            }
-        }
+    if (stageIntoFrameCb(d, *buffer, data, size, offset)) {
+        return;
     }
     // Outside a frame (init, tools): nothing ever waits, block as before
     // with a dedicated staging.
@@ -2846,11 +2835,10 @@ void VulkanDevice::updateBuffer(BufferHandle handle, const void* data, u64 size,
 }
 
 // Destroying a resource still referenced by an in-flight command buffer is
-// undefined, and OpenGL hid the problem by deferring internally. Until the
-// backend keeps a deletion queue (destroy after kFramesInFlight frames), the
-// safe move is to drain the GPU first. Destroys are rare — shader hot reload,
-// texture eviction, swapchain resize — never per-frame, so the stall is
-// acceptable for bring-up. Revisit if a profile ever shows it.
+// undefined. During a frame the resource is parked in the deferred-free
+// queue (released once its frame slot recycles); out of frame nothing
+// tracks in-flight use, so a full drain first is the safe move — those
+// paths (hot reload, teardown, resize) are rare and never per-frame.
 void VulkanDevice::destroyBuffer(BufferHandle handle) {
     Impl& d = *impl;
     auto it = d.buffers.find(handle.id);
@@ -3148,7 +3136,6 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& desc,
 
 void VulkanDevice::destroyTexture(TextureHandle handle) {
     Impl& d = *impl;
-    vkDeviceWaitIdle(d.device);
     auto it = d.textures.find(handle.id);
     if (it == d.textures.end()) {
         return;
@@ -3162,6 +3149,8 @@ void VulkanDevice::destroyTexture(TextureHandle handle) {
         d.textures.erase(it);
         return;
     }
+    // Out-of-frame destruction: nothing tracks in-flight use, drain first.
+    vkDeviceWaitIdle(d.device);
     for (VkImageView v : it->second.mipViews) {
         if (v != VK_NULL_HANDLE) {
             vkDestroyImageView(d.device, v, nullptr);
@@ -3281,11 +3270,11 @@ SamplerHandle VulkanDevice::createSampler(const SamplerDesc& desc) {
 
 void VulkanDevice::destroySampler(SamplerHandle handle) {
     Impl& d = *impl;
-    vkDeviceWaitIdle(d.device);
     auto it = d.samplers.find(handle.id);
     if (it == d.samplers.end()) {
         return;
     }
+    vkDeviceWaitIdle(d.device);
     vkDestroySampler(d.device, it->second, nullptr);
     d.samplers.erase(it);
 }
@@ -3327,6 +3316,17 @@ FramebufferHandle VulkanDevice::createFramebuffer(const FramebufferDesc& desc) {
         return true;
     };
 
+    // Failure after a partial build must release the views already created.
+    const auto bail = [&]() -> FramebufferHandle {
+        for (VkImageView view : target.colorViews) {
+            vkDestroyImageView(d.device, view, nullptr);
+        }
+        if (target.depthView != VK_NULL_HANDLE) {
+            vkDestroyImageView(d.device, target.depthView, nullptr);
+        }
+        return {};
+    };
+
     u32 width = 0;
     u32 height = 0;
     for (const FramebufferAttachment& attachment : desc.colorAttachments) {
@@ -3334,7 +3334,7 @@ FramebufferHandle VulkanDevice::createFramebuffer(const FramebufferDesc& desc) {
         VkFormat format = VK_FORMAT_UNDEFINED;
         if (!makeView(attachment, view, format, width, height)) {
             LOG_ERROR("Vulkan createFramebuffer: bad color attachment");
-            return {};
+            return bail();
         }
         target.colorViews.push_back(view);
         target.colorFormats.push_back(format);
@@ -3344,13 +3344,13 @@ FramebufferHandle VulkanDevice::createFramebuffer(const FramebufferDesc& desc) {
         if (!makeView(desc.depthAttachment, target.depthView,
                       target.depthFormat, width, height)) {
             LOG_ERROR("Vulkan createFramebuffer: bad depth attachment");
-            return {};
+            return bail();
         }
         target.depthTexture = desc.depthAttachment.texture;
     }
     if (width == 0 || height == 0) {
         LOG_ERROR("Vulkan createFramebuffer: no attachments");
-        return {};
+        return bail();
     }
     target.extent = { width, height };
 
@@ -3361,11 +3361,11 @@ FramebufferHandle VulkanDevice::createFramebuffer(const FramebufferDesc& desc) {
 
 void VulkanDevice::destroyFramebuffer(FramebufferHandle handle) {
     Impl& d = *impl;
-    vkDeviceWaitIdle(d.device);
     auto it = d.targets.find(handle.id);
     if (it == d.targets.end()) {
         return;
     }
+    vkDeviceWaitIdle(d.device);
     for (VkImageView view : it->second.colorViews) {
         vkDestroyImageView(d.device, view, nullptr);
     }
@@ -3469,11 +3469,11 @@ ShaderHandle VulkanDevice::createShader(const ShaderDesc& desc) {
 
 void VulkanDevice::destroyShader(ShaderHandle handle) {
     Impl& d = *impl;
-    vkDeviceWaitIdle(d.device);
     auto it = d.shaders.find(handle.id);
     if (it == d.shaders.end()) {
         return;
     }
+    vkDeviceWaitIdle(d.device);
     vkDestroyShaderModule(d.device, it->second.vertex, nullptr);
     vkDestroyShaderModule(d.device, it->second.fragment, nullptr);
     vkDestroyShaderModule(d.device, it->second.compute, nullptr);
@@ -3813,11 +3813,11 @@ PipelineHandle VulkanDevice::createComputePipeline(
 
 void VulkanDevice::destroyPipeline(PipelineHandle handle) {
     Impl& d = *impl;
-    vkDeviceWaitIdle(d.device);
     auto it = d.pipelines.find(handle.id);
     if (it == d.pipelines.end()) {
         return;
     }
+    vkDeviceWaitIdle(d.device);
     for (auto& [key, variant] : it->second.variants) {
         vkDestroyPipeline(d.device, variant, nullptr);
     }

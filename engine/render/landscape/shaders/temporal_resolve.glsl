@@ -1,5 +1,5 @@
 // Shared temporal accumulation for raymarched half-res media targets
-// (ground mist today, volumetric sky clouds tomorrow). World-space
+// (ground mist and the volumetric sky clouds). World-space
 // reprojection: the WORLD point at the pixel's depth is reprojected into
 // last frame's view — correct for world-anchored media under camera
 // motion — then EMA-blended with a soft clamp toward the current sample
