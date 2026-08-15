@@ -746,8 +746,8 @@ TEST_CASE("erosion strength diagnostic" * doctest::skip()) {
 
 // UV health of the scanned rocks (docs/GRASS-REDO.md props): per model,
 // the per-triangle texel-stretch distribution (world area vs uv area)
-// BEFORE and AFTER decimation — the striped-face hunt ("la texture
-// n'en fait pas le tour" on the pale boulder).
+// BEFORE and AFTER decimation — the striped-face hunt (the texture
+// not wrapping around the pale boulder).
 //   meadows-tests '-tc=rock uv diagnostic' -ns
 #include "engine/assets/GltfMesh.hpp"
 #include "engine/assets/MeshSimplify.hpp"

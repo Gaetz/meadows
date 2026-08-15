@@ -89,7 +89,7 @@ TEST_CASE("the simulated socket sweeps the blade right to left across "
     const SwingTiming timing { 0.25f, 0.20f, 0.35f };
     MeleeSwing swing;
 
-    // Idle = the A2 guard pose: hand bottom-right, blade up-forward.
+    // Idle = the guard pose: hand bottom-right, blade up-forward.
     const Mat4 guard = gameplay::swingSocketLocal(swing, timing);
     CHECK(guard[3].x == doctest::Approx(0.30f));
     CHECK(guard[3].y == doctest::Approx(-0.34f));
@@ -295,7 +295,7 @@ TEST_CASE("an EMPTY guard never parries and eats the crit-sens posture "
     CHECK(!fine.exhausted);
 }
 
-TEST_CASE("projectile ballistics: gravity arc, plant, expiry (P0 A7)") {
+TEST_CASE("projectile ballistics: gravity arc, plant, expiry") {
     gameplay::Projectile arrow;
     arrow.position = { 0.0f, 2.0f, 0.0f };
     arrow.velocity = { 10.0f, 0.0f, 0.0f };

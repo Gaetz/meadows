@@ -250,6 +250,6 @@ TEST_CASE("lake beds: masked lakes get a shore-profiled basin") {
     const auto plain = finalizeTerrain(coarse(), h, macro, hydro,
                                        coarse(), flat, 5);
     const f32 plainBed =
-        plain.height[static_cast<size_t>(row) * fine.fineSpec.n + col];
+        plain.height[static_cast<size_t>(row) * plain.fineSpec.n + col];
     CHECK(plainBed > bed);
 }

@@ -3,7 +3,7 @@
 #include "engine/render/landscape/TerrainNoise.hpp"
 #include "game/TerrainCollision.hpp"
 
-// B4: collision tiles sampled from the SAME deterministic terrain function
+// Collision tiles sampled from the SAME deterministic terrain function
 // the renderer uses — a capsule dropped anywhere rests at terrain height,
 // and the tile ring follows the focus with hysteresis.
 

@@ -182,7 +182,7 @@ TEST_CASE("follower forms: FollowerState round-trips the save bridge") {
           doctest::Approx(state.followerLastHomeUpgradeHours));
     CHECK(restored.followerDownedRecoveryHours ==
           doctest::Approx(state.followerDownedRecoveryHours));
-    // A « rester » order survives the save (followerStance rides
+    // A Stay order survives the save (followerStance rides
     // the same name-match bridge).
     CHECK(gameplay::followerStance(restored) ==
           gameplay::FollowerStance::Stay);

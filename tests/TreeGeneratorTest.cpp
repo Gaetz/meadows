@@ -65,7 +65,7 @@ TEST_CASE("generated trees are well-formed solid-canopy meshes") {
     }
 }
 
-// EXPERIMENT (feature/space-colonization-trees): the Runions/SDF-card
+// The Runions/SDF-card
 // generator honors the same contracts as generateTree — determinism per
 // seed, well-formed mesh, LOD levels sharing one seed, unit SDF normals
 // on the foliage cards, uv in range.

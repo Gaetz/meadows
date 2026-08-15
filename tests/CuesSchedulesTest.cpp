@@ -11,7 +11,7 @@
 #include "gameplay/interaction/Furniture.hpp"
 #include "world/ai/GridNavigator.hpp"
 
-// H7: every runtime skeleton of the group — cues, schedules, furniture
+// Every runtime skeleton of the group — cues, schedules, furniture
 // occupancy, particles, nav stub — headless and deterministic.
 
 TEST_CASE("cue registry: headless no-op, handlers receive, table falls back") {
@@ -204,9 +204,6 @@ TEST_CASE("particles: deterministic bursts, aging, expiry") {
     // Same seed: identical first particle trajectory.
     Vec3 p1 {};
     Vec3 p2 {};
-    sim.forEach([&](const Vec3& p, f32, const Vec4&, bool) {
-        if (p1 == Vec3 { 0.0f }) { p1 = p; }
-    });
     sim.update(0.1f);
     sim2.update(0.1f);
     bool first = true;

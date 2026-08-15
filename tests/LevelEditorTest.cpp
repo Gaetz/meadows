@@ -211,7 +211,7 @@ TEST_CASE("editor: placing in a virgin square ships the implicit cell") {
     REQUIRE(fresh.referencesIn(reloaded).size() == 1);
     CHECK(resolved.get(fresh.referencesIn(reloaded)[0])->id == placed);
 
-    // Brick 3 core: a NEW session over the reloaded database sees the
+    // The core loop: a NEW session over the reloaded database sees the
     // square as AUTHORED — same guid back, zero records, no duplicate.
     game::LevelEditor second { resolved, types };
     CHECK(second.ensureCell(fresh, resolved, resolved.handleOf(kWorld), 5,

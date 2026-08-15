@@ -10,7 +10,7 @@
 #include "world/worldspace/FormCategory.hpp"
 #include "world/worldspace/WorldModel.hpp"
 
-// H8: prefab expansion — a placed reference whose base is a PrefabForm
+// Prefab expansion — a placed reference whose base is a PrefabForm
 // spawns its template children with DERIVED deterministic guids and
 // composed transforms; templates never spawn on their own.
 

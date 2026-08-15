@@ -12,7 +12,7 @@
 #include "gameplay/condition/Condition.hpp"
 #include "world/scene/AnimBridge.hpp"
 
-// H5: the anim runtime is pure and deterministic — synthetic skeleton +
+// The anim runtime is pure and deterministic — synthetic skeleton +
 // clip, sampled, blended, driven through the graph, all headless.
 
 namespace {
@@ -216,7 +216,7 @@ threshold = 0.5
 }
 
 TEST_CASE("locomotion graph from records cycles idle/walk/run on the speed "
-          "param (B3)") {
+          "param") {
     // The adventure.toml shape: three states, up transitions on "greater"
     // and down transitions on compare = "less" (not covered above).
     constexpr const char* kToml = R"(

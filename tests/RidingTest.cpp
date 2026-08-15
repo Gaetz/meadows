@@ -5,7 +5,7 @@
 using gameplay::RideState;
 using gameplay::stepRide;
 
-TEST_CASE("riding: converges to mount speed on flat ground (É11)") {
+TEST_CASE("riding: converges to mount speed on flat ground") {
     const auto flat = [](f32, f32) { return 0.0f; };
     RideState state;
     // One second of full-forward wish at 60 Hz, generous smoothing.
@@ -21,7 +21,7 @@ TEST_CASE("riding: converges to mount speed on flat ground (É11)") {
     CHECK(state.position.y == doctest::Approx(0.0f));
 }
 
-TEST_CASE("riding: zero wish coasts to a stop, y stays grounded (É11)") {
+TEST_CASE("riding: zero wish coasts to a stop, y stays grounded") {
     const auto flat = [](f32, f32) { return 2.5f; };
     RideState state;
     state.velocity = { 9.0f, 0.0f, 0.0f };
@@ -34,7 +34,7 @@ TEST_CASE("riding: zero wish coasts to a stop, y stays grounded (É11)") {
     CHECK(state.position.y == doctest::Approx(2.5f).epsilon(0.01));
 }
 
-TEST_CASE("riding: the height follows a slope without popping (É11)") {
+TEST_CASE("riding: the height follows a slope without popping") {
     // A 20% slope along +X.
     const auto slope = [](f32 x, f32) { return 0.2f * x; };
     RideState state;

@@ -216,7 +216,7 @@ struct GearShelf {
 
 } // namespace
 
-TEST_CASE("É7: itemUnremovable reads the flag across item form types") {
+TEST_CASE("itemUnremovable reads the flag across item form types") {
     GearShelf shelf;
     CHECK(itemUnremovable(shelf.forms, shelf.baseSword));
     CHECK_FALSE(itemUnremovable(shelf.forms, shelf.betterSword));
@@ -224,7 +224,7 @@ TEST_CASE("É7: itemUnremovable reads the flag across item form types") {
     CHECK_FALSE(itemUnremovable(shelf.forms, core::Guid {})); // unknown
 }
 
-TEST_CASE("É7: gearPower — strongest weapon channel, armor slash, else 0") {
+TEST_CASE("gearPower — strongest weapon channel, armor slash, else 0") {
     GearShelf shelf;
     CHECK(gearPower(shelf.forms, shelf.baseSword) == doctest::Approx(12.0f));
     CHECK(gearPower(shelf.forms, shelf.torso) == doctest::Approx(10.0f));
@@ -238,7 +238,7 @@ TEST_CASE("É7: gearPower — strongest weapon channel, armor slash, else 0") {
     CHECK(gearPower(shelf.forms, id) == doctest::Approx(25.0f));
 }
 
-TEST_CASE("É7: isUpgrade — strictly better fills the right slot") {
+TEST_CASE("isUpgrade — strictly better fills the right slot") {
     GearShelf shelf;
     Equipment equipment;
     equipment.weapon = shelf.baseSword; // his unremovable floor, power 12

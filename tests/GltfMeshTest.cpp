@@ -4,7 +4,6 @@
 
 #include "engine/assets/GltfMesh.hpp"
 
-using render::MeshData;
 
 namespace {
 
@@ -29,7 +28,7 @@ constexpr const char* kTriangleGltf = R"({
     "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAAAAAAIA/" }]
 })";
 
-// Minimal skinned glTF (B2): one triangle bound to a 2-joint skin whose
+// Minimal skinned glTF: one triangle bound to a 2-joint skin whose
 // file order is CHILD-FIRST — exercises parse, JOINTS_0/WEIGHTS_0 decode,
 // weight normalization, and above all the parents-first joint REMAP that
 // keeps palette indices aligned with loadGltfSkeleton's reorder.
@@ -106,8 +105,8 @@ TEST_CASE("malformed glTF is rejected, not crashed on") {
             .has_value());
 }
 
-TEST_CASE("skinned glTF import remaps JOINTS_0 to the parents-first order "
-          "(B2)") {
+TEST_CASE("skinned glTF import remaps JOINTS_0 to the "
+          "parents-first order") {
     const auto mesh = assets::loadGltfSkinnedMeshFromMemory(
         kSkinnedGltf, std::strlen(kSkinnedGltf));
     REQUIRE(mesh.has_value());

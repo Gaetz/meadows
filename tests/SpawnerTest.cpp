@@ -28,8 +28,8 @@ const Guid kMissingBase =
 data::FormTypeRegistry makeTypes() {
     data::FormTypeRegistry types;
     data::registerCoreFormTypes(types);
-    data::registerVisualFormTypes(types); // StaticForm/MaterialForm (B1)
-    gameplay::registerCharacterFormTypes(types); // AppearanceForm (B6)
+    data::registerVisualFormTypes(types); // StaticForm/MaterialForm
+    gameplay::registerCharacterFormTypes(types); // AppearanceForm
     world::registerWorldFormTypes(types);
     return types;
 }
@@ -150,7 +150,7 @@ position = [5.0, 6.0, 0.0]
     CHECK(entity.get<world::Transform>().position.y == 6.0f);
 }
 
-TEST_CASE("extract (B1): a spawned StaticForm reference lands in the "
+TEST_CASE("extract: a spawned StaticForm reference lands in the "
           "snapshot's mesh section") {
     Fixture fx;
     const auto base = parse(fx.types, R"toml(
@@ -210,7 +210,7 @@ scale = [2.0, 2.0, 2.0]
     CHECK(snapshot.meshes[0].transform[0].x == doctest::Approx(2.0f));
 }
 
-TEST_CASE("resolveActorVisual (B6): ActorForm + AppearanceForm resolve to "
+TEST_CASE("resolveActorVisual: ActorForm + AppearanceForm resolve to "
           "a drawable visual") {
     Fixture fx;
     const auto base = parse(fx.types, R"toml(
@@ -267,7 +267,7 @@ editorId = "LegacyNpc"
     CHECK_FALSE(world::resolveActorVisual(fx.db, *legacy).has_value());
 }
 
-TEST_CASE("collectLights picks the nearest N, deterministically (ch.2 B5)") {
+TEST_CASE("collectLights picks the nearest N, deterministically") {
     Fixture fx;
     const auto light = [&](f32 x, f32 intensity) {
         ecs::Entity e = fx.world.create();

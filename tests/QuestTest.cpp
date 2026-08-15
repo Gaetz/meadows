@@ -89,7 +89,7 @@ TEST_CASE("quest: tasks progress on matching events and the quest completes") {
     CHECK(questState(log, kQuest) == kDone);
 }
 
-// 8.7c — data-driven quest starts: QuestForm.startEvent + startQuestsOn.
+// Data-driven quest starts: QuestForm.startEvent + startQuestsOn.
 TEST_CASE("startQuestsOn begins matching quests once, never restarts") {
     data::FormDatabase db = buildQuestDb();
     // Give the quest a start event (the dialogue option fires it).
@@ -171,7 +171,7 @@ TEST_CASE("a branch into a Failure state fails the quest") {
     CHECK(questStatus(log, kQuest) == QuestStatus::Failed);
     CHECK_FALSE(isActive(log, kQuest));
     CHECK(questState(log, kQuest) == kFailed);
-    // And a failed quest never restarts through its startEvent (8.7c).
+    // And a failed quest never restarts through its startEvent.
     auto* quest = const_cast<QuestForm*>(db.find<QuestForm>(kQuest));
     quest->startEvent = "OnAcceptSlay";
     const auto started =

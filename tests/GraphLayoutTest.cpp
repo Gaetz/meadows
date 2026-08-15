@@ -103,10 +103,6 @@ TEST_CASE("isAncestorOf walks the parent chain, survives corrupt cycles") {
     CHECK_FALSE(data::isAncestorOf(parentOf, b, a));     // child is not
     CHECK_FALSE(data::isAncestorOf(parentOf, other, b)); // stranger
 
-    // The re-parent rule it implements: b may move under `other`
-    // (other is no descendant of b), but root may NOT move under b.
-    CHECK_FALSE(data::isAncestorOf(parentOf, other, b));
-    CHECK(data::isAncestorOf(parentOf, root, b)); // would cycle -> refuse
 
     // A corrupt cycle in the map terminates instead of hanging.
     std::unordered_map<Guid, Guid> cyclic { { a, b }, { b, a } };

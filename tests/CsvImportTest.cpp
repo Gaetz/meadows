@@ -90,7 +90,7 @@ TEST_CASE("csv import: explicit form guid wins; bad rows are skipped") {
     CHECK(plugin->records[1].formId == data::csvRowGuid(kPluginId, "Derived"));
 }
 
-TEST_CASE("csv import: patch mode targets another plugin's rows (C9.5)") {
+TEST_CASE("csv import: patch mode targets another plugin's rows") {
     const data::FormTypeRegistry types = makeTypes();
     const auto* type = types.findType("WeaponForm");
 

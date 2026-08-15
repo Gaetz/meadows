@@ -310,11 +310,11 @@ TEST_CASE("dungeon records: re-Accept updates live records and disables "
     CHECK_FALSE(draftDropped->enabled);
 
     // A reference whose cell changed is indexed under the new cell only.
-    const data::FormHandle enemyHandle = fx.db.handleOf(firstTorch);
+    const data::FormHandle movedHandle = fx.db.handleOf(firstTorch);
     u32 listedIn = 0;
     for (const data::FormHandle cell : fx.model.cells()) {
         for (const data::FormHandle ref : fx.model.referencesIn(cell)) {
-            if (ref.value == enemyHandle.value) {
+            if (ref.value == movedHandle.value) {
                 ++listedIn;
             }
         }

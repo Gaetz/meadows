@@ -100,8 +100,7 @@ TEST_CASE("frame composer: auto-exposure rides the free .w slots") {
 
 TEST_CASE("frame composer: sun on screen drives the god-ray fade") {
     render::FrameComposerInputs in = exteriorDay();
-    // Identity viewProj: a point at +Z1000 lands behind the NDC plane w=1.
-    // Look "at the sun": sun straight ahead in clip space.
+    // Identity viewProj; the sun points straight up — off screen.
     in.sky.sunDirection = { 0.0f, 0.1f, 0.0f };
     in.viewProj = Mat4 { 1.0f };
     in.cameraPosition = { 0.0f, 0.0f, 0.0f };

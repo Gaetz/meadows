@@ -111,7 +111,7 @@ TEST_CASE("settings: a missing file leaves the defaults standing") {
     CHECK(map.binding(InputAction::Interact).key == Key::E);
 }
 
-TEST_CASE("options capture: the rebind decision table (C9.4)") {
+TEST_CASE("options capture: the rebind decision table") {
     using Kind = CaptureResult::Kind;
     // Nothing pressed: keep waiting.
     CHECK(decideCapture(std::nullopt, std::nullopt, std::nullopt).kind ==

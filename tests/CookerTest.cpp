@@ -146,7 +146,7 @@ TEST_CASE("cooker: uncooking skips unknown type ids gracefully") {
 }
 
 // --- Golden on-disk contract ----------------------------------------------------------
-// The Batch-1 static_asserts lock FieldKind / Value / KindOf in lockstep with
+// These static_asserts lock FieldKind / Value / KindOf in lockstep with
 // EACH OTHER; the two cases below freeze their ACTUAL persisted values and the
 // full byte layout of a cooked plugin. If either fails, an on-disk format
 // change happened: either revert it, or bump kPluginBinaryVersion and write a

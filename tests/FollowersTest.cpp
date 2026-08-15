@@ -211,7 +211,7 @@ TEST_CASE("followers: recruit/dismiss ride the pending layer's cell patch") {
                !pending.isRehomed(referenceId);
     };
 
-    const ecs::Entity cellEntity = loader.loadCell(db.handleOf(kCell));
+    loader.loadCell(db.handleOf(kCell));
     ecs::Entity follower = findByRef(world, kFollowerRef);
     REQUIRE(follower.is_alive());
     follower.set<gameplay::AttributeSet>({});
@@ -262,7 +262,6 @@ TEST_CASE("followers: recruit/dismiss ride the pending layer's cell patch") {
     CHECK_FALSE(findByRef(world, kFollowerRef).is_alive());
     loader.loadCell(db.handleOf(kCell));
     CHECK(countByRef(world, kFollowerRef) == 1);
-    (void)cellEntity;
 }
 
 // --- The aggro table (gameplay::adoptOnHit — pure, headless) ------------
@@ -311,7 +310,7 @@ u64 adopt(u64 self, u64 source, u64 target, bool selfHasLiveTarget = false,
 
 } // namespace
 
-TEST_CASE("followers É2: a follower defends the party") {
+TEST_CASE("followers: a follower defends the party") {
     // A hostile hits the player -> the idle follower adopts the hostile.
     CHECK(adopt(kFollower, kHostile, kPlayer) == kHostile);
     // A hostile hits a FELLOW follower -> same adoption.
@@ -327,7 +326,7 @@ TEST_CASE("followers É2: a follower defends the party") {
     CHECK(adopt(20, kHostile, kPlayer) == 0);
 }
 
-TEST_CASE("followers É2: the player's initiative is followed") {
+TEST_CASE("followers: the player's initiative is followed") {
     // The player strikes a hostile first -> followers adopt it.
     CHECK(adopt(kFollower, kPlayer, kHostile) == kHostile);
     // But not when committed elsewhere...
@@ -336,7 +335,7 @@ TEST_CASE("followers É2: the player's initiative is followed") {
     CHECK(adopt(kFollower, kPlayer, 20) == 0);
 }
 
-TEST_CASE("followers É2: hostiles fight followers back") {
+TEST_CASE("followers: hostiles fight followers back") {
     // A follower hits a hostile -> the hostile re-aims at the follower.
     CHECK(adopt(kHostile, kFollower, kHostile) == kFollower);
     // Hit by the PLAYER: keep the default player targeting (no
@@ -348,7 +347,7 @@ TEST_CASE("followers É2: hostiles fight followers back") {
     CHECK(adopt(kHostile, kHostile, kHostile) == 0);
 }
 
-TEST_CASE("followers É2: Combat.FriendlyTrial gates follower adoption") {
+TEST_CASE("followers: Combat.FriendlyTrial gates follower adoption") {
     // Every follower adoption path is suppressed...
     CHECK(adopt(kFollower, kHostile, kPlayer, false, true) == 0);
     CHECK(adopt(kFollower, kPlayer, kHostile, false, true) == 0);
@@ -357,13 +356,13 @@ TEST_CASE("followers É2: Combat.FriendlyTrial gates follower adoption") {
     CHECK(adopt(kHostile, kFollower, kHostile, false, true) == kFollower);
 }
 
-TEST_CASE("followers É2: death disengages whoever targeted the dead") {
+TEST_CASE("followers: death disengages whoever targeted the dead") {
     CHECK(gameplay::disengageOnDeath(kHostile, kHostile));
     CHECK_FALSE(gameplay::disengageOnDeath(kHostile, kHostile2));
     CHECK_FALSE(gameplay::disengageOnDeath(kHostile, 0)); // no target: no-op
 }
 
-// --- À terre, soin, survie, rotation ------------------------------------
+// --- Downed, healing, survival, rotation ---------------------------------
 // The sim rules (docs/CHANTIER-FOLLOWERS.md): 0 HP under the
 // Follower.Protected mirror routes to State.Downed in updateLifeState (the
 // ONE life-state write point); the CombatState bleedout clock (the stagger
@@ -427,7 +426,7 @@ u64 seedWithFirstDraw(f64 p, bool wanted) {
 
 } // namespace
 
-TEST_CASE("followers É3: 0 HP routes to Downed under protection, Dead otherwise") {
+TEST_CASE("followers: 0 HP routes to Downed under protection, Dead otherwise") {
     // The bandit path is untouched: no protection tag, he just dies.
     DownFixture bandit;
     bandit.hitToZero();
@@ -450,7 +449,7 @@ TEST_CASE("followers É3: 0 HP routes to Downed under protection, Dead otherwise
     CHECK_FALSE(ally.system.tags.has(ally.dead));
 }
 
-TEST_CASE("followers É3: updateDowned counts the bleedout window ONCE") {
+TEST_CASE("followers: updateDowned counts the bleedout window ONCE") {
     DownFixture f;
     f.protect();
     f.hitToZero();
@@ -471,7 +470,7 @@ TEST_CASE("followers É3: updateDowned counts the bleedout window ONCE") {
     CHECK(up.combat.downedSeconds == doctest::Approx(2.0f));
 }
 
-TEST_CASE("followers É3: the aggravation roll is gated, seeded, distributed") {
+TEST_CASE("followers: the aggravation roll is gated, seeded, distributed") {
     const gameplay::StatsTuningForm tuning; // death 0.15, worse 0.4
     // Unwounded: no aggravation AND no draw (the stream stays untouched).
     core::Rng gated { 42 };
@@ -505,7 +504,7 @@ TEST_CASE("followers É3: the aggravation roll is gated, seeded, distributed") {
     CHECK(worse < 3800);
 }
 
-TEST_CASE("followers É3: bleedout recovery — 1 HP, a fresh wound, back up") {
+TEST_CASE("followers: bleedout recovery — 1 HP, a fresh wound, back up") {
     DownFixture f;
     f.protect();
     f.hitToZero();
@@ -526,7 +525,7 @@ TEST_CASE("followers É3: bleedout recovery — 1 HP, a fresh wound, back up") {
     CHECK_FALSE(gameplay::needsConvalescence(f.injuries));
 }
 
-TEST_CASE("followers É3: bleedout death — the roll kills through the normal path") {
+TEST_CASE("followers: bleedout death — the roll kills through the normal path") {
     DownFixture f;
     f.protect();
     f.hitToZero();
@@ -540,7 +539,7 @@ TEST_CASE("followers É3: bleedout death — the roll kills through the normal p
     CHECK_FALSE(f.system.tags.has(f.shield)); // protection lifted
 }
 
-TEST_CASE("followers É3: a wound on a wounded body can aggravate") {
+TEST_CASE("followers: a wound on a wounded body can aggravate") {
     DownFixture f;
     f.protect();
     f.hitToZero();
@@ -569,7 +568,7 @@ TEST_CASE("followers É3: a wound on a wounded body can aggravate") {
     CHECK(gameplay::convalescenceHours(f.injuries) == doctest::Approx(48.0f));
 }
 
-TEST_CASE("followers É3: convalescence stamps and the recruit-refusal gate") {
+TEST_CASE("followers: convalescence stamps and the recruit-refusal gate") {
     gameplay::FollowerState state;
     CHECK_FALSE(gameplay::followerConvalescent(state, 0.0)); // never downed
     state.followerDownedRecoveryHours = 100.0f;
@@ -593,7 +592,7 @@ TEST_CASE("followers É3: convalescence stamps and the recruit-refusal gate") {
     CHECK_FALSE(gameplay::evaluateClause(clause, context)); // recruit hides
 }
 
-TEST_CASE("followers É3: survival extremes drive resonance, never health") {
+TEST_CASE("followers: survival extremes drive resonance, never health") {
     // The 'survival floor' is STRUCTURAL: hunger/thirst feed amber and
     // sleep feeds garnet (energy/essence maxima) — no survival path
     // touches health or onyx, so survival alone cannot kill a follower.
@@ -613,7 +612,7 @@ TEST_CASE("followers É3: survival extremes drive resonance, never health") {
     CHECK_FALSE(f.system.tags.has(f.dead));
 }
 
-TEST_CASE("followers É3: no health regen while downed") {
+TEST_CASE("followers: no health regen while downed") {
     DownFixture f;
     f.protect();
     f.hitToZero();
@@ -631,13 +630,13 @@ TEST_CASE("followers É3: no health regen while downed") {
     CHECK(f.vitals.health == doctest::Approx(0.0f)); // no silent self-revive
 }
 
-// --- Recrutement complet + affinité --------------------------------------
+// --- Full recruitment + affinity ------------------------------------------
 // The new evaluator clause (FollowerAffinityAtLeast — one entry in the OCP
 // dispatch table, reading the DIALOGUE PARTNER half of EvalContext), the
 // AffinityRuleForm matcher (the QuestTaskForm event+filterTag matching) and
 // the passive time-together accrual (the VendorState hour-stamp idiom).
 
-TEST_CASE("followers É4: FollowerAffinityAtLeast reads the dialogue partner") {
+TEST_CASE("followers: FollowerAffinityAtLeast reads the dialogue partner") {
     gameplay::ConditionForm clause;
     clause.kind = "FollowerAffinityAtLeast";
     clause.value = 10.0f;
@@ -663,7 +662,7 @@ TEST_CASE("followers É4: FollowerAffinityAtLeast reads the dialogue partner") {
     CHECK(gameplay::conditionSummary(clause) == "if affinity >= 10");
 }
 
-TEST_CASE("followers É4: affinity rules match event, filterTag and parties") {
+TEST_CASE("followers: affinity rules match event, filterTag and parties") {
     gameplay::GameplayTagRegistry tags;
     const gameplay::GameplayTag bandit = tags.registerTag("Faction.Bandits.East");
 
@@ -712,7 +711,7 @@ TEST_CASE("followers É4: affinity rules match event, filterTag and parties") {
     CHECK(gameplay::affinityDelta(rules, view, tags) == doctest::Approx(0.0f));
 }
 
-TEST_CASE("followers É4: passive accrual math and the ±100 clamp") {
+TEST_CASE("followers: passive accrual math and the ±100 clamp") {
     gameplay::FollowerState state;
     // The first stamp (delta 0) and clock hiccups are inert.
     CHECK(gameplay::accrueTimeTogether(state, 0.0f, 0.5f) ==
@@ -795,7 +794,7 @@ data::FormDatabase buildRecruitDialogueDb() {
 
 } // namespace
 
-TEST_CASE("followers É4: the failing condition picks the refusal option") {
+TEST_CASE("followers: the failing condition picks the refusal option") {
     const data::FormDatabase db = buildRecruitDialogueDb();
     gameplay::EventBus bus;
     gameplay::GameplayTagRegistry tags;
@@ -836,14 +835,14 @@ TEST_CASE("followers É4: the failing condition picks the refusal option") {
     CHECK(only() == kRefusalA);
 }
 
-// --- Classes, niveaux, évolution ------------------------------------------
+// --- Classes, levels, progression -----------------------------------------
 // The pure rules (docs/CHANTIER-FOLLOWERS.md): the age curve applied as
 // per-tick StatModifiers (the equipmentMods fold — §2.9: nothing persisted,
 // no synthetic effects), the player-linked level sync, the +1 attribute
 // point walk, and the curve DELTA on level changes (bonus points survive;
 // the recompute path preserves vitals — no mid-game full heal).
 
-TEST_CASE("followers É5: age multipliers — ageless, onset, slope, floor") {
+TEST_CASE("followers: age multipliers — ageless, onset, slope, floor") {
     const gameplay::StatsTuningForm tuning; // onset 45, .008/.005, floor .5
     // Ageless (ActorForm.age default 0) and below onset: both stay 1.
     CHECK(gameplay::ageMultipliers(0.0f, tuning).physical == 1.0f);
@@ -863,7 +862,7 @@ TEST_CASE("followers É5: age multipliers — ageless, onset, slope, floor") {
     CHECK(ancient.mental == doctest::Approx(tuning.ageFloor));
 }
 
-TEST_CASE("followers É5: age mods shrink CURRENT attributes, never the maxima") {
+TEST_CASE("followers: age mods shrink CURRENT attributes, never the maxima") {
     const gameplay::StatsTuningForm tuning;
     // The fold contract (armorModifiers): multiply into existing entries.
     gameplay::StatModifiers mods;
@@ -881,7 +880,7 @@ TEST_CASE("followers É5: age mods shrink CURRENT attributes, never the maxima")
 
     // Through the recompute: current strength drops, but the primary
     // maxima derive from BASE attributes (docs/STATS.md §2) — the doc's
-    // « compétence_effective = base × multiplicateur », not a health nerf.
+    // "effective skill = base x multiplier", not a health nerf.
     DownFixture f;
     const f32 maxBefore = currentValueOf(f.system, attr("maxHealth"));
     const f32 strengthBefore = currentValueOf(f.system, attr("strength"));
@@ -894,7 +893,7 @@ TEST_CASE("followers É5: age mods shrink CURRENT attributes, never the maxima")
           doctest::Approx(maxBefore));
 }
 
-TEST_CASE("followers É5: level sync — tracking, catch-up, first meet, stamps") {
+TEST_CASE("followers: level sync — tracking, catch-up, first meet, stamps") {
     using gameplay::syncFollowerLevel;
     // First meeting (lastSyncedFrom 0, the default): stamp only — no
     // retroactive gain from the player's pre-acquaintance levels.
@@ -929,7 +928,7 @@ TEST_CASE("followers É5: level sync — tracking, catch-up, first meet, stamps"
     CHECK(s.pointsGained == 0);
 }
 
-TEST_CASE("followers É5: the +1 point walks the player's attributes descending") {
+TEST_CASE("followers: the +1 point walks the player's attributes descending") {
     gameplay::CoreAttributes player;   // defaults: 6s, insight 0
     gameplay::CoreAttributes follower; // same
     // Equal everywhere: no attribute is strictly greater -> no point.
@@ -963,7 +962,7 @@ TEST_CASE("followers É5: the +1 point walks the player's attributes descending"
     CHECK_FALSE(gameplay::bonusAttribute(player, titan).has_value());
 }
 
-TEST_CASE("followers É5: curves at spawn, DELTA on level-up — bonuses and vitals survive") {
+TEST_CASE("followers: curves at spawn, DELTA on level-up — bonuses and vitals survive") {
     gameplay::FollowerClassForm cls; // the ClassWarrior shape
     cls.strengthBase = 7.0f;
     cls.strengthPerLevel = 1.5f;
@@ -1100,7 +1099,7 @@ data::FormDatabase buildPerkDb(data::FormTypeRegistry& types) {
 
 } // namespace
 
-TEST_CASE("followers É6: syncClassPerks gates by level and never doubles") {
+TEST_CASE("followers: syncClassPerks gates by level and never doubles") {
     data::FormTypeRegistry types;
     data::FormDatabase db = buildPerkDb(types);
     gameplay::GameplayTagRegistry tags;
@@ -1140,7 +1139,7 @@ TEST_CASE("followers É6: syncClassPerks gates by level and never doubles") {
     CHECK(system.activeEffects.size() == 1);
 }
 
-TEST_CASE("followers É6: grantPerk — the learned-perk dedup (grantedTag)") {
+TEST_CASE("followers: grantPerk — the learned-perk dedup (grantedTag)") {
     data::FormTypeRegistry types;
     data::FormDatabase db = buildPerkDb(types);
     gameplay::GameplayTagRegistry tags;
@@ -1165,7 +1164,7 @@ TEST_CASE("followers É6: grantPerk — the learned-perk dedup (grantedTag)") {
     CHECK(system.activeEffects.size() == 1);
 }
 
-TEST_CASE("followers É6: grantedAbilities round-trip the save layer") {
+TEST_CASE("followers: grantedAbilities round-trip the save layer") {
     gameplay::GameplayTagRegistry tags;
     tags.registerTag("State.Dead");
     const Guid ref = guid("60000000-0000-4000-8000-0000000000aa");
@@ -1221,7 +1220,7 @@ TEST_CASE("followers É6: grantedAbilities round-trip the save layer") {
           2);
 }
 
-TEST_CASE("followers É6: the healer's pick — lowest ally below the bar") {
+TEST_CASE("followers: the healer's pick — lowest ally below the bar") {
     using gameplay::pickHealTarget;
     const f32 bar = 0.5f;
     // Nobody below the threshold: keep the essence.
@@ -1238,7 +1237,7 @@ TEST_CASE("followers É6: the healer's pick — lowest ally below the bar") {
     CHECK(pickHealTarget({ { 1, 0.5f } }, bar) == 0);
 }
 
-TEST_CASE("followers É6: pickPower skips the shared attack ability") {
+TEST_CASE("followers: pickPower skips the shared attack ability") {
     const Guid attack = guid("60000000-0000-4000-8000-0000000000ab");
     const Guid power = guid("60000000-0000-4000-8000-0000000000ac");
     CHECK(gameplay::pickPower({}, attack) == Guid {});
@@ -1249,7 +1248,7 @@ TEST_CASE("followers É6: pickPower skips the shared attack ability") {
 
 // ---- Follower carry weight ------------------------------------------------
 
-TEST_CASE("followers É7: carry factor is the É5 physical age multiplier") {
+TEST_CASE("followers: carry factor is the physical age multiplier") {
     const gameplay::StatsTuningForm tuning;
     CHECK(gameplay::followerCarryFactor(0.0f, tuning) == 1.0f);  // ageless
     CHECK(gameplay::followerCarryFactor(28.0f, tuning) == 1.0f); // Aldric
@@ -1257,7 +1256,7 @@ TEST_CASE("followers É7: carry factor is the É5 physical age multiplier") {
           doctest::Approx(gameplay::ageMultipliers(52.0f, tuning).physical));
 }
 
-TEST_CASE("followers É7: canCarry — the follower refuses the excess item") {
+TEST_CASE("followers: canCarry — the follower refuses the excess item") {
     // Player-style grace: stats not computed yet (max <= 0) accepts.
     CHECK(gameplay::canCarry(100.0f, 50.0f, 0.0f, 1.0f));
     // Exact fit is allowed; one gram over is refused.
@@ -1268,7 +1267,7 @@ TEST_CASE("followers É7: canCarry — the follower refuses the excess item") {
     CHECK_FALSE(gameplay::canCarry(41.0f, 5.0f, 50.0f, 0.9f));
 }
 
-// ---- Mort, tombe, enterrement ----------------------------------------------
+// ---- Death, grave, burial --------------------------------------------------
 // The grave contract at the model level (the recruit precedent — the scene
 // controller resolves entities, the LAYER carries the persistence):
 // createReference generalizes the disableReference materialization into a
@@ -1326,7 +1325,7 @@ struct GraveFixture {
 
 } // namespace
 
-TEST_CASE("followers É8: the grave guid derivation is deterministic") {
+TEST_CASE("followers: the grave guid derivation is deterministic") {
     const Guid corpseRef = kFollowerRef;
     const Guid grave = Guid::combine(corpseRef, kGraveNs);
     // Stable across calls ("sessions"), never the source, unique per
@@ -1340,7 +1339,7 @@ TEST_CASE("followers É8: the grave guid derivation is deterministic") {
     CHECK(grave.isValid());
 }
 
-TEST_CASE("followers É8: createReference -> flush -> re-resolve = a "
+TEST_CASE("followers: createReference -> flush -> re-resolve = a "
           "persistent reference") {
     GraveFixture fx;
     const Guid graveRef = Guid::combine(kFollowerRef, kGraveNs);
@@ -1404,7 +1403,7 @@ TEST_CASE("followers É8: createReference -> flush -> re-resolve = a "
     CHECK(grave.get<world::RefId>().referenceId == graveRef);
 }
 
-TEST_CASE("followers É8: a grave's content survives capture -> re-resolve") {
+TEST_CASE("followers: a grave's content survives capture -> re-resolve") {
     GraveFixture fx;
     const Guid graveRef = Guid::combine(kFollowerRef, kGraveNs);
 
@@ -1465,7 +1464,7 @@ TEST_CASE("followers É8: a grave's content survives capture -> re-resolve") {
                               kFleur) == 2);
 }
 
-TEST_CASE("followers É8: transferAllItems empties the corpse into the grave") {
+TEST_CASE("followers: transferAllItems empties the corpse into the grave") {
     const Guid sword = guid("eeee0003-0000-4000-8000-000000000001");
     gameplay::Inventory corpse;
     gameplay::addItem(corpse, kFleur, 1);
@@ -1483,14 +1482,14 @@ TEST_CASE("followers É8: transferAllItems empties the corpse into the grave") {
     CHECK(gameplay::itemCount(grave, kFleur) == 3);
 }
 
-// --- Multi-followers, commandes, vie ambiante ----------------------------
+// --- Multi-followers, commands, ambient life -----------------------------
 // The pure layer (docs/CHANTIER-FOLLOWERS.md): party caps by follower
 // category against the §5 tuning knobs; the stance vocabulary (one
 // decode/encode point); defend = the aggro table minus rule 4; ambient
 // comments and banter on the 10-game-hour anti-repeat with oneShot and
 // ordered chaining. Anti-repeat clocks are runtime-only v1 (stated).
 
-TEST_CASE("followers É9: party caps — census and the recruit gate") {
+TEST_CASE("followers: party caps — census and the recruit gate") {
     gameplay::PartyCounts counts;
     gameplay::countPartyMember(counts, "major");
     gameplay::countPartyMember(counts, "minor");
@@ -1515,7 +1514,7 @@ TEST_CASE("followers É9: party caps — census and the recruit gate") {
     CHECK(verdict("", 5, 0) == gameplay::RecruitVerdict::MajorsFull);
 }
 
-TEST_CASE("followers É9: the stance vocabulary — one transition point") {
+TEST_CASE("followers: the stance vocabulary — one transition point") {
     gameplay::FollowerState state;
     CHECK(gameplay::followerStance(state) ==
           gameplay::FollowerStance::Follow);
@@ -1538,7 +1537,7 @@ TEST_CASE("followers É9: the stance vocabulary — one transition point") {
           gameplay::FollowerStance::Follow);
 }
 
-TEST_CASE("followers É9: defend disables the player-initiative adoption") {
+TEST_CASE("followers: defend disables the player-initiative adoption") {
     // Follow(0) vs defend(3) differ in exactly rule 4: the player strikes
     // a hostile first — a defender stays put...
     gameplay::AggroRoles roles = rolesFor(kFollower, kPlayer, kHostile);
@@ -1556,7 +1555,7 @@ TEST_CASE("followers É9: defend disables the player-initiative adoption") {
     CHECK(gameplay::adoptOnHit(kHostile2, kFollower, roles) == kHostile2);
 }
 
-TEST_CASE("followers É9: commentMatches — event, filterTag, minValue, source") {
+TEST_CASE("followers: commentMatches — event, filterTag, minValue, source") {
     gameplay::GameplayTagRegistry tags;
     const gameplay::GameplayTag bandits = tags.registerTag("Faction.Bandits");
     const gameplay::GameplayTag guards = tags.registerTag("Faction.Guards");
@@ -1594,7 +1593,7 @@ TEST_CASE("followers É9: commentMatches — event, filterTag, minValue, source"
                                    1.0f, true, tags));
 }
 
-TEST_CASE("followers É9: decideComment — cooldown, one-shot, sneak, chaining") {
+TEST_CASE("followers: decideComment — cooldown, one-shot, sneak, chaining") {
     gameplay::CommentForm comment; // cooldownHours defaults to the doc's 10
     const gameplay::CommentClock never {};
 
@@ -1625,7 +1624,7 @@ TEST_CASE("followers É9: decideComment — cooldown, one-shot, sneak, chaining"
                                   prerequisite));
 }
 
-TEST_CASE("followers É9: banter — pair matching, bond gate, anti-repeat") {
+TEST_CASE("followers: banter — pair matching, bond gate, anti-repeat") {
     const Guid aldric = guid("eeee0009-0000-4000-8000-00000000000a");
     const Guid maela = guid("eeee0009-0000-4000-8000-00000000000b");
     const Guid other = guid("eeee0009-0000-4000-8000-00000000000c");
@@ -1669,7 +1668,7 @@ TEST_CASE("followers É9: banter — pair matching, bond gate, anti-repeat") {
 // phase walk (engaged -> warning -> expired), and the renewal extension
 // (max(now, expiry) + days). All pure, headless (§2.10).
 
-TEST_CASE("followers É10: mercenaryPrice — level axis, wealth axis, rounding") {
+TEST_CASE("followers: mercenaryPrice — level axis, wealth axis, rounding") {
     gameplay::StatsTuningForm tuning; // 0.15 / 1000 / 0.5 defaults
 
     // The floor: level 1, empty pockets = exactly the base.
@@ -1703,7 +1702,7 @@ TEST_CASE("followers É10: mercenaryPrice — level axis, wealth axis, rounding"
     CHECK(gameplay::mercenaryPrice(100.0f, 1.0f, 100000, tuning) == 100);
 }
 
-TEST_CASE("followers É10: contractPhase — the hire -> warning -> expiry walk") {
+TEST_CASE("followers: contractPhase — the hire -> warning -> expiry walk") {
     // No stamp = not under contract (the default 0).
     CHECK(gameplay::contractPhase(50.0, 0.0f, 12.0f) ==
           gameplay::ContractPhase::None);
@@ -1733,7 +1732,7 @@ TEST_CASE("followers É10: contractPhase — the hire -> warning -> expiry walk"
           gameplay::ContractPhase::Engaged);
 }
 
-TEST_CASE("followers É10: extendContract — from max(now, expiry)") {
+TEST_CASE("followers: extendContract — from max(now, expiry)") {
     // A fresh hire (stamp 0) starts from NOW: 7 days on hour 10 = 178.
     CHECK(gameplay::extendContract(10.0, 0.0f, 7.0f) ==
           doctest::Approx(178.0f));

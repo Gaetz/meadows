@@ -117,6 +117,7 @@ TEST_CASE("quest save: mid-quest progress round-trips through a plugin") {
     // Determinism (§8): capturing twice yields identical record ids.
     const auto again = quest::captureQuestLog(log);
     REQUIRE(again.size() == save.records.size());
+    REQUIRE(again.size() >= 2);
     CHECK(again[0].formId == save.records[0].formId);
     CHECK(again[1].formId == save.records[1].formId);
 }

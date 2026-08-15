@@ -2,7 +2,7 @@
 
 #include "engine/physics/Physics.hpp"
 
-// H3: the Jolt seam works headless — a capsule character falls onto a
+// The Jolt seam works headless — a capsule character falls onto a
 // static floor, lands, and walks; rays hit what they should.
 
 TEST_CASE("a character capsule falls onto a static box and rests on it") {
@@ -41,7 +41,7 @@ TEST_CASE("a character capsule falls onto a static box and rests on it") {
     CHECK(character.onGround());
 }
 
-TEST_CASE("a capsule lands on a height field and climbs its slope (B4)") {
+TEST_CASE("a capsule lands on a height field and climbs its slope") {
     phys::PhysicsWorld world;
     // 64x64 samples, 1 m apart: a plane at y = 5 rising along +X at 20 %
     // past x = 32 (gentle slope, well under the 50° walkable limit).
@@ -90,7 +90,7 @@ TEST_CASE("a capsule lands on a height field and climbs its slope (B4)") {
           5.0f + (character.position().x - 32.0f) * 0.2f - 0.5f);
 }
 
-TEST_CASE("a static triangle mesh blocks a capsule and rays (ch.2 B2)") {
+TEST_CASE("a static triangle mesh blocks a capsule and rays") {
     phys::PhysicsWorld world;
     // A 10x10 m quad at y = 2, two triangles, scaled x2 through the API.
     const Vec3 vertices[] = { { -5.0f, 2.0f, -5.0f },
@@ -163,7 +163,7 @@ TEST_CASE("sphere casts sweep into geometry a ray would miss") {
     CHECK(swept.normal.z == doctest::Approx(1.0f).epsilon(0.05));
 
     // Off to the side: a RAY misses the post, the fat sweep clips it —
-    // exactly the melee-arc forgiveness the hit windows want (A4).
+    // exactly the melee-arc forgiveness the hit windows want.
     const phys::RayHit grazeRay = world.rayCast(
         { 0.55f, 2.0f, 5.0f }, { 0.0f, 0.0f, -1.0f }, 10.0f);
     CHECK_FALSE(grazeRay.hit);

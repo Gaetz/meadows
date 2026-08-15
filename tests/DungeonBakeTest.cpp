@@ -77,8 +77,8 @@ TEST_CASE("dungeon bake: same seed replays bit for bit (§8)") {
     CHECK(a.entrancePos == b.entrancePos);
 
     const DungeonBakeResult c = bakeDungeon(mineParams(8));
-    CHECK(a.cellMeshes.size() * a.torches.size() !=
-          c.cellMeshes.size() * c.torches.size());
+    CHECK((a.cellMeshes.size() != c.cellMeshes.size() ||
+           a.torches.size() != c.torches.size()));
 }
 
 TEST_CASE("dungeon bake: lock-and-key missions anchor paired barriers and levers") {

@@ -43,8 +43,8 @@ struct Fixture {
         addPerk(kPerk1, "maxHealth", 25.0f);
         addPerk(kPerk2, "maxEnergy", 50.0f);
 
-        // The trained ability: maps to the skill, no cost/effect (v1 the
-        // mapping is the only new field — APPEND on AbilityForm).
+        // The trained ability: maps to the skill, no cost/effect (the
+        // skill mapping is the ability's only extra field).
         auto ability = std::make_unique<AbilityForm>();
         ability->id = kAbility;
         ability->editorId = "SlashTraining";

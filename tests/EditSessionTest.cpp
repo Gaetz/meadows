@@ -11,7 +11,7 @@
 #include "data/plugins/TomlWriter.hpp"
 #include "quest/Quest.hpp"
 
-// H2: the editor-writes-plugins loop, end to end and headless — edit a
+// The editor-writes-plugins loop, end to end and headless — edit a
 // resolved form, export the diff, re-parse it through the NORMAL plugin
 // pipeline, and get the edited world back.
 
@@ -196,7 +196,7 @@ TEST_CASE("duplicate clones every field under a new guid, undo/redo safe") {
     CHECK_FALSE(session.duplicateForm(core::Guid::generate(), "x").isValid());
 
     // Undo drops the copy; redo re-clones the FIELDS, not just the shell.
-    session.undo(); // pops the failed... no-op ops are not pushed
+    session.undo(); // the failed duplicate pushed no op — pops the copy
     CHECK(session.view(copyId) == nullptr);
     session.redo();
     REQUIRE(asWeapon(copyId) != nullptr);

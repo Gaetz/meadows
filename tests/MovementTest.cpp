@@ -39,7 +39,7 @@ TEST_CASE("movement: entities without a Velocity are not moved") {
 }
 
 TEST_CASE("swimming transitions: deep water swims, shores and surfaces "
-          "ground (P0 D2b)") {
+          "ground") {
     using gameplay::decideMoveMode;
     using gameplay::MoveMode;
     const f32 head = 1.7f;

@@ -202,7 +202,7 @@ TEST_CASE("trigger volumes: two actors are tracked independently") {
     CHECK(f.received[2].value == 0.0f);
 }
 
-TEST_CASE("trigger volumes: the B1 spatial-index path matches the full "
+TEST_CASE("trigger volumes: the spatial-index path matches the full "
           "scan, leave-sweep included") {
     Fixture f;
     ecs::Entity actor = f.makeActor({ 50.0f, 0.0f, 0.0f });

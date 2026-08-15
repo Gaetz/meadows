@@ -1,11 +1,11 @@
 #include <doctest/doctest.h>
-#include "gameplay/combat/PlayerAction.hpp" // R5
+#include "gameplay/combat/PlayerAction.hpp"
 
 using gameplay::decidePlayerAction;
 using gameplay::PlayerAction;
 using gameplay::PlayerActionInputs;
 
-TEST_CASE("player action: plain frames are Idle (R5)") {
+TEST_CASE("player action: plain frames are Idle") {
     // Nothing pressed, nothing in flight: Idle, drawn or sheathed.
     PlayerActionInputs in;
     CHECK(decidePlayerAction(in) == PlayerAction::Idle);
@@ -18,14 +18,14 @@ TEST_CASE("player action: the guard needs a DRAWN melee weapon") {
     PlayerActionInputs in;
     in.blockHeld = true;
     CHECK(decidePlayerAction(in) == PlayerAction::Idle);
-    // ...drawn, it is the A5 raised guard.
+    // ...drawn, it is the raised guard.
     in.weaponDrawn = true;
     CHECK(decidePlayerAction(in) == PlayerAction::Blocking);
 }
 
-TEST_CASE("player action: a bow raises no guard (review 7b)") {
-    // The one deliberate change: RMB with a ranged weapon used to grant
-    // a full shield guard (blockFactor 0.7) — now it does nothing.
+TEST_CASE("player action: a bow raises no guard") {
+    // RMB with a ranged weapon grants no guard — a bow is not a
+    // shield.
     PlayerActionInputs in;
     in.weaponDrawn = true;
     in.rangedWeapon = true;

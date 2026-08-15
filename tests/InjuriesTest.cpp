@@ -108,10 +108,10 @@ TEST_CASE("injuries: syncInjuryEffects removes old effects and re-applies fresh 
     addInjury(injuries, InjuryType::Cut, BodyPart::Torso);
     syncInjuryEffects(injuries, sys, vitals, tags);
     const auto countBefore = sys.activeEffects.size();
+    CHECK(countBefore > 0);
 
     // Clear all injuries and sync -> no more injury effects.
     injuries.list.clear();
     syncInjuryEffects(injuries, sys, vitals, tags);
     CHECK(sys.activeEffects.empty());
-    (void)countBefore; // verifiable: countBefore > 0
 }

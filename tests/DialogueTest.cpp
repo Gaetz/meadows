@@ -100,7 +100,7 @@ TEST_CASE("dialogue: chunk flow, condition-gated options, events on select") {
     CHECK(runner.options(ctx).empty());
 }
 
-// 8.7e — the world-side-effect hook: onNodeFired fires for every entered
+// The world-side-effect hook: onNodeFired fires for every entered
 // NPC line AND every picked option (where the game layer applies
 // takeItem/takeCount to the player inventory).
 TEST_CASE("dialogue: onNodeFired reports every fired node, with its fields") {

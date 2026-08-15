@@ -96,7 +96,7 @@ TEST_CASE("afflictions: re-infliction refreshes the timer, not stack") {
     CHECK(inflictEffect(vitals, sys, fever, -100.0f, 1.0, rng, tags));
     CHECK(sys.activeEffects.size() == countAfterFirst);
     for (const auto& ae : sys.activeEffects) {
-        CHECK(ae.remaining == doctest::Approx(48.0f * 3600.0f).epsilon(1.0f));
+        CHECK(ae.remaining == doctest::Approx(48.0f * 3600.0f));
     }
 }
 

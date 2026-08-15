@@ -49,7 +49,7 @@ TEST_CASE("loc: a missing key falls back to the key itself") {
     CHECK(texts.format("no.such.key", "x") == "no.such.key");
 }
 
-TEST_CASE("loc: format fills N slots left to right (C9.5)") {
+TEST_CASE("loc: format fills N slots left to right") {
     data::FormTypeRegistry types;
     data::registerLocFormTypes(types);
     const auto* type = types.findType("LocStringForm");

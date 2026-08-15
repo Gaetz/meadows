@@ -33,7 +33,7 @@ TEST_CASE("event bus: payload is delivered; unsubscribe stops a handler") {
     CHECK(totalDamage == 15.0f); // no longer listening
 }
 
-// 8.7c — the quest system listens to EVERYTHING (open, data-defined
+// The quest system listens to EVERYTHING (open, data-defined
 // event vocabulary): subscribeAll receives any kind, in subscription
 // order with the per-kind handlers.
 TEST_CASE("event bus: subscribeAll receives every kind") {

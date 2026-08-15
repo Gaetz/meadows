@@ -2,7 +2,7 @@
 
 #include "engine/audio/Audio.hpp"
 
-// H6: the audio seam runs fully headless on miniaudio's null backend —
+// The audio seam runs fully headless on miniaudio's null backend —
 // same code paths as the real device, no hardware, CI-safe.
 
 TEST_CASE("audio system lifecycle on the null backend") {

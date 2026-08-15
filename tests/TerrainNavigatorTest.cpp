@@ -2,8 +2,8 @@
 
 #include "world/ai/TerrainNavigator.hpp"
 
-// Le fallback sanctionné du seam nav : A* 3D lazy sur une
-// fonction de hauteur, pentes et boîtes bloquantes respectées.
+// The nav seam's sanctioned fallback: lazy 3D A* over a height
+// function, honoring slopes and blocking boxes.
 
 TEST_CASE("terrain navigator goes around a blocking box") {
     world::TerrainNavigator nav { [](f32, f32) { return 0.0f; } };

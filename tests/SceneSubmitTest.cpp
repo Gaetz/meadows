@@ -5,7 +5,7 @@
 #include "game/SceneSubmit.hpp"
 
 // The render bridge's GPU path (texture resolution, submission) needs a live GL
-// context, so it is exercised by running the game (brick e). What is pure and
+// context, so it is exercised by running the game. What is pure and
 // unit-testable is the component → sprite mapping, including the 2D yaw.
 
 TEST_CASE("scene submit: maps transform + sprite render to a 2D sprite") {

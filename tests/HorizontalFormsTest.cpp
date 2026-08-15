@@ -15,7 +15,7 @@
 #include "gameplay/interaction/FurnitureForms.hpp"
 #include "world/worldspace/WorldForms.hpp"
 
-// Horizontal pass H1: every new Form family resolves through the §5
+// Every new Form family resolves through the §5
 // pipeline, the child-record convention queries cleanly, and a mod can
 // patch a field or ADD a child without touching the parent.
 
