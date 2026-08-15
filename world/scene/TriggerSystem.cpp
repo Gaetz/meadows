@@ -8,7 +8,7 @@
 
 #include "gameplay/event/EventBus.hpp"
 #include "world/scene/Components.hpp"
-#include "world/scene/SpatialIndex.hpp" // B1: the near-actors fast path
+#include "world/scene/SpatialIndex.hpp" // the near-actors fast path
 
 namespace world {
 
@@ -45,7 +45,7 @@ void updateTriggerVolumes(ecs::World& world, const TriggerCallbacks& cb,
                 actors.push_back({ entity, transform.position });
             });
     }
-    vector<SpatialIndex::Entry> nearby; // per-volume scratch (B1 path)
+    vector<SpatialIndex::Entry> nearby; // per-volume scratch
 
     vector<ecs::Entity> triggers;
     world.handle()
@@ -66,7 +66,7 @@ void updateTriggerVolumes(ecs::World& world, const TriggerCallbacks& cb,
         TriggerOccupancy occupancy = trigger.ensure<TriggerOccupancy>();
         bool fired = volume.fired;
 
-        // B1: with an index, only the actors within the box's bounding
+        // With an index, only the actors within the box's bounding
         // sphere are candidates — anyone further out is outside for sure.
         vector<Actor> candidates;
         if (index) {
@@ -122,7 +122,7 @@ void updateTriggerVolumes(ecs::World& world, const TriggerCallbacks& cb,
             }
         }
 
-        // B1 leave-sweep: an occupant no longer among the candidates left
+        // Leave-sweep: an occupant no longer among the candidates left
         // the neighborhood entirely — that IS a leave (the full scan got
         // this for free by testing every actor).
         if (index) {

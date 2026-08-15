@@ -15,7 +15,7 @@
 #include "gameplay/ai/ScheduleSystem.hpp" // updateInterruption edges
 #include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/actors/Followers.hpp"  // foldAgeModifiers
-#include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions (C2)
+#include "gameplay/cue/GameplayCues.hpp"        // Cue.* emissions
 #include "gameplay/event/EventBus.hpp"
 #include "gameplay/inventory/Inventory.hpp" // Equipment (the weapon link)
 #include "gameplay/stats/EquipmentStats.hpp" // armor protects NPCs too
@@ -118,7 +118,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             ctx.eventBus.dispatch({ gameplay::eventKind("OnDeath"),
                                     ecs::Entity {}, npc.entity,
                                     npc.factionTag });
-            if (ctx.cues) { // C2: the fall's LOOK (dust puff by default)
+            if (ctx.cues) { // the fall's LOOK (dust puff by default)
                 ctx.cues->emit({ "Cue.Death",
                                  transform.position +
                                      Vec3 { 0.0f, 0.6f, 0.0f },
@@ -160,7 +160,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
             ctx.eventBus.dispatch({ gameplay::eventKind("OnDowned"),
                                     ecs::Entity {}, npc.entity,
                                     npc.factionTag });
-            LOG_INFO("É3: {} is DOWN ({:.0f}s bleedout window)",
+            LOG_INFO("{} is DOWN ({:.0f}s bleedout window)",
                      npc.editorId, ctx.statsTuning.downedBleedoutSeconds);
         } else if (!npc.downed && wasDowned) {
             npc.sitting = false; // back up: drop the kneel-proxy pose
@@ -217,7 +217,7 @@ void NpcDirector::update(f32 dt, const NpcContext& ctx) {
         npc.weaponDrawn = inCombat;
         // An ACTIVE follower overrides his schedule with the
         // follow package (combat still wins the frame). Non-followers keep
-        // the exact prior dispatch (iso-behavior). The « rester »
+        // the exact prior dispatch (iso-behavior). The Stay
         // stance HOLDS him instead — active, standing at his spot; his
         // schedule takes over only on a DISMISS (v1 sandbox statement:
         // the home schedules are the town life of dismissed followers).

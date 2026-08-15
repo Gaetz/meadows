@@ -168,11 +168,11 @@ void FollowerController::applyLevelSync(const FollowerContext& ctx,
             follower.get_mut<gameplay::AttributeSet>(),
             follower.get_mut<gameplay::AbilitySystem>(), ctx.gameTags);
         if (granted > 0) {
-            LOG_INFO("É6: {} unlocks {} class perk(s) at level {:.0f}",
+            LOG_INFO("{} unlocks {} class perk(s) at level {:.0f}",
                      actor.editorId, granted, sync.level);
         }
     }
-    LOG_INFO("É5: {} level {:.0f} -> {:.0f}{}", actor.editorId, fromLevel,
+    LOG_INFO("{} level {:.0f} -> {:.0f}{}", actor.editorId, fromLevel,
              sync.level, bonusText);
 }
 
@@ -189,7 +189,7 @@ void FollowerController::recruit(const FollowerContext& ctx,
     // A convalescent follower refuses (the dialogue's refusal option
     // is the UX; this is the belt-and-braces code gate).
     if (gameplay::followerConvalescent(state, ctx.gameClock.gameHours())) {
-        LOG_INFO("É3: recruit refused — '{}' is convalescent for {:.1f} h",
+        LOG_INFO("recruit refused — '{}' is convalescent for {:.1f} h",
                  actor->editorId,
                  state.followerDownedRecoveryHours -
                      ctx.gameClock.gameHours());
@@ -207,7 +207,7 @@ void FollowerController::recruit(const FollowerContext& ctx,
             toast(ctx, ctx.texts->format("follower.partyFull",
                                          actor->displayName));
         }
-        LOG_INFO("É9: recruit refused — party {} cap reached ('{}')",
+        LOG_INFO("recruit refused — party {} cap reached ('{}')",
                  verdict == gameplay::RecruitVerdict::MajorsFull ? "major"
                                                                  : "minor",
                  actor->editorId);
@@ -215,7 +215,7 @@ void FollowerController::recruit(const FollowerContext& ctx,
     }
     state.followerActive = true;
     // A fresh recruit always starts on the default stance (a stayed
-    // then dismissed follower must not reload wedged in « rester »).
+    // then dismissed follower must not reload wedged in Stay).
     gameplay::setFollowerStance(state, gameplay::FollowerStance::Follow);
     // Mirror the protection onto HIS tags right away — 0 HP routes
     // to Downed from the very first hit (updateDowned re-syncs per frame).
@@ -242,7 +242,7 @@ void FollowerController::recruit(const FollowerContext& ctx,
     follower.remove<ecs::InCell>(flecs::Wildcard);
     ctx.pendingSave.captureEntity(follower, ctx.forms, ctx.gameTags);
     syncActiveTag(ctx);
-    LOG_INFO("É1: follower '{}' recruited (cell -> persistent)",
+    LOG_INFO("follower '{}' recruited (cell -> persistent)",
              actor->editorId);
 }
 
@@ -307,14 +307,16 @@ void FollowerController::dismiss(const FollowerContext& ctx,
         if (follower.has<world::Transform>()) {
             auto& transform = follower.get_mut<world::Transform>();
             transform.position = homePos;
-            transform.position.y = render::terrain::height(
-                ctx.terrainParams, homePos.x, homePos.z);
+            // groundAt, not the raw height field: in interiors the terrain
+            // height would park him outside the dungeon.
+            groundAt(ctx.terrainParams, ctx.interiorMode, ctx.physics,
+                     transform.position);
         }
         ctx.pendingSave.captureEntity(follower, ctx.forms, ctx.gameTags);
         follower.destruct();
     }
     syncActiveTag(ctx);
-    LOG_INFO("É1: follower '{}' dismissed (cell -> home, resident = {})",
+    LOG_INFO("follower '{}' dismissed (cell -> home, resident = {})",
              actor->editorId, homeCellEntity.is_alive());
 }
 
@@ -330,7 +332,7 @@ void FollowerController::repositionActiveFollowers(const FollowerContext& ctx,
             !npc.entity.get<gameplay::FollowerState>().followerActive) {
             continue;
         }
-        // « restez ici » means it — a stayed follower holds his spot
+        // "Stay here" means it — a stayed follower holds his spot
         // through the player's travels.
         if (gameplay::followerStance(
                 npc.entity.get<gameplay::FollowerState>()) ==
@@ -412,7 +414,7 @@ void FollowerController::onHitTaken(const FollowerContext& ctx,
     }
     // Remember the player's CURRENT target (the last hostile he
     // struck — the same aggro signal rule 4 reads) for the one-shot
-    // « attaquez ma cible » adoption at command time.
+    // "attack my target" adoption at command time.
     if (roles.sourcePlayer && targetNpc && targetNpc->hostile &&
         !targetNpc->dead) {
         playerTarget_ = event.target;
@@ -426,7 +428,7 @@ void FollowerController::onHitTaken(const FollowerContext& ctx,
         roles.self = npc.entity.id();
         roles.selfFollower = isActiveFollower(npc);
         roles.selfHostile = npc.hostile;
-        // The « me défendre » stance turns rule 4 (player-initiative
+        // The defend-only stance turns rule 4 (player-initiative
         // adoption) off for THIS follower (gameplay::adoptOnHit).
         roles.defendOnly =
             roles.selfFollower &&
@@ -453,7 +455,7 @@ void FollowerController::onHitTaken(const FollowerContext& ctx,
         // adoptOnHit only ever returns an NPC entity (never the player).
         const Npc* adopted = adopt == source ? sourceNpc : targetNpc;
         npc.combatTarget = adopt == source ? event.source : event.target;
-        LOG_INFO("É2: {} engages {} (aggro on hit)", npc.editorId,
+        LOG_INFO("{} engages {} (aggro on hit)", npc.editorId,
                  adopted ? adopted->editorId : str { "?" });
     }
 }
@@ -472,7 +474,7 @@ void FollowerController::disengage(const FollowerContext& ctx, u64 gone) {
             npcPtr->combatTarget = ecs::Entity {};
         }
     }
-    // A dead (or departed) hostile is no longer « ma cible ».
+    // A dead (or departed) hostile is no longer "my target".
     if (playerTarget_.id() == gone) {
         playerTarget_ = ecs::Entity {};
     }
@@ -555,7 +557,7 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
                                   { std::string_view { actor->displayName },
                                     std::to_string(hoursLeft) }));
                     }
-                    LOG_INFO("É10: {}'s contract ends in {} h", npc.editorId,
+                    LOG_INFO("{}'s contract ends in {} h", npc.editorId,
                              hoursLeft);
                 } else if (phase == gameplay::ContractPhase::Expired) {
                     // Clear BEFORE the dismiss: its captureEntity carries
@@ -566,7 +568,7 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
                         toast(ctx, ctx.texts->format("follower.contractOver",
                                                      actor->displayName));
                     }
-                    LOG_INFO("É10: {}'s contract expired — dismissed home",
+                    LOG_INFO("{}'s contract expired — dismissed home",
                              npc.editorId);
                     ecs::Entity follower = npc.entity;
                     dismiss(ctx, follower); // may despawn npc.entity
@@ -606,12 +608,12 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
             if (ctx.texts) {
                 toast(ctx, ctx.texts->format("follower.died", name));
             }
-            LOG_INFO("É3: {} bled out — real death (aggravation roll)",
+            LOG_INFO("{} bled out — real death (aggravation roll)",
                      npc.editorId);
             continue;
         }
         // Recovered at 1 HP with a fresh wound (aggravated if rolled).
-        LOG_INFO("É3: {} recovers at 1 HP with a {} wound", npc.editorId,
+        LOG_INFO("{} recovers at 1 HP with a {} wound", npc.editorId,
                  result.aggravated ? "WORSENED" : "fresh");
         if (gameplay::needsConvalescence(injuries)) {
             // Wounded past the bar: he demands rest — the dismiss
@@ -626,7 +628,7 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
                                 std::to_string(static_cast<i32>(
                                     restHours + 0.5f)) }));
             }
-            LOG_INFO("É3: {} needs {:.0f} h of convalescence — dismissed "
+            LOG_INFO("{} needs {:.0f} h of convalescence — dismissed "
                      "home",
                      npc.editorId, restHours);
             ecs::Entity follower = npc.entity;
@@ -647,7 +649,7 @@ bool FollowerController::updateFollowers(const FollowerContext& ctx, f32 dt) {
 
 void FollowerController::partyCommand(const FollowerContext& ctx,
                                       gameplay::FollowerStance stance) {
-    // « attaquez ma cible » : resolve the one-shot adoption target —
+    // "Attack my target": resolve the one-shot adoption target —
     // the last hostile the player struck (the aggro signal), still standing.
     ecs::Entity attackTarget {};
     if (stance == gameplay::FollowerStance::Attack &&
@@ -713,7 +715,7 @@ void FollowerController::partyCommand(const FollowerContext& ctx,
             break;
         }
     }
-    LOG_INFO("É9: party command stance={} ({} follower(s))",
+    LOG_INFO("party command stance={} ({} follower(s))",
              static_cast<i32>(stance), commanded);
 }
 
@@ -765,7 +767,7 @@ void FollowerController::onAmbientEvent(const FollowerContext& ctx,
                                { std::string_view { actor->displayName },
                                  std::string_view { comment->line } }));
             }
-            LOG_INFO("É9: {} comments on {} ('{}')", actor->editorId,
+            LOG_INFO("{} comments on {} ('{}')", actor->editorId,
                      comment->event, comment->editorId);
             break; // one line per follower per event — no monologue walls
         }
@@ -872,7 +874,7 @@ void FollowerController::updateBanter(const FollowerContext& ctx, f32 dt,
                   std::string_view { banter.lineB } });
             pendingReplySeconds_ = kBanterReplySeconds;
         }
-        LOG_INFO("É9: banter '{}' — {} then {}", banter.editorId,
+        LOG_INFO("banter '{}' — {} then {}", banter.editorId,
                  a->actor->editorId, b->actor->editorId);
         return; // one exchange per window
     }
@@ -938,7 +940,7 @@ void FollowerController::reviveDownedAlly(const FollowerContext& ctx,
         toast(ctx, ctx.texts->format("follower.revived",
                                      followerDisplayName(ctx, follower)));
     }
-    LOG_INFO("É3: revived downed ally with '{}'", potion->editorId);
+    LOG_INFO("revived downed ally with '{}'", potion->editorId);
 }
 
 void FollowerController::consultFollower(const FollowerContext& ctx,
@@ -1036,7 +1038,7 @@ void FollowerController::onAffinityEvent(const FollowerContext& ctx,
         }
         const f32 applied = gameplay::addAffinity(state, delta);
         if (applied != 0.0f) {
-            LOG_INFO("É4: {} affinity {:+.1f} -> {:.1f}", npc.editorId,
+            LOG_INFO("{} affinity {:+.1f} -> {:.1f}", npc.editorId,
                      applied, state.followerAffinity);
         }
     }
@@ -1104,7 +1106,7 @@ void FollowerController::openRecruitPreview(const FollowerContext& ctx,
     ctx.screenStack->show("recruit");
 }
 
-// ---- The player learns a perk (réciproque) -------------------------------
+// ---- The player learns a perk (the reverse direction) --------------------
 
 void FollowerController::teachPerk(const FollowerContext& ctx,
                                    ecs::Entity follower) {
@@ -1131,7 +1133,7 @@ void FollowerController::teachPerk(const FollowerContext& ctx,
             toast(ctx, ctx.texts->format("follower.perkLearned",
                                          perk->displayName));
         }
-        LOG_INFO("É6: the player learns '{}' from {}", perk->displayName,
+        LOG_INFO("the player learns '{}' from {}", perk->displayName,
                  actor->editorId);
         return;
     }
@@ -1201,7 +1203,7 @@ void FollowerController::forgeUpgrade(const FollowerContext& ctx,
                 equipment.weapon = swap.to;
             }
         }
-        LOG_INFO("É7: {} forge upgrade {} -> {}", actor->editorId,
+        LOG_INFO("{} forge upgrade {} -> {}", actor->editorId,
                  swap.from.toString(), swap.to.toString());
     }
     if (ctx.texts) {
@@ -1239,7 +1241,7 @@ void FollowerController::hireMercenary(const FollowerContext& ctx,
                            { std::string_view { actor->displayName },
                              std::to_string(price) }));
         }
-        LOG_INFO("É10: {} refuses — {} gold asked, {} in the bag",
+        LOG_INFO("{} refuses — {} gold asked, {} in the bag",
                  actor->editorId, price, playerGold);
         return;
     }
@@ -1277,7 +1279,7 @@ void FollowerController::hireMercenary(const FollowerContext& ctx,
                        { std::string_view { actor->displayName },
                          std::to_string(days), std::to_string(price) }));
     }
-    LOG_INFO("É10: {} {} for {} gold — contract ends at {:.1f} h",
+    LOG_INFO("{} {} for {} gold — contract ends at {:.1f} h",
              actor->editorId, renewal ? "renewed" : "hired", price,
              state.followerContractExpiryHours);
 }
@@ -1304,7 +1306,7 @@ bool buryFollower(const FollowerContext& ctx, ecs::Entity corpse,
     const auto* grave =
         data::findByEditorId<gameplay::FurnitureForm>(ctx.forms, "Grave");
     if (!grave) {
-        LOG_WARN("É8: no 'Grave' FurnitureForm in the data — burial skipped");
+        LOG_WARN("no 'Grave' FurnitureForm in the data — burial skipped");
         return false;
     }
     const core::Guid corpseRef = corpse.get<world::RefId>().referenceId;
@@ -1355,7 +1357,7 @@ bool buryFollower(const FollowerContext& ctx, ecs::Entity corpse,
     if (ctx.texts) {
         toast(ctx, ctx.texts->format("follower.buried", actor->displayName));
     }
-    LOG_INFO("É8: {} buried — grave {} at ({:.1f}, {:.1f}, {:.1f})",
+    LOG_INFO("{} buried — grave {} at ({:.1f}, {:.1f}, {:.1f})",
              actor->editorId, graveRef.toString(), gravePos.x, gravePos.y,
              gravePos.z);
     return true;
@@ -1427,8 +1429,8 @@ bool FollowerController::buryByContact(const FollowerContext& ctx,
             if (const auto* marker = ctx.forms.find<world::ReferenceForm>(
                     actor->buryMarker)) {
                 gravePos = marker->position;
-                gravePos.y = render::terrain::height(
-                    ctx.terrainParams, gravePos.x, gravePos.z);
+                groundAt(ctx.terrainParams, ctx.interiorMode, ctx.physics,
+                         gravePos);
             }
             return buryFollower(ctx, npc.entity, gravePos);
         }

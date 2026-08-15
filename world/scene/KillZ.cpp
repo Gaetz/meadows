@@ -42,7 +42,7 @@ void enforceKillZ(ecs::World& world, f32 killZ,
             entity.get_mut<gameplay::CombatState>()
         };
         gameplay::killOutright(block, tags, derived, tuning);
-        LOG_INFO("D2a: an actor fell below killZ ({:.0f})", killZ);
+        LOG_INFO("an actor fell below killZ ({:.0f})", killZ);
     }
 }
 

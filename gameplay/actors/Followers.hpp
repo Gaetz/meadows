@@ -82,7 +82,7 @@ struct AggroRoles {
     bool targetFollower { false };
     bool targetHostile { false };
     bool friendlyTrial { false };
-    // The « me défendre » stance — this follower never
+    // The defend-only stance — this follower never
     // adopts on the player's INITIATIVE (rule 4 off); being hit, or a
     // hostile striking the party, still engages him. Follow(0) and
     // defend(3) differ in exactly this flag.
@@ -236,7 +236,7 @@ void applyClassLevelChange(CoreAttributes& core, const FollowerClassForm& cls,
 // equipmentMods fold — §2.9: mods recomputed from data each tick, nothing
 // persisted, no synthetic effects), so CURRENT attributes shrink while the
 // BASE-derived primary maxima stay untouched — exactly the doc's
-// « compétence_effective = compétence_base × multiplicateur ».
+// "effective skill = base skill x multiplier".
 struct AgeMultipliers {
     f32 physical { 1.0f }; // strength, constitution, grace, dexterity
     f32 mental { 1.0f };   // alacrity, perception, charisma, ego, insight
@@ -326,8 +326,8 @@ struct AllyVitals {
 u64 pickHealTarget(const vector<AllyVitals>& allies, f32 threshold);
 
 // ---- Follower carry weight ----------------------------------------------
-// docs/FOLLOWERS.md §5: « poids limité par ses caractéristiques et son
-// modificateur d'âge ». Reused systems (§2.11): the age curve (the
+// docs/FOLLOWERS.md §5: "carry weight limited by his attributes and
+// his age modifier". Reused systems (§2.11): the age curve (the
 // PHYSICAL multiplier — carrying is a body matter) and the
 // encumbrance helpers (inventoryWeight / the maxEncumbrance derived stat);
 // this only adds the pure accept/reject decision at the transfer site.
@@ -372,8 +372,8 @@ enum class RecruitVerdict : u8 { Ok, MajorsFull, MinorsFull };
 RecruitVerdict canJoinParty(const str& category, const PartyCounts& counts,
                             i32 majorCap, i32 minorCap);
 
-// The group-command stance (docs/FOLLOWERS.md §7 « stratégie modifiable
-// par dialogue »). Persisted as FollowerState.followerStance (f32 — the
+// The group-command stance (docs/FOLLOWERS.md §7, "strategy adjustable
+// through dialogue"). Persisted as FollowerState.followerStance (f32 — the
 // save sweep); read/written ONLY through these two (the enum-over-bools
 // rule: one vocabulary, one transition point). Out-of-range floats decay
 // to Follow — a modded save never wedges a follower.

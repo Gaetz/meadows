@@ -161,7 +161,7 @@ void TerrainSculptTool::publish(const SculptContext& ctx, bool commit) {
     // in-flight workers keep the old instance alive through their copied
     // TerrainParams (shared_ptr). The scene swaps it in and rebuilds.
     auto next = std::make_shared<render::HeightPatches>();
-    next->chunkSize = 64.0f;
+    next->chunkSize = render::TerrainSystem::kChunkSize;
     if (ctx.publishedPatches) {
         next->chunks = ctx.publishedPatches->chunks;
     }
@@ -217,7 +217,7 @@ void TerrainSculptTool::saveToMod(const SculptContext& ctx) {
         session.setField(recordGuid, type.findField("asset")->id,
                          reflect::Value { assetGuid });
     }
-    LOG_INFO("B9: {} sculpted chunk(s) staged — Export writes the mod",
+    LOG_INFO("{} sculpted chunk(s) staged — Export writes the mod",
              grids.size());
 }
 

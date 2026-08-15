@@ -76,7 +76,7 @@ u64 adoptOnHit(u64 source, u64 target, const AggroRoles& roles) {
         return source;
     }
     // Follow the player's initiative: he struck a hostile first. The
-    // « me défendre » stance turns exactly this rule off — a defender
+    // defend-only stance turns exactly this rule off — a defender
     // only ever engages attackers of the party (the rules above).
     if (roles.sourcePlayer && roles.targetHostile && target != roles.self &&
         !roles.defendOnly) {
@@ -231,8 +231,8 @@ constexpr std::array<f32 CoreAttributes::*, kCoreAttributeCount> kCoreFields {
     &CoreAttributes::insight,
 };
 
-// The doc's physical/mental split (docs/FOLLOWERS.md §2: « un physique,
-// un mental ») over the canonical indices above.
+// The doc's physical/mental split (docs/FOLLOWERS.md §2: one physical,
+// one mental) over the canonical indices above.
 constexpr std::array<u32, 4> kPhysicalAttrs { 0, 1, 2, 3 }; // str/con/gra/dex
 constexpr std::array<u32, 5> kMentalAttrs { 4, 5, 6, 7, 8 }; // ala/per/cha/ego/ins
 
@@ -378,7 +378,7 @@ PerkGrant grantPerk(const data::FormDatabase& forms,
                 tag = tags.find(form->grantedTag);
             }
             if (!tag) {
-                LOG_WARN("É6: perk effect '{}' has no (registered) "
+                LOG_WARN("perk effect '{}' has no (registered) "
                          "grantedTag — skipped (it would stack on every "
                          "sync; see FollowerForms.hpp)",
                          form->editorId);
@@ -388,7 +388,7 @@ PerkGrant grantPerk(const data::FormDatabase& forms,
                 granted = true;
             }
         } else {
-            LOG_WARN("É6: perk effect {} not found", effect.toString());
+            LOG_WARN("perk effect {} not found", effect.toString());
         }
     }
     if (granted) {

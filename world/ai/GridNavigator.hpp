@@ -6,9 +6,8 @@
 namespace world {
 
 // The 2D-phase nav::Navigator: adapts the existing grid A* to the nav
-// seam. World XZ (or XY in 2D scenes — the caller picks the plane via
-// `cellSize` mapping done here on X/Y) maps onto grid cells; Y of the
-// waypoints is left at 0 for the 2D phase.
+// seam. World X/Y (the 2D scenes' plane) map onto grid cells; waypoints
+// come back as (x, y, 0).
 class GridNavigator final : public nav::Navigator {
 public:
     GridNavigator(const ai::Grid& grid, f32 cellSize)

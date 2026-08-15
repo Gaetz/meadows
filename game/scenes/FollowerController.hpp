@@ -162,7 +162,7 @@ public:
                          const gameplay::Event& event,
                          ecs::Entity dialoguePartner);
 
-    // Dialogue "OnFollowerPreview" (« Parle-moi de tes aptitudes ») — the
+    // Dialogue "OnFollowerPreview" — the
     // recruit-preview screen (the MapController screen idiom: push the
     // "recruit" model, show the UiScreenForm screen): name, class, level,
     // the 9 attributes (currentValueOf on the PARTNER entity), vitals,
@@ -170,8 +170,8 @@ public:
     void openRecruitPreview(const FollowerContext& ctx, ecs::Entity follower);
 
     // ---- Group commands, banter, ambient comments ----------------------
-    // Dialogue "OnPartyFollow/Stay/Attack/Defend" (« Consignes de
-    // groupe... » submenu nodes — zero new UI surface; the doc's radial
+    // Dialogue "OnPartyFollow/Stay/Attack/Defend" (the group-orders
+    // submenu nodes — zero new UI surface; the doc's radial
     // menu is the stated TODO): ONE stance write point for EVERY active
     // follower. Semantics (v1):
     //   Follow — the default follow package + the full aggro table.
@@ -193,7 +193,7 @@ public:
     // Ambient comments (docs/FOLLOWERS.md §6.1) — the SAME generic bus
     // channel as onAffinityEvent (the subscribeAll precedent): a
     // matching CommentForm child of an ACTIVE follower's ActorForm toasts
-    // « {Name} : {line} », gated by the pure gameplay::decideComment
+    // "{Name}: {line}", gated by the pure gameplay::decideComment
     // (10-game-hour anti-repeat, oneShot, ordered chaining) — never while
     // the player sneaks. Anti-repeat clocks are RUNTIME-ONLY v1 (stated:
     // they reset on load; oneShot is not persisted either).
@@ -231,8 +231,8 @@ public:
     // recruit dialogue's refusal option gates on it.
     void syncConvalescentTag(const FollowerContext& ctx);
 
-    // ---- The player learns a perk (réciproque) -------------------------
-    // Dialogue "OnLearnPerk" (« Apprends-moi quelque chose ») — the option
+    // ---- The player learns a perk (the reverse direction) --------------
+    // Dialogue "OnLearnPerk" — the option
     // itself is gated in DATA by ConditionForm children (affinity >= 25 +
     // HasTag Zone.Calme, the quiet-place mirror; a sibling refusal with the
     // negated zone clause carries the "not here" hint — the doc's
@@ -243,8 +243,7 @@ public:
     void teachPerk(const FollowerContext& ctx, ecs::Entity follower);
 
     // ---- The forge upgrade of the base kit -----------------------------
-    // Dialogue "OnForgeUpgrade" (« Améliorons ton équipement à la forge »)
-    // — the option is gated in DATA (HasItem gold >= 50 + HasTag
+    // Dialogue "OnForgeUpgrade" — the option is gated in DATA (HasItem gold >= 50 + HasTag
     // Zone.Forge, the quiet-zone trigger mirror). §2.2: a Form never
     // mutates — the upgrade REPLACES each unremovable weapon that names
     // an `upgradesTo` tier with that next-tier record (both unremovable),
@@ -257,8 +256,8 @@ public:
     void forgeUpgrade(const FollowerContext& ctx, ecs::Entity follower);
 
     // ---- Mercenaries ---------------------------------------------------
-    // Dialogue "OnHireMercenary" (« Engage-moi (contrat 7 jours) » /
-    // « Prolonger le contrat » — BOTH options fire the same event; the
+    // Dialogue "OnHireMercenary" (hire / extend-contract — BOTH
+    // options fire the same event; the
     // renewal option simply also exists, gated Follower.Active, on the
     // mercenary's own dialogue: `mercenary` is per-actor DATA the
     // condition evaluator cannot read, so authoring carries that half).
@@ -281,7 +280,7 @@ public:
     // spot is DEFERRED — it needs a ground-placement mechanic (aim a spot,
     // validate it) that nothing else requires yet. TODO(followers):
     // when a placement mechanic exists, add the corpse-as-item flow
-    // (« Dépouille de {} », heavy MiscItemForm) on top of buryOnSpot.
+    // (a "{} remains" heavy MiscItemForm) on top of buryOnSpot.
     //
     // The grave reference's DETERMINISTIC guid: Guid::combine of the dead
     // follower's reference guid and the grave namespace (the prefab-child
@@ -296,7 +295,7 @@ public:
     static str graveOwnerName(const data::FormDatabase& forms,
                               const core::Guid& graveReference);
 
-    // [F] « Enterrer ici » on a DEAD follower's corpse (the InteractAlt
+    // [F] "Bury here" on a DEAD follower's corpse (the InteractAlt
     // action — free on corpses): creates the grave AT the corpse (§2.11 —
     // the generalized pending-layer materialization + the persistent-pass
     // spawn idiom), moves the corpse's whole inventory into it
@@ -320,7 +319,7 @@ private:
     // applyClassLevelChange / bonusAttribute — doctested headless); this
     // helper only resolves the entities and performs the §2.9-sanctioned
     // level-up BASE writes (curve delta + level attribute + the +1
-    // points), logging "É5: Aldric level 2 -> 3 (+1 strength)". The next
+    // points), logging "Aldric level 2 -> 3 (+1 strength)". The next
     // tickCharacter recomputes the currents with vitals PRESERVED — never
     // initializeActorStats (no mid-game full heal). Two callers: the
     // per-frame sweep (active = true — 1:1 tracking, points granted) and
@@ -351,7 +350,7 @@ private:
     // v1: lineB lands ~3 s after lineA through this small timer).
     str pendingReplyLine_;
     f32 pendingReplySeconds_ { 0.0f };
-    // « attaquez ma cible » : the last hostile the PLAYER struck (the
+    // "attack my target": the last hostile the PLAYER struck (the
     // OnHitTaken signal), adopted one-shot at command time. Runtime
     // only — cleared on its death and on reset().
     ecs::Entity playerTarget_ {};

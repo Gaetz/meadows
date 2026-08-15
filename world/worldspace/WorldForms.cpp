@@ -28,7 +28,7 @@ core::Guid cellGuidFor(const core::Guid& worldspace, i32 gx, i32 gy) {
     // The grid square as a synthetic guid (coords in hi, a fixed tag in
     // lo so cell coords can never collide with another derived family),
     // mixed with the worldspace identity through the SAME deterministic
-    // combine the prefab-child contract uses (H8) — well-formed v4 out.
+    // combine the prefab-child contract uses — well-formed v4 out.
     const core::Guid coords {
         (static_cast<u64>(static_cast<u32>(gx)) << 32) |
             static_cast<u64>(static_cast<u32>(gy)),

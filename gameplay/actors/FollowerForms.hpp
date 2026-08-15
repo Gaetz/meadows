@@ -119,7 +119,7 @@ struct AffinityRuleForm : data::Form {
 };
 
 // A perk the PLAYER can learn from this follower (the
-// réciproque of docs/FOLLOWERS.md §3): CHILD record of the ActorForm
+// reverse direction of docs/FOLLOWERS.md §3): CHILD record of the ActorForm
 // (childrenOf, like AffinityRuleForm above). The teaching rides the
 // existing dialogue machinery — a dialogue option gated by ConditionForm
 // children (affinity, the quiet-place zone tag) fires OnLearnPerk; the

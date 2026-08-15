@@ -63,7 +63,8 @@ struct MissionGraph {
     u32 goal { 0 };
 };
 
-// The design dial (§ "algorithme à tiroirs"): a mine and a temple differ by
+// The design dial (docs/DUNGEON-GEN.md § « algorithme à tiroirs »): a
+// mine and a temple differ by
 // these values, not by code. Patterns absent from `patterns` are never drawn.
 struct MissionParams {
     u32 seed { 1337 };

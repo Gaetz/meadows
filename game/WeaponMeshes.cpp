@@ -204,7 +204,7 @@ render::MeshData makeHorseMesh(f32 shoulderHeight) {
         }
     }
     // Neck rising from the chest, then the head with a muzzle bias
-    // forward — enough silhouette to read « poney » at a glance.
+    // forward — enough silhouette to read "pony" at a glance.
     box({ 0.0f, 1.34f, 0.58f }, { 0.10f, 0.26f, 0.13f }, kCoat);
     box({ 0.0f, 1.60f, 0.82f }, { 0.085f, 0.12f, 0.22f }, kCoat);
     // Mane ridge along the neck's back edge + two ear nubs.

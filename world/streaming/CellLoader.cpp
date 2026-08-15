@@ -24,7 +24,7 @@ ecs::Entity CellLoader::loadCell(data::FormHandle cell) {
         }
         if (reference->prefab.isValid()) {
             continue; // prefab TEMPLATE child: only spawned when a placed
-                      // reference instantiates its PrefabForm (H8)
+                      // reference instantiates its PrefabForm
         }
         if (spawnFilter && !spawnFilter(reference->id)) {
             continue; // vetoed by the pending save layer

@@ -79,8 +79,8 @@ struct DeviceCaps {
 // memoryBarrier(dst) (which later work must see the compute writes) and
 // the SOURCE scope of readBarrier(src) (whose reads must finish first).
 // OR-able. Scoping is what gives the GPU permission to overlap
-// independent passes across a barrier (docs/RENDERING.md, chantier
-// parallélisme) — an All barrier forbids any overlap.
+// independent passes across a barrier (docs/RENDERING.md) — an All
+// barrier forbids any overlap.
 enum BarrierStage : u32 {
     BarrierStage_Compute = 1u << 0,  // dispatches
     BarrierStage_Fragment = 1u << 1, // fragment-stage reads

@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <cstring>
+#include <filesystem>
 #include <fstream>
 
 #include <imgui.h>
@@ -67,7 +67,8 @@ void TreeCreationScene::onEnter() {
     params.seaLevel = -100.0f;
     applySelected();
 
-    // The R3 opt-in for real: no water, no GI, no froxels, no occlusion.
+    // The minimal-renderer opt-in (docs/RENDERING.md §7 R3): no water,
+    // no GI, no froxels, no occlusion.
     // postFx stays ON — the postFx-less blit fallback is unproven on
     // Vulkan (unbound tonemap samplers); hardening it is a follow-up.
     rhi::Device& device = engine->getDevice();
@@ -129,7 +130,6 @@ void TreeCreationScene::render(engine::FrameContext& frame) {
         .probe = &frameProbe,
     };
     renderer.render(frame, snapshot, view);
-    frameProbe.endFrame();
 }
 
 void TreeCreationScene::loadLibrary() {

@@ -264,7 +264,7 @@ void QuestDirector::openDialogue(const QuestContext& ctx,
             }
         };
     if (!dialogueRunner_->start(dialogueId)) {
-        LOG_WARN("B4: dialogue {} failed to start", dialogueId.toString());
+        LOG_WARN("dialogue {} failed to start", dialogueId.toString());
         return;
     }
     if (const auto* dialogue =

@@ -44,7 +44,7 @@ const world::WorldspaceForm* MapController::exteriorWorldspace(
 void MapController::open(const MapContext& ctx) {
     const world::WorldspaceForm* space = exteriorWorldspace(ctx);
     if (!space) {
-        LOG_WARN("C9.6: no exterior worldspace to map");
+        LOG_WARN("no exterior worldspace to map");
         return;
     }
 
@@ -69,7 +69,7 @@ void MapController::open(const MapContext& ctx) {
             maxGY = std::max(maxGY, cell.gridY);
         });
     if (!any) {
-        LOG_WARN("C9.6: worldspace '{}' has no cells — no map",
+        LOG_WARN("worldspace '{}' has no cells — no map",
                  space->editorId);
         return;
     }
@@ -116,7 +116,7 @@ void MapController::open(const MapContext& ctx) {
         ctx.jobs.enqueue([job, spaceName] {
             const core::TimePoint start = core::clockNow();
             job->pixels = generateMapRaster(job->desc);
-            LOG_INFO("C9.6: map raster {}x{} of '{}' ({} x {} m) "
+            LOG_INFO("map raster {}x{} of '{}' ({} x {} m) "
                      "generated in {:.1f} ms",
                      job->desc.size, job->desc.size, spaceName,
                      job->desc.maxX - job->desc.minX,

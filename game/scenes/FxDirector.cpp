@@ -6,7 +6,7 @@
 #include "engine/core/Hash.hpp"
 #include "engine/render/FlyCamera.hpp"
 #include "engine/render/landscape/TerrainNoise.hpp" // MaterialWeights
-#include "game/SoundResolver.hpp" // C3: cue sounds
+#include "game/SoundResolver.hpp" // cue sounds
 
 namespace game {
 
@@ -44,8 +44,8 @@ void FxDirector::create(const data::FormDatabase& formsIn,
                 // Cosmetic seed: spot hash + a running counter (§8:
                 // presentation never touches the gameplay RNG).
                 const u32 seed =
-                    core::hashU32(static_cast<u32>(event.position.x * 73.0f) ^
-                                  (static_cast<u32>(event.position.z * 179.0f)
+                    core::hashU32(static_cast<u32>(static_cast<i32>(event.position.x * 73.0f)) ^
+                                  (static_cast<u32>(static_cast<i32>(event.position.z * 179.0f))
                                    << 8) ^
                                   ++spawnCounter);
                 sim->spawn(gameplay::toEmitterParams(*particles),
@@ -66,15 +66,15 @@ void FxDirector::create(const data::FormDatabase& formsIn,
                      cue->shakeDecay);
         }
         if (cue->sound.isValid() && sounds) {
-            // C3: the SoundForm resolver — weighted variant + jitter.
+            // The SoundForm resolver — weighted variant + jitter.
             // Its OWN always-incremented counter (review bug 7a: the
             // spawn counter only moved in the particle branch, freezing
             // sound-only cues on one variant) + the spot hash, mirroring
             // the particle seed; the emitter's scales soften sneaked
             // steps.
             const u32 seed =
-                core::hashU32(static_cast<u32>(event.position.x * 73.0f) ^
-                              (static_cast<u32>(event.position.z * 179.0f)
+                core::hashU32(static_cast<u32>(static_cast<i32>(event.position.x * 73.0f)) ^
+                              (static_cast<u32>(static_cast<i32>(event.position.z * 179.0f))
                                << 8) ^
                               ++soundCounter ^ 0xac00571cu);
             sounds->play(cue->sound, event.position, seed,

@@ -104,8 +104,8 @@ void NpcCombatController::tryUsePower(
         // The party's vitals — player, active followers, herself. The
         // downed/dead are excluded: reviving is the potion mechanic,
         // not a spell target.
-        // NOTE — the doc's « garde toujours un objet de soin en
-        // réserve pour le joueur » (docs/FOLLOWERS.md §6.2) is a deliberate
+        // NOTE — the doc's "always keep a healing item in reserve
+        // for the player" rule (docs/FOLLOWERS.md §6.2) is a deliberate
         // DEVIATION here: Maela heals by POWER (essence-costed ability),
         // not by items, so there is no item stock to reserve. The rule
         // becomes relevant the day a follower heals from his inventory;
@@ -159,7 +159,7 @@ void NpcCombatController::tryUsePower(
             // Instant heals write the BaseValue; re-derive the currents
             // (the reviveDownedAlly idiom).
             gameplay::recomputeCurrent(targetSet, targetSystem);
-            LOG_INFO("É6: {} casts her power on {} (heal)", npc.editorId,
+            LOG_INFO("{} casts her power on {} (heal)", npc.editorId,
                      pick == ctx.playerEntity.id()
                          ? str { "the player" }
                          : npcByEntity.at(pick)->editorId);
@@ -169,7 +169,7 @@ void NpcCombatController::tryUsePower(
     // Default / "melee": the self-buff on engaging (Aldric's war cry).
     if (gameplay::tryActivate(*ability, casterSet, casterSystem, casterSet,
                               casterSystem, abilityCtx)) {
-        LOG_INFO("É6: {} unleashes his power (self-buff)", npc.editorId);
+        LOG_INFO("{} unleashes his power (self-buff)", npc.editorId);
     }
 }
 
@@ -406,7 +406,7 @@ bool NpcCombatController::update(
             npc.combatMove = move;
             npc.intentReason =
                 str { "combat: " } + gameplay::combatMoveName(move);
-            LOG_INFO("B3: {} -> {} (health {:.0f}%, dist {:.1f} m)",
+            LOG_INFO("combat: {} -> {} (health {:.0f}%, dist {:.1f} m)",
                      npc.editorId, gameplay::combatMoveName(move),
                      situation.healthFraction * 100.0f, targetDistance);
         }
@@ -769,7 +769,7 @@ void NpcCombatController::updateSwing(
                 };
                 const gameplay::StrikeContext strikeCtx {
                     ctx.gameTags, ctx.derivedStats, ctx.statsTuning,
-                    &ctx.eventBus, ctx.cues
+                    &ctx.eventBus, ctx.cues, &ctx.combatRng
                 };
                 const gameplay::StrikeOutcome outcome =
                     gameplay::resolveMeleeStrike(

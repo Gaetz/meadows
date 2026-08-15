@@ -14,7 +14,7 @@ CombatMove chooseCombatMove(const CombatSituation& s) {
     if (s.swinging) {
         return CombatMove::Strike;
     }
-    // No sight: go where the target was (the B2 investigation).
+    // No sight: go where the target was (investigation).
     if (!s.canSee) {
         return CombatMove::Approach;
     }

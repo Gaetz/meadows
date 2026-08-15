@@ -150,7 +150,7 @@ ecs::Entity Spawner::spawn(SpawnContext& ctx, const ReferenceForm& reference,
         return ecs::Entity {};
     }
 
-    // Prefab expansion (H8): a placed reference whose base is a PrefabForm
+    // Prefab expansion: a placed reference whose base is a PrefabForm
     // spawns every template child with a DERIVED, deterministic guid —
     // combine(instance, template) — so saves/patches can target one child
     // of one placed prefab forever. Nested prefabs recurse naturally.
@@ -237,8 +237,8 @@ ecs::Entity Spawner::spawn(SpawnContext& ctx, const ReferenceForm& reference,
         entity.set<SpriteRender>(sprite);
     }
 
-    // MeshRender seeded the same reflected way from `model` + `material`
-    // (H8): any base form declaring them gets a 3D visual — StaticForm,
+    // MeshRender seeded the same reflected way from `model` + `material`:
+    // any base form declaring them gets a 3D visual — StaticForm,
     // FurnitureForm today, ActorForm's appearance path later.
     if (const reflect::FieldInfo* modelField = baseType->findField("model");
         modelField && modelField->kind == reflect::FieldKind::Guid) {

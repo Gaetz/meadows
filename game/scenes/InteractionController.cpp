@@ -198,7 +198,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
             case PromptKind::DownedAlly: // "[E] Soigner {} (potion)"
                 promptLabel_ = label("prompt.heal", "prompt.heal.name");
                 break;
-            case PromptKind::Grave: // "[E] Se recueillir... — [F] Dépôt"
+            case PromptKind::Grave: // "[E] Pay respects — [F] Deposit"
                 promptLabel_ = label("prompt.homage", "prompt.homage.name");
                 promptLabel_ += ctx.texts.get("prompt.grave");
                 break;
@@ -333,7 +333,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
         // gear — THE existing two-panel container screen (transfer +
         // the base-kit/carry guards live in UiRouter). Gated by his
         // opinion: negative affinity = a refusal toast (docs/FOLLOWERS.md
-        // §5 — "avis négatif" = followerAffinity < 0, the scale's
+        // §5 — "negative opinion" = followerAffinity < 0, the scale's
         // neutral point).
         if (promptEntity.is_alive() &&
             ctx.actions->pressed(ctx.input, InputAction::InteractAlt)) {
@@ -358,7 +358,7 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
                     ctx.openContainer(promptEntity);
                 }
             } else if (promptKind == PromptKind::Corpse) {
-                // « Enterrer ici » — dead FOLLOWERS only (a bandit
+                // "Bury here" — dead FOLLOWERS only (a bandit
                 // stays plain lootable). The closure destructs the
                 // corpse: drop the prompt reference right away.
                 if (ctx.buryCorpse && followerActor(ctx, promptEntity)) {
@@ -412,40 +412,24 @@ void InteractionController::update(f32 dt, const InteractionContext& ctx) {
 }
 
 void InteractionController::rest(f32 hours, const InteractionContext& ctx) {
-    if (!ctx.playerEntity.is_alive()) {
+    if (!ctx.playerEntity.is_alive() || !ctx.applySleep) {
         return;
     }
-    if (!ctx.playerEntity.has<gameplay::Survival>() ||
-        !ctx.playerEntity.has<gameplay::CombatState>()) {
-        LOG_WARN("B7: player has no survival stats; rest skipped");
-        return;
-    }
-    gameplay::sleep(ctx.gameClock,
-                    ctx.playerEntity.get_mut<gameplay::Survival>(),
-                    ctx.playerEntity.get_mut<gameplay::CombatState>(),
-                    hours, ctx.statsTuning);
+    ctx.applySleep(hours);
     say(ctx.texts.get(hours >= 8.0f ? "rest.sleep" : "rest.nap"), 3.0f);
-    LOG_INFO("B7-lite: rested {} h -> game time {:.2f} h", hours,
+    LOG_INFO("rested {} h -> game time {:.2f} h", hours,
              std::fmod(ctx.gameClock.gameHours(), 24.0));
 }
 
 void InteractionController::wait(f32 hours, const InteractionContext& ctx) {
-    // Waiting passes game time and decays the needs, but restores nothing
-    // — that's what beds are for (gameplay::sleep).
-    const f64 gameDt = static_cast<f64>(hours) * 3600.0;
-    ctx.gameClock.gameSeconds += gameDt;
-    if (ctx.playerEntity.is_alive()) {
-        if (ctx.playerEntity.has<gameplay::Survival>()) {
-            gameplay::tickSurvival(
-                ctx.playerEntity.get_mut<gameplay::Survival>(), gameDt,
-                ctx.statsTuning);
-        }
-        if (ctx.playerEntity.has<gameplay::CombatState>()) {
-            gameplay::accrueRest(
-                ctx.playerEntity.get_mut<gameplay::CombatState>(), gameDt);
-        }
+    // Waiting is the full time skip MINUS the bed's sleep-need restore:
+    // needs decay, drugs expire, afflictions progress, regen and injury
+    // recovery run (gameplay::waitGameTime behind the closure).
+    if (!ctx.applyWait) {
+        return;
     }
-    LOG_INFO("B6: waited {} h -> game time {:.2f} h", hours,
+    ctx.applyWait(hours);
+    LOG_INFO("waited {} h -> game time {:.2f} h", hours,
              std::fmod(ctx.gameClock.gameHours(), 24.0));
 }
 

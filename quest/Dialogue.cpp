@@ -32,7 +32,7 @@ void DialogueRunner::enter(const core::Guid& nodeId) {
             bus.dispatch({ gameplay::eventKind(node->event) });
         }
         if (onNodeFired) {
-            onNodeFired(*node); // 8.7e: world side effects (takeItem...)
+            onNodeFired(*node); // world side effects (takeItem...)
         }
     } else {
         current = {};
@@ -74,7 +74,7 @@ void DialogueRunner::select(const DialogueNodeForm& option) {
         bus.dispatch({ gameplay::eventKind(option.event) });
     }
     if (onNodeFired) {
-        onNodeFired(option); // 8.7e: world side effects (takeItem...)
+        onNodeFired(option); // world side effects (takeItem...)
     }
     // Advance to the NPC reply that follows this option (lowest order), if any.
     const DialogueNodeForm* reply = nullptr;

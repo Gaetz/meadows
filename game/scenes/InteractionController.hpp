@@ -76,6 +76,12 @@ struct InteractionContext {
     // [E] on a lever (dungeon locks): the scene opens the paired barrier
     // (world::barrierForLever inverts lever reference -> barrier).
     std::function<void(ecs::Entity lever)> pullLever;
+    // Sleep in a bed, fired at the black of the fade: the scene runs
+    // gameplay::sleepCharacter over the player (clock, needs, regen,
+    // injury recovery — the time-skip path).
+    std::function<void(f32 hours)> applySleep;
+    // Wait (campfire): same skip WITHOUT the sleep-need restore.
+    std::function<void(f32 hours)> applyWait;
 };
 
 // Generic interaction extracted from LandscapeScene: the aim

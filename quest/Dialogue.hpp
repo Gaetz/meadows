@@ -65,7 +65,7 @@ class DialogueRunner {
 public:
     DialogueRunner(const data::FormDatabase& forms, gameplay::EventBus& bus);
 
-    // 8.7e: called for EVERY node that fires (entered NPC line or picked
+    // Called for EVERY node that fires (entered NPC line or picked
     // option), after its event dispatch. The game layer applies the
     // node's world side effects here (takeItem/takeCount -> inventory) —
     // the runner itself stays world-free and headless-testable.

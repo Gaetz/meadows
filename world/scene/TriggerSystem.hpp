@@ -12,7 +12,7 @@
 // box (position vs halfExtents scaled/rotated by the reference transform)
 // — deliberately NOT a Jolt sensor: characters are CharacterVirtual, which
 // never enters the broadphase, so Jolt sensors would see nothing that
-// matters. If arbitrary rigid bodies ever need to fire triggers, the H3
+// matters. If arbitrary rigid bodies ever need to fire triggers, the phys
 // facade grows the sensor path then; the observable contract (actor in
 // volume → event) stays.
 //

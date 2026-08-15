@@ -101,7 +101,7 @@ struct SavedStatsForm : data::Form {
     // FollowerState.followerLevel).
     f32 level { 1.0f };
     // FollowerState.followerStance
-    // — a « rester » order survives the save (name-matched sweep).
+    // — a Stay order survives the save (name-matched sweep).
     f32 followerStance { 0.0f };
 
     REFLECT_BEGIN(SavedStatsForm, data::Form)

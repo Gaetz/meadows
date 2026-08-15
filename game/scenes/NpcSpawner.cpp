@@ -27,7 +27,7 @@ const RigData* NpcSpawner::loadRig(const NpcContext& ctx,
     RigData& rig = rigCache[asset]; // empty entry = negative cache
     const auto path = ctx.assetDb.resolve(asset);
     if (!path) {
-        LOG_WARN("B6: no asset registered for rig {}", asset.toString());
+        LOG_WARN("no asset registered for rig {}", asset.toString());
         return nullptr;
     }
     auto skeleton = assets::loadGltfSkeleton(*path);
@@ -36,7 +36,7 @@ const RigData* NpcSpawner::loadRig(const NpcContext& ctx,
     }
     rig.skeleton = std::move(*skeleton);
     rig.clips = assets::loadGltfAnimations(*path, rig.skeleton);
-    LOG_INFO("B6: rig {} loaded — {} joints, {} clips", path->string(),
+    LOG_INFO("rig {} loaded — {} joints, {} clips", path->string(),
              rig.skeleton.joints.size(), rig.clips.size());
     return &rig;
 }
@@ -134,7 +134,7 @@ void NpcSpawner::refreshNpcs(
                             return clip.clip;
                         }
                     }
-                    LOG_WARN("B6: no animation '{}' in rig {}", name,
+                    LOG_WARN("no animation '{}' in rig {}", name,
                              asset.toString());
                     return std::nullopt;
                 });
@@ -273,7 +273,7 @@ void NpcSpawner::refreshNpcs(
                 characterSpot = transform.position;
             }
             npcs.push_back(std::move(npc));
-            LOG_INFO("B6: NPC '{}' built from Forms", actor.editorId);
+            LOG_INFO("NPC '{}' built from Forms", actor.editorId);
         });
     for (auto& [entity, actorId] : pendingLoadouts) {
         // Every built NPC perceives (a reload keeps a saved state
