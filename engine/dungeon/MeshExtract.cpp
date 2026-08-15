@@ -149,51 +149,45 @@ render::MeshData extractChunkMesh(const DensityFn& density,
             for (i32 gx = x0; gx < x1; ++gx) {
                 const f32 here = sampleAt(gx, gy, gz);
                 // X-directed edge.
-                if (gx + 1 <= x1) {
-                    const f32 there = sampleAt(gx + 1, gy, gz);
-                    if ((here < 0.0f) != (there < 0.0f)) {
-                        const Vec3 mid =
-                            latticePos(gx, gy, gz) +
-                            Vec3 { voxelSize * 0.5f, 0.0f, 0.0f };
-                        if (owns(mid)) {
-                            emitQuad(vertexOf(gx, gy - 1, gz - 1),
-                                     vertexOf(gx, gy, gz - 1),
-                                     vertexOf(gx, gy, gz),
-                                     vertexOf(gx, gy - 1, gz),
-                                     here < 0.0f);
-                        }
+                const f32 thereX = sampleAt(gx + 1, gy, gz);
+                if ((here < 0.0f) != (thereX < 0.0f)) {
+                    const Vec3 mid =
+                        latticePos(gx, gy, gz) +
+                        Vec3 { voxelSize * 0.5f, 0.0f, 0.0f };
+                    if (owns(mid)) {
+                        emitQuad(vertexOf(gx, gy - 1, gz - 1),
+                                 vertexOf(gx, gy, gz - 1),
+                                 vertexOf(gx, gy, gz),
+                                 vertexOf(gx, gy - 1, gz),
+                                 here < 0.0f);
                     }
                 }
                 // Y-directed edge.
-                if (gy + 1 <= y1) {
-                    const f32 there = sampleAt(gx, gy + 1, gz);
-                    if ((here < 0.0f) != (there < 0.0f)) {
-                        const Vec3 mid =
-                            latticePos(gx, gy, gz) +
-                            Vec3 { 0.0f, voxelSize * 0.5f, 0.0f };
-                        if (owns(mid)) {
-                            emitQuad(vertexOf(gx - 1, gy, gz - 1),
-                                     vertexOf(gx, gy, gz - 1),
-                                     vertexOf(gx, gy, gz),
-                                     vertexOf(gx - 1, gy, gz),
-                                     there < 0.0f);
-                        }
+                const f32 thereY = sampleAt(gx, gy + 1, gz);
+                if ((here < 0.0f) != (thereY < 0.0f)) {
+                    const Vec3 mid =
+                        latticePos(gx, gy, gz) +
+                        Vec3 { 0.0f, voxelSize * 0.5f, 0.0f };
+                    if (owns(mid)) {
+                        emitQuad(vertexOf(gx - 1, gy, gz - 1),
+                                 vertexOf(gx, gy, gz - 1),
+                                 vertexOf(gx, gy, gz),
+                                 vertexOf(gx - 1, gy, gz),
+                                 thereY < 0.0f);
                     }
                 }
                 // Z-directed edge.
-                if (gz + 1 <= z1) {
-                    const f32 there = sampleAt(gx, gy, gz + 1);
-                    if ((here < 0.0f) != (there < 0.0f)) {
-                        const Vec3 mid =
-                            latticePos(gx, gy, gz) +
-                            Vec3 { 0.0f, 0.0f, voxelSize * 0.5f };
-                        if (owns(mid)) {
-                            emitQuad(vertexOf(gx - 1, gy - 1, gz),
-                                     vertexOf(gx, gy - 1, gz),
-                                     vertexOf(gx, gy, gz),
-                                     vertexOf(gx - 1, gy, gz),
-                                     here < 0.0f);
-                        }
+                const f32 thereZ = sampleAt(gx, gy, gz + 1);
+                if ((here < 0.0f) != (thereZ < 0.0f)) {
+                    const Vec3 mid =
+                        latticePos(gx, gy, gz) +
+                        Vec3 { 0.0f, 0.0f, voxelSize * 0.5f };
+                    if (owns(mid)) {
+                        emitQuad(vertexOf(gx - 1, gy - 1, gz),
+                                 vertexOf(gx, gy - 1, gz),
+                                 vertexOf(gx, gy, gz),
+                                 vertexOf(gx - 1, gy, gz),
+                                 here < 0.0f);
                     }
                 }
             }

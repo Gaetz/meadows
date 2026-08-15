@@ -127,7 +127,9 @@ void SaveController::requestLoad(
     const str& slot, const data::TextTable& texts,
     const std::function<void(const str&)>& notify) {
     if (!std::filesystem::exists(savePath(slot))) {
-        notify(texts.format("save.missing", slot));
+        if (notify) {
+            notify(texts.format("save.missing", slot));
+        }
         return;
     }
     pendingLoadSlot_ = slot;

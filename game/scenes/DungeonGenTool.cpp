@@ -129,9 +129,10 @@ void DungeonGenTool::accept(const DungeonGenContext& ctx) {
                  "or the next session reloads the old version.",
                  seed);
     }
-    acceptedSeeds.insert(seed);
-
-    // Assets on disk, registered LIVE (travel this session) and for export.
+    // Assets: write EVERY file first, register nothing until all of them
+    // landed — a failed write must leave no half-registered state (the
+    // seed stays un-accepted, so Accept can simply be retried; orphan
+    // files from the failed run are rewritten then).
     char dirName[64];
     std::snprintf(dirName, sizeof(dirName), "dungeon_%u", seed);
     const auto modsDir = platform::executableDir() / "data" / "mods";
@@ -139,29 +140,39 @@ void DungeonGenTool::accept(const DungeonGenContext& ctx) {
     std::error_code errc;
     std::filesystem::create_directories(dir, errc);
 
+    vector<std::pair<core::Guid, str>> writtenAssets;
+    writtenAssets.reserve(result->cellMeshes.size() + 1);
     for (const auto& cellMesh : result->cellMeshes) {
         char name[64];
         std::snprintf(name, sizeof(name), "cell_%d_%d.cmesh", cellMesh.cx,
                       cellMesh.cz);
         if (!assets::saveCookedMesh(dir / name, cellMesh.mesh,
                                     dungeon::kDungeonBakeVersion)) {
+            LOG_ERROR("Dungeon gen: writing {} failed — accept aborted, "
+                      "nothing registered (retry Accept)",
+                      (dir / name).string());
             return;
         }
-        const core::Guid asset =
-            cellMeshAssetGuid(dungeonId, cellMesh.cx, cellMesh.cz);
-        const str relative =
-            str { "dungeons/" } + dirName + "/" + name;
-        ctx.assetDb.add(asset, modsDir, relative);
-        ctx.levelEditor.addExportAsset(asset, relative);
+        writtenAssets.emplace_back(
+            cellMeshAssetGuid(dungeonId, cellMesh.cx, cellMesh.cz),
+            str { "dungeons/" } + dirName + "/" + name);
     }
     if (!dungeon::writeNvgFile(dir / "nav.nvg", result->navGrid,
                                dungeon::kDungeonBakeVersion)) {
+        LOG_ERROR("Dungeon gen: writing {} failed — accept aborted, "
+                  "nothing registered (retry Accept)",
+                  (dir / "nav.nvg").string());
         return;
     }
+    writtenAssets.emplace_back(navAssetGuid(dungeonId),
+                               str { "dungeons/" } + dirName + "/nav.nvg");
+
+    acceptedSeeds.insert(seed);
+    for (const auto& [asset, relative] : writtenAssets) {
+        ctx.assetDb.add(asset, modsDir, relative);
+        ctx.levelEditor.addExportAsset(asset, relative);
+    }
     const core::Guid navAsset = navAssetGuid(dungeonId);
-    const str navRelative = str { "dungeons/" } + dirName + "/nav.nvg";
-    ctx.assetDb.add(navAsset, modsDir, navRelative);
-    ctx.levelEditor.addExportAsset(navAsset, navRelative);
 
     // The outside door: at the camera, in the active worldspace's cell
     // (materialized live + shipped, the ensureCell pattern).

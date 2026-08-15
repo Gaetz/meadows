@@ -304,7 +304,8 @@ void GameHud::pushItemModels(const HudContext& ctx) {
     std::snprintf(number, sizeof(number), "%.1f", invView.totalWeight());
     char maxText[32];
     f32 maxEncumbrance = 0.0f;
-    if (ctx.playerEntity.is_alive()) {
+    if (ctx.playerEntity.is_alive() &&
+        ctx.playerEntity.has<gameplay::AbilitySystem>()) {
         maxEncumbrance = gameplay::currentValueOf(
             ctx.playerEntity.get<gameplay::AbilitySystem>(),
             gameplay::attr("maxEncumbrance"));

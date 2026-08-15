@@ -88,13 +88,13 @@ bool SceneEditor::pickEntity(const EditorContext& ctx, const Vec2& mousePx,
                     }
                     continue;
                 }
-                f32 near = (wlo[static_cast<i32>(axis)] - o) / d;
-                f32 far = (whi[static_cast<i32>(axis)] - o) / d;
-                if (near > far) {
-                    std::swap(near, far);
+                f32 tNear = (wlo[static_cast<i32>(axis)] - o) / d;
+                f32 tFar = (whi[static_cast<i32>(axis)] - o) / d;
+                if (tNear > tFar) {
+                    std::swap(tNear, tFar);
                 }
-                t0 = glm::max(t0, near);
-                t1 = glm::min(t1, far);
+                t0 = glm::max(t0, tNear);
+                t1 = glm::min(t1, tFar);
                 if (t0 > t1) {
                     return;
                 }
@@ -257,9 +257,17 @@ void SceneEditor::draw(const EditorContext& ctx) {
                     ctx.levelEditor.editSession()
                 };
                 core::Guid cellGuid {};
-                if (const auto* space =
-                        static_cast<const world::WorldspaceForm*>(
-                            ctx.forms.get(ctx.activeWorldspace))) {
+                const reflect::TypeInfo* wsType =
+                    ctx.forms.typeOf(ctx.activeWorldspace);
+                const auto* space =
+                    wsType &&
+                            wsType->isA(world::WorldspaceForm::
+                                            staticTypeInfo()
+                                                .id)
+                        ? static_cast<const world::WorldspaceForm*>(
+                              ctx.forms.get(ctx.activeWorldspace))
+                        : nullptr;
+                if (space) {
                     const i32 gx = static_cast<i32>(
                         std::floor(ground.x / space->cellSize));
                     const i32 gy = static_cast<i32>(

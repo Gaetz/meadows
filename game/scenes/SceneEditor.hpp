@@ -32,8 +32,9 @@ namespace game {
 class LevelEditor;
 
 // The scene systems the in-world level editor touches, bundled so the editor
-// (pick / place / gizmo / palette / sculpt) is decoupled from LandscapeScene
-//. The scene rebuilds it each frame from its own members — cheap:
+// (pick / place / gizmo / palette / sculpt) is decoupled from
+// LandscapeScene. The scene rebuilds it each frame from its own members —
+// cheap:
 // references plus the sculpt sub-contract by value. This is the editor↔scene
 // contract; the target is to let the editor become a stacked SceneStack layer.
 struct EditorContext {

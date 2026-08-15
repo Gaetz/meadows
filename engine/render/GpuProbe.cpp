@@ -2,8 +2,6 @@
 
 #include <algorithm>
 
-#include "engine/core/Log.hpp"
-
 namespace render {
 
 rhi::TimestampHandle GpuProbe::mark(rhi::Device& device) {
@@ -68,14 +66,8 @@ void GpuProbe::resolveOldest(rhi::Device& device) {
     if (frameIndex < slot.frameIndex + 2) {
         return;
     }
-    // All-or-nothing: GL returns results in submission order, so if the
-    // LAST timestamp is ready the whole slot is — but poll each anyway
-    // (drivers may differ) without consuming until all are available...
-    // consuming as we go is fine BECAUSE we only commit stats when the
-    // full slot resolved this frame; a partially-consumed slot just
-    // finishes next frame (values are cached in the sample).
-    // Simpler contract: check readiness back to front; the last sample's
-    // end timestamp gates the slot.
+    // GL returns results in submission order: the last sample's end
+    // timestamp gates the whole slot.
     u64 nanos = 0;
     if (slot.samples.empty()) {
         slot.open = false;
@@ -90,52 +82,33 @@ void GpuProbe::resolveOldest(rhi::Device& device) {
     }
     const u64 frameEnd = nanos;
     u64 frameBegin = 0;
-    f64 spikeCheck = 0.0;
-    str spikeLine;
     for (size_t i = 0; i < slot.samples.size(); ++i) {
         Sample& sample = slot.samples[i];
         u64 beginNs = 0;
         u64 endNs = frameEnd;
-        device.timestampReady(sample.begin, beginNs); // ready by order
-        if (i + 1 < slot.samples.size() || sample.end.id != last.id) {
-            device.timestampReady(sample.end, endNs);
+        // Submission order + the 2-frame hold above make every timestamp
+        // ready here; if a driver disagrees, drop the sample (a raw 0
+        // would read as the absolute GPU clock and poison the stats).
+        if (!device.timestampReady(sample.begin, beginNs)) {
+            device.destroyTimestamp(sample.begin);
+            device.destroyTimestamp(sample.end);
+            continue;
         }
-        if (i == 0) {
-            frameBegin = beginNs;
+        if (i + 1 < slot.samples.size() || sample.end.id != last.id) {
+            if (!device.timestampReady(sample.end, endNs)) {
+                device.destroyTimestamp(sample.end);
+                endNs = beginNs; // reads as 0 ms
+            }
         }
         frameBegin = frameBegin == 0 ? beginNs : std::min(frameBegin, beginNs);
         const f64 ms =
             static_cast<f64>(endNs - std::min(beginNs, endNs)) / 1.0e6;
         accumulate(sample.name, ms);
-        if (ms >= 0.5) {
-            char buffer[48];
-            std::snprintf(buffer, sizeof(buffer), " %s=%.1f", sample.name,
-                          ms);
-            spikeLine += buffer;
-        }
-        spikeCheck = std::max(spikeCheck, ms);
     }
     const f64 totalMs = static_cast<f64>(frameEnd - frameBegin) / 1.0e6;
     frameAccum.sum += totalMs;
     frameAccum.max = std::max(frameAccum.max, totalMs);
     ++frameAccum.count;
-    if (totalMs > 25.0) {
-        // Throttled to one line every ~5 s: on a machine where EVERY frame
-        // exceeds the budget (M1 Debug through MoltenVK), per-frame spike
-        // lines drown the log without adding information — the perf panel
-        // carries the live numbers.
-        static u64 lastSpikeLogFrame = 0;
-        if (slot.frameIndex > lastSpikeLogFrame + 300 ||
-            lastSpikeLogFrame == 0) {
-            lastSpikeLogFrame = slot.frameIndex;
-            // The CPU FrameProbe logged its half 2-4 frames earlier; the
-            // frame index pairs them.
-            LOG_WARN("gpu frame spike {:.1f} ms (frame {}):{}", totalMs,
-                     slot.frameIndex,
-                     spikeLine.empty() ? " (all passes < 0.5 ms)"
-                                       : spikeLine.c_str());
-        }
-    }
 
     slot.open = false;
     slot.samples.clear();

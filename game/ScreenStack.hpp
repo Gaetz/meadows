@@ -1,7 +1,5 @@
 #pragma once
 
-#include <set>
-
 #include "engine/core/Defines.hpp"
 
 namespace game {
@@ -44,8 +42,9 @@ public:
 
 private:
     vector<Screen> screens;
-    vector<str> stack;      // modal names, bottom -> top
-    std::set<str> overlays; // visible overlay names
+    vector<str> stack;    // modal names, bottom -> top
+    vector<str> overlays; // visible overlay names, in SHOW order (first
+                          // shown = bottom-most layer, stack semantics)
 };
 
 } // namespace game

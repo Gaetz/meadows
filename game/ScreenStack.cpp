@@ -28,7 +28,12 @@ bool ScreenStack::show(const str& name) {
         return false;
     }
     if (screen->overlay) {
-        overlays.insert(name);
+        // Re-showing keeps the original layer position (no raise: an
+        // always-on HUD must not jump above a later overlay).
+        if (std::find(overlays.begin(), overlays.end(), name) ==
+            overlays.end()) {
+            overlays.push_back(name);
+        }
         return true;
     }
     if (screen->modal) {
@@ -42,7 +47,9 @@ bool ScreenStack::show(const str& name) {
 }
 
 bool ScreenStack::close(const str& name) {
-    if (overlays.erase(name) > 0) {
+    if (const auto it = std::find(overlays.begin(), overlays.end(), name);
+        it != overlays.end()) {
+        overlays.erase(it);
         return true;
     }
     const auto it = std::find(stack.begin(), stack.end(), name);

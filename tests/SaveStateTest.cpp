@@ -10,6 +10,7 @@
 #include "engine/ecs/World.hpp"
 #include "game/SaveGame.hpp"
 #include "gameplay/ability/AbilitySystem.hpp"
+#include "gameplay/actors/CharacterTick.hpp"
 #include "gameplay/combat/Combat.hpp"
 #include "gameplay/inventory/Inventory.hpp"
 #include "gameplay/save/SaveForms.hpp"
@@ -309,7 +310,7 @@ TEST_CASE("save state: reference diff patches cell moves, actors only for transf
     REQUIRE(patch.has_value());
     CHECK(patch->fields.at(cellId) == reflect::Value { core::Guid {} });
 
-    // A non-actor at its authored spot: no patch at all.
+    // A MOVED non-actor: still no patch (transforms are actor-only).
     ecs::Entity crate = world.create();
     crate.set<world::RefId>(
         { kRef, data::FormHandle {},
@@ -317,4 +318,58 @@ TEST_CASE("save state: reference diff patches cell moves, actors only for transf
     crate.set<world::Transform>(
         { Vec3 { 999.0f, 5.0f, 4.0f }, Quat { 1, 0, 0, 0 }, Vec3 { 1.0f } });
     CHECK_FALSE(game::captureReference(crate, db).has_value());
+}
+
+TEST_CASE("save state: derived maxima survive applySavedState — the HUD is "
+          "right on the very first frame") {
+    gameplay::GameplayTagRegistry tags;
+    tags.registerTag("State.Dead");
+    gameplay::DerivedStatRegistry derived;
+    gameplay::registerCoreDerivedStats(derived);
+    gameplay::StatsTuningForm tuning;
+    const gameplay::CharacterTickContext ctx { derived, tags, tuning };
+
+    // A spawned-then-battered actor, captured.
+    ecs::World worldA;
+    gameplay::registerGameplayComponents(worldA);
+    ecs::Entity actorA = makeActor(worldA, /*battered=*/false);
+    actorA.set<gameplay::ResonanceDecays>({});
+    gameplay::initializeActorStats(actorA, ctx);
+    const f32 formulaMax = gameplay::currentValueOf(
+        actorA.get<gameplay::AbilitySystem>(), gameplay::attr("maxHealth"));
+    // The raw AttributeSet seed differs from the formula: that gap is
+    // what a wrong overlay seed would expose on the HUD.
+    REQUIRE(formulaMax !=
+            doctest::Approx(actorA.get<gameplay::AttributeSet>().maxHealth));
+    actorA.get_mut<gameplay::AttributeSet>().health = 37.0f;
+
+    data::FormTypeRegistry types = makeTypes();
+    data::Plugin save;
+    save.id = guid("40000000-0000-4000-8000-00000000009a");
+    save.name = "slot";
+    save.records = gameplay::captureActor(actorA, kRef, tags);
+    const auto worldPlugin = data::parsePluginToml(kWorldToml, types, "world");
+    REQUIRE(worldPlugin.has_value());
+    data::FormDatabase db;
+    data::resolve({ &*worldPlugin, &save }, types, db);
+
+    // The load path: spawn init (formula maxima + derived cache), THEN the
+    // saved bases land on top.
+    ecs::World worldB;
+    gameplay::registerGameplayComponents(worldB);
+    ecs::Entity actorB = makeActor(worldB, /*battered=*/false);
+    actorB.set<gameplay::ResonanceDecays>({});
+    gameplay::initializeActorStats(actorB, ctx);
+    gameplay::applySavedState(actorB, gameplay::savedRecordsFor(db, kRef),
+                              tags);
+
+    const auto& system = actorB.get<gameplay::AbilitySystem>();
+    // The derived max keeps its FORMULA value right after the load —
+    // seeding the overlay from the raw AttributeSet would read the
+    // authored seed here until the next character tick.
+    CHECK(gameplay::currentValueOf(system, gameplay::attr("maxHealth")) ==
+          doctest::Approx(formulaMax));
+    // Non-derived currents refresh from the restored bases immediately.
+    CHECK(gameplay::currentValueOf(system, gameplay::attr("health")) ==
+          doctest::Approx(37.0f));
 }

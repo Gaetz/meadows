@@ -367,7 +367,14 @@ void applySavedState(ecs::Entity entity, const SavedActorRecords& saved,
                          entity.get<FollowerState>().followerActive);
         }
         const auto& set = entity.get<AttributeSet>();
-        initializeCurrent(system, set);
+        // PARTIAL recompute only: it seeds every non-derived current from
+        // the restored bases and deliberately SKIPS the derived targets
+        // (system.derivedTargetIds, cached by the spawn-time
+        // initializeActorStats) — their formula values survive the load,
+        // so the HUD's maxima are right on the very first frame; the next
+        // tickCharacter re-derives them exactly. Seeding the overlay from
+        // the raw AttributeSet here would stomp maxHealth/... with the
+        // authored seeds until that tick.
         recomputeCurrent(set, system);
         updateLifeState(system, registry);
     }

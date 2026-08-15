@@ -91,3 +91,21 @@ TEST_CASE("ScreenStack: later definitions win (mod layering)") {
     REQUIRE(stack.topModal() != nullptr);
     CHECK(stack.topModal()->document == "mods/fancy-inventory.rml");
 }
+
+TEST_CASE("ScreenStack: overlays layer in SHOW order, not by name") {
+    game::ScreenStack stack;
+    stack.define({ .name = "zeta", .document = "z.rml", .overlay = true });
+    stack.define({ .name = "alpha", .document = "a.rml", .overlay = true });
+    CHECK(stack.show("zeta"));
+    CHECK(stack.show("alpha"));
+    CHECK(stack.show("zeta")); // re-show keeps the original position
+
+    const auto visible = stack.visibleScreens();
+    REQUIRE(visible.size() == 2);
+    CHECK(visible[0]->name == "zeta");  // shown first = bottom layer
+    CHECK(visible[1]->name == "alpha"); // a std::set would flip these
+
+    CHECK(stack.close("zeta"));
+    REQUIRE(stack.visibleScreens().size() == 1);
+    CHECK(stack.visibleScreens()[0]->name == "alpha");
+}
